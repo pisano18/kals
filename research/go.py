@@ -115,7 +115,7 @@ SELFTESTS = [
     ("proxy reference", ["proxy.py", "--selftest"]),
     # power.py touches no data, but it is what makes every null result in the
     # report readable, and it is simulation code that can be silently wrong.
-    ("detectability", ["power.py", "--selftest"]),
+    ("detectability", ["power.py", "--selftest", "--quick"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so

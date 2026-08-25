@@ -67,6 +67,7 @@ from collections import defaultdict
 from statistics import mean, median, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tdist import p_two_sided, crit                       # noqa: E402
 
 LAGS = list(range(-5, 11))          # positive = the replica LEADS the index
 
@@ -242,13 +243,25 @@ def show_lags(res, label):
     if not res:
         print("    not enough overlapping data")
         return None
-    print(f"  {'lag':>6}{'beta':>10}{'t':>8}{'pairs':>10}")
+    # The standard error comes from ~20 blocks, so this is a t on
+    # (blocks - 1) degrees of freedom and NOT a z. At |t| = 3 the two-sided
+    # p is 0.0074 rather than 0.0027, and at |t| = 4 it is 0.00077 rather
+    # than 0.00006 -- twelve times more likely to be noise than it reads.
+    # power.py measured the cost of the old reading directly: comparing this
+    # column to 1.96 rejects a true null 7.7% of the time, not 5%.
+    print(f"  {'lag':>6}{'beta':>10}{'t':>8}{'df':>5}{'p (t)':>10}"
+          f"{'pairs':>10}")
     best = max(res, key=lambda k: res[k]["beta"])
     for k in sorted(res):
         r = res[k]
-        print(f"  {k:>+6}{r['beta']:>10.3f}{r['t']:>8.1f}{r['n']:>10,}"
+        df = max(r.get("blocks", 20) - 1, 1)
+        print(f"  {k:>+6}{r['beta']:>10.3f}{r['t']:>8.1f}{df:>5}"
+              f"{p_two_sided(r['t'], df):>10.4f}{r['n']:>10,}"
               + ("   <== peak" if k == best else ""))
-    print(f"\n  peak at lag {best:+d}s")
+    bdf = max(res[best].get("blocks", 20) - 1, 1)
+    print(f"\n  peak at lag {best:+d}s   "
+          f"|t| for p<0.05 on t({bdf}) is {crit(0.05, bdf):.2f}, "
+          f"not 1.96")
     if best > 0:
         print(f"  -> OUR REPLICA LEADS the published index by ~{best}s.")
         print("     Because settlement is a 60-second average, that lead is")

@@ -50,7 +50,11 @@ import argparse
 import math
 import os
 import random
+import sys
 from statistics import NormalDist, mean, pstdev
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tdist import student_t_cdf, student_t_ppf, p_two_sided   # noqa: E402,F401
 
 ND = NormalDist()
 
@@ -61,87 +65,6 @@ WINDOWS_PER_DAY = 96
 def fee(p):
     """Kalshi quadratic taker fee, large-order limit."""
     return 0.07 * p * (1 - p)
-
-
-# ---------------------------------------------------------------------------
-# Student-t, because a block bootstrap does not hand you a z.
-#
-# feeds.py and leadlag.py build their standard error from ~20 blocks. That is
-# 20 numbers, so the statistic is a t on 19 degrees of freedom and comparing it
-# to 1.96 rejects a true null about 8.6% of the time instead of 5%. At the
-# thresholds this project actually uses the gap is worse, not better: |t| = 3
-# is p = 0.0027 under a normal and p = 0.0074 under t(19), so a "3-sigma"
-# lead-lag result is nearly three times more likely to be noise than it looks.
-# stdlib has no t quantile, so here is one, checked against published values
-# in --selftest.
-# ---------------------------------------------------------------------------
-def _betacf(a, b, x, itmax=200, eps=3e-14):
-    qab, qap, qam = a + b, a + 1.0, a - 1.0
-    c, d = 1.0, 1.0 - qab * x / qap
-    if abs(d) < 1e-300:
-        d = 1e-300
-    d = 1.0 / d
-    h = d
-    for m in range(1, itmax + 1):
-        m2 = 2 * m
-        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
-        d = 1.0 + aa * d
-        if abs(d) < 1e-300:
-            d = 1e-300
-        c = 1.0 + aa / c
-        if abs(c) < 1e-300:
-            c = 1e-300
-        d = 1.0 / d
-        h *= d * c
-        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
-        d = 1.0 + aa * d
-        if abs(d) < 1e-300:
-            d = 1e-300
-        c = 1.0 + aa / c
-        if abs(c) < 1e-300:
-            c = 1e-300
-        d = 1.0 / d
-        de = d * c
-        h *= de
-        if abs(de - 1.0) < eps:
-            break
-    return h
-
-
-def betainc(a, b, x):
-    """Regularized incomplete beta I_x(a, b)."""
-    if x <= 0.0:
-        return 0.0
-    if x >= 1.0:
-        return 1.0
-    lb = (math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
-          + a * math.log(x) + b * math.log(1.0 - x))
-    if x < (a + 1.0) / (a + b + 2.0):
-        return math.exp(lb) * _betacf(a, b, x) / a
-    return 1.0 - math.exp(lb) * _betacf(b, a, 1.0 - x) / b
-
-
-def student_t_cdf(t, df):
-    if df <= 0:
-        return float("nan")
-    x = df / (df + t * t)
-    p = 0.5 * betainc(df / 2.0, 0.5, x)
-    return 1.0 - p if t > 0 else p
-
-
-def student_t_ppf(p, df):
-    """Two-sided-friendly inverse CDF by bisection. Falls back to the normal
-    for large df, where they agree to well past any decimal that matters."""
-    if df > 3000:
-        return ND.inv_cdf(p)
-    lo, hi = -300.0, 300.0
-    for _ in range(200):
-        mid = (lo + hi) / 2.0
-        if student_t_cdf(mid, df) < p:
-            lo = mid
-        else:
-            hi = mid
-    return (lo + hi) / 2.0
 
 
 def crit_for(fn, alpha, **kw):
@@ -341,64 +264,57 @@ ESTIMATORS = [
 
 
 # ===========================================================================
-def _solve_quad(a, b, need):
-    """Smallest positive e with a*e + b*e^2 = need."""
-    if abs(b) < 1e-12:
-        return (need / a) if a > 0 else float("inf")
-    disc = a * a + 4 * b * need
-    if disc < 0:
-        return float("inf")
-    rr = [(-a + math.sqrt(disc)) / (2 * b), (-a - math.sqrt(disc)) / (2 * b)]
-    pos = [r for r in rr if r > 0]
-    return min(pos) if pos else float("inf")
-
-
 def mde(fn, n, alpha=0.05, power=0.80, reps=800, seed=1, hi=None,
-        return_curve=False, **kw):
+        return_curve=False, pw_reps=None, **kw):
     """Smallest effect this estimator finds `power` of the time at `alpha`.
 
     Solved, not multiplied. The obvious shortcut -- MDE = (z_a + z_p) * SE --
-    silently assumes the statistic's expectation is LINEAR in the effect, and
-    for edge.py's Brier difference it is quadratic (bias^2 minus model noise^2)
-    with a floor the sample size never reaches. So: measure the null standard
-    error, work out the mean shift required, then invert the effect-to-mean
-    curve numerically. Returns (mde, se_null, t_crit); mde is inf when the
-    estimator cannot reach the required shift at any effect size.
+    makes two assumptions that are both false here.
+
+      1. That the statistic's expectation is LINEAR in the effect. For
+         edge.py's Brier difference it is quadratic: bias^2 minus model
+         noise^2, with a floor no sample size reaches.
+      2. That its VARIANCE does not depend on the effect. The P&L variance
+         FALLS as the edge grows -- a winning bet loses less often -- and the
+         Brier variance RISES. Ignoring that lands the power ten points out,
+         in opposite directions for the two.
+
+    So both curves are measured from the same three probes: the mean curve
+    a*e + b*e^2 and the variance ratio g(e) = sd(e)/sd(0), then
+    a*e + b*e^2 = (z_a + z_p) * sd(0) * g(e) is solved numerically. Modelling
+    g separately is also what makes extrapolation to a larger n honest: sd(0)
+    scales as 1/sqrt(n) and g does not scale at all, whereas folding them
+    together carried a large-effect variance reduction into a regime where the
+    effect is small and read 15% optimistic.
+
+    Returns (mde, se_null, t_crit), or with return_curve a dict as well.
     """
     rnd = random.Random(seed)
     zc = crit_for(fn, alpha, **kw)
     zp = ND.inv_cdf(power)
-    probe_reps = max(reps // 6, 80)
+    probe_reps = max(reps // 3, 120)
 
     def _bail(se_):
-        # every exit has to honour return_curve, or mde_scaled unpacks three
-        # values into six and the whole table dies on the first row that
-        # happens to be underpowered
-        return ((float("inf"), se_, zc, 1.0, 0.0, 1.0) if return_curve
+        curve = {"a": 1.0, "b": 0.0, "c1": 0.0, "c2": 0.0, "se0": se_,
+                 "zc": zc, "cal": 1.0, "n": n}
+        return ((float("inf"), se_, zc, curve) if return_curve
                 else (float("inf"), se_, zc))
 
-    def sd_at(e, r):
-        return pstdev([fn(n, e, r, **kw)[0] for _ in range(reps)])
+    def probe(e, r_reps, seed_off):
+        r = random.Random(seed + seed_off)
+        v = [fn(n, e, r, **kw)[0] for _ in range(r_reps)]
+        return mean(v), pstdev(v)
 
-    def mean_at(e):
-        r = random.Random(seed + 977)
-        return mean([fn(n, e, r, **kw)[0] for _ in range(probe_reps)])
-
-    se0 = sd_at(0.0, rnd)
+    m0, se0 = probe(0.0, reps, 0)
     if se0 <= 0:
         return _bail(se0)
+    K = (zc + zp) * se0
 
-    # Three probes and an exact quadratic solve, rather than fifty bisection
-    # steps. Every estimator here has expectation a*e + b*e^2 (linear for the
-    # P&L, up-rate, autocorrelation and slope; purely quadratic for the Brier
-    # difference, whose effect enters squared). Probing is ~7x cheaper than
-    # bisecting and --selftest verifies the answer by planting it, so a fit
-    # that did not describe the curve could not survive.
-    m0 = mean_at(0.0)
-    h = hi if hi is not None else max((zc + zp) * se0, 1e-9)
+    h = hi if hi is not None else max(K, 1e-9)
     for _ in range(30):
-        m1, m2 = mean_at(h), mean_at(2 * h)
-        if (m2 - m0) >= (zc + zp) * se0:
+        m1, s1 = probe(h, probe_reps, 977)
+        m2, s2 = probe(2 * h, probe_reps, 977)
+        if (m2 - m0) >= K:
             break
         h *= 2.0
         if h > 1e6:
@@ -409,47 +325,41 @@ def mde(fn, n, alpha=0.05, power=0.80, reps=800, seed=1, hi=None,
     y1, y2 = m1 - m0, m2 - m0
     b = (y2 - 2 * y1) / (2 * h * h)
     a = (y1 - b * h * h) / h
+    # Keep the quadratic term ONLY where it is doing real work. Fitting b to
+    # two noisy probes on a genuinely linear estimator gives a coefficient
+    # that swings from -9 to -0.3 across sample sizes, and that spurious
+    # curvature is optimism, which is the dangerous direction. The Brier
+    # statistic really is quadratic (a ~ 0, b ~ 1) and sails through.
+    if abs(b * h * h) < 0.25 * abs(a * h):
+        b = 0.0
+        a = ((y1 / h) + (y2 / (2 * h))) / 2.0
 
-    def solve(need):
-        return _solve_quad(a, b, need)
+    g1, g2 = s1 / se0, s2 / se0
+    c2 = (g2 - 2 * g1 + 1.0) / (2 * h * h)
+    c1 = (g1 - 1.0 - c2 * h * h) / h
 
-    # THE STANDARD ERROR UNDER THE ALTERNATIVE IS NOT THE ONE UNDER THE NULL,
-    # and here it moves in both directions. A P&L bet with a real edge wins
-    # more often, so its variance FALLS and the null-SE calculation understates
-    # the power (measured 0.90 against a target of 0.80). A Brier difference
-    # with a real market bias has a bigger and more variable per-observation
-    # score, so its variance RISES and the same calculation overstates the
-    # power badly (measured 0.23). Iterate the standard error to the effect
-    # actually being solved for; two passes is enough for both to converge.
-    e = solve((zc + zp) * se0)
-    se = se0
-    for _ in range(2):
-        if not (0 < e < float("inf")):
-            return _bail(se)
-        se = sd_at(e, random.Random(seed + 4231))
-        if se <= 0:
-            return _bail(se)
-        e_new = solve((zc + zp) * se)
-        if e_new == float("inf"):
-            return _bail(se)
-        if abs(e_new - e) <= 0.01 * e:
-            e = e_new
-            break
-        e = e_new
+    curve = {"a": a, "b": b, "c1": c1, "c2": c2, "se0": se0, "zc": zc,
+             "cal": 1.0, "n": n}
+    e = _solve_curve(curve, K)
+    if e == float("inf"):
+        return _bail(se0)
 
-    # Even with the right standard error, (zc + zp) * se is a normal-theory
-    # approximation, and these statistics are skewed enough that it lands
-    # roughly ten points of power off. So finish by MEASURING the power at the
-    # analytic answer and rescaling: p_hat implies an achieved z of
-    # inv_cdf(p_hat) + zc, and for a locally linear curve the effect scales by
-    # the ratio of the wanted z to the achieved one. Two measurements converge
-    # from a good starting point, and --selftest checks the result by planting
+    # Even with both curves right, this is still normal theory and these
+    # statistics are skewed. Finish by MEASURING the power at the analytic
+    # answer and rescaling: p_hat implies an achieved z of inv_cdf(p_hat) + zc,
+    # and for a locally linear curve the effect scales by the ratio of the
+    # wanted z to the achieved one. --selftest checks the result by planting
     # it, so this cannot quietly stop working.
-    pw_reps = max(reps, 350)
-    for _ in range(2):
+    pw_reps = pw_reps or max(reps, 350)
+    # Stop when the measured power is within its OWN sampling error of the
+    # target. A fixed 0.02 band at 200 replications is inside the noise, so
+    # the loop exits on a lucky draw and the answer comes back a few points low.
+    tol = max(0.02, math.sqrt(power * (1 - power) / pw_reps))
+    e0 = e
+    for _ in range(3):
         p_hat = measured_power(fn, n, e, alpha, reps=pw_reps,
                                seed=seed + 6100, **kw)
-        if abs(p_hat - power) <= 0.02:
+        if abs(p_hat - power) <= tol:
             break
         p_hat = min(max(p_hat, 1e-4), 1 - 1e-4)
         z_now = ND.inv_cdf(p_hat) + zc
@@ -458,42 +368,68 @@ def mde(fn, n, alpha=0.05, power=0.80, reps=800, seed=1, hi=None,
             e *= 2.0
             continue
         e *= z_want / z_now
+    curve["cal"] = (e / e0) if e0 > 0 else 1.0
     if return_curve:
-        analytic = _solve_quad(a, b, (zc + zp) * se)
-        cal = (e / analytic) if analytic not in (0.0, float("inf")) else 1.0
-        return e, se, zc, a, b, cal
-    return e, se, zc
+        return e, se0, zc, curve
+    return e, se0, zc
+
+
+def _solve_curve(curve, K):
+    """Smallest e > 0 with a*e + b*e^2 = K * (1 + c1*e + c2*e^2).
+
+    Bisection rather than the quadratic formula: both sides are closed form,
+    so this costs nothing, and it does not care how the coefficients came out.
+    """
+    a, b, c1, c2 = curve["a"], curve["b"], curve["c1"], curve["c2"]
+
+    def f(e):
+        return (a * e + b * e * e) - K * (1.0 + c1 * e + c2 * e * e)
+
+    if f(0.0) >= 0:
+        return 0.0
+    lo, hi = 0.0, max(K, 1e-12)
+    for _ in range(60):
+        if f(hi) >= 0:
+            break
+        hi *= 2.0
+        if hi > 1e9:
+            return float("inf")
+    else:
+        return float("inf")
+    for _ in range(80):
+        mid = (lo + hi) / 2.0
+        if f(mid) >= 0:
+            hi = mid
+        else:
+            lo = mid
+    return (lo + hi) / 2.0
 
 
 def mde_scaled(fn, n_target, alpha=0.05, power=0.80, reps=400, seed=1,
-               n_cap=3000, n_sim_force=None, curve=None, **kw):
+               n_cap=3000, n_sim_force=None, curve=None, pw_reps=None, **kw):
     """MDE at n_target, simulated at min(n_target, n_cap) and extrapolated.
 
-    Every statistic here is a sample mean, so its standard error falls as
-    1/sqrt(n) -- checked directly in --selftest, where four times the data
-    halves each linear MDE. Simulating a quarter of a million seconds of feed
-    outright would take hours; simulating 3,000 and scaling the standard error
-    takes seconds and lands on the same number. The effect-to-mean curve and
-    the power-calibration factor are properties of the estimator's shape, not
-    of n, so they are measured once and reused. Returns (mde, n_simulated).
+    Every statistic here is a sample mean, so sd(0) falls as 1/sqrt(n) --
+    checked in --selftest, where four times the data halves each linear MDE.
+    The mean curve and the variance-ratio curve are properties of the
+    estimator's shape, not of n, so they are measured once and reused.
+    Simulating a quarter of a million seconds of feed outright would take
+    hours. Returns (mde, n_simulated).
     """
-    # n_sim_force overrides the cap in BOTH directions -- the recording-length
-    # table simulates one curve and rescales it down to a single day as well
-    # as up, and an extrapolation that is only ever checked upward is only
-    # half checked.
     n_sim = int(n_sim_force) if n_sim_force else int(min(n_target, n_cap))
     if n_sim < 30:
         return float("inf"), n_sim
     if curve is None:
-        curve = mde(fn, n_sim, alpha, power, reps=reps, seed=seed,
-                    return_curve=True, **kw)
-    m, se, zc, a, b, cal = curve
-    if n_sim == n_target or m == float("inf"):
-        return m, n_sim
-    se_t = se * math.sqrt(n_sim / float(n_target))
-    zp = ND.inv_cdf(power)
-    e = _solve_quad(a, b, (zc + zp) * se_t)
-    return (e * cal if e != float("inf") else e), n_sim
+        _m, _se, _zc, curve = mde(fn, n_sim, alpha, power, reps=reps,
+                                  seed=seed, return_curve=True,
+                                  pw_reps=pw_reps, **kw)
+    if n_sim == n_target:
+        e = _solve_curve(curve, (curve["zc"] + ND.inv_cdf(power))
+                         * curve["se0"])
+        return (e * curve["cal"] if e != float("inf") else e), n_sim
+    se_t = curve["se0"] * math.sqrt(n_sim / float(n_target))
+    e = _solve_curve(curve, (curve["zc"] + ND.inv_cdf(power)) * se_t)
+    return (e * curve["cal"] if e != float("inf") else e), n_sim
 
 
 def measured_power(fn, n, effect, alpha=0.05, reps=2000, seed=2, **kw):
@@ -567,7 +503,16 @@ def testing_report(n_series, alpha):
 
 
 # ===========================================================================
-def selftest():
+def selftest(quick=False):
+    """quick=True halves every replication count. go.py runs it that way --
+    a full pass is seven and a half minutes and this file touches no data, so
+    paying that on every run would just discourage running go.py at all. The
+    tolerances still hold at 3 sigma on the reduced counts."""
+    q = 0.45 if quick else 1.0
+
+    def R(n):
+        return max(int(n * q), 60)
+
     print("=" * 78)
     print("SELF-TEST -- does a planted effect of exactly the MDE actually fire?")
     print("=" * 78)
@@ -592,19 +537,25 @@ def selftest():
     print()
     print(f"  {'estimator':>28}{'n':>9}{'MDE':>12}{'power@MDE':>11}"
           f"{'null rate':>11}")
+    N = (lambda v: max(int(v * (0.5 if quick else 1.0)), 120))
     cases = [
+        # not shrunk in quick mode: below ~300 clusters the per-cluster
+        # P&L is skewed enough that a normal critical value over-rejects,
+        # which the section further down measures rather than hides
         ("replay net P&L / contract", est_pnl, 300, {}, True),
-        ("edge.py Brier advantage", est_brier, 300, {"per_cluster": 4}, False),
-        ("chain.py up-rate deviation", est_uprate, 3000, {}, True),
-        ("chain.py lag-1 autocorr", est_autocorr, 2000, {}, True),
-        ("feeds.py lead-lag beta", est_lagbeta, 4000, {}, True),
+        ("edge.py Brier advantage", est_brier, N(300), {"per_cluster": 4},
+         False),
+        ("chain.py up-rate deviation", est_uprate, N(3000), {}, True),
+        ("chain.py lag-1 autocorr", est_autocorr, N(2000), {}, True),
+        ("feeds.py lead-lag beta", est_lagbeta, N(4000), {}, True),
     ]
     for label, fn, n, kw, linear in cases:
-        m, se, _ = mde(fn, n, ALPHA, POWER, reps=250, seed=11, **kw)
-        pw = measured_power(fn, n, m, ALPHA, reps=900, seed=99, **kw)
-        nl = measured_power(fn, n, 0.0, ALPHA, reps=900, seed=13, **kw)
+        m, se, _ = mde(fn, n, ALPHA, POWER, reps=R(250), seed=11,
+                       pw_reps=R(350), **kw)
+        pw = measured_power(fn, n, m, ALPHA, reps=R(900), seed=99, **kw)
+        nl = measured_power(fn, n, 0.0, ALPHA, reps=R(900), seed=13, **kw)
         flag = ""
-        if abs(pw - POWER) > 0.06:
+        if abs(pw - POWER) > (0.09 if quick else 0.06):
             flag = " <-- power off"
             fails.append(f"{label}: planted the MDE and measured power "
                          f"{pw:.2f}, wanted {POWER:.2f}")
@@ -613,14 +564,35 @@ def selftest():
             fails.append(f"{label}: null fires at {nl:.3f}, wanted {ALPHA}")
         print(f"  {label:>28}{n:>9,}{m:>12.5f}{pw:>11.2f}{nl:>11.3f}{flag}")
 
+    print("\n  SKEW AT SMALL CLUSTER COUNTS -- replay's t is anti-conservative")
+    print("  The per-cluster net P&L is a handful of binary payoffs at a price")
+    print("  near 95c: mostly small wins, occasionally a 95c loss. Averaging a")
+    print("  few dozen of those does not give you a normal, so comparing the")
+    print("  t to 1.96 rejects a TRUE null more often than 5% -- and a day of")
+    print("  recording is 96 clusters. Not a bug to fix here; a number to know")
+    print("  before reading a P&L t-statistic off a short recording.")
+    print(f"\n  {'clusters':>12}{'null rejection rate at alpha=0.05':>36}")
+    prev = None
+    for nc in (60, 150, 300, 600, 1200):
+        r = measured_power(est_pnl, nc, 0.0, ALPHA, reps=R(900), seed=71)
+        print(f"  {nc:>12,}{r:>36.3f}")
+        if nc >= 300 and abs(r - ALPHA) > 0.03:
+            fails.append(f"P&L null fires at {r:.3f} with {nc} clusters -- "
+                         "the skew should have washed out by here")
+        prev = r
+    if prev is None or prev > 0.08:
+        fails.append("the P&L null never settled toward alpha as clusters grew")
+
     print("\n  SQRT(n) SCALING -- four times the data must halve a LINEAR MDE")
     print(f"  {'estimator':>28}{'MDE(n)':>12}{'MDE(4n)':>12}{'ratio':>9}"
           f"{'want':>8}")
     for label, fn, n, kw, linear in cases:
         if not linear:
             continue
-        a, _, _ = mde(fn, n, ALPHA, POWER, reps=200, seed=21, **kw)
-        b, _, _ = mde(fn, 4 * n, ALPHA, POWER, reps=200, seed=21, **kw)
+        a, _, _ = mde(fn, n, ALPHA, POWER, reps=R(200), seed=21,
+                      pw_reps=R(350), **kw)
+        b, _, _ = mde(fn, 4 * n, ALPHA, POWER, reps=R(200), seed=21,
+                      pw_reps=R(350), **kw)
         ratio = b / a if a > 0 else float("nan")
         bad = ""
         if not (0.40 < ratio < 0.62):
@@ -634,44 +606,35 @@ def selftest():
     print("  it simulates n_cap and scales the standard error by sqrt(n). If")
     print("  that shortcut were wrong every number in the report would be too.")
     print(f"\n  {'estimator':>28}{'direct':>12}{'scaled':>12}{'ratio':>9}")
-    print("  Upward only. The downward direction is measured below and is")
-    print("  biased, so nothing in the output depends on it.")
+    print("  Both directions. Extrapolating used to read 15% optimistic at")
+    print("  8x up and 23% pessimistic at 6x down, because the effect-dependent")
+    print("  variance was folded into the standard error instead of modelled.")
+    print("  These rows are what caught that.")
     for label, fn, n, cap, kw in (
             ("up-rate, 4x up", est_uprate, 8000, 2000, {}),
             ("lag-1 autocorr, 4x up", est_autocorr, 8000, 2000, {}),
             ("net P&L, 4x up", est_pnl, 1200, 300, {}),
-            ("net P&L, 8x up", est_pnl, 2400, 300, {})):
-        direct, _, _ = mde(fn, n, ALPHA, POWER, reps=200, seed=5, **kw)
+            ("net P&L, 8x up", est_pnl, 2400, 300, {}),
+            ("net P&L, 6x DOWN", est_pnl, 250, 1500, {}),
+            ("up-rate, 8x DOWN", est_uprate, 500, 4000, {})):
+        direct, _, _ = mde(fn, n, ALPHA, POWER, reps=R(200), seed=5,
+                           pw_reps=R(350), **kw)
         # force the simulation size so a DOWN row really extrapolates down
         # instead of quietly simulating the target directly, which is what an
-        # earlier version of this check did -- both DOWN rows read exactly
-        # 1.000, which should have been the giveaway.
-        scaled, nsim = mde_scaled(fn, n, ALPHA, POWER, reps=200, seed=5,
-                                  n_sim_force=cap, **kw)
+        # earlier version did -- both DOWN rows read exactly 1.000, which
+        # should have been the giveaway.
+        scaled, nsim = mde_scaled(fn, n, ALPHA, POWER, reps=R(200), seed=5,
+                                  n_sim_force=cap, pw_reps=R(350), **kw)
         ratio = scaled / direct if direct > 0 else float("nan")
         bad = ""
-        if not (0.85 < ratio < 1.18):
+        # both sides of the ratio are simulated, so the band has to widen when
+        # the replication counts are cut
+        band = 0.14 if quick else 0.09
+        if not (1 - band < ratio < 1 + band):
             bad = " <--"
             fails.append(f"{label}: extrapolated MDE is {ratio:.2f}x the "
                          "directly simulated one")
         print(f"  {label:>28}{direct:>12.5f}{scaled:>12.5f}{ratio:>9.3f}{bad}")
-
-    print("\n  ...and why it is upward only. The P&L statistic's variance")
-    print("  FALLS as the edge grows -- a winning bet loses less often -- so a")
-    print("  curve fitted where the MDE is small overstates it where the MDE")
-    print("  is large. Extrapolating downward must therefore read HIGH. That")
-    print("  is at least the safe direction, but it is not an answer, and the")
-    print("  recording table simulates each row directly instead.")
-    d_direct, _, _ = mde(est_pnl, 250, ALPHA, POWER, reps=200, seed=5)
-    d_scaled, _ = mde_scaled(est_pnl, 250, ALPHA, POWER, reps=200, seed=5,
-                             n_sim_force=1500)
-    print(f"  {'net P&L, 6x DOWN':>28}{d_direct:>12.5f}{d_scaled:>12.5f}"
-          f"{d_scaled/d_direct:>9.3f}")
-    if d_scaled < d_direct * 0.98:
-        fails.append(f"downward extrapolation read LOW "
-                     f"({d_scaled/d_direct:.2f}x) -- it is supposed to be "
-                     "conservative, and anything that trusted it would be "
-                     "understating the MDE")
 
     print("\n  THE MODEL-NOISE FLOOR -- the one MDE that data cannot lower")
     print("  edge.py compares OUR probability to the market's. Its expectation")
@@ -679,12 +642,13 @@ def selftest():
     print("  detect a bias smaller than our own error. sigma is the only free")
     print("  parameter and d(fair)/d(log sigma) peaks at 0.242, so this floor")
     print("  is set by how well sigma is known -- not by how long we record.")
-    print(f"\n  {'our noise':>16}{'n=300':>12}{'n=2,400':>12}{'floor':>12}")
+    print(f"\n  {'our noise':>16}{'n=300':>12}{'n=' + f'{N(2400):,}':>12}"
+          f"{'floor':>12}")
     for mn in (0.003, 0.010):
-        a, _, _ = mde(est_brier, 300, ALPHA, POWER, reps=150, seed=41,
-                      per_cluster=4, model_noise=mn)
-        b, _, _ = mde(est_brier, 2400, ALPHA, POWER, reps=150, seed=41,
-                      per_cluster=4, model_noise=mn)
+        a, _, _ = mde(est_brier, 300, ALPHA, POWER, reps=R(150), seed=41,
+                      pw_reps=R(350), per_cluster=4, model_noise=mn)
+        b, _, _ = mde(est_brier, N(2400), ALPHA, POWER, reps=R(150), seed=41,
+                      pw_reps=R(350), per_cluster=4, model_noise=mn)
         print(f"  {mn:>16.3f}{a:>12.5f}{b:>12.5f}{mn:>12.3f}")
         if b < mn * 0.9:
             fails.append(f"MDE {b:.5f} fell below the model-noise floor "
@@ -707,9 +671,9 @@ def selftest():
             ("block SE, t(19)=2.09 (correct)", False,
              student_t_ppf(0.975, 19))):
         rnd = random.Random(51)
-        hits = sum(1 for _ in range(900)
+        hits = sum(1 for _ in range(R(900))
                    if abs(est_lagbeta(4000, 0.0, rnd, iid_se=iid)[1]) > crit)
-        rates[name] = hits / 900
+        rates[name] = hits / R(900)
         print(f"  {name:>34}{rates[name]:>22.3f}{ALPHA:>8.2f}")
     if abs(rates["block SE, t(19)=2.09 (correct)"] - ALPHA) > 0.03:
         fails.append("block-bootstrap null with the t critical value fires at "
@@ -755,10 +719,12 @@ def main():
                     help="largest n actually simulated; bigger targets are "
                          "reached by scaling the standard error as 1/sqrt(n)")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--quick", action="store_true",
+                    help="with --selftest: fewer replications, same checks")
     a = ap.parse_args()
 
     if a.selftest:
-        raise SystemExit(0 if selftest() else 1)
+        raise SystemExit(0 if selftest(quick=a.quick) else 1)
     if os.environ.get("KALS_SELFTESTED") != "1" and not selftest():
         raise SystemExit("self-test failed; the numbers below would be wrong")
 
@@ -827,28 +793,31 @@ def main():
     print("  The P&L row is clustered by close time, and close times arrive")
     print("  at 4 an hour no matter how many series you watch. Halving the")
     print("  MDE means quadrupling the DAYS.")
-    print("  Each row is simulated at its own cluster count where that is")
-    print("  affordable; `sim n` says which rows were extrapolated, and the")
-    print("  extrapolation is upward only -- --selftest shows the downward")
-    print("  direction is biased high by about a quarter.\n")
+    print("  One simulated curve, rescaled as 1/sqrt(n) in both directions;")
+    print("  --selftest checks that against direct runs to within 10%.\n")
     print(f"  {'recording':>12}{'clusters':>11}{'P&L MDE':>11}"
-          f"{'corrected':>12}{'sim n':>8}")
+          f"{'corrected':>12}")
 
-    row_cap = min(a.cap, 1200)
+    ncur = min(a.cap, 1200)
     kwp = dict(price=a.price, n_series=a.series, rho=a.rho)
+    cur_raw = mde(est_pnl, ncur, a.alpha, a.power, reps=a.reps, seed=7,
+                  return_curve=True, **kwp)[3]
+    cur_cor = mde(est_pnl, ncur, bonf, a.power, reps=a.reps, seed=7,
+                  return_curve=True, **kwp)[3]
     for days in (1, 3, 7, 14, 30, 90):
         cl = int(days * 24 * WINDOWS_PER_HOUR)
-        p1, nsim = mde_scaled(est_pnl, cl, a.alpha, a.power, reps=a.reps,
-                              seed=7, n_cap=row_cap, **kwp)
-        p2, _ = mde_scaled(est_pnl, cl, bonf, a.power, reps=a.reps,
-                           seed=7, n_cap=row_cap, **kwp)
+        p1, _ = mde_scaled(est_pnl, cl, a.alpha, a.power, n_sim_force=ncur,
+                           curve=cur_raw, **kwp)
+        p2, _ = mde_scaled(est_pnl, cl, bonf, a.power, n_sim_force=ncur,
+                           curve=cur_cor, **kwp)
+
         def cell(v, w):
             # 96 clusters cannot reach the corrected threshold at any effect
             # size; say so rather than printing "infc"
             return (f"{100*v:>{w-1}.2f}c" if v != float("inf")
                     else f"{'unreachable':>{w}}")
         print(f"  {str(days) + ' day' + ('s' if days > 1 else ''):>12}"
-              f"{cl:>11,}{cell(p1, 11)}{cell(p2, 12)}{nsim:>8,}")
+              f"{cl:>11,}{cell(p1, 11)}{cell(p2, 12)}")
     print("\n  Read the P&L column against the edge you would actually trade.")
     print("  If the edges on the table are 1c and the MDE at your recording")
     print("  length is 2c, replay CANNOT confirm or refute them, and saying")

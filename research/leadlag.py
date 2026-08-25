@@ -59,6 +59,7 @@ from collections import defaultdict
 from statistics import NormalDist, mean, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tdist import p_two_sided, crit                       # noqa: E402
 from engine import var_factor, N_AVG                     # noqa: E402
 from replay import (load_index, load_quotes, load_markets,  # noqa: E402
                     SERIES_TO_INDEX, series_of)
@@ -180,15 +181,26 @@ def report(res, label):
     if not res:
         print(f"  {label}: not enough data")
         return None
-    print(f"  {'lag':>6}{'beta':>10}{'t':>8}{'clusters':>10}{'obs':>10}")
+    # The standard error is built from the close-time clusters, so this is a
+    # t on (clusters - 1) degrees of freedom. With a few dozen clusters -- and
+    # clusters arrive at four an hour, so a day of recording is 96 -- the gap
+    # from the normal is not negligible at the thresholds used here.
+    print(f"  {'lag':>6}{'beta':>10}{'t':>8}{'df':>5}{'p (t)':>10}"
+          f"{'clusters':>10}{'obs':>10}")
     best = max(res, key=lambda k: res[k]["beta"])
     for k in sorted(res):
         r = res[k]
+        df = max(r["clusters"] - 1, 1)
         mark = "  <== peak" if k == best else ""
-        print(f"  {k:>+6}{r['beta']:>10.3f}{r['t']:>8.1f}"
+        print(f"  {k:>+6}{r['beta']:>10.3f}{r['t']:>8.1f}{df:>5}"
+              f"{p_two_sided(r['t'], df):>10.4f}"
               f"{r['clusters']:>10}{r['n']:>10,}{mark}")
     tot = sum(r["beta"] for r in res.values())
+    bdf = max(res[best]["clusters"] - 1, 1)
     print(f"\n  peak at lag {best:+d}s   sum of beta over all lags = {tot:.3f}")
+    print(f"  |t| for p<0.05 on t({bdf}) is {crit(0.05, bdf):.2f}; and see")
+    print(f"  power.py -- one go.py run emits several hundred statistics, so")
+    print(f"  the threshold that matters is a long way above that.")
     if best > 0:
         print("  -> THE BOOK FOLLOWS THE INDEX. That is a mechanical edge:")
         print("     the fair value has already moved and the quote has not.")
