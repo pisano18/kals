@@ -63,14 +63,19 @@ from collections import defaultdict
 from statistics import NormalDist, mean, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from settlewin import cond_mean as sw_cond_mean   # noqa: E402
 from engine import var_factor, N_AVG                       # noqa: E402
 
 ND = NormalDist()
 
 
-def fair_from(index_at_t, strike, tau, gamma0, locked_sum=0.0, n_locked=0):
-    r = N_AVG - n_locked
-    mu = (locked_sum + r * index_at_t) / N_AVG
+def fair_from_mu(mu, strike, tau, gamma0):
+    """Fair value given the conditional mean of the settlement average.
+
+    Split out from fair_from so callers that already hold a correctly
+    reconstructed mu -- settlewin.cond_mean, which rescales the locked sum for
+    missing ticks -- do not have to re-derive it from a raw (sum, count) pair.
+    """
     vf = var_factor(tau, [1.0])
     if vf <= 0:
         return None
@@ -78,6 +83,12 @@ def fair_from(index_at_t, strike, tau, gamma0, locked_sum=0.0, n_locked=0):
     if sd <= 0:
         return None
     return 1.0 - ND.cdf((strike - mu) / sd)
+
+
+def fair_from(index_at_t, strike, tau, gamma0, locked_sum=0.0, n_locked=0):
+    r = N_AVG - n_locked
+    return fair_from_mu((locked_sum + r * index_at_t) / N_AVG,
+                        strike, tau, gamma0)
 
 
 def build(quotes, markets, index, proxies, gamma0, series_to_index,
@@ -106,16 +117,11 @@ def build(quotes, markets, index, proxies, gamma0, series_to_index,
             if not (min_tau <= tau <= max_tau):
                 prev = None
                 continue
-            hi = min(t, close_s)
-            if hi >= lo_run:
-                lk = [ticks[s] for s in range(lo_run, hi + 1) if s in ticks]
-                nl = hi - lo_run + 1
-                if len(lk) < nl * 0.95:
-                    prev = None
-                    continue
-                fv = fair_from(ticks[t], strike, tau, g0, sum(lk), nl)
-            else:
-                fv = fair_from(ticks[t], strike, tau, g0)
+            mu = sw_cond_mean(ticks, close_s, t, ticks[t])
+            if mu is None:
+                prev = None
+                continue
+            fv = fair_from_mu(mu, strike, tau, g0)
             if fv is None:
                 prev = None
                 continue

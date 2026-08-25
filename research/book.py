@@ -137,7 +137,23 @@ def _levels(v):
 def rebuild(data_dir, verbose=True, max_msgs=None):
     """ticker -> [(sec, yes_bid, yes_ask, bid_sz, ask_sz)], valid stretches only.
 
-    Reads orderbook_snapshot and orderbook_delta together in file order."""
+    ORDERING. The collector writes orderbook_snapshot and orderbook_delta into
+    two SEPARATE directories, one file per hour each. Concatenating the two
+    globs replays an entire day of deltas before the first snapshot is seen, so
+    every delta lands on an invalid book and is thrown away: the rebuild
+    silently degrades to one book state per snapshot and the depth measurement
+    it exists to produce is taken on a book that never had a delta applied.
+    The self-test used to miss this because it wrote its snapshot INTO the
+    delta directory, which is not the layout on disk.
+
+    So: read both channels, then order per ticker. Book state is per-ticker, so
+    interleaving across tickers is irrelevant -- only the order WITHIN a ticker
+    matters. `_rx_ms` is the collector's own receive stamp on every message
+    from a single local clock, which is exactly the order the socket delivered
+    them in; seq breaks ties, and the read index makes it deterministic. seq is
+    deliberately NOT the primary key: it restarts on reconnect, and sorting by
+    it would interleave two connections' worth of messages into fiction.
+    """
     books = defaultdict(Book)
     series = defaultdict(list)
     stats = defaultdict(int)
@@ -173,44 +189,65 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
         t = parse_ts(d.get("ts")) if isinstance(d, dict) else None
         return t or (m.get("_rx_ms") or 0) / 1000.0
 
-    for m in rows:
+    by_ticker = defaultdict(list)
+    for i, m in enumerate(rows):
         typ = m.get("type", "")
         d = m.get("msg") or {}
         tk = d.get("market_ticker") or d.get("ticker")
         if not tk:
             stats["no_ticker"] += 1
             continue
-        seq = d.get("seq")
+        if "snapshot" not in typ and "delta" not in typ:
+            continue
+        is_snap = "snapshot" in typ
         t = ts_of(m, d)
-        bk = books[tk]
-        if "snapshot" in typ:
-            bk.snapshot(_levels(d.get("yes")), _levels(d.get("no")), seq, t)
-            stats["snapshots"] += 1
-        elif "delta" in typ:
-            side = str(d.get("side", "")).lower()
-            price = d.get("price")
-            change = d.get("delta", d.get("change"))
-            if price is None or change is None or side not in ("yes", "no"):
-                stats["unparsed_delta"] += 1
+        rx = m.get("_rx_ms")
+        # no _rx_ms (synthetic fixtures, or a collector that predates it):
+        # fall back to the message clock, which is the best available.
+        order = (rx / 1000.0) if isinstance(rx, (int, float)) else t
+        seq = d.get("seq")
+        by_ticker[tk].append((order, seq if isinstance(seq, int) else -1,
+                              0 if is_snap else 1, i, typ, d, t))
+
+    ordered = []
+    for tk, recs in by_ticker.items():
+        recs.sort(key=lambda r: r[:4])
+        ordered.append((tk, recs))
+    # deterministic across runs, and puts the busiest markets first in stats
+    ordered.sort(key=lambda x: x[0])
+
+    for tk, recs in ordered:
+        for _o, _s, _k, _i, typ, d, t in recs:
+            seq = d.get("seq")
+            bk = books[tk]
+            if "snapshot" in typ:
+                bk.snapshot(_levels(d.get("yes")), _levels(d.get("no")), seq, t)
+                stats["snapshots"] += 1
+            elif "delta" in typ:
+                side = str(d.get("side", "")).lower()
+                price = d.get("price")
+                change = d.get("delta", d.get("change"))
+                if price is None or change is None or side not in ("yes", "no"):
+                    stats["unparsed_delta"] += 1
+                    continue
+                was = bk.valid
+                bk.delta(price, change, side, seq, t)
+                if was and not bk.valid:
+                    stats["seq_gaps"] += 1
+                stats["deltas"] += 1
+            else:
                 continue
-            was = bk.valid
-            bk.delta(price, change, side, seq, t)
-            if was and not bk.valid:
-                stats["seq_gaps"] += 1
-            stats["deltas"] += 1
-        else:
-            continue
-        top = bk.top()
-        if top is None:
-            continue
-        yb, ybs, ya, yas = top
-        if not (0 < yb < ya < 1):
-            stats["crossed_or_odd"] += 1
-            continue
-        series[tk].append((int(round(t)), yb, ya, ybs, yas))
-        b, a = bk.depth_within(1)
-        if b is not None:
-            depth_samples.append((yb, b, a))
+            top = bk.top()
+            if top is None:
+                continue
+            yb, ybs, ya, yas = top
+            if not (0 < yb < ya < 1):
+                stats["crossed_or_odd"] += 1
+                continue
+            series[tk].append((int(round(t)), yb, ya, ybs, yas))
+            b, a = bk.depth_within(1)
+            if b is not None:
+                depth_samples.append((yb, b, a))
 
     for v in series.values():
         v.sort()
@@ -263,18 +300,25 @@ def selftest():
 
     tmp = tempfile.mkdtemp()
     try:
+        # THE REAL LAYOUT: two sibling directories, one file per hour each.
+        # Writing the snapshot into orderbook_delta/ (as this test used to)
+        # hides the only bug that matters here -- a reader that finishes the
+        # whole delta channel before it opens the first snapshot file.
         os.makedirs(os.path.join(tmp, "orderbook_delta"))
-        # a book we control, evolved by deltas we also write out
+        os.makedirs(os.path.join(tmp, "orderbook_snapshot"))
         yes = {40: 500.0, 39: 800.0, 38: 1200.0}
         no = {58: 400.0, 57: 900.0, 56: 1500.0}
         truth = []
-        with gzip.open(os.path.join(tmp, "orderbook_delta", "a.jsonl.gz"),
-                       "wt") as f:
-            f.write(json.dumps({"type": "orderbook_snapshot", "msg": {
+        with gzip.open(os.path.join(tmp, "orderbook_snapshot",
+                                    "20260825T00.jsonl.gz"), "wt") as f:
+            f.write(json.dumps({"type": "orderbook_snapshot",
+                                "_rx_ms": 1000 * 1000, "msg": {
                 "market_ticker": "M1",
                 "yes": [[p, s] for p, s in yes.items()],
                 "no": [[p, s] for p, s in no.items()],
                 "seq": 1, "ts": 1000}}) + "\n")
+        with gzip.open(os.path.join(tmp, "orderbook_delta",
+                                    "20260825T00.jsonl.gz"), "wt") as f:
             seq = 1
             for i in range(400):
                 seq += 1
@@ -296,7 +340,8 @@ def selftest():
                     d.pop(p, None)
                 if not d:
                     d[p] = 100.0
-                f.write(json.dumps({"type": "orderbook_delta", "msg": {
+                f.write(json.dumps({"type": "orderbook_delta",
+                                    "_rx_ms": (1000 + i + 1) * 1000, "msg": {
                     "market_ticker": "M1", "price": p, "delta": ch,
                     "side": side, "seq": seq, "ts": 1000 + i + 1}}) + "\n")
                 if yes and no:
@@ -328,13 +373,18 @@ def selftest():
     tmp = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmp, "orderbook_delta"))
-        with gzip.open(os.path.join(tmp, "orderbook_delta", "a.jsonl.gz"),
-                       "wt") as f:
-            f.write(json.dumps({"type": "orderbook_snapshot", "msg": {
+        os.makedirs(os.path.join(tmp, "orderbook_snapshot"))
+        with gzip.open(os.path.join(tmp, "orderbook_snapshot",
+                                    "20260825T00.jsonl.gz"), "wt") as f:
+            f.write(json.dumps({"type": "orderbook_snapshot",
+                                "_rx_ms": 1000, "msg": {
                 "market_ticker": "M2", "yes": [[40, 100]], "no": [[58, 100]],
                 "seq": 1, "ts": 1}}) + "\n")
+        with gzip.open(os.path.join(tmp, "orderbook_delta",
+                                    "20260825T00.jsonl.gz"), "wt") as f:
             for seq, ts in ((2, 2), (3, 3), (9, 4), (10, 5)):   # 4..8 missing
-                f.write(json.dumps({"type": "orderbook_delta", "msg": {
+                f.write(json.dumps({"type": "orderbook_delta",
+                                    "_rx_ms": ts * 1000, "msg": {
                     "market_ticker": "M2", "price": 40, "delta": 10.0,
                     "side": "yes", "seq": seq, "ts": ts}}) + "\n")
         got, (st, _) = rebuild(tmp, verbose=False)

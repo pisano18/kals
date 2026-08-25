@@ -276,6 +276,16 @@ def cond_var(t, close_sec, g0, rho):
 
 
 def cond_mean(t, close_sec, ticks, spot):
+    """Conditional mean of the 60-print settlement average.
+
+    n_locked_expected seconds of the window are already in the past; only
+    len(locked) of them were actually observed. Summing the observed ones and
+    then reserving r = N_AVG - n_locked_expected slots for the future
+    double-counts nothing but UNDER-counts the past: a 10% tick shortfall on a
+    $100k index drops mu by thousands of dollars, which reads as a colossal
+    model-vs-market edge and is entirely a data artifact. Rescale the observed
+    sum up to the number of seconds it is standing in for.
+    """
     lo = close_sec - N_AVG + 1
     locked = [ticks[s][0] for s in range(lo, min(t, close_sec) + 1)
               if s in ticks]
@@ -283,7 +293,9 @@ def cond_mean(t, close_sec, ticks, spot):
     if n_locked_expected and len(locked) < n_locked_expected * 0.9:
         return None                     # too many missing ticks to trust
     r = N_AVG - n_locked_expected
-    return (sum(locked) + r * spot) / N_AVG
+    locked_sum = (sum(locked) * (n_locked_expected / len(locked))
+                  if locked else 0.0)
+    return (locked_sum + r * spot) / N_AVG
 
 
 # ===========================================================================
@@ -323,16 +335,22 @@ def clustered_mean(pairs):
 # synthetic end-to-end -- writes fake collector files, runs the whole pipeline
 # ===========================================================================
 def make_synth(tmp, n_windows=140, sigma=6.0, rho1=0.0, seed=5,
-               book_mode="fair", book_sigma_mult=1.0, book_lag=0):
+               book_mode="fair", book_sigma_mult=1.0, book_lag=0,
+               index_id="BRTI", series="KXBTC15M", s0=80_000.0, tag="a"):
     """book_mode: 'fair'  -> market quotes the true model (null: no edge)
                   'stale' -> market uses a sigma that is wrong by a constant
                   'spot'  -> market ignores the averaging (delta = 1, not r/60)
+
+    index_id/series/s0/tag exist so the same generator can lay down a SECOND
+    asset in the same directory at a different price level. One index can never
+    catch a pipeline that scores every market against whichever index it
+    happened to load first.
     """
     rnd = random.Random(seed)
     os.makedirs(os.path.join(tmp, "cfbenchmarks_value"), exist_ok=True)
     os.makedirs(os.path.join(tmp, "trade"), exist_ok=True)
     t0 = 1_760_000_000
-    S = 80_000.0
+    S = s0
     ticks, markets, trades = {}, [], []
     prev_d = 0.0
     total = n_windows * 900 + 120
@@ -350,8 +368,8 @@ def make_synth(tmp, n_windows=140, sigma=6.0, rho1=0.0, seed=5,
             break
         strike = mean(ticks[s] for s in range(open_s - 59, open_s + 1))
         settle = mean(ticks[s] for s in range(close_s - 59, close_s + 1))
-        tk = f"KXBTC15M-SYN{w:04d}"
-        markets.append({"ticker": tk, "series": "KXBTC15M", "strike": strike,
+        tk = f"{series}-SYN{w:04d}"
+        markets.append({"ticker": tk, "series": series, "strike": strike,
                         "settle": settle, "close": float(close_s),
                         "result": 1.0 if settle >= strike else 0.0})
         g0 = sigma * sigma * (1 + rho1 * rho1)
@@ -381,31 +399,56 @@ def make_synth(tmp, n_windows=140, sigma=6.0, rho1=0.0, seed=5,
                                    "ts": s, "count": 10,
                                    "taker_side": "yes"}, "type": "trade"})
     with gzip.open(os.path.join(tmp, "cfbenchmarks_value",
-                                "20260825T00.jsonl.gz"), "wt") as f:
+                                f"20260825T00{tag}.jsonl.gz"), "wt") as f:
         for s in sorted(ticks):
             f.write(json.dumps({"type": "cfbenchmarks_value",
-                                "msg": {"index_id": "BRTI",
+                                "msg": {"index_id": index_id,
                                         "data": json.dumps(
                                             {"time": s * 1000,
                                              "value": ticks[s]})}}) + "\n")
-    with gzip.open(os.path.join(tmp, "trade", "20260825T00.jsonl.gz"), "wt") as f:
+    with gzip.open(os.path.join(tmp, "trade",
+                                f"20260825T00{tag}.jsonl.gz"), "wt") as f:
         for t in trades:
             f.write(json.dumps(t) + "\n")
     return markets
 
 
 def run_pipeline(data_dir, markets, verbose=True):
+    """Score every market against the index that actually settles it.
+
+    This used to loop over indices, score ALL markets against whichever index
+    came out of the dict first, and break. On the one-index synthetic that is
+    invisible; on real data it prices eleven series off BRTI, which is not a
+    subtle bias -- an XRP contract scored against a bitcoin index produces
+    |p_model - p_mkt| near 1 on essentially every row, and score() would have
+    read that as the largest edge this project has ever found.
+    """
     idx = load_index(data_dir, verbose=verbose)
     tr = load_trades(data_dir)
     out = {}
-    for index_id, ticks in idx.items():
+    by_index = defaultdict(list)
+    unmatched = 0
+    for m in markets:
+        iid = SERIES_TO_INDEX.get(m.get("series") or
+                                  str(m.get("ticker", "")).split("-")[0])
+        if iid is None or iid not in idx:
+            unmatched += 1
+            continue
+        by_index[iid].append(m)
+    if unmatched and verbose:
+        print(f"  {unmatched} market(s) had no matching index feed -- skipped")
+    out["unmatched_markets"] = unmatched
+    out["autocov_by_index"] = {}
+    rows = []
+    for index_id, ticks in sorted(idx.items(), key=lambda x: -len(x[1])):
         ac = autocov_increments(ticks)
         if not ac:
             continue
-        out["autocov"] = ac
+        out["autocov_by_index"][index_id] = ac
+        # first (largest) index keeps the old key so existing callers still read
+        out.setdefault("autocov", ac)
         g0, rho = ac["g0"], ac["rho"]
-        rows = []
-        for m in markets:
+        for m in by_index.get(index_id, ()):
             close_s = int(round(m["close"]))
             tape = tr.get(m["ticker"], [])
             if not tape:
@@ -436,9 +479,9 @@ def run_pipeline(data_dir, markets, verbose=True):
                 pm = snap_to_tick(1 - ND.cdf((m["strike"] - mu) / math.sqrt(v)))
                 rows.append({"tk": m["ticker"], "close": close_s, "ttc": ttc,
                              "p_model": pm, "p_mkt": prev[1], "y": m["result"],
-                             "spot": ticks[ts][0], "strike": m["strike"]})
-        out["rows"] = rows
-        break
+                             "spot": ticks[ts][0], "strike": m["strike"],
+                             "index_id": index_id})
+    out["rows"] = rows
     return out
 
 
@@ -465,6 +508,16 @@ def score(rows, label, edge_min=0.02, verbose=True):
                           logloss(r["p_model"], r["y"]), r["close"]) for r in rows])
     br = clustered_mean([((r["p_mkt"] - r["y"]) ** 2 -
                           (r["p_model"] - r["y"]) ** 2, r["close"]) for r in rows])
+    if ll is None or br is None:
+        # 50 rows is not 10 clusters. A single close time sampled at every
+        # gridpoint clears the row gate and gives one independent observation;
+        # clustered_mean correctly refuses it, and unpacking its None here was
+        # a TypeError, not a result.
+        nclust = len({r["close"] for r in rows})
+        if verbose:
+            print(f"  {label}: {len(rows)} observations but only "
+                  f"{nclust} close-time cluster(s) -- need 10")
+        return None
     pnl_rows = []
     for r in rows:
         d = r["p_model"] - r["p_mkt"]
@@ -528,6 +581,36 @@ def selftest():
                 fails.append(f"missed a planted stale quote (t={r['t']:.1f})")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    print("\n  TWO ASSETS, one directory (the wrong-index check)")
+    print("  Both books are fair. BTC settles off BRTI at $80k, ETH off")
+    print("  ETHUSD_RTI at $3k. A pipeline that prices ETH against BRTI reads")
+    print("  p_model=1 on every row and calls it the edge of the century.")
+    tmp = tempfile.mkdtemp()
+    try:
+        mk = make_synth(tmp, n_windows=400, seed=17, book_mode="fair")
+        mk += make_synth(tmp, n_windows=400, seed=41, book_mode="fair",
+                         index_id="ETHUSD_RTI", series="KXETH15M",
+                         s0=3_000.0, sigma=0.22, tag="b")
+        res = run_pipeline(tmp, mk, verbose=False)
+        rows = res.get("rows", [])
+        seen = sorted({r["index_id"] for r in rows})
+        print(f"  {'indices scored':>16}   {', '.join(seen) or '(none)'}")
+        if len(seen) < 2:
+            fails.append(f"only scored {seen} -- the second asset was dropped")
+        for iid, lbl in (("BRTI", "BTC vs BRTI"),
+                         ("ETHUSD_RTI", "ETH vs ETHUSD_RTI")):
+            sub = [r for r in rows if r["index_id"] == iid]
+            r = score(sub, lbl) if sub else None
+            if r and abs(r["t"]) > 3:
+                fails.append(f"{lbl}: edge t={r['t']:.1f} against a FAIR book")
+        # the direct assertion: every market scored against ITS own index
+        bad = [r for r in rows
+               if SERIES_TO_INDEX.get(r["tk"].split("-")[0]) != r["index_id"]]
+        if bad:
+            fails.append(f"{len(bad)} row(s) scored against the wrong index")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n  AUTOCOVARIANCE recovery (the no-iid-assumption check)")
     print(f"  {'injected rho1':>16}{'recovered':>12}")

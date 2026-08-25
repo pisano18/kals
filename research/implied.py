@@ -63,6 +63,7 @@ from datetime import datetime, timezone
 from statistics import NormalDist, mean, median, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from settlewin import cond_mean as sw_cond_mean   # noqa: E402
 from engine import var_factor, N_AVG                      # noqa: E402
 
 ND = NormalDist()
@@ -111,15 +112,9 @@ def collect(index, quotes, markets, series_to_index, ttc_max=900):
             if not (1 <= tau <= ttc_max) or t not in ticks:
                 continue
             spot = ticks[t]
-            hi = min(t, close_s)
-            if hi >= lo_run:
-                locked = [ticks[s] for s in range(lo_run, hi + 1) if s in ticks]
-                n_lock = hi - lo_run + 1
-                if len(locked) < n_lock * 0.95:
-                    continue
-                mu = (sum(locked) + (N_AVG - n_lock) * spot) / N_AVG
-            else:
-                mu = spot
+            mu = sw_cond_mean(ticks, close_s, t, spot)
+            if mu is None:
+                continue
             mid = (bid + ask) / 2.0
             iv = implied_sigma(mid, mu, strike, tau)
             if iv is None:

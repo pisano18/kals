@@ -52,6 +52,7 @@ from collections import defaultdict
 from statistics import NormalDist, mean, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from settlewin import cond_mean as sw_cond_mean   # noqa: E402
 
 ND = NormalDist()
 
@@ -301,11 +302,9 @@ def build_obs(data_dir, out_dir, ttc_points=(600, 300, 120, 60, 30)):
                     break
             if prev is None or cut not in ticks:
                 continue
-            lo = close_s - N_AVG + 1
-            hi = min(cut, close_s)
-            locked = [ticks[s] for s in range(lo, hi + 1) if s in ticks]
-            r = N_AVG - max(0, hi - lo + 1)
-            mu = (sum(locked) + r * ticks[cut]) / N_AVG
+            mu = sw_cond_mean(ticks, close_s, cut, ticks[cut])
+            if mu is None:
+                continue          # too many missing ticks to trust the window
             vf = var_factor(ttc, [1.0])
             if vf <= 0:
                 continue
