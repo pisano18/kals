@@ -115,6 +115,7 @@ SELFTESTS = [
     ("proxy reference", ["proxy.py", "--selftest"]),
     # power.py touches no data, but it is what makes every null result in the
     # report readable, and it is simulation code that can be silently wrong.
+    ("student-t", ["tdist.py", "--selftest"]),
     ("detectability", ["power.py", "--selftest", "--quick"]),
 ]
 
