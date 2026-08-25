@@ -103,6 +103,73 @@ def gate_strike(markets, index, series_to_index, verbose=True):
     return {"n": len(errs), "median": med}
 
 
+def check_deviation_scale(index, verbose=True):
+    """THE one number the whole opening-value claim rests on.
+
+    R1 puts mean |fair - 50c| at 4.75c, and that follows entirely from
+    sd(spot - trailing-60s-mean) = sqrt(20)*sigma, exact for a walk with iid
+    increments. BRTI is a consolidation of order-book mids and need not have iid
+    increments, so measure the ratio instead of assuming it.
+
+    THE DIRECTION IS NOT OBVIOUS AND I INITIALLY GOT IT BACKWARDS. Validated
+    against synthetic indices:
+
+        iid increments          ratio 0.99   -> 4.75c, as claimed
+        EMA-smoothed (a=0.5)    ratio 1.69   -> about 8.0c
+        EMA-smoothed (a=0.8)    ratio 2.81   -> about 13.4c
+
+    POSITIVE autocorrelation makes the walk trend, so spot sits FURTHER from its
+    own trailing average and the effect GROWS. Negative autocorrelation (quote
+    flicker, bid-ask bounce) would shrink it. Both are plausible for a
+    consolidated mid, so this is a genuine measurement, not a formality -- and
+    it can rescale R1's headline number in either direction."""
+    print("\n" + "=" * 78)
+    print("SCALE CHECK -- the number the opening-value claim depends on")
+    print("=" * 78)
+    print(f"  {'index':>14}{'sd(spot-avg60)':>17}{'sqrt(20)*sigma':>17}"
+          f"{'ratio':>9}   reading")
+    out = {}
+    for iid, ticks in sorted(index.items(), key=lambda kv: -len(kv[1])):
+        secs = sorted(ticks)
+        if len(secs) < 5000:
+            continue
+        d = [ticks[b] - ticks[a] for a, b in zip(secs, secs[1:]) if b - a == 1]
+        if len(d) < 1000:
+            continue
+        mu = sum(d) / len(d)
+        sig = math.sqrt(sum((x - mu) ** 2 for x in d) / len(d))
+        devs = []
+        for t in secs:
+            w = [ticks[s] for s in range(t - N_AVG + 1, t + 1) if s in ticks]
+            if len(w) == N_AVG:
+                devs.append(ticks[t] - sum(w) / N_AVG)
+        if len(devs) < 500:
+            continue
+        m = sum(devs) / len(devs)
+        sd_obs = math.sqrt(sum((x - m) ** 2 for x in devs) / len(devs))
+        theory = math.sqrt(20.0) * sig
+        ratio = sd_obs / theory if theory > 0 else float("nan")
+        out[iid] = ratio
+        r = ("as assumed (iid-like)" if 0.9 <= ratio <= 1.1 else
+             "SHRINKS -- index is noisy/mean-reverting at 1s" if ratio < 0.9
+             else "GROWS -- index trends at 1s")
+        print(f"  {iid:>14}{sd_obs:>17.4f}{theory:>17.4f}{ratio:>9.3f}   {r}")
+    if out:
+        med = sorted(out.values())[len(out) // 2]
+        print(f"\n  median ratio {med:.3f}")
+        print(f"  R1's mean |fair - 50c| of 4.75c scales roughly linearly with")
+        print(f"  this, so the honest figure is about {4.75*med:.2f}c.")
+        if med < 0.9:
+            print("  The index mean-reverts at one-second scale (quote flicker,")
+            print("  bid-ask bounce), so spot stays closer to its own trailing")
+            print("  average. The opening-value effect is real but smaller.")
+        elif med > 1.1:
+            print("  The index TRENDS at one-second scale, so spot runs further")
+            print("  from its trailing average than a random walk would. The")
+            print("  opening-value effect is LARGER than R1 claimed.")
+    return out
+
+
 def edge_profile(markets, index, quotes, series_to_index, gamma0,
                  horizon=120, verbose=True):
     """model - market, by seconds since open."""
@@ -300,6 +367,8 @@ def main():
     print("GATE  --  our reconstructed strike vs Kalshi's floor_strike")
     print("=" * 78)
     gate_strike(markets, index, SERIES_TO_INDEX)
+
+    check_deviation_scale(index)
 
     print("\n" + "=" * 78)
     print("THE FIRST TWO MINUTES")
