@@ -203,7 +203,14 @@ def lag_profile(x_by_sec, y_by_sec, lags=LAGS, label=""):
           for t in y_by_sec if (t - 1) in y_by_sec}
     out = {}
     for k in lags:
-        pairs = [(dx[t - k], dy[t]) for t in dy if (t - k) in dx]
+        # sorted(dy), not dy. A dict iterates in INSERTION order, which is the
+        # order the feed files happened to be read in -- so the "contiguous
+        # blocks" below were contiguous in nothing. A block bootstrap whose
+        # blocks are not time-contiguous cannot absorb serial dependence; it
+        # collapses to an iid standard error, which is too small, which is a t
+        # that is too large. That is the exact shape of every fake edge in
+        # this project's history.
+        pairs = [(dx[t - k], dy[t]) for t in sorted(dy) if (t - k) in dx]
         pairs = [(a, b) for a, b in pairs if a != 0.0]
         if len(pairs) < 300:
             continue
@@ -330,6 +337,36 @@ def selftest():
         got = show_lags(res, f"injected lead of {want}s")
         if got != want:
             fails.append(f"injected {want}s lead, recovered {got}")
+
+    print("\n  BLOCK ORDERING (the bootstrap must not depend on read order)")
+    print("  Same data, second series inserted in shuffled order. The blocks")
+    print("  the SE is built from are only meaningful if they are contiguous")
+    print("  in TIME, so both runs must agree exactly.")
+    rnd = random.Random(77)
+    t0, n = 1_760_000_000, 6000
+    truth, x = {}, 80_000.0
+    for k in range(n):
+        x += rnd.gauss(0, 6.0)
+        truth[t0 + k] = x
+    replica = dict(truth)
+    idx_sorted = {t: truth[t - 2] + rnd.gauss(0, 0.05)
+                  for t in sorted(truth) if (t - 2) in truth}
+    keys = list(idx_sorted)
+    rnd.shuffle(keys)
+    idx_shuffled = {t: idx_sorted[t] for t in keys}
+    a_res = lag_profile(replica, idx_sorted)
+    b_res = lag_profile(replica, idx_shuffled)
+    diffs = [k for k in set(a_res) | set(b_res)
+             if k not in a_res or k not in b_res
+             or abs(a_res[k]["beta"] - b_res[k]["beta"]) > 1e-12
+             or abs(a_res[k]["t"] - b_res[k]["t"]) > 1e-9]
+    k2 = 2
+    print(f"  {'lag +2 t-stat':>22}   in-order {a_res.get(k2,{}).get('t',0):.2f}"
+          f"   shuffled {b_res.get(k2,{}).get('t',0):.2f}"
+          f"   lags differing: {len(diffs)}")
+    if diffs:
+        fails.append(f"lag profile changed when the input dict was reordered "
+                     f"at lags {sorted(diffs)} -- the blocks follow read order")
 
     print("\n  IMBALANCE recovery")
     rnd = random.Random(9)

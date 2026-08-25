@@ -341,6 +341,35 @@ def selftest():
     print("  clears the corrected threshold, but must not be read as a finding")
     print("  on real data.")
 
+    print("\n1b. A FABRICATED CLOSE TIME MIS-STAMPS EVERY GRIDPOINT")
+    print("   The tape stops 600s before the real close (a dropped")
+    print("   subscription). Taking the last quote AS the close shifts every")
+    print("   time-to-close by 600s, and ttc is the one variable this whole")
+    print("   file conditions on.")
+    paths_f, closes_f = make(overreact=0.0, n_mkt=200, seed=4242)
+    truncated = {}
+    for tk, ser in paths_f.items():
+        cut = closes_f[tk] - 600
+        truncated[tk] = {t: v for t, v in ser.items() if t <= cut}
+    obs_true = build_obs(truncated, closes_f)
+    fake_closes = {tk: max(ser) for tk, ser in truncated.items() if ser}
+    obs_fake = build_obs(truncated, fake_closes)
+    ttc_true = sorted({o["ttc"] for o in obs_true})
+    ttc_fake = sorted({o["ttc"] for o in obs_fake})
+    print(f"\n   {'close time':>22}{'rows':>9}   time-to-close values present")
+    print(f"   {'real (measured)':>22}{len(obs_true):>9}   "
+          f"{ttc_true if ttc_true else '(none below 600s -- correct)'}")
+    print(f"   {'last quote (invented)':>22}{len(obs_fake):>9}   {ttc_fake}")
+    invented = [t for t in ttc_fake if t not in ttc_true]
+    if not invented:
+        fails.append("the fabricated close produced no phantom gridpoints -- "
+                     "this test has stopped testing anything")
+    if any(t < 600 for t in ttc_true):
+        fails.append(f"measured close produced rows inside the missing "
+                     f"600s of tape: {[t for t in ttc_true if t < 600]}")
+    print(f"   -> {len(invented)} phantom gridpoints, every one of them "
+          f"actually observed\n      600s earlier than its label says.")
+
     print("\n2. PLANTED: the shown price overreacts to the last move")
     paths, closes = make(overreact=1.0)
     obs = build_obs(paths, closes)
@@ -387,6 +416,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="./kalshi_data")
     ap.add_argument("--out", default="./fulltape")
+    ap.add_argument("--assume-close-grid", type=int, default=0,
+                    help="infer missing close times by snapping the last quote "
+                         "up to the next multiple of this many seconds (e.g. "
+                         "900). Off by default: an inferred close time "
+                         "mis-stamps every time-to-close in the report.")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
 
@@ -412,12 +446,6 @@ def main():
             paths, source = paths_from_quotes(q)
             mk = load_markets(a.out)
             closes = {tk: int(m["close"]) for tk, m in mk.items()}
-            # markets we have quotes for but no settled record yet
-            for tk in paths:
-                if tk not in closes:
-                    ts = sorted(paths[tk])
-                    if ts:
-                        closes[tk] = ts[-1]
     except Exception as e:
         print(f"  quote load failed ({type(e).__name__}: {e})")
     if not paths:
@@ -431,6 +459,41 @@ def main():
     if not paths:
         print("  nothing to analyse.")
         return
+
+    # Markets with no settled record have no known close time. The last quote
+    # is NOT the close: the collector stops when the subscription drops or the
+    # process restarts, and using it stamps ttc=0 on a moment that may be ten
+    # minutes early. Every gridpoint in build_obs is then measured at the wrong
+    # time-to-close, which is the single variable this whole file conditions
+    # on. Drop them, loudly, rather than fabricate.
+    missing = [tk for tk in paths if tk not in closes]
+    if missing:
+        print(f"\n  {len(missing):,} of {len(paths):,} markets have quotes but "
+              f"no settled record, so no known close time.")
+        if a.assume_close_grid:
+            g = a.assume_close_grid
+            kept = 0
+            for tk in missing:
+                ts = sorted(paths[tk])
+                if not ts:
+                    continue
+                snapped = ((ts[-1] + g - 1) // g) * g
+                # only believe it if the tape actually runs up to that close;
+                # a market whose quotes stop half a window early tells us
+                # nothing about which window it belonged to
+                if snapped - ts[-1] <= 60:
+                    closes[tk] = snapped
+                    kept += 1
+            print(f"  --assume-close-grid {g}: snapped {kept:,} of them to the "
+                  f"next {g}s boundary (tape within 60s of it); "
+                  f"{len(missing)-kept:,} dropped.")
+            print("  These close times are INFERRED. Anything that depends on "
+                  "them is weaker evidence than the rest of this report.")
+        else:
+            print("  Dropping them. Pass --assume-close-grid 900 to snap the "
+                  "last quote up to the next 15-minute boundary instead "
+                  "(inferred, not measured).")
+
     obs = build_obs(paths, closes)
     report(obs, source)
 
