@@ -67,16 +67,27 @@ useful idea in v3.
 distribution. Our σ and the market's appear on both sides and largely cancel, so
 an error in σ neither creates nor destroys the edge.
 
-1. **Stale quotes / lead-lag.** Does the book follow the index? A plumbing
+1. **The first sixty seconds.** `strike(N+1) == settle(N)`, so a window's
+   strike is fully determined the instant the previous one closes — computable
+   from our own index feed before Kalshi stamps `floor_strike`. And fair value
+   at open is not 50¢ but `Φ((spot−strike)/σ√860)`, averaging 4.75¢ away with
+   40% of windows outside 45–55¢. If the book opens near 50¢ and converges, the
+   whole disagreement is available at the most liquid moment of the window.
+   Nothing had ever looked at second zero: H5 measures the *mean* opening edge,
+   which is zero by symmetry, and `replay` starts 300s after the open.
+   Demonstrated: against a simulated book that opens at 50¢ and converges over
+   30s, the H5-style mean-edge test reports "nothing" (t=−1.1) while the true
+   disagreement is **4.23¢**. `openwindow.py`.
+2. **Stale quotes / lead-lag.** Does the book follow the index? A plumbing
    artefact, not a pricing opinion. Replay: **+7.85¢/contract** against a maker
    lagging spot by 20s. Because settlement is a 60-second *average*, this needs
    no colocation — only a better read on a slow-moving mean. This is
    `crypto_feeds.py`'s original thesis and it is the best idea in the v2 work.
-2. **The locked-in partial average.** Inside the last minute part of settlement
+3. **The locked-in partial average.** Inside the last minute part of settlement
    is already determined and Kalshi publishes the running average itself
    (`avg_60s_data`). Pure arithmetic. Replay: **+4.83¢** against a maker that
    ignores the averaging.
-3. **Delta damping.** `d(fair)/d(spot) = φ(z)/sd · (r_live/60)`. A $50 spot move
+4. **Delta damping.** `d(fair)/d(spot) = φ(z)/sd · (r_live/60)`. A $50 spot move
    with 10s left moves fair settlement by $8.33, not $50 — anything reacting 1:1
    overreacts 6×. Testable as a regression with a *known correct coefficient*,
    far sharper than H6, which looks at contract jumps with no index reference
@@ -85,9 +96,9 @@ an error in σ neither creates nor destroys the edge.
 **σ-based edges — self-limiting.** To profit from the book's σ being wrong you
 must know σ better than the book does, and our own σ̂ carries 2–4% error at best.
 
-4. **Vol timing.** Real, but bounded by our own estimation error. v2's successor
+5. **Vol timing.** Real, but bounded by our own estimation error. v2's successor
    analysis ranked this first; §4 explains why that was wrong.
-5. **Tail shape.** Only after the conditional/unconditional question is settled.
+6. **Tail shape.** Only after the conditional/unconditional question is settled.
 
 ---
 
@@ -143,9 +154,10 @@ Two specifics worth carrying forward:
 
 ## 6. Route to money
 
-1. **`python research/go.py`** — self-tests, then chain gate, vol
-   discriminator, null calibrator, replay. One report. *(No collector needed
-   for the first two stages.)*
+1. **`python research/go.py`** — 12 self-tests, then `doctor` (what is actually
+   on disk, and the schema every loader reads instead of guessing), `book`,
+   `chain`, `volmodel`, `placebo`, `replay`, `leadlag`, `cross`, `openwindow`.
+   One report. *(Only `chain` needs the internet; the rest read local data.)*
 2. **Resolve the null for the existing 450-market result** (`placebo`). Until
    then "the market is efficient" is not established; −0.008 was compared to
    zero, and the estimator's null is not zero.
@@ -185,10 +197,12 @@ switch.
 - Maker fee: secondary sources say 25% of taker (0.0175 vs 0.07). Unconfirmed
   from primary source. Does not revive the maker path — v2 §4's objection was
   queue depth (~3,767 at the touch), not fee.
-- Is BRTI a random walk at one-second scale? If increments are autocorrelated, a
-  plain σ²·k model is wrong by a fixed factor. `edge.py` estimates γ and
-  propagates it rather than assuming.
-- Cross-sectional design: 12 correlated series are weak for time-series tests
-  (1.22 effective units) but *strong* as mutual controls — "is NEAR mispriced
-  relative to BTC?" differences out the common move. Not yet built.
-- Are the thin series (ZEC, HYPE, NEAR, TON) more loosely quoted than BTC?
+- ~~Cross-sectional design~~ **built** (`cross.py`). Demeaning the close-time
+  cluster deletes the common crypto move — the very term that reduced 12 series
+  to 1.22 effective units. Measured power gain **2.2× in t, 4.8× in variance**;
+  a 0.2¢ relative mispricing is found 74% of the time versus 10% for the
+  absolute test. It answers the thin-series question directly.
+  Note the centre must be robust and outliers excluded from it: on a mean centre
+  a single planted +1¢ series produced **four false** MISPRICED flags, since with
+  S series one real effect displaces every other by effect/(S−1).
+- Is BRTI a random walk at 1s? `edge.py` estimates γ rather than assuming it.

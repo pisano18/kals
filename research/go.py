@@ -36,6 +36,15 @@ STAGES
             Needs fulltape/.
   replay    run the decision engine over recorded collector data and score the
             P&L against its null. Needs kalshi_data/ and fulltape/.
+  cross     is any ONE series mispriced relative to its peers? Demeaning the
+            close-time cluster deletes the common crypto move, which is the
+            term that made 12 correlated series worth only 1.22 independent
+            ones. Measured power gain: 2.2x in t, 4.8x in variance.
+  openwindow the first 60 seconds. strike(N+1) == settle(N), so the strike is
+            knowable the instant the previous window closes -- before Kalshi
+            stamps it. Also gates our strike reconstruction against
+            floor_strike. H5 measures the MEAN opening edge, which is zero by
+            symmetry; this measures the SIZE, which is what you trade.
   leadlag   does the book FOLLOW the index? PLAN_V3 ranks this the single most
             likely surviving edge, because it is plumbing rather than opinion.
             Needs kalshi_data/ and fulltape/.
@@ -65,6 +74,8 @@ SELFTESTS = [
     ("lead-lag", ["leadlag.py", "--selftest"]),
     ("format prober", ["doctor.py", "--selftest"]),
     ("book rebuild", ["book.py", "--selftest"]),
+    ("cross-section", ["cross.py", "--selftest"]),
+    ("open window", ["openwindow.py", "--selftest"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so
@@ -86,6 +97,10 @@ STAGES = [
      "{data}/cfbenchmarks_value"),
     ("leadlag", ["research/leadlag.py", "--data", "{data}", "--out", "{out}"],
      "{data}/cfbenchmarks_value"),
+    ("cross", ["research/cross.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/cfbenchmarks_value"),
+    ("openwindow", ["research/openwindow.py", "--data", "{data}",
+                    "--out", "{out}"], "{data}/cfbenchmarks_value"),
 ]
 
 
