@@ -40,6 +40,12 @@ STAGES
             close-time cluster deletes the common crypto move, which is the
             term that made 12 correlated series worth only 1.22 independent
             ones. Measured power gain: 2.2x in t, 4.8x in variance.
+  implied   what the market BELIEVES, read straight out of its prices: the
+            implied volatility surface. Needs NO settlements, so it runs on
+            however many hours exist. Level = variance risk premium (a premium,
+            not a mistake -- being paid it is a strategy). Term tilt = the
+            market uses a different variance formula than ours. Smile = fat
+            tails already priced. Per-series = where attention is thin.
   openwindow the first 60 seconds. strike(N+1) == settle(N), so the strike is
             knowable the instant the previous window closes -- before Kalshi
             stamps it. Also gates our strike reconstruction against
@@ -76,6 +82,7 @@ SELFTESTS = [
     ("book rebuild", ["book.py", "--selftest"]),
     ("cross-section", ["cross.py", "--selftest"]),
     ("open window", ["openwindow.py", "--selftest"]),
+    ("implied vol", ["implied.py", "--selftest"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so
@@ -101,6 +108,8 @@ STAGES = [
      "{data}/cfbenchmarks_value"),
     ("openwindow", ["research/openwindow.py", "--data", "{data}",
                     "--out", "{out}"], "{data}/cfbenchmarks_value"),
+    ("implied", ["research/implied.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/cfbenchmarks_value"),
 ]
 
 
