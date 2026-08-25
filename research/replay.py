@@ -56,6 +56,23 @@ from statistics import mean, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import Engine, N_AVG, fee_per_contract, tick_at   # noqa: E402
+from doctor import get_path, walk_paths, find_field           # noqa: E402
+
+
+def load_schema(path="./schema.json"):
+    """Field mappings discovered from the REAL collector output by doctor.py.
+
+    Guessing field names is how a loader silently returns nothing, or returns
+    something subtly wrong. If this file exists, its paths win over any name
+    hard-coded here."""
+    for cand in (path, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "..", path)):
+        try:
+            with open(cand) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            continue
+    return {}
 
 INDEX_TO_SERIES = {
     "BRTI": "KXBTC15M", "ETHUSD_RTI": "KXETH15M", "SOLUSD_RTI": "KXSOL15M",
@@ -159,37 +176,58 @@ def infer_scale(vals):
     return 100.0 if mx > 1.5 else 1.0
 
 
-def load_quotes(data_dir, verbose=True):
-    """ticker -> sorted [(sec, bid, ask, bid_sz, ask_sz)] from the ticker
-    channel. Field names vary; try the plausible ones and report what hit."""
+def load_quotes(data_dir, verbose=True, schema=None):
+    """ticker -> sorted [(sec, bid, ask, bid_sz, ask_sz)].
+
+    Field paths come from schema.json when doctor.py has run against the real
+    collector output. Otherwise they are discovered on the fly from a sample of
+    the data itself. Hard-coded names are the last resort, not the first."""
+    if schema is None:
+        schema = load_schema()
+    tick = (schema or {}).get("ticker") or {}
+
+    msgs = list(read_jsonl_gz(os.path.join(data_dir, "ticker", "*.jsonl.gz")))
+    if not msgs:
+        if verbose:
+            print("  quotes: no ticker messages on disk")
+        return {}
+
+    # discover from the data if no schema was supplied
+    if not tick.get("yes_bid"):
+        paths = defaultdict(lambda: defaultdict(int))
+        for m in msgs[:1500]:
+            walk_paths(m, out=paths)
+        tick = {c: find_field(paths, c) for c in
+                ("ticker", "yes_bid", "yes_ask", "bid_size", "ask_size", "ts")}
+        tick = {k: v for k, v in tick.items() if v}
+        if verbose:
+            print(f"  quotes: no schema.json, discovered {tick}")
+
+    p_tk, p_b, p_a = tick.get("ticker"), tick.get("yes_bid"), tick.get("yes_ask")
+    if not (p_tk and p_b and p_a):
+        if verbose:
+            print("  quotes: could not locate ticker/bid/ask fields. Run:")
+            print("    python research/doctor.py --data <dir>")
+        return {}
+    p_bs, p_as, p_ts = tick.get("bid_size"), tick.get("ask_size"), tick.get("ts")
+
     raw = []
-    hits = defaultdict(int)
-    for m in read_jsonl_gz(os.path.join(data_dir, "ticker", "*.jsonl.gz")):
-        d = m.get("msg") or {}
-        tk = d.get("market_ticker") or d.get("ticker")
+    for m in msgs:
+        tk = get_path(m, p_tk)
         if not tk:
-            hits["no_ticker"] += 1
             continue
-        bid = ask = None
-        for a, b in (("yes_bid", "yes_ask"), ("bid", "ask"),
-                     ("best_bid", "best_ask")):
-            if d.get(a) is not None and d.get(b) is not None:
-                bid, ask = _num(d[a]), _num(d[b])
-                hits[f"{a}/{b}"] += 1
-                break
-        if bid is None or ask is None:
-            hits["no_bid_ask_fields"] += 1
+        b, a = _num(get_path(m, p_b)), _num(get_path(m, p_a))
+        if b is None or a is None:
             continue
-        t = parse_ts(d.get("ts")) or (m.get("_rx_ms", 0) / 1000.0)
+        t = parse_ts(get_path(m, p_ts)) if p_ts else None
+        if not t:
+            t = (m.get("_rx_ms") or 0) / 1000.0
         if not t:
             continue
-        bs = d.get("yes_bid_size") or d.get("bid_size") or 0
-        as_ = d.get("yes_ask_size") or d.get("ask_size") or 0
-        try:
-            bs, as_ = float(bs), float(as_)
-        except (TypeError, ValueError):
-            bs = as_ = 0.0
-        raw.append((tk, int(round(t)), bid, ask, bs, as_))
+        bs = _num(get_path(m, p_bs)) if p_bs else 0.0
+        as_ = _num(get_path(m, p_as)) if p_as else 0.0
+        raw.append((tk, int(round(t)), b, a, bs or 0.0, as_ or 0.0))
+
     scale = infer_scale([r[2] for r in raw] + [r[3] for r in raw])
     out = defaultdict(list)
     dropped = 0
@@ -202,11 +240,9 @@ def load_quotes(data_dir, verbose=True):
     for v in out.values():
         v.sort()
     if verbose:
-        print(f"  quotes: {len(out):,} markets, field hits {dict(hits)}, "
-              f"price scale /{scale:.0f}, {dropped:,} out-of-range dropped")
-        if not out:
-            print("    *** no quotes parsed. Run with --dump-ticker to see the")
-            print("        raw shape, and send it back so the parser can be fixed.")
+        print(f"  quotes: {len(out):,} markets from {len(msgs):,} messages, "
+              f"paths {p_b}/{p_a}, price scale /{scale:.0f}, "
+              f"{dropped:,} out-of-range dropped")
     return out
 
 
@@ -342,7 +378,8 @@ def null_pnl(decisions, markets, quotes, reps=500, seed=0):
 
 
 # ===========================================================================
-def make_fake_collector(tmp, n_markets=120, sigma=6.0, seed=5, lag=0):
+def make_fake_collector(tmp, n_markets=120, sigma=6.0, seed=5, lag=0,
+                        naming="kalshi"):
     """Write synthetic files in the collector's own format so the whole loader
     + replay path is exercised, not just the engine."""
     from statistics import NormalDist
@@ -396,13 +433,23 @@ def make_fake_collector(tmp, n_markets=120, sigma=6.0, seed=5, lag=0):
                 ask = min(round((fair + half) / step) * step, 0.999)
                 if ask <= bid:
                     ask = bid + step
-                f.write(json.dumps({"type": "ticker",
-                                    "msg": {"market_ticker": tk,
-                                            "yes_bid": round(bid * 100, 1),
-                                            "yes_ask": round(ask * 100, 1),
-                                            "yes_bid_size": 500,
-                                            "yes_ask_size": 500,
-                                            "ts": s}}) + "\n")
+                if naming == "kalshi":
+                    body = {"market_ticker": tk,
+                            "yes_bid": round(bid * 100, 1),
+                            "yes_ask": round(ask * 100, 1),
+                            "yes_bid_size": 500, "yes_ask_size": 500, "ts": s}
+                elif naming == "short":          # dollars, short names
+                    body = {"ticker": tk, "bid": round(bid, 4),
+                            "ask": round(ask, 4), "bid_size": 500,
+                            "ask_size": 500, "timestamp": s}
+                else:                             # best_* prefixed, ISO time
+                    body = {"market": tk, "best_bid": round(bid * 100, 1),
+                            "best_ask": round(ask * 100, 1),
+                            "best_bid_size": 500, "best_ask_size": 500,
+                            "created_time": datetime.fromtimestamp(
+                                s, timezone.utc).isoformat().replace(
+                                    "+00:00", "Z")}
+                f.write(json.dumps({"type": "ticker", "msg": body}) + "\n")
     return markets
 
 
@@ -439,6 +486,33 @@ def selftest():
             fails.append("failed to trade a maker with 20s stale quotes")
         elif s["pnl"] <= 0:
             fails.append("lost money against a maker with stale quotes")
+
+    print("\n  SCHEMA INDEPENDENCE -- same data, three field namings.")
+    print("  The loader is told nothing; it discovers the fields itself.")
+    print(f"  {'naming':>20}{'markets':>10}{'quotes':>12}{'trades':>9}"
+          f"{'per ctr':>10}")
+    base = None
+    for naming in ("kalshi", "short", "best"):
+        tmp = tempfile.mkdtemp()
+        try:
+            mk = make_fake_collector(tmp, n_markets=120, seed=5, lag=20,
+                                     naming=naming)
+            idx = load_index(tmp, verbose=False)
+            qs = load_quotes(tmp, verbose=False, schema={})
+            eng, ds, pnl = run(idx, qs, mk)
+            ctr = sum(d.size for d in ds)
+            per = (sum(pnl.values()) / ctr) if ctr else 0.0
+            print(f"  {naming:>20}{len(qs):>10}{sum(len(v) for v in qs.values()):>12,}"
+                  f"{len(ds):>9}{100*per:>9.2f}c")
+            if not qs:
+                fails.append(f"loader found no quotes under '{naming}' naming")
+            if base is None:
+                base = (len(qs), len(ds))
+            elif (len(qs), len(ds)) != base:
+                fails.append(f"'{naming}' naming gave a different result "
+                             f"{(len(qs), len(ds))} vs {base}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n  OUTCOME-REDRAW NULL (is the P&L luck?)")
     for label in ("quote 20s stale",):
@@ -497,6 +571,15 @@ def main():
         print("  {'type':'subscribed'} reply is NOT success, only a data frame is.")
         return
     quotes = load_quotes(a.data)
+    if not quotes:
+        print("  ticker gave nothing usable -- rebuilding the book from"
+              " orderbook deltas instead")
+        try:
+            from book import rebuild
+            quotes, _ = rebuild(a.data)
+        except Exception as e:
+            print(f"  book rebuild failed: {type(e).__name__}: {e}")
+            quotes = {}
     markets = load_markets(a.out)
     print(f"  markets with strike+result: {len(markets):,}")
     both = [tk for tk in quotes if tk in markets]

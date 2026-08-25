@@ -19,6 +19,13 @@ WHAT IT DOES
 
 STAGES
 
+  doctor    what is ACTUALLY on disk: which channels are flowing, at what
+            rate, and what the fields are really called. Writes schema.json so
+            no loader has to guess. Also answers the one question everything
+            depends on -- is cfbenchmarks_value delivering?
+  book      rebuild the real order book from snapshot+delta, with sequence
+            integrity, and re-measure the queue depth that PLAN sec.4 used to
+            kill the maker strategy.
   chain     strike(N+1) == settle(N). Gates the contract, and yields a
             15-min-spaced TWAP series per asset from PUBLIC settled records.
             Needs only the internet. Start here.
@@ -56,12 +63,20 @@ SELFTESTS = [
     ("decision engine", ["engine.py", "--selftest"]),
     ("replay", ["replay.py", "--selftest"]),
     ("lead-lag", ["leadlag.py", "--selftest"]),
+    ("format prober", ["doctor.py", "--selftest"]),
+    ("book rebuild", ["book.py", "--selftest"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so
 # ./chain_cache.json means the same thing to the stage that writes it and the
 # stage that reads it.
 STAGES = [
+    # doctor runs FIRST: it writes schema.json, which every loader downstream
+    # reads instead of guessing at field names.
+    ("doctor", ["research/doctor.py", "--data", "{data}", "--feeds", "{feeds}",
+                "--schema", "./schema.json"], "{data}"),
+    ("book", ["research/book.py", "--data", "{data}"],
+     "{data}/orderbook_delta"),
     ("chain", ["research/chain.py", "--markets", "5000",
                "--cache", "./chain_cache.json"], None),
     ("volmodel", ["research/volmodel.py", "--cache", "./chain_cache.json"],
@@ -93,6 +108,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="./kalshi_data")
     ap.add_argument("--out", default="./fulltape")
+    ap.add_argument("--feeds", default="./feed_data")
     ap.add_argument("--report", default="RESULTS.md")
     ap.add_argument("--only")
     ap.add_argument("--quick", action="store_true")
@@ -144,9 +160,11 @@ def main():
     for name, cmd, need in STAGES:
         if a.only and a.only != name:
             continue
-        cmd = [c.replace("{data}", a.data).replace("{out}", a.out) for c in cmd]
+        cmd = [c.replace("{data}", a.data).replace("{out}", a.out)
+                .replace("{feeds}", a.feeds) for c in cmd]
         if need:
-            path = need.replace("{data}", a.data).replace("{out}", a.out)
+            path = (need.replace("{data}", a.data).replace("{out}", a.out)
+                    .replace("{feeds}", a.feeds))
             if not os.path.exists(os.path.join(ROOT, path)) and \
                not os.path.exists(path):
                 print(f"  {name:>20}  SKIPPED (missing {path})")
