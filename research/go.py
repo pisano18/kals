@@ -69,7 +69,7 @@ STAGES
 
 Not stages. Run these around the results rather than inside them:
 
-  research/power.py --hours 72 --settled-days 30
+  research/power.py --data ./kalshi_data
 Read this BEFORE the report. It says what this much data could have detected at
 all. A stage whose measured effect is smaller than its minimum detectable
 effect has produced no information -- positive or negative -- and "no edge

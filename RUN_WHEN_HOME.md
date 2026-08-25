@@ -7,9 +7,14 @@ Paste the output back, or just send `RESULTS.md`.
 
 ## 0. Read this first, before anything in RESULTS.md
 
+```powershell
+cd C:\kals-repo
+python research\power.py --data C:\kals\kalshi_data
 ```
-python research\power.py --hours <hours recorded> --settled-days <days in chain_cache>
-```
+
+(It counts the hours and the settled history itself. Do not paste anything
+with `<angle brackets>` into PowerShell — it reads them as redirection and
+drops to a `>>` continuation prompt. Ctrl+C if that happens.)
 
 New file. It answers the question that makes every other number readable:
 **with the data that exists, what could we have detected at all?** A t of 1.4

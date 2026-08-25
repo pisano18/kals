@@ -47,6 +47,7 @@ and not the corrected line is not a lead; it is the arithmetic working.
 """
 
 import argparse
+import json
 import math
 import os
 import random
@@ -341,8 +342,36 @@ def mde(fn, n, alpha=0.05, power=0.80, reps=800, seed=1, hi=None,
     curve = {"a": a, "b": b, "c1": c1, "c2": c2, "se0": se0, "zc": zc,
              "cal": 1.0, "n": n}
     e = _solve_curve(curve, K)
-    if e == float("inf"):
+
+    # THE SOLUTION HAS TO LAND INSIDE THE RANGE THE CURVES WERE FITTED OVER.
+    # Both curves come from probes at 0, h and 2h. At a strict alpha the
+    # required effect can be several times h, and evaluating a two-point
+    # quadratic that far outside its range is not extrapolation, it is
+    # invention: the Brier row came back with a Bonferroni MDE of 0.00026
+    # against an uncorrected 0.03136 -- a stricter threshold cannot need a
+    # SMALLER effect, which is how this surfaced. Re-probe around the answer
+    # and re-fit until it sits inside.
+    for _ in range(6):
+        if e != float("inf") and e <= 2.0 * h:
+            break
+        h = (e / 1.5) if e != float("inf") else h * 3.0
+        m1, s1 = probe(h, probe_reps, 977)
+        m2, s2 = probe(2 * h, probe_reps, 977)
+        y1, y2 = m1 - m0, m2 - m0
+        b = (y2 - 2 * y1) / (2 * h * h)
+        a = (y1 - b * h * h) / h
+        if abs(b * h * h) < 0.25 * abs(a * h):
+            b = 0.0
+            a = ((y1 / h) + (y2 / (2 * h))) / 2.0
+        g1, g2 = s1 / se0, s2 / se0
+        c2 = (g2 - 2 * g1 + 1.0) / (2 * h * h)
+        c1 = (g1 - 1.0 - c2 * h * h) / h
+        curve = {"a": a, "b": b, "c1": c1, "c2": c2, "se0": se0, "zc": zc,
+                 "cal": 1.0, "n": n}
+        e = _solve_curve(curve, K)
+    if e == float("inf") or e <= 0:
         return _bail(se0)
+    curve["h"] = h
 
     # Even with both curves right, this is still normal theory and these
     # statistics are skewed. Finish by MEASURING the power at the analytic
@@ -383,7 +412,10 @@ def _solve_curve(curve, K):
     a, b, c1, c2 = curve["a"], curve["b"], curve["c1"], curve["c2"]
 
     def f(e):
-        return (a * e + b * e * e) - K * (1.0 + c1 * e + c2 * e * e)
+        # the variance ratio is a ratio of standard deviations -- it cannot go
+        # negative, and a downward-curving fit will take it there if allowed
+        g = max(1.0 + c1 * e + c2 * e * e, 0.05)
+        return (a * e + b * e * e) - K * g
 
     if f(0.0) >= 0:
         return 0.0
@@ -564,6 +596,31 @@ def selftest(quick=False):
             fails.append(f"{label}: null fires at {nl:.3f}, wanted {ALPHA}")
         print(f"  {label:>28}{n:>9,}{m:>12.5f}{pw:>11.2f}{nl:>11.3f}{flag}")
 
+    print("\n  MONOTONICITY -- a stricter bar can never need a SMALLER effect")
+    print("  Both curves are fitted from probes at 0, h and 2h. At a strict")
+    print("  alpha the answer can land several times h out, and a two-point")
+    print("  quadratic evaluated that far outside its range is invention, not")
+    print("  extrapolation. The Brier row once returned a Bonferroni MDE of")
+    print("  0.00026 against an uncorrected 0.03136. This is the check that")
+    print("  would have caught it on the day it was written.")
+    print(f"\n  {'estimator':>28}{'a=0.05':>12}{'a=1.7e-4':>12}{'ratio':>9}")
+    for label, fn, n, kw in (("edge.py Brier advantage", est_brier, 300,
+                              {"per_cluster": 4}),
+                             ("replay net P&L / contract", est_pnl, 300, {}),
+                             ("chain.py up-rate deviation", est_uprate, 3000,
+                              {})):
+        loose, _, _ = mde(fn, n, 0.05, POWER, reps=R(200), seed=61,
+                          pw_reps=R(350), **kw)
+        tight, _, _ = mde(fn, n, 1.7e-4, POWER, reps=R(200), seed=61,
+                          pw_reps=R(350), **kw)
+        ratio = tight / loose if loose > 0 else float("nan")
+        bad = ""
+        if not (tight > loose):
+            bad = " <--"
+            fails.append(f"{label}: Bonferroni MDE {tight:.5f} is not larger "
+                         f"than the uncorrected {loose:.5f}")
+        print(f"  {label:>28}{loose:>12.5f}{tight:>12.5f}{ratio:>9.2f}{bad}")
+
     print("\n  SKEW AT SMALL CLUSTER COUNTS -- replay's t is anti-conservative")
     print("  The per-cluster net P&L is a handful of binary payoffs at a price")
     print("  near 95c: mostly small wins, occasionally a 95c loss. Averaging a")
@@ -702,12 +759,112 @@ def selftest(quick=False):
 
 
 # ===========================================================================
+# Working out how much data there actually is, so nobody has to type it.
+#
+# The first person to run this pasted the documented command with its
+# <placeholders> still in it, and PowerShell read the angle brackets as
+# redirection and hung on a continuation prompt. A tool that needs two numbers
+# the user does not have should go and count them.
+# ===========================================================================
+def count_recorded_hours(data_dir):
+    """(hours, channel, note). The collector writes one file per hour per
+    channel, named YYYYMMDDTHH.jsonl.gz, so the file count IS the hour count --
+    and it counts only hours actually recorded, which is what we want: a gap
+    in the recording is a gap in the clusters."""
+    if not os.path.isdir(data_dir):
+        return None, None, f"no such directory: {data_dir}"
+    best, best_n = None, 0
+    for ch in sorted(os.listdir(data_dir)):
+        d = os.path.join(data_dir, ch)
+        if not os.path.isdir(d):
+            continue
+        n = len([f for f in os.listdir(d) if f.endswith(".jsonl.gz")])
+        if ch == "cfbenchmarks_value" and n:
+            return n, ch, None                  # the feed everything depends on
+        if n > best_n:
+            best, best_n = ch, n
+    if not best_n:
+        return None, None, f"no hourly files under {data_dir}"
+    return best_n, best, ("cfbenchmarks_value is EMPTY -- counted "
+                          f"{best!r} instead. If the index feed is not "
+                          "recording, most of go.py has nothing to run on.")
+
+
+def count_settled(cache_path):
+    """(markets in the largest series, n_series, note)."""
+    if not os.path.exists(cache_path):
+        return None, 0, f"no {cache_path} -- run chain.py to build it"
+    try:
+        data = json.load(open(cache_path))
+    except (json.JSONDecodeError, OSError) as e:
+        return None, 0, f"could not read {cache_path}: {e}"
+    counts = {k: len(v) for k, v in data.items() if isinstance(v, list)}
+    if not counts:
+        return None, 0, f"{cache_path} is empty"
+    top = max(counts, key=counts.get)
+    thin = [k for k, v in counts.items() if v < counts[top] * 0.5]
+    note = None
+    if thin:
+        note = (f"{len(thin)} of {len(counts)} series have under half the "
+                f"history of {top} -- their own MDEs are worse than the table")
+    return counts[top], len(counts), note
+
+
+def resolve_inputs(a):
+    """Returns (hours, settled_markets_per_series, notes). hours is None if
+    there is nothing to report on."""
+    notes = []
+    hours, settled = a.hours, None
+    if a.settled_days is not None:
+        settled = int(a.settled_days * WINDOWS_PER_DAY)
+
+    if hours is None:
+        h, ch, note = count_recorded_hours(a.data)
+        if note:
+            notes.append(note)
+        if h is not None:
+            hours = float(h)
+            notes.append(f"counted {h:,} hourly files in {a.data}/{ch}")
+    if settled is None:
+        n, nser, note = count_settled(a.cache)
+        if note:
+            notes.append(note)
+        if n is not None:
+            settled = n
+            notes.append(f"read {n:,} settled markets for the longest of "
+                         f"{nser} series in {a.cache}")
+
+    if hours is None and settled is None:
+        print("\n  Found no data to size. Point it at the collector output:")
+        print("     python research/power.py --data C:\\kals\\kalshi_data")
+        print("  or state the numbers directly:")
+        print("     python research/power.py --hours 72 --settled-days 30")
+        for ln in notes:
+            print(f"  - {ln}")
+        return None, None, notes
+    if hours is None:
+        hours = 0.0
+        notes.append("no recording found; the per-second rows are blank")
+    if settled is None:
+        settled = 0
+        notes.append("no settled cache; the chain rows are blank")
+    return hours, settled, notes
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--hours", type=float, default=72.0,
-                    help="hours of live collector recording on disk")
-    ap.add_argument("--settled-days", type=float, default=30.0,
-                    help="days of settled history in chain_cache.json")
+    ap.add_argument("--hours", type=float, default=None,
+                    help="hours of live collector recording on disk. Omit and "
+                         "it is counted off --data: the collector writes one "
+                         "file per hour per channel.")
+    ap.add_argument("--settled-days", type=float, default=None,
+                    help="days of settled history. Omit and it is read off "
+                         "--cache.")
+    ap.add_argument("--data", default="./kalshi_data",
+                    help="collector output directory, for counting recorded "
+                         "hours")
+    ap.add_argument("--cache", default="./chain_cache.json",
+                    help="chain.py's settled-market cache")
     ap.add_argument("--series", type=int, default=12)
     ap.add_argument("--rho", type=float, default=0.8)
     ap.add_argument("--price", type=float, default=0.95,
@@ -728,17 +885,21 @@ def main():
     if os.environ.get("KALS_SELFTESTED") != "1" and not selftest():
         raise SystemExit("self-test failed; the numbers below would be wrong")
 
-    clusters = int(a.hours * WINDOWS_PER_HOUR)
+    hours, settled, notes = resolve_inputs(a)
+    if hours is None:
+        return
+    clusters = int(hours * WINDOWS_PER_HOUR)
     markets = clusters * a.series
-    settled = int(a.settled_days * WINDOWS_PER_DAY)
-    seconds = int(a.hours * 3600)
+    seconds = int(hours * 3600)
     eff = eff_units(a.series, a.rho)
 
     print("\n\n" + "#" * 78)
     print("# WHAT THIS MUCH DATA COULD DETECT")
     print("#" * 78)
-    print(f"\n  {a.hours:.0f} hours recorded, {a.settled_days:.0f} days of "
-          f"settled history, {a.series} series at rho={a.rho}")
+    for ln in notes:
+        print(f"  {ln}")
+    print(f"\n  {hours:.1f} hours recorded, {settled/WINDOWS_PER_DAY:.1f} days "
+          f"of settled history, {a.series} series at rho={a.rho}")
     print(f"  {'close-time clusters (the independent unit)':>52}"
           f"{clusters:>10,}")
     print(f"  {'markets (NOT the sample size)':>52}{markets:>10,}")
