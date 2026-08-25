@@ -180,12 +180,31 @@ def autocorr(x, lag):
     return num / den if den > 0 else None
 
 
-def ac_t(x, lag):
-    """t-stat for autocorrelation under the iid null (SE ~ 1/sqrt(n))."""
+# ---------------------------------------------------------------------------
+# THE NULL FOR CONSECUTIVE-WINDOW RETURN AUTOCORRELATION IS NOT ZERO.
+#
+# settle(N) is the mean of the 60 index prints ending at T_N = N*900, and
+# r_N = settle(N) - settle(N-1). For a driftless random walk,
+#   Cov(avg over [a,b], avg over [c,d]) = (a+b)/2   for b < c
+#   Var(avg over [a,b])                 = a + (b-a)/3
+# which gives Cov(r_N, r_N+1) = 10*sigma^2 against Var(r) = 880*sigma^2, so
+#
+#   rho_1 = 10/880 = 1/88 = +0.011364
+#
+# purely from the overlapping-average structure. No market, no inefficiency,
+# just arithmetic. Verified by simulating 60,000 windows of a pure random walk:
+# rho_1 = +0.0127, which is t = +3.12 against a ZERO null and t = +0.34 against
+# this one. Testing against zero would report a screaming signal from nothing.
+# ---------------------------------------------------------------------------
+TWAP_RHO1 = 10.0 / 880.0
+
+
+def ac_t(x, lag, null=0.0):
+    """t-stat for autocorrelation against `null` (SE ~ 1/sqrt(n))."""
     r = autocorr(x, lag)
     if r is None:
         return None, None
-    return r, r * math.sqrt(len(x) - lag)
+    return r, (r - null) * math.sqrt(len(x) - lag)
 
 
 def ljung_box(x, lags=5):
@@ -285,7 +304,9 @@ def test_return_autocorr(rows, label):
     if len(rows) < 200:
         return None
     r = [x["r"] for x in rows]
-    r1, t1 = ac_t(r, 1)
+    # lag 1 carries the mechanical TWAP-overlap term; lag 2 does not (the
+    # windows are far enough apart that the covariance is exactly zero).
+    r1, t1 = ac_t(r, 1, null=TWAP_RHO1)
     r2, t2 = ac_t(r, 2)
     # sign persistence is the tradeable version
     s = [1 if x > 0 else 0 for x in r]
@@ -490,6 +511,9 @@ def power_analysis(reps=400):
             for s in range(reps):
                 d = synth(n, rho=rho, seed=90000 + s * 13 + n)
                 r = [math.log(m["settle"] / m["strike"]) for m in d]
+                # synth() builds returns directly, with no TWAP overlap, so the
+                # null here is genuinely zero -- this measures the test's power,
+                # not the real-data null.
                 _, t = ac_t(r, 1)
                 if t is not None and abs(t) > 2:
                     hit += 1
@@ -606,6 +630,12 @@ def main():
     for s in a.series:
         if rows_by.get(s):
             test_return_autocorr(rows_by[s], s)
+    print(f"\n  ac1 is tested against a null of {TWAP_RHO1:+.5f}, NOT zero. That")
+    print("  much autocorrelation is mechanical: consecutive settlement windows")
+    print("  are 60-second averages 900s apart, and the overlap structure alone")
+    print("  gives Cov/Var = 10/880. Against a zero null a pure random walk")
+    print("  reads t=+3.1 at 60k windows. ac2 has no such term and IS tested")
+    print("  against zero.")
 
     print("\n" + "=" * 78)
     print("TAILS, per series  [pooling assets with kurtosis 25..153 was wrong]")
