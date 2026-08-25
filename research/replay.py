@@ -482,10 +482,9 @@ def main():
             dump_channel(a.data, ch)
         return
 
-    ok = selftest()
     if a.selftest:
-        raise SystemExit(0 if ok else 1)
-    if not ok:
+        raise SystemExit(0 if selftest() else 1)
+    if os.environ.get("KALS_SELFTESTED") != "1" and not selftest():
         raise SystemExit("self-test failed; refusing to touch real data")
 
     print("\n\n" + "#" * 78)

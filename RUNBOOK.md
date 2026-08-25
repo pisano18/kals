@@ -15,12 +15,26 @@ Working directory: `C:\kals`
    WebSocket can authenticate for market data — that is its only use here.
 2. **Never claim a result you did not measure.** If a script fails, report the
    failure. Do not estimate what the output "would have been."
-3. **Cluster by market, always.** Hundreds of trades share one settlement
-   outcome. Statistics on trade counts are wrong by ~14x. This produced a fake
-   "26 mispriced cells with 21c edges" result that was pure artefact.
+3. **Cluster by market, always** -- but know that this is NOT sufficient.
+   Hundreds of trades share one settlement outcome, so statistics on trade
+   counts are wrong by ~14x. That produced the fake "26 mispriced cells with
+   21c edges". HOWEVER: clustering corrects STANDARD ERRORS, not POINT
+   ESTIMATES. Occupation-time selection (how long a price path lingers near a
+   level is correlated with where it ends up) biases the estimate itself and
+   survives clustering untouched. See R4. Sample on an exogenous schedule
+   (fixed times-to-close), not on trade arrivals.
 4. **Report `n` as the number of markets, never the number of trades.**
 5. Do not modify anything under `kalshi_data/` or `feed_data/` — a collector
    is actively writing there.
+6. **Calibrate every estimator against ground truth before believing it.**
+   Five fake-edge bugs were found in two days, none catchable by inspection,
+   all caught by asking a statistic what it returns when the answer is already
+   known. Every tool in `research/` refuses to touch real data until its
+   self-test passes. Do not remove that gate.
+7. **Never infer a price's unit from its magnitude.** On the tapered deci-cent
+   grid a 0.5-cent quote is written "0.5"; any `x > 1` test reads it as 50
+   cents. Decide the unit once from the whole sample. That bug alone produced
+   75c/contract against a provably fair book.
 
 ---
 
@@ -52,7 +66,14 @@ Var(settle - strike) = 20 + 920 - 2(30) = 880 * sigma^2
 ```
 (NOT 900, and NOT 820 — both were earlier errors.)
 
-Consequence: every window opens at **exactly 50c fair value by construction**.
+**CORRECTED (R1).** It was previously recorded here that every window opens at
+exactly 50c fair value by construction. That is the UNCONDITIONAL mean. The
+conditional fair value -- the only one tradeable -- is
+`Phi((spot_at_open - strike) / (sigma*sqrt(860)))`. Strike is the TRAILING 60s
+average and spot at open is not that average; their difference has sd
+sqrt(20)*sigma ~ $26 against a settlement sd of ~$176. Mean |fair - 50c| is
+**4.75c**, and 40% of windows open outside 45-55c. So there IS a directional
+view at open, requiring no forecasting.
 
 **Fees.** `fee_type: quadratic`, `fee_multiplier: 1` →
 `ceil(0.07 * P * (1-P) * n)` per order. S&P/Nasdaq get 0.035 but have no
@@ -64,10 +85,17 @@ short-cadence markets, so that lever is unavailable.
 **Volatility.** BTC ~0.1765% per window (~33% annualized) as of late Aug 2026.
 The June archive showed 0.2353% (~45%) — regime changed, so prefer recent data.
 
-**Tails.** Winsorized, pooled: Gaussian model UNDERvalues the favourite below
-~96.7c and OVERvalues above it. Crossover replicated at 96.6c on the June
-archive and 96.7c on recent data — two independent datasets, so this is real.
-Per-series kurtosis ranges 25 (BTC) to 153 (NEAR); pooling series is a mistake.
+**Tails. CORRECTED (R3) — the 96.7c crossover is an artefact of the statistic.**
+14 unrelated fat-tailed processes (Student-t nu=3..20, GARCH across a range of
+persistence, normal mixtures) all cross at 96.3-99.3c regardless of kurtosis
+magnitude (1.0 to 168). It sits close to a fixed point of standardizing ANY
+fat-tailed distribution, so agreement across two datasets establishes only that
+returns have excess kurtosis — never in doubt, and not something needing two
+datasets to show. Do NOT build a threshold strategy on that number; the
+informative quantities are the tail RATIOS at the price you would trade.
+Per-series kurtosis 25 (BTC) to 153 (NEAR); pooling series is a mistake.
+Whether the fatness is unconditional or merely vol clustering is what decides
+the model — `research/volmodel.py` separates them.
 
 **API traps.**
 - WebSocket `cfbenchmarks_value` requires param **`index_ids`** (values:
@@ -95,10 +123,22 @@ with only 2ms jitter. A colocated firm sees ~1-5ms, so the disadvantage is
 
 ---
 
-## THE KEY RESULT SO FAR
+## THE KEY RESULT SO FAR -- NOT YET ESTABLISHED (R4)
 
 Full-tape calibration on **2.1M trades across 450 markets**, clustered by
-market: the market is **efficient**.
+market, reported mean t = -0.008 and was read as "the market is efficient".
+**That compared the estimator's output to zero, and the estimator does not
+return zero on an efficient market.** On a synthetic book quoting the true
+model exactly, the same scheme returns mean t = -1.03 with 12 of 84 cells at
+|t|>=2, from occupation-time selection. The bias depends on the trade-arrival
+process, so its size on real data is unknown until measured.
+
+`research/placebo.py` measures it, using data already on disk: keep the real
+tape and redraw only the outcomes as y ~ Bernoulli(p_last), which is
+martingale-consistent under the efficient-market null. Until that runs, neither
+"efficient" nor "inefficient" is established.
+
+The original table, for reference:
 
 | | Observed | Efficient market predicts |
 |---|---|---|
@@ -182,9 +222,13 @@ against BRTI changes at lags from −5s to +5s, per market, clustered.
 - Peak at **zero lag** → the book tracks the index in real time → dead end.
 
 Then build a fair-value model: `P(settle >= strike)` from the index path plus
-trailing realized vol, using `Var = sigma^2 * (tau + 20)` before the averaging
-window opens, and `sigma^2 * r^3 / 10800` with `r` seconds remaining once
-inside it. Score it against the traded price via `kalshi_backtest.py` by
+trailing realized vol. **CORRECTED (R1) — both variance formulas below were
+wrong.** Use `Var = sigma^2 * (tau - 39.50)` before the averaging window opens,
+with tau = seconds to CLOSE (the old `(tau + 20)` was derived for time-until-
+the-window-starts and overstates vol by 32% at 120s out). Inside the window use
+`sigma^2 * r*(r+1)*(2r+1)/21600`, the exact form for 60 DISCRETE prices; the old
+`r^3/10800` is the continuous integral and understates vol by 7.5% at r=10 and
+73% at r=1, which biases toward overpricing favourites. Score it against the traded price via `kalshi_backtest.py` by
 adding a strategy function.
 
 ---

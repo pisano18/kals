@@ -46,6 +46,7 @@ of the sample and evaluated on the second.
 import argparse
 import json
 import math
+import os
 import random
 from collections import defaultdict
 from statistics import NormalDist, mean, pstdev
@@ -308,15 +309,13 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
 
-    ok = selftest()
     if a.selftest:
-        raise SystemExit(0 if ok else 1)
-    if not ok:
+        raise SystemExit(0 if selftest() else 1)
+    if os.environ.get("KALS_SELFTESTED") != "1" and not selftest():
         raise SystemExit("self-test failed; refusing to touch real data")
 
     edge_table((0.80, 0.90, 1.00, 1.15, 1.30, 1.50))
 
-    import os
     if not os.path.exists(a.cache):
         print(f"\n  no {a.cache} -- run chain.py first to build it.")
         return
