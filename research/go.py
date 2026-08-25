@@ -156,11 +156,15 @@ STAGES = [
 def run(cmd, cwd, timeout):
     t0 = time.time()
     try:
+        env = dict(os.environ)
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
         p = subprocess.run([sys.executable] + cmd, cwd=cwd, timeout=timeout,
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", env=env)
         return p.returncode, (p.stdout or "") + (p.stderr or ""), time.time() - t0
     except subprocess.TimeoutExpired as e:
-        out = (e.stdout or b"")
+        out = (e.stdout or "")
         if isinstance(out, bytes):
             out = out.decode("utf-8", "replace")
         return 124, out + f"\n*** TIMED OUT after {timeout}s ***", time.time() - t0
@@ -216,7 +220,8 @@ def main():
             print("    The failing output is in the report. Send it back.")
             chunks.append("\n**A self-test failed — no real data was "
                           "analysed.**\n")
-            open(os.path.join(ROOT, a.report), "w").write("\n".join(chunks))
+            open(os.path.join(ROOT, a.report), "w", encoding="utf-8",
+             newline="\n").write("\n".join(chunks))
             raise SystemExit(1)
 
     print("\nSTAGES")
@@ -250,7 +255,10 @@ def main():
                   "measurement bug. Treat anything eye-catching as a bug until "
                   "it survives its own null.\n")
     path = os.path.join(ROOT, a.report)
-    open(path, "w").write("\n".join(chunks))
+    # utf-8 explicitly: on Windows the default is cp1252 and this file
+    # embeds whatever the stages printed. Dying here would throw away the
+    # entire run.
+    open(path, "w", encoding="utf-8", newline="\n").write("\n".join(chunks))
     print(f"\nwrote {path}")
     print("Send that file back.")
 

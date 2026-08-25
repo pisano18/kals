@@ -1,9 +1,54 @@
-# Run these when you're home
+# Run this when you're home
 
-Everything here is read-only. Nothing places an order.
-Paste the output back, or just send `RESULTS.md`.
+```powershell
+cd C:\kals-repo
+git pull
+python research\everything.py
+```
+
+That is the whole thing. No arguments, no paths, no placeholders. It finds the
+repo, finds your data under `C:\kals`, works out how much of it there is, and
+runs every job below in the right order.
+
+When it finishes it prints one line:
+
+```
+    SEND ME THIS ONE FILE:  C:\kals-repo\kals-report-YYYYMMDD-HHMM.zip
+```
+
+Send that. It contains the report, `RESULTS.md`, the schema the loaders
+detected, and the four API responses.
+
+**Expect 30–60 minutes.** Progress prints as it goes with elapsed time, so you
+can tell it apart from a hang. Everything is read-only: it never places an
+order, never writes to `kalshi_data/` or `feed_data/`, and never kills your
+recorder.
+
+If it dies partway, run it again — or `--skip go` to leave out the long stage,
+`--only api` to run one piece. The report is rewritten after every step, so
+even an interrupted run leaves something worth sending.
+
+### The one thing it deliberately does NOT do
+
+It adds the two comparison series to `run_all.ps1` but **does not restart your
+watchdog**. Stopping your recorder unattended is not a risk worth taking. It
+prints the restart command; do it when you're at the keyboard:
+
+```
+Ctrl+C in the watchdog window, then
+powershell -ExecutionPolicy Bypass -File C:\kals\run_all.ps1
+```
+
+Until you do, `KXCRYPTOLEAD15M` and `KXCRYPTOCOMP15M` are still not being
+recorded, and that is the one thing here where waiting costs something
+permanent.
 
 ---
+
+# What it runs, and why
+
+Everything below happens automatically. It is written out so you can run any
+piece by hand if you want to, and so you know what the report is telling you.
 
 ## 0. Read this first, before anything in RESULTS.md
 
