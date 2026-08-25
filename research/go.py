@@ -63,6 +63,12 @@ STAGES
             likely surviving edge, because it is plumbing rather than opinion.
             Needs kalshi_data/ and fulltape/.
 
+Not a stage, but run it once you have a measured edge:
+  research/viability.py --edge 0.01 --price 0.95
+It prices the consequences of an edge rather than looking for one: Sharpe with
+the correlation penalty applied, drawdown, losing-month rate, and how long you
+would have to trade before the P&L could tell the edge from luck.
+
 NOTHING HERE PLACES AN ORDER. There is no order code in this repository and no
 flag that enables one.
 """
