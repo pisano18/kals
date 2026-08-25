@@ -5,6 +5,34 @@ Paste the output back, or just send `RESULTS.md`.
 
 ---
 
+## 0. Read this first, before anything in RESULTS.md
+
+```
+python research\power.py --hours <hours recorded> --settled-days <days in chain_cache>
+```
+
+New file. It answers the question that makes every other number readable:
+**with the data that exists, what could we have detected at all?** A t of 1.4
+means "there is no edge" or "there is an edge and we cannot see it", and until
+now nothing here could tell those apart.
+
+Two things it will tell you that matter more than any single stage:
+
+- The independent unit is the **close time**, not the market. Twelve series
+  closing simultaneously at 80% correlation are worth 1.22 independent bets,
+  so a day of recording is 96 observations, not 1,152. Every "n = 4,300
+  markets" in an earlier report was overstating the sample by roughly twelve
+  times.
+- One `go.py` run emits **several hundred** t-statistics. At the usual 0.05
+  that is a dozen or more expected to fire on noise alone. The corrected
+  threshold is printed; it is a long way above 3.
+
+It runs a few minutes of simulation before it prints anything — that is the
+self-test planting an effect of exactly the size it claims to detect and
+checking that it fires four times in five. Let it finish.
+
+---
+
 ## 1. The main run — one command, does almost everything
 
 ```powershell

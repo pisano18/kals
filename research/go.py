@@ -67,11 +67,20 @@ STAGES
             likely surviving edge, because it is plumbing rather than opinion.
             Needs kalshi_data/ and fulltape/.
 
-Not a stage, but run it once you have a measured edge:
+Not stages. Run these around the results rather than inside them:
+
+  research/power.py --hours 72 --settled-days 30
+Read this BEFORE the report. It says what this much data could have detected at
+all. A stage whose measured effect is smaller than its minimum detectable
+effect has produced no information -- positive or negative -- and "no edge
+found" is not a finding there. It also counts the several hundred statistics
+one run emits and prints the corrected threshold, which is a long way above 3.
+
   research/viability.py --edge 0.01 --price 0.95
-It prices the consequences of an edge rather than looking for one: Sharpe with
-the correlation penalty applied, drawdown, losing-month rate, and how long you
-would have to trade before the P&L could tell the edge from luck.
+Run this once you have a MEASURED edge. It prices the consequences rather than
+looking for one: Sharpe with the correlation penalty applied, drawdown,
+losing-month rate, and how long you would have to trade before the P&L could
+tell the edge from luck.
 
 NOTHING HERE PLACES AN ORDER. There is no order code in this repository and no
 flag that enables one.
@@ -104,6 +113,9 @@ SELFTESTS = [
     ("constituent feeds", ["feeds.py", "--selftest"]),
     ("path statistics", ["pathstats.py", "--selftest"]),
     ("proxy reference", ["proxy.py", "--selftest"]),
+    # power.py touches no data, but it is what makes every null result in the
+    # report readable, and it is simulation code that can be silently wrong.
+    ("detectability", ["power.py", "--selftest"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so
