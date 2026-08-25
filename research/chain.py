@@ -61,6 +61,7 @@ import json
 import math
 import os
 import random
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -91,7 +92,14 @@ def parse_ts(s):
 
 def fetch_settled(series, want, verbose=True):
     """Public endpoint, no key. /historical/* is stale (RUNBOOK) -- not used."""
-    import requests
+    try:
+        import requests
+    except ImportError:
+        raise SystemExit(
+            "\n  This stage needs `requests`, which is not installed for this\n"
+            "  interpreter. Install it with:\n\n"
+            f"      {sys.executable} -m pip install requests\n\n"
+            "  Every other stage is stdlib-only and will run without it.")
     sess = requests.Session()
     out, cursor, pages = [], None, 0
     while len(out) < want and pages < 200:

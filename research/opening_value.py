@@ -39,7 +39,7 @@ look for before spending a day pulling data.
 """
 
 import math
-import numpy as np
+import random
 from statistics import NormalDist
 
 from settlement_math import (CLOSE_K, N_AVG, SETTLE_IDX, STRIKE_IDX,
@@ -50,53 +50,74 @@ OPEN_K = 60
 
 
 def main():
-    rng = np.random.default_rng(11)
-    n = 400_000
+    rng = random.Random(11)
+    n = 120_000
     sigma = 1.0
 
-    S = np.cumsum(rng.standard_normal((n, CLOSE_K)) * sigma, axis=1)
-    strike = S[:, np.array(STRIKE_IDX) - 1].mean(axis=1)
-    settle = S[:, np.array(SETTLE_IDX) - 1].mean(axis=1)
-    spot_open = S[:, OPEN_K - 1]
+    # only the strike window, the settle window and the open are ever read, so
+    # jump between them in one draw each rather than stepping all 960 seconds
+    need = sorted(set(STRIKE_IDX) | set(SETTLE_IDX) | {OPEN_K})
+    pos = {k: i for i, k in enumerate(need)}
+    sds = [sigma * math.sqrt(g) for g in
+           [need[0]] + [need[i] - need[i-1] for i in range(1, len(need))]]
+    si = [pos[i] for i in STRIKE_IDX]
+    ei = [pos[i] for i in SETTLE_IDX]
+    strike, settle, spot_open = [], [], []
+    for _ in range(n):
+        path, x = [], 0.0
+        for sd in sds:
+            x += rng.gauss(0.0, sd)
+            path.append(x)
+        strike.append(sum(path[i] for i in si) / 60.0)
+        settle.append(sum(path[i] for i in ei) / 60.0)
+        spot_open.append(path[pos[OPEN_K]])
 
     print("=" * 78)
     print("A. IS FAIR VALUE AT OPEN ACTUALLY 50 CENTS?")
     print("=" * 78)
-    dev = spot_open - strike
-    print(f"   spot_at_open - strike:  mean {dev.mean():+.4f} sigma   "
-          f"sd {dev.std(ddof=1):.4f} sigma")
+    dev = [a - b for a, b in zip(spot_open, strike)]
+    def _mean(x): return sum(x) / len(x)
+    def _sd(x):
+        m = _mean(x)
+        return math.sqrt(sum((v - m) ** 2 for v in x) / (len(x) - 1))
+    print(f"   spot_at_open - strike:  mean {_mean(dev):+.4f} sigma   "
+          f"sd {_sd(dev):.4f} sigma")
     print(f"   theory: mean 0, sd sqrt(20) = {math.sqrt(20):.4f} sigma")
 
     sd_open = math.sqrt(cond_var_closedform(OPEN_K, sigma))
-    z = dev / sd_open
-    p_open = np.array([ND.cdf(x) for x in z[:200_000]])
+    z = [d / sd_open for d in dev]
+    p_open = [ND.cdf(x) for x in z]
     print(f"\n   residual sd of settle at open = {sd_open:.3f} sigma")
-    print(f"   so z at open has sd {z.std(ddof=1):.4f}  "
+    print(f"   so z at open has sd {_sd(z):.4f}  "
           f"(= sqrt(20/{cond_var_closedform(OPEN_K):.1f}))")
     print(f"\n   TRUE fair value at open, distribution over windows:")
     qs = [1, 5, 10, 25, 50, 75, 90, 95, 99]
-    vals = np.percentile(p_open, qs)
+    sp = sorted(p_open)
+    vals = [sp[min(int(len(sp) * q / 100), len(sp) - 1)] for q in qs]
     print("   " + "".join(f"p{q:<4}" for q in qs))
     print("   " + "".join(f"{100*v:<5.1f}" for v in vals))
-    print(f"\n   mean |fair - 50c| = {100*np.abs(p_open-0.5).mean():.2f} cents")
-    print(f"   P(fair outside 45-55c) = {100*np.mean(np.abs(p_open-0.5)>0.05):.1f}%")
-    print(f"   P(fair outside 40-60c) = {100*np.mean(np.abs(p_open-0.5)>0.10):.1f}%")
+    ad = [abs(p - 0.5) for p in p_open]
+    print(f"\n   mean |fair - 50c| = {100*_mean(ad):.2f} cents")
+    print(f"   P(fair outside 45-55c) = "
+          f"{100*sum(1 for v in ad if v > 0.05)/len(ad):.1f}%")
+    print(f"   P(fair outside 40-60c) = "
+          f"{100*sum(1 for v in ad if v > 0.10)/len(ad):.1f}%")
 
     # verify the model is actually right: does it predict outcomes?
     print("\n   CALIBRATION OF THE MODEL ITSELF (sanity, must be ~diagonal):")
-    out = (settle[:200_000] >= strike[:200_000]).astype(float)
+    out = [1.0 if a >= b else 0.0 for a, b in zip(settle, strike)]
     print(f"   {'model says':>12}{'windows':>9}{'actually Yes':>14}")
     for lo, hi in [(0, .35), (.35, .45), (.45, .55), (.55, .65), (.65, 1)]:
-        m = (p_open >= lo) & (p_open < hi)
-        if m.sum() > 100:
-            print(f"   {f'{100*lo:.0f}-{100*hi:.0f}c':>12}{m.sum():>9,}"
-                  f"{100*out[m].mean():>13.1f}%")
+        sel = [out[i] for i, p in enumerate(p_open) if lo <= p < hi]
+        if len(sel) > 100:
+            print(f"   {f'{100*lo:.0f}-{100*hi:.0f}c':>12}{len(sel):>9,}"
+                  f"{100*_mean(sel):>13.1f}%")
 
     print("\n" + "=" * 78)
     print("B. IF THE BOOK OPENS AT 50c, WHAT IS THE EDGE?")
     print("=" * 78)
     print("   Buy the side the model favours, at a flat 50c, every window.")
-    edge = np.abs(p_open - 0.5).mean()
+    edge = _mean(ad)
     fee50 = math.ceil(0.07 * 0.5 * 0.5 * 100) / 100.0
     print(f"   gross edge                 {100*edge:+.2f} c/contract")
     print(f"   taker fee at 50c           {-100*fee50:+.2f} c")

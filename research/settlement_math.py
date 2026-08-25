@@ -36,10 +36,12 @@ methodology note -- it is built from order books, not trades).
 """
 
 import math
+import random
 from statistics import NormalDist
 
-import numpy as np
-
+# Deliberately stdlib-only, like every other file here. numpy has no wheel for
+# some Python versions (3.14 among them) and an import failure in THIS file
+# gates the entire run, since go.py stops on any self-test failure.
 ND = NormalDist()
 
 OPEN_K, CLOSE_K = 60, 960
@@ -52,12 +54,23 @@ N_AVG = 60
 # 1. Exact second moments from the covariance structure.  Cov(S_i,S_j)=s^2*min
 # ---------------------------------------------------------------------------
 def exact_var_linear(weights_by_index, sigma=1.0):
-    """Var(sum_i c_i S_i) computed exactly. weights_by_index: {index: c}."""
+    """Var(sum_i c_i S_i) computed exactly. weights_by_index: {index: c}.
+
+    Cov(S_i, S_j) = sigma^2 * min(i, j) for a driftless random walk, so this is
+    c^T M c with M_ij = min(i,j). Written as a single pass over the sorted
+    indices: for the k-th smallest index, min(i,j) = idx[k] over the whole
+    remaining suffix, so the quadratic form collapses to a suffix-sum."""
     idx = sorted(weights_by_index)
-    c = np.array([weights_by_index[i] for i in idx], dtype=float)
-    I = np.array(idx, dtype=float)
-    cov = np.minimum(I[:, None], I[None, :])          # min(i,j)
-    return float(c @ cov @ c) * sigma ** 2
+    c = [weights_by_index[i] for i in idx]
+    n = len(idx)
+    suffix = [0.0] * (n + 1)
+    for k in range(n - 1, -1, -1):
+        suffix[k] = suffix[k + 1] + c[k]
+    total = 0.0
+    for k in range(n):
+        # diagonal term plus twice the off-diagonal terms above it
+        total += c[k] * idx[k] * (2.0 * suffix[k + 1] + c[k])
+    return total * sigma ** 2
 
 
 def unconditional_var_settle_minus_strike(sigma=1.0):
@@ -132,22 +145,48 @@ def runbook_var_inside(r, sigma=1.0):
 
 
 # ---------------------------------------------------------------------------
-def monte_carlo(t_list, n=200_000, sigma=1.0, seed=7):
-    """Simulate the whole 960-second path and measure Var(settle | F_t)."""
-    rng = np.random.default_rng(seed)
-    out = {}
-    steps = rng.standard_normal((n, CLOSE_K)) * sigma
-    S = np.cumsum(steps, axis=1)                      # S[:,k-1] = S_k, S_0 = 0
-    settle = S[:, np.array(SETTLE_IDX) - 1].mean(axis=1)
-    strike = S[:, np.array(STRIKE_IDX) - 1].mean(axis=1)
-    out["uncond_var_diff"] = float(np.var(settle - strike, ddof=1))
+def monte_carlo(t_list, n=40_000, sigma=1.0, seed=7):
+    """Simulate and measure Var(settle | F_t), with no numpy.
+
+    Only the seconds the test actually reads are simulated -- the strike window,
+    the settle window, and the listed t values. Between them the walk jumps in
+    one draw of variance (gap * sigma^2), which is exact for a random walk and
+    about 7x less work than stepping every second."""
+    rng = random.Random(seed)
+    need = sorted(set(STRIKE_IDX) | set(SETTLE_IDX) | set(t_list) | {CLOSE_K})
+    pos = {k: i for i, k in enumerate(need)}
+    strike_at = [pos[i] for i in STRIKE_IDX]
+    settle_at = [pos[i] for i in SETTLE_IDX]
+    locked_at, nfut = {}, {}
     for t in t_list:
-        locked_idx = [i for i in SETTLE_IDX if i <= t]
-        locked_sum = (S[:, np.array(locked_idx) - 1].sum(axis=1)
-                      if locked_idx else np.zeros(n))
-        n_fut = N_AVG - len(locked_idx)
-        mu = (locked_sum + n_fut * S[:, t - 1]) / N_AVG
-        out[t] = float(np.var(settle - mu, ddof=1))   # residual variance
+        li = [pos[i] for i in SETTLE_IDX if i <= t]
+        locked_at[t] = li
+        nfut[t] = N_AVG - len(li)
+
+    diffs, resid = [], {t: [] for t in t_list}
+    gaps = [need[0]] + [need[i] - need[i - 1] for i in range(1, len(need))]
+    sds = [sigma * math.sqrt(g) for g in gaps]
+    for _ in range(n):
+        path, x = [], 0.0
+        for sd in sds:
+            x += rng.gauss(0.0, sd)
+            path.append(x)
+        settle = sum(path[i] for i in settle_at) / N_AVG
+        strike = sum(path[i] for i in strike_at) / N_AVG
+        diffs.append(settle - strike)
+        for t in t_list:
+            li = locked_at[t]
+            ls = sum(path[i] for i in li) if li else 0.0
+            mu = (ls + nfut[t] * path[pos[t]]) / N_AVG
+            resid[t].append(settle - mu)
+
+    def var(xs):
+        m = sum(xs) / len(xs)
+        return sum((v - m) ** 2 for v in xs) / (len(xs) - 1)
+
+    out = {"uncond_var_diff": var(diffs)}
+    for t in t_list:
+        out[t] = var(resid[t])
     return out
 
 
@@ -179,7 +218,7 @@ def main():
 
     # ---- C. Monte Carlo
     tl = [60, 300, 600, 840, 899, 900, 910, 930, 950, 955, 957, 959]
-    print("\nC. Monte Carlo check (200k paths)")
+    print("\nC. Monte Carlo check (40k paths, stdlib only)")
     mc = monte_carlo(tl)
     print(f"   uncond Var(settle-strike): MC {mc['uncond_var_diff']:.3f} "
           f"vs exact {v:.3f}   ({100*(mc['uncond_var_diff']/v-1):+.2f}%)")
@@ -192,7 +231,7 @@ def main():
         worst = max(worst, abs(rel))
         print(f"   {t:>5}{CLOSE_K-t:>6}{e:>13.4f}{m:>13.4f}{100*rel:>9.2f}%")
     print(f"   worst |rel err| = {100*worst:.2f}%  "
-          f"({'PASS' if worst < 0.03 else '*** FAIL ***'} at 200k paths)")
+          f"({'PASS' if worst < 0.03 else '*** FAIL ***'} at 40k paths)")
 
     # ---- D. where RUNBOOK is wrong
     print("\n" + "=" * 78)

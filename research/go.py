@@ -124,6 +124,11 @@ def main():
                           f"{'PASS' if passed else 'FAIL'} ({dt:.0f}s)\n")
             if not passed:
                 chunks.append("```\n" + out[-4000:] + "\n```\n")
+                # Show it here too. Burying the reason in the report cost a
+                # whole round trip the first time this fired.
+                tail = [ln for ln in out.strip().splitlines() if ln.strip()]
+                for ln in tail[-6:]:
+                    print(f"        | {ln[:110]}")
         if ok:
             os.environ["KALS_SELFTESTED"] = "1"
         if not ok:
