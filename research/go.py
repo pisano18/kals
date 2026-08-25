@@ -40,6 +40,10 @@ STAGES
             close-time cluster deletes the common crypto move, which is the
             term that made 12 correlated series worth only 1.22 independent
             ones. Measured power gain: 2.2x in t, 4.8x in variance.
+  pathstats is the contract price a martingale in its OWN right? Needs no
+            index and no settlements. A violation is tradeable without ever
+            holding to expiry -- enter, wait, exit -- which is a far better
+            risk shape than betting on the outcome.
   feeds     the 3+ GB/day of constituent exchange books that NOTHING has ever
             read. They are not correlated with the settlement index -- they are
             its inputs. Does our replica lead Kalshi's published value, and does
@@ -88,6 +92,7 @@ SELFTESTS = [
     ("open window", ["openwindow.py", "--selftest"]),
     ("implied vol", ["implied.py", "--selftest"]),
     ("constituent feeds", ["feeds.py", "--selftest"]),
+    ("path statistics", ["pathstats.py", "--selftest"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so
@@ -117,6 +122,8 @@ STAGES = [
      "{data}/cfbenchmarks_value"),
     ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
      "{feeds}"),
+    ("pathstats", ["research/pathstats.py", "--data", "{data}",
+                   "--out", "{out}"], "{out}/markets.json"),
 ]
 
 
