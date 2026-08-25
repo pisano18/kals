@@ -173,8 +173,21 @@ class IndexState:
 
 
 class MarketState:
+    """Per-market paper position, booked as two independent legs.
+
+    A single net `position` with a single `avg_cost` cannot represent a Kalshi
+    position honestly: buying YES at p and NO at q are two separate purchases
+    that both pay out at settlement, not an open and a close. Netting them to
+    zero made the market look flat while the cash was still committed, and
+    settle() then returned early and never released it -- the total-exposure
+    cap ratcheted shut for the rest of the session. Overwriting avg_cost on a
+    second fill leaked in the other direction. Two legs, each with its own
+    cash, and the release at settlement is exactly what was committed.
+    """
+
     __slots__ = ("ticker", "index_id", "strike", "close", "bid", "ask",
-                 "bid_sz", "ask_sz", "last_book_ts", "position", "avg_cost")
+                 "bid_sz", "ask_sz", "last_book_ts",
+                 "yes_qty", "yes_cost", "no_qty", "no_cost", "fees")
 
     def __init__(self, ticker, index_id, strike, close):
         self.ticker, self.index_id = ticker, index_id
@@ -182,8 +195,22 @@ class MarketState:
         self.bid = self.ask = None
         self.bid_sz = self.ask_sz = 0
         self.last_book_ts = None
-        self.position = 0
-        self.avg_cost = 0.0
+        self.yes_qty = self.no_qty = 0
+        self.yes_cost = self.no_cost = self.fees = 0.0
+
+    @property
+    def stake(self):
+        """Cash actually committed and not yet released."""
+        return self.yes_cost + self.no_cost
+
+    @property
+    def position(self):
+        return self.yes_qty - self.no_qty
+
+    @property
+    def avg_cost(self):
+        n = self.yes_qty + self.no_qty
+        return (self.yes_cost + self.no_cost) / n if n else 0.0
 
 
 class Decision:
@@ -228,11 +255,21 @@ class Engine:
         self.min_size, self.max_size = min_size, max_size
         self.indices = {}
         self.markets = {}
-        self.open_stake = 0.0
+        self._open_stake = 0.0
         self.realized = 0.0
         self.halted = False
         self.halt_reason = None
         self.skips = {}
+
+    @property
+    def open_stake(self):
+        """Maintained incrementally; audit_stake() checks it against the books."""
+        return self._open_stake
+
+    def audit_stake(self):
+        """(tracked, true) committed cash. These must be equal. Any gap is a
+        leak that silently shrinks the total-exposure cap."""
+        return self._open_stake, sum(m.stake for m in self.markets.values())
 
     # ---- ingest -----------------------------------------------------------
     def on_index(self, index_id, sec, value):
@@ -382,26 +419,52 @@ class Engine:
 
     # ---- bookkeeping ------------------------------------------------------
     def record_fill(self, d):
-        """Paper fill. Tracks exposure so the total cap means something."""
-        self.open_stake += d.size * d.price
+        """Paper fill. Tracks exposure so the total cap means something.
+
+        Returns False and books nothing for a market the engine is not
+        tracking: settle() could never find it to release the cash, so the
+        exposure would be permanent.
+        """
         m = self.markets.get(d.ticker)
-        if m:
-            m.position += d.size if d.side == "yes" else -d.size
-            m.avg_cost = d.price
+        if m is None:
+            self.skips["fill on an untracked market"] = \
+                self.skips.get("fill on an untracked market", 0) + 1
+            return False
+        cost = d.size * d.price
+        if d.side == "yes":
+            m.yes_qty += d.size
+            m.yes_cost += cost
+        else:
+            m.no_qty += d.size
+            m.no_cost += cost
+        # Kalshi charges the taker fee on the trade. Accrue it per fill (so the
+        # basis is the price actually paid) and realise it at settlement, which
+        # is where the bankroll moves.
+        m.fees += d.size * fee_per_contract(d.price)
+        self._open_stake += cost
+        return True
 
     def settle(self, ticker, result):
         """result: 1.0 if the market resolved Yes."""
         m = self.markets.get(ticker)
-        if m is None or m.position == 0:
+        if m is None:
             return 0.0
-        n = abs(m.position)
-        won = (result >= 0.5) if m.position > 0 else (result < 0.5)
-        pnl = n * ((1 - m.avg_cost) if won else -m.avg_cost)
-        pnl -= n * fee_per_contract(m.avg_cost)
+        stake = m.stake
+        if m.yes_qty == 0 and m.no_qty == 0:
+            # Release unconditionally rather than returning early. A flat
+            # market should hold no cash; if it somehow does, stranding it is
+            # how the exposure cap closes itself.
+            self._open_stake = max(0.0, self._open_stake - stake)
+            m.yes_cost = m.no_cost = m.fees = 0.0
+            return 0.0
+        won_yes = result >= 0.5
+        payout = (m.yes_qty if won_yes else 0) + (m.no_qty if not won_yes else 0)
+        pnl = payout - m.yes_cost - m.no_cost - m.fees
         self.realized += pnl
         self.bankroll += pnl
-        self.open_stake = max(0.0, self.open_stake - n * m.avg_cost)
-        m.position = 0
+        self._open_stake = max(0.0, self._open_stake - stake)
+        m.yes_qty = m.no_qty = 0
+        m.yes_cost = m.no_cost = m.fees = 0.0
         dd = (self.bankroll0 - self.bankroll) / self.bankroll0
         if dd > self.daily_loss_limit:
             self.halted = True
@@ -561,12 +624,52 @@ def selftest():
 
     eng5 = Engine(bankroll=1000.0, daily_loss_limit=0.10)
     eng5.on_market("X", "BRTI", 100.0, 0)
-    eng5.markets["X"].position, eng5.markets["X"].avg_cost = 500, 0.50
+    eng5.record_fill(Decision(ticker="X", side="yes", price=0.50, size=500))
     eng5.settle("X", 0.0)
     print(f"  {'drawdown kill switch':>34}: halted={eng5.halted} "
           f"({eng5.halt_reason})")
     if not eng5.halted:
         fails.append("drawdown limit did not halt trading")
+
+    # ---- exposure accounting must conserve --------------------------------
+    print("\n  EXPOSURE ACCOUNTING (committed cash must return to zero)")
+    e6 = Engine(bankroll=100_000.0, daily_loss_limit=1.0,
+                max_total_frac=1.0, max_stake_frac=1.0, max_size=10 ** 9)
+    e6.on_market("A", "BRTI", 100.0, 0)
+    e6.on_market("B", "BRTI", 100.0, 0)
+    # both legs of the same market, a second fill on top, and a fill for a
+    # market nobody registered -- each one used to strand cash
+    e6.record_fill(Decision(ticker="A", side="yes", price=0.40, size=100))
+    e6.record_fill(Decision(ticker="A", side="no", price=0.55, size=100))
+    e6.record_fill(Decision(ticker="A", side="yes", price=0.42, size=50))
+    e6.record_fill(Decision(ticker="B", side="yes", price=0.30, size=10))
+    took = e6.record_fill(Decision(ticker="GHOST", side="yes",
+                                   price=0.30, size=1000))
+    tracked, true = e6.audit_stake()
+    want = 100 * .40 + 100 * .55 + 50 * .42 + 10 * .30
+    print(f"  {'after 4 fills + 1 ghost':>34}: tracked ${tracked:,.2f}  "
+          f"books ${true:,.2f}  expected ${want:,.2f}  ghost booked={took}")
+    if took:
+        fails.append("booked a fill for a market the engine does not track")
+    if abs(tracked - true) > 1e-9 or abs(tracked - want) > 1e-9:
+        fails.append(f"open_stake {tracked:.2f} != books {true:.2f} "
+                     f"!= expected {want:.2f}")
+    # A holds 150 yes and 100 no: yes wins, so it pays 150.
+    p_a = e6.settle("A", 1.0)
+    p_b = e6.settle("B", 0.0)
+    e6.settle("A", 1.0)                       # settling twice must be a no-op
+    tracked, true = e6.audit_stake()
+    fee_a = (100 * fee_per_contract(.40) + 100 * fee_per_contract(.55)
+             + 50 * fee_per_contract(.42))
+    want_a = 150 - (100 * .40 + 100 * .55 + 50 * .42) - fee_a
+    want_b = -10 * .30 - 10 * fee_per_contract(.30)
+    print(f"  {'after settlement':>34}: tracked ${tracked:,.2f}  "
+          f"books ${true:,.2f}   P&L A ${p_a:+,.2f} (want ${want_a:+,.2f})"
+          f"  B ${p_b:+,.2f} (want ${want_b:+,.2f})")
+    if abs(tracked) > 1e-9 or abs(true) > 1e-9:
+        fails.append(f"${tracked:.2f} of exposure stranded after settlement")
+    if abs(p_a - want_a) > 1e-9 or abs(p_b - want_b) > 1e-9:
+        fails.append("settlement P&L does not match the two-leg cash flows")
 
     print("\n  KELLY SIZING (stake fraction f* = (p-q)/(1-q), quarter-Kelly)")
     e = Engine(bankroll=10_000.0, kelly=0.25, edge_haircut=1.0,

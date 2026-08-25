@@ -57,7 +57,20 @@ ND = NormalDist()
 # ===========================================================================
 # volatility estimators -- all strictly causal
 # ===========================================================================
-def ewma_sigma(rets, lam, warmup=50):
+# Sample-size floors, derived rather than guessed. tail_profile needs TAIL_MIN
+# vol-adjusted returns before its exceedance ratios mean anything; analyse()
+# spends half its returns choosing lambda and loses WARMUP more to the causal
+# estimator's burn-in, so it needs 2*(TAIL_MIN + WARMUP) to hand tail_profile a
+# usable sample. The old floor of 400 was a guess: at n=430 tail_profile got
+# 165 returns, returned None, and the summary table unpacked it as
+# r["raw"]["kurt"] -- a TypeError on any series with four to five hundred
+# settled markets, which is a completely ordinary amount of history.
+TAIL_MIN = 200
+WARMUP = 50
+MIN_RETURNS = 2 * (TAIL_MIN + WARMUP)
+
+
+def ewma_sigma(rets, lam, warmup=WARMUP):
     """sigma_t estimated from returns STRICTLY BEFORE t. Returns list of
     (index, sigma_t) for t >= warmup."""
     out = []
@@ -69,7 +82,7 @@ def ewma_sigma(rets, lam, warmup=50):
     return out
 
 
-def const_sigma(rets, warmup=50):
+def const_sigma(rets, warmup=WARMUP):
     """Expanding-window constant sigma -- also causal, the honest 'static' rival."""
     out, s2, n = [], 0.0, 0
     for i, r in enumerate(rets):
@@ -106,7 +119,7 @@ def tail_profile(z, label, quiet=False):
     """Observed/Gaussian exceedance ratios, with a significance guard so that
     clean noise cannot report a crossover (that bug was real -- see R2)."""
     n = len(z)
-    if n < 200:
+    if n < TAIL_MIN:
         return None
     sd = pstdev(z)
     if sd <= 0:
@@ -202,7 +215,7 @@ def analyse(rets, label, lam_grid=(0.80, 0.90, 0.94, 0.97, 0.99), quiet=False):
     """Choose lambda on the first half, report on the second. Returns the
     verdict dict."""
     n = len(rets)
-    if n < 400:
+    if n < MIN_RETURNS:
         return None
     half = n // 2
     best_lam, best_ll = None, -1e18
@@ -226,6 +239,11 @@ def analyse(rets, label, lam_grid=(0.80, 0.90, 0.94, 0.97, 0.99), quiet=False):
 
     t_raw = tail_profile(raw, f"{label} raw", quiet)
     t_cond = tail_profile(zc, f"{label} vol-adjusted", quiet)
+
+    if t_raw is None or t_cond is None:
+        # Belt and braces: the caller's only contract is "None means not
+        # enough data", so never hand back a dict with a None inside it.
+        return None
 
     sds = sorted(sd_map[i] for i in sorted(common))
     spread = sds[int(len(sds) * .9)] / sds[int(len(sds) * .1)] if sds else 1.0
@@ -279,6 +297,25 @@ def selftest():
                      f"({t['raw']['kurt']:.1f} -> {t['cond']['kurt']:.1f}) "
                      "-- discriminator gives false 'it was clustering'")
 
+    # Sample-size contract: analyse() returns either None or a dict whose
+    # 'raw' and 'cond' are both real. Anything in between is the TypeError the
+    # summary table used to die on, and it fired at ordinary history lengths.
+    print("\n  SAMPLE-SIZE CONTRACT (None, or a complete dict -- never both)")
+    bad_n = []
+    for n in (250, 399, 400, 430, 499, 500, 501, 700, 1200):
+        r = analyse(synth_garch(n, alpha=0.10, beta=0.85, seed=11),
+                    "size", quiet=True)
+        if r is not None and (r.get("raw") is None or r.get("cond") is None):
+            bad_n.append(n)
+    print(f"  {'n swept':>16}   250..1200      "
+          f"incomplete dicts: {len(bad_n)}")
+    if bad_n:
+        fails.append(f"analyse returned a dict with a None tail profile at "
+                     f"n={bad_n} -- the summary table unpacks that")
+    if analyse(synth_garch(MIN_RETURNS, alpha=0.1, beta=0.85, seed=12),
+               "size", quiet=True) is None:
+        fails.append(f"analyse refused its own stated floor of {MIN_RETURNS}")
+
     print("\n" + "-" * 78)
     print(f"  {'case':>22}{'best lam':>10}{'dLL vs const':>14}"
           f"{'kurt raw':>10}{'kurt adj':>10}{'vol p90/p10':>13}")
@@ -325,17 +362,24 @@ def main():
     print("#" * 78)
     print(f"  {'case':>22}{'n':>7}{'exkurt':>9}{'80%':>8}{'90%':>8}"
           f"{'96%':>8}{'98%':>8}{'99%':>8}{'crossover':>12}")
-    summary = {}
+    summary, thin = {}, []
     for s, mkts in sorted(data.items()):
         chain = sorted(mkts, key=lambda m: m["close"])
         rets = [math.log(m["settle"] / m["strike"]) for m in chain
                 if m.get("strike", 0) > 0 and m.get("settle", 0) > 0]
-        if len(rets) < 400:
+        if len(rets) < MIN_RETURNS:
+            thin.append((s, len(rets)))
             continue
         r = analyse(rets, s)
         if r:
             summary[s] = r
             print()
+        else:
+            thin.append((s, len(rets)))
+    if thin:
+        print(f"\n  {len(thin)} series had too little history "
+              f"(need {MIN_RETURNS} settled markets): "
+              + ", ".join(f"{k} ({v})" for k, v in sorted(thin)))
     if not summary:
         print("  not enough history in the cache.")
         return

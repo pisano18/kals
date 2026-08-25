@@ -207,6 +207,75 @@ def ac_t(x, lag, null=0.0):
     return r, (r - null) * math.sqrt(len(x) - lag)
 
 
+def segments_of(rows, field="r"):
+    """Split the flat row list back into its chains.
+
+    build_chains exists to guarantee we never difference across a hole, and
+    chain_returns then concatenated every chain into one list -- so lag-1
+    autocorrelation happily paired the last window before a two-day gap with
+    the first window after it. The pairs that straddle a hole are not
+    consecutive 15-minute windows and carry none of the overlap structure the
+    null is built on; including them biases every lag toward zero and inflates
+    n, which is the wrong direction on both counts.
+    """
+    segs, cur, cid = [], [], object()
+    for x in rows:
+        c = x.get("chain")
+        if c != cid:
+            if len(cur) > 1:
+                segs.append(cur)
+            cur, cid = [], c
+        cur.append(x[field])
+    if len(cur) > 1:
+        segs.append(cur)
+    return segs
+
+
+def autocorr_seg(segs, lag):
+    """Pooled autocorrelation over WITHIN-chain pairs only.
+
+    Returns (r, n_pairs). The variance is pooled across everything (it is not
+    a lagged quantity) and rescaled to the pairs actually used, so r stays a
+    correlation instead of being shrunk by the pairs the holes removed.
+    """
+    allv = [v for sg in segs for v in sg]
+    n = len(allv)
+    if n <= lag + 5:
+        return None, 0
+    m = mean(allv)
+    den = sum((v - m) ** 2 for v in allv)
+    if den <= 0:
+        return None, 0
+    num, npairs = 0.0, 0
+    for sg in segs:
+        for i in range(len(sg) - lag):
+            num += (sg[i] - m) * (sg[i + lag] - m)
+            npairs += 1
+    if npairs == 0:
+        return None, 0
+    return num / (den * npairs / n), npairs
+
+
+def ac_t_seg(segs, lag, null=0.0):
+    r, npairs = autocorr_seg(segs, lag)
+    if r is None:
+        return None, None
+    return r, (r - null) * math.sqrt(npairs)
+
+
+def box_pierce_seg(segs, lags=5):
+    """Sum_k n_k * r_k^2 ~ chi2(lags) under the null. The classic Ljung-Box
+    n(n+2)/(n-k) correction assumes one unbroken series; with chains the
+    honest sample size is the pair count at each lag."""
+    q = 0.0
+    for k in range(1, lags + 1):
+        r, npairs = autocorr_seg(segs, k)
+        if r is None:
+            continue
+        q += npairs * r * r
+    return q
+
+
 def ljung_box(x, lags=5):
     n = len(x)
     q = 0.0
@@ -257,11 +326,11 @@ def gate_chain(chains, label, tol=1e-6):
 def chain_returns(chains):
     """Log returns of the TWAP chain. Each one IS a window's (settle-strike)."""
     rows = []
-    for ch in chains:
+    for ci, ch in enumerate(chains):
         for m in ch:
             if m["strike"] > 0 and m["settle"] > 0:
                 rows.append({"r": math.log(m["settle"] / m["strike"]),
-                             "close": m["close"],
+                             "close": m["close"], "chain": ci,
                              "up": 1.0 if m["settle"] >= m["strike"] else 0.0})
     return rows
 
@@ -288,11 +357,17 @@ def test_vol_clustering(rows, label):
     sigma, a fast one is a durable edge with no directional view."""
     if len(rows) < 200:
         return None
-    a = [abs(x["r"]) for x in rows]
-    r1, t1 = ac_t(a, 1)
-    r5, _ = ac_t(a, 5)
-    r20, _ = ac_t(a, 20)
-    lb = ljung_box(a, 5)
+    segs = segments_of([{"r": abs(x["r"]), "chain": x.get("chain")}
+                        for x in rows])
+    a = [v for sg in segs for v in sg]
+    if len(a) < 200:
+        return None
+    r1, t1 = ac_t_seg(segs, 1)
+    r5, _ = ac_t_seg(segs, 5)
+    r20, _ = ac_t_seg(segs, 20)
+    if r1 is None or r5 is None or r20 is None:
+        return None
+    lb = box_pierce_seg(segs, 5)
     print(f"  {label:>11}{len(a):>7,}{r1:>9.3f}{t1:>8.1f}{r5:>9.3f}"
           f"{r20:>9.3f}{lb:>10.1f}   "
           f"{'CLUSTERS' if t1 > 3 else 'weak' if t1 > 2 else 'no'}")
@@ -303,16 +378,29 @@ def test_return_autocorr(rows, label):
     """Does window N's direction predict window N+1? Tradeable AT THE OPEN."""
     if len(rows) < 200:
         return None
-    r = [x["r"] for x in rows]
+    segs = segments_of(rows)
+    r = [v for sg in segs for v in sg]
+    if len(r) < 200:
+        return None
     # lag 1 carries the mechanical TWAP-overlap term; lag 2 does not (the
     # windows are far enough apart that the covariance is exactly zero).
-    r1, t1 = ac_t(r, 1, null=TWAP_RHO1)
-    r2, t2 = ac_t(r, 2)
-    # sign persistence is the tradeable version
-    s = [1 if x > 0 else 0 for x in r]
-    same = sum(1 for i in range(len(s) - 1) if s[i] == s[i + 1])
-    frac = same / (len(s) - 1)
-    se = math.sqrt(0.25 / (len(s) - 1))
+    # Both are measured within chains only -- the overlap term the null
+    # encodes exists between CONSECUTIVE windows and nowhere else, so a pair
+    # spanning a gap is being tested against a null that does not apply to it.
+    r1, t1 = ac_t_seg(segs, 1, null=TWAP_RHO1)
+    r2, t2 = ac_t_seg(segs, 2)
+    if r1 is None or r2 is None:
+        return None
+    # sign persistence is the tradeable version -- also within-chain only
+    same = npairs = 0
+    for sg in segs:
+        sgn = [1 if v > 0 else 0 for v in sg]
+        same += sum(1 for i in range(len(sgn) - 1) if sgn[i] == sgn[i + 1])
+        npairs += len(sgn) - 1
+    if npairs < 100:
+        return None
+    frac = same / npairs
+    se = math.sqrt(0.25 / npairs)
     print(f"  {label:>11}{len(r):>7,}{r1:>10.4f}{t1:>8.1f}{r2:>10.4f}"
           f"{t2:>8.1f}{100*frac:>10.2f}%{(frac-0.5)/se:>8.1f}   "
           f"{'SIGNAL' if abs(t1) > 3 else 'weak' if abs(t1) > 2 else 'no'}")
@@ -440,6 +528,41 @@ def selftest():
             fails.append(f"invented autocorrelation in clean noise (t={got['t']:.1f})")
         if rho != 0.0 and got and abs(got["ac1"] - rho) > 0.04:
             fails.append(f"failed to recover rho={rho} (got {got['ac1']:.3f})")
+
+    print("\n2b. HOLES IN THE HISTORY must not be differenced across")
+    print("   40 independent AR(1) chains, rho=+0.30, spliced end to end.")
+    print("   Within-chain the answer is 0.30. The 39 pairs that straddle a")
+    print("   splice are independent by construction, so a flat estimate over")
+    print("   the concatenation must come out LOW -- and did, because")
+    print("   chain_returns handed every consumer one undifferentiated list.")
+    rnd_h = random.Random(99)
+    RHO_H, NSEG, SEGLEN = 0.30, 40, 60
+    seg_rows = []
+    for ci in range(NSEG):
+        prev = rnd_h.gauss(0, 1)
+        for j in range(SEGLEN):
+            v = RHO_H * prev + math.sqrt(1 - RHO_H ** 2) * rnd_h.gauss(0, 1)
+            prev = v
+            seg_rows.append({"r": v, "chain": ci})
+    segs_h = segments_of(seg_rows)
+    r_seg, npairs = autocorr_seg(segs_h, 1)
+    r_flat = autocorr([x["r"] for x in seg_rows], 1)
+    print(f"\n   {'estimator':>22}{'pairs':>9}{'ac1':>9}{'error':>9}")
+    print(f"   {'within-chain':>22}{npairs:>9,}{r_seg:>9.3f}"
+          f"{r_seg - RHO_H:>+9.3f}")
+    print(f"   {'flat concatenation':>22}{len(seg_rows)-1:>9,}{r_flat:>9.3f}"
+          f"{r_flat - RHO_H:>+9.3f}")
+    if len(segs_h) != NSEG:
+        fails.append(f"segments_of found {len(segs_h)} chains, not {NSEG}")
+    if npairs != NSEG * (SEGLEN - 1):
+        fails.append(f"used {npairs} pairs, expected {NSEG*(SEGLEN-1)} "
+                     "-- some pair crossed a hole")
+    if abs(r_seg - RHO_H) > 0.05:
+        fails.append(f"within-chain estimate missed rho={RHO_H} "
+                     f"(got {r_seg:.3f})")
+    if abs(r_flat - RHO_H) <= abs(r_seg - RHO_H):
+        fails.append("the flat estimate was not worse than the within-chain "
+                     "one -- this test has stopped testing anything")
 
     print("\n3. VOL CLUSTERING -- must find injected GARCH, and only that")
     print(f"  {'injected':>11}{'n':>7}{'ac1|r|':>9}{'t':>8}{'ac5':>9}"
@@ -573,12 +696,32 @@ def main():
         except Exception:
             data = {}
     for s in a.series:
-        if s in data and len(data[s]) >= a.markets * 0.9:
+        have = len(data.get(s, ()))
+        if have >= a.markets * 0.9:
             continue
         print(f"  pulling {s} ...", flush=True)
-        data[s] = fetch_settled(s, a.markets)
-        print(f"    {len(data[s]):,} settled markets", flush=True)
-    json.dump(data, open(a.cache, "w"))
+        got = fetch_settled(s, a.markets)
+        # NEVER let a bad pull destroy the cache. This file is thousands of
+        # paginated API calls and it is the only 15-minute-spaced settlement
+        # history the project has; a rate limit, a dropped connection or a
+        # renamed field all return [] from fetch_settled, and assigning that
+        # over a good series -- then dumping -- deletes history that costs
+        # hours to rebuild. Keep whichever pull is larger.
+        if len(got) >= have:
+            data[s] = got
+            print(f"    {len(got):,} settled markets", flush=True)
+        else:
+            print(f"    pulled only {len(got):,}, KEEPING the cached "
+                  f"{have:,} -- treat this run's numbers for {s} as stale",
+                  flush=True)
+
+    # Write to a sibling and rename: json.dump straight onto the cache path
+    # truncates it the instant the file is opened, so any serialization error
+    # (or a Ctrl-C at the wrong moment) leaves an empty cache behind.
+    tmp_path = a.cache + ".tmp"
+    with open(tmp_path, "w") as fh:
+        json.dump(data, fh)
+    os.replace(tmp_path, a.cache)
 
     chains_by = {}
     print("\n" + "=" * 78)

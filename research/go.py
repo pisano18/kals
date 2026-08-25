@@ -88,7 +88,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 SELFTESTS = [
-    ("settlement math", ["settlement_math.py"]),
+    ("settlement math", ["settlement_math.py", "--selftest"]),
     ("chain harness", ["chain.py", "--selftest"]),
     ("vol discriminator", ["volmodel.py", "--selftest"]),
     ("model-vs-market", ["edge.py", "--selftest"]),

@@ -35,6 +35,7 @@ which is the right null: BRTI is a martingale by construction (CF's own
 methodology note -- it is built from order books, not trades).
 """
 
+import argparse
 import math
 import random
 from statistics import NormalDist
@@ -191,6 +192,16 @@ def monte_carlo(t_list, n=40_000, sigma=1.0, seed=7):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    # --selftest is accepted so this file matches every other gate in the
+    # repo. go.py used to invoke it with no flag at all; main() printed the
+    # word FAIL in its own output and then exited 0, so the gate could not
+    # fail and the run proceeded on a broken model. Failures are now collected
+    # and turned into a non-zero exit either way.
+    ap.add_argument("--selftest", action="store_true")
+    ap.parse_args()
+
+    fails = []
     print("=" * 78)
     print("SETTLEMENT MATH  --  exact discrete model, triple-checked")
     print("=" * 78)
@@ -204,6 +215,8 @@ def main():
           f"({100*(v-880)/880:+.3f}%), from discreteness. Immaterial.")
     print("   This is the number used to back sigma out of realized "
           "(settle-strike).")
+    if abs(v - 880) > 0.5:
+        fails.append(f"Var(settle-strike) = {v:.4f}, not ~880 sigma^2")
 
     # ---- B. conditional variance: closed form vs brute force
     print("\nB. Var(settle | info at second t) -- closed form vs brute force")
@@ -215,6 +228,8 @@ def main():
             print(f"   MISMATCH t={t}: closed {a:.6f} brute {b:.6f}")
     print(f"   checked {len(list(range(0,960,37)))+65} values of t, "
           f"{bad} mismatches.  {'PASS' if bad == 0 else '*** FAIL ***'}")
+    if bad:
+        fails.append(f"{bad} closed-form/brute-force variance mismatches")
 
     # ---- C. Monte Carlo
     tl = [60, 300, 600, 840, 899, 900, 910, 930, 950, 955, 957, 959]
@@ -232,6 +247,29 @@ def main():
         print(f"   {t:>5}{CLOSE_K-t:>6}{e:>13.4f}{m:>13.4f}{100*rel:>9.2f}%")
     print(f"   worst |rel err| = {100*worst:.2f}%  "
           f"({'PASS' if worst < 0.03 else '*** FAIL ***'} at 40k paths)")
+    if worst >= 0.03:
+        fails.append(f"Monte Carlo disagrees with the closed form by "
+                     f"{100*worst:.2f}%")
+    if abs(mc["uncond_var_diff"] / v - 1) > 0.05:
+        fails.append("Monte Carlo unconditional variance is off by more "
+                     f"than 5% ({100*(mc['uncond_var_diff']/v-1):+.2f}%)")
+
+    # p_yes must be exactly a half when the conditional mean sits on the
+    # strike, at every t, with and without a locked partial sum. If this ever
+    # drifts, every price the engine quotes is shifted.
+    half_bad = 0
+    for t in (0, 300, 800, 899, 920, 950, 958):
+        for S, drift in ((100.0, 0.0), (100.0, 3.0), (80_000.0, 0.0)):
+            n_locked = len([i for i in SETTLE_IDX if i <= t])
+            # the locked ticks sat at S+drift; the future ones sit at S
+            ls = n_locked * (S + drift)
+            k = cond_mean(t, S, locked_sum=ls)
+            if abs(p_yes(t, S, k, 1.0, locked_sum=ls) - 0.5) > 1e-9:
+                half_bad += 1
+    print(f"   p_yes at the money = 0.5 exactly: "
+          f"{'PASS' if half_bad == 0 else f'*** FAIL ({half_bad}) ***'}")
+    if half_bad:
+        fails.append(f"p_yes is not 0.5 at the money in {half_bad} cases")
 
     # ---- D. where RUNBOOK is wrong
     print("\n" + "=" * 78)
@@ -296,6 +334,15 @@ def main():
         print(row)
     print("\n   Gaps of several cents at exactly the prices PLAN.md targets.")
     print("   Any model that used r^3/10800 was mispricing its own signal.")
+
+    print("\n" + "=" * 78)
+    if fails:
+        print("*** SETTLEMENT MATH FAILED ***")
+        for f in fails:
+            print("   -", f)
+        raise SystemExit(1)
+    print("SETTLEMENT MATH PASSED -- closed form matches brute force exactly,")
+    print("Monte Carlo agrees within tolerance, and p_yes is 0.5 at the money.")
 
 
 if __name__ == "__main__":
