@@ -40,6 +40,10 @@ STAGES
             close-time cluster deletes the common crypto move, which is the
             term that made 12 correlated series worth only 1.22 independent
             ones. Measured power gain: 2.2x in t, 4.8x in variance.
+  feeds     the 3+ GB/day of constituent exchange books that NOTHING has ever
+            read. They are not correlated with the settlement index -- they are
+            its inputs. Does our replica lead Kalshi's published value, and does
+            book imbalance predict the next seconds of index?
   implied   what the market BELIEVES, read straight out of its prices: the
             implied volatility surface. Needs NO settlements, so it runs on
             however many hours exist. Level = variance risk premium (a premium,
@@ -83,6 +87,7 @@ SELFTESTS = [
     ("cross-section", ["cross.py", "--selftest"]),
     ("open window", ["openwindow.py", "--selftest"]),
     ("implied vol", ["implied.py", "--selftest"]),
+    ("constituent feeds", ["feeds.py", "--selftest"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so
@@ -110,6 +115,8 @@ STAGES = [
                     "--out", "{out}"], "{data}/cfbenchmarks_value"),
     ("implied", ["research/implied.py", "--data", "{data}", "--out", "{out}"],
      "{data}/cfbenchmarks_value"),
+    ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
+     "{feeds}"),
 ]
 
 
