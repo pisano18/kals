@@ -1,0 +1,12 @@
+# Live collector output -- never commit, never modify (see RUNBOOK hard rule 5)
+kalshi_data/
+feed_data/
+fulltape/
+logs/
+
+# Credentials -- the RSA key must never leave the box
+*.pem
+*.key
+
+__pycache__/
+*.pyc
