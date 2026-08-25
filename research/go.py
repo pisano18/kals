@@ -29,6 +29,9 @@ STAGES
             Needs fulltape/.
   replay    run the decision engine over recorded collector data and score the
             P&L against its null. Needs kalshi_data/ and fulltape/.
+  leadlag   does the book FOLLOW the index? PLAN_V3 ranks this the single most
+            likely surviving edge, because it is plumbing rather than opinion.
+            Needs kalshi_data/ and fulltape/.
 
 NOTHING HERE PLACES AN ORDER. There is no order code in this repository and no
 flag that enables one.
@@ -52,6 +55,7 @@ SELFTESTS = [
     ("null calibrator", ["placebo.py", "--selftest"]),
     ("decision engine", ["engine.py", "--selftest"]),
     ("replay", ["replay.py", "--selftest"]),
+    ("lead-lag", ["leadlag.py", "--selftest"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so
@@ -64,6 +68,8 @@ STAGES = [
      "chain_cache.json"),
     ("placebo", ["research/placebo.py", "--out", "{out}"], "{out}/markets.json"),
     ("replay", ["research/replay.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/cfbenchmarks_value"),
+    ("leadlag", ["research/leadlag.py", "--data", "{data}", "--out", "{out}"],
      "{data}/cfbenchmarks_value"),
 ]
 
