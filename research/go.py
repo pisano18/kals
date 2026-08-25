@@ -40,6 +40,10 @@ STAGES
             close-time cluster deletes the common crypto move, which is the
             term that made 12 correlated series worth only 1.22 independent
             ones. Measured power gain: 2.2x in t, 4.8x in variance.
+  proxy     which price is the maker ACTUALLY quoting off? Nothing forces them
+            to use BRTI; a desk quotes what it already has wired in. If they
+            quote Coinbase or a delayed BRTI, every divergence is a knowable
+            mispricing and nobody is wrong.
   pathstats is the contract price a martingale in its OWN right? Needs no
             index and no settlements. A violation is tradeable without ever
             holding to expiry -- enter, wait, exit -- which is a far better
@@ -99,6 +103,7 @@ SELFTESTS = [
     ("implied vol", ["implied.py", "--selftest"]),
     ("constituent feeds", ["feeds.py", "--selftest"]),
     ("path statistics", ["pathstats.py", "--selftest"]),
+    ("proxy reference", ["proxy.py", "--selftest"]),
 ]
 
 # Paths are all relative to the repo root, and every stage runs there, so
@@ -130,6 +135,8 @@ STAGES = [
      "{feeds}"),
     ("pathstats", ["research/pathstats.py", "--data", "{data}",
                    "--out", "{out}"], "{out}/markets.json"),
+    ("proxy", ["research/proxy.py", "--data", "{data}", "--feeds", "{feeds}",
+               "--out", "{out}"], "{data}/cfbenchmarks_value"),
 ]
 
 

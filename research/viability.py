@@ -153,8 +153,48 @@ def trades_to_significance(net, q, target_t=2.0, n_series=12, rho=0.8):
     return n_eff * inflate / n_series * n_series, n_eff
 
 
+def hedge_table(S=78788.0, sigma=5.92, bps=3.0):
+    """Can a Kalshi binary be delta-hedged with a crypto perp? No, and the
+    margin is enormous rather than marginal.
+
+    A $1-payout binary near the money has a huge delta w.r.t. the underlying,
+    because the payoff is a step function: d(P)/d(S) = phi(z)/sd * (r_live/60),
+    and sd collapses toward expiry. At 30s to close that is ~$1,600 of BTC
+    exposure to hedge ONE contract that can never pay more than $1.
+
+    Round-tripping that at 3bp -- about the best a retail perp account gets --
+    costs multiples of any edge being hunted. This closes cross-venue delta
+    hedging permanently and forces every strategy to be self-hedging (paired
+    Kalshi legs) or deliberately unhedged and sized for it."""
+    print("=" * 78)
+    print("CAN YOU DELTA-HEDGE WITH A PERP?  (spoiler: no, by 1-2 orders)")
+    print("=" * 78)
+    print(f"  {'ttc':>6}{'sd($)':>10}{'d(P)/d(S)':>12}"
+          f"{'$ BTC per contract':>21}{'round trip @3bp':>18}")
+    for tau in (900, 300, 120, 60, 30):
+        r_live = min(tau, 60)
+        var = (tau - 39.4972) if tau >= 60 else \
+            tau * (tau + 1) * (2 * tau + 1) / 6.0 / 3600.0
+        sd = math.sqrt(var) * sigma
+        dPdS = 0.3989422804 / sd * (r_live / 60.0)
+        usd = dPdS * S
+        cost = usd * bps / 10000.0 * 2
+        print(f"  {tau:>6}{sd:>10.1f}{100*dPdS:>11.4f}c{usd:>20.2f}"
+              f"{100*cost:>17.2f}c")
+    print("\n  Against edges of 0.5-2c per contract, hedging costs 10.9c at")
+    print("  900s and 98c at 30s. That is 5x to 200x the edge, at every")
+    print("  maturity, for the cheapest perp fees a retail account can get.")
+    print("\n  => CROSS-VENUE DELTA HEDGING IS PERMANENTLY UNECONOMIC HERE.")
+    print("     Not 'depends on fees' -- off by one to two orders of magnitude.")
+    print("     Consequence: every strategy must be SELF-HEDGING (paired Kalshi")
+    print("     legs, e.g. the cross-sectional trade) or deliberately unhedged")
+    print("     and sized for the full loss. There is no third option.")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--hedge", action="store_true",
+                    help="price a perp delta hedge and close the question")
     ap.add_argument("--edge", type=float, default=None,
                     help="gross edge in dollars, e.g. 0.01 for one cent")
     ap.add_argument("--price", type=float, default=0.90)
@@ -170,6 +210,10 @@ def main():
     print("=" * 78)
     print("  Feed this a MEASURED edge, never a modelled one. It assumes the")
     print("  edge is real and prices the consequences.\n")
+
+    if a.hedge:
+        hedge_table()
+        return
 
     if a.edge is None:
         print("  SURVEY -- net of the real quadratic fee and one tick of spread")
