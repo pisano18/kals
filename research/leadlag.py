@@ -204,6 +204,43 @@ def report(res, label):
     return {"peak": best, "sum_beta": tot}
 
 
+def value_of_lead(sigma_1s, zs=(0.0, 0.67, 1.28)):
+    """What is ONE SECOND of lead on the index worth, in cents?
+
+    A one-second index move of sigma_1s shifts the settlement mean by
+    (r_live/60)*sigma_1s, and a shift in the mean moves fair value by
+    phi(z)/sd. So:
+
+        value = phi(z) * (r_live/60) * sigma_1s / sd(tau)
+
+    This is why the lag profile above matters so much near expiry: sd(tau)
+    collapses as tau^1.5 inside the averaging window while r_live/60 only falls
+    linearly, so the value of being early RISES as the close approaches. It is
+    also why the engine refuses to trade inside 15 seconds -- that is where the
+    edge is largest and where a home connection is least likely to win the
+    race for it.
+    """
+    print("\n" + "=" * 78)
+    print("WHAT ONE SECOND OF LEAD IS WORTH")
+    print("=" * 78)
+    print(f"  index sd = {sigma_1s:.4f} per second. Multiply by the measured")
+    print("  lag above to get the size of the standing mispricing.\n")
+    print(f"  {'ttc':>6}{'r_live':>8}{'sd(tau)':>10}" +
+          "".join(f"{f'z={z:.2f}':>11}" for z in zs))
+    for tau in (600, 300, 180, 120, 90, 60, 45, 30, 20, 15):
+        r_live = min(tau, N_AVG)
+        sd = math.sqrt(var_factor(tau, [1.0])) * sigma_1s
+        if sd <= 0:
+            continue
+        row = f"  {tau:>6}{r_live:>8}{sd:>10.2f}"
+        for z in zs:
+            phi = math.exp(-0.5 * z * z) / math.sqrt(2 * math.pi)
+            row += f"{100 * phi * (r_live / 60.0) * sigma_1s / sd:>10.2f}c"
+        print(row)
+    print("\n  z=0 is a coin-flip contract, z=1.28 is a 90c favourite.")
+    print("  Compare against the cost bar: ~2.25pp at 50c, ~0.38pp at 95c.")
+
+
 def cumulative(res):
     print(f"\n  CUMULATIVE RESPONSE -- how much of a fair-value move the book")
     print(f"  has incorporated by k seconds. The shortfall is what is sitting")
@@ -296,6 +333,9 @@ def main():
     got = report(res, "real")
     if res:
         cumulative(res)
+    biggest = max((v for v in g.values() if v), default=None)
+    if biggest:
+        value_of_lead(math.sqrt(biggest))
     print("\n  Caveats: mid is quantized to the tick grid, which adds noise to")
     print("  the dependent variable but does not bias the slope. A peak at a")
     print("  negative lag almost certainly means a clock problem, not")
