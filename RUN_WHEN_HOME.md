@@ -39,7 +39,52 @@ short cadence in the ticker name (15M, 30M, 1H).
 
 ---
 
-## 3. If `replay` / `leadlag` report zero quotes parsed
+## 3. Start recording the comparison markets (do this first — it's collection)
+
+`kalshi_collector.py` deliberately excludes `KXCRYPTOLEAD15M` and
+`KXCRYPTOCOMP15M`. PLAN dismissed them as "not decomposable into the
+single-asset binaries, therefore not an arb" — true, and the wrong conclusion.
+
+Those contracts price **relative** performance, so their price depends on the
+CORRELATION between two coins:
+
+```
+P(A beats B) = Phi( (d_A - d_B) / sd )
+sd^2 = 880 * (sigma_A^2 + sigma_B^2 - 2 * rho * sigma_A * sigma_B)
+```
+
+The numerator is computable from the index feeds we already record. So inverting
+their price gives **implied correlation** — and realized correlation is directly
+measurable from the same feeds. Implied correlation persistently exceeding
+realized is one of the most durable risk premia in finance; the whole dispersion
+trading business exists because of it. Nobody has to be wrong for it to pay.
+
+Right now we record none of it. Two things:
+
+**(a) Add them to the collector.** Stop the watchdog, edit `run_all.ps1`, add
+`--series` with the full list plus the two comparison series, restart:
+
+```
+kalshi_collector.py --key-id $KeyId --key-file $KeyFile --out ./kalshi_data --series KXBTC15M KXETH15M KXSOL15M KXXRP15M KXDOGE15M KXBNB15M KXADA15M KXBCH15M KXZEC15M KXHYPE15M KXNEAR15M KXTON15M KXCRYPTOLEAD15M KXCRYPTOCOMP15M
+```
+
+Disk cost is small — two more series against fourteen.
+
+**(b) Send me the exact contract terms**, so I build against the real spec
+rather than my reconstruction of it:
+
+```powershell
+curl.exe -s "https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=KXCRYPTOCOMP15M&status=settled&limit=2" > comp.json
+curl.exe -s "https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=KXCRYPTOLEAD15M&status=settled&limit=2" > lead.json
+```
+
+I want `rules_primary`, `floor_strike`, `expiration_value` and the ticker
+format. I will not write the correlation model until I have seen them — the
+formula above is my reconstruction, not confirmed.
+
+---
+
+## 4. If `replay` / `leadlag` report zero quotes parsed
 
 ```powershell
 python research\doctor.py --data C:\kals\kalshi_data --feeds C:\kals\feed_data
@@ -51,7 +96,7 @@ itself. If not, the dump shows me the raw message shape.
 
 ---
 
-## 4. Refresh the settled-market outcomes
+## 5. Refresh the settled-market outcomes
 
 Several stages need `fulltape/markets.json` to be current — it maps tickers to
 strike and result. If it's stale, markets recorded overnight won't have outcomes:
@@ -63,7 +108,7 @@ python kalshi_fulltape.py --data .\kalshi_data --out .\fulltape --markets 400
 
 ---
 
-## 5. The maker-fee question, if you feel like it
+## 6. The maker-fee question, if you feel like it
 
 `PLAN.md` §9 action 1. Secondary sources say maker = 25% of taker (0.0175 vs
 0.07), but not confirmed from Kalshi's own schedule and it's unclear whether
