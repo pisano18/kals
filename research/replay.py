@@ -559,6 +559,54 @@ def selftest():
             fails.append("a genuinely profitable strategy did not clear "
                          "its own outcome-redraw null")
 
+    # THE REAL WIRE FORMAT. Kalshi sends the ticker channel's prices as dollar
+    # STRINGS under yes_bid_dollars / yes_ask_dollars and sizes under
+    # yes_bid_size_fp / yes_ask_size_fp. load_quotes asked for yes_bid and
+    # yes_ask, found neither, and returned {} -- so in the first real run
+    # SEVEN stages (replay, leadlag, cross, openwindow, implied, pathstats,
+    # proxy) each printed "could not locate ticker/bid/ask fields" and then
+    # exited 0.
+    import tempfile as _tf, shutil as _sh
+    tmp = _tf.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmp, "ticker"))
+        N = 300
+        with gzip.open(os.path.join(tmp, "ticker", "20260826T00.jsonl.gz"),
+                       "wt", encoding="utf-8") as f:
+            for i in range(N):
+                bid = 0.40 + (i % 5) * 0.01
+                f.write(json.dumps({
+                    "type": "ticker", "sid": 1,
+                    "_rx_ms": (1_760_000_000 + i) * 1000,
+                    "msg": {"market_ticker": f"KXBTC15M-A{i % 3:02d}",
+                            "yes_bid_dollars": f"{bid:.4f}",
+                            "yes_ask_dollars": f"{bid + 0.01:.4f}",
+                            "yes_bid_size_fp": "500.00",
+                            "yes_ask_size_fp": "500.00",
+                            "ts": 1_760_000_000 + i}}) + "\n")
+        q = load_quotes(tmp, verbose=False, schema={})
+        n_rows = sum(len(v) for v in q.values())
+        print("\n  KALSHI WIRE FORMAT (yes_bid_dollars as a string)")
+        print(f"  {'markets loaded':>34}: {len(q)}")
+        print(f"  {'quote rows':>34}: {n_rows} of {N}")
+        if not q:
+            fails.append("load_quotes returned NOTHING on Kalshi's real "
+                         "ticker field names -- this is the break that made "
+                         "seven stages produce no information while exiting 0")
+        elif n_rows < N * 0.9:
+            fails.append(f"load_quotes kept only {n_rows} of {N} rows on the "
+                         "real wire format")
+        else:
+            sample = next(iter(q.values()))[0]
+            _t, b, a, bs, _as = sample
+            print(f"  {'first row bid/ask':>34}: {b:.2f} / {a:.2f}   "
+                  f"size {bs:.0f}")
+            if not (0.30 < b < 0.60 and a > b):
+                fails.append(f"dollar strings decoded to bid={b}, ask={a} -- "
+                             "the price scale is wrong")
+    finally:
+        _sh.rmtree(tmp, ignore_errors=True)
+
     print("\n" + "=" * 78)
     if fails:
         print("*** SELF-TEST FAILED ***")

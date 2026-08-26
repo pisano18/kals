@@ -123,6 +123,21 @@ SELFTESTS = [
 # Paths are all relative to the repo root, and every stage runs there, so
 # ./chain_cache.json means the same thing to the stage that writes it and the
 # stage that reads it.
+# Phrases a stage prints when its loader came back empty. Matching on the
+# stage's own words is crude, but the alternative is every stage growing a
+# machine-readable exit protocol, and the failure this catches -- eight
+# stages reporting ok on no data -- is worth catching crudely today.
+EMPTY_MARKERS = (
+    "could not locate ticker/bid/ask fields",
+    "no ticker messages on disk",
+    "Nothing rebuilt",
+    "no quotes",
+    "nothing to analyse",
+    "no cfbenchmarks_value data",
+    "not enough overlapping data",
+    "0 markets",
+)
+
 STAGES = [
     # doctor runs FIRST: it writes schema.json, which every loader downstream
     # reads instead of guessing at field names.
@@ -257,6 +272,7 @@ def main():
 
     print("\nSTAGES")
     chunks.append("\n## Stages\n")
+    empties = []
     for name, cmd, need in STAGES:
         if a.only and a.only != name:
             continue
@@ -273,13 +289,36 @@ def main():
         if a.quick and name in ("placebo",):
             cmd += ["--reps", "60"]
         rc, out, dt = run(cmd, ROOT, 600 if a.quick else 3600)
-        print(f"  {name:>20}  {'ok' if rc == 0 else f'exit {rc}'}  ({dt:.0f}s)")
-        chunks.append(f"\n### {name}\n\n```\npython {' '.join(cmd)}\n```\n")
+        # A STAGE THAT LOADED NOTHING IS NOT "ok". The first real run reported
+        # ok for all thirteen while eight of them had no data at all: Kalshi
+        # had renamed its websocket fields, every loader returned empty, and
+        # every stage exited 0. Report that as EMPTY so it cannot read as a
+        # null result.
+        empty = rc == 0 and any(p in out for p in EMPTY_MARKERS)
+        label = ("EMPTY -- no data loaded" if empty
+                 else "ok" if rc == 0 else f"exit {rc}")
+        if empty:
+            empties.append(name)
+        print(f"  {name:>20}  {label}  ({dt:.0f}s)")
+        chunks.append(f"\n### {name}{' — EMPTY' if empty else ''}\n\n"
+                      f"```\npython {' '.join(cmd)}\n```\n")
         chunks.append(f"\nexit {rc}, {dt:.0f}s\n\n```\n{out[-60000:]}\n```\n")
         # after EVERY stage, not once at the end. Stages run for up to an hour
         # each; a Ctrl+C or a timeout two hours in used to throw away every
         # result already computed.
         write_report(a.report, chunks)
+
+    if empties:
+        msg = ("\n**%d stage(s) loaded NO DATA and must not be read as a null "
+               "result: %s.** A stage that finds nothing because its loader "
+               "returned an empty sample has measured nothing at all. Check "
+               "the `doctor` stage's schema section against what the loaders "
+               "asked for.\n" % (len(empties), ", ".join(empties)))
+        chunks.append(msg)
+        print(f"\n*** {len(empties)} stage(s) loaded NO DATA: "
+              f"{', '.join(empties)}")
+        print("    That is not a null result. See the doctor stage's schema "
+              "section.")
 
     chunks.append("\n## How to read this\n\n"
                   "- `n` is always a number of MARKETS or CLOSE-TIME CLUSTERS, "

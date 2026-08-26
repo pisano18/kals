@@ -115,25 +115,76 @@ class Book:
 
 
 # ===========================================================================
-def _levels(v):
-    """Accept [[price, size], ...] or [{'price':p,'size':s}, ...]."""
+def _cents(v, scale):
+    """A price as integer cents. `scale` is decided ONCE for the whole feed.
+
+    Never per-observation: on the tapered deci-cent grid a half-cent quote is
+    written "0.5", which any `x > 1` test reads as fifty cents. That exact line
+    produced a 75c/contract phantom edge once already.
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(round(f * scale))
+
+
+def _levels(v, scale=1.0):
+    """Accept [[price, size], ...] or [{'price':p,'size':s}, ...].
+
+    Values may be strings: Kalshi sends prices as "0.4700" and sizes as
+    fractional strings like "1.53", so int() on them raises and float() does
+    not.
+    """
     out = []
     if not isinstance(v, list):
         return out
     for it in v:
         if isinstance(it, (list, tuple)) and len(it) >= 2:
-            try:
-                out.append((int(it[0]), float(it[1])))
-            except (TypeError, ValueError):
-                continue
+            p, q = it[0], it[1]
         elif isinstance(it, dict):
-            p = it.get("price", it.get("p"))
-            s = it.get("size", it.get("s", it.get("quantity")))
-            try:
-                out.append((int(p), float(s)))
-            except (TypeError, ValueError):
-                continue
+            p = it.get("price", it.get("price_dollars", it.get("p")))
+            q = it.get("size", it.get("size_fp", it.get("s",
+                        it.get("quantity", it.get("delta_fp")))))
+        else:
+            continue
+        c = _cents(p, scale)
+        try:
+            sz = float(q)
+        except (TypeError, ValueError):
+            continue
+        if c is not None and sz > 0:
+            out.append((c, sz))
     return out
+
+
+def _resolve_ob(sample):
+    """Field paths and the price unit for the orderbook channels, read off the
+    data rather than assumed.
+
+    The first real run found 68,976,084 of 68,976,084 deltas 'unparsed',
+    because the code asked for `price` and `delta` while Kalshi sends
+    `price_dollars` and `delta_fp`. It exited 0.
+    """
+    paths = defaultdict(lambda: defaultdict(int))
+    for m in sample:
+        walk_paths(m, out=paths)
+    f = {c: find_field(paths, c) for c in
+         ("ticker", "price", "delta", "taker", "seq", "ts")}
+    vals = []
+    for m in sample:
+        d = m.get("msg") or {}
+        v = get_path(m, f["price"]) if f.get("price") else None
+        if v is None:
+            v = d.get("price_dollars", d.get("price"))
+        try:
+            vals.append(abs(float(v)))
+        except (TypeError, ValueError):
+            pass
+    # one decision for the whole feed, from the aggregate maximum
+    mx = max(vals, default=0.0)
+    f["scale"] = 100.0 if mx <= 1.5 else 1.0
+    return f
 
 
 def rebuild(data_dir, verbose=True, max_msgs=None):
@@ -170,8 +221,41 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
             print("  no orderbook channels on disk")
         return {}, stats
 
+    # Resolve the field names and the price unit from a sample of the ACTUAL
+    # data before reading any of it. Asking for the names we expect is how the
+    # whole channel came back unparsed.
+    sample = []
+    for fp in files:
+        try:
+            for line in salvage_lines(fp):
+                try:
+                    sample.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+                if len(sample) >= 2000:
+                    break
+        except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
+            pass
+        if len(sample) >= 2000:
+            break
+    F = _resolve_ob(sample)
+    scale = F["scale"]
+    if verbose:
+        print(f"  book: fields {dict((k, v) for k, v in F.items() if v)}")
+
+    def fget(m, concept, *fallbacks):
+        p = F.get(concept)
+        v = get_path(m, p) if p else None
+        if v is None:
+            d = m.get("msg") or {}
+            for fb in fallbacks:
+                v = d.get(fb)
+                if v is not None:
+                    break
+        return v
+
     def ts_of(m, d):
-        t = parse_ts(d.get("ts")) if isinstance(d, dict) else None
+        t = parse_ts(fget(m, "ts", "ts")) if isinstance(d, dict) else None
         return t or (m.get("_rx_ms") or 0) / 1000.0
 
     # STREAMED into by_ticker, with no `rows` list in between. It used to hold
@@ -210,13 +294,16 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
                     # it): fall back to the message clock, the best available
                     order = ((rx / 1000.0) if isinstance(rx, (int, float))
                              else t)
-                    seq = d.get("seq")
+                    seq = fget(m, "seq", "seq")
                     if is_snap:
-                        payload = (_levels(d.get("yes")), _levels(d.get("no")))
+                        payload = (_levels(d.get("yes"), scale),
+                                   _levels(d.get("no"), scale))
                     else:
-                        payload = (str(d.get("side", "")).lower(),
-                                   d.get("price"),
-                                   d.get("delta", d.get("change")))
+                        payload = (
+                            str(fget(m, "taker", "side") or "").lower(),
+                            _cents(fget(m, "price", "price_dollars", "price"),
+                                   scale),
+                            fget(m, "delta", "delta_fp", "delta", "change"))
                     by_ticker[tk].append(
                         (order, seq if isinstance(seq, int) else -1,
                          0 if is_snap else 1, n_read, is_snap, payload,
@@ -241,6 +328,10 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
                 stats["snapshots"] += 1
             else:
                 side, price, change = payload
+                try:
+                    change = float(change)
+                except (TypeError, ValueError):
+                    change = None
                 if price is None or change is None or side not in ("yes", "no"):
                     stats["unparsed_delta"] += 1
                     continue
@@ -378,6 +469,62 @@ def selftest():
             fails.append(f"{bad} rebuilt states disagree with ground truth")
         if len(g) < len(truth) * 0.9:
             fails.append("rebuilt far fewer states than expected")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # THE REAL WIRE FORMAT. Kalshi sends prices as dollar STRINGS
+    # ("0.4700") under `price_dollars`, and sizes as fractional strings under
+    # `delta_fp`. This file asked for `price` and `delta` and got None for
+    # both: in the first real run, 68,976,084 of 68,976,084 deltas came back
+    # "unparsed", 0 markets, 0 quotes -- and the stage exited 0.
+    tmp = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmp, "orderbook_delta"))
+        os.makedirs(os.path.join(tmp, "orderbook_snapshot"))
+        yes = {40: 500.0, 39: 800.0}
+        no = {58: 400.0, 57: 900.0}
+        with gzip.open(os.path.join(tmp, "orderbook_snapshot",
+                                    "20260826T00.jsonl.gz"), "wt",
+                       encoding="utf-8") as f:
+            f.write(json.dumps({"type": "orderbook_snapshot",
+                                "_rx_ms": 1000 * 1000, "seq": 1, "msg": {
+                "market_ticker": "M9",
+                "yes": [[f"{p/100:.4f}", str(sz)] for p, sz in yes.items()],
+                "no": [[f"{p/100:.4f}", str(sz)] for p, sz in no.items()],
+                "ts": 1000}}) + "\n")
+        n_delta = 120
+        with gzip.open(os.path.join(tmp, "orderbook_delta",
+                                    "20260826T00.jsonl.gz"), "wt",
+                       encoding="utf-8") as f:
+            for i in range(n_delta):
+                f.write(json.dumps({
+                    "type": "orderbook_delta",
+                    "_rx_ms": (1000 + i + 1) * 1000, "seq": 2 + i, "msg": {
+                        "market_ticker": "M9",
+                        "price_dollars": "0.4000" if i % 2 else "0.3900",
+                        "delta_fp": "10.00" if i % 3 else "-5.00",
+                        "side": "yes",
+                        "ts": str(1000 + i + 1)}}) + "\n")
+        got, (st, _) = rebuild(tmp, verbose=False)
+        n_states = len(got.get("M9", []))
+        print("\n  Kalshi wire format (price_dollars / delta_fp as strings)")
+        print(f"  {'deltas parsed':>34}: {st.get('deltas', 0)} of {n_delta}")
+        print(f"  {'unparsed':>34}: {st.get('unparsed_delta', 0)}")
+        print(f"  {'book states emitted':>34}: {n_states}")
+        if st.get("unparsed_delta"):
+            fails.append(f"{st['unparsed_delta']} deltas unparsed on the real "
+                         "wire format -- the field names or units are wrong")
+        if st.get("deltas", 0) < n_delta:
+            fails.append(f"parsed only {st.get('deltas', 0)} of {n_delta} "
+                         "deltas on the real wire format")
+        if n_states < n_delta:
+            fails.append(f"emitted {n_states} book states from {n_delta} "
+                         "deltas on the real wire format")
+        prices = {int(round(r[1] * 100)) for r in got.get("M9", [])}
+        print(f"  {'yes-bid cents seen':>34}: {sorted(prices)}")
+        if not prices <= {39, 40}:
+            fails.append("dollar strings converted to the wrong cents: "
+                         f"{sorted(prices)}, expected a subset of [39, 40]")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

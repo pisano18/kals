@@ -51,19 +51,36 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gzsalvage import iter_lines as salvage_lines   # noqa: E402
 
 # concepts we need to locate, and the names they plausibly go by
+# Kalshi suffixes its websocket fields with the UNIT: `_dollars` for prices
+# (sent as strings like "0.4700") and `_fp` for fixed-point quantities (also
+# strings, and genuinely fractional -- counts come back as "1.53"). Matching on
+# the bare names silently found nothing: in the first real run, 68,976,084 of
+# 68,976,084 orderbook deltas were unparsed and seven stages ran on zero
+# quotes, every one of them exiting 0. SUFFIXES below strips those so a future
+# rename cannot repeat it.
 FIELD_CANDIDATES = {
     "ticker":    ["market_ticker", "ticker", "market", "market_id"],
-    "yes_bid":   ["yes_bid", "bid", "best_bid", "yes_bid_price", "bid_price"],
-    "yes_ask":   ["yes_ask", "ask", "best_ask", "yes_ask_price", "ask_price"],
-    "bid_size":  ["yes_bid_size", "bid_size", "best_bid_size", "bid_qty"],
-    "ask_size":  ["yes_ask_size", "ask_size", "best_ask_size", "ask_qty"],
-    "price":     ["yes_price", "yes_price_dollars", "price", "last_price"],
+    "yes_bid":   ["yes_bid", "yes_bid_dollars", "bid", "best_bid",
+                  "yes_bid_price", "bid_price"],
+    "yes_ask":   ["yes_ask", "yes_ask_dollars", "ask", "best_ask",
+                  "yes_ask_price", "ask_price"],
+    "bid_size":  ["yes_bid_size", "yes_bid_size_fp", "bid_size",
+                  "best_bid_size", "bid_qty"],
+    "ask_size":  ["yes_ask_size", "yes_ask_size_fp", "ask_size",
+                  "best_ask_size", "ask_qty"],
+    "price":     ["yes_price", "yes_price_dollars", "price", "price_dollars",
+                  "last_price"],
+    "delta":     ["delta", "delta_fp", "change", "size_delta"],
     "count":     ["count", "count_fp", "size", "quantity"],
     "taker":     ["taker_side", "side", "aggressor", "taker"],
     "ts":        ["ts", "created_time", "timestamp", "time", "received_at"],
     "seq":       ["seq", "sequence", "seq_num"],
     "index_id":  ["index_id", "index", "id", "index_ticker"],
 }
+
+# Unit suffixes Kalshi appends. Stripped only AFTER every exact match has been
+# tried, so an exact hit always wins and the priority order is preserved.
+SUFFIXES = ("_dollars", "_fp", "_cents", "_price", "_value")
 
 
 def read_jsonl_gz(pattern, limit=None):
@@ -117,20 +134,36 @@ def sample_channel(data_dir, chan, n=4000):
     return msgs
 
 
+def _strip_unit(leaf):
+    for suf in SUFFIXES:
+        if leaf.endswith(suf) and len(leaf) > len(suf):
+            return leaf[:-len(suf)]
+    return leaf
+
+
 def find_field(paths, concept):
     """Match a concept to a real path, preferring the shallowest match and the
-    earliest candidate name."""
-    hits = []
-    for cand in FIELD_CANDIDATES[concept]:
-        for p in paths:
-            leaf = p.split(".")[-1].replace("(json)", "")
-            if leaf == cand:
-                hits.append((FIELD_CANDIDATES[concept].index(cand),
-                             p.count("."), p))
-    if not hits:
-        return None
-    hits.sort()
-    return hits[0][2]
+    earliest candidate name.
+
+    Exact matches first, then unit-suffix-tolerant ones. An exact hit always
+    outranks a stripped one, so nothing that used to resolve can be stolen by
+    the fallback -- but `yes_bid_dollars` now answers to `yes_bid`, which it
+    did not, which is why the largest channel on disk went entirely unread.
+    """
+    cands = FIELD_CANDIDATES[concept]
+    for stripped in (False, True):
+        hits = []
+        for i, cand in enumerate(cands):
+            for p in paths:
+                leaf = p.split(".")[-1].replace("(json)", "")
+                if stripped:
+                    leaf = _strip_unit(leaf)
+                if leaf == cand:
+                    hits.append((i, p.count("."), p))
+        if hits:
+            hits.sort()
+            return hits[0][2]
+    return None
 
 
 def get_path(obj, path):
