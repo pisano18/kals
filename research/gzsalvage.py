@@ -292,15 +292,19 @@ def main():
         n = b = std = sal = 0
         for fp in sorted(glob.glob(os.path.join(d, "*.jsonl.gz"))):
             n += 1
-            s0 = 0
+            s0, healthy = 0, True
             try:
                 with gzip.open(fp, "rt", encoding="utf-8") as f:
                     for _ in f:
                         s0 += 1
             except Exception:
+                healthy = False
                 b += 1
             std += s0
-            sal += sum(1 for _ in iter_lines(fp))
+            # a healthy file salvages to exactly what the standard reader got,
+            # so re-reading it proves nothing and doubles the cost of a survey
+            # over gigabytes
+            sal += s0 if healthy else sum(1 for _ in iter_lines(fp))
         if not n:
             continue
         tot["files"] += n

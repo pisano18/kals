@@ -363,12 +363,21 @@ def step_preflight(ctx):
     # collector cannot write a gzip trailer on Windows, so any hour in which
     # it restarted reads back as a broken file and every loader in this repo
     # silently discarded it.
-    rc, out, _ = run([os.path.join("research", "gzsalvage.py"),
-                      "--data", kd], REPO, 1800, "gzsalvage")
+    # STREAMED, not captured. This walks every recorded file, and on a couple
+    # of gigabytes that is minutes of total silence sitting between two lines
+    # of preflight -- which is exactly the dead-terminal problem streaming was
+    # added to solve, reintroduced in the one step that runs before the user
+    # has any reason to trust the script yet.
+    say("surveying recorded files for restart damage (walks every .gz; on a "
+        "few GB this takes minutes)")
+    rc, out, _ = run_stream([os.path.join("research", "gzsalvage.py"),
+                             "--data", kd], REPO, 3600, "gzsalvage")
     ctx["raw"]["salvage"] = out
+    # into the run log only -- the lines have already gone past on screen, and
+    # echoing them again just reads as a stutter
     for ln in out.splitlines():
         if ln.strip() and ("unreadable" in ln or "Salvage recovers" in ln):
-            say(ln.strip())
+            LOG.append(ln.strip())
 
     try:
         free = shutil.disk_usage(ctx["data_root"]).free
