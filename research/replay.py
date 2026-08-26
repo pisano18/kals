@@ -188,17 +188,29 @@ def load_quotes(data_dir, verbose=True, schema=None):
         schema = load_schema()
     tick = (schema or {}).get("ticker") or {}
 
-    msgs = list(read_jsonl_gz(os.path.join(data_dir, "ticker", "*.jsonl.gz")))
-    if not msgs:
-        if verbose:
-            print("  quotes: no ticker messages on disk")
-        return {}
+    pattern = os.path.join(data_dir, "ticker", "*.jsonl.gz")
 
-    # discover from the data if no schema was supplied
+    # STREAMED, not list()ed. This used to hold every ticker message as a
+    # Python dict, then a second full copy as tuples, then a third as a
+    # doubled list of prices for the scale inference. Decoded dicts run 10-20x
+    # the compressed size, seven stages each do this independently, and a
+    # machine with a couple of gigabytes of ticker data on disk does not
+    # survive it. Three passes over a generator cost disk reads; one pass into
+    # RAM costs the box.
+
+    # discovery pass: at most 1500 messages, then the generator is dropped
     if not tick.get("yes_bid"):
         paths = defaultdict(lambda: defaultdict(int))
-        for m in msgs[:1500]:
+        seen = 0
+        for m in read_jsonl_gz(pattern):
             walk_paths(m, out=paths)
+            seen += 1
+            if seen >= 1500:
+                break
+        if not seen:
+            if verbose:
+                print("  quotes: no ticker messages on disk")
+            return {}
         tick = {c: find_field(paths, c) for c in
                 ("ticker", "yes_bid", "yes_ask", "bid_size", "ask_size", "ts")}
         tick = {k: v for k, v in tick.items() if v}
@@ -213,8 +225,13 @@ def load_quotes(data_dir, verbose=True, schema=None):
         return {}
     p_bs, p_as, p_ts = tick.get("bid_size"), tick.get("ask_size"), tick.get("ts")
 
-    raw = []
-    for m in msgs:
+    # accumulation pass: one small tuple per quote, and the message dict is
+    # released immediately. The scale maximum is tracked as we go rather than
+    # from a second list -- see infer_scale for why it must be an aggregate.
+    acc = defaultdict(list)
+    n_msgs, mx = 0, 0.0
+    for m in read_jsonl_gz(pattern):
+        n_msgs += 1
         tk = get_path(m, p_tk)
         if not tk:
             continue
@@ -228,24 +245,34 @@ def load_quotes(data_dir, verbose=True, schema=None):
             continue
         bs = _num(get_path(m, p_bs)) if p_bs else 0.0
         as_ = _num(get_path(m, p_as)) if p_as else 0.0
-        raw.append((tk, int(round(t)), b, a, bs or 0.0, as_ or 0.0))
+        acc[tk].append((int(round(t)), b, a, bs or 0.0, as_ or 0.0))
+        mx = max(mx, abs(b), abs(a))
 
-    scale = infer_scale([r[2] for r in raw] + [r[3] for r in raw])
-    out = defaultdict(list)
+    if not n_msgs:
+        if verbose:
+            print("  quotes: no ticker messages on disk")
+        return {}
+    scale = 100.0 if mx > 1.5 else 1.0      # infer_scale, on the running max
     dropped = 0
-    for tk, t, bid, ask, bs, as_ in raw:
-        b, a = bid / scale, ask / scale
-        if not (0 < b < 1 and 0 < a < 1):
-            dropped += 1
-            continue
-        out[tk].append((t, b, a, bs, as_))
-    for v in out.values():
-        v.sort()
+    for tk in list(acc):
+        keep = []
+        for t, bid, ask, bs, as_ in acc[tk]:
+            b, a = bid / scale, ask / scale
+            if not (0 < b < 1 and 0 < a < 1):
+                dropped += 1
+                continue
+            keep.append((t, b, a, bs, as_))
+        keep.sort()
+        # rewritten per ticker, so only one market's rows are ever duplicated
+        if keep:
+            acc[tk] = keep
+        else:
+            del acc[tk]
     if verbose:
-        print(f"  quotes: {len(out):,} markets from {len(msgs):,} messages, "
+        print(f"  quotes: {len(acc):,} markets from {n_msgs:,} messages, "
               f"paths {p_b}/{p_a}, price scale /{scale:.0f}, "
               f"{dropped:,} out-of-range dropped")
-    return out
+    return acc
 
 
 def dump_channel(data_dir, chan, n=3):

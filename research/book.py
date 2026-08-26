@@ -170,45 +170,61 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
             print("  no orderbook channels on disk")
         return {}, stats
 
-    rows = []
-    for fp in files:
-        try:
-            for line in salvage_lines(fp):
-                    try:
-                        m = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    rows.append(m)
-                    if max_msgs and len(rows) >= max_msgs:
-                        break
-        except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
-            stats["partial_files"] += 1
-        if max_msgs and len(rows) >= max_msgs:
-            break
-
     def ts_of(m, d):
         t = parse_ts(d.get("ts")) if isinstance(d, dict) else None
         return t or (m.get("_rx_ms") or 0) / 1000.0
 
+    # STREAMED into by_ticker, with no `rows` list in between. It used to hold
+    # every orderbook message as a Python dict AND then a per-ticker list of
+    # tuples that referenced those same dicts, so both stayed alive at once --
+    # on the largest channel on disk. Decoded dicts run 10-20x their
+    # compressed size. Only the fields the rebuild actually needs are kept,
+    # and the levels are parsed to (int, float) pairs on the way in, so the
+    # raw JSON is released immediately.
     by_ticker = defaultdict(list)
-    for i, m in enumerate(rows):
-        typ = m.get("type", "")
-        d = m.get("msg") or {}
-        tk = d.get("market_ticker") or d.get("ticker")
-        if not tk:
-            stats["no_ticker"] += 1
-            continue
-        if "snapshot" not in typ and "delta" not in typ:
-            continue
-        is_snap = "snapshot" in typ
-        t = ts_of(m, d)
-        rx = m.get("_rx_ms")
-        # no _rx_ms (synthetic fixtures, or a collector that predates it):
-        # fall back to the message clock, which is the best available.
-        order = (rx / 1000.0) if isinstance(rx, (int, float)) else t
-        seq = d.get("seq")
-        by_ticker[tk].append((order, seq if isinstance(seq, int) else -1,
-                              0 if is_snap else 1, i, typ, d, t))
+    n_read = 0
+    stop = False
+    for fp in files:
+        if stop:
+            break
+        try:
+            for line in salvage_lines(fp):
+                try:
+                    m = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                n_read += 1
+                if max_msgs and n_read >= max_msgs:
+                    stop = True
+
+                typ = m.get("type", "")
+                d = m.get("msg") or {}
+                tk = d.get("market_ticker") or d.get("ticker")
+                if not tk:
+                    stats["no_ticker"] += 1
+                elif "snapshot" in typ or "delta" in typ:
+                    is_snap = "snapshot" in typ
+                    t = ts_of(m, d)
+                    rx = m.get("_rx_ms")
+                    # no _rx_ms (synthetic fixtures, or a collector predating
+                    # it): fall back to the message clock, the best available
+                    order = ((rx / 1000.0) if isinstance(rx, (int, float))
+                             else t)
+                    seq = d.get("seq")
+                    if is_snap:
+                        payload = (_levels(d.get("yes")), _levels(d.get("no")))
+                    else:
+                        payload = (str(d.get("side", "")).lower(),
+                                   d.get("price"),
+                                   d.get("delta", d.get("change")))
+                    by_ticker[tk].append(
+                        (order, seq if isinstance(seq, int) else -1,
+                         0 if is_snap else 1, n_read, is_snap, payload,
+                         t, seq))
+                if stop:
+                    break
+        except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
+            stats["partial_files"] += 1
 
     ordered = []
     for tk, recs in by_ticker.items():
@@ -218,16 +234,13 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
     ordered.sort(key=lambda x: x[0])
 
     for tk, recs in ordered:
-        for _o, _s, _k, _i, typ, d, t in recs:
-            seq = d.get("seq")
+        for _o, _s, _k, _i, is_snap, payload, t, seq in recs:
             bk = books[tk]
-            if "snapshot" in typ:
-                bk.snapshot(_levels(d.get("yes")), _levels(d.get("no")), seq, t)
+            if is_snap:
+                bk.snapshot(payload[0], payload[1], seq, t)
                 stats["snapshots"] += 1
-            elif "delta" in typ:
-                side = str(d.get("side", "")).lower()
-                price = d.get("price")
-                change = d.get("delta", d.get("change"))
+            else:
+                side, price, change = payload
                 if price is None or change is None or side not in ("yes", "no"):
                     stats["unparsed_delta"] += 1
                     continue
@@ -236,8 +249,6 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
                 if was and not bk.valid:
                     stats["seq_gaps"] += 1
                 stats["deltas"] += 1
-            else:
-                continue
             top = bk.top()
             if top is None:
                 continue

@@ -348,36 +348,32 @@ def step_preflight(ctx):
                           "recorder may be STOPPED")
             say(f"{name:<12} {human(dir_bytes(path)):>10}   {state}")
 
-    tick_gb = 0.0
-    tdir = os.path.join(kd, "ticker")
-    if os.path.isdir(tdir):
-        tick_gb = dir_bytes(tdir) / 1024 ** 3
-        if tick_gb > 3.0:
-            say(f"*** the ticker channel is {tick_gb:.1f} GB compressed. Seven "
-                f"stages each load it whole into memory, one process at a "
-                f"time; decoded that is several times larger. If a stage dies "
-                f"with MemoryError, that is why -- re-run with "
-                f"--skip go and tell me, rather than assuming the data is bad.")
-
-    # How much of what is already recorded is currently invisible? The
-    # collector cannot write a gzip trailer on Windows, so any hour in which
-    # it restarted reads back as a broken file and every loader in this repo
-    # silently discarded it.
-    # STREAMED, not captured. This walks every recorded file, and on a couple
-    # of gigabytes that is minutes of total silence sitting between two lines
-    # of preflight -- which is exactly the dead-terminal problem streaming was
-    # added to solve, reintroduced in the one step that runs before the user
-    # has any reason to trust the script yet.
-    say("surveying recorded files for restart damage (walks every .gz; on a "
-        "few GB this takes minutes)")
-    rc, out, _ = run_stream([os.path.join("research", "gzsalvage.py"),
-                             "--data", kd], REPO, 3600, "gzsalvage")
-    ctx["raw"]["salvage"] = out
-    # into the run log only -- the lines have already gone past on screen, and
-    # echoing them again just reads as a stutter
-    for ln in out.splitlines():
-        if ln.strip() and ("unreadable" in ln or "Salvage recovers" in ln):
-            LOG.append(ln.strip())
+    # Projected peak memory, per channel, from what is actually on disk.
+    # A crash an hour into a run is almost always this: the loaders used to
+    # materialise a whole channel as Python dicts, and decoded dicts run many
+    # times their compressed size. Measured after streaming them: about 220
+    # bytes of peak RSS per ticker message against 1,330 before.
+    B_PER_MSG, COMPRESSED_B_PER_MSG = 220.0, 26.0
+    heavy = []
+    for ch in ("ticker", "orderbook_delta", "orderbook_snapshot"):
+        d = os.path.join(kd, ch)
+        if not os.path.isdir(d):
+            continue
+        gb = dir_bytes(d) / 1024 ** 3
+        est = gb * 1024 ** 3 / COMPRESSED_B_PER_MSG * B_PER_MSG / 1024 ** 3
+        heavy.append((ch, gb, est))
+    if heavy:
+        say("heaviest channels, and what a stage needs in RAM to read one:")
+        for ch, gb, est in heavy:
+            say(f"    {ch:<24}{human(gb * 1024**3):>10} on disk"
+                f"   ~{est:.1f} GB peak")
+        worst = max(e for _, _, e in heavy)
+        if worst > 3.0:
+            say(f"*** the largest is ~{worst:.1f} GB in RAM. Stages run one at "
+                f"a time, so that is the peak -- but if this machine has less "
+                f"than about {worst*2:.0f} GB free, expect a stage to die or "
+                f"the box to swap itself to death. Re-run with --skip go and "
+                f"tell me rather than assuming the data is bad.")
 
     try:
         free = shutil.disk_usage(ctx["data_root"]).free
