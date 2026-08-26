@@ -40,6 +40,7 @@ import argparse
 import glob
 import gzip
 import json
+import zlib
 import math
 import os
 import sys
@@ -47,6 +48,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gzsalvage import iter_lines as salvage_lines   # noqa: E402
 
 # concepts we need to locate, and the names they plausibly go by
 FIELD_CANDIDATES = {
@@ -69,8 +71,7 @@ def read_jsonl_gz(pattern, limit=None):
     n = 0
     for fp in sorted(glob.glob(pattern)):
         try:
-            with gzip.open(fp, "rt") as f:
-                for line in f:
+            for line in salvage_lines(fp):
                     try:
                         yield json.loads(line)
                     except json.JSONDecodeError:
@@ -78,7 +79,7 @@ def read_jsonl_gz(pattern, limit=None):
                     n += 1
                     if limit and n >= limit:
                         return
-        except Exception:
+        except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
             n_partial += 1
             continue
 
@@ -163,7 +164,7 @@ def channel_stats(data_dir, chan):
         except OSError:
             pass
         try:
-            with gzip.open(fp, "rt") as f:
+            with gzip.open(fp, "rt", encoding="utf-8") as f:
                 for _ in f:
                     n += 1
         except Exception:
@@ -416,7 +417,7 @@ def selftest():
         tmp = tempfile.mkdtemp()
         try:
             os.makedirs(os.path.join(tmp, "ticker"))
-            with gzip.open(os.path.join(tmp, "ticker", "x.jsonl.gz"), "wt") as f:
+            with gzip.open(os.path.join(tmp, "ticker", "x.jsonl.gz"), "wt", encoding="utf-8") as f:
                 for _ in range(500):
                     f.write(json.dumps(mk()) + "\n")
             msgs = sample_channel(tmp, "ticker")
@@ -443,8 +444,7 @@ def selftest():
     tmp = tempfile.mkdtemp()
     try:
         os.makedirs(os.path.join(tmp, "cfbenchmarks_value"))
-        with gzip.open(os.path.join(tmp, "cfbenchmarks_value", "x.jsonl.gz"),
-                       "wt") as f:
+        with gzip.open(os.path.join(tmp, "cfbenchmarks_value", "x.jsonl.gz"), "wt", encoding="utf-8") as f:
             for i in range(500):
                 f.write(json.dumps({"type": "cfbenchmarks_value", "msg": {
                     "index_id": "BRTI",
@@ -515,8 +515,13 @@ def main():
     report_orderbook(a.data)
     report_disk(a.data, a.feeds)
 
-    with open(a.schema, "w") as f:
+    # tmp + replace: a truncated schema.json is silently swallowed by
+    # replay.load_schema, and every loader then reverts to GUESSING field
+    # names -- producing numbers that look valid and are subtly wrong, which
+    # is this project's entire failure mode.
+    with open(a.schema + ".tmp", "w", encoding="utf-8") as f:
         json.dump(schema, f, indent=2)
+    os.replace(a.schema + ".tmp", a.schema)
     print(f"\n  wrote {a.schema} -- the loaders read this instead of guessing.")
     print("\n  If cfbenchmarks_value is flowing and ticker resolved bid/ask,")
     print("  everything downstream will run. If not, the lines above say why.")

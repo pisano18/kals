@@ -690,7 +690,7 @@ def main():
     data = {}
     if os.path.exists(a.cache):
         try:
-            data = json.load(open(a.cache))
+            data = json.load(open(a.cache, encoding="utf-8"))
             print(f"loaded cache {a.cache}: "
                   f"{sum(len(v) for v in data.values()):,} markets")
         except Exception:
@@ -719,7 +719,7 @@ def main():
     # truncates it the instant the file is opened, so any serialization error
     # (or a Ctrl-C at the wrong moment) leaves an empty cache behind.
     tmp_path = a.cache + ".tmp"
-    with open(tmp_path, "w") as fh:
+    with open(tmp_path, "w", encoding="utf-8") as fh:
         json.dump(data, fh)
     os.replace(tmp_path, a.cache)
 

@@ -96,11 +96,11 @@ def paths_from_tapes(out_dir):
     if not (os.path.exists(fp) and os.path.exists(mfp)):
         return {}, None
     idx = {}
-    for s, ms in json.load(open(mfp)).items():
+    for s, ms in json.load(open(mfp, encoding="utf-8")).items():
         for m in ms:
             idx[m["ticker"]] = m
     out = defaultdict(dict)
-    for s, ts in json.load(open(fp)).items():
+    for s, ts in json.load(open(fp, encoding="utf-8")).items():
         for t in ts:
             tk = t.get("ticker") or t.get("market_ticker")
             if tk not in idx:
@@ -453,7 +453,7 @@ def main():
         paths, source = paths_from_tapes(a.out)
         mk_fp = os.path.join(a.out, "markets.json")
         if os.path.exists(mk_fp):
-            for s, ms in json.load(open(mk_fp)).items():
+            for s, ms in json.load(open(mk_fp, encoding="utf-8")).items():
                 for m in ms:
                     closes[m["ticker"]] = int(m["close"])
     if not paths:

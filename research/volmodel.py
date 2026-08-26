@@ -356,7 +356,7 @@ def main():
     if not os.path.exists(a.cache):
         print(f"\n  no {a.cache} -- run chain.py first to build it.")
         return
-    data = json.load(open(a.cache))
+    data = json.load(open(a.cache, encoding="utf-8"))
     print("\n\n" + "#" * 78)
     print("# REAL DATA")
     print("#" * 78)

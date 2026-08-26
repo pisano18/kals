@@ -60,6 +60,7 @@ import argparse
 import glob
 import gzip
 import json
+import zlib
 import math
 import os
 import sys
@@ -67,6 +68,7 @@ from collections import defaultdict
 from statistics import mean, median, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gzsalvage import iter_lines as salvage_lines   # noqa: E402
 from tdist import p_two_sided, crit                       # noqa: E402
 
 LAGS = list(range(-5, 11))          # positive = the replica LEADS the index
@@ -76,8 +78,7 @@ def read_gz(pattern, limit=None):
     n = 0
     for fp in sorted(glob.glob(pattern)):
         try:
-            with gzip.open(fp, "rt") as f:
-                for line in f:
+            for line in salvage_lines(fp):
                     try:
                         yield json.loads(line)
                     except json.JSONDecodeError:
@@ -85,7 +86,7 @@ def read_gz(pattern, limit=None):
                     n += 1
                     if limit and n >= limit:
                         return
-        except Exception:
+        except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
             continue
 
 

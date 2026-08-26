@@ -36,6 +36,9 @@ live collector raise EOFError on read).
 """
 
 import argparse, glob, gzip, json, math, os, time
+import sys as _sys
+_sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "research"))
+from gzsalvage import iter_lines as salvage_lines   # noqa: E402
 from collections import defaultdict
 from datetime import datetime, timezone
 from statistics import NormalDist, mean, median, pstdev
@@ -71,12 +74,11 @@ def feed_check(data_dir):
         n, first, partial = 0, None, 0
         for fp in files:
             try:
-                with gzip.open(fp, "rt") as f:
-                    for line in f:
+                for line in salvage_lines(fp):
                         n += 1
                         if first is None and line.strip():
                             first = line.strip()[:280]
-            except Exception:
+            except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
                 partial += 1   # EOFError, zlib.error, OSError -- all mean
                                # 'file is mid-write', all are fine
         tag = "OK" if n else "*** EMPTY ***"
@@ -99,8 +101,7 @@ def feed_check(data_dir):
     for fp in sorted(glob.glob(os.path.join(data_dir, "cfbenchmarks_value",
                                             "*.jsonl.gz"))):
         try:
-            with gzip.open(fp, "rt") as f:
-                for line in f:
+            for line in salvage_lines(fp):
                     try:
                         m = json.loads(line)
                     except json.JSONDecodeError:
@@ -238,8 +239,15 @@ def pull_full_tapes(series_list, n_markets, out_dir, max_pages=40):
         print(f"  {s}: {len(got):,} trades, {len(got)/max(len(good),1):.0f}/market"
               f"  ({capped} hit the page cap)", flush=True)
 
-    json.dump(markets, open(os.path.join(out_dir, "markets.json"), "w"))
-    json.dump(tapes, open(os.path.join(out_dir, "tapes.json"), "w"))
+    # tmp + os.replace, both of them: markets.json is written first and
+    # tapes.json second, so an interrupt between the two leaves a state where
+    # every consumer that checks only markets.json proceeds and then dies on
+    # the missing tapes.json.
+    for name, obj in (("markets.json", markets), ("tapes.json", tapes)):
+        fp = os.path.join(out_dir, name)
+        with open(fp + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump(obj, fh)
+        os.replace(fp + ".tmp", fp)
     return markets, tapes
 
 
@@ -382,8 +390,8 @@ def main():
 
     feed_check(a.data)
     if a.reuse:
-        markets = json.load(open(os.path.join(a.out, "markets.json")))
-        tapes = json.load(open(os.path.join(a.out, "tapes.json")))
+        markets = json.load(open(os.path.join(a.out, "markets.json"), encoding="utf-8"))
+        tapes = json.load(open(os.path.join(a.out, "tapes.json"), encoding="utf-8"))
     else:
         print("\nPulling full tapes (10-15 min)...")
         markets, tapes = pull_full_tapes(a.series, a.markets, a.out)

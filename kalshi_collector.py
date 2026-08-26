@@ -86,10 +86,28 @@ class Writer:
         if chan not in self.fh:
             d = os.path.join(self.root, chan)
             os.makedirs(d, exist_ok=True)
+            # encoding is explicit on BOTH ends of this contract: the readers
+            # in research/ run as children of go.py with PYTHONUTF8=1, while
+            # this recorder runs standalone under the watchdog with the
+            # machine's locale encoding. It round-trips today only because
+            # json.dumps defaults to ensure_ascii=True -- which is a property
+            # of the payload, not a guarantee anyone wrote down.
             self.fh[chan] = gzip.open(
-                os.path.join(d, f"{self.hour}.jsonl.gz"), "at", compresslevel=4)
-        self.fh[chan].write(json.dumps(obj, separators=(",", ":")) + "\n")
-        self.fh[chan].flush()
+                os.path.join(d, f"{self.hour}.jsonl.gz"), "at",
+                compresslevel=4, encoding="utf-8")
+        try:
+            self.fh[chan].write(json.dumps(obj, separators=(",", ":")) + "\n")
+            self.fh[chan].flush()
+        except (OSError, ValueError):
+            # A failed write or flush -- disk full, antivirus lock, a closed
+            # handle -- used to leave a dead file object in self.fh forever.
+            # The process stayed alive, so the watchdog never restarted it and
+            # recording stopped silently. Drop the handle and reopen next time.
+            try:
+                self.fh.pop(chan).close()
+            except Exception:
+                self.fh.pop(chan, None)
+            raise
 
     def close(self):
         for f in self.fh.values():
@@ -312,14 +330,35 @@ async def main():
     os.makedirs(a.out, exist_ok=True)
     c = Collector(a)
     loop = asyncio.get_running_loop()
+    signal_handlers_installed = False
     for s in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(s, lambda: setattr(c, "stop", True))
+            signal_handlers_installed = True
         except NotImplementedError:
-            pass          # Windows
+            pass          # Windows -- handled below
+    # On Windows loop.add_signal_handler raises NotImplementedError and the
+    # loop above swallows it, so Ctrl+C propagated straight out of the gather
+    # below and c.w.close() NEVER RAN. The gzip files then had no trailer --
+    # survivable on its own, but the next restart inside the same UTC hour
+    # appended a second member behind an untrailered first one, and a reader
+    # hitting that gets `zlib.error: invalid block type` and discards the file.
+    # Measured on a faithful reproduction: 0 of 10 records recovered.
+    # research/gzsalvage.py reads what is already on disk; this stops more of
+    # it being written.
+    if not signal_handlers_installed:
+        try:
+            signal.signal(signal.SIGINT, lambda *_: setattr(c, "stop", True))
+            signal.signal(signal.SIGTERM, lambda *_: setattr(c, "stop", True))
+        except (ValueError, OSError, AttributeError):
+            pass
     print(f"[start] out={a.out} series={a.series}", flush=True)
-    await asyncio.gather(c.run(), c.heartbeat())
-    c.w.close()
+    try:
+        await asyncio.gather(c.run(), c.heartbeat())
+    finally:
+        # try/finally, not a trailing statement: this has to run on Ctrl+C,
+        # on an exception, and on a clean exit alike.
+        c.w.close()
 
 
 
@@ -330,4 +369,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        pass
+        pass                  # the writer is closed in main()'s finally

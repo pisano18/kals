@@ -73,8 +73,8 @@ def show(rows, note=""):
     if note: print(note)
 
 def load(out):
-    markets = json.load(open(os.path.join(out,"markets.json")))
-    tapes   = json.load(open(os.path.join(out,"tapes.json")))
+    markets = json.load(open(os.path.join(out,"markets.json"), encoding="utf-8"))
+    tapes   = json.load(open(os.path.join(out,"tapes.json"), encoding="utf-8"))
     idx = {}
     for s,ms in markets.items():
         for m in ms: idx[m["ticker"]] = m

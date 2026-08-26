@@ -57,6 +57,7 @@ from statistics import mean, pstdev
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import Engine, N_AVG, fee_per_contract, tick_at   # noqa: E402
 from doctor import get_path, walk_paths, find_field           # noqa: E402
+from gzsalvage import iter_lines as salvage_lines             # noqa: E402
 
 
 def load_schema(path="./schema.json"):
@@ -68,7 +69,7 @@ def load_schema(path="./schema.json"):
     for cand in (path, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", path)):
         try:
-            with open(cand) as f:
+            with open(cand, encoding="utf-8") as f:
                 return json.load(f)
         except (OSError, ValueError):
             continue
@@ -102,17 +103,18 @@ def series_of(ticker):
 
 def read_jsonl_gz(pattern, on_error=None):
     part = 0
+    st = {}
     for fp in sorted(glob.glob(pattern)):
-        try:
-            with gzip.open(fp, "rt") as f:
-                for line in f:
-                    try:
-                        yield json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception:
-            part += 1              # file is mid-write; expected, not an error
-            continue
+        # counted, not probed: a health probe would decompress every healthy
+        # file twice, and healthy is essentially all of them
+        before = st.get("salvaged_files", 0)
+        for line in salvage_lines(fp, stats=st):
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+        if st.get("salvaged_files", 0) > before:
+            part += 1
     if on_error is not None:
         on_error["partial"] = part
 
@@ -264,7 +266,7 @@ def load_markets(out_dir):
     if not os.path.exists(fp):
         return {}
     idx = {}
-    for s, ms in json.load(open(fp)).items():
+    for s, ms in json.load(open(fp, encoding="utf-8")).items():
         for m in ms:
             idx[m["ticker"]] = m
     return idx
@@ -396,14 +398,14 @@ def make_fake_collector(tmp, n_markets=120, sigma=6.0, seed=5, lag=0,
         ticks[t0 + k] = S
     markets = {}
     with gzip.open(os.path.join(tmp, "cfbenchmarks_value",
-                                "20260825T00.jsonl.gz"), "wt") as f:
+                                "20260825T00.jsonl.gz"), "wt", encoding="utf-8") as f:
         for s in sorted(ticks):
             f.write(json.dumps({"type": "cfbenchmarks_value",
                                 "msg": {"index_id": "BRTI",
                                         "data": json.dumps({"time": s * 1000,
                                                             "value": ticks[s]})}
                                 }) + "\n")
-    with gzip.open(os.path.join(tmp, "ticker", "20260825T00.jsonl.gz"), "wt") as f:
+    with gzip.open(os.path.join(tmp, "ticker", "20260825T00.jsonl.gz"), "wt", encoding="utf-8") as f:
         for w in range(n_markets):
             open_s = t0 + 60 + w * 900
             close_s = open_s + 900

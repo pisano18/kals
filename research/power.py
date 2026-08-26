@@ -795,9 +795,12 @@ def count_settled(cache_path):
     if not os.path.exists(cache_path):
         return None, 0, f"no {cache_path} -- run chain.py to build it"
     try:
-        data = json.load(open(cache_path))
-    except (json.JSONDecodeError, OSError) as e:
-        return None, 0, f"could not read {cache_path}: {e}"
+        data = json.load(open(cache_path, encoding="utf-8"))
+    except (ValueError, OSError) as e:
+        # ValueError, not JSONDecodeError: UnicodeDecodeError is a ValueError
+        # but not a JSONDecodeError, so a cache written in another encoding
+        # would crash the step instead of returning this message.
+        return None, 0, f"could not read {cache_path}: {type(e).__name__}: {e}"
     counts = {k: len(v) for k, v in data.items() if isinstance(v, list)}
     if not counts:
         return None, 0, f"{cache_path} is empty"

@@ -108,9 +108,14 @@ cost bar halves and the set of edges that clear it roughly doubles. That is
 worth more than any modelling improvement I could make.
 
 ```powershell
-curl.exe -s "https://api.elections.kalshi.com/trade-api/v2/series?category=Financials" > series_fin.json
-curl.exe -s "https://api.elections.kalshi.com/trade-api/v2/series?category=Crypto" > series_crypto.json
+curl.exe -s -o series_fin.json "https://api.elections.kalshi.com/trade-api/v2/series?category=Financials"
+curl.exe -s -o series_crypto.json "https://api.elections.kalshi.com/trade-api/v2/series?category=Crypto"
 ```
+
+(`-o` rather than `>`: PowerShell 5.1's `>` is Out-File, which writes
+UTF-16LE with a BOM that `json.load` cannot read. `everything.py` does
+these four probes itself with urllib and writes the bytes verbatim, so
+you only need these if you are running the steps by hand.)
 
 Send me both files. I want `fee_multiplier`, `ticker`, and anything with a
 short cadence in the ticker name (15M, 30M, 1H).
@@ -152,8 +157,8 @@ Disk cost is small — two more series against fourteen.
 rather than my reconstruction of it:
 
 ```powershell
-curl.exe -s "https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=KXCRYPTOCOMP15M&status=settled&limit=2" > comp.json
-curl.exe -s "https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=KXCRYPTOLEAD15M&status=settled&limit=2" > lead.json
+curl.exe -s -o comp.json "https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=KXCRYPTOCOMP15M&status=settled&limit=2"
+curl.exe -s -o lead.json "https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=KXCRYPTOLEAD15M&status=settled&limit=2"
 ```
 
 I want `rules_primary`, `floor_strike`, `expiration_value` and the ticker
@@ -206,3 +211,22 @@ dollar. Only worth doing if you're curious — it doesn't gate anything.
   `kalshi_data` first (Kalshi's REST history can rebuild most of it) and only
   compress, never delete, `feed_data`.
 - **Leave the watchdog window running.**
+
+---
+
+## Restarting the watchdog: do it near the top of an hour
+
+The collector opens one gzip file per UTC hour and appends to it. On Windows it
+cannot write a gzip trailer on shutdown, so a restart *inside* an hour leaves
+that hour's file with two gzip members and no trailer on the first — and the
+standard reader then throws the whole file away. Measured on a faithful
+reproduction: **0 of 10 records recovered.**
+
+`research/gzsalvage.py` now reads those files member by member and recovers
+them, and every loader here goes through it, so this is no longer data loss.
+But the fix for *new* files only takes effect after the collector restarts with
+the current code, and restarting a minute past the hour still costs you the
+tidiest version of that hour. Restart just after `:00` when you can.
+
+`everything.py` reports, in its preflight, exactly how many of your recorded
+files are affected and how many messages salvage recovers.

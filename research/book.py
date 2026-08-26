@@ -40,6 +40,7 @@ import argparse
 import glob
 import gzip
 import json
+import zlib
 import math
 import os
 import sys
@@ -48,6 +49,7 @@ from datetime import datetime, timezone
 from statistics import mean, median
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gzsalvage import iter_lines as salvage_lines   # noqa: E402
 from doctor import get_path, walk_paths, find_field       # noqa: E402
 from replay import read_jsonl_gz, parse_ts, _num          # noqa: E402
 
@@ -171,8 +173,7 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
     rows = []
     for fp in files:
         try:
-            with gzip.open(fp, "rt") as f:
-                for line in f:
+            for line in salvage_lines(fp):
                     try:
                         m = json.loads(line)
                     except json.JSONDecodeError:
@@ -180,7 +181,7 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
                     rows.append(m)
                     if max_msgs and len(rows) >= max_msgs:
                         break
-        except Exception:
+        except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
             stats["partial_files"] += 1
         if max_msgs and len(rows) >= max_msgs:
             break
@@ -310,7 +311,7 @@ def selftest():
         no = {58: 400.0, 57: 900.0, 56: 1500.0}
         truth = []
         with gzip.open(os.path.join(tmp, "orderbook_snapshot",
-                                    "20260825T00.jsonl.gz"), "wt") as f:
+                                    "20260825T00.jsonl.gz"), "wt", encoding="utf-8") as f:
             f.write(json.dumps({"type": "orderbook_snapshot",
                                 "_rx_ms": 1000 * 1000, "msg": {
                 "market_ticker": "M1",
@@ -318,7 +319,7 @@ def selftest():
                 "no": [[p, s] for p, s in no.items()],
                 "seq": 1, "ts": 1000}}) + "\n")
         with gzip.open(os.path.join(tmp, "orderbook_delta",
-                                    "20260825T00.jsonl.gz"), "wt") as f:
+                                    "20260825T00.jsonl.gz"), "wt", encoding="utf-8") as f:
             seq = 1
             for i in range(400):
                 seq += 1
@@ -375,13 +376,13 @@ def selftest():
         os.makedirs(os.path.join(tmp, "orderbook_delta"))
         os.makedirs(os.path.join(tmp, "orderbook_snapshot"))
         with gzip.open(os.path.join(tmp, "orderbook_snapshot",
-                                    "20260825T00.jsonl.gz"), "wt") as f:
+                                    "20260825T00.jsonl.gz"), "wt", encoding="utf-8") as f:
             f.write(json.dumps({"type": "orderbook_snapshot",
                                 "_rx_ms": 1000, "msg": {
                 "market_ticker": "M2", "yes": [[40, 100]], "no": [[58, 100]],
                 "seq": 1, "ts": 1}}) + "\n")
         with gzip.open(os.path.join(tmp, "orderbook_delta",
-                                    "20260825T00.jsonl.gz"), "wt") as f:
+                                    "20260825T00.jsonl.gz"), "wt", encoding="utf-8") as f:
             for seq, ts in ((2, 2), (3, 3), (9, 4), (10, 5)):   # 4..8 missing
                 f.write(json.dumps({"type": "orderbook_delta",
                                     "_rx_ms": ts * 1000, "msg": {

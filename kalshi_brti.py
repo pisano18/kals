@@ -202,7 +202,7 @@ def main():
     api = API(sign)
     print(f"auth: {'yes' if sign else 'NO (may be required)'}")
 
-    markets = json.load(open(os.path.join(a.out, "markets.json")))
+    markets = json.load(open(os.path.join(a.out, "markets.json"), encoding="utf-8"))
     allm = sorted([m for ms in markets.values() for m in ms],
                   key=lambda x: x["close"], reverse=True)[:a.markets]
     print(f"markets to cover: {len(allm)}")
@@ -242,7 +242,7 @@ def main():
         time.sleep(0.08)
 
     fp = os.path.join(a.out, "brti.json")
-    json.dump(out, open(fp, "w"))
+    json.dump(out, open(fp, "w", encoding="utf-8"))
     print(f"\n  saved {len(out)} markets to {fp}")
     if out:
         k = next(iter(out))

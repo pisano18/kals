@@ -116,6 +116,7 @@ SELFTESTS = [
     # power.py touches no data, but it is what makes every null result in the
     # report readable, and it is simulation code that can be silently wrong.
     ("student-t", ["tdist.py", "--selftest"]),
+    ("gzip salvage", ["gzsalvage.py", "--selftest"]),
     ("detectability", ["power.py", "--selftest", "--quick"]),
 ]
 
@@ -133,7 +134,8 @@ STAGES = [
                "--cache", "./chain_cache.json"], None),
     ("volmodel", ["research/volmodel.py", "--cache", "./chain_cache.json"],
      "chain_cache.json"),
-    ("placebo", ["research/placebo.py", "--out", "{out}"], "{out}/markets.json"),
+    ("placebo", ["research/placebo.py", "--out", "{out}"],
+     "{out}/tapes.json"),   # placebo needs BOTH; tapes.json is the later write
     ("replay", ["research/replay.py", "--data", "{data}", "--out", "{out}"],
      "{data}/cfbenchmarks_value"),
     ("leadlag", ["research/leadlag.py", "--data", "{data}", "--out", "{out}"],
@@ -172,18 +174,43 @@ def run(cmd, cwd, timeout):
         return 1, f"*** {type(e).__name__}: {e} ***", time.time() - t0
 
 
+def write_report(report, chunks):
+    path = os.path.join(ROOT, report)
+    # utf-8 explicitly: on Windows the default is cp1252 and this file embeds
+    # whatever the stages printed. Dying here would throw away the whole run.
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(chunks))
+    os.replace(tmp, path)
+    return path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="./kalshi_data")
     ap.add_argument("--out", default="./fulltape")
     ap.add_argument("--feeds", default="./feed_data")
     ap.add_argument("--report", default="RESULTS.md")
-    ap.add_argument("--only")
+    ap.add_argument("--only", choices=[s[0] for s in STAGES],
+                    help="run a single stage. Validated: a typo used to skip "
+                         "the self-tests (a.only is truthy) AND every stage "
+                         "(none match), then exit 0 with an empty report.")
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--skip-selftests", action="store_true",
                     help="not recommended; they exist because this project's "
                          "history is of measurement bugs producing fake edges")
     a = ap.parse_args()
+
+    # Our own stdout is the last unprotected encoder in the chain. The
+    # children are forced to utf-8, but this process re-prints their output
+    # and (in everything.py) Kalshi's rules_primary text verbatim -- external
+    # legalese full of curly quotes and en-dashes. Redirect this to a file in
+    # PowerShell and sys.stdout becomes cp1252, which cannot encode them.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     chunks = [f"# RESULTS — automated run\n\n`{stamp}`\n",
@@ -199,7 +226,12 @@ def main():
         print("\nSELF-TESTS (a failure here stops the run)")
         chunks.append("\n## Self-tests\n")
         for name, cmd in SELFTESTS:
-            rc, out, dt = run(cmd, HERE, 900)
+            # power.py simulates for minutes; everything else is under
+            # 150s. A flat cap sized for the fast ones kills the slow one on
+            # slower hardware, and go.py then stops the whole run over a
+            # timeout rather than a failure.
+            budget = 2400 if cmd[0] == "power.py" else 900
+            rc, out, dt = run(cmd, HERE, budget)
             passed = (rc == 0)
             ok = ok and passed
             print(f"  {name:>20}  {'PASS' if passed else '*** FAIL ***'}"
@@ -220,8 +252,7 @@ def main():
             print("    The failing output is in the report. Send it back.")
             chunks.append("\n**A self-test failed — no real data was "
                           "analysed.**\n")
-            open(os.path.join(ROOT, a.report), "w", encoding="utf-8",
-             newline="\n").write("\n".join(chunks))
+            write_report(a.report, chunks)
             raise SystemExit(1)
 
     print("\nSTAGES")
@@ -245,6 +276,10 @@ def main():
         print(f"  {name:>20}  {'ok' if rc == 0 else f'exit {rc}'}  ({dt:.0f}s)")
         chunks.append(f"\n### {name}\n\n```\npython {' '.join(cmd)}\n```\n")
         chunks.append(f"\nexit {rc}, {dt:.0f}s\n\n```\n{out[-60000:]}\n```\n")
+        # after EVERY stage, not once at the end. Stages run for up to an hour
+        # each; a Ctrl+C or a timeout two hours in used to throw away every
+        # result already computed.
+        write_report(a.report, chunks)
 
     chunks.append("\n## How to read this\n\n"
                   "- `n` is always a number of MARKETS or CLOSE-TIME CLUSTERS, "
@@ -254,11 +289,7 @@ def main():
                   "- Every large edge this project has produced so far was a "
                   "measurement bug. Treat anything eye-catching as a bug until "
                   "it survives its own null.\n")
-    path = os.path.join(ROOT, a.report)
-    # utf-8 explicitly: on Windows the default is cp1252 and this file
-    # embeds whatever the stages printed. Dying here would throw away the
-    # entire run.
-    open(path, "w", encoding="utf-8", newline="\n").write("\n".join(chunks))
+    path = write_report(a.report, chunks)
     print(f"\nwrote {path}")
     print("Send that file back.")
 

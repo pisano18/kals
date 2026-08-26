@@ -24,6 +24,9 @@ FAIL = stop. Do not build a model on a contract you cannot reproduce.
 """
 
 import argparse, glob, gzip, json, math, os
+import sys as _sys
+_sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "research"))
+from gzsalvage import iter_lines as salvage_lines   # noqa: E402
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -65,8 +68,7 @@ def load_ticks(data_dir):
     print(f"  reading {len(files)} cfbenchmarks files...")
     for fp in files:
         try:
-            with gzip.open(fp, "rt") as f:
-                for line in f:
+            for line in salvage_lines(fp):
                     try:
                         m = json.loads(line)
                     except json.JSONDecodeError:
@@ -94,7 +96,7 @@ def load_ticks(data_dir):
                         except (TypeError, ValueError):
                             a = None
                     acc[idx].append((t, v, a))
-        except Exception:
+        except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
             continue
     out = {}
     for k, v in acc.items():

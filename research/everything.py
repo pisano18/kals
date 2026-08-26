@@ -21,7 +21,7 @@ WHAT IT DOES, IN ORDER
                    Financials and Crypto, and the real contract terms for
                    KXCRYPTOCOMP15M / KXCRYPTOLEAD15M.
   3  fulltape      Refreshes the settled-market outcomes several stages need.
-  4  go            18 self-tests, then 13 analysis stages. The long one.
+  4  go            every self-test, then 13 analysis stages. The long one.
   5  power         What this much data could have detected at all. Runs AFTER
                    go, because go's chain stage writes the cache power sizes
                    itself from -- but it is printed FIRST in the report,
@@ -206,9 +206,14 @@ def run_stream(cmd, cwd, timeout, label, prefix="    | "):
     env = dict(os.environ)
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    # -u as well: a child's stdout is BLOCK buffered when it is a pipe rather
+    # than a console, so without this the "streaming" progress arrives all at
+    # once when the child exits -- which is exactly the dead-terminal problem
+    # streaming was added to solve.
+    env["PYTHONUNBUFFERED"] = "1"
     t0, buf = time.time(), []
     try:
-        p = subprocess.Popen([sys.executable] + cmd, cwd=cwd,
+        p = subprocess.Popen([sys.executable, "-u"] + cmd, cwd=cwd,
                              stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, text=True,
                              encoding=ENC, errors="replace", env=env,
@@ -222,6 +227,17 @@ def run_stream(cmd, cwd, timeout, label, prefix="    | "):
 
     def _kill():
         killed["by_timeout"] = True
+        # Popen.kill() is TerminateProcess on Windows and does NOT take the
+        # process tree with it: go.py would die and leave the stage it was
+        # running orphaned, still holding files open and still writing.
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"],
+                               capture_output=True)
+            else:
+                p.kill()
+        except Exception:
+            pass
         try:
             p.kill()
         except Exception:
@@ -252,17 +268,40 @@ def run_stream(cmd, cwd, timeout, label, prefix="    | "):
     return rc, "\n".join(buf), time.time() - t0
 
 
-def get_json(url, timeout=30):
+def get_json(url, timeout=30, tries=4):
     """Read-only GET against the PUBLIC Kalshi endpoints. No key, no POST.
-    chain.py documents these as keyless; nothing here signs a request and
-    nothing here can place an order."""
+
+    Every other REST fetcher in this repo `break`s out of its loop on a
+    non-200 and returns what it has, so a rate-limit blip yields a short
+    result that looks exactly like a complete one. This RAISES instead, and
+    retries 429/5xx with backoff. A live collector is already spending the
+    same ~20 reads/sec budget round the clock, so the backoff is not
+    theoretical.
+    """
     req = urllib.request.Request(url, headers={
         "User-Agent": "kals-research/1.0 (read-only)",
         "Accept": "application/json",
     })
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        raw = r.read()
-    return json.loads(raw.decode(ENC, "replace")), raw
+    last = None
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                raw = r.read()
+            return json.loads(raw.decode(ENC, "replace")), raw
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode(ENC, "replace")[:200]
+            except Exception:
+                pass
+            last = f"HTTP {e.code} {body}"
+            if e.code not in (429, 500, 502, 503, 504):
+                raise RuntimeError(last)            # 4xx is terminal
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = f"{type(e).__name__}: {e}"
+        if attempt < tries - 1:
+            time.sleep(0.5 * (2 ** attempt))
+    raise RuntimeError(last or "unknown error")
 
 
 # ==========================================================================
@@ -308,6 +347,28 @@ def step_preflight(ctx):
                      else f"newest file is {age/3600:.1f}h old -- "
                           "recorder may be STOPPED")
             say(f"{name:<12} {human(dir_bytes(path)):>10}   {state}")
+
+    tick_gb = 0.0
+    tdir = os.path.join(kd, "ticker")
+    if os.path.isdir(tdir):
+        tick_gb = dir_bytes(tdir) / 1024 ** 3
+        if tick_gb > 3.0:
+            say(f"*** the ticker channel is {tick_gb:.1f} GB compressed. Seven "
+                f"stages each load it whole into memory, one process at a "
+                f"time; decoded that is several times larger. If a stage dies "
+                f"with MemoryError, that is why -- re-run with "
+                f"--skip go and tell me, rather than assuming the data is bad.")
+
+    # How much of what is already recorded is currently invisible? The
+    # collector cannot write a gzip trailer on Windows, so any hour in which
+    # it restarted reads back as a broken file and every loader in this repo
+    # silently discarded it.
+    rc, out, _ = run([os.path.join("research", "gzsalvage.py"),
+                      "--data", kd], REPO, 1800, "gzsalvage")
+    ctx["raw"]["salvage"] = out
+    for ln in out.splitlines():
+        if ln.strip() and ("unreadable" in ln or "Salvage recovers" in ln):
+            say(ln.strip())
 
     try:
         free = shutil.disk_usage(ctx["data_root"]).free
@@ -387,8 +448,27 @@ def step_collection(ctx):
         say(f"    --series {series}")
         return True
 
-    open(ps, "w", encoding=ENC, newline="").write("".join(out))
-    say(f"patched    {ps}  (+2 series; original kept as .bak)")
+    # tmp + replace: a truncating open() here means a Ctrl+C at the wrong
+    # instant leaves the watchdog empty, and the .bak is the only thing
+    # standing between that and no recording at all.
+    with open(ps + ".tmp", "w", encoding=ENC, newline="") as fh:
+        fh.write("".join(out))
+    os.replace(ps + ".tmp", ps)
+
+    # Verify rather than announce. The patch inserts before the last quote on
+    # the first line mentioning the collector; if that line were ever a
+    # comment, or the quoting differed, the message would be a lie.
+    check = open(ps, encoding=ENC, errors="replace", newline="").read()
+    good = [ln for ln in check.splitlines()
+            if "kalshi_collector.py" in ln and "--series" in ln
+            and not ln.lstrip().startswith("#")
+            and all(t in ln for t in COMPARISON)]
+    if not good:
+        say(f"*** the patch did not take. {bak} is intact -- restore it and "
+            f"add this by hand:")
+        say(f"    --series {series}")
+        return False
+    say(f"patched    {ps}  (+2 series; original kept as .bak; verified)")
     say("")
     say("THIS DOES NOT TAKE EFFECT UNTIL THE WATCHDOG RESTARTS. I have not "
         "killed it -- stopping your recorder unattended is not a risk worth "
@@ -405,7 +485,10 @@ def step_api(ctx):
         ("series_fin.json", f"{API}/series?category=Financials",
          "fee multiplier for S&P / Nasdaq. PLAN says 0.035 against crypto's "
          "0.07. If those series have gained a short cadence, the cost bar "
-         "halves and the set of edges that clears it roughly doubles."),
+         "halves and the set of edges that clears it roughly doubles. "
+         "NOTE: /series?category= is coded in this repo but has never been "
+         "observed returning data, so an empty result here may be the "
+         "endpoint, not the answer."),
         ("series_crypto.json", f"{API}/series?category=Crypto",
          "the crypto fee multiplier, to compare against."),
         ("comp.json",
@@ -420,9 +503,8 @@ def step_api(ctx):
     for name, url, why in probes:
         try:
             js, raw = get_json(url)
-        except (urllib.error.URLError, urllib.error.HTTPError,
-                json.JSONDecodeError, TimeoutError, OSError) as e:
-            say(f"{name:<20} FAILED  {type(e).__name__}: {e}")
+        except (RuntimeError, ValueError, OSError) as e:
+            say(f"{name:<20} FAILED  {e}")
             continue
         with open(os.path.join(outdir, name), "wb") as f:
             f.write(raw)
@@ -438,6 +520,11 @@ def step_api(ctx):
         rows = js.get("series") or []
         say("")
         say(f"{tag}: {len(rows)} series")
+        if not rows:
+            say("    EMPTY. /series?category= has never been seen returning "
+                "data from this repo -- treat this as 'endpoint unconfirmed', "
+                "not 'no such series'. Raw response is in the zip.")
+            continue
         short = []
         for s in rows:
             tk = str(s.get("ticker", ""))
@@ -494,9 +581,16 @@ def step_fulltape(ctx):
     if not os.path.exists(ft):
         say("*** kalshi_fulltape.py not found; skipping")
         return True
+    # --series explicitly: kalshi_fulltape.py defaults to THREE series
+    # (BTC, ETH, SOL), so markets.json would carry outcomes for a quarter of
+    # what the collector records and the other nine series would be silently
+    # dropped by every stage that matches on outcome.
+    say(f"pulling outcomes for all {len(CRYPTO_15M)} recorded series "
+        f"(its own default is 3 of them, which would silently drop the rest)")
     rc, out, dt = run_stream([ft, "--data", ctx["kalshi_data"],
-                              "--out", ctx["fulltape"], "--markets", "400"],
-                             REPO, 3600, "fulltape")
+                              "--out", ctx["fulltape"], "--markets", "400",
+                              "--series"] + CRYPTO_15M,
+                             REPO, 7200, "fulltape")
     say(f"exit {rc} in {dt:.0f}s")
     ctx["raw"]["fulltape"] = out
     mj = os.path.join(ctx["fulltape"], "markets.json")
@@ -511,7 +605,7 @@ def step_fulltape(ctx):
 
 
 def step_go(ctx):
-    rule("4  GO -- 18 self-tests, then 13 stages. The long one.")
+    rule("4  GO -- every self-test, then 13 stages. The long one.")
     say("A self-test failure stops the run before any real data is touched. "
         "That is deliberate: every large edge this project has produced so "
         "far was a measurement bug.")
@@ -521,7 +615,7 @@ def step_go(ctx):
                               "--data", ctx["kalshi_data"],
                               "--out", ctx["fulltape"],
                               "--feeds", ctx["feed_data"]],
-                             REPO, 14400, "go.py")
+                             REPO, 36000, "go.py")
     say(f"exit {rc} in {dt/60:.1f} min")
     ctx["raw"]["go"] = out
     ctx["go_ok"] = (rc == 0)
@@ -578,7 +672,8 @@ def write_report(ctx, status):
     p.append("\n---\n\n## Run log\n")
     p.append("```\n" + "\n".join(LOG) + "\n```\n")
 
-    for key, title in (("go", "go.py — self-tests and stages"),
+    for key, title in (("salvage", "gzip salvage survey"),
+                       ("go", "go.py — self-tests and stages"),
                        ("fulltape", "kalshi_fulltape.py")):
         if ctx["raw"].get(key):
             p.append(f"\n---\n\n## {title}\n")
@@ -641,6 +736,17 @@ def main():
     ap.add_argument("--no-install", dest="install", action="store_false",
                     help="do not pip install a missing dependency")
     a = ap.parse_args()
+
+    # Our own stdout is the last unprotected encoder in the chain. The
+    # children are forced to utf-8, but this process re-prints their output
+    # and (in everything.py) Kalshi's rules_primary text verbatim -- external
+    # legalese full of curly quotes and en-dashes. Redirect this to a file in
+    # PowerShell and sys.stdout becomes cp1252, which cannot encode them.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
     print("=" * 78, flush=True)
     print("  kals — everything", flush=True)

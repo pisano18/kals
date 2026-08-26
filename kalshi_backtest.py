@@ -227,8 +227,8 @@ def main():
     a = ap.parse_args()
     random.seed(1)
 
-    markets = json.load(open(os.path.join(a.out, "markets.json")))
-    tapes = json.load(open(os.path.join(a.out, "tapes.json")))
+    markets = json.load(open(os.path.join(a.out, "markets.json"), encoding="utf-8"))
+    tapes = json.load(open(os.path.join(a.out, "tapes.json"), encoding="utf-8"))
 
     # ---- proof the engine cannot leak the outcome ----
     print("=" * 78); print("HARNESS INTEGRITY CHECK"); print("=" * 78)

@@ -57,13 +57,18 @@ import argparse
 import glob
 import gzip
 import json
+import zlib
 import math
 import os
 import random
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
+import sys
 from statistics import NormalDist, mean, median, pstdev
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gzsalvage import iter_lines as salvage_lines   # noqa: E402
 
 ND = NormalDist()
 BASE = "https://api.elections.kalshi.com/trade-api/v2"
@@ -104,13 +109,12 @@ def read_jsonl_gz(path_glob):
     n_part = 0
     for fp in sorted(glob.glob(path_glob)):
         try:
-            with gzip.open(fp, "rt") as f:
-                for line in f:
+            for line in salvage_lines(fp):
                     try:
                         yield json.loads(line)
                     except json.JSONDecodeError:
                         continue
-        except Exception:
+        except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
             n_part += 1
             continue
 
@@ -399,7 +403,7 @@ def make_synth(tmp, n_windows=140, sigma=6.0, rho1=0.0, seed=5,
                                    "ts": s, "count": 10,
                                    "taker_side": "yes"}, "type": "trade"})
     with gzip.open(os.path.join(tmp, "cfbenchmarks_value",
-                                f"20260825T00{tag}.jsonl.gz"), "wt") as f:
+                                f"20260825T00{tag}.jsonl.gz"), "wt", encoding="utf-8") as f:
         for s in sorted(ticks):
             f.write(json.dumps({"type": "cfbenchmarks_value",
                                 "msg": {"index_id": index_id,
@@ -407,7 +411,7 @@ def make_synth(tmp, n_windows=140, sigma=6.0, rho1=0.0, seed=5,
                                             {"time": s * 1000,
                                              "value": ticks[s]})}}) + "\n")
     with gzip.open(os.path.join(tmp, "trade",
-                                f"20260825T00{tag}.jsonl.gz"), "wt") as f:
+                                f"20260825T00{tag}.jsonl.gz"), "wt", encoding="utf-8") as f:
         for t in trades:
             f.write(json.dumps(t) + "\n")
     return markets

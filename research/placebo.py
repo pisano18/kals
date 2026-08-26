@@ -128,8 +128,8 @@ def run_estimator(cells, outcome, min_markets=40):
 
 # ===========================================================================
 def load_fulltape(out_dir):
-    markets = json.load(open(os.path.join(out_dir, "markets.json")))
-    tapes = json.load(open(os.path.join(out_dir, "tapes.json")))
+    markets = json.load(open(os.path.join(out_dir, "markets.json"), encoding="utf-8"))
+    tapes = json.load(open(os.path.join(out_dir, "tapes.json"), encoding="utf-8"))
     idx = {}
     for s, ms in markets.items():
         for m in ms:

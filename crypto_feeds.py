@@ -65,7 +65,7 @@ class Writer:
             d = os.path.join(self.root, chan)
             os.makedirs(d, exist_ok=True)
             self.fh[chan] = gzip.open(
-                os.path.join(d, f"{self.hour}.jsonl.gz"), "at", compresslevel=4)
+                os.path.join(d, f"{self.hour}.jsonl.gz"), "at", compresslevel=4, encoding="utf-8")
         self.fh[chan].write(json.dumps(obj, separators=(",", ":")) + "\n")
         self.fh[chan].flush()
 
