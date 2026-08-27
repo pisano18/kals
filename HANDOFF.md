@@ -355,10 +355,26 @@ returned zero observations. **This is the next experiment — see §7.**
   **Still iid:** `power_analysis()` (`--power`) computes its false-positive
   columns with `ac_t`, not the block SE. Its `g = 0` row is homoskedastic so
   that row is sound, but the garch rows understate the bar.
-- **`KXBTC15M` was not pulled in the 2026-08-26 run** (the stage log lists 11
-  series, BTC absent) — the anchor of the whole detectability table came from a
-  cache ~10h stale. Other series were truncated by HTTP 429s that the report
-  re-describes as "under half the history". **Unfixed.**
+- ~~**`KXBTC15M` was not pulled in the 2026-08-26 run**~~ — **FIXED**, and the
+  cause was not a failure. The cache-skip condition was `have >= markets*0.9`,
+  size only: BTC's cache was long enough, so the pull was skipped and BTC
+  never appeared in the run log. The anchor of the detectability table came
+  from a ~10-hour-old cache and nothing in the output said so. The condition is
+  now size **and** age (`STALE_HOURS = 6`), and a **DATA PROVENANCE** table
+  prints before GATE C with each series' market count, `cache`/`pulled`, the
+  age of its newest settlement, pages fetched, and retries spent.
+
+  The 429 truncations were a separate fault in `fetch_settled`: it `break`ed
+  out of the pagination loop on *any* non-200 and on *any* exception, and
+  returned the short list with no way for a caller to tell "this is the whole
+  history" from "we gave up here". So a rate limit was reported as a fact
+  about the market. It now retries with exponential backoff (0.5/1/2/4/8s),
+  honours a `Retry-After` header verbatim, does **not** retry a 4xx that isn't
+  429, and fills a `stats` dict whose `truncated` flag distinguishes a short
+  history from a short pull. Self-test section 7 drives six scripted cases
+  (429-then-ok, `Retry-After`, 429-forever, 404, timeout-then-ok, clean
+  exhaustion) through an injected session and asserts the flag and the backoff
+  growth on each.
 - ~~**`doctor.channel_stats` undercounts** wherever `mid-write > 0`~~ —
   **FIXED.** It used plain `gzip.open`, which dies inside a torn member and
   surrenders everything written after it; the proof was in the run itself
@@ -454,8 +470,10 @@ Ranked by information unlocked per unit of work:
    with the block `t`; the iid ones were ~1.7× too large.
 3. ~~Make `doctor.channel_stats` use `gzsalvage`~~ — done; the census is no
    longer a lower bound.
-4. Fix `chain.py`'s HTTP 429 handling and make it actually pull `KXBTC15M`;
-   mark stale/cached series in every table, not once in a run log.
+4. ~~Fix `chain.py`'s HTTP 429 handling and make it actually pull
+   `KXBTC15M`~~ — done; see the provenance table. Series-level staleness is
+   now printed once, up front, rather than marked in every table — if that
+   turns out not to be enough, the per-table marker is the next step.
 5. Restate GATE C's claim (§4).
 6. Switch Bitstamp to the delta channel (§5) — recovers ~3 GB/day of disk.
 7. Reopen the fee question via `exchange_index` (§6).

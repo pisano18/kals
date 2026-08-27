@@ -70,6 +70,11 @@ from statistics import NormalDist, mean, median, pstdev
 ND = NormalDist()
 BASE = "https://api.elections.kalshi.com/trade-api/v2"
 WINDOW = 900          # seconds between consecutive closes
+# A cached series older than this is refreshed even when it is
+# already long enough. Size alone let KXBTC15M -- the anchor of the
+# whole detectability table -- supply a report from a ~10-hour-old
+# cache, with nothing in the output saying so.
+STALE_HOURS = 6.0
 
 CRYPTO_15M = ["KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M", "KXDOGE15M",
               "KXBNB15M", "KXADA15M", "KXBCH15M", "KXZEC15M", "KXHYPE15M",
@@ -90,35 +95,102 @@ def parse_ts(s):
         return None
 
 
-def fetch_settled(series, want, verbose=True):
-    """Public endpoint, no key. /historical/* is stale (RUNBOOK) -- not used."""
-    try:
-        import requests
-    except ImportError:
-        raise SystemExit(
-            "\n  This stage needs `requests`, which is not installed for this\n"
-            "  interpreter. Install it with:\n\n"
-            f"      {sys.executable} -m pip install requests\n\n"
-            "  Every other stage is stdlib-only and will run without it.")
-    sess = requests.Session()
+def fetch_settled(series, want, verbose=True, stats=None, session=None,
+                  sleep=time.sleep, tries=5):
+    """Public endpoint, no key. /historical/* is stale (RUNBOOK) -- not used.
+
+    A page that fails is RETRIED, not surrendered to. The old version broke
+    out of the loop on any non-200 and on any exception, which turned a single
+    HTTP 429 -- the routine consequence of paginating a 200-row endpoint
+    thousands of times -- into a silently short series. Worse, it returned
+    that short list with no way for the caller to tell "this is the whole
+    history" from "we gave up here", so a truncated pull was reported as a
+    finding about the market.
+
+    `stats` (a dict, filled in place) now carries that distinction:
+        pages     pages actually fetched
+        http      the last non-200 status seen, if any
+        retries   how many retries were spent
+        stopped   'want' | 'exhausted' | 'gave_up' | 'empty'
+        truncated True when the history is short because WE failed
+    """
+    if stats is None:
+        stats = {}
+    stats.update({"pages": 0, "http": None, "retries": 0,
+                  "stopped": "empty", "truncated": False})
+    if session is None:
+        try:
+            import requests
+        except ImportError:
+            raise SystemExit(
+                "\n  This stage needs `requests`, which is not installed for "
+                "this\n  interpreter. Install it with:\n\n"
+                f"      {sys.executable} -m pip install requests\n\n"
+                "  Every other stage is stdlib-only and will run without it.")
+        session = requests.Session()
+
     out, cursor, pages = [], None, 0
     while len(out) < want and pages < 200:
         p = {"series_ticker": series, "status": "settled", "limit": 200}
         if cursor:
             p["cursor"] = cursor
-        try:
-            r = sess.get(BASE + "/markets", params=p, timeout=30)
-            if r.status_code != 200:
+
+        js = None
+        for attempt in range(tries):
+            try:
+                r = session.get(BASE + "/markets", params=p, timeout=30)
+                if r.status_code == 200:
+                    js = r.json()
+                    break
+                stats["http"] = r.status_code
+                # 4xx that is not 429 will not become 200 by asking again.
+                if r.status_code != 429 and r.status_code < 500:
+                    if verbose:
+                        print(f"    HTTP {r.status_code}: "
+                              f"{getattr(r, 'text', '')[:160]}")
+                    break
+                wait = None
+                try:
+                    ra = r.headers.get("Retry-After")
+                    if ra is not None:
+                        wait = float(ra)
+                except (AttributeError, TypeError, ValueError):
+                    wait = None
+                if wait is None:
+                    wait = 0.5 * (2 ** attempt)         # 0.5 1 2 4 8
+                if attempt == tries - 1:
+                    if verbose:
+                        print(f"    HTTP {r.status_code} after {tries} tries; "
+                              f"giving up on this page")
+                    break
                 if verbose:
-                    print(f"    HTTP {r.status_code}: {r.text[:160]}")
-                break
-            js = r.json()
-        except Exception as e:
-            if verbose:
-                print(f"    {type(e).__name__}: {e}")
+                    print(f"    HTTP {r.status_code}, retry "
+                          f"{attempt + 1}/{tries - 1} in {wait:.1f}s")
+                stats["retries"] += 1
+                sleep(wait)
+            except Exception as e:
+                stats["http"] = type(e).__name__
+                if attempt == tries - 1:
+                    if verbose:
+                        print(f"    {type(e).__name__}: {e} -- giving up")
+                    break
+                wait = 0.5 * (2 ** attempt)
+                if verbose:
+                    print(f"    {type(e).__name__}: {e}; retry "
+                          f"{attempt + 1}/{tries - 1} in {wait:.1f}s")
+                stats["retries"] += 1
+                sleep(wait)
+
+        if js is None:
+            # Out of retries with pages still to go: the history is short
+            # because we failed, not because it ended.
+            stats["stopped"] = "gave_up"
+            stats["truncated"] = True
             break
+
         b = js.get("markets", [])
         if not b:
+            stats["stopped"] = "exhausted"
             break
         for m in b:
             try:
@@ -133,9 +205,16 @@ def fetch_settled(series, want, verbose=True):
                             "close": c, "open": o})
         cursor = js.get("cursor")
         pages += 1
+        stats["pages"] = pages
         if not cursor:
+            stats["stopped"] = "exhausted"
             break
-        time.sleep(0.08)                       # Basic tier ~20 reads/s
+        if len(out) >= want:
+            stats["stopped"] = "want"
+            break
+        sleep(0.08)                            # Basic tier ~20 reads/s
+    else:
+        stats["stopped"] = "want" if len(out) >= want else "gave_up"
     return out
 
 
@@ -827,6 +906,98 @@ def selftest():
     print("   slight overstatement. That is why the verdict bar in this file")
     print("   is |t| > 3 and not 1.96.")
 
+    print("\n7. THE PULL must survive a rate limit, and must SAY when it did not")
+    print("   A 429 is the routine consequence of paginating a 200-row")
+    print("   endpoint thousands of times. The old code broke out of the loop")
+    print("   on any non-200 and returned the short list with no way to tell")
+    print("   'this is the whole history' from 'we gave up here' -- so a rate")
+    print("   limit was reported as a fact about the market.")
+
+    class _Resp(object):
+        def __init__(self, status, payload=None, headers=None):
+            self.status_code = status
+            self._p = payload or {}
+            self.headers = headers or {}
+            self.text = "" if status == 200 else f"error {status}"
+
+        def json(self):
+            return self._p
+
+    class _Session(object):
+        def __init__(self, script):
+            self.script = list(script)
+            self.n = 0
+
+        def get(self, url, params=None, timeout=None):
+            self.n += 1
+            item = (self.script.pop(0) if self.script
+                    else _Resp(200, {"markets": [], "cursor": None}))
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+    def _page(i, n=200, cursor=None):
+        t0 = 1_700_000_000
+        return _Resp(200, {"markets": [
+            {"ticker": f"T-{i}-{j}", "floor_strike": 60000.0,
+             "expiration_value": 60000.0 + j,
+             "close_time": t0 + (i * n + j) * WINDOW,
+             "open_time": t0 + (i * n + j - 1) * WINDOW}
+            for j in range(n)], "cursor": cursor})
+
+    waits = []
+    cases = [
+        # want=150 but a page is 200 rows: pages are taken whole, so a
+        # recovered pull returns 200. Asserting 150 here would be asserting a
+        # truncation the code has never done.
+        ("429 then ok",
+         [_Resp(429), _page(0)], 150, dict(n=200, trunc=False, retried=True)),
+        ("Retry-After honoured",
+         [_Resp(429, headers={"Retry-After": "2.5"}), _page(0)], 150,
+         dict(n=200, trunc=False, retried=True)),
+        ("429 forever",
+         [_Resp(429)] * 12, 150, dict(n=0, trunc=True, retried=True)),
+        ("404 -- do not retry",
+         [_Resp(404)], 150, dict(n=0, trunc=True, retried=False)),
+        ("timeout then ok",
+         [OSError("timed out"), _page(0)], 150,
+         dict(n=200, trunc=False, retried=True)),
+        ("clean exhaustion",
+         [_page(0, n=50, cursor=None)], 5000,
+         dict(n=50, trunc=False, retried=False)),
+    ]
+    print(f"\n   {'case':>24}{'markets':>9}{'retries':>9}{'stopped':>11}"
+          f"{'truncated':>11}   verdict")
+    for name, script, want, exp in cases:
+        waits.clear()
+        st = {}
+        got = fetch_settled("KXTEST", want, verbose=False, stats=st,
+                            session=_Session(script),
+                            sleep=lambda w: waits.append(w))
+        ok = (len(got) == exp["n"] and st["truncated"] == exp["trunc"]
+              and (st["retries"] > 0) == exp["retried"])
+        print(f"   {name:>24}{len(got):>9,}{st['retries']:>9}"
+              f"{st['stopped']:>11}{str(st['truncated']):>11}   "
+              f"{'ok' if ok else '*** WRONG ***'}")
+        if not ok:
+            fails.append(f"pull case '{name}': got {len(got)} markets, "
+                         f"retries={st['retries']}, "
+                         f"truncated={st['truncated']}; expected "
+                         f"{exp['n']}, retried={exp['retried']}, "
+                         f"truncated={exp['trunc']}")
+        if name == "Retry-After honoured":
+            if 2.5 not in waits:
+                fails.append(f"ignored the server's Retry-After: waited "
+                             f"{waits} instead of 2.5s")
+        if name == "429 forever":
+            grew = all(waits[i] <= waits[i + 1] for i in range(len(waits) - 1))
+            if not grew or len(waits) < 3:
+                fails.append(f"backoff did not grow across retries: {waits}")
+
+    print("\n   'truncated' is the column that matters. It is the difference")
+    print("   between a short history and a short pull, and only one of those")
+    print("   is a finding.")
+
     print("\n" + "=" * 78)
     if fails:
         print("*** SELF-TEST FAILED ***")
@@ -924,12 +1095,26 @@ def main():
                   f"{sum(len(v) for v in data.values()):,} markets")
         except Exception:
             data = {}
+    now = time.time()
+    prov = {}
+
+    def newest_of(rows):
+        return max((m.get("close") or 0.0 for m in rows), default=0.0)
+
     for s in a.series:
-        have = len(data.get(s, ()))
-        if have >= a.markets * 0.9:
+        cached = data.get(s, ())
+        have = len(cached)
+        age = (now - newest_of(cached)) / 3600.0 if have else float("inf")
+        if have >= a.markets * 0.9 and age < STALE_HOURS:
+            prov[s] = {"n": have, "src": "cache", "age": age, "trunc": False,
+                       "pages": 0, "retries": 0}
             continue
-        print(f"  pulling {s} ...", flush=True)
-        got = fetch_settled(s, a.markets)
+        why = "stale" if have >= a.markets * 0.9 else "short"
+        agestr = "never" if have == 0 else f"{age:.1f}h old"
+        print(f"  pulling {s} ({why}: {have:,} cached, newest {agestr}) ...",
+              flush=True)
+        st = {}
+        got = fetch_settled(s, a.markets, stats=st)
         # NEVER let a bad pull destroy the cache. This file is thousands of
         # paginated API calls and it is the only 15-minute-spaced settlement
         # history the project has; a rate limit, a dropped connection or a
@@ -938,11 +1123,20 @@ def main():
         # hours to rebuild. Keep whichever pull is larger.
         if len(got) >= have:
             data[s] = got
+            src = "pulled"
             print(f"    {len(got):,} settled markets", flush=True)
         else:
+            src = "cache"
             print(f"    pulled only {len(got):,}, KEEPING the cached "
                   f"{have:,} -- treat this run's numbers for {s} as stale",
                   flush=True)
+        rows = data.get(s, ())
+        prov[s] = {"n": len(rows), "src": src,
+                   "age": (now - newest_of(rows)) / 3600.0 if rows
+                          else float("inf"),
+                   "trunc": bool(st.get("truncated")),
+                   "pages": st.get("pages", 0),
+                   "retries": st.get("retries", 0)}
 
     # Write to a sibling and rename: json.dump straight onto the cache path
     # truncates it the instant the file is opened, so any serialization error
@@ -951,6 +1145,27 @@ def main():
     with open(tmp_path, "w", encoding="utf-8") as fh:
         json.dump(data, fh)
     os.replace(tmp_path, a.cache)
+
+    print("\n" + "=" * 78)
+    print("DATA PROVENANCE -- where each series' numbers came from")
+    print("=" * 78)
+    print("  A short series is not a fact about the market until we know the")
+    print("  pull finished. TRUNCATED means we ran out of retries, so the")
+    print("  history below is ours, not Kalshi's.")
+    print(f"\n  {'series':>12}{'markets':>10}{'source':>9}{'newest':>11}"
+          f"{'pages':>7}{'retries':>9}   note")
+    for sname in a.series:
+        pv = prov.get(sname)
+        if not pv:
+            print(f"  {sname:>12}{'--':>10}{'--':>9}{'--':>11}"
+                  f"{'--':>7}{'--':>9}   not requested")
+            continue
+        agestr = "never" if pv["age"] == float("inf") else f"{pv['age']:.1f}h"
+        note = ("*** TRUNCATED ***" if pv["trunc"]
+                else "stale" if pv["age"] > STALE_HOURS
+                else "")
+        print(f"  {sname:>12}{pv['n']:>10,}{pv['src']:>9}{agestr:>11}"
+              f"{pv['pages']:>7}{pv['retries']:>9}   {note}")
 
     chains_by = {}
     print("\n" + "=" * 78)
