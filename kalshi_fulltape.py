@@ -35,7 +35,7 @@ was itself wrong) and a crash-safe feed check (gzip files being written by the
 live collector raise EOFError on read).
 """
 
-import argparse, glob, gzip, json, math, os, time
+import argparse, glob, gzip, json, math, os, time, zlib
 import sys as _sys
 _sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "research"))
 from gzsalvage import iter_lines as salvage_lines   # noqa: E402

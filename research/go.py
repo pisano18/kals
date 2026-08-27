@@ -134,6 +134,10 @@ SELFTESTS = [
                         "--selftest"]),
     ("maker economics", ["maker.py", "--selftest"]),
     ("vol timing", ["voltiming.py", "--selftest"]),
+    # cheap, and it is the only check that looks INSIDE main() --
+    # the one function no self-test in this project executes
+    ("unbound names", ["unbound.py", "--selftest"]),
+    ("repo name scan", ["unbound.py", ".."]),
     ("detectability", ["power.py", "--selftest", "--quick"]),
 ]
 

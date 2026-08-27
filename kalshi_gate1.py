@@ -23,7 +23,7 @@ PASS = median |error| under ~1 cent of index value.
 FAIL = stop. Do not build a model on a contract you cannot reproduce.
 """
 
-import argparse, glob, gzip, json, math, os
+import argparse, glob, gzip, json, math, os, zlib
 import sys as _sys
 _sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "research"))
 from gzsalvage import iter_lines as salvage_lines   # noqa: E402

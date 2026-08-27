@@ -245,19 +245,25 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
                 m1 = mid_at(t + h)
                 if m1 is None:
                     continue
-                hit[h].append((sgn * (m1 - m0) * 100.0, close_s))
+                # m0 rides along so fills can be bucketed by PRICE. The fee
+                # is 0.07*p*(1-p) and the break-even uninformed share is
+                # fee/(fee+h), so the answer at 50c and the answer at 5c are
+                # different questions -- 78% against 25%. A pooled number is
+                # dominated by the mid-book, which is exactly the region the
+                # arithmetic says cannot work.
+                hit[h].append((sgn * (m1 - m0) * 100.0, close_s, m0))
                 # same moments, same moves, RANDOM sign: isolates whether the
                 # taker's direction carries information from whether trades
                 # merely happen in volatile seconds
-                shuf[h].append((flip * (m1 - m0) * 100.0, close_s))
+                shuf[h].append((flip * (m1 - m0) * 100.0, close_s, m0))
     return hit, shuf
 
 
 def clustered(pairs):
     """One observation per close time, then a t on (clusters - 1) df."""
     by = defaultdict(list)
-    for v, k in pairs:
-        by[k].append(v)
+    for rec in pairs:
+        by[rec[1]].append(rec[0])          # (value, close, [price, ...])
     obs = [mean(v) for v in by.values()]
     n = len(obs)
     if n < 10:
@@ -390,8 +396,8 @@ def selftest():
         quotes[tk], trades[tk] = ser, tr
     hit, shuf = adverse_from_tape(quotes, trades, closes)
     hs = clustered(hit[1])
-    abs_h = clustered([(abs(v), k) for v, k in hit[1]])
-    abs_n = clustered([(abs(v), k) for v, k in shuf[1]])
+    abs_h = clustered([(abs(r[0]), r[1]) for r in hit[1]])
+    abs_n = clustered([(abs(r[0]), r[1]) for r in shuf[1]])
     print(f"\n  {'signed markout (correct)':>32}: {hs['mean']:>7.3f}c  "
           f"t={hs['t']:>6.1f}")
     print(f"  {'absolute move (the old test)':>32}: {abs_h['mean']:>7.3f}c  "
@@ -400,6 +406,130 @@ def selftest():
         fails.append(f"the SIGNED estimator fired (t={hs['t']:.1f}) on a tape "
                      "with zero directional information -- it is picking up "
                      "arrival clustering, not adverse selection")
+
+    # ---- a name a function READS but never BINDS is a crash waiting for
+    # real data, and main() is the one function no self-test can execute --
+    # it needs quotes, trades and markets that only exist on the recorder's
+    # machine. So nothing else in this file can catch it.
+    #
+    # This exact bug shipped: main() did `hit, null = adverse_from_tape(...)`
+    # while the robustness block below read `shuf`. The maker stage would have
+    # raised NameError on its first real run, at the point where it prints the
+    # decisive number, and the run log would have said "FAILED" with no clue.
+    import ast as _ast
+    import builtins as _bi
+    print("\n  UNBOUND NAMES -- main() is never executed by any self-test, so")
+    print("  a typo in it survives every test in this file until real data")
+    print("  reaches it. Checked statically instead.")
+    _src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _tree = _ast.parse(_src)
+    # module-level dunders are always bound, and are not assignments
+    _mod = set(dir(_bi)) | {"__file__", "__name__", "__doc__",
+                            "__spec__", "__package__", "__loader__",
+                            "__builtins__", "__debug__"}
+    for _n in _ast.walk(_tree):
+        if isinstance(_n, (_ast.Import, _ast.ImportFrom)):
+            for _al in _n.names:
+                _mod.add(_al.asname or _al.name.split(".")[0])
+    for _n in _tree.body:
+        if isinstance(_n, (_ast.FunctionDef, _ast.AsyncFunctionDef,
+                           _ast.ClassDef)):
+            _mod.add(_n.name)
+        elif isinstance(_n, (_ast.Assign, _ast.AnnAssign, _ast.For,
+                             _ast.With)):
+            for _x in _ast.walk(_n):
+                if isinstance(_x, _ast.Name) and isinstance(_x.ctx, _ast.Store):
+                    _mod.add(_x.id)
+
+    def _free(fn):
+        bound = set()
+        for _x in _ast.walk(fn):
+            if isinstance(_x, _ast.Name) and isinstance(_x.ctx, _ast.Store):
+                bound.add(_x.id)
+            elif isinstance(_x, _ast.arg):
+                bound.add(_x.arg)
+            elif isinstance(_x, (_ast.FunctionDef, _ast.AsyncFunctionDef,
+                                 _ast.ClassDef)):
+                bound.add(_x.name)
+            elif isinstance(_x, _ast.ExceptHandler) and _x.name:
+                bound.add(_x.name)
+            elif isinstance(_x, (_ast.Import, _ast.ImportFrom)):
+                for _al in _x.names:
+                    bound.add(_al.asname or _al.name.split(".")[0])
+            elif isinstance(_x, _ast.Global):
+                bound.update(_x.names)
+        used = {_x.id for _x in _ast.walk(fn)
+                if isinstance(_x, _ast.Name) and isinstance(_x.ctx, _ast.Load)}
+        return sorted(used - bound - _mod)
+
+    bad = {}
+    for _n in _tree.body:
+        if isinstance(_n, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            f = _free(_n)
+            if f:
+                bad[_n.name] = f
+    print(f"  checked {sum(1 for _n in _tree.body if isinstance(_n, (_ast.FunctionDef, _ast.AsyncFunctionDef)))}"
+          f" top-level functions -> "
+          + ("clean" if not bad else f"*** {bad} ***"))
+    for k, v in bad.items():
+        fails.append(f"{k}() reads {v} but never binds them -- NameError on "
+                     "the first real run")
+    # and the checker itself must be able to see one
+    _probe = _ast.parse("def f(a):\n    return a + undefined_thing\n").body[0]
+    if "undefined_thing" not in _free(_probe):
+        fails.append("the unbound-name checker cannot detect an unbound name, "
+                     "so its 'clean' verdict above means nothing")
+
+    # ---- the per-price table must actually separate prices ----------------
+    print("\n  PER-PRICE SEPARATION. Plant adverse selection ONLY in markets")
+    print("  quoted near 50c and none in markets quoted near 10c. A pooled")
+    print("  number averages them; the bucketed one must not.")
+    rnd = random.Random(4)
+    quotes, trades, closes = {}, {}, {}
+    for w in range(240):
+        close_s = 1_760_000_000 + w * 900
+        tk = f"P{w:04d}"
+        closes[tk] = close_s
+        near50 = (w % 2 == 0)
+        base = 0.50 if near50 else 0.10
+        planted = 1.0 if near50 else 0.0
+        mid = base
+        ser, tr = [], []
+        for s_ in range(close_s - 900, close_s + 1):
+            mid = min(max(mid + rnd.gauss(0, 0.0008), base - 0.03),
+                      base + 0.03)
+            ser.append([s_, mid - 0.005, mid + 0.005, 100.0, 100.0])
+        for i in range(60, 900, 60):
+            s_ = close_s - 900 + i
+            side = "yes" if rnd.random() < 0.5 else "no"
+            sgn = 1.0 if side == "yes" else -1.0
+            tr.append((s_, ser[i][1], 10.0, side))
+            for j in range(i, min(i + 31, len(ser))):
+                ser[j][1] += sgn * planted / 100.0
+                ser[j][2] += sgn * planted / 100.0
+        quotes[tk] = [tuple(r) for r in ser]
+        trades[tk] = tr
+    hitp, _sh = adverse_from_tape(quotes, trades, closes)
+    H1 = HORIZONS[0]
+    print(f"\n  {'bucket':>14}{'planted':>10}{'measured':>11}{'clusters':>10}")
+    for lo, hi, want in ((0.05, 0.16, 0.0), (0.30, 0.70, 1.0)):
+        sel = [r for r in hitp[H1] if len(r) > 2 and lo <= r[2] < hi]
+        c = clustered(sel)
+        got = c["mean"] if c else float("nan")
+        print(f"  {f'{100*lo:.0f}-{100*hi:.0f}c':>14}{want:>9.2f}c"
+              f"{got:>10.3f}c{(c['n'] if c else 0):>10}")
+        if not c:
+            fails.append(f"per-price bucket {100*lo:.0f}-{100*hi:.0f}c "
+                         "produced no clusters, so the split is not working")
+        elif abs(got - want) > 0.12:
+            fails.append(f"bucket {100*lo:.0f}-{100*hi:.0f}c measured "
+                         f"{got:.3f}c against a planted {want:.2f}c")
+    pooled = clustered(hitp[H1])
+    if pooled:
+        print(f"  {'pooled':>14}{'--':>10}{pooled['mean']:>10.3f}c"
+              f"{pooled['n']:>10}")
+        print("  The pooled number is the average of a real effect and no")
+        print("  effect. It describes neither market.")
 
     print("\n" + "=" * 78)
     if fails:
@@ -439,10 +569,7 @@ def main():
     trades = load_trades(a.data)
     mk = load_markets(a.out)
     closes = {tk: int(m["close"]) for tk, m in mk.items()}
-    for tk in quotes:
-        if tk not in closes:
-            continue
-    hit, null = adverse_from_tape(quotes, trades, closes)
+    hit, shuf = adverse_from_tape(quotes, trades, closes)
 
     print("\n" + "=" * 78)
     print("REALISED ADVERSE SELECTION  --  what a resting quote actually costs")
@@ -472,6 +599,42 @@ def main():
         if sf:
             print(f"  {h:>8}s{sf['mean']:>16.3f}c{sf['t']:>8.1f}{sf['df']:>6}"
                   f"{p_two_sided(sf['t'], sf['df']):>10.4f}")
+
+    print("\n" + "=" * 78)
+    print("BY PRICE  --  the pooled number above answers the wrong question")
+    print("=" * 78)
+    print("  The fee is 0.07*p*(1-p) and the break-even uninformed share is")
+    print("  fee/(fee+h). At 50c that is 78%; at 5c with the same 1c of")
+    print("  adverse selection it is 25%. Those are different propositions,")
+    print("  and a pooled average is dominated by the mid-book -- the one")
+    print("  region the arithmetic says cannot work at any q.\n")
+    print(f"  {'price':>12}{'fills':>8}{'clusters':>10}{'markout':>11}"
+          f"{'t':>7}{'fee':>8}{'net':>9}{'q needed':>10}   verdict")
+    H1 = HORIZONS[0]
+    buckets = [(0.00, 0.08), (0.08, 0.16), (0.16, 0.30), (0.30, 0.70),
+               (0.70, 0.84), (0.84, 0.92), (0.92, 1.00)]
+    for lo, hi in buckets:
+        sel = [r for r in hit[H1] if len(r) > 2 and lo <= r[2] < hi]
+        c = clustered(sel)
+        mid_p = (lo + hi) / 2.0
+        fee = 100.0 * 0.07 * mid_p * (1.0 - mid_p)
+        label = f"{100*lo:.0f}-{100*hi:.0f}c"
+        if not c:
+            print(f"  {label:>12}{len(sel):>8,}{'--':>10}"
+                  f"{'too few clusters':>28}")
+            continue
+        h_cost = c["mean"]
+        # A maker quoting one tick wide earns 0.5c and pays h_cost per fill.
+        net = 0.5 - h_cost
+        q = fee / (fee + h_cost) if h_cost > 0 else 0.0
+        verdict = ("needs " + f"{100*q:.0f}% uninformed" if h_cost > 0
+                   else "no adverse selection measured")
+        print(f"  {label:>12}{len(sel):>8,}{c['n']:>10}{h_cost:>10.3f}c"
+              f"{c['t']:>7.1f}{fee:>7.2f}c{net:>8.3f}c"
+              f"{(100*q if h_cost > 0 else 0):>9.0f}%   {verdict}")
+    print("\n  'q needed' is the fraction of counterparties that must be")
+    print("  uninformed for quoting at that price to break even. Read the")
+    print("  wings, not the average.")
 
     print("\n  BREAK-EVEN UNINFORMED SHARE -- q = fee/(fee+h). Below this")
     print("  fraction of noise flow, quoting loses to the fee theorem no")
