@@ -376,7 +376,14 @@ def report_orderbook(data_dir):
         if m.get("_seq_gap"):
             flagged += 1
         sid = m.get("sid")
-        sq = (m.get("msg") or {}).get("seq")
+        # Kalshi puts `seq` at the TOP level of the frame, not inside `msg`;
+        # the emitted schema.json resolves it there. Reading msg.seq returned
+        # None for every message, so gaps were counted over ZERO pairs and the
+        # prober printed "Clean. A book reconstructed from these deltas is
+        # trustworthy" about a channel that was, in the same run, 100%
+        # unparseable. A green light computed from n=0 is worse than none.
+        d = m.get("msg") or {}
+        sq = m.get("seq", d.get("seq"))
         if sid is None or sq is None:
             continue
         prev = seen.get(sid)
@@ -385,11 +392,22 @@ def report_orderbook(data_dir):
         seen[sid] = sq
     print(f"  {len(msgs):,} messages across {len(seen):,} subscriptions")
     print(f"  sequence gaps: {gaps:,} (collector flagged {flagged:,})")
-    if gaps:
+    if not seen:
+        # NEVER certify from an empty sample. This branch printed "Clean...
+        # trustworthy" over zero (sid, seq) pairs, in a run where the channel
+        # it was certifying failed to parse 68,976,084 times out of
+        # 68,976,084. The "0 subscriptions" on the line above was the only
+        # clue, and nothing keyed on it.
+        print("  *** NO (sid, seq) PAIRS FOUND -- this says NOTHING about "
+              "book integrity.")
+        print("  Either the channel is empty or the sequence field is not "
+              "where this expects it.")
+    elif gaps:
         print("  A gap means the reconstructed book is WRONG from that point")
         print("  until the next snapshot. Any fill model built on it is fiction.")
     else:
-        print("  Clean. A book reconstructed from these deltas is trustworthy.")
+        print(f"  Clean across {len(seen):,} subscriptions. A book "
+              f"reconstructed from these deltas is trustworthy.")
 
 
 def report_disk(data_dir, feeds_dir):

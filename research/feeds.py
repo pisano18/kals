@@ -164,6 +164,24 @@ def load_tob(feeds_dir, asset="BTC", verbose=True):
             put(m.get("_rx", 0), "bitstamp", bids[0][0], bids[0][1],
                 asks[0][0], asks[0][1])
 
+    # GEMINI. 1,538,050 recorded messages were being silently dropped: this
+    # loader covered coinbase, kraken and bitstamp only, so the imbalance
+    # regression and the index replica were built from DIFFERENT venue sets.
+    # Its top_of_book stream emits incremental `change` events, so bid and ask
+    # have to be carried forward the way crypto_feeds.py does when it builds
+    # the replica.
+    g_bid = g_ask = None
+    for m in read_gz(os.path.join(feeds_dir, "gemini", "*.jsonl.gz")):
+        for e in m.get("events", []) or []:
+            if e.get("type") == "change" and e.get("side") in ("bid", "ask"):
+                if e["side"] == "bid":
+                    g_bid = (e.get("price"), e.get("remaining"))
+                else:
+                    g_ask = (e.get("price"), e.get("remaining"))
+        if g_bid and g_ask:
+            put(m.get("_rx", 0), "gemini", g_bid[0], g_bid[1],
+                g_ask[0], g_ask[1])
+
     if verbose:
         print(f"  top-of-book {asset}: {len(per):,} seconds, per venue "
               f"{dict(counts)}")
@@ -294,10 +312,19 @@ def imbalance_test(tob, index, horizons=(1, 2, 3, 5, 10)):
         print("\n  imbalance: too few seconds with sizes on both sides")
         return
     print(f"\n  ORDER-BOOK IMBALANCE -> FUTURE INDEX ({len(imb):,} seconds)")
-    print(f"  {'horizon':>9}{'beta ($ per unit imb)':>24}{'t':>8}{'n':>10}")
+    print(f"  {'horizon':>9}{'beta ($ per unit imb)':>24}{'t':>8}{'df':>5}"
+          f"{'p (t)':>10}{'n':>10}")
     for h in horizons:
+        # sorted(imb), not imb. A dict iterates in INSERTION order, which is
+        # the order the feed files happened to be read in, so the "contiguous
+        # blocks" below were contiguous in nothing and the block bootstrap
+        # collapsed to an iid standard error -- too small, so the t is too
+        # large. This is the identical defect lag_profile carries a nine-line
+        # comment about, in the function next door, and no self-test ever
+        # exercised this one.
         pairs = []
-        for sec, v in imb.items():
+        for sec in sorted(imb):
+            v = imb[sec]
             if sec in index and (sec + h) in index:
                 pairs.append((v, index[sec + h] - index[sec]))
         if len(pairs) < 300:
@@ -321,7 +348,16 @@ def imbalance_test(tob, index, horizons=(1, 2, 3, 5, 10)):
             continue
         m, sd = mean(bs_), pstdev(bs_)
         se = sd / math.sqrt(len(bs_)) if sd > 0 else float("inf")
-        print(f"  {h:>8}s{beta:>24.3f}{m/se if se>0 else 0:>8.1f}{n:>10,}")
+        t = m / se if se > 0 else 0.0
+        # df and a t-based p, like lag_profile: this SE is built from a handful
+        # of blocks, so it is a t on (blocks - 1), not a z. It printed a bare
+        # t and left the reader to compare it against 1.96.
+        df = max(len(bs_) - 1, 1)
+        print(f"  {h:>8}s{beta:>24.3f}{t:>8.1f}{df:>5}"
+              f"{p_two_sided(t, df):>10.4f}{n:>10,}")
+    print(f"\n  |t| for p<0.05 on t({df}) is {crit(0.05, df):.2f}, not 1.96; and")
+    print("  the multiple-testing bar in power.py is a NORMAL bar -- on this")
+    print("  many degrees of freedom the equivalent is higher still.")
     print("\n  A positive beta means a bid-heavy consolidated book precedes a")
     print("  rising index. Multiply beta by a typical imbalance to get the")
     print("  dollar move, then by the delta damping factor (r_live/60) and")

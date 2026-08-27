@@ -294,7 +294,14 @@ class Collector:
         m["_rx_ms"] = int(time.time() * 1000)   # local receive time, for latency
 
         if t == "orderbook_delta":
-            sid, sq = m.get("sid"), (m.get("msg") or {}).get("seq")
+            # Kalshi puts `seq` at the TOP level of the frame, not inside `msg`;
+            # the emitted schema.json resolves it there. Reading msg.seq returned
+            # None for every message, so gaps were counted over ZERO pairs and the
+            # prober printed "Clean. A book reconstructed from these deltas is
+            # trustworthy" about a channel that was, in the same run, 100%
+            # unparseable. A green light computed from n=0 is worse than none.
+            _d = m.get("msg") or {}
+            sid, sq = m.get("sid"), m.get("seq", _d.get("seq"))
             if sid is not None and sq is not None:
                 prev = self.seq.get(sid)
                 if prev is not None and sq != prev + 1:

@@ -329,9 +329,20 @@ def chain_returns(chains):
     for ci, ch in enumerate(chains):
         for m in ch:
             if m["strike"] > 0 and m["settle"] > 0:
+                # Ties score 0.5, not 1.0. `settle >= strike` counted every
+                # exact tie as an up-move: XRP has 57 ties in 1,994 windows,
+                # which is 51.15% with the old convention against 48.29%
+                # strictly above -- the convention moved the number by MORE
+                # than the deviation being reported, and flipped its sign.
+                # Neither ">=" nor ">" is defensible when the tie count is
+                # comparable to the effect; 0.5 is the only neutral choice,
+                # and the count is now reported so it cannot hide again.
+                up = (1.0 if m["settle"] > m["strike"]
+                      else 0.5 if m["settle"] == m["strike"] else 0.0)
                 rows.append({"r": math.log(m["settle"] / m["strike"]),
                              "close": m["close"], "chain": ci,
-                             "up": 1.0 if m["settle"] >= m["strike"] else 0.0})
+                             "tie": 1.0 if m["settle"] == m["strike"] else 0.0,
+                             "up": up})
     return rows
 
 
@@ -345,11 +356,16 @@ def report_sigma(rows, label):
     sig_s = sd_window / math.sqrt(880.0)
     ann = sd_window / math.sqrt(880.0) * math.sqrt(365 * 24 * 3600) * 100
     up = mean([x["up"] for x in rows])
-    se_up = math.sqrt(up * (1 - up) / len(rows))
+    ties = sum(x.get("tie", 0.0) for x in rows)
+    # ties contribute zero variance under the 0.5 convention, so the effective
+    # n for the binomial SE is the number of windows that actually resolved
+    n_eff = max(len(rows) - ties, 1)
+    se_up = math.sqrt(0.25 / n_eff)
     print(f"  {label:>11}{len(rows):>7,}{100*sd_window:>11.4f}%"
           f"{1e6*sig_s:>13.2f}{ann:>10.1f}%{100*up:>9.2f}%"
-          f"{(up-0.5)/se_up:>8.1f}")
-    return {"sd": sd_window, "sigma_s": sig_s, "n": len(rows)}
+          f"{(up-0.5)/se_up:>8.1f}{int(ties):>7,}")
+    return {"sd": sd_window, "sigma_s": sig_s, "n": len(rows),
+            "up": up, "ties": int(ties)}
 
 
 def test_vol_clustering(rows, label):
@@ -433,9 +449,21 @@ def test_tails(rows, label):
     if len(rows) < 300:
         return None
     r = sorted(x["r"] for x in rows)
+    # THIS USED TO DELETE THE EXTREMES AND THEN STANDARDISE BY THE SURVIVORS'
+    # STANDARD DEVIATION -- a trim labelled "winsorize" in its own comment. It
+    # is the difference between measuring a tail and removing it: dropping the
+    # ten largest of 5,195 BTC returns takes excess kurtosis from 17.61 to
+    # 5.6, and the sd it then divides by is 7-12% below the sd the SIGMA table
+    # publishes and a pricing model would use. Four of the five "crossovers"
+    # this table reported do not exist without it.
+    #
+    # Winsorize properly: CLIP the extremes to the 0.1% quantiles, keep every
+    # observation, and standardise by the sd of the FULL sample.
     k = max(int(len(r) * 0.001), 1)
-    r = r[k:len(r) - k]                       # winsorize the extreme 0.1%
-    sd = pstdev(r)
+    lo, hi = r[k], r[len(r) - 1 - k]
+    sd_full = pstdev(r)
+    r = [min(max(v, lo), hi) for v in r]
+    sd = sd_full
     if sd <= 0:
         return None
     z = [(v - mean(r)) / sd for v in r]
@@ -578,7 +606,7 @@ def selftest():
 
     print("\n4. SIGMA RECOVERY -- must back out the sigma it was given")
     print(f"  {'injected':>11}{'n':>7}{'sd/window':>12}{'sig(1e-6/s)':>13}"
-          f"{'annual':>10}{'up-rate':>9}{'t':>8}")
+          f"{'annual':>10}{'up-rate':>9}{'t':>8}{'ties':>7}")
     for sd in (0.001, 0.002, 0.004):
         rows = chain_returns(build_chains(synth(4000, sd=sd, seed=int(sd*1e6)))[0])
         got = report_sigma(rows, f"sd={sd:.4f}")
@@ -749,7 +777,7 @@ def main():
     print("SIGMA -- the one free parameter of the fair-value model")
     print("=" * 78)
     print(f"  {'series':>11}{'windows':>7}{'sd/window':>12}{'sig(1e-6/s)':>13}"
-          f"{'annual':>10}{'up-rate':>9}{'t':>8}")
+          f"{'annual':>10}{'up-rate':>9}{'t':>8}{'ties':>7}")
     for s in a.series:
         if rows_by.get(s):
             report_sigma(rows_by[s], s)

@@ -296,8 +296,16 @@ def mde(fn, n, alpha=0.05, power=0.80, reps=800, seed=1, hi=None,
     probe_reps = max(reps // 3, 120)
 
     def _bail(se_):
+        # UNREACHABLE, and it has to say so. This used to hand back a sentinel
+        # curve {a:1, b:0, c1:0, c2:0}, whose exact root is K = (z_a+z_b)*se0
+        # -- so mde_scaled(), which discarded the inf and re-solved the curve,
+        # produced a finite number out of thin air. That is where the report's
+        # Bonferroni Brier MDE of 0.00030 came from (against 0.03695
+        # uncorrected), and the P&L row's 7.44c, at which effect size every
+        # cluster wins, the standard deviation is zero and the measured power
+        # is 0.000. `unreachable` is the flag every caller must honour.
         curve = {"a": 1.0, "b": 0.0, "c1": 0.0, "c2": 0.0, "se0": se_,
-                 "zc": zc, "cal": 1.0, "n": n}
+                 "zc": zc, "cal": 1.0, "n": n, "unreachable": True}
         return ((float("inf"), se_, zc, curve) if return_curve
                 else (float("inf"), se_, zc))
 
@@ -455,6 +463,13 @@ def mde_scaled(fn, n_target, alpha=0.05, power=0.80, reps=400, seed=1,
         _m, _se, _zc, curve = mde(fn, n_sim, alpha, power, reps=reps,
                                   seed=seed, return_curve=True,
                                   pw_reps=pw_reps, **kw)
+        if _m == float("inf"):
+            # propagate it. Discarding this into an unread variable and
+            # re-solving the sentinel curve below is what manufactured finite
+            # MDEs for effects that are unreachable at ANY effect size.
+            return float("inf"), n_sim
+    if curve.get("unreachable"):
+        return float("inf"), n_sim
     if n_sim == n_target:
         e = _solve_curve(curve, (curve["zc"] + ND.inv_cdf(power))
                          * curve["se0"])
@@ -525,6 +540,17 @@ def testing_report(n_series, alpha):
     print(f"  expected to be real, and it is not a fixed threshold: sort the")
     print(f"  {total} p-values ascending and keep the largest i with")
     print(f"  p_(i) <= i * {alpha} / {total}.")
+    print("\n  AND THIS BAR IS A NORMAL ONE. Several statistics here are t's")
+    print("  on few degrees of freedom -- feeds.py and leadlag.py build their")
+    print("  standard error from ~20 blocks or from the close-time clusters,")
+    print("  and clusters arrive at four an hour. On 19 df the corrected bar")
+    print(f"  is |t| = {student_t_ppf(1 - bonf / 2, 19):.2f}, not "
+          f"{ND.inv_cdf(1 - bonf/2):.2f}. Applying the normal bar to those")
+    print("  rows passes results that the correct bar rejects.")
+    print(f"\n  {'df':>8}{'corrected |t|':>16}")
+    for df in (10, 19, 30, 60, 120, 1000):
+        print(f"  {df:>8}{student_t_ppf(1 - bonf / 2, df):>16.2f}")
+
     print("\n  THE PRACTICAL RULE. One |t| of 3.1 out of "
           f"{total} tests is noise.")
     print(f"  Treat |t| < {ND.inv_cdf(1 - bonf/2):.1f} as a lead to re-measure "
@@ -604,22 +630,45 @@ def selftest(quick=False):
     print("  0.00026 against an uncorrected 0.03136. This is the check that")
     print("  would have caught it on the day it was written.")
     print(f"\n  {'estimator':>28}{'a=0.05':>12}{'a=1.7e-4':>12}{'ratio':>9}")
-    for label, fn, n, kw in (("edge.py Brier advantage", est_brier, 300,
+    for label, fn, n, kw in (("Brier @ the run's own n=104", est_brier, 104,
+                              {"per_cluster": 12, "price": 0.95}),
+                             ("P&L @ the run's own n=104", est_pnl, 104,
+                              {"price": 0.95}),
+                             ("edge.py Brier advantage", est_brier, 300,
                               {"per_cluster": 4}),
                              ("replay net P&L / contract", est_pnl, 300, {}),
                              ("chain.py up-rate deviation", est_uprate, 3000,
                               {})):
-        loose, _, _ = mde(fn, n, 0.05, POWER, reps=R(200), seed=61,
-                          pw_reps=R(350), **kw)
-        tight, _, _ = mde(fn, n, 1.7e-4, POWER, reps=R(200), seed=61,
-                          pw_reps=R(350), **kw)
-        ratio = tight / loose if loose > 0 else float("nan")
+        # mde_scaled(), NOT mde(). main() calls mde_scaled; the bug that
+        # produced a Bonferroni MDE of 0.00030 against 0.03695 lived entirely
+        # in mde_scaled re-solving a sentinel curve, and a test that exercised
+        # mde() could never have seen it.
+        loose, _ = mde_scaled(fn, n, 0.05, POWER, reps=R(200), seed=61,
+                              n_cap=3000, pw_reps=R(350), **kw)
+        tight, _ = mde_scaled(fn, n, 1.7e-4, POWER, reps=R(200), seed=61,
+                              n_cap=3000, pw_reps=R(350), **kw)
+        inf = float("inf")
+        ratio = (tight / loose) if (loose > 0 and tight != inf) else inf
         bad = ""
-        if not (tight > loose):
+        # `tight > loose` alone is satisfied by infinity, so assert the shape
+        # too: a finite loose value must give a finite-and-larger OR an
+        # explicitly unreachable tight one, never a smaller finite number.
+        if tight < loose or (tight == loose and loose != inf):
+            # both unreachable is a legitimate answer -- it means the effect
+            # cannot be detected at ANY size, which at n=104 and a 95c price
+            # is true: the quote saturates against the boundary long before
+            # the required power is reached
             bad = " <--"
-            fails.append(f"{label}: Bonferroni MDE {tight:.5f} is not larger "
-                         f"than the uncorrected {loose:.5f}")
-        print(f"  {label:>28}{loose:>12.5f}{tight:>12.5f}{ratio:>9.2f}{bad}")
+            fails.append(f"{label}: Bonferroni MDE {tight} is not larger than "
+                         f"the uncorrected {loose}")
+        if loose == inf and tight != inf:
+            bad = " <--"
+            fails.append(f"{label}: unreachable at alpha=0.05 but reachable "
+                         f"at Bonferroni -- impossible")
+        f_l = "unreachable" if loose == inf else f"{loose:.5f}"
+        f_t = "unreachable" if tight == inf else f"{tight:.5f}"
+        f_r = "--" if ratio == inf else f"{ratio:.2f}"
+        print(f"  {label:>28}{f_l:>12}{f_t:>12}{f_r:>9}{bad}")
 
     print("\n  SKEW AT SMALL CLUSTER COUNTS -- replay's t is anti-conservative")
     print("  The per-cluster net P&L is a handful of binary payoffs at a price")
