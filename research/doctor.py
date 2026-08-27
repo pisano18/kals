@@ -190,19 +190,23 @@ def channel_stats(data_dir, chan):
     files = sorted(glob.glob(os.path.join(data_dir, chan, "*.jsonl.gz")))
     if not files:
         return None
-    n, partial, bytes_ = 0, 0, 0
+    n, bytes_ = 0, 0
+    st = {}
     for fp in files:
         try:
             bytes_ += os.path.getsize(fp)
         except OSError:
             pass
-        try:
-            with gzip.open(fp, "rt", encoding="utf-8") as f:
-                for _ in f:
-                    n += 1
-        except Exception:
-            partial += 1
-    return {"files": len(files), "msgs": n, "partial": partial, "bytes": bytes_}
+        # Read through the salvage reader, not gzip.open. A file the collector
+        # was mid-write on when the machine died raises inside the torn member,
+        # and gzip.open then surrenders everything written after it -- so this
+        # census would under-count, or call EMPTY, a channel that is largely
+        # intact on disk. Every other stage already reads through salvage; the
+        # census that decides whether a channel is usable must agree with them.
+        for _ in salvage_lines(fp, st):
+            n += 1
+    return {"files": len(files), "msgs": n,
+            "partial": st.get("salvaged_files", 0), "bytes": bytes_}
 
 
 # ===========================================================================
@@ -230,6 +234,12 @@ def report_channels(data_dir, label):
         status = "OK" if s["msgs"] else "*** EMPTY ***"
         print(f"  {c:<22}{s['files']:>7}{s['msgs']:>12,}"
               f"{s['bytes']/1e6:>9.1f}{s['partial']:>11}   {status}")
+    torn = sum(v["partial"] for v in out.values())
+    if torn:
+        print(f"\n  {torn} file(s) were mid-write when the collector last "
+              "stopped. Their complete\n  gzip members ARE counted above and "
+              "ARE read by every stage; only the final\n  torn record is "
+              "lost. This is a note, not a problem.")
     return out
 
 
@@ -445,7 +455,7 @@ def report_disk(data_dir, feeds_dir):
 def selftest():
     """Prove the prober finds the right fields regardless of which naming
     convention the collector actually used."""
-    import tempfile, shutil
+    import io, tempfile, shutil
     print("=" * 78)
     print("SELF-TEST -- does schema discovery survive different field names?")
     print("=" * 78)
@@ -512,6 +522,59 @@ def selftest():
         got = get_path(msgs[0], "msg.data(json).value")
         if got != 80000.0:
             fails.append(f"nested path read {got!r}, expected 80000.0")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # ---- the census must count a file the collector died mid-write on ----
+    # Not hypothetical: the machine running the collector has already crashed
+    # once, and a crash leaves exactly this shape on disk -- a member torn off
+    # mid-write, then, on restart, a COMPLETE member appended after it.
+    # gzip.open dies inside the torn member and never reaches the good one,
+    # surrendering every byte written after the crash. That is the loss this
+    # reader exists to stop, so the census has to prove it stops it.
+    tmp = tempfile.mkdtemp()
+    try:
+        d = os.path.join(tmp, "ticker")
+        os.makedirs(d)
+
+        def member(lo, hi):
+            b = io.BytesIO()
+            with gzip.GzipFile(fileobj=b, mode="wb") as g:
+                for i in range(lo, hi):
+                    g.write((json.dumps({"type": "ticker", "i": i,
+                                         "pad": "x" * 40}) + "\n").encode())
+            return b.getvalue()
+
+        crashed = member(0, 60)
+        crashed = crashed[:len(crashed) * 3 // 5]          # torn mid-deflate
+        restart = member(60, 120)                          # complete
+        fp = os.path.join(d, "crash.jsonl.gz")
+        with open(fp, "wb") as fh:
+            fh.write(crashed + restart)
+
+        naive = 0
+        try:
+            with gzip.open(fp, "rt", encoding="utf-8") as f:
+                for _ in f:
+                    naive += 1
+        except Exception:
+            pass
+
+        st = channel_stats(tmp, "ticker")
+        print(f"\n  mid-write census: gzip.open recovers {naive} lines, "
+              f"channel_stats recovers {st['msgs']} "
+              f"(mid-write flagged: {st['partial']})")
+        if st["partial"] != 1:
+            fails.append(f"census flagged {st['partial']} mid-write files, "
+                         "expected exactly 1")
+        if st["msgs"] <= naive:
+            fails.append(f"census recovered {st['msgs']} lines vs gzip.open's "
+                         f"{naive} -- salvage bought nothing")
+        # The post-restart member is intact. All 60 of its records must
+        # survive, or the reader is not doing the one job it has.
+        if st["msgs"] < 60:
+            fails.append(f"census recovered {st['msgs']} lines; the intact "
+                         "post-restart member alone holds 60")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -326,10 +326,15 @@ returned zero observations. **This is the next experiment — see §7.**
   series, BTC absent) — the anchor of the whole detectability table came from a
   cache ~10h stale. Other series were truncated by HTTP 429s that the report
   re-describes as "under half the history". **Unfixed.**
-- **`doctor.channel_stats` undercounts** wherever `mid-write > 0`: it uses
-  plain `gzip.open` and abandons a file at the first exception. Proof in the
-  run itself — 86,338 seconds recovered by `feeds.py` against 83,463 messages
-  counted on the same channel. Should use `gzsalvage`. **Unfixed.**
+- ~~**`doctor.channel_stats` undercounts** wherever `mid-write > 0`~~ —
+  **FIXED.** It used plain `gzip.open`, which dies inside a torn member and
+  surrenders everything written after it; the proof was in the run itself
+  (86,338 seconds recovered by `feeds.py` against 83,463 messages counted on
+  the same channel). It now reads through `gzsalvage`, and a self-test builds
+  the exact shape a crash leaves — a member torn mid-write followed by a
+  complete member appended on restart — and asserts the census beats
+  `gzip.open` on it: **24 lines vs 84**. The `mid-write` column now means
+  "salvaged", not "discarded", and the census says so in words.
 
 ---
 
@@ -413,8 +418,8 @@ Ranked by information unlocked per unit of work:
 2. Replace `chain.py`'s iid SEs with block-bootstrap on both autocorrelation
    tables. It is the difference between "one cell clears the bar" and "nothing
    exceeds |t| = 1.3".
-3. Make `doctor.channel_stats` use `gzsalvage`; every count it prints is a
-   lower bound.
+3. ~~Make `doctor.channel_stats` use `gzsalvage`~~ — done; the census is no
+   longer a lower bound.
 4. Fix `chain.py`'s HTTP 429 handling and make it actually pull `KXBTC15M`;
    mark stale/cached series in every table, not once in a run log.
 5. Restate GATE C's claim (§4).
