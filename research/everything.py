@@ -404,6 +404,114 @@ def step_preflight(ctx):
     return True
 
 
+COLLECTORS = ("kalshi_collector.py", "crypto_feeds.py")
+
+
+def _sha(path):
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+    except OSError:
+        return None
+    return h.hexdigest()
+
+
+def step_sync(ctx):
+    """Is the code the watchdog actually launches the code in this repo?
+
+    run_all.ps1 does `Set-Location C:\kals` and starts `python
+    kalshi_collector.py`, so it runs the copies sitting NEXT TO THE DATA --
+    not the repo at C:\kals-repo. A `git pull` updates the repo and changes
+    nothing about what is recording. Every collector fix this project has
+    made could have been sitting unused, and nothing in the run would have
+    said so.
+    """
+    rule("0c  COLLECTOR CODE -- is the running copy the repo's copy?")
+    root = ctx.get("data_root")
+    if not root or os.path.abspath(root) == os.path.abspath(REPO):
+        say("data and repo are the same directory; nothing can drift.")
+        return True
+
+    drift = []
+    for name in COLLECTORS:
+        live, mine = os.path.join(root, name), os.path.join(REPO, name)
+        if not os.path.exists(mine):
+            say(f"{name:<24} not in this repo -- skipped")
+            continue
+        if not os.path.exists(live):
+            say(f"{name:<24} *** MISSING from {root} ***")
+            drift.append((name, live, mine, "missing"))
+            continue
+        a, b = _sha(live), _sha(mine)
+        if a == b:
+            say(f"{name:<24} identical to the repo")
+        else:
+            say(f"{name:<24} *** DIFFERENT from the repo ***")
+            drift.append((name, live, mine, "stale"))
+
+    if not drift:
+        say("The watchdog is running this repo's code.")
+        return True
+
+    say("")
+    say("The watchdog launches the copies under " + root + ", so these fixes")
+    say("are NOT running. They take effect only after the file is replaced")
+    say("AND the collector process restarts.")
+    if not ctx.get("sync"):
+        say("")
+        say("Re-run with --sync-collectors to copy them (each is backed up")
+        say("to .bak first, and is copied only if its own self-test passes),")
+        say("or copy by hand:")
+        for name, live, mine, _why in drift:
+            say(f'    copy /Y "{mine}" "{live}"')
+        return True
+
+    for name, live, mine, _why in drift:
+        # Never overwrite the code that produces unrecoverable data with code
+        # that has not proved it runs. A gate is cheap; a collector that dies
+        # on import at 03:00 is not.
+        #
+        # Not every collector has a --selftest, and "no self-test" must not
+        # mean "never sync" -- that would quietly pin the file forever. Where
+        # there is one, run it; where there is not, at least prove the file
+        # compiles, and say which gate was used rather than implying the
+        # stronger one.
+        try:
+            has_st = "--selftest" in open(mine, encoding=ENC,
+                                          errors="replace").read()
+        except OSError:
+            has_st = False
+        if has_st:
+            gate, cmd = "self-test", [mine, "--selftest"]
+        else:
+            gate, cmd = "compile check", ["-m", "py_compile", mine]
+        rc, out, _dt = run(cmd, REPO, 600, f"{name} {gate}")
+        if rc != 0:
+            say(f"{name}: {gate} FAILED (exit {rc}) -- NOT copied")
+            tail = (out or "").strip().splitlines()
+            if tail:
+                say("    " + tail[-1][:120])
+            continue
+        say(f"{name}: {gate} passed")
+        if os.path.exists(live):
+            bak = live + ".bak"
+            if not os.path.exists(bak):
+                shutil.copy2(live, bak)
+                say(f"{name}: backed up to {bak}")
+        shutil.copy2(mine, live)
+        ok = _sha(live) == _sha(mine)
+        say(f"{name}: copied, hashes {'match' if ok else '*** STILL DIFFER ***'}")
+        if not ok:
+            return False
+    say("")
+    say("Copied. The RUNNING processes still hold the old code -- restart the")
+    say("watchdog when you are at the machine for this to take effect.")
+    return True
+
+
 def step_collection(ctx):
     rule("1  COLLECTION -- the only step where waiting costs something")
     say("KXCRYPTOLEAD15M and KXCRYPTOCOMP15M price RELATIVE performance, so "
@@ -756,11 +864,16 @@ def main():
                          "automatically)")
     ap.add_argument("--only", action="append", default=None,
                     choices=["preflight", "collection", "api", "fulltape",
-                             "go", "power", "disk"],
+                             "go", "power", "disk", "sync"],
                     help="run only these steps (repeatable)")
     ap.add_argument("--skip", action="append", default=[],
-                    choices=["collection", "api", "fulltape", "go", "power", "disk"],
+                    choices=["collection", "api", "fulltape", "go", "power", "disk",
+                             "sync"],
                     help="skip these steps (repeatable)")
+    ap.add_argument("--sync-collectors", dest="sync", action="store_true",
+                    help="replace the collector scripts next to the data with "
+                         "this repo's, after each passes its own self-test. "
+                         "Takes effect when the collector next restarts.")
     ap.add_argument("--no-install", dest="install", action="store_false",
                     help="do not pip install a missing dependency")
     a = ap.parse_args()
@@ -786,6 +899,7 @@ def main():
     root, searched = find_data_root(a.data)
     ctx = {
         "data_root": root, "searched": searched, "install": a.install,
+        "sync": a.sync,
         "api": {}, "raw": {}, "channels": {}, "go_ok": False,
         "outdir": REPO,
     }
@@ -795,7 +909,7 @@ def main():
         ctx["fulltape"] = os.path.join(root, "fulltape")
 
     steps = [("preflight", step_preflight), ("disk", step_disk),
-             ("collection", step_collection),
+             ("sync", step_sync), ("collection", step_collection),
              ("api", step_api), ("fulltape", step_fulltape),
              ("go", step_go), ("power", step_power)]
 

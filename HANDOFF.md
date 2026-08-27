@@ -437,6 +437,17 @@ returned zero observations. **This is the next experiment — see §7.**
 
   **Levels 2-100 already on disk keep their full depth; nothing recorded so
   far is altered. What gets trimmed from here cannot be recovered.**
+- **The watchdog runs the collectors from `C:\kals`, not the repo.**
+  `run_all.ps1` does `Set-Location C:\kals` then `python crypto_feeds.py`, so
+  it launches the copies sitting next to the data. **A `git pull` updates the
+  repo and changes nothing about what is recording** — every collector fix
+  this project has made could have been sitting unused, and nothing in any run
+  said so. `everything.py` step `0c` now hashes both collectors against the
+  repo and reports drift; `--sync-collectors` copies them, backing each up to
+  `.bak` and gating on its own `--selftest` where it has one and a compile
+  check where it does not (no self-test must not mean "never sync", which
+  would pin the file forever). The copy does not affect the RUNNING processes
+  — the watchdog has to restart.
 - Channels named `ok` and `subscribed` are being written as data channels (the
   collector routes purely on the `type` field). Harmless, tiny.
 

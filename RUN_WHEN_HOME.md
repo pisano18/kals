@@ -24,6 +24,31 @@ can tell it apart from a hang. Everything is read-only: it never places an
 order, never writes to `kalshi_data/` or `feed_data/`, and never kills your
 recorder.
 
+## One thing worth doing once, at the machine
+
+The watchdog does `Set-Location C:\kals` and launches `python
+crypto_feeds.py` — so it runs the copies of the collectors sitting **next to
+your data**, not the ones in `C:\kals-repo`. A `git pull` updates the repo and
+changes nothing about what is actually recording.
+
+Step `0c` of the run now checks that and tells you if they have drifted. To
+fix it:
+
+```powershell
+python research\everything.py --only sync --sync-collectors
+```
+
+Each file is backed up to `.bak`, and is copied only after it passes its own
+self-test (or, where it has none, a compile check). Then **restart the
+watchdog** — the running processes still hold the old code until they do.
+
+There is currently one collector change waiting: Bitstamp's order book is
+trimmed from 100 levels a side to 5 before it is written, which is 95.9% off
+those records and ~89% off `feed_data`'s growth rate. Nothing reads levels
+2–100. Data already on disk keeps its full depth.
+
+---
+
 If it dies partway, run it again — or `--skip go` to leave out the long stage,
 `--only api` to run one piece. The report is rewritten after every step, so
 even an interrupted run leaves something worth sending.
