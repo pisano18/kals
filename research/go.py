@@ -126,6 +126,12 @@ SELFTESTS = [
     ("student-t", ["tdist.py", "--selftest"]),
     ("gzip salvage", ["gzsalvage.py", "--selftest"]),
     ("disk census", ["whatate.py", "--selftest"]),
+    # Run from research/, so the two collectors at the repo root are
+    # reached by "..". They are the only code in this project that
+    # writes data nothing can re-record, which is exactly why their
+    # self-tests belong in the same gate as the analysis.
+    ("feed collector", [os.path.join("..", "crypto_feeds.py"),
+                        "--selftest"]),
     ("maker economics", ["maker.py", "--selftest"]),
     ("detectability", ["power.py", "--selftest", "--quick"]),
 ]

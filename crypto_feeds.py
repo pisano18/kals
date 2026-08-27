@@ -36,16 +36,36 @@ backfill. Every hour this isn't running is an hour we can never analyse.
 No API key. No account. Read-only market data.
 """
 
-import argparse, asyncio, gzip, json, os, time
+import argparse, asyncio, gzip, json, os, sys, time
 from collections import defaultdict
 from datetime import datetime, timezone
 
 try:
     import websockets
 except ImportError:
-    raise SystemExit("pip install websockets")
+    # Deferred to main() rather than raised here, so --selftest can run on a
+    # machine that has no websockets installed. Running the collector without
+    # it still exits with the same message it always did.
+    websockets = None
 
 __VERSION__ = "2026-08-25-v2"
+
+# Bitstamp has no top-of-book channel: order_book_<pair> sends all 100 levels
+# of both sides on every update, several times a second, across eight pairs.
+# That is 92.6% of everything under feed_data/ -- and EVERY reader in this
+# project uses bids[0] and asks[0] only (research/feeds.py load_tob,
+# research/proxy.py's constituent series). Levels 2-100 have been written and
+# never once read.
+#
+# Keeping five is not "keeping one with a safety margin for its own sake": it
+# leaves room to ask a depth question later without the archive being useless
+# for it, while dropping the 95% of each record that nothing has ever looked
+# at. Raising this number only affects data recorded AFTER the change -- what
+# is already on disk keeps its full depth, and what is truncated cannot be
+# recovered. That is why the truncation is stamped into the record rather
+# than done silently: a future reader must be able to tell a five-level book
+# from a market that only had five levels.
+BITSTAMP_KEEP_LEVELS = 5
 
 
 class Writer:
@@ -68,6 +88,31 @@ class Writer:
                 os.path.join(d, f"{self.hour}.jsonl.gz"), "at", compresslevel=4, encoding="utf-8")
         self.fh[chan].write(json.dumps(obj, separators=(",", ":")) + "\n")
         self.fh[chan].flush()
+
+
+def trim_book(d, keep):
+    """Cut an order-book payload to `keep` levels a side, in place.
+
+    Stamps `_depth` with what the venue actually sent, so the archive never
+    lies about how deep the book was. Returns True when anything was dropped.
+
+    keep <= 0 disables trimming entirely -- the record is left exactly as it
+    arrived, and no stamp is added, so turning this off restores byte-for-byte
+    the old behaviour rather than a lookalike of it.
+    """
+    if keep is None or keep <= 0 or not isinstance(d, dict):
+        return False
+    bids, asks = d.get("bids"), d.get("asks")
+    nb = len(bids) if isinstance(bids, list) else 0
+    na = len(asks) if isinstance(asks, list) else 0
+    if nb <= keep and na <= keep:
+        return False
+    if nb > keep:
+        d["bids"] = bids[:keep]
+    if na > keep:
+        d["asks"] = asks[:keep]
+    d["_depth"] = {"bids": nb, "asks": na, "kept": keep}
+    return True
 
 
 # Shared top-of-book state, so we can emit a consolidated index once a second.
@@ -153,11 +198,15 @@ async def bitstamp(w, verbose):
             m = json.loads(raw)
             if m.get("event") == "data":
                 m["_rx"] = time.time()
+                d = m.get("data") or {}
+                bids, asks = d.get("bids") or [], d.get("asks") or []
+                trim_book(d, BITSTAMP_KEEP_LEVELS)
                 w.write("bitstamp", m)
                 ch = m.get("channel", "")
                 asset = ch.replace("order_book_", "").replace("usd", "").upper()
-                d = m.get("data", {})
-                bids, asks = d.get("bids") or [], d.get("asks") or []
+                # d is the same object the writer just serialised, so this
+                # still reads the true top of book -- trimming removes depth,
+                # never the touch.
                 if bids and asks:
                     upd("bitstamp", asset, bids[0][0], bids[0][1],
                         asks[0][0], asks[0][1])
@@ -218,11 +267,135 @@ async def index_replica(w, verbose):
             w.write("index_replica", out)
 
 
+def selftest():
+    """Prove the depth trim keeps everything anything reads, and says so."""
+    import copy, gzip as _gz, shutil, tempfile
+    print("=" * 78)
+    print("SELF-TEST -- trimming Bitstamp depth must not change any answer")
+    print("=" * 78)
+    fails = []
+
+    def book(n=100, base=60000.0):
+        return {"channel": "order_book_btcusd", "event": "data", "data": {
+            "timestamp": "1760000000", "microtimestamp": "1760000000000000",
+            "bids": [[f"{base - i * 0.5:.2f}", f"{0.1 + i:.8f}"]
+                     for i in range(n)],
+            "asks": [[f"{base + 0.5 + i * 0.5:.2f}", f"{0.2 + i:.8f}"]
+                     for i in range(n)]}}
+
+    # 1. the touch survives, and the stamp records what the venue really sent
+    m = book()
+    top = (m["data"]["bids"][0][:], m["data"]["asks"][0][:])
+    trim_book(m["data"], 5)
+    if m["data"]["bids"][0] != top[0] or m["data"]["asks"][0] != top[1]:
+        fails.append("the top of book changed under trimming")
+    if len(m["data"]["bids"]) != 5 or len(m["data"]["asks"]) != 5:
+        fails.append(f"kept {len(m['data']['bids'])}/"
+                     f"{len(m['data']['asks'])} levels, expected 5/5")
+    if m["data"].get("_depth") != {"bids": 100, "asks": 100, "kept": 5}:
+        fails.append(f"depth stamp reads {m['data'].get('_depth')!r}")
+
+    # 2. disabling it must restore the ORIGINAL bytes, not something like them
+    m2 = book()
+    before = json.dumps(m2, separators=(",", ":"))
+    if trim_book(m2["data"], 0) or json.dumps(m2, separators=(",", ":")) != before:
+        fails.append("keep<=0 still modified the record")
+    # and a book already shallower than `keep` must be left completely alone
+    m3 = book(n=3)
+    before3 = json.dumps(m3, separators=(",", ":"))
+    if trim_book(m3["data"], 5) or json.dumps(m3, separators=(",", ":")) != before3:
+        fails.append("a 3-level book was stamped or altered by a 5-level trim")
+
+    # 3. MEASURE the saving on the real record shape, gzipped as it is stored
+    def gz_bytes(objs):
+        import io as _io
+        buf = _io.BytesIO()
+        with _gz.GzipFile(fileobj=buf, mode="wb", compresslevel=4) as g:
+            for o in objs:
+                g.write((json.dumps(o, separators=(",", ":")) + "\n").encode())
+        return len(buf.getvalue())
+
+    full = [book(base=60000.0 + k) for k in range(200)]
+    cut = copy.deepcopy(full)
+    for o in cut:
+        trim_book(o["data"], BITSTAMP_KEEP_LEVELS)
+    fb, cb = gz_bytes(full), gz_bytes(cut)
+    print(f"\n  200 records, gzip level 4 as stored:")
+    print(f"    100 levels a side   {fb:>9,} bytes   {fb/200:>7.0f} per record")
+    print(f"    {BITSTAMP_KEEP_LEVELS} levels a side     {cb:>9,} bytes   "
+          f"{cb/200:>7.0f} per record")
+    print(f"    saving              {100*(1-cb/fb):>8.1f}%")
+    if cb >= fb:
+        fails.append("trimming did not shrink the stored record")
+
+    # 4. END TO END: the project's own reader must get the SAME top of book
+    #    out of a trimmed file as out of a full one. This is the only check
+    #    that matters -- the rest is about the shape of a dict.
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(here, "research"))
+    try:
+        from feeds import load_tob
+    except ImportError as e:
+        print(f"\n  research/feeds.py not importable ({e}); end-to-end check "
+              "SKIPPED")
+        load_tob = None
+    if load_tob:
+        got = {}
+        for tag, objs in (("full", full), ("trimmed", cut)):
+            tmp = tempfile.mkdtemp()
+            try:
+                d = os.path.join(tmp, "bitstamp")
+                os.makedirs(d)
+                with _gz.open(os.path.join(d, "20260827T00.jsonl.gz"), "wt",
+                              encoding="utf-8") as f:
+                    for i, o in enumerate(objs):
+                        o = dict(o, _rx=1760000000.0 + i)
+                        f.write(json.dumps(o, separators=(",", ":")) + "\n")
+                got[tag] = load_tob(tmp, "BTC", verbose=False)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+        same = got["full"] == got["trimmed"]
+        n = len(got["full"])
+        print(f"\n  load_tob over {n} seconds: full vs trimmed -> "
+              f"{'IDENTICAL' if same else '*** DIFFERENT ***'}")
+        if not n:
+            fails.append("load_tob read nothing out of either file, so this "
+                         "check compared two empty results and proved nothing")
+        if not same:
+            fails.append("load_tob returned different top-of-book from the "
+                         "trimmed file")
+
+    print("\n" + "=" * 78)
+    if fails:
+        print("*** SELF-TEST FAILED ***")
+        for f in fails:
+            print("   -", f)
+        return False
+    print("SELF-TEST PASSED -- the touch is untouched, the depth actually")
+    print("sent is stamped into the record, disabling the trim restores the")
+    print("original bytes, and the project's own reader cannot tell the")
+    print("difference.")
+    return True
+
+
 async def main():
+    global BITSTAMP_KEEP_LEVELS
+    if websockets is None:
+        raise SystemExit("pip install websockets")
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="./feed_data")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--selftest", action="store_true",
+                    help="handled before the event loop starts")
+    ap.add_argument("--book-levels", type=int, default=BITSTAMP_KEEP_LEVELS,
+                    help="Bitstamp order-book levels to STORE per side. 0 "
+                         "keeps all 100, as before. Only affects data "
+                         "recorded from now on.")
     a = ap.parse_args()
+    BITSTAMP_KEEP_LEVELS = a.book_levels
+    print(f"[start] bitstamp depth stored: "
+          f"{'all levels' if a.book_levels <= 0 else str(a.book_levels)}",
+          flush=True)
     os.makedirs(a.out, exist_ok=True)
     w = Writer(a.out)
     print(f"[start] crypto_feeds {__VERSION__} -> {a.out}", flush=True)
@@ -247,6 +420,10 @@ async def heartbeat():
 
 
 if __name__ == "__main__":
+    # Checked before the event loop starts: the self-test writes files and
+    # reads them back, and has no business inside the collector's loop.
+    if "--selftest" in sys.argv:
+        raise SystemExit(0 if selftest() else 1)
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

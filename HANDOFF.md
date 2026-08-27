@@ -403,10 +403,40 @@ returned zero observations. **This is the next experiment — see §7.**
   Both stream now: **220 B/msg, 6×**. `orderbook_delta` at 1.9 GB still
   projects ~15 GB peak; `everything.py` preflight prints the projection.
   **A PC crash an hour into a run was this.**
-- **Bitstamp is 92.6% waste.** `crypto_feeds.py` subscribes to
-  `order_book_<pair>` — Bitstamp's 100-bid/100-ask FULL SNAPSHOT channel — and
-  the repo only ever reads `bids[0]`/`asks[0]`. 3.1 GB of 3.2 GB feed_data.
-  Switch to `diff_order_book_` or read the depth. **Unfixed.**
+- ~~**Bitstamp is 92.6% waste**~~ — **FIXED, effective on the collector's next
+  restart.** `crypto_feeds.py` subscribes to `order_book_<pair>`, Bitstamp's
+  100-bid/100-ask FULL SNAPSHOT channel, and the repo only ever reads
+  `bids[0]`/`asks[0]` (`feeds.load_tob`, `proxy.py`'s constituent series).
+  3.1 GB of 3.2 GB `feed_data`.
+
+  Not switched to `diff_order_book_` — that channel is *larger*, being full
+  depth deltas, and it would require carrying book state to recover the touch
+  we already get for free. Instead the record is trimmed to
+  `BITSTAMP_KEEP_LEVELS = 5` a side at write time, with `--book-levels 0`
+  restoring the old behaviour byte-for-byte.
+
+  Measured, on 200 records of the real shape at the gzip level actually used:
+  **712 → 29 bytes per record, a 95.9% cut.** Against Bitstamp's 92.6% share
+  that is ~89% off `feed_data`'s growth rate. The saving is measured on a
+  synthetic record of the same shape, not on the real file — real books have
+  less regular prices and sizes, so they compress worse and the true saving
+  should be at least this.
+
+  Trimming is stamped into the record as `_depth: {bids, asks, kept}`, giving
+  what the venue actually sent. A silently truncated archive is the kind of
+  thing that produces a confident wrong answer two months from now: a future
+  reader must be able to tell a five-level book from a market that only had
+  five levels.
+
+  The self-test's decisive check is end to end, not structural — it writes a
+  full-depth file and a trimmed one, runs the project's own `load_tob` over
+  both, and asserts the results are identical (and that they are not both
+  empty, which would compare nothing and pass). It also proves `--book-levels
+  0` reproduces the original bytes exactly, and that a book already shallower
+  than the limit is left completely untouched, stamp included.
+
+  **Levels 2-100 already on disk keep their full depth; nothing recorded so
+  far is altered. What gets trimmed from here cannot be recovered.**
 - Channels named `ok` and `subscribed` are being written as data channels (the
   collector routes purely on the `type` field). Harmless, tiny.
 
@@ -475,7 +505,10 @@ Ranked by information unlocked per unit of work:
    now printed once, up front, rather than marked in every table — if that
    turns out not to be enough, the per-table marker is the next step.
 5. Restate GATE C's claim (§4).
-6. Switch Bitstamp to the delta channel (§5) — recovers ~3 GB/day of disk.
+6. ~~Switch Bitstamp to the delta channel (§5)~~ — done differently and
+   better: the record is trimmed to 5 levels at write time (95.9%
+   measured), because the delta channel is bigger than the snapshot one.
+   Takes effect when the collector next restarts.
 7. Reopen the fee question via `exchange_index` (§6).
 8. Model `KXCRYPTOLEAD15M` (§6) — unexplored, and computable from data in hand.
 9. The 87-idea adversarial sweep produced 16 survivors and 6 rated worthwhile;
