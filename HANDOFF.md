@@ -6,11 +6,73 @@ operator's card.
 
 - **Branch**: `claude/file-uploads-70rtjl` (this is also the remote default —
   a plain `git pull` gets it).
-- **Head at handoff**: `cfdb1a3`.
+- **Head at handoff**: see `git log -1`. Run 2 findings are in the section below.
 - **User's machine**: Windows 11, Python 3.14.6, repo `C:\kals-repo`, data
   `C:\kals` (`kalshi_data/`, `feed_data/`, `fulltape/`, `run_all.ps1`).
 - **State**: 19 self-tests, all passing. One full real run completed
   2026-08-26 (203 min); its findings and its faults are below.
+
+---
+
+## RUN 2 (2026-08-27 02:39, 154 min) — THE FIRST COMPLETE RUN
+
+All 13 stages produced data. 46.4 hours recorded, 72.6M orderbook deltas
+parsed (100% of them, against 0% in run 1). Findings, and what is still wrong:
+
+- **The maker strategy's death sentence was based on a mis-parsed number.**
+  PLAN.md sec.4 killed it on "best bid 0.40 with 3,767 contracts resting",
+  from a REST call RUNBOOK separately records as mis-parsed. Measured from the
+  websocket: **median depth at the touch is 30 contracts**, 32 at 40c, 20 at
+  50c. That is 125x smaller and a joinable queue. **NOT YET CONFIRMED** — see
+  the sid bug below; it was measured on 24 of 1,090 markets.
+- **PLAN_V3's #1 ranked idea is refuted.** "Does the book follow the index?"
+  — it does not. The book **leads** by one second: beta 0.530 at lag -1
+  (t=29.4, 108 df) against -0.001 at lag +1 (p=0.37). Corroborated by feeds,
+  where our own replica also lags the published index by 0-1s. There is no
+  stale-quote edge available from watching the index. Most likely the CF index
+  is timestamped ~1s behind the information the market already has.
+- **Implied vs realised volatility, per series** (the only trustworthy cut):
+  BTC 0.88, ETH 0.86, SOL 0.89, BNB 0.94, DOGE 0.94, ZEC 1.03, NEAR 1.02,
+  XRP 1.10, HYPE 1.25. The liquid series price volatility BELOW realised —
+  the opposite of a variance risk premium. **The report's headline "VARIANCE
+  RISK PREMIUM 1.192x" and the 59x-141x "vs realised" columns in the term and
+  smile tables are a POOLING ARTEFACT** — implied.py averages sigmas across
+  series whose price levels differ by six orders of magnitude (BTC ~5.59
+  $/sqrt(s), DOGE ~0.00002). It must pool the per-series RATIOS, not the raw
+  sigmas. **Unfixed.**
+- **Cross-sectional: a clean null.** All 9 series "in line", max |t| = 2.2
+  (BTC absolute 0.62c). 509-533 clusters each.
+- **Replay P&L: -13.20, null 95% [-657, +365], 73rd percentile.** Nothing.
+- **Median spread is 1.00c** on the liquid series (ZEC 7c, NEAR 8c) —
+  consistent with a flat 1-cent tick, so §8 item 1 leans that way.
+- **Index coverage is 59.9% and flagged GAPPY** on every one of the ten
+  indices: ~100,005 seconds present out of 166,896 in the span. Four in ten
+  index prints are missing. This degrades every model-based test and is
+  **undiagnosed** — is it the feed, the subscription, or the reader?
+
+### Bugs found in run 2, fixed
+- **`book.py` checked sequence continuity per TICKER.** The collector
+  subscribes a LIST of market_tickers in one call, so Kalshi's `seq`
+  increments per SUBSCRIPTION across every market in it. Consecutive deltas
+  for one ticker jump by however many other markets spoke in between, so
+  nearly every delta read as a gap: 74,343,133 deltas parsed, **24 of 1,090
+  markets** rebuilt. Now keyed on `sid`, with a gap invalidating every book
+  under that subscription. Self-test (8 markets interleaved on one sid)
+  reproduces it: 8 of 328 states under the old logic, 328 of 328 under the
+  new. **The depth figure above must be re-measured after this.**
+- **`go.py`'s EMPTY flag matched bare substrings**, so `"1,090 markets"`
+  matched `"0 markets"` and five stages that had each loaded ~710,000
+  messages were labelled `EMPTY -- no data loaded`. A false EMPTY is worse
+  than none: it buries a real result under the one label that says do not read
+  this. Now boundary-anchored regexes.
+
+### Operational note from the watchdog log
+Recording is healthy (~76 MB/h kalshi, ~89 MB/h feeds). The size column looks
+frozen for most of each hour and then jumps at :04 — that is Windows not
+updating directory metadata until the hourly file closes, not a stall.
+**But free disk swung 71.5 -> 36.5 -> 44.7 GB in five hours** while the data
+directories grew ~100 MB/h. Something else on that machine is taking and
+releasing tens of gigabytes. The watchdog halts below 5 GB.
 
 ---
 

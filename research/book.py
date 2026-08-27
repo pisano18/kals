@@ -71,12 +71,11 @@ class Book:
         self.no = {int(p): float(s) for p, s in no_levels if float(s) > 0}
         self.seq, self.valid, self.ts = seq, True, ts
 
-    def delta(self, price, change, side, seq, ts):
-        if seq is not None and self.seq is not None and seq != self.seq + 1:
-            # A gap. Everything after it would be fiction until a fresh
-            # snapshot arrives, so stop pretending the book is known.
-            self.valid = False
-        self.seq = seq if seq is not None else self.seq
+    def apply(self, price, change, side, ts):
+        """Apply a delta. Sequence integrity is decided by the CALLER, at the
+        subscription level -- seq is per-sid, and one sid carries many
+        tickers, so a per-ticker continuity check reads every interleaved
+        message as a gap."""
         self.ts = ts
         if not self.valid:
             return
@@ -304,27 +303,53 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
                             _cents(fget(m, "price", "price_dollars", "price"),
                                    scale),
                             fget(m, "delta", "delta_fp", "delta", "change"))
+                    # sid, not ticker, is the sequence domain. The collector
+                    # subscribes a LIST of market_tickers in one call, so
+                    # Kalshi's seq increments per SUBSCRIPTION across every
+                    # market in it. Keying continuity on the ticker made
+                    # almost every delta look like a gap: 74,343,133 deltas
+                    # parsed and only 24 of 1,090 markets survived.
+                    sid = m.get("sid")
                     by_ticker[tk].append(
                         (order, seq if isinstance(seq, int) else -1,
                          0 if is_snap else 1, n_read, is_snap, payload,
-                         t, seq))
+                         t, seq, sid if sid is not None else tk))
                 if stop:
                     break
         except (OSError, EOFError, zlib.error, gzip.BadGzipFile):
             stats["partial_files"] += 1
 
-    ordered = []
+    # Regroup by SUBSCRIPTION. Sequence continuity is a property of the sid
+    # stream; book state is a property of the ticker. Conflating them is what
+    # made the previous run discard 98% of the markets it had parsed.
+    by_sid = defaultdict(list)
     for tk, recs in by_ticker.items():
-        recs.sort(key=lambda r: r[:4])
-        ordered.append((tk, recs))
-    # deterministic across runs, and puts the busiest markets first in stats
-    ordered.sort(key=lambda x: x[0])
+        for r in recs:
+            by_sid[r[8]].append((tk, r))
+    for sid in by_sid:
+        # within a subscription seq is monotone, so it orders the stream
+        # exactly; _rx_ms and the read index only break ties
+        by_sid[sid].sort(key=lambda x: (x[1][1], x[1][0], x[1][3]))
 
-    for tk, recs in ordered:
-        for _o, _s, _k, _i, is_snap, payload, t, seq in recs:
+    sid_seq = {}
+    for sid in sorted(by_sid, key=lambda x: str(x)):
+        for tk, rec in by_sid[sid]:
+            _o, _s, _k, _i, is_snap, payload, t, seq, _sid = rec
             bk = books[tk]
+            if isinstance(seq, int):
+                prev = sid_seq.get(sid)
+                if prev is not None and seq != prev + 1:
+                    # A gap in the subscription's stream. Every book under it
+                    # is fiction from here until that ticker gets a fresh
+                    # snapshot -- not just the one this message names.
+                    for other in {t2 for t2, _ in by_sid[sid]}:
+                        if books[other].valid:
+                            books[other].valid = False
+                            stats["seq_gaps"] += 1
+                sid_seq[sid] = seq
             if is_snap:
                 bk.snapshot(payload[0], payload[1], seq, t)
+                bk.valid = True
                 stats["snapshots"] += 1
             else:
                 side, price, change = payload
@@ -335,10 +360,10 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
                 if price is None or change is None or side not in ("yes", "no"):
                     stats["unparsed_delta"] += 1
                     continue
-                was = bk.valid
-                bk.delta(price, change, side, seq, t)
-                if was and not bk.valid:
-                    stats["seq_gaps"] += 1
+                if not bk.valid:
+                    stats["delta_while_invalid"] += 1
+                    continue
+                bk.apply(price, change, side, t)
                 stats["deltas"] += 1
             top = bk.top()
             if top is None:
@@ -525,6 +550,61 @@ def selftest():
         if not prices <= {39, 40}:
             fails.append("dollar strings converted to the wrong cents: "
                          f"{sorted(prices)}, expected a subset of [39, 40]")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # MANY MARKETS, ONE SUBSCRIPTION. The collector subscribes a LIST of
+    # market_tickers in a single call, so Kalshi's seq increments per SID
+    # across every market in it, and consecutive deltas for any one ticker
+    # have seqs that jump by however many other markets spoke in between.
+    # Checking continuity per TICKER read almost every delta as a gap: in the
+    # 2026-08-27 run, 74,343,133 deltas parsed and only 24 of 1,090 markets
+    # produced a single valid book state.
+    tmp = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmp, "orderbook_delta"))
+        os.makedirs(os.path.join(tmp, "orderbook_snapshot"))
+        TKS = [f"M{i}" for i in range(8)]
+        SID = 7
+        seq = 0
+        with gzip.open(os.path.join(tmp, "orderbook_snapshot",
+                                    "20260827T00.jsonl.gz"), "wt",
+                       encoding="utf-8") as f:
+            for tk in TKS:
+                seq += 1
+                f.write(json.dumps({"type": "orderbook_snapshot", "sid": SID,
+                                    "seq": seq, "_rx_ms": seq * 1000, "msg": {
+                    "market_ticker": tk, "yes": [[40, 500.0]],
+                    "no": [[58, 400.0]], "ts": seq}}) + "\n")
+        PER = 40
+        with gzip.open(os.path.join(tmp, "orderbook_delta",
+                                    "20260827T00.jsonl.gz"), "wt",
+                       encoding="utf-8") as f:
+            for r in range(PER):
+                for tk in TKS:          # interleaved, exactly as the wire is
+                    seq += 1
+                    f.write(json.dumps({"type": "orderbook_delta", "sid": SID,
+                                        "seq": seq, "_rx_ms": seq * 1000,
+                                        "msg": {"market_ticker": tk,
+                                                "price": 40, "delta": 1.0,
+                                                "side": "yes",
+                                                "ts": seq}}) + "\n")
+        got, (st, _) = rebuild(tmp, verbose=False)
+        want_states = len(TKS) * (PER + 1)
+        n_states = sum(len(v) for v in got.values())
+        print("\n  ONE SUBSCRIPTION, EIGHT MARKETS, INTERLEAVED")
+        print(f"  {'markets rebuilt':>34}: {len(got)} of {len(TKS)}")
+        print(f"  {'book states':>34}: {n_states} of {want_states}")
+        print(f"  {'false sequence gaps':>34}: {st.get('seq_gaps', 0)}")
+        if len(got) < len(TKS):
+            fails.append(f"rebuilt {len(got)} of {len(TKS)} markets sharing a "
+                         "subscription -- seq continuity is being checked per "
+                         "ticker instead of per sid")
+        if st.get("seq_gaps", 0):
+            fails.append(f"{st['seq_gaps']} false gaps on a stream with no "
+                         "gap in it")
+        if n_states < want_states:
+            fails.append(f"emitted {n_states} of {want_states} book states")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

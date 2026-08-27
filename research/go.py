@@ -88,6 +88,7 @@ flag that enables one.
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -127,15 +128,20 @@ SELFTESTS = [
 # stage's own words is crude, but the alternative is every stage growing a
 # machine-readable exit protocol, and the failure this catches -- eight
 # stages reporting ok on no data -- is worth catching crudely today.
+# Matched as REGEXES with word boundaries, not as bare substrings. The first
+# version of this used `"0 markets" in out` and flagged five stages that had
+# each loaded 1,090 markets and ~710,000 messages -- because "1,09|0 markets|"
+# contains it. A false EMPTY is worse than no flag at all: it buries a real
+# result under the one label that says "do not read this".
 EMPTY_MARKERS = (
-    "could not locate ticker/bid/ask fields",
-    "no ticker messages on disk",
-    "Nothing rebuilt",
-    "no quotes",
-    "nothing to analyse",
-    "no cfbenchmarks_value data",
-    "not enough overlapping data",
-    "0 markets",
+    r"could not locate ticker/bid/ask fields",
+    r"no ticker messages on disk",
+    r"Nothing rebuilt",
+    r"\bno quotes\b",
+    r"\bnothing to analyse\b",
+    r"\bno cfbenchmarks_value data\b",
+    r"\bnot enough overlapping data\b",
+    r"(?<![\d,.])0 markets\b",
 )
 
 STAGES = [
@@ -294,7 +300,7 @@ def main():
         # had renamed its websocket fields, every loader returned empty, and
         # every stage exited 0. Report that as EMPTY so it cannot read as a
         # null result.
-        empty = rc == 0 and any(p in out for p in EMPTY_MARKERS)
+        empty = rc == 0 and any(re.search(p, out) for p in EMPTY_MARKERS)
         label = ("EMPTY -- no data loaded" if empty
                  else "ok" if rc == 0 else f"exit {rc}")
         if empty:
