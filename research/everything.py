@@ -611,6 +611,15 @@ def step_api(ctx):
         ("lead.json",
          f"{API}/markets?series_ticker=KXCRYPTOLEAD15M&status=settled&limit=2",
          "same, for the lead series."),
+        ("series_btc.json", f"{API}/series/KXBTC15M",
+         "the series record itself, for the TICK SIZE question: PLAN assumes "
+         "a tapered tick near the wings, run 2 measured a flat 1c spread on "
+         "the liquid series. It decides whether sub-cent edges are worth "
+         "chasing at all."),
+        ("market_btc.json",
+         f"{API}/markets?series_ticker=KXBTC15M&status=open&limit=1",
+         "a LIVE market object, since tick structure may live on the market "
+         "rather than the series."),
     ]
     got = 0
     for name, url, why in probes:
@@ -624,6 +633,67 @@ def step_api(ctx):
         say(f"{name:<20} {human(len(raw)):>10}   {why}")
         ctx["api"][name] = js
         got += 1
+
+    # ---- TICK SIZE: report what the API actually carries, not a schema
+    # I have guessed at. Naming the field wrong and then reading zero from it
+    # would answer the question with silence, which is the failure mode this
+    # project keeps hitting. So: walk both responses and print every key whose
+    # name could plausibly describe a tick, verbatim, and let the verdict
+    # follow from what is there.
+    say("")
+    say("TICK SIZE -- tapered or flat 1c?")
+    WORDS = ("tick", "price_range", "increment", "min_price", "max_price",
+             "price_unit", "cent")
+    # "ticker" contains "tick". Without this, every response reports a hit,
+    # the hits list is never empty, and the honest "the API carries no tick
+    # field" verdict below can never print -- the question would be answered
+    # by a substring match on the market's name.
+    SKIP = ("ticker",)
+
+    def walk(o, prefix="", out=None, depth=0):
+        if out is None:
+            out = []
+        if depth > 8:
+            return out
+        if isinstance(o, dict):
+            for k, v in o.items():
+                path = f"{prefix}.{k}" if prefix else k
+                kl = k.lower()
+                if any(sk in kl for sk in SKIP):
+                    walk(v, path, out, depth + 1)
+                elif any(w in kl for w in WORDS) and not isinstance(
+                        v, (dict, list)):
+                    out.append((path, v))
+                elif any(w in kl for w in WORDS):
+                    out.append((path, json.dumps(v)[:200]))
+                else:
+                    walk(v, path, out, depth + 1)
+        elif isinstance(o, list):
+            for i, v in enumerate(o[:3]):
+                walk(v, f"{prefix}[{i}]", out, depth + 1)
+        return out
+
+    hits = []
+    for tag in ("series_btc.json", "market_btc.json"):
+        js = ctx["api"].get(tag)
+        if not js:
+            say(f"  {tag}: not retrieved")
+            continue
+        h = walk(js)
+        hits += h
+        if h:
+            for path, val in h[:20]:
+                say(f"  {tag}  {path} = {val}")
+        else:
+            say(f"  {tag}: no field naming a tick, price range or increment")
+    if not hits:
+        say("  The API carries no tick field in either response. The only")
+        say("  evidence remains the measured one: median spread 1.00c on the")
+        say("  liquid series, which is consistent with a flat 1c tick and")
+        say("  inconsistent with a taper that would show sub-cent quotes.")
+        say("  Treat 'flat 1c' as measured-but-unconfirmed, not as read from")
+        say("  the API -- and note the measurement cannot see a taper that")
+        say("  exists only where nobody quotes.")
 
     # ---- what the fee data actually says
     for tag in ("series_fin.json", "series_crypto.json"):
@@ -842,7 +912,8 @@ def bundle(ctx, report):
                os.path.join(REPO, "chain_cache.json")]
     members += [os.path.join(ctx["outdir"], n) for n in
                 ("series_fin.json", "series_crypto.json",
-                 "comp.json", "lead.json")]
+                 "comp.json", "lead.json",
+                 "series_btc.json", "market_btc.json")]
     with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
         for m in members:
             if os.path.exists(m):
