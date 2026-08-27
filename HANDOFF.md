@@ -503,8 +503,19 @@ Order of operations:
 
 Ranked by information unlocked per unit of work:
 
-1. Resolve the **tick size** contradiction (tapered vs flat 1¢) from the API's
-   `price_ranges`. It decides whether sub-cent edges are worth chasing at all.
+1. **Tick size** (tapered vs flat 1¢) — the probe is now built; it needs a run
+   from a machine that can reach the API (this session's proxy returns 403 on
+   `api.elections.kalshi.com`, a policy denial, not a transport fault). Step 2
+   fetches `/series/KXBTC15M` and a live market, then prints **every** field in
+   either response whose name could describe a tick, verbatim, rather than
+   reading a schema I have not seen — naming the field wrong and getting zero
+   back would answer the question with silence. `ticker` is excluded from the
+   match: it contains `tick`, and without that exclusion every response
+   reports a hit and the honest "the API carries no tick field" verdict can
+   never print. Exercised against five synthetic responses (tapered
+   `price_ranges`, flat `tick_size`, a deeply nested `minimum_price_increment`,
+   one with nothing, and one hiding a tick field *under* a key containing
+   "ticker").
 2. ~~Replace `chain.py`'s iid SEs with block-bootstrap~~ — done, and the
    self-test now measures the coverage of both rulers rather than asserting
    the new one is better. Re-read the run-2 return-autocorrelation verdicts
