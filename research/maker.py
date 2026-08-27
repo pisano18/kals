@@ -24,12 +24,49 @@ Three facts make it worth pricing, all measured, none assumed:
      one cent -- so a two-sided quote captures 1c gross, 0.5c per side.
   3. The thin series quote far wider: ZEC 7c, NEAR 8c.
 
-THE ONE CALCULATION THAT DECIDES IT
+THE ONE CALCULATION THAT DECIDES IT -- AND IT IS NOT DIFFUSION
 
-A resting quote is an option you have written. It is exercised against you
-exactly when fair value moves through it. So the question is whether the
-half-spread you capture exceeds the fair-value move that happens while you sit
-there.
+A first pass at this compared the half-spread against how far fair value drifts
+per second. That is the wrong conditioning, and it is optimistic. You are not
+run over by the AVERAGE second; you are run over by the seconds in which
+somebody chose to trade with you.
+
+Condition on the fill. A taker crossing pays the spread AND the fee, so a
+rational one only crosses when their estimate F beats the touch by more than
+the fee:
+
+    F - a > fee(p)      =>      E[F | ask lifted] >= a + fee(p)
+
+The maker who sold at a earns a - F, so
+
+    E[maker P&L per fill] <= a - (a + fee(p)) = -fee(p)
+
+**and that bound does not depend on how wide you quote**, because widening
+raises the half-spread on both sides of the inequality and it cancels. Against
+perfectly informed takers, a maker loses the TAKER's fee on every fill:
+-1.75c at 50c, -0.63c at 90c, -0.33c at 95c. Paying no maker fee is why anyone
+quotes at all; it is not an edge.
+
+So the strategy lives or dies on ONE measurable number: what fraction of the
+flow is uninformed. Noise crossing (impatience, hedging, liquidation, retail)
+pays you the half-spread and takes nothing back. Informed crossing costs you
+the fee. Mixing:
+
+    E[P&L per fill] = q*h - (1-q)*fee(p)      q = uninformed share
+
+    break-even q = fee / (fee + h)
+
+At 50c with a 1c spread that is q = 1.75/2.25 = 78%: more than three quarters
+of everyone who trades with you must be trading for reasons unrelated to where
+the price is going. At 90c it is 56%.
+
+That number is not assumable. It is measurable, and it is exactly the signed
+markout this file computes from the tape.
+
+The diffusion table below is still printed, because it is a NECESSARY
+condition -- a spread that cannot survive a second of drift cannot survive an
+informed taker either -- but it is not sufficient, and it must not be read as
+a green light.
 
     d(fair)/d(spot) = phi(z)/sd * (r_live/60)          [settlement_math.py]
     a one-second one-sigma index move is sigma dollars
@@ -65,6 +102,7 @@ at rho 0.8 and are worth 1.22 independent units. NOTHING HERE PLACES AN ORDER.
 import argparse
 import math
 import os
+import random as _random
 import sys
 from collections import defaultdict
 from statistics import NormalDist, mean, median, pstdev
@@ -141,15 +179,37 @@ HORIZONS = [1, 5, 30]
 
 
 def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
-    """Realised adverse selection, and its exogenous-grid null.
+    """SIGNED markout per fill: the decision quantity, not a volatility proxy.
 
-    For every trade, the mid AFTER the trade minus the mid BEFORE, signed by
-    the taker's direction so a positive number always means the taker was
-    right and the resting side was run over. The null takes the identical
-    horizons at gridpoints WE chose, where no trade need have happened.
+        AS_i(h) = sgn_i * (mid(t_i + h) - mid(t_i-))          in cents
+        sgn_i   = +1 if the taker lifted the ask (we sold), -1 if they hit
+                  the bid (we bought)
+
+    Positive means the taker was right and the resting side was run over.
+    E[AS] = 0 is the no-adverse-selection null, and net per fill is
+    half_spread - AS.
+
+    TWO BUGS THIS REPLACES, both of which my own self-test passed over:
+
+    1. The pre-trade mid was taken as "last quote at or before t". Book
+       updates share the trade's integer second constantly, so that returned
+       the POST-trade mid and measured 1.000c of planted permanent adverse
+       selection as 0.000c -- a total attenuation to a clean null. The
+       reference mid must be STRICTLY before the trade.
+    2. The headline compared |post-trade move| against |random-grid move|.
+       That is a volatility test, not a direction test: trades cluster in
+       volatile moments, so on a tape with provably ZERO adverse selection it
+       fired at t = +11. The signed markout has no such artefact, because
+       volatility is symmetric and the sign is not.
+
+    The deeper lesson, and it is the one this project keeps relearning: the
+    self-test exercised the signed path while main() reported the absolute
+    path. Testing a different quantity than you report is indistinguishable
+    from not testing.
     """
     hit = defaultdict(list)
-    null = defaultdict(list)
+    shuf = defaultdict(list)
+    rnd = _random.Random(20260827)
     for tk, series in quotes.items():
         close_s = closes.get(tk)
         if not close_s or len(series) < 30:
@@ -159,13 +219,12 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
         if len(secs) < 30:
             continue
 
-        def mid_at(t):
-            """Last mid at or before t, and only if it is fresh."""
-            lo, hi = 0, len(secs) - 1
-            best = None
+        def mid_at(t, strict=False):
+            """Last mid at (or strictly before) t, and only if it is fresh."""
+            lo, hi, best = 0, len(secs) - 1, None
             while lo <= hi:
                 m = (lo + hi) // 2
-                if secs[m] <= t:
+                if (secs[m] < t) if strict else (secs[m] <= t):
                     best = secs[m]
                     lo = m + 1
                 else:
@@ -175,30 +234,23 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
             return mids[best]
 
         for (t, price, size, side) in trades.get(tk, []):
-            m0 = mid_at(t)
+            # STRICTLY before: a quote stamped in the trade's own second is
+            # the book AFTER the trade, and using it measures nothing
+            m0 = mid_at(t, strict=True)
             if m0 is None:
                 continue
             sgn = 1.0 if str(side).lower().startswith("y") else -1.0
+            flip = rnd.choice((1.0, -1.0))
             for h in horizons:
                 m1 = mid_at(t + h)
                 if m1 is None:
                     continue
                 hit[h].append((sgn * (m1 - m0) * 100.0, close_s))
-
-        # the null: our grid, not theirs
-        for ttc in GRID:
-            t = int(close_s) - ttc
-            m0 = mid_at(t)
-            if m0 is None:
-                continue
-            for h in horizons:
-                m1 = mid_at(t + h)
-                if m1 is None:
-                    continue
-                # unsigned direction is meaningless without a taker, so score
-                # the ABSOLUTE move against the absolute post-trade move
-                null[h].append((abs(m1 - m0) * 100.0, close_s))
-    return hit, null
+                # same moments, same moves, RANDOM sign: isolates whether the
+                # taker's direction carries information from whether trades
+                # merely happen in volatile seconds
+                shuf[h].append((flip * (m1 - m0) * 100.0, close_s))
+    return hit, shuf
 
 
 def clustered(pairs):
@@ -272,52 +324,82 @@ def selftest():
     if not (b60_1 > b900_1):
         fails.append("less time did not shrink the viable region")
 
-    print("\n  PLANTED ADVERSE SELECTION. A synthetic tape where the mid moves")
-    print("  a KNOWN amount against the resting side after every trade, and a")
-    print("  second where it does not move at all.")
-    print(f"\n  {'planted':>12}{'measured 1s':>14}{'t vs null':>12}{'clusters':>10}")
-    for planted in (0.0, 0.5, 2.0):
+    print("\n  PLANTED ADVERSE SELECTION, with the book updating in the SAME")
+    print("  SECOND as the trade -- which is what the real tape does, and what")
+    print("  a 'last quote at or before t' lookup silently reads as the")
+    print("  post-trade mid, attenuating a planted 1.00c to 0.00c.")
+    print(f"\n  {'planted':>12}{'measured 1s':>14}{'t vs 0':>10}{'clusters':>10}")
+    for planted in (0.0, 0.5, 1.0):
         rnd = random.Random(11)
         quotes, trades, closes = {}, {}, {}
-        for w in range(120):
+        for w in range(140):
             close_s = 1_760_000_000 + w * 900
             tk = f"M{w:04d}"
             closes[tk] = close_s
             mid = 0.50
             ser, tr = [], []
-            for s in range(close_s - 900, close_s + 1):
-                mid += rnd.gauss(0, 0.0015)
-                mid = min(max(mid, 0.05), 0.95)
-                ser.append((s, mid - 0.005, mid + 0.005, 100.0, 100.0))
-            # trades on a sparse schedule, each followed by a planted drift
+            for s_ in range(close_s - 900, close_s + 1):
+                mid = min(max(mid + rnd.gauss(0, 0.0015), 0.05), 0.95)
+                ser.append([s_, mid - 0.005, mid + 0.005, 100.0, 100.0])
             for i in range(60, 900, 60):
-                s = close_s - 900 + i
+                s_ = close_s - 900 + i
                 side = "yes" if rnd.random() < 0.5 else "no"
                 sgn = 1.0 if side == "yes" else -1.0
-                tr.append((s, ser[i][1], 10.0, side))
-                for j in range(i + 1, min(i + 31, len(ser))):
-                    t2, b2, a2, bs, asz = ser[j]
-                    shift = sgn * planted / 100.0
-                    ser[j] = (t2, b2 + shift, a2 + shift, bs, asz)
-            quotes[tk] = ser
+                tr.append((s_, ser[i][1], 10.0, side))
+                # the drift lands starting IN the trade's own second
+                for j in range(i, min(i + 31, len(ser))):
+                    ser[j][1] += sgn * planted / 100.0
+                    ser[j][2] += sgn * planted / 100.0
+            quotes[tk] = [tuple(r) for r in ser]
             trades[tk] = tr
-        hit, null = adverse_from_tape(quotes, trades, closes)
+        hit, shuf = adverse_from_tape(quotes, trades, closes)
         h = clustered(hit[1])
-        nl = clustered([(abs(v), k) for v, k in hit[1]]) if hit[1] else None
-        nn = clustered(null[1])
-        if not h or not nn:
+        if not h:
             fails.append(f"planted={planted}: estimator returned nothing")
             continue
-        diff = clustered([(v, k) for v, k in hit[1]])
-        print(f"  {planted:>11.2f}c{h['mean']:>13.3f}c"
-              f"{diff['t']:>12.1f}{h['n']:>10}")
-        if planted == 0.0 and abs(diff["t"]) > crit(0.05, diff["df"]):
-            fails.append(f"found adverse selection (t={diff['t']:.1f}) in a "
-                         "tape with none planted")
-        if planted > 0 and abs(h["mean"] - planted) > 0.35 * planted:
-            fails.append(f"planted {planted}c, measured {h['mean']:.3f}c")
-        if planted > 0 and diff["t"] < 3:
-            fails.append(f"missed a planted {planted}c (t={diff['t']:.1f})")
+        print(f"  {planted:>11.2f}c{h['mean']:>13.3f}c{h['t']:>10.1f}{h['n']:>10}")
+        if planted == 0.0 and abs(h["t"]) > crit(0.05, h["df"]):
+            fails.append(f"found adverse selection (t={h['t']:.1f}) where none "
+                         "was planted")
+        if planted > 0 and abs(h["mean"] - planted) > 0.30 * planted:
+            fails.append(f"planted {planted}c, measured {h['mean']:.3f}c -- "
+                         "the pre-trade mid is being read after the trade")
+        if planted > 0 and h["t"] < 3:
+            fails.append(f"missed a planted {planted}c (t={h['t']:.1f})")
+
+    print("\n  THE VOLATILITY TRAP. Trades arrive PREFERENTIALLY IN VOLATILE")
+    print("  SECONDS and carry ZERO directional information. An absolute-move")
+    print("  test fires hard on this; a signed one must not.")
+    rnd = random.Random(77)
+    quotes, trades, closes = {}, {}, {}
+    for w in range(140):
+        close_s = 1_760_000_000 + w * 900
+        tk = f"M{w:04d}"
+        closes[tk] = close_s
+        mid, ser, tr = 0.50, [], []
+        vol = [0.0006 if (k // 90) % 2 else 0.0045 for k in range(901)]
+        for k in range(901):
+            mid = min(max(mid + rnd.gauss(0, vol[k]), 0.05), 0.95)
+            ser.append((close_s - 900 + k, mid - 0.005, mid + 0.005, 100., 100.))
+        for k in range(30, 900):
+            # arrival probability tracks volatility; side is a fair coin, so
+            # there is no information in the trade by construction
+            if rnd.random() < (0.30 if vol[k] > 0.002 else 0.02):
+                tr.append((close_s - 900 + k, ser[k][1], 10.0,
+                           "yes" if rnd.random() < 0.5 else "no"))
+        quotes[tk], trades[tk] = ser, tr
+    hit, shuf = adverse_from_tape(quotes, trades, closes)
+    hs = clustered(hit[1])
+    abs_h = clustered([(abs(v), k) for v, k in hit[1]])
+    abs_n = clustered([(abs(v), k) for v, k in shuf[1]])
+    print(f"\n  {'signed markout (correct)':>32}: {hs['mean']:>7.3f}c  "
+          f"t={hs['t']:>6.1f}")
+    print(f"  {'absolute move (the old test)':>32}: {abs_h['mean']:>7.3f}c  "
+          f"vs {abs_n['mean']:.3f}c at random signs")
+    if abs(hs["t"]) > crit(0.05, hs["df"]):
+        fails.append(f"the SIGNED estimator fired (t={hs['t']:.1f}) on a tape "
+                     "with zero directional information -- it is picking up "
+                     "arrival clustering, not adverse selection")
 
     print("\n" + "=" * 78)
     if fails:
@@ -369,26 +451,38 @@ def main():
     print("  was run over. Scored against the same horizons measured at times")
     print("  WE chose, where no trade need have happened -- a raw post-trade")
     print("  drift is not evidence, the gap against that null is.\n")
-    print(f"  {'horizon':>9}{'after a trade':>16}{'at our gridpoints':>20}"
-          f"{'t':>8}{'df':>6}{'p':>10}{'clusters':>10}")
+    print(f"  {'horizon':>9}{'signed markout':>17}{'t':>8}{'df':>6}{'p':>10}"
+          f"{'net @0.5c':>12}{'clusters':>10}")
     for h in HORIZONS:
         a_ = clustered(hit[h])
-        n_ = clustered([(v, k) for v, k in null[h]])
-        if not a_ or not n_:
+        if not a_:
             print(f"  {h:>8}s   not enough paired observations")
             continue
-        # compare |post-trade| against |random-time| on the same clusters
-        abs_hit = clustered([(abs(v), k) for v, k in hit[h]])
-        gap = abs_hit["mean"] - n_["mean"]
-        se = math.sqrt(abs_hit["se"] ** 2 + n_["se"] ** 2)
-        t = gap / se if se > 0 else 0.0
-        df = min(abs_hit["df"], n_["df"])
-        print(f"  {h:>8}s{abs_hit['mean']:>15.3f}c{n_['mean']:>19.3f}c"
-              f"{t:>8.1f}{df:>6}{p_two_sided(t, df):>10.4f}"
-              f"{abs_hit['n']:>10}")
-    print(f"\n  |t| for p<0.05 on these df is about "
-          f"{crit(0.05, 100):.2f}, not 1.96; and one go.py run emits several")
-    print("  hundred statistics, so the bar that matters is well above that.")
+        print(f"  {h:>8}s{a_['mean']:>16.3f}c{a_['t']:>8.1f}{a_['df']:>6}"
+              f"{p_two_sided(a_['t'], a_['df']):>10.4f}"
+              f"{0.5 - a_['mean']:>11.3f}c{a_['n']:>10}")
+    print("\n  SIGNED, so positive means the taker was right and the resting")
+    print("  side was run over. 'net @0.5c' is what a one-cent two-sided quote")
+    print("  earns per fill after that cost. The null is zero.")
+
+    print("\n  ROBUSTNESS -- same moments, same moves, random sign. If the")
+    print("  signed number above is real it must NOT survive this.")
+    for h in HORIZONS:
+        sf = clustered(shuf[h])
+        if sf:
+            print(f"  {h:>8}s{sf['mean']:>16.3f}c{sf['t']:>8.1f}{sf['df']:>6}"
+                  f"{p_two_sided(sf['t'], sf['df']):>10.4f}")
+
+    print("\n  BREAK-EVEN UNINFORMED SHARE -- q = fee/(fee+h). Below this")
+    print("  fraction of noise flow, quoting loses to the fee theorem no")
+    print("  matter how wide you quote.")
+    print(f"\n  {'price':>8}{'taker fee':>12}{'half-spread':>14}{'q needed':>11}")
+    for pq in (0.50, 0.60, 0.70, 0.80, 0.90, 0.95):
+        fee = 100 * 0.07 * pq * (1 - pq)
+        hs_ = 0.5
+        print(f"  {100*pq:>7.0f}c{fee:>11.2f}c{hs_:>13.2f}c"
+              f"{fee/(fee+hs_):>10.0%}")
+
     print("\n  Read it against the region table: if realised adverse selection")
     print("  at 1s is below the half-spread you would capture, quoting pays.")
 

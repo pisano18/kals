@@ -14,6 +14,89 @@ operator's card.
 
 ---
 
+## THE MAKER QUESTION — PRICED, AND IT IS WORSE THAN IT LOOKED
+
+Run 2 reopened market-making by replacing PLAN.md's mis-parsed "3,767
+contracts resting" with a measured ~30. Makers genuinely pay no fee: all
+sixteen fifteen-minute series are fee_type="quadratic" (the only
+quadratic_with_maker_fees series anywhere are KXBTCMAX125/150). The tick is
+1c, the liquid series quote 1c wide, ZEC 7c and NEAR 8c.
+
+**A first pass compared the half-spread against per-second diffusion and
+concluded the wings were viable (quote beyond 92.1c at 900s). That framing is
+wrong and optimistic**, and `research/maker.py` now says so in its own
+docstring. You are not run over by the average second; you are run over by the
+seconds in which somebody chose to trade with you.
+
+### The fee theorem
+A rational taker crosses only when their estimate beats the touch by more than
+the fee, so E[F | ask lifted] >= a + fee(p), and
+
+    E[maker P&L per fill] <= a - (a + fee(p)) = -fee(p)
+
+**and the bound is invariant to how wide you quote** — widening raises the
+half-spread on both sides and it cancels. Against informed flow a maker loses
+the TAKER's fee every fill: -1.75c at 50c, -0.63c at 90c, -0.33c at 95c.
+Paying no maker fee is why anyone quotes at all; it is not an edge.
+
+Independent confirmations of the same answer: a queue/diffusion argument (30
+contracts ahead, a 1-tick ATM level lives ~541ms at tau=900 while only ~9.4
+contracts of one-side flow arrive, so the modal outcome is the level moving
+away and the fills that DO occur are informed bursts, E[drift|fill] ~ 1.55c,
+net -1.05c); and the transaction-cost split (at 50c the maker captures
+h/(h+fee) = 22% of what counterparties pay, Kalshi takes 78%).
+
+### So the strategy reduces to ONE measurable number
+Noise flow pays you the half-spread; informed flow costs you the fee.
+
+    E[P&L per fill] = q*h - (1-q)*fee      break-even q = fee/(fee+h)
+
+At 50c that is **78% of all flow must be uninformed**; at 90c, 56%. That is
+not assumable — it is exactly the signed markout `maker.py` measures.
+
+### Two fatal bugs in the first maker.py, both of which its self-test passed
+1. The pre-trade mid was "last quote at or before t". Book updates share the
+   trade's integer second constantly, so it read the POST-trade mid and
+   attenuated a planted 1.000c to **0.000c**.
+2. The headline compared |post-trade move| against |random-grid move| — a
+   volatility test, not a direction test. Trades cluster in volatile seconds,
+   so on a tape with provably ZERO directional information it fired at
+   **t = +171**.
+
+Both fixed; both now planted in the self-test. **The deeper lesson: the
+self-test exercised the SIGNED path while main() reported the ABSOLUTE path.
+Testing a different quantity than you report is indistinguishable from not
+testing.**
+
+### What a paper trade can and cannot do (measured, not argued)
+At 185 close-time clusters the P&L minimum detectable effect is 2.64c at a 95c
+price and **8.46c at 55c** — and making happens mid-book, so 8.46c is the
+honest number. Confirming a 0.5c edge from settlement P&L needs ~6,550
+clusters (68 days) at 95c and ~54,000 (564 days) at 55c. **For a maker, extra
+fills buy ZERO additional power on settlement P&L**, because every fill in one
+market settles on the same single outcome.
+
+The alternative is not a longer paper trade but a different estimator: signed
+post-fill markouts have per-fill sd 1.36-2.47c, cluster SE 0.028-0.094c, and
+an MDE of **0.08-0.26c at 185 clusters — 30-100x more powerful** than replayed
+P&L, against a target quantity of ~0.5c. That is the measurement to run.
+
+### The 59.9% index coverage is NOT a 40% hole rate
+It is ONE contiguous ~18.6-hour recorder outage (the PC crash) inside a
+46.36-hour wall-clock span, plus ~2,000s of short transport interruptions.
+Dedup is definitively excluded: replay's own parse counter (999,590) exactly
+equals the sum of the ten per-index distinct-second counts, and the live rate
+measures 1.000 Hz/index. The data that exists is dense and fine.
+
+### implied.py's pooling bug is fixed
+Five sites pooled raw sigmas across series spanning 1e6 in price. The "1.192x
+variance risk premium" was 0.7839/0.0118, where 0.0118 is literally SOL's
+realised sigma alone and BTC+ETH supply 97.6% of the numerator. Now pools
+per-series ratios, with a self-test that plants three series priced 1,000,000x
+apart carrying a common ratio and checks the price level does not leak.
+
+---
+
 ## RUN 2 (2026-08-27 02:39, 154 min) — THE FIRST COMPLETE RUN
 
 All 13 stages produced data. 46.4 hours recorded, 72.6M orderbook deltas
