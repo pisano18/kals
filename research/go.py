@@ -133,6 +133,7 @@ SELFTESTS = [
     ("feed collector", [os.path.join("..", "crypto_feeds.py"),
                         "--selftest"]),
     ("maker economics", ["maker.py", "--selftest"]),
+    ("vol timing", ["voltiming.py", "--selftest"]),
     ("detectability", ["power.py", "--selftest", "--quick"]),
 ]
 
@@ -192,6 +193,10 @@ STAGES = [
     # analytic half needs no data at all
     ("maker", ["research/maker.py", "--data", "{data}", "--out", "{out}"],
      "{data}/ticker"),
+    # voltiming after maker: it asks whether the ONE confirmed finding is
+    # already in the price. Its analytic half needs no data either.
+    ("voltiming", ["research/voltiming.py", "--data", "{data}",
+                   "--feeds", "{feeds}"], "{data}/ticker"),
 ]
 
 
