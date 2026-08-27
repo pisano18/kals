@@ -263,6 +263,154 @@ def ac_t_seg(segs, lag, null=0.0):
     return r, (r - null) * math.sqrt(npairs)
 
 
+# ---------------------------------------------------------------------------
+# WHY 1/sqrt(n) IS THE WRONG RULER FOR |r|
+#
+# ac_t_seg divides by 1/sqrt(npairs). That SE is derived under INDEPENDENCE.
+# It is the right ruler for the returns, which are near-independent. It is the
+# wrong ruler for |returns|, whose entire claim is that they are strongly
+# dependent -- and a dependent series carries far less information per
+# observation than n independent ones do. Applying the iid SE to |r| tests a
+# dependence claim with a ruler that assumes the claim is false, and inflates
+# the t-stat by however true the claim happens to be.
+#
+# The fix is a moving-block bootstrap: resample CONTIGUOUS runs, so every
+# resample keeps the local dependence intact, and read the SE off the spread
+# of the statistic across resamples. Blocks never straddle a chain boundary,
+# for the same reason segments_of exists.
+#
+# This matters because volatility clustering is the one finding in this
+# project that has survived everything. It deserves to be measured with a
+# ruler that does not assume its own conclusion.
+# ---------------------------------------------------------------------------
+def block_len(n, lag=0):
+    """n^(1/3) -- the standard MBB rate -- floored so a block spans the lag
+    being measured. A block shorter than the lag holds no pair at that lag, so
+    the bootstrap would be resampling nothing but edge effects."""
+    b = int(round(n ** (1.0 / 3.0)))
+    return max(lag + 1, 2, min(b, max(2, n // 4)))
+
+
+def _blocks(cols, b):
+    """cols is a tuple of per-segment aligned lists (P, V) or (X,). Returns
+    (prefix_tuples, starts) where starts is every legal (segment, offset)."""
+    pref, starts = [], []
+    for j, seg in enumerate(zip(*cols)):
+        # seg is a tuple of the aligned lists for segment j
+        L = len(seg[0])
+        if L < b:
+            continue
+        ps = []
+        for arr in seg:
+            c = [0.0] * (L + 1)
+            for i, v in enumerate(arr):
+                c[i + 1] = c[i] + v
+            ps.append(c)
+        idx = len(pref)
+        pref.append(ps)
+        starts.extend((idx, s) for s in range(L - b + 1))
+    return pref, starts
+
+
+def _pair_series(segs, lag):
+    """Per-segment (P, V) arrays about the pooled mean, index-aligned so a
+    block drawn from one is the same block drawn from the other.
+
+    P is the lag-`lag` cross-product; V the squared deviation. The pooled
+    autocorrelation is mean(P) / mean(V), so bootstrapping the two together
+    bootstraps the ratio without ever re-centering on resampled data."""
+    allv = [v for sg in segs for v in sg]
+    if len(allv) <= lag + 5:
+        return None, None
+    m = mean(allv)
+    P, V = [], []
+    for sg in segs:
+        if len(sg) <= lag:
+            continue
+        P.append([(sg[i] - m) * (sg[i + lag] - m) for i in range(len(sg) - lag)])
+        V.append([(sg[i] - m) ** 2 for i in range(len(sg) - lag)])
+    return P, V
+
+
+def ac_block_se(segs, lag, B=1000, seed=20260827, block=None):
+    """Moving-block-bootstrap SE of the pooled autocorrelation.
+
+    Returns (se, block_len, npairs); se is None if the bootstrap cannot run
+    (every chain shorter than one block, or a degenerate denominator).
+    """
+    P, V = _pair_series(segs, lag)
+    if not P:
+        return None, None, 0
+    npairs = sum(len(x) for x in P)
+    b = block or block_len(npairs, lag)
+    pref, starts = _blocks((P, V), b)
+    if not starts:
+        return None, b, npairs
+    k = max(1, int(math.ceil(npairs / float(b))))
+    rng = random.Random(seed)
+    pick = rng.randrange
+    nst = len(starts)
+    out = []
+    for _ in range(B):
+        sp = sv = 0.0
+        for _ in range(k):
+            j, s = starts[pick(nst)]
+            cp, cv = pref[j]
+            sp += cp[s + b] - cp[s]
+            sv += cv[s + b] - cv[s]
+        if sv > 0:
+            out.append(sp / sv)
+    if len(out) < 50:
+        return None, b, npairs
+    return pstdev(out), b, npairs
+
+
+def ac_t_block(segs, lag, null=0.0, B=1000, seed=20260827):
+    """(r, t, se, block) using the block-bootstrap SE.
+
+    Falls back to the iid t only when the bootstrap cannot run, and signals
+    that by returning se=None -- a caller printing a t must be able to say
+    which ruler produced it.
+    """
+    r, npairs = autocorr_seg(segs, lag)
+    if r is None:
+        return None, None, None, None
+    se, b, _ = ac_block_se(segs, lag, B=B, seed=seed)
+    if not se or se <= 0:
+        return r, (r - null) * math.sqrt(npairs), None, None
+    return r, (r - null) / se, se, b
+
+
+def block_mean_se(seg_lists, B=1000, seed=20260827, block=None):
+    """Moving-block-bootstrap SE for the mean of a within-chain series.
+
+    The sign-persistence test used sqrt(0.25/n) -- the SE of a mean of
+    INDEPENDENT Bernoullis. If direction persists at all, consecutive
+    indicators are not independent and that SE is too small, in the direction
+    that manufactures significance.
+    """
+    n = sum(len(x) for x in seg_lists)
+    if n < 30:
+        return None, None
+    b = block or block_len(n)
+    pref, starts = _blocks((seg_lists,), b)
+    if not starts:
+        return None, b
+    k = max(1, int(math.ceil(n / float(b))))
+    rng = random.Random(seed)
+    pick = rng.randrange
+    nst = len(starts)
+    out = []
+    for _ in range(B):
+        t = 0.0
+        for _ in range(k):
+            j, s = starts[pick(nst)]
+            c = pref[j][0]
+            t += c[s + b] - c[s]
+        out.append(t / (k * b))
+    return pstdev(out), b
+
+
 def box_pierce_seg(segs, lags=5):
     """Sum_k n_k * r_k^2 ~ chi2(lags) under the null. The classic Ljung-Box
     n(n+2)/(n-k) correction assumes one unbroken series; with chains the
@@ -378,16 +526,17 @@ def test_vol_clustering(rows, label):
     a = [v for sg in segs for v in sg]
     if len(a) < 200:
         return None
-    r1, t1 = ac_t_seg(segs, 1)
+    r1, t1, se1, b1 = ac_t_block(segs, 1)
+    _, t_iid = ac_t_seg(segs, 1)
     r5, _ = ac_t_seg(segs, 5)
     r20, _ = ac_t_seg(segs, 20)
     if r1 is None or r5 is None or r20 is None:
         return None
     lb = box_pierce_seg(segs, 5)
-    print(f"  {label:>11}{len(a):>7,}{r1:>9.3f}{t1:>8.1f}{r5:>9.3f}"
-          f"{r20:>9.3f}{lb:>10.1f}   "
+    print(f"  {label:>11}{len(a):>7,}{r1:>9.3f}{t1:>8.1f}{t_iid:>8.1f}"
+          f"{r5:>9.3f}{r20:>9.3f}{lb:>10.1f}   "
           f"{'CLUSTERS' if t1 > 3 else 'weak' if t1 > 2 else 'no'}")
-    return {"ac1": r1, "t": t1}
+    return {"ac1": r1, "t": t1, "t_iid": t_iid, "se": se1, "block": b1}
 
 
 def test_return_autocorr(rows, label):
@@ -403,8 +552,9 @@ def test_return_autocorr(rows, label):
     # Both are measured within chains only -- the overlap term the null
     # encodes exists between CONSECUTIVE windows and nowhere else, so a pair
     # spanning a gap is being tested against a null that does not apply to it.
-    r1, t1 = ac_t_seg(segs, 1, null=TWAP_RHO1)
-    r2, t2 = ac_t_seg(segs, 2)
+    r1, t1, se1, b1 = ac_t_block(segs, 1, null=TWAP_RHO1)
+    r2, t2, _, _ = ac_t_block(segs, 2)
+    _, t1_iid = ac_t_seg(segs, 1, null=TWAP_RHO1)
     if r1 is None or r2 is None:
         return None
     # sign persistence is the tradeable version -- also within-chain only
@@ -417,10 +567,11 @@ def test_return_autocorr(rows, label):
         return None
     frac = same / npairs
     se = math.sqrt(0.25 / npairs)
-    print(f"  {label:>11}{len(r):>7,}{r1:>10.4f}{t1:>8.1f}{r2:>10.4f}"
-          f"{t2:>8.1f}{100*frac:>10.2f}%{(frac-0.5)/se:>8.1f}   "
+    print(f"  {label:>11}{len(r):>7,}{r1:>10.4f}{t1:>8.1f}{t1_iid:>8.1f}"
+          f"{r2:>10.4f}{t2:>8.1f}{100*frac:>10.2f}%{(frac-0.5)/se:>8.1f}   "
           f"{'SIGNAL' if abs(t1) > 3 else 'weak' if abs(t1) > 2 else 'no'}")
-    return {"ac1": r1, "t": t1, "sign_frac": frac, "sign_t": (frac - 0.5) / se}
+    return {"ac1": r1, "t": t1, "t_iid": t1_iid, "se": se1, "block": b1,
+            "sign_frac": frac, "sign_t": (frac - 0.5) / se}
 
 
 def test_hour_of_day(rows, label):
@@ -546,8 +697,8 @@ def selftest():
         fails.append("chain gate did not detect corrupted data")
 
     print("\n2. RETURN AUTOCORRELATION -- must find injected rho, and only that")
-    print(f"  {'injected':>11}{'n':>7}{'ac1':>10}{'t':>8}{'ac2':>10}{'t':>8}"
-          f"{'sign%':>11}{'t':>8}   verdict")
+    print(f"  {'injected':>11}{'n':>7}{'ac1':>10}{'t_blk':>8}{'t_iid':>8}"
+          f"{'ac2':>10}{'t':>8}{'sign%':>11}{'t':>8}   verdict")
     for tag, rho, sd in (("null-a", 0.0, 1), ("null-b", 0.0, 2),
                          ("rho=+0.05", 0.05, 3), ("rho=-0.10", -0.10, 4)):
         rows = chain_returns(build_chains(synth(4000, rho=rho, seed=700 + sd))[0])
@@ -593,8 +744,8 @@ def selftest():
                      "one -- this test has stopped testing anything")
 
     print("\n3. VOL CLUSTERING -- must find injected GARCH, and only that")
-    print(f"  {'injected':>11}{'n':>7}{'ac1|r|':>9}{'t':>8}{'ac5':>9}"
-          f"{'ac20':>9}{'LB(5)':>10}   verdict")
+    print(f"  {'injected':>11}{'n':>7}{'ac1|r|':>9}{'t_blk':>8}{'t_iid':>8}"
+          f"{'ac5':>9}{'ac20':>9}{'LB(5)':>10}   verdict")
     for tag, g, sd in (("null-a", 0.0, 1), ("null-b", 0.0, 2),
                        ("garch=0.30", 0.30, 3), ("garch=0.60", 0.60, 4)):
         rows = chain_returns(build_chains(synth(4000, garch=g, seed=800 + sd))[0])
@@ -625,6 +776,56 @@ def selftest():
     if tg and tg["cross"] is not None:
         fails.append(f"invented a tail crossover at {100*tg['cross']:.1f}c "
                      "in clean Gaussian data")
+
+    print("\n6. THE SE ITSELF must be tested -- COVERAGE under vol clustering")
+    print("   Every t in tables 2 and 3 is a number divided by a standard")
+    print("   error, and an SE is a claim like any other. The iid SE assumes")
+    print("   independence. Volatility clustering -- the one thing this")
+    print("   project has actually confirmed -- breaks that assumption, and")
+    print("   it breaks it for the RETURN table too, because a return series")
+    print("   with clustered variance is not iid even when its true")
+    print("   autocorrelation is exactly zero.")
+    print("\n   So: generate many datasets with KNOWN true rho = 0 and heavy")
+    print("   vol clustering, and count how often a nominal 95% interval")
+    print("   actually contains 0. It should be 95 in 100.")
+    M, NN = 150, 1200
+    r_hat, se_blk = [], []
+    for k in range(M):
+        rows = chain_returns(build_chains(
+            synth(NN, garch=0.6, sd=0.002, seed=31000 + k))[0])
+        segs = segments_of(rows)
+        r, npairs = autocorr_seg(segs, 1)
+        if r is None:
+            continue
+        se, _b, _n = ac_block_se(segs, 1, B=250, seed=900 + k)
+        r_hat.append((r, 1.0 / math.sqrt(npairs)))
+        se_blk.append(se)
+    cov_iid = sum(1 for (r, si) in r_hat
+                  if abs(r - TWAP_RHO1) / si < 1.96) / max(len(r_hat), 1)
+    cov_blk = sum(1 for (r, _si), sb in zip(r_hat, se_blk)
+                  if sb and abs(r - TWAP_RHO1) / sb < 1.96) / max(len(r_hat), 1)
+    med_i = median([si for _r, si in r_hat])
+    med_b = median([x for x in se_blk if x])
+    print(f"\n   {'ruler':>22}{'median SE':>12}{'95% cover':>12}   verdict")
+    print(f"   {'iid  1/sqrt(n)':>22}{med_i:>12.4f}{100*cov_iid:>11.0f}%   "
+          f"{'OK' if cov_iid > 0.90 else '*** BROKEN ***'}")
+    print(f"   {'moving-block boot':>22}{med_b:>12.4f}{100*cov_blk:>11.0f}%   "
+          f"{'OK' if cov_blk > 0.85 else '*** BROKEN ***'}")
+    print(f"\n   {len(r_hat)} datasets, {NN} windows each, true rho = the TWAP")
+    print("   overlap term and nothing else.")
+    if cov_iid > 0.90:
+        fails.append("the iid SE covered {:.0%} here -- this fixture is not "
+                     "heteroskedastic enough to test the SE, so section 6 "
+                     "proves nothing".format(cov_iid))
+    if cov_blk < 0.85:
+        fails.append(f"block-bootstrap SE covered only {cov_blk:.0%} of the "
+                     "time against a nominal 95%")
+    if cov_blk <= cov_iid + 0.03:
+        fails.append("the block SE was no better calibrated than the iid SE")
+    print("\n   NOTE the block bootstrap lands near 90%, not 95%: it is")
+    print("   mildly optimistic in finite samples, so a block t is still a")
+    print("   slight overstatement. That is why the verdict bar in this file")
+    print("   is |t| > 3 and not 1.96.")
 
     print("\n" + "=" * 78)
     if fails:
@@ -787,8 +988,8 @@ def main():
     print("\n" + "=" * 78)
     print("VOL CLUSTERING -- can we forecast sigma better than a constant?")
     print("=" * 78)
-    print(f"  {'series':>11}{'n':>7}{'ac1|r|':>9}{'t':>8}{'ac5':>9}"
-          f"{'ac20':>9}{'LB(5)':>10}   verdict")
+    print(f"  {'series':>11}{'n':>7}{'ac1|r|':>9}{'t_blk':>8}{'t_iid':>8}"
+          f"{'ac5':>9}{'ac20':>9}{'LB(5)':>10}   verdict")
     for s in a.series:
         if rows_by.get(s):
             test_vol_clustering(rows_by[s], s)
@@ -796,8 +997,8 @@ def main():
     print("\n" + "=" * 78)
     print("RETURN AUTOCORRELATION -- a signal available AT THE OPEN")
     print("=" * 78)
-    print(f"  {'series':>11}{'n':>7}{'ac1':>10}{'t':>8}{'ac2':>10}{'t':>8}"
-          f"{'sign%':>11}{'t':>8}   verdict")
+    print(f"  {'series':>11}{'n':>7}{'ac1':>10}{'t_blk':>8}{'t_iid':>8}"
+          f"{'ac2':>10}{'t':>8}{'sign%':>11}{'t':>8}   verdict")
     for s in a.series:
         if rows_by.get(s):
             test_return_autocorr(rows_by[s], s)

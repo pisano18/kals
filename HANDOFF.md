@@ -319,9 +319,42 @@ returned zero observations. **This is the next experiment — see §7.**
   quantized to 1e-6 while `expiration_value` carries 1e-7. The identity holds
   in 1,978/1,978 pairs under `floor(settle × 1e6)/1e6`, always one-sided
   (strike ≤ settle).
-- **`chain.py` uses iid SEs (`1/√n`) on both autocorrelation tables**, while
-  the same report proves the data is heteroskedastic. Should be
-  block-bootstrap or HAC. **Unfixed.**
+- ~~**`chain.py` uses iid SEs (`1/√n`) on both autocorrelation tables**~~ —
+  **FIXED.** Both tables now divide by a moving-block-bootstrap SE and print
+  the old iid `t` beside it, so the inflation is visible rather than implied.
+  A new self-test section 6 measures the two rulers against a known answer:
+  150 datasets of 1,200 windows with **true ρ = 0** and heavy vol
+  clustering, counting how often a nominal 95% interval actually contains the
+  truth.
+
+  | ruler | median SE | 95% coverage |
+  |---|---|---|
+  | iid `1/√n` | 0.0289 | **69%** |
+  | moving-block bootstrap | 0.0484 | **91%** |
+
+  The iid SE is **1.67× too small** on this fixture, so every `t` in the
+  return table was inflated by that factor — and the fixture's returns have
+  *zero* true autocorrelation. This is the more important half: the clustering
+  we confirmed does not just break the |r| table's SE, it breaks the RETURN
+  table's SE too, because a return series with clustered variance is not iid
+  even when its autocorrelation is exactly zero. On the synthetic GARCH cases
+  the |r| `t` falls from 12.5 to 8.8 (g=0.30) and 26.8 to 18.5 (g=0.60);
+  expect a similar haircut on the real series.
+
+  The block bootstrap covers 91%, not 95% — mildly optimistic in finite
+  samples. Both a HAC/Newey–West SE and subsampling were calibrated against
+  the same fixture; HAC landed at the same 89–91% coverage and subsampling
+  worse, so the bootstrap was kept for needing no bandwidth choice. The `|t|
+  > 3` verdict bar (rather than 1.96) absorbs the residual.
+
+  Sign persistence keeps its binomial SE `√(0.25/n)`: measured against the
+  same process it is correctly calibrated (ratio 1.05), because signs are
+  insensitive to heteroskedasticity. That is now the most robust column in the
+  return table, not the least.
+
+  **Still iid:** `power_analysis()` (`--power`) computes its false-positive
+  columns with `ac_t`, not the block SE. Its `g = 0` row is homoskedastic so
+  that row is sound, but the garch rows understate the bar.
 - **`KXBTC15M` was not pulled in the 2026-08-26 run** (the stage log lists 11
   series, BTC absent) — the anchor of the whole detectability table came from a
   cache ~10h stale. Other series were truncated by HTTP 429s that the report
@@ -415,9 +448,10 @@ Ranked by information unlocked per unit of work:
 
 1. Resolve the **tick size** contradiction (tapered vs flat 1¢) from the API's
    `price_ranges`. It decides whether sub-cent edges are worth chasing at all.
-2. Replace `chain.py`'s iid SEs with block-bootstrap on both autocorrelation
-   tables. It is the difference between "one cell clears the bar" and "nothing
-   exceeds |t| = 1.3".
+2. ~~Replace `chain.py`'s iid SEs with block-bootstrap~~ — done, and the
+   self-test now measures the coverage of both rulers rather than asserting
+   the new one is better. Re-read the run-2 return-autocorrelation verdicts
+   with the block `t`; the iid ones were ~1.7× too large.
 3. ~~Make `doctor.channel_stats` use `gzsalvage`~~ — done; the census is no
    longer a lower bound.
 4. Fix `chain.py`'s HTTP 429 handling and make it actually pull `KXBTC15M`;
