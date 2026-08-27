@@ -140,6 +140,78 @@ def walk_scopes(node, known, out):
             walk_scopes(child, known, out)
 
 
+def exported_by(path):
+    """Top-level names a module defines: defs, classes, assignments, imports.
+
+    Conservative on purpose. A name bound only inside an `if`/`try` at module
+    level still counts, because it is reachable, and calling a real export
+    missing would be a false alarm.
+    """
+    try:
+        tree = ast.parse(open(path, encoding="utf-8", errors="replace").read())
+    except (OSError, SyntaxError):
+        return None
+    out = set()
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.Import, ast.ImportFrom)):
+            for a in n.names:
+                out.add(a.asname or a.name.split(".")[0])
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                            ast.ClassDef)):
+            out.add(n.name)
+        elif isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+            out.add(n.id)
+    return out
+
+
+def bad_imports(path, search):
+    """`from X import Y` where X is a module in this repo and Y is not in it.
+
+    This is the bug the unbound-name check CANNOT see: the import statement
+    binds Y, so every function using it looks perfectly correct. It cost two
+    real runs -- `from replay import load_trades` (it is in edge.py) and
+    `from engine import SERIES_TO_INDEX` (it is in replay.py). Both crashed at
+    the first line of REAL DATA, after the self-tests had all passed, because
+    a self-test never reaches that import.
+
+    Only local modules are checked. A missing third-party package is a
+    different problem with a different fix, and guessing at one would make
+    this noisy enough to ignore.
+    """
+    try:
+        tree = ast.parse(open(path, encoding="utf-8", errors="replace").read())
+    except (OSError, SyntaxError):
+        return []
+    out = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.ImportFrom) or n.level or not n.module:
+            continue
+        mod = n.module.split(".")[0]
+        target = None
+        for d in search:
+            cand = os.path.join(d, mod + ".py")
+            if os.path.isfile(cand) and os.path.abspath(cand) != \
+                    os.path.abspath(path):
+                target = cand
+                break
+        if target is None:
+            continue                       # stdlib or third-party; not ours
+        have = exported_by(target)
+        if have is None:
+            continue
+        for a in n.names:
+            if a.name == "*":
+                continue
+            if a.name not in have:
+                near = sorted(x for x in have
+                              if a.name.split("_")[-1] in x
+                              or x.split("_")[-1] in a.name)[:3]
+                out.append((f"import:{n.lineno}",
+                            [f"{mod}.{a.name} does not exist"
+                             + (f" (did you mean {near}?)" if near else "")]))
+    return out
+
+
 def scan(path):
     try:
         src = open(path, encoding="utf-8", errors="replace").read()
@@ -148,6 +220,9 @@ def scan(path):
         return [("<file>", [f"{type(e).__name__}: {e}"])]
     out = []
     walk_scopes(tree, module_names(tree), out)
+    out += bad_imports(path, [os.path.dirname(os.path.abspath(path)),
+                              os.path.dirname(os.path.dirname(
+                                  os.path.abspath(path)))])
     return out
 
 
@@ -155,7 +230,7 @@ def selftest():
     print("=" * 78)
     print("SELF-TEST -- the checker must see a real one and invent none")
     print("=" * 78)
-    import tempfile
+    import shutil, tempfile
     fails = []
     CASES = [
         # `f` is defined at module level here on purpose: without it the
@@ -221,6 +296,47 @@ def selftest():
               + ("" if ok else "   *** WRONG ***"))
         if not ok:
             fails.append(f"{name}: expected {want}, got {got}")
+
+    # ---- cross-module imports: the bug the scope check cannot see --------
+    print("\n  IMPORT RESOLUTION. `from X import Y` BINDS Y, so every use of")
+    print("  it passes the scope check above. Two real runs crashed on this:")
+    print("  `from replay import load_trades` (it is in edge.py) and")
+    print("  `from engine import SERIES_TO_INDEX` (it is in replay.py). Both")
+    print("  died at the first line of REAL DATA, long after the self-tests.")
+    tmpd = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(tmpd, "lib.py"), "w", encoding="utf-8") as f:
+            f.write("VALUE = 1\ndef real_fn():\n    return VALUE\n"
+                    "class Thing:\n    pass\n")
+        CASES2 = [
+            ("existing function", "from lib import real_fn\n", 0),
+            ("existing constant", "from lib import VALUE\n", 0),
+            ("existing class", "from lib import Thing\n", 0),
+            ("aliased", "from lib import real_fn as f\n", 0),
+            ("several, all real",
+             "from lib import VALUE, real_fn, Thing\n", 0),
+            ("MISSING name", "from lib import nope\n", 1),
+            ("one real one missing",
+             "from lib import real_fn, nope\n", 1),
+            ("stdlib is not ours", "from json import loads\n", 0),
+            ("unknown third party", "from numpy import array\n", 0),
+            ("star import is not checked", "from lib import *\n", 0),
+            ("import inside a function",
+             "def g():\n    from lib import nope\n    return nope\n", 1),
+        ]
+        print(f"\n  {'case':>28}{'expected':>10}{'found':>8}")
+        for name, src, want in CASES2:
+            fp = os.path.join(tmpd, "case.py")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(src)
+            got = len([h for h in scan(fp) if h[0].startswith("import:")])
+            print(f"  {name:>28}{want:>10}{got:>8}"
+                  + ("" if got == want else "   *** WRONG ***"))
+            if got != want:
+                fails.append(f"import case '{name}': expected {want} hits, "
+                             f"got {got}")
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
 
     print("\n" + "=" * 78)
     if fails:

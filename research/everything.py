@@ -420,7 +420,7 @@ def _sha(path):
 
 
 def step_sync(ctx):
-    """Is the code the watchdog actually launches the code in this repo?
+    r"""Is the code the watchdog actually launches the code in this repo?
 
     run_all.ps1 does `Set-Location C:\kals` and starts `python
     kalshi_collector.py`, so it runs the copies sitting NEXT TO THE DATA --

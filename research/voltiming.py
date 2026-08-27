@@ -68,9 +68,41 @@ ND = NormalDist()
 # across all sixteen fifteen-minute series.
 FEE_K = 0.07
 
-# The measured median spread on the liquid series is 1.00c, so a taker crosses
-# half a cent. ZEC (7c) and NEAR (8c) are not tradeable on this basis at all.
-HALF_SPREAD_C = 0.5
+# The tick is TAPERED, not flat. From the API's own price_ranges on a live
+# KXBTC15M market:
+#
+#     0.0000 - 0.1000   step 0.0010   =  0.1c
+#     0.1000 - 0.9000   step 0.0100   =  1.0c
+#     0.9000 - 1.0000   step 0.0010   =  0.1c
+#
+# Run 2 measured "a flat 1c spread" and that was right about the liquid
+# mid-book and blind to the wings, because nothing quotes there. This file
+# previously assumed 0.5c of half-spread EVERYWHERE, which is 10x too high in
+# exactly the region every thread in this project points at. The corrected
+# break-even sigma error keeps FALLING below 10c instead of turning back up:
+# 2.6% at 7c and 1.9% at 2c, against the 4.8-6.4% the flat assumption gave.
+TICK_RANGES = ((0.00, 0.10, 0.001), (0.10, 0.90, 0.010), (0.90, 1.00, 0.001))
+
+
+def tick_cents(p):
+    for lo, hi, step in TICK_RANGES:
+        if lo <= p < hi:
+            return 100.0 * step
+    return 100.0 * TICK_RANGES[-1][2]
+
+
+def half_spread_c(p):
+    """Half of the tightest quotable spread at this price.
+
+    A one-tick-wide book is the best case, and the liquid series do quote one
+    tick wide. It is a floor on the cost of crossing, not a measurement of
+    what is actually resting there -- ZEC quotes 7c and NEAR 8c, and neither
+    is tradeable on this basis at any tick.
+    """
+    return tick_cents(p) / 2.0
+
+
+HALF_SPREAD_C = 0.5          # kept for the 10c-90c band, where it is correct
 
 # max of |z|*phi(z), at |z| = 1. The ceiling on any sigma-based edge, in cents
 # per 1.0 log-unit of sigma error.
@@ -99,9 +131,10 @@ def fee_cents(p):
     return 100.0 * FEE_K * p * (1.0 - p)
 
 
-def net_edge(p, dsig, half_spread=HALF_SPREAD_C):
+def net_edge(p, dsig, half_spread=None):
     """Cents left after the fee and the spread, for a log-sigma error dsig."""
-    return dfair_dlogsigma(p) * dsig - fee_cents(p) - half_spread
+    hs = half_spread_c(p) if half_spread is None else half_spread
+    return dfair_dlogsigma(p) * dsig - fee_cents(p) - hs
 
 
 def tail_error_cents(p, ratio):
@@ -118,7 +151,7 @@ def tail_error_cents(p, ratio):
     return abs(ratio - 1.0) * 100.0 * min(p, 1.0 - p)
 
 
-def band(dsig, half_spread=HALF_SPREAD_C, tails=None, lo=0.01, hi=0.50,
+def band(dsig, half_spread=None, tails=None, lo=0.01, hi=0.50,
          step=0.0025):
     """The contiguous price range where net edge > model error, on the low
     side of 50c. Returns (p_lo, p_hi) or None."""
@@ -144,9 +177,11 @@ def analytic_report(dsigs=(0.05, 0.10, 0.20, 0.30), tails=None):
           f"{MAX_DFAIR_DLOGSIG:.3f}c per 1.0 log-unit.")
     print(f"  Taker fee = {FEE_K}*p*(1-p): largest at 50c, vanishing in the "
           f"wings.")
-    print(f"  A taker also crosses {HALF_SPREAD_C:.1f}c of the measured 1c "
-          f"spread.\n")
-    hdr = (f"  {'price':>7}{'z':>7}{'edge/logsig':>13}{'fee':>8}{'hurdle':>9}"
+    print("  The tick is TAPERED (API price_ranges): 0.1c below 10c and above")
+    print("  90c, 1c in between. So a taker crosses 0.05c in the wings, not")
+    print("  0.5c -- and the hurdle keeps falling instead of turning back up.")
+    hdr = (f"  {'price':>7}{'z':>7}{'edge/logsig':>13}{'fee':>8}{'tick':>7}"
+           f"{'hurdle':>9}"
            + "".join(f"{f'net@{d:.0%}':>10}" for d in dsigs))
     print(hdr)
     for p in (0.50, 0.40, 0.30, 0.25, 0.20, 0.16, 0.12, 0.10, 0.07, 0.05,
@@ -155,7 +190,7 @@ def analytic_report(dsigs=(0.05, 0.10, 0.20, 0.30), tails=None):
         g = dfair_dlogsigma(p)
         f = fee_cents(p)
         row = (f"  {100*p:>6.0f}c{z:>7.2f}{g:>12.3f}c{f:>7.2f}c"
-               f"{f + HALF_SPREAD_C:>8.2f}c")
+               f"{tick_cents(p):>6.1f}c{f + half_spread_c(p):>8.2f}c")
         for d in dsigs:
             row += f"{net_edge(p, d):>10.2f}"
         print(row)
@@ -165,7 +200,7 @@ def analytic_report(dsigs=(0.05, 0.10, 0.20, 0.30), tails=None):
     print(f"  {'price':>7}{'needed':>12}")
     for p in (0.40, 0.30, 0.20, 0.16, 0.10, 0.05, 0.02):
         g = dfair_dlogsigma(p)
-        need = (fee_cents(p) + HALF_SPREAD_C) / g if g > 0 else float("inf")
+        need = (fee_cents(p) + half_spread_c(p)) / g if g > 0 else float("inf")
         print(f"  {100*p:>6.0f}c{100*need:>11.1f}%")
     for d in dsigs:
         b = band(d, tails=tails)
@@ -176,6 +211,14 @@ def analytic_report(dsigs=(0.05, 0.10, 0.20, 0.30), tails=None):
                   f"{100*b[0]:.0f}c-{100*b[1]:.0f}c "
                   f"(and {100*(1-b[1]):.0f}c-{100*(1-b[0]):.0f}c by symmetry)")
     if tails is None:
+        print("\n  MEASURED TAILS say the deep wings are worse than this table")
+        print("  makes them look. chain.py on 5,190 windows per series puts")
+        print("  the 99th-percentile empirical/Gaussian ratio at 1.72-2.64")
+        print("  (BTC 2.64). At p = 1c that is model error of ~1.6c, carrying")
+        print("  the SAME SIGN on every trade, against a sigma-timing edge")
+        print("  there of ~0.06c per 1% -- so 1-3c is not a place to trade a")
+        print("  Gaussian model however cheap the tick is. Pass --tail-ratio")
+        print("  to fold it in.")
         print("\n  NOTE no empirical tail ratios supplied, so the wings are")
         print("  scored on fee and tick alone. That is optimistic. Pass")
         print("  --tail-ratio to fold in chain.py's measured tail table; at")
@@ -346,7 +389,7 @@ def fitted_gap(r, x):
 
 
 def hurdle_cents(p=0.16):
-    return fee_cents(p) + HALF_SPREAD_C
+    return fee_cents(p) + half_spread_c(p)
 
 
 GAP_HDR = (f"  {'label':>12}{'n':>7}{'level':>9}{'slope':>9}{'se':>8}"
@@ -613,9 +656,9 @@ def main():
     print("PART 2  DOES THE MARKET ALREADY KNOW? -- measured")
     print("=" * 78)
     try:
-        from replay import load_quotes, load_markets, load_index
+        from replay import (load_quotes, load_markets, load_index,
+                            SERIES_TO_INDEX)   # NOT engine -- it lives here
         from implied import collect
-        from engine import SERIES_TO_INDEX
     except ImportError as e:
         print(f"  loaders unavailable ({e}); analytic half only.")
         return

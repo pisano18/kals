@@ -468,8 +468,8 @@ def main():
     print("\n\n" + "#" * 78)
     print("# REAL DATA")
     print("#" * 78)
-    from replay import load_quotes, load_markets, load_index
-    from engine import SERIES_TO_INDEX
+    from replay import (load_quotes, load_markets, load_index,
+                        SERIES_TO_INDEX)       # NOT engine -- it lives here
     quotes = load_quotes(a.data)
     if not quotes:
         print("\n  no quotes -- nothing to measure. Run doctor.py.")

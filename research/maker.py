@@ -561,7 +561,8 @@ def main():
     print("\n\n" + "#" * 78)
     print("# REAL DATA")
     print("#" * 78)
-    from replay import load_quotes, load_markets, load_trades
+    from replay import load_quotes, load_markets
+    from edge import load_trades          # NOT replay -- it lives here
     quotes = load_quotes(a.data)
     if not quotes:
         print("\n  no quotes -- nothing to measure. Run doctor.py.")
