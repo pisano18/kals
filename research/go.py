@@ -40,6 +40,13 @@ STAGES
             close-time cluster deletes the common crypto move, which is the
             term that made 12 correlated series worth only 1.22 independent
             ones. Measured power gain: 2.2x in t, 4.8x in variance.
+  maker     can you QUOTE these markets rather than cross them? Makers pay NO
+            fee on all sixteen 15-minute series while a taker crossing a 1c
+            spread at the money pays 1.75c. The analytic half needs no data:
+            a resting quote is a written option, exercised exactly when fair
+            value moves through it, and the sigma cancels -- so the viable
+            region is the same for BTC and DOGE. The measured half is realised
+            adverse selection off the tape, against an exogenous-grid null.
   proxy     which price is the maker ACTUALLY quoting off? Nothing forces them
             to use BRTI; a desk quotes what it already has wired in. If they
             quote Coinbase or a delayed BRTI, every divergence is a knowable
@@ -118,6 +125,7 @@ SELFTESTS = [
     # report readable, and it is simulation code that can be silently wrong.
     ("student-t", ["tdist.py", "--selftest"]),
     ("gzip salvage", ["gzsalvage.py", "--selftest"]),
+    ("maker economics", ["maker.py", "--selftest"]),
     ("detectability", ["power.py", "--selftest", "--quick"]),
 ]
 
@@ -173,6 +181,10 @@ STAGES = [
                    "--out", "{out}"], "{out}/markets.json"),
     ("proxy", ["research/proxy.py", "--data", "{data}", "--feeds", "{feeds}",
                "--out", "{out}"], "{data}/cfbenchmarks_value"),
+    # maker last: it reads the same quotes every other stage does, and its
+    # analytic half needs no data at all
+    ("maker", ["research/maker.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/ticker"),
 ]
 
 
