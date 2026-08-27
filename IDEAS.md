@@ -157,6 +157,32 @@ doubles the set of viable strategies. Cheap to check, large if true.
 
 ---
 
+### A7. The endgame — the last sixty seconds  ·  `research/endgame.py`  ·  **UNFINISHED**
+**Mechanism** with τ left, 60−τ settlement prints are already locked and on our
+disk. The exact `sd/σ` collapses in a way no approximation follows: naive `√τ`
+is **1.7× too large at 60s, 3.4× at 30s, 9.7× at 10s**, and `√(τ−39.5)` is
+exact above 60s then divides by approximately nothing. This is the one region
+where fair value barely depends on σ, because most of the answer is already
+observed — close to the only measurement here that does not rest on a
+volatility estimate. `openwindow.py` covers the first 60 seconds; nothing
+covered the last.
+**Status** Part 1 (the variance table) is exact and verified. **Part 2 does not
+work and the module is not registered.** Against a book pricing naive `√τ` the
+strategy is detected at |t| = 7.7 but *loses* 22.6¢ — if our model is right and
+theirs is wrong we must make money, so the fixture or the entry rule is still
+wrong. No number from it is usable yet.
+**Already banked from it** two methodology results, both from failed
+self-tests: taking the largest model-vs-market disagreement in a window is a
+look-ahead worth −49.5¢ at t = −3.3 on a zero-edge tape; and a fixture that
+clamps quotes to [1¢, 99¢] cannot be called "correctly priced", because the
+clamp is itself a real mispricing in the endgame.
+**Spin-off worth its own test** the exchange cannot quote below 1¢. In the
+endgame true fair goes to 0 or 1, so selling a 1¢ contract genuinely worth
+0.1¢ is a 0.9¢ edge against a 0.07¢ fee. Cheap to measure, and it needs no
+model beyond the locked prints.
+
+---
+
 ## TIER C — structural, low probability, high payoff
 
 ### C1. Settlement-mechanic edges near the boundary
