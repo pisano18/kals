@@ -652,6 +652,28 @@ def step_power(ctx):
     return rc == 0
 
 
+def step_disk(ctx):
+    """A fast, read-only disk census.
+
+    Free space on this machine swung 71.5 -> 36.5 -> 44.7 GB in five hours
+    while the recorded data grew ~100 MB/h, and the watchdog halts the
+    collector below 5 GB. Whatever is taking that space is a threat to the
+    recording, so the run should carry the evidence rather than leave it to be
+    reconstructed later. The fast pass takes seconds; --deep is manual.
+    """
+    rule("0b  DISK")
+    rc, out, dt = run_stream([os.path.join("research", "whatate.py"),
+                              "--data", ctx.get("kalshi_data", ""),
+                              "--feeds", ctx.get("feed_data", ""),
+                              "--fulltape", ctx.get("fulltape", "")],
+                             REPO, 900, "whatate.py")
+    ctx["raw"]["disk"] = out
+    say(f"exit {rc} in {dt:.0f}s")
+    # Never fail the run on this. It is a diagnostic, and a machine that
+    # refuses to enumerate one of these folders must not cost us a stage.
+    return True
+
+
 # ==========================================================================
 # the report
 # ==========================================================================
@@ -677,7 +699,8 @@ def write_report(ctx, status):
     p.append("\n---\n\n## Run log\n")
     p.append("```\n" + "\n".join(LOG) + "\n```\n")
 
-    for key, title in (("salvage", "gzip salvage survey"),
+    for key, title in (("disk", "disk census"),
+                       ("salvage", "gzip salvage survey"),
                        ("go", "go.py — self-tests and stages"),
                        ("fulltape", "kalshi_fulltape.py")):
         if ctx["raw"].get(key):
@@ -733,10 +756,10 @@ def main():
                          "automatically)")
     ap.add_argument("--only", action="append", default=None,
                     choices=["preflight", "collection", "api", "fulltape",
-                             "go", "power"],
+                             "go", "power", "disk"],
                     help="run only these steps (repeatable)")
     ap.add_argument("--skip", action="append", default=[],
-                    choices=["collection", "api", "fulltape", "go", "power"],
+                    choices=["collection", "api", "fulltape", "go", "power", "disk"],
                     help="skip these steps (repeatable)")
     ap.add_argument("--no-install", dest="install", action="store_false",
                     help="do not pip install a missing dependency")
@@ -771,11 +794,12 @@ def main():
         ctx["feed_data"] = os.path.join(root, "feed_data")
         ctx["fulltape"] = os.path.join(root, "fulltape")
 
-    steps = [("preflight", step_preflight), ("collection", step_collection),
+    steps = [("preflight", step_preflight), ("disk", step_disk),
+             ("collection", step_collection),
              ("api", step_api), ("fulltape", step_fulltape),
              ("go", step_go), ("power", step_power)]
 
-    if root is None and (a.only and set(a.only) - {"preflight"}):
+    if root is None and (a.only and set(a.only) - {"preflight", "disk"}):
         print("\n  No kalshi_data/ found, so there is nothing for those steps "
               "to run on.", flush=True)
         print("  Looked in: " + ", ".join(searched), flush=True)

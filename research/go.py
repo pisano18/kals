@@ -125,6 +125,7 @@ SELFTESTS = [
     # report readable, and it is simulation code that can be silently wrong.
     ("student-t", ["tdist.py", "--selftest"]),
     ("gzip salvage", ["gzsalvage.py", "--selftest"]),
+    ("disk census", ["whatate.py", "--selftest"]),
     ("maker economics", ["maker.py", "--selftest"]),
     ("detectability", ["power.py", "--selftest", "--quick"]),
 ]
