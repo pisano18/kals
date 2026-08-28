@@ -201,7 +201,7 @@ STAGES = [
     # voltiming after maker: it asks whether the ONE confirmed finding is
     # already in the price. Its analytic half needs no data either.
     ("voltiming", ["research/voltiming.py", "--data", "{data}",
-                   "--feeds", "{feeds}"], "{data}/ticker"),
+                   "--out", "{out}", "--feeds", "{feeds}"], "{data}/ticker"),
     # calib last: it decides whether D-FINAL's eight cells are a market
     # mispricing or the side that happened to trade.
     ("calib", ["research/calib.py", "--data", "{data}", "--out", "{out}"],

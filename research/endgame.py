@@ -475,6 +475,10 @@ def main():
         print("\n  no quotes -- nothing to measure. Run doctor.py.")
         return
     markets = load_markets(a.out)
+    if not markets:
+        print(f"\n  *** NO SETTLED MARKETS at {os.path.abspath(a.out)} -- "
+              "run fulltape or fix --out.")
+        return
     index = load_index(a.data)
 
     # sigma per series from the index itself, over the recorded span

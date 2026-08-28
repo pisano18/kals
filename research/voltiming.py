@@ -672,6 +672,23 @@ def main():
     except Exception as e:
         print(f"  {type(e).__name__}: {e}")
         return
+
+    # load_markets returns {} for a missing file, and every downstream gate
+    # then reports "no settled market for this ticker" 1.4 million times.
+    # That has now cost two runs: once because this file looked in ".", and
+    # once because go.py's stage table did not pass --out at all. Say it here,
+    # once, naming the path.
+    if not markets:
+        print(f"\n  *** NO SETTLED MARKETS. Looked for markets.json in "
+              f"{os.path.abspath(a.out)}")
+        print("  Nothing downstream can run without it. Either fulltape has "
+              "not been run,")
+        print("  or --out is pointing somewhere else (it must be the "
+              "directory holding")
+        print("  markets.json, normally C:\\kals\\fulltape).")
+        return
+    print(f"  {len(markets):,} settled markets from "
+          f"{os.path.abspath(a.out)}")
     rows = collect(index, quotes, markets, SERIES_TO_INDEX,
                    ttc_max=a.tau_hi)
     if not rows:

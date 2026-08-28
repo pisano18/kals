@@ -557,8 +557,16 @@ def main():
     trades = load_trades(a.data)
     print(f"\n  {len(quotes):,} quoted markets, {len(markets):,} settled, "
           f"{sum(len(v) for v in trades.values()):,} trades")
-    if not quotes or not markets:
-        print("  nothing to measure.")
+    if not markets:
+        print(f"\n  *** NO SETTLED MARKETS. Looked for markets.json in "
+              f"{os.path.abspath(a.out)}")
+        print("  Every ticker would report 'no settled market' and the tables")
+        print("  would be empty for a reason that has nothing to do with the")
+        print("  market. Run fulltape, or point --out at the directory that")
+        print("  holds markets.json.")
+        return
+    if not quotes:
+        print("  no quotes -- nothing to measure. Run doctor.py.")
         return
 
     raw = {"print": rows_from_prints(quotes, trades, markets),
