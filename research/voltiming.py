@@ -55,6 +55,7 @@ import math
 import os
 import random
 import sys
+from collections import defaultdict
 from statistics import NormalDist, mean, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -674,7 +675,46 @@ def main():
     rows = collect(index, quotes, markets, SERIES_TO_INDEX,
                    ttc_max=a.tau_hi)
     if not rows:
-        print("  no invertible quotes -- nothing to measure.")
+        # "no invertible quotes" with no reason is the failure mode this
+        # project keeps getting burned by: it looks like a finding about the
+        # market and is always a finding about the pipeline. Count WHERE the
+        # rows go instead of shrugging.
+        print("  no invertible quotes -- counting where they went:")
+        why = defaultdict(int)
+        for tk, q in quotes.items():
+            m = markets.get(tk)
+            if not m:
+                why["no settled market for this ticker"] += len(q)
+                continue
+            ser = m.get("series") or tk.split("-")[0]
+            iid = SERIES_TO_INDEX.get(ser)
+            if not iid:
+                why[f"series {ser} maps to no index"] += len(q)
+                continue
+            ticks = index.get(iid)
+            if not ticks:
+                why[f"index {iid} has no ticks"] += len(q)
+                continue
+            if not m.get("strike"):
+                why["market has no strike"] += len(q)
+                continue
+            close_s = int(round(m["close"]))
+            for rec in q:
+                t, bid, ask = rec[0], rec[1], rec[2]
+                tau = close_s - t
+                if not (1 <= tau <= a.tau_hi):
+                    why["quote outside the tau window"] += 1
+                elif t not in ticks:
+                    why["no index tick that second"] += 1
+                elif not (0.06 <= (bid + ask) / 2.0 <= 0.94):
+                    why["price outside 6c-94c (uninvertible)"] += 1
+                else:
+                    why["reached the inversion"] += 1
+        for k, v in sorted(why.items(), key=lambda x: -x[1]):
+            print(f"    {v:>12,}  {k}")
+        print("\n  The largest line is the thing to fix. 'reached the")
+        print("  inversion' being large means sw_cond_mean or implied_sigma")
+        print("  is rejecting them, not the plumbing.")
         return
 
     # One implied sigma per (series, close): the median over the tau window,
