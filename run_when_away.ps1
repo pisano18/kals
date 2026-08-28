@@ -34,12 +34,26 @@ function Say($m) {
     Add-Content -Path $log -Value $line
 }
 
+# PowerShell turns anything a native program writes to stderr into a red
+# ErrorRecord, even when the program succeeded. git writes ordinary progress
+# there ("From https://github.com/..."), so a clean pull printed a wall of
+# red and a NativeCommandError. Stringify each line before it reaches the
+# pipeline and it is just text again.
+function Git-Quiet {
+    $out = & git @args 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    if ($out) { Add-Content -Path $log -Value $out }
+    return $code
+}
+
 Say "=== run_when_away $stamp ==="
 
 # ---- 1. take Claude's latest fixes -------------------------------------
 # --rebase so a local results commit never turns into a merge bubble.
 Say "git pull"
-git pull --rebase origin $Branch 2>&1 | Tee-Object -Append -FilePath $log
+if ((Git-Quiet pull --rebase origin $Branch) -ne 0) {
+    Say "git pull FAILED -- continuing with the code already here"
+}
 $head = (git rev-parse --short HEAD)
 Say "now at $head"
 
@@ -54,8 +68,9 @@ foreach ($s in $stages) {
     Say "--- $s ---"
     $rep = "$Repo\results\RESULTS_$s.md"
     $t0 = Get-Date
-    & python research\go.py --only $s --data $Data --out $Out --feeds $Feeds `
-        --report $rep 2>&1 | Tee-Object -Append -FilePath $log | Out-Null
+    $so = & python research\go.py --only $s --data $Data --out $Out `
+        --feeds $Feeds --report $rep 2>&1 | ForEach-Object { "$_" }
+    if ($so) { Add-Content -Path $log -Value $so }
     $dt = [int]((Get-Date) - $t0).TotalSeconds
     if (Test-Path $rep) {
         Say "$s -> $(([math]::Round((Get-Item $rep).Length/1KB,1))) KB in ${dt}s"
@@ -70,22 +85,22 @@ foreach ($s in $stages) {
 if ($NoPush) { Say "-NoPush given; stopping before publish."; exit 0 }
 
 Say "publishing"
-git add results 2>&1 | Out-Null
+Git-Quiet add results | Out-Null
 $dirty = git status --porcelain results
 if (-not $dirty) {
     Say "nothing changed; not committing."
     exit 0
 }
-git -c user.name="kals-runner" -c user.email="runner@localhost" `
-    commit -q -m "results: automated run $stamp at $head" 2>&1 |
-    Tee-Object -Append -FilePath $log
+Git-Quiet -c user.name="kals-runner" -c user.email="runner@localhost" `
+    commit -q -m "results: automated run $stamp at $head" | Out-Null
 
 # Claude may have pushed while this ran. Rebase onto whatever is there and
 # retry rather than failing and leaving the results stranded on this machine.
 for ($i = 1; $i -le 4; $i++) {
-    git pull --rebase origin $Branch 2>&1 | Out-Null
-    git push origin "HEAD:$Branch" 2>&1 | Tee-Object -Append -FilePath $log
-    if ($LASTEXITCODE -eq 0) { Say "pushed on attempt $i"; break }
+    Git-Quiet pull --rebase origin $Branch | Out-Null
+    if ((Git-Quiet push origin "HEAD:$Branch") -eq 0) {
+        Say "pushed on attempt $i"; break
+    }
     $wait = [math]::Pow(2, $i)
     Say "push failed; retrying in ${wait}s"
     Start-Sleep -Seconds $wait

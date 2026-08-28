@@ -232,6 +232,29 @@ def analytic_report(dsigs=(0.05, 0.10, 0.20, 0.30), tails=None):
 # ===========================================================================
 # PART 2 -- the measurement
 # ===========================================================================
+def realised_sigma(ticks, lo, hi, min_pairs=120):
+    """Per-second sigma from TRUE consecutive pairs only.
+
+    The obvious version collects the seconds that are present and differences
+    neighbouring entries. With 74% index coverage those neighbours are 1.35s
+    apart on average, so each difference carries ~1.35x the variance of a
+    one-second move and sigma comes out ~16% too high.
+
+    That error lands entirely in this file's `level` column -- the half
+    already flagged as fragile, because any bias in the realised estimator
+    goes straight into it. It also biases in the direction that makes the
+    market look like it charges LESS for volatility than it does.
+
+    Only (t, t+1) pairs where both seconds exist are used. Fewer pairs, no
+    bias.
+    """
+    d = [ticks[t + 1] - ticks[t]
+         for t in range(lo, hi) if t in ticks and (t + 1) in ticks]
+    if len(d) < min_pairs:
+        return None
+    return pstdev(d)
+
+
 def ewma_logvol(vals, halflife):
     """Backward-looking log-volatility forecast: EWMA of log|r|, using only
     entries STRICTLY BEFORE each position. Returns a list the same length,
@@ -520,6 +543,34 @@ def selftest():
             fails.append(f"{tag}: missed a planted gap of {want:.2f}")
 
     # 4. the cents conversion must predict actual money
+    # ---- 3b. the realised-sigma estimator, against gaps ------------------
+    print("\n3b. REALISED SIGMA WITH A GAPPY FEED. The index is 74% covered.")
+    print("    Differencing the seconds that HAPPEN to be present spans the")
+    print("    gaps, so each difference carries more than one second of")
+    print("    variance and sigma comes out too high. That error lands")
+    print("    entirely in the `level` column above.")
+    rng = random.Random(77)
+    TRUE_SIG = 6.0
+    print(f"\n    {'coverage':>10}{'naive sigma':>14}{'pairs-only':>13}"
+          f"{'true':>8}")
+    for cov in (1.00, 0.74, 0.50):
+        ticks, x = {}, 80000.0
+        for t in range(0, 20000):
+            x += rng.gauss(0, TRUE_SIG)
+            if rng.random() < cov:
+                ticks[t] = x
+        seg = [ticks[t] for t in range(0, 20000) if t in ticks]
+        naive = pstdev([seg[i + 1] - seg[i] for i in range(len(seg) - 1)])
+        pairs = realised_sigma(ticks, 0, 20000)
+        print(f"    {cov:>10.2f}{naive:>14.3f}{pairs:>13.3f}{TRUE_SIG:>8.2f}")
+        if abs(pairs - TRUE_SIG) > 0.15:
+            fails.append(f"pairs-only sigma read {pairs:.3f} at {cov:.0%} "
+                         f"coverage, true {TRUE_SIG}")
+        if cov < 0.99 and naive <= TRUE_SIG * 1.05:
+            fails.append(f"the naive estimator was NOT inflated at {cov:.0%} "
+                         "coverage, so this check is not demonstrating the "
+                         "bias it exists to catch")
+
     print("\n4. THE ONE THAT MATTERS: the cents figure must predict realised")
     print("   P&L. A formula that says 3c and earns 0.4c is not a formula.")
     print("   Trade the planted mispricing at |z|=1 and settle every")
@@ -758,12 +809,7 @@ def main():
         ticks = index.get(iid) or {}
         rvs = []
         for c in closes:
-            seg = [ticks[t] for t in range(c - 900, c) if t in ticks]
-            if len(seg) < 300:
-                rvs.append(None)
-                continue
-            d = [seg[i + 1] - seg[i] for i in range(len(seg) - 1)]
-            rvs.append(pstdev(d) if len(d) > 30 else None)
+            rvs.append(realised_sigma(ticks, c - 900, c))
         good = [(c, iv, rv) for c, iv, rv in zip(closes, ivs, rvs)
                 if rv and rv > 0 and iv and iv > 0]
         if len(good) < 60:
