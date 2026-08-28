@@ -386,7 +386,51 @@ def rebuild(data_dir, verbose=True, max_msgs=None):
     return dict(series), (stats, depth_samples)
 
 
-def report_depth(depth_samples):
+def depth_from_ticker(data_dir, verbose=True):
+    """Depth at the touch, from the `ticker` channel instead of a rebuild.
+
+    THE POINT. Rebuilding the book means holding 130 million orderbook deltas
+    to order them by sequence before replaying, and the operator's machine has
+    16 GB against a measured ~30 GB requirement. So the depth number -- the
+    one that decides whether a resting quote can ever be joined -- has been
+    unavailable on the only machine that has the data.
+
+    It did not need the rebuild. The `ticker` channel already carries
+    yes_bid, yes_ask AND BOTH SIZES on every message: 71 MB against 3.6 GB,
+    every market rather than the 24 of 1,090 the old sid bug left standing.
+
+    What this CANNOT do is depth beyond the touch -- level two and deeper
+    live only in the deltas. For "how many contracts are ahead of me if I
+    join the best bid", which is the question the maker analysis actually
+    asks, the touch is the whole answer.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from replay import load_quotes
+    q = load_quotes(data_dir, verbose=verbose)
+    samples = []
+    for tk, ser in q.items():
+        for rec in ser:
+            if len(rec) < 5:
+                continue
+            _t, bid, ask, bs, asz = rec[0], rec[1], rec[2], rec[3], rec[4]
+            if bid is None or ask is None or bs is None or asz is None:
+                continue
+            if not (0.0 < bid < ask < 1.0):
+                continue
+            try:
+                b, a = float(bs), float(asz)
+            except (TypeError, ValueError):
+                continue
+            if b <= 0 and a <= 0:
+                continue
+            samples.append((bid, b, a))
+    if verbose:
+        print(f"  depth from ticker: {len(samples):,} quote-seconds across "
+              f"{len(q):,} markets")
+    return samples
+
+
+def report_depth(depth_samples, source=""):
     print("\n" + "=" * 78)
     print("QUEUE DEPTH AT THE TOUCH  --  re-measuring PLAN sec.4")
     print("=" * 78)
@@ -396,7 +440,11 @@ def report_depth(depth_samples):
     print("  PLAN.md sec.4 killed the maker strategy on 'best bid 0.40 with")
     print("  3,767 contracts resting'. That came from a REST call which RUNBOOK")
     print("  separately records as mis-parsed (levels ascending, truncated from")
-    print("  the bottom, top-of-book hidden). Here it is from the websocket.\n")
+    print("  the bottom, top-of-book hidden). Here it is from the websocket.")
+    if source:
+        print(f"  Source: {source}.\n")
+    else:
+        print("")
     print(f"  {'yes-bid':>9}{'samples':>9}{'median bid depth':>19}"
           f"{'median ask depth':>19}")
     buckets = defaultdict(list)
@@ -663,6 +711,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="./kalshi_data")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--rebuild", action="store_true",
+                    help="reconstruct the full book from orderbook_delta. "
+                         "Needs ~30 GB of RAM on the current tape and will "
+                         "swap a 16 GB machine to death; only depth BEYOND "
+                         "the touch requires it.")
+    ap.add_argument("--max-msgs", type=int, default=0,
+                    help="with --rebuild, stop after this many messages. A "
+                         "bounded, honest sample beats an unbounded hang.")
     a = ap.parse_args()
 
     if a.selftest:
@@ -673,7 +729,24 @@ def main():
     print("\n\n" + "#" * 78)
     print("# REAL DATA")
     print("#" * 78)
-    series, res = rebuild(a.data)
+    if not a.rebuild:
+        # DEFAULT: the touch, from the ticker channel. 71 MB instead of 3.6
+        # GB, every market instead of the handful a memory-starved rebuild
+        # survives, and it answers the only depth question the maker
+        # analysis actually asks -- how many contracts are ahead of me at
+        # the best price.
+        print("\n  Reading depth at the touch from the `ticker` channel.")
+        print("  The full rebuild needs ~30 GB of RAM and answers a question")
+        print("  nothing currently asks (depth BEYOND the touch); pass")
+        print("  --rebuild if you want it and have the memory.")
+        depth = depth_from_ticker(a.data)
+        if not depth:
+            print("\n  No usable quotes. Run:  python research/doctor.py")
+            return
+        report_depth(depth, source="ticker channel, top of book, all markets")
+        return
+
+    series, res = rebuild(a.data, max_msgs=(a.max_msgs or None))
     if not series:
         print("\n  Nothing rebuilt. Either the collector is not recording")
         print("  orderbook_delta, or the message shape differs from the one")
@@ -682,7 +755,7 @@ def main():
     st, depth = res
     n = sum(len(v) for v in series.values())
     print(f"\n  {len(series):,} markets, {n:,} valid book states")
-    report_depth(depth)
+    report_depth(depth, source="full orderbook rebuild")
 
 
 if __name__ == "__main__":
