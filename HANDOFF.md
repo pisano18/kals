@@ -2,6 +2,64 @@
 
 ---
 
+## 2026-08-28 (evening) — a whole run lost to a filename
+
+The 17:26 run produced nothing. Fourteen of sixteen stages died on the same
+line:
+
+```
+File "research/replay.py", line 47, in <module>
+    import gzip
+File "C:\Python314\Lib\gzip.py", line 16, in <module>
+    from compression._common import _streams
+ModuleNotFoundError: No module named 'compression._common'; 'compression' is not a package
+```
+
+**Python 3.14 added a stdlib package called `compression`.** The repo had a
+`research/compression.py` (added in `6f6ac20`, after the last run that worked),
+and every stage puts `research/` first on `sys.path`, so `import gzip` found
+ours. Renamed to `research/patterntrade.py`.
+
+**Read this part, not the fix.** Four separate things had to be true, and each
+one is a lesson that outlives this bug:
+
+1. **It was invisible on the machine the code is written on.** That container
+   runs Python 3.11, where `gzip` imports `_compression` (underscore) and
+   `compression` is not in `sys.stdlib_module_names` at all. Every self-test
+   passed. The development environment differing from the run environment is
+   now a known, named risk in this project.
+2. **The self-tests structurally could not see it.** They import their own
+   modules and never `gzip`. Only stages that load real data import `gzip`, and
+   those are exactly the stages that get skipped when there is no data — so the
+   gate is blind to the whole class by construction.
+3. **The gate never ran.** `run_when_away.ps1` drives stages one at a time with
+   `--only`, and `--only` skips self-tests by design.
+4. **It looked like sixteen separate failures.** An environment bug does not
+   present as one bug; it presents as everything being broken at once, which is
+   the hardest shape to diagnose from a results file.
+
+Guards added:
+
+- **`research/shadow.py`.** Deliberately does *not* rely on a stdlib name list,
+  because a name check against the *running* interpreter is exactly the check
+  that would have passed here. It (a) puts `research/` first on `sys.path` as
+  every stage does, imports every stdlib module the repo names, and checks each
+  resolves outside the repo — which catches transitive shadows like
+  `gzip → compression` where the shadowed name never appears in our source; and
+  (b) carries an explicit list of names that are stdlib in Pythons *newer* than
+  the one running, so a 3.11 container flags a file that will only break on
+  3.14. Its self-test asserts that exact case. A `ModuleNotFoundError` naming
+  the module *itself* is a platform difference (`winreg` on Linux), not a
+  shadow — a real shadow reports a *different* name, as `compression._common`
+  did.
+- **`go.py` PREFLIGHT**, which runs even under `--only` and stops the run before
+  any stage. Environment bugs belong in front of the fast path.
+
+Nothing was lost but the evening: the recorder is independent and kept running
+throughout.
+
+---
+
 ## 2026-08-28 (later) — endgame repaired, and a rule written down before the number
 
 Three things landed after the audit. Nothing here has touched real data yet;
