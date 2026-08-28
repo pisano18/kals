@@ -64,13 +64,22 @@ Say "now at $head"
 $stages = @("maker", "calib", "voltiming", "chain", "leadlag", "cross",
             "openwindow", "implied", "feeds", "pathstats", "proxy")
 
+Say "$($stages.Count) stages. maker is first and takes ~16 min; the rest are"
+Say "1-3 min each. Expect 30-60 min total."
+
 foreach ($s in $stages) {
-    Say "--- $s ---"
+    Say "--- $s ($([array]::IndexOf($stages,$s)+1) of $($stages.Count)) ---"
     $rep = "$Repo\results\RESULTS_$s.md"
     $t0 = Get-Date
-    $so = & python research\go.py --only $s --data $Data --out $Out `
-        --feeds $Feeds --report $rep 2>&1 | ForEach-Object { "$_" }
-    if ($so) { Add-Content -Path $log -Value $so }
+    # STREAM it. The first version collected the child's output into a
+    # variable and wrote it out only when the stage finished, so the screen
+    # showed "--- maker ---" and then nothing for sixteen minutes. A run you
+    # cannot tell from a hang is a run you will kill.
+    & python research\go.py --only $s --data $Data --out $Out `
+        --feeds $Feeds --report $rep 2>&1 |
+        ForEach-Object { "$_" } |
+        Tee-Object -Append -FilePath $log |
+        ForEach-Object { Write-Host "    | $_" }
     $dt = [int]((Get-Date) - $t0).TotalSeconds
     if (Test-Path $rep) {
         Say "$s -> $(([math]::Round((Get-Item $rep).Length/1KB,1))) KB in ${dt}s"
