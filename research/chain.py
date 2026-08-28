@@ -637,11 +637,21 @@ def test_return_autocorr(rows, label):
     if r1 is None or r2 is None:
         return None
     # sign persistence is the tradeable version -- also within-chain only
+    # Ties (r == 0 exactly; XRP alone has 57) are EXCLUDED from the pairs,
+    # not forced into the down class. chain_returns argues at length above
+    # that lumping ties one side is indefensible for the up-rate, and the old
+    # code here did exactly that anyway: unequal classes give a symmetric iid
+    # series an agreement rate of 0.5 + q^2/2, a positive bias under the
+    # test's own null.
     same = npairs = 0
     for sg in segs:
-        sgn = [1 if v > 0 else 0 for v in sg]
-        same += sum(1 for i in range(len(sgn) - 1) if sgn[i] == sgn[i + 1])
-        npairs += len(sgn) - 1
+        for i in range(len(sg) - 1):
+            a_, b_ = sg[i], sg[i + 1]
+            if a_ == 0.0 or b_ == 0.0:
+                continue
+            npairs += 1
+            if (a_ > 0) == (b_ > 0):
+                same += 1
     if npairs < 100:
         return None
     frac = same / npairs
@@ -692,6 +702,7 @@ def test_tails(rows, label):
     k = max(int(len(r) * 0.001), 1)
     lo, hi = r[k], r[len(r) - 1 - k]
     sd_full = pstdev(r)
+    r_full = list(r)
     r = [min(max(v, lo), hi) for v in r]
     sd = sd_full
     if sd <= 0:
@@ -706,9 +717,32 @@ def test_tails(rows, label):
     # A crossover is only meaningful if the ratios it sits between are
     # themselves distinguishable from 1. Without this guard, clean Gaussian
     # noise reports a confident crossover at ~99c every time.
-    def sig(zz):
+    # The gate's SE must respect clustering: tail exceedances arrive in
+    # RUNS (a volatile stretch delivers several 2-sigma windows together),
+    # and the binomial sqrt(g(1-g)/n) assumed independence -- Monte Carlo on
+    # this file's own garch fixtures put the true sd at 1.6-2.7x nominal,
+    # turning the "2 SE" gate into a ~17-21% false-positive machine per
+    # threshold. Moving-block bootstrap over the window-ordered indicators.
+    def sig(zz, _B=200):
         g = 2 * (1 - ND.cdf(zz))
-        se = math.sqrt(g * (1 - g) / n) / g
+        ind = [1.0 if abs(x) > zz else 0.0 for x in z]
+        b = max(2, int(round(n ** (1.0 / 3.0))))
+        starts = n - b + 1
+        if starts < 2:
+            return False
+        cum = [0.0]
+        for v in ind:
+            cum.append(cum[-1] + v)
+        bs = [cum[i + b] - cum[i] for i in range(starts)]
+        k_ = max(1, -(-n // b))
+        rng = random.Random(int(zz * 1000) ^ 77)
+        props = []
+        for _ in range(_B):
+            t_ = 0.0
+            for _ in range(k_):
+                t_ += bs[rng.randrange(starts)]
+            props.append(t_ / (k_ * b))
+        se = pstdev(props) / g if g > 0 else float("inf")
         return abs(ratios[zz] - 1) > 2 * se
     cross = None
     xs = sorted(ratios)
@@ -721,7 +755,16 @@ def test_tails(rows, label):
             cz = xs[i] + (0 - la) / (lb - la) * (xs[i + 1] - xs[i])
             cross = ND.cdf(cz)
             break
-    ek = excess_kurtosis(z)
+    # Kurtosis on the FULL sample. excess_kurtosis is scale-invariant --
+    # it computes its own m2 -- so "standardise by sd_full" did nothing for
+    # it, and what was printed was the WINSORIZED sample's kurtosis: 4.7
+    # where the full-sample truth on the file's own garch fixture is 14.9.
+    # The tail-ratio columns are legitimately computed on the clipped sample;
+    # kurtosis is exactly the statistic clipping destroys.
+    m_f = mean(r_full)
+    m2_f = sum((v - m_f) ** 2 for v in r_full) / len(r_full)
+    m4_f = sum((v - m_f) ** 4 for v in r_full) / len(r_full)
+    ek = (m4_f / (m2_f * m2_f) - 3.0) if m2_f > 0 else float("nan")
     print(f"  {label:>11}{n:>7,}{ek:>9.1f}" +
           "".join(f"{ratios[z_]:>8.2f}" for z_ in xs) +
           (f"{100*cross:>11.1f}c" if cross else f"{'none':>12}"))
@@ -879,10 +922,18 @@ def selftest():
         se, _b, _n = ac_block_se(segs, 1, B=250, seed=900 + k)
         r_hat.append((r, 1.0 / math.sqrt(npairs)))
         se_blk.append(se)
+    # Against ZERO, not TWAP_RHO1. synth() builds returns directly -- no
+    # 60-second averaging anywhere -- so the overlap term does not exist in
+    # this fixture and its true rho is exactly 0. The audit caught this file
+    # measuring coverage against a null 0.0114 away from its own fixture's
+    # truth, in the very section that lectures about testing SEs. Both
+    # rulers absorbed it (the offset is ~0.4 iid SEs), which is why the
+    # numbers looked plausible; that is an argument for deriving nulls from
+    # the fixture, never from the prose.
     cov_iid = sum(1 for (r, si) in r_hat
-                  if abs(r - TWAP_RHO1) / si < 1.96) / max(len(r_hat), 1)
+                  if abs(r - 0.0) / si < 1.96) / max(len(r_hat), 1)
     cov_blk = sum(1 for (r, _si), sb in zip(r_hat, se_blk)
-                  if sb and abs(r - TWAP_RHO1) / sb < 1.96) / max(len(r_hat), 1)
+                  if sb and abs(r - 0.0) / sb < 1.96) / max(len(r_hat), 1)
     med_i = median([si for _r, si in r_hat])
     med_b = median([x for x in se_blk if x])
     print(f"\n   {'ruler':>22}{'median SE':>12}{'95% cover':>12}   verdict")
@@ -890,8 +941,8 @@ def selftest():
           f"{'OK' if cov_iid > 0.90 else '*** BROKEN ***'}")
     print(f"   {'moving-block boot':>22}{med_b:>12.4f}{100*cov_blk:>11.0f}%   "
           f"{'OK' if cov_blk > 0.85 else '*** BROKEN ***'}")
-    print(f"\n   {len(r_hat)} datasets, {NN} windows each, true rho = the TWAP")
-    print("   overlap term and nothing else.")
+    print(f"\n   {len(r_hat)} datasets, {NN} windows each, true rho = 0")
+    print("   (synth builds returns directly; no TWAP overlap exists here).")
     if cov_iid > 0.90:
         fails.append("the iid SE covered {:.0%} here -- this fixture is not "
                      "heteroskedastic enough to test the SE, so section 6 "
@@ -1180,7 +1231,12 @@ def main():
         ch, dup = build_chains(data[s])
         chains_by[s] = ch
         g = gate_chain(ch, s)
-        if g and g["median"] > 1e-4:
+        # Key on the gate's own worst-case verdict, not the median. The gate
+        # carries a comment explaining that corrupting every 7th pair leaves
+        # the median at exactly 0 -- and main() then re-derived its stop/go
+        # from the median anyway, reintroducing one level up the precise bug
+        # the gate was rebuilt to kill.
+        if g and (g["exact_frac"] < 0.95 or g["median"] > 1e-4):
             gate_ok = False
     if not gate_ok:
         print("\n  *** GATE C FAILED for at least one series. Either the")

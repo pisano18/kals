@@ -104,6 +104,50 @@ def gaussian_loglik(rets, sig_list):
     return ll
 
 
+def loglik_terms(rets, sig_list):
+    """{window index: log N(r_i; 0, sigma_i)} -- the per-window pieces the
+    dLL t-statistic needs."""
+    out = {}
+    for i, s in sig_list:
+        if s > 0:
+            out[i] = (-0.5 * math.log(2 * math.pi * s * s)
+                      - rets[i] ** 2 / (2 * s * s))
+    return out
+
+
+def dll_t(rets, sig_e, sig_c, common, B=300, seed=7):
+    """Moving-block-bootstrap t for the summed log-likelihood difference.
+
+    d_ll is a raw sum over windows that are serially dependent (that is the
+    file's whole thesis) and heavy-tailed (each term carries r^2/sigma^2, so
+    one wild window contributes tens of nats). A sign read off it with no
+    dispersion is not a verdict. Blocks over the window ORDER keep the
+    dependence; the t is the sum divided by the bootstrap sd of the sum.
+    """
+    te = loglik_terms(rets, sig_e)
+    tc = loglik_terms(rets, sig_c)
+    d = [te[i] - tc[i] for i in sorted(common) if i in te and i in tc]
+    n = len(d)
+    if n < 30:
+        return None
+    b = max(2, int(round(n ** (1.0 / 3.0))))
+    starts = n - b + 1
+    cum = [0.0]
+    for v in d:
+        cum.append(cum[-1] + v)
+    bsum = [cum[i + b] - cum[i] for i in range(starts)]
+    k = max(1, -(-n // b))
+    rng = random.Random(seed)
+    sums = []
+    for _ in range(B):
+        t_ = 0.0
+        for _ in range(k):
+            t_ += bsum[rng.randrange(starts)]
+        sums.append(t_ * (n / (k * b)))
+    sd = pstdev(sums)
+    return (sum(d) / sd) if sd > 0 else None
+
+
 # ===========================================================================
 def excess_kurtosis(x):
     n = len(x)
@@ -129,9 +173,31 @@ def tail_profile(z, label, quiet=False):
     m = mean(z)
     for zz in zz_list:
         g = 2 * (1 - ND.cdf(zz))
-        o = sum(1 for v in z if abs((v - m) / sd) > zz) / n
+        ind = [1.0 if abs((v - m) / sd) > zz else 0.0 for v in z]
+        o = sum(ind) / n
         ratios[zz] = o / g
-        se = math.sqrt(g * (1 - g) / n) / g
+        # Block-bootstrap SE, not binomial: exceedances arrive in RUNS when
+        # vol clusters (chain.py measured the true sd at 1.6-2.7x nominal on
+        # its garch fixtures), so the iid gate was a ~20% false-positive
+        # machine per threshold.
+        b_ = max(2, int(round(n ** (1.0 / 3.0))))
+        starts = n - b_ + 1
+        if starts >= 2:
+            cum = [0.0]
+            for v in ind:
+                cum.append(cum[-1] + v)
+            bsum = [cum[i + b_] - cum[i] for i in range(starts)]
+            k_ = max(1, -(-n // b_))
+            rng = random.Random(int(zz * 1000) ^ 55)
+            props = []
+            for _ in range(200):
+                t_ = 0.0
+                for _ in range(k_):
+                    t_ += bsum[rng.randrange(starts)]
+                props.append(t_ / (k_ * b_))
+            se = (pstdev(props) / g) if g > 0 else float("inf")
+        else:
+            se = math.sqrt(g * (1 - g) / n) / g
         sigflag[zz] = abs(ratios[zz] - 1) > 2 * se
     cross = None
     for i in range(len(zz_list) - 1):
@@ -247,7 +313,9 @@ def analyse(rets, label, lam_grid=(0.80, 0.90, 0.94, 0.97, 0.99), quiet=False):
 
     sds = sorted(sd_map[i] for i in sorted(common))
     spread = sds[int(len(sds) * .9)] / sds[int(len(sds) * .1)] if sds else 1.0
-    return {"lam": best_lam, "d_ll": ll_e - ll_c, "n": len(common),
+    return {"lam": best_lam, "d_ll": ll_e - ll_c,
+            "d_ll_t": dll_t(test, sig_e, sig_c, common),
+            "n": len(common),
             "raw": t_raw, "cond": t_cond, "vol_p90_p10": spread}
 
 
@@ -317,15 +385,18 @@ def selftest():
         fails.append(f"analyse refused its own stated floor of {MIN_RETURNS}")
 
     print("\n" + "-" * 78)
-    print(f"  {'case':>22}{'best lam':>10}{'dLL vs const':>14}"
+    print(f"  {'case':>22}{'best lam':>10}{'dLL vs const':>14}{'t':>7}"
           f"{'kurt raw':>10}{'kurt adj':>10}{'vol p90/p10':>13}")
     for name, _ in cases:
         r = res[name]
-        print(f"  {name:>22}{r['lam']:>10.2f}{r['d_ll']:>+14.1f}"
+        print(f"  {name:>22}{r['lam']:>10.2f}{r['d_ll']:>+14.1f}{(r.get('d_ll_t') or 0):>7.1f}"
               f"{r['raw']['kurt']:>10.2f}{r['cond']['kurt']:>10.2f}"
               f"{r['vol_p90_p10']:>13.2f}")
     print("\n  Read it: 'kurt raw' high + 'kurt adj' near zero => CLUSTERING.")
-    print("  Both high => genuinely fat tails. dLL>0 => a conditional sigma")
+    print("  Both high => genuinely fat tails. dLL counts only with its t:")
+    print("  it is a sum over dependent, heavy-tailed windows, and a sign")
+    print("  with no dispersion is not a verdict. |t| > 3 or nothing.")
+    print("  dLL>0 => a conditional sigma")
     print("  predicts better than a constant one, out of sample.")
 
     print("\n" + "=" * 78)
@@ -384,10 +455,10 @@ def main():
         print("  not enough history in the cache.")
         return
     print("\n" + "-" * 78)
-    print(f"  {'series':>22}{'best lam':>10}{'dLL vs const':>14}"
+    print(f"  {'series':>22}{'best lam':>10}{'dLL vs const':>14}{'t':>7}"
           f"{'kurt raw':>10}{'kurt adj':>10}{'vol p90/p10':>13}")
     for s, r in sorted(summary.items()):
-        print(f"  {s:>22}{r['lam']:>10.2f}{r['d_ll']:>+14.1f}"
+        print(f"  {s:>22}{r['lam']:>10.2f}{r['d_ll']:>+14.1f}{(r.get('d_ll_t') or 0):>7.1f}"
               f"{r['raw']['kurt']:>10.2f}{r['cond']['kurt']:>10.2f}"
               f"{r['vol_p90_p10']:>13.2f}")
     print("\n  VERDICT KEY")

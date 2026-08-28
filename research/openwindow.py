@@ -190,9 +190,24 @@ def edge_profile(markets, index, quotes, series_to_index, gamma0,
         early = [t for t in mids if t >= open_s]
         if early:
             first_quote.append(min(early) - open_s)
+        # The prevailing mid, carried forward at most 30s -- NOT `s in mids`.
+        # The ticker channel is publish-on-change, so requiring a message in
+        # the exact second samples at quote-arrival times: the market-maker's
+        # own repricing process chooses the sample, which is the very
+        # staleness this stage measures. calib.py's _mid_at is the blessed
+        # pattern; this is the same carry-forward inline.
+        msecs = sorted(mids)
+        mj, mcur = 0, None
+        carry = {}
+        for s_ in range(open_s, open_s + horizon + 1):
+            while mj < len(msecs) and msecs[mj] <= s_:
+                mcur = msecs[mj]
+                mj += 1
+            if mcur is not None and s_ - mcur <= 30:
+                carry[s_] = mids[mcur]
         for dt in range(0, horizon + 1):
             s = open_s + dt
-            if s not in ticks or s not in mids:
+            if s not in ticks or s not in carry:
                 continue
             # before the settle window, so nothing is locked in yet
             mu = ticks[s]
@@ -201,7 +216,7 @@ def edge_profile(markets, index, quotes, series_to_index, gamma0,
             if vf <= 0:
                 continue
             fair = 1.0 - ND.cdf((strike - mu) / math.sqrt(vf * g0))
-            rows[dt].append((fair - mids[s], close_s))
+            rows[dt].append((fair - carry[s], close_s))
     if verbose and first_quote:
         first_quote.sort()
         print(f"\n  first quote after open: median {median(first_quote):.0f}s"

@@ -419,9 +419,30 @@ def summarize(decisions, pnl, label):
     by_close = defaultdict(float)
     for d in decisions:
         by_close[int(d.ts + d.ttc)] += pnl.get(d.ticker, 0.0)
-    obs = list(by_close.values())
+    mu_items = sorted(by_close.items())
+    obs = [v for _c, v in mu_items]
     mu = mean(obs)
-    se = pstdev(obs) / math.sqrt(len(obs)) if len(obs) > 1 else float("inf")
+    # Moving-block SE, not iid: cluster P&L is serially dependent (vol
+    # clusters, and the engine's bankroll and drawdown state carry across
+    # closes) and violently skewed. Same recipe as cross.py/chain.py.
+    nn = len(obs)
+    if nn > 20:
+        bb = max(2, int(round(nn ** (1.0 / 3.0))))
+        cum = [0.0]
+        for v in obs:
+            cum.append(cum[-1] + v)
+        bsum = [cum[i + bb] - cum[i] for i in range(nn - bb + 1)]
+        kk = max(1, -(-nn // bb))
+        rgen = random.Random(4242)
+        ms = []
+        for _ in range(300):
+            t_ = 0.0
+            for _ in range(kk):
+                t_ += bsum[rgen.randrange(len(bsum))]
+            ms.append(t_ / (kk * bb))
+        se = pstdev(ms) if ms else float("inf")
+    else:
+        se = pstdev(obs) / math.sqrt(nn) if nn > 1 else float("inf")
     print(f"  {label:>20}{n:>8}{ctr:>10,}{tot:>12.2f}{100*per:>10.2f}c"
           f"{len(obs):>9}{mu/se if se > 0 else 0:>8.1f}")
     return {"pnl": tot, "n": n, "contracts": ctr, "per": per,
@@ -439,12 +460,32 @@ def null_pnl(decisions, markets, quotes, reps=500, seed=0):
     own last price: if the book is wrong -- which is the hypothesis under test
     -- that null inherits the same error and the test loses its power.
     """
+    # OUTCOMES SHARE ONE CRYPTO DRAW PER CLOSE. The twelve series settle at
+    # the same second on ~0.8-correlated underlyings -- summarize() forty
+    # lines up says exactly that and clusters accordingly -- and this null
+    # used to redraw every decision as an INDEPENDENT coin anyway, making
+    # the band ~sqrt(k) too narrow whenever k series traded the same close,
+    # and doubly so because a common move pushes every stale quote the same
+    # way. Gaussian copula: one common Z per close, underlying correlation
+    # 0.8, each outcome = 1{ sqrt(rho)Z_c + sqrt(1-rho)Z_i < Phi^-1(p) }.
+    # Marginals stay Bernoulli(entry price), so E[P&L] is still exactly
+    # minus the fee; only the JOINT distribution widens to the truth.
+    from statistics import NormalDist
+    ND = NormalDist()
     rnd = random.Random(seed)
+    RHO = 0.8
+    a_, b_ = math.sqrt(RHO), math.sqrt(1.0 - RHO)
     out = []
     for _ in range(reps):
         tot = 0.0
+        zc = {}
         for d in decisions:
-            won = rnd.random() < d.price
+            c = int(d.ts + d.ttc)
+            if c not in zc:
+                zc[c] = rnd.gauss(0, 1)
+            zi = rnd.gauss(0, 1)
+            p_ = min(max(d.price, 1e-9), 1 - 1e-9)
+            won = (a_ * zc[c] + b_ * zi) < ND.inv_cdf(p_)
             tot += d.size * ((1 - d.price) if won else -d.price)
             tot -= d.size * fee_per_contract(d.price)
         out.append(tot)
