@@ -117,47 +117,92 @@ def name_collisions(root):
     return sorted(hits)
 
 
-def import_probe(pkg_dir, root, names):
-    """With `pkg_dir` first on sys.path -- as every stage arranges -- import
-    each name and check where it actually came from.
-
-    Returns (failures, hijacked) where a failure is (name, exception text) and
-    a hijack is (name, the repo file it resolved to).
-    """
-    root = os.path.abspath(root)
-    failures, hijacked, absent = [], [], []
-    saved_path = list(sys.path)
-    saved_mods = dict(sys.modules)
-    sys.path.insert(0, os.path.abspath(pkg_dir))
+# The probe runs in a CHILD interpreter, and that is not a detail.
+#
+# The first version did it in-process: delete the name from sys.modules,
+# re-import, look at __file__. The list of names to probe is "every stdlib
+# module this repo imports", and this repo imports `sys` -- so the probe
+# deleted `sys` from sys.modules and re-imported it, producing a module object
+# with no `stderr`. Every name probed alphabetically after it then died with
+# `AttributeError: module 'sys' has no attribute 'stderr'`. On Linux 3.11 it
+# survived by luck and reported clean; on Windows 3.14 it failed, and the
+# preflight built to stop a broken run became the thing that stopped it.
+#
+# That is the SAME failure as the bug this file exists to catch: behaviour that
+# differs between the machine the code is written on and the machine that runs
+# it, where the writing machine says fine. A checker must not be able to do
+# that, so it no longer mutates the interpreter it runs in at all.
+#
+# The child uses ONLY `sys` and builtins. Built-in modules are resolved by
+# BuiltinImporter before any path entry is consulted, so a research/sys.py
+# could not shadow them -- which means the child's own machinery cannot be
+# fooled by the thing it is looking for. Importing json or importlib up front
+# to do the reporting WOULD be fooled: it would load the real one before the
+# repo path went on, then report the name clean.
+_CHILD = r"""
+import sys
+sys.path.insert(0, sys.argv[1])
+for n in sys.argv[2:]:
     try:
-        for n in sorted(names):
-            if n not in sys.stdlib_module_names and n not in FUTURE_STDLIB:
-                continue                      # ours, or third party
-            for k in [k for k in sys.modules if k == n or k.startswith(n + ".")]:
-                del sys.modules[k]
-            try:
-                m = importlib.import_module(n)
-            except ModuleNotFoundError as e:
-                if e.name == n:
-                    # The module itself is absent -- winreg on Linux, msvcrt
-                    # on POSIX. That is a platform difference, not a shadow.
-                    # A SHADOW reports a DIFFERENT name: the 3.14 bug raised
-                    # "No module named 'compression._common'" while importing
-                    # gzip, never "No module named 'compression'".
-                    absent.append(n)
-                    continue
-                failures.append((n, f"{type(e).__name__}: {e}"))
-                continue
-            except Exception as e:
-                failures.append((n, f"{type(e).__name__}: {e}"))
-                continue
-            f = getattr(m, "__file__", None)
-            if f and os.path.abspath(f).startswith(root + os.sep):
-                hijacked.append((n, os.path.abspath(f)))
-    finally:
-        sys.path[:] = saved_path
-        sys.modules.clear()
-        sys.modules.update(saved_mods)
+        m = __import__(n)
+    except BaseException as e:
+        nm = getattr(e, "name", None) or ""
+        print("\t".join(["ERR", n, type(e).__name__ + ": " + str(e), str(nm)]))
+        continue
+    f = getattr(m, "__file__", None) or ""
+    print("\t".join(["OK", n, f, ""]))
+"""
+
+
+def import_probe(pkg_dir, root, names):
+    """Import each name in a FRESH interpreter with `pkg_dir` first on
+    sys.path, exactly as a stage is launched, and report where each came from.
+
+    Returns (failures, hijacked, absent).
+    """
+    import subprocess
+    root = os.path.abspath(root)
+    probe = [n for n in sorted(names)
+             if n in sys.stdlib_module_names or n in FUTURE_STDLIB]
+    if not probe:
+        return [], [], []
+    try:
+        p = subprocess.run(
+            [sys.executable, "-c", _CHILD, os.path.abspath(pkg_dir)] + probe,
+            capture_output=True, text=True, timeout=180)
+    except Exception as e:
+        return [("<probe>", f"could not launch the child interpreter: "
+                            f"{type(e).__name__}: {e}")], [], []
+    failures, hijacked, absent, seen = [], [], [], set()
+    for line in (p.stdout or "").splitlines():
+        parts = line.split("\t")
+        if len(parts) != 4:
+            continue
+        kind, name, detail, errname = parts
+        seen.add(name)
+        if kind == "OK":
+            if detail and os.path.abspath(detail).startswith(root + os.sep):
+                hijacked.append((name, os.path.abspath(detail)))
+        else:
+            if errname == name and detail.startswith("ModuleNotFoundError"):
+                # The module itself is absent -- winreg on Linux, msvcrt on
+                # POSIX. A platform difference, not a shadow. A real shadow
+                # reports a DIFFERENT name: the 3.14 bug raised "No module
+                # named 'compression._common'" while importing gzip.
+                absent.append(name)
+            else:
+                failures.append((name, detail))
+    missed = [n for n in probe if n not in seen]
+    if missed:
+        # The child died partway. Whatever it was importing when it stopped is
+        # worth knowing about, so report it rather than silently passing.
+        failures.append(("<probe>", f"the child interpreter stopped after "
+                                    f"{len(seen)} of {len(probe)} imports "
+                                    f"(exit {p.returncode}); not reached: "
+                                    + ", ".join(missed[:8])
+                                    + (" ..." if len(missed) > 8 else "")
+                                    + ((" | stderr: " + p.stderr.strip()[-300:])
+                                       if p.stderr.strip() else "")))
     return failures, hijacked, absent
 
 
@@ -279,6 +324,68 @@ def selftest():
           f"{'YES' if 'json' in hij or any(n == 'json' for n, _, _ in r['collisions']) else 'NO'}")
     if "json" not in hij and not any(n == "json" for n, _, _ in r["collisions"]):
         fails.append("a working-but-shadowing json.py was accepted")
+
+    # --- 3b. A TRANSITIVE SHADOW, which is the shape that actually shipped -
+    # The bug was never that we imported `compression`. Nothing in this repo
+    # mentions that name. It was that `gzip` imports it, so the shadow was
+    # reached through a module we DO import. A name scan alone cannot see that
+    # shape, which is why the probe exists.
+    #
+    # It can be reproduced exactly on Pythons before 3.14, where gzip imports
+    # `_compression` with an underscore for the same purpose. Same mechanism,
+    # different name, and this interpreter can actually run it.
+    if "_compression" in sys.stdlib_module_names:
+        d = world({"thing.py": "import gzip\n", "_compression.py": "X = 1\n"})
+        r = check(d)
+        got = [n for n, _ in r["failures"]]
+        print("\n  A transitive shadow (research/_compression.py, reached only")
+        print("  through `import gzip` -- the same shape as the 3.14 bug):")
+        for n, e in r["failures"]:
+            print(f"    {n}: {e}")
+        if "gzip" not in got:
+            fails.append("a shadow reached THROUGH gzip was not detected -- "
+                         "this is the exact shape that broke fourteen stages, "
+                         "and a name scan alone cannot see it")
+    else:
+        print("\n  (the transitive-shadow reproduction needs a Python whose")
+        print("   gzip imports _compression; this one does not, so it is")
+        print("   skipped rather than silently passed)")
+
+    # --- 4b. THE CHECKER MUST NOT DAMAGE THE INTERPRETER IT RUNS IN -------
+    # The first version of import_probe deleted names from sys.modules and
+    # re-imported them. `sys` is on the probe list, because this repo imports
+    # sys everywhere, so it deleted and rebuilt `sys` -- and every name probed
+    # alphabetically after it died with "module 'sys' has no attribute
+    # 'stderr'". It survived on Linux 3.11 and killed the run on Windows 3.14.
+    # A checker that can do that is worse than no checker.
+    print("\n  The probe must not touch the interpreter running it. Probing")
+    print("  the most dangerous names there are -- sys, builtins, io,")
+    print("  importlib -- and checking this process is unharmed afterwards.")
+    before = {
+        "stderr": getattr(sys, "stderr", None),
+        "stdout": getattr(sys, "stdout", None),
+        "sys_is_sys": sys.modules.get("sys") is sys,
+        "path": list(sys.path),
+        "nmods": len(sys.modules),
+    }
+    d = world({"thing.py": "import sys\nimport io\nimport builtins\n"
+                           "import importlib\nimport threading\nimport zipfile\n"})
+    r = check(d)
+    after_ok = (getattr(sys, "stderr", None) is before["stderr"]
+                and getattr(sys, "stdout", None) is before["stdout"]
+                and sys.modules.get("sys") is sys
+                and list(sys.path) == before["path"])
+    print(f"    sys.stderr intact:            {getattr(sys, 'stderr', None) is before['stderr']}")
+    print(f"    sys.stdout intact:            {getattr(sys, 'stdout', None) is before['stdout']}")
+    print(f"    sys.modules['sys'] is sys:    {sys.modules.get('sys') is sys}")
+    print(f"    sys.path unchanged:           {list(sys.path) == before['path']}")
+    print(f"    probe reported {len(r['failures'])} failures on a clean tree")
+    if not after_ok:
+        fails.append("import_probe damaged the interpreter it was running in "
+                     "-- this is the exact defect that killed the 19:48 run")
+    if r["failures"]:
+        fails.append(f"probing sys/io/builtins/importlib on a CLEAN tree "
+                     f"reported failures: {r['failures']}")
 
     # --- 5. the real repo, which is the point -----------------------------
     here = os.path.dirname(os.path.abspath(__file__))

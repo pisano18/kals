@@ -43,6 +43,11 @@ function Git-Quiet {
     $out = & git @args 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
     if ($out) { Add-Content -Path $log -Value $out }
+    # On failure the reason belongs on screen. It used to go only to the log,
+    # so "git pull FAILED" was all anyone ever saw of it.
+    if ($code -ne 0 -and $out) {
+        $out | ForEach-Object { Write-Host "    | $_" }
+    }
     return $code
 }
 
@@ -50,12 +55,44 @@ Say "=== run_when_away $stamp ==="
 
 # ---- 1. take Claude's latest fixes -------------------------------------
 # --rebase so a local results commit never turns into a merge bubble.
+# --autostash because the previous run leaves results/*.md modified, and a
+# rebase refuses to start on a dirty tree. That is the likeliest reason a pull
+# has ever failed here.
 Say "git pull"
-if ((Git-Quiet pull --rebase origin $Branch) -ne 0) {
-    Say "git pull FAILED -- continuing with the code already here"
+$rc = Git-Quiet pull --rebase --autostash origin $Branch
+if ($rc -ne 0) {
+    Say "  rebase pull failed; aborting any partial rebase and retrying as a merge"
+    Git-Quiet rebase --abort | Out-Null
+    $rc = Git-Quiet pull --no-rebase --autostash origin $Branch
 }
-$head = (git rev-parse --short HEAD)
-Say "now at $head"
+$head   = (git rev-parse --short HEAD 2>$null)
+$remote = (git rev-parse --short "origin/$Branch" 2>$null)
+Say "now at $head (origin/$Branch is $remote)"
+
+# A run on code that is not what Claude pushed produces results nobody can
+# attribute, and the 19:48 run was exactly that: the pull failed, the script
+# said so in one line, and then ran sixteen stages on whatever was on disk.
+# Silence about provenance is how an evening gets spent twice.
+if ($head -ne $remote) {
+    Say "*** This checkout does NOT match origin/$Branch."
+    Say "*** Refusing to run: results from unknown code are worse than none."
+    Say "*** Fix with:   git stash -u ; git pull --rebase origin $Branch"
+    exit 1
+}
+
+# ---- 1b. preflight, ONCE ------------------------------------------------
+# go.py runs this too, per stage. Doing it here as well is not redundancy for
+# its own sake: without it a preflight failure prints sixteen identical walls
+# of text, one per stage, and the run still takes long enough to look real.
+Say "preflight: stdlib shadowing"
+& python research\shadow.py . 2>&1 |
+    ForEach-Object { "$_" } |
+    Tee-Object -Append -FilePath $log |
+    ForEach-Object { Write-Host "    | $_" }
+if ($LASTEXITCODE -ne 0) {
+    Say "*** PREFLIGHT FAILED. Nothing was run. Send the lines above back."
+    exit 1
+}
 
 # ---- 2. run the stages -------------------------------------------------
 # `book` is deliberately absent: preflight measures it at ~30 GB of RAM and
