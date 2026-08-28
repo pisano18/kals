@@ -143,7 +143,7 @@ def rows_from_prints(quotes, trades, markets):
             b = band_of(close_s - t)
             if b is None or not (0.0 < price < 1.0):
                 continue
-            out.append((b, bucket_of(price), price, tk, won))
+            out.append((b, bucket_of(price), price, (tk, close_s), won))
     return out
 
 
@@ -196,7 +196,7 @@ def rows_from_mids(quotes, trades, markets):
             mid = _mid_at(secs, mids, t)
             if mid is None or not (0.0 < mid < 1.0):
                 continue
-            out.append((b, bucket_of(mid), mid, tk, won))
+            out.append((b, bucket_of(mid), mid, (tk, close_s), won))
     return out
 
 
@@ -225,7 +225,7 @@ def rows_from_grid(quotes, markets, step=GRID_STEP):
             mid = _mid_at(secs, mids, close_s - tau)
             if mid is None or not (0.0 < mid < 1.0):
                 continue
-            out.append((b, bucket_of(mid), mid, tk, won))
+            out.append((b, bucket_of(mid), mid, (tk, close_s), won))
     return out
 
 
@@ -246,18 +246,34 @@ def calibrate(rows, min_markets=30):
         # single outcome. A market settles once; fifty quote-seconds inside it
         # carry the information of one.
         obs = [(mean(x[0] for x in v), v[0][1]) for v in by_tk.values()]
-        n = len(obs)
+        n = len(obs)                      # reported n stays: it IS markets
         if n < min_markets:
             continue
         q = mean(w for _pr, w in obs)
+        # SE clustered by CLOSE TIME, not by market. Twelve series settle at
+        # the same instant with ~0.8-correlated outcomes, so pooling their
+        # markets as independent observations inflates t by up to sqrt(12).
+        # This file shipped with exactly that bug -- pattern 8 of its own
+        # catalogue -- and the "grid-verified |t|~3" compression cells were
+        # measured with it. The count n stays as markets (it is the honest
+        # size of the sample); only the standard error uses the clusters.
         # The AVERAGE ACTUAL PRICE, not the bucket centre. This is what
         # D-FINAL reports and it is the only version that can see a
         # half-spread effect at all: bucketing to 5c centres absorbs a 0.5c
         # side bias completely, and an estimator that cannot see the
         # alternative explanation cannot rule it out.
         price = mean(pr for pr, _w in obs)
-        se = math.sqrt(max(q * (1 - q), 1e-12) / n)
-        out[key] = {"n": n, "price": price, "realized": q,
+        by_close = defaultdict(list)
+        for (tk_, c_), v in by_tk.items():
+            by_close[c_].append((mean(x[0] for x in v), v[0][1]))
+        cl = [(mean(p_ for p_, _ in v), mean(w_ for _, w_ in v))
+              for v in by_close.values()]
+        nc = len(cl)
+        resid = [w_ - p_ for p_, w_ in cl]
+        mr = mean(resid)
+        se = (math.sqrt(sum((x - mr) ** 2 for x in resid) / nc / nc)
+              if nc > 1 else float("inf"))
+        out[key] = {"n": n, "n_clusters": nc, "price": price, "realized": q,
                     "edge": q - price, "se": se,
                     "t": (q - price) / se if se > 0 else 0.0}
     return out
@@ -522,6 +538,37 @@ def selftest():
     if sane_or_die(broken, "an all-zero table"):
         fails.append("the gate ACCEPTED a table where nothing ever resolved "
                      "yes -- it would have passed the -1.6 million t through")
+
+    # ---- 6. correlated series must NOT multiply the evidence -------------
+    print("\n6. TWELVE SERIES, ONE COIN FLIP. Markets from different series")
+    print("   settle at the same close with ~0.8-correlated outcomes. This")
+    print("   file shipped clustering by MARKET, so pooling k series into a")
+    print("   bucket multiplied nominal evidence by k while adding one real")
+    print("   observation -- t inflated ~sqrt(k). Plant k PERFECTLY correlated")
+    print("   series; the close-clustered t must match one series' t, not")
+    print("   sqrt(k) times it.")
+    rng = random.Random(9)
+    for k_series in (1, 8):
+        rows = []
+        for w in range(400):
+            close_s = 1_760_000_000 + w * 900
+            won = 1.0 if rng.random() < 0.60 else 0.0   # true 60% vs price 65c
+            for si in range(k_series):
+                rows.append((((480, 900)), 0.65, 0.65,
+                             (f"S{si}-{w:04d}", close_s), won))
+        tab = calibrate(rows, min_markets=30)
+        r = tab.get(((480, 900), 0.65))
+        if k_series == 1:
+            t1 = r["t"]
+        else:
+            tk_ = r["t"]
+        print(f"   {k_series} series: n={r['n']:>5,} clusters={r['n_clusters']:>4}"
+              f"  edge={100*r['edge']:+.1f}c  t={r['t']:+.1f}")
+    if abs(tk_) > abs(t1) * 1.35:
+        fails.append(f"8 perfectly-correlated series inflated t from {t1:.1f} "
+                     f"to {tk_:.1f} -- close-time clustering is not working")
+    if abs(tk_) < abs(t1) * 0.6:
+        fails.append(f"clustering over-deflated: {t1:.1f} -> {tk_:.1f}")
 
     print("\n" + "=" * 78)
     if fails:

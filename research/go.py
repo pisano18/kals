@@ -136,6 +136,7 @@ SELFTESTS = [
     ("vol timing", ["voltiming.py", "--selftest"]),
     ("calibration", ["calib.py", "--selftest"]),
     ("vol referee", ["reconcile.py", "--selftest"]),
+    ("compression", ["compression.py", "--selftest"]),
     # cheap, and it is the only check that looks INSIDE main() --
     # the one function no self-test in this project executes
     ("unbound names", ["unbound.py", "--selftest"]),
