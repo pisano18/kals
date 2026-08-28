@@ -70,6 +70,14 @@ STAGES
             stamps it. Also gates our strike reconstruction against
             floor_strike. H5 measures the MEAN opening edge, which is zero by
             symmetry; this measures the SIZE, which is what you trade.
+  surface   given an implied/true sigma ratio, WHERE is it worth crossing
+            the spread? Needs no data. The mechanism: if the market's sigma is
+            too low its prices are too confident, so the cheap side is always
+            the one below 50c -- and tau cancels exactly, so the edge does not
+            depend on time to close at all, only on price. What does depend on
+            price is the cost: the quadratic fee peaks at 50c and the tick is
+            TAPERED, 0.1c below 10c against 1c above it. At 0.895 the net is
+            positive below ~30c, best at 7c, and negative at the money.
   term      the volatility TERM STRUCTURE. Every other vol result here is a
             LEVEL -- implied divided by a realised sigma we estimated -- so a
             bias in our estimator lands entirely in the answer. This is a
@@ -137,6 +145,7 @@ SELFTESTS = [
     ("endgame", ["endgame.py", "--selftest"]),
     ("implied vol", ["implied.py", "--selftest"]),
     ("term structure", ["term.py", "--selftest"]),
+    ("edge surface", ["surface.py", "--selftest"]),
     ("constituent feeds", ["feeds.py", "--selftest"]),
     ("path statistics", ["pathstats.py", "--selftest"]),
     ("proxy reference", ["proxy.py", "--selftest"]),
@@ -220,6 +229,11 @@ STAGES = [
     # reach it. It is the only vol result here that is immune to that.
     ("term", ["research/term.py", "--data", "{data}", "--out", "{out}"],
      "{data}/cfbenchmarks_value"),
+    # surface needs NO data at all -- it is what a given implied/true sigma
+    # ratio would be worth, with the real fee and the real tapered tick. It is
+    # in the report so the trading rule is written down BEFORE the number it
+    # depends on is re-measured, rather than chosen after seeing it.
+    ("surface", ["research/surface.py"], None),
     ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
      "{feeds}"),
     ("pathstats", ["research/pathstats.py", "--data", "{data}",

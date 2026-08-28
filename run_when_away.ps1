@@ -61,7 +61,7 @@ Say "now at $head"
 # `book` is deliberately absent: preflight measures it at ~30 GB of RAM and
 # this machine has ~16 GB, so it swaps the box to death rather than failing
 # cleanly. Everything here reads the ticker/trade channels, which are small.
-$stages = @("reconcile", "implied", "term", "endgame", "calib", "voltiming", "maker",
+$stages = @("surface", "reconcile", "implied", "term", "endgame", "calib", "voltiming", "maker",
             "chain", "leadlag", "cross", "openwindow", "feeds", "pathstats",
             "proxy", "book")
 
