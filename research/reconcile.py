@@ -420,6 +420,7 @@ def real_data(data_dir, out_dir):
           f"{'implied RMS':>12}{'ratio':>8}{'95% CI':>18}")
     import random as _rnd
     verdicts = []
+    sig_by_series = {}
     for ser in sorted(per):
         # settlement sigma over this series' recorded closes
         setts = {}
@@ -441,12 +442,21 @@ def real_data(data_dir, out_dir):
         sig_st = math.sqrt(sum((x - m0) ** 2 for x in d) / len(d) / 880.0)
 
         clus = per[ser]
-        ivs_by_close = {c: math.sqrt(mean(v * v for v in vals))
-                        for c, vals in clus.items() if vals}
+        # Per-close MEDIAN iv first (a bad quote cannot own a cluster), then
+        # RMS across closes with the top and bottom 2% of clusters
+        # winsorised. ETH's real-data run produced ratio 1.399 with a CI of
+        # [0.64, 2.27]: a handful of extreme inversions dominated a plain
+        # RMS, because squaring hands the wildest observation the microphone.
+        # Winsorising (clip, not drop -- the catalogue's pattern 14) keeps
+        # the variance comparison honest without letting one quote decide it.
+        ivs_by_close = {c: median(vals) for c, vals in clus.items() if vals}
         if len(ivs_by_close) < 30:
             print(f"  {ser:>11}   too few clusters ({len(ivs_by_close)})")
             continue
-        vals = list(ivs_by_close.values())
+        ranked = sorted(ivs_by_close.values())
+        lo_w = ranked[max(0, int(0.02 * len(ranked)))]
+        hi_w = ranked[min(len(ranked) - 1, int(0.98 * len(ranked)))]
+        vals = [min(max(v, lo_w), hi_w) for v in ranked]
         iv_rms = math.sqrt(mean(v * v for v in vals))
         ratio = iv_rms / sig_st
         # cluster bootstrap on the implied side + gaussian SE on the settle
@@ -462,8 +472,31 @@ def real_data(data_dir, out_dir):
         lo = lo_b - 1.96 * se_settle
         hi = hi_b + 1.96 * se_settle
         verdicts.append(ratio)
+        sig_by_series[ser] = sig_st
         print(f"  {ser:>11}{len(vals):>8}{len(d) + 1:>12}{sig_st:>12.4g}"
               f"{iv_rms:>12.4g}{ratio:>8.3f}   [{lo:>5.3f}, {hi:>5.3f}]")
+    # ---- per-tau bands: WHERE in the window does the gap live? ----------
+    print(f"\n  {'tau band':>12}", "".join(f"{s_[2:5]:>7}" for s_ in sorted(per)))
+    for tlo, thi in ((60, 180), (180, 300), (300, 600), (600, 900)):
+        row = f"  {f'{tlo}-{thi}s':>12}"
+        for ser in sorted(per):
+            sel = defaultdict(list)
+            for r in band:
+                if r["series"] == ser and tlo <= r["tau"] < thi:
+                    sel[r["close"]].append(r["iv"])
+            if len(sel) < 30:
+                row += f"{'--':>7}"
+                continue
+            ranked = sorted(median(v) for v in sel.values())
+            lo_w = ranked[max(0, int(0.02 * len(ranked)))]
+            hi_w = ranked[min(len(ranked) - 1, int(0.98 * len(ranked)))]
+            vv = [min(max(x, lo_w), hi_w) for x in ranked]
+            st = sig_by_series.get(ser)
+            row += (f"{math.sqrt(mean(x * x for x in vv)) / st:>7.2f}"
+                    if st else f"{'--':>7}")
+        print(row)
+    print("  (implied/settle per tau band; the term structure of the gap)")
+
     if verdicts:
         med = sorted(verdicts)[len(verdicts) // 2]
         print(f"\n  median implied/settle ratio: {med:.3f}")
