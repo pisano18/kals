@@ -135,6 +135,7 @@ SELFTESTS = [
     ("maker economics", ["maker.py", "--selftest"]),
     ("vol timing", ["voltiming.py", "--selftest"]),
     ("calibration", ["calib.py", "--selftest"]),
+    ("vol referee", ["reconcile.py", "--selftest"]),
     # cheap, and it is the only check that looks INSIDE main() --
     # the one function no self-test in this project executes
     ("unbound names", ["unbound.py", "--selftest"]),
@@ -206,6 +207,10 @@ STAGES = [
     # mispricing or the side that happened to trade.
     ("calib", ["research/calib.py", "--data", "{data}", "--out", "{out}"],
      "{data}/ticker"),
+    # reconcile last: the canonical implied-vs-settle vol measurement, under
+    # the referee's rules. This is the number the vol question rests on.
+    ("reconcile", ["research/reconcile.py", "--data", "{data}",
+                   "--out", "{out}"], "{data}/ticker"),
 ]
 
 
