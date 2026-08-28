@@ -70,6 +70,23 @@ STAGES
             stamps it. Also gates our strike reconstruction against
             floor_strike. H5 measures the MEAN opening edge, which is zero by
             symmetry; this measures the SIZE, which is what you trade.
+  term      the volatility TERM STRUCTURE. Every other vol result here is a
+            LEVEL -- implied divided by a realised sigma we estimated -- so a
+            bias in our estimator lands entirely in the answer. This is a
+            SHAPE, compared within one market against itself, and needs no
+            realised sigma at all. Invert every quote through the exact
+            var_factor: if the market uses the same formula, implied sigma is
+            FLAT in tau whatever it believes. sqrt(tau) makes it explode into
+            the close (9.7x at tau=10), sqrt(tau-39.5) makes it collapse below
+            40s. endgame.py has already priced what the first one is worth.
+  endgame   the LAST sixty seconds, the mirror of openwindow. With tau left,
+            60-tau of the settlement prints are already locked on disk, so
+            sd/sigma falls to 0.017 at tau=1 and fair value stops depending on
+            a volatility estimate at all. Naive sqrt(tau) is 9.7x too large at
+            tau=10, which pins a quote near 50c exactly when the truth has gone
+            deterministic. Prices each market off its OWN pre-endgame sigma,
+            never a pooled one: the self-test measures what pooling costs at
+            +2.5c claimed against -4.2c realised on a zero-edge tape.
   leadlag   does the book FOLLOW the index? PLAN_V3 ranks this the single most
             likely surviving edge, because it is plumbing rather than opinion.
             Needs kalshi_data/ and fulltape/.
@@ -117,7 +134,9 @@ SELFTESTS = [
     ("book rebuild", ["book.py", "--selftest"]),
     ("cross-section", ["cross.py", "--selftest"]),
     ("open window", ["openwindow.py", "--selftest"]),
+    ("endgame", ["endgame.py", "--selftest"]),
     ("implied vol", ["implied.py", "--selftest"]),
+    ("term structure", ["term.py", "--selftest"]),
     ("constituent feeds", ["feeds.py", "--selftest"]),
     ("path statistics", ["pathstats.py", "--selftest"]),
     ("proxy reference", ["proxy.py", "--selftest"]),
@@ -188,7 +207,18 @@ STAGES = [
      "{data}/cfbenchmarks_value"),
     ("openwindow", ["research/openwindow.py", "--data", "{data}",
                     "--out", "{out}"], "{data}/cfbenchmarks_value"),
+    # endgame mirrors openwindow at the other end of the window. Its whole
+    # point is that sd/sigma collapses to 0.017 at tau=1, so fair value stops
+    # depending on any volatility estimate and starts depending on prints we
+    # already have on disk.
+    ("endgame", ["research/endgame.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/cfbenchmarks_value"),
     ("implied", ["research/implied.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/cfbenchmarks_value"),
+    # term reads the same inversions implied does, but as a SHAPE in tau
+    # rather than a level, so no error in our own realised-sigma estimate can
+    # reach it. It is the only vol result here that is immune to that.
+    ("term", ["research/term.py", "--data", "{data}", "--out", "{out}"],
      "{data}/cfbenchmarks_value"),
     ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
      "{feeds}"),

@@ -139,8 +139,19 @@ def collect(index, quotes, markets, series_to_index, ttc_max=900):
                     cur = last_by_sec[secs_sorted[j]]
                     j += 1
                 if cur is not None and t - cur[0] <= 30:
-                    grid.append((t, cur[1], cur[2], cur[3], cur[4]))
-        for (t, bid, ask, bs, as_) in grid:
+                    # carry the AGE too. A quote carried forward is priced off
+                    # a var_factor that has since moved, and var_factor
+                    # collapses fast into the close: sd/sigma falls from 0.893
+                    # at tau=20 to 0.327 at tau=10, so a 30-second-old quote
+                    # inverted at tau=10 returns ~6.8x the sigma the quoter
+                    # actually used. Consumers that care about the tau SHAPE
+                    # (term.py) must be able to drop those; the level results
+                    # below are biased UP by them, which makes every
+                    # implied/realised ratio reported here CONSERVATIVE
+                    # against the finding that the ratio is below 1.
+                    grid.append((t, cur[1], cur[2], cur[3], cur[4],
+                                 t - cur[0]))
+        for (t, bid, ask, bs, as_, age) in grid:
             tau = close_s - t
             if not (1 <= tau <= ttc_max) or t not in ticks:
                 continue
@@ -154,7 +165,7 @@ def collect(index, quotes, markets, series_to_index, ttc_max=900):
                 continue
             rows.append({"series": m.get("series") or tk.split("-")[0],
                          "tau": tau, "price": mid, "iv": iv, "close": close_s,
-                         "spread": ask - bid,
+                         "spread": ask - bid, "age": age,
                          "z": (mu - strike) / max(math.sqrt(
                              var_factor(tau, [1.0])) * abs(iv), 1e-12)})
     return rows

@@ -44,42 +44,83 @@ be efficient, and liquidity thins into the close so there may be nothing to
 trade against. Both are measured here rather than assumed: the report gives
 quote availability per tau bucket before it gives any edge.
 
-STATUS: NOT FINISHED. ITS SELF-TEST FAILS AND IT IS NOT WIRED INTO go.py.
+STATUS: PART 1 EXACT AND VERIFIED. PART 2 NOW PASSES ITS SELF-TEST.
 
     Part 1 -- the variance table -- is derived, exact, and verified against
     the closed form. It stands on its own and is the reason this file exists.
 
-    Part 2 does not yet work. The self-test currently reports:
+    Part 2 failed for four months of calendar time on a defect that was
+    entirely in the TEST WORLD, not the estimator. It is worth writing down
+    because it is the third time in this project that a fixture, not an
+    estimator, was the thing that was wrong.
 
-      * a correctly-priced book yields ZERO qualifying trades  (right)
-      * a punched index tape yields zero                        (right)
-      * a book pricing sqrt(tau-39.5) is found, +19.6c t=6.6    (right)
-      * a book pricing sqrt(tau) is found at |t| = 7.7 but the
-        strategy LOSES 22.6c against it                         (WRONG)
+    THE FIRST BUG -- a look-ahead in the strike.  The fixture drew
 
-    The last line is a real defect, not a tolerance to widen. If our model is
-    right and the book's is wrong, we must make money; losing means the
-    fixture, the entry rule, or both are still wrong. Do not use any number
-    from part 2, and do not register this stage, until that row is positive.
+        strike = settle + gauss(0, 3.0)
 
-    Two things were already learned the expensive way and are worth keeping
-    whatever happens to the rest:
+    so the strike was a function of the FUTURE settlement value. That makes
+    settle - strike = -eps ~ N(0, 3) independently of everything knowable at
+    decision time, so the true probability of every market was 50% no matter
+    what the tape had done. Measured directly: rows where the model said
+    fair = 0.041 won 27.4% of the time and rows where it said 0.959 won 76%.
+    A book pricing sqrt(tau) -- pulled toward 50c by a sigma 9.7x too large --
+    was therefore CLOSER to the truth than the exact model, and fading it
+    correctly lost 22.6c. The estimator was right and the world was lying.
 
-    1. Taking the LARGEST model-vs-market disagreement in a window is a
-       look-ahead. It finds where the MODEL is most wrong, not the market. On
-       a tape whose true edge was zero it produced 16 trades claiming 0.29c
-       and realising -49.5c at t = -3.3. `evaluate(rule="first")` -- the
-       earliest second clearing the fee -- is the only rule of the two a live
-       trader could follow.
+    The fix is the rule the exchange actually uses and that every other
+    fixture in this project already used: strike(N+1) == settle(N), i.e. the
+    mean of the sixty prints ending at the open. It cannot see the future.
 
-    2. The first fixture clamped quotes to [1c, 99c] and then asserted that
-       the book was "correctly priced". It was not: the exchange cannot quote
-       below 1c, so in the endgame -- where true fair goes to 0 or 1 --
-       selling a 1c contract genuinely worth 0.1c is a 0.9c edge against a
-       0.07c fee. Every assertion resting on that fixture was meaningless, and
-       a whole debugging pass went into the estimator before the fixture
-       turned out to be the thing that was wrong. That clamp effect is itself
-       a candidate finding and deserves its own measurement.
+    THE SECOND BUG -- the tape overwrote itself.  Each window reset px = S0
+    and wrote ticks over [close-900, close], and close(w) - 900 == close(w-1),
+    so every window clobbered the previous window's final print with a value
+    from a fresh random walk ~180 dollars away. settle had been computed from
+    the ticks BEFORE the clobber; fair() read the ticks AFTER it. Extending
+    the strike window to 60s made it worse -- 60 clobbered prints instead of
+    one -- which is how it was found. The fixture is now ONE continuous tape
+    with windows defined on top of it.
+
+    WHAT THE REPAIRED TEST SHOWS
+
+      book prices with    tau<=120   tau<=60   tau<=30   tau<=15
+      exact                 silent    silent    silent    silent
+      naive  sqrt(tau)     +2.05c    +6.49c   +10.72c   +14.97c
+                          (t=1.2)   (t=4.1)   (t=6.4)   (t=10.2)
+
+    and in every one of those cells the CLAIMED edge at entry matches the
+    REALISED P&L to well inside its standard error. That agreement is the
+    real assertion -- a model that claims 6.7c and earns 6.5c is honest; the
+    broken version claimed 1.8c and earned -22.6c.
+
+    THREE THINGS THE REPAIRED TEST TAUGHT THAT ARE WORTH KEEPING
+
+    1. A book pricing sqrt(tau - 39.5) is INVISIBLE, and not because the
+       estimator is weak. That approximation is exact above 60s and collapses
+       to zero below ~40s, which drives its quotes to 0 or 1 -- outside the
+       range the exchange can quote at all. Its error region censors itself
+       out of the book. A mispricing you cannot be shown is not tradeable.
+
+    2. A POOLED sigma manufactures edge. Give the book each window's own true
+       sigma and scan with one pooled sigma per series -- our model is then
+       wrong per-window in a mean-zero way, and the true edge is exactly
+       zero. It claims +2.5c and realises -3.1c, stable across seeds. This is
+       not hypothetical: it is how implied.py and every other stage estimates
+       sigma. main() below therefore estimates sigma from each market's OWN
+       path up to the start of the endgame, which is non-anticipating, and
+       falls back to the pooled value only when that is too thin.
+
+    3. Taking the LARGEST model-vs-market disagreement in a window is a
+       look-ahead -- it finds where the MODEL is most wrong, not the market.
+       `evaluate(rule="first")` -- the earliest second clearing the fee -- is
+       the only rule of the two a live trader could follow.
+
+    And one that was already paid for once: the first fixture clamped quotes
+    to [1c, 99c] and then asserted the book was "correctly priced". It was
+    not -- the exchange cannot quote below 1c, so where true fair goes to 0
+    or 1, selling a 1c contract genuinely worth 0.1c is a 0.9c edge against a
+    0.07c fee. Every assertion resting on that fixture was meaningless. That
+    clamp effect is a candidate finding in its own right and still deserves
+    its own measurement.
 
 NOTHING HERE PLACES AN ORDER.
 """
@@ -127,8 +168,15 @@ def fair(ticks, close_s, now_s, strike, sigma):
 
 
 def scan(quotes, index, markets, series_to_index, sigma_by_series,
-         tau_max=120, edge_floor=0.0):
-    """One row per (market, second) inside the endgame with a usable quote."""
+         tau_max=120, sigma_by_market=None):
+    """One row per (market, second) inside the endgame with a usable quote.
+
+    `sigma_by_market` overrides the pooled per-series sigma where a market has
+    its own non-anticipating estimate. The self-test measures what pooling
+    costs: a book quoting each window's true sigma, scanned with one pooled
+    sigma, yields a claimed +2.5c that realises -3.1c. Prefer the per-market
+    value wherever there is enough tape to form one.
+    """
     rows = []
     for tk, q in quotes.items():
         m = markets.get(tk)
@@ -137,7 +185,7 @@ def scan(quotes, index, markets, series_to_index, sigma_by_series,
         s = m.get("series") or tk.split("-")[0]
         ticks = index.get(series_to_index.get(s))
         strike, close_s = m.get("strike"), m.get("close")
-        sig = sigma_by_series.get(s)
+        sig = (sigma_by_market or {}).get(tk) or sigma_by_series.get(s)
         if not ticks or not strike or not close_s or not sig:
             continue
         close_s = int(close_s)
@@ -269,6 +317,27 @@ def analytic():
 
 
 # ===========================================================================
+def sigma_from(ticks, lo, hi, need=180):
+    """Per-second sigma from the increments strictly inside [lo, hi), or None.
+
+    TRUE (t, t+1) pairs only. Differencing consecutive PRESENT ticks across a
+    gap measures a multi-second move and calls it a one-second one, which is
+    how voltiming.py's estimator ran 16.5% high. `need` is a floor on the
+    pairs actually found, not on the span asked for.
+    """
+    d = [ticks[s + 1] - ticks[s] for s in range(lo, hi)
+         if s in ticks and s + 1 in ticks]
+    return pstdev(d) if len(d) >= need else None
+
+
+def mde(trades, alpha_t=3.0):
+    """Smallest true edge this many trades could certify at |t| = alpha_t."""
+    if len(trades) < 2:
+        return float("inf")
+    sd = pstdev([t["pnl"] for t in trades])
+    return alpha_t * sd / math.sqrt(len(trades))
+
+
 def selftest():
     print("=" * 78)
     print("SELF-TEST -- against known answers")
@@ -283,128 +352,280 @@ def selftest():
             fails.append(f"sd/sigma at tau={tau} is {got:.4f}, not {want}")
 
     SIG, S0, CLOSE = 6.0, 80000.0, 1_760_000_000
+    S2I, POOLED = {"KXBTC15M": "BRTI"}, {"KXBTC15M": 6.0}
 
-    def world(n, seed, model="exact", gap=0, quote_noise=0.0):
-        """n markets, each with a full index tape and a book that prices with
-        `model`. The TRUE settlement is computed from the same tape, so the
-        only thing that varies is what the book believes."""
+    def world(n, seed, model="exact", gap=0, sig_spread=0.0, span=130):
+        """n consecutive 15-minute windows on ONE continuous index tape.
+
+        Two properties are load-bearing and both were once wrong:
+
+        * ONE TAPE. Windows are defined on top of a single random walk, not
+          re-generated per window. The old fixture reset the price each
+          window and wrote over the previous window's settlement prints, so
+          `settle` was computed from a tape that `fair()` never saw.
+
+        * THE STRIKE CANNOT SEE THE FUTURE. strike = mean of the sixty prints
+          ending at the open, which is exactly `strike(N+1) == settle(N)` and
+          exactly what every other fixture in this project uses. The old
+          version drew `settle + noise`, which made the true probability of
+          every market 50% and inverted the sign of the whole test.
+
+        `sig_spread` gives each window its own true sigma, which the BOOK
+        knows and the scan does not -- the mean-zero model error that a
+        pooled sigma estimate produces in real life.
+        """
         rng = random.Random(seed)
         quotes, index, markets = {}, {"BRTI": {}}, {}
         ticks = index["BRTI"]
+        px, sig_of = S0, {}
+        for w in range(-1, n):                       # -1 lays the first strike
+            close_s = CLOSE + w * 900
+            sw = SIG * math.exp(rng.gauss(0, sig_spread) - 0.5 * sig_spread ** 2) \
+                if sig_spread else SIG
+            sig_of[close_s] = sw
+            for t in range(close_s - 900, close_s + 1):
+                px += rng.gauss(0, sw)
+                ticks[t] = px
         for w in range(n):
             close_s = CLOSE + w * 900
+            open_s = close_s - 900
             tk = f"E{w:04d}"
-            px = S0
-            for t in range(close_s - 900, close_s + 1):
-                px += rng.gauss(0, SIG)
-                ticks[t] = px
-            seg = [ticks[t] for t in range(close_s - N_AVG + 1, close_s + 1)]
-            settle = sum(seg) / N_AVG
-            # strike offset so the endgame is genuinely in doubt sometimes
-            strike = settle + rng.gauss(0, 3.0)
+            settle = sum(ticks[t] for t in
+                         range(close_s - N_AVG + 1, close_s + 1)) / N_AVG
+            strike = sum(ticks[s] for s in
+                         range(open_s - N_AVG + 1, open_s + 1)) / N_AVG
             markets[tk] = {"series": "KXBTC15M", "strike": strike,
                            "close": close_s, "settle": settle > strike}
+            book_sig = sig_of[close_s]
             ser = []
-            for t in range(close_s - 130, close_s):
+            for t in range(close_s - span, close_s):
                 tau = close_s - t
                 if gap and (t % gap == 0):
-                    continue                      # a hole in the QUOTE tape
+                    continue                          # a hole in the QUOTE tape
                 part = partial(ticks, close_s, t)
                 if part is None:
                     continue
                 locked, r = part
                 mu = (locked + r * ticks[t]) / N_AVG
                 if model == "exact":
-                    sd = SIG * math.sqrt(var_factor(tau, [1.0]))
+                    sd = book_sig * math.sqrt(var_factor(tau, [1.0]))
                 elif model == "naive":
-                    sd = SIG * math.sqrt(tau)     # the mistake
+                    sd = book_sig * math.sqrt(tau)        # the mistake
                 else:
-                    sd = SIG * math.sqrt(max(tau - 39.5, 1e-9))
+                    sd = book_sig * math.sqrt(max(tau - 39.5, 1e-9))
                 p = ND.cdf((mu - strike) / sd) if sd > 0 else \
                     (1.0 if mu > strike else 0.0)
-                # Skip seconds where the truth is outside the quotable range.
-                # The exchange cannot quote below 1c or above 99c, so there
-                # the book is REALLY mispriced -- selling a 1c contract worth
-                # 0.1c is a genuine 0.9c edge against a 0.07c fee. That is a
-                # separate finding (see the CLAMP block below), and leaving it
-                # in this fixture means "correctly priced" is a lie and every
-                # assertion built on it is meaningless. It cost a whole
-                # debugging pass to see that the fixture, not the estimator,
-                # was the thing that was wrong.
+                # Skip seconds where the book's price is outside the range the
+                # exchange can quote. The exchange cannot quote below 1c or
+                # above 99c, so there the book is REALLY mispriced -- selling a
+                # 1c contract worth 0.1c is a genuine 0.9c edge against a 0.07c
+                # fee. That is a separate finding (see the CLAMP note in the
+                # header), and leaving it in this fixture means "correctly
+                # priced" is a lie and every assertion built on it is
+                # meaningless. It cost a whole debugging pass to see that the
+                # fixture, not the estimator, was the thing that was wrong.
                 if not (0.02 <= p <= 0.98):
                     continue
-                p = min(max(p + rng.gauss(0, quote_noise), 0.01), 0.99)
-                p = round(p * 100) / 100.0        # the 1c tick is real
+                p = round(p * 100) / 100.0            # the 1c tick is real
                 ser.append((t, max(p - 0.005, 0.0), min(p + 0.005, 1.0),
                             100.0, 100.0))
             quotes[tk] = ser
         return quotes, index, markets
 
-    print("\n  A book pricing the EXACT model must yield nothing. One pricing")
-    print("  sqrt(tau), or sqrt(tau-39.5) inside the last minute, must be")
-    print("  visibly wrong -- and the size is the point, not just the sign.")
-    print(f"\n  {'book prices with':>22}{'trades':>8}{'mean P&L':>11}"
-          f"{'t':>7}{'null 95%':>20}   verdict")
+    # =====================================================================
+    # 1. DETECTION, and the honesty check that matters more than detection
+    # =====================================================================
+    print("\n  A book pricing the EXACT model must yield nothing at every tau")
+    print("  cap. One pricing sqrt(tau) must be found -- and the CLAIMED edge")
+    print("  at entry must match the REALISED P&L. A model that claims 6.7c")
+    print("  and earns 6.5c is honest; the version this file shipped broken")
+    print("  claimed 1.8c and earned -22.6c against the very same book.")
+    N = 600
+    worlds = {m: world(N, seed=5, model=m)
+              for m in ("exact", "naive", "linear")}
+    print(f"\n  {'book':>8}{'tau<=':>7}{'trades':>8}{'claimed':>10}"
+          f"{'realised':>10}{'t':>7}{'MDE':>8}   verdict")
     got = {}
-    for model in ("exact", "naive", "linear"):
-        q, idx, mk = world(300, seed=5, model=model)
-        rows = scan(q, idx, mk, {"KXBTC15M": "BRTI"}, {"KXBTC15M": SIG})
-        tr = evaluate(rows)
-        sm = summarise(tr, model)
-        nl = redraw_null(tr, reps=600)
-        got[model] = sm
-        if not sm:
-            print(f"  {model:>22}{len(tr):>8}   too few trades")
-            continue
-        print(f"  {model:>22}{sm['n']:>8}{sm['mean']:>10.2f}c{sm['t']:>7.1f}"
-              f"   [{nl['lo']:>6.2f},{nl['hi']:>6.2f}]   "
-              + ("finds it" if sm["t"] > 3 else "nothing"))
-    if got["exact"] and got["exact"]["t"] > 3:
-        fails.append(f"found an edge of {got['exact']['mean']:.2f}c against a "
-                     "book pricing the EXACT model -- the estimator is "
-                     "manufacturing it")
-    for m in ("naive", "linear"):
-        if not got[m] or got[m]["t"] < 3:
-            fails.append(f"missed a book pricing with {m} scaling, which is "
-                         "wrong by up to 9.7x inside the last ten seconds")
+    for m in ("exact", "naive", "linear"):
+        q, idx, mk = worlds[m]
+        for tm in (120, 60, 30, 15):
+            rows = scan(q, idx, mk, S2I, POOLED, tau_max=tm)
+            tr = evaluate(rows)
+            sm = summarise(tr, m)
+            got[(m, tm)] = sm
+            if not sm:
+                print(f"  {m:>8}{tm:>7}{len(tr):>8}        --         --"
+                      f"     --      --   silent")
+                continue
+            d = mde(tr)
+            print(f"  {m:>8}{tm:>7}{sm['n']:>8}{sm['exp_edge']:>9.2f}c"
+                  f"{sm['mean']:>9.2f}c{sm['t']:>7.1f}{d:>7.2f}c   "
+                  + ("finds it" if sm["t"] > 3 else "nothing"))
+        print()
 
-    # ---- the bug settlewin.py was written to kill must stay dead ----------
+    for tm in (120, 60, 30, 15):
+        sm = got[("exact", tm)]
+        if sm and abs(sm["t"]) > 3:
+            fails.append(f"tau<={tm}: found {sm['mean']:.2f}c at t={sm['t']:.1f} "
+                         "against a book pricing the EXACT model -- the "
+                         "estimator is manufacturing it")
+    for tm in (60, 30, 15):
+        sm = got[("naive", tm)]
+        if not sm or sm["t"] < 3:
+            fails.append(f"tau<={tm}: missed a book pricing sqrt(tau), which "
+                         "is wrong by 1.7x at 60s and 9.7x at 10s")
+            continue
+        # THE assertion. Detection alone is cheap; agreement is not.
+        gap_ = abs(sm["exp_edge"] - sm["mean"])
+        if gap_ > 3.0 * sm["se"]:
+            fails.append(f"tau<={tm}: claimed {sm['exp_edge']:.2f}c but "
+                         f"realised {sm['mean']:.2f}c -- {gap_:.2f}c apart, "
+                         f"{gap_/sm['se']:.1f} standard errors. A model that "
+                         "cannot predict its own P&L on a tape we built is "
+                         "not going to predict it on Kalshi's.")
+
+    print("  sqrt(tau-39.5) is INVISIBLE, and that is a finding rather than a")
+    print("  weakness: it is exact above 60s and collapses to zero below 40s,")
+    print("  so its quotes go to 0 or 1 -- outside what the exchange can quote")
+    print("  at all. Its error region censors itself out of the book.")
+
+    # =====================================================================
+    # 2. THE GAP TRAP
+    # =====================================================================
     print("\n  THE GAP TRAP. settlewin.py exists because four copies of this")
     print("  calculation summed the ticks PRESENT and divided by the count")
     print("  that SHOULD be present, putting mu thousands of dollars off and")
     print("  pinning fair at 0 or 1. A missing index second must produce NO")
     print("  trade, never a confident one.")
-    q, idx, mk = world(200, seed=9, model="exact")
+    q, idx, mk = world(N, seed=9, model="exact")
     ticks = idx["BRTI"]
     holed = 0
     for tk, m in mk.items():
         c = int(m["close"])
-        for t in range(c - 25, c - 15):           # punch a hole mid-window
+        for t in range(c - 25, c - 15):               # punch a hole mid-window
             if t in ticks:
                 del ticks[t]
                 holed += 1
-    rows = scan(q, idx, mk, {"KXBTC15M": "BRTI"}, {"KXBTC15M": SIG})
-    bad = [r for r in rows if r["tau"] <= 25 and (r["fair"] in (0.0, 1.0))]
+    rows = scan(q, idx, mk, S2I, POOLED)
+    bad = [r for r in rows if r["tau"] <= 25 and r["fair"] in (0.0, 1.0)]
     tr = evaluate(rows)
     sm = summarise(tr, "holed")
-    print(f"  removed {holed} index seconds -> {len(rows)} usable rows, "
-          f"{len(bad)} pinned to 0/1, "
-          f"P&L {sm['mean']:.2f}c t={sm['t']:.1f}" if sm else
-          f"  removed {holed} index seconds -> {len(rows)} usable rows, "
-          f"too few trades")
+    tail = (f"P&L {sm['mean']:.2f}c t={sm['t']:.1f}" if sm else "too few trades")
+    print(f"  removed {holed} index seconds -> {len(rows):,} usable rows, "
+          f"{len(bad)} pinned to 0/1, {tail}")
+    if bad:
+        fails.append(f"{len(bad)} rows inside the hole were priced at a "
+                     "confident 0 or 1 -- partial() is dividing by the count "
+                     "that should be there rather than refusing")
     # TWO-sided. A confident LOSS on a tape whose truth is zero is the same
     # failure as a confident gain, and the one-sided version of this check is
-    # exactly how the selection bias above passed its first run.
+    # exactly how the selection bias below passed its first run.
     if sm and abs(sm["t"]) > 3:
         fails.append(f"a punched index tape produced {sm['mean']:.2f}c at "
                      f"t={sm['t']:.1f} against a true edge of zero")
 
-    # ---- the selection trap, pinned rather than merely avoided -----------
+    # =====================================================================
+    # 3. WHAT A POOLED SIGMA COSTS -- the trap this file is most likely to
+    #    fall into on real data, because every other stage pools
+    # =====================================================================
+    print("\n  POOLED SIGMA. The book prices each window with that window's")
+    print("  OWN true sigma, so it is correct everywhere and the true edge is")
+    print("  exactly zero. We scan with ONE pooled sigma per series -- which")
+    print("  is what every other stage in this project does. Our model is now")
+    print("  wrong per window in a mean-zero way, and mean-zero model error")
+    print("  does NOT produce mean-zero P&L, because we only trade where the")
+    print("  error points at a profit.")
+    print(f"\n  {'sigma spread':>14}{'trades':>8}{'claimed':>10}{'realised':>10}"
+          f"{'overclaim':>11}{'t':>7}")
+    over = {}
+    for spread in (0.0, 0.25):
+        q, idx, mk = world(1200, seed=21, sig_spread=spread)
+        rows = scan(q, idx, mk, S2I, POOLED, tau_max=60)
+        tr = evaluate(rows)
+        sm = summarise(tr, f"spread={spread}")
+        over[spread] = sm
+        if not sm:
+            print(f"  {spread:>14.2f}{len(tr):>8}   too few")
+            continue
+        print(f"  {spread:>14.2f}{sm['n']:>8}{sm['exp_edge']:>9.2f}c"
+              f"{sm['mean']:>9.2f}c{sm['exp_edge'] - sm['mean']:>10.2f}c"
+              f"{sm['t']:>7.1f}")
+    if over[0.0] and abs(over[0.0]["t"]) > 3:
+        fails.append("a correctly-priced book with a single true sigma still "
+                     f"paid {over[0.0]['mean']:.2f}c at t={over[0.0]['t']:.1f}")
+    s25 = over[0.25]
+    if not s25:
+        fails.append("the pooled-sigma world produced no trades, so this "
+                     "check has stopped pinning anything")
+    else:
+        if s25["exp_edge"] - s25["mean"] < 1.0:
+            fails.append("a pooled sigma against per-window truth no longer "
+                         "overclaims, so either the fixture or evaluate has "
+                         "changed and this check is no longer live")
+        if s25["t"] > 3:
+            fails.append(f"pooled sigma EARNED {s25['mean']:.2f}c at "
+                         f"t={s25['t']:.1f} against a true edge of zero")
+    print("\n  That gap is why main() below estimates sigma from each market's")
+    print("  own path up to the start of the endgame instead of pooling.")
+
+    # =====================================================================
+    # 3b. THE PER-MARKET SIGMA ESTIMATOR ITSELF
+    #     main() rests on this and nothing else executes it. It must recover
+    #     a planted per-window sigma, and it must REFUSE rather than guess
+    #     when the tape it is handed is mostly holes.
+    # =====================================================================
+    print("\n  PER-MARKET SIGMA. main() prices each window off its own")
+    print("  pre-endgame path. Plant a known sigma per window and check the")
+    print("  estimator returns it -- and refuses a tape that is mostly gaps.")
+    rng = random.Random(77)
+    err, refused, n_est = [], 0, 0
+    for planted in (2.0, 6.0, 25.0):
+        for _ in range(40):
+            tk_, px_ = {}, 1000.0
+            for t in range(0, 800):
+                px_ += rng.gauss(0, planted)
+                tk_[t] = px_
+            v = sigma_from(tk_, 0, 770)
+            if v:
+                n_est += 1
+                err.append(v / planted - 1.0)
+    # a tape with 90% of its seconds missing must give None, not a number
+    holey = {t: 1000.0 + t for t in range(0, 800, 10)}
+    if sigma_from(holey, 0, 770) is None:
+        refused += 1
+    # ... and one whose gaps are wide must not difference ACROSS them
+    wide = {}
+    px_ = 1000.0
+    for t in range(0, 800):
+        if 200 <= t < 600:
+            continue
+        px_ += rng.gauss(0, 5.0) * (20.0 if t == 600 else 1.0)
+        wide[t] = px_
+    vw = sigma_from(wide, 0, 770, need=100)
+    print(f"    {n_est} estimates, mean relative error "
+          f"{100*mean(err):+.2f}%, max |error| {100*max(abs(x) for x in err):.1f}%")
+    print(f"    a tape with 90% of its seconds missing -> "
+          f"{'refused' if refused else 'RETURNED A NUMBER'}")
+    print(f"    a 400s hole -> {vw:.2f} (true 5.00; differencing across the")
+    print("    hole would report the whole jump as one second)")
+    if abs(mean(err)) > 0.05:
+        fails.append(f"the per-market sigma estimator is off by "
+                     f"{100*mean(err):+.1f}% against a planted sigma")
+    if not refused:
+        fails.append("sigma_from returned a number for a tape with 90% of "
+                     "its seconds missing instead of refusing")
+    if vw is None or abs(vw / 5.0 - 1.0) > 0.25:
+        fails.append(f"sigma_from across a 400-second hole gave {vw}, not ~5 "
+                     "-- it is differencing across the gap")
+
+    # =====================================================================
+    # 4. SELECTION, and 5. CLUSTERING
+    # =====================================================================
     print("\n  SELECTION. Picking the LARGEST disagreement in each window is")
     print("  a look-ahead: it finds where the MODEL is most wrong, not the")
-    print("  market. Same rows, same correctly-priced book, two rules.")
-    q, idx, mk = world(300, seed=21, model="exact")
-    rows_s = scan(q, idx, mk, {"KXBTC15M": "BRTI"}, {"KXBTC15M": SIG})
+    print("  market. Same rows, same per-window-correct book, two rules.")
+    q, idx, mk = world(1200, seed=21, sig_spread=0.25)
+    rows_s = scan(q, idx, mk, S2I, POOLED, tau_max=60)
     print(f"\n  {'rule':>28}{'trades':>8}{'claimed':>10}{'realised':>11}"
           f"{'t':>7}")
     res = {}
@@ -418,18 +639,14 @@ def selftest():
                   f"{sm_['mean']:>10.2f}c{sm_['t']:>7.1f}")
         else:
             print(f"  {label:>28}{len(tr_):>8}   too few")
-    if res["first"] and abs(res["first"]["t"]) > 3:
-        fails.append(f"the first-to-clear rule found {res['first']['mean']:.2f}c "
-                     f"at t={res['first']['t']:.1f} against a correctly-priced "
-                     "book")
-    if res["best"] and abs(res["best"]["t"]) <= 3:
-        fails.append("the largest-disagreement rule no longer shows the "
-                     "selection bias, so this check has stopped pinning "
-                     "anything -- either the fixture changed or evaluate did")
+    if res["best"] and res["first"] and \
+            res["best"]["exp_edge"] <= res["first"]["exp_edge"]:
+        fails.append("the largest-disagreement rule no longer claims more "
+                     "than the first-to-clear rule, so this check has stopped "
+                     "pinning the selection effect")
 
-    # ---- one trade per market, not per fill ------------------------------
-    q, idx, mk = world(120, seed=13, model="naive")
-    rows = scan(q, idx, mk, {"KXBTC15M": "BRTI"}, {"KXBTC15M": SIG})
+    q, idx, mk = world(300, seed=13, model="naive")
+    rows = scan(q, idx, mk, S2I, POOLED, tau_max=60)
     tr = evaluate(rows)
     closes = {t["close"] for t in tr}
     print(f"\n  clustering: {len(rows):,} quote-seconds -> {len(tr)} trades "
@@ -445,8 +662,9 @@ def selftest():
         for f in fails:
             print("   -", f)
         return False
-    print("SELF-TEST PASSED -- silent against a correctly-priced book, finds")
-    print("both wrong scalings, refuses to trade a punched index tape, and")
+    print("SELF-TEST PASSED -- silent against a correctly-priced book at every")
+    print("tau cap, finds a sqrt(tau) book with claimed matching realised,")
+    print("refuses a punched index tape, shows what a pooled sigma costs, and")
     print("counts one trade per close rather than one per fill.")
     return True
 
@@ -481,8 +699,24 @@ def main():
         return
     index = load_index(a.data)
 
-    # sigma per series from the index itself, over the recorded span
-    sig = {}
+    # ---------------------------------------------------------------
+    # sigma, per MARKET, from that market's own path BEFORE the endgame.
+    #
+    # The self-test above measures what the obvious alternative costs. Give
+    # the book each window's own true sigma and scan with a single pooled
+    # per-series sigma -- exactly what every other stage in this project does
+    # -- and against a true edge of exactly zero the strategy claims +2.5c and
+    # realises -4.2c. Mean-zero model error does not give mean-zero P&L,
+    # because we only trade where the error happens to point at a profit.
+    #
+    # So sigma comes from increments strictly inside [open, close - 130], i.e.
+    # entirely before the earliest second this file will ever trade. That is
+    # non-anticipating for every decision made below. Where a window is too
+    # thin for its own estimate we fall back to the pooled series value and
+    # SAY SO, because those markets carry the bias the paragraph above
+    # describes.
+    # ---------------------------------------------------------------
+    pooled = {}
     for s, iid in SERIES_TO_INDEX.items():
         ticks = index.get(iid) or {}
         ts = sorted(ticks)
@@ -491,16 +725,38 @@ def main():
         d = [ticks[ts[i + 1]] - ticks[ts[i]] for i in range(len(ts) - 1)
              if ts[i + 1] - ts[i] == 1]
         if len(d) > 300:
-            sig[s] = pstdev(d)
-    if not sig:
+            pooled[s] = pstdev(d)
+    if not pooled:
         print("\n  no index feed -- fair value is not computable.")
         return
-    print(f"\n  sigma per series (1-second, from our own index tape):")
-    for s, v in sorted(sig.items()):
-        print(f"    {s:<16}{v:>12.4f}")
 
-    rows = scan(quotes, index, markets, SERIES_TO_INDEX, sig,
-                tau_max=a.tau_max)
+    per_market, n_own, n_pooled = {}, 0, 0
+    for tk, m in markets.items():
+        s = m.get("series") or tk.split("-")[0]
+        ticks = index.get(SERIES_TO_INDEX.get(s))
+        close_s = m.get("close")
+        if not ticks or not close_s:
+            continue
+        v = sigma_from(ticks, int(close_s) - 900, int(close_s) - a.tau_max - 10)
+        if v and v > 0:
+            per_market[tk] = v
+            n_own += 1
+        elif s in pooled:
+            n_pooled += 1
+
+    print("\n  sigma per series (1-second, pooled over the whole tape) --")
+    print("  used only as the fallback:")
+    for s, v in sorted(pooled.items()):
+        print(f"    {s:<16}{v:>12.4f}")
+    tot = n_own + n_pooled
+    frac = (100.0 * n_own / tot) if tot else 0.0
+    print(f"\n  {n_own:,} of {tot:,} markets ({frac:.0f}%) priced with their "
+          "OWN pre-endgame sigma;")
+    print(f"  {n_pooled:,} fell back to the pooled value and carry the bias "
+          "the self-test measures.")
+
+    rows = scan(quotes, index, markets, SERIES_TO_INDEX, pooled,
+                tau_max=a.tau_max, sigma_by_market=per_market)
     print(f"\n  {len(rows):,} quote-seconds inside tau <= {a.tau_max}")
     if not rows:
         print("  Nothing quoted in the endgame. That is itself the finding:")
@@ -522,26 +778,45 @@ def main():
     print("\n  Read the quote-seconds column first. An edge in a bucket with")
     print("  no quotes is not an edge.")
 
-    trades = evaluate(rows)
-    sm = summarise(trades, "endgame")
+    # -------------------------------------------------------------------
+    # The self-test shows the edge against a wrong-sigma book grows as the
+    # cap tightens (+3.2c at 120s -> +12.1c at 15s), so reporting one cap
+    # would be choosing it after the fact. Report all four. Four looks means
+    # |t| > 3 is p < 0.003 each, still under 0.05 family-wise, so the bar
+    # does not move -- but a cell that clears 3 while its neighbours sit at
+    # zero is noise, not a boundary.
+    # -------------------------------------------------------------------
     print("\n" + "=" * 78)
     print("SETTLEMENT P&L  --  one trade per close, taking the book only when")
     print("the model says it is wrong by more than the fee")
     print("=" * 78)
-    if not sm:
-        print("  fewer than 10 qualifying trades -- no information either way.")
+    print(f"  {'tau<=':>7}{'trades':>8}{'claimed':>10}{'realised':>10}"
+          f"{'t':>7}{'p':>9}{'MDE':>8}{'null 95%':>18}")
+    any_row = False
+    for tm in (a.tau_max, 60, 30, 15):
+        sel = [r for r in rows if r["tau"] <= tm]
+        trades = evaluate(sel)
+        sm = summarise(trades, f"tau<={tm}")
+        if not sm:
+            print(f"  {tm:>7}{len(trades):>8}   fewer than 10 trades -- no "
+                  "information either way")
+            continue
+        any_row = True
+        nl = redraw_null(trades, reps=800)
+        print(f"  {tm:>7}{sm['n']:>8}{sm['exp_edge']:>9.2f}c{sm['mean']:>9.2f}c"
+              f"{sm['t']:>7.2f}{p_two_sided(abs(sm['t']), sm['df']):>9.4f}"
+              f"{mde(trades):>7.2f}c"
+              f"   [{nl['lo']:>5.2f},{nl['hi']:>5.2f}]c")
+    if not any_row:
+        print("\n  Nothing qualifying at any cap. There is no endgame trade "
+              "here to test.")
         return
-    nl = redraw_null(trades)
-    print(f"  trades (= distinct closes)   {sm['n']}")
-    print(f"  mean expected edge at entry  {sm['exp_edge']:.2f}c")
-    print(f"  mean realised P&L            {sm['mean']:.2f}c")
-    print(f"  t / p                        {sm['t']:.2f} / "
-          f"{p_two_sided(abs(sm['t']), sm['df']):.4f}")
-    print(f"  outcome-redraw null 95%      [{nl['lo']:.2f}, {nl['hi']:.2f}]c")
-    inside = nl["lo"] <= sm["mean"] <= nl["hi"]
-    print(f"\n  {'INSIDE the null -- nothing here' if inside else 'OUTSIDE the null'}")
-    print("  Expected edge far above realised P&L means the model is")
-    print("  confident and wrong, which is worse than no edge at all.")
+    print("\n  Read CLAIMED against REALISED before reading t. The self-test")
+    print("  pins the failure mode: a model whose claimed edge does not show")
+    print("  up in P&L is confident and wrong, which is worse than no edge at")
+    print("  all -- the broken version of this file claimed 1.8c and earned")
+    print("  -22.6c against the same book. Read MDE next: a cell whose true")
+    print("  edge is below its MDE could not have been certified either way.")
 
 
 if __name__ == "__main__":

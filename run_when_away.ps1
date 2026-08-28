@@ -61,9 +61,9 @@ Say "now at $head"
 # `book` is deliberately absent: preflight measures it at ~30 GB of RAM and
 # this machine has ~16 GB, so it swaps the box to death rather than failing
 # cleanly. Everything here reads the ticker/trade channels, which are small.
-$stages = @("reconcile", "implied", "calib", "voltiming", "maker", "chain",
-            "leadlag", "cross", "openwindow", "feeds", "pathstats", "proxy",
-            "book")
+$stages = @("reconcile", "implied", "term", "endgame", "calib", "voltiming", "maker",
+            "chain", "leadlag", "cross", "openwindow", "feeds", "pathstats",
+            "proxy", "book")
 
 Say "$($stages.Count) stages. maker is first and takes ~16 min; the rest are"
 Say "1-3 min each. Expect 30-60 min total."
