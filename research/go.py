@@ -134,6 +134,7 @@ SELFTESTS = [
                         "--selftest"]),
     ("maker economics", ["maker.py", "--selftest"]),
     ("vol timing", ["voltiming.py", "--selftest"]),
+    ("calibration", ["calib.py", "--selftest"]),
     # cheap, and it is the only check that looks INSIDE main() --
     # the one function no self-test in this project executes
     ("unbound names", ["unbound.py", "--selftest"]),
@@ -201,6 +202,10 @@ STAGES = [
     # already in the price. Its analytic half needs no data either.
     ("voltiming", ["research/voltiming.py", "--data", "{data}",
                    "--feeds", "{feeds}"], "{data}/ticker"),
+    # calib last: it decides whether D-FINAL's eight cells are a market
+    # mispricing or the side that happened to trade.
+    ("calib", ["research/calib.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/ticker"),
 ]
 
 
