@@ -154,6 +154,20 @@ for n in sys.argv[2:]:
 """
 
 
+def _under(path, root):
+    """Is `path` inside `root`?
+
+    normcase because this runs on Windows, where C:\\kals-repo and
+    c:\\kals-repo are the same directory and a plain startswith would answer
+    no. A hijack check that silently says "not ours" on the machine that runs
+    the data is not a check. Two bugs in this file's short life have been
+    exactly this shape -- correct on the machine it was written on.
+    """
+    a = os.path.normcase(os.path.abspath(path))
+    b = os.path.normcase(os.path.abspath(root)).rstrip(os.sep)
+    return a == b or a.startswith(b + os.sep)
+
+
 def import_probe(pkg_dir, root, names):
     """Import each name in a FRESH interpreter with `pkg_dir` first on
     sys.path, exactly as a stage is launched, and report where each came from.
@@ -181,7 +195,7 @@ def import_probe(pkg_dir, root, names):
         kind, name, detail, errname = parts
         seen.add(name)
         if kind == "OK":
-            if detail and os.path.abspath(detail).startswith(root + os.sep):
+            if detail and _under(detail, root):
                 hijacked.append((name, os.path.abspath(detail)))
         else:
             if errname == name and detail.startswith("ModuleNotFoundError"):
@@ -350,6 +364,31 @@ def selftest():
         print("\n  (the transitive-shadow reproduction needs a Python whose")
         print("   gzip imports _compression; this one does not, so it is")
         print("   skipped rather than silently passed)")
+
+    # --- 3c. the hijack check must not care how the root was spelled ------
+    # It compares a path from the child against the repo root. Spelling the
+    # root relatively, or with a trailing separator, must not change the
+    # answer -- and on Windows neither must its CASE, which is why _under
+    # normcases both sides.
+    d = world({"thing.py": "import json\n", "json.py": "def loads(s):\n    return None\n"})
+    spellings = {
+        "absolute": d,
+        "trailing separator": d + os.sep,
+        "with a dot segment": os.path.join(d, "."),
+    }
+    print("\n  The hijack check must not care how the root is spelled:")
+    base = None
+    for label, spelling in spellings.items():
+        rr = check(spelling)
+        hij = sorted(n for n, _ in rr["hijacked"])
+        print(f"    {label:>20}: hijacks = {hij}")
+        if base is None:
+            base = hij
+        elif hij != base:
+            fails.append(f"spelling the root as '{label}' changed the hijack "
+                         f"result from {base} to {hij}")
+    if not base:
+        fails.append("a research/json.py was not reported as a hijack at all")
 
     # --- 4b. THE CHECKER MUST NOT DAMAGE THE INTERPRETER IT RUNS IN -------
     # The first version of import_probe deleted names from sys.modules and
