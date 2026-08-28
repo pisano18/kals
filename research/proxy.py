@@ -92,6 +92,7 @@ def fair_from(index_at_t, strike, tau, gamma0, locked_sum=0.0, n_locked=0):
 
 
 def build(quotes, markets, index, proxies, gamma0, series_to_index,
+          only_index=None,
           min_tau=30, max_tau=880):
     """Residual quote change, paired with the change in (BRTI - each candidate)."""
     rows = defaultdict(list)
@@ -101,6 +102,16 @@ def build(quotes, markets, index, proxies, gamma0, series_to_index,
         if not m:
             continue
         iid = series_to_index.get(m.get("series") or tk.split("-")[0])
+        # Only markets whose OWN index is the one the candidates proxy. Every
+        # candidate on the real path is built from BRTI (brti_lagN, and the
+        # feeds loaded for --asset), but nothing here filtered the markets --
+        # so a DOGE market's residual was regressed on the BTC gap, whose
+        # variance is ~10^12 larger than anything DOGE-scale. Those rows are
+        # pure noise in x, which attenuates beta toward zero: a
+        # false-NEGATIVE machine. "No candidate beats the control" was partly
+        # this dilution, not a finding about the maker.
+        if only_index is not None and iid != only_index:
+            continue
         ticks, g0 = index.get(iid), gamma0.get(iid)
         if not ticks or not g0:
             continue
@@ -179,11 +190,22 @@ def report(res, label="CANDIDATE REFERENCES"):
     # a finding.
     strongest = min((v["beta"] for v in res.values()), default=0.0)
     floor = min(-1e-4, 0.3 * strongest)
+    # The bar a candidate must clear is the CONFOUND row, not zero: any
+    # sub-second quote lag loads resid negatively on every innovation-
+    # correlated candidate, and delta_confound_lag0 carries that at full
+    # strength. Beating zero while losing to the confound row is the
+    # confound, described twice.
+    conf = res.get("delta_confound_lag0")
+    conf_bar = (conf["beta"] - 2.0 * abs(conf["beta"] / conf["t"])
+                if conf and conf.get("t") else 0.0)
     best = None
     for k, v in sorted(res.items(), key=lambda kv: kv[1]["beta"]):
-        hit = (v["t"] < -3 and v["beta"] <= floor and k != "random_control")
+        hit = (v["t"] < -3 and v["beta"] <= floor
+               and v["beta"] < conf_bar
+               and k not in ("random_control", "delta_confound_lag0"))
         r = "<== the maker follows THIS" if hit else (
             "(control)" if k == "random_control" else
+            "(confound bar)" if k == "delta_confound_lag0" else
             "significant but negligible" if v["t"] < -3 else "")
         if hit and best is None:
             best = k
@@ -338,6 +360,16 @@ def main():
         cx += rnd.gauss(0, math.sqrt(g0.get("BRTI", 36.0)))
         ctrl[t] = brti[t] + cx
     proxies = {"random_control": ctrl}
+    # The CONFOUND CONTROL. The declared null was beta = 0, but zero is not
+    # the null: the recorded quote reflects the index with SOME sub-second
+    # lag (maker reaction, collector receive, last-message-in-second offset),
+    # so resid under-responds to the current second's innovation and loads
+    # negatively on ANY candidate correlated with that innovation -- which
+    # every genuine candidate is. Regressing on the raw innovation itself
+    # (brti_lag0's gap is exactly -e_t) measures that confound at full
+    # strength. A candidate is only "followed" if it beats THIS row, not
+    # zero.
+    proxies["delta_confound_lag0"] = dict(brti)
     for lag in (1, 2, 3, 5):
         proxies[f"brti_lag{lag}"] = {t + lag: v for t, v in brti.items()}
     try:
@@ -355,7 +387,9 @@ def main():
         print(f"  constituent feeds unavailable ({type(e).__name__}: {e})")
 
     print(f"  candidates: {sorted(proxies)}")
-    rows, used = build(quotes, markets, index, proxies, g0, SERIES_TO_INDEX)
+    # BRTI-built candidates test BTC markets only; see build()'s comment.
+    rows, used = build(quotes, markets, index, proxies, g0, SERIES_TO_INDEX,
+                       only_index="BRTI")
     print(f"  {used:,} markets contributed")
     report(regress(rows, "real"))
 

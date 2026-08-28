@@ -70,11 +70,46 @@ def timeseries_test(obs, label="absolute"):
         vals = list(byc.values())
         if len(vals) < 20:
             continue
-        m, sd = mean(vals), pstdev(vals)
-        se = sd / math.sqrt(len(vals)) if sd > 0 else float("inf")
+        m = mean(vals)
+        se = _mbb_se(byc) or float("inf")
         out[s] = {"mean": m, "n": len(vals), "se": se,
                   "t": m / se if se > 0 else 0.0}
     return out
+
+
+def _mbb_se(byc, B=200, seed=20260828):
+    """Moving-block-bootstrap SE of the mean over close-ordered clusters.
+
+    The iid 1/sqrt(n) SE assumes independent clusters; consecutive crypto
+    closes are neither independent (a maker's parameter error persists) nor
+    homoskedastic (vol clusters). On this project's data a nominal-95% iid
+    interval covered 69%. Same recipe as chain.py's block bootstrap.
+
+    Prefix sums make each drawn block one subtraction, because the self-test
+    calls this inside a 3-edge x 400-replication power harness: the naive
+    list-slicing version turned a 90-second self-test into a timeout.
+    """
+    vals = [v for _c, v in sorted(byc.items())]
+    n = len(vals)
+    if n < 20:
+        return None
+    b = max(2, int(round(n ** (1.0 / 3.0))))
+    starts = n - b + 1
+    k = max(1, -(-n // b))
+    cum = [0.0]
+    for v in vals:
+        cum.append(cum[-1] + v)
+    bsum = [cum[i + b] - cum[i] for i in range(starts)]
+    rng = random.Random(seed)
+    pick = rng.randrange
+    inv = 1.0 / (k * b)
+    ms = []
+    for _ in range(B):
+        t = 0.0
+        for _ in range(k):
+            t += bsum[pick(starts)]
+        ms.append(t * inv)
+    return pstdev(ms)
 
 
 def _median(xs):
@@ -100,8 +135,8 @@ def _fit(by_cluster, exclude, min_series, centre):
         vals = list(byc.values())
         if len(vals) < 20:
             continue
-        m, sd = mean(vals), pstdev(vals)
-        se = sd / math.sqrt(len(vals)) if sd > 0 else float("inf")
+        m = mean(vals)
+        se = _mbb_se(byc) or float("inf")
         out[s] = {"mean": m, "n": len(vals), "se": se,
                   "t": m / se if se > 0 else 0.0}
     return out
@@ -272,13 +307,32 @@ def build_obs(data_dir, out_dir, ttc_points=(600, 300, 120, 60, 30)):
         except Exception:
             quotes = {}
     markets = load_markets(out_dir)
-    g0 = {}
+    # CAUSAL variance: prefix sums of squared one-second increments, so each
+    # market is priced with only the ticks a trader at its cut had. The old
+    # code computed one full-sample g0 per index and used it for every
+    # market, handing the model a realised quantity -- a vol episode anywhere
+    # in the sample re-priced markets that closed before it happened.
+    gpre = {}
     for iid, ticks in index.items():
         secs = sorted(ticks)
-        d = [ticks[b] - ticks[a] for a, b in zip(secs, secs[1:]) if b - a == 1]
-        if len(d) > 200:
-            m = mean(d)
-            g0[iid] = sum((x - m) ** 2 for x in d) / len(d)
+        ts_, cum, cnt = [], [0.0], [0]
+        for a, b in zip(secs, secs[1:]):
+            if b - a == 1:
+                ts_.append(b)
+                cum.append(cum[-1] + (ticks[b] - ticks[a]) ** 2)
+                cnt.append(cnt[-1] + 1)
+        gpre[iid] = (ts_, cum, cnt)
+
+    def g0_at(iid, cut):
+        pre = gpre.get(iid)
+        if not pre:
+            return None
+        ts_, cum, cnt = pre
+        import bisect
+        i = bisect.bisect_right(ts_, cut)
+        if cnt[i] < 200:
+            return None
+        return cum[i] / cnt[i]
 
     obs = defaultdict(dict)
     for tk, q in quotes.items():
@@ -287,8 +341,8 @@ def build_obs(data_dir, out_dir, ttc_points=(600, 300, 120, 60, 30)):
             continue
         ser = m.get("series") or series_of(tk)
         iid = SERIES_TO_INDEX.get(ser)
-        ticks, gv = index.get(iid), g0.get(iid)
-        if not ticks or not gv:
+        ticks = index.get(iid)
+        if not ticks:
             continue
         close_s = int(round(m["close"]))
         qq = {t: (b + a) / 2.0 for t, b, a, _, _ in q}
@@ -308,9 +362,17 @@ def build_obs(data_dir, out_dir, ttc_points=(600, 300, 120, 60, 30)):
             vf = var_factor(ttc, [1.0])
             if vf <= 0:
                 continue
+            gv = g0_at(iid, cut)
+            if not gv or gv <= 0:
+                continue
             fair = 1.0 - ND.cdf((m["strike"] - mu) / math.sqrt(vf * gv))
-            obs[ser][(close_s, ttc)] = fair - prev
-    return dict(obs)
+            obs[ser].setdefault(close_s, []).append(fair - prev)
+    # ONE observation per (series, close). The five ttc reads of a market are
+    # five reads of the same mispricing settling on the same outcome -- the
+    # docstring always said "keyed by close-time cluster" while the key was
+    # (close_s, ttc), quintupling n and inflating every t by ~sqrt(5).
+    return {ser: {c: mean(v) for c, v in byc.items()}
+            for ser, byc in obs.items()}
 
 
 def main():

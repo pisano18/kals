@@ -815,6 +815,18 @@ def main():
         if len(good) < 60:
             print(f"  {s:>10}{len(good):>7,}   too few paired windows")
             continue
+        # implied_sigma is SIGNED now (the one-sided sd<=0 trim was itself a
+        # bias); a nonpositive cluster median means the cell was pure ATM
+        # noise, so it is dropped HERE, at the cluster level, symmetrically
+        # in effect and counted out loud.
+        n_bad = sum(1 for g in good if g[1] <= 0)
+        if n_bad:
+            print(f"    {s}: dropped {n_bad} cluster(s) with nonpositive "
+                  "median implied")
+        good = [g for g in good if g[1] > 0]
+        if len(good) < 60:
+            print(f"  {s:>10}{len(good):>7,}   too few paired windows")
+            continue
         x = ewma_logvol([g[2] for g in good], a.halflife)
         lr = [math.log(g[2] / g[1]) for g in good]
         print_gap(gap_test(x, lr, s))

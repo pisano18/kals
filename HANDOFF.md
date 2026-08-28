@@ -1,5 +1,53 @@
 # HANDOFF — read this first in a new session
 
+---
+
+## AUDIT OF 2026-08-28 — every estimator vs the 14-pattern bias catalogue
+
+A 51-agent audit read all twelve estimator modules against the fourteen bias
+patterns this project has actually shipped, then adversarially verified every
+claim. 39 claimed → 15 survived: 4 critical, 9 material, 2 cosmetic. ALL are
+now fixed (see the commit trail of 2026-08-28). The ones that changed
+conclusions:
+
+- **implied.py sampled implied vol at QUOTE times** (occupation-time): quote
+  intensity rises with vol, so every implied/realised ratio was biased UP —
+  the vol-underpricing candidate is STRONGER than published. Now an exogenous
+  per-second grid.
+- **implied.py's inversion deleted only the negative half** of a symmetric
+  error (`sd <= 0 → None`), manufacturing the 45–55c "frown" (1.166 row) out
+  of a flat surface. The inversion now returns the SIGNED estimate; medians
+  are unbiased; downstream consumers guard against rare nonpositive medians.
+- **pathstats weighted clusters 1/K where K counts FUTURE gridpoints** —
+  −1.46c of fake reversion from an exact martingale. Pooled mean +
+  cluster-robust SE now. Every previously published pathstats table is void.
+- **edge.py scored the model at the gridpoint against a trade print up to
+  60s stale** — a proper scoring rule pays the fresher forecast by
+  construction (fixture: t=13, +7.55c for 20s). Market side now reads the
+  BOOK MID at the same second.
+- **feeds.py's imbalance predictor was read up to ~1s INSIDE its own
+  prediction window** (last-write-wins bucketing) — the h=1 row was largely
+  contemporaneous. Predictor is now the prior second's state.
+- **proxy.py regressed every asset's markets on BTC-only candidates**
+  (attenuation → false negatives) and tested against a zero null when any
+  sub-second quote lag makes the honest-maker null NEGATIVE. Now BTC-only
+  markets + an explicit delta-confound control row that candidates must beat.
+- **cross.py counted each market five times** (one per ttc), used iid SEs on
+  clustered closes, and priced markets with FULL-SAMPLE index variance
+  (look-ahead). One obs per close, moving-block SE, causal prefix-sum g0.
+  Its "clean null" stands a fortiori (its t's shrink).
+
+The catalogue self-audit also matters: calib.py — excluded from the audit as
+"written this week" — carried pattern 8 (cluster by close, not market),
+caught separately the same day. Exclusions are where bugs live.
+
+STATUS OF THE ONE LIVE CANDIDATE: implied/settle-sigma = 0.895 median over
+the full 399-window recording, four series' CIs exclude 1 (BNB 0.725, DOGE
+0.754, XRP 0.820, SOL 0.842). The occupation-time fix moves these DOWN
+(stronger). Standard before trading: the same measurement, below 1, on fresh
+data the finding has never seen. The recorder is collecting that data now.
+
+
 Everything needed to continue is in this repo. Nothing lives only in a chat.
 Read this file, then `STATUS.md`, then `PLAN_V3.md`. `RUN_WHEN_HOME.md` is the
 operator's card.

@@ -147,7 +147,15 @@ def build_obs(paths, closes, index=None):
                     back = s
                 else:
                     break
-            vel = (p0 - series[back]) if back is not None else 0.0
+            # Staleness-guarded like prev and nxt. `back` used to be the last
+            # print at-or-before t-30 with NO bound, so on a thin strike
+            # "velocity over 30s" was really the move over minutes, inflating
+            # the tails of the BY RECENT MOVE split with exactly the least
+            # liquid markets. And a missing lookback used to impute vel=0.0
+            # -- a fabricated flat observation -- instead of skipping.
+            if back is None or (t - 30) - back > 30:
+                continue
+            vel = p0 - series[back]
             row = {"tk": tk, "close": int(close_s), "ttc": ttc, "p": p0,
                    "vel": vel,
                    "round": min(abs(p0 - r) for r in
@@ -173,16 +181,36 @@ def build_obs(paths, closes, index=None):
 
 
 def clustered(vals):
-    """vals: [(value, cluster)]. One observation per close-time cluster."""
+    """vals: [(value, cluster)]. Pooled mean, cluster-robust SE.
+
+    The previous version averaged within each cluster and then averaged the
+    cluster means -- weight 1/K per observation, where K is how many
+    gridpoints of that cluster qualified for the bucket. K counts gridpoints
+    AFTER t, so it is realised FUTURE information: a market that leaves the
+    bucket immediately (a move-away draw) keeps its one observation at full
+    weight, a market that stays gets each observation shrunk. The audit
+    demonstrated the consequence on an exact martingale: flat-pooled mean
+    +0.07c (truth ~0) against -1.46c from the 1/K weighting, with K=1
+    clusters alone at -12.8c. It also invalidates the file's old printed
+    excuse that the artefact was "cent quantization interacting with the
+    entry filter".
+
+    A martingale's future increment has mean zero conditional on any
+    PAST-measurable event; qualifying at time t is past-measurable, so equal
+    PER-OBSERVATION weight is unbiased. The clustering then belongs only in
+    the standard error (CR0 sandwich), not in the point estimate.
+    """
     by = defaultdict(list)
     for v, c in vals:
         by[c].append(v)
-    o = [mean(x) for x in by.values()]
-    if len(o) < 15:
+    if len(by) < 15:
         return None
-    m, sd = mean(o), pstdev(o)
-    se = sd / math.sqrt(len(o)) if sd > 0 else float("inf")
-    return {"mean": m, "n": len(o), "t": m / se if se > 0 else 0.0}
+    allv = [v for x in by.values() for v in x]
+    n = len(allv)
+    m = mean(allv)
+    g2 = sum((sum(x) - len(x) * m) ** 2 for x in by.values())
+    se = math.sqrt(g2) / n if g2 > 0 else float("inf")
+    return {"mean": m, "n": len(by), "t": m / se if se > 0 else 0.0}
 
 
 def test_split(obs, h, key, buckets, label, thresh, results):

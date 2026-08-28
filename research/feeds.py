@@ -65,7 +65,7 @@ import math
 import os
 import sys
 from collections import defaultdict
-from statistics import mean, median, pstdev
+from statistics import stdev, mean, median, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gzsalvage import iter_lines as salvage_lines   # noqa: E402
@@ -250,7 +250,11 @@ def lag_profile(x_by_sec, y_by_sec, lags=LAGS, label=""):
                 betas.append(sum(a * c for a, c in b) / dn)
         if len(betas) < 5:
             continue
-        m, sd = mean(betas), pstdev(betas)
+        # stdev, not pstdev: the blocks are a SAMPLE of the process, and the
+        # population formula understates the SE by sqrt(B/(B-1)) -- +2.6% on
+        # t at 20 blocks, +5.4% at the 10-block floor. Small, but every t in
+        # both printed tables carried it.
+        m, sd = mean(betas), (stdev(betas) if len(betas) > 1 else 0.0)
         se = sd / math.sqrt(len(betas)) if sd > 0 else float("inf")
         out[k] = {"beta": beta, "n": n, "t": m / se if se > 0 else 0.0,
                   "blocks": len(betas)}
@@ -324,7 +328,20 @@ def imbalance_test(tob, index, horizons=(1, 2, 3, 5, 10)):
         # exercised this one.
         pairs = []
         for sec in sorted(imb):
-            v = imb[sec]
+            # imb[sec] is built from the LAST venue message in bucket
+            # [sec, sec+1) -- load_tob overwrites on every message and _rx is
+            # a local receive stamp -- so a busy venue's entry is dated
+            # ~sec+0.99. The index, keyed on CF's own stamp, IS the value at
+            # sec. Regressing imb[sec] on index[sec+h]-index[sec] therefore
+            # read a predictor observed up to a second INSIDE its own
+            # response window: at h=1 that regression was mostly
+            # contemporaneous, and the decay across horizons read as
+            # "information decay" when it was the overlap shrinking. The
+            # predictor is now the PRIOR second's state, which is strictly
+            # before the window starts, on every venue and every horizon.
+            v = imb.get(sec - 1)
+            if v is None:
+                continue
             if sec in index and (sec + h) in index:
                 pairs.append((v, index[sec + h] - index[sec]))
         if len(pairs) < 300:

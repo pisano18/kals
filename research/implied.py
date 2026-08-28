@@ -86,8 +86,17 @@ def implied_sigma(price, mu, strike, tau):
     if vf <= 0:
         return None
     sd = (mu - strike) / z
-    if sd <= 0:
-        return None
+    # SIGNED, deliberately. sd's estimation error is multiplicative and
+    # symmetric (sd_est = sd_true * (1 + err/z)), and near 50c, where z is
+    # tiny, a sizeable fraction of that symmetric error lands below zero.
+    # This function used to `return None` for sd <= 0 -- deleting ONLY the
+    # negative half of a symmetric distribution -- and the audit measured
+    # the consequence on a fixture whose truth was exactly flat: the 45-55c
+    # cell median shifted from 0.998 (unbiased) to 1.032, manufacturing the
+    # "frown" the smile table then reported as a market phenomenon. The
+    # median of the SIGNED values is unbiased; every consumer of iv takes
+    # cell medians, so negatives are rare symmetric noise that cancels
+    # instead of a tail that got amputated.
     return sd / math.sqrt(vf)
 
 
@@ -107,7 +116,31 @@ def collect(index, quotes, markets, series_to_index, ttc_max=900):
         if not strike:
             continue
         lo_run = close_s - N_AVG + 1
-        for (t, bid, ask, bs, as_) in q:
+        # EXOGENOUS one-second grid, not one row per ticker message. The
+        # ticker channel is publish-on-change, so message times are chosen
+        # by the market: a second where the touch moved four times used to
+        # contribute four rows and a quiet second none -- implied sigma at a
+        # typical QUOTE, divided by a calendar-time realised sigma. Quote
+        # intensity rises with volatility, so that ratio picked up the
+        # coupling, biasing every implied/realised figure UP. One prevailing
+        # quote per second, carried forward at most 30s, is the calendar-
+        # time numerator the denominator always was.
+        last_by_sec = {}
+        for rec in q:
+            last_by_sec[rec[0]] = rec
+        grid = []
+        if last_by_sec:
+            secs_sorted = sorted(last_by_sec)
+            j = 0
+            cur = None
+            for t in range(max(secs_sorted[0], close_s - ttc_max),
+                           close_s):
+                while j < len(secs_sorted) and secs_sorted[j] <= t:
+                    cur = last_by_sec[secs_sorted[j]]
+                    j += 1
+                if cur is not None and t - cur[0] <= 30:
+                    grid.append((t, cur[1], cur[2], cur[3], cur[4]))
+        for (t, bid, ask, bs, as_) in grid:
             tau = close_s - t
             if not (1 <= tau <= ttc_max) or t not in ticks:
                 continue
@@ -123,7 +156,7 @@ def collect(index, quotes, markets, series_to_index, ttc_max=900):
                          "tau": tau, "price": mid, "iv": iv, "close": close_s,
                          "spread": ask - bid,
                          "z": (mu - strike) / max(math.sqrt(
-                             var_factor(tau, [1.0])) * iv, 1e-12)})
+                             var_factor(tau, [1.0])) * abs(iv), 1e-12)})
     return rows
 
 

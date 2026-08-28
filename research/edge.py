@@ -417,6 +417,23 @@ def make_synth(tmp, n_windows=140, sigma=6.0, rho1=0.0, seed=5,
     return markets
 
 
+def _mid_lookup(data_dir, verbose=True):
+    """ticker -> (sorted secs, {sec: mid}) from the book, for scoring the
+    market at the SAME instant as the model."""
+    from replay import load_quotes
+    q = load_quotes(data_dir, verbose=verbose)
+    out = {}
+    for tk, ser in q.items():
+        mids = {}
+        for rec in ser:
+            t, b, a = rec[0], rec[1], rec[2]
+            if b is not None and a is not None and 0 < b <= a < 1:
+                mids[t] = (b + a) / 2.0
+        if mids:
+            out[tk] = (sorted(mids), mids)
+    return out
+
+
 def run_pipeline(data_dir, markets, verbose=True):
     """Score every market against the index that actually settles it.
 
@@ -444,6 +461,7 @@ def run_pipeline(data_dir, markets, verbose=True):
     out["unmatched_markets"] = unmatched
     out["autocov_by_index"] = {}
     rows = []
+    mids_by_tk = _mid_lookup(data_dir, verbose=verbose)
     for index_id, ticks in sorted(idx.items(), key=lambda x: -len(x[1])):
         ac = autocov_increments(ticks)
         if not ac:
@@ -457,20 +475,46 @@ def run_pipeline(data_dir, markets, verbose=True):
             tape = tr.get(m["ticker"], [])
             if not tape:
                 continue
+            mq = mids_by_tk.get(m["ticker"])
             for ttc in TTC_GRID:
                 cut = close_s - ttc
-                # last print at or before the gridpoint -- the price a taker
-                # would have seen at that moment
-                prev = None
-                for (t, p, sz, side) in tape:
-                    if t <= cut:
-                        prev = (t, p)
-                    else:
-                        break
-                if prev is None:
-                    continue
-                if cut - prev[0] > 60:        # quote too stale to be the market
-                    continue
+                # THE MARKET IS THE BOOK MID AT THE GRIDPOINT, not the last
+                # trade print. The old code admitted a print up to 60s stale
+                # while the model read the index AT the gridpoint -- two
+                # forecasts on different information sets, and Brier/log-loss
+                # are proper scoring rules, so the fresher one wins by
+                # construction: dBrier collects E[(p_prev - p_cut)^2] > 0
+                # even against a book that quotes the model exactly. The
+                # file's own fixture prices that mechanism at t = 13.0 and
+                # +7.55c for a 20-second gap. A print is also a bid-or-ask
+                # draw, not a mid, adding Var(bounce) with the same sign.
+                # Both channels die when market and model are read at the
+                # same second from the book. Prints remain only as a
+                # fallback, staleness-capped at 5s and flagged, for tickers
+                # with no book coverage.
+                p_mkt = None
+                if mq is not None:
+                    secs_q, mids_q = mq
+                    lo_i, hi_i, best = 0, len(secs_q) - 1, None
+                    while lo_i <= hi_i:
+                        mi = (lo_i + hi_i) // 2
+                        if secs_q[mi] <= cut:
+                            best = secs_q[mi]
+                            lo_i = mi + 1
+                        else:
+                            hi_i = mi - 1
+                    if best is not None and cut - best <= 5:
+                        p_mkt = mids_q[best]
+                if p_mkt is None:
+                    prev = None
+                    for (t, p, sz, side) in tape:
+                        if t <= cut:
+                            prev = (t, p)
+                        else:
+                            break
+                    if prev is None or cut - prev[0] > 5:
+                        continue
+                    p_mkt = prev[1]
                 ts = cut
                 if ts not in ticks:
                     continue
@@ -482,7 +526,7 @@ def run_pipeline(data_dir, markets, verbose=True):
                     continue
                 pm = snap_to_tick(1 - ND.cdf((m["strike"] - mu) / math.sqrt(v)))
                 rows.append({"tk": m["ticker"], "close": close_s, "ttc": ttc,
-                             "p_model": pm, "p_mkt": prev[1], "y": m["result"],
+                             "p_model": pm, "p_mkt": p_mkt, "y": m["result"],
                              "spot": ticks[ts][0], "strike": m["strike"],
                              "index_id": index_id})
     out["rows"] = rows

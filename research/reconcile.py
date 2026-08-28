@@ -450,6 +450,11 @@ def real_data(data_dir, out_dir):
         # Winsorising (clip, not drop -- the catalogue's pattern 14) keeps
         # the variance comparison honest without letting one quote decide it.
         ivs_by_close = {c: median(vals) for c, vals in clus.items() if vals}
+        n_bad = sum(1 for v in ivs_by_close.values() if v <= 0)
+        if n_bad:
+            print(f"  {ser:>11}   ({n_bad} nonpositive cluster medians "
+                  "dropped -- signed-iv noise)")
+        ivs_by_close = {c: v for c, v in ivs_by_close.items() if v > 0}
         if len(ivs_by_close) < 30:
             print(f"  {ser:>11}   too few clusters ({len(ivs_by_close)})")
             continue
@@ -487,7 +492,11 @@ def real_data(data_dir, out_dir):
             if len(sel) < 30:
                 row += f"{'--':>7}"
                 continue
-            ranked = sorted(median(v) for v in sel.values())
+            ranked = sorted(x for x in (median(v) for v in sel.values())
+                            if x > 0)
+            if len(ranked) < 30:
+                row += f"{'--':>7}"
+                continue
             lo_w = ranked[max(0, int(0.02 * len(ranked)))]
             hi_w = ranked[min(len(ranked) - 1, int(0.98 * len(ranked)))]
             vv = [min(max(x, lo_w), hi_w) for x in ranked]

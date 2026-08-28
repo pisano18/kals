@@ -345,9 +345,16 @@ def main():
     got = report(res, "real")
     if res:
         cumulative(res)
-    biggest = max((v for v in g.values() if v), default=None)
-    if biggest:
-        value_of_lead(math.sqrt(biggest))
+    # BRTI's gamma, labelled as BRTI. max() over per-index variances in each
+    # index's OWN price units always returned BRTI's (~10^12 above DOGE's),
+    # and it was then printed unlabelled as "index sd" with an instruction to
+    # multiply -- wrong by up to six orders of magnitude for eleven of the
+    # twelve series. The cents table itself was safe (sigma cancels); only
+    # this header lied.
+    if g.get("BRTI"):
+        print("\n  (per-second sd below is BRTI/BTC only; other series scale"
+              " differently)")
+        value_of_lead(math.sqrt(g["BRTI"]))
     print("\n  Caveats: mid is quantized to the tick grid, which adds noise to")
     print("  the dependent variable but does not bias the slope. A peak at a")
     print("  negative lag almost certainly means a clock problem, not")
