@@ -233,7 +233,7 @@ STAGES = [
     # ratio would be worth, with the real fee and the real tapered tick. It is
     # in the report so the trading rule is written down BEFORE the number it
     # depends on is re-measured, rather than chosen after seeing it.
-    ("surface", ["research/surface.py"], None),
+    ("surface", ["research/surface.py", "--data", "{data}"], None),
     ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
      "{feeds}"),
     ("pathstats", ["research/pathstats.py", "--data", "{data}",

@@ -112,22 +112,30 @@ def gross_cents(m, r):
     return None if f is None else 100.0 * (f - m)
 
 
-def cost_cents(m):
-    """Half-spread plus taker fee, paying the ask on a one-tick-wide book."""
-    hs = half_spread_c(m)
+def cost_cents(m, hs=None):
+    """Half-spread plus taker fee, paying the ask.
+
+    `hs` defaults to half the tightest quotable spread -- the BEST case, a
+    one-tick book. Pass the observed half-spread instead wherever it is known:
+    a 1c spread at 5c is ten ticks, not one, and that single substitution
+    moves the net at 5c from +1.66c to +1.21c. The availability table below
+    does exactly that.
+    """
+    if hs is None:
+        hs = half_spread_c(m)
     ask = min(m + hs / 100.0, 0.999)
     return hs + fee_cents(ask), hs, fee_cents(ask)
 
 
-def net_cents(m, r):
+def net_cents(m, r, hs=None):
     g = gross_cents(m, r)
     if g is None:
         return None
-    c, _, _ = cost_cents(m)
+    c, _, _ = cost_cents(m, hs)
     return g - c
 
 
-def kelly(m, r):
+def kelly(m, r, hs=None):
     """Full-Kelly stake as a fraction of bankroll, buying at the ask.
 
     A binary bought at price a pays 1 and costs a, so the odds are (1-a)/a and
@@ -139,7 +147,7 @@ def kelly(m, r):
     q = true_fair(m, r)
     if q is None:
         return None
-    a = min(m + half_spread_c(m) / 100.0, 0.999)
+    a = min(m + (half_spread_c(m) if hs is None else hs) / 100.0, 0.999)
     if a >= 1.0 or a <= 0.0:
         return None
     f = (q - a) / (1.0 - a)
@@ -233,6 +241,96 @@ def grid():
     print("  be negative: with the market right, crossing a spread and paying")
     print("  a fee is a guaranteed loss. If any cell there is positive this")
     print("  file has an arithmetic bug, and the self-test checks it.")
+
+
+# ===========================================================================
+WING_BUCKETS = [(0.005, 0.02), (0.02, 0.04), (0.04, 0.06), (0.06, 0.08),
+                (0.08, 0.10), (0.10, 0.13), (0.13, 0.16), (0.16, 0.20),
+                (0.20, 0.25), (0.25, 0.30), (0.30, 0.40), (0.40, 0.50)]
+
+
+def availability(quotes, ratio):
+    """Where is anything actually QUOTED, and at what spread?
+
+    The map above says the best cells are at 5-7c, and it gets there by
+    assuming a one-tick book -- 0.1c below 10c. That is a floor on the cost of
+    crossing, not a measurement. If the wings are quoted 1c wide, the tick
+    taper buys nothing and every cell below 10c loses most of its advantage.
+    If they are not quoted at all, the best cells do not exist.
+
+    So this recomputes the net using the OBSERVED median spread per bucket.
+    It needs quotes only -- no settlements, no index, no realised sigma -- so
+    it runs on however many hours are on disk.
+    """
+    rows = []
+    for lo, hi in WING_BUCKETS:
+        n, tk, sp = 0, set(), []
+        for ticker, q in quotes.items():
+            for rec in q:
+                bid, ask = rec[1], rec[2]
+                if not (0.0 < bid < ask < 1.0):
+                    continue
+                mid = (bid + ask) / 2.0
+                cheap = min(mid, 1.0 - mid)
+                if lo <= cheap < hi:
+                    n += 1
+                    tk.add(ticker)
+                    sp.append(ask - bid)
+        if not n:
+            rows.append({"band": (lo, hi), "n": 0, "markets": 0,
+                         "spread": None, "net": None, "best": None})
+            continue
+        sp.sort()
+        med = sp[len(sp) // 2]
+        m = (lo + hi) / 2.0
+        rows.append({"band": (lo, hi), "n": n, "markets": len(tk),
+                     "spread": med,
+                     "net": net_cents(m, ratio, hs=100.0 * med / 2.0),
+                     "best": net_cents(m, ratio)})
+    return rows
+
+
+def availability_table(rows, ratio):
+    print("\n" + "=" * 78)
+    print("IS THE MAP REACHABLE? -- observed quotes, observed spreads")
+    print("=" * 78)
+    print("  The table above assumed a one-tick book. This one uses the")
+    print("  spread that is actually resting there.")
+    print(f"\n  {'cheap side':>12}{'quote-secs':>12}{'markets':>9}"
+          f"{'med spread':>12}{'ticks':>7}{'net @1 tick':>13}"
+          f"{'NET observed':>14}")
+    reach = None
+    for r_ in rows:
+        lo, hi = r_["band"]
+        lbl = f"{100*lo:.0f}-{100*hi:.0f}c"
+        if not r_["n"]:
+            print(f"  {lbl:>12}{0:>12}{'--':>9}{'--':>12}{'--':>7}"
+                  f"{(r_['best'] if r_['best'] is not None else 0):>12.2f}c"
+                  f"{'never quoted':>14}")
+            continue
+        m = (lo + hi) / 2.0
+        ticks = 100.0 * r_["spread"] / tick_cents(m)
+        if r_["net"] is not None and (reach is None or r_["net"] > reach[1]):
+            reach = (lbl, r_["net"], r_["n"], r_["markets"])
+        print(f"  {lbl:>12}{r_['n']:>12,}{r_['markets']:>9}"
+              f"{100*r_['spread']:>11.2f}c{ticks:>7.1f}"
+              f"{r_['best']:>12.2f}c{r_['net']:>13.2f}c")
+    print("\n  'ticks' is the observed spread divided by the tightest one the")
+    print("  exchange allows there. A 1c spread at 5c is TEN ticks, and the")
+    print("  whole advantage of the tapered tick is gone.")
+    if reach:
+        print(f"\n  Best REACHABLE cell at r={ratio:.3f}: {reach[0]} at "
+              f"{reach[1]:+.2f}c net, over {reach[2]:,} quote-seconds in "
+              f"{reach[3]:,} markets.")
+        if reach[1] <= 0:
+            print("  That is not positive. On the spreads actually quoted,")
+            print("  this mispricing does not pay anywhere.")
+    else:
+        print("\n  Nothing quoted in any wing bucket. The map is unreachable")
+        print("  on this tape, and that is the finding.")
+    print("\n  Read quote-seconds and markets before reading net. A bucket")
+    print("  with 400 quote-seconds in 3 markets is one accident, not a")
+    print("  tradeable region.")
 
 
 # ===========================================================================
@@ -374,6 +472,40 @@ def selftest():
     print("  This catches a sign error, a missing cost, or a tau dependence.")
     print("  It would NOT catch a 0.2c error, and nothing here claims it does.")
 
+    # --- 4b. the availability table must use the OBSERVED spread ----------
+    print("\n  AVAILABILITY. Feed it a book quoted one tick wide and a book")
+    print("  quoted ten ticks wide at the same prices. The net must fall,")
+    print("  because a wide spread costs what it costs whatever the tick is.")
+    def _book(width):
+        q = {}
+        for i in range(40):
+            recs = []
+            for k, m in enumerate((0.05, 0.07, 0.12, 0.22)):
+                recs.append((1000 + k, m - width / 2.0, m + width / 2.0,
+                             100, 100))
+            q[f"T{i}"] = recs
+        return q
+    tight = availability(_book(0.001), 0.895)
+    wide = availability(_book(0.010), 0.895)
+    print(f"\n  {'cheap side':>12}{'1-tick net':>13}{'10-tick net':>14}")
+    for a_, b_ in zip(tight, wide):
+        if a_["n"] and b_["n"]:
+            lo, hi = a_["band"]
+            print(f"  {f'{100*lo:.0f}-{100*hi:.0f}c':>12}"
+                  f"{a_['net']:>12.2f}c{b_['net']:>13.2f}c")
+            if b_["net"] >= a_["net"]:
+                fails.append(f"a ten-tick spread in {100*lo:.0f}-{100*hi:.0f}c "
+                             "was not costlier than a one-tick one -- the "
+                             "observed spread is being ignored")
+    if not any(x["n"] for x in tight):
+        fails.append("the availability table found no quotes in a book that "
+                     "quotes 4 prices in 40 markets")
+    # a bucket nothing quotes must report never-quoted, not a number
+    empty = [x for x in tight if not x["n"]]
+    if not empty:
+        fails.append("every bucket reported quotes, including ones the "
+                     "fixture never quoted in")
+
     # --- 5. the NO side must be worth exactly the same --------------------
     print("\n  Symmetry: buying NO at mid 1-m must be worth what buying YES")
     print("  at m is worth. If it is not, one of the two is mis-stated.")
@@ -431,6 +563,9 @@ def main():
     ap.add_argument("--ratio", type=float, default=0.895,
                     help="implied/true sigma. 0.895 is the recorded window's "
                          "median; 0.725 is BNB's point estimate.")
+    ap.add_argument("--data", default="./kalshi_data",
+                    help="if quotes are found here, the map is re-costed with "
+                         "the spreads actually quoted")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
@@ -441,6 +576,26 @@ def main():
     table(a.ratio)
     breakevens()
     grid()
+
+    # The map above is a floor on cost. If there are quotes on disk, replace
+    # the assumed one-tick spread with the one actually resting there. This
+    # needs quotes ONLY -- no settlements, no index -- so it runs on any tape.
+    try:
+        from replay import load_quotes
+        quotes = load_quotes(a.data)
+    except Exception as e:
+        quotes = None
+        print(f"\n  (no quotes loaded: {type(e).__name__}: {e})")
+    if quotes:
+        availability_table(availability(quotes, a.ratio), a.ratio)
+    else:
+        print("\n" + "=" * 78)
+        print("  NO QUOTES ON DISK, so every cost above is the best case: a")
+        print("  one-tick book. Run this with --data pointing at kalshi_data")
+        print("  to re-cost the map with the spreads actually quoted. Until")
+        print("  then the 5-7c cells are a hypothesis about liquidity, not a")
+        print("  measurement of it.")
+        print("=" * 78)
     print("\n" + "=" * 78)
     print("READ THIS BEFORE READING ANYTHING ABOVE")
     print("=" * 78)
@@ -449,10 +604,12 @@ def main():
     print("  any of it is actionable:")
     print("   1. implied/settle below 1 on FRESH data the finding has never")
     print("      seen -- not the window it was found in.")
-    print("   2. quotes actually resting in the wings. The cost column")
-    print("      assumes a one-tick book; ZEC quotes 7c and NEAR 8c, and")
-    print("      neither is tradeable at any tick. This file cannot see that;")
-    print("      the quote-availability tables in the other stages can.")
+    print("   2. quotes actually resting in the wings at a spread near the")
+    print("      tick. The map assumes a one-tick book, which is a FLOOR on")
+    print("      the cost and not a measurement -- ZEC quotes 7c and NEAR 8c")
+    print("      and neither is tradeable at any tick. The availability table")
+    print("      re-costs every cell with the spread actually quoted; read it")
+    print("      instead of the map wherever it has data.")
     print("   3. the market wrong about SIGMA and right about MU. If it is")
     print("      also wrong about mu, the sign of all of this is unknown.")
 
