@@ -103,7 +103,7 @@ tradeable. `feeds.py` shows the replica lags the published index by 0–1s, whic
 is the wrong comparison — the comparison that matters is replica vs *book*.
 **Kill** replica never leads the book.
 
-### A6. Volatility term structure across τ  ·  NOT BUILT
+### A6. Volatility term structure across τ  ·  `research/term.py`  ·  **BUILT**
 **Mechanism** `var_factor(τ)` is exact and known. Implied σ backed out at
 τ = 800 and at τ = 200 must agree. If the market prices a flat σ across τ while
 the true term structure is not flat, the disagreement is arbitrage between two
@@ -115,6 +115,34 @@ error — both are exploitable, and this needs **no directional view at all**.
 **Kill** slope indistinguishable from zero after clustering by close time.
 **Attractive because** it is a within-market comparison, so it is immune to the
 realised-σ estimator bias that threatens A1's level term.
+**BUILT, and sharper than the original idea.** Rather than only asking "is the
+slope zero", the τ-profile of the inverted σ is a *fingerprint* of the market's
+variance formula: flat if it uses the exact one, exploding into the close
+(9.7× at τ=10) if it uses √τ, collapsing below 40s if it uses √(τ−39.5).
+Self-test recovers a planted √τ book at β = 0.991 [0.981, 1.015]. A genuine
+rising-vol *view* is separated from an arithmetic *error* by the pair of betas,
+not either alone (√τ book: 0.991/−0.446; 40% rising view: 0.185/−0.175).
+**And endgame.py has already priced the √τ case at +6.5c inside 60s.**
+**Cost of building it:** found that `implied.collect`'s 30-second carry-forward
+inverts stale quotes through a collapsed `var_factor` — 2s of staleness alone
+fakes β = +0.062 (t = 6.0) on a flat book. Fixed; the level results were biased
+UP by it, so they were conservative against the sub-1 finding.
+
+### A7. WHERE a σ mispricing pays  ·  `research/surface.py`  ·  **BUILT, no data needed**
+**Mechanism** not an edge of its own — the map from A1's number to a trade. If
+implied σ is too low, prices are too confident, so the cheap side is the one
+below 50¢. `z_true = z_market · r`, and **τ cancels exactly**, so the edge
+depends on price alone.
+**Result at r = 0.895** net is positive below ~30¢ and negative above, best at
+7¢ (+1.82¢). A structural cliff at 10¢ where the tick goes 0.1¢ → 1¢ makes the
+cost of crossing jump 10×. Break-even σ error: **1.8–2.5% below 10¢**, 10.7% at
+30¢, never at 50¢.
+**Kill** the availability table. The map assumes a one-tick book; if the wings
+are quoted 1¢ wide the taper buys nothing, and if they are not quoted at all the
+best cells do not exist. `surface.py --data` re-costs every cell with the
+observed spread. **This is now the binding question for the whole candidate.**
+**Why it is here** so the rule is written down *before* the number is
+re-measured, rather than chosen after seeing the result.
 
 ---
 

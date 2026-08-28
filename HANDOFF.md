@@ -2,6 +2,123 @@
 
 ---
 
+## 2026-08-28 (later) — endgame repaired, and a rule written down before the number
+
+Three things landed after the audit. Nothing here has touched real data yet;
+all of it is arithmetic and fixtures.
+
+### 1. `endgame.py` part 2 was broken by its own fixture, in two ways
+
+It had been failing since it was written, and the estimator was never at fault.
+
+- `strike = settle + gauss(0, 3.0)` drew the strike from the **future**
+  settlement value, so `settle - strike` was independent of everything knowable
+  at decision time and the true probability of every market was 50%. Measured
+  directly: rows the model priced at 0.041 won **27.4%** of the time; rows it
+  priced at 0.959 won **76%**. A book on `sqrt(tau)` — pulled toward 50c by a
+  sigma 9.7x too large — was therefore *closer to the truth* than the exact
+  model, and fading it correctly lost 22.6c.
+- Each window reset `px = S0` and wrote ticks over `[close-900, close]`, and
+  `close(w) - 900 == close(w-1)`, so every window **clobbered the previous
+  window's final settlement print** with a value ~180 dollars away. `settle`
+  was computed before the clobber; `fair()` read after it.
+
+Repaired (one continuous tape, `strike(N+1) == settle(N)`), it is silent
+against a correctly-priced book at every tau cap and finds a `sqrt(tau)` book
+at **+6.5c (t=4.1)** inside 60s rising to **+12.1c (t=6.4)** inside 15s — with
+**claimed edge matching realised P&L inside a standard error in every cell**.
+That agreement is the assertion. Detection alone is cheap.
+
+Two results worth keeping from the repair:
+
+- A book on `sqrt(tau-39.5)` is **invisible**, and not because the estimator is
+  weak: that approximation collapses below ~40s, driving its own quotes outside
+  the range the exchange can quote. Its error region censors itself.
+- **A pooled sigma manufactures edge.** Book quotes each window's own true
+  sigma, scan uses one pooled sigma per series — true edge exactly zero,
+  claimed **+2.5c**, realised **−4.2c**, stable across seeds. `endgame.main()`
+  now prices each market off its own pre-endgame path. *Every other stage in
+  this project pools.*
+
+### 2. `term.py` — the first vol measurement immune to our own sigma estimator
+
+Every other vol result here is a **level**: implied over a realised sigma we
+estimated, so any bias in our estimator lands in the answer. This measures a
+**shape** within a single market against itself. Invert every quote through the
+exact `var_factor`: a market using the same formula is **flat in tau**, whatever
+it believes. `sqrt(tau)` makes implied sigma explode into the close (9.7x at
+tau=10); `sqrt(tau-39.5)` makes it collapse below 40s.
+
+Self-test recovers a planted `sqrt(tau)` book at **beta = 0.991 [0.981, 1.015]**
+and `sqrt(tau-39.5)` at 1.153, reads flat on a flat book, and separates a
+genuine rising-vol *view* from an arithmetic *error* by the **pair** of betas
+(a sqrt(tau) book reads 0.991/−0.446; a 40% rising-vol view reads 0.185/−0.175).
+
+**It found a real bias in `implied.collect` on the way.** The 30-second
+carry-forward inverts a stale quote through a `var_factor` that has since
+collapsed: sd/sigma falls from 0.893 at tau=20 to 0.327 at tau=10, so a
+30s-old quote at tau=10 returns **~6.8x** the sigma the quoter used — a
+rising-into-the-close bias with exactly the shape of the signature term.py
+looks for. On a fixture whose truth is flat, 2s of allowed staleness alone gives
+beta = **+0.062 at t = 6.0**. `collect()` now carries the quote's age; term.py
+drops any quote whose sd(tau) has moved >2% since it was posted, and reads
+0.000. **The level results in implied.py are biased UP by this, which makes
+every ratio it reports conservative against the finding that the ratio is
+below 1.**
+
+### 3. `surface.py` — the map from the finding to a trade, written down first
+
+The project had a candidate (implied/true sigma = 0.895) and no answer to
+"which contract, at what price, for how much". That needs no data.
+
+If the market's sigma is too low its prices are too **confident**, so the cheap
+side is always the one below 50c. A market quoting mid `m` believes
+`z_m = Phi^-1(m)`, the true z is `z_m * r`, and true fair is `Phi(z_m * r)`.
+**The var_factor cancels, so the edge does not depend on tau at all.** Only the
+cost depends on price: the quadratic fee peaks at 50c, and the tick is tapered
+(0.1c below 10c, 1c above).
+
+At r = 0.895:
+
+| mid | gross | cost | NET | break-even r |
+|---|---|---|---|---|
+| 5c | 2.05c | 0.39c | **+1.66c** | 0.978 |
+| 7c | 2.33c | 0.51c | **+1.82c** | 0.975 |
+| 10c | 2.57c | 1.16c | +1.41c | 0.951 |
+| 16c | 2.67c | 1.46c | +1.21c | 0.941 |
+| 30c | 1.94c | 1.98c | −0.04c | 0.893 |
+| 50c | 0.00c | 2.25c | −2.25c | never |
+
+Positive below ~30c, negative above, best at 7c. There is a **structural cliff
+at 10c**: the tick goes 0.1c → 1c, so the cost of crossing jumps 10x in one step
+while the gross edge barely moves. Below 10c the market only has to be wrong
+about sigma by **1.8–2.5%** for the trade to pay; at 30c it must be wrong by
+10.7%; at 50c no error is ever enough. **Fourth independent line pointing away
+from 50c.**
+
+Verified not against itself but against a settled simulation — real 900s tape,
+real 60-print settlement, market quoting `r × sigma`, one trade per window held
+to expiry. Analytic vs simulated agrees to |t| ≤ 1.2 across four cells while
+mean tau moves from 342s to 825s, which is the tau-cancellation tested rather
+than asserted. The `r = 0.999` row correctly **loses** 1.5c: a market that is
+right must cost you the spread and the fee.
+
+**The map assumes a one-tick book, which is a floor and not a measurement**, and
+that assumption does most of the work below 10c. `surface.py --data` re-costs
+every cell with the observed median spread per bucket, with quote-seconds and
+distinct markets beside it. **Read that table, not the map, wherever it has
+data.** If the wings are quoted 1c wide, the taper buys nothing; if they are not
+quoted at all, the best cells do not exist.
+
+### What this changes about what to do next
+
+The order of operations is now: `surface` (no data) says where to look,
+`term` says whether the market's error is a formula or a view, `endgame` prices
+the formula case, and `implied`/`reconcile` say whether r is below 1 at all —
+on **fresh** data. All four are in `run_when_away.ps1`.
+
+---
+
 ## AUDIT OF 2026-08-28 — every estimator vs the 14-pattern bias catalogue
 
 A 51-agent audit read all twelve estimator modules against the fourteen bias
