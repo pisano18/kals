@@ -80,15 +80,65 @@ def band_of(tau):
 
 
 # ===========================================================================
+def outcome_of(m):
+    """1.0 / 0.0 / None from a market's settled result.
+
+    fulltape and replay both write `result` as a FLOAT (1.0 or 0.0); the API
+    itself uses the strings "yes"/"no". The first version of this file tested
+    `str(result).lower() in ("yes","true","1")`, which turns 1.0 into "1.0"
+    and matches nothing -- so every one of 3,600 settled markets read as a
+    loss, every realized rate came out 0.000, and every t was -1.6 million.
+
+    A number that absurd is easy to catch. A subtler parse failure is not,
+    which is why sane_or_die below refuses to print a table whose overall
+    outcome rate is impossible rather than trusting this function.
+    """
+    r = m.get("result")
+    if r is None:
+        return None
+    if isinstance(r, bool):
+        return 1.0 if r else 0.0
+    if isinstance(r, (int, float)):
+        return 1.0 if float(r) >= 0.5 else 0.0
+    t = str(r).strip().lower()
+    if t in ("yes", "true", "1", "1.0", "y"):
+        return 1.0
+    if t in ("no", "false", "0", "0.0", "n"):
+        return 0.0
+    return None
+
+
+def sane_or_die(rows, label=""):
+    """A calibration table is only meaningful if outcomes look like outcomes.
+
+    Across every bucket and band, YES should resolve somewhere near half the
+    time -- the buckets span 0 to 1 and the sample is dominated by the middle.
+    A rate of 0.000 or 1.000 is not a market discovery, it is a field that did
+    not parse, and printing a t of -1.6 million as though it were a finding is
+    worse than printing nothing.
+    """
+    if not rows:
+        return True
+    rate = sum(r[4] for r in rows) / len(rows)
+    if 0.05 <= rate <= 0.95:
+        return True
+    print(f"\n  *** REFUSING TO REPORT {label}: the overall YES rate across "
+          f"{len(rows):,} observations is {rate:.3f}.")
+    print("  That is not a market, it is an outcome field that did not parse.")
+    print("  Check markets.json: `result` is written as a float 1.0/0.0 by")
+    print("  fulltape and as \"yes\"/\"no\" by the API.")
+    return False
+
+
 def rows_from_prints(quotes, trades, markets):
     """One row per trade: the print price, its market, its tau band."""
     out = []
     for tk, tr in trades.items():
         m = markets.get(tk)
-        if not m or m.get("result") is None:
+        won = outcome_of(m) if m else None
+        if won is None:
             continue
         close_s = int(m["close"])
-        won = 1.0 if str(m["result"]).lower() in ("yes", "true", "1") else 0.0
         for (t, price, _size, _side) in tr:
             b = band_of(close_s - t)
             if b is None or not (0.0 < price < 1.0):
@@ -132,10 +182,10 @@ def rows_from_mids(quotes, trades, markets):
     out = []
     for tk, tr in trades.items():
         m = markets.get(tk)
-        if not m or m.get("result") is None or tk not in quotes:
+        won = outcome_of(m) if m else None
+        if won is None or tk not in quotes:
             continue
         close_s = int(m["close"])
-        won = 1.0 if str(m["result"]).lower() in ("yes", "true", "1") else 0.0
         secs, mids = _mid_index(quotes[tk])
         if len(secs) < 5:
             continue
@@ -161,10 +211,10 @@ def rows_from_grid(quotes, markets, step=GRID_STEP):
     out = []
     for tk, q in quotes.items():
         m = markets.get(tk)
-        if not m or m.get("result") is None:
+        won = outcome_of(m) if m else None
+        if won is None:
             continue
         close_s = int(m["close"])
-        won = 1.0 if str(m["result"]).lower() in ("yes", "true", "1") else 0.0
         secs, mids = _mid_index(q)
         if len(secs) < 5:
             continue
@@ -441,6 +491,38 @@ def selftest():
                      "posterior; trade-time sampling is biased and the grid "
                      "column is the only one to read")
 
+    # ---- 5. the outcome field, and the gate that catches it -------------
+    print("\n5. THE OUTCOME FIELD. fulltape writes `result` as a FLOAT")
+    print("   1.0/0.0; the API uses \"yes\"/\"no\". Testing")
+    print("   str(result).lower() in (\"yes\",\"true\",\"1\") turns 1.0 into")
+    print("   \"1.0\" and matches nothing, so all 3,600 settled markets read")
+    print("   as losses and every t came out at -1.6 million.")
+    CASES = [("float 1.0/0.0", 1.0, 1.0), ("float 0.0", 0.0, 0.0),
+             ("int 1", 1, 1.0), ("string yes", "yes", 1.0),
+             ("string no", "no", 0.0), ("string YES", "YES", 1.0),
+             ("bool True", True, 1.0), ("string 1.0", "1.0", 1.0),
+             ("missing", None, None), ("garbage", "pending", None)]
+    print(f"\n  {'stored as':>18}{'value':>10}{'parsed':>10}{'want':>10}")
+    for name, val, want in CASES:
+        m = {} if val is None else {"result": val}
+        got = outcome_of(m)
+        print(f"  {name:>18}{str(val):>10}{str(got):>10}{str(want):>10}"
+              + ("" if got == want else "   *** WRONG ***"))
+        if got != want:
+            fails.append(f"outcome_of({val!r}) gave {got!r}, expected {want!r}")
+
+    # and the gate must refuse a table built from a broken parse
+    print("\n   The gate: a table whose overall YES rate is impossible must")
+    print("   be REFUSED, not printed. It is the backstop for the next parse")
+    print("   bug, which will not be this one.")
+    good = [((480, 900), 0.5, 0.5, f"T{i}", float(i % 2)) for i in range(200)]
+    broken = [((480, 900), 0.5, 0.5, f"T{i}", 0.0) for i in range(200)]
+    if not sane_or_die(good, "a healthy table"):
+        fails.append("the gate rejected a table with a 50% YES rate")
+    if sane_or_die(broken, "an all-zero table"):
+        fails.append("the gate ACCEPTED a table where nothing ever resolved "
+                     "yes -- it would have passed the -1.6 million t through")
+
     print("\n" + "=" * 78)
     if fails:
         print("*** SELF-TEST FAILED ***")
@@ -479,9 +561,12 @@ def main():
         print("  nothing to measure.")
         return
 
-    tabs = {"print": calibrate(rows_from_prints(quotes, trades, markets)),
-            "mid": calibrate(rows_from_mids(quotes, trades, markets)),
-            "grid": calibrate(rows_from_grid(quotes, markets))}
+    raw = {"print": rows_from_prints(quotes, trades, markets),
+           "mid": rows_from_mids(quotes, trades, markets),
+           "grid": rows_from_grid(quotes, markets)}
+    if not all(sane_or_die(v, k) for k, v in raw.items()):
+        return
+    tabs = {k: calibrate(v) for k, v in raw.items()}
     for k, t in tabs.items():
         print(f"  {k:>6}: {len(t)} cells with enough markets")
 

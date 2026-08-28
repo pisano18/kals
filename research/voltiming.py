@@ -637,6 +637,8 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--data", default="./kalshi_data")
     ap.add_argument("--feeds", default="./feed_data")
+    ap.add_argument("--out", default="./fulltape",
+                    help="where fulltape wrote markets.json")
     ap.add_argument("--halflife", type=float, default=8.0,
                     help="windows; 8 = two hours of 15-minute closes")
     ap.add_argument("--tau-lo", type=int, default=300)
@@ -664,7 +666,7 @@ def main():
         return
     try:
         quotes = load_quotes(a.data)
-        markets = load_markets(".")
+        markets = load_markets(a.out)   # NOT "." -- it lives beside the tapes
         index = load_index(a.data)
     except Exception as e:
         print(f"  {type(e).__name__}: {e}")

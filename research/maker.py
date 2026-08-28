@@ -215,6 +215,7 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
         if not close_s or len(series) < 30:
             continue
         mids = {t: (b + a) / 2.0 for t, b, a, _, _ in series}
+        spr = {t: (a - b) for t, b, a, _, _ in series}
         secs = sorted(mids)
         if len(secs) < 30:
             continue
@@ -251,11 +252,15 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
                 # different questions -- 78% against 25%. A pooled number is
                 # dominated by the mid-book, which is exactly the region the
                 # arithmetic says cannot work.
-                hit[h].append((sgn * (m1 - m0) * 100.0, close_s, m0))
+                hit[h].append((sgn * (m1 - m0) * 100.0, close_s, m0,
+                               spr.get(t, spr.get(max(
+                                   (x for x in secs if x < t), default=t),
+                                   0.01))))
                 # same moments, same moves, RANDOM sign: isolates whether the
                 # taker's direction carries information from whether trades
                 # merely happen in volatile seconds
-                shuf[h].append((flip * (m1 - m0) * 100.0, close_s, m0))
+                shuf[h].append((flip * (m1 - m0) * 100.0, close_s, m0,
+                                0.0))
     return hit, shuf
 
 
@@ -602,40 +607,56 @@ def main():
                   f"{p_two_sided(sf['t'], sf['df']):>10.4f}")
 
     print("\n" + "=" * 78)
-    print("BY PRICE  --  the pooled number above answers the wrong question")
+    print("BY PRICE  --  the pooled number answers the wrong question, and")
+    print("             so does a flat half-spread")
     print("=" * 78)
-    print("  The fee is 0.07*p*(1-p) and the break-even uninformed share is")
-    print("  fee/(fee+h). At 50c that is 78%; at 5c with the same 1c of")
-    print("  adverse selection it is 25%. Those are different propositions,")
-    print("  and a pooled average is dominated by the mid-book -- the one")
-    print("  region the arithmetic says cannot work at any q.\n")
-    print(f"  {'price':>12}{'fills':>8}{'clusters':>10}{'markout':>11}"
-          f"{'t':>7}{'fee':>8}{'net':>9}{'q needed':>10}   verdict")
+    print("  The fee is 0.07*p*(1-p), so 50c and 5c are different questions.")
+    print("  But the TICK is different too, and that is what an earlier")
+    print("  version of this table got wrong. The API's price_ranges give")
+    print("  0.1c below 10c and above 90c, 1c in between -- so a one-tick")
+    print("  quote in the wings captures 0.05c, not the 0.5c this table used")
+    print("  to assume. That assumption is what made the two wing buckets")
+    print("  look profitable. They are not, at one tick.")
+    print("\n  So the honest column is 'need': the half-spread you must")
+    print("  actually capture to break even, which is just the markout. Next")
+    print("  to it is what the book was really quoting there.\n")
+    print(f"  {'price':>10}{'fills':>9}{'clus':>6}{'markout':>10}{'t':>7}"
+          f"{'tick':>7}{'obs spr':>9}{'capture':>9}{'need':>8}{'net':>9}"
+          f"   verdict")
     H1 = HORIZONS[0]
     buckets = [(0.00, 0.08), (0.08, 0.16), (0.16, 0.30), (0.30, 0.70),
                (0.70, 0.84), (0.84, 0.92), (0.92, 1.00)]
+
+    def tick_c(p):
+        return 0.1 if (p < 0.10 or p > 0.90) else 1.0
+
     for lo, hi in buckets:
         sel = [r for r in hit[H1] if len(r) > 2 and lo <= r[2] < hi]
         c = clustered(sel)
         mid_p = (lo + hi) / 2.0
-        fee = 100.0 * 0.07 * mid_p * (1.0 - mid_p)
         label = f"{100*lo:.0f}-{100*hi:.0f}c"
         if not c:
-            print(f"  {label:>12}{len(sel):>8,}{'--':>10}"
-                  f"{'too few clusters':>28}")
+            print(f"  {label:>10}{len(sel):>9,}{'--':>6}"
+                  f"{'too few clusters':>30}")
             continue
         h_cost = c["mean"]
-        # A maker quoting one tick wide earns 0.5c and pays h_cost per fill.
-        net = 0.5 - h_cost
-        q = fee / (fee + h_cost) if h_cost > 0 else 0.0
-        verdict = ("needs " + f"{100*q:.0f}% uninformed" if h_cost > 0
-                   else "no adverse selection measured")
-        print(f"  {label:>12}{len(sel):>8,}{c['n']:>10}{h_cost:>10.3f}c"
-              f"{c['t']:>7.1f}{fee:>7.2f}c{net:>8.3f}c"
-              f"{(100*q if h_cost > 0 else 0):>9.0f}%   {verdict}")
-    print("\n  'q needed' is the fraction of counterparties that must be")
-    print("  uninformed for quoting at that price to break even. Read the")
-    print("  wings, not the average.")
+        tk = tick_c(mid_p)
+        obs = sorted(r[3] * 100.0 for r in sel if len(r) > 3)
+        obs_spr = obs[len(obs) // 2] if obs else float("nan")
+        # You capture half of whatever spread you can actually quote. One
+        # tick is the floor; the book's own median spread is what a quote
+        # sitting AT the touch would earn.
+        cap = (obs_spr / 2.0) if obs else (tk / 2.0)
+        net = cap - h_cost
+        print(f"  {label:>10}{len(sel):>9,}{c['n']:>6}{h_cost:>9.3f}c"
+              f"{c['t']:>7.1f}{tk:>6.1f}c{obs_spr:>8.2f}c{cap:>8.3f}c"
+              f"{h_cost:>7.3f}c{net:>8.3f}c   "
+              + ("PAYS" if net > 0 else "loses"))
+    print("\n  'capture' is half the book's OWN median spread at that price,")
+    print("  measured on the quote immediately before each fill -- not an")
+    print("  assumption. 'need' is the markout. Quoting pays only where")
+    print("  capture exceeds need, and only if you can actually sit at the")
+    print("  touch for that whole spread rather than one tick inside it.")
 
     print("\n  BREAK-EVEN UNINFORMED SHARE -- q = fee/(fee+h). Below this")
     print("  fraction of noise flow, quoting loses to the fee theorem no")
