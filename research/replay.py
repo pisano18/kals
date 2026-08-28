@@ -217,6 +217,51 @@ def load_quotes(data_dir, verbose=True, schema=None):
         if verbose:
             print(f"  quotes: no schema.json, discovered {tick}")
 
+    # A CACHED SCHEMA THAT EXPLAINS NONE OF THE DATA IS NOT A SCHEMA.
+    #
+    # schema.json holds the field names doctor.py found in the REAL collector
+    # output -- currently msg.yes_bid_dollars. Every self-test fixture in this
+    # repo writes the canonical msg.yes_bid. So on any machine that has run
+    # doctor.py, the cached schema is applied to synthetic data it does not
+    # describe, every message is skipped, and the stage reports an empty
+    # result. leadlag.py's self-test failed exactly this way on the operator's
+    # machine while passing on a machine with no schema.json -- and leadlag is
+    # the stage that produced the "the book LEADS the index" refutation.
+    #
+    # The same guard protects the real path: Kalshi renamed these fields once
+    # already and 68,976,084 of 68,976,084 deltas went unparsed while every
+    # stage exited 0. A schema that matches nothing must be abandoned, not
+    # trusted.
+    if tick.get("yes_bid"):
+        probe = 0
+        checked = 0
+        for m in read_jsonl_gz(pattern):
+            checked += 1
+            if get_path(m, tick.get("yes_bid")) is not None:
+                probe += 1
+                if probe >= 5:
+                    break
+            if checked >= 400:
+                break
+        if checked and not probe:
+            if verbose:
+                print(f"  quotes: schema.json says {tick.get('yes_bid')} but "
+                      f"no message in the first {checked} has it -- "
+                      "rediscovering from the data")
+            paths = defaultdict(lambda: defaultdict(int))
+            seen = 0
+            for m in read_jsonl_gz(pattern):
+                walk_paths(m, out=paths)
+                seen += 1
+                if seen >= 1500:
+                    break
+            tick = {c: find_field(paths, c) for c in
+                    ("ticker", "yes_bid", "yes_ask", "bid_size", "ask_size",
+                     "ts")}
+            tick = {k: v for k, v in tick.items() if v}
+            if verbose:
+                print(f"  quotes: rediscovered {tick}")
+
     p_tk, p_b, p_a = tick.get("ticker"), tick.get("yes_bid"), tick.get("yes_ask")
     if not (p_tk and p_b and p_a):
         if verbose:
@@ -605,6 +650,47 @@ def selftest():
                 fails.append(f"dollar strings decoded to bid={b}, ask={a} -- "
                              "the price scale is wrong")
     finally:
+        _sh.rmtree(tmp, ignore_errors=True)
+
+    # ---- a cached schema that explains NOTHING must be abandoned ---------
+    print("\n  STALE SCHEMA. schema.json holds the field names doctor.py")
+    print("  found in the REAL collector output. Every fixture in this repo")
+    print("  writes the canonical names. So on any machine that has run")
+    print("  doctor.py, the cached schema gets applied to synthetic data it")
+    print("  does not describe and every message is silently skipped.")
+    print("  leadlag.py's self-test failed exactly this way on the operator's")
+    print("  machine while passing here -- and leadlag is the stage that")
+    print("  produced the 'the book LEADS the index' refutation.")
+    tmp = _tf.mkdtemp()
+    cwd = os.getcwd()
+    try:
+        os.chdir(tmp)
+        make_fake_collector(tmp, n_markets=5, seed=1, lag=0)
+        WRONG = {"ticker": {"ticker": "msg.market_ticker",
+                            "yes_bid": "msg.yes_bid_dollars",
+                            "yes_ask": "msg.yes_ask_dollars",
+                            "ts": "msg.ts"}}
+        with open(os.path.join(tmp, "schema.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(WRONG, fh)
+        n = hit = 0
+        for m in read_jsonl_gz(os.path.join(tmp, "ticker", "*.jsonl.gz")):
+            n += 1
+            if get_path(m, "msg.yes_bid_dollars") is not None:
+                hit += 1
+        got = load_quotes(tmp, verbose=False)
+        print(f"\n  {n:,} fixture messages, {hit} matching the cached path -> "
+              f"load_quotes recovered {len(got)} markets")
+        if hit:
+            fails.append("the fixture DOES carry msg.yes_bid_dollars, so this "
+                         "check is not testing a stale schema at all")
+        if not got:
+            fails.append("a schema.json describing none of the data still "
+                         "produced an empty result -- the rediscovery guard "
+                         "is not firing, and every fixture on a machine that "
+                         "has run doctor.py is silently disabled")
+    finally:
+        os.chdir(cwd)
         _sh.rmtree(tmp, ignore_errors=True)
 
     print("\n" + "=" * 78)
