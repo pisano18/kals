@@ -280,14 +280,25 @@ def selftest():
     print("=" * 78)
     fails = []
 
+    made = []
+
     def world(files):
         d = tempfile.mkdtemp(prefix="shadow_")
+        made.append(d)
         os.makedirs(os.path.join(d, "research"), exist_ok=True)
         for name, body in files.items():
             with open(os.path.join(d, "research", name), "w",
                       encoding="utf-8") as f:
                 f.write(textwrap.dedent(body))
         return d
+
+    def cleanup():
+        # The child interpreters leave __pycache__ behind in each fixture. Six
+        # fixtures per run is nothing, but a checker that litters the disk of
+        # a machine already short on it is a checker people turn off.
+        import shutil
+        for d in made:
+            shutil.rmtree(d, ignore_errors=True)
 
     # --- 1. a clean tree must be clean ------------------------------------
     d = world({"thing.py": "import gzip\nimport json\n"})
@@ -434,6 +445,7 @@ def selftest():
     if not ok:
         fails.append("this repository currently shadows a stdlib module")
 
+    cleanup()
     print("\n" + "=" * 78)
     if fails:
         print("*** SELF-TEST FAILED ***")

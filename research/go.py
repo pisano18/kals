@@ -143,7 +143,10 @@ ROOT = os.path.dirname(HERE)
 # exactly the ones skipped when there is no data. It cost a full evening of
 # recording time.
 PREFLIGHT = [
-    ("stdlib shadowing", ["shadow.py", "--selftest"]),
+    # The report, not the fixtures: this runs before EVERY stage, and the
+    # fixtures spawn seven child interpreters each. Verifying the checker
+    # itself belongs in the gate below, which runs once.
+    ("stdlib shadowing", ["shadow.py", ".."]),
 ]
 
 SELFTESTS = [
@@ -188,6 +191,7 @@ SELFTESTS = [
     ("pattern trade", ["patterntrade.py", "--selftest"]),
     # cheap, and it is the only check that looks INSIDE main() --
     # the one function no self-test in this project executes
+    ("stdlib shadow checker", ["shadow.py", "--selftest"]),
     ("unbound names", ["unbound.py", "--selftest"]),
     ("repo name scan", ["unbound.py", ".."]),
     ("detectability", ["power.py", "--selftest", "--quick"]),
