@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""compression.py -- trade the one calibration pattern that survived.
+"""patterntrade.py -- trade the one calibration pattern that survived.
+
+    (Named compression.py until 2026-08-28. Python 3.14 added a stdlib PACKAGE
+    called `compression`, and research/ is first on sys.path in every stage, so
+    `import gzip` -- which does `from compression._common import _streams` on
+    3.14 -- resolved to this file instead. Every stage that reads compressed
+    data died on import, on the user's machine only, because the container
+    this was developed in runs 3.11 where gzip imports `_compression` and the
+    name does not exist. shadow.py now checks for this at gate time.)
 
 THE PATTERN. calib.py priced the same markets three ways -- trade prints, the
 book mid at trade times, and the mid on a FIXED tau grid that ignores when

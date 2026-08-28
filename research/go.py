@@ -129,6 +129,23 @@ from datetime import datetime, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
+# Checks that run even under --only. The full self-test gate does not: a
+# single stage is meant to be fast, and that is reasonable for a measurement
+# bug, which is confined to its own stage. It is NOT reasonable for an
+# ENVIRONMENT bug, which breaks every stage at once and looks like sixteen
+# separate failures.
+#
+# On 2026-08-28 a whole run died in fourteen stages because research/ held a
+# file called compression.py and Python 3.14 added a stdlib package by that
+# name, so `import gzip` resolved to ours. run_when_away.ps1 drives stages one
+# at a time with --only, so the gate never ran, and the gate would not have
+# caught it anyway: self-tests do not import gzip, and the stages that do are
+# exactly the ones skipped when there is no data. It cost a full evening of
+# recording time.
+PREFLIGHT = [
+    ("stdlib shadowing", ["shadow.py", "--selftest"]),
+]
+
 SELFTESTS = [
     ("settlement math", ["settlement_math.py", "--selftest"]),
     ("chain harness", ["chain.py", "--selftest"]),
@@ -164,7 +181,11 @@ SELFTESTS = [
     ("vol timing", ["voltiming.py", "--selftest"]),
     ("calibration", ["calib.py", "--selftest"]),
     ("vol referee", ["reconcile.py", "--selftest"]),
-    ("compression", ["compression.py", "--selftest"]),
+    # patterntrade was called compression.py until Python 3.14 added a stdlib
+    # package by that name. research/ is first on sys.path in every stage, so
+    # `import gzip` resolved `compression._common` to OUR file and every stage
+    # that touches compressed data died on import. shadow.py now guards this.
+    ("pattern trade", ["patterntrade.py", "--selftest"]),
     # cheap, and it is the only check that looks INSIDE main() --
     # the one function no self-test in this project executes
     ("unbound names", ["unbound.py", "--selftest"]),
@@ -326,6 +347,21 @@ def main():
     print("=" * 78)
 
     ok = True
+    if not a.skip_selftests:
+        print("\nPREFLIGHT (runs even under --only)")
+        chunks.append("\n## Preflight\n")
+        for name, cmd in PREFLIGHT:
+            rc, out, dt = run(cmd, HERE, 300)
+            print(f"  {name:>22}  {'PASS' if rc == 0 else 'FAIL'}  ({dt:.0f}s)")
+            chunks.append(f"\n### {name} — "
+                          f"{'PASS' if rc == 0 else 'FAIL'}\n\n```\n{out}\n```\n")
+            if rc != 0:
+                print(f"\n*** PREFLIGHT FAILED: {name}. Nothing was run.")
+                print(out)
+                chunks.append("\n**Preflight failed. No stage ran.**\n")
+                write_report(a.report, chunks)
+                raise SystemExit(1)
+
     if not a.skip_selftests and not a.only:
         print("\nSELF-TESTS (a failure here stops the run)")
         chunks.append("\n## Self-tests\n")
