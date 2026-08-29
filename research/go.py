@@ -222,7 +222,16 @@ EMPTY_MARKERS = (
     r"Nothing rebuilt",
     r"\bno quotes\b",
     r"\bnothing to analyse\b",
-    r"\bno cfbenchmarks_value data\b",
+    # Was "no cfbenchmarks_value DATA", and the word `data` is the reason five
+    # stages could report ok on an index feed that delivered nothing. The
+    # directory exists as soon as the collector subscribes, so the `need` guard
+    # passes; cross, openwindow, implied, term and proxy then each print
+    # "no cfbenchmarks_value -- ..." and return 0. None of them says "data".
+    # The two that do (leadlag, replay) capitalise it "No", and the match is
+    # not case-insensitive. Zero of seven matched. Now the feed name alone,
+    # and every match below is case-insensitive.
+    r"\bno cfbenchmarks_value\b",
+    r"\bno settled markets\b",
     r"\bnot enough overlapping data\b",
     r"(?<![\d,.])0 markets\b",
 )
@@ -437,7 +446,7 @@ def main():
         # had renamed its websocket fields, every loader returned empty, and
         # every stage exited 0. Report that as EMPTY so it cannot read as a
         # null result.
-        empty = rc == 0 and any(re.search(p, out) for p in EMPTY_MARKERS)
+        empty = rc == 0 and any(re.search(p, out, re.I) for p in EMPTY_MARKERS)
         label = ("EMPTY -- no data loaded" if empty
                  else "ok" if rc == 0 else f"exit {rc}")
         if empty:

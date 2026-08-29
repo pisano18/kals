@@ -55,8 +55,19 @@ def markers_from(go_path):
     """
     src = open(go_path, encoding="utf-8").read()
     a = src.index("EMPTY_MARKERS = (")
-    b = src.index(")", src.index("\n", a))
-    return re.findall(r'r?"((?:[^"\\]|\\.)*)"', src[a:b])
+    # The CLOSING paren is a line that is exactly ")", not the first ")" in
+    # the block: the comments contain parenthetical asides, and one of them
+    # ("(leadlag, replay)") silently truncated the marker list from eight to
+    # five -- dropping the very markers the same comment was explaining.
+    m = re.search(r"^\)\s*$", src[a:], re.M)
+    b = a + (m.start() if m else len(src) - a)
+    # Strip comment lines first. The block is heavily commented and those
+    # comments quote the very phrases they explain, so a naive scan lifted
+    # `data` out of the sentence describing why `data` was removed from a
+    # marker -- and then flagged every file containing the words "REAL DATA".
+    body = "\n".join(ln for ln in src[a:b].splitlines()
+                      if not ln.lstrip().startswith("#"))
+    return re.findall(r'r?"((?:[^"\\]|\\.)*)"', body)
 
 
 def _ends_here(block, idx):

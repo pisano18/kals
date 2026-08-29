@@ -867,7 +867,11 @@ def main():
         if len(d) > 300:
             pooled[s] = pstdev(d)
     if not pooled:
-        print("\n  no index feed -- fair value is not computable.")
+        # Names the FEED, not "index feed": chain.py legitimately prints
+        # "[needs no index feed]" in a section heading on every successful
+        # run, and a marker matching that would flag chain EMPTY forever.
+        # markers.py caught the collision the moment the marker was added.
+        print("\n  no cfbenchmarks_value -- fair value is not computable.")
         return
 
     per_market, n_own, n_pooled = {}, 0, 0

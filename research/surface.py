@@ -81,12 +81,16 @@ import math
 import os
 import random
 import sys
-from statistics import NormalDist, mean, pstdev
+from statistics import NormalDist, mean, median, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from voltiming import tick_cents, half_spread_c, fee_cents      # noqa: E402
 
 ND = NormalDist()
+
+# Longest a quote may be carried forward on the exogenous grid, matching
+# implied.collect().
+CARRY_MAX = 30
 
 PRICES = [0.01, 0.02, 0.03, 0.05, 0.07, 0.10, 0.13, 0.16, 0.20, 0.25,
           0.30, 0.35, 0.40, 0.45, 0.50]
@@ -148,10 +152,16 @@ def kelly(m, r, hs=None):
     if q is None:
         return None
     a = min(m + (half_spread_c(m) if hs is None else hs) / 100.0, 0.999)
-    if a >= 1.0 or a <= 0.0:
+    # The fee is paid whatever the outcome, so it is part of the cost of the
+    # contract, not a haircut on the winnings. The effective price is a + fee.
+    # Omitting it printed a POSITIVE stake on rows whose own NET column said
+    # the trade loses: at r=0.895 the 30c row read NET -0.04c and Kelly +2.1%.
+    # Full Kelly is the point past which growth turns negative, so a positive
+    # number there is not a small overstatement, it is the wrong side of zero.
+    a_eff = a + fee_cents(a) / 100.0
+    if a_eff >= 1.0 or a_eff <= 0.0:
         return None
-    f = (q - a) / (1.0 - a)
-    return f
+    return (q - a_eff) / (1.0 - a_eff)
 
 
 def breakeven_ratio(m, lo=0.5, hi=1.0, tol=1e-6):
@@ -262,30 +272,68 @@ def availability(quotes, ratio):
     It needs quotes only -- no settlements, no index, no realised sigma -- so
     it runs on however many hours are on disk.
     """
+    # ONE PREVAILING QUOTE PER SECOND, not one row per message.
+    #
+    # The ticker channel is publish-on-change. A tight, competitive book
+    # republishes orders of magnitude more often than a dead wide one, so a
+    # median taken over raw messages is dragged toward the tightest book in
+    # the bucket -- and the whole point of this table is the WIDE ones.
+    # Measured on a fixture: two markets in the 4-6c bucket over the same
+    # 1,000 seconds, one 1c wide firing 10 messages a second and one 6c wide
+    # firing one every ten seconds. Over messages the median spread is 1.00c
+    # and the bucket reads +1.19c, "this pays". Over a per-second grid it is
+    # 6c and reads -1.47c. A sign flip on this file's central deliverable.
+    #
+    # implied.collect() has built exactly this grid since the occupation-time
+    # fix, for exactly this reason. This is the same bias in a new file.
+    per_sec = {}
+    for ticker, q in quotes.items():
+        last = {}
+        for rec in q:
+            bid, ask = rec[1], rec[2]
+            if 0.0 < bid < ask < 1.0:
+                last[int(rec[0])] = (bid, ask)
+        if not last:
+            continue
+        secs = sorted(last)
+        grid, cur, j = [], None, 0
+        for t in range(secs[0], secs[-1] + 1):
+            while j < len(secs) and secs[j] <= t:
+                cur = (secs[j], last[secs[j]])
+                j += 1
+            if cur is not None and t - cur[0] <= CARRY_MAX:
+                grid.append(cur[1])
+        per_sec[ticker] = grid
+
     rows = []
     for lo, hi in WING_BUCKETS:
-        n, tk, sp = 0, set(), []
-        for ticker, q in quotes.items():
-            for rec in q:
-                bid, ask = rec[1], rec[2]
-                if not (0.0 < bid < ask < 1.0):
-                    continue
+        n, sp, by_mkt = 0, [], {}
+        for ticker, grid in per_sec.items():
+            mine = []
+            for bid, ask in grid:
                 mid = (bid + ask) / 2.0
-                cheap = min(mid, 1.0 - mid)
-                if lo <= cheap < hi:
-                    n += 1
-                    tk.add(ticker)
-                    sp.append(ask - bid)
+                if lo <= min(mid, 1.0 - mid) < hi:
+                    mine.append(ask - bid)
+            if mine:
+                n += len(mine)
+                sp.extend(mine)
+                by_mkt[ticker] = median(mine)
+        m = (lo + hi) / 2.0
         if not n:
             rows.append({"band": (lo, hi), "n": 0, "markets": 0,
-                         "spread": None, "net": None, "best": None})
+                         "spread": None, "mkt_spread": None,
+                         "net": None, "mkt_net": None,
+                         "best": net_cents(m, ratio)})
             continue
-        sp.sort()
-        med = sp[len(sp) // 2]
-        m = (lo + hi) / 2.0
-        rows.append({"band": (lo, hi), "n": n, "markets": len(tk),
-                     "spread": med,
+        med = median(sp)
+        # ...and the same thing again with ONE observation per market, which
+        # is the project's own clustering rule. Where the two disagree, the
+        # bucket is a few markets pretending to be many.
+        mmed = median(list(by_mkt.values()))
+        rows.append({"band": (lo, hi), "n": n, "markets": len(by_mkt),
+                     "spread": med, "mkt_spread": mmed,
                      "net": net_cents(m, ratio, hs=100.0 * med / 2.0),
+                     "mkt_net": net_cents(m, ratio, hs=100.0 * mmed / 2.0),
                      "best": net_cents(m, ratio)})
     return rows
 
@@ -294,49 +342,66 @@ def availability_table(rows, ratio):
     print("\n" + "=" * 78)
     print("IS THE MAP REACHABLE? -- observed quotes, observed spreads")
     print("=" * 78)
-    print("  The table above assumed a one-tick book. This one uses the")
-    print("  spread that is actually resting there.")
-    print(f"\n  {'cheap side':>12}{'quote-secs':>12}{'markets':>9}"
-          f"{'med spread':>12}{'ticks':>7}{'net @1 tick':>13}"
-          f"{'NET observed':>14}")
+    print("  The map above assumed a one-tick book. This uses the spread")
+    print("  actually resting there, on an EXOGENOUS one-second grid -- one")
+    print("  prevailing quote per second, not one row per message. A tight")
+    print("  book republishes far more often than a wide one, so a median")
+    print("  over messages is dragged toward the tightest book in the bucket,")
+    print("  which is the opposite of what this table is for.")
+    print(f"\n  {'cheap side':>11}{'quote-secs':>11}{'mkts':>6}"
+          f"{'spread':>9}{'ticks':>6}{'@1 tick':>9}{'NET grid':>10}"
+          f"{'per-mkt sp':>11}{'NET/mkt':>9}")
     reach = None
     for r_ in rows:
         lo, hi = r_["band"]
         lbl = f"{100*lo:.0f}-{100*hi:.0f}c"
-        if not r_["n"]:
-            print(f"  {lbl:>12}{0:>12}{'--':>9}{'--':>12}{'--':>7}"
-                  f"{(r_['best'] if r_['best'] is not None else 0):>12.2f}c"
-                  f"{'never quoted':>14}")
-            continue
         m = (lo + hi) / 2.0
+        if not r_["n"]:
+            # The 'at one tick' column exists to answer "what would this
+            # bucket be worth if it WERE quoted", so printing 0.00c for the
+            # unquoted buckets -- the only ones the question is about --
+            # answers the wrong question with a fabricated number.
+            print(f"  {lbl:>11}{0:>11}{'--':>6}{'--':>9}{'--':>6}"
+                  f"{r_['best']:>8.2f}c{'never quoted':>10}"
+                  f"{'--':>11}{'--':>9}")
+            continue
         ticks = 100.0 * r_["spread"] / tick_cents(m)
-        if r_["net"] is not None and (reach is None or r_["net"] > reach[1]):
-            reach = (lbl, r_["net"], r_["n"], r_["markets"])
-        print(f"  {lbl:>12}{r_['n']:>12,}{r_['markets']:>9}"
-              f"{100*r_['spread']:>11.2f}c{ticks:>7.1f}"
-              f"{r_['best']:>12.2f}c{r_['net']:>13.2f}c")
-    print("\n  'ticks' is the observed spread divided by the tightest one the")
-    print("  exchange allows there. A 1c spread at 5c is TEN ticks, and the")
-    print("  whole advantage of the tapered tick is gone.")
+        # The PER-MARKET net is the one to act on: it is the project's own
+        # clustering rule, one observation per market.
+        if r_["mkt_net"] is not None and (reach is None
+                                          or r_["mkt_net"] > reach[1]):
+            reach = (lbl, r_["mkt_net"], r_["n"], r_["markets"])
+        print(f"  {lbl:>11}{r_['n']:>11,}{r_['markets']:>6}"
+              f"{100*r_['spread']:>8.2f}c{ticks:>6.1f}"
+              f"{r_['best']:>8.2f}c{r_['net']:>9.2f}c"
+              f"{100*r_['mkt_spread']:>10.2f}c{r_['mkt_net']:>8.2f}c")
+    print("\n  'ticks' is the observed spread over the tightest the exchange")
+    print("  allows there. A 1c spread at 5c is TEN ticks and the whole")
+    print("  advantage of the tapered tick is gone.")
+    print("\n  NET grid weights every second the quote stood. NET/mkt takes")
+    print("  one median per market and then the median of those. Where they")
+    print("  disagree the bucket is a few markets pretending to be many, and")
+    print("  NET/mkt is the honest one.")
     if reach:
-        print(f"\n  Best REACHABLE cell at r={ratio:.3f}: {reach[0]} at "
-              f"{reach[1]:+.2f}c net, over {reach[2]:,} quote-seconds in "
-              f"{reach[3]:,} markets.")
+        print(f"\n  Best REACHABLE cell at r={ratio:.3f}, per market: "
+              f"{reach[0]} at {reach[1]:+.2f}c net, over {reach[2]:,} "
+              f"quote-seconds in {reach[3]:,} markets.")
         if reach[1] <= 0:
             print("  That is not positive. On the spreads actually quoted,")
             print("  this mispricing does not pay anywhere.")
     else:
         print("\n  Nothing quoted in any wing bucket. The map is unreachable")
         print("  on this tape, and that is the finding.")
-    print("\n  Read quote-seconds and markets before reading net. A bucket")
-    print("  with 400 quote-seconds in 3 markets is one accident, not a")
-    print("  tradeable region.")
+    print("\n  Read quote-seconds and mkts before reading any net. A bucket")
+    print("  with 400 quote-seconds in 3 markets is one accident.")
 
 
 # ===========================================================================
 def _simulate(m_lo, m_hi, r, n_win, seed, sig=6.0, step=5):
     """One continuous tape, windows on top of it, settlement as the exchange
-    computes it. Returns (close, entry mid, P&L cents, tau) per window.
+    computes it. Returns (close, entry mid, realised P&L, tau, EXPECTED P&L)
+    per window, where the expected P&L uses the true conditional probability
+    at entry and therefore carries no outcome noise at all.
 
     The strike is the mean of the sixty prints ending at the OPEN -- which is
     `strike(N+1) == settle(N)`, the rule the exchange uses, and the rule that
@@ -380,8 +445,16 @@ def _simulate(m_lo, m_hi, r, n_win, seed, sig=6.0, step=5):
             hs = half_spread_c(cheap)
             ask = cheap + hs / 100.0
             w_ = won if mid <= 0.5 else 1.0 - won
+            # The TRUE conditional probability of the side we bought, from
+            # the tape and the true sigma. Costs nothing to compute and
+            # carries no outcome noise, which is what makes the arithmetic
+            # check below able to see a missing fee.
+            sd_true = sig * math.sqrt(var_factor(close_s - t, [1.0]))
+            p_yes = ND.cdf((mu - strike) / sd_true)
+            q = p_yes if mid <= 0.5 else 1.0 - p_yes
             out.append((close_s, cheap,
-                        100.0 * (w_ - ask) - fee_cents(ask), close_s - t))
+                        100.0 * (w_ - ask) - fee_cents(ask), close_s - t,
+                        100.0 * (q - ask) - fee_cents(ask)))
             break                      # ONE trade per window. Every fill in a
                                        # window settles on the same outcome.
     return out
@@ -471,6 +544,38 @@ def selftest():
     print(f"\n  Resolution: about {0.5:.1f}c per cell at {N_WIN:,} windows.")
     print("  This catches a sign error, a missing cost, or a tau dependence.")
     print("  It would NOT catch a 0.2c error, and nothing here claims it does.")
+
+    # --- 4a. THE ARITHMETIC, with the outcome noise removed ---------------
+    # The settled simulation above has a per-cell se of about 0.5c, so its MDE
+    # is ~1.8c -- larger than every analytic net in the table and larger than
+    # the fee at every price tested. Deleting the entire taker fee from
+    # cost_cents left the whole self-test PASSING. A check that cannot see the
+    # cost it exists to verify is decoration.
+    #
+    # So: same simulated trades, same entries, but score each one by its TRUE
+    # conditional probability instead of a coin flip. That has zero outcome
+    # variance, so any disagreement with the analytic net is arithmetic.
+    print("\n  THE SAME TRADES, SCORED WITHOUT OUTCOME NOISE. Every entry")
+    print("  above, valued at its true conditional probability rather than a")
+    print("  settled coin flip. Nothing here is statistics: a gap is a bug in")
+    print("  the arithmetic, and the tolerance is 0.05c rather than 1.8c.")
+    print(f"\n  {'bucket':>10}{'r':>7}{'trades':>8}{'analytic':>11}"
+          f"{'exact':>10}{'gap':>9}")
+    for (lo, hi), r in (((0.14, 0.18), 0.895), ((0.04, 0.06), 0.895),
+                        ((0.33, 0.37), 0.85), ((0.14, 0.18), 0.999)):
+        tr = _simulate(lo, hi, r, n_win=N_WIN, seed=11)
+        if len(tr) < 100:
+            continue
+        mm = mean(x[1] for x in tr)
+        ana = net_cents(mm, r)
+        exact = mean(x[4] for x in tr)
+        print(f"  {f'{100*lo:.0f}-{100*hi:.0f}c':>10}{r:>7.3f}{len(tr):>8}"
+              f"{ana:>10.3f}c{exact:>9.3f}c{exact - ana:>+8.3f}c")
+        if abs(exact - ana) > 0.05:
+            fails.append(f"analytic net {ana:.3f}c in {100*lo:.0f}-"
+                         f"{100*hi:.0f}c at r={r} but the exact pathwise "
+                         f"value is {exact:.3f}c -- {exact-ana:+.3f}c apart, "
+                         "which is arithmetic, not noise")
 
     # --- 4b. the availability table must use the OBSERVED spread ----------
     print("\n  AVAILABILITY. Feed it a book quoted one tick wide and a book")
