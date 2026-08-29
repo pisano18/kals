@@ -430,10 +430,21 @@ def selftest():
     # gzip` lived in such a file, the probe would cover ZERO modules and this
     # file would print "clean" -- a guard reporting PASS after checking
     # nothing.
-    d = world({"newsyntax.py": "type Grid = list[float]\nimport gzip\n"})
+    # The fixture must be unparseable on EVERY Python, so it tests the
+    # MECHANISM rather than a version. The first version of this cell used
+    # `type Grid = list[float]` -- 3.12+ syntax, chosen because it fails to
+    # parse on the 3.11 development box. It parses fine on 3.14, so on the
+    # machine that actually runs the data the file was readable, nothing was
+    # skipped, and this test failed. That is pattern 16 -- a fixture making a
+    # version-dependent claim about reality -- inside the test written FOR
+    # pattern 15. The narrative below is why the check exists; the syntax is
+    # chosen so the check itself does not depend on it.
+    d = world({"broken.py": "import gzip\ndef f(:\n"})
     r = check(d)
-    print("\n  A file this Python cannot parse (3.12+ `type` statement),")
-    print("  carrying the repo's only import:")
+    print("\n  A file this Python cannot parse, carrying the repo's only")
+    print("  import. Production is 3.14 and development is 3.11, so a stage")
+    print("  written in newer syntax parses there and not here -- and an")
+    print("  unprobed import is an unchecked one.")
     print(f"    unparseable recorded : {len(r.get('unreadable', []))}")
     print(f"    stdlib modules probed: {r['probed']}")
     ok_ = report(check(d))
@@ -443,6 +454,15 @@ def selftest():
     if ok_:
         fails.append("a repo whose only import lives in an unparseable file "
                      "was reported CLEAN after probing zero modules")
+
+    # ...and the version-dependent case, reported rather than asserted.
+    d2 = world({"newsyntax.py": "type Grid = list[float]\nimport gzip\n"})
+    r2 = check(d2)
+    parses = not r2.get("unreadable")
+    print(f"    (3.12+ `type` syntax parses on this Python "
+          f"{sys.version_info.major}.{sys.version_info.minor}: "
+          f"{'yes' if parses else 'no'} -- reported, not asserted, because"
+          f" the answer differs between the dev box and the run machine)")
 
     # --- 4b. THE CHECKER MUST NOT DAMAGE THE INTERPRETER IT RUNS IN -------
     # The first version of import_probe deleted names from sys.modules and
