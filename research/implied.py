@@ -152,11 +152,31 @@ def collect(index, quotes, markets, series_to_index, ttc_max=900):
                     grid.append((t, cur[1], cur[2], cur[3], cur[4],
                                  t - cur[0]))
         for (t, bid, ask, bs, as_, age) in grid:
-            tau = close_s - t
-            if not (1 <= tau <= ttc_max) or t not in ticks:
+            # Invert at the second the quote was ISSUED, not the second it is
+            # sampled on. A carried-forward quote was priced when tau was
+            # tau+age and when mu was whatever it was then; inverting it
+            # through today's var_factor attributes a stale price to a
+            # variance that has since collapsed.
+            #
+            # That is not a rounding error. On a fixture whose true term
+            # structure is exactly FLAT, tolerating 2% of var_factor drift
+            # (term.py's old rule) returns beta = -0.487 on sqrt(tau) at
+            # t = -7.7 when quotes are 20s apart, and +0.119 on a free power
+            # law at t = +7.7. The real tape's reported +0.111 (t = 8.4) is
+            # indistinguishable from that artefact.
+            #
+            # Inverting at the issue time removes the bias exactly instead of
+            # bounding it, and keeps every row: the EXOGENOUS GRID still
+            # decides which quotes are sampled and how often, so a quote that
+            # stood for thirty seconds still counts thirty times -- that is
+            # the calendar-time weighting the grid exists for -- but its
+            # implied sigma is the one its author actually used.
+            issue = t - age
+            tau = close_s - issue
+            if not (1 <= tau <= ttc_max) or issue not in ticks:
                 continue
-            spot = ticks[t]
-            mu = sw_cond_mean(ticks, close_s, t, spot)
+            spot = ticks[issue]
+            mu = sw_cond_mean(ticks, close_s, issue, spot)
             if mu is None:
                 continue
             mid = (bid + ask) / 2.0
@@ -537,7 +557,7 @@ def _attach_rel(rows, real_by_series):
 
 
 def _build(quote_fn, series="KXBTC15M", iid="BRTI", S0=80_000.0, sig=6.0,
-           n_win=200, seed=7):
+           n_win=200, seed=7, step=3):
     """A synthetic series at an arbitrary PRICE LEVEL. S0 and sig scale
     together, so the implied/realised ratio is invariant to the level while
     every raw sigma is not -- which is the whole point of tests 4-6."""
@@ -560,7 +580,11 @@ def _build(quote_fn, series="KXBTC15M", iid="BRTI", S0=80_000.0, sig=6.0,
                        "strike": strike, "close": float(close_s),
                        "result": 0.0}
         qs = []
-        for s in range(open_s, close_s, 3):
+        # `step` is a parameter and not a 3 because it was a 3, and every
+        # fixture in this project therefore only ever produced quotes 0-2
+        # seconds stale. term.py's staleness rule was wrong by a factor of
+        # eight in that blind spot and nothing could see it.
+        for s in range(open_s, close_s, step):
             tau = close_s - s
             lo_run = close_s - N_AVG + 1
             hi = min(s, close_s)

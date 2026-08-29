@@ -122,13 +122,32 @@ def vf(tau):
     return var_factor(int(tau), [1.0])
 
 
-# How much sd(tau) may have moved between the quote and the second it is
-# inverted at. 2% is well under the smallest signature this file looks for.
-STALE_TOL = 0.02
+# A LOOSE backstop, no longer a bias control. implied.collect() inverts every
+# carried-forward quote at the second it was ISSUED, so staleness no longer
+# tilts the tau profile at all -- measured below on a flat book at 3s, 10s and
+# 20s quote spacing, where beta comes back 0.0000 with this filter on or off.
+#
+# It used to be 0.02 and it used to be the whole defence, and it did not work.
+# The rule was only ever exercised on a fixture emitting a quote every 3
+# seconds, so every row it ever saw had age in {0,1,2}. On the same exact-model
+# book with quotes 20s apart -- which is what a publish-on-change channel
+# actually looks like when the book is quiet -- it returned beta = -0.487 on
+# sqrt(tau) at t = -7.7 and +0.119 on the free power law at t = +7.7, against a
+# true beta of exactly zero. The real tape's first reported figure, +0.111 at
+# t = 8.4, is indistinguishable from that artefact.
+STALE_TOL = 0.50
 
 
 def fresh(tau, age):
-    """Is a quote `age` seconds old still safe to invert at `tau`?
+    """A backstop against absurdly old quotes. NOT the staleness fix.
+
+    The fix is in implied.collect(): a carried-forward quote is inverted at the
+    tau it was issued at, which removes the bias exactly rather than bounding
+    it. This only drops quotes so old that the market they describe has moved
+    on entirely.
+
+    What follows is why bounding it did not work, kept because the reasoning
+    looked sound and was wrong.
 
     A carried-forward quote was priced when tau was tau+age, so inverting it
     through sqrt(var_factor(tau)) returns sd(tau+age)/sd(tau) times the sigma
@@ -345,9 +364,11 @@ def report(rows, label=""):
             print(f"  {f'{lo}-{hi}s':>12}{s['n']:>10,}{s['med_age']:>11}s"
                   f"{s['kept']:>14,}"
                   f"{100.0*s['kept']/s['n']:>7.0f}%")
-        print("  A carried-forward quote is priced off a var_factor that has")
-        print("  since collapsed. Dropping them is not fastidiousness: keeping")
-        print("  2s of staleness alone fakes beta=+0.06 on sqrt(tau).")
+        print("  Age is now DIAGNOSTIC, not a correction: implied.collect()")
+        print("  inverts each carried quote at the tau it was issued at, so a")
+        print("  stale quote is attributed to the moment its author priced it")
+        print("  and contributes no tilt. Read this table for how live the")
+        print("  book is, not for how much bias was removed.")
 
     sh = shape(cs)
     print(f"\n  {'tau band':>12}{'cells':>8}{'closes':>8}"
@@ -457,6 +478,34 @@ def selftest():
                 fails.append(f"exact book: {name} came back beta="
                              f"{f['beta']:.3f} at t={f['t']:.1f} -- a term "
                              "structure invented out of a flat one")
+
+    # ---- 2b. QUOTE SPACING. The cell that would have caught the bug. -----
+    # implied._build emits a quote every 3 seconds, so every row every other
+    # fixture here has ever seen had age in {0,1,2}. A publish-on-change
+    # channel on a quiet book looks nothing like that. Re-run the SAME
+    # exact-model book at 10s and 20s spacing, where the true beta is still
+    # exactly zero.
+    print("\n" + "-" * 78)
+    print("  QUOTE SPACING. Same exact-model book, quotes further apart. The")
+    print("  true beta is zero at every spacing. This is the regime the old")
+    print("  2%-staleness rule was never tested in, and it returned")
+    print("  beta = -0.487 (t = -7.7) on sqrt(tau) at 20s spacing.")
+    print(f"\n  {'spacing':>9}{'cells':>8}{'beta sqrt(tau)':>24}"
+          f"{'beta power law':>24}")
+    for step in (3, 10, 20):
+        idx_, q_, mk_ = _build(_quote("exact"), n_win=260, seed=7, step=step)
+        cs_ = cells(collect(idx_, q_, mk_, S2I))
+        fn_ = fit(demeaned(cs_, g_naive))
+        fp_ = fit(demeaned(cs_, g_logtau))
+        def _f(x):
+            return f"{x['beta']:+.4f} (t={x['t']:+6.2f})" if x else "no fit"
+        print(f"  {step:>8}s{len(cs_):>8}{_f(fn_):>24}{_f(fp_):>24}")
+        for nm, ft in (("sqrt(tau)", fn_), ("free power law", fp_)):
+            if ft and abs(ft["beta"]) > 0.05:
+                fails.append(f"at {step}s quote spacing a FLAT book returned "
+                             f"beta={ft['beta']:+.3f} (t={ft['t']:+.1f}) on "
+                             f"{nm} -- a term structure invented out of the "
+                             "gap between quotes")
 
     # ---- 3. the trap, measured rather than asserted ------------------------
     print("\n" + "-" * 78)
