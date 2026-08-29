@@ -73,7 +73,18 @@ Say "now at $head (origin/$Branch is $remote)"
 # attribute, and the 19:48 run was exactly that: the pull failed, the script
 # said so in one line, and then ran sixteen stages on whatever was on disk.
 # Silence about provenance is how an evening gets spent twice.
-if ($head -ne $remote) {
+# -not $head -or -not $remote FIRST. If git itself is broken -- absent from
+# PATH under a service account, or "dubious ownership" when the scheduled task
+# runs as a different user than the repo owner -- BOTH rev-parses exit 128 with
+# empty stdout, both variables bind to $null, and $null -ne $null is $false. The
+# guard would fall through in exactly the case where provenance is unknowable,
+# which is the case it exists for. Found by audit, not by running it.
+if ((-not $head) -or (-not $remote) -or ($head -ne $remote)) {
+    if ((-not $head) -or (-not $remote)) {
+        Say "*** git could not report HEAD or origin/$Branch at all."
+        Say "*** (git missing from PATH, or dubious-ownership under a"
+        Say "***  different account than the one that owns C:\kals-repo)"
+    }
     Say "*** This checkout does NOT match origin/$Branch."
     Say "*** Refusing to run: results from unknown code are worse than none."
     Say "*** Fix with:   git stash -u ; git pull --rebase origin $Branch"

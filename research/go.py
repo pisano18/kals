@@ -266,6 +266,13 @@ STAGES = [
     # in the report so the trading rule is written down BEFORE the number it
     # depends on is re-measured, rather than chosen after seeing it.
     ("surface", ["research/surface.py", "--data", "{data}"], None),
+    # patterntrade backtests the calibration shape calib.py measures: whether
+    # outcomes come out MORE extreme than prices. The 2026-08-28 23:00 run made
+    # this urgent -- calib's grid column says they do (20c realises 16.9%, 90c
+    # realises 94.4%), which is the OPPOSITE sign to reconcile's implied/settle
+    # of 0.81. It has never run on real data; it was self-test only.
+    ("patterntrade", ["research/patterntrade.py", "--data", "{data}",
+                      "--out", "{out}"], "{data}/ticker"),
     ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
      "{feeds}"),
     ("pathstats", ["research/pathstats.py", "--data", "{data}",
