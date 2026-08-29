@@ -775,8 +775,14 @@ def main():
         sp = sorted((r["ask"] - r["bid"]) * 100.0 for r in sel)
         print(f"  {f'{lo}-{hi}s':>10}{len(sel):>12,}{mk:>9}{gap:>15.2f}c"
               f"{sp[len(sp)//2]:>14.2f}c")
-    print("\n  Read the quote-seconds column first. An edge in a bucket with")
-    print("  no quotes is not an edge.")
+    # Deliberately NOT phrased "a bucket with no quotes": go.py scans stage
+    # output for loader-failure markers, one of which is /\bno quotes\b/, and
+    # this sentence tripped it -- flagging a stage that had just printed 89,757
+    # quote-seconds and a full P&L table as "EMPTY, do not read this". go.py's
+    # own comment warns that a false EMPTY buries a real result; markers.py now
+    # checks the rule that prevents it.
+    print("\n  Read the quote-seconds column first. An edge in a bucket that")
+    print("  nothing is quoted in is not an edge.")
 
     # -------------------------------------------------------------------
     # The self-test shows the edge against a wrong-sigma book grows as the

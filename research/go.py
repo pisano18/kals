@@ -147,6 +147,12 @@ PREFLIGHT = [
     # fixtures spawn seven child interpreters each. Verifying the checker
     # itself belongs in the gate below, which runs once.
     ("stdlib shadowing", ["shadow.py", ".."]),
+    # Cheap, and it guards the one failure mode that corrupts a GOOD run's
+    # reading rather than the run itself: prose that trips EMPTY_MARKERS.
+    # endgame.py printed "an edge in a bucket with no quotes is not an edge"
+    # under a table of 89,757 quote-seconds and a full P&L, and the whole
+    # stage was labelled EMPTY -- the one label that says do not read this.
+    ("empty-marker prose", ["markers.py", ".."]),
 ]
 
 SELFTESTS = [
@@ -192,6 +198,7 @@ SELFTESTS = [
     # cheap, and it is the only check that looks INSIDE main() --
     # the one function no self-test in this project executes
     ("stdlib shadow checker", ["shadow.py", "--selftest"]),
+    ("empty-marker checker", ["markers.py", "--selftest"]),
     ("unbound names", ["unbound.py", "--selftest"]),
     ("repo name scan", ["unbound.py", ".."]),
     ("detectability", ["power.py", "--selftest", "--quick"]),

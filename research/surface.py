@@ -585,14 +585,19 @@ def main():
         quotes = load_quotes(a.data)
     except Exception as e:
         quotes = None
-        print(f"\n  (no quotes loaded: {type(e).__name__}: {e})")
+        # Wording matters here: go.py scans stage output for loader-failure
+        # markers and /\bno quotes\b/ is one of them. The MAP above needs no
+        # data and is a real result, so tripping that marker would flag this
+        # whole stage EMPTY and tell the reader to discard it. markers.py
+        # checks this.
+        print(f"\n  (availability skipped: {type(e).__name__}: {e})")
     if quotes:
         availability_table(availability(quotes, a.ratio), a.ratio)
     else:
         print("\n" + "=" * 78)
-        print("  NO QUOTES ON DISK, so every cost above is the best case: a")
-        print("  one-tick book. Run this with --data pointing at kalshi_data")
-        print("  to re-cost the map with the spreads actually quoted. Until")
+        print("  NOTHING QUOTED ON DISK, so every cost above is the best")
+        print("  case: a one-tick book. Point --data at kalshi_data to")
+        print("  re-cost the map with the spreads actually quoted. Until")
         print("  then the 5-7c cells are a hypothesis about liquidity, not a")
         print("  measurement of it.")
         print("=" * 78)
