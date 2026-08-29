@@ -105,6 +105,44 @@ the run machine's version.**
 
 ---
 
+### 16. The fixture disagrees with the collector  [4]  ← added 2026-08-29
+
+Pattern 15 was written about Python versions. The 2026-08-29 audit found the
+same shape four more times, and none of them involved Python at all. In every
+case a fixture and the real world differed in **one detail the fixture's author
+chose**, and the self-test passed on a world that does not exist:
+
+- `endgame.py` wrote `"settle": settle > strike` — a **bool** — where the
+  collector writes the settled index LEVEL with the outcome in `result`. The
+  estimator read the truthiness of a price. Every market on the tape booked a
+  YES win and a full P&L table was published from it. Every other fixture in
+  the repo (`replay.py`, `edge.py`) matched the collector; this one did not.
+- `implied._build` emitted a quote **every 3 seconds**, so no fixture in this
+  project had ever produced a quote more than 2 seconds stale. `term.py`'s
+  staleness rule was built and validated entirely inside that blind spot; at
+  20-second spacing it returned β = −0.487 (t = −7.7) on a book whose true β
+  was exactly zero.
+- `surface.availability()` medianed spreads over **messages** where the channel
+  is publish-on-change and the analysis needs a per-second grid — the same
+  occupation-time bias `implied.collect()` had been fixed for days earlier.
+- `surface`'s settled simulation had an MDE of ~1.8¢ against costs of ~1¢, so
+  deleting the entire taker fee left it **passing**.
+
+**A fixture is a claim about reality.** An untested claim about reality is
+exactly the thing this project exists to distrust, and a self-test built on one
+inherits its error silently and then certifies it.
+
+Practical rules that follow:
+1. **A fixture must use the producer's schema, verbatim.** If the collector
+   writes a float, the fixture writes a float. Never a "cleaner" equivalent.
+2. **Sweep the parameter the fixture holds fixed.** Quote spacing, message
+   rate, gap size, field type. The constant nobody thought about is where the
+   estimator has never been looked at.
+3. **A self-test must be shown to FAIL.** Plant the bug it claims to catch and
+   watch it fail; a check whose MDE exceeds the effect it guards is decoration.
+
+---
+
 ## The two meta-rules
 
 1. **Every exciting result this project has produced so far was a measurement

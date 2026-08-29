@@ -2,6 +2,106 @@
 
 ---
 
+## 2026-08-29 — RETRACTIONS. Read this before any number below it.
+
+A seven-lens adversarial audit of the code written on 28 August claimed 43
+defects; 16 survived three independent refuters each, 8 of them critical. Two
+of those invalidate results published in the section below and reported to the
+operator. **The retractions come first because the wrong numbers were stated
+with confidence and travelled.**
+
+### RETRACTED: endgame's real-data P&L (−21c to −39c, t = −4.2 to −7.8)
+
+It measured nothing.
+
+    won = 1.0 if b["settle"] else 0.0
+
+`kalshi_fulltape.py` writes `settle` as the **settled index LEVEL** (~79,500)
+and the outcome as `result`, guarded so `settle` is never zero. That truthiness
+test returned 1.0 for **every market on the tape**: every yes-side trade booked
+a win, every no-side trade booked a loss, and the realised column was a pure
+function of the yes/no trade mix.
+
+I used that number to argue the project's σ chain was confidently wrong. **That
+argument is withdrawn.** The σ-vs-outcome contradiction below stands on calib
+alone until endgame is re-run.
+
+No test could see it: endgame's fixture wrote `"settle": settle > strike`, a
+bool — the only fixture in the repo that disagreed with the collector's schema.
+`replay.py` and `edge.py` both write it as a price with a separate `result`.
+Fixed with `outcome_of()`, a `sane_or_die()` YES-rate gate, a fixture on the
+collector's schema, and a self-test that fails if the broken reading and the
+correct one ever agree again.
+
+### RETRACTED: term.py's term structure (free power law +0.111, t = 8.41)
+
+Indistinguishable from an artefact of term.py's own staleness tolerance.
+
+`STALE_TOL = 0.02` was only ever exercised against a fixture emitting a quote
+every 3 seconds, so every row it had ever seen was 0–2s old. On the same
+**exact-model** book — true β exactly zero — with quotes 20s apart:
+
+| spacing | β on sqrt(τ) | β on free power law |
+|---|---|---|
+| 3s | −0.003 (t=−0.95) | +0.001 (t=+0.46) |
+| 10s | −0.156 (t=−4.76) | +0.032 (t=+3.44) |
+| 20s | −0.487 (t=−7.74) | **+0.119 (t=+7.70)** |
+
+Against the tape's reported **+0.111 (t=8.41)**. Setting the tolerance to zero
+returned 0.0000, so the admitted staleness was the entire effect.
+
+Fixed at the source, not with a tighter bound: `implied.collect()` now inverts
+every carried-forward quote at the second it was **issued**. That removes the
+bias exactly and keeps *more* data than a zero tolerance did. Verified 0.0000
+at 3s, 10s and 20s spacing.
+
+**The claim "the market is not making a variance-formula error" is therefore
+unproven, not disproven.** It must be re-measured.
+
+### SUSPECT: surface's "best reachable cell, 4–6c at +1.24c"
+
+`availability()` medianed the spread over raw **messages**. The ticker channel
+is publish-on-change, so a tight book republishes far more often than a wide
+one and the median is dragged toward the tightest book in the bucket — the
+occupation-time bias that `implied.collect()` was fixed for the same week,
+reappearing in a new file. On a two-market fixture it flipped the sign of a
+bucket's net. Now an exogenous one-quote-per-second grid plus a per-market
+column. **Re-run before quoting.**
+
+### The other five criticals
+
+- `endgame.redraw_null` resettled from the **model's own** fair value, so its
+  mean is the claimed edge by construction — and it was printed as "null" with
+  main() reading a result inside it as "nothing here". Inside that band means
+  the model is **right**. Now two bands, labelled: a market-right null and a
+  model band.
+- `surface.kelly()` omitted the taker fee, printing a **positive stake** on
+  rows its own NET column declared unprofitable.
+- `go.py`'s cfbenchmarks_value EMPTY marker required the word "data" after the
+  feed name. Zero of the seven messages stages actually print matched it, so
+  five stages could report `ok` on an index feed delivering nothing.
+- `go.py` flagged **every successful endgame run** EMPTY, because one sentence
+  of prose contained "no quotes". `markers.py` now enforces the rule that
+  separates the real case from the accident.
+- `run_when_away.ps1`'s HEAD-vs-origin gate passed when **both** sides were
+  `$null` — exactly when git is broken and provenance is unknowable.
+
+### What this run taught that outlives the individual bugs
+
+**Every one of these was invisible to the self-tests, and each for the same
+structural reason: the fixture and the real world differed in one detail the
+fixture's author chose.** A bool where the collector writes a float. A 3-second
+quote spacing where the channel is publish-on-change. A message stream where
+the sampling is per-second. Pattern 15 in `BIASES.md` was written about Python
+versions; it is much wider than that. **A fixture is a claim about reality, and
+an untested claim about reality is exactly what this project exists to
+distrust.**
+
+The one number that survived the audit untouched is calib's grid column, and
+that is not a coincidence: it makes no model assumption at all. It counts.
+
+---
+
 ## 2026-08-28 (evening) — a whole run lost to a filename
 
 The 17:26 run produced nothing. Fourteen of sixteen stages died on the same
