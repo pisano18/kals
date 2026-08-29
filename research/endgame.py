@@ -148,6 +148,71 @@ def fee_cents(p):
     return 100.0 * FEE_K * p * (1.0 - p)
 
 
+def outcome_of(m, strike=None):
+    """Did this market settle YES? 1.0 / 0.0, or None if it cannot be told.
+
+    THIS FUNCTION EXISTS BECAUSE OF A BUG THAT SHIPPED. evaluate() used to do
+
+        won = 1.0 if m["settle"] else 0.0
+
+    and `settle` is not the outcome. kalshi_fulltape.py writes
+
+        "settle": float(expiration_value),        # the settled INDEX LEVEL
+        "result": 1.0 if v >= k else 0.0          # the outcome
+
+    guarded by `if k and v and c`, so on real data `settle` is ALWAYS a nonzero
+    float and that truthiness test returned 1.0 for every market on the tape.
+    Every yes-side trade booked a win and every no-side trade booked a loss, so
+    the printed realised P&L was a pure function of the yes/no trade mix and
+    carried no outcome information at all. The 2026-08-28 run reported
+    -21c to -39c at t = -8 on that basis.
+
+    The self-test could not see it: endgame's own fixture wrote
+    `"settle": settle > strike`, a bool, which is a schema real data never has.
+    replay.py and edge.py both write settle as a PRICE with a separate result,
+    so this fixture was the only one in the repo that disagreed with the
+    collector. calib.py has carried an outcome_of for the same reason since the
+    day `result` turned out to be a float rather than a string.
+    """
+    r = m.get("result")
+    if r is not None and not (isinstance(r, str) and not r.strip()):
+        if isinstance(r, bool):
+            return 1.0 if r else 0.0
+        if isinstance(r, (int, float)):
+            return 1.0 if float(r) >= 0.5 else 0.0
+        t = str(r).strip().lower()
+        if t in ("yes", "y", "true", "1", "1.0", "win"):
+            return 1.0
+        if t in ("no", "n", "false", "0", "0.0", "loss"):
+            return 0.0
+        return None
+    st, k = m.get("settle"), strike if strike is not None else m.get("strike")
+    if st is None or k is None:
+        return None
+    return 1.0 if float(st) >= float(k) else 0.0
+
+
+def sane_or_die(trades, label=""):
+    """Refuse to report a P&L whose outcomes are degenerate.
+
+    A constant `won` is the signature of reading the wrong field, and it is
+    exactly what shipped. Kalshi's 15-minute binaries are near coin flips, so a
+    YES rate outside [0.05, 0.95] over hundreds of markets is a parsing bug,
+    not a market.
+    """
+    if len(trades) < 20:
+        return True
+    rate = mean(t["won"] for t in trades)
+    if 0.05 <= rate <= 0.95:
+        return True
+    print(f"\n  *** REFUSING TO REPORT {label}: the YES rate over "
+          f"{len(trades)} settled markets is {rate:.3f}.")
+    print("  *** That is a parsing failure, not a market. `settle` is the")
+    print("  *** settled index LEVEL; the outcome is `result`. See")
+    print("  *** outcome_of() above.")
+    return False
+
+
 def fair(ticks, close_s, now_s, strike, sigma):
     """Model fair value with the locked prints already counted, or None."""
     part = partial(ticks, close_s, now_s)
@@ -189,7 +254,7 @@ def scan(quotes, index, markets, series_to_index, sigma_by_series,
         if not ticks or not strike or not close_s or not sig:
             continue
         close_s = int(close_s)
-        settle = m.get("settle")
+        settle, result = m.get("settle"), m.get("result")
         for (t, bid, ask, _bs, _as) in q:
             tau = close_s - t
             if not (1 <= tau <= tau_max):
@@ -200,7 +265,8 @@ def scan(quotes, index, markets, series_to_index, sigma_by_series,
             mid = (bid + ask) / 2.0
             rows.append({"tk": tk, "series": s, "close": close_s, "tau": tau,
                          "fair": f, "mid": mid, "bid": bid, "ask": ask,
-                         "settle": settle, "strike": strike})
+                         "settle": settle, "strike": strike,
+                         "result": result})
     return rows
 
 
@@ -227,7 +293,7 @@ def evaluate(rows, edge_floor=0.0, rule="first"):
     """
     best = {}
     for r in sorted(rows, key=lambda x: (x["close"], -x["tau"])):
-        if r["settle"] is None:
+        if outcome_of(r, r.get("strike")) is None:
             continue
         f, bid, ask = r["fair"], r["bid"], r["ask"]
         buy = 100.0 * f - 100.0 * ask - fee_cents(ask)
@@ -239,7 +305,9 @@ def evaluate(rows, edge_floor=0.0, rule="first"):
         if edge <= edge_floor:
             continue
         cur = {"edge": edge, "side": side, "entry": entry, "tau": r["tau"],
-               "close": r["close"], "settle": r["settle"], "fair": f}
+               "close": r["close"], "settle": r["settle"], "fair": f,
+               "strike": r.get("strike"), "result": r.get("result"),
+               "mid": r["mid"]}
         prev = best.get(r["close"])
         if prev is None:
             best[r["close"]] = cur
@@ -247,7 +315,10 @@ def evaluate(rows, edge_floor=0.0, rule="first"):
             best[r["close"]] = cur
     out = []
     for b in best.values():
-        won = 1.0 if b["settle"] else 0.0
+        won = outcome_of(b, b.get("strike"))
+        if won is None:
+            continue
+        b = dict(b, won=won)
         if b["side"] == "yes":
             pnl = 100.0 * (won - b["entry"]) - fee_cents(b["entry"])
         else:
@@ -268,10 +339,23 @@ def summarise(trades, label=""):
             "exp_edge": mean(t["edge"] for t in trades)}
 
 
-def redraw_null(trades, reps=2000, seed=20260827):
-    """Outcome-redraw: keep every trade, resettle each market by its OWN model
-    probability. If the model is calibrated this has mean zero, and anything
-    the strategy earns above it is not coming from the model being confident.
+def redraw_null(trades, reps=2000, seed=20260827, using="fair"):
+    """Resettle every market from an assumed probability and re-score.
+
+    `using="fair"`  -- the MODEL's probability. NOT a null. Its mean is the
+                      claimed edge by construction, because E[won] = fair is
+                      exactly what "claimed edge" means. It answers "is the
+                      realised P&L consistent with my model being right?"
+    `using="mid"`   -- the MARKET's probability. This IS the null: if the book
+                      is right, E[won] = mid, and the strategy earns
+                      100*(mid - entry) - fee, i.e. it pays the spread and the
+                      fee and nothing else.
+
+    The distinction was wrong until 2026-08-29 and the wrongness was in the
+    direction that flatters: only the fair-band existed, it was printed under
+    the heading "outcome-redraw null", and main() read a result INSIDE it as
+    "nothing here". Inside the fair-band means the model is RIGHT. The two
+    readings are opposites.
     """
     if not trades:
         return None
@@ -280,7 +364,8 @@ def redraw_null(trades, reps=2000, seed=20260827):
     for _ in range(reps):
         tot = 0.0
         for t in trades:
-            won = 1.0 if rng.random() < t["fair"] else 0.0
+            p_ = t["fair"] if using == "fair" else t.get("mid", t["fair"])
+            won = 1.0 if rng.random() < p_ else 0.0
             if t["side"] == "yes":
                 tot += 100.0 * (won - t["entry"]) - fee_cents(t["entry"])
             else:
@@ -394,8 +479,17 @@ def selftest():
                          range(close_s - N_AVG + 1, close_s + 1)) / N_AVG
             strike = sum(ticks[s] for s in
                          range(open_s - N_AVG + 1, open_s + 1)) / N_AVG
+            # The COLLECTOR'S schema, deliberately: `settle` is the settled
+            # index LEVEL and `result` is the outcome. This fixture used to
+            # write `"settle": settle > strike` -- a bool -- and that single
+            # disagreement with kalshi_fulltape.py hid a critical bug for as
+            # long as the file existed: evaluate() read the truthiness of
+            # `settle`, which is always True on real data, so every market
+            # booked a YES win. A fixture whose schema differs from the
+            # collector's tests nothing about the collector's data.
             markets[tk] = {"series": "KXBTC15M", "strike": strike,
-                           "close": close_s, "settle": settle > strike}
+                           "close": close_s, "settle": settle,
+                           "result": 1.0 if settle >= strike else 0.0}
             book_sig = sig_of[close_s]
             ser = []
             for t in range(close_s - span, close_s):
@@ -488,6 +582,52 @@ def selftest():
     print("  weakness: it is exact above 60s and collapses to zero below 40s,")
     print("  so its quotes go to 0 or 1 -- outside what the exchange can quote")
     print("  at all. Its error region censors itself out of the book.")
+
+    # =====================================================================
+    # 1b. THE OUTCOME FIELD. This is the bug that shipped, and the reason
+    #     this whole file's 2026-08-28 real-data table was meaningless.
+    # =====================================================================
+    print("\n  THE OUTCOME FIELD. kalshi_fulltape.py writes `settle` as the")
+    print("  settled index LEVEL and `result` as the outcome, and guards")
+    print("  `if k and v and c`, so settle is ALWAYS a nonzero float on real")
+    print("  data. Reading its truthiness books EVERY market as a YES win.")
+    coll = [{"strike": 80000.0, "settle": 79500.0, "result": 0.0},   # NO
+            {"strike": 80000.0, "settle": 80500.0, "result": 1.0},   # YES
+            {"strike": 80000.0, "settle": 79999.0, "result": 0.0},
+            {"strike": 80000.0, "settle": 80000.0, "result": 1.0}]
+    got = [outcome_of(m) for m in coll]
+    old = [1.0 if m["settle"] else 0.0 for m in coll]      # what shipped
+    print(f"    outcome_of on collector records : {got}")
+    print(f"    the truthiness reading that shipped: {old}")
+    if got != [0.0, 1.0, 0.0, 1.0]:
+        fails.append(f"outcome_of misread the collector's schema: {got}")
+    if old == got:
+        fails.append("the broken reading and the correct one now agree, so "
+                     "this check has stopped pinning anything")
+    # and with `result` absent it must fall back to settle vs strike
+    if [outcome_of({k: v for k, v in m.items() if k != "result"})
+            for m in coll] != [0.0, 1.0, 0.0, 1.0]:
+        fails.append("outcome_of could not fall back to settle >= strike when "
+                     "`result` was absent")
+    # the fixture must now carry the collector's schema, and the outcomes it
+    # produces must not be degenerate
+    q, idx, mk = world(400, seed=31, model="naive")
+    if any(isinstance(m["settle"], bool) for m in mk.values()):
+        fails.append("world() is still writing a bool into `settle` -- the "
+                     "single schema disagreement that hid this bug")
+    rows = scan(q, idx, mk, S2I, POOLED, tau_max=60)
+    tr = evaluate(rows)
+    rate = mean(t["won"] for t in tr) if tr else -1
+    print(f"    fixture YES rate over {len(tr)} settled markets: {rate:.3f}")
+    if not (0.05 <= rate <= 0.95):
+        fails.append(f"the fixture's YES rate is {rate:.3f} -- degenerate, "
+                     "which is the signature of reading the wrong field")
+    # sane_or_die must refuse a degenerate set rather than print a number
+    print("    sane_or_die on an all-YES set:", end=" ")
+    if sane_or_die([{"won": 1.0}] * 50, "a deliberately degenerate set"):
+        fails.append("sane_or_die accepted a set in which every market won")
+    else:
+        print("(refused, as it must)")
 
     # =====================================================================
     # 2. THE GAP TRAP
@@ -796,8 +936,9 @@ def main():
     print("SETTLEMENT P&L  --  one trade per close, taking the book only when")
     print("the model says it is wrong by more than the fee")
     print("=" * 78)
-    print(f"  {'tau<=':>7}{'trades':>8}{'claimed':>10}{'realised':>10}"
-          f"{'t':>7}{'p':>9}{'MDE':>8}{'null 95%':>18}")
+    print(f"  {'tau<=':>7}{'trades':>8}{'YES rate':>10}{'claimed':>10}"
+          f"{'realised':>10}{'t':>7}{'MDE':>8}"
+          f"{'market-right null':>20}{'model band':>18}")
     any_row = False
     for tm in (a.tau_max, 60, 30, 15):
         sel = [r for r in rows if r["tau"] <= tm]
@@ -807,22 +948,37 @@ def main():
             print(f"  {tm:>7}{len(trades):>8}   fewer than 10 trades -- no "
                   "information either way")
             continue
+        # The gate that would have caught the settle-as-price bug on sight.
+        if not sane_or_die(trades, f"tau<={tm}"):
+            continue
         any_row = True
-        nl = redraw_null(trades, reps=800)
-        print(f"  {tm:>7}{sm['n']:>8}{sm['exp_edge']:>9.2f}c{sm['mean']:>9.2f}c"
-              f"{sm['t']:>7.2f}{p_two_sided(abs(sm['t']), sm['df']):>9.4f}"
-              f"{mde(trades):>7.2f}c"
-              f"   [{nl['lo']:>5.2f},{nl['hi']:>5.2f}]c")
+        mk = redraw_null(trades, reps=800, using="mid")
+        md = redraw_null(trades, reps=800, using="fair")
+        print(f"  {tm:>7}{sm['n']:>8}"
+              f"{mean(t['won'] for t in trades):>10.3f}"
+              f"{sm['exp_edge']:>9.2f}c{sm['mean']:>9.2f}c"
+              f"{sm['t']:>7.2f}{mde(trades):>7.2f}c"
+              f"   [{mk['lo']:>5.2f},{mk['hi']:>5.2f}]c"
+              f"   [{md['lo']:>5.2f},{md['hi']:>5.2f}]c")
     if not any_row:
         print("\n  Nothing qualifying at any cap. There is no endgame trade "
               "here to test.")
         return
-    print("\n  Read CLAIMED against REALISED before reading t. The self-test")
-    print("  pins the failure mode: a model whose claimed edge does not show")
-    print("  up in P&L is confident and wrong, which is worse than no edge at")
-    print("  all -- the broken version of this file claimed 1.8c and earned")
-    print("  -22.6c against the same book. Read MDE next: a cell whose true")
-    print("  edge is below its MDE could not have been certified either way.")
+    print("\n  READ THE YES-RATE COLUMN FIRST. It should sit near 0.5. This")
+    print("  file once printed a whole P&L table in which every market had")
+    print("  booked a YES win, because `settle` is the settled index LEVEL and")
+    print("  the outcome is `result` -- see outcome_of(). A degenerate rate")
+    print("  now refuses to print rather than printing a number.")
+    print("\n  MARKET-RIGHT NULL is the null: what the strategy earns if the")
+    print("  book's price is the true probability. It is NEGATIVE by")
+    print("  construction -- you pay the spread and the fee. Beating it is the")
+    print("  bar. MODEL BAND is not a null: it is centred on the claimed edge")
+    print("  by construction, so a result inside it means the MODEL IS RIGHT.")
+    print("  Those two readings are opposites and this file printed only the")
+    print("  second one, labelled as the first, until 2026-08-29.")
+    print("\n  Then read CLAIMED against REALISED, and MDE last: a cell whose")
+    print("  true edge is below its MDE could not have been certified either")
+    print("  way.")
 
 
 if __name__ == "__main__":
