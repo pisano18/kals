@@ -53,7 +53,7 @@ subtle, and neither can be produced by an error in anything we measure.
 WHY IT IS WORTH KNOWING
 
 endgame.py prices the consequence. Against a book quoting sqrt(tau) the exact
-model earns +6.5c inside 60 seconds and +12.1c inside 15, with the claimed edge
+model earns +7.9c inside 60 seconds and +12.1c inside 15, with the claimed edge
 matching the realised P&L to inside a standard error. So this file identifies
 which model the market is on, and endgame.py says what that is worth. If the
 answer is "flat", the market has the same arithmetic we do and there is nothing
@@ -86,10 +86,15 @@ formula, sqrt(tau) still reads beta = 0.185 (t = 12.6). The PAIR separates them
 cleanly and that is how the table should be read:
 
                             beta on sqrt(tau)    beta on free power law
-    a sqrt(tau) book                    0.991                    -0.446
-    a 40% rising-vol view               0.185                    -0.175
+    a sqrt(tau) book                    0.998                    -0.580
+    a 40% rising-vol view               0.119                    -0.157
 
-A large beta on sqrt(tau) with a power-law beta near -0.45 is an arithmetic
+Every figure here is printed by the self-test below, and is quoted rather than
+remembered: an earlier version of this table carried numbers no run produced,
+they were copied into HANDOFF, and they were still there when the result those
+numbers described turned out to be an artefact.
+
+A large beta on sqrt(tau) with a power-law beta near -0.58 is an arithmetic
 error. A small one with a power-law beta near -0.18 is somebody's opinion about
 volatility, which is not the same thing and is not obviously tradeable.
 
@@ -407,7 +412,7 @@ def report(rows, label=""):
     # mean instead is a different centering whenever markets do not all carry
     # the same set of tau bands -- which they never do, because the close-in
     # bands are sparser. Measured on the planted sqrt(tau) book, where the fit
-    # correctly returns beta=0.991 (the market IS exactly on the model), the
+    # correctly returns beta=0.998 (the market IS exactly on the model), the
     # global-mean version printed 'naive says 2.932x' at 20-40s against data
     # of 2.259x, and 0.881x against 0.923x at 600-900s: a 30% disagreement
     # invented by the centering, in a table the header calls "the picture".

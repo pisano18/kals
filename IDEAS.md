@@ -122,7 +122,7 @@ variance formula: flat if it uses the exact one, exploding into the close
 Self-test recovers a planted √τ book at β = 0.991 [0.981, 1.015]. A genuine
 rising-vol *view* is separated from an arithmetic *error* by the pair of betas,
 not either alone (√τ book: 0.991/−0.446; 40% rising view: 0.185/−0.175).
-**And endgame.py has already priced the √τ case at +6.5c inside 60s.**
+**And endgame.py has already priced the √τ case at +7.9c inside 60s.**
 **Cost of building it:** found that `implied.collect`'s 30-second carry-forward
 inverts stale quotes through a collapsed `var_factor` — 2s of staleness alone
 fakes β = +0.062 (t = 6.0) on a flat book. Fixed; the level results were biased

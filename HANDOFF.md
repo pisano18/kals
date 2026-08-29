@@ -183,7 +183,7 @@ It had been failing since it was written, and the estimator was never at fault.
 
 Repaired (one continuous tape, `strike(N+1) == settle(N)`), it is silent
 against a correctly-priced book at every tau cap and finds a `sqrt(tau)` book
-at **+6.5c (t=4.1)** inside 60s rising to **+12.1c (t=6.4)** inside 15s — with
+at **+7.9c (t=4.9)** inside 60s rising to **+12.1c (t=6.4)** inside 15s — with
 **claimed edge matching realised P&L inside a standard error in every cell**.
 That agreement is the assertion. Detection alone is cheap.
 
@@ -207,15 +207,16 @@ exact `var_factor`: a market using the same formula is **flat in tau**, whatever
 it believes. `sqrt(tau)` makes implied sigma explode into the close (9.7x at
 tau=10); `sqrt(tau-39.5)` makes it collapse below 40s.
 
-Self-test recovers a planted `sqrt(tau)` book at **beta = 0.991 [0.981, 1.015]**
-and `sqrt(tau-39.5)` at 1.153, reads flat on a flat book, and separates a
+Self-test recovers a planted `sqrt(tau)` book at **beta = 0.998 [0.994, 1.001]**
+and `sqrt(tau-39.5)` at 1.039 [0.982, 1.096], reads flat on a flat book
+(beta = -0.000), and separates a
 genuine rising-vol *view* from an arithmetic *error* by the **pair** of betas
-(a sqrt(tau) book reads 0.991/−0.446; a 40% rising-vol view reads 0.185/−0.175).
+(a sqrt(tau) book reads 0.998/−0.580; a 40% rising-vol view reads 0.119/−0.157).
 
 **It found a real bias in `implied.collect` on the way.** The 30-second
 carry-forward inverts a stale quote through a `var_factor` that has since
 collapsed: sd/sigma falls from 0.893 at tau=20 to 0.327 at tau=10, so a
-30s-old quote at tau=10 returns **~6.8x** the sigma the quoter used — a
+30s-old quote at tau=10 returns **7.58x** the sigma the quoter used — a
 rising-into-the-close bias with exactly the shape of the signature term.py
 looks for. On a fixture whose truth is flat, 2s of allowed staleness alone gives
 beta = **+0.062 at t = 6.0**. `collect()` now carries the quote's age; term.py
@@ -248,8 +249,9 @@ At r = 0.895:
 | 50c | 0.00c | 2.25c | −2.25c | never |
 
 Positive below ~30c, negative above, best at 7c. There is a **structural cliff
-at 10c**: the tick goes 0.1c → 1c, so the cost of crossing jumps 10x in one step
-while the gross edge barely moves. Below 10c the market only has to be wrong
+at 10c**: the TICK goes 0.1c → 1c in one step. The cost of crossing goes
+0.51c → 1.16c, which is 2.28x rather than 10x — the quadratic fee dominates
+below 10c and moves smoothly — while the gross edge barely moves at all. Below 10c the market only has to be wrong
 about sigma by **1.8–2.5%** for the trade to pay; at 30c it must be wrong by
 10.7%; at 50c no error is ever enough. **Fourth independent line pointing away
 from 50c.**

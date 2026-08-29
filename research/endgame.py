@@ -84,13 +84,19 @@ STATUS: PART 1 EXACT AND VERIFIED. PART 2 NOW PASSES ITS SELF-TEST.
 
       book prices with    tau<=120   tau<=60   tau<=30   tau<=15
       exact                 silent    silent    silent    silent
-      naive  sqrt(tau)     +2.05c    +6.49c   +10.72c   +14.97c
-                          (t=1.2)   (t=4.1)   (t=6.4)   (t=10.2)
+      naive  sqrt(tau)     +3.24c    +7.93c   +11.02c   +12.11c
+                          (t=2.0)   (t=4.9)   (t=6.5)   (t=6.4)
+      claimed at entry      +1.91c    +5.82c   +12.40c   +14.39c
 
-    and in every one of those cells the CLAIMED edge at entry matches the
-    REALISED P&L to well inside its standard error. That agreement is the
-    real assertion -- a model that claims 6.7c and earns 6.5c is honest; the
-    broken version claimed 1.8c and earned -22.6c.
+    Those two rows agree to between 0.8 and 1.3 standard errors in every cell,
+    and THAT is the real assertion -- detection alone is cheap. A model that
+    claims 5.8c and earns 7.9c is honest; the broken version claimed 1.8c and
+    earned -22.6c.
+
+    (Every figure above is printed by the self-test below. They are quoted
+    here because a docstring carrying numbers no run produces is a lie that
+    gets copied into handoff notes and then into decisions -- which is exactly
+    what happened to the earlier version of this table.)
 
     THREE THINGS THE REPAIRED TEST TAUGHT THAT ARE WORTH KEEPING
 
@@ -103,7 +109,7 @@ STATUS: PART 1 EXACT AND VERIFIED. PART 2 NOW PASSES ITS SELF-TEST.
     2. A POOLED sigma manufactures edge. Give the book each window's own true
        sigma and scan with one pooled sigma per series -- our model is then
        wrong per-window in a mean-zero way, and the true edge is exactly
-       zero. It claims +2.5c and realises -3.1c, stable across seeds. This is
+       zero. It claims +2.5c and realises -4.2c, an overclaim of 6.7c. This
        not hypothetical: it is how implied.py and every other stage estimates
        sigma. main() below therefore estimates sigma from each market's OWN
        path up to the start of the endgame, which is non-anticipating, and
@@ -239,7 +245,7 @@ def scan(quotes, index, markets, series_to_index, sigma_by_series,
     `sigma_by_market` overrides the pooled per-series sigma where a market has
     its own non-anticipating estimate. The self-test measures what pooling
     costs: a book quoting each window's true sigma, scanned with one pooled
-    sigma, yields a claimed +2.5c that realises -3.1c. Prefer the per-market
+    sigma, yields a claimed +2.5c that realises -4.2c. Prefer the per-market
     value wherever there is enough tape to form one.
     """
     rows = []
@@ -531,8 +537,8 @@ def selftest():
     # =====================================================================
     print("\n  A book pricing the EXACT model must yield nothing at every tau")
     print("  cap. One pricing sqrt(tau) must be found -- and the CLAIMED edge")
-    print("  at entry must match the REALISED P&L. A model that claims 6.7c")
-    print("  and earns 6.5c is honest; the version this file shipped broken")
+    print("  at entry must match the REALISED P&L. A model that claims 5.8c")
+    print("  and earns 7.9c is honest; the version this file shipped broken")
     print("  claimed 1.8c and earned -22.6c against the very same book.")
     N = 600
     worlds = {m: world(N, seed=5, model=m)

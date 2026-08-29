@@ -41,7 +41,7 @@ TIME across all series. Cluster by market, always; report n as markets.
 `edge.py` scored a gridpoint model against a trade print up to 60s stale; a
 proper scoring rule pays the fresher forecast by construction.
 `implied.collect`'s 30s carry-forward inverts a stale quote through a
-`var_factor` that has since collapsed — 6.8x at tau=10.
+`var_factor` that has since collapsed — 7.58x at tau=10.
 
 ### 7. Pooling across the dimension the theory says matters  [3]
 `proxy.py` pooled scale; `implied.py` pooled tau bands. Measured cost: a book

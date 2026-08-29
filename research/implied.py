@@ -143,7 +143,7 @@ def collect(index, quotes, markets, series_to_index, ttc_max=900):
                     # a var_factor that has since moved, and var_factor
                     # collapses fast into the close: sd/sigma falls from 0.893
                     # at tau=20 to 0.327 at tau=10, so a 30-second-old quote
-                    # inverted at tau=10 returns ~6.8x the sigma the quoter
+                    # inverted at tau=10 returns 7.58x the sigma the quoter
                     # actually used. Consumers that care about the tau SHAPE
                     # (term.py) must be able to drop those; the level results
                     # below are biased UP by them, which makes every
