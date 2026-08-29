@@ -104,6 +104,7 @@ NOTHING HERE PLACES AN ORDER.
 import argparse
 import math
 import os
+import random
 import sys
 from collections import defaultdict
 from statistics import NormalDist, median, mean
@@ -125,6 +126,20 @@ MIN_CLUSTERS = 20     # close times before a fit is reported.
                       # is 13.4%. At 20 it is 8.7% and the t correction below
                       # closes most of the rest.
 Z_LO, Z_HI = 0.5, 2.0
+
+
+# Measured in the self-test below: symmetric mid noise on a FLAT book, whose
+# true beta is exactly zero, produces |beta| of 0.000 / 0.041 / 0.123 at mid
+# noise of 0c / 2c / 5c. Very nearly linear, so the floor is quoted as
+# 2.46 * (noise in probability units), with half the observed spread used as
+# the noise proxy. Crude, and it is the difference between a result and a
+# number, so it is printed beside every fit.
+NOISE_SLOPE = 2.46
+
+
+def noise_floor(spread):
+    """|beta| this file cannot distinguish from quote noise, given a spread."""
+    return NOISE_SLOPE * (spread / 2.0)
 
 
 def t_crit(df, p=0.975):
@@ -442,6 +457,13 @@ def report(rows, label=""):
               f"{(math.exp(mn) if mn is not None else float('nan')):>12.3f}x"
               f"{(math.exp(ml) if ml is not None else float('nan')):>13.3f}x")
 
+    spreads = sorted(r["spread"] for r in rows if r.get("spread") is not None)
+    sp = spreads[len(spreads) // 2] if spreads else 0.0
+    fl = noise_floor(sp)
+    print(f"\n  median spread {100*sp:.2f}c -> NOISE FLOOR |beta| = {fl:.3f}.")
+    print("  A fit inside that is not a finding however large its t, because")
+    print("  the t is against zero and zero is not the right null for a book")
+    print("  that is quoted in ticks. See THE NOISE FLOOR in the self-test.")
     print(f"\n  {'variance model':>20}{'beta':>9}{'95% CI':>20}{'t':>8}"
           f"{'cells':>8}{'closes':>8}   reading")
     fits = {}
@@ -451,7 +473,10 @@ def report(rows, label=""):
         if not f:
             print(f"  {name:>20}   not enough clusters")
             continue
-        if f["lo"] > 0.5:
+        f["floor"] = fl
+        if abs(f["beta"]) <= fl:
+            rd = "INSIDE the noise floor -- not a finding"
+        elif f["lo"] > 0.5:
             rd = "the market is ON this model"
         elif f["hi"] < 0.5 and f["lo"] > -0.5 and abs(f["t"]) < 2:
             rd = "no trace of it"
@@ -468,9 +493,17 @@ def report(rows, label=""):
 
 
 # ===========================================================================
-def _quote(model):
+def _quote(model, noise=0.0):
     """A quote function for implied._build that prices with a chosen variance
-    model. `sd` arrives as sqrt(var_factor(tau)) -- the exact one."""
+    model. `sd` arrives as sqrt(var_factor(tau)) -- the exact one.
+
+    `noise` adds SYMMETRIC error to the mid before the tick rounding _build
+    applies. It is not decoration: it is the only way to see this file's
+    resolution limit, and the limit turns out to be the same order as the
+    effects it is looking for.
+    """
+    rng = random.Random(20260829)
+
     def q(mu, strike, sd, tau, sig):
         if model == "exact":
             s = sig * sd
@@ -486,7 +519,8 @@ def _quote(model):
             raise ValueError(model)
         if s <= 0:
             return None
-        return ND.cdf((mu - strike) / s)
+        p = ND.cdf((mu - strike) / s)
+        return p + rng.gauss(0, noise) if noise else p
     return q
 
 
@@ -562,6 +596,45 @@ def selftest():
                              f"beta={ft['beta']:+.3f} (t={ft['t']:+.1f}) on "
                              f"{nm} -- a term structure invented out of the "
                              "gap between quotes")
+
+    # ---- 2c. THE NOISE FLOOR. What this file cannot resolve. -------------
+    # Quote noise alone tilts a FLAT book. Same exact-model world, same
+    # everything, with symmetric noise added to the mid before the 1c tick
+    # rounding. The true beta is zero in every row.
+    #
+    # Raising Z_LO does not help -- it makes it worse -- so this is NOT the
+    # small-|z| convexity it looks like, and no mechanism here is claimed. It
+    # is measured and reported as a floor, because a bound you can state is
+    # worth more than a correction built on a mechanism you have not proved.
+    print("\n" + "-" * 78)
+    print("  THE NOISE FLOOR. Symmetric mid noise on a FLAT book, where the")
+    print("  true beta is exactly zero. This is what quote noise alone buys,")
+    print("  and no result of this file smaller than it means anything.")
+    print(f"\n  {'mid noise':>11}{'cells':>8}{'beta sqrt(tau)':>24}"
+          f"{'beta power law':>24}")
+    floor = 0.0
+    for nz in (0.0, 0.02, 0.05):
+        idx_, q_, mk_ = _build(_quote("exact", noise=nz), n_win=260, seed=7,
+                               step=5)
+        cs_ = cells(collect(idx_, q_, mk_, S2I))
+        fn_ = fit(demeaned(cs_, g_naive))
+        fp_ = fit(demeaned(cs_, g_logtau))
+        def _f(x):
+            return f"{x['beta']:+.4f} (t={x['t']:+6.2f})" if x else "no fit"
+        print(f"  {nz:>11.2f}{len(cs_):>8}{_f(fn_):>24}{_f(fp_):>24}")
+        for ft in (fn_, fp_):
+            if ft:
+                floor = max(floor, abs(ft["beta"]))
+        if nz == 0.0:
+            for nm, ft in (("sqrt(tau)", fn_), ("power law", fp_)):
+                if ft and abs(ft["beta"]) > 0.02:
+                    fails.append(f"a flat book with NO quote noise returned "
+                                 f"beta={ft['beta']:+.3f} on {nm}")
+    print(f"\n  NOISE FLOOR |beta| = {floor:.3f}. term.py cannot distinguish a")
+    print("  real tilt smaller than this from the quote noise that produces")
+    print("  it, whatever the t-statistic says -- the t is against zero, and")
+    print("  zero is not the right null when the book is noisy.")
+    globals()["NOISE_FLOOR"] = floor
 
     # ---- 3. the trap, measured rather than asserted ------------------------
     print("\n" + "-" * 78)
