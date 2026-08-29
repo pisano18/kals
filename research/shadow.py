@@ -82,17 +82,26 @@ def repo_files(root):
     return out
 
 
-def imported_names(paths):
+def imported_names(paths, unreadable=None):
     """Top-level module names this repo imports, from its own source.
 
     Parsed rather than executed: importing the repo to find out what it imports
     is exactly the thing that fails when something is shadowed.
+
+    A file that will not parse is RECORDED, not skipped. Development runs 3.11
+    and production runs 3.14, so a stage written with 3.12+ syntax parses in
+    production and raises SyntaxError here -- and if the only `import gzip` in
+    the repo lived in that file, the probe would cover zero modules and this
+    file would print "clean". A guard that reports PASS after checking nothing
+    is worse than no guard.
     """
     names = set()
     for p in paths:
         try:
             tree = ast.parse(open(p, encoding="utf-8").read())
-        except (OSError, SyntaxError):
+        except (OSError, SyntaxError, ValueError) as e:
+            if unreadable is not None:
+                unreadable.append((p, f"{type(e).__name__}: {e}"))
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -226,14 +235,16 @@ def check(root, pkg_dir=None):
     if not os.path.isdir(pkg_dir):
         pkg_dir = root
     files = repo_files(root)
-    names = imported_names([p for _, p in files])
+    unreadable = []
+    names = imported_names([p for _, p in files], unreadable)
     coll = name_collisions(root)
     failures, hijacked, absent = import_probe(pkg_dir, root, names)
     return {"root": root, "pkg_dir": pkg_dir, "files": len(files),
             "probed": len([n for n in names
                            if n in sys.stdlib_module_names or n in FUTURE_STDLIB]),
             "collisions": coll, "failures": failures,
-            "hijacked": hijacked, "absent": sorted(absent)}
+            "hijacked": hijacked, "absent": sorted(absent),
+            "unreadable": unreadable}
 
 
 def report(res):
@@ -262,6 +273,18 @@ def report(res):
         bad = True
         print(f"  *** `import {name}` resolved to "
               f"{os.path.relpath(path, res['root'])}, not the stdlib.")
+    for path, err in res.get("unreadable", []):
+        bad = True
+        print(f"  *** {os.path.relpath(path, res['root'])} could not be "
+              f"parsed here: {err}")
+        print("      Its imports were NOT probed. Development is 3.11 and the")
+        print("      run machine is 3.14, so newer syntax parses there and")
+        print("      not here -- and an unprobed import is an unchecked one.")
+    if res["probed"] == 0:
+        bad = True
+        print("  *** probed ZERO stdlib modules. Either the repo imports")
+        print("      nothing, or the files that do could not be parsed. A")
+        print("      guard that checks nothing must not report PASS.")
     if res.get("absent"):
         print("  (absent on this platform, so not probed: "
               + ", ".join(res["absent"]) + ")")
@@ -400,6 +423,26 @@ def selftest():
                          f"result from {base} to {hij}")
     if not base:
         fails.append("a research/json.py was not reported as a hijack at all")
+
+    # --- 3d. A FILE THIS PYTHON CANNOT PARSE MUST NOT BECOME A PASS -------
+    # Development is 3.11, production is 3.14. A stage using 3.12+ syntax
+    # parses there and raises SyntaxError here. If the repo's only `import
+    # gzip` lived in such a file, the probe would cover ZERO modules and this
+    # file would print "clean" -- a guard reporting PASS after checking
+    # nothing.
+    d = world({"newsyntax.py": "type Grid = list[float]\nimport gzip\n"})
+    r = check(d)
+    print("\n  A file this Python cannot parse (3.12+ `type` statement),")
+    print("  carrying the repo's only import:")
+    print(f"    unparseable recorded : {len(r.get('unreadable', []))}")
+    print(f"    stdlib modules probed: {r['probed']}")
+    ok_ = report(check(d))
+    if not r.get("unreadable"):
+        fails.append("a file that would not parse was skipped silently -- its "
+                     "imports were never probed and nothing said so")
+    if ok_:
+        fails.append("a repo whose only import lives in an unparseable file "
+                     "was reported CLEAN after probing zero modules")
 
     # --- 4b. THE CHECKER MUST NOT DAMAGE THE INTERPRETER IT RUNS IN -------
     # The first version of import_probe deleted names from sys.modules and

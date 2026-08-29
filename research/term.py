@@ -106,6 +106,7 @@ from statistics import NormalDist, median, mean
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import var_factor                                  # noqa: E402
 from implied import collect, _build                            # noqa: E402
+from tdist import p_two_sided                                  # noqa: E402
 
 ND = NormalDist()
 
@@ -114,8 +115,26 @@ TAU_BUCKETS = [(1, 10), (10, 20), (20, 40), (40, 60), (60, 90), (90, 150),
                (150, 250), (250, 400), (400, 600), (600, 900)]
 
 MIN_CELL = 3          # quotes before a (market, tau-bucket) cell counts
-MIN_CLUSTERS = 8      # close times before a fit is reported
+MIN_CLUSTERS = 20     # close times before a fit is reported.
+                      # Was 8, where the measured size of a nominal 5% test
+                      # is 13.4%. At 20 it is 8.7% and the t correction below
+                      # closes most of the rest.
 Z_LO, Z_HI = 0.5, 2.0
+
+
+def t_crit(df, p=0.975):
+    """Two-sided 97.5% t critical value. 1.96 is the df=inf limit and it is
+    materially wrong where this file actually operates: 2.365 at df=8."""
+    if df < 1:
+        return float("inf")
+    lo, hi = 1.0, 100.0
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if p_two_sided(mid, df) > 2 * (1 - p):
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
 
 
 def vf(tau):
@@ -308,10 +327,19 @@ def fit(pts):
     ncl = len(g2)
     if ncl < MIN_CLUSTERS:
         return None
+    # CR0 with a finite-cluster correction and a t critical value, not 1.96.
+    # Monte Carlo of this exact estimator at a true beta of zero: with 8
+    # clusters the true sd(beta) is 0.211 while the uncorrected se averages
+    # 0.180, so a nominal 5% test fired 13.4% of the time. At 20 clusters,
+    # 8.7%; at 60, 6.2%. The sandwich itself is right -- at 256 clusters it is
+    # 5.9% -- and the whole defect is the small-G floor, which is exactly the
+    # regime main()'s per-series tables run in.
     se = math.sqrt(sum(v * v for v in g2.values())) / sxx
+    se *= math.sqrt(ncl / (ncl - 1.0)) if ncl > 1 else 1.0
+    crit = t_crit(ncl - 1)
     return {"beta": b, "se": se, "n": len(pts), "clusters": ncl,
-            "t": (b / se) if se > 0 else 0.0,
-            "lo": b - 1.96 * se, "hi": b + 1.96 * se}
+            "t": (b / se) if se > 0 else 0.0, "crit": crit,
+            "lo": b - crit * se, "hi": b + crit * se}
 
 
 def shape(cs):
@@ -374,17 +402,40 @@ def report(rows, label=""):
     print(f"\n  {'tau band':>12}{'cells':>8}{'closes':>8}"
           f"{'log iv vs own market':>22}{'ratio':>9}"
           f"{'  naive says':>13}{'  linear says':>14}")
-    # the models' own predictions, demeaned the same way, for comparison
-    gm_n = mean(g_naive(c["tau"]) for c in cs)
-    gm_l = mean(g_linear(c["tau"]) for c in cs)
+    # The model columns must be demeaned EXACTLY as the data column is:
+    # within market, then averaged over the same cells. Subtracting a global
+    # mean instead is a different centering whenever markets do not all carry
+    # the same set of tau bands -- which they never do, because the close-in
+    # bands are sparser. Measured on the planted sqrt(tau) book, where the fit
+    # correctly returns beta=0.991 (the market IS exactly on the model), the
+    # global-mean version printed 'naive says 2.932x' at 20-40s against data
+    # of 2.259x, and 0.881x against 0.923x at 600-900s: a 30% disagreement
+    # invented by the centering, in a table the header calls "the picture".
+    # Demeaned consistently, the model says 2.282x and 0.921x -- under 1%.
+    model_band = {}
+    for name, g in (("naive", g_naive), ("linear", g_linear)):
+        pts = demeaned(cs, g)                 # (close, x_demeaned, y) per cell
+        acc = defaultdict(list)
+        by = defaultdict(list)
+        for c in cs:
+            by[c["mkt"]].append(c)
+        for mkt, v in by.items():
+            if len(v) < 2:
+                continue
+            gx = [g(c["tau"]) for c in v]
+            mx = mean(gx)
+            for c, x in zip(v, gx):
+                acc[c["band"]].append(x - mx)
+        model_band[name] = {b: mean(vals) for b, vals in acc.items() if vals}
     for s in sh:
         lo, hi = s["band"]
-        tm = mean(c["tau"] for c in cs if c["band"] == s["band"])
+        mn = model_band["naive"].get(s["band"])
+        ml = model_band["linear"].get(s["band"])
         print(f"  {f'{lo}-{hi}s':>12}{s['n']:>8}{s['clusters']:>8}"
               f"{s['mean']:>+15.3f} +-{1.96*s['se']:<5.3f}"
               f"{math.exp(s['mean']):>8.3f}x"
-              f"{math.exp(g_naive(tm)-gm_n):>12.3f}x"
-              f"{math.exp(g_linear(tm)-gm_l):>13.3f}x")
+              f"{(math.exp(mn) if mn is not None else float('nan')):>12.3f}x"
+              f"{(math.exp(ml) if ml is not None else float('nan')):>13.3f}x")
 
     print(f"\n  {'variance model':>20}{'beta':>9}{'95% CI':>20}{'t':>8}"
           f"{'cells':>8}{'closes':>8}   reading")

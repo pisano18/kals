@@ -28,10 +28,25 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmm"
 $log   = "$Repo\results\run-$stamp.log"
 New-Item -ItemType Directory -Force -Path "$Repo\results" | Out-Null
 
+# -Encoding utf8 EVERYWHERE, including on the stage output below.
+# Say used Add-Content (ASCII by default in Windows PowerShell 5.1) while the
+# stage output used Tee-Object (UTF-16LE, and 5.1's Tee has no -Encoding), so
+# the published log was a byte-level splice of the two. `file` called it
+# "data", grep refused it as binary, and the script's own instruction --
+# "Send the lines above back" -- pointed at an artifact that cannot be read
+# as text. results/run-20260828-1948.log is exactly that on disk.
 function Say($m) {
     $line = "$(Get-Date -f 'HH:mm:ss')  $m"
     Write-Host $line
-    Add-Content -Path $log -Value $line
+    Add-Content -Path $log -Value $line -Encoding utf8
+}
+
+# Tee-Object in Windows PowerShell 5.1 has no -Encoding, so this replaces it.
+function LogLines($lines) {
+    $lines | ForEach-Object {
+        Write-Host "    | $_"
+        Add-Content -Path $log -Value "$_" -Encoding utf8
+    }
 }
 
 # PowerShell turns anything a native program writes to stderr into a red
@@ -96,11 +111,10 @@ if ((-not $head) -or (-not $remote) -or ($head -ne $remote)) {
 # its own sake: without it a preflight failure prints sixteen identical walls
 # of text, one per stage, and the run still takes long enough to look real.
 Say "preflight: stdlib shadowing"
-& python research\shadow.py . 2>&1 |
-    ForEach-Object { "$_" } |
-    Tee-Object -Append -FilePath $log |
-    ForEach-Object { Write-Host "    | $_" }
-if ($LASTEXITCODE -ne 0) {
+$pre = & python research\shadow.py . 2>&1 | ForEach-Object { "$_" }
+$preRc = $LASTEXITCODE
+LogLines $pre
+if ($preRc -ne 0) {
     Say "*** PREFLIGHT FAILED. Nothing was run. Send the lines above back."
     exit 1
 }
@@ -116,25 +130,49 @@ $stages = @("surface", "reconcile", "implied", "term", "endgame", "calib", "volt
 Say "$($stages.Count) stages. maker is first and takes ~16 min; the rest are"
 Say "1-3 min each. Expect 30-60 min total."
 
+$failed = @()
 foreach ($s in $stages) {
     Say "--- $s ($([array]::IndexOf($stages,$s)+1) of $($stages.Count)) ---"
     $rep = "$Repo\results\RESULTS_$s.md"
+
+    # DELETE THE OLD REPORT FIRST. Success used to be inferred from
+    # Test-Path alone, and last night's file passes that test. On the 19:48
+    # run every stage died in preflight, go.py wrote a 1.5 KB "no stage ran"
+    # stub, and the loop logged sixteen success-shaped lines --
+    # "surface -> 1.5 KB in 1s" -- then committed and pushed them as results.
+    if (Test-Path $rep) { Remove-Item $rep -Force }
+
     $t0 = Get-Date
     # STREAM it. The first version collected the child's output into a
     # variable and wrote it out only when the stage finished, so the screen
     # showed "--- maker ---" and then nothing for sixteen minutes. A run you
-    # cannot tell from a hang is a run you will kill.
+    # cannot tell from a hang is a run you will kill. ForEach-Object streams
+    # and writes one encoding; Tee-Object in 5.1 cannot be told an encoding.
     & python research\go.py --only $s --data $Data --out $Out `
         --feeds $Feeds --report $rep 2>&1 |
-        ForEach-Object { "$_" } |
-        Tee-Object -Append -FilePath $log |
-        ForEach-Object { Write-Host "    | $_" }
+        ForEach-Object {
+            $line = "$_"
+            Write-Host "    | $line"
+            Add-Content -Path $log -Value $line -Encoding utf8
+        }
+    $rc = $LASTEXITCODE
     $dt = [int]((Get-Date) - $t0).TotalSeconds
-    if (Test-Path $rep) {
-        Say "$s -> $(([math]::Round((Get-Item $rep).Length/1KB,1))) KB in ${dt}s"
+
+    if ($rc -ne 0) {
+        $failed += $s
+        Say "*** $s FAILED (exit $rc) in ${dt}s"
+    } elseif (-not (Test-Path $rep)) {
+        $failed += $s
+        Say "*** $s produced NO report in ${dt}s -- see the log"
     } else {
-        Say "$s produced NO report in ${dt}s -- see the log"
+        Say "$s -> $(([math]::Round((Get-Item $rep).Length/1KB,1))) KB in ${dt}s"
     }
+}
+
+if ($failed.Count -gt 0) {
+    Say ""
+    Say "*** $($failed.Count) of $($stages.Count) stages FAILED: $($failed -join ', ')"
+    Say "*** Results below are partial. Do not read a missing stage as a null."
 }
 
 # ---- 3. publish --------------------------------------------------------
