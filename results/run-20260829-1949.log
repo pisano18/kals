@@ -1,0 +1,275 @@
+﻿19:49:50  === run_when_away 20260829-1949 ===
+19:49:50  git pull
+From https://github.com/pisano18/kals
+ * branch            claude/file-uploads-70rtjl -> FETCH_HEAD
+Already up to date.
+19:49:50  now at eb55b46 (origin/claude/file-uploads-70rtjl is eb55b46)
+19:49:50  preflight: stdlib shadowing
+==============================================================================
+STDLIB SHADOWING
+==============================================================================
+  43 python files under C:\kals-repo
+  probing 34 stdlib modules with C:\kals-repo\research
+  first on sys.path, the way every stage arranges it
+
+  clean -- nothing in this repo shadows a stdlib module, on this
+  Python or on any newer one this file knows about.
+19:49:52  16 stages. maker is first and takes ~16 min; the rest are
+19:49:52  1-3 min each. Expect 30-60 min total.
+19:49:52  --- surface (1 of 16) ---
+==============================================================================
+go.py   2026-08-29 23:49 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+               surface  ok  (64s)
+
+wrote C:\kals-repo\results\RESULTS_surface.md
+Send that file back.
+19:50:57  surface -> 13.2 KB in 65s
+19:50:57  --- reconcile (2 of 16) ---
+==============================================================================
+go.py   2026-08-29 23:50 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+             reconcile  ok  (74s)
+
+wrote C:\kals-repo\results\RESULTS_reconcile.md
+Send that file back.
+19:52:13  reconcile -> 6.7 KB in 75s
+19:52:13  --- implied (3 of 16) ---
+==============================================================================
+go.py   2026-08-29 23:52 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+               implied  ok  (100s)
+
+wrote C:\kals-repo\results\RESULTS_implied.md
+Send that file back.
+19:53:53  implied -> 26.6 KB in 101s
+19:53:53  --- term (4 of 16) ---
+==============================================================================
+go.py   2026-08-29 23:53 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                  term  ok  (87s)
+
+wrote C:\kals-repo\results\RESULTS_term.md
+Send that file back.
+19:55:22  term -> 40.3 KB in 88s
+19:55:22  --- endgame (5 of 16) ---
+==============================================================================
+go.py   2026-08-29 23:55 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+               endgame  ok  (67s)
+
+wrote C:\kals-repo\results\RESULTS_endgame.md
+Send that file back.
+19:56:30  endgame -> 13.2 KB in 68s
+19:56:30  --- calib (6 of 16) ---
+==============================================================================
+go.py   2026-08-29 23:56 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                 calib  ok  (198s)
+
+wrote C:\kals-repo\results\RESULTS_calib.md
+Send that file back.
+19:59:50  calib -> 12.3 KB in 200s
+19:59:50  --- voltiming (7 of 16) ---
+==============================================================================
+go.py   2026-08-29 23:59 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+             voltiming  ok  (117s)
+
+wrote C:\kals-repo\results\RESULTS_voltiming.md
+Send that file back.
+20:01:48  voltiming -> 10.4 KB in 118s
+20:01:48  --- maker (8 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:01 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                 maker  ok  (1001s)
+
+wrote C:\kals-repo\results\RESULTS_maker.md
+Send that file back.
+20:18:30  maker -> 9.2 KB in 1003s
+20:18:30  --- chain (9 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:18 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                 chain  ok  (192s)
+
+wrote C:\kals-repo\results\RESULTS_chain.md
+Send that file back.
+20:21:43  chain -> 17.4 KB in 193s
+20:21:43  --- leadlag (10 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:21 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+               leadlag  ok  (74s)
+
+wrote C:\kals-repo\results\RESULTS_leadlag.md
+Send that file back.
+20:22:58  leadlag -> 11.3 KB in 75s
+20:22:58  --- cross (11 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:22 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                 cross  ok  (183s)
+
+wrote C:\kals-repo\results\RESULTS_cross.md
+Send that file back.
+20:26:03  cross -> 8 KB in 185s
+20:26:03  --- openwindow (12 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:26 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+            openwindow  ok  (83s)
+
+wrote C:\kals-repo\results\RESULTS_openwindow.md
+Send that file back.
+20:27:27  openwindow -> 7.3 KB in 84s
+20:27:27  --- feeds (13 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:27 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                 feeds  ok  (425s)
+
+wrote C:\kals-repo\results\RESULTS_feeds.md
+Send that file back.
+20:34:33  feeds -> 9.4 KB in 426s
+20:34:33  --- pathstats (14 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:34 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+             pathstats  ok  (40s)
+
+wrote C:\kals-repo\results\RESULTS_pathstats.md
+Send that file back.
+20:35:15  pathstats -> 13.7 KB in 42s
+20:35:15  --- proxy (15 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:35 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                 proxy  ok  (463s)
+
+wrote C:\kals-repo\results\RESULTS_proxy.md
+Send that file back.
+20:42:59  proxy -> 6.6 KB in 464s
+20:42:59  --- book (16 of 16) ---
+==============================================================================
+go.py   2026-08-30 00:42 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                  book  ok  (35s)
+
+wrote C:\kals-repo\results\RESULTS_book.md
+Send that file back.
+20:43:35  book -> 4.7 KB in 36s
+20:43:35  publishing
