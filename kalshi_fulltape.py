@@ -168,45 +168,84 @@ def feed_check(data_dir):
 
 
 # ==========================================================================
+def _settled_for(sess, s, n_markets):
+    """The n_markets most recently SETTLED markets of one series.
+
+    Cheap: a few paginated /markets calls. This is the half that has to be
+    refreshed on every analysis run, because it is the OUTCOMES -- and until
+    2026-08-30 nothing refreshed it. run_all.ps1 records quotes forever while
+    fulltape was a manual step nobody re-ran, so three consecutive analysis
+    runs read the same 3,600 settled markets while the quoted-market count
+    grew 3,638 -> 4,797 -> 6,127. Every settlement-dependent result was
+    frozen, and "confirm it on fresh data" was impossible by construction.
+    """
+    ms, cursor = [], None
+    while len(ms) < n_markets * 2:
+        p = {"series_ticker": s, "status": "settled", "limit": 200}
+        if cursor:
+            p["cursor"] = cursor
+        r = sess.get(BASE + "/markets", params=p, timeout=30)
+        if r.status_code != 200:
+            break
+        js = r.json()
+        b = js.get("markets", [])
+        if not b:
+            break
+        ms += b
+        cursor = js.get("cursor")
+        if not cursor:
+            break
+        time.sleep(0.12)
+    good = []
+    for m in ms:
+        try:
+            k = float(m.get("floor_strike") or m.get("strike"))
+            v = float(m["expiration_value"])
+            c = parse_ts(m.get("close_time"))
+            if k and v and c:
+                good.append({"ticker": m["ticker"], "series": s, "strike": k,
+                             "settle": v, "close": c,
+                             "result": 1.0 if v >= k else 0.0})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return sorted(good, key=lambda m: m["close"], reverse=True)[:n_markets]
+
+
+def _write(out_dir, markets, tapes=None):
+    """tmp + os.replace, both of them: markets.json is written first and
+    tapes.json second, so an interrupt between the two leaves a state where
+    every consumer that checks only markets.json proceeds and then dies on the
+    missing tapes.json."""
+    os.makedirs(out_dir, exist_ok=True)
+    todo = [("markets.json", markets)]
+    if tapes is not None:
+        todo.append(("tapes.json", tapes))
+    for name, obj in todo:
+        fp = os.path.join(out_dir, name)
+        with open(fp + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump(obj, fh)
+        os.replace(fp + ".tmp", fp)
+
+
+def pull_markets_only(series_list, n_markets, out_dir):
+    """Refresh the OUTCOMES and leave tapes.json alone."""
+    sess = requests.Session()
+    markets = {}
+    for s in series_list:
+        markets[s] = _settled_for(sess, s, n_markets)
+        print(f"  {s}: {len(markets[s])} settled markets", flush=True)
+    _write(out_dir, markets)
+    return markets
+
+
 def pull_full_tapes(series_list, n_markets, out_dir, max_pages=40):
     sess = requests.Session()
     os.makedirs(out_dir, exist_ok=True)
     markets, tapes = {}, {}
-
     for s in series_list:
-        ms, cursor = [], None
-        while len(ms) < n_markets * 2:
-            p = {"series_ticker": s, "status": "settled", "limit": 200}
-            if cursor:
-                p["cursor"] = cursor
-            r = sess.get(BASE + "/markets", params=p, timeout=30)
-            if r.status_code != 200:
-                break
-            js = r.json()
-            b = js.get("markets", [])
-            if not b:
-                break
-            ms += b
-            cursor = js.get("cursor")
-            if not cursor:
-                break
-            time.sleep(0.12)
-        good = []
-        for m in ms:
-            try:
-                k = float(m.get("floor_strike") or m.get("strike"))
-                v = float(m["expiration_value"])
-                c = parse_ts(m.get("close_time"))
-                if k and v and c:
-                    good.append({"ticker": m["ticker"], "series": s, "strike": k,
-                                 "settle": v, "close": c,
-                                 "result": 1.0 if v >= k else 0.0})
-            except (KeyError, TypeError, ValueError):
-                continue
-        good = sorted(good, key=lambda m: m["close"], reverse=True)[:n_markets]
+        good = _settled_for(sess, s, n_markets)
         markets[s] = good
         print(f"  {s}: {len(good)} markets, pulling FULL tapes...", flush=True)
-
         got, capped = [], 0
         for i, m in enumerate(good):
             cursor, pages, mine = None, 0, []
@@ -236,19 +275,12 @@ def pull_full_tapes(series_list, n_markets, out_dir, max_pages=40):
             if (i + 1) % 25 == 0:
                 print(f"    {i+1}/{len(good)}  {len(got):,} trades", flush=True)
         tapes[s] = got
-        print(f"  {s}: {len(got):,} trades, {len(got)/max(len(good),1):.0f}/market"
+        print(f"  {s}: {len(got):,} trades, "
+              f"{len(got)/max(len(good),1):.0f}/market"
               f"  ({capped} hit the page cap)", flush=True)
-
-    # tmp + os.replace, both of them: markets.json is written first and
-    # tapes.json second, so an interrupt between the two leaves a state where
-    # every consumer that checks only markets.json proceeds and then dies on
-    # the missing tapes.json.
-    for name, obj in (("markets.json", markets), ("tapes.json", tapes)):
-        fp = os.path.join(out_dir, name)
-        with open(fp + ".tmp", "w", encoding="utf-8") as fh:
-            json.dump(obj, fh)
-        os.replace(fp + ".tmp", fp)
+    _write(out_dir, markets, tapes)
     return markets, tapes
+
 
 
 # ==========================================================================
@@ -382,13 +414,37 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="./kalshi_data")
     ap.add_argument("--out", default="./fulltape")
+    # ALL TWELVE recorded series, not three. The collector subscribes to every
+    # one of these (research/replay.py SERIES_TO_INDEX) and the quote tape
+    # covers them all, but the settlement fetch defaulted to three -- so nine
+    # series had quotes and no outcomes, and every settlement-dependent stage
+    # silently measured a quarter of the recording.
     ap.add_argument("--series", nargs="*",
-                    default=["KXBTC15M", "KXETH15M", "KXSOL15M"])
+                    default=["KXADA15M", "KXBCH15M", "KXBNB15M", "KXBTC15M",
+                             "KXDOGE15M", "KXETH15M", "KXHYPE15M",
+                             "KXNEAR15M", "KXSOL15M", "KXTON15M",
+                             "KXXRP15M", "KXZEC15M"])
     ap.add_argument("--markets", type=int, default=150)
     ap.add_argument("--reuse", action="store_true")
+    ap.add_argument("--markets-only", action="store_true",
+                    help="fetch settled markets.json and STOP. Skips the "
+                         "per-market trade tapes, which are the 10-15 min and "
+                         "which only placebo and pathstats read. This is the "
+                         "mode an automated refresh wants.")
     a = ap.parse_args()
 
     feed_check(a.data)
+    if a.markets_only:
+        # markets.json is CHEAP -- a few paginated /markets calls per series.
+        # tapes.json is the expensive part and nothing that needs a fresh
+        # settlement needs it. Keeping these separate is what lets an
+        # automated run refresh the outcomes every time.
+        markets = pull_markets_only(a.series, a.markets, a.out)
+        tails_per_series(markets)
+        n = sum(len(v) for v in markets.values())
+        print(f"\n  markets.json refreshed: {n:,} settled markets across "
+              f"{len(markets)} series. tapes.json left as it was.")
+        return
     if a.reuse:
         markets = json.load(open(os.path.join(a.out, "markets.json"), encoding="utf-8"))
         tapes = json.load(open(os.path.join(a.out, "tapes.json"), encoding="utf-8"))

@@ -119,11 +119,34 @@ if ($preRc -ne 0) {
     exit 1
 }
 
+# ---- 1c. REFRESH THE OUTCOMES ------------------------------------------
+# run_all.ps1 records quotes and index continuously, but the SETTLEMENTS come
+# from kalshi_fulltape.py, which was a manual step nobody re-ran. Three
+# consecutive analysis runs therefore read the same 3,600 settled markets
+# while the quoted-market count grew 3,638 -> 4,797 -> 6,127. Every
+# settlement-dependent stage -- calib, endgame, patterntrade, cross,
+# openwindow -- was frozen on a fixed sample, and the project's own standard
+# ("confirm it on data the finding has never seen") was impossible to meet.
+#
+# --markets-only skips the per-market trade tapes, which are the 10-15 minutes
+# and which only placebo and pathstats read. This is a couple of minutes.
+Say "refreshing settled outcomes (markets.json)"
+$ft = & python kalshi_fulltape.py --data $Data --out $Out --markets 4000 `
+        --markets-only 2>&1 | ForEach-Object { "$_" }
+$ftRc = $LASTEXITCODE
+LogLines $ft
+if ($ftRc -ne 0) {
+    Say "*** settlement refresh FAILED (exit $ftRc). Stages will run on the"
+    Say "*** outcomes already on disk, which may be stale. Say so in the"
+    Say "*** report you send back."
+}
+
 # ---- 2. run the stages -------------------------------------------------
 # `book` is deliberately absent: preflight measures it at ~30 GB of RAM and
 # this machine has ~16 GB, so it swaps the box to death rather than failing
 # cleanly. Everything here reads the ticker/trade channels, which are small.
-$stages = @("surface", "reconcile", "implied", "term", "endgame", "calib", "voltiming", "maker",
+$stages = @("surface", "reconcile", "implied", "term", "endgame", "patterntrade",
+            "calib", "voltiming", "maker",
             "chain", "leadlag", "cross", "openwindow", "feeds", "pathstats",
             "proxy", "book")
 
