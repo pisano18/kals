@@ -219,26 +219,71 @@ def _settled_for(sess, s, n_markets):
         if not cursor:
             break
         time.sleep(0.35)                 # ~3/sec, not ~8/sec
-    good = []
+    good, why = [], {}
+
+    def _drop(reason):
+        why[reason] = why.get(reason, 0) + 1
+
     for m in ms:
-        try:
-            k = float(m.get("floor_strike") or m.get("strike"))
-            v = float(m["expiration_value"])
-            c = parse_ts(m.get("close_time"))
-            if k and v and c:
-                good.append({"ticker": m["ticker"], "series": s, "strike": k,
-                             "settle": v, "close": c,
-                             "result": 1.0 if v >= k else 0.0})
-        except (KeyError, TypeError, ValueError):
+        # Each field checked SEPARATELY. Lumping them into one try/except
+        # produced "none had a usable strike/expiration_value/close_time" for
+        # four series and left nobody any wiser about which of the three it
+        # was, or whether the field was absent, empty or unparseable. A
+        # diagnostic that does not narrow anything is a slower silence.
+        raw_k = m.get("floor_strike")
+        if raw_k in (None, ""):
+            raw_k = m.get("strike")
+        if raw_k in (None, ""):
+            _drop("no floor_strike and no strike")
             continue
+        try:
+            k = float(raw_k)
+        except (TypeError, ValueError):
+            _drop(f"strike not numeric (e.g. {raw_k!r})")
+            continue
+        if "expiration_value" not in m:
+            _drop("no expiration_value field at all")
+            continue
+        raw_v = m.get("expiration_value")
+        if raw_v in (None, ""):
+            _drop("expiration_value present but empty")
+            continue
+        try:
+            v = float(raw_v)
+        except (TypeError, ValueError):
+            _drop(f"expiration_value not numeric (e.g. {raw_v!r})")
+            continue
+        c = parse_ts(m.get("close_time"))
+        if c is None:
+            _drop(f"close_time unparseable (e.g. {m.get('close_time')!r})")
+            continue
+        if not k:
+            _drop("strike is zero")
+            continue
+        if not v:
+            _drop("expiration_value is zero")
+            continue
+        good.append({"ticker": m["ticker"], "series": s, "strike": k,
+                     "settle": v, "close": c,
+                     "result": 1.0 if v >= k else 0.0})
     out = sorted(good, key=lambda m: m["close"], reverse=True)[:n_markets]
     if not out:
         # A silent zero is the "empty loader read as a null result" pattern
         # wearing a fetcher's clothes. Say what went wrong.
-        print(f"  *** {s}: ZERO settled markets"
-              + (f" -- last error: {err}" if err else
-                 " -- the API returned rows but none had a usable"
-                 " strike/expiration_value/close_time"), flush=True)
+        if err:
+            print(f"  *** {s}: ZERO settled markets -- last error: {err}",
+                  flush=True)
+        elif not ms:
+            print(f"  *** {s}: ZERO settled markets -- the API returned no "
+                  "rows at all for this series_ticker", flush=True)
+        else:
+            print(f"  *** {s}: ZERO settled markets from {len(ms):,} rows. "
+                  "Why each was dropped:", flush=True)
+            for reason, cnt in sorted(why.items(), key=lambda x: -x[1]):
+                print(f"      {cnt:>6,}  {reason}", flush=True)
+            keys = sorted({kk for m in ms[:5] for kk in m})
+            print(f"      fields actually present on the first rows: "
+                  f"{', '.join(keys)}", flush=True)
     return out
 
 

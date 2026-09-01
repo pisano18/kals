@@ -2,6 +2,89 @@
 
 ---
 
+## 2026-09-01 — the volatility question, mostly answered
+
+Three days of instrument-building produced an answer, and it is close to "the
+market is right".
+
+### calfit: one parameter for the whole calibration curve
+
+P(win) = Phi(a * Phi^-1(price)), fitted by maximum likelihood over every settled
+market. a = 1 is calibrated. It is not an arbitrary curve — a is exactly
+sigma_implied/sigma_true, so **a = 1/r**, the same parameter reconcile.py gets
+from settlement dispersion by an unrelated route.
+
+| tau | a | 95% CI | t vs 1 |
+|---|---|---|---|
+| 120s | 1.0122 | [0.938, 1.086] | 0.32 |
+| 240s | 1.0233 | [0.950, 1.097] | 0.62 |
+| 360s | 1.0736 | [0.996, 1.152] | 1.85 |
+| 480s | 1.0832 | [0.988, 1.178] | 1.72 |
+| 600s | 1.0018 | [0.898, 1.105] | 0.03 |
+| 720s | 1.1710 | [1.034, 1.307] | 2.46 |
+| 840s | 1.1543 | [0.937, 1.372] | 1.39 |
+
+**Six of seven CIs contain 1.** The one that does not is a single cell of seven
+looks, where a family-wise 5% needs |t| > 2.69. Every point estimate is above 1,
+but the taus overlap heavily so that is not seven independent votes.
+
+### reconcile was comparing two different periods
+
+Widening the settlement fetch to 10,798 markets collapsed every ratio — BNB
+0.715 → 0.524, XRP 0.810 → 0.481. A market underpricing volatility two to one
+over 580 closes is not a finding, it is a mismatch: the numerator (implied RMS)
+could only be measured over the ~164 recorded hours while the denominator drew
+on 1,198 settlements spanning ~300 hours. **Volatility clusters**, so a
+denominator from a different stretch of tape is a different number.
+
+Restricted to the quoted span, the two instruments broadly agree:
+
+| series | reconcile r | calfit 1/a |
+|---|---|---|
+| BTC | 0.967 | 0.970 |
+| NEAR | 0.964 | 0.961 |
+| DOGE | 0.856 | 0.990 |
+| ETH | 0.814 | 0.937 |
+| BNB | 0.806 | 0.888 |
+
+**r ≈ 0.85–0.97.** Implied volatility perhaps 3–15% under settlement dispersion.
+Small, possibly real, at the edge of what ~170 hours of tape resolves.
+
+### calib's rotation faded under more data
+
+The finding that survived everything else — outcomes more extreme than prices —
+largely evaporated when the settlements tripled: 20c from −3.5c to −1.9c, 90c
+from +4.5c to +0.5c, every bucket now under |t| = 1.5. **That is what a
+small-sample artefact looks like when the sample grows.**
+
+### patterntrade could not have answered either way
+
+−1.04c at 583 clusters, inside its null — but its MDE is 5.7c against a 3–5c
+effect. One trade per market at a 46c per-trade sd is an expensive way to ask.
+Not a refutation; a statement that the instrument was the wrong shape.
+
+### oos.py — the only test here that is not in-sample
+
+Everything above describes the whole tape at once. `oos` walks closes in time
+order, fits `a` on markets that settled **strictly before** each close, trades
+that close off it, and settles. Its self-test proves the absence of look-ahead
+rather than asserting it: `a` jumps 0.80 → 1.30 mid-fixture and the fit must
+LAG it (0.834 → 0.905 across the jump, reaching 1.301 only 280 closes later).
+Nothing that peeks can lag. MDE 2.34c at 460 closes.
+
+### Where this leaves the project
+
+The measurement problem is solved; the question is now simply whether anything
+is there. **The binding constraint is the length of the quote tape**, not the
+analysis — `oos` prints how many more closes each edge size would need.
+
+If `oos` ties its market-is-right null, the volatility thread is finished and
+the next direction is `orderbook_delta`: **395 million messages**, by far the
+largest dataset here and essentially unmined — `book` currently runs in under a
+minute off the cheap ticker-derived path.
+
+---
+
 ## 2026-08-29 — RETRACTIONS. Read this before any number below it.
 
 A seven-lens adversarial audit of the code written on 28 August claimed 43
