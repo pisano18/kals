@@ -158,10 +158,16 @@ def fit(rows):
         # outside it, which is a statement about the data and not a fit.
         return {"a": lo if f_lo < 0 else hi, "se": float("inf"),
                 "n": len(obs), "clusters": 0, "bracketed": False}
-    for _ in range(200):
+    # 60 halvings of a 4.8-wide bracket resolves `a` to 4e-18, which is far
+    # past the fourth decimal anything here prints. The first version did 200
+    # and evaluated the score TWICE per iteration, which made oos.py's
+    # walk-forward -- one refit every few closes over hundreds of closes --
+    # too slow to run at all.
+    for _ in range(60):
         mid = (lo + hi) / 2.0
-        if total(mid) * f_lo > 0:
-            lo, f_lo = mid, total(mid)
+        f_mid = total(mid)
+        if f_mid * f_lo > 0:
+            lo, f_lo = mid, f_mid
         else:
             hi = mid
     a = (lo + hi) / 2.0

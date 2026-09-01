@@ -78,6 +78,16 @@ STAGES
             price is the cost: the quadratic fee peaks at 50c and the tick is
             TAPERED, 0.1c below 10c against 1c above it. At 0.895 the net is
             positive below ~30c, best at 7c, and negative at the money.
+  oos       WALK-FORWARD, and the only stage here that is not in-sample.
+            Closes in time order; at each one, fit `a` on markets that settled
+            STRICTLY BEFORE it, price this close's markets off that, take the
+            trades whose edge beats the spread and the fee, and settle them.
+            The parameter refits as the tape advances, so every trade is
+            priced by a number that existed before its outcome did. Its
+            self-test proves the absence of look-ahead rather than asserting
+            it: `a` jumps mid-fixture and the fit must LAG the jump, which
+            nothing that peeks can do. n is CLOSES; the null is what the
+            strategy earns if the book is right, which is negative.
   calfit    the calibration curve as ONE number. P(win) = Phi(a*Phi^-1(p)),
             fitted by maximum likelihood over every settled market, clustered
             on close time. a = 1 is calibrated; a > 1 means outcomes come out
@@ -204,6 +214,7 @@ SELFTESTS = [
     # that touches compressed data died on import. shadow.py now guards this.
     ("pattern trade", ["patterntrade.py", "--selftest"]),
     ("calibration fit", ["calfit.py", "--selftest"]),
+    ("walk-forward", ["oos.py", "--selftest"]),
     # cheap, and it is the only check that looks INSIDE main() --
     # the one function no self-test in this project executes
     ("stdlib shadow checker", ["shadow.py", "--selftest"]),
@@ -296,6 +307,13 @@ STAGES = [
     # in money terms against patterntrade's 5.7c, which is the difference
     # between resolving the 3-5c calibration curve and not.
     ("calfit", ["research/calfit.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/ticker"),
+    # oos is the only test here that is not in-sample. Every trade is priced
+    # by an `a` fitted on closes strictly EARLIER than its own, so it answers
+    # the question none of the others can: with only what was known at the
+    # time, what would this have made? It is the slowest stage by design --
+    # it refits as the tape advances.
+    ("oos", ["research/oos.py", "--data", "{data}", "--out", "{out}"],
      "{data}/ticker"),
     ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
      "{feeds}"),
@@ -455,7 +473,11 @@ def main():
                 continue
         if a.quick and name in ("placebo",):
             cmd += ["--reps", "60"]
-        rc, out, dt = run(cmd, ROOT, 600 if a.quick else 3600)
+        # oos refits the parameter as the tape advances and sweeps seven
+        # taus, seven edge floors and nine series, so it is the one stage
+        # that legitimately needs hours rather than minutes.
+        budget_s = 600 if a.quick else (14400 if name == "oos" else 3600)
+        rc, out, dt = run(cmd, ROOT, budget_s)
         # A STAGE THAT LOADED NOTHING IS NOT "ok". The first real run reported
         # ok for all thirteen while eight of them had no data at all: Kalshi
         # had renamed its websocket fields, every loader returned empty, and

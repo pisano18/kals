@@ -159,12 +159,12 @@ if ($ft -match "REFUSING TO WRITE") {
 # `book` is deliberately absent: preflight measures it at ~30 GB of RAM and
 # this machine has ~16 GB, so it swaps the box to death rather than failing
 # cleanly. Everything here reads the ticker/trade channels, which are small.
-$stages = @("surface", "reconcile", "implied", "term", "endgame", "patterntrade", "calfit",
+$stages = @("surface", "reconcile", "implied", "term", "endgame", "patterntrade", "calfit", "oos",
             "calib", "voltiming", "maker",
             "chain", "leadlag", "cross", "openwindow", "feeds", "pathstats",
             "proxy", "book")
 
-Say "$($stages.Count) stages. maker is first and takes ~16 min; the rest are"
+Say "$($stages.Count) stages. oos walks the tape forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are"
 Say "1-3 min each. Expect 30-60 min total."
 
 $failed = @()
