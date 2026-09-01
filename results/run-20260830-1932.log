@@ -273,3 +273,41 @@ wrote C:\kals-repo\results\RESULTS_book.md
 Send that file back.
 20:31:45  book -> 4.7 KB in 47s
 20:31:45  publishing
+warning: LF will be replaced by CRLF in results/RESULTS_book.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_calib.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_chain.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_cross.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_endgame.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_feeds.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_implied.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_leadlag.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_maker.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_openwindow.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_pathstats.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_proxy.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_reconcile.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_surface.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_term.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_voltiming.md.
+The file will have its original line endings in your working directory
+error: cannot pull with rebase: You have unstaged changes.
+error: please commit or stash them.
+To https://github.com/pisano18/kals
+   7019730..33570c4  HEAD -> claude/file-uploads-70rtjl
+20:31:47  pushed on attempt 1
+20:31:47  === done ===
