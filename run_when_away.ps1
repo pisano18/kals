@@ -131,7 +131,12 @@ if ($preRc -ne 0) {
 # --markets-only skips the per-market trade tapes, which are the 10-15 minutes
 # and which only placebo and pathstats read. This is a couple of minutes.
 Say "refreshing settled outcomes (markets.json)"
-$ft = & python kalshi_fulltape.py --data $Data --out $Out --markets 4000 `
+# --markets 1200 per series, not 4000. The recording spans ~164 hours and a
+# 15-minute series settles 4 markets an hour, so ~660 per series covers every
+# market we have quotes for; 1200 is generous. 4000 meant 22 pages per series
+# across twelve series, and that request rate is what triggered the rate
+# limiting that returned zero markets for five of them.
+$ft = & python kalshi_fulltape.py --data $Data --out $Out --markets 1200 `
         --markets-only 2>&1 | ForEach-Object { "$_" }
 $ftRc = $LASTEXITCODE
 LogLines $ft
@@ -139,6 +144,15 @@ if ($ftRc -ne 0) {
     Say "*** settlement refresh FAILED (exit $ftRc). Stages will run on the"
     Say "*** outcomes already on disk, which may be stale. Say so in the"
     Say "*** report you send back."
+}
+# The refresh refuses to write a materially smaller file than the one already
+# there, so a rate-limited fetch leaves the good outcomes in place. Surface
+# that here too, because a stale-but-good file is a very different thing to
+# read a report against than a fresh one.
+if ($ft -match "REFUSING TO WRITE") {
+    Say "*** the refresh came back short and REFUSED to overwrite. The"
+    Say "*** outcomes on disk are the previous, larger set. Results below"
+    Say "*** are on THAT sample, not a fresh one."
 }
 
 # ---- 2. run the stages -------------------------------------------------

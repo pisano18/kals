@@ -179,23 +179,46 @@ def _settled_for(sess, s, n_markets):
     grew 3,638 -> 4,797 -> 6,127. Every settlement-dependent result was
     frozen, and "confirm it on fresh data" was impossible by construction.
     """
-    ms, cursor = [], None
-    while len(ms) < n_markets * 2:
+    ms, cursor, err = [], None, None
+    pages, max_pages = 0, max(2, math.ceil(n_markets / 200.0) + 2)
+    while len(ms) < n_markets and pages < max_pages:
         p = {"series_ticker": s, "status": "settled", "limit": 200}
         if cursor:
             p["cursor"] = cursor
-        r = sess.get(BASE + "/markets", params=p, timeout=30)
-        if r.status_code != 200:
+        # RETRY, do not break. The first version broke out of the loop on any
+        # non-200, and Kalshi rate-limits: asking for twelve series at eight
+        # requests a second, five of them came back with ZERO markets --
+        # including KXBTC15M, the most liquid series on the exchange -- and
+        # the rest stopped on a page boundary at 200 or 400. That silently
+        # REPLACED a working 3,600-market file with a 1,999-market one.
+        ok = False
+        for attempt in range(5):
+            try:
+                r = sess.get(BASE + "/markets", params=p, timeout=30)
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+                time.sleep(1.0 * (2 ** attempt))
+                continue
+            if r.status_code == 200:
+                ok = True
+                break
+            err = f"HTTP {r.status_code}"
+            if r.status_code in (429, 500, 502, 503, 504):
+                time.sleep(1.0 * (2 ** attempt))
+                continue
+            break                        # a real error, not a rate limit
+        if not ok:
             break
         js = r.json()
         b = js.get("markets", [])
         if not b:
             break
         ms += b
+        pages += 1
         cursor = js.get("cursor")
         if not cursor:
             break
-        time.sleep(0.12)
+        time.sleep(0.35)                 # ~3/sec, not ~8/sec
     good = []
     for m in ms:
         try:
@@ -208,7 +231,15 @@ def _settled_for(sess, s, n_markets):
                              "result": 1.0 if v >= k else 0.0})
         except (KeyError, TypeError, ValueError):
             continue
-    return sorted(good, key=lambda m: m["close"], reverse=True)[:n_markets]
+    out = sorted(good, key=lambda m: m["close"], reverse=True)[:n_markets]
+    if not out:
+        # A silent zero is the "empty loader read as a null result" pattern
+        # wearing a fetcher's clothes. Say what went wrong.
+        print(f"  *** {s}: ZERO settled markets"
+              + (f" -- last error: {err}" if err else
+                 " -- the API returned rows but none had a usable"
+                 " strike/expiration_value/close_time"), flush=True)
+    return out
 
 
 def _write(out_dir, markets, tapes=None):
@@ -227,13 +258,41 @@ def _write(out_dir, markets, tapes=None):
         os.replace(fp + ".tmp", fp)
 
 
-def pull_markets_only(series_list, n_markets, out_dir):
-    """Refresh the OUTCOMES and leave tapes.json alone."""
+def pull_markets_only(series_list, n_markets, out_dir, force=False):
+    """Refresh the OUTCOMES and leave tapes.json alone.
+
+    REFUSES to replace a materially larger existing markets.json. The first
+    version of this had no such guard, hit a rate limit, and overwrote 3,600
+    settled markets with 1,999 -- five series, including BTC, reduced to zero.
+    A refresh that can destroy the thing it refreshes is not a refresh.
+    """
     sess = requests.Session()
     markets = {}
     for s in series_list:
         markets[s] = _settled_for(sess, s, n_markets)
         print(f"  {s}: {len(markets[s])} settled markets", flush=True)
+    new_n = sum(len(v) for v in markets.values())
+
+    fp = os.path.join(out_dir, "markets.json")
+    old_n, old_series = 0, 0
+    if os.path.exists(fp):
+        try:
+            prev = json.load(open(fp, encoding="utf-8"))
+            old_n = sum(len(v) for v in prev.values())
+            old_series = sum(1 for v in prev.values() if v)
+        except (OSError, ValueError, AttributeError):
+            pass
+    new_series = sum(1 for v in markets.values() if v)
+
+    if not force and old_n and (new_n < 0.9 * old_n
+                                or new_series < old_series):
+        print(f"\n  *** REFUSING TO WRITE. The fetch returned {new_n:,} "
+              f"settled markets across {new_series} series;")
+        print(f"  *** the file on disk already has {old_n:,} across "
+              f"{old_series}. That is a fetch failure, not a shrinking")
+        print("  *** market. markets.json is UNCHANGED. Re-run when the API")
+        print("  *** is cooperating, or pass --force if the shrink is real.")
+        return prev
     _write(out_dir, markets)
     return markets
 
@@ -426,6 +485,9 @@ def main():
                              "KXXRP15M", "KXZEC15M"])
     ap.add_argument("--markets", type=int, default=150)
     ap.add_argument("--reuse", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="write markets.json even if the fetch came back "
+                         "materially smaller than the file already there")
     ap.add_argument("--markets-only", action="store_true",
                     help="fetch settled markets.json and STOP. Skips the "
                          "per-market trade tapes, which are the 10-15 min and "
@@ -439,7 +501,7 @@ def main():
         # tapes.json is the expensive part and nothing that needs a fresh
         # settlement needs it. Keeping these separate is what lets an
         # automated run refresh the outcomes every time.
-        markets = pull_markets_only(a.series, a.markets, a.out)
+        markets = pull_markets_only(a.series, a.markets, a.out, a.force)
         tails_per_series(markets)
         n = sum(len(v) for v in markets.values())
         print(f"\n  markets.json refreshed: {n:,} settled markets across "
