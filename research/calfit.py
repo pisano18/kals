@@ -428,40 +428,70 @@ def main():
         print(f"\n  *** NO SETTLED MARKETS at {os.path.abspath(a.out)}.")
         return
 
-    rows, by_series, skipped = [], defaultdict(list), defaultdict(int)
-    for tk, q in quotes.items():
-        m = markets.get(tk)
-        if not m:
-            skipped["no settled market"] += 1
-            continue
-        y = outcome_of(m)
-        close = m.get("close")
-        if y is None or close is None:
-            skipped["no usable outcome"] += 1
-            continue
-        want = int(round(float(close))) - a.tau
-        # The prevailing quote at a FIXED second before close. Exogenous: the
-        # market chooses when to quote, not when we look.
-        best = None
-        for rec in q:
-            t = int(rec[0])
-            if t <= want and (best is None or t > best[0]):
-                best = (t, rec)
-        if best is None or want - best[0] > a.max_age:
-            skipped["no fresh quote at tau"] += 1
-            continue
-        bid, ask = best[1][1], best[1][2]
-        if not (0.0 < bid < ask < 1.0):
-            skipped["unusable quote"] += 1
-            continue
-        mid = (bid + ask) / 2.0
-        if not (P_LO <= mid <= P_HI):
-            skipped["price outside the invertible band"] += 1
-            continue
-        ser = m.get("series") or tk.split("-")[0]
-        rows.append((int(round(float(close))), mid, y))
-        by_series[ser].append((int(round(float(close))), mid, y))
+    def build(tau):
+        rows, by_series, skipped = [], defaultdict(list), defaultdict(int)
+        for tk, q in quotes.items():
+            m = markets.get(tk)
+            if not m:
+                skipped["no settled market"] += 1
+                continue
+            y = outcome_of(m)
+            close = m.get("close")
+            if y is None or close is None:
+                skipped["no usable outcome"] += 1
+                continue
+            want = int(round(float(close))) - tau
+            best = None
+            for rec in q:
+                t = int(rec[0])
+                if t <= want and (best is None or t > best[0]):
+                    best = (t, rec)
+            if best is None or want - best[0] > a.max_age:
+                skipped["no fresh quote at tau"] += 1
+                continue
+            bid, ask = best[1][1], best[1][2]
+            if not (0.0 < bid < ask < 1.0):
+                skipped["unusable quote"] += 1
+                continue
+            mid = (bid + ask) / 2.0
+            if not (P_LO <= mid <= P_HI):
+                skipped["price outside the invertible band"] += 1
+                continue
+            ser = m.get("series") or tk.split("-")[0]
+            c = int(round(float(close)))
+            rows.append((c, mid, y))
+            by_series[ser].append((c, mid, y))
+        return rows, by_series, skipped
 
+    # A SWEEP, not one number. `a` is a volatility ratio, and term.py reports
+    # the market pricing less volatility into the close, so if that is real
+    # `a` must move with tau. One number at one tau cannot tell a level from
+    # a slope, and the tau grid is FIXED here rather than chosen after seeing
+    # which one worked.
+    print("\n" + "=" * 78)
+    print("a ACROSS TIME TO CLOSE -- fixed grid, chosen before looking")
+    print("=" * 78)
+    print(f"  {'tau':>7}{'markets':>9}{'clusters':>10}{'a':>9}"
+          f"{'95% CI':>20}{'t vs 1':>9}{'MDE':>9}")
+    for tau in (120, 240, 360, 480, 600, 720, 840):
+        rws, _, _ = build(tau)
+        if len(rws) < 200:
+            print(f"  {tau:>6}s{len(rws):>9,}   too few")
+            continue
+        f = fit(rws)
+        if not f or not f.get("bracketed"):
+            print(f"  {tau:>6}s{len(rws):>9,}   no fit")
+            continue
+        ci = f"[{f['lo']:.3f}, {f['hi']:.3f}]"
+        print(f"  {tau:>6}s{f['n']:>9,}{f['clusters']:>10}{f['a']:>9.4f}"
+              f"{ci:>20}{f['t']:>9.2f}{f['mde']:>9.4f}")
+    print("\n  A flat column is a level: the market misprices volatility by")
+    print("  the same factor throughout. A column that RISES into the close")
+    print("  is the term structure term.py reports, seen from the outcomes")
+    print("  instead of from the quotes -- and that agreement, or its")
+    print("  absence, is worth more than either measurement alone.")
+
+    rows, by_series, skipped = build(a.tau)
     print(f"\n  one market = one observation, priced at tau = {a.tau}s")
     for k, v in sorted(skipped.items(), key=lambda x: -x[1]):
         print(f"    skipped {v:>7,}  {k}")
