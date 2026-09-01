@@ -432,7 +432,25 @@ def real_data(data_dir, out_dir):
                 setts[c] = float(m["settle"])
             except (KeyError, TypeError, ValueError):
                 continue
+        # THE SAME WINDOW ON BOTH SIDES. The numerator (implied RMS) can only
+        # be measured where we have quotes; the denominator can be measured
+        # wherever Kalshi has settled a market. Once the settlement fetch was
+        # widened from 3,600 markets to 10,798 the two stopped covering the
+        # same period -- 1,198 settlements spanning ~300 hours against 580
+        # close-time clusters from the ~164 hours actually recorded -- and
+        # every ratio fell hard: BNB 0.715 -> 0.524, XRP 0.810 -> 0.481,
+        # DOGE 0.747 -> 0.502. A ratio of 0.48 says the market underprices
+        # volatility by more than two to one, which on a liquid exchange over
+        # 580 closes is not a finding, it is a mismatch.
+        #
+        # Volatility clusters -- this project's one confirmed result -- so a
+        # denominator drawn from a different and longer stretch of tape is a
+        # different number, not a better one.
+        lo_c = min(clus_c := sorted(per[ser])) if per[ser] else None
+        hi_c = max(clus_c) if per[ser] else None
         times = sorted(setts)
+        if lo_c is not None:
+            times = [t for t in times if lo_c - WINDOW <= t <= hi_c + WINDOW]
         d = [setts[b] - setts[a] for a, b in zip(times, times[1:])
              if b - a == WINDOW]
         if len(d) < 60:
@@ -440,6 +458,11 @@ def real_data(data_dir, out_dir):
             continue
         m0 = mean(d)
         sig_st = math.sqrt(sum((x - m0) ** 2 for x in d) / len(d) / 880.0)
+        span_h = (times[-1] - times[0]) / 3600.0 if len(times) > 1 else 0.0
+        all_h = ((max(setts) - min(setts)) / 3600.0) if len(setts) > 1 else 0.0
+        if all_h > span_h * 1.05:
+            print(f"  {ser:>11}   settle sigma restricted to the quoted span: "
+                  f"{span_h:.0f}h of {all_h:.0f}h available, {len(d)} pairs")
 
         clus = per[ser]
         # Per-close MEDIAN iv first (a bad quote cannot own a cluster), then

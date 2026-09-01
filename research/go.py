@@ -78,6 +78,14 @@ STAGES
             price is the cost: the quadratic fee peaks at 50c and the tick is
             TAPERED, 0.1c below 10c against 1c above it. At 0.895 the net is
             positive below ~30c, best at 7c, and negative at the money.
+  calfit    the calibration curve as ONE number. P(win) = Phi(a*Phi^-1(p)),
+            fitted by maximum likelihood over every settled market, clustered
+            on close time. a = 1 is calibrated; a > 1 means outcomes come out
+            more extreme than prices. It is not an arbitrary curve: a is
+            exactly sigma_implied/sigma_true, so a = 1/r and it measures the
+            SAME parameter reconcile.py gets from settlement dispersion, by a
+            completely different route. Fisher information is zero at 50c and
+            rises into the wings, so it down-weights the mid-book for free.
   term      the volatility TERM STRUCTURE. Every other vol result here is a
             LEVEL -- implied divided by a realised sigma we estimated -- so a
             bias in our estimator lands entirely in the answer. This is a
@@ -195,6 +203,7 @@ SELFTESTS = [
     # `import gzip` resolved `compression._common` to OUR file and every stage
     # that touches compressed data died on import. shadow.py now guards this.
     ("pattern trade", ["patterntrade.py", "--selftest"]),
+    ("calibration fit", ["calfit.py", "--selftest"]),
     # cheap, and it is the only check that looks INSIDE main() --
     # the one function no self-test in this project executes
     ("stdlib shadow checker", ["shadow.py", "--selftest"]),
@@ -282,6 +291,12 @@ STAGES = [
     # of 0.81. It has never run on real data; it was self-test only.
     ("patterntrade", ["research/patterntrade.py", "--data", "{data}",
                       "--out", "{out}"], "{data}/ticker"),
+    # calfit fits ONE parameter to every settled market instead of one trade
+    # per market. Same data, 3.5x the power: at 578 clusters its MDE is 1.6c
+    # in money terms against patterntrade's 5.7c, which is the difference
+    # between resolving the 3-5c calibration curve and not.
+    ("calfit", ["research/calfit.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/ticker"),
     ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
      "{feeds}"),
     ("pathstats", ["research/pathstats.py", "--data", "{data}",
