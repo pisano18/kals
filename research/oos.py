@@ -149,7 +149,14 @@ def summarise(trades, label=""):
         by[t["close"]].append(t["pnl"])
     cl = [mean(v) for v in by.values()]
     n = len(cl)
-    if n < 3:
+    # THIRTY clusters, not three. At three the cluster standard error is
+    # noise about noise, and this file proved it on its own real-data run:
+    # the min-edge 2.00c cell reported +9.60c at t = +12.28 off 16 trades in
+    # 12 closes, with an MDE of 2.35c -- LOWER than the 11.58c of the cell
+    # above it, which is impossible for a smaller sample and is the tell.
+    # A t of twelve is exactly the number that ends an argument, and it came
+    # from twelve observations.
+    if n < 30:
         return None
     m = mean(cl)
     sd = pstdev(cl) * math.sqrt(n / (n - 1.0))
@@ -189,7 +196,15 @@ def report(rows, label="", warmup=120, refit_every=5, min_edge=0.0):
     trades, a_path = walk_forward(rows, warmup, refit_every, min_edge)
     sm = summarise(trades, label)
     if not sm:
-        print(f"  {label}{len(trades)} trades -- too few to say anything.")
+        ncl = len({t["close"] for t in trades})
+        print(f"\n  {label}")
+        print(f"    {len(trades)} trades over {ncl} closes -- under the "
+              "30-cluster floor, so no standard error is reported.")
+        print("    A cluster SE off a handful of clusters is noise about")
+        print("    noise; this cell once printed t = +12.28 off 12 closes.")
+        if trades:
+            print(f"    (raw mean {mean(t['pnl'] for t in trades):+.2f}c, "
+                  "stated WITHOUT any claim of significance)")
         return None
     nl = market_null(trades, reps=2000)
     print(f"\n  {label}")
@@ -453,7 +468,16 @@ def main():
     print("\n" + "=" * 78)
     print("HOW MUCH MORE TAPE WOULD SETTLE IT")
     print("=" * 78)
-    base = summarise(walk_forward(cache[a.tau], a.warmup, a.refit_every)[0])
+    # The best-POPULATED cell, not whatever --tau happens to be. The first
+    # run took its per-close sd from tau=600s, which had 173 closes where the
+    # neighbouring taus had 450, and so overstated the tape required.
+    base, base_tau = None, None
+    for tau, rws in sorted(cache.items()):
+        sm_ = summarise(walk_forward(rws, a.warmup, a.refit_every)[0])
+        if sm_ and (base is None or sm_["closes"] > base["closes"]):
+            base, base_tau = sm_, tau
+    if base:
+        print(f"  from the best-populated cell, tau = {base_tau}s.")
     if base:
         sd = base["se"] * math.sqrt(base["closes"])
         print(f"  per-close sd {sd:.2f}c over {base['closes']} closes.")

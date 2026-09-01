@@ -143,6 +143,31 @@ Practical rules that follow:
 
 ---
 
+### 17. A cluster standard error off a handful of clusters  [1]  ← 2026-09-01
+
+`oos.py` allowed a cell to report as long as it had **three** close-time
+clusters. On its first real-data run the min-edge 2.00c cell printed
+
+    trades / closes   16 / 12
+    realised P&L      +9.60c   t = +12.28
+    MDE               2.35c
+
+A t of twelve is the number that ends an argument, and it came from twelve
+observations. The tell was there in the same block: the MDE of **2.35c was
+LOWER than the 11.58c of the cell above it**, which is impossible for a strictly
+smaller sample and can only mean the standard error had stopped being an
+estimate of anything.
+
+The floor is thirty clusters now, and a cell below it prints the raw mean with
+an explicit statement that no significance is claimed — because suppressing the
+number entirely invites someone to compute it by hand without the warning.
+
+**A filter that tightens until only a few observations survive will always end
+in a spectacular t.** Any sweep over a threshold needs a floor on what survives
+it, stated before the sweep runs.
+
+---
+
 ## The two meta-rules
 
 1. **Every exciting result this project has produced so far was a measurement
