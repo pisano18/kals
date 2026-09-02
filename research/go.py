@@ -315,6 +315,15 @@ STAGES = [
     # it refits as the tape advances.
     ("oos", ["research/oos.py", "--data", "{data}", "--out", "{out}"],
      "{data}/ticker"),
+    # flow reads the LARGEST thing on disk, and the only channel nobody has
+    # read: 395,685,479 orderbook deltas, about twenty times the rest of the
+    # tape put together. Every other stage here asks whether the PRICE is
+    # wrong. This one asks whether the order flow knows, one second early,
+    # where the price is going -- a different question, and the only one left
+    # that this tape can answer. It streams and caches per day, so the first
+    # run is slow and every run after it is not.
+    ("flow", ["research/flow.py", "--data", "{data}", "--out", "{out}",
+              "--cache", "./flow_cache"], "{data}/orderbook_delta"),
     ("feeds", ["research/feeds.py", "--feeds", "{feeds}", "--data", "{data}"],
      "{feeds}"),
     ("pathstats", ["research/pathstats.py", "--data", "{data}",
@@ -476,7 +485,11 @@ def main():
         # oos refits the parameter as the tape advances and sweeps seven
         # taus, seven edge floors and nine series, so it is the one stage
         # that legitimately needs hours rather than minutes.
-        budget_s = 600 if a.quick else (14400 if name == "oos" else 3600)
+        # flow is the slowest by a wide margin on its FIRST run -- it reads
+        # every orderbook message on disk once. After that it reads its own
+        # per-day cache and takes seconds.
+        budget_s = 600 if a.quick else (
+            14400 if name in ("oos", "flow") else 3600)
         rc, out, dt = run(cmd, ROOT, budget_s)
         # A STAGE THAT LOADED NOTHING IS NOT "ok". The first real run reported
         # ok for all thirteen while eight of them had no data at all: Kalshi

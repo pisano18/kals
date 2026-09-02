@@ -156,16 +156,25 @@ if ($ft -match "REFUSING TO WRITE") {
 }
 
 # ---- 2. run the stages -------------------------------------------------
-# `book` is deliberately absent: preflight measures it at ~30 GB of RAM and
-# this machine has ~16 GB, so it swaps the box to death rather than failing
-# cleanly. Everything here reads the ticker/trade channels, which are small.
-$stages = @("surface", "reconcile", "implied", "term", "endgame", "patterntrade", "calfit", "oos",
+# `flow` runs FIRST and it is new. It is the only stage that reads
+# orderbook_delta -- 395 million messages, about twenty times the rest of the
+# tape put together, and until now completely unread. It STREAMS rather than
+# rebuilding, so it needs a few hundred MB rather than the ~30 GB a rebuild
+# wants, and it caches one file per day: the first run is roughly an hour and
+# every run after it is seconds. First in the list so that a short window
+# still gets it.
+#
+# `book` stays last: its main path reads the small `ticker` channel, not the
+# rebuild, so it is cheap -- but it is also the least interesting thing here
+# now that flow reads the real book.
+$stages = @("flow",
+            "surface", "reconcile", "implied", "term", "endgame", "patterntrade", "calfit", "oos",
             "calib", "voltiming", "maker",
             "chain", "leadlag", "cross", "openwindow", "feeds", "pathstats",
             "proxy", "book")
 
-Say "$($stages.Count) stages. oos walks the tape forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are"
-Say "1-3 min each. Expect 30-60 min total."
+Say "$($stages.Count) stages. flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape"
+Say "forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each."
 
 $failed = @()
 foreach ($s in $stages) {

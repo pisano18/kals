@@ -166,6 +166,37 @@ number entirely invites someone to compute it by hand without the warning.
 in a spectacular t.** Any sweep over a threshold needs a floor on what survives
 it, stated before the sweep runs.
 
+### 18. The fixture plants the effect in the wrong place  [1]  ← 2026-09-02
+
+`flow.py` asks whether order flow at second *t* predicts the mid move from *t*
+to *t+k*. Its self-test builds a world where the answer is a loud yes: size
+lands on the side the price is about to move toward.
+
+The first version of that fixture emitted the flow at `sec*1000+200` and the
+price move at `sec*1000+700` — **the same second**. So the planted effect was
+*contemporaneous*, not predictive. The forward regression correctly read zero.
+Had that code been pointed at real data, a genuine null and a broken fixture
+would have printed identically, and the honest conclusion "order flow does not
+predict the next move" would have been unfalsifiable.
+
+What caught it was the **backward check**: the same *x* against the move that
+has already finished. It read `t = +340` while forward read `t = -0.91`. An
+estimator that can find an enormous effect one second in the past and nothing
+one second in the future is not measuring the future — it is measuring the
+present and calling it the past.
+
+A second, subtler version of the same failure followed. Once the timing was
+fixed, the *backward* check read zero, because the fixture's book was one level
+deep on each side: a price step deleted the only level, the side went
+momentarily empty, the order-flow chain reset, and the reactive flow that every
+real move generates contributed exactly nothing. Real books are laddered and
+never do this. **A fixture simple enough to reason about is often simple enough
+to be degenerate in exactly the dimension being measured.**
+
+**Any test for a forward-looking effect needs a backward-looking companion that
+must be large.** A null result is only interpretable from an estimator that has
+been shown, on the same data path, to be capable of finding something.
+
 ---
 
 ## The two meta-rules
