@@ -2,6 +2,71 @@
 
 ---
 
+## 2026-09-02 — a new question: does the ORDER FLOW know?
+
+The volatility thread is closed. calfit puts `a` at 1.01–1.17 across seven taus
+with six of seven CIs containing 1; reconcile, restricted to the quoted span,
+agrees; the walk-forward is inside its MDE at every horizon and negative in six
+of eight series. **The price is not wrong in any way this project has been able
+to measure**, and that is now six dead ideas plus volatility: delta-hedging,
+market-making, opening-value, lead-lag stale quotes, endgame, and calibration.
+
+Every one of those asked the same question — *is the price wrong*. There is one
+more question the tape can answer and it has never been asked.
+
+### `research/flow.py` — the largest thing on disk, finally read
+
+`orderbook_delta` is **395,685,479 messages, ~3.6 GB, about twenty times the
+rest of the tape put together**, and effectively untouched. `book.py` reaches it
+but holds every message in RAM to sort by sequence, measured at ~30 GB against a
+16 GB machine, so the depth number the project actually uses comes from
+`depth_from_ticker` — a shortcut over the small `ticker` channel.
+
+It never needed the sort. Within one collector file the messages are already in
+arrival order, so a k-way merge across files yields a globally time-ordered
+stream in memory proportional to the **number of files**, not the number of
+messages. Book state is proportional to the markets alive at once, which for
+15-minute contracts is a handful. Measured at **~116,000 messages/second**:
+about an hour for the whole tape, cached one file per day, so every run after
+the first takes seconds.
+
+The question:
+
+    x   order flow imbalance over second t (Cont-Kukanov-Stoikov, level 1)
+    y   the mid change from the end of t to the end of t+k
+
+`x` is complete before `y` begins. The split is at a **second boundary, not a
+message boundary** — message-level overlap is the single easiest way to
+manufacture this exact result.
+
+What it enforces, all of it checked by the self-test rather than asserted in a
+comment:
+
+* the grid is **exogenous** — every second in the window is emitted, message or
+  not, so the sample is not built out of exactly the moments the answer is
+  about. Forward-fill is bounded by a global clock, so a dead collector cannot
+  read as a calm market.
+* cluster-robust on close time, `G` = closes, and the **MDE printed before the
+  estimate**.
+* a **time-shifted placebo**: real flow against a moment 300s away in the same
+  market. Must read zero.
+* a **backward check** that must be large. A forward zero from an estimator
+  never shown capable of finding anything is not a result.
+* **money, out of sample**: slope fitted on the first half of the tape, traded
+  on the second, paying the full spread and the quadratic fee at both ends.
+
+It also re-measures, from the websocket stream, the resting-depth number
+PLAN sec.4 used to kill market-making — which came from a REST endpoint RUNBOOK
+separately records as returning levels ascending and truncating from the bottom.
+
+**Nothing has been run against real data yet.** Two fixture bugs were found and
+fixed getting the self-test to pass, both recorded as BIASES.md pattern 18, and
+one real bug fell out of them: sequence bookkeeping sat after the ticker filter,
+so skipping tickers we have no settlement for would have read holes in our
+sample as holes in Kalshi's stream and invalidated every book we hold.
+
+---
+
 ## 2026-09-01 — the volatility question, mostly answered
 
 Three days of instrument-building produced an answer, and it is close to "the
