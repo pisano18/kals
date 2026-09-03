@@ -178,7 +178,8 @@ GRID = [720, 600, 480, 360, 300, 240, 180, 120, 90, 60, 45, 30]
 HORIZONS = [1, 5, 30]
 
 
-def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
+def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS,
+                      verbose=False):
     """SIGNED markout per fill: the decision quantity, not a volatility proxy.
 
         AS_i(h) = sgn_i * (mid(t_i + h) - mid(t_i-))          in cents
@@ -210,7 +211,21 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
     hit = defaultdict(list)
     shuf = defaultdict(list)
     rnd = _random.Random(20260827)
+    n_tr = sum(len(v) for v in trades.values())
+    if verbose:
+        print(f"  markouts over {len(quotes):,} markets and {n_tr:,} trades")
+        if not n_tr:
+            print("  no trades on disk -- nothing to mark out against")
+    done = 0
     for tk, series in quotes.items():
+        done += 1
+        # A STAGE THAT DIES MUST SAY WHERE. This timed out at 3600s twice and
+        # its output was the single line "*** TIMED OUT ***", which does not
+        # distinguish a slow loop from a hung read.
+        if verbose and done % 2000 == 0:
+            print(f"    {done:,}/{len(quotes):,} markets, "
+                  f"{sum(len(v) for v in hit.values()):,} markouts",
+                  flush=True)
         close_s = closes.get(tk)
         if not close_s or len(series) < 30:
             continue
@@ -220,8 +235,8 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
         if len(secs) < 30:
             continue
 
-        def mid_at(t, strict=False):
-            """Last mid at (or strictly before) t, and only if it is fresh."""
+        def _before(t, strict=False):
+            """The freshest quote second at (or strictly before) t."""
             lo, hi, best = 0, len(secs) - 1, None
             while lo <= hi:
                 m = (lo + hi) // 2
@@ -232,7 +247,12 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
                     hi = m - 1
             if best is None or t - best > 30:
                 return None
-            return mids[best]
+            return best
+
+        def mid_at(t, strict=False):
+            """Last mid at (or strictly before) t, and only if it is fresh."""
+            b = _before(t, strict)
+            return None if b is None else mids[b]
 
         for (t, price, size, side) in trades.get(tk, []):
             # STRICTLY before: a quote stamped in the trade's own second is
@@ -242,6 +262,15 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
                 continue
             sgn = 1.0 if str(side).lower().startswith("y") else -1.0
             flip = rnd.choice((1.0, -1.0))
+            # ONCE PER TRADE, BY BINARY SEARCH. This used to be
+            #   spr.get(t, spr.get(max(x for x in secs if x < t), 0.01))
+            # evaluated inside the horizon loop -- a LINEAR scan of every
+            # quote second in the market, per trade, per horizon. The stage
+            # timed out at 3600s on two consecutive real runs and its verdict
+            # never printed. `mid_at` was already doing the same lookup
+            # correctly two lines above.
+            b0 = _before(t, strict=True)
+            sp0 = spr.get(t, spr[b0] if b0 is not None else 0.01)
             for h in horizons:
                 m1 = mid_at(t + h)
                 if m1 is None:
@@ -252,10 +281,7 @@ def adverse_from_tape(quotes, trades, closes, horizons=HORIZONS):
                 # different questions -- 78% against 25%. A pooled number is
                 # dominated by the mid-book, which is exactly the region the
                 # arithmetic says cannot work.
-                hit[h].append((sgn * (m1 - m0) * 100.0, close_s, m0,
-                               spr.get(t, spr.get(max(
-                                   (x for x in secs if x < t), default=t),
-                                   0.01))))
+                hit[h].append((sgn * (m1 - m0) * 100.0, close_s, m0, sp0))
                 # same moments, same moves, RANDOM sign: isolates whether the
                 # taker's direction carries information from whether trades
                 # merely happen in volatile seconds
@@ -363,7 +389,8 @@ def selftest():
                     ser[j][2] += sgn * planted / 100.0
             quotes[tk] = [tuple(r) for r in ser]
             trades[tk] = tr
-        hit, shuf = adverse_from_tape(quotes, trades, closes)
+        hit, shuf = adverse_from_tape(quotes, trades, closes,
+                                  verbose=True)
         h = clustered(hit[1])
         if not h:
             fails.append(f"planted={planted}: estimator returned nothing")
@@ -399,7 +426,8 @@ def selftest():
                 tr.append((close_s - 900 + k, ser[k][1], 10.0,
                            "yes" if rnd.random() < 0.5 else "no"))
         quotes[tk], trades[tk] = ser, tr
-    hit, shuf = adverse_from_tape(quotes, trades, closes)
+    hit, shuf = adverse_from_tape(quotes, trades, closes,
+                                  verbose=True)
     hs = clustered(hit[1])
     abs_h = clustered([(abs(r[0]), r[1]) for r in hit[1]])
     abs_n = clustered([(abs(r[0]), r[1]) for r in shuf[1]])
@@ -575,7 +603,8 @@ def main():
     trades = load_trades(a.data)
     mk = load_markets(a.out)
     closes = {tk: int(m["close"]) for tk, m in mk.items()}
-    hit, shuf = adverse_from_tape(quotes, trades, closes)
+    hit, shuf = adverse_from_tape(quotes, trades, closes,
+                                  verbose=True)
 
     print("\n" + "=" * 78)
     print("REALISED ADVERSE SELECTION  --  what a resting quote actually costs")
