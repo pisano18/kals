@@ -2,6 +2,94 @@
 
 ---
 
+## 2026-09-03 — order flow predicts. It is ~100x too small to pay a spread.
+
+First real answer from `flow.py`, on 124,378 market-seconds over 1,430 markets
+and 323 close-time clusters. **This is 3% of the tape** — see the data-loss note
+below — so every number here is provisional on power, not on method.
+
+### The measurement
+
+| horizon | slope (c per contract of OFI) | t | MDE | |
+|---|---|---|---|---|
+| k = 1s | +0.0000 | **+3.96** | 0.0000 | beats MDE |
+| k = 2s | +0.0000 | **+3.39** | 0.0000 | beats MDE |
+| k = 5s | +0.0001 | **+3.65** | 0.0000 | beats MDE |
+| k = 10s | +0.0001 | **+2.52** | 0.0001 | beats MDE |
+| k = 30s | +0.0003 | **+3.60** | 0.0002 | beats MDE |
+| k = 60s | +0.0005 | +1.88 | 0.0006 | inside MDE |
+
+The controls behave. **Backward** (the move that has already finished) reads
+t = +12.99 / +9.76 / +3.45 at k = 1/5/30 — flow follows price mechanically, so
+an instrument that could not find that would make the forward zeros
+meaningless. **Placebo** (real flow against a moment 300s away in the same
+market) reads t = −1.16 / −1.71 / +0.47; the middle one is marginally outside
+its MDE with the wrong sign, which is one marginal cell in three looks.
+
+**So order flow does carry information about the next move.** That is a real
+fact about the book and it is the first positive result in this project.
+
+### And it is worth nothing to a taker
+
+    k =  1s   trained slope +0.0000c, only 0 trades cleared the cost of crossing
+    k =  5s   trained slope +0.0001c, only 0 trades cleared the cost of crossing
+    k = 10s   trained slope +0.0001c, only 0 trades cleared the cost of crossing
+    k = 30s   trained slope +0.0005c, only 6 trades cleared the cost of crossing
+
+Median spread is **2c**, plus a quadratic fee at both ends. A one-standard-
+deviation burst of order flow predicts hundredths of a cent. **The signal is
+roughly two orders of magnitude smaller than the cost of acting on it.** Taker
+order-flow trading is dead, and no amount of extra tape changes that — more
+data measures the same tiny number more precisely.
+
+Seven ideas are now closed: delta-hedging, market-making (on the old depth
+number), opening-value, lead-lag stale quotes, endgame, calibration, and taker
+order flow.
+
+### The book, from the websocket, on 124,378 market-seconds
+
+    spread, cents                     1 /   2 /   6      (25th / median / 75th)
+    contracts AT the touch           22 /  42 /  83
+    contracts within 3 cents         75 / 123 / 214
+
+`book.py` independently reads **65 contracts** median at the bid off the
+`ticker` channel over 5.9M quote-seconds. Two different channels, two different
+code paths, same order of magnitude — and both an order of magnitude away from
+PLAN sec.4's mis-parsed 3,767. That correction was already known; this is the
+first time it has been confirmed from the reconstructed book.
+
+**This is where the project should go next.** Makers pay no fee, earn the
+spread rather than paying it, and the queue in front of them is tens of
+contracts rather than thousands. The one thing that kills a maker is adverse
+selection — filled precisely when wrong — and a signal far too small to pay 2c
+of spread is not too small to decide when to pull a resting quote. `maker.py`
+has now timed out at 3600s on two consecutive runs and its verdict has not
+printed; a fill model built on the reconstructed book (queue position, size
+ahead, drain rate) is the missing instrument.
+
+### The data loss, and its third form
+
+The run kept 3% of the tape. Every day printed one subscription, ~460 forward
+seq jumps, ~800 books invalidated, and 55 of 62 million deltas dropped onto
+invalid books.
+
+The collector subscribes `orderbook_delta`, `trade` and `ticker` in a **single
+subscribe call**, so Kalshi numbers all three under one sid with one counter.
+Reading `seq` off the orderbook messages alone reads every ticker and trade in
+between as a hole, and a hole invalidates every book under the sid — with one
+sid, that is every market at once.
+
+**This is the third form of the same mistake in this one file**: the first
+version did sequence bookkeeping after filtering by ticker, the second after
+filtering by channel. Sequence bookkeeping must precede *every* filter.
+
+The mine now reads all four channels, and uses `ticker` to re-anchor top of
+book after a genuine gap instead of going dark until the next snapshot. It also
+reports, per day and on real data, how often the book replayed from 400 million
+deltas agrees with the top of book the ticker channel hands over whole.
+
+---
+
 ## 2026-09-02 — a new question: does the ORDER FLOW know?
 
 The volatility thread is closed. calfit puts `a` at 1.01–1.17 across seven taus
