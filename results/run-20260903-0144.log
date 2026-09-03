@@ -1,0 +1,112 @@
+﻿01:44:26  === run_when_away 20260903-0144 ===
+01:44:26  git pull
+From https://github.com/pisano18/kals
+ * branch            claude/file-uploads-70rtjl -> FETCH_HEAD
+Already up to date.
+01:44:27  now at 12eba37 (origin/claude/file-uploads-70rtjl is 12eba37)
+01:44:27  preflight: stdlib shadowing
+==============================================================================
+STDLIB SHADOWING
+==============================================================================
+  46 python files under C:\kals-repo
+  probing 35 stdlib modules with C:\kals-repo\research
+  first on sys.path, the way every stage arranges it
+
+  clean -- nothing in this repo shadows a stdlib module, on this
+  Python or on any newer one this file knows about.
+01:44:29  refreshing settled outcomes (markets.json)
+==============================================================================
+FEED CHECK
+==============================================================================
+  cfbenchmarks_value  200 files   7,127,037 msgs  (0 still writing)  OK
+    sample: {"type":"cfbenchmarks_value","sid":2,"seq":1,"msg":{"index_id":"SOLUSD_RTI","received_at":1787630959031,"data":"{\"type\":\"value\",\"time\":1787630959000,\"id\":\"SOLUSD_RTI\",\"value\":\"101.22\"}","avg_60s_data":{"value":"101.22000000","window_size":0,"window_start_ts_ms":1787
+  pyth_value            0 files           0 msgs  (0 still writing)  *** EMPTY ***
+  orderbook_delta     200 files  557,337,262 msgs  (0 still writing)  OK
+  ticker              200 files   6,271,680 msgs  (0 still writing)  OK
+  trade               199 files  27,255,498 msgs  (0 still writing)  OK
+
+  --- cfbenchmarks detail ---
+  span 216.84 h across 11 indices
+           index     msgs   per hour   (1/sec = 3600)
+     NEARUSD_RTI  664,694      3,065
+      BNBUSD_RTI  664,694      3,065
+            BRTI  664,693      3,065
+      ETHUSD_RTI  664,693      3,065
+      SOLUSD_RTI  664,692      3,065
+     HYPEUSD_RTI  664,692      3,065
+      ZECUSD_RTI  664,692      3,065
+      BCHUSD_RTI  664,690      3,065
+      XRPUSD_RTI  664,690      3,065
+     DOGEUSD_RTI  664,688      3,065
+      ADAUSD_RTI  479,511      2,211  <-- GAPPY
+
+  avg_60s_data present on 100.0% of messages
+  window_size: min 0  median 60  max 60
+  ^ this is the 'seconds already locked in' term the whole
+    (60-s)^1.5 model was built around -- Kalshi hands it to us.
+
+  LATENCY  CF timestamp -> Kalshi received_at:
+    median 68 ms   p90 106 ms
+  LATENCY  Kalshi received_at -> our machine:
+    median 45 ms   p90 475 ms
+    (includes any clock offset between your PC and Kalshi --
+     run w32tm /resync before trusting the absolute number;
+     the SPREAD between p90 and median is offset-free.)
+  *** KXADA15M: ZERO settled markets -- the API returned no rows at all for this series_ticker
+  KXADA15M: 0 settled markets
+  *** KXBCH15M: ZERO settled markets -- the API returned no rows at all for this series_ticker
+  KXBCH15M: 0 settled markets
+  KXBNB15M: 1200 settled markets
+  KXBTC15M: 1198 settled markets
+  KXDOGE15M: 1200 settled markets
+  KXETH15M: 1198 settled markets
+  KXHYPE15M: 1200 settled markets
+  KXNEAR15M: 1200 settled markets
+  KXSOL15M: 1200 settled markets
+  *** KXTON15M: ZERO settled markets -- the API returned no rows at all for this series_ticker
+  KXTON15M: 0 settled markets
+  KXXRP15M: 1200 settled markets
+  KXZEC15M: 1200 settled markets
+
+==============================================================================
+C-FINAL  tails PER SERIES  [pooling 9 series was wrong]
+==============================================================================
+       series      n    kurt     90c     95c     98c     99c  crossover
+     KXBNB15M   1198     7.4    0.75    0.91    1.36    1.96      95.9c
+     KXBTC15M   1196     6.2    0.76    0.89    1.28    1.75      96.2c
+    KXDOGE15M   1198    10.9    0.73    0.79    1.15    1.46      97.1c
+     KXETH15M   1196     7.6    0.75    0.78    1.17    1.92      97.1c
+    KXHYPE15M   1198     4.8    0.84    0.96    1.34    1.71      95.5c
+    KXNEAR15M   1198     6.6    0.83    0.93    1.19    1.79      96.2c
+     KXSOL15M   1198     9.9    0.75    0.89    1.04    1.50      97.4c
+     KXXRP15M   1198     7.3    0.74    0.92    1.21    1.63      96.2c
+     KXZEC15M   1198     7.7    0.80    0.87    1.29    1.67      96.3c
+
+  Pooled crossover was 96.6c (June archive) and 96.7c (recent) --
+  two independent datasets agreeing. Per-series tells us whether that
+  holds everywhere or is an average over very different assets.
+  Below the crossover a Gaussian model UNDERvalues the favourite;
+  above it, OVERvalues. That is a model-building fact regardless of
+  whether the market itself is exploitable.
+
+  markets.json refreshed: 10,796 settled markets across 12 series. tapes.json left as it was.
+01:52:52  -Only given; running just: flow
+01:52:52  1 stage(s). flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape
+01:52:52  forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each.
+01:52:52  --- flow (1 of 1) ---
+==============================================================================
+go.py   2026-09-03 05:52 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (2s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                  flow  ok  (3667s)
+
+wrote C:\kals-repo\results\RESULTS_flow.md
+Send that file back.
+02:54:02  flow -> 11 KB in 3670s
+02:54:02  publishing
