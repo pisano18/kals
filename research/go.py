@@ -467,6 +467,7 @@ def main():
     print("\nSTAGES")
     chunks.append("\n## Stages\n")
     empties = []
+    crashed = []
     for name, cmd, need in STAGES:
         if a.only and a.only != name:
             continue
@@ -501,6 +502,8 @@ def main():
                  else "ok" if rc == 0 else f"exit {rc}")
         if empty:
             empties.append(name)
+        if rc != 0:
+            crashed.append((name, rc))
         print(f"  {name:>20}  {label}  ({dt:.0f}s)")
         chunks.append(f"\n### {name}{' — EMPTY' if empty else ''}\n\n"
                       f"```\npython {' '.join(cmd)}\n```\n")
@@ -522,6 +525,20 @@ def main():
         print("    That is not a null result. See the doctor stage's schema "
               "section.")
 
+    # A STAGE THAT CRASHED IS NOT A NULL RESULT EITHER. The flow stage died
+    # on a traceback 3,185 seconds in, go.py exited 0 anyway, and the runner
+    # logged it as "flow -> 5.8 KB" alongside nineteen genuine successes. The
+    # only place the failure appeared was thirty lines into the report.
+    if crashed:
+        msg = ("\n**%d stage(s) CRASHED and produced no result: %s.** A stage "
+               "that raised has measured nothing. Its section below is a "
+               "traceback, not a finding.\n"
+               % (len(crashed), ", ".join(f"{n} (exit {r})"
+                                          for n, r in crashed)))
+        chunks.append(msg)
+        print(f"\n*** {len(crashed)} stage(s) CRASHED: "
+              f"{', '.join(n for n, _ in crashed)}")
+
     chunks.append("\n## How to read this\n\n"
                   "- `n` is always a number of MARKETS or CLOSE-TIME CLUSTERS, "
                   "never trades.\n"
@@ -533,6 +550,10 @@ def main():
     path = write_report(a.report, chunks)
     print(f"\nwrote {path}")
     print("Send that file back.")
+    # Non-zero so the runner's own per-stage check sees it. The report is
+    # written FIRST, so a failing exit never costs the results.
+    if crashed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
