@@ -1,44 +1,44 @@
-﻿20:25:25  === run_when_away 20260901-2025 ===
-20:25:25  git pull
+﻿17:18:07  === run_when_away 20260902-1718 ===
+17:18:07  git pull
 From https://github.com/pisano18/kals
  * branch            claude/file-uploads-70rtjl -> FETCH_HEAD
 Already up to date.
-20:25:26  now at 0e07dc7 (origin/claude/file-uploads-70rtjl is 0e07dc7)
-20:25:26  preflight: stdlib shadowing
+17:18:08  now at eb54f58 (origin/claude/file-uploads-70rtjl is eb54f58)
+17:18:08  preflight: stdlib shadowing
 ==============================================================================
 STDLIB SHADOWING
 ==============================================================================
-  45 python files under C:\kals-repo
-  probing 34 stdlib modules with C:\kals-repo\research
+  46 python files under C:\kals-repo
+  probing 35 stdlib modules with C:\kals-repo\research
   first on sys.path, the way every stage arranges it
 
   clean -- nothing in this repo shadows a stdlib module, on this
   Python or on any newer one this file knows about.
-20:25:26  refreshing settled outcomes (markets.json)
+17:18:09  refreshing settled outcomes (markets.json)
 ==============================================================================
 FEED CHECK
 ==============================================================================
-  cfbenchmarks_value  171 files   6,521,654 msgs  (0 still writing)  OK
+  cfbenchmarks_value  192 files   7,126,400 msgs  (0 still writing)  OK
     sample: {"type":"cfbenchmarks_value","sid":2,"seq":1,"msg":{"index_id":"SOLUSD_RTI","received_at":1787630959031,"data":"{\"type\":\"value\",\"time\":1787630959000,\"id\":\"SOLUSD_RTI\",\"value\":\"101.22\"}","avg_60s_data":{"value":"101.22000000","window_size":0,"window_start_ts_ms":1787
   pyth_value            0 files           0 msgs  (0 still writing)  *** EMPTY ***
-  orderbook_delta     171 files  471,870,108 msgs  (0 still writing)  OK
-  ticker              171 files   5,377,946 msgs  (0 still writing)  OK
-  trade               170 files  23,409,672 msgs  (0 still writing)  OK
+  orderbook_delta     192 files  536,741,483 msgs  (0 still writing)  OK
+  ticker              192 files   6,027,245 msgs  (0 still writing)  OK
+  trade               191 files  26,094,669 msgs  (0 still writing)  OK
 
   --- cfbenchmarks detail ---
-  span 188.26 h across 11 indices
+  span 209.14 h across 11 indices
            index     msgs   per hour   (1/sec = 3600)
-      ETHUSD_RTI  609,714      3,239
-     NEARUSD_RTI  609,713      3,239
-     HYPEUSD_RTI  609,713      3,239
-      BNBUSD_RTI  609,713      3,239
-      SOLUSD_RTI  609,712      3,239
-            BRTI  609,712      3,239
-      BCHUSD_RTI  609,712      3,239
-      ZECUSD_RTI  609,712      3,239
-      XRPUSD_RTI  609,711      3,239
-     DOGEUSD_RTI  609,711      3,239
-      ADAUSD_RTI  424,531      2,255  <-- GAPPY
+      ETHUSD_RTI  664,691      3,178
+            BRTI  664,690      3,178
+     HYPEUSD_RTI  664,690      3,178
+      ZECUSD_RTI  664,690      3,178
+      BNBUSD_RTI  664,690      3,178
+      SOLUSD_RTI  664,689      3,178
+     NEARUSD_RTI  664,689      3,178
+      BCHUSD_RTI  664,688      3,178
+      XRPUSD_RTI  664,687      3,178
+     DOGEUSD_RTI  664,687      3,178
+      ADAUSD_RTI  479,509      2,293  <-- GAPPY
 
   avg_60s_data present on 100.0% of messages
   window_size: min 0  median 60  max 60
@@ -46,9 +46,9 @@ FEED CHECK
     (60-s)^1.5 model was built around -- Kalshi hands it to us.
 
   LATENCY  CF timestamp -> Kalshi received_at:
-    median 68 ms   p90 105 ms
+    median 68 ms   p90 106 ms
   LATENCY  Kalshi received_at -> our machine:
-    median 47 ms   p90 402 ms
+    median 45 ms   p90 475 ms
     (includes any clock offset between your PC and Kalshi --
      run w32tm /resync before trusting the absolute number;
      the SPREAD between p90 and median is offset-free.)
@@ -72,15 +72,15 @@ FEED CHECK
 C-FINAL  tails PER SERIES  [pooling 9 series was wrong]
 ==============================================================================
        series      n    kurt     90c     95c     98c     99c  crossover
-     KXBNB15M   1198     8.5    0.72    0.89    1.34    1.75      96.1c
-     KXBTC15M   1196     8.1    0.72    0.87    1.23    1.84      96.5c
-    KXDOGE15M   1198     9.8    0.72    0.83    1.21    1.71      96.7c
-     KXETH15M   1196     8.0    0.71    0.80    1.17    1.96      97.0c
-    KXHYPE15M   1198     5.8    0.83    0.94    1.21    1.58      96.0c
-    KXNEAR15M   1198     6.8    0.82    0.91    1.19    1.63      96.3c
-     KXSOL15M   1198     9.6    0.76    0.87    1.04    1.50      97.5c
-     KXXRP15M   1198     7.4    0.75    0.85    1.27    1.92      96.5c
-     KXZEC15M   1198     7.7    0.76    0.89    1.38    1.75      96.1c
+     KXBNB15M   1198     9.0    0.72    0.84    1.32    1.75      96.4c
+     KXBTC15M   1196     8.4    0.70    0.84    1.13    1.92      97.0c
+    KXDOGE15M   1198    10.6    0.72    0.81    1.15    1.67      97.1c
+     KXETH15M   1196     8.4    0.71    0.79    1.17    1.96      97.0c
+    KXHYPE15M   1198     5.7    0.83    0.93    1.23    1.75      96.0c
+    KXNEAR15M   1198     7.0    0.81    0.91    1.19    1.71      96.3c
+     KXSOL15M   1198     9.7    0.74    0.89    1.09    1.50      97.1c
+     KXXRP15M   1198     7.5    0.74    0.87    1.32    1.75      96.3c
+     KXZEC15M   1198     7.9    0.76    0.86    1.32    1.75      96.3c
 
   Pooled crossover was 96.6c (June archive) and 96.7c (recent) --
   two independent datasets agreeing. Per-series tells us whether that
@@ -90,11 +90,11 @@ C-FINAL  tails PER SERIES  [pooling 9 series was wrong]
   whether the market itself is exploitable.
 
   markets.json refreshed: 10,796 settled markets across 12 series. tapes.json left as it was.
-20:32:23  19 stages. oos walks the tape forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are
-20:32:23  1-3 min each. Expect 30-60 min total.
-20:32:23  --- surface (1 of 19) ---
+17:26:57  20 stages. flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape
+17:26:57  forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each.
+17:26:57  --- flow (1 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:32 UTC
+go.py   2026-09-02 21:26 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -103,14 +103,30 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-               surface  ok  (101s)
+                  flow  exit 1  (3185s)
+
+wrote C:\kals-repo\results\RESULTS_flow.md
+Send that file back.
+18:20:03  flow -> 5.8 KB in 3187s
+18:20:03  --- surface (2 of 20) ---
+==============================================================================
+go.py   2026-09-02 22:20 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+               surface  ok  (113s)
 
 wrote C:\kals-repo\results\RESULTS_surface.md
 Send that file back.
-20:34:05  surface -> 13.2 KB in 102s
-20:34:05  --- reconcile (2 of 19) ---
+18:21:58  surface -> 13.2 KB in 115s
+18:21:58  --- reconcile (3 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:34 UTC
+go.py   2026-09-02 22:21 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -119,14 +135,14 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-             reconcile  ok  (149s)
+             reconcile  ok  (168s)
 
 wrote C:\kals-repo\results\RESULTS_reconcile.md
 Send that file back.
-20:36:35  reconcile -> 7.4 KB in 150s
-20:36:35  --- implied (3 of 19) ---
+18:24:48  reconcile -> 7.4 KB in 170s
+18:24:48  --- implied (4 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:36 UTC
+go.py   2026-09-02 22:24 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -135,14 +151,14 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-               implied  ok  (192s)
+               implied  ok  (228s)
 
 wrote C:\kals-repo\results\RESULTS_implied.md
 Send that file back.
-20:39:48  implied -> 26.5 KB in 193s
-20:39:48  --- term (4 of 19) ---
+18:28:37  implied -> 26.5 KB in 230s
+18:28:37  --- term (5 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:39 UTC
+go.py   2026-09-02 22:28 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -151,14 +167,14 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-                  term  ok  (176s)
+                  term  ok  (205s)
 
 wrote C:\kals-repo\results\RESULTS_term.md
 Send that file back.
-20:42:45  term -> 41.1 KB in 177s
-20:42:45  --- endgame (5 of 19) ---
+18:32:04  term -> 41.1 KB in 206s
+18:32:04  --- endgame (6 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:42 UTC
+go.py   2026-09-02 22:32 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -167,30 +183,30 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-               endgame  ok  (125s)
+               endgame  ok  (149s)
 
 wrote C:\kals-repo\results\RESULTS_endgame.md
 Send that file back.
-20:44:51  endgame -> 13.1 KB in 126s
-20:44:51  --- patterntrade (6 of 19) ---
+18:34:34  endgame -> 13.1 KB in 150s
+18:34:34  --- patterntrade (7 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:44 UTC
+go.py   2026-09-02 22:34 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
         stdlib shadowing  PASS  (1s)
-      empty-marker prose  PASS  (0s)
+      empty-marker prose  PASS  (1s)
 
 STAGES
-          patterntrade  ok  (99s)
+          patterntrade  ok  (119s)
 
 wrote C:\kals-repo\results\RESULTS_patterntrade.md
 Send that file back.
-20:46:31  patterntrade -> 3.7 KB in 100s
-20:46:31  --- calfit (7 of 19) ---
+18:36:34  patterntrade -> 3.7 KB in 120s
+18:36:34  --- calfit (8 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:46 UTC
+go.py   2026-09-02 22:36 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -199,14 +215,14 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-                calfit  ok  (70s)
+                calfit  ok  (86s)
 
 wrote C:\kals-repo\results\RESULTS_calfit.md
 Send that file back.
-20:47:42  calfit -> 8.1 KB in 71s
-20:47:42  --- oos (8 of 19) ---
+18:38:02  calfit -> 8.1 KB in 88s
+18:38:02  --- oos (9 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:47 UTC
+go.py   2026-09-02 22:38 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -215,14 +231,14 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-                   oos  ok  (516s)
+                   oos  ok  (658s)
 
 wrote C:\kals-repo\results\RESULTS_oos.md
 Send that file back.
-20:56:20  oos -> 13 KB in 518s
-20:56:20  --- calib (9 of 19) ---
+18:49:01  oos -> 13 KB in 659s
+18:49:01  --- calib (10 of 20) ---
 ==============================================================================
-go.py   2026-09-02 00:56 UTC
+go.py   2026-09-02 22:49 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -231,30 +247,30 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-                 calib  ok  (644s)
+                 calib  ok  (1365s)
 
 wrote C:\kals-repo\results\RESULTS_calib.md
 Send that file back.
-21:07:05  calib -> 12.6 KB in 645s
-21:07:05  --- voltiming (10 of 19) ---
+19:11:47  calib -> 12.6 KB in 1366s
+19:11:47  --- voltiming (11 of 20) ---
 ==============================================================================
-go.py   2026-09-02 01:07 UTC
+go.py   2026-09-02 23:11 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
         stdlib shadowing  PASS  (1s)
-      empty-marker prose  PASS  (0s)
+      empty-marker prose  PASS  (1s)
 
 STAGES
-             voltiming  ok  (194s)
+             voltiming  ok  (236s)
 
 wrote C:\kals-repo\results\RESULTS_voltiming.md
 Send that file back.
-21:10:21  voltiming -> 10.3 KB in 195s
-21:10:21  --- maker (11 of 19) ---
+19:15:45  voltiming -> 10.3 KB in 238s
+19:15:45  --- maker (12 of 20) ---
 ==============================================================================
-go.py   2026-09-02 01:10 UTC
+go.py   2026-09-02 23:15 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -267,42 +283,42 @@ STAGES
 
 wrote C:\kals-repo\results\RESULTS_maker.md
 Send that file back.
-22:10:23  maker -> 1.6 KB in 3603s
-22:10:23  --- chain (12 of 19) ---
+20:15:48  maker -> 1.6 KB in 3603s
+20:15:48  --- chain (13 of 20) ---
 ==============================================================================
-go.py   2026-09-02 02:10 UTC
+go.py   2026-09-03 00:15 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
-        stdlib shadowing  PASS  (3s)
-      empty-marker prose  PASS  (1s)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
 
 STAGES
-                 chain  ok  (219s)
+                 chain  ok  (211s)
 
 wrote C:\kals-repo\results\RESULTS_chain.md
 Send that file back.
-22:14:06  chain -> 17.5 KB in 223s
-22:14:06  --- leadlag (13 of 19) ---
+20:19:20  chain -> 17.7 KB in 212s
+20:19:20  --- leadlag (14 of 20) ---
 ==============================================================================
-go.py   2026-09-02 02:14 UTC
+go.py   2026-09-03 00:19 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
         stdlib shadowing  PASS  (1s)
-      empty-marker prose  PASS  (1s)
+      empty-marker prose  PASS  (0s)
 
 STAGES
-               leadlag  ok  (188s)
+               leadlag  ok  (181s)
 
 wrote C:\kals-repo\results\RESULTS_leadlag.md
 Send that file back.
-22:17:16  leadlag -> 11.2 KB in 190s
-22:17:16  --- cross (14 of 19) ---
+20:22:22  leadlag -> 11.2 KB in 182s
+20:22:22  --- cross (15 of 20) ---
 ==============================================================================
-go.py   2026-09-02 02:17 UTC
+go.py   2026-09-03 00:22 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -311,14 +327,14 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-                 cross  ok  (271s)
+                 cross  ok  (263s)
 
 wrote C:\kals-repo\results\RESULTS_cross.md
 Send that file back.
-22:21:49  cross -> 7.9 KB in 273s
-22:21:49  --- openwindow (15 of 19) ---
+20:26:47  cross -> 7.9 KB in 265s
+20:26:47  --- openwindow (16 of 20) ---
 ==============================================================================
-go.py   2026-09-02 02:21 UTC
+go.py   2026-09-03 00:26 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -327,117 +343,73 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-            openwindow  ok  (187s)
+            openwindow  ok  (180s)
 
 wrote C:\kals-repo\results\RESULTS_openwindow.md
 Send that file back.
-22:24:57  openwindow -> 7.2 KB in 189s
-22:24:57  --- feeds (16 of 19) ---
+20:29:48  openwindow -> 7.2 KB in 181s
+20:29:48  --- feeds (17 of 20) ---
 ==============================================================================
-go.py   2026-09-02 02:24 UTC
+go.py   2026-09-03 00:29 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
         stdlib shadowing  PASS  (1s)
-      empty-marker prose  PASS  (1s)
+      empty-marker prose  PASS  (0s)
 
 STAGES
-                 feeds  ok  (645s)
+                 feeds  ok  (634s)
 
 wrote C:\kals-repo\results\RESULTS_feeds.md
 Send that file back.
-22:35:44  feeds -> 9.4 KB in 647s
-22:35:44  --- pathstats (17 of 19) ---
+20:40:23  feeds -> 9.4 KB in 635s
+20:40:23  --- pathstats (18 of 20) ---
 ==============================================================================
-go.py   2026-09-02 02:35 UTC
+go.py   2026-09-03 00:40 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
-        stdlib shadowing  PASS  (2s)
-      empty-marker prose  PASS  (1s)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
 
 STAGES
-             pathstats  ok  (90s)
+             pathstats  ok  (84s)
 
 wrote C:\kals-repo\results\RESULTS_pathstats.md
 Send that file back.
-22:37:17  pathstats -> 13.7 KB in 92s
-22:37:17  --- proxy (18 of 19) ---
+20:41:48  pathstats -> 13.6 KB in 85s
+20:41:48  --- proxy (19 of 20) ---
 ==============================================================================
-go.py   2026-09-02 02:37 UTC
+go.py   2026-09-03 00:41 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
         stdlib shadowing  PASS  (1s)
-      empty-marker prose  PASS  (1s)
+      empty-marker prose  PASS  (0s)
 
 STAGES
-                 proxy  ok  (759s)
+                 proxy  ok  (714s)
 
 wrote C:\kals-repo\results\RESULTS_proxy.md
 Send that file back.
-22:49:57  proxy -> 6.5 KB in 760s
-22:49:57  --- book (19 of 19) ---
+20:53:44  proxy -> 6.5 KB in 716s
+20:53:44  --- book (20 of 20) ---
 ==============================================================================
-go.py   2026-09-02 02:49 UTC
+go.py   2026-09-03 00:53 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
         stdlib shadowing  PASS  (1s)
-      empty-marker prose  PASS  (1s)
+      empty-marker prose  PASS  (0s)
 
 STAGES
-                  book  ok  (91s)
+                  book  ok  (80s)
 
 wrote C:\kals-repo\results\RESULTS_book.md
 Send that file back.
-22:51:30  book -> 4.7 KB in 93s
-22:51:30  publishing
-warning: LF will be replaced by CRLF in results/RESULTS_book.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_calfit.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_calib.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_chain.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_cross.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_endgame.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_feeds.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_implied.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_leadlag.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_maker.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_oos.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_openwindow.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_pathstats.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_patterntrade.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_proxy.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_reconcile.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_surface.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_term.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_voltiming.md.
-The file will have its original line endings in your working directory
-error: cannot pull with rebase: You have unstaged changes.
-error: please commit or stash them.
-To https://github.com/pisano18/kals
-   0e07dc7..3ee02c5  HEAD -> claude/file-uploads-70rtjl
-22:51:33  pushed on attempt 1
-22:51:33  === done ===
+20:55:06  book -> 4.7 KB in 81s
+20:55:06  publishing
