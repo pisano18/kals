@@ -35,9 +35,31 @@ time-ordered stream in memory proportional to the NUMBER OF FILES, not the
 number of messages. Book state is then proportional to the number of markets
 alive at once, which for 15-minute contracts is a handful.
 
-The output is one row per (market, second) -- not per message -- so 395
+The output is one row per (market, second) -- not per message -- so 470
 million messages become a few million rows, written once, cached per day, and
 re-analysed in seconds.
+
+ALL FOUR CHANNELS, NOT TWO
+
+The collector subscribes to orderbook_delta, trade and ticker in ONE
+`subscribe` call, so Kalshi numbers all three under one sid with one counter.
+Reading `seq` off the orderbook messages alone reads every ticker and every
+trade in between as a hole -- and a hole invalidates every book under the sid,
+which here is every market at once. The first two runs did exactly that: ~460
+"gaps" a day, 55 of 62 million deltas dropped onto invalid books, and 3% of
+the tape surviving.
+
+`ticker` earns its place twice. It carries the sequence numbers, and it
+carries yes_bid, yes_ask and both sizes on every message -- so after a
+GENUINE gap it re-anchors top of book in seconds rather than leaving the
+market dark until the next snapshot, of which there are ~800 a day. Rows say
+which source they came from; depth beyond the touch is only knowable from the
+rebuilt book, so it is absent on a ticker-channel row rather than counted as
+zero.
+
+That also buys a cross-check nothing else in this project has: two
+independent views of the same top of book, one replayed from 400 million
+deltas and one handed over whole. The mine reports how often they agree.
 
 WHAT IS MEASURED
 
@@ -99,6 +121,7 @@ from statistics import mean, pstdev
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gzsalvage import iter_lines as salvage_lines          # noqa: E402
 from book import Book, _levels, _cents, _resolve_ob        # noqa: E402
+from doctor import get_path, walk_paths, find_field         # noqa: E402
 from engine import fee_per_contract                        # noqa: E402
 
 
@@ -170,8 +193,26 @@ def _first_time(fp):
     return None
 
 
+CHANNELS = ("orderbook_snapshot", "orderbook_delta", "ticker", "trade")
+
+
 def ob_files(data_dir):
-    """Both orderbook channels, grouped by the UTC day of their first message.
+    """EVERY channel in the subscription, grouped by the UTC day of its first
+    message.
+
+    Not just the two orderbook ones, and the difference is the whole run. The
+    collector subscribes to orderbook_delta, trade and ticker in ONE
+    `subscribe` call, so Kalshi numbers all three under one sid with one
+    counter. Reading seq off the orderbook messages alone means every ticker
+    and every trade in between reads as a hole -- and a hole invalidates every
+    book under the sid, which here is every market at once. The first run
+    logged ~460 "gaps" a day and dropped 55 of 62 million deltas onto invalid
+    books.
+
+    `ticker` earns its place twice over: it carries yes_bid, yes_ask AND both
+    sizes on every message, so after a genuine gap it re-anchors top of book
+    in seconds instead of waiting for the next snapshot -- of which there are
+    only ~800 a day. `trade` is read for its sequence numbers alone.
 
     Grouped by day so the mine can cache and resume. A day boundary costs the
     first few seconds of book validity on each market alive across it, until
@@ -179,7 +220,7 @@ def ob_files(data_dir):
     is the difference between a stage that can be re-run and one that cannot.
     """
     files = []
-    for ch in ("orderbook_snapshot", "orderbook_delta"):
+    for ch in CHANNELS:
         files += glob.glob(os.path.join(data_dir, ch, "*.jsonl.gz"))
     by_day = defaultdict(list)
     for fp in sorted(files):
@@ -244,8 +285,31 @@ def _l1(bk):
 # ===========================================================================
 # THE MINE
 # ===========================================================================
+def _resolve_ticker(sample):
+    """Field paths and price unit for the `ticker` channel, read off the data.
+
+    Discovered, never assumed: Kalshi renamed these once already and
+    68,976,084 of 68,976,084 deltas went unparsed while every stage exited 0.
+    """
+    paths = defaultdict(lambda: defaultdict(int))
+    for m in sample:
+        walk_paths(m, out=paths)
+    f = {c: find_field(paths, c) for c in
+         ("ticker", "yes_bid", "yes_ask", "bid_size", "ask_size")}
+    mx = 0.0
+    for m in sample:
+        for c in ("yes_bid", "yes_ask"):
+            if f.get(c):
+                try:
+                    mx = max(mx, abs(float(get_path(m, f[c]))))
+                except (TypeError, ValueError):
+                    pass
+    f["scale"] = 100.0 if mx <= 1.5 else 1.0
+    return f
+
+
 def mine_day(files, windows, verbose=False, max_msgs=None):
-    """One day of both orderbook channels -> rows, in bounded memory.
+    """One day of every channel -> rows, in bounded memory.
 
     `windows` is ticker -> (start_sec, end_sec): the only seconds worth
     emitting. Everything else is applied to the book and dropped, so the
@@ -253,50 +317,84 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
     to the tape.
 
     A row is:
-        (ticker, sec, bid_c, ask_c, bid_sz, ask_sz, ofi, nmsg, dbid, dask)
+        (ticker, sec, bid_c, ask_c, bid_sz, ask_sz, ofi, nmsg, dbid, dask, src)
     with prices in integer cents, the book state as of the END of `sec`, and
-    `ofi` accumulated over the messages that arrived DURING `sec`.
+    `ofi` accumulated over the messages that arrived DURING `sec`. `src` says
+    which channel the top of book came from: B for the reconstructed delta
+    book, T for the ticker channel after a gap. Depth beyond the touch is
+    only knowable from the book, so it is zero on a T row.
     """
     stats = defaultdict(int)
+    gap_sizes = []
     rows = []
     if not files:
         return rows, stats
 
-    sample = []
+    ob_sample, tk_sample = [], []
     for fp in files:
+        want_tk = os.sep + "ticker" + os.sep in fp
+        if (want_tk and len(tk_sample) >= 1500) or \
+           (not want_tk and len(ob_sample) >= 2000):
+            continue
         for line in salvage_lines(fp):
             try:
                 mm = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if isinstance(mm, dict):
-                sample.append(mm)
-            if len(sample) >= 2000:
+            if not isinstance(mm, dict):
+                continue
+            (tk_sample if want_tk else ob_sample).append(mm)
+            if len(tk_sample) >= 1500 and len(ob_sample) >= 2000:
                 break
-        if len(sample) >= 2000:
-            break
-    scale = _resolve_ob(sample)["scale"]
+            if (want_tk and len(tk_sample) >= 1500) or \
+               (not want_tk and len(ob_sample) >= 2000):
+                break
+    scale = _resolve_ob(ob_sample)["scale"]
+    TF = _resolve_ticker(tk_sample)
     stats["scale"] = scale
+    # Printed, not assumed. Kalshi renamed these once and 68,976,084 of
+    # 68,976,084 deltas went unparsed while every stage exited 0; if the
+    # sizes stop resolving, ticker-channel rows quietly lose their order
+    # flow and nothing else says so.
+    stats["ticker_fields"] = str({k: v for k, v in TF.items() if v})
 
     books = defaultdict(Book)
     sid_tk = defaultdict(set)      # subscription -> the tickers under it
     sid_seq = {}
-    last_l1 = {}                   # ticker -> l1 after the previous message
+    tl1 = {}                       # ticker -> L1 from the `ticker` channel
+    last_l1 = {}                   # ticker -> (l1, src) after the last message
     cur = {}                       # ticker -> (sec being accumulated, ofi, n)
     live = {}                      # ticker -> (start, end) for tickers in play
     gclock = 0
 
-    def emit(tk, sec, ofi, n):
+    def state_of(tk):
+        """Top of book now, and where it came from.
+
+        The reconstructed book wins when it is valid -- it is the higher
+        resolution source and the only one that knows depth. When a genuine
+        sequence gap has invalidated it, the ticker channel still carries
+        yes_bid, yes_ask and both sizes, so the market stays measurable
+        instead of going dark until the next snapshot.
+        """
         bk = books.get(tk)
-        l1 = _l1(bk) if bk is not None else None
-        if l1 is None:
+        if bk is not None and bk.valid:
+            l1 = _l1(bk)
+            if l1 is not None:
+                db, da = bk.depth_within(3)
+                return l1, "B", (db or 0.0), (da or 0.0)
+        t = tl1.get(tk)
+        if t is not None:
+            return t, "T", 0.0, 0.0
+        return None
+
+    def emit(tk, sec, ofi, n):
+        st = state_of(tk)
+        if st is None:
             stats["sec_invalid"] += 1
             return
-        b, bs, a, as_ = l1
-        db, da = bk.depth_within(3)
-        rows.append((tk, sec, b, a, bs, as_, ofi, n,
-                     db if db is not None else 0.0,
-                     da if da is not None else 0.0))
+        (b, bs, a, as_), src, db, da = st
+        stats["rows_" + src] += 1
+        rows.append((tk, sec, b, a, bs, as_, ofi, n, db, da, src))
 
     def flush(tk, upto):
         """Emit every second strictly before `upto` that we owe for `tk`."""
@@ -319,6 +417,7 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
             cur.pop(tk, None)         # window is finished with
             live.pop(tk, None)
             books.pop(tk, None)
+            tl1.pop(tk, None)
             last_l1.pop(tk, None)
         else:
             cur[tk] = (max(s, upto), 0.0, 0)
@@ -328,6 +427,33 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
         for tk in list(cur):
             flush(tk, now)
 
+    def account(tk, sec, w):
+        """Fold this message into the second it belongs to, with its flow."""
+        st_now = state_of(tk)
+        new = (st_now[0], st_now[1]) if st_now else None
+        old = last_l1.get(tk)
+        # A CHANGE OF SOURCE IS NOT ORDER FLOW. Switching between the
+        # reconstructed book and the ticker channel moves the numbers for
+        # reasons that have nothing to do with anyone trading, and the jump
+        # would be booked as an enormous imbalance.
+        if old is not None and new is not None and old[1] != new[1]:
+            e = None
+            stats["ofi_reset_source_change"] += 1
+        else:
+            e = ofi_step(old[0] if old else None, new[0] if new else None)
+        last_l1[tk] = new
+
+        if tk not in live:
+            live[tk] = w
+        cs = cur.get(tk)
+        if cs is None:
+            cur[tk] = (sec, e or 0.0, 1)
+        elif cs[0] == sec:
+            cur[tk] = (sec, cs[1] + (e or 0.0), cs[2] + 1)
+        else:
+            flush(tk, sec)
+            cur[tk] = (sec, e or 0.0, 1)
+
     streams = [_file_stream(fp, i) for i, fp in enumerate(files)]
     n_read = 0
     for t, _fi, _li, m in merge(*streams):
@@ -335,25 +461,26 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
         if max_msgs and n_read > max_msgs:
             break
         typ = m.get("type", "")
-        is_snap = "orderbook_snapshot" in typ
-        if not (is_snap or "orderbook_delta" in typ):
-            continue
         d = m.get("msg") or {}
-        tk = d.get("market_ticker") or d.get("ticker")
+        is_snap = "orderbook_snapshot" in typ
+        is_delta = "orderbook_delta" in typ
+        is_tick = typ == "ticker"
+        if not (is_snap or is_delta or is_tick or typ == "trade"):
+            continue
+        tk = (get_path(m, TF["ticker"]) if is_tick and TF.get("ticker")
+              else None) or d.get("market_ticker") or d.get("ticker")
         if not tk:
             stats["no_ticker"] += 1
             continue
 
-        # SEQUENCE FIRST, BEFORE ANY FILTER. seq counts every message in the
-        # subscription, including the thousands of tickers we have no
-        # settlement for and the ones whose window has closed. Skipping those
-        # for efficiency and then testing continuity reads a hole in OUR
-        # sample as a hole in KALSHI's stream, and invalidates every book we
-        # hold, forever. This is the same class of mistake as keying
-        # continuity on the ticker, which once left 24 of 1,090 markets
-        # standing -- and it would have been invisible here, because the
-        # self-test fixture has one ticker per subscription unless it is
-        # built not to.
+        # SEQUENCE FIRST, BEFORE ANY FILTER -- of ticker, of window, and of
+        # CHANNEL. seq counts every message in the subscription: the
+        # thousands of tickers we have no settlement for, the ones whose
+        # window has closed, and the trade and ticker frames that share the
+        # sid. Skipping any of them and then testing continuity reads a hole
+        # in OUR sample as a hole in Kalshi's stream, and invalidates every
+        # book we hold. The first run skipped by ticker; the second still
+        # skipped by channel.
         sid = m.get("sid")
         sid = tk if sid is None else sid
         seq = m.get("seq")
@@ -362,40 +489,35 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
         if isinstance(seq, int):
             prev = sid_seq.get(sid)
             if prev is not None and seq != prev + 1:
-                # A RESTART IS NOT A GAP, and conflating them cost the first
-                # real run almost all of its data: 598-824 "gaps" a day
-                # against 747-864 snapshots, which invalidated nearly every
-                # book nearly all the time and left 105,876 market-seconds
-                # where ~9 million were on disk.
-                #
-                # The collector re-subscribes every 30 seconds for newly
-                # opened windows, and Kalshi assigns a NEW sid per subscribe
-                # and starts its seq at 1. Reconnects restart the sid
-                # numbering too, so an old sid's counter reappears at 1 under
-                # a number we have already seen. A sequence number that goes
-                # DOWN means a new stream began; it does not mean messages
-                # were lost. Only seq > prev + 1 means anything is missing.
+                # A RESTART IS NOT A GAP. The collector re-subscribes every
+                # thirty seconds for newly opened windows, and Kalshi starts
+                # each subscription's counter at 1; a reconnect restarts the
+                # numbering under a sid number already seen. A sequence
+                # number that goes DOWN means a new stream began. Only one
+                # that jumps UP means anything is missing.
                 if seq <= prev:
                     stats["seq_restarts"] += 1
                     stats["restart_on_snapshot" if is_snap
                           else "restart_on_delta"] += 1
                 else:
                     stats["seq_gaps"] += 1
-                    stats["gap_size_total"] += seq - prev - 1
-                    if seq - prev - 1 > stats["gap_size_max"]:
-                        stats["gap_size_max"] = seq - prev - 1
+                    gap_sizes.append(seq - prev - 1)
                     # A gap is a property of the SUBSCRIPTION, not of the
                     # message that revealed it: every book under that sid is
-                    # fiction from here until it gets a fresh snapshot.
+                    # fiction from here until it gets a fresh snapshot. The
+                    # ticker channel keeps those markets measurable in the
+                    # meantime.
                     for other in sid_tk[sid]:
                         b2 = books.get(other)
                         if b2 is not None and b2.valid:
                             b2.valid = False
-                            last_l1.pop(other, None)
                             stats["books_invalidated"] += 1
             if prev is None:
                 stats["sids"] += 1
             sid_seq[sid] = seq
+        if typ == "trade":
+            stats["trades_seen"] += 1
+            continue
 
         w = windows.get(tk)
         if w is None:
@@ -408,6 +530,41 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
         if sec > w[1]:
             continue                  # past this market's window entirely
         sid_tk[sid].add(tk)
+
+        if is_tick:
+            b = _cents(get_path(m, TF["yes_bid"]) if TF.get("yes_bid")
+                       else d.get("yes_bid"), TF["scale"])
+            a = _cents(get_path(m, TF["yes_ask"]) if TF.get("yes_ask")
+                       else d.get("yes_ask"), TF["scale"])
+            try:
+                bs = float(get_path(m, TF["bid_size"]) if TF.get("bid_size")
+                           else d.get("yes_bid_size") or 0.0)
+                as_ = float(get_path(m, TF["ask_size"]) if TF.get("ask_size")
+                            else d.get("yes_ask_size") or 0.0)
+            except (TypeError, ValueError):
+                bs = as_ = 0.0
+            if b is None or a is None or not (0 < b < a < 100):
+                stats["ticker_unusable"] += 1
+                continue
+            stats["ticker_msgs"] += 1
+            tl1[tk] = (b, bs, a, as_)
+            # AGREEMENT, ON REAL DATA. Where the reconstructed book is valid
+            # and the ticker channel has just spoken, the two independent
+            # views of top-of-book must match. This is the only check in the
+            # project that scores the delta replay against something it did
+            # not itself produce.
+            bk = books.get(tk)
+            if bk is not None and bk.valid:
+                bl = _l1(bk)
+                if bl is not None:
+                    stats["agree_n"] += 1
+                    if bl[0] == b and bl[2] == a:
+                        stats["agree_exact"] += 1
+                    elif abs(bl[0] - b) <= 1 and abs(bl[2] - a) <= 1:
+                        stats["agree_1c"] += 1
+            if sec >= w[0]:
+                account(tk, sec, w)
+            continue
 
         bk = books[tk]
         if is_snap:
@@ -434,21 +591,7 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
 
         if sec < w[0]:
             continue                  # before the window: book state only
-
-        new = _l1(bk)
-        e = ofi_step(last_l1.get(tk), new)
-        last_l1[tk] = new
-
-        if tk not in live:
-            live[tk] = w
-        st = cur.get(tk)
-        if st is None:
-            cur[tk] = (sec, e or 0.0, 1)
-        elif st[0] == sec:
-            cur[tk] = (sec, st[1] + (e or 0.0), st[2] + 1)
-        else:
-            flush(tk, sec)
-            cur[tk] = (sec, e or 0.0, 1)
+        account(tk, sec, w)
 
     sweep(gclock + 1)
     for tk in list(cur):
@@ -456,6 +599,11 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
     stats["rows"] = len(rows)
     stats["messages"] = n_read
     stats["markets_emitted"] = len({r[0] for r in rows})
+    if gap_sizes:
+        gap_sizes.sort()
+        stats["gap_size_median"] = gap_sizes[len(gap_sizes) // 2]
+        stats["gap_size_max"] = gap_sizes[-1]
+        stats["gap_under_100"] = sum(1 for g in gap_sizes if g < 100)
     return rows, stats
 
 
@@ -475,8 +623,8 @@ def windows_from_markets(markets, tau=TAU_MAX, lead=MIN_LEAD):
 # would have silently served eight days of the sequence-restart bug back after
 # the fix was pushed. The version is in the FILENAME, so a stale file is
 # ignored rather than overwritten -- and can still be read by hand.
-CACHE_VERSION = 2
-CACHE_HDR = "ticker,sec,bid_c,ask_c,bid_sz,ask_sz,ofi,nmsg,dbid,dask\n"
+CACHE_VERSION = 3
+CACHE_HDR = ("ticker,sec,bid_c,ask_c,bid_sz,ask_sz,ofi,nmsg,dbid,dask,src\n")
 
 
 def mine(data_dir, markets, cache_dir, verbose=True, rebuild=False,
@@ -502,13 +650,15 @@ def mine(data_dir, markets, cache_dir, verbose=True, rebuild=False,
         with gzip.open(tmp, "wt", encoding="utf-8") as f:
             f.write(CACHE_HDR)
             for r in rows:
-                f.write("%s,%d,%d,%d,%.2f,%.2f,%.4f,%d,%.2f,%.2f\n" % r)
+                f.write("%s,%d,%d,%d,%.2f,%.2f,%.4f,%d,%.2f,%.2f,%s\n"
+                        % r)
         os.replace(tmp, fp)
         paths.append(fp)
         if verbose:
             print(f"    {day}: {st['rows']:,} rows over "
                   f"{st['markets_emitted']:,} markets, from "
                   f"{st['messages']:,} messages")
+            print(f"        ticker fields {st['ticker_fields']}")
             print(f"        deltas applied {st['deltas']:,}  "
                   f"snapshots {st['snapshots']:,}  "
                   f"subscriptions {st['sids']:,}  "
@@ -517,16 +667,30 @@ def mine(data_dir, markets, cache_dir, verbose=True, rebuild=False,
             # nothing else, and "105,876 rows" looked like a small tape rather
             # than a 99% loss. Every line below is a place market-seconds go
             # to die, so a repeat of that failure names itself.
-            print(f"        seq restarts {st['seq_restarts']:,} "
-                  f"(on snapshot {st['restart_on_snapshot']:,}, "
-                  f"on delta {st['restart_on_delta']:,})  "
+            print(f"        seq restarts {st['seq_restarts']:,}  "
                   f"REAL gaps {st['seq_gaps']:,} "
-                  f"(max {st['gap_size_max']:,} msgs)")
+                  f"(median {st['gap_size_median']:,}, "
+                  f"max {st['gap_size_max']:,} msgs, "
+                  f"{st['gap_under_100']:,} under 100)")
             print(f"        books invalidated {st['books_invalidated']:,}  "
                   f"deltas dropped on an invalid book "
                   f"{st['delta_while_invalid']:,}  "
-                  f"seconds skipped for no two-sided book "
+                  f"seconds with no top of book at all "
                   f"{st['sec_invalid']:,}")
+            print(f"        rows from the rebuilt book {st['rows_B']:,}  "
+                  f"from the ticker channel after a gap {st['rows_T']:,}  "
+                  f"ticker msgs {st['ticker_msgs']:,}  "
+                  f"trades {st['trades_seen']:,}")
+            # THE CROSS-CHECK. Two independent views of top of book, one
+            # replayed from 400 million deltas and one handed to us whole.
+            # If they disagree, the replay is wrong and every number above
+            # it is decoration.
+            if st["agree_n"]:
+                ex = 100.0 * st["agree_exact"] / st["agree_n"]
+                w1 = 100.0 * (st["agree_exact"] + st["agree_1c"]) / st["agree_n"]
+                print(f"        rebuilt book vs ticker channel: "
+                      f"{ex:.1f}% exact, {w1:.1f}% within 1c, "
+                      f"on {st['agree_n']:,} comparisons")
             if st["deltas"] == 0 and st["messages"] > 1000:
                 print("    *** every delta unparsed -- the field names moved. "
                       "This is exactly how the channel came back empty before.")
@@ -553,7 +717,7 @@ def load_rows(paths, markets, verbose=True):
                 continue
             for line in f:
                 p = line.rstrip("\n").split(",")
-                if len(p) != 10:
+                if len(p) != 11:
                     continue
                 try:
                     out[p[0]][int(p[1])] = (int(p[2]), int(p[3]), float(p[6]))
@@ -585,7 +749,7 @@ def book_summary(paths, verbose=True):
                 continue
             for line in f:
                 p = line.rstrip("\n").split(",")
-                if len(p) != 10:
+                if len(p) != 11:
                     continue
                 try:
                     b, a = int(p[2]), int(p[3])
@@ -596,17 +760,25 @@ def book_summary(paths, verbose=True):
                 n += 1
                 spreads.append(a - b)
                 touch.append((bs + as_) / 2.0)
-                near.append((db + da) / 2.0)
+                # Depth beyond the touch is only knowable from the rebuilt
+                # book. A ticker-channel row has no view past level one, and
+                # averaging its zero into the quartiles would halve the very
+                # number the maker verdict rests on.
+                if p[10].strip() == "B":
+                    near.append((db + da) / 2.0)
     if not n:
         return None
     spreads.sort(); touch.sort(); near.sort()
+    if not near:
+        near = [0.0]
 
     def q(v, f):
         return v[min(len(v) - 1, int(f * len(v)))]
     r = {"n": n,
          "spread": (q(spreads, .25), q(spreads, .5), q(spreads, .75)),
          "touch": (q(touch, .25), q(touch, .5), q(touch, .75)),
-         "near3": (q(near, .25), q(near, .5), q(near, .75))}
+         "near3": (q(near, .25), q(near, .5), q(near, .75)),
+         "near_n": len(near)}
     if verbose:
         print("\n" + "=" * 78)
         print("WHAT THE BOOK ACTUALLY LOOKS LIKE, from the websocket stream")
@@ -620,7 +792,8 @@ def book_summary(paths, verbose=True):
               f"{r['touch'][2]:>8.0f}")
         print(f"    contracts within 3 cents      "
               f"{r['near3'][0]:>8.0f} {r['near3'][1]:>8.0f} "
-              f"{r['near3'][2]:>8.0f}")
+              f"{r['near3'][2]:>8.0f}   (rebuilt-book rows only, "
+              f"{r['near_n']:,})")
         print("\n  A resting quote has to outlast the contracts already in")
         print("  front of it. That queue is the maker verdict, and this is")
         print("  the first time it has been read off the stream rather than")
@@ -794,10 +967,9 @@ def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False,
     independent draw and the flow is real but tells you nothing.
     """
     rnd = random.Random(seed)
-    snap_dir = os.path.join(root, "orderbook_snapshot")
-    delt_dir = os.path.join(root, "orderbook_delta")
-    os.makedirs(snap_dir, exist_ok=True)
-    os.makedirs(delt_dir, exist_ok=True)
+    dirs = {ch: os.path.join(root, ch) for ch in CHANNELS}
+    for v in dirs.values():
+        os.makedirs(v, exist_ok=True)
     msgs = []
     markets = {}
 
@@ -860,6 +1032,23 @@ def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False,
                     d_msg(t1 + 2, "yes", bid, -yes.get(bid, 0.0), yes)
                     d_msg(t1 + 3, "yes", bid - DEPTH, LOT, yes)
                 bid, ask = bid + pend, ask + pend
+                # The real collector subscribes orderbook_delta, trade and
+                # ticker in ONE call, so all three share a sid and a single
+                # seq counter. A fixture carrying only the orderbook channels
+                # cannot show that reading seq off one channel reads the
+                # other two as holes -- the bug that dropped 55 of 62 million
+                # deltas onto invalid books.
+                msgs.append({"type": "ticker", "sid": 1, "seq": nxt(),
+                             "_rx_ms": t1 + 4,
+                             "msg": {"market_ticker": tk,
+                                     "yes_bid": bid / 100.0,
+                                     "yes_ask": ask / 100.0,
+                                     "yes_bid_size": float(yes.get(bid, 0.0)),
+                                     "yes_ask_size": float(
+                                         no.get(100 - ask, 0.0))}})
+                msgs.append({"type": "trade", "sid": 1, "seq": nxt(),
+                             "_rx_ms": t1 + 5,
+                             "msg": {"market_ticker": tk, "count": 1}})
             pend = 0
 
             d = rnd.gauss(0, 1)
@@ -895,11 +1084,10 @@ def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False,
         for j, m in enumerate(msgs[h:], start=1):
             m["seq"] = j
 
-    snaps = [m for m in msgs if "snapshot" in m["type"]]
-    delts = [m for m in msgs if "delta" in m["type"]]
-    for fp, part in ((os.path.join(snap_dir, "a.jsonl.gz"), snaps),
-                     (os.path.join(delt_dir, "a.jsonl.gz"), delts)):
-        with gzip.open(fp, "wt", encoding="utf-8") as f:
+    for ch, dv in dirs.items():
+        part = [m for m in msgs if m["type"] == ch]
+        with gzip.open(os.path.join(dv, "a.jsonl.gz"), "wt",
+                       encoding="utf-8") as f:
             for m in part:
                 f.write(json.dumps(m) + "\n")
     return markets
@@ -960,11 +1148,28 @@ def selftest():
                         windows_from_markets(mk), verbose=False)
         print(f"    healthy feed: seq gaps {h['seq_gaps']}, deltas applied "
               f"while invalid {h['delta_while_invalid']}, "
-              f"unparsed {h['unparsed_delta']}")
+              f"unparsed {h['unparsed_delta']}, "
+              f"ticker msgs {h['ticker_msgs']:,}, trades {h['trades_seen']:,}")
         if h["seq_gaps"] or h["delta_while_invalid"] or h["unparsed_delta"]:
             fails.append("an intact feed produced gaps or unparsed deltas -- "
                          "the reader is inventing holes, and on real data "
                          "that silently discards the channel")
+        if not h["ticker_msgs"] or not h["trades_seen"]:
+            fails.append("the ticker and trade channels were not read. They "
+                         "share the subscription's seq counter, so ignoring "
+                         "them reads every one of them as a hole.")
+        if h["rows_T"]:
+            fails.append(f"{h['rows_T']} rows fell back to the ticker channel "
+                         "on a feed with no gaps -- the rebuilt book should "
+                         "be authoritative throughout")
+        # THE CROSS-CHECK, on the fixture, where the answer is known exactly.
+        ex = 100.0 * h["agree_exact"] / max(1, h["agree_n"])
+        print(f"    rebuilt book vs ticker channel: {ex:.1f}% exact on "
+              f"{h['agree_n']:,} comparisons")
+        if h["agree_n"] < 100 or ex < 99.9:
+            fails.append(f"the replayed book and the ticker channel agree on "
+                         f"only {ex:.1f}% of {h['agree_n']:,} comparisons -- "
+                         "two views of the same top of book must match")
 
         mny = trade_oos(pairs(rows, mk, k=1), 1)
         print(f"    money block runs: {mny is not None}")
@@ -1048,6 +1253,31 @@ def selftest():
             fails.append(f"the restart changed the output: {len(r4):,} rows "
                          f"vs {len(r5):,}. A renumbered stream carries the "
                          "same book.")
+
+        # -- 4c. a gap must cost seconds, not the rest of the day ----------
+        print("\n  A real gap invalidates the book -- correctly. But the")
+        print("  ticker channel still carries top of book, so the market")
+        print("  must stay measurable instead of going dark until the next")
+        print("  snapshot, of which there are ~800 a day against ~460 gaps.")
+        d6 = os.path.join(tmp, "recover")
+        mk6 = _write_feed(d6, _spec(8, 2, seed=9), seed=9, drop_seq=True)
+        r6, s6 = mine_day(sorted(glob.glob(os.path.join(d6, "*", "*.gz"))),
+                          windows_from_markets(mk6), verbose=False)
+        print(f"    gaps {s6['seq_gaps']}, books invalidated "
+              f"{s6['books_invalidated']}, rows kept {len(r6):,} "
+              f"({s6['rows_B']:,} from the book, {s6['rows_T']:,} from the "
+              f"ticker channel), seconds lost {s6['sec_invalid']:,}")
+        if s6["seq_gaps"] == 0 or s6["books_invalidated"] == 0:
+            fails.append("the gap fixture produced no gap -- this test "
+                         "proves nothing")
+        if s6["rows_T"] == 0:
+            fails.append("a gap took the market dark. The ticker channel is "
+                         "on disk and carries top of book; not using it is "
+                         "how 55 of 62 million deltas landed on invalid "
+                         "books.")
+        if s6["sec_invalid"]:
+            fails.append(f"{s6['sec_invalid']:,} seconds had no top of book "
+                         "at all despite the ticker channel being available")
 
         # -- 5. the cache must be a cache, not a second opinion -------------
         again = load_rows(mine(d1, mk, os.path.join(tmp, "c1"), verbose=False),
