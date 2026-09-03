@@ -19,6 +19,15 @@ param(
     [string]$Feeds = "C:\kals\feed_data",
     [string]$Out   = "C:\kals\fulltape",
     [string]$Branch = "claude/file-uploads-70rtjl",
+    # Run only these stages, in this order. The full sweep is ~2h35m and most
+    # of that is stages nothing has changed in; after a fix to one stage,
+    # re-running twenty of them to see one number is most of an evening.
+    #   .\run_when_away.ps1 -Only flow
+    # NOT named -Stages: PowerShell variable names are CASE-INSENSITIVE, so a
+    # parameter $Stages and the stage list $stages are the same variable, and
+    # the list assignment below would silently overwrite the argument. The
+    # filter would then never fire and the full sweep would run anyway.
+    [string[]]$Only = @(),
     [switch]$NoPush
 )
 
@@ -173,7 +182,18 @@ $stages = @("flow",
             "chain", "leadlag", "cross", "openwindow", "feeds", "pathstats",
             "proxy", "book")
 
-Say "$($stages.Count) stages. flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape"
+if ($Only.Count -gt 0) {
+    $unknown = $Only | Where-Object { $stages -notcontains $_ }
+    if ($unknown) {
+        Say "*** unknown stage(s): $($unknown -join ', ')"
+        Say "    known: $($stages -join ', ')"
+        exit 1
+    }
+    $stages = $Only
+    Say "-Only given; running just: $($stages -join ', ')"
+}
+
+Say "$($stages.Count) stage(s). flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape"
 Say "forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each."
 
 $failed = @()
