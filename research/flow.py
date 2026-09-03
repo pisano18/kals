@@ -693,7 +693,7 @@ def windows_from_markets(markets, tau=TAU_MAX, lead=MIN_LEAD):
 # would have silently served eight days of the sequence-restart bug back after
 # the fix was pushed. The version is in the FILENAME, so a stale file is
 # ignored rather than overwritten -- and can still be read by hand.
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 CACHE_HDR = ("ticker,sec,bid_c,ask_c,bid_sz,ask_sz,ofi,nmsg,dbid,dask,src\n")
 
 

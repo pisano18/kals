@@ -315,6 +315,20 @@ STAGES = [
     # it refits as the tape advances.
     ("oos", ["research/oos.py", "--data", "{data}", "--out", "{out}"],
      "{data}/ticker"),
+    # informed is the conditional cut of the strongest clean number this
+    # project has produced: the taker's +0.612c signed markout (t=54.4).
+    # maker.py pooled it and the pooled verdict is settled; this asks WHICH
+    # trades carry the information and how far it drifts -- to settlement --
+    # against the two live strategies: follow the informed tail as a taker,
+    # or quote only in cells where the resting side is not run over.
+    ("informed", ["research/informed.py", "--data", "{data}",
+                  "--out", "{out}"], "{data}/trade"),
+    # strikes needs no mispricing at all: within one event, P(settle >= K)
+    # is decreasing in K by arithmetic, so ask(K_low) < bid(K_high) is a
+    # riskless credit net of two fees. Thin fast books produce transient
+    # crossings; nobody has looked.
+    ("strikes", ["research/strikes.py", "--data", "{data}",
+                 "--out", "{out}"], "{data}/ticker"),
     # flow reads the LARGEST thing on disk, and the only channel nobody has
     # read: 395,685,479 orderbook deltas, about twenty times the rest of the
     # tape put together. Every other stage here asks whether the PRICE is
@@ -491,6 +505,8 @@ def main():
         # per-day cache and takes seconds.
         budget_s = 600 if a.quick else (
             14400 if name in ("oos", "flow") else 3600)
+        if name == "informed":
+            budget_s = 7200      # 27.7M trades; maker's fixed loop took ~25min
         rc, out, dt = run(cmd, ROOT, budget_s)
         # A STAGE THAT LOADED NOTHING IS NOT "ok". The first real run reported
         # ok for all thirteen while eight of them had no data at all: Kalshi

@@ -44,9 +44,21 @@ WS_PATH   = "/trade-api/ws/v2"
 # CONFIRMED live 2026-08-25 by recon. 14 series, not 7. KXLTC15M does not exist.
 CRYPTO_15M = ["KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M", "KXDOGE15M",
               "KXBNB15M", "KXADA15M", "KXBCH15M", "KXZEC15M", "KXHYPE15M",
-              "KXNEAR15M", "KXTON15M"]
-# Deliberately excluded: KXCRYPTOLEAD15M, KXCRYPTOCOMP15M (relative-performance
-# contracts, different terms). Add with --series if you want them recorded.
+              "KXNEAR15M", "KXTON15M",
+              # 2026-09-03: the Coin Race relative-performance series, added
+              # to the DEFAULT. They price the CORRELATION between coins, not
+              # a single coin's volatility -- the one quantity in this market
+              # family nobody has shown to be well priced, and IDEAS.md B1
+              # has flagged it as the highest unexplored value since the
+              # start. everything.py once patched run_all.ps1 to add them
+              # via --series and it never took effect, because the watchdog
+              # runs the collector from C:\kals, not from the repo. Putting
+              # them in the default means a plain file copy is the whole
+              # deployment. Recording is ticker-agnostic; if the series is
+              # missing, discover() gets a non-200 and skips it. Analysis of
+              # this tape needs DAYS of it, so every day this is not
+              # deployed is a day of the only untested idea lost.
+              "KXCRYPTOLEAD15M", "KXCRYPTOCOMP15M"]
 
 
 def make_signer(key_id, key_file):
