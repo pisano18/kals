@@ -197,6 +197,45 @@ to be degenerate in exactly the dimension being measured.**
 must be large.** A null result is only interpretable from an estimator that has
 been shown, on the same data path, to be capable of finding something.
 
+### 19. The integrity check was the bug  [1]  ← 2026-09-03
+
+`flow.py`'s first real run read **470 million order-book messages** and emitted
+**105,876 market-seconds** — about one percent of what was on disk. It exited
+without any complaint about the data.
+
+The per-day line said, every day:
+
+    seq gaps 598 ... 824        snapshots 747 ... 864
+
+Roughly one "gap" per snapshot. A Kalshi sequence number counts messages within
+one *subscription*, and the collector **re-subscribes every thirty seconds** to
+pick up newly opened windows — each subscribe is a new subscription whose
+counter starts at 1, and a reconnect restarts the numbering so an old
+subscription's number reappears at 1. The reader tested `seq != prev + 1` and
+called all of it a gap. Every restart therefore invalidated every book under
+that subscription, and books recover only on a fresh snapshot, so nearly every
+book was fiction nearly all the time.
+
+**A sequence number that goes DOWN means a new stream began. Only one that
+jumps UP means anything is missing.** The check was inherited verbatim from
+`book.py`, where the same conflation had already cost 98% of markets once
+before — for a different reason (keying continuity on the ticker instead of the
+subscription), fixed there, and then reintroduced here in a new form.
+
+Two things made it survive to a real run:
+
+* the self-test's fixture had **one subscription that never restarted**, so the
+  branch that mattered was never executed. A fixture that never exercises the
+  recovery path tests only the happy path.
+* the stage printed `rows` and `gaps` and nothing else. `105,876` looks like a
+  small tape. It does not look like a 99% loss unless something prints what the
+  ceiling was and where the difference went. The mine now accounts for every
+  market-second it declines to emit, by reason.
+
+**A correctness guard that discards data needs its own null: how much does it
+throw away on a healthy feed?** If that number is not printed, a guard that
+throws away everything is indistinguishable from a thin tape.
+
 ---
 
 ## The two meta-rules

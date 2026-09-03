@@ -127,6 +127,12 @@ def _file_stream(fp, fi):
             m = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(m, dict):
+            # A truncated write can leave a line that is still VALID json --
+            # `123` parses to an int, not a dict. json.JSONDecodeError does not
+            # fire and `.get` raises three hundred million messages later. The
+            # first real run died here, on the ninth of nine days.
+            continue
         i += 1
         rx = m.get("_rx_ms")
         if isinstance(rx, (int, float)):
@@ -154,6 +160,8 @@ def _first_time(fp):
         try:
             m = json.loads(line)
         except json.JSONDecodeError:
+            continue
+        if not isinstance(m, dict):
             continue
         rx = m.get("_rx_ms")
         if isinstance(rx, (int, float)):
@@ -258,9 +266,11 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
     for fp in files:
         for line in salvage_lines(fp):
             try:
-                sample.append(json.loads(line))
+                mm = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if isinstance(mm, dict):
+                sample.append(mm)
             if len(sample) >= 2000:
                 break
         if len(sample) >= 2000:
@@ -352,15 +362,39 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
         if isinstance(seq, int):
             prev = sid_seq.get(sid)
             if prev is not None and seq != prev + 1:
-                # A gap is a property of the SUBSCRIPTION, not of the message
-                # that revealed it: every book under that sid is fiction from
-                # here until it gets a fresh snapshot.
-                for other in sid_tk[sid]:
-                    b2 = books.get(other)
-                    if b2 is not None and b2.valid:
-                        b2.valid = False
-                        last_l1.pop(other, None)
-                        stats["seq_gaps"] += 1
+                # A RESTART IS NOT A GAP, and conflating them cost the first
+                # real run almost all of its data: 598-824 "gaps" a day
+                # against 747-864 snapshots, which invalidated nearly every
+                # book nearly all the time and left 105,876 market-seconds
+                # where ~9 million were on disk.
+                #
+                # The collector re-subscribes every 30 seconds for newly
+                # opened windows, and Kalshi assigns a NEW sid per subscribe
+                # and starts its seq at 1. Reconnects restart the sid
+                # numbering too, so an old sid's counter reappears at 1 under
+                # a number we have already seen. A sequence number that goes
+                # DOWN means a new stream began; it does not mean messages
+                # were lost. Only seq > prev + 1 means anything is missing.
+                if seq <= prev:
+                    stats["seq_restarts"] += 1
+                    stats["restart_on_snapshot" if is_snap
+                          else "restart_on_delta"] += 1
+                else:
+                    stats["seq_gaps"] += 1
+                    stats["gap_size_total"] += seq - prev - 1
+                    if seq - prev - 1 > stats["gap_size_max"]:
+                        stats["gap_size_max"] = seq - prev - 1
+                    # A gap is a property of the SUBSCRIPTION, not of the
+                    # message that revealed it: every book under that sid is
+                    # fiction from here until it gets a fresh snapshot.
+                    for other in sid_tk[sid]:
+                        b2 = books.get(other)
+                        if b2 is not None and b2.valid:
+                            b2.valid = False
+                            last_l1.pop(other, None)
+                            stats["books_invalidated"] += 1
+            if prev is None:
+                stats["sids"] += 1
             sid_seq[sid] = seq
 
         w = windows.get(tk)
@@ -421,6 +455,7 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
         flush(tk, gclock + 1)
     stats["rows"] = len(rows)
     stats["messages"] = n_read
+    stats["markets_emitted"] = len({r[0] for r in rows})
     return rows, stats
 
 
@@ -435,6 +470,12 @@ def windows_from_markets(markets, tau=TAU_MAX, lead=MIN_LEAD):
     return w
 
 
+# Bumped whenever the mine's OUTPUT would change for the same input. The
+# per-day cache is what makes this stage re-runnable, and it is also what
+# would have silently served eight days of the sequence-restart bug back after
+# the fix was pushed. The version is in the FILENAME, so a stale file is
+# ignored rather than overwritten -- and can still be read by hand.
+CACHE_VERSION = 2
 CACHE_HDR = "ticker,sec,bid_c,ask_c,bid_sz,ask_sz,ofi,nmsg,dbid,dask\n"
 
 
@@ -450,7 +491,7 @@ def mine(data_dir, markets, cache_dir, verbose=True, rebuild=False,
               f"{len(windows):,} markets with a settlement")
     paths = []
     for day, files in days.items():
-        fp = os.path.join(cache_dir, f"{day}.csv.gz")
+        fp = os.path.join(cache_dir, f"{day}.v{CACHE_VERSION}.csv.gz")
         if os.path.exists(fp) and not rebuild:
             paths.append(fp)
             if verbose:
@@ -465,11 +506,27 @@ def mine(data_dir, markets, cache_dir, verbose=True, rebuild=False,
         os.replace(tmp, fp)
         paths.append(fp)
         if verbose:
-            print(f"    {day}: {st['rows']:,} rows from "
-                  f"{st['messages']:,} messages  "
-                  f"(deltas {st['deltas']:,}, snapshots {st['snapshots']:,}, "
-                  f"seq gaps {st['seq_gaps']:,}, "
-                  f"unparsed {st['unparsed_delta']:,})")
+            print(f"    {day}: {st['rows']:,} rows over "
+                  f"{st['markets_emitted']:,} markets, from "
+                  f"{st['messages']:,} messages")
+            print(f"        deltas applied {st['deltas']:,}  "
+                  f"snapshots {st['snapshots']:,}  "
+                  f"subscriptions {st['sids']:,}  "
+                  f"unparsed {st['unparsed_delta']:,}")
+            # WHERE THE DATA WENT. The first run printed rows and gaps and
+            # nothing else, and "105,876 rows" looked like a small tape rather
+            # than a 99% loss. Every line below is a place market-seconds go
+            # to die, so a repeat of that failure names itself.
+            print(f"        seq restarts {st['seq_restarts']:,} "
+                  f"(on snapshot {st['restart_on_snapshot']:,}, "
+                  f"on delta {st['restart_on_delta']:,})  "
+                  f"REAL gaps {st['seq_gaps']:,} "
+                  f"(max {st['gap_size_max']:,} msgs)")
+            print(f"        books invalidated {st['books_invalidated']:,}  "
+                  f"deltas dropped on an invalid book "
+                  f"{st['delta_while_invalid']:,}  "
+                  f"seconds skipped for no two-sided book "
+                  f"{st['sec_invalid']:,}")
             if st["deltas"] == 0 and st["messages"] > 1000:
                 print("    *** every delta unparsed -- the field names moved. "
                       "This is exactly how the channel came back empty before.")
@@ -724,7 +781,8 @@ def trade_oos(obs, k, verbose=True):
 # ===========================================================================
 # SELF-TEST
 # ===========================================================================
-def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False):
+def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False,
+                restart_seq=False):
     """A synthetic collector directory in the REAL layout: two channels, two
     directories, one file each, prices as `price_dollars`, sizes as
     `delta_fp`. A fixture that disagrees with the collector tests nothing --
@@ -828,6 +886,14 @@ def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False):
     if drop_seq:
         dd = [i for i, m in enumerate(msgs) if "delta" in m["type"]]
         del msgs[dd[len(dd) // 2]]
+    if restart_seq:
+        # What the collector actually does: it re-subscribes every 30 seconds
+        # for newly opened windows, and on reconnect the sid numbering starts
+        # over, so an old sid's counter reappears at 1 under a number already
+        # seen. Nothing is missing -- the stream simply began again.
+        h = len(msgs) // 2
+        for j, m in enumerate(msgs[h:], start=1):
+            m["seq"] = j
 
     snaps = [m for m in msgs if "snapshot" in m["type"]]
     delts = [m for m in msgs if "delta" in m["type"]]
@@ -951,6 +1017,37 @@ def selftest():
             fails.append("a deleted message produced no sequence gap -- "
                          "deltas are being applied across a hole, and every "
                          "level after it is fiction")
+
+        # -- 4b. a seq RESTART is not a gap --------------------------------
+        print("\n  The sequence RESTARTS mid-stream, the way it does every")
+        print("  time the collector re-subscribes. Nothing is missing, so")
+        print("  nothing may be invalidated.")
+        d4 = os.path.join(tmp, "restart")
+        mk4 = _write_feed(d4, _spec(20, 2, seed=13), seed=13,
+                          restart_seq=True)
+        r4, s4 = mine_day(sorted(glob.glob(os.path.join(d4, "*", "*.gz"))),
+                          windows_from_markets(mk4), verbose=False)
+        d5 = os.path.join(tmp, "clean")
+        mk5 = _write_feed(d5, _spec(20, 2, seed=13), seed=13)
+        r5, s5 = mine_day(sorted(glob.glob(os.path.join(d5, "*", "*.gz"))),
+                          windows_from_markets(mk5), verbose=False)
+        print(f"    restarts seen {s4['seq_restarts']:,}, real gaps "
+              f"{s4['seq_gaps']:,}, books invalidated "
+              f"{s4['books_invalidated']:,}")
+        print(f"    rows {len(r4):,} vs {len(r5):,} on the same feed without "
+              "the restart")
+        if s4["seq_restarts"] == 0:
+            fails.append("the fixture restarted the sequence and the reader "
+                         "did not notice -- this test proves nothing")
+        if s4["books_invalidated"] or s4["seq_gaps"]:
+            fails.append(f"a sequence RESTART was counted as "
+                         f"{s4['seq_gaps']} gaps and invalidated "
+                         f"{s4['books_invalidated']} books. This is the bug "
+                         "that cost the first real run 99% of its rows.")
+        if len(r4) != len(r5):
+            fails.append(f"the restart changed the output: {len(r4):,} rows "
+                         f"vs {len(r5):,}. A renumbered stream carries the "
+                         "same book.")
 
         # -- 5. the cache must be a cache, not a second opinion -------------
         again = load_rows(mine(d1, mk, os.path.join(tmp, "c1"), verbose=False),
