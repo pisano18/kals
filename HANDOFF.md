@@ -2,6 +2,94 @@
 
 ---
 
+## 2026-09-03 (evening) — BOTH structural strategies are now closed
+
+On the full tape: 5,947,458 market-seconds, 7,176 markets, **798 close-time
+clusters**. Forty-eight times the previous sample.
+
+### Taking on order flow: real, and ~100x too small
+
+| horizon | slope | t |
+|---|---|---|
+| k = 1s | +0.0000c | **+47.33** |
+| k = 5s | +0.0000c | +37.12 |
+| k = 30s | +0.0000c | +18.11 |
+| k = 60s | +0.0000c | +11.62 |
+
+Controls are now clean at full power: **placebo** t = −0.41 / +0.13 / +0.77,
+all inside their MDE; **backward** t = +82.5. And the money block:
+
+    k = 1s / 5s / 10s / 30s   ZERO trades cleared the cost of crossing
+
+Median spread is **1 cent** — the minimum tick in the 10-90c band. There is no
+room to quote inside it, and a forecast worth hundredths of a cent cannot pay
+it. **Closed.**
+
+### Making the spread: adverse selection eats it, in every bucket
+
+`maker.py` completed for the first time (it had timed out at 3600s twice) and
+delivered the number the whole maker question rests on. 27,760,728 trades,
+77 million markouts, 798 clusters.
+
+    horizon   signed markout       t         p    net @0.5c
+         1s           0.612c    54.4    0.0000     -0.112c
+         5s           0.624c    52.0    0.0000     -0.124c
+        30s           0.657c    40.6    0.0000     -0.157c
+
+The random-sign control reads −0.000c (t = −0.2), so this is **direction, not
+volatility** — the trap that once made a zero-adverse-selection tape fire at
+t = +11.
+
+Per price bucket, capture against need:
+
+| price | fills | markout (need) | capture | net | |
+|---|---|---|---|---|---|
+| 0-8c | 3,990,931 | 0.436c | 0.050c | −0.386c | loses |
+| 8-16c | 1,940,005 | 1.018c | 0.500c | −0.518c | loses |
+| 16-30c | 3,101,529 | 1.141c | 0.500c | −0.641c | loses |
+| 30-70c | 9,850,731 | 0.856c | 0.500c | −0.356c | loses |
+| 70-84c | 2,961,810 | 1.250c | 0.500c | −0.750c | loses |
+| 84-92c | 1,768,775 | 1.131c | 0.500c | −0.631c | loses |
+| 92-100c | 3,655,710 | 0.529c | 0.050c | −0.479c | loses |
+
+Every bucket, by a wide margin, on millions of fills. **Closed.**
+
+That is eight ideas dead: delta-hedging, "every game starts at 50c",
+opening-value, lead-lag stale quotes, endgame, calibration/volatility, taker
+order flow, and making the spread.
+
+### The book, measured properly at last
+
+    spread, cents                 1 /  1 /  2      (25th / median / 75th)
+    contracts AT the touch       28 / 55 / 124
+    contracts within 3 cents     76 / 124 / 216
+
+### Still not clean: the book is replayed out of order
+
+92% of rows had to fall back to the ticker channel, and where the rebuilt book
+was valid it agreed with the ticker channel on only **81-85%** of comparisons.
+The per-day diagnostic named the cause: 426-712 "gaps" a day with a **median
+gap size of 1**, plus 74-198 "restarts" — the signature of a single adjacent
+pair swapped.
+
+`_rx_ms` is a millisecond stamp and the merge breaks ties by channel
+directory, so messages sharing a millisecond arrive in alphabetical order of
+channel rather than the order Kalshi sent them. `Book.apply` deletes a level
+whose size reaches zero, so a subtraction applied before its matching addition
+destroys that level permanently.
+
+Fixed with a bounded reorder buffer keyed on seq. Measured on the fixture with
+the buffer disabled: **27,650 false gaps, 13,825 false restarts, and 34,744 of
+34,838 rows falling back to the ticker channel** — the real-data signature
+exactly. With it: byte-identical output to the cleanly ordered feed.
+
+This does not revive either dead idea (the placebo is clean and the money
+block is empty by two orders of magnitude), but it is what a trustworthy book
+requires, and C2 — queue position — is the only maker idea left standing and
+needs one.
+
+---
+
 ## 2026-09-03 — order flow predicts. It is ~100x too small to pay a spread.
 
 First real answer from `flow.py`, on 124,378 market-seconds over 1,430 markets

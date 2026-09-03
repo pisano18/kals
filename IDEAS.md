@@ -82,7 +82,7 @@ which A1 measures directly, and is the likely outcome.
 **Dependency** entirely parasitic on A1: a 6% σ error at 5¢ is worth more than
 the whole tick effect. Do not run this before A1 reports.
 
-### A4. Per-bucket adverse selection  ·  NOT BUILT
+### A4. Per-bucket adverse selection  ·  **DONE 2026-09-03 — every bucket loses**
 **Mechanism** the σ-cancelling result — adverse selection per second is
 `100·φ(z)/√var_factor(τ)·(r_live/60)`, asset-independent — says cost falls with
 τ and with |z|. So the *safest* quoting region is far from close and far from
@@ -248,6 +248,8 @@ findings before. Needs many more days before it is anything.
 | Wide maker quotes earn the spread | The fee theorem: `E[P&L | fill] ≤ −fee(p)`, **invariant to quote width**. Widening makes the taker more certain before they cross. |
 | Depth at touch is 3,767 contracts | A mis-parsed REST field. Measured ~30. |
 | Directional prediction from past returns | Up-rate 50.4%; sign test t under 1 after the tie fix. |
+| Taker trading on order-flow imbalance | Real (t = +47 at k=1s, 798 closes, 4.7M market-seconds; placebo clean, backward t = +82) and ~100x too small. **Zero** trades cleared the cost of crossing at any horizon. `flow.py`. |
+| Making the spread, any price bucket | Realised signed markout +0.612c at 1s, t = 54.4 on 798 closes, against 0.5c capture at a 1c median spread. Random-sign control reads -0.000c, so it is direction and not volatility. Loses -0.36c to -0.75c per fill in all seven price buckets. `maker.py`. |
 
 ---
 

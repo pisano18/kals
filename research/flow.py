@@ -448,94 +448,62 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
         cs = cur.get(tk)
         if cs is None:
             cur[tk] = (sec, e or 0.0, 1)
-        elif cs[0] == sec:
-            cur[tk] = (sec, cs[1] + (e or 0.0), cs[2] + 1)
+        elif cs[0] >= sec:
+            # `>=`, not `==`. Replaying in seq order means a message can carry
+            # a receive stamp a second EARLIER than the one being accumulated.
+            # Starting a new second for it would discard the flow already
+            # gathered for the later one; folding it in is right at
+            # one-second resolution, and the reordering spans milliseconds.
+            cur[tk] = (cs[0], cs[1] + (e or 0.0), cs[2] + 1)
         else:
             flush(tk, sec)
             cur[tk] = (sec, e or 0.0, 1)
 
-    streams = [_file_stream(fp, i) for i, fp in enumerate(files)]
-    n_read = 0
-    for t, _fi, _li, m in merge(*streams):
-        n_read += 1
-        if max_msgs and n_read > max_msgs:
-            break
-        typ = m.get("type", "")
-        d = m.get("msg") or {}
-        is_snap = "orderbook_snapshot" in typ
-        is_delta = "orderbook_delta" in typ
-        is_tick = typ == "ticker"
-        if not (is_snap or is_delta or is_tick or typ == "trade"):
-            continue
-        tk = (get_path(m, TF["ticker"]) if is_tick and TF.get("ticker")
-              else None) or d.get("market_ticker") or d.get("ticker")
-        if not tk:
-            stats["no_ticker"] += 1
-            continue
+    # ------------------------------------------------------------------
+    # THE REORDER BUFFER
+    #
+    # `_rx_ms` is a MILLISECOND local receive stamp, and the merge breaks ties
+    # by file. Two messages that share a millisecond but sit in different
+    # channel directories are therefore delivered in alphabetical order of
+    # channel, not in the order Kalshi sent them. On the 2026-09-03 run that
+    # showed up as 74-198 "restarts" and 426-712 "gaps" a day with a MEDIAN
+    # GAP SIZE OF 1 -- the signature of a single adjacent pair swapped, which
+    # reads as one step backwards and then one step forwards.
+    #
+    # It is not cosmetic. `Book.apply` deletes a level whose size reaches
+    # zero, so a subtraction applied before its matching addition destroys the
+    # level permanently. That is why the replayed book agreed with the ticker
+    # channel on only 81% of comparisons, and why 92% of rows had to fall back
+    # to the ticker channel.
+    #
+    # seq is the true order, so messages are held until they can be applied in
+    # seq order. The buffer is bounded: once PENDING_MAX messages are waiting
+    # on one that never comes, that one really is missing and the gap is
+    # declared. A gap of 65,840,809 therefore costs 4,096 buffered messages,
+    # not 65 million.
+    PENDING_MAX = 4096
+    pend = defaultdict(dict)
+    expect = {}
 
-        # SEQUENCE FIRST, BEFORE ANY FILTER -- of ticker, of window, and of
-        # CHANNEL. seq counts every message in the subscription: the
-        # thousands of tickers we have no settlement for, the ones whose
-        # window has closed, and the trade and ticker frames that share the
-        # sid. Skipping any of them and then testing continuity reads a hole
-        # in OUR sample as a hole in Kalshi's stream, and invalidates every
-        # book we hold. The first run skipped by ticker; the second still
-        # skipped by channel.
-        sid = m.get("sid")
-        sid = tk if sid is None else sid
-        seq = m.get("seq")
-        if not isinstance(seq, int):
-            seq = (d.get("seq") if isinstance(d.get("seq"), int) else None)
-        if isinstance(seq, int):
-            prev = sid_seq.get(sid)
-            if prev is not None and seq != prev + 1:
-                # A RESTART IS NOT A GAP. The collector re-subscribes every
-                # thirty seconds for newly opened windows, and Kalshi starts
-                # each subscription's counter at 1; a reconnect restarts the
-                # numbering under a sid number already seen. A sequence
-                # number that goes DOWN means a new stream began. Only one
-                # that jumps UP means anything is missing.
-                if seq <= prev:
-                    stats["seq_restarts"] += 1
-                    stats["restart_on_snapshot" if is_snap
-                          else "restart_on_delta"] += 1
-                else:
-                    stats["seq_gaps"] += 1
-                    gap_sizes.append(seq - prev - 1)
-                    # A gap is a property of the SUBSCRIPTION, not of the
-                    # message that revealed it: every book under that sid is
-                    # fiction from here until it gets a fresh snapshot. The
-                    # ticker channel keeps those markets measurable in the
-                    # meantime.
-                    for other in sid_tk[sid]:
-                        b2 = books.get(other)
-                        if b2 is not None and b2.valid:
-                            b2.valid = False
-                            stats["books_invalidated"] += 1
-            if prev is None:
-                stats["sids"] += 1
-            sid_seq[sid] = seq
-        if typ == "trade":
-            stats["trades_seen"] += 1
-            continue
-
+    def handle(t, m, typ, d, tk, is_snap, is_delta, is_tick, seq, sid):
+        nonlocal gclock
         w = windows.get(tk)
         if w is None:
             stats["no_settlement"] += 1
-            continue
+            return
         sec = int(t)
         if sec > gclock:
             gclock = sec
             sweep(gclock)
         if sec > w[1]:
-            continue                  # past this market's window entirely
+            return                    # past this market's window entirely
         sid_tk[sid].add(tk)
 
         if is_tick:
             b = _cents(get_path(m, TF["yes_bid"]) if TF.get("yes_bid")
                        else d.get("yes_bid"), TF["scale"])
-            a = _cents(get_path(m, TF["yes_ask"]) if TF.get("yes_ask")
-                       else d.get("yes_ask"), TF["scale"])
+            a_ = _cents(get_path(m, TF["yes_ask"]) if TF.get("yes_ask")
+                        else d.get("yes_ask"), TF["scale"])
             try:
                 bs = float(get_path(m, TF["bid_size"]) if TF.get("bid_size")
                            else d.get("yes_bid_size") or 0.0)
@@ -543,11 +511,11 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
                             else d.get("yes_ask_size") or 0.0)
             except (TypeError, ValueError):
                 bs = as_ = 0.0
-            if b is None or a is None or not (0 < b < a < 100):
+            if b is None or a_ is None or not (0 < b < a_ < 100):
                 stats["ticker_unusable"] += 1
-                continue
+                return
             stats["ticker_msgs"] += 1
-            tl1[tk] = (b, bs, a, as_)
+            tl1[tk] = (b, bs, a_, as_)
             # AGREEMENT, ON REAL DATA. Where the reconstructed book is valid
             # and the ticker channel has just spoken, the two independent
             # views of top-of-book must match. This is the only check in the
@@ -558,13 +526,13 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
                 bl = _l1(bk)
                 if bl is not None:
                     stats["agree_n"] += 1
-                    if bl[0] == b and bl[2] == a:
+                    if bl[0] == b and bl[2] == a_:
                         stats["agree_exact"] += 1
-                    elif abs(bl[0] - b) <= 1 and abs(bl[2] - a) <= 1:
+                    elif abs(bl[0] - b) <= 1 and abs(bl[2] - a_) <= 1:
                         stats["agree_1c"] += 1
             if sec >= w[0]:
                 account(tk, sec, w)
-            continue
+            return
 
         bk = books[tk]
         if is_snap:
@@ -582,16 +550,118 @@ def mine_day(files, windows, verbose=False, max_msgs=None):
                 chg = None
             if price is None or chg is None or side not in ("yes", "no"):
                 stats["unparsed_delta"] += 1
-                continue
+                return
             if not bk.valid:
                 stats["delta_while_invalid"] += 1
-                continue
+                return
             bk.apply(price, chg, side, t)
             stats["deltas"] += 1
 
         if sec < w[0]:
-            continue                  # before the window: book state only
+            return                    # before the window: book state only
         account(tk, sec, w)
+
+    def parse(m):
+        typ = m.get("type", "")
+        d = m.get("msg") or {}
+        is_snap = "orderbook_snapshot" in typ
+        is_delta = "orderbook_delta" in typ
+        is_tick = typ == "ticker"
+        if not (is_snap or is_delta or is_tick or typ == "trade"):
+            return None
+        tk = (get_path(m, TF["ticker"]) if is_tick and TF.get("ticker")
+              else None) or d.get("market_ticker") or d.get("ticker")
+        if not tk:
+            stats["no_ticker"] += 1
+            return None
+        return typ, d, tk, is_snap, is_delta, is_tick
+
+    def dispatch(t, m, P, seq, sid):
+        typ, d, tk, is_snap, is_delta, is_tick = P
+        if typ == "trade":
+            stats["trades_seen"] += 1
+            return
+        handle(t, m, typ, d, tk, is_snap, is_delta, is_tick, seq, sid)
+
+    def invalidate(sid):
+        for other in sid_tk[sid]:
+            b2 = books.get(other)
+            if b2 is not None and b2.valid:
+                b2.valid = False
+                stats["books_invalidated"] += 1
+
+    def drain(sid):
+        dq = pend[sid]
+        while dq:
+            e = expect[sid]
+            got = dq.pop(e, None)
+            if got is None:
+                return
+            dispatch(got[0], got[1], got[2], e, sid)
+            expect[sid] = e + 1
+
+    streams = [_file_stream(fp, i) for i, fp in enumerate(files)]
+    n_read = 0
+    for t, _fi, _li, m in merge(*streams):
+        n_read += 1
+        if max_msgs and n_read > max_msgs:
+            break
+        P = parse(m)
+        if P is None:
+            continue
+        sid = m.get("sid")
+        sid = P[2] if sid is None else sid
+        seq = m.get("seq")
+        if not isinstance(seq, int):
+            sq = P[1].get("seq")
+            seq = sq if isinstance(sq, int) else None
+        if seq is None:
+            dispatch(t, m, P, None, sid)  # no sequence to order by
+            continue
+
+        e = expect.get(sid)
+        if e is None:
+            stats["sids"] += 1
+            expect[sid] = seq + 1
+            dispatch(t, m, P, seq, sid)
+        elif seq == e:
+            expect[sid] = seq + 1
+            dispatch(t, m, P, seq, sid)
+            if pend[sid]:
+                drain(sid)
+        elif seq > e:
+            pend[sid][seq] = (t, m, P)
+            if len(pend[sid]) > PENDING_MAX:
+                # PENDING_MAX messages have arrived and the one we are
+                # waiting for is not among them. It is genuinely lost, and
+                # every book under this subscription is fiction until a
+                # snapshot -- or until the ticker channel re-anchors it.
+                nxt = min(pend[sid])
+                stats["seq_gaps"] += 1
+                gap_sizes.append(nxt - e)
+                invalidate(sid)
+                expect[sid] = nxt
+                drain(sid)
+        else:
+            # seq below what we expect. Inside the buffer's reach that is a
+            # late arrival we have already given up on; far below it, the
+            # subscription's counter restarted -- the collector re-subscribes
+            # every thirty seconds and a reconnect renumbers from 1.
+            if e - seq > PENDING_MAX:
+                stats["seq_restarts"] += 1
+                pend[sid].clear()
+                expect[sid] = seq + 1
+                dispatch(t, m, P, seq, sid)
+            else:
+                stats["late_arrival"] += 1
+                dispatch(t, m, P, seq, sid)
+
+    # whatever is still buffered is in order among itself
+    for sid in list(pend):
+        for sq in sorted(pend[sid]):
+            got = pend[sid][sq]
+            dispatch(got[0], got[1], got[2], sq, sid)
+        pend[sid].clear()
 
     sweep(gclock + 1)
     for tk in list(cur):
@@ -955,7 +1025,7 @@ def trade_oos(obs, k, verbose=True):
 # SELF-TEST
 # ===========================================================================
 def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False,
-                restart_seq=False):
+                restart_seq=False, jitter=False):
     """A synthetic collector directory in the REAL layout: two channels, two
     directories, one file each, prices as `price_dollars`, sizes as
     `delta_fp`. A fixture that disagrees with the collector tests nothing --
@@ -1051,6 +1121,14 @@ def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False,
                              "msg": {"market_ticker": tk, "count": 1}})
             pend = 0
 
+            msgs.append({"type": "ticker", "sid": 1, "seq": nxt(),
+                         "_rx_ms": int(sec * 1000) + 195,
+                         "msg": {"market_ticker": tk,
+                                 "yes_bid": bid / 100.0,
+                                 "yes_ask": ask / 100.0,
+                                 "yes_bid_size": float(yes.get(bid, 0.0)),
+                                 "yes_ask_size": float(no.get(100 - ask,
+                                                              0.0))}})
             d = rnd.gauss(0, 1)
             add = round(abs(d) * 60.0, 2) + 1.0
             if d > 0:
@@ -1072,6 +1150,19 @@ def _write_feed(root, spec, seed=7, predictive=True, drop_seq=False,
     msgs.sort(key=lambda z: z["_rx_ms"])
     for i, m in enumerate(msgs, start=1):
         m["seq"] = i
+    if jitter:
+        # WHAT THE REAL TAPE LOOKS LIKE. `_rx_ms` is a millisecond stamp and
+        # the merge breaks ties by channel directory, so messages that share
+        # a millisecond arrive in alphabetical order of channel rather than
+        # the order Kalshi sent them. Coarsening the clock AFTER seq is
+        # assigned reproduces exactly that: seq still carries the truth, the
+        # arrival order no longer does.
+        # 100ms, and the grid was MEASURED not chosen: at 10ms this fixture
+        # produces 0 out-of-seq arrivals in 36,628 messages and the test is
+        # vacuous. At 100ms it produces 8,211. A test that cannot fail is
+        # worse than no test, because it reads as coverage.
+        for m in msgs:
+            m["_rx_ms"] = (m["_rx_ms"] // 100) * 100
     if drop_seq:
         dd = [i for i, m in enumerate(msgs) if "delta" in m["type"]]
         del msgs[dd[len(dd) // 2]]
@@ -1278,6 +1369,39 @@ def selftest():
         if s6["sec_invalid"]:
             fails.append(f"{s6['sec_invalid']:,} seconds had no top of book "
                          "at all despite the ticker channel being available")
+
+        # -- 4d. same messages, millisecond ties, wrong arrival order ------
+        print("\n  The same feed with a coarser receive clock, so messages")
+        print("  sharing a millisecond arrive in channel order rather than")
+        print("  the order they were sent. seq still carries the truth. The")
+        print("  output must be IDENTICAL to the cleanly ordered feed.")
+        d7 = os.path.join(tmp, "clean2")
+        mk7 = _write_feed(d7, _spec(20, 2, seed=21), seed=21)
+        r7, s7 = mine_day(sorted(glob.glob(os.path.join(d7, "*", "*.gz"))),
+                          windows_from_markets(mk7), verbose=False)
+        d8 = os.path.join(tmp, "jitter")
+        mk8 = _write_feed(d8, _spec(20, 2, seed=21), seed=21, jitter=True)
+        r8, s8 = mine_day(sorted(glob.glob(os.path.join(d8, "*", "*.gz"))),
+                          windows_from_markets(mk8), verbose=False)
+        print(f"    ordered: {len(r7):,} rows, gaps {s7['seq_gaps']}, "
+              f"restarts {s7['seq_restarts']}, from the ticker channel "
+              f"{s7['rows_T']:,}")
+        print(f"    jittered: {len(r8):,} rows, gaps {s8['seq_gaps']}, "
+              f"restarts {s8['seq_restarts']}, from the ticker channel "
+              f"{s8['rows_T']:,}, late arrivals {s8['late_arrival']:,}")
+        if s8["seq_gaps"] or s8["seq_restarts"]:
+            fails.append(f"a millisecond tie produced {s8['seq_gaps']} gaps "
+                         f"and {s8['seq_restarts']} restarts. Nothing is "
+                         "missing -- the messages merely arrived out of "
+                         "order, and calling that a gap invalidates every "
+                         "book under the subscription.")
+        if s8["rows_T"]:
+            fails.append(f"{s8['rows_T']:,} rows fell back to the ticker "
+                         "channel on a feed with nothing missing")
+        if len(r8) != len(r7) or r8 != r7:
+            fails.append("reordering the arrivals changed the output. seq is "
+                         "the true order and replaying in it must be "
+                         "deterministic.")
 
         # -- 5. the cache must be a cache, not a second opinion -------------
         again = load_rows(mine(d1, mk, os.path.join(tmp, "c1"), verbose=False),
