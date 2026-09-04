@@ -71,6 +71,112 @@ def pinned_rows(rows, pin=PIN):
     return [r for r in rows if r["fair"] >= pin or r["fair"] <= 1.0 - pin]
 
 
+# ===========================================================================
+# OUT OF SAMPLE -- the answer to "BELOW the fair band"
+# ===========================================================================
+def refair(f, k):
+    """Fair value recomputed with sigma scaled by k, exactly and cheaply.
+
+    fair = Phi(z) with z = (mu - K)/sd and sd proportional to sigma, so
+    scaling sigma by k sends z -> z/k. No rescan of the tape is needed to
+    ask "what would this have looked like with a less confident model?"
+    """
+    f = min(1.0 - 1e-12, max(1e-12, float(f)))
+    return ND.cdf(ND.inv_cdf(f) / k)
+
+
+def _stated(t, k):
+    """The probability the model assigns to the side this trade took."""
+    f = refair(t["fair"], k)
+    return f if t["side"] == "yes" else 1.0 - f
+
+
+def _happened(t):
+    w = t.get("won")
+    if w is None:
+        return None
+    return w if t["side"] == "yes" else 1.0 - w
+
+
+def fit_k(trades, lo=0.30, hi=8.0, iters=60):
+    """The sigma multiplier that makes the model's confidence match reality.
+
+    THE FIRST REAL RUN FLAGGED EVERY CELL "BELOW the fair band": the model
+    claimed +2.51c and delivered +1.70c at tau<=20, and claimed +12.01c
+    against +4.73c at the 2c floor. That is a model too sure of itself, and
+    the bias grows with the size of the disagreement -- exactly the shape of
+    selecting on our own error rather than on the market's.
+
+    An overconfident model is not necessarily a worthless one. If the ONLY
+    fault is that sigma is too small, one number fixes it, and that number
+    can be fitted on closes strictly earlier than the one being traded. Then
+    the question stops being "is our model right" and becomes "does what is
+    left, out of sample, still beat the market-is-right null".
+
+    Fitted by matching the mean stated probability of the taken side to the
+    rate at which that side actually won. Monotone in k, so bisection.
+    """
+    ts = [t for t in trades if _happened(t) is not None]
+    if len(ts) < 30:
+        return None
+    hit = mean(_happened(t) for t in ts)
+
+    def gap(k):
+        return mean(_stated(t, k) for t in ts) - hit
+
+    glo, ghi = gap(lo), gap(hi)
+    if glo * ghi > 0:
+        # the calibration cannot be reached inside the bracket -- refuse to
+        # extrapolate rather than returning an endpoint that looks fitted
+        return None
+    for _ in range(iters):
+        mid = 0.5 * (lo + hi)
+        if gap(mid) * glo > 0:
+            lo, glo = mid, gap(mid)
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def walk_forward(rows, floor=0.5, pin=PIN, warmup=150, refit_every=10):
+    """Every trade priced by a k fitted on closes strictly EARLIER than its own.
+
+    Returns (trades, k_path). A close becomes training data only AFTER it has
+    been traded, which is the whole point; oos.py's self-test proves the same
+    construction lags a planted regime change instead of anticipating it.
+    """
+    by_close = defaultdict(list)
+    for r in rows:
+        by_close[r["close"]].append(r)
+    closes = sorted(by_close)
+    seen, out, kpath = [], [], []
+    k_cur, since = 1.0, 10 ** 9
+    for i, c in enumerate(closes):
+        if i >= warmup:
+            if since >= refit_every:
+                kk = fit_k(seen)
+                if kk is not None:
+                    k_cur = kk
+                since = 0
+            since += 1
+            sub = [dict(r, fair=refair(r["fair"], k_cur)) for r in by_close[c]]
+            tr = evaluate(pinned_rows(sub, pin), edge_floor=floor,
+                          rule="first")
+            # EVERY post-warmup close, not only the ones that traded. Recording
+            # k only when a trade fired made a WORKING recalibration look
+            # broken: once k rose enough to stop the trading, no further k was
+            # ever recorded, so the path read "1.00 -> 1.00" while the fit was
+            # actually at 4x and correctly refusing to trade.
+            kpath.append((c, k_cur))
+            out.extend(tr)
+        # TRAINING POPULATION IS FIXED AT k=1 on purpose: conditioning the
+        # training set on the current k would let today's estimate choose
+        # which of yesterday's trades it is judged against.
+        seen.extend(evaluate(pinned_rows(by_close[c], pin),
+                             edge_floor=floor, rule="first"))
+    return out, kpath
+
+
 def flips(trades):
     """Trades where the near-certain side lost -- the tail, enumerated."""
     out = []
@@ -122,6 +228,27 @@ def run_cells(rows, reps=2000):
         for floor in FLOORS:
             block(evaluate(sub, edge_floor=floor, rule="first"),
                   f"edge floor {floor:.1f}c", reps=reps)
+
+
+def run_oos(rows, reps=2000):
+    """The in-sample table above looked at eight cells and every one of them
+    was flagged overconfident. This is the same question asked once, out of
+    sample, with the confidence fitted only on the past."""
+    print("\n" + "=" * 78)
+    print("OUT OF SAMPLE -- sigma recalibrated on closes strictly earlier")
+    print("than the one being traded, so 'our model is overconfident' stops")
+    print("being an excuse and becomes a fitted number")
+    print("=" * 78)
+    for tau_max in (20, TAU_MAX):
+        sub = [r for r in rows if r["tau"] <= tau_max]
+        print(f"\n  tau <= {tau_max}s")
+        for floor in FLOORS:
+            tr, kp = walk_forward(sub, floor=floor)
+            ks = [k for _, k in kp]
+            lab = f"edge floor {floor:.1f}c"
+            if ks:
+                lab += f"  k {ks[0]:.2f}->{ks[-1]:.2f}"
+            block(tr, lab, reps=reps)
 
 
 # ===========================================================================
@@ -247,6 +374,7 @@ def selftest():
         fails.append("the overconfident model produced almost no phantom "
                      "trades -- the trap fixture is not a trap")
     else:
+        tr_in3 = tr3
         sm3 = summarise(tr3)
         nf3 = redraw_null(tr3, reps=500, using="fair")
         print(f"    {sm3['n']} closes, claimed {sm3['exp_edge']:+.2f}c, "
@@ -256,6 +384,65 @@ def selftest():
             fails.append("an overconfident model's phantom edge was NOT "
                          "flagged: realised sits inside the fair band it "
                          "should have fallen out of")
+
+    # ---- 3b. the walk-forward must LEARN the overconfidence --------------
+    print("\n  Same overconfident world, but sigma now recalibrated on")
+    print("  closes strictly EARLIER than the one being traded. The fitted")
+    print("  k must climb toward the 4x it was lied to by, and the money")
+    print("  must stop being negative.")
+    tr3b, kp = walk_forward(rows3, floor=0.5, warmup=60, refit_every=5)
+    ks = [k for _, k in kp]
+    print(f"    k fitted {ks[0]:.2f} -> {ks[-1]:.2f} (truth 4.00); "
+          f"trades {len(tr_in3)} in-sample -> {len(tr3b)} out of sample")
+    if not ks:
+        fails.append("the walk-forward evaluated no closes at all")
+    else:
+        if ks[-1] < 2.0:
+            fails.append(f"the walk-forward never learned the model was "
+                         f"overconfident: k ended at {ks[-1]:.2f} against a "
+                         "planted 4.00")
+        # The RIGHT response to a model that cannot tell certainty from noise
+        # is to stop claiming certainty -- so the trade count must collapse.
+        # A recalibration that kept trading at the same rate would not have
+        # learned anything.
+        if len(tr3b) >= 0.5 * len(tr_in3):
+            fails.append(f"recalibration barely reduced the trading "
+                         f"({len(tr_in3)} -> {len(tr3b)}); an overconfident "
+                         "model must stop calling outcomes decided")
+        if tr3b:
+            m3b = mean(t["pnl"] for t in tr3b)
+            tot_in = sm3["mean"] * len(tr_in3)
+            tot_oos = m3b * len(tr3b)
+            print(f"    mean {sm3['mean']:+.2f}c on {len(tr_in3)} -> "
+                  f"{m3b:+.2f}c on {len(tr3b)}")
+            print(f"    TOTAL damage {tot_in:+.0f}c -> {tot_oos:+.0f}c")
+            # TOTAL, not the mean. A single flip is -95c, so the mean over 13
+            # trades and the mean over 96 are not the same statistic -- the
+            # first version of this assertion compared them and failed a
+            # recalibration that had just cut the losses by two thirds. What
+            # a working recalibration buys is FEWER BAD TRADES, and the money
+            # lost is what measures that.
+            if tot_oos < tot_in:
+                fails.append(f"recalibrating lost MORE in total "
+                             f"({tot_in:+.0f}c -> {tot_oos:+.0f}c)")
+
+    # ---- 3c. it must NOT break the honest world --------------------------
+    print("\n  And on the world where the model was told the truth, the")
+    print("  recalibration must find k near 1 and leave the harvest alone.")
+    trh, kph = walk_forward(rows, floor=0.5, warmup=60, refit_every=5)
+    ksh = [k for _, k in kph]
+    if ksh:
+        smh = summarise(trh)
+        print(f"    k {ksh[0]:.2f} -> {ksh[-1]:.2f} (truth 1.00), "
+              f"{len(trh)} trades, realised "
+              f"{smh['mean'] if smh else float('nan'):+.2f}c")
+        if ksh[-1] > 2.5:
+            fails.append(f"on a correctly-specified model the fit inflated "
+                         f"sigma to {ksh[-1]:.2f}x and threw the edge away")
+        if smh and smh["mean"] < 0:
+            fails.append("recalibration turned a real harvest negative")
+    else:
+        fails.append("the walk-forward took no trades on the honest world")
 
     # ---- 4. the flip is priced into the claim ----------------------------
     print("\n  In the harvested world the claimed edge must already net the")
@@ -344,6 +531,7 @@ def main():
     print("outcome, taken at the earliest qualifying second, one per close")
     print("=" * 78)
     run_cells(rows)
+    run_oos(rows)
     print("\n  Read the flags, not the means. 'Below the fair band' says our")
     print("  tail probability was wrong and the edge was fiction. Only a")
     print("  cell that beats the mid-null while staying inside its fair")

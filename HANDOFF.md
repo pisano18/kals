@@ -2,6 +2,84 @@
 
 ---
 
+## 2026-09-04 (evening) — FIRST RESULTS FROM THE FOUR NEW STAGES
+
+### pin — the strongest signal this project has produced, and it is marginal
+
+    tau <= 20s
+      floor 0.3c   n=362   MDE 1.69c   claimed +2.51c   REALISED +1.70c  t=+3.0
+      floor 0.5c   n=316   MDE 2.27c   claimed +3.81c   REALISED +2.29c  t=+3.0
+      floor 1.0c   n=240   MDE 3.47c   claimed +6.54c   REALISED +2.87c  t=+2.5
+      floor 2.0c   n=151   MDE 6.00c   claimed +12.01c  REALISED +4.73c  t=+2.4
+    tau <= 60s: +0.23 / +0.04 / -0.49 / -0.52c, all t < 1. NOTHING.
+
+The mid-null tops out at +0.32c and the realised is +1.70c, so it beats the
+market-is-right null. **And the effect lives ONLY at tau <= 20s**, which is
+what the settlement arithmetic predicts: at tau=20 forty of the sixty prints
+are locked, at tau=60 none are. A result that appears exactly where the theory
+says it must is worth more than the same t-stat appearing anywhere.
+
+Two things keep it honest. Realised sits AT the MDE (1.70 vs 1.69) — the
+smallest effect this sample could certify. And every cell is flagged **BELOW
+the fair band**: claimed +2.51c against realised +1.70c, worsening to +12.01c
+against +4.73c at the 2c floor. The bias grows with the size of the
+disagreement, which is the signature of selecting on OUR error rather than the
+market's.
+
+So `pin.py` now walks forward: sigma is recalibrated on closes strictly
+earlier than the one being traded, by matching the model's stated confidence
+to the rate the stated side actually won. Self-tested against a model fed a
+sigma 4x too small — the fit recovers **k = 4.14** and cuts the total damage
+from -257c to -82c, while leaving a correctly-specified model at k = 1.07 with
+its harvest intact.
+
+### informed — making may not be dead, and that is a correction
+
+`maker.py` measured the resting side's markout at 1s/5s/30s (0.612/0.624/
+0.657c), compared it to a 0.5c capture, and this file recorded market-making
+as closed. `informed.py` measured the SAME quantity **to settlement** and got
+**+0.38c** — against a trade-weighted half-spread of 0.63c, that is
+**+0.25c per fill, positive**.
+
+    ALL      mkS +0.38c (t=6.5)   follow -1.12c (t=-20.1)   maker +0.35c (t=6.2)
+    spread >=5c                                             maker +0.96c (t=5.4)
+    shufS ~0 everywhere (max |t| 2.1) -- the random-sign control is clean
+
+Both numbers cannot be the maker's cost. Either impact peaks near 30s and
+decays by settlement — in which case **a maker who holds to expiry never pays
+the peak, and maker.py measured an exit nobody is forced to take** — or one of
+the two is wrong. `informed.py` now prints the full curve (1s/5s/30s/120s/
+300s/settlement) with the maker's net at each, so the next run settles it by
+measurement. The half-spread on that table is derived, not assumed:
+maker = half - mkS holds exactly by construction.
+
+**Do not act on this yet.** It is a horizon distinction that could still be an
+artefact, and it needs the curve before anything is rewritten.
+
+### informed — the two pre-registered cells both fail
+
+* TAIL (follow the informed tail): follow **+0.01c, t=0.1**. Dead.
+* HEADLINE (quote where spreads are wide): mkS **rises** with spread —
+  0.27c at 1c, 3.11c at >=5c. Wide spreads mean MORE informed takers, not
+  fewer. The adversarial panel predicted exactly this and it is confirmed.
+
+### strikes — undefined, not negative
+
+7,907 events scanned, **every one a single strike**. These contracts carry one
+strike per window (strike(N+1) == settle(N)), so there is no second leg to
+cross against. Cross-strike arbitrage is not mispriced here — the question
+does not exist for this product. It WOULD exist for the Coin Race
+(KXCRYPTOLEAD15M), whose legs must sum to 100c. The stage now says so rather
+than printing a bare zero.
+
+### Coin Race recording is LIVE
+
+`KXCRYPTOLEAD15M` is arriving: 1,071 quotes, 144 trades, 2,422 book updates in
+one hour. `KXCRYPTOCOMP15M` is NOT — along with the long-standing ADA, BCH and
+TON. The ticker is wrong or the series does not exist under that name.
+
+---
+
 ## 2026-09-04 — WHAT IS ACTUALLY OPTIMISTIC, AND WHAT IT WOULD PAY
 
 One cell on disk beats its own market-is-right null. `RESULTS_endgame.md`,

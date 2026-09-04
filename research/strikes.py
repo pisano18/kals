@@ -172,9 +172,28 @@ def scan(quotes, markets, verbose=True):
 
 # ===========================================================================
 def report(episodes, stats):
-    print(f"\n  {stats.get('events', 0):,} multi-strike events scanned, "
+    ev = stats.get("events", 0)
+    ss = stats.get("single_strike_events", 0)
+    print(f"\n  {ev:,} multi-strike events scanned, "
           f"{stats.get('strike_pairs', 0):,} strike pairs, "
-          f"{stats.get('single_strike_events', 0):,} single-strike skipped")
+          f"{ss:,} single-strike skipped")
+    if ev == 0 and ss:
+        # THE ZERO MEANS SOMETHING DIFFERENT FROM "no crossings found", and
+        # reading it the other way would be the project's favourite mistake.
+        # Measured 2026-09-04: 7,907 events, EVERY ONE of them a single
+        # strike. These 15-minute crypto contracts carry one strike per
+        # window -- set to the previous window's settlement, which is the
+        # same fact as strike(N+1) == settle(N). There is no second strike
+        # to cross against, so cross-strike arbitrage is not mispriced here,
+        # it is UNDEFINED.
+        print("\n  *** EVERY event has exactly ONE strike. This product has")
+        print("  one strike per window (strike(N+1) == settle(N)), so there")
+        print("  is no second leg to cross against. The zero below is not")
+        print("  'no crossings were found' -- the question does not exist")
+        print("  for this contract. It WOULD exist for a multi-outcome")
+        print("  series such as the Coin Race (KXCRYPTOLEAD15M), where the")
+        print("  legs must sum to 100c; point this at that tape once it has")
+        print("  a few days on disk.")
     for tier in ("strict", "loose"):
         eps = [e for e in episodes if e["tier"] == tier]
         print("\n" + "=" * 78)

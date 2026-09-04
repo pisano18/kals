@@ -80,7 +80,15 @@ from engine import fee_per_contract                        # noqa: E402
 from tdist import crit as _tcrit                           # noqa: E402
 from tdist import p_two_sided                              # noqa: E402
 
-HORIZONS = (1, 30)          # mid-terms markouts; settlement is its own column
+# THE HORIZON CURVE, and it is the point of this list rather than a detail.
+# maker.py measured the resting side's markout at 1s/5s/30s and got
+# 0.612/0.624/0.657c, concluded making loses against a 0.5c capture, and the
+# project recorded that as closed. This file measured the SAME quantity to
+# SETTLEMENT and got 0.38c -- which, against the trade-weighted 0.63c
+# half-spread, is positive. Both cannot be the maker's cost. Either impact
+# peaks and decays, in which case a maker who HOLDS never pays the peak, or
+# one of the two numbers is wrong. A curve settles it; an argument does not.
+HORIZONS = (1, 5, 30, 120, 300)
 FRESH = 30                  # a quote older than this is not a quote
 BURST_W = 10                # seconds of prior flow that define the lean
 SIZE_CUTS = (5.0, 20.0, 100.0)     # contracts; stated, not fitted
@@ -103,7 +111,8 @@ class Cell:
     16 GB machine. Cluster-robust inference only needs per-CLOSE means, so
     each cell holds close -> [sum, n] per measure and nothing else.
     """
-    MEASURES = ("mk1", "mk30", "mkS", "follow", "maker", "shufS")
+    MEASURES = tuple(f"mk{h}" for h in HORIZONS) + \
+        ("mkS", "follow", "maker", "shufS")
 
     def __init__(self):
         self.by = {m: defaultdict(lambda: [0.0, 0]) for m in self.MEASURES}
@@ -246,8 +255,8 @@ def measure(quotes, trades, markets, outcome, verbose=False,
             flip = rnd.choice((1.0, -1.0))
             shufS = flip * (Y - m0)
 
-            vals = dict(mk1=mk.get(1), mk30=mk.get(30), mkS=mkS,
-                        follow=follow, maker=maker, shufS=shufS)
+            vals = {f"mk{h}": mk.get(h) for h in HORIZONS}
+            vals.update(mkS=mkS, follow=follow, maker=maker, shufS=shufS)
             n_used += 1
             size_seen[bucket_of(SIZE_CUTS, sz)] += 1
 
@@ -282,6 +291,54 @@ BUCKET_NAMES = {
     "price": {"0": "<8c", "1": "8-30c", "2": "30-70c", "3": "70-92c",
               "4": ">=92c"},
 }
+
+
+def show_curve(tables, keys=(("ALL", "all"), ("spread", "0"),
+                            ("spread", "3"), ("price", "2"))):
+    """Markout against horizon, and the maker's net at each one.
+
+    THE WHOLE MAKER QUESTION IS ON THIS TABLE. `net` is the trade-weighted
+    half-spread captured minus the markout at that horizon -- what a maker
+    keeps if they unwind after h seconds. If markout rises to 30s and then
+    falls by settlement, a maker who holds to expiry never pays the peak and
+    maker.py's short-horizon verdict was measuring an exit nobody has to take.
+    """
+    print("\n" + "=" * 78)
+    print("THE IMPACT CURVE -- what the resting side pays, by how long they")
+    print("hold. maker.py stopped at 30s; settlement is a different number.")
+    print("=" * 78)
+    hs = list(HORIZONS)
+    hdr = f"  {'cell':<22}{'half-spread':>12}"
+    for h in hs:
+        hdr += f"{str(h) + 's':>9}"
+    hdr += f"{'settle':>9}"
+    print(hdr)
+    for tb, bk in keys:
+        if tb not in tables or bk not in tables[tb]:
+            continue
+        cell = tables[tb][bk]
+        mkS = cell.stat("mkS")["mean"]
+        mkr = cell.stat("maker")["mean"]
+        if mkS is None or mkr is None:
+            continue
+        half = mkr + mkS      # maker = half_spread - mkS, exactly
+        name = BUCKET_NAMES.get(tb, {}).get(bk, f"{tb}/{bk}")
+        row = f"  {name:<22}{half:>11.2f}c"
+        for h in hs:
+            v = cell.stat(f"mk{h}")["mean"]
+            row += f"{v:>8.2f}c" if v is not None else f"{'--':>9}"
+        row += f"{mkS:>8.2f}c"
+        print(row)
+        net = f"  {'  -> maker net':<22}{'':>12}"
+        for h in hs:
+            v = cell.stat(f"mk{h}")["mean"]
+            net += f"{half - v:>8.2f}c" if v is not None else f"{'--':>9}"
+        net += f"{half - mkS:>8.2f}c"
+        print(net)
+    print("\n  half-spread is derived, not assumed: maker = half - mkS holds")
+    print("  exactly by construction, so half = maker + mkS.")
+    print("  A positive `net` at settlement with a negative one at 30s means")
+    print("  the impact is temporary and the maker who holds does not pay it.")
 
 
 def show_tables(tables, measures=("mkS", "follow", "maker", "shufS")):
@@ -511,6 +568,7 @@ def main():
     print("\n" + "=" * 78)
     print("WHO IS INFORMED -- signed drift to settlement, by condition")
     print("=" * 78)
+    show_curve(tables)
     show_tables(tables)
     print("\n  READ IT IN THIS ORDER: shufS must be ~0 everywhere or stop.")
     print("  Then HEADLINE (can a maker stand anywhere?) and TAIL (does")
