@@ -323,6 +323,14 @@ STAGES = [
     # or quote only in cells where the resting side is not run over.
     ("informed", ["research/informed.py", "--data", "{data}",
                   "--out", "{out}"], "{data}/trade"),
+    # pin hunts the endgame's sleeping quotes: seconds where the locked
+    # settlement prints say the outcome is decided (fair beyond 0.98) and a
+    # quote is still on the wrong side of it. Four of the strategy panel's
+    # twenty-one candidates were this one idea; it needs nobody to be wrong
+    # about anything difficult -- only slow. Its report flags its own
+    # overconfidence: realised below the fair band means OUR tail was wrong.
+    ("pin", ["research/pin.py", "--data", "{data}", "--out", "{out}"],
+     "{data}/cfbenchmarks_value"),
     # strikes needs no mispricing at all: within one event, P(settle >= K)
     # is decreasing in K by arithmetic, so ask(K_low) < bid(K_high) is a
     # riskless credit net of two fees. Thin fast books produce transient

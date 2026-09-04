@@ -176,7 +176,7 @@ if ($ft -match "REFUSING TO WRITE") {
 # `book` stays last: its main path reads the small `ticker` channel, not the
 # rebuild, so it is cheap -- but it is also the least interesting thing here
 # now that flow reads the real book.
-$stages = @("informed", "strikes", "flow",
+$stages = @("informed", "strikes", "pin", "flow",
             "surface", "reconcile", "implied", "term", "endgame", "patterntrade", "calfit", "oos",
             "calib", "voltiming", "maker",
             "chain", "leadlag", "cross", "openwindow", "feeds", "pathstats",
