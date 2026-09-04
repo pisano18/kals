@@ -258,14 +258,42 @@ Git-Quiet -c user.name="kals-runner" -c user.email="runner@localhost" `
 
 # Claude may have pushed while this ran. Rebase onto whatever is there and
 # retry rather than failing and leaving the results stranded on this machine.
+#
+# --autostash, and the omission cost a whole run. The pull at the TOP of this
+# script has carried it since 2026-08-28 for exactly the reason it is needed
+# here: a run leaves results/*.md and the odd cache file modified, and
+# `pull --rebase` refuses to start on a dirty tree. On 2026-09-04 four stages
+# ran for two hours, committed locally, and then failed four times on
+# "cannot pull with rebase: You have unstaged changes" -- the results sat on
+# the operator's machine and I could not read them. The same flag, on the
+# same command, twenty lines apart.
+#
+# The old loop also reported every failure as "push failed" even when the
+# PULL was what died, and slept 2/4/8/16s over a condition no amount of
+# waiting fixes. It now names which step failed, and only backs off for the
+# case backing off can help.
+$pushed = $false
 for ($i = 1; $i -le 4; $i++) {
-    Git-Quiet pull --rebase origin $Branch | Out-Null
+    $prc = Git-Quiet pull --rebase --autostash origin $Branch
+    if ($prc -ne 0) {
+        Say "pull --rebase --autostash failed (exit $prc) on attempt $i"
+    }
     if ((Git-Quiet push origin "HEAD:$Branch") -eq 0) {
-        Say "pushed on attempt $i"; break
+        Say "pushed on attempt $i"; $pushed = $true; break
     }
     $wait = [math]::Pow(2, $i)
     Say "push failed; retrying in ${wait}s"
     Start-Sleep -Seconds $wait
+}
+if (-not $pushed) {
+    # LOUD, and with the fix. A silent "done ===" after four failed pushes
+    # reads exactly like a successful run in the scrollback.
+    Say ""
+    Say "*** PUBLISH FAILED. The results are committed LOCALLY and are NOT"
+    Say "*** on the remote. Nothing is lost -- recover with:"
+    Say "***   git pull --rebase --autostash origin $Branch"
+    Say "***   git push origin HEAD:$Branch"
+    Say ""
 }
 
 Say "=== done ==="
