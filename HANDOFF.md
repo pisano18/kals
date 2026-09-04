@@ -2,6 +2,44 @@
 
 ---
 
+## 2026-09-04 — WHAT IS ACTUALLY OPTIMISTIC, AND WHAT IT WOULD PAY
+
+One cell on disk beats its own market-is-right null. `RESULTS_endgame.md`,
+settlement P&L, tau <= 60s:
+
+    trades 705   claimed 1.87c   REALISED +0.86c   t 1.33   MDE 1.93c
+    market-right null [-2.26, +0.57]c
+
+**+0.86c sits above the null's top of +0.57c.** Every other strategy cell in
+this project sits inside or below its null. This one does not — it is the only
+positive signal that survived contact with the right null.
+
+It is NOT proven and must not be reported as such: t = 1.33, and the MDE of
+1.93c is larger than the effect, so this sample could never have certified
+0.86c whether it was real or not. Underpowered is not the same as refuted, and
+this is the one place the distinction matters.
+
+`pin.py` is the tighter filter on exactly this region: only seconds where the
+locked prints put fair beyond 0.98 (or below 0.02) and a quote is still on the
+wrong side. If the endgame edge is real it should CONCENTRATE there, which
+raises the effect against the same noise.
+
+### The money, if it holds
+
+Contracts pay $1, so 1c = $0.01/contract. Measured: 80 closes/day, 13.4
+strikes per close, depth 55 at the touch (28/55/124 quartiles).
+
+    floor    one trade/close, 40 lots, 0.86c    $24/day     $8.9k/yr
+    central  3 strikes/close,  50 lots, 1.5c    $180/day    $66k/yr
+    high     5 strikes/close,  50 lots, 3.0c    $598/day    $218k/yr
+
+**The binding constraint is depth, not edge.** 55 contracts at the touch is
+$55 of book. This strategy cannot be scaled by betting bigger; only by
+covering more strikes and more closes. Any plan that assumes size is wrong
+about this market.
+
+---
+
 ## 2026-09-03 (evening) — BOTH structural strategies are now closed
 
 On the full tape: 5,947,458 market-seconds, 7,176 markets, **798 close-time
