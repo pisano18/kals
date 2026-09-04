@@ -40,6 +40,52 @@ arithmetic has produced, and it was not obvious going in.
 
 ---
 
+## 2026-09-04 — THE RE-GENERATION, under the relaxed goal
+
+The user relaxed the goal: no longer "a flaw in the market", but ANY strategy
+with positive expectancy after real costs. Twenty-one candidates were
+generated from six lenses and each was audited by three adversaries
+(arithmetic against the measured constants; duplication against this file's
+graveyard; testability and power on the tape). Two died outright
+(strike-formation gap at open; post-shock vol over-response — no reachable
+MDE). The rest cluster into four families, ranked by profit x probability,
+testability as the tiebreak:
+
+**1. The pinned endgame** (`pin.py`, BUILT) — fair beyond 0.98 from locked
+prints, quotes still on the wrong side of it. The panel's highest
+confidence x edge cluster (four of the 21 candidates were this one idea).
+The arithmetic skeptic killed one version's premise (there is no 1c floor —
+ticks go to 0.1c in the wings) and `pin.py` does not rely on it.
+
+**2. Follow the informed tail** (`informed.py` TAIL cell, BUILT) — the
++0.612c/t=54 markout, conditioned on size/burst/tau and run to settlement.
+Est 0.7c against ~2.3c of taker cost; the tail decides, the pool does not.
+
+**3. Conditional making** (`informed.py` HEADLINE + spread/burst/price
+tables, BUILT) — the closest deficit to zero (-0.11c pooled). The skeptic's
+strong counter, recorded so the real numbers are read against it: wide
+spreads concentrate in exactly the price buckets whose markout is already
+1.0-1.25c, so expect the spread cut to kill rather than save. Same run, free.
+
+**4. Cross-strike dutch book** (`strikes.py`, BUILT) — not one of the 21;
+needs no one to be wrong, only briefly inconsistent. Two fees charged, two
+freshness tiers, episodes counted once.
+
+**5. Queue position / fill-type decomposition** (C2; NEXT BUILD) — the power
+auditor confirms decision-grade MDE from the now-trustworthy book; the
+arithmetic auditor's caution stands: front-of-queue still eats every
+through-sweep, so the decomposition decides, not the hope.
+
+**6. Coin Race correlation** (collection STARTED — collector default now
+includes KXCRYPTOLEAD15M/COMP15M; deploy = one file copy) — days of tape
+needed before the first test.
+
+**7. Hourly-crypto calibration via REST** (44 series, thousands of closes)
+and **8. equities 15-min with a futures feed** — new machinery, ranked by
+cost.
+
+---
+
 ## TIER A — testable with data already on disk
 
 ### A1. Volatility under-response  ·  `research/voltiming.py`  ·  BUILT
