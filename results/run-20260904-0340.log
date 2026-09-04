@@ -1,44 +1,44 @@
-﻿07:26:40  === run_when_away 20260903-0726 ===
-07:26:40  git pull
+﻿03:40:45  === run_when_away 20260904-0340 ===
+03:40:45  git pull
 From https://github.com/pisano18/kals
  * branch            claude/file-uploads-70rtjl -> FETCH_HEAD
 Already up to date.
-07:26:40  now at 7cbae17 (origin/claude/file-uploads-70rtjl is 7cbae17)
-07:26:40  preflight: stdlib shadowing
+03:40:45  now at 59b6f5c (origin/claude/file-uploads-70rtjl is 59b6f5c)
+03:40:45  preflight: stdlib shadowing
 ==============================================================================
 STDLIB SHADOWING
 ==============================================================================
-  46 python files under C:\kals-repo
+  49 python files under C:\kals-repo
   probing 35 stdlib modules with C:\kals-repo\research
   first on sys.path, the way every stage arranges it
 
   clean -- nothing in this repo shadows a stdlib module, on this
   Python or on any newer one this file knows about.
-07:26:42  refreshing settled outcomes (markets.json)
+03:40:46  refreshing settled outcomes (markets.json)
 ==============================================================================
 FEED CHECK
 ==============================================================================
-  cfbenchmarks_value  206 files   7,342,087 msgs  (0 still writing)  OK
+  cfbenchmarks_value  226 files   8,143,173 msgs  (0 still writing)  OK
     sample: {"type":"cfbenchmarks_value","sid":2,"seq":1,"msg":{"index_id":"SOLUSD_RTI","received_at":1787630959031,"data":"{\"type\":\"value\",\"time\":1787630959000,\"id\":\"SOLUSD_RTI\",\"value\":\"101.22\"}","avg_60s_data":{"value":"101.22000000","window_size":0,"window_start_ts_ms":1787
   pyth_value            0 files           0 msgs  (0 still writing)  *** EMPTY ***
-  orderbook_delta     205 files  567,741,288 msgs  (0 still writing)  OK
-  ticker              205 files   6,377,883 msgs  (0 still writing)  OK
-  trade               204 files  27,617,853 msgs  (0 still writing)  OK
+  orderbook_delta     225 files  640,317,418 msgs  (0 still writing)  OK
+  ticker              225 files   7,022,968 msgs  (0 still writing)  OK
+  trade               224 files  30,912,188 msgs  (0 still writing)  OK
 
   --- cfbenchmarks detail ---
-  span 223.43 h across 11 indices
+  span 243.67 h across 11 indices
            index     msgs   per hour   (1/sec = 3600)
-     NEARUSD_RTI  684,726      3,065
-      BNBUSD_RTI  684,726      3,065
-            BRTI  684,725      3,065
-      ETHUSD_RTI  684,725      3,065
-      SOLUSD_RTI  684,724      3,065
-     HYPEUSD_RTI  684,724      3,065
-      ZECUSD_RTI  684,724      3,065
-      BCHUSD_RTI  684,722      3,065
-      XRPUSD_RTI  684,722      3,065
-     DOGEUSD_RTI  684,720      3,065
-      ADAUSD_RTI  499,543      2,236  <-- GAPPY
+     NEARUSD_RTI  757,545      3,109
+            BRTI  757,543      3,109
+      ETHUSD_RTI  757,543      3,109
+      BNBUSD_RTI  757,543      3,109
+      ZECUSD_RTI  757,542      3,109
+      SOLUSD_RTI  757,541      3,109
+     HYPEUSD_RTI  757,541      3,109
+      BCHUSD_RTI  757,540      3,109
+      XRPUSD_RTI  757,539      3,109
+     DOGEUSD_RTI  757,537      3,109
+      ADAUSD_RTI  572,360      2,349  <-- GAPPY
 
   avg_60s_data present on 100.0% of messages
   window_size: min 0  median 60  max 60
@@ -46,9 +46,9 @@ FEED CHECK
     (60-s)^1.5 model was built around -- Kalshi hands it to us.
 
   LATENCY  CF timestamp -> Kalshi received_at:
-    median 68 ms   p90 106 ms
+    median 68 ms   p90 105 ms
   LATENCY  Kalshi received_at -> our machine:
-    median 44 ms   p90 501 ms
+    median 42 ms   p90 662 ms
     (includes any clock offset between your PC and Kalshi --
      run w32tm /resync before trusting the absolute number;
      the SPREAD between p90 and median is offset-free.)
@@ -72,15 +72,15 @@ FEED CHECK
 C-FINAL  tails PER SERIES  [pooling 9 series was wrong]
 ==============================================================================
        series      n    kurt     90c     95c     98c     99c  crossover
-     KXBNB15M   1198     7.5    0.75    0.90    1.32    1.88      96.1c
-     KXBTC15M   1196     6.3    0.76    0.89    1.23    1.71      96.3c
-    KXDOGE15M   1198    11.1    0.72    0.78    1.13    1.46      97.2c
-     KXETH15M   1196     7.8    0.74    0.77    1.13    1.88      97.3c
-    KXHYPE15M   1198     4.9    0.84    0.95    1.27    1.67      95.7c
-    KXNEAR15M   1198     6.7    0.82    0.93    1.21    1.79      96.1c
-     KXSOL15M   1198     9.9    0.74    0.90    1.04    1.50      97.3c
-     KXXRP15M   1198     7.5    0.74    0.92    1.17    1.71      96.3c
-     KXZEC15M   1198     7.8    0.81    0.86    1.29    1.71      96.4c
+     KXBNB15M   1198     5.4    0.85    1.01    1.38    1.92      94.8c
+     KXBTC15M   1196     5.9    0.77    0.93    1.28    1.88      95.9c
+    KXDOGE15M   1198     6.4    0.82    0.99    1.23    1.71      95.3c
+     KXETH15M   1196     7.4    0.74    0.77    1.21    1.84      97.0c
+    KXHYPE15M   1198     4.7    0.83    0.93    1.38    1.71      95.8c
+    KXNEAR15M   1198     4.8    0.84    0.94    1.38    1.67      95.7c
+     KXSOL15M   1198     6.6    0.79    1.01    1.29    1.67      94.8c
+     KXXRP15M   1198     6.0    0.84    1.02    1.25    1.58      94.6c
+     KXZEC15M   1198     6.5    0.81    0.94    1.15    1.50      96.2c
 
   Pooled crossover was 96.6c (June archive) and 96.7c (recent) --
   two independent datasets agreeing. Per-series tells us whether that
@@ -90,12 +90,12 @@ C-FINAL  tails PER SERIES  [pooling 9 series was wrong]
   whether the market itself is exploitable.
 
   markets.json refreshed: 10,796 settled markets across 12 series. tapes.json left as it was.
-07:35:24  -Only given; running just: flow, maker
-07:35:24  2 stage(s). flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape
-07:35:24  forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each.
-07:35:24  --- flow (1 of 2) ---
+03:50:05  -Only given; running just: informed, strikes, pin, flow
+03:50:05  4 stage(s). flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape
+03:50:05  forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each.
+03:50:05  --- informed (1 of 4) ---
 ==============================================================================
-go.py   2026-09-03 11:35 UTC
+go.py   2026-09-04 07:50 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -104,35 +104,57 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-                  flow  ok  (4416s)
+              informed  ok  (794s)
+
+wrote C:\kals-repo\results\RESULTS_informed.md
+Send that file back.
+04:03:21  informed -> 8.5 KB in 795s
+04:03:21  --- strikes (2 of 4) ---
+==============================================================================
+go.py   2026-09-04 08:03 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+               strikes  ok  (73s)
+
+wrote C:\kals-repo\results\RESULTS_strikes.md
+Send that file back.
+04:04:35  strikes -> 4.7 KB in 74s
+04:04:35  --- pin (3 of 4) ---
+==============================================================================
+go.py   2026-09-04 08:04 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                   pin  ok  (147s)
+
+wrote C:\kals-repo\results\RESULTS_pin.md
+Send that file back.
+04:07:03  pin -> 6.7 KB in 148s
+04:07:03  --- flow (4 of 4) ---
+==============================================================================
+go.py   2026-09-04 08:07 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                  flow  ok  (6105s)
 
 wrote C:\kals-repo\results\RESULTS_flow.md
 Send that file back.
-08:49:01  flow -> 15.6 KB in 4417s
-08:49:01  --- maker (2 of 2) ---
-==============================================================================
-go.py   2026-09-03 12:49 UTC
-  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
-==============================================================================
-
-PREFLIGHT (runs even under --only)
-        stdlib shadowing  PASS  (1s)
-      empty-marker prose  PASS  (0s)
-
-STAGES
-                 maker  ok  (2934s)
-
-wrote C:\kals-repo\results\RESULTS_maker.md
-Send that file back.
-09:37:57  maker -> 9.6 KB in 2936s
-09:37:57  publishing
-warning: LF will be replaced by CRLF in results/RESULTS_flow.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_maker.md.
-The file will have its original line endings in your working directory
-error: cannot pull with rebase: You have unstaged changes.
-error: please commit or stash them.
-To https://github.com/pisano18/kals
-   7cbae17..769c509  HEAD -> claude/file-uploads-70rtjl
-09:38:00  pushed on attempt 1
-09:38:00  === done ===
+05:48:49  flow -> 16.7 KB in 6106s
+05:48:49  publishing

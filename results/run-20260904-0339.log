@@ -1,0 +1,17 @@
+﻿03:39:54  === run_when_away 20260904-0339 ===
+03:39:54  git pull
+From https://github.com/pisano18/kals
+ * branch            claude/file-uploads-70rtjl -> FETCH_HEAD
+Already up to date.
+03:39:55  now at 59b6f5c (origin/claude/file-uploads-70rtjl is 59b6f5c)
+03:39:55  preflight: stdlib shadowing
+==============================================================================
+STDLIB SHADOWING
+==============================================================================
+  49 python files under C:\kals-repo
+  probing 35 stdlib modules with C:\kals-repo\research
+  first on sys.path, the way every stage arranges it
+
+  clean -- nothing in this repo shadows a stdlib module, on this
+  Python or on any newer one this file knows about.
+03:39:57  refreshing settled outcomes (markets.json)
