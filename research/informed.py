@@ -260,6 +260,21 @@ def measure(quotes, trades, markets, outcome, verbose=False,
             n_used += 1
             size_seen[bucket_of(SIZE_CUTS, sz)] += 1
 
+            # HOW FAR FROM THE TOUCH DID THIS PRINT? The maker measure
+            # averages over every fill in the book, and a fill 3c from the
+            # mid pays the maker 3c -- but only a maker QUOTING 3c out gets
+            # it, and they are filled far less often. maker.py assumed every
+            # fill lands at the touch of a median-width book (capture 0.50c);
+            # this file measured where trades ACTUALLY printed (0.73c) and
+            # flipped the verdict on that difference alone. Which of the two
+            # is right depends entirely on whether the money is at the touch
+            # or out in the ladder, so split it and look.
+            touch = a0 if sgn > 0 else b0
+            beyond = sgn * (price_c - touch)
+            dep = ("at-touch" if beyond <= 0.05 else
+                   "0-1c-out" if beyond <= 1.0 else
+                   "1-3c-out" if beyond <= 3.0 else "3c+-out")
+
             agree = ("agree" if sgn * burst > 0.5 else
                      "against" if sgn * burst < -0.5 else "quiet")
             keys = [
@@ -269,6 +284,7 @@ def measure(quotes, trades, markets, outcome, verbose=False,
                 ("burst", agree),
                 ("spread", f"{bucket_of(SPREAD_CUTS, sp0)}"),
                 ("price", f"{bucket_of(PRICE_CUTS, m0 / 100.0)}"),
+                ("filldepth", dep),
             ]
             # the pre-registered headline cell, written before real data
             if sp0 >= 2.0 and agree in ("quiet", "against") and tau > 180:
@@ -293,7 +309,8 @@ BUCKET_NAMES = {
 }
 
 
-def show_curve(tables, keys=(("ALL", "all"), ("spread", "0"),
+def show_curve(tables, keys=(("ALL", "all"), ("filldepth", "at-touch"),
+                            ("filldepth", "1-3c-out"), ("spread", "0"),
                             ("spread", "3"), ("price", "2"))):
     """Markout against horizon, and the maker's net at each one.
 
@@ -337,6 +354,11 @@ def show_curve(tables, keys=(("ALL", "all"), ("spread", "0"),
         print(net)
     print("\n  half-spread is derived, not assumed: maker = half - mkS holds")
     print("  exactly by construction, so half = maker + mkS.")
+    print("  READ THE at-touch ROW FIRST. That is the only line a maker")
+    print("  resting at the best bid or offer can actually collect. If the")
+    print("  positive number lives in the -out rows, the money is spread")
+    print("  along a ladder that fills rarely, and the pooled figure is an")
+    print("  average nobody can trade.")
     print("  A positive `net` at settlement with a negative one at 30s means")
     print("  the impact is temporary and the maker who holds does not pay it.")
 
@@ -351,8 +373,8 @@ def show_tables(tables, measures=("mkS", "follow", "maker", "shufS")):
     print(f"  looked at. A single cell needs |t| > {z:.1f} to survive the")
     print("  family at 5%. The pre-registered HEADLINE and TAIL cells are")
     print("  the only readings that pay no multiple-looks tax.")
-    order = ["ALL", "HEADLINE", "TAIL", "burst", "size", "spread", "tau",
-             "price"]
+    order = ["ALL", "HEADLINE", "TAIL", "filldepth", "burst", "size",
+             "spread", "tau", "price"]
     for tb in order:
         if tb not in tables:
             continue

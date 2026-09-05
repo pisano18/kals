@@ -209,12 +209,26 @@ def block(trades, label, reps=2000):
         verdict = "  <-- beats the market-is-right null"
     elif sm["mean"] < nf["lo"]:
         verdict = "  <-- BELOW the fair band: OUR tail probability is wrong"
+    # WHAT THESE TRADES ACTUALLY ARE. The first real run reported +2.29c
+    # with 18 flips in 316, and the walk-forward reported +2.27c with 70 in
+    # 270 -- nearly identical money from a completely different bet, and the
+    # only way to see it was to solve for the entry price by hand afterwards.
+    # A near-certainty bought at 92c that wins 94% of the time and a coin
+    # flip bought at 70c that wins 74% are not the same strategy, and the
+    # report must not make them look like one.
+    wins = [t["pnl"] for t in trades if t not in fl]
+    loss = [t["pnl"] for t in trades if t in fl]
+    entry = mean(100.0 * t["entry"] if t["side"] == "yes"
+                 else 100.0 * (1.0 - t["entry"]) for t in trades)
+    wr = 100.0 * (1.0 - len(fl) / len(trades))
     print(f"    {label:<26} n={sm['n']:>4} closes  MDE {md:>5.2f}c  "
           f"claimed {sm['exp_edge']:+.2f}c  realised {sm['mean']:+.2f}c "
           f"(t={sm['t']:+.1f})")
-    print(f"    {'':<26} flips {len(fl)}/{sm['n']}"
-          f"  worst {min(t['pnl'] for t in trades):+.1f}c"
-          f"  mid-null [{nm['lo']:+.2f},{nm['hi']:+.2f}]"
+    print(f"    {'':<26} paid {entry:.1f}c  won {wr:.1f}% of the time "
+          f"(model said >={100 * PIN:.0f}%)  "
+          f"win {mean(wins) if wins else 0:+.1f}c  "
+          f"loss {mean(loss) if loss else 0:+.1f}c")
+    print(f"    {'':<26} mid-null [{nm['lo']:+.2f},{nm['hi']:+.2f}]"
           f"  fair-band [{nf['lo']:+.2f},{nf['hi']:+.2f}]{verdict}")
 
 

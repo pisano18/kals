@@ -2,6 +2,69 @@
 
 ---
 
+## 2026-09-05 — pin SURVIVES out of sample, and the maker correction was
+## not the one I proposed
+
+### pin: out of sample it got STRONGER, and it is a different bet than I said
+
+    tau <= 20s, out of sample, sigma recalibrated on earlier closes only
+      floor 0.3c  k 0.50->1.26  n=307  MDE 1.69c  REALISED +1.82c  t=+3.2
+      floor 0.5c  k 1.37->1.35  n=270  MDE 1.82c  REALISED +2.27c  t=+3.7
+      floor 1.0c  k 1.36->1.59  n=187  MDE 2.61c  realised +2.06c  t=+2.4 (inside MDE)
+    tau <= 60s: nothing, again.
+
+The 0.5c cell beats its MDE (2.27 vs 1.82) and the market-is-right null
+(top +0.78c) with a HIGHER t than in sample (+3.7 vs +3.0). The effect is
+still confined to tau <= 20s, which remains the settlement arithmetic's own
+prediction.
+
+**But it is not the strategy I described.** Backing the entry price out of
+(mean P&L, flip rate):
+
+    in sample   paid ~91.5c   won 94.3%   edge +2.8pp
+    out of sample paid ~70.3c  won 74.1%   edge +3.7pp
+
+The recalibration shrinks fair, which shrinks every edge, so only the LARGEST
+market-model disagreements still clear the floor -- and those are much cheaper
+entries. So the out-of-sample bet is not "buy a 92c near-certainty": it is
+"buy at 70c something that wins 74% of the time". Same money, completely
+different risk, and the only way to see it was to solve for it by hand. `pin`
+now prints entry, win rate, mean win and mean loss on every line.
+
+The model's stated confidence remains fiction at every cut: it says >=98% and
+delivers 74-94%. The edge is real in the P&L; the CONFIDENCE is not, and no
+position size should ever be taken from it.
+
+### maker: the horizon was NOT the correction. The capture was.
+
+The measured curve:
+
+    cell        half-spread    1s      5s     30s    120s    300s   settle
+    ALL              0.73c   0.60c   0.61c   0.64c   0.62c   0.47c   0.39c
+      maker net              +0.13   +0.12   +0.09   +0.12   +0.27   +0.35
+    1c spread        0.57c   0.50c   0.51c   0.53c   0.53c   0.39c   0.27c
+      maker net              +0.08   +0.07   +0.05   +0.04   +0.18   +0.30
+    >=5c spread      4.02c   2.30c   2.35c   2.70c   2.37c   2.31c   3.03c
+      maker net              +1.72   +1.66   +1.32   +1.65   +1.71   +0.99
+
+Impact does peak near 30s and decay, but only from 0.64c to 0.39c. That is
+NOT what flips the sign. **The markouts agree with maker.py (0.600 vs
+0.612c). The capture does not: maker.py used half the MEDIAN spread, 0.50c;
+the measured mean signed (trade price - pre-trade mid) is 0.73c.** The verdict
+turned on that one assumption, and the maker net is positive at EVERY horizon
+once the capture is measured rather than assumed.
+
+**Do not trade this yet, and the reason is specific.** A fill 3c from the mid
+pays the maker 3c -- but only a maker QUOTING 3c out collects it, and they are
+filled far less often. The +0.35c may be an average over a ladder nobody can
+rest the whole of. `informed.py` now splits every measure by how far the print
+landed from the pre-trade touch (at-touch / 0-1c / 1-3c / 3c+). **The at-touch
+row is the only line a maker at the best bid or offer can actually collect.**
+If the positive number lives in the -out rows, maker.py was right for the
+wrong reason and this is not a strategy.
+
+---
+
 ## 2026-09-04 (evening) — FIRST RESULTS FROM THE FOUR NEW STAGES
 
 ### pin — the strongest signal this project has produced, and it is marginal
