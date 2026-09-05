@@ -1,0 +1,128 @@
+﻿22:22:40  === run_when_away 20260904-2222 ===
+22:22:40  git pull
+From https://github.com/pisano18/kals
+ * branch            claude/file-uploads-70rtjl -> FETCH_HEAD
+Already up to date.
+22:22:40  now at 65966ca (origin/claude/file-uploads-70rtjl is 65966ca)
+22:22:40  preflight: stdlib shadowing
+==============================================================================
+STDLIB SHADOWING
+==============================================================================
+  50 python files under C:\kals-repo
+  probing 35 stdlib modules with C:\kals-repo\research
+  first on sys.path, the way every stage arranges it
+
+  clean -- nothing in this repo shadows a stdlib module, on this
+  Python or on any newer one this file knows about.
+22:22:42  refreshing settled outcomes (markets.json)
+==============================================================================
+FEED CHECK
+==============================================================================
+  cfbenchmarks_value  245 files   8,883,069 msgs  (0 still writing)  OK
+    sample: {"type":"cfbenchmarks_value","sid":2,"seq":1,"msg":{"index_id":"SOLUSD_RTI","received_at":1787630959031,"data":"{\"type\":\"value\",\"time\":1787630959000,\"id\":\"SOLUSD_RTI\",\"value\":\"101.22\"}","avg_60s_data":{"value":"101.22000000","window_size":0,"window_start_ts_ms":1787
+  pyth_value            0 files           0 msgs  (0 still writing)  *** EMPTY ***
+  orderbook_delta     244 files  696,954,948 msgs  (0 still writing)  OK
+  ticker              244 files   7,602,490 msgs  (0 still writing)  OK
+  trade               243 files  33,647,121 msgs  (0 still writing)  OK
+
+  --- cfbenchmarks detail ---
+  span 262.38 h across 11 indices
+           index     msgs   per hour   (1/sec = 3600)
+     NEARUSD_RTI  824,889      3,144
+            BRTI  824,888      3,144
+      BNBUSD_RTI  824,888      3,144
+      ETHUSD_RTI  824,887      3,144
+      ZECUSD_RTI  824,887      3,144
+      SOLUSD_RTI  824,886      3,144
+     HYPEUSD_RTI  824,886      3,144
+      BCHUSD_RTI  824,884      3,144
+      XRPUSD_RTI  824,884      3,144
+     DOGEUSD_RTI  824,882      3,144
+      ADAUSD_RTI  639,705      2,438  <-- GAPPY
+
+  avg_60s_data present on 100.0% of messages
+  window_size: min 0  median 60  max 60
+  ^ this is the 'seconds already locked in' term the whole
+    (60-s)^1.5 model was built around -- Kalshi hands it to us.
+
+  LATENCY  CF timestamp -> Kalshi received_at:
+    median 68 ms   p90 105 ms
+  LATENCY  Kalshi received_at -> our machine:
+    median 40 ms   p90 583 ms
+    (includes any clock offset between your PC and Kalshi --
+     run w32tm /resync before trusting the absolute number;
+     the SPREAD between p90 and median is offset-free.)
+  *** KXADA15M: ZERO settled markets -- the API returned no rows at all for this series_ticker
+  KXADA15M: 0 settled markets
+  *** KXBCH15M: ZERO settled markets -- the API returned no rows at all for this series_ticker
+  KXBCH15M: 0 settled markets
+  KXBNB15M: 1200 settled markets
+  KXBTC15M: 1198 settled markets
+  KXDOGE15M: 1200 settled markets
+  KXETH15M: 1198 settled markets
+  KXHYPE15M: 1200 settled markets
+  KXNEAR15M: 1200 settled markets
+  KXSOL15M: 1200 settled markets
+  *** KXTON15M: ZERO settled markets -- the API returned no rows at all for this series_ticker
+  KXTON15M: 0 settled markets
+  KXXRP15M: 1200 settled markets
+  KXZEC15M: 1200 settled markets
+
+==============================================================================
+C-FINAL  tails PER SERIES  [pooling 9 series was wrong]
+==============================================================================
+       series      n    kurt     90c     95c     98c     99c  crossover
+     KXBNB15M   1198     6.1    0.81    0.96    1.23    1.67      95.7c
+     KXBTC15M   1196     6.5    0.76    0.92    1.30    1.88      95.9c
+    KXDOGE15M   1198     8.5    0.78    0.92    1.11    1.63      96.6c
+     KXETH15M   1196     8.3    0.72    0.74    1.17    1.75      97.2c
+    KXHYPE15M   1198     5.1    0.81    0.93    1.34    1.79      95.8c
+    KXNEAR15M   1198     6.0    0.76    0.92    1.32    1.88      95.9c
+     KXSOL15M   1198     6.7    0.78    0.99    1.40    1.71      95.2c
+     KXXRP15M   1198     6.2    0.79    0.96    1.40    1.71      95.4c
+     KXZEC15M   1198     9.3    0.76    0.85    1.15    1.54      96.9c
+
+  Pooled crossover was 96.6c (June archive) and 96.7c (recent) --
+  two independent datasets agreeing. Per-series tells us whether that
+  holds everywhere or is an average over very different assets.
+  Below the crossover a Gaussian model UNDERvalues the favourite;
+  above it, OVERvalues. That is a model-building fact regardless of
+  whether the market itself is exploitable.
+
+  markets.json refreshed: 10,796 settled markets across 12 series. tapes.json left as it was.
+22:32:34  -Only given; running just: pin, informed
+22:32:34  2 stage(s). flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape
+22:32:34  forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each.
+22:32:34  --- pin (1 of 2) ---
+==============================================================================
+go.py   2026-09-05 02:32 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+                   pin  ok  (176s)
+
+wrote C:\kals-repo\results\RESULTS_pin.md
+Send that file back.
+22:35:31  pin -> 9.6 KB in 177s
+22:35:31  --- informed (2 of 2) ---
+==============================================================================
+go.py   2026-09-05 02:35 UTC
+  cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
+==============================================================================
+
+PREFLIGHT (runs even under --only)
+        stdlib shadowing  PASS  (1s)
+      empty-marker prose  PASS  (0s)
+
+STAGES
+              informed  ok  (1034s)
+
+wrote C:\kals-repo\results\RESULTS_informed.md
+Send that file back.
+22:52:47  informed -> 9.8 KB in 1035s
+22:52:47  publishing

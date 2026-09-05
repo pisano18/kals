@@ -158,3 +158,56 @@ wrote C:\kals-repo\results\RESULTS_flow.md
 Send that file back.
 05:48:49  flow -> 16.7 KB in 6106s
 05:48:49  publishing
+warning: LF will be replaced by CRLF in results/RESULTS_flow.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_informed.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_pin.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_strikes.md.
+The file will have its original line endings in your working directory
+error: cannot pull with rebase: You have unstaged changes.
+error: please commit or stash them.
+To https://github.com/pisano18/kals
+ ! [rejected]        HEAD -> claude/file-uploads-70rtjl (fetch first)
+error: failed to push some refs to 'https://github.com/pisano18/kals'
+hint: Updates were rejected because the remote contains work that you do
+hint: not have locally. This is usually caused by another repository pushing
+hint: to the same ref. You may want to first integrate the remote changes
+hint: (e.g., 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+05:48:51  push failed; retrying in 2s
+error: cannot pull with rebase: You have unstaged changes.
+error: please commit or stash them.
+To https://github.com/pisano18/kals
+ ! [rejected]        HEAD -> claude/file-uploads-70rtjl (fetch first)
+error: failed to push some refs to 'https://github.com/pisano18/kals'
+hint: Updates were rejected because the remote contains work that you do
+hint: not have locally. This is usually caused by another repository pushing
+hint: to the same ref. You may want to first integrate the remote changes
+hint: (e.g., 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+05:48:54  push failed; retrying in 4s
+error: cannot pull with rebase: You have unstaged changes.
+error: please commit or stash them.
+To https://github.com/pisano18/kals
+ ! [rejected]        HEAD -> claude/file-uploads-70rtjl (fetch first)
+error: failed to push some refs to 'https://github.com/pisano18/kals'
+hint: Updates were rejected because the remote contains work that you do
+hint: not have locally. This is usually caused by another repository pushing
+hint: to the same ref. You may want to first integrate the remote changes
+hint: (e.g., 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+05:48:59  push failed; retrying in 8s
+error: cannot pull with rebase: You have unstaged changes.
+error: please commit or stash them.
+To https://github.com/pisano18/kals
+ ! [rejected]        HEAD -> claude/file-uploads-70rtjl (fetch first)
+error: failed to push some refs to 'https://github.com/pisano18/kals'
+hint: Updates were rejected because the remote contains work that you do
+hint: not have locally. This is usually caused by another repository pushing
+hint: to the same ref. You may want to first integrate the remote changes
+hint: (e.g., 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+05:49:09  push failed; retrying in 16s
+05:49:25  === done ===
