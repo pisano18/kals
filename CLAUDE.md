@@ -653,3 +653,43 @@ minutes on a cold cache and neither live result depends on re-mining it.
 
 No order has ever been placed. No money has been deployed. Nothing above
 changes that, and the kill criteria are still blank.
+
+---
+
+# AMENDMENT 2026-09-06 — hard rule 1 has been NARROWED BY THE OPERATOR
+
+**This is a change to a hard rule, dated and stated loudly, per the standing
+requirement that a bar is never moved quietly.**
+
+Hard rule 1 above, and operating rule 1, both read *"never place, amend, or
+cancel an order — read-only only."* The operator has replaced that, in their
+own words:
+
+> "My rule is narrower than you think: DON'T SPEND OR RISK MONEY. Everything
+> else is open. Authenticated calls, non-GET methods, WebSocket channels you
+> haven't subscribed to, account configuration."
+
+and
+
+> "no live orders and no real money without my explicit sign-off, per
+> instance. That's it. That is the entire list."
+
+**The operative rule is therefore:**
+
+1. **No order that risks real money without per-instance operator sign-off.**
+   Sign-off is per ORDER, not per session, not standing.
+2. Demo orders are permitted — the demo key is proven demo-only (200 with a
+   $10 balance on demo, 401 `NOT_FOUND` on production and on
+   production-elections, checked 2026-09-06).
+3. Non-GET methods, authenticated calls and account configuration are open.
+4. `kalshi_data/`, `feed_data/` and the running collector remain untouchable.
+   That rule did not change.
+
+**The old text is left in place above rather than edited out**, so that anyone
+reading later sees what the rule was before and when it moved. `research/`
+enforcement did not weaken: `ordercli.py` is still the only file that can send
+a non-GET, still forces `post_only`, still requires `--live` plus a sign-off
+token bound to the exact order and environment, and still defaults to demo.
+
+**Separately: hard rule 3 ("never claim a result you did not measure") is
+NOT amended and never will be.**
