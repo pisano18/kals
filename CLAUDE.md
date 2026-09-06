@@ -57,8 +57,15 @@ analysis result is not. So:
 - **After EVERY job, verify `kalshi_collector.py` and `crypto_feeds.py` are
   still alive, and say so in the report.** Both normally sit at 13-25 MB, so
   they are never the memory hog — but silence about them is not evidence.
-- **Report free disk in every status.** Below **4 GB free, stop all analysis
-  and write state**, then say so.
+- **Report free disk in every status. The guard is 6 GB, and the reason is
+  that 5 GB is a HARD COLLECTION STOP, not a slowdown.** `run_all.ps1` line 41
+  is `if ($free -lt 5) { Write-Host "LOW DISK - stopping" ; break }` — the
+  watchdog *exits its loop*, so both recorders stop being restarted and the
+  tape ends. A guard set below that number could never fire in time to prevent
+  anything; the earlier 4 GB figure was worse than useless.
+  **Below 6 GB free: stop all analysis, write state, and say so loudly.**
+  On 2026-09-05 free disk reached **7.0 GB** — 2 GB from the collection stop —
+  and was reported as merely "tight".
 - **Never kill `python.exe` broadly.** Filter on `*research*`:
 
   ```powershell

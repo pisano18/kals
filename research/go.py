@@ -171,6 +171,13 @@ PREFLIGHT = [
     # under a table of 89,757 quote-seconds and a full P&L, and the whole
     # stage was labelled EMPTY -- the one label that says do not read this.
     ("empty-marker prose", ["markers.py", ".."]),
+    # A deployed file that has drifted from the repo means the collector is
+    # recording something other than what the repo says, and NOTHING crashes
+    # -- only the data is wrong. On 2026-09-06 C:\kals\run_all.ps1 carried an
+    # explicit --series list the repo copy did not, which silently overrode
+    # CRYPTO_15M and made CLAUDE.md's documented deployment process a lie for
+    # an unknown length of time. Cheap, and silent where there is no C:\kals.
+    ("deploy drift", ["deploycheck.py"]),
 ]
 
 SELFTESTS = [
@@ -219,6 +226,7 @@ SELFTESTS = [
     # the one function no self-test in this project executes
     ("stdlib shadow checker", ["shadow.py", "--selftest"]),
     ("empty-marker checker", ["markers.py", "--selftest"]),
+    ("deploy drift checker", ["deploycheck.py", "--selftest"]),
     ("unbound names", ["unbound.py", "--selftest"]),
     ("repo name scan", ["unbound.py", ".."]),
     ("detectability", ["power.py", "--selftest", "--quick"]),

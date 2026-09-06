@@ -2,6 +2,91 @@
 
 ---
 
+## 2026-09-06 (tape incident) — a 150s collector gap and one hour of
+## feed_data mostly destroyed. Exact timestamps, because pin's forward test
+## runs on this tape.
+
+### What happened
+
+Deploying the five commodity 15-minute series to the collector required
+restarting it. The restart was done correctly and the *documented* process
+still did not work, because `C:\kals\run_all.ps1` carried an explicit
+`--series` list the repo copy does not, which overrides the `CRYPTO_15M`
+default. That needed a second restart, and the watchdog restart orphaned a
+`crypto_feeds.py` process which then wrote to `feed_data` alongside its
+replacement.
+
+### THE GAPS — measured off the tape, not estimated
+
+**`kalshi_data`, all channels — ONE gap:**
+
+    14:51:09 -> 14:53:40 UTC     150.4s   (trade channel)
+    14:51:08 -> 14:53:40 UTC     151.4s   (ticker channel)
+    = 10:51:09 -> 10:53:40 ET, 2 minutes 31 seconds
+
+The second restart at 14:57 UTC produced **no gap over 20s**. Only one
+collector ran at any moment (`3381772`, parent `3383356`), so **`kalshi_data`
+is not corrupted anywhere** — it is missing 150 seconds and is otherwise
+intact.
+
+For contrast, the tape carries routine ~35s gaps at 14:15:00 and 14:30:00 UTC.
+Those are quarter-hour market rollovers, not incidents, and they appear
+throughout the whole tape.
+
+**`feed_data` — DOUBLE-WRITTEN 14:57:02 to ~15:05 UTC.** Two `crypto_feeds.py`
+processes appended to the same gzip files, producing interleaved members that
+the standard reader cannot decompress. Salvaged with `gzsalvage.iter_lines`:
+
+    file                         salvaged   bytes    verdict
+    bitstamp/20260906T13          124,073   5.6 MB   clean, the reference
+    bitstamp/20260906T14          130,198   7.3 MB   salvaged, ~complete
+    bitstamp/20260906T15              725   1.3 MB   ~97% LOST
+    gemini/20260906T15              3,746   365 KB   heavy loss
+    coinbase/20260906T15               36   605 KB   ~99% LOST
+    kraken/20260906T15              1,131   143 KB   heavy loss
+    index_replica/20260906T15           5   114 KB   effectively total loss
+
+**The 15:00 UTC hour of constituent-exchange data is gone.** `T14` is
+recoverable and `T13` was untouched. `read_jsonl_gz` already routes through the
+salvager, so no analysis will crash on these — it will silently see less data,
+which is exactly why this is written down.
+
+**Nothing in `feed_data` has ever been used by any live result.** `pin` and
+`informed` read `ticker`, `trade` and `cfbenchmarks_value` from `kalshi_data`,
+all of which are intact apart from the 150s gap. **The forward test is not
+affected.**
+
+### Three fixes, all landed
+
+1. **`research/deploycheck.py`** — new preflight guard, with its own self-test.
+   Diffs `kalshi_collector.py`, `run_all.ps1` and `crypto_feeds.py` between the
+   repo and `C:\kals`, ignoring line endings only, and fails loudly on
+   anything else. Wired into `go.py` `PREFLIGHT` (runs before every stage, even
+   under `--only`) and `SELFTESTS`. Self-test proves it sees a one-line change,
+   ignores CRLF-vs-LF, catches a file missing from the deployment, and stays
+   silent on a machine with no `C:\kals`. **Currently clean.**
+2. **The disk guard was set below the cliff and has been raised.**
+   `run_all.ps1:41` stops the watchdog loop below **5 GB free** — collection
+   *ends*, it does not slow down. The assistant's own guard was **4 GB**, i.e.
+   below the level at which the thing it was protecting had already died. Now
+   **6 GB**, recorded in `CLAUDE.md`. On 2026-09-05 free disk hit 7.0 GB and
+   was reported as merely "tight"; it was 2 GB from the end of the tape.
+3. **The orphan was killed rather than the supervised process.** `531268`
+   (parent `536524`, dead) was stopped; `3385232` (parent `3383356`, the live
+   watchdog) was kept. Killing the supervised one would have been useless — the
+   watchdog respawns it within 300s and you would be back to two.
+
+### And two false alarms of mine, both the same bug
+
+I twice reported "two watchdogs are running" from a process filter matching
+`*run_all*`. **Both times the second process was my own query**, whose command
+line contains the string it was searching for. There has only ever been one
+watchdog. This is the same failure as the look-ahead false alarm earlier today:
+a measurement that catches itself. Process filters here must exclude the
+current process or match on the launcher's exact form.
+
+---
+
 ## 2026-09-06 (re-scope) — the goal is MONEY. pin is a PASS. And I was
 ## wrong that the race is unmeasurable.
 
