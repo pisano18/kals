@@ -58,10 +58,15 @@ from statistics import NormalDist, mean, pstdev
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import var_factor, N_AVG, fee_per_contract     # noqa: E402
 from settlewin import partial                               # noqa: E402
+from tdist import crit as _tcrit                            # noqa: E402
 from endgame import (scan, evaluate, summarise, redraw_null,  # noqa: E402
                      mde, fee_cents, outcome_of, sigma_from)
 
 ND = NormalDist()
+
+
+def t_crit(df):
+    return _tcrit(0.05, df)
 PIN = 0.98                  # fair beyond this (or below 1-PIN) is "decided"
 TAU_MAX = 60                # the sigma-proof region; also swept at 20
 FLOORS = (0.3, 0.5, 1.0, 2.0)      # cents of fee-netted edge required
@@ -283,6 +288,127 @@ def run_cells(rows, reps=2000):
                   f"edge floor {floor:.1f}c", reps=reps)
 
 
+# ===========================================================================
+# THE PORTFOLIO -- every coin, every close, and what that really buys
+# ===========================================================================
+def evaluate_markets(rows, edge_floor=0.0, rule="first"):
+    """One trade per MARKET, not one per close.
+
+    Every table above this takes a single trade per close time, which is a
+    STATISTICAL rule and not a trading limit: the twelve crypto series all
+    settle on the quarter hour, so twelve markets share every close, and
+    counting them as twelve observations would be counting one crypto move
+    twelve times. IDEAS.md B2 puts the price on that -- rho ~ 0.8 gives
+    **1.22 effective independent units per close, not 12**.
+
+    A live book has no such rule. It can hold all twelve. So this evaluates
+    every market, and `portfolio()` then sums within a close and clusters on
+    the close -- which keeps n honest while letting the money be real.
+
+    Each market belongs to exactly one close (strike(N+1) == settle(N), one
+    strike per window), so calling the per-close evaluator once per ticker
+    yields exactly one trade per market and reuses the audited rule rather
+    than restating it.
+    """
+    by_tk = defaultdict(list)
+    for r in rows:
+        by_tk[r["tk"]].append(r)
+    out = []
+    for tk, rs in by_tk.items():
+        for t in evaluate(rs, edge_floor=edge_floor, rule=rule):
+            out.append(dict(t, tk=tk))
+    return out
+
+
+def portfolio(trades, label="", contracts=50):
+    """P&L per CLOSE, summed over every coin traded at that close.
+
+    n stays the number of closes, so the correlation is handled by
+    construction rather than by an assumption. What changes is that a close
+    now earns the SUM over its markets, which is what a live book would
+    take -- and loses the sum too, which is the entire point: twelve
+    correlated coins are twelve times the money AND twelve times the loss on
+    the close that goes wrong. That is leverage, not diversification, and
+    the worst-close column is where it shows.
+    """
+    if len(trades) < 30:
+        return None
+    byc = defaultdict(list)
+    for t in trades:
+        byc[t["close"]].append(t)
+    per = [sum(x["pnl"] for x in v) for v in byc.values()]
+    wide = [len(v) for v in byc.values()]
+    G = len(per)
+    mu, sd = mean(per), pstdev(per) * math.sqrt(G / (G - 1.0))
+    se = sd / math.sqrt(G)
+    worst = min(per)
+    return {"label": label, "G": G, "trades": len(trades), "sd": sd,
+            "per_close": mu, "t": mu / se if se > 0 else 0.0,
+            "mde": t_crit(G - 1) * se, "width": mean(wide),
+            "maxwidth": max(wide), "worst": worst,
+            "day": mu * 96.0 * contracts / 100.0,
+            "worst_day": worst * contracts / 100.0}
+
+
+def run_portfolio(rows, floors=(0.5,), contracts=50):
+    print("\n" + "=" * 78)
+    print("EVERY COIN AT ONCE -- the same rule run across all twelve series,")
+    print("summed within each close. n is still CLOSES, because twelve coins")
+    print("settling on the same tick are not twelve independent bets.")
+    print("=" * 78)
+    print("  IDEAS.md B2: twelve series at rho ~ 0.8 give 1.22 effective")
+    print("  independent units per close, not 12. So this multiplies the")
+    print("  MONEY by the number of coins and the RISK by very nearly the")
+    print("  same factor. It is leverage. Read the worst-close column as the")
+    print("  price of it.\n")
+    for tau_max in (20, TAU_MAX):
+        sub = [r for r in rows if r["tau"] <= tau_max]
+        for floor in floors:
+            tr, _kp = walk_forward(sub, floor=floor)
+            # the same out-of-sample rule, but keeping every market
+            trm = _walk_markets(sub, floor=floor)
+            p1 = portfolio(tr, "one per close", contracts)
+            pa = portfolio(trm, "every market", contracts)
+            print(f"  tau <= {tau_max}s, floor {floor:.1f}c")
+            for pp in (p1, pa):
+                if pp is None:
+                    continue
+                print(f"    {pp['label']:<16} {pp['trades']:>5} trades over "
+                      f"{pp['G']:>4} closes ({pp['width']:.1f} coins/close, "
+                      f"max {pp['maxwidth']})")
+                print(f"    {'':<16} per close {pp['per_close']:+7.2f}c  "
+                      f"t={pp['t']:+5.1f}  MDE {pp['mde']:.2f}c   "
+                      f"WORST close {pp['worst']:+8.1f}c")
+                print(f"    {'':<16} at {contracts} contracts: "
+                      f"${pp['day']:+.0f}/day   worst single close "
+                      f"${pp['worst_day']:+.2f}")
+
+
+def _walk_markets(rows, floor=0.5, pin=PIN, warmup=150, refit_every=10):
+    """walk_forward, but keeping EVERY market at each close."""
+    by_close = defaultdict(list)
+    for r in rows:
+        by_close[r["close"]].append(r)
+    closes = sorted(by_close)
+    seen, out = [], []
+    k_cur, since = 1.0, 10 ** 9
+    for i, c in enumerate(closes):
+        if i >= warmup:
+            if since >= refit_every:
+                kk = fit_k(seen)
+                if kk is not None:
+                    k_cur = kk
+                since = 0
+            since += 1
+            sub = [dict(r, fair=refair(r["fair"], k_cur))
+                   for r in by_close[c]]
+            out.extend(evaluate_markets(pinned_rows(sub, pin),
+                                        edge_floor=floor, rule="first"))
+        seen.extend(evaluate(pinned_rows(by_close[c], pin),
+                             edge_floor=floor, rule="first"))
+    return out
+
+
 def run_oos(rows, reps=2000):
     """The in-sample table above looked at eight cells and every one of them
     was flagged overconfident. This is the same question asked once, out of
@@ -306,7 +432,7 @@ def run_oos(rows, reps=2000):
 
 # ===========================================================================
 def _world(n_mkt, sigma_true, sigma_fed=None, book="stale", seed=1,
-           step=900):
+           step=900, coins=1, rho=0.85):
     """One series, one continuous index, consecutive 15-minute windows.
 
     book="stale":  the last 90 seconds quote frozen at the tau=90 fair +-1c.
@@ -316,19 +442,33 @@ def _world(n_mkt, sigma_true, sigma_fed=None, book="stale", seed=1,
                    TRUE sigma). Nothing to harvest but the spread.
     """
     rnd = random.Random(seed)
-    ticks = {}
-    quotes, markets = {}, {}
     base = 1767225600
-    px = 79000.0
-    t = base - 200
     end = base + n_mkt * step + 5
+    # COINS SHARE CLOSE TIMES AND A COMMON SHOCK. Every crypto series on
+    # Kalshi settles on the quarter hour, and at rho ~ 0.8 twelve of them
+    # carry about 1.22 independent bets between them. A fixture with one
+    # market per close cannot show that, so it cannot test the portfolio
+    # view at all -- which is exactly how an undefined name reached a commit
+    # inside that code path.
+    idx = {}
+    for c in range(coins):
+        idx[f"IDX{c}"] = {}
+    px = {f"IDX{c}": 79000.0 for c in range(coins)}
+    t = base - 200
     while t <= end:
-        px += rnd.gauss(0, sigma_true)
-        ticks[t] = px
+        common = rnd.gauss(0, sigma_true)
+        for c in range(coins):
+            own = rnd.gauss(0, sigma_true)
+            px[f"IDX{c}"] += (math.sqrt(rho) * common +
+                              math.sqrt(1.0 - rho) * own)
+            idx[f"IDX{c}"][t] = px[f"IDX{c}"]
         t += 1
-    sigs = {"KXTEST": (sigma_fed if sigma_fed is not None else sigma_true)}
+    quotes, markets = {}, {}
+    sigs = {f"KXT{c}": (sigma_fed if sigma_fed is not None else sigma_true)
+            for c in range(coins)}
+    s2i = {f"KXT{c}": f"IDX{c}" for c in range(coins)}
 
-    def true_fair(close_s, now_s, strike):
+    def true_fair(ticks, close_s, now_s, strike):
         p = partial(ticks, close_s, now_s)
         if p is None:
             return None
@@ -340,14 +480,16 @@ def _world(n_mkt, sigma_true, sigma_fed=None, book="stale", seed=1,
         return ND.cdf((mu - strike) / sd)
 
     for k in range(n_mkt):
+      for c in range(coins):
+        ticks = idx[f"IDX{c}"]
         open_s = base + k * step
         close_s = open_s + step
-        tk = f"KXTEST-{k}"
+        tk = f"KXT{c}-{k}"
         strike = ticks[open_s]          # 50/50 at the open
         ql = []
         frozen = None
         for s in range(close_s - 90, close_s):
-            f = true_fair(close_s, s, strike)
+            f = true_fair(ticks, close_s, s, strike)
             if f is None:
                 continue
             if book == "stale":
@@ -362,10 +504,10 @@ def _world(n_mkt, sigma_true, sigma_fed=None, book="stale", seed=1,
         settle = mean(ticks[s] for s in range(close_s - N_AVG + 1,
                                               close_s + 1))
         quotes[tk] = ql
-        markets[tk] = {"ticker": tk, "series": "KXTEST", "strike": strike,
+        markets[tk] = {"ticker": tk, "series": f"KXT{c}", "strike": strike,
                        "close": close_s, "settle": settle,
                        "result": 1.0 if settle >= strike else 0.0}
-    return quotes, {"IDX": ticks}, markets, {"KXTEST": "IDX"}, sigs
+    return quotes, idx, markets, s2i, sigs
 
 
 def selftest():
@@ -497,6 +639,56 @@ def selftest():
     else:
         fails.append("the walk-forward took no trades on the honest world")
 
+    # ---- 3d. the portfolio path must run, and must show the correlation --
+    # This exists because `t_crit` reached a commit UNDEFINED: nothing in the
+    # self-test ever called run_portfolio, so the whole branch was unproven
+    # code shipped next to proven code. A path with no test is not tested by
+    # the tests beside it.
+    print("\n  Every market at every close, not one per close. Twelve")
+    print("  correlated coins are twelve times the money AND twelve times")
+    print("  the loss on the close that goes wrong.")
+    qm, ixm, mkm, s2im, sigm = _world(200, sigma_true=8.0, book="stale",
+                                      seed=17, coins=6, rho=0.85)
+    rowsm = scan(qm, ixm, mkm, s2im, sigm, tau_max=TAU_MAX)
+    trm = _walk_markets(rowsm, floor=0.5, warmup=60, refit_every=5)
+    p1 = portfolio(walk_forward(rowsm, floor=0.5, warmup=60,
+                                refit_every=5)[0], "one per close")
+    pa = portfolio(trm, "every market")
+    if pa is None:
+        fails.append("the portfolio path produced nothing on a world that "
+                     "harvests -- it is untested code")
+    else:
+        print(f"    one/close  {p1['trades'] if p1 else 0} trades, per close "
+              f"{p1['per_close'] if p1 else 0:+.2f}c")
+        print(f"    every mkt  {pa['trades']} trades over {pa['G']} closes "
+              f"({pa['width']:.1f}/close), per close {pa['per_close']:+.2f}c, "
+              f"worst {pa['worst']:+.1f}c")
+        if pa["trades"] < (p1["trades"] if p1 else 0):
+            fails.append("taking every market produced FEWER trades than "
+                         "taking one per close")
+        if pa["width"] < 2.0:
+            fails.append(f"six coins share every close in this fixture but "
+                         f"the portfolio view found only {pa['width']:.1f} "
+                         "per close -- it is not seeing the other markets")
+        # THE WHOLE POINT, AND IT IS A TESTABLE CLAIM. If the coins were
+        # independent, holding w of them would scale the per-close spread by
+        # sqrt(w). Because they are correlated it scales by nearly w. That
+        # difference is the entire distinction between diversification and
+        # leverage, and asserting it is what stops this table being a
+        # comforting sentence with nothing behind it.
+        if p1 and p1["sd"] > 0:
+            ratio = pa["sd"] / p1["sd"]
+            indep = math.sqrt(pa["width"])
+            print(f"    spread per close scales {ratio:.1f}x on "
+                  f"{pa['width']:.1f} coins  (independent would be "
+                  f"{indep:.1f}x)")
+            if ratio < indep * 1.25:
+                fails.append(f"per-close spread scaled only {ratio:.1f}x on "
+                             f"{pa['width']:.1f} correlated coins, barely "
+                             f"above the {indep:.1f}x of independence -- the "
+                             "fixture is not correlated, so the leverage "
+                             "warning this table gives is untested")
+
     # ---- 4. the flip is priced into the claim ----------------------------
     print("\n  In the harvested world the claimed edge must already net the")
     print("  flip probability: |claimed - realised| within the fair band's")
@@ -585,6 +777,7 @@ def main():
     print("=" * 78)
     run_cells(rows)
     run_oos(rows)
+    run_portfolio(rows)
     print("\n  Read the flags, not the means. 'Below the fair band' says our")
     print("  tail probability was wrong and the edge was fiction. Only a")
     print("  cell that beats the mid-null while staying inside its fair")
