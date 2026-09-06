@@ -2,6 +2,125 @@
 
 ---
 
+## 2026-09-06 (rebate) — the Liquidity Incentive Program is REAL, the
+## ambiguity resolves in our favour, and the number is big enough to distrust
+
+### The rule that "decides everything" — settled from Kalshi's own docs
+
+**Target Size is AGGREGATE market depth, not per participant.** Verbatim:
+*"the depth that must be resting on each side for a snapshot to count."*
+So we do **not** have to post 300 (or 1,000) a side to score at all. We need
+the MARKET to carry that depth; then we take a pro-rata share.
+
+    Reference Price  walking down from the best bid, the first level at which
+                     cumulative resting size reaches ONE FIFTH of Target Size
+    Raw score        size x multiplier; 1.0 at or better than Reference Price,
+                     else discount_factor ^ (ticks away).
+                     discount_factor_bps 5000 -> 0.50, i.e. HALVING PER TICK
+    Your share       your raw score / total raw score on that side, pro rata
+    Snapshots        once per second, at a random moment within the second
+    Excluded         market closed, or EITHER side below Target Size; the
+                     reward scales by non-excluded / total snapshots
+    Obligations      NONE stated -- no mandatory two-sided quoting, no max
+                     spread, no minimum uptime
+    Eligibility      a verified SSN on file above IRS reporting thresholds;
+                     non-US users, Kalshi affiliates, IBs and FCMs excluded
+
+### The units, explicitly, because the earlier table was ambiguous
+
+`period_reward: 200000` = **$20.00 per market per 15-minute window.**
+
+* each commodity series: 24 windows/day = **$480/day PER SERIES**
+* **$2,400/day is the FIVE-SERIES family total**, not one market
+* Coin Race: 5 coins x ~96 windows x $20 = **~$9,600/day family pool** —
+  nearly 4x what was first reported
+
+And the programme is far wider than the 15-minute families. From
+`GET /incentive_programs` (authenticated, 1,000 rows):
+
+    family                  period_reward   target   programs  windows
+    KXDIESELD                   1,400,000     1000         21       21
+    KXAAAGASD* (12 states)      1,000,000     1000    17 each        1
+    KXRAIN                      1,000,000     1000         22        4
+    KXTTELITEMATCH (tbl tennis)   200,000      300        246      134
+    KXCRYPTOLEAD15M               200,000     1000        370       74
+    5x commodity 15M              200,000      300    24 each       24
+
+`KXDIESELD` pays **$140 per period** and `KXAAAGASD` **$100** — several times
+the 15-minute families. Table tennis has 246 programmes across 134 windows.
+**None of these has ever been looked at.**
+
+### OUR SLICE, measured on the KXCRYPTOLEAD15M tape we already hold
+
+795 markets, 1.65M book events, 276,600 reconstructed market-seconds over
+2026-09-05/06. Books built from `orderbook_delta`; the snapshots for this
+series carry no level arrays at all, which is correct — a 15-minute market
+opens with an empty book.
+
+    snapshots qualifying (both sides >= 1000)   80,047 of 276,600 = 28.9%
+    depth actually resting, yes side   p10 6    median 1100   p90 10,120
+    depth actually resting, no  side   p10 291  median 1004   p90  3,669
+
+**The median depth sits almost exactly ON the 1,000 target.** That is what it
+looks like when market makers quote precisely enough to qualify and no more.
+
+    S contracts     share of    $/period    $/day       $/day
+    each side       the side               1 market    5 coins
+        10            2.63%      0.1524      14.63       73.16
+        25            6.26%      0.3622      34.77      173.83
+        50           11.57%      0.6694      64.26      321.31
+       100           20.11%      1.1640     111.74      558.72
+       300           39.98%      2.3138     222.13     1110.63
+
+At S=50 the implied total score on a side is only ~380 contract-equivalents
+against a median raw depth of ~1,100. **That gap IS the discount factor**:
+halving per tick means size five ticks off the touch scores 3% of face. Almost
+all resting depth scores almost nothing, and being AT the touch is worth
+enormously more than being near it.
+
+### WHAT WOULD MAKE THIS FICTION, AND WHAT THE CHECK SAID
+
+The slice is `S / (total_score + S)`. If the reconstructed book is MISSING
+resting orders the denominator is too small and the slice is inflated. Checked
+against the `ticker` channel's own `yes_bid_size_fp` / `yes_ask_size_fp` —
+a different feed, computed by the exchange:
+
+    top-of-book size agrees within 2%    bid 78.8%   ask 92.0%
+    median (reconstructed - ticker)      bid +0.0    ask +0.0
+    reconstructed bid >10% BELOW ticker  19.1% of matched seconds
+
+**No systematic bias** (median exactly zero both sides), so the slice is not
+obviously inflated. But one second in five has the bid short by more than 10%,
+so **treat these figures as an upper-ish estimate, not a measurement to size
+against.**
+
+### THREE THINGS NOT PRICED, AND ONE OF THEM IS THE WHOLE RISK
+
+1. **We would be quoting AT THE TOUCH on both sides, so we WILL be filled.**
+   The rebate is payment for bearing inventory into a 15-minute settlement.
+   That is an unhedged directional position, and it is NOT in the numbers
+   above. The operator's warning stands and is unanswered: *"an exchange
+   paying people to quote is usually a market with no natural flow — the
+   rebate can be entirely real while the fills are rare or toxic."* Fill rate
+   and fill toxicity on Coin Race are **unmeasured**.
+2. **At S=300 we would be 40% of the qualifying side.** The pro-rata model
+   assumes we do not displace anyone. At 40% that assumption is simply false;
+   even S=50 at 11.6% is a material presence.
+3. **The account is unfunded**, and two-sided quoting on 5 coins at S=50
+   locks capital on BOTH books simultaneously.
+
+### A MEASUREMENT I HAD TO THROW AWAY
+
+The first run of this reported **"NO SNAPSHOT EVER QUALIFIED — the pool is
+never paid to anyone"**, which would have killed the idea outright. It was
+wrong. `ts_ms` lives inside `msg`, and I read it from the top level of the
+record; every timestamp came back `None`, every second collapsed to 0, and the
+sampler emitted exactly one snapshot per market — 795 samples from 795
+markets. The giveaway was in the output all along and I nearly filed it as a
+finding.
+
+---
+
 ## 2026-09-06 (tape incident) — a 150s collector gap and one hour of
 ## feed_data mostly destroyed. Exact timestamps, because pin's forward test
 ## runs on this tape.

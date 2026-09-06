@@ -215,17 +215,32 @@ def block(trades, label, reps=2000):
     # mid-p rank is the same test where the band is smooth and is defined
     # where it is not. TIED is printed rather than resolved, because a cell
     # sitting on the boundary atom is neither below the band nor inside it.
+    # BOTH halves of this verdict run on a discrete band, and only one of
+    # them was guarded until 2026-09-06. Measured on the real tau<=20
+    # floor-0.5c cell: the fair band holds 11 atoms in 2000 draws (4.40% of
+    # the mass sitting on the 2.5% cut) and the MID band holds 23 atoms with
+    # 2.65% on the 97.5% cut. The mid half happened to clear by +2.08c so
+    # nothing flipped -- but "happened to" is not a guard, so the
+    # market-is-right test is now the mid band's own mid-p rank too.
     rank = nf.get("rank")
+    rank_m = nm.get("rank")
     below = rank is not None and rank < 0.025
+    beats = (rank_m > 0.975) if rank_m is not None else (sm["mean"] > nm["hi"])
     tied = (rank is not None and not below
             and nf["ties"] > 0 and abs(sm["mean"] - nf["lo"]) < 1e-6)
+    tied_m = (rank_m is not None and nm["ties"] > 0
+              and abs(sm["mean"] - nm["hi"]) < 1e-6)
     verdict = ""
-    if sm["mean"] > nm["hi"] and not below:
+    if beats and not below:
         verdict = "  <-- beats the market-is-right null"
         if tied:
             verdict += " (fair band TIED at the edge)"
+        if tied_m:
+            verdict += " (mid band TIED at the edge)"
     elif below:
         verdict = "  <-- BELOW the fair band: OUR tail probability is wrong"
+    elif tied_m:
+        verdict = "  <-- mid band TIED: realised sits ON the boundary atom"
     elif tied:
         verdict = "  <-- fair band TIED: realised sits ON the boundary atom"
     # WHAT THESE TRADES ACTUALLY ARE. The first real run reported +2.29c
@@ -288,6 +303,14 @@ def block(trades, label, reps=2000):
               f"  headroom {100 * be / ub if ub else 0:.1f}x")
     print(f"    {'':<26} mid-null [{nm['lo']:+.2f},{nm['hi']:+.2f}]"
           f"  fair-band [{nf['lo']:+.2f},{nf['hi']:+.2f}]{verdict}")
+    # PRINT THE DISCRETENESS. A band whose 2.5% cut sits inside an atom
+    # holding several percent of the mass is not a 2.5% cut, and the reader
+    # cannot see that from the interval alone.
+    print(f"    {'':<26} band atoms: mid {nm['atoms']:,}/{reps:,} "
+          f"(cuts hold {100*nm['lo_mass']:.1f}%/{100*nm['hi_mass']:.1f}%)"
+          f"   fair {nf['atoms']:,}/{reps:,} "
+          f"(cuts hold {100*nf['lo_mass']:.1f}%/{100*nf['hi_mass']:.1f}%)"
+          f"   ranks mid {100*rank_m:.1f}% fair {100*rank:.1f}%")
 
 
 def run_cells(rows, reps=2000):
@@ -547,20 +570,25 @@ def selftest():
     rows = scan(q, ix, mk, s2i, sigs, tau_max=TAU_MAX)
     tr = evaluate(pinned_rows(rows), edge_floor=0.5, rule="first")
     sm = summarise(tr)
-    nm = redraw_null(tr, reps=500, using="mid")
-    nf = redraw_null(tr, reps=500, using="fair")
+    nm = redraw_null(tr, reps=500, using="mid", value=sm["mean"])
+    nf = redraw_null(tr, reps=500, using="fair", value=sm["mean"])
+    # RANKS, NOT RAW BAND EDGES. Both bands are discrete -- block() says why
+    # and section 4 below proves the raw comparison is ulp-fragile on this
+    # very fixture -- so every assertion here thresholds the mid-p rank.
     print(f"    {sm['n']} closes, claimed {sm['exp_edge']:+.2f}c, "
-          f"realised {sm['mean']:+.2f}c, mid-null hi {nm['hi']:+.2f}c, "
-          f"fair band [{nf['lo']:+.2f},{nf['hi']:+.2f}]")
+          f"realised {sm['mean']:+.2f}c, mid-null hi {nm['hi']:+.2f}c "
+          f"(rank {100*nm['rank']:.1f}%, {nm['atoms']} atoms), "
+          f"fair band [{nf['lo']:+.2f},{nf['hi']:+.2f}] "
+          f"(rank {100*nf['rank']:.1f}%, {nf['atoms']} atoms)")
     if sm["n"] < 100:
         fails.append(f"only {sm['n']} closes harvested from 300 sleeping "
                      "markets -- the filter is throwing the cell away")
-    if sm["mean"] <= nm["hi"]:
+    if not nm["rank"] > 0.975:
         fails.append("a frozen book was not beaten -- the one world where "
-                     "this must collect")
-    if not (nf["lo"] <= sm["mean"] <= nf["hi"]):
+                     f"this must collect (mid-null rank {100*nm['rank']:.1f}%)")
+    if not (0.025 <= nf["rank"] <= 0.975):
         fails.append(f"realised {sm['mean']:+.2f}c sits outside its own "
-                     f"fair band [{nf['lo']:+.2f},{nf['hi']:+.2f}] -- the "
+                     f"fair band (rank {100*nf['rank']:.1f}%) -- the "
                      "claimed edge is dishonest about the flip probability")
 
     # ---- 2. an honest book must yield (nearly) nothing -------------------
@@ -573,10 +601,11 @@ def selftest():
     print(f"    trades against the honest book: {len(tr2)}")
     if len(tr2) > 15:
         sm2 = summarise(tr2)
-        nm2 = redraw_null(tr2, reps=500, using="mid")
-        if sm2 and nm2 and sm2["mean"] > nm2["hi"]:
+        nm2 = redraw_null(tr2, reps=500, using="mid", value=sm2["mean"])
+        if sm2 and nm2 and nm2["rank"] > 0.975:
             fails.append(f"the harvest claims {sm2['mean']:+.2f}c against a "
-                         "book that is never wrong")
+                         "book that is never wrong (mid-null rank "
+                         f"{100*nm2['rank']:.1f}%)")
 
     # ---- 3. the tail-risk trap: OUR sigma too small ----------------------
     print("\n  The model is fed a sigma 4x too SMALL, so it calls outcomes")
@@ -593,14 +622,16 @@ def selftest():
     else:
         tr_in3 = tr3
         sm3 = summarise(tr3)
-        nf3 = redraw_null(tr3, reps=500, using="fair")
+        nf3 = redraw_null(tr3, reps=500, using="fair", value=sm3["mean"])
         print(f"    {sm3['n']} closes, claimed {sm3['exp_edge']:+.2f}c, "
               f"realised {sm3['mean']:+.2f}c, fair band "
-              f"[{nf3['lo']:+.2f},{nf3['hi']:+.2f}]")
-        if sm3["mean"] >= nf3["lo"]:
+              f"[{nf3['lo']:+.2f},{nf3['hi']:+.2f}] "
+              f"(rank {100*nf3['rank']:.1f}%, {nf3['atoms']} atoms)")
+        if not nf3["rank"] < 0.025:
             fails.append("an overconfident model's phantom edge was NOT "
                          "flagged: realised sits inside the fair band it "
-                         "should have fallen out of")
+                         f"should have fallen out of (rank "
+                         f"{100*nf3['rank']:.1f}%)")
 
     # ---- 3b. the walk-forward must LEARN the overconfidence --------------
     print("\n  Same overconfident world, but sigma now recalibrated on")
@@ -723,6 +754,94 @@ def selftest():
         fails.append(f"{len(fl)} flips in {len(tr)} trades -- far beyond "
                      "the model's stated tail; fair is overconfident even "
                      "with the TRUE sigma")
+
+    # ==================================================================
+    # MUTATION GUARDS. Added 2026-09-06 after mutation testing planted 9
+    # deliberately wrong estimators and this self-test caught only 3. Each
+    # block fails against one named survivor. CLAUDE.md: "the self-test is
+    # the deliverable; the estimator is the easy part."
+    # ==================================================================
+
+    # M1 -- SURVIVOR: "fee_cents returns 0.0" and "fee removed on the YES
+    # leg". pin's edge is fee-NETTED, so a silent zero fee inflates every
+    # number in the report and nothing complained.
+    print("\n  MUTATION GUARD 1 -- fees must exist, at 0.07*p*(1-p), and")
+    print("  must actually reach the realised P&L.")
+    f50, f96 = fee_cents(0.50), fee_cents(0.96)
+    print(f"    fee_cents(0.50) = {f50:.4f}c   fee_cents(0.96) = {f96:.4f}c")
+    if abs(f50 - 0.07 * 0.50 * 0.50 * 100.0) > 1e-9:
+        fails.append(f"fee_cents(0.50) is {f50:.4f}c, not "
+                     f"{0.07*0.25*100:.4f}c -- the fee curve is wrong")
+    if abs(f96 - 0.07 * 0.96 * 0.04 * 100.0) > 1e-9:
+        fails.append(f"fee_cents(0.96) is {f96:.4f}c -- not 0.07*p*(1-p)")
+    gross = mean(100.0 * (t["won"] - t["entry"]) if t["side"] == "yes"
+                 else 100.0 * ((1.0 - t["won"]) - (1.0 - t["entry"]))
+                 for t in tr)
+    net = mean(t["pnl"] for t in tr)
+    print(f"    fixture gross {gross:+.3f}c   net {net:+.3f}c   "
+          f"fee drag {gross - net:+.4f}c")
+    if gross - net < 1e-6:
+        fails.append("realised P&L shows NO fee drag -- pnl is gross, so "
+                     "every edge in the report is overstated by the fee")
+
+    # M2 -- SURVIVOR: "sd scaled by 0.25", i.e. the MDE understated 4x, so an
+    # underpowered cell prints as decisive. CLAUDE.md: "no effect and no
+    # power are different results."
+    print("\n  MUTATION GUARD 2 -- the MDE must equal 3*sd/sqrt(n) by hand.")
+    sd_h = pstdev([t["pnl"] for t in tr])
+    hand = 3.0 * sd_h / math.sqrt(len(tr))
+    got = mde(tr)
+    print(f"    n={len(tr)}  sd={sd_h:.3f}c  by hand {hand:.4f}c  "
+          f"mde() {got:.4f}c")
+    if abs(hand - got) > 1e-6:
+        fails.append(f"mde() reports {got:.4f}c but 3*sd/sqrt(n) is "
+                     f"{hand:.4f}c -- the power arithmetic is wrong")
+
+    # M3 -- SURVIVOR: "null band widened to infinity". A band nothing can
+    # fall outside is decorative, and every verdict in block() reads it.
+    print("\n  MUTATION GUARD 3 -- the null must be a band, not the real line.")
+    nbg = redraw_null(tr, reps=400, using="mid")
+    wg = nbg["hi"] - nbg["lo"]
+    print(f"    mid-null [{nbg['lo']:+.2f}, {nbg['hi']:+.2f}]  width {wg:.2f}c")
+    if not (0.0 < wg < 60.0):
+        fails.append(f"mid-null width is {wg:.1f}c -- a null nothing can "
+                     "fall outside is not a null")
+
+    # M4 -- SURVIVOR, AND THE MOST IMPORTANT ONE: "walk_forward replaced by
+    # in-sample evaluate". The out-of-sample property IS the result, and
+    # nothing tested it. The property is exactly testable with no randomness:
+    # the k applied at close i must depend only on closes STRICTLY earlier,
+    # so truncating the input at close i must leave that k bit-identical.
+    #
+    # A previous attempt at this scrambled future outcomes and compared the
+    # first 20 refits -- but with warmup=60 and refit_every=5 the later
+    # refits legitimately consume the scrambled region, and the test reported
+    # LOOK-AHEAD against correct code. Truncation has no such ambiguity.
+    print("\n  MUTATION GUARD 4 -- walk_forward must not see the future.")
+    ftr, fkp = walk_forward(rows3, floor=0.5, warmup=60, refit_every=5)
+    kmap_g = {c: k for c, k in fkp}
+    cl_g = sorted({r["close"] for r in rows3})
+    badg = testedg = 0
+    for idxg in range(65, min(len(cl_g), 240), 20):
+        cig = cl_g[idxg]
+        if cig not in kmap_g:
+            continue
+        _tg, kpg = walk_forward([r for r in rows3 if r["close"] <= cig],
+                                floor=0.5, warmup=60, refit_every=5)
+        kmg = {c: k for c, k in kpg}
+        if cig not in kmg:
+            continue
+        testedg += 1
+        if abs(kmg[cig] - kmap_g[cig]) > 1e-12:
+            badg += 1
+    print(f"    truncation test: {testedg} closes checked, {badg} whose "
+          f"refitted k moved when only FUTURE closes were removed")
+    if testedg == 0:
+        fails.append("the walk-forward truncation guard checked nothing -- "
+                     "it is not guarding anything")
+    if badg:
+        fails.append(f"LOOK-AHEAD: {badg} of {testedg} refitted k values "
+                     "changed when only future closes were removed")
 
     print()
     if fails:
