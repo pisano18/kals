@@ -75,6 +75,44 @@ Backtest, out-of-sample walk-forward, 2,638 trades over 364 closes in 9.6 days,
 | worst single close | see §5 — this number is not a downside estimate |
 | trades eating the whole level | **0%** |
 
+## 3b. THE FEED THE RULE MUST READ — measured after §3 was drafted
+
+**Read `orderbook_delta`, not `ticker`.** This was measured on 2026-09-06 and
+it changes the expected result materially, so it is part of the frozen rule.
+
+| channel | messages | min lag | median lag |
+|---|---|---|---|
+| `ticker` | 127,812 | 29 ms | **326 ms** |
+| `trade` | 649,236 | 10 ms | 46 ms |
+| `orderbook_delta` | **13,498,096** | 22 ms | **47 ms** |
+
+The *heaviest* channel is the *fastest*, so the delay is not our collector's
+overhead; NTP puts clock skew at −2 to −6 ms, so it is not skew either. **It is
+Kalshi's own ticker publication delay.** `load_quotes` reads `ticker`, which is
+why every latency figure before this was ~320 ms.
+
+Total reaction time, detection to order arriving:
+
+    reading ticker            326 ms + 35 ms order RTT  = ~361 ms
+    reading orderbook_delta    47 ms + 35 ms order RTT  =  ~82 ms
+
+Against the measured quote-survival distribution (median 0.70 s to fill 30
+contracts, 43.6% never depleted):
+
+| feed | races won | $/day kept vs ideal |
+|---|---|---|
+| `ticker` (~320 ms) | 77% | 94% |
+| **`orderbook_delta` (~82 ms)** | **88%** | **91%** |
+
+And the races we lose are the *cheap* ones: `corr(survival, edge) = +0.136`,
+`corr(survival, pnl) = +0.072`. Losing 23% of races costs only 6% of the money.
+
+**Frozen: the live implementation detects from `orderbook_delta`.** The
+backtest was built on `ticker`-derived depth, so §3's figures already carry the
+worse feed's latency implicitly — reading the faster feed should if anything
+improve on them, and that asymmetry is stated here so a better-than-expected
+forward result is not mistaken for a lucky one.
+
 ## 4. Success and failure, decided in advance
 
 Per the operator's revised kill criteria (2026-09-06):
