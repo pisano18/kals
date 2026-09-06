@@ -2,6 +2,98 @@
 
 ---
 
+## 2026-09-06 (depth) — pin is a TAKER and the book is thin. Every dollar
+## figure so far assumed 50 contracts fill. 42% of the time they do not.
+
+### What is actually resting where pin decides to hit
+
+`side="yes"` lifts the ask, `side="no"` hits the bid (`endgame.evaluate`), so
+the size that matters is at the touch, which `load_quotes` already carries. No
+orderbook rebuild was needed. 336 of 336 trades matched a quote, median quote
+age 0s, no empty touches.
+
+    resting size, contracts    p10 2   p25 15   MEDIAN 69   p75 193   p90 455
+                               min 0   max 113,600   mean 644
+
+Mean 644 against median 69: the distribution is wildly skewed and the mean is
+not usable. Would NOT fill: **10 contracts 20.2%, 25 contracts 31.2%,
+50 contracts 42.3%, 100 contracts 60.1%** of the time.
+
+### The money, restated at a size the book offers
+
+    variant       cap   avg filled   $/close   $/day    worst   t   eats level
+    one/close      50         35.0      0.90      33   -38.65  4.6       43.2%
+    every market   50         35.4      1.31      49   -46.33  3.6       42.2%
+    one/close     100         58.6      1.61      60   -38.65  5.7       61.6%
+    every market  100         59.8      2.36      88   -88.20  4.0       60.4%
+
+**Against the kill criterion (net +$50/day at a fillable size): pin MISSES.**
+$33/day one-per-close, $49/day every-market — one dollar short — at 50
+contracts, a size that already fails to fill 42% of the time.
+
+The published $122/day was two compounding fictions: full fills (35.0/50 =
+0.70) and 96 closes/day where the cell fires 37.2 (0.39). 0.70 x 0.39 x 122 =
+$33.4. Reconciles.
+
+### The two ways over the line, and what each costs
+
+**Take more per market.** cap 100 clears at $60-88/day, but consumes the
+ENTIRE resting level 60-62% of the time. That is not a passive take; it is the
+sweep behaviour `informed.py` measures at +8.6c of adverse move, and it
+assumes winning the race for a stale quote in full against everyone else who
+wants it. This backtest cannot test that. **Do not bank it.**
+
+**Trade more markets.** This is the sound one. Depth binds PER MARKET, and
+twelve series settle on the same tick, so more coins is more money at the same
+per-market size. Measured: every-market makes **1.48x** the money of
+one-per-close (+$49 vs +$33) for **1.20x** the tail (-$46.33 vs -$38.65) —
+sub-linear, i.e. favourable, and it does not eat books any deeper (42.2% vs
+43.2%).
+
+**But the t-stat falls, 4.6 -> 3.6.** Twelve correlated coins summed within a
+close add variance without adding independent observations, exactly as
+IDEAS.md B2's rho ~ 0.8 predicts. More money, less certainty. Both are true
+and the report must carry both.
+
+### The cheapest principled route over $50/day is fixing the dead series
+
+`allm` gets 1.59 coins/close from the **9** series that return settled
+markets. `KXADA15M`, `KXBCH15M`, `KXTON15M` and `KXCRYPTOCOMP15M` return zero.
+At the same per-market size, 12 live series would give ~2.1 coins/close and
+roughly **$65/day** — over the threshold without eating a single book deeper
+and without touching the rule. That is CLAUDE.md next-action #3 and it is now
+the highest-value item on the list, not a housekeeping chore.
+
+This is also the only route that does not risk selecting a variant because it
+clears the bar. Hunting floors or tau cuts until one prints $50 is exactly the
+"selecting on our own error" trap `fit_k` was written for.
+
+### Adverse selection checked, and it is NOT the problem
+
+Sizing to depth means betting more where the book is deeper, which is only
+free if depth is uncorrelated with edge quality. Measured P&L per contract by
+depth bucket: <5 +4.13c, 5-15 +1.34c, 15-40 +1.17c, 40-100 +1.91c, 100-300
++3.68c, 300+ +1.66c. **No decay.** Size-weighting helps slightly (+0.176c at
+cap 100). The benign explanation holds; the problem is purely that the book is
+thin and that taking it all is unpriceable.
+
+### Concentration, which matters for the forward test
+
+At cap 50 the top 10 of 336 closes carry **45%** of the money and the top 25
+carry **73%**. A 500-close forward window in which those few closes do not
+recur would collapse the result. Worth stating before the clock starts.
+
+### Operational
+
+One run was killed by the harness for low memory (two processes each holding a
+full `load_quotes`). The collector was never at risk — it sits at 25 MB and
+kept writing throughout; the harness kills the largest offender, which was
+mine. Rebuilt as one load with a TARGETED quote pass (533 ticker-instants
+instead of every quote for 14,597 markets) and both cells are cached, so
+future variants cost seconds rather than a reload.
+
+---
+
 ## 2026-09-06 — JUDGEMENT, NOT MEASUREMENT: confidence and capacity
 
 Everything else in this file is measured. **This section is not.** It is the
