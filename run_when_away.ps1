@@ -33,6 +33,32 @@ param(
 
 $ErrorActionPreference = "Continue"
 Set-Location $Repo
+# ---- ONE RUN AT A TIME -------------------------------------------------
+# Two concurrent runs write the SAME results/RESULTS_*.md files and both end
+# with git add/commit/push in the same working tree. That yields reports half
+# written by each and a commit mixing one run's finished work with another's
+# half-finished work -- and since the publish pull carries --autostash, the
+# second run can stash the first one's results mid-write.
+#
+# The lock stores a PID and is never deleted. That is deliberate: a lock left
+# behind by a crashed or killed run names a process that no longer exists, so
+# the next run takes it and carries on. Nothing to clean up by hand, and no
+# way to be blocked by a run that already died.
+$lock = "$Repo\results\.run.lock"
+New-Item -ItemType Directory -Force -Path "$Repo\results" | Out-Null
+if (Test-Path $lock) {
+    $old = (Get-Content $lock -EA SilentlyContinue | Select-Object -First 1)
+    if ($old -and (Get-Process -Id $old -EA SilentlyContinue)) {
+        Write-Host "*** ANOTHER RUN IS ALREADY IN PROGRESS (pid $old)."
+        Write-Host "*** Two runs share these report files and this git tree;"
+        Write-Host "*** running both produces reports mixed from each."
+        Write-Host "*** Wait for it, or stop it with:  Stop-Process -Id $old"
+        exit 1
+    }
+    Write-Host "stale lock from pid $old (not running); taking it"
+}
+$PID | Set-Content $lock
+
 $stamp = Get-Date -Format "yyyyMMdd-HHmm"
 $log   = "$Repo\results\run-$stamp.log"
 New-Item -ItemType Directory -Force -Path "$Repo\results" | Out-Null
