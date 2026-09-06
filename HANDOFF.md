@@ -2,6 +2,49 @@
 
 ---
 
+## 2026-09-06 (correction) — "KXDIESELD pays 7x the crypto rate" was
+## MISLEADING. Per HOUR it pays a tenth. The 15-minute families win.
+
+I reported that `KXDIESELD` pays **$140 per period** against the crypto
+families' **$20**, and flagged it as possibly the bigger prize. **The per-period
+figure is right and the conclusion was wrong: the periods are not the same
+length.** Measured from `start_date`/`end_date` on every live programme:
+
+    family                reward$   period   $/hr/market  open   $/hr family
+    KXCRYPTOLEAD15M         20.00      15m         80.00     5        400.00
+    KXGOLD/SILVER/WTI/
+      NATGAS/COPPER 15M     20.00      15m         80.00     1         80.00 ea
+    KXAAAGASD* (12 states) 100.00     959m          6.26    17        106.36 ea
+    KXTTELITEMATCH          20.00      90m         13.33     6         80.00
+    KXDIESELD              140.00    1077m          7.80     1          7.80
+    KXTRUMPENDORSEMENTS    142.86    8518m          1.01     7           7.04
+    KXSOFRD                 20.00    1440m          0.83     7           5.83
+    KXTRUMPACT              90.91    9958m          0.55    11           6.03
+
+**Coin Race pays $80/hr/market against KXDIESELD's $7.80 — ten times more,
+not seven times less.** A 15-minute market's whole life IS one period, so a
+$20 pool is $80/hour; an 18-hour market's $140 pool is $7.80/hour.
+
+**Consequences, and they are all favourable:**
+
+1. **The five commodity 15-minute series added to the collector today are
+   exactly the right ones** — $80/hr each, $400/hr combined, second only to
+   Coin Race. No second restart is needed to chase KXDIESELD.
+2. **Coin Race remains the best single target**: $400/hr across 5 concurrent
+   markets, and it has been recording since 2026-09-04.
+3. **The gas families have the largest TOTAL pool** (12 states x 17 markets x
+   $6.26/hr = ~$1,280/hr) but at $6.26 per market spread over 204 markets with
+   a 1,000 target each — uncoverable at $1,000 of capital. Not a target.
+4. Four families appeared that were not in the first pull at all
+   (`KXMAMDANIEO`, `KXTRUMPACT`, `KXTRUMPENDORSEMENTS`, `KXTRUTHSOCIAL`), so
+   the endpoint is paged and the earlier list was incomplete. All are under
+   $7/hr per family.
+
+**The lesson worth keeping: a reward pool is meaningless without its period.**
+`period_reward` alone ranked the families almost exactly backwards.
+
+---
+
 ## 2026-09-06 (rebate) — the Liquidity Incentive Program is REAL, the
 ## ambiguity resolves in our favour, and the number is big enough to distrust
 
