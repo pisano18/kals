@@ -2,6 +2,87 @@
 
 ---
 
+## 2026-09-06 (verdict) — pin IS DEAD against the kill criteria. The edge
+## is real; it cannot be filled at a size that pays.
+
+Nothing here retracts the edge. `+2.54c` per contract at `t=+5.0` out of
+sample stands. What fails is capacity, and the four pre-freeze checks the
+operator demanded are what killed it.
+
+### The bootstrap interval, not the point estimate, decides
+
+Threshold: net +$50/day at a fillable size. 20,000-rep percentile bootstrap
+over CLOSES — no normal-theory SE, because the distribution is nothing like
+one (see concentration).
+
+    variant   cap   $/day        95% interval      verdict
+    one        50      33      [  +19,   +48 ]     FAIL
+    one        69      45      [  +28,   +61 ]     INCONCLUSIVE
+    every mkt  50      49      [  +22,   +76 ]     INCONCLUSIVE
+    every mkt  69      64      [  +30,   +99 ]     INCONCLUSIVE
+
+**Nothing clears.** A pass needs the whole interval above $50; the best honest
+cell straddles it from $22 to $76. cap 100 is treated as UNAVAILABLE, not as
+clearing: it consumes the entire resting level 60-62% of the time, which
+assumes winning a race for a stale quote that this backtest cannot test — and
+stale quotes are thin precisely because size does not sit on a price about to
+be wrong.
+
+### Concentration is the headline, and t=+5.0 was flattering it
+
+    one/close cap 50    top 5 = 30%   top 10 = 45%   top 25 = 73% of the money
+    every mkt cap 50    top 5 = 41%   top 10 = 56%   top 25 = 86%
+
+    drop the best closes        one-per-close      every-market
+      drop none                    $33/day            $49/day
+      drop top 10                  $19/day            $22/day   [ +1, +40]
+      drop top 25                  $10/day             $7/day   [-14, +24]
+
+**The operator's own test was "if dropping ten closes takes it under $20/day,
+this is a lottery ticket and not an edge." One-per-close lands at $19/day.
+Say it that way: this is a lottery ticket.** 78% of closes are individually
+profitable, so it is not a coin flip — but the money lives in a handful of
+closes and normal-theory SEs on that distribution overstate the confidence.
+
+### AND THE EVERY-MARKET RESCUE MAKES CONCENTRATION WORSE, NOT BETTER
+
+This retracts my own recommendation from earlier today. I proposed fixing the
+four dead series to reach ~$65/day on the grounds that more coins is more
+money at the same per-market size. The money part is true. The independence
+part is false: going from one coin per close to 1.6 pushed top-10
+concentration from **45% to 56%** and top-25 from **73% to 86%**. Coins at one
+close are the same bet at rho ~ 0.8, so extra series amplify the same few big
+closes rather than adding breadth — which is also why t falls 4.6 -> 3.6 while
+the money rises. **Fixing the dead series would buy leverage, not
+diversification, and should not be sold as a route past the threshold.**
+
+### The two arithmetic reconciliations
+
+**Worst close is -$38.65 at caps 50, 69, 100 and 250 — not a bug.** That close
+(1788293700) holds a single trade whose resting depth was **40.1 contracts**,
+below every cap tested. The cap never binds there, so raising it cannot make
+that particular close worse. Confirmed explicitly rather than assumed.
+
+**Fire rate: 37.2/day is right, 26.5 was mine and wrong.** The error was
+dividing out-of-sample trades by a span that includes the 150-close warmup.
+Measured: 723 closes in the tau<=20 scan over 12.2 days; the OOS window holds
+572 available closes over 9.0 days; 336 fired = **58.7% of available closes,
+37.2/day**. Note also that available closes run 63.3/day, not the 96 that
+`portfolio()` assumes, so that constant is wrong on two counts.
+
+### What this does and does not kill
+
+Per the operator's criteria, this kills **pin** — not the project, and not the
+search. `pin` dies here on capacity rather than on the forward test, which is
+a cheaper death and an earlier one. The rule was never frozen and the 19-day
+forward clock never started, which is the correct outcome: 19 days spent
+confirming a miss would have been the waste.
+
+**The queue-position simulator is now the main event.** Market-making is the
+remaining live strategy and its capacity question is unmeasured.
+
+---
+
 ## 2026-09-06 (depth) — pin is a TAKER and the book is thin. Every dollar
 ## figure so far assumed 50 contracts fill. 42% of the time they do not.
 

@@ -45,6 +45,31 @@ single session.
   before anything that writes outside `results/` or the repo, and never touch
   `kalshi_data`, `feed_data`, or the collector.
 
+## Resource protocol — the collector outranks every job here
+
+Set 2026-09-06 after a job was OOM-killed. The tape is unreproducible; an
+analysis result is not. So:
+
+- **Before starting concurrent work, measure free RAM and cap concurrency so
+  the total fits with headroom.** `load_quotes` holds ~2-3 GB. Two of them at
+  once is what caused the kill. Prefer the cached cells under the session work
+  directory over reloading.
+- **After EVERY job, verify `kalshi_collector.py` and `crypto_feeds.py` are
+  still alive, and say so in the report.** Both normally sit at 13-25 MB, so
+  they are never the memory hog — but silence about them is not evidence.
+- **Report free disk in every status.** Below **4 GB free, stop all analysis
+  and write state**, then say so.
+- **Never kill `python.exe` broadly.** Filter on `*research*`:
+
+  ```powershell
+  Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object {$_.CommandLine -like '*research*'} |
+    Select-Object ProcessId, CommandLine
+  ```
+
+  `kalshi_collector.py` and `crypto_feeds.py` carry no `research` in their
+  command lines, so that filter spares them.
+
 ## Hard rules
 
 1. **Never place, amend, or cancel an order.** No `POST /portfolio/orders`.
@@ -492,9 +517,15 @@ Two things that will bite:
 
 **Two results are alive** (both detailed in `HANDOFF.md`, newest first):
 
-- `pin` — buy the endgame's stale quotes at `tau <= 20s`. Out of sample
-  **+2.54c, t = +5.0** at edge floor 0.5c. Low floors only; 1.0c and 2.0c have
-  headroom at or below 1.0x and are not safely positive.
+- `pin` — **DEAD against the kill criteria as of 2026-09-06.** It is a
+  TAKER and the book it hits is thin: median resting size 69 contracts, and 50
+  fails to fill 42.3% of the time. At the largest size that does not require
+  winning an untestable race for a whole resting level, the bootstrap 95%
+  interval on $/day is **[+19, +48] one-per-close (FAIL)** and **[+22, +76]
+  every-market (INCONCLUSIVE)** against a +$50/day threshold. Neither clears.
+  Money is a lottery: the top 10 of 336 closes carry 45-56% of it, and dropping
+  them leaves $19-22/day. See `HANDOFF.md`. The +2.54c/t=+5.0 per-contract edge
+  is real and unretracted — it simply cannot be filled at a size that pays.
 - `informed` — market-making at the touch. **+0.48c per fill, t = +6.4** on
   17.1M fills, takers there carrying zero information (t = 0.2). Sweeps print
   per level (59% of same-instant groups, median 8 legs), so the touch leg of a
