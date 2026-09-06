@@ -81,14 +81,29 @@ def sign_headers(pk, key_id, method, path):
 
 
 def build_order(ticker, side, price, count, client_id):
-    """The request body. post_only is not optional and is not an argument."""
+    """The request body.
+
+    THE SHAPE IS INFERRED, NOT DOCUMENTED. Kalshi publishes no OpenAPI spec
+    reachable from here (checked 2026-09-06: /openapi.json, /swagger.json,
+    /docs and four more all 404 on demo and production). So these field names
+    come from the operator's OWN historical order records, which the exchange
+    itself emitted:
+
+        action "buy" | side "yes"/"no" | type "limit" | yes_price_dollars
+
+    The first field name in the earlier version -- side "bid"/"ask" plus a
+    bare "price" -- appears NOWHERE in those records and was a guess.
+
+    post_only is not optional and is not an argument.
+    """
+    yes_px = float(price)
     return {
         "ticker": ticker,
-        "side": side,                       # "bid" buys YES, "ask" buys NO
-        "count": f"{float(count):.2f}",
-        "price": f"{float(price):.4f}",
-        "time_in_force": "good_till_canceled",
-        "self_trade_prevention_type": "maker",
+        "action": "buy",
+        "side": "yes" if side == "bid" else "no",
+        "type": "limit",
+        "count": int(round(float(count))),
+        "yes_price_dollars": f"{yes_px:.4f}",
         "post_only": True,                  # <-- CANNOT CROSS. The whole rail.
         "client_order_id": client_id,
     }
@@ -98,7 +113,7 @@ def check_limits(body):
     """Refuse before signing, not after. Returns a list of violations."""
     bad = []
     c = float(body["count"])
-    p = float(body["price"])
+    p = float(body["yes_price_dollars"])
     if c > MAX_COUNT:
         bad.append(f"count {c} exceeds MAX_COUNT {MAX_COUNT}")
     if c <= 0:
@@ -109,8 +124,11 @@ def check_limits(body):
         bad.append(f"notional {c*p:.2f} exceeds MAX_NOTIONAL {MAX_NOTIONAL}")
     if body.get("post_only") is not True:
         bad.append("post_only is not True -- this order could TAKE liquidity")
-    if body.get("time_in_force") != "good_till_canceled":
-        bad.append("time_in_force is not good_till_canceled")
+    if body.get("type") != "limit":
+        bad.append(f"type is {body.get('type')!r}, not 'limit' -- a market "
+                   f"order has no price rail at all")
+    if body.get("action") != "buy":
+        bad.append(f"action is {body.get('action')!r}, not 'buy'")
     return bad
 
 
@@ -157,13 +175,14 @@ def selftest():
 
     print("\n  every ceiling must REFUSE, before signing:")
     for desc, mut in (
-            ("count above MAX_COUNT", {"count": "999.00"}),
-            ("notional above MAX_NOTIONAL", {"count": "5.00", "price": "0.8000"}),
-            ("price at 0", {"price": "0.0000"}),
-            ("price at 1", {"price": "1.0000"}),
-            ("negative count", {"count": "-1.00"}),
+            ("count above MAX_COUNT", {"count": 999}),
+            ("notional above MAX_NOTIONAL", {"count": 5, "yes_price_dollars": "0.8000"}),
+            ("price at 0", {"yes_price_dollars": "0.0000"}),
+            ("price at 1", {"yes_price_dollars": "1.0000"}),
+            ("negative count", {"count": -1}),
             ("post_only stripped", {"post_only": False}),
-            ("time_in_force changed", {"time_in_force": "fill_or_kill"})):
+            ("type changed to market", {"type": "market"}),
+            ("action changed to sell", {"action": "sell"})):
         bb = dict(b)
         bb.update(mut)
         v = check_limits(bb)
@@ -173,7 +192,7 @@ def selftest():
 
     print("\n  the sign-off token must bind to the exact order and environment:")
     t1 = token_for(b, DEMO)
-    t2 = token_for(dict(b, count="2.00"), DEMO)
+    t2 = token_for(dict(b, count=2), DEMO)
     t3 = token_for(b, PROD)
     print(f"    demo/1 contract {t1}   demo/2 contracts {t2}   PROD/1 {t3}")
     if t1 == t2:
@@ -205,6 +224,9 @@ def main():
     ap.add_argument("--side", default="bid", choices=["bid", "ask"])
     ap.add_argument("--price", type=float)
     ap.add_argument("--count", type=float, default=1.0)
+    ap.add_argument("--client-id", default="",
+                    help="fix the client_order_id so the sign-off token "
+                         "is reproducible by both sides")
     ap.add_argument("--prod", action="store_true",
                     help="use PRODUCTION. Demo is the default.")
     ap.add_argument("--live", action="store_true",
@@ -224,7 +246,7 @@ def main():
 
     base = PROD if a.prod else DEMO
     body = build_order(a.ticker, a.side, a.price, a.count,
-                       "kals-" + str(int(time.time())))
+                       a.client_id or ("kals-" + str(int(time.time()))))
     bad = check_limits(body)
     tok = token_for(body, base)
 
@@ -234,8 +256,8 @@ def main():
     print(f"  environment : {'PRODUCTION -- REAL MONEY' if a.prod else 'DEMO'}")
     print(f"  base        : {base}")
     print(f"  body        : {json.dumps(body, indent=2)}")
-    print(f"  collateral  : ${float(body['count'])*float(body['price']):.2f}")
-    print(f"  worst case  : ${float(body['count'])*float(body['price']):.2f} "
+    print(f"  collateral  : ${float(body['count'])*float(body['yes_price_dollars']):.2f}")
+    print(f"  worst case  : ${float(body['count'])*float(body['yes_price_dollars']):.2f} "
           f"(it fills and settles against us)")
     if bad:
         print("\n  *** REFUSED BY THE RAILS ***")
@@ -258,7 +280,7 @@ def main():
 
     print("\n  sign-off matches. Sending ...")
     pk = load_key(a.key_file)
-    st, resp = send(base, pk, a.key_id, "POST", "/portfolio/events/orders", body)
+    st, resp = send(base, pk, a.key_id, "POST", "/portfolio/orders", body)
     print(f"  -> {st}  {json.dumps(resp)[:400] if isinstance(resp, dict) else resp}")
     if st == 200 or st == 201:
         oid = (resp or {}).get("order_id")

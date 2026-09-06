@@ -864,6 +864,188 @@ def selftest():
         fails.append(f"{bad7} control groups are genuinely simultaneous -- "
                      "the null contains the thing it is controlling for")
 
+
+    # ==================================================================
+    # MUTATION GUARDS. Added 2026-09-06 after mutation testing planted 5
+    # deliberately wrong estimators in this file and this self-test caught
+    # only 2 of them. Each block below fails against one named survivor.
+    # CLAUDE.md: "the self-test is the deliverable; the estimator is the
+    # easy part."
+    # ==================================================================
+
+    # M1 -- SURVIVOR: "every cell mean inflated 50%". Every number this
+    # stage prints is a Cell.stat() mean and nothing ever handed Cell a mean
+    # it already knew. Note WHY no significance test could have caught this:
+    # a constant factor on the per-close means scales mu and se together and
+    # CANCELS in the t-stat. Only planting the answer and demanding it back
+    # detects it.
+    def _n(x, spec="+.4f"):
+        """Format a number that stat() is allowed to return as None.
+
+        The first version of these guards formatted stat()['t'] directly and
+        a mutation that RAISED the cluster floor to 300 made it None -- so
+        the guard raised TypeError instead of failing. A crash is the
+        interpreter catching the bug, not the gate; mutation testing scores
+        it separately and rightly. Every guard below prints through this.
+        """
+        return "None" if x is None else format(x, spec)
+
+    print("\n  MUTATION GUARD 1 -- a planted per-close mean must come back")
+    print("  out of Cell.stat() exactly, and so must its t and its MDE.")
+    plant = [2.0 + 0.37 * math.sin(i) for i in range(40)]
+    cP = Cell()
+    for i, v in enumerate(plant):
+        # two adds straddling v, so the per-close mean is EXACTLY v and the
+        # sum/n aggregation inside the cell is exercised, not bypassed
+        cP.add(9_000_000 + i, mkS=v - 0.25)
+        cP.add(9_000_000 + i, mkS=v + 0.25)
+    sP = cP.stat("mkS")
+    GP = len(plant)
+    muP = mean(plant)
+    sdP = pstdev(plant) * math.sqrt(GP / (GP - 1.0))
+    seP = sdP / math.sqrt(GP)
+    tP = muP / seP
+    mdP = t_crit(GP - 1) * seP
+    print(f"    planted mean {muP:+.6f}c over {GP} closes ({2 * GP} adds) "
+          f"-> stat() mean {_n(sP['mean'], '+.6f')}c  G={sP['G']}  "
+          f"n={sP['n']}  t={_n(sP['t'])} (hand {tP:+.4f})  "
+          f"MDE {_n(sP['mde'], '.4f')} (hand {mdP:.4f})")
+    if sP["G"] != GP or sP["n"] != 2 * GP:
+        fails.append(f"Cell counted G={sP['G']} n={sP['n']} against a "
+                     f"planted {GP} closes and {2 * GP} trades")
+    if sP["mean"] is None or abs(sP["mean"] - muP) > 1e-9:
+        fails.append(f"a planted cell mean of {muP:+.4f}c came back as "
+                     f"{_n(sP['mean'])}c -- every mean in this report is "
+                     "scaled by a factor no t-stat can see")
+    if (sP["t"] is None or sP["mde"] is None
+            or abs(sP["t"] - tP) > 1e-9 or abs(sP["mde"] - mdP) > 1e-9):
+        fails.append(f"stat() reports t={_n(sP['t'])} / "
+                     f"MDE={_n(sP['mde'], '.4f')} against {tP:+.4f} / "
+                     f"{mdP:.4f} computed by hand from the same planted "
+                     f"numbers on {GP} clusters")
+
+    # M2 -- SURVIVOR: "the 30-cluster floor removed". A cluster SE off a
+    # handful of closes once produced t = +12.28 off 12 closes. The floor is
+    # the only thing standing between this stage and that number, and it was
+    # asserted nowhere. Checked on BOTH sides of the boundary so that a floor
+    # raised to infinity -- which would also suppress every real result --
+    # fails too.
+    print("\n  MUTATION GUARD 2 -- below 30 clusters stat() must refuse to")
+    print("  claim significance, and at exactly 30 it must start.")
+    boundary = {}
+    for GG in (29, 30):
+        cQ = Cell()
+        for i in range(GG):
+            cQ.add(8_000_000 + i, mkS=1.0 + 0.01 * i)
+        boundary[GG] = cQ.stat("mkS")
+    a29, a30 = boundary[29], boundary[30]
+    print(f"    G=29 -> t={_n(a29['t'])}  MDE={_n(a29['mde'], '.4f')}  "
+          f"mean {_n(a29['mean'])}c        "
+          f"G=30 -> t={_n(a30['t'], '+.2f')}  MDE={_n(a30['mde'], '.4f')}")
+    if a29["t"] is not None or a29["mde"] is not None:
+        fails.append(f"stat() claimed t={a29['t']} off 29 clusters -- the "
+                     "30-cluster floor is gone, so a handful of closes can "
+                     "produce a significant-looking number")
+    if a29["mean"] is None:
+        fails.append("below the cluster floor stat() withheld the MEAN too "
+                     "-- the floor must suppress the CLAIM, not the number")
+    if a30["t"] is None or a30["mde"] is None:
+        fails.append("stat() refused a t at exactly 30 clusters -- the floor "
+                     "sits above its documented value and real cells are "
+                     "being thrown away")
+
+    # M3 -- SURVIVOR: "every group counted as monotone (up = True)". Test 5's
+    # sweepless tape is ALSO sequence-scattered, so with every group called
+    # monotone the verdict still died on the contiguity term and the mutation
+    # walked through: the existing case masks the one it was meant to test.
+    # This fixture removes the mask. Its groups are simultaneous,
+    # single-sided, seq-contiguous and multi-price -- everything a sweep is
+    # -- and differ from a sweep in exactly one respect: the price walks up,
+    # back down, and up again. The monotonicity predicate is asserted
+    # directly (mono must be 0), and the verdict is asserted too, so nothing
+    # else in sweep_verdict can be what is doing the refusing.
+    print("\n  MUTATION GUARD 3 -- the monotonicity predicate, asserted")
+    print("  DIRECTLY on groups that are sweeps in every respect but price")
+    print("  order, with a rising control beside them so the guard has to")
+    print("  discriminate rather than merely refuse.")
+    rnd8 = random.Random(23)
+    zigzag, rising, sq8 = [], [], 0
+    for k in range(1200):
+        t8 = 1767225600000 + k * 1000 + rnd8.randrange(900)
+        p0 = round(rnd8.uniform(0.30, 0.60), 2)
+        zz = [p0, p0 + 0.05, p0 + 0.02, p0 + 0.07]    # up, DOWN, up
+        rs = [p0, p0 + 0.02, p0 + 0.05, p0 + 0.07]    # strictly up
+        for j in range(4):
+            zigzag.append((f"KXZIG-{k % 50}", t8, sq8 + j,
+                           round(zz[j], 4), "yes"))
+            rising.append((f"KXUPP-{k % 50}", t8, sq8 + j,
+                           round(rs[j], 4), "yes"))
+        sq8 += 4 + rnd8.randrange(1, 4)               # gap BETWEEN groups
+    sZ = sweep_stats(zigzag)
+    sU = sweep_stats(rising)
+    print(f"    zig-zag: {sZ['multi_px']:,} multi-price groups, "
+          f"{_pct(sZ['one_side'], sZ['multi_px']):.0f}% single-sided, "
+          f"{_pct(sZ['contig'], sZ['multi_px']):.0f}% seq-contiguous, "
+          f"{sZ['mono']} monotone, verdict "
+          f"{'PER LEVEL' if sweep_verdict(sZ) else 'not established'}")
+    print(f"    rising : {sU['multi_px']:,} multi-price groups, "
+          f"{sU['mono']} monotone, {sU['dir_ok']} direction-consistent, "
+          f"verdict "
+          f"{'PER LEVEL' if sweep_verdict(sU) else 'not established'}")
+    if (sZ["multi_px"] < 1100 or sZ["one_side"] != sZ["multi_px"]
+            or sZ["contig"] != sZ["multi_px"]):
+        fails.append("the zig-zag fixture is not simultaneous, single-sided, "
+                     "contiguous and numerous, so a failed verdict on it "
+                     "would not isolate monotonicity -- guard 3 is inert")
+    if sZ["mono"] or sZ["sided_mono"]:
+        fails.append(f"{sZ['mono']} of {sZ['multi_px']} groups whose price "
+                     "walks up, back down and up again were called MONOTONE "
+                     "-- the shape test's one discriminating predicate "
+                     "always says yes")
+    if sweep_verdict(sZ):
+        fails.append("PER LEVEL claimed off groups that are not monotone in "
+                     "price -- that shape is not a book being swept")
+    if sU["mono"] != sU["multi_px"] or not sweep_verdict(sU):
+        fails.append("the rising control was NOT read as per-level sweeps, "
+                     "so guard 3 refuses everything rather than "
+                     "discriminating")
+
+    # M4 -- found by REPAIRING a mutation that never applied. mutate.py meant
+    # to delete the sign-scrambled control and did it by renaming a dict key
+    # that does not exist; renaming the key that DOES exist raises KeyError,
+    # which is the interpreter catching the bug rather than this gate. The
+    # faithful non-crashing form is `shufS = 0.0`, and it SURVIVED: the null
+    # that certifies "this estimator does not manufacture information" can be
+    # a constant and every test above still passes, because all of them ask
+    # only whether it is near zero. A null with no variance is not a null --
+    # it is a printed zero. So the control must be near zero in MEAN while
+    # carrying the same order of SPREAD as the measure it controls.
+    print("\n  MUTATION GUARD 4 -- the sign-scrambled control must be a LIVE")
+    print("  measurement: near zero in mean, and carrying the same order of")
+    print("  per-close spread as the measure it is the null for.")
+    for _tbl, _key in (("ALL", "all"), ("size", "3")):
+        cS = tb2[_tbl][_key]
+        shc = [s / n for s, n in cS.by["shufS"].values() if n > 0]
+        mkc = [s / n for s, n in cS.by["mkS"].values() if n > 0]
+        if len(shc) < 30 or len(mkc) < 30 or len(shc) != len(mkc):
+            fails.append(f"the shuffle control on {_tbl}/{_key} covers "
+                         f"{len(shc)} closes against mkS's {len(mkc)} -- it "
+                         "is not recorded on the same trades it controls")
+            continue
+        s_sh, s_mk = pstdev(shc), pstdev(mkc)
+        t_sh = cS.stat("shufS")["t"]
+        print(f"    {_tbl}/{_key}: shuffle mean {mean(shc):+.2f}c "
+              f"sd {s_sh:.2f}c t={_n(t_sh, '+.2f')}   measured mkS mean "
+              f"{mean(mkc):+.2f}c sd {s_mk:.2f}c")
+        if s_sh <= 0.5 * s_mk:
+            fails.append(f"the shuffle control on {_tbl}/{_key} carries sd "
+                         f"{s_sh:.2f}c against the measure's {s_mk:.2f}c -- "
+                         "the null is flat, so it can never fire and "
+                         "certifies nothing")
+        if t_sh is None or abs(t_sh) > 4.0:
+            fails.append(f"the shuffle control on {_tbl}/{_key} reads "
+                         f"t={_n(t_sh)} -- a coin-flip sign is producing "
+                         "information")
     print()
     if fails:
         print("=" * 78)

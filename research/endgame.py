@@ -399,6 +399,16 @@ def redraw_null(trades, reps=2000, seed=20260827, using="fair",
     #
     # `rank` is the mid-p percentile of `value` among the draws: strictly-
     # below plus half the ties. It is the well-defined thing to threshold.
+    #
+    # `atoms` is the EXACT distinct-value count -- keyed on the raw float, not
+    # a rounded one, because rounding is itself the dust this guards against.
+    # Measured on the real tau<=20 floor-0.5c cell (n=336, 2026-09-06):
+    # fair 11 atoms in 2000 draws with 4.40% of the mass on the 2.5% cut;
+    # mid  23 atoms with 2.65% on the 97.5% cut. Ten times the reps moves
+    # those to 14 and 27 -- the discreteness is the estimator, not the sample.
+    res["atoms"] = len(set(out))
+    res["lo_mass"] = out.count(res["lo"]) / float(reps)
+    res["hi_mass"] = out.count(res["hi"]) / float(reps)
     if value is not None:
         below = sum(1 for x in out if x < value - 1e-9)
         ties = sum(1 for x in out if abs(x - value) <= 1e-9)

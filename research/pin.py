@@ -843,6 +843,162 @@ def selftest():
         fails.append(f"LOOK-AHEAD: {badg} of {testedg} refitted k values "
                      "changed when only future closes were removed")
 
+
+    # M5 -- SURVIVOR: "fee removed on the YES leg ONLY". Guard 1 above is an
+    # AGGREGATE fee-drag check, and with the fee still charged on the NO legs
+    # the aggregate stayed positive, so the mutation walked straight through
+    # it. The fee is a PER-LEG quantity and has to be checked per leg: every
+    # single trade's realised P&L must differ from its own gross by exactly
+    # the fee its own entry price implies, and both legs must be PRESENT in
+    # the fixture or the check is vacuous on the missing one.
+    print("\n  MUTATION GUARD 5 -- the fee must be charged on EVERY leg,")
+    print("  trade by trade, not merely on average.")
+    n_yes = sum(1 for t in tr if t["side"] == "yes")
+    n_no = len(tr) - n_yes
+    worst_leg, worst_side = 0.0, ""
+    drag = {"yes": [], "no": []}
+    for t in tr:
+        if t["side"] == "yes":
+            g_ = 100.0 * (t["won"] - t["entry"])
+            f_ = fee_cents(t["entry"])
+        else:
+            g_ = 100.0 * ((1.0 - t["won"]) - (1.0 - t["entry"]))
+            f_ = fee_cents(1.0 - t["entry"])
+        d_ = g_ - t["pnl"]
+        drag[t["side"]].append(d_)
+        if abs(d_ - f_) > worst_leg:
+            worst_leg, worst_side = abs(d_ - f_), t["side"]
+    dy = mean(drag["yes"]) if drag["yes"] else float("nan")
+    dn = mean(drag["no"]) if drag["no"] else float("nan")
+    print(f"    {n_yes} YES legs drag {dy:+.4f}c   {n_no} NO legs drag "
+          f"{dn:+.4f}c   worst per-trade residual {worst_leg:.2e}c "
+          f"({worst_side or 'none'})")
+    if n_yes < 5 or n_no < 5:
+        fails.append(f"the per-leg fee guard saw {n_yes} YES and {n_no} NO "
+                     "legs -- one side is missing from the fixture, so a fee "
+                     "dropped on that side would not be caught")
+    if worst_leg > 1e-9:
+        fails.append(f"a {worst_side.upper()} leg's P&L is off its own fee "
+                     f"by {worst_leg:.4f}c -- the fee is not charged on "
+                     "every leg")
+    if not (dy > 1e-6 and dn > 1e-6):
+        fails.append(f"per-leg fee drag reads YES {dy:+.4f}c NO {dn:+.4f}c "
+                     "-- a whole leg is being handed its fee back")
+
+    # M6 -- SURVIVOR: "edge overstated by 0.5c in evaluate()". Nothing ever
+    # recomputed the edge a trade was taken on, so an entry rule that lies
+    # about its own edge both takes trades that do not qualify and reports a
+    # claimed edge nobody could have earned. This is checkable EXACTLY rather
+    # than by sampling: the model's expected P&L on a YES fill is
+    # 100*(fair - entry) - fee(entry), which is precisely what evaluate()
+    # stores as "edge". So "the realised edge distribution matches what the
+    # entry rule claims" has a closed form, per trade, with no Monte Carlo.
+    # The resettled cross-check below is the same statement done the noisy
+    # way, and is kept only because it independently exercises redraw_null.
+    print("\n  MUTATION GUARD 6 -- every trade's edge recomputed from its")
+    print("  own (fair, entry, side); every trade must clear the floor.")
+    floor_t = 0.5
+    worst_e, under = 0.0, 0
+    for t in tr:
+        if t["side"] == "yes":
+            e_ = 100.0 * t["fair"] - 100.0 * t["entry"] - fee_cents(t["entry"])
+        else:
+            e_ = 100.0 * t["entry"] - 100.0 * t["fair"] \
+                - fee_cents(1.0 - t["entry"])
+        worst_e = max(worst_e, abs(e_ - t["edge"]))
+        if e_ <= floor_t:
+            under += 1
+    nfx = redraw_null(tr, reps=2000, using="fair")
+    gapx = nfx["mean"] - sm["exp_edge"]
+    print(f"    worst |stored edge - recomputed| {worst_e:.2e}c over "
+          f"{len(tr)} trades; {under} at or below the {floor_t:.1f}c floor; "
+          f"claimed {sm['exp_edge']:+.3f}c vs the model's own resettled mean "
+          f"{nfx['mean']:+.3f}c (gap {gapx:+.3f}c)")
+    if worst_e > 1e-9:
+        fails.append(f"a trade's stored edge is {worst_e:.4f}c away from "
+                     "100*(fair-entry) - fee: evaluate() claims an edge its "
+                     "own entry price does not support, so trades that do "
+                     "not qualify are being taken")
+    if under:
+        fails.append(f"{under} of {len(tr)} trades sit at or below the "
+                     f"{floor_t:.1f}c edge floor they were required to clear")
+    if abs(gapx) > 0.15:
+        fails.append(f"the claimed edge {sm['exp_edge']:+.2f}c and the mean "
+                     "P&L the model's OWN probabilities pay "
+                     f"{nfx['mean']:+.2f}c differ by {gapx:+.2f}c")
+
+    # M7 -- SURVIVOR, AND THE ONE THAT MATTERS: "walk_forward replaced by
+    # in-sample evaluate AT THE CALL SITE in run_oos". Guard 4 tests
+    # walk_forward itself, so swapping the CALLER slips straight past it --
+    # the table headed OUT OF SAMPLE would be printed from an in-sample
+    # estimator and every assertion above would still pass. The property is
+    # not "walk_forward is honest" but "the out-of-sample tables are MADE OF
+    # walk_forward's output", so walk_forward and _walk_markets are wrapped
+    # in delegates that run the real thing and TAG every trade they hand
+    # back, and the two consumers (block, portfolio) are replaced by
+    # collectors. Every row those tables score must carry the tag.
+    #
+    # LIMIT OF THIS GUARD, stated: it proves the tables are fed by whatever
+    # the module currently calls walk_forward. That the function so named has
+    # no look-ahead is guard 4's job. Neither is sufficient alone; together
+    # they cover the printed table.
+    print("\n  MUTATION GUARD 7 -- the out-of-sample tables must be FED by")
+    print("  walk_forward, not merely accompanied by it.")
+    import contextlib as _cl
+    import io as _io
+    _g = globals()
+    _r_wf, _r_blk = _g["walk_forward"], _g["block"]
+    _r_wm, _r_pf = _g["_walk_markets"], _g["portfolio"]
+    seen_calls = {"wf": 0, "wm": 0}
+    fed = []
+
+    def _spy_wf(rws, *a, **kw):
+        seen_calls["wf"] += 1
+        _t, _k = _r_wf(rws, *a, **kw)
+        return [dict(x, _oos=True) for x in _t], _k
+
+    def _spy_wm(rws, *a, **kw):
+        seen_calls["wm"] += 1
+        return [dict(x, _oos=True) for x in _r_wm(rws, *a, **kw)]
+
+    def _spy_blk(trades, label, reps=2000):
+        fed.append(list(trades))
+
+    def _spy_pf(trades, label="", contracts=50):
+        fed.append(list(trades))
+        return _r_pf(trades, label, contracts)
+
+    _buf = _io.StringIO()
+    try:
+        _g["walk_forward"], _g["block"] = _spy_wf, _spy_blk
+        _g["_walk_markets"], _g["portfolio"] = _spy_wm, _spy_pf
+        with _cl.redirect_stdout(_buf):
+            run_oos(rows, reps=10)
+            run_portfolio(rows, floors=(0.5,))
+    finally:
+        _g["walk_forward"], _g["block"] = _r_wf, _r_blk
+        _g["_walk_markets"], _g["portfolio"] = _r_wm, _r_pf
+    want_wf = 2 * len(FLOORS) + 2      # run_oos cells, plus run_portfolio
+    n_fed = sum(len(x) for x in fed)
+    n_tag = sum(1 for x in fed for t in x if t.get("_oos"))
+    print(f"    run_oos + run_portfolio built {len(fed)} tables from "
+          f"{n_fed} trades; walk_forward called {seen_calls['wf']}x "
+          f"(expected {want_wf}), _walk_markets {seen_calls['wm']}x; "
+          f"{n_tag}/{n_fed} of the scored trades came from them")
+    if seen_calls["wf"] < want_wf:
+        fails.append(f"the out-of-sample call sites invoked walk_forward "
+                     f"{seen_calls['wf']} times against {want_wf} cells -- "
+                     "the caller is not using the out-of-sample estimator")
+    if seen_calls["wm"] < 2:
+        fails.append("run_portfolio never called _walk_markets -- the "
+                     "every-market table is not the walk-forward one")
+    if n_fed < 100:
+        fails.append(f"only {n_fed} trades reached the out-of-sample tables "
+                     "-- guard 7 is checking almost nothing")
+    if n_tag != n_fed:
+        fails.append(f"{n_fed - n_tag} of {n_fed} trades scored in the "
+                     "OUT-OF-SAMPLE tables did not come from walk_forward: "
+                     "the table is in-sample and its heading lies")
     print()
     if fails:
         print("=" * 78)

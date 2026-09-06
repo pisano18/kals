@@ -2838,3 +2838,90 @@ and the cost of supplying the missing side is the PREMIUM, not the notional —
 shape of a real edge and it has NOT been measured yet. It is also exactly the
 kind of too-good result that is usually an artefact of a rule I have misread.
 
+
+---
+
+## 2026-09-06 ~20:30 UTC — the live-test design workflow landed, and it moved the plan
+
+`wf_e9226d75-26f`, 4 agents, 0 errors. Several of its findings overturn things
+this project has been assuming.
+
+### 1. THERE IS A $1.00 MINIMUM PAYOUT PER PROGRAMME. The tiny test is dead.
+Verbatim from two first-party Kalshi help pages. A programme is ONE market for
+ONE 15-minute window. Replayed over **4,067 market-windows**, a 1-contract
+two-sided quote earns **$0.037** and cleared $1.00 **zero times (0.0%)**.
+
+This is not the cent-rounding question I had been carrying as an open item —
+it is a floor two orders of magnitude higher, and it invalidates the whole
+"place one contract and read the credit" plan. **A 1-contract live test on
+production would cost money and measure nothing.**
+
+Smallest size that reliably pays: **S=50 per side on one Coin Race market**
+(91.2% of programmes pay ≥$1.00 on HYPE; S=40 → 84.1%, S=30 → 66.5%).
+The floor deletes 41.7% of the modelled rebate at S=25, 8.9% at S=50, 1.9% at
+S=100.
+
+### 2. THE 2× AMBIGUITY IS RESOLVED. There is no 2×.
+"Your share of the yes side **plus** your share of the no side" —
+`Sum(y+n)/(2N)` is identically the mean of `(y+n)/2`. **The average
+implementation was exactly the rule all along.** Every figure that carried the
+"could double" caveat should drop it. This closes an open item that has been
+flagged since the first LIP writeup.
+
+### 3. Coin Race is `linear_cent`, and the modelled share is 11.80%, not 12.55%.
+Confirms the earlier retraction and supersedes the 12.55% figure that some
+agents were briefed with. Agents briefed on 12.55% were wrong in OUR FAVOUR.
+
+### 4. A HARD BLOCKER NOBODY HAD FOUND: the money is on the wrong shard.
+Coin Race is `exchange_index: 2` ("Crypto"). The production balance breakdown
+reads `{index 0: $0.0047, index 1: $0.0000, index 2: $0.0000, index 3: $0.0000}`.
+**Shard 2 holds nothing, so every Coin Race order would be rejected outright**,
+regardless of eligibility or strategy. This is checkable in one call and had
+never been checked.
+
+### 5. `netting_enabled` / "Collateral Return" must be OFF before the first order.
+It locks per event on the first order placed and **cannot be changed after**.
+With it on, positions may be unsellable, which breaks any stop condition.
+
+### 6. Qualification rate disagreement inside our own files.
+The workflow measures `q = 65.5%` mean / 70.7% median over 4,067
+market-windows. `REBATE_RISK.md` says **26.0%**. Traced to that pipeline
+reporting exact zeros where the book was demonstrably full — the signature of
+a missed opening snapshot. **NOT REPAIRED. Do not quote either number until
+one of them is fixed.**
+
+### 7. Replay was validated against the live book
+405 live orderbook polls: median depth error 0.0 contracts, median side-score
+relative error 0.00%, reference-price agreement 98.0%. The reconstruction is
+sound; what remains unvalidated is our *share* once we are in the book.
+
+---
+
+## Same session — `ordercli.py` had the WRONG ENDPOINT and a guessed body
+
+Two real bugs, both found before any send, neither by inspection:
+
+1. **`POST /portfolio/events/orders` does not exist.** Measured on demo:
+   `GET /portfolio/events/orders` → **404 page not found**;
+   `GET /portfolio/orders` → **200**. Fixed to `/portfolio/orders`.
+   *Flagged, unresolved:* the live-test workflow independently recommends
+   `DELETE /portfolio/events/orders` for cancellation. One of the two is
+   wrong; my probe is a direct measurement and its claim is not sourced, but a
+   method-specific router could make both true. **Verify before relying on
+   the cancel path.**
+2. **The body used `side: "bid"/"ask"` and a bare `price`.** Those field names
+   appear nowhere in the operator's own order records, which the exchange
+   itself emitted and which use `action: "buy"`, `side: "yes"/"no"`,
+   `type: "limit"`, `yes_price_dollars`. Rebuilt to match. No OpenAPI spec is
+   reachable to confirm (checked seven paths on demo and production, all 404),
+   so **the shape is still inferred and the first POST is how we learn it.**
+3. The sign-off token hashed a wall-clock `client_order_id`, so this session
+   and the operator could never compute the same token — the approval had to
+   be relayed by hand. Added `--client-id`. The token still binds ticker,
+   side, price, count and environment.
+
+Self-test passes with eight rails refusing, including two new ones: `type`
+must be `limit` and `action` must be `buy`.
+
+**Demo remains unable to test the money.** Demo `/incentive_programs` carries
+`discount_factor_bps: 1` (production: 5000) and `end_date: 2026-07-30`.
