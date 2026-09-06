@@ -1,0 +1,67 @@
+  book: 6,549,810 market-seconds over 7,941 markets from 11 cached day(s)
+        top of book from the rebuilt delta book 702,732, from the ticker channel 5,847,078
+  trades: 240 file(s) over the cached days
+          30,069,663 inside a book window; 13,861,494 exactly at the touch (46.1%); 28,827,212 kept within 6c
+          contracts: 1,882,181,038 in a window, 752,095,427 at the touch (40.0%)
+          dropped: outside a window 682,118, no touch that second 1,842, more than 6c out 1,242,451, ticker absent from the book 2,466,745
+          sub-cent print prices (rounded to the book grid): 8,577,354
+          at-touch contracts by tick zone: 598,293,195 on the exact 1c grid (10c-90c), 153,802,231 in the 0.1c zone (20.4%)
+          the 0.1c zone is EXCLUDED from the headline: the
+          cached book rounds those prices to whole cents, so a
+          print up to 0.5c away would read as at the touch.
+
+==============================================================================
+BENCHMARK: what EVERY at-touch fill earns, exact-1c grid
+==============================================================================
+  per PRINT    +0.781c  t 7.73  MDE 0.198  prints 10,672,189  closes 883
+  per CONTRACT +0.774c  t 5.74  MDE 0.265  contracts 598,293,195  closes 883
+  informed.py, at-touch, per print, ALL prices: +0.48c t=6.4
+
+==============================================================================
+THE NO-CAMP BOUND -- any fill sends us to the back of the queue
+==============================================================================
+  883 closes, 86.9 closes/day
+  S          contracts contracts/day        $/day              95% bootstrap  verdict
+  1            391,555        38,553          294   [      +205,       +382]  PASS
+        per contract +0.819c  t 6.94  MDE 0.232  closes 883
+        concentration  top 5 7%  top 10 14%  top 25 31%   drop top 10 -> $257/day
+  10         2,748,398       270,611         2201   [     +1521,      +2871]  PASS
+        per contract +0.899c  t 6.80  MDE 0.259  closes 883
+        concentration  top 5 8%  top 10 14%  top 25 31%   drop top 10 -> $1914/day
+  50         7,528,235       741,241         6188   [     +4163,      +8225]  PASS
+        per contract +0.949c  t 6.50  MDE 0.286  closes 883
+        concentration  top 5 9%  top 10 16%  top 25 35%   drop top 10 -> $5235/day
+  100       10,813,341     1,064,698         8170   [     +5088,     +11257]  PASS
+        per contract +0.910c  t 5.83  MDE 0.306  closes 883
+        concentration  top 5 11%  top 10 20%  top 25 41%   drop top 10 -> $6646/day
+  500       21,474,860     2,114,447        12621   [     +5210,     +20086]  PASS
+        per contract +0.765c  t 4.17  MDE 0.360  closes 883
+        concentration  top 5 17%  top 10 30%  top 25 64%   drop top 10 -> $8958/day
+  net position left at settlement per market, S=50: median 73 p90 354 p99 1142 max 2576
+
+==============================================================================
+WHERE THE MONEY COMES FROM, S=50, exact-1c grid, camping allowed
+==============================================================================
+  total $114663 on 12,246,316 filled contracts (0.9363c per contract, volume weighted)
+
+  by TIME TO CLOSE
+  tau               contracts      share            $   c/contract
+  <=30s                 3,032       0.0%          105        3.458
+  31-60s              125,042       1.0%          802        0.641
+  61-180s           1,056,219       8.6%        15001        1.420
+  181-420s          3,224,414      26.3%        11022        0.342
+  421-900s          7,837,607      64.0%        87734        1.119
+
+  by FILL PRICE
+  price             contracts      share            $   c/contract
+  1-10c               287,947       2.4%         1481        0.514
+  11-25c            2,299,001      18.8%        26058        1.133
+  26-45c            2,998,648      24.5%        32426        1.081
+  46-55c            1,486,438      12.1%        15922        1.071
+  56-75c            2,868,586      23.4%        19618        0.684
+  76-90c            2,305,694      18.8%        19157        0.831
+
+  per-close correlation, money vs at-touch volume   -0.097
+  per-close correlation, money vs contracts filled  -0.003
+  closes 883  mean $129.86  median $135.16  profitable 62.2%
+  per close  p10 $-552.7  p25 $-199.9  median $135.2  p75 $481.5  p90 $825.9   worst $-2648  best $1958

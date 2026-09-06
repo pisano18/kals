@@ -109,3 +109,43 @@ THE SAME RUN WITH THE 0.1c TICK ZONE PUT BACK IN
   zone the cached book rounds the price to a whole cent, so these
   fills include prints up to 0.5c away from the true touch and the
   fill count is an OVERSTATEMENT of unknown size.
+    S=1    contracts        735,381 (exact grid        412,373)   $/day      +320
+    S=10   contracts      6,139,692 (exact grid      3,441,972)   $/day     +3125
+    S=50   contracts     22,004,415 (exact grid     12,246,316)   $/day    +11566
+    S=100  contracts     35,532,305 (exact grid     19,828,566)   $/day    +18762
+    S=500  contracts     98,345,088 (exact grid     57,866,389)   $/day    +50018
+
+==============================================================================
+PLACEBO ON REAL DATA -- a quote that is never at the touch
+==============================================================================
+  quoting 1c inside the touch, S=50: 7,532,977 contracts against 12,246,316 at the touch  (61.51%)
+  quoting 2c inside the touch, S=50: 3,863,598 contracts against 12,246,316 at the touch  (31.55%)
+  quoting 5c inside the touch, S=50: 1,021,906 contracts against 12,246,316 at the touch  (8.34%)
+
+==============================================================================
+THE CANCEL ASSUMPTION, BOUNDED BOTH WAYS
+==============================================================================
+  The tape shows a level shrinking; it never says whether the
+  cancelled orders were in front of us or behind. `behind` is
+  the pessimistic bound, `front` the optimistic one, and the
+  headline `prorata` sits between them by construction.
+  policy       S=10 $/day     S=50 $/day    S=100 $/day
+  behind             3105          11586          18862
+  prorata            2980          11290          18385
+  front              2971          11191          18314
+
+==============================================================================
+VERDICT AGAINST THE KILL CRITERION: net +$50/day after fees at a
+size the depth measurement shows is actually fillable
+==============================================================================
+  Makers pay no fee, so gross and net are the same number here.
+  S=1     PASS   realised $309/day, 95% [+216, +402]
+  S=10    PASS   realised $2980/day, 95% [+2137, +3815]
+  S=50    PASS   realised $11290/day, 95% [+8027, +14529]
+  S=100   PASS   realised $18385/day, 95% [+12752, +24013]
+  S=500   PASS   realised $50465/day, 95% [+31693, +69153]
+
+  Fillable size: the median queue ahead of us when a trade
+  arrives is 1464 contracts and the median trade at our price is
+  10 contracts, so anything beyond that is resting behind a
+  queue this tape says is rarely cleared.
