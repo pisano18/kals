@@ -2,30 +2,93 @@
 
 ## Read these five lines first
 
-1. **THE SELF-TEST GATE IS WEAK, AND THAT WAS THE MOST IMPORTANT FINDING.**
-   Mutation-tested `pin` and `informed` the way lens 2 did `queuesim`: **pin's
-   self-test kills 33% of deliberately wrong estimators, informed's 40%.**
-   Fees abolished entirely, walk-forward replaced by in-sample fitting, MDE
-   understated 4×, the null band widened to infinity — all SURVIVED. **But I
-   then verified all five properties directly and the shipped code is correct
-   on every one.** The number stands; the *guarantee* does not.
-2. **`pin` SURVIVES and the race is answered in its favour.** Quotes live a
-   median **0.70–0.82 s**; 41–45% are never taken. And the 282 ms lag is
-   **Kalshi's ticker channel, not our overhead and not clock skew** —
-   `orderbook_delta` delivers the same information in **47 ms**. Reading from
-   there we win **~88% of races and keep ~91% of the money**.
-3. **WHAT CHANGED — the collector now records the five commodity 15-minute
-   series**, which are the ones Kalshi's incentive program actually pays for.
-   File deployed to `C:\kals`. **THE RESTART WAS BLOCKED and has not happened**
-   — see "Needs you", item 1. They trade 18:00–23:45 ET so there is margin.
-4. **WHAT NEEDS YOU** — the collector restart (blocked), and the PREREG is now
-   complete enough to sign: $250 accepted, and the MDE section you asked for is
-   in as §5b.
-5. **WHAT I COULDN'T DO** — **NEW DIRECTIONS and RISK/REWARD never ran; both
-   died on the session limit, not by my choice, and I failed to say so.** So did
-   the tie audit, the API job, the stage suite, relative value, early exit and
-   both adversarial passes: **10 of 17 agents across the two workflows errored
-   out.** Nothing ran twice.
+1. **THE REBATE IS REAL, LARGE, AND NOT YET MONEY.** Kalshi pays makers for
+   *resting* orders. The rule that decided it resolves in our favour: **Target
+   Size is aggregate market depth, not ours** — we don't post 1,000 to score.
+   Measured on Coin Race: **50 contracts a side = 11.6% of the side = $64/day
+   one market, $321/day across 5 coins.** What is *not* priced is the inventory
+   risk that earns it — quoting at the touch means we get filled and carry
+   position into settlement. **Do not size against this yet.**
+2. **`pin` SURVIVES, and reading the right feed makes it better.** The 282 ms
+   lag was **Kalshi's ticker channel**, not our overhead (NTP skew is −2 to
+   −6 ms, and the 100×-heavier `orderbook_delta` is 7× *faster* at 47 ms).
+   Reaction time drops ~361 ms → **~82 ms**, lifting races won **77% → 88%**.
+   Frozen into PREREG §3b.
+3. **WHAT CHANGED — two corrections of my own.** "KXDIESELD pays 7× the crypto
+   rate" was **backwards per hour** ($7.80/hr vs Coin Race's $80/hr — a reward
+   pool is meaningless without its period). And the queue simulator's
+   $195–309/day is **refuted**: a back-of-queue quote cannot earn 2× the rate
+   of the flow it stands in.
+4. **WHAT NEEDS YOU** — nothing blocking. PREREG is signable; the $250
+   drawdown clause is in and recorded as *not* binding.
+5. **WHAT I COULDN'T DO** — the rebate's fill toxicity, the last 3+3 mutation
+   survivors, early-exit modelling and risk/reward sizing are **running now**
+   in workflow `wf_a180dbd9-1ba` (7 Opus agents). Earlier, 10 of 17 agents died
+   on a session limit — named below, none silently dropped.
+
+---
+
+## THE REBATE — the best money found, and what stands between it and being real
+
+**The rule that decides everything, from Kalshi's docs, verbatim:** Target Size
+is *"the depth that must be resting on each side for a snapshot to count"* —
+**aggregate, not per participant.**
+
+| mechanic | value |
+|---|---|
+| Reference Price | walking down from best bid, first level where cumulative size hits **⅕ of target** |
+| Raw score | `size × multiplier`; 1.0 at/better than Reference, else `0.50 ^ ticks` — **halving per tick** |
+| Your share | your score ÷ total score on that side, pro rata |
+| Snapshots | 1/sec; **excluded if either side is under target** |
+| Obligations | **none** — no two-sided, max-spread or uptime requirement |
+| Eligibility | **verified SSN** above IRS thresholds; non-US excluded |
+
+**`period_reward: 200000` = $20 per market per 15-minute window.**
+
+Measured on 795 Coin Race markets / 276,600 reconstructed market-seconds:
+
+| | |
+|---|---|
+| snapshots qualifying | **28.9%** (71% of the pool is never paid to anyone) |
+| median resting depth | **1,100** yes / **1,004** no vs a **1,000** target |
+| our slice at 50/side | **11.57%** → **$64/day** one market, **$321/day** × 5 coins |
+
+Median depth sitting *exactly* on target is what it looks like when makers
+quote precisely enough to qualify and no more.
+
+**Artefact check** (the slice is `S/(total+S)`, so a book missing orders
+inflates it): against `ticker`'s own top-of-book sizes — a different feed
+computed by the exchange — agreement within 2% on **78.8% of bids, 92.0% of
+asks, median difference exactly 0.0**. But **19.1% of seconds have the bid
+>10% short**, so treat these as an upper-ish estimate.
+
+**Unpriced, and it is the whole risk:** to earn this we rest at the touch, so
+we *will* be filled and carry inventory into a 15-minute settlement. That is an
+unhedged directional bet the rebate is paying us to take. **Being measured now.**
+
+### Ranking the families by $/HOUR — my earlier ranking was backwards
+
+| family | $/hr per market | open | $/hr family |
+|---|---|---|---|
+| **KXCRYPTOLEAD15M** | **$80.00** | 5 | **$400** |
+| 5× commodity 15M | **$80.00** | 1 ea | **$400** combined |
+| KXTTELITEMATCH | $13.33 | 6 | $80 |
+| KXDIESELD | $7.80 | 1 | $7.80 |
+| KXSOFRD | $0.83 | 7 | $5.83 |
+
+A 15-minute market's whole life is one period, so a $20 pool is **$80/hour**;
+an 18-hour market's $140 pool is **$7.80/hour**. **The five commodity series
+added to the collector today are exactly the right ones.** No further collector
+change is needed. The gas families hold the largest total pool (~$1,280/hr) but
+across 204 markets with a 1,000 target each — uncoverable at $1,000.
+
+### A measurement I threw away
+
+The first run said **"NO SNAPSHOT EVER QUALIFIED — the pool is never paid to
+anyone"**, which would have killed the idea. It was my bug: `ts_ms` lives inside
+`msg` and I read it from the record's top level, so every timestamp was `None`,
+every second collapsed to 0, and 795 markets produced 795 samples. The giveaway
+was in the output and I nearly filed it as a finding.
 
 ---
 
