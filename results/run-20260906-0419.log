@@ -126,3 +126,7 @@ wrote C:\kals-repo\results\RESULTS_pin.md
 Send that file back.
 04:58:48  pin -> 15.2 KB in 220s
 04:58:48  publishing
+warning: LF will be replaced by CRLF in results/RESULTS_informed.md.
+The file will have its original line endings in your working directory
+warning: LF will be replaced by CRLF in results/RESULTS_pin.md.
+The file will have its original line endings in your working directory

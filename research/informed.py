@@ -152,7 +152,145 @@ def bucket_of(cuts, v):
     return len(cuts)
 
 
-def sweep_shape(trades, verbose=True, cap=4_000_000):
+def _iter_trade_events(data_dir, cap=4_000_000, exact=True):
+    """(ticker, instant_ms, seq, yes_price_dollars, taker_side) off the tape.
+
+    NOT via edge.load_trades. That loader goes through schema.json, which
+    pins the trade timestamp to `msg.ts` -- an integer SECOND. Grouping by a
+    whole second pools every unrelated trade on that ticker in that second
+    and calls the pile one burst. `msg.ts_ms` carries the true instant and is
+    present on 100% of the trade messages on disk; this diagnostic is the one
+    consumer that needs it, so it reads it here rather than moving the
+    timestamp every other stage is calibrated against.
+
+    exact=False reproduces the whole-second grouping deliberately, so the two
+    can be printed side by side.
+    """
+    from edge import read_jsonl_gz
+    n = 0
+    for m in read_jsonl_gz(os.path.join(data_dir, "trade", "*.jsonl.gz")):
+        d = m.get("msg") or {}
+        tk = d.get("market_ticker") or d.get("ticker")
+        if not tk:
+            continue
+        if d.get("yes_price_dollars") is not None:
+            p, scale = d.get("yes_price_dollars"), 1.0
+        else:
+            p, scale = d.get("yes_price"), 100.0
+        if p is None:
+            continue
+        ts_ms, ts = d.get("ts_ms"), d.get("ts")
+        t = ts_ms if (exact and ts_ms is not None) else \
+            (None if ts is None else int(ts) * 1000)
+        if t is None:
+            continue
+        try:
+            p = float(p) / scale
+        except (TypeError, ValueError):
+            continue
+        yield (tk, int(t), m.get("seq"), p,
+               str(d.get("taker_side", "")).lower())
+        n += 1
+        if n >= cap:
+            return
+
+
+def sweep_stats(events):
+    """Group trades by (ticker, instant) and describe the SHAPE of the groups.
+
+    The share of multi-price groups is not evidence of anything on its own.
+    At whole-second resolution unrelated trades pile into one group and that
+    share inflates without a single sweep being involved -- which is exactly
+    how "59.0% of same-instant groups, median 8 legs" was produced.
+
+    What separates a swept book from a coincidence does not involve the clock
+    at all. A sweep's legs are ONE taker side walking CONSECUTIVE price levels
+    away from the touch, printed back to back. Independent trades that merely
+    share a timestamp scatter: mixed sides, non-monotone prices, other
+    tickers' prints interleaved in the sequence numbers. So the fraction of
+    multi-price groups that are single-sided AND monotone is decisive at any
+    resolution, and the timestamp is only corroboration.
+    """
+    groups = defaultdict(list)
+    n = 0
+    for (tk, t, seq, p, side) in events:
+        groups[(tk, t)].append((seq, p, side))
+        n += 1
+    multi = [v for v in groups.values() if len(v) > 1]
+    mpx = [v for v in multi if len(set(round(x[1], 6) for x in v)) > 1]
+    one_side = mono = sided_mono = dir_ok = contig = 0
+    for v in mpx:
+        v = sorted(v, key=lambda x: (x[0] if x[0] is not None else 0))
+        px = [x[1] for x in v]
+        sides = set(x[2] for x in v if x[2])
+        up = all(b >= a for a, b in zip(px, px[1:]))
+        down = all(b <= a for a, b in zip(px, px[1:]))
+        single = len(sides) == 1
+        if single:
+            one_side += 1
+        if up or down:
+            mono += 1
+        if single and (up or down):
+            sided_mono += 1
+            # a YES taker eats ascending asks; a NO taker walks the yes
+            # price DOWN. Either is a book being swept; a mismatch is not.
+            s = next(iter(sides))
+            if (s == "yes" and up) or (s == "no" and down):
+                dir_ok += 1
+        sq = [x[0] for x in v if x[0] is not None]
+        if len(sq) == len(v) and sq and (max(sq) - min(sq) + 1) == len(sq):
+            contig += 1
+    return {"trades": n, "groups": len(groups),
+            "single": len(groups) - len(multi),
+            "multi_same_px": len(multi) - len(mpx), "multi_px": len(mpx),
+            "one_side": one_side, "mono": mono, "sided_mono": sided_mono,
+            "dir_ok": dir_ok, "contig": contig,
+            "legs": sorted(len(v) for v in mpx)}
+
+
+def adjacent_control(events, sizes, seed=20260906):
+    """THE NULL for the shape test: trades adjacent in time, NOT simultaneous.
+
+    Takes runs of consecutive trades on one ticker, drawn to the same length
+    distribution as the real multi-price groups, and discards any run whose
+    members all share an instant. If the shape test is measuring "a book
+    being walked" it must go quiet here; if it stays high, it is measuring
+    nothing more than that a busy book trends, and the sweep claim dies with
+    it. Each run is relabelled to its own synthetic instant so the identical
+    grouping code scores it.
+    """
+    rnd = random.Random(seed)
+    buf = defaultdict(list)
+    want = {}
+    gid = 0
+    if not sizes:
+        return
+    for (tk, t, seq, p, side) in events:
+        if tk not in want:
+            want[tk] = sizes[rnd.randrange(len(sizes))]
+        buf[tk].append((t, seq, p, side))
+        if len(buf[tk]) >= want[tk]:
+            grp = buf[tk]
+            if len(set(x[0] for x in grp)) > 1:      # not simultaneous
+                gid += 1
+                for (t_, seq_, p_, side_) in grp:
+                    yield (tk, -gid, seq_, p_, side_)
+            buf[tk] = []
+            want[tk] = sizes[rnd.randrange(len(sizes))]
+
+
+def sweep_verdict(s):
+    """PER-LEVEL is claimed off the SHAPE of the groups, never off a count."""
+    m = s["multi_px"]
+    return (m > 1000 and s["sided_mono"] >= 0.90 * m
+            and s["contig"] >= 0.90 * m and s["dir_ok"] >= 0.80 * m)
+
+
+def _pct(a, b):
+    return 100.0 * a / max(1, b)
+
+
+def sweep_shape(data_dir, verbose=True, cap=10_000_000):
     """Does Kalshi report a sweep as ONE print, or one print PER LEVEL?
 
     THE ENTIRE MAKER VERDICT TURNS ON THIS AND NOTHING ELSE.
@@ -163,55 +301,83 @@ def sweep_shape(trades, verbose=True, cap=4_000_000):
     the exchange prints it:
 
       PER LEVEL   the touch leg is its own print and lands in `at-touch`,
-                  so the at-touch P&L (+0.47c) already includes sweep legs
+                  so the at-touch P&L (+0.48c) already includes sweep legs
                   and stands as measured.
       ONE PRINT   the sweep appears once at its average price, out in the
                   -out buckets, and the touch leg is INVISIBLE. A touch
                   maker eats it at the touch price, and the volume-weighted
                   result is about -0.42c. Negative.
 
-    +0.47c and -0.42c is the difference between a strategy and nothing, and
-    it is decided by a reporting convention rather than by anything about the
-    market. So: count trades sharing an exact timestamp on one ticker, and
-    look at whether their prices differ. Bursts of same-instant prints at
-    DIFFERENT prices are per-level reporting; single prints are not.
+    The first version counted trades sharing a timestamp and took that
+    timestamp from edge.load_trades, which reads `msg.ts` -- an integer
+    SECOND (verified on disk: ts == floor(ts_ms/1000) on 4,168,479 of
+    4,168,479 trades). So "same instant" meant "same second", and the 59.0%
+    it reported is what a busy book produces from independent trades alone.
+
+    The count is now a description. The claim rests on the shape of the
+    groups -- single-sided AND monotone, walking the taker's own direction,
+    over consecutive exchange seq -- which does not reference the clock, is
+    reported at BOTH resolutions, and is scored against a null of trades
+    that are adjacent in time but not simultaneous.
     """
-    same_ts = defaultdict(list)
-    n = 0
-    for tk, tl in trades.items():
-        for (t, p_, sz, side) in tl:
-            n += 1
-            if n > cap:
-                break
-            same_ts[(tk, round(float(t), 3))].append(float(p_))
-        if n > cap:
-            break
-    multi = [v for v in same_ts.values() if len(v) > 1]
-    multi_px = [v for v in multi if len(set(round(x, 6) for x in v)) > 1]
-    lone = len(same_ts) - len(multi)
-    if verbose:
-        print("\n" + "=" * 78)
-        print("HOW A SWEEP IS PRINTED -- the fact the maker verdict rests on")
-        print("=" * 78)
-        print(f"  {n:,} trades in {len(same_ts):,} (ticker, instant) groups")
-        print(f"    single print at that instant      {lone:>12,}"
-              f"  ({100.0 * lone / max(1, len(same_ts)):.1f}%)")
-        print(f"    several prints, SAME price        "
-              f"{len(multi) - len(multi_px):>12,}")
-        print(f"    several prints, DIFFERENT prices  {len(multi_px):>12,}"
-              f"  ({100.0 * len(multi_px) / max(1, len(same_ts)):.1f}%)")
-        if multi_px:
-            sz = sorted(len(v) for v in multi_px)
-            print(f"    legs per multi-price group: median "
-                  f"{sz[len(sz) // 2]}, max {sz[-1]}")
-        print("\n  MANY multi-price groups => PER-LEVEL reporting => the")
-        print("  touch leg of every sweep is already inside `at-touch`, and")
-        print("  the at-touch maker P&L stands as measured.")
-        print("  NEAR ZERO => one print per sweep => the touch leg is hidden")
-        print("  in the -out buckets, a touch maker eats it unpriced, and")
-        print("  the at-touch number is an overstatement.")
-    return {"groups": len(same_ts), "multi_price": len(multi_px),
-            "single": lone}
+    ms = sweep_stats(_iter_trade_events(data_dir, cap, exact=True))
+    sec = sweep_stats(_iter_trade_events(data_dir, cap, exact=False))
+    ctl = sweep_stats(adjacent_control(
+        _iter_trade_events(data_dir, cap, exact=True), ms["legs"]))
+    if not verbose:
+        return ms, sec, ctl
+    print("\n" + "=" * 78)
+    print("HOW A SWEEP IS PRINTED -- the fact the maker verdict rests on")
+    print("=" * 78)
+    print(f"  {ms['trades']:,} trades\n")
+    hdr = f"  {'':<34}{'ts_ms':>14}{'whole second':>14}{'CONTROL':>14}"
+    print(hdr)
+    print(f"  {'':<34}{'(true instant)':>14}{'(msg.ts)':>14}"
+          f"{'(adjacent)':>14}")
+    print("  " + "-" * 74)
+    rows = [("groups", "groups", None), ("trades per group", None, "tpg"),
+            ("multi-price groups", "multi_px", None)]
+    print(f"  {'groups':<34}{ms['groups']:>14,}{sec['groups']:>14,}"
+          f"{ctl['groups']:>14,}")
+    print(f"  {'trades per group':<34}"
+          f"{ms['trades'] / max(1, ms['groups']):>14.2f}"
+          f"{sec['trades'] / max(1, sec['groups']):>14.2f}"
+          f"{ctl['trades'] / max(1, ctl['groups']):>14.2f}")
+    print(f"  {'multi-price groups':<34}{ms['multi_px']:>14,}"
+          f"{sec['multi_px']:>14,}{ctl['multi_px']:>14,}")
+    print(f"  {'  as % of all groups':<34}"
+          f"{_pct(ms['multi_px'], ms['groups']):>13.1f}%"
+          f"{_pct(sec['multi_px'], sec['groups']):>13.1f}%"
+          f"{_pct(ctl['multi_px'], ctl['groups']):>13.1f}%")
+    print("\n  SHAPE of those multi-price groups -- no clock involved:")
+    for lbl, k in (("single-sided", "one_side"),
+                   ("monotone price ladder", "mono"),
+                   ("single-sided AND monotone", "sided_mono"),
+                   ("  ...and walking taker's way", "dir_ok"),
+                   ("consecutive exchange seq", "contig")):
+        print(f"  {lbl:<34}"
+              f"{_pct(ms[k], ms['multi_px']):>13.1f}%"
+              f"{_pct(sec[k], sec['multi_px']):>13.1f}%"
+              f"{_pct(ctl[k], ctl['multi_px']):>13.1f}%")
+    if ms["legs"]:
+        lg = ms["legs"]
+        print(f"\n  legs per multi-price group (ts_ms): median "
+              f"{lg[len(lg) // 2]}, max {lg[-1]}")
+    print()
+    if sweep_verdict(ms):
+        print("  PER LEVEL. Same-instant multi-price prints are one-sided")
+        print("  monotone ladders over consecutive seq -- a book being")
+        print("  walked. The control, built from trades that are merely")
+        print("  adjacent, does not have that shape, so the test is reading")
+        print("  sweep structure and not just a trending book. The touch leg")
+        print("  of a sweep is its own print, is already inside `at-touch`,")
+        print("  and the at-touch maker P&L stands as measured.")
+    else:
+        print("  NOT ESTABLISHED. The multi-price groups do not have the")
+        print("  shape of a swept book, so the touch leg may be hidden in")
+        print("  the -out buckets and the at-touch figure would then be an")
+        print("  overstatement. The maker verdict cannot be read.")
+    return ms, sec, ctl
 
 
 def measure(quotes, trades, markets, outcome, verbose=False,
@@ -618,6 +784,86 @@ def selftest():
         print("    strictly-before holds for every trade")
     except AssertionError as e:
         fails.append(str(e))
+    # ---- 5. the sweep diagnostic must not be fooled by a whole second ----
+    print("\n  A tape with NO sweeps -- unrelated one-off trades scattered")
+    print("  through each second at different prices. Pooling them into")
+    print("  whole seconds inflates the multi-price COUNT enormously,")
+    print("  which is what the first version read PER LEVEL off. Neither")
+    print("  grouping may return PER LEVEL: there are no sweeps to find.")
+    rnd5 = random.Random(11)
+    flat = []
+    for k in range(4000):
+        base = 1767225600000 + k * 1000
+        for j in range(6):          # 6 unrelated trades inside one second
+            flat.append((f"KXTEST-{k % 50}", base + rnd5.randrange(1000),
+                         len(flat), round(rnd5.uniform(0.20, 0.80), 2),
+                         rnd5.choice(("yes", "no"))))
+    s_ms = sweep_stats(flat)
+    s_sec = sweep_stats([(tk, (t // 1000) * 1000, q, p, sd)
+                         for (tk, t, q, p, sd) in flat])
+    print(f"    true instant: {s_ms['multi_px']:,} multi-price groups, "
+          f"verdict {'PER LEVEL' if sweep_verdict(s_ms) else 'not established'}")
+    print(f"    whole second: {s_sec['multi_px']:,} multi-price groups, "
+          f"verdict {'PER LEVEL' if sweep_verdict(s_sec) else 'not established'}")
+    if sweep_verdict(s_ms):
+        fails.append("sweep_shape read PER LEVEL off a tape containing no "
+                     "sweeps at all")
+    if sweep_verdict(s_sec):
+        fails.append("pooling a sweepless tape into whole seconds still "
+                     "reads PER LEVEL -- the count is being trusted again")
+    if s_sec["multi_px"] <= 4 * s_ms["multi_px"]:
+        fails.append("the whole-second fixture did not actually pool -- "
+                     "test 5 is not testing anything")
+
+    # ---- 6. a real sweep must still be FOUND ----------------------------
+    print("\n  And a tape that is nothing but sweeps must read PER LEVEL:")
+    print("  one taker walking three to five levels, per-level prints.")
+    swept = []
+    seq = 0
+    for k in range(4000):
+        t = 1767225600000 + k * 1000 + rnd5.randrange(1000)
+        side = rnd5.choice(("yes", "no"))
+        px = rnd5.uniform(0.30, 0.70)
+        for j in range(rnd5.randrange(3, 6)):
+            step = 0.01 * j * (1 if side == "yes" else -1)
+            swept.append((f"KXTEST-{k % 50}", t, seq, round(px + step, 4),
+                          side))
+            seq += 1
+        seq += rnd5.randrange(1, 4)     # gap BETWEEN sweeps, not inside one
+    s_sw = sweep_stats(swept)
+    print(f"    {s_sw['multi_px']:,} multi-price groups, "
+          f"single-sided AND monotone "
+          f"{100.0 * s_sw['sided_mono'] / max(1, s_sw['multi_px']):.0f}%, "
+          f"seq-contiguous "
+          f"{100.0 * s_sw['contig'] / max(1, s_sw['multi_px']):.0f}%, "
+          f"verdict {'PER LEVEL' if sweep_verdict(s_sw) else 'not established'}")
+    if not sweep_verdict(s_sw):
+        fails.append("sweep_shape cannot recognise a tape made entirely of "
+                     "per-level sweeps")
+
+    # ---- 7. the control must not contain a single simultaneous group ----
+    print("\n  The shape test's null is groups of ADJACENT trades. If it")
+    print("  ever emits a genuinely simultaneous group it is scoring real")
+    print("  sweeps as its own control and would validate anything.")
+    seen, bad7 = 0, 0
+    byg = defaultdict(list)
+    for (tk, gid, q, p, sd) in adjacent_control(swept, s_sw["legs"]):
+        byg[(tk, gid)].append(q)
+    real = {}
+    for (tk, t, q, p, sd) in swept:
+        real[q] = t
+    for k, qs in byg.items():
+        seen += 1
+        if len(set(real[q] for q in qs)) == 1:
+            bad7 += 1
+    print(f"    {seen:,} control groups, {bad7} of them simultaneous")
+    if seen < 100:
+        fails.append("the shape-test control produced almost no groups -- "
+                     "it is not a null, it is empty")
+    if bad7:
+        fails.append(f"{bad7} control groups are genuinely simultaneous -- "
+                     "the null contains the thing it is controlling for")
+
     print()
     if fails:
         print("=" * 78)
@@ -628,8 +874,9 @@ def selftest():
         return False
     print("=" * 78)
     print("SELF-TEST PASSED -- silent on nothing, finds a planted tail in")
-    print("the right bucket, immune to volatility clustering, and anchored")
-    print("strictly before the trade.")
+    print("the right bucket, immune to volatility clustering, anchored")
+    print("strictly before the trade, and reads the sweep convention off")
+    print("the shape of the prints rather than off a pooled second.")
     print("=" * 78)
     return True
 
@@ -667,7 +914,7 @@ def main():
     print(f"  {sum(len(v) for v in trades.values()):,} trades, "
           f"{len(quotes):,} markets with quotes, "
           f"{len(markets):,} with settlements")
-    sweep_shape(trades)
+    sweep_shape(a.data)
     tables, used, skipped, sizes = measure(quotes, trades, markets,
                                            outcome_of, verbose=True)
     print(f"\n  {used:,} trades measured, {skipped:,} skipped "

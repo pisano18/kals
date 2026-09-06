@@ -49,6 +49,90 @@ believing any of this.
 
 ---
 
+## 2026-09-06 (later still) — the sweep question is ANSWERED, but the test
+## that answered it was broken and was about to be right by accident
+
+### The answer: PER LEVEL. The maker verdict's premise holds.
+
+    12,000,000 trades, grouped at the TRUE instant (msg.ts_ms)
+      675,193 groups of same-instant prints at DIFFERENT prices
+        one taker side                    96.7%
+        monotone price ladder             99.6%
+        ladder walks the taker's way      96.6%
+        consecutive exchange seq          99.8%
+
+Same-instant multi-price prints are one-sided monotone ladders over
+consecutive sequence numbers. That is a book being walked, not trades
+coinciding. **Kalshi prints a sweep per level**, so the touch leg of every
+sweep is its own print, is already inside `at-touch`, and **+0.47c stands on
+this axis.** The -0.42c branch is closed. Also checked: `is_block_trade` is
+false on 1,255,096 of 1,255,096 trades, so negotiated blocks cannot be
+manufacturing the ladders.
+
+### But `sweep_shape()` was measuring the wrong thing entirely
+
+It grouped trades by `round(t, 3)` and took `t` from `edge.load_trades`,
+which reads `msg.ts` -- an **integer second**. So "trades sharing an exact
+instant" was in fact "every trade on that ticker anywhere in that second",
+and the multi-price share it reports is pooling, not sweeps:
+
+    multi-price share of groups     whole second  57.2%
+                                    true instant  10.7%     5.6x inflation
+
+The old code would have declared PER LEVEL off a tape with no sweeps in it
+at all -- the sweepless fixture now in the self-test pools to 4,000
+multi-price groups from 56. The verdict was going to be right, and it was
+going to be right by luck, on the one question the handoff says the entire
+maker verdict turns on.
+
+`msg.ts_ms` is on **100%** of trade messages on disk and was never read.
+`msg.created_time` is on 0%, so the `ts or created_time` fallback in
+`load_trades` never fires.
+
+**What changed.** `sweep_shape` now reads the tape at true millisecond
+resolution through its own loader, and the claim no longer rests on a
+percentage at all -- it rests on the SHAPE of the groups (one side, monotone,
+correct direction, contiguous seq), which pooling cannot fake. Both figures
+are printed side by side. Self-test cases 5 and 6 lock it: a sweepless tape
+must not read PER LEVEL under either grouping, and an all-sweeps tape must.
+Change is confined to `research/informed.py`; nothing else calls it, and the
+return value was never used, so no other number moves.
+
+### SEPARATE and UNRESOLVED: the same truncation is aging every reference quote
+
+This is not the sweep question and it is not fixed. `schema.json` pins
+`ts -> msg.ts` for **both** channels; `load_quotes` then does
+`int(round(t))`. Both sides of the at-touch classification are therefore
+snapped to whole seconds, and `measure()`'s strictly-earlier rule cannot see
+inside one. Measured on 251,526 trades over three hours:
+
+    true age of the reference quote     p25    median    p75   >2s old
+      second stamps (what runs today)  1.39s    1.75s   2.17s    34.2%
+      true ms stamps                   0.34s    0.65s   1.01s    14.1%
+
+The `filldepth2s/at-touch` row -- the one that produced +0.47c -- is defined
+by "reference quote at most 2s old". On second stamps a quote the code
+believes is inside 2s is typically **1.4-2.2s old in truth**, and a third of
+trades breach the bar the filter is trying to enforce. The whole at-touch
+question is about sub-second adverse selection, and it is being decided
+against a median 1.75s-stale quote.
+
+Going to millisecond stamps would cut that to 0.65s. It is **safe on the
+look-ahead axis** -- 0.00% of selected quotes land after their trade under
+either rule, so this is staleness, not leakage. But it moves numbers in
+`calib`, `edge`, `informed` and `maker`, so it is a decision, not a cleanup,
+and it has not been made. Direction of the effect on +0.47c is unknown.
+
+### Housekeeping
+
+The informed stage running since 04:30 loaded the module before this edit, so
+its log will print the old 57.2% line. Its tables are unaffected -- sweep
+shape is a pure diagnostic whose return value nothing consumes -- so the run
+does not need restarting; only that one section of it is superseded by the
+numbers above.
+
+---
+
 ## 2026-09-06 (evening) — MARKET-MAKING IS CONFIRMED. pin's tail arrived
 ## exactly where the bound said it would.
 
