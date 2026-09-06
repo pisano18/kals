@@ -2761,3 +2761,80 @@ rules + API traps), `RUN_WHEN_HOME.md` (operator card), `research/RESULTS_R1..R6
 (earlier findings, each with its method note).
 
 **Recorders** (root): `kalshi_collector.py`, `crypto_feeds.py`, `run_all.ps1`.
+
+---
+
+## 2026-09-06 ~20:15 UTC — the cheap-pool finding, and the demo order that did not run
+
+### 1. DEMO ORDER: NOT SENT. Blocked by the local permission classifier.
+`ordercli.py` dry-ran clean against demo market
+`KXCRYPTOLEAD15M-26SEP061615-XRP`, 1 contract at $0.05, and printed sign-off
+token `3d9370ec65771595`. The `--live` invocation was **refused by Claude
+Code's auto-mode classifier**, not by Kalshi. Nothing was transmitted. The
+place→rest→observe→cancel lifecycle is therefore STILL UNPROVEN. The operator
+must run the command by hand (see results/OVERNIGHT.md) or grant the rule.
+
+### 2. ELIGIBILITY GATE: partially closed, and it is NOT a blocker.
+Read-only probe of the PRODUCTION account:
+- `/portfolio/balance` → 200, `balance_dollars: "0.0047"`
+- `/portfolio/fills`, `/portfolio/settlements`, `/portfolio/orders` → all 200
+  with real historical records (fills from 2026-08-23, settlement fees paid)
+- `/portfolio/deposits` → 200, real deposits, **with a fee**: 1021c deposited
+  on a 20c fee, 1939c on 38c ≈ **1.96% deposit cost**
+- There is **no endpoint that reports LIP eligibility**. `/users/self`,
+  `/portfolio/incentive_payouts`, `/portfolio/rewards`, `/portfolio/credits`
+  all 404 — they do not exist, as distinct from being refused.
+
+So eligibility cannot be confirmed by API. What CAN be said: the account has
+completed real funded trades on a CFTC-regulated venue, which is not possible
+without completed KYC. That is an inference, labelled as one. **The only way
+to settle it is to earn a rebate and look for the credit.**
+
+### 3. THE CHEAP POOLS. Five families pay Coin Race money at a THIRD of the size.
+`target_size_fp` is **not 1000 everywhere** — every share figure this project
+has produced assumed it was.
+
+| family | pool | target | window | $/hr while live | $/hr per 100 of target |
+|---|---|---|---|---|---|
+| KXCRYPTOLEAD15M | $20 | **1000** | 15 min | $80 × 5 concurrent = $400 | 8.00 |
+| KXGOLD15M | $20 | **300** | 15 min | $80 | **26.67** |
+| KXSILVER15M | $20 | **300** | 15 min | $80 | **26.67** |
+| KXWTI15M | $20 | **300** | 15 min | $80 | **26.67** |
+| KXNATGAS15M | $20 | **300** | 15 min | $80 | **26.67** |
+| KXCOPPER15M | $20 | **300** | 15 min | $80 | **26.67** |
+
+**3.33× cheaper per unit of resting depth than Coin Race.**
+
+### 4. …but they run a SIX-HOUR session, not 24 hours.
+Queried by `min_close_ts`: the only commodity windows in the last 12h close
+between **18:15 and 00:00 ET** — exactly 24 windows, one market at a time.
+So the family is worth `24 × $20 = $480/day advertised`, not $1,920. Across
+five families **$2,400/day advertised**, versus Coin Race's verified $9,600.
+
+### 5. AND THEY ARE ALREADY BEING PAID — more reliably than Coin Race.
+| family | programmes | paid | paid % |
+|---|---|---|---|
+| KXGOLD15M | 2,420 | 2,381 | **98.4%** |
+| KXSILVER15M | 2,420 | 2,380 | **98.3%** |
+| KXWTI15M | 2,420 | 2,380 | **98.3%** |
+| KXCOPPER15M | 642 | 618 | 96.3% |
+| KXNATGAS15M | 642 | 616 | 96.0% |
+| KXCRYPTOLEAD15M | 6,385 | 5,507 | 86.2% |
+
+This CUTS AGAINST the "empty space" hope: a pool paying 98% of the time is
+being captured by somebody. **UNRESOLVED AND IMPORTANT:** whether
+`paid_out: true` means money reached a participant, or merely that the
+programme was processed. Until that is settled, every "% paid" figure in this
+project — including the $5,051,195 total — is of uncertain meaning. Testing it
+against our own book tape is the next job.
+
+### 6. The observation that may matter most, unmeasured so far
+Live Coin Race book, 2026-09-06 20:10 UTC: **ETH's yes side had 3 contracts
+resting against a target of 1000**, while its no side had 3,086. SOL and HYPE
+yes sides sit at 5,015 and 5,615 but stacked at 1–2c. If the exclusion rule
+("either side under target → nobody paid") is real, ETH's window pays nobody,
+and the cost of supplying the missing side is the PREMIUM, not the notional —
+1,000 contracts at 2c is $20 of collateral against a $20 pool. That is the
+shape of a real edge and it has NOT been measured yet. It is also exactly the
+kind of too-good result that is usually an artefact of a rule I have misread.
+
