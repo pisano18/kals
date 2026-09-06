@@ -2,173 +2,219 @@
 
 ## Read these five lines first
 
-1. **WHAT DIED — `pin`.** Not on edge, on capacity. It is a taker; the median
-   resting size where it hits is 69 contracts and 50 fails to fill 42.3% of
-   the time. Bootstrap 95% interval on $/day at cap 50: **[+19, +48]**
-   one-per-close (FAIL) and **[+22, +76]** every-market (INCONCLUSIVE) against
-   your +$50/day threshold. Nothing clears. Drop the ten best closes and it is
-   $19–22/day — **by your own test, a lottery ticket, not an edge.**
-2. **WHAT SURVIVED — market-making,** and it is now the only live strategy.
-   +0.48c per fill, t=+6.4, on 17.1M at-touch fills; capacity was the open
-   question and the queue-position simulator (JOB A) was built to answer it.
-3. **WHAT CHANGED — I retracted my own recommendation from yesterday evening.**
-   I proposed fixing the four dead series to reach ~$65/day. The money part
-   holds; the independence part does not. Going 1.0 → 1.6 coins/close pushed
-   top-10 concentration from 45% → 56%. More series buys **leverage, not
-   diversification**, and must not be sold as a route past the threshold.
-4. **WHAT NEEDS YOU** — see "Needs you" below. Nothing is frozen; the 19-day
-   forward clock has NOT started, which is the right outcome.
-5. **WHAT I COULDN'T DO** — see "Not done, and why" at the foot. Nothing was
-   silently dropped.
-
-**Status of this file:** written after priority 1 completed, then updated as
-each overnight job landed. If a section says RUNNING or NOT REACHED, that is
-literal — it was not finished, and I have not guessed at its result.
+1. **WHAT DIED — the queue simulator's market-making number.** It said
+   $195–309/day from ONE contract resting per side. Three adversarial refuters
+   ran; **two REFUTED it, one partially.** The kill: a quote that always joins
+   the **back** of the queue was earning **2.0× the per-contract rate of the
+   flow it stands in**. A back-of-queue order's fills are a *subset* of at-touch
+   flow — that subset can earn the same or less, never double. **Do not spend
+   against that number.**
+2. **WHAT SURVIVED — `pin`, and the race question is now ANSWERED in its
+   favour.** I was wrong that it was unmeasurable. Quotes survive a **median
+   0.70–0.82 s**; 41–45% are never depleted at all. Our full reaction time is
+   **~320 ms** (282 ms feed lag + 35 ms order round-trip). **~80–85% of races
+   are winnable.**
+3. **WHAT CHANGED — the best money found tonight needs nobody to be wrong.**
+   Kalshi runs a **Liquidity Incentive Program** that pays makers for *resting*
+   orders whether or not they fill. It is live on 15-minute families, and the
+   12 crypto series this project has worked on for weeks are the **only**
+   15-minute family with **no** program at all.
+4. **WHAT NEEDS YOU** — `PREREG_pin.md` is drafted and unsigned; the incentive
+   program's pool-sharing formula needs one more check before it is money; the
+   $50 live test is designed only if you want it. See "Needs you".
+5. **WHAT I COULDN'T DO** — the race adverse-selection join was still running
+   at write time, and JOB D (full stage suite) had not started. Both named
+   below with status. Nothing was silently dropped.
 
 ---
 
-## Priority 1 — the four pre-freeze checks — COMPLETE
+## 1. THE RACE — answered, and I was wrong to call it unanswerable
 
-All four ran on cached out-of-sample cells. 20,000-rep percentile bootstrap
-over **closes**, not trades, because hundreds of trades share one settlement
-outcome.
+I said twice that the race for a stale quote could not be measured from
+recordings. That was habit, not fact. `orderbook_delta` carries **microsecond**
+timestamps, a sequence number and a signed `delta_fp` per price level, so the
+life of the exact level `pin` wants is directly reconstructable.
 
-### 1. Concentration — the headline, not a footnote
+**Quote survival, 335 of 336 `pin` entries traced, 9,569 deltas:**
 
-You were right that `t=+5.0` was flattering it. Normal-theory standard errors
-assume nothing like this distribution.
+| to fill | p10 | p25 | median | p75 | p90 | never depleted |
+|---|---|---|---|---|---|---|
+| 10 contracts | 0.058s | 0.197s | **0.777s** | 1.246s | 2.413s | 45.3% |
+| 30 contracts | 0.084s | 0.312s | **0.696s** | 1.264s | 2.323s | 43.6% |
+| 50 contracts | 0.083s | 0.310s | **0.816s** | 1.264s | 2.323s | 41.4% |
 
-| cap 50 | one-per-close | every-market |
-|---|---|---|
-| top 5 closes | 30% of the money | 41% |
-| top 10 | **45%** | **56%** |
-| top 25 | 73% | 86% |
-| closes individually profitable | 263/336 (78.3%) | 264/336 (78.6%) |
+**Our real reaction time is not 35 ms.** Measured on this box:
 
-| drop the best closes | one-per-close | every-market |
-|---|---|---|
-| drop none | $33/day | $49/day |
-| **drop top 10** | **$19/day** | **$22/day**  [+1, +40] |
-| drop top 25 | $10/day | $7/day  [−14, +24] |
+| stage | median | p75 | p90 |
+|---|---|---|---|
+| ticker websocket delivery lag (`_rx_ms − ts_ms`, n=375,927) | **282 ms** | 601 ms | 984 ms |
+| order round-trip, read-only GET × 12 | ~35 ms (min 29, max 199) | | |
+| **total** | **~320 ms** | ~640 ms | ~1.0 s |
 
-Your test was: *"if dropping ten closes takes it under $20/day, this is a
-lottery ticket and not an edge, and I want it said that way."* One-per-close
-lands at **$19/day**. **Said that way: pin is a lottery ticket.**
+Against the survival table: **87.7% of levels survive 0.25 s and 78.6% survive
+0.50 s.** So we win roughly **80–85%** of races at median latency, ~73% at p75.
 
-The mitigating fact, stated because it is true: 78% of closes are individually
-profitable, so it is not a coin flip. But the money lives in a handful of
-closes, and that is what the normal-theory `t` was hiding.
+**Caveat that cuts both ways:** the 282 ms is *our collector's* lag — it is
+gzip-compressing and writing to disk in the same process. A purpose-built order
+client would be faster by an unknown amount. That is exactly what a live test
+would measure and nothing else can.
 
-### 2. Intervals, not point estimates
+**Still running at write time:** whether the races we LOSE are the *good* ones.
+If high-edge quotes vanish fastest we keep the dross, and an 85% win rate would
+not mean 85% of the money. Result appended when it lands.
 
-| variant | cap | $/day | 95% bootstrap interval | verdict |
+## 2. `pin` — in your units, not mine
+
+`$/day at 50 contracts` was my framing and it was wrong for your capital.
+
+| rule | peak concurrent capital | $/day | % return on peak capital/day |
+|---|---|---|---|
+| tau≤20, one-per-close, cap 50 | **$49.70** | $30.22 | **67.2%** |
+| tau≤60, every-mkt, cap100/frac0.25 | $268.01 | $88.10 | 37.7% |
+
+**Risk, measured properly.** My first attempt flattered us: a close-level *iid*
+bootstrap said the 1%-worst week was **+$47**. That is an artefact — resampling
+closes independently destroys the one mechanism that makes a real bad week, a
+session where the model is wrong across many closes at once. Redone as a **block
+bootstrap over whole days**:
+
+| rule | days | negative days | worst day | mean/day |
 |---|---|---|---|---|
-| one-per-close | 25 | 17 | [+9, +25] | FAIL |
-| one-per-close | 50 | 33 | [+19, +48] | **FAIL** |
-| one-per-close | 69 | 45 | [+28, +61] | INCONCLUSIVE |
-| every-market | 25 | 26 | [+11, +39] | FAIL |
-| every-market | 50 | 49 | [+22, +76] | **INCONCLUSIVE** |
-| every-market | 69 | 64 | [+30, +99] | INCONCLUSIVE |
+| tau≤20 one, cap 50 | 10 | **1** | −$18.30 | +$30.22 |
+| tau≤60 every-mkt | 11 | **0** | +$10.47 | +$88.10 |
 
-A pass needs the **whole interval** above $50. Nothing does. cap 100 is
-recorded as **UNAVAILABLE**, not as clearing — it consumes the entire resting
-level 60–62% of the time, which assumes winning a race for a stale quote that
-this backtest cannot test.
+5-day week resampling **days**: 1%-worst **+$27**, 5%-worst **+$65**, 0.3% of
+weeks lose money. **Your $150 bad-week limit does not bind. Depth binds.**
+Stress arithmetic by hand: a flip costs ~$38 at cap 50, so $150 needs **4 flips
+in a week**; observed rate is 1 in 263 → λ≈0.7 per 185-close week → **P(≥4) ≈
+0.5%**. **But 10 days contains no crash. This measures variance, not tail.**
 
-### 3. The every-market rescue, with the identical per-market haircut
+**A better size rule was found.** Capping at a *fraction of the touch* removes
+the race assumption structurally instead of hoping:
 
-**It already carried it.** The $49/day figure is computed with
-`min(cap, depth)` applied **per market**, the same haircut as one-per-close.
-My earlier "$51/day, right at your line" was an extrapolation from the +3.95c
-per-close figure *before* the haircut; the measured post-haircut number is
-**$49/day, interval [+22, +76] — INCONCLUSIVE.** The rescue does not rescue.
+| tau≤60 every-market | $/day | 95% interval | maxDD | eats whole level |
+|---|---|---|---|---|
+| cap 50, frac 1.00 | 83 | [+40, +122] | $115 | **46%** |
+| **cap 100, frac 0.25** | **101** | **[+65, +143]** | **$51** | **0%** |
 
-Worse: per-market p25 depth is 15, so a 50-contract order fails to fill in
-roughly 31% of individual markets, and stacking markets **concentrates** the
-result rather than diversifying it (top-10 45% → 56%).
+It earns *more* because it sizes up on deep books and down on thin ones, and
+per-contract edge does not decay with depth. This is the rule in `PREREG_pin.md`.
 
-### 4. The two arithmetic reconciliations
+## 3. THE QUEUE SIMULATOR — refuted, and the refutation is the finding
 
-**Worst close −$38.65 at caps 50, 69, 100 AND 250 — not a bug, confirmed
-explicitly.** That close (`1788293700`) holds a **single** trade whose resting
-depth was **40.1 contracts** — below every cap tested. The cap never binds
-there, so raising it cannot make that particular close worse. Verified by
-printing the trade list and its depths, not by reasoning.
+JOB A built `research/queuesim.py` (self-test green, 26 checks) and reported
+market-making clearing every threshold at every size — 20 cells, 20 passes,
+$195–309/day from one contract per side. Three Opus refuters attacked it.
 
-**Fire rate: 37.2/day is correct; my 26.5 was wrong.** I had divided
-out-of-sample trades by a span that included the 150-close warmup. Measured:
+- **Lens 3 (statistics): REFUTED.** Reproduced the headline *to the cent*, then
+  killed it on weighting. The report's central artefact check compared a
+  close-clustered mean against a close-clustered population; weighted the way
+  the money is actually made — pooled, per contract — our fills earn **+0.76c
+  against a population +0.43c at S=1, and +0.94c vs +0.43c at S=50**. That is
+  **~2.0× the population rate, at every size.** A back-of-queue quote cannot do
+  that. Close-clustering is right for a *t-statistic* and wrong for a
+  *reconciliation*, and the error hid the artefact it was built to find.
+- **Lens 2 (self-test): REFUTED.** Planted 20 deliberately wrong estimators;
+  **14 passed all 26 checks**, including three that reverse or multiply the
+  headline money and one that deletes the null control. The entire cancel-policy
+  block is never executed by the self-test. It found no bug in the shipped code
+  — it found that the self-test would not tell us if there were one, which is
+  precisely what CLAUDE.md says the self-test exists for.
+- **Lens 1 (fill model): PARTIALLY REFUTED.** The fill engine survived every
+  attack, rebuilt independently on the deci-cent grid. Two of three validation
+  claims did not survive; 3–8% of the money comes from a tick zone the report
+  claimed to exclude.
 
-- 723 closes in the `tau<=20` scan over 12.2 days
-- the OOS window holds **572 available closes over 9.0 days**
-- **336 fired = 58.7% of available closes = 37.2/day**
+**Verdict: market-making is UNRESOLVED, not proven.** The +0.48c per-fill edge
+from `informed.py` is untouched by this — what is refuted is the *capacity*
+number built on top of it.
 
-A third error surfaced while reconciling: `portfolio()` assumes **96
-closes/day**, but available closes run **63.3/day** in this window. So that
-constant was wrong on two counts, not one.
+## 4. FEES AND REBATES — the best thing found tonight
 
-### The verdict this forces
+**`GET /incentive_programs` (live API call) returns a per-market, per-15-minute
+reward pool. Kalshi pays makers for RESTING orders whether or not they fill.**
 
-**`pin` is dead against your kill criteria.** It dies on capacity, not on the
-forward test — a cheaper death and an earlier one. The rule was never frozen
-and the forward clock never started; 19 days spent confirming a miss would
-have been the waste. Written into `HANDOFF.md` and `CLAUDE.md`, commit
-`1a5e9f9`.
+| family | reward/window | target size | windows/day | pool/day | already recorded? |
+|---|---|---|---|---|---|
+| `KXCRYPTOLEAD15M` (Coin Race) | $20.00 | 1,000 | ~52 | **~$5,200** | **yes** |
+| `KXGOLD15M`/`SILVER`/`WTI`/`NATGAS`/`COPPER` | $20.00 | 300 | 24 each | ~$2,400 | no |
+| `KXBTC15M` + 11 crypto siblings | **none** | — | — | **$0** | yes |
 
-The per-contract edge (+2.54c, t=+5.0 out of sample) is **not** retracted. It
-is real. It simply cannot be filled at a size that pays.
+**The twelve series this project has spent weeks on are the only 15-minute
+family with no incentive program at all.**
 
----
+This is money that does not require anyone to be wrong — you are paid for
+posting depth. **It is not yet money, and here is what stands between:** the
+pool is *shared*. $20/window is the pool, not our cut; our share depends on our
+depth against everyone else's, with a target size of 1,000 (Coin Race) or 300
+(commodities). At $1,000 of capital we cannot post 1,000 contracts. **The
+sharing formula is the next check and it decides everything.**
 
-## Priority 2–6 — overnight run
+Contradiction 3 is settled: `KXINX15M` and `KXNDQ15M` both return 200 OK.
 
-Workflow `wf_91a8161c-989`, all subagents pinned to **Opus at `max` effort** —
-no cheaper model checks an Opus result.
+## 5. CROSS-VENUE — no money, and the reason is worth knowing
 
-| # | job | status |
-|---|---|---|
-| 2 | JOB A — queue-position simulator + self-test | see below |
-| — | 3 adversarial refuters against JOB A | see below |
-| 3 | AGENT ADVERSARIAL pass 1 | see below |
-| 4 | AGENT RISK/REWARD | see below |
-| 5 | AGENT NEW DIRECTIONS | see below |
-| 6 | JOB B tie audit · JOB C API · JOB D stage suite | see below |
+**Money found: none.** Not "none reachable" — none.
 
-Individual reports land in `results/overnight/`.
+- Kalshi `KXBTC15M` ↔ Polymarket `btc-updown-15m` is a genuine same-event
+  overlap: **99.00% outcome agreement over 1,198 matched windows**, with 100%
+  of disagreements in windows moving less than $5. **You cannot legally trade
+  it from a US IP.**
+- The one legally reachable overlap (Kalshi vs Polymarket US, daily high
+  temperature) is **arbed out: mean net edge −2.53c.**
+- The apparent crypto gap **turned out to be our own data going stale**, twice,
+  in opposite directions.
 
-*(This table is rewritten with real outcomes as each job returns. Any row
-still reading "see below" with no section underneath did not finish.)*
+Two keepers: **Kalshi's REST `/markets` quote fields are stale by tens of
+seconds — wrong by up to 17 cents**, verified against Kalshi's own candlesticks
+(a hazard for any live monitoring). And **Polymarket US pays makers
+`0.0125·p·(1−p)` where Kalshi pays zero** — +0.31c per contract at 50c,
+unconditional.
+
+## 6. Bookkeeping — thresholds moved twice, loudly
+
+`CLAUDE.md` now carries three dated versions of the kill criteria with the
+reason each changed: +$50/day (original, pre-measurement) → positive with
+tolerable drawdown (revised after seeing the number) → **positive expectancy**
+(your definition of "consistently"). **No measurement was ever re-run, re-fitted
+or re-weighted. Only the question moved.** Under the final definition `pin` is a
+PASS and was all along.
+
+Also fixed: `pin.py`'s `portfolio()` hardcoded **96 closes/day**. It now uses
+the measured fire rate. That constant overstated the four published portfolio
+figures by **1.73× to 3.91×**.
 
 ---
 
 ## Needs you
 
-1. **Nothing is frozen and nothing should be.** `pin` failed before the freeze
-   step, which is the system working.
-2. **A decision once the queue simulator lands:** if market-making also misses
-   $50/day at a fillable size, both live strategies are dead, and your criteria
-   then start a 60-day clock on the search itself. That is your call, not mine.
-3. **Model/effort:** I cannot set my own. You are on Opus 5 at `max`; subagents
-   are explicitly pinned to Opus/`max` in the workflow script.
+1. **`PREREG_pin.md` — drafted, UNSIGNED, clock not started.** The survival
+   result supports signing it. §5 needs your drawdown number; my proposal is
+   $250 (≈5× observed max, ≈2.5 days of P&L).
+2. **The incentive-program sharing formula.** If our share at a few hundred
+   contracts is meaningful, this is the most reliable money on the table and it
+   points at Coin Race and the commodity 15-minute families, not at crypto.
+3. **The $50 live test.** The race is ~85% won on recordings, so it is no longer
+   *needed* to answer the question — but it is the only way to measure a real
+   order client's latency versus our collector's 282 ms. I have not designed it
+   because it is no longer the blocker. Say the word and I will.
 
 ## Not done, and why
 
-*(populated as the night resolves — a failed job honestly reported beats one
-quietly skipped)*
-
-- Cache pre-build succeeded: `rows_tau60.pkl` (169,254 rows) and
-  `depth_map.pkl` (831,100 ticker-second depth entries), so no agent needs
-  `load_quotes` and the OOM risk is removed structurally rather than by asking
-  agents to be careful.
-- One job was OOM-killed earlier in the day (two processes each holding a full
-  `load_quotes`). **The collectors were never at risk** — both sit at 13–25 MB
-  and kept writing throughout; the harness kills the largest offender, which
-  was mine. Resource protocol now written into `CLAUDE.md`.
+- **Race adverse-selection join** — running at write time; the scan re-reads 277
+  delta files. Appended when it lands.
+- **JOB D, full stage suite** — not started. It is last in the workflow by
+  design and the queue-sim refutation makes re-publishing less urgent.
+- **JOB B tie-audit, relative value, early exit, constraint audit** — agents
+  running; reports land in `results/overnight/`.
+- **The $50 live-test design** — deliberately not written; see above.
 
 ## Resource state
 
 | | |
 |---|---|
-| free disk | 52.5 GB (was 7.0 GB — your uninstall landed) |
-| free RAM | 5.0 GB of 15.8 GB after cache build |
-| `kalshi_collector.py` | **UP**, pid 2708908, since 09-04 |
-| `crypto_feeds.py` | **UP**, pid 531268, since 08-27 |
+| free disk | 52.0 GB |
+| free RAM | 3.3–3.6 GB of 15.8 GB, never below 3.3 |
+| `kalshi_collector.py` | **UP** throughout, pid 2708908, ~25 MB |
+| `crypto_feeds.py` | **UP** throughout, pid 531268, ~14 MB |
+| OOM kills tonight | 1, early, mine — two processes each holding a full `load_quotes`. Fixed structurally by pre-building shared caches. Collectors were never at risk. |
