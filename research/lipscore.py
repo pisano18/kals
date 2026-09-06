@@ -23,13 +23,27 @@ sys.path.insert(0, r"C:\Users\Joe\AppData\Local\Temp\kals-work")
 from kauth import get
 from engine import tick_at
 
+# THE TICK GRID IS PER SERIES AND THE API SAYS SO. `price_level_structure` on
+# any market object is "linear_cent" (flat 0.01 everywhere) or
+# "tapered_deci_cent" (0.001 below 0.10 and above 0.90, 0.01 between), and
+# `price_ranges` gives the steps explicitly. Measured 2026-09-06:
+#   KXCRYPTOLEAD15M  linear_cent          <- Coin Race, the rebate target
+#   KXTTELITEMATCH   linear_cent
+#   KXBTC15M/KXETH15M/KXGOLD15M/KXSILVER15M   tapered_deci_cent
+# CLAUDE.md hard rule 5 says "the tick is tapered". That is TRUE FOR THE CRYPTO
+# UP/DOWN SERIES AND NOT UNIVERSAL. Assuming it for Coin Race inflated our
+# modelled share from 11.31% to 12.55% -- an error in our own favour, which is
+# the direction that matters. Read the field; never assume the grid.
+
 TARGET = 1000.0
 DISC = 0.50
 POOL = 20.00
 
 
-def ticks_between(lo, hi):
-    """Number of TICKS from lo up to hi on the tapered grid."""
+def ticks_between(lo, hi, structure="tapered_deci_cent"):
+    """Number of TICKS from lo up to hi, on the grid the SERIES actually uses."""
+    if structure == "linear_cent":
+        return max(int(round((hi - lo) * 100.0)), 0)
     if hi <= lo:
         return 0
     n = 0

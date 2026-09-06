@@ -2,6 +2,71 @@
 
 ---
 
+## 2026-09-06 (two retractions) — the account history is the OPERATOR's own
+## retail trading, and Coin Race does NOT use a tapered tick
+
+### Retraction 1: the ledger is not evidence of anything about strategy
+
+The operator has confirmed the account's fills are **his own manual retail
+trading, a couple of tens of dollars, as a taker**. Two claims I drew from it
+are withdrawn:
+
+* **"`maker_fees_dollars: 0.000000` is first-party evidence that makers pay
+  nothing."** WRONG. Every fill was a taker fill, so that field reads zero
+  because there were no maker fills to charge. It is trivially true and proves
+  nothing about maker fee policy.
+* **"a settlement showing -$18.32 corroborates informed.py's taker-loses
+  finding."** WRONG. One manual retail trade is not evidence about market
+  structure, and I presented it as if it were.
+
+**What survives:** the fee formula check. Two fills matched
+`0.07 * p * (1-p)` to the hundredth of a cent (12.37 contracts at yes 0.16
+charged $0.116400; 0.07*0.16*0.84*12.37 = 0.116400). That is arithmetic on a
+real charge and does not depend on who traded or why.
+
+**AND IT OPENS A LOAD-BEARING QUESTION.** `CLAUDE.md` lists "makers pay no fee"
+as a CONFIRMED MECHANIC. It is confirmed only by `engine.fee_per_contract` and
+by documentation, not by any maker fill we have ever made. Secondary sources
+now suggest Kalshi charges a maker fee at roughly **a quarter of the taker
+rate** on resting orders. At p=0.50 that is **0.44c per contract against
+informed.py's +0.48c per fill** — it would eat almost the entire maker edge.
+Kalshi's own fee-schedule PDF returned HTTP 429 twice.
+**THIS IS NOW THE HIGHEST-PRIORITY OPEN QUESTION IN THE PROJECT.**
+
+### Retraction 2: I applied a tapered tick to a flat-tick market
+
+The API exposes `price_level_structure` and `price_ranges` on every market
+object — a field nobody here knew existed. Measured:
+
+    KXCRYPTOLEAD15M   linear_cent          step 0.0100 everywhere
+    KXTTELITEMATCH    linear_cent          step 0.0100 everywhere
+    KXBTC15M          tapered_deci_cent    0.0010 below 0.10, 0.0100 to 0.90
+    KXETH15M          tapered_deci_cent
+    KXGOLD15M         tapered_deci_cent
+    KXSILVER15M       tapered_deci_cent
+
+**Coin Race — the market the entire rebate thesis rests on — uses a FLAT ONE
+CENT TICK.** Yesterday I "fixed" a flat-tick bug by imposing the tapered grid,
+which raised the modelled share from **11.31% to 12.55%**. That fix was wrong
+for this series, and it was wrong **in our own favour**, which is the direction
+that matters. **The correct Coin Race share at S=50 is ~11.3%, and $348/day
+reverts to ~$319/day.**
+
+`CLAUDE.md` hard rule 5 — "the tick is tapered" — is true for the crypto
+up/down series and **is not universal**. `research/lipscore.py` now reads the
+grid from the API instead of assuming it. The commodity 15-minute series ARE
+tapered, so the tapered logic still applies there.
+
+### The pattern worth naming
+
+Both retractions are the same error: **treating a property of one part of this
+exchange as a property of the whole.** The account's taker history was read as
+evidence about makers; the crypto series' tick was read as evidence about Coin
+Race. Kalshi publishes both facts per-market in the API and neither needed to
+be assumed.
+
+---
+
 ## 2026-09-06 (ledger) — THE ACCOUNT HAS A TRADING HISTORY, and it confirms
 ## the fee formula and zero maker fees from real money
 
