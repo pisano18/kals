@@ -2,6 +2,82 @@
 
 ---
 
+## 2026-09-06 (formula verified) — I read the LIP rules verbatim at last.
+## Seven of eight confirmed, one real bug found, one 2x ambiguity unresolved.
+
+Every rebate number so far rested on a **summariser's** rendering of Kalshi's
+help page. Three "independent" estimates converged, but they all used the same
+implementation of the same second-hand formula — converging on a shared error
+is exactly what this project keeps doing. So: the rules, verbatim.
+
+### CONFIRMED, seven of eight
+
+    Target Size      "the depth that must be resting on each side for a
+                     snapshot to count"                        -> AGGREGATE, ours was right
+    Reference Price  "walking down from the best bid, the first price level
+                     at which cumulative resting size reaches one fifth of
+                     the Target Size"                          -> ours was right
+    Raw score        "Order Size x Distance Multiplier"        -> ours was right
+    Normalisation    "each order is divided by the total raw score of all
+                     qualifying orders on that side"           -> ours was right
+    Snapshots        "once per second, at a random moment within each second"
+    Exclusion        market not open, OR "resting orders must meet the Target
+                     Size on BOTH the yes side and the no side"
+    Reward           "Your Time Period Score x Time Period Reward x
+                     (non-excluded snapshots / total snapshots)"
+
+### BUG FOUND IN MY OWN CODE — the tick is TAPERED
+
+Verbatim: *"the Discount Factor raised to the number of **ticks** away."* I
+computed ticks as `(ref - price) * 100`, i.e. a 1c tick everywhere. **The tick
+on this exchange is 0.1c below 10c and above 90c** (`engine.tick_at`, and
+CLAUDE.md hard rule 5). In that zone a 1-cent gap is **ten ticks**, so the
+multiplier is `0.5^10 = 0.001`, not `0.5`.
+
+It matters because the live books stack thousands of contracts at 1-2c and the
+Reference Price often sits down there too. Measured on five live markets:
+
+    market/side    depth   ref   score FLAT   score TAPERED   share flat -> tapered
+    SOL/yes         4003  0.02       2502.0          1003.9    2.0%  ->   4.7%
+    ETH/yes         4246  0.02       2685.0          1127.0    1.8%  ->   4.2%
+    XRP/yes         3539  0.05        673.8           416.0    6.9%  ->  10.7%
+    (sides with ref above 10c are unchanged, as they must be)
+
+    mean share at S=50   11.48%  ->  12.55%   (1.09x)
+    $/day, 5 coins, after the 28.9% qualifying haircut   $319 -> $348
+
+**The error made us look WORSE, not better**, by inflating the denominator with
+junk that should score nothing. Corrected implementation is
+`research/lipscore.py`. Conservative-but-wrong is still wrong.
+
+### UNRESOLVED, AND IT IS A FACTOR OF TWO
+
+Verbatim: *"Both sides count separately. **Your snapshot score is your share of
+the yes side plus your share of the no side.**"*
+
+I implemented this as the **average** of the two sides (0.5 each). If "plus" is
+literal, every figure doubles: **$348/day becomes $697/day.**
+
+Against the literal reading: participants' scores would then sum to 2.0 per
+snapshot, so Kalshi would pay out twice the advertised pool. For it: the pool
+may simply be defined per side. **I cannot settle it from the text and I have
+not assumed it.** Everything quoted uses the conservative half.
+
+### THE TAB — deferred, deliberately, so they are not lost
+
+1. Resolve the plus-vs-average 2x. Cheapest route is a worked example in
+   Kalshi's docs or a single observed payout on a funded account.
+2. Book shape drives share 4x (4.2% to 18.3% across ten live sides measured
+   today). A rule that quotes only into favourable shapes may be worth more
+   than any other change.
+3. Early exit, to cap the -47c tail on a filled position.
+4. The unpaid-pool question: can we make a dead market qualify alone and take
+   nearly the whole pool? My first measurement of this exited empty; re-run.
+5. Table-tennis period-length disagreement: I measured 90 min, the families
+   agent measured 163 h. One of us is wrong.
+
+---
+
 ## 2026-09-06 (rebate verified) — the programme DOES pay. My "nothing has
 ## ever been paid" alarm was an unpaginated first page.
 
