@@ -2,6 +2,53 @@
 
 ---
 
+## 2026-09-06 — JUDGEMENT, NOT MEASUREMENT: confidence and capacity
+
+Everything else in this file is measured. **This section is not.** It is the
+subjective read that formed over the whole project, written down because it
+existed only in conversation and would otherwise be lost. Treat every number
+below as an opinion with a name on it, and do not cite it as a result.
+
+### Confidence that `pin` makes real money
+
+| claim | confidence |
+|---|---|
+| the arithmetic is right (the settlement average IS knowable early) | ~99% |
+| the pattern is real in the recorded tape | ~85% |
+| it still works next month | ~60% |
+| it survives live trading — latency, queue, partial fills | **~40%** |
+| it makes *meaningful* money | ~15% |
+
+**Overall: ~40% this makes real money, and if it does it is ~$10-25k/year,
+not more.** The gap between 85% and 40% is everything the tape cannot test:
+getting an order in inside the last twenty seconds, actually being filled, and
+Kalshi noticing. Those only appear with money at risk.
+
+The recommendation that follows from it: **do not scale.** If the remaining
+checks come back clean, run it live with a few hundred pounds for a fortnight.
+Reality is the only test left and it is cheap to buy.
+
+### Capacity if `pin` runs on all twelve series at once
+
+`evaluate()` takes one trade per CLOSE, which is a statistical rule, not a
+trading limit — so every table in this file measures roughly one twelfth of
+what a live book could hold. All twelve crypto series settle on the same
+quarter hour.
+
+Measured on a six-coin fixture at rho = 0.85 (`pin.py` self-test): money per
+close scaled **8.2x**, and the per-close spread scaled **5.2x** against the
+**1.9x** that independence would give.
+
+**That is leverage, not diversification.** Twelve correlated coins are twelve
+times the money AND very nearly twelve times the loss on the close that goes
+wrong. Scaling the earlier $28-69/day by the coin count suggests **$300-400/day
+territory** — but that number is an extrapolation from a fixture, not a
+measurement, and the honest version needs `run_portfolio` to actually execute
+against real data. **It never has.** Read its worst-close column before
+believing any of this.
+
+---
+
 ## 2026-09-06 (evening) — MARKET-MAKING IS CONFIRMED. pin's tail arrived
 ## exactly where the bound said it would.
 
