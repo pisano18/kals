@@ -2,6 +2,76 @@
 
 ---
 
+## 2026-09-06 (evening) — MARKET-MAKING IS CONFIRMED. pin's tail arrived
+## exactly where the bound said it would.
+
+### The sweep question is settled: Kalshi prints PER LEVEL
+
+    4,000,001 trades in 401,591 (ticker, instant) groups
+      single print at that instant          103,314   25.7%
+      several prints, SAME price             61,386
+      several prints, DIFFERENT prices      236,891   59.0%
+      legs per multi-price group: median 8, max 806
+
+**59% of same-instant groups carry different prices, median 8 legs.** So the
+touch leg of every sweep is its own print and is already inside `at-touch`.
+The at-touch maker P&L stands as measured, and the -0.42c alternative is dead.
+
+### The maker result, on 17.1 million fills
+
+    filldepth2s/at-touch   half-spread 0.49c
+      markout   0.27c @1s   0.29 @5s   0.32 @30s   0.15 @300s   0.01 @settle
+      maker net +0.22c @1s                                      +0.48c @settle
+
+    at-touch  17,139,809 trades  1,071 closes
+      taker information (mkS)  +0.02c   t=0.2    <- ZERO
+      maker P&L                +0.48c   t=6.4
+      random-sign control      -0.01c   t=-0.9   <- clean
+
+A maker resting at the touch collects 0.49c of half-spread -- exactly half the
+1c tick, as it must be -- and the takers who fill them carry **no information
+at all** (t=0.2 on seventeen million observations). The informed flow sweeps:
++8.6c at 3c+ out. That is the textbook shape and this is the first time this
+project has measured it.
+
+It also pins maker.py's error precisely: **its 0.50c capture was right.** It
+compared that capture against the ALL-FILLS markout of 0.612c when the
+at-touch population is only 0.27c. Two different populations, one comparison.
+
+**What is NOT yet known is capacity.** +0.48c is per fill; how many fills a
+real quote receives depends on queue position, and 55 contracts sit at the
+touch. That is the next build and the only thing between this and a number in
+dollars. Do not multiply 17.1M by anything.
+
+### pin: the tail arrived, and it landed inside the bound
+
+    tau <= 20s, out of sample
+      floor 0.3c  n=376  MDE 1.44c  REALISED +2.13c  t=+4.4
+        DEAR n=309 paid 97c  1 flip  bound 1.29%  breakeven 2.47%  headroom 1.9x
+      floor 0.5c  n=335  MDE 1.54c  REALISED +2.54c  t=+5.0
+        DEAR n=262 paid 96c  1 flip  bound 1.53%  breakeven 2.93%  headroom 1.9x
+      floor 1.0c  n=233  MDE 2.13c  realised +2.23c  t=+3.1
+        DEAR n=171           2 flips bound 2.92%  breakeven 2.96%  headroom 1.0x
+
+**t has risen on every single tape: 3.0, 3.7, 4.5, 4.9, now 5.0.**
+
+And the loss that had never been seen has now been seen. Last tape reported
+0 flips in 260 and a 95% upper bound of 1.15%; this one reports **1 flip in
+262**, a rate of 0.38% -- inside the bound, as it should be. Headroom fell
+from 2.5x to 1.9x, which is what happens when an unobserved tail becomes an
+observed one. That is the rule of three doing its job rather than failing.
+
+The high floors are now marginal: floor 1.0c out of sample has headroom 1.0x,
+and in sample floor 2.0c is 0.8x. **The low floors are the strategy; the
+aggressive ones are not safely positive.** Take more, smaller edges.
+
+### Not in this run
+
+It was launched at 785fe20, before the all-coins portfolio table was pushed.
+The twelve-series capacity question is unanswered and needs one more run.
+
+---
+
 ## 2026-09-06 (later) — pin's real shape, and the one fact the maker
 ## verdict hangs on
 
