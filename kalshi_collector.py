@@ -58,7 +58,27 @@ CRYPTO_15M = ["KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M", "KXDOGE15M",
               # missing, discover() gets a non-200 and skips it. Analysis of
               # this tape needs DAYS of it, so every day this is not
               # deployed is a day of the only untested idea lost.
-              "KXCRYPTOLEAD15M", "KXCRYPTOCOMP15M"]
+              "KXCRYPTOLEAD15M", "KXCRYPTOCOMP15M",
+              # 2026-09-06: the COMMODITY 15-minute families. These are the
+              # markets Kalshi's Liquidity Incentive Program actually pays
+              # for -- GET /incentive_programs returns a per-market, per-
+              # window reward pool for these and for Coin Race, and NONE for
+              # the twelve crypto up/down series this project has spent
+              # weeks on. Being paid to rest an order does not require the
+              # market to be wrong about anything, which makes it the most
+              # reliable money found here so far.
+              #
+              # All five verified live 2026-09-06: GET /series/<ticker>
+              # returns frequency "fifteen_min", category "Commodities", and
+              # each has settled markets. They trade roughly 18:00-23:45 ET,
+              # so they show zero OPEN markets during the day -- that is the
+              # session, not a bad ticker.
+              #
+              # Recording is ticker-agnostic and discover() skips a non-200
+              # silently, so a wrong name costs nothing but also warns
+              # nothing: verify with research/newseries.py after deploying.
+              "KXGOLD15M", "KXSILVER15M", "KXWTI15M", "KXNATGAS15M",
+              "KXCOPPER15M"]
 
 
 def make_signer(key_id, key_file):

@@ -179,8 +179,10 @@ be wrong.
       drop top 25                  $10/day             $7/day   [-14, +24]
 
 **The operator's own test was "if dropping ten closes takes it under $20/day,
-this is a lottery ticket and not an edge." One-per-close lands at $19/day.
-Say it that way: this is a lottery ticket.** 78% of closes are individually
+this is a lottery ticket and not an edge." One-per-close lands at $19/day.**
+
+**RETRACTED 2026-09-06 by the operator and by me, on this page's own evidence.**
+78% of closes are individually
 profitable, so it is not a coin flip — but the money lives in a handful of
 closes and normal-theory SEs on that distribution overstate the confidence.
 

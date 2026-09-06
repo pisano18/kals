@@ -81,7 +81,7 @@ Per the operator's revised kill criteria (2026-09-06):
 
 - **Sample:** **500 fired closes** of forward tape, scored **standalone**, not
   pooled with anything measured before the signature date. At the measured fire
-  rate (~38 closes/day at `tau<=60` every-market) that is **~13 days**.
+  rate (**74.3** closes/day at `tau<=60` every-market) that is **~7 days**.
 - **PASS:** the 95% bootstrap interval on per-close P&L **excludes zero on the
   positive side**, AND realised max drawdown stays inside the tolerance in §5.
 - **FAIL:** the interval includes zero, or the drawdown tolerance is breached.
@@ -105,15 +105,74 @@ only at 3/364 ≈ 0.8% per close — which at 38 closes/day is roughly **once a
 month**. Wherever `−$38.65` or `−$46.33` appears as "worst close", it means
 *worst close observed in nine days* and nothing more.
 
-**Proposed clause, for the operator to accept or replace:**
+**CLAUSE — ACCEPTED BY THE OPERATOR 2026-09-06: $250.**
 
 > Stop the forward test and re-examine if cumulative drawdown from peak exceeds
-> **$250**, i.e. ~5× the observed maximum and ~2.5 days of expected P&L.
-> Scale size linearly to whatever drawdown tolerance is chosen: the rule in §2
-> is stated at a base unit, and halving the cap halves both the P&L and the
-> drawdown.
+> **$250**. Scale size linearly to that tolerance: halving the cap halves both
+> the P&L and the drawdown.
 
-`[ ] Accept $250   [ ] Use instead: $______   [ ] Different rule: __________`
+**AND IT IS NOT THE BINDING CONSTRAINT — record that plainly.** The 1%-worst
+modelled 5-day week, block-bootstrapped over whole days, is **+$27**; the
+5%-worst is **+$65**; 0.3% of simulated weeks lose money at all. $250 sits far
+outside anything observed in 11 days. **Depth binds, not risk.** The clause is a
+circuit-breaker against a regime this tape has never seen, not a live limit.
+
+**Provenance note, because it is exactly the failure this project keeps
+finding.** An earlier draft of this document sized against a **$150** limit and
+attributed it to the operator. **It was never the operator's number** — it came
+from a draft they forwarded and I adopted it as a requirement. That is the same
+inference-hardening-into-a-rule pattern as "read-only" becoming "never learn
+anything requiring interaction". Logged in the constraint audit.
+
+## 5b. POWER AND MDE — what this test can and cannot detect
+
+`CLAUDE.md`'s own rule is *"state the MDE before the estimate; no effect and no
+power are different results."* The first draft of this document violated it.
+Computed on the frozen rule's backtest distribution (712 closes, mean
+**$1.3611/close**, sd **$7.0858**, 74.3 closes/day):
+
+| forward closes | days | MDE $/close | MDE as $/day |
+|---|---|---|---|
+| 250 | 3.4 | 0.8826 | 65.6 |
+| **500** | **6.7** | **0.6226** | **46.3** |
+| 750 | 10.1 | 0.5079 | 37.7 |
+| 1000 | 13.5 | 0.4397 | 32.7 |
+| 1500 | 20.2 | 0.3589 | 26.7 |
+
+**Can 500 closes distinguish a HALVED edge from zero? YES — but only just.**
+Half the backtest edge is **$0.6806/close** against an MDE of **$0.6226** — a
+margin of 1.09×. Detecting a halved edge needs **418 closes ≈ 5.6 days**.
+
+**Detecting a QUARTER of the backtest edge needs 1,674 closes ≈ 22.5 days.** So
+if the forward result regresses hard, 500 closes returns "no power", not "no
+effect", and those are different answers. If the operator wants the test to
+survive a 4× regression, the sample must be ~1,700 closes, not 500.
+
+Note the sample converts faster than earlier stated: at 74.3 fired closes/day
+this cell reaches 500 closes in **~7 days**, not 13.
+
+## 5c. WHAT REGRESSION TO EXPECT — read the forward result against this
+
+**§3's $101/day is the best of roughly 44 backtest cells** (2 tau cuts × 2
+filters × 3 caps × 3 fractions, plus 8 earlier). Selecting the maximum of many
+correlated cells biases it upward, and the forward result should be read against
+a realistic prior rather than against $101.
+
+Three anchors for that prior, none of them precise:
+
+1. **Family-wise, 44 looks at 5% each means a single cell needs p < 0.0011 to
+   carry the same weight.** The chosen cell's bootstrap interval [+$65, +$143]
+   is wide of zero, so it survives that correction — but the *point estimate* is
+   still the maximum of the family.
+2. **The mid-ranked comparable cells sit at $49–83/day**, and those are the
+   honest neighbours of the chosen one.
+3. **The latency haircut is not in §3.** Reading from `orderbook_delta` (47 ms)
+   rather than `ticker` (326 ms) we win ~88% of races and keep **~91%** of the
+   money; reading from `ticker` it is ~77% of races and ~94% of the money.
+
+**Stated expectation: a forward result anywhere in $45–90/day should be read as
+CONSISTENT with the backtest, not as a miss.** A result below ~$30/day, or an
+interval including zero, is the signal that the backtest was selection.
 
 ## 6. Known weaknesses — stated before the test, not after
 
