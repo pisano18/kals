@@ -2,6 +2,60 @@
 
 ---
 
+## 2026-09-06 — pin is STILL strengthening; the at-touch maker row is
+## contaminated and its verdict is not yet readable
+
+### pin, third look, out of sample
+
+    tau <= 20s          n     MDE   claimed  REALISED       t   mid-null top
+      floor 0.3c      360   1.46c    +2.98c    +1.94c    +4.0        +0.55c
+      floor 0.5c      319   1.57c    +3.27c    +2.36c    +4.5        +0.48c
+      floor 1.0c      222   2.22c    +5.75c    +2.14c    +2.9        +0.79c
+    tau <= 60s: +0.24 / +0.20 / +0.32c, all t < 1. Still nothing.
+
+**t has risen every time more tape arrived: +3.0 in sample, +3.7, now +4.5.**
+That is what a real effect does and a fitted one does not. It clears its MDE
+(2.36 vs 1.57) and the market-is-right null (top +0.48c), out of sample, with
+the confidence refitted only on earlier closes.
+
+**My reporting of it was wrong and is fixed.** The line read "paid 74.9c, won
+77.4%, win +3.7c, loss -2.2c" -- and win minus loss must be 100c for ANY
+binary, so that pair was impossible. The trades are two opposite populations:
+DEAR ones bought near 96c (win +4c, lose -96c) and CHEAP ones bought near 2c
+(win +98c, lose -2c). Their average, 74.9c, is a price at which nothing was
+ever bought. Each population is separately zero-EV if the market is right, so
+the +2.36c is edge over the market either way -- but the two legs are now
+printed separately, with their own counts, prices, win rates and P&L.
+
+The stated confidence is still fiction: >=98% claimed, 77% delivered.
+
+### The maker at-touch row cannot be read yet
+
+    filldepth      trades      mkS      t    maker      t
+      at-touch  24,630,462   -0.71c  -10.0   +0.52c    +7.0
+      0-1c-out   7,014,249   +0.89c  +11.4   +0.10c    +1.2
+      1-3c-out   2,983,928   +2.78c  +32.3   -0.13c    -1.6
+      3c+-out    1,968,990   +8.62c  +39.8   -0.37c    -1.8
+
+The shape is exactly what a maker would want: the money is AT THE TOUCH
+(+0.52c, t=+7.0, on two thirds of all trades) and negative out in the ladder,
+which is the opposite of the fear that killed the last version of this idea.
+Takers who print at the touch have NEGATIVE information (-0.71c); the informed
+ones sweep (+8.62c at 3c+ out). Economically coherent.
+
+**But the at-touch half-spread came back as -0.19c, and a maker who captures
+less than nothing is not a maker -- it is a stale reference quote.** The
+bucket test was `beyond <= 0.05`, which sweeps in every print that landed
+INSIDE the recorded quote, i.e. every case where the book had already moved
+and our reference was old. Those fills belong to nobody.
+
+Fixed: `inside-stale` is its own bucket now, and the whole split is repeated
+against a reference quote at most 2 seconds old (`filldepth2s`). If at-touch
+and at-touch(fresh) disagree, that difference IS the staleness. Until that run
+lands, **the maker verdict is unresolved -- not positive.**
+
+---
+
 ## 2026-09-05 — pin SURVIVES out of sample, and the maker correction was
 ## not the one I proposed
 

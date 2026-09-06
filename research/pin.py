@@ -216,18 +216,40 @@ def block(trades, label, reps=2000):
     # A near-certainty bought at 92c that wins 94% of the time and a coin
     # flip bought at 70c that wins 74% are not the same strategy, and the
     # report must not make them look like one.
-    wins = [t["pnl"] for t in trades if t not in fl]
-    loss = [t["pnl"] for t in trades if t in fl]
-    entry = mean(100.0 * t["entry"] if t["side"] == "yes"
-                 else 100.0 * (1.0 - t["entry"]) for t in trades)
+    # SPLIT THE MIXTURE. The first version printed one mean entry and one
+    # mean win, and the pair was arithmetically impossible for a binary --
+    # win minus loss must be 100c per trade, and it printed +3.7 and -2.2.
+    # The trades are two opposite populations: DEAR ones bought near 96c
+    # (win +4c, lose -96c) and CHEAP ones bought near 2c (win +98c, lose
+    # -2c). Averaging them gives 74.9c, a price at which nothing was ever
+    # bought. Each side is separately zero-EV if the market is right, so
+    # both must be shown or neither means anything.
+    flset = {id(t) for t in fl}
+    cost = [(100.0 * t["entry"] if t["side"] == "yes"
+             else 100.0 * (1.0 - t["entry"]), t) for t in trades]
+    dear = [(c, t) for c, t in cost if c >= 50.0]
+    cheap = [(c, t) for c, t in cost if c < 50.0]
+
+    def leg(rows):
+        if not rows:
+            return None
+        w = sum(1 for _, t in rows if id(t) not in flset)
+        return (len(rows), mean(c for c, _ in rows),
+                100.0 * w / len(rows), mean(t["pnl"] for _, t in rows))
+
+    dl, cl = leg(dear), leg(cheap)
     wr = 100.0 * (1.0 - len(fl) / len(trades))
     print(f"    {label:<26} n={sm['n']:>4} closes  MDE {md:>5.2f}c  "
           f"claimed {sm['exp_edge']:+.2f}c  realised {sm['mean']:+.2f}c "
           f"(t={sm['t']:+.1f})")
-    print(f"    {'':<26} paid {entry:.1f}c  won {wr:.1f}% of the time "
-          f"(model said >={100 * PIN:.0f}%)  "
-          f"win {mean(wins) if wins else 0:+.1f}c  "
-          f"loss {mean(loss) if loss else 0:+.1f}c")
+    def fmt(nm, L):
+        if L is None:
+            return f"{nm} none"
+        return (f"{nm} n={L[0]} paid {L[1]:.0f}c won {L[2]:.0f}% "
+                f"P&L {L[3]:+.2f}c")
+    print(f"    {'':<26} overall won {wr:.1f}% "
+          f"(model said >={100 * PIN:.0f}%)   "
+          f"{fmt('DEAR', dl)}   {fmt('CHEAP', cl)}")
     print(f"    {'':<26} mid-null [{nm['lo']:+.2f},{nm['hi']:+.2f}]"
           f"  fair-band [{nf['lo']:+.2f},{nf['hi']:+.2f}]{verdict}")
 

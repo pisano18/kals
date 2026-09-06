@@ -271,9 +271,20 @@ def measure(quotes, trades, markets, outcome, verbose=False,
             # or out in the ladder, so split it and look.
             touch = a0 if sgn > 0 else b0
             beyond = sgn * (price_c - touch)
-            dep = ("at-touch" if beyond <= 0.05 else
+            # `beyond < 0` means the print landed INSIDE the reference quote
+            # -- a buy below the recorded ask. No maker at that touch was
+            # filled there; the quote had already moved and ours is stale.
+            # The first version tested `beyond <= 0.05` and swept all of it
+            # into "at-touch", which is why that bucket reported a NEGATIVE
+            # half-spread of -0.19c: a maker who captures less than nothing
+            # is not a maker, it is a stale reference. Its own bucket now,
+            # so it can be counted rather than silently mixed in.
+            dep = ("inside-stale" if beyond < -0.05 else
+                   "at-touch" if beyond <= 0.05 else
                    "0-1c-out" if beyond <= 1.0 else
                    "1-3c-out" if beyond <= 3.0 else "3c+-out")
+            age = t - secs[j0]
+            fresh2 = age <= 2.0
 
             agree = ("agree" if sgn * burst > 0.5 else
                      "against" if sgn * burst < -0.5 else "quiet")
@@ -286,6 +297,11 @@ def measure(quotes, trades, markets, outcome, verbose=False,
                 ("price", f"{bucket_of(PRICE_CUTS, m0 / 100.0)}"),
                 ("filldepth", dep),
             ]
+            # The same split again, restricted to a reference quote at most
+            # two seconds old. If `at-touch` and `at-touch(fresh)` disagree,
+            # the difference IS the staleness and no argument is needed.
+            if fresh2:
+                keys.append(("filldepth2s", dep))
             # the pre-registered headline cell, written before real data
             if sp0 >= 2.0 and agree in ("quiet", "against") and tau > 180:
                 keys.append(("HEADLINE", "spread>=2c & not-with-flow & "
@@ -309,7 +325,10 @@ BUCKET_NAMES = {
 }
 
 
-def show_curve(tables, keys=(("ALL", "all"), ("filldepth", "at-touch"),
+def show_curve(tables, keys=(("ALL", "all"),
+                            ("filldepth2s", "at-touch"),
+                            ("filldepth", "at-touch"),
+                            ("filldepth", "inside-stale"),
                             ("filldepth", "1-3c-out"), ("spread", "0"),
                             ("spread", "3"), ("price", "2"))):
     """Markout against horizon, and the maker's net at each one.
@@ -354,6 +373,10 @@ def show_curve(tables, keys=(("ALL", "all"), ("filldepth", "at-touch"),
         print(net)
     print("\n  half-spread is derived, not assumed: maker = half - mkS holds")
     print("  exactly by construction, so half = maker + mkS.")
+    print("  A NEGATIVE half-spread is impossible for a real maker and means")
+    print("  the reference quote was stale -- see inside-stale, and prefer")
+    print("  the 2s-fresh at-touch row over the pooled one wherever they")
+    print("  disagree.")
     print("  READ THE at-touch ROW FIRST. That is the only line a maker")
     print("  resting at the best bid or offer can actually collect. If the")
     print("  positive number lives in the -out rows, the money is spread")
@@ -373,8 +396,8 @@ def show_tables(tables, measures=("mkS", "follow", "maker", "shufS")):
     print(f"  looked at. A single cell needs |t| > {z:.1f} to survive the")
     print("  family at 5%. The pre-registered HEADLINE and TAIL cells are")
     print("  the only readings that pay no multiple-looks tax.")
-    order = ["ALL", "HEADLINE", "TAIL", "filldepth", "burst", "size",
-             "spread", "tau", "price"]
+    order = ["ALL", "HEADLINE", "TAIL", "filldepth", "filldepth2s",
+             "burst", "size", "spread", "tau", "price"]
     for tb in order:
         if tb not in tables:
             continue
