@@ -2,6 +2,146 @@
 
 ---
 
+## 2026-09-06 (re-scope) — the goal is MONEY. pin is a PASS. And I was
+## wrong that the race is unmeasurable.
+
+### Three corrections, all of them mine
+
+**1. "The race is unanswerable from recordings" was wrong.** I said it twice
+and it was a habit, not a fact. `orderbook_delta` carries **microsecond**
+timestamps, a sequence number and a signed `delta_fp` per price level, so the
+life of the exact level `pin` wants to hit is directly reconstructable.
+Measurement running. Measured alongside it: round-trip latency from this box to
+Kalshi is **median 30-36 ms**, min 29 ms, worst 199 ms, over read-only GETs.
+
+**2. `$/day at 50 contracts` was the wrong unit and it misled the project.** At
+$1,000 of capital the right units are $/contract/day, PEAK CONCURRENT capital,
+and % return on capital. Restated:
+
+    tau<=20 one-per-close cap 50   peak capital $49.70   $30.22/day   67.2%/day
+    tau<=60 every-mkt cap100 f0.25 peak capital $268     $88.10/day   37.7%/day
+
+**3. The close-level bootstrap understated the risk question and I nearly
+handed over a number that flattered us.** It said the 1%-worst week was
+**+$47**, which is an artefact of resampling closes **iid** — that destroys the
+only mechanism that makes a real bad week, namely a volatile session where the
+model is wrong across many closes at once. Redone as a BLOCK bootstrap over
+whole days:
+
+    tau<=20 one cap 50    10 days, 1 negative, worst day -$18.30, mean +$30.22
+    tau<=60 allm f0.25    11 days, 0 negative, worst day +$10.47, mean +$88.10
+    5-day week, resampling DAYS:  1%-worst +$27, 0.3% of weeks lose money
+
+**The operator's $150 bad-week limit (20% of $750) does not bind at this
+size. DEPTH binds.** The caveat that matters more than the number: 10-11 days
+contains no crash and no volatility regime. This measures variance, not tail.
+
+### pin is a PASS under the operator's definition of "consistently"
+
+Positive expectancy, i.e. likely to come out on top if it runs its course. The
+bootstrap interval excludes zero at every fillable size, on both close-level
+and day-level resampling, and 10 of 11 days were positive. Recorded in
+`CLAUDE.md` with both superseded bars and the reason each changed.
+
+### The re-scope: every approach tried so far needs the MARKET TO BE WRONG
+
+pin, informed, baskets, lead-lag, calibration, and all eight graveyard entries
+share one structure: they pay only if the price is mistaken. **That is the
+hardest and least reliable way to make money, and it was never what was
+asked for.** The search is restructured around money that does not require
+anyone to be wrong:
+
+1. **Cross-venue.** Two venues pricing the SAME event differently needs no
+   model, no null and no settlement mathematics. Never priced. Now running.
+2. **Fees and rebates.** Cheaper fees on identical mechanics is free money.
+   One API call, open for weeks.
+3. **Being paid for a service** rather than for being right — market-making is
+   this, and it is the other live idea.
+4. **Relative value.** rho ~ 0.8 was only ever treated as a risk; the spread
+   between two correlated series is hedged against what moves them both, and
+   Coin Race legs MUST sum to 100c.
+5. **Early exit.** Everything holds to settlement. Exiting when the stale quote
+   catches up is the same signal with far lower capital lockup, which is the
+   binding constraint at $1,000.
+
+---
+
+## 2026-09-06 (threshold revised) — pin is NOT dead. It is small, and the
+## interval excludes zero. The bar moved, loudly and on the record.
+
+### The correction
+
+The previous entry graded pin FAIL against +$50/day and called it dead. The
+operator has replaced that threshold, **after seeing the number**, and has
+required both versions be recorded with the reason. See `CLAUDE.md`
+"Kill criteria — change log". In short:
+
+    OLD  net +$50/day at a fillable size
+    NEW  positive after fees at a fillable size, demonstrated out of sample
+         on fresh tape, with a maximum drawdown the operator can sit through.
+         Size is capped by DRAWDOWN, not by a dollars/day target.
+
+**No measurement changed. Nothing was re-run, re-fitted or re-weighted.** What
+changed is the question. The 95% bootstrap interval at a fillable cap of 50 is
+**[+19, +48] $/day** and it **excludes zero**; grading that FAIL against a
+round number buried the actual finding, which is that pin is *small* and
+*confidently positive*.
+
+> **pin makes ~$33/day and we are confident it is positive.**
+
+pin goes to **forward test, not the graveyard**. `PREREG_pin.md` is being
+drafted with the size clause set by the depth measurement rather than by an
+assumed 50 contracts, and **the forward clock does not start until the
+operator signs it**.
+
+### I withdraw the word "lottery ticket" on my own evidence
+
+I applied the operator's pre-set drop-ten screen correctly and then attached a
+label the same data contradicts. **78.3% of closes are individually
+profitable.** A lottery ticket loses most of the time and pays rarely; pin
+wins most of the time with a fat right tail. That is the opposite shape. The
+concentration number stands unchanged and is a real risk — top 10 of 336
+closes carry 45% of the money, top 25 carry 73% — but the label was wrong and
+is withdrawn independently of any further test.
+
+### THREE THINGS THAT DID NOT CHANGE, and travel with every pin number
+
+**1. THE RACE. This is the primary open risk to pin, above everything else.**
+The backtest cannot test whether we win the race for a stale quote. In the
+backtest we always get it. In reality we are racing everyone else for the same
+mispriced quote, and the most mispriced quotes are the ones most worth racing
+for. **Real fills will be worse than backtest fills by an unknown amount, and
+the amount is not bounded by anything measured so far.** Any statement of
+pin's edge that does not carry this sentence is incomplete.
+
+**2. NINE DAYS. The worst close in the sample is not the real downside.**
+336 closes at 37.2/day is **9.0 days** of out-of-sample tape. Wherever
+**-$38.65** appears as "worst close", it means "worst close observed in nine
+days" and nothing more. A 9-day maximum is not a drawdown estimate; the true
+tail is unobserved and, per the rule of three, a loss worse than anything seen
+is entirely consistent with this sample.
+
+**3. Concentration is real, and the drop-ten screen was harsh.** Most
+fat-tailed strategies fail it. Keep the number, drop the verdict: top 10 = 45%
+of the money, drop-ten leaves $19/day. Whether that lumpiness is a defect or
+just the shape of the thing depends on whether the big closes are predictable
+EX ANTE — which is now a queued measurement, not an assumption.
+
+### Still open, in the operator's order
+
+1. Repo-wide **96-vs-63.3 closes/day audit**. `portfolio()` computes
+   `day = mu * 96 * contracts / 100`, but available closes run 63.3/day in the
+   measured window. Every published $/day built on 96 may be inflated by up to
+   **2.58x** (96/37.2 where the strategy fires) — list every number affected.
+2. **Are the top closes predictable ex ante** from model-vs-book gap, realised
+   vol, tau, time of day, coin, depth at touch, or spread width? Fit early,
+   test late, walk forward. If yes, there is a better-shaped strategy inside
+   pin: 73% of the money at 7% of the trades needs far less size, and size is
+   the binding constraint. If no, the lumpiness is a risk to live with.
+3. Everything already queued overnight.
+
+---
+
 ## 2026-09-06 (verdict) — pin IS DEAD against the kill criteria. The edge
 ## is real; it cannot be filled at a size that pays.
 

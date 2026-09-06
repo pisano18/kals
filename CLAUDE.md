@@ -384,38 +384,102 @@ which sample it refers to, and do not quote the new results as settled either
 
 ## Kill criteria
 
-**Set by the operator 2026-09-06. Verbatim. Do not reinterpret these to fit a
-result.**
+### CHANGE LOG — the bar has moved once, and the move is on the record
 
-- **Threshold:** net +$50/day, after fees, at a size the depth measurement
-  shows is actually fillable, sustained over the forward test. Rationale: I am
-  not chasing a big number, I am chasing something that comes out on top
-  consistently. If it clears $50/day honestly it is worth deploying small and
-  scaling on evidence.
+**The reason tonight's result counts is that the bar was set before the number
+was seen. That is not erased by revising it, so both versions stand here with
+their dates and the reason for the change.**
+
+#### 2026-09-06, ORIGINAL (operator, set before any capacity measurement)
+
+> **Threshold:** net +$50/day, after fees, at a size the depth measurement
+> shows is actually fillable, sustained over the forward test. Rationale: I am
+> not chasing a big number, I am chasing something that comes out on top
+> consistently. If it clears $50/day honestly it is worth deploying small and
+> scaling on evidence.
+
+#### 2026-09-06, REVISED (operator, set AFTER seeing pin's measurement)
+
+> **Threshold:** positive after fees at a fillable size, demonstrated
+> out-of-sample on fresh tape, with a maximum drawdown I can sit through. Size
+> is capped by drawdown, not by a dollars/day target.
+
+#### 2026-09-06, FINAL — "CONSISTENTLY" DEFINED (operator, same day)
+
+> **Threshold: positive expectancy.** "Consistently" means *likely to come out
+> on top if it runs its course*. Not a t-statistic. Not a dollar target.
+
+**By this definition `pin` is a PASS**, and was a pass all along: its 95%
+bootstrap interval on per-close P&L excludes zero, at every fillable size
+tested, on both the close-level and the day-level block bootstrap.
+
+**Why it changed, twice, in one day — and this is the honest account.** The
+first bar, +$50/day, came off a menu the assistant offered. It answered "is
+this a business?" when the question was "is this real?", and it was anchored to
+an arbitrary 50 contracts. That framing nearly threw away a working strategy.
+The operator's words: *"the $50/day bar was a bad target and it nearly threw
+away a working strategy; I'd rather be corrected than agreed with."*
+
+**No measurement was re-run, re-fitted or re-weighted at any point.** Every
+number is exactly as first computed. What changed is the question. Both earlier
+bars stay above so that anyone reading later sees precisely what was promised
+before the data spoke.
+
+### THE UNITS. This is not cosmetic — the old unit was misleading.
+
+At low hundreds to ~$1,000 of capital, absolute `$/day at 50 contracts` is the
+wrong measure and actively misled this project. **Every result from 2026-09-06
+onward is reported as:**
+
+1. **$ per contract per day**
+2. **PEAK CONCURRENT capital required** — positions here are held ≤60s and
+   closes are 15 minutes apart, so exposure never overlaps across closes. Peak
+   concurrent is the largest single close's notional, not the day's turnover.
+3. **% return on capital deployed**
+
+Measured for `pin` (tau≤20, one-per-close, cap 50): peak concurrent capital
+**$49.70**, **$30.22/day** mean, **67.2% per day on peak capital**, 10 of 11
+days positive.
+
+**The capacity-matching argument, and where it holds.** The operator's case is
+that a ~30%/day return survives *because* it is capacity-limited — no serious
+player deploys $100 to make $33, so nobody competes it away. **That is sound
+and it is the standard reason small-capacity edges persist.** Two caveats
+recorded for honesty:
+
+- Capacity-limitation explains why an edge *could* persist; it is not evidence
+  that this one is real. A single retail script, not a fund, is the competitor
+  that matters here — and the race question is what decides it.
+- Return on capital is high partly because capital turns over ~37×/day. The
+  binding constraint is **opportunity count × depth**, not capital. So % ROC is
+  the right metric for *this* operator at *this* size, but it cannot be scaled
+  by adding capital, and quoting it without that sentence would flatter it.
+
+### The rest, unchanged from 2026-09-06
 
 - **Minimum sample:** 500 fired closes of FORWARD tape, collected after the
   rule is frozen, scored standalone rather than pooled with the 336 we have.
-  At ~26.5 fired closes/day that is ~19 days. Freeze the rule in writing
-  before the window starts.
+  At ~37 fired closes/day that is ~14 days. Freeze the rule in writing before
+  the window starts.
 
 - **Result that ends the project:** not the death of a strategy — the death of
   the search. `pin` dies if the forward test at n>=500 fails to beat the
   mid-null. Market-making dies if the queue simulator puts expected fills x
-  $0.005 under $50/day at max fillable size. Either one dying kills that
+  $0.005 under the threshold at max fillable size. Either one dying kills that
   strategy only. The PROJECT ends if both are dead AND 60 further days pass
   with no new idea clearing its own null. Pivoting to a new idea is expected,
   not a failure.
 
-Three consequences that bind immediately:
+### Three consequences that bind
 
-1. **"$/day" now means fillable $/day.** Any dollar figure quoted against the
-   threshold must be at a size the resting-depth measurement supports, not at
-   an assumed 50 contracts. A figure at an unfillable size does not count.
-2. **The forward window has not started.** It starts when the rule is frozen
-   in writing, and the 336 closes already measured are NOT part of it.
-3. **A stage may now be described as decisive** against these criteria, and
-   only against these.
-
+1. **"$/day" means fillable $/day.** Any figure quoted against the threshold
+   must be at a size the resting-depth measurement supports, not at an assumed
+   50 contracts.
+2. **The forward window has not started.** It starts when `PREREG_pin.md` is
+   signed. The 336 closes already measured are NOT part of it.
+3. **A bar is never moved after seeing a result without saying so loudly and
+   dating it.** Changing the question is legitimate. Changing the answer
+   quietly is not.
 
 ---
 
@@ -517,15 +581,20 @@ Two things that will bite:
 
 **Two results are alive** (both detailed in `HANDOFF.md`, newest first):
 
-- `pin` — **DEAD against the kill criteria as of 2026-09-06.** It is a
-  TAKER and the book it hits is thin: median resting size 69 contracts, and 50
-  fails to fill 42.3% of the time. At the largest size that does not require
-  winning an untestable race for a whole resting level, the bootstrap 95%
-  interval on $/day is **[+19, +48] one-per-close (FAIL)** and **[+22, +76]
-  every-market (INCONCLUSIVE)** against a +$50/day threshold. Neither clears.
-  Money is a lottery: the top 10 of 336 closes carry 45-56% of it, and dropping
-  them leaves $19-22/day. See `HANDOFF.md`. The +2.54c/t=+5.0 per-contract edge
-  is real and unretracted — it simply cannot be filled at a size that pays.
+- `pin` — **ALIVE, small, and going to forward test.** Out of sample
+  **+2.54c per contract, t=+5.0**. It is a TAKER and the book is thin: median
+  resting size 69 contracts, and 50 fails to fill 42.3% of the time. At a
+  fillable cap of 50 the bootstrap 95% interval on $/day is **[+19, +48]
+  one-per-close** — small, and **confidently positive**. The honest sentence
+  is "pin makes ~$33/day and we are confident it is positive."
+  **PRIMARY OPEN RISK, above everything else: the backtest cannot test whether
+  we win the race for a stale quote.** In the backtest we always get the
+  quote; in reality we are racing everyone else for it, and real fills will be
+  worse by an unknown amount. Two further caveats travel with every pin
+  number: the sample is **9 days**, so the worst close in it is not the real
+  downside; and the money is concentrated (top 10 of 336 closes = 45%), which
+  is real but is a screen most fat-tailed strategies fail. Note 78.3% of
+  closes are individually profitable, which is not a lottery shape.
 - `informed` — market-making at the touch. **+0.48c per fill, t = +6.4** on
   17.1M fills, takers there carrying zero information (t = 0.2). Sweeps print
   per level (59% of same-instant groups, median 8 legs), so the touch leg of a

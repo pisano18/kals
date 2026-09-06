@@ -1,0 +1,111 @@
+==============================================================================
+QUEUE-POSITION SIMULATOR
+==============================================================================
+  cached book days: 20260825, 20260826, 20260827, 20260828, 20260829, 20260830, 20260831, 20260901, 20260902, 20260903, 20260904
+  days of tape with NO cached book: 20260905, 20260906
+  they are excluded. flow.py is ~100 min on a cold cache and
+  this stage does not trigger one.
+  settlements: 10,796 markets in markets.json
+
+==============================================================================
+PLAN.md's KILL NUMBER, RE-MEASURED: "best bid 0.40 with 3,767
+contracts resting"
+==============================================================================
+  6,549,810 market-seconds, 13,099,620 touch observations (both sides)
+  contracts AT the touch   p10 3  p25 15  MEDIAN 46  p75 120  p90 534  p99 7593  p99.9 12622  max 85219
+  the 40c slice: 65,546 seconds with a best bid of exactly 40c
+    bid size there  p10 6  MEDIAN 44  p90 1144  p99 7889  p99.9 14479  max 22478
+  market-seconds with 3,767+ resting on EITHER touch: 449,336 (6.860% of 6,549,810)
+
+loading ...
+  book: 6,549,810 market-seconds over 7,941 markets from 11 cached day(s)
+        top of book from the rebuilt delta book 702,732, from the ticker channel 5,847,078
+  trades: 240 file(s) over the cached days
+          30,069,663 inside a book window; 13,861,494 exactly at the touch (46.1%); 28,827,212 kept within 6c
+          contracts: 1,882,181,038 in a window, 752,095,427 at the touch (40.0%)
+          dropped: outside a window 682,118, no touch that second 1,842, more than 6c out 1,242,451, ticker absent from the book 2,466,745
+          sub-cent print prices (rounded to the book grid): 8,577,354
+          at-touch contracts by tick zone: 598,293,195 on the exact 1c grid (10c-90c), 153,802,231 in the 0.1c zone (20.4%)
+          the 0.1c zone is EXCLUDED from the headline: the
+          cached book rounds those prices to whole cents, so a
+          print up to 0.5c away would read as at the touch.
+
+simulating (policy=prorata) ...
+  7,941 markets simulated over 883 closes
+  13,086,222 market-second pairs, 9,271,703 with a touch on the side quoted (70.9%)
+  the touch price HELD from one second to the next 46.5% of the time
+  a trade printed at our exact resting price in 2,100,812 of those seconds (16.05%)
+  contracts printed at our price over the whole tape: 598,239,210
+  seconds skipped for a hole in the grid: 0
+  seconds NOT quoted because the touch sat in the 0.1c tick zone (below 10c or above 90c): 3,826,705 (29.2% of pairs)
+
+  QUEUE AHEAD OF US when a trade arrives at our price (9,587,778 draws)
+    contracts  p10 23   p25 166   MEDIAN 1464   p75 3626   p90 5733
+  SIZE RESTING AT THE TOUCH when we post (280,098 draws, subsampled)
+    contracts  p10 6   p25 24   MEDIAN 54   p75 145   p90 1059
+  TRADE SIZE at our price, all prints  p10 0  median 10  p90 113  p99 702
+  TRADE SIZE of the prints that FILL us (S=50)  p10 1  median 14  p90 150  p99 1253
+  If the second line is much larger than the first, our fills are
+  selected toward BIG takers and +0.48c per fill is the wrong
+  price for them. The realised per-contract column below settles
+  it against the actual outcomes rather than by argument.
+
+  INVENTORY, which the fill count alone hides. At S=50 the net
+  position left on the book at settlement, per market, is
+    |net| contracts  median 127  p90 618  p99 1646  max 4334
+  cash turned over per close (sum of price x size, S=50):
+    $ median 6,410  p90 11,794  max 18,076
+
+==============================================================================
+FILLS AND MONEY  --  policy=prorata, at the touch
+==============================================================================
+  883 closes over the cached tape, 86.9 closes/day
+  S         contracts    contracts    $/day at       $/day           95%% bootstrap  verdict
+               filled         /day      +0.48c    realised              on realised
+  1           412,373       40,602         195         309   [    +216,     +402]   PASS
+  10        3,441,972      338,901        1627        2980   [   +2137,    +3815]   PASS
+  50       12,246,316    1,205,791        5788       11290   [   +8027,   +14529]   PASS
+  100      19,828,566    1,952,351        9371       18385   [  +12752,   +24013]   PASS
+  500      57,866,389    5,697,613       27349       50465   [  +31693,   +69153]   PASS
+
+  realised P&L per FILLED CONTRACT, clustered on close time
+  (informed.py measures +0.48c per at-touch fill; this is the same
+   quantity restricted to the fills our queue position wins)
+  S          cents        t       MDE   closes   sign-scrambled $/day
+  1         +0.811     6.94     0.230      883        +11  [    -41,     +62]
+  10        +0.944     7.44     0.249      883       +344  [   -138,    +815]
+  50        +1.052     7.69     0.268      883       -210  [  -1943,   +1496]
+  100       +1.108     7.66     0.284      883      +1290  [  -1498,   +4098]
+  500       +1.152     7.06     0.320      883      -5234  [ -14608,   +4047]
+
+  where the fills come from (contracts, policy=prorata, at the touch)
+    S=1    bid side       199,566   ask side       212,807   bid share 48.4%
+    S=10   bid side     1,657,063   ask side     1,784,909   bid share 48.1%
+    S=50   bid side     5,917,852   ask side     6,328,464   bid share 48.3%
+    S=100  bid side     9,622,249   ask side    10,206,317   bid share 48.5%
+    S=500  bid side    28,334,392   ask side    29,531,996   bid share 49.0%
+
+==============================================================================
+CONCENTRATION  --  pin died partly on this, so it is checked here
+==============================================================================
+  S          $/day    top 5   top 10   top 25   $/day dropping the top 10 / top 25
+  1            309       7%      14%      30%       +270 /     +221
+  10          2980       7%      14%      29%      +2606 /    +2165
+  50         11290       8%      14%      30%      +9814 /    +8113
+  100        18385       9%      15%      32%     +15817 /   +12898
+  500        50465      10%      18%      38%     +41828 /   +32119
+
+  the same for FILL VOLUME rather than money
+    S=1    top 5 1%   top 10 2%   top 25 5%
+    S=10   top 5 1%   top 10 2%   top 25 5%
+    S=50   top 5 1%   top 10 2%   top 25 5%
+    S=100  top 5 1%   top 10 2%   top 25 5%
+    S=500  top 5 1%   top 10 2%   top 25 6%
+
+==============================================================================
+THE SAME RUN WITH THE 0.1c TICK ZONE PUT BACK IN
+==============================================================================
+  Reported because leaving it out is a choice, not a fact. In this
+  zone the cached book rounds the price to a whole cent, so these
+  fills include prints up to 0.5c away from the true touch and the
+  fill count is an OVERSTATEMENT of unknown size.

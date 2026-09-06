@@ -352,6 +352,7 @@ def portfolio(trades, label="", contracts=50):
         byc[t["close"]].append(t)
     per = [sum(x["pnl"] for x in v) for v in byc.values()]
     wide = [len(v) for v in byc.values()]
+    span_days = (max(byc) - min(byc)) / 86400.0
     G = len(per)
     mu, sd = mean(per), pstdev(per) * math.sqrt(G / (G - 1.0))
     se = sd / math.sqrt(G)
@@ -360,7 +361,14 @@ def portfolio(trades, label="", contracts=50):
             "per_close": mu, "t": mu / se if se > 0 else 0.0,
             "mde": t_crit(G - 1) * se, "width": mean(wide),
             "maxwidth": max(wide), "worst": worst,
-            "day": mu * 96.0 * contracts / 100.0,
+            # $/day MUST use the rate this cell actually FIRES at, not the
+            # 96-close grid. Two errors lived in `mu * 96`: the strategy does
+            # not trade every close (tau<=20 fires 37.2/day), and available
+            # closes ran 63.3/day in the measured window anyway. Measured
+            # 2026-09-06, it overstated the four published portfolio figures
+            # by 1.73x to 3.91x. worst_day is unaffected -- it is per close.
+            "fired_per_day": G / max(span_days, 1e-9),
+            "day": mu * (G / max(span_days, 1e-9)) * contracts / 100.0,
             "worst_day": worst * contracts / 100.0}
 
 
