@@ -2,6 +2,76 @@
 
 ---
 
+## 2026-09-06 (later) — pin's real shape, and the one fact the maker
+## verdict hangs on
+
+### pin: splitting the legs shows a clean, tradeable strategy
+
+    tau <= 20s, out of sample, floor 0.5c
+      n=333 closes   MDE 1.55c   REALISED +2.53c   t=+4.9
+        DEAR   n=260  paid 96c  won 260/260  P&L +2.91c
+        CHEAP  n= 73  paid  1c  won   2/73   P&L +1.19c
+
+**t is now +4.9** (from +3.0, +3.7, +4.5 on successive tapes). And the split
+resolves the "26% flip rate" that looked alarming: EVERY flip was in the CHEAP
+leg losing its 1c premium. The two legs are different businesses:
+
+* **DEAR is the original thesis, and it works.** Pay 96c for a contract the
+  locked prints say is decided; it paid out **260 times out of 260**. This is
+  the strategy I described at the start, and it is the one carrying the money
+  (260 x 2.91c = 757c against CHEAP's 87c).
+* **CHEAP is a lottery ticket** -- buy at 1c, win 99c about 3% of the time.
+  Positive by payoff ratio rather than by the model being right (any rate
+  above ~1% is +EV), and on 73 trades with 2 wins it is far too noisy to
+  claim. It should probably be dropped rather than defended.
+
+**The risk is entirely unobserved and is now priced in the report.** A flip at
+a 96c entry costs -96.3c, which is 33 winners. Zero flips in 260 gives a 95%
+upper bound of 1.15% on the true rate (rule of three); breakeven is **2.9%**.
+So there is about **2.5x headroom** -- comfortable, but resting on a tail that
+has never once been seen. Every pin line now prints flips, the upper bound,
+the breakeven rate and the headroom.
+
+    money, DEAR leg only: 24 trades/day
+      at  40 contracts   $28/day    $10.0k/yr
+      at  55 contracts   $38/day    $13.8k/yr
+      at 100 contracts   $69/day    $25.1k/yr
+
+### maker: the at-touch row came back CLEAN, and now hangs on one fact
+
+Quarantining the stale fills fixed it. `filldepth2s/at-touch` (reference quote
+at most 2s old):
+
+    half-spread +0.49c   markout 0.28c @1s ... 0.02c @settlement
+    maker net   +0.22c @1s   +0.47c @settlement    (t=+6.1, 16.8M trades)
+    at-touch taker information: mkS +0.03c, t=0.4  -- ZERO
+
+That is the shape a maker wants: the money is at the touch, takers who fill
+there carry no information at all, and the informed ones sweep (+8.61c at 3c+
+out, t=40.4). It also locates maker.py's error precisely: **its capture (0.50c)
+was RIGHT; its markout was the ALL-FILLS 0.612c when the at-touch population
+is only 0.28c.** It compared two different populations.
+
+**But one unverified assumption decides everything.** A maker at the touch is
+filled at the touch by any order that reaches it -- including the first leg of
+a sweep that goes on to eat three levels. Whether that fill is already counted
+depends purely on how Kalshi prints a sweep:
+
+* **per level** -> the touch leg is its own print, already inside `at-touch`,
+  and **+0.47c stands**
+* **one print at VWAP** -> the touch leg is invisible in the -out buckets, a
+  touch maker eats it unpriced, and the volume-weighted answer is **-0.42c**
+
++0.47c against -0.42c is the difference between a strategy and nothing, and it
+is settled by a reporting convention rather than by anything about the market.
+`sweep_shape()` now counts trades sharing an exact instant on one ticker and
+reports how many carry DIFFERENT prices. Many => per level => the number
+stands. Near zero => the at-touch figure is an overstatement.
+
+**Until that prints, the maker verdict is unresolved.**
+
+---
+
 ## 2026-09-06 — pin is STILL strengthening; the at-touch maker row is
 ## contaminated and its verdict is not yet readable
 

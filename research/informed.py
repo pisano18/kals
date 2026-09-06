@@ -152,6 +152,68 @@ def bucket_of(cuts, v):
     return len(cuts)
 
 
+def sweep_shape(trades, verbose=True, cap=4_000_000):
+    """Does Kalshi report a sweep as ONE print, or one print PER LEVEL?
+
+    THE ENTIRE MAKER VERDICT TURNS ON THIS AND NOTHING ELSE.
+
+    A maker resting at the touch is filled at the touch by any taker order
+    that reaches it -- including the first leg of a sweep that goes on to eat
+    three levels above. Whether that fill is already counted depends on how
+    the exchange prints it:
+
+      PER LEVEL   the touch leg is its own print and lands in `at-touch`,
+                  so the at-touch P&L (+0.47c) already includes sweep legs
+                  and stands as measured.
+      ONE PRINT   the sweep appears once at its average price, out in the
+                  -out buckets, and the touch leg is INVISIBLE. A touch
+                  maker eats it at the touch price, and the volume-weighted
+                  result is about -0.42c. Negative.
+
+    +0.47c and -0.42c is the difference between a strategy and nothing, and
+    it is decided by a reporting convention rather than by anything about the
+    market. So: count trades sharing an exact timestamp on one ticker, and
+    look at whether their prices differ. Bursts of same-instant prints at
+    DIFFERENT prices are per-level reporting; single prints are not.
+    """
+    same_ts = defaultdict(list)
+    n = 0
+    for tk, tl in trades.items():
+        for (t, p_, sz, side) in tl:
+            n += 1
+            if n > cap:
+                break
+            same_ts[(tk, round(float(t), 3))].append(float(p_))
+        if n > cap:
+            break
+    multi = [v for v in same_ts.values() if len(v) > 1]
+    multi_px = [v for v in multi if len(set(round(x, 6) for x in v)) > 1]
+    lone = len(same_ts) - len(multi)
+    if verbose:
+        print("\n" + "=" * 78)
+        print("HOW A SWEEP IS PRINTED -- the fact the maker verdict rests on")
+        print("=" * 78)
+        print(f"  {n:,} trades in {len(same_ts):,} (ticker, instant) groups")
+        print(f"    single print at that instant      {lone:>12,}"
+              f"  ({100.0 * lone / max(1, len(same_ts)):.1f}%)")
+        print(f"    several prints, SAME price        "
+              f"{len(multi) - len(multi_px):>12,}")
+        print(f"    several prints, DIFFERENT prices  {len(multi_px):>12,}"
+              f"  ({100.0 * len(multi_px) / max(1, len(same_ts)):.1f}%)")
+        if multi_px:
+            sz = sorted(len(v) for v in multi_px)
+            print(f"    legs per multi-price group: median "
+                  f"{sz[len(sz) // 2]}, max {sz[-1]}")
+        print("\n  MANY multi-price groups => PER-LEVEL reporting => the")
+        print("  touch leg of every sweep is already inside `at-touch`, and")
+        print("  the at-touch maker P&L stands as measured.")
+        print("  NEAR ZERO => one print per sweep => the touch leg is hidden")
+        print("  in the -out buckets, a touch maker eats it unpriced, and")
+        print("  the at-touch number is an overstatement.")
+    return {"groups": len(same_ts), "multi_price": len(multi_px),
+            "single": lone}
+
+
 def measure(quotes, trades, markets, outcome, verbose=False,
             assert_strict=False):
     """One pass over every trade -> cell aggregates.
@@ -605,6 +667,7 @@ def main():
     print(f"  {sum(len(v) for v in trades.values()):,} trades, "
           f"{len(quotes):,} markets with quotes, "
           f"{len(markets):,} with settlements")
+    sweep_shape(trades)
     tables, used, skipped, sizes = measure(quotes, trades, markets,
                                            outcome_of, verbose=True)
     print(f"\n  {used:,} trades measured, {skipped:,} skipped "

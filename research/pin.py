@@ -56,7 +56,7 @@ from collections import defaultdict
 from statistics import NormalDist, mean, pstdev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from engine import var_factor, N_AVG                        # noqa: E402
+from engine import var_factor, N_AVG, fee_per_contract     # noqa: E402
 from settlewin import partial                               # noqa: E402
 from endgame import (scan, evaluate, summarise, redraw_null,  # noqa: E402
                      mde, fee_cents, outcome_of, sigma_from)
@@ -250,6 +250,23 @@ def block(trades, label, reps=2000):
     print(f"    {'':<26} overall won {wr:.1f}% "
           f"(model said >={100 * PIN:.0f}%)   "
           f"{fmt('DEAR', dl)}   {fmt('CHEAP', cl)}")
+    # PRICE THE LOSS THAT HAS NOT HAPPENED YET. The dear leg won 260 of 260
+    # on the 2026-09-06 tape, so its downside is entirely unobserved -- and
+    # a single flip at a 96c entry costs 33 winners. Picking up pennies in
+    # front of a roller is exactly the shape that looks best right up until
+    # it does not, so the breakeven flip rate is printed next to the rule-of
+    # -three upper bound on the rate actually seen. Headroom between those
+    # two is the whole margin of safety, and it must be stated, not felt.
+    if dl and dl[0] >= 20:
+        n_d, paid, wr_d, pnl_d = dl
+        fl_d = sum(1 for _, t in dear if id(t) in flset)
+        lose = -paid - 100.0 * fee_per_contract(paid / 100.0)
+        be = pnl_d / (pnl_d - lose) if pnl_d > lose else float("nan")
+        ub = 100.0 * (3.0 + fl_d) / n_d       # rule of three, extended
+        print(f"    {'':<26} DEAR tail: {fl_d} flips in {n_d}"
+              f"  -> 95% upper bound {ub:.2f}%"
+              f"  breakeven {100 * be:.2f}%"
+              f"  headroom {100 * be / ub if ub else 0:.1f}x")
     print(f"    {'':<26} mid-null [{nm['lo']:+.2f},{nm['hi']:+.2f}]"
           f"  fair-band [{nf['lo']:+.2f},{nf['hi']:+.2f}]{verdict}")
 
