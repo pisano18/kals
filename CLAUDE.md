@@ -309,3 +309,127 @@ To be filled in by the operator. Do not populate these from inference.
 
 Until these are set, no run may be described as decisive, and no stage may
 report a result as project-ending.
+
+
+---
+
+# Session handoff — reading this from a CLI on the operator's machine
+
+Everything above was written from a **remote container with no data**. That
+session could only write code and self-tests, then hand the operator a command
+to run. If you are reading this from a CLI on the box that holds `C:\kals`,
+that loop is gone: **you can run the stages yourself.** Read this section
+before doing so.
+
+## Where things are
+
+| | |
+|---|---|
+| repo | `C:\kals-repo` |
+| tape (do not touch) | `C:\kals\kalshi_data` |
+| constituent feeds (do not touch) | `C:\kals\feed_data` |
+| settlements | `C:\kals\fulltape` |
+| deployed collector | `C:\kals\kalshi_collector.py` — a **copy**, not the repo file |
+| branch | `claude/file-uploads-70rtjl` |
+
+The stage defaults in `go.py` are `./kalshi_data` etc., which are **wrong on
+this machine**. Either use the runner, which passes the real paths, or pass
+them explicitly:
+
+```powershell
+python research\pin.py --data C:\kals\kalshi_data --out C:\kals\fulltape
+```
+
+## Running work
+
+Prefer the runner — it handles paths, per-stage reports, the PID lock, the
+settlement refresh, and the commit/push:
+
+```powershell
+cd C:\kals-repo
+.\run_when_away.ps1 -Only pin              # one or more stages
+.\run_when_away.ps1                        # all 23, ~2h35m
+```
+
+Rough budgets, measured: `informed` ~13 min (7200s cap), `pin` ~2.5 min,
+`strikes` ~75s, `flow` ~100 min on a cold cache and seconds after,
+`maker` ~25 min, `oos` and `flow` get 14400s, everything else 3600s.
+
+Two things that will bite:
+
+- **The lock.** `results/.run.lock` holds a PID; a second run refuses to start
+  and names the PID to stop. It is never deleted — a stale lock from a killed
+  run points at a dead process and the next run takes it. Do not delete it by
+  hand.
+- **The collector must keep running.** If you ever need to stop analysis
+  processes, filter on `research`, never on `python.exe` alone:
+
+  ```powershell
+  Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object {$_.CommandLine -like '*research*'} |
+    ForEach-Object { Stop-Process -Id $_.ProcessId }
+  ```
+
+  `kalshi_collector.py` and `crypto_feeds.py` have no `research` in their
+  command lines, so that filter spares them. The watchdog (`run_all.ps1`)
+  only checks liveness every **300 seconds**, so anything killed costs up to
+  five minutes of unrecoverable tape.
+
+## The working loop that produced everything above
+
+1. Write the stage **and its self-test together**. The self-test is the
+   deliverable; plant an answer, and fail if the estimator misses it *or*
+   finds something in a world with nothing planted.
+2. Run `--selftest` until green, then `markers.py` and `shadow.py`.
+3. Run against real data.
+4. **Read the output adversarially before believing it.** Most of what this
+   project has learned came from a number that could not be true — a maker
+   capturing a negative half-spread, a binary whose win and loss did not sum
+   to 100c, a "gap" whose median size was 1. Reconcile the arithmetic by hand
+   when something looks good.
+5. Commit with the reasoning, not just the change.
+
+## State as of 2026-09-06
+
+**Two results are alive** (both detailed in `HANDOFF.md`, newest first):
+
+- `pin` — buy the endgame's stale quotes at `tau <= 20s`. Out of sample
+  **+2.54c, t = +5.0** at edge floor 0.5c. Low floors only; 1.0c and 2.0c have
+  headroom at or below 1.0x and are not safely positive.
+- `informed` — market-making at the touch. **+0.48c per fill, t = +6.4** on
+  17.1M fills, takers there carrying zero information (t = 0.2). Sweeps print
+  per level (59% of same-instant groups, median 8 legs), so the touch leg of a
+  sweep is already counted.
+
+**Immediate next actions, in order:**
+
+1. **Run `pin` once.** The all-coins portfolio table (`run_portfolio`,
+   `evaluate_markets`, `_walk_markets`) was pushed *after* the last run and
+   **has never executed against real data**. It reports P&L per close summed
+   over every coin, coins per close, and the worst single close. Twelve series
+   settle on the same quarter hour at rho ~ 0.8, so this is leverage, not
+   diversification — read the worst-close column first.
+2. **Build the queue-position simulator.** `+0.48c` is per fill; how many fills
+   a resting quote actually receives is unmeasured, and it is the only thing
+   between the maker result and a number in dollars. The rebuilt book in
+   `flow.py` is now replay-correct (seq-ordered, stale fills quarantined) and
+   is the input.
+3. **Fix `KXCRYPTOCOMP15M`.** It is in `CRYPTO_15M` but nothing arrives;
+   the ticker is wrong or the series does not exist under that name. One API
+   call. `KXCRYPTOLEAD15M` **is** recording (since 2026-09-04) and needs days
+   of tape before it is testable. Verify with:
+
+   ```powershell
+   python research\newseries.py --data C:\kals\kalshi_data
+   ```
+
+4. **Settle contradiction 3** (short-cadence equity series) with one API call —
+   it decides whether `IDEAS.md` B3 lives or is struck.
+
+**Do not** re-run `flow` unless the book itself is in question; it costs ~100
+minutes on a cold cache and neither live result depends on re-mining it.
+
+## What this project has never done
+
+No order has ever been placed. No money has been deployed. Nothing above
+changes that, and the kill criteria are still blank.
