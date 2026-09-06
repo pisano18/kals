@@ -235,6 +235,18 @@ applies unchanged to the Coin Race legs, which must sum to 100c.
    `sweep_shape()`). A per-print statistic can therefore weight one taker
    decision up to 8 times.
 
+   **THAT 59% IS MEASURED AT SECOND RESOLUTION AND IS AN UPPER BOUND, NOT THE
+   ANSWER.** Confirmed on disk 2026-09-06: `ts_ms` is present on 100% of trade
+   messages with all 1,000 sub-second values occurring, `created_time` on 0%,
+   and `ts` is exactly `floor(ts_ms/1000)`. `edge.load_trades` reads `ts`, so
+   `sweep_shape()` grouped by **second**, not instant — and a busy book
+   produces many unrelated trades per second. Re-measure on `ts_ms`, and
+   prefer the clock-independent test: a sweep's legs are the SAME taker side
+   at consecutive price levels walking away from the touch, while independent
+   trades sharing a second scatter. **Until that lands, do not cite 59% and do
+   not treat the maker verdict as settled** — it is the number the +0.48c vs
+   -0.42c question rests on.
+
    **Scope matters here, and getting it backwards destroys a valid result —
    see the contradiction flagged below.**
 

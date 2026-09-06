@@ -46,9 +46,20 @@ Set-Location $Repo
 # way to be blocked by a run that already died.
 $lock = "$Repo\results\.run.lock"
 New-Item -ItemType Directory -Force -Path "$Repo\results" | Out-Null
+# SIX HOURS. $PID is the PowerShell process RUNNING THIS SCRIPT, which when
+# launched from a prompt is the operator's own interactive shell -- and that
+# shell outlives the run by hours or days. So a PID-liveness check alone can
+# never see the lock go stale, and the runner refuses to start forever. The
+# finally block below is the real fix; this age bound is the backstop for the
+# case where the shell is hard-killed and the finally never runs.
+$LOCK_MAX_AGE_H = 6
 if (Test-Path $lock) {
     $old = (Get-Content $lock -EA SilentlyContinue | Select-Object -First 1)
-    if ($old -and (Get-Process -Id $old -EA SilentlyContinue)) {
+    $ageH = ((Get-Date) - (Get-Item $lock).LastWriteTime).TotalHours
+    if ($ageH -gt $LOCK_MAX_AGE_H) {
+        Write-Host ("lock is {0:N1}h old (max {1}h); taking it" -f $ageH, $LOCK_MAX_AGE_H)
+    }
+    elseif ($old -and (Get-Process -Id $old -EA SilentlyContinue)) {
         Write-Host "*** ANOTHER RUN IS ALREADY IN PROGRESS (pid $old)."
         Write-Host "*** Two runs share these report files and this git tree;"
         Write-Host "*** running both produces reports mixed from each."
@@ -58,6 +69,13 @@ if (Test-Path $lock) {
     Write-Host "stale lock from pid $old (not running); taking it"
 }
 $PID | Set-Content $lock
+
+# EVERYTHING BELOW RUNS INSIDE try/finally SO THE LOCK IS ALWAYS RELEASED.
+# PowerShell runs a finally block when a script exits, including through the
+# seven `exit` statements below, so this is the one place that reliably clears
+# it. Without it the lock survived a completed run and blocked every run after
+# -- found 2026-09-06 with the lock holding a live interactive shell's PID.
+try {
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmm"
 $log   = "$Repo\results\run-$stamp.log"
@@ -323,3 +341,8 @@ if (-not $pushed) {
 }
 
 Say "=== done ==="
+
+}
+finally {
+    Remove-Item $lock -Force -EA SilentlyContinue
+}
