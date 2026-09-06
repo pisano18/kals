@@ -2,29 +2,120 @@
 
 ## Read these five lines first
 
-1. **WHAT DIED — the queue simulator's market-making number.** It said
-   $195–309/day from ONE contract resting per side. Three adversarial refuters
-   ran; **two REFUTED it, one partially.** The kill: a quote that always joins
-   the **back** of the queue was earning **2.0× the per-contract rate of the
-   flow it stands in**. A back-of-queue order's fills are a *subset* of at-touch
-   flow — that subset can earn the same or less, never double. **Do not spend
-   against that number.**
-2. **WHAT SURVIVED — `pin`, and the race question is now ANSWERED in its
-   favour.** I was wrong that it was unmeasurable. Quotes survive a **median
-   0.70–0.82 s**; 41–45% are never depleted at all. Our full reaction time is
-   **~320 ms** (282 ms feed lag + 35 ms order round-trip). **~80–85% of races
-   are winnable.**
-3. **WHAT CHANGED — the best money found tonight needs nobody to be wrong.**
-   Kalshi runs a **Liquidity Incentive Program** that pays makers for *resting*
-   orders whether or not they fill. It is live on 15-minute families, and the
-   12 crypto series this project has worked on for weeks are the **only**
-   15-minute family with **no** program at all.
-4. **WHAT NEEDS YOU** — `PREREG_pin.md` is drafted and unsigned; the incentive
-   program's pool-sharing formula needs one more check before it is money; the
-   $50 live test is designed only if you want it. See "Needs you".
-5. **WHAT I COULDN'T DO** — the race adverse-selection join was still running
-   at write time, and JOB D (full stage suite) had not started. Both named
-   below with status. Nothing was silently dropped.
+1. **THE SELF-TEST GATE IS WEAK, AND THAT WAS THE MOST IMPORTANT FINDING.**
+   Mutation-tested `pin` and `informed` the way lens 2 did `queuesim`: **pin's
+   self-test kills 33% of deliberately wrong estimators, informed's 40%.**
+   Fees abolished entirely, walk-forward replaced by in-sample fitting, MDE
+   understated 4×, the null band widened to infinity — all SURVIVED. **But I
+   then verified all five properties directly and the shipped code is correct
+   on every one.** The number stands; the *guarantee* does not.
+2. **`pin` SURVIVES and the race is answered in its favour.** Quotes live a
+   median **0.70–0.82 s**; 41–45% are never taken. And the 282 ms lag is
+   **Kalshi's ticker channel, not our overhead and not clock skew** —
+   `orderbook_delta` delivers the same information in **47 ms**. Reading from
+   there we win **~88% of races and keep ~91% of the money**.
+3. **WHAT CHANGED — the collector now records the five commodity 15-minute
+   series**, which are the ones Kalshi's incentive program actually pays for.
+   File deployed to `C:\kals`. **THE RESTART WAS BLOCKED and has not happened**
+   — see "Needs you", item 1. They trade 18:00–23:45 ET so there is margin.
+4. **WHAT NEEDS YOU** — the collector restart (blocked), and the PREREG is now
+   complete enough to sign: $250 accepted, and the MDE section you asked for is
+   in as §5b.
+5. **WHAT I COULDN'T DO** — **NEW DIRECTIONS and RISK/REWARD never ran; both
+   died on the session limit, not by my choice, and I failed to say so.** So did
+   the tie audit, the API job, the stage suite, relative value, early exit and
+   both adversarial passes: **10 of 17 agents across the two workflows errored
+   out.** Nothing ran twice.
+
+---
+
+## 0. MUTATION TESTING — the gate, tested against itself
+
+| stage | applied | killed by the self-test | **survived** | kill rate |
+|---|---|---|---|---|
+| `pin` | 9 | 3 | **6** | **33%** |
+| `informed` | 5 | 2 | **3** | **40%** |
+
+**Survivors — bugs the gate would not have caught:**
+
+- `pin`: **fees abolished entirely** (pin's edge is fee-*netted*)
+- `pin`: **walk-forward replaced by in-sample `evaluate`** — the out-of-sample
+  claim is the whole result and nothing tests it
+- `pin`: **null band widened to infinity**; **MDE understated 4×**; **edge
+  overstated 0.5c**
+- `informed`: **every cell mean inflated 50%**; **the 30-cluster floor removed**
+- `informed`: **"every group counted as monotone"** — that is the sweep shape
+  test I wrote *today*; my own contiguity check masks the monotonicity check
+
+**A surviving mutation means the test would not catch that bug — not that the
+bug is present.** So each was then checked directly:
+
+| property | direct check | result |
+|---|---|---|
+| fees charged | hand-recomputed 400 trades; `fee_cents(0.96)=0.2688c` vs `0.07·0.96·0.04·100` | **0 mismatches**, 0.187c drag/trade |
+| walk-forward out of sample | truncate input to closes ≤ i, re-run, compare k at close i | **9/9 identical**, 207 past trades bit-identical |
+| null band finite | mid-null [−3.41, +0.46], width 3.87c | sane |
+| MDE arithmetic | `3·9.391/√336 = 1.537c` | matches `mde()` exactly |
+| edge floor binds | four floors | min edge > floor each time |
+
+**A FALSE ALARM OF MINE, RETRACTED.** My first look-ahead test scrambled
+outcomes after close index 150 and reported LOOK-AHEAD from 10/20 refits
+differing. The test was wrong — `warmup=150, refit_every=10`, so refits at 160,
+170… legitimately consume closes inside the scrambled region. The truncation
+test above is the correct one and it is clean.
+
+**What this costs:** the project's epistemic claim is "we have not fooled
+ourselves because of the self-test gate". That claim is now much weaker than
+believed. Strengthening these self-tests is the highest-value engineering work
+available, and it is not done.
+
+## 0b. THE 282 ms, DECOMPOSED
+
+| candidate cause | test | verdict |
+|---|---|---|
+| clock skew | `w32tm /stripchart` vs NTP | **−2 to −6 ms. Eliminated.** |
+| collector overhead | compare channels by volume | **Eliminated — see below** |
+| Kalshi's own publication delay | what remains | **This is it** |
+
+| channel | messages | min | median lag |
+|---|---|---|---|
+| `ticker` | 127,812 | 29 ms | **326 ms** |
+| `trade` | 649,236 | 10 ms | **46 ms** |
+| `orderbook_delta` | **13,498,096** | 22 ms | **47 ms** |
+
+The **heaviest** channel is the **fastest**, so it is not our overhead. `pin`
+detects from `ticker` today; the same information is in `orderbook_delta`.
+**Real reaction time ~82 ms, not ~320 ms.**
+
+## 0c. RACE ADVERSE SELECTION — favourable
+
+`corr(survival, edge) = +0.136`, `corr(survival, pnl) = +0.072`. **We lose the
+low-edge races, not the good ones.**
+
+| latency | races won | $/day | vs ideal |
+|---|---|---|---|
+| 100 ms (`orderbook_delta`) | 88% | $30.54 | **91%** |
+| 320 ms (`ticker`) | 77% | $31.25 | 94% |
+| 1.0 s | 59% | $23.76 | 71% |
+
+## 0d. THE tau≤60 MDE CAVEAT — answered
+
+The caveat *"the tau≤60 one-per-close base is below its own MDE, so multiples on
+it are a multiple on a non-result"* **does not transfer to the every-market
+headline**, and here is the structural reason, measured:
+
+| tau≤60 | n | median tau | mean edge | mean P&L |
+|---|---|---|---|---|
+| one-per-close | 713 | **59 s** | 1.24c | **0.25c** |
+| every-market | 2,641 | **45 s** | 1.91c | **0.81c** |
+
+`rule="first"` takes the *earliest* qualifying second, so at tau≤60 one-per-close
+sits at the boundary where the variance collapse has not happened. Different
+populations; the non-result does not contaminate the headline.
+
+**The real caveat, stated instead:** tau≤60's money comes from **volume, not
+edge quality** (0.81c vs 2.49c at tau≤20). That makes it more exposed to
+latency, fees and slippage error than tau≤20 is.
 
 ---
 
@@ -188,26 +279,62 @@ figures by **1.73× to 3.91×**.
 
 ## Needs you
 
-1. **`PREREG_pin.md` — drafted, UNSIGNED, clock not started.** The survival
-   result supports signing it. §5 needs your drawdown number; my proposal is
-   $250 (≈5× observed max, ≈2.5 days of P&L).
-2. **The incentive-program sharing formula.** If our share at a few hundred
-   contracts is meaningful, this is the most reliable money on the table and it
-   points at Coin Race and the commodity 15-minute families, not at crypto.
-3. **The $50 live test.** The race is ~85% won on recordings, so it is no longer
-   *needed* to answer the question — but it is the only way to measure a real
-   order client's latency versus our collector's 282 ms. I have not designed it
-   because it is no longer the blocker. Say the word and I will.
+1. **THE COLLECTOR RESTART — BLOCKED, and it is the only thing on a clock.**
+   `kalshi_collector.py` now lists the five commodity series and is deployed to
+   `C:\kals`, verified identical to the repo. **But stopping the running
+   process was refused by the permission classifier, so the change is on disk
+   and NOT live.** The watchdog respawns within 300 s, so this restores it:
 
-## Not done, and why
+   ```powershell
+   Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+     Where-Object {$_.CommandLine -like '*kalshi_collector.py*'} |
+     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+   ```
 
-- **Race adverse-selection join** — running at write time; the scan re-reads 277
-  delta files. Appended when it lands.
-- **JOB D, full stage suite** — not started. It is last in the workflow by
-  design and the queue-sim refutation makes re-publishing less urgent.
-- **JOB B tie-audit, relative value, early exit, constraint audit** — agents
-  running; reports land in `results/overnight/`.
-- **The $50 live-test design** — deliberately not written; see above.
+   Then verify: `python research\newseries.py --data C:\kals\kalshi_data`.
+   The commodity markets open **18:00 ET**, so it must be live before then.
+   Cost of the restart: up to 5 minutes of crypto tape.
+
+2. **`PREREG_pin.md` is now complete enough to sign.** $250 accepted and
+   recorded as *not* the binding constraint; §5b gives the MDE you asked for;
+   §5c states the regression to expect. Two numbers to know before signing:
+   500 closes detects a **halved** edge with only a **1.09× margin**, and a
+   **quarter** edge needs **1,674 closes ≈ 22.5 days**. At 74.3 closes/day the
+   500-close window is **~7 days**, not 13.
+
+3. **Nothing else.** No orders placed. No money moved. The account is unfunded.
+
+## Not done, and why — nothing silently dropped
+
+**Died on the session limit (reset 09:40), not deprioritised by me:**
+
+| agent | workflow | status |
+|---|---|---|
+| NEW DIRECTIONS | 1 | **errored — session limit** |
+| RISK/REWARD | 1 | **errored — session limit** |
+| JOB B tie-audit | 1 | errored |
+| JOB C API | 1 | errored |
+| JOB D stage suite | 1 | errored |
+| adversarial-1, adversarial-2 | 1 | errored |
+| relative value | 2 | errored |
+| early exit | 2 | errored |
+| adversarial-rescope | 2 | errored |
+
+**10 of 17 agents errored.** I reported the workflows as "running" and did not
+check the failure list — that is the reporting failure, and it is mine.
+**Nothing ran twice.** The fee/API question was assigned to both workflows
+(`jobC:api` and `fees-rebates`); `jobC:api` errored, so only one completed.
+
+**Not started by me, from the current list:**
+
+- **D — the rebate's sharing formula, obligations, and our realistic slice.**
+  The single highest-value item remaining. Not started.
+- **E — the cross-venue accounting** of what was ruled out *without* checking.
+  From the report: Deribit, Binance (451), Bybit (403), Robinhood and
+  Polymarket-US-crypto were all *checked*. **The sports overlap was NOT priced**
+  — the agent ran out of time building the ticker map, and it names it as the
+  most promising unexplored branch, better than weather on event identity.
+- **Strengthening the self-tests** that mutation testing just showed are weak.
 
 ## Resource state
 
