@@ -2,6 +2,86 @@
 
 ---
 
+## 2026-09-06 (rebate verified) — the programme DOES pay. My "nothing has
+## ever been paid" alarm was an unpaginated first page.
+
+### RETRACTION FIRST
+
+I reported that **276 ended programmes all showed `paid_out: false`** and made
+"has this ever paid anyone?" the top open question. **That was wrong, and the
+cause was mine:** `GET /incentive_programs` returns newest-first and I read
+only the first page of 1,000 rows — which contains nothing but current and
+future windows. Paginating with `next_cursor`:
+
+    programs seen          60,000  over 60 pages
+    paid_out = true        49,934  (83%)
+    end_date range         2026-07-27  ->  2026-09-26
+    distinct families       1,320   (I had seen 25)
+
+**Coin Race is among the paid.** `KXCRYPTOLEAD15M-26SEP060015-ETH`, $20,
+target 1,000, `paid_out: true`.
+
+### SETTLEMENT LAG, measured on 57,057 ended programmes
+
+    hours since end, PAID     p10 56.2   median 339.8   p90 840.7   MIN 2.0
+    hours since end, UNPAID   p10 12.0   median 101.1   p90 822.7   MAX 959.8
+
+**Minimum observed lag for a paid programme is 2.0 hours**, so settlement is
+not slow in principle. But 7,434 ended programmes remain unpaid, some **40 days
+after they ended** — those are not waiting, they are programmes where nobody
+qualified and the pool simply expired.
+
+### THE PAYOUT RATE IS THE NUMBER THAT MATTERS, and it varies enormously
+
+    family                 ended     paid     rate
+    KXGOLD15M               2,396    2,381   99.4%
+    KXSILVER15M             2,396    2,380   99.3%
+    KXWTI15M                2,396    2,380   99.3%
+    KXAAAGASD                 680      680  100.0%
+    KXFEDFUNDSYEAR            840      840  100.0%
+    KXDIESELD                 651      639   98.2%
+    KXRAIN                    800      786   98.2%
+    KXCRYPTOLEAD15M         6,175    5,457   88.4%
+    KXTTELITEMATCH          6,119    3,360   54.9%
+
+**The five commodity 15-minute series added to the collector today have the
+HIGHEST payout rate of any family at 99.3-99.4%.** That change looks better
+the more it is examined — it was made for the pool size and it turns out to be
+right for the qualification rate too.
+
+**Table tennis, which I ranked second by pool size, pays only 54.9% of the
+time** — nearly half its programmes expire unpaid. Effective rate roughly
+halves: $342/hr becomes ~$188/hr. Coin Race at 88.4% becomes ~$354/hr, and the
+five commodity series ~$398/hr combined. **Ranking by advertised pool was
+wrong a third time; rank by pool x payout rate.**
+
+### AND A CORRECTION TO THE SECOND AI, which got this part wrong
+
+It stated: *"To earn a portion of that $20, your resting orders must be equal
+or greater than the market's specific target_size_fp."* **That is false, and it
+is the single most important detail in the whole programme.** Kalshi's own
+documentation, verbatim: Target Size is *"the depth that must be resting on
+each side for a snapshot to count"* — **AGGREGATE market depth, not per
+participant.** We do not need to post 1,000 contracts to earn anything; we need
+the MARKET to carry 1,000, and then we take a pro-rata share of the pool by our
+share of distance-weighted qualifying size. If the other reading were true the
+programme would be unreachable at $1,000 of capital; because it is not, a
+50-contract quote earns 11.57% of a side.
+
+Its batch-latency hypothesis, though, was exactly right and my alarm was
+exactly wrong. Both halves recorded.
+
+### WHAT THIS DOES AND DOES NOT SETTLE
+
+Settled: the pools are real, the units are $1e-4, the money is paid, and the
+qualification rate per family is now measured rather than guessed.
+
+Still open, and now the top question: **the inventory risk.** To collect, we
+rest at the touch, get filled, and carry position into a 15-minute settlement.
+That is unpriced and it is being measured.
+
+---
+
 ## 2026-09-06 (correction) — "KXDIESELD pays 7x the crypto rate" was
 ## MISLEADING. Per HOUR it pays a tenth. The 15-minute families win.
 
