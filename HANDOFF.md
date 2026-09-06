@@ -2,6 +2,54 @@
 
 ---
 
+## 2026-09-06 (ledger) — THE ACCOUNT HAS A TRADING HISTORY, and it confirms
+## the fee formula and zero maker fees from real money
+
+`/portfolio/fills`, `/portfolio/orders` and `/portfolio/settlements` all return
+data. The account is not virgin. (The first probe returned 401 on all three —
+that was my bug: `kauth.get` signs the PATH, so passing `?limit=1` inside the
+path string put the query into the signature. Pass params separately.)
+
+### Confirmed from real executions, not from documentation
+
+**The fee formula is exactly `0.07 * p * (1-p)` per contract:**
+
+    fill 12.37 contracts, no_price 0.84 (yes 0.16), fee charged $0.116400
+      0.07 * 0.16 * 0.84 * 12.37 = 0.116400   exact
+    fill 38.97 contracts, no_price 0.53 (yes 0.47), fee charged $0.679600
+      0.07 * 0.47 * 0.53 * 38.97 = 0.679540   agrees to a hundredth of a cent
+
+**`maker_fees_dollars: "0.000000"`** on the account's own orders. Makers really
+do pay nothing — that is now first-party evidence, not a help-centre claim.
+
+### AND THE FINDING THAT MATTERS: every fill is `is_taker: true`
+
+**This account has never rested a maker order that filled.** So there is no
+rebate history to learn from, and the critic's fourth demand — *"realised score
+share after live posting"* — genuinely cannot be answered from anything we
+hold. It requires an order.
+
+Realised settlements also show the taker side losing as `informed.py` predicts:
+`KXBTC15M-26AUG150130-30`, 38.97 contracts of YES bought at 0.47, market
+resolved NO, value 0, revenue 0 — a $18.32 loss plus $0.68 of fee.
+
+### Where this leaves the four demands
+
+    1. realised score share after posting   REQUIRES AN ORDER. Being designed.
+    2. full inventory P&L distribution      running, wf_c62c12ec-7cb
+    3. capital / max drawdown on 5 markets  running, wf_c62c12ec-7cb
+    4. does 100c mutual exclusivity hedge   running, wf_c62c12ec-7cb
+
+`wf_e9226d75-26f` now designs the **minimum informative live test**: a
+1-contract two-sided quote is ~$1 of collateral and is a measuring instrument
+rather than a bet. **The first thing it must check is whether a 1-contract
+share (~0.1-0.5%, i.e. $0.02-$0.10 a window) survives Kalshi's "rounded down to
+the nearest cent" — if it rounds to zero the test costs money and measures
+nothing.** It must also find which endpoint actually reports incentive
+earnings; if none does, the test is unreadable and that kills it.
+
+---
+
 ## 2026-09-06 (formula verified) — I read the LIP rules verbatim at last.
 ## Seven of eight confirmed, one real bug found, one 2x ambiguity unresolved.
 
