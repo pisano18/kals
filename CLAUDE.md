@@ -229,23 +229,38 @@ applies unchanged to the Coin Race legs, which must sum to 100c.
    edges. That was `limit=200` returning only each market's LAST 200 prints.
    Any analysis paging the trades endpoint must confirm full coverage first.
 2. **Sweep-level reporting.** Kalshi reports a single sweep as multiple prints
-   at different price levels — measured 2026-09-06: **59.0% of
-   (ticker, instant) groups carry different prices, median 8 legs, max 806**,
-   over 4,000,001 trades in 401,591 groups (`research/informed.py`,
-   `sweep_shape()`). A per-print statistic can therefore weight one taker
-   decision up to 8 times.
+   at different price levels. **SETTLED 2026-09-06 on `ts_ms`** over 12,000,000
+   trades (`research/informed.py`, `sweep_shape()`):
 
-   **THAT 59% IS MEASURED AT SECOND RESOLUTION AND IS AN UPPER BOUND, NOT THE
-   ANSWER.** Confirmed on disk 2026-09-06: `ts_ms` is present on 100% of trade
-   messages with all 1,000 sub-second values occurring, `created_time` on 0%,
-   and `ts` is exactly `floor(ts_ms/1000)`. `edge.load_trades` reads `ts`, so
-   `sweep_shape()` grouped by **second**, not instant — and a busy book
-   produces many unrelated trades per second. Re-measure on `ts_ms`, and
-   prefer the clock-independent test: a sweep's legs are the SAME taker side
-   at consecutive price levels walking away from the touch, while independent
-   trades sharing a second scatter. **Until that lands, do not cite 59% and do
-   not treat the maker verdict as settled** — it is the number the +0.48c vs
-   -0.42c question rests on.
+   | multi-price (ticker, instant) groups | `ts_ms` | whole second | control |
+   |---|---|---|---|
+   | groups | 6,330,052 | 1,225,485 | 1,661,130 |
+   | trades per group | **1.90** | **9.79** | 6.11 |
+   | multi-price share | 10.7% | 57.2% | 76.9% |
+   | single-sided AND monotone | **96.6%** | 28.3% | **12.9%** |
+   | consecutive exchange `seq` | 99.8% | 23.2% | 32.8% |
+
+   **The answer is PER LEVEL, and it rests on the shape, not the count.** At
+   the true instant, multi-price groups are one-sided monotone ladders walking
+   the taker's own direction over consecutive `seq` — a book being walked. The
+   control (groups of trades ADJACENT in time but never simultaneous, drawn to
+   the same size distribution) scores 12.9%, so the test is reading sweep
+   structure and not merely that a busy book trends.
+
+   **The earlier 59.0% / median-8-legs figure was wrong and must not be
+   quoted.** It grouped by `msg.ts`, which is exactly `floor(ts_ms/1000)`, so
+   "same instant" meant "same second". Its own arithmetic gave it away:
+   4,000,001 trades in 401,591 groups is **9.96 prints per "instant" on one
+   ticker**, where the true instant gives 1.90. Grouped by second, only 28.3%
+   of multi-price groups have sweep shape at all. `ts_ms` is on 100% of trade
+   messages, `created_time` on 0%, and `edge.load_trades` still reads `ts` —
+   it was not changed, because that timestamp is what every other stage is
+   calibrated against (see the reference-quote staleness item in `HANDOFF.md`).
+
+   Consequence: the touch leg of a sweep is its own print at its own price and
+   is already inside `at-touch`, so **the at-touch maker P&L stands as
+   measured and the -0.42c branch is closed.** A per-print statistic can still
+   weight one taker decision several times (median 4 legs, max 342).
 
    **Scope matters here, and getting it backwards destroys a valid result —
    see the contradiction flagged below.**

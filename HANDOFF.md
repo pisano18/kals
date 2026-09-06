@@ -49,87 +49,127 @@ believing any of this.
 
 ---
 
-## 2026-09-06 (later still) — the sweep question is ANSWERED, but the test
-## that answered it was broken and was about to be right by accident
+## 2026-09-06 (later still) — the sweep question is SETTLED: PER LEVEL, on
+## shape rather than on a count. And pin's report contradicts itself.
 
-### The answer: PER LEVEL. The maker verdict's premise holds.
+### The answer, and it no longer depends on the clock
 
-    12,000,000 trades, grouped at the TRUE instant (msg.ts_ms)
-      675,193 groups of same-instant prints at DIFFERENT prices
-        one taker side                    96.7%
-        monotone price ladder             99.6%
-        ladder walks the taker's way      96.6%
-        consecutive exchange seq          99.8%
+    12,000,000 trades                ts_ms    whole second      CONTROL
+                                (true inst.)      (msg.ts)   (adjacent)
+      groups                     6,330,052     1,225,485     1,661,130
+      trades per group                1.90          9.79          6.11
+      multi-price groups            10.7%         57.2%         76.9%
 
-Same-instant multi-price prints are one-sided monotone ladders over
-consecutive sequence numbers. That is a book being walked, not trades
-coinciding. **Kalshi prints a sweep per level**, so the touch leg of every
-sweep is its own print, is already inside `at-touch`, and **+0.47c stands on
-this axis.** The -0.42c branch is closed. Also checked: `is_block_trade` is
-false on 1,255,096 of 1,255,096 trades, so negotiated blocks cannot be
-manufacturing the ladders.
+      SHAPE of the multi-price groups -- no clock involved:
+      single-sided                  96.7%         32.4%         18.0%
+      monotone price ladder         99.6%         44.0%         50.0%
+      single-sided AND monotone     96.6%         28.3%         12.9%
+        ...walking taker's way      96.6%         27.3%         10.0%
+      consecutive exchange seq      99.8%         23.2%         32.8%
 
-### But `sweep_shape()` was measuring the wrong thing entirely
+**PER LEVEL.** At the true instant, multi-price groups are one-sided monotone
+ladders walking the taker's own direction over consecutive `seq` — a book
+being walked, not trades coinciding. The CONTROL is the operator's suggestion
+and it is what the first version lacked: groups of trades ADJACENT in time but
+never simultaneous, drawn to the same size distribution. It scores **12.9%**
+against the real **96.6%**, so the test is reading sweep structure and not
+merely that a busy book trends. Also checked: `is_block_trade` is false on
+1,255,096 of 1,255,096 trades, so negotiated blocks are not manufacturing the
+ladders.
 
-It grouped trades by `round(t, 3)` and took `t` from `edge.load_trades`,
-which reads `msg.ts` -- an **integer second**. So "trades sharing an exact
-instant" was in fact "every trade on that ticker anywhere in that second",
-and the multi-price share it reports is pooling, not sweeps:
+So the touch leg of a sweep is its own print at its own price, is already
+inside `at-touch`, and **the maker verdict is re-reported unchanged: +0.48c
+stands; the -0.42c branch is closed.**
 
-    multi-price share of groups     whole second  57.2%
-                                    true instant  10.7%     5.6x inflation
+### The 59% was grouped by SECOND, and its own arithmetic said so
 
-The old code would have declared PER LEVEL off a tape with no sweeps in it
-at all -- the sweepless fixture now in the self-test pools to 4,000
-multi-price groups from 56. The verdict was going to be right, and it was
-going to be right by luck, on the one question the handoff says the entire
-maker verdict turns on.
+`sweep_shape()` grouped on `round(float(t), 3)` with `t` from
+`edge.load_trades`, which reads `msg.ts`. On disk `msg.ts` is exactly
+`floor(ts_ms/1000)` on **4,168,479 of 4,168,479** trades, so "same instant"
+meant "same second". `ts_ms` is on **100%** of trade messages and was never
+read; `created_time` is on **0%**, so the `ts or created_time` fallback never
+fires.
 
-`msg.ts_ms` is on **100%** of trade messages on disk and was never read.
-`msg.created_time` is on 0%, so the `ts or created_time` fallback in
-`load_trades` never fires.
+The tell was already printed: **4,000,001 trades in 401,591 groups is 9.96
+prints per "instant" on one ticker**, where the true instant gives 1.90. Ten
+prints in one millisecond on a single 15-minute binary is not credible; ten in
+one second is ordinary. Grouped by second, only 28.3% of multi-price groups
+have sweep shape at all — the rest is pooling. The old diagnostic would have
+returned PER LEVEL off a tape with no sweeps in it, and the self-test now
+contains exactly that tape.
 
-**What changed.** `sweep_shape` now reads the tape at true millisecond
-resolution through its own loader, and the claim no longer rests on a
-percentage at all -- it rests on the SHAPE of the groups (one side, monotone,
-correct direction, contiguous seq), which pooling cannot fake. Both figures
-are printed side by side. Self-test cases 5 and 6 lock it: a sweepless tape
-must not read PER LEVEL under either grouping, and an all-sweeps tape must.
-Change is confined to `research/informed.py`; nothing else calls it, and the
-return value was never used, so no other number moves.
+`edge.load_trades` was **not** changed. Its whole-second timestamp is what
+every other stage is calibrated against, and moving it is a decision, not a
+cleanup — see the next section.
 
-### SEPARATE and UNRESOLVED: the same truncation is aging every reference quote
+### UNRESOLVED, and it is a decision: every reference quote is ~1.1s too old
 
-This is not the sweep question and it is not fixed. `schema.json` pins
-`ts -> msg.ts` for **both** channels; `load_quotes` then does
-`int(round(t))`. Both sides of the at-touch classification are therefore
-snapped to whole seconds, and `measure()`'s strictly-earlier rule cannot see
-inside one. Measured on 251,526 trades over three hours:
+`schema.json` pins `ts -> msg.ts` for **both** channels and `load_quotes` then
+does `int(round(t))`, so both sides of the at-touch classification are snapped
+to whole seconds and `measure()`'s strictly-earlier rule cannot see inside
+one. Measured on 251,526 trades over three hours:
 
     true age of the reference quote     p25    median    p75   >2s old
-      second stamps (what runs today)  1.39s    1.75s   2.17s    34.2%
+      second stamps (running today)    1.39s    1.75s   2.17s    34.2%
       true ms stamps                   0.34s    0.65s   1.01s    14.1%
 
-The `filldepth2s/at-touch` row -- the one that produced +0.47c -- is defined
-by "reference quote at most 2s old". On second stamps a quote the code
-believes is inside 2s is typically **1.4-2.2s old in truth**, and a third of
-trades breach the bar the filter is trying to enforce. The whole at-touch
-question is about sub-second adverse selection, and it is being decided
+The `filldepth2s/at-touch` row is defined as "reference quote at most 2s old",
+and on second stamps a quote the code believes is inside 2s is typically
+1.4–2.2s old in truth. A sub-second adverse-selection question is being decided
 against a median 1.75s-stale quote.
 
-Going to millisecond stamps would cut that to 0.65s. It is **safe on the
-look-ahead axis** -- 0.00% of selected quotes land after their trade under
-either rule, so this is staleness, not leakage. But it moves numbers in
-`calib`, `edge`, `informed` and `maker`, so it is a decision, not a cleanup,
-and it has not been made. Direction of the effect on +0.47c is unknown.
+**It is safe on the look-ahead axis** — 0.00% of selected quotes land after
+their trade under either rule, so this is staleness, not leakage. Two things
+argue it is not urgent: `filldepth/at-touch` (no freshness filter) and
+`filldepth2s/at-touch` agree to 0.01c, so the result is not resting on that
+filter. But it moves numbers in `calib`, `edge`, `informed` and `maker`, and
+the direction of its effect on +0.48c is unknown. **Not applied.**
+
+### The maker row's half-spread is an identity, not a measurement
+
+`RESULTS_informed.md` line 145 states it plainly: *"half-spread is derived, not
+assumed: maker = half - mkS holds exactly by construction, so half = maker +
+mkS."* So "0.49c, exactly half the 1c tick, as it must be" is a consistency
+check, not independent corroboration. The independently measured quantities are
+`maker` (+0.48c, t=6.4) and `mkS` (+0.01c, t=0.1). The arithmetic reconciles:
+0.49 − 0.27 = 0.22 at 1s, 0.49 − 0.01 = 0.48 at settlement.
+
+### NEW CONTRADICTION: pin's report disqualifies pin, and pin.py disagrees
+
+Run 20260906-0419 flags **every single out-of-sample cell** "BELOW the fair
+band: OUR tail probability is wrong" — including the headline
+`tau<=20s, floor 0.5c` cell that this file and `CLAUDE.md` both cite as alive.
+The report footer says: *"Only a cell that beats the mid-null while staying
+inside its fair band is a strategy."* Under that rule **nothing in the table
+is a strategy.**
+
+But `fit_k`'s own docstring says the opposite: the flag firing on every cell is
+the known reason the out-of-sample k-refit exists, and *"the question stops
+being 'is our model right' and becomes 'does what is left, out of sample, still
+beat the market-is-right null'."* Under that rule the headline cell passes —
+realised +2.55c against a mid-null of [−3.41, +0.46], MDE 1.54c, t=+5.0.
+
+Both criteria are printed by the same file, and they disagree about the
+project's headline result. Recording both, picking neither.
+
+One detail that sharpens it: at floor 0.5c the realised +2.55c sits *exactly on*
+the lower edge of its fair band [+2.55, +4.33] — marginal, not a clear miss —
+while floor 1.0c (+2.23 vs [+4.37,+6.93]) and floor 2.0c (+5.48 vs
+[+10.74,+13.90]) are far below it. That is the same "low floors only" boundary
+already found by the headroom column, arriving independently.
 
 ### Housekeeping
 
-The informed stage running since 04:30 loaded the module before this edit, so
-its log will print the old 57.2% line. Its tables are unaffected -- sweep
-shape is a pure diagnostic whose return value nothing consumes -- so the run
-does not need restarting; only that one section of it is superseded by the
-numbers above.
+* **`pin` has now run with the portfolio table.** `CLAUDE.md`'s next-action #1
+  is already done: run 0419 executed at 944e8cb, which contains
+  `run_portfolio`, and `RESULTS_pin.md` carries the all-coins block. Its
+  warning lands as predicted — at `tau<=60s` the worst single close is
+  **−427.4c** across coins against **−96.3c** for one, i.e. leverage, not
+  diversification.
+* The published `RESULTS_informed.md` from that run still carries the old
+  59.0% section. Its tables are unaffected — sweep shape is a pure diagnostic
+  whose return value nothing consumes — so the run does not need re-running;
+  only that section is superseded.
 
 ---
 
