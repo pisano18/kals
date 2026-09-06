@@ -71,9 +71,16 @@ believing any of this.
 ladders walking the taker's own direction over consecutive `seq` — a book
 being walked, not trades coinciding. The CONTROL is the operator's suggestion
 and it is what the first version lacked: groups of trades ADJACENT in time but
-never simultaneous, drawn to the same size distribution. It scores **12.9%**
-against the real **96.6%**, so the test is reading sweep structure and not
-merely that a busy book trends. Also checked: `is_block_trade` is false on
+never simultaneous, drawn to the same size distribution. It scores **15.3%** against
+the real **96.6%**, so the test is reading sweep structure and not merely that
+a busy book trends.
+
+*(Corrected: the first control drew 6.11 trades per group against 1.90 for the
+real groups, and every all-N-legs test gets harder as N grows, so its 12.9%
+was a handicapped baseline rather than the chance rate. Re-scored per leg
+count and re-weighted to the real size distribution it is 15.3%. The contrast
+holds at every stratum — at n=2, where monotone is free, real 92.5% against
+control 23.1% on 157,301 and 138,564 groups; at n=12, 98.3% against 5.0%.)* Also checked: `is_block_trade` is false on
 1,255,096 of 1,255,096 trades, so negotiated blocks are not manufacturing the
 ladders.
 
@@ -134,29 +141,106 @@ check, not independent corroboration. The independently measured quantities are
 `maker` (+0.48c, t=6.4) and `mkS` (+0.01c, t=0.1). The arithmetic reconciles:
 0.49 − 0.27 = 0.22 at 1s, 0.49 − 0.01 = 0.48 at settlement.
 
-### NEW CONTRADICTION: pin's report disqualifies pin, and pin.py disagrees
+### RETRACTED, and replaced: pin's fair-band flag was floating-point dust
 
-Run 20260906-0419 flags **every single out-of-sample cell** "BELOW the fair
-band: OUR tail probability is wrong" — including the headline
-`tau<=20s, floor 0.5c` cell that this file and `CLAUDE.md` both cite as alive.
-The report footer says: *"Only a cell that beats the mid-null while staying
-inside its fair band is a strategy."* Under that rule **nothing in the table
-is a strategy.**
+**My previous entry framed this as two competing criteria and that was
+wrong.** `pin.py:213-216` is a single `if/elif` with one AND condition —
 
-But `fit_k`'s own docstring says the opposite: the flag firing on every cell is
-the known reason the out-of-sample k-refit exists, and *"the question stops
-being 'is our model right' and becomes 'does what is left, out of sample, still
-beat the market-is-right null'."* Under that rule the headline cell passes —
-realised +2.55c against a mid-null of [−3.41, +0.46], MDE 1.54c, t=+5.0.
+    if  sm["mean"] > nm["hi"] and sm["mean"] >= nf["lo"]:  -> beats the null
+    elif sm["mean"] < nf["lo"]:                            -> BELOW the band
 
-Both criteria are printed by the same file, and they disagree about the
-project's headline result. Recording both, picking neither.
+— and the report footer describes that same line. There was never a
+disagreement between `fit_k`'s docstring and the footer. Withdrawn.
 
-One detail that sharpens it: at floor 0.5c the realised +2.55c sits *exactly on*
-the lower edge of its fair band [+2.55, +4.33] — marginal, not a clear miss —
-while floor 1.0c (+2.23 vs [+4.37,+6.93]) and floor 2.0c (+5.48 vs
-[+10.74,+13.90]) are far below it. That is the same "low floors only" boundary
-already found by the headroom column, arriving independently.
+**The real fault is worse and it is now fixed.** The fair band is a
+**discrete** distribution. Every row in a pinned cell carries a model
+probability at 0.98+ or 0.02-, so one simulated re-settlement differs from the
+next by whole FLIPS and the per-trade mean moves in steps of `100/n` cents —
+0.2976c at n=336. 2,000 draws produced **11 distinct values**, not a smooth
+curve:
+
+        +2.2487c   n=  16   cum  1.2%
+        +2.5463c   n=  88   cum  5.6%   <-- the 2.5% cut lands INSIDE this atom
+        +2.8439c   n= 238   cum 17.5%
+
+The realised result **is** that atom. `nf["lo"]` was `+2.546269041666672` and
+the realised `+2.5462690416666676` — the flag fired on a difference of
+**-4.4e-15**. More reps cannot help: at reps=50,000 the answer was byte-
+identical, because the discreteness is intrinsic and not sampling error. So
+the operator's Monte-Carlo-noise hypothesis was the right suspicion about the
+wrong mechanism.
+
+`redraw_null` now takes `value=` and returns a mid-p percentile **rank**
+(strictly-below plus half the ties), and `pin.block` thresholds that instead of
+the band edge, printing TIED rather than resolving a tie. Re-scored:
+
+    tau<=20s, floor 0.5c   fair-band rank across 10 seeds at reps=50,000
+      mean 4.08%   sd 0.06%   min 4.00%   max 4.16%
+      seeds calling it BELOW the 2.5% band:  0 of 10
+
+**That cell is NOT below the fair band.** It beats the market-is-right null
+(+2.546c against a mid-null top of +0.761c at reps=50,000) and sits at the 4.1st
+percentile of its own model's distribution — low, honestly low, but inside.
+`pin --selftest` still passes.
+
+The 1.0c and 2.0c floors are a different matter: they are far below their
+bands, not tied to them, and this fix does not rescue them.
+
+### The money column assumes it trades every close, and it does not
+
+`portfolio()` computes `day = mu * 96 * contracts / 100` — 96 closes a day,
+i.e. every 15-minute close. Measured: the tape holds **1,201 distinct closes
+over 12.7 days** (94.8/day, so the 96 grid is right), but the `tau<=20s`
+cell fires on **336** of them — 28%, about 26-30 traded closes per day once
+the 150-close warmup is removed. The printed figures are therefore roughly
+**3.2-3.6x too high**:
+
+    tau<=20s floor 0.5c        printed      corrected for fire rate
+      one per close          $+122/day            ~$34-39/day
+      every market           $+190/day            ~$53-60/day
+    tau<=60s floor 0.5c
+      every market           $+143/day            ~$84/day
+
+The worst-close dollars are unaffected — those are per close, not per day.
+
+### The portfolio table, both rows, both cuts — the half I left out
+
+I previously quoted only the worst-close column, which is half a comparison.
+Verbatim from `RESULTS_pin.md` (run 0419):
+
+    tau <= 20s, floor 0.5c
+      one per close   336 trades over 336 closes (1.0 coins/close, max 1)
+                    per close +2.55c t=+5.0 MDE 1.01c  WORST close  -96.3c
+                    at 50 contracts: $+122/day  worst single close $-48.13
+      every market    533 trades over 336 closes (1.6 coins/close, max 7)
+                    per close +3.95c t=+4.5 MDE 1.73c  WORST close  -96.3c
+                    at 50 contracts: $+190/day  worst single close $-48.13
+    tau <= 60s, floor 0.5c
+      one per close   713 trades over 713 closes (1.0 coins/close, max 1)
+                    per close +0.25c t=+0.9 MDE 0.56c  WORST close  -99.3c
+                    at 50 contracts: $+12/day   worst single close $-49.63
+      every market   2641 trades over 713 closes (3.7 coins/close, max 9)
+                    per close +2.99c t=+3.4 MDE 1.72c  WORST close -427.4c
+                    at 50 contracts: $+143/day  worst single close $-213.68
+
+**Read whole, the basket is not the warning I made it sound like.**
+
+* At `tau<=20s`, going from 1.0 to 1.6 coins per close raises the return
+  **+2.55c -> +3.95c (1.55x)** and leaves the worst close **unchanged at
+  -96.3c**. More money, identical tail. That is strictly better.
+* At `tau<=60s`, the return goes **+0.25c -> +2.99c (12.0x)** while the worst
+  close goes **-99.3c -> -427.4c (4.3x)**. Return grows ~2.8x faster than the
+  tail. Sub-linear, and therefore an argument FOR the basket, not against.
+* The caveat that survives: the `tau<=60s` one-per-close base is +0.25c with
+  MDE 0.56c — **below its own MDE, i.e. no measured effect**. A 12x multiple
+  on a non-result is not a 12x anything. The every-market row at +2.99c,
+  t=+3.4, MDE 1.72c does clear its MDE.
+* Best cell on both axes is `tau<=20s every market`: highest return AND the
+  smaller tail (-96.3c against -427.4c). It dominates `tau<=60s every market`.
+
+Dollar arithmetic reconciles: 3.95c x 50 contracts = 197.5c = $1.975/close,
+x96 = $189.6 ~ the printed $+190. Worst -96.3c x 50 = -$48.15 ~ the printed
+$-48.13.
 
 ### Housekeeping
 

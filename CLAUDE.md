@@ -14,6 +14,37 @@ Read `RUNBOOK.md` (hard rules, confirmed contract facts) and `HANDOFF.md`
 (newest section first — the running log of what is measured, alive, and dead)
 before changing anything. `BIASES.md` is the checklist.
 
+## How to report to the operator — STANDING, every message
+
+Set 2026-09-06 by the operator. These are not optional and they outlive any
+single session.
+
+**Every response is formatted in three parts, in this order:**
+
+1. **The answer first, in plain language.** Numbers carry units.
+2. **A section headed `Like you're five:`** — what was just done and what is
+   happening next, written for someone who knows nothing about trading or
+   code. No jargon. Any term like *null*, *markout*, *t-stat* or *fair band*
+   is defined in the same sentence it appears in.
+3. **A section headed `What I need from you:`** — the explicit next action, or
+   `nothing, I'm continuing` when there isn't one.
+
+**Never end a message without parts 2 and 3.**
+
+**Posture:**
+
+- Say what was measured and what was not. If a script fails, report the
+  failure. Never estimate what the output would have been.
+- Reconcile arithmetic by hand before believing a good number. Every large
+  edge this project has produced has been a measurement bug.
+- When a result looks good, state what would have to be true for it to be an
+  artefact, then go and check that thing.
+- Report half a comparison as half a comparison. A loss is quoted next to the
+  return that bought it.
+- Do not ask permission for read-only measurement — run it and report. Ask
+  before anything that writes outside `results/` or the repo, and never touch
+  `kalshi_data`, `feed_data`, or the collector.
+
 ## Hard rules
 
 1. **Never place, amend, or cancel an order.** No `POST /portfolio/orders`.
@@ -385,9 +416,27 @@ Rough budgets, measured: `informed` ~13 min (7200s cap), `pin` ~2.5 min,
 Two things that will bite:
 
 - **The lock.** `results/.run.lock` holds a PID; a second run refuses to start
-  and names the PID to stop. It is never deleted — a stale lock from a killed
-  run points at a dead process and the next run takes it. Do not delete it by
-  hand.
+  and names the PID to stop. `run_when_away.ps1` now releases it in a
+  `finally`, with a six-hour age backstop for a hard-killed shell.
+
+  An earlier version of this line said the lock is never deleted and must not
+  be cleared by hand. **That was written on a wrong assumption and is
+  withdrawn.** The script stores `$PID`, which is the PowerShell process
+  *running the script* — launched from a prompt that is the operator's own
+  interactive shell, which outlives the run by days. So the liveness check
+  could never see the lock go stale and the runner refused to start forever.
+  Found and cleared 2026-09-06 (the lock held pid 558468, a live prompt).
+
+  **Before clearing one by hand, check that no run is actually live:**
+
+  ```powershell
+  Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object {$_.CommandLine -like '*research*'} |
+    Select-Object ProcessId, CommandLine
+  ```
+
+  Nothing returned means no analysis is running and the lock is safe to
+  delete. Something returned means wait.
 - **The collector must keep running.** If you ever need to stop analysis
   processes, filter on `research`, never on `python.exe` alone:
 

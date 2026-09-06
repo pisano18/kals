@@ -207,13 +207,27 @@ def block(trades, label, reps=2000):
         return
     fl = flips(trades)
     md = mde(trades)
-    nm = redraw_null(trades, reps=reps, using="mid")
-    nf = redraw_null(trades, reps=reps, using="fair")
+    nm = redraw_null(trades, reps=reps, using="mid", value=sm["mean"])
+    nf = redraw_null(trades, reps=reps, using="fair", value=sm["mean"])
+    # RANK, NOT THE EDGE. The fair band is discrete (see redraw_null): the
+    # 2.5% cut can fall inside an atom carrying several percent of the mass,
+    # and `sm["mean"] < nf["lo"]` then decides on floating-point noise. The
+    # mid-p rank is the same test where the band is smooth and is defined
+    # where it is not. TIED is printed rather than resolved, because a cell
+    # sitting on the boundary atom is neither below the band nor inside it.
+    rank = nf.get("rank")
+    below = rank is not None and rank < 0.025
+    tied = (rank is not None and not below
+            and nf["ties"] > 0 and abs(sm["mean"] - nf["lo"]) < 1e-6)
     verdict = ""
-    if sm["mean"] > nm["hi"] and sm["mean"] >= nf["lo"]:
+    if sm["mean"] > nm["hi"] and not below:
         verdict = "  <-- beats the market-is-right null"
-    elif sm["mean"] < nf["lo"]:
+        if tied:
+            verdict += " (fair band TIED at the edge)"
+    elif below:
         verdict = "  <-- BELOW the fair band: OUR tail probability is wrong"
+    elif tied:
+        verdict = "  <-- fair band TIED: realised sits ON the boundary atom"
     # WHAT THESE TRADES ACTUALLY ARE. The first real run reported +2.29c
     # with 18 flips in 316, and the walk-forward reported +2.27c with 70 in
     # 270 -- nearly identical money from a completely different bet, and the

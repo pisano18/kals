@@ -345,7 +345,8 @@ def summarise(trades, label=""):
             "exp_edge": mean(t["edge"] for t in trades)}
 
 
-def redraw_null(trades, reps=2000, seed=20260827, using="fair"):
+def redraw_null(trades, reps=2000, seed=20260827, using="fair",
+                value=None):
     """Resettle every market from an assumed probability and re-score.
 
     `using="fair"`  -- the MODEL's probability. NOT a null. Its mean is the
@@ -379,8 +380,27 @@ def redraw_null(trades, reps=2000, seed=20260827, using="fair"):
                     - fee_cents(1.0 - t["entry"])
         out.append(tot / len(trades))
     out.sort()
-    return {"lo": out[int(0.025 * reps)], "hi": out[int(0.975 * reps)],
-            "mean": mean(out)}
+    res = {"lo": out[int(0.025 * reps)], "hi": out[int(0.975 * reps)],
+           "mean": mean(out)}
+    # THE BAND IS DISCRETE. Every row in a pinned cell carries a model
+    # probability at 0.98+ or 0.02-, so one simulated re-settlement differs
+    # from the next by whole FLIPS and the per-trade mean moves in steps of
+    # 100/n cents -- 0.2976c at n=336. Mass therefore piles onto a handful of
+    # atoms, and `out[int(0.025*reps)]` can land in the middle of one holding
+    # several percent. Comparing a realised value to that edge with `<` then
+    # turns on floating-point dust: measured 2026-09-06, the tau<=20 floor
+    # 0.5c cell sat ON the boundary atom and was flagged BELOW by -4.4e-15.
+    # More reps cannot fix it; the discreteness is intrinsic, not sampling
+    # error (identical at reps=2000 and reps=50000).
+    #
+    # `rank` is the mid-p percentile of `value` among the draws: strictly-
+    # below plus half the ties. It is the well-defined thing to threshold.
+    if value is not None:
+        below = sum(1 for x in out if x < value - 1e-9)
+        ties = sum(1 for x in out if abs(x - value) <= 1e-9)
+        res["rank"] = (below + 0.5 * ties) / float(reps)
+        res["ties"] = ties
+    return res
 
 
 # ===========================================================================
