@@ -310,10 +310,14 @@ def evaluate(rows, edge_floor=0.0, rule="first"):
             edge, side, entry = sell, "no", bid
         if edge <= edge_floor:
             continue
+        # "tk" carried through so a taker-capacity measurement can ask how
+        # many contracts were RESTING at the level this trade decides to
+        # hit. Every dollar figure assumed 50 fill; without the ticker that
+        # is uncheckable. Additive -- consumers read by key, not position.
         cur = {"edge": edge, "side": side, "entry": entry, "tau": r["tau"],
                "close": r["close"], "settle": r["settle"], "fair": f,
                "strike": r.get("strike"), "result": r.get("result"),
-               "mid": r["mid"]}
+               "mid": r["mid"], "tk": r.get("tk")}
         prev = best.get(r["close"])
         if prev is None:
             best[r["close"]] = cur

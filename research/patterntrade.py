@@ -116,7 +116,7 @@ def summarise(trades):
             "se": se, "t": m / se if se > 0 else 0.0, "df": len(obs) - 1}
 
 
-def redraw_null(trades, reps=2000, seed=20260828):
+def redraw_null(trades, reps=2000, seed=20260828, value=None):
     """Resettle every trade by ITS OWN entry-implied probability: the null is
     'the market's price was right'. What the strategy earns above this band is
     what the compression is actually worth."""
@@ -134,7 +134,24 @@ def redraw_null(trades, reps=2000, seed=20260828):
             by[t["close"]].append(pnl)
         out.append(mean([mean(v) for v in by.values()]))
     out.sort()
-    return {"lo": out[int(0.025 * reps)], "hi": out[int(0.975 * reps)]}
+    res = {"lo": out[int(0.025 * reps)], "hi": out[int(0.975 * reps)]}
+    # TIE-AWARENESS. A resampled band is only smooth if the assumed
+    # probabilities are spread out. Where they pile up near 0 or 1 the
+    # simulated mean moves in whole-flip steps of 100/n cents, mass collects
+    # on a few atoms, and `lo <= mean <= hi` gets decided by floating-point
+    # dust on a boundary. That is not hypothetical: pin.py's headline flag
+    # was firing on a difference of -4.4e-15 (found 2026-09-06). This null
+    # resettles at the MARKET's mid, which is mid-range for the compression
+    # trade, so it should stay smooth -- `atoms` is reported so that stops
+    # being an assumption. `rank` is the mid-p percentile of `value`:
+    # strictly-below plus half the ties.
+    res["atoms"] = len({round(x, 9) for x in out})
+    if value is not None:
+        below = sum(1 for x in out if x < value - 1e-9)
+        ties = sum(1 for x in out if abs(x - value) <= 1e-9)
+        res["rank"] = (below + 0.5 * ties) / float(reps)
+        res["ties"] = ties
+    return res
 
 
 # ===========================================================================
@@ -287,7 +304,7 @@ def main():
     print(f"  the minimum detectable edge is ~{mde:.1f}c. Any smaller result,")
     print("  positive or negative, is NO INFORMATION -- read the calibration")
     print("  curve and the reconcile ratio instead; they carry the power.")
-    nl = redraw_null(trades)
+    nl = redraw_null(trades, value=sm["mean"])
     per_side = defaultdict(list)
     for t in trades:
         per_side[t["side"]].append(t["pnl"])
@@ -297,9 +314,16 @@ def main():
     print(f"  mean P&L per trade          {sm['mean']:+.2f}c")
     print(f"  t / p                       {sm['t']:.2f} / "
           f"{p_two_sided(abs(sm['t']), sm['df']):.4f}")
-    print(f"  market-is-right null 95%    [{nl['lo']:+.2f}, {nl['hi']:+.2f}]c")
-    inside = nl["lo"] <= sm["mean"] <= nl["hi"]
-    print(f"\n  {'INSIDE the null -- the compression is not worth money' if inside else 'OUTSIDE the null'}")
+    print(f"  market-is-right null 95%    [{nl['lo']:+.2f}, {nl['hi']:+.2f}]c"
+          f"   ({nl['atoms']:,} distinct draws)")
+    # the rank, not the edge -- see redraw_null on why a boundary comparison
+    # is unsafe when the band is discrete
+    inside = 0.025 <= nl["rank"] <= 0.975
+    tied = nl["ties"] > 0 and (abs(sm["mean"] - nl["lo"]) < 1e-6
+                               or abs(sm["mean"] - nl["hi"]) < 1e-6)
+    print(f"\n  {'INSIDE the null -- the compression is not worth money' if inside else 'OUTSIDE the null'}"
+          f"   (rank {100 * nl['rank']:.1f}%"
+          f"{', TIED on a boundary atom' if tied else ''})")
     print("  Fees and the crossed spread are already in every number above.")
     by_bucket = defaultdict(list)
     for t in trades:

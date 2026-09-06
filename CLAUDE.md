@@ -359,14 +359,37 @@ which sample it refers to, and do not quote the new results as settled either
 
 ## Kill criteria
 
-To be filled in by the operator. Do not populate these from inference.
+**Set by the operator 2026-09-06. Verbatim. Do not reinterpret these to fit a
+result.**
 
-- **Threshold:** _______
-- **Minimum sample:** _______
-- **Result that ends the project:** _______
+- **Threshold:** net +$50/day, after fees, at a size the depth measurement
+  shows is actually fillable, sustained over the forward test. Rationale: I am
+  not chasing a big number, I am chasing something that comes out on top
+  consistently. If it clears $50/day honestly it is worth deploying small and
+  scaling on evidence.
 
-Until these are set, no run may be described as decisive, and no stage may
-report a result as project-ending.
+- **Minimum sample:** 500 fired closes of FORWARD tape, collected after the
+  rule is frozen, scored standalone rather than pooled with the 336 we have.
+  At ~26.5 fired closes/day that is ~19 days. Freeze the rule in writing
+  before the window starts.
+
+- **Result that ends the project:** not the death of a strategy — the death of
+  the search. `pin` dies if the forward test at n>=500 fails to beat the
+  mid-null. Market-making dies if the queue simulator puts expected fills x
+  $0.005 under $50/day at max fillable size. Either one dying kills that
+  strategy only. The PROJECT ends if both are dead AND 60 further days pass
+  with no new idea clearing its own null. Pivoting to a new idea is expected,
+  not a failure.
+
+Three consequences that bind immediately:
+
+1. **"$/day" now means fillable $/day.** Any dollar figure quoted against the
+   threshold must be at a size the resting-depth measurement supports, not at
+   an assumed 50 contracts. A figure at an unfillable size does not count.
+2. **The forward window has not started.** It starts when the rule is frozen
+   in writing, and the 336 closes already measured are NOT part of it.
+3. **A stage may now be described as decisive** against these criteria, and
+   only against these.
 
 
 ---
