@@ -276,7 +276,21 @@ applies unchanged to the Coin Race legs, which must sum to 100c.
   `strike(N+1) == settle(N)` — abutting windows make the opening TWAP of one
   the closing TWAP of the last.
 - Fees quadratic: `0.07 * P * (1-P)`, multiplier 1.
-  *Verified:* `engine.fee_per_contract`.
+  *Verified:* `engine.fee_per_contract`, AND against real charges in the
+  operator's own fill history (12.37 contracts at yes 0.16 charged $0.116400;
+  `0.07*0.16*0.84*12.37 = 0.116400` exactly).
+- **Makers pay no fee ON OUR SERIES — but this is a PER-SERIES property, not a
+  platform one, and it must be checked before touching any new family.**
+  `GET /series/{ticker}` returns `fee_type`, enumerated `quadratic` |
+  `quadratic_with_maker_fees` | `quadratic_with_combo_maker_fees` | `flat`.
+  Scanned 2026-09-06 across **13,839 series**: 13,676 `quadratic`, **160
+  `quadratic_with_maker_fees`**, 3 combo. `KXCRYPTOLEAD15M`, `KXGOLD15M`,
+  `KXBTC15M` and `KXTTELITEMATCH` are all plain `quadratic`, so makers pay
+  nothing there. The 163 that DO charge makers are overwhelmingly Sports
+  (`KXNFLGAME`, `KXMLBGAME` at multiplier 0.5, `KXINDY500`, `KXNFLMVP`) and
+  would cost a maker `0.0175*P*(1-P)` = **0.44c at the money — larger than any
+  maker edge this project has measured.** Checking `fee_type` is a one-line
+  call and is now the FIRST thing to run on any new series.
 - Tick grid `tapered_deci_cent`: 0.1c below 10c and above 90c, 1c between.
   *Verified:* `engine.tick_at`.
 - WebSocket `cfbenchmarks_value` requires the param `index_ids`

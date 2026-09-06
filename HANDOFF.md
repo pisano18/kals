@@ -2,6 +2,63 @@
 
 ---
 
+## 2026-09-06 (maker fee RESOLVED) — makers pay nothing on our series, and
+## it is now sourced from the exchange rather than from our own code
+
+The fear was concrete: secondary sources give the maker fee as
+`roundup(M * 0.0175 * C * P * (1-P))` — a quarter of the taker rate. **At
+p=0.50 that is 0.44c per contract against `informed.py`'s +0.48c per fill.** It
+would have eaten essentially the whole maker edge and taken the rebate thesis
+with it. `CLAUDE.md` listed "makers pay no fee" as a CONFIRMED MECHANIC on the
+strength of our own `engine.fee_per_contract` — which is circular.
+
+### Settled from Kalshi's own API, across the whole exchange
+
+`GET /series/{ticker}` returns `fee_type`, and the documented enum is
+`quadratic` | `quadratic_with_maker_fees` | `quadratic_with_combo_maker_fees` |
+`flat`. Scanned **13,839 series**:
+
+    quadratic                          13,676
+    quadratic_with_maker_fees             160
+    quadratic_with_combo_maker_fees         3
+
+**The distinction is real and in active use** — 163 series do charge makers,
+overwhelmingly Sports (`KXNFLGAME`, `KXMLBGAME` at multiplier 0.5, `KXMLBSERIES`,
+`KXINDY500`, `KXNFLMVP`, ...). And every series we care about is on the free
+side:
+
+    KXCRYPTOLEAD15M   quadratic   mult 1   Crypto        <- the rebate target
+    KXGOLD15M         quadratic   mult 1   Commodities
+    KXBTC15M          quadratic   mult 1   Crypto        <- pin's series
+    KXTTELITEMATCH    quadratic   mult 1   Sports
+
+**So makers pay nothing on Coin Race, on the commodity 15-minute families, and
+on the crypto up/down series. `informed.py`'s +0.48c/fill survives, and the
+rebate's fill side is not silently taxed.**
+
+Note `fee_multiplier` on the series object is the TAKER multiplier: it reads 1
+for all of these, and our own historical taker fills match
+`0.07 * p * (1-p) * count` exactly at multiplier 1.
+
+### What this changes operationally
+
+**If this project ever moves to a sports series, check `fee_type` first.** 163
+series would charge a maker 0.0175*p*(1-p) — 0.44c at the money — which is
+larger than any maker edge measured here. It is a one-line check
+(`GET /series/{ticker}` -> `fee_type`) and it is now the first thing to run on
+any new family.
+
+### Method note, because the route mattered
+
+kalshi.com returned HTTP 429 on five separate attempts at the fee-schedule PDF,
+so the primary document was never read. The answer came instead from
+`docs.kalshi.com/llms.txt` -> the API reference for `get-series-fee-changes`,
+whose response schema documents the `fee_type` enum, and then from scanning the
+live `/series` endpoint. **A blocked primary source is not a dead end if the
+same fact is expressed in a schema.**
+
+---
+
 ## 2026-09-06 (two retractions) — the account history is the OPERATOR's own
 ## retail trading, and Coin Race does NOT use a tapered tick
 
