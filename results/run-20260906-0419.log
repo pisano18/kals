@@ -1,10 +1,10 @@
-﻿03:35:31  === run_when_away 20260906-0335 ===
-03:35:31  git pull
+﻿04:19:37  === run_when_away 20260906-0419 ===
+04:19:37  git pull
 From https://github.com/pisano18/kals
  * branch            claude/file-uploads-70rtjl -> FETCH_HEAD
 Already up to date.
-03:35:31  now at 785fe20 (origin/claude/file-uploads-70rtjl is 785fe20)
-03:35:31  preflight: stdlib shadowing
+04:19:37  now at 944e8cb (origin/claude/file-uploads-70rtjl is 944e8cb)
+04:19:37  preflight: stdlib shadowing
 ==============================================================================
 STDLIB SHADOWING
 ==============================================================================
@@ -14,31 +14,31 @@ STDLIB SHADOWING
 
   clean -- nothing in this repo shadows a stdlib module, on this
   Python or on any newer one this file knows about.
-03:35:33  refreshing settled outcomes (markets.json)
+04:19:38  refreshing settled outcomes (markets.json)
 ==============================================================================
 FEED CHECK
 ==============================================================================
-  cfbenchmarks_value  274 files  10,039,939 msgs  (0 still writing)  OK
+  cfbenchmarks_value  275 files  10,069,001 msgs  (0 still writing)  OK
     sample: {"type":"cfbenchmarks_value","sid":2,"seq":1,"msg":{"index_id":"SOLUSD_RTI","received_at":1787630959031,"data":"{\"type\":\"value\",\"time\":1787630959000,\"id\":\"SOLUSD_RTI\",\"value\":\"101.22\"}","avg_60s_data":{"value":"101.22000000","window_size":0,"window_start_ts_ms":1787
   pyth_value            0 files           0 msgs  (0 still writing)  *** EMPTY ***
-  orderbook_delta     273 files  761,066,047 msgs  (0 still writing)  OK
-  ticker              273 files   8,478,460 msgs  (0 still writing)  OK
-  trade               272 files  38,510,298 msgs  (0 still writing)  OK
+  orderbook_delta     274 files  762,752,052 msgs  (0 still writing)  OK
+  ticker              274 files   8,499,589 msgs  (0 still writing)  OK
+  trade               273 files  38,601,725 msgs  (0 still writing)  OK
 
   --- cfbenchmarks detail ---
-  span 291.61 h across 11 indices
+  span 292.34 h across 11 indices
            index     msgs   per hour   (1/sec = 3600)
-     NEARUSD_RTI  930,115      3,190
-            BRTI  930,114      3,190
-      BNBUSD_RTI  930,114      3,190
-      ETHUSD_RTI  930,113      3,190
-      ZECUSD_RTI  930,113      3,190
-      SOLUSD_RTI  930,112      3,190
-     HYPEUSD_RTI  930,112      3,190
-      BCHUSD_RTI  930,110      3,190
-      XRPUSD_RTI  930,110      3,190
-     DOGEUSD_RTI  930,108      3,190
-      ADAUSD_RTI  744,931      2,555  <-- GAPPY
+     NEARUSD_RTI  932,753      3,191
+            BRTI  932,752      3,191
+      BNBUSD_RTI  932,752      3,191
+      ETHUSD_RTI  932,751      3,191
+      ZECUSD_RTI  932,751      3,191
+      SOLUSD_RTI  932,750      3,191
+     HYPEUSD_RTI  932,750      3,191
+      BCHUSD_RTI  932,748      3,191
+      XRPUSD_RTI  932,748      3,191
+     DOGEUSD_RTI  932,746      3,191
+      ADAUSD_RTI  747,569      2,557  <-- GAPPY
 
   avg_60s_data present on 100.0% of messages
   window_size: min 0  median 60  max 60
@@ -48,11 +48,11 @@ FEED CHECK
   LATENCY  CF timestamp -> Kalshi received_at:
     median 67 ms   p90 104 ms
   LATENCY  Kalshi received_at -> our machine:
-    median 36 ms   p90 454 ms
+    median 36 ms   p90 451 ms
     (includes any clock offset between your PC and Kalshi --
      run w32tm /resync before trusting the absolute number;
      the SPREAD between p90 and median is offset-free.)
-  *** KXADA15M: ZERO settled markets -- last error: HTTP 429
+  *** KXADA15M: ZERO settled markets -- the API returned no rows at all for this series_ticker
   KXADA15M: 0 settled markets
   *** KXBCH15M: ZERO settled markets -- the API returned no rows at all for this series_ticker
   KXBCH15M: 0 settled markets
@@ -72,15 +72,15 @@ FEED CHECK
 C-FINAL  tails PER SERIES  [pooling 9 series was wrong]
 ==============================================================================
        series      n    kurt     90c     95c     98c     99c  crossover
-     KXBNB15M   1198     6.2    0.78    0.96    1.29    1.88      95.5c
-     KXBTC15M   1196     7.1    0.74    0.87    1.36    1.71      96.2c
-    KXDOGE15M   1198     9.8    0.73    0.89    1.06    1.54      97.2c
-     KXETH15M   1196     8.5    0.75    0.85    1.17    1.67      96.8c
+     KXBNB15M   1198     6.3    0.78    0.95    1.29    1.83      95.6c
+     KXBTC15M   1196     7.2    0.74    0.86    1.36    1.71      96.2c
+    KXDOGE15M   1198     9.9    0.73    0.89    1.06    1.54      97.2c
+     KXETH15M   1196     8.6    0.75    0.85    1.17    1.71      96.8c
     KXHYPE15M   1198     5.3    0.75    0.92    1.34    1.96      95.9c
-    KXNEAR15M   1198     5.3    0.83    0.92    1.15    1.63      96.4c
-     KXSOL15M   1198     7.4    0.76    0.95    1.46    1.71      95.5c
+    KXNEAR15M   1198     6.2    0.81    0.89    1.17    1.67      96.6c
+     KXSOL15M   1198     7.4    0.76    0.95    1.48    1.71      95.5c
      KXXRP15M   1198     7.0    0.76    0.99    1.36    2.00      95.2c
-     KXZEC15M   1198    14.2    0.68    0.74    1.02    1.33      97.9c
+     KXZEC15M   1198    14.2    0.67    0.74    1.02    1.33      97.9c
 
   Pooled crossover was 96.6c (June archive) and 96.7c (recent) --
   two independent datasets agreeing. Per-series tells us whether that
@@ -90,12 +90,12 @@ C-FINAL  tails PER SERIES  [pooling 9 series was wrong]
   whether the market itself is exploitable.
 
   markets.json refreshed: 10,796 settled markets across 12 series. tapes.json left as it was.
-03:46:20  -Only given; running just: informed, pin
-03:46:20  2 stage(s). flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape
-03:46:20  forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each.
-03:46:20  --- informed (1 of 2) ---
+04:30:17  -Only given; running just: informed, pin
+04:30:17  2 stage(s). flow reads the whole order book once -- about an hour the first time, seconds after that. oos walks the tape
+04:30:17  forward and refits as it goes -- it may take hours on its own. maker is ~16 min; the rest are 1-3 min each.
+04:30:17  --- informed (1 of 2) ---
 ==============================================================================
-go.py   2026-09-06 07:46 UTC
+go.py   2026-09-06 08:30 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
@@ -104,41 +104,25 @@ PREFLIGHT (runs even under --only)
       empty-marker prose  PASS  (0s)
 
 STAGES
-              informed  ok  (1423s)
+              informed  ok  (1490s)
 
 wrote C:\kals-repo\results\RESULTS_informed.md
 Send that file back.
-04:10:04  informed -> 13.3 KB in 1424s
-04:10:04  --- pin (2 of 2) ---
+04:55:08  informed -> 13.3 KB in 1491s
+04:55:08  --- pin (2 of 2) ---
 ==============================================================================
-go.py   2026-09-06 08:10 UTC
+go.py   2026-09-06 08:55 UTC
   cwd=C:\kals-repo  data=C:\kals\kalshi_data  out=C:\kals\fulltape
 ==============================================================================
 
 PREFLIGHT (runs even under --only)
         stdlib shadowing  PASS  (1s)
-      empty-marker prose  PASS  (0s)
+      empty-marker prose  PASS  (1s)
 
 STAGES
-                   pin  ok  (196s)
+                   pin  ok  (218s)
 
 wrote C:\kals-repo\results\RESULTS_pin.md
 Send that file back.
-04:13:21  pin -> 13.3 KB in 197s
-04:13:21  publishing
-warning: LF will be replaced by CRLF in results/RESULTS_informed.md.
-The file will have its original line endings in your working directory
-warning: LF will be replaced by CRLF in results/RESULTS_pin.md.
-The file will have its original line endings in your working directory
-From https://github.com/pisano18/kals
- * branch            claude/file-uploads-70rtjl -> FETCH_HEAD
-   785fe20..4eb8f13  claude/file-uploads-70rtjl -> origin/claude/file-uploads-70rtjl
-Created autostash: 2e1e447
-Rebasing (1/1)
-Applied autostash.
-System.Management.Automation.RemoteException
-[KSuccessfully rebased and updated refs/heads/claude/file-uploads-70rtjl.
-To https://github.com/pisano18/kals
-   4eb8f13..944e8cb  HEAD -> claude/file-uploads-70rtjl
-04:13:24  pushed on attempt 1
-04:13:24  === done ===
+04:58:48  pin -> 15.2 KB in 220s
+04:58:48  publishing
