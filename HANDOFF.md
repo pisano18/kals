@@ -3393,3 +3393,79 @@ $/contract -- that is a share of about 8.8% and roughly **$1.7/window**,
    not**, and cannot be from tape.
 4. NatGas is attractive *because* its book is thin, which is also the condition
    under which a single participant's arrival moves the share most.
+
+---
+
+## 2026-09-07 ~00:30 ET — RETRACTION: the "6-hour commodity session" was a SUNDAY
+
+**2026-09-06 was a Sunday.** CME metals and energy futures close Friday 17:00
+ET and reopen Sunday 18:00 ET. What I measured and reported as "the commodity
+families run a 6-hour session, 18:00-00:00 ET, 24 windows/day" was the
+**weekend reopening**, not a daily schedule. Checked on Thursday 2026-09-03:
+
+```
+KXNATGAS15M   89 settled markets, closes in 23 of 24 ET hours (gap: 04:00)
+KXGOLD15M     89 settled markets, same shape
+Saturday 09-05: 1 settled market each
+```
+
+**Weekdays run ~89 windows, not 24.** Every "$/session" and "$/day" figure I
+published for the commodity families tonight ($157 / $281 / $470 per "24-window
+session"; "$480/day per family advertised"; "$2,400/day across five") is
+**~3.7x too low on a weekday** and should not be quoted. The per-window
+figures are unaffected. The arithmetic adversary in `wf_161d431e-c74` caught
+this independently ("THE 24-WINDOW SESSION DOES NOT EXIST — 96 programmes/day,
+24/24 hours traded").
+
+Consequence for the tape: the collector has recorded these families **only
+since Sunday 18:00 ET**, so every commodity measurement in this file rests on
+a Sunday-evening reopening — plausibly the least representative hours of the
+week. Weekday tape starts accumulating now.
+
+## Same time — the $20 workflow (`wf_161d431e-c74`), six of seven agents in
+
+The synthesis agent is still running. What the six measurement/attack agents
+established, in order of how much it changes the plan:
+
+1. **THE $20 PROFIT TEST IS DEAD BY ARITHMETIC, and it dies in ONE WINDOW.**
+   Collateral per two-sided pair is **$0.96-0.99**, so $20 buys ~20 pairs on
+   ONE family. At S=20 the re-hedge headroom is **0.87-2.87 cents**: the first
+   fill converts a "locked pair" into a naked position because there is no free
+   cash to re-post the other leg. Worst window **-$19.96 to -$19.97 in all five
+   families**; 12.2% of window-family observations lose >90%. Mechanism is the
+   collateral engine, family-independent.
+2. **THERE IS NO STOP-LOSS.** Exiting long YES means selling YES, which under
+   the collateral model `ordercli.collateral()` assumes reserves `(1-p)` — cash
+   a fully-deployed account does not have. **UNTESTED: does Kalshi net a
+   position-reducing sell?** This single property decides whether any hedge or
+   stop is fundable. It costs ~$0.02 to test and is the best $0.02 in the project.
+3. **The reference price IS the touch 57-82% of the time** on these families —
+   the OPPOSITE of Coin Race (where it sat a median 4 ticks below). "Stand back
+   at the reference" buys almost no fill protection here. The real lever is
+   touch-1 (keeps 64-73% of credit, sheds 45-64% of exposure). Family choice
+   matters ~20x more than placement; **NATGAS is 4-20x better per unit of fill
+   risk** than any other family.
+4. **Adverse selection is real: -1.35 to -3.07 c/contract** to settlement,
+   against +1.61 c/contract of available half-spread. Net fill P&L: -1.79c
+   (back of queue), -0.67c (random), +0.26c (front). Both sides fill in 97.4%
+   of windows but the pair fills at **$1.036 for a $1.00 payout** — the "lock"
+   is negative except at the front of the queue.
+5. **A LIP credit has NO API line item anywhere.** It is readable only as a
+   balance residual — which reconciles to **$0.0000** over the account's whole
+   life (deposits + fills + settlements + transfers), so a $1.00 credit would
+   be unambiguous. Credits land in **one daily run at 05:00-05:15 UTC**; 0 of
+   340 programmes ending after that instant were paid 22.5h later. **The $1.00
+   floor is PER PROGRAMME** per the CFTC filing. Minimum pool observed is $10,
+   matching the filing ("$10-$1,000 per calendar day"), not the help centre's
+   "$1".
+6. **Tick grid is NOT uniform:** GOLD/SILVER/WTI `tapered_deci_cent`,
+   NATGAS/COPPER `linear_cent`. Tonight's `commodqual.py` counted CENTS not
+   ticks (conservative for tapered families); the capital job applied TAPERED
+   to all (inflated NATGAS 19%, COPPER 66%). Corrected NATGAS at S=20:
+   **$1.78/window paid, 17 of 18 clear the cliff** (not 20/20).
+7. **Three defects in `ordercli.py`** (fixed this session, see below): cancel
+   verified against an unfiltered page-1 listing; a failed listing read as
+   "verified"; `MAX_OPEN_ORDERS` never enforced and **no cumulative collateral
+   cap at all** — a repeg loop at the permitted S=5 still deploys the whole $20.
+8. **The formula itself survives:** no double haircut, no 2x; reftouch's hand
+   reconciliation `1401.377 / 13496 x $20 = $2.077` closes exactly.
