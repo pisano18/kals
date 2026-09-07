@@ -3326,3 +3326,70 @@ The rebate is paid for resting whether or not the fill comes; the fill itself
 is, at best, a fair bet and, at worst, systematically adverse. It is also the
 concrete version of the risk the operator asked about: one adverse fill costs
 many windows of rebate, and adverse fills are the ones that actually arrive.
+
+---
+
+## 2026-09-06 ~22:20 ET — QUALIFICATION SETTLED AT ~97%, and the first commodity measurement
+
+### The snapshot question, decided on the tape itself
+| | levelled | bare |
+|---|---|---|
+| **FIRST** snapshot of a market | **264** | 14 |
+| **LATER** snapshots | **0** | 468 |
+
+The first snapshot carries the opening ladder (`yes_dollars_fp` /
+`no_dollars_fp`, median depth **86,526 yes / 68,866 no**); every later snapshot
+is a bare resync marker. **So the correct rule is: SET the book when a snapshot
+carries levels, CLEAR it when it does not.** A reconstruction that clears on
+every snapshot discards the opening ladder for the market's entire life.
+
+**`REBATE_RISK.md`'s 26.0% and `HANDOFF`'s 28.9% are both artefacts of that
+bug.** ADVERSARIAL_L1 was right and this now rests on a direct count, not on
+adjudicating between two reports.
+
+*Method note, recorded because it nearly went the other way:* my first detector
+looked for `yes_dollars`/`no_dollars` and missed `yes_dollars_fp`, printing
+"0.0% levelled" for every series and a confident verdict REFUTING
+ADVERSARIAL_L1. The key-set histogram printed beside it showed 264 messages
+carrying `yes_dollars_fp`, which is the only reason the error was caught. **A
+detector that reports absence must print what it did see.**
+
+### FIRST EVER MEASUREMENT OF THE COMMODITY FAMILIES
+Tonight's session (18:00-00:00 ET), 80 markets, 16 complete windows per family,
+correct reconstruction, target 300, one-second grid.
+
+| family | qualify | yes score | no score | $/win S=25 | S=50 | S=100 |
+|---|---|---|---|---|---|---|
+| KXGOLD15M | 98.5% | 1079 | 955 | 0.53 | 1.00 | 1.84 |
+| KXSILVER15M | 99.3% | 344 | 279 | 1.54 | 2.75 | 4.59 |
+| KXWTI15M | 99.0% | 568 | 487 | 0.97 | 1.80 | 3.17 |
+| **KXNATGAS15M** | 97.1% | **210** | **204** | **2.20** | **3.80** | 6.05 |
+| KXCOPPER15M | 93.0% | 581 | 465 | 1.31 | 2.34 | 3.91 |
+
+**Qualification is 93-99%, not 26% and not 74%.** Every figure in this project
+that multiplied by 0.289 or 0.7416 was too LOW — which is the unflattering
+direction being corrected, so it is recorded plainly rather than celebrated.
+
+Across all five, per window: **S=25 $6.53, S=50 $11.69, S=100 $19.57**;
+over the 24-window session **$157 / $281 / $470**.
+
+### THE $1.00 FLOOR BITES AT S=25 AND IS THE BINDING CONSTRAINT
+At S=25, Gold ($0.53) and WTI ($0.97) fall under the per-programme minimum and
+pay **zero**, not a reduced amount. Surviving: Silver, NatGas, Copper =
+$5.05/window, $121/session. At S=50 all five clear, Gold only barely ($1.00).
+
+### What $20 can actually do
+Capital is `S x (ref_yes + ref_no)` ~ `S x $0.97` per family per side-pair.
+S=50 on all five needs **~$242**. The operator has **$20**, which buys roughly
+**S=20 on ONE family**. On NatGas -- the thinnest book, therefore the best
+$/contract -- that is a share of about 8.8% and roughly **$1.7/window**,
+**~$41 across a session**, and it clears the $1 floor.
+
+**CAVEATS THAT TRAVEL WITH EVERY NUMBER ABOVE, and they are not small:**
+1. **REBATE ONLY.** No fill P&L. Tonight's accidental 1c maker fill was a
+   textbook adverse selection: filled precisely when the contract went to zero.
+2. **ONE SESSION** of tape, and it is the first ever recorded for these series.
+3. Our own size is in the denominator, but **competitors' reaction to us is
+   not**, and cannot be from tape.
+4. NatGas is attractive *because* its book is thin, which is also the condition
+   under which a single participant's arrival moves the share most.
