@@ -64,7 +64,14 @@ CEILINGS = {
     #  loss. Per-order ceilings never bounded it: a repeg loop at the
     #  permitted S=5 still deploys the whole account (ruin adversary,
     #  2026-09-07).
-    "prod": (5.0, 2.50, 4, 2.50),
+    # RAISED 2026-09-07 for the gold cutoff test (PREREG_gold.md S5).
+    # The cumulative cap IS the maximum loss on a binary: $21 of $65.19.
+    # MAX_NOTIONAL MUST BE REACHABLE: at MAX_COUNT=20 the largest
+    # possible collateral is 20 x 0.99 = $19.80, so a $20 per-order cap
+    # could never fire -- the same dead-ceiling bug the self-test caught
+    # on this file at MAX_COUNT=5. $15 binds and still allows a full-size
+    # leg priced up to 0.75.
+    "prod": (20.0, 15.00, 4, 21.00),
     "demo": (2000.0, 50.00, 12, 50.00),
 }
 MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS, MAX_DEPLOYED = CEILINGS["prod"]
@@ -257,8 +264,10 @@ def selftest():
 
     print("\n  every ceiling must REFUSE, before signing:")
     for desc, mut in (
-            ("count above MAX_COUNT", {"count": "999.00"}),
-            ("collateral above MAX_NOTIONAL", {"count": "5.00", "price": "0.8000"}),
+            ("count above MAX_COUNT", {"count": f"{MAX_COUNT * 2:.2f}"}),
+            ("collateral above MAX_NOTIONAL",
+             {"count": f"{MAX_COUNT:.2f}",
+              "price": f"{min(0.99, MAX_NOTIONAL / MAX_COUNT * 1.5):.4f}"}),
             ("price at 0", {"price": "0.0000"}),
             ("price at 1", {"price": "1.0000"}),
             ("negative count", {"count": "-1.00"}),
@@ -286,24 +295,30 @@ def selftest():
 
 
     print("\n  the CUMULATIVE cap must bind when per-order ceilings do not:")
-    fake_rest = [{"side": "yes", "remaining_count_fp": "2.00",
+    # sized off MAX_DEPLOYED so this keeps testing when the ceiling moves
+    half = MAX_DEPLOYED / 2.0
+    fake_rest = [{"side": "yes", "remaining_count_fp": f"{half / 0.60:.2f}",
                   "yes_price_dollars": "0.6000", "no_price_dollars": "0.4000"},
-                 {"side": "no", "remaining_count_fp": "3.00",
+                 {"side": "no", "remaining_count_fp": f"{half / 0.30:.2f}",
                   "yes_price_dollars": "0.7000", "no_price_dollars": "0.3000"}]
     dep = sum(order_collateral(o) for o in fake_rest)
-    print(f"    two resting orders hold ${dep:.2f} "
-          f"(yes 2x0.60 + no 3x0.30 = 2.10)")
-    if abs(dep - 2.10) > 1e-9:
-        fails.append(f"order_collateral summed {dep:.4f}, expected 2.10 -- a "
-                     f"leg is priced off the wrong side")
-    small = build_order("KXTEST-1", "bid", 0.30, 2, "t2")     # $0.60
+    print(f"    two resting orders hold ${dep:.2f} against MAX_DEPLOYED "
+          f"${MAX_DEPLOYED:.2f}")
+    if abs(dep - MAX_DEPLOYED) > 0.02:
+        fails.append(f"order_collateral summed {dep:.4f}, expected "
+                     f"{MAX_DEPLOYED:.4f} -- a leg is priced off the wrong side")
+    cnt = max(0.01, min(MAX_COUNT, (0.05 * MAX_DEPLOYED) / 0.30))
+    small = build_order("KXTEST-1", "bid", 0.30, cnt, "t2")
     if check_limits(small):
-        fails.append("a $0.60 order failed the per-order rails")
+        fails.append(f"a ${collateral(small):.2f} order failed the per-order "
+                     f"rails: {check_limits(small)}")
     if dep + collateral(small) > MAX_DEPLOYED:
-        print(f"    + a new $0.60 order -> ${dep + collateral(small):.2f} > "
-              f"MAX_DEPLOYED ${MAX_DEPLOYED:.2f} -> REFUSED (correct)")
+        print(f"    + a ${collateral(small):.2f} order -> "
+              f"${dep + collateral(small):.2f} > ${MAX_DEPLOYED:.2f} "
+              f"-> REFUSED (correct)")
     else:
-        fails.append("cumulative cap did NOT bind at $2.70 vs $2.50")
+        fails.append(f"cumulative cap did NOT bind at "
+                     f"${dep + collateral(small):.2f} vs ${MAX_DEPLOYED:.2f}")
 
     print("\n  a FAILED listing must read as UNKNOWN, never as 'nothing resting':")
     class _Fail:
