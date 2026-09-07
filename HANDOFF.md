@@ -3737,3 +3737,83 @@ Eight gold windows at S=20 therefore predict **~$11.40 or exactly $0.00**, with
 no ambiguous middle -- a far better instrument than a UI element that does not
 exist. Awaiting the operator's explicit go; the pre-registered prediction is to
 be written to file BEFORE any order is placed.
+
+---
+
+## 2026-09-07 07:30Z — THE CUTOFF IS REAL. Read from the operative filing.
+
+**RETRACTION FIRST: I called the "July 15 2026 CFTC update" a fabricated
+citation. It is real.** Two outside reviewers cited it; I searched cftc.gov and
+kalshi.com, did not surface it, and concluded it did not exist — treating
+"I could not find it" as "it is not there", and reading a reviewer's
+cross-turn imprecision as corroborating evidence of fabrication. Both were
+overreaches. **The reviewers were right about the document and right about the
+cutoff.**
+
+Source: `https://kalshi-public-docs.s3.amazonaws.com/regulatory/notices/`
+`Liquidity%20Incentive%20Program%20-%20July%2015,%202026%20Update.pdf`
+204,719 bytes, 10 pages. Text saved to `results/LIP_FILING_2026-07-15.txt`.
+
+**A near-miss inside the correction, recorded as method:** my FIRST WebFetch of
+that PDF returned an answer matching exactly what I had asked about. Re-asked
+open-endedly ("transcribe literally; if you cannot read it, say so") the same
+fetcher replied **"I CANNOT READ THE TEXT."** The first answer was confabulated
+from a leading question and I nearly banked it as confirmation. **Reading it
+required installing `pypdf`; the raw-stream extraction I wrote by hand produced
+pure subset-font garbage (0 English tokens in 28,422 chars).**
+
+### THE OPERATIVE RULE, verbatim
+
+> *"Kalshi will add the size available at the current bid price to the
+> Qualifying Yes Total Size, and add all bids at the current bid price to the
+> Qualifying Yes Bids. **If the Reference Yes Price has not yet been set, and
+> the Qualifying Yes Total Size is greater than or equal to one fifth of the
+> target size, then the Reference Yes Price is set to the current bid price.
+> If the Qualifying Yes Total Size is greater than or equal to the target size,
+> the procedure is stopped here.** Otherwise, Kalshi will find the next highest
+> yes bid price and repeat... **If no more bids exist, Kalshi will clear the
+> Qualifying Yes Bids, as there were not enough bids to reach the Target
+> Size.**"*
+>
+> *"each Qualifying Yes Bid is assigned a score equal to the Discount Factor
+> taken to the Nth power multiplied by its size, where N is the number of ticks
+> between the Reference Yes Price and the price of the Qualifying Yes Bid...
+> **The score divided by the sum of the scores** creates a normalized score."*
+
+**Both steps, in one procedure — exactly the hybrid reading.** Reference at
+one fifth; walk stops at the full Target Size; **only Qualifying Bids are
+scored and the normalisation is over Qualifying Bids only.** Everything deeper
+scores nothing.
+
+Also settled by the same document:
+- *"continue until the earlier of ~~September 1, 2026~~, **January 1, 2027**"* —
+  the September date is STRUCK in the redline. **The programme runs to
+  2027-01-01**, matching the help centre. The "it expired" worry is dead, and
+  it was already refuted empirically (3,056 future programmes scheduled).
+- *"This amendment will go into effect on **July 30, 2026**."* It governs today.
+- *"Appendix A contains the Program's updated terms in both clean and redlined
+  form"* — which explains the mangled `"Reference Yes Price highest yes bid
+  price"` fragment: struck text merged with its replacement by the extractor.
+
+### CONSEQUENCE: every share figure in this project is UNDERSTATED
+
+| family | share @S=20, as published | corrected | ratio |
+|---|---|---|---|
+| KXGOLD15M | 1.97% | **7.12%** | **3.61x** |
+| KXCOPPER15M | 4.62% | 9.28% | 2.01x |
+| KXWTI15M | 4.62% | 8.45% | 1.83x |
+| KXSILVER15M | 5.31% | 8.99% | 1.69x |
+| KXNATGAS15M | 8.92% | 12.67% | 1.42x |
+
+**Gold is not a worthless venue. It was an artefact of dividing by 1,856 when
+at most 300 contracts can qualify.** Every `$/window` and `NET` table in this
+file predates this and must be re-derived before it is quoted again.
+
+**It also explains the unpaid pools directly:** *"Kalshi will clear the
+Qualifying Yes Bids, as there were not enough bids to reach the Target Size."*
+A thin market produces NO qualifying bids on that side, the snapshot is
+excluded, and the pool pays nobody. That is the mechanism behind `KXTEMP*`
+(3,094 unpaid past 200 h) and behind `series_lip` paying only 77.6% overall —
+**not a payment backlog.** The operator's instinct that unpaid pools mean empty
+space is right in mechanism, but the space is empty *because the book cannot
+reach Target Size*, which is also the reason nobody can be paid there.
