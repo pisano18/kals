@@ -49,13 +49,27 @@ PROD = "https://external-api.kalshi.com/trade-api/v2"
 
 # HARD CEILINGS. Not arguments. A live test that needs more than this is a
 # different decision and needs a different commit.
-MAX_COUNT = 5.0            # contracts, per order
-# MAX_NOTIONAL MUST BIND. At MAX_COUNT=5 the largest possible notional is
-# 5 x 0.99 = $4.95, so a $5.00 ceiling could NEVER fire -- the self-test
-# caught it as dead code on its first run. $2.50 is reachable (5 contracts at
-# 50c) and therefore actually constrains.
-MAX_NOTIONAL = 2.50        # dollars of collateral, per order
-MAX_OPEN_ORDERS = 4        # across the process
+# HARD CEILINGS. Not arguments. They differ by environment because the two
+# environments carry different consequences: demo money is fake, so the only
+# reason to bound demo is to stop a runaway loop, while production is bounded
+# to what the operator has actually signed off on.
+#
+# MAX_NOTIONAL binds on COLLATERAL, not on price x count: an ask at price p
+# freezes (1 - p), so a sell quote at 2c ties up 98c per contract. Checking
+# the wrong leg would understate every sell-side order.
+CEILINGS = {
+    # env:      (MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS)
+    "prod": (5.0, 2.50, 4),
+    "demo": (2000.0, 50.00, 12),
+}
+MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS = CEILINGS["prod"]
+
+
+def set_env(is_prod):
+    """Select the ceiling set. Called once, before any order is built."""
+    global MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS
+    MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS = CEILINGS[
+        "prod" if is_prod else "demo"]
 
 
 def load_key(path):
@@ -167,6 +181,7 @@ def send(base, pk, key_id, method, path, body=None):
 
 
 def selftest():
+    set_env(True)
     print("=" * 78)
     print("SELF-TEST -- the rails must hold before anything can be sent")
     print("=" * 78)
@@ -252,6 +267,7 @@ def main():
     if not (a.ticker and a.price):
         raise SystemExit("\n--ticker and --price are required")
 
+    set_env(bool(a.prod))
     base = PROD if a.prod else DEMO
     body = build_order(a.ticker, a.side, a.price, a.count,
                        a.client_id or ("kals-" + str(int(time.time()))))

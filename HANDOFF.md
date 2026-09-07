@@ -3137,3 +3137,80 @@ which is a deliberate code edit and a separate decision.
 The order never filled, so `maker_fees_dollars: 0.000000` on it is **trivially
 true and is not evidence about maker fees.** This project has already retracted
 that exact inference once and must not make it again.
+
+---
+
+## 2026-09-06 ~21:30 ET — four findings from the operator's own penny trade
+
+The operator bought and then sold a contract by hand while this session
+watched. That was a better experiment than either of us intended.
+
+### 1. KALSHI SUPPORTS FRACTIONAL CONTRACTS. This project did not know that.
+The fill: `count_fp: "0.02"` — **two hundredths of a contract**, at
+`no_price_dollars: "0.4400"`, total cost $0.0088, on
+`KXBTC15M-26SEP062145-45`. Not one contract at a penny; a fiftieth of a
+contract at 44c.
+
+Consequence: **order size is continuous, not integral.** Every "how many
+contracts" calculation in this project assumed integers, and sizing can be
+finer than assumed. It does NOT help with the $1.00 payout floor, which binds
+on dollars, not on lots.
+
+### 2. FEES ROUND UP, and at small size that is not negligible.
+`0.07 x 0.5600 x 0.4400 x 0.02 = $0.000345` predicted, **$0.000400 charged.**
+The formula is confirmed a second time, but the charge is rounded UP to the
+next $0.0001 — a 16% surcharge at this size. The quadratic fee model in
+`engine.fee_per_contract` computes the exact value and will understate small
+fills.
+
+### 3. THE SHARD BLOCKER IS GONE, and the app is what removed it.
+Before: `{0: $20.0047, 1: 0, 2: 0, 3: 0}`. Coin Race is shard 2, and the
+live-test workflow called an empty shard 2 a hard blocker — "every order would
+otherwise be rejected."
+
+After the operator's app trade: `{0: $19.9747, 2: $0.0208}`. **The app moved
+funds to shard 2 automatically and registered the account there.** Coin Race
+is now reachable on production without any manual transfer.
+
+### 4. DEMO CANNOT TEST ORDERS AT ALL. Stronger than "stale rebate data."
+Every demo order returns `404 user_not_found — "Exchange user not found"`,
+because the demo account has no user on shard 2, and **every open demo market
+is on shard 2** (checked 60 markets: none on shard 0). So demo can place no
+order anywhere. Combined with its stale `discount_factor_bps: 1`, **demo is
+useless for this project and should not be relied on again.**
+
+The first attempt returned an unhelpful `400 invalid_parameters`; the real
+error only appeared after fixing a self-inflicted bug — my probe script was
+named `bisect.py` and shadowed the stdlib module, which is exactly the failure
+`research/shadow.py` exists to catch, and I hit it outside the repo where that
+guard does not run.
+
+---
+
+## THE COLLATERAL QUESTION: narrowed, still open, and NOT resolved in our favour
+
+Second test, 5 contracts at $0.02 (collateral $0.10 if reserved), polled every
+3 seconds for 18 seconds:
+
+```
+t=0    $20.0033  updated_ts=1788745160
+t=3s   $20.0033  updated_ts=1788745163      order status=resting remaining=5.00
+...
+t=18s  $20.0033  updated_ts=1788745179
+net change across the whole test: $+0.0000
+```
+
+**`updated_ts` advances on every poll, so the value is LIVE. The cache
+explanation is ruled out.** Kalshi's own reference calls this field "Member's
+available balance", which should mean it nets out resting orders. It does not.
+
+**What is now established:** `balance_dollars` cannot measure capital tied up
+in resting orders, so no peak-concurrent-capital figure can be read from it.
+**What is NOT established:** that resting is free. `/portfolio/summary/total_resting_order_value`
+exists and 403s to this key; its name says reserves are tracked. Assuming
+resting is free would multiply our usable size and is exactly the flattering
+direction this project treats as suspect.
+
+**Cheapest remaining test, and it needs no money:** the Kalshi app shows an
+available balance. While an order rests, look at it. If it is reduced, the API
+field is simply gross and the question is answered for free.
