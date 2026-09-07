@@ -284,6 +284,43 @@ def selftest():
         fails.append("token does not change with environment -- a demo "
                      "sign-off would authorise PRODUCTION")
 
+
+    print("\n  the CUMULATIVE cap must bind when per-order ceilings do not:")
+    fake_rest = [{"side": "yes", "remaining_count_fp": "2.00",
+                  "yes_price_dollars": "0.6000", "no_price_dollars": "0.4000"},
+                 {"side": "no", "remaining_count_fp": "3.00",
+                  "yes_price_dollars": "0.7000", "no_price_dollars": "0.3000"}]
+    dep = sum(order_collateral(o) for o in fake_rest)
+    print(f"    two resting orders hold ${dep:.2f} "
+          f"(yes 2x0.60 + no 3x0.30 = 2.10)")
+    if abs(dep - 2.10) > 1e-9:
+        fails.append(f"order_collateral summed {dep:.4f}, expected 2.10 -- a "
+                     f"leg is priced off the wrong side")
+    small = build_order("KXTEST-1", "bid", 0.30, 2, "t2")     # $0.60
+    if check_limits(small):
+        fails.append("a $0.60 order failed the per-order rails")
+    if dep + collateral(small) > MAX_DEPLOYED:
+        print(f"    + a new $0.60 order -> ${dep + collateral(small):.2f} > "
+              f"MAX_DEPLOYED ${MAX_DEPLOYED:.2f} -> REFUSED (correct)")
+    else:
+        fails.append("cumulative cap did NOT bind at $2.70 vs $2.50")
+
+    print("\n  a FAILED listing must read as UNKNOWN, never as 'nothing resting':")
+    class _Fail:
+        pass
+    def _bad_send(*a, **k):
+        return 500, "boom"
+    _real = globals()["send"]
+    globals()["send"] = _bad_send
+    try:
+        lst, ok = resting_orders("x", None, "k")
+    finally:
+        globals()["send"] = _real
+    print(f"    send() returning 500 -> resting_orders ok={ok}, "
+          f"{len(lst)} orders")
+    if ok:
+        fails.append("resting_orders reported ok=True on a failed listing")
+
     print("\n  default environment:")
     print(f"    base defaults to DEMO: {DEMO}")
 
