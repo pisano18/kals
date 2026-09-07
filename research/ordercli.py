@@ -229,6 +229,21 @@ def order_collateral(o):
         return 0.0
 
 
+def amend(base, pk, key_id, oid, body):
+    """Atomically move a resting order to a new price.
+
+    POST /portfolio/events/orders/{id}/amend. Replaces cancel-then-place, which
+    leaves a gap where that side is unquoted, and place-then-cancel, which
+    briefly holds TWO orders on one side and doubles the reserve (the documented
+    ruin path). Amend has neither failure mode.
+
+    Queue position is forfeited on a price change -- but cancel-then-place
+    forfeits it too, so nothing is lost.
+    """
+    return send(base, pk, key_id, "POST",
+                f"/portfolio/events/orders/{oid}/amend", body=body)
+
+
 def cancel(base, pk, key_id, oid, exchange_index):
     """Cancel, and VERIFY it actually cancelled.
 

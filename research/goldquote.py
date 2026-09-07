@@ -314,6 +314,25 @@ def main():
                     cur = live.get(side)
                     if cur and abs(cur[1] - ref) < 1e-9:
                         continue                      # already at the reference
+                    # ATOMIC RE-PEG when an order already rests on this side.
+                    # Neither cancel-then-place (a gap where the side is
+                    # unquoted) nor place-then-cancel (two orders on one side,
+                    # double reserve -- the documented ruin path). Amend has
+                    # neither failure mode. Price changes forfeit queue
+                    # position, but so does cancel-then-place, so nothing is
+                    # lost.
+                    if cur and not a.dry_run:
+                        stx, r = oc.amend(BASE, pk, KEY_ID, cur[0], body)
+                        if stx in (200, 201):
+                            nid = (r.get("order_id") if isinstance(r, dict)
+                                   else None) or cur[0]
+                            live[side] = (nid, ref, a.size)
+                            print(f"    {side} AMEND -> {px:.4f} "
+                                  f"(ref {ref:.4f}) -> {stx}")
+                            continue
+                        print(f"    {side} amend -> {stx} "
+                              f"{json.dumps(r)[:110] if isinstance(r,dict) else r}"
+                              f"  falling back to cancel+place")
                     cancel_side(side)                 # CANCEL BEFORE PLACE
                     if a.dry_run:
                         live[side] = ("DRY", ref, a.size)
@@ -336,11 +355,34 @@ def main():
                 ticks += 1
                 if ticks % 20 == 0 and a.live:
                     cur_bal = balance()
+                    # MARK TO MARKET, not to cost. An outside reviewer caught
+                    # this and was right: market_exposure_dollars is the COST
+                    # basis (verified -- a contract bought at 0.79 reports
+                    # exposure 0.790000). Cash falls by the cost when a fill
+                    # lands, so cash + cost is CONSTANT and the abort could
+                    # never fire on an unrealised loss. It would only see the
+                    # damage after settlement, by which time the window is
+                    # over. Value the position at what the market says now.
                     st, p = api("GET", "/portfolio/positions")
-                    exposure = sum(float(x.get("market_exposure_dollars") or 0)
-                                   for x in (p or {}).get("market_positions", []))
-                    pnl = (cur_bal + exposure) - start_bal
-                    print(f"    .. bal ${cur_bal:.2f} exposure ${exposure:.2f} "
+                    mv = 0.0
+                    for x in (p or {}).get("market_positions", []):
+                        try:
+                            n = float(x.get("position_fp") or 0)
+                        except Exception:
+                            continue
+                        if abs(n) < 1e-9:
+                            continue
+                        py, pn = book(api, x.get("ticker"))
+                        if not py or not pn:
+                            # cannot mark it -- fall back to cost, and say so
+                            mv += float(x.get("market_exposure_dollars") or 0)
+                            print(f"    !! cannot mark {x.get('ticker')}, "
+                                  f"using cost basis")
+                            continue
+                        yes_mid = (py[0][0] + (1.0 - pn[0][0])) / 2.0
+                        mv += (n * yes_mid) if n > 0 else (abs(n) * (1.0 - yes_mid))
+                    pnl = (cur_bal + mv) - start_bal
+                    print(f"    .. bal ${cur_bal:.2f} mark-to-mkt ${mv:.2f} "
                           f"P&L ${pnl:+.2f}")
                     if pnl <= LOSS_ABORT:
                         aborted = f"loss abort: P&L ${pnl:+.2f} <= ${LOSS_ABORT}"
