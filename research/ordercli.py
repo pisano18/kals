@@ -80,55 +80,61 @@ def sign_headers(pk, key_id, method, path):
             "Accept": "application/json"}
 
 
-def build_order(ticker, side, price, count, client_id):
-    """The request body.
+def build_order(ticker, side, price, count, client_id, exchange_index=0):
+    """The V2 request body, taken from Kalshi's own create-order-v2 reference.
 
-    THE SHAPE IS INFERRED, NOT DOCUMENTED. Kalshi publishes no OpenAPI spec
-    reachable from here (checked 2026-09-06: /openapi.json, /swagger.json,
-    /docs and four more all 404 on demo and production). So these field names
-    come from the operator's OWN historical order records, which the exchange
-    itself emitted:
+    side is "bid" (buy YES) or "ask" (sell YES, i.e. economically buy NO).
+    price and count are FIXED-POINT STRINGS in dollars, 2-4 decimals.
 
-        action "buy" | side "yes"/"no" | type "limit" | yes_price_dollars
-
-    The first field name in the earlier version -- side "bid"/"ask" plus a
-    bare "price" -- appears NOWHERE in those records and was a guess.
+    Do not re-derive these names from /portfolio/orders records: those are V1
+    RESPONSE objects and using them as a request schema is what produced the
+    410 on 2026-09-06.
 
     post_only is not optional and is not an argument.
     """
-    yes_px = float(price)
     return {
         "ticker": ticker,
-        "action": "buy",
-        "side": "yes" if side == "bid" else "no",
-        "type": "limit",
-        "count": int(round(float(count))),
-        "yes_price_dollars": f"{yes_px:.4f}",
+        "side": side,
+        "count": f"{float(count):.2f}",
+        "price": f"{float(price):.4f}",
+        "time_in_force": "good_till_canceled",
+        "self_trade_prevention_type": "maker",
         "post_only": True,                  # <-- CANNOT CROSS. The whole rail.
         "client_order_id": client_id,
+        "exchange_index": int(exchange_index),
     }
+
+
+def collateral(body):
+    """What the exchange actually freezes. A bid at p costs p; an ask at p is
+    a sale of YES, which costs (1 - p). Getting this backwards would understate
+    the risk of every sell-side quote."""
+    c = float(body["count"])
+    p = float(body["price"])
+    return c * (p if body["side"] == "bid" else (1.0 - p))
 
 
 def check_limits(body):
     """Refuse before signing, not after. Returns a list of violations."""
     bad = []
     c = float(body["count"])
-    p = float(body["yes_price_dollars"])
+    p = float(body["price"])
     if c > MAX_COUNT:
         bad.append(f"count {c} exceeds MAX_COUNT {MAX_COUNT}")
     if c <= 0:
         bad.append(f"count {c} is not positive")
     if not (0.0 < p < 1.0):
         bad.append(f"price {p} is outside (0,1)")
-    if c * p > MAX_NOTIONAL:
-        bad.append(f"notional {c*p:.2f} exceeds MAX_NOTIONAL {MAX_NOTIONAL}")
+    if collateral(body) > MAX_NOTIONAL:
+        bad.append(f"collateral {collateral(body):.2f} exceeds MAX_NOTIONAL "
+                   f"{MAX_NOTIONAL}")
     if body.get("post_only") is not True:
         bad.append("post_only is not True -- this order could TAKE liquidity")
-    if body.get("type") != "limit":
-        bad.append(f"type is {body.get('type')!r}, not 'limit' -- a market "
-                   f"order has no price rail at all")
-    if body.get("action") != "buy":
-        bad.append(f"action is {body.get('action')!r}, not 'buy'")
+    if body.get("time_in_force") != "good_till_canceled":
+        bad.append(f"time_in_force is {body.get('time_in_force')!r}, not "
+                   f"good_till_canceled")
+    if body.get("side") not in ("bid", "ask"):
+        bad.append(f"side is {body.get('side')!r}, not bid or ask")
     return bad
 
 
@@ -175,14 +181,14 @@ def selftest():
 
     print("\n  every ceiling must REFUSE, before signing:")
     for desc, mut in (
-            ("count above MAX_COUNT", {"count": 999}),
-            ("notional above MAX_NOTIONAL", {"count": 5, "yes_price_dollars": "0.8000"}),
-            ("price at 0", {"yes_price_dollars": "0.0000"}),
-            ("price at 1", {"yes_price_dollars": "1.0000"}),
-            ("negative count", {"count": -1}),
+            ("count above MAX_COUNT", {"count": "999.00"}),
+            ("collateral above MAX_NOTIONAL", {"count": "5.00", "price": "0.8000"}),
+            ("price at 0", {"price": "0.0000"}),
+            ("price at 1", {"price": "1.0000"}),
+            ("negative count", {"count": "-1.00"}),
             ("post_only stripped", {"post_only": False}),
-            ("type changed to market", {"type": "market"}),
-            ("action changed to sell", {"action": "sell"})):
+            ("time_in_force changed", {"time_in_force": "fill_or_kill"}),
+            ("side made nonsense", {"side": "sell"})):
         bb = dict(b)
         bb.update(mut)
         v = check_limits(bb)
@@ -192,7 +198,7 @@ def selftest():
 
     print("\n  the sign-off token must bind to the exact order and environment:")
     t1 = token_for(b, DEMO)
-    t2 = token_for(dict(b, count=2), DEMO)
+    t2 = token_for(dict(b, count="2.00"), DEMO)
     t3 = token_for(b, PROD)
     print(f"    demo/1 contract {t1}   demo/2 contracts {t2}   PROD/1 {t3}")
     if t1 == t2:
@@ -258,8 +264,8 @@ def main():
     print(f"  environment : {'PRODUCTION -- REAL MONEY' if a.prod else 'DEMO'}")
     print(f"  base        : {base}")
     print(f"  body        : {json.dumps(body, indent=2)}")
-    print(f"  collateral  : ${float(body['count'])*float(body['yes_price_dollars']):.2f}")
-    print(f"  worst case  : ${float(body['count'])*float(body['yes_price_dollars']):.2f} "
+    print(f"  collateral  : ${collateral(body):.2f}")
+    print(f"  worst case  : ${collateral(body):.2f} "
           f"(it fills and settles against us)")
     if bad:
         print("\n  *** REFUSED BY THE RAILS ***")
@@ -290,8 +296,8 @@ def main():
     print(f"  balance BEFORE : "
           f"{json.dumps(bal0)[:180] if isinstance(bal0, dict) else bal0}")
 
-    st, resp = send(base, pk, a.key_id, "POST", "/portfolio/orders", body)
-    print(f"\n  POST /portfolio/orders -> {st}")
+    st, resp = send(base, pk, a.key_id, "POST", "/portfolio/events/orders", body)
+    print(f"\n  POST /portfolio/events/orders -> {st}")
     print(f"    {json.dumps(resp)[:500] if isinstance(resp, dict) else resp}")
     if st not in (200, 201):
         print("\n  *** REJECTED. Nothing rests. Nothing is at risk. ***")
@@ -324,8 +330,12 @@ def main():
         print("      Every rebate figure assumes it is. Never checked before.")
         s2, r2 = g("/markets/" + body["ticker"] + "/orderbook")
         ob = ((r2 or {}).get("orderbook_fp") or {}) if isinstance(r2, dict) else {}
-        key = "yes_dollars" if body["side"] == "yes" else "no_dollars"
-        want = float(body["yes_price_dollars"])
+        # a bid rests on the yes book at p; an ask rests on the
+        # no book at (1-p) -- Kalshi's two books are one book.
+        bid = body["side"] == "bid"
+        key = "yes_dollars" if bid else "no_dollars"
+        want = (float(body["price"]) if bid
+                else round(1.0 - float(body["price"]), 4))
         hit = [(float(px), float(sz)) for px, sz in (ob.get(key) or [])
                if abs(float(px) - want) < 1e-9]
         if hit:
@@ -342,7 +352,7 @@ def main():
         try:
             b0 = float((bal0 or {}).get("balance_dollars"))
             b1 = float((bal1 or {}).get("balance_dollars"))
-            exp = float(body["count"]) * want
+            exp = collateral(body)
             ok = "MATCH" if abs((b0 - b1) - exp) < 1e-6 else "*** DIFFERS ***"
             print(f"    before ${b0:.4f}   after ${b1:.4f}   "
                   f"held ${b0 - b1:.4f}   expected ${exp:.4f}   {ok}")
@@ -350,8 +360,8 @@ def main():
             print(f"    could not compare balances: {e}")
     finally:
         s4, r4 = send(base, pk, a.key_id, "DELETE",
-                      f"/portfolio/orders/{oid}")
-        print(f"\n  --- CANCEL: DELETE /portfolio/orders/{oid} -> {s4}")
+                      f"/portfolio/events/orders/{oid}")
+        print(f"\n  --- CANCEL: DELETE /portfolio/events/orders/{oid} -> {s4}")
         print(f"    {str(r4)[:200]}")
         s5, bal2 = g("/portfolio/balance")
         if isinstance(bal2, dict):

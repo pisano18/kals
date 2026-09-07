@@ -3018,3 +3018,61 @@ Also confirmed verbatim: Target Size is *"the depth that must be resting on
 each side"* (aggregate, not ours); Reference Price *"is not always the best bid
 or ask - a small order alone at the top of the book does not set it"*; minimum
 payout $1.00; daily rewards $1-$1,000 per market per day.
+
+---
+
+## 2026-09-06 ~21:00 ET — FIRST ORDER EVER SENT. Rejected 410, and it was MY bug.
+
+**The project's first-ever order request reached Kalshi.** Result:
+
+```
+POST /portfolio/orders -> 410
+{"code":"deprecated_v1_order_endpoint",
+ "message":"Please switch to the V2 endpoints",
+ "details":"https://docs.kalshi.com/api-reference/orders/create-order-v2"}
+```
+
+Nothing rested, nothing filled, balance unchanged at $20.0047. The rails held:
+`post_only` was set, the sign-off token matched, and the ceilings passed.
+
+### RETRACTION: both of tonight's "fixes" to ordercli.py were REGRESSIONS.
+
+The file was **already correct** before I touched it. I broke it twice:
+
+1. **Endpoint.** I changed `POST /portfolio/events/orders` to
+   `POST /portfolio/orders` because `GET /portfolio/events/orders` returned
+   *404 page not found*. **It is POST-only.** I had explicitly written in this
+   file that "a method-specific router could make both true" and then acted on
+   the wrong branch anyway. The V2 create endpoint IS
+   `POST /portfolio/events/orders`, per Kalshi's own reference.
+2. **Body shape.** I rebuilt it from the operator's August order records
+   (`action`/`side: yes`/`type`/`yes_price_dollars`). Those are **V1 RESPONSE
+   objects**. A response shape is not a request schema, and I treated one as
+   the other. The V2 request is exactly what the file had originally:
+   `side: bid|ask`, `count` and `price` as fixed-point strings,
+   `time_in_force`, `self_trade_prevention_type`.
+
+**The subagent that recommended `/portfolio/events/orders` was RIGHT and my
+direct probe misled me.** I recorded its advice as "unresolved, my probe is a
+direct measurement and its claim is not sourced." The lesson is narrower than
+"trust the agent": *a 404 on GET is not evidence about POST*, and I knew that
+at the time.
+
+### The documented V2 contract, now in the file
+| | |
+|---|---|
+| create | `POST /portfolio/events/orders` |
+| cancel | `DELETE /portfolio/events/orders/{order_id}` |
+| body | `ticker`, `side` (`bid`=buy YES, `ask`=sell YES), `count` (fp string), `price` (fp dollars string), `time_in_force`, `self_trade_prevention_type`, `client_order_id`, `post_only`, `exchange_index` |
+
+Also added `collateral()`, because **an `ask` at price p freezes `(1-p)`, not
+`p`** — the old notional check would have understated the risk of every
+sell-side quote by using the wrong leg. `MAX_NOTIONAL` now tests true
+collateral. Self-test: eight rails, all refuse.
+
+### Operational note: the `!` prefix does nothing in this operator's client.
+Two commands the operator "ran" via `! ...` were never executed — the text is
+echoed to the session as a message. Confirmed by them and by the exchange
+showing no trace. **Hand over commands to run in a PowerShell window, and
+remember Windows PowerShell 5.1 rejects `&&`.** Use full paths
+(`C:\Python314\python.exe`) so no `cd` is needed.
