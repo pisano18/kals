@@ -57,6 +57,14 @@ CADENCE = 3.0                # seconds between re-peg checks
 # bounds the one-sided exposure at SIZE x PRICE_MAX.
 PRICE_MIN, PRICE_MAX = 0.20, 0.80
 
+# NEVER JOIN A WINDOW LATE. The operator caught this before it ran.
+# reward = R x mean over ALL snapshots in the period of our share. Join a
+# 900-second window with 60 seconds left and we are present for 1/15 of the
+# snapshots, so a $1.42 window pays about $0.09 -- under the $1.00 floor, so
+# ZERO. We would carry the full fill risk for no possible credit.
+# Require most of the window to remain, otherwise wait for the next one.
+MIN_WINDOW_SECONDS = 780      # of a 900 s window; refuse anything shorter
+
 
 def ref_price(levels, target=TARGET):
     """Reference Price: walking DOWN from the best, the first level at which
@@ -224,12 +232,25 @@ def main():
                 print("  no open gold market; waiting")
                 time.sleep(10)
                 continue
+            # pick the market with the MOST time left, and refuse to join late
+            def left(mm):
+                return (dt.datetime.fromisoformat(
+                    mm["close_time"].replace("Z", "+00:00"))
+                    - dt.datetime.now(dt.timezone.utc)).total_seconds()
+            mks = sorted([x for x in mks if x.get("close_time")],
+                         key=left, reverse=True)
+            if not mks or left(mks[0]) < MIN_WINDOW_SECONDS:
+                secs = left(mks[0]) if mks else 0
+                print(f"  only {secs:.0f}s left in the freshest window "
+                      f"(need {MIN_WINDOW_SECONDS}s) -- waiting for the next")
+                time.sleep(min(30, max(5, secs + 5)))
+                continue
             m = mks[0]
             tk = m["ticker"]
             close = dt.datetime.fromisoformat(
                 m["close_time"].replace("Z", "+00:00"))
             print(f"\n  === window {windows_done+1}/{a.windows}: {tk} "
-                  f"closes {m['close_time']} ===")
+                  f"closes {m['close_time']} ({left(m):.0f}s of quoting) ===")
             wstart = balance()
             ticks = 0
 
@@ -252,29 +273,48 @@ def main():
                     time.sleep(CADENCE)
                     continue
 
+                # BOTH LEGS OR NEITHER.
+                # The dry run caught this: when one leg was refused by a rail
+                # the loop placed the OTHER one anyway and sat quoting a single
+                # side continuously -- which is the naked directional exposure
+                # this design exists to avoid. A safety ceiling was CREATING
+                # the unsafe state. Build both, validate both, then act.
+                plan = {}
                 for side, ref in (("yes", ry), ("no", rn)):
+                    px = ref if side == "yes" else round(1.0 - ref, 4)
+                    o_side = "bid" if side == "yes" else "ask"
+                    plan[side] = (ref, px, oc.build_order(
+                        tk, o_side, px, a.size,
+                        f"gq-{side}-{int(time.time()*1000) % 1000000}"))
+                bad = {s: oc.check_limits(v[2]) for s, v in plan.items()}
+                pair_collat = sum(oc.collateral(v[2]) for v in plan.values())
+                rest, ok = (oc.resting_orders(BASE, pk, KEY_ID) if a.live
+                            else ([], True))
+                if not ok:
+                    raise RuntimeError("cannot read resting orders")
+                held = sum(oc.order_collateral(o) for o in rest
+                           if o.get("order_id") not in
+                           {live[s][0] for s in ("yes", "no") if live[s]})
+                blocked = [f"{s}:{b}" for s, b in bad.items() if b]
+                if held + pair_collat > oc.MAX_DEPLOYED:
+                    blocked.append(f"pair ${pair_collat:.2f} + held ${held:.2f} "
+                                   f"> cap ${oc.MAX_DEPLOYED:.2f}")
+                if blocked:
+                    if live["yes"] or live["no"]:
+                        print(f"    PAIR BLOCKED {blocked} -- standing down "
+                              f"(never one-sided)")
+                        cancel_side("yes")
+                        cancel_side("no")
+                    time.sleep(CADENCE)
+                    continue
+
+                # both legs are legal; re-peg only the ones that moved
+                for side in ("yes", "no"):
+                    ref, px, body = plan[side]
                     cur = live.get(side)
                     if cur and abs(cur[1] - ref) < 1e-9:
                         continue                      # already at the reference
                     cancel_side(side)                 # CANCEL BEFORE PLACE
-                    # ask price is the YES price; bidding NO at rn means
-                    # offering to sell YES at (1 - rn)
-                    px = ref if side == "yes" else round(1.0 - ref, 4)
-                    o_side = "bid" if side == "yes" else "ask"
-                    body = oc.build_order(tk, o_side, px, a.size,
-                                          f"gq-{side}-{int(time.time()*1000)%1000000}")
-                    bad = oc.check_limits(body)
-                    if bad:
-                        print(f"    {side}: rails refuse {bad}")
-                        continue
-                    rest, ok = oc.resting_orders(BASE, pk, KEY_ID) if a.live else ([], True)
-                    if not ok:
-                        raise RuntimeError("cannot read resting orders")
-                    dep = sum(oc.order_collateral(o) for o in rest)
-                    if dep + oc.collateral(body) > oc.MAX_DEPLOYED:
-                        print(f"    {side}: cumulative ${dep+oc.collateral(body):.2f} "
-                              f"> cap ${oc.MAX_DEPLOYED:.2f}, skipping")
-                        continue
                     if a.dry_run:
                         live[side] = ("DRY", ref, a.size)
                         print(f"    [dry] {side} {a.size:.0f} @ {px:.4f} "
@@ -289,6 +329,10 @@ def main():
                         else:
                             print(f"    {side} @ {px:.4f} -> {stx} "
                                   f"{json.dumps(r)[:120] if isinstance(r,dict) else r}")
+                            # a leg failed to place -- do not run one-sided
+                            print(f"    leg failed; cancelling the other side")
+                            cancel_side("yes" if side == "no" else "no")
+                            break
                 ticks += 1
                 if ticks % 20 == 0 and a.live:
                     cur_bal = balance()
