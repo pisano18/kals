@@ -3499,3 +3499,35 @@ Silver 89, WTI 89, Copper 89 settled markets each; closes in 23 of 24 ET hours;
 the one empty hour is **04:00 ET (08:00Z) on every family** — observed, not yet
 explained (it is not the CME 17:00-18:00 ET break). Saturday: 1 each. The
 retraction of the "24-window session" now rests on every family, not two.
+
+---
+
+## 2026-09-07 ~05:05Z — NETTING TEST v1: suggestive, NOT proof
+
+Operator ran `tmp/netting.py` (shard 2, `KXCRYPTOLEAD15M-26SEP070115-XRP`):
+
+```
+taker buy 0.02 YES, limit 0.37 -> filled 0.3000 (price improvement), fee $0.0003
+free cash after: $0.0123   position +0.02 YES
+CONTROL  post_only BID 0.02 @ 0.36 -> 400 invalid_order "post only ... would cross"
+TREATMENT post_only ASK 0.02 @ 0.30 (naive reserve $0.0140 > cash $0.0123) -> 201 ACCEPTED
+```
+
+**Reading:** the informative half points to NETTING — an ask needing $0.0140 of
+naive collateral was accepted against $0.0123 of free cash. **Not claimed as
+settled, for two reasons.** (1) The margin is **$0.0017**: if Kalshi rounds
+reserves to whole cents, 1.4c -> 1c < 1.23c and the acceptance proves nothing.
+(2) The control never ran: the buy filled at 0.30 not 0.37, so the 0.36 control
+bid sat ABOVE the new ask and was rejected for post_only crossing, not balance.
+The refusal mechanism at this scale IS established separately (the $0.0250
+`insufficient_balance` straddle earlier tonight), but a same-run control is what
+makes the treatment clean.
+
+`tmp/netting2.py` written: spends the shard down to <0.3c first so both the
+control and the treatment carry a **>1c margin** (aborts at run time if not),
+control bid AT the best bid (cannot cross), treatment ask one tick inside the
+spread. Handed to the operator; the local classifier blocks this session from
+sending taker orders.
+
+Also observed: `average_fee_paid: 0.0150` per contract on a fill at 0.30
+(exact 0.07x0.30x0.70 = 0.0147) — fees round UP, third confirmation.
