@@ -304,10 +304,22 @@ def cancel(base, pk, key_id, oid, exchange_index):
     if st != 200:
         st, r = send(base, pk, key_id, "DELETE",
                      f"/portfolio/events/orders/{oid}")
-    rest, ok = resting_orders(base, pk, key_id)
-    if not ok:
-        return st, r, None           # UNKNOWN. Never report "verified".
-    return st, r, any(o.get("order_id") == oid for o in rest)
+    # THE LISTING LAGS THE CANCEL. Observed directly 2026-09-07: a cancel
+    # returned 200 while ?status=resting still showed the order seconds later,
+    # and a strict one-shot check aborted a live run on that lag alone.
+    # So poll: a cancel is only "still resting" if it PERSISTS.
+    still = None
+    for attempt in range(4):
+        rest, ok = resting_orders(base, pk, key_id)
+        if not ok:
+            still = None             # UNKNOWN; never report "verified"
+        elif any(o.get("order_id") == oid for o in rest):
+            still = True
+        else:
+            return st, r, False      # gone: confirmed cancelled
+        if attempt < 3:
+            time.sleep(0.6)
+    return st, r, still
 
 
 def selftest():

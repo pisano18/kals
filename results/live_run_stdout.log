@@ -1,0 +1,51 @@
+==========================================================================
+SELF-TEST -- the reference price and the rails
+==========================================================================
+
+  book [(0.6, 5.0), (0.59, 10.0), (0.58, 100.0), (0.57, 500.0)]
+    target/5 = 60; cumulative reaches it at 0.58
+    hand-check: cum 5, 15, 115 -> first >= 60 is at 0.58
+
+  real copper book [(0.95, 2.0), (0.94, 29.0), (0.93, 2040.0)]
+    reference 0.93 (expect 0.93 -- a 2-contract touch cannot set it)
+
+  a single deep level at the touch: ref 0.6 (expect 0.60)
+  empty book: ref None, depth 0.0 (expect None, 0.0)
+
+  production ceilings: count 20.0, per-order $15.0, cumulative $21.0
+    full size at 0.99 (collateral $19.80) -> REFUSED
+    ask 10 @ 0.20 reserves $8.00 (expect 8.00 = 10 x (1-0.20))
+
+SELF-TEST PASSED
+
+  starting balance $65.1813   size 20/side   4 window(s)   *** LIVE ***
+  caps: cumulative $21.00, abort at $-15.00
+
+  run log      : C:\kals-repo\results\run-live-20260907T082748Z.jsonl
+  only 131s left in the freshest window (need 780s) -- waiting for the next
+  only 101s left in the freshest window (need 780s) -- waiting for the next
+  only 71s left in the freshest window (need 780s) -- waiting for the next
+  only 41s left in the freshest window (need 780s) -- waiting for the next
+  only 11s left in the freshest window (need 780s) -- waiting for the next
+  only -5s left in the freshest window (need 780s) -- waiting for the next
+  only -10s left in the freshest window (need 780s) -- waiting for the next
+  only -15s left in the freshest window (need 780s) -- waiting for the next
+
+  === window 1/4: KXNATGAS15M-26SEP070445-45 closes 2026-09-07T08:45:00Z (880s of quoting) ===
+    yes 20 @ 0.4800 (ref 0.4800) -> 201
+    no 20 @ 0.5400 (ref 0.4600) -> 201
+    no amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+
+  !! cancel of 01a07afd-6148-7755-898b-db5b1157884f returned still=True -- UNVERIFIED or STILL RESTING. Aborting rather than quote on top of an order we cannot account for.
+
+  --- CLEANUP ---
+  !! cancel of 01a07afd-6148-7027-93d1-3463ca50e287 returned still=True -- UNVERIFIED or STILL RESTING. Aborting rather than quote on top of an order we cannot account for.
+  verified: nothing resting
+
+  windows completed : 0
+  balance           : $65.1813 -> $65.1813 (+0.0000)
+  ABORTED           : exception: cancel of 01a07afd-6148-7755-898b-db5b1157884f returned still=True -- UNVERIFIED or STILL RESTING. Aborting rather than quote on top of an order we cannot account for.
+  per-window        : []
+
+  The rebate, if any, is NOT in this number. It appears in the
+  balance 48+ hours from now. Read it against PREREG_gold.md.
