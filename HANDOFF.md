@@ -2925,3 +2925,96 @@ must be `limit` and `action` must be `buy`.
 
 **Demo remains unable to test the money.** Demo `/incentive_programs` carries
 `discount_factor_bps: 1` (production: 5000) and `end_date: 2026-07-30`.
+
+---
+
+## 2026-09-06 ~20:00 ET — the commodity books, measured live for the first time
+
+They were closed at every previous look. Six polls ~10s apart, live API.
+
+### Maker fees: ZERO on all five. `fee_type=quadratic`, multiplier 1.
+Checked first, per CLAUDE.md. Gold, Silver, WTI, NatGas, Copper all plain
+`quadratic` — makers pay nothing.
+
+### All five are on EXCHANGE SHARD 0, where the money is.
+Coin Race is shard 2, which holds $0.0000. **The commodity families need no
+transfer and Coin Race does.** Balance now $20.0047, all shard 0. The newest
+deposit (2000c) was charged **fee 0c** — bank transfer is free, unlike the
+1.96% on the two earlier card deposits.
+
+### Side scores, median of six polls, and share at S=50
+
+| series | side | score med | min | max | ref | share @25 | share @50 |
+|---|---|---|---|---|---|---|---|
+| KXGOLD15M | yes | 2522.8 | 1724 | 5068 | 0.10 | 1.0% | 1.9% |
+| KXGOLD15M | no | 606.3 | 481 | 1197 | 0.88 | 4.0% | 7.6% |
+| KXSILVER15M | yes | 300.0 | 186 | 414 | 0.35 | 7.7% | 14.3% |
+| **KXSILVER15M** | **no** | **178.1** | 141 | 305 | 0.64 | 12.3% | **21.9%** |
+| KXWTI15M | yes | 403.6 | 210 | 605 | 0.31 | 5.8% | 11.0% |
+| KXWTI15M | no | 288.7 | 178 | 365 | 0.66 | 8.0% | 14.8% |
+| KXNATGAS15M | yes | 1754.1 | 1385 | 2572 | 0.04 | 1.4% | 2.8% |
+| KXNATGAS15M | no | 979.6 | 293 | 1289 | 0.95 | 2.5% | 4.9% |
+| KXCOPPER15M | yes | 341.5 | 133 | 413 | 0.55 | 6.8% | 12.8% |
+| **KXCOPPER15M** | **no** | **185.0** | 104 | 858 | 0.42 | 11.9% | **21.3%** |
+
+### RETRACTION: "3.3x cheaper" was the wrong comparison and I published it.
+Earlier today I reported the commodity families as **3.3x cheaper** than Coin
+Race because `target_size` is 300 against 1000. **That is the ratio of target
+sizes, not the ratio of share obtained, and they are not the same quantity.**
+Measured: S=50 buys **~21%** of silver's or copper's NO side against **11.80%**
+on Coin Race — **~1.8x**, not 3.3x. The 3.3x figure should not be quoted.
+
+### AND: a single book poll is a selection artefact.
+The FIRST poll of copper's no side scored **96.0**, which implies a 34% share
+at S=50. Six polls give a median of **185** and a range of **104-858**. I came
+within one message of quoting the 96. **Poll a book repeatedly before believing
+its thinness.**
+
+### Consequence: $20 sits just under the payout cliff.
+The $1.00 minimum payout is a CLIFF, not a taper — below it the payout is zero,
+not reduced. At $20 on copper's no side (47 contracts at 0.42):
+- median window: share 20.3% -> snapshot score 10.1% -> **$1.50** (pays)
+- bad window (side score 858): share 5.2% -> snapshot 2.6% -> $0.38 -> **$0.00**
+
+Break-even size is ~29 contracts (~$12). So $20 clears the floor at the median
+and misses it in the tail. Expected ~$24 across tonight's remaining 16 windows,
+**lumpy, and on markets for which this project holds NO TAPE AT ALL.**
+
+### The tape starts tonight.
+Confirmed the deployed collector is capturing them: **0 lines earlier today**
+(markets shut), **110,602 copper and 101,654 silver orderbook_delta lines in
+the 23:00Z hour file alone.** The deployment works; the pending
+"do the commodity series record" item is CLOSED, positively.
+
+---
+
+## Operator supplied the LIP help text — two long-standing questions CLOSED
+
+### 1. ELIGIBILITY: we are eligible. The #1 blocker is gone.
+Verbatim: *"Who can participate: Most regular U.S. Kalshi members."* Excluded
+are Kalshi affiliates/employees, Introducing Brokers/FCMs and their customers,
+and international non-U.S. users. **A verified SSN is required only "to receive
+reward credits ABOVE annual IRS reporting thresholds"** — it is not a gate on
+participating or on small credits. This was logged as "if the answer is no,
+every number above is zero." The answer is yes.
+
+### 2. THE 2x AMBIGUITY IS SETTLED, AND THERE IS NO 2x.
+The help text says both things that looked contradictory, and together they
+resolve it:
+- Step 3/"Both sides count separately": *"Your snapshot score is your share of
+  the yes side plus your share of the no side, so a single snapshot is worth
+  at most 2.0 across all participants."*
+- Step 4: *"Your Time Period score = your total snapshot scores / ALL
+  PARTICIPANTS' total snapshot scores."*
+
+The numerator is `(y+n)`; the denominator sums to **2.0 per snapshot**. So the
+Time Period score is `Sum(y+n) / 2N`, which is identically the mean of
+`(y+n)/2` — **the average of the two side shares.** The conservative
+implementation this project used was exactly right all along, and the
+"everything might double" caveat should be struck everywhere it appears,
+including in `wf_c62c12ec-7cb`'s output, which still carries it as unresolved.
+
+Also confirmed verbatim: Target Size is *"the depth that must be resting on
+each side"* (aggregate, not ours); Reference Price *"is not always the best bid
+or ask - a small order alone at the top of the book does not set it"*; minimum
+payout $1.00; daily rewards $1-$1,000 per market per day.
