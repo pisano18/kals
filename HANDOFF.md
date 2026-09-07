@@ -3531,3 +3531,59 @@ sending taker orders.
 
 Also observed: `average_fee_paid: 0.0150` per contract on a fill at 0.30
 (exact 0.07x0.30x0.70 = 0.0147) — fees round UP, third confirmation.
+
+---
+
+## 2026-09-07 ~05:20Z — NETTING READ DIRECTLY. No inference needed, and no margin exists.
+
+The docs index at `docs.kalshi.com/llms.txt` named endpoints this project had
+never tried. Two matter:
+
+```
+GET /portfolio/subaccounts/netting -> 200
+{"netting_configs":[{"enabled":false,"exchange_index":0,"subaccount_number":0},
+                    {"enabled":false,"exchange_index":2,"subaccount_number":0}]}
+```
+
+**Netting is OFF on both shards.** Confirmed by reading the setting, not by
+inferring it from whether an order was accepted — which is what
+`netting.py` v1/v2/v3 were trying to do, and v1's "suggestive" acceptance is
+now explained as the whole-cent rounding it was flagged as. Those scripts are
+superseded; do not cite v1's result.
+
+`GET /portfolio/subaccounts/balances` also works and is the per-shard figure.
+`GET /portfolio/resting_order_value` is DOCUMENTED BUT 404s — the published
+index is not a reliable guide to what exists, so probe before trusting it.
+`POST /portfolio/intra_exchange_instance_transfers` also 404s while the GET
+works; the documented transfer mechanism is `PUT
+/portfolio/target_balance_allocation`, untested.
+
+### What Collateral Return actually is, from Kalshi's help centre
+- *"gives you cash back early when you buy hedged positions"* — collateral is
+  returned on FILLED offsetting positions, not on resting orders. **So it does
+  NOT reduce the capital needed to QUOTE**, only what is held after both legs
+  fill. The $20-buys-20-pairs arithmetic is unchanged.
+- *"Enabling this feature may make you unable to sell positions for which
+  you've already had collateral returned."*
+- *"The collateral return flag is 'enabled' at the first moment a user places
+  their first order in a given event, even before any trade actually fills"*
+  and *"there is no way to retroactively enable or disable collateral return
+  for a given event."*
+
+**So neither setting gives a fully-deployed account a clean exit:**
+
+| | capital while quoting | can we sell to stop? |
+|---|---|---|
+| netting OFF (current) | full on both legs | yes — but the sell itself reserves `(1-p)`, cash a deployed account lacks |
+| netting ON | same while quoting | **may be unable to sell** the returned-collateral position |
+
+The ruin adversary's finding stands and is now grounded in Kalshi's own text
+rather than in a model: **a stop-loss is not reliably fundable at full
+deployment either way.** Any plan that says "hedge or flatten if it goes
+wrong" must first prove it can.
+
+### NO MARGIN EXISTS, and nothing here uses any
+Kalshi is fully cash-collateralised. There is no borrowing, no loan and no
+leverage available to any account; maximum loss is capped at deposited cash and
+the balance cannot go negative. Netting is a collateral-accounting setting, not
+leverage. Recorded because the operator asked directly.
