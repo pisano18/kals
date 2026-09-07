@@ -3633,3 +3633,49 @@ The model has **no cash constraint**: it rests and fills 20 on both sides
 exactly the mechanism the ruin adversary identified as decisive. `netpnl3.py`
 re-runs it with a bankroll (20/60/150/500) and posts the largest size that
 fits, which is what turns this into a funding case rather than an argument.
+
+---
+
+## 2026-09-07 06:05Z — PAYOUT TIMING SETTLED, and the daily-batch model REFUTED
+
+### The inferred "one daily batch at 05:00-05:15Z" is WRONG, refuted by watching
+A watcher held 14 programmes ending 03:45Z/04:00Z across the whole predicted
+window: **0 of 14 flipped in 40 minutes.** Meanwhile 32 other programmes paid
+**within 2 hours** of ending (KXTTELITEMATCH / KXTTSTARMATCH, same `series_lip`
+type). Payment is not one batch and not one schedule. **Watching beat
+inferring**, and the inference came from 178,245 records.
+
+### There are TWO incentive types, and ours is the less reliable one
+| type | programmes | paid |
+|---|---|---|
+| `volume` | 22,275 | **100.0%** |
+| `liquidity` | 156,097 | 92.9% |
+| — `series_lip` (ours) | 36,219 | **77.6%** |
+
+The never-paid mass is concentrated in THIN families: `KXTEMP*` weather (3,094
+unpaid past 200 h) and table tennis (869). **Hypothesis worth testing and not
+yet tested: an unpaid pool may mean NOBODY QUALIFIED — the book never held
+Target Size on both sides, or nobody cleared $1.00 — rather than a payment
+pending.** If so the operator's earlier instinct ("if it doesn't pay because
+nobody makes markets, isn't that more space for us?") is right for those
+families, and this project has been misreading unpaid pools as lag.
+
+### OUR FIVE FAMILIES: 94.8-98.1% PAID, READOUT >48 HOURS
+| family | 0-2h | 2-6h | 6-12h | 24-48h | >48h | overall |
+|---|---|---|---|---|---|---|
+| KXGOLD15M | 0% (8) | 0% (16) | 0% (8) | - | **99%** (2396) | 98.1% (2428) |
+| KXSILVER15M | 0% | 0% | 0% | - | **99%** (2396) | 98.0% (2428) |
+| KXWTI15M | 0% | 0% | 0% | - | **99%** (2396) | 98.0% (2428) |
+| KXNATGAS15M | 0% | 0% | 0% | - | **100%** (618) | 94.8% (650) |
+| KXCOPPER15M | 0% | 0% | 0% | - | **100%** (618) | 95.1% (650) |
+| KXCRYPTOLEAD15M | 0% (40) | 0% (80) | 0% (120) | 96% (480) | 99% (5465) | 91.1% (6425) |
+
+**Nothing pays before 48 h; after it, 99-100% do.** (The 12-48 h buckets are
+empty for commodities because the weekend has no windows there.) Coin Race is
+faster at 24-48 h. **This is the readout time for any live test** and it was
+the missing parameter.
+
+`results/THE_PLAN.md` written: settle the Rule A/B fork first for under $1
+using Kalshi's own per-order qualification indicator, then $60 (not $150, not
+$500 -- the marginal dollar dies at $60) for an eight-window natural-gas test
+with a pre-registered prediction of ~$17 and a stated abort at -$15.
