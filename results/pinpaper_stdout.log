@@ -1,0 +1,7 @@
+SELF-TEST
+  fully-locked avg 105 vs strike 100 -> fair 1.0000 (expect ~1)
+  fully-locked avg 95 vs strike 100 -> fair 0.0000 (expect ~0)
+  half-locked at strike, tau 30 -> fair 0.5000 (expect ~0.5)
+  sigma of a +/-0.1 sawtooth: 0.2017 (expect ~0.2)
+SELF-TEST PASSED
+  MODE: PAPER (log only)   log: C:\kals-repo\results\pin-paper-20260907T224024Z.jsonl

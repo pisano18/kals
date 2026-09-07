@@ -40,6 +40,7 @@ LAST NIGHT'S LESSONS, carried in by construction:
   * read the live index tolerantly (the current hour file is a live gzip).
 """
 import argparse
+import calendar
 import glob
 import gzip
 import json
@@ -260,8 +261,7 @@ def main():
                 ct, sk = m.get("close_time"), m.get("floor_strike")
                 if not ct or sk is None:
                     continue
-                cs = int(time.mktime(time.strptime(
-                    ct, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone)
+                cs = calendar.timegm(time.strptime(ct, "%Y-%m-%dT%H:%M:%SZ"))
                 u[m["ticker"]] = (iid, cs, float(sk))
         return u
 
