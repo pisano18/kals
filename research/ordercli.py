@@ -162,14 +162,17 @@ def token_for(body, base):
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
-def send(base, pk, key_id, method, path, body=None):
-    url = base + path
+def send(base, pk, key_id, method, path, body=None, query=None):
+    """Sign the PATH ONLY; send path+query.
+
+    Appending the query to the signed string produces
+    INCORRECT_API_KEY_SIGNATURE -- a mistake already made once in this project.
+    """
+    q = "" if not query else "?" + "&".join(f"{k}={v}" for k, v in query.items())
+    url = base + path + q
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
-    for k, v in sign_headers(pk, key_id, method,
-                             base.split("kalshi.co")[-1].split("kalshi.com")[-1]
-                             + path if False else
-                             "/trade-api/v2" + path).items():
+    for k, v in sign_headers(pk, key_id, method, "/trade-api/v2" + path).items():
         req.add_header(k, v)
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
@@ -178,6 +181,25 @@ def send(base, pk, key_id, method, path, body=None):
         return e.code, e.read().decode()[:400]
     except Exception as e:
         return -1, str(e)
+
+
+def cancel(base, pk, key_id, oid, exchange_index):
+    """Cancel, and VERIFY it actually cancelled.
+
+    A 404 here used to be printed and ignored. It must not be: an order left
+    resting is real exposure. Retries without the query once, then reports
+    loudly if the order is still resting.
+    """
+    st, r = send(base, pk, key_id, "DELETE",
+                 f"/portfolio/events/orders/{oid}",
+                 query={"exchange_index": int(exchange_index)})
+    if st != 200:
+        st, r = send(base, pk, key_id, "DELETE",
+                     f"/portfolio/events/orders/{oid}")
+    st2, lst = send(base, pk, key_id, "GET", "/portfolio/orders")
+    still = [o for o in (lst or {}).get("orders", [])
+             if o.get("order_id") == oid and o.get("status") == "resting"]
+    return st, r, bool(still)
 
 
 def selftest():
@@ -375,10 +397,15 @@ def main():
         except Exception as e:
             print(f"    could not compare balances: {e}")
     finally:
-        s4, r4 = send(base, pk, a.key_id, "DELETE",
-                      f"/portfolio/events/orders/{oid}")
-        print(f"\n  --- CANCEL: DELETE /portfolio/events/orders/{oid} -> {s4}")
+        s4, r4, still = cancel(base, pk, a.key_id, oid,
+                               body.get("exchange_index", 0))
+        print(f"\n  --- CANCEL {oid} -> {s4}")
         print(f"    {str(r4)[:200]}")
+        if still:
+            print("    *** THE ORDER IS STILL RESTING. CANCEL IT BY "
+                  "HAND. ***")
+        else:
+            print("    verified: no longer resting.")
         s5, bal2 = g("/portfolio/balance")
         if isinstance(bal2, dict):
             print(f"    balance after cancel: ${bal2.get('balance_dollars')}")

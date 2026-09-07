@@ -3214,3 +3214,63 @@ direction this project treats as suspect.
 **Cheapest remaining test, and it needs no money:** the Kalshi app shows an
 available balance. While an order rests, look at it. If it is reduced, the API
 field is simply gross and the question is answered for free.
+
+---
+
+## 2026-09-06 ~21:55 ET — COLLATERAL SETTLED, and a silent cancel bug found
+
+### THE COLLATERAL QUESTION IS ANSWERED: resting orders DO reserve funds.
+
+The operator rested 1.00 contract at $0.01 on `KXCRYPTOLEAD15M-26SEP062200-XRP`,
+which is exchange shard 2. Shard 2 held **$0.0286**. That made a discriminating
+test cost about two cents:
+
+| order | collateral | result |
+|---|---|---|
+| A  1.50 @ $0.01 | $0.0150 | **201 accepted** |
+| B  2.50 @ $0.01 | $0.0250 | **400 `insufficient_balance`** |
+
+If reserves were not enforced, B ($0.0250) would have fitted inside the
+$0.0286 shard balance and been accepted. It was refused. The arithmetic
+reconciles exactly:
+
+```
+shard 2 total                       $0.0286
+ - operator's resting order          0.0100
+ - our order A                       0.0150
+ = available                         0.0036   <  B's 0.0250  -> refused
+```
+
+**So `balance_dollars` is GROSS.** It does not net out resting orders, in the
+API *or* in the app — the operator confirmed the app also showed no change.
+Reserves are real and cumulative; they are simply invisible in the only
+balance figure we can read.
+
+**This resolves the question in the CONSERVATIVE direction, which means the
+capacity arithmetic already in this file stands unchanged.** The alternative
+would have multiplied our usable size, and it is dead.
+
+### A SILENT CANCEL FAILURE. This one was dangerous.
+`DELETE /portfolio/events/orders/{id}` returns **200 on shard 0** and
+**404 not_found on shard 2**. The shard must be passed as a **query
+parameter**: with `?exchange_index=2` the same order cancelled 200
+(`reduced_by: 1.50`).
+
+`ordercli.py` printed the 404 and carried on. Its cancel-on-exit is the whole
+guarantee that nothing it places is left resting — and **Coin Race is shard 2**,
+so every order of the actual strategy would have been affected. An order left
+resting is real exposure that nobody is watching.
+
+Fixed: `send()` now takes a `query` argument (appended to the URL only —
+Kalshi signs the path WITHOUT the query, the mistake that produced
+`INCORRECT_API_KEY_SIGNATURE` earlier in this project), and a new `cancel()`
+passes the shard, retries once without it, then **re-reads
+`/portfolio/orders` and reports loudly if the order is still resting.**
+
+### Operational hazard found in the app
+In the Kalshi mobile order ticket, **"Submit as resting order only" defaults
+to OFF.** That toggle is `post_only`. Left off, a manual order crosses the
+spread and pays the taker fee. Any hand-placed order for this strategy must
+have it ON. The app also shows `Cost $0.01 ($0 fee)` for a resting order,
+consistent with makers paying nothing on this series — still not proof, since
+nothing filled.
