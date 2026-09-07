@@ -39,7 +39,11 @@ import ordercli as oc
 
 KEY_ID = "b48b406b-b498-4d14-b640-be989913526f"
 KEY_FILE = r"C:\kals\kalshi.pem"
-SERIES = "KXGOLD15M"
+SERIES = "KXNATGAS15M"   # set by --series; natgas is the only
+                         # family where S=20 clears the $1.00
+                         # floor in most windows (77% of 39
+                         # sampler observations, vs 8-33%
+                         # elsewhere)
 TARGET = 300.0
 DISC = 0.50
 LOSS_ABORT = -15.00          # dollars of realised+unrealised loss
@@ -163,6 +167,7 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--live", action="store_true")
+    ap.add_argument("--series", default="KXNATGAS15M")
     ap.add_argument("--size", type=float, default=20.0)
     ap.add_argument("--windows", type=int, default=8)
     ap.add_argument("--max-minutes", type=float, default=45.0,
@@ -178,6 +183,7 @@ def main():
     if not (a.dry_run or a.live):
         raise SystemExit("pass --dry-run or --live")
 
+    series = a.series
     oc.set_env(True)
     pk = oc.load_key(KEY_FILE)
     BASE = oc.PROD
@@ -218,7 +224,7 @@ def main():
     print(f"  run log      : {logpath}")
     rec("start", size=a.size, windows=a.windows, live=bool(a.live),
         max_minutes=a.max_minutes, cap=oc.MAX_DEPLOYED, abort=LOSS_ABORT,
-        series=SERIES, balance=start_bal)
+        series=series, balance=start_bal)
 
     live = {"yes": None, "no": None}      # side -> (order_id, price, count)
     log = []
@@ -275,7 +281,7 @@ def main():
             if time.time() > hard_stop:
                 aborted = f"wall-clock limit {a.max_minutes:.0f} min"
                 break
-            st, b = api("GET", "/markets", query={"series_ticker": SERIES,
+            st, b = api("GET", "/markets", query={"series_ticker": series,
                                                   "status": "open", "limit": "3"})
             mks = (b or {}).get("markets", [])
             if not mks:
