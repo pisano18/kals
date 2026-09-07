@@ -3940,3 +3940,78 @@ whole-level rule and the excluded-book case.
 
 **Until that log covers a full day, the scaling ceiling above is unverified and
 must not be quoted as a business.**
+
+---
+
+## 2026-09-07 09:30Z — THE FIRST LIVE RUN. Lost $15.64, and found a fake safety rail.
+
+### RESULT: -$15.64 of $65.18. Stopped BY HAND, because the abort did not fire.
+
+Four windows quoted on `KXNATGAS15M`, 20 contracts a side at the Reference
+Price, re-pegged.
+
+| window | filled | side | outcome |
+|---|---|---|---|
+| 1 | — | — | stood down: ref_yes 0.18, outside the 0.20-0.80 band |
+| 2 | 17.03 @ 0.43 | **YES only** | settled **NO** -> **-$7.32** |
+| 3 | 23.21 @ 0.35 | **YES only** | settled **NO** -> **-$8.22** |
+| 4 | 20.00 @ 0.43 | **NO only** | open at stop |
+
+Balance $65.1813 -> $41.04 cash + one open position.
+
+### FINDING 1: THE HEDGE DOES NOT HAPPEN. Both legs never filled once.
+The entire design rests on both legs filling, leaving a YES and a NO that must
+pay $1.00 for a ~$0.96 cost. **In four live windows the pair filled ZERO
+times.** Every fill was one-sided, and the direction was systematic: when gas
+falls, the flow is sellers, so only our BID is hit and our ASK sits untouched.
+
+This is the adverse selection the fill-cost job measured at **-1.35 to -3.07
+c/contract** and which I discounted in favour of the more attractive
+"locked pair" story. **It is the dominant term, not a correction to one.**
+The strategy is therefore the rebate MINUS adverse selection, with no hedge.
+
+### FINDING 2: THE LOSS ABORT WAS DECORATIVE. This is the serious one.
+`LOSS_ABORT = -15.00` never fired. P&L reached **-$15.64** while the process
+reported itself healthy and kept running; it had to be killed by hand.
+
+**Cause:** the P&L check sat AFTER the order-placing block, and every
+stand-down path -- decided market, pair blocked, depth under target -- hits
+`continue` before reaching it. The run stood down on nearly every cycle
+(because of finding 1's exposure cap), **so the check never executed once.**
+Earlier that evening I had added `ticks += 1` to the stand-down paths and
+ASSUMED that made the check run. It did not; the check itself was downstream.
+
+**A limit that silently does not run is worse than no limit, because it is
+trusted.** Fixed three ways:
+1. `risk_check()` hoisted to the TOP of the cycle, before any branch.
+2. It now runs its arithmetic in **dry run** too (only the abort is live-only).
+   Previously it returned immediately when not live, so **the only way to
+   exercise that code path was with real money** -- which is why the defect
+   survived to a live run.
+3. A **structural self-test**: it reads `main`'s own source and fails if
+   `risk_check()` appears after the first `continue` statement in the quoting
+   loop. No value-based test can catch a wrong ORDER; only the source can.
+   (Its first version matched the word "continue" inside its own comment and
+   failed everything -- safe direction, but useless. Now strips comments.)
+
+### FINDING 3: `POST /portfolio/events/orders/{id}/amend` returns 404
+Every re-peg fell back to cancel-then-place. The fallback works, so nothing
+broke, but the "strictly better" atomic amend adopted on a reviewer's advice
+**is not in effect** and its failures were not being logged (only successes
+were). Path or payload is wrong; unresolved.
+
+### WHAT THE $15.64 BOUGHT
+- The full lifecycle proven live: select market, compute the Reference Price,
+  quote two-sided, track a moving reference, fill as MAKER at **zero fee**,
+  settle.
+- Hard evidence that **adverse selection dominates** and the hedge is fictional.
+- A fake safety rail found while the stakes were $15 rather than $65.
+- The cumulative cap counting filled inventory **worked on its first live
+  test** -- it blocked further quoting on top of an unhedged position, which
+  the pre-fix version would have funded.
+
+### STILL OPEN
+The rebate. It lands ~48 h after the last window (measured: our families pay
+94.8-98.1%, none before 48 h). **Nothing tonight can shortcut it.** If it is a
+few dollars the picture is "small edge, real drag, needs size". If it is
+$0.00 the strategy is dead and $15.64 bought a clean kill.

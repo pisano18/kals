@@ -1,0 +1,2 @@
+{"size": 20.0, "windows": 1, "live": false, "max_minutes": 1.0, "cap": 21.0, "abort": -15.0, "series": "KXNATGAS15M", "balance": 41.0386, "t": "2026-09-07T09:18:58.545+00:00", "kind": "start"}
+{"windows": 0, "start_balance": 41.0386, "end_balance": 41.0386, "delta": 0.0, "aborted": "wall-clock limit 1 min", "per_window": [], "t": "2026-09-07T09:19:59.038+00:00", "kind": "end"}

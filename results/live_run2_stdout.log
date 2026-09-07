@@ -1,0 +1,85 @@
+==========================================================================
+SELF-TEST -- the reference price and the rails
+==========================================================================
+
+  book [(0.6, 5.0), (0.59, 10.0), (0.58, 100.0), (0.57, 500.0)]
+    target/5 = 60; cumulative reaches it at 0.58
+    hand-check: cum 5, 15, 115 -> first >= 60 is at 0.58
+
+  real copper book [(0.95, 2.0), (0.94, 29.0), (0.93, 2040.0)]
+    reference 0.93 (expect 0.93 -- a 2-contract touch cannot set it)
+
+  a single deep level at the touch: ref 0.6 (expect 0.60)
+  empty book: ref None, depth 0.0 (expect None, 0.0)
+
+  production ceilings: count 20.0, per-order $15.0, cumulative $21.0
+    full size at 0.99 (collateral $19.80) -> REFUSED
+    ask 10 @ 0.20 reserves $8.00 (expect 8.00 = 10 x (1-0.20))
+
+SELF-TEST PASSED
+
+  starting balance $65.1813   size 20/side   4 window(s)   *** LIVE ***
+  caps: cumulative $21.00, abort at $-15.00
+
+  run log      : C:\kals-repo\results\run-live-20260907T083151Z.jsonl
+
+  === window 1/4: KXNATGAS15M-26SEP070445-45 closes 2026-09-07T08:45:00Z (789s of quoting) ===
+    yes 20 @ 0.2100 (ref 0.2100) -> 201
+    no 20 @ 0.2500 (ref 0.7500) -> 201
+    no amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+    no 20 @ 0.2800 (ref 0.7200) -> 201
+    ref_yes 0.180 outside [0.2,0.8] -- standing down
+  verified: nothing resting
+  window 1 done; balance $65.1813 (delta $+0.0000)
+  only 2s left in the freshest window (need 780s) -- waiting for the next
+  only -5s left in the freshest window (need 780s) -- waiting for the next
+  only -10s left in the freshest window (need 780s) -- waiting for the next
+  only -15s left in the freshest window (need 780s) -- waiting for the next
+  only -20s left in the freshest window (need 780s) -- waiting for the next
+
+  === window 2/4: KXNATGAS15M-26SEP070500-00 closes 2026-09-07T09:00:00Z (874s of quoting) ===
+    yes 20 @ 0.4000 (ref 0.4000) -> 201
+    no 20 @ 0.4600 (ref 0.5400) -> 201
+    yes amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+    yes 20 @ 0.4300 (ref 0.4300) -> 201
+    no amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+    no 20 @ 0.4800 (ref 0.5200) -> 201
+    no amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+    no 20 @ 0.4600 (ref 0.5400) -> 201
+    yes amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+    yes 20 @ 0.4400 (ref 0.4400) -> 201
+    .. bal $65.18 mark-to-mkt $0.00 P&L $+0.00
+    yes amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+    yes 20 @ 0.4300 (ref 0.4300) -> 201
+    .. bal $65.18 mark-to-mkt $0.00 P&L $+0.00
+    PAIR BLOCKED ['pair $19.40 + held $7.32 > cap $21.00'] -- standing down (never one-sided)
+  verified: nothing resting
+  window 2 done; balance $57.8584 (delta $-7.3229)
+  only 2s left in the freshest window (need 780s) -- waiting for the next
+  only -5s left in the freshest window (need 780s) -- waiting for the next
+  only -10s left in the freshest window (need 780s) -- waiting for the next
+  only -15s left in the freshest window (need 780s) -- waiting for the next
+  only -21s left in the freshest window (need 780s) -- waiting for the next
+  only -26s left in the freshest window (need 780s) -- waiting for the next
+
+  === window 3/4: KXNATGAS15M-26SEP070515-15 closes 2026-09-07T09:15:00Z (869s of quoting) ===
+    yes 20 @ 0.3500 (ref 0.3500) -> 201
+    no 20 @ 0.4100 (ref 0.5900) -> 201
+    yes amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+    yes 20 @ 0.3800 (ref 0.3800) -> 201
+    yes amend -> 404 {"error":{"code":"not_found","message":"not found"}}  falling back to cancel+place
+    yes 20 @ 0.3500 (ref 0.3500) -> 201
+    PAIR BLOCKED ['pair $18.60 + held $8.22 > cap $21.00'] -- standing down (never one-sided)
+  verified: nothing resting
+  window 3 done; balance $49.6386 (delta $-8.2198)
+  only 3s left in the freshest window (need 780s) -- waiting for the next
+  only -5s left in the freshest window (need 780s) -- waiting for the next
+  only -10s left in the freshest window (need 780s) -- waiting for the next
+  only -15s left in the freshest window (need 780s) -- waiting for the next
+  only -21s left in the freshest window (need 780s) -- waiting for the next
+  only -26s left in the freshest window (need 780s) -- waiting for the next
+
+  === window 4/4: KXNATGAS15M-26SEP070530-30 closes 2026-09-07T09:30:00Z (869s of quoting) ===
+    yes 20 @ 0.5600 (ref 0.5600) -> 201
+    no 20 @ 0.5700 (ref 0.4300) -> 201
+    PAIR BLOCKED ['pair $18.60 + held $8.60 > cap $21.00'] -- standing down (never one-sided)

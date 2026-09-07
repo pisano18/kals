@@ -152,6 +152,33 @@ def selftest():
     print(f"    ask 10 @ 0.20 reserves ${oc.collateral(a):.2f} (expect 8.00 = "
           f"10 x (1-0.20))")
 
+    # STRUCTURAL GUARD -- the defect that cost $15.64 was not a wrong value,
+    # it was a wrong ORDER. The loss check sat after the order-placing block,
+    # so every stand-down `continue` skipped it and it never ran once during a
+    # live run. No value-based test can catch that; only the source order can.
+    import inspect
+    src = inspect.getsource(main)
+    inner = src[src.index("while (dt.datetime.now"):] if \
+        "while (dt.datetime.now" in src else ""
+    # STATEMENTS ONLY. A first version matched the word "continue" inside its
+    # own explanatory comment and failed the whole self-test -- safe direction,
+    # but useless. Strip comments and require a bare `continue` statement.
+    code = "\n".join(l.split("#")[0].rstrip() for l in inner.split("\n"))
+    call = code.find("risk_check()")
+    cont = next((m for m, l in
+                 ((code.index(ln), ln) for ln in code.split("\n")
+                  if ln.strip() == "continue")), -1)
+    print("\n  the loss abort must run BEFORE any branch can skip it:")
+    if call < 0:
+        fails.append("risk_check() is never called in the quoting loop")
+    elif cont >= 0 and call > cont:
+        fails.append(f"risk_check() at char {call} comes AFTER the first "
+                     f"`continue` at {cont} -- a stand-down would skip it, "
+                     f"which is exactly the defect that cost $15.64")
+    else:
+        print(f"    risk_check() at char {call}, first `continue` at {cont}"
+              f" -> checked first, cannot be skipped")
+
     print()
     if fails:
         print("*** SELF-TEST FAILED ***")
@@ -276,6 +303,51 @@ def main():
                 print("  *** ORDERS STILL RESTING AFTER 3 PASSES -- "
                       "CANCEL BY HAND ***")
 
+    def risk_check():
+        """Loss abort. MUST run on EVERY cycle, before any branch.
+
+        THE DEFECT THIS FIXES, proven live 2026-09-07: the check used to sit
+        AFTER the order-placing block, so every stand-down path -- decided
+        market, pair blocked, depth under target -- hit `continue` before
+        reaching it. The run stood down on nearly every cycle, so the abort
+        NEVER RAN ONCE. It reached -$15.64 against a -$15.00 limit while
+        reporting itself healthy, and had to be killed by hand.
+
+        A limit that silently does not run is worse than no limit, because it
+        is trusted. Returns a reason string to stop, or None.
+        """
+        # RUN THE MATHS IN DRY RUN TOO. The original returned immediately when
+        # not live, so the only way to exercise this code path was with real
+        # money -- which is part of why the defect above survived to a live
+        # run. Dry run now computes and prints; only the ABORT is live-only.
+        cur_bal = balance()
+        st, p = api("GET", "/portfolio/positions")
+        mv = 0.0
+        for x in (p or {}).get("market_positions", []):
+            try:
+                nn = float(x.get("position_fp") or 0)
+            except Exception:
+                continue
+            if abs(nn) < 1e-9:
+                continue
+            py, pn = book(api, x.get("ticker"))
+            if not py or not pn:
+                mv += abs(float(x.get("market_exposure_dollars") or 0))
+                continue
+            ymid = (py[0][0] + (1.0 - pn[0][0])) / 2.0
+            mv += (nn * ymid) if nn > 0 else (abs(nn) * (1.0 - ymid))
+        pnl = (cur_bal + mv) - start_bal
+        print(f"    .. bal ${cur_bal:.2f} mark ${mv:.2f} P&L ${pnl:+.2f}")
+        rec("pnl", balance=round(cur_bal, 4), mark_to_market=round(mv, 4),
+            pnl=round(pnl, 4),
+            positions=(p or {}).get("market_positions", []))
+        if pnl <= LOSS_ABORT:
+            if a.live:
+                return f"LOSS ABORT: P&L ${pnl:+.2f} <= ${LOSS_ABORT:.2f}"
+            print(f"    [dry] would ABORT here: ${pnl:+.2f} <= "
+                  f"${LOSS_ABORT:.2f}")
+        return None
+
     try:
         while windows_done < a.windows and not aborted:
             if time.time() > hard_stop:
@@ -315,6 +387,15 @@ def main():
             while (dt.datetime.now(dt.timezone.utc)
                    < close - dt.timedelta(seconds=8)
                    and time.time() < hard_stop):
+                # FIRST, before any branch that could `continue` past it.
+                ticks += 1
+                if ticks % 6 == 0:
+                    stop = risk_check()
+                    if stop:
+                        aborted = stop
+                        print(f"  !! {stop}")
+                        rec("abort", reason=stop)
+                        break
                 y, n = book(api, tk)
                 ry, dy = ref_price(y)
                 rn, dn = ref_price(n)
@@ -439,7 +520,7 @@ def main():
                             cancel_side("yes" if side == "no" else "no")
                             break
                 ticks += 1
-                if ticks % 6 == 0 and a.live:
+                if False:                 # moved: see risk_check() above
                     cur_bal = balance()
                     # MARK TO MARKET, not to cost. An outside reviewer caught
                     # this and was right: market_exposure_dollars is the COST
