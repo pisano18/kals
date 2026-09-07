@@ -165,6 +165,10 @@ def main():
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--size", type=float, default=20.0)
     ap.add_argument("--windows", type=int, default=8)
+    ap.add_argument("--max-minutes", type=float, default=45.0,
+                    help="hard wall-clock stop. This process "
+                         "outlives the session that started it, "
+                         "so it must be able to end itself.")
     a = ap.parse_args()
 
     if a.selftest:
@@ -195,6 +199,7 @@ def main():
     log = []
     windows_done = 0
     aborted = None
+    hard_stop = time.time() + a.max_minutes * 60.0
 
     def cancel_side(side):
         cur = live.get(side)
@@ -203,9 +208,13 @@ def main():
         oid, px, cnt = cur
         if a.live:
             st, r, still = oc.cancel(BASE, pk, KEY_ID, oid, 0)
-            if still:
-                raise RuntimeError(f"CANCEL FAILED and order {oid} is STILL "
-                                   f"RESTING -- aborting rather than continue")
+            # None means the listing could not be read: UNKNOWN, not OK.
+            # `if still:` treated None as success because None is falsy.
+            if still is not False:
+                raise RuntimeError(
+                    f"cancel of {oid} returned still={still!r} -- "
+                    f"UNVERIFIED or STILL RESTING. Aborting rather than "
+                    f"quote on top of an order we cannot account for.")
         live[side] = None
 
     def cancel_all():
@@ -215,16 +224,32 @@ def main():
             except Exception as e:
                 print(f"  !! {e}")
         if a.live:
-            rest, ok = oc.resting_orders(BASE, pk, KEY_ID)
-            if not ok:
-                print("  !! COULD NOT VERIFY -- check for resting orders BY HAND")
-            else:
-                print(f"  resting after cleanup: {len(rest)}")
+            # CANCEL what is left, do not merely report it. Printing a
+            # resting order and exiting leaves live exposure nobody is
+            # watching -- and this process may outlive the session.
+            for attempt in range(3):
+                rest, ok = oc.resting_orders(BASE, pk, KEY_ID)
+                if not ok:
+                    print("  !! CANNOT READ ORDERS -- CHECK BY HAND")
+                    break
+                if not rest:
+                    print("  verified: nothing resting")
+                    break
+                print(f"  {len(rest)} still resting, cancelling (pass "
+                      f"{attempt+1}/3)")
                 for o in rest:
-                    print(f"     {o.get('ticker')} @ {o.get('yes_price_dollars')}")
+                    oc.cancel(BASE, pk, KEY_ID, o.get("order_id"),
+                              o.get("exchange_index") or 0)
+                time.sleep(2)
+            else:
+                print("  *** ORDERS STILL RESTING AFTER 3 PASSES -- "
+                      "CANCEL BY HAND ***")
 
     try:
         while windows_done < a.windows and not aborted:
+            if time.time() > hard_stop:
+                aborted = f"wall-clock limit {a.max_minutes:.0f} min"
+                break
             st, b = api("GET", "/markets", query={"series_ticker": SERIES,
                                                   "status": "open", "limit": "3"})
             mks = (b or {}).get("markets", [])
@@ -254,11 +279,14 @@ def main():
             wstart = balance()
             ticks = 0
 
-            while dt.datetime.now(dt.timezone.utc) < close - dt.timedelta(seconds=8):
+            while (dt.datetime.now(dt.timezone.utc)
+                   < close - dt.timedelta(seconds=8)
+                   and time.time() < hard_stop):
                 y, n = book(api, tk)
                 ry, dy = ref_price(y)
                 rn, dn = ref_price(n)
                 if ry is None or rn is None or dy < TARGET or dn < TARGET:
+                    ticks += 1
                     time.sleep(CADENCE)
                     continue
                 if not (PRICE_MIN <= ry <= PRICE_MAX):
@@ -270,6 +298,7 @@ def main():
                               f"[{PRICE_MIN},{PRICE_MAX}] -- standing down")
                         cancel_side("yes")
                         cancel_side("no")
+                    ticks += 1
                     time.sleep(CADENCE)
                     continue
 
@@ -288,13 +317,21 @@ def main():
                         f"gq-{side}-{int(time.time()*1000) % 1000000}"))
                 bad = {s: oc.check_limits(v[2]) for s, v in plan.items()}
                 pair_collat = sum(oc.collateral(v[2]) for v in plan.values())
-                rest, ok = (oc.resting_orders(BASE, pk, KEY_ID) if a.live
-                            else ([], True))
-                if not ok:
-                    raise RuntimeError("cannot read resting orders")
-                held = sum(oc.order_collateral(o) for o in rest
-                           if o.get("order_id") not in
-                           {live[s][0] for s in ("yes", "no") if live[s]})
+                # TOTAL deployed = resting collateral + FILLED inventory.
+                # Counting resting orders alone made the cap dead code: a
+                # fill left the listing, held fell to ~0, and the next
+                # tick funded a fresh pair, to the whole balance.
+                if a.live:
+                    held_all, ok = oc.deployed(BASE, pk, KEY_ID)
+                    if not ok:
+                        raise RuntimeError("cannot read deployed capital")
+                    rest, _ = oc.resting_orders(BASE, pk, KEY_ID)
+                    mine = {live[s][0] for s in ("yes", "no") if live[s]}
+                    ours = sum(oc.order_collateral(o) for o in rest
+                               if o.get("order_id") in mine)
+                    held = held_all - ours
+                else:
+                    held = 0.0
                 blocked = [f"{s}:{b}" for s, b in bad.items() if b]
                 if held + pair_collat > oc.MAX_DEPLOYED:
                     blocked.append(f"pair ${pair_collat:.2f} + held ${held:.2f} "
@@ -305,6 +342,7 @@ def main():
                               f"(never one-sided)")
                         cancel_side("yes")
                         cancel_side("no")
+                    ticks += 1
                     time.sleep(CADENCE)
                     continue
 
@@ -353,7 +391,7 @@ def main():
                             cancel_side("yes" if side == "no" else "no")
                             break
                 ticks += 1
-                if ticks % 20 == 0 and a.live:
+                if ticks % 6 == 0 and a.live:
                     cur_bal = balance()
                     # MARK TO MARKET, not to cost. An outside reviewer caught
                     # this and was right: market_exposure_dollars is the COST

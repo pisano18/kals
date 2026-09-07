@@ -1,0 +1,7 @@
+SELF-TEST
+  one level of 900 vs target 300 -> ref 0.5, qualifying size 900.0, score 900.0, levels 1
+  book of 150 vs target 300 -> ref None (expect None: excluded)
+  touch of 2 contracts -> ref 0.93 (expect 0.93)
+SELF-TEST PASSED
+
+  2026-09-07T07:44:19+00:00  +12 rows (total 12)

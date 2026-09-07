@@ -219,14 +219,61 @@ def resting_orders(base, pk, key_id):
 
 
 def order_collateral(o):
-    """Collateral a RESTING order record holds: remaining x its leg price."""
+    """Collateral a RESTING order record holds.
+
+    BRANCH ON action/book_side, NOT on `side`. A real record on this account:
+        action=sell  book_side=ask  side=yes  yes_px=0.3000  no_px=0.7000
+    Branching on `side` returned count x 0.30 where the true reserve for
+    selling yes at 0.30 is count x 0.70 -- understating a sell leg by 2.3x.
+    A BUY reserves what it pays for its own outcome; a SELL reserves what it
+    might owe, i.e. (1 - the price it sold at).
+    """
     try:
         c = float(o.get("remaining_count_fp") or o.get("remaining_count") or 0)
-        if o.get("side") == "yes":
-            return c * float(o.get("yes_price_dollars") or 0)
-        return c * float(o.get("no_price_dollars") or 0)
     except Exception:
         return 0.0
+    if c <= 0:
+        return 0.0
+
+    def f(k):
+        try:
+            return float(o.get(k) or 0)
+        except Exception:
+            return 0.0
+
+    action = str(o.get("action") or "").lower()
+    book = str(o.get("book_side") or "").lower()
+    side = str(o.get("side") or "").lower()
+    if action == "sell" or (not action and book == "ask" and side == "yes"):
+        # selling YES at yes_price: we may owe (1 - yes_price)
+        return c * max(0.0, 1.0 - f("yes_price_dollars"))
+    # a buy pays for its own outcome side
+    return c * (f("yes_price_dollars") if side == "yes"
+                else f("no_price_dollars"))
+
+
+def deployed(base, pk, key_id):
+    """TOTAL capital at risk: resting collateral PLUS filled inventory.
+
+    The earlier version summed resting orders only. A FILLED order leaves the
+    ?status=resting listing entirely, so the total fell back to ~0 and a
+    quoting loop would fund a fresh pair, and another, to the whole balance.
+    On a binary the total deployed IS the maximum loss, so this must count
+    positions too. Returns (total, ok).
+    """
+    rest, ok = resting_orders(base, pk, key_id)
+    if not ok:
+        return 0.0, False
+    total = sum(order_collateral(o) for o in rest)
+    st, p = send(base, pk, key_id, "GET", "/portfolio/positions")
+    if st != 200 or not isinstance(p, dict):
+        return total, False
+    for x in p.get("market_positions", []):
+        try:
+            total += abs(float(x.get("market_exposure_dollars") or 0))
+        except Exception:
+            pass
+    return total, True
 
 
 def amend(base, pk, key_id, oid, body):
