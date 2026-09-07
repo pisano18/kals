@@ -3493,3 +3493,9 @@ established, in order of how much it changes the plan:
   (the Sunday "24-window session" → 89 weekday windows).
 - Still pending from `wf_161d431e-c74`: the "uninterpretable" attacker and the
   plan synthesis.
+
+**Weekday windows, all five families (Thursday 2026-09-03):** NatGas 89, Gold 89,
+Silver 89, WTI 89, Copper 89 settled markets each; closes in 23 of 24 ET hours;
+the one empty hour is **04:00 ET (08:00Z) on every family** — observed, not yet
+explained (it is not the CME 17:00-18:00 ET break). Saturday: 1 each. The
+retraction of the "24-window session" now rests on every family, not two.
