@@ -3884,3 +3884,59 @@ amount of code hardening changes it.
 
 Measurement across all five families under the correct procedure is running.
 **Nothing will be placed live until it reports.**
+
+---
+
+## 2026-09-07 08:00Z — SCALING, and the limitation that voids the ceiling
+
+### The scaling curve, measured with our size INSIDE the walk
+`liveden.py` used `share = S/(denominator + S)`. That is **wrong**: adding our
+own size near the top makes the walk reach Target Size SOONER, which pushes
+deeper competitors OUT of the qualifying set. Our share therefore rises faster
+than the naive formula — measured at ~1.7x it. Corrected, on KXNATGAS15M
+(ref_yes 0.45 / ref_no 0.51, competitor score 533):
+
+| S | share | $/window | collateral | 1-leg risk | exit fundable? | naive share |
+|---|---|---|---|---|---|---|
+| 10 | 3.1% | 0.61 | 9.55 | 5.05 | **YES** | 1.8% |
+| **20** | **5.9%** | **1.18** | **19.10** | **10.10** | **YES** | 3.6% |
+| 50 | 13.1% | 2.63 | 47.75 | 25.25 | NO ($28 needed, $17 free) | 8.6% |
+| 100 | 22.9% | 4.59 | 95.50 | | NO | 15.8% |
+| 200 | 54.2% | 10.84 | 191.00 | | NO | 27.3% |
+| 400 | 76.8% | 15.36 | 382.00 | | NO | 42.9% |
+
+**Saturation is near $200/family (~$1,000 across five).** $191 -> $382 buys only
+$4.52 more per window. The pool is bounded: 5 families x 89 windows x $20 =
+**$8,900/day** commodity, plus Coin Race's verified $9,600/day.
+
+**THE EXIT CONSTRAINT IS THE REAL SIZE LIMIT.** Flattening S contracts bought
+at p requires posting a sell reserving `S x (1-p)`, and netting is OFF so that
+needs FREE cash. At S=20 ($19.10 deployed, $46 free) a stop is fundable. At
+S=50 ($47.75 deployed, $17 free, $28 needed) **it is not** — the position
+becomes uncloseable by arithmetic. This does not relax with a bigger bankroll;
+it moves.
+
+### FAMILY QUALITY IS NOT STABLE
+KXCOPPER15M was one of the two good families at 07:00Z (denominator 337,
+$1.12/window at S=20). By 07:50Z its price was 0.92 and its denominator 1,132 —
+**$0.41/window, now one of the bad ones.** Venue selection must be dynamic per
+window, not fixed.
+
+### THE LIMITATION THAT VOIDS THE CEILING
+**Every commodity measurement in this project was taken between 03:00 and 04:00
+ET on US Labor Day**, and the obvious retrospective check is impossible:
+**the collector was only subscribed to the five commodity families at
+2026-09-06 18:00 ET.** There is NO weekday and NO daytime commodity tape in
+existence. If the qualifying crowd is an order of magnitude thicker during
+London/New York hours, the share at S=20 falls from 5.9% to ~0.7%, the rebate
+falls under the $1.00 floor, and **the strategy exists only overnight.**
+
+Two replay attempts to answer this were **OOM-killed** (3.67 GB free; the
+collector outranks analysis). So it is being answered FORWARD:
+`research/densample.py`, detached pid 3595744, logs the qualifying denominator
+for all six families, both sides, once a minute for 24 h to
+`results/denominator_log.csv`. Self-tested on three cases including the
+whole-level rule and the excluded-book case.
+
+**Until that log covers a full day, the scaling ceiling above is unverified and
+must not be quoted as a business.**
