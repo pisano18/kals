@@ -3817,3 +3817,70 @@ excluded, and the pool pays nobody. That is the mechanism behind `KXTEMP*`
 **not a payment backlog.** The operator's instinct that unpaid pools mean empty
 space is right in mechanism, but the space is empty *because the book cannot
 reach Target Size*, which is also the reason nobody can be paid there.
+
+---
+
+## 2026-09-07 07:45Z — NO_GO on the gold test, and RETRACTION #11: my cutoff model was also wrong
+
+`wf_30553923-867` (4 adversaries + verdict) returned **NO_GO**. I checked its
+three load-bearing claims myself; **all three hold**, and the first one exposes
+an error of mine that neither outside reviewer caught.
+
+### RETRACTED: "the cutoff means the denominator is 300, so gold's share is 7.12%"
+I published that ~20 minutes ago. **It is wrong.** The filing says:
+
+> *"add the size available at the current bid price to the Qualifying Yes Total
+> Size, and **add ALL BIDS AT THE CURRENT BID PRICE** to the Qualifying Yes
+> Bids... If the Qualifying Yes Total Size >= the target size, the procedure is
+> stopped here."*
+
+**A level is added WHOLE, and only THEN is the stop checked.** So the
+denominator is the cumulative size through the level that first reaches Target
+Size — which is **at least 300 and can be far more**. It is not truncated at
+300.
+
+Measured live on `KXGOLD15M-26SEP070330-30` (yes side: 0.12 x 40, 0.11 x 3,133):
+
+| model | denominator | our share @20 |
+|---|---|---|
+| "no cutoff" (whole book) — earlier model | 159,413 | **0.01%** |
+| "cutoff at 300" — the model I published | 300 | **6.25%** |
+| **the filing's actual procedure** | **3,173** | **0.63%** |
+
+**Both of my models were wrong, in opposite directions.** The truth sits
+between them and is far closer to the pessimistic end. At 0.63% the gold
+rebate is about **$0.13/window** — nowhere near the $1.00 floor. **Gold pays
+zero, but not for the reason `PREREG_gold.md` predicts, so the pre-registered
+decision rule would have logged the wrong verdict either way.**
+
+Every share and $/window table in this file predates this and is void until
+re-derived under the filing procedure.
+
+### The other two findings, both verified by reading
+- **`ordercli.order_collateral` misprices a sell.** A real record on this
+  account: `action=sell, book_side=ask, side=yes, yes_price_dollars 0.3000,
+  no_price_dollars 0.7000`. The function branches on `side == "yes"` and
+  returns `count x 0.30`; the true reserve for selling yes at 0.30 is
+  `count x 0.70`. **Understates a sell leg by 2.3x.** It must branch on
+  `action`/`book_side`, not `side`.
+- **The $21 cumulative cap is DEAD CODE.** `held` sums `order_collateral` over
+  the `?status=resting` listing only. A FILLED order leaves that listing, so
+  `held` falls back to ~0 and the next tick funds a fresh ~$19.80 pair, and
+  again. **The real bound was the $65.19 balance, not $21.** `PREREG_gold.md`
+  S5's "~$44 untouched" was never true of the code.
+- Also real: `goldquote.cancel_side` does `if still: raise`, but
+  `ordercli.cancel` returns **None** for UNKNOWN, which is falsy — an
+  unverifiable cancel was being treated as a successful one. And `ticks` is
+  incremented only on placing cycles, so the loss abort can fire about once per
+  window rather than every 20 ticks.
+
+### The design conclusion, which matters more than the bugs
+Under the filing procedure our 20 lots sit inside a qualifying set of ~3,200
+contracts, so the share is ~0.6% and the rebate ~$0.13/window against a $1.00
+floor. **Clearing the floor needs a share near 5%, i.e. S ~ 167 contracts —
+about $160 of two-sided collateral on a $65.19 account.** If that holds across
+families, **the rebate strategy is out of reach at this bankroll**, and no
+amount of code hardening changes it.
+
+Measurement across all five families under the correct procedure is running.
+**Nothing will be placed live until it reports.**
