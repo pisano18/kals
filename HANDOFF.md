@@ -4015,3 +4015,81 @@ The rebate. It lands ~48 h after the last window (measured: our families pay
 94.8-98.1%, none before 48 h). **Nothing tonight can shortcut it.** If it is a
 few dollars the picture is "small edge, real drag, needs size". If it is
 $0.00 the strategy is dead and $15.64 bought a clean kill.
+
+---
+
+## 2026-09-07 ~10:45Z — THE REBATE TEST PROVED NOTHING, and pin's primary risk is now bounded
+
+### The rebate credit will be $0.00, BY CONSTRUCTION. Waiting is pointless.
+`reward = R x mean over ALL snapshots of our share`. Measured presence from the
+run log:
+
+| win | window | resting | presence | gross | paid |
+|---|---|---|---|---|---|
+| 1 | 789s | 8s | 1.0% | 0.012 | **0.00** |
+| 2 | 874s | 48s | 5.5% | 0.065 | **0.00** |
+| 3 | 869s | 13s | 1.5% | 0.018 | **0.00** |
+| 4 | 869s | 7s | 0.8% | 0.010 | **0.00** |
+
+**Clearing the $1.00 floor at S=20 needs 85% PRESENCE.** We achieved at most
+5.5%. **My advice to "wait for Tuesday's free information" is WITHDRAWN --
+there is no information coming.** The hedge-cancelling defect did not merely
+cause the losses; it also destroyed the rebate measurement.
+
+**THE FINDING I MOST UNDERESTIMATED: the rebate strategy requires ~85%
+UPTIME.** Not "post two orders and collect" -- continuous quoting through
+fills, swings and re-pegs, where every un-quoted second earns zero and partial
+presence pays nothing at all rather than proportionally less.
+
+Confirmed from the operative filing that the floor is PER TIME PERIOD, not
+daily (a Google summary suggested daily aggregation, which would have changed
+the economics entirely -- it is wrong):
+> *"Each Time Period Liquidity Provider Score is multiplied by the Time Period
+> Reward and the ratio of non-excluded snapshots to total snapshots, and if the
+> result is greater than or equal to $1.00, the result is paid out"*
+
+Our Time Period IS the 15-minute window (API `start_date`/`end_date` 15 min
+apart). Also visible in the redline: the amendment LOWERED the minimum pool
+from ~~$10~~ to **$1**, so the programme is being widened.
+
+### pin's PRIMARY RISK IS NOW BOUNDED -- and it is winnable
+pin's own notes called the race "not bounded by anything measured so far".
+`research/racecheck.py` measures it from tape for nothing: the lifetime of a
+mispriced quote (an ask <= 5c on a market that settled YES, or a bid >= 95c on
+one that settled NO). **16,603 completed lifetimes over 3 hours:**
+
+| | |
+|---|---|
+| p25 | 65 ms |
+| **median** | **661 ms** |
+| p75 | 6,029 ms |
+| mean | 40,129 ms |
+
+| round trip | we arrive in time |
+|---|---|
+| 100 ms | 71.1% |
+| 200 ms | 63.2% |
+| **500 ms** | **55.6%** |
+| 1000 ms | 44.6% |
+
+**CAVEAT, recorded before anyone quotes the 56%:** the quotes that survive
+longest are by construction the ones nobody else wanted, and there may be a
+reason. That is adverse selection in a new form -- the same shape that cost
+$24 last night. It does not invalidate the number; it means the REALISED edge
+can be worse than backtest even on races we win.
+
+### pin's shape, read from its own source rather than memory
+`pin.py`: trade only where the model says the outcome is effectively decided
+(fair >= 0.98 or <= 0.02) AND the quote is on the wrong side of that. **Wins
+~1-3c, loses ~97c.** For the measured +2.54c edge the flip rate must be ~0.4%,
+and the record says 1 flip in 262 = 0.38%. Consistent.
+
+**CONSEQUENCE FOR TESTING: a size-1 live test CANNOT measure profitability.**
+20 trades earns ~$0.50; one flip costs ~$0.97. The edge is only visible over
+hundreds of trades. **What a size-1 test CAN measure is the race** -- do we
+actually get filled at the quoted price -- and that is pin's primary risk.
+
+### pin has NO LIVE PATH. `pin.py` is a backtest tool.
+A live version needs the settlement model running against the index feed in
+real time, fair value each second, book watching, and a taker order. That is
+a real build and rushing it is exactly how last night happened.
