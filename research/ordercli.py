@@ -58,17 +58,22 @@ PROD = "https://external-api.kalshi.com/trade-api/v2"
 # freezes (1 - p), so a sell quote at 2c ties up 98c per contract. Checking
 # the wrong leg would understate every sell-side order.
 CEILINGS = {
-    # env:      (MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS)
-    "prod": (5.0, 2.50, 4),
-    "demo": (2000.0, 50.00, 12),
+    # env:  (MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS, MAX_DEPLOYED)
+    #  MAX_DEPLOYED is CUMULATIVE collateral across every resting order
+    #  plus the one being placed. On a binary that sum IS the maximum
+    #  loss. Per-order ceilings never bounded it: a repeg loop at the
+    #  permitted S=5 still deploys the whole account (ruin adversary,
+    #  2026-09-07).
+    "prod": (5.0, 2.50, 4, 2.50),
+    "demo": (2000.0, 50.00, 12, 50.00),
 }
-MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS = CEILINGS["prod"]
+MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS, MAX_DEPLOYED = CEILINGS["prod"]
 
 
 def set_env(is_prod):
     """Select the ceiling set. Called once, before any order is built."""
-    global MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS
-    MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS = CEILINGS[
+    global MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS, MAX_DEPLOYED
+    MAX_COUNT, MAX_NOTIONAL, MAX_OPEN_ORDERS, MAX_DEPLOYED = CEILINGS[
         "prod" if is_prod else "demo"]
 
 
@@ -183,6 +188,40 @@ def send(base, pk, key_id, method, path, body=None, query=None):
         return -1, str(e)
 
 
+def resting_orders(base, pk, key_id):
+    """Every RESTING order, paged. Returns (list, ok).
+
+    ok=False means the listing FAILED and nothing can be concluded from an
+    empty list. A caller that treats "could not read" as "nothing resting" has
+    reinvented the silent-cancel bug.
+    """
+    out, cur, pages = [], None, 0
+    while pages < 50:
+        q = {"status": "resting", "limit": "200"}
+        if cur:
+            q["cursor"] = cur
+        st, r = send(base, pk, key_id, "GET", "/portfolio/orders", query=q)
+        if st != 200 or not isinstance(r, dict):
+            return out, False
+        out.extend(r.get("orders") or [])
+        pages += 1
+        cur = r.get("cursor") or r.get("next_cursor")
+        if not cur:
+            break
+    return out, True
+
+
+def order_collateral(o):
+    """Collateral a RESTING order record holds: remaining x its leg price."""
+    try:
+        c = float(o.get("remaining_count_fp") or o.get("remaining_count") or 0)
+        if o.get("side") == "yes":
+            return c * float(o.get("yes_price_dollars") or 0)
+        return c * float(o.get("no_price_dollars") or 0)
+    except Exception:
+        return 0.0
+
+
 def cancel(base, pk, key_id, oid, exchange_index):
     """Cancel, and VERIFY it actually cancelled.
 
@@ -196,10 +235,10 @@ def cancel(base, pk, key_id, oid, exchange_index):
     if st != 200:
         st, r = send(base, pk, key_id, "DELETE",
                      f"/portfolio/events/orders/{oid}")
-    st2, lst = send(base, pk, key_id, "GET", "/portfolio/orders")
-    still = [o for o in (lst or {}).get("orders", [])
-             if o.get("order_id") == oid and o.get("status") == "resting"]
-    return st, r, bool(still)
+    rest, ok = resting_orders(base, pk, key_id)
+    if not ok:
+        return st, r, None           # UNKNOWN. Never report "verified".
+    return st, r, any(o.get("order_id") == oid for o in rest)
 
 
 def selftest():
@@ -334,6 +373,22 @@ def main():
     print(f"  balance BEFORE : "
           f"{json.dumps(bal0)[:180] if isinstance(bal0, dict) else bal0}")
 
+    rest, ok = resting_orders(base, pk, a.key_id)
+    if not ok:
+        raise SystemExit("  *** could not read resting orders; refusing "
+                         "to place blind ***")
+    deployed = sum(order_collateral(o) for o in rest)
+    print(f"  resting now   : {len(rest)} order(s) holding "
+          f"${deployed:.4f}; this order adds ${collateral(body):.4f}")
+    if len(rest) >= MAX_OPEN_ORDERS:
+        raise SystemExit(f"  *** {len(rest)} orders already resting >= "
+                         f"MAX_OPEN_ORDERS {MAX_OPEN_ORDERS}. REFUSING. ***")
+    if deployed + collateral(body) > MAX_DEPLOYED:
+        raise SystemExit(f"  *** cumulative collateral "
+                         f"${deployed + collateral(body):.4f} would exceed "
+                         f"MAX_DEPLOYED ${MAX_DEPLOYED:.2f}. On a binary that "
+                         f"sum IS the maximum loss. REFUSING. ***")
+
     st, resp = send(base, pk, a.key_id, "POST", "/portfolio/events/orders", body)
     print(f"\n  POST /portfolio/events/orders -> {st}")
     print(f"    {json.dumps(resp)[:500] if isinstance(resp, dict) else resp}")
@@ -401,11 +456,15 @@ def main():
                                body.get("exchange_index", 0))
         print(f"\n  --- CANCEL {oid} -> {s4}")
         print(f"    {str(r4)[:200]}")
-        if still:
+        if still is None:
+            print("    *** COULD NOT READ THE ORDER LIST. CANCEL STATUS "
+                  "UNKNOWN. CHECK BY HAND. ***")
+        elif still:
             print("    *** THE ORDER IS STILL RESTING. CANCEL IT BY "
                   "HAND. ***")
         else:
-            print("    verified: no longer resting.")
+            print("    verified against the paged status=resting list: "
+                  "no longer resting.")
         s5, bal2 = g("/portfolio/balance")
         if isinstance(bal2, dict):
             print(f"    balance after cancel: ${bal2.get('balance_dollars')}")
