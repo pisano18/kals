@@ -3679,3 +3679,61 @@ the missing parameter.
 using Kalshi's own per-order qualification indicator, then $60 (not $150, not
 $500 -- the marginal dollar dies at $60) for an eight-window natural-gas test
 with a pre-registered prediction of ~$17 and a stated abort at -$15.
+
+---
+
+## 2026-09-07 06:31Z — FIRST PROFIT, and the payout-batch hypothesis is dead
+
+### The project's first money: +$0.21
+`KXCOPPER15M-26SEP070230-30` settled **`result: yes`**, revenue $1.00 against a
+$0.79 maker fill. Balance $64.19 -> **$65.19**.
+
+The mechanics are the ones the strategy needs, and all three are now confirmed
+on a real fill: we RESTED (`post_only`), someone came to US (`is_taker: false`),
+and we paid **`fee_cost: 0.000000`** with `maker_fill_cost: 0.790000` and
+`taker_fill_cost: 0.000000`. Second non-vacuous confirmation that makers are
+free on these series.
+
+**It proves the machine, not the edge.** One contract, won because copper rose
+in the following four minutes. Tonight's other resting fill (the 1c XRP bid)
+lost. n=2, one each way, exactly as a fair coin should look.
+
+### Order records: a 400 STILL CREATES A CANCELLED ORDER
+Four order records exist on that market; only two ever rested. The two that
+returned `400 invalid_order / "post only cross"` appear as
+`status: canceled, initial_count_fp: 1.00`. **An order audit must filter on
+status or it will double-count rejected orders.**
+
+### THE 05:00-05:15Z PAYOUT BATCH DOES NOT EXIST
+Watched live for **93 minutes** (04:58Z-06:31Z), 14 programmes ending
+03:45Z/04:00Z, polled every 60 s: **0 of 14 flipped.** The credit agent inferred
+that window from a knife-edge frontier across 178,245 records. **Refuted by
+observation.** Watching beat inferring, again.
+
+What stands: our five families reach **99-100% paid somewhere past 48 h**, and
+nothing pays before it. The *shape* of the lag is known; the *mechanism* is not.
+
+### THE UI QUALIFICATION INDICATOR DOES NOT APPEAR
+The plan agent asserted Kalshi renders a per-order qualification dot and
+efficiency percentage. Two 1-contract orders were rested in
+`KXCOPPER15M-26SEP070230-30` -- confirmed to carry a LIVE `series_lip`
+programme (`target_size_fp 300`, `period_reward 200000`, 06:15-06:30Z) -- and
+the operator's app showed **no dot and no percentage** on the order screen, the
+position screen, or the market screen. **That claim was relayed without
+verification and is now unsupported.** One place remains unchecked: the app's
+"Order book" view.
+
+### CONSEQUENCE: a better discriminator exists, and it is the $1.00 floor
+The cutoff question (does scoring stop at Target Size?) moves our share
+1.42x-3.61x. On **GOLD** the two readings straddle the $1.00 minimum payout,
+which turns a continuous question into a binary one:
+
+| | our share | rebate/window | pays? |
+|---|---|---|---|
+| no cutoff | 1.97% | $0.39 | **$0.00** (under the floor) |
+| cutoff | 7.12% | $1.42 | **$1.42** |
+
+Eight gold windows at S=20 therefore predict **~$11.40 or exactly $0.00**, with
+no ambiguous middle -- a far better instrument than a UI element that does not
+exist. Awaiting the operator's explicit go; the pre-registered prediction is to
+be written to file BEFORE any order is placed.
