@@ -231,6 +231,8 @@ def main():
                     help="use PRODUCTION. Demo is the default.")
     ap.add_argument("--live", action="store_true",
                     help="actually send. Requires --signoff.")
+    ap.add_argument("--rest-seconds", type=int, default=20,
+                    help="seconds to leave it resting before cancelling")
     ap.add_argument("--signoff", default="",
                     help="the token printed by the dry run of THIS order")
     ap.add_argument("--key-id", default=os.environ.get("KALSHI_KEY_ID", ""))
@@ -280,18 +282,81 @@ def main():
 
     print("\n  sign-off matches. Sending ...")
     pk = load_key(a.key_file)
+
+    def g(path):
+        return send(base, pk, a.key_id, "GET", path)
+
+    st0, bal0 = g("/portfolio/balance")
+    print(f"  balance BEFORE : "
+          f"{json.dumps(bal0)[:180] if isinstance(bal0, dict) else bal0}")
+
     st, resp = send(base, pk, a.key_id, "POST", "/portfolio/orders", body)
-    print(f"  -> {st}  {json.dumps(resp)[:400] if isinstance(resp, dict) else resp}")
-    if st == 200 or st == 201:
-        oid = (resp or {}).get("order_id")
-        print(f"\n  order_id {oid}. This process will CANCEL it on exit.")
+    print(f"\n  POST /portfolio/orders -> {st}")
+    print(f"    {json.dumps(resp)[:500] if isinstance(resp, dict) else resp}")
+    if st not in (200, 201):
+        print("\n  *** REJECTED. Nothing rests. Nothing is at risk. ***")
+        print("  The response above names what is wrong -- that IS the result")
+        print("  of this test, and it is how we learn the correct body shape.")
+        return
+
+    oid = ((resp or {}).get("order") or resp or {}).get("order_id")
+    print(f"\n  ACCEPTED. order_id {oid}")
+    print(f"  resting {a.rest_seconds}s, then verifying, then CANCELLING.")
+    try:
+        for _ in range(int(a.rest_seconds)):
+            time.sleep(1)
+
+        print("\n  --- VERIFY 1: does the exchange say it is resting? ---")
+        s1, r1 = g("/portfolio/orders")
+        mine = ([o for o in (r1 or {}).get("orders", [])
+                 if o.get("order_id") == oid] if isinstance(r1, dict) else [])
+        if mine:
+            o = mine[0]
+            print(f"    status={o.get('status')}  "
+                  f"remaining={o.get('remaining_count_fp')}  "
+                  f"filled={o.get('fill_count_fp')}  "
+                  f"maker_fees={o.get('maker_fees_dollars')}  "
+                  f"taker_fees={o.get('taker_fees_dollars')}")
+        else:
+            print(f"    order NOT found in /portfolio/orders (status {s1})")
+
+        print("\n  --- VERIFY 2: is our size VISIBLE in the PUBLIC book? ---")
+        print("      Every rebate figure assumes it is. Never checked before.")
+        s2, r2 = g("/markets/" + body["ticker"] + "/orderbook")
+        ob = ((r2 or {}).get("orderbook_fp") or {}) if isinstance(r2, dict) else {}
+        key = "yes_dollars" if body["side"] == "yes" else "no_dollars"
+        want = float(body["yes_price_dollars"])
+        hit = [(float(px), float(sz)) for px, sz in (ob.get(key) or [])
+               if abs(float(px) - want) < 1e-9]
+        if hit:
+            print(f"    YES -- {key} shows {hit[0][1]:.2f} contracts at "
+                  f"${hit[0][0]:.2f}.")
+            print(f"    Our resting size IS in the public depth feed.")
+        else:
+            print(f"    NO -- nothing at ${want:.2f} on {key}.")
+            print(f"    Either the feed lags, or resting size here is not")
+            print(f"    published. THAT WOULD MATTER A GREAT DEAL.")
+
+        print("\n  --- VERIFY 3: what collateral was actually held? ---")
+        s3, bal1 = g("/portfolio/balance")
         try:
-            input("  press Enter to cancel and exit ...")
-        finally:
-            if oid:
-                s2, r2 = send(base, pk, a.key_id, "DELETE",
-                              f"/portfolio/orders/{oid}")
-                print(f"  cancel -> {s2} {str(r2)[:200]}")
+            b0 = float((bal0 or {}).get("balance_dollars"))
+            b1 = float((bal1 or {}).get("balance_dollars"))
+            exp = float(body["count"]) * want
+            ok = "MATCH" if abs((b0 - b1) - exp) < 1e-6 else "*** DIFFERS ***"
+            print(f"    before ${b0:.4f}   after ${b1:.4f}   "
+                  f"held ${b0 - b1:.4f}   expected ${exp:.4f}   {ok}")
+        except Exception as e:
+            print(f"    could not compare balances: {e}")
+    finally:
+        s4, r4 = send(base, pk, a.key_id, "DELETE",
+                      f"/portfolio/orders/{oid}")
+        print(f"\n  --- CANCEL: DELETE /portfolio/orders/{oid} -> {s4}")
+        print(f"    {str(r4)[:200]}")
+        s5, bal2 = g("/portfolio/balance")
+        if isinstance(bal2, dict):
+            print(f"    balance after cancel: ${bal2.get('balance_dollars')}")
+            print(f"    (collateral should be returned IN FULL)")
 
 
 if __name__ == "__main__":
