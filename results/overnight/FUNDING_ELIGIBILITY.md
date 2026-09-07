@@ -486,7 +486,7 @@ $0.0001.** All four fills match to the last digit [LIVE]:
 
 Rounding is to $0.0001 — the same 1e-4 unit as `period_reward`. Four for four.
 
-**Makers pay nothing:** `maker_fees_dollars` = "0.000000" on all four orders [LIVE].
+**Makers pay nothing** — but NOT for the reason first written here. The four orders originally cited were all `is_taker: true`, so their zero maker fee was trivially true and that inference was RETRACTED on 2026-09-06. The claim now rests on a genuine maker fill the same night: a resting 1c YES bid on `KXCRYPTOLEAD15M-26SEP062200-XRP` was hit with **`is_taker: false` and `fee_cost: 0.000000`** [LIVE, non-vacuous], consistent with `fee_type: quadratic`.
 
 **Full ledger reconciliation** [LIVE]: deposits credited $39.02 − trade cost
 $56.3202 − trade fees $1.9851 + settlement revenue $19.32 = **$0.0347**, against an

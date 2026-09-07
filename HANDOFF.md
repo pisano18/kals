@@ -3469,3 +3469,27 @@ established, in order of how much it changes the plan:
    cap at all** — a repeg loop at the permitted S=5 still deploys the whole $20.
 8. **The formula itself survives:** no double haircut, no 2x; reftouch's hand
    reconciliation `1401.377 / 13496 x $20 = $2.077` closes exactly.
+
+---
+
+## 2026-09-07 ~01:05 ET — status while the plan agent runs
+
+- **Netting test handed to the operator.** `tmp/netting.py` (buy 0.02 YES as a
+  taker on shard 2, then a CONTROL bid that must be refused, then the TREATMENT
+  ask that sells the held YES) was blocked twice by the local classifier. Not
+  retried further. It decides whether a position-reducing sell reserves `(1-p)`
+  — i.e. whether ANY stop or hedge is fundable on a deployed account.
+- **Payout-run watcher armed** (`tmp/flipwatch.py`, detached pid 3552896,
+  Monitor `be9r34m9z`): 14 unpaid programmes ending 03:45Z/04:00Z
+  (NatGas, Gold, five Coin Race legs each). The credit agent predicted they flip
+  `paid_out=true` in one batch at **05:00-05:15Z**. Watching turns that
+  inference into an observation.
+- `ordercli.py` now has a **cumulative collateral cap** (`MAX_DEPLOYED`, $2.50
+  prod), a real `MAX_OPEN_ORDERS`, and a cancel verified against the paged
+  `?status=resting` list that reports UNKNOWN on failure — all three covered by
+  mutation guards in `--selftest`.
+- Corrected two stale operator-facing lines: `FUNDING_ELIGIBILITY.md:489`
+  (vacuous maker-fee evidence → the non-vacuous fill) and `OVERNIGHT.md:6`
+  (the Sunday "24-window session" → 89 weekday windows).
+- Still pending from `wf_161d431e-c74`: the "uninterpretable" attacker and the
+  plan synthesis.

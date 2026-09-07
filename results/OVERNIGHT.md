@@ -3,7 +3,7 @@
 **Five lines:**
 1. **No order was ever sent.** The demo order dry-ran clean; the live send was blocked by Claude Code's own permission classifier, not by Kalshi. Lifecycle still unproven.
 2. **`target_size` is not 1000 everywhere.** Gold/Silver/WTI/NatGas/Copper 15M pay the same $20 per 15 min against a target of **300** — 3.3× cheaper per unit of depth than Coin Race.
-3. **But they only run 18:00→00:00 ET** (24 windows/day), so each family is worth $480/day advertised, not $1,920.
+3. ~~But they only run 18:00→00:00 ET (24 windows/day)~~ **RETRACTED 2026-09-07:** that was measured on a **Sunday** — the CME futures weekend reopening. On weekdays they run **~89 windows/day** (Thursday 2026-09-03: 89 settled markets each for NatGas and Gold, closes in 23 of 24 hours), so each family is worth ~$1,780/day advertised, ~3.7× what this line first said.
 4. **And they already pay 96–98% of the time** — *more* reliably than Coin Race's 86% — so they are not empty space. Somebody is there.
 5. **Eligibility could not be confirmed by API** (no such endpoint exists); the account has real funded fills, which implies completed KYC, but that is an inference and the only proof is earning a credit.
 
