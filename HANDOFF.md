@@ -3076,3 +3076,64 @@ echoed to the session as a message. Confirmed by them and by the exchange
 showing no trace. **Hand over commands to run in a PowerShell window, and
 remember Windows PowerShell 5.1 rejects `&&`.** Use full paths
 (`C:\Python314\python.exe`) so no `cd` is needed.
+
+---
+
+## 2026-09-06 ~21:08 ET — THE FULL ORDER LIFECYCLE WORKS. First time in this project.
+
+Production, real account, 1 contract at $0.02 on `KXMLBPLAYOFFS-26-TB`,
+`post_only`, `client_order_id: kals-machine-test-2`.
+
+```
+POST /portfolio/events/orders -> 201
+  {"client_order_id":"kals-machine-test-2","fill_count":"0.00",
+   "order_id":"01a0797b-0af0-735d-80c0-8dd310b32c84",
+   "remaining_count":"1.00","ts_ms":1788744502497}
+VERIFY 1  status=resting remaining=1.00 filled=0.00
+VERIFY 2  yes_dollars shows 1.00 contracts at $0.02
+VERIFY 3  balance before $20.0047  after $20.0047  held $0.0000  expected $0.0200
+DELETE /portfolio/events/orders/01a0797b-... -> 200  reduced_by 1.00
+```
+
+### 1. The V2 contract is CONFIRMED WORKING, not merely documented.
+`POST /portfolio/events/orders` with `side: bid`, fixed-point `count`/`price`,
+`time_in_force`, `self_trade_prevention_type`, `post_only`, `exchange_index`.
+Cancel is `DELETE /portfolio/events/orders/{id}` and returns `reduced_by`.
+
+### 2. THE BIGGEST ASSUMPTION IN THE REBATE MODEL IS NOW TESTED, AND IT HOLDS.
+Every share figure this project has produced divides our size by the depth in
+the **public** orderbook feed. That assumed our own resting size appears in
+that feed. **It does.** One contract placed at an empty price level showed up
+as `1.00 @ $0.02` in `yes_dollars` within 20 seconds, read back through the
+public endpoint. The level was chosen because it was EMPTY, so the contract is
+unambiguously ours.
+
+This does **not** prove the converse — that no participant rests size the feed
+omits. The adversarial job named that as "the single biggest unquantified
+risk" and it stays open. What is now closed is the half we can test: *our*
+orders are visible and countable.
+
+### 3. UNEXPLAINED, AND FLAGGED RATHER THAN CLAIMED: no collateral was held.
+`balance_dollars` was **$20.0047 before and $20.0047 while the order rested**.
+Two cents at four decimals is not rounding.
+
+**I am NOT concluding that resting orders are free.** Kalshi is fully
+cash-collateralised and the endpoint `/portfolio/summary/total_resting_order_value`
+**exists but returns 403 permission_denied to this key** — its very name says
+resting orders carry a tracked value. The likely reading is that
+`balance_dollars` is GROSS cash and available funds are `balance - resting
+order value`, which this key cannot read. Probed nine candidate endpoints for
+an available/buying-power field: eight 404, one 403.
+
+**Why this matters and must not be assumed favourably:** if resting orders
+genuinely did not reserve cash, $20 would support far more resting size and
+tonight's "copper pays zero at $20" conclusion would be wrong in our favour.
+That is precisely the direction that requires proof. **The test that settles
+it:** deliberately rest orders totalling more than the cash balance and see
+whether the exchange refuses. That needs `MAX_NOTIONAL` raised above $2.50,
+which is a deliberate code edit and a separate decision.
+
+### 4. What this run does NOT show
+The order never filled, so `maker_fees_dollars: 0.000000` on it is **trivially
+true and is not evidence about maker fees.** This project has already retracted
+that exact inference once and must not make it again.
