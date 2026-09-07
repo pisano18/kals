@@ -3274,3 +3274,55 @@ spread and pays the taker fee. Any hand-placed order for this strategy must
 have it ON. The app also shows `Cost $0.01 ($0 fee)` for a resting order,
 consistent with makers paying nothing on this series — still not proof, since
 nothing filled.
+
+---
+
+## 2026-09-06 21:58 ET — THE FIRST MAKER FILL. And a textbook adverse selection.
+
+The operator's 1c YES bid on `KXCRYPTOLEAD15M-26SEP062200-XRP` **was hit.**
+
+```
+count_fp 1.00   yes_price_dollars 0.0100   book_side bid
+is_taker FALSE  fee_cost 0.000000          exchange_index 2
+```
+
+### 1. MAKERS PAY NOTHING ON THIS SERIES — now on evidence, not on a tautology.
+Every prior fill on this account was `is_taker: true`, which made
+`maker_fees_dollars: 0.000000` trivially true; this project **retracted** that
+claim once for exactly that reason. **This fill rested and was hit.**
+`is_taker: false` with `fee_cost: 0.000000` is the first non-vacuous
+confirmation that `fee_type: quadratic` means makers are free here.
+
+### 2. THE COLLATERAL ARITHMETIC CLOSES EXACTLY.
+Balance $20.0033 -> **$19.9933**; shard 2 $0.0286 -> **$0.0186**. Both down
+precisely $0.0100 as the reserved cent converted into a position. The reserve
+model established an hour ago reconciles to the penny.
+
+### 3. A PERFECT, UNPLANNED DEMONSTRATION OF ADVERSE SELECTION.
+When the order was placed the book was **bid 18c / ask 21c**. It rested at 1c,
+17c below the touch, and looked unfillable. Twelve minutes later XRP had
+collapsed; the book was **bid 2c / ask 6c**, then **bid 0c / ask 7c**, and the
+1c bid was hit on the way down.
+
+**The fill did not arrive because someone blundered. It arrived because the
+contract had become worth about a cent.** That is adverse selection in one
+trade: a resting bid is filled precisely when the price has moved against it.
+
+The app's framing — "Max payout $1 (+$0.99)" — is the misleading half. The
+honest version, conditional on being filled at 1c:
+
+| | payout | cost | net | probability |
+|---|---|---|---|---|
+| never filled | -- | -- | $0.00 | (was ~99%) |
+| filled, XRP leads | $1.00 | $0.01 | **+$0.99** | ~1% |
+| filled, XRP does not lead | $0.00 | $0.01 | **-$0.01** | ~99% |
+
+`0.01 x $0.99 - 0.99 x $0.01 = $0.0000`. **Fair.** The 99:1 payout is exactly
+offset by the 1:99 odds *given a fill*, which is the whole reason a maker's
+edge cannot come from the payout ratio.
+
+**This is precisely why the rebate is the thesis and the fill P&L is not.**
+The rebate is paid for resting whether or not the fill comes; the fill itself
+is, at best, a fair bet and, at worst, systematically adverse. It is also the
+concrete version of the risk the operator asked about: one adverse fill costs
+many windows of rebate, and adverse fills are the ones that actually arrive.
