@@ -1,0 +1,2 @@
+{"size": 20.0, "windows": 1, "live": false, "max_minutes": 1.0, "cap": 21.0, "abort": -15.0, "series": "KXGOLD15M", "balance": 65.1813, "t": "2026-09-07T08:12:18.631+00:00", "kind": "start"}
+{"windows": 0, "start_balance": 65.1813, "end_balance": 65.1813, "delta": 0.0, "aborted": "wall-clock limit 1 min", "per_window": [], "t": "2026-09-07T08:13:19.136+00:00", "kind": "end"}

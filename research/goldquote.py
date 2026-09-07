@@ -195,6 +195,31 @@ def main():
     print(f"  caps: cumulative ${oc.MAX_DEPLOYED:.2f}, abort at "
           f"${LOSS_ABORT:.2f}\n")
 
+    # STRUCTURED RUN LOG. The operator's requirement: if this goes wrong we
+    # must be able to reconstruct exactly why, afterwards, without me. One
+    # JSON object per event, flushed immediately -- this process can be killed
+    # at any moment (OOM, usage limit, machine sleep) and the log must survive
+    # whatever was written up to that instant.
+    import io as _io
+    import os as _os
+    runid = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    logpath = _os.path.join(r"C:\kals-repo\results",
+                            f"run-{'live' if a.live else 'dry'}-{runid}.jsonl")
+
+    def rec(kind, **kw):
+        kw["t"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds")
+        kw["kind"] = kind
+        try:
+            with _io.open(logpath, "a", encoding="utf-8", newline="\n") as fh:
+                fh.write(json.dumps(kw, default=str) + "\n")
+        except Exception:
+            pass
+
+    print(f"  run log      : {logpath}")
+    rec("start", size=a.size, windows=a.windows, live=bool(a.live),
+        max_minutes=a.max_minutes, cap=oc.MAX_DEPLOYED, abort=LOSS_ABORT,
+        series=SERIES, balance=start_bal)
+
     live = {"yes": None, "no": None}      # side -> (order_id, price, count)
     log = []
     windows_done = 0
@@ -276,6 +301,8 @@ def main():
                 m["close_time"].replace("Z", "+00:00"))
             print(f"\n  === window {windows_done+1}/{a.windows}: {tk} "
                   f"closes {m['close_time']} ({left(m):.0f}s of quoting) ===")
+            rec("window_open", n=windows_done + 1, ticker=tk,
+                close=m["close_time"], seconds_left=round(left(m), 1))
             wstart = balance()
             ticks = 0
 
@@ -289,6 +316,9 @@ def main():
                     ticks += 1
                     time.sleep(CADENCE)
                     continue
+                rec("book", ticker=tk, ref_yes=ry, ref_no=rn,
+                    depth_yes=round(dy, 2), depth_no=round(dn, 2),
+                    top_yes=y[:3], top_no=n[:3])
                 if not (PRICE_MIN <= ry <= PRICE_MAX):
                     # decided market -- a one-sided fill here risks the whole
                     # deployment to earn cents. Stand down, and make sure we
@@ -296,6 +326,7 @@ def main():
                     if live["yes"] or live["no"]:
                         print(f"    ref_yes {ry:.3f} outside "
                               f"[{PRICE_MIN},{PRICE_MAX}] -- standing down")
+                        rec("stand_down", why="decided_market", ref_yes=ry)
                         cancel_side("yes")
                         cancel_side("no")
                     ticks += 1
@@ -340,6 +371,9 @@ def main():
                     if live["yes"] or live["no"]:
                         print(f"    PAIR BLOCKED {blocked} -- standing down "
                               f"(never one-sided)")
+                        rec("stand_down", why="pair_blocked",
+                            blocked=blocked, held=round(held, 4),
+                            pair_collateral=round(pair_collat, 4))
                         cancel_side("yes")
                         cancel_side("no")
                     ticks += 1
@@ -367,6 +401,8 @@ def main():
                             live[side] = (nid, ref, a.size)
                             print(f"    {side} AMEND -> {px:.4f} "
                                   f"(ref {ref:.4f}) -> {stx}")
+                            rec("amend", side=side, price=px, ref=ref,
+                                status=stx, order_id=nid)
                             continue
                         print(f"    {side} amend -> {stx} "
                               f"{json.dumps(r)[:110] if isinstance(r,dict) else r}"
@@ -383,9 +419,15 @@ def main():
                             live[side] = (r.get("order_id"), ref, a.size)
                             print(f"    {side} {a.size:.0f} @ {px:.4f} "
                                   f"(ref {ref:.4f}) -> {stx}")
+                            rec("place", side=side, size=a.size, price=px,
+                                ref=ref, status=stx,
+                                order_id=r.get("order_id"),
+                                collateral=round(oc.collateral(body), 4))
                         else:
                             print(f"    {side} @ {px:.4f} -> {stx} "
                                   f"{json.dumps(r)[:120] if isinstance(r,dict) else r}")
+                            rec("place_rejected", side=side, price=px,
+                                status=stx, response=str(r)[:300])
                             # a leg failed to place -- do not run one-sided
                             print(f"    leg failed; cancelling the other side")
                             cancel_side("yes" if side == "no" else "no")
@@ -422,6 +464,9 @@ def main():
                     pnl = (cur_bal + mv) - start_bal
                     print(f"    .. bal ${cur_bal:.2f} mark-to-mkt ${mv:.2f} "
                           f"P&L ${pnl:+.2f}")
+                    rec("pnl", balance=round(cur_bal, 4),
+                        mark_to_market=round(mv, 4), pnl=round(pnl, 4),
+                        positions=(p or {}).get("market_positions", []))
                     if pnl <= LOSS_ABORT:
                         aborted = f"loss abort: P&L ${pnl:+.2f} <= ${LOSS_ABORT}"
                         break
@@ -434,6 +479,8 @@ def main():
                         "balance_delta": round(wend - wstart, 4)})
             print(f"  window {windows_done} done; balance ${wend:.4f} "
                   f"(delta ${wend-wstart:+.4f})")
+            rec("window_close", n=windows_done, ticker=tk,
+                balance=round(wend, 4), delta=round(wend - wstart, 4))
             if aborted:
                 break
             time.sleep(4)
@@ -451,6 +498,9 @@ def main():
               f"({end_bal-start_bal:+.4f})")
         if aborted:
             print(f"  ABORTED           : {aborted}")
+        rec("end", windows=windows_done, start_balance=start_bal,
+            end_balance=end_bal, delta=round(end_bal - start_bal, 4),
+            aborted=aborted, per_window=log)
         print(f"  per-window        : {json.dumps(log)}")
         print(f"\n  The rebate, if any, is NOT in this number. It appears in the")
         print(f"  balance 48+ hours from now. Read it against PREREG_gold.md.")
