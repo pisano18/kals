@@ -3587,3 +3587,49 @@ Kalshi is fully cash-collateralised. There is no borrowing, no loan and no
 leverage available to any account; maximum loss is capped at deposited cash and
 the balance cannot go negative. Netting is a collateral-accounting setting, not
 leverage. Recorded because the operator asked directly.
+
+---
+
+## 2026-09-07 ~05:45Z — NET P&L PER FAMILY, measured twice, second one correct
+
+**Answering the operator's direct question ("is our only P&L estimate pure
+negative?"): NO.** At S=20/side, with the tick grid read per family and
+`taker_side` respected, all five commodity families are **net positive** per
+15-minute window:
+
+| family | grid | gross rebate | paid after $1 floor | inventory P&L | **NET** | worst |
+|---|---|---|---|---|---|---|
+| KXNATGAS15M | cent | 1.746 | 1.712 | +0.458 | **+2.170** | -7.50 |
+| KXCOPPER15M | cent | 0.996 | 0.480 | +1.343 | **+1.824** | -6.80 |
+| KXSILVER15M | taper | 1.125 | 0.770 | +0.644 | **+1.415** | -5.34 |
+| KXGOLD15M | taper | 0.453 | 0.000 | +0.436 | **+0.436** | -4.40 |
+| KXWTI15M | taper | 1.051 | 0.793 | -0.564 | **+0.229** | -8.45 |
+
+n = 24 settled windows per family, 125 markets, 6 hours of tape.
+
+**Inventory P&L is mostly POSITIVE**, which inverts the earlier reading. The
+mechanism is not subtle: when both legs fill you hold a YES and a NO in the
+same market, which must pay exactly $1.00 against a cost of ~$0.97. That is the
+maker's spread and it is real. The fillcost agent's negative figure came from
+quoting adverse selection against the QUOTE rather than against the $1.00 the
+pair is worth — an error its own reviewer caught.
+
+### v1 OF THIS MEASUREMENT WAS WRONG AND ITS TABLE MUST NOT BE QUOTED
+Two defects, both mine, both found by inspecting my own output:
+1. `price_level_structure` was read from `/series`, **where it does not exist**
+   — it lives on the MARKET record, together with `price_ranges` (which gives
+   the step per band directly and should be used instead of any hardcoded
+   rule). The grid came back `None` for all five and cents were applied to
+   every family: **the exact bug the script was written to fix.**
+2. **`taker_side` was ignored.** On Kalshi's dual book a taker buying YES
+   consumes a resting NO bid and vice versa, so at most ONE of our two quotes
+   can be hit by any trade. v1 counted every trade against BOTH, which is why
+   it reported 40.0 fills (both sides full) in nearly every window and gave
+   copper an inventory P&L of +$1.48.
+
+### THE NUMBER ABOVE IS AN UPPER BOUND, NOT A FORECAST
+The model has **no cash constraint**: it rests and fills 20 on both sides
+(~$19.40) without ever checking the cash existed at that instant. That is
+exactly the mechanism the ruin adversary identified as decisive. `netpnl3.py`
+re-runs it with a bankroll (20/60/150/500) and posts the largest size that
+fits, which is what turns this into a funding case rather than an argument.
