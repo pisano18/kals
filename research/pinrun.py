@@ -83,6 +83,7 @@ RAILS, and why each one exists:
 """
 import argparse
 import asyncio
+import bisect
 import calendar
 import json
 import math
@@ -118,7 +119,10 @@ PIN = 0.98
 TAU_MAX = 20
 TAU_MIN = 3            # a one-second misalignment is fatal below this
 EDGE_FLOOR = 0.005     # AFTER fee
-SIZE = 1               # contracts
+SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
+MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
+                       # our own size: a 0.01-contract order against a
+                       # 0.02-contract dust level is not a real fill test
 MAX_BOOK_AGE_MS = 2000
 MAX_INDEX_AGE_S = 2
 SIGMA_WIN = 300
@@ -222,6 +226,31 @@ class IndexWS:
 
         THE WINDOW IS [close-60, close-1]. See CORRECTIONS 1 in the module
         docstring: measured against Kalshi's avg_60s_data on 108/108 markets.
+
+        CORRECTION 3, found in adversarial review 2026-09-08 and fixed here.
+        A second whose print HAS NOT ARRIVED is a print still to come, not a
+        locked print to be guessed at. The first version ended the window at
+        min(now_s, close_s-1) and then scaled the observed sum by
+        want/len(got) -- it substituted the WINDOW MEAN for every missing
+        second, the most recent one included.
+
+        Measured on this feed 2026-09-08 (20 Hz, 90 s, BRTI + ETHUSD_RTI):
+        the print for the CURRENT second is absent in 321 of 3,570 samples =
+        9.0%, so this fired often. The error it makes is exactly
+        (mean of the prints held) - (the print missing), and its sd against
+        the model's own residual sd is
+
+            tau     3      4      5      6      8     10     15     20
+            ratio 1.97x  1.17x  0.79x  0.58x  0.36x  0.25x  0.12x  0.07x
+
+        -- at tau<=5 the guess is as big as everything the model still treats
+        as random, and it is signed AGAINST the latest move, which is exactly
+        when a stale quote appears. Same class of error as CORRECTION 1.
+
+        So the locked window now ends at the newest print actually held, and
+        every second after it is counted in `remaining` and modelled with
+        spot -- which is what the model says to do. Interior gaps are filled
+        from the NEAREST print held, never from the window mean.
         """
         with self.lock:
             d = self.ticks.get(iid)
@@ -231,11 +260,28 @@ class IndexWS:
             hi = min(now_s, close_s - 1)
             if hi < lo:
                 return 0.0, N_AVG
+            have = [s for s in range(lo, hi + 1) if s in d]
+            if not have:
+                return None
+            hi = have[-1]                 # the newest print we actually hold
             want = hi - lo + 1
-            got = [d[s] for s in range(lo, hi + 1) if s in d]
-        if not got or len(got) < want * 0.95:
+            got = {s: d[s] for s in have}
+        if len(got) < want * 0.95:
             return None
-        return sum(got) * (want / len(got)), N_AVG - want
+        if len(got) == want:
+            return sum(got.values()), N_AVG - want
+        keys = sorted(got)
+        total = 0.0
+        for s in range(lo, hi + 1):
+            v = got.get(s)
+            if v is None:                 # interior gap: nearest print held
+                i = bisect.bisect_left(keys, s)
+                cand = [k for k in (keys[i] if i < len(keys) else None,
+                                    keys[i - 1] if i > 0 else None)
+                        if k is not None]
+                v = got[min(cand, key=lambda k: (abs(k - s), k))]
+            total += v
+        return total, N_AVG - want
 
     # ---- socket ----
     async def _run(self):
@@ -382,6 +428,52 @@ def selftest():
     ck(f_raw == 0.0, f"the un-rounded model calls it NO ({f_raw}) -- the "
                      f"-90.91c loss")
 
+    # --- CORRECTION 3: a print that has NOT ARRIVED is not a locked print ---
+    # A steady uptrend with the newest print still in flight. The first
+    # version ended the locked window at now_s and scaled the observed sum by
+    # want/len(got) -- imputing the WINDOW MEAN for the missing second, which
+    # on a trend sits far below the latest print. The model then buys the
+    # wrong side at ~99c. This fixture fails if that ever comes back.
+    idx5 = IndexWS(["R"])
+    for s in range(C - 60, C - 3):          # up to close-4; close-3 in flight
+        idx5.ticks["R"][s] = 1000.0 + 1.0 * (s - (C - 60))
+    lockd, r5 = idx5.partial("R", C, C - 3)
+    ck(r5 == 3 and abs(lockd - sum(idx5.ticks["R"].values())) < 1e-9,
+       f"the locked window ends at the newest print HELD, not at now "
+       f"(remaining {r5}, locked {lockd:.1f})")
+    spot5 = idx5.ticks["R"][C - 4]
+    mu_new = (lockd + r5 * spot5) / N_AVG
+    got_old = [idx5.ticks["R"][s] for s in range(C - 60, C - 2)
+               if s in idx5.ticks["R"]]
+    want_old = (C - 3) - (C - 60) + 1
+    mu_old = (sum(got_old) * (want_old / len(got_old)) + 2 * spot5) / N_AVG
+    K5 = mu_new - 0.005
+    f_new = fair(idx5, "R", C, C - 3, K5, 0.02)
+    f_old = ND.cdf((mu_old - K5) / (0.02 * math.sqrt(var_factor(2, [1.0]))))
+    ck(f_new >= PIN and f_old <= 1.0 - PIN,
+       f"with the newest print in flight on a rising index the corrected "
+       f"model says YES (fair {f_new:.4f}); mean-imputation said NO "
+       f"(fair {f_old:.4f}) -- a wrong-side buy at ~99c")
+
+    # an interior gap is filled from the NEAREST print, never the window mean
+    idx7 = IndexWS(["H"])
+    for s in range(C - 60, C):
+        idx7.ticks["H"][s] = 100.0
+    idx7.ticks["H"][C - 30] = 999.0
+    del idx7.ticks["H"][C - 31]
+    lk, rr = idx7.partial("H", C, C)
+    ck(rr == 0 and abs(lk - 6899.0) < 1e-9,
+       f"an interior gap takes the nearest print ({lk}, expected 6899.0; "
+       f"the window-mean rule would say {6799.0 * 60 / 59:.1f})")
+
+    # and a window missing more than 5% of its prints is refused outright
+    idx6 = IndexWS(["G"])
+    for s in range(C - 60, C - 3):
+        if (s - (C - 60)) % 7:
+            idx6.ticks["G"][s] = 100.0
+    ck(idx6.partial("G", C, C - 3) is None,
+       "partial refuses a window missing more than 5% of its prints")
+
     # --- fee-netted edge ---
     e = net_edge(0.995, 0.99, "yes")
     fee = billed_fee(0.99, 1)
@@ -475,6 +567,21 @@ def selftest():
         pintake.LEDGER.update({"committed": 0.0, "halt": "unknown order state"})
         s3 = risk_abort({"halted": False, "errors": 0}, _A)
         ck(s3 and "halted" in s3, f"abort fires on a pintake halt ({s3})")
+        # the FORWARD bound: realised only moves after settlement, so the
+        # advertised -$2.00 has to be checked against what is still open.
+        pintake.LEDGER.update({"realised": 0.0, "committed": 0.0,
+                               "halt": None, "positions": {}})
+        s4 = risk_abort({"halted": False, "errors": 0, "open_cost": 1.20}, _A)
+        ck(s4 and "loss bound" in s4,
+           f"abort fires FORWARD: $1.20 open plus one more contract would "
+           f"pass -$2.00 ({s4})")
+        s5 = risk_abort({"halted": False, "errors": 0, "open_cost": 0.90}, _A)
+        ck(s5 is None,
+           f"$0.90 open still leaves room for one more contract ({s5})")
+        s6 = risk_abort({"halted": False, "errors": 0, "order_errors": 2}, _A)
+        ck(s6 and "ORDER path" in s6,
+           f"abort fires on order-path errors, which the universe pass "
+           f"cannot reset ({s6})")
     finally:
         pintake.LEDGER.clear()
         pintake.LEDGER.update(saved)
@@ -493,6 +600,15 @@ def selftest():
     needles = ["ordercli" + ".send(", "url" + "open(", "http" + ".client"]
     hits = [n for n in needles if n in src]
     ck(not hits, f"no direct send path in this file (found {hits})")
+
+    # --- STRUCTURAL: the order carries the market's own exchange_index ---
+    # Every open crypto 15M market reads exchange_index 2 (all 11 series,
+    # checked live 2026-09-08). pintake.take() defaults the field to 0, so
+    # without this the order is routed to a shard the market is not on.
+    ck("exchange_index=exi" in src,
+       "take() is called with the market's exchange_index, not the default 0")
+    ck('int(m.get("exchange_index") or 0)' in src,
+       "exchange_index is read from the market record in the universe pass")
 
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
@@ -520,9 +636,24 @@ def risk_abort(state, a):
                 f"${a.loss_abort:.2f}")
     if float(led.get("committed", 0.0)) >= pintake.MAX_RUN_STAKE:
         return f"stake cap reached: ${led['committed']:.2f} committed"
+    # FORWARD-LOOKING LOSS BOUND. `realised` only moves once a position has
+    # SETTLED, so a realised-only abort always allows one more contract while
+    # an unsettled one is open -- and it is inert entirely if the settlement
+    # reader is failing. This bounds what the run can still lose: realised,
+    # minus every open position going to zero, minus one more contract at up
+    # to $1.00. With the default -$2.00 the run can never have more than
+    # ~$1.99 at risk, whatever the settlement reader does.
+    worst = float(led.get("realised", 0.0)) - float(state.get("open_cost", 0.0))
+    if worst - 1.00 * float(SIZE) < a.loss_abort - 1e-9:
+        return (f"loss bound: realised ${float(led.get('realised', 0.0)):+.2f} "
+                f"with ${float(state.get('open_cost', 0.0)):.2f} still open; "
+                f"one more contract could take this run past "
+                f"${a.loss_abort:.2f}")
     if len(led.get("positions") or {}) >= a.max_positions:
         return (f"position cap: {len(led['positions'])} open "
                 f">= {a.max_positions}")
+    if state.get("order_errors", 0) >= 2:
+        return f"{state['order_errors']} errors on the ORDER path"
     if state["errors"] >= 5:
         return f"{state['errors']} consecutive errors"
     return None
@@ -532,10 +663,11 @@ def risk_abort(state, a):
 def trade_loop(a, rec, book, idx, series_index):
     live = a.live
     fired = {}                 # close_s -> ticker we already fired on
-    seen_markets = {}          # ticker -> (iid, close_s, strike, digits)
+    seen_markets = {}          # ticker -> (iid, close_s, strike, digits, exi)
     uni_at = 0.0
-    watching = set()
+    watching = {}            # ticker -> close_s, so closed ones drop out
     open_pos = {}            # ticker -> (close_s, want, cost) awaiting settlement
+    recon_at = {}            # ticker -> when the settlement was last polled
     state = {"halted": False, "errors": 0, "signals": 0, "considered": 0}
     end = time.time() + a.minutes * 60
 
@@ -552,6 +684,14 @@ def trade_loop(a, rec, book, idx, series_index):
             close_s, want, cost = open_pos[tk]
             if time.time() < close_s + 20:
                 continue                      # not settled yet
+            # THROTTLE. This runs at the top of a 20 Hz loop and a market that
+            # has closed but not finalised is NOT popped -- unthrottled that
+            # is ~18,000 blocking GETs per unsettled position, which is both a
+            # rate-limit suicide (the failure that blinded the REST paper run)
+            # and a stall of the trading loop: kauth.get times out at 20 s.
+            if time.time() < recon_at.get(tk, 0.0) + 15.0:
+                continue
+            recon_at[tk] = time.time()
             try:
                 st, b = get("/markets/" + tk)
             except Exception:
@@ -568,9 +708,12 @@ def trade_loop(a, rec, book, idx, series_index):
                 open_pos.pop(tk, None)
                 continue
             won = (res == want)
-            pnl = (1.0 - cost) if won else (-cost)
+            # the taker fee is charged on the way in and is part of realised
+            # P&L; leaving it out flatters the number the loss abort reads.
+            pnl = ((1.0 - cost) if won else (-cost)) - billed_fee(cost, 1)
             pintake.record_pnl(pnl, note=f"{tk} {want} vs {res}")
             open_pos.pop(tk, None)
+            recon_at.pop(tk, None)
             state["settled"] = state.get("settled", 0) + 1
             state["wins"] = state.get("wins", 0) + int(won)
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
@@ -578,6 +721,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 realised=round(pintake.LEDGER["realised"], 4))
             print(f"  SETTLED {tk} {want} vs {res} -> {100 * pnl:+.2f}c "
                   f"(run realised ${pintake.LEDGER['realised']:+.4f})")
+        state["open_cost"] = sum(c for (_, _, c) in open_pos.values())
 
     while time.time() < end:
         reconcile()
@@ -610,21 +754,41 @@ def trade_loop(a, rec, book, idx, series_index):
                         if cs - now_s > 900 or cs < now_s:
                             continue
                         d = (m.get("custom_strike") or {}).get("round_digits")
+                        # EXCHANGE_INDEX IS NOT OPTIONAL. Checked live
+                        # 2026-09-08 across all 11 series: every open crypto
+                        # 15M market reads exchange_index 2, not 0. take()
+                        # defaults it to 0, so every live order was going to
+                        # be routed to the wrong shard -- rejected, or worse,
+                        # created where _unrest's cancel (which reuses the
+                        # same field) cannot find it. pintake.envtest already
+                        # reads this field; pinrun did not.
                         fresh[m["ticker"]] = (iid, cs, float(sk),
-                                              int(d) if d is not None else None)
+                                              int(d) if d is not None else None,
+                                              int(m.get("exchange_index") or 0))
                 if fresh:
                     seen_markets = fresh
-                    new = set(seen_markets) - watching
+                    new = set(seen_markets) - set(watching)
                     if new:
                         book.subscribe(sorted(new))
-                        watching |= new
-                        rec("watch", n=len(watching), added=sorted(new))
+                        rec("watch", n=len(watching) + len(new),
+                            added=sorted(new))
+                    for tk_, v_ in fresh.items():
+                        watching[tk_] = v_[1]
+                    # a subscription that only grows re-subscribes every dead
+                    # market on each reconnect and walks into the server's
+                    # "Subscription buffer overflow" (livebook error code 25).
+                    gone = [t for t, c in watching.items() if c < now_s - 300]
+                    if gone:
+                        book.drop(gone)
+                        for t in gone:
+                            watching.pop(t, None)
+                        rec("unwatch", n=len(watching), dropped=sorted(gone))
                 state["errors"] = 0
             except Exception as e:                       # noqa: BLE001
                 state["errors"] += 1
                 rec("error", where="universe", err=str(e)[:200])
 
-        for tk, (iid, close_s, strike, digits) in list(seen_markets.items()):
+        for tk, (iid, close_s, strike, digits, exi) in list(seen_markets.items()):
             tau = close_s - now_s
             if not (TAU_MIN <= tau <= TAU_MAX):
                 continue
@@ -663,7 +827,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     want, price, size = "no", na, ns
             if want is None:
                 continue
-            if size < SIZE:                 # fractional dust is not a fill
+            if size < max(MIN_LEVEL, SIZE):   # dust is not a real fill
                 continue
             e = net_edge(f, price, want)
             if e < EDGE_FLOOR:
@@ -674,7 +838,7 @@ def trade_loop(a, rec, book, idx, series_index):
                        fair=round(f, 5), tau=tau, edge_c=round(100 * e, 3),
                        size=size, strike=strike, digits=digits, spot=spot,
                        sigma=round(sg, 6), book_age_ms=b["age_ms"],
-                       index_age_s=round(iage, 2))
+                       index_age_s=round(iage, 2), exchange_index=exi)
             fired[close_s] = tk
             rec("signal", live=live, **sig)
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
@@ -686,7 +850,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 try:
                     out = pintake.take(CREDS["base"], CREDS["pk"],
                                        CREDS["key_id"], tk, want, price,
-                                       SIZE, close_s)
+                                       SIZE, close_s, exchange_index=exi)
                     rec("order", ticker=tk, **{k: v for k, v in out.items()
                                                if k != "raw"})
                     filled = float(out.get("filled") or 0)
@@ -700,7 +864,10 @@ def trade_loop(a, rec, book, idx, series_index):
                           f"filled {out.get('filled')} "
                           f"@ {out.get('exec_price')} fee {out.get('fee')}")
                 except Exception as ex:                  # noqa: BLE001
-                    state["errors"] += 1
+                    # NOT state["errors"]: the universe block resets that to 0
+                    # every 20 s, so an order path that threw on every fire
+                    # could never reach the consecutive-errors abort.
+                    state["order_errors"] = state.get("order_errors", 0) + 1
                     rec("error", where="take", ticker=tk, err=str(ex)[:300])
                     print(f"    ORDER FAILED: {ex}")
 
@@ -717,15 +884,32 @@ def main():
     ap.add_argument("--minutes", type=float, default=60.0)
     ap.add_argument("--loss-abort", type=float, default=-2.00)
     ap.add_argument("--tau-max", type=int, default=TAU_MAX)
+    ap.add_argument("--size", type=float, default=1.0,
+                    help="contracts per take; 0.01 is about one cent, for "
+                         "proving order/fill/settle/payout end to end")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
     a = ap.parse_args()
+    # The frozen rule is frozen. Widening it must be a code edit and a commit,
+    # not a flag: pintake's own MAX_TAU is 90 s, so --tau-max 60 would have
+    # been waved through by every rail below this line.
+    if a.live:
+        if a.tau_max > TAU_MAX:
+            raise SystemExit(f"--tau-max {a.tau_max} exceeds the frozen rule's "
+                             f"{TAU_MAX} s (PREREG_pin_live.md); refusing to go "
+                             f"live outside the pre-registered cell")
+        if not (-5.00 <= a.loss_abort < 0.0):
+            raise SystemExit(f"--loss-abort {a.loss_abort} is outside "
+                             f"[-5.00, 0.00); refusing")
+        if a.max_positions > 3:
+            raise SystemExit(f"--max-positions {a.max_positions} > 3; refusing")
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
     if not selftest():
         raise SystemExit("self-test failed -- nothing ran")
 
     globals()["TAU_MAX"] = a.tau_max
+    globals()["SIZE"] = a.size
     runid = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     tag = "live" if a.live else "paper"
     logpath = os.path.join(RESULTS, f"pinrun-{tag}-{runid}.jsonl")
@@ -741,13 +925,13 @@ def main():
 
     print(f"  MODE {'LIVE size 1' if a.live else 'PAPER'}   "
           f"tau<={TAU_MAX}s  pin {PIN}  edge>={100 * EDGE_FLOOR:.1f}c net  "
-          f"loss abort ${a.loss_abort:.2f}")
+          f"loss abort ${a.loss_abort:.2f}  SIZE {a.size:g}")
     print(f"  log {logpath}")
     rec("start", mode=tag, tau_max=TAU_MAX, pin=PIN, edge_floor=EDGE_FLOOR,
-        size=SIZE, loss_abort=a.loss_abort, minutes=a.minutes)
+        size=a.size, loss_abort=a.loss_abort, minutes=a.minutes)
 
     if a.live:
-        arm(f"pinrun --live, size {SIZE}, frozen rule tau<={TAU_MAX}, "
+        arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}, "
             f"PREREG_pin_live.md")
         print(f"  ARMED: {CREDS['base']}  key {CREDS['key_id'][:8]}...  "
               f"stake cap ${pintake.MAX_RUN_STAKE:.2f}")
