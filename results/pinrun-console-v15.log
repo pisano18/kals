@@ -10,6 +10,11 @@ SELF-TEST -- pinrun
   ok   with the newest print in flight on a rising index the corrected model says YES (fair 1.0000); mean-imputation said NO (fair 0.0000) -- a wrong-side buy at ~99c
   ok   an interior gap takes the nearest print (6899.0, expected 6899.0; the window-mean rule would say 6914.2)
   ok   partial refuses a window missing more than 5% of its prints
+  ok   two fills on the SAME ticker occupy TWO entries -- keyed by order id, the second cannot overwrite the first
+  ok   and open exposure is the SUM of both stakes ($36.82), not just the last
+  ok   releasing ONE of them leaves the ticker still referenced, so the position record must NOT be dropped yet
+  ok   and only when the last one goes is the ticker free -- the null, so a release cannot fire early
+  ok   and NOTHING in the loop still keys open_pos by ticker
   ok   attempts (8) are capped ABOVE fills (3) -- separate budgets, because a lost race should cost a retry but not a fill slot
   ok   and the attempt cap is small enough that a 20 Hz loop cannot spam (8)
   ok   the attempt cap is actually READ in the loop, not merely defined
@@ -100,25 +105,7 @@ SELF-TEST -- pinrun
   ok   exchange_index is read from the market record in the universe pass
 SELF-TEST PASSED
   MODE LIVE size 1   tau<=30s  pin 0.98  edge>=0.3c net  loss abort $-90.00  SIZE 20
-  log C:\kals-repo\results\pinrun-live-20260908T224737Z.jsonl
+  log C:\kals-repo\results\pinrun-live-20260908T233214Z.jsonl
   pintake rails raised: MAX_TAKE_COUNT 10 -> 20; LOSS_ABORT $-2.00 -> $-90.00; MAX_RUN_STAKE $60.00 -> $190.00  (size 20, worst close $60.00)
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $190.00
-  index up: 14 ticks, 11 feeds
-  close 23:00Z: 4667 looks, best was KXXRP15M-26SEP081900-0 YES @0.9990 edge +0.09c (need +0.3c) -> no trade
-  SIGNAL KXSOL15M-26SEP081915-15 tau=28s buy YES @0.9180 fair 0.9810 edge +5.77c size 98.37 taking 20
-    ORDER -> status canceled filled 0.0 @ None fee None
-  SIGNAL KXDOGE15M-26SEP081915-15 tau=27s buy YES @0.9800 fair 0.9845 edge +0.31c size 71.18 taking 20
-    ORDER -> status executed filled 20.0 @ 0.98 fee 0.0013
-  SIGNAL KXSOL15M-26SEP081915-15 tau=24s buy YES @0.9690 fair 0.9949 edge +2.38c size 11.00 taking 11
-    ORDER -> status partially_filled_then_canceled filled 10.0 @ 0.969 fee 0.0021
-  close 23:15Z: 4522 looks, best was KXSOL15M-26SEP081915-1 YES @0.9180 edge +5.77c (need +0.3c) -> FIRED
-  SETTLED KXDOGE15M-26SEP081915-15 yes vs yes -> +37.25c (run realised $+0.3725)
-  SETTLED KXSOL15M-26SEP081915-15 yes vs yes -> +28.89c (run realised $+0.6614)
-  SIGNAL KXSOL15M-26SEP081930-30 tau=7s buy YES @0.9450 fair 0.9833 edge +3.46c size 20.00 taking 20
-    ORDER -> status canceled filled 0.0 @ None fee None
-  SIGNAL KXSOL15M-26SEP081930-30 tau=7s buy YES @0.9530 fair 0.9833 edge +2.71c size 108.00 taking 20
-    ORDER -> status executed filled 20.0 @ 0.94 fee 0.0039
-  SIGNAL KXSOL15M-26SEP081930-30 tau=7s buy YES @0.9010 fair 0.9833 edge +7.60c size 35.00 taking 20
-    ORDER -> status executed filled 20.0 @ 0.901 fee 0.0062
-  close 23:30Z: 4513 looks, best was KXSOL15M-26SEP081930-3 YES @0.9010 edge +7.60c (need +0.3c) -> FIRED
-  SETTLED KXSOL15M-26SEP081930-30 yes vs yes -> +185.51c (run realised $+2.5165)
+  index up: 11 ticks, 11 feeds
