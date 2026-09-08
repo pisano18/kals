@@ -78,3 +78,8 @@ SELF-TEST PASSED
   close 10:45Z: 6 looks, best was KXBNB15M-26SEP080645-4 NO @0.9960 edge +0.37c (need +0.3c) -> FIRED
   SETTLED KXBNB15M-26SEP080645-45 no vs no -> +0.37c (run realised $+0.0911)
   close 11:00Z: 1517 looks, 1517 decided, 1517 decided-but-nothing-offered, 0 undecided
+  close 11:15Z: 2898 looks, 2898 decided, 2898 decided-but-nothing-offered, 0 undecided
+  close 11:30Z: 2916 looks, 2916 decided, 2916 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXSOL15M-26SEP080745-45 tau=20s buy NO @0.9950 fair 0.0004 edge +0.42c size 107.00
+    ORDER -> status canceled filled 0.0 @ None fee None
+  close 11:45Z: 3 looks, best was KXSOL15M-26SEP080745-4 NO @0.9950 edge +0.42c (need +0.3c) -> FIRED

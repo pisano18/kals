@@ -1,0 +1,4 @@
+{"mode": "live", "tau_max": 20, "pin": 0.98, "edge_floor": 0.003, "size": 1.0, "loss_abort": -3.0, "minutes": 600.0, "t": "2026-09-08T11:45:47Z", "kind": "start"}
+{"base": "https://api.elections.kalshi.com/trade-api/v2", "stake_cap": 5.0, "t": "2026-09-08T11:45:47Z", "kind": "armed"}
+{"ticks": 11, "feeds": ["ADAUSD_RTI", "BCHUSD_RTI", "BNBUSD_RTI", "BRTI", "DOGEUSD_RTI", "ETHUSD_RTI", "HYPEUSD_RTI", "NEARUSD_RTI", "SOLUSD_RTI", "XRPUSD_RTI", "ZECUSD_RTI"], "t": "2026-09-08T11:45:49Z", "kind": "feeds"}
+{"n": 9, "added": ["KXBNB15M-26SEP080800-00", "KXBTC15M-26SEP080800-00", "KXDOGE15M-26SEP080800-00", "KXETH15M-26SEP080800-00", "KXHYPE15M-26SEP080800-00", "KXNEAR15M-26SEP080800-00", "KXSOL15M-26SEP080800-00", "KXXRP15M-26SEP080800-00", "KXZEC15M-26SEP080800-00"], "t": "2026-09-08T11:45:50Z", "kind": "watch"}

@@ -383,8 +383,35 @@ def billed_fee(price, count=1):
     return math.ceil(raw * 10000.0) / 10000.0
 
 
+MEASURED_FLIP = 0.0090   # 3 flips in 333 dear trades, corrected OOS run. The
+                         # MODEL implies ~0.06% at the prices we pay; reality
+                         # is 15x worse because of adverse selection -- a
+                         # near-certainty is only offered cheaply when the
+                         # seller may know something.
+                         # See results/PREREG_pin_live_AMENDMENT_2.md.
+EV_FLOOR = 0.003         # dollars per contract required IN EXPECTATION
+
+
+def expected_value(price, flip=MEASURED_FLIP):
+    """EV of one contract at `price`, using the MEASURED flip rate.
+
+        EV = (1-f)*(1-p) - f*p - fee
+        EV = 0  ->  p* = 1 - f = 0.991
+
+    So ANY purchase above 99.1c loses money on average, however confident the
+    model is. On 2026-09-08 five of seven live trades were above that line;
+    the night realised +9.85c against an expected +3.55c -- lucky, not right --
+    and a single loss at 99.6c would have cost 10.1x the whole night's profit.
+    """
+    p = float(price)
+    return (1.0 - flip) * (1.0 - p) - flip * p - billed_fee(p, 1)
+
+
 def net_edge(f, price, want):
     """Edge in dollars per contract AFTER the taker fee at that price.
+
+    NO LONGER THE TRADE TEST ON ITS OWN -- expected_value() is, and above ~98.5c
+    it is the binding one. This still gates on the model's view.
 
     THE FEE IS BILLED ON THE ORDER, NOT ON ONE CONTRACT, and it is ceilinged
     to $0.0001. At --size 0.01 that floor dominates: 0.07*0.01*0.99*0.01 =
@@ -490,6 +517,22 @@ def selftest():
        "partial refuses a window missing more than 5% of its prints")
 
     # --- fee-netted edge ---
+    # --- THE EXPECTED-VALUE GATE (AMENDMENT 2) ---
+    ck(abs(expected_value(1.0 - MEASURED_FLIP)) < 0.0011,
+       f"EV is ~zero exactly at p = 1 - flip = "
+       f"{1-MEASURED_FLIP:.4f} (got {100*expected_value(1-MEASURED_FLIP):+.3f}c)")
+    for p_, sign in ((0.996, -1), (0.993, -1), (0.992, -1), (0.991, -1),
+                     (0.979, +1), (0.947, +1)):
+        ev_ = expected_value(p_)
+        ck((ev_ < 0) if sign < 0 else (ev_ > 0),
+           f"a trade at {100*p_:.1f}c is "
+           f"{'NEGATIVE' if sign < 0 else 'positive'} EV "
+           f"({100*ev_:+.2f}c) -- matches the 2026-09-08 live trades")
+    ck(expected_value(0.98) > EV_FLOOR > expected_value(0.99),
+       "the EV floor puts the price ceiling between 98c and 99c")
+    ck(expected_value(0.95, flip=0.05) < 0,
+       "a higher flip rate makes even 95c negative (the gate tracks f)")
+
     e = net_edge(0.995, 0.99, "yes")
     fee = billed_fee(0.99, 1)
     ck(abs(e - (0.005 - fee)) < 1e-12,
@@ -983,6 +1026,18 @@ def trade_loop(a, rec, book, idx, series_index):
                               "price": price, "fair": f, "tau": tau,
                               "size": size}
             if e < EDGE_FLOOR:
+                continue
+            # THE EXPECTED-VALUE GATE (AMENDMENT 2). The model edge above uses
+            # the model's own confidence, which implies ~0.06% error at the
+            # prices we pay. The MEASURED rate on trades we actually take is
+            # 0.90%. At high prices that gap flips the sign of the trade:
+            # breakeven price is exactly 1 - flip = 99.1c, and five of the
+            # seven live trades on 2026-09-08 were above it and negative EV.
+            ev = expected_value(price)
+            if ev < EV_FLOOR:
+                nb["neg_ev"] = nb.get("neg_ev", 0) + 1
+                if nb["best"] is not None and nb["best"]["ticker"] == tk:
+                    nb["best"]["ev_c"] = round(100 * ev, 3)
                 continue
 
             state["signals"] += 1
