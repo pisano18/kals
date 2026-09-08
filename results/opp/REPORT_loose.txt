@@ -1,0 +1,191 @@
+SELF-TEST -- oppreport
+  ok   YES@0.95 win +0.0466 lose -0.9534 (fee 0.0034)
+  ok   the fee is billed on the ORDER, not per contract (10 @ 0.95 costs 0.0333)
+  ok   one-per-close takes the earliest, not the best
+SELF-TEST PASSED
+
+days loaded: 20260825, 20260826, 20260827, 20260828, 20260829, 20260830, 20260831, 20260901, 20260902, 20260903, 20260904, 20260905, 20260906, 20260907, 20260908
+MODE = loose
+
+PER DAY
+day        hours closes  hit  eps  >=140ms >=200ms  best_edge_c
+20260825    21     75    24   102      53      47       13.14
+20260826     9     23    15   166      70      65       68.38
+20260827    23     87    41   499     214     198       96.58
+20260828    27     95    43   875     243     204       97.86
+20260829    27     96    58   928     304     257       85.28
+20260830    27     96    48   813     263     243       91.20
+20260831    27     96    42   484     176     158       88.31
+20260901    27     96    43   777     218     180       51.25
+20260902    27     63    25   547     154     117       72.65
+20260903    26     63    29   491     131     109       23.68
+20260904    27     94    50  1277     289     239       58.08
+20260905    27     96    67  2188     441     382       27.81
+20260906    27     95    57  1964     333     277       88.31
+20260907    27     96    52  1050     300     248       84.10
+20260908    12     32    13   327      65      53       64.36
+
+PER UTC HOUR (pooled over all days)
+utc  et   eps   share  >=140  >=200  medEdge  medDur  closesHit
+  0  20   846    6.8%    198    157     0.94      20         32
+  1  21   387    3.1%     89     77     1.39      20         20
+  2  22   269    2.2%     97     86     1.67      37         22
+  3  23   272    2.2%    105     94     0.83      64         23
+  4   0   657    5.3%    163    137     1.02      17         25
+  5   1   501    4.0%    168    149     1.21      53         35
+  6   2  1016    8.1%    185    149     1.39      13         28
+  7   3  1005    8.0%    184    159     3.05      12         25
+  8   4   420    3.4%    130    125     4.48      13         26
+  9   5   180    1.4%     90     86     1.39     148         24
+ 10   6   304    2.4%    120    110     1.02      43         27
+ 11   7   339    2.7%    122    105     0.83      52         22
+ 12   8   770    6.2%    188    158     2.32      17         33
+ 13   9   456    3.7%    124    114     1.86      18         23
+ 14  10   176    1.4%     79     73     1.21      96         14
+ 15  11   115    0.9%     76     70     0.92     354         21
+ 16  12   468    3.7%    108     92     0.93      17         23
+ 17  13   320    2.6%     82     59     1.05      33         22
+ 18  14   404    3.2%    142    125     2.14      37         26
+ 19  15   361    2.9%    134    115     1.32      68         27
+ 20  16   805    6.4%    167    140     2.23      15         33
+ 21  17   795    6.4%    171    143     1.85      19         30
+ 22  18   637    5.1%    156    124     1.20      16         24
+ 23  19   985    7.9%    176    130     2.51      15         22
+
+OVERNIGHT 00-12 UTC (20:00-08:00 ET) vs US 12-24 UTC (08:00-20:00 ET)
+  overnight   eps   6196 (49.6%)  >=140ms  1651  >=200ms  1434  medEdge  1.30c  medSize    110.0  medDur     18 ms  correct  99.5%  $/contract +0.0328
+  us-session  eps   6292 (50.4%)  >=140ms  1603  >=200ms  1343  medEdge  1.69c  medSize    111.9  medDur     19 ms  correct  98.3%  $/contract +0.0275
+
+DURATION SURVIVAL (all episodes, n=12488)
+    >=     0 ms:   12488  100.0%
+    >=    50 ms:    4849   38.8%
+    >=   100 ms:    3782   30.3%
+    >=   140 ms:    3254   26.1%
+    >=   200 ms:    2777   22.2%
+    >=   500 ms:    1796   14.4%
+    >=  1000 ms:    1270   10.2%
+    >=  2000 ms:     872    7.0%
+    >=  5000 ms:     471    3.8%
+    p10            3 ms
+    p25            7 ms
+    median        19 ms
+    p75          154 ms
+    p90         1000 ms
+    p99        18000 ms
+
+WHY EPISODES END
+    second boundary (the MODEL moved, quote still there):     113    0.9%
+    book event      (the QUOTE moved):                      12038   96.4%
+    ran to the tau=3 window edge (censored):                  337    2.7%
+    of the 3254 episodes >= 140 ms, 89 (2.7%) ended because the model moved
+
+NET EDGE IN CENTS (all episodes)
+    min         0.50 c
+    p25         0.82 c
+    median      1.47 c
+    p75         3.64 c
+    p90         6.83 c
+    p99        51.25 c
+    max        97.86 c
+    [  0.5,   1.0) c :    4498   36.0%
+    [  1.0,   2.0) c :    2896   23.2%
+    [  2.0,   5.0) c :    3093   24.8%
+    [  5.0,  10.0) c :    1234    9.9%
+    [ 10.0,  25.0) c :     434    3.5%
+    [ 25.0,1000000000.0) c :     333    2.7%
+
+RESTING SIZE AT THE QUALIFYING LEVEL (contracts)
+    min           1.00
+    p10           8.00
+    p25          25.02
+    median      110.24
+    p75         533.84
+    p90        1702.77
+    max       19757.57
+    level holds >=   1 contracts:   12488  100.0%
+    level holds >=  10 contracts:   10731   85.9%
+    level holds >=  30 contracts:    9247   74.0%
+    level holds >=  50 contracts:    8266   66.2%
+    level holds >= 100 contracts:    6702   53.7%
+    among episodes >=140 ms: median 81.7, p25 20.0, >=30 contracts 69.9%
+
+MONEY -- one fire per close, EARLIEST qualifying episode, P&L from the settled result
+  full days used: 9 (20260828,20260829,20260830,20260831,20260901,20260904,20260905,20260906,20260907)
+
+  --- no reachability gate (the backtest assumption) ---
+    fires 460 over 9 days = 51.1/day; wins 451 (98.0%); mean edge 3.91c
+      size  1: $   +10.74 total = $   +1.19/day  (depth-capped on 0 of 460 fires; peak concurrent capital $0.99)
+      size 10: $  +110.72 total = $  +12.30/day  (depth-capped on 69 of 460 fires; peak concurrent capital $9.94)
+      size 30: $  +309.59 total = $  +34.40/day  (depth-capped on 141 of 460 fires; peak concurrent capital $29.82)
+
+  --- episode must last >= 140 ms ---
+    fires 434 over 9 days = 48.2/day; wins 427 (98.4%); mean edge 4.08c
+      size  1: $   +12.53 total = $   +1.39/day  (depth-capped on 0 of 434 fires; peak concurrent capital $0.99)
+      size 10: $  +121.59 total = $  +13.51/day  (depth-capped on 65 of 434 fires; peak concurrent capital $9.94)
+      size 30: $  +333.07 total = $  +37.01/day  (depth-capped on 137 of 434 fires; peak concurrent capital $29.82)
+
+  --- episode must last >= 200 ms ---
+    fires 425 over 9 days = 47.2/day; wins 418 (98.4%); mean edge 4.14c
+      size  1: $   +12.38 total = $   +1.38/day  (depth-capped on 0 of 425 fires; peak concurrent capital $0.99)
+      size 10: $  +120.44 total = $  +13.38/day  (depth-capped on 63 of 425 fires; peak concurrent capital $9.94)
+      size 30: $  +331.10 total = $  +36.79/day  (depth-capped on 132 of 425 fires; peak concurrent capital $29.82)
+
+PER-DAY P&L, one fire per close, episode >= 140 ms, size capped by measured depth
+day        fires wins    size1     size10     size30
+20260828    40   39      +1.38     +13.15     +36.17
+20260829    53   53      +1.87     +17.45     +44.51
+20260830    47   45      -0.03      +4.42     +13.95
+20260831    40   40      +1.55     +14.14     +38.90
+20260901    41   40      +0.73      +6.09     +16.59
+20260904    47   47      +1.55     +12.72     +34.50
+20260905    63   63      +1.76     +16.17     +42.17
+20260906    52   52      +2.37     +21.48     +59.63
+20260907    51   48      +1.35     +15.97     +46.65
+TOTAL                  +12.53    +121.59    +333.07
+PER DAY                 +1.39     +13.51     +37.01
+DAYS POSITIVE             8/9        9/9        9/9
+
+MODEL CORRECTNESS AT THE GATE (all episodes, per market)
+    decided side correct on 12354 of 12488 episodes = 98.93%
+
+    BY EPISODE DURATION -- the crux. A quote that stays put is
+    a quote nobody else wants; a quote that vanishes in 10 ms is
+    one we cannot reach.
+      duration          n   correct   mean_edge_c   $/contract
+          0-50          7639    99.0%        3.76      +0.0297
+         50-140         1595    98.9%        3.05      +0.0210
+        140-200          477    98.3%        2.91      +0.0142
+        200-500          981    98.9%        2.25      +0.0128
+        500-1000         526    99.2%        1.95      +0.0137
+       1000-2000         398    98.5%        2.61      +0.0142
+       2000-5000         401    98.5%        2.97      +0.0184
+       5000-inf          471    98.3%       17.56      +0.1621
+
+    BY MODEL EDGE AT THE START
+      edge_c            n   correct   mean_dur_ms   $/contract
+        0.5-1            4498    99.8%         271      +0.0057
+        1.0-2            2896    99.8%         510      +0.0139
+        2.0-5            3093    99.5%         470      +0.0304
+        5.0-10           1234    98.9%         915      +0.0588
+       10.0-25            434    95.9%        2982      +0.1266
+       25.0-inf           333    78.1%        6704      +0.2660
+
+    BY TAU AT EPISODE START
+      tau= 3  n=   188  correct  95.2%  $/contract   -0.0026
+      tau= 4  n=   309  correct 100.0%  $/contract   +0.0466
+      tau= 5  n=   325  correct  99.4%  $/contract   +0.0208
+      tau= 6  n=   507  correct 100.0%  $/contract   +0.0364
+      tau= 7  n=   464  correct  97.8%  $/contract   +0.0140
+      tau= 8  n=   552  correct  99.6%  $/contract   +0.0427
+      tau= 9  n=   585  correct 100.0%  $/contract   +0.0404
+      tau=10  n=   668  correct 100.0%  $/contract   +0.0544
+      tau=11  n=   633  correct  99.5%  $/contract   +0.0308
+      tau=12  n=   632  correct  97.9%  $/contract   +0.0167
+      tau=13  n=   848  correct  98.9%  $/contract   +0.0193
+      tau=14  n=   733  correct  99.7%  $/contract   +0.0366
+      tau=15  n=   721  correct  99.9%  $/contract   +0.0324
+      tau=16  n=   890  correct  99.9%  $/contract   +0.0253
+      tau=17  n=   901  correct  99.7%  $/contract   +0.0195
+      tau=18  n=   914  correct  97.3%  $/contract   +0.0216
+      tau=19  n=   880  correct  98.5%  $/contract   +0.0085
+      tau=20  n=  1738  correct  97.6%  $/contract   +0.0478
