@@ -35,7 +35,37 @@ constants**, so they stay meaningful at any setting.
 
 ---
 
-## v7 — CURRENT (2026-09-08 16:12 UTC)
+## v8 — CURRENT (2026-09-08 16:35 UTC)
+
+| setting | value |
+|---|---|
+| **price ceiling** | **96.0¢** (was 98.8¢) |
+| size | 5 contracts |
+| buys per close | up to 2, second only if ≥0.5¢ cheaper |
+| window | tau 3–30 s |
+| loss abort | −$21.00 |
+
+**Change from v7: price ceiling 98.8¢ → 96.0¢.** Safer AND more profitable —
+measured on 5,219 qualifying moments:
+
+| ceiling | closes | avg price | headroom | profit/close | total |
+|---|---|---|---|---|---|
+| ≤98.8¢ | 83 | 93.94¢ | 1.4× | 7.42¢ | 616¢ |
+| **≤96.0¢** | **58** | **90.80¢** | **4.4×** | **11.20¢** | **650¢** |
+
+30% fewer trades, **+51% profit per opportunity**, 3× the safety margin, and
+slightly more total profit. The dear trades were never paying for the risk.
+
+**The principle: the price paid sets how wrong we are allowed to be.** At 96¢
+we lose money only above a **4.0%** error rate; at 98.8¢ only above **1.2%**.
+Measured rate: **0.90%**.
+
+**Revert:** `PRICE_CEILING = 0.988`.
+**Revert trigger:** fewer than 10 fired closes per day — too tight to learn.
+
+---
+
+## v7 — 2026-09-08 16:12 UTC
 
 | setting | value |
 |---|---|

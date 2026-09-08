@@ -1,0 +1,7 @@
+{"mode": "live", "tau_min": 3, "tau_max": 30, "pin": 0.98, "edge_floor": 0.003, "ev_floor": 0.003, "measured_flip": 0.009, "max_per_close": 2, "improve_by": 0.005, "min_level": 1.0, "max_book_age_ms": 2000, "max_index_age_s": 2, "sigma_stress": 1.0, "sigma_win": 300, "size": 5.0, "loss_abort": -21.0, "max_positions": 3, "minutes": 720.0, "price_ceiling": 0.988, "t": "2026-09-08T16:14:31Z", "kind": "start"}
+{"base": "https://api.elections.kalshi.com/trade-api/v2", "stake_cap": 60.0, "t": "2026-09-08T16:14:31Z", "kind": "armed"}
+{"ticks": 11, "feeds": ["ADAUSD_RTI", "BCHUSD_RTI", "BNBUSD_RTI", "BRTI", "DOGEUSD_RTI", "ETHUSD_RTI", "HYPEUSD_RTI", "NEARUSD_RTI", "SOLUSD_RTI", "XRPUSD_RTI", "ZECUSD_RTI"], "t": "2026-09-08T16:14:32Z", "kind": "feeds"}
+{"n": 9, "added": ["KXBNB15M-26SEP081215-15", "KXBTC15M-26SEP081215-15", "KXDOGE15M-26SEP081215-15", "KXETH15M-26SEP081215-15", "KXHYPE15M-26SEP081215-15", "KXNEAR15M-26SEP081215-15", "KXSOL15M-26SEP081215-15", "KXXRP15M-26SEP081215-15", "KXZEC15M-26SEP081215-15"], "t": "2026-09-08T16:14:33Z", "kind": "watch"}
+{"n": 10, "added": ["KXZEC15M-26SEP081230-30"], "t": "2026-09-08T16:15:13Z", "kind": "watch"}
+{"n": 17, "added": ["KXBNB15M-26SEP081230-30", "KXBTC15M-26SEP081230-30", "KXETH15M-26SEP081230-30", "KXHYPE15M-26SEP081230-30", "KXNEAR15M-26SEP081230-30", "KXSOL15M-26SEP081230-30", "KXXRP15M-26SEP081230-30"], "t": "2026-09-08T16:15:34Z", "kind": "watch"}
+{"n": 18, "added": ["KXDOGE15M-26SEP081230-30"], "t": "2026-09-08T16:15:53Z", "kind": "watch"}

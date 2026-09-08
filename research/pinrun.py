@@ -408,6 +408,14 @@ MEASURED_FLIP = 0.0090   # 3 flips in 333 dear trades, corrected OOS run. The
                          # seller may know something.
                          # See results/PREREG_pin_live_AMENDMENT_2.md.
 EV_FLOOR = 0.003         # dollars per contract required IN EXPECTATION
+PRICE_CEILING = 0.96     # AMENDMENT 5. The price paid sets how wrong we may
+                         # be: at 96c we lose money only above a 4.0% flip
+                         # rate, at 98.8c only above 1.2%, and our measured
+                         # rate is 0.90%. Tightening 98.8c -> 96c measured
+                         # 30%% fewer closes but +51%% profit per opportunity
+                         # (7.42c -> 11.20c) and 3x the safety margin, for
+                         # roughly the same total. The dear trades were never
+                         # paying for the risk they carried.
 
 
 def expected_value(price, flip=MEASURED_FLIP):
@@ -1065,6 +1073,9 @@ def trade_loop(a, rec, book, idx, series_index):
             # the risk without lowering the average paid, which is the whole
             # mechanism -- a lower price wins more AND loses less.
             if prev is not None and price >= prev["best"] - IMPROVE_BY:
+                continue
+            if price > PRICE_CEILING:
+                nb["over_ceiling"] = nb.get("over_ceiling", 0) + 1
                 continue
             ev = expected_value(price)
             if ev < EV_FLOOR:
