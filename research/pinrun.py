@@ -139,12 +139,24 @@ EDGE_FLOOR = 0.003     # AFTER fee. 0.5c -> 0.3c per
                        # Better on every dimension measured. REVERTS to
                        # 0.005 if the live flip rate exceeds 1.0%.
 SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
-MAX_PER_CLOSE = 2      # AMENDMENT 3: buys per close, adding only when the
-                       # price IMPROVES. Measured over 70 closes: 4.18c ->
-                       # 8.87c per opportunity, and the average price paid
-                       # FELL 95.53c -> 94.28c. Cap 2 not 3 because 3 takes
-                       # worst-case exposure to ~$2.83, which would nearly
-                       # trip the -$3.00 abort in a single bad close.
+MAX_PER_CLOSE = 2        # AMENDMENT 7 WITHDRAWN 2026-09-08 before it traded.
+                         # 3 measured BETTER on risk, not worse: at the 2.31%
+                         # upper bound, size 20 cap 3 and size 25 cap 2 give an
+                         # IDENTICAL median ($303.97 vs $303.96) while cap 3 is
+                         # ruined 1.1% of the time against 2.8%. The measurement
+                         # stands and is recorded in results/VERSIONS.md.
+                         # IT IS WITHDRAWN ANYWAY, because cap 3 HAS NEVER
+                         # TRADED LIVE and I deployed it in the same breath as
+                         # a doubling of size. Two changes at once, one of them
+                         # unproven, is precisely what the operator had already
+                         # ruled out: "We shouldn't necessarily be pushing out
+                         # updates before seeing the current version work
+                         # correctly if they build on eachother at all."
+                         # Cap 2 is the rule that has won 18 of 18 live.
+                         # A measured improvement is not the same thing as a
+                         # proven one, and the difference is the operator's
+                         # money.
+
 IMPROVE_BY = 0.005     # a second buy must be at least this much cheaper
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # our own size: a 0.01-contract order against a
@@ -587,6 +599,31 @@ def selftest():
 
     # --- fee-netted edge ---
     # --- THE EXPECTED-VALUE GATE (AMENDMENT 2) ---
+    # --- the LOSS-COUNT brake (added 2026-09-08, first funded deployment) ---
+    class _AL:
+        loss_abort = -1e9
+        max_positions = 99
+        size = 20.0
+        max_losses = 3
+    _sv = dict(pintake.LEDGER)
+    try:
+        pintake.reset_ledger()
+        pintake.LEDGER["losses"] = 2
+        ck(risk_abort({"halted": False, "errors": 0}, _AL) is None,
+           "2 losses does NOT halt a run whose brake is 3")
+        pintake.LEDGER["losses"] = 3
+        _r = risk_abort({"halted": False, "errors": 0}, _AL)
+        ck(_r is not None and "loss COUNT" in _r,
+           f"3 losses DOES halt it, on COUNT and not on dollars ({_r})")
+        _AL2 = type("X", (), dict(loss_abort=-1e9, max_positions=99,
+                                  size=20.0, max_losses=0))
+        ck(risk_abort({"halted": False, "errors": 0}, _AL2) is None,
+           "and max_losses=0 DISABLES it -- the null, so the brake cannot fire "
+           "on a run that never asked for it")
+    finally:
+        pintake.LEDGER.clear()
+        pintake.LEDGER.update(_sv)
+
     # --- AMENDMENT 6: partial fills, and a slot consumed by a FILL ----------
     ck(0.0 < MIN_FILL_FRAC <= 1.0,
        f"MIN_FILL_FRAC is a fraction ({MIN_FILL_FRAC})")
@@ -628,6 +665,12 @@ def selftest():
     ck(_fired[1]["n"] == 2 and _fired[1]["best"] == 0.93,
        "a second fill books the second slot and LOWERS the bar to the better "
        "price")
+    # FILL THE REST RELATIVE TO THE CONSTANT. Writing "2" here was correct at
+    # MAX_PER_CLOSE = 2 and became a false alarm the moment the cap moved to 3
+    # -- the same shape as pintake's "count 2 must be refused" test. Rail tests
+    # are written in terms of the rail, never as a literal.
+    for _k in range(2, int(MAX_PER_CLOSE)):
+        _slot(1, 0.93 - 0.01 * (_k - 1))
     ck(_fired[1]["n"] >= MAX_PER_CLOSE,
        f"and {MAX_PER_CLOSE} FILLS still exhaust the close -- max exposure is "
        f"UNCHANGED by this amendment, only wasted attempts are recovered")
@@ -936,6 +979,17 @@ def risk_abort(state, a):
     if len(led.get("positions") or {}) >= a.max_positions:
         return (f"position cap: {len(led['positions'])} open "
                 f">= {a.max_positions}")
+    # THE LOSS-COUNT BRAKE. The dollar brake asks "have we lost too much?".
+    # This asks a different and more important question: "is the model still
+    # the thing we think it is?" The entire edge rests on a 0.90% flip rate
+    # measured from THREE events, out of sample, under an older rule. If losses
+    # arrive faster than that rate predicts, the right response is to STOP AND
+    # RE-MEASURE, not to keep trading until a dollar figure is reached. At ~50
+    # trades a day a 0.90% rate predicts 0.45 losses per day, so three in one
+    # run is roughly a 1% event -- rare enough to deserve a human look.
+    if getattr(a, "max_losses", 0) and             int(led.get("losses", 0) or 0) >= a.max_losses:
+        return (f"loss COUNT brake: {led['losses']} losing trades this run "
+                f">= {a.max_losses}; stop and re-measure the flip rate")
     if state.get("order_errors", 0) >= 2:
         return f"{state['order_errors']} errors on the ORDER path"
     if state["errors"] >= 5:
@@ -1086,6 +1140,12 @@ def trade_loop(a, rec, book, idx, series_index):
             _release(tk, cost, nfill)
             state["settled"] = state.get("settled", 0) + 1
             state["wins"] = state.get("wins", 0) + int(won)
+            if not won:
+                pintake.LEDGER["losses"] = int(
+                    pintake.LEDGER.get("losses", 0) or 0) + 1
+                state["losses"] = state.get("losses", 0) + 1
+                print(f"  *** A LOSS. run losses "
+                      f"{pintake.LEDGER['losses']} ***")
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
                 pnl_c=round(100 * pnl, 2),
                 realised=round(pintake.LEDGER["realised"], 4))
@@ -1414,6 +1474,11 @@ def main():
                          "proving order/fill/settle/payout end to end")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
+    ap.add_argument("--max-losses", type=int, default=0,
+                    help="halt after this many LOSING trades, whatever the "
+                         "dollars. 0 disables. The dollar brake asks 'have we "
+                         "lost too much'; this asks 'is the model still what "
+                         "we think it is'.")
     a = ap.parse_args()
     # The frozen rule is frozen. Widening it must be a code edit and a commit,
     # not a flag: pintake's own MAX_TAU is 90 s, so --tau-max 60 would have

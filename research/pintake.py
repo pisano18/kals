@@ -227,6 +227,14 @@ def _fresh_ledger():
         "filled_dollars": 0.0,     # from FILLS in responses, never from intents
         "fees": 0.0,
         "realised": 0.0,           # settled P&L, recorded by record_pnl()
+        "losses": 0,               # COUNT of losing settlements. Distinct from
+                                   # "realised" on purpose: dollars answer "have
+                                   # we lost too much", a COUNT answers "is the
+                                   # model still what we think it is". The whole
+                                   # edge rests on a 0.90% flip rate measured
+                                   # from three events, so the arrival RATE of
+                                   # losses is the first thing that would tell
+                                   # us the number is wrong.
         "sends": 0,
         "unknown": 0,
         "rested": 0,               # IOCs that came back with live contracts
