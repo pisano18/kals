@@ -35,7 +35,96 @@ constants**, so they stay meaningful at any setting.
 
 ---
 
-## v11 — CURRENT (2026-09-08 21:39 UTC) — MORE BETS, same maximum exposure
+## v14 — CURRENT (2026-09-08 22:47 UTC) — funded, size 20, cap 3
+
+| setting | value |
+|---|---|
+| **bank** | **$154.33**, all on the Crypto shard |
+| size | **20 contracts** |
+| buys per close | **3**, each ≥0.5¢ cheaper than the last |
+| partial fills | down to 50% of size |
+| price ceiling | 98.8¢ |
+| worst case, one close | $60 |
+| dollar brake | −$90 |
+| **loss-count brake** | **3 losing trades** |
+| **attempts per close** | **8**, separate from the 3-fill cap |
+| max open positions | 4 |
+| pid / code sha | 4074664 / `e4cdb6320807` |
+
+The operator funded the account. The $150 landed on exchange_index 0, where it
+could not have bought anything, and $113.0360 was moved to the Crypto shard.
+
+---
+
+## THE RUNAWAY — 2026-09-08 22:44:30Z, 160 refused orders in one second
+
+**No money lost. Balance unchanged, zero fills, zero open positions.** Caught by
+the monitor and stopped within seconds.
+
+**Two of my own changes collided, and neither was wrong alone.**
+
+1. **`pintake.MAX_TAKE_COUNT` was still 10**, so every order at size 20 was
+   silently refused. **The FOURTH size-1 literal to break scaling in one day**,
+   after the loss-abort range, the run-stake cap and the stake release.
+   `take()` *returns* its violations rather than raising, so nothing noticed:
+   the order records carry `status_code: null`, `parsed: false`, `error: null`.
+2. **AMENDMENT 6 had just stopped a no-fill from consuming a scale-in slot.**
+   That is correct — an unfilled order creates no exposure — and it earned
+   +27.96¢ within five minutes of deployment. But it left **nothing bounding
+   how many times we may try**, so a permanently refused order retried at 20 Hz
+   forever.
+
+**Fills and attempts needed separate budgets and only had one.**
+
+### Three fixes
+
+| | |
+|---|---|
+| `set_limits()` now raises `MAX_TAKE_COUNT` too | and `HARD_MAX` with it, announced, never silently. Still refuses to lower either. |
+| a returned refusal is now an **error** | `order_errors` increments, so two in a row halt the run |
+| `MAX_ATTEMPTS_PER_CLOSE = 8` | counted **before** the send, so a call that never returns still consumes one |
+
+**Verified against the production endpoint without sending:** `check_take` at
+size 20 returned `['count 20.0 exceeds MAX_TAKE_COUNT 10.0']` before the fix and
+`[]` after.
+
+### The lesson, and it is the second time today
+
+I verified the process **started** and that its start record described the right
+configuration. **I did not verify that an order at the new size would be
+ACCEPTED.** That is one function call, no network, no money, and it is now part
+of every deployment. *"The process is alive"* and *"the process can trade"* are
+different claims.
+
+---
+
+## v13 — 2026-09-08 22:15 UTC — cap 2 → 3
+
+**Withdrawn, then reinstated at the operator's instruction** (*"if you know the
+idea works then do it"*). It is **not a new mechanism**: the scale-in rule has
+been live since v3 and has produced second buys on real closes. Cap 3 only lets
+the same proven rule repeat once more, and **the trade it adds is the cheapest
+of the close** — every extra buy must clear `IMPROVE_BY`, so a third buy is at
+least 1.0¢ below the first. Cheaper wins more *and* loses less, so cap 3 cannot
+degrade the average price paid. Structurally, not merely empirically.
+
+Measured with losses injected per close at the 2.31% exact upper bound:
+
+| | typical result | ruined |
+|---|---|---|
+| size 20, cap 2 | $271 | 3.4% |
+| **size 20, cap 3** | **$304** | **1.1%** |
+
+**12% more money and a third of the ruin.** What it costs is exposure, not
+per-contract risk.
+
+**The self-test found the deployment bug for free.** With `--max-positions 3`,
+the third buy plus a straggler still settling from the previous close would have
+been silently refused. The flag is now 4.
+
+---
+
+## v11 — 2026-09-08 21:39 UTC — MORE BETS, same maximum exposure
 
 | setting | value |
 |---|---|
