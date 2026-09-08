@@ -295,10 +295,24 @@ def fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
     return ND.cdf((mu - K) / sd)
 
 
+def billed_fee(price, count=1):
+    """The fee Kalshi ACTUALLY charges, not the raw formula.
+
+    Measured over the account's whole taker fill history (8 fills, 0.02 to
+    54.99 contracts): fee_cost == ceil(0.07*count*p*(1-p) to the next $0.0001)
+    every time. Not nearest-rounded (0.0003387 -> 0.0004 and 0.0003450 ->
+    0.0004 both refute that) and NOT rounded up to a whole cent, which would
+    have killed a 1-3c edge at size 1. Using the ceiling here keeps the edge
+    test conservative rather than flattering by up to 0.0075c.
+    """
+    raw = pintake.expected_fee(price, count)
+    return math.ceil(raw * 10000.0) / 10000.0
+
+
 def net_edge(f, price, want):
     """Edge in dollars per contract AFTER the taker fee at that price."""
     gross = (f - price) if want == "yes" else ((1.0 - f) - price)
-    return gross - pintake.expected_fee(price, 1)
+    return gross - billed_fee(price, 1)
 
 
 # ===========================================================================
@@ -350,15 +364,36 @@ def selftest():
 
     # --- fee-netted edge ---
     e = net_edge(0.995, 0.99, "yes")
-    fee = pintake.expected_fee(0.99, 1)
+    fee = billed_fee(0.99, 1)
     ck(abs(e - (0.005 - fee)) < 1e-12,
        f"net edge subtracts the taker fee ({100 * e:.3f}c at p=0.99)")
+    # the BILLED fee is the ceiling to $0.0001, measured on real fills
+    ck(abs(billed_fee(0.95, 1) - 0.0034) < 1e-12,
+       f"billed fee at p=0.95 is $0.0034, not the raw $0.003325 "
+       f"({billed_fee(0.95,1)})")
+    ck(billed_fee(0.98, 1) >= pintake.expected_fee(0.98, 1),
+       "the billed fee is never below the raw formula (conservative)")
     ck(net_edge(0.9999, 0.995, "yes") > 0 > net_edge(0.9999, 0.9999, "yes"),
        "edge sign behaves at the boundary")
     # a NO take: fair 0.001, buying NO at 0.99 -> gross 0.999-0.99 = 0.9c
     ck(abs(net_edge(0.001, 0.99, "no") -
-           (0.009 - pintake.expected_fee(0.99, 1))) < 1e-12,
+           (0.009 - billed_fee(0.99, 1))) < 1e-12,
        "NO-side edge is (1-fair) - price - fee")
+    # the order bodies for both sides, built by pintake, checked by hand
+    by = pintake.build_take("T-00", "yes", 0.9910, 1)
+    bn = pintake.build_take("T-15", "no", 0.9890, 1)
+    ck(by["side"] == "bid" and by["price"] == "0.9910",
+       f"YES take is a bid at the seen price ({by['side']} {by['price']})")
+    ck(bn["side"] == "ask" and bn["price"] == "0.0110",
+       f"NO take at 0.989 is an ask at 0.0110 = the yes bid we hit "
+       f"({bn['side']} {bn['price']})")
+    ck(abs(pintake.stake(bn) - 0.9890) < 1e-9,
+       f"a NO take at 0.989 costs $0.989, not $0.011 "
+       f"(${pintake.stake(bn):.4f})")
+    ck(by["post_only"] is False and bn["post_only"] is False,
+       "both bodies have post_only False -- pin must cross, never rest")
+    ck(by["time_in_force"] in ("immediate_or_cancel", "fill_or_kill"),
+       f"tif never rests ({by['time_in_force']})")
 
     # --- index staleness ---
     idx3 = IndexWS(["S"])
