@@ -37,12 +37,32 @@ CORRECTIONS TO THE BACKTEST'S MODEL, both measured on this tape today:
      custom_strike.round_digits is 2 for BTC/ETH/BNB and 4 for the rest;
      Kalshi rounds the 60-print mean to that many digits, writes it as
      expiration_value, and settles YES iff expiration_value >= floor_strike.
-     So the true threshold is K - 0.5*10^-d, not K. THIS IS THE ONLY LOSS IN
-     TODAY'S REPLAY: KXETH15M-26SEP071745-45, strike 2492.82, settle
-     2492.8158 -> rounds to 2492.82 -> YES. The model called it fair 0.017 and
-     would have bought NO at 0.903, losing 90.91c against the seven wins of
-     +0.56 to +4.76c that the same three hours produced. One line of code is
-     the difference between +7.7c and -79.2c over those closes.
+     So the true threshold is K - 0.5*10^-d, not K. A market lands inside that
+     band 2.46% of the time (266 of 10,796 settled markets; DOGE 19.8% of the
+     time, BTC never), so it is worth pricing correctly.
+
+     RETRACTION, and it matters. This correction was first reported -- by the
+     replay that found it, and repeated by me to the operator -- as the thing
+     that turns the replayed three hours from -79.2c into +7.7c, because the
+     single loss (KXETH15M-26SEP071745-45, strike 2492.82, settle 2492.8158 ->
+     rounds to 2492.82 -> YES) sits in the band. RECONSTRUCTING THAT MARKET
+     TICK BY TICK SHOWS THAT IS FALSE. With BOTH corrections applied, fair at
+     tau=5 is 0.0052 -- still under the 0.02 gate, so pin still buys NO at
+     0.903 and still loses 90.91c:
+
+         tau   old window      +window fix    +rounding fix     sd
+          10     0.5085          0.5471          0.6049       0.0338
+           6     0.0145          0.0133          0.0294       0.0153
+           5     0.0025          0.0013          0.0052       0.0113
+           4     0.2476          0.2286          0.4577       0.0078
+
+     The actual cause of that loss is SPOT SUBSTITUTION: the index dipped to
+     2492.60 at tau 5-6, the model extrapolated the dip across the remaining
+     prints, and the index came back to 2493.08 by tau=3. Both corrections are
+     right and stay; neither prevents that trade. The honest statement is that
+     the replayed three hours are 7 wins of +0.56 to +4.76c against one loss of
+     -90.91c that the corrections DO NOT remove, and that n=12 closes says
+     nothing about the edge either way.
 
 RAILS, and why each one exists:
   * the abort block is the FIRST statement in the loop, before any branch.
@@ -515,11 +535,52 @@ def trade_loop(a, rec, book, idx, series_index):
     seen_markets = {}          # ticker -> (iid, close_s, strike, digits)
     uni_at = 0.0
     watching = set()
+    open_pos = {}            # ticker -> (close_s, want, cost) awaiting settlement
     state = {"halted": False, "errors": 0, "signals": 0, "considered": 0}
     end = time.time() + a.minutes * 60
 
 
+    def reconcile():
+        """Book settled P&L so the loss abort is a REAL brake, not a nominal one.
+
+        pin holds to settlement, which lands after the close. Without this the
+        ledger's `realised` never moves and the only true bound on a run is the
+        stake cap. Each closed position is looked up once; a market that has
+        not finalised yet is left for the next pass.
+        """
+        for tk in list(open_pos):
+            close_s, want, cost = open_pos[tk]
+            if time.time() < close_s + 20:
+                continue                      # not settled yet
+            try:
+                st, b = get("/markets/" + tk)
+            except Exception:
+                continue
+            if st != 200 or not isinstance(b, dict):
+                continue
+            m = b.get("market") or {}
+            if m.get("status") != "finalized":
+                if time.time() > close_s + 900:
+                    open_pos.pop(tk, None)    # give up rather than leak
+                continue
+            res = m.get("result")
+            if res not in ("yes", "no"):
+                open_pos.pop(tk, None)
+                continue
+            won = (res == want)
+            pnl = (1.0 - cost) if won else (-cost)
+            pintake.record_pnl(pnl, note=f"{tk} {want} vs {res}")
+            open_pos.pop(tk, None)
+            state["settled"] = state.get("settled", 0) + 1
+            state["wins"] = state.get("wins", 0) + int(won)
+            rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
+                pnl_c=round(100 * pnl, 2),
+                realised=round(pintake.LEDGER["realised"], 4))
+            print(f"  SETTLED {tk} {want} vs {res} -> {100 * pnl:+.2f}c "
+                  f"(run realised ${pintake.LEDGER['realised']:+.4f})")
+
     while time.time() < end:
+        reconcile()
         stop = risk_abort(state, a)
         if stop:
             state["halted"] = True
@@ -619,6 +680,8 @@ def trade_loop(a, rec, book, idx, series_index):
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
                   f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f}")
 
+            if not live:
+                open_pos[tk] = (close_s, want, price)
             if live:
                 try:
                     out = pintake.take(CREDS["base"], CREDS["pk"],
@@ -626,6 +689,13 @@ def trade_loop(a, rec, book, idx, series_index):
                                        SIZE, close_s)
                     rec("order", ticker=tk, **{k: v for k, v in out.items()
                                                if k != "raw"})
+                    filled = float(out.get("filled") or 0)
+                    if filled > 0:
+                        px = out.get("exec_price")
+                        cost = float(px) if px is not None else float(price)
+                        open_pos[tk] = (close_s, want, cost)
+                        state["fills"] = state.get("fills", 0) + 1
+                    state["sent"] = state.get("sent", 0) + 1
                     print(f"    ORDER -> status {out.get('status')} "
                           f"filled {out.get('filled')} "
                           f"@ {out.get('exec_price')} fee {out.get('fee')}")

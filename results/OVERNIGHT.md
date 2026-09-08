@@ -53,8 +53,25 @@ This is not academic. It is the ONLY loss in today's replay:
 > Rounds to 2492.82 → **YES**. Our model: fair 0.017, i.e. "98% sure NO",
 > and would have bought NO at 0.903 for **−90.91c**.
 
-Over the replayed hours that one line is the difference between **+7.7c and
-−79.2c**.
+**RETRACTION (dated 2026-09-08, before any live order).** This was first
+reported — and I repeated it — as the fix that turns those three hours from
+−79.2c into +7.7c. **That is false.** Reconstructing the market tick by tick,
+with BOTH corrections applied fair at tau=5 is **0.0052 — still under the
+0.02 gate**, so pin still buys NO at 0.903 and still loses 90.91c:
+
+| tau | old window | +window fix | +rounding fix | sd |
+|---|---|---|---|---|
+| 10 | 0.5085 | 0.5471 | 0.6049 | 0.0338 |
+| 6 | 0.0145 | 0.0133 | 0.0294 | 0.0153 |
+| 5 | 0.0025 | 0.0013 | **0.0052** | 0.0113 |
+| 4 | 0.2476 | 0.2286 | 0.4577 | 0.0078 |
+
+The real cause is **spot substitution**: the index dipped to 2492.60 at
+tau 5–6, the model extrapolated that dip across the remaining prints, and it
+came back to 2493.08 by tau=3. Both corrections are right and stay in;
+neither prevents that trade. A market lands inside the rounding band 2.46% of
+the time (266/10,796; DOGE 19.8%, BTC never), so the fix is still worth
+having — just not for the reason first claimed.
 
 ## What the replay actually showed (3 h, 12 closes, 108 markets)
 
