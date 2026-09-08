@@ -468,34 +468,20 @@ loss abort −$3.00. First real trade 08:00Z (BTC YES @0.992, won +0.74¢).
 
 | | |
 |---|---|
-| won / lost | **20 / 0** |
-| bank | **$154.9908** on the Crypto shard |
-| biggest single trade | +103.14¢ (BTC, 10 at 89¢) |
+| won / lost | **23 / 0** |
+| bank | **$158.9173** on the Crypto shard |
+| profit today | **+$7.05** |
+| biggest single trade | **+185.51¢** (SOL, 20 at 90.1¢) |
+| second biggest | +103.14¢ (BTC, 10 at 89.0¢) |
 | price paid, live | min **89.0¢**, max 99.60¢ |
 
-### The 23:15 close is the clearest evidence yet that AMENDMENT 6 was right
+**The two biggest trades were the two cheapest prices.** Break-even at 90¢ is a
+10% error rate against a measured 0.90%; at 98¢ it is 2%. Cheaper wins more AND
+loses less.
 
-```
-23:14:32  SOL  @91.8c   race LOST, filled 0
-23:14:33  DOGE @98.0c   FILLED 20        +37.25c
-23:14:36  SOL  @96.9c   FILLED 10 of 11  +28.89c
-```
-
-**Under the old rule that close makes ZERO trades.** The lost race at 91.8¢
-would have burned a slot *and* set the improve bar at 91.8¢, blocking both
-trades that followed. Counterfactual, run explicitly: old rule 0 fills, new rule
-2 fills, **+66.14¢ from a close that would have been silent.**
-
-The second SOL order also fired the **partial-fill** rule for the first time: it
-asked for 11 contracts because only 11 were offered, 11 clears the half-of-20
-threshold, and the exchange filled 10. That change measured only +1.3% in
-backtest and produced a 28.89¢ trade here.
-
-Bank reconciles exactly: $154.3294 − $29.29 stakes − $0.0486 fees + $30.00
-payouts = **$154.9908**, which is what the account reads.
-
-**Standing caveat:** at the measured 0.90% flip rate, 20 straight wins is the
-EXPECTED outcome. Nothing about the tail has been observed live.
+**Standing caveat:** at the measured 0.90% flip rate, 23 straight wins is the
+EXPECTED outcome (0.21 losses expected). Nothing about the tail has been
+observed live, and the streak is not evidence either way.
 
 ## What to check first if it starts losing
 

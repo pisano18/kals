@@ -1,3 +1,89 @@
+# 2026-09-08 late night -- FUNDED at $154, size 20, and three more of my own bugs found and fixed live
+
+**Five lines:** (1) The operator funded the account; the deposit landed on
+exchange_index 0 where it could buy nothing, and $113.0360 was moved to the
+Crypto shard. **Bank $158.92, up $7.05 on the day, 23 wins and 0 losses.**
+(2) **A RUNAWAY sent 160 refused orders into one close in one second** --
+`MAX_TAKE_COUNT` was still 10 (the FOURTH size-1 literal of the day) so every
+size-20 order was silently refused, and AMENDMENT 6 had just removed the only
+thing bounding retries. **No money lost.** Fills and attempts now have separate
+budgets. (3) **Two fills on the SAME ticker overwrote each other** --
+`open_pos` was keyed by ticker, so a 112.10c win went unbooked and its $18.80
+stake unreleased. The bank was right; the ledger was not. Now keyed by order id.
+(4) **AMENDMENT 6 proved itself twice on live tape**: at the 23:15Z close a lost
+race at 91.8c would, under the old rule, have burned a slot and blocked both
+trades that followed -- **0 fills instead of 2, +66.14c from a close that would
+have been silent.** (5) **The hedge is WEAKER than I first reported** and the
+correction is recorded: only 6 of 12 hedges are deep enough at size 20, and at a
+90% trigger the other side costs 76-98c, so it saves ~8% of a loss, not the
+"30x ruin reduction" I quoted.
+
+## The three bugs, and what they share
+
+| bug | mechanism | why it mattered |
+|---|---|---|
+| `MAX_TAKE_COUNT = 10` | silently refused every size-20 order; `take()` RETURNS refusals rather than raising | 160 orders, 0 fills, no error logged |
+| no attempt cap | AMENDMENT 6 stopped a no-fill burning a FILL slot (correct) but nothing bounded TRIES | 20 Hz retry loop |
+| `open_pos` keyed by ticker | a second fill on the same market overwrote the first | a missing **loss** would be invisible to the loss abort |
+
+**All three are the same lesson in different clothes: a constant or a key that
+was correct at size 1 and one-fill-per-close, and wrong afterwards.** That is
+now seven distinct instances in one day.
+
+**And two of them were caused by my own earlier fixes.** AMENDMENT 6 is right --
+an unfilled order creates no exposure and must not consume an exposure budget,
+and it earned +27.96c within five minutes -- but it removed a bound without
+replacing it. `MAX_PER_CLOSE = 3` is right on every measurement, and it made
+same-ticker repeats more likely two hours before one fired.
+
+## The deployment check I had been skipping
+
+I verified processes **started**, and that their start records described the
+right configuration. I did not verify that an order **at the new size would be
+ACCEPTED**. That is one call to `check_take`, no network and no money, and it is
+now part of every deployment. *"The process is alive"* and *"the process can
+trade"* are different claims and I conflated them twice in one day.
+
+## Live configuration
+
+| | |
+|---|---|
+| bank | **$158.92**, Crypto shard |
+| size / cap | 20 contracts, 3 buys per close, partials to 50% |
+| ceiling | 98.8c |
+| brakes | **-$90**, **3 losses**, 2 order errors, 8 attempts/close |
+| max open positions | 4 |
+
+`results/LOSS_PLAN.md` is written and covers what happens at one, two and three
+losses, and names the number that ends the strategy: a live flip rate above
+**2.31%** over 50+ settled trades.
+
+## Cheap prices are where the money is, confirmed live
+
+The two biggest trades of the day were **+185.51c at 90.1c** and **+103.14c at
+89.0c**. Break-even at 90c is a 10% error rate against a measured 0.90%; at 98c
+it is 2%. **Cheaper wins more AND loses less**, which is why the price ceiling
+argument mattered and why cap 3 is safe: every extra buy must clear
+`IMPROVE_BY`, so the marginal trade is the cheapest of the close.
+
+## Market impact is measured and does NOT block scaling
+
+18.2M sweep groups over 951 closes: buying 125 instead of 10 keeps **10.2-11.3x
+of the naive 12.5x**. Impact eats 9-19%, and 25-57% at 530. The displayed book
+is honest -- fade **-0.001c, fillable 1.000 on 3,527,972 real sweeps**. Sweeping
+instantly beats working the order over 30s. **Capital is the constraint, and
+after that the race.**
+
+## THE RACE IS NOW THE BIGGEST OPEN ITEM
+
+26% of orders fill nothing, and depth is not the cause -- the misses had 562,
+107, 93, 10 and 5 contracts on offer. It is unmeasurable from tape, though
+`pinimpact` puts a floor on it: the best fill in a sweep lands **0.152c worse
+than the last published top of book, t=-9.8**. Nothing measured today addresses
+it, and it is worth more than the hedge.
+
+---
+
 # 2026-09-08 late -- MARKET IMPACT IS MEASURED. Scaling 10 -> 125 keeps 10.2-11.3x of the naive 12.5x; the ladder is real; the endgame refill control has NO POWER and I am saying so rather than reporting a number
 
 **Five lines:** (1) `research/pinimpact.py` (rewritten, self-test green) measured
