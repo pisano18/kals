@@ -35,65 +35,86 @@ constants**, so they stay meaningful at any setting.
 
 ---
 
-## v8 — WITHDRAWN BEFORE IT EVER TRADED (2026-09-08 16:20 UTC)
+## v9 — CURRENT (2026-09-08 16:36 UTC) — back to a 98.8¢ ceiling
 
-**THE 96¢ CEILING WAS NEVER LIVE, AND THE ENTRY BELOW THIS ONE WAS WRONG WHEN
-I WROTE IT.** I committed `PRICE_CEILING = 0.96` to disk as `18191e4` and wrote
-this file as though it were running. It was not. The live process (pid 3994760,
-started 16:14:31Z) logged `"price_ceiling": 0.988` in its own start record, and
-I never restarted it. I also stamped the entry `16:35 UTC`, a time that had not
-yet happened.
+| setting | value |
+|---|---|
+| **price ceiling** | **98.8¢** |
+| size | 5 contracts |
+| buys per close | up to 2, second only if ≥0.5¢ cheaper |
+| window | tau 3–30 s |
+| loss abort | −$21.00 |
+| pid / code sha | 3997812 / `d6826548c653` |
 
-**How it was caught:** by reading the running process's start record instead of
-the file on disk. That is now the check — *what the process logged at start*,
-never *what the source says*.
+---
 
-### Why it is withdrawn rather than deployed — three measured reasons
+## v8 — 96¢ CEILING. IT *WAS* LIVE, IT SUPPRESSED TRADING, AND I TWICE GOT THE STORY WRONG
 
-**1. Live prices say it is far tighter than the backtest claimed.**
+**This entry has been wrong twice. Both wrong versions are described here rather
+than deleted, because the failure mode is the lesson.**
 
-| | backtest | live |
-|---|---|---|
-| mean price paid | 93.86¢ | **97.61¢** |
-| signals a 96¢ ceiling refuses | ~30% | **12 of 16 (75%)** |
+### Wrong version 1 (16:35 UTC): "v8 is live and it is safer AND more profitable"
 
-The amendment's own revert trigger was "fewer than 10 fired closes per day".
-At 4 of 16 we would fire roughly 8. **It breaches its own trigger on the live
-tape.**
+Two of the three claims did not hold. Total realised profit goes DOWN when you
+tighten (742.0¢ → 724.9¢); it only rises in EXPECTATION at an assumed 0.90%
+flip rate (625.9¢ → 649.3¢). And "the dear trades were never paying for the
+risk" was never measured — there are **zero flips in the entire eligible
+sample at every ceiling**, and the 96–98.8¢ band realised **+2.087¢ per
+contract** over 784 moments. I stated a model output as a measurement.
 
-**2. Neither ceiling is unsafe, because the ceiling is a cap and not the
-typical price.** Blended break-even flip rate over the whole book of trades a
-ceiling admits:
+### Wrong version 2 (16:20 UTC): "the 96¢ ceiling was never live"
 
-| ceiling | closes | buys | avg price | break-even flip rate | headroom vs 2.31% |
-|---|---|---|---|---|---|
-| **98.8¢ (live)** | 83 | 129 | 93.86¢ | **5.75%** | **2.49×** |
-| 96.0¢ | 58 | 84 | 90.80¢ | 8.63% | 3.74× |
+**Also wrong, and worse, because I acted on it.** I read the live process's own
+start record, saw `"price_ceiling": 0.988`, and concluded the change had never
+been applied.
 
-Both clear comfortably. The earlier "1.2% vs 4.0%" framing compared the
-break-even *at the ceiling price* against a flip rate measured *over the whole
-book*, which is not a like-for-like comparison and made the looser setting look
-marginal when it is not.
+**That field was DERIVED, not the constant.** The line was:
 
-**3. "The dear trades were never paying for the risk" was never measured.**
-There are **zero flips in the entire eligible sample at every ceiling tested**.
-Trades in the 96–98.8¢ band realised **+2.087¢ per contract** over 784 moments.
-They are not losers in the data. They are only losers under an assumed flip
-rate, and saying otherwise stated a model output as a measurement.
+```python
+price_ceiling=round(1.0 - MEASURED_FLIP - EV_FLOOR, 4)   #  = 0.988, ALWAYS
+```
 
-### What is actually true about tightening
+It reports the ceiling the EV arithmetic *implies*. It never read
+`PRICE_CEILING` at all. **A process running a 96¢ ceiling truthfully logged
+98.8¢.** My "verify what the process logged, not what the source says" rule was
+right in principle and I applied it to a field that could not answer the
+question.
 
-| | realised (0 flips, what happened) | expected (at 0.90%, what we believe) |
-|---|---|---|
-| 98.8¢ | **742.0¢** | 625.9¢ |
-| 96.0¢ | 724.9¢ | **649.3¢** |
+### What actually gave it away — the operator noticed the symptom first
 
-Tightening wins **only** in expectation, by 3.7%, and loses 2.3% on what the
-sample actually did. That is a coin-flip-sized difference resting entirely on a
-borrowed constant. **It is not a reason to restart a working process.**
+The operator said "haven't seen a trade in a while." The 16:30Z close then
+showed this:
 
-**Status: `PRICE_CEILING` is back to 0.988 on disk, which now matches the
-running process.**
+```
+close 16:30Z  4,264 looks  954 tradeable  fired: FALSE
+best: KXBTC15M NO @ 96.6c  edge +2.891c  tau 28s  665.71 contracts on offer
+```
+
+Every gate in the code on disk passes that moment: edge 2.891¢ ≥ 0.3¢,
+EV 2.270¢ ≥ 0.3¢, price 96.6¢ ≤ 98.8¢. **The only rule that rejects 96.6¢ is a
+96¢ ceiling.** Behaviour, not logs, proved it was live.
+
+### Cost
+
+Live signal history: **12 of our 16 real signals were above 96¢** (mean price
+paid 97.61¢). The 96¢ ceiling was refusing roughly three quarters of our
+trades, against a backtest that predicted it would refuse 30%.
+
+### Two fixes, both in `pinrun.py`
+
+1. **The start record now logs `PRICE_CEILING` itself**, with the derived value
+   kept alongside as `ev_implied_ceiling`, plus a `code_sha` fingerprint of the
+   running file. A log line can no longer describe code that is not running.
+2. **`close_summary` now emits `over_ceiling` and `neg_ev`.** Both counters
+   existed and neither was reported, so the refusal was invisible in the log
+   that was written specifically to explain refusals.
+
+### The standing rule this replaces
+
+*"Check what the process logged at start"* is not enough. **A configuration
+check must read a field that is derived from the constant it claims to
+describe — and the way to prove a rule is live is to find a moment it changed
+the behaviour.**
 
 ---
 

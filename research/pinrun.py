@@ -401,6 +401,18 @@ def billed_fee(price, count=1):
     return math.ceil(raw * 10000.0) / 10000.0
 
 
+def _source_fingerprint():
+    """Hash of THIS FILE, so a log line can never describe code that is not
+    running. Added 2026-09-08 after a start record described a configuration
+    the process was not using."""
+    import hashlib
+    try:
+        with open(os.path.abspath(__file__), "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()[:12]
+    except Exception:                                    # noqa: BLE001
+        return "unknown"
+
+
 MEASURED_FLIP = 0.0090   # 3 flips in 333 dear trades, corrected OOS run. The
                          # MODEL implies ~0.06% at the prices we pay; reality
                          # is 15x worse because of adverse selection -- a
@@ -906,6 +918,9 @@ def trade_loop(a, rec, book, idx, series_index):
                     no_offer=nb["no_offer"], dust=nb["dust"],
                     tradeable=nb["tradeable"], fired=(cs in fired),
                     best_ticker=b["ticker"], best_want=b["want"],
+                    over_ceiling=nb.get("over_ceiling", 0),
+                    neg_ev=nb.get("neg_ev", 0),
+                    price_ceiling=PRICE_CEILING,
                     best_edge_c=round(100 * b["edge"], 3),
                     best_price=round(b["price"], 4),
                     best_fair=round(b["fair"], 5), best_tau=b["tau"],
@@ -1230,7 +1245,16 @@ def main():
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
         size=a.size, loss_abort=a.loss_abort,
         max_positions=a.max_positions, minutes=a.minutes,
-        price_ceiling=round(1.0 - MEASURED_FLIP - EV_FLOOR, 4))
+        # THE ACTUAL CONSTANT THIS PROCESS WILL ENFORCE. Until 2026-09-08 this
+        # record logged only the DERIVED value below, so a process running
+        # PRICE_CEILING = 0.96 truthfully reported "price_ceiling": 0.988 and
+        # I read that as proof the change was not live. It was live, and it was
+        # silently refusing three quarters of our trades.
+        # A START RECORD MUST LOG WHAT THE PROCESS WILL DO, NOT WHAT THE
+        # ARITHMETIC IMPLIES.
+        price_ceiling=PRICE_CEILING,
+        ev_implied_ceiling=round(1.0 - MEASURED_FLIP - EV_FLOOR, 4),
+        code_sha=_source_fingerprint())
 
     if a.live:
         arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}, "
