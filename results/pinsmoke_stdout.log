@@ -1,0 +1,10 @@
+SELF-TEST -- pinsmoke
+  ok   no send path except pintake.take
+  ok   a penny order is 0.01 contracts (0.01)
+  ok   it stakes $0.0099, about one cent ($0.009900)
+  ok   it crosses and never rests
+  ok   the 90s close rail still refuses a far market (['market closes in 300.0 s; pin only trades inside the last 90 s', 'base https://api.elections.kalshi.com/trade-api/v2 is PRODUCTION and production is not armed (--prod)'])
+SELF-TEST PASSED
+
+  balance before: $41.0386
+  log C:\kals-repo\results\pinsmoke-20260908T063631Z.jsonl

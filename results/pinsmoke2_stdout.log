@@ -1,0 +1,27 @@
+SELF-TEST -- pinsmoke
+  ok   no send path except pintake.take
+  ok   a penny order is 0.01 contracts (0.01)
+  ok   it stakes $0.0099, about one cent ($0.009900)
+  ok   it crosses and never rests
+  ok   the 90s close rail still refuses a far market (['market closes in 300.0 s; pin only trades inside the last 90 s', 'base https://api.elections.kalshi.com/trade-api/v2 is PRODUCTION and production is not armed (--prod)'])
+  ok   two markets sharing a close time sort without raising
+  ok   and a BARE sorted() would still crash -- the key is required
+  ok   choose() takes the dearer, near-certain side
+  ok   choose() takes NO when NO is the dear side
+  ok   choose() skips a coin-flip book
+  ok   choose() skips fractional dust
+  ok   choose() survives an empty book
+SELF-TEST PASSED
+
+  balance before: $41.0386
+  log C:\kals-repo\results\pinsmoke-20260908T064741Z.jsonl
+
+  MARKET  KXBTC15M-26SEP080300-00   exchange_index 2   tau +85s
+  BUYING  0.01 contracts of NO at 0.9920
+  STAKE   $0.009920   expected fee $0.000006
+
+  RESPONSE status 400  order None
+    status None  filled 0.0  remaining None
+    exec_price None  fee None
+
+  no fill -- the IOC found nothing at that price. The send path is proven; the fill path is not.

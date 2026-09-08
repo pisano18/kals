@@ -1,0 +1,7 @@
+{"mode": "paper", "tau_max": 20, "pin": 0.98, "edge_floor": 0.005, "size": 1, "loss_abort": -2.0, "minutes": 4.0, "t": "2026-09-08T06:27:42Z", "kind": "start"}
+{"ticks": 11, "feeds": ["ADAUSD_RTI", "BCHUSD_RTI", "BNBUSD_RTI", "BRTI", "DOGEUSD_RTI", "ETHUSD_RTI", "HYPEUSD_RTI", "NEARUSD_RTI", "SOLUSD_RTI", "XRPUSD_RTI", "ZECUSD_RTI"], "t": "2026-09-08T06:27:43Z", "kind": "feeds"}
+{"n": 9, "added": ["KXBNB15M-26SEP080230-30", "KXBTC15M-26SEP080230-30", "KXDOGE15M-26SEP080230-30", "KXETH15M-26SEP080230-30", "KXHYPE15M-26SEP080230-30", "KXNEAR15M-26SEP080230-30", "KXSOL15M-26SEP080230-30", "KXXRP15M-26SEP080230-30", "KXZEC15M-26SEP080230-30"], "t": "2026-09-08T06:27:44Z", "kind": "watch"}
+{"n": 10, "added": ["KXDOGE15M-26SEP080245-45"], "t": "2026-09-08T06:30:24Z", "kind": "watch"}
+{"n": 17, "added": ["KXBTC15M-26SEP080245-45", "KXETH15M-26SEP080245-45", "KXHYPE15M-26SEP080245-45", "KXNEAR15M-26SEP080245-45", "KXSOL15M-26SEP080245-45", "KXXRP15M-26SEP080245-45", "KXZEC15M-26SEP080245-45"], "t": "2026-09-08T06:30:44Z", "kind": "watch"}
+{"n": 18, "added": ["KXBNB15M-26SEP080245-45"], "t": "2026-09-08T06:31:04Z", "kind": "watch"}
+{"state": {"halted": false, "errors": 0, "signals": 0, "considered": 2997, "open_cost": 0}, "ledger": {"committed": 0.0, "filled_contracts": 0.0, "filled_dollars": 0.0, "fees": 0.0, "realised": 0.0, "sends": 0, "unknown": 0, "rested": 0, "anomalies": [], "halt": null, "positions": {}, "takes": []}, "index_stats": {"connects": 1, "subscribed": 1, "ticks": 2651}, "t": "2026-09-08T06:31:43Z", "kind": "end"}

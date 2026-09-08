@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File [35m"C:\kals-repo\research\pinsmoke.py"[0m, line [35m258[0m, in [35m<module>[0m
+    [31mmain[0m[1;31m()[0m
+    [31m~~~~[0m[1;31m^^[0m
+  File [35m"C:\kals-repo\research\pinsmoke.py"[0m, line [35m151[0m, in [35mmain[0m
+    for cs, m in [31msorted[0m[1;31m(find_market())[0m:
+                 [31m~~~~~~[0m[1;31m^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35m'<' not supported between instances of 'dict' and 'dict'[0m

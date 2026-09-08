@@ -6,9 +6,16 @@ SELF-TEST -- pinrun
   ok   eff_strike(2492.82, d=2) == 2492.815
   ok   rounding-aware fair calls the real ETH market YES (1.0)
   ok   the un-rounded model calls it NO (0.0) -- the -90.91c loss
-  ok   net edge subtracts the taker fee (0.431c at p=0.99)
+  ok   net edge subtracts the taker fee (0.430c at p=0.99)
+  ok   billed fee at p=0.95 is $0.0034, not the raw $0.003325 (0.0034)
+  ok   the billed fee is never below the raw formula (conservative)
   ok   edge sign behaves at the boundary
   ok   NO-side edge is (1-fair) - price - fee
+  ok   YES take is a bid at the seen price (bid 0.9910)
+  ok   NO take at 0.989 is an ask at 0.0110 = the yes bid we hit (ask 0.0110)
+  ok   a NO take at 0.989 costs $0.989, not $0.011 ($0.9890)
+  ok   both bodies have post_only False -- pin must cross, never rest
+  ok   tif never rests (immediate_or_cancel)
   ok   stale index reports its age (30s)
   ok   on_frame parses a real cfbenchmarks_value frame
   ok   junk and off-channel frames are counted, not fatal
@@ -23,7 +30,7 @@ SELF-TEST -- pinrun
   ok   risk_abort() runs before the first `continue` in the loop
   ok   no direct send path in this file (found [])
 SELF-TEST PASSED
-  MODE PAPER   tau<=20s  pin 0.98  edge>=0.5c net  loss abort $-2.00
-  log C:\kals-repo\results\pinrun-paper-20260908T060746Z.jsonl
+  MODE LIVE size 1   tau<=20s  pin 0.98  edge>=0.5c net  loss abort $-2.00
+  log C:\kals-repo\results\pinrun-live-20260908T062046Z.jsonl
+  ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $5.00
   index up: 11 ticks, 11 feeds
-  SIGNAL KXBTC15M-26SEP080215-15 tau=15s buy NO @0.9030 fair 0.0143 edge +7.65c size 1864.99

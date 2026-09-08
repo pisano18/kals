@@ -1,0 +1,49 @@
+SELF-TEST -- pinrun
+  ok   all 60 prints locked at now=close (remaining 0)
+  ok   locked sum excludes tick@close and includes tick@close-60 (5900.0, expected 5900.0)
+  ok   decided yes on the corrected window (fair 1.0)
+  ok   old and new windows genuinely differ on this fixture
+  ok   eff_strike(2492.82, d=2) == 2492.815
+  ok   rounding-aware fair calls the real ETH market YES (1.0)
+  ok   the un-rounded model calls it NO (0.0) -- the -90.91c loss
+  ok   the locked window ends at the newest print HELD, not at now (remaining 3, locked 58596.0)
+  ok   with the newest print in flight on a rising index the corrected model says YES (fair 1.0000); mean-imputation said NO (fair 0.0000) -- a wrong-side buy at ~99c
+  ok   an interior gap takes the nearest print (6899.0, expected 6899.0; the window-mean rule would say 6914.2)
+  ok   partial refuses a window missing more than 5% of its prints
+  ok   net edge subtracts the taker fee (0.430c at p=0.99)
+  ok   billed fee at p=0.95 is $0.0034, not the raw $0.003325 (0.0034)
+  ok   the billed fee is never below the raw formula (conservative)
+  ok   the billed fee on 0.01 contracts is the $0.0001 floor (0.0001)
+  ok   at --size 0.01 a 0.9c gross edge is NEGATIVE once the order's own fee is charged (-0.100c), where the one-contract fee would have called it +0.83c
+  ok   edge sign behaves at the boundary
+  ok   NO-side edge is (1-fair) - price - fee
+  ok   YES take is a bid at the seen price (bid 0.9910)
+  ok   NO take at 0.989 is an ask at 0.0110 = the yes bid we hit (ask 0.0110)
+  ok   a NO take at 0.989 costs $0.989, not $0.011 ($0.9890)
+  ok   both bodies have post_only False -- pin must cross, never rest
+  ok   tif never rests (immediate_or_cancel)
+  ok   stale index reports its age (30s)
+  ok   on_frame parses a real cfbenchmarks_value frame
+  ok   junk and off-channel frames are counted, not fatal
+  ok   pintake ledger has the key the abort reads: 'halt'
+  ok   pintake ledger has the key the abort reads: 'realised'
+  ok   pintake ledger has the key the abort reads: 'committed'
+  ok   pintake ledger has the key the abort reads: 'positions'
+  ok   every ledger key the abort reads exists (['committed', 'halt', 'positions', 'realised'])
+  ok   abort fires on realised -3.00 vs limit -2.00 (loss abort: realised $-3.00 <= $-2.00)
+  ok   abort fires at the stake cap (stake cap reached: $5.00 committed)
+  ok   abort fires on a pintake halt (pintake halted: unknown order state)
+  ok   abort fires FORWARD: $1.20 open plus one more contract would pass -$2.00 (loss bound: realised $+0.00 with $1.20 still open; one more contract could take this run past $-2.00)
+  ok   $0.90 open still leaves room for one more contract (None)
+  ok   abort fires on order-path errors, which the universe pass cannot reset (2 errors on the ORDER path)
+  ok   a settled position releases its stake (committed 0.0000)
+  ok   and its P&L is booked to realised, which the abort reads
+  ok   risk_abort() runs before the first `continue` in the loop
+  ok   no direct send path in this file (found [])
+  ok   take() is called with the market's exchange_index, not the default 0
+  ok   exchange_index is read from the market record in the universe pass
+SELF-TEST PASSED
+  MODE LIVE size 1   tau<=20s  pin 0.98  edge>=0.5c net  loss abort $-3.00  SIZE 1
+  log C:\kals-repo\results\pinrun-live-20260908T070919Z.jsonl
+  ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $5.00
+  index up: 11 ticks, 11 feeds

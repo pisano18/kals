@@ -1,0 +1,42 @@
+SELF-TEST -- pinsmoke
+  ok   no send path except pintake.take
+  ok   a penny order is 0.01 contracts (0.01)
+  ok   it stakes $0.0099, about one cent ($0.009900)
+  ok   it crosses and never rests
+  ok   the 90s close rail still refuses a far market (['market closes in 300.0 s; pin only trades inside the last 90 s', 'base https://api.elections.kalshi.com/trade-api/v2 is PRODUCTION and production is not armed (--prod)'])
+  ok   two markets sharing a close time sort without raising
+  ok   and a BARE sorted() would still crash -- the key is required
+  ok   choose() takes the dearer, near-certain side
+  ok   choose() takes NO when NO is the dear side
+  ok   choose() skips a coin-flip book
+  ok   choose() skips fractional dust
+  ok   choose() survives an empty book
+SELF-TEST PASSED
+
+  balance before: $41.0386
+  log C:\kals-repo\results\pinsmoke-20260908T071221Z.jsonl
+
+  MARKET  KXBTC15M-26SEP080315-15   exchange_index 2   tau +87s
+  BUYING  0.01 contracts of YES at 0.9900
+  STAKE   $0.009900   expected fee $0.000007
+
+  RESPONSE status 201  order 01a07fdd-6d48-761d-8a15-a8311dbd5656
+    status executed  filled 0.01  remaining 0.0
+    exec_price 0.99  fee 0.01
+
+  /portfolio/fills shows 1 fill(s) on this market:
+    0.01 @ yes 0.9900 / no 0.0100  taker=True  fee $0.000100
+  position: 0.01
+  balance after the buy: $41.0286   (was $41.0386, delta $-0.0100)
+
+  waiting for settlement (closes in +83s)...
+
+  SETTLEMENT: yes   we held YES   WON
+  balance now $41.0386
+    before buy   $41.0386
+    after buy    $41.0286   (stake+fee: $-0.0100)
+    after settle $41.0386   (payout:    $+0.0100)
+    NET on the whole round trip: $+0.0000
+    modelled net (before fee): $+0.000100
+
+  THE WHOLE PATH IS PROVEN: order -> fill -> position -> fee -> settlement -> payout.

@@ -1,0 +1,63 @@
+﻿==============================================================================
+SELF-TEST -- the rails must hold before anything can be sent
+==============================================================================
+
+  a well-formed 1-contract order at 30c: {"ticker": "KXTEST-1", "side": "bid", "count": "1.00", "price": "0.3000", "time_in_force": "good_till_canceled", "self_trade_prevention_type": "maker", "post_only": true, "client_order_id": "t1", "exchange_index": 0}
+
+  every ceiling must REFUSE, before signing:
+    count above MAX_COUNT              -> REFUSED
+    collateral above MAX_NOTIONAL      -> REFUSED
+    price at 0                         -> REFUSED
+    price at 1                         -> REFUSED
+    negative count                     -> REFUSED
+    post_only stripped                 -> REFUSED
+    time_in_force changed              -> REFUSED
+    side made nonsense                 -> REFUSED
+
+  the sign-off token must bind to the exact order and environment:
+    demo/1 contract e3b36b7d036b6f5c   demo/2 contracts 7ad3fd219c661268   PROD/1 0f13f1fc1d4f6b41
+
+  the CUMULATIVE cap must bind when per-order ceilings do not:
+    two resting orders hold $21.00 against MAX_DEPLOYED $21.00
+    + a $1.05 order -> $22.05 > $21.00 -> REFUSED (correct)
+
+  a FAILED listing must read as UNKNOWN, never as 'nothing resting':
+    send() returning 500 -> resting_orders ok=False, 0 orders
+
+  default environment:
+    base defaults to DEMO: https://external-api.demo.kalshi.co/trade-api/v2
+
+SELF-TEST PASSED -- post_only is forced, every ceiling refuses before
+signing, and a sign-off token cannot be replayed onto a bigger order
+or onto production.
+
+==============================================================================
+ORDER, NOT YET SENT
+==============================================================================
+  environment : PRODUCTION -- REAL MONEY
+  base        : https://external-api.kalshi.com/trade-api/v2
+  body        : {
+  "ticker": "KXBTCMAXY-26DEC31-99999.99",
+  "side": "bid",
+  "count": "1.00",
+  "price": "0.0100",
+  "time_in_force": "good_till_canceled",
+  "self_trade_prevention_type": "maker",
+  "post_only": true,
+  "client_order_id": "kals-1788850316",
+  "exchange_index": 0
+}
+  collateral  : $0.01
+  worst case  : $0.01 (it fills and settles against us)
+
+  SIGN-OFF TOKEN: c233b8f29d7a24f2
+  This token is bound to this exact order and environment. It cannot
+  authorise a different size, price, ticker, or production.
+python.exe : 
+At line:1 char:348
++ ... _live.log"; & "C:\Python314\python.exe" -u "C:\kals-repo\research\ord ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  *** sign-off token mismatch. Expected c233b8f29d7a24f2, got '38a594a43a5738e1'. REFUSING. ***
