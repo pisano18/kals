@@ -571,6 +571,22 @@ def selftest():
 
     # --- fee-netted edge ---
     # --- THE EXPECTED-VALUE GATE (AMENDMENT 2) ---
+    # --- depth reporting (added 2026-09-08) ---------------------------------
+    ck(_depth_report([]) is None,
+       "an EMPTY close reports NO depth rather than a zero -- a close where "
+       "nothing was offered must not look like a close offering 0 contracts")
+    _d = _depth_report([4.0, 10.0, 30.0, 125.0, 2399.0])
+    ck(_d["median"] == 30.0 and _d["min"] == 4.0 and _d["max"] == 2399.0,
+       f"depth percentiles come back sorted (median {_d['median']})")
+    ck(_d["kept"]["5"] == 4 and _d["kept"]["125"] == 2 and _d["kept"]["250"] == 1,
+       f"the size ladder counts moments that SURVIVE each size "
+       f"({_d['kept']['5']} at 5, {_d['kept']['125']} at 125)")
+    ck(_d["kept"]["1"] == 5,
+       "at size 1 every offered moment survives -- the ladder's own null")
+    ck(_depth_report([7.0])["kept"]["10"] == 0,
+       "a single 7-contract offer survives at size 5 but NOT at size 10, "
+       "which is exactly the opportunity cost of scaling")
+
     ck(abs(expected_value(1.0 - MEASURED_FLIP)) < 0.0011,
        f"EV is ~zero exactly at p = 1 - flip = "
        f"{1-MEASURED_FLIP:.4f} (got {100*expected_value(1-MEASURED_FLIP):+.3f}c)")
@@ -713,21 +729,68 @@ def selftest():
         pintake.LEDGER.update(saved)
 
     # --- the stake cap must measure CONCURRENT risk, not lifetime turnover ---
+    # THIS TEST SWEEPS SIZE. The version it replaces asserted at committed
+    # 0.97 / released 0.97 -- size 1, where the release bug is INVISIBLE
+    # because price and price*1 are the same number. It passed all day while
+    # the runner stranded $3.90 per settled trade at size 5.
     saved2 = dict(pintake.LEDGER)
     try:
+        for _n in (1.0, 5.0, 8.0, 10.0, 25.0):
+            pintake.reset_ledger()
+            _px = 0.975
+            # commit exactly the way pintake does on a fill
+            pintake.LEDGER["committed"] = float(
+                pintake.LEDGER.get("committed", 0.0)) + _px * _n
+            _before = pintake.LEDGER["committed"]
+            pintake.record_pnl(+0.03, note="settled win")
+            pintake.LEDGER["committed"] = max(
+                0.0, _before - committed_for(_px, _n))
+            ck(abs(pintake.LEDGER["committed"]) < 1e-9,
+               f"a settled position releases its FULL stake at size {_n:g} "
+               f"(committed {pintake.LEDGER['committed']:.4f}, "
+               f"was {_before:.4f})")
         pintake.reset_ledger()
-        pintake.LEDGER["committed"] = 0.97
+        pintake.LEDGER["committed"] = 0.975 * 5
         pintake.record_pnl(+0.03, note="settled win")
-        pintake.LEDGER["committed"] = max(
-            0.0, float(pintake.LEDGER["committed"]) - 0.97)
-        ck(abs(pintake.LEDGER["committed"]) < 1e-9,
-           f"a settled position releases its stake "
-           f"(committed {pintake.LEDGER['committed']:.4f})")
+        pintake.LEDGER["committed"] = max(0.0, 0.975 * 5 - 0.975)
+        ck(pintake.LEDGER["committed"] > 1e-9,
+           f"and releasing only ONE contract at size 5 LEAKS "
+           f"${pintake.LEDGER['committed']:.4f} -- the bug this test now "
+           f"catches, stated as a positive so it cannot pass vacuously")
         ck(abs(pintake.LEDGER["realised"] - 0.03) < 1e-9,
-           "and its P&L is booked to realised, which the abort reads")
+           "P&L is booked to realised, which the abort reads")
+        # the release helper must be reachable from the source, not a comment
+        _src = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _body = _src[_src.index("def trade_loop("):]
+        ck(_body.count("_release(") >= 4,
+           f"every exit path releases the stake -- finalized, both give-ups, "
+           f"and the definition ({_body.count('_release(')} references)")
     finally:
         pintake.LEDGER.clear()
         pintake.LEDGER.update(saved2)
+
+    # --- the ORDER PATH must not carry a brake tighter than the run's own ---
+    _saved_la = pintake.LOSS_ABORT
+    try:
+        ck(pintake.LOSS_ABORT == -2.00,
+           f"pintake ships a size-1 loss abort of ${pintake.LOSS_ABORT:.2f}")
+        _one_loss = -1.00 * 5 * 0.975
+        ck(_one_loss < pintake.LOSS_ABORT,
+           f"ONE ordinary loss at size 5 is ${_one_loss:.2f}, which is past "
+           f"that default -- so an unraised order path dies on the first loss")
+        pintake.set_limits(loss_abort=-30.00, why="selftest")
+        ck(pintake.LOSS_ABORT == -30.00,
+           "set_limits LOOSENS the order-path brake to match the run's own")
+        _raised = False
+        try:
+            pintake.set_limits(loss_abort=-1.00)
+        except ValueError:
+            _raised = True
+        ck(_raised,
+           "and it REFUSES to tighten -- a hidden brake tighter than the "
+           "operator's is not a brake, it is an outage")
+    finally:
+        pintake.LOSS_ABORT = _saved_la
 
     # --- STRUCTURAL: the abort must precede every branch in the loop ---
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
@@ -804,8 +867,46 @@ def risk_abort(state, a):
 
 # ===========================================================================
 def _fresh_near():
+    # "depths" records the contracts ON OFFER at every moment we could have
+    # bought, whether or not we did. Added 2026-09-08 at the operator's
+    # request: "track the times we would buy/do buy and how many orders are
+    # available at that moment". Without it the only depth we ever saw was the
+    # single best moment, which cannot answer how far we can scale.
     return {"best": None, "n": 0, "decided": 0, "tradeable": 0,
-            "no_offer": 0, "undecided": 0, "dust": 0}
+            "no_offer": 0, "undecided": 0, "dust": 0, "depths": [],
+            "shallow": {}}
+
+
+def committed_for(cost, nfill):
+    """Dollars pintake commits for a fill, and therefore the dollars that must
+    be released when it settles. Module level ON PURPOSE: the self-test that
+    was blind to the release bug was blind because it RETYPED the arithmetic
+    inline at size 1, where price and price*1 are the same number. A test must
+    drive the same expression the runner drives."""
+    return float(cost) * float(nfill)
+
+
+def _depth_report(depths):
+    """What the offer looked like across a close, and how many of those
+    moments survive at each candidate SIZE. A moment offering fewer contracts
+    than we want to buy is skipped by the dust gate, so this table is exactly
+    the opportunity cost of scaling."""
+    if not depths:
+        return None
+    d = sorted(depths)
+    n = len(d)
+    return {
+        "n": n,
+        "min": round(d[0], 2),
+        "p25": round(d[n // 4], 2),
+        "median": round(d[n // 2], 2),
+        "p75": round(d[(3 * n) // 4], 2),
+        "max": round(d[-1], 2),
+        "total": round(sum(d), 2),
+        # moments that would still qualify at each size
+        "kept": {str(k): sum(1 for x in d if x >= k)
+                 for k in (1, 5, 10, 15, 25, 50, 75, 125, 250)},
+    }
 
 
 def trade_loop(a, rec, book, idx, series_index):
@@ -814,7 +915,14 @@ def trade_loop(a, rec, book, idx, series_index):
     seen_markets = {}          # ticker -> (iid, close_s, strike, digits, exi)
     uni_at = 0.0
     watching = {}            # ticker -> close_s, so closed ones drop out
-    open_pos = {}            # ticker -> (close_s, want, cost) awaiting settlement
+    # ticker -> (close_s, want, cost_per_contract, contracts). THE FOURTH
+    # FIELD IS NEW (2026-09-08) AND IT IS THE WHOLE FIX: pintake commits
+    # `filled * price` on a fill, so a release of bare `price` strands
+    # (filled-1)*price forever. At size 5 that is $3.90 a trade and the $60
+    # run-stake cap turns back into a cap on LIFETIME TURNOVER after ~15
+    # fills -- the exact bug that was fixed once at size 1 and written as a
+    # size-1 literal. Found by an adversarial audit, reproduced by a probe.
+    open_pos = {}
     # NEAR MISSES. "nothing fired" is not information; "the best on offer was
     # 0.2c and we need 0.5c" is. Per close, keep the best net edge seen on
     # each side and report it when the close passes, so a quiet run can be
@@ -826,6 +934,25 @@ def trade_loop(a, rec, book, idx, series_index):
     end = time.time() + a.minutes * 60
 
 
+    def _release(tk, cost, nfill):
+        """Give back EXACTLY what was committed, and never on only one path.
+
+        pintake._book() adds `filled * price` to LEDGER["committed"]. Anything
+        that pops a position must subtract the same product. Before this
+        existed, the finalized path released `price` (one contract) and the two
+        give-up paths released NOTHING AT ALL, so a run leaked committed
+        dollars until the stake cap silently refused every further order --
+        with no halt, no error and no log line, because take() RETURNS the
+        refusal rather than raising.
+        """
+        owed = committed_for(cost, nfill)
+        pintake.LEDGER["committed"] = max(
+            0.0, float(pintake.LEDGER.get("committed", 0.0)) - owed)
+        pintake.LEDGER["positions"].pop(tk, None)
+        open_pos.pop(tk, None)
+        recon_at.pop(tk, None)
+        return owed
+
     def reconcile():
         """Book settled P&L so the loss abort is a REAL brake, not a nominal one.
 
@@ -835,7 +962,7 @@ def trade_loop(a, rec, book, idx, series_index):
         not finalised yet is left for the next pass.
         """
         for tk in list(open_pos):
-            close_s, want, cost = open_pos[tk]
+            close_s, want, cost, nfill = open_pos[tk]
             if time.time() < close_s + 20:
                 continue                      # not settled yet
             # THROTTLE. This runs at the top of a 20 Hz loop and a market that
@@ -855,17 +982,20 @@ def trade_loop(a, rec, book, idx, series_index):
             m = b.get("market") or {}
             if m.get("status") != "finalized":
                 if time.time() > close_s + 900:
-                    open_pos.pop(tk, None)    # give up rather than leak
+                    _release(tk, cost, nfill)   # give up rather than leak
                 continue
             res = m.get("result")
             if res not in ("yes", "no"):
-                open_pos.pop(tk, None)
+                _release(tk, cost, nfill)
                 continue
             won = (res == want)
             # the taker fee is charged on the way in and is part of realised
             # P&L; leaving it out flatters the number the loss abort reads.
-            pnl = (float(SIZE) * ((1.0 - cost) if won else (-cost))
-                   - billed_fee(cost, SIZE))
+            # P&L on the contracts ACTUALLY FILLED, not on the size we
+            # asked for. A partial fill booked at full size overstates both
+            # the win and the loss the abort reads.
+            pnl = (float(nfill) * ((1.0 - cost) if won else (-cost))
+                   - billed_fee(cost, nfill))
             pintake.record_pnl(pnl, note=f"{tk} {want} vs {res}")
             # RELEASE the stake. pintake's ledger only ever ADDS to
             # "committed" on a fill and never gives it back, but the field
@@ -875,11 +1005,7 @@ def trade_loop(a, rec, book, idx, series_index):
             # concurrent exposure, and an overnight run halts on its own
             # success. pin holds for <60 s and closes are 15 min apart, so
             # concurrent exposure is one bet, not the night's turnover.
-            pintake.LEDGER["committed"] = max(
-                0.0, float(pintake.LEDGER.get("committed", 0.0)) - cost)
-            pintake.LEDGER["positions"].pop(tk, None)
-            open_pos.pop(tk, None)
-            recon_at.pop(tk, None)
+            _release(tk, cost, nfill)
             state["settled"] = state.get("settled", 0) + 1
             state["wins"] = state.get("wins", 0) + int(won)
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
@@ -890,7 +1016,7 @@ def trade_loop(a, rec, book, idx, series_index):
         # size x price, NOT price: at --size 0.01 the per-contract figure
         # overstates exposure 100x and the forward loss bound would halt the
         # run on its very first fill.
-        state["open_cost"] = float(SIZE) * sum(c for (_, _, c)
+        state["open_cost"] = sum(c * n for (_, _, c, n)
                                                in open_pos.values())
 
     def report_closes(now_s):
@@ -905,6 +1031,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     decided=nb["decided"], undecided=nb["undecided"],
                     no_offer=nb["no_offer"], dust=nb["dust"],
                     fired=(cs in fired), best=None,
+                    depth=_depth_report(nb.get("depths")),
                     why=("decided but NOBODY OFFERED the winning side"
                          if nb["no_offer"] else
                          "no market ever reached the 98% gate"))
@@ -920,6 +1047,8 @@ def trade_loop(a, rec, book, idx, series_index):
                     best_ticker=b["ticker"], best_want=b["want"],
                     over_ceiling=nb.get("over_ceiling", 0),
                     neg_ev=nb.get("neg_ev", 0),
+                    depth=_depth_report(nb.get("depths")),
+                    shallow_skips=nb.get("shallow", {}),
                     price_ceiling=PRICE_CEILING,
                     best_edge_c=round(100 * b["edge"], 3),
                     best_price=round(b["price"], 4),
@@ -1078,12 +1207,19 @@ def trade_loop(a, rec, book, idx, series_index):
                     nb["undecided"] += 1
                 continue
             if size < max(MIN_LEVEL, SIZE):   # dust is not a real fill
+                # RECORD IT ANYWAY. A moment we skip for being too shallow is
+                # still a moment the market offered something, and it is the
+                # number that decides how far we can scale.
+                _nb = near.setdefault(close_s, _fresh_near())
+                _nb["depths"].append(float(size))
+                _nb["shallow"][str(int(SIZE))] =                     _nb["shallow"].get(str(int(SIZE)), 0) + 1
                 continue
             e = net_edge(f, price, want)
             nb = near.setdefault(close_s, _fresh_near())
             nb["n"] += 1
             nb["decided"] += 1
             nb["tradeable"] += 1
+            nb["depths"].append(float(size))
             if size < max(MIN_LEVEL, SIZE):
                 nb["dust"] += 1
             if nb["best"] is None or e > nb["best"]["edge"]:
@@ -1130,7 +1266,7 @@ def trade_loop(a, rec, book, idx, series_index):
                   f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f}")
 
             if not live:
-                open_pos[tk] = (close_s, want, price)
+                open_pos[tk] = (close_s, want, price, float(SIZE))
             if live:
                 try:
                     out = pintake.take(CREDS["base"], CREDS["pk"],
@@ -1142,7 +1278,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     if filled > 0:
                         px = out.get("exec_price")
                         cost = float(px) if px is not None else float(price)
-                        open_pos[tk] = (close_s, want, cost)
+                        open_pos[tk] = (close_s, want, cost, filled)
                         state["fills"] = state.get("fills", 0) + 1
                     state["sent"] = state.get("sent", 0) + 1
                     print(f"    ORDER -> status {out.get('status')} "
@@ -1257,6 +1393,18 @@ def main():
         code_sha=_source_fingerprint())
 
     if a.live:
+        # THE ORDER PATH HAS ITS OWN BRAKE AND IT SHIPS AT A SIZE-1 DEFAULT.
+        # Left alone, pintake.LOSS_ABORT = -$2.00 refuses every take after the
+        # first ordinary loss at size 5 (about -$4.90), silently, while the
+        # operator's brake below sits untouched. Raise it to agree with the
+        # brake the operator actually set, so the two cannot disagree.
+        # set_limits() refuses to TIGHTEN, so this can only ever loosen.
+        _worst_close = 1.00 * float(a.size) * float(MAX_PER_CLOSE)
+        pintake.set_limits(
+            loss_abort=float(a.loss_abort),
+            max_run_stake=max(pintake.MAX_RUN_STAKE,
+                              3.0 * _worst_close + 10.0),
+            why=f"size {a.size:g}, worst close ${_worst_close:.2f}")
         arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}, "
             f"PREREG_pin_live.md")
         print(f"  ARMED: {CREDS['base']}  key {CREDS['key_id'][:8]}...  "

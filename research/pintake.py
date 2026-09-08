@@ -154,7 +154,54 @@ MAX_RUN_STAKE = 60.00     # dollars committed per process. The shard holds ~$38
                           # and positions settle within 60 s, so this bounds
                           # CONCURRENT exposure, not turnover; pinrun releases
                           # the stake on settlement.
-LOSS_ABORT = -2.00        # realised P&L at or below this refuses every take
+LOSS_ABORT = -2.00        # realised P&L at or below this refuses every take.
+                          # THIS IS A SIZE-1 DEFAULT AND MUST BE RAISED BY THE
+                          # CALLER FOR ANY LARGER SIZE -- see set_limits().
+                          # Found 2026-09-08 by an adversarial audit: at
+                          # --size 5 a single ordinary loss is about -$4.90,
+                          # so the FIRST loss would refuse every subsequent
+                          # take while the operator's own -$21 brake sat
+                          # untouched. take() RETURNS the refusal rather than
+                          # raising, so nothing halted and nothing was logged;
+                          # the process would print SIGNAL lines forever while
+                          # every order died before the wire.
+                          # THE FOURTH size-1 literal to break scaling in one
+                          # day. The repo rule stands: ANY CONSTANT TIED TO
+                          # SIZE MUST BE EXPRESSED IN TERMS OF SIZE.
+
+
+def set_limits(loss_abort=None, max_run_stake=None, why=""):
+    """Raise this module's rails to match the run that is actually trading.
+
+    Deliberately one-way: a caller may only LOOSEN a rail, never tighten it
+    below the shipped default, and the change is printed rather than silent.
+    Two independent brakes are a safety feature; a hidden one that is tighter
+    than the operator's is not a brake, it is an outage.
+    """
+    global LOSS_ABORT, MAX_RUN_STAKE
+    out = []
+    if loss_abort is not None:
+        la = float(loss_abort)
+        if la >= 0:
+            raise ValueError("loss_abort must be negative")
+        if la > LOSS_ABORT:
+            raise ValueError(
+                f"refusing to TIGHTEN the order-path loss abort from "
+                f"${LOSS_ABORT:.2f} to ${la:.2f}")
+        out.append(f"LOSS_ABORT ${LOSS_ABORT:.2f} -> ${la:.2f}")
+        LOSS_ABORT = la
+    if max_run_stake is not None:
+        ms = float(max_run_stake)
+        if ms < MAX_RUN_STAKE:
+            raise ValueError(
+                f"refusing to LOWER MAX_RUN_STAKE from ${MAX_RUN_STAKE:.2f} "
+                f"to ${ms:.2f}")
+        out.append(f"MAX_RUN_STAKE ${MAX_RUN_STAKE:.2f} -> ${ms:.2f}")
+        MAX_RUN_STAKE = ms
+    if out:
+        print("  pintake rails raised: " + "; ".join(out) +
+              (f"  ({why})" if why else ""))
+    return out
 
 _PROD_ARMED = False
 
@@ -1192,13 +1239,23 @@ def selftest():
         for f in fails:
             print("   - " + f)
         return False
-    print("SELF-TEST PASSED -- IOC only, post_only False, count <= 1 with a "
-          "separate HARD_MAX 5,\nclose within 90 s, $5 stake ledger booked "
-          "from fills (released only on remaining 0),\nUNKNOWN outcomes and "
-          "5xx keep the stake and halt, a rested IOC is cancelled, verified\n"
-          "and halted, -$2 loss abort, production refused unless armed and never "
-          "with a faked\nclock, and no path to the wire without an empty "
-          "violation list.")
+    # EVERY NUMBER HERE IS READ FROM THE CONSTANT, NEVER TYPED. The version
+    # this replaces said "count <= 1", "HARD_MAX 5", "$5 stake ledger" and
+    # "-$2 loss abort" long after those rails became 10, 25, $60 and settable.
+    # A summary that describes code which no longer exists is worse than none:
+    # it is a PASSING TEST REPORTING A CONFIGURATION THAT IS NOT RUNNING --
+    # the same failure as the start record that logged a derived ceiling.
+    print(f"SELF-TEST PASSED -- IOC only, post_only False, "
+          f"count <= {MAX_TAKE_COUNT:g} with a separate HARD_MAX "
+          f"{HARD_MAX:g}, close within {MAX_TAU:g} s,\n"
+          f"${MAX_RUN_STAKE:.2f} stake ledger booked from fills "
+          f"(released only on remaining 0), UNKNOWN outcomes and 5xx keep "
+          f"the stake and halt,\n"
+          f"a rested IOC is cancelled, verified and halted, "
+          f"${LOSS_ABORT:.2f} loss abort "
+          f"(raisable via set_limits, never tightenable),\n"
+          f"production refused unless armed and never with a faked clock, "
+          f"and no path to the wire without an empty violation list.")
     return True
 
 
