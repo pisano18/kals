@@ -1,0 +1,333 @@
+
+  fulltape knows 10,796 settled crypto markets
+  close_of() agrees with fulltape on 0 prints, disagrees on 0, ticker unknown to fulltape 453,083
+
+  scanning 240h of trade + ticker ...
+
+  replaying 48h of order book ...
+
+==============================================================================
+COVERAGE  (trade + ticker pass)
+==============================================================================
+  ctl_obs                             736,709
+  ctl_window_had_a_trade              790,758
+  dropped_mixed_side                   71,245
+  groups                           18,225,343
+  kept                             18,154,098
+  no_pre_ticker                       107,826
+  pop_BUY_WINNER                       97,786
+  pop_LIVE                         17,778,053
+  pop_SELL_WINNER                     170,914
+  pop_UNDECIDED                       107,345
+  pre_ticker_unquoted                   4,470
+
+  POPULATION LABEL vs SETTLEMENT (only markets fulltape knows)
+    BUY_WINNER   taker was right on 72,141 of 72,524 sweeps (99.47%)
+    SELL_WINNER  taker was right on 475 of 126,679 sweeps (0.37%)
+
+==============================================================================
+MDE FIRST -- what each slippage cell COULD have detected at 80%
+power, before any estimate below is read.  cents per contract.
+==============================================================================
+    population          1-10      11-50     51-125    126-500       500+
+    ALL               0.001c     0.002c     0.003c     0.006c     0.010c
+    BUY_WINNER        0.001c     0.003c     0.006c     0.009c     0.025c
+    SELL_WINNER       0.003c     0.008c     0.016c     0.013c     0.018c
+    UNDECIDED         0.035c     0.056c     0.134c     0.233c     0.695c
+    LIVE              0.001c     0.002c     0.003c     0.006c     0.011c
+
+==============================================================================
+(a) TEMPORARY IMPACT -- cents per contract paid ABOVE the touch
+    slip_own  = VWAP(sweep) - best price in the same sweep
+    slip_tick = VWAP(sweep) - ticker top of book at T-1s
+    control   = next k prints, same side, never simultaneous
+==============================================================================
+
+  ALL
+         size     medN   slip_own       t   control  slip_tick    walked  closes      sweeps
+         1-10      2.9     0.017c    52.5    0.038c     0.022c    0.027c     951   7,153,464
+        11-50     22.0     0.054c    86.8    0.138c     0.049c    0.095c     951   5,892,283
+       51-125     77.5     0.100c    84.8    0.232c     0.116c    0.178c     951   2,472,534
+      126-500    211.9     0.152c    72.9    0.296c     0.193c    0.264c     951   1,858,543
+         500+    951.7     0.236c    63.0    0.431c     0.361c    0.446c     951     777,274
+
+  BUY_WINNER
+         size     medN   slip_own       t   control  slip_tick    walked  closes      sweeps
+         1-10      3.0     0.006c    15.3    0.012c     0.145c    0.008c     773      31,579
+        11-50     23.1     0.020c    20.8    0.043c     0.215c    0.032c     758      28,454
+       51-125     82.0     0.038c    18.2    0.110c     0.225c    0.069c     727      15,933
+      126-500    228.8     0.066c    21.7    0.184c     0.224c    0.117c     741      13,719
+         500+   1097.0     0.135c    15.1    0.380c     0.264c    0.214c     683       8,101
+
+  SELL_WINNER
+         size     medN   slip_own       t   control  slip_tick    walked  closes      sweeps
+         1-10      3.0     0.009c     8.5    0.008c    -0.132c    0.014c     935      40,433
+        11-50     24.7     0.034c    12.2    0.037c    -0.113c    0.057c     932      42,575
+       51-125     86.1     0.059c    10.6    0.060c    -0.064c    0.114c     929      28,939
+      126-500    237.6     0.073c    15.4    0.067c    -0.018c    0.142c     931      31,197
+         500+    934.7     0.063c     9.7    0.038c     0.030c    0.150c     934      27,770
+
+  UNDECIDED
+         size     medN   slip_own       t   control  slip_tick    walked  closes      sweeps
+         1-10      3.1     0.068c     5.4    0.104c    -0.424c    0.111c     427      37,054
+        11-50     23.0     0.231c    11.7    0.439c    -0.093c    0.424c     431      36,148
+       51-125     77.0     0.601c    12.6    1.141c     0.430c    1.117c     402      16,817
+      126-500    214.5     1.285c    15.5    2.277c     1.959c    2.470c     383      12,185
+         500+    902.5     3.029c    12.2    3.794c     4.419c    5.248c     278       5,141
+
+  LIVE
+         size     medN   slip_own       t   control  slip_tick    walked  closes      sweeps
+         1-10      2.9     0.017c    57.2    0.037c     0.025c    0.027c     951   7,044,398
+        11-50     21.9     0.053c    90.2    0.138c     0.052c    0.094c     951   5,785,106
+       51-125     77.4     0.099c    87.5    0.232c     0.119c    0.177c     951   2,410,845
+      126-500    210.8     0.152c    73.4    0.296c     0.195c    0.263c     951   1,801,442
+         500+    952.5     0.241c    62.9    0.442c     0.371c    0.456c     951     736,262
+
+==============================================================================
+(b) PERMANENT IMPACT -- what a SECOND taker in the same direction
+    pays at T+h versus T-1s.  positive = the book did not come back
+    adj = minus the matched no-trade control (same side, tau
+    bucket, 5c price bucket, same hour)
+==============================================================================
+
+  the matched control's own level (all strata pooled):
+    T+1  s    -0.051c  t=-30.51  MDE  0.005c  closes   951  obs    513,439
+    T+5  s    -0.098c  t=-25.56  MDE  0.011c  closes   951  obs    184,156
+    T+15 s    -0.180c  t=-13.71  MDE  0.037c  closes   950  obs     39,114
+
+  ALL
+         size      raw+1     raw+5    raw+15     adj+1     adj+5    adj+15    dep+1    dep+5   dep+15  closes
+         1-10     0.253c    0.268c    0.268c    0.303c    0.361c    0.477c    0.76x    0.74x    0.72x     951
+        11-50     0.352c    0.350c    0.337c    0.382c    0.422c    0.529c    0.75x    0.73x    0.72x     951
+       51-125     0.395c    0.379c    0.357c    0.426c    0.471c    0.600c    0.74x    0.72x    0.72x     951
+      126-500     0.476c    0.468c    0.456c    0.481c    0.531c    0.621c    0.74x    0.72x    0.72x     951
+         500+     0.734c    0.755c    0.767c    0.695c    0.768c    0.949c    0.72x    0.72x    0.72x     951
+
+  BUY_WINNER
+         size      raw+1     raw+5    raw+15     adj+1     adj+5    adj+15    dep+1    dep+5   dep+15  closes
+         1-10     0.327c    0.533c   -1.220c      nanc      nanc      nanc    0.69x    0.69x    0.69x     702
+        11-50     0.450c    0.714c   -0.832c      nanc      nanc      nanc    0.68x    0.68x    0.68x     691
+       51-125     0.439c    0.673c   -1.185c      nanc      nanc      nanc    0.66x    0.67x    0.70x     658
+      126-500     0.407c    0.444c   -1.101c      nanc      nanc      nanc    0.64x    0.65x    0.66x     645
+         500+     0.414c    0.572c   -0.566c      nanc      nanc      nanc    0.62x    0.64x    0.67x     530
+
+  SELL_WINNER
+         size      raw+1     raw+5    raw+15     adj+1     adj+5    adj+15    dep+1    dep+5   dep+15  closes
+         1-10    -0.101c   -0.206c   -0.285c    0.021c   -0.164c   -0.171c    0.85x    0.87x    0.92x     930
+        11-50    -0.126c   -0.261c   -0.288c   -0.019c   -0.197c   -0.256c    0.83x    0.86x    0.91x     927
+       51-125    -0.069c   -0.199c   -0.273c    0.052c   -0.167c   -0.200c    0.83x    0.85x    0.91x     916
+      126-500    -0.023c   -0.155c   -0.177c    0.037c   -0.109c   -0.269c    0.82x    0.85x    0.91x     916
+         500+    -0.006c   -0.035c   -0.036c    0.035c   -0.053c   -0.033c    0.85x    0.87x    0.93x     932
+
+  UNDECIDED
+         size      raw+1     raw+5    raw+15     adj+1     adj+5    adj+15    dep+1    dep+5   dep+15  closes
+         1-10     0.187c   -0.276c   -3.736c    6.214c    6.192c    1.250c    0.71x    0.68x    0.71x     425
+        11-50     0.959c    0.646c   -2.813c    7.284c    9.734c    1.250c    0.70x    0.68x    0.71x     431
+       51-125     1.400c    0.944c   -2.075c    8.879c    7.050c      nanc    0.69x    0.66x    0.69x     402
+      126-500     2.722c    2.257c   -2.020c    8.723c   11.751c      nanc    0.67x    0.66x    0.68x     382
+         500+     3.988c    3.093c   -1.313c   25.722c   25.068c      nanc    0.67x    0.65x    0.68x     277
+
+  LIVE
+         size      raw+1     raw+5    raw+15     adj+1     adj+5    adj+15    dep+1    dep+5   dep+15  closes
+         1-10     0.256c    0.274c    0.283c    0.304c    0.363c    0.478c    0.76x    0.74x    0.72x     951
+        11-50     0.355c    0.357c    0.359c    0.384c    0.425c    0.530c    0.75x    0.73x    0.72x     951
+       51-125     0.401c    0.392c    0.385c    0.430c    0.477c    0.601c    0.74x    0.72x    0.72x     951
+      126-500     0.484c    0.483c    0.484c    0.488c    0.540c    0.622c    0.74x    0.72x    0.72x     951
+         500+     0.763c    0.783c    0.799c    0.718c    0.791c    0.953c    0.72x    0.72x    0.72x     951
+
+  TOUCH ALIGNMENT -- ticker top of book at T-1s minus the sweep's
+  own best price.  Large positive = the sweep's best fill was NOT
+  the touch and (a) understates slippage.
+    BUY_WINNER       -0.152c  t= -9.77  MDE  0.044c  closes   788  obs     94,569
+    SELL_WINNER      +0.117c  t=+11.90  MDE  0.028c  closes   935  obs    166,223
+    UNDECIDED        +0.239c  t= +2.70  MDE  0.248c  closes   445  obs    107,321
+    LIVE             -0.016c  t= -5.89  MDE  0.008c  closes   951  obs 17,673,689
+
+==============================================================================
+BOOK REPLAY COVERAGE
+==============================================================================
+  grid_buyable                          5,666
+  grid_first_bite                         622
+  grid_no_near_certain                 41,334
+  grid_seconds                         47,000
+  seeded_yes_dollars_fp                 1,728
+  snap_empty                            3,182
+  sweep_book_incomplete                    11
+  sweep_ladder_thin                         8
+  sweep_scored                      3,527,972
+
+==============================================================================
+(d1) DOES THE DISPLAYED LADDER ACTUALLY FILL?
+     realised sweep VWAP minus the cost of walking the PRE-SWEEP
+     displayed book for the same number of contracts.
+     positive = quotes LEFT when they were hit (fade).
+     touchdiff is the artefact check: displayed touch minus the
+     sweep's own touch.  If the book channel ran AHEAD of the trade
+     channel this is positive and the fade number is inflated.
+==============================================================================
+         size       fade       t      MDE   touchdiff   fillable   closes     sweeps
+         1-10    -0.001c    -7.7   0.000c      0.001c      1.000      192  1,412,460
+        11-50    -0.002c    -5.6   0.001c      0.002c      1.000      192  1,143,435
+       51-125    -0.001c    -2.7   0.001c      0.001c      1.000      192    471,162
+      126-500    -0.001c    -2.0   0.001c      0.003c      1.000      192    352,080
+         500+    -0.001c    -1.0   0.002c      0.005c      1.000      192    148,835
+
+==============================================================================
+(d2) WHAT BUYING n CONTRACTS COSTS, tau 3-30, on the near-certain
+     side, off the DISPLAYED book, by the price at the touch
+==============================================================================
+
+  touch in 95.0-97.0c   ladder holds 10,891 contracts on average, 80 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.092c    96.10c      1.000       10.0       27.32c    2.732c       80       315
+          125       0.545c    96.55c      1.000      125.0      288.61c    2.309c       80       315
+          530       1.343c    97.35c      0.987      523.2      824.43c    1.576c       80       315
+          all       2.716c    98.73c      1.000    10891.4      356.15c    0.033c       80       315
+     ev_gated       1.497c    97.51c      1.000     3097.9     4095.01c    1.322c       80       315
+
+  touch in 97.0-98.5c   ladder holds 16,656 contracts on average, 94 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.045c    97.83c      1.000       10.0       11.18c    1.118c       94       542
+          125       0.267c    98.05c      1.000      125.0      113.88c    0.911c       94       542
+          530       0.740c    98.52c      0.980      519.4      249.57c    0.481c       94       542
+          all       1.438c    99.22c      1.000    16656.3    -9780.23c   -0.587c       94       542
+     ev_gated       0.332c    98.12c      1.000      969.4      781.62c    0.806c       94       542
+
+  touch in 98.5-99.5c   ladder holds 11,358 contracts on average, 105 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.022c    99.10c      1.000       10.0       -0.69c   -0.069c      105       812
+          125       0.145c    99.23c      0.999      124.9      -22.97c   -0.184c      105       812
+          530       0.321c    99.40c      0.946      501.2     -168.96c   -0.337c      105       812
+          all       0.561c    99.64c      1.000    11357.6    -7428.50c   -0.654c      105       812
+     ev_gated       0.042c    98.64c      1.000      392.5      140.81c    0.359c       51       112
+
+  touch in 99.5-100.0c   ladder holds 2,308 contracts on average, 161 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.005c    99.82c      0.924        9.2       -6.75c   -0.731c      161     3,997
+          125       0.021c    99.83c      0.846      105.8      -78.43c   -0.742c      161     3,997
+          530       0.041c    99.85c      0.671      355.5     -269.25c   -0.757c      161     3,997
+          all       0.054c    99.87c      1.000     2308.5    -1804.28c   -0.782c      161     3,997
+
+  touch in ALL   ladder holds 4,031 contracts on average, 162 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.013c    99.42c      0.935        9.3       -3.16c   -0.339c      162     5,666
+          125       0.072c    99.48c      0.874      109.2      -40.38c   -0.370c      162     5,666
+          530       0.179c    99.59c      0.735      389.4     -167.55c   -0.430c      162     5,666
+          all       0.325c    99.74c      1.000     4031.3    -2406.39c   -0.597c      162     5,666
+     ev_gated       0.649c    97.95c      1.000     1473.4     1677.09c    1.138c      102       969
+
+  FIRST BUYABLE SECOND ONLY, touch in 95.0-97.0c   ladder holds 14,364 contracts on average, 74 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.089c    95.86c      1.000       10.0       29.61c    2.961c       74       108
+          125       0.499c    96.27c      1.000      125.0      322.31c    2.579c       74       108
+          530       1.326c    97.09c      0.990      524.5      953.72c    1.818c       74       108
+          all       2.924c    98.69c      1.000    14363.6     -276.48c   -0.019c       74       108
+     ev_gated       1.742c    97.51c      1.000     4058.3     5365.67c    1.322c       74       108
+
+  FIRST BUYABLE SECOND ONLY, touch in 97.0-98.5c   ladder holds 25,595 contracts on average, 51 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.065c    97.73c      1.000       10.0       12.12c    1.212c       51        66
+          125       0.299c    97.96c      1.000      125.0      124.20c    0.994c       51        66
+          530       0.787c    98.45c      0.982      520.6      286.48c    0.550c       51        66
+          all       1.686c    99.35c      1.000    25594.8   -16245.83c   -0.635c       51        66
+     ev_gated       0.425c    98.09c      1.000     1306.0     1018.46c    0.780c       51        66
+
+  FIRST BUYABLE SECOND ONLY, touch in 98.5-99.5c   ladder holds 28,467 contracts on average, 44 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.019c    99.07c      1.000       10.0       -0.43c   -0.043c       44        55
+          125       0.164c    99.22c      1.000      125.0      -22.33c   -0.179c       44        55
+          530       0.397c    99.45c      0.984      521.4     -203.34c   -0.390c       44        55
+          all       0.756c    99.81c      1.000    28466.5   -21521.98c   -0.756c       44        55
+     ev_gated       0.044c    98.61c      1.000      144.1       57.32c    0.398c        9        10
+
+  FIRST BUYABLE SECOND ONLY, touch in 99.5-100.0c   ladder holds 6,806 contracts on average, 152 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.003c    99.84c      0.893        8.9       -6.72c   -0.752c      152       393
+          125       0.011c    99.85c      0.869      108.6      -82.50c   -0.760c      152       393
+          530       0.027c    99.87c      0.823      436.3     -338.00c   -0.775c      152       393
+          all       0.049c    99.89c      1.000     6805.6    -5470.71c   -0.804c      152       393
+
+  FIRST BUYABLE SECOND ONLY, touch in ALL   ladder holds 10,444 contracts on average, 162 closes
+            n   over touch      vwap   fillable     filled    EV bought   per ctr   closes   moments
+           10       0.021c    99.01c      0.931        9.3        0.75c    0.081c      162       622
+          125       0.122c    99.11c      0.917      114.7       -1.05c   -0.009c      162       622
+          530       0.324c    99.31c      0.886      469.4      -92.36c   -0.197c      162       622
+          all       0.666c    99.65c      1.000    10444.3    -6293.60c   -0.603c      162       622
+     ev_gated       1.164c    97.78c      1.000     2778.0     3373.89c    1.215c      102       184
+
+==============================================================================
+(d3) THE CORRECTED ANSWER -- what scaling actually buys
+     naive multiple assumes the price does not move; realised is
+     what the displayed ladder actually pays.  'eaten' is the share
+     of the naive gain that market impact takes back.
+==============================================================================
+
+  touch in 95.0-97.0c   base = 10 contracts, 27.32c of EV per close over 80 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       125.0    12.50x       10.56x    15.5%     288.61c
+          530       523.2    52.32x       30.17x    42.3%     824.43c
+          all     10891.4  1089.14x       13.04x    98.8%     356.15c
+     ev_gated      3097.9   309.79x      149.88x    51.6%    4095.01c
+
+  touch in 97.0-98.5c   base = 10 contracts, 11.18c of EV per close over 94 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       125.0    12.50x       10.19x    18.5%     113.88c
+          530       519.4    51.94x       22.32x    57.0%     249.57c
+          all     16656.3  1665.63x     -874.81x   152.5%   -9780.23c
+     ev_gated       969.4    96.94x       69.91x    27.9%     781.62c
+
+  touch in 98.5-99.5c   base = 10 contracts, -0.69c of EV per close over 105 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       124.9    12.49x       33.09x  -164.8%     -22.97c
+          530       501.2    50.12x      243.41x  -385.6%    -168.96c
+          all     11357.6  1135.76x    10701.68x  -842.2%   -7428.50c
+     ev_gated       392.5    39.25x     -202.86x   616.8%     140.81c
+
+  touch in 99.5-100.0c   base = 10 contracts, -6.75c of EV per close over 161 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       105.8    11.45x       11.62x    -1.5%     -78.43c
+          530       355.5    38.49x       39.90x    -3.6%    -269.25c
+          all      2308.5   249.93x      267.35x    -7.0%   -1804.28c
+
+  touch in ALL   base = 10 contracts, -3.16c of EV per close over 162 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       109.2    11.69x       12.76x    -9.2%     -40.38c
+          530       389.4    41.67x       52.95x   -27.1%    -167.55c
+          all      4031.3   431.36x      760.45x   -76.3%   -2406.39c
+     ev_gated      1473.4   157.66x     -529.98x   436.2%    1677.09c
+
+  FIRST BUYABLE SECOND ONLY, touch in 95.0-97.0c   base = 10 contracts, 29.61c of EV per close over 74 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       125.0    12.50x       10.88x    12.9%     322.31c
+          530       524.5    52.45x       32.21x    38.6%     953.72c
+          all     14363.6  1436.36x       -9.34x   100.7%    -276.48c
+     ev_gated      4058.3   405.83x      181.20x    55.4%    5365.67c
+
+  FIRST BUYABLE SECOND ONLY, touch in 97.0-98.5c   base = 10 contracts, 12.12c of EV per close over 51 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       125.0    12.50x       10.25x    18.0%     124.20c
+          530       520.6    52.06x       23.64x    54.6%     286.48c
+          all     25594.8  2559.48x    -1340.75x   152.4%  -16245.83c
+     ev_gated      1306.0   130.60x       84.05x    35.6%    1018.46c
+
+  FIRST BUYABLE SECOND ONLY, touch in 98.5-99.5c   base = 10 contracts, -0.43c of EV per close over 44 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       125.0    12.50x       51.87x  -315.0%     -22.33c
+          530       521.4    52.14x      472.31x  -805.8%    -203.34c
+          all     28466.5  2846.65x    49989.82x -1656.1%  -21521.98c
+     ev_gated       144.1    14.41x     -133.15x  1024.0%      57.32c
+
+  FIRST BUYABLE SECOND ONLY, touch in 99.5-100.0c   base = 10 contracts, -6.72c of EV per close over 152 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       108.6    12.16x       12.28x    -1.0%     -82.50c
+          530       436.3    48.84x       50.30x    -3.0%    -338.00c
+          all      6805.6   761.89x      814.06x    -6.8%   -5470.71c
+
+  FIRST BUYABLE SECOND ONLY, touch in ALL   base = 10 contracts, 0.75c of EV per close over 162 closes
+            n   contracts   naive x   realised x    eaten    EV/close
+          125       114.7    12.32x       -1.39x   111.3%      -1.05c
+          530       469.4    50.42x     -122.38x   342.7%     -92.36c
+          all     10444.3  1121.89x    -8339.50x   843.3%   -6293.60c
+     ev_gated      2778.0   298.40x     4470.67x -1398.2%    3373.89c
+
+  2119s

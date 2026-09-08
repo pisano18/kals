@@ -1,3 +1,185 @@
+# 2026-09-08 late -- MARKET IMPACT IS MEASURED. Scaling 10 -> 125 keeps 10.2-11.3x of the naive 12.5x; the ladder is real; the endgame refill control has NO POWER and I am saying so rather than reporting a number
+
+**Five lines:** (1) `research/pinimpact.py` (rewritten, self-test green) measured
+slippage and refill on **18,225,343 sweep groups over 951 closes** of trade +
+ticker tape and a **48-hour order-book replay over 162 closes**. (2) **Buying
+125 instead of 10 earns 10.2-11.3x, not 12.5x -- impact eats 9-19%**, so the
+scale-up is worth doing on impact grounds; **530 contracts eats 25-57%** and is
+where it starts to hurt. (3) **The displayed ladder is real**: realised sweep
+VWAP minus the cost of walking the pre-sweep displayed book is **-0.001c on
+3,527,972 real sweeps, fillable share 1.000**, and the book delta that removes
+the liquidity carries **exactly the same `ts_ms`** as the trade print on
+126,348 of 126,348 prints, so the book being walked is genuinely pre-sweep.
+(4) **`pinladder2`'s closing caveat was aimed at the wrong thing** -- its
+arithmetic already pays each level its own price, and the tape says those
+prices are honest; what it is missing is ~0.15c/contract of race cost (~11%)
+and the fact that its ladder costs $3,020. (5) **The permanent-impact control
+CANNOT BE BUILT in the population that matters** and the report says `nan`
+rather than guessing.
+
+## THE IMPACT FUNCTION -- cents per contract paid above the touch
+
+Priced off the DISPLAYED book on an exogenous one-second grid at tau 3-30,
+which is the right question ("what would OUR order cost at a random qualifying
+second"), not the trade-arrival question ("what did takers who chose to trade
+pay"). 48 hours of book replay, clustered by close.
+
+| touch band | closes | touch level | whole ladder | n=10 | n=125 | n=530 |
+|---|---|---|---|---|---|---|
+| 90.0-95.0c | 80 | 143 | 35,249 | **0.212c** | **0.808c** | 1.811c |
+| 95.0-97.0c | 80 | 167 | 10,891 | **0.092c** | **0.545c** | 1.343c |
+| 97.0-98.5c | 94 | 176 | 16,656 | **0.045c** | **0.267c** | 0.740c |
+| 98.5-99.5c | 105 | 276 | 11,358 | 0.022c | 0.145c | 0.321c |
+| 99.5-100.0c | 161 | 1,223 | 2,308 | 0.005c | 0.021c | 0.041c |
+
+**The cheaper the offer, the thinner the book.** Slippage at 125 contracts is
+26x larger at 96c than at 99.8c. That is the opposite of comfortable: the money
+is at the cheap end and so is the impact. Roughly `slip ~ N^0.65`.
+
+From REAL sweeps instead of the hypothetical grid (97,786 BUY_WINNER sweeps,
+683-773 closes, MDE 0.001-0.025c): median 3 contracts 0.006c, 23 contracts
+0.020c, **82 contracts 0.038c**, 229 contracts 0.066c, 1,097 contracts 0.135c.
+Lower than the grid because real sweeps are dominated by the deep 99.5c+ book.
+**The slippage control -- the next k prints, same side, never simultaneous --
+is LARGER than the sweep in every bucket** (0.012 / 0.043 / 0.110 / 0.184 /
+0.380c). Sweeping instantly is cheaper than working the same size over the
+following 30 seconds.
+
+## (d) THE CORRECTED NUMBERS
+
+| band | 10 contracts | 125 contracts | naive | realised | eaten |
+|---|---|---|---|---|---|
+| 95.0-97.0c | 2.732c/ctr, 27.32c/close | 2.309c/ctr, 288.61c/close | 12.50x | **10.56x** | **15.5%** |
+| 97.0-98.5c | 1.118c/ctr, 11.18c/close | 0.911c/ctr, 113.88c/close | 12.50x | **10.19x** | **18.5%** |
+| 90.0-95.0c | 5.935c/ctr* | 5.376c/ctr* | 12.50x | **11.32x** | **9.4%** |
+
+\* the EV column below 95c is NOT trustworthy -- `MEASURED_FLIP = 0.90%` was
+calibrated on trades the model called >=98% certain, and applying it to a 92c
+contract is exactly the error that made pinladder2 v1 print 680%/day. The
+SLIPPAGE column is model-free and stands at every band.
+
+At 530 contracts: 39.60x / 30.17x / 22.32x against a naive 53x / 52x / 52x --
+**25.3% / 42.3% / 57.0% eaten.**
+
+Reconciled by hand: at vwap 98.05c, `ev_c` = 100*(0.991*0.0195 - 0.009*0.9805)
+= 1.050c gross, fee `ceil(0.07*0.9805*0.0195*10000)/10000` = 0.14c, net 0.911c,
+which is the table. 0.911/1.118 = 0.815, x12.5 = 10.19x. Matches.
+
+**pinladder2's $83.14/close.** Its caveat -- "buying the whole ladder would move
+the price, this assumes it does not" -- names a mechanism that is NOT in its
+number's error: `sum(s * ev(p))` over levels already pays each level its own
+price, and (d1) shows those prices are what a real taker gets. Re-measured per
+close with the `_fp` snapshot key and a market-birth guard, the EV-gated ladder
+in the 95-97c band is **3,098 contracts at 97.51c = $3,020 of capital for
+$40.95 of EV per close**. Not a like-for-like correction of $83.14: that used a
+model gate (p_flip <= 2%) and a median over moments, this uses a price gate
+(touch >= 95c) and a mean per close. The real haircuts on it are **~0.15c per
+contract of race cost (~11%)** and **capital**: $3,020 against a $38.83 account.
+
+## (b) REFILL -- and where it has no power
+
+Live markets (tau > 30 s, 951 closes), matched no-trade control differenced
+within stratum and within hour: a sweep raises what the NEXT taker pays by
+**+0.30c (1-10 contracts) rising to +0.70c (500+)** at T+1s, and only
+**72-76% of the touch depth is back** at T+1/5/15s. Size matters there.
+
+**In the population that matters it cannot be measured.** BUY_WINNER at tau
+3-30 returns `nan` for every control-adjusted cell. Diagnosed, not assumed: in
+12 hours of tape there are **567** quiet tau-3-30 control observations with any
+quoted cost and **8** of them in the >=95c bucket, against 2,544 sweep
+observations there. A quiet second in the endgame with the near-certain side
+still on offer barely exists -- the same fact `pinoffer.py` found. **That is no
+power, not no effect.** The one control that survives is the size difference,
+which shares the drift: raw T+1s change across the five size buckets is
+**0.327 / 0.450 / 0.439 / 0.407 / 0.414c -- flat and non-monotone**, against
+LIVE's 0.256 -> 0.763c which rises cleanly. Conditional on a trade happening in
+the endgame, its size barely changes what the price does next. T+15s is
+uninterpretable at tau 3-30: the market has closed by then.
+
+## (c) THE POPULATIONS, VALIDATED AGAINST SETTLEMENT
+
+Labelled from the RESTING BID consumed, never from the outcome, so it is
+computable live. Scored against fulltape where it reaches:
+
+| population | meaning | taker was right |
+|---|---|---|
+| BUY_WINNER (paid >=95c) | **our trade** | **72,141 of 72,524 = 99.47%** |
+| SELL_WINNER (paid <=5c) | dumping a winner into bids | 475 of 126,679 = 0.37% |
+
+The 0.53% realised flip in the BUY_WINNER population is **more favourable than
+the 0.90% the EV gate assumes**, so the EV column is conservative.
+
+## WHAT WOULD MAKE THIS AN ARTEFACT, AND WHAT CHECKING IT SHOWED
+
+1. **The replayed book might already be eaten when the sweep is scored.**
+   Checked: the negative delta on the consumed level carries the SAME `ts_ms`
+   as the trade on 126,348 of 126,348 prints, 0.00% strictly before. Clean.
+2. **`close_of()` might mis-cluster.** The run's own check returned 0 of 0
+   because fulltape stops at 2026-09-06 08:30Z; re-checked on six hours
+   fulltape covers: **1,098,741 agree, 0 disagree**.
+3. **Phantom depth that pulls when hit.** Checked by (d1) on real sweeps up to
+   ~1,000 contracts: fade -0.001c, fillable 1.000. **Sizes above ~1,000 are
+   extrapolation** -- the "all" and "ev_gated" rows at 3,000-48,000 contracts
+   are NOT validated against a real sweep of that size, because none exists.
+4. **Float noise faking impact.** The first version of `sweep_stat` computed
+   `sum/qty - touch` and left 1e-16 on a group that never left the touch; the
+   self-test demanded EXACT zero and caught it.
+5. **Sweep and control measured over different windows.** The self-test planted
+   a pure 0.10c/s drift: the sweep's base was at T-1s and the control's at T,
+   turning the drift into a spurious +0.10c of "impact" at every horizon. Both
+   now go through one `event_delta()`.
+
+## BUGS FIXED IN THE ESTIMATOR ITSELF (all caught by the self-test)
+
+- `cents()` now rounds at the unit boundary; `close_of()` ceils in
+  MILLISECONDS (a print 1 ms after a close was assigned to the close it had
+  already missed).
+- The `ticker` channel writes `yes_ask "1.0000"` for NO ASK and
+  `yes_bid "0.0000"` for NO BID. The previous version had no guard on the sweep
+  side and would have booked those 100c non-quotes as real prices.
+- The depth-recovery metric was an unbounded ratio; a touch holding 0.01
+  contracts before a sweep and 60 after scored 6,000x and one such moment owned
+  the mean. Now the capped SHARE of pre-sweep depth restored.
+- `count_fp` is fractional (0.17 contracts is a real print); the old `lo=1`
+  size bucket silently discarded those sweeps.
+- Confirmed on the tape: **every non-empty `orderbook_snapshot` uses
+  `yes_dollars_fp` / `no_dollars_fp`** (1,027 of 1,027 in a 20-file sample), so
+  `pindata.Book.snapshot()` has never seeded. `pinimpact` reads both keys AND
+  adds a market-birth guard -- every 15-minute market is born and dies inside
+  one hour file, so a delta-only replay of that file is complete from birth if
+  the birth was seen. 11 sweeps and a handful of grid seconds were discarded by
+  that guard out of 3.5M and 47,000.
+
+## WHAT I COULD NOT MEASURE
+
+- **The race.** The backtest always gets the quote. The tape says the sweep's
+  own best fill is **0.152c worse than the ticker's last published top of book**
+  in the BUY_WINNER population (t = -9.8), which is a floor on "what you see is
+  not what you get", and HANDOFF already records 5 of 19 live orders filling
+  nothing with 562/107/93/10/5 contracts on offer. **Impact is not the binding
+  risk of scaling; the race is.**
+- **Impact below 90c.** The live rule's ceiling is 98.8c and its cheapest live
+  fill was 89c. Bands stop at 90c.
+- **Impact at OUR order sizes above ~1,000 contracts**, for want of a real
+  sweep that big to validate against.
+- **Permanent impact in the endgame** (above).
+
+## THE DECISION THIS SUPPORTS
+
+**On impact alone, 10 -> 125 is a clear yes: you keep 10.2-11.3x of a naive
+12.5x.** It does not clear the other two constraints, and neither is mine to
+move: 125 contracts at 96.55c is **$120.69 per bite, $362 at MAX_PER_CLOSE=3**,
+against a $38.83 account; and HANDOFF's own measurement is that size 125 keeps
+only 53% of opportunities because a moment offering fewer contracts than you
+want is only partly usable.
+
+Files: `research/pinimpact.py`; runs in `results/_pinimpact_full.txt` (240h
+scan + 48h book) and `results/_pinimpact_bands.txt` (48h book, bands to 90c);
+checks in `results/_verify_pinimpact.py`, `_verify_pinimpact2.py`,
+`_verify_pinimpact3.py`.
+
+---
+
 # 2026-09-08 night -- two size-1 literals were silently disarming the trader, and the fix for wasted attempts paid for itself in five minutes
 
 **Five lines:** (1) An adversarial audit of the live money path found **two
