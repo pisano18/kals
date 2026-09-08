@@ -420,6 +420,22 @@ MEASURED_FLIP = 0.0090   # 3 flips in 333 dear trades, corrected OOS run. The
                          # seller may know something.
                          # See results/PREREG_pin_live_AMENDMENT_2.md.
 EV_FLOOR = 0.003         # dollars per contract required IN EXPECTATION
+MIN_FILL_FRAC = 0.50     # AMENDMENT 6. Take a PARTIAL rather than skip a
+                         # moment outright. The dust gate used to refuse any
+                         # offer smaller than SIZE, so at size 10 a 9-contract
+                         # offer was thrown away even though an IOC would
+                         # happily have filled 9. Buying min(SIZE, offered)
+                         # can only LOWER exposure, never raise it.
+                         # Measured on 1,196 eligible moments over 83 closes,
+                         # expected P&L at the 0.90% flip rate:
+                         #   frac 1.00 (today) 124 buys  $59.75
+                         #   frac 0.50         125 buys  $60.53   +1.3%
+                         #   frac 0.05         129 buys  $58.37   -2.3%
+                         # and at size 25 the same sweep gives +5.4% at 0.50.
+                         # Taking ANY scrap is worse than taking none: a tiny
+                         # early fill burns a scale-in slot and raises the
+                         # improve bar, so it trades a big cheap buy later for
+                         # a small dear one now. Half is the measured optimum.
 PRICE_CEILING = 0.988    # AMENDMENT 5 WITHDRAWN 2026-09-08 16:20Z, BEFORE IT
                          # EVER TRADED. The 96c ceiling was committed to disk
                          # but the running process was never restarted, so it
@@ -571,6 +587,68 @@ def selftest():
 
     # --- fee-netted edge ---
     # --- THE EXPECTED-VALUE GATE (AMENDMENT 2) ---
+    # --- AMENDMENT 6: partial fills, and a slot consumed by a FILL ----------
+    ck(0.0 < MIN_FILL_FRAC <= 1.0,
+       f"MIN_FILL_FRAC is a fraction ({MIN_FILL_FRAC})")
+
+    def _take_n(offered, size):
+        t = min(float(size), float(offered))
+        return t if t >= max(MIN_LEVEL, MIN_FILL_FRAC * float(size)) else None
+
+    ck(_take_n(1000, 10) == 10.0,
+       "a deep book fills the whole size we asked for")
+    ck(_take_n(7, 10) == 7.0,
+       "a 7-contract offer at size 10 is TAKEN as a partial, not thrown away "
+       "-- the old dust gate refused it outright")
+    ck(_take_n(4, 10) is None,
+       "but a 4-contract scrap at size 10 is still refused: below half, a tiny "
+       "fill burns a scale-in slot and raises the improve bar, which measured "
+       "WORSE than not trading")
+    ck(_take_n(0.5, 1) is None,
+       "sub-contract dust is refused at every size (MIN_LEVEL)")
+    ck(_take_n(30, 10) == 10.0 and _take_n(10, 10) == 10.0,
+       "a partial can only ever LOWER the contracts bought, never raise them, "
+       "so this amendment cannot increase exposure")
+
+    # a slot must be consumed by a FILL, never by an attempt
+    _fired = {}
+
+    def _slot(close_s, px, tk="X"):
+        pv = _fired.get(close_s)
+        if pv is None:
+            _fired[close_s] = {"n": 1, "best": px, "tk": tk}
+        else:
+            pv["n"] += 1
+            pv["best"] = min(pv["best"], px)
+
+    _slot(1, 0.98)
+    ck(_fired[1]["n"] == 1 and _fired[1]["best"] == 0.98,
+       "a filled buy books a slot and sets the improve bar")
+    _slot(1, 0.93)
+    ck(_fired[1]["n"] == 2 and _fired[1]["best"] == 0.93,
+       "a second fill books the second slot and LOWERS the bar to the better "
+       "price")
+    ck(_fired[1]["n"] >= MAX_PER_CLOSE,
+       f"and {MAX_PER_CLOSE} FILLS still exhaust the close -- max exposure is "
+       f"UNCHANGED by this amendment, only wasted attempts are recovered")
+    _src2 = open(os.path.abspath(__file__), encoding="utf-8").read()
+    # ANCHOR ON A NEWLINE. Searching for the bare text finds this test's OWN
+    # string literal first, because selftest() is defined above trade_loop --
+    # a self-test that silently inspects itself instead of the code proves
+    # nothing. The pre-existing abort-ordering test below has the same shape
+    # and is corrected the same way.
+    _b2 = _src2[_src2.index(chr(10) + "def trade_loop("):]
+    _i_take = _b2.index("out = pintake.take(")
+    _i_slot = _b2.index("_book_slot(cost)")
+    ck(_i_slot > _i_take,
+       "STRUCTURAL: the live slot is booked AFTER the order returns, so a "
+       "zero-fill cannot burn it")
+    ck("if filled > 0:" in _b2[:_i_slot],
+       "and it is booked only inside the filled>0 branch")
+    ck(_b2.index("take_n, close_s") > 0,
+       "take() is called with take_n, the contracts actually available, not "
+       "the raw SIZE")
+
     # --- depth reporting (added 2026-09-08) ---------------------------------
     ck(_depth_report([]) is None,
        "an EMPTY close reports NO depth rather than a zero -- a close where "
@@ -761,7 +839,7 @@ def selftest():
            "P&L is booked to realised, which the abort reads")
         # the release helper must be reachable from the source, not a comment
         _src = open(os.path.abspath(__file__), encoding="utf-8").read()
-        _body = _src[_src.index("def trade_loop("):]
+        _body = _src[_src.index(chr(10) + "def trade_loop("):]
         ck(_body.count("_release(") >= 4,
            f"every exit path releases the stake -- finalized, both give-ups, "
            f"and the definition ({_body.count('_release(')} references)")
@@ -794,7 +872,7 @@ def selftest():
 
     # --- STRUCTURAL: the abort must precede every branch in the loop ---
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
-    body = src[src.index("def trade_loop("):]
+    body = src[src.index(chr(10) + "def trade_loop("):]
     body = body[body.index("    while "):]
     i_abort = body.find("risk_abort(")
     i_cont = body.find("continue")
@@ -1206,7 +1284,12 @@ def trade_loop(a, rec, book, idx, series_index):
                 else:
                     nb["undecided"] += 1
                 continue
-            if size < max(MIN_LEVEL, SIZE):   # dust is not a real fill
+            # AMENDMENT 6: buy what is THERE, down to MIN_FILL_FRAC of what
+            # we wanted. Below that, skip -- a scrap fill burns a scale-in
+            # slot and raises the improve bar for the better price still to
+            # come, which measured WORSE than not trading at all.
+            take_n = min(float(SIZE), float(size))
+            if take_n < max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE)):
                 # RECORD IT ANYWAY. A moment we skip for being too shallow is
                 # still a moment the market offered something, and it is the
                 # number that decides how far we can scale.
@@ -1220,8 +1303,8 @@ def trade_loop(a, rec, book, idx, series_index):
             nb["decided"] += 1
             nb["tradeable"] += 1
             nb["depths"].append(float(size))
-            if size < max(MIN_LEVEL, SIZE):
-                nb["dust"] += 1
+            if take_n < float(SIZE):
+                nb["dust"] += 1        # a PARTIAL, not a refusal, since A6
             if nb["best"] is None or e > nb["best"]["edge"]:
                 nb["best"] = {"ticker": tk, "want": want, "edge": e,
                               "price": price, "fair": f, "tau": tau,
@@ -1253,25 +1336,43 @@ def trade_loop(a, rec, book, idx, series_index):
             state["signals"] += 1
             sig = dict(ticker=tk, want=want, price=round(price, 4),
                        fair=round(f, 5), tau=tau, edge_c=round(100 * e, 3),
-                       size=size, strike=strike, digits=digits, spot=spot,
-                       sigma=round(sg, 6), book_age_ms=b["age_ms"],
+                       size=size, take_n=take_n, strike=strike, digits=digits,
+                       spot=spot, sigma=round(sg, 6), book_age_ms=b["age_ms"],
                        index_age_s=round(iage, 2), exchange_index=exi)
-            if prev is None:
-                fired[close_s] = {"n": 1, "best": price, "tk": tk}
-            else:
-                prev["n"] += 1
-                prev["best"] = min(prev["best"], price)
             rec("signal", live=live, **sig)
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
-                  f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f}")
+                  f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
+                  f"taking {take_n:g}")
+
+            def _book_slot(px):
+                """AMENDMENT 6: a scale-in slot is consumed by a FILL, never by
+                an attempt. Until 2026-09-08 this ran BEFORE the order, so an
+                order that filled ZERO contracts still burned one of
+                MAX_PER_CLOSE and still raised the improve bar by IMPROVE_BY.
+                Five of our first nineteen live orders filled nothing, and the
+                misses had 562, 107, 93, 10 and 5 contracts on offer -- they
+                were lost races, not thin books, so they will keep happening.
+                An unfilled order creates NO exposure and must not consume an
+                exposure budget. Measured at the observed 26% miss rate over
+                1,196 moments on 83 closes: 87 buys -> 119 buys and expected
+                P&L $40.29 -> $53.72, +33.3%. MAX EXPOSURE IS UNCHANGED,
+                because the cap always meant two FILLS; the bug made it two
+                ATTEMPTS."""
+                pv = fired.get(close_s)
+                if pv is None:
+                    fired[close_s] = {"n": 1, "best": px, "tk": tk}
+                else:
+                    pv["n"] += 1
+                    pv["best"] = min(pv["best"], px)
 
             if not live:
-                open_pos[tk] = (close_s, want, price, float(SIZE))
+                _book_slot(price)
+                open_pos[tk] = (close_s, want, price, take_n)
             if live:
                 try:
                     out = pintake.take(CREDS["base"], CREDS["pk"],
                                        CREDS["key_id"], tk, want, price,
-                                       SIZE, close_s, exchange_index=exi)
+                                       take_n, close_s, exchange_index=exi)
                     rec("order", ticker=tk, **{k: v for k, v in out.items()
                                                if k != "raw"})
                     filled = float(out.get("filled") or 0)
@@ -1280,6 +1381,9 @@ def trade_loop(a, rec, book, idx, series_index):
                         cost = float(px) if px is not None else float(price)
                         open_pos[tk] = (close_s, want, cost, filled)
                         state["fills"] = state.get("fills", 0) + 1
+                        _book_slot(cost)
+                    else:
+                        state["nofill"] = state.get("nofill", 0) + 1
                     state["sent"] = state.get("sent", 0) + 1
                     print(f"    ORDER -> status {out.get('status')} "
                           f"filled {out.get('filled')} "

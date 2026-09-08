@@ -35,7 +35,68 @@ constants**, so they stay meaningful at any setting.
 
 ---
 
-## v10 — CURRENT (2026-09-08 21:14 UTC) — size 10, and two silent killers removed
+## v11 — CURRENT (2026-09-08 21:39 UTC) — MORE BETS, same maximum exposure
+
+| setting | value |
+|---|---|
+| size | 10 contracts |
+| **partial fills** | **take `min(size, offered)` down to 50% of size** |
+| **scale-in slot** | **consumed by a FILL, never by an attempt** |
+| price ceiling | 98.8¢ |
+| loss abort | −$30.00 |
+| pid / code sha | 4052684 / `792ee01f2153` |
+
+**Neither change raises the maximum exposure of a close.** That was the
+constraint, because the balance cannot fund more.
+
+### Change 1 — a no-fill no longer burns a scale-in slot: +33.3%
+
+`fired[close_s]` was written when the SIGNAL fired, *before* the order was
+sent, so an order filling **zero** contracts still burned one of the two
+allowed buys and still raised the improve bar. **5 of our first 19 live orders
+filled nothing**, and depth was not the cause — the misses had 562, 107, 93, 10
+and 5 contracts on offer. Lost races, not thin books, so they recur.
+
+| at the observed 26% miss rate | closes won | buys | expected |
+|---|---|---|---|
+| no-fill BURNS a slot (before) | 67 | 87 | $40.29 |
+| **no-fill keeps the slot** | **80** | **119** | **$53.72** |
+
+**Max exposure unchanged** — the cap always meant two *fills*; the bug made it
+two *attempts*.
+
+### Change 2 — take a partial down to half size: +1.3% at size 10, +5.4% at 25
+
+| threshold | buys | expected |
+|---|---|---|
+| full size only (before) | 124 | $59.75 |
+| **≥50% of size** | **125** | **$60.53** |
+| ≥5% of size | 129 | $58.37 |
+
+**Taking any scrap is worse than taking none:** a tiny early fill burns a slot
+and raises the improve bar, trading a big cheap buy later for a small dear one
+now. Half is the measured optimum at both sizes. Exposure can only fall.
+
+### MEASURED AND REJECTED: `MAX_PER_CLOSE` 2 → 3
+
+**+26.7%, larger than either change above, and NOT deployed because it cannot
+be funded.** Worst close $30 against a $38.83 balance, and the rail would need
+a brake at −$45 or looser. **This is the best available change the moment the
+account is funded.**
+
+### Three self-tests were inspecting themselves
+
+`src.index("def trade_loop(")` matched this test file's OWN string literal,
+because `selftest()` is defined above `trade_loop`. Every structural check
+built on it was reading the test instead of the code and could have passed
+vacuously. All three now anchor on a newline.
+
+**Revert:** `MIN_FILL_FRAC = 1.0`, and move `_book_slot()` back above the order.
+**Pre-registration:** `results/PREREG_pin_live_AMENDMENT_6.md`.
+
+---
+
+## v10 — 2026-09-08 21:14 UTC — size 10, and two silent killers removed
 
 | setting | value |
 |---|---|
