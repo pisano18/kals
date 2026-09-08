@@ -155,9 +155,18 @@ believe it has a 0.1% chance; at the 2.31% rate we cannot rule out, 1.1%.
 
 ## Loss mitigation that is measured but NOT deployed
 
-**Buying the cheap opposite side when a position turns** cuts ruin risk roughly
-in half at zero measured cost, if and only if it triggers late — once the model
-is **90%** sure the position is lost.
+**Buying the opposite side when a position turns** helps less than I first
+reported, and the correction is mine to own. It works only if it triggers late
+— once the model is **90%** sure the position is lost — and even then:
+
+- a hedge existed at the trigger moment in **12 of 12** losers, but was
+  **deep enough for a 20-contract position in only 6 of 12**;
+- at that trigger the other side costs **76¢ to 97.8¢**, not the "5 cent"
+  price the idea was framed around, so it saves roughly **16% of a loss**, and
+  nearer **8%** once the thin half is discounted.
+
+**The "cuts ruin 30×" figure I gave earlier assumed unlimited depth and should
+not be quoted.**
 
 | trigger | false alarms in 165 live positions | profit destroyed |
 |---|---|---|
@@ -165,11 +174,10 @@ is **90%** sure the position is lost.
 | 50% | 1 | 6.7% |
 | **90%** | **0** | **0.0%** |
 
-**It is not live, for one honest reason.** A hedge asks us to buy the side that
-is now *winning*, and we measured that the winning side has no seller in
-**33,427 of 33,431** decided moments. Whether the hedge is purchasable at the
-moment we need it is **unmeasured**, and I will not build a safety net without
-looking for the holes first. That measurement is the next job.
+**It is not live, and the case got weaker when I looked for the holes.** A
+safety net with gaps in half its area, saving 8% of each loss, does not justify
+new live order-path code — especially when the same effort could go at the
+race, which costs us 26% of all orders and is worth far more.
 
 ---
 

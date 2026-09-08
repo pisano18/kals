@@ -22,6 +22,63 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## MEASURED 2026-09-08 late — the hedge is WEAKER than I reported. Half of them are too thin to use.
+
+### 32 | Is the hedge actually PURCHASABLE at the moment we need it? — **PARTIALLY. And that matters.**
+
+This was flagged as the one unmeasured risk gating the hedge. It is now
+measured for depth, and it cuts the benefit roughly in half again.
+
+At a 90% trigger, for all **12 losers** in the wide window:
+
+| | |
+|---|---|
+| a hedge existed at the trigger moment | **12 of 12** |
+| deep enough for a **20-contract** position | **6 of 12** |
+
+The six thin ones offered **1, 2, 6, 9, 1 and 1 contracts**. At our live size of
+20 those are unusable.
+
+**And the hedge is not cheap.** At a 90% trigger the other side costs **76¢ to
+97.8¢**, not the "5 cent" price the idea was framed around. By the time the
+model is 90% sure we have lost, the market has already repriced. Entering at
+95¢ and hedging at 92.6¢ pays 187.6¢ for a $1.00 payout — a locked **87.6¢**
+loss against an unhedged 95¢. It saves 7.4¢, not 90¢.
+
+### The corrected benefit, and I overstated this earlier
+
+| what I said | what it actually is |
+|---|---|
+| "cuts ruin risk 30×" (50% trigger) | true only if every hedge is fillable |
+| "roughly halves ruin risk" (90% trigger) | **~16% loss-severity cut, and only usable half the time** |
+
+Effective severity cut at size 20 is nearer **8%** than 16%, because half the
+hedges cannot be filled at that size. **The 30× figure assumed unlimited depth
+and should not be quoted.**
+
+### What this does NOT change
+
+- The **direction** is still right: hedging late is free, hedging early destroys
+  a quarter of all profit. Idea #31's false-alarm table stands.
+- Availability at the *trigger moment* is genuinely 12 of 12 — the hedge is
+  never absent, only sometimes thin.
+
+### Standing caveat on this measurement
+
+`rows.jsonl` holds one row per **genuinely available** trade, so a moment with
+no offer at all is simply absent from it. This can measure depth **where a
+hedge existed**; it cannot prove one always exists. Settling that needs the raw
+order book, and it is **not settled here**.
+
+### Verdict
+
+**Still not deployed, and the case is now weaker rather than stronger.** A
+safety net with holes in half its area, saving 8% of each loss, is not worth new
+live order-path code while the same effort could go at the race — which costs
+us 26% of all orders and is worth far more.
+
+---
+
 ## MEASURED 2026-09-08 night — the hedge, and what it costs the bets that were fine
 
 ### 31 | Buy the cheap opposite side when a position drifts — **WORKS, but only at a very late trigger**
