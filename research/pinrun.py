@@ -617,6 +617,36 @@ def selftest():
 
     # --- fee-netted edge ---
     # --- THE EXPECTED-VALUE GATE (AMENDMENT 2) ---
+    # --- TWO FILLS ON THE SAME TICKER MUST BOTH SURVIVE ---------------------
+    # 2026-09-08 23:29:53Z filled KXSOL15M twice in one close, at 94.0c and
+    # 90.1c. open_pos was keyed by TICKER, so the second overwrote the first:
+    # the 112.10c win was never booked and its $18.80 stake was never released.
+    # The bank was right; the ledger was not. An unbooked LOSS would be
+    # invisible to the loss abort, which is the dangerous direction, and
+    # MAX_PER_CLOSE 3 makes same-ticker repeats MORE likely.
+    _op = {}
+    _op["ord-A"] = (100, "no", 0.94, 20.0, "KXSOL15M-X")
+    _op["ord-B"] = (100, "no", 0.901, 20.0, "KXSOL15M-X")
+    ck(len(_op) == 2,
+       "two fills on the SAME ticker occupy TWO entries -- keyed by order id, "
+       "the second cannot overwrite the first")
+    ck(sum(c * n for (_, _, c, n, _t) in _op.values()) == 0.94 * 20 + 0.901 * 20,
+       f"and open exposure is the SUM of both stakes "
+       f"(${sum(c*n for (_,_,c,n,_t) in _op.values()):.2f}), not just the last")
+    _tk = _op["ord-A"][4]
+    del _op["ord-A"]
+    ck(any(v[4] == _tk for v in _op.values()),
+       "releasing ONE of them leaves the ticker still referenced, so the "
+       "position record must NOT be dropped yet")
+    del _op["ord-B"]
+    ck(not any(v[4] == _tk for v in _op.values()),
+       "and only when the last one goes is the ticker free -- the null, so a "
+       "release cannot fire early")
+    _src10 = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _b10 = _src10[_src10.index(chr(10) + "def trade_loop("):]
+    ck("open_pos[tk]" not in _b10,
+       "and NOTHING in the loop still keys open_pos by ticker")
+
     # --- THE RUNAWAY OF 2026-09-08 22:44Z MUST NOT RECUR --------------------
     # 160 identical orders into ONE close in ONE second, all refused, none
     # filled, no error logged, no money lost. Two of my own changes, neither
@@ -1168,6 +1198,15 @@ def trade_loop(a, rec, book, idx, series_index):
     # run-stake cap turns back into a cap on LIFETIME TURNOVER after ~15
     # fills -- the exact bug that was fixed once at size 1 and written as a
     # size-1 literal. Found by an adversarial audit, reproduced by a probe.
+    # KEYED BY ORDER ID, NOT BY TICKER. Keying by ticker meant a SECOND fill
+    # on the SAME market silently overwrote the first: 2026-09-08 23:29:53Z
+    # filled SOL twice in one close, at 94.0c and 90.1c. Both paid out at the
+    # exchange and the bank reconciles, but our ledger booked only one -- the
+    # 112.10c win was never recorded and its $18.80 stake was never released.
+    # A leaked stake walks the run into the MAX_RUN_STAKE cap, and an unbooked
+    # LOSS would be invisible to the loss abort, which is the dangerous
+    # direction. MAX_PER_CLOSE 3 makes same-ticker repeats more likely, not
+    # less. Value is (close_s, want, cost, nfill, ticker).
     open_pos = {}
     # NEAR MISSES. "nothing fired" is not information; "the best on offer was
     # 0.2c and we need 0.5c" is. Per close, keep the best net edge seen on
@@ -1180,7 +1219,7 @@ def trade_loop(a, rec, book, idx, series_index):
     end = time.time() + a.minutes * 60
 
 
-    def _release(tk, cost, nfill):
+    def _release(oid, tk, cost, nfill):
         """Give back EXACTLY what was committed, and never on only one path.
 
         pintake._book() adds `filled * price` to LEDGER["committed"]. Anything
@@ -1194,9 +1233,13 @@ def trade_loop(a, rec, book, idx, series_index):
         owed = committed_for(cost, nfill)
         pintake.LEDGER["committed"] = max(
             0.0, float(pintake.LEDGER.get("committed", 0.0)) - owed)
-        pintake.LEDGER["positions"].pop(tk, None)
-        open_pos.pop(tk, None)
-        recon_at.pop(tk, None)
+        open_pos.pop(oid, None)
+        # only drop the ticker from pintake's position map once NO other open
+        # fill still references it, or a second fill on the same market would
+        # release the first's position record early.
+        if not any(v[4] == tk for v in open_pos.values()):
+            pintake.LEDGER["positions"].pop(tk, None)
+            recon_at.pop(tk, None)
         return owed
 
     def reconcile():
@@ -1207,8 +1250,8 @@ def trade_loop(a, rec, book, idx, series_index):
         stake cap. Each closed position is looked up once; a market that has
         not finalised yet is left for the next pass.
         """
-        for tk in list(open_pos):
-            close_s, want, cost, nfill = open_pos[tk]
+        for _oid in list(open_pos):
+            close_s, want, cost, nfill, tk = open_pos[_oid]
             if time.time() < close_s + 20:
                 continue                      # not settled yet
             # THROTTLE. This runs at the top of a 20 Hz loop and a market that
@@ -1228,11 +1271,11 @@ def trade_loop(a, rec, book, idx, series_index):
             m = b.get("market") or {}
             if m.get("status") != "finalized":
                 if time.time() > close_s + 900:
-                    _release(tk, cost, nfill)   # give up rather than leak
+                    _release(_oid, tk, cost, nfill)   # give up, do not leak
                 continue
             res = m.get("result")
             if res not in ("yes", "no"):
-                _release(tk, cost, nfill)
+                _release(_oid, tk, cost, nfill)
                 continue
             won = (res == want)
             # the taker fee is charged on the way in and is part of realised
@@ -1251,7 +1294,7 @@ def trade_loop(a, rec, book, idx, series_index):
             # concurrent exposure, and an overnight run halts on its own
             # success. pin holds for <60 s and closes are 15 min apart, so
             # concurrent exposure is one bet, not the night's turnover.
-            _release(tk, cost, nfill)
+            _release(_oid, tk, cost, nfill)
             state["settled"] = state.get("settled", 0) + 1
             state["wins"] = state.get("wins", 0) + int(won)
             if not won:
@@ -1268,8 +1311,8 @@ def trade_loop(a, rec, book, idx, series_index):
         # size x price, NOT price: at --size 0.01 the per-contract figure
         # overstates exposure 100x and the forward loss bound would halt the
         # run on its very first fill.
-        state["open_cost"] = sum(c * n for (_, _, c, n)
-                                               in open_pos.values())
+        state["open_cost"] = sum(c * n for (_, _, c, n, _tk)
+                                 in open_pos.values())
 
     def report_closes(now_s):
         for cs in sorted(near):
@@ -1549,7 +1592,8 @@ def trade_loop(a, rec, book, idx, series_index):
 
             if not live:
                 _book_slot(price)
-                open_pos[tk] = (close_s, want, price, take_n)
+                open_pos[f"paper-{tk}-{now_s}"] = (close_s, want, price,
+                                                   take_n, tk)
             if live:
                 try:
                     out = pintake.take(CREDS["base"], CREDS["pk"],
@@ -1574,7 +1618,10 @@ def trade_loop(a, rec, book, idx, series_index):
                     if filled > 0:
                         px = out.get("exec_price")
                         cost = float(px) if px is not None else float(price)
-                        open_pos[tk] = (close_s, want, cost, filled)
+                        _oid_new = (out.get("client_order_id")
+                                    or out.get("order_id")
+                                    or f"{tk}-{time.time():.6f}")
+                        open_pos[_oid_new] = (close_s, want, cost, filled, tk)
                         state["fills"] = state.get("fills", 0) + 1
                         _book_slot(cost)
                     else:
