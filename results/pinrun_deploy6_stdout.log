@@ -48,3 +48,4 @@ SELF-TEST PASSED
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $5.00
   index up: 11 ticks, 11 feeds
   close 08:30Z: 3132 looks, best was KXNEAR15M-26SEP080430- YES @0.9990 edge +0.09c (need +0.3c) -> no trade
+  close 08:45Z: 2905 looks, best was KXBTC15M-26SEP080445-4 YES @0.9980 edge +0.18c (need +0.3c) -> no trade
