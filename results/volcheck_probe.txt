@@ -1,0 +1,27 @@
+scanned BNBUSD_RTI
+scanned BRTI
+scanned DOGEUSD_RTI
+scanned ETHUSD_RTI
+scanned HYPEUSD_RTI
+scanned NEARUSD_RTI
+scanned SOLUSD_RTI
+scanned XRPUSD_RTI
+scanned ZECUSD_RTI
+
+EMPIRICAL ONE-SIDED EXCEEDANCE in the pin zone (r<=19), grid stride 7
+   r    n cells        z>3        z>4        z>5        z>6        z>8       z>10
+   2  1,447,911   1.08e-02   5.29e-03   2.98e-03   1.86e-03   8.76e-04   4.86e-04
+   3  1,447,772   1.10e-02   5.28e-03   2.95e-03   1.81e-03   8.53e-04   4.58e-04
+   5  1,447,499   1.13e-02   5.33e-03   2.92e-03   1.80e-03   8.18e-04   4.14e-04
+   9  1,447,013   1.19e-02   5.48e-03   2.95e-03   1.77e-03   7.48e-04   3.56e-04
+  14  1,446,358   1.25e-02   5.62e-03   2.93e-03   1.73e-03   6.80e-04   3.10e-04
+  19  1,445,710   1.29e-02   5.70e-03   2.93e-03   1.65e-03   6.19e-04   2.61e-04
+gauss              1.35e-03   3.17e-05   2.87e-07   9.87e-10   6.22e-16   7.62e-24
+
+PIN ZONE (tau<=20) -- GAUSSIAN vs EMPIRICAL vs WHAT ACTUALLY HAPPENED
+        bucket   rows  closes  mean z   E gauss    E emp  realised
+  p_gauss<1e-6    542     107   21.98     0.000     0.30         0
+    1e-6..1e-4     45      35    4.26     0.001     0.22         0
+    1e-4..1e-2     77      50    3.03     0.180     1.02         0
+        >=1e-2     99      44    1.31    13.313    11.60        17
+         TOTAL    763     109   16.34    13.494    13.13        17

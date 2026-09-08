@@ -135,10 +135,25 @@ STP = "taker_at_cross"
 STP_ALLOWED = ("taker_at_cross", "maker")
 
 # HARD CEILINGS. Not arguments. Changing them is a code edit and a commit.
-MAX_TAKE_COUNT = 1.0      # contracts per take
-HARD_MAX = 5.0            # nothing may exceed this even if the line above is edited
+# THESE RAILS WERE SET FOR A SIZE-1 PROOF AND SILENTLY BLOCKED EVERY SCALE-UP.
+# On 2026-09-08 the operator asked to scale. pinrun was restarted at size 3 and
+# then 8, and BOTH would have been refused HERE at the order stage even after
+# pinrun's own flags were fixed: MAX_TAKE_COUNT of 1 rejects any size above one
+# contract, and a $5 run stake is less than a single size-8 buy (~$7.60).
+# Raised deliberately, with the reasoning recorded, rather than rediscovered as
+# an outage later.
+MAX_TAKE_COUNT = 10.0     # contracts per take. About 8% of the median 125
+                          # resting at the touch, so market impact stays
+                          # negligible.
+HARD_MAX = 25.0           # nothing may exceed this even if the line above is
+                          # edited. 25 contracts is ~$24 at typical prices,
+                          # roughly 60% of the crypto shard -- the real ceiling
+                          # whatever any other constant says.
 MAX_TAU = 90.0            # seconds to close; pin trades only in the last minute
-MAX_RUN_STAKE = 5.00      # dollars committed per process
+MAX_RUN_STAKE = 60.00     # dollars committed per process. The shard holds ~$38
+                          # and positions settle within 60 s, so this bounds
+                          # CONCURRENT exposure, not turnover; pinrun releases
+                          # the stake on settlement.
 LOSS_ABORT = -2.00        # realised P&L at or below this refuses every take
 
 _PROD_ARMED = False
@@ -705,8 +720,14 @@ def selftest():
     # --- every rail must REFUSE ------------------------------------------------
     print("\n  every rail must REFUSE, before signing:")
     cases = [
-        ("count 2", dict(y, count="2.00"), close_ok, now, None),
-        ("count 10 (above HARD_MAX too)", dict(y, count="10.00"), close_ok, now, None),
+        # RELATIVE to the constants, not hardcoded. These were "count 2" and
+        # "count 10", correct when the rails were 1 and 5 and silently WRONG
+        # the moment they were raised for scaling -- the suite then failed on
+        # legal orders instead of illegal ones.
+        (f"count {MAX_TAKE_COUNT + 1:g} (over MAX_TAKE_COUNT)",
+         dict(y, count=f"{MAX_TAKE_COUNT + 1:.2f}"), close_ok, now, None),
+        (f"count {HARD_MAX + 5:g} (over HARD_MAX too)",
+         dict(y, count=f"{HARD_MAX + 5:.2f}"), close_ok, now, None),
         ("price 0", dict(y, price="0.0000"), close_ok, now, None),
         ("price 1", dict(y, price="1.0000"), close_ok, now, None),
         ("price 1.2", dict(y, price="1.2000"), close_ok, now, None),
@@ -730,14 +751,20 @@ def selftest():
         print(f"    {desc:<40} -> {'REFUSED' if v else '*** ALLOWED ***'}")
         if not v:
             fails.append(f"{desc} was NOT refused")
-    v10 = check_take(dict(y, count="10.00"), close_ok, now)
-    if not any("HARD_MAX" in s for s in v10):
-        fails.append("count 10 was not refused by the HARD_MAX rail specifically")
-    v2 = check_take(dict(y, count="2.00"), close_ok, now)
-    if any("HARD_MAX" in s for s in v2):
-        fails.append("count 2 tripped HARD_MAX -- the two ceilings are not separate")
-    if not any("MAX_TAKE_COUNT" in s for s in v2):
-        fails.append("count 2 was not refused by MAX_TAKE_COUNT")
+    vhard = check_take(dict(y, count=f"{HARD_MAX + 5:.2f}"), close_ok, now)
+    if not any("HARD_MAX" in s for s in vhard):
+        fails.append(f"count {HARD_MAX+5:g} was not refused by HARD_MAX specifically")
+    vsoft = check_take(dict(y, count=f"{MAX_TAKE_COUNT + 1:.2f}"), close_ok, now)
+    if any("HARD_MAX" in s for s in vsoft):
+        fails.append(f"count {MAX_TAKE_COUNT+1:g} tripped HARD_MAX -- the two "
+                     f"ceilings are not separate")
+    if not any("MAX_TAKE_COUNT" in s for s in vsoft):
+        fails.append(f"count {MAX_TAKE_COUNT+1:g} was not refused by MAX_TAKE_COUNT")
+    # and a LEGAL size must pass, or the rails are simply blocking everything
+    vok = check_take(dict(y, count=f"{MAX_TAKE_COUNT:.2f}"), close_ok, now,
+                     base=DEMO)
+    if vok:
+        fails.append(f"a legal count of {MAX_TAKE_COUNT:g} was refused: {vok}")
     if HARD_MAX < MAX_TAKE_COUNT:
         fails.append("HARD_MAX is below MAX_TAKE_COUNT")
 
@@ -868,10 +895,17 @@ def selftest():
     ordercli.send = boom
     try:
         reset_ledger()
-        out = take(DEMO, None, "k", "T", "yes", 0.97, 2, close_ok, now_epoch=now)
+        # A count ABOVE HARD_MAX. This used to be 2, which was refused when
+        # MAX_TAKE_COUNT was 1; raising that rail for scaling turned this test
+        # into a false alarm rather than a real check. The INTENT is unchanged
+        # and is the important part: a refused body must never reach the wire.
+        over = HARD_MAX + 5.0
+        out = take(DEMO, None, "k", "T", "yes", 0.97, over, close_ok,
+                   now_epoch=now)
     finally:
         ordercli.send = real_send
-    print(f"    count 2 -> refused={bool(out.get('refused'))} sends={len(calls)}")
+    print(f"    count {over:g} (> HARD_MAX {HARD_MAX:g}) -> "
+          f"refused={bool(out.get('refused'))} sends={len(calls)}")
     if not out.get("refused") or calls or out["status_code"] is not None:
         fails.append("take() reached the wire, or did not report, a refused body")
 

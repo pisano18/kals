@@ -1142,11 +1142,24 @@ def main():
             raise SystemExit(f"--tau-max {a.tau_max} exceeds the frozen rule's "
                              f"{TAU_MAX} s (PREREG_pin_live.md); refusing to go "
                              f"live outside the pre-registered cell")
-        if not (-5.00 <= a.loss_abort < 0.0):
-            raise SystemExit(f"--loss-abort {a.loss_abort} is outside "
-                             f"[-5.00, 0.00); refusing")
-        if a.max_positions > 3:
-            raise SystemExit(f"--max-positions {a.max_positions} > 3; refusing")
+        # THE ABORT MUST SCALE WITH SIZE. A flat -$5.00 cap was correct at
+        # size 1 and silently fatal at size 8: one ORDINARY loss there is
+        # -$7.57, so the run refused to start at all and traded nothing for an
+        # hour before the operator noticed. A brake that cannot survive the
+        # first expected event is not a brake, and a hard cap that refuses the
+        # correct value is worse -- it looks like a safety feature and acts
+        # like an outage.
+        # Allowed: roughly 2 to 4 ordinary losses at the size being traded.
+        one_loss = 1.00 * float(a.size)
+        lo_allowed = -4.0 * one_loss
+        if not (lo_allowed <= a.loss_abort <= -1.5 * one_loss):
+            raise SystemExit(
+                f"--loss-abort {a.loss_abort:.2f} is outside "
+                f"[{lo_allowed:.2f}, {-1.5*one_loss:.2f}] for size {a.size:g}. "
+                f"One ordinary loss at this size is about ${one_loss:.2f}; the "
+                f"abort must survive the first one and stop by the fourth.")
+        if a.max_positions > 6:
+            raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
     if not selftest():
@@ -1171,8 +1184,19 @@ def main():
           f"tau<={TAU_MAX}s  pin {PIN}  edge>={100 * EDGE_FLOOR:.1f}c net  "
           f"loss abort ${a.loss_abort:.2f}  SIZE {a.size:g}")
     print(f"  log {logpath}")
-    rec("start", mode=tag, tau_max=TAU_MAX, pin=PIN, edge_floor=EDGE_FLOOR,
-        size=a.size, loss_abort=a.loss_abort, minutes=a.minutes)
+    # EVERY parameter that can change a trade decision goes in the log, so a
+    # post-mortem can tell exactly which version produced a given result
+    # without guessing from the timestamp. results/VERSIONS.md maps these to
+    # git SHAs and revert commands.
+    rec("start", mode=tag, tau_min=TAU_MIN, tau_max=TAU_MAX, pin=PIN,
+        edge_floor=EDGE_FLOOR, ev_floor=EV_FLOOR,
+        measured_flip=MEASURED_FLIP, max_per_close=MAX_PER_CLOSE,
+        improve_by=IMPROVE_BY, min_level=MIN_LEVEL,
+        max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
+        sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
+        size=a.size, loss_abort=a.loss_abort,
+        max_positions=a.max_positions, minutes=a.minutes,
+        price_ceiling=round(1.0 - MEASURED_FLIP - EV_FLOOR, 4))
 
     if a.live:
         arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}, "

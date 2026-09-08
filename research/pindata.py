@@ -60,7 +60,7 @@ SERIES_TO_INDEX = {
 ROUND_DIGITS = {"KXBTC15M": 2, "KXETH15M": 2, "KXBNB15M": 2,
                 "KXSOL15M": 4, "KXXRP15M": 4, "KXZEC15M": 4,
                 "KXHYPE15M": 4, "KXNEAR15M": 4, "KXDOGE15M": 7}
-TAU_LO, TAU_HI = 2, 90
+TAU_LO, TAU_HI = 2, 200
 
 
 def billed_fee(p, n=1):
@@ -275,6 +275,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--hours", type=int, default=48)
+    ap.add_argument("--tau-hi", type=int, default=TAU_HI)
     ap.add_argument("--out", default=OUT)
     a = ap.parse_args()
     if a.selftest:
@@ -282,6 +283,7 @@ def main():
     if not selftest():
         raise SystemExit("self-test failed")
 
+    globals()["TAU_HI"] = a.tau_hi
     os.makedirs(a.out, exist_ok=True)
     print(f"\n  loading index ({a.hours}h) ...")
     idx, ifiles = load_index(a.hours)

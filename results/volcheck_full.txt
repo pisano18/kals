@@ -1,0 +1,285 @@
+==============================================================================
+VOLCHECK -- is sigma_300 a good estimator of the move it is asked to price?
+==============================================================================
+
+LOADING  C:\kals\kalshi_data\cfbenchmarks_value
+    truncated/unreadable (expected for the live hour): 20260826T05.jsonl.gz EOFError
+    truncated/unreadable (expected for the live hour): 20260902T00.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T01.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T02.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T03.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T04.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T05.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T21.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T22.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T23.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T00.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T01.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T02.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T03.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T04.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T05.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260904T07.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260906T14.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260908T15.jsonl.gz EOFError
+  files=330 unreadable=19
+    BNBUSD_RTI   span=1,249,092s  present=1,127,643  coverage=90.277%
+    BRTI         span=1,249,092s  present=1,127,642  coverage=90.277%
+    DOGEUSD_RTI  span=1,249,092s  present=1,127,642  coverage=90.277%
+    ETHUSD_RTI   span=1,249,092s  present=1,127,645  coverage=90.277%
+    HYPEUSD_RTI  span=1,249,092s  present=1,127,646  coverage=90.277%
+    NEARUSD_RTI  span=1,249,092s  present=1,127,646  coverage=90.277%
+    SOLUSD_RTI   span=1,249,092s  present=1,127,644  coverage=90.277%
+    XRPUSD_RTI   span=1,249,092s  present=1,127,642  coverage=90.277%
+    ZECUSD_RTI   span=1,249,092s  present=1,127,644  coverage=90.277%
+  load 86s
+  scanned BNBUSD_RTI       25s
+  scanned BRTI             25s
+  scanned DOGEUSD_RTI      25s
+  scanned ETHUSD_RTI       24s
+  scanned HYPEUSD_RTI      24s
+  scanned NEARUSD_RTI      24s
+  scanned SOLUSD_RTI       24s
+  scanned XRPUSD_RTI       24s
+  scanned ZECUSD_RTI       24s
+
+GRID: stride 7s, r in (2, 3, 5, 9, 14, 19, 29, 44, 59), 9 indices, 13,002,938 (index, second, r) cells for the shipped estimator
+
+==============================================================================
+1. THE SHIPPED ESTIMATOR: distribution of  m(t,r) / sd_pred
+   sd_pred = sigma_300 * sqrt(var_factor(r,[1.0])) * (60/r)
+==============================================================================
+   r  tau           n   sd(z)     |z|>2     |z|>3      |z|>4       |z|>6
+                       want 1    4.550%    0.270%    0.0063%    2.0e-07%
+   2    3   1,447,128   1.105   5.366%   2.183%   1.0642%  3.740e-03
+   3    4   1,446,989   1.116   5.591%   2.214%   1.0631%  3.646e-03
+   5    6   1,446,725   1.137   5.918%   2.276%   1.0733%  3.621e-03
+   9   10   1,446,230   1.163   6.471%   2.397%   1.1029%  3.558e-03
+  14   15   1,445,584   1.185   7.000%   2.529%   1.1334%  3.469e-03
+  19   20   1,444,936   1.201   7.394%   2.608%   1.1489%  3.317e-03
+  29   30   1,443,699   1.223   7.954%   2.723%   1.1529%  3.010e-03
+  44   45   1,441,775   1.246   8.565%   2.850%   1.1509%  2.718e-03
+  59   60   1,439,872   1.262   8.968%   2.921%   1.1378%  2.551e-03
+------------------------------------------------------------------------------
+      ALL  13,002,938   1.183   7.023%   2.522%   1.1141%  3.293e-03
+
+TAIL RATIO -- realised frequency divided by what a gaussian claims
+  |z| > 2: realised 7.023351%  gaussian 4.550026%   RATIO        1.5x
+  |z| > 3: realised 2.522068%  gaussian 0.269980%   RATIO        9.3x
+  |z| > 4: realised 1.114125%  gaussian 0.006334%   RATIO      175.9x
+  |z| > 6: realised 0.329287%  gaussian 0.000000%   RATIO  1668818.4x
+
+==============================================================================
+1b. THE SHAPE OF z -- quantiles of |z|, pooled over r, against the
+    gaussian.  sd(z) is itself driven by the tail it is supposed to
+    describe, so the BODY is read off the median and the WINSORISED
+    sd (|z| clipped at 3).  If the body sits at 1.00 and only the
+    tail is wrong, sigma is the right SCALE and the GAUSSIAN is the
+    wrong SHAPE -- and those need completely different fixes.
+==============================================================================
+
+  sd300: n=13,002,938
+     quantile  |z| realised  |z| gaussian   ratio
+       0.5000         0.470         0.674   0.697
+       0.7500         0.980         1.150   0.852
+       0.9000         1.700         1.645   1.034
+       0.9500         2.310         1.960   1.179
+       0.9900         4.160         2.576   1.615
+       0.9990         8.730         3.291   2.653
+       0.9999        16.810         3.891   4.321
+
+  rmatch: n=13,001,066
+     quantile  |z| realised  |z| gaussian   ratio
+       0.5000         0.420         0.674   0.623
+       0.7500         0.890         1.150   0.774
+       0.9000         1.550         1.645   0.942
+       0.9500         2.110         1.960   1.077
+       0.9900         3.780         2.576   1.467
+       0.9990         7.780         3.291   2.364
+       0.9999        15.190         3.891   3.904
+
+  SCALE OF THE BODY vs SCALE OF THE WHOLE, per r (sd300):
+     r   sd(z)  winsor sd  med|z|/0.6745  pooled real/pred
+     2   1.105      0.866          0.460             1.021
+     3   1.116      0.888          0.504             1.025
+     5   1.137      0.920          0.563             1.028
+     9   1.163      0.964          0.652             1.032
+    14   1.185      1.000          0.726             1.034
+    19   1.201      1.026          0.771             1.031
+    29   1.223      1.061          0.830             1.027
+    44   1.246      1.095          0.890             1.028
+    59   1.262      1.117          0.934             1.031
+
+==============================================================================
+2. IS SIGMA BIASED OR JUST NOISY?  per-hour realised/predicted sd,
+   non-overlapping windows inside each hour block
+==============================================================================
+     est    r  blocks    p05    p25    MED    p75    p95    p99  pooled
+   sd300    2    2853  0.791  0.909  0.988  1.061  1.204  1.345   1.021
+   sd300    3    2853  0.817  0.924  0.994  1.066  1.189  1.312   1.025
+   sd300    5    2853  0.842  0.943  1.009  1.075  1.192  1.289   1.028
+   sd300    9    2853  0.854  0.955  1.027  1.100  1.224  1.327   1.032
+   sd300   14    2853  0.855  0.975  1.052  1.134  1.279  1.387   1.034
+   sd300   19    2853  0.865  0.984  1.066  1.160  1.327  1.444   1.031
+   sd300   29    2844  0.865  0.998  1.091  1.197  1.377  1.522   1.027
+   sd300   44    2844  0.821  0.967  1.072  1.186  1.387  1.532   1.028
+   sd300   59    2835  0.851  1.004  1.127  1.262  1.488  1.682   1.031
+    ew60    2    2853  0.790  0.911  0.988  1.061  1.206  1.346   1.022
+    ew60    3    2853  0.816  0.926  0.995  1.067  1.191  1.311   1.026
+    ew60    5    2853  0.843  0.945  1.008  1.075  1.190  1.284   1.028
+    ew60    9    2853  0.857  0.956  1.027  1.099  1.220  1.320   1.032
+    ew60   14    2853  0.859  0.976  1.055  1.134  1.274  1.385   1.034
+    ew60   19    2853  0.865  0.986  1.067  1.163  1.328  1.456   1.032
+    ew60   29    2844  0.866  1.001  1.097  1.202  1.382  1.536   1.027
+    ew60   44    2844  0.821  0.968  1.072  1.186  1.390  1.534   1.028
+    ew60   59    2835  0.854  1.014  1.140  1.277  1.513  1.726   1.031
+  rmatch    2    2853  0.748  0.882  0.977  1.074  1.250  1.438   1.006
+  rmatch    3    2853  0.766  0.895  0.982  1.071  1.231  1.415   1.004
+  rmatch    5    2853  0.795  0.912  0.986  1.063  1.211  1.358   1.003
+  rmatch    9    2853  0.790  0.921  0.988  1.071  1.214  1.358   1.004
+  rmatch   14    2853  0.804  0.925  0.999  1.080  1.237  1.401   1.004
+  rmatch   19    2853  0.808  0.931  1.008  1.092  1.242  1.429   1.002
+  rmatch   29    2844  0.814  0.936  1.022  1.112  1.279  1.417   1.001
+  rmatch   44    2844  0.780  0.901  0.992  1.087  1.238  1.367   1.001
+  rmatch   59    2835  0.802  0.937  1.036  1.139  1.312  1.507   1.001
+
+==============================================================================
+3. ESTIMATOR RACE -- same cells, all backward-looking
+   RMSE is against realised |m|, prediction sqrt(2/pi)*sd_pred,
+   normalised by mean|m| so BTC does not swamp DOGE.
+   log-loss is of p_flip at a required move of 2.326 x the (index,r) move scale (~1% base rate each side).
+==============================================================================
+ estimator            n   sd(z)  pooled   nRMSE  logloss    base    pred    |z|>3     |z|>4
+      sd30   12,976,132   1.650   1.030  3.5811  0.09689 1.5640% 1.4278%  5.2449%  2.77639%
+      sd60   12,998,415   1.414   1.030  3.5149  0.09023 1.5615% 1.3885%  3.8895%  1.90242%
+     sd120   13,002,848   1.280   1.030  3.4861  0.08576 1.5611% 1.3566%  3.1006%  1.43142%
+     sd300   13,002,938   1.183   1.029  3.4964  0.08339 1.5611% 1.3279%  2.5221%  1.11413%  <-- SHIPPED
+     sd900   13,003,100   1.126   1.029  3.5245  0.08281 1.5611% 1.3284%  2.2427%  0.95753%
+      ew15   13,003,829   1.419   1.030  3.5134  0.09075 1.5611% 1.3892%  3.9663%  1.93463%
+      ew60   13,003,829   1.195   1.030  3.4567  0.08276 1.5611% 1.3407%  2.6060%  1.15701%
+     ew300   13,003,829   1.102   1.030  3.4880  0.08057 1.5611% 1.3265%  2.0904%  0.88634%
+     bp300   13,002,848   1.541   1.228  3.5210  0.09887 1.5612% 0.7525%  4.9916%  2.38267%
+    rmatch   13,001,066   1.074   1.002  3.5866  0.08182 1.5613% 1.6143%  1.9491%  0.84194%
+
+  best nRMSE: ew60     best log-loss: ew300
+
+==============================================================================
+4. CONDITIONAL -- does the shipped estimator fail somewhere in particular?
+==============================================================================
+
+  by index
+      BNBUSD_RTI n= 1,444,764  sd(z)= 1.106  |z|>3 2.1893% (   8.1x)  |z|>4 0.91364% (  144.2x)
+            BRTI n= 1,444,765  sd(z)= 1.135  |z|>3 2.3926% (   8.9x)  |z|>4 1.04536% (  165.0x)
+     DOGEUSD_RTI n= 1,444,767  sd(z)= 1.173  |z|>3 2.2939% (   8.5x)  |z|>4 1.05110% (  165.9x)
+      ETHUSD_RTI n= 1,444,784  sd(z)= 1.123  |z|>3 2.1874% (   8.1x)  |z|>4 0.90526% (  142.9x)
+     HYPEUSD_RTI n= 1,444,780  sd(z)= 1.263  |z|>3 3.1588% (  11.7x)  |z|>4 1.43088% (  225.9x)
+     NEARUSD_RTI n= 1,444,776  sd(z)= 1.122  |z|>3 2.3553% (   8.7x)  |z|>4 0.97988% (  154.7x)
+      SOLUSD_RTI n= 1,444,768  sd(z)= 1.090  |z|>3 1.9225% (   7.1x)  |z|>4 0.79245% (  125.1x)
+      XRPUSD_RTI n= 1,444,764  sd(z)= 1.315  |z|>3 3.2326% (  12.0x)  |z|>4 1.50904% (  238.2x)
+      ZECUSD_RTI n= 1,444,770  sd(z)= 1.293  |z|>3 2.9662% (  11.0x)  |z|>4 1.39953% (  220.9x)
+
+  by UTC hour
+               0 n=   511,076  sd(z)= 1.190  |z|>3 2.5867% (   9.6x)  |z|>4 1.17967% (  186.2x)
+               1 n=   499,086  sd(z)= 1.228  |z|>3 2.6318% (   9.7x)  |z|>4 1.18937% (  187.8x)
+              10 n=   580,788  sd(z)= 1.198  |z|>3 2.5694% (   9.5x)  |z|>4 1.23281% (  194.6x)
+              11 n=   580,185  sd(z)= 1.170  |z|>3 2.4208% (   9.0x)  |z|>4 1.09810% (  173.4x)
+              12 n=   581,220  sd(z)= 1.257  |z|>3 2.5839% (   9.6x)  |z|>4 1.12247% (  177.2x)
+              13 n=   583,047  sd(z)= 1.196  |z|>3 2.6229% (   9.7x)  |z|>4 1.08225% (  170.9x)
+              14 n=   574,124  sd(z)= 1.147  |z|>3 2.2030% (   8.2x)  |z|>4 0.85347% (  134.7x)
+              15 n=   544,950  sd(z)= 1.166  |z|>3 2.3496% (   8.7x)  |z|>4 0.98578% (  155.6x)
+              16 n=   540,819  sd(z)= 1.186  |z|>3 2.2910% (   8.5x)  |z|>4 0.88163% (  139.2x)
+              17 n=   540,684  sd(z)= 1.127  |z|>3 2.1970% (   8.1x)  |z|>4 0.88739% (  140.1x)
+              18 n=   540,468  sd(z)= 1.143  |z|>3 2.3709% (   8.8x)  |z|>4 0.99839% (  157.6x)
+              19 n=   540,459  sd(z)= 1.160  |z|>3 2.4004% (   8.9x)  |z|>4 1.01099% (  159.6x)
+               2 n=   499,563  sd(z)= 1.209  |z|>3 2.6942% (  10.0x)  |z|>4 1.19625% (  188.9x)
+              20 n=   539,379  sd(z)= 1.174  |z|>3 2.6562% (   9.8x)  |z|>4 1.21640% (  192.0x)
+              21 n=   511,674  sd(z)= 1.230  |z|>3 3.0594% (  11.3x)  |z|>4 1.42513% (  225.0x)
+              22 n=   499,005  sd(z)= 1.145  |z|>3 2.5242% (   9.3x)  |z|>4 1.11562% (  176.1x)
+              23 n=   497,398  sd(z)= 1.169  |z|>3 2.4604% (   9.1x)  |z|>4 1.17572% (  185.6x)
+               3 n=   499,077  sd(z)= 1.115  |z|>3 2.3904% (   8.9x)  |z|>4 0.99223% (  156.6x)
+               4 n=   510,849  sd(z)= 1.207  |z|>3 2.7143% (  10.1x)  |z|>4 1.24518% (  196.6x)
+               5 n=   525,207  sd(z)= 1.204  |z|>3 2.6694% (   9.9x)  |z|>4 1.22085% (  192.7x)
+               6 n=   581,265  sd(z)= 1.142  |z|>3 2.3664% (   8.8x)  |z|>4 1.07541% (  169.8x)
+               7 n=   566,781  sd(z)= 1.224  |z|>3 2.7554% (  10.2x)  |z|>4 1.30827% (  206.5x)
+               8 n=   576,918  sd(z)= 1.158  |z|>3 2.5255% (   9.4x)  |z|>4 1.10744% (  174.8x)
+               9 n=   578,916  sd(z)= 1.230  |z|>3 2.5511% (   9.4x)  |z|>4 1.17755% (  185.9x)
+
+  by s30 > 2*s300 (a jump just happened)
+               0 n=12,664,348  sd(z)= 1.174  |z|>3 2.4824% (   9.2x)  |z|>4 1.09198% (  172.4x)
+               1 n=   338,590  sd(z)= 1.482  |z|>3 4.0048% (  14.8x)  |z|>4 1.94247% (  306.7x)
+
+  by vol-of-vol bucket s30/s300 (<0.75, 0.75-1.25, >)
+               0 n= 5,152,260  sd(z)= 1.055  |z|>3 1.9377% (   7.2x)  |z|>4 0.84724% (  133.8x)
+               1 n= 5,600,076  sd(z)= 1.205  |z|>3 2.5892% (   9.6x)  |z|>4 1.13027% (  178.4x)
+               2 n= 2,250,602  sd(z)= 1.386  |z|>3 3.6929% (  13.7x)  |z|>4 1.68493% (  266.0x)
+
+==============================================================================
+5. THE TRADED POPULATION -- 28,479 rows from C:\kals-repo\results\pindata\rows.jsonl
+   real required_move, real settled flip, no synthetic threshold
+==============================================================================
+
+  RECONSTRUCTION CHECK (this pipeline vs the built dataset)
+    sigma_300 identical to the row's 'sig': 28,479 of 28,479   worst relative diff 3.96e-10
+    settled flip reproduced from m vs required_move: 28,479 of 28,479 (100.0000%); 0 rows dropped for a gap in the index
+
+  CALIBRATION of p_flip = Phi(-|required_move| / sd_pred)
+      p_model bucket       n  mean p_model   realised    ratio   cents
+     0e+00-1e-06     14,460      0.00000%    0.4772% 126170.3    0.48
+     1e-06-1e-05      1,441      0.00040%    1.1103%   2753.2    1.11
+     1e-05-1e-04      1,645      0.00394%    0.6687%    169.6    0.66
+     1e-04-1e-03      1,908      0.04007%    0.4717%     11.8    0.43
+     1e-03-3e-03      1,043      0.18652%    1.4382%      7.7    1.25
+     3e-03-1e-02      1,286      0.58809%    1.0109%      1.7    0.42
+     1e-02-3e-02      1,306      1.84251%    3.3691%      1.8    1.53
+     3e-02-1e-01      1,812      6.04802%   10.4857%      1.7    4.44
+     1e-01-1e+00      3,578     25.45514%   31.8334%      1.3    6.38
+
+    TOTAL: model expects 1054.8 flips in 28,479 rows (3.7037%); realised 1506 (5.2881%); ratio 1.4x
+
+  THE OPERATING POINT pin ACTUALLY TRADES (tau <= 20s), split
+  by how confident the gaussian is.  This is the only slice that decides money.
+       tau <= 20  n=  2,701  model expects    48.87 flips (1.80926%)   realised    62 (2.2954%)   gap +0.486 cents
+       tau 21-60  n= 25,778  model expects  1005.91 flips (3.90222%)   realised  1444 (5.6017%)   gap +1.699 cents
+    and inside tau<=20, by the model's own confidence:
+      p_model   0e+00-1e-06   n=  1,860  mean price 0.9944  model  0.00000%  realised  0.0000%  THRESHOLD ERROR -0.000 cents
+      p_model   1e-06-1e-04   n=    184  mean price 0.9779  model  0.00259%  realised  0.0000%  THRESHOLD ERROR -0.003 cents
+      p_model   1e-04-1e-02   n=    280  mean price 0.9568  model  0.25574%  realised  0.0000%  THRESHOLD ERROR -0.256 cents
+      p_model   1e-02-1e+00   n=    377  mean price 0.8421  model 12.77112%  realised 16.4456%  THRESHOLD ERROR +3.675 cents
+
+  ESTIMATOR RACE ON REAL OUTCOMES -- p_flip = Phi(-|required_move| / sd_pred),
+  scored against the settled flip.  'emp/sd300' keeps sigma_300 as the scale but
+  replaces the gaussian with the measured |z| exceedance curve at the same z.
+  'base rate' is no model at all -- the constant that any model has to beat.
+       model       n   logloss      Brier  E[flips]  realised
+        sd30  28,413   0.18740  0.0400071    1120.8      1498
+        sd60  28,479   0.17380  0.0390477    1116.6      1506
+       sd120  28,479   0.16577  0.0385685    1138.7      1506
+       sd300  28,479   0.15875  0.0385983    1054.8      1506
+       sd900  28,479   0.15339  0.0388083    1064.3      1506
+        ew15  28,479   0.17429  0.0395168    1143.1      1506
+        ew60  28,479   0.16178  0.0385467    1119.0      1506
+       ew300  28,479   0.15486  0.0384732    1085.2      1506
+       bp300  28,479   0.17890  0.0402963     748.2      1506
+   emp/sd300  28,479   0.13658  0.0388965    1116.6      1506
+   base rate  28,479   0.20691  0.0500847    1506.0      1506
+
+==============================================================================
+6. MONEY -- threshold price is 1 - p_flip - margin, so a probability error
+   of dp moves the threshold by 100*dp CENTS, one for one.
+==============================================================================
+
+  (a) SCALE ONLY -- sigma multiplied by 1.183 (measured pooled z sd 1.183):
+      |delta threshold| cents: mean 0.769  median 0.002  p90 3.435  p99 4.050  max 4.057
+
+  (a) SCALE ONLY -- sigma multiplied by 1.250 (the 25% sigma_stress the engine already applies):
+      |delta threshold| cents: mean 1.051  median 0.005  p90 4.587  p99 5.370  max 5.377
+
+  (a) SCALE ONLY -- sigma multiplied by 2.000 (sigma doubled):
+      |delta threshold| cents: mean 4.210  median 0.756  p90 14.594  p99 16.116  max 16.134
+
+  (b) SHAPE -- gaussian p_flip vs the EMPIRICAL exceedance at the same z (28,479 rows):
+      |delta threshold| cents: mean 0.684  median 0.272  p90 1.894  p99 3.991  max 11.431
+
+  (c) TOTAL as calibrated -- weighted mean |realised - model| across buckets with n>=30: 1.584 cents
+
+total 318s

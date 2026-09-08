@@ -894,6 +894,61 @@ def main():
         print(f"  |z| > {thr:.0f}: realised {got:.6%}  gaussian {exp:.6%}"
               f"   RATIO {got/exp:>10.1f}x")
 
+    # ---- 1b. SHAPE: where in the distribution does it go wrong? ----------
+    print("\n" + "=" * 78)
+    print("1b. THE SHAPE OF z -- quantiles of |z|, pooled over r, against the")
+    print("    gaussian.  sd(z) is itself driven by the tail it is supposed to")
+    print("    describe, so the BODY is read off the median and the WINSORISED")
+    print("    sd (|z| clipped at 3).  If the body sits at 1.00 and only the")
+    print("    tail is wrong, sigma is the right SCALE and the GAUSSIAN is the")
+    print("    wrong SHAPE -- and those need completely different fixes.")
+    print("=" * 78)
+    GQ = ((0.50, 0.67449), (0.75, 1.15035), (0.90, 1.64485), (0.95, 1.95996),
+          (0.99, 2.57583), (0.999, 3.29053), (0.9999, 3.89059))
+    for tag, key in (("sd300", "hist"), ("rmatch", "histR")):
+        H = [0] * HB_N
+        for r in rs:
+            h = cond.get((key, r))
+            if h:
+                for i in range(HB_N):
+                    H[i] += h[i]
+        tt = sum(H)
+        if not tt:
+            continue
+        print(f"\n  {tag}: n={tt:,}")
+        print(f"    {'quantile':>9} {'|z| realised':>13} {'|z| gaussian':>13}"
+              f" {'ratio':>7}")
+        run = 0
+        qi = 0
+        for i in range(HB_N):
+            run += H[i]
+            while qi < len(GQ) and run / tt >= GQ[qi][0]:
+                q, g = GQ[qi]
+                x = (i + 1) * HB_W
+                print(f"    {q:>9.4f} {x:>13.3f} {g:>13.3f} {x/g:>7.3f}")
+                qi += 1
+            if qi >= len(GQ):
+                break
+    print("\n  SCALE OF THE BODY vs SCALE OF THE WHOLE, per r (sd300):")
+    print(f"  {'r':>4} {'sd(z)':>7} {'winsor sd':>10} {'med|z|/0.6745':>14}"
+          f" {'pooled real/pred':>17}")
+    for r in rs:
+        x = acc.get(("sd300", r))
+        if not x or not x[0]:
+            continue
+        h = cond.get(("hist", r))
+        med = float("nan")
+        if h:
+            tt = sum(h)
+            run = 0
+            for i in range(HB_N):
+                run += h[i]
+                if run / tt >= 0.5:
+                    med = (i + 1) * HB_W
+                    break
+        print(f"  {r:>4} {math.sqrt(x[1]/x[0]):>7.3f}"
+              f" {math.sqrt(x[10]/x[0]):>10.3f} {med/0.67449:>14.3f}"
+              f" {math.sqrt(x[8]/x[9]):>17.3f}")
     # ---- 2. BIAS OR NOISE -------------------------------------------------
     print("\n" + "=" * 78)
     print("2. IS SIGMA BIASED OR JUST NOISY?  per-hour realised/predicted sd,")
@@ -1083,6 +1138,46 @@ def main():
               f"({tp/nn:.4%}); realised {tf} ({tf/nn:.4%}); "
               f"ratio {tf/tp if tp else float('nan'):.1f}x")
 
+        # ---- 5c. THE PIN OPERATING POINT ---------------------------------
+        print("\n  THE OPERATING POINT pin ACTUALLY TRADES (tau <= 20s), split")
+        print("  by how confident the gaussian is.  This is the only slice "
+              "that decides money.")
+        for lo_t, hi_t, lab in ((0, 21, "tau <= 20"), (21, 61, "tau 21-60")):
+            sub = [d for d in dat if lo_t <= d[10] < hi_t]
+            if not sub:
+                continue
+            n2 = len(sub)
+            ep = 0.0
+            hit = 0
+            for d in sub:
+                sd = d[6] * sd_scale(d[2])
+                pp = phi(-abs(d[3]) / sd) if sd > 0 else 0.5
+                ep += pp
+                hit += 1 if d[5] else 0
+            print(f"    {lab:>12}  n={n2:>7,}  model expects {ep:>8.2f} flips "
+                  f"({ep/n2:.5%})   realised {hit:>5} ({hit/n2:.4%})   "
+                  f"gap {100*(hit/n2 - ep/n2):+.3f} cents")
+        print("    and inside tau<=20, by the model's own confidence:")
+        cuts2 = [0, 1e-6, 1e-4, 1e-2, 1.01]
+        for i in range(len(cuts2) - 1):
+            sub = []
+            for d in dat:
+                if not (0 <= d[10] < 21):
+                    continue
+                sd = d[6] * sd_scale(d[2])
+                pp = phi(-abs(d[3]) / sd) if sd > 0 else 0.5
+                if cuts2[i] <= pp < cuts2[i + 1]:
+                    sub.append((pp, d[5], d[9]))
+            if not sub:
+                continue
+            n2 = len(sub)
+            ep = sum(x[0] for x in sub)
+            hit = sum(1 for x in sub if x[1])
+            mprice = sum(x[2] for x in sub) / n2
+            print(f"      p_model {cuts2[i]:>7.0e}-{cuts2[i+1]:<7.0e} "
+                  f"n={n2:>7,}  mean price {mprice:.4f}  model {ep/n2:>9.5%}"
+                  f"  realised {hit/n2:>8.4%}  THRESHOLD ERROR "
+                  f"{100*(hit/n2 - ep/n2):+.3f} cents")
         # ---- 5b. ESTIMATOR RACE ON THE REAL SETTLED OUTCOMES -------------
         hists = {r: cond.get(("hist", r)) for r in rs}
         print("\n  ESTIMATOR RACE ON REAL OUTCOMES -- p_flip = "

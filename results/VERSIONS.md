@@ -1,39 +1,71 @@
 # Live strategy versions — what is running, and how to go back
 
 **Every change to what trades real money is listed here with its git SHA, the
-evidence, and the exact command to revert.** Newest first. If performance
-degrades, this is the file to read.
+evidence, and the exact command to revert.** Newest first.
 
 ---
 
-## v5 — CURRENT (2026-09-08 ~15:40 UTC)
+## OUTAGE — 2026-09-08 14:40–15:44 UTC, ~1 hour, NO TRADING
+
+**Cause:** three separate hardcoded rails silently refused every scale-up, and
+I verified the process *started* rather than that it *survived*.
+
+1. `pinrun` refused `--loss-abort` outside `[-5.00, 0.00)`. The −$10 (v5) and
+   −$15 (v6) values were rejected and the process **exited immediately**.
+2. `pinrun` refused `--max-positions > 3`. I passed 4.
+3. `pintake.MAX_TAKE_COUNT` was **1 contract**, and `MAX_RUN_STAKE` was $5 —
+   less than a single size-8 buy (~$7.60). So even with (1) and (2) fixed,
+   **size 3 and size 8 would both have been refused at the order stage.**
+
+**The operator noticed before I did** ("No bets have been bought since we upped
+it"). The lesson is recorded, not just the fix: **check that a process is still
+alive after it starts, and that its orders are accepted, before believing a
+deployment.**
+
+**Fixes:** the loss abort now **scales with size** (allowed range is roughly 2–4
+ordinary losses at whatever size is trading) instead of a flat cap that was
+right at size 1 and fatal at size 8. Order rails raised deliberately with the
+reasoning in the source: `MAX_TAKE_COUNT` 1 → 10 (~8% of the median 125
+resting at the touch), `HARD_MAX` 5 → 25, `MAX_RUN_STAKE` $5 → $60.
+
+**`pintake`'s own self-test also had to be fixed** — it asserted "count 2 must
+be refused", which was correct when the rail was 1 and became a *false alarm*
+the moment it was raised. The rail tests are now written **relative to the
+constants**, so they stay meaningful at any setting.
+
+---
+
+## v6 @ size 1 — CURRENT (2026-09-08 15:47 UTC)
 
 | setting | value |
 |---|---|
-| window | `tau` 3–**30** s |
-| model gate | `p_flip` ≤ 0.02 (fair ≥0.98 or ≤0.02) |
-| edge floor | 0.3¢ after fee |
-| **EV gate** | ≥0.3¢ expected at the measured 0.90% flip rate → price ceiling ~98.5¢ |
-| **size** | **3 contracts** per buy |
-| buys per close | up to 2, second only if ≥0.5¢ cheaper |
-| max exposure/close | ~$5.70 |
-| loss abort | **−$10.00** |
-| stake cap | $5.00 committed (pintake) |
+| window | tau 3–**30** s |
+| model gate | p_flip ≤ 0.02 |
+| EV gate | ≥0.3¢ expected at 0.90% flip rate → ceiling **98.8¢** |
+| size | **1 contract** |
+| buys per close | up to **2**, second only if ≥0.5¢ cheaper |
+| max exposure/close | ~$1.90 |
+| loss abort | −$3.00 |
 
-**Change from v4:** size 1 → 3, loss abort −$3 → −$10.
+**Deployed at size 1 deliberately.** The operator's instruction: only go one
+step beyond a *proven* version, and only if each change passed its historic
+test and its failure would be identifiable.
 
-**Why:** the edge rests on 354 out-of-sample closes (+2.51¢, t=+4.1), all four
-falsification controls passing (mirror refused 70/70, forced-wrong lost 70/70,
-placebo bled −48.68¢/trade), and zero flips in 5,219 moments under tau 30.
-Scaling does not accelerate learning — trade *count* does — so this is purely a
-decision about how much to risk on evidence already in hand.
+**Each change passed:**
+- EV gate — 5 of 7 live trades were negative-EV; break-even price = 1−f is exact
+- scale-in — 70 closes, 4.18¢ → 7.43¢/close, average price paid FELL
+- tau 30 — 0 flips in 2,872 moments across 118 closes at tau 21–30
 
-**Why the abort moved:** at size 3 one ordinary loss is −$2.85. A −$3 brake
-would fire on the *first expected event* rather than on a malfunction. −$10 is
-roughly 3–4 losses, which at a 0.9% rate is a genuine anomaly.
+**Each failure is distinguishable:**
+| symptom | cause | fix |
+|---|---|---|
+| flips on trades at tau > 20 | v4 | `--tau-max 20` |
+| second buy at a WORSE price than the first | v3 | `MAX_PER_CLOSE = 1` |
+| any fill above ~98.7¢ | EV gate not binding | check `MEASURED_FLIP` |
+| flip rate > 1.80% | the whole ceiling is wrong | re-derive every threshold |
 
-**Revert:** `git checkout 45966b9 -- research/pinrun.py` then relaunch with
-`--size 1 --loss-abort -3.00`.
+**Size stays at 1 until this version has traded and won on its own.** Scaling
+is a separate, later decision — it does not accelerate learning, only exposure.
 
 ---
 
