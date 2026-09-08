@@ -10,7 +10,8 @@ close]` (108/108 markets). And Kalshi ROUNDS the settlement to the strike's
 precision before comparing, which our model ignored.
 **3.** Replaying the frozen rule over 3 hours of today's tape with full book
 vision: **8 closes fired, 7 won** (+0.56 to +4.76c). The single loss
-(−90.9c) is the rounding bug, not bad luck.
+(−90.9c) is SPOT SUBSTITUTION — the model extrapolated a dip that recovered.
+The corrections do NOT remove it (retraction below).
 **4.** The taker fee is fractional (ceil to $0.0001) — **0.14c at size 1**,
 not 1c. A 1–3c win survives. That threat to the whole strategy is cleared.
 **5.** No live pin order has been placed yet. Account flat at $41.04.
@@ -82,7 +83,7 @@ one fire per close:
 |---|---|---|---|---|
 | 21:15Z | KXHYPE15M | NO @0.9890 | | **+1.02c** |
 | 21:30Z | KXSOL15M | YES @0.9770 | | **+2.14c** |
-| 21:45Z | KXETH15M | NO @0.9030 | | **−90.91c** ← the rounding bug |
+| 21:45Z | KXETH15M | NO @0.9030 | | **−90.91c** ← spot substitution, NOT fixed |
 | 22:00Z | KXXRP15M | YES @0.9910 | | **+0.84c** |
 | 22:15Z | KXDOGE15M | NO @0.9940 | | **+0.56c** |
 | 22:30Z | KXBTC15M | NO @0.9940 | | **+0.56c** |
@@ -139,8 +140,12 @@ qualifying episodes. Fixed by reading the `orderbook_delta` WebSocket.
 
 - **The backtest's +2.54c / t=+5.0 was computed WITH both bugs.** It is being
   re-run corrected. Until that returns, the OOS number should not be quoted.
-- The loss abort reads *realised* P&L, but pin holds to settlement — which
-  happens after a short run ends. So within a single run the **stake cap is
-  the real limit**, not the loss abort. Worst case for a run is therefore
-  bounded by $5, not by −$2.
+- ~~The loss abort can never fire within a run.~~ **FIXED**: `pinrun` now
+  reconciles each closed position against its settlement and calls
+  `record_pnl`, so −$2.00 is a real brake. Worst case for a run is the lower
+  of the $5 stake cap and the −$2.00 abort.
+- **Spot substitution is pin's real remaining risk**, and it is unfixed. The
+  model replaces every not-yet-printed settlement tick with the current spot.
+  When spot moves away and returns, the model can be confidently wrong at
+  small tau — which is exactly what the one replayed loss was.
 - Fill rate in the race is still unmeasured. Predicted 40–60%.
