@@ -162,3 +162,76 @@ G.  (e) THE RACE -- the only direct evidence that exists
 H.  THE SNAPSHOT SEED IN pindata.py IS BROKEN (measured)
 ============================================================================
   8 of 331 snapshot files, 956 messages: keys that ever carry a book = {'yes_dollars_fp': 420, 'no_dollars_fp': 421}
+  rebuilt ['20260906T05', '20260906T06', '20260906T07'] both ways in 58s (108 markets seeded)
+    yesbid: 7,253 of 314,346 (2.31%) differ; 2,249 are levels the delta-only book cannot see at all
+    nobid: 2,404 of 314,346 (0.76%) differ; 689 are levels the delta-only book cannot see at all
+    where both exist: the seeded best bid is +0.236c against delta-only (median +0.100c), higher 100% of the time
+  -> a HIGHER best bid on the far side is a LOWER price for us, so the shipped delta-only book quotes prices that are too DEAR. The bug makes the backtest CONSERVATIVE about price, not optimistic.  It still has to be fixed.
+
+============================================================================
+I.  SAME-DAY REPLAY OF THE MARKETS WE ACTUALLY TRADED
+============================================================================
+  replayed 17 markets + 11 index feeds from the raw tape in 4s (snapshot-seeded, corrected keys)
+  'gated' = a second at which the FULL live rule would have bought:
+  model fair >= 0.98, non-dust offer, edge >= 0.3c after fee, EV >= 0.3c.
+  An UNGATED cheapest-in-window column was removed: it read 8.2c on BTC
+  08:00 because at tau 24 the market still thought the other side was
+  winning. That is hindsight about the outcome, not a missed trade.
+  ticker                      live paid tau tape@tau gated n 1st gated @tau best gated @tau
+  KXBNB15M-26SEP080645-45        99.60c  20   99.80c       0       n/a    -        n/a    -
+  KXBNB15M-26SEP080830-30        95.00c  15   96.70c       5    96.70c   15     96.70c   15
+  KXBNB15M-26SEP080845-45        97.70c  20   99.80c       2    95.60c   22     95.60c   22
+  KXBTC15M-26SEP080400-00        99.20c  20   99.20c       2    98.20c   24     98.20c   24
+  KXBTC15M-26SEP080530-30        99.20c  20   99.60c       6    98.20c   30     98.00c   29
+  KXBTC15M-26SEP080600-00        99.60c  20   99.80c       2    98.70c   30     98.60c   29
+  KXBTC15M-26SEP080800-00        95.00c  19   96.80c       7    96.80c   19     96.80c   19
+  KXDOGE15M-26SEP080930-30       96.30c  20   96.30c       5    96.40c   28     96.30c   20
+  KXETH15M-26SEP081300-00        97.50c  11   99.00c       0       n/a    -        n/a    -
+  KXHYPE15M-26SEP080630-30       99.50c  20   99.30c       0       n/a    -        n/a    -
+  KXHYPE15M-26SEP081200-00       93.50c   9   95.90c       6    95.90c    9     72.00c    8
+  KXNEAR15M-26SEP080615-15       99.20c  12   99.10c       0       n/a    -        n/a    -
+  KXSOL15M-26SEP080500-00        97.90c  15   97.90c       1    97.90c   15     97.90c   15
+  KXSOL15M-26SEP080745-45        99.50c  20   99.60c       4    97.70c   28     97.70c   28
+  KXSOL15M-26SEP080900-00        97.20c  13   97.90c       0       n/a    -        n/a    -
+  KXXRP15M-26SEP081030-30        98.70c  20   98.80c       7    94.00c   30     94.00c   30
+  KXZEC15M-26SEP080515-15        94.70c  15   94.70c       2    96.00c   27     94.70c   15
+  HOW GOOD IS THIS REPLAY? tape vs the live book at the fired second: 17 comparable, mean |difference| 0.68c, median 0.20c, 4 exact.
+  That is NOT a sub-cent validation and must not be used as one: the
+  replay keeps the LAST book state in each second while live acted at an
+  instant inside it, and the logged second can be one off the second the
+  loop evaluated.  Read section I as order-of-magnitude, not as a tie-out.
+  the replay reproduced a qualifying second on 12 of 17 markets.  Of the 5 it did not: 3 are CORRECTLY refused -- today's EV gate rejects their price outright (99.60c, 99.50c, 99.20c); 2 are UNEXPLAINED reconstruction misses (97.50c, 97.20c).
+  live paid mean +0.35c / MEDIAN +0.45c against the FIRST gated second in tau 3-30 (n=12); largest single term +4.70c
+  live paid mean +2.48c / MEDIAN +1.00c against the CHEAPEST gated second in tau 3-30 (n=12); largest single term +21.50c
+  THE OUTLIER, named rather than averaged in: KXHYPE15M-26SEP081200-00 shows a gated price of 72.00c at tau 8.  A 20c+ edge on a near-certain binary is not credible; it is almost certainly a momentary one-contract level in the rebuilt book.  The MEDIAN is the number to quote here, not the mean.
+  Waiting for the cheapest gated second is not free: IDEAS_LOG #9 measured
+  that skipping one tick missed 7 of 70 closes outright.
+
+============================================================================
+VERDICT -- the decomposition, in cents
+============================================================================
+  quoted backtest, blended over scale-in buys        93.66c
+  + FIRST buy per close only (live had no 2nd)       94.87c   (+1.21c)
+  + tau 3-20, the window 15/17 live runs ran          95.37c   (+0.50c)
+  live, TODAY'S RULE only (n=10 closes)                96.35c   (+0.98c UNEXPLAINED)
+  live, all 17 signals, three rule versions        97.61c   (+1.26c is rule contamination)
+
+  CORRECTED EXPECTATION at the measured 0.90% flip rate
+  (EV = (1-f)(1-p) - f*p - fee, averaged per trade, not at the mean price):
+    per contract, blended rule (tau 3-30, cap 2)      5.04c
+    per contract, first buy only (tau 3-20)           3.43c
+    per CLOSE, blended rule                           7.60c   (125 buys over 83 closes)
+    per CLOSE, first buy only, tau 3-20               3.43c   (70 buys over 70 closes)
+    the live rule-accepted signals price out at       2.50c per contract
+
+  CONSEQUENCE FOR results/VERSIONS.md v8 (the withdrawn 96c ceiling).
+  Its reason 1 was: 'the backtest predicted a 96c ceiling would refuse
+  ~30% of trades; live it refuses 12 of 16 (75%)'.  That compared live
+  FIRST buys against the backtest's BLENDED buys.  Like for like:
+    backtest FIRST buys, tau 3-30 (the quoted cell) above 96c  46 of  83 (55%)
+    backtest FIRST buys, tau 3-20 (15/16 live runs) above 96c  47 of  70 (67%)
+    live, today's rule                              above 96c   6 of  10 (60%)
+  The backtest and the live tape AGREE on how often a 96c ceiling binds.
+  v8's reason 1 is refuted; its reasons 2 and 3 are untouched by this file.
+
+  n is CLOSES throughout: 83 backtest closes, 10 live closes under today's rule. Twelve series settle on the same quarter hour at rho~0.8, so a close is worth ~1.22 independent observations, not 12.

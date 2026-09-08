@@ -14,3 +14,12 @@
 {"n": 16, "added": ["KXDOGE15M-26SEP081315-15", "KXETH15M-26SEP081315-15", "KXHYPE15M-26SEP081315-15", "KXSOL15M-26SEP081315-15", "KXXRP15M-26SEP081315-15", "KXZEC15M-26SEP081315-15"], "t": "2026-09-08T17:00:29Z", "kind": "watch"}
 {"n": 18, "added": ["KXBNB15M-26SEP081315-15", "KXBTC15M-26SEP081315-15"], "t": "2026-09-08T17:00:49Z", "kind": "watch"}
 {"n": 9, "dropped": ["KXBNB15M-26SEP081300-00", "KXBTC15M-26SEP081300-00", "KXDOGE15M-26SEP081300-00", "KXETH15M-26SEP081300-00", "KXHYPE15M-26SEP081300-00", "KXNEAR15M-26SEP081300-00", "KXSOL15M-26SEP081300-00", "KXXRP15M-26SEP081300-00", "KXZEC15M-26SEP081300-00"], "t": "2026-09-08T17:05:09Z", "kind": "unwatch"}
+{"close": 1788887700, "looks": 4502, "decided": 4502, "undecided": 0, "no_offer": 4451, "dust": 0, "tradeable": 51, "fired": false, "best_ticker": "KXETH15M-26SEP081315-15", "best_want": "no", "over_ceiling": 0, "neg_ev": 0, "price_ceiling": 0.988, "best_edge_c": 0.092, "best_price": 0.999, "best_fair": 0.0, "best_tau": 28, "best_size": 414.53, "needed_c": 0.3, "t": "2026-09-08T17:15:05Z", "kind": "close_summary"}
+{"n": 11, "added": ["KXBNB15M-26SEP081330-30", "KXZEC15M-26SEP081330-30"], "t": "2026-09-08T17:15:10Z", "kind": "watch"}
+{"n": 16, "added": ["KXBTC15M-26SEP081330-30", "KXDOGE15M-26SEP081330-30", "KXHYPE15M-26SEP081330-30", "KXNEAR15M-26SEP081330-30", "KXXRP15M-26SEP081330-30"], "t": "2026-09-08T17:15:30Z", "kind": "watch"}
+{"n": 18, "added": ["KXETH15M-26SEP081330-30", "KXSOL15M-26SEP081330-30"], "t": "2026-09-08T17:15:50Z", "kind": "watch"}
+{"n": 9, "dropped": ["KXBNB15M-26SEP081315-15", "KXBTC15M-26SEP081315-15", "KXDOGE15M-26SEP081315-15", "KXETH15M-26SEP081315-15", "KXHYPE15M-26SEP081315-15", "KXNEAR15M-26SEP081315-15", "KXSOL15M-26SEP081315-15", "KXXRP15M-26SEP081315-15", "KXZEC15M-26SEP081315-15"], "t": "2026-09-08T17:20:10Z", "kind": "unwatch"}
+{"close": 1788888600, "looks": 4476, "decided": 4476, "undecided": 0, "no_offer": 4476, "dust": 0, "fired": false, "best": null, "why": "decided but NOBODY OFFERED the winning side", "t": "2026-09-08T17:30:05Z", "kind": "close_summary"}
+{"n": 11, "added": ["KXBNB15M-26SEP081345-45", "KXETH15M-26SEP081345-45"], "t": "2026-09-08T17:30:11Z", "kind": "watch"}
+{"n": 15, "added": ["KXBTC15M-26SEP081345-45", "KXHYPE15M-26SEP081345-45", "KXNEAR15M-26SEP081345-45", "KXXRP15M-26SEP081345-45"], "t": "2026-09-08T17:30:31Z", "kind": "watch"}
+{"n": 18, "added": ["KXDOGE15M-26SEP081345-45", "KXSOL15M-26SEP081345-45", "KXZEC15M-26SEP081345-45"], "t": "2026-09-08T17:30:51Z", "kind": "watch"}
