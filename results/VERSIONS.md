@@ -35,6 +35,62 @@ constants**, so they stay meaningful at any setting.
 
 ---
 
+## v10 — CURRENT (2026-09-08 21:14 UTC) — size 10, and two silent killers removed
+
+| setting | value |
+|---|---|
+| size | **10 contracts** |
+| price ceiling | 98.8¢ |
+| buys per close | up to 2, second only if ≥0.5¢ cheaper |
+| window | tau 3–30 s |
+| loss abort | **−$30.00**, and the order path now agrees |
+| pid / code sha | 4056648 / `497c2f96b280` |
+
+### First size-10 trade: +103.14¢, more than the whole day before it
+
+```
+21:30Z close   KXBTC15M  tau=7s  buy NO @0.8900  fair 0.00256  edge +10.058c
+1,000 contracts on offer, we took 10
+filled 10.0 @ 0.89, fee $0.0680  ->  settled NO, payout $10.00
+stake $8.9000 + fee $0.0680      profit +$1.0314   = 11.59% on stake
+```
+
+**89¢ is the cheapest price we have ever paid**, and the cheapest price wins
+more *and* loses less. Break-even at 89¢ is an 11% error rate; ours is 0.90%.
+
+### Two size-1 literals were silently disarming the trader — found by audit
+
+1. **The stake release gave back ONE contract instead of the whole fill.**
+   pintake commits `filled × price`; reconcile released bare `price`. At size 5
+   that stranded $3.90 per settled trade, turning the $60 run-stake cap back
+   into a **cap on lifetime turnover** — every order refused after ~15 fills,
+   6 at size 10. `take()` *returns* the refusal rather than raising, so nothing
+   halted and nothing logged. Two give-up branches released **nothing at all**.
+2. **`pintake.LOSS_ABORT` was a hard −$2.00.** One ordinary loss at size 5 is
+   −$4.88, so **the first loss we ever took would have shut off all trading**,
+   silently, while the −$21 brake sat untouched.
+
+**Fixes:** a single `_release()` used on all three exit paths, releasing
+`cost × contracts`; P&L booked on contracts actually filled; and
+`pintake.set_limits()`, which raises the order-path rails to agree with the
+run's own brake and **refuses to tighten**.
+
+**The self-tests now sweep sizes 1, 5, 8, 10, 25**, include a positive
+assertion that a one-contract release at size 5 leaks $3.90 so they cannot pass
+vacuously, and scan the source to require every exit path to release.
+
+### Depth tracking added
+
+`close_summary` now carries min/p25/median/p75/max/total contracts offered
+across every moment we could have bought, plus how many survive at each
+candidate size. Early readings: **median 530 contracts** on one close, **101**
+on another, with 414 moments surviving size 10.
+
+**Revert:** `--size 5 --loss-abort -21.00`.
+**Revert trigger:** any fill above 98.8¢, or a flip rate above 2.31%.
+
+---
+
 ## v9 — CURRENT (2026-09-08 16:36 UTC) — back to a 98.8¢ ceiling
 
 | setting | value |
@@ -262,29 +318,19 @@ loss abort −$3.00. First real trade 08:00Z (BTC YES @0.992, won +0.74¢).
 
 | | |
 |---|---|
-| orders executed | **13** |
-| won / lost | **13 / 0** |
-| realised | **+82.29¢** |
-| crypto shard | $38.8255 |
-| price paid, live | min 93.50¢, mean 97.61¢, max 99.60¢ |
+| orders sent | 19 |
+| executed / no fill | **14 / 5** |
+| won / lost | **14 / 0** |
+| realised | **+$1.8543** |
+| biggest single trade | **+103.14¢** (BTC, 10 contracts at 89¢) |
+| price paid, live | min **89.0¢**, max 99.60¢ |
 
-### The first trade under the restored 98.8¢ ceiling proves the revert was right
+**5 of 19 orders did not fill**, and depth was NOT the cause — the misses had
+562, 107, 93, 10 and 5 contracts on offer against the 1 to 10 we asked for.
+That is the race for a stale quote, the project's standing primary open risk.
 
-```
-17:00Z close   KXETH15M  tau=11s  buy NO @0.9750  edge +1.142c
-filled 5.0 @ 0.975, fee $0.0086  ->  settled, payout $5.00
-stake $4.8750 + fee $0.0086       profit +11.64c
-crypto shard $38.7091 -> $38.8255, reconciles to the cent
-over_ceiling on that close: 76 moments refused at 98.8c, 0 negative-EV
-```
-
-**97.5¢ is above 96¢, so the withdrawn v8 ceiling would have refused this trade
-outright.** The revert earned 11.64¢ on its first close.
-
-**Standing caveat, unchanged:** at the measured 0.90% flip rate, 13 straight
-wins is the EXPECTED outcome (0.12 losses expected). Nothing about the tail has
-been observed live. At the live mean price of 97.61¢ the first loss costs
-roughly **41 wins**.
+**Standing caveat:** at the measured 0.90% flip rate, 14 straight wins is the
+EXPECTED outcome. Nothing about the tail has been observed live.
 
 ## What to check first if it starts losing
 
