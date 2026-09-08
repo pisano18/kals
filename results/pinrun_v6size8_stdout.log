@@ -52,7 +52,7 @@ SELF-TEST -- pinrun
   ok   take() is called with the market's exchange_index, not the default 0
   ok   exchange_index is read from the market record in the universe pass
 SELF-TEST PASSED
-  MODE LIVE size 1   tau<=30s  pin 0.98  edge>=0.3c net  loss abort $-3.00  SIZE 1
-  log C:\kals-repo\results\pinrun-live-20260908T154616Z.jsonl
+  MODE LIVE size 1   tau<=30s  pin 0.98  edge>=0.3c net  loss abort $-15.00  SIZE 8
+  log C:\kals-repo\results\pinrun-live-20260908T154854Z.jsonl
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $60.00
   index up: 11 ticks, 11 feeds
