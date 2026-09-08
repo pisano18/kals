@@ -60,3 +60,8 @@ SELF-TEST PASSED
   SIGNAL KXBTC15M-26SEP080530-30 tau=20s buy NO @0.9920 fair 0.0000 edge +0.74c size 562.02
     ORDER -> status canceled filled 0.0 @ None fee None
   close 09:30Z: 1 looks, best was KXBTC15M-26SEP080530-3 NO @0.9920 edge +0.74c (need +0.3c) -> FIRED
+  close 09:45Z: 2961 looks, best was KXZEC15M-26SEP080545-4 YES @0.9990 edge +0.09c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP080600-00 tau=20s buy YES @0.9960 fair 1.0000 edge +0.37c size 2398.63
+    ORDER -> status executed filled 1.0 @ 0.996 fee 0.0003
+  close 10:00Z: 1 looks, best was KXBTC15M-26SEP080600-0 YES @0.9960 edge +0.37c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP080600-00 yes vs yes -> +0.37c (run realised $+0.0726)
