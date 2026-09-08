@@ -262,23 +262,29 @@ loss abort −$3.00. First real trade 08:00Z (BTC YES @0.992, won +0.74¢).
 
 | | |
 |---|---|
-| orders sent | 16 |
-| executed / no fill | 12 / 4 |
-| settled and booked | 12 |
-| won / lost | **12 / 0** |
-| realised | **+70.65¢** |
-| crypto shard | $38.7091 |
-| price paid, live | min 93.50¢, mean **97.61¢**, max 99.60¢ |
+| orders executed | **13** |
+| won / lost | **13 / 0** |
+| realised | **+82.29¢** |
+| crypto shard | $38.8255 |
+| price paid, live | min 93.50¢, mean 97.61¢, max 99.60¢ |
 
-Biggest single win: the size-8 HYPE trade, +49.34¢ (6.6% on stake). **Its
-`settled` record is missing from the JSONL** because the process was stopped
-between fill and settlement; the balance reconciles, so the trade is real, but
-the log undercounts. Log scans of `kind == "settled"` return 11, not 12.
+### The first trade under the restored 98.8¢ ceiling proves the revert was right
 
-**Standing caveat:** at the measured 0.90% flip rate, 12 straight wins is the
-*expected* outcome (0.11 losses expected). Nothing about the tail has been
-observed live. At the live mean price of 97.61¢ the first loss costs roughly
-**41 wins**, not ten.
+```
+17:00Z close   KXETH15M  tau=11s  buy NO @0.9750  edge +1.142c
+filled 5.0 @ 0.975, fee $0.0086  ->  settled, payout $5.00
+stake $4.8750 + fee $0.0086       profit +11.64c
+crypto shard $38.7091 -> $38.8255, reconciles to the cent
+over_ceiling on that close: 76 moments refused at 98.8c, 0 negative-EV
+```
+
+**97.5¢ is above 96¢, so the withdrawn v8 ceiling would have refused this trade
+outright.** The revert earned 11.64¢ on its first close.
+
+**Standing caveat, unchanged:** at the measured 0.90% flip rate, 13 straight
+wins is the EXPECTED outcome (0.12 losses expected). Nothing about the tail has
+been observed live. At the live mean price of 97.61¢ the first loss costs
+roughly **41 wins**.
 
 ## What to check first if it starts losing
 
