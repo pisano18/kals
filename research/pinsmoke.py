@@ -247,9 +247,22 @@ def main():
     rec("order_raw", raw=out.get("raw"))
 
     filled = float(out.get("filled") or 0)
+    sc = out.get("status_code")
+    if sc is None or not (200 <= int(sc) < 300):
+        # A NON-2xx IS A REJECTION, NOT A MISSED FILL. The first run printed
+        # "no fill -- the send path is proven" on an HTTP 400
+        # insufficient_balance, which is exactly backwards: nothing was
+        # accepted, and the real cause was that the money sat on the wrong
+        # exchange shard. Report the exchange's own words, never a guess.
+        err = out.get("error") or out.get("raw")
+        print(f"\n  *** REJECTED by Kalshi: HTTP {sc} -- {err}")
+        print("  Nothing was placed. This is NOT 'no fill'.")
+        rec("end", why="rejected", status_code=sc, error=err,
+            balance_after=balance())
+        return
     if filled <= 0:
-        print("\n  no fill -- the IOC found nothing at that price. "
-              "The send path is proven; the fill path is not.")
+        print("\n  accepted but no fill -- the IOC found nothing at that "
+              "price and cancelled. Send path proven; fill path not.")
         rec("end", why="no fill", balance_after=balance())
         return
 

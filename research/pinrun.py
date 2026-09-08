@@ -808,7 +808,21 @@ def trade_loop(a, rec, book, idx, series_index):
                             ct, "%Y-%m-%dT%H:%M:%SZ"))
                         if cs - now_s > 900 or cs < now_s:
                             continue
-                        d = (m.get("custom_strike") or {}).get("round_digits")
+                        cs_ = m.get("custom_strike") or {}
+                        d = cs_.get("round_digits")
+                        # THE STRIKE IS RETURNED TWICE AND THEY DIFFER.
+                        # Top-level floor_strike is TRUNCATED to the display
+                        # precision; custom_strike.floor_strike is exact.
+                        # Live 2026-09-08: DOGE 0.08926 vs '0.0892605'. DOGE's
+                        # round_digits is 7, so the rounding correction is
+                        # 5e-8 while the truncation error is 5e-7 -- ten times
+                        # larger than the effect it was meant to model. Use
+                        # the exact field wherever the exchange gives it.
+                        if cs_.get("floor_strike") is not None:
+                            try:
+                                sk = float(cs_["floor_strike"])
+                            except (TypeError, ValueError):
+                                pass
                         # EXCHANGE_INDEX IS NOT OPTIONAL. Checked live
                         # 2026-09-08 across all 11 series: every open crypto
                         # 15M market reads exchange_index 2, not 0. take()

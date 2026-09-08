@@ -77,7 +77,38 @@ SERIES_TO_INDEX = {
     "KXZEC15M": "ZECUSD_RTI", "KXHYPE15M": "HYPEUSD_RTI",
     "KXNEAR15M": "NEARUSD_RTI", "KXADA15M": "ADAUSD_RTI",
 }
-ROUND_DIGITS = {"KXBTC15M": 2, "KXETH15M": 2, "KXBNB15M": 2}   # others 4
+# MEASURED FROM THE EXCHANGE, NEVER ASSUMED. The first version hardcoded 2 for
+# BTC/ETH/BNB and defaulted everything else to 4. DOGE is 7. Applying a 4-digit
+# band (0.00005) to a $0.09 coin shifts the pricing threshold by 0.055% --
+# comparable to DOGE's entire 15-minute move. An assumed constant inside a
+# pricing threshold is how a "correction" makes a model worse.
+ROUND_DIGITS = {}
+
+
+def load_round_digits(verbose=True):
+    """round_digits per series, straight from custom_strike on a live market."""
+    sys.path.insert(0, r"C:\Users\Joe\AppData\Local\Temp\kals-work")
+    from kauth import get
+    for s in SERIES_TO_INDEX:
+        try:
+            st, b = get("/markets", {"series_ticker": s, "status": "open",
+                                     "limit": "1"})
+            ms = (b or {}).get("markets") or []
+            if not ms:
+                continue
+            d = (ms[0].get("custom_strike") or {}).get("round_digits")
+            if d is not None:
+                ROUND_DIGITS[s] = int(d)
+        except Exception:
+            pass
+    if verbose:
+        print("  round_digits read from the exchange: "
+              + ", ".join(f"{k}={v}" for k, v in sorted(ROUND_DIGITS.items())))
+        missing = [s for s in SERIES_TO_INDEX if s not in ROUND_DIGITS]
+        if missing:
+            print(f"  no round_digits for {missing} -- those series are "
+                  f"SKIPPED rather than guessed")
+    return ROUND_DIGITS
 PIN = 0.98
 SIGMA_WIN = 300
 
@@ -275,6 +306,7 @@ def main():
              for r in v]
     ft_hi = max(float(r["close"]) for r in rows0)
     ft_lo = min(float(r["close"]) for r in rows0)
+    load_round_digits()
     files = sorted(glob.glob(os.path.join(IDXDIR, "2026*.jsonl.gz")))[:-1]
 
     def hour_of(f):
@@ -315,7 +347,9 @@ def main():
         close_s = int(float(r["close"]))
         K = float(r["strike"])
         won = 1.0 if float(r["result"]) >= 0.5 else 0.0
-        d = ROUND_DIGITS.get(s, 4)
+        d = ROUND_DIGITS.get(s)
+        if d is None:
+            continue      # never guess the pricing threshold
         for tau in taus:
             now = close_s - tau
             sg = sigma_from(T, now)
