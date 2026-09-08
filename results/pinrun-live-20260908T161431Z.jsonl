@@ -5,3 +5,8 @@
 {"n": 10, "added": ["KXZEC15M-26SEP081230-30"], "t": "2026-09-08T16:15:13Z", "kind": "watch"}
 {"n": 17, "added": ["KXBNB15M-26SEP081230-30", "KXBTC15M-26SEP081230-30", "KXETH15M-26SEP081230-30", "KXHYPE15M-26SEP081230-30", "KXNEAR15M-26SEP081230-30", "KXSOL15M-26SEP081230-30", "KXXRP15M-26SEP081230-30"], "t": "2026-09-08T16:15:34Z", "kind": "watch"}
 {"n": 18, "added": ["KXDOGE15M-26SEP081230-30"], "t": "2026-09-08T16:15:53Z", "kind": "watch"}
+{"n": 9, "dropped": ["KXBNB15M-26SEP081215-15", "KXBTC15M-26SEP081215-15", "KXDOGE15M-26SEP081215-15", "KXETH15M-26SEP081215-15", "KXHYPE15M-26SEP081215-15", "KXNEAR15M-26SEP081215-15", "KXSOL15M-26SEP081215-15", "KXXRP15M-26SEP081215-15", "KXZEC15M-26SEP081215-15"], "t": "2026-09-08T16:20:14Z", "kind": "unwatch"}
+{"close": 1788885000, "looks": 4264, "decided": 3883, "undecided": 381, "no_offer": 2929, "dust": 0, "tradeable": 954, "fired": false, "best_ticker": "KXBTC15M-26SEP081230-30", "best_want": "no", "best_edge_c": 2.891, "best_price": 0.966, "best_fair": 0.00279, "best_tau": 28, "best_size": 665.71, "needed_c": 0.3, "t": "2026-09-08T16:30:05Z", "kind": "close_summary"}
+{"n": 11, "added": ["KXNEAR15M-26SEP081245-45", "KXSOL15M-26SEP081245-45"], "t": "2026-09-08T16:30:14Z", "kind": "watch"}
+{"n": 17, "added": ["KXBNB15M-26SEP081245-45", "KXBTC15M-26SEP081245-45", "KXDOGE15M-26SEP081245-45", "KXETH15M-26SEP081245-45", "KXHYPE15M-26SEP081245-45", "KXXRP15M-26SEP081245-45"], "t": "2026-09-08T16:30:35Z", "kind": "watch"}
+{"n": 18, "added": ["KXZEC15M-26SEP081245-45"], "t": "2026-09-08T16:30:54Z", "kind": "watch"}

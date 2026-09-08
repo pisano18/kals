@@ -56,3 +56,4 @@ SELF-TEST PASSED
   log C:\kals-repo\results\pinrun-live-20260908T161431Z.jsonl
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $60.00
   index up: 11 ticks, 11 feeds
+  close 16:30Z: 4264 looks, best was KXBTC15M-26SEP081230-3 NO @0.9660 edge +2.89c (need +0.3c) -> no trade
