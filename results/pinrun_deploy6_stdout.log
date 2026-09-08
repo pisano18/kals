@@ -57,3 +57,6 @@ SELF-TEST PASSED
     ORDER -> status executed filled 1.0 @ 0.947 fee 0.0036
   close 09:15Z: 718 looks, best was KXZEC15M-26SEP080515-1 NO @0.9470 edge +3.82c (need +0.3c) -> FIRED
   SETTLED KXZEC15M-26SEP080515-15 no vs no -> +4.94c (run realised $+0.0689)
+  SIGNAL KXBTC15M-26SEP080530-30 tau=20s buy NO @0.9920 fair 0.0000 edge +0.74c size 562.02
+    ORDER -> status canceled filled 0.0 @ None fee None
+  close 09:30Z: 1 looks, best was KXBTC15M-26SEP080530-3 NO @0.9920 edge +0.74c (need +0.3c) -> FIRED
