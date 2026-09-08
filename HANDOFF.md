@@ -1,3 +1,255 @@
+# 2026-09-08 evening -- a live config change hid itself in a derived log field, and the REAL constraint turns out to be that there is nothing to buy
+
+**Five lines:** (1) **The 96c price ceiling WAS live and I twice reported it
+wrong**, because `pinrun`'s start record logged
+`round(1.0 - MEASURED_FLIP - EV_FLOOR, 4)` -- a DERIVED 0.988 -- instead of the
+`PRICE_CEILING` constant, so a process enforcing 96c truthfully printed 98.8c;
+it was refusing **12 of our 16 live signals** and the operator noticed the
+symptom ("haven't seen a trade in a while") before I did. (2) It was proved
+live by BEHAVIOUR, not logs: the 16:30Z close passed on `KXBTC15M` NO @96.6c
+with **+2.891c edge and 665 contracts on offer**, and the only rule in the file
+that rejects 96.6c is a 96c ceiling. (3) **Reverted to 98.8c (v9, pid 3997812,
+code sha `d6826548c653`)** after measuring that the tighter setting was never
+necessary -- blended break-even flip rate is **5.75% at 98.8c vs 8.63% at 96c**
+against an EXACT one-sided 95% bound of **2.31%** (the 1.80% Wald figure quoted
+until today is optimistic by 28% at 3 events). (4) **The binding constraint is
+NOT our rules -- it is that nobody offers the winning side.** Across all 30
+live close summaries, **8 closes had ZERO offers on every one of thousands of
+looks**, and most firing closes had only ONE tradeable moment. (5) Two large
+measurements landed: sizing on model confidence is **inverted** (p_flip<1e-10
+rows average 97.51c and pay 1.41c/contract; p_flip>1e-3 rows average 94.39c and
+pay **4.35c**), and the volatility model is the **wrong shape**, not the wrong
+width -- body too narrow at 0.70x, tail |z|>4 at **176x** gaussian, because the
+indices are step functions (SOL repeats the same 1-second print **70.5%** of
+the time).
+
+## The log field that hid a live configuration change
+
+```python
+# WRONG -- this is what the start record logged until 2026-09-08
+price_ceiling=round(1.0 - MEASURED_FLIP - EV_FLOOR, 4)   # ALWAYS 0.988
+```
+
+It reported the ceiling the EV arithmetic *implies* and never read
+`PRICE_CEILING` at all. I checked it, saw 0.988, and concluded the 96c change
+had never been applied. **I then wrote a commit and a VERSIONS.md entry
+asserting that, and reverted the source while the live process kept enforcing
+96c.**
+
+**Fixed:** the start record now logs `PRICE_CEILING` itself, keeps the derived
+value alongside as `ev_implied_ceiling`, and carries a `code_sha` fingerprint of
+the running file. `close_summary` now emits `over_ceiling` and `neg_ev`; both
+counters already existed and neither was reported, so the refusal was invisible
+in the very log written to explain refusals.
+
+**The rule this replaces:** "check what the process logged at start" is not
+enough. A configuration check must read a field DERIVED FROM the constant it
+claims to describe, and the way to prove a rule is live is to find a moment
+where it changed the behaviour.
+
+## The ceiling question, answered properly
+
+The ceiling is a CAP, not the price we usually pay, so comparing break-even
+*at the ceiling* against a flip rate measured *over the whole book* is not
+like-for-like. Blended over every trade a ceiling admits:
+
+| ceiling | closes | buys | avg price | break-even flip rate | headroom vs 2.31% |
+|---|---|---|---|---|---|
+| **98.8c (live)** | 83 | 129 | 93.86c | **5.75%** | 2.49x |
+| 96.0c | 58 | 84 | 90.80c | 8.63% | 3.74x |
+
+Both clear comfortably. Tightening wins **only in expectation** (649.3c vs
+625.9c at an assumed 0.90%) and **loses on what the sample actually did**
+(724.9c vs 742.0c). And the claim that dear trades "were never paying for the
+risk" was never measured: there are **ZERO flips in the entire eligible sample
+at every ceiling**, and the 96-98.8c band realised **+2.087c per contract** over
+784 moments.
+
+## THE REAL CONSTRAINT: 8 of 30 closes had nothing to buy
+
+`close_summary` separates two very different refusals, and the split is stark:
+
+| | meaning | share |
+|---|---|---|
+| `undecided` | fair never reached the 98% gate; no edge existed | small |
+| `no_offer` | fair DID reach the gate but **nobody offered the winning side** | dominant |
+
+Eight closes were `no_offer` on **100% of thousands of looks** (11:00, 11:15,
+11:30, 12:15, 13:45, 14:00, 14:15, 16:45). Most firing closes produced exactly
+**one** tradeable moment. When an outcome becomes obvious the losing side's bid
+vanishes, so there is nothing to cross.
+
+**This is a CAPACITY limit, not a signal limit, and it reframes the whole
+profit question.** Loosening our own thresholds cannot buy what is not offered.
+The lever that acts on this constraint is **RESTING our own bid instead of
+taking** (IDEAS_LOG #6, measured +37% and deliberately not deployed), because a
+resting bid is an offer rather than a search for one. Its blocker is unchanged:
+zero losses in the sample, so the one risk resting carries -- being filled
+precisely when we are wrong -- is unmeasurable on this data.
+
+## Live prices are 3.75c worse than the backtest, and that is unexplained
+
+| | mean price paid |
+|---|---|
+| backtest, live gate, scale-in cap 2 | 93.86c |
+| **LIVE, 16 real signals** | **97.61c** |
+
+On a strategy earning 2-6c per contract that gap could mean every profit figure
+in this repo is inflated. Under investigation; the leading candidate is that
+live we take the FIRST qualifying moment as it streams while the backtest sees
+the whole close and its scale-in picks the best.
+
+## Running record
+
+12 orders executed of 16 sent, **12 wins, 0 losses, +70.65c**, crypto shard
+$38.71. At a 0.90% flip rate 12 straight wins is the EXPECTED outcome (0.11
+losses expected); nothing about the tail has been observed live. At the live
+mean price of 97.61c the first loss costs roughly **41 wins**.
+
+## Copper and the commodity 15M family -- OUT OF SCOPE, and the reason is structural
+
+Kalshi runs **seven** commodity 15-minute series (`KXGOLD15M`, `KXSILVER15M`,
+`KXPLATINUM15M`, `KXPALLADIUM15M`, `KXCOPPER15M`, `KXWTI15M`, `KXNATGAS15M`),
+all `fee_type: quadratic`, so makers pay nothing exactly as on crypto. The
+collector's `CRYPTO_15M` list already names all of them (19 series total).
+
+**pin does not transfer, because the settlement model is different.**
+`KXCOPPER15M` settles on *the close price of a single 1-minute Pyth candle* at
+the close versus the one 15 minutes earlier. Crypto settles on *the mean of 60
+one-second CF Benchmarks prints*. pin's entire edge is that with tau seconds
+left, `61-tau` of the 60 deciding numbers are already published and cannot
+change -- it reads a partly-finished scoreboard. A single candle close has no
+partly-finished state to read. `settlewin.partial()` has nothing to compute and
+`SERIES_TO_INDEX` has no index for it.
+
+Open question worth a measurement, not an assumption: whether the final seconds
+of a 1-minute candle are predictable enough to support a different rule. That
+needs the Pyth feed recorded first.
+
+---
+
+# 2026-09-08 early -- the two settlement-model bugs fixed IN THE BACKTEST; pin survives at +2.51c, t=+4.1, and is now honest about its own tail
+
+**Five lines:** (1) Both bugs named in `pinrun.py`'s docstring were reproduced
+independently on this tape before anything was changed, then fixed in
+`settlewin.py`, `endgame.py` and `pin.py` with self-tests that fail if either
+is reverted. (2) The settlement window is **[close-60, close-1]** -- Kalshi's
+own `avg_60s_data.window_end_ts_exclusive` says so, and mean[c-60..c-1]
+reproduced Kalshi's published 60s average on **44 of 44** quarter-hour closes
+against 11 of 44 for [c-59..c]. (3) Settlement is **rounded to
+`custom_strike.round_digits`** before comparison, so the threshold is
+`K - 0.5*10^-d`; measured by API: BTC/ETH/BNB 2, SOL/XRP/ZEC/HYPE/NEAR 4,
+**DOGE 7** (the docstring's "4 for the rest" was wrong for DOGE). (4) Both
+fixes together reproduce Kalshi's settled outcome on **9,124 of 9,124**
+markets with a complete window on disk -- 100.000%; the old window with no
+rounding got 9,110 (99.847%). (5) **pin SURVIVES.** Frozen cell tau<=20 /
+floor 0.5c, out of sample: **+2.55c t=+5.0 -> +2.51c t=+4.1**, n 336 -> 354,
+MDE 1.54c -> 1.84c -- and the verdict line flips from *"BELOW the fair band:
+OUR tail probability is wrong"* to **"beats the market-is-right null"**.
+
+## What was measured, before anything was changed
+
+Bug 1, three independent ways, all on `C:\kals\kalshi_data\cfbenchmarks_value`:
+
+* Kalshi ships the window on every tick: `window_start_ts_ms = (close-60)*1000`,
+  `window_end_ts_exclusive = close*1000`. Exclusive at the top.
+* mean[c-60..c-1] == Kalshi's `avg_60s_data.value` on 44/44 quarter-hour
+  closes over BRTI, ETHUSD_RTI, SOLUSD_RTI, BNBUSD_RTI (2026-09-05
+  20:00-23:00Z). mean[c-59..c] matched 11/44, only where the two end ticks
+  happened to be equal.
+* Strike identity: over the same window, [c-60..c-1] was the closer match to
+  the next market's `floor_strike` on 39 of 43 markets. e.g.
+  KXBTC15M-26SEP052030-30 settled 79936.50; [c-60..c-1] = 79936.5013,
+  [c-59..c] = 79936.2710.
+
+Bug 2, the confirmed case re-pulled live: `GET /markets/KXETH15M-26SEP071745-45`
+returns `floor_strike 2492.82`, `custom_strike {'round_digits': '2'}`,
+`expiration_value 2492.82`, `result yes`. The tape mean over [c-60..c-1] is
+**2492.815833** -- below the strike. Unrounded model: fair 0.0. Rounded:
+fair 1.0.
+
+## The fix, and the price of it
+
+`settlewin.partial()` is now `lo = close-60`, `hi = min(now, close-1)`, so at
+tau seconds out **61-tau prints are locked and tau-1 remain**. The variance had
+to move with it: `endgame.fair()` now calls `var_factor(tau-1)`, not
+`var_factor(tau)` -- `settle_weights(tau-1)` is exactly right both inside the
+window and before it opens. Leaving the variance alone would have made the two
+halves of `fair()` disagree about how much is still unknown. At tau=5 the old
+sd was 1.35x too wide; at tau=1 it priced a random outcome that is already
+fully determined.
+
+`endgame.settle_threshold(K, d) = K - 0.5*10^-d`, sourced per series by
+`round_digits_map()`: inferred from the settled records themselves (`settle`
+in `fulltape/markets.json` **is** Kalshi's already-rounded `expiration_value`,
+so its widest decimal expansion is `round_digits`) and cross-checked against
+the API. Tape and API agreed on all 9 series with settled markets. A series
+with neither gets no adjustment rather than a guess.
+
+**`outcome_of()` is NOT a third bug.** `kalshi_fulltape.py` writes
+`settle = expiration_value` (already rounded) and
+`result = 1.0 if expiration_value >= floor_strike`, which is Kalshi's own rule;
+`outcome_of` prefers `result` and its fallback compares that same rounded
+`settle`. Both branches were already comparing the rounded value. Verified at
+scale: only 9 of 9,141 settled markets settle the opposite way to
+`raw_mean >= K`, and the fixed model labels all 9 correctly.
+
+## The frozen cell, old model vs new, on ONE tape load
+
+Same rows, same rule, same `walk_forward`. Variant A reproduces the committed
+`results/RESULTS_pin.md` line 176 exactly, which is what makes the rest of the
+table trustworthy.
+
+| variant | n | MDE | claimed | realised | t | flips |
+|---|---|---|---|---|---|---|
+| A OLD window, NO rounding (the +2.55c model) | 336 | 1.54c | +3.38c | **+2.55c** | +5.0 | 72 |
+| B new window, NO rounding | 336 | 1.76c | +3.31c | +2.27c | +3.9 | 57 |
+| C OLD window, rounding | 334 | 1.76c | +2.94c | +2.47c | +4.2 | 53 |
+| D new window + rounding (pin.py today) | 354 | 1.84c | +3.04c | **+2.51c** | +4.1 | 22 |
+
+The money barely moves. What moves is the **honesty**: flips fall 72 -> 22 and
+the cell stops being flagged "BELOW the fair band". t falls only because the
+per-trade spread widens (MDE 1.54c -> 1.84c) as the corrected model takes 40
+closes the old one refused.
+
+Of the old model's **72 losing trades**, the rounding fix alone (A -> C, window
+held fixed) reclassifies **37**: 19 no longer taken, 16 taken on the opposite
+side, 2 now win. Their P&L on those closes goes -160.0c -> -94.6c. With both
+fixes (A -> D) **58 of 72** are reclassified (22 dropped, 25 side-flipped, 11
+now wins).
+
+## What this does NOT change
+
+* The primary open risk is still the race for a stale quote, which no backtest
+  can test.
+* Sample is still ~9 days of settled markets (`fulltape/markets.json` was last
+  refreshed 2026-09-06 04:30, so the analysis universe is unchanged from the
+  2026-09-06 run -- 169,254 endgame quote-seconds in both, which is why the
+  before/after is apples-to-apples).
+* tau<=60 is still dead: +0.17c at t=+0.5, below its own MDE, still flagged
+  below the fair band. TAU_MAX=20 remains the only live cell.
+* The all-coins table now reads +4.84c per close at t=+5.0 (563 trades over 354
+  closes) with a **worst close of -95.5c**; at tau<=60 the every-market worst
+  close is **-427.4c**. That column is the price of the leverage.
+
+## Still carrying the old window (NOT on pin's path, NOT fixed here)
+
+`engine.IndexState.partial`, `engine.py` maker_quote fixture, `edge.py:293`,
+`implied.py:118/589`, `leadlag.py:75`, `openwindow.py:66/143`, `proxy.py:123/267`,
+`replay.py:536` (synthetic-tape builder), `surface.py:428/430`, `pinlive.py:142`.
+Their self-tests pass because their fixtures carry the same off-by-one. Any
+number any of them produced at small tau is suspect by the same 1.35x-at-tau-5
+argument. `pinrun.py` (the live loop) already had both corrections.
+
+## Files changed (working tree only, NOT committed)
+
+`research/settlewin.py`, `research/endgame.py`, `research/pin.py`.
+Raw stage output: `C:\Users\Joe\AppData\Local\Temp\kals-work\pin_AFTER_20260908.txt`
+and `pindiff_20260908.txt`. `results/RESULTS_pin.md` deliberately left at the
+2026-09-06 run so the BEFORE evidence survives.
+
+---
+
 # 2026-09-07 evening -- pin goes live-capable: engine built, eyes not yet, no money moved
 
 **Five lines:** (1) Operator direction: tonight's real run is pin. (2) Built
