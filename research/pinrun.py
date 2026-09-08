@@ -441,6 +441,15 @@ MEASURED_FLIP = 0.0090   # 3 flips in 333 dear trades, corrected OOS run. The
                          # seller may know something.
                          # See results/PREREG_pin_live_AMENDMENT_2.md.
 EV_FLOOR = 0.003         # dollars per contract required IN EXPECTATION
+MAX_ATTEMPTS_PER_CLOSE = 8   # orders SENT per close, filled or not. Distinct
+                             # from MAX_PER_CLOSE, which caps FILLS. Added
+                             # 2026-09-08 after a runaway sent 160 orders into
+                             # one close in a single second: every one was
+                             # refused by a rail, take() returns refusals
+                             # rather than raising, and AMENDMENT 6 had just
+                             # stopped a no-fill from consuming a slot. Fills
+                             # and attempts need separate budgets. 8 allows the
+                             # 3 fills plus a generous margin of lost races.
 MIN_FILL_FRAC = 0.50     # AMENDMENT 6. Take a PARTIAL rather than skip a
                          # moment outright. The dust gate used to refuse any
                          # offer smaller than SIZE, so at size 10 a 9-contract
@@ -608,6 +617,48 @@ def selftest():
 
     # --- fee-netted edge ---
     # --- THE EXPECTED-VALUE GATE (AMENDMENT 2) ---
+    # --- THE RUNAWAY OF 2026-09-08 22:44Z MUST NOT RECUR --------------------
+    # 160 identical orders into ONE close in ONE second, all refused, none
+    # filled, no error logged, no money lost. Two of my own changes, neither
+    # wrong alone: MAX_TAKE_COUNT = 10 silently refused every order at size 20
+    # (the FOURTH size-1 literal in a day), and AMENDMENT 6 had just stopped a
+    # no-fill from consuming a slot -- correctly, since an unfilled order
+    # creates no exposure -- leaving NOTHING that bounded retries.
+    ck(MAX_ATTEMPTS_PER_CLOSE > MAX_PER_CLOSE,
+       f"attempts ({MAX_ATTEMPTS_PER_CLOSE}) are capped ABOVE fills "
+       f"({MAX_PER_CLOSE}) -- separate budgets, because a lost race should "
+       f"cost a retry but not a fill slot")
+    ck(MAX_ATTEMPTS_PER_CLOSE < 20,
+       f"and the attempt cap is small enough that a 20 Hz loop cannot spam "
+       f"({MAX_ATTEMPTS_PER_CLOSE})")
+    _src9 = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _b9 = _src9[_src9.index(chr(10) + "def trade_loop("):]
+    ck("attempts.get(close_s, 0) >= MAX_ATTEMPTS_PER_CLOSE" in _b9,
+       "the attempt cap is actually READ in the loop, not merely defined")
+    ck(_b9.index('attempts[close_s] = attempts.get') < _b9.index("pintake.take("),
+       "and an attempt is counted BEFORE the order is sent, so a send that "
+       "never returns still consumes one")
+    ck('out.get("refused")' in _b9 and 'state["order_errors"]' in _b9,
+       "a RETURNED refusal is counted as an order error -- take() does not "
+       "raise, so nothing noticed 160 refusals in a row")
+    ck(pintake.MAX_TAKE_COUNT <= pintake.HARD_MAX,
+       f"pintake's own count rail is below its hard ceiling "
+       f"({pintake.MAX_TAKE_COUNT:g} <= {pintake.HARD_MAX:g})")
+    _sv9 = (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX)
+    try:
+        pintake.set_limits(max_take_count=_sv9[0] + 5, why="selftest")
+        ck(pintake.MAX_TAKE_COUNT == _sv9[0] + 5,
+           "set_limits RAISES the count rail so it can never be the thing that "
+           "silently blocks a bigger size again")
+        _raised9 = False
+        try:
+            pintake.set_limits(max_take_count=1.0)
+        except ValueError:
+            _raised9 = True
+        ck(_raised9, "and it REFUSES to lower it")
+    finally:
+        pintake.MAX_TAKE_COUNT, pintake.HARD_MAX = _sv9
+
     # --- AMENDMENT 7: THREE fills in ONE close must be accounted correctly ---
     # The order path for a third buy is IDENTICAL code to the second, which is
     # proven live. What is genuinely new is holding MAX_PER_CLOSE positions
@@ -1106,6 +1157,7 @@ def _depth_report(depths):
 def trade_loop(a, rec, book, idx, series_index):
     live = a.live
     fired = {}                 # close_s -> ticker we already fired on
+    attempts = {}              # close_s -> orders SENT, filled or not
     seen_markets = {}          # ticker -> (iid, close_s, strike, digits, exi)
     uni_at = 0.0
     watching = {}            # ticker -> close_s, so closed ones drop out
@@ -1358,6 +1410,13 @@ def trade_loop(a, rec, book, idx, series_index):
             prev = fired.get(close_s)
             if prev is not None and prev["n"] >= MAX_PER_CLOSE:
                 continue
+            # AND A SEPARATE CAP ON ATTEMPTS. AMENDMENT 6 stopped a no-fill
+            # from burning a FILL slot, which is right -- an unfilled order
+            # creates no exposure. But it left NOTHING bounding how many times
+            # we may try, so a persistently refused order retried at 20 Hz
+            # forever. Fills and attempts need separate budgets.
+            if attempts.get(close_s, 0) >= MAX_ATTEMPTS_PER_CLOSE:
+                continue
             try:
                 b = book.best(tk)
             except Exception as e:                       # noqa: BLE001
@@ -1461,6 +1520,7 @@ def trade_loop(a, rec, book, idx, series_index):
                        size=size, take_n=take_n, strike=strike, digits=digits,
                        spot=spot, sigma=round(sg, 6), book_age_ms=b["age_ms"],
                        index_age_s=round(iage, 2), exchange_index=exi)
+            attempts[close_s] = attempts.get(close_s, 0) + 1
             rec("signal", live=live, **sig)
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
                   f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
@@ -1497,6 +1557,19 @@ def trade_loop(a, rec, book, idx, series_index):
                                        take_n, close_s, exchange_index=exi)
                     rec("order", ticker=tk, **{k: v for k, v in out.items()
                                                if k != "raw"})
+                    # A RETURNED REFUSAL IS AN ERROR AND MUST BE COUNTED.
+                    # take() returns its violations rather than raising, so
+                    # nothing here noticed. Combined with AMENDMENT 6 (a slot
+                    # is consumed by a FILL, not an attempt) that produced a
+                    # RUNAWAY: 160 identical orders in one close, 20 Hz, all
+                    # refused, none filled, no error logged. Two of my own
+                    # changes interacting. Neither was wrong alone.
+                    _ref = out.get("refused") or []
+                    if _ref or out.get("status_code") is None:
+                        state["order_errors"] = state.get("order_errors", 0) + 1
+                        rec("error", where="take_refused", ticker=tk,
+                            err=str(_ref)[:300])
+                        print(f"    ORDER REFUSED {_ref}")
                     filled = float(out.get("filled") or 0)
                     if filled > 0:
                         px = out.get("exec_price")
@@ -1631,10 +1704,15 @@ def main():
         # brake the operator actually set, so the two cannot disagree.
         # set_limits() refuses to TIGHTEN, so this can only ever loosen.
         _worst_close = 1.00 * float(a.size) * float(MAX_PER_CLOSE)
+        # THE ORDER-COUNT RAIL IS ALSO A SIZE-1 LITERAL. MAX_TAKE_COUNT = 10
+        # silently REFUSED every order at --size 20 on 2026-09-08: 160 orders
+        # sent, 0 filled, no error raised, because take() RETURNS its refusal.
+        # The FOURTH size-1 constant to break scaling in one day.
         pintake.set_limits(
             loss_abort=float(a.loss_abort),
             max_run_stake=max(pintake.MAX_RUN_STAKE,
                               3.0 * _worst_close + 10.0),
+            max_take_count=max(pintake.MAX_TAKE_COUNT, float(a.size)),
             why=f"size {a.size:g}, worst close ${_worst_close:.2f}")
         arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}, "
             f"PREREG_pin_live.md")

@@ -170,7 +170,8 @@ LOSS_ABORT = -2.00        # realised P&L at or below this refuses every take.
                           # SIZE MUST BE EXPRESSED IN TERMS OF SIZE.
 
 
-def set_limits(loss_abort=None, max_run_stake=None, why=""):
+def set_limits(loss_abort=None, max_run_stake=None,
+               max_take_count=None, why=""):
     """Raise this module's rails to match the run that is actually trading.
 
     Deliberately one-way: a caller may only LOOSEN a rail, never tighten it
@@ -178,8 +179,20 @@ def set_limits(loss_abort=None, max_run_stake=None, why=""):
     Two independent brakes are a safety feature; a hidden one that is tighter
     than the operator's is not a brake, it is an outage.
     """
-    global LOSS_ABORT, MAX_RUN_STAKE
+    global LOSS_ABORT, MAX_RUN_STAKE, MAX_TAKE_COUNT, HARD_MAX
     out = []
+    if max_take_count is not None:
+        mt = float(max_take_count)
+        if mt < MAX_TAKE_COUNT:
+            raise ValueError(
+                f"refusing to LOWER MAX_TAKE_COUNT from {MAX_TAKE_COUNT:g} "
+                f"to {mt:g}")
+        if mt > HARD_MAX:
+            # raise the ceiling too, but say so -- never silently
+            out.append(f"HARD_MAX {HARD_MAX:g} -> {mt * 1.5:g}")
+            HARD_MAX = mt * 1.5
+        out.append(f"MAX_TAKE_COUNT {MAX_TAKE_COUNT:g} -> {mt:g}")
+        MAX_TAKE_COUNT = mt
     if loss_abort is not None:
         la = float(loss_abort)
         if la >= 0:
