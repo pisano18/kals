@@ -1,3 +1,113 @@
+# 2026-09-08 night -- two size-1 literals were silently disarming the trader, and the fix for wasted attempts paid for itself in five minutes
+
+**Five lines:** (1) An adversarial audit of the live money path found **two
+size-1 literals that would each have stopped trading without a word**: the
+stake release gave back ONE contract instead of the whole fill (stranding
+$3.90 per settled trade at size 5, refusing every order after ~15 fills), and
+`pintake.LOSS_ABORT` was a hard **-$2.00** when one ordinary size-5 loss is
+-$4.88 -- so **the first loss we ever took would have shut off all trading**
+while the operator's -$21 brake sat untouched. (2) Both fixed; the self-tests
+that missed them now **sweep sizes 1, 5, 8, 10, 25** and carry a positive
+assertion that the old code leaks exactly $3.90, so they cannot pass vacuously.
+(3) **THREE STRUCTURAL SELF-TESTS WERE INSPECTING THEMSELVES** -- the source
+scan matched the test file's own string literal because `selftest()` sits above
+`trade_loop`, so the abort-ordering check and the stake-release check were
+reading the test, not the code. All now anchor on a newline. (4) **v11 ships
+two more-bets changes at UNCHANGED maximum exposure** and one of them **earned
++27.96c within five minutes of deployment**. (5) Size raised 5 -> 10; the first
+size-10 trade won **+103.14c at 89c**; record is **16 wins, 0 losses, +$2.60**.
+
+## The two silent killers, and why the tests could not see them
+
+| bug | mechanism | why the test missed it |
+|---|---|---|
+| stake release | pintake commits `filled x price`; reconcile released bare `price` | asserted at committed 0.97 / released 0.97, i.e. **size 1**, where the two are the same number |
+| `LOSS_ABORT = -2.00` | one size-5 loss is -$4.88, past the rail | the rail was correct when size was 1 |
+
+`take()` **returns** its refusal rather than raising, so the order-error counter
+never incremented and `risk_abort` never fired. The process would have printed
+SIGNAL lines for the rest of its 720 minutes while every order died before the
+wire. Two give-up branches in `reconcile()` released **nothing at all**.
+
+**Fixes:** one `_release()` helper on all three exit paths giving back
+`cost x contracts`; P&L booked on contracts actually FILLED; and
+`pintake.set_limits()`, which raises the order-path rails to agree with the
+run's own brake and **refuses to tighten** -- a hidden brake tighter than the
+operator's is not a brake, it is an outage.
+
+## v11: more bets, same maximum exposure, and it worked immediately
+
+**A no-fill no longer burns a scale-in slot.** The per-close record was written
+when the SIGNAL fired, before the order was sent. **5 of the first 19 live
+orders filled nothing and depth was NOT the cause** -- the misses had 562, 107,
+93, 10 and 5 contracts on offer against the 1 to 10 requested. Lost races, so
+they recur. At the observed 26% miss rate over 1,196 moments on 83 closes:
+87 buys / $40.29 -> **119 buys / $53.72**. Max exposure unchanged, because the
+cap always meant two FILLS and the bug made it two ATTEMPTS.
+
+**THE LIVE COUNTERFACTUAL, 21:45Z close, five minutes after deployment:**
+
+```
+NEAR @96c  ->  NO FILL      (old rule: burns a slot, sets the bar at 96c)
+NEAR @97c  ->  FILLED 10    (old rule: BLOCKED, 0.97 >= 0.96 - 0.005)
+BTC  @95c  ->  FILLED 10    (allowed under both)
+old rule: 1 fill.   new rule: 2 fills.
+NEAR settled +27.96c  |  BTC settled +46.67c
+```
+
+**The +27.96c trade would not have existed under the old rule.**
+
+**Partial fills down to half size.** The dust gate refused any offer smaller
+than SIZE. Sweeping: full-size-only 124 buys / $59.75; **>=50% 125 buys /
+$60.53**; >=5% 129 buys / $58.37. **Taking any scrap is worse than taking
+none** -- a tiny early fill burns a slot and raises the improve bar, trading a
+big cheap buy later for a small dear one now.
+
+## MEASURED, REJECTED, AND WAITING ON MONEY
+
+**`MAX_PER_CLOSE` 2 -> 3 is +26.7%** -- larger than both v11 changes combined.
+**Not deployed because it cannot be funded**: worst close $30 against a $38.83
+balance, and the loss-abort rail would require a brake at -$45 or looser.
+**It is the first thing to deploy when the account is funded.**
+
+| | opportunities kept | worst close | fits $38.83? |
+|---|---|---|---|
+| size 10, cap 2 (live) | 82% | $20 | yes |
+| size 10, cap 3 | 82% | $30 | no -- the brake would exceed the balance |
+| size 25, cap 2 | 76% | $50 | no, needs ~$150 |
+| size 125, cap 2 | 53% | $250 | no, needs ~$600 |
+
+**Bigger size LOSES opportunities**, because a moment offering fewer contracts
+than we want is only partly usable.
+
+## The price panic is over, and one of my v8 reasons is REFUTED
+
+`research/pingap.py` decomposed the 3.75c live-vs-backtest price gap:
+**1.26c is rule-version contamination** (7 of 17 live signals predate the EV
+gate and today's rule refuses them outright) and **1.71c is comparing a blended
+scale-in mean against live first-buys**. The residual is 0.98c over 10 closes,
+which a close-clustered bootstrap puts at **p = 0.18-0.28**. Noise.
+**Never quote 97.61c again without saying it mixes three rule versions.**
+
+**VERSIONS.md v8 reason 1 is REFUTED.** I claimed a 96c ceiling refuses ~30% in
+backtest but 75% live. Like for like above 96c: backtest first buys 46 of 83
+(55%) at tau 3-30 and 47 of 70 (67%) at tau 3-20; live under today's rule 6 of
+10 (60%). **The backtest and the live tape AGREE.** Reasons 2 and 3 stand.
+
+## NEW BUG, FOUND AND NOT YET FIXED
+
+`pindata.Book.snapshot()` reads the book under `yes_dollars` / `no_dollars`,
+but every `orderbook_snapshot` in the tape carries it under **`yes_dollars_fp`**
+/ **`no_dollars_fp`**. **Snapshot seeding has never worked**; every replayed
+book is rebuilt from deltas alone, from empty. Over 3 hours and 314,346
+top-of-book observations, `yes_bid` differs 2.31% of the time and 2,249 levels
+are invisible to a delta-only book. Direction is **conservative** -- the seeded
+best bid is higher, which is a LOWER price for us, so the shipped backtest
+quotes prices too DEAR. **Any replay written from here must use the `_fp`
+keys**, and `pinoffer.py` / `pinqueue.py` should be re-run against them.
+
+---
+
 # 2026-09-08 evening -- a live config change hid itself in a derived log field, and the REAL constraint turns out to be that there is nothing to buy
 
 **Five lines:** (1) **The 96c price ceiling WAS live and I twice reported it
