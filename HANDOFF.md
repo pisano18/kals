@@ -1,3 +1,34 @@
+# 2026-09-07 evening -- pin goes live-capable: engine built, eyes not yet, no money moved
+
+**Five lines:** (1) Operator direction: tonight's real run is pin. (2) Built
+`research/pinlive.py` (live fair value from the collector's index feed, 0.4 s
+fresh, self-tested on 4 hand cases) and `research/pinscore.py` (grades
+would-be trades against settlement). (3) Two bugs caught before money: a test
+that put ticks in the wrong half of the window, and `close_s` off by **3600 s**
+(`time.mktime - time.timezone` ignores DST; fixed with `calendar.timegm`,
+verified tau=211 s against a live market). (4) 45-min paper run: **0 signals
+-- NOT evidence about pin**: the REST orderbook poll (9-12 markets at 1 Hz)
+was rate-limited and blind most seconds; in the one close it did see, every
+market was correctly priced (yes 0.001/0.002 on decided-NO). (5) Rebuilding
+the eyes as a WebSocket book (`livebook.py`) and the hands as taker rails
+(`pintake.py`) via a 4-agent workflow with independent verifiers; the size-1
+rule, what it can/cannot prove, and the rails are frozen in
+`results/PREREG_pin_live.md` BEFORE any order.
+
+Account flat: $41.04 cash, no positions, no orders. Rebate credit from last
+night's natgas run is $0.00 by construction (needed 85% presence, had 5.5%).
+Collectors alive (29 MB / 19 MB), free disk 46.8 GB, free RAM 2.0 GB (tight:
+no agent may load the tape; streaming only).
+
+Why pin cannot repeat last night's failure class: it never rests. IOC limit at
+the seen price -- takes if the quote is there, cancels if gone. No hedge to
+cancel, no inventory to be picked off, no uptime requirement.
+
+What size 1 cannot prove (arithmetic in the prereg): profitability. Breakeven
+flip rate is 2.0%; bounding it below that with zero flips needs ~150 fills =
+7-8 days at size 1. Tonight proves execution, fill rate (predicted 40-60% from
+racecheck's 55.6% survival at 500 ms), and side-correctness only.
+
 # HANDOFF — read this first in a new session
 
 ---

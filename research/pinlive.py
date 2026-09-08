@@ -295,15 +295,20 @@ def main():
             seen.add(key)
             sg = idx.sigma(iid)
             if sg is None:
+                rec("skip", ticker=tk, tau=tau, why="no_sigma")
                 continue
             f = fair(idx, iid, close_s, now_s, strike, sg)
             if f is None:
+                rec("skip", ticker=tk, tau=tau, why="no_fair", sigma=round(sg,6))
                 continue
             if True:
                 m = {"ticker": tk}
                 ya, yb = live_book(tk)
                 if ya is None or yb is None:
+                    rec("skip", ticker=tk, tau=tau, why="no_book", fair=round(f,4))
                     continue
+                rec("consider", ticker=tk, tau=tau, fair=round(f,4),
+                    yes_ask=ya, yes_bid=yb, sigma=round(sg,6))
                 # DECIDED YES, and a yes ask still cheap -> take it
                 if f >= PIN and 0 < ya <= f - a.edge:
                     sig = dict(ticker=m["ticker"], side="yes", fair=round(f, 4),
