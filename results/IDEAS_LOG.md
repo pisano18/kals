@@ -22,6 +22,88 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## MEASURED 2026-09-08 night — the hedge, and what it costs the bets that were fine
+
+### 31 | Buy the cheap opposite side when a position drifts — **WORKS, but only at a very late trigger**
+
+The operator's idea, and then the operator's follow-up: *"check if it kills
+profits on normal bets that would've been fine and how much that hurts us"*.
+It does, badly, unless the trigger is late.
+
+**FALSE ALARMS IN THE LIVE WINDOW** (tau 3–30, 165 positions, base 837.4¢,
+**zero losers — so every hedge here is pure waste**):
+
+| hedge once p(lose) reaches | false alarms | they cost | % of profit destroyed |
+|---|---|---|---|
+| 5% | 9 | 222.2¢ | **26.5%** |
+| 10% | 8 | 214.0¢ | 25.6% |
+| 20% | 4 | 139.8¢ | 16.7% |
+| 35% | 3 | 119.7¢ | 14.3% |
+| 50% | 1 | 55.7¢ | 6.7% |
+| 75% | 1 | 64.6¢ | 7.7% |
+| **90%** | **0** | **0.0¢** | **0.0%** |
+
+**A 5% trigger destroys a quarter of all profit.** The operator's instinct to
+check this was right and it would have been an expensive mistake to skip.
+
+**AT A 90% TRIGGER IT NEVER FIRED ON A WINNER**, in 165 live-window positions,
+while still catching **all 12 losers** in the wide window. *Caveat: zero in 165
+is a small-sample zero. The true false-alarm rate is below roughly 0.6%, not
+zero.*
+
+### The break-even flip rate for the hedge itself
+
+Cost measured on the LIVE window (what we trade); saving measured on the WIDE
+window (the only place losses exist):
+
+| trigger | cost/position | saving/loss | break-even flip rate | at our 0.90% |
+|---|---|---|---|---|
+| 20% | 0.847¢ | 43.5¢ | 1.95% | marginal |
+| 50% | 0.338¢ | 32.6¢ | 1.04% | marginal |
+| 75% | 0.392¢ | 25.9¢ | 1.51% | marginal |
+| **90%** | **0.000¢** | **15.1¢** | **0.00%** | **PAYS** |
+
+"Marginal" means it does not pay at the 0.90% we measured but does pay before
+the **2.31%** exact upper bound we cannot rule out. **It is insurance against
+our own flip rate being wrong, not a profit centre.**
+
+### What it does to RUIN, which is the real reason to want it
+
+$150, size 25, cap 2, 3,000 paths, losses drawn per close:
+
+| if the true flip rate is | ruined, no hedge | ruined, 50% trigger | ruined, 90% trigger |
+|---|---|---|---|
+| 0.90% measured | 0.1% | 0.0% | 0.1% |
+| **2.31% bound** | **3.0%** | **0.1%** | **1.1%** |
+| 5.00% | 23.4% | 4.2% | 12.4% |
+| 10.00% | 79.5% | 45.3% | 65.5% |
+
+**The choice is a real trade-off, not a free lunch:**
+
+- **90% trigger** — costs nothing measurable, roughly halves ruin risk.
+- **50% trigger** — costs 6.7% of profit, cuts ruin risk **thirty-fold**.
+
+### A bug found mid-analysis that had flattered the idea
+
+`rows.jsonl`'s `price` is the ask on the **model-favoured** side, and the
+favoured side changes as the index moves. The first version inverted it
+unconditionally, so once the model switched it priced our *losing* side rather
+than the one we wanted to buy. **The tell was impossible monotonicity: hedges
+appeared to get CHEAPER the longer we waited** (43¢ at a 50% trigger, 21¢ at
+90%), when insurance must get dearer as the fire spreads. Corrected, the wide
+window benefit fell from +84% to **+26.4%**.
+
+### NOT DEPLOYED — one unmeasured risk, and it is the important one
+
+`rows.jsonl` holds one row per **genuinely available** trade, so it cannot say
+how often the hedge is simply **not offered**. A hedge asks us to buy the side
+that is now *winning*, and IDEAS_LOG #29 measured that the winning side has no
+seller in **33,427 of 33,431** decided moments. All 12 losers were catchable in
+this study, but that sample is selected on availability by construction.
+**Measure hedge availability before building this.**
+
+---
+
 ## MEASURED 2026-09-08 evening — the closes we miss are NOT missed profit
 
 ### 30 | Rest a bid instead of taking one, in the closes where nothing is offered — **TESTED-REJECTED**
