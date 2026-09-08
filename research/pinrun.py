@@ -408,14 +408,29 @@ MEASURED_FLIP = 0.0090   # 3 flips in 333 dear trades, corrected OOS run. The
                          # seller may know something.
                          # See results/PREREG_pin_live_AMENDMENT_2.md.
 EV_FLOOR = 0.003         # dollars per contract required IN EXPECTATION
-PRICE_CEILING = 0.96     # AMENDMENT 5. The price paid sets how wrong we may
-                         # be: at 96c we lose money only above a 4.0% flip
-                         # rate, at 98.8c only above 1.2%, and our measured
-                         # rate is 0.90%. Tightening 98.8c -> 96c measured
-                         # 30%% fewer closes but +51%% profit per opportunity
-                         # (7.42c -> 11.20c) and 3x the safety margin, for
-                         # roughly the same total. The dear trades were never
-                         # paying for the risk they carried.
+PRICE_CEILING = 0.988    # AMENDMENT 5 WITHDRAWN 2026-09-08 16:20Z, BEFORE IT
+                         # EVER TRADED. The 96c ceiling was committed to disk
+                         # but the running process was never restarted, so it
+                         # was NEVER LIVE. Reverted for three measured reasons:
+                         #  1. LIVE PRICES SAY IT IS FAR TIGHTER THAN THE
+                         #     BACKTEST CLAIMED. 12 of our 16 real signals
+                         #     were above 96c (mean 97.61c). The backtest
+                         #     predicted 30% fewer trades; live it is 75%.
+                         #     That breaches the amendment's own revert
+                         #     trigger of "fewer than 10 fired closes/day".
+                         #  2. NEITHER CEILING IS UNSAFE. The ceiling is a
+                         #     cap, not the typical price. Blended breakeven
+                         #     flip rate is 5.75% at 98.8c and 8.63% at 96c,
+                         #     against an exact one-sided 95% bound of 2.31%
+                         #     on our measured rate. Headroom 2.5x vs 3.7x --
+                         #     both comfortably clear.
+                         #  3. "THE DEAR TRADES WERE NEVER PAYING FOR THE
+                         #     RISK" WAS NOT MEASURED. There are ZERO flips
+                         #     in the whole eligible sample at every ceiling.
+                         #     Trades in the 96-98.8c band realised +2.087c
+                         #     per contract. They are not losers in the data;
+                         #     they are only losers under an assumed flip
+                         #     rate. See results/PREREG_pin_live_AMENDMENT_5.md.
 
 
 def expected_value(price, flip=MEASURED_FLIP):

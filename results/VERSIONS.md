@@ -35,33 +35,65 @@ constants**, so they stay meaningful at any setting.
 
 ---
 
-## v8 — CURRENT (2026-09-08 16:35 UTC)
+## v8 — WITHDRAWN BEFORE IT EVER TRADED (2026-09-08 16:20 UTC)
 
-| setting | value |
-|---|---|
-| **price ceiling** | **96.0¢** (was 98.8¢) |
-| size | 5 contracts |
-| buys per close | up to 2, second only if ≥0.5¢ cheaper |
-| window | tau 3–30 s |
-| loss abort | −$21.00 |
+**THE 96¢ CEILING WAS NEVER LIVE, AND THE ENTRY BELOW THIS ONE WAS WRONG WHEN
+I WROTE IT.** I committed `PRICE_CEILING = 0.96` to disk as `18191e4` and wrote
+this file as though it were running. It was not. The live process (pid 3994760,
+started 16:14:31Z) logged `"price_ceiling": 0.988` in its own start record, and
+I never restarted it. I also stamped the entry `16:35 UTC`, a time that had not
+yet happened.
 
-**Change from v7: price ceiling 98.8¢ → 96.0¢.** Safer AND more profitable —
-measured on 5,219 qualifying moments:
+**How it was caught:** by reading the running process's start record instead of
+the file on disk. That is now the check — *what the process logged at start*,
+never *what the source says*.
 
-| ceiling | closes | avg price | headroom | profit/close | total |
+### Why it is withdrawn rather than deployed — three measured reasons
+
+**1. Live prices say it is far tighter than the backtest claimed.**
+
+| | backtest | live |
+|---|---|---|
+| mean price paid | 93.86¢ | **97.61¢** |
+| signals a 96¢ ceiling refuses | ~30% | **12 of 16 (75%)** |
+
+The amendment's own revert trigger was "fewer than 10 fired closes per day".
+At 4 of 16 we would fire roughly 8. **It breaches its own trigger on the live
+tape.**
+
+**2. Neither ceiling is unsafe, because the ceiling is a cap and not the
+typical price.** Blended break-even flip rate over the whole book of trades a
+ceiling admits:
+
+| ceiling | closes | buys | avg price | break-even flip rate | headroom vs 2.31% |
 |---|---|---|---|---|---|
-| ≤98.8¢ | 83 | 93.94¢ | 1.4× | 7.42¢ | 616¢ |
-| **≤96.0¢** | **58** | **90.80¢** | **4.4×** | **11.20¢** | **650¢** |
+| **98.8¢ (live)** | 83 | 129 | 93.86¢ | **5.75%** | **2.49×** |
+| 96.0¢ | 58 | 84 | 90.80¢ | 8.63% | 3.74× |
 
-30% fewer trades, **+51% profit per opportunity**, 3× the safety margin, and
-slightly more total profit. The dear trades were never paying for the risk.
+Both clear comfortably. The earlier "1.2% vs 4.0%" framing compared the
+break-even *at the ceiling price* against a flip rate measured *over the whole
+book*, which is not a like-for-like comparison and made the looser setting look
+marginal when it is not.
 
-**The principle: the price paid sets how wrong we are allowed to be.** At 96¢
-we lose money only above a **4.0%** error rate; at 98.8¢ only above **1.2%**.
-Measured rate: **0.90%**.
+**3. "The dear trades were never paying for the risk" was never measured.**
+There are **zero flips in the entire eligible sample at every ceiling tested**.
+Trades in the 96–98.8¢ band realised **+2.087¢ per contract** over 784 moments.
+They are not losers in the data. They are only losers under an assumed flip
+rate, and saying otherwise stated a model output as a measurement.
 
-**Revert:** `PRICE_CEILING = 0.988`.
-**Revert trigger:** fewer than 10 fired closes per day — too tight to learn.
+### What is actually true about tightening
+
+| | realised (0 flips, what happened) | expected (at 0.90%, what we believe) |
+|---|---|---|
+| 98.8¢ | **742.0¢** | 625.9¢ |
+| 96.0¢ | 724.9¢ | **649.3¢** |
+
+Tightening wins **only** in expectation, by 3.7%, and loses 2.3% on what the
+sample actually did. That is a coin-flip-sized difference resting entirely on a
+borrowed constant. **It is not a reason to restart a working process.**
+
+**Status: `PRICE_CEILING` is back to 0.988 on disk, which now matches the
+running process.**
 
 ---
 
@@ -142,7 +174,7 @@ test and its failure would be identifiable.
 | flips on trades at tau > 20 | v4 | `--tau-max 20` |
 | second buy at a WORSE price than the first | v3 | `MAX_PER_CLOSE = 1` |
 | any fill above ~98.7¢ | EV gate not binding | check `MEASURED_FLIP` |
-| flip rate > 1.80% | the whole ceiling is wrong | re-derive every threshold |
+| flip rate > 2.31% | the whole ceiling is wrong | re-derive every threshold |
 
 **Size stays at 1 until this version has traded and won on its own.** Scaling
 is a separate, later decision — it does not accelerate learning, only exposure.
@@ -209,14 +241,23 @@ loss abort −$3.00. First real trade 08:00Z (BTC YES @0.992, won +0.74¢).
 
 | | |
 |---|---|
-| trades settled | 11 |
-| won / lost | 11 / 0 |
-| realised | +21.31¢ |
-| balance | $41.0386 → $41.2517 |
+| orders sent | 16 |
+| executed / no fill | 12 / 4 |
+| settled and booked | 12 |
+| won / lost | **12 / 0** |
+| realised | **+70.65¢** |
+| crypto shard | $38.7091 |
+| price paid, live | min 93.50¢, mean **97.61¢**, max 99.60¢ |
 
-**Standing caveat:** at the measured 0.90% flip rate, 11 straight wins is the
-*expected* outcome (0.1 losses expected). Nothing about the tail has been
-observed live. The first loss will cost roughly ten wins.
+Biggest single win: the size-8 HYPE trade, +49.34¢ (6.6% on stake). **Its
+`settled` record is missing from the JSONL** because the process was stopped
+between fill and settlement; the balance reconciles, so the trade is real, but
+the log undercounts. Log scans of `kind == "settled"` return 11, not 12.
+
+**Standing caveat:** at the measured 0.90% flip rate, 12 straight wins is the
+*expected* outcome (0.11 losses expected). Nothing about the tail has been
+observed live. At the live mean price of 97.61¢ the first loss costs roughly
+**41 wins**, not ten.
 
 ## What to check first if it starts losing
 
@@ -227,5 +268,7 @@ observed live. The first loss will cost roughly ten wins.
 3. **Prices paid.** If trades are appearing above 98.5¢, the EV gate is not
    binding — check `MEASURED_FLIP` and `EV_FLOOR`.
 4. **The measured flip rate itself.** Everything above is built on 0.90% from
-   3 flips in 333. If the live rate exceeds 1.80% (its 95% upper bound), the
+   3 flips in 333. If the live rate exceeds 2.31% (the EXACT one-sided 95%
+   Clopper-Pearson bound; the 1.80% figure quoted until 2026-09-08 was a normal
+   approximation and is optimistic by 28% at only 3 events), the
    price ceiling is wrong and every threshold must be re-derived.

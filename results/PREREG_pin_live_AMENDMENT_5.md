@@ -1,3 +1,16 @@
+> **WITHDRAWN 2026-09-08 16:20 UTC, BEFORE IT EVER TRADED.**
+> The 96c ceiling was committed to disk but the live process was never
+> restarted, so it never priced a single order. It is withdrawn rather than
+> deployed for three measured reasons: (1) on the LIVE tape it refuses 12 of 16
+> real signals, not the ~30% the backtest predicted, breaching this amendment's
+> own "fewer than 10 fired closes/day" revert trigger; (2) the blended
+> break-even flip rate at the 98.8c ceiling is 5.75%, not the 1.2% quoted here
+> -- the ceiling is a cap, not the typical price, and the live mean paid is
+> 97.61c while the backtest mean is 93.86c; (3) the claim that dear trades
+> "were never paying for the risk" was never measured -- there are ZERO flips
+> in the eligible sample at every ceiling, and the 96-98.8c band realised
+> +2.087c per contract. See results/VERSIONS.md.
+
 # AMENDMENT 5 — price ceiling 98.8c -> 96.0c
 
 **Written 2026-09-08 ~16:30 UTC, BEFORE the change goes live.**
