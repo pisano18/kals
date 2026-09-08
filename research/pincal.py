@@ -49,6 +49,7 @@ overconfident and the test must SEE that. An estimator that cannot fail on the
 rigged world cannot be trusted on the real one.
 """
 import argparse
+import zlib
 import calendar
 import glob
 import gzip
@@ -222,6 +223,7 @@ def selftest():
 def load_index_hours(files):
     """{index_id: {sec: value}} streamed one file at a time."""
     ticks = defaultdict(dict)
+    bad = []
     for f in files:
         try:
             with gzip.open(f, "rt") as fh:
@@ -241,8 +243,15 @@ def load_index_hours(files):
                         ticks[iid][int(dd["time"]) // 1000] = float(dd["value"])
                     except Exception:
                         continue
-        except EOFError:
-            pass
+        except (EOFError, zlib.error, OSError) as e:
+            # A truncated or corrupt hour file must not lose the whole window.
+            # EOFError is the live hour; zlib.error "invalid block type" is a
+            # genuinely damaged file, and one of those killed a 60-hour run.
+            bad.append((os.path.basename(f), type(e).__name__))
+    if bad:
+        print(f"  {len(bad)} damaged hour file(s), used what parsed: "
+              + ", ".join(f"{n} ({t})" for n, t in bad[:4])
+              + (" ..." if len(bad) > 4 else ""))
     return ticks
 
 

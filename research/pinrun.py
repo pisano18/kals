@@ -376,9 +376,16 @@ def billed_fee(price, count=1):
 
 
 def net_edge(f, price, want):
-    """Edge in dollars per contract AFTER the taker fee at that price."""
+    """Edge in dollars per contract AFTER the taker fee at that price.
+
+    THE FEE IS BILLED ON THE ORDER, NOT ON ONE CONTRACT, and it is ceilinged
+    to $0.0001. At --size 0.01 that floor dominates: 0.07*0.01*0.99*0.01 =
+    $0.0000069 bills as $0.0001, which is 1.00c PER CONTRACT against the
+    0.07c the raw formula gives. Netting the one-contract fee here would let
+    a penny run fire on a +0.6c "edge" that is really -0.33c.
+    """
     gross = (f - price) if want == "yes" else ((1.0 - f) - price)
-    return gross - billed_fee(price, 1)
+    return gross - billed_fee(price, SIZE) / float(SIZE)
 
 
 # ===========================================================================
@@ -485,6 +492,21 @@ def selftest():
        f"({billed_fee(0.95,1)})")
     ck(billed_fee(0.98, 1) >= pintake.expected_fee(0.98, 1),
        "the billed fee is never below the raw formula (conservative)")
+    # THE FEE SCALES WITH THE ORDER, NOT WITH ONE CONTRACT. The $0.0001
+    # ceiling dominates a penny order: it is 1.00c per contract at size 0.01.
+    ck(abs(billed_fee(0.99, 0.01) - 0.0001) < 1e-12,
+       f"the billed fee on 0.01 contracts is the $0.0001 floor "
+       f"({billed_fee(0.99, 0.01)})")
+    _saved_size = SIZE
+    try:
+        globals()["SIZE"] = 0.01
+        e_penny = net_edge(0.999, 0.99, "yes")
+        ck(abs(e_penny - (0.009 - 0.01)) < 1e-12,
+           f"at --size 0.01 a 0.9c gross edge is NEGATIVE once the order's "
+           f"own fee is charged ({100 * e_penny:+.3f}c), where the "
+           f"one-contract fee would have called it +0.83c")
+    finally:
+        globals()["SIZE"] = _saved_size
     ck(net_edge(0.9999, 0.995, "yes") > 0 > net_edge(0.9999, 0.9999, "yes"),
        "edge sign behaves at the boundary")
     # a NO take: fair 0.001, buying NO at 0.99 -> gross 0.999-0.99 = 0.9c
@@ -710,7 +732,8 @@ def trade_loop(a, rec, book, idx, series_index):
             won = (res == want)
             # the taker fee is charged on the way in and is part of realised
             # P&L; leaving it out flatters the number the loss abort reads.
-            pnl = ((1.0 - cost) if won else (-cost)) - billed_fee(cost, 1)
+            pnl = (float(SIZE) * ((1.0 - cost) if won else (-cost))
+                   - billed_fee(cost, SIZE))
             pintake.record_pnl(pnl, note=f"{tk} {want} vs {res}")
             open_pos.pop(tk, None)
             recon_at.pop(tk, None)
@@ -721,7 +744,11 @@ def trade_loop(a, rec, book, idx, series_index):
                 realised=round(pintake.LEDGER["realised"], 4))
             print(f"  SETTLED {tk} {want} vs {res} -> {100 * pnl:+.2f}c "
                   f"(run realised ${pintake.LEDGER['realised']:+.4f})")
-        state["open_cost"] = sum(c for (_, _, c) in open_pos.values())
+        # size x price, NOT price: at --size 0.01 the per-contract figure
+        # overstates exposure 100x and the forward loss bound would halt the
+        # run on its very first fill.
+        state["open_cost"] = float(SIZE) * sum(c for (_, _, c)
+                                               in open_pos.values())
 
     while time.time() < end:
         reconcile()
