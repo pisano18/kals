@@ -65,3 +65,16 @@ SELF-TEST PASSED
     ORDER -> status executed filled 1.0 @ 0.996 fee 0.0003
   close 10:00Z: 1 looks, best was KXBTC15M-26SEP080600-0 YES @0.9960 edge +0.37c (need +0.3c) -> FIRED
   SETTLED KXBTC15M-26SEP080600-00 yes vs yes -> +0.37c (run realised $+0.0726)
+  SIGNAL KXNEAR15M-26SEP080615-15 tau=12s buy NO @0.9920 fair 0.0026 edge +0.48c size 132.87
+    ORDER -> status executed filled 1.0 @ 0.991 fee 0.0007
+  close 10:15Z: 1242 looks, best was KXNEAR15M-26SEP080615- NO @0.9920 edge +0.48c (need +0.3c) -> FIRED
+  SETTLED KXNEAR15M-26SEP080615-15 no vs no -> +0.83c (run realised $+0.0809)
+  SIGNAL KXHYPE15M-26SEP080630-30 tau=20s buy YES @0.9950 fair 1.0000 edge +0.46c size 35.56
+    ORDER -> status executed filled 1.0 @ 0.993 fee 0.0005
+  close 10:30Z: 8 looks, best was KXHYPE15M-26SEP080630- YES @0.9950 edge +0.46c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP080630-30 yes vs yes -> +0.65c (run realised $+0.0874)
+  SIGNAL KXBNB15M-26SEP080645-45 tau=20s buy NO @0.9960 fair 0.0000 edge +0.37c size 4.00
+    ORDER -> status executed filled 1.0 @ 0.996 fee 0.0003
+  close 10:45Z: 6 looks, best was KXBNB15M-26SEP080645-4 NO @0.9960 edge +0.37c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP080645-45 no vs no -> +0.37c (run realised $+0.0911)
+  close 11:00Z: 1517 looks, 1517 decided, 1517 decided-but-nothing-offered, 0 undecided
