@@ -118,7 +118,15 @@ SERIES_TO_INDEX = {
 PIN = 0.98
 TAU_MAX = 20
 TAU_MIN = 3            # a one-second misalignment is fatal below this
-EDGE_FLOOR = 0.005     # AFTER fee
+EDGE_FLOOR = 0.003     # AFTER fee. 0.5c -> 0.3c per
+                       # results/PREREG_pin_live_AMENDMENT_1.md, written
+                       # 2026-09-08 08:20Z BEFORE the change went live.
+                       # Out of sample the 0.3c floor gave 389 closes,
+                       # +2.76c/contract, t=+5.6, 1 flip in 359 dear trades
+                       # (headroom 2.1x); the 0.5c floor gave 354 closes,
+                       # +2.51c, t=+4.1, 3 flips in 333 (headroom 1.3x).
+                       # Better on every dimension measured. REVERTS to
+                       # 0.005 if the live flip rate exceeds 1.0%.
 SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # our own size: a 0.01-contract order against a
@@ -699,6 +707,11 @@ def risk_abort(state, a):
 
 
 # ===========================================================================
+def _fresh_near():
+    return {"best": None, "n": 0, "decided": 0, "tradeable": 0,
+            "no_offer": 0, "undecided": 0, "dust": 0}
+
+
 def trade_loop(a, rec, book, idx, series_index):
     live = a.live
     fired = {}                 # close_s -> ticker we already fired on
@@ -706,6 +719,12 @@ def trade_loop(a, rec, book, idx, series_index):
     uni_at = 0.0
     watching = {}            # ticker -> close_s, so closed ones drop out
     open_pos = {}            # ticker -> (close_s, want, cost) awaiting settlement
+    # NEAR MISSES. "nothing fired" is not information; "the best on offer was
+    # 0.2c and we need 0.5c" is. Per close, keep the best net edge seen on
+    # each side and report it when the close passes, so a quiet run can be
+    # told apart from a blind one.
+    near = {}                # close_s -> dict of the best look at that close
+    reported = set()
     recon_at = {}            # ticker -> when the settlement was last polled
     state = {"halted": False, "errors": 0, "signals": 0, "considered": 0}
     end = time.time() + a.minutes * 60
@@ -778,7 +797,46 @@ def trade_loop(a, rec, book, idx, series_index):
         state["open_cost"] = float(SIZE) * sum(c for (_, _, c)
                                                in open_pos.values())
 
+    def report_closes(now_s):
+        for cs in sorted(near):
+            if cs > now_s or cs in reported:
+                continue
+            reported.add(cs)
+            nb = near[cs]
+            b = nb.get("best")
+            if b is None:
+                rec("close_summary", close=cs, looks=nb["n"],
+                    decided=nb["decided"], undecided=nb["undecided"],
+                    no_offer=nb["no_offer"], dust=nb["dust"],
+                    fired=cs in fired, best=None,
+                    why=("decided but NOBODY OFFERED the winning side"
+                         if nb["no_offer"] else
+                         "no market ever reached the 98% gate"))
+                print(f"  close {time.strftime('%H:%M', time.gmtime(cs))}Z: "
+                      f"{nb['n']} looks, {nb['decided']} decided, "
+                      f"{nb['no_offer']} decided-but-nothing-offered, "
+                      f"{nb['undecided']} undecided")
+            else:
+                rec("close_summary", close=cs, looks=nb["n"],
+                    decided=nb["decided"], undecided=nb["undecided"],
+                    no_offer=nb["no_offer"], dust=nb["dust"],
+                    tradeable=nb["tradeable"], fired=cs in fired,
+                    best_ticker=b["ticker"], best_want=b["want"],
+                    best_edge_c=round(100 * b["edge"], 3),
+                    best_price=round(b["price"], 4),
+                    best_fair=round(b["fair"], 5), best_tau=b["tau"],
+                    best_size=b["size"],
+                    needed_c=round(100 * EDGE_FLOOR, 2))
+                v = "FIRED" if cs in fired else "no trade"
+                print(f"  close {time.strftime('%H:%M', time.gmtime(cs))}Z: "
+                      f"{nb['n']} looks, best was {b['ticker'][:22]} "
+                      f"{b['want'].upper()} @{b['price']:.4f} "
+                      f"edge {100*b['edge']:+.2f}c "
+                      f"(need +{100*EDGE_FLOOR:.1f}c) -> {v}")
+            near.pop(cs, None)
+
     while time.time() < end:
+        report_closes(int(time.time()) - 5)
         reconcile()
         stop = risk_abort(state, a)
         if stop:
@@ -895,10 +953,35 @@ def trade_loop(a, rec, book, idx, series_index):
                 if na and ns and na < 1.0:
                     want, price, size = "no", na, ns
             if want is None:
+                # WHY did this not produce a candidate? The two cases are very
+                # different and conflating them hides the real constraint:
+                #   undecided  -- fair never reached the gate; no edge existed
+                #   no_offer   -- fair DID reach the gate but nobody was
+                #                 offering the winning side. When an outcome
+                #                 becomes obvious the losing side's bids
+                #                 vanish, so there is nothing to buy. That is
+                #                 a CAPACITY limit, not a signal limit.
+                nb = near.setdefault(close_s, _fresh_near())
+                nb["n"] += 1
+                if f >= PIN or f <= 1.0 - PIN:
+                    nb["decided"] += 1
+                    nb["no_offer"] += 1
+                else:
+                    nb["undecided"] += 1
                 continue
             if size < max(MIN_LEVEL, SIZE):   # dust is not a real fill
                 continue
             e = net_edge(f, price, want)
+            nb = near.setdefault(close_s, _fresh_near())
+            nb["n"] += 1
+            nb["decided"] += 1
+            nb["tradeable"] += 1
+            if size < max(MIN_LEVEL, SIZE):
+                nb["dust"] += 1
+            if nb["best"] is None or e > nb["best"]["edge"]:
+                nb["best"] = {"ticker": tk, "want": want, "edge": e,
+                              "price": price, "fair": f, "tau": tau,
+                              "size": size}
             if e < EDGE_FLOOR:
                 continue
 

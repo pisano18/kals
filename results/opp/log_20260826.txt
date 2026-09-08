@@ -1,0 +1,28 @@
+SELF-TEST -- oppcount
+  ok   billed fee at p=0.95 is $0.0034 (0.0034)
+  ok   net edge subtracts the fee (0.430c)
+  ok   flat index far from strike prices 1/0 (1.0000, 0.0000)
+  ok   round_digits changes the call at the band edge (d=7 0.000, d=2 1.000)
+  ok   planted opportunity found once in each mode (1 loose, 1 strict)
+  ok   loose duration is the 4000 ms it was planted for (4000)
+  ok   strict duration is capped by the 2 s book-age gate (2001)
+  ok   edge is 1 - 0.90 - fee = 9.37c (got 9.37c)
+  ok   side and resting size read off the opposing bid (yes, 25.0)
+  ok   a fairly-priced ask yields nothing (0)
+  ok   a 25 s stale book counts loose but NOT strict (['loose'])
+  ok   a 0.4-contract level is not a fill (0)
+  ok   an ask that only appears at tau<3 is not counted (0)
+  ok   the NO side fires symmetrically (['no', 'no'])
+  ok   delta parser ('KXBTC15M-26SEP010800-00', 'no', 979, 17.0, 1788263999993, 19639244)
+SELF-TEST PASSED
+[20260826] 972 markets in range
+    20260825T21: 3,613,122 deltas, 72 snaps, 0 unparsed, 11s, eps=0
+    20260825T22: 2,258,518 deltas, 72 snaps, 0 unparsed, 8s, eps=0
+    20260825T23: 2,908,015 deltas, 72 snaps, 0 unparsed, 10s, eps=12
+    20260826T00: 3,210,458 deltas, 72 snaps, 0 unparsed, 11s, eps=18
+    20260826T01: 2,827,574 deltas, 72 snaps, 0 unparsed, 10s, eps=84
+    20260826T02: 2,790,698 deltas, 72 snaps, 0 unparsed, 9s, eps=124
+    20260826T03: 2,503,227 deltas, 72 snaps, 0 unparsed, 8s, eps=174
+    20260826T04: 2,773,655 deltas, 63 snaps, 0 unparsed, 9s, eps=321
+    20260826T05: 2,384,700 deltas, 54 snaps, 0 unparsed, 8s, eps=323
+[20260826] DONE hours=9 closes=23 episodes=323 stat={'index_ticks': 310725, 'snapshots': 621, 'armed': 279, 'deltas': 25269967, 'unparsed': 0, 'window_evaluated': 207, 'decided_seconds': 3636}

@@ -43,13 +43,7 @@ SELF-TEST -- pinrun
   ok   take() is called with the market's exchange_index, not the default 0
   ok   exchange_index is read from the market record in the universe pass
 SELF-TEST PASSED
-  MODE LIVE size 1   tau<=20s  pin 0.98  edge>=0.5c net  loss abort $-3.00  SIZE 1
-  log C:\kals-repo\results\pinrun-live-20260908T073814Z.jsonl
+  MODE LIVE size 1   tau<=20s  pin 0.98  edge>=0.3c net  loss abort $-3.00  SIZE 1
+  log C:\kals-repo\results\pinrun-live-20260908T082217Z.jsonl
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $5.00
   index up: 11 ticks, 11 feeds
-  close 07:45Z: 2919 looks, best was KXBTC15M-26SEP080345-4 NO @0.9960 edge +0.37c (need +0.5c) -> no trade
-  SIGNAL KXBTC15M-26SEP080400-00 tau=20s buy YES @0.9920 fair 0.9994 edge +0.68c size 202.93
-    ORDER -> status executed filled 1.0 @ 0.992 fee 0.0006
-  close 08:00Z: 1 looks, best was KXBTC15M-26SEP080400-0 YES @0.9920 edge +0.68c (need +0.5c) -> FIRED
-  SETTLED KXBTC15M-26SEP080400-00 yes vs yes -> +0.74c (run realised $+0.0074)
-  close 08:15Z: 3096 looks, nothing decided

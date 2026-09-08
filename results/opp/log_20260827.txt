@@ -1,0 +1,42 @@
+SELF-TEST -- oppcount
+  ok   billed fee at p=0.95 is $0.0034 (0.0034)
+  ok   net edge subtracts the fee (0.430c)
+  ok   flat index far from strike prices 1/0 (1.0000, 0.0000)
+  ok   round_digits changes the call at the band edge (d=7 0.000, d=2 1.000)
+  ok   planted opportunity found once in each mode (1 loose, 1 strict)
+  ok   loose duration is the 4000 ms it was planted for (4000)
+  ok   strict duration is capped by the 2 s book-age gate (2001)
+  ok   edge is 1 - 0.90 - fee = 9.37c (got 9.37c)
+  ok   side and resting size read off the opposing bid (yes, 25.0)
+  ok   a fairly-priced ask yields nothing (0)
+  ok   a 25 s stale book counts loose but NOT strict (['loose'])
+  ok   a 0.4-contract level is not a fill (0)
+  ok   an ask that only appears at tau<3 is not counted (0)
+  ok   the NO side fires symmetrically (['no', 'no'])
+  ok   delta parser ('KXBTC15M-26SEP010800-00', 'no', 979, 17.0, 1788263999993, 19639244)
+SELF-TEST PASSED
+[20260827] 900 markets in range
+    20260827T00: 2,395,746 deltas, 84 snaps, 0 unparsed, 8s, eps=191
+    20260827T01: 2,971,303 deltas, 98 snaps, 0 unparsed, 10s, eps=208
+    20260827T02: 3,204,663 deltas, 98 snaps, 0 unparsed, 11s, eps=275
+    20260827T03: 3,293,340 deltas, 112 snaps, 0 unparsed, 12s, eps=283
+    20260827T04: 2,469,220 deltas, 98 snaps, 0 unparsed, 9s, eps=300
+    20260827T05: 3,047,416 deltas, 112 snaps, 0 unparsed, 11s, eps=452
+    20260827T06: 2,648,362 deltas, 112 snaps, 0 unparsed, 10s, eps=580
+    20260827T07: 866 deltas, 9 snaps, 0 unparsed, 0s, eps=580
+    20260827T09: 2,782,299 deltas, 84 snaps, 0 unparsed, 10s, eps=601
+    20260827T10: 2,036,868 deltas, 84 snaps, 0 unparsed, 7s, eps=649
+    20260827T11: 2,627,424 deltas, 112 snaps, 0 unparsed, 9s, eps=653
+    20260827T12: 2,197,651 deltas, 112 snaps, 0 unparsed, 7s, eps=653
+    20260827T13: 3,580,916 deltas, 88 snaps, 0 unparsed, 11s, eps=666
+    20260827T14: 3,234,295 deltas, 112 snaps, 0 unparsed, 10s, eps=666
+    20260827T15: 3,145,893 deltas, 98 snaps, 0 unparsed, 10s, eps=675
+    20260827T16: 2,771,954 deltas, 98 snaps, 0 unparsed, 9s, eps=712
+    20260827T17: 3,305,728 deltas, 112 snaps, 0 unparsed, 11s, eps=750
+    20260827T18: 3,224,529 deltas, 112 snaps, 0 unparsed, 11s, eps=774
+    20260827T19: 3,251,607 deltas, 112 snaps, 0 unparsed, 12s, eps=850
+    20260827T20: 2,878,809 deltas, 112 snaps, 0 unparsed, 10s, eps=856
+    20260827T21: 2,460,335 deltas, 112 snaps, 0 unparsed, 9s, eps=862
+    20260827T22: 2,685,519 deltas, 112 snaps, 0 unparsed, 9s, eps=888
+    20260827T23: 2,254,373 deltas, 126 snaps, 0 unparsed, 7s, eps=908
+[20260827] DONE hours=23 closes=87 episodes=908 stat={'index_ticks': 820430, 'snapshots': 2309, 'arm_no_book': 81, 'armed': 792, 'window_evaluated': 783, 'decided_seconds': 13870, 'deltas': 62469116, 'unparsed': 0}

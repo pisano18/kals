@@ -1,2 +1,1 @@
   *** PRODUCTION ARMED: pinrun --live, size 1, frozen rule tau<=20, PREREG_pin_live.md ***
-ConnectionClosedError: no close frame received or sent -- retry in 1s
