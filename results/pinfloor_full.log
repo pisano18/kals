@@ -1,0 +1,214 @@
+SELF-TEST -- pinfloor
+  ok   EV identity (1-f)(1-p) - f*p == (1-p) - f
+  ok   the CONSTANT flip rate collapses to today's fixed ceiling (98.71c; live quotes it as 98.8c)
+  ok   a higher f_hat gives a TIGHTER ceiling (96.46c at 3%, 89.01c at 10%)
+  ok   the ceiling sits exactly where EV meets the floor
+  ok   r buckets map r = 2, 29, 59 to 0, 6, 8
+  ok   flat buckets, and None means 'feature not supplied'
+  ok   the Pareto index of a planted z^-3 tail is recovered (alpha 2.990, planted 3.000)
+  ok   planted exceedance at z=1.5: 2.974e-01 vs true 2.963e-01 (ratio 1.00)
+  ok   planted exceedance at z=3.0: 3.699e-02 vs true 3.704e-02 (ratio 1.00)
+  ok   planted exceedance at z=6.0: 4.714e-03 vs true 4.630e-03 (ratio 1.02)
+  ok   the extrapolation holds at z=60 -- 1 in 216,000, far past anything in 400,000 samples (6.05e-06 vs 4.63e-06)
+  ok   the curve is never exactly zero, so the ceiling can never reach 99.7c
+  ok   monotone non-increasing at z=1.0
+  ok   monotone non-increasing at z=2.0
+  ok   monotone non-increasing at z=4.0
+  ok   monotone non-increasing at z=8.0
+  ok   monotone non-increasing at z=16.0
+  ok   monotone non-increasing at z=32.0
+  ok   monotone non-increasing at z=64.0
+  ok   clean gaussian world, z=2.0: measured one-sided 2.271e-02 vs gaussian 2.275e-02 (ratio 1.00) -- NOTHING PLANTED, nothing found
+  ok   clean gaussian world, z=2.5: measured one-sided 6.260e-03 vs gaussian 6.210e-03 (ratio 1.01) -- NOTHING PLANTED, nothing found
+  ok   clean gaussian world, z=3.0: measured one-sided 1.379e-03 vs gaussian 1.350e-03 (ratio 1.02) -- NOTHING PLANTED, nothing found
+  ok   and no manufactured fat tail at z=4 (ratio 1.7x, which is sigma-estimation noise, not a planted tail; the planted world below must beat this)
+  ok   clean world at z=5.0: extrapolation 7.47e-06 is CONSERVATIVE against the gaussian truth 2.87e-07 (26x) -- never below it
+  ok   clean world at z=6.0: extrapolation 1.53e-06 is CONSERVATIVE against the gaussian truth 9.87e-10 (1,553x) -- never below it
+  ok   clean world at z=8.0: extrapolation 1.45e-07 is CONSERVATIVE against the gaussian truth 6.66e-16 (218,327,985x) -- never below it
+  ok   in a clean world the FLOOR binds at z=6, so f_hat never returns 0
+  ok   but at z=2 the MEASUREMENT is in charge, not the floor
+  ok   PLANTED fat tail at z=3.0: recovered 1.664e-03 against independent-MC truth 1.458e-03 (ratio 1.14)
+  ok   PLANTED fat tail at z=4.0: recovered 1.810e-04 against independent-MC truth 1.667e-04 (ratio 1.09)
+  ok   PLANTED fat tail at z=6.0: recovered 3.330e-05 against independent-MC truth 5.833e-05 (ratio 0.57)
+  ok   the planted world's tail is 3.4x the clean world's at z=4 and 21.7x at z=6 -- the estimator DISCRIMINATES. It fails here if it saw the same thing in both, which is the whole point of running the clean world at all
+  ok   one lucky monster in a 50-sample cell would say 1.000e-02 at z=20 against the parent's 1.045e-04 -- 96x, and that is the failure mode being guarded
+  ok   shrunk, it says 1.582e-04, pulled back to the parent (1.51x)
+  ok   so the thin cell cannot tighten the ceiling on one observation
+  ok   an unknown index falls back to the floor, never to zero
+  ok   so the variable ceiling can never be LOOSER than today's constant
+  ok   f_hat stays inside [0.009, 0.5] at z=2.0
+  ok   f_hat stays inside [0.009, 0.5] at z=3.0
+  ok   f_hat stays inside [0.009, 0.5] at z=5.0
+  ok   f_hat stays inside [0.009, 0.5] at z=30.0
+  ok   ceiling is non-decreasing in z (97.24c at z=2.0 -> 98.71c at z=2.5)
+  ok   ceiling is non-decreasing in z (98.71c at z=2.5 -> 98.71c at z=3.0)
+  ok   ceiling is non-decreasing in z (98.71c at z=3.0 -> 98.71c at z=4.0)
+  ok   ceiling is non-decreasing in z (98.71c at z=4.0 -> 98.71c at z=8.0)
+SELF-TEST PASSED
+
+==============================================================================
+pinfloor -- EMPIRICAL flip probability and the VARIABLE price ceiling
+==============================================================================
+  tape   C:\kals\kalshi_data\cfbenchmarks_value  last 331 hours, stride 1
+  rows   C:\kals-repo\results\pindata\rows.jsonl
+  rule   tau 3-30s, pin 0.98, edge >= 0.3c, EV >= 0.3c, <= 2 buys/close
+  floor  f_hat >= 0.90%  ->  ceiling never above 98.71c (today's constant)
+
+    truncated (expected for the live hour): 20260826T05.jsonl.gz EOFError
+    truncated (expected for the live hour): 20260902T00.jsonl.gz error
+    truncated (expected for the live hour): 20260902T01.jsonl.gz error
+    truncated (expected for the live hour): 20260902T02.jsonl.gz error
+    truncated (expected for the live hour): 20260902T03.jsonl.gz error
+    truncated (expected for the live hour): 20260902T04.jsonl.gz error
+    truncated (expected for the live hour): 20260902T05.jsonl.gz error
+    truncated (expected for the live hour): 20260902T21.jsonl.gz error
+    truncated (expected for the live hour): 20260902T22.jsonl.gz error
+    truncated (expected for the live hour): 20260902T23.jsonl.gz error
+    truncated (expected for the live hour): 20260903T00.jsonl.gz error
+    truncated (expected for the live hour): 20260903T01.jsonl.gz error
+    truncated (expected for the live hour): 20260903T02.jsonl.gz error
+    truncated (expected for the live hour): 20260903T03.jsonl.gz error
+    truncated (expected for the live hour): 20260903T04.jsonl.gz error
+    truncated (expected for the live hour): 20260903T05.jsonl.gz error
+    truncated (expected for the live hour): 20260904T07.jsonl.gz error
+    truncated (expected for the live hour): 20260906T14.jsonl.gz error
+    truncated (expected for the live hour): 20260908T16.jsonl.gz EOFError
+  files=331 unreadable=19 prints=9,658,987
+    BNBUSD_RTI   span=1,194,641s  present=1,073,220  coverage=89.836%
+    BRTI         span=1,194,641s  present=1,073,219  coverage=89.836%
+    DOGEUSD_RTI  span=1,194,641s  present=1,073,219  coverage=89.836%
+    ETHUSD_RTI   span=1,194,641s  present=1,073,222  coverage=89.836%
+    HYPEUSD_RTI  span=1,194,641s  present=1,073,223  coverage=89.836%
+    NEARUSD_RTI  span=1,194,641s  present=1,073,223  coverage=89.836%
+    SOLUSD_RTI   span=1,194,641s  present=1,073,221  coverage=89.836%
+    XRPUSD_RTI   span=1,194,641s  present=1,073,219  coverage=89.836%
+    ZECUSD_RTI   span=1,194,641s  present=1,073,221  coverage=89.836%
+  loaded 9 indices in 86s
+    BNBUSD_RTI      9,638,519 standardised moves  9s
+    BRTI            9,638,510 standardised moves  9s
+    DOGEUSD_RTI     9,638,510 standardised moves  9s
+    ETHUSD_RTI      9,638,603 standardised moves  9s
+    HYPEUSD_RTI     9,638,546 standardised moves  9s
+    NEARUSD_RTI     9,638,603 standardised moves  9s
+    SOLUSD_RTI      9,638,528 standardised moves  9s
+    XRPUSD_RTI      9,638,501 standardised moves  9s
+    ZECUSD_RTI      9,638,528 standardised moves  9s
+  86,746,848 standardised moves in 172 cells (168s)
+  GUARD NULL -- what the scan threw away, on a healthy tape:
+    gap_in_future_window            421,410  (0.436% of attempts)
+    thin_sigma_window             9,563,571  (9.887% of attempts)
+
+  MEASURED ONE-SIDED EXCEEDANCE vs the GAUSSIAN the model uses
+  (pooled over all indices, r bucket (8, 11) = tau 9-12)
+         z     gaussian     measured      ratio
+       2.0    2.275e-02    3.241e-02       1.4x
+       2.5    6.210e-03    1.918e-02       3.1x
+       3.0    1.350e-03    1.201e-02       8.9x
+       4.0    3.167e-05    5.543e-03     175.0x
+       6.0    9.866e-10    1.791e-03 1815802.7x
+      10.0    0.000e+00    3.706e-04       huge
+      20.0    0.000e+00    2.567e-05       huge
+      28.0    0.000e+00    6.645e-06       huge
+
+  BY INDEX at z=3 (one-sided), r bucket (8, 11).
+  'anchor' is the z beyond which the curve is EXTRAPOLATED, not
+  measured; 'alpha' is the fitted Pareto index used out there.
+  'pos/neg' is the sign asymmetry -- the pooling assumes it is ~1.
+    index                     n      P(Z>3)   anchor   alpha   pos/neg
+    BNBUSD_RTI        1,071,913   1.038e-02    24.17    3.33     1.040
+    BRTI              1,071,912   1.234e-02    19.20    3.64     1.027
+    DOGEUSD_RTI       1,071,912   1.087e-02    25.12    3.14     1.015
+    ETHUSD_RTI        1,071,924   1.046e-02    21.54    3.51     1.020
+    HYPEUSD_RTI       1,071,916   1.439e-02    22.39    3.64     1.044
+    NEARUSD_RTI       1,071,924   1.170e-02    18.48    3.77     1.044
+    SOLUSD_RTI        1,071,914   9.395e-03    16.47    3.73     1.039
+    XRPUSD_RTI        1,071,911   1.504e-02    27.12    3.07     0.999
+    ZECUSD_RTI        1,071,914   1.355e-02    38.31    2.93     0.985
+    POOLED            9,647,240   1.201e-02    52.08    3.44     1.023
+
+  rows: 28,479 from pindata, 1,506 flips (all tau, all prices;
+        the eligible tau 3-30 sample has ZERO, which is why this
+        estimator is fitted to the INDEX TAPE and not to outcomes)
+
+  CALIBRATION -- the backward-looking companion. f_hat is scored
+  against flips that ACTUALLY happened, on the whole row set. An
+  estimator that cannot find flips where they exist cannot be
+  trusted where they do not.
+          f_hat band        n   flips   realised     f_hat    gaussian
+       0.00-0.91       18,328      94      0.51%     0.90%     0.0019%
+       0.91-2.00        2,472      28      1.13%     1.38%     0.1797%
+       2.00-5.00        2,363      61      2.58%     3.24%     1.4504%
+       5.00-10.00       1,717     187     10.89%     7.25%     6.1650%
+      10.00-25.00       2,242     540     24.09%    16.09%    17.4329%
+      25.00-101.00      1,357     596     43.92%    35.91%    38.2470%
+
+==============================================================================
+  THE COMPARISON -- constant 0.90% vs variable f_hat, same live rule
+==============================================================================
+    constant  dropped: edge_floor=2813, ev_gate=51, hard_ceiling=1172, pin_gate=988, tau=22272
+    f_hat     dropped: edge_floor=2813, ev_gate=170, hard_ceiling=1172, pin_gate=988, tau=22272
+
+                                      CONSTANT         f_hat
+    closes fired                            83            80
+    buys                                   125           118
+    flips realised                           0             0
+    mean price paid (c)                  93.66         93.34
+    max price paid (c)                   98.70         98.70
+    mean f_hat applied (%)               2.094         1.928
+    E[profit]/close @0.90% (c)          +7.597        +7.886
+    E[profit]/close @f_hat (c)          +5.799        +6.369
+    E[profit]/close @2.31% (c)          +5.473        +5.806
+    E[profit] TOTAL @f_hat (c)          +481.3        +509.5
+    realised/close (c)                  +8.952        +9.213
+    realised/contract (c)               +5.944        +6.246
+    realised TOTAL (c)                  +743.0        +737.0
+    blended break-even flip (%)          5.944         6.246
+    headroom vs 2.31% bound               2.57          2.70
+
+  ('E[profit] @f_hat' values BOTH books at the per-row f_hat, so the
+   two columns are comparable. 'realised' is what the sample actually
+   did, and there are ZERO flips in it, so realised always favours
+   taking more trades and cannot decide this on its own.)
+
+  PAIRED BY CLOSE (n is closes, the unit the rule fires on). Each
+  close contributes one number: f_hat arm minus constant arm.
+    E[profit] at f_hat     mean  +0.340c/close  sd  1.116  n   83 closes  t  +2.78
+    realised (0 flips)     mean  -0.072c/close  sd  1.124  n   83 closes  t  -0.58
+
+  HOW MUCH THE CEILING ACTUALLY MOVES. Scored across every trade the
+  CONSTANT rule admits, so both arms see the same population.
+    constant ceiling            98.71c  on every trade, always
+    variable ceiling   p10 96.19c   p50 97.48c   p90 98.71c
+                       min 95.11c   max 98.71c   p10-p90 SPAN 2.52c
+    f_hat              p10 0.900%   p50 2.041%   p90 3.252%
+    at the floor (ceiling unchanged): 23 of 125 = 18.4%
+
+    coin             n      p10      p50      p90   at floor  refused
+    KXBNB15M        11   97.03c   97.99c   98.71c      27.3%     9.1%
+    KXBTC15M        24   96.26c   97.89c   98.71c      29.2%    12.5%
+    KXDOGE15M       16   96.31c   97.34c   98.68c       6.2%     6.2%
+    KXETH15M        20   96.51c   98.05c   98.71c      15.0%     5.0%
+    KXHYPE15M       13   95.39c   96.50c   98.71c      23.1%    23.1%
+    KXNEAR15M       14   96.19c   97.04c   98.06c       7.1%    21.4%
+    KXSOL15M         6   96.76c   97.48c   97.67c      16.7%    16.7%
+    KXXRP15M        12   95.24c   98.09c   98.71c      16.7%    33.3%
+    KXZEC15M         9   97.07c   98.13c   98.71c      22.2%    44.4%
+
+  WHAT THE VARIABLE FLOOR REFUSED (trades the constant rule took):
+    21 of 125 buys (16.8%), mean price 97.78c, 0 flips
+    they REALISED +43.4c in total (+2.068c per contract)
+    worth +24.5c in expectation at the CONSTANT 0.90%, and -7.8c at their own f_hat
+    (0 flips in the whole eligible sample, so 'realised' here is a
+     sample with no adverse event in it, not a verdict.)
+
+  ARTEFACT CHECK -- adverse selection. The index tape has no Kalshi
+  outcomes in it, so f_hat cannot see that a near-certainty is only
+  offered cheaply when the seller may know something. If the tape's
+  own tail were the whole story, mean f_hat over the trades we take
+  would already reach the 0.90% measured on trades actually taken.
+    mean f_hat over the 125 trades the constant rule takes: 2.094%
+    measured rate on trades actually taken:                 0.900%   (3 in 333)
+    exact one-sided 95% bound on that:                      2.310%
+    -> the tape's tail is ABOVE the traded rate, so the FLOOR is not doing the work here
+
+  wrote C:\kals-repo\results\pinfloor_full.txt
