@@ -30,10 +30,19 @@ EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 # Measured constants. Each carries where it came from.
 # ---------------------------------------------------------------------------
 FACTS = {
+    # TWO error rates, and using the wrong one was this report's biggest
+    # mistake. The ALL-CALLS rate is measured over every near-certain call;
+    # the TRADED rate is measured only over calls somebody offered us cheap,
+    # which is the subset we can actually buy -- and it is 90x worse.
     "flip_rate_pct": 0.01,          # pincal.py, 236 closes, 1 wrong of 10,421
     "flip_n": 10421,
     "flip_wrong": 1,
     "flip_closes": 236,
+    "traded_flip_pct": 0.90,        # pin.py OOS: 3 flips in 333 DEAR trades
+    "traded_flip_wrong": 3,
+    "traded_flip_n": 333,
+    "traded_breakeven_pct": 2.26,   # from the same OOS line
+    "traded_headroom": 1.3,
     "breakeven_pct": 2.00,          # 2c win vs ~98c loss
     "oos_edge_c": 2.51,             # pin.py re-run with both corrections
     "oos_t": 4.1,
@@ -171,8 +180,9 @@ def build(out_html):
     h.append('<h1>pin — overnight run report</h1>')
     h.append(f'<div class="sub">Kalshi 15-minute crypto markets · generated {now}</div>')
     h.append('<div class="grid">')
-    h.append(kpi(f'{F["flip_rate_pct"]:.2f}%', "model error rate", "good"))
-    h.append(kpi(f'{F["breakeven_pct"]:.2f}%', "break-even error rate"))
+    h.append(kpi(f'{F["traded_flip_pct"]:.2f}%', "error rate ON TRADES", "good"))
+    h.append(kpi(f'{F["traded_breakeven_pct"]:.2f}%', "break-even error rate"))
+    h.append(kpi(f'{F["traded_headroom"]:.1f}×', "safety margin", "warn"))
     h.append(kpi(f'+{F["oos_edge_c"]:.2f}c', "edge per contract", "good"))
     h.append(kpi(f'{len(closes)}', "closes watched live"))
     h.append(kpi(f'{fired}', "trades triggered",
@@ -218,7 +228,40 @@ def build(out_html):
              'place — before the market price always catches up.</div>')
 
     # ---------------- 2. the shape of the bet
-    h.append('<h2>2. The shape of a single bet</h2>')
+    h.append('<h2>2. Reading versus predicting — where the edge is real</h2>')
+    h.append('<p>This is the distinction the whole strategy rests on. We are '
+             'not forecasting where Bitcoin goes. We are reading a scoreboard '
+             'that is <b>already partly final</b> — and only the unfinished '
+             'part is a forecast.</p>')
+    h.append(R.chart_reading_vs_predicting())
+    h.append('<div class="cap">Green is already published and can never '
+             'change; red is still unknown. At 20 seconds — where the strategy '
+             'trades — 68% of the answer is already fixed. At 45 seconds it '
+             'inverts and becomes mostly guesswork, which is ordinary market '
+             'prediction and is not reliable.</div>')
+    h.append('<div class="note bad"><b>The rule this imposes.</b> Trading '
+             'earlier reaches deeper order books, but it converts reading into '
+             'predicting. Any move earlier than 20 seconds is only permitted '
+             'where the ALREADY-PUBLISHED numbers alone settle the outcome — '
+             'never on the strength of a forecast.</div>')
+
+    h.append('<h2>3. The correction that matters most</h2>')
+    h.append('<p>An earlier version of this report quoted the model&rsquo;s error '
+             'rate as 0.01%. That figure is real but answers the wrong '
+             'question — it is measured across <i>all</i> near-certain calls. '
+             'The rate that decides profitability is the one measured on the '
+             'calls we <b>actually trade</b>.</p>')
+    h.append(R.chart_two_error_rates())
+    h.append('<div class="cap">A 90x difference. Someone is only willing to '
+             'sell a near-certainty cheaply when they may know something we do '
+             'not, so the subset we get to trade is systematically riskier '
+             'than the average. This is called adverse selection, and here it '
+             'is measured rather than assumed.</div>')
+    h.append('<div class="note bad"><b>Honest margin: about 1.3–1.7x, not '
+             '200x.</b> Real and positive, but thin. Every claim in this '
+             'report uses the traded rate.</div>')
+
+    h.append('<h2>4. The shape of a single bet</h2>')
     h.append(R.chart_payoff())
     h.append('<div class="cap">Drawn to scale. We win about 2.5 cents and lose '
              'about 97 cents, so one loss cancels roughly 39 wins. Everything '
@@ -226,7 +269,7 @@ def build(out_html):
              'measured most carefully below.</div>')
 
     # ---------------- 3. calibration
-    h.append('<h2 class="pagebreak">3. Is the model honest about its own certainty?</h2>')
+    h.append('<h2 class="pagebreak">5. Is the model honest about its own certainty?</h2>')
     h.append('<p>A model that says “98% sure” must be right about 98% of the '
              'time. If it is right only 95% of the time the strategy loses '
              'money, no matter how fast or well-executed it is. This is the '
@@ -242,9 +285,13 @@ def build(out_html):
              'honesty.</div>')
     h.append(f'<div class="note good"><b>Result.</b> Over {F["flip_closes"]} '
              f'market closes and {F["flip_n"]:,} confident calls, the model '
-             f'was wrong <b>{F["flip_wrong"]} time</b>. That is '
-             f'{F["flip_rate_pct"]:.2f}% against a break-even of '
-             f'{F["breakeven_pct"]:.2f}%.</div>')
+             f'was wrong <b>{F["flip_wrong"]} time</b> — '
+             f'{F["flip_rate_pct"]:.2f}%. <b>But that is the wrong number to '
+             f'trade on:</b> restricted to the calls we actually get offered, '
+             f'the rate is {F["traded_flip_pct"]:.2f}% '
+             f'({F["traded_flip_wrong"]} in {F["traded_flip_n"]}). Both are '
+             f'below break-even; only the second one is the margin we '
+             f'live on.</div>')
     h.append('<div class="note"><b>How this test was made trustworthy.</b> '
              'The measuring tool was first run on two invented worlds where '
              'the answer was known: one where the model is correct by '
@@ -253,7 +300,7 @@ def build(out_html):
              'rigged world proves nothing on real data.</div>')
 
     # ---------------- 4. how rare the opportunity is
-    h.append('<h2>4. Why it does not trade every close</h2>')
+    h.append('<h2>6. Why it does not trade every close</h2>')
     h.append('<p>Being certain is common; being certain <i>and</i> finding '
              'someone selling too cheap is rare. Over three hours of recorded '
              'market data:</p>')
@@ -271,7 +318,7 @@ def build(out_html):
              f'close.</div>')
 
     # ---------------- 5. the night itself
-    h.append('<h2>5. What happened during the live run</h2>')
+    h.append('<h2>7. What happened during the live run</h2>')
     if closes:
         h.append('<table><tr><th>Close (UTC)</th><th>Markets looked at</th>'
                  '<th>Best deal available</th><th>Needed</th><th>Result</th></tr>')
@@ -338,7 +385,7 @@ def build(out_html):
                  'tested before any real size.</div>')
 
     # ---------------- 7. speed
-    h.append('<h2 class="pagebreak">6. The race</h2>')
+    h.append('<h2 class="pagebreak">8. The race</h2>')
     h.append('<p>A mispriced quote does not sit around. Measured from recorded '
              f'market data, these bargains last a median of '
              f'<b>{F["episode_median_ms"]} milliseconds</b>. Our reaction time:</p>')
@@ -357,7 +404,7 @@ def build(out_html):
              f'not a measurement</b> — it needs live fills to confirm.</div>')
 
     # ---------------- 8. scaling
-    h.append('<h2>7. What it could earn, and what it could lose</h2>')
+    h.append('<h2>9. What it could earn, and what it could lose</h2>')
     rows = [(1, 0.99, 0.93, 0.99), (5, 4.95, 4.7, 4.95),
             (10, 9.90, 9.3, 9.90), (30, 29.70, 28.0, 29.70)]
     h.append(R.chart_scaling(rows))
@@ -366,6 +413,13 @@ def build(out_html):
              f'{F["oos_edge_c"]:.2f}c per contract and '
              f'{F["fire_closes_per_day"]:.0f} chances per day. The red figure '
              'under each is what a single wrong bet costs.</div>')
+    h.append(R.chart_capacity([(30, 18, "money"), (50, 25, "money"),
+                               (100, 30, "depth"), (500, 30, "depth"),
+                               (5000, 30, "depth")]))
+    h.append('<div class="cap">Green means your cash is the limit; grey means '
+             'the order book is. Past roughly $100 the strategy earns the same '
+             'whether you add $400 or $4,900 — there simply are not enough '
+             'contracts on offer to buy.</div>')
     h.append('<div class="note"><b>More money stops helping at about $100.</b> '
              'Each bet lasts under 60 seconds and the next chance is 15 '
              'minutes later, so only one bet\'s worth of cash is ever needed at '
@@ -377,7 +431,7 @@ def build(out_html):
              'large bet, not twelve independent ones.</div>')
 
     # ---------------- 9. risks
-    h.append('<h2>8. What could still go wrong</h2>')
+    h.append('<h2>10. What could still go wrong</h2>')
     h.append('<table><tr><th>Risk</th><th>Severity</th><th>Status</th></tr>'
              '<tr><td><b>Price dips then recovers.</b> The model assumes the '
              'current price holds for the remaining seconds. A brief dip that '
@@ -399,7 +453,7 @@ def build(out_html):
              '</table>')
 
     # ---------------- 10. bugs
-    h.append('<h2>9. Faults found and fixed (and one class of mistake worth knowing)</h2>')
+    h.append('<h2>11. Faults found and fixed (and one class of mistake worth knowing)</h2>')
     h.append('<table><tr><th>#</th><th>Fault</th><th>Consequence had it shipped</th></tr>'
              '<tr><td>1</td><td>Clock conversion ignored daylight saving</td>'
              '<td>Off by one hour — would have traded nothing, silently</td></tr>'
@@ -427,7 +481,7 @@ def build(out_html):
              'confirms the alarm sounds.</div>')
 
     # ---------------- 11. the blocker story
-    h.append('<h2>10. The blocker: money in the wrong pocket</h2>')
+    h.append('<h2>12. The blocker: money in the wrong pocket</h2>')
     h.append('<p>Kalshi splits an account into separate shards. Every '
              '15-minute crypto market trades on the shard named '
              '<b>“Crypto”</b>, which held <b>$0.0026</b> while <b>$41.04</b> '
