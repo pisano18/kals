@@ -72,18 +72,27 @@ def selftest():
        "exactly why the favoured side must be chosen by the MODEL, not by "
        "price alone")
     b = Book()
-    b.snapshot({"yes_dollars": [["0.04", "100"], ["0.03", "50"], ["0.02", "20"]],
+    # yes bids at 4c/3c/2c/1c -> buying NO at 96c/97c/98c/99c. The 99c level
+    # must be trimmed by the EV floor; the fixture originally stopped at 98c,
+    # where the floor does not bite, so the test asserted a trim that could
+    # never happen.
+    b.snapshot({"yes_dollars": [["0.04", "100"], ["0.03", "50"],
+                                ["0.02", "20"], ["0.01", "500"]],
                 "no_dollars": [["0.95", "10"]]}, 1000)
     # buying NO means hitting the yes bids: NO price = 1 - yes bid
     lv = sorted((round(1 - p, 4), s) for p, s in b.yes.items())
     ck(lv[0] == (0.96, 100.0),
        f"cheapest NO comes from the HIGHEST yes bid ({lv[0]})")
-    ck([p for p, _ in lv] == [0.96, 0.97, 0.98],
+    ck([p for p, _ in lv] == [0.96, 0.97, 0.98, 0.99],
        "and deeper levels are DEARER, not cheaper -- the ladder runs the "
        "wrong way from intuition")
     keep = [(p, s) for p, s in lv if ev(p) >= EV_FLOOR]
-    ck(len(keep) < len(lv),
-       f"the EV floor trims the dear end: {len(lv)} levels -> {len(keep)}")
+    ck(len(keep) == 3 and keep[-1][0] == 0.98,
+       f"the EV floor trims the dear end: {len(lv)} levels -> {len(keep)}, "
+       f"stopping at {keep[-1][0] if keep else None}")
+    ck(sum(s for _, s in lv) - sum(s for _, s in keep) == 500.0,
+       "and the trimmed level was the biggest one -- depth sits where the "
+       "money is not")
     print("SELF-TEST " + ("PASSED" if not f else "*** FAILED ***"))
     for m in f:
         print("   - " + m)

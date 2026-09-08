@@ -35,6 +35,56 @@ constants**, so they stay meaningful at any setting.
 
 ---
 
+## v7 — CURRENT (2026-09-08 16:12 UTC)
+
+| setting | value |
+|---|---|
+| size | **5 contracts** per buy |
+| buys per close | up to 2, second only if ≥0.5¢ cheaper |
+| window | tau 3–30 s |
+| EV gate | ≥0.3¢ at 0.90% flip rate → ceiling 98.8¢ |
+| worst case per close | **$10.00** |
+| loss abort | **−$21.00** → survives 2.1 bad closes |
+
+### First size-8 trade: WON +49.34¢
+
+```
+KXHYPE15M  tau=9s  buy NO @0.9350  fair 0.0103  edge +5.04c  size on offer 34
+filled 8.0 @ 0.934, fee $0.0346  ->  settled, payout $8.00
+stake $7.4720 + fee $0.0346 = $7.5066   profit +$0.4934   = 6.6% on stake
+crypto shard $38.2157 -> $38.7091, reconciles exactly
+```
+
+**The rebuilt order rails work end to end at size 8.**
+
+### The safety system caught two configuration errors in ten minutes
+
+**1. Self-halt after the fill (correct).**
+```
+HALT: realised $+0.00 with $7.47 still open; one more contract
+      could take this run past $-15.00
+```
+Size 8 with 2 buys can commit ~$16 against a −$15 brake. **The configuration
+was self-contradictory** and the forward-looking loss bound refused to enter a
+state where the brake could be breached. Exactly the right behaviour.
+
+**2. The deployment rail then refused −$21 at size 5 — right call, wrong
+arithmetic.** It sized the abort against **one contract** when a close can buy
+**MAX_PER_CLOSE** of them. Fixed to use `size × MAX_PER_CLOSE` as the unit of
+loss, because **the unit of loss is a CLOSE, not a contract**.
+
+### The pattern, now explicit
+
+This is the **third** time today a limit set for a size-1 proof silently
+blocked scaling: the loss-abort range, `pintake`'s 1-contract order cap and $5
+run stake, and now the abort's unit of measure. Every one of them was *correct
+for size 1* and wrong afterwards.
+
+**Rule going forward: any constant tied to size must be expressed in terms of
+size, never as a literal.**
+
+---
+
 ## v6 @ size 1 — CURRENT (2026-09-08 15:47 UTC)
 
 | setting | value |

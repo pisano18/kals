@@ -52,14 +52,7 @@ SELF-TEST -- pinrun
   ok   take() is called with the market's exchange_index, not the default 0
   ok   exchange_index is read from the market record in the universe pass
 SELF-TEST PASSED
-  MODE LIVE size 1   tau<=30s  pin 0.98  edge>=0.3c net  loss abort $-15.00  SIZE 8
-  log C:\kals-repo\results\pinrun-live-20260908T154854Z.jsonl
+  MODE LIVE size 1   tau<=30s  pin 0.98  edge>=0.3c net  loss abort $-21.00  SIZE 5
+  log C:\kals-repo\results\pinrun-live-20260908T160242Z.jsonl
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $60.00
   index up: 11 ticks, 11 feeds
-  SIGNAL KXHYPE15M-26SEP081200-00 tau=9s buy NO @0.9350 fair 0.0103 edge +5.04c size 34.00
-    ORDER -> status executed filled 8.0 @ 0.934 fee 0.0043
-  *** HALT: loss bound: realised $+0.00 with $7.47 still open; one more contract could take this run past $-15.00
-
-  1 signals, 3519 evaluations
-  ledger {'committed': 7.472, 'filled_contracts': 8.0, 'filled_dollars': 7.472, 'fees': 0.0344, 'realised': 0.0, 'sends': 1, 'unknown': 0, 'rested': 0, 'anomalies': [], 'halt': None, 'positions': {'KXHYPE15M-26SEP081200-00': {'want': 'no', 'contracts': 8.0, 'cost': 7.472, 'order_ids': ['01a081bf-44d8-71e0-ac91-354066f6c91d']}}, 'takes': [{'status_code': 201, 'order_id': '01a081bf-44d8-71e0-ac91-354066f6c91d', 'status': 'executed', 'filled': 8.0, 'remaining': 0.0, 'exec_price': 0.934, 'fee': 0.0043, 'fee_total': 0.0344, 'client_order_id': 'pin-1788883191110-37085f', 't': 1788883191.2041228}]}
-  log C:\kals-repo\results\pinrun-live-20260908T154854Z.jsonl

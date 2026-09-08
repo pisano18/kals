@@ -36,7 +36,12 @@ TABLE 1 -- REALISED on this sample. NOT A RANKING: zero losses occurred,
   SCALE_IMPROVE cap2 LIVE      70     96   0.9441     502.3     7.18     5.23      1.21     1.968
   SCALE_IMPROVE cap3           70    106   0.9387     608.6     8.69     5.74      1.21     2.922
   SCALE_IMPROVE cap4           70    108   0.9349     659.0     9.41     6.10      1.21     3.659
+  TIER_IMPROVE cap2            70    102   0.9403     570.2     8.15     5.59      1.21     1.968
+  TIER_IMPROVE cap3            70    127   0.9297     836.2    11.95     6.58      1.21     2.922
   TIER_IMPROVE cap4            70    146   0.9226    1059.2    15.13     7.25      1.21     3.806
+  EV_IMPROVE cap2              70    125   0.9474     615.4     8.79     4.92      1.21     1.968
+  EV_IMPROVE cap3              70    165   0.9404     920.0    13.14     5.58      1.21     2.926
+  CONF_IMPROVE cap2            70    112   0.9512     511.0     7.30     4.56      1.21     1.976
 
 ------------------------------------------------------------------------------------------------------------------------
 TABLE 2 -- EXPECTED, losses priced in. THIS is the comparison.
@@ -65,7 +70,12 @@ TABLE 2 -- EXPECTED, losses priced in. THIS is the comparison.
   SCALE_IMPROVE cap2 LIVE      96      5.94    4.33      4.71    3.43      4.01     17    1.968      2        2       no       no
   SCALE_IMPROVE cap3          106      7.33    4.84      5.97    3.94      5.20     16    2.922      3        2       no      YES
   SCALE_IMPROVE cap4          108      8.03    5.20      6.64    4.30      5.85     16    3.659      4        1      YES      YES
+  TIER_IMPROVE cap2           102      6.84    4.69      5.52    3.79      4.78     17    1.968      2        2       no       no
+  TIER_IMPROVE cap3           127     10.31    5.68      8.68    4.78      7.75     16    2.922      3        2       no      YES
   TIER_IMPROVE cap4           146     13.25    6.35     11.38    5.45     10.31     16    3.806      4        1      YES      YES
+  EV_IMPROVE cap2             125      7.18    4.02      5.58    3.12      4.67     17    1.968      2        2       no       no
+  EV_IMPROVE cap3             165     11.02    4.68      8.90    3.78      7.70     15    2.926      3        2       no      YES
+  CONF_IMPROVE cap2           112      5.86    3.66      4.42    2.76      3.60     21    1.976      2        2       no       no
 
 ------------------------------------------------------------------------------------------------------------------------
 TABLE 3 -- the depth guard's cost, and its null (a rule wanting one
@@ -92,7 +102,12 @@ TABLE 3 -- the depth guard's cost, and its null (a rule wanting one
   SCALE_IMPROVE cap2 LIVE       96          0           0       1.300          3
   SCALE_IMPROVE cap3           106          0           0       1.427          3
   SCALE_IMPROVE cap4           108          0           0       1.449          3
+  TIER_IMPROVE cap2             91          0           0       1.376          3
+  TIER_IMPROVE cap3             98          0           0       1.695          2
   TIER_IMPROVE cap4            100          0           0       1.934          2
+  EV_IMPROVE cap2               82          1           0       1.698          2
+  EV_IMPROVE cap3               90          2           0       2.226          2
+  CONF_IMPROVE cap2             86          1           0       1.527          2
 
 ------------------------------------------------------------------------------------------------------------------------
 THE MECHANISM -- why sizing on the MODEL'S confidence backfires
@@ -119,27 +134,32 @@ RISK -- Monte Carlo on the -$3.00 abort
   same quarter hour; hard rule 4). 20,000 paths of 500 closes -- the
   pre-registered forward window. P&L runs cumulatively from flat.
   rule                      P(abort) 0.90%     1.80%     2.31%  med worst DD $
-  FLAT1                               0.0%      0.6%      2.0%            0.00
-  FLAT2                               0.9%      5.7%     11.6%            0.00
-  FLAT3                               2.2%     11.0%     19.1%            0.00
-  EV_PROP cap2                        0.3%      2.7%      6.1%            0.00
-  EV_PROP cap3                        0.7%      3.8%      7.9%            0.00
-  EV_PROP cap4                        2.1%      6.8%     10.9%            0.00
-  CONF_PROP cap2                      0.5%      4.3%     10.5%            0.00
-  CONF_PROP cap3                      1.6%      9.3%     18.8%            0.00
-  CONF_PROP cap4                      4.5%     15.6%     26.9%            0.00
-  PRICE_TIER cap2                     0.1%      0.6%      1.8%            0.00
-  PRICE_TIER cap3                     0.2%      1.2%      2.7%            0.00
-  PRICE_TIER cap4                     0.7%      2.4%      4.0%            0.00
-  KELLY_full cap2                     0.9%      5.7%     11.6%            0.00
-  KELLY_1/4 cap2                      0.9%      5.7%     11.6%            0.00
-  KELLY_1/10 cap2                     0.9%      5.7%     11.6%            0.00
-  KELLY_1/20 cap2                     0.6%      4.7%      9.9%            0.00
-  KELLY_1/20 cap4                     2.8%      9.4%     14.9%            0.00
-  SCALE_IMPROVE cap2 LIVE             0.3%      1.7%      3.6%            0.00
-  SCALE_IMPROVE cap3                  0.4%      2.4%      4.7%            0.00
-  SCALE_IMPROVE cap4                  0.6%      2.6%      4.6%            0.00
-  TIER_IMPROVE cap4                   1.8%      5.4%      7.6%            0.00
+  FLAT1                               0.0%      0.5%      2.1%            0.02
+  FLAT2                               0.9%      5.7%     12.0%            0.05
+  FLAT3                               2.4%     11.1%     19.7%            0.07
+  EV_PROP cap2                        0.3%      2.8%      6.3%            0.05
+  EV_PROP cap3                        0.7%      4.1%      7.7%            0.05
+  EV_PROP cap4                        2.1%      6.5%     10.5%            0.05
+  CONF_PROP cap2                      0.5%      4.4%     10.9%            0.03
+  CONF_PROP cap3                      1.5%      9.3%     19.6%            0.03
+  CONF_PROP cap4                      4.4%     15.8%     27.5%            0.03
+  PRICE_TIER cap2                     0.1%      0.6%      2.0%            0.03
+  PRICE_TIER cap3                     0.3%      1.2%      2.8%            0.03
+  PRICE_TIER cap4                     0.7%      2.3%      4.1%            0.03
+  KELLY_full cap2                     0.9%      5.7%     12.0%            0.05
+  KELLY_1/4 cap2                      0.9%      5.7%     12.0%            0.05
+  KELLY_1/10 cap2                     0.9%      5.7%     12.0%            0.05
+  KELLY_1/20 cap2                     0.7%      4.7%      9.9%            0.05
+  KELLY_1/20 cap4                     3.0%      9.3%     15.0%            0.07
+  SCALE_IMPROVE cap2 LIVE             0.2%      1.5%      4.0%            0.03
+  SCALE_IMPROVE cap3                  0.4%      2.2%      4.6%            0.03
+  SCALE_IMPROVE cap4                  0.6%      2.5%      4.7%            0.03
+  TIER_IMPROVE cap2                   0.2%      1.4%      3.6%            0.03
+  TIER_IMPROVE cap3                   0.6%      2.5%      5.0%            0.03
+  TIER_IMPROVE cap4                   1.9%      4.9%      7.9%            0.04
+  EV_IMPROVE cap2                     0.5%      3.3%      7.3%            0.06
+  EV_IMPROVE cap3                     1.0%      4.8%      9.2%            0.07
+  CONF_IMPROVE cap2                   0.4%      3.5%      8.1%            0.04
 
 ------------------------------------------------------------------------------------------------------------------------
 KELLY, and why full Kelly is not a candidate
@@ -179,5 +199,105 @@ HOW MUCH FLIP RATE EACH RULE CAN ABSORB before its EV per close is zero
   SCALE_IMPROVE cap2 LIVE              5.232               5.81x             yes             yes
   SCALE_IMPROVE cap3                   5.742               6.38x             yes             yes
   SCALE_IMPROVE cap4                   6.102               6.78x             yes             yes
+  TIER_IMPROVE cap2                    5.591               6.21x             yes             yes
+  TIER_IMPROVE cap3                    6.584               7.32x             yes             yes
   TIER_IMPROVE cap4                    7.255               8.06x             yes             yes
+  EV_IMPROVE cap2                      4.924               5.47x             yes             yes
+  EV_IMPROVE cap3                      5.576               6.20x             yes             yes
+  CONF_IMPROVE cap2                    4.562               5.07x             yes             yes
 
+------------------------------------------------------------------------------------------------------------------------
+SIGMA STRESS -- how much of this depends on the volatility estimate
+------------------------------------------------------------------------------------------------------------------------
+  sigma enters these rules in exactly TWO places:
+    (a) the ELIGIBILITY gate p_flip <= 0.02, which decides WHICH trades
+        exist at all -- shared by every rule including flat sizing;
+    (b) CONF_PROP's size, which is the ONLY rule that sizes on sigma.
+  PRICE_TIER, EV_PROP and the improve rules size on PRICE, so their
+  sizing decision does not read sigma at all.
+
+  Stress multipliers are the measured hour-to-hour spread of sigma_300
+  from the volatility-accuracy study (r=19: p05 0.865, median 1.066,
+  p95 1.327), plus 1.50 and 2.00 as a deliberate overshoot.
+    sigma x  elig rows  closes  TIER_IMPROVE2  SCALE_IMPR2  CONF_PROP2    FLAT2
+                                Ec/close@1.8%        @1.8%       @1.8%    @1.8%
+      0.865        648      70           6.68         6.08        4.13     5.99
+      1.000        593      70           5.52         4.71        2.90     5.02
+      1.066        559      69           5.07         4.23        2.57     4.34
+      1.327        461      68           3.71         3.05        1.46     2.72
+      1.500        391      63           2.92         2.58        1.18     2.17
+      2.000        247      55           1.81         1.53        0.96     1.79
+
+  Same rows, as a percentage of the sigma x 1.000 result:
+      0.865                              121%         129%        142%     119%
+      1.327                               67%          65%         50%      54%
+      2.000                               33%          33%         33%      36%
+
+------------------------------------------------------------------------------------------------------------------------
+LIVE CONFIGURATION CHECK -- the running process is NOT at size 1
+------------------------------------------------------------------------------------------------------------------------
+  Read from the live process on 2026-09-08:
+    pinrun.py --live --size 8 --minutes 720 --loss-abort -15.00 --max-positions 3
+  MAX_PER_CLOSE is 2 and is NOT settable by a flag, so a close can hold
+  TWO takes of 8 = 16 contracts.
+  pinrun's own rail sizes the abort off ONE take (one_loss = 1.00 * size = $8.00)
+  and requires the abort in [-4x, -1.5x] of it. It does not account for
+  the second take, so the worst close is twice what the rail assumes.
+
+  rule                      contr  maxExp $  meanExp $  vs abort   trips  bad closes
+                                     /close     /close    $15.00    in 1    to abort
+  FLAT2                      1048     15.81      14.31      105%     YES           1
+  EV_PROP cap2                848     15.61      11.50      104%     YES           1
+  CONF_PROP cap2              736     15.81      10.09      105%     YES           1
+  PRICE_TIER cap2             656     14.76       8.86       98%      no           2
+  KELLY_1/20 cap2             968     15.78      13.18      105%     YES           1
+  SCALE_IMPROVE cap2 LIVE     744     15.75      10.07      105%     YES           1
+  TIER_IMPROVE cap2           800     15.75      10.79      105%     YES           1
+  EV_IMPROVE cap2             936     15.75      12.70      105%     YES           1
+  CONF_IMPROVE cap2           872     15.81      11.87      105%     YES           1
+
+  THIS IS THE FINDING THAT MATTERS MOST FOR THE MONEY ACTUALLY AT RISK:
+  at --size 8 the live rule's worst single close is already at or over
+  the -$15.00 abort, so ONE bad close can end the session. That is a
+  property of the CURRENT configuration, not of any rule proposed here,
+  and it is unchanged by the sizing question. Every rule below was
+  scored at size 1 against -$3.00 as briefed; the ratio is what
+  transfers, and the ratio says the same thing at both sizes.
+
+------------------------------------------------------------------------------------------------------------------------
+THE VERDICT -- apply the risk rejection, then rank on cents per CLOSE
+------------------------------------------------------------------------------------------------------------------------
+  REJECT any rule whose worst single close commits >= $2.70, i.e. 90% of the -$3.00
+  abort budget. One bad event then ends the session outright or leaves
+  too little of the budget standing to keep trading. pinrun's own
+  comment already reaches this conclusion for cap 3.
+
+  REJECTED (13): FLAT3 ($2.96), EV_PROP cap3 ($2.89), EV_PROP cap4 ($3.81), CONF_PROP cap3 ($2.96), CONF_PROP cap4 ($3.95), PRICE_TIER cap3 ($2.74), PRICE_TIER cap4 ($3.51), KELLY_1/20 cap4 ($3.84), SCALE_IMPROVE cap3 ($2.92), SCALE_IMPROVE cap4 ($3.66), TIER_IMPROVE cap3 ($2.92), TIER_IMPROVE cap4 ($3.81), EV_IMPROVE cap3 ($2.93)
+
+  SURVIVORS (13), ranked by expected cents per close at the
+  EXACT 2.31% upper bound -- the honest worst case:
+   rank  rule                      Ec/close  Ec/close  Ec/close  Ec/con  contr  maxExp$  P(abort)  headroom
+                                     @0.90%    @1.80%    @2.31%  @2.31%                    @2.31%          
+      1  TIER_IMPROVE cap2             6.84      5.52      4.78    3.28    102    1.968      3.6%     6.21x
+      2  EV_IMPROVE cap2               7.18      5.58      4.67    2.61    125    1.968      7.3%     5.47x
+      3  EV_PROP cap2                  6.52      5.07      4.24    2.63    113    1.952      6.3%     5.49x
+      4  KELLY_1/20 cap2               6.77      5.08      4.13    2.21    131    1.972      9.9%     5.02x
+      5  SCALE_IMPROVE cap2 LIVE       5.94      4.71      4.01    2.92     96    1.968      4.0%     5.81x
+      6  FLAT2                         6.81      5.02      4.01    2.02    139    1.976     12.0%     4.81x
+      7  KELLY_full cap2               6.81      5.02      4.01    2.02    139    1.976     12.0%     4.81x
+      8  KELLY_1/4 cap2                6.81      5.02      4.01    2.02    139    1.976     12.0%     4.81x
+      9  KELLY_1/10 cap2               6.81      5.02      4.01    2.02    139    1.976     12.0%     4.81x
+     10  CONF_IMPROVE cap2             5.86      4.42      3.60    2.25    112    1.976      8.1%     5.07x
+     11  PRICE_TIER cap2               5.23      4.18      3.59    3.11     81    1.845      2.0%     6.02x
+     12  CONF_PROP cap2                4.14      2.90      2.20    1.61     96    1.976     10.9%     4.35x
+     13  FLAT1                         3.43      2.53      2.02    2.02     70    0.988      2.1%     4.81x
+
+  CAVEATS THAT TRAVEL WITH EVERY NUMBER ABOVE
+  1. 70 closes over THREE days (2026-09-04/05/06), 43 of them on one
+     day. That is 3 independent day-blocks, not 70 observations.
+  2. ZERO flips occurred here. The 0.90% is IMPORTED from a different
+     sample (3 in 333 dear trades, out of sample). Nothing in this
+     dataset measures the flip rate, so nothing here can confirm it.
+  3. Every EV number is linear in that imported rate. If the true rate
+     is above each rule's breakeven (3.5-7.3%), every rule loses.
+  4. The backtest always gets the quote. Live, we race for it.

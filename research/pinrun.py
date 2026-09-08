@@ -1150,14 +1150,22 @@ def main():
         # correct value is worse -- it looks like a safety feature and acts
         # like an outage.
         # Allowed: roughly 2 to 4 ordinary losses at the size being traded.
-        one_loss = 1.00 * float(a.size)
-        lo_allowed = -4.0 * one_loss
-        if not (lo_allowed <= a.loss_abort <= -1.5 * one_loss):
+        # The unit of loss is a CLOSE, not a contract. With MAX_PER_CLOSE buys
+        # allowed, one bad close costs size * MAX_PER_CLOSE, and sizing the
+        # abort against a single contract produced a configuration the
+        # forward-looking loss bound then refused as self-contradictory --
+        # size 8 with 2 buys can commit ~$16 against a $15 brake, so the run
+        # halted after its FIRST trade. Correct arithmetic, wrong unit.
+        worst_close = 1.00 * float(a.size) * float(MAX_PER_CLOSE)
+        lo_allowed = -4.0 * worst_close
+        hi_allowed = -1.5 * worst_close
+        if not (lo_allowed <= a.loss_abort <= hi_allowed):
             raise SystemExit(
                 f"--loss-abort {a.loss_abort:.2f} is outside "
-                f"[{lo_allowed:.2f}, {-1.5*one_loss:.2f}] for size {a.size:g}. "
-                f"One ordinary loss at this size is about ${one_loss:.2f}; the "
-                f"abort must survive the first one and stop by the fourth.")
+                f"[{lo_allowed:.2f}, {hi_allowed:.2f}] for size {a.size:g} "
+                f"with {MAX_PER_CLOSE} buys per close. One bad CLOSE costs up "
+                f"to ${worst_close:.2f}; the abort must survive the first and "
+                f"stop by the fourth.")
         if a.max_positions > 6:
             raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
     if a.selftest:

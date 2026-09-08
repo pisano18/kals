@@ -90,6 +90,14 @@ MIN_LEVEL = 1.0           # dust is not a real fill
 LOSS_ABORT = -3.00        # dollars; the live process halts here
 BANKROLL = 100.00         # for Kelly only; --bankroll
 
+# ---- the ACTUAL live configuration, read off the running process ----------
+# Get-CimInstance Win32_Process -Filter "Name='python.exe'" on 2026-09-08 shows
+#   pinrun.py --live --size 8 --minutes 720 --loss-abort -15.00 --max-positions 3
+# The brief for this study says size 1 and a -$3.00 abort. Both are scored.
+LIVE_UNIT = 8
+LIVE_ABORT = -15.00
+LIVE_TAG = "2026-09-08"
+
 
 # ===========================================================================
 # ARITHMETIC
@@ -285,9 +293,13 @@ class Buy(object):
         self.n, self.flip, self.tau = n, flip, tau
 
 
-def replay(closes, mode, fn, cap):
+def replay(closes, mode, fn, cap, unit=1):
     """Walk each close in time order and apply the rule.  Returns
-    (buys, depth_truncations, dust_skips)."""
+    (buys, depth_truncations, dust_skips).
+
+    `unit` is pinrun's --size: contracts per TAKE.  At unit > 1 pinrun does
+    not trade smaller against a thin level, it SKIPS the row
+    (`size < max(MIN_LEVEL, SIZE)`), so that is what is replicated here."""
     buys, trunc, skip = [], 0, 0
     for close_s in sorted(closes):
         rows = closes[close_s]
@@ -305,21 +317,33 @@ def replay(closes, mode, fn, cap):
                 continue
             want = min(want, cap - got)
             avail = int(math.floor(float(row["size"])))
-            if avail < 1:
-                skip += 1
-                continue
-            n = min(want, avail)
-            if n < want:
-                trunc += 1
+            if unit > 1:
+                if avail < unit:            # pinrun skips a thin level whole
+                    skip += 1
+                    continue
+                n = want * unit
+                if n > avail:
+                    n = (avail // unit) * unit
+                    trunc += 1
+                if n < unit:
+                    skip += 1
+                    continue
+            else:
+                if avail < 1:
+                    skip += 1
+                    continue
+                n = min(want, avail)
+                if n < want:
+                    trunc += 1
             buys.append(Buy(close_s, row["tk"], float(row["price"]), n,
                             bool(row["flip"]), int(row["tau"])))
-            got += n
+            got += n // unit if unit > 1 else n
             best = (float(row["price"]) if best is None
                     else min(best, float(row["price"])))
     return buys, trunc, skip
 
 
-def score(buys, flips=(MEASURED_FLIP, FLIP_HI, FLIP_CP)):
+def score(buys, flips=(MEASURED_FLIP, FLIP_HI, FLIP_CP), abort=None):
     """Everything the report needs, for one rule."""
     out = {}
     by_close = {}
@@ -359,13 +383,15 @@ def score(buys, flips=(MEASURED_FLIP, FLIP_HI, FLIP_CP)):
     out["max_exposure"] = max(cost.values()) if cost else 0.0
     out["mean_exposure"] = (sum(cost.values()) / len(cost)) if cost else 0.0
     out["worst_case_loss"] = -out["max_exposure"]
-    out["closes_to_abort"] = (int(math.ceil(abs(LOSS_ABORT) / out["max_exposure"]))
+    ab = abs(LOSS_ABORT if abort is None else abort)
+    out["abort"] = ab
+    out["closes_to_abort"] = (int(math.ceil(ab / out["max_exposure"]))
                               if out["max_exposure"] > 0 else 0)
-    out["typ_closes_to_abort"] = (int(math.ceil(abs(LOSS_ABORT) / out["mean_exposure"]))
+    out["typ_closes_to_abort"] = (int(math.ceil(ab / out["mean_exposure"]))
                                   if out["mean_exposure"] > 0 else 0)
-    out["trips_abort"] = out["max_exposure"] >= abs(LOSS_ABORT)
+    out["trips_abort"] = out["max_exposure"] >= ab
     # "near" = one bad close leaves under 10% of the abort budget standing
-    out["near_abort"] = out["max_exposure"] >= 0.90 * abs(LOSS_ABORT)
+    out["near_abort"] = out["max_exposure"] >= 0.90 * ab
     out["max_contracts_close"] = max((sum(b.n for b in v)
                                       for v in by_close.values()), default=0)
     return out
@@ -388,7 +414,7 @@ def breakeven_flip(buys):
 # ===========================================================================
 # LOAD
 # ===========================================================================
-def eligible(path=ROWS, verbose=True):
+def eligible(path=ROWS, verbose=True, sigma_mult=1.0):
     """The population pinrun would actually have traded."""
     rows, seen = [], 0
     with open(path, encoding="utf-8") as fh:
@@ -406,6 +432,8 @@ def eligible(path=ROWS, verbose=True):
         if not (TAU_MIN <= d["tau"] <= TAU_MAX):
             cut_tau += 1
             continue
+        if sigma_mult != 1.0:
+            d = dict(d, sig=d["sig"] * sigma_mult)
         if p_flip_model(d) > PFLIP_MAX:
             cut_pf += 1
             continue
@@ -547,6 +575,33 @@ def selftest():
        "THE GUARD'S NULL: on the same data a rule wanting 1 contract is "
        "truncated ZERO times, so the guard is not eating everything it sees")
 
+    # ---- 7b. pinrun's --size semantics: take whole units, skip thin -------
+    U = {1: [_row(price=0.95, size=100.0, close=1, sec=1),
+             _row(price=0.94, size=100.0, close=1, sec=2)],
+         2: [_row(price=0.95, size=5.0, close=2, sec=1),
+             _row(price=0.94, size=20.0, close=2, sec=2)],
+         3: [_row(price=0.95, size=12.0, close=3, sec=1)]}
+    bu, tru, sku = replay(U, "improve", _one, 2, unit=8)
+    got = [(x.close, x.n) for x in bu]
+    ck(got[0] == (1, 8) and got[1] == (1, 8),
+       f"--size 8: each take is 8 contracts, and cap2 means two takes = 16 "
+       f"contracts on one close [{got}]")
+    ck((2, 8) in got and sku >= 1,
+       f"--size 8: a level holding 5 is SKIPPED WHOLE (pinrun does not trade "
+       f"smaller against a thin level) and the next level is taken [{got}]")
+    b3 = [x for x in bu if x.close == 3]
+    ck(len(b3) == 1 and b3[0].n == 8,
+       f"--size 8: a level holding 12 gives ONE unit of 8, not 12 "
+       f"[{[(x.close, x.n) for x in b3]}]")
+    su = score(bu, abort=-15.00)
+    ck(abs(su["abort"] - 15.0) < 1e-12 and su["max_exposure"] > 15.0
+       and su["trips_abort"] is True,
+       f"--size 8 with a -$15.00 abort: the worst close commits "
+       f"${su['max_exposure']:.2f} and TRIPS it on one event")
+    su1 = score(bu)
+    ck(abs(su1["abort"] - 3.0) < 1e-12,
+       "score() still defaults to the -$3.00 abort when none is passed")
+
     # ---- 8. PLANTED WORLD A: cheaper is better ---------------------------
     A = {}
     for i in range(200):
@@ -645,7 +700,7 @@ def selftest():
 
 
 # ===========================================================================
-def report(closes, bankroll=BANKROLL, out=None):
+def report(closes, bankroll=BANKROLL, out=None, rows_path=ROWS):
     lines = []
 
     def P(s=""):
@@ -836,6 +891,97 @@ def report(closes, bankroll=BANKROLL, out=None):
     P("")
 
     P("-" * 120)
+    P("SIGMA STRESS -- how much of this depends on the volatility estimate")
+    P("-" * 120)
+    P("  sigma enters these rules in exactly TWO places:")
+    P("    (a) the ELIGIBILITY gate p_flip <= 0.02, which decides WHICH trades")
+    P("        exist at all -- shared by every rule including flat sizing;")
+    P("    (b) CONF_PROP's size, which is the ONLY rule that sizes on sigma.")
+    P("  PRICE_TIER, EV_PROP and the improve rules size on PRICE, so their")
+    P("  sizing decision does not read sigma at all.")
+    P("")
+    P("  Stress multipliers are the measured hour-to-hour spread of sigma_300")
+    P("  from the volatility-accuracy study (r=19: p05 0.865, median 1.066,")
+    P("  p95 1.327), plus 1.50 and 2.00 as a deliberate overshoot.")
+    P(f"  {'sigma x':>9}{'elig rows':>11}{'closes':>8}"
+      f"{'TIER_IMPROVE2':>15}{'SCALE_IMPR2':>13}{'CONF_PROP2':>12}{'FLAT2':>9}")
+    P(f"  {'':>9}{'':>11}{'':>8}{'Ec/close@1.8%':>15}{'@1.8%':>13}"
+      f"{'@1.8%':>12}{'@1.8%':>9}")
+    base = None
+    for mult in (0.865, 1.000, 1.066, 1.327, 1.500, 2.000):
+        cl2, kp2 = eligible(rows_path, verbose=False, sigma_mult=mult)
+        if not kp2:
+            P(f"  {mult:>9.3f}{0:>11}{0:>8}{'-':>15}{'-':>13}{'-':>12}{'-':>9}")
+            continue
+        vals = []
+        for mode, fn, cap in (("improve", _price_tier, 2), ("improve", _one, 2),
+                              ("once", _conf_prop, 2), ("once", _flat(2), 2)):
+            bb, _, _ = replay(cl2, mode, fn, cap)
+            vals.append(100 * score(bb)["ev0.0180_per_close"])
+        if mult == 1.000:
+            base = list(vals)
+        P(f"  {mult:>9.3f}{len(kp2):>11}{len(cl2):>8}"
+          f"{vals[0]:>15.2f}{vals[1]:>13.2f}{vals[2]:>12.2f}{vals[3]:>9.2f}")
+    if base:
+        P("")
+        P("  Same rows, as a percentage of the sigma x 1.000 result:")
+        for mult in (0.865, 1.327, 2.000):
+            cl2, kp2 = eligible(rows_path, verbose=False, sigma_mult=mult)
+            vals = []
+            for mode, fn, cap in (("improve", _price_tier, 2),
+                                  ("improve", _one, 2),
+                                  ("once", _conf_prop, 2), ("once", _flat(2), 2)):
+                bb, _, _ = replay(cl2, mode, fn, cap)
+                vals.append(100 * score(bb)["ev0.0180_per_close"])
+            P(f"  {mult:>9.3f}{'':>11}{'':>8}"
+              + "".join(f"{100.0 * v / b:>14.0f}%" if b else f"{'-':>15}"
+                        for v, b in zip(vals[:1], base[:1]))
+              + "".join(f"{100.0 * v / b:>12.0f}%" if b else f"{'-':>13}"
+                        for v, b in zip(vals[1:2], base[1:2]))
+              + "".join(f"{100.0 * v / b:>11.0f}%" if b else f"{'-':>12}"
+                        for v, b in zip(vals[2:3], base[2:3]))
+              + "".join(f"{100.0 * v / b:>8.0f}%" if b else f"{'-':>9}"
+                        for v, b in zip(vals[3:4], base[3:4])))
+    P("")
+
+    P("-" * 120)
+    P("LIVE CONFIGURATION CHECK -- the running process is NOT at size 1")
+    P("-" * 120)
+    P(f"  Read from the live process on {LIVE_TAG}:")
+    P(f"    pinrun.py --live --size {LIVE_UNIT:g} --minutes 720 "
+      f"--loss-abort {LIVE_ABORT:.2f} --max-positions 3")
+    P("  MAX_PER_CLOSE is 2 and is NOT settable by a flag, so a close can hold")
+    P(f"  TWO takes of {LIVE_UNIT:g} = {2 * LIVE_UNIT:g} contracts.")
+    P(f"  pinrun's own rail sizes the abort off ONE take (one_loss = 1.00 * "
+      f"size = ${LIVE_UNIT:.2f})")
+    P(f"  and requires the abort in [-4x, -1.5x] of it. It does not account for")
+    P("  the second take, so the worst close is twice what the rail assumes.")
+    P("")
+    P(f"  {'rule':<24}{'contr':>7}{'maxExp $':>10}{'meanExp $':>11}"
+      f"{'vs abort':>10}{'trips':>8}{'bad closes':>12}")
+    P(f"  {'':<24}{'':>7}{'/close':>10}{'/close':>11}"
+      f"{('$%.2f' % abs(LIVE_ABORT)):>10}{'in 1':>8}{'to abort':>12}")
+    for name, mode, fn, cap in rules:
+        if cap != 2 or "KELLY_full" in name or "KELLY_1/4" in name                 or "KELLY_1/10" in name:
+            continue
+        bl, trl, skl = replay(closes, mode, fn, cap, unit=LIVE_UNIT)
+        sl = score(bl, abort=LIVE_ABORT)
+        P(f"  {name:<24}{sl['contracts']:>7}{sl['max_exposure']:>10.2f}"
+          f"{sl['mean_exposure']:>11.2f}"
+          f"{100.0 * sl['max_exposure'] / abs(LIVE_ABORT):>9.0f}%"
+          f"{('YES' if sl['trips_abort'] else 'no'):>8}"
+          f"{sl['closes_to_abort']:>12}")
+    P("")
+    P("  THIS IS THE FINDING THAT MATTERS MOST FOR THE MONEY ACTUALLY AT RISK:")
+    P("  at --size 8 the live rule's worst single close is already at or over")
+    P("  the -$15.00 abort, so ONE bad close can end the session. That is a")
+    P("  property of the CURRENT configuration, not of any rule proposed here,")
+    P("  and it is unchanged by the sizing question. Every rule below was")
+    P("  scored at size 1 against -$3.00 as briefed; the ratio is what")
+    P("  transfers, and the ratio says the same thing at both sizes.")
+    P("")
+
+    P("-" * 120)
     P("THE VERDICT -- apply the risk rejection, then rank on cents per CLOSE")
     P("-" * 120)
     P(f"  REJECT any rule whose worst single close commits >= "
@@ -902,7 +1048,7 @@ def main():
     if not kept:
         print("loaded nothing")
         return 0
-    report(closes, a.bankroll, a.out)
+    report(closes, a.bankroll, a.out, a.rows)
     return 0
 
 
