@@ -49,3 +49,7 @@ SELF-TEST PASSED
   index up: 11 ticks, 11 feeds
   close 08:30Z: 3132 looks, best was KXNEAR15M-26SEP080430- YES @0.9990 edge +0.09c (need +0.3c) -> no trade
   close 08:45Z: 2905 looks, best was KXBTC15M-26SEP080445-4 YES @0.9980 edge +0.18c (need +0.3c) -> no trade
+  SIGNAL KXSOL15M-26SEP080500-00 tau=15s buy NO @0.9790 fair 0.0140 edge +0.55c size 210.76
+    ORDER -> status executed filled 1.0 @ 0.979 fee 0.0015
+  close 09:00Z: 732 looks, best was KXSOL15M-26SEP080500-0 NO @0.9790 edge +0.55c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP080500-00 no vs no -> +1.95c (run realised $+0.0195)
