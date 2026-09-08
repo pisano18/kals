@@ -22,6 +22,54 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## MEASURED 2026-09-08 evening — the closes we miss are NOT missed profit
+
+### 30 | Rest a bid instead of taking one, in the closes where nothing is offered — **TESTED-REJECTED**
+
+Yesterday's answer to "the losing side's book is empty" was "then REST a bid
+instead of taking one." Measured on **10,168 decided moments** across the eight
+closes where the live runner could buy nothing, sampled on a 5-second grid:
+
+| | |
+|---|---|
+| best bid on the WINNING side | **99.90¢** (median) |
+| price levels quoted | 87 (median) |
+| our break-even as a maker | **99.10¢** (no fee) |
+
+**The market is already bidding 99.90¢, which is 0.80¢ BEYOND the price where
+this trade stops making money.** To rest anywhere profitable we would sit behind
+an enormous queue:
+
+| if we rested at | contracts ahead of us | our EV per contract |
+|---|---|---|
+| 99.0¢ | 15,218 | +0.10¢ |
+| 98.8¢ | ~16,600 | +0.30¢ |
+| 98.0¢ | 16,672 | +1.10¢ |
+| 96.0¢ | 17,537 | +3.10¢ |
+| 90.0¢ | 18,807 | +9.10¢ |
+
+A resting bid has PRICE priority, so every contract bid above ours fills first.
+At any price that makes money we are behind more than sixteen thousand
+contracts.
+
+**THE IMPORTANT CONSEQUENCE, and it is good news: those closes are not lost
+profit.** They are closes where the trade is not available to anybody at a
+price that works. We were not too slow and we are not too timid. There is no
+version of us that captures them. That closes a line of enquiry rather than
+opening one.
+
+**Also worth noting: the 15,218 contracts bid above 99.0¢ are buying
+negative-EV contracts at our measured 0.90% flip rate.** Either the resting
+crowd's true error rate is far below ours, or they are overpaying. Which of
+those is true is unmeasured and matters, because our whole edge rests on 0.90%.
+
+**SCOPE, and it matters.** This is measured only on the closes where NOTHING
+was offered. It says nothing about resting in the **41% of closes where an offer
+does appear** — a different population, and IDEAS_LOG #6 (+37%) is still open
+there.
+
+---
+
 ## MEASURED 2026-09-08 evening — THE BINDING CONSTRAINT, and it is not our rules
 
 ### 29 | In a decided market the losing side's book is EMPTY — **MEASURED, and it reframes everything**
