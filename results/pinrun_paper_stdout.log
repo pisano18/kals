@@ -1,0 +1,28 @@
+SELF-TEST -- pinrun
+  ok   all 60 prints locked at now=close (remaining 0)
+  ok   locked sum excludes tick@close and includes tick@close-60 (5900.0, expected 5900.0)
+  ok   decided yes on the corrected window (fair 1.0)
+  ok   old and new windows genuinely differ on this fixture
+  ok   eff_strike(2492.82, d=2) == 2492.815
+  ok   rounding-aware fair calls the real ETH market YES (1.0)
+  ok   the un-rounded model calls it NO (0.0) -- the -90.91c loss
+  ok   net edge subtracts the taker fee (0.431c at p=0.99)
+  ok   edge sign behaves at the boundary
+  ok   NO-side edge is (1-fair) - price - fee
+  ok   stale index reports its age (30s)
+  ok   on_frame parses a real cfbenchmarks_value frame
+  ok   junk and off-channel frames are counted, not fatal
+  ok   pintake ledger has the key the abort reads: 'halt'
+  ok   pintake ledger has the key the abort reads: 'realised'
+  ok   pintake ledger has the key the abort reads: 'committed'
+  ok   pintake ledger has the key the abort reads: 'positions'
+  ok   every ledger key the abort reads exists (['committed', 'halt', 'positions', 'realised'])
+  ok   abort fires on realised -3.00 vs limit -2.00 (loss abort: realised $-3.00 <= $-2.00)
+  ok   abort fires at the stake cap (stake cap reached: $5.00 committed)
+  ok   abort fires on a pintake halt (pintake halted: unknown order state)
+  ok   risk_abort() runs before the first `continue` in the loop
+  ok   no direct send path in this file (found [])
+SELF-TEST PASSED
+  MODE PAPER   tau<=20s  pin 0.98  edge>=0.5c net  loss abort $-2.00
+  log C:\kals-repo\results\pinrun-paper-20260908T060746Z.jsonl
+  index up: 11 ticks, 11 feeds
