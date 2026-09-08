@@ -53,3 +53,7 @@ SELF-TEST PASSED
     ORDER -> status executed filled 1.0 @ 0.979 fee 0.0015
   close 09:00Z: 732 looks, best was KXSOL15M-26SEP080500-0 NO @0.9790 edge +0.55c (need +0.3c) -> FIRED
   SETTLED KXSOL15M-26SEP080500-00 no vs no -> +1.95c (run realised $+0.0195)
+  SIGNAL KXZEC15M-26SEP080515-15 tau=15s buy NO @0.9470 fair 0.0112 edge +3.82c size 6.00
+    ORDER -> status executed filled 1.0 @ 0.947 fee 0.0036
+  close 09:15Z: 718 looks, best was KXZEC15M-26SEP080515-1 NO @0.9470 edge +3.82c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP080515-15 no vs no -> +4.94c (run realised $+0.0689)
