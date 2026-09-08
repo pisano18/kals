@@ -22,6 +22,76 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## MEASURED 2026-09-08 — the two biggest results of the day
+
+### 26 | Size on CONFIDENCE — **TESTED-REJECTED, and it is backwards**
+
+The operator's standing request was to size by how sure we are. Measured across
+a panel of sizing rules on 593 eligible trades over 70 closes:
+
+| the model's p_flip | mean price | worth per contract |
+|---|---|---|
+| below 1e-10 (most certain) | **97.51¢** | **1.41¢** |
+| above 1e-3 (least certain) | 94.39¢ | **4.35¢** |
+
+**Confidence and reward are INVERSELY related here.** "Buy more when confident"
+is literally "buy more at 97–99¢", which is the expensive end. `CONF_PROP` is
+the WORST rule in the panel (3.02¢/contract vs flat's 3.43¢) and gets
+monotonically worse as its cap rises.
+
+**What works instead is sizing on what the trade PAYS** — price or EV. That is
+the same information with the model's opinion taken out of it. Best survivor:
+`TIER_IMPROVE cap2` — first take is 2 contracts when the price is already below
+93¢, `n = 1 + floor((0.95 − price)/0.02)`, cap unchanged. +15% per close at
+identical max exposure and slightly LOWER abort probability. **Not deployed** —
+it is +0.8¢/close measured on 70 closes with zero adverse events, which is a
+candidate for pre-registration, not a reason to touch a working process.
+
+### 27 | Is our volatility number any good? — **MEASURED, and it is the wrong SHAPE**
+
+`volcheck.py`, 13.0M cells over 329 hour-files, 90.3% tape coverage. Verified
+against the shipped dataset on 28,479 of 28,479 rows (worst relative difference
+3.96e-10) and reproduces the settled flip on 28,479 of 28,479.
+
+When the model says the move has standard deviation X, the realised standard
+deviation is **1.18X** pooled — 1.105× at tau 3 rising monotonically to 1.262×
+at tau 60. But the pooled RMS ratio is only **1.029**, so the *average level* is
+nearly right and the gap is per-instance error.
+
+**The distribution is not a gaussian of the wrong width. It is the wrong shape.**
+
+| | realised | gaussian | ratio |
+|---|---|---|---|
+| median \|z\| (body) | 0.470 | 0.674 | **0.70×** — too NARROW |
+| \|z\| > 2 | 7.02% | 4.55% | 1.5× |
+| \|z\| > 3 | 2.52% | 0.270% | 9.3× |
+| \|z\| > 4 | 1.114% | 0.0063% | **176×** |
+| \|z\| > 6 | 0.329% | 2e-7% | 1.7 million× |
+
+**Mechanism, visible in the raw tape: these indices are step functions.**
+Fraction of consecutive one-second prints that are EXACTLY equal — SOL 70.5%,
+NEAR 39.1%, XRP 17.7%, DOGE 17.6%, ETH 10.7%, BNB 8.4%, HYPE 3.8%, BRTI 0.6%,
+ZEC 0.07%. A long flat stretch sets a tiny 300-second sigma, then one second
+moves 20–25 sigma and the level persists.
+
+**This independently explains the 0.90% flip rate.** The model implies ~0.06%;
+reality is 15× worse. The tail measurement says exceedance at z>3 runs ~9×
+gaussian. Two independent routes to the same order of magnitude. **The
+protection is not the model — it is that we substitute the measured 0.90% for
+the model's number in the EV gate.** That substitution is doing all the work.
+
+**Also corrected here:** the flip-rate 95% upper bound. 1.80% was a Wald normal
+approximation on 3 events. The exact one-sided Clopper-Pearson bound on 3 in
+333 is **2.31%**, 28% higher. Every headroom figure in this repo now uses 2.31%.
+
+### 28 | Price ceiling 98.8¢ → 96¢ — **TESTED-REJECTED after being wrongly declared live**
+
+See `results/VERSIONS.md`. Committed to disk, never restarted, never traded.
+Withdrawn because live prices (mean 97.61¢) are far dearer than the backtest
+(93.86¢), so it would refuse 12 of 16 real signals rather than ~30%.
+
+---
+
 ## TESTED-PROMISING — works, deliberately not deployed
 
 | # | idea | result | why not deployed |
