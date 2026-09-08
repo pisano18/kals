@@ -116,7 +116,18 @@ SERIES_TO_INDEX = {
 
 # ---- the frozen rule -------------------------------------------------------
 PIN = 0.98
-TAU_MAX = 20
+TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
+                       # horizon on the order-book dataset, restricted to
+                       # moments it calls <2% risk:
+                       #   tau  3-10   575 moments  0 flips   clean
+                       #   tau 11-20 1,772 moments  0 flips   clean
+                       #   tau 21-30 2,872 moments  0 flips   clean
+                       #   tau 31-45 7,302 moments 25 flips   3.7x overconfident
+                       #   tau 46-60 10,047 moments 126 flips 10.9x overconfident
+                       # The overconfidence is ENTIRELY a long-horizon effect,
+                       # which also explains why the tau<=60 cell was dead out
+                       # of sample. 31-45 is a measured wall, not a soft edge:
+                       # do NOT extend past 30 on this evidence.
 TAU_MIN = 3            # a one-second misalignment is fatal below this
 EDGE_FLOOR = 0.003     # AFTER fee. 0.5c -> 0.3c per
                        # results/PREREG_pin_live_AMENDMENT_1.md, written
