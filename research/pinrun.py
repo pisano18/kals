@@ -128,6 +128,13 @@ EDGE_FLOOR = 0.003     # AFTER fee. 0.5c -> 0.3c per
                        # Better on every dimension measured. REVERTS to
                        # 0.005 if the live flip rate exceeds 1.0%.
 SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
+MAX_PER_CLOSE = 2      # AMENDMENT 3: buys per close, adding only when the
+                       # price IMPROVES. Measured over 70 closes: 4.18c ->
+                       # 8.87c per opportunity, and the average price paid
+                       # FELL 95.53c -> 94.28c. Cap 2 not 3 because 3 takes
+                       # worst-case exposure to ~$2.83, which would nearly
+                       # trip the -$3.00 abort in a single bad close.
+IMPROVE_BY = 0.005     # a second buy must be at least this much cheaper
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # our own size: a 0.01-contract order against a
                        # 0.02-contract dust level is not a real fill test
@@ -851,7 +858,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 rec("close_summary", close=cs, looks=nb["n"],
                     decided=nb["decided"], undecided=nb["undecided"],
                     no_offer=nb["no_offer"], dust=nb["dust"],
-                    fired=cs in fired, best=None,
+                    fired=(cs in fired), best=None,
                     why=("decided but NOBODY OFFERED the winning side"
                          if nb["no_offer"] else
                          "no market ever reached the 98% gate"))
@@ -863,7 +870,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 rec("close_summary", close=cs, looks=nb["n"],
                     decided=nb["decided"], undecided=nb["undecided"],
                     no_offer=nb["no_offer"], dust=nb["dust"],
-                    tradeable=nb["tradeable"], fired=cs in fired,
+                    tradeable=nb["tradeable"], fired=(cs in fired),
                     best_ticker=b["ticker"], best_want=b["want"],
                     best_edge_c=round(100 * b["edge"], 3),
                     best_price=round(b["price"], 4),
@@ -962,7 +969,16 @@ def trade_loop(a, rec, book, idx, series_index):
             tau = close_s - now_s
             if not (TAU_MIN <= tau <= TAU_MAX):
                 continue
-            if close_s in fired:
+            # AMENDMENT 3: scale in as the price IMPROVES, up to MAX_PER_CLOSE.
+            # One shot at the first safe price leaves money on the table:
+            # measured over 70 closes, adding only on improvement raised profit
+            # per opportunity from 4.18c to 8.87c AND lowered the average price
+            # paid from 95.53c to 94.28c. Waiting for a better price instead is
+            # strictly worse -- skipping just one tick missed 7 of 70 closes
+            # outright. In this bet a lower price wins more AND loses less, so
+            # averaging down improves both sides.
+            prev = fired.get(close_s)
+            if prev is not None and prev["n"] >= MAX_PER_CLOSE:
                 continue
             try:
                 b = book.best(tk)
@@ -1033,6 +1049,12 @@ def trade_loop(a, rec, book, idx, series_index):
             # 0.90%. At high prices that gap flips the sign of the trade:
             # breakeven price is exactly 1 - flip = 99.1c, and five of the
             # seven live trades on 2026-09-08 were above it and negative EV.
+            # AMENDMENT 3: a SECOND buy on the same close is only allowed at a
+            # genuinely better price. Re-buying at the same level would double
+            # the risk without lowering the average paid, which is the whole
+            # mechanism -- a lower price wins more AND loses less.
+            if prev is not None and price >= prev["best"] - IMPROVE_BY:
+                continue
             ev = expected_value(price)
             if ev < EV_FLOOR:
                 nb["neg_ev"] = nb.get("neg_ev", 0) + 1
@@ -1046,7 +1068,11 @@ def trade_loop(a, rec, book, idx, series_index):
                        size=size, strike=strike, digits=digits, spot=spot,
                        sigma=round(sg, 6), book_age_ms=b["age_ms"],
                        index_age_s=round(iage, 2), exchange_index=exi)
-            fired[close_s] = tk
+            if prev is None:
+                fired[close_s] = {"n": 1, "best": price, "tk": tk}
+            else:
+                prev["n"] += 1
+                prev["best"] = min(prev["best"], price)
             rec("signal", live=live, **sig)
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
                   f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f}")

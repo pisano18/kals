@@ -56,3 +56,30 @@ SELF-TEST PASSED
   log C:\kals-repo\results\pinrun-live-20260908T114547Z.jsonl
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $5.00
   index up: 11 ticks, 11 feeds
+  SIGNAL KXBTC15M-26SEP080800-00 tau=19s buy NO @0.9500 fair 0.0156 edge +3.10c size 385.35
+    ORDER -> status executed filled 1.0 @ 0.95 fee 0.0034
+  close 12:00Z: 190 looks, best was KXBTC15M-26SEP080800-0 NO @0.9500 edge +3.10c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP080800-00 no vs no -> +4.66c (run realised $+0.0466)
+  close 12:15Z: 2943 looks, 2943 decided, 2943 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXBNB15M-26SEP080830-30 tau=15s buy NO @0.9500 fair 0.0182 edge +2.84c size 5.26
+    ORDER -> status canceled filled 0.0 @ None fee None
+  close 12:30Z: 888 looks, best was KXBNB15M-26SEP080830-3 NO @0.9500 edge +2.84c (need +0.3c) -> FIRED
+  SIGNAL KXBNB15M-26SEP080845-45 tau=20s buy YES @0.9770 fair 0.9856 edge +0.70c size 26.00
+    ORDER -> status executed filled 1.0 @ 0.977 fee 0.0016
+  close 12:45Z: 6 looks, best was KXBNB15M-26SEP080845-4 YES @0.9770 edge +0.70c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP080845-45 yes vs yes -> +2.14c (run realised $+0.0680)
+  SIGNAL KXSOL15M-26SEP080900-00 tau=13s buy NO @0.9720 fair 0.0194 edge +0.66c size 10.00
+    ORDER -> status canceled filled 0.0 @ None fee None
+  close 13:00Z: 1218 looks, best was KXSOL15M-26SEP080900-0 NO @0.9720 edge +0.66c (need +0.3c) -> FIRED
+  close 13:15Z: 2831 looks, best was KXETH15M-26SEP080915-1 YES @0.9980 edge +0.18c (need +0.3c) -> no trade
+  SIGNAL KXDOGE15M-26SEP080930-30 tau=20s buy NO @0.9630 fair 0.0002 edge +3.43c size 581.44
+    ORDER -> status executed filled 1.0 @ 0.963 fee 0.0025
+  close 13:30Z: 86 looks, best was KXDOGE15M-26SEP080930- NO @0.9630 edge +3.43c (need +0.3c) -> FIRED
+  SETTLED KXDOGE15M-26SEP080930-30 no vs no -> +3.45c (run realised $+0.1025)
+  close 13:45Z: 2997 looks, 2997 decided, 2997 decided-but-nothing-offered, 0 undecided
+  close 14:00Z: 2934 looks, 2934 decided, 2934 decided-but-nothing-offered, 0 undecided
+  close 14:15Z: 2871 looks, 2871 decided, 2871 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXXRP15M-26SEP081030-30 tau=20s buy YES @0.9870 fair 1.0000 edge +1.21c size 125.00
+    ORDER -> status executed filled 1.0 @ 0.987 fee 0.0009
+  close 14:30Z: 4 looks, best was KXXRP15M-26SEP081030-3 YES @0.9870 edge +1.21c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP081030-30 yes vs yes -> +1.21c (run realised $+0.1146)
