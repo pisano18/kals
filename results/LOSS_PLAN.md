@@ -67,11 +67,11 @@ At ~50 trades a day a 0.90% rate predicts **0.45 losses per day**, so three in
 one run is roughly a **1% event** — rare enough to stop and re-measure rather
 than trade through.
 
-**2. The dollar brake — −$90 realised, then halt.** Forward-looking: it refuses
+**2. The dollar brake — −$60 realised, then halt.** Forward-looking: it refuses
 to enter a state where one more contract could breach the limit, so it stops
 *before* the number is hit, not after.
 
-**3. The order-path brake — the same −$90, enforced independently** inside
+**3. The order-path brake — the same −$60, enforced independently** inside
 `pintake`. Two brakes that cannot silently disagree, because `set_limits()`
 refuses to tighten below what the run configured.
 
@@ -131,9 +131,10 @@ trades.** That is not a feeling, it is the exact upper bound of the measurement
 the entire system rests on. Above it, the price ceiling is in the wrong place
 and every profit figure in this repository is an artefact.
 
-**It is NOT dead because of a bad day.** A −$90 halt on a $154 bank is a 58%
-drawdown and it is survivable. The stress test says that at the rate we
-believe, that outcome has a 0.1% chance; at the rate we cannot rule out, 1.1%.
+**It is NOT dead because of a bad day.** A −$60 halt on a $154 bank is a 39%
+drawdown, it leaves $94, and it is survivable. The stress test says that at the
+rate we believe, that outcome has a 0.1% chance; at the 2.31% rate we cannot
+rule out, 3.4%.
 
 ---
 
