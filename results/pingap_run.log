@@ -1,0 +1,164 @@
+SELF-TEST -- pingap
+  ok   billed_fee matches pinsize exactly
+  ok   ev_per_contract matches pinsize exactly
+  ok   p_flip_model matches pinsize exactly
+  ok   gate constants match pinsize (flip 0.009/0.009, ev 0.003/0.003, pflip 0.02/0.02, improve 0.005/0.005)
+  ok   PFLIP_MAX is 1 - PIN, the gate pinrun actually applies
+  ok   billed fee at 95c is the $0.0001 ceiling, 0.0034 (0.0034)
+  ok   EV before fee is exactly zero at p = 1 - flip
+  ok   today's rule refuses a live signal at 99.20c (EV net -0.160c)
+  ok   today's rule refuses a live signal at 99.50c (EV net -0.440c)
+  ok   today's rule refuses a live signal at 99.60c (EV net -0.530c)
+  ok   today's rule accepts a live signal at 98.70c (EV net +0.310c)
+  ok   today's rule accepts a live signal at 97.90c (EV net +1.050c)
+  ok   today's rule accepts a live signal at 95.00c (EV net +3.760c)
+  ok   today's rule accepts a live signal at 93.50c (EV net +5.170c)
+  ok   planted close: improve-cap2 buys 99c then 95c and SKIPS 95.4c ([0.99, 0.95])
+  ok   the FIRST buy is the dear one -- blending it with the improve buy is exactly the effect being decomposed
+  ok   planted: blended mean 97c vs first-buy mean 99c -- a 2c gap from scale-in alone
+  ok   NULL world (flat prices): no second buy, and blended == first-buy, so the scale-in term measures zero
+  ok   cap1 takes the FIRST qualifying moment, never the cheapest later one -- the replay is strictly causal
+  ok   a 0.02-contract dust level is not a buy
+  ok   a population that is all 94c NEVER averages 97.61c over 16 draws
+  ok   a population that is all 99c ALWAYS does
+  ok   NULL: drawing at the population's own mean is an ordinary event (0.508) -- the estimator does not manufacture rarity
+  ok   and a target 5c above the population mean is rare, as it must be
+  ok   the close-clustered bootstrap agrees with the buy-level one on a degenerate population
+  ok   coverage estimator: tau 4 in both episodes (1.00), tau 5 in one (0.50) -- got 1.00/0.50
+  ok   NULL: a fully covered world reports coverage 1.00 everywhere, so a coverage claim cannot be an artefact of the estimator
+  ok   pindata.Book.snapshot still reads yes_dollars, the key the tape does NOT use -- if this FAILS the bug has been fixed and section F must be rewritten before it is quoted
+  ok   the corrected seeder reads *_fp (({0.6: 10.0}, {0.39: 5.0}))
+  ok   a message with only the SHIPPED key names seeds an EMPTY book -- which is exactly what pindata has been doing on every file
+  ok   a tau-19 signal at 11:59:41Z reconstructs a 12:00:00Z close
+  ok   the EV gate's birth is git c3aca51 converted to UTC, not local
+  ok   with all 60 prints held, remaining is 0 and mu is the mean ((100.0, 0, 100.0))
+  ok   three prints in flight are counted as remaining, not guessed (3)
+  ok   eff_strike carries the rounding correction
+  ok   path_stats reads the tape price at the second live actually fired
+  ok   with no index supplied path_stats reports NO cheapest price rather than the ungated hindsight one -- the trap column is gone
+  ok   rule_fires takes the 95c offer at tau 20, refuses the 99.5c offer at tau 15 on EV, and refuses the 0.02-contract dust at tau 10 ([(20, 0.95, 'yes')])
+  ok   and it buys the side the index says is winning, at the offered price
+  ok   NULL: with the index sitting on the strike the model is undecided and rule_fires returns NOTHING -- it cannot manufacture an opportunity
+  ok   and with no index at all it returns nothing rather than guessing
+SELF-TEST PASSED
+
+============================================================================
+A.  THE LIVE SAMPLE IS NOT ONE RULE
+============================================================================
+  17 signals from 5 runs; EV gate born 2026-09-08T11:46:40Z (git c3aca51)
+  signal time            tau      ticker    price  proc had EV  rule accepts
+  2026-09-08T07:59:40Z    20   KXBTC15M-   99.20c        False         False
+  2026-09-08T08:59:45Z    15   KXSOL15M-   97.90c        False          True
+  2026-09-08T09:14:45Z    15   KXZEC15M-   94.70c        False          True
+  2026-09-08T09:29:40Z    20   KXBTC15M-   99.20c        False         False
+  2026-09-08T09:59:40Z    20   KXBTC15M-   99.60c        False         False
+  2026-09-08T10:14:48Z    12   KXNEAR15M   99.20c        False         False
+  2026-09-08T10:29:40Z    20   KXHYPE15M   99.50c        False         False
+  2026-09-08T10:44:40Z    20   KXBNB15M-   99.60c        False         False
+  2026-09-08T11:44:40Z    20   KXSOL15M-   99.50c        False         False
+  2026-09-08T11:59:41Z    19   KXBTC15M-   95.00c        False          True
+  2026-09-08T12:29:45Z    15   KXBNB15M-   95.00c        False          True
+  2026-09-08T12:44:40Z    20   KXBNB15M-   97.70c        False          True
+  2026-09-08T12:59:47Z    13   KXSOL15M-   97.20c        False          True
+  2026-09-08T13:29:40Z    20   KXDOGE15M   96.30c        False          True
+  2026-09-08T14:29:40Z    20   KXXRP15M-   98.70c        False          True
+  2026-09-08T15:59:51Z     9   KXHYPE15M   93.50c         True          True
+  2026-09-08T16:59:49Z    11   KXETH15M-   97.50c         True          True
+
+  ALL signals                 n=17  mean 97.61c  min 93.50c  max 99.60c
+  process HAD the EV gate     n= 2  mean 95.50c
+  today's rule ACCEPTS price  n=10  mean 96.35c
+  -> the 97.61c figure is a MIXED-RULE statistic. 7 of 17 signals sit at prices the current EV gate refuses outright.
+
+  CAVEAT ON 'proc had EV', stated because it is 53 seconds from a boundary:
+   the run pinrun-live-20260908T114547Z started 11:45:47Z, 53s BEFORE commit
+   c3aca51 (11:46:40Z), so the strict process-start test calls it pre-EV-gate.
+   Three things say the file was already edited when it launched: its stdout
+   log is named pinrun_ev_stdout.log; results/PREREG_pin_live_AMENDMENT_2.md was
+   written at 11:44Z, one minute earlier, and this project pre-registers before
+   deploying; and its six signals top out at 98.70c where the run before it
+   fired at 99.60c. NEITHER READING IS PROVEN. The 'rule accepts' column does
+   not depend on it at all, which is why the headline uses that one.
+
+  ORDERS: 17 sent, 13 filled, 4 no-fill (76% fill rate)
+  executed vs the price we SAW: 3 better, 0 worse, 10 equal; executed mean 97.54c vs quoted 97.57c
+
+============================================================================
+B.  THE BACKTEST NUMBER IS A BLEND OVER SCALE-IN BUYS
+============================================================================
+  rows.jsonl: 28,479 rows, 132 closes, span 2026-09-04 12:15 .. 2026-09-06 08:15 UTC
+  live signals span closes 2026-09-08 08:00 .. 2026-09-08 17:00 UTC
+  *** THE TWO SAMPLES DO NOT SHARE A SINGLE CLOSE. fulltape/markets.json is stale to 2026-09-06, which is why. ***
+
+  tau 3-30 (the quoted cell)   moments  1196  closes  83  buys  125  blended 93.66c  FIRST-buy 94.87c
+  tau 3-20 (15/16 live runs)   moments   593  closes  70  buys   96  blended 94.41c  FIRST-buy 95.37c
+  tau 3-30, LEVEL age<=2s      moments   925  closes  82  buys  120  blended 93.75c  FIRST-buy 95.21c
+
+  reproduction note: the repo quotes 129 buys / 93.86c for the first cell; this file gets 125 buys / 93.66c from the shipped rows.jsonl with pinsize's own constants. The difference is NOT reconciled -- the quoted figure is not exactly reproducible.
+  cheapest price standing ANYWHERE in the close: 91.84c. The causal rule pays +3.03c against that oracle, so it is NOT cherry-picking the low.
+
+============================================================================
+C.  (a) IS THE GAP JUST 16 DRAWS?
+============================================================================
+  tau 3-30 (the quoted cell)
+     P(mean of 16 blended buys  >= 97.61c) = 0.00000
+     P(mean of 16 FIRST buys    >= 97.61c) = 0.00045
+     P(mean of 10 CLOSES, first buy >= 96.35c) = 0.17880   <- THE LIKE-FOR-LIKE TEST
+  tau 3-20 (15/16 live runs)
+     P(mean of 16 blended buys  >= 97.61c) = 0.00007
+     P(mean of 16 FIRST buys    >= 97.61c) = 0.00200
+     P(mean of 10 CLOSES, first buy >= 96.35c) = 0.27510   <- THE LIKE-FOR-LIKE TEST
+  tau 3-30, LEVEL age<=2s
+     P(mean of 16 blended buys  >= 97.61c) = 0.00000
+     P(mean of 16 FIRST buys    >= 97.61c) = 0.00150
+     P(mean of 10 CLOSES, first buy >= 96.35c) = 0.23335   <- THE LIKE-FOR-LIKE TEST
+
+============================================================================
+D.  (b) TIMING AND SELECTION
+============================================================================
+  the backtest's own first buy sits at mean tau 25.4s (median 30s); 48 of 83 at tau 30, the very top of its window.
+  live fires at mean tau 17.0s (all) / 15.7s (rule-accepted); 9 of 17 at tau 20, the top of ITS window.  BOTH fire at the top of their window.
+  P(rows.jsonl even HOLDS a moment), 499 episodes, by tau:
+     3:0.08  5:0.12  8:0.18  10:0.24  15:0.40  20:0.58  25:0.69  30:0.91
+  -> the backtest sees FEWER instants than live, not more, and the ones it misses are the LATE ones.  'The backtest sees every second' is false.
+
+============================================================================
+E.  (c) IS PRICE RELATED TO TAU?
+============================================================================
+    tau  1- 5  n=  38  mean 96.61c
+    tau  6-10  n= 130  mean 96.06c
+    tau 11-15  n= 202  mean 96.05c
+    tau 16-20  n= 223  mean 95.65c
+    tau 21-25  n= 276  mean 95.64c
+    tau 26-30  n= 327  mean 95.95c
+  spread across the whole window: 0.96c. Price is essentially FLAT in tau, so the tau mix cannot carry a 3.75c gap.
+
+============================================================================
+F.  (d) BOOK AGE -- THE TWO FIELDS ARE DIFFERENT QUANTITIES
+============================================================================
+  livebook.best()['age_ms'] = now - rx_ms of the last book MESSAGE (feed freshness).
+  pindata's 'age_ms'        = ts - born[(side,price)] (how long the RESTING LEVEL has stood).
+  A pindata row exists only on a second in which a delta arrived, so its FEED age is ~0 ms by construction: the live 2000 ms gate removes nothing the backtest had.  LEVEL age, measured anyway:
+    level age 0-0.5s   n= 608  mean 95.83c
+    level age 0.5-2s   n= 317  mean 96.23c
+    level age 2-10s    n=  81  mean 95.50c
+    level age 10-60s   n=  39  mean 95.37c
+    level age >60s     n= 151  mean 95.65c
+  -> level age moves the mean price by under 1c across four decades of age.  Not the cause.
+
+============================================================================
+G.  (e) THE RACE -- the only direct evidence that exists
+============================================================================
+  4 no-fills at quoted 95.00c, 97.20c, 99.20c, 99.50c (mean 97.72c)
+  13 fills at quoted mean 97.57c
+  -> if the race stole the CHEAP quotes the misses would cluster cheap. They are +0.16c against that story, and no fill executed WORSE than the price we saw. n=4: a direction, not a result.
+  WHAT WOULD SETTLE IT (not done here):
+   1. for each fired second, take the tape's own delta stream and measure
+      how long the level we hit survived after our order left;
+   2. run two identical processes at a deliberate latency offset and compare
+      their fill rates on the same quotes.
+
+============================================================================
+H.  THE SNAPSHOT SEED IN pindata.py IS BROKEN (measured)
+============================================================================
+  8 of 331 snapshot files, 956 messages: keys that ever carry a book = {'yes_dollars_fp': 420, 'no_dollars_fp': 421}

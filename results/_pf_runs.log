@@ -1,0 +1,9 @@
+
+C:\kals-repo>python -u research\pinfloor.py --hours 331 --stride 1 --out C:\kals-repo\results\pinfloor_full.txt  1>C:\kals-repo\results\pinfloor_full.log 2>&1 
+
+C:\kals-repo>python -u research\pinfloor.py --hours 331 --stride 61 --out C:\kals-repo\results\pinfloor_stride61.txt  1>C:\kals-repo\results\pinfloor_stride61.log 2>&1 
+
+C:\kals-repo>python -u research\pinfloor.py --hours 331 --stride 1 --split --out C:\kals-repo\results\pinfloor_split.txt  1>C:\kals-repo\results\pinfloor_split.log 2>&1 
+
+C:\kals-repo>echo ALLDONE 
+ALLDONE

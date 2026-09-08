@@ -57,3 +57,7 @@ SELF-TEST PASSED
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $60.00
   index up: 11 ticks, 11 feeds
   close 16:45Z: 4734 looks, 4734 decided, 4734 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXETH15M-26SEP081300-00 tau=11s buy NO @0.9750 fair 0.0119 edge +1.14c size 228.06
+    ORDER -> status executed filled 5.0 @ 0.975 fee 0.0017
+  close 17:00Z: 4563 looks, best was KXETH15M-26SEP081300-0 NO @0.9750 edge +1.14c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP081300-00 no vs no -> +11.64c (run realised $+0.1164)
