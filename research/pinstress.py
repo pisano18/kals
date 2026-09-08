@@ -84,7 +84,13 @@ def model_pflip(r):
 
 
 def simulate(byclose, size, cap, start_cash, flip_rate, loss_abort,
-             rng, correlated=True):
+             rng, correlated=True, hedge_cut=0.0, hedge_cost=0.0):
+    """hedge_cut: fraction of a LOSS recovered by buying the other side once
+    the model turns against us. hedge_cost: what that insurance costs on every
+    position that would have WON anyway, as a fraction of the stake. Both are
+    MEASURED in research/pinhedge.py, not assumed:
+      trigger p(lose) >= 50%  ->  loss severity cut 34.7%, and in the live
+      tau 3-30 window the false alarms cost 55.7c over 165 positions.""" 
     """One path. Returns the full account history and how it ended."""
     cash = float(start_cash)
     peak = cash
@@ -117,10 +123,13 @@ def simulate(byclose, size, cap, start_cash, flip_rate, loss_abort,
             trades += 1
             if lost:
                 losses += 1
-                realised -= cost
+                back = hedge_cut * cost           # the hedge returns part of it
+                cash += back
+                realised -= (cost - back)
             else:
-                cash += take                      # $1.00 per winning contract
-                realised += take - cost
+                prem = hedge_cost * cost          # insurance we did not need
+                cash += take - prem
+                realised += take - cost - prem
             best = x["price"] if best is None else min(best, x["price"])
             n += 1
             peak = max(peak, cash)
@@ -208,6 +217,12 @@ def main():
     ap.add_argument("--size", type=float, default=40.0)
     ap.add_argument("--cap", type=int, default=2)
     ap.add_argument("--paths", type=int, default=4000)
+    ap.add_argument("--hedge-cut", type=float, default=0.0,
+                    help="fraction of a loss recovered by hedging (pinhedge "
+                         "measures 0.347 at a 50%% trigger)")
+    ap.add_argument("--hedge-cost", type=float, default=0.0,
+                    help="premium paid on winners, as a fraction of stake "
+                         "(pinhedge measures 0.0037 in the live window)")
     a = ap.parse_args()
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
@@ -257,7 +272,8 @@ def main():
         ends, dds, halts = [], [], 0
         for s in range(a.paths):
             d = simulate(byc, a.size, a.cap, a.cash, rate, abort,
-                         random.Random(s), correlated=True)
+                         random.Random(s), correlated=True,
+                         hedge_cut=a.hedge_cut, hedge_cost=a.hedge_cost)
             ends.append(d["cash"])
             dds.append(d["worst_dd"])
             halts += int(bool(d["halted"]))
