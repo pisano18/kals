@@ -1,0 +1,64 @@
+SELF-TEST -- pindata
+  ok   snapshot best yes 0.6 no 0.39
+  ok   depth sums the top levels
+  ok   a level emptied by a delta is removed (0.59)
+  ok   and its age record is dropped
+  ok   a new level records when it appeared
+  ok   adding to an existing level does NOT reset its age
+  ok   a flat index has zero volatility
+  ok   a +/-0.2 sawtooth gives sigma ~0.2 (0.2000000000000024)
+  ok   at tau=10 there are 9 prints still to come (9)
+SELF-TEST PASSED
+
+  loading index (96h) ...
+  11 indices from 96 files
+  10,796 settled markets known
+  96 book hours to replay
+
+    20260904T12  rows so far 556  19s
+    20260904T13  rows so far 1,130  49s
+    20260904T14  rows so far 1,500  77s
+    20260904T15  rows so far 1,856  98s
+    20260904T16  rows so far 2,162  119s
+    20260904T17  rows so far 2,621  140s
+    20260904T18  rows so far 3,119  158s
+    20260904T19  rows so far 3,537  174s
+    20260904T20  rows so far 4,256  191s
+    20260904T21  rows so far 5,020  207s
+    20260904T22  rows so far 5,883  221s
+    20260904T23  rows so far 6,361  234s
+    20260905T00  rows so far 7,127  248s
+    20260905T01  rows so far 7,801  263s
+    20260905T02  rows so far 8,556  276s
+    20260905T03  rows so far 9,350  288s
+    20260905T04  rows so far 10,000  301s
+    20260905T05  rows so far 11,056  314s
+    20260905T06  rows so far 11,890  328s
+    20260905T07  rows so far 12,609  343s
+    20260905T08  rows so far 13,500  356s
+    20260905T09  rows so far 14,093  368s
+    20260905T10  rows so far 14,943  381s
+    20260905T11  rows so far 15,720  393s
+    20260905T12  rows so far 16,311  406s
+    20260905T13  rows so far 17,051  420s
+    20260905T14  rows so far 17,669  434s
+    20260905T15  rows so far 18,490  449s
+    20260905T16  rows so far 19,314  464s
+    20260905T17  rows so far 20,000  481s
+    20260905T18  rows so far 20,792  498s
+    20260905T19  rows so far 21,420  513s
+    20260905T20  rows so far 22,284  528s
+    20260905T21  rows so far 22,823  542s
+    20260905T22  rows so far 23,508  556s
+    20260905T23  rows so far 24,277  571s
+    20260906T00  rows so far 24,995  586s
+    20260906T01  rows so far 25,428  603s
+    20260906T02  rows so far 26,095  618s
+    20260906T03  rows so far 26,696  633s
+    20260906T04  rows so far 27,200  649s
+    20260906T05  rows so far 27,603  665s
+    20260906T06  rows so far 28,022  680s
+    20260906T07  rows so far 28,307  692s
+    20260906T08  rows so far 28,479  703s
+
+  28,479 rows -> C:\kals-repo\results\pindata\rows.jsonl  (15.6 MB)
