@@ -22,6 +22,58 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## MEASURED 2026-09-08 evening — THE BINDING CONSTRAINT, and it is not our rules
+
+### 29 | In a decided market the losing side's book is EMPTY — **MEASURED, and it reframes everything**
+
+Replayed the recorded order book across the eight live closes the runner
+reported as "nobody offered", using the settled market records pulled from the
+API. **33,431 moments where the model was already ≥98% sure:**
+
+| | count | share |
+|---|---|---|
+| winning side has bids | 33,431 | **100.00%** |
+| **losing side has bids (= there is something we can buy)** | **4** | **0.01%** |
+| both sides empty (would mean my replay was broken) | 0 | 0.00% |
+
+**The control is what makes this trustworthy.** The winning side is quoted in
+every single moment, with a **median of 84 price levels**. So the replay
+populated the book fully and the emptiness is real. The four buyable moments
+were all priced at **99.90¢**, which the EV gate refuses anyway.
+
+**Why:** to buy the winner somebody must be willing to hold the loser. Once an
+outcome is obvious, nobody will, at any price. There is no ask because there is
+no bid on the other side.
+
+**What this changes:**
+
+1. **Loosening our own thresholds cannot buy what is not offered.** Every
+   parameter argument today — the price ceiling, the edge floor, the EV floor —
+   operates on a supply that mostly does not exist. Of 17 closes watched end to
+   end, only **7** had any tradeable moment at all.
+2. **The ladder sweep is conditional, not general.** `pinladder2`'s $83.14 per
+   close was measured on moments where offers existed. Applying it to 33 closes
+   a day assumes a book that is empty roughly 59% of the time. At $1,000 of
+   capital the honest figure is nearer **$300/day than $729/day**, and market
+   impact is still unmeasured on top of that.
+3. **RESTING becomes the central untested idea, not a nice-to-have.** We are
+   currently racing to take an offer that appears in 0.01% of decided moments.
+   A resting bid does not need an offer to exist — it *is* the offer. IDEAS_LOG
+   #6 measured +37% for resting and it was parked because zero losses in the
+   sample make its one real risk unmeasurable. That parking decision now looks
+   much more expensive.
+4. **Our 13 wins came from the rare moments a seller appeared.** That is a real
+   edge and it is small in count, not in size. It also means the strategy's
+   capacity is set by how often someone sells a near-certain winner cheaply,
+   which nothing in this repo has yet measured.
+
+**What would make this an artefact, and the check that was run:** if my replay
+never populated the book, both sides would read empty and the finding would be
+meaningless. Both-sides-empty came back at **0 of 33,431**, with a median of 84
+levels quoted on the side that was populated. The finding survives.
+
+---
+
 ## MEASURED 2026-09-08 — the two biggest results of the day
 
 ### 26 | Size on CONFIDENCE — **TESTED-REJECTED, and it is backwards**
