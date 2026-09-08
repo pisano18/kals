@@ -1,5 +1,57 @@
 # OVERNIGHT — 2026-09-07 into 2026-09-08
 
+## THE BLOCKER, FOUND AND FIXED: the money was on the wrong exchange shard
+
+pin's first real order was rejected by Kalshi:
+
+    {"error":{"code":"insufficient_balance","message":"insufficient balance"}}
+    market KXBTC15M-26SEP080300-00   exchange_index 2
+
+The balance breakdown says why. Kalshi splits the account across shards:
+
+| shard | name | before | after |
+|---|---|---|---|
+| 0 | Default | $41.0360 | $11.0360 |
+| 1 | Combos | $0.0000 | $0.0000 |
+| 2 | **Crypto** | **$0.0026** | **$30.0026** |
+| 3 | Tennis & Baseball | $0.0000 | $0.0000 |
+
+**Every 15-minute crypto market — pin's entire universe — is on shard 2,
+which held a quarter of a cent.** Last night's natural-gas run traded fine
+because commodities are on shard 0, and the 1c penny-proof resting order
+worked for the same reason. pin could never have placed a single order, and
+no amount of code would have fixed it. This is the single most important
+finding of the night.
+
+Fixed with `POST /portfolio/intra_exchange_instance_transfer`,
+`{"source":"event_contract","destination":"event_contract","amount":300000,
+"source_exchange_shard":0,"destination_exchange_shard":2}` — HTTP 200,
+transfer_id 74ea3d45-da13-405d-8083-aef9dfd7af07, landed within 4 seconds.
+
+**`amount` is in CENTICENTS (hundredths of a cent), not cents.** 300,000 =
+$30.00. A secondary source the operator supplied says cents; it is wrong, and
+the measured transfer proves it — 300,000 moved exactly $30.00, where cents
+would have meant $3,000 and failed.
+
+`POST /portfolio/target_balance_allocation` was also accepted (HTTP 200) but
+moved nothing within 60 s; it appears to set a periodic sweep target rather
+than transferring immediately. The instance transfer is the one that works now.
+
+## DEPLOYED
+
+`pinrun.py --live --size 1`, started 2026-09-08 07:09Z, 5.5 hours, all 11
+crypto series. Size 1 (~$0.99/bet), loss abort −$3.00, max 3 open positions.
+
+Size 1 and not 30 deliberately: **no pin order has ever filled.** At size 30 a
+single wrong bet costs $29.70 and empties the crypto shard, and wrong bets run
+~0.9%. Scaling before one proven fill is exactly what cost $24.14 last night.
+
+Expected tonight: **pennies** — 5–15c over four hours, and that is the honest
+number. At size 30 the same rule would be ~$9–18/day. That is the morning's
+decision, to be made on fills rather than on the backtest.
+
+---
+
 **1.** pin now has a working live body: WebSocket order book (`livebook.py`,
 26 ms, top-3 identical to REST), taker order rails (`pintake.py`, IOC limit,
 proven with two real DEMO orders), and the runner that joins them

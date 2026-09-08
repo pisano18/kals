@@ -219,8 +219,117 @@ def sane_or_die(trades, label=""):
     return False
 
 
-def fair(ticks, close_s, now_s, strike, sigma):
-    """Model fair value with the locked prints already counted, or None."""
+# ===========================================================================
+# SETTLEMENT ROUNDING -- bug 2, fixed 2026-09-08
+# ===========================================================================
+# Kalshi does not compare the raw 60-print mean to the strike. It rounds the
+# mean to custom_strike.round_digits, writes that as `expiration_value`, and
+# settles YES iff expiration_value >= floor_strike. So the threshold the model
+# must price against is K - 0.5*10^-d, NOT K.
+#
+# Measured 2026-09-08 by GET /markets?series_ticker=...&status=settled and
+# reading custom_strike.round_digits off the returned records:
+#
+#     KXBTC15M 2   KXETH15M 2   KXBNB15M 2
+#     KXSOL15M 4   KXXRP15M 4   KXZEC15M 4   KXHYPE15M 4   KXNEAR15M 4
+#     KXDOGE15M 7
+#
+# (KXBCH15M, KXADA15M and the rest returned zero settled markets, so they have
+# no measured value and get none -- an unmeasured series is priced with no
+# adjustment, which is the old behaviour, rather than with a guess.)
+#
+# THE CONFIRMED CASE: KXETH15M-26SEP071745-45, floor_strike 2492.82. The tape
+# mean over [close-60, close-1] is 2492.815833; round(.,2) = 2492.82, Kalshi's
+# expiration_value is 2492.82 and result is `yes`. An unrounded model prices
+# that market at fair 0.017 -- i.e. it buys NO at 90c and loses 90.91c.
+ROUND_DIGITS = {
+    "KXBTC15M": 2, "KXETH15M": 2, "KXBNB15M": 2,
+    "KXSOL15M": 4, "KXXRP15M": 4, "KXZEC15M": 4,
+    "KXHYPE15M": 4, "KXNEAR15M": 4,
+    "KXDOGE15M": 7,
+}
+
+
+def _decimals(x):
+    """Decimal places in the shortest round-tripping form of x, or None."""
+    try:
+        s = repr(float(x))
+    except (TypeError, ValueError):
+        return None
+    if "e" in s or "E" in s or "inf" in s or "nan" in s:
+        return None
+    return len(s.split(".")[1].rstrip("0")) if "." in s else 0
+
+
+def infer_round_digits(markets, need=20, cap=8):
+    """{series: round_digits} read off the settled records themselves.
+
+    `settle` in fulltape/markets.json IS Kalshi's expiration_value, i.e. the
+    already-rounded number, so the widest decimal expansion a series ever
+    prints is its round_digits. This is preferred over the hardcoded table
+    because it is measured on the same tape the backtest scores, and it
+    cross-checks the table rather than trusting it.
+    """
+    seen = {}
+    for m in markets.values():
+        s = m.get("series")
+        d = _decimals(m.get("settle"))
+        if not s or d is None or d > cap:
+            continue
+        a, b = seen.get(s, (0, 0))
+        seen[s] = (max(a, d), b + 1)
+    return {s: d for s, (d, n) in seen.items() if n >= need}
+
+
+def round_digits_map(markets, verbose=True):
+    """The per-series round_digits the model will use, and where it came from.
+
+    Inference wins where it exists; the measured table fills the rest; a
+    series with neither gets no entry and is priced unrounded. Disagreements
+    are printed rather than silently resolved.
+    """
+    inf = infer_round_digits(markets)
+    out = dict(ROUND_DIGITS)
+    out.update(inf)
+    if verbose:
+        for s in sorted(set(out) | set(ROUND_DIGITS) | set(inf)):
+            tab, got = ROUND_DIGITS.get(s), inf.get(s)
+            flag = ""
+            if tab is not None and got is not None and tab != got:
+                flag = "   *** DISAGREES with the API-measured table ***"
+            print(f"    round_digits {s:<14} using {out.get(s)}   "
+                  f"(tape {got}, api {tab}){flag}")
+    return out
+
+
+def settle_threshold(strike, round_digits):
+    """The raw-mean level at or above which the market settles YES.
+
+    round(x, d) >= K  <=>  x >= K - 0.5*10^-d. With round_digits unknown the
+    threshold is the strike itself, which is the pre-2026-09-08 behaviour.
+    """
+    if round_digits is None:
+        return float(strike)
+    return float(strike) - 0.5 * (10.0 ** (-int(round_digits)))
+
+
+def fair(ticks, close_s, now_s, strike, sigma, round_digits=None):
+    """Model fair value with the locked prints already counted, or None.
+
+    TWO CORRECTIONS, both measured on this tape on 2026-09-08:
+
+      * the window is [close-60, close-1], so at tau seconds out there are
+        tau-1 prints still unknown, not tau. partial() owns the mean; the
+        VARIANCE has to be told the same thing or the two halves of this
+        function disagree with each other. var_factor's argument is the
+        number of unknown one-second increments, and settle_weights(tau-1)
+        is exactly right in both regimes -- inside the window it is
+        [tau-1..1], and before the window opens the extra flat weight of 60
+        it drops is exactly the weight that is no longer there.
+
+      * the settlement is rounded to the strike's precision before it is
+        compared, so the threshold is K - 0.5*10^-d. See ROUND_DIGITS.
+    """
     part = partial(ticks, close_s, now_s)
     if part is None:
         return None
@@ -229,17 +338,18 @@ def fair(ticks, close_s, now_s, strike, sigma):
     if spot is None:
         return None
     mu = (locked + r * spot) / N_AVG
+    k = settle_threshold(strike, round_digits)
     tau = close_s - now_s
-    vf = var_factor(int(tau), [1.0])
+    vf = var_factor(max(0, int(tau) - 1), [1.0])
     sd = sigma * math.sqrt(vf)
     if sd <= 0:
         # Nothing random is left: the outcome is already determined.
-        return 1.0 if mu > strike else 0.0
-    return ND.cdf((mu - strike) / sd)
+        return 1.0 if mu >= k else 0.0
+    return ND.cdf((mu - k) / sd)
 
 
 def scan(quotes, index, markets, series_to_index, sigma_by_series,
-         tau_max=120, sigma_by_market=None):
+         tau_max=120, sigma_by_market=None, round_digits=None):
     """One row per (market, second) inside the endgame with a usable quote.
 
     `sigma_by_market` overrides the pooled per-series sigma where a market has
@@ -261,18 +371,22 @@ def scan(quotes, index, markets, series_to_index, sigma_by_series,
             continue
         close_s = int(close_s)
         settle, result = m.get("settle"), m.get("result")
+        # round_digits: the market's own field wins, then the per-series map.
+        rd = m.get("round_digits")
+        if rd is None and round_digits:
+            rd = round_digits.get(s)
         for (t, bid, ask, _bs, _as) in q:
             tau = close_s - t
             if not (1 <= tau <= tau_max):
                 continue
-            f = fair(ticks, close_s, t, strike, sig)
+            f = fair(ticks, close_s, t, strike, sig, round_digits=rd)
             if f is None:
                 continue
             mid = (bid + ask) / 2.0
             rows.append({"tk": tk, "series": s, "close": close_s, "tau": tau,
                          "fair": f, "mid": mid, "bid": bid, "ask": ask,
                          "settle": settle, "strike": strike,
-                         "result": result})
+                         "result": result, "rd": rd})
     return rows
 
 
@@ -422,17 +536,22 @@ def analytic():
     print("=" * 78)
     print("PART 1  WHY THE LAST MINUTE -- the exact variance collapses")
     print("=" * 78)
-    print("  Settlement averages 60 one-second prints. With tau left, 60-tau")
-    print("  of them are LOCKED -- already printed, already recorded.\n")
+    print("  Settlement averages the 60 one-second prints [close-60, close-1].")
+    print("  With tau seconds left, 61-tau of them are LOCKED -- already")
+    print("  printed, already on disk -- and tau-1 are still unknown.")
+    print("  (Before 2026-09-08 this table said 60-tau locked and tau")
+    print("  unknown: it counted the tick AT the close, which Kalshi's own")
+    print("  window_end_ts_exclusive says is not in the settlement.)\n")
     print(f"  {'tau':>6}{'sd/sigma':>11}{'sqrt(tau)':>11}{'ratio':>8}"
           f"{'sqrt(t-39.5)':>14}{'ratio':>8}{'locked':>9}")
     for tau in (900, 400, 200, 120, 90, 60, 45, 30, 20, 10, 5, 2, 1):
-        vf = var_factor(tau, [1.0])
+        vf = var_factor(max(0, tau - 1), [1.0])       # tau-1 unknown prints
         sd = math.sqrt(vf)
         naive = math.sqrt(tau)
         lin = math.sqrt(max(tau - 39.5, 0.0))
-        locked = max(0, N_AVG - tau)
-        print(f"  {tau:>6}{sd:>11.4f}{naive:>11.4f}{naive/sd:>8.3f}"
+        locked = max(0, min(N_AVG, N_AVG + 1 - tau))
+        print(f"  {tau:>6}{sd:>11.4f}{naive:>11.4f}"
+              f"{(naive/sd if sd > 0 else float('inf')):>8.3f}"
               f"{lin:>14.4f}{(lin/sd if sd > 0 else 0):>8.3f}"
               f"{locked:>9}")
     print("\n  A quote built on sqrt(tau) carries a sigma 1.7x too large at")
@@ -476,6 +595,120 @@ def selftest():
         if abs(got - want) > 5e-4:
             fails.append(f"sd/sigma at tau={tau} is {got:.4f}, not {want}")
 
+    # =====================================================================
+    # 0a. BUG 1 -- THE SETTLEMENT WINDOW IS [close-60, close-1].
+    #     Plant a wild tick AT the close (must be EXCLUDED from fair's mu)
+    #     and one at close-60 (must be INCLUDED). Under the old window both
+    #     verdicts came out backwards, and the sd at small tau was one
+    #     unknown print too large.
+    # =====================================================================
+    print("\n  BUG 1 -- the settlement window. A tick stamped AT the close is")
+    print("  outside the settlement; the tick at close-60 is inside it.")
+    # The strike sits BETWEEN the flat mean (100) and the mean a counted
+    # spike would produce (1100), so the two verdicts are opposite and each
+    # half of the membership test actually bites.
+    C0, K0 = 1_760_000_000, 500.0
+    flat = {s: 100.0 for s in range(C0 - 300, C0 + 300)}
+    spike_close = dict(flat)
+    spike_close[C0] = 100.0 + 60_000.0        # would add +1000 to mu
+    spike_lo = dict(flat)
+    spike_lo[C0 - N_AVG] = 100.0 + 60_000.0
+    f_close = fair(spike_close, C0, C0 - 1, K0, 1.0)
+    f_lo = fair(spike_lo, C0, C0 - 1, K0, 1.0)
+    f_flat = fair(flat, C0, C0 - 1, K0, 1.0)
+    print(f"    fair at tau=1, strike {K0}: flat tape {f_flat}, "
+          f"spike AT close {f_close}, spike at close-60 {f_lo}")
+    if f_flat != 0.0:
+        fails.append(f"a flat tape at 100 priced {f_flat} against a strike "
+                     "of 500 -- the fixture is not what it says it is")
+    if f_close != f_flat:
+        fails.append(f"a tick stamped AT the close moved fair from {f_flat} "
+                     f"to {f_close}; close is not in [close-60, close-1]")
+    if f_lo != 1.0:
+        fails.append(f"a +60000 tick at close-60 left fair at {f_lo}; the "
+                     "close-60 print IS in the settlement window")
+    # and the variance must agree with the mean about how much is left
+    if fair(flat, C0, C0 - 1, 100.001, 1.0) != 0.0:
+        fails.append("at tau=1 nothing is unknown (the last print is "
+                     "close-1) but fair() still priced a random outcome")
+    p1 = partial(flat, C0, C0 - 5)
+    if p1 is None or p1[1] != 4:
+        fails.append(f"at tau=5 partial reports {p1 and p1[1]} prints to "
+                     "come; the truth is 4")
+    sd5 = math.sqrt(var_factor(4, [1.0]))
+    sd5_old = math.sqrt(var_factor(5, [1.0]))
+    print(f"    sd/sigma at tau=5: {sd5:.5f} with 4 unknown prints, "
+          f"{sd5_old:.5f} with the 5 the old code assumed "
+          f"({sd5_old / sd5:.2f}x too wide)")
+    if sd5_old <= sd5:
+        fails.append("the old window's sd is not wider than the corrected "
+                     "one, so this check is not pinning the variance half "
+                     "of the window bug")
+
+    # =====================================================================
+    # 0b. BUG 2 -- THE SETTLEMENT IS ROUNDED BEFORE IT IS COMPARED.
+    #     The real case, with the real numbers, from the real tape:
+    #     KXETH15M-26SEP071745-45, floor_strike 2492.82, round_digits 2,
+    #     tape mean over [close-60, close-1] = 2492.815833, Kalshi's
+    #     expiration_value 2492.82, result YES.
+    # =====================================================================
+    print("\n  BUG 2 -- the settlement is rounded to the strike's precision")
+    print("  before it is compared. KXETH15M-26SEP071745-45: strike 2492.82,")
+    print("  tape mean 2492.815833, round_digits 2 -> Kalshi settled YES.")
+    K_ETH, MU_ETH, D_ETH = 2492.82, 2492.8158333333334, 2
+    if round(MU_ETH, D_ETH) < K_ETH:
+        fails.append("the fixture's own arithmetic disagrees with Kalshi: "
+                     f"round({MU_ETH}, {D_ETH}) is {round(MU_ETH, D_ETH)}, "
+                     f"below the strike {K_ETH}, yet the market settled YES")
+    thr = settle_threshold(K_ETH, D_ETH)
+    print(f"    threshold: strike {K_ETH} -> {thr} "
+          f"(= K - 0.5*10^-{D_ETH});  mean {MU_ETH} is "
+          f"{'ABOVE' if MU_ETH >= thr else 'below'} it")
+    if MU_ETH < thr:
+        fails.append(f"settle_threshold({K_ETH}, {D_ETH}) = {thr} still sits "
+                     f"above the mean {MU_ETH} that settled YES")
+    if settle_threshold(K_ETH, None) != K_ETH:
+        fails.append("settle_threshold with unknown round_digits must be the "
+                     "strike itself, not a guess")
+    # the same case priced end to end, on a tape that reproduces that mean
+    eth = {s: MU_ETH for s in range(C0 - 300, C0 + 300)}
+    f_round = fair(eth, C0, C0 - 1, K_ETH, 0.5, round_digits=D_ETH)
+    f_raw = fair(eth, C0, C0 - 1, K_ETH, 0.5, round_digits=None)
+    print(f"    fair at tau=1: rounded model {f_round}, unrounded {f_raw} "
+          f"(the market settled YES, so 1.0 is right)")
+    if f_round != 1.0:
+        fails.append(f"the rounded model priced the confirmed ETH YES at "
+                     f"{f_round}")
+    if f_raw != 0.0:
+        fails.append("the UNROUNDED model no longer gets this market wrong, "
+                     "so this check has stopped pinning bug 2")
+    # a strike far enough below the mean must be unaffected by rounding
+    if fair(eth, C0, C0 - 1, K_ETH - 1.0, 0.5, round_digits=D_ETH) != 1.0 or \
+       fair(eth, C0, C0 - 1, K_ETH + 1.0, 0.5, round_digits=D_ETH) != 0.0:
+        fails.append("the rounding adjustment changed an outcome a whole "
+                     "dollar away from the strike -- it is not a half-tick "
+                     "correction any more")
+    # the size of the correction is exactly half a tick, in both directions
+    for d in (2, 4, 7):
+        want = 0.5 * 10.0 ** (-d)
+        got = 1000.0 - settle_threshold(1000.0, d)
+        if abs(got - want) > 1e-12:
+            fails.append(f"round_digits={d} shifted the threshold by {got}, "
+                         f"not {want}")
+    # the per-series map must read the collector's schema and not the table
+    fake = {"A": {"series": "KXSOL15M", "settle": 103.3607},
+            "B": {"series": "KXSOL15M", "settle": 103.4712}}
+    fake.update({str(i): {"series": "KXSOL15M", "settle": 103.5}
+                 for i in range(30)})
+    inf = infer_round_digits(fake)
+    print(f"    infer_round_digits on 32 KXSOL15M records: {inf}")
+    if inf.get("KXSOL15M") != 4:
+        fails.append(f"infer_round_digits read KXSOL15M as {inf.get('KXSOL15M')} "
+                     "from settle values printed to 4 decimals")
+    if infer_round_digits({"A": {"series": "KXNEW", "settle": 1.25}}):
+        fails.append("infer_round_digits inferred a round_digits from a "
+                     "single record; it must refuse a sample that small")
+
     SIG, S0, CLOSE = 6.0, 80000.0, 1_760_000_000
     S2I, POOLED = {"KXBTC15M": "BRTI"}, {"KXBTC15M": 6.0}
 
@@ -515,10 +748,13 @@ def selftest():
             close_s = CLOSE + w * 900
             open_s = close_s - 900
             tk = f"E{w:04d}"
+            # THE WINDOW IS [close-60, close-1]. The close tick is NOT in it;
+            # the close-60 tick IS. Same for the strike, which is the previous
+            # window's settlement (strike(N+1) == settle(N)).
             settle = sum(ticks[t] for t in
-                         range(close_s - N_AVG + 1, close_s + 1)) / N_AVG
+                         range(close_s - N_AVG, close_s)) / N_AVG
             strike = sum(ticks[s] for s in
-                         range(open_s - N_AVG + 1, open_s + 1)) / N_AVG
+                         range(open_s - N_AVG, open_s)) / N_AVG
             # The COLLECTOR'S schema, deliberately: `settle` is the settled
             # index LEVEL and `result` is the outcome. This fixture used to
             # write `"settle": settle > strike` -- a bool -- and that single
@@ -542,7 +778,10 @@ def selftest():
                 locked, r = part
                 mu = (locked + r * ticks[t]) / N_AVG
                 if model == "exact":
-                    sd = book_sig * math.sqrt(var_factor(tau, [1.0]))
+                    # tau-1 unknown prints remain, not tau -- the window ends
+                    # at close-1. fair() prices the same thing.
+                    sd = book_sig * math.sqrt(
+                        var_factor(max(0, tau - 1), [1.0]))
                 elif model == "naive":
                     sd = book_sig * math.sqrt(tau)        # the mistake
                 else:
@@ -939,8 +1178,15 @@ def main():
     print(f"  {n_pooled:,} fell back to the pooled value and carry the bias "
           "the self-test measures.")
 
+    print("\n  settlement rounding (bug 2): the threshold is "
+          "K - 0.5*10^-round_digits,")
+    print("  not K. Per series, read off the settled records and cross-checked")
+    print("  against the API-measured table:")
+    rdmap = round_digits_map(markets)
+
     rows = scan(quotes, index, markets, SERIES_TO_INDEX, pooled,
-                tau_max=a.tau_max, sigma_by_market=per_market)
+                tau_max=a.tau_max, sigma_by_market=per_market,
+                round_digits=rdmap)
     print(f"\n  {len(rows):,} quote-seconds inside tau <= {a.tau_max}")
     if not rows:
         print("  Nothing quoted in the endgame. That is itself the finding:")

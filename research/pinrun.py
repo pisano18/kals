@@ -608,6 +608,23 @@ def selftest():
         pintake.LEDGER.clear()
         pintake.LEDGER.update(saved)
 
+    # --- the stake cap must measure CONCURRENT risk, not lifetime turnover ---
+    saved2 = dict(pintake.LEDGER)
+    try:
+        pintake.reset_ledger()
+        pintake.LEDGER["committed"] = 0.97
+        pintake.record_pnl(+0.03, note="settled win")
+        pintake.LEDGER["committed"] = max(
+            0.0, float(pintake.LEDGER["committed"]) - 0.97)
+        ck(abs(pintake.LEDGER["committed"]) < 1e-9,
+           f"a settled position releases its stake "
+           f"(committed {pintake.LEDGER['committed']:.4f})")
+        ck(abs(pintake.LEDGER["realised"] - 0.03) < 1e-9,
+           "and its P&L is booked to realised, which the abort reads")
+    finally:
+        pintake.LEDGER.clear()
+        pintake.LEDGER.update(saved2)
+
     # --- STRUCTURAL: the abort must precede every branch in the loop ---
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
     body = src[src.index("def trade_loop("):]
@@ -735,6 +752,17 @@ def trade_loop(a, rec, book, idx, series_index):
             pnl = (float(SIZE) * ((1.0 - cost) if won else (-cost))
                    - billed_fee(cost, SIZE))
             pintake.record_pnl(pnl, note=f"{tk} {want} vs {res}")
+            # RELEASE the stake. pintake's ledger only ever ADDS to
+            # "committed" on a fill and never gives it back, but the field
+            # means "dollars at risk RIGHT NOW" and a settled position is no
+            # longer at risk -- the cash is back. Without this the $5 cap is a
+            # cap on LIFETIME turnover (~5 bets at size 1) rather than on
+            # concurrent exposure, and an overnight run halts on its own
+            # success. pin holds for <60 s and closes are 15 min apart, so
+            # concurrent exposure is one bet, not the night's turnover.
+            pintake.LEDGER["committed"] = max(
+                0.0, float(pintake.LEDGER.get("committed", 0.0)) - cost)
+            pintake.LEDGER["positions"].pop(tk, None)
             open_pos.pop(tk, None)
             recon_at.pop(tk, None)
             state["settled"] = state.get("settled", 0) + 1

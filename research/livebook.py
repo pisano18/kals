@@ -280,6 +280,7 @@ class LiveBook:
         if prev is not None and seq != prev + 1:
             self.stats["seq_gaps"] += 1
             self.gaps.append((now_ms(), sid, prev + 1, seq))
+            del self.gaps[:-200]         # unbounded on a flaky stream
             log.error("SEQ GAP sid=%s expected %s got %s -- books on this sid "
                       "are suspect until a fresh snapshot", sid, prev + 1, seq)
             with self.lock:

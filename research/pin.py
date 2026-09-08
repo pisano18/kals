@@ -60,7 +60,9 @@ from engine import var_factor, N_AVG, fee_per_contract     # noqa: E402
 from settlewin import partial                               # noqa: E402
 from tdist import crit as _tcrit                            # noqa: E402
 from endgame import (scan, evaluate, summarise, redraw_null,  # noqa: E402
-                     mde, fee_cents, outcome_of, sigma_from)
+                     mde, fee_cents, outcome_of, sigma_from,
+                     fair, settle_threshold, round_digits_map,
+                     infer_round_digits)
 
 ND = NormalDist()
 
@@ -519,9 +521,11 @@ def _world(n_mkt, sigma_true, sigma_fed=None, book="stale", seed=1,
             return None
         locked, r = p
         mu = (locked + r * ticks[now_s]) / N_AVG
-        sd = sigma_true * math.sqrt(var_factor(int(close_s - now_s), [1.0]))
+        # tau-1 prints remain, not tau: the window ends at close-1.
+        sd = sigma_true * math.sqrt(
+            var_factor(max(0, int(close_s - now_s) - 1), [1.0]))
         if sd <= 0:
-            return 1.0 if mu > strike else 0.0
+            return 1.0 if mu >= strike else 0.0
         return ND.cdf((mu - strike) / sd)
 
     for k in range(n_mkt):
@@ -546,8 +550,8 @@ def _world(n_mkt, sigma_true, sigma_fed=None, book="stale", seed=1,
             bid = min(0.989, max(0.001, f_q - 0.01))
             ask = min(0.999, max(0.011, f_q + 0.01))
             ql.append((s, bid, ask, 50.0, 50.0))
-        settle = mean(ticks[s] for s in range(close_s - N_AVG + 1,
-                                              close_s + 1))
+        # [close-60, close-1]: the tick AT the close is not in the settlement.
+        settle = mean(ticks[s] for s in range(close_s - N_AVG, close_s))
         quotes[tk] = ql
         markets[tk] = {"ticker": tk, "series": f"KXT{c}", "strike": strike,
                        "close": close_s, "settle": settle,
@@ -555,11 +559,143 @@ def _world(n_mkt, sigma_true, sigma_fed=None, book="stale", seed=1,
     return quotes, idx, markets, s2i, sigs
 
 
+def _round_world(n_mkt, d=2, seed=11, step=900):
+    """A world whose whole content is BUG 2, with the answer planted.
+
+    Kalshi rounds the 60-print mean to `d` digits, writes it as
+    expiration_value, and settles YES iff expiration_value >= floor_strike.
+    So a market whose raw mean is K - 0.4*10^-d settles YES even though the
+    raw mean is BELOW the strike.
+
+    Half the markets here are that near-miss (raw mean just under K, rounds
+    UP, settles YES). The other half sit five ticks below K and genuinely
+    settle NO. The book quotes both at a near-certain NO -- 10c bid, 12c ask
+    -- which is what it looks like when the market is reading the same raw
+    number we are.
+
+    A model that ignores the rounding prices EVERY market here at fair 0,
+    buys NO at 90c on all of them, and loses 90.3c on half. A model that
+    prices P(round(settle, d) >= K) takes the other side of the near-misses
+    and wins. The gap between those two is bug 2, in cents.
+    """
+    rnd = random.Random(seed)
+    base = 1767225600
+    idx = {"IDXR": {}}
+    ticks = idx["IDXR"]
+    quotes, markets = {}, {}
+    tick = 10.0 ** (-d)
+    for k in range(n_mkt):
+        close_s = base + (k + 1) * step
+        strike = 1000.0 + k          # a fresh round strike per window
+        near = (k % 2 == 0)
+        # raw settlement mean: just under K (rounds UP to K -> YES), or five
+        # ticks under K (rounds to K - 5 ticks -> NO).
+        mu = strike - (0.4 if near else 5.0) * tick
+        for s in range(close_s - step, close_s + 1):
+            ticks[s] = mu
+        settle = mean(ticks[s] for s in range(close_s - N_AVG, close_s))
+        won = 1.0 if round(settle, d) >= strike else 0.0
+        if won != (1.0 if near else 0.0):
+            raise AssertionError(
+                f"_round_world built a market it cannot label: settle "
+                f"{settle!r} strike {strike!r} d={d} near={near}")
+        ql = [(s, 0.10, 0.12, 500.0, 500.0)
+              for s in range(close_s - 90, close_s)]
+        tk = f"KXRND-{k}"
+        quotes[tk] = ql
+        markets[tk] = {"ticker": tk, "series": "KXRND", "strike": strike,
+                       "close": close_s, "settle": round(settle, d),
+                       "result": won}
+    # sigma is tiny ON PURPOSE: the whole content of this world is which side
+    # of the threshold a constant mean sits on, so nothing must be left to
+    # chance. At 1e-6 the half-tick shift is ~900 standard deviations, which
+    # is what makes "fair >= 0.98" a statement about the THRESHOLD and not
+    # about the volatility model.
+    return (quotes, idx, markets, {"KXRND": "IDXR"}, {"KXRND": 1e-6})
+
+
 def selftest():
     print("=" * 78)
     print("SELF-TEST -- against known answers")
     print("=" * 78)
     fails = []
+
+    # ---- 0a. BUG 1: the window that every number below rests on ----------
+    # pin imports partial from settlewin. If that ever goes back to
+    # [close-59, close], pin's own tests must fail, not just settlewin's.
+    print("\n  BUG 1 -- the settlement window is [close-60, close-1], so at")
+    print("  tau seconds out there are tau-1 unknown prints, not tau.")
+    Cw = 1_760_000_000
+    flatw = {s: 100.0 for s in range(Cw - 300, Cw + 300)}
+    spikew = dict(flatw)
+    spikew[Cw] = 100.0 + 60_000.0
+    lowin = dict(flatw)
+    lowin[Cw - N_AVG] = 100.0 + 60_000.0
+    fw = [fair(t, Cw, Cw - 1, 500.0, 1.0) for t in (flatw, spikew, lowin)]
+    pw = partial(flatw, Cw, Cw - 5)
+    print(f"    fair(strike 500) flat {fw[0]}, spike AT close {fw[1]}, "
+          f"spike at close-60 {fw[2]};  tau=5 leaves {pw[1]} unknown prints")
+    if fw[1] != fw[0]:
+        fails.append("a tick stamped AT the close changed pin's fair value; "
+                     "the close print is not in the settlement window")
+    if fw[2] != 1.0:
+        fails.append("a wild tick at close-60 did not reach pin's fair "
+                     "value; the close-60 print IS in the window")
+    if pw[1] != 4:
+        fails.append(f"at tau=5 pin's partial() reports {pw[1]} prints still "
+                     "to come; the truth is 4")
+
+    # ---- 0b. BUG 2: the rounding, priced end to end ----------------------
+    print("\n  BUG 2 -- the settlement is rounded to the strike's precision")
+    print("  before it is compared, so the threshold is K - 0.5*10^-d. Half")
+    print("  the markets in this world settle YES on a raw mean BELOW the")
+    print("  strike. A model that ignores that buys NO at 90c on all of them.")
+    qr, ixr, mkr, s2ir, sigr = _round_world(200, d=2, seed=11)
+    rows_on = scan(qr, ixr, mkr, s2ir, sigr, tau_max=TAU_MAX,
+                   round_digits={"KXRND": 2})
+    rows_off = scan(qr, ixr, mkr, s2ir, sigr, tau_max=TAU_MAX)
+    tr_on = evaluate(pinned_rows(rows_on), edge_floor=0.5, rule="first")
+    tr_off = evaluate(pinned_rows(rows_off), edge_floor=0.5, rule="first")
+    m_on = mean(t["pnl"] for t in tr_on) if tr_on else float("nan")
+    m_off = mean(t["pnl"] for t in tr_off) if tr_off else float("nan")
+    fl_on, fl_off = flips(tr_on), flips(tr_off)
+    print(f"    rounded model   {len(tr_on):>4} trades  "
+          f"{m_on:+8.2f}c  {len(fl_on)} flips")
+    print(f"    unrounded model {len(tr_off):>4} trades  "
+          f"{m_off:+8.2f}c  {len(fl_off)} flips")
+    if len(tr_off) < 100:
+        fails.append("the unrounded model took almost no trades in the "
+                     "rounding world -- the trap is not a trap")
+    elif m_off > -20.0:
+        fails.append(f"the UNROUNDED model only lost {m_off:+.2f}c in a world "
+                     "built entirely out of bug 2; this check has stopped "
+                     "pinning anything")
+    if len(tr_on) < 100:
+        fails.append("the rounded model took almost no trades in a world "
+                     "where every outcome is decided")
+    elif m_on < 0:
+        fails.append(f"the ROUNDED model lost {m_on:+.2f}c on markets whose "
+                     "outcomes it should be calling exactly right")
+    if fl_on:
+        fails.append(f"the rounded model flipped on {len(fl_on)} markets "
+                     "whose settlement is deterministic in this fixture")
+    # and the near-miss markets must be priced YES, not merely profitable
+    near = [r for r in rows_on if int(r["tk"].split("-")[1]) % 2 == 0]
+    if not near or min(r["fair"] for r in near) < 0.98:
+        fails.append("a near-miss market (raw mean under K, rounds up to K, "
+                     "settles YES) was not priced as a near-certain YES by "
+                     "the rounded model")
+    farr = [r for r in rows_off if int(r["tk"].split("-")[1]) % 2 == 0]
+    if not farr or max(r["fair"] for r in farr) > 0.02:
+        fails.append("the unrounded model no longer prices the near-miss "
+                     "markets at ~0, so the contrast above is not measuring "
+                     "the rounding")
+    # the correction is half a tick and nothing more
+    for dd in (2, 4, 7):
+        if abs((1000.0 - settle_threshold(1000.0, dd))
+               - 0.5 * 10.0 ** (-dd)) > 1e-12:
+            fails.append(f"settle_threshold moved the strike by more than "
+                         f"half a tick at round_digits={dd}")
 
     # ---- 1. a sleeping book must be harvested, and honestly --------------
     print("\n  A book that freezes 90 seconds out while the index decides")
@@ -1063,8 +1199,18 @@ def main():
     print(f"  per-market sigma for {len(sigma_by_market):,} markets, "
           f"pooled fallback for {len(pooled)} series")
 
+    # BUG 2, fixed 2026-09-08. Kalshi rounds the 60-print mean to the
+    # strike's precision and settles YES iff that rounded value >= the
+    # floor strike, so the threshold this model must price is
+    # K - 0.5*10^-round_digits. Sourced from the settled records themselves
+    # (`settle` IS Kalshi's expiration_value, already rounded) and
+    # cross-checked against the values read off GET /markets on 2026-09-08.
+    print("\n  settlement rounding: threshold is K - 0.5*10^-round_digits")
+    rdmap = round_digits_map(markets)
+
     rows = scan(quotes, index, markets, SERIES_TO_INDEX, pooled,
-                tau_max=TAU_MAX, sigma_by_market=sigma_by_market)
+                tau_max=TAU_MAX, sigma_by_market=sigma_by_market,
+                round_digits=rdmap)
     if not rows:
         print("\n  nothing to analyse -- no endgame quote-seconds survived")
         return
