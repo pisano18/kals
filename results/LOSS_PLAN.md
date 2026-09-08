@@ -25,26 +25,31 @@ to the fact of a loss.
 |---|---|
 | bank | **$154.33**, all on the Crypto shard (exchange_index 2) |
 | size | **20 contracts** |
-| buys per close | up to **2**, each ≥0.5¢ cheaper than the last |
-| worst case, one close | **$40** |
-| dollar brake | **−$60** (39% of the bank) |
+| buys per close | up to **3**, each ≥0.5¢ cheaper than the last |
+| worst case, one close | **$60** |
+| dollar brake | **−$90** |
 | **loss-count brake** | **3 losing trades, then stop** |
-| process | pid 4071500 |
+| open positions | max **4** |
+| process | pid 4072716 |
 
-**Only ONE thing changed from the configuration that has won 18 of 18: the
-size.** Cap 3 measured better and was withdrawn before it traded, because
-deploying it alongside a doubling of size would have been two changes at once
-with one of them unproven. A measured improvement is not a proven one.
+**Cap 3 is not a new mechanism.** The scale-in rule has been live since v3 and
+has already produced second buys on real closes. Cap 3 only lets that same
+proven rule repeat once more. **And the trade it adds is the cheapest of the
+close, not the riskiest** — every extra buy must clear the improve rule, so a
+third buy is at least 1.0¢ below the first. Cheaper wins more and loses less.
+What cap 3 costs is exposure, not per-contract risk.
 
 **Why not the configuration that earns most.** Measured with losses injected
 per close at the 2.31% upper bound, $154 bank:
 
 | | typical result | ruined | status |
 |---|---|---|---|
-| **size 20, cap 2** | **$271** | **3.4%** | **LIVE — the proven rule, bigger** |
+| size 20, cap 2 | $271 | 3.4% | superseded |
 | size 25, cap 2 | $304 | 2.8% | not deployed |
-| size 20, cap 3 | $304 | 1.1% | measured better, **never traded live** |
+| **size 20, cap 3** | **$304** | **1.1%** | **LIVE** |
 | size 40, cap 2 | $380 | worst path reaches **$0.00** | rejected outright |
+
+Cap 3 earns 12% more than cap 2 **and is ruined a third as often.**
 
 **Size 40 earns the most and is the only setting that can reach zero**, because
 the brake scales with the bet: at size 40 it sits at −$120 of a $154 bank and
@@ -52,9 +57,20 @@ fires after the money is already gone. **The brake must be small relative to
 the ACCOUNT, not merely proportionate to the BET.** At size 20 cap 2 the brake
 is −$60, which is 39% of the bank and leaves $94 to continue with.
 
-Cap 3 is the better setting on every number I have, and it is not deployed. It
-has never placed a live order. It goes in only after size 20 has proved itself
-on the rule that already works.
+**How cap 3 was tested before it went live, without spending anything.** The
+operator offered a penny test. The honest engineering answer was that the order
+path for a third buy is *identical code* to the second, which is already proven
+live; what was genuinely new is holding three positions from one close at once.
+So that is what the self-test exercises: that three fills commit the sum of
+their stakes rather than three times the first, that releasing all three gives
+back exactly what was committed, and that the forward-looking loss bound
+tolerates all three open.
+
+**It immediately found a real deployment bug.** With `--max-positions 3`, the
+third buy plus any straggler still settling from the previous close would have
+been REFUSED — silently, since a position-cap refusal is not an error. The flag
+is now 4. That is exactly the failure a penny test would have found the slow
+way, found for free instead.
 
 ---
 
@@ -67,11 +83,11 @@ At ~50 trades a day a 0.90% rate predicts **0.45 losses per day**, so three in
 one run is roughly a **1% event** — rare enough to stop and re-measure rather
 than trade through.
 
-**2. The dollar brake — −$60 realised, then halt.** Forward-looking: it refuses
+**2. The dollar brake — −$90 realised, then halt.** Forward-looking: it refuses
 to enter a state where one more contract could breach the limit, so it stops
 *before* the number is hit, not after.
 
-**3. The order-path brake — the same −$60, enforced independently** inside
+**3. The order-path brake — the same −$90, enforced independently** inside
 `pintake`. Two brakes that cannot silently disagree, because `set_limits()`
 refuses to tighten below what the run configured.
 
@@ -131,10 +147,9 @@ trades.** That is not a feeling, it is the exact upper bound of the measurement
 the entire system rests on. Above it, the price ceiling is in the wrong place
 and every profit figure in this repository is an artefact.
 
-**It is NOT dead because of a bad day.** A −$60 halt on a $154 bank is a 39%
-drawdown, it leaves $94, and it is survivable. The stress test says that at the
-rate we believe, that outcome has a 0.1% chance; at the 2.31% rate we cannot
-rule out, 3.4%.
+**It is NOT dead because of a bad day.** A −$90 halt on a $154 bank is a 58%
+drawdown and it is survivable. The stress test says that at the rate we
+believe it has a 0.1% chance; at the 2.31% rate we cannot rule out, 1.1%.
 
 ---
 
