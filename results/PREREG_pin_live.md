@@ -89,3 +89,12 @@ right side.
   (yes 0.001/0.002 on decided-NO markets) -- no stale quote in that one close.
 - Two bugs found before money: a self-test that placed ticks in the wrong
   half of the window, and `close_s` off by 3600 s (time.timezone ignores DST).
+
+## Measured AFTER this file was written (dated additions, not bar changes)
+
+- 2026-09-07 ~20:50 ET: authenticated REST round trip from this box to
+  `GET /markets/{t}/orderbook`, n=15: **min 81 ms, median 90 ms, p90 156 ms,
+  max 1,091 ms**. The 40-60% fill prediction above assumed 200-500 ms; the
+  measured clock is faster, so the prediction is conservative. It stands as
+  written.
+- Account at the time of writing: $41.04 cash, 0 positions, 0 resting orders.
