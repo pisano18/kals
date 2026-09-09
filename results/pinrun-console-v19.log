@@ -114,3 +114,7 @@ SELF-TEST PASSED
   pintake rails raised: MAX_TAKE_COUNT 10 -> 20; LOSS_ABORT $-2.00 -> $-60.00; MAX_RUN_STAKE $60.00 -> $130.00  (size 20, worst close $40.00)
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $130.00
   index up: 11 ticks, 11 feeds
+  SIGNAL KXSOL15M-26SEP090000-00 tau=22s buy YES @0.9710 fair 0.9837 edge +1.07c size 11.00 taking 11
+    ORDER -> status executed filled 11.0 @ 0.971 fee 0.0019
+  close 04:00Z: 4023 looks, best was KXBTC15M-26SEP090000-0 NO @0.9800 edge +1.16c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP090000-00 yes vs yes -> +29.73c (run realised $+0.2973)
