@@ -10,7 +10,8 @@
 |---|---|
 | bank | **$110.45** |
 | record | 30 wins, 3 losses |
-| live | size **20**, 2 buys per close, ceiling 98.8¢, tau 3–30 |
+| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30 |
+| restart it | **`RESTART.md`** in the repo root — one line to paste |
 | brakes | −$60 · 3 losing **closes** · 2 order errors · 8 attempts/close |
 | day | started $38.83, funded +$113.04 → **−$41.54** |
 
@@ -37,6 +38,28 @@ The brake stopped it. Nothing was left open.
 | a $28.92 balance drop was unexplained | it was committed stake, to the cent. I reported before subtracting |
 
 **Seven size-1 constants broke scaling in one day.** Any constant tied to size must be written in terms of size.
+
+---
+
+## THE BEST THING LEARNED (2026-09-09, Joe's argument)
+
+**"Unless it eliminates 100% of losses it just makes earning back our blunders
+more difficult."** Correct, and it kills every probability gate: each costs
+22–44 winning trades to avoid a loss worth ~24 wins, so it's a wash AND it
+burns the wins we recover with.
+
+**But the recovery ratio is a PRICE lever, not a probability one, and it is
+arithmetic:**
+
+| price paid | a win pays | wins to recover one loss |
+|---|---|---|
+| 98.8¢ | 1.11¢ | **89** |
+| 98.0¢ | 1.86¢ | 53 |
+| 96.0¢ | 3.73¢ | 26 |
+| 90.0¢ | 9.37¢ | **10** |
+
+Ceiling moved 98.8¢ → **98.0¢**: measured 129 trades/742¢ → 118 trades/**768¢**,
+and wins-to-recover 16 → 14. **More money and better resilience at once.**
 
 ---
 

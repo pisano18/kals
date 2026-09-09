@@ -453,7 +453,32 @@ MIN_FILL_FRAC = 0.50     # AMENDMENT 6. Take a PARTIAL rather than skip a
                          # early fill burns a scale-in slot and raises the
                          # improve bar, so it trades a big cheap buy later for
                          # a small dear one now. Half is the measured optimum.
-PRICE_CEILING = 0.988    # AMENDMENT 5 WITHDRAWN 2026-09-08 16:20Z, BEFORE IT
+PRICE_CEILING = 0.980    # 98.8c -> 98.0c, 2026-09-09. THE OPERATOR'S
+                         # ARGUMENT, and it is arithmetic rather than a fitted
+                         # parameter: "unless it eliminates 100% of losses it
+                         # just makes earning back our blunders more difficult."
+                         # He is right, and it kills every PROBABILITY gate --
+                         # each one costs 22-44 winning trades to avoid a loss
+                         # that costs ~24 wins, so it is a wash AND it removes
+                         # the wins we need to recover with.
+                         # But the recovery ratio is not a probability lever,
+                         # it is a PRICE lever, fixed by arithmetic:
+                         #     98.8c  win 1.11c  loss 98.89c  ->  89 wins to recover
+                         #     98.0c  win 1.86c  loss 98.14c  ->  53
+                         #     96.0c  win 3.73c  loss 96.27c  ->  26
+                         # Measured on the live rule, 83 closes:
+                         #     ceiling 98.8c  129 trades  742.0c  16 wins to recover
+                         #     ceiling 98.0c  118 trades  767.6c  14
+                         # MORE money AND better resilience -- better on both
+                         # axes, which is rare enough to act on. The profit
+                         # difference (+3.5% on 83 closes) may be noise; the
+                         # RESILIENCE difference is arithmetic and cannot be.
+                         # A tightening can only ever refuse trades, so the
+                         # downside is bounded at "trades less".
+                         # LIVE EVIDENCE: the 02:30Z trade we took at 98.7c
+                         # needed 82 wins to recover and paid 12.10c. That is
+                         # the worst risk-reward accepted all night and it sat
+                         # inside the old ceiling.    # AMENDMENT 5 WITHDRAWN 2026-09-08 16:20Z, BEFORE IT
                          # EVER TRADED. The 96c ceiling was committed to disk
                          # but the running process was never restarted, so it
                          # was NEVER LIVE. Reverted for three measured reasons:
