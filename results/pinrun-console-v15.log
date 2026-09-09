@@ -109,3 +109,29 @@ SELF-TEST PASSED
   pintake rails raised: MAX_TAKE_COUNT 10 -> 20; LOSS_ABORT $-2.00 -> $-90.00; MAX_RUN_STAKE $60.00 -> $190.00  (size 20, worst close $60.00)
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $190.00
   index up: 11 ticks, 11 feeds
+  SIGNAL KXBNB15M-26SEP081945-45 tau=30s buy NO @0.9800 fair 0.0020 edge +1.66c size 187.32 taking 20
+    ORDER -> status executed filled 20.0 @ 0.98 fee 0.0013
+  SIGNAL KXDOGE15M-26SEP081945-45 tau=22s buy NO @0.9290 fair 0.0038 edge +6.26c size 34.00 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXDOGE15M-26SEP081945-45 tau=22s buy NO @0.9700 fair 0.0038 edge +2.42c size 145.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.969 fee 0.0021
+  close 23:45Z: 4468 looks, best was KXDOGE15M-26SEP081945- NO @0.9290 edge +6.26c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP081945-45 no vs no -> +37.25c (run realised $+0.3725)
+  SETTLED KXDOGE15M-26SEP081945-45 no vs no -> +57.79c (run realised $+0.9504)
+  SIGNAL KXDOGE15M-26SEP082000-00 tau=30s buy NO @0.9800 fair 0.0054 edge +1.32c size 97.97 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXETH15M-26SEP082000-00 tau=30s buy NO @0.9780 fair 0.0001 edge +2.04c size 25.75 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXETH15M-26SEP082000-00 tau=30s buy NO @0.9800 fair 0.0001 edge +1.85c size 746.50 taking 20
+    ORDER -> status executed filled 20.0 @ 0.98 fee 0.0013
+  SIGNAL KXBTC15M-26SEP082000-00 tau=19s buy YES @0.9440 fair 0.9871 edge +3.94c size 90.02 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXBTC15M-26SEP082000-00 tau=19s buy YES @0.9470 fair 0.9871 edge +3.66c size 34.99 taking 20
+    ORDER -> status executed filled 20.0 @ 0.947 fee 0.0035
+  SIGNAL KXBTC15M-26SEP082000-00 tau=16s buy YES @0.9380 fair 0.9979 edge +5.58c size 284.82 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXBTC15M-26SEP082000-00 tau=16s buy YES @0.9380 fair 0.9979 edge +5.58c size 232.54 taking 20
+    ORDER -> status executed filled 20.0 @ 0.938 fee 0.004
+  close 00:00Z: 2161 looks, best was KXBTC15M-26SEP082000-0 YES @0.9380 edge +5.58c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP082000-00 no vs no -> +37.25c (run realised $+1.3229)
+  SETTLED KXBTC15M-26SEP082000-00 yes vs yes -> +98.97c (run realised $+2.3126)
