@@ -114,3 +114,4 @@ SELF-TEST PASSED
   pintake rails raised: MAX_TAKE_COUNT 10 -> 20; LOSS_ABORT $-2.00 -> $-60.00; MAX_RUN_STAKE $60.00 -> $130.00  (size 20, worst close $40.00)
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $130.00
   index up: 11 ticks, 11 feeds
+  close 03:15Z: 4545 looks, best was KXZEC15M-26SEP082315-1 YES @0.9990 edge +0.09c (need +0.3c) -> no trade

@@ -1,0 +1,40 @@
+SELF-TEST -- pindraw
+  ok   an unhedged win pays 1 - price, minus the fee
+  ok   an unhedged loss costs the whole price, plus the fee
+  ok   hedging ALL of a 95c position at 3c locks +1.45c whatever happens
+  ok   and the hedged outcome is IDENTICAL on a win and a loss -- that identity is what makes a full hedge a certainty, not a bet
+  ok   a PARTIAL hedge of 10 of 20 recovers 968.0c of a -1906.7c loss -- the thing the earlier study never measured
+  ok   half-hedging a loser is better than not hedging and still a loss
+  ok   and on a WINNER the same hedge is pure cost -- a 90c hedge that expires worthless is the false alarm this study has to price
+  ok   a dead-flat index has zero volatility
+  ok   a +/-0.2 sawtooth gives sigma ~0.2 (0.2003)
+  ok   at tau=10 there are 9 prints still to come (9)
+  ok   settlement is the mean of the 60 prints in [close-60, close-1]
+  ok   a +1.0 step 30s before close settles at 100.5 (100.5000) -- the locked half still counts
+  ok   a second BEFORE the first quote arrived has no quote, and is not back-filled from a later one
+  ok   and the second it arrives does
+  ok   a quote is carried forward to later seconds
+  ok   and its age is measured, not assumed (1749 ms)
+  ok   planted world: the crossing trigger fires on exactly the 10 losers (10)
+  ok   planted world: the worst close falls from $19.07 to $3.29
+  ok   and in the operator's unit from 20.4 wins to 3.5 wins to recover
+  ok   on a world where the signal is perfect the hedge also makes money, so a rule that shows NO improvement here is broken
+  ok   null world: P(lose | crossing) 0.250 == P(lose | no crossing) 0.250 exactly, CI [0.175, 0.343] -- the estimator finds NOTHING where nothing is planted
+  ok   and a FAIRLY PRICED hedge on that useless trigger costs exactly the fees ($-26.2500 vs -$26.2500) -- no more, no less
+  ok   the null fires on 100 of 400 positions (100), so the test has something to be wrong about
+  ok   the live rule buys a 95c offer the model calls 99.5% ([{'tk': 'A', 'tau': 20, 'want': 'yes', 'price': 0.95, 'n': 20.0, 'fair': 0.995, 'edge': 0.04167000000000004}])
+  ok   and refuses 99.5c, which is past the price ceiling AND negative EV
+  ok   and refuses tau=45, outside the frozen window
+  ok   and refuses a 3-contract offer at size 20 (below MIN_FILL_FRAC)
+  ok   scale-in takes the second buy only when it is IMPROVE_BY cheaper ([0.95, 0.9])
+  ok   with only 7 contracts at the touch a single shot hedges 7 of 20 (7.0) -- the all-or-nothing rule scored this as ZERO and threw the position away
+  ok   and retrying each remaining second completes it (20.0)
+  ok   a 7-of-20 hedge still beats no hedge on a loser
+SELF-TEST PASSED
+
+  10,796 settled markets on the 9 crypto series, closes 2026-08-24 16:23Z -> 2026-09-06 08:30Z
+  loading index ...
+    index 50/275
+    index 100/275
+    index 150/275
+    index 200/275
