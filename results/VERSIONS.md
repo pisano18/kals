@@ -468,32 +468,34 @@ loss abort −$3.00. First real trade 08:00Z (BTC YES @0.992, won +0.74¢).
 
 | | |
 |---|---|
-| won / lost | **26 / 0** |
-| bank | **$161.4380** |
-| profit today | **+$9.57** |
-| best single close | **+$2.52** (three fills, 00:00Z) |
-| best single trade | +185.51¢ (SOL, 20 at 90.1¢) |
-| price paid, live | min **89.0¢**, max 99.60¢ |
+| won / **lost** | **29 / 3** |
+| live flip rate | **9.4%** (3 of 32) — see the caveat below |
+| bank | **$110.33** |
+| day | started $38.83, funded +$113.04, now $110.33 = **−$41.54** |
+| best single close | +$2.52 (three fills) |
+| best single trade | +185.51¢ (SOL at 90.1¢) |
+| **worst single close** | **−$52.60** (three fills, ONE market, all lost together) |
 
-### The 00:00Z close used all three slots for the first time
+### THE FIRST LOSS — 2026-09-09 00:45Z, KXNEAR15M
 
-```
-ETH  @98.0c  x20   +37.25c
-BTC  @94.7c  x20   +98.97c
-BTC  @93.8c  x20  +115.85c
-                  +252.07c  = $2.5207
-```
+Three same-side buys on **one market** at tau 22 / 21 / 17, 96.2¢ / 95.6¢ /
+73.0¢, all lost together. The loss-count brake halted the run. Settlement was
+reproduced independently from the raw index and agrees with the exchange, so
+**the arithmetic is not broken**. The index sat flat for eight seconds, then
+moved 0.0021 in a single second at tau 16 and never came back.
 
-Bank $158.9173 → **$161.4380**, reconciling to the cent, zero open positions.
-Two of the three fills were on the **same ticker**, which is exactly the case
-that overwrote itself an hour earlier and is now keyed by order id.
+**A six-agent forensic investigation refuted nearly every proposed fix,
+including my own.** Flatness, sigma regime and recent-jump separate losers from
+winners at p = 0.14–0.99; once the model's own `z` is held fixed, nothing adds
+anything. Every entry gate tested costs **22–44 winning trades per loss
+avoided**. See AMENDMENT 8 and IDEAS_LOG.
 
-**Every extra buy came in cheaper** — 98.0¢, then 94.7¢, then 93.8¢ — and the
-cheapest paid the most. That is the scale-in mechanism doing precisely what it
-is supposed to, and the reason cap 3 raises return while lowering ruin.
-
-**Standing caveat:** at the measured 0.90% flip rate, 26 straight wins is the
-EXPECTED outcome (0.23 losses expected). The streak is not evidence either way.
+**The live flip rate of 9.4% is 3 losses in one correlated close, not 3
+independent events.** Clustered by close it is 1 losing close in 20, and the
+sample is far too small either way. It does NOT yet exceed the 2.31% bound that
+would kill the strategy, because that bound is per-trade on independent draws
+and these were not independent. **This is exactly why the brake now counts
+closes.**
 
 ## What to check first if it starts losing
 
