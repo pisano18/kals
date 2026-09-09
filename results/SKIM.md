@@ -87,6 +87,47 @@ Also costed and rejected: repricing with `max(sigma_30, sigma_300)` refuses
 
 ---
 
+## THE HEDGE: TESTED PROPERLY UNDER JOE'S OBJECTIVE. IT DOES NOT WORK.
+
+Three tracks, six agents, all refuted. **No hedge gets near the target.**
+
+| | worst loss, in wins to recover |
+|---|---|
+| Joe's target | **1–5 wins** |
+| no hedge | 21.8 |
+| best hedge, with realistic depth | **20.7** |
+
+**It moves the worst loss by one win.** And it costs **−6.9% of all profit** on
+the window we actually trade, for **zero measured benefit** there (0 losers in
+83 closes). The headline +39% came entirely from tau 31–60, a window
+AMENDMENT 4 already removed from the live rule.
+
+**Break-even for the rule is a 0.90% loss rate. Our live constant IS 0.90%.**
+A coin flip on our own best estimate.
+
+### Why insurance is never cheap here
+
+There IS enough time — losers cross at median tau 14 and 97–100% of alarms fire
+with ≥3 seconds left. **The constraint is PRICE, not latency.** The market
+reprices in the same instant the move happens, so by the time we know, the
+other side already costs what it is worth.
+
+### Two things that kill the "warning sign" idea for good
+
+- **`mu` crossing the strike is a near-perfect classifier** — losers cross
+  100% of the time, winners essentially never. But it arrives at the *same
+  moment* as the price. It is a report, not a warning.
+- **Tonight the cushion |spot − K| GREW from 0.00085 to 0.00135 as the trade
+  died.** An unsigned-distance alarm is structurally incapable of warning.
+
+### The win unit was optimistic and the corrected figure is worse
+
+Median winning close is **$0.78**, median 3.26¢ per contract. So the worst
+close, −$37.50, is **47.8 wins at the median**, not 20.8. The recovery problem
+is bigger than I said.
+
+---
+
 ## OPEN QUESTIONS — where pushback is worth most
 
 1. **THE RACE.** 26% of orders fill nothing. Depth is not the cause (misses had 562, 107, 93 contracts on offer). Our round trip is ~100ms whether we win or lose; misses happen on *fresher* prices. Suggests we lose to **already-resting** orders, not faster ones. Unmeasurable from tape so far.

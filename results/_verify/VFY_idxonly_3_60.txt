@@ -1,0 +1,61 @@
+SELF-TEST -- pinexit
+  ok   perfectly separated groups give AUC 1.000
+  ok   separated the WRONG way gives 0.000, so a sign error shows up as a number below 0.5 instead of being silently absorbed
+  ok   an all-ties column gives exactly 0.500, not 1.000
+  ok   identical distributions give 0.500
+  ok   the binned AUC the bootstrap uses agrees with the exact one (0.7053 vs 0.7054)
+  ok   at tau=10 there are 9 prints still to come (9) -- the settlement window is [close-60, close-1] and the print AT this second is already in it. pindata.py's own self-test asserts the same 9.
+  ok   a dead flat index projects a settlement equal to itself
+  ok   and with the strike AT that level the required move is zero
+  ok   a strike 0.6 above needs the 9 remaining prints to average 4.0 higher, because 9/60 of 4.0 is exactly 0.6 (4.0000)
+  ok   a flat index has zero realised volatility (0.0)
+  ok   a +/-0.2 sawtooth has realised volatility exactly 0.2
+  ok   holding YES with mu one sd ABOVE the strike, p(lose) is 15.9%
+  ok   holding NO in the same state, p(lose) is 84.1% -- the two sides must sum to exactly 1.000 or the orientation is wrong
+  ok   while the model still favours our side, our mid is ask - spread/2 (0.9450)
+  ok   once the model has SWITCHED, the stored ask belongs to the OTHER side and our mid is 1 - price + spread/2 (0.7050)
+  ok   the two sides' mids always sum to exactly 1.000
+  ok   PLANTED: before the plant (k=5) the estimator finds nothing (0.541)
+  ok   PLANTED: from the plant onward (k=8) it finds it (1.000)
+  ok   PLANTED: and the close-clustered CI excludes 0.500 ([1.000, 1.000])
+  ok   PLANTED: at a threshold only the plant can reach, the first-fire detector names the planted second exactly (6)
+  ok   PLANTED: it fires on 100.0% of losers and only 3.7% of winners -- a warning, not a coin flip
+  ok   NULL: no second on any signal separates by more than 0.12 (worst |AUC-0.5| = 0.059)
+  ok   NULL: the clustered CI excludes 0.500 in only 10 of 156 independent cells (6.4%), at or below the rate chance alone produces
+  ok   CALIBRATION: on 60 independent null worlds the nominal 95% close-clustered CI excluded 0.500 3 times (5.0%, nominal 5%) -- the interval is not too narrow, so a real interval that excludes 0.500 means something
+  ok   NULL: the first-fire detector fires on losers and winners at the same rate (9.3% vs 7.0%) -- it invents no warning where there is nothing to warn about
+  ok   the MDE floor shrinks as the sample grows (0.085 -> 0.042)
+  ok   and doubles when the measured design effect doubles it
+SELF-TEST PASSED
+==============================================================================
+  pinexit -- after we bought, when does a loser look different?
+==============================================================================
+  hedge bought from the book 1 s AFTER the alarm (0 = look-ahead)
+
+==============================================================================
+  THE LARGE COMPANION -- index only, no order book required
+==============================================================================
+  Population: every second of every settled market at which the
+  settlement model was at least 98% sure,
+  followed to settlement. NO book, so no market-implied columns.
+  This CANNOT say how often we lose -- the population that is
+  actually OFFERED to us is about 90x worse. It is here only to
+  say, CONDITIONAL ON LOSING, when the index gives it away.
+    BRTI         1,076,890 of 1,155,600 prints (93.2%)
+    ETHUSD_RTI   1,076,887 of 1,155,600 prints (93.2%)
+    SOLUSD_RTI   1,076,889 of 1,155,600 prints (93.2%)
+    XRPUSD_RTI   1,076,887 of 1,155,600 prints (93.2%)
+    DOGEUSD_RTI  1,076,885 of 1,155,600 prints (93.2%)
+    BNBUSD_RTI   1,076,889 of 1,155,600 prints (93.2%)
+    ZECUSD_RTI   1,076,889 of 1,155,600 prints (93.2%)
+    HYPEUSD_RTI  1,076,888 of 1,155,600 prints (93.2%)
+    NEARUSD_RTI  1,076,890 of 1,155,600 prints (93.2%)
+    9,006 settled markets inside that span
+
+  POPULATION: 437,821 entries, 726 losers over 77 LOSING CLOSES (89 losing markets) out of 920 closes
+  77 losing closes CLEARS the floor of 30.
+
+  MDE, BEFORE THE ESTIMATE: 0.0300 on |AUC - 0.500| treating
+  rows as independent; the measured design effect restates it.
+
+  replaying ...

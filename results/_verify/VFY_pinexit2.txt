@@ -1,0 +1,33 @@
+SELF-TEST -- vfy_pinexit2
+  ok   CAUSAL: pinexit's real feature vector is bit-identical when every print after the decision second is deleted (588 values compared, 0 differ)
+  ok   PLANTED: a feature that peeks one second ahead IS caught by the same harness (49 cells differ on CHEAT)
+  ok   PLANTED: and ONLY the cheating column differs -- the harness does not manufacture failures in honest columns
+SELF-TEST PASSED
+
+==============================================================================
+  C -- LOOK-AHEAD TRUNCATION ON REAL TAPE
+  Every cell recomputed with all index prints and all book rows
+  AFTER that second deleted, and the tape also cut below at
+  close-400. Equality is required TO THE LAST BIT.
+==============================================================================
+  sample: 60 markets (12 losers, 48 winners)
+  2921 cells, 35052 feature values compared, 0 differ
+  VERDICT: NO LOOK-AHEAD -- every value bit-identical
+  and the window tape [close-400, sec] reproduces the WHOLE-tape
+  feature vector to 2.3e-08 relative -- so nothing outside 400 s
+  before the close is read at all (that residue is the one-ULP
+  prefix-sum origin effect, not information).
+
+==============================================================================
+  G -- HEDGE LAG. The recommended rule re-priced at 0..3 s.
+  lag 0 is the authors' own admitted look-ahead.
+==============================================================================
+  438 trades, typical win 4.52c, NO HEDGE total 176.5 wins
+    p_model >= 0.5   lag 0: total    253.5 wins  (+43.7% vs no hedge)  hedged 15
+    p_model >= 0.5   lag 1: total    244.9 wins  (+38.8% vs no hedge)  hedged 15
+    p_model >= 0.5   lag 2: total    234.7 wins  (+33.0% vs no hedge)  hedged 15
+    p_model >= 0.5   lag 3: total    231.9 wins  (+31.4% vs no hedge)  hedged 15
+    sd_loss >= 2.0   lag 0: total    231.0 wins  (+30.9% vs no hedge)  hedged 19
+    sd_loss >= 2.0   lag 1: total    237.2 wins  (+34.4% vs no hedge)  hedged 19
+    sd_loss >= 2.0   lag 2: total    229.2 wins  (+29.9% vs no hedge)  hedged 19
+    sd_loss >= 2.0   lag 3: total    224.6 wins  (+27.3% vs no hedge)  hedged 19

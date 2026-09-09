@@ -1,0 +1,46 @@
+SELF-TEST -- vfy_pinexit3
+  ok   PLANTED: save 9 / tax 9 / fires on 100% of losers and 10% of winners breaks even at 0.0909, the closed form
+  ok   PLANTED: a rule that never fires on a winner pays at ANY loss rate
+  ok   NULL: a rule that never catches a loser returns None, not a number
+  ok   NULL: a hedge that saves nothing returns None, not a number
+  ok   a costlier false alarm requires a HIGHER loss rate to justify -- the sign of the dependence is right
+  ok   the percentile helper is the study's
+SELF-TEST PASSED
+
+==============================================================================
+  H -- THE BREAK-EVEN LOSS RATE
+  The +39%% headline is not a property of the rule. It is the
+  product of the rule and THIS population's 2.7%% loss rate.
+  Below, save and tax are measured; the loss rate is solved for.
+==============================================================================
+  typical win 4.52c; population loss rate 2.74% (12 of 438 one-per-market trades)
+
+              rule   save     tax   fire|L   fire|W  break-even live fire|W
+  --------------------------------------------------------------------------
+      p_model>=0.5    8.4    10.8     100%    0.70%       0.90%       0.61%
+      -> at the LIVE window's own false-alarm rate (1 of 165 trades) it breaks even at a loss rate of 0.77%
+      p_model>=0.9    2.8    11.9     100%    0.23%       1.00%       0.00%
+      -> at the LIVE window's own false-alarm rate (0 of 165 trades) it breaks even at a loss rate of 0.00%
+      sd_loss>=2.0    9.8     8.2     100%    1.64%       1.35%       2.42%
+      -> at the LIVE window's own false-alarm rate (4 of 165 trades) it breaks even at a loss rate of 1.98%
+      p_gain>=0.25    9.8     7.0     100%    2.58%       1.81%       2.42%
+      -> at the LIVE window's own false-alarm rate (4 of 165 trades) it breaks even at a loss rate of 1.70%
+
+  WHAT WE KNOW ABOUT THE LOSS RATE, for comparison:
+    pinrun's own MEASURED_FLIP constant .............. 0.90%
+    this study's tau 3-60 gated population ........... 2.74%
+    the LIVE window tau 3-30 gated population ........ 0.00% (0 of 165)
+    the live record in SKIM.md ....................... 3 losses / 33 trades, but 1 losing CLOSE
+
+==============================================================================
+  I -- DEPTH ON THE TRADES THAT WOULD ACTUALLY BE SAVED
+  The study quotes a median depth of 150 from the 4,696-entry
+  population. The ledger comes from these 438. What was resting
+  on the 12 trades where the hedge would have paid?
+==============================================================================
+  p_model >= 0.5: LOSERS n=9 depth min 6  p25 21  median 60  max 1000  |  below size 20: 2 of 9
+      winners n=2 median depth 1639
+  p_model >= 0.9: LOSERS n=12 depth min 1  p25 29  median 52  max 285  |  below size 20: 2 of 12
+      winners n=1 median depth 311
+  sd_loss >= 2.0: LOSERS n=7 depth min 6  p25 9  median 60  max 1000  |  below size 20: 2 of 7
+  p_gain >= 0.25: LOSERS n=7 depth min 6  p25 9  median 60  max 1000  |  below size 20: 2 of 7

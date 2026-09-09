@@ -1,0 +1,33 @@
+﻿SELF-TEST -- vfy_cliffunit
+  ok   PLANT: a strictly smooth decreasing truth 0.896, 0.843, 0.769, 0.673, 0.561, 0.442 -- no step exists in it
+  ok   CONTROL, independent rows: cliff_test correctly finds no cliff (p = 0.719)
+  ok   the clustered world has exactly the same number of rows, so any difference is the correlation and not the sample size
+SELF-TEST PASSED
+
+==========================================================================
+  IS cliff_test's UNIT WRONG?  smooth truth, clustered rows
+==========================================================================
+  true per-market flip prob by bucket: 0.8962, 0.8427, 0.7687, 0.6733, 0.5611, 0.4423
+                               world     rows   p from cliff_test
+       CLUSTERED (9 rows per market)   21,600               0.007
+       CLUSTERED (9 rows per market)   21,600               0.020
+       CLUSTERED (9 rows per market)   21,600               0.007
+       CLUSTERED (9 rows per market)   21,600               0.007
+       CLUSTERED (9 rows per market)   21,600               0.007
+        INDEPENDENT (same row count)   21,600               0.974
+        INDEPENDENT (same row count)   21,600               0.530
+        INDEPENDENT (same row count)   21,600               0.980
+  A smooth world must give p > 0.05. Any cell that does not is the
+  test reading clustering as a cliff.
+
+==========================================================================
+  THE REAL CELLS, RE-RUN AT THE MARKET UNIT
+==========================================================================
+  loading index tape ...
+  82,395 rows, 76,232 model-confident
+     bps         all rows:  ROW unit  LR    0.54  p 0.881   |   MARKET unit  LR    0.38  p 0.974
+     bps  model-confident:  ROW unit  LR    5.71  p 0.086   |   MARKET unit  LR    3.35  p 0.278
+   cr300         all rows:  ROW unit  LR  129.35  p 0.007   |   MARKET unit  LR   67.55  p 0.007
+   cr300  model-confident:  ROW unit  LR   26.95  p 0.007   |   MARKET unit  LR   21.72  p 0.007
+
+  DONE.

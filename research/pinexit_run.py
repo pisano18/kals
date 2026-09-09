@@ -317,6 +317,96 @@ def ledger(rows, ents, typical_win):
     print("  lifts `worst` (and p99) a long way WITHOUT collapsing `total`.")
 
 
+def entry_filter(ents, typical_win):
+    """DON'T BUY, rather than BUY THE OTHER SIDE.
+
+    A hedge and a skip fail differently, and the difference is the whole
+    argument. Hedging a trade that would have won turns a +3.3c win into a
+    locked loss of tens of cents -- 13 to 17 WINS thrown away per false alarm.
+    Skipping a trade that would have won costs exactly the win: ONE win. So a
+    skip rule can afford to be roughly fifteen times more trigger-happy than a
+    hedge rule for the same damage, and that is a fact about the payoff
+    structure rather than about this tape.
+
+    This is an ENTRY-time test and the project has already refuted a list of
+    entry-time features -- flatness, sigma regime, recent jump, all p = 0.14 to
+    0.99, and every gate tested cost 22-44 winners per loss avoided. Those were
+    all features of the INDEX. The two here are features of the ORDER BOOK
+    relative to the model, which is a different object and was not in that list.
+    That is a reason to test them, not a reason to believe them, and the sample
+    below is far too small to settle it either way.
+    """
+    print("\n" + "=" * 78)
+    print("  DON'T BUY, rather than BUY THE OTHER SIDE")
+    print("  Same population. A skipped trade scores exactly 0.00, so its only")
+    print("  cost is the win it forgoes -- ONE win, against 13-17 for a hedge.")
+    print("=" * 78)
+    base = []
+    keep = {}
+    for (tk, close, K, tp, sec0, yes, lose, price, secs, sr) in ents:
+        if price is None:
+            continue
+        pnl = ((-price) if lose else (1.0 - price)) - fee(price)
+        base.append(pnl)
+        row = secs.get(sec0)
+        st = state(tp, close, sec0, K)
+        pm = p_lose(st, K, yes)
+        ml = pk = None
+        if row is not None and pm is not None:
+            mid = our_mid(row, yes)
+            if 0.0 < mid < 1.0:
+                pk = 1.0 - mid
+                ml = pk - pm
+        keep[len(base) - 1] = (pnl, lose, ml, pk)
+    n = len(base)
+    if not n:
+        return
+
+    def wins(c):
+        return c / typical_win
+
+    def show(name, rows_):
+        ps = sorted(rows_)
+        m = len(ps)
+        print(f"  {name:>30}{100 * (n - m) / n:>9.1f}%"
+              f"{wins(ps[0]):>9.1f}{wins(ps[int(0.01 * m)]):>8.1f}"
+              f"{wins(ps[int(0.05 * m)]):>8.1f}"
+              f"{wins(sum(ps) / m):>9.2f}{wins(sum(ps)):>11.1f}")
+
+    hdr = (f"  {'rule':>30}{'skipped':>10}{'worst':>9}{'p99':>8}{'p95':>8}"
+           f"{'mean':>9}{'total':>11}")
+    print(hdr)
+    print("  " + "-" * (len(hdr) - 2))
+    print(f"  {'TAKE EVERYTHING (today)':>30}{0.0:>9.1f}%"
+          f"{wins(sorted(base)[0]):>9.1f}"
+          f"{wins(sorted(base)[int(0.01 * n)]):>8.1f}"
+          f"{wins(sorted(base)[int(0.05 * n)]):>8.1f}"
+          f"{wins(sum(base) / n):>9.2f}{wins(sum(base)):>11.1f}")
+    cov = sum(1 for v in keep.values() if v[2] is not None)
+    for th in (0.05, 0.10, 0.15, 0.20, 0.30):
+        r = [v[0] for v in keep.values()
+             if not (v[2] is not None and v[2] >= th)]
+        if r:
+            show(f"skip if market-model >= {th:.2f}", r)
+    for th in (0.05, 0.10, 0.20, 0.35):
+        r = [v[0] for v in keep.values()
+             if not (v[3] is not None and v[3] >= th)]
+        if r:
+            show(f"skip if market p(lose) >= {th:.2f}", r)
+    print(f"\n  the market-vs-model column exists on {cov:,} of {n:,} entries "
+          f"({100 * cov / n:.1f}%);")
+    print(f"  an entry with no usable book quote is never skipped.")
+    los = [v for v in keep.values() if v[1]]
+    if los:
+        mls = sorted(v[2] for v in los if v[2] is not None)
+        wns = sorted(v[2] for v in keep.values() if not v[1]
+                     and v[2] is not None)
+        if mls and wns:
+            print(f"  market-minus-model AT ENTRY: losers median "
+                  f"{mls[len(mls) // 2]:+.3f} (n={len(mls)}), winners median "
+                  f"{wns[len(wns) // 2]:+.3f} (n={len(wns):,})")
+
+
 def placebo(ents, seed=4242):
     """Move the LOSER labels to different markets, keeping everything else.
 
@@ -1138,6 +1228,7 @@ def main():
     print("  wins = how many typical wins that locked loss still costs.")
 
     ledger(rows, ents, typical_win)
+    entry_filter(ents, typical_win)
 
     loss_night(a)
 

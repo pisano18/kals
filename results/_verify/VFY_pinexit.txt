@@ -1,0 +1,81 @@
+SELF-TEST -- vfy_pinexit
+  ok   PLANTED: the ledger delta is pure arithmetic
+  ok   PLANTED: 2 losers saved, 1 winner taxed -> +4.0 wins, positive, the shape the real table claims
+  ok   PLANTED: 1 loser to 4 taxed winners and the SAME hedge loses money -- the sign is carried by the ratio, not by the machinery
+  ok   NULL: an empty population gives an empty ledger and no fires
+  ok   truncation removes every second after the cut and keeps the rest
+  ok   a window entirely before the cut is bit-identical after truncation
+  ok   the percentile helper matches the one the study uses
+SELF-TEST PASSED
+
+  rows.jsonl span 2026-09-04T12:14Z .. 2026-09-06T08:14Z
+
+==============================================================================
+  A -- COST ON THE LIVE WINDOW (tau 3-30, gated). ZERO LOSERS,
+       so every fire is a false alarm and every cent is pure loss.
+==============================================================================
+
+  one entry per market: 165 entries, 0 losers, 83 closes
+  typical win 5.08c  ->  a hedge locking -56c costs 11.0 wins
+                  rule   fires   fires%      no-hedge        hedged  cost(wins)   change
+        p_model >= 0.5       1    0.61%         165.0         153.6       -11.4    -6.9%
+        p_model >= 0.9       0    0.00%         165.0         165.0         0.0     0.0%
+        sd_loss >= 2.0       3    1.82%         165.0         153.5       -11.5    -6.9%
+        p_gain >= 0.25       4    2.42%         165.0         145.7       -19.3   -11.7%
+          p_mkt >= 0.1      44   26.67%         165.0           2.7      -162.3   -98.4%
+
+  every entry: 1196 entries, 0 losers, 83 closes
+  typical win 3.85c  ->  a hedge locking -56c costs 14.5 wins
+                  rule   fires   fires%      no-hedge        hedged  cost(wins)   change
+        p_model >= 0.5       3    0.25%        1196.0        1151.0       -45.0    -3.8%
+        p_model >= 0.9       0    0.00%        1196.0        1196.0         0.0     0.0%
+        sd_loss >= 2.0      14    1.17%        1196.0        1094.9      -101.1    -8.5%
+        p_gain >= 0.25      18    1.51%        1196.0        1075.5      -120.5   -10.1%
+          p_mkt >= 0.1     159   13.29%        1196.0         485.9      -710.1   -59.4%
+
+==============================================================================
+  B -- LEAVE-ONE-CLOSE-OUT on the headline (+39%), gated,
+       one entry per market, tau 3-60.
+==============================================================================
+  438 trades, 12 losers, 118 closes
+  typical win 4.52c, typical loss 93.90c, one loss = 20.8 wins
+  p_model >= 0.5: full +68.4 wins | LOCO min +43.6 max +82.3 | 0 of 118 closes whose removal makes it <= 0
+  p_model >= 0.9: full +21.2 wins | LOCO min +10.3 max +33.1 | 0 of 118 closes whose removal makes it <= 0
+  sd_loss >= 2.0: full +60.7 wins | LOCO min +35.9 max +71.1 | 0 of 118 closes whose removal makes it <= 0
+  p_gain >= 0.25: full +40.7 wins | LOCO min +15.9 max +51.5 | 0 of 118 closes whose removal makes it <= 0
+  p_mkt >= 0.1: full -232.4 wins | LOCO min -252.0 max -214.8 | 118 of 118 closes whose removal makes it <= 0
+
+==============================================================================
+  D -- NOFILL BY CLASS. A missing book row silently UN-hedges a
+       trade. More missing on winners than losers = flattered.
+==============================================================================
+  p_model >= 0.5: losers fired 12 nofill 0 (0%) | winners fired 3 nofill 0 (0%)
+      hedge paid: losers median 62.0c (n=12), winners median 56.0c (n=3)
+  p_model >= 0.9: losers fired 12 nofill 0 (0%) | winners fired 1 nofill 0 (0%)
+      hedge paid: losers median 91.1c (n=12), winners median 52.0c (n=1)
+  sd_loss >= 2.0: losers fired 12 nofill 0 (0%) | winners fired 7 nofill 0 (0%)
+      hedge paid: losers median 60.0c (n=12), winners median 35.0c (n=7)
+  p_gain >= 0.25: losers fired 12 nofill 0 (0%) | winners fired 11 nofill 0 (0%)
+      hedge paid: losers median 60.0c (n=12), winners median 25.0c (n=11)
+  p_mkt >= 0.1: losers fired 12 nofill 0 (0%) | winners fired 98 nofill 0 (0%)
+      hedge paid: losers median 30.0c (n=12), winners median 14.0c (n=98)
+
+==============================================================================
+  E -- BREAK-EVEN RATIO, computed from the measured prices.
+==============================================================================
+  p_model >= 0.5: 12 losers saved +8.4 wins each, 3 winners cost -10.8 wins each -> BREAK-EVEN needs 1.29 losers per taxed winner; observed 4.00
+      implied break-even LOSS RATE among trades the alarm touches: 56.29%
+  p_model >= 0.9: 12 losers saved +2.8 wins each, 1 winners cost -11.9 wins each -> BREAK-EVEN needs 4.31 losers per taxed winner; observed 12.00
+      implied break-even LOSS RATE among trades the alarm touches: 81.17%
+  sd_loss >= 2.0: 12 losers saved +9.8 wins each, 7 winners cost -8.2 wins each -> BREAK-EVEN needs 0.83 losers per taxed winner; observed 1.71
+      implied break-even LOSS RATE among trades the alarm touches: 45.43%
+  p_gain >= 0.25: 12 losers saved +9.8 wins each, 11 winners cost -7.0 wins each -> BREAK-EVEN needs 0.71 losers per taxed winner; observed 1.09
+      implied break-even LOSS RATE among trades the alarm touches: 41.60%
+  p_mkt >= 0.1: 12 losers saved +13.4 wins each, 98 winners cost -4.0 wins each -> BREAK-EVEN needs 0.30 losers per taxed winner; observed 0.12
+      implied break-even LOSS RATE among trades the alarm touches: 23.03%
+
+==============================================================================
+  F -- THE LIVE CEILING IS 0.980; THE STUDY USED 0.988.
+==============================================================================
+  ceiling 0.988: 438 trades, 12 losers, typical win 4.52c, one loss = 20.8 wins; p_model>=0.5 total 176.5 -> 244.9 wins (+38.8%)
+  ceiling 0.980: 360 trades, 12 losers, typical win 5.26c, one loss = 17.8 wins; p_model>=0.5 total 134.3 -> 193.1 wins (+43.7%)

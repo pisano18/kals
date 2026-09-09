@@ -1,0 +1,29 @@
+SELF-TEST -- vfy_pinexit4
+  ok   PLANTED: depth exactly equal to size gives the fully hedged number
+  ok   NULL: depth far above size changes nothing -- the cap only ever bites
+  ok   PLANTED: half the size fillable gives exactly the midpoint (-0.75)
+  ok   PLANTED: nothing resting means the trade is not hedged at all
+  ok   unknown depth is reported as BOTH bounds, never silently as one
+  ok   a deep book means a false alarm pays its tax in full
+  ok   NULL: an empty population produces an empty ledger
+SELF-TEST PASSED
+
+==============================================================================
+  J -- THE LEDGER WITH FILLS CAPPED BY RESTING DEPTH, size 20
+==============================================================================
+  438 trades, 12 losers, typical win 4.52c
+
+              rule   no hedge   full fill capped/full capped/zero     worst
+  --------------------------------------------------------------------------
+      p_model>=0.5      176.5       244.9       240.7       204.3     -20.7
+      hedge-side depth: LOSERS median 60 (n=9 known of 12), WINNERS median 1639 (n=2 known of 3)
+      share fillable at size 20: LOSERS 86%, WINNERS 100%  <-- the asymmetry that decides it
+      p_model>=0.9      176.5       197.7       194.5       194.5     -21.7
+      hedge-side depth: LOSERS median 52 (n=12 known of 12), WINNERS median 311 (n=1 known of 1)
+      share fillable at size 20: LOSERS 87%, WINNERS 100%  <-- the asymmetry that decides it
+      sd_loss>=2.0      176.5       237.2       233.0       214.9     -20.7
+      hedge-side depth: LOSERS median 60 (n=7 known of 12), WINNERS median ? (n=0 known of 7)
+
+  'capped/full' treats an unknown depth as a full fill (the
+  study's own assumption); 'capped/zero' treats it as no fill.
+  The truth is between them and neither is chosen here.
