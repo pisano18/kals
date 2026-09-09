@@ -468,20 +468,32 @@ loss abort −$3.00. First real trade 08:00Z (BTC YES @0.992, won +0.74¢).
 
 | | |
 |---|---|
-| won / lost | **23 / 0** |
-| bank | **$158.9173** on the Crypto shard |
-| profit today | **+$7.05** |
-| biggest single trade | **+185.51¢** (SOL, 20 at 90.1¢) |
-| second biggest | +103.14¢ (BTC, 10 at 89.0¢) |
+| won / lost | **26 / 0** |
+| bank | **$161.4380** |
+| profit today | **+$9.57** |
+| best single close | **+$2.52** (three fills, 00:00Z) |
+| best single trade | +185.51¢ (SOL, 20 at 90.1¢) |
 | price paid, live | min **89.0¢**, max 99.60¢ |
 
-**The two biggest trades were the two cheapest prices.** Break-even at 90¢ is a
-10% error rate against a measured 0.90%; at 98¢ it is 2%. Cheaper wins more AND
-loses less.
+### The 00:00Z close used all three slots for the first time
 
-**Standing caveat:** at the measured 0.90% flip rate, 23 straight wins is the
-EXPECTED outcome (0.21 losses expected). Nothing about the tail has been
-observed live, and the streak is not evidence either way.
+```
+ETH  @98.0c  x20   +37.25c
+BTC  @94.7c  x20   +98.97c
+BTC  @93.8c  x20  +115.85c
+                  +252.07c  = $2.5207
+```
+
+Bank $158.9173 → **$161.4380**, reconciling to the cent, zero open positions.
+Two of the three fills were on the **same ticker**, which is exactly the case
+that overwrote itself an hour earlier and is now keyed by order id.
+
+**Every extra buy came in cheaper** — 98.0¢, then 94.7¢, then 93.8¢ — and the
+cheapest paid the most. That is the scale-in mechanism doing precisely what it
+is supposed to, and the reason cap 3 raises return while lowering ruin.
+
+**Standing caveat:** at the measured 0.90% flip rate, 26 straight wins is the
+EXPECTED outcome (0.23 losses expected). The streak is not evidence either way.
 
 ## What to check first if it starts losing
 

@@ -1596,11 +1596,23 @@ def trade_loop(a, rec, book, idx, series_index):
                                                    take_n, tk)
             if live:
                 try:
+                    # LATENCY INSTRUMENTATION, added 2026-09-08. 26% of our
+                    # orders fill NOTHING and depth is not the cause -- the
+                    # misses had 562, 107, 93, 10 and 5 contracts on offer.
+                    # We are losing a race and have never measured our own
+                    # part of it. Three numbers matter and none were recorded:
+                    # how stale the book was when we decided, how long the
+                    # round trip took, and whether misses differ from fills on
+                    # either. Pure instrumentation -- it changes no decision.
+                    _t0 = time.time()
                     out = pintake.take(CREDS["base"], CREDS["pk"],
                                        CREDS["key_id"], tk, want, price,
                                        take_n, close_s, exchange_index=exi)
-                    rec("order", ticker=tk, **{k: v for k, v in out.items()
-                                               if k != "raw"})
+                    _lat_ms = round(1000.0 * (time.time() - _t0), 1)
+                    rec("order", ticker=tk, latency_ms=_lat_ms,
+                        book_age_ms=b.get("age_ms"),
+                        index_age_s=round(iage, 2), tau_at_send=tau,
+                        **{k: v for k, v in out.items() if k != "raw"})
                     # A RETURNED REFUSAL IS AN ERROR AND MUST BE COUNTED.
                     # take() returns its violations rather than raising, so
                     # nothing here noticed. Combined with AMENDMENT 6 (a slot
