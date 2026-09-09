@@ -139,33 +139,20 @@ EDGE_FLOOR = 0.003     # AFTER fee. 0.5c -> 0.3c per
                        # Better on every dimension measured. REVERTS to
                        # 0.005 if the live flip rate exceeds 1.0%.
 SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
-MAX_PER_CLOSE = 3        # AMENDMENT 7, deployed 2026-09-08 on the operator's
-                         # instruction: "if you know the idea works then do it,
-                         # just do what's real and works."
-                         #
-                         # IT IS NOT A NEW MECHANISM. The scale-in rule has been
-                         # live since v3 and has already produced second buys on
-                         # real closes (NEAR then BTC, 21:45Z and 22:15Z). Cap 3
-                         # only lets that SAME proven rule repeat once more.
-                         #
-                         # AND THE MARGINAL TRADE IT ADDS IS THE SAFEST OF THE
-                         # CLOSE, NOT THE RISKIEST. Every extra buy must clear
-                         # IMPROVE_BY, so a third buy is at least 1.0c cheaper
-                         # than the first. Cheaper wins more AND loses less; the
-                         # break-even error rate at 89c is 11%, at 98c it is 2%.
-                         # Cap 3 therefore cannot degrade the average price paid
-                         # -- structurally, not just empirically.
-                         #
-                         # MEASURED, losses injected per close, 2.31% upper
-                         # bound, $154 bank:
-                         #   size 20 cap 2   median $271   RUINED 3.4%
-                         #   size 20 cap 3   median $304   RUINED 1.1%
-                         # More money AND a third of the ruin. What it costs is
-                         # EXPOSURE, not per-contract risk: worst close $40 -> $60.
-                         #
-                         # It saturates at 4 -- a close does not hold many
-                         # successively cheaper prices, so cap 6 and cap 8
-                         # measure identically to cap 4.
+MAX_PER_CLOSE = 2        # 3 -> 2 on 2026-09-09, and NOT because cap 3 is
+                         # wrong. Cap 3 still measures better on every number
+                         # I have. It is a BANK constraint: at size 20 cap 3 a
+                         # worst close costs $60, the deployment rail requires
+                         # a brake of at least 1.5x that, and $90 is 81% of a
+                         # $110 bank. Cap 2 keeps the operator's size at 20
+                         # with a $60 brake at 54% of the bank.
+                         # THE OPERATOR IS RIGHT THAT HALVING SIZE IS NOT A
+                         # FIX: it halves the loss AND the profit and leaves
+                         # the ratio untouched, so it diagnoses nothing. Size
+                         # goes back to 20; the cap is what gives way, because
+                         # the cap is also what concentrated three fills into
+                         # one market on the losing close.
+
 IMPROVE_BY = 0.005     # a second buy must be at least this much cheaper
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # our own size: a 0.01-contract order against a
@@ -731,14 +718,20 @@ def selftest():
     _sv7 = dict(pintake.LEDGER)
     try:
         pintake.reset_ledger()
-        _sz, _pxs = 20.0, [0.98, 0.96, 0.94]      # each clears IMPROVE_BY
+        # PRICES DERIVED FROM THE CAP, never typed. A literal [0.98,0.96,0.94]
+        # was correct at MAX_PER_CLOSE 3 and became a false alarm the instant
+        # the cap moved to 2. That is the SAME lesson as pintake's "count 2
+        # must be refused" and the scale-in rail before it: A RAIL TEST IS
+        # WRITTEN IN TERMS OF THE RAIL.
+        _sz = 20.0
+        _pxs = [round(0.98 - 0.02 * k, 4) for k in range(int(MAX_PER_CLOSE))]
         ck(len(_pxs) == MAX_PER_CLOSE,
            f"the fixture buys exactly MAX_PER_CLOSE times ({MAX_PER_CLOSE})")
         ck(all(_pxs[i] <= _pxs[i - 1] - IMPROVE_BY for i in range(1, len(_pxs))),
            "and every later buy is at least IMPROVE_BY cheaper -- so the "
            "marginal trade cap 3 adds is the CHEAPEST of the close, which is "
            "why it cannot degrade the average price paid")
-        for i, _p in enumerate(_pxs):
+        for i, _p in enumerate(_pxs):   # fills == MAX_PER_CLOSE by construction
             pintake.LEDGER["committed"] = float(
                 pintake.LEDGER["committed"]) + _p * _sz
             pintake.LEDGER["positions"][f"T{i}"] = {"n": _sz, "price": _p}
@@ -746,9 +739,9 @@ def selftest():
         ck(abs(pintake.LEDGER["committed"] - _want) < 1e-9,
            f"three fills commit ${pintake.LEDGER['committed']:.2f}, the sum of "
            f"their stakes, not three times the first")
-        ck(pintake.LEDGER["committed"] < 1.00 * _sz * MAX_PER_CLOSE,
-           f"and that is BELOW the ${1.00*_sz*MAX_PER_CLOSE:.0f} worst case the "
-           f"deployment rail sizes the brake against -- the rail is "
+        ck(pintake.LEDGER["committed"] < 1.00 * _sz * MAX_PER_CLOSE + 1e-9,
+           f"and that is at or below the ${1.00*_sz*MAX_PER_CLOSE:.0f} worst "
+           f"case the deployment rail sizes the brake against -- the rail is "
            f"conservative, as it must be")
         for i in range(len(_pxs)):
             committed_for(_pxs[i], _sz)
@@ -766,12 +759,16 @@ def selftest():
            f"the forward loss bound tolerates all three open (${_want:.2f} vs "
            f"a $-90.00 brake)")
 
+        # the position cap must leave room for MAX_PER_CLOSE fills PLUS a
+        # straggler still settling from the previous close. Expressed against
+        # the cap, so it stays true at any setting.
         class _A7b(_A7):
-            max_positions = 3
+            max_positions = int(MAX_PER_CLOSE)
         _r7 = risk_abort({"halted": False, "errors": 0}, _A7b)
         ck(_r7 is not None and "position cap" in _r7,
-           f"but --max-positions 3 would REFUSE the third plus any straggler "
-           f"from the previous close, which is why it must be 4 ({_r7})")
+           f"--max-positions equal to the cap ({MAX_PER_CLOSE:g}) REFUSES the "
+           f"last fill once a straggler is still open, which is why it must be "
+           f"at least MAX_PER_CLOSE + 1 ({_r7})")
     finally:
         pintake.LEDGER.clear()
         pintake.LEDGER.update(_sv7)
