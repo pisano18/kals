@@ -22,6 +22,69 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## THE PRICE LADDER — measured 2026-09-09, and it is the biggest finding of the project
+
+**22,568 model-confident moments, tau 3–60. The question: do CHEAP trades lose
+more often, and does it matter?**
+
+| price band | moments | closes | flips | flip rate | break-even | **margin** |
+|---|---|---|---|---|---|---|
+| 70–85¢ | 80 | 20 | 2 | 2.50% | 18.2% | **7×** |
+| 85–93¢ | 356 | 70 | 9 | 2.53% | 9.1% | 4× |
+| 93–97¢ | 1,330 | 98 | 26 | 1.95% | 4.2% | 2× |
+| 97–98¢ | 2,087 | 117 | 15 | 0.72% | 2.0% | 3× |
+| **98–100¢** | **18,712** | 132 | 99 | **0.53%** | **0.3%** | **LOSES MONEY** |
+
+### Two findings, and the second one is alarming
+
+**1. Cheap trades DO flip more often — and it does not matter.** They flip about
+5× more (2.50% vs 0.53%), but their break-even is 60× higher. Net margin at
+70–85¢ is **7×**; at 93–97¢ it is **2×**. **The cheap end is the SAFEST place we
+trade, not the riskiest.**
+
+**2. THE 98–100¢ BAND LOSES MONEY.** Flip rate 0.53% against a break-even of
+0.30%. It is not marginal, it is negative — and it holds **18,712 of 22,568
+model-confident moments, 83% of everything the model likes.** The vast majority
+of what our model calls a good bet is a bet we should never take.
+
+**This independently validates the 98.0¢ ceiling** deployed hours earlier on
+Joe's recovery argument. That argument was arithmetic; this is the outcome data
+agreeing with it from a completely different direction.
+
+### What it implies, and it is not a gate
+
+Our size is **constant regardless of price**. We stake the same on a bet with a
+2× margin as on one with a 7× margin. That is backwards.
+
+| | risk | reward | wins to recover a loss |
+|---|---|---|---|
+| a normal 96¢ trade, 20 lots | $19.20 | $0.80 | 25.8 |
+| the 22¢ SOL trade, 200 lots | $44.00 | $156.00 | **0.30** |
+
+**PROPOSED, NOT DEPLOYED: size inversely with price.** Bet large where the
+margin is 7× and small where it is 2×. This follows from Joe's own recovery
+argument and is arithmetic, not a fitted parameter.
+
+**Before deploying it needs:** the frequency of cheap offers measured properly
+(only 3 moments below 70¢ in 22,568 — the 22¢ SOL fill is genuinely rare), the
+market-impact curve applied at larger size, and a bank that can fund the worst
+case at the larger size.
+
+### The trade that prompted this
+
+2026-09-09 05:14:48Z, KXSOL15M. Model `fair = 0.0` (certain), edge 42.3¢, 200
+contracts on offer. **Bid 56¢, filled at 22¢** — swept a resting offer 34¢
+better than we asked. 20 contracts, $4.40 stake, **+$15.36, a 349% return.**
+
+**It is the same shape as the trade that lost $52.60** — a deep discount on a
+near-certainty, meaning violent disagreement with the market. Last night the
+market was right; this time we were. **What differs is not our accuracy but the
+price: at 22¢ we can be wrong 77% of the time and still profit.**
+
+**We took 20 of 200 available.**
+
+---
+
 ## MEASURED 2026-09-08 late — the hedge is WEAKER than I reported. Half of them are too thin to use.
 
 ### 32 | Is the hedge actually PURCHASABLE at the moment we need it? — **PARTIALLY. And that matters.**

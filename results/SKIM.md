@@ -128,6 +128,27 @@ is bigger than I said.
 
 ---
 
+## ⭐ THE PRICE LADDER — the biggest finding, measured 2026-09-09
+
+22,568 model-confident moments. **Cheap trades flip ~5× more often and are far
+SAFER, because break-even rises faster than the flip rate.**
+
+| price | flip rate | break-even | margin |
+|---|---|---|---|
+| 70–85¢ | 2.50% | 18.2% | **7× safe** |
+| 93–97¢ | 1.95% | 4.2% | 2× safe |
+| **98–100¢** | **0.53%** | **0.30%** | **LOSES MONEY** |
+
+**83% of everything our model likes sits in the band that loses money.** The
+98.0¢ ceiling now has outcome data behind it, not just arithmetic.
+
+**NEXT ACTION, not yet deployed: SIZE INVERSELY WITH PRICE.** We currently stake
+the same on a 2×-margin bet as a 7×-margin one. The 22¢ SOL trade had 200
+contracts available and we took 20. Needs: cheap-offer frequency (only 3 of
+22,568 moments were under 70¢), market impact at size, and a bank that funds it.
+
+---
+
 ## OPEN QUESTIONS — where pushback is worth most
 
 1. **THE RACE.** 26% of orders fill nothing. Depth is not the cause (misses had 562, 107, 93 contracts on offer). Our round trip is ~100ms whether we win or lose; misses happen on *fresher* prices. Suggests we lose to **already-resting** orders, not faster ones. Unmeasurable from tape so far.
