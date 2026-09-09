@@ -109,3 +109,32 @@ SELF-TEST PASSED
   pintake rails raised: MAX_TAKE_COUNT 10 -> 20; LOSS_ABORT $-2.00 -> $-90.00; MAX_RUN_STAKE $60.00 -> $190.00  (size 20, worst close $60.00)
   ARMED: https://api.elections.kalshi.com/trade-api/v2  key b48b406b...  stake cap $190.00
   index up: 11 ticks, 11 feeds
+  close 00:15Z: 4590 looks, 4590 decided, 4590 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXNEAR15M-26SEP082030-30 tau=15s buy YES @0.9780 fair 0.9842 edge +0.47c size 100.77 taking 20
+    ORDER -> status executed filled 20.0 @ 0.978 fee 0.0015
+  close 00:30Z: 4425 looks, best was KXNEAR15M-26SEP082030- YES @0.9730 edge +2.16c (need +0.3c) -> FIRED
+  SETTLED KXNEAR15M-26SEP082030-30 yes vs yes -> +40.98c (run realised $+0.4098)
+  SIGNAL KXNEAR15M-26SEP082045-45 tau=22s buy NO @0.9300 fair 0.0183 edge +4.72c size 10.83 taking 10.83
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXNEAR15M-26SEP082045-45 tau=22s buy NO @0.9580 fair 0.0183 edge +2.09c size 13.00 taking 13
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXNEAR15M-26SEP082045-45 tau=22s buy NO @0.9620 fair 0.0183 edge +1.72c size 60.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.962 fee 0.0025
+  SIGNAL KXNEAR15M-26SEP082045-45 tau=21s buy NO @0.9560 fair 0.0124 edge +2.87c size 60.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.956 fee 0.0029
+  SIGNAL KXNEAR15M-26SEP082045-45 tau=17s buy NO @0.5300 fair 0.0037 edge +44.88c size 60.00 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXNEAR15M-26SEP082045-45 tau=17s buy NO @0.7300 fair 0.0017 edge +25.45c size 24.00 taking 20
+    ORDER -> status partially_filled_then_canceled filled 19.0 @ 0.73 fee 0.0138
+  close 00:45Z: 1936 looks, best was KXNEAR15M-26SEP082045- NO @0.5300 edge +44.88c (need +0.3c) -> FIRED
+  *** A LOSS. run losses 1 ***
+  SETTLED KXNEAR15M-26SEP082045-45 no vs yes -> -1929.12c (run realised $-18.8814)
+  *** A LOSS. run losses 2 ***
+  SETTLED KXNEAR15M-26SEP082045-45 no vs yes -> -1917.89c (run realised $-38.0603)
+  *** A LOSS. run losses 3 ***
+  SETTLED KXNEAR15M-26SEP082045-45 no vs yes -> -1413.22c (run realised $-52.1925)
+  *** HALT: loss COUNT brake: 3 losing trades this run >= 3; stop and re-measure the flip rate
+
+  7 signals, 11088 evaluations
+  ledger {'committed': 0.0, 'filled_contracts': 79.0, 'filled_dollars': 71.78999999999999, 'fees': 0.4002, 'realised': -52.192499999999995, 'losses': 3, 'sends': 7, 'unknown': 0, 'rested': 0, 'anomalies': [], 'halt': None, 'positions': {}, 'takes': [{'status_code': 201, 'order_id': '01a08392-18a8-7c8d-a9c9-8d92ed2195e6', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.978, 'fee': 0.0015, 'fee_total': 0.03, 'client_order_id': 'pin-1788913785079-3e1bdf', 't': 1788913785.175569}, {'kind': 'pnl', 'delta': 0.4098000000000004, 'note': 'KXNEAR15M-26SEP082030-30 yes vs yes', 't': 1788913820.1423259}, {'status_code': 201, 'order_id': '01a0839f-b8f0-77f7-89e8-b94a84afb432', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1788914678121-5e3e96', 't': 1788914678.230528}, {'status_code': 201, 'order_id': '01a0839f-b8f0-776c-b180-fc41aefd8854', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1788914678283-8e60f6', 't': 1788914678.386549}, {'status_code': 201, 'order_id': '01a0839f-b8f0-70e9-959a-4ce7d2a30bbc', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.962, 'fee': 0.0025, 'fee_total': 0.05, 'client_order_id': 'pin-1788914678440-362e0b', 't': 1788914678.542566}, {'status_code': 201, 'order_id': '01a0839f-bcd8-7c7b-bc73-3630bd5c48e3', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.956, 'fee': 0.0029, 'fee_total': 0.057999999999999996, 'client_order_id': 'pin-1788914679325-1be6b2', 't': 1788914679.4043655}, {'status_code': 201, 'order_id': '01a0839f-cc78-7ae2-bba0-1b34d05bb5e4', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1788914683043-790bca', 't': 1788914683.138294}, {'status_code': 201, 'order_id': '01a0839f-cc78-78ba-9b49-56aa95b37a62', 'status': 'partially_filled_then_canceled', 'filled': 19.0, 'remaining': 0.0, 'exec_price': 0.73, 'fee': 0.0138, 'fee_total': 0.2622, 'client_order_id': 'pin-1788914683192-ab9ca9', 't': 1788914683.2952785}, {'kind': 'pnl', 'delta': -19.2912, 'note': 'KXNEAR15M-26SEP082045-45 no vs yes', 't': 1788914720.114216}, {'kind': 'pnl', 'delta': -19.1789, 'note': 'KXNEAR15M-26SEP082045-45 no vs yes', 't': 1788914735.1811821}, {'kind': 'pnl', 'delta': -14.1322, 'note': 'KXNEAR15M-26SEP082045-45 no vs yes', 't': 1788914750.1553576}]}
+  log C:\kals-repo\results\pinrun-live-20260909T000027Z.jsonl
