@@ -38,3 +38,344 @@ SELF-TEST PASSED
     index 100/275
     index 150/275
     index 200/275
+    index 250/275
+  9 indices from 275 hour-files (83s)
+  274 ticker hour-files
+
+  control: 28,479 order-book cells loaded
+  1,158 closes inside the tape window
+    ticker 25/274  positions live=40 wide=115  88s
+    ticker 50/274  positions live=81 wide=235  94s
+    ticker 75/274  positions live=136 wide=373  101s
+    ticker 100/274  positions live=219 wide=526  108s
+    ticker 125/274  positions live=282 wide=670  114s
+    ticker 150/274  positions live=333 wide=807  121s
+    ticker 175/274  positions live=379 wide=915  128s
+    ticker 200/274  positions live=413 wide=997  134s
+    ticker 225/274  positions live=471 wide=1140  140s
+    ticker 250/274  positions live=560 wide=1310  146s
+
+  panel built in 152s; skipped {'no_panel': 1242, 'ticker_file': 5}
+
+==============================================================================
+STAGE A -- THE CROSSING, MEASURED WITHOUT THE BOOK AND WITHOUT PRICES
+==============================================================================
+
+  Population: every settled market where the model reached 98% on some second
+  in tau 3-30, whether or not anything was on offer. n = 9,159 markets over
+  1,020 closes. This stage uses no prices at all, so the book cannot select it.
+
+                                                      n  lost   P(lose)             95% CI
+  index NEVER crossed K_eff after entry            8557     0    0.0000    [0.0000, 0.0004]
+  index crossed K_eff at least once                 602    18    0.0299    [0.0190, 0.0468]
+
+  EVERY loss in this sample was preceded by a crossing: 18 of 18.
+
+  THE OPERATOR'S QUESTION -- 'how often is a crossing at tau > 5 followed by
+  settlement on that same (wrong) side?'
+    crossings first seen at tau > 5s: 524; settled on the crossed side 18 times
+    = 0.0344  [95% CI 0.0218, 0.0536]
+    and if it was STILL on the wrong side at the last second: 299 cases, settled
+    on that side 17 times = 0.0569  [0.0358, 0.0892]
+
+  FIRST CROSSING, BY WHEN IT HAPPENS
+                                                      n  lost   P(lose)             95% CI
+  first crossing at tau <= 5s                        78     0    0.0000    [0.0000, 0.0469]
+  first crossing at tau 6-10s                        55     0    0.0000    [0.0000, 0.0653]
+  first crossing at tau 11-20s                      137     6    0.0438    [0.0202, 0.0923]
+  first crossing at tau 21-30s                      332    12    0.0361    [0.0208, 0.0621]
+
+  HOW LONG THE INDEX IS STILL ON THE WRONG SIDE AT THE CLOSE
+                                                      n  lost   P(lose)             95% CI
+  crossed, but came back before the close           303     1    0.0033    [0.0006, 0.0185]
+  still wrong for the last 1-2s                      61     1    0.0164    [0.0029, 0.0872]
+  still wrong for the last 3-5s                      47     1    0.0213    [0.0038, 0.1111]
+  still wrong for the last 6-10s                     54     0    0.0000    [0.0000, 0.0664]
+  still wrong for the last 11s or more              137    15    0.1095    [0.0675, 0.1728]
+
+  For comparison, the PROJECTED SETTLEMENT (locked prints + spot) crossing K_eff:
+  184 markets, 18 lost, P(lose) = 0.0978 [0.0628, 0.1493].
+
+  Ticker-quote staleness at tau=20, carried forward from the last update:
+  median 1,763 ms, p90 10,890 ms, p99 28,496 ms, over 8,908 markets.
+  Gate used here: 10,000 ms.
+
+  CONTROL -- the ticker touch against the ORDER-BOOK replay (results/pindata/rows.jsonl):
+  28,479 (market, second) cells present in both. Same price to 0.1c on 20,851 = 73.22%;
+  median absolute difference 0.000c, p90 1.000c, p99 12.000c. 0 order-book cells had no ticker quote at all.
+  The order-book replay is DELTA-ONLY (its snapshot reads the wrong keys -- SKIM open
+  item 5), so a disagreement is not automatically the ticker channel's fault.
+
+==============================================================================
+STAGE B -- LIVE WINDOW: what a hedge does to the loss distribution
+==============================================================================
+
+  Entry rule: the LIVE frozen rule (pin 0.98, edge >= 0.3c, EV >= 0.3c, ceiling 98.8c,
+  cap 2 buys/close, size 20) over tau 3-30s.
+
+  639 buys over 470 CLOSES; 15 losing buys over 13 losing closes (2.77% of closes).
+  ONE WIN = $1.5158 -- the mean profit of a profitable close, unhedged, at size 20.
+  Unhedged total $529.84; worst close -$37.50 = 24.7 WINS TO RECOVER.
+
+  MDE, STATED BEFORE THE ESTIMATES: this sample holds 13 losing closes. The worst-close
+  column is ONE observation and carries no interval.
+  A severity reduction smaller than about 54% of a loss standard deviation could not be
+  distinguished from noise at this n.
+  *** 13 losing closes is BELOW the 30-cluster floor. Nothing in this block is a
+  significance claim; it is a description of the losses this tape actually contains.
+
+  trigger               total$  worst$  worst    p5$    p1$ fire   FA FA$each   FAw FA%prof   save$ FA/sv  fill  hedge  lead
+                                         wins                                  each                 ratio  frac     px     s
+  NO HEDGE              529.84  -37.50   24.7   0.24 -11.97    -    -       -     -       -       -     -     -      -     -
+  MKT_UNDER_US          -51.08  -28.08   18.5  -4.26  -9.97  181  168    4.38   2.9   138.8  154.27  12.9  1.00  0.160    21
+  MODEL_P10             443.16  -22.22   14.7  -1.75 -10.42   53   38    5.65   3.7    40.5  128.13   2.5  1.00  0.300    19
+  MODEL_P50             487.78  -26.86   17.7   0.22 -15.15   25   10   10.98   7.2    20.7   67.75   0.7  1.00  0.610    14
+  MODEL_P90             525.14  -35.59   23.5   0.24 -13.55   18    3   17.25  11.4     9.8   47.05   0.2  0.94  0.860    12
+  MU_AND_SPOT           487.78  -26.86   17.7   0.22 -15.15   25   10   10.98   7.2    20.7   67.75   0.7  1.00  0.610    14
+  MU_CROSS              487.78  -26.86   17.7   0.22 -15.15   25   10   10.98   7.2    20.7   67.75   0.7  1.00  0.610    14
+  MU_CROSS_HOLD2        491.41  -35.33   23.3   0.22 -16.12   23    8   11.48   7.6    17.3   53.41   0.5  1.00  0.780    15
+  MU_CROSS_HOLD3        464.06  -36.00   23.8   0.22 -14.73   22    8   11.93   7.9    18.0   29.64   0.6  1.00  0.830    14
+  NEARLINE_T10_S10      342.80  -37.50   24.7  -1.09 -14.90  259  254    0.82   0.5    39.3   21.16  50.8  1.00  0.012    10
+  NEARLINE_T10_S5       408.92  -37.50   24.7  -0.24 -14.90  159  155    0.93   0.6    27.1   22.59  38.8  1.00  0.012    10
+  NEARLINE_T20_S10      211.19  -19.80   13.1  -2.19  -7.68  378  366    1.25   0.8    86.3  138.53  30.5  1.00  0.030    20
+  PRICE_DROP15          216.49  -22.22   14.7  -5.08 -15.66   60   46    8.37   5.5    72.7   71.68   3.3  0.97  0.410    18
+  PRICE_DROP30          316.69  -23.86   15.7  -4.51 -17.37   37   27    9.91   6.5    50.5   54.48   2.7  1.00  0.540    17
+  PRICE_DROP5            -5.73  -19.22   12.7  -4.85 -10.53  182  168    3.93   2.6   124.6  124.45  12.0  0.99  0.142    21
+  SPOT_CROSS            363.70  -22.22   14.7  -1.58 -10.62  190  175    1.85   1.2    61.1  157.78  11.7  1.00  0.056    13
+  SPOT_CROSS_HOLD2      423.88  -22.62   14.9  -1.04 -10.84  167  152    1.71   1.1    49.0  153.62  10.1  1.00  0.045    12
+  SPOT_CROSS_HOLD3      413.95  -24.97   16.5  -0.92 -12.38  146  132    1.84   1.2    45.9  127.22   9.4  1.00  0.045    12
+  SPOT_CROSS_HOLD5      425.63  -24.19   16.0  -0.54 -13.96  113  100    2.02   1.3    38.2   98.29   7.7  1.00  0.039    10
+
+  COLUMNS. 'worst wins' is the worst single close in WINS TO RECOVER -- the operator's
+  unit. 'FA' counts false alarms: firings on positions that went on to WIN. 'FA$each'
+  and 'FAw each' are what ONE false alarm costs, in dollars and in wins; the operator
+  said 1-5 wins is an acceptable price, so that column is the test he set. 'save$' is
+  the total rescued on positions that lost. 'fill frac' is how much of the position the
+  touch actually let us hedge. 'hedge px' is the median price paid for the other side.
+  'lead s' is the median seconds between the trigger firing and the close.
+  'FA/sv ratio' is WINNING TRADES SPOILED PER LOSS CAUGHT -- the same currency as the
+  entry gates, which cost 22-44 winners per loss avoided.
+
+  PARTIAL HEDGING BY CHOICE, not by depth: hedge only a FRACTION of the position.
+  trigger               frac   total$   worst$  worst wins  FA%prof
+  SPOT_CROSS            0.25   488.91   -28.85        19.0     15.2
+  SPOT_CROSS            0.50   446.74   -20.23        13.3     30.6
+  SPOT_CROSS            1.00   363.70   -22.22        14.7     61.1
+  SPOT_CROSS_HOLD2      0.25   504.56   -28.80        19.0     12.0
+  SPOT_CROSS_HOLD2      0.50   477.70   -20.12        13.3     24.3
+  SPOT_CROSS_HOLD2      1.00   423.88   -22.62        14.9     49.0
+  SPOT_CROSS_HOLD5      0.25   503.91   -29.19        19.3      9.6
+  SPOT_CROSS_HOLD5      0.50   477.84   -20.88        13.8     19.1
+  SPOT_CROSS_HOLD5      1.00   425.63   -24.19        16.0     38.2
+  MU_CROSS              0.25   519.63   -34.84        23.0      5.1
+  MU_CROSS              0.50   509.05   -32.18        21.2     10.3
+  MU_CROSS              1.00   487.78   -26.86        17.7     20.7
+  MU_CROSS_HOLD2        0.25   520.40   -36.84        24.3      4.3
+  MU_CROSS_HOLD2        0.50   510.89   -36.19        23.9      8.7
+  MU_CROSS_HOLD2        1.00   491.41   -35.33        23.3     17.3
+  MU_AND_SPOT           0.25   519.63   -34.84        23.0      5.1
+  MU_AND_SPOT           0.50   509.05   -32.18        21.2     10.3
+  MU_AND_SPOT           1.00   487.78   -26.86        17.7     20.7
+  MODEL_P90             0.25   528.75   -36.84        24.3      2.4
+  MODEL_P90             0.50   527.70   -36.19        23.9      4.9
+  MODEL_P90             1.00   525.14   -35.59        23.5      9.8
+
+  THE LOSS TAIL IN WINS TO RECOVER -- how many closes cost more than N wins
+  trigger               >1 win    >5   >10   >20   >40   worst
+  NO HEDGE                  11     7     4     2     0    24.7
+  SPOT_CROSS                25     6     3     0     0    14.7
+  SPOT_CROSS_HOLD2          21    10     3     0     0    14.9
+  SPOT_CROSS_HOLD5          17    10     4     0     0    16.0
+  MU_CROSS                  15    11     5     0     0    17.7
+  MU_CROSS_HOLD2            14    10     6     1     0    23.3
+  MU_AND_SPOT               15    11     5     0     0    17.7
+  MODEL_P90                 12     7     5     2     0    23.5
+
+  What each trigger means:
+    MKT_UNDER_US         the market's implied chance for our side is 10c below our model's
+    MODEL_P10            the MODEL's chance we lose has reached 10% (the earlier study's rule, for comparison)
+    MODEL_P50            the MODEL's chance we lose has reached 50% (the earlier study's rule, for comparison)
+    MODEL_P90            the MODEL's chance we lose has reached 90% (the earlier study's rule, for comparison)
+    MU_AND_SPOT          the projected settlement AND the index are both on the wrong side
+    MU_CROSS             the projected settlement (locked prints + spot) has crossed K_eff -- arithmetic, no probability
+    MU_CROSS_HOLD2       the projected settlement has been the wrong side of K_eff for 2 seconds running
+    MU_CROSS_HOLD3       the projected settlement has been the wrong side of K_eff for 3 seconds running
+    NEARLINE_T10_S10     at tau<=10s the index is within 1 sigma*sqrt(tau) of K_eff
+    NEARLINE_T10_S5      at tau<=10s the index is within 0.5 sigma*sqrt(tau) of K_eff
+    NEARLINE_T20_S10     at tau<=20s the index is within 1 sigma*sqrt(tau) of K_eff
+    PRICE_DROP15         the market's bid for our side has fallen 15c below what we paid
+    PRICE_DROP30         the market's bid for our side has fallen 30c below what we paid
+    PRICE_DROP5          the market's bid for our side has fallen 5c below what we paid
+    SPOT_CROSS           the index itself is on the wrong side of K_eff
+    SPOT_CROSS_HOLD2     the index has been on the wrong side for 2 seconds running
+    SPOT_CROSS_HOLD3     the index has been on the wrong side for 3 seconds running
+    SPOT_CROSS_HOLD5     the index has been on the wrong side for 5 seconds running
+
+  EVERY LOSING BUY IN THIS SAMPLE (first 40), and what SPOT_CROSS would have done:
+  ticker                       tau   paid   lost$  fired hedge px  hedged  saved$
+  KXXRP15M-26AUG280445-45       30  0.936  -18.80     28    0.140    20.0   17.03
+  KXXRP15M-26AUG280445-45       28  0.930  -18.69     27    0.119    20.0   17.48
+  KXNEAR15M-26AUG280830-30       7  0.270   -4.54      4    0.861    16.0    2.09
+  KXDOGE15M-26AUG291830-30      17  0.380   -7.93     14    0.870    20.0    2.44
+  KXXRP15M-26AUG300130-30       27  0.770  -15.65     26    0.160    20.0   16.61
+  KXBNB15M-26AUG300145-45       19  0.950   -9.53     17    0.750    10.0    2.37
+  KXHYPE15M-26AUG300630-30      15  0.049   -1.05      7    0.240    20.0   14.95
+  KXHYPE15M-26AUG300730-30      30  0.240   -5.06     29    0.900    20.0    1.87
+  KXBTC15M-26AUG301630-30       19  0.949  -19.05     18    0.160    20.0   16.61
+  KXNEAR15M-26AUG310200-00      24  0.949  -19.05     20    0.840    20.0    3.01
+  KXETH15M-26SEP011000-00       29  0.939  -18.86     26    0.160    20.0   16.61
+  KXETH15M-26SEP011000-00       27  0.810  -16.42     26    0.160    20.0   16.61
+  KXSOL15M-26SEP011615-15       18  0.840  -16.99     11    0.590    20.0    7.86
+  KXBTC15M-26SEP021515-15        7  0.290   -6.09      6    0.640    20.0    6.88
+  KXBTC15M-26SEP031915-15       25  0.270   -5.68     24    0.220    20.0   15.36
+
+==============================================================================
+STAGE B -- WIDE WINDOW: what a hedge does to the loss distribution
+==============================================================================
+
+  Entry rule: the LIVE frozen rule (pin 0.98, edge >= 0.3c, EV >= 0.3c, ceiling 98.8c,
+  cap 2 buys/close, size 20) over tau 3-90s.
+  THE WIDE WINDOW IS NOT THE STRATEGY. tau 31-90 is measured 3.7-10.9x overconfident
+  and is not traded. It is here because the live window contains too few losses to
+  describe a loss tail at all, and a hedge study with no losses can only measure cost.
+
+  1,474 buys over 856 CLOSES; 126 losing buys over 89 losing closes (10.40% of closes).
+  ONE WIN = $2.2674 -- the mean profit of a profitable close, unhedged, at size 20.
+  Unhedged total $-183.65; worst close -$38.66 = 17.0 WINS TO RECOVER.
+
+  MDE, STATED BEFORE THE ESTIMATES: this sample holds 89 losing closes. The worst-close
+  column is ONE observation and carries no interval.
+  A severity reduction smaller than about 21% of a loss standard deviation could not be
+  distinguished from noise at this n.
+
+  trigger               total$  worst$  worst    p5$    p1$ fire   FA FA$each   FAw FA%prof   save$ FA/sv  fill  hedge  lead
+                                         wins                                  each                 ratio  frac     px     s
+  NO HEDGE             -183.65  -38.66   17.0 -18.18 -36.25    -    -       -     -       -       -     -     -      -     -
+  MKT_UNDER_US         -927.75  -18.65    8.2  -6.10 -12.80  762  642    3.63   1.6 -1268.4 1585.30   5.3  1.00  0.160    86
+  MODEL_P10              -9.99  -26.61   11.7  -9.14 -19.69  363  237    4.91   2.2  -633.6 1337.28   1.9  1.00  0.250    68
+  MODEL_P50              14.55  -34.58   15.2 -13.95 -23.80  183   57   10.80   4.8  -335.1  813.59   0.5  1.00  0.600    55
+  MODEL_P90              53.44  -35.52   15.7 -16.68 -30.38  133    7   14.93   6.6   -56.9  341.60   0.1  1.00  0.850    42
+  MU_AND_SPOT            11.09  -34.58   15.2 -13.95 -23.80  183   57   10.86   4.8  -337.0  813.59   0.5  1.00  0.600    55
+  MU_CROSS               11.09  -34.58   15.2 -13.95 -23.80  183   57   10.86   4.8  -337.0  813.59   0.5  1.00  0.600    55
+  MU_CROSS_HOLD2         -4.69  -35.14   15.5 -14.71 -25.47  171   45   11.84   5.2  -290.2  711.84   0.4  1.00  0.660    54
+  MU_CROSS_HOLD3        -16.18  -35.52   15.7 -15.23 -27.98  168   42   11.37   5.0  -259.9  644.80   0.3  1.00  0.685    53
+  NEARLINE_T10_S10     -234.83  -38.66   17.0 -18.17 -35.81  231  182    0.55   0.2   -54.8   49.54   3.7  0.95  0.008    10
+  NEARLINE_T10_S5      -197.83  -38.66   17.0 -18.17 -36.25  141  109    0.54   0.2   -31.9   44.31   3.4  0.96  0.008    10
+  NEARLINE_T20_S10     -160.99  -38.47   17.0 -17.11 -35.49  327  257    1.03   0.5  -143.9  286.96   3.7  0.99  0.014    20
+  PRICE_DROP15         -465.83  -27.70   12.2 -10.53 -17.61  338  214    6.75   3.0  -786.7 1162.50   1.7  1.00  0.330    70
+  PRICE_DROP30         -396.11  -33.63   14.8 -14.44 -26.01  229  107    9.71   4.3  -565.7  826.33   0.9  1.00  0.510    62
+  PRICE_DROP5          -853.31  -22.62   10.0  -7.43 -15.80  706  581    3.71   1.6 -1173.1 1484.70   4.6  1.00  0.161    81
+  SPOT_CROSS             35.33  -34.58   15.2 -11.72 -23.34  307  181    4.17   1.8  -411.2  974.15   1.4  1.00  0.390    44
+  SPOT_CROSS_HOLD2       55.39  -35.14   15.5 -12.85 -24.34  281  155    4.34   1.9  -366.7  912.39   1.2  1.00  0.450    41
+  SPOT_CROSS_HOLD3       24.24  -35.52   15.7 -13.32 -25.35  268  142    4.30   1.9  -332.4  818.38   1.1  1.00  0.460    40
+  SPOT_CROSS_HOLD5       23.51  -35.33   15.6 -13.91 -25.35  238  112    4.73   2.1  -288.4  736.86   0.9  1.00  0.520    38
+
+  COLUMNS. 'worst wins' is the worst single close in WINS TO RECOVER -- the operator's
+  unit. 'FA' counts false alarms: firings on positions that went on to WIN. 'FA$each'
+  and 'FAw each' are what ONE false alarm costs, in dollars and in wins; the operator
+  said 1-5 wins is an acceptable price, so that column is the test he set. 'save$' is
+  the total rescued on positions that lost. 'fill frac' is how much of the position the
+  touch actually let us hedge. 'hedge px' is the median price paid for the other side.
+  'lead s' is the median seconds between the trigger firing and the close.
+  'FA/sv ratio' is WINNING TRADES SPOILED PER LOSS CAUGHT -- the same currency as the
+  entry gates, which cost 22-44 winners per loss avoided.
+
+  PARTIAL HEDGING BY CHOICE, not by depth: hedge only a FRACTION of the position.
+  trigger               frac   total$   worst$  worst wins  FA%prof
+  SPOT_CROSS            0.25  -126.69   -36.96        16.3   -102.6
+  SPOT_CROSS            0.50   -70.83   -36.17        16.0   -205.6
+  SPOT_CROSS            1.00    35.33   -34.58        15.2   -411.2
+  SPOT_CROSS_HOLD2      0.25  -122.99   -37.10        16.4    -91.2
+  SPOT_CROSS_HOLD2      0.50   -63.17   -36.45        16.1   -182.8
+  SPOT_CROSS_HOLD2      1.00    55.39   -35.14        15.5   -366.7
+  SPOT_CROSS_HOLD5      0.25  -130.79   -37.15        16.4    -72.0
+  SPOT_CROSS_HOLD5      0.50   -80.27   -36.54        16.1   -144.5
+  SPOT_CROSS_HOLD5      1.00    23.51   -35.33        15.6   -288.4
+  MU_CROSS              0.25  -132.77   -36.96        16.3    -84.2
+  MU_CROSS              0.50   -82.64   -36.17        16.0   -168.7
+  MU_CROSS              1.00    11.09   -34.58        15.2   -337.0
+  MU_CROSS_HOLD2        0.25  -138.90   -37.10        16.4    -72.5
+  MU_CROSS_HOLD2        0.50   -94.27   -36.45        16.1   -145.3
+  MU_CROSS_HOLD2        1.00    -4.69   -35.14        15.5   -290.2
+  MU_AND_SPOT           0.25  -132.77   -36.96        16.3    -84.2
+  MU_AND_SPOT           0.50   -82.64   -36.17        16.0   -168.7
+  MU_AND_SPOT           1.00    11.09   -34.58        15.2   -337.0
+  MODEL_P90             0.25  -122.80   -37.20        16.4    -14.2
+  MODEL_P90             0.50   -61.89   -36.64        16.2    -28.5
+  MODEL_P90             1.00    53.44   -35.52        15.7    -56.9
+
+  THE LOSS TAIL IN WINS TO RECOVER -- how many closes cost more than N wins
+  trigger               >1 win    >5   >10   >20   >40   worst
+  NO HEDGE                  87    77    36     0     0    17.0
+  SPOT_CROSS               125    50    11     0     0    15.2
+  SPOT_CROSS_HOLD2         119    57    14     0     0    15.5
+  SPOT_CROSS_HOLD5         117    59    18     0     0    15.6
+  MU_CROSS                 122    60    12     0     0    15.2
+  MU_CROSS_HOLD2           118    60    19     0     0    15.5
+  MU_AND_SPOT              122    60    12     0     0    15.2
+  MODEL_P90                 91    71    32     0     0    15.7
+
+  What each trigger means:
+    MKT_UNDER_US         the market's implied chance for our side is 10c below our model's
+    MODEL_P10            the MODEL's chance we lose has reached 10% (the earlier study's rule, for comparison)
+    MODEL_P50            the MODEL's chance we lose has reached 50% (the earlier study's rule, for comparison)
+    MODEL_P90            the MODEL's chance we lose has reached 90% (the earlier study's rule, for comparison)
+    MU_AND_SPOT          the projected settlement AND the index are both on the wrong side
+    MU_CROSS             the projected settlement (locked prints + spot) has crossed K_eff -- arithmetic, no probability
+    MU_CROSS_HOLD2       the projected settlement has been the wrong side of K_eff for 2 seconds running
+    MU_CROSS_HOLD3       the projected settlement has been the wrong side of K_eff for 3 seconds running
+    NEARLINE_T10_S10     at tau<=10s the index is within 1 sigma*sqrt(tau) of K_eff
+    NEARLINE_T10_S5      at tau<=10s the index is within 0.5 sigma*sqrt(tau) of K_eff
+    NEARLINE_T20_S10     at tau<=20s the index is within 1 sigma*sqrt(tau) of K_eff
+    PRICE_DROP15         the market's bid for our side has fallen 15c below what we paid
+    PRICE_DROP30         the market's bid for our side has fallen 30c below what we paid
+    PRICE_DROP5          the market's bid for our side has fallen 5c below what we paid
+    SPOT_CROSS           the index itself is on the wrong side of K_eff
+    SPOT_CROSS_HOLD2     the index has been on the wrong side for 2 seconds running
+    SPOT_CROSS_HOLD3     the index has been on the wrong side for 3 seconds running
+    SPOT_CROSS_HOLD5     the index has been on the wrong side for 5 seconds running
+
+  EVERY LOSING BUY IN THIS SAMPLE (first 40), and what SPOT_CROSS would have done:
+  ticker                       tau   paid   lost$  fired hedge px  hedged  saved$
+  KXBTC15M-26AUG250300-00       89  0.953  -19.12     55    0.440    20.0   10.85
+  KXBTC15M-26AUG250300-00       88  0.910  -18.31     55    0.440    20.0   10.85
+  KXXRP15M-26AUG251130-30       90  0.900  -11.78     60    0.550    13.0    5.62
+  KXXRP15M-26AUG251130-30       87  0.860  -10.42     60    0.550    12.0    5.19
+  KXHYPE15M-26AUG251300-00      87  0.965  -19.35     63    0.460    20.0   10.45
+  KXHYPE15M-26AUG251300-00      82  0.959  -19.24     63    0.460    20.0   10.45
+  KXHYPE15M-26AUG252315-15      89  0.820  -16.61     50    0.390    20.0   11.87
+  KXBTC15M-26AUG260030-30       85  0.926  -18.62     79    0.680    20.0    6.10
+  KXHYPE15M-26AUG270545-45      90  0.900  -18.13     76    0.500    20.0    9.65
+  KXHYPE15M-26AUG270600-00      90  0.950  -19.07     55    0.915    20.0    1.59
+  KXHYPE15M-26AUG270600-00      84  0.930  -18.69     55    0.915    20.0    1.59
+  KXHYPE15M-26AUG270830-30      90  0.917  -18.45     34    0.360    20.0   12.48
+  KXHYPE15M-26AUG270830-30      89  0.900  -18.13     34    0.360    20.0   12.48
+  KXZEC15M-26AUG271215-15       90  0.800  -16.22     49    0.880    20.0    2.25
+  KXXRP15M-26AUG271445-45       90  0.890  -17.94     48    0.630    20.0    7.07
+  KXXRP15M-26AUG271445-45       82  0.870  -17.56     48    0.630    20.0    7.07
+  KXBNB15M-26AUG271530-30       90  0.770  -15.65     58    0.530    20.0    9.05
+  KXXRP15M-26AUG271715-15       90  0.860  -17.37     61    0.540    20.0    8.85
+  KXXRP15M-26AUG271715-15       89  0.850  -17.18     61    0.540    20.0    8.85
+  KXBNB15M-26AUG280300-00       90  0.930  -12.15     54    0.900    13.0    1.23
+  KXBNB15M-26AUG280300-00       85  0.919  -18.48     54    0.909    20.0    1.71
+  KXNEAR15M-26AUG280400-00      90  0.850  -17.18     78    0.870    20.0    2.44
+  KXNEAR15M-26AUG280400-00      88  0.790  -16.03     78    0.870    20.0    2.44
+  KXXRP15M-26AUG280445-45       90  0.830  -16.80     28    0.140    20.0   17.03
+  KXXRP15M-26AUG280445-45       38  0.780  -15.84     28    0.140    20.0   17.03
+  KXHYPE15M-26AUG281500-00      89  0.913  -18.37     43    0.200    20.0   15.78
+  KXZEC15M-26AUG281530-30       76  0.750  -15.26     44    0.720    20.0    5.32
+  KXBTC15M-26AUG281730-30       88  0.929  -18.67     66    0.500    20.0    9.65
+  KXSOL15M-26AUG282115-15       57  0.973  -19.50     52    0.600    20.0    7.66
+  KXDOGE15M-26AUG282200-00      72  0.630  -12.93     69    0.458    20.0   10.49
+  KXBNB15M-26AUG282315-15       71  0.730  -14.88     37    0.079    20.0   18.31
+  KXZEC15M-26AUG290245-45       90  0.929  -18.67     40    0.320    20.0   13.30
+  KXZEC15M-26AUG290245-45       89  0.919  -18.48     40    0.320    20.0   13.30
+  KXZEC15M-26AUG290415-15       90  0.972  -19.48     87    0.540    20.0    8.85
+  KXZEC15M-26AUG290415-15       88  0.480   -9.95     87    0.540    20.0    8.85
+  KXBNB15M-26AUG290600-00       90  0.890  -17.94     75    0.800    20.0    3.78
+  KXBNB15M-26AUG290600-00       89  0.850  -17.18     75    0.800    20.0    3.78
+  KXBTC15M-26AUG290700-00       90  0.920  -18.50     48    0.520    20.0    9.25
+  KXDOGE15M-26AUG290700-00      55  0.840  -16.99     35    0.440    20.0   10.85
+  KXDOGE15M-26AUG290715-15      64  0.800  -16.22     30    0.760    20.0    4.54
+
+  written -> C:\kals-repo\results\pindraw\REPORT.md

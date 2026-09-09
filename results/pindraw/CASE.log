@@ -1,0 +1,133 @@
+SELF-TEST -- pindrawcase
+SELF-TEST -- pindraw
+  ok   an unhedged win pays 1 - price, minus the fee
+  ok   an unhedged loss costs the whole price, plus the fee
+  ok   hedging ALL of a 95c position at 3c locks +1.45c whatever happens
+  ok   and the hedged outcome is IDENTICAL on a win and a loss -- that identity is what makes a full hedge a certainty, not a bet
+  ok   a PARTIAL hedge of 10 of 20 recovers 968.0c of a -1906.7c loss -- the thing the earlier study never measured
+  ok   half-hedging a loser is better than not hedging and still a loss
+  ok   and on a WINNER the same hedge is pure cost -- a 90c hedge that expires worthless is the false alarm this study has to price
+  ok   a dead-flat index has zero volatility
+  ok   a +/-0.2 sawtooth gives sigma ~0.2 (0.2003)
+  ok   at tau=10 there are 9 prints still to come (9)
+  ok   settlement is the mean of the 60 prints in [close-60, close-1]
+  ok   a +1.0 step 30s before close settles at 100.5 (100.5000) -- the locked half still counts
+  ok   a second BEFORE the first quote arrived has no quote, and is not back-filled from a later one
+  ok   and the second it arrives does
+  ok   a quote is carried forward to later seconds
+  ok   and its age is measured, not assumed (1749 ms)
+  ok   planted world: the crossing trigger fires on exactly the 10 losers (10)
+  ok   planted world: the worst close falls from $19.07 to $3.29
+  ok   and in the operator's unit from 20.4 wins to 3.5 wins to recover
+  ok   on a world where the signal is perfect the hedge also makes money, so a rule that shows NO improvement here is broken
+  ok   null world: P(lose | crossing) 0.250 == P(lose | no crossing) 0.250 exactly, CI [0.175, 0.343] -- the estimator finds NOTHING where nothing is planted
+  ok   and a FAIRLY PRICED hedge on that useless trigger costs exactly the fees ($-26.2500 vs -$26.2500) -- no more, no less
+  ok   the null fires on 100 of 400 positions (100), so the test has something to be wrong about
+  ok   the live rule buys a 95c offer the model calls 99.5% ([{'tk': 'A', 'tau': 20, 'want': 'yes', 'price': 0.95, 'n': 20.0, 'fair': 0.995, 'edge': 0.04167000000000004}])
+  ok   and refuses 99.5c, which is past the price ceiling AND negative EV
+  ok   and refuses tau=45, outside the frozen window
+  ok   and refuses a 3-contract offer at size 20 (below MIN_FILL_FRAC)
+  ok   scale-in takes the second buy only when it is IMPROVE_BY cheaper ([0.95, 0.9])
+  ok   with only 7 contracts at the touch a single shot hedges 7 of 20 (7.0) -- the all-or-nothing rule scored this as ZERO and threw the position away
+  ok   and retrying each remaining second completes it (20.0)
+  ok   a 7-of-20 hedge still beats no hedge on a loser
+  ok   the trigger FIRES but a 90c hedge is refused under a 25c cap (fired at tau 29, 0 fills) -- a refusal is still a firing and must be counted as one
+  ok   and the same hedge is taken when the cap allows it
+  ok   a 15c hedge under a 25c cap turns a -$19.07 loss into $-2.25
+SELF-TEST PASSED
+  ok   pindraw's own self-test passes (this file is a thin wrapper over it and inherits every guarantee)
+  ok   the recorded -$52.60 is reproduced from the three fills ($52.60 at 59 contracts) -- if this fails the case data is wrong and nothing below can be trusted
+  ok   the settlement 2.349367 landed ABOVE K_eff 2.34915, so YES won and every NO contract paid zero
+  ok   and leg_pnl agrees on the loss ($-52.60)
+SELF-TEST PASSED
+
+  KXNEAR15M-26SEP082045-45  close 2026-09-09 00:45:00Z
+  settlement from the tape: 2.349367  (operator recorded 2.349367, difference 0.000000)
+  117 ticker updates in the last 120s
+
+   tau       spot     spot-K  side?         mu  model p(lose)  our bid  hedge px hedge size
+    40    2.34960   +0.00045  WRONG    2.34924       0.560356    0.380     0.620       26.0
+    39    2.34960   +0.00045  WRONG    2.34924       0.562704    0.380     0.620       26.0
+    38    2.34970   +0.00055  WRONG    2.34931       0.608555    0.420     0.580       20.0
+    37    2.34970   +0.00055  WRONG    2.34931       0.612928    0.610     0.390       13.0
+    36    2.34940   +0.00025  WRONG    2.34913       0.482276    0.610     0.390       10.6
+    35    2.34940   +0.00025  WRONG    2.34913       0.481500    0.570     0.430       12.0
+    34    2.34950   +0.00035  WRONG    2.34918       0.527614    0.470     0.530       12.0
+    33    2.34950   +0.00035  WRONG    2.34918       0.528901    0.470     0.530       12.0
+    32    2.34950   +0.00035  WRONG    2.34918       0.530285    0.460     0.540       18.0
+    31    2.34960   +0.00045  WRONG    2.34923       0.580568    0.510     0.490       12.0
+    30    2.34960   +0.00045  WRONG    2.34923       0.584741    0.830     0.170       60.0
+    29    2.34790   -0.00125     ok    2.34841       0.034184    0.890     0.110       31.0
+    28    2.34780   -0.00135     ok    2.34837       0.020470    0.680     0.320       27.0
+    27    2.34830   -0.00085     ok    2.34859       0.062710    0.840     0.160       23.0
+    26    2.34830   -0.00085     ok    2.34859       0.052195    0.870     0.130       11.0
+    25    2.34830   -0.00085     ok    2.34859       0.042048    0.850     0.150       24.0
+    24    2.34840   -0.00075     ok    2.34863       0.043924    0.870     0.130       27.0
+    23    2.34830   -0.00085     ok    2.34859       0.025225    0.890     0.110       38.0
+    22    2.34830   -0.00085     ok    2.34859       0.018120    0.890     0.110       52.0
+    21    2.34830   -0.00085     ok    2.34859       0.012234    0.901     0.099       34.0
+    20    2.34840   -0.00075     ok    2.34863       0.011319    0.900     0.100        5.0
+    19    2.34870   -0.00045     ok    2.34872       0.021740    0.907     0.093       36.0
+    18    2.34840   -0.00075     ok    2.34863       0.003681    0.923     0.077       66.0
+    17    2.34840   -0.00075     ok    2.34863       0.001709    0.640     0.360       60.0
+    16    2.35050   +0.00135  WRONG    2.34919       0.593600    0.520     0.480       46.0
+    15    2.35040   +0.00125  WRONG    2.34917       0.541720    0.500     0.500       47.0
+    14    2.35180   +0.00265  WRONG    2.34949       0.989897    0.160     0.840       60.0
+    13    2.35170   +0.00255  WRONG    2.34947       0.992693    0.120     0.880       60.0
+    12    2.35150   +0.00235  WRONG    2.34943       0.992280    0.057     0.943       44.0
+    11    2.35150   +0.00235  WRONG    2.34943       0.997253    0.058     0.942       24.0
+    10    2.35150   +0.00235  WRONG    2.34943       0.999375    0.060     0.940       26.0
+     9    2.35130   +0.00215  WRONG    2.34940       0.999669    0.050     0.950       77.0
+     8    2.35130   +0.00215  WRONG    2.34940       0.999980    0.022     0.978        1.0
+     7    2.35140   +0.00225  WRONG    2.34941       1.000000    0.031     0.969       60.0
+     6    2.35130   +0.00215  WRONG    2.34940       1.000000    0.008     0.992       60.0
+     5    2.35150   +0.00235  WRONG    2.34942       1.000000    0.006     0.994       52.0
+     4    2.35080   +0.00165  WRONG    2.34937       1.000000    0.000     1.000        0.0
+     3    2.35080   +0.00165  WRONG    2.34937       1.000000    0.000     1.000        0.0
+     2    2.35060   +0.00145  WRONG    2.34937       1.000000    0.000     1.000        0.0
+     1    2.35060   +0.00145  WRONG    2.34937       1.000000    0.000     1.000        0.0
+
+  WHAT EACH TRIGGER WOULD HAVE DONE (position: 59 NO contracts)
+  trigger              fires at tau  hedge px  hedged  result $  vs -52.60
+  MKT_UNDER_US                   17     0.360    40.0    -27.65     +24.95
+  MODEL_P10                      16     0.480    59.0    -22.95     +29.65
+  MODEL_P50                      16     0.480    59.0    -22.95     +29.65
+  MODEL_P90                      14     0.840    59.0    -43.72      +8.88
+  MU_AND_SPOT                    16     0.480    59.0    -22.95     +29.65
+  MU_CROSS                       16     0.480    59.0    -22.95     +29.65
+  MU_CROSS_HOLD2                 15     0.500    59.0    -24.13     +28.47
+  MU_CROSS_HOLD3                 14     0.840    59.0    -43.72      +8.88
+  NEARLINE_T10_S10                0       nan     0.0    -52.60      +0.00
+  NEARLINE_T10_S5                 0       nan     0.0    -52.60      +0.00
+  NEARLINE_T20_S10               20     0.095    40.0    -16.63     +35.97
+  PRICE_DROP15                   17     0.400    59.0    -18.10     +34.50
+  PRICE_DROP30                   17     0.520    59.0    -24.79     +27.82
+  PRICE_DROP5                    21     0.225    59.0     -7.17     +45.43
+  SPOT_CROSS                     16     0.480    59.0    -22.95     +29.65
+  SPOT_CROSS_HOLD2               15     0.500    59.0    -24.13     +28.47
+  SPOT_CROSS_HOLD3               14     0.840    59.0    -43.72      +8.88
+  SPOT_CROSS_HOLD5               12     0.943    59.0    -49.46      +3.14
+
+  AND WITH A PRICE CAP ON THE HEDGE -- 'only buy the other side if it is cheap',
+  which is the operator's idea in its original form:
+  trigger                cap  hedged  result $  vs -52.60
+  SPOT_CROSS              5c     0.0    -52.60      +0.00
+  SPOT_CROSS             10c     0.0    -52.60      +0.00
+  SPOT_CROSS             25c     0.0    -52.60      +0.00
+  SPOT_CROSS             50c    59.0    -22.95     +29.65
+  SPOT_CROSS            none    59.0    -22.95     +29.65
+  MU_CROSS                5c     0.0    -52.60      +0.00
+  MU_CROSS               10c     0.0    -52.60      +0.00
+  MU_CROSS               25c     0.0    -52.60      +0.00
+  MU_CROSS               50c    59.0    -22.95     +29.65
+  MU_CROSS              none    59.0    -22.95     +29.65
+  MODEL_P90               5c     0.0    -52.60      +0.00
+  MODEL_P90              10c     0.0    -52.60      +0.00
+  MODEL_P90              25c     0.0    -52.60      +0.00
+  MODEL_P90              50c     0.0    -52.60      +0.00
+  MODEL_P90             none    59.0    -43.72      +8.88
+
+  'vs -52.60' is dollars better (+) or worse (-) than what actually happened.
+  Every one of these assumes we WIN THE RACE for the hedge at the displayed touch,
+  which is the same assumption the entry backtest makes and the same one that is
+  wrong 26% of the time on entries.
