@@ -1,0 +1,271 @@
+==============================================================================
+pinscale -- is the SCALE-IN RULE the problem, or is CONCENTRATION?
+==============================================================================
+
+THE HYPOTHESIS: 'the scale-in rule reads a collapsing price as a
+discount and buys more.'  If true, LATER buys lose more often than
+FIRST buys.  Everything below tries to refute that.
+
+------------------------------------------------------------------------------
+POPULATION
+------------------------------------------------------------------------------
+  LIVE window tau 3-30s: 1,196 available trades, 83 closes,
+    0 flips among 136 buys.
+    ZERO flips -> every loss-rate question is 0/n here.  Unusable.
+
+  WIDE window tau 3-60s (used for everything below):
+    rows.jsonl CANNOT hold tau > 60: with more than 60s to run no
+    settlement print is locked yet and pindata.partial() returns None.
+    'tau up to 200' is pindata's argument default, not the data.
+    tau 31-60 is a HARDER world -- the model is 3.7x overconfident at
+    31-45s and 10.9x at 46-60s -- so rates here are ~4x live.  This is
+    a STRESS population.  No number below is a live forecast.
+
+==============================================================================
+Q1  LOSS RATE BY BUY INDEX -- does the scale-in rule buy worse trades?
+==============================================================================
+
+  MDE FIRST, before any estimate.  Comparing 'the first buy lost' over
+  118 closes with 'any later buy lost' over 91 closes, at a base
+  rate of 3.39%, one-sided alpha 0.05, 80% power:
+    MDE = +8.8 percentage points (3.4% -> 12.2%, a 3.6x rise).
+    ANYTHING SMALLER IS INVISIBLE HERE.  A doubling of the
+    later-buy loss rate would NOT be detected by this sample.
+
+  buy index   buys   flips   loss rate   closes   95% upper   mean price
+      1        118       4      3.39%     118       7.59%       96.18c
+      2         91       6      6.59%      91      12.60%       92.87c
+      3         46       0      0.00%      46       6.30%       90.29c
+      4         19       0      0.00%      19      14.59%       85.58c
+
+  Clustered by close, ONE observation per close (hard rule 4):
+    first buy lost             4 / 118 closes = 3.39%
+    ANY later buy lost         6 /  91 closes = 6.59%
+    difference               +3.20 pp   z = +1.08   cluster bootstrap 95% CI [-2.64, +9.55] pp
+
+  MATCHED, on the SAME closes -- this separates 'later buys are worse'
+  from 'closes that produce later buys are worse closes':
+    of the 91 closes that produced a later buy,
+      the FIRST buy lost on 3; a LATER buy lost on 6.
+
+  VERDICT: NO DETECTABLE DIFFERENCE.  My hypothesis is NOT
+  supported by this tape.  Given the MDE above that is 'no
+  evidence', not 'no effect' -- a real effect smaller than the
+  MDE would look exactly like this.
+
+==============================================================================
+Q2  CONDITIONAL ON THE PRICE DROP THAT QUALIFIED THE BUY
+==============================================================================
+  Tonight's third buy came after a 22.6c drop (95.6c -> 73.0c).  Is a
+  big drop more dangerous than a small one?
+
+  drop bucket    buys  flips   loss rate   closes   mean price   median market/model
+      0.5-1c      32      0      0.00%       27      95.68c                 5x
+        1-3c      50      3      6.00%       42      92.86c                 7x
+       3-10c      59      2      3.39%       49      90.68c                 7x
+        10c+      15      1      6.67%       15      78.40c                16x
+
+  'market/model' is how many times the MARKET's implied chance we lose
+  (1 - price) exceeds the MODEL's.  The MEDIAN is shown because the
+  model's p_flip runs to 1e-60 on a dead-flat index, so the mean of the
+  ratio is meaningless.  Tonight's third buy was 73.0c with a model
+  p(lose) of 0.23%, so the market said 27.0% -- a ratio of 117x.
+
+  Pooled: small drops (<3c) 3.66% of 82 buys over 56 closes;
+          big drops (>=3c) 4.05% of 74 buys over 61 closes.
+  one-sided z (big > small) = +0.13  -- not significant
+  With 4 buckets, the multiple-looks threshold for alpha 0.05 is
+  |z| >= 2.24 (Bonferroni), not 1.64.
+
+==============================================================================
+Q3  THE CORRELATION THAT ACTUALLY HURT US
+==============================================================================
+  closes with >= 2 buys (cap 3):            91
+  ... all buys on ONE market, as tonight:   8  (8.8%)
+  most buys landing on a single market:     {1: 86, 2: 28, 3: 4}
+
+  *** A DEFECT THE RULE ALLOWS, FOUND WHILE MEASURING THIS ***
+  Times the rule bought BOTH SIDES of the SAME market in one close: 3
+  pinrun keys `fired` by CLOSE, so the improve test compares a raw
+  price against the cheapest paid anywhere in that close -- across
+  markets AND across sides.  Every eligible price is above 50c, so
+  YES + NO on one market always costs MORE than the $1.00 it pays.
+    KXETH15M-26SEP041215-15  YES @98.3c then  NO @90.8c  = 189.1c for $1.00  -> locked -89.1c/contract
+    KXETH15M-26SEP041215-15  YES @96.5c then  NO @90.8c  = 187.3c for $1.00  -> locked -87.3c/contract
+    KXBTC15M-26SEP041830-30   NO @87.0c then YES @86.0c  = 173.0c for $1.00  -> locked -73.0c/contract
+
+  HOW CORRELATED ARE TWO BUYS IN THE SAME CLOSE, REALLY?
+  (first eligible offer per market per close -- the one we would buy)
+    market-closes measured           438
+    marginal loss rate               2.74%
+    cross-market pairs in a close    760
+    both lost                        2
+    exactly one lost                 41
+    P(the OTHER market also loses | this one loses) = 8.9%
+    SAME market, same side:          100.0%, by definition
+
+  pinstress.simulate() assumes that number is 100% for every pair in a
+  close.  Measured, it is 8.9% across markets and 100% within one.
+  So the model that authorised cap 3 CANNOT TELL tonight's shape (3
+  buys, 1 market) apart from the ordinary shape (3 buys, 3 markets).
+
+  THE COUNTERFACTUAL RULE: up to 3 buys per close, AT MOST ONE PER
+  MARKET, improve rule unchanged.  Size 20 contracts.
+
+  rule                     buys  closes   realised    worst   sd/close    E@0.90%    E@2.31%
+  LIVE cap3 (any mkt)      255    118  $    73.71  $ -37.31  $    6.40  $   230.44  $   162.65
+  cap3, 1 per market       227    118  $    80.24  $ -19.68  $    5.01  $   201.75  $   141.45
+  LIVE cap2 (any mkt)      209    118  $    -6.91  $ -39.09  $    6.70  $   157.80  $   102.52
+
+  One-per-market gives up 12.4% of expected profit at 0.90% and 13.0% at 2.31%,
+  and buys a worst close of $-19.68 instead of $-37.31 and a per-close sd of $5.01 instead of $6.40.
+
+==============================================================================
+Q4  THE CAP SWEEP, RE-RUN WHERE LOSSES EXIST
+==============================================================================
+  The decision to deploy cap 3 came from a sweep on the tau 3-30
+  window, which has ZERO flips, with losses injected at a rate that is
+  the same for every buy.  Under that model a later (and therefore
+  cheaper) buy has strictly higher EV, so a higher cap CANNOT lose.
+  The self-test proves that monotonicity.  Here the same sweep runs on
+  real flips, and then on injected flips with the MEASURED correlation.
+
+  rule                     buys  closes   realised    worst   sd/close    E@0.90%    E@2.31%
+  cap1                     118    118  $    -1.84  $ -19.68  $    3.68  $    58.33  $    27.27
+  cap2                     209    118  $    -6.91  $ -39.09  $    6.70  $   157.80  $   102.52
+  cap3                     255    118  $    73.71  $ -37.31  $    6.40  $   230.44  $   162.65
+  cap4                     274    118  $   125.42  $ -37.31  $    6.66  $   278.73  $   205.58
+
+  ACCOUNT SIMULATION.  Bank $154.33, size 20, brakes: -$90 realised and 3 losing trades.
+  3,000 draws per cell.  Two correlation models:
+    ASSUMED  co-flip 100%   -- what pinstress used
+    MEASURED co-flip 8.9% across markets, 100% within one -- what the tape says
+
+  flip rate 0.90% (measured)
+    model      cap   median $    mean $    5th %ile   halted   ruined   mean worst close
+    ASSUMED    1    $   58.16  $   56.33   $    2.78     9.6%     0.0%   $ -12.40
+    ASSUMED    2    $  157.09  $  142.95   $    6.85    27.0%     0.0%   $ -21.64
+    ASSUMED    3    $  108.02  $  114.78   $  -39.48    65.6%     0.0%   $ -21.10
+    ASSUMED    4    $  141.80  $  145.10   $  -38.94    66.6%     0.0%   $ -21.36
+    MEASURED   1    $   58.16  $   56.83   $    5.17     9.0%     0.0%   $ -12.15
+    MEASURED   2    $  158.90  $  138.68   $   10.44    31.7%     0.0%   $ -17.73
+    MEASURED   3    $   48.17  $   73.45   $  -36.41    84.4%     0.0%   $ -19.91
+    MEASURED   4    $   61.79  $   94.75   $  -35.23    85.7%     0.0%   $ -19.84
+
+  flip rate 2.31% (95% upper bound)
+    model      cap   median $    mean $    5th %ile   halted   ruined   mean worst close
+    ASSUMED    1    $   22.60  $   21.74   $  -30.05    52.5%     0.0%   $ -18.00
+    ASSUMED    2    $   57.68  $   67.89   $  -35.75    75.7%     0.0%   $ -31.92
+    ASSUMED    3    $    2.96  $   34.32   $  -44.41    93.8%     0.0%   $ -25.34
+    ASSUMED    4    $   16.72  $   50.55   $  -43.23    94.9%     0.0%   $ -25.59
+    MEASURED   1    $   21.92  $   21.91   $  -29.53    52.7%     0.0%   $ -18.09
+    MEASURED   2    $   50.29  $   58.02   $  -33.09    84.2%     0.0%   $ -22.72
+    MEASURED   3    $   -6.14  $    7.92   $  -44.41    99.4%     0.0%   $ -21.47
+    MEASURED   4    $    7.62  $   18.91   $  -43.23    99.7%     0.0%   $ -21.81
+
+  And the same account walk for the one-per-market variant at the
+  measured correlation, which is the only place the rules can differ:
+    rule                     median $   5th %ile   halted   mean worst close
+    cap3 any market  @0.90%   $   42.51  $  -36.26    85.0%   $ -19.79
+    cap3 1 per market @0.90%   $  200.24  $   34.58    34.5%   $ -16.86
+    cap3 any market  @2.31%   $   -6.14  $  -44.41    99.2%   $ -21.70
+    cap3 1 per market @2.31%   $   70.23  $  -25.39    88.6%   $ -20.16
+
+==============================================================================
+Q5  WHY THE CAP RANKING MOVED: THE 3-LOSS BRAKE AND CAP 3 WERE NEVER
+    TESTED TOGETHER
+==============================================================================
+  pinstress.simulate() halts on DOLLARS only (`realised <= loss_abort`).
+  The loss-COUNT brake -- 3 losing trades, then stop -- was written
+  into LOSS_PLAN.md and deployed AFTER that sweep ran.  Ablation on one
+  population, so only the brake and the correlation change:
+
+    brakes           correlation   cap   median $   5th %ile   halted
+    $ only         ASSUMED       2   $  157.09  $   87.90     0.1%
+    $ only         ASSUMED       3   $  193.71  $  104.71     0.9%
+    $ only         MEASURED      2   $  158.90  $  100.20     0.0%
+    $ only         MEASURED      3   $  193.71  $  123.71     0.0%
+    $ + 3 losses     ASSUMED       2   $  157.09  $    6.85    27.0%
+    $ + 3 losses     ASSUMED       3   $  108.02  $  -39.48    65.6%
+    $ + 3 losses     MEASURED      2   $  158.90  $   10.44    31.7%
+    $ + 3 losses     MEASURED      3   $   48.17  $  -36.41    84.4%
+
+  With pinstress's brakes, cap 3 beats cap 2 -- this file REPRODUCES
+  the number cap 3 was deployed on.  Add the brake that is actually
+  live and the ranking reverses ON THIS POPULATION.
+
+  *** AND NOW THE CHECK THAT NARROWS THAT CLAIM.  The wide window
+  admits ~2x the buys per close, so it halts far more often than the
+  live window would.  The SAME ablation on the tau 3-30 buy structure
+  -- the population cap 3 was actually decided on, with losses injected
+  so the zero-flip problem does not bite: ***
+
+    live-window cap 1: 82 buys over 82 closes, at most 1 in a close, 0 all-one-market
+    live-window cap 2: 122 buys over 82 closes, at most 2 in a close, 15 all-one-market
+    live-window cap 3: 136 buys over 82 closes, at most 3 in a close, 12 all-one-market
+    live-window cap 4: 141 buys over 82 closes, at most 4 in a close, 12 all-one-market
+
+    brakes           correlation   cap   median $   5th %ile   halted
+    $ only         ASSUMED       2   $  117.29  $   66.29     0.0%
+    $ only         ASSUMED       3   $  146.81  $   86.81     0.0%
+    $ only         MEASURED      2   $  117.29  $   76.29     0.0%
+    $ only         MEASURED      3   $  146.81  $   86.81     0.0%
+    $ + 3 losses     ASSUMED       2   $  117.29  $    6.23    13.9%
+    $ + 3 losses     ASSUMED       3   $  146.81  $   -4.18    19.3%
+    $ + 3 losses     MEASURED      2   $  117.29  $   15.99    13.4%
+    $ + 3 losses     MEASURED      3   $  146.81  $   27.95    15.3%
+
+  ON THE LIVE WINDOW CAP 3 STILL WINS THE MEDIAN, brake or no brake.
+  So cap 3 is NOT refuted, and I am not going to say it is.  What the
+  brake costs cap 3 is TAIL and UPTIME, not median profit.  The wide-
+  window reversal above is driven by trade COUNT, not by cap 3 being
+  a worse rule, and quoting it as 'cap 3 is wrong' would be an error.
+
+  THE MECHANISM.  The brake counts TRADES; the unit of information is a
+  CLOSE.  How many losing TRADES one losing CLOSE delivers:
+    LIVE cap3 (any market)   {1: 6, 2: 2}
+    cap3, 1 per market       {1: 8}
+
+    cap 1: at most 1 losing trades from one close; 0 closes put every buy on one market
+    cap 2: at most 2 losing trades from one close; 16 closes put every buy on one market
+    cap 3: at most 3 losing trades from one close; 8 closes put every buy on one market
+    cap 4: at most 4 losing trades from one close; 7 closes put every buy on one market
+
+  LOSS_PLAN.md calls three losses 'roughly a 1% event' at the 0.90%
+  rate.  That arithmetic treats three losing TRADES as three
+  independent draws.  Under cap 3 with same-market repeats they can be
+  ONE draw, which is what happened live: three fills on KXNEAR15M,
+  three losing trades, the whole brake budget spent by a single close.
+
+  THE COST OF ONE-PER-MARKET, in trades:
+    refused 36 buys (2 of them losers); admitted 8 replacements (0 losers).
+    net 26 WINNING trades given up for 2 losses avoided = 13 winners refused per loss avoided.
+    profit destroyed: E@0.90% $230.44 -> $201.75 = -$28.69 over 118 closes = -$0.243 per close.
+
+  AND WHERE THAT BENEFIT ACTUALLY COMES FROM -- it is the brake, not
+  better trades.  With the loss-count brake switched OFF the two rules
+  are within a few percent of each other:
+    cap3 any market   brake OFF median $  193.71 (halt  0.1%)  |  brake ON median $   42.51 (halt 85.0%)
+    cap3 1 per market  brake OFF median $  200.24 (halt  0.0%)  |  brake ON median $  200.24 (halt 34.5%)
+  One-per-market's median is UNCHANGED by the brake, because it can
+  never spend more than one unit of the brake budget on one close.
+
+  TONIGHT AGAINST THIS SAMPLE.  The five worst closes in the 118:
+    ['$-37.31', '$-33.19', '$-18.69', '$-18.13', '$-18.06']
+    tonight, live: -$52.60.  Worse than every close in the sample, and
+    88% of the $60 modelled worst case for one close.
+
+==============================================================================
+WHAT THIS DOES NOT MEASURE
+==============================================================================
+  * tau 31-60 is not the live window.  Rates here are ~4x live and the
+    RANKING of rules is what transfers, not the levels.
+  * Only a handful of closes in this sample contain any loss at all, so
+    every loss-rate comparison is underpowered by the MDE printed above.
+  * pindata.Book.snapshot() reads yes_dollars/no_dollars where the tape
+    carries yes_dollars_fp/no_dollars_fp, so the replayed books are
+    delta-only and seeded empty.  That REMOVES offers, so this file
+    sees fewer buying opportunities than really existed; it cannot
+    invent one.  Conservative for opportunity count; whether it biases
+    the loss RATE either way is NOT known and is not claimed here.
+  * The race is not modelled.  26% of live orders fill nothing.

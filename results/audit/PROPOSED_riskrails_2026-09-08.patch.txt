@@ -1,0 +1,245 @@
+PROPOSED PATCH -- NOT APPLIED. pinrun.py (pid 3997812) and pintake.py are live.
+Audited against code_sha d6826548c653, which is the sha the running process
+logged in its own start record, so this is the code that is trading.
+
+Ordered by how much money each one can cost. Apply on the NEXT restart, never
+by editing the files under a live process.
+
+===============================================================================
+[1] pintake.LOSS_ABORT -- a size-1 literal that pinrun never overrides
+===============================================================================
+research/pintake.py:157
+
+-LOSS_ABORT = -2.00        # realised P&L at or below this refuses every take
++# EXPRESSED IN TERMS OF SIZE, per the repo rule. A flat -$2.00 was correct at
++# size 1 and is tripped by ONE ORDINARY LOSS at size 5 (-$4.89), after which
++# every take is refused for the life of the process -- silently, because a
++# refusal is not an error and does not halt. set_loss_abort() is called by
++# pinrun.main() so the order rail and the run rail are the SAME number.
++LOSS_ABORT = -2.00        # default for a size-1 process; see set_loss_abort
++
++def set_loss_abort(dollars, reason=""):
++    """Bind the order-stage loss rail to the run's own --loss-abort."""
++    global LOSS_ABORT
++    LOSS_ABORT = float(dollars)
++    print(f"  pintake.LOSS_ABORT set to ${LOSS_ABORT:.2f} ({reason})",
++          file=sys.stderr)
+
+research/pinrun.py, in main() under "if a.live:", after the loss-abort range
+check and before arm():
+
++        pintake.set_loss_abort(a.loss_abort, f"--loss-abort at size {a.size:g}")
++        if float(a.size) > pintake.MAX_TAKE_COUNT:
++            raise SystemExit(
++                f"--size {a.size:g} exceeds pintake.MAX_TAKE_COUNT "
++                f"{pintake.MAX_TAKE_COUNT:g}; every order would be refused at "
++                f"the wire and the run would trade nothing")
++        if float(a.size) * MAX_PER_CLOSE > pintake.MAX_RUN_STAKE:
++            raise SystemExit("size x MAX_PER_CLOSE exceeds MAX_RUN_STAKE")
+
+and log them, so the start record cannot describe a rail the process is not
+enforcing (the v8 lesson, applied to the ORDER rails as well as pinrun's own):
+
+     rec("start", ..., loss_abort=a.loss_abort,
++        pintake_loss_abort=pintake.LOSS_ABORT,
++        pintake_max_take_count=pintake.MAX_TAKE_COUNT,
++        pintake_hard_max=pintake.HARD_MAX,
++        pintake_max_run_stake=pintake.MAX_RUN_STAKE,
+         ...)
+
+===============================================================================
+[2] the settlement stake release is per-CONTRACT; the commit is per-ORDER
+===============================================================================
+research/pinrun.py:878-879, inside reconcile()
+
+     pintake.record_pnl(pnl, note=f"{tk} {want} vs {res}")
+-    pintake.LEDGER["committed"] = max(
+-        0.0, float(pintake.LEDGER.get("committed", 0.0)) - cost)
++    # RELEASE WHAT WAS COMMITTED, NOT ONE CONTRACT OF IT. _book() raised
++    # `committed` by filled x price; releasing `cost` alone leaks
++    # price x (filled - 1) per settled trade -- $3.90 at size 5 -- and turns
++    # MAX_RUN_STAKE back into a lifetime-turnover cap, which is the exact bug
++    # the comment below claims to have fixed. Release the position's OWN
++    # recorded cost, which _book() accumulated from the fills.
++    pos = (pintake.LEDGER.get("positions") or {}).get(tk) or {}
++    release = float(pos.get("cost") or (float(contracts) * cost))
++    pintake.LEDGER["committed"] = max(
++        0.0, float(pintake.LEDGER.get("committed", 0.0)) - release)
+     pintake.LEDGER["positions"].pop(tk, None)
+
+===============================================================================
+[3] two buys in one close can land on the SAME ticker and the first is lost
+===============================================================================
+research/pinrun.py -- open_pos must accumulate contracts, not overwrite a price.
+
+-    open_pos = {}            # ticker -> (close_s, want, cost) awaiting settlement
++    open_pos = {}            # ticker -> [close_s, want, contracts, cost_dollars]
+
+at the fill site (~line 1141):
+
+-                    if filled > 0:
+-                        px = out.get("exec_price")
+-                        cost = float(px) if px is not None else float(price)
+-                        open_pos[tk] = (close_s, want, cost)
++                    if filled > 0:
++                        px = out.get("exec_price")
++                        per = float(px) if px is not None else float(price)
++                        # ACCUMULATE. Two buys on one close may be the SAME
++                        # ticker: nothing checks it, and fired[close_s]["tk"]
++                        # is stored and never read. A dict assignment here
++                        # threw the first buy away, so reconcile() booked half
++                        # the loss and open_cost understated real exposure by
++                        # half. AND: `filled` is the REAL fill -- a partial
++                        # IOC filled 2 of 5 was being booked as 5.
++                        e = open_pos.setdefault(tk, [close_s, want, 0.0, 0.0])
++                        e[2] += float(filled)
++                        e[3] += float(filled) * per
+
+in reconcile():
+
+-            close_s, want, cost = open_pos[tk]
++            close_s, want, contracts, cost_d = open_pos[tk]
++            cost = cost_d / contracts if contracts else 0.0   # avg per contract
+...
+-            pnl = (float(SIZE) * ((1.0 - cost) if won else (-cost))
+-                   - billed_fee(cost, SIZE))
++            # CONTRACTS ACTUALLY FILLED, never the configured SIZE.
++            pnl = ((contracts - cost_d) if won else (-cost_d)) \
++                  - billed_fee(cost, contracts)
+
+and at the end of reconcile():
+
+-        state["open_cost"] = float(SIZE) * sum(c for (_, _, c)
+-                                               in open_pos.values())
++        state["open_cost"] = sum(e[3] for e in open_pos.values())
+
+The same-ticker case should probably just be forbidden as well, which is
+cheaper than getting the accounting right and loses nothing measured:
+
+             if prev is not None and price >= prev["best"] - IMPROVE_BY:
+                 continue
++            if prev is not None and prev["tk"] == tk:
++                continue        # one position per ticker per close
+
+===============================================================================
+[4] the forward loss bound budgets ONE take; a loop pass can fire MAX_PER_CLOSE
+===============================================================================
+research/pinrun.py:788 in risk_abort()
+
+-    if worst - 1.00 * float(SIZE) < a.loss_abort - 1e-9:
++    # risk_abort() runs ONCE at the top of the while loop; the inner for loop
++    # can fire MAX_PER_CLOSE takes before it runs again. Budgeting one take
++    # lets the run commit size*MAX_PER_CLOSE against a bound that reserved
++    # size*1. Measured at the live config (size 5, MAX_PER_CLOSE 2,
++    # --loss-abort -21.00): it keeps trading at realised -$16.00 and can then
++    # commit $9.88, so the floor it truly enforces is -$25.90, not -$21.00.
++    headroom = 1.00 * float(SIZE) * float(MAX_PER_CLOSE)
++    if worst - headroom < a.loss_abort - 1e-9:
+
+and the position cap, for the same reason -- 4 positions are reachable at
+max_positions 3:
+
+-    if len(led.get("positions") or {}) >= a.max_positions:
++    if len(led.get("positions") or {}) + MAX_PER_CLOSE > a.max_positions:
+
+===============================================================================
+[5] a rails refusal is invisible to the abort path
+===============================================================================
+research/pinrun.py, immediately after the take() call
+
+                     out = pintake.take(...)
+                     rec("order", ticker=tk, **{...})
++                    if out.get("refused"):
++                        # The money rails said no. That is NOT a no-fill, and
++                        # today it prints the same line as one while still
++                        # incrementing state["sent"]. It must reach the abort:
++                        # otherwise a size-1-era constant silently ends trading
++                        # for the rest of a 12-hour run.
++                        state["refused"] = state.get("refused", 0) + 1
++                        state["order_errors"] = state.get("order_errors", 0) + 1
++                        print(f"    ORDER REFUSED BY THE RAILS: "
++                              f"{out['refused']}")
++                        continue
+                     filled = float(out.get("filled") or 0)
+
+===============================================================================
+[6] rails that are too LOOSE for this account
+===============================================================================
+research/pintake.py:148-155
+
+-HARD_MAX = 25.0
++# 25 contracts is $24.70 at the 98.8c price ceiling -- ONE order larger than
++# the whole -$21.00 loss abort, and 64% of the crypto shard, which read
++# $38.8255 on 2026-09-08. Express it against the shard, not as a bare count.
++SHARD_FLOOR = 38.00       # measured; re-read before raising anything here
++HARD_MAX = 15.0           # <= 0.40 * SHARD_FLOOR at a price of 1.00
+
+-MAX_RUN_STAKE = 60.00
++# $60 exceeds the shard ($38.83). A cap above the available cash cannot bind:
++# the exchange rejects for insufficient funds first, and _book() treats a 4xx
++# as a clean release with NO halt, so the process would loop on rejections
++# silently.
++MAX_RUN_STAKE = 30.00
+
+===============================================================================
+[7] the ledger-key scan has a regex hole, and two abort branches are untested
+===============================================================================
+research/pinrun.py, in selftest()
+
+-    read = set(_re.findall(r"led(?:\[|\.get\()[\"']([a-z_]+)[\"']", code_only))
++    # [a-z_]+ silently DROPS any key containing a digit or a capital: renaming
++    # "committed" -> "committed2" inside risk_abort leaves this test printing
++    # "ok" with the key absent from the scanned set (verified 2026-09-08).
++    read = set(_re.findall(r"led(?:\[|\.get\()[\"']([^\"']+)[\"']", code_only))
+
+and add the two missing behavioural cases. The position cap and the
+consecutive-error branch have NO test today, so a rename there is caught by
+nothing at all:
+
++        pintake.LEDGER.update({"realised": 0.0, "committed": 0.0,
++                               "halt": None,
++                               "positions": {"A": {}, "B": {}}})
++        s7 = risk_abort({"halted": False, "errors": 0, "open_cost": 0.0}, _A)
++        ck(s7 and "position cap" in s7, f"abort fires on the position cap ({s7})")
++        pintake.LEDGER["positions"] = {}
++        s8 = risk_abort({"halted": False, "errors": 5}, _A)
++        ck(s8 and "consecutive" in s8, f"abort fires on 5 errors ({s8})")
+
+and run the stake-release test at a size > 1, or it cannot see defect [2]:
+
+-        pintake.LEDGER["committed"] = 0.97
++        _sz = 5.0                      # NOT 1: the bug is invisible at size 1
++        pintake.LEDGER["committed"] = _sz * 0.97
+
+===============================================================================
+[8] the dust counter is unreachable, so the guard's discard is invisible
+===============================================================================
+research/pinrun.py ~line 1080
+
+-            if size < max(MIN_LEVEL, SIZE):   # dust is not a real fill
+-                continue
++            if size < max(MIN_LEVEL, SIZE):   # dust is not a real fill
++                nb = near.setdefault(close_s, _fresh_near())
++                nb["n"] += 1
++                nb["decided"] += 1
++                nb["dust"] += 1
++                continue
+
+and delete the unreachable second test twelve lines below. At size 5 the guard
+is "size < 5", so it now discards a great deal and reports dust = 0 every time,
+against the repo's own rule that a guard which discards data must print how
+much it throws away.
+
+===============================================================================
+[9] pintake's SELF-TEST PASSED banner describes constants it no longer has
+===============================================================================
+It prints "count <= 1 with a separate HARD_MAX 5" and "$5 stake ledger" while
+the constants are 10, 25 and $60. Same class as the start-record bug that hid a
+live config change: build the banner FROM the constants.
+
+-    print("SELF-TEST PASSED -- IOC only, post_only False, count <= 1 with a "
+-          "separate HARD_MAX 5,\nclose within 90 s, $5 stake ledger ...")
++    print(f"SELF-TEST PASSED -- IOC only, post_only False, count <= "
++          f"{MAX_TAKE_COUNT:g} with a separate HARD_MAX {HARD_MAX:g},\n"
++          f"close within {MAX_TAU:.0f} s, ${MAX_RUN_STAKE:.2f} stake ledger "
++          f"booked from fills, ${abs(LOSS_ABORT):.2f} loss abort ...")

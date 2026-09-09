@@ -1,0 +1,139 @@
+PROPOSED PATCH -- NOT APPLIED. pinrun.py is live (pid 3997812). Log-only change:
+touches NO gate, NO price, NO order path. Verified 2026-09-08 by audit.
+
+VERIFIED FACTS THIS PATCH ADDRESSES
+  1. Five health rejections `continue` before either `near.setdefault` site
+     (AST: setdefault at 1072 and 1083; continues at 1038 suspect-or-missing
+     book, 1040 stale book, 1043 missing/stale index, 1046 no sigma,
+     1050 fair()==None). None is counted or logged anywhere. If every look in
+     a close hits one of them, `near` has no entry for that close and
+     report_closes() emits NO close_summary -- a blind close is indistinguishable
+     from a close that never happened.
+  2. pinrun.py:1087 is DEAD CODE. Its test `size < max(MIN_LEVEL, SIZE)` is
+     textually identical to the one at :1080 whose body is `continue`, and the
+     only assignments to `size` in trade_loop are at 1054/1058/1062 (AST-checked),
+     all before :1080. `nb["dust"]` can therefore never increment. Confirmed on
+     the tape: dust == 0 in all 28 close_summary records that carry the field.
+     At --size 5 the skip threshold is max(1.0, 5.0) = 5.0 contracts, so it is
+     firing MORE often than at the size-1 era when the counter was written.
+  3. The IMPROVE_BY refusal at :1105 also has no counter (over_ceiling and
+     neg_ev do).
+
+NOT A PROBLEM (checked, do not "fix"):
+  - The book-exception path at :1034 IS logged (rec("error", where="book")) and
+    IS counted toward the 5-consecutive-errors abort.
+  - A dead-at-START index feed IS visible: rec("feeds", ticks=..., feeds=[...])
+    would read ticks 0, feeds []. A MID-RUN IndexWS thread death is close to
+    unreachable: _run()'s reconnect loop catches everything after `import
+    websockets` / make_signer, both of which run once at start.
+
+--- 1. _fresh_near(), pinrun.py:806 -------------------------------------------
+ def _fresh_near():
+     return {"best": None, "n": 0, "decided": 0, "tradeable": 0,
+-            "no_offer": 0, "undecided": 0, "dust": 0}
++            "no_offer": 0, "undecided": 0, "dust": 0,
++            # WHY a look was thrown away before it could be judged. Until
++            # 2026-09-08 all five of these were silent, so a run that could
++            # not see the market wrote NO close_summary at all and looked
++            # exactly like a market with no opportunities.
++            "book_suspect": 0, "book_stale": 0, "index_stale": 0,
++            "no_sigma": 0, "no_fair": 0, "improve_by": 0}
+
+--- 2. trade_loop, pinrun.py:1038-1051 ----------------------------------------
+ REPLACE each silent `continue` with a counted one. `nb` must be fetched
+ BEFORE the continue, which is the whole point:
+
+         b = book.best(tk)   # (exception path above is unchanged -- already logged)
++        nb = near.setdefault(close_s, _fresh_near())
+-        if not b or b.get("suspect"):
++        if not b or b.get("suspect"):
++            nb["book_suspect"] += 1
+             continue
+-        if b.get("age_ms") is None or b["age_ms"] > MAX_BOOK_AGE_MS:
++        if b.get("age_ms") is None or b["age_ms"] > MAX_BOOK_AGE_MS:
++            nb["book_stale"] += 1
+             continue
+         sec, spot, iage = idx.spot(iid)
+-        if spot is None or iage is None or iage > MAX_INDEX_AGE_S:
++        if spot is None or iage is None or iage > MAX_INDEX_AGE_S:
++            nb["index_stale"] += 1
+             continue
+         sg = idx.sigma(iid)
+-        if sg is None:
++        if sg is None:
++            nb["no_sigma"] += 1
+             continue
+         f = fair(...)
+-        if f is None:
++        if f is None:
++            nb["no_fair"] += 1
+             continue
+
+ CAUTION, and this is the one thing to get right: do NOT increment nb["n"]
+ on these paths. `looks` is the denominator every historical close_summary
+ was written against, and changing what it counts silently rebases every
+ number in results/VERSIONS.md. The health counters are a SEPARATE tally.
+ Creating the `near` entry early is safe: report_closes() handles best=None.
+
+--- 3. dust, pinrun.py:1080-1088 ----------------------------------------------
+-        if size < max(MIN_LEVEL, SIZE):   # dust is not a real fill
++        if size < max(MIN_LEVEL, SIZE):   # dust is not a real fill
++            nb["dust"] += 1               # count it HERE; the copy at :1087
++                                          # was unreachable and always read 0
+             continue
+         e = net_edge(f, price, want)
+-        nb = near.setdefault(close_s, _fresh_near())
+         nb["n"] += 1
+         nb["decided"] += 1
+         nb["tradeable"] += 1
+-        if size < max(MIN_LEVEL, SIZE):
+-            nb["dust"] += 1
++        # (dead test removed -- identical to the guard above, body unreachable)
+
+ NOTE the semantic change: `dust` goes from "always 0" to "levels skipped for
+ thin size". No historical value is invalidated, because every historical
+ value was 0 for a reason that had nothing to do with dust.
+
+--- 4. the IMPROVE_BY refusal, pinrun.py:1105 ---------------------------------
+         if prev is not None and price >= prev["best"] - IMPROVE_BY:
++            nb["improve_by"] = nb.get("improve_by", 0) + 1
+             continue
+
+--- 5. report_closes(), pinrun.py:896 -----------------------------------------
+ BOTH branches (best is None, and best is not None) must carry the new fields.
+ The best-is-None branch is the one that matters: it is the branch a blind
+ close would take.
+
++        health = dict(book_suspect=nb["book_suspect"], book_stale=nb["book_stale"],
++                      index_stale=nb["index_stale"], no_sigma=nb["no_sigma"],
++                      no_fair=nb["no_fair"], dust=nb["dust"],
++                      improve_by=nb.get("improve_by", 0))
+   ... rec("close_summary", ..., **health)   in BOTH branches
+   ... and in the printed line, so it is visible without parsing the jsonl.
+
+--- 6. a heartbeat, so a blind close is LOUD rather than merely countable -----
+ Even with 1-5, a close in which the market list itself is empty still writes
+ nothing. Add, in report_closes(), before the per-close loop is not enough;
+ add a periodic record in the main while loop (throttled to ~60 s):
+
++        if now - hb_at > 60:
++            hb_at = now
++            rec("heartbeat", watching=len(watching), markets=len(seen_markets),
++                idx_ticks=idx.stats.get("ticks", 0),
++                idx_connects=idx.stats.get("connects", 0),
++                idx_ws_error=idx.stats.get("ws_error", 0),
++                idx_feeds=len(idx.ticks),
++                considered=state.get("considered", 0),
++                signals=state.get("signals", 0))
+ idx.stats is currently written ONLY in the `end` record, so a feed that dies
+ at 17:00 is not visible until the run finishes 12 hours later.
+
+--- 7. THE SELF-TEST IS THE DELIVERABLE -------------------------------------
+ There is no self-test over the near-miss accounting today, which is exactly
+ why :1087 sat dead. Add, written RELATIVE TO THE CONSTANTS per the repo rule:
+   a) build a near-dict via _fresh_near(); assert every key report_closes()
+      emits exists in it (the 'halted'/'halt' class of bug, one level up);
+   b) plant a look with size = max(MIN_LEVEL, SIZE) - 0.01 and assert dust == 1
+      -- this test FAILS on today's code, which is the point;
+   c) plant a close where every look is suspect and assert a close_summary IS
+      emitted with book_suspect == the number of looks and best is None.

@@ -1,0 +1,162 @@
+
+==============================================================================
+pinfloor -- EMPIRICAL flip probability and the VARIABLE price ceiling
+==============================================================================
+  tape   C:\kals\kalshi_data\cfbenchmarks_value  last 331 hours, stride 61
+  rows   C:\kals-repo\results\pindata\rows.jsonl
+  rule   tau 3-30s, pin 0.98, edge >= 0.3c, EV >= 0.3c, <= 2 buys/close
+  floor  f_hat >= 0.90%  ->  ceiling never above 98.71c (today's constant)
+
+  loaded 9 indices in 120s
+    BNBUSD_RTI        158,033 standardised moves  2s
+    BRTI              158,033 standardised moves  2s
+    DOGEUSD_RTI       158,033 standardised moves  2s
+    ETHUSD_RTI        158,033 standardised moves  2s
+    HYPEUSD_RTI       158,033 standardised moves  2s
+    NEARUSD_RTI       158,033 standardised moves  2s
+    SOLUSD_RTI        158,033 standardised moves  2s
+    XRPUSD_RTI        158,033 standardised moves  2s
+    ZECUSD_RTI        158,033 standardised moves  2s
+  1,422,297 standardised moves in 172 cells (135s)
+  GUARD NULL -- what the scan threw away, on a healthy tape:
+    gap_in_future_window              6,696  (0.422% of attempts)
+    thin_sigma_window               156,816  (9.889% of attempts)
+
+  MEASURED ONE-SIDED EXCEEDANCE vs the GAUSSIAN the model uses
+  (pooled over all indices, r bucket (8, 11) = tau 9-12)
+         z     gaussian     measured      ratio
+       2.0    2.275e-02    3.159e-02       1.4x
+       2.5    6.210e-03    1.844e-02       3.0x
+       3.0    1.350e-03    1.153e-02       8.5x
+       4.0    3.167e-05    5.300e-03     167.4x
+       6.0    9.866e-10    1.642e-03 1664567.4x
+      10.0    0.000e+00    2.687e-04       huge
+      20.0    0.000e+00    2.052e-05       huge
+      28.0    0.000e+00    6.632e-06       huge
+
+  BY INDEX at z=3 (one-sided), r bucket (8, 11).
+  'anchor' is the z beyond which the curve is EXTRAPOLATED, not
+  measured; 'alpha' is the fitted Pareto index used out there.
+  'pos/neg' is the sign asymmetry -- the pooling assumes it is ~1.
+    index                     n      P(Z>3)   anchor   alpha   pos/neg
+    BNBUSD_RTI           17,574   1.062e-02     7.36    3.18     1.043
+    BRTI                 17,574   1.194e-02     7.64    3.08     1.034
+    DOGEUSD_RTI          17,574   1.012e-02     7.64    2.62     1.005
+    ETHUSD_RTI           17,574   1.032e-02     7.36    3.00     1.011
+    HYPEUSD_RTI          17,574   1.439e-02     8.25    2.95     1.051
+    NEARUSD_RTI          17,574   1.063e-02     7.36    2.97     1.042
+    SOLUSD_RTI           17,574   8.388e-03     6.56    2.92     1.042
+    XRPUSD_RTI           17,574   1.438e-02     8.91    2.56     0.983
+    ZECUSD_RTI           17,574   1.296e-02     7.36    3.26     1.002
+    POOLED              158,166   1.153e-02    13.08    3.36     1.023
+
+  rows: 28,479 from pindata, 1,506 flips (all tau, all prices;
+        the eligible tau 3-30 sample has ZERO, which is why this
+        estimator is fitted to the INDEX TAPE and not to outcomes)
+
+  CALIBRATION -- the backward-looking companion. f_hat is scored
+  against flips that ACTUALLY happened, on the whole row set. An
+  estimator that cannot find flips where they exist cannot be
+  trusted where they do not.
+          f_hat band        n   flips   realised     f_hat    gaussian
+       0.00-0.91       18,419      96      0.52%     0.90%     0.0021%
+       0.91-2.00        2,428      28      1.15%     1.38%     0.1898%
+       2.00-5.00        2,341      63      2.69%     3.26%     1.4946%
+       5.00-10.00       1,718     189     11.00%     7.25%     6.2727%
+      10.00-25.00       2,229     540     24.23%    16.12%    17.5717%
+      25.00-101.00      1,344     590     43.90%    35.95%    38.3448%
+
+==============================================================================
+  THE COMPARISON -- constant 0.90% vs variable f_hat, same live rule
+==============================================================================
+
+                                      CONSTANT         f_hat
+    closes fired                            83            80
+    buys                                   125           118
+    flips realised                           0             0
+    mean price paid (c)                  93.66         93.33
+    max price paid (c)                   98.70         98.70
+    mean f_hat applied (%)               2.049         1.895
+    E[profit]/close @0.90% (c)          +7.597        +7.887
+    E[profit]/close @f_hat (c)          +5.866        +6.420
+    E[profit]/close @2.31% (c)          +5.473        +5.807
+    E[profit] TOTAL @f_hat (c)          +486.9        +513.6
+    realised/close (c)                  +8.952        +9.214
+    realised/contract (c)               +5.944        +6.247
+    realised TOTAL (c)                  +743.0        +737.1
+    blended break-even flip (%)          5.944         6.247
+    headroom vs 2.31% bound               2.57          2.70
+
+  ('E[profit] @f_hat' values BOTH books at the per-row f_hat, so the
+   two columns are comparable. 'realised' is what the sample actually
+   did, and there are ZERO flips in it, so realised always favours
+   taking more trades and cannot decide this on its own.)
+
+  PAIRED BY CLOSE (n is closes, the unit the rule fires on). Each
+  close contributes one number: f_hat arm minus constant arm.
+    E[profit] at f_hat     mean  +0.321c/close  sd  1.111  n   83 closes  t  +2.64
+    realised (0 flips)     mean  -0.071c/close  sd  1.124  n   83 closes  t  -0.57
+
+  HOW MUCH THE CEILING ACTUALLY MOVES. Scored across every trade the
+  CONSTANT rule admits, so both arms see the same population.
+    constant ceiling            98.71c  on every trade, always
+    variable ceiling   p10 96.28c   p50 97.54c   p90 98.71c
+                       min 95.24c   max 98.71c   p10-p90 SPAN 2.43c
+    f_hat              p10 0.900%   p50 1.993%   p90 3.157%
+    at the floor (ceiling unchanged): 25 of 125 = 20.0%
+
+    coin             n      p10      p50      p90   at floor  refused
+    KXBNB15M        11   97.12c   98.02c   98.71c      27.3%     9.1%
+    KXBTC15M        24   96.33c   97.91c   98.71c      29.2%    12.5%
+    KXDOGE15M       16   96.38c   97.49c   98.71c      12.5%     0.0%
+    KXETH15M        20   96.55c   98.06c   98.71c      15.0%     5.0%
+    KXHYPE15M       13   95.42c   96.52c   98.71c      23.1%    23.1%
+    KXNEAR15M       14   96.29c   97.13c   98.18c       7.1%    21.4%
+    KXSOL15M         6   96.81c   97.54c   97.75c      16.7%    16.7%
+    KXXRP15M        12   95.37c   98.19c   98.71c      25.0%    33.3%
+    KXZEC15M         9   97.09c   98.14c   98.71c      22.2%    44.4%
+
+  WHAT THE VARIABLE FLOOR REFUSED (trades the constant rule took):
+    20 of 125 buys (16.0%), mean price 97.77c, 0 flips
+    they REALISED +41.5c in total (+2.074c per contract)
+    worth +23.5c in expectation at the CONSTANT 0.90%, and -7.0c at their own f_hat
+    (0 flips in the whole eligible sample, so 'realised' here is a
+     sample with no adverse event in it, not a verdict.)
+
+  ARTEFACT CHECK 1 -- adverse selection. The index tape has no Kalshi
+  outcomes in it, so f_hat cannot see that a near-certainty is only
+  offered cheaply when the seller may know something. If the tape's
+  own tail were the whole story, mean f_hat over the trades we take
+  would already reach the 0.90% measured on trades actually taken.
+    mean f_hat over the 125 trades the constant rule takes: 2.049%
+    measured rate on trades actually taken:                 0.900%   (3 in 333)
+    exact one-sided 95% bound on that:                      2.310%
+    -> the tape's tail is ABOVE the traded rate, so the FLOOR is not doing the work here
+    over those 125 buys f_hat expects 2.56 flips and the constant expects 1.12; we saw 0.
+    P(0 flips) = 7.5% under f_hat, 32.3% under the constant -- so f_hat is on the
+    PESSIMISTIC side of what this sample did, though not rejected by it
+    (and closes are correlated at rho~0.8, which raises both).
+
+  ARTEFACT CHECK 2 -- MATCHED TIGHTNESS. The variable floor refuses
+  trades; so does any tighter flat ceiling. If a flat ceiling that
+  refuses the SAME NUMBER of buys does just as well, then the
+  condition-dependence is cosmetic and only the tightness matters.
+    matched flat ceiling: 98.30c  (closest achievable to 118 buys)
+                                         f_hat  flat-matched
+    closes fired                            80            81
+    buys                                   118           117
+    flips realised                           0             0
+    mean price paid (c)                  93.33         93.26
+    max price paid (c)                   98.70         98.30
+    mean f_hat applied (%)               1.895         2.113
+    E[profit]/close @0.90% (c)          +7.887        +7.830
+    E[profit]/close @f_hat (c)          +6.420        +6.078
+    E[profit]/close @2.31% (c)          +5.807        +5.793
+    E[profit] TOTAL @f_hat (c)          +513.6        +492.3
+    realised/close (c)                  +9.214        +9.130
+    realised/contract (c)               +6.247        +6.321
+    realised TOTAL (c)                  +737.1        +739.5
+    blended break-even flip (%)          6.247         6.321
+    headroom vs 2.31% bound               2.70          2.74
+    PAIRED f_hat MINUS flat-matched, at f_hat: +0.259c/close  n 82 closes  t +2.04
+

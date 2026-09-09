@@ -1,0 +1,239 @@
+SELF-TEST -- pinalarmverify
+  ok   planted: one observation per market (40)
+  ok   planted: 20 of them lose
+
+  planted world -- the estimator MUST find this
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to 0                  20       20        0        0     0.00%
+    0 to +inf                  20       20       20       20   100.00%
+    top minus bottom +100.00pp, 95% CI [+100.00, +100.00]pp
+    cluster-preserving shuffle p = 0.002
+  ok   planted: top-minus-bottom is huge (+100.00pp)
+  ok   planted: and the shuffle control agrees (p=0.002)
+
+  null world -- the estimator MUST find nothing
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to 0                  20       20       10       10    50.00%
+    0 to +inf                  20       20       10       10    50.00%
+    top minus bottom +0.00pp, 95% CI [-31.31, +30.00]pp
+    cluster-preserving shuffle p = 0.594
+  ok   null: the shuffle control refuses the claim (p=0.594)
+  ok   null: and the point estimate is not large (+0.00pp)
+  ok   grid: the sample is the last row at or above the target tau (tau 31)
+  ok   grid: a market with nothing at or above the target tau is DROPPED, never sampled from later
+  ok   leave-one-out: 50% minus 0% is +50pp
+  ok   leave-one-out: drop the only loser and it is +0pp
+  ok   fold: FIRST of the second is the first delta's ask (rows.jsonl's)
+  ok   fold: LAST of the second is the last delta's ask (the replay's)
+  ok   fold: and the intra-second range brackets both
+  ok   fold: each second counts its own deltas
+  ok   fold: the two conventions give DIFFERENT velocities on the same tape (12.0 vs 10.0 c/s)
+  ok   guard: profit destroyed is the two refused winners (0.1874)
+  ok   guard: a loss costs the stake plus its fee
+  ok   guard: break-even flip rate among the refused is 10.34%
+  ok   guard: and none of the refused actually flipped
+  ok   guard: 0 of 2 has a one-sided 95% upper bound of 77.6%
+  ok   guard: a threshold nothing reaches returns nothing, not a zero
+  ok   no lookahead: deleting every row after the entry leaves the entry velocity unchanged (0.5000)
+SELF-TEST PASSED
+
+  28479 rows loaded
+
+==========================================================================
+  A. HOW MANY DAYS OF LOSSES ARE THERE? An out-of-sample split by
+     day is only possible if this number is bigger than one.
+==========================================================================
+    the entry tape spans 3 UTC days
+      2026-09-04   110 entries   29 closes   4 losers over  4 closes
+      2026-09-05   273 entries   70 closes   7 losers over  5 closes
+      2026-09-06    55 entries   19 closes   1 losers over  1 closes
+
+    the same for the whole tape, ungated:
+      2026-09-04   242 market-closes,  29 of them flip at some second
+      2026-09-05   593 market-closes,  64 of them flip at some second
+      2026-09-06   179 market-closes,   8 of them flip at some second
+
+==========================================================================
+  B. LEAVE-ONE-LOSER-OUT on the WIDE price-velocity table
+==========================================================================
+    all 12 losers in:                              +18.85pp
+    drop the most influential single loser:         -1.15pp   (KXBNB15M-26SEP051045-45, tau 37)
+    drop the most influential single CLOSE:         -1.16pp   (1788619500 = 2026-09-05)
+    and its cluster-preserving shuffle p becomes:   0.282
+
+==========================================================================
+  C. BUCKET-EDGE SENSITIVITY. The edges were chosen after the data
+     was seen, and top-minus-bottom is a function of them.
+==========================================================================
+    as published             top   5 entries  1 losers  1 losing closes -> +18.85pp
+    top edge 0.5, not 1      top  12 entries  2 losers  2 losing closes -> +15.52pp
+    top edge 2, not 1        top   3 entries  1 losers  1 losing closes -> +32.18pp
+    top edge 4 (the rule)    top   2 entries  1 losers  1 losing closes -> +48.85pp
+    one cut at zero          top  54 entries  3 losers  3 losing closes -> +4.06pp
+    symmetric quarters       top   5 entries  1 losers  1 losing closes -> +19.16pp
+
+==========================================================================
+  D. THE SAME FEATURE WHERE THERE IS POWER. One observation per
+     market-close on an EXOGENOUS grid (the last row at or above a
+     fixed tau), NO live gate. If price velocity predicts a flip
+     at all, it has to do it here, with the same sign.
+==========================================================================
+
+    --- exogenous grid at tau 30: 1013 market-closes, 17 flips over 15 closes
+
+  flip rate by PRICE VELOCITY, tau 30, no gate
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to -0.25             118       71       11       10     9.32%
+    -0.25 to 0                224      106        0        0     0.00%
+    0 to 0.25                 590      131        3        3     0.51%
+    0.25 to 1                  11       11        1        1     9.09%
+    1 to +inf                  14       14        2        2    14.29%
+    (unavailable)              56       43        0        0     0.00%
+    top minus bottom +4.96pp, 95% CI [-11.97, +26.39]pp
+    cluster-preserving shuffle p = 0.147
+
+  flip rate by DIVERGENCE, tau 30, no gate
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to 0                  32       25       10        8    31.25%
+    0 to 0.01                 823      132        2        2     0.24%
+    0.01 to 0.03               68       53        2        2     2.94%
+    0.03 to 0.08               55       43        2        2     3.64%
+    0.08 to +inf               35       30        1        1     2.86%
+    top minus bottom -28.39pp, 95% CI [-46.19, -9.26]pp
+    cluster-preserving shuffle p = 1.000
+
+    --- exogenous grid at tau 45: 1003 market-closes, 43 flips over 34 closes
+
+  flip rate by PRICE VELOCITY, tau 45, no gate
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to -0.25             158       88       15       14     9.49%
+    -0.25 to 0                254      112        3        2     1.18%
+    0 to 0.25                 513      132        7        5     1.36%
+    0.25 to 1                  14       13        4        4    28.57%
+    1 to +inf                  32       29       14       14    43.75%
+    (unavailable)              32       25        0        0     0.00%
+    top minus bottom +34.26pp, 95% CI [+17.28, +52.74]pp
+    cluster-preserving shuffle p = 0.002
+
+  flip rate by DIVERGENCE, tau 45, no gate
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to 0                  52       42       11       11    21.15%
+    0 to 0.01                 686      132        6        2     0.87%
+    0.01 to 0.03              124       69        4        4     3.23%
+    0.03 to 0.08               89       60       12       12    13.48%
+    0.08 to +inf               52       38       10       10    19.23%
+    top minus bottom -1.92pp, 95% CI [-16.44, +12.20]pp
+    cluster-preserving shuffle p = 0.656
+
+    --- exogenous grid at tau 60: 940 market-closes, 70 flips over 51 closes
+
+  flip rate by PRICE VELOCITY, tau 60, no gate
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to -0.25               0        0        0        0      nan%
+    -0.25 to 0                  0        0        0        0      nan%
+    0 to 0.25                   0        0        0        0      nan%
+    0.25 to 1                   0        0        0        0      nan%
+    1 to +inf                   0        0        0        0      nan%
+    (unavailable)             940      131       70       51     7.45%
+    a terminal bucket is empty -- no statistic
+
+  flip rate by DIVERGENCE, tau 60, no gate
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to 0                  95       63       18       17    18.95%
+    0 to 0.01                 460      129        7        4     1.52%
+    0.01 to 0.03              190       98        7        7     3.68%
+    0.03 to 0.08              118       77       14       11    11.86%
+    0.08 to +inf               77       54       24       22    31.17%
+    top minus bottom +12.22pp, 95% CI [-1.47, +26.65]pp
+    cluster-preserving shuffle p = 0.002
+
+    --- the SAME grid WITH the live gate: 73 market-closes, 0 flips over 0 closes
+
+  flip rate by PRICE VELOCITY, tau 30, live gate
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to -0.25              35       29        0        0     0.00%
+    -0.25 to 0                 20       16        0        0     0.00%
+    0 to 0.25                  12       11        0        0     0.00%
+    0.25 to 1                   3        3        0        0     0.00%
+    1 to +inf                   3        3        0        0     0.00%
+    top minus bottom +0.00pp, 95% CI [+0.00, +0.00]pp
+    cluster-preserving shuffle p = 1.000
+
+==========================================================================
+  E. THE RELAXED POPULATION with LOSING CLOSES printed. The
+     submission's table omits that column, and it is the one the
+     30-cluster floor is measured on.
+==========================================================================
+
+  RELAXED: flip rate by price velocity
+    bucket                entries   closes   losers    losCl flip rate
+    -inf to -0.25              87       62       17       16    19.54%
+    -0.25 to 0                  2        2        1        1    50.00%
+    0 to 0.25                  22       19        1        1     4.55%
+    0.25 to 1                   5        5        1        1    20.00%
+    1 to +inf                   6        6        3        3    50.00%
+    (unavailable)             497      121       26       23     5.23%
+    top minus bottom +30.46pp, 95% CI [-20.93, +80.65]pp
+    cluster-preserving shuffle p = 0.012
+
+==========================================================================
+  F. MULTIPLE LOOKS
+==========================================================================
+    pinalarm reports 4 cluster-preserving shuffle p-values and 7
+    bucket tables with bootstrap CIs on the same 12 losers.
+       1 looks -> Bonferroni threshold 0.0500; published p = 0.027 SURVIVES
+       4 looks -> Bonferroni threshold 0.0125; published p = 0.027 FAILS
+       7 looks -> Bonferroni threshold 0.0071; published p = 0.027 FAILS
+      11 looks -> Bonferroni threshold 0.0045; published p = 0.027 FAILS
+
+==========================================================================
+  G. TONIGHT'S THREE BUYS UNDER THE OTHER ASK CONVENTION.
+     The winner distribution the three buys are scored against is
+     built from rows.jsonl, whose ask is the FIRST delta of each
+     second. pinalarm's replay reports the LAST. Same tape, two
+     answers.
+==========================================================================
+    deltas 39323, negative-size events 350, snapshot levels seeded 0
+    with the snapshot seeded instead: 142 levels, negative-size events 0
+
+     tau     first      last     range           paid     v(last)    v(first)
+      22     90.9c     96.2c   90.9-96.2c          96.2c      -2.07      -2.00
+      21     96.2c     97.6c   95.6-97.6c          95.6c      -1.60      -1.57
+      17     97.5c     65.0c   42.0-97.5c          73.0c      +8.10      +8.20
+
+    v(last) is pinalarm's published number; v(first) is
+    the same quantity measured the way every winner it is
+    compared against was measured. Positive = FALLING.
+
+    THE BOUND THE INTRA-SECOND RANGE ALLOWS (paid vs the reference second's cheapest and dearest ask):
+      tau 22: fall is somewhere in [-2.07, -1.33] c/s
+      tau 21: fall is somewhere in [-1.60, -1.53] c/s
+      tau 17: fall is somewhere in [+8.10, +8.33] c/s
+
+==========================================================================
+  H. THE PROPOSED RULE. A guard pays only if the buys it refuses
+     really do flip more often than break-even. Break-even is
+     profit destroyed per refusal divided by the loss a refusal
+     avoids -- pure arithmetic, no model.
+==========================================================================
+
+    population, threshold      buys  refused  losers     base break-even   measured     95% UB
+    WIDE  all buys, >=2c/s      566       19       1    2.83%     13.27%      5.26%     14.59%
+    WIDE  all buys, >=4c/s      566        9       1    2.83%     16.72%     11.11%     28.31%
+    WIDE  all buys, >=8c/s      566        3       0    2.83%     11.71%      0.00%     63.16%
+    WIDE  buys 2-3 only, >=2c/s    128       16       0    3.12%     15.11%      0.00%     17.07%
+    WIDE  buys 2-3 only, >=4c/s    128        7       0    3.12%     20.48%      0.00%     34.82%
+    WIDE  buys 2-3 only, >=8c/s    128        3       0    3.12%     11.71%      0.00%     63.16%
+    LIVE  all buys, >=2c/s      205        6       0    0.00%     14.97%      0.00%     39.30%
+    LIVE  all buys, >=4c/s      205        0       -        -          -          -          -
+    LIVE  all buys, >=8c/s      205        0       -        -          -          -          -
+    LIVE  buys 2-3 only, >=2c/s     40        6       0    0.00%     14.97%      0.00%     39.30%
+    LIVE  buys 2-3 only, >=4c/s     40        0       -        -          -          -          -
+    LIVE  buys 2-3 only, >=8c/s     40        0       -        -          -          -          -
+
+    'break-even' is the flip rate the refused buys need to
+    carry. 'measured' is what they actually carried. '95% UB' is
+    the one-sided upper bound on 'measured' given how few
+    refusals there are -- the honest read of a zero.
+
+  DONE.

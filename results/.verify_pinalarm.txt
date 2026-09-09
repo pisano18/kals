@@ -1,0 +1,527 @@
+SELF-TEST -- pinalarm
+  ok   our side is the favoured one: ask 0.95, bid 0.94 (got 0.9500/0.9400)
+  ok   and the hedge costs 1-bid = 6c (0.0600)
+  ok   the model has SWITCHED, so the recorded 81c ask belongs to the OTHER side and ours is 20c (got 0.2000)
+  ok   and hedging now costs the recorded 81c, not 19c (0.8100)
+  ok   with no spread a switched row CANNOT be re-expressed, and is dropped rather than guessed
+  ok   a 2-sigma cushion is a 2.275% model chance of losing (2.275%)
+  ok   a negative cushion is odds-against, and a dead-flat index with the cushion already gone is a certain loss
+  ok   holding NO, the cushion is +req
+  ok   holding YES against the same row it is -req -- one second is good news for one side and bad for the other
+  ok   a 6c fall across a 6-second gap is 1.0c/s, not 2c/s -- the gap is divided out (1.0000)
+  ok   and with nothing inside the window it returns None rather than comparing across 20 seconds of silence
+  ok   the gate opens every position at the planted second (60 at tau [40])
+  ok   30 of them lose, by construction
+  ok   and every loser crosses at the planted second
+  ok   the velocity alarm finds the planted collapse: catch 100%, false alarms 0%
+  ok   and it fires 18s before the cross, not on top of it
+  ok   so the warning is usable (100%)
+  ok   a one-second warning is DETECTED (100%) and scored UNUSABLE (0%) -- accuracy is not the test
+  ok   in a world with no losers an always-on alarm destroys 143.2% of profit, which is the hand figure 143.2%
+  ok   NULL: with the price path drawn independently of the outcome the alarm fires -4pp more often on losers, 95% CI [-18, +10]pp -- it must contain zero
+  ok   NULL: and the claim-carrying statistic (usable catches minus false alarms) must NOT come back positive: -24pp, 95% CI [-42, -6]pp
+  ok   and the null world has both kinds to confuse it (41 losers, 39 winners)
+  ok   one first buy per market (10)
+  ok   a falling price produces three buys (3)
+  ok   and each is at least 0.5c cheaper than the last (96.0c, 95.0c, 94.0c)
+  ok   a flat price produces exactly one buy, never a scale-in
+  ok   the guard refuses 3 buys, 1 loser and 2 winners (3/1/2)
+  ok   two winning trades refused per loss avoided (2.0)
+  ok   profit destroyed is the two winners' P&L, fees included
+  ok   loss avoided is the loser's stake plus its fee
+  ok   and here the guard is worth it, because 90c saved beats two 10c winners given up
+  ok   with nothing above the threshold it refuses nothing and a None velocity is never refused
+  ok   break-even flip rate is cost/saving: 0.5c against 50c is 1.00%
+  ok   30 closes per arm can only detect a swing of 36pp around a 50% rate
+SELF-TEST PASSED
+
+  28479 rows loaded from C:\kals-repo\results\pindata\rows.jsonl
+  WIDE   live gate, tau 3-200                  438 positions  118 closes   12 losers over  10 closes
+  LIVE   live gate, tau 3-30                   165 positions   83 closes    0 losers over   0 closes
+  RELAX  p<=20%, price<=99.5c, no EV floor     619 positions  125 closes   49 losers over  40 closes
+
+  MDE, STATED BEFORE THE ESTIMATES, per the house rule.
+  Each CLOSE is one independent observation (nine coins share a
+  close at rho ~0.8). The WIDE window has 10 LOSING closes against
+  118 winning ones. At 80% power and alpha 0.05 the smallest
+  detectable difference in flip rate, around the base rate of
+  2.74%, is 20.5pp; around a 50% alarm rate it is 63pp.
+  THE HOUSE FLOOR IS 30 CLUSTERS AND WE HAVE 10. Nothing below is
+  a significance claim; every loser-side number is descriptive.
+
+==============================================================================
+  1. AT ENTRY -- is anything different about the ones that lose?
+==============================================================================
+  WIDE window. Every feature is built from seconds BEFORE the
+  entry, so all of it was knowable at the moment we bought.
+
+    median at entry                   winners       losers
+    divergence, pp                      3.418        4.959
+    price fall, cents/s                -0.833        0.100
+    divergence widening, pp/s           0.162        1.624
+    cushion change, sigma/s             0.184        0.174
+    cushion, sigmas                     2.353        2.691
+    model p(lose), %                    0.934        1.054
+    market p(lose), %                   4.150        6.800
+    price paid, cents                  97.000       95.400
+
+  COVERAGE, AND IT IS THE BIGGEST LIMIT ON PART 2: 183 of 438
+  entries -- and 6 of the 12 losers -- have NO price velocity at
+  all, because rows.jsonl only holds seconds where somebody was
+  offering, and there was no earlier such second within 6s. A LIVE
+  trader sees its own book feed continuously and would not have
+  this hole; this BACKTEST does, and it halves the loser sample.
+
+  FLIP RATE BY PRICE VELOCITY AT ENTRY (cents/s of FALL)
+    bucket                  entries   closes   losers flip rate
+    -inf to -0.25               174       90        2     1.15%
+    -0.25 to 0                   27       22        1     3.70%
+    0 to 0.25                    37       33        1     2.70%
+    0.25 to 1                    12       12        1     8.33%
+    1 to +inf                     5        5        1    20.00%
+    (feature unavailable)       183       96        6     3.28%
+    top bucket minus bottom: +18.85pp, 95% CI [-2.47, +65.59]pp  (closes resampled)
+    CLUSTER-PRESERVING SHUFFLE (price velocity): real +18.85pp, shuffled median -2.30pp, 95th pct +18.28pp, p = 0.027 on 400 draws
+
+  FLIP RATE BY DIVERGENCE AT ENTRY (market minus model)
+    bucket                  entries   closes   losers flip rate
+    -inf to 0                     8        8        0     0.00%
+    0 to 0.01                    33       29        0     0.00%
+    0.01 to 0.03                159       92        3     1.89%
+    0.03 to 0.08                153       81        5     3.27%
+    0.08 to +inf                 85       58        4     4.71%
+    top bucket minus bottom: +4.71pp, 95% CI [+1.11, +9.41]pp  (closes resampled)
+    CLUSTER-PRESERVING SHUFFLE (divergence): real +4.71pp, shuffled median +2.35pp, 95th pct +5.88pp, p = 0.170 on 400 draws
+
+  FLIP RATE BY PRICE PAID -- the confound divergence has to beat, because divergence is very nearly 1 minus the price
+    bucket                  entries   closes   losers flip rate
+    0 to 0.94                   109       65        4     3.67%
+    0.94 to 0.96                 58       41        3     5.17%
+    0.96 to 0.98                157       90        3     1.91%
+    0.98 to 1                   114       74        2     1.75%
+    top bucket minus bottom: -1.92pp, 95% CI [-6.53, +2.68]pp  (closes resampled)
+
+  DIVERGENCE INSIDE ONE PRICE BAND (94-98c, 215 entries, 6 losers)
+  If divergence is only price wearing a hat, it stops separating
+  anything once the price is held roughly fixed.
+
+    divergence within band
+    bucket                  entries   closes   losers flip rate
+    -inf to 0.02                 38       34        1     2.63%
+    0.02 to 0.04                100       74        3     3.00%
+    0.04 to 0.06                 60       45        1     1.67%
+    0.06 to +inf                 17       17        1     5.88%
+    top bucket minus bottom: +3.25pp, 95% CI [+0.00, +12.12]pp  (closes resampled)
+
+  FLIP RATE BY CUSHION TRAJECTORY AT ENTRY (sigma/s; negative = the required move SHRINKING)
+    bucket                  entries   closes   losers flip rate
+    -inf to -0.1                 10        8        2    20.00%
+    -0.1 to -0.02                 2        2        0     0.00%
+    -0.02 to 0.02                 3        3        0     0.00%
+    0.02 to 0.1                  62       38        1     1.61%
+    0.1 to +inf                 178       92        3     1.69%
+    (feature unavailable)       183       96        6     3.28%
+    top bucket minus bottom: -18.31pp, 95% CI [-49.01, +2.40]pp  (closes resampled)
+
+  FLIP RATE BY CUSHION LEVEL AT ENTRY (sigmas) -- what the trajectory has to beat
+    bucket                  entries   closes   losers flip rate
+    -inf to 2.5                 253      101        6     2.37%
+    2.5 to 4                    147       86        5     3.40%
+    4 to 8                       35       28        1     2.86%
+    8 to +inf                     3        3        0     0.00%
+    top bucket minus bottom: -2.37pp, 95% CI [-4.53, -0.77]pp  (closes resampled)
+
+  THE SAME TWO TABLES ON THE RELAXED POPULATION (619 entries, 49 losers over 40 closes)
+  This is a DIFFERENT population -- it buys things the live rule
+  refuses -- so it cannot validate the live edge. It exists only
+  to ask whether the signal survives when losses are not scarce.
+
+  RELAXED: flip rate by price velocity at entry
+    bucket                  entries   closes   losers flip rate
+    -inf to -0.25                87       62       17    19.54%
+    -0.25 to 0                    2        2        1    50.00%
+    0 to 0.25                    22       19        1     4.55%
+    0.25 to 1                     5        5        1    20.00%
+    1 to +inf                     6        6        3    50.00%
+    (feature unavailable)       497      121       26     5.23%
+    top bucket minus bottom: +30.46pp, 95% CI [-20.93, +80.65]pp  (closes resampled)
+    CLUSTER-PRESERVING SHUFFLE (price velocity, relaxed): real +30.46pp, shuffled median -5.75pp, 95th pct +25.29pp, p = 0.012 on 400 draws
+
+  RELAXED: flip rate by divergence at entry
+    bucket                  entries   closes   losers flip rate
+    -inf to 0                    83       59       12    14.46%
+    0 to 0.01                   131       85        3     2.29%
+    0.01 to 0.03                187       97        4     2.14%
+    0.03 to 0.08                115       76        8     6.96%
+    0.08 to +inf                103       69       22    21.36%
+    top bucket minus bottom: +6.90pp, 95% CI [-5.16, +18.48]pp  (closes resampled)
+    CLUSTER-PRESERVING SHUFFLE (divergence, relaxed): real +6.90pp, shuffled median -0.43pp, 95th pct +6.09pp, p = 0.032 on 400 draws
+
+  AN ENTRY GUARD ON PRICE VELOCITY -- WIDE window
+    refuse if >=     refused   of them   winners profit lost   flip rate
+                                losers   refused       cents of the rest
+    0.5                   12         2        10        70.6       2.35%
+    1                      5         1         4        41.3       2.54%
+    2                      3         1         2        12.1       2.53%
+    4                      2         1         1         9.4       2.52%
+    8                      0         0         0         0.0       2.74%
+    (base: 438 entries, 12 losers, +796.9c total)
+
+  THE SAME GUARD ON THE LIVE WINDOW (tau 3-30) -- pure cost, there is nothing here to save
+    refuse if >=     refused   of them   winners profit lost   flip rate
+                                losers   refused       cents of the rest
+    0.5                   15         0        15        98.8       0.00%
+    1                      5         0         5        45.8       0.00%
+    2                      0         0         0         0.0       0.00%
+    4                      0         0         0         0.0       0.00%
+    8                      0         0         0         0.0       0.00%
+    (base: 165 entries, 0 losers, +837.4c total)
+
+  AN ENTRY GUARD ON DIVERGENCE -- WIDE window
+    refuse if >=     refused   of them   winners profit lost   flip rate
+                                losers   refused       cents of the rest
+    0.03                 238         9       229      1540.1       1.50%
+    0.05                 146         5       141      1247.1       2.40%
+    0.1                   54         2        52       705.1       2.60%
+    (base: 438 entries, 12 losers, +796.9c total)
+
+  THE SAME DIVERGENCE GUARD ON THE LIVE WINDOW
+    refuse if >=     refused   of them   winners profit lost   flip rate
+                                losers   refused       cents of the rest
+    0.03                 110         0       110       731.5       0.00%
+    0.05                  65         0        65       584.2       0.00%
+    0.1                   25         0        25       335.7       0.00%
+    (base: 165 entries, 0 losers, +837.4c total)
+
+==============================================================================
+  2. AFTER ENTRY -- does the trajectory warn us in time?
+==============================================================================
+  lead2 / lead5: share of LOSERS warned at least 2 / 5 seconds
+  before the CROSS (the second the projected mean lands on the
+  wrong side of the strike). 'hedge c' is the median price of the
+  other side at the moment the alarm fired -- the cost of acting
+  on it. 'profit -' is the share of winners' profit a hedge at
+  that trigger destroys; IDEAS_LOG #31 killed the 5%% model
+  trigger on that column at 26.5%%.
+
+  WIDE window (438 positions, 12 losers over 10 closes)
+    alarm                                      on los  lead2  lead5  lead s  on win hedge c tau fire profit - 95% CI on fires(lose)-fires(win)
+    DIVERGENCE  mkt-model >= 2pp                 100%    83%    75%      12   78.6%     9.1       57   155.2%  [+17, +26]pp
+    DIVERGENCE  mkt-model >= 5pp                  75%    42%    42%      12   37.8%    18.0       51   121.9%  [+10, +62]pp
+    DIVERGENCE  mkt-model >= 10pp                 42%    25%    25%      13   14.8%    21.0       45    82.8%  [+2, +60]pp
+    DIVERGENCE  mkt-model >= 20pp                 17%    17%     8%      13    4.9%    57.0       42    39.8%  [-6, +40]pp
+    DIVERGENCE  mkt-model >= 35pp                  8%     8%     0%       2    0.9%    57.0       34    12.2%  [-2, +26]pp
+    DIV VELOCITY  >= 1pp/s                       100%    50%    42%       4   27.9%    26.0       52    89.6%  [+68, +76]pp
+    DIV VELOCITY  >= 2pp/s                       100%    42%    33%       1   12.9%    47.0       46    64.4%  [+84, +90]pp
+    DIV VELOCITY  >= 5pp/s                        67%    33%    25%       2    3.8%    51.0       42    29.7%  [+35, +87]pp
+    DIV VELOCITY  >= 10pp/s                       17%     8%     0%       2    1.6%    75.0       34    16.2%  [-2, +36]pp
+    PRICE VELOCITY  falling >= 0.25c/s           100%    50%    50%       5   39.0%    39.0       53    90.8%  [+56, +66]pp
+    PRICE VELOCITY  falling >= 0.5c/s            100%    50%    50%       5   27.5%    39.0       53    77.7%  [+67, +77]pp
+    PRICE VELOCITY  falling >= 1c/s              100%    42%    42%       1   15.5%    51.0       52    62.7%  [+81, +88]pp
+    PRICE VELOCITY  falling >= 2c/s              100%    42%    42%       1    8.9%    51.0       48    48.4%  [+88, +94]pp
+    PRICE VELOCITY  falling >= 4c/s              100%    42%    25%       0    4.5%    60.0       47    32.0%  [+93, +97]pp
+    PRICE VELOCITY  falling >= 8c/s              100%    33%    25%       0    1.9%    62.0       47    22.7%  [+97, +99]pp
+    CUSHION SHRINKING  <= -0.05 sigma/s          100%    50%    50%       7   49.3%    39.0       52    74.0%  [+46, +56]pp
+    CUSHION SHRINKING  <= -0.1 sigma/s           100%    50%    50%       7   39.4%    39.0       52    64.4%  [+55, +66]pp
+    CUSHION SHRINKING  <= -0.25 sigma/s          100%    42%    42%       1   18.1%    51.0       52    35.0%  [+78, +86]pp
+    CUSHION SHRINKING  <= -0.5 sigma/s           100%    42%    42%       1    6.8%    51.0       52    23.2%  [+90, +96]pp
+    MODEL p(lose) >= 5%  [the rejected trigger]   100%    42%    42%       1    8.5%    51.0       48    37.0%  [+88, +95]pp
+    MODEL p(lose) >= 50%  [the rejected trigger]   100%     0%     0%       0    0.7%    66.0       42     9.4%  [+98, +100]pp
+    MODEL p(lose) >= 90%  [the rejected trigger]   100%     0%     0%      -4    0.2%    86.0       36     4.3%  [+99, +100]pp
+    COMBO  falling >= 2c/s AND model p(lose) >= 20%   100%    33%    33%       0    2.6%    52.0       47    20.7%  [+96, +99]pp
+    COMBO  falling >= 1c/s AND divergence >= 20pp    17%    17%     8%      13    2.6%    57.0       42    23.2%  [-3, +42]pp
+
+  The same alarms on the LIVE window, where there is nothing
+  to catch. This is the honest COST column, and it is the one
+  that has to be compared with 26.5%.
+
+  LIVE window (165 positions, 0 losers)
+    alarm                                      on los  lead2  lead5  lead s  on win hedge c tau fire profit - 
+    DIVERGENCE  mkt-model >= 2pp                 n/a%   n/a%   n/a%     n/a   89.1%     n/a      n/a   170.4%
+    DIVERGENCE  mkt-model >= 5pp                 n/a%   n/a%   n/a%     n/a   44.2%     n/a      n/a   131.0%
+    DIVERGENCE  mkt-model >= 10pp                n/a%   n/a%   n/a%     n/a   19.4%     n/a      n/a    92.3%
+    DIVERGENCE  mkt-model >= 20pp                n/a%   n/a%   n/a%     n/a    6.7%     n/a      n/a    50.8%
+    DIVERGENCE  mkt-model >= 35pp                n/a%   n/a%   n/a%     n/a    1.8%     n/a      n/a    20.6%
+    DIV VELOCITY  >= 1pp/s                       n/a%   n/a%   n/a%     n/a   30.9%     n/a      n/a    96.0%
+    DIV VELOCITY  >= 2pp/s                       n/a%   n/a%   n/a%     n/a   15.2%     n/a      n/a    70.0%
+    DIV VELOCITY  >= 5pp/s                       n/a%   n/a%   n/a%     n/a    5.5%     n/a      n/a    40.1%
+    DIV VELOCITY  >= 10pp/s                      n/a%   n/a%   n/a%     n/a    3.6%     n/a      n/a    26.8%
+    PRICE VELOCITY  falling >= 0.25c/s           n/a%   n/a%   n/a%     n/a   32.1%     n/a      n/a    84.3%
+    PRICE VELOCITY  falling >= 0.5c/s            n/a%   n/a%   n/a%     n/a   20.6%     n/a      n/a    71.6%
+    PRICE VELOCITY  falling >= 1c/s              n/a%   n/a%   n/a%     n/a   12.1%     n/a      n/a    58.2%
+    PRICE VELOCITY  falling >= 2c/s              n/a%   n/a%   n/a%     n/a    9.1%     n/a      n/a    52.7%
+    PRICE VELOCITY  falling >= 4c/s              n/a%   n/a%   n/a%     n/a    4.8%     n/a      n/a    39.3%
+    PRICE VELOCITY  falling >= 8c/s              n/a%   n/a%   n/a%     n/a    1.8%     n/a      n/a    20.6%
+    CUSHION SHRINKING  <= -0.05 sigma/s          n/a%   n/a%   n/a%     n/a   24.2%     n/a      n/a    48.9%
+    CUSHION SHRINKING  <= -0.1 sigma/s           n/a%   n/a%   n/a%     n/a   21.2%     n/a      n/a    40.6%
+    CUSHION SHRINKING  <= -0.25 sigma/s          n/a%   n/a%   n/a%     n/a   10.9%     n/a      n/a    29.8%
+    CUSHION SHRINKING  <= -0.5 sigma/s           n/a%   n/a%   n/a%     n/a    2.4%     n/a      n/a    12.3%
+    MODEL p(lose) >= 5%  [the rejected trigger]   n/a%   n/a%   n/a%     n/a    5.5%     n/a      n/a    26.5%
+    MODEL p(lose) >= 50%  [the rejected trigger]   n/a%   n/a%   n/a%     n/a    0.6%     n/a      n/a     6.7%
+    MODEL p(lose) >= 90%  [the rejected trigger]   n/a%   n/a%   n/a%     n/a    0.0%     n/a      n/a     0.0%
+    COMBO  falling >= 2c/s AND model p(lose) >= 20%   n/a%   n/a%   n/a%     n/a    2.4%     n/a      n/a    19.3%
+    COMBO  falling >= 1c/s AND divergence >= 20pp   n/a%   n/a%   n/a%     n/a    4.2%     n/a      n/a    35.0%
+
+  EVERY LOSER, under PRICE VELOCITY falling >= 2c/s
+    market                          entry    paid fire at  cross   lead   hedge
+    KXBNB15M-26SEP051045-45           37s   95.4c     35s    36s     -1   62.0c
+    KXBTC15M-26SEP041830-30           44s   87.0c     42s    42s     +0   68.0c
+    KXDOGE15M-26SEP040830-30          47s   95.0c     45s    32s    +13   18.0c
+    KXETH15M-26SEP041215-15           60s   98.3c     56s    42s    +14   15.0c
+    KXETH15M-26SEP051045-45           60s   96.9c     52s    37s    +15   39.0c
+    KXHYPE15M-26SEP052330-30          54s   93.8c     44s    29s    +15   21.0c
+    KXNEAR15M-26SEP041515-15          60s   90.0c     48s    47s     +1   18.0c
+    KXNEAR15M-26SEP050815-15          60s   79.0c     57s    52s     +5   35.0c
+    KXXRP15M-26SEP042130-30           58s   98.3c     42s    42s     +0   81.0c
+    KXXRP15M-26SEP051145-45           60s   96.4c     54s    54s     +0   82.0c
+    KXZEC15M-26SEP050745-45           47s   95.0c     36s    36s     +0   51.0c
+    KXZEC15M-26SEP051145-45           60s   96.7c     55s    55s     +0   52.0c
+
+  EVERY LOSER, under DIV VELOCITY >= 5pp/s
+    market                          entry    paid fire at  cross   lead   hedge
+    KXBNB15M-26SEP051045-45           37s   95.4c     33s    36s     -3   75.0c
+    KXBTC15M-26SEP041830-30           44s   87.0c   never    42s      -       -
+    KXDOGE15M-26SEP040830-30          47s   95.0c     34s    32s     +2   57.0c
+    KXETH15M-26SEP041215-15           60s   98.3c     54s    42s    +12   29.0c
+    KXETH15M-26SEP051045-45           60s   96.9c     48s    37s    +11   13.0c
+    KXHYPE15M-26SEP052330-30          54s   93.8c     42s    29s    +13   51.0c
+    KXNEAR15M-26SEP041515-15          60s   90.0c   never    47s      -       -
+    KXNEAR15M-26SEP050815-15          60s   79.0c   never    52s      -       -
+    KXXRP15M-26SEP042130-30           58s   98.3c     38s    42s     -4   93.7c
+    KXXRP15M-26SEP051145-45           60s   96.4c   never    54s      -       -
+    KXZEC15M-26SEP050745-45           47s   95.0c     33s    36s     -3   47.0c
+    KXZEC15M-26SEP051145-45           60s   96.7c     52s    55s     -3   48.0c
+
+  EVERY LOSER, under MODEL p(lose) >= 90%
+    market                          entry    paid fire at  cross   lead   hedge
+    KXBNB15M-26SEP051045-45           37s   95.4c     36s    36s     +0   52.0c
+    KXBTC15M-26SEP041830-30           44s   87.0c     37s    42s     -5   80.0c
+    KXDOGE15M-26SEP040830-30          47s   95.0c     28s    32s     -4   92.6c
+    KXETH15M-26SEP041215-15           60s   98.3c     30s    42s    -12   76.0c
+    KXETH15M-26SEP051045-45           60s   96.9c     37s    37s     +0   88.0c
+    KXHYPE15M-26SEP052330-30          54s   93.8c     26s    29s     -3   92.9c
+    KXNEAR15M-26SEP041515-15          60s   90.0c     36s    47s    -11   86.0c
+    KXNEAR15M-26SEP050815-15          60s   79.0c     43s    52s     -9   92.6c
+    KXXRP15M-26SEP042130-30           58s   98.3c     41s    42s     -1   83.0c
+    KXXRP15M-26SEP051145-45           60s   96.4c     54s    54s     +0   82.0c
+    KXZEC15M-26SEP050745-45           47s   95.0c     29s    36s     -7   86.0c
+    KXZEC15M-26SEP051145-45           60s   96.7c     14s    55s    -41   97.8c
+
+==============================================================================
+  3. THE HEDGE, RE-TRIGGERED
+==============================================================================
+  A note that stops a wrong claim: buying the other side and
+  SELLING our own are economically identical here. Hedging pays
+  1-bid and sells nothing; selling takes bid. The fee
+  0.07*p*(1-p) is symmetric in p, so both pay the same fee too.
+  There is no cheaper way to act on an alarm.
+
+    trigger                                      net (c)   vs base  deep@20    touch 95% CI
+    NO HEDGE (what we do today)                    796.9         -        -        - -
+    DIVERGENCE  mkt-model >= 2pp                 -1179.6   -1976.4     100%     80/1 [-3.39,-2.08]c/pos
+    DIVERGENCE  mkt-model >= 5pp                  -928.7   -1725.5     100%     80/1 [-3.39,-1.01]c/pos
+    DIVERGENCE  mkt-model >= 10pp                 -453.6   -1250.5     100%     59/1 [-2.75,+0.47]c/pos
+    DIVERGENCE  mkt-model >= 20pp                  119.8    -677.0     100%        - [-1.69,+1.88]c/pos
+    DIVERGENCE  mkt-model >= 35pp                  602.9    -194.0     100%        - [-0.54,+3.00]c/pos
+    DIV VELOCITY  >= 1pp/s                        -172.4    -969.2     100%     60/3 [-1.60,+0.63]c/pos
+    DIV VELOCITY  >= 2pp/s                         190.4    -606.4     100%    144/4 [-0.85,+1.51]c/pos
+    DIV VELOCITY  >= 5pp/s                         600.3    -196.6     100%    200/2 [-0.13,+2.74]c/pos
+    DIV VELOCITY  >= 10pp/s                        550.2    -246.6     100%     60/1 [-0.78,+3.00]c/pos
+    PRICE VELOCITY  falling >= 0.25c/s            -199.5    -996.3     100%     60/5 [-1.56,+0.55]c/pos
+    PRICE VELOCITY  falling >= 0.5c/s               42.3    -754.6     100%     38/5 [-1.08,+1.21]c/pos
+    PRICE VELOCITY  falling >= 1c/s                243.9    -553.0     100%     38/6 [-0.67,+1.72]c/pos
+    PRICE VELOCITY  falling >= 2c/s                507.5    -289.4     100%     38/6 [-0.10,+2.28]c/pos
+    PRICE VELOCITY  falling >= 4c/s                744.4     -52.5     100%     60/7 [+0.44,+2.82]c/pos
+    PRICE VELOCITY  falling >= 8c/s                830.4     +33.6     100%     60/8 [+0.48,+3.18]c/pos
+    CUSHION SHRINKING  <= -0.05 sigma/s            141.0    -655.9     100%     60/5 [-0.79,+1.27]c/pos
+    CUSHION SHRINKING  <= -0.1 sigma/s             325.0    -471.8     100%     60/5 [-0.38,+1.72]c/pos
+    CUSHION SHRINKING  <= -0.25 sigma/s            809.0     +12.1     100%     60/5 [+0.62,+2.96]c/pos
+    CUSHION SHRINKING  <= -0.5 sigma/s            1016.9    +220.0     100%     98/6 [+1.12,+3.39]c/pos
+    MODEL p(lose) >= 5%  [the rejected trigger]     708.0     -88.9     100%     60/6 [+0.27,+2.85]c/pos
+    MODEL p(lose) >= 50%  [the rejected trigger]    1007.1    +210.3     100%    60/12 [+1.06,+3.49]c/pos
+    MODEL p(lose) >= 90%  [the rejected trigger]     895.7     +98.8     100%    47/12 [+0.44,+3.47]c/pos
+    COMBO  falling >= 2c/s AND model p(lose) >= 20%     896.9    +100.1     100%     38/7 [+0.78,+3.18]c/pos
+    COMBO  falling >= 1c/s AND divergence >= 20pp     438.2    -358.7     100%        - [-0.92,+2.64]c/pos
+
+    'deep@20' uses rows.jsonl's TOP-THREE depth on the side we
+    would sell into, so it is an UPPER BOUND and reads 100%
+    everywhere. 'touch' is the exact touch size, median and count,
+    and it is only knowable for alarms firing AFTER the model has
+    switched sides. IDEAS_LOG #32 measured 6 of 12 hedges deep
+    enough at size 20 using the touch; that number, not this one,
+    is the one to believe.
+
+    THE NET COLUMN ABOVE IS NOT THE DECISION. It pools a
+    2.74% wide-window flip rate with a live rate of 0.90%, so it
+    flatters every trigger by roughly 3x. The decision is below.
+
+    trigger                                      cost/pos  saving/loss  break-even  verdict
+    DIVERGENCE  mkt-model >= 2pp                   8.649c        84.0c     10.30%  does not pay even at the 2.31% bound
+    DIVERGENCE  mkt-model >= 5pp                   6.650c        51.7c     12.88%  does not pay even at the 2.31% bound
+    DIVERGENCE  mkt-model >= 10pp                  4.687c        28.6c     16.40%  does not pay even at the 2.31% bound
+    DIVERGENCE  mkt-model >= 20pp                  2.578c         7.4c     34.94%  does not pay even at the 2.31% bound
+    DIVERGENCE  mkt-model >= 35pp                  1.046c         3.4c     30.41%  does not pay even at the 2.31% bound
+    DIV VELOCITY  >= 1pp/s                         4.871c        62.8c      7.75%  does not pay even at the 2.31% bound
+    DIV VELOCITY  >= 2pp/s                         3.551c        52.8c      6.73%  does not pay even at the 2.31% bound
+    DIV VELOCITY  >= 5pp/s                         2.036c        31.3c      6.51%  does not pay even at the 2.31% bound
+    DIV VELOCITY  >= 10pp/s                        1.362c         5.4c     25.16%  does not pay even at the 2.31% bound
+    PRICE VELOCITY  falling >= 0.25c/s             4.280c        62.5c      6.84%  does not pay even at the 2.31% bound
+    PRICE VELOCITY  falling >= 0.5c/s              3.636c        61.7c      5.89%  does not pay even at the 2.31% bound
+    PRICE VELOCITY  falling >= 1c/s                2.953c        54.4c      5.43%  does not pay even at the 2.31% bound
+    PRICE VELOCITY  falling >= 2c/s                2.673c        53.5c      5.00%  does not pay even at the 2.31% bound
+    PRICE VELOCITY  falling >= 4c/s                1.997c        47.0c      4.25%  does not pay even at the 2.31% bound
+    PRICE VELOCITY  falling >= 8c/s                1.046c        39.1c      2.67%  does not pay even at the 2.31% bound
+    CUSHION SHRINKING  <= -0.05 sigma/s            2.483c        63.9c      3.88%  does not pay even at the 2.31% bound
+    CUSHION SHRINKING  <= -0.1 sigma/s             2.061c        63.9c      3.22%  does not pay even at the 2.31% bound
+    CUSHION SHRINKING  <= -0.25 sigma/s            1.514c        57.0c      2.65%  does not pay even at the 2.31% bound
+    CUSHION SHRINKING  <= -0.5 sigma/s             0.626c        55.5c      1.13%  marginal: pays between 0.90% and 2.31%
+    MODEL p(lose) >= 5%  [the rejected trigger]     1.347c        51.9c      2.59%  does not pay even at the 2.31% bound
+    MODEL p(lose) >= 50%  [the rejected trigger]     0.338c        32.6c      1.04%  marginal: pays between 0.90% and 2.31%
+    MODEL p(lose) >= 90%  [the rejected trigger]     0.000c        15.1c      0.00%  costs nothing measurable
+    COMBO  falling >= 2c/s AND model p(lose) >= 20%     0.978c        41.5c      2.36%  does not pay even at the 2.31% bound
+    COMBO  falling >= 1c/s AND divergence >= 20pp     1.778c         7.4c     24.10%  does not pay even at the 2.31% bound
+
+==============================================================================
+  4. THE SCALE-IN BUYS, WHICH IS WHERE THE LIVE LOSS ACTUALLY WENT
+==============================================================================
+  A second or third buy only EXISTS because the price fell at
+  least 0.5c. So a price-velocity guard is not neutral between
+  buys -- it lands almost entirely on the later ones. Tonight the
+  third buy was 22.6c cheaper than the second.
+
+  WIDE window, by buy index
+    buy      positions   closes    losers   flip rate med fall c/s
+    1              438      118        12       2.74%        -0.80
+    2              109       72         3       2.75%        +0.57
+    3               19       18         1       5.26%        +0.87
+
+  LIVE window, by buy index
+    buy      positions   closes    losers   flip rate med fall c/s
+    1              165       83         0       0.00%        -0.57
+    2               36       30         0       0.00%        +0.30
+    3                4        4         0       0.00%        +2.97
+
+  A VELOCITY GUARD ON SECOND AND THIRD BUYS ONLY -- WIDE
+    refuse if >=     refused   of them   winners profit lost   flip rate
+                                losers   refused       cents of the rest
+    1                     40         0        40       435.0       4.55%
+    2                     16         0        16       210.1       3.57%
+    4                      7         0         7       119.0       3.31%
+    8                      3         0         3        31.4       3.20%
+    (base: 128 entries, 4 losers, +570.9c total)
+
+  THE SAME GUARD ON SECOND AND THIRD BUYS -- LIVE window, pure cost
+    refuse if >=     refused   of them   winners profit lost   flip rate
+                                losers   refused       cents of the rest
+    1                     12         0        12       137.9       0.00%
+    2                      6         0         6        78.1       0.00%
+    4                      0         0         0         0.0       0.00%
+    8                      0         0         0         0.0       0.00%
+    (base: 40 entries, 0 losers, +358.0c total)
+
+  A DIVERGENCE GUARD ON SECOND AND THIRD BUYS -- LIVE window, pure cost
+    refuse if >=     refused   of them   winners profit lost   flip rate
+                                losers   refused       cents of the rest
+    0.1                   16         0        16       240.2       0.00%
+    0.2                    5         0         5       117.5       0.00%
+    0.35                   1         0         1        34.4       0.00%
+    (base: 40 entries, 0 losers, +358.0c total)
+
+==============================================================================
+  5. THE PROPOSED RULE, AND WHAT IT COSTS
+==============================================================================
+  Refuse ANY buy whose price is falling faster than the threshold.
+  'win/loss' is winning trades refused per loss avoided; 'net' is
+  the loss avoided minus the profit destroyed. A guard is only
+  worth having where net is positive.
+
+    population / threshold                buys refused  losers   winners   win/loss  profit -       net
+    WIDE  all buys, refuse >= 1c/s         566      45       1        44       44.0    476.3c   -380.6c
+    WIDE  all buys, refuse >= 2c/s         566      19       1        18       18.0    222.1c   -126.4c
+    WIDE  all buys, refuse >= 4c/s         566       9       1         8        8.0    128.3c    -32.6c
+    WIDE  all buys, refuse >= 8c/s         566       3       0         3    no loss     31.4c    -31.4c
+    LIVE  all buys, refuse >= 1c/s         205      17       0        17    no loss    183.7c   -183.7c
+    LIVE  all buys, refuse >= 2c/s         205       6       0         6    no loss     78.1c    -78.1c
+    LIVE  all buys, refuse >= 4c/s         205       0       0         0    no loss      0.0c     +0.0c
+    LIVE  all buys, refuse >= 8c/s         205       0       0         0    no loss      0.0c     +0.0c
+    WIDE  buys 2-3 only, refuse >= 1c/s     128      40       0        40    no loss    435.0c   -435.0c
+    WIDE  buys 2-3 only, refuse >= 2c/s     128      16       0        16    no loss    210.1c   -210.1c
+    WIDE  buys 2-3 only, refuse >= 4c/s     128       7       0         7    no loss    119.0c   -119.0c
+    WIDE  buys 2-3 only, refuse >= 8c/s     128       3       0         3    no loss     31.4c    -31.4c
+    LIVE  buys 2-3 only, refuse >= 1c/s      40      12       0        12    no loss    137.9c   -137.9c
+    LIVE  buys 2-3 only, refuse >= 2c/s      40       6       0         6    no loss     78.1c    -78.1c
+    LIVE  buys 2-3 only, refuse >= 4c/s      40       0       0         0    no loss      0.0c     +0.0c
+    LIVE  buys 2-3 only, refuse >= 8c/s      40       0       0         0    no loss      0.0c     +0.0c
+
+==============================================================================
+  TONIGHT'S LOSS, REPLAYED FROM THE RAW TAPE
+==============================================================================
+  deltas applied 39323 (snapshot seeds 0, negative-size events 350)
+
+     tau      index     cushion    sigmas    model   our ask     mkt p  fall c/s
+      45    2.34930    0.000159      0.16   43.67%     50.0c    51.5%         -    50.0-66.0c
+      44    2.34960   -0.000144     -0.15   55.79%     70.0c    32.5%    -20.00    50.0-81.0c
+      43    2.34930    0.000160      0.16   43.54%     65.0c    40.0%     -7.50    58.0-69.0c
+      42    2.34950   -0.000041     -0.04   51.70%     56.0c    47.5%     -2.00    56.0-65.0c
+      41    2.34940    0.000060      0.06   47.50%     40.0c    61.0%    +10.00    40.0-58.0c
+      40    2.34960   -0.000144     -0.15   56.04%     45.0c    58.5%     +6.67    40.0-47.0c
+      39    2.34960   -0.000147     -0.16   56.27%     47.0c    57.5%     +3.00    43.0-48.0c
+      38    2.34970   -0.000254     -0.28   60.86%     45.0c    57.5%     -1.67    45.0-47.0c
+      37    2.34970   -0.000261     -0.29   61.29%     70.0c    34.5%     -8.33    45.0-81.0c
+      36    2.34940    0.000040      0.04   48.23%     68.0c    36.5%     -7.00    67.0-70.0c
+      35    2.34940    0.000041      0.05   48.15%     50.0c    51.5%     -1.67    50.0-68.0c
+      34    2.34950   -0.000061     -0.07   52.76%     48.0c    52.5%     +7.33    48.0-56.0c
+      33    2.34950   -0.000063     -0.07   52.89%     56.0c    49.0%     +4.00    48.0-56.0c
+      32    2.34950   -0.000065     -0.08   53.03%     58.0c    47.5%     -2.67    56.0-62.0c
+      31    2.34960   -0.000170     -0.20   58.06%     59.0c    44.0%     -3.67    55.0-59.0c
+      30    2.34960   -0.000176     -0.21   58.46%     93.0c    12.5%    -12.33    56.0-96.2c
+      29    2.34790    0.001579      1.83    3.39%     87.0c    14.5%     -9.67    84.0-94.1c
+      28    2.34780    0.001741      2.05    2.03%     81.0c    20.5%     -7.33    79.0-91.9c
+      27    2.34830    0.001288      1.53    6.24%     88.0c    13.0%     +1.67    80.0-88.0c
+      26    2.34830    0.001340      1.63    5.20%     90.2c    12.4%     -1.07    88.0-90.5c
+      25    2.34830    0.001396      1.73    4.21%     90.0c    10.5%     -3.00    90.0-92.2c
+      24    2.34840    0.001352      1.71    4.37%     90.8c    11.1%     -0.93    90.8-91.0c
+      23    2.34830    0.001518      1.96    2.50%     90.9c    10.1%     -0.23    90.8-93.0c
+      22    2.34830    0.001590      2.10    1.80%     96.2c     7.4%     -2.07    90.9-96.2c
+      21    2.34830    0.001670      2.25    1.21%     97.6c     6.2%     -2.27    95.6-97.6c
+      20    2.34840    0.001653      2.28    1.12%     97.3c     6.2%     -2.13    97.3-98.0c
+      19    2.34870    0.001428      2.02    2.18%     97.3c     5.8%     -0.37    97.3-97.3c
+      18    2.34840    0.001829      2.65    0.40%     97.5c     5.8%     +0.03    97.3-97.5c
+      17    2.34840    0.001944      2.93    0.17%     65.0c    40.5%    +10.77    42.0-97.5c
+      16    2.35050   -0.000167     -0.24   59.36%     55.0c    46.5%    +14.10    55.0-67.0c
+      15    2.35040   -0.000071     -0.10   54.17%     34.0c    71.5%    +21.17    29.0-55.0c
+      14    2.35180   -0.001585     -2.32   98.98%     21.0c    81.5%    +14.67    19.0-34.0c
+      13    2.35170   -0.001608     -2.44   99.26%     15.0c    88.2%    +13.33    15.0-28.0c
+      12    2.35150   -0.001536     -2.42   99.22%     18.0c    86.9%     +5.33    15.0-20.0c
+      11    2.35150   -0.001690     -2.77   99.72%     17.0c    88.4%     +1.33    13.0-18.0c
+      10    2.35150   -0.001878     -3.22   99.94%     13.0c    90.5%     +0.67    12.0-20.0c
+       9    2.35130   -0.001887     -3.40   99.97%     12.0c    93.2%     +2.00     9.8-17.0c
+       8    2.35130   -0.002157     -4.11  100.00%      8.6c    94.7%     +2.80     8.6-14.0c
+       7    2.35140   -0.002633     -5.33  100.00%      5.0c    96.4%     +2.67     4.8-18.0c
+       6    2.35130   -0.003040     -6.60  100.00%     10.0c    94.6%     +0.67     5.0-10.0c
+       5    2.35150   -0.004050     -9.51  100.00%      1.8c    99.0%     +2.27     0.6-10.0c
+       4    2.35080   -0.004467    -11.42  100.00%      0.8c        -     +1.40      0.8-1.8c
+       3    2.35080   -0.006700    -19.12  100.00%      0.8c        -     +3.07      0.8-0.8c
+
+  RECONCILING THE REPLAY AGAINST THE THREE PRICES WE ACTUALLY
+  PAID. A book replay that cannot reproduce a known fill is wrong,
+  and this check is what found the seeding bug in the first version.
+    tau 22: paid 96.2c, replayed best NO ask 96.2c, range within the second 90.9-96.2c  --> REPRODUCED
+    tau 21: paid 95.6c, replayed best NO ask 97.6c, range within the second 95.6-97.6c  --> REPRODUCED
+    tau 17: paid 73.0c, replayed best NO ask 65.0c, range within the second 42.0-97.5c  --> REPRODUCED
+
+  AND AT THE PRICE WE ACTUALLY PAID. The best ask and our
+  fill differ inside a second, so the velocity a guard would have
+  seen AT THE MOMENT OF THE ORDER is computed from the paid price
+  against the ask three seconds earlier.
+    tau 22: paid 96.2c against 90.0c 3s earlier -> -2.07 c/s of FALL  (28.5%ile of winning trades)
+    tau 21: paid 95.6c against 90.8c 3s earlier -> -1.60 c/s of FALL  (34.9%ile of winning trades)
+    tau 17: paid 73.0c against 97.3c 3s earlier -> +8.10 c/s of FALL  (100.0%ile of winning trades)
+
+  WHERE THE THREE BUYS SIT IN THE WINNING-TRADE DISTRIBUTION
+      tau    our ask     div pp   div %ile   fall c/s  fall %ile
+       22      96.2c       +5.6      71.4%      -2.07      28.5%
+       21      97.6c       +4.9      66.7%      -2.27      27.3%
+       17      65.0c      +40.3     100.0%     +10.77     100.0%
+
+  DONE.

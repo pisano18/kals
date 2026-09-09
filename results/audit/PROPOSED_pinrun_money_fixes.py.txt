@@ -1,0 +1,129 @@
+PROPOSED PATCHES -- money arithmetic and settlement.  NOT APPLIED.
+pinrun.py and pintake.py are read by the LIVE process (pid 3997812) on
+restart, so nothing here has been written into them.  Apply at the next
+deliberate restart, in this order: (2) before (1) or the money bug in (1)
+becomes reachable.
+
+Every constant below is expressed in terms of SIZE / MAX_PER_CLOSE, per the
+repo rule "any constant tied to size must be expressed in terms of size".
+
+=============================================================================
+(1) pinrun.py -- reconcile() books ONE fill of SIZE contracts per ticker.
+    Lines 1133/1145 (open_pos[tk] = ...), 867 (pnl), 878 (release), 893.
+    MEASURED: results/audit/audit_money_probe.py PROBE 1, 3, 4.
+=============================================================================
+-- 1145 (and 1133 for paper) --  accumulate, never overwrite, and remember
+   how many contracts actually filled:
+
+    # was: open_pos[tk] = (close_s, want, cost)
+    prev_leg = open_pos.get(tk)
+    n = float(filled)                       # NOT SIZE: an IOC part-fills
+    if prev_leg and prev_leg[1] == want:
+        _, _, pn, pc = prev_leg             # (close_s, want, contracts, $cost)
+        open_pos[tk] = (close_s, want, pn + n, pc + n * cost)
+    else:
+        if prev_leg:                        # both sides of one market
+            state["both_sides"] = state.get("both_sides", 0) + 1
+        open_pos[tk] = (close_s, want, n, n * cost)
+
+   (paper branch: open_pos[tk] = (close_s, want, float(SIZE),
+                                  float(SIZE) * price))
+
+-- 867 -- P&L on the contracts actually held, at the dollars actually paid:
+
+    close_s, want, contracts, cost_dollars = open_pos[tk]
+    avg = cost_dollars / contracts
+    pnl = ((contracts - cost_dollars) if won else (-cost_dollars)) \
+          - billed_fee(avg, contracts)
+
+-- 878 -- release the DOLLARS committed, not one contract's price:
+
+    pintake.LEDGER["committed"] = max(
+        0.0, float(pintake.LEDGER.get("committed", 0.0)) - cost_dollars)
+
+-- 893 -- open_cost is already dollars once the tuple carries dollars:
+
+    state["open_cost"] = sum(c for (_, _, _, c) in open_pos.values())
+
+=============================================================================
+(2) pintake.py -- LOSS_ABORT is a size-1 literal that kills the order path
+    after the FIRST ordinary loss at size 5, silently.
+    MEASURED: audit_money_probe.py PROBE 2.
+=============================================================================
+    # was: LOSS_ABORT = -2.00
+    LOSS_ABORT = -2.00        # DEFAULT ONLY -- one contract's worth of loss.
+
+    def set_loss_abort(dollars, reason):
+        """The caller owns the brake; pintake owns the floor.  Must be no
+        looser than the process's own abort, and must be set explicitly."""
+        global LOSS_ABORT
+        if float(dollars) >= 0:
+            raise ValueError("loss abort must be negative")
+        LOSS_ABORT = float(dollars)
+        print(f"  *** pintake LOSS_ABORT -> ${LOSS_ABORT:.2f} ({reason}) ***",
+              file=sys.stderr)
+
+   and in pinrun.arm():   pintake.set_loss_abort(a.loss_abort, "pinrun --live")
+   plus a self-test that asserts pintake.LOSS_ABORT <= a.loss_abort, i.e. the
+   order rail can never be tighter than the brake the operator was shown.
+
+=============================================================================
+(3) pinrun.py line 790 -- the forward loss bound reserves ONE buy where the
+    rule allows MAX_PER_CLOSE.  Same "unit of loss is a CLOSE" error that was
+    already fixed in main()'s deployment rail and not here.
+=============================================================================
+    # was: if worst - 1.00 * float(SIZE) < a.loss_abort - 1e-9:
+    room = 1.00 * float(SIZE) * float(MAX_PER_CLOSE)
+    if worst - room < a.loss_abort - 1e-9:
+
+=============================================================================
+(4) pinrun.py lines 858 / 861 -- the two give-up paths drop the position but
+    never release its stake and never remove it from LEDGER["positions"], so
+    three of them halt the run on the position cap and the committed dollars
+    are gone for the life of the process.  A give-up also silently discards a
+    LOSS the abort should have seen.
+=============================================================================
+    def _abandon(tk, why):
+        cs, want, contracts, cost_dollars = open_pos.pop(tk)
+        pintake.LEDGER["committed"] = max(
+            0.0, float(pintake.LEDGER.get("committed", 0.0)) - cost_dollars)
+        pintake.LEDGER["positions"].pop(tk, None)
+        state["abandoned"] = state.get("abandoned", 0) + 1
+        rec("abandoned", ticker=tk, why=why, cost=round(cost_dollars, 4))
+        # a position we cannot settle is UNKNOWN, not free: charge the worst
+        # case to realised so the brake cannot be walked past by a slow feed.
+        pintake.record_pnl(-cost_dollars, note=f"{tk} abandoned: {why}")
+
+=============================================================================
+(5) pinrun.py line 1046 -- sigma == 0.0 is not None, so a stuck index feed
+    gives sd = 0 and fair() returns exactly 1.0 or 0.0: infinite confidence
+    at the moment the feed is broken.  Never seen in 3 h of real tape
+    (audit_sigma_zero.py: 0 of 10,500 windows on each of 11 indices; the
+    longest identical run was 24 s on SOL), so this is a guard, not a fix.
+=============================================================================
+    # was: if sg is None:
+    if sg is None or sg <= 0.0:
+        continue
+
+=============================================================================
+(6) pintake.py line 1195 -- the self-test's PASS banner prints size-1-era
+    literals ("count <= 1", "HARD_MAX 5", "$5 stake ledger") while the
+    constants are 10 / 25 / $60.  The assertions were made relative to the
+    constants; the sentence a human reads was not.
+=============================================================================
+    print(f"SELF-TEST PASSED -- IOC only, post_only False, count <= "
+          f"{MAX_TAKE_COUNT:g} with a separate HARD_MAX {HARD_MAX:g},\n"
+          f"close within {MAX_TAU:.0f} s, ${MAX_RUN_STAKE:.2f} stake ledger "
+          f"booked from fills (released only on remaining 0),\n...  "
+          f"${LOSS_ABORT:.2f} loss abort, ...")
+
+=============================================================================
+(7) pinrun.py -- add the self-test that would have caught (1).  The existing
+    stake-release test is written at SIZE 1, where the bug is invisible.
+=============================================================================
+    for sz in (1.0, 5.0, 8.0):
+        globals()["SIZE"] = sz
+        ... one fill of sz contracts at 0.97, then reconcile's release ...
+        ck(abs(pintake.LEDGER["committed"]) < 1e-9,
+           f"a settled position at size {sz:g} releases ALL of its stake")
+    # and: two fills on one ticker book 2*sz contracts, not sz

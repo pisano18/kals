@@ -1,0 +1,70 @@
+PROPOSED (NOT APPLIED -- pinrun.py is live, pid 3997812). Audit 2026-09-08.
+
+FINDING AUDITED: "strike_type and cap_strike are never read" (pinrun.py ~L991)
+VERDICT: code gap is REAL AND CORRECTLY DESCRIBED; severity "loses-money" is
+         NOT SUPPORTED. There is no reachable path to a loss today, and the
+         claimed mechanism (sign inversion) is blocked upstream.
+
+WHAT THE FINDING MISSED -- the guard two lines above it:
+
+    ct, sk = m.get("close_time"), m.get("floor_strike")
+    if not ct or sk is None:
+        continue                 # <-- this is the guard
+    cs_ = m.get("custom_strike") or {}          # override comes AFTER
+
+It tests the TOP-LEVEL floor_strike and it runs BEFORE the custom_strike
+override, so a market with no top-level floor never reaches fair().
+
+MEASURED, live, GET-only, 2026-09-08 (scripts in this directory:
+AUDIT_striketype_convention2.py / _between.py / _nextseries.py / _family.py):
+
+  strike_type       floor_strike  cap_strike  pinrun    n measured
+  ----------------  ------------  ----------  --------  ------------------
+  greater_or_equal  set           None        TRADES    35,552 (the family)
+  greater           set           None        TRADES    623
+  between           set           SET         TRADES    502   <-- only hole
+  less              None          set         SKIPPED   106
+  custom            None          None        SKIPPED   25,058
+  structured        None          None        SKIPPED   4
+  None (initialized) None         None        SKIPPED   448 (in the family)
+
+So every SIGN-INVERTING type (less, custom, structured, unstruck) already
+carries floor_strike None and is already discarded. `greater` differs from
+`greater_or_equal` only at the boundary, which eff_strike's
+K - 0.5*10^-round_digits already dominates. The single unguarded shape is
+`between`, which is an OVERSTATEMENT of fair, not an inversion.
+
+REACHABILITY: zero. All markets ever exposed by the 11 SERIES_TO_INDEX series
+(36,000 across the 9 live ones; KXBCH15M and KXADA15M return none) are
+greater_or_equal/uncapped or unstruck. The likeliest next addition,
+KXCRYPTOLEAD15M, is strike_type 'custom' with floor_strike None -- already
+skipped, not mispriced.
+
+STILL WORTH ADDING (defence in depth, zero cost, measured null of 0 discards):
+
+    ct, sk = m.get("close_time"), m.get("floor_strike")
+    if not ct or sk is None:
+        continue
++   # The model is P(settle >= K). Only greater_or_equal with no cap has
++   # that payoff. Measured 2026-09-08 over 36,000 markets in these 11
++   # series: 35,552 greater_or_equal/uncapped, 448 unstruck (already
++   # skipped above), 0 anything else -- so this discards nothing on a
++   # healthy feed. It exists so that a `between` leg (floor AND cap set,
++   # the one shape the floor_strike guard does not catch) can never be
++   # priced as if it were one-sided.
++   if m.get("strike_type") != "greater_or_equal" or m.get("cap_strike") is not None:
++       rec("skip", why="strike_type", ticker=m.get("ticker"),
++           strike_type=m.get("strike_type"), cap=m.get("cap_strike"))
++       continue
+
+AND a self-test assertion, written RELATIVE to the accepted set rather than as
+a literal, per the repo rule:
+
+    # feed three synthetic market records through the universe filter:
+    #   greater_or_equal + cap None  -> accepted
+    #   between (floor AND cap set)  -> rejected, why == "strike_type"
+    #   less (floor None)            -> rejected by the existing floor guard
+    # and assert the ACCEPTED set is exactly what fair()'s docstring prices.
+
+This is a hardening item for the next planned restart. It is NOT a reason to
+restart the live process.

@@ -1,0 +1,25 @@
+81c81
+<   live orders 17   filled 13   no fill 4
+---
+>   live orders 16   filled 12   no fill 4
+99,106c99,105
+<     KXETH15M-26SEP081300-00       0.9750      228.06        12   11  executed
+<     size resting at the touch        filled     336.2000   no-fill     171.0700   permutation p = 0.645
+<     age of our own book frame (ms)   filled      20.5385   no-fill      10.2500   permutation p = 0.725
+<     price                            filled       0.9757   no-fill       0.9772   permutation p = 0.915
+<     tau (s)                          filled      17.0000   no-fill      17.0000   permutation p = 1.000
+<     model edge (cents)               filled       1.6412   no-fill       1.1655   permutation p = 0.563
+<     MDE at 13 fills vs 4 misses: the smallest miss-rate
+<     difference detectable at 80% power is about 69 percentage points. This is a
+---
+>     size resting at the touch        filled     345.2117   no-fill     171.0700   permutation p = 0.657
+>     age of our own book frame (ms)   filled      21.2500   no-fill      10.2500   permutation p = 0.715
+>     price                            filled       0.9758   no-fill       0.9772   permutation p = 0.923
+>     tau (s)                          filled      17.5000   no-fill      17.0000   permutation p = 0.880
+>     model edge (cents)               filled       1.6828   no-fill       1.1655   permutation p = 0.543
+>     MDE at 12 fills vs 4 misses: the smallest miss-rate
+>     difference detectable at 80% power is about 70 percentage points. This is a
+113c112
+<     live miss rate for comparison: 23.5% (4/17).
+---
+>     live miss rate for comparison: 25.0% (4/16).

@@ -1,0 +1,378 @@
+SELF-TEST -- pinbook
+  ok   matrix inverse is an inverse
+  ok   req = 0 is a coin flip (0.5000)
+  ok   join 30 vs take 10 gives imbalance +0.5 (0.5)
+  ok   a large favourable required move prices near 1
+  ok   a level born this instant has log-age 0
+  ok   fee reproduces the real charge 12.37 @ 0.16 -> $0.1164
+  ok   planted +0.100/sd recovered as +0.1157/sd
+  ok   and it is significant (sign-flip p = 0.0008)
+  ok   the UNPLANTED feature stays quiet (p = 0.1049)
+  ok   shuffling the labels kills it (max|t| = 1.29)
+  ok   four worlds with nothing planted: 0 false positives
+  ok   a 210-row sample has a WORSE MDE than a 3,000-row one (10.58 vs 5.55 pp)
+  ok   cluster-robust se 0.01259 exceeds the iid one 0.00912 when the feature is cluster-correlated
+  ok   all-positive signs reproduce the observed standard errors exactly
+  ok   one observation per market (240)
+  ok   about half the markets improve (0.48)
+  ok   a planted thin-book-improves relation is found with the right sign (-50.08 pp/sd, p = 0.0010)
+  ok   and nothing is found once the outcome is shuffled (p = 0.1828)
+  ok   a +10 sigma step is flagged in exactly the 5 seconds before it (5 flagged)
+  ok   the last 5 seconds have no forward window (5)
+  ok   sigma_30 a tenth of sigma_300 reads -1 (-1.0000)
+  ok   the activity controls are unsigned and the jump flag carries through
+  ok   a planted relation still ranks out of sample (31% vs 70%)
+  ok   and a shuffled outcome does not (50% vs 54%)
+  ok   a perfectly separated split gives a small permutation p
+  ok   two identical groups give a large one
+SELF-TEST PASSED
+
+==========================================================================
+PINBOOK -- can the order book improve the decision?
+==========================================================================
+  28,479 rows   1,014 markets   132 distinct closes   1,506 flips
+  under the LIVE rule (tau 3-30, pin 0.98, edge 0.003, ceiling 0.988): 1,183 rows over 83 closes, 0 flips
+  The four features under test are the ones the live rule ignores; `size`
+  is the one it already uses and is carried as a benchmark.
+
+==========================================================================
+1. PRICE IMPROVEMENT -- does book state say a cheaper price is coming?
+==========================================================================
+  165 first-tradeable moments over 83 closes; 35 of them (21.2%) saw a price at least 0.5c better later.
+  mean best improvement, counting zeros: 0.776c
+
+  P(a >=0.5c better price arrives later), pp per 1 sd
+    n = 165 rows   closes (clusters) = 83   strata = 18   outcome mean = 21.212 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch          10.620    +2.988   +0.79   0.4085
+    spread (cents)                9.833    +6.427   +2.01   0.0468
+    log10 total top-3 depth       9.100    +1.869   +0.59   0.5421
+    book imbalance toward us     11.196    +0.816   +0.20   0.8380
+    log10 level age (ms)          7.727    +0.027   +0.01   0.9936
+    -- all 5 together --
+    log10 size at touch          12.003    +2.868   +0.68   0.4711
+    spread (cents)               10.520    +7.161   +2.14   0.0390
+    log10 total top-3 depth      10.073    +2.561   +0.73   0.4375
+    book imbalance toward us     12.065    +0.651   +0.15   0.8790
+    log10 level age (ms)          7.889    -0.154   -0.06   0.9480
+    multiple-looks: p(max|t| over 5 features) = 0.1536   [max|t| observed 2.14]
+    CONTROL, labels shuffled across rows: max|t| = 1.50 (must be small)
+
+  size of the best later improvement, cents per 1 sd
+    n = 165 rows   closes (clusters) = 83   strata = 18   outcome mean = 0.776 cents
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           0.481    +0.214   +1.25   0.2082
+    spread (cents)                0.463    +0.029   +0.18   0.8626
+    log10 total top-3 depth       0.484    +0.051   +0.30   0.7686
+    book imbalance toward us      0.458    +0.009   +0.06   0.9520
+    log10 level age (ms)          0.277    -0.020   -0.20   0.8474
+    -- all 5 together --
+    log10 size at touch           0.431    +0.234   +1.56   0.1006
+    spread (cents)                0.517    +0.036   +0.20   0.8448
+    log10 total top-3 depth       0.486    -0.006   -0.04   0.9710
+    book imbalance toward us      0.470    +0.054   +0.32   0.7592
+    log10 level age (ms)          0.277    +0.014   +0.14   0.8862
+    multiple-looks: p(max|t| over 5 features) = 0.4145   [max|t| observed 1.56]
+    CONTROL, labels shuffled across rows: max|t| = 1.61 (must be small)
+
+==========================================================================
+2. FILL RISK -- 4 of 16 live orders came back canceled
+==========================================================================
+  live orders 17   filled 13   no fill 4
+    ticker                            px  size@touch  frame_ms  tau  outcome
+    KXBTC15M-26SEP080400-00       0.9920      202.93         1   20  executed
+    KXSOL15M-26SEP080500-00       0.9790      210.76         3   15  executed
+    KXZEC15M-26SEP080515-15       0.9470        6.00       100   15  executed
+    KXBTC15M-26SEP080530-30       0.9920      562.02         1   20  canceled
+    KXBTC15M-26SEP080600-00       0.9960     2398.63         4   20  executed
+    KXNEAR15M-26SEP080615-15      0.9920      132.87        79   12  executed
+    KXHYPE15M-26SEP080630-30      0.9950       35.56         4   20  executed
+    KXBNB15M-26SEP080645-45       0.9960        4.00         5   20  executed
+    KXSOL15M-26SEP080745-45       0.9950      107.00        17   20  canceled
+    KXBTC15M-26SEP080800-00       0.9500      385.35         0   19  executed
+    KXBNB15M-26SEP080830-30       0.9500        5.26        18   15  canceled
+    KXBNB15M-26SEP080845-45       0.9770       26.00        30   20  executed
+    KXSOL15M-26SEP080900-00       0.9720       10.00         5   13  canceled
+    KXDOGE15M-26SEP080930-30      0.9630      581.44        11   20  executed
+    KXXRP15M-26SEP081030-30       0.9870      125.00        12   20  executed
+    KXHYPE15M-26SEP081200-00      0.9350       34.00         6    9  executed
+    KXETH15M-26SEP081300-00       0.9750      228.06        12   11  executed
+    size resting at the touch        filled     336.2000   no-fill     171.0700   permutation p = 0.645
+    age of our own book frame (ms)   filled      20.5385   no-fill      10.2500   permutation p = 0.725
+    price                            filled       0.9757   no-fill       0.9772   permutation p = 0.915
+    tau (s)                          filled      17.0000   no-fill      17.0000   permutation p = 1.000
+    model edge (cents)               filled       1.6412   no-fill       1.1655   permutation p = 0.563
+    MDE at 13 fills vs 4 misses: the smallest miss-rate
+    difference detectable at 80% power is about 69 percentage points. This is a
+    reconciliation, not a test.
+
+  QUOTE-PERSISTENCE PROXY (large sample, and it is a proxy)
+    1,183 eligible moments; a row exists one second later for 1,180 (99.7%).
+    of those, the offer was gone or worse 804 times = 68.14%.
+    treating a MISSING next row as gone instead: 68.22%.
+    live miss rate for comparison: 23.5% (4/17).
+    WHY it counts as gone -- the reading turns on this: price_worse 804, still_there 376
+    when the price got worse it got worse by a median of 0.80c (p10 0.20c, p90 2.80c). A one-tick drift toward
+    1.00 counts here, so this is 'our limit would not have filled', not 'the book emptied'.
+
+  P(the offer is gone one second later), pp per 1 sd
+    n = 1,180 rows   closes (clusters) = 82   strata = 20   outcome mean = 68.136 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           3.551    -3.182   -2.74   0.0102
+    spread (cents)                3.907    -5.083   -4.14   0.0002
+    log10 total top-3 depth       3.931    -0.386   -0.28   0.7820
+    book imbalance toward us      4.554    +0.791   +0.50   0.6235
+    log10 level age (ms)          4.797    -5.298   -3.56   0.0022
+    -- all 5 together --
+    log10 size at touch           3.987    -4.101   -3.22   0.0020
+    spread (cents)                4.086    -5.890   -4.35   0.0002
+    log10 total top-3 depth       4.287    -2.000   -1.33   0.1884
+    book imbalance toward us      4.718    +1.117   +0.65   0.5313
+    log10 level age (ms)          4.829    -5.665   -3.72   0.0012
+    multiple-looks: p(max|t| over 5 features) = 0.0012   [max|t| observed 4.35]
+    CONTROL, labels shuffled across rows: max|t| = 1.05 (must be small)
+
+  ARTEFACT CHECK -- SERIES fixed effects added, so no comparison is ever
+  between one coin and another:
+
+  P(the offer is gone one second later), series FE, pp per sd
+    n = 1,180 rows   closes (clusters) = 82   strata = 121   outcome mean = 68.136 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           3.621    -3.830   -3.46   0.0010
+    spread (cents)                4.109    -5.281   -3.93   0.0004
+    log10 total top-3 depth       3.776    -0.413   -0.31   0.7524
+    book imbalance toward us      3.866    +1.277   +0.93   0.3383
+    log10 level age (ms)          4.619    -5.632   -3.95   0.0002
+    -- all 5 together --
+    log10 size at touch           3.673    -3.459   -2.97   0.0024
+    spread (cents)                4.111    -5.258   -3.78   0.0002
+    log10 total top-3 depth       3.772    -0.827   -0.65   0.4949
+    book imbalance toward us      3.923    +0.648   +0.49   0.6173
+    log10 level age (ms)          4.700    -6.030   -3.97   0.0002
+    multiple-looks: p(max|t| over 5 features) = 0.0004   [max|t| observed 3.97]
+    CONTROL, labels shuffled across rows: max|t| = 2.11 (must be small)
+
+    OUT OF SAMPLE -- fit on the 630 rows before close 1788605100, rank the 547 after it:
+      quartile of predicted miss          n   miss rate  vs stratum
+      Q1 (best book)                    136       57.4%      -11.6pp
+      Q2                                136       70.6%       +1.0pp
+      Q3                                136       70.6%       +1.7pp
+      Q4 (worst book)                   139       77.7%       +5.6pp
+
+==========================================================================
+3. FLIPS ON THE WIDER SAMPLE -- price and tau held fixed
+==========================================================================
+
+  P(the favoured side loses), pp per 1 sd
+    n = 28,479 rows   closes (clusters) = 132   strata = 36   outcome mean = 5.288 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           0.857    +0.425   +1.41   0.1658
+    spread (cents)                1.633    -0.779   -1.49   0.1620
+    log10 total top-3 depth       0.676    +0.424   +1.78   0.0800
+    book imbalance toward us      2.095    -1.371   -1.92   0.0626
+    log10 level age (ms)          0.633    -0.346   -1.55   0.1286
+    -- all 5 together --
+    log10 size at touch           0.984    -0.008   -0.02   0.9816
+    spread (cents)                1.631    -0.694   -1.34   0.2104
+    log10 total top-3 depth       0.728    +0.301   +1.18   0.2507
+    book imbalance toward us      2.182    -1.338   -1.80   0.0854
+    log10 level age (ms)          0.590    -0.223   -1.09   0.2897
+    multiple-looks: p(max|t| over 5 features) = 0.3415   [max|t| observed 1.80]
+    CONTROL, labels shuffled across rows: max|t| = 1.44 (must be small)
+
+    OUT OF SAMPLE, ranked by book imbalance alone: fit on the 14,093 rows before close
+    1788603300, rank the 14,386 after it.
+      Q1  n =   3596   flip rate   5.06%   vs its stratum  -2.22pp
+      Q2  n =   3596   flip rate   0.89%   vs its stratum  -1.16pp
+      Q3  n =   3596   flip rate   5.39%   vs its stratum  +0.02pp
+      Q4  n =   3598   flip rate   8.92%   vs its stratum  +1.95pp
+      A quartile table carries no error bar. The clustered regression above
+      does, and it is the one that decides.
+
+    OUT OF SAMPLE, ranked by all five book features: fit on the 14,093 rows before close
+    1788603300, rank the 14,386 after it.
+      Q1  n =   3596   flip rate   6.03%   vs its stratum  -1.24pp
+      Q2  n =   3596   flip rate   1.64%   vs its stratum  -0.94pp
+      Q3  n =   3596   flip rate   2.47%   vs its stratum  -0.91pp
+      Q4  n =   3598   flip rate  10.12%   vs its stratum  +1.68pp
+      A quartile table carries no error bar. The clustered regression above
+      does, and it is the one that decides.
+
+  The same test with the model's own probability added as a control, so a
+  feature has to beat the gaussian rather than merely agree with it:
+
+  P(flip) controlling for log10 model failure probability, pp per 1 sd
+    n = 28,479 rows   closes (clusters) = 132   strata = 36   outcome mean = 5.288 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           0.857    +0.425   +1.41   0.1728
+    spread (cents)                1.633    -0.779   -1.49   0.1600
+    log10 total top-3 depth       0.676    +0.424   +1.78   0.0808
+    book imbalance toward us      2.095    -1.371   -1.92   0.0604
+    log10 level age (ms)          0.633    -0.346   -1.55   0.1338
+    log10 model failure prob      0.730    +0.845   +3.32   0.0008
+    -- all 6 together --
+    log10 size at touch           1.027    +0.110   +0.30   0.7752
+    spread (cents)                1.637    -0.806   -1.57   0.1506
+    log10 total top-3 depth       0.734    +0.336   +1.30   0.1920
+    book imbalance toward us      2.234    -1.206   -1.58   0.1200
+    log10 level age (ms)          0.591    -0.214   -1.05   0.3103
+    log10 model failure prob      0.853    +0.861   +2.81   0.0058
+    multiple-looks: p(max|t| over 6 features) = 0.0294   [max|t| observed 2.81]
+    CONTROL, labels shuffled across rows: max|t| = 1.61 (must be small)
+
+==========================================================================
+4. THE EXCEEDANCE TAIL -- is a thin or wide book a jump warning?
+==========================================================================
+  22,801 (series, second) observations with a 5-second forward window; 5,678 had none.
+  realised |z| > 2 in 6.37% of them (gaussian 4.55%), |z| > 3 in 2.69% (gaussian 0.270%).
+  An anchor against volcheck.py's 13.0M-cell measurement, not a re-derivation
+  of it: this is a 5-second forward move on the book-row grid, not the
+  settlement horizon.
+
+  P(|forward 5s z| > 3), pp per 1 sd
+    n = 22,801 rows   closes (clusters) = 131   strata = 36   outcome mean = 2.688 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           0.513    +0.066   +0.36   0.7389
+    spread (cents)                0.536    -0.092   -0.50   0.6175
+    log10 total top-3 depth       0.592    -0.114   -0.54   0.5979
+    book imbalance toward us      0.629    -0.573   -2.68   0.0086
+    log10 level age (ms)          0.363    -0.440   -3.54   0.0002
+    -- all 5 together --
+    log10 size at touch           0.483    +0.009   +0.05   0.9576
+    spread (cents)                0.533    -0.086   -0.48   0.6343
+    log10 total top-3 depth       0.610    -0.210   -0.97   0.3397
+    book imbalance toward us      0.628    -0.543   -2.53   0.0144
+    log10 level age (ms)          0.363    -0.423   -3.42   0.0008
+    multiple-looks: p(max|t| over 5 features) = 0.0028   [max|t| observed 3.42]
+    CONTROL, labels shuffled across rows: max|t| = 2.45 (must be small)
+
+  WHAT WOULD HAVE TO BE TRUE FOR THAT TO BE AN ARTEFACT:
+  volatility clusters, and a book level's age is a proxy for how recently
+  the index moved -- a jump reprices the book, so a fresh level and a
+  forthcoming jump would both follow from the same recent activity, with no
+  information in the book at all. So: the same test with the index's OWN
+  recent activity added as controls. A book feature that survives this is
+  carrying something the index tape does not.
+
+  P(|forward 5s z| > 3) given recent index activity, pp per sd
+    n = 22,801 rows   closes (clusters) = 131   strata = 36   outcome mean = 2.688 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           0.513    +0.066   +0.36   0.7193
+    spread (cents)                0.536    -0.092   -0.50   0.6287
+    log10 total top-3 depth       0.592    -0.114   -0.54   0.6061
+    book imbalance toward us      0.629    -0.573   -2.68   0.0064
+    log10 level age (ms)          0.363    -0.440   -3.54   0.0004
+    index jumped in last 30s      0.691    +0.488   +2.00   0.0512
+    |5s transient| (sigmas)       0.650    +0.436   +1.95   0.0642
+    |15s drift| (sigmas)          0.747    +0.537   +2.14   0.0552
+    log10 sigma_30 / sigma_300    1.483    -0.191   -0.38   0.9962
+    -- all 9 together --
+    log10 size at touch           0.478    +0.007   +0.04   0.9748
+    spread (cents)                0.540    -0.102   -0.58   0.5757
+    log10 total top-3 depth       0.611    -0.219   -1.03   0.3197
+    book imbalance toward us      0.629    -0.550   -2.54   0.0120
+    log10 level age (ms)          0.360    -0.396   -3.22   0.0018
+    index jumped in last 30s      0.817    +0.490   +1.76   0.0958
+    |5s transient| (sigmas)       0.720    +0.216   +0.88   0.3953
+    |15s drift| (sigmas)          0.920    +0.412   +1.34   0.2250
+    log10 sigma_30 / sigma_300    1.700    -0.524   -1.00   0.8114
+    multiple-looks: p(max|t| over 9 features) = 0.0128   [max|t| observed 3.22]
+    CONTROL, labels shuffled across rows: max|t| = 2.05 (must be small)
+
+  SECOND ARTEFACT CHECK -- the same test with SERIES fixed effects added,
+  so the comparison is between markets of the same coin at the same price
+  and the same tau, never between a step-function coin and a smooth one:
+
+  P(|forward 5s z| > 3), series fixed effects, pp per 1 sd
+    n = 22,801 rows   closes (clusters) = 131   strata = 294   outcome mean = 2.688 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           0.410    -0.101   -0.69   0.4955
+    spread (cents)                0.398    -0.002   -0.01   0.9892
+    log10 total top-3 depth       0.617    -0.256   -1.17   0.2505
+    book imbalance toward us      0.607    -0.485   -2.33   0.0230
+    log10 level age (ms)          0.362    -0.407   -3.25   0.0010
+    -- all 5 together --
+    log10 size at touch           0.378    -0.104   -0.78   0.4371
+    spread (cents)                0.401    -0.024   -0.17   0.8682
+    log10 total top-3 depth       0.612    -0.193   -0.88   0.3913
+    book imbalance toward us      0.603    -0.469   -2.26   0.0278
+    log10 level age (ms)          0.367    -0.392   -3.11   0.0022
+    multiple-looks: p(max|t| over 5 features) = 0.0072   [max|t| observed 3.11]
+    CONTROL, labels shuffled across rows: max|t| = 0.89 (must be small)
+
+  BACKWARD-LOOKING COMPANION -- the move that ALREADY happened. A jump
+  reprices the book, so this must be large. A null here would mean the
+  estimator cannot see anything on this population and the forward null
+  above would say nothing.
+
+  P(|PAST 5s z| > 3), pp per 1 sd
+    n = 18,096 rows   closes (clusters) = 131   strata = 36   outcome mean = 2.536 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           0.384    +0.148   +1.08   0.2877
+    spread (cents)                1.074    +0.621   +1.60   0.1082
+    log10 total top-3 depth       0.485    +0.325   +1.90   0.0676
+    book imbalance toward us      0.702    +0.415   +1.70   0.0972
+    log10 level age (ms)          0.477    -0.529   -3.31   0.0004
+    -- all 5 together --
+    log10 size at touch           0.406    +0.276   +1.97   0.0522
+    spread (cents)                1.094    +0.691   +1.75   0.0664
+    log10 total top-3 depth       0.503    +0.309   +1.71   0.1004
+    book imbalance toward us      0.722    +0.508   +2.04   0.0428
+    log10 level age (ms)          0.478    -0.537   -3.32   0.0006
+    multiple-looks: p(max|t| over 5 features) = 0.0026   [max|t| observed 3.32]
+    CONTROL, labels shuffled across rows: max|t| = 1.24 (must be small)
+
+  THE DECIDING TEST. If the book carried FORWARD information, the forward
+  relation would survive conditioning on the move that already happened.
+  If instead level age is a marker of an active regime, conditioning on
+  the backward move should absorb most of it -- the same coefficient in
+  both directions of time is the signature of a regime, not a forecast.
+
+  P(|forward 5s z| > 3) given the PAST move, pp per 1 sd
+    n = 18,096 rows   closes (clusters) = 131   strata = 36   outcome mean = 2.614 pp
+    feature                         MDE       est       t   p_rand
+    log10 size at touch           0.568    +0.111   +0.55   0.5765
+    spread (cents)                0.649    -0.106   -0.47   0.6431
+    log10 total top-3 depth       0.652    -0.088   -0.38   0.7171
+    book imbalance toward us      0.760    -0.743   -2.89   0.0034
+    log10 level age (ms)          0.363    -0.404   -3.25   0.0014
+    |PAST 5s z| > 3 (0/1)         0.520    +0.329   +1.70   0.0970
+    -- all 6 together --
+    log10 size at touch           0.534    +0.009   +0.05   0.9630
+    spread (cents)                0.645    -0.109   -0.51   0.6283
+    log10 total top-3 depth       0.689    -0.232   -0.96   0.3423
+    book imbalance toward us      0.771    -0.731   -2.80   0.0062
+    log10 level age (ms)          0.368    -0.362   -2.90   0.0034
+    |PAST 5s z| > 3 (0/1)         0.522    +0.345   +1.79   0.0758
+    multiple-looks: p(max|t| over 6 features) = 0.0230   [max|t| observed 2.90]
+    CONTROL, labels shuffled across rows: max|t| = 1.25 (must be small)
+
+==========================================================================
+VERDICT
+==========================================================================
+  P(a >=0.5c better price arrives later), pp per 1 sd
+     strongest single feature: spread (cents)  est +6.427 vs MDE 9.833, t +2.01, p 0.0468; joint multiple-looks p 0.1536
+  size of the best later improvement, cents per 1 sd
+     strongest single feature: log10 size at touch  est +0.214 vs MDE 0.481, t +1.25, p 0.2082; joint multiple-looks p 0.4145
+  P(the offer is gone one second later), pp per 1 sd
+     strongest single feature: spread (cents)  est -5.083 vs MDE 3.907, t -4.14, p 0.0002; joint multiple-looks p 0.0012
+  P(the offer is gone one second later), series FE, pp per sd
+     strongest single feature: log10 level age (ms)  est -5.632 vs MDE 4.619, t -3.95, p 0.0002; joint multiple-looks p 0.0004
+  P(the favoured side loses), pp per 1 sd
+     strongest single feature: book imbalance toward us  est -1.371 vs MDE 2.095, t -1.92, p 0.0626; joint multiple-looks p 0.3415
+  P(flip) controlling for log10 model failure probability, pp per 1 sd
+     strongest single feature: log10 model failure prob  est +0.845 vs MDE 0.730, t +3.32, p 0.0008; joint multiple-looks p 0.0294
+  P(|forward 5s z| > 3), pp per 1 sd
+     strongest single feature: log10 level age (ms)  est -0.440 vs MDE 0.363, t -3.54, p 0.0002; joint multiple-looks p 0.0028
+  P(|forward 5s z| > 3) given recent index activity, pp per sd
+     strongest single feature: log10 level age (ms)  est -0.440 vs MDE 0.363, t -3.54, p 0.0004; joint multiple-looks p 0.0128
+  P(|forward 5s z| > 3), series fixed effects, pp per 1 sd
+     strongest single feature: log10 level age (ms)  est -0.407 vs MDE 0.362, t -3.25, p 0.0010; joint multiple-looks p 0.0072
+  P(|PAST 5s z| > 3), pp per 1 sd
+     strongest single feature: log10 level age (ms)  est -0.529 vs MDE 0.477, t -3.31, p 0.0004; joint multiple-looks p 0.0026
+  P(|forward 5s z| > 3) given the PAST move, pp per 1 sd
+     strongest single feature: log10 level age (ms)  est -0.404 vs MDE 0.363, t -3.25, p 0.0014; joint multiple-looks p 0.0230
+
+  A feature is worth adding only where its estimate exceeds its own MDE AND
+  the joint multiple-looks p-value is small. Anything else is noise with an
+  honest error bar around it.

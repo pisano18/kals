@@ -1,0 +1,1 @@
+--loss-abort -60.00 is outside [-240.00, -90.00] for size 20 with 3 buys per close. One bad CLOSE costs up to $60.00; the abort must survive the first and stop by the fourth.

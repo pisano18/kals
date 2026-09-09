@@ -1,0 +1,33 @@
+PROPOSED, NOT APPLIED. pinrun.py is loaded by live pid 3997812; do not edit in
+place. This is a LOG-FIDELITY fix, not a money fix -- see the audit finding:
+at the measured universe-pass duration (0.77-0.90 s, 11 GETs, 3 reps) the stale
+clock is strictly CONSERVATIVE at the 0.98/0.02 gate and produced 0 extra
+trades in 2.1M simulated cells. Apply at the next natural restart, not before.
+
+--- research/pinrun.py   (around line 1017)
+@@
+-        for tk, (iid, close_s, strike, digits, exi) in list(seen_markets.items()):
+-            tau = close_s - now_s
++        # The clock is re-read HERE, not at the top of the iteration. now_s is
++        # captured at :947, before the 11-GET universe pass; that pass takes
++        # ~0.85 s measured and up to 11 x 20 s = 220 s if every GET hits
++        # kauth's timeout, so a now_s captured before it can be seconds stale.
++        # The error is one-signed and safe (a stale now_s moves already-locked
++        # prints into `remaining`, which only inflates sd and pulls fair toward
++        # 0.5), but it writes a tau into the signal record that is not the tau
++        # the trade had. Same class as the PRICE_CEILING log line.
++        loop_now_s = int(time.time())
++        for tk, (iid, close_s, strike, digits, exi) in list(seen_markets.items()):
++            tau = close_s - loop_now_s
+@@
+-            f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS,
++            f = fair(idx, iid, close_s, loop_now_s, strike, sg * SIGMA_STRESS,
+                      round_digits=digits)
+
+SEPARATELY (bigger win, also not applied): kauth.get uses timeout=20 and
+pinrun makes 11 of them serially every 20 s plus reconcile()'s GETs at the top
+of the same loop. A single hung endpoint blinds the trading loop for up to
+20 s; all eleven for 220 s. That is missed closes, not lost money (the book and
+index staleness gates and pintake's own "market closed" rail all use a fresh
+clock), but a 3-5 s timeout on the universe GETs would bound it. Needs its own
+measurement of the p99 GET latency before it is set.

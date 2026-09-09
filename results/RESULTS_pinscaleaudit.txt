@@ -1,0 +1,124 @@
+==============================================================================
+pinscaleaudit -- ADVERSARIAL AUDIT OF pinscale.py's RECOMMENDATION
+==============================================================================
+  population: results/pindata/rows.jsonl, wide window tau 3-60, live gates
+  4696 eligible trades over 118 closes
+
+A1  HOW MANY EVENTS, AND OVER HOW MANY DAYS
+  calendar days in the sample: 3
+    2026-09-04   29 closes   4 losing closes   5 losing trades
+    2026-09-05   70 closes   4 losing closes   5 losing trades
+    2026-09-06   19 closes   0 losing closes   0 losing trades
+  losing trades the one-per-market rule avoids: 2
+    09-04 16:15  KXETH15M-26SEP041215-15  idx2  YES @96.5c
+    09-05 01:30  KXXRP15M-26SEP042130-30  idx2  NO @96.8c
+  -> the ENTIRE measured benefit rests on 2 events on 2 distinct days.
+
+  LEAVE-ONE-DAY-OUT on realised P&L (size 20):
+    held-out day   closes   any-market   one-per-market   delta
+    2026-09-04       29    $  -38.65      $  -27.91    $  +10.74
+    2026-09-05       70    $   62.53      $   67.94    $   +5.41
+    2026-09-06       19    $   49.84      $   40.21    $   -9.62
+    (a day with zero losing closes cannot discriminate the two rules)
+
+A2  COST IN THE LIVE WINDOW (tau 3-30), WHICH HAS ZERO LOSSES
+  live-window buys: any-market 136 over 82 closes, 0 flips
+  live-window buys: one-per-mkt 115 over 82 closes, 0 flips
+  refused 23 buys (0 losers), added 2 (0 losers)
+  EV@0.90%: refused $43.34, added $1.90, net $-41.44 on a base of $143.56 = -28.9%
+  realised in the live window: any $166.81, one-per-mkt $121.74 (ZERO losses, so the whole delta is refused profit)
+
+A3  THE CORRELATION INPUT TO THE ACCOUNT SIM
+  cross-market pairs 760; BOTH lost 2; exactly one lost 41
+  cond_coflip point 8.9%  marginal 2.74%  cluster-bootstrap 95% CI [0.0%, 19.2%]
+  -> the whole 'MEASURED correlation' input rests on 2 co-flip events.
+
+  ACCOUNT SIM ACROSS THAT CI (flip 0.90%, live brakes, 2000 draws):
+    cond_coflip   any-market median   one-per-mkt median   any halt%%   one halt%%
+        2.8%        $   41.03          $  200.24          85.1%      34.8%
+        8.9%        $   48.17          $  202.24          85.3%      33.3%
+       20.0%        $   53.68          $  203.24          83.3%      32.6%
+       40.0%        $   65.95          $  206.24          79.3%      32.6%
+       70.0%        $   83.36          $  206.24          71.9%      34.1%
+      100.0%        $  110.17          $  204.24          66.0%      35.1%
+
+A4  SHUFFLED-LABEL CONTROL (outcome patterns permuted across closes)
+  CALIBRATION: 438 market-closes, 12 with the favoured side losing = 2.74% (must match pinscale's 2.74% marginal)
+  and the unshuffled map reproduces the tape: any 10 losing trades, one-per-mkt 8 (replay says 10 and 8)
+  OBSERVED advantage of one-per-market: $+6.53 with no brakes, $+9.83 with the live brakes
+    no brakes    shuffled delta: median $+6.53, mean $+16.84, 95% band [$-13.47, $+59.53]
+                 observed $+6.53 -> P(shuffle >) = 0.488, P(=) = 0.377, mid-p = 0.676
+    live brakes  shuffled delta: median $+24.45, mean $+34.34, 95% band [$-7.20, $+110.14]
+                 observed $+9.83 -> P(shuffle >) = 0.703, P(=) = 0.001, mid-p = 0.703
+  -> A RANDOM RELABELLING PRODUCES AN ADVANTAGE THIS LARGE OR LARGER
+     MOST OF THE TIME.  The shuffled-label control returns nothing.
+
+A5  THE FIX pinscale DIAGNOSED BUT DID NOT TEST: COUNT LOSING CLOSES
+    'the brake counts TRADES; the unit of information is a CLOSE'
+    A close-counting brake costs ZERO trades.  Same sim, flip 0.90%%:
+    rule                brake            median $   5th %%ile   halt%%
+    any-market  cap3   3 losing TRADES  $   48.17  $  -34.30    85.3%
+    any-market  cap3   3 losing CLOSES  $   49.67  $  -29.76    85.0%
+    one-per-mkt cap3   3 losing TRADES  $  202.24  $   36.27    33.3%
+    one-per-mkt cap3   3 losing CLOSES  $  202.24  $   44.81    30.3%
+    any-market  cap2   3 losing TRADES  $  163.07  $   15.75    28.1%
+    any-market  cap2   3 losing CLOSES  $  163.07  $   29.38    22.9%
+
+    and at the 2.31%% upper bound:
+    any-market  cap3   3 losing TRADES  $   -6.14  $  -44.41    99.5%
+    any-market  cap3   3 losing CLOSES  $   -6.14  $  -54.34    99.5%
+    one-per-mkt cap3   3 losing TRADES  $   65.73  $  -25.39    90.5%
+    one-per-mkt cap3   3 losing CLOSES  $   68.34  $  -24.66    89.4%
+
+A6  HOW MUCH OF THE GAP IS 'A HALT ENDS THE SAMPLE FOREVER'?
+    LOSS_PLAN.md halts, re-measures and restarts.  run_account() does not.
+    rule                halt model        median $   5th %%ile   halt%%
+    any-market  cap3   permanent        $   48.17  $  -34.30    85.3%
+    any-market  cap3   resumable        $  195.78  $  136.52    85.3%
+    one-per-mkt cap3   permanent        $  202.24  $   36.27    33.3%
+    one-per-mkt cap3   resumable        $  202.34  $  145.36    33.3%
+
+A7  THE 'BOTH SIDES OF ONE MARKET' EPISODES -- WHAT DID THEY COST?
+    09-04 16:15 KXETH15M-26SEP041215-15
+        YES @98.3c  LOST
+        YES @96.5c  LOST
+        NO  @90.8c  won
+        market P&L WITH the opposite leg  $-37.31
+        market P&L WITHOUT it             $-39.03
+        the opposite leg was worth        $+1.72
+    09-04 22:30 KXBTC15M-26SEP041830-30
+        NO  @87.0c  LOST
+        YES @86.0c  won
+        market P&L WITH the opposite leg  $-14.93
+        market P&L WITHOUT it             $-17.56
+        the opposite leg was worth        $+2.63
+    pairs 3, over 2 CLOSES (pinscale reports this as '3 times')
+
+A8  THE MINIMAL FIX pinscale FOUND BUT DID NOT TEST: NEVER BUY THE
+    OPPOSITE SIDE OF A MARKET YOU ALREADY HOLD.  Same-market, same-side
+    scale-in is left alone, so this refuses 2 buys, not 28.
+    rule                    buys  flips   realised    EV@0.90%   sim median   sim p05   halt%
+    live cap3 any-market    255    10   $   73.71   $  230.44   $   48.17  $  -34.30    85.3%
+    cap3 one-per-market     227     8   $   80.24   $  201.75   $  202.24  $   36.27    33.3%
+    cap3 no-opposite-side   253    10   $   69.36   $  226.45   $  229.36  $    1.43    38.4%
+
+    IN THE LIVE WINDOW (tau 3-30) the no-opposite rule is a NO-OP:
+      any-market 136 buys / $143.56 EV; no-opposite 136 buys / $143.56 EV; one-per-market 115 buys / $102.12 EV
+      both-sides closes in the live window: 0 of 82
+
+
+    AND THE BRAKE FIX ON TOP OF IT.  A5 showed close-counting does
+    nothing for the live rule; that was because the halts there are
+    the opposite-side legs, which land on TWO different closes.  With
+    those removed, does counting CLOSES buy the remaining tail?
+    rule                    brake            median $   5th %%ile   halt%%
+    cap3 no-opposite-side  3 losing TRADES  $  229.36  $    1.43    38.4%
+    cap3 no-opposite-side  3 losing CLOSES  $  229.36  $   63.52    28.0%
+    cap3 one-per-market    3 losing TRADES  $  202.24  $   36.27    33.3%
+    cap3 one-per-market    3 losing CLOSES  $  202.24  $   44.81    30.3%
+
+    WHY THIS MATTERS: pinrun's loss-COUNT brake increments once per
+    settled losing ORDER (pinrun.py line ~1301).  A close that holds
+    both sides of one market therefore delivers a losing trade with
+    probability ONE and spends a third of the brake budget on a
+    position that carries no directional risk at all.

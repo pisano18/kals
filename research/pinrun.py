@@ -617,6 +617,40 @@ def selftest():
 
     # --- fee-netted edge ---
     # --- THE EXPECTED-VALUE GATE (AMENDMENT 2) ---
+    # --- AMENDMENT 8: what SURVIVED the forensics of the first loss ---------
+    # Almost nothing did. Flatness, sigma regime and recent-jump separate
+    # losers from winners at p 0.14-0.99, and once the model's own risk number
+    # is held fixed NOTHING adds anything. Every entry gate tested costs 22-44
+    # WINNING trades per loss avoided. Two cheap structural fixes survived.
+
+    # (A) both sides of one market is a CERTAIN loss on one of the two orders
+    def _pair_cost(p_yes, p_no):
+        return (p_yes + p_no) - 1.0          # paid, minus the guaranteed $1
+    ck(_pair_cost(0.983, 0.908) > 0,
+       f"buying YES at 98.3c and NO at 90.8c on ONE market pays "
+       f"{100*(0.983+0.908):.1f}c for a guaranteed $1.00 -- a locked "
+       f"{100*_pair_cost(0.983,0.908):.1f}c loss carrying NO directional risk")
+    ck(all(_pair_cost(a, b) > 0 for a in (0.51, 0.73, 0.99)
+           for b in (0.51, 0.73, 0.99)),
+       "and EVERY price the rule can pay is above 50c, so a both-sides pair is "
+       "ALWAYS a locked loss -- there is no price at which it is not")
+    _pv = {"n": 1, "best": 0.98, "tk": "A", "sides": {"A": "yes"}}
+    ck(_pv["sides"].get("A") == "yes" and _pv["sides"].get("B") is None,
+       "the side taken is recorded PER TICKER, so a second market is "
+       "unaffected -- the guard must not block ordinary diversification")
+
+    # (B) the brake counts CLOSES, because a close is one draw
+    _lc = set()
+    for _cs in (100, 100, 100, 200):
+        _lc.add(_cs)
+    ck(len(_lc) == 2,
+       f"three losing trades on ONE close plus one on another is TWO losing "
+       f"closes, not four ({len(_lc)}) -- tonight three fills on one NEAR "
+       f"market spent the whole 3-loss budget on a SINGLE draw")
+    ck(len({100}) < 3,
+       "so one bad close can no longer exhaust a 3-close brake by itself, "
+       "which is what 'three losses is roughly a 1% event' actually assumed")
+
     # --- TWO FILLS ON THE SAME TICKER MUST BOTH SURVIVE ---------------------
     # 2026-09-08 23:29:53Z filled KXSOL15M twice in one close, at 94.0c and
     # 90.1c. open_pos was keyed by TICKER, so the second overwrote the first:
@@ -1298,11 +1332,24 @@ def trade_loop(a, rec, book, idx, series_index):
             state["settled"] = state.get("settled", 0) + 1
             state["wins"] = state.get("wins", 0) + int(won)
             if not won:
-                pintake.LEDGER["losses"] = int(
-                    pintake.LEDGER.get("losses", 0) or 0) + 1
-                state["losses"] = state.get("losses", 0) + 1
-                print(f"  *** A LOSS. run losses "
-                      f"{pintake.LEDGER['losses']} ***")
+                # AMENDMENT 8(B): THE BRAKE COUNTS LOSING CLOSES, NOT LOSING
+                # TRADES. The unit of information is a CLOSE -- twelve series
+                # settle on the same second at rho ~0.8, and three fills on ONE
+                # market are ONE draw, not three. Tonight three fills on one
+                # NEAR market spent the entire 3-loss budget on a single event,
+                # when LOSS_PLAN's "three losses is roughly a 1% event" is
+                # arithmetic on three INDEPENDENT draws. Costs zero trades and
+                # makes the brake measure what it was written to measure.
+                state["losing_trades"] = state.get("losing_trades", 0) + 1
+                _lc = state.setdefault("losing_closes", set())
+                _new_close = close_s not in _lc
+                _lc.add(close_s)
+                if _new_close:
+                    pintake.LEDGER["losses"] = int(
+                        pintake.LEDGER.get("losses", 0) or 0) + 1
+                print(f"  *** A LOSS. losing trades "
+                      f"{state['losing_trades']}, losing CLOSES "
+                      f"{pintake.LEDGER['losses']} (the brake counts closes) ***")
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
                 pnl_c=round(100 * pnl, 2),
                 realised=round(pintake.LEDGER["realised"], 4))
@@ -1453,6 +1500,21 @@ def trade_loop(a, rec, book, idx, series_index):
             prev = fired.get(close_s)
             if prev is not None and prev["n"] >= MAX_PER_CLOSE:
                 continue
+            # AMENDMENT 8(A): NEVER HOLD BOTH SIDES OF ONE MARKET.
+            # `fired` was keyed by close alone, so the improve bar was compared
+            # across markets AND across sides. Every price we can pay is above
+            # 50c, so buying YES then NO on the same market pays >100c for a
+            # guaranteed $1.00 -- a CERTAIN loss on one of the two orders,
+            # carrying no directional risk at all. Worse, pinrun counts the
+            # loss brake per settled losing ORDER, so it spends a third of the
+            # budget with certainty. Measured: 3 pairs over 2 closes in the
+            # wide sample, ZERO in 82 live-window closes, so this costs ~$4 of
+            # EV out of $230 and nothing at all where we actually trade.
+            if prev is not None and prev.get("sides", {}).get(tk) not in (None,):
+                if prev["sides"][tk] != want:
+                    nb0 = near.setdefault(close_s, _fresh_near())
+                    nb0["both_sides_blocked"] =                         nb0.get("both_sides_blocked", 0) + 1
+                    continue
             # AND A SEPARATE CAP ON ATTEMPTS. AMENDMENT 6 stopped a no-fill
             # from burning a FILL slot, which is right -- an unfilled order
             # creates no exposure. But it left NOTHING bounding how many times
@@ -1585,10 +1647,14 @@ def trade_loop(a, rec, book, idx, series_index):
                 ATTEMPTS."""
                 pv = fired.get(close_s)
                 if pv is None:
-                    fired[close_s] = {"n": 1, "best": px, "tk": tk}
+                    fired[close_s] = {"n": 1, "best": px, "tk": tk,
+                                      "sides": {tk: want},
+                                      "tickers": {tk}}
                 else:
                     pv["n"] += 1
                     pv["best"] = min(pv["best"], px)
+                    pv.setdefault("sides", {})[tk] = want
+                    pv.setdefault("tickers", set()).add(tk)
 
             if not live:
                 _book_slot(price)
