@@ -1,0 +1,530 @@
+SELF-TEST -- pinclose
+  ok   K_eff recovers from mu, req and r exactly (100.500000 vs 100.5)
+  ok   the rounded-settlement strike for a 4-digit coin is K - 0.00005 (2.34915) -- this is tonight's 2.34915
+  ok   range over a window that contains the spike is 0.5 (0.5)
+  ok   and 0.0 over a window that does not -- which is exactly the failure mode: a flat 60 s says 'nothing can happen' one second before a jump
+  ok   a window that runs off the start of the tape returns None, not a silently short range
+  ok   the snapshot is read from the *_fp keys the tape actually carries
+  ok   the YES ask is 1 - the best NO bid (0.65) with that level's size (80.0)
+  ok   NULL: the OLD key names load nothing at all -- which is exactly the open bug this class exists to avoid, and it must stay visible
+  ok   and emptying the other side leaves no ask rather than a stale one
+  ok   holding YES, above the strike is a cushion and below it is a deficit
+  ok   holding NO the sign flips -- the cushion is always measured on the side we need
+  ok   tonight's entry: NO with the index 0.00085 BELOW the strike is a POSITIVE cushion of 0.00085
+  ok   and after the jump it is MINUS 0.00135 -- while the UNSIGNED gap grew from 0.00085 to 0.00135 and so looked safer
+  ok   planted CROSSING: found at tau 16, which is tonight's actual second
+  ok   NULL: a path that never crosses returns None, not a spurious tau
+  ok   planted PERSISTENT crossing: fires at tau 19 with no confirmation and tau 17 after 2 s of it (19, 17)
+  ok   NULL: a one-second blip back over the line fires without confirmation and is correctly SUPPRESSED by 2 s of it -- the false-alarm control
+  ok   planted TAIL: in 100 closes with ten losses the 1st percentile is the worst (-10.0) and the 5th is the fifth worst (-6.0)
+  ok   and with only THREE losses in 100 closes the 5th percentile is a WIN -- the tail is shallower than the worst case, which is the whole reason to print both
+  ok   NULL: a world with no losses has a 1st percentile equal to the win, not a fabricated loss
+  ok   and an empty sample returns None
+  ok   a 90c loss against a 3c mean win costs 30 WINS to recover
+  ok   and a loss the size of one win costs one win
+  ok   planted CLIFF at bin 3: estimator puts the break at 3
+  ok   and rejects the smooth model (p = 0.008)
+  ok   planted SMOOTH SLOPE: the step model must NOT beat it (p = 1.000) -- a estimator that calls every downward trend a cliff would gate on noise
+  ok   NULL world (flat 3% everywhere): no cliff found (p = 1.000)
+  ok   and no slope found (b = -0.016)
+  ok   planted SIMPSON: marginal rates are 10.1% vs 1.9% but the within-band difference is +0.0000 pp -- zero, which is the correct answer
+  ok   planted REAL effect of +4.5 pp inside every band: estimator returns +4.500 pp
+  ok   and an empty stratum returns None rather than a fabricated zero
+  ok   cluster bootstrap point rates 0.200 / 0.020 match the planted 0.200 / 0.020
+  ok   and its sd is finite and small on 60 identical closes (0.0000)
+  ok   NULL: two buckets with the same planted rate come back identical
+  ok   a gate at 0.05 refuses 1 winner and 1 loser (1 / 1)
+  ok   so it costs 1.0 winners per loss avoided (1.00)
+  ok   and it removes the worst loss entirely: base worst -95.3c -> kept worst +4.7c (no losing position survives the gate)
+  ok   NULL: a gate at zero refuses nothing and changes nothing
+  ok   and leaves P&L identical to the base case
+SELF-TEST PASSED
+
+==============================================================================
+  PLAYING TOO CLOSE TO THE LINE -- pinclose.py
+==============================================================================
+
+  BOOK population: 28,479 rows, 1,014 markets, 132 closes
+  span 2026-09-04 12:14 -> 2026-09-06 08:14 UTC
+
+  loading index tape ...
+    50/341 index hours  5s
+    100/341 index hours  10s
+    150/341 index hours  15s
+    250/341 index hours  23s
+    300/341 index hours  28s
+  11 indices over 341 hours
+  RECONCILIATION: K_eff recovered from (mu, req, r) matches the settlement file on 4,000 of 4,000 rows checked
+
+------------------------------------------------------------------------------
+  TONIGHT'S LOSS, RECONSTRUCTED FROM THE INDEX TAPE
+------------------------------------------------------------------------------
+  Full per-second path from entry to the last settling print.
+  side = NO, so the cushion is POSITIVE while the index is BELOW K_eff.
+    tau      spot  signed cushion     bps   cr300  model p(lose)
+     22   2.34830         0.00085    3.62   0.080          1.80%
+     21   2.34830         0.00085    3.62   0.080          1.21%
+     20   2.34840         0.00075    3.19   0.071          1.12%
+     19   2.34870         0.00045    1.92   0.042          2.18%
+     18   2.34840         0.00075    3.19   0.071          0.40%
+     17   2.34840         0.00075    3.19   0.071          0.17%
+     16   2.35050        -0.00135   -5.74  -0.118         59.36%
+     15   2.35040        -0.00125   -5.32  -0.110         54.17%
+     14   2.35180        -0.00265  -11.27  -0.209         98.98%
+     13   2.35170        -0.00255  -10.84  -0.201         99.26%
+     12   2.35150        -0.00235   -9.99  -0.185         99.22%
+     11   2.35150        -0.00235   -9.99  -0.185         99.72%
+     10   2.35150        -0.00235   -9.99  -0.185         99.94%
+      9   2.35130        -0.00215   -9.14  -0.169         99.97%
+      8   2.35130        -0.00215   -9.14  -0.169        100.00%
+      7   2.35140        -0.00225   -9.57  -0.177        100.00%
+      6   2.35130        -0.00215   -9.14  -0.169        100.00%
+      5   2.35150        -0.00235   -9.99  -0.185        100.00%
+      4   2.35080        -0.00165   -7.02  -0.130        100.00%
+      3   2.35080        -0.00165   -7.02  -0.130        100.00%
+      2   2.35060        -0.00145   -6.17  -0.114        100.00%
+      1   2.35060        -0.00145   -6.17  -0.114           nan%
+
+  WHAT THE OTHER SIDE ACTUALLY COST, from the raw book:
+    tau   YES ask      size   locked P&L if hedged here    wins
+     22     11.0c        52                       -0.9c     0.2
+     21      9.9c        24                        0.2c     0.0
+     20      9.7c        36                        0.4c     0.1
+     19      8.9c        45                        1.3c     0.3
+     18      9.0c         1                        1.2c     0.2
+     17     46.0c        60                      -37.0c     7.3
+     16     48.0c        60                      -39.0c     7.7
+     15     77.0c        25                      -67.5c    13.3
+     14     84.0c        58                      -74.2c    14.6
+     13     91.4c        25                      -81.2c    16.0
+     12     91.9c        24                      -81.7c    16.1
+     11     93.9c        23                      -83.6c    16.4
+     10     94.0c         9                      -83.6c    16.5
+      9     97.9c         1                      -87.3c    17.2
+      8     97.9c        62                      -87.3c    17.2
+      7     97.7c        55                      -87.1c    17.1
+      6     99.2c        60                      -88.5c    17.4
+      5     99.9c       283                      -89.2c    17.6
+  (our average entry was 88.5c across 59 contracts; unhedged that lost -89.2c each, which is the -$52.60)
+  index CROSSED to the wrong side at tau 16
+  the model reached 50% at tau 16; 90% at tau 14
+
+    tau  22  spot 2.34830  |spot-K| 0.00085    3.62 bps   cr60   0.207  cr300   0.080  cr900   0.046
+    tau  21  spot 2.34830  |spot-K| 0.00085    3.62 bps   cr60   0.266  cr300   0.080  cr900   0.046
+    tau  17  spot 2.34840  |spot-K| 0.00075    3.19 bps   cr60   0.268  cr300   0.071  cr900   0.041
+    tau  16  spot 2.35050  |spot-K| 0.00135    5.74 bps   cr60   0.375  cr300   0.118  cr900   0.073
+
+==============================================================================
+  A. LOSS RATE BY CUSHION
+==============================================================================
+
+  model-confident rows (p_flip <= 2%): 22,601, 1,014 markets, 16 of which flipped, over 132 closes
+
+  BOOK, all rows -- distance in BASIS POINTS  --  bucketed on bps, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+             < 2   5,129    200      91            87    43.50%   50.43%   21.076%   1.9939  14.802%       1.42
+             2-5   7,046    331     110            44    13.29%   17.37%    3.576%   0.6692   3.226%       1.11
+            5-10   7,421    390     118            19     4.87%    7.48%    1.819%   0.8449   0.664%       2.74
+           10-25   6,593    413     127             3     0.73%    2.11%    0.440%   0.3173   0.270%       1.63
+           25-60   1,911    166      97             2     1.20%    4.29%    0.471%   0.4130   0.065%       7.22
+           >= 60     379     45      34             0     0.00%    6.67%    0.000%   0.0000   0.000%       0.00
+
+  BOOK, all rows -- cushion / 60 s range  --  bucketed on cr60, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+          < 0.05     579     98      65            47    47.96%   57.74%   27.461%   4.3671  23.051%       1.19
+       0.05-0.10     635    108      65            47    43.52%   52.93%   25.197%   3.6209  24.395%       1.03
+       0.10-0.20   1,313    143      76            57    39.86%   48.05%   26.276%   4.0197  19.065%       1.38
+       0.20-0.40   2,683    213      90            70    32.86%   39.43%   15.207%   2.2978  10.996%       1.38
+       0.40-0.80   4,818    304     106            42    13.82%   18.15%    5.002%   1.0232   3.299%       1.52
+         >= 0.80  18,451    915     132            23     2.51%    3.74%    1.046%   0.5390   0.337%       3.11
+
+  BOOK, all rows -- cushion / 300 s range  --  bucketed on cr300, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+          < 0.05   1,279    127      71            64    50.39%   58.95%   26.896%   3.6259  24.312%       1.11
+       0.05-0.10   1,402    157      82            67    42.68%   50.50%   27.461%   3.8925  19.143%       1.43
+       0.10-0.20   3,235    224      97            67    29.91%   36.20%   13.014%   2.0847   9.687%       1.34
+       0.20-0.40   6,551    353     110            36    10.20%   13.80%    3.465%   0.7868   2.280%       1.52
+       0.40-0.80   8,580    464     124             9     1.94%    3.64%    0.804%   0.4729   0.147%       5.48
+         >= 0.80   7,432    520     129             5     0.96%    2.23%    0.807%   0.7064   0.001%     566.68
+
+  BOOK, all rows -- cushion / 900 s range  --  bucketed on cr900, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+          < 0.05   2,068    147      78            78    53.06%   60.95%   24.952%   2.7446  22.599%       1.10
+       0.05-0.10   2,353    192      91            69    35.94%   42.94%   20.909%   2.6719  13.096%       1.60
+       0.10-0.20   5,552    310     109            50    16.13%   20.63%    5.710%   1.0475   3.908%       1.46
+       0.20-0.40   8,829    475     122            21     4.42%    6.66%    1.563%   0.6899   0.696%       2.25
+       0.40-0.80   8,906    587     132             8     1.36%    2.67%    0.483%   0.4037   0.010%      49.00
+         >= 0.80     771     95      57             0     0.00%    3.16%    0.000%   0.0000   0.000%       0.00
+
+  BOOK, model says <= 2% -- distance in BASIS POINTS  --  bucketed on bps, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+             < 2   1,788    133      74             1     0.75%    4.14%    0.056%   0.0550   0.233%       0.24
+             2-5   5,246    286     105             6     2.10%    4.50%    0.705%   0.3691   0.172%       4.11
+            5-10   6,925    375     116            10     2.67%    4.84%    1.097%   0.8447   0.085%      12.89
+           10-25   6,366    410     127             2     0.49%    1.76%    0.440%   0.3308   0.047%       9.27
+           25-60   1,897    166      97             2     1.20%    4.29%    0.474%   0.4209   0.011%      43.10
+           >= 60     379     45      34             0     0.00%    6.67%    0.000%   0.0000   0.000%       0.00
+
+  BOOK, model says <= 2% -- cushion / 300 s range  --  bucketed on cr300, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+          < 0.05     311     48      36             0     0.00%    6.25%    0.000%   0.0000   0.203%       0.00
+       0.05-0.10     327     59      39             0     0.00%    5.08%    0.000%   0.0000   0.262%       0.00
+       0.10-0.20   1,213    145      77             2     1.38%    4.89%    0.330%   0.2523   0.281%       1.17
+       0.20-0.40   4,896    312     107             5     1.60%    3.70%    0.490%   0.2540   0.246%       1.99
+       0.40-0.80   8,422    459     124             7     1.53%    3.11%    0.748%   0.4778   0.062%      12.05
+         >= 0.80   7,432    520     129             5     0.96%    2.23%    0.807%   0.7064   0.001%     566.68
+
+==============================================================================
+  B. CLIFF OR SLOPE?  (step model vs smooth, parametric bootstrap)
+==============================================================================
+  A significant p means the data prefer a THRESHOLD to a trend --
+  a gate. A non-significant p means sizing, not gating.
+  Run twice: on ALL rows (where the answer is trivially yes -- closer to
+  the line is more dangerous, which is what the model already knows), and
+  on the MODEL-CONFIDENT rows, which is the only population we would trade.
+     bps: slope in log(cushion) = -1.799   best break at bucket 1 (2-5)   LR = 83.16   p = 0.007  (150 parametric draws)
+    cr60: slope in log(cushion) = -1.108   best break at bucket 2 (0.10-0.20)   LR = 304.59   p = 0.007  (150 parametric draws)
+   cr300: slope in log(cushion) = -1.282   best break at bucket 1 (0.05-0.10)   LR = 165.40   p = 0.007  (150 parametric draws)
+   cr900: slope in log(cushion) = -1.492   best break at bucket 1 (0.05-0.10)   LR = 142.84   p = 0.007  (150 parametric draws)
+  --- the same test on the MODEL-CONFIDENT rows only ---
+     bps: slope -0.063   break at bucket 3 (10-25)   LR = 26.67   p = 0.007
+   cr300: slope +0.432   break at bucket 2 (0.10-0.20)   LR = 3.31   p = 0.238
+
+==============================================================================
+  C. WHAT A GATE COSTS -- in cents AND in WINS TO RECOVER
+==============================================================================
+
+  LIVE window tau 3-30: 165 positions, 83 closes, 0 LOSERS
+  mean WIN 5.08c per contract, so one 90c loss costs 18 wins.
+  base: total +837.4c, worst position +1.2c (0.2 wins), worst close +1.2c (0.2 wins)
+
+     gate: refuse if cr300 <  kept  ref W  ref L    W/L     total  d profit  worst pos   wins  worst close   wins
+                       0.020   158      7      0    nan    813.0c    -24.4c       1.2c    0.2         1.2c    0.2
+                       0.050   150     15      0    nan    773.5c    -63.8c       1.2c    0.2         1.2c    0.2
+                       0.080   145     20      0    nan    739.5c    -97.9c       1.2c    0.2         1.2c    0.2
+                       0.120   131     34      0    nan    669.6c   -167.8c       1.2c    0.2         1.2c    0.2
+                       0.200    91     74      0    nan    498.2c   -339.2c       1.2c    0.2         1.2c    0.2
+                       0.350    35    130      0    nan    213.8c   -623.6c       1.2c    0.2         1.3c    0.3
+
+       gate: refuse if bps <  kept  ref W  ref L    W/L     total  d profit  worst pos   wins  worst close   wins
+                       1.000   141     24      0    nan    706.1c   -131.3c       1.2c    0.2         1.2c    0.2
+                       2.000   100     65      0    nan    501.7c   -335.7c       1.2c    0.2         1.2c    0.2
+                       4.000    47    118      0    nan    228.2c   -609.2c       1.2c    0.2         1.2c    0.2
+                       8.000    13    152      0    nan     80.0c   -757.4c       1.3c    0.3         1.3c    0.3
+                      15.000     4    161      0    nan     22.5c   -814.9c       1.6c    0.3         1.6c    0.3
+
+  D. SAME THRESHOLD, USED AS A HEDGE TRIGGER INSTEAD (LIVE window tau 3-30)
+    hedge if cr300 falls below  hedged    saved     cost     total  d profit  worst pos   wins
+                         0.020      29     0.0c   233.5c    603.8c   -233.5c     -19.8c    3.9
+                         0.050      42     0.0c   388.4c    448.9c   -388.4c     -42.5c    8.4
+                         0.080      51     0.0c   503.0c    334.4c   -503.0c     -42.5c    8.4
+                         0.120      70     0.0c   698.6c    138.8c   -698.6c     -73.3c   14.4
+                         0.200     105     0.0c   870.9c    -33.5c   -870.9c     -73.3c   14.4
+                         0.350     142     0.0c  1294.9c   -457.5c  -1294.9c     -73.3c   14.4
+
+  --------------------------------------------------------------------------
+  F. THE CROSSING -- LIVE window tau 3-30
+  --------------------------------------------------------------------------
+  A position is 'crossed' at the first second the index sits on the
+  WRONG side of K_eff. This is the only after-entry event with any
+  lead time, and unlike the unsigned cushion it does not invert.
+
+  LOSERS  that ever crossed after entry: 0 of 0
+  WINNERS that ever crossed after entry: 36 of 165
+  winners cross at tau: median 13 s (these are the FALSE ALARMS a crossing trigger must pay for)
+    of the 36 winners that crossed, 17 stayed crossed and still WON (the average was already locked in our favour)
+
+  HEDGING ON THE CROSSING. Confirm = wait this many seconds and
+  require the index to still be on the wrong side before paying.
+  cap = refuse to pay more than this for the other side; hedging at 90c
+  against a 95c entry locks -85c and is barely worth the fee.
+   confirm   cap  hedged  losers    saved     cost      net    total  worst pos   wins  worst close   wins  no px too dear
+      NONE     -       -       -        -        -        -   837.4c       1.2c    0.2         1.2c    0.2
+         0  1.00      27       0     0.0c   202.4c  -202.4c   635.0c     -26.1c    5.1       -22.9c    4.5      9        0
+         0  0.80      27       0     0.0c   202.4c  -202.4c   635.0c     -26.1c    5.1       -22.9c    4.5      9        0
+         0  0.60      27       0     0.0c   202.4c  -202.4c   635.0c     -26.1c    5.1       -22.9c    4.5      9        0
+         0  0.40      27       0     0.0c   202.4c  -202.4c   635.0c     -26.1c    5.1       -22.9c    4.5      9        0
+         1  1.00      19       0     0.0c   129.3c  -129.3c   708.1c     -19.8c    3.9       -16.7c    3.3      3        0
+         1  0.80      19       0     0.0c   129.3c  -129.3c   708.1c     -19.8c    3.9       -16.7c    3.3      3        0
+         1  0.60      19       0     0.0c   129.3c  -129.3c   708.1c     -19.8c    3.9       -16.7c    3.3      3        0
+         1  0.40      19       0     0.0c   129.3c  -129.3c   708.1c     -19.8c    3.9       -16.7c    3.3      3        0
+         2  1.00      15       0     0.0c   120.3c  -120.3c   717.0c     -34.5c    6.8       -26.7c    5.3      4        0
+         2  0.80      15       0     0.0c   120.3c  -120.3c   717.0c     -34.5c    6.8       -26.7c    5.3      4        0
+         2  0.60      15       0     0.0c   120.3c  -120.3c   717.0c     -34.5c    6.8       -26.7c    5.3      4        0
+         2  0.40      15       0     0.0c   120.3c  -120.3c   717.0c     -34.5c    6.8       -26.7c    5.3      4        0
+         3  1.00      13       0     0.0c    94.3c   -94.3c   743.1c     -32.5c    6.4       -24.7c    4.9      3        0
+         3  0.80      13       0     0.0c    94.3c   -94.3c   743.1c     -32.5c    6.4       -24.7c    4.9      3        0
+         3  0.60      13       0     0.0c    94.3c   -94.3c   743.1c     -32.5c    6.4       -24.7c    4.9      3        0
+         3  0.40      13       0     0.0c    94.3c   -94.3c   743.1c     -32.5c    6.4       -24.7c    4.9      3        0
+         5  1.00      11       0     0.0c   107.2c  -107.2c   730.2c     -53.6c   10.6       -45.8c    9.0      2        0
+         5  0.80      11       0     0.0c   107.2c  -107.2c   730.2c     -53.6c   10.6       -45.8c    9.0      2        0
+         5  0.60      11       0     0.0c   107.2c  -107.2c   730.2c     -53.6c   10.6       -45.8c    9.0      2        0
+         5  0.40      10       0     0.0c    49.5c   -49.5c   787.9c      -5.5c    1.1        -2.5c    0.5      2        1
+
+  --------------------------------------------------------------------------
+  G. EVERY TRIGGER, SAME ACCOUNTING -- LIVE window tau 3-30
+  --------------------------------------------------------------------------
+  Per-CLOSE tail: p1 = worst 1% of closes, p5 = worst 5%. 'wins' converts at
+  the mean winning trade of 5.08c per contract, which is the operator's unit.
+                          rule hedged  lose    cost    total     net     95% CI on net  worst close  wins  p1 close  wins  p5 close  wins no px
+               no hedge at all      -     -       -   837.4c       -                 -         1.2c   0.2      1.2c   0.2      1.9c   0.4     -
+         CROSSED, confirmed 0s     27     0    202c   635.0c   -202c     [-305, -114]c       -22.9c   4.5    -22.9c   4.5     -1.7c   0.3     9
+         CROSSED, confirmed 1s     19     0    129c   708.1c   -129c      [-209, -64]c       -16.7c   3.3    -16.7c   3.3      1.2c   0.2     3
+         CROSSED, confirmed 2s     15     0    120c   717.0c   -120c      [-216, -48]c       -26.7c   5.3    -26.7c   5.3      1.4c   0.3     4
+         CROSSED, confirmed 3s     13     0     94c   743.1c    -94c      [-185, -32]c       -24.7c   4.9    -24.7c   4.9      1.5c   0.3     3
+          model p(lose) >= 10%      8     0    214c   623.4c   -214c      [-387, -71]c       -30.7c   6.0    -30.7c   6.0     -8.1c   1.6     0
+          model p(lose) >= 20%      4     0    140c   697.6c   -140c      [-301, -20]c       -26.7c   5.3    -26.7c   5.3      1.4c   0.3     0
+          model p(lose) >= 35%      3     0    120c   717.6c   -120c       [-271, +0]c       -26.7c   5.3    -26.7c   5.3      1.4c   0.3     0
+          model p(lose) >= 50%      1     0     56c   781.6c    -56c       [-167, +0]c       -43.8c   8.6    -43.8c   8.6      1.9c   0.4     0
+          model p(lose) >= 75%      1     0     65c   772.7c    -65c       [-194, +0]c       -52.7c  10.4    -52.7c  10.4      1.9c   0.4     0
+          model p(lose) >= 90%      0     0      0c   837.4c      0c         [+0, +0]c         1.2c   0.2      1.2c   0.2      1.9c   0.4     0
+      CROSSED and model >= 35%      2     0     66c   771.4c    -66c       [-171, +0]c       -26.7c   5.3    -26.7c   5.3      1.5c   0.3     0
+      CROSSED and model >= 50%      1     0     56c   781.6c    -56c       [-167, +0]c       -43.8c   8.6    -43.8c   8.6      1.9c   0.4     0
+  'net' is total minus the no-hedge total. A CI that spans zero means the rule
+  is not a demonstrated improvement on P&L -- which under the operator's
+  objective is allowed, PROVIDED the worst-loss columns actually fall.
+
+  WIDE window tau 3-200: 438 positions, 118 closes, 12 LOSERS
+  mean WIN 4.52c per contract, so one 90c loss costs 20 wins.
+  base: total +796.9c, worst position -98.4c (21.8 wins), worst close -175.9c (39.0 wins)
+
+     gate: refuse if cr300 <  kept  ref W  ref L    W/L     total  d profit  worst pos   wins  worst close   wins
+                       0.020   433      5      0    nan    777.7c    -19.1c     -98.4c   21.8      -175.9c   39.0
+                       0.050   429      9      0    nan    764.1c    -32.7c     -98.4c   21.8      -175.9c   39.0
+                       0.080   426     12      0    nan    742.1c    -54.7c     -98.4c   21.8      -175.9c   39.0
+                       0.120   418     20      0    nan    687.8c   -109.1c     -98.4c   21.8      -175.9c   39.0
+                       0.200   378     59      1   59.0    589.8c   -207.0c     -98.4c   21.8      -175.9c   39.0
+                       0.350   247    186      5   37.2    287.2c   -509.6c     -98.4c   21.8      -175.9c   39.0
+
+       gate: refuse if bps <  kept  ref W  ref L    W/L     total  d profit  worst pos   wins  worst close   wins
+                       1.000   421     17      0    nan    702.4c    -94.5c     -98.4c   21.8      -175.9c   39.0
+                       2.000   383     54      1   54.0    571.7c   -225.1c     -98.4c   21.8      -175.9c   39.0
+                       4.000   271    164      3   54.7    110.1c   -686.8c     -98.4c   21.8      -175.9c   39.0
+                       8.000   111    318      9   35.3     82.1c   -714.8c     -96.9c   21.5       -94.7c   21.0
+                      15.000    34    394     10   39.4    -55.1c   -852.0c     -90.6c   20.1       -90.6c   20.1
+
+  D. SAME THRESHOLD, USED AS A HEDGE TRIGGER INSTEAD (WIDE window tau 3-200)
+    hedge if cr300 falls below  hedged    saved     cost     total  d profit  worst pos   wins
+                         0.020      36   168.0c   375.4c    589.5c   -207.3c     -98.4c   21.8
+                         0.050      60   375.7c   629.4c    543.2c   -253.7c     -98.4c   21.8
+                         0.080      70   375.9c   755.7c    417.1c   -379.8c     -98.4c   21.8
+                         0.120      96   483.8c  1000.1c    280.6c   -516.2c     -98.4c   21.8
+                         0.200     155   565.1c  1374.9c    -13.0c   -809.9c     -98.4c   21.8
+                         0.350     280   731.8c  2226.0c   -697.4c  -1494.2c     -96.6c   21.4
+
+  --------------------------------------------------------------------------
+  F. THE CROSSING -- WIDE window tau 3-200
+  --------------------------------------------------------------------------
+  A position is 'crossed' at the first second the index sits on the
+  WRONG side of K_eff. This is the only after-entry event with any
+  lead time, and unlike the unsigned cushion it does not invert.
+
+  LOSERS  that ever crossed after entry: 12 of 12
+  WINNERS that ever crossed after entry: 49 of 426
+  losers  cross at tau (s before close): 33, 36, 36, 41, 42, 42, 42, 47, 51, 52, 55, 55
+    median lead time 42 s; min 33 s; max 55 s
+    stayed crossed to the end: 9 of 12
+    the model's own p(lose) AT the crossing second: median 68.1%, min 23.6%, max 92.3%
+  winners cross at tau: median 13 s (these are the FALSE ALARMS a crossing trigger must pay for)
+    of the 49 winners that crossed, 23 stayed crossed and still WON (the average was already locked in our favour)
+
+  HEDGING ON THE CROSSING. Confirm = wait this many seconds and
+  require the index to still be on the wrong side before paying.
+  cap = refuse to pay more than this for the other side; hedging at 90c
+  against a 95c entry locks -85c and is barely worth the fee.
+   confirm   cap  hedged  losers    saved     cost      net    total  worst pos   wins  worst close   wins  no px too dear
+      NONE     -       -       -        -        -        -   796.9c     -98.4c   21.8      -175.9c   39.0
+         0  1.00      45      12   512.6c   353.2c   159.3c   956.2c     -80.5c   17.8      -112.7c   25.0     16        0
+         0  0.80      43      10   477.7c   353.2c   124.5c   921.3c     -98.4c   21.8      -129.7c   28.7     16        2
+         0  0.60      40       7   380.4c   353.2c    27.2c   824.0c     -98.4c   21.8      -129.7c   28.7     16        5
+         0  0.40      34       2   139.2c   298.5c  -159.3c   637.5c     -98.4c   21.8      -175.9c   39.0     16       11
+         1  1.00      36      12   450.7c   302.2c   148.5c   945.4c     -82.4c   18.3      -118.0c   26.1      9        0
+         1  0.80      33       9   403.7c   302.2c   101.5c   898.3c     -98.4c   21.8      -124.7c   27.6      9        3
+         1  0.60      29       5   272.0c   302.2c   -30.2c   766.6c     -98.4c   21.8      -124.7c   27.6      9        7
+         1  0.40      24       2   139.2c   198.7c   -59.6c   737.3c     -98.4c   21.8      -175.9c   39.0      9       12
+         2  1.00      29      11   385.4c   278.7c   106.7c   903.5c     -97.1c   21.5      -137.6c   30.5     10        0
+         2  0.80      26       8   346.4c   278.7c    67.7c   864.6c     -98.4c   21.8      -137.6c   30.5     10        3
+         2  0.60      23       6   295.2c   216.0c    79.2c   876.0c     -98.4c   21.8      -137.6c   30.5     10        6
+         2  0.40      16       1    75.8c   125.6c   -49.8c   747.0c     -98.4c   21.8      -175.9c   39.0     10       13
+         3  1.00      28      11   362.4c   287.3c    75.1c   872.0c     -97.1c   21.5      -152.2c   33.7      8        0
+         3  0.80      26       9   337.9c   287.3c    50.6c   847.4c     -98.4c   21.8      -152.2c   33.7      8        2
+         3  0.60      18       3   177.3c   160.0c    17.2c   814.1c     -98.4c   21.8      -175.9c   38.9      8       10
+         3  0.40      15       1    75.8c   109.3c   -33.5c   763.3c     -98.4c   21.8      -175.9c   39.0      8       13
+         5  1.00      26      11   316.3c   319.3c    -2.9c   793.9c     -97.1c   21.5      -162.7c   36.0      6        0
+         5  0.80      21       6   263.0c   319.3c   -56.2c   740.6c     -98.4c   21.8      -175.9c   38.9      6        5
+         5  0.60      17       3   181.2c   239.1c   -57.9c   739.0c     -98.4c   21.8      -175.9c   38.9      6        9
+         5  0.40      14       2   135.0c   123.6c    11.4c   808.2c     -98.4c   21.8      -175.9c   39.0      6       12
+
+  EVERY LOSER under the best cell (confirm 0, cap 1.00), so the saving can be checked by hand:
+                      ticker entry tau entry px cross tau hedge px  unhedged   hedged   saved   wins
+     KXETH15M-26SEP041215-15        60    98.3c        42    51.0c    -98.4c   -51.2c   47.2c   10.5
+     KXXRP15M-26SEP042130-30        58    98.3c        42    81.0c    -98.4c   -80.5c   17.9c    4.0
+     KXETH15M-26SEP051045-45        60    96.9c        51    23.0c    -97.1c   -21.4c   75.8c   16.8
+     KXZEC15M-26SEP051145-45        60    96.7c        55    52.0c    -96.9c   -50.7c   46.2c   10.2
+     KXXRP15M-26SEP051145-45        60    96.4c        55    82.0c    -96.6c   -79.7c   17.0c    3.8
+     KXBNB15M-26SEP051045-45        37    95.4c        36    52.0c    -95.7c   -49.5c   46.2c   10.2
+    KXDOGE15M-26SEP040830-30        47    95.0c        33    44.0c    -95.3c   -41.1c   54.3c   12.0
+     KXZEC15M-26SEP050745-45        47    95.0c        36    51.0c    -95.3c   -48.1c   47.2c   10.5
+    KXHYPE15M-26SEP052330-30        54    93.8c        41    35.0c    -94.2c   -30.8c   63.4c   14.0
+    KXNEAR15M-26SEP041515-15        60    90.0c        47    66.0c    -90.6c   -58.2c   32.4c    7.2
+     KXBTC15M-26SEP041830-30        44    87.0c        42    68.0c    -87.8c   -57.3c   30.5c    6.7
+    KXNEAR15M-26SEP050815-15        60    79.0c        52    64.0c    -80.2c   -45.8c   34.4c    7.6
+  NET vs no hedge: +159.3c, cluster-bootstrap 95% CI on 118 closes [-190.9c, +555.8c]  -- INCLUDES ZERO, so this is not a demonstrated edge
+
+  --------------------------------------------------------------------------
+  G. EVERY TRIGGER, SAME ACCOUNTING -- WIDE window tau 3-200
+  --------------------------------------------------------------------------
+  Per-CLOSE tail: p1 = worst 1% of closes, p5 = worst 5%. 'wins' converts at
+  the mean winning trade of 4.52c per contract, which is the operator's unit.
+                          rule hedged  lose    cost    total     net     95% CI on net  worst close  wins  p1 close  wins  p5 close  wins no px
+               no hedge at all      -     -       -   796.9c       -                 -      -175.9c  39.0   -175.9c  38.9    -69.1c  15.3     -
+         CROSSED, confirmed 0s     45    12    353c   956.2c    159c     [-193, +557]c      -112.7c  25.0    -79.6c  17.6    -47.8c  10.6    16
+         CROSSED, confirmed 1s     36    12    302c   945.4c    149c     [-179, +519]c      -118.0c  26.1   -107.7c  23.9    -51.1c  11.3     9
+         CROSSED, confirmed 2s     29    11    279c   903.5c    107c     [-192, +437]c      -137.6c  30.5   -103.7c  23.0    -46.2c  10.2    10
+         CROSSED, confirmed 3s     28    11    287c   872.0c     75c     [-225, +391]c      -152.2c  33.7   -107.8c  23.9    -56.0c  12.4     8
+          model p(lose) >= 10%     29    12    460c   929.1c    132c     [-267, +567]c      -112.7c  25.0    -80.1c  17.7    -35.8c   7.9     1
+          model p(lose) >= 20%     24    12    391c   926.9c    130c     [-233, +524]c      -112.7c  25.0    -80.1c  17.7    -48.8c  10.8     0
+          model p(lose) >= 35%     20    12    311c   978.3c    181c     [-154, +570]c      -112.7c  25.0    -60.0c  13.3    -50.0c  11.1     0
+          model p(lose) >= 50%     15    12    145c  1144.8c    348c      [-14, +769]c      -112.7c  25.0    -55.8c  12.3    -48.8c  10.8     0
+          model p(lose) >= 75%     14    12    145c   962.8c    166c     [-144, +447]c      -134.3c  29.7   -118.4c  26.2    -53.9c  11.9     0
+          model p(lose) >= 90%     13    12     82c   895.7c     99c     [-133, +294]c      -156.9c  34.8   -118.4c  26.2    -61.0c  13.5     0
+      CROSSED and model >= 35%     18    12    202c  1087.8c    291c      [-53, +677]c      -112.7c  25.0    -54.4c  12.0    -48.8c  10.8     0
+      CROSSED and model >= 50%     15    12    145c  1144.8c    348c      [-14, +769]c      -112.7c  25.0    -55.8c  12.3    -48.8c  10.8     0
+  'net' is total minus the no-hedge total. A CI that spans zero means the rule
+  is not a demonstrated improvement on P&L -- which under the operator's
+  objective is allowed, PROVIDED the worst-loss columns actually fall.
+
+==============================================================================
+  E. THE EXOGENOUS-GRID POPULATION (no book, ~12 days)
+==============================================================================
+  10,796 settled markets on disk; building rows on an exogenous tau grid ...
+    2000/10796 markets  2s
+    4000/10796 markets  4s
+    6000/10796 markets  6s
+    8000/10796 markets  8s
+    10000/10796 markets  10s
+  82,395 rows, 9,159 markets, 1019 closes, 1,296 flip rows
+  model-confident (<= 2%): 76,232 rows, 9,133 markets, 62 flipped, 1019 closes
+
+  INDEX, all rows -- distance in BASIS POINTS  --  bucketed on bps, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+             < 2   6,348  1,479     651           446    30.16%   32.54%   14.414%   0.7899  12.850%       1.12
+             2-5   9,496  2,248     755           194     8.63%    9.86%    2.864%   0.2370   2.833%       1.01
+            5-10  14,304  2,910     859            63     2.16%    2.76%    0.587%   0.0953   0.434%       1.35
+           10-25  25,714  3,968     977            18     0.45%    0.72%    0.086%   0.0216   0.045%       1.92
+           25-60  19,460  2,734     903             2     0.07%    0.27%    0.015%   0.0119   0.002%       9.11
+           >= 60   7,073    935     441             0     0.00%    0.32%    0.000%   0.0000   0.000%       0.00
+
+  INDEX, model says <= 2% -- distance in BASIS POINTS  --  bucketed on bps, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+             < 2   3,041    957     529            17     1.78%    2.83%    0.789%   0.2416   0.155%       5.08
+             2-5   7,477  1,887     705            20     1.06%    1.63%    0.294%   0.0687   0.107%       2.74
+            5-10  13,608  2,759     849            22     0.80%    1.20%    0.220%   0.0708   0.051%       4.36
+           10-25  25,577  3,955     976            13     0.33%    0.56%    0.063%   0.0189   0.012%       5.42
+           25-60  19,456  2,734     903             2     0.07%    0.27%    0.015%   0.0120   0.001%      17.38
+           >= 60   7,073    935     441             0     0.00%    0.32%    0.000%   0.0000   0.000%       0.00
+
+  INDEX, all rows -- cushion / 300 s range  --  bucketed on cr300, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+          < 0.05   2,169    894     522           291    32.55%   35.69%   21.208%   1.2557  20.418%       1.04
+       0.05-0.10   2,372  1,043     542           235    22.53%   25.16%   13.659%   0.9653  13.095%       1.04
+       0.10-0.20   4,657  1,605     682           214    13.33%   15.08%    6.141%   0.5208   5.918%       1.04
+       0.20-0.40   9,945  2,489     794           122     4.90%    5.82%    1.649%   0.1839   1.162%       1.42
+       0.40-0.80  17,966  3,505     916            35     1.00%    1.39%    0.267%   0.0541   0.077%       3.46
+         >= 0.80  45,286  5,761    1001             9     0.16%    0.30%    0.031%   0.0162   0.000%      68.78
+
+  INDEX, model says <= 2% -- cushion / 300 s range  --  bucketed on cr300, n reported as CLOSES
+  MDE, STATED BEFORE THE ESTIMATE. Unit of inference is the MARKET (one settlement); clustering is on CLOSE.
+  Bonferroni alpha 0.0083 over 6 buckets at 80% power: a bucket can only show an effect larger than 3.48 x its
+  bootstrap sd. A bucket with ZERO flipped markets measures nothing below its 95% upper bound (rule of three, 3/n).
+          bucket    rows   mkts  closes  mkts flipped  mkt rate   95% UB  row rate  boot sd  model p real/model
+          < 0.05     766    403     304             2     0.50%    1.79%    0.522%   0.4134   0.140%       3.72
+       0.05-0.10   1,035    550     378             6     1.09%    2.36%    0.676%   0.3057   0.158%       4.29
+       0.10-0.20   2,783  1,099     559             5     0.45%    1.06%    0.180%   0.0977   0.148%       1.22
+       0.20-0.40   8,574  2,251     773            26     1.16%    1.69%    0.338%   0.0691   0.122%       2.77
+       0.40-0.80  17,788  3,482     914            27     0.78%    1.13%    0.202%   0.0442   0.030%       6.84
+         >= 0.80  45,286  5,761    1001             9     0.16%    0.30%    0.031%   0.0162   0.000%      68.78
+
+  cliff test on the INDEX population:
+     bps: slope -2.136   break at bucket 2 (5-10)   LR = 0.54   p = 0.881
+   cr300: slope -1.598   break at bucket 1 (0.05-0.10)   LR = 129.35   p = 0.007
+  --- and on the MODEL-CONFIDENT rows only ---
+     bps: slope -1.057   break at bucket 2 (5-10)   LR = 5.71   p = 0.086
+   cr300: slope -0.814   break at bucket 5 (>= 0.80)   LR = 26.95   p = 0.007
+
+------------------------------------------------------------------------------
+  CONTROL: cushion WITHIN bands of the model's own z
+------------------------------------------------------------------------------
+
+  INDEX, all rows: is bps still informative INSIDE a band of model z?
+  low stratum = bps < 5.0, high stratum = bps >= 10.0. Unit = market, clustering = close.
+        z band  lo mkts  lo flip  lo rate  hi mkts  hi flip  hi rate  diff pp
+       2.0-3.0    1,241       19    1.53%      398        5    1.26%     0.27
+       3.0-4.0    1,065        7    0.66%      756        2    0.26%     0.39
+       4.0-6.0    1,355        3    0.22%    1,967        3    0.15%     0.07
+      6.0-10.0    1,408        0    0.00%    4,087        0    0.00%     0.00
+  10.0-1000000000.0    1,763        0    0.00%    6,176        0    0.00%     0.00
+  POOLED within-z difference: +0.079 pp   95% CI [-0.070, +0.244] pp on 1019 closes   -- INCLUDES ZERO: no information beyond the model's z
+
+  INDEX, model says <= 2%: is bps still informative INSIDE a band of model z?
+  low stratum = bps < 5.0, high stratum = bps >= 10.0. Unit = market, clustering = close.
+        z band  lo mkts  lo flip  lo rate  hi mkts  hi flip  hi rate  diff pp
+       2.0-3.0    1,206       18    1.49%      388        4    1.03%     0.46
+       3.0-4.0    1,065        7    0.66%      756        2    0.26%     0.39
+       4.0-6.0    1,355        3    0.22%    1,967        3    0.15%     0.07
+      6.0-10.0    1,408        0    0.00%    4,087        0    0.00%     0.00
+  10.0-1000000000.0    1,763        0    0.00%    6,176        0    0.00%     0.00
+  POOLED within-z difference: +0.092 pp   95% CI [-0.051, +0.255] pp on 1019 closes   -- INCLUDES ZERO: no information beyond the model's z
+
+  INDEX, all rows: is cr300 still informative INSIDE a band of model z?
+  low stratum = cr300 < 0.1, high stratum = cr300 >= 0.2. Unit = market, clustering = close.
+        z band  lo mkts  lo flip  lo rate  hi mkts  hi flip  hi rate  diff pp
+       2.0-3.0      292        6    2.05%    1,741       24    1.38%     0.68
+       3.0-4.0      239        2    0.84%    2,148        9    0.42%     0.42
+       4.0-6.0      266        2    0.75%    3,980        5    0.13%     0.63
+      6.0-10.0      264        0    0.00%    6,312        1    0.02%    -0.02
+  10.0-1000000000.0      457        0    0.00%    8,328        0    0.00%     0.00
+  POOLED within-z difference: +0.293 pp   95% CI [-0.083, +0.789] pp on 1019 closes   -- INCLUDES ZERO: no information beyond the model's z
+
+  INDEX, model says <= 2%: is cr300 still informative INSIDE a band of model z?
+  low stratum = cr300 < 0.1, high stratum = cr300 >= 0.2. Unit = market, clustering = close.
+        z band  lo mkts  lo flip  lo rate  hi mkts  hi flip  hi rate  diff pp
+       2.0-3.0      274        5    1.82%    1,703       22    1.29%     0.53
+       3.0-4.0      239        2    0.84%    2,148        9    0.42%     0.42
+       4.0-6.0      266        2    0.75%    3,980        5    0.13%     0.63
+      6.0-10.0      264        0    0.00%    6,312        1    0.02%    -0.02
+  10.0-1000000000.0      457        0    0.00%    8,328        0    0.00%     0.00
+  POOLED within-z difference: +0.265 pp   95% CI [-0.101, +0.757] pp on 1019 closes   -- INCLUDES ZERO: no information beyond the model's z
+  z  2.0-3.0    n=3,013  < 0.05:3/146=2.05% 0.05-0.10:4/205=1.95% 0.10-0.20:4/530=0.75% 0.20-0.40:22/1304=1.69% 0.40-0.80:20/786=2.54%
+  z  3.0-4.0    n=2,965  < 0.05:0/95=0.00% 0.05-0.10:3/155=1.94% 0.10-0.20:1/342=0.29% 0.20-0.40:10/942=1.06% 0.40-0.80:7/1200=0.58% >= 0.80:1/231=0.43%
+  z  4.0-6.0    n=5,626  < 0.05:2/120=1.67% 0.05-0.10:0/169=0.00% 0.10-0.20:0/491=0.00% 0.20-0.40:0/1246=0.00% 0.40-0.80:8/2275=0.35% >= 0.80:6/1325=0.45%
+  z  6.0-inf    n=64,772  < 0.05:0/422=0.00% 0.05-0.10:0/518=0.00% 0.10-0.20:0/1448=0.00% 0.20-0.40:0/5150=0.00% 0.40-0.80:1/13546=0.01% >= 0.80:5/43688=0.01%
+
+  DONE. Every number above is per contract unless marked otherwise.

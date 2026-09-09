@@ -1,0 +1,78 @@
+[    0.0s] loading index tape
+[   95.9s] event refingerprinted: dist/sig=3.0716 z=2.0976 p_lose=0.0180 flipped=True
+[   95.9s] scanning tape (tau=22, stride=5)
+[  135.2s] cells=2067403
+
+==============================================================================
+1. IS THE EVENT ITS OWN NEAREST NEIGHBOUR?
+==============================================================================
+  event cell IS row 1376267, t=1788914678, distance to target = 0.000000
+  its flipA=1 flipB=1 flipC=1 flipD=0 aligned=1
+  -> the target is a member of its own analogue set, with an
+     outcome that is a flip BY CONSTRUCTION.
+
+  RE-RUN WITH THE EVENT CELL EXCLUDED:
+  which      k   incl rate   excl rate  excl ratio    excl p
+  A         50      38.00%      36.00%        3.54    0.0005
+  A        200      36.00%      35.50%        3.49    0.0005
+  A       1000      33.80%      33.70%        3.31    0.0005
+  B         50       4.00%       4.00%        1.19    0.5252
+  B        200       7.50%       7.50%        2.24    0.0035
+  B       1000       5.80%       5.80%        1.73    0.0010
+  C         50       4.00%       2.00%        0.75    0.7576
+  C        200       5.00%       4.50%        1.68    0.1094
+  C       1000       3.80%       3.70%        1.38    0.0595
+  D         50      24.00%      24.00%        2.33    0.0050
+  D        200      29.00%      29.00%        2.81    0.0005
+  D       1000      32.00%      32.00%        3.10    0.0005
+
+==============================================================================
+2. THE FLIP-CONDITIONAL PLACEBO -- the null pinmatch did not test
+==============================================================================
+  REAL placement A: k=200 rate=36.00% base=10.1783% ratio=3.54 radius=0.541
+  REAL placement B: k=200 rate=7.50% base=3.3521% ratio=2.24 radius=0.541
+
+  placement A: 210426 cells flipped; drawing targets FROM THOSE
+[  261.8s]     A: 25/150 placebos
+[  306.1s]     A: 50/150 placebos
+[  351.9s]     A: 75/150 placebos
+[  396.3s]     A: 100/150 placebos
+[  437.4s]     A: 125/150 placebos
+[  478.4s]     A: 150/150 placebos
+    kept 150 rarity-matched flip-conditional placebos (tried 164)
+    placebo neighbour flip rate: min 0.50% p25 12.62% median 20.00% p75 29.37% p90 39.55% max 52.50%
+    unconditional base rate for A: 10.1783%
+    MEDIAN PLACEBO / BASE = 1.96x   <- the lift you get for FREE by picking a target that flipped
+    REAL (event excluded) = 35.50%
+    REAL (event INCLUDED, like-for-like) = 36.00%
+    placebos >= real(excl): 24/150 -> p = 0.1656
+    placebos >= real(incl): 23/150 -> p = 0.1589   <-- LIKE FOR LIKE
+    placebo radii median 0.545 vs real 0.541
+
+  placement B: 69301 cells flipped; drawing targets FROM THOSE
+[  523.9s]     B: 25/150 placebos
+[  573.3s]     B: 50/150 placebos
+[  620.9s]     B: 75/150 placebos
+[  661.8s]     B: 100/150 placebos
+[  707.2s]     B: 125/150 placebos
+[  751.3s]     B: 150/150 placebos
+    kept 150 rarity-matched flip-conditional placebos (tried 164)
+    placebo neighbour flip rate: min 1.00% p25 3.50% median 4.50% p75 6.00% p90 7.50% max 14.00%
+    unconditional base rate for B: 3.3521%
+    MEDIAN PLACEBO / BASE = 1.34x   <- the lift you get for FREE by picking a target that flipped
+    REAL (event excluded) = 7.50%
+    REAL (event INCLUDED, like-for-like) = 7.50%
+    placebos >= real(excl): 17/150 -> p = 0.1192
+    placebos >= real(incl): 17/150 -> p = 0.1192   <-- LIKE FOR LIKE
+    placebo radii median 0.495 vs real 0.541
+
+==============================================================================
+3. BLOCK SHUFFLE -- reassign analogues to random HOURS, not cells
+==============================================================================
+  placement A: k=200 flips=71/200 (35.50%)
+    i.i.d.-within-coin shuffle p (pinmatch's) = 0.0005
+    HOUR-BLOCK shuffle p (each analogue reassigned to a random hour of its own coin) = 0.0005
+  placement B: k=200 flips=15/200 (7.50%)
+    i.i.d.-within-coin shuffle p (pinmatch's) = 0.0035
+    HOUR-BLOCK shuffle p (each analogue reassigned to a random hour of its own coin) = 0.0030
+[  757.4s] done

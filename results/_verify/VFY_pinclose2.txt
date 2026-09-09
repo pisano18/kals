@@ -1,0 +1,71 @@
+﻿SELF-TEST -- vfy_pinclose2
+  ok   PLANT +5.0 pp inside the only band with events: restricted pooling returns +5.000 pp
+  ok   and the full pooling DILUTES it to +0.238 pp because two dead bands carry most of the weight -- which is the criticism
+  ok   the restricted bootstrap CI [+2.500, +8.000] pp excludes zero on a planted effect
+  ok   NULL world, identical rates in both strata: both poolings return exactly zero, not a fabricated effect
+  ok   and the NULL bootstrap CI [+0.000, +0.000] pp contains zero
+  ok   PLANT: a hedge with enough depth is exactly the full hedged P&L (-941.67c vs -941.67c)
+  ok   PLANT partial fill (5 of 20): -1665.4c sits strictly between unhedged -1906.7c and fully hedged -941.7c
+  ok   NULL: zero depth leaves the position exactly unhedged (-1906.66c vs -1906.66c)
+  ok   and the per-ORDER fee ceiling means n x the per-contract number is NOT the n-contract number -- which is why this fixture had to be rewritten after it failed
+SELF-TEST PASSED
+
+============================================================================
+  PASS 2 -- POWER OF THE CONTROL, AND WHAT IT IS WORTH
+============================================================================
+  loading index tape ...
+  10,796 settled markets; building the exogenous grid ...
+  82,395 rows -> 76,232 model-confident, 9,133 markets, 1019 closes
+
+----------------------------------------------------------------------------
+  A. POWER OF THE POOLING -- weights, and the bands that carry them
+----------------------------------------------------------------------------
+
+  bps: low < 5.0, high >= 10.0
+        z band    lo n  lo k    hi n  hi k    weight  % of weight   diff pp
+           2-3   1,206    18     388     4       294         7.4%     0.462
+           3-4   1,065     7     756     2       442        11.2%     0.393
+           4-6   1,355     3   1,967     3       802        20.3%     0.069
+          6-10   1,408     0   4,087     0      1047        26.5%     0.000
+           10+   1,763     0   6,176     0      1371        34.7%     0.000
+  bands with ZERO flipped markets on both sides carry 61.1% of the weight and contribute 0.000 pp
+  ALL bands      : +0.092 pp  95% CI [-0.061, +0.246] pp on 1019 closes  spans 0
+  bands with events only ([0, 1, 2]): +0.237 pp  95% CI [-0.156, +0.633] pp  spans 0
+
+  B. WHAT IT IS WORTH. A flip swings the outcome by exactly
+     $1.00 per contract, so an extra flip rate of d costs 100*d
+     cents of EV. Mean win in the live window is 5.08c.
+           point (all bands): +0.092 pp  ->  +0.092c per contract  = +1.8% of one mean win
+             upper 95% (all): +0.246 pp  ->  +0.246c per contract  = +4.8% of one mean win
+          point (live bands): +0.237 pp  ->  +0.237c per contract  = +4.7% of one mean win
+      upper 95% (live bands): +0.633 pp  ->  +0.633c per contract  = +12.5% of one mean win
+
+  cr300: low < 0.1, high >= 0.2
+        z band    lo n  lo k    hi n  hi k    weight  % of weight   diff pp
+           2-3     274     5   1,703    22       236        17.0%     0.533
+           3-4     239     2   2,148     9       215        15.5%     0.418
+           4-6     266     2   3,980     5       249        18.0%     0.626
+          6-10     264     0   6,312     1       253        18.3%    -0.016
+           10+     457     0   8,328     0       433        31.2%     0.000
+  bands with ZERO flipped markets on both sides carry 31.2% of the weight and contribute 0.000 pp
+  ALL bands      : +0.265 pp  95% CI [-0.118, +0.759] pp on 1019 closes  spans 0
+  bands with events only ([0, 1, 2, 3]): +0.386 pp  95% CI [-0.170, +1.103] pp  spans 0
+
+  B. WHAT IT IS WORTH. A flip swings the outcome by exactly
+     $1.00 per contract, so an extra flip rate of d costs 100*d
+     cents of EV. Mean win in the live window is 5.08c.
+           point (all bands): +0.265 pp  ->  +0.265c per contract  = +5.2% of one mean win
+             upper 95% (all): +0.759 pp  ->  +0.759c per contract  = +14.9% of one mean win
+          point (live bands): +0.386 pp  ->  +0.386c per contract  = +7.6% of one mean win
+      upper 95% (live bands): +1.103 pp  ->  +1.103c per contract  = +21.7% of one mean win
+
+----------------------------------------------------------------------------
+  C. DEPTH-CAPPED HEDGE at the MEASURED hedge-side touch size
+----------------------------------------------------------------------------
+  size 20: unhedged   15975.4c | hedged, UNLIMITED depth   22935.9c (net +6960.5c) | hedged, MEASURED depth   22315.0c (net +6339.6c)
+  size 59: unhedged   47130.9c | hedged, UNLIMITED depth   67664.5c (net +20533.6c) | hedged, MEASURED depth   63548.5c (net +16417.6c)
+
+  D. TRIGGER-TO-FILL LAG: the index walk fires at tau T, the first usable book row is 0-1 s later (median 0 s, n=15)
+     fires where the book row is >= 3 s later: 0 of 15
+
+  DONE.

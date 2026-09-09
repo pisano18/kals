@@ -63,6 +63,30 @@ and wins-to-recover 16 → 14. **More money and better resilience at once.**
 
 ---
 
+## THE ANALOGUE STUDY — a lesson worth more than the result
+
+Joe's idea: find historic moments that look exactly like the one we lost on,
+see what happened next. **It looked like a hit: 200 nearest analogues crossed
+36% of the time against a 10% base rate, 3.5x, p=0.0003.**
+
+**The verifier killed it with the null the study never ran.** The target
+fingerprint was chosen BECAUSE IT FLIPPED. If flip probability varies across
+feature space — and volatility clustering guarantees it does — then picking a
+target from flipped cells buys a lift with **zero predictive content**.
+
+Re-run with targets drawn from other flipped cells: **median placebo = 1.96x.**
+Nearly two thirds of the 3.5x was free. Corrected p = **0.159. Not significant.**
+The jump result went from 2.20x to **0.59x** in units of current volatility.
+
+**THE RULE THIS GIVES US: when you search for things resembling a known bad
+outcome, your control must also be drawn from bad outcomes.** Otherwise you
+measure your own selection.
+
+Also costed and rejected: repricing with `max(sigma_30, sigma_300)` refuses
+**963 winners for 6 losses avoided**, net −4,538¢.
+
+---
+
 ## OPEN QUESTIONS — where pushback is worth most
 
 1. **THE RACE.** 26% of orders fill nothing. Depth is not the cause (misses had 562, 107, 93 contracts on offer). Our round trip is ~100ms whether we win or lose; misses happen on *fresher* prices. Suggests we lose to **already-resting** orders, not faster ones. Unmeasurable from tape so far.

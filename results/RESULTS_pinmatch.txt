@@ -1,0 +1,361 @@
+SELF-TEST (main refuses real data until this passes)
+  ok   phi(0) = 0.5
+  ok   phi_inv(0.975) = 1.959964
+  ok   phi/phi_inv round-trip
+  ok   wilson(0,100) = [0.000,0.037]
+  ok   MDE(p0=2%, n=200) = 5.270%
+  ok   MDE falls with n
+  ok   sliding range 0..4 = 4
+  ok   sliding range60 = 4
+  ok   sliding max|diff| = 4 (the 4->0 step)
+  ok   sigma(i,w) matches the manual w+1 diff form
+  ok   flat = 0 on a never-flat series
+  ok   mean(0,4) of 0,1,2,3,4 = 2
+  ok   10 cells 1 s apart thin to 1 (got 1)
+  ok   planted fingerprint measurable (None)
+  ok   planted range300/sigma300 = 12.27 (theory 12.27)
+  ok   planted sigma10/sigma300 = 5.23 (theory 5.23)
+  ok   planted flat300 = 0.993 (>0.98)
+    world=PLANTED  cells=166,677 n=60 rate=36.7% base=7.50% ratio=4.89 p=0.0005 radius=0.217
+    world=NULL     cells=166,689 n=60 rate=0.0% base=6.63% ratio=0.00 p=1.0000 radius=0.238
+  ok   planted world found 60 independent windows
+  ok   planted lift recovered: ratio=4.89 (>3)
+  ok   planted shuffle p=0.0005 (<0.01)
+  ok   NULL world (outcomes independent of the fingerprint) finds no lift: ratio=0.00 (<1.8)
+  ok   null world shuffle p=1.0000 (>0.02)
+  ok   planted rate 36.7% clearly separated from null 0.0%
+  SELFTEST PASS
+
+==============================================================================
+PINMATCH -- historical analogues of the shape we lost on
+==============================================================================
+event : KXNEAR15M-26SEP082045-45  close=1788914700 index=NEARUSD_RTI K_eff=2.34915 tau=22
+
+LOADING INDEX TAPE  (cfbenchmarks_value; the timestamp is msg.data.time -- there is NO ts_ms on this channel)
+    truncated/unreadable (expected for the live hour): 20260826T05.jsonl.gz EOFError
+    parsed 100/342 files 27s
+    truncated/unreadable (expected for the live hour): 20260902T00.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T01.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T02.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T03.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T04.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T05.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T21.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T22.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260902T23.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T00.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T01.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T02.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T03.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T04.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260903T05.jsonl.gz error
+    parsed 200/342 files 51s
+    truncated/unreadable (expected for the live hour): 20260904T07.jsonl.gz error
+    truncated/unreadable (expected for the live hour): 20260906T14.jsonl.gz error
+    parsed 300/342 files 77s
+    truncated/unreadable (expected for the live hour): 20260909T03.jsonl.gz EOFError
+  files=342 unreadable=19 parse=89s  span=1787630280..1788926520 (1,296,241s)
+    BNBUSD_RTI     span=1,296,241s  present=1,171,283  coverage=90.360%
+    BRTI           span=1,296,241s  present=1,171,282  coverage=90.360%
+    DOGEUSD_RTI    span=1,296,241s  present=1,171,282  coverage=90.360%
+    ETHUSD_RTI     span=1,296,241s  present=1,171,285  coverage=90.360%
+    HYPEUSD_RTI    span=1,296,241s  present=1,171,286  coverage=90.360%
+    NEARUSD_RTI    span=1,296,241s  present=1,171,286  coverage=90.360%
+    SOLUSD_RTI     span=1,296,241s  present=1,171,284  coverage=90.360%
+    XRPUSD_RTI     span=1,296,241s  present=1,171,282  coverage=90.360%
+    ZECUSD_RTI     span=1,296,241s  present=1,171,284  coverage=90.360%
+
+------------------------------------------------------------------------------
+1. THE EVENT, RE-MEASURED FROM THE RAW TAPE
+------------------------------------------------------------------------------
+  quantity               re-measured         brief   delta
+  spot                        2.3483        2.3483   +0.0%
+  dist to K_eff              0.00085       0.00085   -0.0%
+  sigma_300            0.00027672743    0.00027719   -0.2%
+  sigma_10             0.00053767175      0.000581   -7.5%
+  sigma_30             0.00035149451      0.000363   -3.2%
+  max 1s move, 10s            0.0017        0.0017   +0.0%
+  range_300                   0.0106        0.0106   -0.0%
+  range_60                    0.0041        0.0041   -0.0%
+  flat_300                0.51162791          0.51   +0.3%
+  flat_10                 0.45454545           0.4   +13.6%
+  model p(lose)          0.017971958        0.0181   -0.7%
+  settlement mean 2.349367 vs K_eff 2.34915 -> YES won, WE LOST
+  r (future prints) = 21, locked = 39
+  required_move = 0.001590   sd_pred = 0.000758   z = 2.0976
+  LARGEST 1s MOVE IN THE REMAINING 21s = 0.00210 = 7.59 x sigma_300
+
+  THE FINGERPRINT (raw, scale-free):
+    F1 range300/sig300           38.3048
+    F2 sig10/sig300               1.9430
+    F3 sig30/sig300               1.2702
+    F4 max1s10/sig300             6.1432
+    F5 flat300                    0.5116
+    F6 flat10                     0.4545
+    F7 range60/range300           0.3868
+
+  threshold placement A: dist/sigma_300 = 3.0716  (the brief's rule)
+  threshold placement B: model z = 2.0976, p(lose) = 1.797%  (holds the MODEL'S OWN view constant -- the tighter conditioning)
+
+------------------------------------------------------------------------------
+2. SCANNING THE WHOLE TAPE at tau=22, stride=5s (exogenous grid; real 15-min closes always included)
+------------------------------------------------------------------------------
+    BNBUSD_RTI     cells=  229,514
+    BRTI           cells=  229,515
+    DOGEUSD_RTI    cells=  229,515
+    ETHUSD_RTI     cells=  229,518
+    HYPEUSD_RTI    cells=  229,515
+    NEARUSD_RTI    cells=  229,518
+    SOLUSD_RTI     cells=  229,514
+    XRPUSD_RTI     cells=  229,514
+    ZECUSD_RTI     cells=  229,516
+  cells scanned            2,065,639
+  guard rejections (a guard that ate everything must not be able to look like a thin tape):
+    gap300            276,495   11.79% of candidates
+    gapfuture           3,482   0.15% of candidates
+    KEPT            2,065,639   88.06% of candidates
+  of which fall on a REAL 15-minute close: 11,547
+  tape span 1787631426 .. 1788923666 (15.0 days)
+  ceiling on INDEPENDENT WINDOWS in this tape ~ 193,833 (span/60 x 9 indices)
+
+  the event's fingerprint in NEAR's own robust units (z):
+   range300=+1.09  sig10=+1.99  sig30=+0.82  max1s10=+2.44  flat300=+0.37  flat10=-0.00  range60=+0.09
+  |z| = 3.45  -- how far the event sits from a typical NEAR second
+
+  BASE RATE, placement A (dist/sigma matched): 210,193/2,065,639 = 10.1757% of cells cross
+  BASE RATE, placement B (model-z matched):    69,272/2,065,639 = 3.3535% of cells cross
+  BASE RATE, placement C (cautious sigma):      55,363/2,065,639 = 2.6802% of cells cross  -- lower because a bigger sigma pushes the threshold further away, which is the point of C
+  BASE RATE, placement D (sign control, downward): 213,273/2,065,639 = 10.3248% of cells cross
+
+------------------------------------------------------------------------------
+3. MDE FIRST, THEN THE ESTIMATE
+------------------------------------------------------------------------------
+  n is INDEPENDENT WINDOWS (non-overlapping 60 s settlement windows within a coin), never cells.
+  k=  50 placement A: base 10.1757%, MDE at 80% power / alpha 0.05 = 23.610% (2.3x base)
+  k=  50 placement B: base 3.3535%, MDE at 80% power / alpha 0.05 = 12.245% (3.7x base)
+  k=  50 placement C: base 2.6802%, MDE at 80% power / alpha 0.05 = 10.860% (4.1x base)
+  k=  50 placement D: base 10.3248%, MDE at 80% power / alpha 0.05 = 23.830% (2.3x base)
+  k= 200 placement A: base 10.1757%, MDE at 80% power / alpha 0.05 = 16.579% (1.6x base)
+  k= 200 placement B: base 3.3535%, MDE at 80% power / alpha 0.05 = 7.407% (2.2x base)
+  k= 200 placement C: base 2.6802%, MDE at 80% power / alpha 0.05 = 6.372% (2.4x base)
+  k= 200 placement D: base 10.3248%, MDE at 80% power / alpha 0.05 = 16.765% (1.6x base)
+  k=1000 placement A: base 10.1757%, MDE at 80% power / alpha 0.05 = 12.943% (1.3x base)
+  k=1000 placement B: base 3.3535%, MDE at 80% power / alpha 0.05 = 5.052% (1.5x base)
+  k=1000 placement C: base 2.6802%, MDE at 80% power / alpha 0.05 = 4.216% (1.6x base)
+  k=1000 placement D: base 10.3248%, MDE at 80% power / alpha 0.05 = 13.109% (1.3x base)
+
+------------------------------------------------------------------------------
+4. THE k NEAREST ANALOGUES, AND WHAT THEY DID NEXT
+------------------------------------------------------------------------------
+
+  PLACEMENT A (dist/sigma_300 matched (the brief's rule))
+       k  n_ind  flips     rate            95% CI     base   ratio  radius  p_shuf
+      50     50     19  38.00%   [25.86%,51.85%] 10.176%    3.73   0.412  0.0003
+     200    200     72  36.00%   [29.67%,42.86%] 10.176%    3.54   0.541  0.0003
+    1000   1000    338  33.80%   [30.94%,36.79%] 10.176%    3.32   0.736  0.0003
+  conservative TIME-BLOCK unit (no two analogues within 60 s of each other on ANY coin):
+     200    200     73  36.50%   [30.14%,43.37%] 10.176%    3.59   0.542  0.0003
+
+  PLACEMENT B (model-z matched -- holds the MODEL'S OWN view constant)
+       k  n_ind  flips     rate            95% CI     base   ratio  radius  p_shuf
+      50     50      2   4.00%    [1.10%,13.46%]  3.354%    1.19   0.412  0.5255
+     200    200     15   7.50%    [4.60%,12.00%]  3.354%    2.24   0.541  0.0040
+    1000   1000     58   5.80%     [4.51%,7.42%]  3.354%    1.73   0.736  0.0010
+  conservative TIME-BLOCK unit (no two analogues within 60 s of each other on ANY coin):
+     200    200     15   7.50%    [4.60%,12.00%]  3.354%    2.24   0.542  0.0040
+
+  PLACEMENT C (model-z matched but priced with sigma_C = max(sigma_30, sigma_300) -- the defensive one-line fix)
+       k  n_ind  flips     rate            95% CI     base   ratio  radius  p_shuf
+      50     50      2   4.00%    [1.10%,13.46%]  2.680%    1.49   0.412  0.3992
+     200    200     10   5.00%     [2.74%,8.96%]  2.680%    1.87   0.541  0.0530
+    1000   1000     38   3.80%     [2.78%,5.17%]  2.680%    1.42   0.736  0.0477
+  conservative TIME-BLOCK unit (no two analogues within 60 s of each other on ANY coin):
+     200    200     10   5.00%     [2.74%,8.96%]  2.680%    1.87   0.542  0.0530
+
+  PLACEMENT D (SIGN CONTROL -- A mirrored, crossing DOWNWARD)
+       k  n_ind  flips     rate            95% CI     base   ratio  radius  p_shuf
+      50     50     12  24.00%   [14.30%,37.41%] 10.325%    2.32   0.412  0.0033
+     200    200     58  29.00%   [23.15%,35.64%] 10.325%    2.81   0.541  0.0003
+    1000   1000    319  31.90%   [29.09%,34.85%] 10.325%    3.09   0.736  0.0003
+  conservative TIME-BLOCK unit (no two analogues within 60 s of each other on ANY coin):
+     200    200     59  29.50%   [23.61%,36.16%] 10.325%    2.86   0.542  0.0003
+
+  ARE THE ANALOGUES SPREAD OUT IN TIME?  200 analogues drawn from three volatile hours are not 200 observations, however far apart they are within those hours.
+    k=  50: 15 distinct DAYS, 50 distinct HOURS, span 14.2d of the 15.0d tape; busiest hour holds 1 of 50, top 3 hours hold 3
+            flips occur on 13 of those 15 days -- concentration check
+    k= 200: 16 distinct DAYS, 148 distinct HOURS, span 14.9d of the 15.0d tape; busiest hour holds 4 of 200, top 3 hours hold 12
+            flips occur on 16 of those 16 days -- concentration check
+    k=1000: 16 distinct DAYS, 293 distinct HOURS, span 14.9d of the 15.0d tape; busiest hour holds 13 of 1000, top 3 hours hold 33
+            flips occur on 16 of those 16 days -- concentration check
+
+  WHERE THE NEIGHBOURS COME FROM.  Composition is the main confound: if the ball lands on one coin, that coin's own base rate could explain the lift.  The SHUFFLE control is stratified by coin precisely for this.
+    coin            analogues  flips     rate  that coin base
+    ZECUSD_RTI             41     15   36.6%        11.124%
+    BRTI                   39     11   28.2%         9.761%
+    HYPEUSD_RTI            31     13   41.9%        11.472%
+    NEARUSD_RTI            24     11   45.8%         9.706%
+    DOGEUSD_RTI            16      2   12.5%         9.473%
+    BNBUSD_RTI             15      6   40.0%         9.003%
+    XRPUSD_RTI             14      5   35.7%        11.898%
+    ETHUSD_RTI             14      5   35.7%         9.573%
+    SOLUSD_RTI              6      4   66.7%         9.572%
+
+  THE MATCH IS IN z-SPACE (each feature standardised inside its own coin).  z of the 10 nearest, against the event's z:
+    range30    sig10    sig30  max1s10  flat300   flat10  range60          coin   dist  flip
+      +1.09    +1.99    +0.82    +2.44    +0.37    +0.00    +0.09   NEARUSD_RTI  0.000     1
+      +1.08    +1.85    +0.89    +2.51    +0.38    +0.00    +0.18    BNBUSD_RTI  0.190     0
+      +1.02    +1.98    +0.82    +2.55    +0.50    +0.00    +0.07          BRTI  0.190     0
+      +0.95    +1.97    +0.85    +2.33    +0.27    +0.00    +0.18    BNBUSD_RTI  0.218     0
+      +0.89    +1.99    +0.87    +2.45    +0.42    +0.00    +0.16   NEARUSD_RTI  0.228     1
+      +0.89    +2.06    +0.94    +2.42    +0.37    +0.00    +0.06   NEARUSD_RTI  0.241     0
+      +1.14    +2.15    +0.72    +2.57    +0.44    +0.00    +0.10   HYPEUSD_RTI  0.252     1
+      +1.13    +2.05    +0.69    +2.49    +0.44    +0.00    -0.08   HYPEUSD_RTI  0.252     0
+      +1.20    +2.01    +0.77    +2.66    +0.33    +0.00    +0.03   HYPEUSD_RTI  0.263     0
+      +1.33    +2.04    +0.77    +2.42    +0.44    +0.00    +0.04   HYPEUSD_RTI  0.268     1
+      +1.09    +1.99    +0.82    +2.44    +0.37    -0.00    +0.09      << EVENT  0.000     1
+
+  RAW FEATURE VALUES of the 10 nearest analogues -- are they really the same shape?
+    range30    sig10    sig30  max1s10  flat300   flat10  range60          coin  flip   jumpz
+     38.305    1.943    1.270    6.143    0.512    0.455    0.387   NEARUSD_RTI     1    7.59
+     37.313    1.932    1.323    6.181    0.120    0.091    0.419    BNBUSD_RTI     0    2.01
+     34.540    2.056    1.285    6.403    0.007    0.000    0.399          BRTI     0    1.06
+     35.870    2.009    1.300    5.846    0.110    0.091    0.418    BNBUSD_RTI     0    1.62
+     35.949    1.946    1.296    6.179    0.522    0.455    0.406   NEARUSD_RTI     1    1.12
+     36.011    1.986    1.331    6.115    0.512    0.455    0.377   NEARUSD_RTI     0    1.36
+     45.972    1.915    1.175    5.571    0.040    0.000    0.373   HYPEUSD_RTI     1    3.36
+     45.850    1.857    1.159    5.449    0.040    0.000    0.325   HYPEUSD_RTI     0    1.71
+     46.877    1.832    1.202    5.711    0.037    0.000    0.356   HYPEUSD_RTI     0    4.18
+     48.663    1.851    1.203    5.338    0.040    0.000    0.357   HYPEUSD_RTI     1    1.86
+     38.305    1.943    1.270    6.143    0.512    0.455    0.387      << EVENT     1    7.59
+
+------------------------------------------------------------------------------
+5. THE OPERATOR'S SECOND FORMULATION -- 'or large movement'
+------------------------------------------------------------------------------
+  Largest ONE-SECOND move in the remaining r seconds, in units of sigma_300 measured at entry.
+  k=  50 n=  50  median  2.59  p90  6.59  p99  15.01  max  15.98   P(jump >= 7.59 sigma) = 8.00%
+  k= 200 n= 200  median  2.66  p90  7.40  p99  16.01  max  23.96   P(jump >= 7.59 sigma) = 9.50%
+  k=1000 n=1000  median  2.71  p90  6.48  p99  18.17  max  34.02   P(jump >= 7.59 sigma) = 7.20%
+  UNCOND n=344274  median  2.25  p90  5.27  p99  13.58  max 131.29   P(jump >= 7.59 sigma) = 4.30%
+  THE EVENT ITSELF: 7.59 sigma
+
+------------------------------------------------------------------------------
+6. ABLATION -- which feature is the effect actually made of?
+------------------------------------------------------------------------------
+  Dropping a feature can only WIDEN the ball along that axis, so a
+  FALL in the ratio means that feature was doing real selection
+  work, and a RISE means it was adding noise.  The radius shrinks
+  mechanically whenever a dimension is removed, so read the ratio,
+  not the radius.
+
+  PLACEMENT A
+  dropped feature              n     rate   ratio  radius  p_shuf
+  -- none (full 7) --        200  36.00%    3.54   0.541  0.0003
+  range300/sig300            200  27.50%    2.70   0.332  0.0005
+  sig10/sig300               200  37.50%    3.69   0.492  0.0005
+  sig30/sig300               200  36.50%    3.59   0.484  0.0005
+  max1s10/sig300             200  34.50%    3.39   0.436  0.0005
+  flat300                    200  32.00%    3.14   0.385  0.0005
+  flat10                     200  38.00%    3.73   0.493  0.0005
+  range60/range300           200  36.00%    3.54   0.442  0.0005
+
+  PLACEMENT B
+  dropped feature              n     rate   ratio  radius  p_shuf
+  -- none (full 7) --        200   7.50%    2.24   0.541  0.0040
+  range300/sig300            200   3.50%    1.04   0.332  0.5017
+  sig10/sig300               200   7.00%    2.09   0.492  0.0060
+  sig30/sig300               200   5.00%    1.49   0.484  0.1449
+  max1s10/sig300             200   5.50%    1.64   0.436  0.0900
+  flat300                    200   6.50%    1.94   0.385  0.0230
+  flat10                     200   4.50%    1.34   0.493  0.2289
+  range60/range300           200   4.50%    1.34   0.442  0.2559
+
+  PLACEMENT C
+  dropped feature              n     rate   ratio  radius  p_shuf
+  -- none (full 7) --        200   5.00%    1.87   0.541  0.0530
+  range300/sig300            200   1.00%    0.37   0.332  0.9690
+  sig10/sig300               200   5.50%    2.05   0.492  0.0235
+  sig30/sig300               200   3.00%    1.12   0.484  0.4718
+  max1s10/sig300             200   4.00%    1.49   0.436  0.2019
+  flat300                    200   5.00%    1.87   0.385  0.0625
+  flat10                     200   3.50%    1.31   0.493  0.3028
+  range60/range300           200   3.00%    1.12   0.442  0.4853
+
+------------------------------------------------------------------------------
+7. CONTROLS
+------------------------------------------------------------------------------
+  (a) SHUFFLE -- flip labels permuted within index strata, the neighbour set held fixed.
+      p_shuf in every table above IS that control.
+      full fingerprint, k=200: placement A p = 0.0003, placement B p = 0.0040
+
+  (b) PLACEBO -- up to 120 random real cells used as target fingerprints, kept only where the k-th-neighbour radius is within 2x of the real one (RARITY MATCHED).
+      kept 120 of 131 draws.  placebo flip rates: median 8.00%, p90 25.05%, max 42.50%
+      placebos at or above the real fingerprint's 36.00%: 3/120  ->  empirical p = 0.033
+      placebo radii median 0.445 vs real 0.541
+
+  (c) OUT OF SAMPLE -- scales fitted on the EARLY half, neighbours drawn only from the LATE half.
+      split at 1788277546: early cells 1,010,213, late cells 1,055,426
+      placement A: n=200 flips=57 rate=28.50% [22.69%,35.12%] vs LATE-half base 10.0638% (ratio 2.83), p_shuf=0.0003, MDE=16.44%
+      placement B: n=200 flips=24 rate=12.00% [8.20%,17.23%] vs LATE-half base 3.3105% (ratio 3.62), p_shuf=0.0003, MDE=7.34%
+      placement C: n=200 flips=13 rate=6.50% [3.84%,10.80%] vs LATE-half base 2.6752% (ratio 2.43), p_shuf=0.0017, MDE=6.36%
+
+  (d) REAL-CLOSE-ALIGNED SUBSET -- cells where t+tau is an actual 15-minute boundary, so the synthetic close is a real one.
+      aligned cells 11,547: n=200 rate=24.50% vs aligned base 8.5996% (ratio 2.85), p_shuf=0.0005, MDE=14.59%
+
+------------------------------------------------------------------------------
+8. THE COST -- what a gate on this fingerprint would have refused
+------------------------------------------------------------------------------
+  results/pindata/rows.jsonl: 28,479 rows (one row = one genuinely available trade)
+  re-loading the tape to attach the fingerprint to each row.  F1-F7 are tau-free, so the gate transfers to every tau.
+  fingerprint attached to 28,479 rows; 0 could not be scored (index gap or tape edge)
+
+  ALL rows, tau 2-60
+    population: 28,479 rows over 1,014 CLOSES.  1,506 losing ROWS (5.288%); 101 losing CLOSES (9.961%).  Wilson 95% on the per-CLOSE loss rate: [8.27%, 11.96%]
+     radius  refused   share  winsRef  lossAvoid  wins/loss   profitDestr   lossAvoided        net
+      0.412        3  0.01%        3          0        INF          0.3c          0.0c      -0.3c
+      0.541        5  0.02%        5          0        INF         16.9c          0.0c     -16.9c
+      0.736       28  0.10%       28          0        INF        277.4c          0.0c    -277.4c
+      1.000       95  0.33%       80         15        5.3        804.9c       1028.7c     223.7c
+      1.500      457  1.60%      410         47        8.7       2133.9c       3484.0c    1350.1c
+      2.000    1,380  4.85%    1,239        141        8.8       6646.6c      10411.2c    3764.6c
+      3.000    6,019 21.13%    5,579        440       12.7      27334.5c      33050.3c    5715.9c
+
+  tau 3-30, every row
+    population: 6,207 rows over 499 CLOSES.  213 losing ROWS (3.432%); 25 losing CLOSES (5.010%).  Wilson 95% on the per-CLOSE loss rate: [3.42%, 7.29%]
+     radius  refused   share  winsRef  lossAvoid  wins/loss   profitDestr   lossAvoided        net
+      0.412        0  0.00%        0          0        INF          0.0c          0.0c       0.0c
+      0.541        0  0.00%        0          0        INF          0.0c          0.0c       0.0c
+      0.736        0  0.00%        0          0        INF          0.0c          0.0c       0.0c
+      1.000       17  0.27%       12          5        2.4        146.5c        347.4c     200.9c
+      1.500       87  1.40%       68         19        3.6        369.7c       1448.3c    1078.6c
+      2.000      275  4.43%      243         32        7.6       1689.6c       2265.3c     575.6c
+      3.000    1,231 19.83%    1,176         55       21.4       5583.1c       3986.1c   -1597.0c
+
+  LIVE RULE: tau 3-30 AND model p(lose) <= 2%  <-- what pin buys
+    population: 5,219 rows over 499 CLOSES.  0 losing ROWS (0.000%); 0 losing CLOSES (0.000%).  Wilson 95% on the per-CLOSE loss rate: [0.00%, 0.76%]
+    THERE ARE NO LOSSES IN THIS POPULATION AT ALL, so no gate can be credited with avoiding one.  Every gate here refuses only winners.  wins/loss is not 22-44, it is INFINITE, and the study has NO POWER to price the benefit side.
+     radius  refused   share  winsRef  lossAvoid  wins/loss   profitDestr   lossAvoided        net
+      0.412        0  0.00%        0          0        INF          0.0c          0.0c       0.0c
+      0.541        0  0.00%        0          0        INF          0.0c          0.0c       0.0c
+      0.736        0  0.00%        0          0        INF          0.0c          0.0c       0.0c
+      1.000        8  0.15%        8          0        INF         17.2c          0.0c     -17.2c
+      1.500       55  1.05%       55          0        INF         49.9c          0.0c     -49.9c
+      2.000      186  3.56%      186          0        INF        256.3c          0.0c    -256.3c
+      3.000      945 18.11%      945          0        INF       1414.8c          0.0c   -1414.8c
+
+  tau 31-60 AND model p(lose) <= 2%  (where losses DO exist)
+    population: 17,349 rows over 941 CLOSES.  151 losing ROWS (0.870%); 16 losing CLOSES (1.700%).  Wilson 95% on the per-CLOSE loss rate: [1.05%, 2.74%]
+     radius  refused   share  winsRef  lossAvoid  wins/loss   profitDestr   lossAvoided        net
+      0.412        3  0.02%        3          0        INF          0.3c          0.0c      -0.3c
+      0.541        5  0.03%        5          0        INF         16.9c          0.0c     -16.9c
+      0.736       17  0.10%       17          0        INF         32.1c          0.0c     -32.1c
+      1.000       45  0.26%       45          0        INF         48.5c          0.0c     -48.5c
+      1.500      273  1.57%      273          0        INF        314.2c          0.0c    -314.2c
+      2.000      815  4.70%      802         13       61.7        788.7c       1258.3c     469.6c
+      3.000    3,497 20.16%    3,458         39       88.7       3160.7c       3840.9c     680.3c
+
+  The prior study killed every proposed gate at 22-44 winning trades refused per loss avoided (research/RESULTS_pinsignal.md).
+  NOTE: rows.jsonl was built 2026-09-08 08:23, BEFORE the 2026-09-09 00:45Z close, so the event itself is NOT in it.
+
+------------------------------------------------------------------------------
+done in 425s
+------------------------------------------------------------------------------

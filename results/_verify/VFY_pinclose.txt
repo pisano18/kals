@@ -1,0 +1,139 @@
+﻿SELF-TEST -- vfy_pinclose
+  ok   truncation keeps every print up to and including the decision second and NaNs every later one
+  ok   a backward-looking range is unchanged by truncation (2.0)
+  ok   PLANT: a range that DOES peek forward returns 8.0 on the full tape and None once the future is deleted -- so this test can fail
+  ok   the windowed truncation is the same tape up to the decision second and physically has no later prints at all
+  ok   PLANT: the forward-peeking range is unmeasurable on the window, so the windowed test detects a peek exactly as the NaN test does
+  ok   PLANT null gate: refuses 2 (1 loser), keeps 2 (1 loser) -- equal rates (1/2 vs 1/2)
+  ok   PLANT real gate: refuses both losers, and the kept worst close is a WIN -- the estimator can detect a gate that works
+  ok   PLANT: pinclose's trigger_tau returns None on a blip-then-persistent path even though a real crossing follows
+  ok   the counter finds exactly that one path (1) and NULL: zero on a clean crossing (0)
+  ok   the fee reproduces the operator's real charge exactly: 12.37 at 16c = $0.116400
+  ok   PLANT tonight's three real fills: stake + per-ORDER fees = $52.6023, which is the reported -$52.60 to the cent
+  ok   and the per-CONTRACT fee model pinclose uses gives $52.6546 -- 6c different, so the two are distinguishable and the check is real
+  ok   jackknife arithmetic: dropping the 100 leaves 30, dropping a 10 leaves 120 -- concentration is visible
+SELF-TEST PASSED
+
+============================================================================
+  ADVERSARIAL VERIFICATION OF pinclose.py
+============================================================================
+  rows.jsonl: 28,479 rows, 1,014 markets, 132 closes
+  loading index tape ...
+  11 indices loaded
+
+----------------------------------------------------------------------------
+  1. LOOKAHEAD -- later index prints deleted, features recomputed
+----------------------------------------------------------------------------
+  1,200 sampled decision-seconds recomputed on a truncated tape
+  features that CHANGED: 0   (largest change 0.000e+00)
+  VERDICT: NO LOOKAHEAD in bps, cr300 or model p
+
+  rebuilt independently: LIVE 165 positions / 83 closes / 0 losers
+                         WIDE 438 positions / 118 closes / 12 losers
+
+----------------------------------------------------------------------------
+  2. TABLE 4 REBUILT -- and the comparison pinclose did not print
+----------------------------------------------------------------------------
+  base: 438 positions, 12 losers (2.74%), total +796.9c, worst close -175.9c
+                gate  refused  ref L  ref rate  kept L  kept rate  kept total  kept worst close
+        cr300 < 0.02        5      0     0.00%      12      2.77%      777.7c           -175.9c
+        cr300 < 0.05        9      0     0.00%      12      2.80%      764.1c           -175.9c
+        cr300 < 0.08       12      0     0.00%      12      2.82%      742.1c           -175.9c
+        cr300 < 0.12       20      0     0.00%      12      2.87%      687.8c           -175.9c
+         cr300 < 0.2       60      1     1.67%      11      2.91%      589.8c           -175.9c
+        cr300 < 0.35      191      5     2.62%       7      2.83%      287.2c           -175.9c
+           bps < 1.0       17      0     0.00%      12      2.85%      702.4c           -175.9c
+           bps < 2.0       55      1     1.82%      11      2.87%      571.7c           -175.9c
+           bps < 4.0      167      3     1.80%       9      3.32%      110.1c           -175.9c
+           bps < 8.0      327      9     2.75%       3      2.70%       82.1c            -94.7c
+          bps < 15.0      404     10     2.48%       2      5.88%      -55.1c            -90.6c
+
+----------------------------------------------------------------------------
+  3. HEDGE-SIDE DEPTH -- reported by pinclose as NOT MEASURED
+----------------------------------------------------------------------------
+  When the model has SWITCHED sides, rows.jsonl's own price/size
+  ARE the ask and the size on the side we hedge INTO.
+
+  WIDE losers: p>=50% fired on 12 of 12
+                      ticker entry tau trig tau  switched  hedge px  size at that px
+     KXZEC15M-26SEP051145-45        60       55       yes     52.0c               12
+     KXXRP15M-26SEP051145-45        60       54       yes     82.0c              189
+    KXNEAR15M-26SEP050815-15        60       52       yes     64.0c               60
+    KXNEAR15M-26SEP041515-15        60       47       yes     66.0c               60
+     KXETH15M-26SEP041215-15        60       42       yes     51.0c              250
+     KXBTC15M-26SEP041830-30        44       42       yes     68.0c             1000
+     KXXRP15M-26SEP042130-30        58       42       yes     81.0c                6
+     KXETH15M-26SEP051045-45        60       37       yes     88.0c                9
+     KXZEC15M-26SEP050745-45        47       36       yes     51.0c               38
+     KXBNB15M-26SEP051045-45        37       36       yes     52.0c               60
+    KXDOGE15M-26SEP040830-30        47       32       yes     64.0c               98
+    KXHYPE15M-26SEP052330-30        54       29       yes     72.0c               16
+  hedge-side touch size, n=12 of 12: min 6, median 60, max 1000
+    deep enough for 20 contracts: 8 of 12 (67%)
+    deep enough for 59 contracts: 7 of 12 (58%)
+
+  LIVE false alarms: p>=50% fired on 1 of 165
+                      ticker entry tau trig tau  switched  hedge px  size at that px
+     KXBTC15M-26SEP051445-45        30       23       yes     54.0c             1000
+  hedge-side touch size, n=1 of 1: min 1000, median 1000, max 1000
+    deep enough for 20 contracts: 1 of 1 (100%)
+    deep enough for 59 contracts: 1 of 1 (100%)
+
+----------------------------------------------------------------------------
+  4. trigger_tau EARLY RETURN -- confirm rules that never fire
+----------------------------------------------------------------------------
+  LIVE confirm 1s: fires on 22 paths; 4 MORE paths have a blip then a genuine confirmed crossing that the early return silently drops
+  LIVE confirm 2s: fires on 19 paths; 2 MORE paths have a blip then a genuine confirmed crossing that the early return silently drops
+  LIVE confirm 3s: fires on 16 paths; 1 MORE paths have a blip then a genuine confirmed crossing that the early return silently drops
+  WIDE confirm 1s: fires on 45 paths; 5 MORE paths have a blip then a genuine confirmed crossing that the early return silently drops
+  WIDE confirm 2s: fires on 39 paths; 4 MORE paths have a blip then a genuine confirmed crossing that the early return silently drops
+  WIDE confirm 3s: fires on 36 paths; 3 MORE paths have a blip then a genuine confirmed crossing that the early return silently drops
+
+----------------------------------------------------------------------------
+  5. LEAD TIME of the recommended p>=50% trigger, TO THE CLOSE
+----------------------------------------------------------------------------
+                      ticker entry tau  trigger tau
+    KXHYPE15M-26SEP052330-30        54           29
+    KXDOGE15M-26SEP040830-30        47           32
+     KXZEC15M-26SEP050745-45        47           36
+     KXBNB15M-26SEP051045-45        37           36
+     KXETH15M-26SEP051045-45        60           37
+     KXETH15M-26SEP041215-15        60           42
+     KXBTC15M-26SEP041830-30        44           42
+     KXXRP15M-26SEP042130-30        58           42
+    KXNEAR15M-26SEP041515-15        60           47
+    KXNEAR15M-26SEP050815-15        60           52
+     KXXRP15M-26SEP051145-45        60           54
+     KXZEC15M-26SEP051145-45        60           55
+  trigger tau (= seconds left when we would act): min 29, median 42, max 55
+
+----------------------------------------------------------------------------
+  6. JACKKNIFE -- drop each loser in turn, does p>=50% survive?
+----------------------------------------------------------------------------
+  full sample net: +210.3c on 438 positions
+    drop    KXETH15M-26SEP041215-15: net +163.0c
+    drop    KXZEC15M-26SEP050745-45: net +163.0c
+    drop    KXBNB15M-26SEP051045-45: net +164.0c
+    drop    KXZEC15M-26SEP051145-45: net +164.0c
+    drop   KXDOGE15M-26SEP040830-30: net +175.9c
+    drop   KXNEAR15M-26SEP050815-15: net +175.9c
+    drop   KXNEAR15M-26SEP041515-15: net +177.9c
+    drop    KXBTC15M-26SEP041830-30: net +179.8c
+    drop   KXHYPE15M-26SEP052330-30: net +183.7c
+    drop    KXXRP15M-26SEP042130-30: net +192.4c
+    drop    KXXRP15M-26SEP051145-45: net +193.3c
+    drop    KXETH15M-26SEP051045-45: net +199.0c
+  jackknife range +163.0c to +199.0c; 0 of 12 single drops turn the net non-positive
+
+----------------------------------------------------------------------------
+  7. WINS TO RECOVER, recomputed at the real per-ORDER fee
+----------------------------------------------------------------------------
+  LIVE: mean win 5.08c/contract (median 3.45c)
+  WIDE: mean win 4.52c/contract (median 2.79c)
+        mean loss -93.89c = 20.8 wins; worst -98.42c = 21.8 wins
+  tonight, per ORDER: stake $52.23 + fees $0.3723 = $52.6023 lost
+  hedge 59 of 59 at tau 17 (46c): net $-21.77 vs $-52.60 unhedged; extra capital needed $27.14
+  hedge 59 of 59 at tau 16 (48c): net $-22.95 vs $-52.60 unhedged; extra capital needed $28.32
+  hedge 58 of 59 at tau 14 (84c): net $-43.87 vs $-52.60 unhedged; extra capital needed $48.72
+
+  DONE.
