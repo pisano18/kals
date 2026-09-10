@@ -27,6 +27,16 @@
    at 60–94¢ (break-even 15%). Only **1** such 60–94¢ fill exists under the
    current gate. n is far too small to write a rule from.
 
+### DECISION REVISED 23:38Z — AMENDMENT 10 DEPLOYED: never buy a certainty at a discount
+
+The operator asked the right question — *why not just refuse the crazy deals?* —
+and the math says yes: on every live fill so far the rule is EV-neutral (−$4.75
+over 111 fills) and removes the entire adverse-fill loss class. A trade whose EV
+rests on the model's extreme tail (proven worthless: 2 of 14 vs ~1e−9) is a trade
+whose EV cannot be estimated. Refused at ≥0.999 confidence and >5¢ discount.
+Self-tested on the two real losses (refused) and the real cheap wins (untouched).
+Details and revert: `VERSIONS.md` v-a10. **Bars A–C below are unchanged.**
+
 ### DECISION: HOLD. Size 20, gate 0.995, nothing else changes tonight.
 
 Reasons, in order: the current version's live record is positive and broad-based
@@ -74,7 +84,7 @@ Ticker dates are ET; the log `t` field is UTC — read the `t` field.
 |---|---|
 | bank | **$110.45** |
 | record | 30 wins, 3 losses |
-| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30, **gate 0.995 (was 0.98 — AMENDMENT 9, 2026-09-10)** |
+| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30, **gate 0.995 (A9)**, **no certainty at a >5¢ discount (A10)** |
 | restart it | **`RESTART.md`** in the repo root — one line to paste |
 | brakes | −$60 · 3 losing **closes** · 2 order errors · 8 attempts/close |
 | day | started $38.83, funded +$113.04 → **−$41.54** |

@@ -76,6 +76,7 @@ human looks before more money moves.
 | size | 20 contracts, up to 2 buys per close |
 | price ceiling | **98.0¢** — never pays more |
 | confidence gate | **0.995** since 2026-09-10 (was 0.98) — needs 2.58 sd, not 2.05 |
+| dump guard | since 2026-09-10 23:38Z: refuses a ≥99.9% "certainty" offered more than 5¢ below fair — that is someone else's information |
 | window | last 3–30 seconds before a close |
 | brakes | −$60 · 3 losing closes · 2 order errors · 8 attempts/close |
 | runs for | 3 days, then exits cleanly |

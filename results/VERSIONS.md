@@ -5,6 +5,39 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## v-a10 — 2026-09-10 23:38Z — AMENDMENT 10: never buy a certainty at a discount (`fdd581e`)
+
+**What changed in `pinrun.py`:** after the edge floor, a fill is refused when the
+model's confidence is ≥ 0.999 (3.09 sd) AND the offer sits more than 5¢ below the
+model's fair value. Counted in the close summary as `dumped`. Nothing else: size
+20, gate 0.995, ceiling 98.0¢, tau 3–30, brakes unchanged.
+
+**Why (live fills only, both gates — `fair()` is identical in both):** 14 fills at
+≥4 sd. The 8 priced 94¢+ went 8–0. The 6 priced below — 8¢ to 90¢ discounts on a
+"certainty" — went 4–2, and both losses were the same reconstructed event: the
+book sold us the certain side cheap and the index jumped 10–18 sigma within a
+second. The model puts that at ~1e−9. A trade whose EV rests on that tail is a
+trade whose EV cannot be estimated, so it is removed.
+
+**Not a fitted threshold:** any discount cut from 6.2¢ to 8.1¢ gives the same
+live result; 5¢ is the conservative side and ~17× the edge floor.
+
+**Cost on the live record:** forgoes SOL +$15.36, DOGE +$3.78, ETH +$2.82, SOL
++$1.52; avoids XRP −$16.61, DOGE −$2.12. **EV ≈ neutral (−$4.75 over 111 fills);
+loss frequency down by the whole class.** The operator's stated preference, and
+the definition of consistent.
+
+**The one thing the operator asked that this answers:** *"why can't we just not
+buy the crazy 'deals' that basically always end up being someone knowing what's
+happening?"* We now don't.
+
+**Revert:** set `DUMP_DISCOUNT = 9.0` (never trips) or `git checkout fdd581e --
+research/pinrun.py`, then stop/start per `RESTART.md`.
+
+Restarted 23:38Z in the quiet window after the 23:30 settlement; pid 442440.
+
+---
+
 ## v-pin995 — 2026-09-10 08:4xZ — AMENDMENT 9: the confidence gate 0.98 → 0.995 (`184c826`)
 
 **THE BAR MOVED. Loud, dated, and with the evidence beside it.**

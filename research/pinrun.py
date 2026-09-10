@@ -130,6 +130,25 @@ SERIES_TO_INDEX = {
 # What it costs is unmeasured: deeper markets are priced higher, so the
 # same opportunity count may fill less often. Revert: PIN = 0.98.
 PIN = 0.995
+# AMENDMENT 10 (2026-09-10 23:3xZ): DO NOT BUY A CERTAINTY AT A DISCOUNT.
+# Operator: "why can't we just not buy the crazy 'deals' that basically always
+# end up being someone knowing what's happening?" -- and he is right.
+# Live, across both gate versions (fair() is identical in both): 14 fills where
+# the model stood at >= 4 sd. The 8 priced at 94c+ (discount <= 6c) went 8-0.
+# The 6 priced below -- discounts of 8c to 90c on a "certainty" -- went 4-2,
+# and both losses were the same event reconstructed twice: the book sold us
+# the certain side cheap, and the index jumped 10-18 sigma within a second.
+# The model claims ~1e-9 for that. Its extreme tail carries no information,
+# so a trade whose EV rests on it is a trade whose EV we cannot estimate.
+# THIS IS NOT A FITTED THRESHOLD: any discount cut between 6.2c and 8.1c
+# gives the same live result; 5c is chosen as the conservative side of it,
+# and it is ~17x the 0.3c edge floor, i.e. far outside what an honest edge
+# ever looks like. Cost on the live record: forgoes SOL +15.36, DOGE +3.78,
+# ETH +2.82, SOL +1.52 and avoids XRP -16.61, DOGE -2.12 -- EV roughly
+# neutral, loss frequency down by the whole class. Fewer losses at ~zero EV
+# cost is the operator's stated preference and the definition of consistent.
+DUMP_CONF = 0.999        # 3.09 sd: "the model calls it certain"
+DUMP_DISCOUNT = 0.05     # a certainty offered 5c+ below fair is a warning
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
                        # moments it calls <2% risk:
@@ -1325,6 +1344,33 @@ def selftest():
     ck("cond_x=" in src and "idx.conditions(iid)" in src,
        "and the signal record actually carries the conditions columns")
 
+    # --- AMENDMENT 10: never buy a certainty at a discount ------------------
+    ck(abs(ND.inv_cdf(DUMP_CONF) - 3.09) < 0.01,
+       f"DUMP_CONF {DUMP_CONF} is 3.09 sd -- the model calling it certain")
+    ck(DUMP_DISCOUNT > 10 * EDGE_FLOOR,
+       f"a {100*DUMP_DISCOUNT:.0f}c discount is >10x the {100*EDGE_FLOOR:.1f}c "
+       f"edge floor, so the honest edge can never trip it")
+    # the live losses this exists for, and the live wins it must not touch,
+    # replayed through the same arithmetic the loop uses
+    def _dump(f_, price_, want_):
+        c_ = f_ if want_ == "yes" else 1 - f_
+        d_ = (f_ - price_) if want_ == "yes" else ((1 - f_) - price_)
+        return c_ >= DUMP_CONF and d_ > DUMP_DISCOUNT
+    ck(_dump(1.0, 0.82, "yes"),
+       "XRP 2026-09-10 04:59Z (fair 1.0, filled 82c, LOST -$16.61) is refused")
+    ck(_dump(0.0, 0.10, "no"),
+       "DOGE 2026-09-10 22:14Z (fair 0.0, filled 10c, LOST -$2.12) is refused")
+    ck(not _dump(0.99735, 0.89, "yes"),
+       "BNB 12:30Z (fair 0.99735, 89c, WON +$2.06) is NOT: 99.7% is not "
+       "'certain' and the guard must not eat ordinary cheap fills")
+    ck(not _dump(1.0, 0.978, "yes"),
+       "a certainty at 97.8c (2.2c discount, WON) passes -- the normal edge")
+    ck(not _dump(0.9953, 0.98, "yes"),
+       "and a boundary fill at the ceiling passes untouched")
+    ck('nb["dumped"]' in src and "_conf >= DUMP_CONF and _disc > DUMP_DISCOUNT" in src,
+       "the guard is wired into the trade loop and counted in the near-miss "
+       "record, so refusals are visible rather than silent")
+
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
         print("   - " + m)
@@ -1807,6 +1853,15 @@ def trade_loop(a, rec, book, idx, series_index):
                               "price": price, "fair": f, "tau": tau,
                               "size": size}
             if e < EDGE_FLOOR:
+                continue
+            # AMENDMENT 10: a certainty at a discount is someone else's
+            # information, not our edge. See DUMP_CONF / DUMP_DISCOUNT.
+            _conf = f if want == "yes" else (1.0 - f)
+            _disc = (f - price) if want == "yes" else ((1.0 - f) - price)
+            if _conf >= DUMP_CONF and _disc > DUMP_DISCOUNT:
+                nb["dumped"] = nb.get("dumped", 0) + 1
+                if nb["best"] is not None and nb["best"]["ticker"] == tk:
+                    nb["best"]["dumped"] = round(100 * _disc, 2)
                 continue
             # THE EXPECTED-VALUE GATE (AMENDMENT 2). The model edge above uses
             # the model's own confidence, which implies ~0.06% error at the
