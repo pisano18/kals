@@ -85,6 +85,42 @@ unchanged, or it is the refuted own-sigma filter under a new name.
 **Logged, not gated on.** We have zero live records of the conditions our
 losses happened in, and the tape has been shown unable to explain them.
 
+### ⚠ CORRECTION 2026-09-10 20:5xZ — THE CAPACITY CEILING IS 2x LOWER THAN I QUOTED
+
+Triggered by the operator saying the number would be life-changing. That is
+exactly when to go looking for the artefact.
+
+**THE ERROR: every projection assumed fills/day stays constant as size grows.
+It does not — the book runs out.** Measured on today's 37 real signals:
+
+| size | signals with enough depth | contracts/day | **$/day** | what I quoted |
+|---|---|---|---|---|
+| 20 | 37 (100%) | 1,148 | $40.53 | $36.01 |
+| 50 | 28 (76%) | 2,115 | $74.66 | $90.02 |
+| 100 | 23 (62%) | 3,140 | **$110.83** | $180.03 |
+| 125 | **17 (46%)** | 3,082 | $108.80 | $225.04 |
+
+**Income PEAKS at size 100 (~$111/day) and DECLINES at 125** — past that we are
+bidding for contracts that are not on offer. The bot needs `MIN_FILL_FRAC`
+(half its size) resting; today's depth was min 10, p25 27, median 60.
+
+**So the honest ceiling is ~$111/day = ~$40k/year, not $225/day = $82k/year.**
+And the model still runs 28% hot at size 20 ($40.53 modelled vs **$31.59
+observed**), so even $111 is an upper bound.
+
+**THE MOST SOBERING NUMBER, and it belongs above all of the above: lifetime
+P&L is about ZERO.** $151.40 in the account against $151.87 deposited — down
+$0.47. Today's +$15.02 just recovered the −$15.02 the old gate lost. **This
+strategy has never made money over its life**, and every forecast above is a
+projection of a thing that so far has not paid.
+
+**And we have never seen a loss under the current rule.** The 0.51% rests on 3
+flips in 594 tape markets, CI [0.10%, 1.47%]. At the top of that interval the
+peak is ~$81/day. Break-even at today's 95.67c is a **4.04%** loss rate; the
+old gate ran at 5.95%.
+
+---
+
 ### THE FORECAST, REBUILT ON AMENDMENT 9 (2026-09-10 12:0xZ) — `pinproj.py`
 
 Bank **$140.24**. Every input re-measured, none inherited from the old forecast.
