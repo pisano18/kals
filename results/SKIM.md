@@ -239,6 +239,54 @@ above says even then it would be answering about a different population.
 ---
 
 
+## THE FIRST LOSS UNDER THE NEW GATE — 2026-09-10 22:15Z, KXDOGE15M, −$2.12
+
+**It cost $2.12. The same wrong call an hour earlier would have cost $19.48.**
+
+Two signals on the same close:
+
+| | tau | our bid | filled | model | outcome |
+|---|---|---|---|---|---|
+| 1 | 17s | 97.4c | **nothing — lost the race** | 99.55%, 2.61 sd | — |
+| 2 | 11s | 53.0c | **9.98c** (43c improvement) | 100.00%, 7.03 sd | **LOST** |
+
+**LOSING THE FIRST RACE SAVED US $17.36.** Filled at 97.4c the loss is $19.48;
+filled at 9.98c it is $2.12. This is the price-ladder thesis paying out in the
+most literal way available: *the same error, nine times cheaper.*
+
+**What happened.** DOGE sat 7.5e−6 below the strike for 30 seconds, we filled at
+t−11, and **one second later it jumped +9.1e−5 — 18 sigma — and never came
+back.** Window mean settled 0.0840355 against a strike of 0.0840226. No data
+error: the bot's inputs reconcile to the tape exactly.
+
+**The market knew and we read it backwards.** Our model said NO was certain;
+the book was selling NO at **10c**, i.e. pricing YES at 90%. We treated a
+violent disagreement as free money. It was a warning.
+
+**The conditions index gave NO warning** — `cond_x` 0.81, `cond_n` 0,
+`cond_own` 0.55 (calmer than its own hour). First live test of the thing I
+deployed this morning, and it was blind to this.
+
+**AND THE TAPE SAYS THIS CANNOT HAPPEN: 0 flips in 7,882 markets at 4+ sd.**
+We have now had **two in two days** (XRP 7.03 sd, DOGE 7.03 sd). That is the
+live-vs-backtest gap again, in the one band the backtest calls risk-free.
+
+**But the dollars say something calmer.** Across all 85 live fills:
+
+| price improvement | fills | losses | P&L |
+|---|---|---|---|
+| none (<0.5c) | 79 | 4 | **−$22.33** |
+| 0.5–5c | 3 | 0 | +$8.56 |
+| 5c+ (the adverse-fill shape) | 3 | 2 | −$3.37 |
+
+**Four of our six lifetime losses were ordinary boundary trades with zero price
+improvement, and they cost −$70 between them.** The deep adverse fills are
+roughly break-even (XRP −$16.61, DOGE −$2.12, SOL +$15.36). **The gate change
+already addressed where the money actually went.** Not deploying anything on
+n=3.
+
+---
+
 ## THE ONE LOSS, IN FOUR LINES
 
 Three buys, **one market**, one close. 96.2¢ / 95.6¢ / 73.0¢. All lost together. **−$52.60.**
