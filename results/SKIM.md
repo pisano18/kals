@@ -239,6 +239,59 @@ above says even then it would be answering about a different population.
 ---
 
 
+## 🚨 THE HONEST STATE, 2026-09-10 23:0xZ — OUR ENTIRE PROFIT IS ONE TRADE
+
+Operator: *"I don't care if 'we got lucky and only lost 2 dollars', that isn't
+the point. Unless that was a crazy fluke then we are fucked why aren't you
+seeing that."* **He is right. I was reporting the dollar and missing the
+mechanism.**
+
+### 1. The model's confidence is meaningless at the extremes
+
+| model says | live fills | lost | **live rate** | model's own number | tape |
+|---|---|---|---|---|---|
+| 2.05–2.6 sd | 45 | 3 | 6.7% | 0.01 | 1.8–3.1% |
+| 2.6–4.0 sd | 52 | 1 | 1.9% | 0.0005 | 0.5% |
+| **4–8 sd** | **14** | **2** | **14.3%** [1.8, 42.8] | **1e−9** | **0 of 7,882** |
+
+**In the band the model calls certain we lose 14.3% of the time.** That is 350x
+the tape's upper bound and nine orders of magnitude off the model. Twice in two
+days, both at 7.03 sd. **It is not a fluke and it is not a rounding error — the
+tail of this model carries no information at all.**
+
+### 2. What has been saving us is the PRICE, not the model
+
+| deep band, by price paid | fills | lost | P&L | break-even loss rate |
+|---|---|---|---|---|
+| under 60c | 2 | 1 (50%) | **+$13.24** | 84% |
+| **60–94c** | **4** | **1 (25%)** | **−$8.49** | **15%** |
+| 94c+ | 8 | 0 | +$2.55 | 2% |
+
+**The lethal cell is high confidence at a moderately discounted price.** Cheap
+enough that the market clearly disagrees, dear enough that being wrong hurts.
+And the 94c+ deep cell is the biggest latent risk: eight fills, no loss yet, a
+2% break-even, against a 14% observed rate.
+
+### 3. THE NUMBER THAT MATTERS MOST
+
+**111 live fills. Lifetime P&L +$13.39.**
+**Remove the single best trade (SOL at 22c, +$15.36) and it is −$1.97.**
+**Remove the best two and it is −$8.85.**
+
+Median trade +$0.46, mean +$0.12. Many small wins, rare large losses — the
+negative-skew shape this project was built to avoid. **We do not have evidence
+that this strategy makes money.** We have one lucky trade and 110 others that
+net out slightly negative.
+
+### WHAT CHANGED AS A RESULT
+
+**THE AUTOMATIC SCALE-UP TO SIZE 25 AT $196 IS CANCELLED.** I promised it
+earlier today; on this evidence it would have been wrong. **Size does not rise
+until the deep band is understood.** Nothing about scaling is supported by 111
+fills whose profit is one outlier.
+
+---
+
 ## THE FIRST LOSS UNDER THE NEW GATE — 2026-09-10 22:15Z, KXDOGE15M, −$2.12
 
 **It cost $2.12. The same wrong call an hour earlier would have cost $19.48.**
