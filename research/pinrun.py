@@ -115,7 +115,21 @@ SERIES_TO_INDEX = {
 }
 
 # ---- the frozen rule -------------------------------------------------------
-PIN = 0.98
+# AMENDMENT 9 (2026-09-10 08:35Z): PIN 0.98 -> 0.995. THE BAR MOVED, AND THIS
+# IS THE LOUD, DATED NOTICE. Evidence (research/pinfirst.py, 10,796 markets
+# walked tau 30->3, flip rate AT THE SECOND THE BOT FIRES, fit/holdout over
+# closes):
+#     margin at fill   2.05-2.3 sd  1.79%   2.3-2.6 sd  3.08%
+#                      2.6-4.0 sd   0.51%   4+ sd       0 of 7,868
+#     flips at the 0.98 crossing 18 -> 10 at 0.995; holdout 3 -> 1;
+#     9,151 of 9,159 markets still reach 0.995 inside the window.
+# 0.995 is the level that excludes exactly the two bands with measured flip
+# rates above 1.5% and keeps everything at 2.6 sd or deeper. On the 84 live
+# fills it would have skipped 3 of the 5 losses (NEAR x2, BNB -- all fired at
+# 2.09-2.25 sd) and no deep win. Size, brakes, ceiling, window: unchanged.
+# What it costs is unmeasured: deeper markets are priced higher, so the
+# same opportunity count may fill less often. Revert: PIN = 0.98.
+PIN = 0.995
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
                        # moments it calls <2% risk:

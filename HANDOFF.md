@@ -1,3 +1,13 @@
+# 2026-09-10 08:4xZ -- AMENDMENT 9 deployed: gate 0.98 -> 0.995 (pid 246096)
+
+The bar moved, on evidence, and it is written down in VERSIONS.md (v-pin995)
+with the table and the one-line revert. Exchange-tick veto tested
+(`pinjump.py`): mechanism real on 2 of 7 tape flips, rule fails holdout, not
+deployed. Trader restarted in the maintenance halt. Watch the FILL COUNT over
+the next day -- that is the cost nobody has measured.
+
+---
+
 # 2026-09-10 ~08:40Z addendum -- the boundary is the loss rate, and XRP was a lead
 
 **Three lines:** (1) Measured at the crossing second on 10,796 markets, the

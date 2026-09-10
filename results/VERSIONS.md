@@ -5,6 +5,45 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## v-pin995 — 2026-09-10 08:4xZ — AMENDMENT 9: the confidence gate 0.98 → 0.995 (`184c826`)
+
+**THE BAR MOVED. Loud, dated, and with the evidence beside it.**
+
+**What changed in `pinrun.py`:** `PIN = 0.995` (was 0.98). The bot now needs the
+model at 99.5% — a margin of **2.58 sd** instead of 2.05 — before it will buy.
+Nothing else: size 20, 2 buys per close, ceiling 98.0¢, tau 3–30, brakes −$60 /
+3 losing closes / 2 order errors / 8 attempts.
+
+**Evidence (`research/pinfirst.py`, 10,796 markets walked tau 30→3, flip rate
+measured AT THE SECOND THE BOT FIRES, fit/holdout over closes):**
+
+| margin at fill | markets | flips | rate | holdout |
+|---|---|---|---|---|
+| 2.05–2.3 sd | 502 | 9 | 1.79% | 2.51% → 1.38% (bands pooled) |
+| 2.3–2.6 sd | 195 | 6 | 3.08% | |
+| 2.6–4 sd | 594 | 3 | 0.51% | 0.74% → 0% |
+| 4+ sd | 7,868 | 0 | [0, 0.05%] | 0 → 0 of 2,500 |
+
+Flips at the crossing 18 → 10 at 0.995; holdout 3 → 1; 9,151 of 9,159 markets
+still reach 0.995 inside the window. On the 84 live fills: skips 3 of the 5
+losses (NEAR ×2, BNB — all fired at 2.09–2.25 sd), keeps every deep win,
+keeps 43 fills.
+
+**What is NOT known:** the fill count. Deeper markets are priced higher, so
+the same number of opportunities may fill less often. The next 24 h measures
+that. The operator's standing want is MORE bets; tonight's want was FEWER
+losses, and this trades one for the other on evidence.
+
+**Revert:**
+```powershell
+# research/pinrun.py line "PIN = 0.995"  ->  "PIN = 0.98", then stop/start per RESTART.md
+git checkout 184c826 -- research/pinrun.py
+```
+
+Restarted during the maintenance halt; pid 246096.
+
+---
+
 ## v-cond — 2026-09-10 07:47Z — conditions logged on every decision (`2994b55`)
 
 **What changed in `pinrun.py`:** every `signal` record now carries `cond_x`,

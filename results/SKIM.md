@@ -10,7 +10,7 @@
 |---|---|
 | bank | **$110.45** |
 | record | 30 wins, 3 losses |
-| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30 |
+| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30, **gate 0.995 (was 0.98 — AMENDMENT 9, 2026-09-10)** |
 | restart it | **`RESTART.md`** in the repo root — one line to paste |
 | brakes | −$60 · 3 losing **closes** · 2 order errors · 8 attempts/close |
 | day | started $38.83, funded +$113.04 → **−$41.54** |
@@ -84,6 +84,19 @@ unchanged, or it is the refuted own-sigma filter under a new name.
 
 **Logged, not gated on.** We have zero live records of the conditions our
 losses happened in, and the tape has been shown unable to explain them.
+
+### DEPLOYED 08:4xZ — AMENDMENT 9: confidence gate 0.98 → 0.995. THE BAR MOVED.
+
+The one lever with holdout evidence. It refuses the two margin bands that
+flip at 1.8–3.1% and keeps everything at 2.6 sd or deeper (0.5%, then 0 of
+7,868). Tape flips 18 → 10, holdout 3 → 1, no loss of opportunities in market
+count. **It would have skipped 3 of our 5 losses and no deep win.** Cost
+unmeasured: expect fewer fills at higher prices — the next day tells. Size,
+brakes, ceiling unchanged. Revert is one line (`VERSIONS.md`).
+
+The exchange-tick veto (the XRP mechanism) is **proven on events, not as a
+rule** — 2 of 7 tape flips have the signature, p=0.07, 0 of 2 holdout flips
+caught. Logged, not deployed (IDEAS_LOG S).
 
 ### LATER THE SAME NIGHT — three more results, one of them the lead we needed
 

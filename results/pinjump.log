@@ -1,0 +1,62 @@
+SELF-TEST -- pinjump
+  ok   holding YES, the exchange 2 sigma BELOW the print reads +2 adverse
+  ok   holding NO, the exchange 2 sigma ABOVE the print reads +2 adverse
+  ok   and the same move reads -2 (in our favour) on the other side
+  ok   a planted exchange-lead effect is found (p=0.0007)
+  ok   calibrated: 1/40 null worlds significant at 5%
+SELF-TEST PASSED
+
+  5,996 settled markets on coins the exchange feeds cover
+  index: 11 feeds, 10,053,852 prints (71s)
+  5,087 crossings of the 0.98 gate, 10 flips
+  streaming 258 hours of coinbase + kraken ...
+  15,220,123 lines (127s)
+
+  2,895 crossings carry a fresh AND a stale exchange tick (7 flips); 2192 unscored
+
+  BY THE FRESHEST TICK BEFORE SENDING (t-1.5s .. t+0.35s)
+    adverse (sd)  markets  closes  flips    rate            95% CI  mean z_adv
+   -99.0-0.5         1848     881      6   0.32%      [0.12, 0.71]      -0.098
+     0.5-1.0          239     215      0   0.00%      [0.00, 1.53]      -0.170
+     1.0-2.0          348     291      0   0.00%      [0.00, 1.05]      -0.009
+     2.0-4.0          334     282      0   0.00%      [0.00, 1.10]       0.018
+     4.0-99.0         126     113      1   0.79%      [0.02, 4.34]       0.009
+
+  BY THE WORST TICK IN THAT WINDOW
+    adverse (sd)  markets  closes  flips    rate            95% CI  mean z_adv
+   -99.0-0.5         1477     807      3   0.20%      [0.04, 0.59]      -0.075
+     0.5-1.0          291     257      0   0.00%      [0.00, 1.26]      -0.095
+     1.0-2.0          418     348      1   0.24%      [0.01, 1.33]      -0.040
+     2.0-4.0          462     353      0   0.00%      [0.00, 0.80]      -0.102
+     4.0-99.0         247     206      3   1.21%      [0.25, 3.51]      -0.063
+
+  CONTROL: BY A TICK 2-4 SECONDS OLD (must be weaker)
+    adverse (sd)  markets  closes  flips    rate            95% CI  mean z_adv
+   -99.0-0.5         1714     847      4   0.23%      [0.06, 0.60]      -0.052
+     0.5-1.0          207     183      0   0.00%      [0.00, 1.77]      -0.057
+     1.0-2.0          384     316      1   0.26%      [0.01, 1.44]      -0.049
+     2.0-4.0          380     306      1   0.26%      [0.01, 1.46]      -0.185
+     4.0-99.0         210     176      1   0.48%      [0.01, 2.62]      -0.137
+
+  PERMUTATION over closes (top quartile vs rest), 4000 draws
+    flips   by freshest tick          lift +0.02pp  p=0.5604
+    flips   by worst fresh tick       lift +0.38pp  p=0.0735
+    flips   by stale tick (control)   lift +0.20pp  p=0.2489
+
+  REFUSE WHEN THE FRESH TICK IS >= k sd AGAINST US -- fit 2,018 / holdout 877 crossings
+      k  FIT kept  flips kept  refused  HOLD kept  flips kept  refused
+    0.5     64.3%           4        1      62.7%           2        0
+    1.0     72.5%           4        1      71.0%           2        0
+    1.5     79.5%           4        1      79.1%           2        0
+    2.0     83.7%           4        1      84.9%           2        0
+    3.0     92.1%           4        1      92.0%           2        0
+  ungated flips: fit 5, holdout 2
+
+  the flips, with what the exchanges showed at the crossing:
+    KXBTC15M   08-27 00:45  tau 18  margin 2.54  fresh +10.14  worst +18.89  stale +2.45  realised +3.26 sd
+    KXBTC15M   08-29 16:00  tau 20  margin 2.06  fresh +0.34  worst +8.05  stale -2.25  realised +3.18 sd
+    KXXRP15M   08-30 05:30  tau 30  margin 3.35  fresh -3.60  worst -3.60  stale -3.60  realised +6.86 sd
+    KXETH15M   08-31 07:15  tau  8  margin 2.35  fresh -1.47  worst -1.47  stale -1.38  realised +2.57 sd
+    KXSOL15M   09-01 20:15  tau 18  margin 2.12  fresh -3.10  worst +4.65  stale +4.65  realised +3.26 sd
+    KXBTC15M   09-02 19:15  tau  7  margin 2.32  fresh -0.57  worst +1.59  stale +1.59  realised +2.77 sd
+    KXBTC15M   09-03 23:15  tau 25  margin 2.06  fresh +0.40  worst +0.40  stale +0.40  realised +2.65 sd
