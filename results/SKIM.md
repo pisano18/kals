@@ -534,6 +534,76 @@ ceiling, so the chart cannot imply compounding that the market will not allow.
 
 ---
 
+### 2b. THE CONTROL CENTRE — play / pause / stop (operator, 2026-09-10)
+
+The tool is not just a window, it is the **control centre**: play, pause and
+stop the trader from it.
+
+**HOW, and the design matters more than the buttons.** The tool must NEVER hold
+the order API, and must never kill a process directly. Instead:
+
+* the tool writes `results/CONTROL.json` — `{"state": "run" | "pause" | "stop"}`
+* `pinrun` reads it once per loop and obeys: `pause` stops opening new
+  positions but keeps settling and reconciling the ones already open; `stop`
+  finishes open positions, writes the `end` record and exits cleanly.
+* **PAUSE MUST NEVER ABANDON AN OPEN POSITION.** A pause that stops the loop
+  dead would leave a fill unsettled and its stake stranded in the ledger —
+  the same class of bug as the stake leak fixed on 09-08.
+* the file is the only channel. That keeps the SANDBOX rule intact: the
+  sandbox build has no code path to the order API *and* no writer for this
+  file.
+* the trader logs every control transition, so "why did it stop trading at
+  3am" is answerable afterwards.
+
+**Not yet built.** `pinrun` has no control-file reader today; stop is currently
+`Stop-Process` per `RESTART.md`.
+
+---
+
+### 2c. RUNNING IT ON A RASPBERRY PI (operator, 2026-09-10) — YES, WITH CONDITIONS
+
+**The decisive architectural fact, checked today: `pinrun.py` never reads
+`kalshi_data` or `feed_data`.** It opens its own WebSockets for the index and
+the book. **The trader and the collectors are completely independent.** So the
+move splits into two very different jobs:
+
+| | trader (`pinrun`) | collectors |
+|---|---|---|
+| disk needed | a few MB of JSONL | **2.57 GB/day** (45.5 GB so far) |
+| if it stops | brakes halt safely, restart any time | **tape is gone forever** |
+| verdict | **move it first** | move only onto an SSD, never an SD card |
+
+**LATENCY — measured, not guessed.** Order latency today is 76–1128 ms, p10–p90
+**82–119 ms**. Splitting our 70 deduped attempts at the median: the faster half
+fills 72.2%, the slower half 67.6% — a 4.6pp gap on n=70, well inside noise.
+**Within the ±20 ms we naturally vary, latency does not detectably change the
+fill rate.** That is NOT a licence to add 200 ms: it says nothing about
+latencies outside the observed range. And note we win 70% of the races we
+enter — the reason we skip closes is `no_offer` (60,812 moments with the model
+decided and nobody selling), not losing races.
+
+**Conditions before trusting a Pi:**
+1. **SSD over USB, never an SD card** if the collectors move — sustained
+   writes kill SD cards, and the tape is unreproducible.
+2. **Port the paths.** `C:\kals`, `C:\kals-repo`, `C:\Users\Joe\...` are
+   hardcoded across the repo, plus `C:\Python314`.
+3. **Check the Python version.** This runs on 3.14; Pi OS ships 3.11.
+   `research/shadow.py` exists precisely because a module once broke 14 of 16
+   stages on 3.14 while passing on 3.11. Run the full self-test suite there
+   before it touches money.
+4. **Wire, not WiFi.**
+5. **Validate latency in PAPER mode on the Pi, side by side with the PC**,
+   before moving the live trader. That measurement is cheap and it is the only
+   thing that could make this a bad idea.
+
+**The alternative worth pricing: a small cloud VM would be FASTER, not slower**
+(Kalshi is US-East; we are on a home connection), which raises fills/day — the
+single biggest driver in `pinproj.py`. It costs real money monthly, so it is
+the operator's call, and it is only worth raising once size is past ~50 and
+$10/month is noise instead of 7% of the bank.
+
+---
+
 ### 3. DUST FILLS BURN A SCALE-IN SLOT (found live 2026-09-10 03:44Z)
 
 `KXBTC15M` filled **0.02 contracts** at 97.9¢ — worth about **0.03¢** — and it

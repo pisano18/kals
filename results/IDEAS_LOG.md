@@ -56,6 +56,9 @@ knowing in the pursuit of the solution is logged."* Commit `2994b55`.
 | U | **The forecast rebuilt on the new gate** (`pinproj.py`) | **DONE, replaces every earlier projection** | Bank $140.24. Measured: 97.0¢ paid, 50 fills/day, 0.51% loss (2.6–4 sd band, CI [0.10, 1.47]). **Size 125 cap on day 11, $142.50/day = $52k/yr.** Ladder gated by the brake: bank ≥ 3 losing closes × 2 buys × size × price. Old gate through the same model: higher ceiling ($360–474/day) but a **1.08× margin over break-even** and −$15.02 realised. New: **5.5× margin**. |
 | V | **PRICE is a bigger lever than the gate** | **MEASURED, next work** | Same 0.51% loss rate: 97¢ → $143/day, 96¢ → $201/day, 95¢ → $259/day. The ZEC fill (93.3¢ at 3.05 sd) shows depth and cheapness are separable. Getting deep markets cheaper — patience, queue position, scale-in — beats any further gate tightening. |
 
+| W | **Tool = control centre: play/pause/stop** (operator) | **SPEC'D, not built** | Control via `results/CONTROL.json` polled by `pinrun`, never a direct process kill and never the order API — keeps the SANDBOX rule intact. Pause must settle open positions, not abandon them (same class as the 09-08 stake leak). |
+| X | **Run it on a Raspberry Pi** (operator) | **VIABLE, conditions logged** | Checked today: `pinrun` never reads `kalshi_data`/`feed_data` — trader and collectors are independent, so the trader can move alone on a few MB of disk. Collectors need **2.57 GB/day** and an SSD (SD cards die on sustained writes; the tape is unreproducible). Latency measured: p10–p90 82–119 ms, faster half fills 72.2% vs slower 67.6% on n=70 — no detectable effect **inside** that range, and no evidence about outside it. Validate in PAPER mode on the Pi first. |
+
 **Worth knowing, not a hypothesis:** the tape's tradeable population is thin —
 about 51 tradeable markets a day pass today's rule. Any future test that needs
 flips needs *months*, so measure forecast error (B), never flips (A).
