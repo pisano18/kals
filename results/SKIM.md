@@ -149,6 +149,63 @@ contracts available and we took 20. Needs: cheap-offer frequency (only 3 of
 
 ---
 
+## ⭐⭐⭐ THE THING WE MUST DO — Joe, 2026-09-10
+
+> *"We can control our own losses because we already do. We don't try to buy
+> into every bet, we look at the conditions and see if it's favorable. We need
+> better conditions, and a faster understanding of how 'favorable' changes."*
+
+**He is right and it corrects me.** I had said we cannot control how often we
+lose — only what a loss costs and when we stop. That is wrong. **The gate IS a
+choice about frequency.** Every close we decline is a loss we chose not to
+take. What is true is only that we have not yet found a BETTER rule for
+choosing.
+
+### Why six investigations all came back empty
+
+We judge "favourable" with **ONE number per trade**: how far the index must
+move, divided by a volatility estimate averaged over the trailing 300 seconds.
+
+That number is **slow** (five minutes of history), **isolated** (one coin, blind
+to the other eleven), and **measurably wrong in the tail** (the gaussian is 9.3×
+too thin at 3 sigma, 176× at 4).
+
+**Every fix attempted this week was a FILTER BOLTED ONTO THAT ONE NUMBER** —
+flatness, sigma regime, recent jump, price velocity, model-vs-market divergence,
+cushion ratio, k-NN fingerprints. All six failed, and they failed for the same
+reason: *asking a slow blind measure to say something it cannot*. The forensics
+proved it directly — once `z` is held fixed, **nothing else adds anything.**
+
+### So the answer is not another filter. It is a better signal.
+
+Measure **the conditions themselves**, across all twelve coins, continuously,
+and let the definition of favourable move with them:
+
+- realised volatility **now** (1s / 5s / 30s), not a 300-second average
+- **how many coins are moving at once** — a cross-market roughness index. The
+  per-coin version is what got refuted; the cross-market version is untested.
+- the rate of change of roughness, not its level
+- book-side signals: spread widening, depth thinning, quote churn
+
+Then tighten the gate while it is elevated and loosen while it is flat, instead
+of holding one fixed threshold through calm and storm alike.
+
+### The evidence this is the right target
+
+**All five losses live in TWO hours out of thirty.** Twenty-eight hours with
+none. Losses are not a steady drip; they arrive in bursts, because volatility
+arrives in bursts. A fixed threshold cannot see a burst. **A live conditions
+measure is the only proposal we have that aims at the FREQUENCY of losses
+rather than their size.**
+
+First test (weak version, using a loss as the signal): the close immediately
+after a losing close is **1.8×** more dangerous, dying to nothing by 4 closes.
+Right shape, but p = 0.318 on 22 events — not significant. **The strong version
+uses live conditions, available before any loss, across 53,555 rows instead of
+22 events. It has never been run.**
+
+---
+
 ## ⭐⭐ THE BACKTEST IS FIXED, AND THE REMAINING GAP HAS A SUSPECT
 
 **Two real bugs fixed 2026-09-10.** `Book.snapshot()` read `yes_dollars`; the
