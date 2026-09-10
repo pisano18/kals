@@ -149,6 +149,55 @@ contracts available and we took 20. Needs: cheap-offer frequency (only 3 of
 
 ---
 
+## 📌 FRIDAY LIST — raised by Joe 2026-09-09, not yet started
+
+### 1. ROBINHOOD RUNS THE SAME MARKET ON THE SAME PRICE SOURCE
+
+Joe: *"Robinhood has the exact same 15 min average market and same price source
+as Kalshi."*
+
+**This attacks our actual binding constraint.** We measured that the limit on
+earnings is not capital and not our rules — it is that **8 of 30 closes have
+nothing to buy at all** (the losing side's book is empty in 33,427 of 33,431
+decided moments). A second venue settling on the *same index* is a second shot
+at the same certainty. Potentially double the opportunities for the same
+research.
+
+**Check in this order, cheapest first:**
+1. Is there an API, and does it allow programmatic orders?
+2. Fee schedule — Kalshi is `ceil(0.07·p·(1−p)·n)` and makers pay zero. If
+   Robinhood charges differently the whole price ladder shifts.
+3. Settlement wording: is it the same 60-print average over the same window,
+   and the same rounding? `strike − 0.5·10^−digits` matters enormously.
+4. Do prices actually diverge between venues? If the same outcome is 94¢ on
+   one and 97¢ on the other, that is a real edge on top of the strategy.
+
+**Caution worth stating up front:** "same price source" is a claim to verify,
+not assume. This project has been burned by assumed field semantics twice
+(DOGE's 7 round-digits, the `_fp` snapshot keys). Read their contract wording
+before writing any code.
+
+### 2. A DESKTOP WINDOW INTO THE BOT'S BRAIN
+
+Joe: *"I want a desktop tool to live view the bot what it's seeing and reading
+and get a peek into its brain."*
+
+Everything needed is **already being logged** — `pinrun-live-*.jsonl` carries,
+per close: every market watched, the index spot and its age, sigma, the
+computed fair value, the required move, the price on offer and its depth, which
+gate refused it, order latency, and the fill. Nothing new needs instrumenting.
+
+What is missing is a **reader**. Shape worth building:
+- the 15-minute countdown, and for each of the 12 markets: spot vs strike, how
+  far it must move to flip, and the model's confidence
+- a live funnel per close — looked → decided → offered → passed the gates →
+  fired — so a quiet close explains itself
+- the price ladder colour-coded by wins-to-recover, since that is the number
+  that actually matters
+- the brakes: realised P&L against −$60, losing closes against 3
+
+---
+
 ## OPEN QUESTIONS — where pushback is worth most
 
 1. **THE RACE.** 26% of orders fill nothing. Depth is not the cause (misses had 562, 107, 93 contracts on offer). Our round trip is ~100ms whether we win or lose; misses happen on *fresher* prices. Suggests we lose to **already-resting** orders, not faster ones. Unmeasurable from tape so far.
