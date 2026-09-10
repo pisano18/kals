@@ -5,6 +5,38 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## v-a10a — 2026-09-10 23:51Z — AMENDMENT 10 SWITCHED TO LOG-ONLY: the math does not support it (`82f2656`)
+
+**What changed:** `DUMP_ENABLED = False`. The guard still COUNTS every fill it
+would have refused (`dumped` in the close summary) and refuses none. Trading rule
+is back to exactly v-pin995. Live for 13 minutes (23:38–23:51Z); no fill was
+refused in that window.
+
+**Why it came off — the operator's rule, applied:** *if it is profitable do it,
+if not don't; if the math is not certain, don't use it.* The six live fills of
+this class: +15.36, +3.78, +2.82, +1.52, −16.61, −2.12 = **+$4.75, mean
++$0.79/fill, standard error ±$4.1, t = 0.19. The sign is not determinable.**
+Refusing is not certifiably profitable; neither is buying. The frozen baseline
+(buy) therefore stands. v-a10 was deployed on a loss-frequency preference
+dressed as a decision, and that was wrong.
+
+**The metric, settled:** `CLAUDE.md`'s own kill criterion defines "consistent"
+as positive expectancy. Variance matters only through ruin, and this class
+cannot cause ruin at size 20 (≤ $19.60 per fill, brakes intact). So the
+criterion is EV alone; EV is unknown; the class is ~3 fills/day, so the decision
+is worth ~$2/day either way and does not merit a rule until it can be measured.
+
+**PRE-REGISTERED EVALUATION, fixed now:** at **40 fills** of this class (model
+≥ 0.999 and offer > 5¢ below fair), refuse only if the 95% CI on their mean P&L
+lies entirely below zero; keep only if entirely above; otherwise re-evaluate at
+80. **Cumulative P&L is not a trigger** — a bar moved by outcomes is not a bar.
+
+**Revert to v-a10 (refusing):** `DUMP_ENABLED = True`, stop/start per RESTART.md.
+
+Restarted 23:51Z in the quiet window after the 23:45 settlement; pid 445008.
+
+---
+
 ## v-a10 — 2026-09-10 23:38Z — AMENDMENT 10: never buy a certainty at a discount (`fdd581e`)
 
 **What changed in `pinrun.py`:** after the edge floor, a fill is refused when the

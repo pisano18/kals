@@ -27,6 +27,16 @@
    at 60–94¢ (break-even 15%). Only **1** such 60–94¢ fill exists under the
    current gate. n is far too small to write a rule from.
 
+### DECISION REVISED AGAIN 23:51Z — AMENDMENT 10 SWITCHED TO LOG-ONLY. The math does not support it.
+
+The operator's rule: *if it is profitable do it, if not don't; if the math is not
+certain, don't use it.* Six live fills of the "discounted certainty" class sum to
+**+$4.75 — mean +$0.79/fill, SE ±$4.1, t = 0.19. The sign is not determinable.**
+Refusing them is not certifiably profitable, so the frozen baseline (buy them)
+stands and the guard only counts. **v-a10 was a loss-frequency preference dressed
+as a decision; that was my error.** Pre-registered evaluation at 40 fills of the
+class, on the 95% CI of mean P&L, never on cumulative P&L. `VERSIONS.md` v-a10a.
+
 ### DECISION REVISED 23:38Z — AMENDMENT 10 DEPLOYED: never buy a certainty at a discount
 
 The operator asked the right question — *why not just refuse the crazy deals?* —
@@ -84,7 +94,7 @@ Ticker dates are ET; the log `t` field is UTC — read the `t` field.
 |---|---|
 | bank | **$110.45** |
 | record | 30 wins, 3 losses |
-| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30, **gate 0.995 (A9)**, **no certainty at a >5¢ discount (A10)** |
+| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30, **gate 0.995 (A9)**; discounted-certainty guard **log-only** (A10a) |
 | restart it | **`RESTART.md`** in the repo root — one line to paste |
 | brakes | −$60 · 3 losing **closes** · 2 order errors · 8 attempts/close |
 | day | started $38.83, funded +$113.04 → **−$41.54** |

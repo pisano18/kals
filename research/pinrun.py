@@ -149,6 +149,18 @@ PIN = 0.995
 # cost is the operator's stated preference and the definition of consistent.
 DUMP_CONF = 0.999        # 3.09 sd: "the model calls it certain"
 DUMP_DISCOUNT = 0.05     # a certainty offered 5c+ below fair is a warning
+# AMENDMENT 10a (2026-09-10 23:5xZ): THE GUARD IS LOG-ONLY. It went live at
+# 23:38Z on a preference, not on math, and the operator caught it. The math:
+# six such fills exist live, +15.36 +3.78 +2.82 +1.52 -16.61 -2.12 = +$4.75,
+# mean +$0.79/fill, standard error +/-$4.1, t = 0.19. THE SIGN IS NOT
+# DETERMINABLE. Refusing is not certifiably profitable; buying is not either.
+# Rule: if the math is not certain, do not use it -- so the frozen baseline
+# (buy them) stands and the guard only COUNTS. PRE-REGISTERED EVALUATION,
+# fixed before any further outcome is seen: at 40 fills of this class, refuse
+# only if the 95% CI on their mean P&L lies entirely below zero; keep only if
+# entirely above; otherwise evaluate again at 80. Cumulative P&L is NOT a
+# trigger -- a bar moved by outcomes is not a bar.
+DUMP_ENABLED = False
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
                        # moments it calls <2% risk:
@@ -1370,6 +1382,17 @@ def selftest():
     ck('nb["dumped"]' in src and "_conf >= DUMP_CONF and _disc > DUMP_DISCOUNT" in src,
        "the guard is wired into the trade loop and counted in the near-miss "
        "record, so refusals are visible rather than silent")
+    ck(DUMP_ENABLED is False,
+       "AMENDMENT 10a: the guard is LOG-ONLY -- six live fills, mean +$0.79, "
+       "SE $4.1, the sign is not determinable, so the frozen baseline stands")
+    # anchored on the loop body, not the whole file: this test's own string
+    # literals appear earlier in the file than the loop and would be matched
+    # first -- the self-inspection trap that once broke three checks here
+    _b10 = src[src.index(chr(10) + "def trade_loop("):]
+    ck("if DUMP_ENABLED:" in _b10 and _b10.index("if DUMP_ENABLED:") >
+       _b10.index('nb["dumped"] = nb.get("dumped", 0) + 1'),
+       "and the count happens BEFORE the enable check, so the class is "
+       "recorded whether or not it is refused")
 
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
@@ -1862,7 +1885,8 @@ def trade_loop(a, rec, book, idx, series_index):
                 nb["dumped"] = nb.get("dumped", 0) + 1
                 if nb["best"] is not None and nb["best"]["ticker"] == tk:
                     nb["best"]["dumped"] = round(100 * _disc, 2)
-                continue
+                if DUMP_ENABLED:
+                    continue
             # THE EXPECTED-VALUE GATE (AMENDMENT 2). The model edge above uses
             # the model's own confidence, which implies ~0.06% error at the
             # prices we pay. The MEASURED rate on trades we actually take is
