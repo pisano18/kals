@@ -583,6 +583,81 @@ that a penny is worth 40%, that is where the money is.
 
 ---
 
+### 2d. PROFILES — operator, 2026-09-10. YES, and it replaces a manual process.
+
+> *"profiles that you can save the sandbox as then run that profile. Default
+> will be the main configuration... I can create a new profile by adjusting
+> some risk and saving it as 'risky' and I can run/deploy that configuration
+> from the tool whenever I want."*
+
+**This is right and it formalises something already done by hand.** Every live
+change is currently a source edit plus a `VERSIONS.md` entry plus a restart.
+A profile IS that entry, in a form the machine reads.
+
+**Shape:** `profiles/*.json`, git-tracked so they diff and revert like code.
+`default.json` is today's live rule (gate 0.995, ceiling 98.0c, tau 3-30,
+size 20, 2 per close, -$60 abort, 3 losing closes). `pinrun --profile risky`.
+
+**FOUR GUARDS, and the first one is not negotiable.**
+
+1. **DEPLOYING A PROFILE MUST STILL RUN THE SELF-TEST SUITE AND REFUSE ON A
+   FAILURE.** One-click deploy is a live-money action that would otherwise
+   bypass the gate that has caught *every* serious bug in this project. It
+   must also range-check every field: `--loss-abort` outside its band once
+   made the process exit instantly and silently, and we lost an hour of
+   trading to it.
+2. **A profile may not loosen a brake without the worst case shown and typed
+   confirmation.** The tool must print "this profile permits losing $X before
+   it halts" using the profile's own numbers, not a stored string.
+3. **THE LOG RECORDS THE PROFILE NAME, ITS FULL CONTENTS AND A HASH AT
+   START.** We already carry `code_sha` because I once read a DERIVED log
+   field and wrongly announced that a ceiling had never been live. A profile
+   name alone would reintroduce exactly that bug.
+4. **Switching profiles = stop cleanly, restart.** Never mutate size or
+   brakes mid-run: the brake counters and open positions are keyed to the
+   running configuration, and changing size under an open fill is how stakes
+   get stranded.
+
+**And a temptation to name:** running "risky" for a day and comparing to
+"default" proves nothing at our loss rates. Any A/B in the tool must print
+its MDE first.
+
+---
+
+### 2e. "WHAT WOULD REALLY HAVE HAPPENED" — the operator asked what could
+deceive here. There is one big thing, and it is the project's largest known risk.
+
+> *"the time progression should just be showing exactly what would've really
+> happened had we bet... Not sure what confusion or deception could be there"*
+
+**The replay is honest about the MARKET. It cannot be honest about whether the
+trade would have been OURS.** In a replay every resting offer is ours for the
+taking. In life we send an order and **fill 70% of the time** (50 of 72
+attempts). A replay that assumes every offer is a fill overstates the trade
+count by ~43%, and it overstates it *most* exactly where the money is, because
+the best prices are the ones others are also racing for.
+
+**So the sandbox shows BOTH, always, side by side:**
+`if every offer were ours: $X` and `at our measured 70% fill rate: $0.7X`.
+
+Four smaller ones, all real:
+
+* **Market impact.** A profile at size 125 takes 125 contracts at the
+  top-of-book price in a replay. Measured impact keeps 10.2-11.3x of a naive
+  12.5x, so it is not fatal — but the replay must apply the curve, not the
+  touch price.
+* **Partial and dust fills.** A 0.02-contract fill is not a position. The
+  replay must model the same `MIN_FILL_FRAC` the live bot uses.
+* **Settlements we do not have.** 10,796 of 14,161 markets carry a settlement
+  level. The replay must state how many it dropped, every time.
+* **Our own footprint.** At size 125 we are a visible participant; nobody has
+  measured what the other side does when we show up repeatedly.
+
+**None of these make the replay useless — they make it an UPPER BOUND, and it
+must be labelled as one on the screen, not in a footnote.**
+
+---
+
 ### 2b. THE CONTROL CENTRE — play / pause / stop (operator, 2026-09-10)
 
 The tool is not just a window, it is the **control centre**: play, pause and
