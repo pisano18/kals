@@ -4,6 +4,70 @@
 
 ---
 
+## THE GAME PLAN — 2026-09-10 23:20Z, set from LIVE facts only. Bars fixed BEFORE the next number is seen.
+
+### What is actually happening (live fills only; no backtest number in this section)
+
+| | fills | losses | P&L | what the losses were |
+|---|---|---|---|---|
+| old gate 0.98 (09-08 → 09-10 08:33Z) | 85 | 5 | −$3.89 | 4 boundary trades at 2.1–2.9 sd, no price improvement, −$70 between them; 1 deep adverse fill (XRP, 82¢ after a 13.7¢ improvement) |
+| **current gate 0.995 (since 08:33Z)** | **27** | **1** | **+$17.65** | 1 deep adverse fill (DOGE, 10¢ after a 43¢ improvement), −$2.12 |
+
+**Two distinct loss mechanisms, both reconstructed by hand from the tape with no data error:**
+
+1. **Boundary flips** — the model's own ~2% rate at 2.05–2.6 sd. Cost −$70 of the
+   old gate's −$3.89. **Removed by construction** at 0.995 (2.58 sd). This is the
+   only change whose effect is certain, because it is arithmetic, not a fit.
+2. **Adverse fills at extreme confidence** — the model says certain, the book is
+   selling far below fair, and the index then moves many sigma within a second.
+   Pooled across both gates: **2 losses in 14 deep fills (14%)**, both with huge
+   price improvement, against a model claim of ~1e−9. The tape cannot see this
+   population at all (it hands us every offer), so no backtest can measure it.
+   The exposure is self-limiting at cheap prices (10¢ → 90% break-even) and lethal
+   at 60–94¢ (break-even 15%). Only **1** such 60–94¢ fill exists under the
+   current gate. n is far too small to write a rule from.
+
+### DECISION: HOLD. Size 20, gate 0.995, nothing else changes tonight.
+
+Reasons, in order: the current version's live record is positive and broad-based
+(+$17.65, 26–1, best trade only +$2.06); the expensive loss class is gone by
+arithmetic; the remaining class is rare, mostly cheap, and every rule I wrote for
+it in the last 48 h was fitted after the fact. I am not deploying another fitted
+rule. **Wait-and-see is the correct decision, with the bars below written down now.**
+
+### PRE-REGISTERED BARS — the number is decided before it is seen
+
+**A. Scaling to size 25 requires ALL of:**
+- **≥ 180 fills under the current gate** (that is what it takes to tell a 1% loss
+  rate from the ~3.7% break-even at 96¢ with 80% power — not a round number I like)
+- **observed loss rate ≤ 2.0%** over those fills
+- **no single losing close over $25**
+- the **−$60 abort literal fixed to scale with size** (at size 40+ one losing close
+  trips it; it is fine at 20, and it is a precondition, not a tweak)
+- bank ≥ **$196.00** (one worst-case losing close at the 98¢ ceiling ≤ 25% of bank)
+
+**B. The adverse-fill guard (refuse deep-confidence offers priced 60–94¢) deploys
+only if:** losses in that cell reach **2 of the next 6** such fills under this gate.
+Until then it is logged, not acted on. Cost of leaving it open ≈ $2/day expected.
+
+**C. The backtest.** `pinsim.py` is the only backtest. It is certified for exactly
+one thing: it reproduces the live bot's DECISION (13 of 14 live signals, fair and
+sigma to five decimals). **It is NOT certified for loss rates and must not be
+quoted for them** — it cannot model fills, and the adverse-fill population is
+precisely the one it cannot see. **Every loss-rate number in this repo comes from
+live fills until pinsim has reproduced live LOSS OUTCOMES, which needs a fill
+model it does not have.** `pincross`/`pintail`/`pinfirst` measure the model's
+tail on the tape; they are not backtests of trading and are not to be described
+as one.
+
+### How reporting changes, because today's errors were mine
+
+Every number carries **(gate version, n fills, n closes, time window)**. No
+extrapolation from a partial day. No pooled number presented as one version's.
+Ticker dates are ET; the log `t` field is UTC — read the `t` field.
+
+---
+
 ## RIGHT NOW
 
 | | |

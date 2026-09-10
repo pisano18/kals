@@ -693,3 +693,26 @@ token bound to the exact order and environment, and still defaults to demo.
 
 **Separately: hard rule 3 ("never claim a result you did not measure") is
 NOT amended and never will be.**
+
+---
+
+# AMENDMENT 2026-09-10 — WHICH BACKTEST, AND WHAT IT IS ALLOWED TO CLAIM
+
+Set by the operator after two days in which every threshold was tuned on a
+replay that had never reproduced a real loss (the `yes_dollars_fp` snapshot bug,
+fixed 2026-09-10).
+
+1. **`research/pinsim.py` is the only backtest.** It calls `pinrun`'s own
+   `fair`, `net_edge`, `expected_value`, `billed_fee` and constants through
+   `pinrun`'s own `IndexWS`, with one override (`spot()`, the wall-clock read).
+   Anything that reimplements the decision is analysis, not a backtest, and must
+   not be called one.
+2. **It is certified only for DECISION reproduction** — 13 of 14 live signals
+   reproduced to five decimals on 2026-09-10. **It is not certified for loss
+   rates.** It cannot model whether an offer is ours (live fill rate 70%), and the
+   loss class that is hurting us — adverse fills at extreme confidence — is the
+   population it cannot see.
+3. **Every loss-rate claim comes from live fills** until pinsim reproduces live
+   loss outcomes. Quote them as (gate version, n fills, n closes, window).
+4. **No threshold is deployed from a replay without a holdout split AND a
+   pre-registered live bar written before the number is seen.**
