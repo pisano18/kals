@@ -534,6 +534,55 @@ ceiling, so the chart cannot imply compounding that the market will not allow.
 
 ---
 
+### 2a. THE SANDBOX IS THE POINT — operator, 2026-09-10
+
+> *"you showed the penny changing profits so much, that's why I wanted the
+> simulator sandbox so I can see how that changes all the other variables too"*
+
+**He is right, and this is a bigger idea than the spec I wrote.** One cent of
+price is worth **+40% of income** ($143/day at 97.0¢ vs $201/day at 96.0¢).
+Nobody's intuition is calibrated for that, mine included — I spent a week
+tuning the gate and the biggest lever on the board was the price.
+
+**TWO KINDS OF SLIDER, and the difference is everything.**
+
+| | ASSUMPTION sliders | **RULE sliders** |
+|---|---|---|
+| what moves | loss rate, price paid, fills/day, bank | gate (PIN), ceiling, tau window, size, max per close |
+| what happens | re-runs `pinproj.py` instantly | **re-runs the real tape** and *derives* fills, price and loss rate |
+| honesty | a toy — it answers "if I assume X" | a decision tool — it answers "if I had actually done X" |
+| speed | instant | seconds to a minute |
+
+**Only the second kind is worth trusting**, and we can now build it: `pinfirst.py`
+already walks all 10,796 markets and finds the crossing at ANY gate level, and
+`pindata_fixed` holds every tradeable moment. So moving the gate slider can
+produce a REAL fill count, a REAL average price and a REAL loss rate, which
+then feed the projection — instead of me guessing at them.
+
+**THE TRAP, AND THE TOOL MUST BE BUILT AGAINST IT.** A slider that shows profit
+invites hunting for the profit-maximising setting on data we have already seen.
+That is precisely how every conditions gate died: **+18.5% on the fit half,
+−18.0% on the holdout.** So:
+
+* **every RULE result shows FIT and HOLDOUT side by side, always, never one
+  number.** A setting that only looks good on the fit half must look obviously
+  broken in the tool.
+* every rate carries its **n as markets AND closes**, and its exact interval.
+  "0.51% [0.10, 1.47] on 594 markets / 3 flips" — not "0.51%".
+* a **"you are now curve fitting" warning** once the operator has tried more
+  than a handful of settings, with the multiple-looks threshold shown.
+* the **live setting is always marked on every axis**, so "what am I actually
+  proposing to change" is never ambiguous.
+
+**AND THE HARD RULE STANDS:** the sandbox build has **no code path to the order
+API and no writer for `CONTROL.json`** — an absent button, not a disabled one.
+
+**Why this matters more than the pretty charts:** the live view tells us what
+happened. The sandbox is where we find out what *would* happen — and given
+that a penny is worth 40%, that is where the money is.
+
+---
+
 ### 2b. THE CONTROL CENTRE — play / pause / stop (operator, 2026-09-10)
 
 The tool is not just a window, it is the **control centre**: play, pause and
