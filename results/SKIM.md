@@ -85,6 +85,56 @@ unchanged, or it is the refuted own-sigma filter under a new name.
 **Logged, not gated on.** We have zero live records of the conditions our
 losses happened in, and the tape has been shown unable to explain them.
 
+### THE FORECAST, REBUILT ON AMENDMENT 9 (2026-09-10 12:0xZ) — `pinproj.py`
+
+Bank **$140.24**. Every input re-measured, none inherited from the old forecast.
+
+| | old gate 0.98 | **new gate 0.995** |
+|---|---|---|
+| price we pay | 93.1¢ | **97.0¢** |
+| fills/day | 65 | **50** (−22%) |
+| loss rate | **5.95% actual** | ~0.51% expected |
+| break-even loss rate | 6.43% | **2.78%** |
+| **safety margin** | **1.08×** | **5.5×** |
+| profit per contract | +0.48¢ | **+2.27¢** |
+| days to the 125 cap | 33 | **11** |
+| income at the cap | $39/day | **$142/day · $4,275/mo · $52k/yr** |
+
+**DAYS TO EACH SIZE** (measured inputs, 0.51% loss, 97.0¢, 50 fills/day):
+
+| size | day | bank | $/day there | $/month |
+|---|---|---|---|---|
+| 20 | now | $140 | $22.80 | $684 |
+| 30 | 2 | $192 | $34.20 | $1,026 |
+| 50 | 5 | $306 | $57.00 | $1,710 |
+| 80 | 8 | $494 | $91.20 | $2,736 |
+| **125 (cap)** | **11** | **$813** | **$142.50** | **$4,275** |
+
+**The ladder is set by the brake, not by hope:** size may rise only when the
+bank covers `3 losing closes × 2 buys × size × price`. At $140 and 97¢ that
+funds exactly size 20.
+
+**THE HONEST COMPARISON.** The old gate had a *higher ceiling* ($360–474/day if
+its loss rate had been low) because it bought at 93.1¢ and cheap contracts pay
+more. It was running at a **1.08× margin over break-even** and it actually
+lost **−$15.02 over 84 fills.** A ceiling you never reach is worth nothing.
+The change bought a 5.5× margin for a lower ceiling. That is the trade, stated
+plainly, and it is reversible in one line.
+
+**THE BIGGEST LEVER IS NOT THE GATE — IT IS THE PRICE.** At the same 0.51%
+loss rate: 97.0¢ → $143/day, 96.0¢ → $201/day, **95.0¢ → $259/day.** One cent
+cheaper is worth more than anything else on the board. The ZEC fill proves the
+two are separable: **93.3¢ AND 3.05 sd deep.** Getting deep markets at cheap
+prices — patience, queue position, scale-in — is now the highest-value work.
+
+**What is thin:** 50 fills/day rests on 7 fills over 3.3 h. The model predicts
+$22.80/day at size 20; the first 3.3 h ran at ~$28/day — consistent, but that
+is one afternoon. Sensitivity tables for loss rate × price × fill rate are in
+`results/pinproj.log`.
+
+**If the loss rate is really 2%+ at 97¢ we are near break-even** (2.78%) and
+the answer is a cheaper price, not a stricter gate.
+
 ### DEPLOYED 08:4xZ — AMENDMENT 9: confidence gate 0.98 → 0.995. THE BAR MOVED.
 
 The one lever with holdout evidence. It refuses the two margin bands that

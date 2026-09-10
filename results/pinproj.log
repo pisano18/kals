@@ -1,0 +1,52 @@
+SELF-TEST -- pinproj
+  ok   the fee matches the real charge (12.37 lots at 16c -> $0.1164)
+  ok   EV crosses zero at the arithmetic breakeven (3.73% at 0.96)
+  ok   0.5% loss rate at 97c is profitable, 5% is not
+  ok   max size is bank / (3 losing closes x 2 buys x price)
+  ok   $140 at 97c funds size 20, not 25 (max 24.1)
+  ok   and an infinite bank still stops at the depth ceiling of 125
+  ok   a 5% loss rate shrinks the bank ($96.04)
+  ok   a 0.5% loss rate reaches the 125 cap (last rung 125)
+SELF-TEST PASSED
+
+  ==========================================================================
+  INPUTS  bank $140.24 | loss 0.51% | price 97.0c | 50 fills/day | cap 125
+  EV per contract +2.280c | wins to recover one loss 34.8
+  ==========================================================================
+
+  DAYS TO EACH SIZE, and the income when you get there
+    size   day   bank at that day  $/day there  $/month there
+      20     0            $140.24       $22.80           $684
+      25     1            $163.04       $28.50           $855
+      30     2            $191.54       $34.20         $1,026
+      40     4            $259.94       $45.60         $1,368
+      50     5            $305.54       $57.00         $1,710
+      65     7            $419.54       $74.10         $2,223
+      80     8            $493.64       $91.20         $2,736
+     100     9            $584.84      $114.00         $3,420
+     125    11            $812.84      $142.50         $4,275
+
+  CEILING: size 125 on day 11, $142.50/day = $4,275/month = $52,013/year.
+  It does NOT compound past here -- the book is only so deep. Everything above
+  ~$728 of float earns nothing and is still exposed. Sweep it.
+
+  IF THE INPUTS ARE WRONG -- days to the 125 cap, and $/day once there
+  rows: loss rate. columns: average price paid.
+                   95.0c         96.0c         97.0c         97.5c         98.0c
+    0.10%       6d $285       7d $227       9d $168      11d $139      14d $110
+    0.51%       6d $259       8d $201      11d $143      13d $113       18d $84
+    1.00%       7d $229       9d $171      13d $112       18d $83       27d $54
+    2.00%       9d $166      13d $108       29d $49       69d $20         never
+    3.00%      14d $104       30d $46         never         never         never
+    5.00%         never         never         never         never         never
+
+  'never' = negative EV; the bank shrinks and no size is ever funded.
+  breakeven loss rate: 95.0c -> 4.66%, 96.0c -> 3.73%, 97.0c -> 2.79%, 97.5c -> 2.32%, 98.0c -> 1.86%
+
+  IF THE FILL RATE IS WRONG (loss 0.51%, price 97.0c)
+    fills/day   day to cap   $/day at cap
+           20          25d         $57.00
+           35          15d         $99.75
+           50          11d        $142.50
+           65           8d        $185.25
+           80           8d        $228.00
