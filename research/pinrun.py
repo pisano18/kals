@@ -160,6 +160,10 @@ MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
 MAX_BOOK_AGE_MS = 2000
 MAX_INDEX_AGE_S = 2
 SIGMA_WIN = 300
+# THE LIVE CONDITIONS INDEX (2026-09-10). Fast/slow roughness ratio per feed,
+# then a leave-one-out average across the other coins. Measured, not guessed:
+# research/pintail.py over 9,159 settled markets and 1,019 closes.
+COND_FAST, COND_SLOW, COND_ROUGH = 30, 3600, 2.0
 SIGMA_STRESS = 1.0     # multiply sigma by this before deciding (>1 = humbler)
 
 # Filled in by arm() only when --live is given. Empty in paper mode, so a
@@ -189,7 +193,18 @@ class IndexWS:
     def __init__(self, index_ids, key_id=None, key_file=None):
         self.ids = list(index_ids)
         self.ticks = defaultdict(dict)      # index_id -> {epoch_sec: value}
-        self.order = defaultdict(lambda: deque(maxlen=1200))
+        # RETENTION IS SET BY THE SLOWEST WINDOW ANYTHING READS. It was 1200
+        # (20 minutes), which is fine for SIGMA_WIN=300 but silently truncates
+        # the 3600s baseline the conditions index needs -- it would have
+        # returned a ratio computed against 20 minutes while claiming an hour.
+        self.order = defaultdict(lambda: deque(maxlen=COND_SLOW + 400))
+        self._cache = {}                    # (kind, iid) -> (stamp, value)
+        # A VERSION PER FEED, bumped only when a stored value actually
+        # CHANGES. (newest second, count) alone cannot see a REVISED print for
+        # a second we already hold -- same max, same length, different data --
+        # and would serve a stale conditions read. Bumping on every frame
+        # instead would recompute the 3600s window on every duplicate.
+        self._ver = defaultdict(int)
         self.last_rx = {}                   # index_id -> local ms of last tick
         self.lock = threading.RLock()
         self.stats = defaultdict(int)
@@ -223,12 +238,15 @@ class IndexWS:
             self.stats["bad_tick"] += 1
             return
         with self.lock:
+            old = self.ticks[iid].get(sec)
             if sec not in self.ticks[iid]:
                 q = self.order[iid]
                 if len(q) == q.maxlen and q:
                     self.ticks[iid].pop(q[0], None)
                 q.append(sec)
             self.ticks[iid][sec] = val
+            if old is None or old != val:
+                self._ver[iid] += 1
             self.last_rx[iid] = rx_ms
         self.stats["ticks"] += 1
 
@@ -241,6 +259,89 @@ class IndexWS:
                 return None, None, None
             s = max(d)
             return s, d[s], time.time() - s
+
+    def _stamp(self, iid, d):
+        """What the conditions cache is keyed on.
+
+        The version counter alone is enough for the live path; the (max, len)
+        pair is carried too so that code which writes `ticks` directly -- the
+        self-test does -- still invalidates correctly.
+        """
+        return (self._ver.get(iid, 0), max(d), len(d)) if d else None
+
+    def zrough(self, iid):
+        """This feed's roughness against ITS OWN last hour.
+
+            z = RMS(1s change over COND_FAST) / RMS(1s change over COND_SLOW)
+
+        Dividing by the feed's own hour is what makes BTC and DOGE comparable
+        without a fitted constant, and it puts z near 1.0 in calm conditions
+        whatever the coin costs. Measured on 9,159 settled markets
+        (research/pintail.py): the model's loss-tail runs 2.27% where z < 0.7
+        and 3.79% where z > 2.0.
+
+        CACHED PER SECOND. The slow window is 3600 lookups; the trade loop
+        runs at ~20 Hz across nine markets, so an uncached version would cost
+        roughly 650,000 dict reads a second and starve the order path.
+        """
+        with self.lock:
+            d = self.ticks.get(iid)
+            if not d or len(d) < COND_SLOW // 4:
+                return None
+            st = self._stamp(iid, d)
+            hit = self._cache.get(("z", iid))
+            if hit is not None and hit[0] == st:
+                return hit[1]
+            snap = dict(d)
+        now = st[1]
+
+        def _rms(win):
+            tot = k = 0
+            for s in range(now - win + 1, now + 1):
+                a, b = snap.get(s - 1), snap.get(s)
+                if a is not None and b is not None:
+                    dd = b - a
+                    tot += dd * dd
+                    k += 1
+            return math.sqrt(tot / k) if k >= max(5, win // 8) else None
+
+        fa, sl = _rms(COND_FAST), _rms(COND_SLOW)
+        z = (fa / sl) if (fa is not None and sl) and sl > 0 else None
+        with self.lock:
+            self._cache[("z", iid)] = (st, z)
+        return z
+
+    def conditions(self, iid):
+        """(X, N, own): the OTHER feeds' mean roughness, how many of them are
+        moving, and this feed's own.
+
+        THE TRADED COIN IS EXCLUDED FROM X AND N BY CONSTRUCTION. Six earlier
+        attempts to cut the loss rate all failed for the same reason -- every
+        one was a filter bolted onto the traded coin's own sigma, so once that
+        number was fixed they added nothing. The other ten coins are genuinely
+        new information. research/pincross.py self-tests the exclusion.
+
+        THIS IS LOGGED, NOT GATED ON. Every fixed threshold built on it failed
+        out of sample (research/pintail.py, fit/holdout split), so deploying
+        one now would be curve fitting. We have ZERO live records of these
+        conditions, and the tape cannot settle why live loses 11x what the
+        backtest does -- so the first job is to write them down.
+        """
+        own = self.zrough(iid)
+        tot = k = nr = 0
+        for other in self.ids:
+            if other == iid:
+                continue
+            v = self.zrough(other)
+            if v is None:
+                continue
+            tot += v
+            k += 1
+            if v > COND_ROUGH:
+                nr += 1
+        if k < 4:
+            return None, None, own
+        return tot / k, nr, own
 
     def sigma(self, iid):
         with self.lock:
@@ -1136,6 +1237,80 @@ def selftest():
     ck('int(m.get("exchange_index") or 0)' in src,
        "exchange_index is read from the market record in the universe pass")
 
+    # --- THE LIVE CONDITIONS INDEX (2026-09-10) ---------------------------
+    # Logged, not gated on. These checks exist so that what gets written into
+    # the log is the number we think it is; a mislabelled conditions column
+    # would be worse than no column, because we would trust it later.
+    import random as _rnd
+    _r = _rnd.Random(11)
+    ixc = IndexWS(list("ABCDEFGH"))
+    T0 = 2_000_000
+    for _i, _id in enumerate("ABCDEFGH"):
+        _p = 100.0
+        for s in range(T0 - COND_SLOW - 10, T0 + 1):
+            _p += _r.gauss(0, 0.05)
+            ixc.ticks[_id][s] = _p
+    _zA = ixc.zrough("A")
+    ck(_zA is not None and 0.5 < _zA < 1.9,
+       f"zrough is ~1.0 on a feed whose roughness never changes "
+       f"(got {_zA:.2f})")
+    _x0, _n0, _own0 = ixc.conditions("A")
+    ck(_x0 is not None and _n0 == 0,
+       f"a calm board reads X~{_x0:.2f} with {_n0} coins moving")
+
+    # blow up A's LAST 30 SECONDS and demand A's own X does not move
+    _p = ixc.ticks["A"][T0 - 30]
+    for s in range(T0 - 29, T0 + 1):
+        _p += _r.gauss(0, 5.0)
+        ixc.ticks["A"][s] = _p
+    ixc._cache.clear()
+    _x1, _n1, _own1 = ixc.conditions("A")
+    ck(abs(_x1 - _x0) < 1e-12,
+       "coin A's OWN volatility spike leaves A's cross index EXACTLY "
+       "unchanged -- otherwise this is the refuted own-sigma filter under a "
+       "new name")
+    ck(_own1 > 3.0 * _zA,
+       f"but A's OWN roughness does spike ({_own1:.1f} vs {_zA:.2f})")
+    _xB, _nB, _ = ixc.conditions("B")
+    ck(_xB > _x0 and _nB >= 1,
+       f"and B DOES see it: X {_x0:.2f} -> {_xB:.2f}, {_nB} coin(s) moving")
+
+    # retention must cover the slow window, or the ratio is against 20
+    # minutes while claiming an hour
+    ck(ixc.order.default_factory().maxlen >= COND_SLOW,
+       f"tick retention ({ixc.order.default_factory().maxlen}) covers the "
+       f"{COND_SLOW}s baseline the ratio is divided by")
+
+    # The cache must not serve a stale number when a REVISED print lands for
+    # a second we already hold: same newest second, same count, different
+    # data. Pushed through on_frame because that is the only ingest path that
+    # exists in production -- the first version of this check poked the dict
+    # directly, which no live code path can do, and it was asserting a
+    # property no stamp could deliver.
+    def _frame(_id, _sec, _val):
+        return {"type": "cfbenchmarks_value",
+                "msg": {"index_id": _id,
+                        "data": json.dumps({"time": _sec * 1000,
+                                            "value": str(_val)})}}
+
+    _z_before = ixc.zrough("C")
+    _held = len(ixc.ticks["C"])
+    ixc.on_frame(_frame("C", T0 - 5, ixc.ticks["C"][T0 - 5] + 50.0))
+    ck(len(ixc.ticks["C"]) == _held,
+       "a revised print does not change how many seconds we hold, so "
+       "(newest, count) alone cannot detect it")
+    ck(ixc.zrough("C") != _z_before,
+       "and it STILL busts the cache -- a revised print must not be served "
+       "stale from a conditions read")
+    _z_now = ixc.zrough("C")
+    ixc.on_frame(_frame("C", T0 - 5, ixc.ticks["C"][T0 - 5]))
+    ck(ixc.zrough("C") == _z_now,
+       "while an identical duplicate does NOT bust it -- otherwise every "
+       "repeated frame recomputes a 3600-second window on the order path")
+
+    ck("cond_x=" in src and "idx.conditions(iid)" in src,
+       "and the signal record actually carries the conditions columns")
+
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
         print("   - " + m)
@@ -1642,11 +1817,22 @@ def trade_loop(a, rec, book, idx, series_index):
                 continue
 
             state["signals"] += 1
+            # THE CONDITIONS AT THE MOMENT WE DECIDED. Logged, never gated on
+            # -- see IndexWS.conditions(). Without this the live losses carry
+            # no record of the state they happened in, and the tape has
+            # already been shown unable to explain them: the backtest's
+            # tradeable population flips 0.79% [0.10, 2.82] while live has
+            # flipped 8.8% [2.9, 19.3], intervals that do not overlap.
+            cx_, cn_, cown_ = idx.conditions(iid)
             sig = dict(ticker=tk, want=want, price=round(price, 4),
                        fair=round(f, 5), tau=tau, edge_c=round(100 * e, 3),
                        size=size, take_n=take_n, strike=strike, digits=digits,
                        spot=spot, sigma=round(sg, 6), book_age_ms=b["age_ms"],
-                       index_age_s=round(iage, 2), exchange_index=exi)
+                       index_age_s=round(iage, 2), exchange_index=exi,
+                       cond_x=(round(cx_, 4) if cx_ is not None else None),
+                       cond_n=cn_,
+                       cond_own=(round(cown_, 4)
+                                 if cown_ is not None else None))
             attempts[close_s] = attempts.get(close_s, 0) + 1
             rec("signal", live=live, **sig)
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "

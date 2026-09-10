@@ -17,6 +17,84 @@
 
 ---
 
+## ⭐⭐ 2026-09-10 — WHY THE LOSS RATE PROBLEM IS NOT A SIGNAL PROBLEM
+
+**Two investigations ran in parallel on different hypotheses. They converge on
+the same answer, and it is not the answer either was looking for.**
+
+### The fact that reframes everything
+
+| population | loss rate | 95% interval |
+|---|---|---|
+| backtest, moments we could actually have bought | **0.79%** | [0.10%, 2.82%] |
+| live, what actually happened | **8.8%** | [2.9%, 19.3%] |
+
+**Those intervals do not overlap.** Whatever is losing our money live is *not
+present in the historical tape at anything like the live rate*. So no amount of
+factor-hunting on tape can find it — and six investigations failing was the
+tape telling us that, not us being unlucky.
+
+### What was measured, and what died
+
+**1. The model's tail IS too thin, and it IS state-dependent. (real, well powered)**
+`pintail.py`, **9,159 settled markets over 1,019 closes**, settlement model
+reconciled to 3.8e-07 first.
+
+| | measured | the model claims |
+|---|---|---|
+| mean forecast error | **0.657 sd** | 0.798 sd |
+| chance of an error past the gate, the losing way | **2.58%** | 2.00% |
+
+**The model is not wrong in scale — it is wrong in SHAPE.** Errors are usually
+*smaller* than it thinks, occasionally far larger. And the tail moves with
+conditions: **2.22% when no other coin is moving, 6.60% when three or more are.**
+
+**2. But no gate built on it survives out of sample. (the important negative)**
+Thresholds fitted on the first 70% of closes and re-measured on the last 30%:
+
+| refuse when | profit change, fit | profit change, **holdout** |
+|---|---|---|
+| 1+ other coins moving | +18.5% | **−18.0%** |
+| cross-market roughness ≥ 1.4 | +16.3% | **−8.4%** |
+| 2+ other coins moving | +11.3% | **−6.6%** |
+
+**Every one of them.** The conditions are real; a *fixed threshold* on them is
+not. Deploying one today would be curve fitting, and I am not doing it.
+
+**3. Cheap fills are not the culprit. (refuted)** The suspicion was that a
+seller dumping a near-certainty far below fair value knows something. Tested
+properly, controlling for price level: **0 flips in 73 high-discount closes.**
+The live-sized version of the claim (~25% flips on discounted fills) is refuted
+outright at P ≈ 7e-10. Anything under ~10% is simply invisible in this sample.
+
+**4. The live/backtest sigma gap. (refuted, and I was wrong)** The live bot
+computes sigma as a standard deviation about the mean; the backtest uses a
+root-mean-square. I expected live to be systematically smaller — a looser gate
+than the backtest scores. Measured on the same 9,159 seconds: ratio **1.0008**,
+tails **2.58% vs 2.57%**. Dividing by (n−1) almost exactly cancels the mean
+subtraction. **Not the bug.**
+
+### What was DEPLOYED (logging only, no money at risk)
+
+`pinrun` now records the market-wide conditions at the instant of every
+decision: `cond_x` (how rough the *other ten* coins are, this one excluded),
+`cond_n` (how many of them are moving), `cond_own`. Self-tested, including the
+exclusion — the traded coin's own spike must leave its own index *exactly*
+unchanged, or it is the refuted own-sigma filter under a new name.
+
+**Logged, not gated on.** We have zero live records of the conditions our
+losses happened in, and the tape has been shown unable to explain them.
+
+### The one thing that would actually settle it
+
+**~70 more live fills with these columns attached.** That is the sample that
+distinguishes a 25% problem from a 5% one. Tape alone would need ~10 more days
+for the crude version and ~44 days for the fine one, and the interval mismatch
+above says even then it would be answering about a different population.
+
+---
+
+
 ## THE ONE LOSS, IN FOUR LINES
 
 Three buys, **one market**, one close. 96.2¢ / 95.6¢ / 73.0¢. All lost together. **−$52.60.**

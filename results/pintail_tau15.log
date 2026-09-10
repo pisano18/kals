@@ -1,0 +1,126 @@
+SELF-TEST -- pintail
+  ok   fair >= 0.98 is exactly |mu-K| >= 2.0537 sd, so the flip probability the gate implies is the tail beyond it
+  ok   and a two-sided Gaussian puts 4.00% beyond it, 2.00% on the losing side -- the model's own claim, which live experience contradicts
+  ok   one second before the window opens, all 60 prints are unpublished
+  ok   at the last second r = 0 and the locked mean IS the settlement mean
+  ok   with 15s to go, 14 prints remain unpublished (got r=14)
+  ok   sigma recovers a planted 0.25 per second (0.242)
+  ok   a planted state-dependent fat tail IS found (lift +21.63pp, p=0.0007)
+  ok   across 40 worlds with a CONSTANT tail, only 0 came out significant at 5% (expect ~2, allow 6)
+SELF-TEST PASSED
+
+  10,796 settled markets with a settlement LEVEL, 08-24 16:30Z -> 09-06 08:30Z
+  loading index tape ...
+  11 feeds, 275 files, 10,063,752 prints (70s)
+
+  RECONCILIATION: our locked mean at r=0 vs the exchange's settle
+    4,000 fully-covered markets: median relative error 3.80e-07, p95 2.33e-05, worst 3.58e-05
+    -> the settlement model reconciles; mu is comparable to settle
+
+  building the cross-market roughness index ...
+  done (14s)
+  scoring every market at tau = 15s ...
+  9,159 markets scored; skipped {'no_spot': 1628, 'no_index': 9}
+
+  ========================================================================
+  THE LIVE SIGMA vs THE BACKTEST SIGMA -- same seconds, 9,159 markets
+  ========================================================================
+    live/tape sigma ratio: median 1.0008, 5th 0.9938, 95th 1.0017
+    loss-tail using the TAPE sigma (RMS)    2.58%  [2.26, 2.92]
+    loss-tail using the LIVE sigma (sd)     2.57%  [2.25, 2.91]
+    the live estimator's gate is 1.00x as dangerous as the one the backtest scores
+    live sigma is the SMALLER number in 35.9% of markets (it is provably <= RMS, so 100% is the correct answer and anything else is a bug in this check)
+
+  ========================================================================
+  THE HEADLINE, at tau = 15s over 9,159 markets / 1,019 closes
+  ========================================================================
+    mean |surprise|                          0.657 sd (a correct model gives 0.798)
+    P(surprise beyond the gate, either way)  5.23%   model says 4.00%
+    P(surprise past it the LOSING way)       2.58%   model says 2.00%
+    exact 95% CI on that                     [2.26%, 2.92%]
+    ratio to the model's own claim           1.29x
+
+    THIS IS AN UPPER BOUND on the gate's flip rate: it counts every market
+    as if it sat exactly on the 0.98 boundary, and most sit deeper.
+
+  BY CROSS-MARKET ROUGHNESS X -- the traded coin EXCLUDED
+             band  markets  closes  mean|z|  P(z<-2.05)              95% CI  vs model
+   0.00-0.70          4681     626    0.619       1.94%        [1.57, 2.38]      1.0x
+   0.70-0.90          2157     363    0.663       3.01%        [2.33, 3.82]      1.5x
+   0.90-1.10          1193     200    0.733       3.44%        [2.48, 4.63]      1.7x
+   1.10-1.40           609     103    0.713       1.64%        [0.79, 3.00]      0.8x
+   1.40-2.00           347      49    0.770       6.63%        [4.25, 9.78]      3.3x
+   2.00-99.00          172      21    0.699       3.49%        [1.29, 7.44]      1.7x
+
+  BY THE TRADED COIN'S OWN fast/slow ROUGHNESS (a regime ratio, NOT the refuted sigma level)
+             band  markets  closes  mean|z|  P(z<-2.05)              95% CI  vs model
+   0.00-0.70          5028     925    0.637       2.27%        [1.87, 2.72]      1.1x
+   0.70-0.90          1589     780    0.635       2.45%        [1.75, 3.34]      1.2x
+   0.90-1.10           988     561    0.701       3.04%        [2.06, 4.31]      1.5x
+   1.10-1.40           683     421    0.679       3.07%        [1.91, 4.66]      1.5x
+   1.40-2.00           554     332    0.745       3.61%        [2.22, 5.52]      1.8x
+   2.00-99.00          317     168    0.760       3.79%        [1.97, 6.52]      1.9x
+
+  BY HOW MANY OTHER COINS ARE MOVING (z > 2)
+             band  markets  closes  mean|z|  P(z<-2.05)              95% CI  vs model
+   0.00-1.00          7561     933    0.646       2.22%        [1.90, 2.58]      1.1x
+   1.00-2.00          1072     158    0.694       3.92%        [2.84, 5.26]      2.0x
+   2.00-3.00           268      42    0.786       5.22%        [2.89, 8.61]      2.6x
+   3.00-5.00           106      16    0.787       6.60%       [2.70, 13.13]      3.3x
+   5.00-99.00          152      19    0.673       3.29%        [1.08, 7.51]      1.6x
+
+  PERMUTATION TESTS -- shuffled over 1,019 CLOSES, 4000 draws
+  statistic                                 top-quartile lift        p
+  loss-tail on cross-market roughness X                 1.10pp   0.0677
+  mean|z|  on cross-market roughness X                 0.094sd   0.0070
+  loss-tail on own fast/slow roughness                  1.39pp   0.0297
+  mean|z|  on own fast/slow roughness                  0.089sd   0.0097
+  loss-tail on how many other coins are moving              1.85pp   0.0250
+  mean|z|  on how many other coins are moving             0.077sd   0.0512
+
+  CONTROL (X shuffled across closes, must show nothing): lift +0.11pp, p=0.4356
+
+  MULTIPLE LOOKS: 6 permutation tests are printed above. At 6 looks the
+  5% threshold is 0.0083, not 0.05. Read every p against that number.
+
+  ==============================================================================
+  WHAT WOULD A GATE COST? anchored so the ungated loss rate is 2.58%,
+  every trade priced at 96c.
+  FIT on 6,413 markets to 09-02 17:00Z, HOLDOUT the 2,746 after it.
+  A threshold chosen on the fit half and re-measured on the holdout is the only
+  version of this table that is not curve fitting.
+  ==============================================================================
+  refuse when              trades kept  loss kept  loss refused   profit   HOLDOUT profit
+  N >= 1                         82.3%      2.07%         4.93%    18.5%           -18.0%
+  N >= 2                         94.4%      2.37%         6.05%    11.3%            -6.6%
+  N >= 3                         97.1%      2.50%         5.38%     4.1%            -2.3%
+  X >= 1.4                       94.3%      2.31%         7.03%    16.3%            -8.4%
+  own >= 1.4                     90.6%      2.49%         3.42%    -2.5%            +4.7%
+  own >= 1.1                     83.1%      2.38%         3.54%    -2.9%            -9.1%
+  N >= 2 or own >= 1.4           88.0%      2.34%         4.35%     6.5%            -1.6%
+  N >= 1 or own >= 1.4           77.7%      2.07%         4.34%    11.8%           -13.7%
+  N >= 3 or own >= 2.0           95.1%      2.47%         4.72%     4.2%            -1.9%
+
+  'profit' is the change in TOTAL expected profit: fewer trades at a lower loss
+  rate. Negative means the gate throws away more good trades than bad ones.
+
+  ==============================================================================
+  WHAT WOULD A GATE COST? anchored so the ungated loss rate is 5.71%,
+  every trade priced at 96c.
+  FIT on 6,413 markets to 09-02 17:00Z, HOLDOUT the 2,746 after it.
+  A threshold chosen on the fit half and re-measured on the holdout is the only
+  version of this table that is not curve fitting.
+  ==============================================================================
+  refuse when              trades kept  loss kept  loss refused   profit   HOLDOUT profit
+  N >= 1                         82.3%      4.59%        10.92%   -64.4%           -15.1%
+  N >= 2                         94.4%      5.26%        13.39%   -27.3%            -5.4%
+  N >= 3                         97.1%      5.53%        11.91%   -11.8%            -3.3%
+  X >= 1.4                       94.3%      5.12%        15.57%   -34.0%            -2.1%
+  own >= 1.4                     90.6%      5.52%         7.58%   -18.3%           -28.3%
+  own >= 1.1                     83.1%      5.28%         7.83%   -35.1%           -27.3%
+  N >= 2 or own >= 1.4           88.0%      5.17%         9.64%   -35.8%           -27.0%
+  N >= 1 or own >= 1.4           77.7%      4.59%         9.61%   -66.2%           -31.6%
+  N >= 3 or own >= 2.0           95.1%      5.47%        10.45%   -16.6%            -8.2%
+
+  'profit' is the change in TOTAL expected profit: fewer trades at a lower loss
+  rate. Negative means the gate throws away more good trades than bad ones.
