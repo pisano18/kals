@@ -177,7 +177,19 @@ not assume. This project has been burned by assumed field semantics twice
 (DOGE's 7 round-digits, the `_fp` snapshot keys). Read their contract wording
 before writing any code.
 
-### 2. A DESKTOP WINDOW INTO THE BOT'S BRAIN
+### 2. A DESKTOP WINDOW INTO THE BOT'S BRAIN — two modes
+
+**LIVE** — what the bot is seeing and thinking right now.
+**SANDBOX** — the same panels, driven by historic tape instead of the live feed,
+with every constant editable. Joe's name for it, and the name carries the point:
+*a place to play with past data and made-up values without touching real money.*
+Scrub to any past close, change the ceiling / size / cap / gate, and watch what
+the bot WOULD have done. Every rejected idea in IDEAS_LOG could have been
+answered here in minutes instead of by a six-agent workflow.
+
+**The sandbox must make one thing impossible: mistaking it for live.** Different
+ground colour, a permanent banner, and no code path to the order API at all —
+not a disabled button, an absent one.
 
 Joe: *"I want a desktop tool to live view the bot what it's seeing and reading
 and get a peek into its brain."*
