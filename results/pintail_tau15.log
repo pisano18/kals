@@ -11,7 +11,7 @@ SELF-TEST PASSED
 
   10,796 settled markets with a settlement LEVEL, 08-24 16:30Z -> 09-06 08:30Z
   loading index tape ...
-  11 feeds, 275 files, 10,063,752 prints (70s)
+  11 feeds, 275 files, 10,063,752 prints (73s)
 
   RECONCILIATION: our locked mean at r=0 vs the exchange's settle
     4,000 fully-covered markets: median relative error 3.80e-07, p95 2.33e-05, worst 3.58e-05
@@ -29,7 +29,10 @@ SELF-TEST PASSED
     loss-tail using the TAPE sigma (RMS)    2.58%  [2.26, 2.92]
     loss-tail using the LIVE sigma (sd)     2.57%  [2.25, 2.91]
     the live estimator's gate is 1.00x as dangerous as the one the backtest scores
-    live sigma is the SMALLER number in 35.9% of markets (it is provably <= RMS, so 100% is the correct answer and anything else is a bug in this check)
+    live sigma is the SMALLER number in 35.9% of markets
+    -- I predicted 100% here, and I was WRONG: removing the mean shrinks the live
+       number but dividing by (n-1) instead of n inflates it by sqrt(300/299), and
+       at this drift the two effects very nearly cancel. THE SIGMA HYPOTHESIS IS DEAD.
 
   ========================================================================
   THE HEADLINE, at tau = 15s over 9,159 markets / 1,019 closes
@@ -83,44 +86,61 @@ SELF-TEST PASSED
   MULTIPLE LOOKS: 6 permutation tests are printed above. At 6 looks the
   5% threshold is 0.0083, not 0.05. Read every p against that number.
 
-  ==============================================================================
-  WHAT WOULD A GATE COST? anchored so the ungated loss rate is 2.58%,
-  every trade priced at 96c.
-  FIT on 6,413 markets to 09-02 17:00Z, HOLDOUT the 2,746 after it.
-  A threshold chosen on the fit half and re-measured on the holdout is the only
-  version of this table that is not curve fitting.
-  ==============================================================================
-  refuse when              trades kept  loss kept  loss refused   profit   HOLDOUT profit
-  N >= 1                         82.3%      2.07%         4.93%    18.5%           -18.0%
-  N >= 2                         94.4%      2.37%         6.05%    11.3%            -6.6%
-  N >= 3                         97.1%      2.50%         5.38%     4.1%            -2.3%
-  X >= 1.4                       94.3%      2.31%         7.03%    16.3%            -8.4%
-  own >= 1.4                     90.6%      2.49%         3.42%    -2.5%            +4.7%
-  own >= 1.1                     83.1%      2.38%         3.54%    -2.9%            -9.1%
-  N >= 2 or own >= 1.4           88.0%      2.34%         4.35%     6.5%            -1.6%
-  N >= 1 or own >= 1.4           77.7%      2.07%         4.34%    11.8%           -13.7%
-  N >= 3 or own >= 2.0           95.1%      2.47%         4.72%     4.2%            -1.9%
+  ========================================================================
+  THE ACTUAL MODEL GATE (fair >= 0.98 on the exact strike), tau = 15s
+  ========================================================================
+    8,951 of 9,159 markets pass it, over 1,019 closes
+    4 flipped, in 4 closes: 0.04%  [0.01, 0.11]
+    (this is NOT an upper bound; it is the gate's own loss rate on every market
+     the model would have called, whether or not anyone offered a price)
 
-  'profit' is the change in TOTAL expected profit: fewer trades at a lower loss
-  rate. Negative means the gate throws away more good trades than bad ones.
+  BY COIN
+           group   gated  closes  flips    rate            95% CI
+             BNB     986     986      0   0.00%      [0.00, 0.37]
+             BTC     989     989      0   0.00%      [0.00, 0.37]
+            DOGE     997     997      1   0.10%      [0.00, 0.56]
+             ETH     982     982      0   0.00%      [0.00, 0.37]
+            HYPE    1003    1003      1   0.10%      [0.00, 0.55]
+            NEAR     998     998      1   0.10%      [0.00, 0.56]
+             SOL    1000    1000      1   0.10%      [0.00, 0.56]
+             XRP     999     999      0   0.00%      [0.00, 0.37]
+             ZEC     997     997      0   0.00%      [0.00, 0.37]
 
-  ==============================================================================
-  WHAT WOULD A GATE COST? anchored so the ungated loss rate is 5.71%,
-  every trade priced at 96c.
-  FIT on 6,413 markets to 09-02 17:00Z, HOLDOUT the 2,746 after it.
-  A threshold chosen on the fit half and re-measured on the holdout is the only
-  version of this table that is not curve fitting.
-  ==============================================================================
-  refuse when              trades kept  loss kept  loss refused   profit   HOLDOUT profit
-  N >= 1                         82.3%      4.59%        10.92%   -64.4%           -15.1%
-  N >= 2                         94.4%      5.26%        13.39%   -27.3%            -5.4%
-  N >= 3                         97.1%      5.53%        11.91%   -11.8%            -3.3%
-  X >= 1.4                       94.3%      5.12%        15.57%   -34.0%            -2.1%
-  own >= 1.4                     90.6%      5.52%         7.58%   -18.3%           -28.3%
-  own >= 1.1                     83.1%      5.28%         7.83%   -35.1%           -27.3%
-  N >= 2 or own >= 1.4           88.0%      5.17%         9.64%   -35.8%           -27.0%
-  N >= 1 or own >= 1.4           77.7%      4.59%         9.61%   -66.2%           -31.6%
-  N >= 3 or own >= 2.0           95.1%      5.47%        10.45%   -16.6%            -8.2%
+  BY HOW MANY OTHER COINS ARE MOVING
+           group   gated  closes  flips    rate            95% CI
+             0-1    7385     930      2   0.03%      [0.00, 0.10]
+             1-2    1052     158      1   0.10%      [0.00, 0.53]
+             2-3     262      42      1   0.38%      [0.01, 2.11]
+            3-99     252      31      0   0.00%      [0.00, 1.45]
 
-  'profit' is the change in TOTAL expected profit: fewer trades at a lower loss
-  rate. Negative means the gate throws away more good trades than bad ones.
+  BY CROSS-MARKET ROUGHNESS X
+           group   gated  closes  flips    rate            95% CI
+           0-0.7    4574     625      0   0.00%      [0.00, 0.08]
+         0.7-0.9    2111     361      1   0.05%      [0.00, 0.26]
+         0.9-1.1    1162     199      3   0.26%      [0.05, 0.75]
+         1.1-1.4     595     103      0   0.00%      [0.00, 0.62]
+          1.4-99     509      65      0   0.00%      [0.00, 0.72]
+
+  BY HOW DEEP INSIDE THE GATE (margin in sd)
+           group   gated  closes  flips    rate            95% CI
+        2.05-2.5      47      46      2   4.26%     [0.52, 14.54]
+           2.5-3      48      46      0   0.00%      [0.00, 7.40]
+             3-4     103     100      2   1.94%      [0.24, 6.84]
+             4-6     228     189      0   0.00%      [0.00, 1.60]
+         6-1e+09    8525    1019      0   0.00%      [0.00, 0.04]
+
+  PERMUTATION over 1,019 closes on REAL gate flips
+    top-quartile X: lift +0.12pp  p=0.0225
+    top-quartile N: lift +0.12pp  p=0.0155
+
+  GATES ON REAL FLIPS, at 96c: FIT 6,266 / HOLDOUT 2,685 gated markets. Numbers are cents of expected profit per 100 opportunities.
+  refuse when                kept  FIT loss   FIT $  HOLD loss  HOLD $   ungated $ fit/hold
+  N >= 1                    82.2%     0.04%   303.4      0.00%   310.7      366.7 / 373.1  
+  N >= 2                    94.4%     0.05%   347.5      0.00%   350.3      366.7 / 373.1  
+  N >= 3                    97.1%     0.07%   356.0      0.00%   363.1      366.7 / 373.1  
+  X >= 1.4                  94.3%     0.07%   345.4      0.00%   352.1      366.7 / 373.1  
+  own >= 1.4                90.7%     0.04%   335.3      0.00%   337.5      366.7 / 373.1  
+  own >= 1.1                83.3%     0.04%   307.6      0.00%   310.7      366.7 / 373.1  
+  N >= 2 or own >= 1.4      88.1%     0.04%   325.7      0.00%   326.1      366.7 / 373.1  
+  N >= 1 or own >= 1.4      77.8%     0.02%   288.5      0.00%   293.5      366.7 / 373.1  
+  N >= 3 or own >= 2.0      95.1%     0.03%   351.5      0.00%   356.0      366.7 / 373.1  

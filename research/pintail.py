@@ -74,6 +74,11 @@ from pincross import Cross, cp_interval, load_index_window    # noqa: E402
 ND = NormalDist()
 FULLTAPE = r"C:\kals\fulltape\markets.json"
 SERIES_TO_INDEX = pincross.SERIES_TO_INDEX
+# read from the API once and pinned; DOGE is 7, not 4, and getting that wrong
+# once produced 77 false "certain" calls
+ROUND_DIGITS = {"KXBTC15M": 2, "KXETH15M": 2, "KXBNB15M": 2,
+                "KXSOL15M": 4, "KXXRP15M": 4, "KXZEC15M": 4,
+                "KXHYPE15M": 4, "KXNEAR15M": 4, "KXDOGE15M": 7}
 
 GATE_Z = ND.inv_cdf(0.98)      # 2.0537 -- what fair >= 0.98 means in sd
 SIG_WIN = 300                  # the sigma horizon the live bot actually uses
@@ -387,6 +392,19 @@ def main():
     cx = Cross(idx)
     print(f"  done ({time.time()-t0:.0f}s)")
 
+    # THE EXACT STRIKE. fulltape's `strike` is the exchange's DISPLAY value,
+    # truncated to the listing precision: DOGE shows 0.091813 where the real
+    # line is 0.0918136. But strike(N+1) == settle(N) exactly (research/
+    # strikes.py), and `settle` is carried at full precision, so the previous
+    # close's settle IS this market's strike whenever the chain is unbroken.
+    prev_settle = {}
+    for r in mk:
+        prev_settle[(r["series"], int(r["close"]))] = float(r["settle"])
+
+    def exact_strike(r):
+        ps = prev_settle.get((r["series"], int(r["close"]) - 900))
+        return ps if ps is not None else float(r["strike"])
+
     print(f"  scoring every market at tau = {a.tau}s ...")
     obs = []
     skip = defaultdict(int)
@@ -423,8 +441,14 @@ def main():
         if c is None or own is None:
             skip["no_index"] += 1
             continue
+        K = exact_strike(r) - 0.5 * 10.0 ** (-ROUND_DIGITS[r["series"]])
+        m = (mu - K) / sd                 # signed margin, + means YES ahead
+        fav_yes = m >= 0
+        yes_won = float(r["settle"]) >= K
         obs.append({"close": cs, "sr": r["series"], "z": z, "zl": zl,
-                    "sig_ratio": sgl / sg,
+                    "sig_ratio": sgl / sg, "m": abs(m),
+                    "gated": abs(m) >= GATE_Z,
+                    "flip": (abs(m) >= GATE_Z) and (yes_won != fav_yes),
                     "X": c[0], "N": c[1], "own": own})
     print(f"  {len(obs):,} markets scored; skipped {dict(skip)}")
     if len(obs) < 500:
@@ -433,11 +457,7 @@ def main():
 
     _sigma_compare(obs)
     _report(obs, a.tau, a.draws)
-    # Two anchors, because the measured tail is an upper bound and the live
-    # rate is only 57 closes old. If a gate is worth deploying it must look
-    # worth deploying under BOTH.
-    for anchor in (0.0258, 0.0571):
-        gates(obs, anchor, 0.96)
+    _gate_report(obs, a.tau, a.draws)
 
 
 def _sigma_compare(obs):
@@ -575,7 +595,108 @@ def _report(obs, tau, draws):
           f"against that number.")
 
 
-# ------------------------------------------------------------- the decision
+# ------------------------------------------------------------- the real gate
+def _flip_table(rows, key, label, edges=None, order=None):
+    """Flip rate of the ACTUAL model gate by a grouping key. n as markets AND
+    closes; exact CP intervals; no significance claimed from this table."""
+    print(f"\n  {label}")
+    print(f"  {'group':>14}{'gated':>8}{'closes':>8}{'flips':>7}{'rate':>8}"
+          f"{'95% CI':>18}")
+    groups = []
+    if edges:
+        for i in range(len(edges) - 1):
+            a_, b_ = edges[i], edges[i + 1]
+            groups.append((f"{a_:g}-{b_:g}",
+                           [o for o in rows if a_ <= o[key] < b_]))
+    else:
+        keys = order or sorted(set(o[key] for o in rows))
+        for k in keys:
+            groups.append((str(k).replace("KX", "").replace("15M", ""),
+                           [o for o in rows if o[key] == k]))
+    for name, sel in groups:
+        if not sel:
+            continue
+        k = sum(1 for o in sel if o["flip"])
+        cl = len(set(o["close"] for o in sel))
+        lo, hi = cp_interval(k, len(sel))
+        print(f"  {name:>14}{len(sel):>8}{cl:>8}{k:>7}{100*k/len(sel):>7.2f}%"
+              f"{'[' + f'{100*lo:.2f}, {100*hi:.2f}' + ']':>18}")
+
+
+def _gate_report(obs, tau, draws):
+    g = [o for o in obs if o["gated"]]
+    n, fl = len(g), sum(1 for o in g if o["flip"])
+    ncl = len(set(o["close"] for o in g))
+    fcl = len(set(o["close"] for o in g if o["flip"]))
+    lo, hi = cp_interval(fl, n)
+    print(f"\n  {'='*72}")
+    print(f"  THE ACTUAL MODEL GATE (fair >= 0.98 on the exact strike), "
+          f"tau = {tau}s")
+    print(f"  {'='*72}")
+    print(f"    {n:,} of {len(obs):,} markets pass it, over {ncl:,} closes")
+    print(f"    {fl} flipped, in {fcl} closes: {100*fl/n:.2f}%  "
+          f"[{100*lo:.2f}, {100*hi:.2f}]")
+    print(f"    (this is NOT an upper bound; it is the gate's own loss rate "
+          f"on every market\n     the model would have called, whether or "
+          f"not anyone offered a price)")
+    _flip_table(g, "sr", "BY COIN")
+    _flip_table(g, "N", "BY HOW MANY OTHER COINS ARE MOVING",
+                edges=[0, 1, 2, 3, 99])
+    _flip_table(g, "X", "BY CROSS-MARKET ROUGHNESS X",
+                edges=[0, 0.7, 0.9, 1.1, 1.4, 99])
+    _flip_table(g, "m", "BY HOW DEEP INSIDE THE GATE (margin in sd)",
+                edges=[2.05, 2.5, 3.0, 4.0, 6.0, 1e9])
+
+    # cluster-honest test on the real flips
+    byclose = defaultdict(lambda: {"n": 0, "flips": 0, "X": 0.0, "N": 0.0})
+    for o in g:
+        c = byclose[o["close"]]
+        c["n"] += 1
+        c["flips"] += 1 if o["flip"] else 0
+        c["X"] += o["X"]
+        c["N"] += o["N"]
+    closes = [{"close": cs, "n": c["n"], "flips": c["flips"],
+               "X": c["X"] / c["n"], "N": c["N"] / c["n"]}
+              for cs, c in byclose.items()]
+    print(f"\n  PERMUTATION over {len(closes):,} closes on REAL gate flips")
+    for key in ("X", "N"):
+        r = perm_generic(closes, key, "flips", draws=draws)
+        if r:
+            print(f"    top-quartile {key}: lift {100*r[0]:+.2f}pp  "
+                  f"p={r[1]:.4f}")
+
+    # the gates table again, on REAL flips, fit/holdout. This replaces the
+    # anchored proxy version, which I withdraw: "% change in profit" against a
+    # baseline that can be negative was misleading in sign.
+    cl = sorted(set(o["close"] for o in g))
+    cut = cl[int(0.70 * len(cl))]
+    fit = [o for o in g if o["close"] < cut]
+    hold = [o for o in g if o["close"] >= cut]
+    print(f"\n  GATES ON REAL FLIPS, at 96c: FIT {len(fit):,} / HOLDOUT "
+          f"{len(hold):,} gated markets. Numbers are cents of expected profit "
+          f"per 100 opportunities.")
+    print(f"  {'refuse when':<24}{'kept':>7}{'FIT loss':>10}{'FIT $':>8}"
+          f"{'HOLD loss':>11}{'HOLD $':>8}   {'ungated $ fit/hold':>18}")
+
+    def money(rows, fn):
+        kep = [o for o in rows if not fn(o)]
+        if not kep:
+            return None
+        f = sum(1 for o in kep if o["flip"]) / len(kep)
+        return len(kep) / len(rows), f, 100 * len(kep) / len(rows) * \
+            ev_per_trade(f, 0.96) * 100
+
+    u_fit = money(fit, lambda o: False)
+    u_hold = money(hold, lambda o: False)
+    for name, fn in GATES:
+        a_, b_ = money(fit, fn), money(hold, fn)
+        if not a_ or not b_:
+            continue
+        print(f"  {name:<24}{100*a_[0]:>6.1f}%{100*a_[1]:>9.2f}%{a_[2]:>8.1f}"
+              f"{100*b_[1]:>10.2f}%{b_[2]:>8.1f}   "
+              f"{u_fit[2]:>8.1f} / {u_hold[2]:<7.1f}")
+
+
 def ev_per_trade(f, p, size=20.0):
     """Dollars per contract at flip rate f and price p, after the taker fee."""
     fee = math.ceil(0.07 * size * p * (1 - p) * 10000 - 1e-9) / 10000 / size

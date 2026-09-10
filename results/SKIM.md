@@ -85,6 +85,29 @@ unchanged, or it is the refuted own-sigma filter under a new name.
 **Logged, not gated on.** We have zero live records of the conditions our
 losses happened in, and the tape has been shown unable to explain them.
 
+### LATER THE SAME NIGHT — three more results, one of them the lead we needed
+
+**1. The model is right at its own boundary and never wrong deep inside.** Measured
+at the second the bot actually fires (10,796 markets walked): flips are **1.8–3.1%
+at 2.05–2.6 sd, 0.5% at 2.6–4 sd, and 0 of 7,868 above 4 sd.** Holds on a
+holdout. Our live boundary fills lost 3/32 — inside that interval. **Two of our
+three recent losses are exactly this: the boundary's own ~2%.** Raising the gate
+to 0.995 halves tape flips at zero market-count cost; a margin-aware EV line is
+correct but would not have removed a single live loss (it refuses 17 small
+winners). Neither deployed; both logged (IDEAS_LOG K–M).
+
+**2. The XRP loss was a sub-second information lead, not a model error.** At the
+signal second the CF index printed **1.39075** while **Coinbase had already
+traded 1.38950.** The seller at 82¢ had seen the exchange tick; the index caught
+up one second later and fell ~10 sd. Our data was fresh — the *print* was stale
+inside its own second. We already record every exchange tick (`feed_data`) and
+have never used it. **This is the next test and the most promising lever of the
+week: refuse to fire when the freshest exchange tick disagrees with the CF print
+by more than ~2 sd.** It costs nothing when nothing is moving.
+
+**3. Live P&L, reconciled to the bank: −$15.02 over all 84 fills.** The earlier
+"+$26.50" excluded the −$52.60 NEAR close.
+
 ### The one thing that would actually settle it
 
 **~70 more live fills with these columns attached.** That is the sample that

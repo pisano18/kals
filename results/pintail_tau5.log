@@ -1,0 +1,146 @@
+SELF-TEST -- pintail
+  ok   fair >= 0.98 is exactly |mu-K| >= 2.0537 sd, so the flip probability the gate implies is the tail beyond it
+  ok   and a two-sided Gaussian puts 4.00% beyond it, 2.00% on the losing side -- the model's own claim, which live experience contradicts
+  ok   one second before the window opens, all 60 prints are unpublished
+  ok   at the last second r = 0 and the locked mean IS the settlement mean
+  ok   with 15s to go, 14 prints remain unpublished (got r=14)
+  ok   sigma recovers a planted 0.25 per second (0.242)
+  ok   a planted state-dependent fat tail IS found (lift +21.63pp, p=0.0007)
+  ok   across 40 worlds with a CONSTANT tail, only 0 came out significant at 5% (expect ~2, allow 6)
+SELF-TEST PASSED
+
+  10,796 settled markets with a settlement LEVEL, 08-24 16:30Z -> 09-06 08:30Z
+  loading index tape ...
+  11 feeds, 275 files, 10,063,752 prints (71s)
+
+  RECONCILIATION: our locked mean at r=0 vs the exchange's settle
+    4,000 fully-covered markets: median relative error 3.80e-07, p95 2.33e-05, worst 3.58e-05
+    -> the settlement model reconciles; mu is comparable to settle
+
+  building the cross-market roughness index ...
+  done (14s)
+  scoring every market at tau = 5s ...
+  9,141 markets scored; skipped {'no_spot': 1628, 'no_index': 9, 'thin_lock': 18}
+
+  ========================================================================
+  THE LIVE SIGMA vs THE BACKTEST SIGMA -- same seconds, 9,141 markets
+  ========================================================================
+    live/tape sigma ratio: median 1.0008, 5th 0.9939, 95th 1.0017
+    loss-tail using the TAPE sigma (RMS)    7.18%  [6.66, 7.72]
+    loss-tail using the LIVE sigma (sd)     7.17%  [6.65, 7.71]
+    the live estimator's gate is 1.00x as dangerous as the one the backtest scores
+    live sigma is the SMALLER number in 36.3% of markets
+    -- I predicted 100% here, and I was WRONG: removing the mean shrinks the live
+       number but dividing by (n-1) instead of n inflates it by sqrt(300/299), and
+       at this drift the two effects very nearly cancel. THE SIGMA HYPOTHESIS IS DEAD.
+
+  ========================================================================
+  THE HEADLINE, at tau = 5s over 9,141 markets / 1,017 closes
+  ========================================================================
+    mean |surprise|                          1.107 sd (a correct model gives 0.798)
+    P(surprise beyond the gate, either way)  14.57%   model says 4.00%
+    P(surprise past it the LOSING way)       7.18%   model says 2.00%
+    exact 95% CI on that                     [6.66%, 7.72%]
+    ratio to the model's own claim           3.59x
+
+    THIS IS AN UPPER BOUND on the gate's flip rate: it counts every market
+    as if it sat exactly on the 0.98 boundary, and most sit deeper.
+
+  BY CROSS-MARKET ROUGHNESS X -- the traded coin EXCLUDED
+             band  markets  closes  mean|z|  P(z<-2.05)              95% CI  vs model
+   0.00-0.70          5024     667    1.136       7.58%        [6.87, 8.35]      3.8x
+   0.70-0.90          2091     352    1.112       7.27%        [6.19, 8.47]      3.6x
+   0.90-1.10          1018     179    1.065       7.27%        [5.75, 9.04]      3.6x
+   1.10-1.40           543      98    0.959       4.60%        [3.00, 6.72]      2.3x
+   1.40-2.00           303      46    1.088       5.61%        [3.30, 8.83]      2.8x
+   2.00-99.00          162      20    0.969       4.32%        [1.75, 8.70]      2.2x
+
+  BY THE TRADED COIN'S OWN fast/slow ROUGHNESS (a regime ratio, NOT the refuted sigma level)
+             band  markets  closes  mean|z|  P(z<-2.05)              95% CI  vs model
+   0.00-0.70          5317     938    1.175       7.69%        [6.99, 8.44]      3.8x
+   0.70-0.90          1543     755    1.023       6.68%        [5.48, 8.04]      3.3x
+   0.90-1.10           852     515    1.056       7.28%        [5.62, 9.23]      3.6x
+   1.10-1.40           617     384    1.011       6.32%        [4.53, 8.54]      3.2x
+   1.40-2.00           516     315    0.951       5.62%        [3.80, 7.97]      2.8x
+   2.00-99.00          296     154    0.950       4.73%        [2.61, 7.81]      2.4x
+
+  BY HOW MANY OTHER COINS ARE MOVING (z > 2)
+             band  markets  closes  mean|z|  P(z<-2.05)              95% CI  vs model
+   0.00-1.00          7650     942    1.106       7.27%        [6.70, 7.87]      3.6x
+   1.00-2.00          1063     148    1.120       6.87%        [5.42, 8.56]      3.4x
+   2.00-3.00           176      26    1.186       5.68%       [2.76, 10.20]      2.8x
+   3.00-5.00           105      15    1.144      11.43%       [6.05, 19.11]      5.7x
+   5.00-99.00          147      19    0.962       3.40%        [1.11, 7.76]      1.7x
+
+  PERMUTATION TESTS -- shuffled over 1,017 CLOSES, 4000 draws
+  statistic                                 top-quartile lift        p
+  loss-tail on cross-market roughness X                -1.57pp   0.9830
+  mean|z|  on cross-market roughness X                -0.105sd   0.9723
+  loss-tail on own fast/slow roughness                 -1.66pp   0.9858
+  mean|z|  on own fast/slow roughness                 -0.110sd   0.9795
+  loss-tail on how many other coins are moving             -0.88pp   0.7326
+  mean|z|  on how many other coins are moving            -0.084sd   0.5384
+
+  CONTROL (X shuffled across closes, must show nothing): lift +0.36pp, p=0.3167
+
+  MULTIPLE LOOKS: 6 permutation tests are printed above. At 6 looks the
+  5% threshold is 0.0083, not 0.05. Read every p against that number.
+
+  ========================================================================
+  THE ACTUAL MODEL GATE (fair >= 0.98 on the exact strike), tau = 5s
+  ========================================================================
+    9,108 of 9,141 markets pass it, over 1,017 closes
+    0 flipped, in 0 closes: 0.00%  [0.00, 0.04]
+    (this is NOT an upper bound; it is the gate's own loss rate on every market
+     the model would have called, whether or not anyone offered a price)
+
+  BY COIN
+           group   gated  closes  flips    rate            95% CI
+             BNB    1009    1009      0   0.00%      [0.00, 0.36]
+             BTC    1009    1009      0   0.00%      [0.00, 0.36]
+            DOGE    1013    1013      0   0.00%      [0.00, 0.36]
+             ETH    1013    1013      0   0.00%      [0.00, 0.36]
+            HYPE    1012    1012      0   0.00%      [0.00, 0.36]
+            NEAR    1013    1013      0   0.00%      [0.00, 0.36]
+             SOL    1013    1013      0   0.00%      [0.00, 0.36]
+             XRP    1012    1012      0   0.00%      [0.00, 0.36]
+             ZEC    1014    1014      0   0.00%      [0.00, 0.36]
+
+  BY HOW MANY OTHER COINS ARE MOVING
+           group   gated  closes  flips    rate            95% CI
+             0-1    7620     940      0   0.00%      [0.00, 0.05]
+             1-2    1061     148      0   0.00%      [0.00, 0.35]
+             2-3     176      26      0   0.00%      [0.00, 2.07]
+            3-99     251      29      0   0.00%      [0.00, 1.46]
+
+  BY CROSS-MARKET ROUGHNESS X
+           group   gated  closes  flips    rate            95% CI
+           0-0.7    5005     667      0   0.00%      [0.00, 0.07]
+         0.7-0.9    2085     352      0   0.00%      [0.00, 0.18]
+         0.9-1.1    1016     178      0   0.00%      [0.00, 0.36]
+         1.1-1.4     540      98      0   0.00%      [0.00, 0.68]
+          1.4-99     462      61      0   0.00%      [0.00, 0.80]
+
+  BY HOW DEEP INSIDE THE GATE (margin in sd)
+           group   gated  closes  flips    rate            95% CI
+        2.05-2.5       8       8      0   0.00%     [0.00, 36.94]
+           2.5-3       4       4      0   0.00%     [0.00, 60.24]
+             3-4      14      14      0   0.00%     [0.00, 23.16]
+             4-6      31      30      0   0.00%     [0.00, 11.22]
+         6-1e+09    9051    1017      0   0.00%      [0.00, 0.04]
+
+  PERMUTATION over 1,017 closes on REAL gate flips
+    top-quartile X: lift +0.00pp  p=1.0000
+    top-quartile N: lift +0.00pp  p=1.0000
+
+  GATES ON REAL FLIPS, at 96c: FIT 6,371 / HOLDOUT 2,737 gated markets. Numbers are cents of expected profit per 100 opportunities.
+  refuse when                kept  FIT loss   FIT $  HOLD loss  HOLD $   ungated $ fit/hold
+  N >= 1                    83.7%     0.00%   312.1      0.00%   312.2      373.1 / 373.1  
+  N >= 2                    95.0%     0.00%   354.3      0.00%   358.7      373.1 / 373.1  
+  N >= 3                    97.0%     0.00%   361.9      0.00%   364.9      373.1 / 373.1  
+  X >= 1.4                  94.7%     0.00%   353.2      0.00%   356.5      373.1 / 373.1  
+  own >= 1.4                90.9%     0.00%   339.3      0.00%   341.9      373.1 / 373.1  
+  own >= 1.1                84.0%     0.00%   313.4      0.00%   318.3      373.1 / 373.1  
+  N >= 2 or own >= 1.4      89.1%     0.00%   332.3      0.00%   336.0      373.1 / 373.1  
+  N >= 1 or own >= 1.4      79.1%     0.00%   295.3      0.00%   295.3      373.1 / 373.1  
+  N >= 3 or own >= 2.0      95.3%     0.00%   355.6      0.00%   359.2      373.1 / 373.1  

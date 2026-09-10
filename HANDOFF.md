@@ -1,3 +1,16 @@
+# 2026-09-10 ~08:40Z addendum -- the boundary is the loss rate, and XRP was a lead
+
+**Three lines:** (1) Measured at the crossing second on 10,796 markets, the
+model flips 1.8-3.1% at 2.05-2.6 sd, 0.5% at 2.6-4, **0 of 7,868 above 4 sd**,
+holdout-stable; 38% of our live fills sit in the thinnest band, and two of the
+three recent losses are that band's own rate. (2) **The XRP loss: CF printed
+1.39075 while Coinbase had already traded 1.38950 in the same second** -- the
+seller at 82c knew; `feed_data` holds every such tick and `pinjump.py` is the
+test being built. (3) Live P&L reconciled: -$15.02 over 84 fills. Full rows
+K-R in `results/IDEAS_LOG.md`. New files: `pinfirst.py`, `pinrace.py`.
+
+---
+
 # 2026-09-10 morning -- the loss-rate hunt: the cause is NOT in the tape
 
 **Five lines:** (1) **The backtest's tradeable population flips 0.79%

@@ -1,0 +1,88 @@
+SELF-TEST -- pinfirst
+  ok   the 0.98 level is reached inside the window
+  ok   0.999 is reached no earlier than 0.98 (tau 30 vs 30)
+  ok   margins at the crossings are ordered and at least the level
+  ok   the favoured side is YES when the index sits above the strike
+  ok   a market pinned on its strike crosses no level
+  ok   the price assumption table reads by band
+SELF-TEST PASSED
+
+  10,796 settled markets
+  11 feeds, 10,063,752 prints (71s)
+  walking tau 30->3 on every market ...
+  10,796 markets walked (1s)
+
+  ALL 10,796 markets -- flip rate AT THE FIRST CROSSING of each gate level, tau 30->3
+     gate  reach it  closes  flips  flip rate           95% CI  med tau   $/100
+    0.980      9159    1020     18      0.20%     [0.12, 0.31]       30   195.9
+    0.985      9157    1020     15      0.16%     [0.09, 0.27]       30   197.7
+    0.990      9154    1020     14      0.15%     [0.08, 0.26]       30   196.5
+    0.995      9151    1020     10      0.11%     [0.05, 0.20]       30   198.3
+    0.998      9149    1020      9      0.10%     [0.04, 0.19]       30   196.6
+    0.999      9148    1020      9      0.10%     [0.04, 0.19]       30   194.3
+
+  FIT: 7,555 markets before 09-02 12:30Z
+     gate  reach it  closes  flips  flip rate           95% CI  med tau   $/100
+    0.980      6252     696     15      0.24%     [0.13, 0.40]       30   187.6
+    0.985      6250     696     13      0.21%     [0.11, 0.36]       30   189.2
+    0.990      6248     696     13      0.21%     [0.11, 0.36]       30   187.2
+    0.995      6245     696      9      0.14%     [0.07, 0.27]       30   190.6
+    0.998      6243     696      8      0.13%     [0.06, 0.25]       30   189.2
+    0.999      6243     696      8      0.13%     [0.06, 0.25]       30   187.1
+
+  HOLDOUT: 3,241 markets after it -- the only column that is not a fit
+     gate  reach it  closes  flips  flip rate           95% CI  med tau   $/100
+    0.980      2907     324      3      0.10%     [0.02, 0.30]       30   215.2
+    0.985      2907     324      2      0.07%     [0.01, 0.25]       30   217.4
+    0.990      2906     324      1      0.03%     [0.00, 0.19]       30   218.2
+    0.995      2906     324      1      0.03%     [0.00, 0.19]       30   216.2
+    0.998      2906     324      1      0.03%     [0.00, 0.19]       30   213.8
+    0.999      2905     324      1      0.03%     [0.00, 0.19]       30   211.2
+
+  '$/100' = expected cents per 100 markets in the population, at the flip rate shown and the
+  price its margin band fetched in the backtest (stated assumption, see PRICE_BY_M).
+
+  AT THE 0.980 CROSSING, BY MARGIN AT THAT SECOND (the band live fills actually occupy)
+        margin  markets  closes  flips    rate            95% CI  tau<30
+   2.05-2.3         502     354      9   1.79%      [0.82, 3.38]     429
+   2.30-2.6         195     169      6   3.08%      [1.14, 6.58]     112
+   2.60-3           189     164      1   0.53%      [0.01, 2.91]      49
+   3.00-4           405     321      2   0.49%      [0.06, 1.77]      37
+   4.00-6           645     440      0   0.00%      [0.00, 0.57]       8
+   6.00-1e+09      7223    1020      0   0.00%      [0.00, 0.05]       4
+  crossings INSIDE the window (tau < 30), all margins: 639 markets, 13 flips, 2.03% [1.09, 3.45]
+
+  AT THE 0.990 CROSSING, BY MARGIN AT THAT SECOND (the band live fills actually occupy)
+        margin  markets  closes  flips    rate            95% CI  tau<30
+   2.30-2.6         555     387      9   1.62%      [0.74, 3.06]     476
+   2.60-3           277     228      2   0.72%      [0.09, 2.58]     137
+   3.00-4           446     347      3   0.67%      [0.14, 1.95]      78
+   4.00-6           652     443      0   0.00%      [0.00, 0.56]      15
+   6.00-1e+09      7224    1020      0   0.00%      [0.00, 0.05]       5
+  crossings INSIDE the window (tau < 30), all margins: 711 markets, 9 flips, 1.27% [0.58, 2.39]
+
+  BANDS AT THE 0.980 CROSSING, FIT vs HOLDOUT (split at 09-02 12:30Z)
+        margin  FIT n flips    rate  HOLD n flips    rate       HOLD 95% CI
+   2.05-2.6       479    12   2.51%     218     3   1.38%      [0.28, 3.97]
+   2.60-4         405     3   0.74%     189     0   0.00%      [0.00, 1.93]
+   4.00-1e+09    5368     0   0.00%    2500     0   0.00%      [0.00, 0.15]
+
+  the flips at the 0.98 crossing:
+    KXBTC15M   close 08-27 00:45  tau 18  margin 2.54 sd
+    KXXRP15M   close 08-28 08:45  tau 30  margin 2.43 sd
+    KXNEAR15M  close 08-28 12:30  tau  7  margin 2.10 sd
+    KXBTC15M   close 08-29 16:00  tau 20  margin 2.06 sd
+    KXHYPE15M  close 08-30 00:45  tau 21  margin 2.22 sd
+    KXXRP15M   close 08-30 05:30  tau 30  margin 3.35 sd
+    KXBNB15M   close 08-30 05:45  tau 20  margin 2.07 sd
+    KXHYPE15M  close 08-30 11:30  tau 30  margin 2.60 sd
+    KXNEAR15M  close 08-30 20:00  tau 16  margin 2.14 sd
+    KXZEC15M   close 08-30 20:00  tau 30  margin 2.97 sd
+    KXBTC15M   close 08-30 20:30  tau 21  margin 2.23 sd
+    KXNEAR15M  close 08-31 06:00  tau 24  margin 2.39 sd
+    KXETH15M   close 08-31 07:15  tau  8  margin 2.35 sd
+    KXETH15M   close 09-01 14:00  tau 30  margin 3.09 sd
+    KXSOL15M   close 09-01 20:15  tau 18  margin 2.12 sd
+    KXBTC15M   close 09-02 19:15  tau  7  margin 2.32 sd
+    KXBTC15M   close 09-03 23:15  tau 25  margin 2.06 sd
+    KXZEC15M   close 09-05 11:00  tau 20  margin 2.22 sd
