@@ -198,6 +198,19 @@ What is missing is a **reader**. Shape worth building:
 
 ---
 
+### 3. DUST FILLS BURN A SCALE-IN SLOT (found live 2026-09-10 03:44Z)
+
+`KXBTC15M` filled **0.02 contracts** at 97.9¢ — worth about **0.03¢** — and it
+consumed one of the two buys allowed for that close.
+
+Same shape as the no-fill bug fixed on 09-08, one layer down: `MIN_FILL_FRAC`
+gates what we ASK for, nothing gates what we GET. A fill under some fraction of
+the requested size should not book a slot, since it creates almost no exposure
+and blocks a real position behind it. Cheap fix, needs a self-test that a dust
+fill does not book and a real partial still does.
+
+---
+
 ## OPEN QUESTIONS — where pushback is worth most
 
 1. **THE RACE.** 26% of orders fill nothing. Depth is not the cause (misses had 562, 107, 93 contracts on offer). Our round trip is ~100ms whether we win or lose; misses happen on *fresher* prices. Suggests we lose to **already-resting** orders, not faster ones. Unmeasurable from tape so far.
