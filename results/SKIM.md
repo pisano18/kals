@@ -196,6 +196,29 @@ What is missing is a **reader**. Shape worth building:
   that actually matters
 - the brakes: realised P&L against −$60, losing closes against 3
 
+**AND AN EQUITY CURVE, TREATED LIKE A TICKER.** Joe: *"track the bets we do and
+my balance amount in a stock like line graph with all the things a regular
+stock has, exc % change and all the other things."*
+
+The balance line, with every trade marked on it, plus the standard readouts a
+ticker carries:
+
+| | |
+|---|---|
+| headline | balance, absolute change, **% change**, up/down colour |
+| ranges | today · 7d · 30d · all — each with its own % change |
+| session bar | open · high · low · current, and the day's range |
+| **max drawdown** | peak-to-trough, in dollars, % **and wins-to-recover** |
+| volume | trades per period, fill rate, and races lost |
+| markers | every fill on the curve, hover for coin/price/size/result; **losses flagged** |
+| return | since inception, and annualised **with the capacity ceiling stated** |
+| capital | deployed vs idle — this strategy caps out around $940 |
+
+**Two things a normal ticker does NOT have, and this one must:** the *wins to
+recover* figure on every drawdown, because that is the operator's own unit; and
+an explicit note that annualised return is meaningless past the capacity
+ceiling, so the chart cannot imply compounding that the market will not allow.
+
 ---
 
 ### 3. DUST FILLS BURN A SCALE-IN SLOT (found live 2026-09-10 03:44Z)
