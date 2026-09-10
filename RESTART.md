@@ -40,6 +40,19 @@ Get-Content (Get-ChildItem C:\kals-repo\results\pinrun-live-*.jsonl |
 
 ---
 
+## SILENCE OVERNIGHT IS NORMAL
+
+Kalshi halts **all** trading for maintenance until about **5am ET (09:00Z)**.
+During it the log gets no new lines at all. Check before assuming a hang:
+
+```powershell
+python -c "import sys; sys.path.insert(0, r'C:\Users\Joe\AppData\Local\Temp\kals-work'); from kauth import get; print(get('/exchange/status', auth=False)[1]['trading_active'])"
+```
+
+`False` = maintenance, leave it alone. `True` with a silent log = look closer.
+
+---
+
 ## IT STOPS ITSELF ON PURPOSE. Check which before restarting.
 
 Search the newest log for `"kind": "halt"`. Four brakes can fire:

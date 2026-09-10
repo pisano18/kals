@@ -22,6 +22,31 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## MEASURED 2026-09-10 — the loss-rate hunt, everything proven good or bad
+
+Operator: *"see if you can think of or try anything to improve our lose rate
+problem"* and *"make sure anything proven good or bad and anything worth
+knowing in the pursuit of the solution is logged."* Commit `2994b55`.
+
+| # | idea | status | evidence |
+|---|---|---|---|
+| A | **Count flips on the tradeable population and split by conditions** (`pincross.py`) | **DEAD as a method** | The whole tape holds **254 tradeable markets / 147 closes / 2 flips**. MDE stated before looking: +3.34pp. Observed +2.50pp. **Shuffled control gave +2.78pp — larger than the signal.** No power, not no effect. Any factor study that counts flips on this tape is hopeless, whatever the factor. |
+| B | **Measure the forecast error instead of the flip** (`pintail.py`) | **TESTED-PROMISING — the right instrument** | One real number per market: `(settle − mu)/sd`. 9,159 markets / 1,019 closes. Settlement model reconciled to 3.8e-07 first. The gate's flip rate is exactly the tail beyond 2.0537 sd, so this measures the loss rate directly, from every market, not from the 2 that flipped. |
+| C | **The model's tail is too thin and it is STATE-DEPENDENT** | **PROVEN (well powered)** | mean error 0.657 sd vs 0.798 claimed; losing-side tail **2.58% [2.26, 2.92] vs 2.00% claimed**. By other coins moving: 0 → 2.22%, 1 → 3.92%, 2 → 5.22%, 3–5 → 6.60%. Permutation over closes: mean-error lift on cross-market roughness **p=0.0070** (survives the 6-look threshold of 0.0083); the loss-tail lifts at p=0.025–0.068 do not. Control clean (p=0.44). **The model is wrong in SHAPE, not scale.** |
+| D | **A fixed gate on those conditions** (9 thresholds, fit/holdout 70/30) | **TESTED-REJECTED** | Every candidate that gains on the fit half **loses on the holdout**: N≥1 +18.5% → **−18.0%**; X≥1.4 +16.3% → **−8.4%**; N≥2 +11.3% → **−6.6%**; N≥3 +4.1% → −2.3%. The one positive holdout (own≥1.4, +4.7%) was negative on fit — noise flipping sign. **Not deployed. Deploying it would be curve fitting.** |
+| E | **Discount-to-fair as adverse selection** (`pindisc.py`, Fable 5.1 in parallel) | **TESTED-REJECTED at live size, PARTIAL below ~10%** | Within price band, high-discount vs low: **0 flips in 73 high-discount closes.** P(0/73 given the live-implied 25%) ≈ 7e-10. Power 0.14 at a 2% effect, 0.74 at 10% — small effects are invisible here. The two tape flips: one on a 36 ms quote, one on a **62.5 s stale quote with 2,024 contracts resting** (the adverse-selection shape, n=1). |
+| F | **Live sigma ≠ backtest sigma** (sd-about-mean vs RMS) | **TESTED-REJECTED — and I predicted it wrong** | Same 9,159 seconds: ratio median **1.0008** (5th 0.9938, 95th 1.0017); tails 2.58% vs 2.57%. I asserted live is provably ≤ RMS; my own check returned 35.9% because dividing by (n−1) cancels the mean subtraction. |
+| G | **THE FACT THAT REFRAMES IT** | **PROVEN** | Backtest tradeable population flips **0.79% [0.10, 2.82]**; live **8.8% [2.9, 19.3]** (5/57). **The intervals do not overlap.** The cause of the live losses is not in the tape at anything like the live rate. Six failed factor studies were this fact, not bad luck. |
+| H | **Log the live conditions on every decision** | **LIVE** (v-cond, `2994b55`) | `cond_x` (the other ten coins' roughness, traded coin excluded), `cond_n` (how many > 2), `cond_own`. Self-tested exclusion. Logged, never gated on. ~70 fills distinguish a 25% problem from a 5% one. |
+| I | **Sigma stress as a continuous function of state** instead of a threshold — `SIGMA_STRESS` already exists in pinrun and is 1.0 | **UNTESTED — next idea** | D killed thresholds, not the signal. A tail-matched stress per state (s = −2nd percentile of z / 2.0537, fitted on the fit half, checked on the holdout) would make the 0.98 gate self-adjust with no new constant. Needs K per market (the DOGE 7-digit trap applies). |
+| J | **Heartbeat record during exchange halts** | **UNTESTED — observability gap** | During Kalshi's nightly maintenance (halt until ~5am ET / 09:00Z, `trading_active: false` on all shards) the bot writes **nothing** — indistinguishable from a hang. A once-a-minute `alive` record would separate them. |
+
+**Worth knowing, not a hypothesis:** the tape's tradeable population is thin —
+about 51 tradeable markets a day pass today's rule. Any future test that needs
+flips needs *months*, so measure forecast error (B), never flips (A).
+
+---
+
 ## THE PRICE LADDER — measured 2026-09-09, and it is the biggest finding of the project
 
 **22,568 model-confident moments, tau 3–60. The question: do CHEAP trades lose

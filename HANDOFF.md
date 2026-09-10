@@ -1,3 +1,36 @@
+# 2026-09-10 morning -- the loss-rate hunt: the cause is NOT in the tape
+
+**Five lines:** (1) **The backtest's tradeable population flips 0.79%
+[0.10, 2.82]; live has flipped 8.8% [2.9, 19.3]. The intervals do not
+overlap.** Whatever loses money live is not in the tape at that rate, which is
+why six factor studies found nothing. (2) The model's forecast-error tail IS
+too thin (2.58% vs 2.00% claimed) and IS state-dependent (2.22% with no other
+coin moving, 6.60% with three or more) -- 9,159 markets, reconciled, control
+clean. (3) **Every fixed gate on those conditions fails out of sample** (fit
++18.5%, holdout **-18.0%**, and so on for all nine). Not deployed. (4)
+Discount-to-fair and the live/backtest sigma mismatch are both refuted; on the
+second I predicted the wrong direction and my own check caught it. (5)
+Deployed: **conditions logged on every live decision**, nothing else changed
+(`2994b55`, v-cond in VERSIONS.md). ~70 more live fills is the sample that
+settles it. Full table: `results/IDEAS_LOG.md` (2026-09-10 section); skim:
+`results/SKIM.md`.
+
+**Method note that outlives this session:** on this tape, never test a factor
+by counting flips -- 254 tradeable markets hold 2 of them. Measure the
+standardised forecast error `(settle - mu)/sd`; the gate's flip rate is the
+tail beyond 2.0537 sd and every settled market contributes. `pintail.py` is
+the instrument; `pincross.py` is the record of why counting failed.
+
+**Exchange fact:** Kalshi halts ALL trading for nightly maintenance until
+~5am ET (09:00Z). `trading_active: false` on every shard, every 15M market
+`initialized`. The bot writes nothing during it -- that silence is normal,
+not a hang (heartbeat is on the list, IDEAS_LOG J).
+
+**Resource check at hand-off:** collectors alive (pids 123296, 124060),
+trader pid 245640, free disk 46.8 GB, free RAM ~5 GB.
+
+---
+
 # 2026-09-08 late night -- FUNDED at $154, size 20, and three more of my own bugs found and fixed live
 
 **Five lines:** (1) The operator funded the account; the deposit landed on

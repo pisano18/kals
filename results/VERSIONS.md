@@ -5,6 +5,34 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## v-cond — 2026-09-10 07:47Z — conditions logged on every decision (`2994b55`)
+
+**What changed in `pinrun.py`:** every `signal` record now carries `cond_x`,
+`cond_n`, `cond_own` (see `IndexWS.conditions`). Tick retention 1200s → 4000s
+so the 3600s baseline is real. A per-feed, per-second cache keyed on a version
+counter (a revised print busts it, an identical duplicate does not).
+**Nothing about what is bought, at what price, or in what size changed.**
+Price ceiling, gates, brakes, size: identical to the previous version.
+
+**Evidence:** `research/pintail.py` — the model's loss-tail is 2.22% with no
+other coin moving and 6.60% with three or more (9,159 markets). Every fixed
+gate on it failed a holdout split, so it is **logged, not gated**.
+
+**Cost on the order path:** `conditions()` runs only when a signal fires;
+~0.5 ms cached, 6 ms cold once per second. Measured.
+
+**Revert:**
+```powershell
+git checkout 33ead84 -- research/pinrun.py
+# then stop/start per RESTART.md
+```
+
+**Restart done during the exchange's maintenance halt** (`trading_active:
+false`, all shards) — trader down 07:43–07:47Z, zero opportunity cost.
+pid 245640, size 20, brake at 3 losing closes.
+
+---
+
 ## OUTAGE — 2026-09-08 14:40–15:44 UTC, ~1 hour, NO TRADING
 
 **Cause:** three separate hardcoded rails silently refused every scale-up, and
