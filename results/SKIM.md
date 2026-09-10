@@ -127,6 +127,28 @@ cheaper is worth more than anything else on the board. The ZEC fill proves the
 two are separable: **93.3¢ AND 3.05 sd deep.** Getting deep markets at cheap
 prices — patience, queue position, scale-in — is now the highest-value work.
 
+**WITH REAL LOSSES IN IT (operator caught that the table above has none —
+6,000 simulated 40-day runs, losses drawn PER CLOSE because a losing close
+loses every fill on it):**
+
+| loss rate | size 125 by (unlucky/typical) | bank at 40d (p10/p50) | worst dip 1-in-10 | ends poorer | brake halts |
+|---|---|---|---|---|---|
+| 0.10% | day 10 / 9 | $5,772 / $6,032 | $0 | 0.0% | 0.01 |
+| **0.51% (measured)** | **day 13 / 10** | **$4,331 / $4,978** | **$192** | **1.1%** | **0.37** |
+| 1.47% (upper 95% CI) | day 28 / 17 | $108 / $2,214 | $427 | **16.4%** | 3.87 |
+| 2.80% (break-even) | day 36 / 25 | $88 / $106 | $262 | 89.5% | 3.54 |
+
+**The measured case barely changes the headline — but the upper end of the
+confidence interval is a different business**: a 16% chance of ending 40 days
+poorer and a halt roughly every 10 days. The loss rate rests on 3 flips in 594
+markets, so that column is not paranoia, it is the honest other end of what we
+actually measured.
+
+**Also corrected:** the "days to each size" table printed only the days the
+size CHANGED, which hid the days in between and made the arithmetic look
+wrong. Day 2 ($191.54, size 30) to day 5 ($305.54) is not 3×$34.20 — the rate
+steps up to $45.60 when size reaches 40 on day 4.
+
 **What is thin:** 50 fills/day rests on 7 fills over 3.3 h. The model predicts
 $22.80/day at size 20; the first 3.3 h ran at ~$28/day — consistent, but that
 is one afternoon. Sensitivity tables for loss rate × price × fill rate are in

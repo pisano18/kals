@@ -7,24 +7,29 @@ SELF-TEST -- pinproj
   ok   and an infinite bank still stops at the depth ceiling of 125
   ok   a 5% loss rate shrinks the bank ($96.04)
   ok   a 0.5% loss rate reaches the 125 cap (last rung 125)
+  ok   the random model's median lands near the smooth model ($378 vs $364)
+  ok   and it spreads, which the smooth model cannot (p10 $266 .. p90 $443)
+  ok   it produces real drawdowns (90th pct $25)
+  ok   two fills per losing close hurts more than one ($207 vs $104 at the 90th pct)
+  ok   a 25% loss rate leaves almost everyone poorer (100%)
 SELF-TEST PASSED
 
   ==========================================================================
-  INPUTS  bank $140.24 | loss 0.51% | price 97.0c | 50 fills/day | cap 125
+  INPUTS  bank $144.09 | loss 0.51% | price 97.0c | 50 fills/day | cap 125
   EV per contract +2.280c | wins to recover one loss 34.8
   ==========================================================================
 
   DAYS TO EACH SIZE, and the income when you get there
     size   day   bank at that day  $/day there  $/month there
-      20     0            $140.24       $22.80           $684
-      25     1            $163.04       $28.50           $855
-      30     2            $191.54       $34.20         $1,026
-      40     4            $259.94       $45.60         $1,368
-      50     5            $305.54       $57.00         $1,710
-      65     7            $419.54       $74.10         $2,223
-      80     8            $493.64       $91.20         $2,736
-     100     9            $584.84      $114.00         $3,420
-     125    11            $812.84      $142.50         $4,275
+      20     0            $144.09       $22.80           $684
+      25     1            $166.89       $28.50           $855
+      30     2            $195.39       $34.20         $1,026
+      40     4            $263.79       $45.60         $1,368
+      50     5            $309.39       $57.00         $1,710
+      65     7            $423.39       $74.10         $2,223
+      80     8            $497.49       $91.20         $2,736
+     100     9            $588.69      $114.00         $3,420
+     125    11            $816.69      $142.50         $4,275
 
   CEILING: size 125 on day 11, $142.50/day = $4,275/month = $52,013/year.
   It does NOT compound past here -- the book is only so deep. Everything above
@@ -33,15 +38,36 @@ SELF-TEST PASSED
   IF THE INPUTS ARE WRONG -- days to the 125 cap, and $/day once there
   rows: loss rate. columns: average price paid.
                    95.0c         96.0c         97.0c         97.5c         98.0c
-    0.10%       6d $285       7d $227       9d $168      11d $139      14d $110
-    0.51%       6d $259       8d $201      11d $143      13d $113       18d $84
-    1.00%       7d $229       9d $171      13d $112       18d $83       27d $54
-    2.00%       9d $166      13d $108       29d $49       69d $20         never
+    0.10%       6d $285       7d $227       9d $168      11d $139      13d $110
+    0.51%       6d $259       7d $201      11d $143      13d $113       17d $84
+    1.00%       7d $229       9d $171      13d $112       18d $83       26d $54
+    2.00%       9d $166      13d $108       28d $49       68d $20         never
     3.00%      14d $104       30d $46         never         never         never
     5.00%         never         never         never         never         never
 
   'never' = negative EV; the bank shrinks and no size is ever funded.
   breakeven loss rate: 95.0c -> 4.66%, 96.0c -> 3.73%, 97.0c -> 2.79%, 97.5c -> 2.32%, 98.0c -> 1.86%
+
+  ==========================================================================
+  NOW WITH REAL LOSSES: 42 closes/day, 1.2 fills each, 6,000 runs of 40 days.
+  A losing CLOSE loses every fill on it -- that is how the brake counts, and how
+  the NEAR close actually cost us three fills at once.
+  ==========================================================================
+    size   unlucky (p10)   typical   lucky (p90)   reached within 40d
+      20           day 0     day 0         day 0               100.0%
+      25           day 1     day 1         day 1                99.7%
+      30           day 2     day 2         day 2                99.4%
+      40           day 5     day 3         day 3                99.3%
+      50           day 7     day 5         day 4                99.3%
+      65           day 8     day 6         day 6                99.3%
+      80          day 10     day 7         day 7                99.3%
+     100          day 11     day 9         day 8                99.3%
+     125          day 13    day 10         day 9                99.3%
+
+  bank after 40 days:  unlucky $4,345   typical $5,013   lucky $5,565
+  worst dip along the way: typical $65, 1-in-10 $195, worst seen $604
+  chance of ending 40 days POORER than you started: 0.7%
+  times the 3-losing-close brake halts you: 0.39 in 40 days (each one needs a human to restart)
 
   IF THE FILL RATE IS WRONG (loss 0.51%, price 97.0c)
     fills/day   day to cap   $/day at cap
@@ -49,4 +75,4 @@ SELF-TEST PASSED
            35          15d         $99.75
            50          11d        $142.50
            65           8d        $185.25
-           80           8d        $228.00
+           80           7d        $228.00

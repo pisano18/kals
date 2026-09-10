@@ -81,6 +81,85 @@ def simulate(bank, f, p, fills_day, days=400, sweep=None):
     return out, bank
 
 
+def montecarlo(bank, f, p, closes_day, per_close=1.2, days=60, trials=4000,
+               seed=17, brake_closes=LOSS_CLOSES, run_days=3):
+    """THE SAME MODEL WITH THE LOSSES ACTUALLY IN IT.
+
+    simulate() spends the AVERAGE every day and therefore never has a bad
+    week. The operator caught that. What it misses is not the mean -- the
+    mean is right -- but everything else: how long the bad case takes, how
+    deep it digs, and how often the brake stops the run.
+
+    LOSSES ARE DRAWN PER CLOSE, NOT PER FILL. Twelve series settle on the
+    same second and a close can hold MAX_PER_CLOSE buys; when a close loses,
+    every fill on it loses together. Drawing per fill would understate the
+    swings by roughly the square root of the fills per close, and this
+    project has already paid for that mistake once (three fills on one NEAR
+    market spent the whole 3-loss budget on a single event).
+
+    THE BRAKE IS MODELLED because it is real: `losing_closes` is a set that
+    accumulates over a whole --minutes 4320 run, so `brake_closes` losing
+    closes inside `run_days` halts the bot until a human restarts it. Here a
+    halt costs the REST OF THAT DAY, which is optimistic -- a real halt lasts
+    until the operator looks.
+    """
+    import random
+    rng = random.Random(seed)
+    win_amt, lose_amt = (1.0 - p) - fee(p), p + fee(p)
+    hit = {r: [] for r in RUNGS}
+    ends, halts, drawdowns, ruined = [], [], [], 0
+    for t in range(trials):
+        b = bank
+        peak = b
+        dd = 0.0
+        nhalt = 0
+        seen = set()
+        lc, runday = 0, 0
+        for d in range(days):
+            r = rung_for(b, p)
+            if r == 0:
+                ruined += 1
+                break
+            if r not in seen:
+                seen.add(r)
+                hit[r].append(d)
+            if runday >= run_days:
+                runday, lc = 0, 0          # a fresh run resets the counter
+            runday += 1
+            n = 0
+            while n < closes_day:
+                n += 1
+                if rng.random() < f:
+                    b -= r * per_close * lose_amt
+                    lc += 1
+                    if lc >= brake_closes:
+                        nhalt += 1
+                        break              # halted: rest of the day is lost
+                else:
+                    b += r * per_close * win_amt
+            peak = max(peak, b)
+            dd = max(dd, peak - b)
+        ends.append(b)
+        halts.append(nhalt)
+        drawdowns.append(dd)
+    ends.sort()
+    drawdowns.sort()
+
+    def pct(v, q):
+        return v[min(len(v) - 1, int(q * len(v)))]
+    out = {"ends": ends, "p10": pct(ends, 0.10), "p50": pct(ends, 0.50),
+           "p90": pct(ends, 0.90), "mean_halts": sum(halts) / trials,
+           "dd50": pct(drawdowns, 0.50), "dd90": pct(drawdowns, 0.90),
+           "dd_max": drawdowns[-1], "ruined": ruined / trials,
+           "worse": sum(1 for e in ends if e < bank) / trials, "hit": {}}
+    for r in RUNGS:
+        v = sorted(hit[r])
+        if v:
+            out["hit"][r] = (pct(v, 0.10), pct(v, 0.50), pct(v, 0.90),
+                             len(v) / trials)
+    return out
+
+
 def selftest():
     print("SELF-TEST -- pinproj")
     fails = []
@@ -120,6 +199,33 @@ def selftest():
     out, end = simulate(140.24, 0.005, 0.97, 50, days=400)
     ck(out[-1][1] == DEPTH_CAP,
        f"a 0.5% loss rate reaches the 125 cap (last rung {out[-1][1]})")
+
+    # --- the Monte Carlo must agree with the smooth model on the MEAN and
+    # --- disagree with it on everything else, or it is not adding anything
+    mc = montecarlo(140.24, 0.0051, 0.97, 42, days=6, trials=1500, seed=2)
+    sm, _ = simulate(140.24, 0.0051, 0.97, 42 * 1.2, days=6)
+    smooth_end = simulate(140.24, 0.0051, 0.97, 42 * 1.2, days=6)[1]
+    ck(abs(mc["p50"] - smooth_end) / smooth_end < 0.25,
+       f"the random model's median lands near the smooth model "
+       f"(${mc['p50']:.0f} vs ${smooth_end:.0f})")
+    ck(mc["p10"] < mc["p50"] < mc["p90"] and mc["p90"] - mc["p10"] > 20,
+       f"and it spreads, which the smooth model cannot "
+       f"(p10 ${mc['p10']:.0f} .. p90 ${mc['p90']:.0f})")
+    ck(mc["dd90"] > 0,
+       f"it produces real drawdowns (90th pct ${mc['dd90']:.0f})")
+    # a per-close loss must cost more than a per-fill loss would
+    a = montecarlo(140.24, 0.0051, 0.97, 42, per_close=1.0, days=20,
+                   trials=800, seed=5)
+    b_ = montecarlo(140.24, 0.0051, 0.97, 42, per_close=2.0, days=20,
+                    trials=800, seed=5)
+    ck(b_["dd90"] > a["dd90"],
+       f"two fills per losing close hurts more than one "
+       f"(${b_['dd90']:.0f} vs ${a['dd90']:.0f} at the 90th pct)")
+    # and a hopeless world must ruin people
+    bad = montecarlo(140.24, 0.25, 0.97, 42, days=40, trials=400, seed=9)
+    ck(bad["worse"] > 0.9,
+       f"a 25% loss rate leaves almost everyone poorer "
+       f"({100*bad['worse']:.0f}%)")
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     return not fails
 
@@ -188,6 +294,34 @@ def main():
     print(f"  breakeven loss rate: "
           + ", ".join(f"{100*pp:.1f}c -> {100*(1-pp-fee(pp)):.2f}%"
                       for pp in prices))
+
+    # ---- the same thing WITH LOSSES ACTUALLY HAPPENING ----------------
+    cpd = n / 1.2
+    mc = montecarlo(bank, f, p, cpd, days=40, trials=6000)
+    print(f"\n  {'='*74}")
+    print(f"  NOW WITH REAL LOSSES: {cpd:.0f} closes/day, 1.2 fills each, "
+          f"6,000 runs of 40 days.")
+    print(f"  A losing CLOSE loses every fill on it -- that is how the brake "
+          f"counts, and how\n  the NEAR close actually cost us three fills "
+          f"at once.")
+    print(f"  {'='*74}")
+    print(f"  {'size':>6}{'unlucky (p10)':>16}{'typical':>10}"
+          f"{'lucky (p90)':>14}{'reached within 40d':>21}")
+    for r in RUNGS:
+        if r not in mc["hit"]:
+            continue
+        lo, md, hi, frac = mc["hit"][r]
+        print(f"  {r:>6}{'day ' + str(hi):>16}{'day ' + str(md):>10}"
+              f"{'day ' + str(lo):>14}{100*frac:>20.1f}%")
+    print(f"\n  bank after 40 days:  unlucky ${mc['p10']:,.0f}   "
+          f"typical ${mc['p50']:,.0f}   lucky ${mc['p90']:,.0f}")
+    print(f"  worst dip along the way: typical ${mc['dd50']:,.0f}, "
+          f"1-in-10 ${mc['dd90']:,.0f}, worst seen ${mc['dd_max']:,.0f}")
+    print(f"  chance of ending 40 days POORER than you started: "
+          f"{100*mc['worse']:.1f}%")
+    print(f"  times the 3-losing-close brake halts you: "
+          f"{mc['mean_halts']:.2f} in 40 days "
+          f"(each one needs a human to restart)")
 
     print(f"\n  IF THE FILL RATE IS WRONG (loss {100*f:.2f}%, price "
           f"{100*p:.1f}c)")
