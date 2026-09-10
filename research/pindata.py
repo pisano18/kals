@@ -90,9 +90,23 @@ class Book:
         self.yes.clear()
         self.no.clear()
         self.born.clear()
-        for side, key in (("yes", "yes_dollars"), ("no", "no_dollars")):
+        # THE TAPE CARRIES `yes_dollars_fp` / `no_dollars_fp`. This read
+        # `yes_dollars` / `no_dollars`, which appear on ZERO messages, so
+        # SNAPSHOT SEEDING HAS NEVER WORKED and every replayed book in this
+        # project was rebuilt from deltas alone, starting empty. Found
+        # 2026-09-08, fixed 2026-09-10 after the backtest failed to reproduce
+        # three real losses.
+        # Both spellings are accepted so an old fixture still loads, and
+        # `_fp` is preferred because that is what the exchange actually sends.
+        for side, keys in (("yes", ("yes_dollars_fp", "yes_dollars")),
+                           ("no", ("no_dollars_fp", "no_dollars"))):
             d = self.yes if side == "yes" else self.no
-            for pair in (msg.get(key) or []):
+            levels = None
+            for key in keys:
+                if msg.get(key):
+                    levels = msg[key]
+                    break
+            for pair in (levels or []):
                 try:
                     p, q = round(float(pair[0]), 4), float(pair[1])
                 except Exception:
@@ -238,8 +252,10 @@ def selftest():
             fails.append(m)
 
     b = Book()
-    b.snapshot({"yes_dollars": [["0.60", "100"], ["0.59", "50"]],
-                "no_dollars": [["0.39", "200"]]}, 1000)
+    # THE REAL WIRE FORMAT. A fixture using the legacy spelling passed for
+    # weeks while the loader silently seeded nothing from the actual tape.
+    b.snapshot({"yes_dollars_fp": [["0.60", "100"], ["0.59", "50"]],
+                "no_dollars_fp": [["0.39", "200"]]}, 1000)
     yb, nb = b.best()
     ck(yb == 0.60 and nb == 0.39, f"snapshot best yes {yb} no {nb}")
     ck(abs(b.depth("yes", 3) - 150.0) < 1e-9, "depth sums the top levels")
