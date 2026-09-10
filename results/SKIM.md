@@ -234,6 +234,28 @@ fill does not book and a real partial still does.
 
 ---
 
+### 4. SWEEP THE SURPLUS ONCE WE HIT THE CAPACITY CEILING
+
+Joe's instinct, 2026-09-10: once the bet size caps out, the extra money is doing
+nothing, so take it off the table.
+
+**He is right about the money and wrong about the reason.** The cap does not make
+anything "guaranteed won" — every close still risks the full stake, and at size
+125 a losing close costs about $120. What is true is that **only ~$940 is doing
+any work**. Above that, capital sits idle *and stays exposed to the account's
+own risk of ruin* for zero return.
+
+**POLICY: once size caps at ~125 contracts, sweep everything above ~$1,100 out
+of the Crypto shard.** That surplus is then genuinely out of reach. It also
+means a catastrophic loss rate can only ever destroy the working float, not the
+winnings.
+
+Needs: a withdrawal path (never automatic — the operator moves money, not me),
+a float threshold with hysteresis so it does not sweep and refund daily, and the
+size ladder recomputed against the *float*, not the total balance.
+
+---
+
 ## OPEN QUESTIONS — where pushback is worth most
 
 1. **THE RACE.** 26% of orders fill nothing. Depth is not the cause (misses had 562, 107, 93 contracts on offer). Our round trip is ~100ms whether we win or lose; misses happen on *fresher* prices. Suggests we lose to **already-resting** orders, not faster ones. Unmeasurable from tape so far.
