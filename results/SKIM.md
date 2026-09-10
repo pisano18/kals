@@ -149,6 +149,64 @@ contracts available and we took 20. Needs: cheap-offer frequency (only 3 of
 
 ---
 
+## ⭐⭐ THE BACKTEST IS FIXED, AND THE REMAINING GAP HAS A SUSPECT
+
+**Two real bugs fixed 2026-09-10.** `Book.snapshot()` read `yes_dollars`; the
+tape sends `yes_dollars_fp`, so snapshot seeding NEVER worked and every replayed
+book was delta-only. And `fulltape/markets.json` was stale to 09-06, so all
+three real losses had no settlement and were invisible. `research/pinverify.py`
+is the acceptance test: **3 real losses AND 2 real wins must all reproduce.**
+It now passes. It caught two errors of mine first, including a fixture where I
+had typed the wrong side for 4 of 5 trades.
+
+| | fixed | old (broken) |
+|---|---|---|
+| rows | **53,555** | 28,479 |
+| closes | **151** | 80 |
+| losing closes | **1 = 0.66%** | 0 = 0.00% |
+| avg price | 93.77¢ | 93.06¢ |
+| profit/contract | **+5.38¢** | +6.50¢ |
+
+**But the backtest still says 0.66% while live says 5.71% (2 in 35).**
+
+### THE SUSPECT: we are filled at prices nobody meant to give us
+
+| | n | asked | paid | improvement |
+|---|---|---|---|---|
+| wins | 78 | 94.91¢ | 94.41¢ | **0.49¢** |
+| **losses** | 5 | 90.90¢ | 88.16¢ | **2.74¢** |
+
+Fills bettering our ask by **>0.5¢ lost 25% of the time**; fills at or near our
+ask lost **5.1%**. The worst: we bid **95.7¢ on XRP and were filled at 82¢** —
+13.7¢ of unexpected generosity, and it lost $16.61.
+
+**The mechanism: the backtest models the trade we INTENDED, at the displayed
+price. Live we get the trade someone CHOSE to hand us — and a seller in a hurry
+often knows something.** That is a different, adversely-selected population, and
+it would explain the whole 0.66%-vs-5.71% gap without the replay being wrong.
+
+### THE EVIDENCE AGAINST IT, which matters
+
+**Our single biggest win was also our biggest price improvement.** The 22¢ SOL
+fill was bid at 56¢ — **34¢ of improvement** — and made **+$15.36**. So a
+surprising fill is not simply poison; it is HIGH VARIANCE. Of the two largest
+improvements on record, one won huge and one lost huge.
+
+**And it rests on five losses.** The 25%-vs-5% split turns on ONE loss among
+four improved fills. Three patterns of exactly this shape have already dissolved
+under proper testing this week. **Do not deploy anything on it.**
+
+### HOW TO SETTLE IT
+
+The rebuilt dataset carries `price` and `spread` per moment, so the modelled
+fill can be compared against the touch across 53,555 rows rather than 83. Test
+whether flip rate rises with the gap between ask and fill, clustered by close,
+with a shuffled control. If it survives, the fix is not a gate but a **price
+sanity check**: refuse a fill that betters our ask by more than X, because it is
+not the trade we priced.
+
+---
+
 ## 📌 FRIDAY LIST — raised by Joe 2026-09-09, not yet started
 
 ### 1. ROBINHOOD RUNS THE SAME MARKET ON THE SAME PRICE SOURCE
