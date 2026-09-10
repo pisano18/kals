@@ -239,6 +239,45 @@ above says even then it would be answering about a different population.
 ---
 
 
+## CORRECTION TO THE SECTION BELOW — I CONFLATED TWO CONFIGURATIONS
+
+The operator: *"How has it lost twice in two days when we put this version out
+this morning?"* **He is right and the section below overstates the case badly.**
+
+**What I got wrong:**
+1. **"Twice in two days" is false.** Both losses were on 2026-09-10. Kalshi
+   tickers are in ET, so `26SEP100100` is 01:00 ET = 05:00Z and
+   `26SEP101815` is 18:15 ET = 22:15Z — the same day.
+2. **Worse: the XRP loss at 04:59Z predates this version.** The 0.995 gate went
+   live at **08:33Z**. XRP was the OLD gate. Only the DOGE loss belongs to the
+   version we are running.
+3. **"Our entire profit is one trade" is a fact about the OLD gate, not this
+   one**, and I applied it to both.
+
+**THE CORRECT SPLIT:**
+
+| | fills | losses | P&L | without its best trade |
+|---|---|---|---|---|
+| old gate 0.98 | 85 | 5 | **−$3.89** | **−$19.25** — profit WAS one trade |
+| **new gate 0.995** | **26** | **1** | **+$17.28** | **+$15.21** — broad-based |
+
+**The new version's record is 26 fills, one loss, +$17.28, and its profit is
+NOT concentrated in one outlier.** The one-trade problem was real and it was
+the old gate's.
+
+**WHAT STILL STANDS, and it is narrower than I claimed:** `fair()` is the same
+function in both versions — the gate changed the threshold, not the model. So
+the deep-band evidence pools legitimately: **2 losses in 14 fills at 4+ sd,
+where the model claims ~1e−9.** The model's extreme-confidence tail is
+unreliable. But **only 3 of those 14 fills are under the current version**, so
+nothing can yet be said about this gate's deep-band rate.
+
+**THE SCALE-UP STAYS PAUSED — for the correct reason.** Not "the profit is one
+trade" (false for this version) but **26 fills is too few to scale on**, and
+the deep-band question is open. Hold at 20.
+
+---
+
 ## 🚨 THE HONEST STATE, 2026-09-10 23:0xZ — OUR ENTIRE PROFIT IS ONE TRADE
 
 Operator: *"I don't care if 'we got lucky and only lost 2 dollars', that isn't
