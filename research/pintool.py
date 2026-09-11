@@ -319,6 +319,44 @@ def sandbox_job(job):
         job.update(status="error", error=repr(e))
 
 
+# ----------------------------------------------------------------- replay
+REPLAYS = {}
+
+
+def replay_job(job):
+    """Runs pinsim.py --stream as a SEPARATE process (same isolation as the
+    sandbox: this server never imports the replay) and buffers its frames."""
+    try:
+        pth = os.path.join(SANDBOX, f"{job['id']}.profile.json")
+        os.makedirs(SANDBOX, exist_ok=True)
+        with open(pth, "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in job["profile"].items()
+                       if not k.startswith("_")}, f)
+        cmd = [PYTHON, PINSIM, "--profile", pth, "--stream",
+               f"{job['start']},{job['end']}"]
+        if job.get("coins"):
+            cmd += ["--coins", ",".join(job["coins"])]
+        env = dict(os.environ, KALS_SELFTESTED="1")
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, env=env,
+                                cwd=REPO, bufsize=1)
+        job["proc"] = proc
+        for line in proc.stdout:
+            if not line.startswith("{"):
+                continue
+            try:
+                job["frames"].append(json.loads(line))
+            except Exception:
+                continue
+        proc.wait()
+        err = proc.stderr.read()[-2000:]
+        job["status"] = "done" if proc.returncode == 0 else "error"
+        if err.strip():
+            job["stderr"] = err
+    except Exception as e:                                   # noqa: BLE001
+        job.update(status="error", error=repr(e))
+
+
 # ------------------------------------------------------------------ learn
 CONCEPTS = {
     "the-settlement-window": (
@@ -500,6 +538,19 @@ class Handler(BaseHTTPRequestHandler):
                                         if k != "thread"})
             if u.path == "/api/sandbox/history":
                 return self._json(200, run_history())
+            if u.path.startswith("/api/replay/"):
+                rid = u.path.rsplit("/", 1)[1]
+                j = REPLAYS.get(rid)
+                if not j:
+                    return self._json(404, {"error": "no such replay"})
+                frm = int(q.get("from", ["0"])[0])
+                lim = int(q.get("limit", ["120"])[0])
+                fr = j["frames"]
+                return self._json(200, {
+                    "status": j["status"], "total": len(fr),
+                    "from": frm, "frames": fr[frm:frm + lim],
+                    "error": j.get("error"), "stderr": j.get("stderr"),
+                    "start": j["start"], "end": j["end"]})
             if u.path == "/api/sandbox/newest":
                 ns = newest_settlement_iso()
                 nb = len(glob.glob(os.path.join(DATA, "orderbook_delta",
@@ -547,6 +598,33 @@ class Handler(BaseHTTPRequestHandler):
                 job["thread"] = th
                 th.start()
                 return self._json(200, {"job": jid})
+            if u.path == "/api/replay/start":
+                prof = body.get("profile", "default")
+                if isinstance(prof, str):
+                    prof = {k: v for k, v in pinrules.load(prof).items()
+                            if not k.startswith("_")}
+                bad = pinrules.validate(prof)
+                if bad:
+                    return self._json(400, {"error": "profile refused",
+                                            "problems": bad})
+                start, end = int(body["start"]), int(body["end"])
+                if end <= start or end - start > 6 * 3600:
+                    return self._json(400, {"error": "window must be 1 s to "
+                                                     "6 h"})
+                # one replay at a time: stop any running one
+                for old in list(REPLAYS.values()):
+                    p_ = old.get("proc")
+                    if p_ and p_.poll() is None:
+                        p_.terminate()
+                        old["status"] = "stopped"
+                rid = uuid.uuid4().hex[:10]
+                job = {"id": rid, "status": "running", "frames": [],
+                       "profile": prof, "start": start, "end": end,
+                       "coins": body.get("coins")}
+                REPLAYS[rid] = job
+                th = threading.Thread(target=replay_job, args=(job,), daemon=True)
+                th.start()
+                return self._json(200, {"replay": rid})
             if u.path == "/api/control":
                 code, out = write_control(body)
                 return self._json(code, out)

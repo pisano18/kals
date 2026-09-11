@@ -263,6 +263,24 @@ endpoint + AMENDMENT 11 in the trader (own self-test, quiet-window restart).
 5. A failed process check must never read as "not running" (fixed: unknown +
    log freshness).
 
+## WHAT THE PLAYER SHOWED ON ITS FIRST RUN (2026-09-11) -- keep this on screen
+
+Streamed the XRP loss window (2026-09-10 04:58:30 -> 05:00:20Z). At the live
+signal second (t-21) the replay's model is IDENTICAL to live -- fair 1.0,
+7.03 sd, sway 1.38882 -- but **the reconstructed book has NO yes ask at that
+second** (`yes_ask: None`, `no_ask: 0.003`), so the replay says `no_offer`,
+while live we were filled YES at 82c. Seven seconds later the index has
+dropped, the model flips, and the replay buys NO at 84c and WINS (+$2.26).
+
+So on this exact market the replay makes the opposite, correct trade -- and
+the reason is the book: the offer we actually hit is not in the
+snapshot+delta reconstruction at that second. **This is the adverse-fill
+blind spot, reproducible, and the player must label it**: when a live fill
+exists for a market and the replay shows no offer, say so in the frame.
+Whether the missing level is a tape gap or an intra-second offer is an open
+measurement (compare the live signal's book_age and the tape's deltas for
+that market in the 2 s before 04:59:39).
+
 ## RESUME HERE (written 2026-09-11 ~01:0xZ, before the usage cutoff)
 
 Done and pushed: `pinrules.py` (schema, rules, trackers, profiles, SCHEDULES --

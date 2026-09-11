@@ -323,6 +323,11 @@ def main():
     ap.add_argument("--sweep", default=None,
                     help="PARAM=v1,v2,... run once per value in THIS process "
                          "so the tape cache serves every value")
+    ap.add_argument("--stream", default=None,
+                    help="START,END epoch seconds: print one JSON frame per "
+                         "tape second (the replay player)")
+    ap.add_argument("--coins", default=None,
+                    help="comma-separated series to include in --stream")
     a = ap.parse_args()
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
@@ -330,6 +335,13 @@ def main():
         raise SystemExit("self-test failed -- refusing to touch real data")
 
     profile = pinrules.load(a.profile)
+    if a.stream:
+        s0, s1 = (int(x) for x in a.stream.split(","))
+        coins = set(a.coins.split(",")) if a.coins else None
+        for fr in stream(profile, s0, s1, size=a.size, coins=coins):
+            sys.stdout.write(json.dumps(fr, separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+        return
     if a.sweep:
         name, vals = a.sweep.split("=", 1)
         typ = pinrules.PARAMS[name][0]
@@ -584,6 +596,159 @@ def run(profile, hours, end=None, size=None, log=None, progress=None):
     return report(bought, refused, rule_tally, skips, profile,
                   size=size, hours=len(stamps), log=say,
                   bad_deltas=bad_deltas, newest_settle=ns)
+
+
+# ------------------------------------------------------------ the replay player
+def stream(profile, start_sec, end_sec, size=None, coins=None):
+    """THE SIMULATION AS A LIVE CHART. Yields one FRAME per tape second from
+    `start_sec` to `end_sec`, through pinrun's own decision code under
+    `profile`, exactly as run() decides -- so what the operator watches IS
+    the backtest, not a picture of it.
+
+    A frame: {"t": sec, "index": {coin: spot}, "markets": [per market inside
+    its last 60 s: ticker, coin, close, tau, strike, mu, fair, margin_sd,
+    yes_ask, no_ask, sway (the average the remaining prints must hit to land
+    the settlement ON the strike), want, price, verdict, fired, bought],
+    "tally": {fills, wins, losses, pnl, refused}, "events": [what settled or
+    was bought this second]}. The operator asked for this to see, with his
+    own eyes, that the backtest behaves like the live bot -- peace of mind is
+    a legitimate deliverable.
+    """
+    import calendar
+    apply_profile(profile)
+    if size is not None:
+        pinrun.SIZE = size
+    mk = load_markets()
+    if coins:
+        mk = {k: v for k, v in mk.items() if v["series"] in coins}
+    stamps = []
+    s = start_sec - (start_sec % 3600)
+    while s <= end_sec:
+        stamps.append(time.strftime("%Y%m%dT%H", time.gmtime(s)))
+        s += 3600
+    tally = {"fills": 0, "wins": 0, "losses": 0, "pnl": 0.0, "refused": 0}
+    open_pos = {}          # ticker -> (want, price, n)
+    decided = set()
+    settled_done = set()
+    for stamp in stamps:
+        hour = load_hour(stamp, mk)
+        if not hour["ticks"]:
+            continue
+        idx = TapeIndex(sorted(hour["ticks"]))
+        pend = {k: list(v) for k, v in hour["ticks"].items()}
+        books = {}
+        for tk, m, ts in hour["snaps"]:
+            books.setdefault(tk, pindata.Book()).snapshot(m, ts)
+        last_sec = None
+        for ts, tk, side, price, dq in hour["deltas"]:
+            if tk is not None:
+                try:
+                    books.setdefault(tk, pindata.Book()).delta(side, price, dq, ts)
+                except Exception:
+                    pass
+            sec = ts // 1000
+            if sec == last_sec:
+                continue
+            last_sec = sec
+            idx.now = sec
+            idx.feed_upto(pend, sec)
+            if sec < start_sec:
+                continue
+            if sec > end_sec:
+                return
+            frame = {"t": sec, "index": {}, "markets": [], "events": []}
+            for iid in idx.ticks:
+                _, sp, _ = idx.spot(iid)
+                if sp is not None:
+                    frame["index"][iid] = sp
+            # settlements that landed this second
+            for tkk, (w, px, n) in list(open_pos.items()):
+                cs = int(float(mk[tkk]["close"]))
+                if sec >= cs and tkk not in settled_done:
+                    res = mk[tkk]["result"]
+                    yes = (str(res).lower() == "yes") if isinstance(res, str) \
+                        else float(res) >= 0.5
+                    won = yes == (w == "yes")
+                    pnl = (n * (1 - px) if won else -n * px) - pinrun.billed_fee(px, n)
+                    tally["fills"] += 1
+                    tally["wins" if won else "losses"] += 1
+                    tally["pnl"] = round(tally["pnl"] + pnl, 4)
+                    settled_done.add(tkk)
+                    open_pos.pop(tkk, None)
+                    frame["events"].append({"kind": "settled", "ticker": tkk,
+                                            "won": won, "pnl": round(pnl, 4)})
+            for tkk, bkk in books.items():
+                r = mk[tkk]
+                cs = int(float(r["close"]))
+                tau = cs - sec
+                if not (0 < tau <= 60):
+                    continue
+                iid = pindata.SERIES_TO_INDEX[r["series"]]
+                if iid not in idx.ticks:
+                    continue
+                b = book_view(bkk, ts)
+                sg = idx.sigma(iid)
+                dg = pindata.ROUND_DIGITS.get(r["series"])
+                K = pinrun.eff_strike(float(r["strike"]), dg)
+                part = idx.partial(iid, cs, sec)
+                _, spot, iage = idx.spot(iid)
+                row = {"ticker": tkk, "coin": r["series"], "close": cs,
+                       "tau": tau, "strike": float(r["strike"]), "spot": spot,
+                       "yes_ask": b.get("yes_ask"), "no_ask": b.get("no_ask"),
+                       "yes_ask_size": b.get("yes_ask_size"),
+                       "no_ask_size": b.get("no_ask_size")}
+                if part and sg and spot is not None:
+                    locked, rr = part
+                    mu = (locked + rr * spot) / pinrun.N_AVG
+                    row["mu"] = mu
+                    row["sway"] = ((pinrun.N_AVG * K - locked) / rr) if rr > 0 else None
+                    f = pinrun.fair(idx, iid, cs, sec, float(r["strike"]),
+                                    sg * pinrun.SIGMA_STRESS, round_digits=dg)
+                    if f is not None:
+                        conf = f if f >= 0.5 else 1 - f
+                        row["fair"] = round(f, 6)
+                        row["conf"] = round(conf, 6)
+                        row["margin_sd"] = round(_ND.inv_cdf(
+                            min(max(conf, 1e-12), 1 - 1e-12)), 3)
+                        if tkk not in decided and \
+                                pinrun.TAU_MIN <= tau <= pinrun.TAU_MAX and \
+                                b["age_ms"] is not None and \
+                                b["age_ms"] <= pinrun.MAX_BOOK_AGE_MS:
+                            side0 = "yes" if f >= 0.5 else "no"
+                            pre = record(f, side0, b.get(f"{side0}_ask") or 0.0,
+                                         0.0, b.get(f"{side0}_ask_size") or 0.0,
+                                         tau, r["series"], sec, sg, spot,
+                                         b["age_ms"], iage)
+                            resolve_for(profile, pre)
+                            w, px, n, fv = decide(idx, iid, cs, sec,
+                                                  float(r["strike"]), dg, b,
+                                                  pinrun.SIZE)
+                            if w is None:
+                                row["why_not"] = px
+                            else:
+                                rc = record(fv, w, px, n, b.get(f"{w}_ask_size"),
+                                            tau, r["series"], sec, sg, spot,
+                                            b["age_ms"], iage)
+                                verdict, fired = pinrules.decide(profile, rc)
+                                row.update(want=w, price=px, take_n=n,
+                                           verdict=verdict,
+                                           fired=[x[0] for x in fired])
+                                decided.add(tkk)
+                                if verdict == "refuse":
+                                    tally["refused"] += 1
+                                    frame["events"].append(
+                                        {"kind": "refused", "ticker": tkk,
+                                         "rules": [x[0] for x in fired],
+                                         "price": px})
+                                else:
+                                    open_pos[tkk] = (w, px, n)
+                                    row["bought"] = True
+                                    frame["events"].append(
+                                        {"kind": "bought", "ticker": tkk,
+                                         "want": w, "price": px, "n": n})
+                frame["markets"].append(row)
+            frame["tally"] = dict(tally)
+            yield frame
 
 
 def _stats(rows):
