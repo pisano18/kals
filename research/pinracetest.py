@@ -323,6 +323,7 @@ def main():
 
     events = {}
     done = set()
+    seen_why = set()
     watched = set()
     last_disc = 0.0
     try:
@@ -388,13 +389,43 @@ def main():
                     continue
                 coin = next(iter(win))
                 tkr = e["legs"][coin]
+                # EVERY REASON WE DO NOT BUY IS RECORDED, ONCE PER EVENT PER
+                # REASON. The first version `continue`d silently here, so the
+                # 23:45 race on 2026-09-11 produced NO log line at all -- the
+                # same "silence looks like no edge" failure the
+                # cannot_evaluate record was added to kill, one stage later.
+                # "nobody was offering the winner" is the single most valuable
+                # thing this test can learn, and it was the invisible case.
                 b = book.best(tkr)
-                if not b or b.get("suspect") or b.get("age_ms") is None \
-                        or b["age_ms"] > MAX_BOOK_AGE_MS:
+                bad = None
+                if not b:
+                    bad = "no_book"
+                elif b.get("suspect"):
+                    bad = "book_suspect"
+                elif b.get("age_ms") is None:
+                    bad = "book_no_age"
+                elif b["age_ms"] > MAX_BOOK_AGE_MS:
+                    bad = "book_stale_%dms" % int(b["age_ms"])
+                else:
+                    ask, asz = b.get("yes_ask"), b.get("yes_ask_size")
+                    if not ask:
+                        bad = "no_yes_ask"          # nobody offering the winner
+                    elif not asz:
+                        bad = "ask_zero_size"
+                    elif ask >= 1.0:
+                        bad = "ask_at_a_dollar"
+                if bad:
+                    key = (evt, bad)
+                    if key not in seen_why:
+                        seen_why.add(key)
+                        rec("no_trade", event=evt, coin=coin, ticker=tkr,
+                            tau=tau, why=bad, margin=round(margin, 8),
+                            yes_ask=(b or {}).get("yes_ask"),
+                            yes_ask_size=(b or {}).get("yes_ask_size"),
+                            no_bid=(b or {}).get("no_bid"),
+                            watched=tkr in watched)
                     continue
                 ask, asz = b.get("yes_ask"), b.get("yes_ask_size")
-                if not ask or not asz or ask >= 1.0:
-                    continue
                 refusals = rails.check(float(ask), SIZE)
                 rec("candidate", event=evt, coin=coin, ticker=tkr, tau=tau,
                     ask=round(float(ask), 4), ask_size=float(asz),
