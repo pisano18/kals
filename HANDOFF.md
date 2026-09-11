@@ -1,3 +1,27 @@
+# 2026-09-11 13:0xZ -- OOM kill of the settlement refresh; replaced by a merge that needs no trade tape
+
+**What happened:** `kalshi_fulltape.py --markets 1200` was killed by the OS for
+low memory at market 600 of 1,200 with 3.5 million trade records resident,
+while the collector was running. Collectors verified alive after (45 MB /
+29 MB); free RAM recovered to 6.6 GB; the settlement file was untouched
+because that script writes only at the end. **Do not run kalshi_fulltape.py
+with a large --markets while the collector is up** -- and note it DUMPS only
+what it fetched, so a small run would overwrite the history.
+
+**Replacement:** `research/pinsettle.py` pulls settled market records only
+(result, close, the EXACT strike from custom_strike, round_digits, and
+expiration_value = the settlement level) and MERGES them into
+`fulltape/markets.json` -- adds new tickers, fills missing settle levels,
+never removes, backs the old file up, writes atomically. Memory: a few MB.
+Result: 14,161 -> 15,214 markets, 747 gained a settle level, newest settled
+close 2026-09-11T13:00Z. `pinverify` still passes on the merged file.
+
+**Also today (see VERSIONS v-a10c, v-a12):** the crazy-deal guard fixed
+(discount-only, 15c, the confidence condition dropped); scrap fills no longer
+spend a scale-in slot. Trader pid 602652.
+
+---
+
 # 2026-09-10 08:4xZ -- AMENDMENT 9 deployed: gate 0.98 -> 0.995 (pid 246096)
 
 The bar moved, on evidence, and it is written down in VERSIONS.md (v-pin995)
