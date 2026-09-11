@@ -48,11 +48,11 @@ profiles/default.json
 
 ## Components and build order (safest first; resume at the first unchecked box)
 
-- [ ] **`research/pinrules.py`** — param schema, condition language, profile
+- [x] **`research/pinrules.py`** — param schema, condition language, profile
       load/validate/save, `decide(profile, record)`. Self-test plants rules and
       checks refuse/log/allow, range validation, and that the crazy-deal rule
       reproduces the two real losses and spares the real cheap wins.
-- [ ] **`profiles/default.json`** — today's live rule exactly (A9 + A10b).
+- [x] **`profiles/default.json`** — today's live rule exactly (A9 + A10b).
 - [ ] **`pinsim.py --profile`** — per-rule would-be tallies, fit/holdout.
 - [ ] **`research/pintool.py`** — stdlib `http.server`; serves `tool/index.html`
       and JSON: `/api/live` (tail of the newest live log → state, equity curve,
