@@ -28,18 +28,13 @@
       "when": {
         "all": [
           [
-            "conf",
-            ">=",
-            0.999
-          ],
-          [
             "discount_c",
             ">",
-            5
+            15
           ]
         ]
       },
-      "note": "The model calls it certain and someone is still selling it 5c+ below fair. Both live losses at extreme confidence had this shape. EV undeterminable on six fills; owner chose fewer losses. Review at 40 records."
+      "note": "An offer more than 15c below the model's own fair value is someone else's information, not our edge. Live: 15c+ went 4 losses in 9 fills; 5-15c went 24-0 for +$32.20, which is why the line is 15 and not 5. The confidence condition was dropped after KXSOL15M 2026-09-11 slipped through at 99.508%. The 15c line is FITTED on 9 fills and claims no significance; the 40-record review decides it."
     }
   ]
 }
