@@ -714,5 +714,18 @@ fixed 2026-09-10).
    population it cannot see.
 3. **Every loss-rate claim comes from live fills** until pinsim reproduces live
    loss outcomes. Quote them as (gate version, n fills, n closes, window).
+5. **NEVER QUOTE A LOSS RATE FROM THE TAPE. NOT ONCE, NOT WITH CAVEATS.**
+   Measured 2026-09-11 at the live gate: the tape says 0.11% (1 of 891
+   markets, CI [0.00, 0.61]); live says 3.4% (2 of 59, CI [0.4, 11.7]). The
+   intervals DO NOT OVERLAP -- a 31x gap. The cause is structural and
+   permanent: the tape's population is "an offer was sitting there", ours is
+   "someone actively sold it to us", and only the second is adversely
+   selected. The 82c XRP fill we actually took does not exist anywhere in the
+   replayed book.
+   The tape is valid for: what the index did, what the model computed, what
+   the market did. It is INVALID for: how often WE lose, and what a rule
+   would have cost US. Those come from live fills only. The operator caught
+   this rule being broken three times in one day; if a number is about our
+   losses and its source is pindata/pinsim, it does not get shown.
 4. **No threshold is deployed from a replay without a holdout split AND a
    pre-registered live bar written before the number is seen.**
