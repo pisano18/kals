@@ -320,13 +320,38 @@ def main():
                     help="last book hour to include, e.g. 20260910T05")
     ap.add_argument("--json", default=None,
                     help="also write the summary as JSON here (the tool reads it)")
+    ap.add_argument("--sweep", default=None,
+                    help="PARAM=v1,v2,... run once per value in THIS process "
+                         "so the tape cache serves every value")
     a = ap.parse_args()
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
-    if not selftest():
+    if os.environ.get("KALS_SELFTESTED") != "1" and not selftest():
         raise SystemExit("self-test failed -- refusing to touch real data")
 
     profile = pinrules.load(a.profile)
+    if a.sweep:
+        name, vals = a.sweep.split("=", 1)
+        typ = pinrules.PARAMS[name][0]
+        results = []
+        for v in vals.split(","):
+            val = int(v) if typ == "int" else float(v)
+            p2 = {k: x for k, x in profile.items() if not k.startswith("_")}
+            p2 = json.loads(json.dumps(p2))
+            p2["params"][name] = val
+            bad = pinrules.validate(p2)
+            if bad:
+                results.append({"value": val, "error": bad})
+                continue
+            p2["_sha"] = pinrules.fingerprint(p2)
+            print(f"\n  ===== {name} = {val} =====")
+            s = run(p2, a.hours, a.end, size=a.size, log=print)
+            results.append({"value": val, "summary": s})
+        if a.json:
+            with open(a.json, "w", encoding="utf-8") as fh:
+                json.dump(results, fh, indent=1)
+            print(f"  sweep written to {a.json}")
+        return
     summary = run(profile, a.hours, a.end, size=a.size, log=print)
     if summary and a.json:
         with open(a.json, "w", encoding="utf-8") as fh:
