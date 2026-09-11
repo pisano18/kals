@@ -53,7 +53,7 @@ profiles/default.json
       checks refuse/log/allow, range validation, and that the crazy-deal rule
       reproduces the two real losses and spares the real cheap wins.
 - [x] **`profiles/default.json`** — today's live rule exactly (A9 + A10b).
-- [ ] **`pinsim.py --profile`** — per-rule would-be tallies, fit/holdout.
+- [x] **`pinsim.py --profile`** — per-rule would-be tallies, fit/holdout.
 - [ ] **`research/pintool.py`** — stdlib `http.server`; serves `tool/index.html`
       and JSON: `/api/live` (tail of the newest live log → state, equity curve,
       the live "number needed to sway the average", brake counters, bars
@@ -87,6 +87,33 @@ profiles/default.json
 - [ ] **`pinrun.py --profile` + CONTROL.json reader** — separate amendment.
       Pause = stop opening positions, keep settling; stop = finish open
       positions, write `end`, exit.
+
+## RESUME HERE (written 2026-09-11 ~01:0xZ, before the usage cutoff)
+
+Done and pushed: `pinrules.py` (schema, rules, trackers, profiles, self-test),
+`profiles/default.json` (= the live rule), `pinsim.py --profile X --hours N
+--end YYYYMMDDTHH --json out.json` (the sandbox backend: per-rule would-be
+tallies, fit/holdout, 70%-fill pair). Verified on 6 settled hours ending
+20260910T05: 23 traded, dump rule fired on real moments, JSON written to
+`results/pinsim_default_6h.json` -- that file is the shape the tool reads.
+
+Next, in order: `research/pintool.py` (stdlib http.server: `/api/live`,
+`/api/profiles`, `/api/schema` from pinrules.PARAMS + FIELDS, `/api/sandbox/run`
+spawning `pinsim --profile --json` in a thread, `/api/sandbox/status`,
+`/api/control`, `/api/learn`; bind 127.0.0.1, `--lan` for the phone) then
+`tool/index.html` (Live / Sandbox / Profiles / Learn; every param control drawn
+from `/api/schema` with its meaning; rule editor = field/op/value rows +
+action; FIT and HOLDOUT always side by side; Chart.js from cdnjs).
+
+Two things noticed and NOT chased, for later:
+* The XRP loss (05:00Z close, live filled at 82c after bidding 95.7c) did NOT
+  trip the dump rule in replay -- at the second the replay decides, the resting
+  ask it sees is not the 82c we were actually filled at. The adverse-fill
+  population is exactly what a replay of resting offers cannot see; the tool
+  must say so wherever it shows the dump rule's would-be numbers.
+* Settlements on file end 2026-09-10T05:45Z. `kalshi_fulltape.py` refreshes
+  them (writes C:\kalsulltape, allowed). The tool's sandbox should show the
+  newest settlement and refuse windows past it rather than "bought 0".
 
 ## Rules that do not bend
 

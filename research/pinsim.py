@@ -55,6 +55,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import pinrun                                                # noqa: E402
 import pindata                                               # noqa: E402
+import pinrules                                              # noqa: E402
+from statistics import NormalDist                            # noqa: E402
+_ND = NormalDist()
 
 DATA = r"C:\kals\kalshi_data"
 FULLTAPE = r"C:\kals\fulltape\markets.json"
@@ -138,6 +141,36 @@ def decide(idx, iid, close_s, now_s, strike, digits, b, size):
     return want, price, take_n, f
 
 
+def record(f, want, price, take_n, avail, tau, series, sec, sg, spot,
+           book_age_ms, index_age_s, cond=(None, None, None)):
+    """THE DECISION RECORD -- the contract between live and replay
+    (pinrules.FIELDS). Everything a rule may see, all backward-looking."""
+    conf = f if want == "yes" else 1.0 - f
+    cc = min(max(conf, 1e-12), 1 - 1e-12)
+    return {
+        "fair": round(f, 6), "conf": round(conf, 6),
+        "margin_sd": round(_ND.inv_cdf(cc), 3), "want": want,
+        "price": round(price, 4),
+        "discount_c": round(100.0 * (conf - price), 2),
+        "edge_c": round(100.0 * pinrun.net_edge(f, price, want), 3),
+        "ev_c": round(100.0 * pinrun.expected_value(price), 3),
+        "tau": int(tau), "depth": float(avail), "take_n": float(take_n),
+        "coin": series, "hour_utc": time.gmtime(sec).tm_hour,
+        "sigma": sg, "spot": spot,
+        "cond_x": cond[0], "cond_n": cond[1], "cond_own": cond[2],
+        "book_age_ms": book_age_ms, "index_age_s": index_age_s,
+    }
+
+
+def apply_profile(profile):
+    """Run pinrun's OWN decision code under a profile's params -- the
+    constants are module attributes read at call time, so setting them is
+    exactly what a restart with those values would do."""
+    for k, v in profile["params"].items():
+        if hasattr(pinrun, k):
+            setattr(pinrun, k, v)
+
+
 # ------------------------------------------------------------------ self-test
 def selftest():
     print("SELF-TEST -- pinsim")
@@ -190,6 +223,27 @@ def selftest():
     ck(abs(pinrun.PIN - 0.995) < 1e-9,
        f"and it is reading the LIVE gate right now ({pinrun.PIN})")
 
+    # --- profiles: the same decision code under DATA ------------------------
+    prof = pinrules.default_profile()
+    r_ = record(1.0, "yes", 0.82, 20.0, 500.0, 21, "KXXRP15M", C - 21,
+                0.00008, 1.39075, 2, 0.18)
+    ck(set(r_) == set(pinrules.FIELDS),
+       "record() produces EXACTLY the fields a rule may see -- no more, no less")
+    v_, fired_ = pinrules.decide(prof, r_)
+    ck(v_ == "refuse" and fired_ == [("dump", "refuse")],
+       "the XRP loss, rebuilt as a decision record, is refused by the "
+       "default profile's rule")
+    saved = pinrun.PIN
+    p2 = json.loads(json.dumps(prof))
+    p2["params"]["PIN"] = 0.98
+    apply_profile(p2)
+    ck(abs(pinrun.PIN - 0.98) < 1e-12,
+       "apply_profile() changes the live constant the decision code reads")
+    w4, why4, _, _ = decide(ix2, "T", C, C - 10, 50.0, 2, b2, 20)
+    apply_profile(prof)
+    ck(abs(pinrun.PIN - saved) < 1e-12,
+       "and applying the default puts it back exactly")
+
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
         print("   - " + m)
@@ -229,15 +283,28 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--hours", type=int, default=24)
-    ap.add_argument("--size", type=float, default=20.0)
+    ap.add_argument("--size", type=float, default=None,
+                    help="override the profile's SIZE")
+    ap.add_argument("--profile", default="default",
+                    help="profile name in profiles/ or a path")
+    ap.add_argument("--end", default=None,
+                    help="last book hour to include, e.g. 20260910T05")
+    ap.add_argument("--json", default=None,
+                    help="also write the summary as JSON here (the tool reads it)")
     a = ap.parse_args()
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
     if not selftest():
         raise SystemExit("self-test failed -- refusing to touch real data")
 
-    pinrun.globals()["SIZE"] = a.size if False else None  # noqa
-    pinrun.SIZE = a.size
+    profile = pinrules.load(a.profile)
+    apply_profile(profile)
+    if a.size is not None:
+        pinrun.SIZE = a.size
+    a.size = pinrun.SIZE
+    print(f"\n  profile {profile['name']} sha {profile['_sha']}: "
+          f"{len(profile['rules'])} rules, worst case "
+          f"{pinrules.worst_case(profile['params'])}")
 
     mk = {}
     for v in json.load(open(FULLTAPE, encoding="utf-8")).values():
@@ -246,18 +313,33 @@ def main():
                     r.get("result") is not None:
                 mk[r["ticker"]] = r
     bfiles = sorted(glob.glob(os.path.join(
-        DATA, "orderbook_delta", "2026*.jsonl.gz")))[:-1][-a.hours:]
+        DATA, "orderbook_delta", "2026*.jsonl.gz")))[:-1]
+    if a.end:
+        bfiles = [f for f in bfiles if os.path.basename(f)[:11] <= a.end]
+    bfiles = bfiles[-a.hours:]
+    newest_settle = max(float(r["close"]) for r in mk.values())
+    print(f"  newest settlement on file: "
+          f"{time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(newest_settle))} "
+          f"-- book hours after it cannot resolve and count as nothing")
     snaps = {os.path.basename(f)[:11]: f for f in sorted(glob.glob(
         os.path.join(DATA, "orderbook_snapshot", "2026*.jsonl.gz")))}
     print(f"\n  {len(mk):,} settled markets, {len(bfiles)} book hours, "
           f"size {a.size:g}, gate {pinrun.PIN}, ceiling {pinrun.PRICE_CEILING}")
 
     bought = []
+    refused = []                 # the rules said no; outcome still resolved
+    rule_tally = {}              # rule id -> every moment it fired on
     skips = defaultdict(int)
+    bad_deltas = 0               # a swallowed parse error is not "no trades"
+    decided = set()              # markets already bought or refused
     for bf in bfiles:
         stamp = os.path.basename(bf)[:11]
-        hstart = time.mktime(time.strptime(stamp, "%Y%m%dT%H")) - \
-            time.timezone
+        # UTC, explicitly. time.mktime() is LOCAL time and time.timezone is
+        # the non-DST offset, so on this box the hour landed 3600 s off and
+        # every decision second found its index prints an hour stale -- 6,813
+        # moments skipped as no_fair with nothing else wrong.
+        import calendar
+        hstart = calendar.timegm(time.strptime(stamp, "%Y%m%dT%H"))
         ticks = load_ticks(int(hstart) - 400, int(hstart) + 3700)
         if not ticks:
             continue
@@ -293,17 +375,22 @@ def main():
                     except Exception:
                         continue
                     tk = m.get("market_ticker")
-                    ts = d.get("ts_ms") or m.get("ts_ms") or 0
+                    ts = int(m.get("ts_ms") or 0)
                     if tk in mk and ts:
                         bk = books.setdefault(tk, pindata.Book())
+                        # VERBATIM from pindata's replay, the reader that was
+                        # fixed on 2026-09-10. The tape says `price_dollars`;
+                        # a first version of this read `price_dollars_fp`,
+                        # every delta raised, the except swallowed it, and six
+                        # settled hours "bought 0" -- the exact shape of the
+                        # bug that broke the old backtest for weeks.
                         try:
-                            bk.delta(m.get("side"),
-                                     m.get("price_dollars_fp",
-                                           m.get("price")),
+                            bk.delta(str(m.get("side", "")).lower(),
+                                     m.get("price_dollars", m.get("price")),
                                      m.get("delta_fp", m.get("delta")) or 0.0,
                                      ts)
                         except Exception:
-                            pass
+                            bad_deltas += 1
                     sec = ts // 1000
                     if sec == last_sec or not sec:
                         continue
@@ -316,7 +403,11 @@ def main():
                         tau = cs - sec
                         if not (pinrun.TAU_MIN <= tau <= pinrun.TAU_MAX):
                             continue
-                        if any(x[0] == tkk for x in bought):
+                        # one decision per market: bought OR refused. A first
+                        # version only excluded bought markets, so a refused
+                        # one was re-refused every second and one market
+                        # counted 16 times in a rule's tally.
+                        if tkk in decided:
                             continue
                         iid = pindata.SERIES_TO_INDEX[r["series"]]
                         if iid not in idx.ticks:
@@ -335,34 +426,112 @@ def main():
                         res = r["result"]
                         yes = (str(res).lower() == "yes") if \
                             isinstance(res, str) else float(res) >= 0.5
-                        bought.append((tkk, w, px, n, tau,
-                                       (yes == (w == "yes"))))
+                        won = (yes == (w == "yes"))
+                        # THE PROFILE'S RULES, on the same record live sees
+                        sg_ = idx.sigma(iid)
+                        _, spot_, iage_ = idx.spot(iid)
+                        rc = record(fv, w, px, n, b.get(f"{w}_ask_size"),
+                                    tau, r["series"], sec, sg_, spot_,
+                                    b["age_ms"], iage_)
+                        verdict, fired = pinrules.decide(profile, rc)
+                        pnl = (n * (1 - px) if won else -n * px) - \
+                            pinrun.billed_fee(px, n)
+                        for rid, act in fired:
+                            rt = rule_tally.setdefault(rid, [])
+                            rt.append((cs, act, won, pnl, px))
+                        decided.add(tkk)
+                        if verdict == "refuse":
+                            refused.append((tkk, w, px, n, tau, won, pnl, cs))
+                            continue
+                        bought.append((tkk, w, px, n, tau, won, pnl, cs))
         except (EOFError, zlib.error, OSError):
             pass
         print(f"    {stamp}  bought {len(bought):,}", flush=True)
 
-    if not bought:
-        print("  loaded nothing")
+    if bad_deltas:
+        print(f"  *** {bad_deltas:,} DELTAS FAILED TO PARSE -- the book is "
+              f"incomplete and every number below is suspect ***")
+    if not bought and not refused:
+        print(f"  loaded nothing -- skips: {dict(skips)}")
         return
-    wins = [x for x in bought if x[5]]
-    losses = [x for x in bought if not x[5]]
-    pnl = sum((n * (1 - px) if won else -n * px) -
-              pinrun.billed_fee(px, n)
-              for _, _, px, n, _, won in bought)
-    print(f"\n  {'='*66}")
-    print(f"  BOUGHT {len(bought):,} times: {len(wins):,} won, "
-          f"{len(losses)} lost ({100.0*len(losses)/len(bought):.2f}%)")
-    print(f"  P&L ${pnl:+,.2f}  |  mean price "
-          f"{100*sum(x[2] for x in bought)/len(bought):.2f}c")
-    print(f"  AT THE MEASURED {100*LIVE_FILL_RATE:.0f}% LIVE FILL RATE: "
-          f"${pnl*LIVE_FILL_RATE:+,.2f} on ~{len(bought)*LIVE_FILL_RATE:.0f} "
-          f"fills")
-    print(f"  {'='*66}")
-    print(f"  why the rest did not fire: {dict(skips)}")
-    print(f"\n  THIS IS AN UPPER BOUND. Every offer is assumed ours; live we "
-          f"win 70% of races.")
-    for t, w, px, n, tau, won in losses[:20]:
-        print(f"    LOSS {t[:28]:<29} {w:>3} {100*px:>5.1f}c tau {tau:>2}")
+    summary = report(bought, refused, rule_tally, skips, profile, a)
+    if a.json:
+        with open(a.json, "w", encoding="utf-8") as fh:
+            json.dump(summary, fh, indent=1)
+        print(f"  summary written to {a.json}")
+
+
+def _stats(rows):
+    """fills / closes / wins / losses / P&L / mean price / loss-rate CI."""
+    from pincross import cp_interval
+    if not rows:
+        return {"fills": 0, "closes": 0, "wins": 0, "losses": 0, "pnl": 0.0,
+                "mean_price": None, "loss_rate": None, "ci": None}
+    L = [x for x in rows if not x[5]]
+    lo, hi = cp_interval(len(L), len(rows))
+    return {"fills": len(rows), "closes": len(set(x[7] for x in rows)),
+            "wins": len(rows) - len(L), "losses": len(L),
+            "pnl": round(sum(x[6] for x in rows), 2),
+            "mean_price": round(100 * sum(x[2] for x in rows) / len(rows), 2),
+            "loss_rate": round(100 * len(L) / len(rows), 2),
+            "ci": [round(100 * lo, 2), round(100 * hi, 2)]}
+
+
+def _line(tag, s):
+    if not s["fills"]:
+        return f"  {tag:<34}{'--':>8}"
+    return (f"  {tag:<34}{s['fills']:>6} fills {s['closes']:>5} closes "
+            f"{s['wins']:>5}W {s['losses']:>3}L  {s['loss_rate']:>6.2f}% "
+            f"[{s['ci'][0]:.2f}, {s['ci'][1]:.2f}]  ${s['pnl']:>+9.2f}  "
+            f"{s['mean_price']:>6.2f}c")
+
+
+def report(bought, refused, rule_tally, skips, profile, a):
+    """FIT and HOLDOUT side by side, always. n as markets AND closes. Every
+    rate with its interval. The 70%-fill pair. Per rule, the would-be outcome
+    of everything it fired on, so a tracker and a refusal read the same."""
+    allrows = bought + refused
+    closes = sorted(set(x[7] for x in allrows))
+    cut = closes[int(0.70 * len(closes))] if closes else 0
+    fit = [x for x in bought if x[7] < cut]
+    hold = [x for x in bought if x[7] >= cut]
+    S = {"profile": profile["name"], "sha": profile["_sha"],
+         "size": a.size, "hours": a.hours, "split_close": cut,
+         "traded": {"all": _stats(bought), "fit": _stats(fit),
+                    "holdout": _stats(hold)},
+         "refused": _stats(refused), "skips": dict(skips), "rules": {}}
+    print(f"\n  {'='*100}")
+    print(f"  PROFILE {profile['name']} (sha {profile['_sha']}), size "
+          f"{a.size:g}, {a.hours} book hours -- UPPER BOUND: every offer "
+          f"assumed ours; live we fill ~{100*LIVE_FILL_RATE:.0f}%")
+    print(f"  {'='*100}")
+    print(_line("TRADED, all", S["traded"]["all"]))
+    print(_line("  fit (first 70% of closes)", S["traded"]["fit"]))
+    print(_line("  HOLDOUT (last 30%)", S["traded"]["holdout"]))
+    pa = S["traded"]["all"]["pnl"]
+    print(f"  at the {100*LIVE_FILL_RATE:.0f}% live fill rate: "
+          f"${pa*LIVE_FILL_RATE:+,.2f}")
+    print(_line("REFUSED by rules (would-be)", S["refused"]))
+    print(f"\n  PER RULE -- what it fired on, and what would have happened")
+    for r in profile["rules"]:
+        rows = rule_tally.get(r["id"], [])
+        conv = [(None, None, px, None, None, won, pnl, cs)
+                for cs, act, won, pnl, px in rows]
+        f_ = [x for x in conv if x[7] < cut]
+        h_ = [x for x in conv if x[7] >= cut]
+        S["rules"][r["id"]] = {"name": r.get("name", r["id"]),
+                               "action": r["action"],
+                               "all": _stats(conv), "fit": _stats(f_),
+                               "holdout": _stats(h_)}
+        print(_line(f"{r['id']} [{r['action']}] all", S["rules"][r["id"]]["all"]))
+        print(_line(f"    fit", S["rules"][r["id"]]["fit"]))
+        print(_line(f"    HOLDOUT", S["rules"][r["id"]]["holdout"]))
+    print(f"\n  why other moments did not fire: {dict(skips)}")
+    L = [x for x in bought if not x[5]]
+    for t, w, px, n, tau, won, pnl, cs in L[:20]:
+        print(f"    LOSS {t[:28]:<29} {w:>3} {100*px:>5.1f}c tau {tau:>2} "
+              f"${pnl:+.2f}")
+    return S
 
 
 if __name__ == "__main__":

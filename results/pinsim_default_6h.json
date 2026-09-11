@@ -1,0 +1,112 @@
+{
+ "profile": "default",
+ "sha": "7d30d9509d62",
+ "size": 20,
+ "hours": 6,
+ "split_close": 1789016400,
+ "traded": {
+  "all": {
+   "fills": 22,
+   "closes": 12,
+   "wins": 22,
+   "losses": 0,
+   "pnl": 17.37,
+   "mean_price": 95.54,
+   "loss_rate": 0.0,
+   "ci": [
+    0.0,
+    15.44
+   ]
+  },
+  "fit": {
+   "fills": 14,
+   "closes": 8,
+   "wins": 14,
+   "losses": 0,
+   "pnl": 10.07,
+   "mean_price": 96.06,
+   "loss_rate": 0.0,
+   "ci": [
+    0.0,
+    23.16
+   ]
+  },
+  "holdout": {
+   "fills": 8,
+   "closes": 4,
+   "wins": 8,
+   "losses": 0,
+   "pnl": 7.3,
+   "mean_price": 94.62,
+   "loss_rate": 0.0,
+   "ci": [
+    0.0,
+    36.94
+   ]
+  }
+ },
+ "refused": {
+  "fills": 2,
+  "closes": 2,
+  "wins": 2,
+  "losses": 0,
+  "pnl": 6.21,
+  "mean_price": 83.5,
+  "loss_rate": 0.0,
+  "ci": [
+   0.0,
+   84.19
+  ]
+ },
+ "skips": {
+  "undecided": 331,
+  "too_shallow": 105,
+  "over_ceiling": 444,
+  "no_offer": 5408
+ },
+ "rules": {
+  "dump": {
+   "name": "Crazy deal",
+   "action": "refuse",
+   "all": {
+    "fills": 2,
+    "closes": 2,
+    "wins": 2,
+    "losses": 0,
+    "pnl": 6.21,
+    "mean_price": 83.5,
+    "loss_rate": 0.0,
+    "ci": [
+     0.0,
+     84.19
+    ]
+   },
+   "fit": {
+    "fills": 1,
+    "closes": 1,
+    "wins": 1,
+    "losses": 0,
+    "pnl": 3.01,
+    "mean_price": 84.0,
+    "loss_rate": 0.0,
+    "ci": [
+     0.0,
+     97.5
+    ]
+   },
+   "holdout": {
+    "fills": 1,
+    "closes": 1,
+    "wins": 1,
+    "losses": 0,
+    "pnl": 3.2,
+    "mean_price": 83.0,
+    "loss_rate": 0.0,
+    "ci": [
+     0.0,
+     97.5
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,44 @@
+SELF-TEST -- pinsim
+  ok   partial() is pinrun's own code, not a copy
+  ok   sigma() is pinrun's own code, not a copy
+  ok   spot() is the ONLY override -- it is the only wall-clock read
+  ok   NO LOOKAHEAD: at now=close-30 the index holds nothing past it (newest -30)
+  ok   spot age is measured against the simulated clock (0)
+  ok   and it advances with it
+  ok   a certain YES with a 97c offer is bought (got yes 0.97, fair 1.0)
+  ok   and the same market at 99c is refused by pinrun's OWN ceiling (0.98) -> over_ceiling
+  ok   and refused when only 3 contracts rest against size 20 -> too_shallow
+  ok   and it is reading the LIVE gate right now (0.995)
+  ok   record() produces EXACTLY the fields a rule may see -- no more, no less
+  ok   the XRP loss, rebuilt as a decision record, is refused by the default profile's rule
+  ok   apply_profile() changes the live constant the decision code reads
+  ok   and applying the default puts it back exactly
+SELF-TEST PASSED
+
+  profile default sha 7d30d9509d62: 1 rules, worst case {'one_losing_close': 39.2, 'closes_to_halt': 2, 'max_loss': 78.4}
+  newest settlement on file: 2026-09-10T05:45Z -- book hours after it cannot resolve and count as nothing
+
+  14,161 settled markets, 6 book hours, size 20, gate 0.995, ceiling 0.98
+    20260910T00  bought 6
+    20260910T01  bought 6
+    20260910T02  bought 10
+    20260910T03  bought 13
+    20260910T04  bought 15
+    20260910T05  bought 22
+
+  ====================================================================================================
+  PROFILE default (sha 7d30d9509d62), size 20, 6 book hours -- UPPER BOUND: every offer assumed ours; live we fill ~70%
+  ====================================================================================================
+  TRADED, all                           22 fills    12 closes    22W   0L    0.00% [0.00, 15.44]  $   +17.37   95.54c
+    fit (first 70% of closes)           14 fills     8 closes    14W   0L    0.00% [0.00, 23.16]  $   +10.07   96.06c
+    HOLDOUT (last 30%)                   8 fills     4 closes     8W   0L    0.00% [0.00, 36.94]  $    +7.30   94.62c
+  at the 70% live fill rate: $+12.16
+  REFUSED by rules (would-be)            2 fills     2 closes     2W   0L    0.00% [0.00, 84.19]  $    +6.21   83.50c
+
+  PER RULE -- what it fired on, and what would have happened
+  dump [refuse] all                      2 fills     2 closes     2W   0L    0.00% [0.00, 84.19]  $    +6.21   83.50c
+      fit                                1 fills     1 closes     1W   0L    0.00% [0.00, 97.50]  $    +3.01   84.00c
+      HOLDOUT                            1 fills     1 closes     1W   0L    0.00% [0.00, 97.50]  $    +3.20   83.00c
+
+  why other moments did not fire: {'undecided': 331, 'too_shallow': 105, 'over_ceiling': 444, 'no_offer': 5408}
+  summary written to results/pinsim_default_6h.json
