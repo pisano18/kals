@@ -22,6 +22,37 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## MEASURED 2026-09-11 — the discount cliff, on 45,287 REAL fills (48h, 144 closes)
+
+**The instrument changed, and that is the lesson.** Every earlier loss-rate
+answer came from replaying the ORDER BOOK, which is blind to the population we
+care about: it records "an offer was resting there", never "someone shoved an
+offer at us". The **TRADE TAPE** (`research/pintrades.py`) prints `taker_side`
+on every execution, so the taker's discount and outcome are directly
+observable. No reconstruction, no fill assumption.
+
+| # | idea | verdict | evidence |
+|---|---|---|---|
+| 6 | **Refuse "crazy deals" ≥15¢ under fair** (A10c, LIVE) | **CONFIRMED, kept at 15¢** | The refused band is 329 trades / 13 closes / 18,648 contracts, **31.31% lost [26.33, 36.62], −6.51¢/contract, −$1,213.60**. Monotone across 7 bands. |
+| 7 | **Move the guard to 25¢** (where the true cliff is) | **TESTED-REJECTED, deliberately** | 15–25¢ is **+0.17¢/contract = break-even** on 165 trades / 11 closes. Loosening buys ~nothing and moves us next to the −17.10¢ band. Not worth it on 11 closes. |
+| 8 | **Be more patient — hold out for a 5–15¢ discount** | **KILLED by per-close arithmetic** | Per CONTRACT it looks 16× better (+6.45¢ and +7.51¢ vs +0.38¢). Per CLOSE it is worse at every threshold: $0.576 → $0.506 (≥2¢) → $0.351 (≥5¢) → $0.102 (≥10¢), because we'd trade 143 closes → 72 → 33 → 6. **Fewer dollars AND a higher loss rate (0.22% → 4.87%).** |
+
+**The methodological rule this produced, which outlives all three:**
+**A PER-CONTRACT TABLE MUST BE RE-ASKED PER CLOSE BEFORE IT CHANGES A RULE.**
+Idea 8 survived the first table and died on the second. Rarity is invisible in
+a per-contract column and it is usually the bigger term.
+
+**What the 48h run changed vs the 10h run:** the 15–25¢ band, which looked
+catastrophic on 2 closes (−22.24¢) and is break-even on 11 (+0.17¢). The 10h
+caveat — "the magnitude rests on few events" — was right, and the correction
+landed exactly where it warned.
+
+**LEVELS ARE NOT OURS.** These are other people's fills; the RANKING is the
+result, the dollar level is not. Per house rule **no loss rate for us is ever
+quoted from the tape** — ours come from live fills only.
+
+---
+
 ## MEASURED 2026-09-10 — the loss-rate hunt, everything proven good or bad
 
 Operator: *"see if you can think of or try anything to improve our lose rate

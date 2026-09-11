@@ -4,7 +4,7 @@
 
 ---
 
-## ⭐⭐⭐ THE DISCOUNT CLIFF — answered 2026-09-11 on REAL TRADES, not the book replay
+## ⭐⭐⭐ THE DISCOUNT CLIFF — answered 2026-09-11 on REAL TRADES, 48 hours, 144 closes
 
 **The operator refused to accept "1 loss in 891" and refused to accept "we
 can't measure it". He was right twice.** The order-book replay is
@@ -13,37 +13,77 @@ it entirely). **The TRADE TAPE is not** — every execution is printed with
 `taker_side`, the price paid and the size. That is exactly the "someone
 actively sold it to us" population, and there are millions of them.
 
-**8,351 real fills where the taker bought a side our model called ≥ 99.5%
-certain, over 31 closes:**
+**45,287 real fills where the taker bought a side our model called ≥ 99.5%
+certain, over 144 closes (the 10-hour run's numbers are kept below it):**
 
-| discount the taker got | trades | closes | loss rate | **taker P&L per contract** |
-|---|---|---|---|---|
-| 0–2c | 5,962 | 31 | 0.07% | +0.33c |
-| 2–5c | 1,616 | 16 | 0.37% | +2.94c |
-| **5–10c** | 627 | 9 | 1.44% | **+5.27c** ← the best band |
-| 10–15c | 40 | 2 | 17.50% | +3.08c |
-| **15–25c** | 40 | 2 | 22.50% | **−22.24c** |
-| **25–50c** | 39 | 1 | 35.90% | **−27.19c** |
-| **50–100c** | 25 | 1 | **92.00%** | **−43.17c** |
+| discount the taker got | trades | closes | loss rate | 95% CI | **taker P&L/contract** |
+|---|---|---|---|---|---|
+| 0–2c | 38,294 | 143 | 0.22% | [0.17, 0.27] | +0.38c |
+| 2–5c | 4,604 | 76 | 0.26% | [0.13, 0.45] | +2.79c |
+| 5–10c | 1,694 | 42 | 0.77% | [0.41, 1.31] | +6.45c |
+| 10–15c | 226 | 15 | 4.87% | [2.45, 8.54] | **+7.51c** |
+| 15–25c | 165 | 11 | 15.76% | [10.56, 22.23] | +0.17c |
+| **25–50c** | 106 | 7 | 39.62% | [30.25, 49.59] | **−17.10c** |
+| **50–100c** | 58 | 6 | 60.34% | [46.64, 72.95] | **−7.40c** |
 
-**THE 15c GUARD IS VINDICATED.** Above it, takers lose 22–43c per contract
-(−$1,705 over 5,683 contracts). At a 50c+ discount the "certainty" loses
-**92%** of the time. Seven monotone bands.
+**THE BAND WE REFUSE (≥15c): 329 trades over 13 closes, 18,648 contracts,
+31.31% lost [26.33, 36.62], −6.51c/contract, −$1,213.60 total.**
 
-**AND THE ACTIONABLE FINDING: the best band is 5–10c of discount at
-+5.27c/contract — sixteen times better than the 0–2c band where most of our
-fills land.** We average ~4c. Being MORE patient for a better price is worth
-far more than the "bid a cent deeper" idea (killed, ~$1/day). Not deployed;
-needs the larger run and a holdout.
+**THE GUARD STANDS, and the 48-hour run moved where the true cliff is.** On
+10 hours the 15–25c band looked catastrophic (−22.24c). On 144 closes it is
+**+0.17c — break-even.** The real collapse begins at **25c**. So the 15c
+guard costs us almost nothing and keeps a wide margin from the −17c band.
+**Kept at 15c deliberately: giving up a break-even band to stay clear of a
+−17c one is a good trade, and the 15–25c estimate rests on 11 closes.**
 
-**Caveat:** the three losing bands are 1–2 closes each — dumps arrive in
-bursts. Direction is solid across 8,351 trades; the cliff's magnitude rests
-on few events. A 48-hour run is measuring that.
+### ❌ RETRACTED: "be more patient for a 5–10c discount"
+
+The 10-hour table tempted me into it — 5–10c pays +6.45c/contract against
++0.38c at 0–2c, sixteen times better per contract. **It is wrong, and the
+per-CLOSE arithmetic kills it.** Deeper discounts are rarer, and the
+frequency loss swamps the size gain:
+
+| only take discounts ≥ | closes we'd trade | $/close at size 20 | loss rate in band |
+|---|---|---|---|
+| **0c (what we do)** | **143 of 144** | **$0.576** | 0.22% |
+| 2c | 72 | $0.506 | 0.26% |
+| 4c | 36 | $0.368 | — |
+| 5c | 33 | $0.351 | 0.77% |
+| 8c | 11 | $0.163 | — |
+| 10c | 6 | $0.102 | 4.87% |
+
+**Being pickier earns LESS MONEY and LOSES MORE OFTEN — both of Joe's
+objectives move the wrong way.** Take everything below 15c. The idea is dead;
+do not resurrect it from the per-contract column.
+
+**LEVELS HERE ARE NOT OURS.** These are other people's fills, so the dollar
+column says what the trade was worth to whoever won the race, not what we
+would earn. The RANKING is the result; the level is not. Per house rule,
+**no loss rate for US is ever quoted from the tape.**
 
 **METHOD NOTE THAT OUTLIVES THIS:** `pintrades.py` reads the TRADE tape and
 has no book-reconstruction blind spot. For any question of the form "what
 happens to someone who takes this trade", it is the right instrument and
-`pindata`/`pinsim` are the wrong ones.
+`pindata`/`pinsim` are the wrong ones. **And any per-contract table must be
+re-asked per-close before it changes a rule** — that is the mistake this
+section records.
+
+<details><summary>the 10-hour run it replaced (8,351 trades, 31 closes)</summary>
+
+| discount | trades | closes | loss rate | taker P&L/contract |
+|---|---|---|---|---|
+| 0–2c | 5,962 | 31 | 0.07% | +0.33c |
+| 2–5c | 1,616 | 16 | 0.37% | +2.94c |
+| 5–10c | 627 | 9 | 1.44% | +5.27c |
+| 10–15c | 40 | 2 | 17.50% | +3.08c |
+| 15–25c | 40 | 2 | 22.50% | −22.24c |
+| 25–50c | 39 | 1 | 35.90% | −27.19c |
+| 50–100c | 25 | 1 | 92.00% | −43.17c |
+
+Its caveat — "the three losing bands are 1–2 closes each, the magnitude rests
+on few events" — was correct and the 48-hour run resolved it: the 15–25c
+number was the one that moved.
+</details>
 
 ---
 
