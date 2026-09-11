@@ -97,6 +97,17 @@ Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
 
 Two results expected. Free disk must stay above 6 GB or data collection stops.
 
+## THE TOOL (Live · Builder · Profiles · Learn)
+
+```powershell
+Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList 'C:\kals-repoesearch\pintool.py' -WorkingDirectory 'C:\kals-repo' -WindowStyle Hidden
+```
+
+Then open **http://127.0.0.1:8765** in a browser. Add `'--lan'` after the script
+path to reach it from your phone on the home network. It never imports the
+order module; the sandbox re-plays real tape through the trader's own decision
+code. `TOOL_PLAN.md` is the design of record.
+
 ## Where things are written down
 
 - `results/SKIM.md` — current state, what is settled, what is open. **Start here.**
