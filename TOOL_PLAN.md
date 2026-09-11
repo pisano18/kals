@@ -88,6 +88,43 @@ profiles/default.json
       Pause = stop opening positions, keep settling; stop = finish open
       positions, write `end`, exit.
 
+## THE SCALE OF CONTROL (operator, 2026-09-11) — this is the standard, not a stretch goal
+
+> "I should be able to set how many contracts are being bought at each price
+> point... an auto calculate best value based on different goals for each
+> metric where it applies... Anything you've ever tinkered with or considered
+> should be testable, changeable, or discoverable via the sandbox/strategy
+> builder UI."
+
+**Four kinds of lever, and every lever is one of them:**
+
+| kind | what it is | examples |
+|---|---|---|
+| **value** | one number with a range and a meaning | `PIN`, `TAU_MAX`, `EDGE_FLOOR` |
+| **schedule** | a number that depends on a field — a table of bands | **size by price** (`SIZE`), ceiling by confidence (`PRICE_CEILING`), sigma stress by conditions (`SIGMA_STRESS`), max-per-close by hour |
+| **rule** | a condition → refuse / log / allow | crazy-deal guard, coin exclusions, hour-of-day, "only when 2+ coins moving", the exchange-tick veto |
+| **goal search** | pick a lever + an objective; the sandbox sweeps it and reports FIT and HOLDOUT | "size-by-price that maximises P&L at ≤2% loss rate", "the ceiling that maximises fills at EV ≥ 0.3c" |
+
+Any value can be promoted to a schedule in the UI ("make this depend on…").
+Objectives available to a goal search: P&L, EV per fill, loss rate, fills/day,
+worst drawdown, wins-to-recover, P&L at the 70% fill rate — **always reported on
+FIT and HOLDOUT, with the multiple-looks threshold for the number of settings
+tried, and a curve-fitting warning that cannot be dismissed.** A goal search is
+how the operator finds the number; the holdout column is how he finds out
+whether it is real.
+
+**The lever catalog — everything investigated this week, each to be exposed:**
+gate `PIN`; price ceiling; tau window; size (scalar → schedule by price);
+margin-aware ceiling (schedule by `margin_sd`); sigma stress (scalar → schedule
+by `cond_x` / `cond_own`); conditions gates on `cond_x` / `cond_n` / `cond_own`;
+the dump guard (rule); the exchange-tick veto (rule, needs the feed replay in
+pinsim — not yet); max per close; improve-by; min fill fraction; coin include /
+exclude; hour-of-day; "fire at first crossing" vs "wait until margin ≥ X"
+(rule on `margin_sd`); price-improvement handling; the brakes (`LOSS_ABORT`,
+`MAX_LOSSES`) with worst-case dollars shown. Missing from the decision record
+today and to be added when their replays exist: exchange-tick divergence,
+latency, fill-race outcome.
+
 ## RESUME HERE (written 2026-09-11 ~01:0xZ, before the usage cutoff)
 
 Done and pushed: `pinrules.py` (schema, rules, trackers, profiles, self-test),
