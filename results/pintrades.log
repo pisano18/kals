@@ -1,0 +1,33 @@
+
+  15,214 settled markets, 10 hours of trade tape
+
+    20260911T03  qualifying trades 1,122
+    20260911T04  qualifying trades 1,750
+    20260911T05  qualifying trades 3,389
+    20260911T06  qualifying trades 3,977
+    20260911T07  qualifying trades 4,734
+    20260911T08  qualifying trades 5,029
+    20260911T09  qualifying trades 5,200
+    20260911T10  qualifying trades 6,983
+    20260911T11  qualifying trades 7,346
+    20260911T12  qualifying trades 8,351
+
+  ================================================================================================
+  8,351 trades where the taker bought a side our model called >= 99.5% certain, over 31 closes
+  72 of them LOST (0.86%) -- these are real fills somebody actually got, not reconstructed offers
+  ================================================================================================
+      discount   trades  closes   contracts   lost  loss rate            95% CI  taker P&L/contract
+      0-2         5,962      31     619,501      4      0.07%      [0.02, 0.17]               0.33c
+      2-5         1,616      16      95,144      6      0.37%      [0.14, 0.81]               2.94c
+      5-10          627       9      22,020      9      1.44%      [0.66, 2.71]               5.27c
+     10-15           40       2       1,640      7     17.50%     [7.34, 32.78]               3.08c
+     15-25           40       2       2,244      9     22.50%    [10.84, 38.45]             -22.24c
+     25-50           39       1       1,744     14     35.90%    [21.20, 52.82]             -27.19c
+     50-100          25       1       1,695     23     92.00%    [73.97, 99.02]             -43.17c
+
+  THE BAND WE REFUSE (>= 15c discount): 104 trades over 2 closes, 5,683 contracts
+    lost 46 = 44.23% [34.50, 54.30]   taker P&L -30.00c per contract  (total $-1,705.21)
+
+  skipped: {'model_not_confident': 18823}
+  NOTE: these are OTHER PEOPLE'S fills. They say what the trade is worth to whoever
+  wins the race, not whether we would win it.

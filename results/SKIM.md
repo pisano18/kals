@@ -4,6 +4,49 @@
 
 ---
 
+## ⭐⭐⭐ THE DISCOUNT CLIFF — answered 2026-09-11 on REAL TRADES, not the book replay
+
+**The operator refused to accept "1 loss in 891" and refused to accept "we
+can't measure it". He was right twice.** The order-book replay is
+structurally blind to dumped offers (the 82c XRP fill we took is absent from
+it entirely). **The TRADE TAPE is not** — every execution is printed with
+`taker_side`, the price paid and the size. That is exactly the "someone
+actively sold it to us" population, and there are millions of them.
+
+**8,351 real fills where the taker bought a side our model called ≥ 99.5%
+certain, over 31 closes:**
+
+| discount the taker got | trades | closes | loss rate | **taker P&L per contract** |
+|---|---|---|---|---|
+| 0–2c | 5,962 | 31 | 0.07% | +0.33c |
+| 2–5c | 1,616 | 16 | 0.37% | +2.94c |
+| **5–10c** | 627 | 9 | 1.44% | **+5.27c** ← the best band |
+| 10–15c | 40 | 2 | 17.50% | +3.08c |
+| **15–25c** | 40 | 2 | 22.50% | **−22.24c** |
+| **25–50c** | 39 | 1 | 35.90% | **−27.19c** |
+| **50–100c** | 25 | 1 | **92.00%** | **−43.17c** |
+
+**THE 15c GUARD IS VINDICATED.** Above it, takers lose 22–43c per contract
+(−$1,705 over 5,683 contracts). At a 50c+ discount the "certainty" loses
+**92%** of the time. Seven monotone bands.
+
+**AND THE ACTIONABLE FINDING: the best band is 5–10c of discount at
++5.27c/contract — sixteen times better than the 0–2c band where most of our
+fills land.** We average ~4c. Being MORE patient for a better price is worth
+far more than the "bid a cent deeper" idea (killed, ~$1/day). Not deployed;
+needs the larger run and a holdout.
+
+**Caveat:** the three losing bands are 1–2 closes each — dumps arrive in
+bursts. Direction is solid across 8,351 trades; the cliff's magnitude rests
+on few events. A 48-hour run is measuring that.
+
+**METHOD NOTE THAT OUTLIVES THIS:** `pintrades.py` reads the TRADE tape and
+has no book-reconstruction blind spot. For any question of the form "what
+happens to someone who takes this trade", it is the right instrument and
+`pindata`/`pinsim` are the wrong ones.
+
+---
+
 ## STATE 2026-09-11 12:40Z — read this first
 
 **Current gate (0.995) since 09-10 08:33Z: 54 fills, 52 W, 2 L, +$21.73.**
