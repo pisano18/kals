@@ -54,7 +54,7 @@ profiles/default.json
       reproduces the two real losses and spares the real cheap wins.
 - [x] **`profiles/default.json`** — today's live rule exactly (A9 + A10b).
 - [x] **`pinsim.py --profile`** — per-rule would-be tallies, fit/holdout.
-- [ ] **`research/pintool.py`** — stdlib `http.server`; serves `tool/index.html`
+- [x] **`research/pintool.py`** (sandbox jobs run pinsim as a separate process; server never imports pinrun/pintake) — stdlib `http.server`; serves `tool/index.html`
       and JSON: `/api/live` (tail of the newest live log → state, equity curve,
       the live "number needed to sway the average", brake counters, bars
       progress), `/api/profiles` (list/get/save), `/api/sandbox/run` (background
@@ -257,7 +257,11 @@ spawning `pinsim --profile --json` in a thread, `/api/sandbox/status`,
 from `/api/schema` with its meaning; rule editor = field/op/value rows +
 action; FIT and HOLDOUT always side by side; Chart.js from cdnjs).
 
-Two things noticed and NOT chased, for later:
+Three things noticed and NOT chased, for later:
+* `/api/live` reads only the NEWEST log. The current version has restarted
+  three times since 08:33Z, so the Live tab should aggregate every log whose
+  start record carries the same profile sha / gate -- otherwise a restart
+  resets the visible record to zero.
 * The XRP loss (05:00Z close, live filled at 82c after bidding 95.7c) did NOT
   trip the dump rule in replay -- at the second the replay decides, the resting
   ask it sees is not the 82c we were actually filled at. The adverse-fill
