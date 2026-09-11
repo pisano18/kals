@@ -1049,8 +1049,61 @@ def selftest():
        _b2.index("if filled >= _real:") > _b2.index("if filled > 0:"),
        "STRUCTURAL: the slot is booked only when the FILL is at least half "
        "our size; a scrap keeps its position and spends no slot")
-    ck("_note_scrap(cost)" in _b2 and 'rec("scrap"' in _b2,
+    ck("_note_scrap(cost, filled)" in _b2 and 'rec("scrap"' in _b2,
        "and a scrap is recorded, not silent")
+    # AMENDMENT 12a: scraps accumulate, so exposure stays bounded
+    ck('pv["scrap_n"] = pv.get("scrap_n", 0.0) + float(nfilled)' in _b2
+       and 'pv["n"] += 1' in _b2[_b2.index('pv["scrap_n"] ='):],
+       "STRUCTURAL: scraps ACCUMULATE and spend a slot once they add up to a "
+       "real fill -- without this, 8 scraps of 9.99 would double the "
+       "worst-case close from $39.20 to $78.32")
+    _fired_t = {}
+
+    def _scrap_sim(n_each, times, size=20.0):
+        """what the loop does, in miniature: how many slots do N scraps spend"""
+        pv = {"n": 0, "scrap_n": 0.0, "best": 1.0}
+        real = max(MIN_LEVEL, MIN_FILL_FRAC * size)
+        for _ in range(times):
+            pv["scrap_n"] += n_each
+            if pv["scrap_n"] >= real:
+                pv["n"] += 1
+                pv["scrap_n"] = 0.0
+        return pv["n"]
+    ck(_scrap_sim(0.02, 8) == 0,
+       "eight 0.02-contract crumbs spend NO slot (0.16 of 10) -- the case "
+       "A12 exists for")
+    # THE ASSERTION THAT MATTERS IS THE EXPOSURE BOUND, NOT THE SLOT COUNT.
+    # A first version of this check asserted 7 slots for eight 9.99 scraps;
+    # the code gives 4 and the code is right (9.99 alone is under the line,
+    # 19.98 crosses it and resets). The fixture was sloppy arithmetic, and it
+    # was also measuring the wrong quantity.
+    def _max_contracts(n_each, size=20.0):
+        """contracts filled before the slots run out, which is the only
+        number that bounds the money at risk in one close"""
+        pv_n, scrap_n, total = 0, 0.0, 0.0
+        real = max(MIN_LEVEL, MIN_FILL_FRAC * size)
+        while pv_n < MAX_PER_CLOSE and total < 1000:
+            total += n_each
+            scrap_n += n_each
+            if scrap_n >= real:
+                pv_n += 1
+                scrap_n = 0.0
+        return total
+    _intended = MAX_PER_CLOSE * 20.0
+    for _each in (9.99, 5.0, 2.0, 0.5):
+        _got = _max_contracts(_each)
+        ck(_got <= _intended + 20.0,
+           f"scraps of {_each:g}: at most {_got:.2f} contracts fill in one "
+           f"close, against the intended {_intended:.0f} -- bounded")
+    # and within the REAL attempt cap, crumbs never cost a slot. (A first
+    # version asserted they never exhaust the slots at all; they do, after a
+    # thousand of them. MAX_ATTEMPTS_PER_CLOSE is what actually bounds it,
+    # and asserting a bound that does not exist is worse than not asserting.)
+    ck(_scrap_sim(0.02, MAX_ATTEMPTS_PER_CLOSE) == 0,
+       f"within the {MAX_ATTEMPTS_PER_CLOSE}-attempt cap, 0.02 crumbs spend "
+       f"no slot at all -- the case A12 exists for")
+    ck(_scrap_sim(9.99, MAX_ATTEMPTS_PER_CLOSE) >= MAX_PER_CLOSE,
+       "while near-full scraps exhaust the slots inside the same cap")
     _real20 = max(MIN_LEVEL, MIN_FILL_FRAC * 20.0)
     ck(2.0 < _real20 and 0.02 < _real20 and 10.0 >= _real20,
        f"at size 20 the real-fill line is {_real20:g}: the 2.0 and 0.02 "
@@ -2002,7 +2055,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     pv.setdefault("sides", {})[tk] = want
                     pv.setdefault("tickers", set()).add(tk)
 
-            def _note_scrap(px):
+            def _note_scrap(px, nfilled):
                 """AMENDMENT 12 (2026-09-11): A SCRAP FILL IS NOT A SLOT.
                 MIN_FILL_FRAC gates what we ASK for; nothing gated what we
                 GOT. 2026-09-11 07:00 ET: asked 20, filled 2.0 (BNB) and
@@ -2011,14 +2064,30 @@ def trade_loop(a, rec, book, idx, series_index):
                 and raised the improve bar, blocking a real fill behind it.
                 A fill under half our size books the POSITION (it exists and
                 must settle and release) but not the slot and not the bar. It
-                does record the side, so the both-sides guard still holds."""
+                does record the side, so the both-sides guard still holds.
+
+                AMENDMENT 12a, same day, found by auditing 12 rather than
+                admiring it: "no slot" with nothing else changed DOUBLES the
+                worst case. MAX_ATTEMPTS_PER_CLOSE is 8, so eight scraps of
+                9.99 contracts would each keep a position and none would
+                spend a slot -- 79.9 contracts, $78.32, against an intended
+                $39.20, with only the run-wide stake cap as a backstop. So
+                SCRAPS ACCUMULATE: once they add up to a real fill they spend
+                a slot exactly as one would. Exposure is bounded again, and
+                the thing 12 was for -- one 0.02-contract crumb must not
+                block a real buy -- still holds."""
                 pv = fired.get(close_s)
                 if pv is None:
-                    fired[close_s] = {"n": 0, "best": 1.0, "tk": tk,
-                                      "sides": {tk: want}, "tickers": {tk}}
-                else:
-                    pv.setdefault("sides", {})[tk] = want
-                    pv.setdefault("tickers", set()).add(tk)
+                    pv = fired[close_s] = {"n": 0, "best": 1.0, "tk": tk,
+                                           "sides": {}, "tickers": set(),
+                                           "scrap_n": 0.0}
+                pv.setdefault("sides", {})[tk] = want
+                pv.setdefault("tickers", set()).add(tk)
+                pv["scrap_n"] = pv.get("scrap_n", 0.0) + float(nfilled)
+                if pv["scrap_n"] >= max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE)):
+                    pv["n"] += 1
+                    pv["scrap_n"] = 0.0
+                    pv["best"] = min(pv["best"], px)
 
             if not live:
                 _book_slot(price)
@@ -2071,7 +2140,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         if filled >= _real:
                             _book_slot(cost)
                         else:
-                            _note_scrap(cost)
+                            _note_scrap(cost, filled)
                             state["scraps"] = state.get("scraps", 0) + 1
                             rec("scrap", ticker=tk, want=want, filled=filled,
                                 asked=take_n, price=cost, real_min=_real)

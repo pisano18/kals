@@ -5,6 +5,39 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## v-a12a — 2026-09-11 13:25Z — AMENDMENT 12a: scraps accumulate, exposure re-bounded (`9aa2014`)
+
+**Found by auditing my own change rather than admiring it.** A12 said a scrap
+fill spends no scale-in slot. With nothing else changed that DOUBLED the worst
+case: `MAX_ATTEMPTS_PER_CLOSE` is 8, so eight scraps of 9.99 contracts would
+each keep a position and none would spend a slot — **79.9 contracts, $78.32,
+against an intended $39.20**, with only the run-wide $130 stake cap as a
+backstop. That is a regression I introduced this morning.
+
+**Fix:** scraps ACCUMULATE. Once they add up to a real fill (half our size)
+they spend a slot exactly as one fill would. Measured in the self-test by the
+only number that matters — contracts filled before the slots run out:
+
+| scrap size | contracts before slots exhaust | intended |
+|---|---|---|
+| 9.99 | 39.96 | 40 |
+| 5.0 | 20.00 | 40 |
+| 2.0 | 20.00 | 40 |
+| 0.5 | 20.00 | 40 |
+
+and within the 8-attempt cap, 0.02 crumbs still spend **no** slot — the thing
+A12 exists for.
+
+**Two of my own test assertions were wrong before this passed**, both recorded
+in place rather than quietly edited: I asserted 8 scraps of 9.99 spend 7 slots
+(the code gives 4, and the code is right), and that 0.02 crumbs "never" exhaust
+the slots (they do, after a thousand; the attempt cap is the real bound).
+Asserting a bound that does not exist is worse than not asserting.
+
+Restarted 13:25Z, pid 611172.
+
+---
+
 ## v-a12 — 2026-09-11 12:40Z — AMENDMENT 12: a scrap fill is not a slot (`d3e2ef0`)
 
 **What changed:** a fill smaller than half our size (under 10 contracts at size
