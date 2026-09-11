@@ -1,0 +1,37 @@
+==============================================================================
+FEED CHECK
+==============================================================================
+  cfbenchmarks_value    0 files           0 msgs  (0 still writing)  *** EMPTY ***
+  pyth_value            0 files           0 msgs  (0 still writing)  *** EMPTY ***
+  orderbook_delta       0 files           0 msgs  (0 still writing)  *** EMPTY ***
+  ticker                0 files           0 msgs  (0 still writing)  *** EMPTY ***
+  trade                 0 files           0 msgs  (0 still writing)  *** EMPTY ***
+
+  --- cfbenchmarks detail ---
+
+Pulling full tapes (10-15 min)...
+  KXBTC15M: 1200 markets, pulling FULL tapes...
+    25/1200  178,800 trades
+    50/1200  306,000 trades
+    75/1200  452,600 trades
+    100/1200  617,800 trades
+    125/1200  763,000 trades
+    150/1200  922,600 trades
+    175/1200  1,068,800 trades
+    200/1200  1,243,800 trades
+    225/1200  1,389,400 trades
+    250/1200  1,521,200 trades
+    275/1200  1,654,800 trades
+    300/1200  1,798,400 trades
+    325/1200  1,947,800 trades
+    350/1200  2,076,200 trades
+    375/1200  2,211,800 trades
+    400/1200  2,349,800 trades
+    425/1200  2,497,600 trades
+    450/1200  2,638,600 trades
+    475/1200  2,762,800 trades
+    500/1200  2,916,400 trades
+    525/1200  3,086,400 trades
+    550/1200  3,236,000 trades
+    575/1200  3,382,200 trades
+    600/1200  3,513,200 trades

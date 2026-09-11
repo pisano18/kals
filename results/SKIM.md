@@ -87,6 +87,41 @@ number was the one that moved.
 
 ---
 
+## ⭐⭐ THE COIN RACE — measured end to end 2026-09-11 (results/RESULTS_coinrace.md)
+
+**Settlement rule SOLVED: highest (close 60s TWAP ÷ open 60s TWAP), 773 of
+773 events.** The denominator is known the moment the window opens.
+
+**We can name the leader: 97.8% at tau 30, 99.5% at tau 20**, against a 20%
+base rate, stable on all nine days.
+
+**But the market is efficient early and only slips late:**
+
+| tau | it charges | leader is right | edge/contract | loss rate |
+|---|---|---|---|---|
+| 45–61 | 89.07c | 89.4% | **−0.18c** | 10.6% |
+| 30–45 | 88.64c | 90.3% | +1.22c | 9.7% |
+| 20–30 | 90.63c | 93.6% | +2.56c | 6.4% |
+| 15–20 | 94.71c | 97.5% | +2.52c | 2.5% |
+| 10–15 | 91.17c | 96.2% | **+4.72c** | 3.8% |
+| 5–10 | 90.92c | 96.0% | **+4.83c** | 4.0% |
+
+**Worth ~$5–10/day at size 20 on 6–10 opportunities. Penny test, NOT a
+deployment** — the race is unproven, coverage is 6–18% of events, and the
+loss-rate intervals are wide.
+
+**NEVER QUOTE THE 99.5% AS A TRADE'S ACCURACY.** We can only buy when someone
+is trading, and those are the closer races: 89.6–97.5%, not 91.5–99.6%.
+
+**Buying only when the leader looks cheap is the discount cliff again** — per
+contract it climbs to +10.11c at a 80c limit while the loss rate climbs to
+**35.1%**. Cheap legs are cheap because they lose.
+
+**Two bugs inflated the first version and both were caught here: look-ahead
+(98.9% vs a true 89.4%) and tau running backwards (98.6% vs a true 93.6%).**
+
+---
+
 ## STATE 2026-09-11 12:40Z — read this first
 
 **Current gate (0.995) since 09-10 08:33Z: 54 fills, 52 W, 2 L, +$21.73.**

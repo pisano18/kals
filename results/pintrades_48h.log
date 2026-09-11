@@ -1,0 +1,72 @@
+
+  15,214 settled markets, 48 hours of trade tape
+
+    20260909T04  qualifying trades 830
+    20260909T05  qualifying trades 2,078
+    20260909T06  qualifying trades 3,752
+    20260909T07  qualifying trades 4,467
+    20260909T08  qualifying trades 4,961
+    20260909T09  qualifying trades 5,173
+    20260909T10  qualifying trades 5,784
+    20260909T11  qualifying trades 6,087
+    20260909T12  qualifying trades 6,624
+    20260909T13  qualifying trades 6,740
+    20260909T21  qualifying trades 6,831
+    20260909T22  qualifying trades 7,003
+    20260909T23  qualifying trades 8,146
+    20260910T00  qualifying trades 11,198
+    20260910T01  qualifying trades 11,290
+    20260910T02  qualifying trades 11,963
+    20260910T03  qualifying trades 15,118
+    20260910T04  qualifying trades 16,204
+    20260910T05  qualifying trades 18,372
+    20260910T06  qualifying trades 18,809
+    20260910T09  qualifying trades 19,851
+    20260910T10  qualifying trades 21,535
+    20260910T11  qualifying trades 23,180
+    20260910T12  qualifying trades 23,829
+    20260910T13  qualifying trades 24,334
+    20260910T14  qualifying trades 24,939
+    20260910T15  qualifying trades 25,851
+    20260910T16  qualifying trades 26,102
+    20260910T17  qualifying trades 26,503
+    20260910T18  qualifying trades 26,800
+    20260910T19  qualifying trades 27,403
+    20260910T20  qualifying trades 28,183
+    20260910T21  qualifying trades 30,574
+    20260910T22  qualifying trades 32,504
+    20260910T23  qualifying trades 33,480
+    20260911T00  qualifying trades 35,342
+    20260911T01  qualifying trades 35,994
+    20260911T02  qualifying trades 36,936
+    20260911T03  qualifying trades 38,058
+    20260911T04  qualifying trades 38,686
+    20260911T05  qualifying trades 40,325
+    20260911T06  qualifying trades 40,913
+    20260911T07  qualifying trades 41,670
+    20260911T08  qualifying trades 41,965
+    20260911T09  qualifying trades 42,136
+    20260911T10  qualifying trades 43,919
+    20260911T11  qualifying trades 44,282
+    20260911T12  qualifying trades 45,287
+
+  ================================================================================================
+  45,287 trades where the taker bought a side our model called >= 99.5% certain, over 144 closes
+  222 of them LOST (0.49%) -- these are real fills somebody actually got, not reconstructed offers
+  ================================================================================================
+      discount   trades  closes   contracts   lost  loss rate            95% CI  taker P&L/contract
+    -99-0           140      11      47,110      0      0.00%      [0.00, 2.60]               0.12c
+      0-2        38,294     143   3,521,169     83      0.22%      [0.17, 0.27]               0.38c
+      2-5         4,604      76     209,415     12      0.26%      [0.13, 0.45]               2.79c
+      5-10        1,694      42      79,352     13      0.77%      [0.41, 1.31]               6.45c
+     10-15          226      15      11,391     11      4.87%      [2.45, 8.54]               7.51c
+     15-25          165      11       9,337     26     15.76%    [10.56, 22.23]               0.17c
+     25-50          106       7       5,570     42     39.62%    [30.25, 49.59]             -17.10c
+     50-100          58       6       3,741     35     60.34%    [46.64, 72.95]              -7.40c
+
+  THE BAND WE REFUSE (>= 15c discount): 329 trades over 13 closes, 18,648 contracts
+    lost 103 = 31.31% [26.33, 36.62]   taker P&L -6.51c per contract  (total $-1,213.60)
+
+  skipped: {'model_not_confident': 106029}
+  NOTE: these are OTHER PEOPLE'S fills. They say what the trade is worth to whoever
+  wins the race, not whether we would win it.

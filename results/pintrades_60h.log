@@ -1,0 +1,84 @@
+
+  15,214 settled markets, 60 hours of trade tape
+
+    20260908T16  qualifying trades 1,100
+    20260908T17  qualifying trades 1,508
+    20260908T18  qualifying trades 1,781
+    20260908T19  qualifying trades 2,857
+    20260908T20  qualifying trades 3,181
+    20260908T21  qualifying trades 5,341
+    20260908T22  qualifying trades 8,046
+    20260908T23  qualifying trades 10,600
+    20260909T00  qualifying trades 11,211
+    20260909T01  qualifying trades 12,776
+    20260909T02  qualifying trades 14,362
+    20260909T03  qualifying trades 15,011
+    20260909T04  qualifying trades 15,841
+    20260909T05  qualifying trades 17,089
+    20260909T06  qualifying trades 18,763
+    20260909T07  qualifying trades 19,478
+    20260909T08  qualifying trades 19,972
+    20260909T09  qualifying trades 20,184
+    20260909T10  qualifying trades 20,795
+    20260909T11  qualifying trades 21,098
+    20260909T12  qualifying trades 21,635
+    20260909T13  qualifying trades 21,751
+    20260909T21  qualifying trades 21,842
+    20260909T22  qualifying trades 22,014
+    20260909T23  qualifying trades 23,157
+    20260910T00  qualifying trades 26,209
+    20260910T01  qualifying trades 26,301
+    20260910T02  qualifying trades 26,974
+    20260910T03  qualifying trades 30,129
+    20260910T04  qualifying trades 31,215
+    20260910T05  qualifying trades 33,383
+    20260910T06  qualifying trades 33,820
+    20260910T09  qualifying trades 34,862
+    20260910T10  qualifying trades 36,546
+    20260910T11  qualifying trades 38,191
+    20260910T12  qualifying trades 38,840
+    20260910T13  qualifying trades 39,345
+    20260910T14  qualifying trades 39,950
+    20260910T15  qualifying trades 40,862
+    20260910T16  qualifying trades 41,113
+    20260910T17  qualifying trades 41,514
+    20260910T18  qualifying trades 41,811
+    20260910T19  qualifying trades 42,414
+    20260910T20  qualifying trades 43,194
+    20260910T21  qualifying trades 45,585
+    20260910T22  qualifying trades 47,515
+    20260910T23  qualifying trades 48,491
+    20260911T00  qualifying trades 50,353
+    20260911T01  qualifying trades 51,005
+    20260911T02  qualifying trades 51,947
+    20260911T03  qualifying trades 53,069
+    20260911T04  qualifying trades 53,697
+    20260911T05  qualifying trades 55,336
+    20260911T06  qualifying trades 55,924
+    20260911T07  qualifying trades 56,681
+    20260911T08  qualifying trades 56,976
+    20260911T09  qualifying trades 57,147
+    20260911T10  qualifying trades 58,930
+    20260911T11  qualifying trades 59,293
+    20260911T12  qualifying trades 60,298
+
+  ================================================================================================
+  60,298 trades where the taker bought a side our model called >= 99.5% certain, over 188 closes
+  251 of them LOST (0.42%) -- these are real fills somebody actually got, not reconstructed offers
+  ================================================================================================
+      discount   trades  closes   contracts   lost  loss rate            95% CI  taker P&L/contract
+    -99-0           207      19      71,041      0      0.00%      [0.00, 1.77]               0.13c
+      0-2        50,776     187   4,588,726     83      0.16%      [0.13, 0.20]               0.40c
+      2-5         6,319      96     362,461     13      0.21%      [0.11, 0.35]               2.94c
+      5-10        2,333      54     147,842     13      0.56%      [0.30, 0.95]               6.45c
+     10-15          309      18      17,071     14      4.53%      [2.50, 7.49]               5.34c
+     15-25          173      12       9,900     34     19.65%    [14.01, 26.37]              -4.55c
+     25-50          120       8       6,223     56     46.67%    [37.51, 55.99]             -22.14c
+     50-100          61       7       3,750     38     62.30%    [48.96, 74.39]              -7.50c
+
+  THE BAND WE REFUSE (>= 15c discount): 354 trades over 14 closes, 19,873 contracts
+    lost 128 = 36.16% [31.15, 41.40]   taker P&L -10.61c per contract  (total $-2,108.92)
+
+  skipped: {'model_not_confident': 154202}
+  NOTE: these are OTHER PEOPLE'S fills. They say what the trade is worth to whoever
+  wins the race, not whether we would win it.

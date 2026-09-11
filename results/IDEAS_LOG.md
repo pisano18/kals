@@ -22,6 +22,38 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## MEASURED 2026-09-11 — THE COIN RACE, end to end (full detail: results/RESULTS_coinrace.md)
+
+| # | idea | verdict | evidence |
+|---|---|---|---|
+| 9 | **Coin Race settlement rule** | **SOLVED** | Highest (close 60s TWAP ÷ open 60s TWAP). Reproduces Kalshi's own `expiration_value` on **773 of 773** events. The spot-at-open alternative gets 92.2%, so the rule is pinned, not guessed. The denominator is known when the window OPENS. |
+| 10 | **Name the leader before the close** | **WORKS** | 91.5% at tau 60, 97.8% at tau 30, **99.5% at tau 20**, 100% at tau 5, on 773 events against a 20% base rate. 98–100% on each of nine separate days. |
+| 11 | **Buy the named leader** | **REAL BUT SMALL — penny test, not deployment** | Edge per contract by tau: −0.18c (45–61), +1.22c (30–45), +2.56c (20–30), +2.52c (15–20), **+4.72c (10–15)**, **+4.83c (5–10)**. Roughly **$5–10/day at size 20**, on 6–10 opportunities. |
+| 12 | **Stand aside unless the leader is cheap** | **TESTED-REJECTED — it is the discount cliff again** | Per contract it climbs −0.18c → +3.61c → +7.91c → +9.12c → +10.11c as the limit falls 98c → 80c. The loss rate climbs **10.6% → 35.1%** alongside it. Cheap legs are cheap because they lose. |
+
+**The mechanism, and it is clean:** the market charges 89.07c at tau 45–61 for
+something worth 89.4% — efficient to within the fee. The edge exists only in
+the last 30 seconds and grows toward the close, because our information
+hardens as prints lock in and the quoted price does not harden as fast.
+
+**TWO BUGS CAUGHT IN THIS MEASUREMENT, both of which INFLATED it:**
+1. **Look-ahead** — v1 scored tau-45 purchases against the tau-20 forecast,
+   30 seconds of future index prints away. Claimed 98.9% where the truth is
+   89.4%. Fixed, and a self-test now asserts for every tau that the forecast
+   used is never from the future.
+2. **Tau runs backwards** — the "first print in the band" rule used `min()` on
+   tau, which is the LAST trade before the close, the most informed and the
+   dearest. Claimed 98.6% at tau 20–30 where the truth is 93.6%. Fixed.
+
+Neither was visible in the output table. Both were found by asking why a
+number was that good.
+
+**THE CAVEAT THAT SURVIVES: never quote the 99.5%.** We can only buy when
+somebody is trading, and those are the closer races — accuracy in the
+tradeable subset is 89.6–97.5%, not 91.5–99.6%. Coverage is 6–18% of events.
+
+---
+
 ## MEASURED 2026-09-11 — the discount cliff, on 45,287 REAL fills (48h, 144 closes)
 
 **The instrument changed, and that is the lesson.** Every earlier loss-rate

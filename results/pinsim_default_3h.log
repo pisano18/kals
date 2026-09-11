@@ -1,0 +1,24 @@
+SELF-TEST -- pinsim
+  ok   partial() is pinrun's own code, not a copy
+  ok   sigma() is pinrun's own code, not a copy
+  ok   spot() is the ONLY override -- it is the only wall-clock read
+  ok   NO LOOKAHEAD: at now=close-30 the index holds nothing past it (newest -30)
+  ok   spot age is measured against the simulated clock (0)
+  ok   and it advances with it
+  ok   a certain YES with a 97c offer is bought (got yes 0.97, fair 1.0)
+  ok   and the same market at 99c is refused by pinrun's OWN ceiling (0.98) -> over_ceiling
+  ok   and refused when only 3 contracts rest against size 20 -> too_shallow
+  ok   and it is reading the LIVE gate right now (0.995)
+  ok   record() produces EXACTLY the fields a rule may see -- no more, no less
+  ok   the XRP loss, rebuilt as a decision record, is refused by the default profile's rule
+  ok   apply_profile() changes the live constant the decision code reads
+  ok   and applying the default puts it back exactly
+SELF-TEST PASSED
+
+  profile default sha 7d30d9509d62: 1 rules, worst case {'one_losing_close': 39.2, 'closes_to_halt': 2, 'max_loss': 78.4}
+
+  14,161 settled markets, 3 book hours, size 20, gate 0.995, ceiling 0.98
+    20260910T23  bought 0
+    20260911T00  bought 0
+    20260911T01  bought 0
+  loaded nothing
