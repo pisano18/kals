@@ -61,25 +61,25 @@ profiles/default.json
       thread running pinsim with a profile → job id → `/api/sandbox/status`),
       `/api/control` (the ONLY writer of `results/CONTROL.json`), `/api/learn`.
       Binds `127.0.0.1` by default; `--lan` binds `0.0.0.0` for the phone.
-- [ ] **`tool/index.html`** — one file, four tabs: **Live · Sandbox · Profiles ·
+- [x] **`tool/index.html`** (v1) — one file, four tabs: **Live · Sandbox · Profiles ·
       Learn**. Chart.js from cdnjs. Responsive so the phone works.
-- [ ] **Live tab** — equity curve as a stock ticker (% change today/7d/30d/all,
+- [x] **Live tab** (v1) — equity curve as a stock ticker (% change today/7d/30d/all,
       OHLC by day, max drawdown in *wins-to-recover*, volume = fills, fill
       rate, per-trade hover, capital deployed vs idle); colour-coded live
       metrics; the number needed to sway the average, updating live; brake
       counters; progress to the pre-registered bars; play/pause/stop.
-- [ ] **Sandbox tab** — pick/edit a profile, run it on the tape, see per-rule
+- [x] **Sandbox tab** (v1) — pick/edit a profile, run it on the tape, see per-rule
       results with FIT and HOLDOUT always side by side, the live setting marked
       on every control, a "you are now curve fitting" warning after N runs
       with the multiple-looks threshold shown. **No code path to the order
       API and no writer for CONTROL.json — an absent button, not a disabled
       one.**
-- [ ] **Profiles tab** — save the sandbox state as a named profile; deploy =
+- [x] **Profiles tab** (v1) — save the sandbox state as a named profile; deploy =
       writes `CONTROL.json {"profile": X}`; the trader validates (full
       self-test + range checks) and restarts itself cleanly; loosening a brake
       shows the worst-case dollars and needs typed confirmation; the log
       records profile name + contents + hash at start.
-- [ ] **Learn tab** — every param's explanation comes from the schema (the tool
+- [x] **Learn tab** (v1) — every param's explanation comes from the schema (the tool
       cannot show a control without its meaning); plus concept pages: the
       settlement window, sigma and margin, why price matters more than
       confidence, wins-to-recover, break-even loss rate, fit vs holdout, why a
