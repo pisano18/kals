@@ -327,106 +327,162 @@ def main():
         raise SystemExit("self-test failed -- refusing to touch real data")
 
     profile = pinrules.load(a.profile)
-    apply_profile(profile)
-    if a.size is not None:
-        pinrun.SIZE = a.size
-    a.size = pinrun.SIZE
-    print(f"\n  profile {profile['name']} sha {profile['_sha']}: "
-          f"{len(profile['rules'])} rules, worst case "
-          f"{pinrules.worst_case(profile['params'])}")
+    summary = run(profile, a.hours, a.end, size=a.size, log=print)
+    if summary and a.json:
+        with open(a.json, "w", encoding="utf-8") as fh:
+            json.dump(summary, fh, indent=1)
+        print(f"  summary written to {a.json}")
 
+
+# ------------------------------------------------------------ the tape cache
+# A goal search replays the same hours N times. Parsing an hour of deltas is
+# the expensive part, so parsed hours are cached in-process -- capped, because
+# the collector outranks this tool for RAM (CLAUDE.md resource protocol).
+_HOUR_CACHE = {}
+HOUR_CACHE_MAX = 12
+
+
+def load_markets():
     mk = {}
     for v in json.load(open(FULLTAPE, encoding="utf-8")).values():
         for r in v:
             if r["series"] in pindata.SERIES_TO_INDEX and \
                     r.get("result") is not None:
                 mk[r["ticker"]] = r
+    return mk
+
+
+def newest_settlement(mk):
+    return max(float(r["close"]) for r in mk.values()) if mk else 0
+
+
+def book_hours(hours, end=None):
     bfiles = sorted(glob.glob(os.path.join(
         DATA, "orderbook_delta", "2026*.jsonl.gz")))[:-1]
-    if a.end:
-        bfiles = [f for f in bfiles if os.path.basename(f)[:11] <= a.end]
-    bfiles = bfiles[-a.hours:]
-    newest_settle = max(float(r["close"]) for r in mk.values())
-    print(f"  newest settlement on file: "
-          f"{time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(newest_settle))} "
-          f"-- book hours after it cannot resolve and count as nothing")
-    snaps = {os.path.basename(f)[:11]: f for f in sorted(glob.glob(
-        os.path.join(DATA, "orderbook_snapshot", "2026*.jsonl.gz")))}
-    print(f"\n  {len(mk):,} settled markets, {len(bfiles)} book hours, "
-          f"size {a.size:g}, gate {pinrun.PIN}, ceiling {pinrun.PRICE_CEILING}")
+    if end:
+        bfiles = [f for f in bfiles if os.path.basename(f)[:11] <= end]
+    return [os.path.basename(f)[:11] for f in bfiles[-hours:]]
 
-    bought = []
-    refused = []                 # the rules said no; outcome still resolved
-    rule_tally = {}              # rule id -> every moment it fired on
-    skips = defaultdict(int)
-    bad_deltas = 0               # a swallowed parse error is not "no trades"
-    decided = set()              # markets already bought or refused
-    for bf in bfiles:
-        stamp = os.path.basename(bf)[:11]
-        # UTC, explicitly. time.mktime() is LOCAL time and time.timezone is
-        # the non-DST offset, so on this box the hour landed 3600 s off and
-        # every decision second found its index prints an hour stale -- 6,813
-        # moments skipped as no_fair with nothing else wrong.
-        import calendar
-        hstart = calendar.timegm(time.strptime(stamp, "%Y%m%dT%H"))
-        ticks = load_ticks(int(hstart) - 400, int(hstart) + 3700)
-        if not ticks:
-            continue
-        idx = TapeIndex(sorted(ticks))
-        pend = {k: list(v) for k, v in ticks.items()}
-        books = {}
-        sf = snaps.get(stamp)
-        if sf:
-            try:
-                with gzip.open(sf, "rt") as f:
-                    for line in f:
-                        if '"orderbook_snapshot"' not in line:
-                            continue
-                        try:
-                            d = json.loads(line)
-                            m = d["msg"]
-                        except Exception:
-                            continue
-                        tk = m.get("market_ticker")
-                        if tk in mk:
-                            books.setdefault(tk, pindata.Book()).snapshot(
-                                m, d.get("ts_ms") or 0)
-            except (EOFError, zlib.error, OSError):
-                pass
-        # walk the deltas in order, and at each second decide on every market
-        last_sec = None
+
+def load_hour(stamp, mk):
+    """Everything one book hour needs, parsed once: index ticks, snapshots,
+    and the delta stream as (ts_ms, ticker, side, price, dq) tuples."""
+    if stamp in _HOUR_CACHE:
+        return _HOUR_CACHE[stamp]
+    import calendar
+    # UTC, explicitly. time.mktime() is LOCAL time and time.timezone is the
+    # non-DST offset, so the hour once landed 3600 s off and 6,813 moments
+    # skipped as no_fair with nothing else wrong.
+    hstart = calendar.timegm(time.strptime(stamp, "%Y%m%dT%H"))
+    ticks = load_ticks(int(hstart) - 400, int(hstart) + 3700)
+    snaps = []
+    sf = os.path.join(DATA, "orderbook_snapshot", f"{stamp}.jsonl.gz")
+    if os.path.exists(sf):
         try:
-            with gzip.open(bf, "rt") as f:
+            with gzip.open(sf, "rt") as f:
                 for line in f:
+                    if '"orderbook_snapshot"' not in line:
+                        continue
                     try:
                         d = json.loads(line)
                         m = d["msg"]
                     except Exception:
                         continue
-                    tk = m.get("market_ticker")
-                    ts = int(m.get("ts_ms") or 0)
-                    if tk in mk and ts:
-                        bk = books.setdefault(tk, pindata.Book())
-                        # VERBATIM from pindata's replay, the reader that was
-                        # fixed on 2026-09-10. The tape says `price_dollars`;
-                        # a first version of this read `price_dollars_fp`,
-                        # every delta raised, the except swallowed it, and six
-                        # settled hours "bought 0" -- the exact shape of the
-                        # bug that broke the old backtest for weeks.
-                        try:
-                            bk.delta(str(m.get("side", "")).lower(),
-                                     m.get("price_dollars", m.get("price")),
-                                     m.get("delta_fp", m.get("delta")) or 0.0,
-                                     ts)
-                        except Exception:
-                            bad_deltas += 1
-                    sec = ts // 1000
-                    if sec == last_sec or not sec:
-                        continue
-                    last_sec = sec
-                    idx.now = sec
-                    idx.feed_upto(pend, sec)
-                    for tkk, bkk in books.items():
+                    if m.get("market_ticker") in mk:
+                        snaps.append((m["market_ticker"], m,
+                                      d.get("ts_ms") or 0))
+        except (EOFError, zlib.error, OSError):
+            pass
+    deltas = []
+    bad = 0
+    bf = os.path.join(DATA, "orderbook_delta", f"{stamp}.jsonl.gz")
+    try:
+        with gzip.open(bf, "rt") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                    m = d["msg"]
+                except Exception:
+                    continue
+                tk = m.get("market_ticker")
+                ts = int(m.get("ts_ms") or 0)
+                if not ts:
+                    continue
+                if tk in mk:
+                    # VERBATIM from pindata's fixed reader. The tape says
+                    # `price_dollars`; a first version read `price_dollars_fp`,
+                    # every delta raised, the except swallowed it, and six
+                    # settled hours "bought 0".
+                    try:
+                        deltas.append((ts, tk, str(m.get("side", "")).lower(),
+                                       float(m.get("price_dollars",
+                                                   m.get("price"))),
+                                       float(m.get("delta_fp",
+                                                   m.get("delta")) or 0.0)))
+                    except Exception:
+                        bad += 1
+                else:
+                    deltas.append((ts, None, None, None, None))  # a clock tick
+    except (EOFError, zlib.error, OSError):
+        pass
+    hour = {"stamp": stamp, "ticks": ticks, "snaps": snaps,
+            "deltas": deltas, "bad_deltas": bad}
+    if len(_HOUR_CACHE) >= HOUR_CACHE_MAX:
+        _HOUR_CACHE.pop(next(iter(_HOUR_CACHE)))
+    _HOUR_CACHE[stamp] = hour
+    return hour
+
+
+def run(profile, hours, end=None, size=None, log=None, progress=None):
+    """Replay `hours` settled book hours (ending at `end`) under `profile`
+    through pinrun's own decision code. Returns the summary dict the tool
+    reads, or None if nothing could be decided."""
+    say = log or (lambda *a, **k: None)
+    apply_profile(profile)
+    if size is not None:
+        pinrun.SIZE = size
+    size = pinrun.SIZE
+    say(f"\n  profile {profile['name']} sha {profile['_sha']}: "
+        f"{len(profile['rules'])} rules, worst case "
+        f"{pinrules.worst_case(profile['params'])}")
+    mk = load_markets()
+    stamps = book_hours(hours, end)
+    ns = newest_settlement(mk)
+    say(f"  newest settlement on file: "
+        f"{time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(ns))} "
+        f"-- book hours after it cannot resolve and count as nothing")
+    say(f"\n  {len(mk):,} settled markets, {len(stamps)} book hours, "
+        f"size {size:g}, gate {pinrun.PIN}, ceiling {pinrun.PRICE_CEILING}")
+
+    bought, refused, rule_tally = [], [], {}
+    skips = defaultdict(int)
+    bad_deltas = 0
+    decided = set()
+    for hi, stamp in enumerate(stamps):
+        hour = load_hour(stamp, mk)
+        bad_deltas += hour["bad_deltas"]
+        if not hour["ticks"]:
+            continue
+        idx = TapeIndex(sorted(hour["ticks"]))
+        pend = {k: list(v) for k, v in hour["ticks"].items()}
+        books = {}
+        for tk, m, ts in hour["snaps"]:
+            books.setdefault(tk, pindata.Book()).snapshot(m, ts)
+        last_sec = None
+        for ts, tk, side, price, dq in hour["deltas"]:
+            if tk is not None:
+                try:
+                    books.setdefault(tk, pindata.Book()).delta(
+                        side, price, dq, ts)
+                except Exception:
+                    bad_deltas += 1
+            sec = ts // 1000
+            if sec == last_sec:
+                continue
+            last_sec = sec
+            idx.now = sec
+            idx.feed_upto(pend, sec)
+            for tkk, bkk in books.items():
                         r = mk[tkk]
                         cs = int(float(r["close"]))
                         tau = cs - sec
@@ -490,21 +546,19 @@ def main():
                             refused.append((tkk, w, px, n, tau, won, pnl, cs))
                             continue
                         bought.append((tkk, w, px, n, tau, won, pnl, cs))
-        except (EOFError, zlib.error, OSError):
-            pass
-        print(f"    {stamp}  bought {len(bought):,}", flush=True)
+        say(f"    {stamp}  bought {len(bought):,}", flush=True)
+        if progress:
+            progress(hi + 1, len(stamps))
 
     if bad_deltas:
-        print(f"  *** {bad_deltas:,} DELTAS FAILED TO PARSE -- the book is "
-              f"incomplete and every number below is suspect ***")
+        say(f"  *** {bad_deltas:,} DELTAS FAILED TO PARSE -- the book is "
+            f"incomplete and every number below is suspect ***")
     if not bought and not refused:
-        print(f"  loaded nothing -- skips: {dict(skips)}")
-        return
-    summary = report(bought, refused, rule_tally, skips, profile, a)
-    if a.json:
-        with open(a.json, "w", encoding="utf-8") as fh:
-            json.dump(summary, fh, indent=1)
-        print(f"  summary written to {a.json}")
+        say(f"  loaded nothing -- skips: {dict(skips)}")
+        return None
+    return report(bought, refused, rule_tally, skips, profile,
+                  size=size, hours=len(stamps), log=say,
+                  bad_deltas=bad_deltas, newest_settle=ns)
 
 
 def _stats(rows):
@@ -532,10 +586,17 @@ def _line(tag, s):
             f"{s['mean_price']:>6.2f}c")
 
 
-def report(bought, refused, rule_tally, skips, profile, a):
+def report(bought, refused, rule_tally, skips, profile, size, hours, log,
+           bad_deltas=0, newest_settle=0):
     """FIT and HOLDOUT side by side, always. n as markets AND closes. Every
     rate with its interval. The 70%-fill pair. Per rule, the would-be outcome
     of everything it fired on, so a tracker and a refusal read the same."""
+    print = log                          # every line below goes to the caller
+
+    class _A:                            # the old arg-namespace shape
+        pass
+    a = _A()
+    a.size, a.hours = size, hours
     allrows = bought + refused
     closes = sorted(set(x[7] for x in allrows))
     cut = closes[int(0.70 * len(closes))] if closes else 0
@@ -543,6 +604,8 @@ def report(bought, refused, rule_tally, skips, profile, a):
     hold = [x for x in bought if x[7] >= cut]
     S = {"profile": profile["name"], "sha": profile["_sha"],
          "size": a.size, "hours": a.hours, "split_close": cut,
+         "upper_bound": True, "live_fill_rate": LIVE_FILL_RATE,
+         "bad_deltas": bad_deltas, "newest_settlement": newest_settle,
          "traded": {"all": _stats(bought), "fit": _stats(fit),
                     "holdout": _stats(hold)},
          "refused": _stats(refused), "skips": dict(skips), "rules": {}}

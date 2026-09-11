@@ -4,6 +4,10 @@
  "size": 20,
  "hours": 6,
  "split_close": 1789016400,
+ "upper_bound": true,
+ "live_fill_rate": 0.7,
+ "bad_deltas": 0,
+ "newest_settlement": 1789019100.0,
  "traded": {
   "all": {
    "fills": 22,

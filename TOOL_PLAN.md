@@ -209,6 +209,22 @@ wins-to-recover and break-even loss rate; fit vs holdout and curve fitting;
 why a replay is an upper bound; what each brake does; what a decision record
 is; what a schedule is; what a tracker is.
 
+### Venues and horizons (operator, 2026-09-11)
+* **Robinhood as a second venue.** The decision code is venue-agnostic (it is
+  index arithmetic); only the book/order adapters differ. So: a `venue` field on
+  profiles and on the decision record, one adapter per venue, the same
+  profile runnable on both, and the Live tab showing both bots. Planned, not
+  built; nothing on Robinhood until its fee schedule, settlement wording and
+  price divergence from the CF index are measured (the Friday list).
+* **Not a trend/pattern identifier.** The edge is settlement mechanics -- the
+  last 60 prints are mostly known, so the outcome is nearly arithmetic -- and it
+  exists only in the final ~30 s. It does not generalise to longer horizons
+  (4-11x overconfident past 30 s). It DOES generalise to any market whose
+  settlement is a short time-average of a public index, whatever the market's
+  length: other 15-min series, equity 15-min series (KXINX15M / KXNDQ15M, open
+  question B3), and hourly/daily crypto series IF they settle on the same
+  60-second average -- to be checked per series, one API call each.
+
 ### pinsim refactor the server needs
 `pinsim.run(profile, hours, end, progress=None) -> summary` with the tape
 window cached in-process per (hours, end) so a goal-search sweep loads the
@@ -216,7 +232,7 @@ tape once and replays N times. `main()` becomes a thin wrapper. Self-test kept.
 Hours capped at 48 in the UI; the collector outranks the tool for RAM.
 
 ### Build order (each step ships usable)
-1. `pinsim.run()` + tape cache · 2. server: schema, profiles, live · 3. page:
+1. ~~`pinsim.run()` + tape cache~~ DONE (cold 86 s / warm 15 s for 3 h, identical results) · 2. server: schema, profiles, live · 3. page:
 Live + Learn (read-only, zero risk, useful at once) · 4. sandbox single run +
 Builder tab · 5. sweeps + goal search + history · 6. Profiles tab · 7. control
 endpoint + AMENDMENT 11 in the trader (own self-test, quiet-window restart).
