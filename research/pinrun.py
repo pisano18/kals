@@ -160,7 +160,15 @@ DUMP_DISCOUNT = 0.05     # a certainty offered 5c+ below fair is a warning
 # only if the 95% CI on their mean P&L lies entirely below zero; keep only if
 # entirely above; otherwise evaluate again at 80. Cumulative P&L is NOT a
 # trigger -- a bar moved by outcomes is not a bar.
-DUMP_ENABLED = False
+# AMENDMENT 10b (2026-09-11 00:0xZ): ON, BY OPERATOR DECISION. The EV of the
+# class is undeterminable on six fills (above); on an undeterminable tie the
+# owner chose fewer losses: "don't do the crazy trades, but track them with
+# the would-be outcome. Later they'll be reviewed when populated with more
+# data." Every refusal writes a `dumped` record (ticker, side, price, fair,
+# tau, discount) once per close, so the would-be P&L is resolvable against
+# the settlement. The 40-fill evaluation on the 95% CI of mean would-be P&L
+# stands unchanged; this is a recorded owner decision, not a claim about EV.
+DUMP_ENABLED = True
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
                        # moments it calls <2% risk:
@@ -1382,9 +1390,18 @@ def selftest():
     ck('nb["dumped"]' in src and "_conf >= DUMP_CONF and _disc > DUMP_DISCOUNT" in src,
        "the guard is wired into the trade loop and counted in the near-miss "
        "record, so refusals are visible rather than silent")
-    ck(DUMP_ENABLED is False,
-       "AMENDMENT 10a: the guard is LOG-ONLY -- six live fills, mean +$0.79, "
-       "SE $4.1, the sign is not determinable, so the frozen baseline stands")
+    ck(DUMP_ENABLED is True,
+       "AMENDMENT 10b: the guard is ON by operator decision (undeterminable "
+       "EV, owner chose fewer losses); would-be outcomes are recorded")
+    _b10b = src[src.index(chr(10) + "def trade_loop("):]
+    ck('rec("dumped"' in _b10b and "dumped_seen.add((close_s, tk))" in _b10b
+       and _b10b.index("dumped_seen.add((close_s, tk))") <
+       _b10b.index('rec("dumped"'),
+       "every refusal writes ONE `dumped` record per (close, market) with "
+       "side, price, fair and tau, so the would-be P&L can be resolved later")
+    ck(_b10b.index('rec("dumped"') < _b10b.index("if DUMP_ENABLED:"),
+       "and the record is written before the enable check, whether or not "
+       "the trade is refused")
     # anchored on the loop body, not the whole file: this test's own string
     # literals appear earlier in the file than the loop and would be matched
     # first -- the self-inspection trap that once broke three checks here
@@ -1527,6 +1544,7 @@ def trade_loop(a, rec, book, idx, series_index):
     # each side and report it when the close passes, so a quiet run can be
     # told apart from a blind one.
     near = {}                # close_s -> dict of the best look at that close
+    dumped_seen = set()      # (close_s, ticker) already written as `dumped`
     reported = set()
     recon_at = {}            # ticker -> when the settlement was last polled
     state = {"halted": False, "errors": 0, "signals": 0, "considered": 0}
@@ -1885,6 +1903,15 @@ def trade_loop(a, rec, book, idx, series_index):
                 nb["dumped"] = nb.get("dumped", 0) + 1
                 if nb["best"] is not None and nb["best"]["ticker"] == tk:
                     nb["best"]["dumped"] = round(100 * _disc, 2)
+                # ONE record per (close, market), not one per 20 Hz tick, so
+                # the would-be outcome is resolvable later and the log stays
+                # readable. Written whether or not the guard is enabled.
+                if (close_s, tk) not in dumped_seen:
+                    dumped_seen.add((close_s, tk))
+                    rec("dumped", ticker=tk, want=want, price=round(price, 4),
+                        fair=round(f, 5), tau=tau, disc_c=round(100 * _disc, 2),
+                        size=size, take_n=take_n, close_s=close_s,
+                        refused=bool(DUMP_ENABLED))
                 if DUMP_ENABLED:
                     continue
             # THE EXPECTED-VALUE GATE (AMENDMENT 2). The model edge above uses

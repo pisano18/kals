@@ -27,6 +27,13 @@
    at 60–94¢ (break-even 15%). Only **1** such 60–94¢ fill exists under the
    current gate. n is far too small to write a rule from.
 
+### OWNER DECISION 00:12Z — refuse the "crazy deals", record what would have happened
+
+EV of the class is undeterminable on six fills; the owner broke the tie toward
+fewer losses. Guard ON; every such moment writes a `dumped` record (side, price,
+fair, tau) so the would-be P&L resolves against the settlement. Reviewed at 40.
+`VERSIONS.md` v-a10b.
+
 ### DECISION REVISED AGAIN 23:51Z — AMENDMENT 10 SWITCHED TO LOG-ONLY. The math does not support it.
 
 The operator's rule: *if it is profitable do it, if not don't; if the math is not
@@ -94,7 +101,7 @@ Ticker dates are ET; the log `t` field is UTC — read the `t` field.
 |---|---|
 | bank | **$110.45** |
 | record | 30 wins, 3 losses |
-| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30, **gate 0.995 (A9)**; discounted-certainty guard **log-only** (A10a) |
+| live | size **20**, 2 buys per close, ceiling **98.0¢**, tau 3–30, **gate 0.995 (A9)**; discounted-certainty guard **ON, would-be outcomes recorded** (A10b, owner decision) |
 | restart it | **`RESTART.md`** in the repo root — one line to paste |
 | brakes | −$60 · 3 losing **closes** · 2 order errors · 8 attempts/close |
 | day | started $38.83, funded +$113.04 → **−$41.54** |

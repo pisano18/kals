@@ -5,6 +5,34 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## v-a10b — 2026-09-11 00:12Z — AMENDMENT 10 ON, BY OPERATOR DECISION; would-be outcomes recorded (`0c5f513`)
+
+**Operator:** *"don't do the 'crazy trades', but track them with the 'would be'
+outcome. Later they'll be reviewed when populated with more data. Leave the
+program to continue."*
+
+**What changed:** `DUMP_ENABLED = True`. A fill where the model is ≥ 0.999 and the
+offer is more than 5¢ below fair is refused. **Every such moment writes one
+`dumped` record per (close, market)** — ticker, side, price, fair, tau, discount,
+depth — whether or not it is refused, so the would-be P&L resolves against the
+settlement later. Everything else is v-pin995.
+
+**The basis, stated exactly:** the EV of this class is **undeterminable** on the
+six live fills (+$4.75, mean +$0.79, SE ±$4.1, t = 0.19). On an undeterminable tie
+the owner chose fewer losses. **This is a recorded owner decision, not a claim
+that refusing is profitable.** The 40-fill evaluation stands: refuse stays only
+if the 95% CI on mean would-be P&L is not entirely above zero; if it is, the
+class comes back. Cumulative P&L is never the trigger.
+
+**To resolve would-be outcomes:** join `dumped` records to settlements on ticker
+— the same join `pinrace.py` does for orders.
+
+**Revert (buy them again):** `DUMP_ENABLED = False`, stop/start per RESTART.md.
+
+Restarted 00:12Z; pid 439076.
+
+---
+
 ## v-a10a — 2026-09-10 23:51Z — AMENDMENT 10 SWITCHED TO LOG-ONLY: the math does not support it (`82f2656`)
 
 **What changed:** `DUMP_ENABLED = False`. The guard still COUNTS every fill it

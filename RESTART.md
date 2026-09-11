@@ -76,7 +76,7 @@ human looks before more money moves.
 | size | 20 contracts, up to 2 buys per close |
 | price ceiling | **98.0¢** — never pays more |
 | confidence gate | **0.995** since 2026-09-10 (was 0.98) — needs 2.58 sd, not 2.05 |
-| dump guard | **log-only** since 23:51Z (`DUMP_ENABLED = False`): counts ≥99.9% "certainties" offered >5¢ below fair, refuses none — six live fills of the class net +$4.75, sign undeterminable |
+| dump guard | **ON** since 2026-09-11 00:12Z by owner decision: refuses a ≥99.9% "certainty" offered >5¢ below fair; each one is written as a `dumped` record so its would-be result is reviewed at 40 |
 | window | last 3–30 seconds before a close |
 | brakes | −$60 · 3 losing closes · 2 order errors · 8 attempts/close |
 | runs for | 3 days, then exits cleanly |
