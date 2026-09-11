@@ -168,7 +168,22 @@ def apply_profile(profile):
     exactly what a restart with those values would do."""
     for k, v in profile["params"].items():
         if hasattr(pinrun, k):
-            setattr(pinrun, k, v)
+            # a schedule is resolved per decision (see resolve_for); the
+            # module gets the schedule's default so nothing reads a dict
+            setattr(pinrun, k, v["default"] if pinrules.is_schedule(v) else v)
+
+
+def resolve_for(profile, rec):
+    """Set the schedulable params for THIS decision from the record so far.
+    SIZE by price, PRICE_CEILING by margin, SIGMA_STRESS by conditions -- the
+    live code reads them as module constants, so they are set right before
+    the decision and mean exactly what a restart with those values would."""
+    for k in ("SIZE", "PRICE_CEILING", "SIGMA_STRESS", "MAX_PER_CLOSE",
+              "MIN_FILL_FRAC", "IMPROVE_BY", "EDGE_FLOOR", "EV_FLOOR",
+              "MEASURED_FLIP", "PIN"):
+        v = profile["params"].get(k)
+        if pinrules.is_schedule(v):
+            setattr(pinrun, k, pinrules.resolve(profile, k, rec))
 
 
 # ------------------------------------------------------------------ self-test
@@ -243,6 +258,20 @@ def selftest():
     apply_profile(prof)
     ck(abs(pinrun.PIN - saved) < 1e-12,
        "and applying the default puts it back exactly")
+    # a SIZE schedule by price changes what the live code takes
+    p3 = json.loads(json.dumps(prof))
+    p3["params"]["SIZE"] = {"by": "price", "default": 20,
+                            "bands": [[0.50, 0.90, 60], [0.90, 0.99, 10]]}
+    apply_profile(p3)
+    resolve_for(p3, {"price": 0.85})
+    w5, px5, n5, _ = decide(ix2, "T", C, C - 10, 50.0, 2,
+                            dict(b, yes_ask=0.85), pinrun.SIZE)
+    resolve_for(p3, {"price": 0.97})
+    w6, px6, n6, _ = decide(ix2, "T", C, C - 10, 50.0, 2, b, pinrun.SIZE)
+    apply_profile(prof)
+    ck(w5 == "yes" and n5 == 60 and w6 == "yes" and n6 == 10,
+       f"SIZE by price: 60 contracts at 85c, 10 at 97c, through the live "
+       f"decision code (got {n5}, {n6})")
 
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
@@ -417,9 +446,26 @@ def main():
                                 b["age_ms"] > pinrun.MAX_BOOK_AGE_MS:
                             skips["stale_book"] += 1
                             continue
+                        # SCHEDULES resolve on what is known BEFORE deciding:
+                        # the model's view and the offer in front of it.
+                        sg0 = idx.sigma(iid)
+                        f0 = pinrun.fair(idx, iid, cs, sec, float(r["strike"]),
+                                         (sg0 or 0) * pinrun.SIGMA_STRESS,
+                                         round_digits=pindata.ROUND_DIGITS.get(
+                                             r["series"])) if sg0 else None
+                        if f0 is not None:
+                            side0 = "yes" if f0 >= 0.5 else "no"
+                            px0 = b.get(f"{side0}_ask")
+                            _, spot0, iage0 = idx.spot(iid)
+                            pre = record(f0, side0, px0 or 0.0, 0.0,
+                                         b.get(f"{side0}_ask_size") or 0.0,
+                                         tau, r["series"], sec, sg0, spot0,
+                                         b["age_ms"], iage0)
+                            resolve_for(profile, pre)
                         w, px, n, fv = decide(
                             idx, iid, cs, sec, float(r["strike"]),
-                            pindata.ROUND_DIGITS.get(r["series"]), b, a.size)
+                            pindata.ROUND_DIGITS.get(r["series"]), b,
+                            pinrun.SIZE)
                         if w is None:
                             skips[px] += 1
                             continue

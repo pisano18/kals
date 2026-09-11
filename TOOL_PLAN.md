@@ -127,12 +127,15 @@ latency, fill-race outcome.
 
 ## RESUME HERE (written 2026-09-11 ~01:0xZ, before the usage cutoff)
 
-Done and pushed: `pinrules.py` (schema, rules, trackers, profiles, self-test),
+Done and pushed: `pinrules.py` (schema, rules, trackers, profiles, SCHEDULES --
+any param as a band table over a field, e.g. SIZE by price -- self-test),
 `profiles/default.json` (= the live rule), `pinsim.py --profile X --hours N
 --end YYYYMMDDTHH --json out.json` (the sandbox backend: per-rule would-be
 tallies, fit/holdout, 70%-fill pair). Verified on 6 settled hours ending
 20260910T05: 23 traded, dump rule fired on real moments, JSON written to
 `results/pinsim_default_6h.json` -- that file is the shape the tool reads.
+`profiles/size_by_price_demo.json` (40 under 90c, 20 above) replays end to end
+through the live decision code: `results/pinsim_demo_6h.json`.
 
 Next, in order: `research/pintool.py` (stdlib http.server: `/api/live`,
 `/api/profiles`, `/api/schema` from pinrules.PARAMS + FIELDS, `/api/sandbox/run`

@@ -219,6 +219,73 @@ def decide(profile, rec):
     return ("refuse" if (refuse and not allow) else "trade"), fired
 
 
+# -------------------------------------------------------------- schedules
+# A param may be a NUMBER or a SCHEDULE -- a table of bands over one field of
+# the decision record:
+#     {"by": "price", "default": 20,
+#      "bands": [[0.50, 0.80, 60], [0.80, 0.94, 30], [0.94, 0.99, 20]]}
+# meaning: 60 contracts when the price is in [0.50, 0.80), 30 in [0.80, 0.94),
+# 20 in [0.94, 0.99), and the default anywhere else. This is how "how many
+# contracts at each price point" is expressed, and any value can be promoted
+# to a schedule over any numeric field. Bands are [lo, hi) and must not
+# overlap; every band value must sit inside the param's own range.
+SCHEDULE_KEYS = ("by", "bands", "default")
+
+
+def is_schedule(v):
+    return isinstance(v, dict) and "bands" in v
+
+
+def check_schedule(name, v, path):
+    bad = []
+    typ, lo, hi, *_ = PARAMS[name]
+    if set(v) - set(SCHEDULE_KEYS) or "by" not in v or "default" not in v:
+        return [f"{path}: a schedule is {{by, bands, default}}"]
+    if v["by"] not in FIELDS:
+        bad.append(f"{path}.by: unknown field {v['by']!r}")
+    if v["by"] in ("want", "coin"):
+        bad.append(f"{path}.by: {v['by']} is not numeric; use a rule")
+
+    def okval(x, where):
+        if typ == "int" and not (isinstance(x, int) and not isinstance(x, bool)):
+            bad.append(f"{where}: must be an integer")
+        elif not isinstance(x, (int, float)) or isinstance(x, bool):
+            bad.append(f"{where}: must be a number")
+        elif not (lo <= x <= hi):
+            bad.append(f"{where}: {x} outside [{lo}, {hi}]")
+    okval(v["default"], f"{path}.default")
+    bands = v["bands"]
+    if not isinstance(bands, list) or not bands:
+        return bad + [f"{path}.bands: non-empty list of [lo, hi, value]"]
+    prev_hi = None
+    for i, b in enumerate(sorted(bands, key=lambda b: b[0] if isinstance(b, list) and b else 0)):
+        if not (isinstance(b, list) and len(b) == 3 and
+                all(isinstance(x, (int, float)) for x in b[:2])):
+            bad.append(f"{path}.bands[{i}]: [lo, hi, value]")
+            continue
+        if b[1] <= b[0]:
+            bad.append(f"{path}.bands[{i}]: hi must exceed lo")
+        if prev_hi is not None and b[0] < prev_hi:
+            bad.append(f"{path}.bands[{i}]: overlaps the previous band")
+        prev_hi = b[1]
+        okval(b[2], f"{path}.bands[{i}].value")
+    return bad
+
+
+def resolve(profile, name, rec):
+    """The effective value of a param for THIS decision record."""
+    v = profile["params"][name]
+    if not is_schedule(v):
+        return v
+    x = rec.get(v["by"])
+    if x is None:
+        return v["default"]
+    for lo, hi, val in v["bands"]:
+        if lo <= x < hi:
+            return val
+    return v["default"]
+
+
 # --------------------------------------------------------------- profiles
 def validate(profile):
     bad = []
@@ -230,6 +297,9 @@ def validate(profile):
             bad.append(f"params.{k}: unknown param")
             continue
         typ, lo, hi, *_ = PARAMS[k]
+        if is_schedule(v):
+            bad += check_schedule(k, v, f"params.{k}")
+            continue
         if typ == "int" and not (isinstance(v, int) and not isinstance(v, bool)):
             bad.append(f"params.{k}: must be an integer")
             continue
@@ -316,10 +386,16 @@ def worst_case(params, price=None):
     """Dollars a run can lose before its brakes stop it -- computed from the
     profile's own numbers so a looser profile cannot hide what it permits."""
     import math
-    p = price if price is not None else params["PRICE_CEILING"]
-    close = params["MAX_PER_CLOSE"] * params["SIZE"] * p
-    n_abort = math.ceil(-params["LOSS_ABORT"] / close) if close > 0 else 99
-    n = min(n_abort, params["MAX_LOSSES"])
+
+    def biggest(v):            # a schedule's worst case is its largest band
+        if is_schedule(v):
+            return max([v["default"]] + [b[2] for b in v["bands"]])
+        return v
+    p = price if price is not None else biggest(params["PRICE_CEILING"])
+    close = biggest(params["MAX_PER_CLOSE"]) * biggest(params["SIZE"]) * p
+    n_abort = math.ceil(-biggest(params["LOSS_ABORT"]) / close) \
+        if close > 0 else 99
+    n = min(n_abort, biggest(params["MAX_LOSSES"]))
     return {"one_losing_close": round(close, 2), "closes_to_halt": n,
             "max_loss": round(n * close, 2)}
 
@@ -419,6 +495,44 @@ def selftest():
     b = json.loads(json.dumps(d))
     b["rules"].append(dict(b["rules"][0]))
     ck(any("duplicate" in x for x in validate(b)), "duplicate rule ids refused")
+
+    # --- SCHEDULES: "how many contracts at each price point" ------------
+    sp = json.loads(json.dumps(d))
+    sp["params"]["SIZE"] = {"by": "price", "default": 20,
+                            "bands": [[0.50, 0.80, 60], [0.80, 0.94, 30],
+                                      [0.94, 0.99, 20]]}
+    ck(validate(sp) == [], "SIZE as a schedule over price validates")
+    # 22c sits BELOW the first band, so the right answer there is the default
+    # -- the first version of this check asked for 60 and the code correctly
+    # refused; the fixture was wrong, not resolve()
+    ck(resolve(sp, "SIZE", {"price": 0.60}) == 60 and
+       resolve(sp, "SIZE", {"price": 0.85}) == 30 and
+       resolve(sp, "SIZE", {"price": 0.97}) == 20 and
+       resolve(sp, "SIZE", {"price": 0.22}) == 20 and
+       resolve(sp, "SIZE", {"price": 0.995}) == 20 and
+       resolve(sp, "SIZE", {}) == 20,
+       "and resolves 60 at 60c, 30 at 85c, 20 at 97c, and the DEFAULT below "
+       "the first band (22c), above the last (99.5c) and when price is missing")
+    ck(resolve(sp, "PIN", {"price": 0.22}) == 0.995,
+       "a plain number resolves to itself")
+    sp2 = json.loads(json.dumps(sp))
+    sp2["params"]["SIZE"]["bands"].append([0.70, 0.90, 40])
+    ck(any("overlaps" in x for x in validate(sp2)), "overlapping bands refused")
+    sp3 = json.loads(json.dumps(sp))
+    sp3["params"]["SIZE"]["bands"][0][2] = 900
+    ck(any("outside" in x for x in validate(sp3)),
+       "a band value outside the param's range is refused")
+    sp4 = json.loads(json.dumps(sp))
+    sp4["params"]["SIZE"]["by"] = "coin"
+    ck(any("not numeric" in x for x in validate(sp4)),
+       "a schedule over a non-numeric field is refused (use a rule)")
+    sp5 = json.loads(json.dumps(d))
+    sp5["params"]["PRICE_CEILING"] = {"by": "margin_sd", "default": 0.98,
+                                      "bands": [[4.0, 99.0, 0.996],
+                                                [2.6, 4.0, 0.99]]}
+    ck(validate(sp5) == [] and resolve(sp5, "PRICE_CEILING",
+                                        {"margin_sd": 5.0}) == 0.996,
+       "the margin-aware ceiling is expressible as a schedule over margin_sd")
 
     w = worst_case(d["params"])
     ck(w["one_losing_close"] == 39.2 and w["closes_to_halt"] == 2 and
