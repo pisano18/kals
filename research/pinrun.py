@@ -147,27 +147,30 @@ PIN = 0.995
 # ETH +2.82, SOL +1.52 and avoids XRP -16.61, DOGE -2.12 -- EV roughly
 # neutral, loss frequency down by the whole class. Fewer losses at ~zero EV
 # cost is the operator's stated preference and the definition of consistent.
-DUMP_CONF = 0.999        # 3.09 sd: "the model calls it certain"
-DUMP_DISCOUNT = 0.05     # a certainty offered 5c+ below fair is a warning
-# AMENDMENT 10a (2026-09-10 23:5xZ): THE GUARD IS LOG-ONLY. It went live at
-# 23:38Z on a preference, not on math, and the operator caught it. The math:
-# six such fills exist live, +15.36 +3.78 +2.82 +1.52 -16.61 -2.12 = +$4.75,
-# mean +$0.79/fill, standard error +/-$4.1, t = 0.19. THE SIGN IS NOT
-# DETERMINABLE. Refusing is not certifiably profitable; buying is not either.
-# Rule: if the math is not certain, do not use it -- so the frozen baseline
-# (buy them) stands and the guard only COUNTS. PRE-REGISTERED EVALUATION,
-# fixed before any further outcome is seen: at 40 fills of this class, refuse
-# only if the 95% CI on their mean P&L lies entirely below zero; keep only if
-# entirely above; otherwise evaluate again at 80. Cumulative P&L is NOT a
-# trigger -- a bar moved by outcomes is not a bar.
-# AMENDMENT 10b (2026-09-11 00:0xZ): ON, BY OPERATOR DECISION. The EV of the
-# class is undeterminable on six fills (above); on an undeterminable tie the
-# owner chose fewer losses: "don't do the crazy trades, but track them with
-# the would-be outcome. Later they'll be reviewed when populated with more
-# data." Every refusal writes a `dumped` record (ticker, side, price, fair,
-# tau, discount) once per close, so the would-be P&L is resolvable against
-# the settlement. The 40-fill evaluation on the 95% CI of mean would-be P&L
-# stands unchanged; this is a recorded owner decision, not a claim about EV.
+# AMENDMENT 10c (2026-09-11 12:4xZ): THE GUARD WAS WRONG IN BOTH DIRECTIONS.
+# Scored on all 139 live fills, by discount to fair at the FILLED price:
+#     <2c   42 fills  1 loss  -$2.11
+#     2-5c  64 fills  2 loss  -$0.11
+#     5-15c 24 fills  0 loss  +$32.20   <- the best band in the dataset
+#     15c+   9 fills  4 loss  -$12.41
+# The 0.999 confidence condition let KXSOL15M 2026-09-11 12:30Z through at
+# 99.508% with a 29.5c discount (-$12.16), and the 5c threshold refuses the
+# 5-15c band. As deployed the guard costs -$10.49 on the live record: it
+# refuses 8 winners (+$29.22) to avoid 2 losers (-$18.73). A measurably
+# negative rule does not stay.
+# TWO CHANGES, and their evidence is NOT equal:
+#  * DROP THE CONFIDENCE CONDITION. Not fitted: the SOL loss proves the
+#    discount matters independent of confidence, and every trade already
+#    passes PIN, so "confident" is not information.
+#  * RAISE THE THRESHOLD 5c -> 15c. The 5-15c evidence is strong and one
+#    directional (0 losses in 24 fills, +$32.20 -- refusing it is
+#    unambiguously harmful). The 15c line itself is CHOSEN AFTER SEEING THE
+#    DATA on 9 fills and is therefore FITTED; it is kept only because
+#    reverting to no guard is also negative on that band (-$12.41) and
+#    because the operator's decision was to refuse deals this extreme.
+#    It does not get to claim significance. The pre-registered review at 40
+#    records stands and decides it on data this threshold never saw.
+DUMP_DISCOUNT = 0.15     # cents below fair that make an offer a warning
 DUMP_ENABLED = True
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
@@ -1365,24 +1368,28 @@ def selftest():
        "and the signal record actually carries the conditions columns")
 
     # --- AMENDMENT 10: never buy a certainty at a discount ------------------
-    ck(abs(ND.inv_cdf(DUMP_CONF) - 3.09) < 0.01,
-       f"DUMP_CONF {DUMP_CONF} is 3.09 sd -- the model calling it certain")
     ck(DUMP_DISCOUNT > 10 * EDGE_FLOOR,
        f"a {100*DUMP_DISCOUNT:.0f}c discount is >10x the {100*EDGE_FLOOR:.1f}c "
        f"edge floor, so the honest edge can never trip it")
     # the live losses this exists for, and the live wins it must not touch,
     # replayed through the same arithmetic the loop uses
     def _dump(f_, price_, want_):
-        c_ = f_ if want_ == "yes" else 1 - f_
         d_ = (f_ - price_) if want_ == "yes" else ((1 - f_) - price_)
-        return c_ >= DUMP_CONF and d_ > DUMP_DISCOUNT
+        return d_ > DUMP_DISCOUNT
     ck(_dump(1.0, 0.82, "yes"),
-       "XRP 2026-09-10 04:59Z (fair 1.0, filled 82c, LOST -$16.61) is refused")
+       "XRP 04:59Z (fair 1.0, filled 82c, 18c disc, LOST -$16.61) refused")
     ck(_dump(0.0, 0.10, "no"),
-       "DOGE 2026-09-10 22:14Z (fair 0.0, filled 10c, LOST -$2.12) is refused")
+       "DOGE 22:14Z (fair 0.0, filled 10c, 90c disc, LOST -$2.12) refused")
+    ck(_dump(0.00492, 0.591, "no"),
+       "SOL 2026-09-11 12:30Z (99.508% sure, filled 59.1c, 40.4c disc, "
+       "LOST -$12.16) IS refused now -- the 0.999 condition let it through")
+    ck(_dump(0.00626, 0.73, "no"),
+       "NEAR 09-09 (99.827% sure, 73c, 26.8c disc, LOST -$14.13) refused")
     ck(not _dump(0.99735, 0.89, "yes"),
-       "BNB 12:30Z (fair 0.99735, 89c, WON +$2.06) is NOT: 99.7% is not "
-       "'certain' and the guard must not eat ordinary cheap fills")
+       "BNB 89c (10.7c disc, WON +$2.06) is NOT refused -- the 5-15c band "
+       "went 24-0 for +$32.20 and refusing it was the guard's worst error")
+    ck(not _dump(1.0, 0.919, "yes"),
+       "SOL 91.9c (8.1c disc, WON) passes")
     ck(not _dump(1.0, 0.978, "yes"),
        "a certainty at 97.8c (2.2c discount, WON) passes -- the normal edge")
     ck(not _dump(0.9953, 0.98, "yes"),
@@ -1899,7 +1906,7 @@ def trade_loop(a, rec, book, idx, series_index):
             # information, not our edge. See DUMP_CONF / DUMP_DISCOUNT.
             _conf = f if want == "yes" else (1.0 - f)
             _disc = (f - price) if want == "yes" else ((1.0 - f) - price)
-            if _conf >= DUMP_CONF and _disc > DUMP_DISCOUNT:
+            if _disc > DUMP_DISCOUNT:
                 nb["dumped"] = nb.get("dumped", 0) + 1
                 if nb["best"] is not None and nb["best"]["ticker"] == tk:
                     nb["best"]["dumped"] = round(100 * _disc, 2)

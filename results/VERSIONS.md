@@ -5,6 +5,39 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## v-a10c — 2026-09-11 12:45Z — the crazy-deal guard was WRONG IN BOTH DIRECTIONS; fixed (`65b0fc2`)
+
+**A second loss (KXSOL15M 12:30Z, −$12.16) went straight through the guard**:
+99.508% sure, filled at 59.1¢ — a **29.5¢ discount** — because the rule demanded
+≥99.9% confidence. Scoring the guard on all 139 live fills then showed the
+other half of the error.
+
+| discount to fair at the FILLED price | fills | lost | loss rate | P&L |
+|---|---|---|---|---|
+| under 2¢ | 42 | 1 | 2.4% | −$2.11 |
+| 2–5¢ | 64 | 2 | 3.1% | −$0.11 |
+| **5–15¢** | **24** | **0** | **0.0%** | **+$32.20** |
+| **15¢+** | **9** | **4** | **44.4%** | **−$12.41** |
+
+**As deployed the guard cost −$10.49**: it refused 8 winners (+$29.22) to avoid
+2 losers (−$18.73). A measurably negative rule does not stay — the operator's
+own test.
+
+**Two changes, and their evidence is NOT equal.**
+* **Drop the confidence condition — NOT fitted.** The SOL loss proves the
+  discount matters independent of confidence, and every trade already passes
+  PIN, so "confident" carried no information.
+* **5¢ → 15¢ — FITTED, and labelled so.** The 5–15¢ evidence is strong and
+  one-directional (0 losses in 24 fills, +$32.20; refusing it was the guard's
+  worst error). The 15¢ line itself was chosen after seeing 9 fills. It is kept
+  only because no guard is also negative on that band (−$12.41) and because the
+  operator decided to refuse deals this extreme. **It claims no significance.
+  The pre-registered review at 40 records decides it on data it never saw.**
+
+Restarted 12:45Z, pid 601412. Revert: `DUMP_ENABLED = False`.
+
+---
+
 ## v-a10b — 2026-09-11 00:12Z — AMENDMENT 10 ON, BY OPERATOR DECISION; would-be outcomes recorded (`0c5f513`)
 
 **Operator:** *"don't do the 'crazy trades', but track them with the 'would be'
