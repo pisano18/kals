@@ -2263,6 +2263,16 @@ def main():
         # ARITHMETIC IMPLIES.
         price_ceiling=PRICE_CEILING,
         ev_implied_ceiling=round(1.0 - MEASURED_FLIP - EV_FLOOR, 4),
+        # SAME LESSON, APPLIED TO THE NEWER CONSTANTS (added 2026-09-11).
+        # The crazy-deal guard and the scrap rule were both deployed without
+        # appearing in this record, so a later reader could see "dumped"
+        # entries but not the threshold that produced them, and could not tell
+        # a refusing process from a merely-logging one. The tape now says the
+        # >=15c band loses 31.31% and costs -6.51c/contract over 18,648
+        # contracts, which makes this exact number worth reconstructing later.
+        dump_discount=DUMP_DISCOUNT,
+        dump_enabled=DUMP_ENABLED,
+        min_fill_frac=MIN_FILL_FRAC,
         code_sha=_source_fingerprint())
 
     if a.live:

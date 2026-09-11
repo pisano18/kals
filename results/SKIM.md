@@ -122,6 +122,59 @@ contract it climbs to +10.11c at a 80c limit while the loss rate climbs to
 
 ---
 
+## ⚠️ READING THE LIVE LOG — A TRAP THAT REPORTS 85x THE TRUTH (found 2026-09-11)
+
+A `settled` record looks like this:
+
+```json
+{"ticker":"KXSOL15M-26SEP111845-45","want":"no","result":"no",
+ "cost":0.83,"pnl_c":320.24,"realised":7.636,"t":"2026-09-11T22:45:20Z"}
+```
+
+- **`pnl_c` is THIS BET's profit in CENTS.** 320.24 = $3.20.
+- **`realised` is the SESSION'S RUNNING TOTAL in DOLLARS**, not this bet's.
+
+**Summing `realised` across records gives $1,183.46 on an account that has
+made $13.87.** It reproduces `realised` exactly as a running sum of
+`pnl_c`/100 on 144 of 144 records, so the two fields are consistent — they
+just answer different questions, and the names do not say so.
+
+**The right lifetime figure is `sum(pnl_c)/100`.** It was caught only by
+reconciling against `/portfolio/balance`, which is the rule: a P&L number is
+not believed until the bank agrees with it.
+
+### LIVE, reconciled 2026-09-11 22:50Z
+
+| | |
+|---|---|
+| lifetime | **144 bets, 137 W, 7 L — 4.9% loss rate, +$11.93** |
+| account | $165.74 held, $151.87 deposited, **+$13.87** (the $1.94 gap is an open position / fee rounding, not reconciled) |
+| today | 33 W, 1 L, +$11.30 |
+| **since the 15¢ guard + 0.995 gate went live 13:23Z** | **9 bets, 9 W, 0 L, +$8.51** |
+
+**Every loss, all seven:**
+
+| when | market | paid | result |
+|---|---|---|---|
+| 09-09 00:45:20 | NEAR | 96.2¢ | −$19.29 |
+| 09-09 00:45:35 | NEAR | 95.6¢ | −$19.18 |
+| 09-09 00:45:50 | NEAR | 73.0¢ | −$14.13 |
+| 09-10 05:00:20 | XRP | 82.0¢ | −$16.61 |
+| 09-10 05:30:20 | BNB | 94.0¢ | −$17.60 |
+| 09-10 22:15:20 | DOGE | 10.0¢ | −$2.12 |
+| 09-11 12:30:20 | SOL | 59.1¢ | −$12.16 |
+
+**Four of the seven were deep-discount fills the 15¢ guard now refuses** —
+the SOL at 59.1¢ (40.4¢ under fair), the NEAR at 73¢ (26.8¢ under), the XRP at
+82¢ and the DOGE at 10¢. `pinrun --selftest` asserts each of those is refused
+by the code now running.
+
+**The guard has fired 6 times.** The newest, 09-11 21:29Z, refused XRP NO at
+74¢ against a 99.7% fair — a 25.7¢ discount, which the trade tape puts in the
+band that loses 39.62% and costs −17.10¢ per contract.
+
+---
+
 ## STATE 2026-09-11 12:40Z — read this first
 
 **Current gate (0.995) since 09-10 08:33Z: 54 fills, 52 W, 2 L, +$21.73.**
