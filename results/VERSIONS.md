@@ -5,6 +5,29 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## v-a12 — 2026-09-11 12:40Z — AMENDMENT 12: a scrap fill is not a slot (`d3e2ef0`)
+
+**What changed:** a fill smaller than half our size (under 10 contracts at size
+20) still books its POSITION — it exists, settles and releases like any other —
+but no longer spends one of the `MAX_PER_CLOSE` buys for that close and no
+longer raises the improve bar. It is written as a `scrap` record. The side is
+still recorded, so the both-sides guard holds. Nothing else changed.
+
+**Why:** 2026-09-11 07:00 ET, the bot asked for 20 twice and got **2.0** (BNB)
+and **0.02** (BTC) — the offer was gone by the time the order landed — and each
+scrap consumed a buy for its close and raised the bar, blocking a real fill
+behind it. `MIN_FILL_FRAC` gated what we ask for; nothing gated what we got.
+This was already logged as open in SKIM.md ("dust fills burn a scale-in slot").
+
+**Risk:** none to money — a scrap can only lose its own few cents. The change
+can only ADD a real fill where a scrap used to block one. Self-tested
+structurally (slot booked only when `filled >= _real`, scrap recorded) and on
+the arithmetic (at size 20 the line is 10; 2.0 and 0.02 are scraps).
+
+Restarted 12:40Z in the quiet window; pid 602652.
+
+---
+
 ## v-a10c — 2026-09-11 12:45Z — the crazy-deal guard was WRONG IN BOTH DIRECTIONS; fixed (`65b0fc2`)
 
 **A second loss (KXSOL15M 12:30Z, −$12.16) went straight through the guard**:

@@ -4,6 +4,38 @@
 
 ---
 
+## STATE 2026-09-11 12:40Z — read this first
+
+**Current gate (0.995) since 09-10 08:33Z: 54 fills, 52 W, 2 L, +$21.73.**
+Bank **$158.11** vs $151.87 in (+$6.24). Both losses were "crazy deals"
+(DOGE 10¢, SOL 59.1¢ on a 29.5¢ discount).
+
+**The class we still trade (discount under 15¢): 52 fills, 0 lost, +$36.01.**
+Skeptically: 0 of 52 has a 95% upper bound of **6.8%**, and break-even at the
+95.9¢ mean price is **3.78%** — the point estimate is excellent and the
+interval still includes "loses money." That is what the 180-fill bar is for.
+**No scaling** (54/180).
+
+**Three amendments today, each on the live record:**
+* **A10c** — the crazy-deal guard was wrong both ways: it demanded ≥99.9%
+  confidence (the SOL loss was 99.5%) and refused the 5–15¢ band, which went
+  24–0 for +$32.20. Now: discount-only, line at 15¢. The 15¢ line is FITTED
+  on 9 fills and says so; the 40-record review decides it.
+* **A12** — a scrap fill (under half our size) no longer spends a scale-in
+  slot. Two scraps (2.0 and 0.02 contracts) had blocked real fills.
+* Settlement file refreshed so the sandbox and the review resolve recent
+  markets.
+
+**The residual risk no rule touches:** a wrongly-"certain" bet at a FAIR
+price. One costs ~$19.40 at 97¢; a win there pays $0.56; 32 wins to recover.
+Live in the 2.6–4 sd band: 1 loss in 52. The model's extreme tail is not
+trustworthy and only price limits the damage. This is the whole business, and
+only fills will answer it.
+
+**Open:** tool auth before any phone access (do not port-forward); Live tab
+should aggregate every log of the current version; AMENDMENT 11 (control
+reader) not built; Robinhood venue; the exchange-tick veto stays log-only.
+
 ## THE GAME PLAN — 2026-09-10 23:20Z, set from LIVE facts only. Bars fixed BEFORE the next number is seen.
 
 ### What is actually happening (live fills only; no backtest number in this section)

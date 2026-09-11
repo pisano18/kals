@@ -1044,6 +1044,17 @@ def selftest():
        "zero-fill cannot burn it")
     ck("if filled > 0:" in _b2[:_i_slot],
        "and it is booked only inside the filled>0 branch")
+    # --- AMENDMENT 12: a scrap fill is not a slot ---------------------------
+    ck("if filled >= _real:" in _b2[:_i_slot] and
+       _b2.index("if filled >= _real:") > _b2.index("if filled > 0:"),
+       "STRUCTURAL: the slot is booked only when the FILL is at least half "
+       "our size; a scrap keeps its position and spends no slot")
+    ck("_note_scrap(cost)" in _b2 and 'rec("scrap"' in _b2,
+       "and a scrap is recorded, not silent")
+    _real20 = max(MIN_LEVEL, MIN_FILL_FRAC * 20.0)
+    ck(2.0 < _real20 and 0.02 < _real20 and 10.0 >= _real20,
+       f"at size 20 the real-fill line is {_real20:g}: the 2.0 and 0.02 "
+       f"fills of 2026-09-11 07:00 ET are scraps, a 10 is a fill")
     ck(_b2.index("take_n, close_s") > 0,
        "take() is called with take_n, the contracts actually available, not "
        "the raw SIZE")
@@ -1991,6 +2002,24 @@ def trade_loop(a, rec, book, idx, series_index):
                     pv.setdefault("sides", {})[tk] = want
                     pv.setdefault("tickers", set()).add(tk)
 
+            def _note_scrap(px):
+                """AMENDMENT 12 (2026-09-11): A SCRAP FILL IS NOT A SLOT.
+                MIN_FILL_FRAC gates what we ASK for; nothing gated what we
+                GOT. 2026-09-11 07:00 ET: asked 20, filled 2.0 (BNB) and
+                0.02 (BTC) -- the offer was gone by the time the order landed
+                -- and each scrap consumed one of the two buys for its close
+                and raised the improve bar, blocking a real fill behind it.
+                A fill under half our size books the POSITION (it exists and
+                must settle and release) but not the slot and not the bar. It
+                does record the side, so the both-sides guard still holds."""
+                pv = fired.get(close_s)
+                if pv is None:
+                    fired[close_s] = {"n": 0, "best": 1.0, "tk": tk,
+                                      "sides": {tk: want}, "tickers": {tk}}
+                else:
+                    pv.setdefault("sides", {})[tk] = want
+                    pv.setdefault("tickers", set()).add(tk)
+
             if not live:
                 _book_slot(price)
                 open_pos[f"paper-{tk}-{now_s}"] = (close_s, want, price,
@@ -2036,7 +2065,18 @@ def trade_loop(a, rec, book, idx, series_index):
                                     or f"{tk}-{time.time():.6f}")
                         open_pos[_oid_new] = (close_s, want, cost, filled, tk)
                         state["fills"] = state.get("fills", 0) + 1
-                        _book_slot(cost)
+                        # AMENDMENT 12: a scrap (under half our size) keeps
+                        # its position but does not spend a scale-in slot
+                        _real = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))
+                        if filled >= _real:
+                            _book_slot(cost)
+                        else:
+                            _note_scrap(cost)
+                            state["scraps"] = state.get("scraps", 0) + 1
+                            rec("scrap", ticker=tk, want=want, filled=filled,
+                                asked=take_n, price=cost, real_min=_real)
+                            print(f"    SCRAP {filled:g} of {take_n:g} -- "
+                                  f"position kept, slot NOT spent")
                     else:
                         state["nofill"] = state.get("nofill", 0) + 1
                     state["sent"] = state.get("sent", 0) + 1
