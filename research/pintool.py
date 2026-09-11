@@ -75,21 +75,24 @@ _proc_cache = {"t": 0, "v": None}
 
 
 def trader_process():
-    """(pid, command) of the running trader, cached 30 s. PowerShell is the
-    only stdlib-free way to see command lines on Windows."""
+    """pid of the running trader, or None, or "unknown" when the CHECK failed.
+
+    The first version cached a failed PowerShell call (cold start > 15 s) as
+    None for 30 s, and the page said NOT RUNNING while the bot was fine. A
+    failed check must never look like a dead bot: it is reported as unknown,
+    not cached, and the page falls back to log freshness."""
     if time.time() - _proc_cache["t"] < 30:
         return _proc_cache["v"]
-    v = None
     try:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
              "Where-Object {$_.CommandLine -like '*research*pinrun*'} | "
              "Select-Object -First 1 -ExpandProperty ProcessId"],
-            capture_output=True, text=True, timeout=15).stdout.strip()
+            capture_output=True, text=True, timeout=45).stdout.strip()
         v = int(out) if out else None
     except Exception:
-        v = None
+        return "unknown"                                     # do not cache
     _proc_cache.update(t=time.time(), v=v)
     return v
 
@@ -142,7 +145,15 @@ def live_state():
     closes = [r for r in recs if r.get("kind") == "close_summary"]
     out["start"] = start
     out["log_age_s"] = round(time.time() - os.path.getmtime(path), 1)
-    out["alive"] = out["pid"] is not None
+    # the trader writes a close summary every 15 minutes; a log younger than
+    # ~20 minutes is alive whatever the process check said
+    fresh = out["log_age_s"] < 1200
+    if out["pid"] == "unknown":
+        out["alive"] = fresh
+        out["alive_basis"] = "log freshness (process check failed)"
+    else:
+        out["alive"] = out["pid"] is not None or fresh
+        out["alive_basis"] = "process" if out["pid"] else "log freshness"
     # equity: cumulative realised, one point per settlement
     eq, cum = [], 0.0
     for r in settled:

@@ -237,6 +237,32 @@ Live + Learn (read-only, zero risk, useful at once) · 4. sandbox single run +
 Builder tab · 5. sweeps + goal search + history · 6. Profiles tab · 7. control
 endpoint + AMENDMENT 11 in the trader (own self-test, quiet-window restart).
 
+## OPERATOR FEEDBACK ON v1 (2026-09-11) -- these come before anything else
+
+1. **Design: Robinhood-like.** Clean, sparse, one big number per screen, green/red,
+   thin type, rounded cards, dark. Not a dense dashboard.
+2. **SIMPLE MODE by default.** One screen: running or not (with the reason if not),
+   today's P&L, all-time P&L, wins / losses, bank, and one plain sentence of
+   status. An "Advanced" switch reveals everything else. The operator does not
+   yet know the vocabulary -- the tool must not assume it.
+3. **More intuitive everywhere.** Every number has a one-line plain meaning next
+   to it, not in a tooltip.
+4. **THE REPLAY PLAYER -- the simulation as a live stock chart.** Pick any date
+   and time in the tape (e.g. three days ago, Tuesday 14:00), press PLAY, and
+   the chart advances as it looked on Kalshi: the index line, the strike, the
+   settlement window; the bot's live variables changing with it -- confidence,
+   margin, the price needed to sway the average, the offer on the book, what
+   the rules say -- and a running tally (P&L, wins, losses, fills). Speed 1x to
+   very fast, pause, step, and "play forward to <date/time>" which skips ahead.
+   **The purpose is peace of mind that the backtest is real**, by seeing it
+   behave live. Implementation: `pinsim.stream(profile, start, end)` yields one
+   FRAME per second (index, best asks, fair, margin_sd, discount, sway price,
+   decision + fired rules, tally); the server runs it in a thread into a
+   buffer; the page polls `/api/replay/<id>?from=N` and renders at the chosen
+   speed. Same decision code as live; the frames ARE the decision records.
+5. A failed process check must never read as "not running" (fixed: unknown +
+   log freshness).
+
 ## RESUME HERE (written 2026-09-11 ~01:0xZ, before the usage cutoff)
 
 Done and pushed: `pinrules.py` (schema, rules, trackers, profiles, SCHEDULES --
