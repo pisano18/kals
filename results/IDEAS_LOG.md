@@ -22,6 +22,60 @@ deployed, with the reason) · **PARTIAL** (tested but not conclusively) ·
 
 ---
 
+## 🛑 PYTH / COMMODITIES — KILLED STRUCTURALLY 2026-09-11. DO NOT PAY $500/MONTH.
+
+The operator was offered a 14-day Pyth trial with a **$500/month** starter
+subscription behind it. **The answer is no, and the reason is not price.**
+
+**Read the settlement rules side by side.** Both are from `/markets`:
+
+- **Crypto (`KXBTC15M`)** — *"If the **simple average of the sixty seconds** of
+  CF Benchmarks' BRTI before 7:15 PM EDT is at least the simple average of the
+  sixty seconds before 7:00 PM EDT..."*
+- **Commodities (`KXGOLD15M`, and identically SILVER/WTI/COPPER/NATGAS)** —
+  *"If the **close price of the 1-minute candlestick** for Gold at 7:15 PM EDT
+  is at least the close price of the 1-minute Pyth GOLD candlestick at 7:00 PM
+  EDT..."*
+
+**A candle close is ONE point. There is no average, so there is nothing to
+lock.** Our entire edge is that with `tau` seconds left, `60-tau` of the sixty
+settlement prints are already recorded and the variance of what remains
+collapses far faster than `sqrt(tau)`. That mechanism is absent here.
+
+| tau | crypto sd/sigma | Pyth sd/sigma | Pyth worse by |
+|---|---|---|---|
+| 30 | 1.62 | 5.48 | **3.4×** |
+| 20 | 0.89 | 4.47 | **5.0×** |
+| 10 | 0.33 | 3.16 | **9.7×** |
+| 5 | 0.12 | 2.24 | **18.1×** |
+| 3 | 0.06 | 1.73 | **27.8×** |
+
+**To reach the same 99.5% gate the price would have to sit 11.5 sigma away at
+tau 20 instead of 2.30, and 8.15 sigma at tau 10 instead of 0.84.** Those
+moments effectively never occur. There is no version of `pin` that trades
+these markets.
+
+**So the trial is not worth taking either** — not because it costs money, but
+because we already know what it would show, and a fortnight spent building a
+Pyth collector is a fortnight not spent on the crypto and Coin Race work that
+does have a mechanism. **Saved: $500/month, $6,000/year.**
+
+### And `KXINX15M` / `KXNDQ15M` are settled too — CLAUDE.md contradiction 3
+
+Both series EXIST with `frequency: fifteen_min` and `fee_type: quadratic`,
+which is what the repo claimed. But `/markets?status=settled` returns **zero
+markets for both**. They are listed and not traded, so the half-fee-at-
+frequency lever the repo hoped for is unavailable in practice. **The operator's
+version was right about the consequence; the repo was right about the field.**
+`IDEAS.md` B3 should be struck.
+
+**THE RULE THIS PRODUCES:** read the settlement rule text of a new series
+BEFORE costing out its data feed. One `/markets` call would have answered the
+Pyth question days ago, and `fee_type` — already the first thing we check —
+is not the only per-series property that decides whether a strategy exists.
+
+---
+
 ## MEASURED 2026-09-11 — THE COIN RACE, end to end (full detail: results/RESULTS_coinrace.md)
 
 | # | idea | verdict | evidence |
