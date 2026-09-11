@@ -350,21 +350,36 @@ def main():
                 if not (TAU_LO <= tau <= TAU_HI):
                     continue
                 rets = {}
-                ok = True
+                why = None
                 for coin, iid in COINS.items():
                     with idx.lock:
                         ticks = dict(idx.ticks.get(iid) or {})
                     sec, spot, iage = idx.spot(iid)
                     if spot is None or iage is None or iage > MAX_INDEX_AGE_S:
-                        ok = False
+                        why = "stale_index:%s" % coin
                         break
                     o = open_twap(ticks, cs - 900)
                     mu = close_mu(ticks, cs, int(now), spot)
-                    if o is None or mu is None or not o:
-                        ok = False
+                    if o is None or not o:
+                        # THE BLIND SPOT THIS RECORD EXISTS FOR. The opening
+                        # 60 prints are [close-960, close-900). A process that
+                        # started after that minute can NEVER evaluate this
+                        # event, and the first version simply fell through and
+                        # logged nothing -- indistinguishable from "no edge".
+                        # It means the first evaluable race is the one whose
+                        # window opens after launch, i.e. up to 15 minutes in.
+                        why = "no_open_window:%s" % coin
+                        break
+                    if mu is None:
+                        why = "no_close_forecast:%s" % coin
                         break
                     rets[coin] = mu / o - 1.0
-                if not ok or len(rets) != 5:
+                if why or len(rets) != 5:
+                    if evt not in done:
+                        rec("cannot_evaluate", event=evt, tau=tau,
+                            why=why or "incomplete",
+                            have=sorted(rets), close_s=cs)
+                        done.add(evt)
                     continue
                 win, margin = leader(rets)
                 if len(win) != 1:

@@ -1,3 +1,74 @@
+# 2026-09-11 23:xxZ -- Pyth KILLED structurally; Coin Race measured; discount cliff settled on 48h
+
+Four things landed. Newest first, all committed, **branch is 4 commits ahead of
+origin and the push was blocked in-session -- run `git push`**.
+
+## 1. PYTH / COMMODITIES: DO NOT BUY. $500/month saved, and not on price.
+
+Crypto settles on *"the simple average of the sixty seconds of CF Benchmarks'
+BRTI before"* the close. GOLD/SILVER/WTI/COPPER/NATGAS settle on *"the close
+price of the 1-minute candlestick"*. **A candle close is one point; there is
+nothing to lock**, so the variance collapse that `pin` is built on does not
+exist there. At tau 10 the commodity market is **9.7x more uncertain**, and
+reaching the 99.5% gate would need 8.15 sigma of cushion instead of 0.84.
+The 14-day trial is not worth taking either -- we know what it shows.
+
+**New rule: read a series' settlement RULE TEXT before costing out its feed.**
+`fee_type` is not the only per-series property that decides whether a strategy
+can exist.
+
+**Also settles CLAUDE.md contradiction 3:** `KXINX15M`/`KXNDQ15M` exist with
+`frequency: fifteen_min` and `fee_type: quadratic` exactly as the repo said,
+but return **zero settled markets**. Listed, not traded. Strike `IDEAS.md` B3.
+
+## 2. THE COIN RACE -- measured end to end (`results/RESULTS_coinrace.md`)
+
+Rule solved: highest (close 60s TWAP / open 60s TWAP), **773 of 773**. Leader
+nameable 97.8% at tau 30, 99.5% at tau 20. But the market charges 89.07c at
+tau 45-61 for something right 89.4% of the time -- efficient. The edge is only
+in the last 30 seconds: **+2.56c (20-30), +4.72c (10-15), +4.83c (5-10)** per
+contract, ~$5-10/day at size 20 on 6-10 chances.
+
+**Two bugs caught here, both of which INFLATED it:** look-ahead (scored tau-45
+buys against the tau-20 forecast: claimed 98.9% vs a true 89.4%) and tau
+running backwards (`min()` on tau is the LAST trade, not the first: claimed
+98.6% vs a true 93.6%). Neither was visible in the output table.
+
+**Never quote the 99.5%.** We can only buy when someone is trading and those
+are the closer races: 89.6-97.5%, not 91.5-99.6%.
+
+## 3. THE DISCOUNT CLIFF, on 48 hours / 144 closes / 45,287 real fills
+
+Refused band (>=15c): 329 trades, 13 closes, **31.31% lost, -6.51c/contract,
+-$1,213.60**. **The guard is vindicated but the true cliff is at 25c, not 15c**
+-- the 15-25c band is +0.17c, break-even. Kept at 15c deliberately.
+
+**"Be more patient for a 5-15c discount" is DEAD.** Per contract it looks 16x
+better; per CLOSE it is worse at every threshold ($0.576 -> $0.506 -> $0.351 ->
+$0.102) because tradeable closes fall 143 -> 72 -> 33 -> 6. **A per-contract
+table must be re-asked per close before it changes a rule.**
+
+## 4. READING THE LIVE LOG -- a trap that reports 85x
+
+`pnl_c` is THIS bet in **cents**; `realised` is the SESSION's running total in
+**dollars**. Summing `realised` gives $1,183 on an account that made $13.87.
+Correct lifetime: **144 bets, 137 W, 7 L, 4.9%, +$11.93** against a bank
+showing +$13.87. Since the guard went live 13:23Z: **9 bets, 9 W, 0 L, +$8.51**.
+
+**Which band each live loss fell in** (discount = confidence minus what we
+PAID): 3 at 2-5c (ordinary), 1 at 15-25c, 2 at 25-50c, 1 at 50-100c.
+**ZERO in the 10-15c band.** Four of seven are refused by the guard now.
+
+## Open / next
+
+- `research/pinracetest.py` -- the Coin Race penny test, operator-approved
+  2026-09-11: 1 contract, 10 orders, $10, <=95c, tau 15-20, `--live` required.
+  Self-test green. **Paper run first; live only after paper shows candidates.**
+- Tool still has no authentication. Do not expose it.
+- AMENDMENT 11 (control-file reader in pinrun) still not built.
+
+---
+
 # 2026-09-11 13:0xZ -- OOM kill of the settlement refresh; replaced by a merge that needs no trade tape
 
 **What happened:** `kalshi_fulltape.py --markets 1200` was killed by the OS for
