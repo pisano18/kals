@@ -61,7 +61,7 @@ profiles/default.json
       thread running pinsim with a profile → job id → `/api/sandbox/status`),
       `/api/control` (the ONLY writer of `results/CONTROL.json`), `/api/learn`.
       Binds `127.0.0.1` by default; `--lan` binds `0.0.0.0` for the phone.
-- [x] **`tool/index.html`** (v1) — one file, four tabs: **Live · Sandbox · Profiles ·
+- [x] **`tool/index.html`** (v2: Robinhood-style dark, SIMPLE mode by default with an Advanced switch, plain meanings beside numbers, REPLAY tab with play/pause/step/speed/play-forward, chart of index vs strike vs sway price, the bot's live variables in plain words, running tally and event feed) — one file, four tabs: **Live · Sandbox · Profiles ·
       Learn**. Chart.js from cdnjs. Responsive so the phone works.
 - [x] **Live tab** (v1) — equity curve as a stock ticker (% change today/7d/30d/all,
       OHLC by day, max drawdown in *wins-to-recover*, volume = fills, fill

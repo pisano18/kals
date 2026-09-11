@@ -6,96 +6,124 @@
 <title>Pin Control Centre</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-:root{--bg:#0f1115;--card:#171a21;--line:#262b36;--fg:#e6e8ee;--dim:#9aa3b2;--good:#3ddc84;--bad:#ff5c5c;--warn:#ffb347;--acc:#5aa9ff}
-@media (prefers-color-scheme: light){:root{--bg:#f4f6fa;--card:#fff;--line:#dde2ea;--fg:#14171c;--dim:#5b6472}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
-header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5}
-header h1{font-size:16px;margin:0 12px 0 0}
-nav a{color:var(--dim);text-decoration:none;padding:6px 10px;border-radius:6px}nav a.on{color:var(--fg);background:var(--line)}
-.pill{padding:3px 9px;border-radius:999px;font-size:12px;background:var(--line)}.pill.good{background:#153d2a;color:var(--good)}.pill.bad{background:#4a1c1c;color:var(--bad)}.pill.warn{background:#4a3a14;color:var(--warn)}
-main{padding:14px 16px;max-width:1400px;margin:0 auto}section{display:none}section.on{display:block}
-.grid{display:grid;gap:12px}.g3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
-.card h3{margin:0 0 8px;font-size:13px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.big{font-size:26px;font-weight:700}.sub{color:var(--dim);font-size:12px}
+:root{--bg:#000;--card:#111318;--line:#22262e;--fg:#f2f4f7;--dim:#8a93a3;--good:#00c805;--bad:#ff5000;--warn:#ffb020;--acc:#5aa9ff}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"Segoe UI",Inter,Roboto,sans-serif;font-weight:400}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 18px;position:sticky;top:0;background:var(--bg);z-index:5;border-bottom:1px solid var(--line)}
+header h1{font-size:15px;font-weight:600;margin:0 10px 0 0;letter-spacing:.02em}
+nav a{color:var(--dim);text-decoration:none;padding:6px 12px;border-radius:999px;font-weight:500}nav a.on{color:var(--fg);background:var(--card)}
+.sw{margin-left:auto;display:flex;gap:8px;align-items:center;color:var(--dim);font-size:13px}
+.pill{padding:3px 10px;border-radius:999px;font-size:12px;background:var(--card);color:var(--dim)}.pill.good{color:var(--good)}.pill.bad{color:var(--bad)}.pill.warn{color:var(--warn)}
+main{padding:16px 18px;max-width:1280px;margin:0 auto}section{display:none}section.on{display:block}
+.grid{display:grid;gap:14px}.g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(400px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.card h3{margin:0 0 6px;font-size:12px;color:var(--dim);font-weight:500;letter-spacing:.06em;text-transform:uppercase}
+.hero{font-size:44px;font-weight:600;letter-spacing:-.02em;line-height:1.1}.big{font-size:28px;font-weight:600;letter-spacing:-.01em}.sub{color:var(--dim);font-size:13px}.mean{color:var(--dim);font-size:13px;margin-top:4px}
 .good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
-table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{color:var(--dim);font-weight:600}
-.scroll{overflow-x:auto}
-input,select,textarea,button{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
-button{cursor:pointer;background:var(--line)}button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}button.danger{background:#4a1c1c;color:var(--bad)}button:disabled{opacity:.5;cursor:not-allowed}
-.param{display:grid;grid-template-columns:150px 1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
-.param .m{color:var(--dim);font-size:12px;grid-column:1/-1}
-.banner{padding:10px 12px;border-radius:8px;margin-bottom:12px;background:#4a3a14;color:var(--warn)}.banner.info{background:#173a5a;color:#bfe0ff}
-.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.rule{border:1px solid var(--line);border-radius:8px;padding:8px;margin:6px 0}
-details summary{cursor:pointer;color:var(--dim)}
-.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:6px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{color:var(--dim);font-weight:500}
+.scroll{overflow-x:auto}.adv{display:none}body.advanced .adv{display:block}body.advanced .grid.adv{display:grid}
+input,select,textarea,button{font:inherit;color:var(--fg);background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+button{cursor:pointer;background:var(--card)}button.primary{background:var(--good);color:#000;border-color:var(--good);font-weight:600}button.danger{color:var(--bad)}button:disabled{opacity:.4;cursor:not-allowed}
+.param{display:grid;grid-template-columns:150px 1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.param .m{color:var(--dim);font-size:12px;grid-column:1/-1}
+.banner{padding:10px 14px;border-radius:12px;margin-bottom:14px;background:#1c1a12;color:var(--warn);font-size:13px}.banner.info{background:#0f1a26;color:#bcd8ff}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.rule{border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}details summary{cursor:pointer;color:var(--dim)}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:var(--good)}
+.kv{display:grid;grid-template-columns:1fr auto;gap:2px 12px;font-size:13px}.kv b{font-weight:500}.kv .k{color:var(--dim)}
 </style>
 </head>
 <body>
 <header>
-  <h1>Pin Control Centre</h1>
-  <nav><a href="#live" data-tab="live">Live</a><a href="#builder" data-tab="builder">Builder</a><a href="#profiles" data-tab="profiles">Profiles</a><a href="#learn" data-tab="learn">Learn</a></nav>
-  <span id="pill-alive" class="pill">…</span><span id="pill-bank" class="pill">bank …</span><span id="pill-log" class="pill mono">…</span>
+  <h1>Pin</h1>
+  <nav><a href="#live" data-tab="live">Live</a><a href="#replay" data-tab="replay">Replay</a><a href="#builder" data-tab="builder">Builder</a><a href="#profiles" data-tab="profiles">Profiles</a><a href="#learn" data-tab="learn">Learn</a></nav>
+  <span id="pill-alive" class="pill">…</span>
+  <label class="sw"><input type="checkbox" id="advanced" onchange="setAdvanced(this.checked)"> Advanced</label>
 </header>
 <main>
 
 <!-- ================================================================ LIVE -->
 <section id="live">
-  <div class="grid g3" id="live-cards"></div>
-  <div class="grid g2" style="margin-top:12px">
-    <div class="card"><h3>Equity — realised P&amp;L this run</h3><canvas id="eq" height="140"></canvas><div class="sub" id="eq-note"></div></div>
-    <div class="card"><h3>Brakes &amp; pre-registered bars</h3><div id="brakes"></div></div>
+  <div class="card" style="margin-bottom:14px">
+    <h3 id="s-title">Today</h3>
+    <div class="hero" id="s-hero">…</div>
+    <div class="mean" id="s-line">…</div>
+    <div class="row" style="margin-top:10px" id="s-facts"></div>
   </div>
-  <div class="grid g2" style="margin-top:12px">
-    <div class="card"><h3>Recent fills</h3><div class="scroll"><table id="recent"></table></div></div>
-    <div class="card"><h3>Crazy deals refused (would-be, for the 40-record review)</h3><div class="scroll"><table id="dumped"></table></div></div>
+  <div class="grid g3 adv" id="live-cards"></div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3>Money this run</h3><canvas id="eq" height="150"></canvas><div class="sub" id="eq-note"></div></div>
+    <div class="card adv"><h3>Brakes &amp; the bars we set in advance</h3><div id="brakes"></div></div>
   </div>
-  <div class="card" style="margin-top:12px"><h3>Controls</h3>
-    <div class="banner">These write <span class="mono">results/CONTROL.json</span>. The trader honours it only once <b>AMENDMENT 11</b> (the control-file reader) is live; until then a press is a request on record, not an action. Nothing here can place an order.</div>
+  <div class="grid g2 adv" style="margin-top:14px">
+    <div class="card"><h3>Recent bets</h3><div class="scroll"><table id="recent"></table></div></div>
+    <div class="card"><h3>Suspicious cheap deals it walked away from</h3><div class="sub">Recorded so we can see later whether walking away was right (reviewed at 40).</div><div class="scroll"><table id="dumped"></table></div></div>
+  </div>
+  <div class="card adv" style="margin-top:14px"><h3>Controls</h3>
+    <div class="banner">These write a request file. The bot acts on it only once <b>AMENDMENT 11</b> (the control reader) is live — until then a press is recorded, not executed. Nothing here can place an order.</div>
     <div class="row"><button onclick="control('run')">▶ run</button><button onclick="control('pause')">⏸ pause</button><button class="danger" onclick="control('stop')">⏹ stop</button><span class="sub" id="ctl-msg"></span></div>
+  </div>
+</section>
+
+<!-- ============================================================== REPLAY -->
+<section id="replay">
+  <div class="banner info">Pick a moment in the recording and press play. The chart moves as it did on Kalshi, and the bot's own numbers move with it — computed by the <b>same code the live bot runs</b>. This is how you check the backtest is real: watch it behave. Loading a window takes ~40 s before the first frame.</div>
+  <div class="card"><div class="row">
+    start <input id="rp-start" type="datetime-local" step="1"> length <select id="rp-len"><option value="300">5 min</option><option value="900" selected>15 min</option><option value="1800">30 min</option><option value="3600">1 hour</option><option value="10800">3 hours</option></select>
+    coins <input id="rp-coins" placeholder="all, or e.g. KXXRP15M,KXBTC15M" style="width:240px">
+    profile <select id="rp-profile"></select>
+    <button class="primary" onclick="replayStart()">Load</button><span class="sub" id="rp-status"></span></div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="rpPlay()">▶ play</button><button onclick="rpPause()">⏸</button><button onclick="rpStep()">step 1s</button>
+      speed <select id="rp-speed" onchange="rpSpeed=+this.value"><option value="1">1×</option><option value="4">4×</option><option value="10" selected>10×</option><option value="30">30×</option><option value="120">120×</option></select>
+      play forward to <input id="rp-to" type="time" step="1"><button onclick="rpForward()">go</button>
+      <span class="mono" id="rp-clock" style="margin-left:auto"></span></div>
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3>The price, the line it must beat, and where the bot bet</h3><canvas id="rp-chart" height="170"></canvas><div class="sub">Solid = index. Dashed = strike (the line). Dotted = the average the remaining seconds must hit to land exactly on the strike — “the price needed to sway the average”.</div></div>
+    <div class="card"><h3>What the bot is thinking right now</h3><div id="rp-vars" class="sub">load a window</div></div>
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3>Running tally</h3><div id="rp-tally" class="big">—</div><div class="sub" id="rp-tally-sub"></div></div>
+    <div class="card"><h3>What happened</h3><div id="rp-events" class="mono" style="max-height:220px;overflow:auto"></div></div>
   </div>
 </section>
 
 <!-- ============================================================= BUILDER -->
 <section id="builder">
-  <div class="banner info">Change any value, hit <b>Run</b>, and the real tape re-plays through the trader's own decision code. Results always show <b>FIT</b> (first 70% of closes, where you tune) beside <b>HOLDOUT</b> (last 30%, the exam). Every number is an <b>upper bound</b> — a replay hands us every offer; live we fill ~70%. No control button exists on this tab.</div>
+  <div class="banner info">Change any value, press <b>Run</b>, and real history replays through the bot's own decision code. Results show <b>FIT</b> (where you tune) beside <b>HOLDOUT</b> (the exam). Every number is an <b>upper bound</b> — a replay gets every offer; live we get ~70%. No control button exists on this tab.</div>
   <div class="grid g2">
     <div>
-      <div class="card"><h3>Profile</h3>
-        <div class="row"><select id="b-load"></select><button onclick="loadIntoBuilder()">load</button>
-          <input id="b-name" placeholder="name" style="width:160px"><button class="primary" onclick="saveProfile()">save as profile</button><span class="sub" id="b-msg"></span></div>
-        <input id="b-note" placeholder="note (why this profile exists)" style="width:100%;margin-top:8px">
+      <div class="card"><h3>Strategy</h3>
+        <div class="row"><select id="b-load"></select><button onclick="loadIntoBuilder()">load</button><input id="b-name" placeholder="name" style="width:160px"><button class="primary" onclick="saveProfile()">save</button><span class="sub" id="b-msg"></span></div>
+        <input id="b-note" placeholder="why this strategy exists" style="width:100%;margin-top:8px">
       </div>
-      <div class="card" style="margin-top:12px"><h3>Values <span class="sub">(live value marked · hover a name for what it means · “depends on…” makes it a schedule)</span></h3><div id="params"></div></div>
-      <div class="card" style="margin-top:12px"><h3>Rules &amp; trackers</h3><div id="rules"></div><button onclick="addRule()">+ add rule</button></div>
+      <div class="card" style="margin-top:14px"><h3>Values <span class="sub">— live value marked · “depends on…” makes a value change with the price, the confidence, the conditions</span></h3><div id="params"></div></div>
+      <div class="card" style="margin-top:14px"><h3>Rules &amp; trackers</h3><div class="sub">A tracker watches a situation and records what would have happened. A rule refuses it. Same row, different switch.</div><div id="rules"></div><button onclick="addRule()">+ add</button></div>
     </div>
     <div>
       <div class="card"><h3>Run</h3>
-        <div class="row">hours <input id="r-hours" type="number" value="6" min="1" max="48" style="width:70px"> ending at hour <input id="r-end" placeholder="20260910T05" style="width:130px"> <span class="sub" id="r-newest"></span></div>
-        <div class="row" style="margin-top:8px">goal search: <select id="r-sweep-param"><option value="">(none)</option></select> values <input id="r-sweep-values" placeholder="0.98,0.99,0.995" style="width:180px"> objective <select id="r-objective"></select></div>
-        <div class="row" style="margin-top:8px"><button class="primary" onclick="runSandbox()">Run on the tape</button><span id="r-status" class="sub"></span></div>
+        <div class="row">hours <input id="r-hours" type="number" value="6" min="1" max="48" style="width:70px"> ending at <input id="r-end" placeholder="20260910T04" style="width:130px"> <span class="sub" id="r-newest"></span></div>
+        <div class="row" style="margin-top:8px">find the best: <select id="r-sweep-param"><option value="">(off)</option></select> try <input id="r-sweep-values" placeholder="0.98,0.99,0.995" style="width:180px"> for <select id="r-objective"></select></div>
+        <div class="row" style="margin-top:8px"><button class="primary" onclick="runSandbox()">Run on history</button><span id="r-status" class="sub"></span></div>
         <div class="bar" style="margin-top:6px"><i id="r-bar" style="width:0"></i></div>
       </div>
-      <div class="card" style="margin-top:12px"><h3>Results</h3><div id="results" class="sub">No run yet.</div></div>
-      <div class="card" style="margin-top:12px"><h3>Run history &amp; the curve-fitting bar</h3><div id="history" class="sub"></div></div>
+      <div class="card" style="margin-top:14px"><h3>Results</h3><div id="results" class="sub">No run yet.</div></div>
+      <div class="card" style="margin-top:14px"><h3>How many things you have tried</h3><div id="history" class="sub"></div></div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================ PROFILES -->
 <section id="profiles">
-  <div class="banner">Deploying a profile writes <span class="mono">CONTROL.json</span> with its name and hash. The trader validates it with its own full self-test and restarts itself — once AMENDMENT 11 is live. Loosening a brake shows the worst-case dollars first and requires the name typed back.</div>
+  <div class="banner">Deploying writes a request with the strategy's name and hash. The bot checks it with its full self-test and restarts itself — once AMENDMENT 11 is live. A looser brake shows the worst-case dollars first and needs the name typed back.</div>
   <div class="card"><div class="scroll"><table id="ptable"></table></div></div>
 </section>
 
 <!-- =============================================================== LEARN -->
 <section id="learn">
   <div class="grid g2">
-    <div class="card"><h3>Concepts</h3><div id="concepts"></div></div>
+    <div class="card"><h3>Start here</h3><div id="concepts"></div></div>
     <div><div class="card"><h3>Every value the bot uses</h3><div id="glossary"></div></div>
-      <div class="card" style="margin-top:12px"><h3>What a rule can see (the decision record)</h3><div id="fields"></div></div></div>
+      <div class="card" style="margin-top:14px"><h3>What a rule can see</h3><div id="fields"></div></div></div>
   </div>
 </section>
 </main>
@@ -103,144 +131,143 @@ details summary{cursor:pointer;color:var(--dim)}
 <script>
 const $=s=>document.querySelector(s);
 const api=async(p,o)=>{const r=await fetch(p,o?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)}:undefined);return r.json();};
-const fmt=(x,d=2)=>x==null?'—':(+x).toFixed(d);
-const money=x=>x==null?'—':((x<0?'−$':'+$')+Math.abs(x).toFixed(2));
-let SCHEMA=null, PROFILE=null, LIVEP=null, eqChart=null;
-
-// ---------------------------------------------------------------- tabs
+const fmt=(x,d=2)=>x==null?'—':(+x).toFixed(d);const money=x=>x==null?'—':((x<0?'−$':'+$')+Math.abs(x).toFixed(2));
+let SCHEMA=null,PROFILE=null,LIVEP=null,eqChart=null;
+function setAdvanced(on){document.body.classList.toggle('advanced',on);try{localStorage.setItem('adv',on?'1':'0');}catch(e){}}
 function showTab(t){document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.dataset.tab===t));if(t==='live')refreshLive();if(t==='profiles')refreshProfiles();}
 window.addEventListener('hashchange',()=>showTab(location.hash.slice(1)||'live'));
 
 // ---------------------------------------------------------------- live
-function card(title,val,sub,cls){return `<div class="card"><h3>${title}</h3><div class="big ${cls||''}">${val}</div><div class="sub">${sub||''}</div></div>`;}
+function card(title,val,mean,cls){return `<div class="card"><h3>${title}</h3><div class="big ${cls||''}">${val}</div><div class="mean">${mean||''}</div></div>`;}
 async function refreshLive(){
-  const L=await api('/api/live'); const m=L.metrics||{};
-  $('#pill-alive').textContent=L.alive?`running · pid ${L.pid}`:'NOT RUNNING'; $('#pill-alive').className='pill '+(L.alive?'good':'bad');
-  $('#pill-bank').textContent=L.bank==null?'bank —':`bank $${L.bank.toFixed(2)}`;
-  $('#pill-log').textContent=(L.log||'')+(L.start?` · gate ${L.start.pin} · ceiling ${L.start.price_ceiling} · ${L.start.code_sha}`:'');
-  const lr=m.loss_rate_fill, lc=m.loss_rate_close;
+  const L=await api('/api/live');const m=L.metrics||{};
+  const alive=L.alive;$('#pill-alive').textContent=alive?'● running':'● not running';$('#pill-alive').className='pill '+(alive?'good':'bad');
+  // SIMPLE MODE: one number, one sentence
+  const r=m.realised||0;$('#s-hero').textContent=money(r);$('#s-hero').className='hero '+(r>=0?'good':'bad');
+  $('#s-title').textContent='This run';
+  $('#s-line').textContent=alive?`The bot is running. ${m.fills||0} bets so far: ${m.wins||0} won, ${m.losses||0} lost, over ${fmt(m.hours,1)} hours.`:`The bot is NOT running${L.alive_basis?` (${L.alive_basis})`:''}. See RESTART.md.`;
+  $('#s-facts').innerHTML=[['Bank',L.bank==null?'—':'$'+L.bank.toFixed(2),'money in the account'],['Losses it can absorb',m.losses_absorbable==null?'—':m.losses_absorbable,'before this run goes negative'],['Bets per day',m.fills_per_day==null?'—':fmt(m.fills_per_day,1),`over ${fmt(m.hours,1)} h`],['Brake',(L.brakes?`${L.brakes.losing_closes} / ${L.brakes.max_losses}`:'—'),'losing rounds before it stops itself']].map(([k,v,s])=>`<div class="card" style="padding:10px 14px;min-width:150px"><div class="sub">${k}</div><div class="big" style="font-size:22px">${v}</div><div class="sub">${s}</div></div>`).join('');
+  const lr=m.loss_rate_fill,lc=m.loss_rate_close;
   $('#live-cards').innerHTML=
-    card('Realised this run',money(m.realised),`${m.fills||0} fills · ${m.wins||0}W ${m.losses||0}L · ${fmt(m.hours,1)} h`,(m.realised||0)>=0?'good':'bad')+
-    card('Loss rate per fill',lr?`${fmt(lr.rate)}%`:'—',lr?`95% CI [${lr.ci[0]}, ${lr.ci[1]}] · n=${lr.n} fills · per close ${fmt(lc.rate)}% [${lc.ci[0]}, ${lc.ci[1]}] n=${lc.n}`:'no fills yet',lr&&lr.rate>(m.break_even_loss_rate||99)?'bad':'')+
-    card('Break-even loss rate',m.break_even_loss_rate!=null?`${fmt(m.break_even_loss_rate)}%`:'—',`at the mean price paid ${fmt(m.mean_price_c)}¢ · wins to recover one loss ${fmt(m.wins_to_recover_one_loss,1)}`)+
-    card('Losses the run can absorb',m.losses_absorbable!=null?m.losses_absorbable:'—',`before realised goes negative, at this run's mean loss size $${fmt(m.mean_loss_size)}`,m.losses_absorbable===0?'warn':'')+
-    card('Fills per day',m.fills_per_day!=null?fmt(m.fills_per_day,1):'—',`over ${fmt(m.hours,1)} hours covered — not a partial-day extrapolation`)+
-    card('EV per fill',money(m.ev_per_fill),'realised ÷ fills');
-  const b=L.brakes||{}, p=L.progress||{};
-  const bar=(a,n)=>`<div class="bar"><i style="width:${Math.min(100,100*a/n)}%"></i></div>`;
-  $('#brakes').innerHTML=`<table>
-    <tr><td>losing closes this run</td><td class="${b.losing_closes>=2?'warn':''}">${b.losing_closes} / ${b.max_losses}</td></tr>
-    <tr><td>realised vs abort</td><td>${money(b.realised)} vs ${money(b.loss_abort)}</td></tr>
-    <tr><td>halts · errors</td><td>${b.halts} · ${b.errors}</td></tr>
-    <tr><td>fills toward the scaling bar</td><td>${p.fills_to_scale?p.fills_to_scale.join(' / '):'—'}${p.fills_to_scale?bar(...p.fills_to_scale):''}</td></tr>
-    <tr><td>crazy-deal records toward review</td><td>${p.dump_review?p.dump_review.join(' / '):'—'}${p.dump_review?bar(...p.dump_review):''}</td></tr>
-    <tr><td>closes evaluated</td><td>${L.closes_evaluated}</td></tr></table>
-    <div class="sub" style="margin-top:6px">Bars are pre-registered (SKIM.md): size rises only at ≥180 fills, loss rate ≤2%, no losing close over $25, abort rescaled, bank ≥ $196. Nothing here moves by itself.</div>`;
-  const eq=L.equity||[]; const ctx=$('#eq').getContext('2d');
-  const data={labels:eq.map(e=>e.t.slice(11,16)),datasets:[{label:'cum realised $',data:eq.map(e=>e.cum),borderColor:'#5aa9ff',pointRadius:2,tension:.2,fill:false}]};
-  if(eqChart){eqChart.data=data;eqChart.update();}else eqChart=new Chart(ctx,{type:'line',data,options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const e=eq[c.dataIndex];return `${e.ticker} ${e.want} @ ${(100*e.price).toFixed(1)}¢ → ${money(e.pnl)} (cum ${money(e.cum)})`;}}}},scales:{y:{ticks:{callback:v=>'$'+v}}}}});
-  $('#eq-note').textContent=eq.length?`${eq.length} settlements · high ${money(Math.max(...eq.map(e=>e.cum)))} · low ${money(Math.min(...eq.map(e=>e.cum)))} · annualising past the capacity ceiling (~size 100) is meaningless`:'no settlements yet';
-  $('#recent').innerHTML='<tr><th>time</th><th>market</th><th>side</th><th>paid</th><th>P&L</th></tr>'+(L.recent||[]).map(r=>`<tr><td>${r.t.slice(11,19)}</td><td>${r.ticker}</td><td>${r.want}</td><td>${(100*r.cost).toFixed(1)}¢</td><td class="${r.pnl_c>0?'good':'bad'}">${money(r.pnl_c/100)}</td></tr>`).join('');
-  $('#dumped').innerHTML='<tr><th>time</th><th>market</th><th>side</th><th>offer</th><th>model</th><th>discount</th></tr>'+(L.dumped||[]).map(r=>`<tr><td>${r.t.slice(11,19)}</td><td>${r.ticker}</td><td>${r.want}</td><td>${(100*r.price).toFixed(1)}¢</td><td>${fmt(r.fair,4)}</td><td>${fmt(r.disc_c,1)}¢</td></tr>`).join('')||'<tr><td class="sub">none since the guard went on</td></tr>';
+    card('Loss rate per bet',lr?`${fmt(lr.rate)}%`:'—',lr?`95% range ${lr.ci[0]}–${lr.ci[1]}% from ${lr.n} bets · per round ${fmt(lc.rate)}% (${lc.n} rounds)`:'no bets yet',lr&&lr.rate>(m.break_even_loss_rate||99)?'bad':'')+
+    card('Break-even loss rate',m.break_even_loss_rate!=null?`${fmt(m.break_even_loss_rate)}%`:'—',`lose more often than this at ${fmt(m.mean_price_c)}¢ and the bot loses money · one loss takes ${fmt(m.wins_to_recover_one_loss,1)} wins to repay`)+
+    card('Per bet',money(m.ev_per_fill),'average money made per bet')+
+    card('Average price paid',m.mean_price_c!=null?`${fmt(m.mean_price_c)}¢`:'—','cheaper is safer: a cheaper bet can afford to be wrong more often');
+  const b=L.brakes||{},p=L.progress||{};const bar=(a,n)=>`<div class="bar"><i style="width:${Math.min(100,100*a/n)}%"></i></div>`;
+  $('#brakes').innerHTML=`<div class="kv"><span class="k">losing rounds this run</span><b class="${b.losing_closes>=2?'warn':''}">${b.losing_closes} / ${b.max_losses}</b><span class="k">money vs the emergency stop</span><b>${money(b.realised)} vs ${money(b.loss_abort)}</b><span class="k">halts · errors</span><b>${b.halts} · ${b.errors}</b></div>
+   <div class="sub" style="margin-top:8px">Bets toward the “allowed to bet bigger” bar ${p.fills_to_scale?p.fills_to_scale.join(' / '):''}</div>${p.fills_to_scale?bar(...p.fills_to_scale):''}
+   <div class="sub" style="margin-top:8px">Suspicious deals recorded toward review ${p.dump_review?p.dump_review.join(' / '):''}</div>${p.dump_review?bar(...p.dump_review):''}
+   <div class="sub" style="margin-top:8px">These bars were fixed in advance (SKIM.md). Nothing here moves by itself.</div>`;
+  const eq=L.equity||[];const ctx=$('#eq').getContext('2d');
+  const data={labels:eq.map(e=>e.t.slice(11,16)),datasets:[{data:eq.map(e=>e.cum),borderColor:(eq.length&&eq[eq.length-1].cum>=0)?'#00c805':'#ff5000',pointRadius:0,borderWidth:2,tension:.25,fill:false}]};
+  if(eqChart){eqChart.data=data;eqChart.update();}else eqChart=new Chart(ctx,{type:'line',data,options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const e=eq[c.dataIndex];return `${e.ticker} ${e.want} @ ${(100*e.price).toFixed(1)}¢ → ${money(e.pnl)} (total ${money(e.cum)})`;}}}},scales:{x:{grid:{display:false}},y:{grid:{color:'#22262e'},ticks:{callback:v=>'$'+v}}}}});
+  $('#eq-note').textContent=eq.length?`${eq.length} settled bets · high ${money(Math.max(...eq.map(e=>e.cum)))} · low ${money(Math.min(...eq.map(e=>e.cum)))}`:'no settled bets yet in this run';
+  $('#recent').innerHTML='<tr><th>time</th><th>market</th><th>side</th><th>paid</th><th>result</th></tr>'+(L.recent||[]).map(r=>`<tr><td>${r.t.slice(11,19)}</td><td>${r.ticker}</td><td>${r.want}</td><td>${(100*r.cost).toFixed(1)}¢</td><td class="${r.pnl_c>0?'good':'bad'}">${money(r.pnl_c/100)}</td></tr>`).join('');
+  $('#dumped').innerHTML='<tr><th>time</th><th>market</th><th>side</th><th>offer</th><th>bot said</th><th>discount</th></tr>'+(L.dumped||[]).map(r=>`<tr><td>${r.t.slice(11,19)}</td><td>${r.ticker}</td><td>${r.want}</td><td>${(100*r.price).toFixed(1)}¢</td><td>${(100*(r.want==='yes'?r.fair:1-r.fair)).toFixed(2)}% sure</td><td>${fmt(r.disc_c,1)}¢</td></tr>`).join('')||'<tr><td class="sub">none yet</td></tr>';
 }
-async function control(state){const c=prompt(`Type "${state}" to confirm. (The trader honours this only once AMENDMENT 11 is live.)`);if(c==null)return;const r=await api('/api/control',{state,confirm:c});$('#ctl-msg').textContent=r.error?('refused: '+r.error):`recorded ${JSON.stringify(r)}`;}
+async function control(state){const c=prompt(`Type "${state}" to confirm. (Acted on only once AMENDMENT 11 is live.)`);if(c==null)return;const r=await api('/api/control',{state,confirm:c});$('#ctl-msg').textContent=r.error?('refused: '+r.error):`recorded`;}
+
+// --------------------------------------------------------------- replay
+let RP={id:null,frames:[],i:0,timer:null,chart:null,seen:0,poll:null};let rpSpeed=10;
+const toEpoch=v=>Math.floor(new Date(v+'Z').getTime()/1000);
+async function replayStart(){
+  rpPause();const st=$('#rp-start').value;if(!st){$('#rp-status').textContent='pick a start time (UTC)';return;}
+  const start=toEpoch(st),end=start+(+$('#rp-len').value);const coins=$('#rp-coins').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const r=await api('/api/replay/start',{profile:$('#rp-profile').value||'default',start,end,coins:coins.length?coins:null});
+  if(r.error){$('#rp-status').textContent='refused: '+r.error;return;}
+  RP={id:r.replay,frames:[],i:0,timer:null,chart:RP.chart,seen:0};$('#rp-status').textContent='loading the tape…';$('#rp-events').innerHTML='';
+  const poll=async()=>{const s=await api(`/api/replay/${RP.id}?from=${RP.seen}&limit=400`);RP.frames.push(...s.frames);RP.seen+=s.frames.length;$('#rp-status').textContent=`${s.status} · ${RP.frames.length} seconds loaded`+(s.error?' · '+s.error:'');if(s.status==='running')RP.poll=setTimeout(poll,2000);else if(s.stderr&&s.status==='error')$('#rp-events').innerHTML=`<div class="bad">${s.stderr}</div>`;if(RP.frames.length&&RP.i===0)rpRender();};poll();
+}
+function rpPlay(){rpPause();const tick=()=>{if(RP.i<RP.frames.length-1){RP.i++;rpRender();}RP.timer=setTimeout(tick,1000/rpSpeed);};tick();}
+function rpPause(){if(RP.timer){clearTimeout(RP.timer);RP.timer=null;}}
+function rpStep(){rpPause();if(RP.i<RP.frames.length-1){RP.i++;rpRender();}}
+function rpForward(){const v=$('#rp-to').value;if(!v||!RP.frames.length)return;const day=$('#rp-start').value.slice(0,10);const target=toEpoch(day+'T'+v);let j=RP.frames.findIndex(f=>f.t>=target);if(j<0)j=RP.frames.length-1;RP.i=j;rpRender();}
+function rpRender(){
+  const f=RP.frames[RP.i];if(!f)return;const d=new Date(f.t*1000);$('#rp-clock').textContent=d.toISOString().slice(0,19).replace('T',' ')+'Z  ·  frame '+(RP.i+1)+'/'+RP.frames.length;
+  const t=f.tally||{};$('#rp-tally').textContent=money(t.pnl);$('#rp-tally').className='big '+((t.pnl||0)>=0?'good':'bad');$('#rp-tally-sub').textContent=`${t.fills||0} bets · ${t.wins||0} won · ${t.losses||0} lost · ${t.refused||0} refused by rules`;
+  const ev=$('#rp-events');(f.events||[]).forEach(e=>{const line=e.kind==='bought'?`<span class="good">BOUGHT</span> ${e.ticker} ${e.want} @ ${(100*e.price).toFixed(1)}¢ ×${e.n}`:e.kind==='settled'?`<span class="${e.won?'good':'bad'}">${e.won?'WON':'LOST'}</span> ${e.ticker} ${money(e.pnl)}`:`<span class="warn">REFUSED</span> ${e.ticker} @ ${(100*e.price).toFixed(1)}¢ by ${e.rules.join(',')}`;ev.innerHTML+=`<div>${d.toISOString().slice(11,19)} ${line}</div>`;ev.scrollTop=ev.scrollHeight;});
+  const mk=(f.markets||[]).slice().sort((a,b)=>a.tau-b.tau);const m=mk[0];
+  if(!m){$('#rp-vars').innerHTML='<span class="sub">no market inside its last 60 seconds right now — play forward</span>';}
+  else{const sure=m.conf!=null?(100*m.conf).toFixed(3)+'%':'—';const side=m.fair!=null?(m.fair>=0.5?'YES (price stays above the line)':'NO (price stays below)'):'—';const need=m.sway!=null?m.sway:null;
+    $('#rp-vars').innerHTML=`<div class="kv">
+      <span class="k">market</span><b>${m.ticker}</b>
+      <span class="k">seconds to the close</span><b>${m.tau}</b>
+      <span class="k">index now</span><b>${m.spot}</b>
+      <span class="k">the line (strike)</span><b>${m.strike}</b>
+      <span class="k">where the bot expects it to settle</span><b>${m.mu!=null?m.mu.toFixed(6):'—'}</b>
+      <span class="k">price needed to sway the average</span><b>${need!=null?need.toFixed(6):'—'}</b>
+      <span class="k">bot's confidence</span><b class="${m.conf>=0.995?'good':''}">${sure} · ${m.margin_sd!=null?m.margin_sd+' sd':''}</b>
+      <span class="k">which side</span><b>${side}</b>
+      <span class="k">offer on the book</span><b>${m.yes_ask!=null?`YES ${(100*m.yes_ask).toFixed(1)}¢ ×${fmt(m.yes_ask_size,0)}`:'YES —'} · ${m.no_ask!=null?`NO ${(100*m.no_ask).toFixed(1)}¢ ×${fmt(m.no_ask_size,0)}`:'NO —'}</b>
+      <span class="k">decision</span><b>${m.bought?`<span class="good">bought ${m.want} @ ${(100*m.price).toFixed(1)}¢</span>`:m.verdict==='refuse'?`<span class="warn">refused by ${m.fired.join(',')}</span>`:m.why_not?`<span class="sub">no bet — ${({no_offer:'nobody is selling the side it wants',undecided:'not sure enough yet',over_ceiling:'too expensive',too_shallow:'not enough on offer',no_edge:'no edge after fees',neg_ev:'negative expected value',no_sigma:'no volatility estimate yet',no_fair:'no model value yet'})[m.why_not]||m.why_not}</span>`:'—'}</b></div>
+      ${mk.length>1?`<div class="sub" style="margin-top:8px">${mk.length-1} other market(s) in their last minute: ${mk.slice(1).map(x=>x.ticker.split('-')[0].replace('KX','').replace('15M','')+' '+x.tau+'s').join(' · ')}</div>`:''}`;
+    // chart: this market's index over the frames we hold, strike and sway
+    const coin=m.coin;const pts=RP.frames.slice(Math.max(0,RP.i-180),RP.i+1);const iid=Object.keys(f.index).find(k=>k.startsWith(coin.replace('KX','').replace('15M','').replace('BTC','BRTI'))||'')||null;
+    const series=pts.map(p=>{const mm=(p.markets||[]).find(x=>x.ticker===m.ticker);return mm?mm.spot:null;});
+    const sway=pts.map(p=>{const mm=(p.markets||[]).find(x=>x.ticker===m.ticker);return mm&&mm.sway!=null?mm.sway:null;});
+    const data={labels:pts.map(p=>new Date(p.t*1000).toISOString().slice(11,19)),datasets:[{label:'index',data:series,borderColor:'#5aa9ff',pointRadius:0,borderWidth:2,tension:.1},{label:'strike',data:pts.map(()=>m.strike),borderColor:'#ffffff',borderDash:[6,4],pointRadius:0,borderWidth:1},{label:'needed to sway',data:sway,borderColor:'#ffb020',borderDash:[2,3],pointRadius:0,borderWidth:1}]};
+    if(RP.chart){RP.chart.data=data;RP.chart.update('none');}else RP.chart=new Chart($('#rp-chart').getContext('2d'),{type:'line',data,options:{animation:false,plugins:{legend:{labels:{color:'#8a93a3'}}},scales:{x:{grid:{display:false},ticks:{color:'#8a93a3',maxTicksLimit:8}},y:{grid:{color:'#22262e'},ticks:{color:'#8a93a3'}}}}});
+  }
+}
 
 // ------------------------------------------------------------- builder
-function blankProfile(){const p={name:'',note:'',params:{},rules:[]};for(const k in SCHEMA.params)p.params[k]=SCHEMA.params[k].default;return p;}
 function isSched(v){return v&&typeof v==='object'&&'bands' in v;}
-function renderParams(){
-  const P=PROFILE.params, live=LIVEP?LIVEP.params:{};
-  $('#params').innerHTML=Object.entries(SCHEMA.params).map(([k,s])=>{
-    const v=P[k], lv=live[k]; const liveTxt=lv==null?'':(isSched(lv)?'live: schedule':`live: ${lv}`);
-    let ctl;
-    if(isSched(v)){
-      ctl=`<div><div class="row">depends on <select onchange="schedBy('${k}',this.value)">${Object.keys(SCHEMA.fields).map(f=>`<option ${f===v.by?'selected':''}>${f}</option>`).join('')}</select> default <input type="number" step="any" value="${v.default}" style="width:90px" onchange="schedDefault('${k}',this.value)"> <button onclick="unsched('${k}')">make it one value</button></div>
-      <table>${v.bands.map((b,i)=>`<tr><td>from <input type="number" step="any" value="${b[0]}" style="width:90px" onchange="band('${k}',${i},0,this.value)"></td><td>to <input type="number" step="any" value="${b[1]}" style="width:90px" onchange="band('${k}',${i},1,this.value)"></td><td>→ <input type="number" step="any" value="${b[2]}" style="width:90px" onchange="band('${k}',${i},2,this.value)"></td><td><button onclick="delBand('${k}',${i})">×</button></td></tr>`).join('')}</table><button onclick="addBand('${k}')">+ band</button></div>`;
-    }else{
-      ctl=`<input type="number" step="${s.type==='int'?1:'any'}" min="${s.min}" max="${s.max}" value="${v}" onchange="setParam('${k}',this.value)"> <button title="make this value depend on a field" onclick="sched('${k}')">depends on…</button>`;
-    }
-    return `<div class="param"><b title="${s.meaning}\n\n${s.why}">${k}</b><div>${ctl}</div><span class="sub">${liveTxt}</span><div class="m">${s.meaning}</div></div>`;
-  }).join('');
-}
-function setParam(k,v){const s=SCHEMA.params[k];PROFILE.params[k]=s.type==='int'?parseInt(v):parseFloat(v);}
+function renderParams(){const P=PROFILE.params,live=LIVEP?LIVEP.params:{};$('#params').innerHTML=Object.entries(SCHEMA.params).map(([k,s])=>{const v=P[k],lv=live[k];const liveTxt=lv==null?'':(isSched(lv)?'live: schedule':`live: ${lv}`);let ctl;
+  if(isSched(v)){ctl=`<div><div class="row">depends on <select onchange="schedBy('${k}',this.value)">${Object.keys(SCHEMA.fields).map(f=>`<option ${f===v.by?'selected':''}>${f}</option>`).join('')}</select> otherwise <input type="number" step="any" value="${v.default}" style="width:90px" onchange="schedDefault('${k}',this.value)"> <button onclick="unsched('${k}')">one value</button></div>
+    <table>${v.bands.map((b,i)=>`<tr><td>from <input type="number" step="any" value="${b[0]}" style="width:90px" onchange="band('${k}',${i},0,this.value)"></td><td>to <input type="number" step="any" value="${b[1]}" style="width:90px" onchange="band('${k}',${i},1,this.value)"></td><td>→ <input type="number" step="any" value="${b[2]}" style="width:90px" onchange="band('${k}',${i},2,this.value)"></td><td><button onclick="delBand('${k}',${i})">×</button></td></tr>`).join('')}</table><button onclick="addBand('${k}')">+ band</button></div>`;}
+  else ctl=`<input type="number" step="${s.type==='int'?1:'any'}" min="${s.min}" max="${s.max}" value="${v}" onchange="setParam('${k}',this.value)"> <button onclick="sched('${k}')">depends on…</button>`;
+  return `<div class="param"><b>${k}</b><div>${ctl}</div><span class="sub">${liveTxt}</span><div class="m">${s.meaning} <span class="adv" style="display:inline">${s.why}</span></div></div>`;}).join('');}
+function num(k,v){return SCHEMA.params[k].type==='int'?parseInt(v):parseFloat(v);}
+function setParam(k,v){PROFILE.params[k]=num(k,v);}
 function sched(k){const s=SCHEMA.params[k];PROFILE.params[k]={by:'price',default:PROFILE.params[k],bands:[[0.5,0.9,s.default],[0.9,0.99,s.default]]};renderParams();}
 function unsched(k){PROFILE.params[k]=PROFILE.params[k].default;renderParams();}
-function schedBy(k,v){PROFILE.params[k].by=v;}
-function schedDefault(k,v){PROFILE.params[k].default=num(k,v);}
-function num(k,v){return SCHEMA.params[k].type==='int'?parseInt(v):parseFloat(v);}
+function schedBy(k,v){PROFILE.params[k].by=v;}function schedDefault(k,v){PROFILE.params[k].default=num(k,v);}
 function band(k,i,j,v){PROFILE.params[k].bands[i][j]=j===2?num(k,v):parseFloat(v);}
 function addBand(k){const b=PROFILE.params[k].bands;const last=b[b.length-1]||[0,0.5,PROFILE.params[k].default];b.push([last[1],last[1]+0.05,last[2]]);renderParams();}
 function delBand(k,i){PROFILE.params[k].bands.splice(i,1);renderParams();}
 function condRows(w){return (w&&w.all)?w.all:(Array.isArray(w)&&w.length===3?[w]:[]);}
-function renderRules(){
-  $('#rules').innerHTML=PROFILE.rules.map((r,i)=>`<div class="rule"><div class="row">
-    <input value="${r.id||''}" placeholder="id" style="width:110px" onchange="PROFILE.rules[${i}].id=this.value">
-    <input value="${r.name||''}" placeholder="name" style="width:150px" onchange="PROFILE.rules[${i}].name=this.value">
-    <select onchange="PROFILE.rules[${i}].action=this.value">${SCHEMA.actions.map(a=>`<option ${a===r.action?'selected':''}>${a}</option>`).join('')}</select>
-    <label><input type="checkbox" ${r.enabled!==false?'checked':''} onchange="PROFILE.rules[${i}].enabled=this.checked"> on</label>
-    <button onclick="PROFILE.rules.splice(${i},1);renderRules()">delete</button></div>
-    <div class="sub" style="margin:4px 0">fires when ALL of these hold — action <b>log</b> = a tracker (trade, but record it); <b>refuse</b> = do not trade; <b>allow</b> = trade even if another rule refuses</div>
-    ${condRows(r.when).map((c,j)=>`<div class="row"><select onchange="cond(${i},${j},0,this.value)">${Object.keys(SCHEMA.fields).map(f=>`<option ${f===c[0]?'selected':''} title="${SCHEMA.fields[f]}">${f}</option>`).join('')}</select>
-      <select onchange="cond(${i},${j},1,this.value)">${SCHEMA.ops.map(o=>`<option ${o===c[1]?'selected':''}>${o}</option>`).join('')}</select>
-      <input value="${JSON.stringify(c[2])}" style="width:120px" onchange="cond(${i},${j},2,this.value)"><button onclick="delCond(${i},${j})">×</button></div>`).join('')}
-    <button onclick="addCond(${i})">+ condition</button>
-    <input value="${r.note||''}" placeholder="note (why)" style="width:100%;margin-top:6px" onchange="PROFILE.rules[${i}].note=this.value"></div>`).join('')||'<div class="sub">no rules — add one to refuse, allow, or track a situation</div>';
-}
+function renderRules(){$('#rules').innerHTML=PROFILE.rules.map((r,i)=>`<div class="rule"><div class="row">
+  <input value="${r.id||''}" placeholder="id" style="width:110px" onchange="PROFILE.rules[${i}].id=this.value"><input value="${r.name||''}" placeholder="name" style="width:150px" onchange="PROFILE.rules[${i}].name=this.value">
+  <select onchange="PROFILE.rules[${i}].action=this.value">${SCHEMA.actions.map(a=>`<option value="${a}" ${a===r.action?'selected':''}>${({refuse:'refuse (do not bet)',log:'track (bet, but record it)',allow:'allow (bet even if refused)'})[a]}</option>`).join('')}</select>
+  <label><input type="checkbox" ${r.enabled!==false?'checked':''} onchange="PROFILE.rules[${i}].enabled=this.checked"> on</label><button onclick="PROFILE.rules.splice(${i},1);renderRules()">delete</button></div>
+  <div class="sub" style="margin:4px 0">when ALL of these are true:</div>
+  ${condRows(r.when).map((c,j)=>`<div class="row"><select onchange="cond(${i},${j},0,this.value)">${Object.keys(SCHEMA.fields).map(f=>`<option ${f===c[0]?'selected':''}>${f}</option>`).join('')}</select><select onchange="cond(${i},${j},1,this.value)">${SCHEMA.ops.map(o=>`<option ${o===c[1]?'selected':''}>${o}</option>`).join('')}</select><input value="${JSON.stringify(c[2])}" style="width:120px" onchange="cond(${i},${j},2,this.value)"><button onclick="delCond(${i},${j})">×</button><span class="sub">${SCHEMA.fields[c[0]]||''}</span></div>`).join('')}
+  <button onclick="addCond(${i})">+ condition</button><input value="${r.note||''}" placeholder="why" style="width:100%;margin-top:6px" onchange="PROFILE.rules[${i}].note=this.value"></div>`).join('')||'<div class="sub">no rules yet</div>';}
 function ensureAll(i){const r=PROFILE.rules[i];if(!(r.when&&r.when.all))r.when={all:condRows(r.when)};return r.when.all;}
 function cond(i,j,k,v){const rows=ensureAll(i);if(k===2){try{v=JSON.parse(v);}catch(e){v=parseFloat(v);}}rows[j][k]=v;}
-function addCond(i){ensureAll(i).push(['conf','>=',0.999]);renderRules();}
-function delCond(i,j){ensureAll(i).splice(j,1);renderRules();}
+function addCond(i){ensureAll(i).push(['conf','>=',0.999]);renderRules();}function delCond(i,j){ensureAll(i).splice(j,1);renderRules();}
 function addRule(){PROFILE.rules.push({id:'rule'+(PROFILE.rules.length+1),name:'',action:'log',enabled:true,when:{all:[['conf','>=',0.999]]},note:''});renderRules();}
-async function loadIntoBuilder(){const nm=$('#b-load').value;const p=await api('/api/profiles/'+nm);PROFILE={name:p.name,note:p.note||'',params:p.params,rules:p.rules};$('#b-name').value=p.name;$('#b-note').value=PROFILE.note;renderParams();renderRules();$('#b-msg').textContent=`loaded ${nm} (${p._sha})`;}
-async function saveProfile(){PROFILE.name=$('#b-name').value.trim();PROFILE.note=$('#b-note').value;if(!PROFILE.name){$('#b-msg').textContent='give it a name';return;}const r=await api('/api/profiles',PROFILE);$('#b-msg').textContent=r.error?('refused: '+(r.problems||[]).join(' · ')):`saved ${PROFILE.name} (${r.sha})`;if(!r.error)await fillProfileSelects();}
-async function fillProfileSelects(){const p=await api('/api/profiles');$('#b-load').innerHTML=p.profiles.map(x=>`<option>${x.name}</option>`).join('');}
-async function runSandbox(){
-  PROFILE.name=$('#b-name').value.trim()||PROFILE.name||'unsaved'; PROFILE.note=$('#b-note').value;
-  const body={profile:PROFILE,hours:+$('#r-hours').value,end:$('#r-end').value||null};
-  const sp=$('#r-sweep-param').value; if(sp){const vals=$('#r-sweep-values').value.split(',').map(s=>s.trim()).filter(Boolean).map(Number);if(!vals.length){$('#r-status').textContent='give the goal search some values';return;}body.sweep={param:sp,values:vals};body.objective=$('#r-objective').value;}
-  const j=await api('/api/sandbox/run',body); if(j.error){$('#r-status').textContent='refused: '+j.error;return;}
-  $('#r-status').textContent='running…'; const t0=Date.now();
-  const poll=async()=>{const s=await api('/api/sandbox/jobs/'+j.job);const [a,n]=s.progress||[0,0];$('#r-bar').style.width=n?`${100*a/n}%`:'0';$('#r-status').textContent=`${s.status} · ${a}/${n} hours · ${Math.round((Date.now()-t0)/1000)}s`;if(s.status==='running')return setTimeout(poll,3000);if(s.status==='error'){$('#results').innerHTML=`<div class="bad">${s.error}</div><pre class="mono">${(s.log||[]).join('\n')}</pre>`;return;}renderResults(s);refreshHistory();};poll();
-}
-const statRow=(t,s)=>!s||!s.fills?`<tr><td>${t}</td><td colspan="7" class="sub">no fills</td></tr>`:`<tr><td>${t}</td><td>${s.fills}</td><td>${s.closes}</td><td>${s.wins}</td><td class="${s.losses?'bad':''}">${s.losses}</td><td>${fmt(s.loss_rate)}% <span class="sub">[${s.ci[0]}, ${s.ci[1]}]</span></td><td class="${s.pnl>=0?'good':'bad'}">${money(s.pnl)}</td><td>${fmt(s.mean_price)}¢</td></tr>`;
-const statTable=(rows)=>`<div class="scroll"><table><tr><th></th><th>fills</th><th>closes</th><th>W</th><th>L</th><th>loss rate</th><th>P&L</th><th>mean price</th></tr>${rows}</table></div>`;
-function summaryHtml(S){
-  const t=S.traded, warn=S.bad_deltas?`<div class="bad">${S.bad_deltas} deltas failed to parse — the book is incomplete and every number here is suspect</div>`:'';
-  return `${warn}<div class="sub">profile <b>${S.profile}</b> · ${S.sha} · size ${S.size} · ${S.hours} book hours · <b>UPPER BOUND</b> (every offer assumed ours) · at the ${Math.round(100*S.live_fill_rate)}% live fill rate: <b>${money(t.all.pnl*S.live_fill_rate)}</b></div>
-  ${statTable(statRow('TRADED · all',t.all)+statRow('&nbsp;&nbsp;FIT (first 70% of closes)',t.fit)+statRow('&nbsp;&nbsp;<b>HOLDOUT (last 30%)</b>',t.holdout)+statRow('refused by rules (would-be)',S.refused))}
-  <h4 style="margin:10px 0 4px">Per rule — what it fired on, and what would have happened</h4>
-  ${Object.entries(S.rules||{}).map(([id,r])=>statTable(statRow(`<b>${id}</b> [${r.action}] all`,r.all)+statRow('&nbsp;&nbsp;fit',r.fit)+statRow('&nbsp;&nbsp;<b>HOLDOUT</b>',r.holdout))).join('')}
-  <div class="sub" style="margin-top:6px">why other moments did not fire: ${Object.entries(S.skips||{}).map(([k,v])=>`${k} ${v}`).join(' · ')}</div>`;
-}
-function renderResults(s){
-  if(s.results){ // a goal search
-    const obj=s.objective||'pnl';
-    $('#results').innerHTML=`<div class="banner">Goal search over <b>${s.sweep.param}</b>. The FIT column is where the number was found; <b>HOLDOUT is whether it is real.</b> A value that wins on FIT and loses on HOLDOUT is a fit, not a finding.</div>
-    <div class="scroll"><table><tr><th>value</th><th>FIT P&L</th><th>FIT loss rate</th><th><b>HOLDOUT P&L</b></th><th><b>HOLDOUT loss rate</b></th><th>fills</th><th>mean price</th></tr>
-    ${s.results.map(r=>{if(r.error)return `<tr><td>${r.value}</td><td colspan="6" class="bad">${r.error.join(' · ')}</td></tr>`;if(!r.summary)return `<tr><td>${r.value}</td><td colspan="6" class="sub">nothing decided</td></tr>`;const f=r.summary.traded.fit,h=r.summary.traded.holdout,a=r.summary.traded.all;return `<tr><td>${r.value}</td><td class="${f.pnl>=0?'good':'bad'}">${money(f.pnl)}</td><td>${fmt(f.loss_rate)}%</td><td class="${h.pnl>=0?'good':'bad'}"><b>${money(h.pnl)}</b></td><td><b>${fmt(h.loss_rate)}%</b> [${h.ci?h.ci.join(', '):''}]</td><td>${a.fills}</td><td>${fmt(a.mean_price)}¢</td></tr>`;}).join('')}</table></div>
-    ${s.results.filter(r=>r.summary).map(r=>`<details><summary>${s.sweep.param} = ${r.value} — full result</summary>${summaryHtml(r.summary)}</details>`).join('')}`;
-  }else $('#results').innerHTML=summaryHtml(s.summary);
-}
-async function refreshHistory(){const h=await api('/api/sandbox/history');$('#history').innerHTML=`<b>${h.runs}</b> runs recorded on this machine → the multiple-looks threshold is now <b>p &lt; ${h.multiple_looks_threshold}</b> (0.05 ÷ runs). ${h.runs>=5?'<span class="warn">You have tried enough settings that a result which merely looks good is expected by chance. Trust HOLDOUT, not FIT, and trust neither without n.</span>':''}<div class="mono" style="margin-top:6px">${h.recent.slice(0,8).map(r=>`${r.t} ${r.profile}${r.sweep?` sweep ${r.sweep}=${r.value}`:''} ${r.hours}h`).join('<br>')}</div>`;}
+async function loadIntoBuilder(){const nm=$('#b-load').value;const p=await api('/api/profiles/'+nm);PROFILE={name:p.name,note:p.note||'',params:p.params,rules:p.rules};$('#b-name').value=p.name;$('#b-note').value=PROFILE.note;renderParams();renderRules();$('#b-msg').textContent=`loaded ${nm}`;}
+async function saveProfile(){PROFILE.name=$('#b-name').value.trim();PROFILE.note=$('#b-note').value;if(!PROFILE.name){$('#b-msg').textContent='give it a name';return;}const r=await api('/api/profiles',PROFILE);$('#b-msg').textContent=r.error?('refused: '+(r.problems||[]).join(' · ')):`saved ${PROFILE.name}`;if(!r.error)await fillProfileSelects();}
+async function fillProfileSelects(){const p=await api('/api/profiles');const opts=p.profiles.map(x=>`<option>${x.name}</option>`).join('');$('#b-load').innerHTML=opts;$('#rp-profile').innerHTML=opts;}
+async function runSandbox(){PROFILE.name=$('#b-name').value.trim()||PROFILE.name||'unsaved';PROFILE.note=$('#b-note').value;const body={profile:PROFILE,hours:+$('#r-hours').value,end:$('#r-end').value||null};const sp=$('#r-sweep-param').value;if(sp){const vals=$('#r-sweep-values').value.split(',').map(s=>s.trim()).filter(Boolean).map(Number);if(!vals.length){$('#r-status').textContent='give some values to try';return;}body.sweep={param:sp,values:vals};body.objective=$('#r-objective').value;}
+  const j=await api('/api/sandbox/run',body);if(j.error){$('#r-status').textContent='refused: '+j.error;return;}$('#r-status').textContent='running…';const t0=Date.now();
+  const poll=async()=>{const s=await api('/api/sandbox/jobs/'+j.job);const [a,n]=s.progress||[0,0];$('#r-bar').style.width=n?`${100*a/n}%`:'0';$('#r-status').textContent=`${s.status} · ${a}/${n} hours · ${Math.round((Date.now()-t0)/1000)}s`;if(s.status==='running')return setTimeout(poll,3000);if(s.status==='error'){$('#results').innerHTML=`<div class="bad">${s.error}</div><pre class="mono">${(s.log||[]).join('\n')}</pre>`;return;}renderResults(s);refreshHistory();};poll();}
+const statRow=(t,s)=>!s||!s.fills?`<tr><td>${t}</td><td colspan="7" class="sub">no bets</td></tr>`:`<tr><td>${t}</td><td>${s.fills}</td><td>${s.closes}</td><td>${s.wins}</td><td class="${s.losses?'bad':''}">${s.losses}</td><td>${fmt(s.loss_rate)}% <span class="sub">[${s.ci[0]}, ${s.ci[1]}]</span></td><td class="${s.pnl>=0?'good':'bad'}">${money(s.pnl)}</td><td>${fmt(s.mean_price)}¢</td></tr>`;
+const statTable=rows=>`<div class="scroll"><table><tr><th></th><th>bets</th><th>rounds</th><th>won</th><th>lost</th><th>loss rate</th><th>money</th><th>avg price</th></tr>${rows}</table></div>`;
+function summaryHtml(S){const t=S.traded;return `${S.bad_deltas?`<div class="bad">${S.bad_deltas} book updates failed to parse — every number here is suspect</div>`:''}<div class="sub"><b>${S.profile}</b> · ${S.hours} hours · <b>upper bound</b> (every offer assumed ours) · at the ${Math.round(100*S.live_fill_rate)}% live fill rate: <b>${money(t.all.pnl*S.live_fill_rate)}</b></div>
+  ${statTable(statRow('all',t.all)+statRow('&nbsp;&nbsp;FIT (first 70%)',t.fit)+statRow('&nbsp;&nbsp;<b>HOLDOUT (last 30%)</b>',t.holdout)+statRow('refused by rules (would have…)',S.refused))}
+  <h4 style="margin:10px 0 4px;font-weight:500">Each rule — what it caught, and what would have happened</h4>${Object.entries(S.rules||{}).map(([id,r])=>statTable(statRow(`<b>${id}</b> [${r.action}]`,r.all)+statRow('&nbsp;&nbsp;fit',r.fit)+statRow('&nbsp;&nbsp;<b>holdout</b>',r.holdout))).join('')}
+  <div class="sub" style="margin-top:6px">why other moments did not bet: ${Object.entries(S.skips||{}).map(([k,v])=>`${k} ${v}`).join(' · ')}</div>`;}
+function renderResults(s){if(s.results){$('#results').innerHTML=`<div class="banner">Trying values of <b>${s.sweep.param}</b>. FIT is where a number looks good; <b>HOLDOUT is whether it is real.</b></div><div class="scroll"><table><tr><th>value</th><th>FIT money</th><th>FIT loss rate</th><th><b>HOLDOUT money</b></th><th><b>HOLDOUT loss rate</b></th><th>bets</th><th>avg price</th></tr>${s.results.map(r=>{if(r.error)return `<tr><td>${r.value}</td><td colspan="6" class="bad">${r.error.join(' · ')}</td></tr>`;if(!r.summary)return `<tr><td>${r.value}</td><td colspan="6" class="sub">nothing decided</td></tr>`;const f=r.summary.traded.fit,h=r.summary.traded.holdout,a=r.summary.traded.all;return `<tr><td>${r.value}</td><td class="${f.pnl>=0?'good':'bad'}">${money(f.pnl)}</td><td>${fmt(f.loss_rate)}%</td><td class="${h.pnl>=0?'good':'bad'}"><b>${money(h.pnl)}</b></td><td><b>${fmt(h.loss_rate)}%</b></td><td>${a.fills}</td><td>${fmt(a.mean_price)}¢</td></tr>`;}).join('')}</table></div>${s.results.filter(r=>r.summary).map(r=>`<details><summary>${s.sweep.param} = ${r.value} — full result</summary>${summaryHtml(r.summary)}</details>`).join('')}`;}else $('#results').innerHTML=summaryHtml(s.summary);}
+async function refreshHistory(){const h=await api('/api/sandbox/history');$('#history').innerHTML=`<b>${h.runs}</b> runs so far → a result now needs p &lt; <b>${h.multiple_looks_threshold}</b> to count (0.05 ÷ runs). ${h.runs>=5?'<span class="warn">You have tried enough settings that something will look good by luck. Trust HOLDOUT, not FIT.</span>':''}`;}
 
 // ------------------------------------------------------------ profiles
-async function refreshProfiles(){const p=await api('/api/profiles');$('#ptable').innerHTML='<tr><th>name</th><th>sha</th><th>rules</th><th>one losing close</th><th>closes to halt</th><th>max loss</th><th>note</th><th></th></tr>'+p.profiles.map(x=>x.error?`<tr><td>${x.name}</td><td colspan="7" class="bad">${x.error}</td></tr>`:`<tr><td><b>${x.name}</b>${LIVEP&&x.name===LIVEP.name?' <span class="pill good">live</span>':''}</td><td class="mono">${x.sha}</td><td>${x.rules}</td><td>$${x.worst_case.one_losing_close}</td><td>${x.worst_case.closes_to_halt}</td><td class="warn">$${x.worst_case.max_loss}</td><td style="white-space:normal;text-align:left">${x.note||''}</td><td><button onclick="$('#b-load').value='${x.name}';loadIntoBuilder();location.hash='builder'">open in builder</button> <button class="danger" onclick="deploy('${x.name}',${x.worst_case.max_loss})">deploy</button></td></tr>`).join('');}
-async function deploy(name,maxLoss){const c=prompt(`Deploy "${name}"? Its brakes permit losing up to $${maxLoss} before it halts.\n\nType the profile name to confirm. (Honoured once AMENDMENT 11 is live.)`);if(c==null)return;const r=await api('/api/control',{profile:name,confirm:c});alert(r.error?('refused: '+r.error):('recorded: '+JSON.stringify(r)));}
+async function refreshProfiles(){const p=await api('/api/profiles');$('#ptable').innerHTML='<tr><th>name</th><th>rules</th><th>one bad round costs</th><th>rounds to halt</th><th>worst case</th><th>note</th><th></th></tr>'+p.profiles.map(x=>x.error?`<tr><td>${x.name}</td><td colspan="6" class="bad">${x.error}</td></tr>`:`<tr><td><b>${x.name}</b>${LIVEP&&x.name===LIVEP.name?' <span class="pill good">live</span>':''}</td><td>${x.rules}</td><td>$${x.worst_case.one_losing_close}</td><td>${x.worst_case.closes_to_halt}</td><td class="warn">$${x.worst_case.max_loss}</td><td style="white-space:normal;text-align:left">${x.note||''}</td><td><button onclick="$('#b-load').value='${x.name}';loadIntoBuilder();location.hash='builder'">open</button> <button class="danger" onclick="deploy('${x.name}',${x.worst_case.max_loss})">deploy</button></td></tr>`).join('');}
+async function deploy(name,maxLoss){const c=prompt(`Deploy "${name}"? Its brakes allow losing up to $${maxLoss} before it stops.\n\nType the name to confirm. (Acted on once AMENDMENT 11 is live.)`);if(c==null)return;const r=await api('/api/control',{profile:name,confirm:c});alert(r.error?('refused: '+r.error):'recorded');}
 
 // --------------------------------------------------------------- learn
 async function renderLearn(){const L=await api('/api/learn');$('#concepts').innerHTML=L.concepts.map(c=>`<details><summary><b>${c.title}</b></summary><p>${c.text}</p></details>`).join('');$('#glossary').innerHTML=Object.entries(L.glossary).map(([k,g])=>`<details><summary><b>${k}</b> — ${g.meaning}</summary><p>${g.why}</p><p class="sub">${g.type}, ${g.range[0]} to ${g.range[1]}, default ${g.default}</p></details>`).join('');$('#fields').innerHTML=Object.entries(L.fields).map(([k,v])=>`<div><b class="mono">${k}</b> <span class="sub">${v}</span></div>`).join('');}
 
 // ---------------------------------------------------------------- boot
 (async()=>{
-  SCHEMA=await api('/api/schema');
-  try{LIVEP=await api('/api/profiles/default');}catch(e){LIVEP=null;}
-  PROFILE=LIVEP?{name:'',note:'',params:JSON.parse(JSON.stringify(LIVEP.params)),rules:JSON.parse(JSON.stringify(LIVEP.rules))}:blankProfile();
-  await fillProfileSelects(); renderParams(); renderRules();
-  $('#r-sweep-param').innerHTML+=Object.keys(SCHEMA.params).map(k=>`<option>${k}</option>`).join('');
-  $('#r-objective').innerHTML=Object.entries(SCHEMA.objectives).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
-  try{const n=await api('/api/sandbox/newest');$('#r-newest').textContent=`newest settlement on file ${n.newest_settlement} — use an end hour ≤ ${n.newest_hour}`;$('#r-end').value=n.newest_hour;}catch(e){}
-  renderLearn(); refreshHistory();
-  showTab(location.hash.slice(1)||'live'); setInterval(()=>{if($('#live').classList.contains('on'))refreshLive();},15000);
+  try{setAdvanced(localStorage.getItem('adv')==='1');$('#advanced').checked=document.body.classList.contains('advanced');}catch(e){}
+  SCHEMA=await api('/api/schema');try{LIVEP=await api('/api/profiles/default');}catch(e){LIVEP=null;}
+  PROFILE=LIVEP?{name:'',note:'',params:JSON.parse(JSON.stringify(LIVEP.params)),rules:JSON.parse(JSON.stringify(LIVEP.rules))}:{name:'',note:'',params:Object.fromEntries(Object.entries(SCHEMA.params).map(([k,s])=>[k,s.default])),rules:[]};
+  await fillProfileSelects();renderParams();renderRules();
+  $('#r-sweep-param').innerHTML+=Object.keys(SCHEMA.params).map(k=>`<option>${k}</option>`).join('');$('#r-objective').innerHTML=Object.entries(SCHEMA.objectives).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  try{const n=await api('/api/sandbox/newest');$('#r-newest').textContent=`newest settled hour on file: ${n.newest_hour}`;$('#r-end').value=n.newest_hour;const d=new Date(Date.parse(n.newest_settlement)-1200*1000);$('#rp-start').value=d.toISOString().slice(0,19);}catch(e){}
+  renderLearn();refreshHistory();showTab(location.hash.slice(1)||'live');setInterval(()=>{if($('#live').classList.contains('on'))refreshLive();},15000);
 })();
 </script>
 </body>
