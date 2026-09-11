@@ -125,6 +125,102 @@ exclude; hour-of-day; "fire at first crossing" vs "wait until margin ≥ X"
 today and to be added when their replays exist: exchange-tick divergence,
 latency, fill-race outcome.
 
+## DESIGN (2026-09-11, before building the server) — read this before touching pintool.py
+
+### The two nouns, and why nothing else is needed
+* **A profile IS the strategy.** Params (values or schedules) + rules. Live runs
+  one; the builder edits one; the sandbox replays one; a goal search sweeps one.
+* **A decision record IS what happened at one second.** The same 20 fields live
+  and in replay. The Live feed, the sandbox results, every rule and every
+  tracker read the same record. One vocabulary → no jumble.
+Everything the tool shows is a view of a profile, a set of decision records,
+or the settlements those records resolved against.
+
+### Where state lives (no database; restart-proof)
+| thing | where |
+|---|---|
+| profiles | `profiles/*.json` (git-tracked) |
+| live state | `results/pinrun-live-*.jsonl` (newest file = the running process) |
+| sandbox results | `results/sandbox/<job>.json` + `runs.jsonl` (every run ever, for the multiple-looks count) |
+| control | `results/CONTROL.json` — written by `/api/control` only |
+| bank | read-only GET on the balance API |
+
+### The process
+`research/pintool.py` — one stdlib `http.server` on `127.0.0.1:8765` (`--lan`
+to bind `0.0.0.0` for the phone), a job thread for sandbox runs, no
+dependencies. **Never imports `pintake`.** `tool/index.html` — one file,
+vanilla JS + Chart.js from cdnjs, tabs by URL hash, responsive, dark/light.
+
+### Endpoints
+| | |
+|---|---|
+| `GET /` | the page |
+| `GET /api/schema` | params (type, range, default, meaning, why), fields, ops, actions, objectives — the UI draws itself from this |
+| `GET /api/live` | process (alive, pid, profile, sha, since), version record, equity points, recent decisions, metrics with intervals, brakes, bars progress, bank |
+| `GET /api/profiles` · `GET /api/profiles/<name>` · `POST /api/profiles` | list / get / save (validate; return problems as text, never silently coerce) |
+| `POST /api/sandbox/run` | `{profile, hours, end, sweep?: {param, values}}` → job id; runs `pinsim.run()` in a thread |
+| `GET /api/sandbox/jobs/<id>` | status, progress, result JSON |
+| `GET /api/sandbox/history` | every run this machine has done: settings tried → multiple-looks threshold |
+| `POST /api/control` | `{state}` or `{profile}` + typed confirmation; the ONLY writer of `CONTROL.json` |
+| `GET /api/learn` | concept articles + the glossary built from the schema |
+
+### The four tabs — each has one job
+**LIVE — "what is it doing, how has it done."** Status strip (running/paused,
+pid, profile + sha, uptime, brake counters 0/3 and $ toward the abort, bars
+progress 32/180 and 0/40). Equity ticker: cumulative realised as a line, with
+the standard stats — % change today / 7d / 30d / all, daily OHLC, max drawdown
+**in wins-to-recover**, volume = fills, fill rate, per-trade hover, capital
+deployed vs idle, **and a note that annualised past the capacity ceiling is
+meaningless.** Metrics panel with intervals: loss rate (per close AND per fill),
+fills/day (with hours covered — never a partial-day extrapolation), mean price,
+EV per fill, and **the number needed to sway the average** = how many losses at
+the run's mean loss size the run's realised P&L can absorb before going
+negative, beside the break-even loss rate at the mean price paid vs the observed
+rate. Decision feed: the latest closes — bought / refused (by which rule) /
+skipped (why), each expandable to its decision record. Controls box: play /
+pause / stop, greyed with the reason **"needs AMENDMENT 11 (control reader in
+the trader)"** until that lands — an honest state, not a dead button.
+
+**BUILDER — "change the strategy and see what it would have done."** Left:
+the profile under edit — name; every param as a control drawn from the schema
+with its meaning on hover and **the live value marked**; each param has "make
+this depend on…" which turns it into a schedule (band editor); rules list with
+add / edit rows (field · op · value, all/any, action, note); goal-search panel
+(lever, objective, values). Run: hours + end (**the newest settlement is shown
+and later windows are refused**). Right: results — overall and per rule, **FIT |
+HOLDOUT columns always**, n as markets and closes, every rate with its
+interval, the upper-bound label, the 70%-fill pair, the skips breakdown, the
+losses list. Bottom: run history with the **multiple-looks threshold and a
+curve-fitting warning that cannot be dismissed**. Save-as-profile. **No
+control button exists on this tab.**
+
+**PROFILES — "what strategies exist, which one is live."** Table: name, sha,
+note, worst case (one losing close, closes to halt, max loss), last sandbox
+result if any. Actions: load into builder; diff vs live; **deploy** = shows the
+worst-case dollars, requires the name typed back, writes `CONTROL.json
+{"profile": name, "sha": ...}`; the trader validates and restarts itself
+(AMENDMENT 11). Until then deploy shows the same honest "needs A11" state.
+
+**LEARN — "what does every word mean."** Glossary auto-built from PARAMS and
+FIELDS (a control cannot exist without an entry here). Concept pages, each in
+the plain-language register: the settlement window and why the last 60 s
+decide everything; sigma and margin; why price matters more than confidence;
+wins-to-recover and break-even loss rate; fit vs holdout and curve fitting;
+why a replay is an upper bound; what each brake does; what a decision record
+is; what a schedule is; what a tracker is.
+
+### pinsim refactor the server needs
+`pinsim.run(profile, hours, end, progress=None) -> summary` with the tape
+window cached in-process per (hours, end) so a goal-search sweep loads the
+tape once and replays N times. `main()` becomes a thin wrapper. Self-test kept.
+Hours capped at 48 in the UI; the collector outranks the tool for RAM.
+
+### Build order (each step ships usable)
+1. `pinsim.run()` + tape cache · 2. server: schema, profiles, live · 3. page:
+Live + Learn (read-only, zero risk, useful at once) · 4. sandbox single run +
+Builder tab · 5. sweeps + goal search + history · 6. Profiles tab · 7. control
+endpoint + AMENDMENT 11 in the trader (own self-test, quiet-window restart).
+
 ## RESUME HERE (written 2026-09-11 ~01:0xZ, before the usage cutoff)
 
 Done and pushed: `pinrules.py` (schema, rules, trackers, profiles, SCHEDULES --
