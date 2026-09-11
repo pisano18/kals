@@ -100,7 +100,7 @@ Two results expected. Free disk must stay above 6 GB or data collection stops.
 ## THE TOOL (Live · Builder · Profiles · Learn)
 
 ```powershell
-Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList 'C:\kals-repoesearch\pintool.py' -WorkingDirectory 'C:\kals-repo' -WindowStyle Hidden
+Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList 'C:\kals-repo\research\pintool.py' -WorkingDirectory 'C:\kals-repo' -WindowStyle Hidden
 ```
 
 Then open **http://127.0.0.1:8765** in a browser. Add `'--lan'` after the script
