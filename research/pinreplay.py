@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# VERSION: 2026-09-12-pr1
+# VERSION: 2026-09-12-pr2
 """pinreplay.py -- THE FIDELITY HARNESS. Does the tape reproduce our own trades?
 
 THE OPERATOR'S DEMAND, verbatim (2026-09-12):
@@ -17,7 +17,7 @@ each fill, whether the tape replay reproduces:
 
   (a) the model's fair value that the live bot logged,
   (b) the offer we hit, as a price and a size in the rebuilt book,
-  (c) our own fill, as a print on the trade tape,
+  (c) our own fill, as a LADDER of prints on the trade tape,
   (d) the settlement, and
   (e) whether `pinsim.decide` -- the existing backtest's decision function --
       would have bought it at all, and if not, the reason string it returns.
@@ -33,6 +33,30 @@ the book once per second is blind to it by construction -- and CLAUDE.md's
 absent from the once-per-second replayed book entirely. So every fill is
 checked twice: at the second boundary (what the backtest sees) and at every
 delta instant inside the second (what the bot saw).
+
+THE BOOK IS MERGED ON `seq`, NOT ON THE CLOCK, and this was a bug found
+here rather than assumed. A snapshot record carries no exchange timestamp at
+all -- only the collector's `_rx_ms` -- but both the snapshot and the delta
+channel carry `seq` from the same subscription (`sid` 4 for both).
+KXSOL15M-26SEP120400-00's snapshot is `seq` 1,286,254 while that market's FIRST
+delta is `seq` 1,286,271, and yet the snapshot's receipt time is 12 ms LATER
+than that delta's `ts_ms`. Merged on the clock, the snapshot therefore lands
+AFTER a delta it already contains and wipes it, leaving levels in the rebuilt
+book that the exchange had already removed. Scored against the price the live
+model logged, over 195 fills: `seq` order 151, clock order 35, with a median
+error of THIRTY CENTS. All three orderings are still reported, because the
+point of this file is to show the difference rather than to assert the answer.
+
+WHY `exec_price` IS NOT A LEVEL PRICE. It is the size-weighted average of
+everything the IOC swept. The DOGE loss settles it on its own: logged at
+0.0998, which is not even on the 0.1c tick grid, with a true print of
+`0.1100 x17 + 0.0420 x3` at one `ts_ms` -- 20 contracts, $1.9960, VWAP exactly
+0.099800. So (c) reconciles a fill against a LADDER: contiguous same-taker-side
+prints whose counts sum to ours and whose VWAP matches what we paid to 2e-4.
+A first version compared `exec_price` to single prints with a one-cent
+tolerance; on that fill it matched the 17-lot leg and called it ours, and on 14
+others it found nothing and said the fill was not on the tape. Both were
+artefacts of comparing an average to a level.
 
 WHY THE DECISION INSTANT IS RECONSTRUCTED TO THE MILLISECOND. The live
 `signal` record carries `index_age_s` = (wall clock) - (second stamped on the
@@ -50,6 +74,19 @@ stamped X arrives at X+0.08 s median. So at W = S.04 the live index holds the
 tick stamped S-1 and pinsim holds the tick stamped S. `fair_sec` therefore
 carries about one second of LOOKAHEAD. Whether that matters is measured here,
 not asserted.
+
+WHAT THE SIGMA DIFFERENCES ARE, when they appear. On 4 of 195 fills the
+replayed `sigma` differs from the one the live bot logged, by 0.3% to 32%,
+moving `fair` by 1.4e-4 to 4.2e-3. It is not a replay defect: on the two worst
+(KXBTC15M and KXBNB15M, both 2026-09-12 09:44) the index tape holds 300 of 300
+seconds with ZERO gaps, and the replayed sigma was reproduced by hand from the
+raw file to every digit. The live bot runs its OWN index WebSocket, separate
+from the collector's, and one extra ~33-point one-second BTC move inside the
+live bot's 300-second window accounts for the whole gap arithmetically
+(variance 5.12 -> 8.88 needs exactly one diff of about 33.5, and the tape's
+largest is 29.89). Two independent subscriptions to the same feed, disagreeing
+at a window boundary in a volatile moment -- worth knowing, not worth fixing
+in the replay.
 
 WHAT THIS FILE DOES NOT MEASURE, and cannot:
   * whether the offer would have been OURS. Live fill rate is 70%; nothing in
@@ -209,6 +246,55 @@ def settle_from_index(ticks, close_s, strike, digits):
     mean = sum(got.values()) / 60.0
     K = pindata.eff_strike(float(strike), digits)
     return mean, 60, ("yes" if mean >= K else "no")
+
+
+def find_fill(trades, S, W_ms, want, px_paid, filled):
+    """Our fill on the trade tape -- as a GROUP OF LEGS, not one print.
+
+    THIS IS THE CORRECTION. `exec_price` in the order record is the
+    SIZE-WEIGHTED AVERAGE of everything the IOC swept, not a level price. The
+    DOGE loss proves it on its own: it is logged at 0.0998, which is not even
+    on the 0.1c tick grid, and its true print is
+
+        0.1100 x 17.00  +  0.0420 x 3.00   at one ts_ms
+        -> 20.00 contracts, $1.9960, VWAP exactly 0.099800
+
+    A first version of this check compared exec_price to individual prints
+    with a one-cent tolerance. On that fill it matched the 17-lot leg and
+    called it "our fill", and on 14 others it found nothing and said
+    OUR_FILL_NOT_ON_TAPE. Both were artefacts of comparing a VWAP to a level.
+    Kalshi prints sweeps PER LEVEL (CLAUDE.md, settled on ts_ms over 12M
+    trades), so the right object to reconcile against is the ladder.
+
+    Searches contiguous runs of same-taker-side prints in tape order across
+    [S-1, S+2), preferring the FEWEST legs and then the run nearest the
+    decision instant. Returns (nlegs, ts, legs, vwap, count) or None.
+    """
+    cands = sorted(((t[0], (t[2] if want == "yes" else t[3]), t[4])
+                    for t in trades
+                    if (S - 1) * 1000 <= t[0] < (S + 2) * 1000
+                    and t[1] == want), key=lambda x: x[0])
+    best = None
+    for i in range(len(cands)):
+        cnt = 0.0
+        cost = 0.0
+        for j in range(i, len(cands)):
+            _ts, px, c = cands[j]
+            cnt += c
+            cost += px * c
+            if cnt > filled + 0.011:
+                break
+            if abs(cnt - filled) <= 0.011 and cnt > 0 \
+                    and abs(cost / cnt - px_paid) <= 2e-4:
+                key = (j - i + 1, abs(cands[i][0] - W_ms))
+                if best is None or key < best[0]:
+                    best = (key, cands[i][0],
+                            [(px_, c_) for _t, px_, c_ in cands[i:j + 1]],
+                            cost / cnt, cnt)
+                break
+    if best is None:
+        return None
+    return (best[0][0], best[1], best[2], best[3], best[4])
 
 
 def our_ask(bk, want, now_ms):
@@ -907,33 +993,30 @@ def probe_fill(fl, ticks, snaps, deltas, trades, mkr):
         flag("TS_ORDER_BOOK_DIFFERS_FROM_SEQ_ORDER")
 
     # ------------------------------------------------------------------ (c)
-    cand = []
-    for ts, taker, ypx, npx, cnt in trades:
-        if not ((S - 1) * 1000 <= ts < (S + 2) * 1000):
-            continue
-        p = ypx if want == "yes" else npx
-        dpx = abs(p - px_paid)
-        if taker != want:
-            continue
-        if dpx > 0.0105:                   # one 1c tick; grid is 0.1c under 10c
-            continue
-        cand.append((abs(ts - W_ms), ts, p, cnt, taker, dpx))
-    exact = [c for c in cand
-             if fl["filled"] > 0 and abs(c[3] - fl["filled"]) <= 0.2 * fl["filled"]]
-    pick = (sorted(exact) or sorted(cand))
-    out["print_found"] = bool(exact)
-    out["print_price_only"] = bool(cand) and not bool(exact)
-    if pick:
-        _, ts, p, cnt, taker, dpx = pick[0]
+    hit = find_fill(trades, S, W_ms, want, px_paid, float(fl["filled"]))
+    out["print_found"] = hit is not None
+    out["print_taker"] = want
+    if hit:
+        nlegs, ts, legs, vwap, cnt = hit
+        out["print_nlegs"] = nlegs
         out["print_ts"] = ts
         out["print_dt_ms"] = ts - W_ms
-        out["print_price"] = p
+        out["print_price"] = round(vwap, 6)
         out["print_count"] = cnt
-        out["print_taker"] = taker
-        out["print_dpx"] = dpx
+        out["print_legs"] = [[round(px_, 4), c_] for px_, c_ in legs]
+        out["print_dpx"] = abs(vwap - px_paid)
+        out["print_price_only"] = False
     else:
+        out["print_nlegs"] = 0
         out["print_ts"] = out["print_dt_ms"] = out["print_price"] = None
-        out["print_count"] = out["print_taker"] = out["print_dpx"] = None
+        out["print_count"] = out["print_dpx"] = None
+        out["print_legs"] = None
+        # a same-side print within one tick of what we paid, so the report can
+        # say "near miss" rather than "absent" when the two are different things
+        near = [t for t in trades
+                if (S - 1) * 1000 <= t[0] < (S + 2) * 1000 and t[1] == want
+                and abs((t[2] if want == "yes" else t[3]) - px_paid) <= 0.0105]
+        out["print_price_only"] = bool(near)
     out["n_trades_window"] = sum(1 for t in trades
                                  if (S - 1) * 1000 <= t[0] < (S + 2) * 1000)
     if not out["print_found"]:
@@ -1185,9 +1268,30 @@ def selftest():
 
     # ---- (iii) the planted print, and the decoy rejected
     ck(out["print_found"] and out["print_count"] == 20.0
-       and out["print_taker"] == "yes" and out["print_dt_ms"] == 300,
-       f"(iii) our fill is found on the trade tape: taker yes, 96c, 20 "
+       and out["print_nlegs"] == 1 and out["print_dt_ms"] == 300,
+       f"(iii) our fill is found on the trade tape as ONE leg: 96c, 20 "
        f"contracts, {out['print_dt_ms']} ms after the decision instant")
+    # THE SWEEP CASE, built from the real DOGE numbers: exec_price is the VWAP
+    # of two legs and equals no single print.
+    sw = [(S * 1000 + 350, "yes", 0.1100, 0.8900, 17.0),
+          (S * 1000 + 350, "yes", 0.0420, 0.9580, 3.0),
+          (S * 1000 + 350, "yes", 0.1100, 0.8900, 133.0)]
+    fl_sw = json.loads(json.dumps(fl_ok))
+    fl_sw["exec_price"] = 0.0998
+    fl_sw["filled"] = 20.0
+    o_sw = probe_fill(fl_sw, {iid: ticks}, snaps, deltas, sw, mkr)
+    ck(o_sw["print_found"] and o_sw["print_nlegs"] == 2
+       and abs(o_sw["print_price"] - 0.0998) < 1e-9
+       and o_sw["print_count"] == 20.0,
+       f"and a fill logged at 0.0998 -- a price not on the tick grid -- is "
+       f"reconciled to the TWO-leg ladder 0.1100 x17 + 0.0420 x3, VWAP "
+       f"{o_sw['print_price']}, 20 contracts (legs {o_sw['print_legs']})")
+    fl_bad_vwap = json.loads(json.dumps(fl_sw))
+    fl_bad_vwap["exec_price"] = 0.0900
+    o_bv = probe_fill(fl_bad_vwap, {iid: ticks}, snaps, deltas, sw, mkr)
+    ck(not o_bv["print_found"],
+       "and the SAME ladder is NOT accepted for a fill logged at 0.0900 -- the "
+       "VWAP has to match, it is not enough for the legs to be nearby")
     no_dec = [t for t in trades if t[1] == "yes"]
     out_nd = probe_fill(fl_ok, {iid: ticks}, snaps, deltas, no_dec, mkr)
     ck(out_nd["print_found"],
@@ -1603,12 +1707,16 @@ def loss_detail(r, out):
                f"{_fmt((r.get('bookage_live')), 0)} ms |")
     out.append(f"| (b) deltas / snapshots (levelled) on this market this hour | "
                f"{r['n_deltas']:,} / {r['n_snaps']} ({r['n_snaps_levelled']}) |")
-    out.append(f"| **(c) our fill as a print** | "
-               f"{'FOUND' if r['print_found'] else ('price match but WRONG SIZE' if r['print_price_only'] else '**NOT ON TAPE**')} |")
+    out.append(f"| **(c) our fill on the trade tape** | "
+               f"{('FOUND, ' + str(r['print_nlegs']) + ' leg' + ('s' if r['print_nlegs'] != 1 else '')) if r['print_found'] else ('a same-side print within one tick exists but NO ladder reconciles to our count and VWAP' if r['print_price_only'] else '**NOT ON TAPE**')} |")
     if r["print_ts"]:
-        out.append(f"| (c) print | taker {r['print_taker']} @ "
-                   f"{_fmt(r['print_price'])} x {_fmt(r['print_count'], 2)}, "
-                   f"{r['print_dt_ms']:+d} ms from the decision instant |")
+        out.append(f"| (c) the ladder | taker {r['print_taker']} "
+                   + " + ".join(f"{px:.4f} x{c:g}"
+                                for px, c in (r['print_legs'] or []))
+                   + f" -> {_fmt(r['print_count'], 2)} contracts, VWAP "
+                     f"{_fmt(r['print_price'], 6)} against the {r['exec_price']:.4f} "
+                     f"the bot logged; {r['print_dt_ms']:+d} ms from the "
+                     f"decision instant |")
     out.append(f"| (c) prints on this market in [S-1, S+2) | "
                f"{r['n_trades_window']} |")
     out.append(f"| **(d) settlement, from the INDEX TAPE** | mean of "
@@ -1661,7 +1769,7 @@ def diagnose(rows, out):
     fair_ok = sum(1 for r in rows if "FAIR_DIVERGE" not in r["flags"])
     never = sum(1 for r in rows if not r["ms_any"])
     at_ms = sum(1 for r in rows if r["offer_at_W"])
-    at_b = sum(1 for r in rows if r["offer_at_s0"] or r["offer_at_s1"])
+    at_b = sum(1 for r in rows if r["offer_at_s0"])
     px_w = sum(1 for r in rows if r.get("ask_w") is not None
                and r.get("price_live") is not None
                and abs(r["ask_w"] - r["price_live"]) <= PX_TOL)
@@ -1669,6 +1777,7 @@ def diagnose(rows, out):
                and r.get("price_live") is not None
                and abs(r["ask_s0"] - r["price_live"]) <= PX_TOL)
     tape = sum(1 for r in rows if r["print_found"])
+    legs = sum(1 for r in rows if (r.get("print_nlegs") or 0) > 1)
     sett = sum(1 for r in rows if r["result_idx"] is not None
                and r["result_live"] is not None
                and r["result_idx"] == str(r["result_live"]).lower())
@@ -1693,9 +1802,10 @@ def diagnose(rows, out):
     out.append(
         f"**The model is not the problem and neither is the tape.** The "
         f"replayed index reproduces the `fair` the live bot logged on "
-        f"**{fair_ok} of {n}** fills to within 1e-4; our own fill is on the "
-        f"trade tape as a print with the right taker side, price and size on "
-        f"**{tape} of {n}**; and the settlement recomputed from the sixty "
+        f"**{fair_ok} of {n}** fills to within 1e-4; our own fill reconciles "
+        f"exactly to a LADDER of same-side prints on the trade tape -- our "
+        f"count and our VWAP -- on **{tape} of {n}** ({legs} of them swept "
+        f"more than one level); and the settlement recomputed from the sixty "
         f"index prints agrees with the outcome we booked on **{sett} of {n}**. "
         f"The offer we hit exists in the rebuilt book at some millisecond on "
         f"**{n - never} of {n}** fills -- it is NOT invisible. What breaks is "
@@ -1705,7 +1815,9 @@ def diagnose(rows, out):
         f"{n}**; evaluated at the second boundary, which is what "
         f"`pinsim.run()` does, it shows it on **{px_b} of {n}** and holds an "
         f"offer at or better than we paid on {at_b} against {at_ms} at the "
-        f"decision instant. Then the rule layer: the existing backtest, run "
+        f"decision instant -- but that near-tie hides the real gap, because "
+        f"the two do not agree about WHICH offer: the price matches on "
+        f"{px_b} against {px_w}. Then the rule layer: the existing backtest, run "
         f"at the second boundary under today's constants, would have bought "
         f"**{b_now} of {n}** of our own fills"
         + (f" -- the dominant refusal is `{top[0][0]}` on {top[0][1]} of them"
@@ -1776,9 +1888,10 @@ def report(rows, bad_total, salvaged, missing, log=print):
                "in the rebuilt book, on our side -- at the second boundary "
                "(what the backtest sees) and at every delta instant inside "
                "the second (what the bot saw)? |")
-    out.append("| (c) | is our own fill on the trade tape as a print with "
-               "`taker_side` = our side, our price to one tick and our size "
-               "to 20%? |")
+    out.append("| (c) | is our own fill on the trade tape? `exec_price` is "
+               "the VWAP of a swept ladder, not a level price, so the test is "
+               "whether contiguous same-side prints exist whose counts sum to "
+               "ours and whose VWAP equals what we paid to 2e-4. |")
     out.append("| (d) | does `fulltape/markets.json` agree with the outcome "
                "the live bot booked? |")
     out.append("| (e) | would `pinsim.decide` -- the existing backtest's "
@@ -1849,6 +1962,63 @@ def report(rows, bad_total, salvaged, missing, log=print):
                    f"for a median of **{live_ms[len(live_ms) // 2]} ms** of the "
                    f"3,000 ms window (p10 {live_ms[len(live_ms) // 10]}, "
                    f"p90 {live_ms[len(live_ms) * 9 // 10]}, max {live_ms[-1]}).")
+    out.append("\n## (c) our own fills, reconciled against the trade tape\n")
+    out.append("`exec_price` is the SIZE-WEIGHTED AVERAGE of everything the IOC "
+               "swept, not a level price -- the DOGE loss is logged at 0.0998, "
+               "which is not on the 0.1c tick grid at all, and its true print is "
+               "`0.1100 x17 + 0.0420 x3` at one `ts_ms`, VWAP exactly 0.099800. "
+               "So a fill is reconciled against a LADDER: contiguous same-side "
+               "prints whose counts sum to ours and whose VWAP equals what we "
+               "paid to 2e-4.\n")
+    out.append("| | fills | % |")
+    out.append("|---|---|---|")
+    fnd = [r for r in rows if r["print_found"]]
+    out.append(f"| **our fill reconciles exactly to a ladder on the tape** | "
+               f"{len(fnd)} | {100.0 * len(fnd) / n:.1f}% |")
+    nb = defaultdict(int)
+    for r in fnd:
+        nb[r["print_nlegs"]] += 1
+    for k in sorted(nb):
+        out.append(f"| ... as {k} leg{'s' if k != 1 else ''} | {nb[k]} | "
+                   f"{100.0 * nb[k] / n:.1f}% |")
+    miss = [r for r in rows if not r["print_found"]]
+    out.append(f"| no ladder reconciles, but a same-side print within one tick "
+               f"exists | {sum(1 for r in miss if r['print_price_only'])} | "
+               f"{100.0 * sum(1 for r in miss if r['print_price_only']) / n:.1f}% |")
+    out.append(f"| nothing on our side within one tick at all | "
+               f"{sum(1 for r in miss if not r['print_price_only'])} | "
+               f"{100.0 * sum(1 for r in miss if not r['print_price_only']) / n:.1f}% |")
+    # the ones that do not reconcile: is it a matching failure or a HOLE?
+    silent = [r for r in miss if not r["n_trades_window"]]
+    if miss:
+        out.append(f"\nOf the {len(miss)} that do not reconcile, "
+                   f"**{len(silent)} have ZERO prints on that market anywhere "
+                   f"in the three-second window** -- so it is not a matching "
+                   f"failure, the trade tape simply does not contain the "
+                   f"execution. Checked by hand on "
+                   f"`KXBTC15M-26SEP110130-30` (fill 2026-09-11T05:29:30Z): "
+                   f"that market printed 19,911 times across the two "
+                   f"surrounding hours and **not once in the 40 s around our "
+                   f"fill**, and neither did any other market -- the whole "
+                   f"`trade` channel is silent from 05:27:11 to 05:31:00, a "
+                   f"**230-second blackout**. That hour has 374 silent seconds "
+                   f"of 3,523 (10.6%), in runs of 230, 72 and 53 s. A quiet "
+                   f"second is normal; a 230-second run with zero prints across "
+                   f"every live market is a dropped subscription. "
+                   f"**Consequence: the `trade` channel has holes, and any "
+                   f"result that treats it as complete -- `pintrades.py` is "
+                   f"the one that matters -- inherits them.** The book channel "
+                   f"shows no such gap at those instants: all "
+                   f"{len(silent)} of these fills still have a rebuilt book "
+                   f"and a fair.")
+    dts = sorted(abs(r["print_dt_ms"]) for r in fnd
+                 if r["print_dt_ms"] is not None)
+    if dts:
+        out.append(f"\nWhere it reconciles, the ladder prints a median "
+                   f"**{dts[len(dts) // 2]} ms** from the reconstructed "
+                   f"decision instant (p90 {dts[len(dts) * 9 // 10]}, max "
+                   f"{dts[-1]}) -- which is a second, independent confirmation "
+                   f"that the instant is reconstructed correctly.")
     out.append("\n## (e) would the backtest have bought it? four ways\n")
     out.append("`pinsim.decide` is CALLED here, not reimplemented. Two things "
                "are varied: WHEN the book is read (the second boundary, which "

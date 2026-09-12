@@ -1,8 +1,8 @@
 # RESULTS_replay -- does the tape replay reproduce our own trades?
 
-`research/pinreplay.py`, run 2026-09-12T13:03:56Z.
+`research/pinreplay.py`, run 2026-09-12T13:22:28Z.
 
-**n = 195 live fills over 150 closes over 190 markets**, every one a real order the bot actually got filled on, read from `results/pinrun-live-*.jsonl`. **9 of them lost money.** No simulated fill, no assumed rule, no tape-derived loss rate appears anywhere in this file -- the losses are our own.
+**n = 207 live fills over 160 closes over 202 markets**, every one a real order the bot actually got filled on, read from `results/pinrun-live-*.jsonl`. **9 of them lost money.** No simulated fill, no assumed rule, no tape-derived loss rate appears anywhere in this file -- the losses are our own.
 
 Zero deltas failed to parse.
 
@@ -14,37 +14,37 @@ Tape integrity: 0 hour-channels needed member-by-member gzip salvage (a collecto
 |---|---|
 | (a) | does the replayed index reproduce the `fair` the live model logged, to 1e-4? Three feeds are tried: ticks stamped `<= S` (pinsim's rule), `<= S-1`, and ticks fed by ARRIVAL up to the reconstructed decision millisecond. |
 | (b) | is there an ask at or better than the price we paid, in the rebuilt book, on our side -- at the second boundary (what the backtest sees) and at every delta instant inside the second (what the bot saw)? |
-| (c) | is our own fill on the trade tape as a print with `taker_side` = our side, our price to one tick and our size to 20%? |
+| (c) | is our own fill on the trade tape? `exec_price` is the VWAP of a swept ladder, not a level price, so the test is whether contiguous same-side prints exist whose counts sum to ours and whose VWAP equals what we paid to 2e-4. |
 | (d) | does `fulltape/markets.json` agree with the outcome the live bot booked? |
 | (e) | would `pinsim.decide` -- the existing backtest's decision function, called here, not reimplemented -- have bought it, and if not, what reason string does it return? |
 
-### ALL FILLS -- n = 195 fills over 150 closes
+### ALL FILLS -- n = 207 fills over 160 closes
 
 | flag | fills | % | closes |
 |---|---|---|---|
-| FAIR_DIVERGE | 4 | 2.1% | 3 |
-| FAIR_NEEDS_ONE_SEC_LAG | 28 | 14.4% | 28 |
-| PRICE_DIVERGE_AT_W | 44 | 22.6% | 41 |
-| OFFER_MISSING | 30 | 15.4% | 30 |
-| OFFER_ONLY_SUBSECOND | 30 | 15.4% | 30 |
-| PINSIM_BOOK_DIFFERS_FROM_SEQ_ORDER | 32 | 16.4% | 31 |
-| TS_ORDER_BOOK_DIFFERS_FROM_SEQ_ORDER | 109 | 55.9% | 94 |
-| OUR_FILL_NOT_ON_TAPE | 14 | 7.2% | 13 |
-| NO_TAPE_SETTLEMENT | 21 | 10.8% | 15 |
-| NO_LIVE_SETTLEMENT | 9 | 4.6% | 5 |
-| REFUSED_BY_PINRUN_DUMP_GUARD_TODAY | 10 | 5.1% | 9 |
-| REFUSED_BY_BACKTEST_PROFILE_RULE | 9 | 4.6% | 8 |
-| FULL_BACKTEST_WOULD_NOT_BUY | 93 | 47.7% | 78 |
+| FAIR_DIVERGE | 4 | 1.9% | 3 |
+| FAIR_NEEDS_ONE_SEC_LAG | 31 | 15.0% | 31 |
+| PRICE_DIVERGE_AT_W | 51 | 24.6% | 46 |
+| OFFER_MISSING | 32 | 15.5% | 32 |
+| OFFER_ONLY_SUBSECOND | 32 | 15.5% | 32 |
+| PINSIM_BOOK_DIFFERS_FROM_SEQ_ORDER | 34 | 16.4% | 33 |
+| TS_ORDER_BOOK_DIFFERS_FROM_SEQ_ORDER | 114 | 55.1% | 99 |
+| OUR_FILL_NOT_ON_TAPE | 9 | 4.3% | 6 |
+| NO_TAPE_SETTLEMENT | 33 | 15.9% | 25 |
+| NO_LIVE_SETTLEMENT | 9 | 4.3% | 5 |
+| REFUSED_BY_PINRUN_DUMP_GUARD_TODAY | 10 | 4.8% | 9 |
+| REFUSED_BY_BACKTEST_PROFILE_RULE | 9 | 4.3% | 8 |
+| FULL_BACKTEST_WOULD_NOT_BUY | 97 | 46.9% | 82 |
 | INDEX_SETTLE_WINDOW_INCOMPLETE | 2 | 1.0% | 1 |
-| BACKTEST_WOULD_NOT_BUY | 91 | 46.7% | 77 |
+| BACKTEST_WOULD_NOT_BUY | 95 | 45.9% | 81 |
 
-**Why `pinsim.decide` would not have bought (91 of 195)** -- at the second boundary, today's gate, our own order size:
+**Why `pinsim.decide` would not have bought (95 of 207)** -- at the second boundary, today's gate, our own order size:
 
 | reason | fills | % |
 |---|---|---|
-| `undecided` | 42 | 21.5% |
-| `too_shallow` | 29 | 14.9% |
-| `over_ceiling` | 19 | 9.7% |
+| `undecided` | 42 | 20.3% |
+| `too_shallow` | 33 | 15.9% |
+| `over_ceiling` | 19 | 9.2% |
 | `no_offer` | 1 | 0.5% |
 
 ### THE LOSING FILLS ONLY -- n = 9 fills over 7 closes
@@ -71,50 +71,50 @@ Tape integrity: 0 hour-channels needed member-by-member gzip salvage (a collecto
 | `over_ceiling` | 2 | 22.2% |
 | `no_offer` | 1 | 11.1% |
 
-### THE WINNING FILLS ONLY (the control) -- n = 186 fills over 147 closes
+### THE WINNING FILLS ONLY (the control) -- n = 198 fills over 157 closes
 
 | flag | fills | % | closes |
 |---|---|---|---|
-| FAIR_DIVERGE | 4 | 2.2% | 3 |
-| FAIR_NEEDS_ONE_SEC_LAG | 28 | 15.1% | 28 |
-| PRICE_DIVERGE_AT_W | 41 | 22.0% | 39 |
-| OFFER_MISSING | 28 | 15.1% | 28 |
-| OFFER_ONLY_SUBSECOND | 28 | 15.1% | 28 |
-| PINSIM_BOOK_DIFFERS_FROM_SEQ_ORDER | 31 | 16.7% | 30 |
-| TS_ORDER_BOOK_DIFFERS_FROM_SEQ_ORDER | 104 | 55.9% | 91 |
-| OUR_FILL_NOT_ON_TAPE | 14 | 7.5% | 13 |
-| NO_TAPE_SETTLEMENT | 20 | 10.8% | 15 |
-| NO_LIVE_SETTLEMENT | 9 | 4.8% | 5 |
-| REFUSED_BY_PINRUN_DUMP_GUARD_TODAY | 6 | 3.2% | 6 |
-| REFUSED_BY_BACKTEST_PROFILE_RULE | 5 | 2.7% | 5 |
-| FULL_BACKTEST_WOULD_NOT_BUY | 85 | 45.7% | 73 |
-| INDEX_SETTLE_WINDOW_INCOMPLETE | 2 | 1.1% | 1 |
-| BACKTEST_WOULD_NOT_BUY | 83 | 44.6% | 71 |
+| FAIR_DIVERGE | 4 | 2.0% | 3 |
+| FAIR_NEEDS_ONE_SEC_LAG | 31 | 15.7% | 31 |
+| PRICE_DIVERGE_AT_W | 48 | 24.2% | 44 |
+| OFFER_MISSING | 30 | 15.2% | 30 |
+| OFFER_ONLY_SUBSECOND | 30 | 15.2% | 30 |
+| PINSIM_BOOK_DIFFERS_FROM_SEQ_ORDER | 33 | 16.7% | 32 |
+| TS_ORDER_BOOK_DIFFERS_FROM_SEQ_ORDER | 109 | 55.1% | 96 |
+| OUR_FILL_NOT_ON_TAPE | 9 | 4.5% | 6 |
+| NO_TAPE_SETTLEMENT | 32 | 16.2% | 25 |
+| NO_LIVE_SETTLEMENT | 9 | 4.5% | 5 |
+| REFUSED_BY_PINRUN_DUMP_GUARD_TODAY | 6 | 3.0% | 6 |
+| REFUSED_BY_BACKTEST_PROFILE_RULE | 5 | 2.5% | 5 |
+| FULL_BACKTEST_WOULD_NOT_BUY | 89 | 44.9% | 77 |
+| INDEX_SETTLE_WINDOW_INCOMPLETE | 2 | 1.0% | 1 |
+| BACKTEST_WOULD_NOT_BUY | 87 | 43.9% | 75 |
 
-**Why `pinsim.decide` would not have bought (83 of 186)** -- at the second boundary, today's gate, our own order size:
+**Why `pinsim.decide` would not have bought (87 of 198)** -- at the second boundary, today's gate, our own order size:
 
 | reason | fills | % |
 |---|---|---|
-| `undecided` | 39 | 21.0% |
-| `too_shallow` | 27 | 14.5% |
-| `over_ceiling` | 17 | 9.1% |
+| `undecided` | 39 | 19.7% |
+| `too_shallow` | 31 | 15.7% |
+| `over_ceiling` | 17 | 8.6% |
 
 ## (a) which index feed reproduces the live `fair`
 
 | feed | fills within 1e-4 | median |d| | max |d| |
 |---|---|---|---|
-| ticks stamped <= S  (**what pinsim does**) | 163/195 (83.6%) | 3.05e-06 | 8.26e-02 |
-| ticks stamped <= S-1 | 59/195 (30.3%) | 3.79e-03 | 4.70e-01 |
-| ticks by ARRIVAL <= decision ms  (**faithful**) | 170/195 (87.2%) | 2.80e-06 | 1.64e-01 |
+| ticks stamped <= S  (**what pinsim does**) | 172/207 (83.1%) | 3.09e-06 | 8.26e-02 |
+| ticks stamped <= S-1 | 64/207 (30.9%) | 3.54e-03 | 4.70e-01 |
+| ticks by ARRIVAL <= decision ms  (**faithful**) | 180/207 (87.0%) | 2.84e-06 | 1.64e-01 |
 
 ## (b) where the offer we hit actually was
 
 | the offer we paid was visible... | fills | % |
 |---|---|---|
-| at the START of second S (pinsim's own view) | 148 | 75.9% |
-| at the END of second S | 68 | 34.9% |
-| at the reconstructed DECISION instant | 154 | 79.0% |
-| at SOME millisecond in [S-1, S+2) | 195 | 100.0% |
+| at the START of second S (pinsim's own view) | 157 | 75.8% |
+| at the END of second S | 73 | 35.3% |
+| at the reconstructed DECISION instant | 164 | 79.2% |
+| at SOME millisecond in [S-1, S+2) | 207 | 100.0% |
 | at NO millisecond at all -- invisible to any book replay | 0 | 0.0% |
 
 ### which book reconstruction reproduces the offer the live model logged
@@ -123,13 +123,32 @@ The live `signal` record logs the exact `price` the bot saw on our side. That is
 
 | reconstruction, evaluated at | == live logged price | median |d| (cents) |
 |---|---|---|
-| **seq order, the decision millisecond** | 151/195 (77.4%) | 0.00c |
-| seq order, start of second S | 76/195 (39.0%) | 0.20c |
-| seq order, end of second S | 36/195 (18.5%) | 0.60c |
-| timestamp order, start of second S | 35/195 (17.9%) | 30.00c |
-| snapshots-first (pinsim), start of second S | 66/195 (33.8%) | 0.30c |
+| **seq order, the decision millisecond** | 156/207 (75.4%) | 0.00c |
+| seq order, start of second S | 78/207 (37.7%) | 0.30c |
+| seq order, end of second S | 38/207 (18.4%) | 0.60c |
+| timestamp order, start of second S | 36/207 (17.4%) | 31.00c |
+| snapshots-first (pinsim), start of second S | 68/207 (32.9%) | 0.30c |
 
-Where the offer was visible at all, it was on the book for a median of **1383 ms** of the 3,000 ms window (p10 372, p90 2757, max 3000).
+Where the offer was visible at all, it was on the book for a median of **1383 ms** of the 3,000 ms window (p10 381, p90 2815, max 3000).
+
+## (c) our own fills, reconciled against the trade tape
+
+`exec_price` is the SIZE-WEIGHTED AVERAGE of everything the IOC swept, not a level price -- the DOGE loss is logged at 0.0998, which is not on the 0.1c tick grid at all, and its true print is `0.1100 x17 + 0.0420 x3` at one `ts_ms`, VWAP exactly 0.099800. So a fill is reconciled against a LADDER: contiguous same-side prints whose counts sum to ours and whose VWAP equals what we paid to 2e-4.
+
+| | fills | % |
+|---|---|---|
+| **our fill reconciles exactly to a ladder on the tape** | 198 | 95.7% |
+| ... as 1 leg | 159 | 76.8% |
+| ... as 2 legs | 21 | 10.1% |
+| ... as 3 legs | 13 | 6.3% |
+| ... as 4 legs | 4 | 1.9% |
+| ... as 6 legs | 1 | 0.5% |
+| no ladder reconciles, but a same-side print within one tick exists | 0 | 0.0% |
+| nothing on our side within one tick at all | 9 | 4.3% |
+
+Of the 9 that do not reconcile, **9 have ZERO prints on that market anywhere in the three-second window** -- so it is not a matching failure, the trade tape simply does not contain the execution. Checked by hand on `KXBTC15M-26SEP110130-30` (fill 2026-09-11T05:29:30Z): that market printed 19,911 times across the two surrounding hours and **not once in the 40 s around our fill**, and neither did any other market -- the whole `trade` channel is silent from 05:27:11 to 05:31:00, a **230-second blackout**. That hour has 374 silent seconds of 3,523 (10.6%), in runs of 230, 72 and 53 s. A quiet second is normal; a 230-second run with zero prints across every live market is a dropped subscription. **Consequence: the `trade` channel has holes, and any result that treats it as complete -- `pintrades.py` is the one that matters -- inherits them.** The book channel shows no such gap at those instants: all 9 of these fills still have a rebuilt book and a fair.
+
+Where it reconciles, the ladder prints a median **78 ms** from the reconstructed decision instant (p90 130, max 1097) -- which is a second, independent confirmation that the instant is reconstructed correctly.
 
 ## (e) would the backtest have bought it? four ways
 
@@ -137,15 +156,15 @@ Where the offer was visible at all, it was on the book for a median of **1383 ms
 
 | book read at | gate | rules | would have bought | top refusal reasons |
 |---|---|---|---|---|
-| second boundary | today | decide only | **104/195** (53.3%) | `undecided` 42, `too_shallow` 29, `over_ceiling` 19, `no_offer` 1 |
-| **decision millisecond** | today | decide only | **128/195** (65.6%) | `undecided` 42, `too_shallow` 13, `over_ceiling` 12 |
-| second boundary | **the one that was LIVE** | decide only | **139/195** (71.3%) | `too_shallow` 34, `over_ceiling` 19, `undecided` 2, `no_offer` 1 |
-| **decision millisecond** | **the one that was LIVE** | decide only | **169/195** (86.7%) | `too_shallow` 13, `over_ceiling` 11, `undecided` 2 |
-| second boundary | today | decide + profile rules | **102/195** (52.3%) | `undecided` 42, `too_shallow` 29, `over_ceiling` 19, `rule:dump` 2 |
-| **decision millisecond** | today | decide + profile rules | **121/195** (62.1%) | `undecided` 42, `too_shallow` 13, `over_ceiling` 12, `rule:dump` 7 |
-| **decision millisecond** | **the one that was LIVE** | decide + profile rules | **160/195** (82.1%) | `too_shallow` 13, `over_ceiling` 11, `rule:dump` 9, `undecided` 2 |
+| second boundary | today | decide only | **112/207** (54.1%) | `undecided` 42, `too_shallow` 33, `over_ceiling` 19, `no_offer` 1 |
+| **decision millisecond** | today | decide only | **137/207** (66.2%) | `undecided` 42, `too_shallow` 16, `over_ceiling` 12 |
+| second boundary | **the one that was LIVE** | decide only | **147/207** (71.0%) | `too_shallow` 38, `over_ceiling` 19, `undecided` 2, `no_offer` 1 |
+| **decision millisecond** | **the one that was LIVE** | decide only | **178/207** (86.0%) | `too_shallow` 16, `over_ceiling` 11, `undecided` 2 |
+| second boundary | today | decide + profile rules | **110/207** (53.1%) | `undecided` 42, `too_shallow` 33, `over_ceiling` 19, `rule:dump` 2 |
+| **decision millisecond** | today | decide + profile rules | **130/207** (62.8%) | `undecided` 42, `too_shallow` 16, `over_ceiling` 12, `rule:dump` 7 |
+| **decision millisecond** | **the one that was LIVE** | decide + profile rules | **169/207** (81.6%) | `too_shallow` 16, `over_ceiling` 11, `rule:dump` 9, `undecided` 2 |
 
-The gate was not one thing over this window. `PIN` by fill: 0.98 x85, 0.995 x110. A fill taken under `PIN` 0.98 is refused `undecided` by today's 0.995 -- which is a gate change, not a replay defect, and the two must not be confused.
+The gate was not one thing over this window. `PIN` by fill: 0.98 x85, 0.995 x122. A fill taken under `PIN` 0.98 is refused `undecided` by today's 0.995 -- which is a gate change, not a replay defect, and the two must not be confused.
 
 ### the two dump guards, which are NOT the same rule
 
@@ -156,9 +175,9 @@ The gate was not one thing over this window. `PIN` by fill: 0.98 x85, 0.995 x110
 | refused by pinrun's live 15c guard as it stands TODAY | 10 | 4 |
 | refused by the guard that was live for that fill | 0 | 0 |
 | refused by the backtest profile's `dump` rule | 9 | 4 |
-| **refused by NEITHER** | 185 | 5 |
+| **refused by NEITHER** | 197 | 5 |
 
-Discount to fair across all fills: median 2.95c, p90 8.49c, max 90.02c.
+Discount to fair across all fills: median 2.95c, p90 8.41c, max 90.02c.
  On the LOSING fills: 1.97c, 2.07c, 3.17c, 4.51c, 5.76c, 18.00c, 26.83c, 40.41c, 90.02c.
 
 ## (d) the settlement, three ways
@@ -167,10 +186,10 @@ Settlement is the mean of the sixty 1-second index prints in [close-60, close-1]
 
 | | fills |
 |---|---|
-| live `settled` record present | 186 |
+| live `settled` record present | 198 |
 | `markets.json` has a result | 174 |
-| index tape has all 60 settlement prints | 193 |
-| **index-tape outcome == the outcome we booked live** | 184 |
+| index tape has all 60 settlement prints | 205 |
+| **index-tape outcome == the outcome we booked live** | 196 |
 | index-tape outcome DISAGREES with live | 0 |
 | `markets.json` DISAGREES with the index tape | 0 |
 
@@ -200,8 +219,8 @@ fill second `2026-09-09T00:44:38Z` (S=1788914678), close 2026-09-09T00:45:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S-1000 ms to S+1477 ms |
 | (b) book age at instant: replay / live-logged | 7 ms / 90 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 39,323 / 3 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker no @ 0.9620 x 20.00, +82 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 1 leg |
+| (c) the ladder | taker no 0.9620 x20 -> 20.00 contracts, VWAP 0.962000 against the 0.9620 the bot logged; +82 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 26 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 2.349367 vs effective strike 2.349150 -> `yes` |
 | (d) settlement | tape `yes` vs live `yes` -> agree |
@@ -237,8 +256,8 @@ fill second `2026-09-09T00:44:39Z` (S=1788914679), close 2026-09-09T00:45:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S-1000 ms to S+477 ms |
 | (b) book age at instant: replay / live-logged | 52 ms / 21 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 39,323 / 3 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker no @ 0.9560 x 20.00, +53 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 1 leg |
+| (c) the ladder | taker no 0.9560 x20 -> 20.00 contracts, VWAP 0.956000 against the 0.9560 the bot logged; +53 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 21 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 2.349367 vs effective strike 2.349150 -> `yes` |
 | (d) settlement | tape `yes` vs live `yes` -> agree |
@@ -274,8 +293,8 @@ fill second `2026-09-09T00:44:43Z` (S=1788914683), close 2026-09-09T00:45:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S+11 ms to S+2000 ms |
 | (b) book age at instant: replay / live-logged | 9 ms / 13 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 39,323 / 3 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker no @ 0.7300 x 19.00, +84 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 1 leg |
+| (c) the ladder | taker no 0.7300 x19 -> 19.00 contracts, VWAP 0.730000 against the 0.7300 the bot logged; +84 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 44 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 2.349367 vs effective strike 2.349150 -> `yes` |
 | (d) settlement | tape `yes` vs live `yes` -> agree |
@@ -311,8 +330,8 @@ fill second `2026-09-10T04:59:39Z` (S=1789016379), close 2026-09-10T05:00:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S+170 ms to S+2000 ms |
 | (b) book age at instant: replay / live-logged | 1 ms / 2 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 85,342 / 1 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker yes @ 0.8200 x 20.00, +19 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 1 leg |
+| (c) the ladder | taker yes 0.8200 x20 -> 20.00 contracts, VWAP 0.820000 against the 0.8200 the bot logged; +19 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 152 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 1.389796 vs effective strike 1.389950 -> `no` |
 | (d) settlement | tape `no` vs live `no` -> agree |
@@ -348,8 +367,8 @@ fill second `2026-09-10T05:29:34Z` (S=1789018174), close 2026-09-10T05:30:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S-1000 ms to S+2000 ms |
 | (b) book age at instant: replay / live-logged | 0 ms / 2 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 33,024 / 3 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker yes @ 0.9400 x 18.00, +24 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 2 legs |
+| (c) the ladder | taker yes 0.9400 x0.64 + 0.9400 x18 -> 18.64 contracts, VWAP 0.940000 against the 0.9400 the bot logged; +24 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 89 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 722.539683 vs effective strike 722.555000 -> `no` |
 | (d) settlement | tape `no` vs live `no` -> agree |
@@ -385,8 +404,8 @@ fill second `2026-09-10T22:14:49Z` (S=1789078489), close 2026-09-10T22:15:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S+489 ms to S+2000 ms |
 | (b) book age at instant: replay / live-logged | 5 ms / 3 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 64,540 / 3 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker no @ 0.1100 x 17.00, +104 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 2 legs |
+| (c) the ladder | taker no 0.0420 x3 + 0.1100 x17 -> 20.00 contracts, VWAP 0.099800 against the 0.0998 the bot logged; +104 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 94 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 0.084036 vs effective strike 0.084023 -> `yes` |
 | (d) settlement | tape `yes` vs live `yes` -> agree |
@@ -422,8 +441,8 @@ fill second `2026-09-11T12:29:30Z` (S=1789129770), close 2026-09-11T12:30:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S+274 ms to S+2000 ms |
 | (b) book age at instant: replay / live-logged | 1 ms / 5 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 64,268 / 3 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker no @ 0.5900 x 18.00, +87 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 2 legs |
+| (c) the ladder | taker no 0.5900 x18 + 0.6000 x2 -> 20.00 contracts, VWAP 0.591000 against the 0.5910 the bot logged; +87 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 170 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 99.473833 vs effective strike 99.306450 -> `yes` |
 | (d) settlement | tape `yes` vs live `yes` -> agree |
@@ -459,8 +478,8 @@ fill second `2026-09-12T02:59:31Z` (S=1789181971), close 2026-09-12T03:00:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S-1000 ms to S+2000 ms |
 | (b) book age at instant: replay / live-logged | 15 ms / 26 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 47,544 / 1 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker no @ 0.9780 x 16.00, -62 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 1 leg |
+| (c) the ladder | taker no 0.9790 x20 -> 20.00 contracts, VWAP 0.979000 against the 0.9790 the bot logged; +84 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 57 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 101.713667 vs effective strike 101.694450 -> `yes` |
 | (d) settlement | tape `yes` vs live `yes` -> agree |
@@ -496,8 +515,8 @@ fill second `2026-09-12T07:59:41Z` (S=1789199981), close 2026-09-12T08:00:00Z fr
 | (b) offer window (the scan covers S-1000 to S+2000) | S-1000 ms to S+1985 ms |
 | (b) book age at instant: replay / live-logged | 2 ms / 3 ms |
 | (b) deltas / snapshots (levelled) on this market this hour | 58,914 / 1 (1) |
-| **(c) our fill as a print** | FOUND |
-| (c) print | taker yes @ 0.9400 x 20.00, -9 ms from the decision instant |
+| **(c) our fill on the trade tape** | FOUND, 1 leg |
+| (c) the ladder | taker yes 0.9400 x20 -> 20.00 contracts, VWAP 0.940000 against the 0.9400 the bot logged; -9 ms from the decision instant |
 | (c) prints on this market in [S-1, S+2) | 118 |
 | **(d) settlement, from the INDEX TAPE** | mean of 60 prints = 101.663500 vs effective strike 101.669950 -> `no` |
 | (d) settlement | tape `-` vs live `no` -> no tape settlement yet |
@@ -513,4 +532,4 @@ fill second `2026-09-12T07:59:41Z` (S=1789199981), close 2026-09-12T08:00:00Z fr
 
 ## DIAGNOSIS
 
-**The model is not the problem and neither is the tape.** The replayed index reproduces the `fair` the live bot logged on **191 of 195** fills to within 1e-4; our own fill is on the trade tape as a print with the right taker side, price and size on **181 of 195**; and the settlement recomputed from the sixty index prints agrees with the outcome we booked on **184 of 195**. The offer we hit exists in the rebuilt book at some millisecond on **195 of 195** fills -- it is NOT invisible. What breaks is WHEN the book is read and WHICH RULE reads it. Reconstructed on the exchange's `seq` and evaluated at the millisecond the live bot decided, the book shows exactly the price we paid on **151 of 195**; evaluated at the second boundary, which is what `pinsim.run()` does, it shows it on **76 of 195** and holds an offer at or better than we paid on 165 against 154 at the decision instant. Then the rule layer: the existing backtest, run at the second boundary under today's constants, would have bought **102 of 195** of our own fills -- the dominant refusal is `undecided` on 42 of them, then `too_shallow` on 29. Move only the sampling to the decision millisecond and it buys **121**; put back the gate that was actually live for each fill and it buys **160 of 195**. **On the 9 fills that LOST money the same backtest buys 1**, refusing the rest as `undecided` x3, `too_shallow` x2, `over_ceiling` x2, `no_offer` x1. That is the answer to why the backtest does not show our losses: not a blind book and not a broken model, but a once-a-second sample of a book that changes ~102 times a second, judged by a gate that has since been tightened past the trades it is being asked to reproduce.
+**The model is not the problem and neither is the tape.** The replayed index reproduces the `fair` the live bot logged on **203 of 207** fills to within 1e-4; our own fill reconciles exactly to a LADDER of same-side prints on the trade tape -- our count and our VWAP -- on **198 of 207** (39 of them swept more than one level); and the settlement recomputed from the sixty index prints agrees with the outcome we booked on **196 of 207**. The offer we hit exists in the rebuilt book at some millisecond on **207 of 207** fills -- it is NOT invisible. What breaks is WHEN the book is read and WHICH RULE reads it. Reconstructed on the exchange's `seq` and evaluated at the millisecond the live bot decided, the book shows exactly the price we paid on **156 of 207**; evaluated at the second boundary, which is what `pinsim.run()` does, it shows it on **78 of 207** and holds an offer at or better than we paid on 157 against 164 at the decision instant -- but that near-tie hides the real gap, because the two do not agree about WHICH offer: the price matches on 78 against 156. Then the rule layer: the existing backtest, run at the second boundary under today's constants, would have bought **110 of 207** of our own fills -- the dominant refusal is `undecided` on 42 of them, then `too_shallow` on 33. Move only the sampling to the decision millisecond and it buys **130**; put back the gate that was actually live for each fill and it buys **169 of 207**. **On the 9 fills that LOST money the same backtest buys 1**, refusing the rest as `undecided` x3, `too_shallow` x2, `over_ceiling` x2, `no_offer` x1. That is the answer to why the backtest does not show our losses: not a blind book and not a broken model, but a once-a-second sample of a book that changes ~99 times a second, judged by a gate that has since been tightened past the trades it is being asked to reproduce.
