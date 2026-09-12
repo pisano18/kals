@@ -258,6 +258,50 @@ entries** — belief was stable at 99.5%+ and collapsed later (SOL: 19 seconds
 stable, then 100% → 0.2% in one second). So the entry side is not where the
 lever is. **Everything rides on the exit.**
 
+**THE EXIT — IS THERE ANYONE TO SELL TO? YES, ABOUT HALF THE TIME IT MATTERS (2026-09-12).**
+For each of the 11 tape losers, the prices that actually TRADED on our side in
+the alarm second (belief first < 70%). Typical print, not best print:
+
+| market | alarm at tau | typical print on our side | loss/contract vs 96c held |
+|---|---|---|---|
+| NEAR 0830 | 23 | 99c | **~0c** |
+| BNB 0830 | 29 | 70c | 26c |
+| HYPE 0830 | 27 | 63c | 33c |
+| XRP 0100 | 19 | 66c | 30c |
+| BTC 2300 | 10 | 65c | 31c |
+| SOL 0830 | 29 | 60c | 36c |
+| ETH 2215 | 24 | 58c | 38c |
+| DOGE 0830 | 25 | 27c | 69c |
+| SOL 2300 | 11 | 19c | 77c |
+| XRP 0830 | 28 | 9c | 87c |
+| DOGE 1815 | 10 | 3c | 93c |
+
+**Mean recoverable ~49c of the 96c. The average loss halves, from ~$19 to
+~$9.50 at 20 contracts.** Seven of eleven recover a third or more; four are
+one-second collapses where the price is gone before the alarm.
+
+Prints carry real size (x200, x294, x3964), so selling into them is realistic
+-- but we would be selling INTO a collapse alongside everyone else, so the
+achieved price will sit at or below these. Treat 49c as the ceiling.
+
+**False alarms:** 2 of 1,642 tape winners dipped below 70%. Exiting those at
+~50c costs ~$9 each = 0.12% x $9 x 39 bets/day = **~$0.42/day**. The gain
+is roughly (96c-49c) x 20 x 2.0% loss rate x 39/day = **~$7/day.** Net ~+$6.5
+a day at size 20 on a strategy making ~$9. **Roughly a 70% improvement,
+before the achieved-price haircut.**
+
+**HOW IT WOULD BE BUILT -- with machinery already proven live:** buy the
+OPPOSITE side via the same `pintake.take()` path, at the best ask, for the
+size we hold. Holding 20 NO at 96c and 20 YES at 35c locks in exactly
+-31c/contract whatever settles. Settlement is per ORDER (`open_pos`), so the
+two legs pay independently and correctly. The A8 both-sides guard sits in
+the SIGNAL path and does not see the hedge. **No new order type, no sell
+path, no change to pintake.**
+
+**GATES BEFORE IT GOES LIVE (AMENDMENT 2026-09-10 applies):** a pinsim holdout
+on days not used above, and a pre-registered live bar written before the first
+live hedge fires.
+
 **Tape caveat, standing:** this is the model's fair PATH, driven by the index,
 not by the book -- so unlike a loss RATE it should transfer to our fills. Both
 live losses that had warning showed exactly this shape.
