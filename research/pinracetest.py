@@ -63,9 +63,31 @@ MAX_ATTEMPTS = 10         # orders ever sent by one process
 MAX_SPEND = 10.00         # dollars of cumulative stake, then stop
 PRICE_CAP = 0.95          # never pay more; break-even at tau 15-20 is 97.28c
 TAU_LO, TAU_HI = 15, 20   # the measured band
-MAX_BOOK_AGE_MS = 2000
-MAX_INDEX_AGE_S = 5
 SUBSCRIBE_LEAD = 100      # seconds before the decision window to subscribe
+MAX_INDEX_AGE_S = 5
+
+# BOOK STALENESS. pinrun uses 2000ms and that is right for the up/down books,
+# which churn constantly. Coin Race books are QUIET: measured 2026-09-12, three
+# of five races were refused with ages of 27s, 83s and 89s. A delta-maintained
+# book that receives no deltas is not stale, it is UNCHANGED -- age_ms is time
+# since the last message, not time since the book was last correct.
+#
+# The real risk a staleness gate guards against is a silently dead socket, and
+# that is a property of the CONNECTION, not of one ticker. So: allow a long
+# per-ticker age, and separately require that the socket has heard from
+# SOMETHING recently.
+MAX_BOOK_AGE_MS = 300000      # 5 minutes: a quiet book is still a book
+MAX_FEED_SILENCE_MS = 15000   # but the socket itself must be alive
+
+# MARGIN GATE. Our one paper candidate (2026-09-12 01:15) was a photo finish:
+# HYPE +0.23203% against SOL +0.23101%, a margin of 0.00102%, and SOL won. The
+# market was asking 81c precisely because it was close, and the market was
+# right. Measured over 530 events at tau 20:
+#     margin < 0.005%   23 events    83-91% correct
+#     margin >= 0.005%  507 events   100.0% correct  [98.8, 100.0]
+# So the gate is set at 0.005% of return. It would have refused exactly the
+# race we got wrong and kept every race we got right.
+MIN_MARGIN = 0.00005          # 0.005% of return, as a fraction
 
 
 def fee(p, n=1.0):
@@ -93,6 +115,26 @@ def close_mu(ticks, close_s, now_s, spot):
     if n > N_AVG or spot is None:
         return None
     return (sum(got) + (N_AVG - n) * float(spot)) / float(N_AVG)
+
+
+def feed_silence_ms(book, now_ms=None):
+    """Milliseconds since the socket last delivered ANY book message.
+
+    This is the honest test for "is the connection dead", which is the only
+    thing a staleness gate should refuse on. A single ticker going quiet means
+    nobody changed their order, not that we lost the feed. Returns None when
+    no book has ever arrived, which the caller treats as no_book.
+    """
+    t = now_ms if now_ms is not None else livebook.now_ms()
+    try:
+        with book.lock:
+            rx = [m["rx_ms"] for m in book.meta.values()
+                  if m.get("rx_ms") is not None]
+    except Exception:                                        # noqa: BLE001
+        return None
+    if not rx:
+        return None
+    return t - max(rx)
 
 
 def leader(rets):
@@ -262,6 +304,33 @@ def selftest():
        "there is at least a minute of warm-up before the decision window "
        "(%ds) -- one shot per race, so a cold book wastes the whole race"
        % SUBSCRIBE_LEAD)
+
+    # ---- the margin gate, set from 530 measured events -------------------
+    ck(abs(MIN_MARGIN - 0.00005) < 1e-12,
+       "the margin gate is 0.005%% of return, the level above which 507 of "
+       "507 events were called correctly")
+    _, m_tight = leader({"HYPE": 0.0023203, "SOL": 0.0023101, "XRP": 0.0021411})
+    ck(m_tight < MIN_MARGIN,
+       "the real photo finish we got WRONG (HYPE vs SOL, 2026-09-12 01:15) "
+       "is refused by the gate")
+    _, m_ok = leader({"A": 0.0023203, "B": 0.0021411})
+    ck(m_ok >= MIN_MARGIN,
+       "a 0.018%% margin, comfortably inside the 100%%-correct band, passes")
+
+    # ---- feed silence is a CONNECTION property, not a ticker property ----
+    class _FakeBook:
+        def __init__(self, rx):
+            self.lock = threading.RLock()
+            self.meta = {("t%d" % i): {"rx_ms": v} for i, v in enumerate(rx)}
+    ck(feed_silence_ms(_FakeBook([1000, 5000, 9000]), now_ms=9200) == 200,
+       "silence is measured from the NEWEST message on any ticker")
+    ck(feed_silence_ms(_FakeBook([1000]), now_ms=400000) > MAX_FEED_SILENCE_MS,
+       "a socket that has said nothing for minutes is refused")
+    ck(feed_silence_ms(_FakeBook([])) is None,
+       "and a book that has never received anything reports None, not zero")
+    ck(MAX_BOOK_AGE_MS >= 60000,
+       "one quiet ticker is tolerated for at least a minute (%ds) -- an "
+       "unchanged book is not a stale one" % (MAX_BOOK_AGE_MS // 1000))
     print("SELF-TEST " + ("PASSED" if not f else "*** FAILED ***"))
     for x in f:
         print("   - " + x)
@@ -421,6 +490,16 @@ def main():
                     rec("skip", event=evt, why="tie_or_incomplete", tau=tau)
                     done.add(evt)
                     continue
+                if margin < MIN_MARGIN:
+                    # A photo finish. Stand aside -- see MIN_MARGIN above.
+                    if (evt, "thin_margin") not in seen_why:
+                        seen_why.add((evt, "thin_margin"))
+                        rec("no_trade", event=evt, coin=sorted(win)[0],
+                            ticker=e["legs"][sorted(win)[0]], tau=tau,
+                            why="thin_margin", margin=round(margin, 9),
+                            min_margin=MIN_MARGIN, yes_ask=None,
+                            yes_ask_size=None, no_bid=None, watched=True)
+                    continue
                 coin = next(iter(win))
                 tkr = e["legs"][coin]
                 # EVERY REASON WE DO NOT BUY IS RECORDED, ONCE PER EVENT PER
@@ -432,14 +511,20 @@ def main():
                 # thing this test can learn, and it was the invisible case.
                 b = book.best(tkr)
                 bad = None
+                sil = feed_silence_ms(book)
                 if not b:
                     bad = "no_book"
                 elif b.get("suspect"):
                     bad = "book_suspect"
                 elif b.get("age_ms") is None:
                     bad = "book_no_age"
+                elif sil is not None and sil > MAX_FEED_SILENCE_MS:
+                    # the SOCKET is dead, which is the thing worth refusing on
+                    bad = "feed_silent"
                 elif b["age_ms"] > MAX_BOOK_AGE_MS:
-                    bad = "book_stale_%dms" % int(b["age_ms"])
+                    bad = "book_stale"       # no ms in the label: it is the
+                                             # dedupe key, and a per-millisecond
+                                             # label wrote 24 records per race
                 else:
                     ask, asz = b.get("yes_ask"), b.get("yes_ask_size")
                     if not ask:
