@@ -57,16 +57,24 @@ THE ONE PLACE THE PASS IS DELIBERATELY NOT pinsim.run()
 run() retires a market (`decided`) at its first candidate. At size 20 that is
 right -- live would have bought it. But a candidate with 5 contracts resting is
 NOT a fill at size 50, and live would keep scanning that market. So the pass
-keeps scanning and emits a row whenever a candidate offers MORE DEPTH than any
-earlier candidate on that market did. That is exactly enough: for any depth
-bar, the first EMITTED row at or above the bar is the first CANDIDATE at or
-above the bar (proved by the property test in selftest()). The market is
-retired once a row clears the largest bar of any size scored, because then
-every size has its answer.
+never retires a market, and emits a row for every candidate that is not
+DOMINATED by an earlier one on the same market: at least as deep at the touch,
+at least as deep on the ladder, and no dearer. For any gate that is monotone --
+easier with more depth, easier with a lower price, which is the shape of
+too_shallow, of the ladder fill and of IMPROVE_BY -- the first CANDIDATE that
+passes is therefore an EMITTED one (property test in selftest()).
 
-  RESIDUAL, STATED: a later CHEAPER offer at the same or less depth is not
-  emitted. It could only matter through the IMPROVE_BY bar on the second fill
-  of a close, so the effect is to MISS a few second fills. Conservative.
+  THE DEPTH-ONLY VERSION OF THIS RULE WAS WRONG AND THE ANCHOR CAUGHT IT.
+  Against pinsim.run()'s own 156 fills on the 72-hour window it produced 153.
+  The closes matched 117 to 117 and all three missing fills were SECOND fills
+  of a close: a later offer that was CHEAPER but no deeper was never emitted,
+  so it could never clear the IMPROVE_BY bar, which is a price test. Price is
+  its own axis. The pass was restarted.
+
+  RESIDUAL, STATED: `fair` is not one of the axes, so a candidate whose only
+  improvement is that the model grew MORE confident while the book stood still
+  is not emitted, though net_edge would read it. fair moves by fractions of a
+  percent second to second where price and depth jump.
 
 TWO SCORING MODES, AND ONLY ONE OF THEM IS LIVE-FAITHFUL
 --------------------------------------------------------
@@ -151,14 +159,38 @@ def depth_bar(size):
     return max(float(pinrun.MIN_LEVEL), float(pinrun.MIN_FILL_FRAC) * float(size))
 
 
-def records_row(prev_max_depth, depth):
-    """Emit iff this candidate unlocks a depth no earlier candidate offered.
+def dominated(prev, depth, lad, price):
+    """True iff an EARLIER emitted row on this market was at least as good in
+    every dimension a size-dependent gate can read: at least as deep at the
+    touch, at least as deep on the ladder, and no dearer.
 
-    See the module docstring. The property that makes one pass sufficient --
-    "for any bar, the first emitted row at or above it is the first candidate
-    at or above it" -- is tested in selftest() against random depth walks.
+    THIS IS WHAT MAKES ONE PASS SUFFICIENT, and the first version of it was
+    WRONG. It tracked depth only, and on the 72-hour acceptance window that
+    cost exactly three fills against pinsim.run()'s own 156 -- the closes
+    matched 117 to 117 and every one of the three was a SECOND fill of a
+    close. The cause: a later offer that was CHEAPER but no deeper was never
+    emitted, so it could never clear the IMPROVE_BY bar, which is a price
+    test. Depth and price are separate axes, and a running maximum on one of
+    them cannot stand in for the other.
+
+    The property, proved in selftest() against random walks: for ANY gate
+    that is monotone -- easier with more depth, easier with a lower price --
+    the first CANDIDATE that passes it is emitted. If candidate c passes and
+    was suppressed, some earlier emitted row e dominated it, so e passes too,
+    so c was not the first. The three gates that matter are exactly of that
+    shape: too_shallow (touch depth), the ladder fill (ladder depth) and
+    IMPROVE_BY (price).
+
+    RESIDUAL, STATED: `fair` is not a dimension here, so a candidate whose
+    only improvement is that the model became MORE confident while the book
+    stood still is not emitted, and net_edge would read that. fair moves by
+    fractions of a percent second to second where price and depth jump, so
+    this is the small term; it is named rather than hidden.
     """
-    return float(depth) > float(prev_max_depth)
+    for d, l, pz in prev:
+        if d >= depth - 1e-9 and l >= lad - 1e-9 and pz <= price + 1e-9:
+            return True
+    return False
 
 
 def ladder_for(bk, side, k=LADDER_LEVELS):
@@ -264,7 +296,7 @@ def hedge_try_ask(hp, thr, bk, ts, belief):
     return True
 
 
-def walk_hour(stamp, mk, max_bar, log=None):
+def walk_hour(stamp, mk, max_bar=None, log=None):
     """One book hour, ONE iteration of its event stream. Returns the rows.
 
     The order of operations is pinsim.run()'s: per second, the hedge/belief
@@ -279,7 +311,10 @@ def walk_hour(stamp, mk, max_bar, log=None):
         pend = {k: list(v) for k, v in hour["ticks"].items()}
         wk = pinsim.Walk(mk, idx, pend, per_event=True)
         watch = {}          # ticker -> belief/hedge state, opened at candidate 1
-        best = {}           # ticker -> deepest candidate emitted so far
+        # ticker -> the (touch, ladder, price) triples already emitted. See
+        # dominated(): a candidate is emitted unless an earlier one was at
+        # least as good on every axis a size-dependent gate can read.
+        pareto = {}
         rows = []
         mismatch = 0
         for kind, tkk, sec, ts in wk.drive(hour["events"]):
@@ -332,8 +367,6 @@ def walk_hour(stamp, mk, max_bar, log=None):
             r = mk.get(tkk)
             if r is None:
                 continue
-            if best.get(tkk, 0.0) >= max_bar:
-                continue                     # every size already has its row
             cs = int(float(r["close"]))
             tau = cs - sec
             if not (pinrun.TAU_MIN <= tau <= pinrun.TAU_MAX):
@@ -371,13 +404,21 @@ def walk_hour(stamp, mk, max_bar, log=None):
                     "alarm_sec": {t: None for t in HEDGE_THRS},
                     "alarm_tau": {t: None for t in HEDGE_THRS},
                     "tries": {}}
-            # THE EMISSION RULE is on LADDER depth, not touch depth: at size
-            # 2000 what unlocks a fill is how much the whole ladder holds.
+            # THE EMISSION RULE: three axes, because three gates read them.
+            # The touch decides what TOUCH mode can fill; the ladder to the
+            # ceiling decides what a SWEEP can fill; the price decides
+            # IMPROVE_BY. A market is NEVER retired early -- an offer twenty
+            # seconds later can still be the cheapest of the window, and
+            # retiring on depth alone is what cost three fills.
             lad_qty = sum(q for c, q in lad
                           if c <= pinrun.PRICE_CEILING + 1e-12)
-            if not records_row(best.get(tkk, 0.0), max(depth, lad_qty)):
+            prev = pareto.setdefault(tkk, [])
+            if dominated(prev, depth, lad_qty, px):
                 continue
-            best[tkk] = max(depth, lad_qty)
+            prev[:] = [e for e in prev
+                       if not (depth >= e[0] - 1e-9 and lad_qty >= e[1] - 1e-9
+                               and px <= e[2] + 1e-9)]
+            prev.append((depth, lad_qty, px))
             rc = pinsim.record(fv, w, px, min(depth, float(pinrun.MIN_LEVEL)),
                                depth, tau, r["series"], sec, sg, spot,
                                b["age_ms"], iage)
@@ -460,7 +501,9 @@ def run_pass(stamps, rows_path, log=print):
         f"scored, so net_edge's per-contract fee is minimal and the pass "
         f"cannot drop a candidate a larger size would take); depth gate at "
         f"MIN_LEVEL={pinrun.MIN_LEVEL:g}; ladder {LADDER_LEVELS} levels; "
-        f"markets retired once a row clears depth {max_bar:g}")
+        f"no early retirement -- a market is scanned to the end of its tau "
+        f"window because a cheaper offer late in it is still news (largest "
+        f"depth bar {max_bar:g})")
     t0 = time.time()
     total = mism = 0
     for i, stamp in enumerate(todo):
@@ -529,7 +572,17 @@ def score(rows, size, hedge_thr=None, mode="touch"):
         bar = depth_bar(size)
         per_close, decided = {}, set()
         fills, refused = [], []
-        for r in sorted(rows, key=lambda x: (x["entry_ts"], x["ticker"])):
+        # SORT BY THE TIMESTAMP ALONE, AND LET THE SORT'S STABILITY DO THE
+        # REST. Rows are appended in the tape's own event order, so a stable
+        # sort on entry_ts leaves two candidates at the SAME millisecond in
+        # the order the exchange sent them -- which is the order pinsim.run()
+        # evaluates them in. Adding `ticker` as a tie-break re-orders those
+        # alphabetically instead, and on the 72-hour acceptance window that
+        # alone cost one fill of 156 and $0.85: whichever of two simultaneous
+        # candidates books the close's slot first sets `best` for the
+        # IMPROVE_BY bar, so the tie-break decides whether the other one can
+        # still buy. With ts alone the anchor reproduces pinsim exactly.
+        for r in sorted(rows, key=lambda x: x["entry_ts"]):
             tk, cs = r["ticker"], r["cs"]
             if tk in decided:
                 continue
@@ -719,29 +772,45 @@ def selftest():
     bars = sorted(depth_bar(s) for s in SIZES)
     mx = max(bars)
     rnd = random.Random(7)
+    pool = [1.0, 2.0, 3.0, 5.0, 9.0, 12.0, 20.0, 40.0, 63.0, 100.0, 400.0,
+            1500.0]
+    prices = [0.80, 0.90, 0.94, 0.95, 0.96, 0.97, 0.975, 0.98]
     bad = 0
-    for _ in range(400):
-        depths = [rnd.choice([1.0, 2.0, 3.0, 5.0, 9.0, 12.0, 20.0, 40.0,
-                              63.0, 100.0, 400.0, 1500.0])
-                  for _ in range(25)]
-        rec, m = [], 0.0
-        for i, d in enumerate(depths):
-            if m >= mx:
-                break                      # retired: every size has its row
-            if records_row(m, d):
-                rec.append((i, d))
-                m = d
+    for _ in range(300):
+        # each candidate is a TRIPLE: touch quantity, ladder quantity (always
+        # at least the touch, since the touch is the ladder's first level),
+        # and price
+        cand = []
+        for _k in range(20):
+            t = rnd.choice(pool)
+            cand.append((t, t + rnd.choice([0.0, 0.0, 5.0, 500.0]),
+                         rnd.choice(prices)))
+        rec, prev = [], []
+        for i, (t, l, pz) in enumerate(cand):
+            if dominated(prev, t, l, pz):
+                continue
+            prev[:] = [e for e in prev
+                       if not (t >= e[0] and l >= e[1] and pz <= e[2])]
+            prev.append((t, l, pz))
+            rec.append((i, t, l, pz))
+        # ANY monotone gate -- deeper is easier, cheaper is easier -- must be
+        # first passed by a row that was EMITTED.
         for bar in bars:
-            first_any = next((i for i, d in enumerate(depths) if d >= bar),
-                             None)
-            first_rec = next((i for i, d in rec if d >= bar), None)
-            if first_any != first_rec:
-                bad += 1
+            for col in (0, 1):
+                for lim in prices:
+                    fa = next((i for i, c in enumerate(cand)
+                               if c[col] >= bar and c[2] <= lim), None)
+                    fr = next((i for i, t, l, pz in rec
+                               if (t, l)[col] >= bar and pz <= lim), None)
+                    if fa != fr:
+                        bad += 1
     ck(bad == 0,
-       "EMISSION RULE: for every depth bar of every size, the first EMITTED "
-       "row at or above it is the FIRST CANDIDATE at or above it, over 400 "
-       f"random depth walks ({bad} violations) -- this is why one pass serves "
-       f"all {len(SIZES)} sizes")
+       "EMISSION RULE: for every combination of a depth bar (either measure) "
+       "and a price limit -- the shape of too_shallow, of the ladder fill and "
+       "of IMPROVE_BY -- the first EMITTED row that passes is the first "
+       f"CANDIDATE that passes. 300 random walks, {bad} violations. The "
+       f"depth-only version of this rule cost exactly 3 of pinsim's 156 fills "
+       f"on the acceptance window, every one a SECOND fill of a close")
 
     # ---- (2) THE LADDER: orientation, and a VWAP done BY HAND -------------
     bk = pindata.Book()
@@ -889,6 +958,22 @@ def selftest():
            and abs(f75[0]["pnl"] - (40 * 0.10 - fee(0.90, 40))) < 1e-9,
            "PARTIAL FILL: 40 resting against size 75 (bar 37.5) takes 40, and "
            "the fee is billed on 40")
+
+        # TIE-BREAK: two candidates at the same millisecond must be scored in
+        # the order they arrive, because the first to book the slot sets the
+        # IMPROVE_BY bar for the second.
+        T = [row("T1", 8000, 7975, 0.90, 500.0, True),
+             row("T2", 8000, 7975, 0.899, 500.0, True)]
+        T[1]["entry_ts"] = T[0]["entry_ts"]           # the SAME millisecond
+        fT, _ = score(T, 20)
+        fT2, _ = score([T[1], T[0]], 20)
+        ck([x["ticker"] for x in fT] == ["T1"]
+           and [x["ticker"] for x in fT2] == ["T2"],
+           f"TIE-BREAK: at one millisecond the FIRST row in tape order books "
+           f"the slot and the second fails the improve bar -- reversing the "
+           f"input reverses the winner ({[x['ticker'] for x in fT]} then "
+           f"{[x['ticker'] for x in fT2]}), so the sort must be stable on "
+           f"entry_ts and must NOT add a tie-break of its own")
 
         # the improve bar, and that failing it does NOT retire the market
         E = [row("E1", 5000, 4970, 0.90, 500.0, True),
