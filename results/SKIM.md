@@ -614,6 +614,86 @@ samples manufacture confident nonsense.
 
 ---
 
+## ⭐⭐⭐ COUNT IS A LIQUIDITY PROBLEM, NOT A SETTINGS PROBLEM — 88% OUT OF REACH (Opus agent, 2026-09-12; `results/RESULTS_count.md`, `research/pincount.py`)
+
+180 book hours / 9 days / 697 closes on the REBUILT replay under the live gate. The
+instrument independently reproduces the number that prompted the hunt — **52.2% of
+model-certain closes traded** vs `RESULTS_maker.md`'s 51.8% — from the BOOK channel,
+not the trade tape.
+
+**The mechanism, from 167,458 fresh certain market-seconds:** **140,990 (84.2%) carry
+NO ask on the winning side — and 140,989 of those 140,990 carry one on the LOSING
+side.** The book is not dead; it is one-sided against us. Buying a near-certainty
+requires somebody to bid the side about to lose, and when the outcome is obvious
+nobody does. Of the 26,468 market-seconds that DO have an ask, 18,006 are above 99.5c
+and only 3,141 are at or below 98c. **That is a capacity limit of the product. No
+parameter touches it.**
+
+**The 333 silent closes, by the closest rung they reached:**
+
+| best offer the close ever showed | closes | reachable by |
+|---|---|---|
+| dearer than 98.7c only | **219 (65.8%)** | the EV floor, not the ceiling |
+| no ask our side, loser had one | 71 (21.3%) | **nothing — liquidity** |
+| 98.0–98.7c and deep | 35 (10.5%) | PRICE_CEILING → 0.987 |
+| everything else | 8 (2.4%) | size / rails / edge |
+
+**Only 39 of 333 (11.7%) lie inside the reach of any price or size constant.**
+
+### The one lever, and it is NOT established
+
+`PRICE_CEILING` 0.980 → **0.987**: +5 points of count (52.1% → 57.1%), **+$1.90/day at
+size 20**, inside its own MDE (+$0.0245 vs $0.0575), and the two dollar columns
+disagree in sign. **0.99 and 0.995 are byte-identical to 0.987** — pinrun's own EV
+floor refuses everything dearer (EV(0.987) = +0.31c clears 0.30c; EV(0.988) = +0.21c
+does not), hand-reconciled at six prices. **A ceiling above 0.987 is inert.**
+
+**The artefact check that decides it:** all 123 added fills are dearer than 98c, and
+the gain flips sign on the one number the tape may not supply —
+
+| loss rate on those 123 dear fills | worth |
+|---|---|
+| 0.8% (the replay's own) | +$12.98 |
+| 1.0% | +$9.49 |
+| **2.0%** | **−$14.00** |
+| 3.0% | −$37.50 |
+
+$15.21 of the $17.08 comes from a 64–0 bucket at 98.5–98.7c where ONE adverse fill
+costs $18.75 at size 20. **We have never bought above 98c live, so no live rate exists
+for this population.** PROPOSED, not deployed: run it at ONE CONTRACT above 98c and
+count, exactly as the hedge plant was run. **Needs per-order sign-off.**
+
+### The tau kill is CONFIRMED on the rebuilt replay — the old one was right here
+
+Flip rate per certain MARKET at today's gate: 0.02% (tau 3–10), 0.18% (11–20), 0.20%
+(21–30), **0.44% (31–45, 2.2×)**, **0.75% (46–60, 3.7×)**. Same wall AMENDMENT 4 found
+at PIN 0.98, lower in level, identical in shape. And dearer: mean price rises
+monotonically 93.63c → 96.33c. TAU_MAX 60 earns +$111 on new closes and loses
+**−$316 on closes we already trade**, because an early dear fill burns a
+MAX_PER_CLOSE slot and raises the improve bar against the better offer still to come.
+TAU_MAX 35 is the only positive row and is inside its MDE.
+
+### The only result that clears its own MDE is NEGATIVE
+
+`MIN_FILL_FRAC` 0.5 → 0.25 buys 5 closes worth +$0.69 and loses $18.48 on shared
+closes: **−$0.0255/close, t = −5.3 against MDE $0.0095.** Do not lower the floor.
+
+### Holdout: no power, not no effect
+
+The BASE gate itself earned $0.2722/close in train and $0.0174 in holdout while
+trading the same share of closes at the same mean price — the COUNT is stable, the
+outcomes were worse. Holdout MDEs land 5–20× above the base's own holdout level.
+**The holdout can refute a large lever; it cannot adjudicate one worth cents a close.**
+
+### Two agent bugs caught and self-tested
+
+The census first counted BOOK STATES, so a market whose book changes 7×/s contributed
+204 rows against a thin market's 28 — it read "an ask exists 84.3% of the time" when
+the per-(market,second) truth is **15.8%**, weighting the thin books out of their own
+measurement. And `per_close_stats` reported the same fill count for all three splits.
+
+---
+
 ## ⚠️ THE LIVE RECORD IS EIGHT STRATEGIES, NOT ONE — never quote a blended $/day (2026-09-12 20:4xZ)
 
 The operator, correcting me: *"It doesn't need to land near 4.60 because 4.60 is
