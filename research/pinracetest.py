@@ -324,10 +324,16 @@ def selftest():
             self.meta = {("t%d" % i): {"rx_ms": v} for i, v in enumerate(rx)}
     ck(feed_silence_ms(_FakeBook([1000, 5000, 9000]), now_ms=9200) == 200,
        "silence is measured from the NEWEST message on any ticker")
-    ck(feed_silence_ms(_FakeBook([1000]), now_ms=400000) > MAX_FEED_SILENCE_MS,
-       "a socket that has said nothing for minutes is refused")
     ck(feed_silence_ms(_FakeBook([])) is None,
        "and a book that has never received anything reports None, not zero")
+    # IT IS DELIBERATELY NOT USED AS A GATE. The only tickers we subscribe to
+    # are the five Coin Race legs and they go quiet together, so gating on it
+    # re-created the bug it replaced and cost the 03:00 race on 2026-09-12.
+    ck("feed_silent" not in [ln.strip().split("=")[-1].strip().strip('"')
+                             for ln in src.split(chr(10))
+                             if ln.strip().startswith("bad = ")],
+       "and it is NOT used to refuse a trade -- index freshness and the "
+       "suspect flag already prove the socket is alive")
     ck(MAX_BOOK_AGE_MS >= 60000,
        "one quiet ticker is tolerated for at least a minute (%ds) -- an "
        "unchanged book is not a stale one" % (MAX_BOOK_AGE_MS // 1000))
@@ -511,16 +517,24 @@ def main():
                 # thing this test can learn, and it was the invisible case.
                 b = book.best(tkr)
                 bad = None
-                sil = feed_silence_ms(book)
                 if not b:
                     bad = "no_book"
                 elif b.get("suspect"):
                     bad = "book_suspect"
                 elif b.get("age_ms") is None:
                     bad = "book_no_age"
-                elif sil is not None and sil > MAX_FEED_SILENCE_MS:
-                    # the SOCKET is dead, which is the thing worth refusing on
-                    bad = "feed_silent"
+                # NO FEED-SILENCE GATE HERE, and that is deliberate.
+                # v1 refused when no book message had arrived on ANY watched
+                # ticker for 15s -- but the only tickers we watch are the five
+                # Coin Race legs, and they are ALL quiet together. So the
+                # check re-created, at connection level, exactly the bug it
+                # replaced: it fired on 2026-09-12 03:00 and cost a race.
+                # Liveness is already established twice over before we get
+                # here: every one of the five index feeds was checked fresh
+                # within MAX_INDEX_AGE_S (they publish once a second no matter
+                # what the market does), and a reconnect sets `suspect` on
+                # every book until a new snapshot arrives. A quiet order book
+                # is the one thing that is NOT evidence of a dead socket.
                 elif b["age_ms"] > MAX_BOOK_AGE_MS:
                     bad = "book_stale"       # no ms in the label: it is the
                                              # dedupe key, and a per-millisecond
