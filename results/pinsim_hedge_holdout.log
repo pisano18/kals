@@ -15,116 +15,132 @@ SELF-TEST -- pinsim
   ok   apply_profile() changes the live constant the decision code reads
   ok   and applying the default puts it back exactly
   ok   SIZE by price: 60 contracts at 85c, 10 at 97c, through the live decision code (got 60.0, 10.0)
+  ok   an event at S+440 ms sees the print stamped S and NOT the one stamped S+1 (newest held +0 from S)
+  ok   and the clock it reads its own age against is fractional (+0.44 s into the second), as live's time.time() is
+  ok   SEQ ORDER: the mid-stream snapshot WIPES the 50c level that preceded it and keeps the 55c delta that followed it ({0.6: 7.0, 0.55: 40.0})
+  ok   and snapshots-first -- what this file did until today -- leaves that 50c level standing, because the snapshot was applied before it ({0.6: 7.0, 0.5: 100.0, 0.55: 40.0})
+  ok   the snapshot carries its REAL receipt _rx_ms, never 0 (+50 ms from the first delta)
+  ok   whereas the old order stamped it 0, which is why it could never overwrite anything
+  ok   and a receipt that trails the delta it precedes is clamped DOWN to that delta's ts_ms (+100 ms, not +900), so the merge's own clock cannot run backwards
+  ok   a 97c offer alive for 400 ms inside second S IS bought, at S+300 ms (('yes', 0.97, 20.0, 300))
+  ok   and the SAME tape sampled once a second misses it entirely ((None, 'no_offer', None, 1000)) -- which is the 2026-09-12 diagnosis in one line
+  ok   --gate-from puts back the gate a live run STARTED with (PIN 0.98, ceiling 0.988, size 33.0, tau_max 20)
+  ok   and it does NOT claim to restore MEASURED_FLIP, which expected_value binds at definition in live too
+  ok   and it names the log it came from, so a report can print it
+  ok   and the live constants are put back exactly (0.995)
 SELF-TEST PASSED
 
   profile default sha 7f3072d03e80: 1 rules, worst case {'one_losing_close': 39.2, 'closes_to_halt': 2, 'max_loss': 78.4}
   newest settlement on file: 2026-09-12T04:45Z -- book hours after it cannot resolve and count as nothing
 
   15,781 settled markets, 72 book hours, size 20, gate 0.995, ceiling 0.98
-    20260906T22  bought 0
-    20260906T23  bought 2
-    20260907T00  bought 4
-    20260907T01  bought 5
-    20260907T02  bought 5
-    20260907T03  bought 7
-    20260907T04  bought 16
-    20260907T05  bought 17
-    20260907T06  bought 21
-    20260907T07  bought 21
-    20260907T08  bought 21
-    20260907T09  bought 22
-    20260907T10  bought 23
-    20260907T11  bought 26
-    20260907T12  bought 26
-    20260907T13  bought 30
-    20260907T14  bought 31
-    20260907T15  bought 35
-    20260907T16  bought 39
-    20260907T17  bought 41
-    20260907T18  bought 44
-    20260907T19  bought 48
-    20260907T20  bought 52
-    20260907T21  bought 60
-    20260907T22  bought 63
-    20260907T23  bought 65
-    20260908T00  bought 66
-    20260908T01  bought 66
-    20260908T02  bought 66
-    20260908T03  bought 68
-    20260908T04  bought 73
-    20260908T05  bought 75
-    20260908T06  bought 77
-    20260908T07  bought 78
-    20260908T08  bought 78
-    20260908T09  bought 81
-    20260908T10  bought 82
-    20260908T11  bought 83
-    20260908T12  bought 84
-    20260908T13  bought 86
-    20260908T14  bought 90
-    20260908T15  bought 91
-    20260908T16  bought 94
-    20260908T17  bought 96
-    20260908T18  bought 98
-    20260908T19  bought 99
-    20260908T20  bought 100
-    20260908T21  bought 106
-    20260908T22  bought 110
-    20260908T23  bought 118
-    20260909T00  bought 121
-    20260909T01  bought 124
-    20260909T02  bought 124
-    20260909T03  bought 124
-    20260909T04  bought 124
-    20260909T05  bought 127
-    20260909T06  bought 132
-    20260909T07  bought 133
-    20260909T08  bought 136
-    20260909T09  bought 139
-    20260909T10  bought 141
-    20260909T11  bought 143
-    20260909T12  bought 144
-    20260909T13  bought 144
-    20260909T21  bought 144
-    20260909T22  bought 145
-    20260909T23  bought 149
-    20260910T00  bought 155
-    20260910T01  bought 155
-    20260910T02  bought 158
-    20260910T03  bought 161
-    20260910T04  bought 162
+  book: snapshots and deltas merged in the exchange's own `seq` order; decisions taken at EVERY book event (live-like)
+    20260906T22  bought 1
+    20260906T23  bought 3
+    20260907T00  bought 5
+    20260907T01  bought 7
+    20260907T02  bought 7
+    20260907T03  bought 9
+    20260907T04  bought 19
+    20260907T05  bought 21
+    20260907T06  bought 25
+    20260907T07  bought 26
+    20260907T08  bought 26
+    20260907T09  bought 28
+    20260907T10  bought 29
+    20260907T11  bought 32
+    20260907T12  bought 33
+    20260907T13  bought 37
+    20260907T14  bought 39
+    20260907T15  bought 43
+    20260907T16  bought 47
+    20260907T17  bought 49
+    20260907T18  bought 52
+    20260907T19  bought 56
+    20260907T20  bought 60
+    20260907T21  bought 68
+    20260907T22  bought 71
+    20260907T23  bought 75
+    20260908T00  bought 76
+    20260908T01  bought 77
+    20260908T02  bought 77
+    20260908T03  bought 79
+    20260908T04  bought 86
+    20260908T05  bought 89
+    20260908T06  bought 92
+    20260908T07  bought 93
+    20260908T08  bought 94
+    20260908T09  bought 98
+    20260908T10  bought 99
+    20260908T11  bought 101
+    20260908T12  bought 103
+    20260908T13  bought 105
+    20260908T14  bought 110
+    20260908T15  bought 112
+    20260908T16  bought 115
+    20260908T17  bought 117
+    20260908T18  bought 119
+    20260908T19  bought 122
+    20260908T20  bought 123
+    20260908T21  bought 131
+    20260908T22  bought 136
+    20260908T23  bought 144
+    20260909T00  bought 148
+    20260909T01  bought 151
+    20260909T02  bought 151
+    20260909T03  bought 151
+    20260909T04  bought 151
+    20260909T05  bought 155
+    20260909T06  bought 160
+    20260909T07  bought 161
+    20260909T08  bought 165
+    20260909T09  bought 168
+    20260909T10  bought 170
+    20260909T11  bought 172
+    20260909T12  bought 174
+    20260909T13  bought 174
+    20260909T21  bought 174
+    20260909T22  bought 175
+    20260909T23  bought 179
+    20260910T00  bought 186
+    20260910T01  bought 186
+    20260910T02  bought 189
+    20260910T03  bought 193
+    20260910T04  bought 195
+  3,056,611 decision moments evaluated; 8 backward `seq` steps in the tape; 52,816 snapshot receipts out of clock order
   hedge positions written to C:\kals-repo\results\pinsim_hedge_positions.json
 
   ====================================================================================================
-  AMENDMENT 15 HOLDOUT -- 162 simulated positions, 4 lost (2.47%), unhedged P&L $+31.52
+  AMENDMENT 15 HOLDOUT -- 195 simulated positions, 6 lost (3.08%), unhedged P&L $+10.45
   every figure is a CEILING: delta-only book, and the replay always wins the race for the ask
    threshold  alarms  false   fa-cost $  caught  of   filled   rec c/ct   net dP&L $   hedged P&L $
-        0.70       4      0        0.00       4   4        4       43.2        33.32          64.84   false-alarm rate 0.00% [0.00, 2.25]
-        0.80       4      0        0.00       4   4        4       55.5        43.08          74.60   false-alarm rate 0.00% [0.00, 2.25]
-        0.90       5      1        0.77       4   4        5       68.2        44.88          76.40   false-alarm rate 0.62% [0.02, 3.39]
+        0.70       8      2       19.66       6   6        8       41.7        28.48          38.93   false-alarm rate 1.03% [0.12, 3.66]
+        0.80       9      3       22.21       6   6        9       49.8        35.69          46.14   false-alarm rate 1.54% [0.32, 4.43]
+        0.90      12      6       34.93       6   6       12       58.3        25.54          35.99   false-alarm rate 3.08% [1.14, 6.58]
   'caught' = alarm fired on an eventual loser; 'filled' = an ask existed under $1 within HEDGE_MAX_TRIES seconds; 'rec' = cents of the loss recovered per hedged contract
-  thr 0.70: alarm fired on losers at tau [18, 16, 11, 9]
-  thr 0.80: alarm fired on losers at tau [19, 16, 11, 9]
-  thr 0.90: alarm fired on losers at tau [19, 16, 13, 13]
+  thr 0.70: alarm fired on losers at tau [29, 19, 18, 16, 11, 9]
+  thr 0.80: alarm fired on losers at tau [29, 19, 19, 16, 11, 9]
+  thr 0.90: alarm fired on losers at tau [29, 19, 19, 16, 13, 13]
   ====================================================================================================
 
   ====================================================================================================
   PROFILE default (sha 7f3072d03e80), size 20, 72 book hours -- UPPER BOUND: every offer assumed ours; live we fill ~70%
   ====================================================================================================
-  TRADED, all                          162 fills   101 closes   158W   4L    2.47% [0.68, 6.20]  $   +31.52   96.16c
-    fit (first 70% of closes)          110 fills    71 closes   107W   3L    2.73% [0.57, 7.76]  $   +16.63   96.10c
-    HOLDOUT (last 30%)                  52 fills    30 closes    51W   1L    1.92% [0.05, 10.26]  $   +14.90   96.28c
-  at the 70% live fill rate: $+22.06
-  REFUSED by rules (would-be)           12 fills    11 closes    11W   1L    8.33% [0.21, 38.48]  $   +32.43   76.58c
+  TRADED, all                          195 fills   117 closes   189W   6L    3.08% [1.14, 6.58]  $   +10.45   96.29c
+    fit (first 70% of closes)          133 fills    81 closes   129W   4L    3.01% [0.83, 7.52]  $   +11.00   96.23c
+    HOLDOUT (last 30%)                  62 fills    36 closes    60W   2L    3.23% [0.39, 11.17]  $    -0.55   96.41c
+  at the 70% live fill rate: $+7.31
+  REFUSED by rules (would-be)            8 fills     8 closes     8W   0L    0.00% [0.00, 36.94]  $   +38.07   74.88c
 
   PER RULE -- what it fired on, and what would have happened
-  dump [refuse] all                     12 fills    11 closes    11W   1L    8.33% [0.21, 38.48]  $   +32.43   76.58c
-      fit                                7 fills     7 closes     7W   0L    0.00% [0.00, 40.96]  $   +36.79   72.29c
-      HOLDOUT                            5 fills     4 closes     4W   1L   20.00% [0.51, 71.64]  $    -4.36   82.60c
+  dump [refuse] all                      8 fills     8 closes     8W   0L    0.00% [0.00, 36.94]  $   +38.07   74.88c
+      fit                                5 fills     5 closes     5W   0L    0.00% [0.00, 52.18]  $   +28.08   70.40c
+      HOLDOUT                            3 fills     3 closes     3W   0L    0.00% [0.00, 70.76]  $    +9.99   82.33c
 
-  why other moments did not fire: {'no_offer': 64803, 'too_shallow': 908, 'over_ceiling': 4578, 'undecided': 3415, 'stale_book': 348}
+  why other markets never fired (MARKETS, counted once per market per reason): {'no_offer': 2276, 'too_shallow': 539, 'over_ceiling': 680, 'undecided': 247, 'stale_book': 21}
+    LOSS KXHYPE15M-26SEP061945-45      yes  97.9c tau 30 $-18.63
     LOSS KXDOGE15M-26SEP071000-00       no  98.0c tau 16 $-19.63
     LOSS KXHYPE15M-26SEP071645-45      yes  95.4c tau 23 $-19.14
     LOSS KXXRP15M-26SEP071730-30       yes  95.5c tau 18 $-19.16
     LOSS KXNEAR15M-26SEP082045-45       no  97.3c tau 18 $-19.50
-EXIT 0
+    LOSS KXXRP15M-26SEP100100-00       yes  95.7c tau 21 $-19.20

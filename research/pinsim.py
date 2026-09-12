@@ -47,6 +47,7 @@ import gzip
 import json
 import os
 import sys
+import tempfile
 import time
 import zlib
 from collections import defaultdict
@@ -80,6 +81,23 @@ class TapeIndex(pinrun.IndexWS):
     def spot(self, iid):
         s, v, _ = super().spot(iid)
         return (s, v, (self.now - s)) if s is not None else (None, None, None)
+
+    def feed_upto_ms(self, series_ticks, ms):
+        """Feed the index to a MILLISECOND, and set the clock to it.
+
+        A book event at second S + 440 ms must see the print STAMPED S -- it
+        is on the wire by then -- and must NOT see the print stamped S+1,
+        which does not exist yet. `feed_upto` takes seconds, so the rule is
+        `ms // 1000`, stated here once instead of at every call site.
+
+        `now` is kept FRACTIONAL because live measures the index's age against
+        `time.time()`: at S+440 ms with the newest print stamped S the live
+        bot logs `index_age_s` 0.44, and pinreplay recovers the decision
+        millisecond from exactly that field. An integer clock would report 0
+        and the replayed record would not match the live log.
+        """
+        self.feed_upto(series_ticks, ms // 1000)
+        self.now = ms / 1000.0
 
     def feed_upto(self, series_ticks, upto):
         """Insert every tick at or before `upto` and no others."""
@@ -318,6 +336,162 @@ def selftest():
        f"SIZE by price: 60 contracts at 85c, 10 at 97c, through the live "
        f"decision code (got {n5}, {n6})")
 
+    # --- THE 2026-09-12 REBUILD: the book, the clock, and the gate ---------
+    # Each of these is one of the four things results/RESULTS_replay.md said
+    # was wrong. A world is built where the answer is already known, and the
+    # test fails if the estimator misses it OR finds it in a world with
+    # nothing planted.
+
+    # (i) the index must be fed to a MILLISECOND, not to a second boundary
+    ixm = TapeIndex(["T"])
+    S = C - 20
+    pm = {"T": [(sec, 100.0) for sec in range(C - 400, C + 2)]}
+    ixm.feed_upto_ms(pm, S * 1000 + 440)
+    ck(S in ixm.ticks["T"] and (S + 1) not in ixm.ticks["T"],
+       f"an event at S+440 ms sees the print stamped S and NOT the one "
+       f"stamped S+1 (newest held {max(ixm.ticks['T']) - S:+d} from S)")
+    ck(abs(ixm.now - (S + 0.44)) < 1e-9,
+       f"and the clock it reads its own age against is fractional "
+       f"({ixm.now - S:+.2f} s into the second), as live's time.time() is")
+
+    # (ii) SEQ ORDER: a snapshot arriving mid-stream must OVERWRITE the book,
+    #      not be pre-applied to an empty one. Planted: a 50c bid, then a
+    #      snapshot that does not contain it, then a 55c bid.
+    T0 = 1_700_000_000_000
+    _snap_msg = {"market_ticker": "M", "yes_dollars_fp": [["0.60", "7"]]}
+    _lines = [
+        {"type": "orderbook_delta", "sid": 4, "seq": 10, "_rx_ms": T0 + 17,
+         "msg": {"market_ticker": "M", "price_dollars": "0.50",
+                 "delta_fp": "100", "side": "yes", "ts_ms": T0}},
+        {"type": "orderbook_delta", "sid": 4, "seq": 30, "_rx_ms": T0 + 117,
+         "msg": {"market_ticker": "M", "price_dollars": "0.55",
+                 "delta_fp": "40", "side": "yes", "ts_ms": T0 + 100}},
+        {"type": "orderbook_delta", "sid": 4, "seq": 40, "_rx_ms": T0 + 217,
+         "msg": {"market_ticker": "OTHER", "price_dollars": "0.10",
+                 "delta_fp": "1", "side": "yes", "ts_ms": T0 + 200}},
+    ]
+    _fp = os.path.join(tempfile.gettempdir(),
+                       f"pinsim_selftest_{os.getpid()}.jsonl.gz")
+    with gzip.open(_fp, "wt") as _f:
+        for _d in _lines:
+            _f.write(json.dumps(_d) + "\n")
+    _snaps = [("M", _snap_msg, 20, T0 + 50)]
+    try:
+        ev_seq = list(EventStream(_fp, _snaps, {"M": 1}, order="seq"))
+        ev_old = list(EventStream(_fp, _snaps, {"M": 1}, order="snapfirst"))
+        # a snapshot whose RECEIPT trails the exchange stamp of the delta it
+        # precedes in seq order: the median lag on this tape is 17 ms, so this
+        # is the normal case, not a corner one
+        ev_clamp = list(EventStream(_fp, [("M", _snap_msg, 20, T0 + 900)],
+                                    {"M": 1}))
+    finally:
+        try:
+            os.remove(_fp)
+        except OSError:
+            pass
+    b_seq, b_old = pindata.Book(), pindata.Book()
+    for _bk, _ev in ((b_seq, ev_seq), (b_old, ev_old)):
+        for _ts, _kind, _tk, _pl in _ev:
+            if _tk is None:
+                continue
+            if _kind == 0:
+                _bk.snapshot(_pl, _ts)
+            else:
+                _bk.delta(_pl[0], _pl[1], _pl[2], _ts)
+    ck(0.50 not in b_seq.yes and b_seq.yes.get(0.60) == 7.0
+       and b_seq.yes.get(0.55) == 40.0,
+       f"SEQ ORDER: the mid-stream snapshot WIPES the 50c level that preceded "
+       f"it and keeps the 55c delta that followed it ({dict(b_seq.yes)})")
+    ck(b_old.yes.get(0.50) == 100.0,
+       f"and snapshots-first -- what this file did until today -- leaves that "
+       f"50c level standing, because the snapshot was applied before it "
+       f"({dict(b_old.yes)})")
+    _snap_ev = [e for e in ev_seq if e[1] == 0]
+    ck(len(_snap_ev) == 1 and _snap_ev[0][0] == T0 + 50,
+       f"the snapshot carries its REAL receipt _rx_ms, never 0 "
+       f"({_snap_ev[0][0] - T0:+d} ms from the first delta)")
+    ck([e[0] for e in ev_old if e[1] == 0] == [0],
+       "whereas the old order stamped it 0, which is why it could never "
+       "overwrite anything")
+    _cl = [e for e in ev_clamp if e[1] == 0]
+    ck(len(_cl) == 1 and _cl[0][0] == T0 + 100,
+       f"and a receipt that trails the delta it precedes is clamped DOWN to "
+       f"that delta's ts_ms ({_cl[0][0] - T0:+d} ms, not +900), so the "
+       f"merge's own clock cannot run backwards")
+
+    # (iii) EVENT-DRIVEN EVALUATION: an offer that exists for 400 ms inside
+    #       one second must be bought; the same offer sampled at the second
+    #       boundary must be missed.
+    def _walk_buys(per_event):
+        ixw = TapeIndex(["BRTI"])
+        pw = {"BRTI": [(sec, 100.0) for sec in range(C - 700, C)]}
+        mkw = {"M": {"ticker": "M", "series": "KXBTC15M", "close": float(C),
+                     "strike": 50.0, "result": "yes"}}
+        evs = [(S * 1000, 1, None, None),
+               (S * 1000 + 300, 1, "M", ("no", 0.03, 500.0)),
+               (S * 1000 + 700, 1, "M", ("no", 0.03, -500.0)),
+               ((S + 1) * 1000, 1, None, None),
+               ((S + 1) * 1000 + 10, 1, None, None)]
+        wkw = Walk(mkw, ixw, pw, per_event=per_event)
+        out = []
+        for _kind, _tk, _sec, _ts in wkw.drive(evs):
+            if _kind == 0 or _tk != "M" or out:
+                continue
+            tau = C - _sec
+            if not (pinrun.TAU_MIN <= tau <= pinrun.TAU_MAX):
+                continue
+            bw = book_view(wkw.books["M"], _ts)
+            if bw["age_ms"] is None or bw["age_ms"] > pinrun.MAX_BOOK_AGE_MS:
+                continue
+            w_, px_, n_, _f_ = decide(ixw, "BRTI", C, _sec, 50.0, 2, bw, 20)
+            out.append((w_, px_, n_, _ts - S * 1000))
+        return out
+    _ev_buys = _walk_buys(True)
+    _sec_buys = _walk_buys(False)
+    ck(_ev_buys and _ev_buys[0][0] == "yes" and _ev_buys[0][1] == 0.97
+       and _ev_buys[0][3] == 300,
+       f"a 97c offer alive for 400 ms inside second S IS bought, at "
+       f"S+300 ms ({_ev_buys[0] if _ev_buys else None})")
+    ck(_sec_buys and _sec_buys[0][0] is None,
+       f"and the SAME tape sampled once a second misses it entirely "
+       f"({_sec_buys[0] if _sec_buys else None}) -- which is the 2026-09-12 "
+       f"diagnosis in one line")
+
+    # (iv) GATE AS OF: a planted `start` record changes what pinrun reads
+    _saved = {k: getattr(pinrun, k) for k in GATE_KEYS if hasattr(pinrun, k)}
+    _gp = os.path.join(tempfile.gettempdir(),
+                       f"pinsim_selftest_gate_{os.getpid()}.jsonl")
+    with open(_gp, "w", encoding="utf-8") as _f:
+        _f.write(json.dumps({"kind": "other", "pin": 0.5}) + "\n")
+        _f.write(json.dumps({"mode": "live", "pin": 0.98,
+                             "price_ceiling": 0.988, "size": 33.0,
+                             "measured_flip": 0.02, "tau_max": 20,
+                             "t": "2026-09-08T06:20:46Z",
+                             "kind": "start"}) + "\n")
+    try:
+        _g = read_gate(_gp)
+        apply_gate(_g)
+        ck(abs(pinrun.PIN - 0.98) < 1e-12
+           and abs(pinrun.PRICE_CEILING - 0.988) < 1e-12
+           and pinrun.SIZE == 33.0 and pinrun.TAU_MAX == 20,
+           f"--gate-from puts back the gate a live run STARTED with "
+           f"(PIN {pinrun.PIN}, ceiling {pinrun.PRICE_CEILING}, size "
+           f"{pinrun.SIZE}, tau_max {pinrun.TAU_MAX})")
+        ck("MEASURED_FLIP" not in _g,
+           "and it does NOT claim to restore MEASURED_FLIP, which "
+           "expected_value binds at definition in live too")
+        ck(_g.get("_log") == os.path.basename(_gp),
+           "and it names the log it came from, so a report can print it")
+    finally:
+        for _k, _v in _saved.items():
+            setattr(pinrun, _k, _v)
+        try:
+            os.remove(_gp)
+        except OSError:
+            pass
+    ck(abs(pinrun.PIN - 0.995) < 1e-12,
+       f"and the live constants are put back exactly ({pinrun.PIN})")
+
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
         print("   - " + m)
@@ -378,6 +552,16 @@ def main():
                          "tape second (the replay player)")
     ap.add_argument("--coins", default=None,
                     help="comma-separated series to include in --stream")
+    ap.add_argument("--gate-from", default=None,
+                    help="a results/pinrun-live-*.jsonl whose `start` record "
+                         "holds the gate that was ACTUALLY LIVE then. Applied "
+                         "on top of the profile, so a historical window is "
+                         "judged by the rule it was traded under.")
+    ap.add_argument("--per-second", action="store_true",
+                    help="decide once a second at the first event of the "
+                         "second -- the sampling this file used until "
+                         "2026-09-12. For scoring the rebuild against what it "
+                         "replaced; never for a result.")
     a = ap.parse_args()
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
@@ -385,6 +569,8 @@ def main():
         raise SystemExit("self-test failed -- refusing to touch real data")
 
     profile = pinrules.load(a.profile)
+    gate = read_gate(a.gate_from) if a.gate_from else None
+    per_event = not a.per_second
     if a.stream:
         s0, s1 = (int(x) for x in a.stream.split(","))
         coins = set(a.coins.split(",")) if a.coins else None
@@ -407,7 +593,8 @@ def main():
                 continue
             p2["_sha"] = pinrules.fingerprint(p2)
             print(f"\n  ===== {name} = {val} =====")
-            s = run(p2, a.hours, a.end, size=a.size, log=print)
+            s = run(p2, a.hours, a.end, size=a.size, log=print,
+                    gate=gate, per_event=per_event)
             results.append({"value": val, "summary": s})
         if a.json:
             with open(a.json, "w", encoding="utf-8") as fh:
@@ -416,7 +603,7 @@ def main():
         return
     _thrs = tuple(float(x) for x in a.hedge.split(",")) if a.hedge else None
     summary = run(profile, a.hours, a.end, size=a.size, log=print,
-                  hedge_thrs=_thrs)
+                  hedge_thrs=_thrs, gate=gate, per_event=per_event)
     if summary and a.json:
         with open(a.json, "w", encoding="utf-8") as fh:
             json.dump(summary, fh, indent=1)
@@ -498,6 +685,258 @@ class DeltaStream:
             return
 
 
+class EventStream:
+    """One book hour as ONE stream, in the exchange's own `seq` order.
+
+    THIS IS THE FIX FOR results/RESULTS_replay.md. Until 2026-09-12 this file
+    applied every `orderbook_snapshot` in the hour BEFORE any delta, stamped
+    ts 0 (the reader looked for `ts_ms`, which a snapshot record does not
+    carry). Snapshots arrive throughout the hour -- one as each market opens,
+    and again on a resubscribe -- so a snapshot belonging to 02:31 was used to
+    seed the book at 02:00 and then never allowed to overwrite anything.
+    Scored against the price the live bot logged on 210 real fills, that book
+    reproduced 69; the same deltas merged with the same snapshots in `seq`
+    order and read at the decision millisecond reproduced 158
+    (results/RESULTS_replay_rebuild.md). pinreplay.py, whose reconstruction
+    was written separately, gets 68/207 and 156/207 on its own sample -- two
+    implementations of the merge landing on the same number.
+
+    Both channels carry a top-level `seq` from the SAME subscription (`sid` 4
+    on this tape, on both channels), so the merge needs no clock estimate: a
+    snapshot goes exactly where the exchange put it. Measured on 20260912T11:
+    1,667,366 deltas with ZERO backward `seq` steps in file order, and 159
+    snapshots whose `seq` values interleave the whole hour.
+
+    Yields (ts_ms, kind, ticker, payload):
+
+        kind 0  SNAPSHOT -- payload is the message. Its timestamp is its real
+                receipt `_rx_ms`, NEVER 0, clamped down to the `ts_ms` of the
+                delta it precedes when the collector's receipt trails the
+                exchange's own stamp (median 17 ms), so the clock cannot run
+                backwards inside the merge.
+        kind 1  DELTA -- payload is (side, price, dq).
+        ticker None -- a message on a market we do not track, kept only so the
+                simulated clock advances. payload is None.
+
+    STREAMING, like DeltaStream and for the same reason: an hour of deltas
+    materialised as tuples is ~1 GB and OOM-killed three runs. Each __iter__
+    re-opens the gzip; the only thing held is the hour's snapshot list, ~159
+    records.
+
+    order='snapfirst' reproduces the OLD behaviour (every snapshot first, at
+    ts 0) and exists only so the rebuild can be scored against what it
+    replaced. run() always uses 'seq'.
+
+    KNOWN LIMIT -- A COLLECTOR RECONNECT RESTARTS `seq`, AND THIS DOES NOT
+    SEGMENT ON IT. Measured on 20260911T12: at message 925,953 of 4,504,521
+    the sequence drops from 13,803,396 to 3, and the hour's 181 snapshots
+    then span seq 1 to 12,911,772 -- two numbering epochs in one list. A
+    snapshot sent by the RESUBSCRIBE carries a low seq, sorts to the front,
+    and is therefore applied near the start of the hour instead of at the
+    reconnect. For a market that opened AFTER the reconnect that is harmless
+    (its book is empty until its own deltas arrive); for a market that
+    existed BEFORE it, it is the old snapshots-first bug for that one market.
+    `seq_back` counts the resets and run() prints the total, so an affected
+    hour is visible rather than silent: 2 of the 7 hours that hold a losing
+    fill have exactly one. THE FIX is to place a pending snapshot when
+    EITHER the delta's `seq` has passed it OR the delta's `_rx_ms` has, which
+    needs no second pass; it is not done here because it would invalidate a
+    72-hour holdout already running, and it is the first thing to do next.
+    """
+
+    def __init__(self, path, snaps, mk, order="seq"):
+        self.path = path
+        self.mk = mk
+        self.order = order
+        # (seq, rx_ms, ticker, msg), sorted on the exchange's sequence number
+        self.snaps = sorted(((sq, rx, tk, m) for tk, m, sq, rx in snaps
+                             if sq is not None), key=lambda e: e[0])
+        self.noseq = [(tk, m, rx) for tk, m, sq, rx in snaps if sq is None]
+        self.bad = 0
+        self.seq_back = 0
+        self.snaps_used = 0
+
+    def __iter__(self):
+        self.bad = 0
+        self.seq_back = 0
+        self.snaps_used = 0
+        snaps = self.snaps
+        i = 0
+        if self.order == "snapfirst":
+            for _sq, _rx, tk, m in snaps:
+                self.snaps_used += 1
+                yield (0, 0, tk, m)
+            i = len(snaps)
+        for tk, m, rx in self.noseq:      # a record without `seq` cannot be
+            self.snaps_used += 1          # placed; its receipt is all there is
+            yield (rx or 0, 0, tk, m)
+        prev = None
+        try:
+            with gzip.open(self.path, "rt") as f:
+                for line in f:
+                    try:
+                        d = json.loads(line)
+                        m = d["msg"]
+                    except Exception:
+                        continue
+                    ts = int(m.get("ts_ms") or 0)
+                    if not ts:
+                        continue
+                    sq = d.get("seq")
+                    if sq is not None:
+                        if prev is not None and sq < prev:
+                            self.seq_back += 1
+                        prev = sq
+                        while i < len(snaps) and snaps[i][0] <= sq:
+                            _sq, rx, stk, sm = snaps[i]
+                            i += 1
+                            self.snaps_used += 1
+                            yield ((rx if (rx and rx <= ts) else ts), 0,
+                                   stk, sm)
+                    tk = m.get("market_ticker")
+                    if tk in self.mk:
+                        try:
+                            yield (ts, 1, tk,
+                                   (str(m.get("side", "")).lower(),
+                                    float(m.get("price_dollars",
+                                                m.get("price"))),
+                                    float(m.get("delta_fp",
+                                                m.get("delta")) or 0.0)))
+                        except Exception:
+                            self.bad += 1
+                    else:
+                        yield (ts, 1, None, None)     # a clock tick
+        except (EOFError, zlib.error, OSError):
+            pass
+        while i < len(snaps):                 # snapshots after the last delta
+            _sq, rx, stk, sm = snaps[i]
+            i += 1
+            self.snaps_used += 1
+            yield (rx, 0, stk, sm)
+
+
+class Walk:
+    """The event walk: books, the simulated clock, and the moments at which a
+    decision is taken.
+
+    Live, pinrun's trade loop reads whatever book it holds, ~20 times a
+    second, and this product's book changes ~100 times a second. Until
+    2026-09-12 this file decided ONCE PER SECOND, at the first event of the
+    second, and that single choice is most of why the backtest could not
+    reproduce our own trades: of 195 real fills the offer we hit was on the
+    book at the start of the second for 76% and at the millisecond we actually
+    decided for 100% (results/RESULTS_replay.md).
+
+    So a decision point ("moment") is
+
+      * EVERY event on a market we track, at that event's millisecond, and
+      * a sweep of every tracked book at the first event of each new second,
+        so a market whose own book is quiet is still re-checked as the index
+        moves.
+
+    `drive` is a GENERATOR of moments rather than a callback loop, so run()
+    and the replay player can both consume it while yielding their own output.
+    It yields (0, None, sec, ts) once per second BEFORE that second's sweep
+    (live runs the hedge pass first), then (1, ticker, sec, ts) per moment.
+
+    per_event=False restores the old once-a-second sampling and exists only so
+    the two can be scored against each other.
+    """
+
+    def __init__(self, mk, idx, pend, per_event=True):
+        self.mk = mk
+        self.idx = idx
+        self.pend = pend
+        self.per_event = per_event
+        self.books = {}
+        self.bad = 0
+        self.ts_back = 0
+        self.events = 0
+        self.moments = 0
+
+    def drive(self, events):
+        books = self.books
+        last_sec = None
+        for ts, kind, tk, payload in events:
+            self.events += 1
+            if tk is not None:
+                bk = books.get(tk)
+                if bk is None:
+                    bk = books[tk] = pindata.Book()
+                if kind == 0:
+                    bk.snapshot(payload, ts)
+                else:
+                    try:
+                        bk.delta(payload[0], payload[1], payload[2], ts)
+                    except Exception:                          # noqa: BLE001
+                        self.bad += 1
+            sec = ts // 1000
+            if last_sec is not None and sec < last_sec:
+                # a snapshot's receipt can precede the delta it follows in
+                # seq order; the simulated clock never runs backwards
+                self.ts_back += 1
+                sec = last_sec
+            if sec != last_sec:
+                last_sec = sec
+                self.idx.feed_upto_ms(self.pend, ts)
+                yield (0, None, sec, ts)
+                for tkk in list(books):
+                    self.moments += 1
+                    yield (1, tkk, sec, ts)
+            elif self.per_event and tk is not None:
+                self.moments += 1
+                yield (1, tk, sec, ts)
+
+
+# ------------------------------------------------------------------ the gate
+# The constants a live `start` record can put back. MEASURED_FLIP is NOT here:
+# pinrun.expected_value(price, flip=MEASURED_FLIP) binds the default AT
+# DEFINITION, so setting the module attribute cannot change the EV gate --
+# and live has the same binding, so reproducing live means leaving it alone.
+GATE_KEYS = ("PIN", "PRICE_CEILING", "EDGE_FLOOR", "EV_FLOOR", "SIZE",
+             "TAU_MIN", "TAU_MAX", "MIN_FILL_FRAC", "MIN_LEVEL",
+             "MAX_BOOK_AGE_MS", "MAX_INDEX_AGE_S", "SIGMA_STRESS",
+             "SIGMA_WIN", "IMPROVE_BY", "DUMP_DISCOUNT", "DUMP_ENABLED",
+             "MAX_PER_CLOSE", "MAX_PER_MARKET", "EV_IMPLIED_CEILING",
+             "HEDGE_ENABLED", "HEDGE_BELIEF", "HEDGE_MAX_ASK",
+             "HEDGE_MAX_TRIES", "HEDGE_PILOT_CONTRACTS")
+
+
+def read_gate(path):
+    """The gate a live run was STARTED with, from its own `start` record.
+
+    A backtest run under today's constants cannot reproduce a trade taken
+    under yesterday's: 85 of our 195 fills were taken at PIN 0.98 and today's
+    0.995 refuses them as `undecided`. That is a gate change, not a replay
+    defect, and the two must not be confused -- so the gate is replayable.
+    """
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:                                  # noqa: BLE001
+                continue
+            if r.get("kind") == "start":
+                g = {k: r[k.lower()] for k in GATE_KEYS
+                     if r.get(k.lower()) is not None}
+                g["_log"] = os.path.basename(path)
+                g["_t"] = r.get("t")
+                return g
+    raise SystemExit(f"no `start` record in {path}")
+
+
+def apply_gate(gate):
+    """Set those constants on pinrun. Same mechanism as apply_profile: the
+    decision code reads them as module attributes at call time."""
+    for k, v in gate.items():
+        if not k.startswith("_") and hasattr(pinrun, k):
+            setattr(pinrun, k, v)
+    return gate
+
+
 def load_hour(stamp, mk):
     """Everything one book hour needs, parsed once: index ticks, snapshots,
     and the delta stream as (ts_ms, ticker, side, price, dq) tuples."""
@@ -523,8 +962,13 @@ def load_hour(stamp, mk):
                     except Exception:
                         continue
                     if m.get("market_ticker") in mk:
-                        snaps.append((m["market_ticker"], m,
-                                      d.get("ts_ms") or 0))
+                        # `seq` PLACES IT and `_rx_ms` TIMES IT. This read
+                        # `d.get("ts_ms") or 0` -- a top-level field that is
+                        # on ZERO snapshot records -- so every snapshot in
+                        # this project's history was stamped 0 and applied
+                        # before the hour began. See EventStream.
+                        snaps.append((m["market_ticker"], m, d.get("seq"),
+                                      int(d.get("_rx_ms") or 0)))
         except (EOFError, zlib.error, OSError):
             pass
     # THE DELTA STREAM IS NOT MATERIALISED. A first version built a Python
@@ -540,12 +984,38 @@ def load_hour(stamp, mk):
     # stream() consume it unchanged and the cache may keep it for free.
     bf = os.path.join(DATA, "orderbook_delta", f"{stamp}.jsonl.gz")
     deltas = DeltaStream(bf, mk)
+    # `events` is the seq-ordered merge of BOTH channels and is what run() and
+    # the replay player consume. `deltas` is kept, unchanged, because it is
+    # another stage's input (research/pinentry.py iterates it directly) and
+    # because neither stream holds any data, so offering both is free.
     hour = {"stamp": stamp, "ticks": ticks, "snaps": snaps,
-            "deltas": deltas, "bad_deltas": 0}
+            "deltas": deltas, "events": EventStream(bf, snaps, mk),
+            "bad_deltas": 0}
     if len(_HOUR_CACHE) >= HOUR_CACHE_MAX:
         _HOUR_CACHE.pop(next(iter(_HOUR_CACHE)))
     _HOUR_CACHE[stamp] = hour
     return hour
+
+
+def hedge_try_ask(hp, thr, bk, ts, belief):
+    """Price the hedge from the book AT THIS INSTANT; True if it filled.
+
+    Live, the hedge order is sent against whatever ask is on the book when the
+    alarm fires and on each retry -- not against the ask at a second
+    boundary. An ask can appear and be gone inside one second exactly as an
+    entry can, so this is called per event, while the alarm, the belief and
+    the retry COUNT stay per second, which is what HEDGE_MAX_TRIES means.
+    """
+    hb = book_view(bk, ts)
+    opp = "no" if hp["w"] == "yes" else "yes"
+    ask = hb.get(f"{opp}_ask")
+    asz = hb.get(f"{opp}_ask_size") or 0.0
+    if not ask or asz <= 0 or not pinrun.hedge_ask_ok(ask):
+        return False
+    hp["h"][thr] = {"filled": min(hp["n"], asz), "ask": ask,
+                    "tau": hp["cs"] - (ts // 1000), "belief": belief,
+                    "edge_c": pinrun.hedge_edge_c(belief, ask)}
+    return True
 
 
 def hedge_report(sim_open, thrs, say=print):
@@ -618,25 +1088,49 @@ def hedge_report(sim_open, thrs, say=print):
 
 
 def run(profile, hours, end=None, size=None, log=None, progress=None,
-        hedge_thrs=None):
-    """hedge_thrs: AMENDMENT 15 holdout. A tuple of belief thresholds, e.g.
+        hedge_thrs=None, gate=None, per_event=True):
+    """Replay `hours` settled book hours (ending at `end`) under `profile`
+    through pinrun's own decision code. Returns the summary dict the tool
+    reads, or None if nothing could be decided.
+
+    gate: a dict of pinrun constants (see read_gate) applied AFTER the
+    profile, so a historical window is replayed under the gate that was
+    actually live then rather than the one that is live today.
+
+    per_event: decide after EVERY book event, which is what live does -- the
+    trade loop reads the book it holds, not the book at a second boundary.
+    False restores the once-a-second sampling this file used until 2026-09-12
+    and exists only so the two can be scored against each other.
+
+    hedge_thrs: AMENDMENT 15 holdout. A tuple of belief thresholds, e.g.
     (0.70, 0.80, 0.90). For every simulated buy, belief is recomputed each
     later second with pinrun.fair() -- the SAME function the live hedge pass
     calls -- and at each threshold the first second belief falls below it is
     the alarm; the opposite side's best ask in the replayed book at that
     second prices the hedge, gated by pinrun.hedge_ask_ok(). All thresholds
-    are tracked in ONE tape pass. None (the default) changes nothing."""
-    """Replay `hours` settled book hours (ending at `end`) under `profile`
-    through pinrun's own decision code. Returns the summary dict the tool
-    reads, or None if nothing could be decided."""
+    are tracked in ONE tape pass. None (the default) changes nothing.
+    """
     say = log or (lambda *a, **k: None)
     apply_profile(profile)
+    if gate:
+        apply_gate(gate)
     if size is not None:
         pinrun.SIZE = size
     size = pinrun.SIZE
     say(f"\n  profile {profile['name']} sha {profile['_sha']}: "
         f"{len(profile['rules'])} rules, worst case "
         f"{pinrules.worst_case(profile['params'])}")
+    if gate:
+        say(f"  GATE AS OF {gate.get('_log')} ({gate.get('_t')}): "
+            + ", ".join(f"{k_}={gate[k_]}" for k_ in GATE_KEYS if k_ in gate))
+        say("  of these the replayed DECISION reads PIN, PRICE_CEILING, "
+            "EDGE_FLOOR, EV_FLOOR, SIZE, TAU_MIN/MAX, MIN_FILL_FRAC, "
+            "MIN_LEVEL, MAX_BOOK_AGE_MS and SIGMA_STRESS/WIN; the hedge pass "
+            "reads HEDGE_*. MAX_PER_CLOSE, MAX_ATTEMPTS_PER_CLOSE, "
+            "MAX_INDEX_AGE_S and EV_IMPLIED_CEILING are printed but NOT "
+            "enforced here -- live caps positions per close and the replay "
+            "does not. MEASURED_FLIP is not re-applied at all: "
+            "expected_value binds it at definition, in live too.")
     mk = load_markets()
     stamps = book_hours(hours, end)
     ns = newest_settlement(mk)
@@ -645,41 +1139,46 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
         f"-- book hours after it cannot resolve and count as nothing")
     say(f"\n  {len(mk):,} settled markets, {len(stamps)} book hours, "
         f"size {size:g}, gate {pinrun.PIN}, ceiling {pinrun.PRICE_CEILING}")
+    say("  book: snapshots and deltas merged in the exchange's own `seq` "
+        "order; decisions taken "
+        + ("at EVERY book event (live-like)" if per_event
+           else "ONCE A SECOND (the old sampling)"))
 
     bought, refused, rule_tally = [], [], {}
-    sim_open = {}          # A15 holdout: ticker -> simulated position + hedge state
+    sim_open = {}          # A15 holdout: ticker -> simulated position + hedge
     skips = defaultdict(int)
+    skip_seen = set()
     bad_deltas = 0
+    seq_back = 0
+    ts_back = 0
+    moments = 0
     decided = set()
+
+    def _skip(reason, tkk):
+        # COUNTED ONCE PER MARKET PER REASON. Event-driven evaluation visits a
+        # market thousands of times before it decides, so a per-visit tally
+        # would say "too_shallow 77,000" and mean nothing. CLAUDE.md: n is
+        # markets or closes, never trades.
+        if (tkk, reason) not in skip_seen:
+            skip_seen.add((tkk, reason))
+            skips[reason] += 1
+
     for hi, stamp in enumerate(stamps):
         hour = load_hour(stamp, mk)
         if not hour["ticks"]:
             continue
         idx = TapeIndex(sorted(hour["ticks"]))
         pend = {k: list(v) for k, v in hour["ticks"].items()}
-        books = {}
-        for tk, m, ts in hour["snaps"]:
-            books.setdefault(tk, pindata.Book()).snapshot(m, ts)
-        last_sec = None
-        for ts, tk, side, price, dq in hour["deltas"]:
-            if tk is not None:
-                try:
-                    books.setdefault(tk, pindata.Book()).delta(
-                        side, price, dq, ts)
-                except Exception:
-                    bad_deltas += 1
-            sec = ts // 1000
-            if sec == last_sec:
-                continue
-            last_sec = sec
-            idx.now = sec
-            idx.feed_upto(pend, sec)
-            # ---- AMENDMENT 15 holdout: the hedge pass, replayed ----------
+        wk = Walk(mk, idx, pend, per_event=per_event)
+        for kind, tkk, sec, ts in wk.drive(hour["events"]):
+            # ---- AMENDMENT 15 holdout: the hedge pass, replayed -----------
             # Mirrors pinrun's live pass: one belief recompute per open
             # simulated position per second, through the same fair(),
             # hedge_should_fire() and hedge_ask_ok(). Runs BEFORE the entry
             # scan, as live does.
-            if hedge_thrs and sim_open:
+            if kind == 0:
+                if not (hedge_thrs and sim_open):
+                    continue
                 for htk, hp in sim_open.items():
                     if sec >= hp["cs"] - 1:
                         continue
@@ -688,14 +1187,15 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
                     hsg = idx.sigma(hp["iid"])
                     if not hsg:
                         continue
-                    hf = pinrun.fair(idx, hp["iid"], hp["cs"], sec, hp["strike"],
-                                     hsg * pinrun.SIGMA_STRESS,
+                    hf = pinrun.fair(idx, hp["iid"], hp["cs"], sec,
+                                     hp["strike"], hsg * pinrun.SIGMA_STRESS,
                                      round_digits=hp["digits"])
                     if hf is None:
                         continue
                     belief = hf if hp["w"] == "yes" else 1.0 - hf
                     hp["min_belief"] = min(hp["min_belief"], belief)
-                    hb = None
+                    hp["last_belief"] = belief
+                    hbk = wk.books.get(htk)
                     for thr in hedge_thrs:
                         if hp["h"][thr] is not None:
                             continue
@@ -704,97 +1204,103 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
                         if hp["alarm_tau"][thr] is None:
                             hp["alarm_tau"][thr] = hp["cs"] - sec
                         hp["tries"][thr] = hp["tries"].get(thr, 0) + 1
-                        if hb is None:
-                            hb = book_view(books[htk], ts)
-                        opp = "no" if hp["w"] == "yes" else "yes"
-                        ask = hb.get(f"{opp}_ask")
-                        asz = hb.get(f"{opp}_ask_size") or 0.0
-                        if not ask or asz <= 0 or not pinrun.hedge_ask_ok(ask):
-                            if hp["tries"][thr] > pinrun.HEDGE_MAX_TRIES:
-                                hp["h"][thr] = {"filled": 0.0, "why": "no_ask_in_time"}
-                            continue
-                        hn = min(hp["n"], asz)
-                        hp["h"][thr] = {"filled": hn, "ask": ask,
-                                        "tau": hp["cs"] - sec, "belief": belief,
-                                        "edge_c": pinrun.hedge_edge_c(belief, ask)}
-            # ---- end AMENDMENT 15 holdout pass -----------------------------
-            for tkk, bkk in books.items():
-                        r = mk[tkk]
-                        cs = int(float(r["close"]))
-                        tau = cs - sec
-                        if not (pinrun.TAU_MIN <= tau <= pinrun.TAU_MAX):
-                            continue
-                        # one decision per market: bought OR refused. A first
-                        # version only excluded bought markets, so a refused
-                        # one was re-refused every second and one market
-                        # counted 16 times in a rule's tally.
-                        if tkk in decided:
-                            continue
-                        iid = pindata.SERIES_TO_INDEX[r["series"]]
-                        if iid not in idx.ticks:
-                            continue
-                        b = book_view(bkk, ts)
-                        if b["age_ms"] is None or \
-                                b["age_ms"] > pinrun.MAX_BOOK_AGE_MS:
-                            skips["stale_book"] += 1
-                            continue
-                        # SCHEDULES resolve on what is known BEFORE deciding:
-                        # the model's view and the offer in front of it.
-                        sg0 = idx.sigma(iid)
-                        f0 = pinrun.fair(idx, iid, cs, sec, float(r["strike"]),
-                                         (sg0 or 0) * pinrun.SIGMA_STRESS,
-                                         round_digits=pindata.ROUND_DIGITS.get(
-                                             r["series"])) if sg0 else None
-                        if f0 is not None:
-                            side0 = "yes" if f0 >= 0.5 else "no"
-                            px0 = b.get(f"{side0}_ask")
-                            _, spot0, iage0 = idx.spot(iid)
-                            pre = record(f0, side0, px0 or 0.0, 0.0,
-                                         b.get(f"{side0}_ask_size") or 0.0,
-                                         tau, r["series"], sec, sg0, spot0,
-                                         b["age_ms"], iage0)
-                            resolve_for(profile, pre)
-                        w, px, n, fv = decide(
-                            idx, iid, cs, sec, float(r["strike"]),
-                            pindata.ROUND_DIGITS.get(r["series"]), b,
-                            pinrun.SIZE)
-                        if w is None:
-                            skips[px] += 1
-                            continue
-                        res = r["result"]
-                        yes = (str(res).lower() == "yes") if \
-                            isinstance(res, str) else float(res) >= 0.5
-                        won = (yes == (w == "yes"))
-                        # THE PROFILE'S RULES, on the same record live sees
-                        sg_ = idx.sigma(iid)
-                        _, spot_, iage_ = idx.spot(iid)
-                        rc = record(fv, w, px, n, b.get(f"{w}_ask_size"),
-                                    tau, r["series"], sec, sg_, spot_,
-                                    b["age_ms"], iage_)
-                        verdict, fired = pinrules.decide(profile, rc)
-                        pnl = (n * (1 - px) if won else -n * px) - \
-                            pinrun.billed_fee(px, n)
-                        for rid, act in fired:
-                            rt = rule_tally.setdefault(rid, [])
-                            rt.append((cs, act, won, pnl, px))
-                        decided.add(tkk)
-                        if verdict == "refuse":
-                            refused.append((tkk, w, px, n, tau, won, pnl, cs))
-                            continue
-                        bought.append((tkk, w, px, n, tau, won, pnl, cs))
-                        if hedge_thrs:
-                            # A15 holdout: hold this position open so the hedge
-                            # pass can watch its belief every later second
-                            sim_open[tkk] = {
-                                "w": w, "px": px, "n": n, "cs": cs, "iid": iid,
-                                "strike": float(r["strike"]),
-                                "digits": pindata.ROUND_DIGITS.get(r["series"]),
-                                "won": won, "pnl": pnl, "tau_in": tau,
-                                "min_belief": 1.0,
-                                "h": {t: None for t in hedge_thrs},
-                                "alarm_tau": {t: None for t in hedge_thrs},
-                                "tries": {}}
-        bad_deltas += getattr(hour["deltas"], "bad", 0) or hour.get("bad_deltas", 0)
+                        if hbk is not None:
+                            hedge_try_ask(hp, thr, hbk, ts, belief)
+                        if hp["h"][thr] is None and \
+                                hp["tries"][thr] > pinrun.HEDGE_MAX_TRIES:
+                            hp["h"][thr] = {"filled": 0.0,
+                                            "why": "no_ask_in_time"}
+                continue
+            # ---- end AMENDMENT 15 holdout pass ----------------------------
+            bkk = wk.books[tkk]
+            # the hedge's per-event retry: an ask that exists for 400 ms
+            # inside a second is an ask, on the way out as on the way in
+            if hedge_thrs:
+                hp = sim_open.get(tkk)
+                if hp is not None and sec < hp["cs"] - 1 and \
+                        hp.get("last_belief") is not None:
+                    for thr in hedge_thrs:
+                        if hp["h"][thr] is None and \
+                                hp["alarm_tau"][thr] is not None:
+                            hedge_try_ask(hp, thr, bkk, ts,
+                                          hp["last_belief"])
+            r = mk.get(tkk)
+            if r is None:
+                continue
+            # one decision per market: bought OR refused. A first version only
+            # excluded bought markets, so a refused one was re-refused every
+            # second and one market counted 16 times in a rule's tally.
+            if tkk in decided:
+                continue
+            cs = int(float(r["close"]))
+            tau = cs - sec
+            if not (pinrun.TAU_MIN <= tau <= pinrun.TAU_MAX):
+                continue
+            iid = pindata.SERIES_TO_INDEX[r["series"]]
+            if iid not in idx.ticks:
+                continue
+            moments += 1
+            b = book_view(bkk, ts)
+            if b["age_ms"] is None or b["age_ms"] > pinrun.MAX_BOOK_AGE_MS:
+                _skip("stale_book", tkk)
+                continue
+            # SCHEDULES resolve on what is known BEFORE deciding: the model's
+            # view and the offer in front of it.
+            sg0 = idx.sigma(iid)
+            f0 = pinrun.fair(idx, iid, cs, sec, float(r["strike"]),
+                             (sg0 or 0) * pinrun.SIGMA_STRESS,
+                             round_digits=pindata.ROUND_DIGITS.get(
+                                 r["series"])) if sg0 else None
+            if f0 is not None:
+                side0 = "yes" if f0 >= 0.5 else "no"
+                px0 = b.get(f"{side0}_ask")
+                _, spot0, iage0 = idx.spot(iid)
+                pre = record(f0, side0, px0 or 0.0, 0.0,
+                             b.get(f"{side0}_ask_size") or 0.0,
+                             tau, r["series"], sec, sg0, spot0,
+                             b["age_ms"], iage0)
+                resolve_for(profile, pre)
+            w, px, n, fv = decide(
+                idx, iid, cs, sec, float(r["strike"]),
+                pindata.ROUND_DIGITS.get(r["series"]), b, pinrun.SIZE)
+            if w is None:
+                _skip(px, tkk)
+                continue
+            res = r["result"]
+            yes = (str(res).lower() == "yes") if \
+                isinstance(res, str) else float(res) >= 0.5
+            won = (yes == (w == "yes"))
+            # THE PROFILE'S RULES, on the same record live sees
+            sg_ = idx.sigma(iid)
+            _, spot_, iage_ = idx.spot(iid)
+            rc = record(fv, w, px, n, b.get(f"{w}_ask_size"),
+                        tau, r["series"], sec, sg_, spot_,
+                        b["age_ms"], iage_)
+            verdict, fired = pinrules.decide(profile, rc)
+            pnl = (n * (1 - px) if won else -n * px) - \
+                pinrun.billed_fee(px, n)
+            for rid, act in fired:
+                rule_tally.setdefault(rid, []).append((cs, act, won, pnl, px))
+            decided.add(tkk)
+            if verdict == "refuse":
+                refused.append((tkk, w, px, n, tau, won, pnl, cs))
+                continue
+            bought.append((tkk, w, px, n, tau, won, pnl, cs))
+            if hedge_thrs:
+                # A15 holdout: hold this position open so the hedge pass can
+                # watch its belief every later second
+                sim_open[tkk] = {
+                    "w": w, "px": px, "n": n, "cs": cs, "iid": iid,
+                    "strike": float(r["strike"]),
+                    "digits": pindata.ROUND_DIGITS.get(r["series"]),
+                    "won": won, "pnl": pnl, "tau_in": tau,
+                    "min_belief": 1.0, "last_belief": None,
+                    "h": {t: None for t in hedge_thrs},
+                    "alarm_tau": {t: None for t in hedge_thrs},
+                    "tries": {}}
+        bad_deltas += wk.bad + (getattr(hour["events"], "bad", 0) or 0)
+        seq_back += getattr(hour["events"], "seq_back", 0) or 0
+        ts_back += wk.ts_back
         say(f"    {stamp}  bought {len(bought):,}", flush=True)
         # MEMORY. _HOUR_CACHE (cap 12) exists for the replay player, which
         # scrubs back and forth over a few hours. A one-pass run visits each
@@ -807,6 +1313,14 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
         if progress:
             progress(hi + 1, len(stamps))
 
+    say(f"  {moments:,} decision moments evaluated"
+        + (f"; {seq_back:,} backward `seq` steps in the tape" if seq_back
+           else "; seq monotone throughout")
+        + (f"; {ts_back:,} events whose ts_ms precedes the second before "
+           f"them -- the TAPE's own clock inversions, not the merge's "
+           f"(12.7% of deltas carry a ts_ms already seen in seq order, "
+           f"measured on 20260909T00: 595,337 of 4,692,864). The simulated "
+           f"clock is held, never rewound" if ts_back else ""))
     if bad_deltas:
         say(f"  *** {bad_deltas:,} DELTAS FAILED TO PARSE -- the book is "
             f"incomplete and every number below is suspect ***")
@@ -842,8 +1356,14 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
 def stream(profile, start_sec, end_sec, size=None, coins=None):
     """THE SIMULATION AS A LIVE CHART. Yields one FRAME per tape second from
     `start_sec` to `end_sec`, through pinrun's own decision code under
-    `profile`, exactly as run() decides -- so what the operator watches IS
-    the backtest, not a picture of it.
+    `profile`, driven by the SAME Walk that run() drives -- so what the
+    operator watches IS the backtest, not a picture of it.
+
+    A frame is emitted when the second it describes has FINISHED, because
+    since 2026-09-12 a decision can be taken at any millisecond inside the
+    second (see Walk) and a frame published at the first event of the second
+    would show the book before the trade that happened in it. Each market's
+    row therefore holds its state at the last event of that second it had.
 
     A frame: {"t": sec, "index": {coin: spot}, "markets": [per market inside
     its last 60 s: ticker, coin, close, tau, strike, mu, fair, margin_sd,
@@ -854,7 +1374,6 @@ def stream(profile, start_sec, end_sec, size=None, coins=None):
     own eyes, that the backtest behaves like the live bot -- peace of mind is
     a legitimate deliverable.
     """
-    import calendar
     apply_profile(profile)
     if size is not None:
         pinrun.SIZE = size
@@ -862,10 +1381,10 @@ def stream(profile, start_sec, end_sec, size=None, coins=None):
     if coins:
         mk = {k: v for k, v in mk.items() if v["series"] in coins}
     stamps = []
-    s = start_sec - (start_sec % 3600)
-    while s <= end_sec:
-        stamps.append(time.strftime("%Y%m%dT%H", time.gmtime(s)))
-        s += 3600
+    s_ = start_sec - (start_sec % 3600)
+    while s_ <= end_sec:
+        stamps.append(time.strftime("%Y%m%dT%H", time.gmtime(s_)))
+        s_ += 3600
     tally = {"fills": 0, "wins": 0, "losses": 0, "pnl": 0.0, "refused": 0}
     open_pos = {}          # ticker -> (want, price, n)
     decided = set()
@@ -876,119 +1395,126 @@ def stream(profile, start_sec, end_sec, size=None, coins=None):
             continue
         idx = TapeIndex(sorted(hour["ticks"]))
         pend = {k: list(v) for k, v in hour["ticks"].items()}
-        books = {}
-        for tk, m, ts in hour["snaps"]:
-            books.setdefault(tk, pindata.Book()).snapshot(m, ts)
-        last_sec = None
-        for ts, tk, side, price, dq in hour["deltas"]:
-            if tk is not None:
-                try:
-                    books.setdefault(tk, pindata.Book()).delta(side, price, dq, ts)
-                except Exception:
-                    pass
-            sec = ts // 1000
-            if sec == last_sec:
-                continue
-            last_sec = sec
-            idx.now = sec
-            idx.feed_upto(pend, sec)
-            if sec < start_sec:
-                continue
-            if sec > end_sec:
-                return
-            frame = {"t": sec, "index": {}, "markets": [], "events": []}
-            for iid in idx.ticks:
-                _, sp, _ = idx.spot(iid)
-                if sp is not None:
-                    frame["index"][iid] = sp
-            # settlements that landed this second
-            for tkk, (w, px, n) in list(open_pos.items()):
-                cs = int(float(mk[tkk]["close"]))
-                if sec >= cs and tkk not in settled_done:
-                    res = mk[tkk]["result"]
-                    yes = (str(res).lower() == "yes") if isinstance(res, str) \
-                        else float(res) >= 0.5
-                    won = yes == (w == "yes")
-                    pnl = (n * (1 - px) if won else -n * px) - pinrun.billed_fee(px, n)
-                    tally["fills"] += 1
-                    tally["wins" if won else "losses"] += 1
-                    tally["pnl"] = round(tally["pnl"] + pnl, 4)
-                    settled_done.add(tkk)
-                    open_pos.pop(tkk, None)
-                    frame["events"].append({"kind": "settled", "ticker": tkk,
-                                            "won": won, "pnl": round(pnl, 4)})
-            for tkk, bkk in books.items():
-                r = mk[tkk]
-                cs = int(float(r["close"]))
-                tau = cs - sec
-                if not (0 < tau <= 60):
+        wk = Walk(mk, idx, pend)
+        frame = None
+        rows = {}
+        for kind, tkk, sec, ts in wk.drive(hour["events"]):
+            if kind == 0:
+                if frame is not None:
+                    frame["markets"] = list(rows.values())
+                    frame["tally"] = dict(tally)
+                    yield frame
+                    frame, rows = None, {}
+                if sec < start_sec:
                     continue
-                iid = pindata.SERIES_TO_INDEX[r["series"]]
-                if iid not in idx.ticks:
-                    continue
-                b = book_view(bkk, ts)
-                sg = idx.sigma(iid)
-                dg = pindata.ROUND_DIGITS.get(r["series"])
-                K = pinrun.eff_strike(float(r["strike"]), dg)
-                part = idx.partial(iid, cs, sec)
-                _, spot, iage = idx.spot(iid)
-                row = {"ticker": tkk, "coin": r["series"], "close": cs,
-                       "tau": tau, "strike": float(r["strike"]), "spot": spot,
-                       "yes_ask": b.get("yes_ask"), "no_ask": b.get("no_ask"),
-                       "yes_ask_size": b.get("yes_ask_size"),
-                       "no_ask_size": b.get("no_ask_size")}
-                if part and sg and spot is not None:
-                    locked, rr = part
-                    mu = (locked + rr * spot) / pinrun.N_AVG
-                    row["mu"] = mu
-                    row["sway"] = ((pinrun.N_AVG * K - locked) / rr) if rr > 0 else None
-                    f = pinrun.fair(idx, iid, cs, sec, float(r["strike"]),
-                                    sg * pinrun.SIGMA_STRESS, round_digits=dg)
-                    if f is not None:
-                        conf = f if f >= 0.5 else 1 - f
-                        row["fair"] = round(f, 6)
-                        row["conf"] = round(conf, 6)
-                        row["margin_sd"] = round(_ND.inv_cdf(
-                            min(max(conf, 1e-12), 1 - 1e-12)), 3)
-                        if tkk not in decided and \
-                                pinrun.TAU_MIN <= tau <= pinrun.TAU_MAX and \
-                                b["age_ms"] is not None and \
-                                b["age_ms"] <= pinrun.MAX_BOOK_AGE_MS:
-                            side0 = "yes" if f >= 0.5 else "no"
-                            pre = record(f, side0, b.get(f"{side0}_ask") or 0.0,
-                                         0.0, b.get(f"{side0}_ask_size") or 0.0,
-                                         tau, r["series"], sec, sg, spot,
-                                         b["age_ms"], iage)
-                            resolve_for(profile, pre)
-                            w, px, n, fv = decide(idx, iid, cs, sec,
-                                                  float(r["strike"]), dg, b,
-                                                  pinrun.SIZE)
-                            if w is None:
-                                row["why_not"] = px
+                if sec > end_sec:
+                    return
+                frame = {"t": sec, "index": {}, "markets": [], "events": []}
+                for iid in idx.ticks:
+                    _, sp, _ = idx.spot(iid)
+                    if sp is not None:
+                        frame["index"][iid] = sp
+                # settlements that landed this second
+                for tk2, (w, px, n) in list(open_pos.items()):
+                    cs = int(float(mk[tk2]["close"]))
+                    if sec >= cs and tk2 not in settled_done:
+                        res = mk[tk2]["result"]
+                        yes = (str(res).lower() == "yes") \
+                            if isinstance(res, str) else float(res) >= 0.5
+                        won = yes == (w == "yes")
+                        pnl = (n * (1 - px) if won else -n * px) - \
+                            pinrun.billed_fee(px, n)
+                        tally["fills"] += 1
+                        tally["wins" if won else "losses"] += 1
+                        tally["pnl"] = round(tally["pnl"] + pnl, 4)
+                        settled_done.add(tk2)
+                        open_pos.pop(tk2, None)
+                        frame["events"].append({"kind": "settled",
+                                                "ticker": tk2, "won": won,
+                                                "pnl": round(pnl, 4)})
+                continue
+            if frame is None:
+                continue
+            bkk = wk.books[tkk]
+            r = mk[tkk]
+            cs = int(float(r["close"]))
+            tau = cs - sec
+            if not (0 < tau <= 60):
+                continue
+            iid = pindata.SERIES_TO_INDEX[r["series"]]
+            if iid not in idx.ticks:
+                continue
+            b = book_view(bkk, ts)
+            sg = idx.sigma(iid)
+            dg = pindata.ROUND_DIGITS.get(r["series"])
+            K = pinrun.eff_strike(float(r["strike"]), dg)
+            part = idx.partial(iid, cs, sec)
+            _, spot, iage = idx.spot(iid)
+            row = {"ticker": tkk, "coin": r["series"], "close": cs,
+                   "tau": tau, "strike": float(r["strike"]), "spot": spot,
+                   "yes_ask": b.get("yes_ask"), "no_ask": b.get("no_ask"),
+                   "yes_ask_size": b.get("yes_ask_size"),
+                   "no_ask_size": b.get("no_ask_size")}
+            prev = rows.get(tkk)
+            if prev is not None and prev.get("bought"):
+                row["bought"] = True       # keep the badge for the second
+            rows[tkk] = row
+            if part and sg and spot is not None:
+                locked, rr = part
+                mu = (locked + rr * spot) / pinrun.N_AVG
+                row["mu"] = mu
+                row["sway"] = ((pinrun.N_AVG * K - locked) / rr) \
+                    if rr > 0 else None
+                f = pinrun.fair(idx, iid, cs, sec, float(r["strike"]),
+                                sg * pinrun.SIGMA_STRESS, round_digits=dg)
+                if f is not None:
+                    conf = f if f >= 0.5 else 1 - f
+                    row["fair"] = round(f, 6)
+                    row["conf"] = round(conf, 6)
+                    row["margin_sd"] = round(_ND.inv_cdf(
+                        min(max(conf, 1e-12), 1 - 1e-12)), 3)
+                    if tkk not in decided and \
+                            pinrun.TAU_MIN <= tau <= pinrun.TAU_MAX and \
+                            b["age_ms"] is not None and \
+                            b["age_ms"] <= pinrun.MAX_BOOK_AGE_MS:
+                        side0 = "yes" if f >= 0.5 else "no"
+                        pre = record(f, side0, b.get(f"{side0}_ask") or 0.0,
+                                     0.0, b.get(f"{side0}_ask_size") or 0.0,
+                                     tau, r["series"], sec, sg, spot,
+                                     b["age_ms"], iage)
+                        resolve_for(profile, pre)
+                        w, px, n, fv = decide(idx, iid, cs, sec,
+                                              float(r["strike"]), dg, b,
+                                              pinrun.SIZE)
+                        if w is None:
+                            row["why_not"] = px
+                        else:
+                            rc = record(fv, w, px, n,
+                                        b.get(f"{w}_ask_size"), tau,
+                                        r["series"], sec, sg, spot,
+                                        b["age_ms"], iage)
+                            verdict, fired = pinrules.decide(profile, rc)
+                            row.update(want=w, price=px, take_n=n,
+                                       verdict=verdict,
+                                       fired=[x[0] for x in fired])
+                            decided.add(tkk)
+                            if verdict == "refuse":
+                                tally["refused"] += 1
+                                frame["events"].append(
+                                    {"kind": "refused", "ticker": tkk,
+                                     "rules": [x[0] for x in fired],
+                                     "price": px})
                             else:
-                                rc = record(fv, w, px, n, b.get(f"{w}_ask_size"),
-                                            tau, r["series"], sec, sg, spot,
-                                            b["age_ms"], iage)
-                                verdict, fired = pinrules.decide(profile, rc)
-                                row.update(want=w, price=px, take_n=n,
-                                           verdict=verdict,
-                                           fired=[x[0] for x in fired])
-                                decided.add(tkk)
-                                if verdict == "refuse":
-                                    tally["refused"] += 1
-                                    frame["events"].append(
-                                        {"kind": "refused", "ticker": tkk,
-                                         "rules": [x[0] for x in fired],
-                                         "price": px})
-                                else:
-                                    open_pos[tkk] = (w, px, n)
-                                    row["bought"] = True
-                                    frame["events"].append(
-                                        {"kind": "bought", "ticker": tkk,
-                                         "want": w, "price": px, "n": n})
-                frame["markets"].append(row)
+                                open_pos[tkk] = (w, px, n)
+                                row["bought"] = True
+                                frame["events"].append(
+                                    {"kind": "bought", "ticker": tkk,
+                                     "want": w, "price": px, "n": n})
+        if frame is not None:
+            frame["markets"] = list(rows.values())
             frame["tally"] = dict(tally)
             yield frame
+        _HOUR_CACHE.pop(stamp, None)
 
 
 def _stats(rows):
@@ -1065,7 +1591,8 @@ def report(bought, refused, rule_tally, skips, profile, size, hours, log,
         print(_line(f"{r['id']} [{r['action']}] all", S["rules"][r["id"]]["all"]))
         print(_line(f"    fit", S["rules"][r["id"]]["fit"]))
         print(_line(f"    HOLDOUT", S["rules"][r["id"]]["holdout"]))
-    print(f"\n  why other moments did not fire: {dict(skips)}")
+    print(f"\n  why other markets never fired (MARKETS, counted once per "
+          f"market per reason): {dict(skips)}")
     L = [x for x in bought if not x[5]]
     for t, w, px, n, tau, won, pnl, cs in L[:20]:
         print(f"    LOSS {t[:28]:<29} {w:>3} {100*px:>5.1f}c tau {tau:>2} "
