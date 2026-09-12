@@ -1,3 +1,33 @@
+# 2026-09-12 14:5xZ -- TAPE HOLES ARE COLLECTOR-SIDE: a proposed fix to kalshi_collector.py, NOT applied
+
+`research/tapegaps.py` (Opus agent; `results/RESULTS_tapegaps.md`; 1.43 billion
+records, 1,248 channel-hours) found the trade channel silent 6.42% of covered
+seconds, 3.28% inside our trading window, 0.71% excluding 97 HOLE hours.
+
+**Cause, proven on `seq`:** of 705 silent runs >= 10 s, exactly ONE is the exchange
+sending nothing. 655 show a forward `seq` jump (messages DROPPED), 42 end with `seq`
+reset to 1 (a RECONNECT -- only a new subscription does that). On 551 of 705 the
+order-book channel goes silent WITH the trades while the 1 Hz index keeps ticking on
+the same socket: **a market-data subscription failing, not a dead connection.** Also:
+8 hours sit beside a gzip a collector restart damaged (210,681 records written and
+unreachable -- `gzsalvage.py` territory).
+
+**Proposed fix (operator decision -- the collector is untouchable by rule, and a
+restart costs up to 5 min of tape at the watchdog's cadence):** in
+`kalshi_collector.py`, (1) on a `seq` gap or a `seq` reset on trade/orderbook
+channels, re-send the subscribe for those channels without dropping the socket;
+(2) flush+close the gzip on SIGTERM so a restart cannot leave a damaged member;
+(3) log every resubscribe. Deploy = edit in repo, copy to C:\kals, restart at a
+quarter-hour boundary so the lost minutes fall in the settlement dead zone.
+`research/newseries.py` then confirms arrival.
+
+**Standing consequence for analysis:** exclude HOLE hours (list in RESULTS_tapegaps.md)
+from any COUNT off the trade channel; rankings are unaffected. The 2% DEGRADED
+threshold I specified is below this channel's noise floor (median hour 3.78% silent)
+and should not be used to exclude.
+
+---
+
 # 2026-09-12 08:2xZ -- OOM kill of the hedge holdout; collectors survived; cause found and fixed
 
 **What happened.** `pinsim.py --hours 72 --hedge 0.70,0.80,0.90` was killed by

@@ -61,7 +61,7 @@ column says what the trade was worth to whoever won the race, not what we
 would earn. The RANKING is the result; the level is not. Per house rule,
 **no loss rate for US is ever quoted from the tape.**
 
-**CAVEAT ADDED 2026-09-12:** the trade channel has recording holes (one hour 10.6% silent, runs up to 230 s, all markets). Every COUNT in this table is a lower bound; the RANKING of bands stands.
+**CAVEAT ADDED 2026-09-12, QUANTIFIED 14:5xZ (`results/RESULTS_tapegaps.md`):** the trade channel has recording holes -- 6.42% of all covered seconds -- but mostly OUTSIDE the trading window. In the last 30 s before a close, inside the tau band this table keeps, **3.28% of seconds fall in a silent run >= 10 s; 0.71% excluding the 97 flagged HOLE hours.** So every COUNT here is a lower bound by roughly 3%, and the RANKING of bands stands. The holes are COLLECTOR-side (654 of 705 long runs show a `seq` jump or a reset to 1, and the book goes silent with the trades while the index keeps ticking on the same socket) -- see HANDOFF for the proposed collector fix.
 
 **METHOD NOTE THAT OUTLIVES THIS:** `pintrades.py` reads the TRADE tape and
 has no book-reconstruction blind spot. For any question of the form "what
