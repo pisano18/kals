@@ -529,7 +529,24 @@ def main():
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
     here = os.path.dirname(os.path.abspath(__file__))
-    raise SystemExit(0 if report(check(a.root, here)) else 1)
+    # THE ROOT IS THE REPO, NEVER THE DRIVE. `root` defaults to ".." because
+    # go.py runs this with cwd = research/. Run from the repo root as
+    # `python research/shadow.py ..`, ".." is C:\ and os.walk scans the whole
+    # drive: twice on 2026-09-12 (594 MB, then 2,777 MB with free RAM down to
+    # 4.0 GB beside the live collector) before someone killed it. So: resolve
+    # the root, and if it is not THIS repo -- no research/pinrun.py under it --
+    # rebase to the script's parent and say so; refuse a filesystem root
+    # outright.
+    root = os.path.abspath(a.root)
+    if os.path.dirname(root) == root:
+        raise SystemExit(f"shadow.py: refusing to scan a drive root ({root}); "
+                         f"pass the repo root, or run from research/ as go.py does")
+    if not os.path.exists(os.path.join(root, "research", "pinrun.py")):
+        rebased = os.path.dirname(here)
+        print(f"shadow.py: {root} is not this repo (no research/pinrun.py); "
+              f"using {rebased}")
+        root = rebased
+    raise SystemExit(0 if report(check(root, here)) else 1)
 
 
 if __name__ == "__main__":

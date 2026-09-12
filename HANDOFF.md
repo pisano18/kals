@@ -1,3 +1,73 @@
+# 2026-09-12 18:1xZ -- SESSION STATE: backtest rebuilt (7 of 7 losses reproduced), hedge live at 0.80, five studies closed, two pre-registrations open
+
+**Read `results/SKIM.md` top-down for the findings. This entry is the state.**
+
+## Live
+- Trader pid 962352, code_sha 9205ae4a429c: PIN 0.995, ceiling 0.98, 15c guard,
+  MAX_PER_CLOSE 2, MAX_PER_MARKET 1 (A13), pause-not-quit (A14), **hedge A15 at
+  HEDGE_BELIEF 0.80**, retries paced one per second, ask recorded on every hedge.
+- Bank $171.64 vs $151.87 deposited = **+$19.77**, 0 open positions (18:0xZ). Logs
+  undercount by ~$6 (restarts orphan settlements). Quote the bank.
+- Watchers armed this session: hedge events, trader-by-name. They die with the session.
+- Collectors alive since 09-09; tape being written. Free RAM 6.6 GB, disk 36.2 GB.
+
+## The backtest (the operator's top priority) -- DONE
+`research/pinsim.py` (commit 8ec2ae7) rebuilt: seq-ordered event stream with real
+`_rx_ms` snapshot times, a decision after every book event, index fed to the ms,
+`--gate-from <live log>`. On our 210 real fills: exact price 33% -> 75%, bought under
+the live gate 143 -> 180, **losses 1/9 -> 9/9**; per loss-hour it prints our own loss
+as a LOSS line for **7 of 7** (`--hours 1 --end <hour> --gate-from <that run's log>`;
+note the decision window for an HH:00 close is in file HH-1). The faithful replay is
+WORSE and now agrees with live: 72h window $+10.45 ceiling, $+7.31 at 70% fill,
+last-30% slice -$0.55. **No $/day from the old replay may be quoted again.**
+`research/pinreplay.py` is the fidelity harness (207 fills) -- rerun it after any
+pinsim change; its `PINSIM_BOOK_DIFFERS_FROM_SEQ_ORDER` flag now measures the OLD
+pinsim and should be renamed.
+
+## Open pre-registrations (bars written before the data)
+- `results/PREREG_hedge.md`: n=30 live hedge events; 2 so far (both false alarms at
+  0.90, beliefs 0.887/0.664, pair -$6.51); false-alarm 0.9% [0.1, 3.2] vs 3% bar.
+  Threshold moved 0.90 -> 0.80 from the REBUILT holdout (+$35.69 vs +$25.54), dated.
+- `results/PREREG_coin.md`: next 30 SOL closes at the current gate; >= 3 losses
+  excludes SOL; <= 1 closes it. Count by CLOSE, exclude `plant-`/`hedge-` legs.
+
+## Closed today (Opus grunt work, Fable design; each has RESULTS_*.md + a self-tested script)
+- Buy-better by resting a bid: KILLED (fills 100% of losers, 29% of winners).
+- Entry-time features: NULL on the book/index; margin-sd tautological; every gate
+  costs 33-94%/close.
+- Per-coin: SOL not proven worse (worst-of-nine p = 0.060); "calmest feed" was a
+  quantization artefact; NEAR triple was ONE close.
+- Tape gaps: trade channel 3.3% of trading-window seconds, COLLECTOR-side
+  (subscription drops; seq jumps/resets). Counts off the trade tape are lower bounds.
+- Coin Race: dead (the winner's ask vanishes at tau 19). Pyth: dead (candle-close
+  settlement, no averaging). Both $0 spent.
+
+## Open items, ranked
+1. **COUNT is the lever**: an acceptable offer exists on 9.6% of confident markets
+   and 51.8% of confident closes. Untested. Biggest number on the board.
+2. pinsim: segment the seq merge on collector reconnects (8 resets in 72h; one line);
+   enforce MAX_PER_CLOSE in the replay (one close took 5 correlated markets);
+   feed the index by ARRIVAL not stamp (8 of 207 fills).
+3. Collector: resubscribe on seq gap/reset, flush gzip on SIGTERM -- OPERATOR
+   decision (restart costs up to 5 min of tape). Proposal in the 14:5xZ entry above.
+4. Tool (`pintool.py`) still has no auth; do not expose. AMENDMENT 11 (control-file
+   reader) not built.
+5. `research/shadow.py` now refuses a drive root and rebases a non-repo path
+   (it scanned C:\ twice today). Run it from research/ as go.py does.
+
+## Rules that bind, added or sharpened today
+- A per-contract table must be re-asked per close before it changes a rule (three
+  ideas died there).
+- Count losses by CLOSE, exclude plant/hedge legs; quote the bank, not the log.
+- Stop any analysis job that takes free RAM under 3 GB while the collector is live
+  (three OOM kills today; the box has ~10 GB baseline on 15.8).
+- A source-scanning self-test anchors on a LINE, never a substring (four
+  self-matches today).
+- Fable thinks, plans, designs; Opus grinds -- with a self-test before real data,
+  a holdout split, MDE first, and "what would make this an artefact" in every brief.
+
+---
+
 # 2026-09-12 14:5xZ -- TAPE HOLES ARE COLLECTOR-SIDE: a proposed fix to kalshi_collector.py, NOT applied
 
 `research/tapegaps.py` (Opus agent; `results/RESULTS_tapegaps.md`; 1.43 billion
