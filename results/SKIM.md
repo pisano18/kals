@@ -176,6 +176,67 @@ contract it climbs to +10.11c at a 80c limit while the loss rate climbs to
 
 ---
 
+## ⚠️ THE LIVE RATE IS $1.71/DAY, NOT $25-30/DAY (reconciled 2026-09-12 03:22Z)
+
+**The bank is the only authority on P&L and it must be checked before any
+$/day figure is quoted.**
+
+| | |
+|---|---|
+| bank | **$158.71** |
+| deposited | $151.87 |
+| **actually made** | **+$6.84 over ~4 days = $1.71/day at size 20** |
+| the logs say | +$2.10 over 158 bets |
+| unreconciled | $4.75 |
+
+**The gap is explained and it is a LOGGING bug, not a money bug.** 164 orders
+filled; only 158 `settled` records exist. The six missing ones are positions
+that were open at the moment the trader was restarted: the new process never
+knew about them, so it never wrote their outcome. Three of the six are the
+`26SEP112200` markets held when the bot hit its position cap at 02:00.
+
+**Consequence: every P&L number computed from `settled` records UNDERSTATES
+the truth, and the count of bets is short by the number of restarts.** Quote
+the bank.
+
+**AND THE BACKTEST WAS OUT BY 15x.** `pin` was projected at $25-30/day at this
+size. Live is $1.71/day. The cause is already documented -- the tape's
+population is "an offer was resting there" and ours is "someone sold it to
+us", so the tape says 0.11% loss and live says 5.1% -- but the SIZE of the gap
+in dollars had not been stated until now. **No $/day projection from any
+backtest may be quoted for this strategy.**
+
+### Why it is so thin
+
+Ordinary trades (what the guard allows): 147 bets, 4 lost, **2.7%**
+[0.7, 6.8], average price paid **96.2c**.
+
+At 96.2c the break-even loss rate is **3.8%**. We run 2.7%. **Headroom 1.4x,
+and the 95% upper bound (6.8%) is ABOVE break-even.** The edge is positive at
+the point estimate and its interval includes zero.
+
+### Does more capital help? NO -- it scales, it does not improve
+
+Depth measured over 88,169 resting offers on 217 closes:
+
+| size | offers that hold it | total contracts vs size 1 |
+|---|---|---|
+| 20 (now) | ~80% | ~17x |
+| 50 | 68.8% | 38x |
+| 125 | 50.6% | 70x |
+| 250 | 32.9% | 91x |
+
+Roughly linear to ~50 and clearly sub-linear past it. **But the edge per
+contract does not change, so more money multiplies the wins AND the losses
+identically.** The only genuine benefit of a bigger bank is drawdown
+tolerance: a worst close becomes a smaller fraction, which is what would allow
+more bets per close.
+
+**Recommendation: do not add money while headroom is 1.4x.** Scaling a thin
+edge multiplies the consequence of it being zero.
+
+---
+
 ## ⚠️ READING THE LIVE LOG — A TRAP THAT REPORTS 85x THE TRUTH (found 2026-09-11)
 
 A `settled` record looks like this:
