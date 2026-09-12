@@ -1,6 +1,6 @@
 # RESULTS_tapegaps -- where the tape is SILENT, second by second
 
-`research/tapegaps.py`, run 2026-09-12T14:42:00Z. Data `C:/kals/kalshi_data`, 1248 channel-hours, 41.4 GB of gzip. Census scanned in 729 s on 2026-09-12T14:36:04Z and read back from a cache here -- the reading code is untouched by the report, so this is the same census.
+`research/tapegaps.py`, run 2026-09-12T14:47:58Z. Data `C:/kals/kalshi_data`, 1248 channel-hours, 41.4 GB of gzip. Census scanned in 729 s on 2026-09-12T14:36:04Z and read back from a cache here -- the reading code is untouched by the report, so this is the same census.
 
 **1,429,655,772 records read.** `trade` 62,950,750 records over 414 hours; `orderbook_delta` 1,351,014,801 records over 416 hours; `cfbenchmarks_value` 15,690,221 records over 418 hours.
 
@@ -75,18 +75,20 @@ Every `trade` silent run >= 30 s, on the exchange's own sequence number. This is
 
 | verdict | runs | silent seconds | lost, in a clean file | lost, next to a damaged gzip | meaning |
 |---|---|---|---|---|---|
-| `QUIET` | 8 | 9,606 | 0 | 0 | `seq` contiguous either side -- the exchange sent nothing, so no count was lost |
+| `QUIET` | 1 | 33 | 0 | 0 | `seq` contiguous either side -- the exchange sent nothing, so no count was lost |
 | `DROPPED` | 655 | 36,080 | 648 | 210,681 | `seq` skipped forward -- that many messages were sent and are not on disk |
 | `RECONNECT` | 42 | 19,583 | unknowable | unknowable | `seq` reset to 1 -- a new subscription. Our socket dropped; how much was missed is NOT knowable from `seq` |
+| `UNKNOWN` | 7 | 9,573 | unknowable | unknowable | no record either side of the hole inside continuous coverage, so `seq` was never compared and NOTHING can be claimed -- an adjacent hour has no file |
 | **total** | **705** | **65,269** | **648** | **210,681** | |
 
 And the density witnesses on the same runs -- a cross-tab, because the two axes are independent and the interesting cell is a hole whose book and index kept running:
 
 | verdict | `BOOK_AND_INDEX_UP` | `BOOK_DOWN_INDEX_UP` | `BOTH_DOWN` | `INDEX_DOWN` | `MIXED` | `NO_WITNESS` |
 |---|---|---|---|---|---|---|
-| `QUIET` | 1 | 2 | 1 | 0 | 4 | 0 |
-| `DROPPED` | 1 | 0 | 0 | 8 | 644 | 2 |
-| `RECONNECT` | 0 | 23 | 0 | 0 | 19 | 0 |
+| `QUIET` | 1 | 0 | 0 | 0 | 0 | 0 |
+| `DROPPED` | 1 | 511 | 8 | 5 | 128 | 2 |
+| `RECONNECT` | 0 | 38 | 3 | 0 | 1 | 0 |
+| `UNKNOWN` | 0 | 2 | 4 | 0 | 1 | 0 |
 
 * `BOOK_AND_INDEX_UP` -- book and index both running throughout
 * `BOOK_DOWN_INDEX_UP` -- the book went silent too, but the 1/s index kept ticking on the same socket -- a market-data subscription failed, the connection did not
@@ -109,24 +111,24 @@ Channel-wide, wherever they fall, and SPLIT ON THE SAME LINE: in files that deco
 
 | start (UTC) | length s | s after close | book s active | index s active | `seq` | verdict | witness |
 |---|---|---|---|---|---|---|---|
-| 2026-09-03T07:00:00Z | **3600** | 0 | 4/3600 | 3596/3600 | contiguous | `QUIET` | `MIXED` |
-| 2026-09-02T21:17:50Z | **2548** | 170 | 5/2548 | 1/2548 | lost 97,784 (damaged gzip) | `DROPPED` | `MIXED` |
-| 2026-09-09T21:00:00Z | **2547** | 0 | 0/2547 | 6/2547 | contiguous | `QUIET` | `BOOK_DOWN_INDEX_UP` |
-| 2026-09-02T00:24:59Z | **2124** | 599 | 7/2124 | 1/2124 | lost 112,884 (damaged gzip) | `DROPPED` | `MIXED` |
-| 2026-09-09T13:29:37Z | **1823** | 877 | 1/1823 | 1/1823 | contiguous | `QUIET` | `MIXED` |
-| 2026-08-26T05:39:59Z | **1201** | 599 | 0/1201 | 0/1201 | contiguous | `QUIET` | `BOTH_DOWN` |
+| 2026-09-03T07:00:00Z | **3600** | 0 | 4/3600 | 3596/3600 | never compared | `UNKNOWN` | `BOOK_DOWN_INDEX_UP` |
+| 2026-09-02T21:17:50Z | **2548** | 170 | 5/2548 | 1/2548 | lost 97,784 (damaged gzip) | `DROPPED` | `BOTH_DOWN` |
+| 2026-09-09T21:00:00Z | **2547** | 0 | 0/2547 | 6/2547 | never compared | `UNKNOWN` | `BOTH_DOWN` |
+| 2026-09-02T00:24:59Z | **2124** | 599 | 7/2124 | 1/2124 | lost 112,884 (damaged gzip) | `DROPPED` | `BOTH_DOWN` |
+| 2026-09-09T13:29:37Z | **1823** | 877 | 1/1823 | 1/1823 | never compared | `UNKNOWN` | `BOTH_DOWN` |
+| 2026-08-26T05:39:59Z | **1201** | 599 | 0/1201 | 0/1201 | never compared | `UNKNOWN` | `BOTH_DOWN` |
 | 2026-09-01T05:01:07Z | **842** | 67 | 0/842 | 841/842 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-09-12T11:47:23Z | **822** | 143 | 0/822 | 821/822 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-09-06T07:16:52Z | **816** | 112 | 0/816 | 814/816 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-09-09T05:17:19Z | **786** | 139 | 0/786 | 785/786 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-09-12T06:18:21Z | **767** | 201 | 0/767 | 758/767 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-09-11T07:18:27Z | **757** | 207 | 0/757 | 756/757 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
-| 2026-08-29T08:32:35Z | **753** | 155 | 2/753 | 752/753 | reset | `RECONNECT` | `MIXED` |
+| 2026-08-29T08:32:35Z | **753** | 155 | 2/753 | 752/753 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-09-11T23:19:00Z | **729** | 240 | 0/729 | 727/729 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
-| 2026-09-09T07:03:10Z | **726** | 190 | 1/726 | 725/726 | reset | `RECONNECT` | `MIXED` |
+| 2026-09-09T07:03:10Z | **726** | 190 | 1/726 | 725/726 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-09-07T08:18:33Z | **714** | 213 | 0/714 | 713/714 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
-| 2026-09-02T05:48:43Z | **693** | 223 | 1/693 | 16/693 | reset | `RECONNECT` | `MIXED` |
-| 2026-09-07T07:33:43Z | **691** | 223 | 1/691 | 688/691 | reset | `RECONNECT` | `MIXED` |
+| 2026-09-02T05:48:43Z | **693** | 223 | 1/693 | 16/693 | reset | `RECONNECT` | `BOTH_DOWN` |
+| 2026-09-07T07:33:43Z | **691** | 223 | 1/691 | 688/691 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-08-27T16:34:14Z | **687** | 254 | 0/687 | 683/687 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 | 2026-09-07T08:34:24Z | **662** | 264 | 0/662 | 661/662 | reset | `RECONNECT` | `BOOK_DOWN_INDEX_UP` |
 
@@ -230,7 +232,7 @@ Per-hour silent fraction, so the thresholds can be judged rather than trusted. A
 
 ## What this means for the discount cliff
 
-Over the whole tape the `trade` channel is silent for 95,339 of 1,485,556 covered seconds (**6.42%**), 84,645 of them inside a run of 10 s or longer. **In the window the bot trades -- the last 30 s before a close -- 3.794% of window-seconds fall inside a silent run >= 10 s** (1,879 of 49,530, over 1,651 fully-taped closes), 9.267% are silent at any run length, and **narrowing to the band `pintrades.py` keeps (tau in [3, 30]) gives 3.282%. Excluding only the hours carrying a run >= 60 s -- the `HOLE` flag, the one whose threshold is above this channel's noise floor -- it is 0.714% over the 1,265 closes that survive.** That is the discount on the counts. Of the 1,683 `trade` runs >= 10 s, **198 start in the last 30 s before a close** and **1,417 start within 60 s AFTER one**, which is the settlement dead zone: the old market has settled and its replacement has no flow yet. **On whether the holes are collector-side or exchange-side, `seq` is decisive.** Of the 705 silent runs of 30 s or more: 8 end with `seq` contiguous (the exchange sent nothing, so no count was lost), 655 end with a forward `seq` jump (messages sent and missing, and countable), and 42 end with `seq` RESET TO 1 -- a new subscription, meaning our socket dropped and reconnected. **The size of the loss has to be split or it is off by two orders of magnitude:** in files that decompressed cleanly the `trade` stream is missing **3,542 sequence numbers against 62,950,750 records, 0.0056%**, while a further 210,681 sit beside a gzip a collector restart broke -- bytes that were written and cannot be decompressed, concentrated in the hours flagged below, a different failure with a different fix. Plus 45 subscription resets. The reset case is the honest problem: it proves the hole is ours, and it destroys the evidence of how much it cost, so those windows are a lower bound by an unmeasured amount rather than by zero. The single worst run is 3600 s from 2026-09-03T07:00:00Z, 0 s after a close.
+Over the whole tape the `trade` channel is silent for 95,339 of 1,485,556 covered seconds (**6.42%**), 84,645 of them inside a run of 10 s or longer. **In the window the bot trades -- the last 30 s before a close -- 3.794% of window-seconds fall inside a silent run >= 10 s** (1,879 of 49,530, over 1,651 fully-taped closes), 9.267% are silent at any run length, and **narrowing to the band `pintrades.py` keeps (tau in [3, 30]) gives 3.282%. Excluding only the hours carrying a run >= 60 s -- the `HOLE` flag, the one whose threshold is above this channel's noise floor -- it is 0.714% over the 1,265 closes that survive.** That is the discount on the counts. Of the 1,683 `trade` runs >= 10 s, **198 start in the last 30 s before a close** and **1,417 start within 60 s AFTER one**, which is the settlement dead zone: the old market has settled and its replacement has no flow yet. **On whether the holes are collector-side or exchange-side, `seq` is decisive.** Of the 705 silent runs of 30 s or more, **exactly 1 has `seq` contiguous either side** -- one single run where the exchange genuinely sent nothing. 655 carry a forward `seq` jump (messages sent and missing), 42 end with `seq` RESET TO 1 (a new subscription: our socket dropped and reconnected), and 7 have no record either side inside continuous coverage, so `seq` was never compared and nothing can be claimed. The density witnesses agree: on **551 of 705** of those runs the order book went silent alongside `trade` while the 1/s index kept ticking on the same socket -- a market-data subscription failing, not a dead connection and not a quiet market. **The size of the loss has to be split or it is off by two orders of magnitude:** in files that decompressed cleanly the `trade` stream is missing **3,542 sequence numbers against 62,950,750 records, 0.0056%**, while a further 210,681 sit beside a gzip a collector restart broke -- bytes that were written and cannot be decompressed, concentrated in the hours flagged below, a different failure with a different fix. Plus 45 subscription resets. The reset case is the honest problem: it proves the hole is ours, and it destroys the evidence of how much it cost, so those windows are a lower bound by an unmeasured amount rather than by zero. The single worst run is 3600 s from 2026-09-03T07:00:00Z, 0 s after a close.
 
 ## What this does NOT say
 

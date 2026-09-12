@@ -139,6 +139,8 @@ TAU_MIN = 3               # pinrun.TAU_MIN. `pintrades.py` keeps a print only
                           # feeds the discount cliff is 28 s wide, not 30.
                           # Both are reported.
 CLOSE_MOD = 900           # 15-minute closes, and epoch is a multiple of 900
+WITNESS_FRAC = 0.10       # a witness channel carrying fewer than this
+                          # fraction of the run's seconds is DOWN, not up
 SEQ_SLACK = 2             # the message that ENDS a hole carries the break,
                           # and its stamp can land a second either side
 JUMP_CAP = 20000          # per file, to bound a pathological seq stream
@@ -453,6 +455,20 @@ class Census(object):
             tot += max(0, min(b, s + L) - max(a, s))
         return tot
 
+    def present(self, ch, src, sec):
+        """Is that exact second inside coverage AND carrying a message?
+
+        A silent run whose neighbouring second is not both of those has no
+        record to be compared against, so no `seq` claim can be made about
+        it -- see WITNESS_FRAC and the UNKNOWN verdict.
+        """
+        i = sec - self.base
+        if not (0 <= i < self.end - self.base):
+            return False
+        if self.bm[(ch, src)][i] != 1:
+            return False
+        return self.cover_in(ch, src, sec, 1) == 1
+
     def mask(self, ch, src, minlen=0):
         """1 where the channel is silent inside a run of at least minlen."""
         m = bytearray(self.end - self.base)
@@ -550,6 +566,13 @@ def classify(c, s, L, breaks):
     d_cov = c.cover_in("orderbook_delta", "ts", s, L)
     x_cov = c.cover_in("cfbenchmarks_value", "ts", s, L)
 
+    # A verdict needs a record either side of the hole. If the second
+    # before or after is not a recorded, covered second -- which is what an
+    # hour with no file leaves behind -- then nothing was ever compared, and
+    # calling that `QUIET` asserts contiguity that was never checked. It
+    # mislabelled the single longest run on this tape.
+    comparable = (c.present("trade", "ts", s - 1)
+                  and c.present("trade", "ts", s + L))
     reset, lost, dmg = False, 0, False
     for t in range(s, s + L + 1 + SEQ_SLACK):
         for prev, nxt, kind, d in breaks.get(t, ()):
@@ -559,15 +582,26 @@ def classify(c, s, L, breaks):
             elif nxt - prev - 1 > lost:
                 lost = nxt - prev - 1
                 dmg = d
-    verdict = "RECONNECT" if reset else ("DROPPED" if lost else "QUIET")
+    if reset:
+        verdict = "RECONNECT"
+    elif lost:
+        verdict = "DROPPED"
+    elif comparable:
+        verdict = "QUIET"
+    else:
+        verdict = "UNKNOWN"
 
+    # Fractions, not exact zeros. An index feed showing 6 messages in 2,547
+    # seconds is down, and testing `x_act == 0` called it up.
+    d_down = d_act < WITNESS_FRAC * L
+    x_down = x_act < WITNESS_FRAC * L
     if d_cov == 0 or x_cov == 0:
         witness = "NO_WITNESS"
-    elif d_act == 0 and x_act == 0:
+    elif d_down and x_down:
         witness = "BOTH_DOWN"
-    elif x_act == 0:
+    elif x_down:
         witness = "INDEX_DOWN"
-    elif d_act == 0:
+    elif d_down:
         # The informative cell, and it turns out to be the common one: the
         # book stopped with `trade`, while the 1/s index kept ticking on the
         # same socket. That is a market-data subscription failing, not a
@@ -582,12 +616,16 @@ def classify(c, s, L, breaks):
     return {"delta_active": d_act, "index_active": x_act,
             "delta_cover": d_cov, "index_cover": x_cov,
             "verdict": verdict, "witness": witness, "seq_lost": lost,
-            "seq_reset": reset, "seq_from_damaged_file": dmg}
+            "seq_reset": reset, "seq_from_damaged_file": dmg,
+            "seq_comparable": comparable}
 
 
 VERDICT_MEANS = {
     "QUIET": "`seq` contiguous either side -- the exchange sent nothing, so "
              "no count was lost",
+    "UNKNOWN": "no record either side of the hole inside continuous "
+               "coverage, so `seq` was never compared and NOTHING can be "
+               "claimed -- an adjacent hour has no file",
     "DROPPED": "`seq` skipped forward -- that many messages were sent and "
                "are not on disk",
     "RECONNECT": "`seq` reset to 1 -- a new subscription. Our socket "
@@ -956,14 +994,15 @@ def build_report(c, hours_all, elapsed, data, prov=""):
     P("| verdict | runs | silent seconds | lost, in a clean file | lost, "
       "next to a damaged gzip | meaning |")
     P("|---|---|---|---|---|---|")
-    for v in ("QUIET", "DROPPED", "RECONNECT"):
+    for v in ("QUIET", "DROPPED", "RECONNECT", "UNKNOWN"):
         if v not in vsplit:
             continue
         n2, sec, clean, dm = vsplit[v]
-        cell = ("unknowable" if v == "RECONNECT" else "{:,}".format(clean))
+        opaque = v in ("RECONNECT", "UNKNOWN")
         P("| `%s` | %d | %s | %s | %s | %s |" %
-          (v, n2, "{:,}".format(sec), cell,
-           ("unknowable" if v == "RECONNECT" else "{:,}".format(dm)),
+          (v, n2, "{:,}".format(sec),
+           "unknowable" if opaque else "{:,}".format(clean),
+           "unknowable" if opaque else "{:,}".format(dm),
            VERDICT_MEANS[v]))
     P("| **total** | **%d** | **%s** | **%s** | **%s** | |" %
       (len(ge30), "{:,}".format(sum(r["length"] for r in ge30)),
@@ -978,7 +1017,7 @@ def build_report(c, hours_all, elapsed, data, prov=""):
     if wits:
         P("| verdict | " + " | ".join("`%s`" % w for w in wits) + " |")
         P("|---" * (len(wits) + 1) + "|")
-        for v in ("QUIET", "DROPPED", "RECONNECT"):
+        for v in ("QUIET", "DROPPED", "RECONNECT", "UNKNOWN"):
             if v not in vsplit:
                 continue
             cells = [sum(1 for r in ge30
@@ -1044,7 +1083,9 @@ def build_report(c, hours_all, elapsed, data, prov=""):
                             " (damaged gzip)"
                             if r["seq_from_damaged_file"] else ""))
             if r["seq_lost"] else
-            ("reset" if r["seq_reset"] else "contiguous")),
+            ("reset" if r["seq_reset"]
+             else ("contiguous" if r["seq_comparable"]
+                   else "never compared"))),
            r["verdict"], r["witness"]))
     P("")
     P("### the worst 10 on each of the other two channels, for contrast")
@@ -1236,9 +1277,10 @@ def _paragraph(c, tcov, tsil, s10, wtot, w10, wany, ttot, t10, nclose, ge30,
                vsplit, trade_runs, nfwd, nres, trec, okclose, oktot, ok10):
     inwin = [r for r in trade_runs if r["s_after_close"] >= CLOSE_MOD - WINDOW]
     deadz = [r for r in trade_runs if r["s_after_close"] < 60]
-    nq = vsplit.get("QUIET", [0, 0, 0])[0]
-    nd = vsplit.get("DROPPED", [0, 0, 0])[0]
-    nr = vsplit.get("RECONNECT", [0, 0, 0])[0]
+    nq = vsplit.get("QUIET", [0, 0, 0, 0])[0]
+    nd = vsplit.get("DROPPED", [0, 0, 0, 0])[0]
+    nr = vsplit.get("RECONNECT", [0, 0, 0, 0])[0]
+    nu = vsplit.get("UNKNOWN", [0, 0, 0, 0])[0]
     worst = trade_runs[0] if trade_runs else None
     return (
         "Over the whole tape the `trade` channel is silent for %s of %s "
@@ -1256,11 +1298,17 @@ def _paragraph(c, tcov, tsil, s10, wtot, w10, wany, ttot, t10, nclose, ge30,
         "settlement dead zone: the old market has settled and its "
         "replacement has no flow yet. **On whether the holes are "
         "collector-side or exchange-side, `seq` is decisive.** Of the %d "
-        "silent runs of 30 s or more: %d end with `seq` contiguous (the "
-        "exchange sent nothing, so no count was lost), %d end with a forward "
-        "`seq` jump (messages sent and missing, and countable), and %d end "
-        "with `seq` RESET TO 1 -- a new subscription, meaning our socket "
-        "dropped and reconnected. **The size of the loss has to be split or "
+        "silent runs of 30 s or more, **exactly %d has `seq` contiguous "
+        "either side** -- one single run where the exchange genuinely sent "
+        "nothing. %d carry a forward `seq` jump (messages sent and missing), "
+        "%d end with `seq` RESET TO 1 (a new subscription: our socket "
+        "dropped and reconnected), and %d have no record either side inside "
+        "continuous coverage, so `seq` was never compared and nothing can be "
+        "claimed. The density witnesses agree: on **%d of %d** of those runs "
+        "the order book went silent alongside `trade` while the 1/s index "
+        "kept ticking on the same socket -- a market-data subscription "
+        "failing, not a dead connection and not a quiet market. **The size "
+        "of the loss has to be split or "
         "it is off by two orders of magnitude:** in files that decompressed "
         "cleanly the `trade` stream is missing **%s sequence numbers against "
         "%s records, %.4f%%**, while a further %s sit beside a gzip a "
@@ -1279,7 +1327,9 @@ def _paragraph(c, tcov, tsil, s10, wtot, w10, wany, ttot, t10, nclose, ge30,
          100.0 * ok10 / max(oktot, 1), "{:,}".format(okclose),
          "{:,}".format(len(trade_runs)), MIN_RUN,
          "{:,}".format(len(inwin)), WINDOW, "{:,}".format(len(deadz)),
-         len(ge30), nq, nd, nr,
+         len(ge30), nq, nd, nr, nu,
+         sum(1 for r in ge30 if r["witness"] == "BOOK_DOWN_INDEX_UP"),
+         len(ge30),
          "{:,}".format(nfwd), "{:,}".format(trec),
          100.0 * nfwd / max(trec, 1),
          "{:,}".format(sum(v[3] for v in vsplit.values())),
@@ -1463,8 +1513,12 @@ def selftest():
         # mid-deflate (member two must still be recovered)
         for ch in CHANNELS:
             mk = MAKER[ch]
+            # trade stops 30 s early: hour 2 has NO FILE, so this tail run
+            # has no record after it and no `seq` comparison is possible.
+            # It must come back UNKNOWN, never QUIET.
+            nsec = 3600 - 30 if ch == "trade" else 3600
             rs = [mk(i + 1, (H1 + i) * 1000 + 100, (H1 + i) * 1000 + 120)
-                  for i in range(3600)]
+                  for i in range(nsec)]
             p = os.path.join(tmp, ch, "20260101T01.jsonl.gz")
             if ch == "trade":
                 _write_broken_trailer(p, rs)
@@ -1598,14 +1652,14 @@ def selftest():
             t10 += m10[i:j - TAU_MIN + 1].count(1)
         chk("close windows fully taped (5 hours x 4)", nclose, 20)
         chk("window seconds inside a run >= %ds" % MIN_RUN, w10,
-            10 + 4 * WINDOW)
+            10 + 5 * WINDOW)
         chk("window seconds silent at ANY run length", wany,
-            19 + 4 * WINDOW)
+            19 + 5 * WINDOW)
         chk("the band is %d s per close" % (WINDOW - TAU_MIN + 1),
             ttot // max(nclose, 1), WINDOW - TAU_MIN + 1)
         chk("tau in [%d,%d] drops the last %d s of each window"
             % (TAU_MIN, WINDOW, TAU_MIN - 1), t10,
-            8 + 4 * (WINDOW - TAU_MIN + 1))
+            8 + 5 * (WINDOW - TAU_MIN + 1))
 
         print("\n  --- a `seq` break ACROSS hour files ---")
         e4 = per_file[("trade", "20260101T04")]
@@ -1645,11 +1699,14 @@ def selftest():
         chk("trade hour 1 raised on the ordinary reader",
             bool(tr1["read_error"]), True)
         chk("trade hour 1 was salvaged", tr1["salvaged"], True)
-        chk("trade hour 1 recovered every second",
-            c.active_in("trade", "ts", H1, 3600), 3600)
-        chk("trade hour 1 has no run >= %ds" % MIN_RUN,
-            [(s, L) for s, L in c.runs[("trade", "ts")]
-             if H1 <= s < H1 + 3600 and L >= MIN_RUN], [])
+        chk("trade hour 1 recovered every second it holds",
+            c.active_in("trade", "ts", H1, 3600), 3570)
+        chk("trade hour 1's only run is the planted 30 s tail",
+            [(s - H1, L) for s, L in c.runs[("trade", "ts")]
+             if H1 <= s < H1 + 3600 and L >= MIN_RUN], [(3570, 30)])
+        d1 = classify(c, H1 + 3570, 30, brk)
+        chk("that tail abuts a MISSING hour -> UNKNOWN, not QUIET",
+            (d1["verdict"], d1["seq_comparable"]), ("UNKNOWN", False))
         cf1 = per_file[("cfbenchmarks_value", "20260101T01")]
         chk("index hour 1 (mid-deflate) raised", bool(cf1["read_error"]),
             True)
