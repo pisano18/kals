@@ -84,6 +84,7 @@ is not the only per-series property that decides whether a strategy exists.
 | 14 | One-contract hedge PILOT on real positions | **REVERSED — my misreading** | Operator meant a planted test, not a cap on real hedges. Ran 30 min, no event. |
 | 15 | **Planted one-contract hedge test (`--hedge-plant`)** | **ARMED, one-shot** | Buys 1 contract of the losing side of a decided market, lets the live hedge fire. Costs cents. Operator's design. |
 | 16 | **Rest a bid instead of taking (maker, zero fee)** | **KILLED** | Per close −$0.36 vs TAKE, t = −5.8; a resting bid fills 100% of losers, 29% of winners. Third time per-contract reversed per close. |
+| 16b | **Entry-time features (offer age/size/freshness, pre-entry jumps, margin-sd)** | **CLOSED — null on the book/index; margin-sd is tautological and every gate costs 33–94% per close** | 409 tradeable entries / 7,328 model-certain; 5/4-day split; control (price) survives the same test → method rejected; RESULTS_entry.md |
 | 17 | **COUNT is the lever** | **UNTESTED, queued** | Offer exists on 9.6% of confident markets, 51.8% of confident closes. |
 | 18 | **Backtest rebuild** | **IN PROGRESS** | Fidelity harness on our ~180 real fills (pinreplay.py, Opus). Then event-driven replay (evaluate after every delta, not once per second) — Fable design. |
 

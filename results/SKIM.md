@@ -234,6 +234,42 @@ unusually calm.
 
 ---
 
+## ❌ "KNOW WHEN NOT TO BUY" FROM THE ORDER BOOK OR THE INDEX — CLOSED (Opus agent, 2026-09-12; `results/RESULTS_entry.md`)
+
+216 book hours, two populations in one pass: **A = 409 entries the live gate would have
+taken (274 closes, 3 losses, 16 belief-collapses)** and **B = 7,328 model-certain moments
+(801 closes)**. Features at the entry second: offer age, offer freshness, offer size
+(absolute and vs that market's own median touch), pre-entry >3σ jump count, largest
+jump, tau, price, discount, margin-to-strike in sd. Split 5 days / 4 days; nothing is a
+survivor unless it holds in BOTH halves; 92 looks, Bonferroni applied.
+
+**Nothing in the book or the index tells you not to buy.** Offer age/freshness/size and
+pre-entry jumpiness are null in both halves, and the signs on size and jumpiness mostly
+run AGAINST "a fresh, large offer is a dump by someone who knows."
+
+**The one thing that separates — margin to the strike in sd — is nearly a tautology and
+the control proves the method would certify nonsense.** `margin_sd = Φ⁻¹(belief)`, and a
+collapse is that same belief later falling under 0.90; an entry at the gate floor starts
+1.29 sd from its own alarm, one at 6 sd starts 4.72 sd away. `price`, included purely as a
+control, survives the identical test. And **every margin gate is ruinous per close**:
+refuse `margin_sd < 3` → −33%/close; `< 5` → −53%; the price control → −94%. 13 of the 16
+collapses on A went on to WIN, so most of what a gate buys is a scare avoided, not a loss.
+**No gate proposed; both candidates written out and rejected on cost.**
+
+**Positive control passed:** inside the margin stratum, a discount ≥ 10c collapsed 6 of 24
+(25%) vs 10 of 272 (3.7%) — the discount cliff, rediscovered from a different outcome on a
+different population, already guarded live at 15c. Not grounds to tighten (−38%/close).
+
+**Practical read:** a new entry refusal would just be a tightening of PIN priced at 33–53%
+of the income, decided by drawdown tolerance rather than by a feature. **Everything rides
+on the exit (the hedge) and on COUNT (offers exist on 9.6% of confident markets).**
+
+**Replay bug confirmed independently:** `pinsim.load_hour` reads `d["ts_ms"]` on
+snapshots, absent on 100% of them; the real field is `_rx_ms`, and snapshots arrive
+throughout the hour, not at the top. In the pinsim rebuild spec.
+
+---
+
 ## ❌ "BUY BETTER BY RESTING A BID" — TESTED AND KILLED (Opus agent, 2026-09-12; `results/RESULTS_maker.md`)
 
 9 days, 793 closes, trade tape. Resting a bid (zero fee) instead of taking:
