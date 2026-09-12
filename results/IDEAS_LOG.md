@@ -86,6 +86,7 @@ is not the only per-series property that decides whether a strategy exists.
 | 16 | **Rest a bid instead of taking (maker, zero fee)** | **KILLED** | Per close −$0.36 vs TAKE, t = −5.8; a resting bid fills 100% of losers, 29% of winners. Third time per-contract reversed per close. |
 | 16b | **Entry-time features (offer age/size/freshness, pre-entry jumps, margin-sd)** | **CLOSED — null on the book/index; margin-sd is tautological and every gate costs 33–94% per close** | 409 tradeable entries / 7,328 model-certain; 5/4-day split; control (price) survives the same test → method rejected; RESULTS_entry.md |
 | 17 | **COUNT is the lever** | **UNTESTED, queued** | Offer exists on 9.6% of confident markets, 51.8% of confident closes. |
+| 18a | **Fidelity harness on our 207 real fills** | **DONE — diagnosis in hand** | pinsim.run() buys 112/207 of our fills and 1/9 losses; at the decision ms under the live gate 178/207. Causes: gate change (51 refusals), once-a-second sampling (78→156 exact price), snapshot merge order (31c vs 0c). Trade channel has holes: counts are lower bounds. |
 | 18 | **Backtest rebuild** | **IN PROGRESS** | Fidelity harness on our ~180 real fills (pinreplay.py, Opus). Then event-driven replay (evaluate after every delta, not once per second) — Fable design. |
 
 **Stale item corrected:** the "snapshot bug" was fixed 09-10 and verified 09-12; not the divergence.

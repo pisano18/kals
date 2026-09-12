@@ -61,6 +61,8 @@ column says what the trade was worth to whoever won the race, not what we
 would earn. The RANKING is the result; the level is not. Per house rule,
 **no loss rate for US is ever quoted from the tape.**
 
+**CAVEAT ADDED 2026-09-12:** the trade channel has recording holes (one hour 10.6% silent, runs up to 230 s, all markets). Every COUNT in this table is a lower bound; the RANKING of bands stands.
+
 **METHOD NOTE THAT OUTLIVES THIS:** `pintrades.py` reads the TRADE tape and
 has no book-reconstruction blind spot. For any question of the form "what
 happens to someone who takes this trade", it is the right instrument and
@@ -231,6 +233,50 @@ us and invisible to the replay. **Honest counter-note:** the 72h holdout above
 showed a 2.47% loss rate, close to the filtered live ~2.0% — the replay is
 not uniformly blind to losses; the 48h window ending 09-12 05:00Z (0.67%) was
 unusually calm.
+
+---
+
+## ⭐⭐⭐ WHY THE BACKTEST NEVER SHOWED OUR LOSSES — ANSWERED ON OUR OWN 207 FILLS (2026-09-12; `results/RESULTS_replay.md`, `research/pinreplay.py`)
+
+**207 real fills, 160 closes, all 9 losses, replayed at the exact second.** Fair
+reproduces (180/207 to 1e-4 by arrival; the 4 misses are sigma from the bot's separate
+index socket). Settlement: **0 disagreements in 196.** Our fill reconciles to a swept
+ladder on the trade tape 198/207. **The offer we hit was in the rebuilt book at SOME
+millisecond for 207/207 — never invisible.**
+
+**Would `pinsim.decide` (called, not reimplemented) have bought our own fills?**
+
+| book read at | gate | bought |
+|---|---|---|
+| second boundary (what `pinsim.run()` does) | today's | **112/207** — and **1 of 9 losses** |
+| decision millisecond | today's | 137/207 |
+| second boundary | the one that was LIVE | 147/207 |
+| **decision millisecond** | **the one that was LIVE** | **178/207 (86%)** |
+
+**Three causes, ranked by count:**
+1. **The gate changed** — PIN 0.98 → 0.995 refuses 42 of our own fills as `undecided`
+   (3 of 9 losses), and dump guards that did not exist then refuse 9 more (4 of 9 losses).
+   51 of 97 refusals. **A rule change, not a replay defect** — but a backtest of our history
+   must run under the gate that was live, or it cannot show our losses by construction.
+2. **Once-a-second sampling of a book that changes ~99 times a second.** Reading at the
+   decision millisecond lifts exact-price agreement from 78/207 to **156/207** and buys 20
+   more of our fills. Offers we hit lived a median 1.4 s; 32 existed only inside a second.
+3. **Book merge order.** Snapshots carry no exchange timestamp; merging on the clock puts a
+   snapshot AFTER a delta it already contains → phantom levels, **31c median error**. Merged
+   on `seq`: 0.00c median error. `pinsim` also stamps snapshots at 0 (reads `ts_ms`, absent;
+   the field is `_rx_ms`).
+
+**All three are in the rebuild spec now running (Opus agent); acceptance = this harness.**
+
+**NEW CAVEAT THAT REACHES BACK: the `trade` channel has holes.** One hour had 374 silent
+seconds of 3,523 (10.6%) in runs of 230, 72 and 53 s, across ALL markets, while the book
+channel was fine. **Any COUNT or RATE from the trade tape is a lower bound — `pintrades.py`
+and the discount-cliff table above included. RANKINGS stand; counts do not.**
+
+**Reading the live log, addendum:** `settled` records now include the plant legs and hedge
+legs (tickers holding both sides). A lifetime tally must net them per ticker or exclude
+`plant-`/`hedge-` order ids. Agent's raw count: 189 settled, 178 W +$145.08, 11 L −$139.63,
+net +$5.45 — of which 2 "losses" are plant legs; 9 real.
 
 ---
 
