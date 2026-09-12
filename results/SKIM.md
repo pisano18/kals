@@ -614,6 +614,57 @@ samples manufacture confident nonsense.
 
 ---
 
+## ⚠️⚠️ ON 72 UNSEEN HOURS THE BASE STRATEGY IS NEGATIVE, AND THE HEDGE IS CARRYING IT (2026-09-12 22:xxZ; `results/pinsim_hedge_holdout_railed.log`)
+
+The same 72 unseen hours (09-06T22 → 09-10T04), re-run on the replay with pinrun's
+per-close rails enforced — the run that decides the hedge threshold:
+
+| | before the rails | **with the rails (correct)** |
+|---|---|---|
+| fills / closes | 195 / 117 | **156 / 117** |
+| losses | 6 (3.08%) | **6 (3.85%)** |
+| mean price paid | 96.29c | 96.14c |
+| **unhedged P&L, ceiling** | **+$10.45** | **−$11.01** |
+| fit (first 70% of closes) | +$14.90 | **−$3.67** |
+| **holdout (last 30%)** | −$0.55 | **−$7.35** |
+
+**The rails removed 39 fills and $21.46 of profit, and both halves are now negative.**
+That is the correct direction and the correct reason: those extra fills were real in
+the replay and impossible live, because MAX_PER_CLOSE is 2. A backtest that takes
+five markets into one correlated close will always look better than a bot that takes
+two.
+
+**At 96.14c the break-even loss rate is 3.86%. The window realised 3.85%.** The base
+strategy sat exactly on its own break-even line for three days — which is the "1.4×
+headroom" finding arriving from a completely different instrument.
+
+### The hedge is what makes the window positive
+
+| threshold | alarms | false | fa cost | losers caught | recovered c/contract | net ΔP&L | **hedged P&L** |
+|---|---|---|---|---|---|---|---|
+| 0.70 | 8 | 2 | $19.66 | **6 of 6** | 41.7 | +$28.48 | $17.46 |
+| **0.80 (LIVE)** | 9 | 3 | $22.21 | **6 of 6** | **49.8** | **+$35.69** | **$24.68** |
+| 0.90 | 12 | 6 | $34.93 | 6 of 6 | 58.3 | +$25.54 | $14.53 |
+
+**0.80 is confirmed best on the corrected tool** — the threshold deployed at 18:2xZ
+survives the fix that invalidated the run it was chosen from. 0.90's false-alarm rate
+is **3.85% [1.42, 8.18]**, outside the pre-registered 3% bar; 0.80's is 1.92%, inside.
+All three catch 6 of 6 losers, so the choice is entirely about what the false alarms
+cost and what the exit recovers.
+
+**Read this as ONE window of 117 closes, not as the expectation.** It is a ceiling
+(the replay wins every race), the interval on 6 losses is wide, and the full-history
+sweep over 422 hours supersedes it. What it establishes is narrower and firmer:
+**the hedge is not a refinement, it is load-bearing**, and the unhedged strategy at
+this gate is close enough to break-even that a normal three-day window can sit on the
+wrong side of it.
+
+**New tape property recorded by the same run:** 12.7% of deltas carry a `ts_ms`
+already seen in `seq` order (595,337 of 4,692,864 on 20260909T00) — the TAPE's own
+clock inversions, not the merge's. The simulated clock is held, never rewound.
+
+---
+
 ## ⭐⭐⭐ COUNT IS A LIQUIDITY PROBLEM, NOT A SETTINGS PROBLEM — 88% OUT OF REACH (Opus agent, 2026-09-12; `results/RESULTS_count.md`, `research/pincount.py`)
 
 180 book hours / 9 days / 697 closes on the REBUILT replay under the live gate. The

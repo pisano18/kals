@@ -297,4 +297,25 @@ a different answer.
 0.90 stay on the record and count toward n=30, flagged as taken at 0.90. If the
 rebuilt replay itself is later found wrong, this entry is the one to revisit.
 
+## THRESHOLD CONFIRMED 2026-09-12 22:xxZ -- 0.80 survives the railed re-run
+
+The 18:2xZ move to 0.80 was chosen from a holdout run BEFORE pinrun's per-close rails
+were enforced in the replay, which I flagged at the time as a decision that had to
+survive the corrected tool. It does. Same 72 unseen hours, rails on:
+
+| threshold | alarms | false | fa cost | caught | recovered c/ct | net dP&L | hedged P&L |
+|---|---|---|---|---|---|---|---|
+| 0.70 | 8 | 2 | $19.66 | 6 of 6 | 41.7 | +$28.48 | $17.46 |
+| **0.80 (live)** | 9 | 3 | $22.21 | **6 of 6** | **49.8** | **+$35.69** | **$24.68** |
+| 0.90 | 12 | 6 | $34.93 | 6 of 6 | 58.3 | +$25.54 | $14.53 |
+
+0.90's false-alarm rate is 3.85% [1.42, 8.18] -- OUTSIDE this file's 3% bar. 0.80's is
+1.92%, inside. All three catch every loser, so the choice is only what the false
+alarms cost against what the exit recovers. No change; HEDGE_BELIEF stays 0.80.
+
+**And the finding that reframes this whole file:** on that window the UNHEDGED
+strategy is **-$11.01** (both halves negative) and the hedged one is **+$24.68**. The
+hedge is not a refinement on top of a profitable strategy -- on this window it IS the
+profit. The n=30 live bar matters more, not less.
+
 ## If this bar moves again, the move is dated and explained here.
