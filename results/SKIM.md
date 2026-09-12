@@ -176,6 +176,79 @@ contract it climbs to +10.11c at a 80c limit while the loss rate climbs to
 
 ---
 
+## 🛑 COIN RACE — DEAD 2026-09-12 05:00Z. Watched the book empty in real time.
+
+The penny test ran live for 70 minutes: **5 races judged, 0 orders sent, $0
+spent.** Every race refused for the same reason -- `no_yes_ask`, nobody
+offering the winning leg. Then I sat on a race and sampled the leader's ask
+every second:
+
+| seconds to close | ETH (the leader) ask | the four losers |
+|---|---|---|
+| 90 | 89c | 1-22c |
+| 40 | **98c** | 1-10c |
+| 20 | 98c | 1-5c |
+| **19 -> 3** | **GONE** | 1-5c |
+
+**The market knows the leader 40 seconds out and charges 98c -- above the
+break-even for tau-40 accuracy. At 19 seconds every offer on the winner is
+pulled.** Our measured band was tau 15-20. There is nothing there.
+
+The tape said takers paid ~87c in that window (+12.1c/contract). Those prints
+were real but they are the rare seconds when a straggler offer existed, and
+live, right now, it does not. Same mechanism as the up/down markets: **in a
+decided market the losing side's book is empty** (33,427 of 33,431 moments).
+
+**Also found and fixed along the way, all mine:** look-ahead in the price
+stage, tau running backwards, `watch()` vs `subscribe()`, a staleness gate
+that refused quiet books, a liveness gate that re-created it, and the REST
+orderbook keys (`orderbook_fp.no_dollars`, not `orderbook.no`). None visible
+in the output; every one found by asking why a number was that good or that
+empty.
+
+---
+
+## ⭐⭐⭐ THE $19 LOSS, DISSECTED — the model knew, and the bot held (2026-09-12)
+
+Second-by-second replay of the three "ordinary" losses that no filter
+catches, using the model's own fair value:
+
+| loss | entered | 2-6s later | 14s left | outcome |
+|---|---|---|---|---|
+| NEAR, NO @ 96.2c | 98.2% | **40.7%** (tau 16) | **1.0%** | -$19.29 |
+| BNB, YES @ 94.0c | 98.5% | **46.3%** (tau 24) | 44.9% | -$17.60 |
+| SOL, NO @ 97.9c | 99.9% | 100% | **0.2%** (tau 11, ONE second) | -$19.61 |
+
+**Two of three collapsed within seconds of entry with 14+ seconds left,
+while the bot held to zero.** SOL was a 0.14% one-second jump -- the genuine
+tail, uncatchable.
+
+**THE TAPE TEST, 48 hours, 1,653 markets entered at our gate:**
+
+| lowest belief after entry | winners (1,642) | losers (11) |
+|---|---|---|
+| never below 99% | **1,630** | 0 |
+| 90-99% | 8 | 0 |
+| 20-90% | 4 | 0 |
+| **below 20%** | 0 | **11** |
+
+**A stop at belief < 70% fires on 2 of 1,642 winners (0.12%) and catches
+11 of 11 losers.** The separation is essentially complete. Alarm timing on the
+losers: tau 29, 29, 28, 27, 25, 24, 23, 19, 11, 10, 10 -- eight of eleven with
+19+ seconds to act.
+
+**TWO WAYS TO USE IT, being measured now:**
+1. **Exit when belief turns** -- needs a bid to sell into; the losing side's
+   book thins fast, so the achievable price is the whole question.
+2. **Refuse to enter on a spike** -- require belief >= 99.5% for N consecutive
+   seconds. Needs no exit liquidity. Would not have saved SOL.
+
+**Tape caveat, standing:** this is the model's fair PATH, driven by the index,
+not by the book -- so unlike a loss RATE it should transfer to our fills. Both
+live losses that had warning showed exactly this shape.
+
+---
+
 ## ❌ "STOP PAYING ABOVE 94c" — TESTED AND KILLED 2026-09-12
 
 **Our own 150 bets said every dollar of profit came from under 94c and that
