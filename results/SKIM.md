@@ -176,6 +176,56 @@ contract it climbs to +10.11c at a 80c limit while the loss rate climbs to
 
 ---
 
+## ❌ "STOP PAYING ABOVE 94c" — TESTED AND KILLED 2026-09-12
+
+**Our own 150 bets said every dollar of profit came from under 94c and that
+94-98c earned nothing across 103 bets. That was NOISE, and independent data
+says the opposite.**
+
+Tested on the TRADE TAPE -- 33,732 fills over 104 closes by takers who have
+never heard of us, at our own gate with our own 15c guard applied:
+
+| price paid | fills | closes | loss rate | break-even | P&L/contract |
+|---|---|---|---|---|---|
+| under 90c | 167 | 10 | 4.19% | 11.92% | **+9.54c** |
+| 90–94c | 827 | 26 | 1.09% | 7.97% | +7.16c |
+| 94–96c | 1,319 | 31 | 0.00% | 4.96% | +4.63c |
+| 96–97c | 1,144 | 36 | 0.00% | 3.53% | +3.29c |
+| 97–98c | 1,987 | 59 | 0.60% | 2.55% | +1.93c |
+| 98–100c | 28,288 | 104 | 0.29% | 0.44% | +0.34c |
+
+Per contract, cheaper is monotonically better. **Per CLOSE it is the reverse,
+because cheap fills are rare:**
+
+| refuse to pay above | closes traded | $/close at size 20 |
+|---|---|---|
+| **100c** | 104 (100%) | **$0.566** |
+| 99c | 77 (74%) | $0.550 |
+| **98c (what we run)** | **67 (64%)** | **$0.528** |
+| 97c | 47 (45%) | $0.444 |
+| 96c | 36 (35%) | $0.376 |
+| 94c | 27 (26%) | $0.295 |
+| 90c | 11 (11%) | $0.071 |
+
+**A 94c ceiling earns $0.295 per close against $0.566. It halves the income.**
+
+**THE CURRENT 98c CEILING IS WELL PLACED**: it keeps 93% of the money while
+trading 64% of the closes. Tightening to 97c costs 21% of the money for
+2 percentage points of loss-rate protection. Leave it alone.
+
+**THE LESSON, AND IT IS THE SECOND TIME:** a per-contract table must be
+re-asked per close before it changes a rule. "Be more patient for a bigger
+discount" died here on 2026-09-11 and "stop paying above 94c" died here on
+2026-09-12, for the identical reason -- rarity is invisible in a per-contract
+column and is usually the larger term.
+
+**AND A SECOND LESSON: 150 of our own bets cannot settle a question that
+33,732 independent fills can.** The 94-98c band looked worthless on our data
+(103 bets, -$8) and carries most of the available money on the tape. Small
+samples manufacture confident nonsense.
+
+---
+
 ## ⚠️ THE LIVE RATE IS $1.71/DAY, NOT $25-30/DAY (reconciled 2026-09-12 03:22Z)
 
 **The bank is the only authority on P&L and it must be checked before any
