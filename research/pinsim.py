@@ -848,11 +848,13 @@ class EventStream:
         self.noseq = [(tk, m, rx) for tk, m, sq, rx in snaps if sq is None]
         self.bad = 0
         self.seq_back = 0
+        self.gap_flags = 0
         self.snaps_used = 0
 
     def __iter__(self):
         self.bad = 0
         self.seq_back = 0
+        self.gap_flags = 0
         self.snaps_used = 0
         snaps = self.snaps
         i = 0
@@ -876,6 +878,21 @@ class EventStream:
                     ts = int(m.get("ts_ms") or 0)
                     if not ts:
                         continue
+                    # THE COLLECTOR'S OWN GAP FLAG, counted and reported.
+                    # kalshi_collector.py sets `_seq_gap` on any frame whose
+                    # seq is not prev+1: at that instant the book for that
+                    # SUBSCRIPTION is wrong, and since the missing deltas could
+                    # have belonged to any market, EVERY tracked book is suspect
+                    # until its next snapshot. Measured 2026-09-12: ~11 flags an
+                    # hour against ~2.6M deltas (0.0005%). Only doctor.py read
+                    # this flag; no replay did. Handling it correctly -- refusing
+                    # every decision between a gap and each market's next
+                    # snapshot -- would cost far more decision-time than 11
+                    # events an hour can justify, so this counts and REPORTS it
+                    # instead of silently trusting the book. A run whose total is
+                    # large should not be believed to the cent.
+                    if d.get("_seq_gap"):
+                        self.gap_flags += 1
                     sq = d.get("seq")
                     if sq is not None:
                         if prev is not None and sq < prev:
@@ -1257,6 +1274,7 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
     skip_seen = set()
     bad_deltas = 0
     seq_back = 0
+    gap_flags = 0
     ts_back = 0
     moments = 0
     decided = set()
@@ -1420,6 +1438,7 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
                     "tries": {}}
         bad_deltas += wk.bad + (getattr(hour["events"], "bad", 0) or 0)
         seq_back += getattr(hour["events"], "seq_back", 0) or 0
+        gap_flags += getattr(hour["events"], "gap_flags", 0) or 0
         ts_back += wk.ts_back
         say(f"    {stamp}  bought {len(bought):,}", flush=True)
         # MEMORY. _HOUR_CACHE (cap 12) exists for the replay player, which
@@ -1434,6 +1453,8 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
             progress(hi + 1, len(stamps))
 
     say(f"  {moments:,} decision moments evaluated"
+        + (f"; {gap_flags:,} collector `_seq_gap` flags (the book was "
+           f"provably wrong that many times)" if gap_flags else "")
         + (f"; {seq_back:,} backward `seq` steps in the tape" if seq_back
            else "; seq monotone throughout")
         + (f"; {ts_back:,} events whose ts_ms precedes the second before "
