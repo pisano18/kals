@@ -175,4 +175,35 @@ to the filtered live rate (~2.0%), unlike the 48h window ending 09-12 05:00Z
 (0.67%). The replay is not uniformly blind to losses; the 48h window was
 unusually calm. Recorded so the rebuild does not chase a phantom.
 
+## PLANT #1 RESULT 2026-09-12 09:44:35Z -- a bug found for a third of a cent
+
+The first planted test fired one minute after arming, on
+KXETH15M-26SEP120545-45 (closes 09:45Z), fair 0.0000 -- a FULLY decided
+market. Sequence, all in the same wall-clock second:
+
+- `plant_attempt` YES @ 0.003 -> `plant` filled 1.0 @ 0.003, status executed.
+  (order path OK, booked as a normal position.)
+- `hedge_alarm` belief 0.0, tau 25. (alarm path OK.)
+- `hedge_no_ask` x5 -> `hedge_gave_up` after "5 tries". **BUG:** the loop runs
+  ~20x/second, so five tries were burned in ~250 ms and the hedge gave up
+  inside the alarm second. HEDGE_MAX_TRIES was documented as seconds. A real
+  hedge whose ask appeared one second after the alarm would never have been
+  tried. **Fixed:** a try is counted only when the wall-clock second advances
+  (`hedge_last_try`), self-tested against the loop's own lines.
+- `settled` YES vs NO, pnl -0.33c. (settlement path OK; total cost of the
+  test $0.0033.)
+
+**Why there was no ask:** in a decided market the dead side's book is empty
+(33,427 of 33,431 moments), so the winner has no ask -- real structure, not a
+defect. It means plant #1 exercised the refusal path, not the fill path. The
+plant now targets NEARLY decided markets (winner 90-99%), where the losing
+side costs 1-10c and the winner's ask exists at 90-99c, so the hedge can fill
+and both legs settle -- the test the operator asked for. **Plant #2 is armed**
+on pid 858644.
+
+**Exit criteria status:** (a) fill -- not yet exercised on the hedge leg;
+(b) price within one tick of the alarm's ask -- not yet; (c) both legs settled
+with locked loss matching `locked_loss_c` -- not yet. Zero of three; the
+count restarts on the paced code.
+
 ## If this bar moves again, the move is dated and explained here.

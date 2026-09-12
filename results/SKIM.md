@@ -200,6 +200,15 @@ first decided market it buys ONE contract of the side about to lose and lets
 the live hedge path fire on it, for a few cents — the operator's own design
 for proving the mechanics.
 
+**PLANT #1 FIRED 09:44:35Z and found a bug for a third of a cent.** It bought
+1 YES @ 0.3c on a fully decided ETH market; the alarm fired instantly; there
+was no NO ask (dead-side book empty = the winner has no ask -- real
+structure); and the hedge **burned all five retries in ~250 ms** because the
+loop runs 20x/second while HEDGE_MAX_TRIES was documented as seconds. Fixed:
+one try per wall-clock second, self-tested. Settled -0.33c. Plant now targets
+NEARLY decided markets (winner 90-99%) so the hedge can actually FILL; plant
+#2 armed on pid 858644. Details and exit-criteria status in PREREG_hedge.md.
+
 **Correction to an item below:** "SNAPSHOT BUG, OPEN" is STALE. `pindata.Book
 .snapshot()` was fixed 2026-09-10 (reads `yes_dollars_fp`), and on 2026-09-12
 the tape's snapshots were verified to carry levels for every market that has

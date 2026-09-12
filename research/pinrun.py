@@ -1541,6 +1541,9 @@ def selftest():
                    for ln in _hblk),
                "and under the pilot any fill completes the hedge -- no "
                "1-contract-per-second dribble for HEDGE_MAX_TRIES seconds")
+        ck(any("if hedge_last_try.get(_hid) == now_s:" in ln for ln in _hblk),
+           "retries are paced to ONE PER SECOND -- the first live alarm burned "
+           "all five in ~250 ms and gave up inside the alarm second")
         ck(HEDGE_MAX_TRIES >= 3 and HEDGE_MAX_TRIES <= 10,
            f"retries are bounded ({HEDGE_MAX_TRIES}) -- a runaway on the hedge "
            "path would be the 160-order incident again")
@@ -1931,6 +1934,7 @@ def trade_loop(a, rec, book, idx, series_index):
     hedge_meta = {}     # A15: oid -> (strike, digits, iid) so belief can be recomputed
     hedged = set()      # A15: oids already hedged (or given up on)
     hedge_tries = {}    # A15: oid -> attempts since the alarm fired
+    hedge_last_try = {} # A15: oid -> wall-clock second of the last try (pacing)
     # NEAR MISSES. "nothing fired" is not information; "the best on offer was
     # 0.2c and we need 0.5c" is. Per close, keep the best net edge seen on
     # each side and report it when the close passes, so a quiet run can be
@@ -2149,6 +2153,14 @@ def trade_loop(a, rec, book, idx, series_index):
                 _belief = _hf if _hwant == "yes" else 1.0 - _hf
                 if not hedge_should_fire(_belief):
                     continue
+                # ONE TRY PER SECOND. The loop runs ~20x/second; the first live
+                # alarm (planted, 2026-09-12 09:44:35Z) burned all five tries in
+                # ~250 ms and gave up inside the same second the alarm fired.
+                # HEDGE_MAX_TRIES means seconds, as its comment says, so a try
+                # is only counted when the wall-clock second has advanced.
+                if hedge_last_try.get(_hid) == now_s:
+                    continue
+                hedge_last_try[_hid] = now_s
                 _tries = hedge_tries.get(_hid, 0)
                 if _tries == 0:
                     state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
@@ -2381,8 +2393,17 @@ def trade_loop(a, rec, book, idx, series_index):
             # Everything after the buy is the ordinary, unmodified hedge path,
             # which is the point: it is the live path being tested.
             if getattr(a, "hedge_plant", False) and not state.get("plant_done") \
-                    and tau <= 25 and (f >= PIN or f <= 1.0 - PIN):
-                _lose = "no" if f >= PIN else "yes"          # the side about to lose
+                    and tau <= 25 and (0.90 <= f <= 0.99 or 0.01 <= f <= 0.10):
+                # FIRST PLANT, 09:44:35Z: it chose a FULLY decided market (fair
+                # 0.0000), bought 1 YES at 0.3c, the alarm fired, and there was
+                # no NO ask to hedge with -- in a decided market the dead side's
+                # book is empty (33,427 of 33,431 moments), so the winner has
+                # no ask. Real structure, not a bug; but it exercised only the
+                # refusal path. Settled -0.33c. Now plant only when the market
+                # is NEARLY decided (winner 90-99%), so the losing side costs
+                # 1-10c and the winner's ask exists at 90-99c: the hedge can
+                # then FILL and both legs settle, which is the test wanted.
+                _lose = "no" if f >= 0.5 else "yes"          # the side about to lose
                 _la = b.get(f"{_lose}_ask")
                 _ls = b.get(f"{_lose}_ask_size")
                 if _la and _ls and 0.0 < _la < 0.50 and live:
