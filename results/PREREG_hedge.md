@@ -118,4 +118,29 @@ is lifted to full size. That lift is a dated entry here. The n=30 live bar
 above counts pilot events as events; recovery per hedged contract is
 measured on the hedged contract.
 
+## REVERSAL 2026-09-12 09:3xZ -- the one-contract pilot was MY MISREADING; full size restored
+
+The pilot above ran live for roughly 30 minutes (pid 850344, 09:19Z to
+~09:35Z). No hedge event occurred in that window. The operator's correction,
+verbatim: "Wait no don't hedge a real 20 contract buy with just 1 as a test,
+do all 20. For the test I meant buy 1 of a losing coin, then test the hedge
+with 1."
+
+He is right and I read him wrong. Capping the hedge on REAL positions at one
+contract left real money under-hedged for the sake of a test. What he meant
+is a self-contained planted test: deliberately buy ONE contract of the side
+that is about to lose, on a market already decided, and let the hedge fire
+on that one. Cost: a few cents (the losing side of a decided market is ~3c;
+the hedge leg ~97c; the pair pays $1). It exercises fill, price-vs-ask, both
+legs settling and the A8 guard, with nothing else at stake.
+
+**What changes:** `HEDGE_PILOT_CONTRACTS = None` (full-size hedges on real
+positions, as A15 was designed). A `--hedge-plant` mode is being added for the
+planted test; it runs once, at the operator's per-instance sign-off already
+given in that message, and is off by default.
+
+**The exit criteria written for the pilot now apply to the planted test
+instead:** fill, price within one tick of the alarm's recorded ask, both legs
+settled with the locked loss matching `locked_loss_c` to the cent.
+
 ## If this bar moves again, the move is dated and explained here.

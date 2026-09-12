@@ -274,15 +274,17 @@ HEDGE_MAX_ASK = 1.00     # the hedge leg must cost LESS than the $1 it pays.
                          # $1.00 or more, where the locked loss equals the
                          # unhedged one. Recorded 2026-09-12 08:4xZ, and
                          # PREREG_hedge.md rule 4 is corrected with this date.
-HEDGE_PILOT_CONTRACTS = 1   # PILOT (2026-09-12, operator: "buy one share of a
-                            # losing coin to attempt the hedge at a tiny scale").
-                            # While set, a hedge buys at most this many contracts
-                            # and is then DONE for that position -- the rest
-                            # rides unhedged as before. Purpose: prove the live
-                            # mechanics (fill, price vs the ask we saw, both legs
-                            # settling) for under a dollar before a $19 event
-                            # depends on them. None = full size. Lift after three
-                            # clean events; that lift is a dated PREREG entry.
+HEDGE_PILOT_CONTRACTS = None  # FULL SIZE. I set this to 1 for ~30 minutes on
+                              # 2026-09-12 having misread the operator: he meant
+                              # "buy ONE contract of a losing coin, then test the
+                              # hedge on THAT one", a self-contained planted test
+                              # -- NOT cap the hedge on real 20-contract positions
+                              # at one contract, which left real money under-
+                              # hedged. His correction, verbatim: "don't hedge a
+                              # real 20 contract buy with just 1 as a test, do
+                              # all 20." The planted test is --hedge-plant below;
+                              # this constant stays as machinery for it and is
+                              # None in production. Dated in PREREG_hedge.md.
 HEDGE_MAX_TRIES = 5      # seconds we keep trying once the alarm has fired.
                          # Separate from MAX_ATTEMPTS_PER_CLOSE, which also
                          # applies. A collapse leaves ~15s; five is generous.
