@@ -189,6 +189,51 @@ def resolve_for(profile, rec):
 # ------------------------------------------------------------------ self-test
 def selftest():
     print("SELF-TEST -- pinsim")
+    # ---- AMENDMENT 15: the hedge REPORT must run, on a fixture that hits
+    # every branch. A 72-hour holdout completed all 162 buys on 2026-09-12
+    # and died in hedge_report on a NameError, because nothing ever called
+    # it before real data did. A report that cannot print is a run lost.
+    _thrs = (0.70, 0.90)
+    _fake = {
+        "W1": {"w": "yes", "px": 0.96, "n": 20.0, "cs": 1000, "iid": "X",
+               "strike": 1.0, "digits": 2, "won": True, "pnl": 0.75,
+               "tau_in": 25, "min_belief": 0.65,
+               "h": {0.70: {"filled": 20.0, "ask": 0.30, "tau": 12,
+                            "belief": 0.65, "edge_c": 5.0}, 0.90: None},
+               "alarm_tau": {0.70: 12, 0.90: 14}, "tries": {0.70: 1, 0.90: 1}},
+        "L1": {"w": "no", "px": 0.96, "n": 20.0, "cs": 1000, "iid": "X",
+               "strike": 1.0, "digits": 2, "won": False, "pnl": -19.24,
+               "tau_in": 22, "min_belief": 0.0,
+               "h": {0.70: {"filled": 20.0, "ask": 0.55, "tau": 15,
+                            "belief": 0.40, "edge_c": 5.0},
+                     0.90: {"filled": 20.0, "ask": 0.50, "tau": 16,
+                            "belief": 0.84, "edge_c": -34.0}},
+               "alarm_tau": {0.70: 15, 0.90: 16}, "tries": {0.70: 1, 0.90: 1}},
+        "L2": {"w": "no", "px": 0.979, "n": 20.0, "cs": 1000, "iid": "X",
+               "strike": 1.0, "digits": 2, "won": False, "pnl": -19.61,
+               "tau_in": 30, "min_belief": 0.0,
+               "h": {0.70: {"filled": 0.0, "why": "no_ask_in_time"},
+                     0.90: {"filled": 0.0, "why": "no_ask_in_time"}},
+               "alarm_tau": {0.70: 11, 0.90: 11}, "tries": {0.70: 6, 0.90: 6}},
+    }
+    _out = []
+    try:
+        hedge_report(_fake, _thrs, say=_out.append)
+        _txt = "\n".join(_out)
+        _ok = ("AMENDMENT 15 HOLDOUT" in _txt and "0.70" in _txt
+               and "0.90" in _txt and "3 simulated positions" in _txt
+               and "2 lost" in _txt)
+        print(("  ok   " if _ok else "  FAIL ")
+              + "hedge_report runs on a fixture with a false alarm, a hedged "
+                "loser and an unfilled loser, and names all three thresholds' "
+                "rows")
+        if not _ok:
+            print("SELF-TEST *** FAILED ***")
+            return False
+    except Exception as _e:                                      # noqa: BLE001
+        print(f"  FAIL hedge_report raised: {_e!r}")
+        print("SELF-TEST *** FAILED ***")
+        return False
     fails = []
 
     def ck(c, m):
@@ -503,7 +548,7 @@ def load_hour(stamp, mk):
     return hour
 
 
-def hedge_report(sim_open, thrs):
+def hedge_report(sim_open, thrs, say=print):
     """AMENDMENT 15 holdout table, one row per threshold, in the units that
     decide it: positions, alarms, false alarms and their cost, losers caught
     and cents recovered, and the net change to P&L with the hedge on.
@@ -769,7 +814,25 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
         say(f"  loaded nothing -- skips: {dict(skips)}")
         return None
     if hedge_thrs and sim_open:
-        hedge_report(sim_open, hedge_thrs)
+        # DUMP FIRST, REPORT SECOND. On 2026-09-12 a 72-hour holdout finished
+        # all 162 buys and then died in hedge_report on a NameError -- `say`
+        # is a closure inside run() and the report was module-level. Ninety
+        # minutes of compute lost at the print step, because the self-test
+        # never called the report. The positions now hit disk before any
+        # printing, so a reporting bug can never again eat the data, and the
+        # table can be regenerated offline from this file.
+        _dump = os.path.join(HERE, "..", "results", "pinsim_hedge_positions.json")
+        try:
+            with open(_dump, "w", encoding="utf-8") as _f:
+                json.dump({"thrs": list(hedge_thrs),
+                           "positions": {k: {kk: ({str(t): vv for t, vv in v.items()}
+                                                  if isinstance(v, dict) else v)
+                                             for kk, v in hp.items()}
+                                         for k, hp in sim_open.items()}}, _f)
+            say(f"  hedge positions written to {os.path.abspath(_dump)}")
+        except Exception as _e:                                  # noqa: BLE001
+            say(f"  *** could not write hedge positions: {_e}")
+        hedge_report(sim_open, hedge_thrs, say=say)
     return report(bought, refused, rule_tally, skips, profile,
                   size=size, hours=len(stamps), log=say,
                   bad_deltas=bad_deltas, newest_settle=ns)
