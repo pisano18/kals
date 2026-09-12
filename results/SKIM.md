@@ -302,6 +302,13 @@ path, no change to pintake.**
 on days not used above, and a pre-registered live bar written before the first
 live hedge fires.
 
+**FOURTH DISSECTED LOSS, out of sample (SOL, YES @ 94c, 2026-09-12 08:00):**
+belief 99.8% at entry (tau 19) -> 83.7% at tau 16 -> **0.05% at tau 15**. A
+70% alarm fires at tau 15 with the price already gone. A **90% alarm fires at
+tau 16 with belief still 84%**, while the market is still worth selling into.
+**So the threshold is a real parameter, and the holdout sweeps it.** Live bar
+pre-registered in `results/PREREG_hedge.md` before the code exists.
+
 **Tape caveat, standing:** this is the model's fair PATH, driven by the index,
 not by the book -- so unlike a loss RATE it should transfer to our fills. Both
 live losses that had warning showed exactly this shape.
