@@ -243,6 +243,21 @@ losers: tau 29, 29, 28, 27, 25, 24, 23, 19, 11, 10, 10 -- eight of eleven with
 2. **Refuse to enter on a spike** -- require belief >= 99.5% for N consecutive
    seconds. Needs no exit liquidity. Would not have saved SOL.
 
+**ENTRY STABILITY — TESTED, WEAK (2026-09-12).** Requiring belief ≥ 99.5% for
+N consecutive seconds before buying, on 1,656 tape markets:
+
+| N seconds | entered | lost | loss rate |
+|---|---|---|---|
+| 1 (now) | 1,655 | 11 | 0.66% |
+| 3 | 1,651 | 10 | 0.61% |
+| 5 | 1,643 | 10 | 0.61% |
+| 8 | 1,638 | 9 | 0.55% |
+
+Removes 2 of 11 losers for 1% of entries. **The losers were mostly NOT spike
+entries** — belief was stable at 99.5%+ and collapsed later (SOL: 19 seconds
+stable, then 100% → 0.2% in one second). So the entry side is not where the
+lever is. **Everything rides on the exit.**
+
 **Tape caveat, standing:** this is the model's fair PATH, driven by the index,
 not by the book -- so unlike a loss RATE it should transfer to our fills. Both
 live losses that had warning showed exactly this shape.
