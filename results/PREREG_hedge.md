@@ -73,4 +73,23 @@ All four passing = it stays on and the next review is at n=100.
 - Latency: our round trip is ~100ms; a one-second collapse leaves no time.
   Those are counted as fired-but-unrecovered and hurt bar 2 honestly.
 
-## Not amended. If this bar moves, the move is dated and explained here.
+## BAR MOVE 2026-09-12 09:0xZ -- deployed BEFORE the pinsim holdout, at the operator's call
+
+The section above said the threshold would be chosen from a pinsim holdout
+before the first live hedge. The holdout was OOM-killed twice (see HANDOFF)
+and its third run was ~90 minutes from done when the operator wrote: "I'm not
+sure if your backtest actually [works]... I'm tempted to just tell you to push
+the change... Continue hunting once this is pushed." That is the owner's
+decision, and pinsim is certified for DECISION reproduction only, so his
+doubt is on the record as fair.
+
+**What ships:** HEDGE_BELIEF = 0.90, the coded default, chosen because it
+fires one second earlier than 0.70 on the fast collapses (SOL 08:00: 84% at
+tau 16, 0.05% at tau 15) at a tape false-alarm cost of 4/1,642 vs 2/1,642.
+
+**What does NOT move:** the live bar at n=30 above, all four rules, and the
+"any one failing disables it" clause. The holdout will still be read when it
+finishes and may change the threshold; that change, if made, is a separate
+dated entry.
+
+## If this bar moves again, the move is dated and explained here.
