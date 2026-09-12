@@ -614,7 +614,41 @@ samples manufacture confident nonsense.
 
 ---
 
-## ⚠️ THE LIVE RATE IS $1.71/DAY, NOT $25-30/DAY (reconciled 2026-09-12 03:22Z)
+## ⚠️ THE LIVE RECORD IS EIGHT STRATEGIES, NOT ONE — never quote a blended $/day (2026-09-12 20:4xZ)
+
+The operator, correcting me: *"It doesn't need to land near 4.60 because 4.60 is
+using a collection of strategies that slowly got improved. We haven't seen just this
+strategy yet."* He is right. Every live fill split by the gate its run STARTED with:
+
+| PIN / ceiling / guard / per-mkt / hedge | legs | markets | days | net $ | $/day |
+|---|---|---|---|---|---|
+| 0.98 / – | 11 | 11 | 0.27 | +0.21 | +0.79 |
+| 0.98 / 0.988 | 21 | 19 | 0.40 | **−43.58** | **−110.09** |
+| 0.98 / 0.98 | 50 | 50 | 1.10 | +25.93 | **+23.49** |
+| 0.995 / 0.98 | 72 | 71 | 1.66 | +34.94 | **+21.10** |
+| 0.995 / 0.98 / 0.15 | 3 | 3 | 0.02 | −16.20 | −777 |
+| 0.995 / 0.98 / 0.15 / 1 | 21 | 21 | 0.22 | −1.98 | −9.06 |
+| 0.995 / 0.98 / 0.15 / 1 / 0.90 | 43 | 39 | 0.34 | +14.49 | +42.15 |
+| 0.995 / 0.98 / 0.15 / 1 / 0.80 | 7 | 7 | 0.09 | +3.90 | +41.59 |
+
+**The blended "+$19.77 lifetime, ~$4.60/day" is dragged down by the −$43.58 of the
+0.988-ceiling era, which no longer exists.** The longest single-gate window is
+**1.66 days**; the full current model (0.80 hedge) has existed for hours. Every
+$/day on a span under ~1 day is noise and is shown only to make that visible.
+
+**Consequences that bind:**
+1. **No live sample can anchor a $/day figure for any configuration.** The rebuilt
+   backtest is the primary estimate, and its day-block bootstrap interval is the
+   honest uncertainty — not agreement with a blended live number.
+2. **A P&L tally must be grouped by gate**, read from each run's own `start` record.
+   The start record logs every constant precisely so this is possible; that is what
+   it is for.
+3. The bank (+$19.77) remains the authority on CASH, and is still the only check on
+   whether the logs are complete. It is not a rate.
+
+---
+
+## ⚠️ SUPERSEDED — THE LIVE RATE IS $1.71/DAY, NOT $25-30/DAY (reconciled 2026-09-12 03:22Z)
 
 **The bank is the only authority on P&L and it must be checked before any
 $/day figure is quoted.**
