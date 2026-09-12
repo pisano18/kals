@@ -76,6 +76,21 @@ is not the only per-series property that decides whether a strategy exists.
 
 ---
 
+## MEASURED 2026-09-12 — the hedge, the maker kill, and the hunt (agents: Opus grunt work, Fable design)
+
+| # | idea | verdict | evidence |
+|---|---|---|---|
+| 13 | **AMENDMENT 15 — hedge on belief collapse** | **LIVE at full size, 0.90** | 72h unseen holdout: 4 of 4 losers caught with 13–19 s to act, 68.2¢/contract recovered, one $0.77 false alarm, P&L $31.52 → $76.40 (ceiling). Live bar at n=30 in PREREG_hedge.md. |
+| 14 | One-contract hedge PILOT on real positions | **REVERSED — my misreading** | Operator meant a planted test, not a cap on real hedges. Ran 30 min, no event. |
+| 15 | **Planted one-contract hedge test (`--hedge-plant`)** | **ARMED, one-shot** | Buys 1 contract of the losing side of a decided market, lets the live hedge fire. Costs cents. Operator's design. |
+| 16 | **Rest a bid instead of taking (maker, zero fee)** | **KILLED** | Per close −$0.36 vs TAKE, t = −5.8; a resting bid fills 100% of losers, 29% of winners. Third time per-contract reversed per close. |
+| 17 | **COUNT is the lever** | **UNTESTED, queued** | Offer exists on 9.6% of confident markets, 51.8% of confident closes. |
+| 18 | **Backtest rebuild** | **IN PROGRESS** | Fidelity harness on our ~180 real fills (pinreplay.py, Opus). Then event-driven replay (evaluate after every delta, not once per second) — Fable design. |
+
+**Stale item corrected:** the "snapshot bug" was fixed 09-10 and verified 09-12; not the divergence.
+
+---
+
 ## MEASURED 2026-09-11 — THE COIN RACE, end to end (full detail: results/RESULTS_coinrace.md)
 
 | # | idea | verdict | evidence |

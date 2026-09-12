@@ -2370,6 +2370,51 @@ def trade_loop(a, rec, book, idx, series_index):
                 continue
             state["considered"] += 1
 
+            # ---- --hedge-plant: the planted one-contract hedge test -------
+            # Operator, 2026-09-12: "buy 1 of a losing coin, then test the
+            # hedge with 1." At the first DECIDED market (belief >= PIN one
+            # way) with tau <= 25, buy ONE contract of the side about to LOSE
+            # at its ask, book it exactly like a real fill (open_pos +
+            # hedge_meta), and let the hedge pass -- which sees belief ~0 on
+            # it within a second -- fire the hedge. Fires at most once per
+            # run; costs a few cents (a ~3c leg plus a ~97c leg pay $1).
+            # Everything after the buy is the ordinary, unmodified hedge path,
+            # which is the point: it is the live path being tested.
+            if getattr(a, "hedge_plant", False) and not state.get("plant_done") \
+                    and tau <= 25 and (f >= PIN or f <= 1.0 - PIN):
+                _lose = "no" if f >= PIN else "yes"          # the side about to lose
+                _la = b.get(f"{_lose}_ask")
+                _ls = b.get(f"{_lose}_ask_size")
+                if _la and _ls and 0.0 < _la < 0.50 and live:
+                    state["plant_done"] = True
+                    attempts[close_s] = attempts.get(close_s, 0) + 1
+                    rec("plant_attempt", ticker=tk, side=_lose, ask=_la,
+                        fair=round(f, 5), tau=tau)
+                    print(f"  PLANT: buying 1 {_lose.upper()} {tk} @ {_la:.3f} "
+                          f"(fair {f:.4f}) to test the hedge on it")
+                    try:
+                        _po = pintake.take(CREDS["base"], CREDS["pk"],
+                                           CREDS["key_id"], tk, _lose,
+                                           float(_la), 1.0, float(close_s),
+                                           exchange_index=2)
+                    except Exception as _e:                  # noqa: BLE001
+                        rec("error", where="plant_take", ticker=tk, err=str(_e)[:300])
+                        _po = {}
+                    _pf = float(_po.get("filled") or 0)
+                    _pp = _po.get("exec_price")
+                    rec("plant", ticker=tk, side=_lose, filled=_pf,
+                        price=(float(_pp) if _pp is not None else _la),
+                        refused=_po.get("refused"), status=_po.get("status"),
+                        order_id=_po.get("order_id"))
+                    if _pf > 0:
+                        _poid = f"plant-{_po.get('order_id') or now_s}"
+                        _pc = float(_pp) if _pp is not None else float(_la)
+                        open_pos[_poid] = (close_s, _lose, _pc, _pf, tk)
+                        hedge_meta[_poid] = (strike, digits, iid)
+                        print(f"  PLANT filled {_pf:g} @ {_pc:.3f}; the hedge "
+                              f"pass should fire on it within a second")
+                    continue
+
             want = price = size = None
             if f >= PIN:
                 ya, ys = b.get("yes_ask"), b.get("yes_ask_size")
@@ -2637,6 +2682,13 @@ def main():
     ap.add_argument("--size", type=float, default=1.0,
                     help="contracts per take; 0.01 is about one cent, for "
                          "proving order/fill/settle/payout end to end")
+    ap.add_argument("--hedge-plant", action="store_true",
+                    help="ONE-SHOT planted test of the hedge path, operator "
+                         "sign-off 2026-09-12: at the first decided market "
+                         "seen with tau <= 25, buy ONE contract of the side "
+                         "that is about to LOSE, book it as a normal position, "
+                         "and let the live hedge pass fire on it. Costs a few "
+                         "cents. Off by default; fires at most once per run.")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
     ap.add_argument("--max-losses", type=int, default=0,

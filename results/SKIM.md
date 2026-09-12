@@ -176,6 +176,66 @@ contract it climbs to +10.11c at a 80c limit while the loss rate climbs to
 
 ---
 
+## ⭐⭐⭐ THE HEDGE — LIVE AT FULL SIZE, HOLDOUT-CONFIRMED (2026-09-12 09:5xZ)
+
+**AMENDMENT 15 is live: when the model's belief in an open position falls
+below 90%, the bot buys the opposite side for the contracts it holds, locking
+the loss at (entry + hedge − 1) instead of the full entry.** Deployed 08:45Z;
+a one-contract pilot cap I added by misreading the operator ran ~30 min and
+was reversed at his correction (PREREG_hedge.md, dated).
+
+**Holdout, 72 unseen hours (09-06T22 → 09-10T04), 162 positions, 4 lost:**
+
+| threshold | false alarms | losers caught | recovered ¢/contract | P&L unhedged → hedged |
+|---|---|---|---|---|
+| 0.70 | 0 | 4 of 4 | 43.2 | $31.52 → $64.84 |
+| 0.80 | 0 | 4 of 4 | 55.5 | $31.52 → $74.60 |
+| **0.90 (live)** | 1 ($0.77) | **4 of 4** | **68.2** | **$31.52 → $76.40** |
+
+Alarm fired on the losers with 19, 16, 13, 13 seconds left. **Ceiling
+numbers** — delta-only replayed book, and the replay always wins the race.
+The live bar (`results/PREREG_hedge.md`, n=30 hedge events) is the test that
+counts. **A planted one-contract test is armed (`--hedge-plant`)**: at the
+first decided market it buys ONE contract of the side about to lose and lets
+the live hedge path fire on it, for a few cents — the operator's own design
+for proving the mechanics.
+
+**Correction to an item below:** "SNAPSHOT BUG, OPEN" is STALE. `pindata.Book
+.snapshot()` was fixed 2026-09-10 (reads `yes_dollars_fp`), and on 2026-09-12
+the tape's snapshots were verified to carry levels for every market that has
+a book (56 of ~160 per hour; the rest are genuinely empty books). It is not
+the live/backtest divergence.
+
+**The divergence that IS structural, now being measured on our own fills
+(`research/pinreplay.py`, in progress):** the replay evaluates once per
+second with the book as of that boundary; the live bot samples ~20×/second.
+An offer that appears at :15.400 and is eaten at :15.600 is a real fill for
+us and invisible to the replay. **Honest counter-note:** the 72h holdout above
+showed a 2.47% loss rate, close to the filtered live ~2.0% — the replay is
+not uniformly blind to losses; the 48h window ending 09-12 05:00Z (0.67%) was
+unusually calm.
+
+---
+
+## ❌ "BUY BETTER BY RESTING A BID" — TESTED AND KILLED (Opus agent, 2026-09-12; `results/RESULTS_maker.md`)
+
+9 days, 793 closes, trade tape. Resting a bid (zero fee) instead of taking:
+**per close it loses in 113 of 114 comparison rows.** TAKE $0.824/close vs
+REST-1 (5s) $0.465, t = −5.8, holdout t = −3.65. **The mechanism is near-total
+adverse selection: a resting bid was filled on 100% of the eventual losers
+(17 of 17) and 29% of the winners.** Nobody sells you a near-certain contract
+for no reason. Cancel-on-alarm does not help — the loser fill lands a median
+5 s before our belief drops. The fee it saves is 2–5× smaller than the cost.
+**Per contract it pointed the wrong way for the THIRD time.**
+
+**The lead it turned up instead — COUNT, not price:** an acceptable offer
+appeared on only **694 of 7,266 markets we were confident about (9.6%)** and
+on **411 of 793 closes (51.8%)**. Half the closes we are sure about, we never
+trade because nobody is offering. That is a larger number than any price
+tweak and is now on the hunt list.
+
+---
+
 ## 🛑 COIN RACE — DEAD 2026-09-12 05:00Z. Watched the book empty in real time.
 
 The penny test ran live for 70 minutes: **5 races judged, 0 orders sent, $0
@@ -1543,7 +1603,7 @@ size ladder recomputed against the *float*, not the total balance.
 2. **THE HEDGE, RE-AIMED.** Earlier study optimised **expected value** and rejected it. Joe's objective is different: *"losing 1–5 wins worth more frequently beats one loss costing tens to a hundred wins."* **Under that objective the earlier answer does not apply.** Being re-tested.
 3. **PLAYING TOO CLOSE TO THE LINE.** Is there a minimum absolute distance to the strike below which we should never trade, regardless of what the model says?
 4. **CAP 3 vs CAP 2.** Cap 3 measured better (12% more money, a third of the ruin) and is currently OFF only because the bank cannot fund its brake. Restore it at ~$150.
-5. **SNAPSHOT BUG, OPEN.** `pindata.Book.snapshot()` reads the wrong keys, so every replayed book is delta-only. Direction is conservative. Any new replay must use the `_fp` keys.
+5. ~~SNAPSHOT BUG~~ **FIXED 2026-09-10, verified 2026-09-12** — reads `yes_dollars_fp`; tape snapshots carry levels wherever a book exists. Not the divergence.
 
 ---
 

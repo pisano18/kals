@@ -143,4 +143,36 @@ given in that message, and is off by default.
 instead:** fill, price within one tick of the alarm's recorded ask, both legs
 settled with the locked loss matching `locked_loss_c` to the cent.
 
+## HOLDOUT VERDICT 2026-09-12 09:5xZ -- 0.90 confirmed; the gate the pre-registration asked for is now met
+
+Fourth launch of the pinsim holdout completed (the first was OOM-killed on
+the 12-hour cache, the second on one resident hour, the third finished all
+72 hours and died printing -- see HANDOFF). 72 book hours, 2026-09-06T22 to
+09-10T04, none used by any earlier hedge analysis. 162 simulated positions,
+4 lost (2.47% [0.68, 6.20]), unhedged P&L $+31.52.
+
+| threshold | alarms | false alarms | fa cost | losers caught | hedges filled | recovered c/contract | net dP&L | hedged P&L |
+|---|---|---|---|---|---|---|---|---|
+| 0.70 | 4 | 0 | $0.00 | 4 of 4 | 4 | 43.2 | +$33.32 | $64.84 |
+| 0.80 | 4 | 0 | $0.00 | 4 of 4 | 4 | 55.5 | +$43.08 | $74.60 |
+| **0.90** | 5 | 1 | $0.77 | **4 of 4** | 5 | **68.2** | **+$44.88** | **$76.40** |
+
+Alarm tau on the four losers at 0.90: 19, 16, 13, 13 -- every one with 13+
+seconds to act. False-alarm rate 0.62% [0.02, 3.39], inside the 3% bar at the
+point estimate; its upper bound is not, and n=162 cannot make it so. Every
+figure is a CEILING: delta-only replayed book, and the replay always wins the
+race for the ask.
+
+**Decision: HEDGE_BELIEF stays 0.90, which is what has been live since
+08:45Z.** The earlier alarm buys a much better exit -- 68c against 43c per
+contract -- and that dominates one 77c false alarm. The threshold is now
+"chosen from a holdout on unseen days", as this file originally required, so
+the 09:0xZ bar move above is retroactively within the original bar. The live
+n=30 review is unchanged and remains the test that counts.
+
+**Note for the backtest rebuild:** this window's loss rate (2.47%) is close
+to the filtered live rate (~2.0%), unlike the 48h window ending 09-12 05:00Z
+(0.67%). The replay is not uniformly blind to losses; the 48h window was
+unusually calm. Recorded so the rebuild does not chase a phantom.
+
 ## If this bar moves again, the move is dated and explained here.
