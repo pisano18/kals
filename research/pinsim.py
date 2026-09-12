@@ -320,6 +320,11 @@ def main():
                     help="last book hour to include, e.g. 20260910T05")
     ap.add_argument("--json", default=None,
                     help="also write the summary as JSON here (the tool reads it)")
+    ap.add_argument("--hedge", default=None,
+                    help="AMENDMENT 15 holdout: comma-separated belief "
+                         "thresholds, e.g. 0.70,0.80,0.90. Replays the live "
+                         "hedge pass through pinrun's own functions and prints "
+                         "one row per threshold. Off by default.")
     ap.add_argument("--sweep", default=None,
                     help="PARAM=v1,v2,... run once per value in THIS process "
                          "so the tape cache serves every value")
@@ -364,7 +369,9 @@ def main():
                 json.dump(results, fh, indent=1)
             print(f"  sweep written to {a.json}")
         return
-    summary = run(profile, a.hours, a.end, size=a.size, log=print)
+    _thrs = tuple(float(x) for x in a.hedge.split(",")) if a.hedge else None
+    summary = run(profile, a.hours, a.end, size=a.size, log=print,
+                  hedge_thrs=_thrs)
     if summary and a.json:
         with open(a.json, "w", encoding="utf-8") as fh:
             json.dump(summary, fh, indent=1)
@@ -470,7 +477,84 @@ def load_hour(stamp, mk):
     return hour
 
 
-def run(profile, hours, end=None, size=None, log=None, progress=None):
+def hedge_report(sim_open, thrs):
+    """AMENDMENT 15 holdout table, one row per threshold, in the units that
+    decide it: positions, alarms, false alarms and their cost, losers caught
+    and cents recovered, and the net change to P&L with the hedge on.
+
+    RECOVERY is (unhedged loss) - (locked loss) = (1 - ask) per contract on a
+    position that went on to LOSE; a hedge on a WINNER costs (ask) - (what the
+    win paid) ... no: on a winner the pair pays $1 and we paid px + ask, so the
+    hedged result is (1 - px - ask) versus the unhedged win (1 - px), a cost
+    of exactly `ask` per contract. Fees on the hedge leg are charged as live
+    would be. Every number here is a CEILING on live -- the replayed book is
+    delta-only (the known snapshot bug) and we always win the race for the
+    ask in a replay.
+    """
+    from pincross import cp_interval
+    P = list(sim_open.values())
+    n_pos = len(P)
+    n_lose = sum(1 for p in P if not p["won"])
+    base = sum(p["pnl"] for p in P)
+    say("\n  " + "=" * 100)
+    say(f"  AMENDMENT 15 HOLDOUT -- {n_pos:,} simulated positions, "
+        f"{n_lose} lost ({100.0 * n_lose / max(1, n_pos):.2f}%), unhedged P&L "
+        f"${base:+.2f}")
+    say("  every figure is a CEILING: delta-only book, and the replay always "
+        "wins the race for the ask")
+    say(f"  {'threshold':>10}{'alarms':>8}{'false':>7}{'  fa-cost $':>12}"
+        f"{'caught':>8}{'of':>4}{'  filled':>9}{'  rec c/ct':>11}"
+        f"{'  net dP&L $':>13}{'  hedged P&L $':>15}")
+    for thr in thrs:
+        alarms = [p for p in P if p["alarm_tau"][thr] is not None]
+        fa = [p for p in alarms if p["won"]]
+        caught = [p for p in alarms if not p["won"]]
+        filled = [p for p in alarms if p["h"][thr] and p["h"][thr].get("filled", 0) > 0]
+        fa_cost = 0.0
+        rec = []
+        d = 0.0
+        for p in filled:
+            h = p["h"][thr]
+            fee = pinrun.billed_fee(h["ask"], h["filled"])
+            if p["won"]:
+                # pair pays $1 on the hedged part; we forgo (1-px) and pay ask
+                cost = h["filled"] * h["ask"] + fee
+                fa_cost += cost
+                d -= cost
+            else:
+                # on the hedged contracts the loss shrinks from px to px+ask-1
+                gain = h["filled"] * (1.0 - h["ask"]) - fee
+                rec.append(100.0 * (1.0 - h["ask"]))
+                d += gain
+        lo, hi = cp_interval(len(fa), max(1, n_pos))
+        say(f"  {thr:>10.2f}{len(alarms):>8}{len(fa):>7}{fa_cost:>12.2f}"
+            f"{len(caught):>8}{n_lose:>4}{len(filled):>9}"
+            f"{(sum(rec) / len(rec)) if rec else 0.0:>11.1f}"
+            f"{d:>13.2f}{base + d:>15.2f}"
+            f"   false-alarm rate {100.0 * len(fa) / max(1, n_pos):.2f}% "
+            f"[{100 * lo:.2f}, {100 * hi:.2f}]")
+    say("  'caught' = alarm fired on an eventual loser; 'filled' = an ask "
+        "existed under $1 within HEDGE_MAX_TRIES seconds; 'rec' = cents of the "
+        "loss recovered per hedged contract")
+    # alarm timing on losers, so the live latency budget is visible
+    for thr in thrs:
+        taus = sorted((p["alarm_tau"][thr] for p in P
+                       if not p["won"] and p["alarm_tau"][thr] is not None),
+                      reverse=True)
+        if taus:
+            say(f"  thr {thr:.2f}: alarm fired on losers at tau {taus}")
+    say("  " + "=" * 100)
+
+
+def run(profile, hours, end=None, size=None, log=None, progress=None,
+        hedge_thrs=None):
+    """hedge_thrs: AMENDMENT 15 holdout. A tuple of belief thresholds, e.g.
+    (0.70, 0.80, 0.90). For every simulated buy, belief is recomputed each
+    later second with pinrun.fair() -- the SAME function the live hedge pass
+    calls -- and at each threshold the first second belief falls below it is
+    the alarm; the opposite side's best ask in the replayed book at that
+    second prices the hedge, gated by pinrun.hedge_ask_ok(). All thresholds
+    are tracked in ONE tape pass. None (the default) changes nothing."""
     """Replay `hours` settled book hours (ending at `end`) under `profile`
     through pinrun's own decision code. Returns the summary dict the tool
     reads, or None if nothing could be decided."""
@@ -492,6 +576,7 @@ def run(profile, hours, end=None, size=None, log=None, progress=None):
         f"size {size:g}, gate {pinrun.PIN}, ceiling {pinrun.PRICE_CEILING}")
 
     bought, refused, rule_tally = [], [], {}
+    sim_open = {}          # A15 holdout: ticker -> simulated position + hedge state
     skips = defaultdict(int)
     bad_deltas = 0
     decided = set()
@@ -519,6 +604,50 @@ def run(profile, hours, end=None, size=None, log=None, progress=None):
             last_sec = sec
             idx.now = sec
             idx.feed_upto(pend, sec)
+            # ---- AMENDMENT 15 holdout: the hedge pass, replayed ----------
+            # Mirrors pinrun's live pass: one belief recompute per open
+            # simulated position per second, through the same fair(),
+            # hedge_should_fire() and hedge_ask_ok(). Runs BEFORE the entry
+            # scan, as live does.
+            if hedge_thrs and sim_open:
+                for htk, hp in sim_open.items():
+                    if sec >= hp["cs"] - 1:
+                        continue
+                    if all(hp["h"][t] is not None for t in hedge_thrs):
+                        continue            # every threshold already resolved
+                    hsg = idx.sigma(hp["iid"])
+                    if not hsg:
+                        continue
+                    hf = pinrun.fair(idx, hp["iid"], hp["cs"], sec, hp["strike"],
+                                     hsg * pinrun.SIGMA_STRESS,
+                                     round_digits=hp["digits"])
+                    if hf is None:
+                        continue
+                    belief = hf if hp["w"] == "yes" else 1.0 - hf
+                    hp["min_belief"] = min(hp["min_belief"], belief)
+                    hb = None
+                    for thr in hedge_thrs:
+                        if hp["h"][thr] is not None:
+                            continue
+                        if not pinrun.hedge_should_fire(belief, thr):
+                            continue
+                        if hp["alarm_tau"][thr] is None:
+                            hp["alarm_tau"][thr] = hp["cs"] - sec
+                        hp["tries"][thr] = hp["tries"].get(thr, 0) + 1
+                        if hb is None:
+                            hb = book_view(books[htk], ts)
+                        opp = "no" if hp["w"] == "yes" else "yes"
+                        ask = hb.get(f"{opp}_ask")
+                        asz = hb.get(f"{opp}_ask_size") or 0.0
+                        if not ask or asz <= 0 or not pinrun.hedge_ask_ok(ask):
+                            if hp["tries"][thr] > pinrun.HEDGE_MAX_TRIES:
+                                hp["h"][thr] = {"filled": 0.0, "why": "no_ask_in_time"}
+                            continue
+                        hn = min(hp["n"], asz)
+                        hp["h"][thr] = {"filled": hn, "ask": ask,
+                                        "tau": hp["cs"] - sec, "belief": belief,
+                                        "edge_c": pinrun.hedge_edge_c(belief, ask)}
+            # ---- end AMENDMENT 15 holdout pass -----------------------------
             for tkk, bkk in books.items():
                         r = mk[tkk]
                         cs = int(float(r["close"]))
@@ -583,6 +712,18 @@ def run(profile, hours, end=None, size=None, log=None, progress=None):
                             refused.append((tkk, w, px, n, tau, won, pnl, cs))
                             continue
                         bought.append((tkk, w, px, n, tau, won, pnl, cs))
+                        if hedge_thrs:
+                            # A15 holdout: hold this position open so the hedge
+                            # pass can watch its belief every later second
+                            sim_open[tkk] = {
+                                "w": w, "px": px, "n": n, "cs": cs, "iid": iid,
+                                "strike": float(r["strike"]),
+                                "digits": pindata.ROUND_DIGITS.get(r["series"]),
+                                "won": won, "pnl": pnl, "tau_in": tau,
+                                "min_belief": 1.0,
+                                "h": {t: None for t in hedge_thrs},
+                                "alarm_tau": {t: None for t in hedge_thrs},
+                                "tries": {}}
         say(f"    {stamp}  bought {len(bought):,}", flush=True)
         if progress:
             progress(hi + 1, len(stamps))
@@ -593,6 +734,8 @@ def run(profile, hours, end=None, size=None, log=None, progress=None):
     if not bought and not refused:
         say(f"  loaded nothing -- skips: {dict(skips)}")
         return None
+    if hedge_thrs and sim_open:
+        hedge_report(sim_open, hedge_thrs)
     return report(bought, refused, rule_tally, skips, profile,
                   size=size, hours=len(stamps), log=say,
                   bad_deltas=bad_deltas, newest_settle=ns)
