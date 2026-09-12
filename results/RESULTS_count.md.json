@@ -1,0 +1,2306 @@
+{
+ "hours": 180,
+ "days": [
+  "2026-09-04",
+  "2026-09-05",
+  "2026-09-06",
+  "2026-09-07",
+  "2026-09-08",
+  "2026-09-09",
+  "2026-09-10",
+  "2026-09-11",
+  "2026-09-12"
+ ],
+ "closes_seen": 697,
+ "closes_certain": 697,
+ "gate": "PIN=0.995 ceiling=0.98 tau=[3,30] SIZE=20 min_fill_frac=0.5 min_level=1 edge_floor=0.003 ev_floor=0.003 flip=0.009 dump=0.15 max_per_close=2 max_per_market=1 improve_by=0.005 book_age<=2000ms index_age<=2s",
+ "decomp_market": {
+  "close_cap": 671,
+  "no_improve": 324,
+  "bought": 475,
+  "no_offer": 3254,
+  "no_edge": 1092,
+  "too_shallow": 100,
+  "over_ceiling": 350,
+  "no_gate": 5,
+  "stale_book": 18,
+  "dumped": 2
+ },
+ "decomp_close": {
+  "bought": 363,
+  "no_edge": 109,
+  "too_shallow": 9,
+  "over_ceiling": 140,
+  "no_offer": 71,
+  "stale_book": 2,
+  "dumped": 2
+ },
+ "tau_accuracy": {
+  "0": [
+   12445,
+   12445
+  ],
+  "10": [
+   30567,
+   30557
+  ],
+  "15": [
+   30036,
+   30009
+  ],
+  "20": [
+   29429,
+   29410
+  ],
+  "25": [
+   28690,
+   28664
+  ],
+  "30": [
+   27968,
+   27917
+  ],
+  "35": [
+   27153,
+   27101
+  ],
+  "40": [
+   26301,
+   26230
+  ],
+  "45": [
+   25392,
+   25301
+  ],
+  "5": [
+   30996,
+   30995
+  ],
+  "50": [
+   24384,
+   24273
+  ],
+  "55": [
+   23311,
+   23170
+  ],
+  "60": [
+   4554,
+   4525
+  ],
+  "A4 11-20": [
+   60379,
+   60338
+  ],
+  "A4 21-30": [
+   57834,
+   57783
+  ],
+  "A4 3-10": [
+   49605,
+   49604
+  ],
+  "A4 31-45": [
+   80930,
+   80749
+  ],
+  "A4 46-60": [
+   72478,
+   72123
+  ]
+ },
+ "tau_accuracy_markets": {
+  "0": [
+   6238,
+   6238
+  ],
+  "10": [
+   6171,
+   6168
+  ],
+  "15": [
+   6070,
+   6061
+  ],
+  "20": [
+   5963,
+   5959
+  ],
+  "25": [
+   5817,
+   5810
+  ],
+  "30": [
+   5681,
+   5670
+  ],
+  "35": [
+   5518,
+   5502
+  ],
+  "40": [
+   5375,
+   5354
+  ],
+  "45": [
+   5208,
+   5188
+  ],
+  "5": [
+   6241,
+   6240
+  ],
+  "50": [
+   5021,
+   4995
+  ],
+  "55": [
+   4812,
+   4779
+  ],
+  "60": [
+   4554,
+   4525
+  ],
+  "A4 11-20": [
+   6158,
+   6147
+  ],
+  "A4 21-30": [
+   5944,
+   5932
+  ],
+  "A4 3-10": [
+   6277,
+   6276
+  ],
+  "A4 31-45": [
+   5692,
+   5667
+  ],
+  "A4 46-60": [
+   5213,
+   5174
+  ]
+ },
+ "census": {
+  "band_ms": 175058,
+  "band_markets": 6291,
+  "rows": 167818,
+  "fresh": 167458,
+  "no_ask_our_side": 140990,
+  "no_ask_but_opp_has_one": 140989,
+  "ask_our_side": 26468,
+  "ask_d10": 24655,
+  "ask_d5": 24877,
+  "ask_d2": 25169,
+  "ask_d1": 25266,
+  "px 98.0-98.7c": 1047,
+  "pxdeep 98.0-98.7c": 1044,
+  "px >99.5c": 18006,
+  "pxdeep >99.5c": 16530,
+  "ok_px_d10": 2996,
+  "ok_px_d5": 3058,
+  "ok_px_d2": 3117,
+  "ok_px_d1": 3141,
+  "px <=98.0c": 3165,
+  "pxdeep <=98.0c": 2996,
+  "px 98.7-99.0c": 1216,
+  "pxdeep 98.7-99.0c": 1216,
+  "px 99.0-99.5c": 3034,
+  "pxdeep 99.0-99.5c": 2869,
+  "stale": 360,
+  "book_dead_both": 1
+ },
+ "silent_buckets": {
+  "dearer than 98.7c only": 219,
+  "deep, 98.0-98.7c": 35,
+  "no ask on our side; the loser still had one": 71,
+  "no ask on our side, ever": 2,
+  "at or below 98c but under 10 deep": 3,
+  "deep AND at or below 98c (blocked downstream)": 2,
+  "98.0-98.7c and under 10 deep": 1
+ },
+ "closes_certain_live_band": 696,
+ "configs": [
+  {
+   "name": "BASE (live gate)",
+   "size": 20.0,
+   "ceiling": 0.98,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 363,
+    "fills": 475,
+    "contracts": 9076.86,
+    "pnl": 136.4717500000002,
+    "per_close": 0.1957987804878052,
+    "sd": 2.6842646878385716,
+    "se": 0.10167377512713968,
+    "t": 1.925754996733084,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.4194317202295555,
+    "ev_total": 292.34390900000017,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9555705263157895,
+    "mean_tau": 22.553684210526317
+   },
+   "paired": {
+    "diff": 0.0,
+    "se": 0.0,
+    "mde": 0.0,
+    "t": 0.0,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": 0.0,
+    "se": 0.0,
+    "mde": 0.0,
+    "t": 0.0,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 0,
+    "pnl_new": 0,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": 0.0,
+    "extra_fills_shared": 0
+   },
+   "split_holdout": {
+    "new_closes": 0,
+    "pnl_new": 0,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": 0.0,
+    "extra_fills_shared": 0
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 253,
+    "fills": 335,
+    "contracts": 6415.54,
+    "pnl": 132.82702000000015,
+    "per_close": 0.27218651639344293,
+    "sd": 2.273348500932885,
+    "se": 0.10290965127329993,
+    "t": 2.6449075769442643,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.41757308196721343,
+    "ev_total": 203.77566400000015,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.9561253731343284,
+    "mean_tau": 21.97910447761194
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 110,
+    "fills": 140,
+    "contracts": 2661.32,
+    "pnl": 3.6447300000000613,
+    "per_close": 0.017438899521531395,
+    "sd": 3.4588968489513827,
+    "se": 0.23925689794404606,
+    "t": 0.07288776069315148,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.42377150717703377,
+    "ev_total": 88.56824500000006,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9542428571428571,
+    "mean_tau": 23.928571428571427
+   }
+  },
+  {
+   "name": "SIZE 10",
+   "size": 10.0,
+   "ceiling": 0.98,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 5.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 368,
+    "fills": 483,
+    "contracts": 4644.77,
+    "pnl": 63.51278000000011,
+    "per_close": 0.09112307030129141,
+    "sd": 1.430055677962385,
+    "se": 0.054167221317326715,
+    "t": 1.6822548413083072,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.21736752941176488,
+    "ev_total": 151.5051680000001,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9555714285714285,
+    "mean_tau": 22.650103519668736
+   },
+   "paired": {
+    "diff": -0.10467571018651377,
+    "se": 0.048926718066177724,
+    "mde": 0.09606165431048072,
+    "t": -2.139438620120209,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.02369344497607674,
+    "se": 0.11346534768984912,
+    "mde": 0.2236895189768177,
+    "t": -0.20881657227051723,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 5,
+    "pnl_new": 0.6872000000000007,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -73.64617000000008,
+    "extra_fills_shared": 3
+   },
+   "split_holdout": {
+    "new_closes": 1,
+    "pnl_new": 0.09310000000000009,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -5.04503000000004,
+    "extra_fills_shared": 1
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 257,
+    "fills": 341,
+    "contracts": 3275.6900000000005,
+    "pnl": 64.81998000000009,
+    "per_close": 0.13282782786885264,
+    "sd": 1.205193904370761,
+    "se": 0.054556564629051285,
+    "t": 2.434680936602119,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.21556127049180346,
+    "ev_total": 105.19390000000008,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.956108504398827,
+    "mean_tau": 22.026392961876834
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 111,
+    "fills": 142,
+    "contracts": 1369.08,
+    "pnl": -1.307199999999978,
+    "per_close": -0.006254545454545349,
+    "sd": 1.851671368004434,
+    "se": 0.12808278675753482,
+    "t": -0.04883205318123989,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.2215850143540671,
+    "ev_total": 46.31126800000003,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9542816901408452,
+    "mean_tau": 24.14788732394366
+   }
+  },
+  {
+   "name": "SIZE 5",
+   "size": 5.0,
+   "ceiling": 0.98,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 2.5,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 370,
+    "fills": 487,
+    "contracts": 2388.0099999999998,
+    "pnl": 36.55933000000004,
+    "per_close": 0.05245241032998571,
+    "sd": 0.7034250603452853,
+    "se": 0.02664412407925783,
+    "t": 1.9686295625240446,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.11186690387374468,
+    "ev_total": 77.97123200000004,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.955517453798768,
+    "mean_tau": 22.6652977412731
+   },
+   "paired": {
+    "diff": -0.14334637015781945,
+    "se": 0.07538245447737012,
+    "mde": 0.1480042718844557,
+    "t": -1.9015879908878819,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.007479712918660532,
+    "se": 0.17769173123237098,
+    "mde": 0.35030763748395904,
+    "t": -0.042093759044303326,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 7,
+    "pnl_new": 0.5700800000000005,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -100.48250000000016,
+    "extra_fills_shared": 5
+   },
+   "split_holdout": {
+    "new_closes": 1,
+    "pnl_new": 0.09310000000000009,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -1.6563600000000511,
+    "extra_fills_shared": 0
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 259,
+    "fills": 346,
+    "contracts": 1697.28,
+    "pnl": 34.47786000000003,
+    "per_close": 0.07065135245901645,
+    "sd": 0.6043831945377416,
+    "se": 0.02735914170651752,
+    "t": 2.5823672839190643,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.11092822131147548,
+    "ev_total": 54.13297200000003,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.9562976878612718,
+    "mean_tau": 22.13005780346821
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 111,
+    "fills": 141,
+    "contracts": 690.73,
+    "pnl": 2.081470000000011,
+    "per_close": 0.009959186602870866,
+    "sd": 0.8932321282598299,
+    "se": 0.06178615827072011,
+    "t": 0.1611879890514318,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.11405866028708139,
+    "ev_total": 23.838260000000012,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9536028368794326,
+    "mean_tau": 23.97872340425532
+   }
+  },
+  {
+   "name": "SIZE 2",
+   "size": 2.0,
+   "ceiling": 0.98,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 1.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 371,
+    "fills": 491,
+    "contracts": 963.99,
+    "pnl": 15.03351000000002,
+    "per_close": 0.021568880918220974,
+    "sd": 0.279217664705362,
+    "se": 0.010576123204763982,
+    "t": 2.0393938781372496,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.044957364418938335,
+    "ev_total": 31.335283000000018,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9553340122199593,
+    "mean_tau": 22.694501018329937
+   },
+   "paired": {
+    "diff": -0.17422989956958418,
+    "se": 0.09117104148263251,
+    "mde": 0.17900324027835088,
+    "t": -1.911022367807149,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.017312153110048103,
+    "se": 0.2139373621465073,
+    "mde": 0.42176353048801996,
+    "t": -0.08092159750101292,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 8,
+    "pnl_new": 0.2976000000000003,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -121.73584000000018,
+    "extra_fills_shared": 8
+   },
+   "split_holdout": {
+    "new_closes": 1,
+    "pnl_new": 0.03720000000000004,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -3.6554400000000533,
+    "extra_fills_shared": 1
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 260,
+    "fills": 349,
+    "contracts": 686.3000000000001,
+    "pnl": 15.007020000000015,
+    "per_close": 0.030752090163934456,
+    "sd": 0.2295337675455869,
+    "se": 0.010390505443344869,
+    "t": 2.9596337090253106,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.044700487704918065,
+    "ev_total": 21.813838000000015,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.9562148997134671,
+    "mean_tau": 22.111747851002864
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 111,
+    "fills": 142,
+    "contracts": 277.69,
+    "pnl": 0.026490000000004614,
+    "per_close": 0.00012674641148327566,
+    "sd": 0.369944758821838,
+    "se": 0.0255896140508512,
+    "t": 0.004953041153000885,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.04555715311004787,
+    "ev_total": 9.521445000000005,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.953169014084507,
+    "mean_tau": 24.12676056338028
+   }
+  },
+  {
+   "name": "SIZE 1",
+   "size": 1.0,
+   "ceiling": 0.98,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 1.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 371,
+    "fills": 491,
+    "contracts": 491.0,
+    "pnl": 7.4712000000000085,
+    "per_close": 0.010719081779053096,
+    "sd": 0.14297010476539115,
+    "se": 0.005415378873655316,
+    "t": 1.9793779953604327,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.023030416068866584,
+    "ev_total": 16.05220000000001,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9553340122199593,
+    "mean_tau": 22.694501018329937
+   },
+   "paired": {
+    "diff": -0.18507969870875207,
+    "se": 0.09633175348086521,
+    "mde": 0.18913566999292195,
+    "t": -1.9212740557610137,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.01643937799043091,
+    "se": 0.22656145345549508,
+    "mde": 0.4466511016268826,
+    "t": -0.07256034837214796,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 8,
+    "pnl_new": 0.15800000000000017,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -129.1585500000002,
+    "extra_fills_shared": 8
+   },
+   "split_holdout": {
+    "new_closes": 1,
+    "pnl_new": 0.01860000000000002,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -3.45443000000006,
+    "extra_fills_shared": 1
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 260,
+    "fills": 349,
+    "contracts": 349.0,
+    "pnl": 7.262300000000007,
+    "per_close": 0.014881762295081981,
+    "sd": 0.1203058186258887,
+    "se": 0.005445988521275378,
+    "t": 2.7326099269112802,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.022789549180327884,
+    "ev_total": 11.121300000000007,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.9562148997134671,
+    "mean_tau": 22.111747851002864
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 111,
+    "fills": 142,
+    "contracts": 142.0,
+    "pnl": 0.20890000000000225,
+    "per_close": 0.0009995215311004893,
+    "sd": 0.18540190167309703,
+    "se": 0.0128245177015557,
+    "t": 0.07793833299315737,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.023592822966507186,
+    "ev_total": 4.930900000000002,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.953169014084507,
+    "mean_tau": 24.12676056338028
+   }
+  },
+  {
+   "name": "SIZE 20 frac 0.25",
+   "size": 20.0,
+   "ceiling": 0.98,
+   "tau_max": 30,
+   "min_fill_frac": 0.25,
+   "ev_gate": true,
+   "floor": 5.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 368,
+    "fills": 483,
+    "contracts": 8573.36,
+    "pnl": 118.67958000000021,
+    "per_close": 0.17027199426111939,
+    "sd": 2.676688954363306,
+    "se": 0.10138682376005691,
+    "t": 1.6794292191664553,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.40046010473457705,
+    "ev_total": 279.1206930000002,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9555714285714285,
+    "mean_tau": 22.650103519668736
+   },
+   "paired": {
+    "diff": -0.02552678622668578,
+    "se": 0.004813316246764384,
+    "mde": 0.009450360450465886,
+    "t": -5.303367765175505,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.017059330143540687,
+    "se": 0.007671973717438487,
+    "mde": 0.01512479488581458,
+    "t": -2.223590795777184,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 5,
+    "pnl_new": 0.6872000000000007,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -18.47936999999999,
+    "extra_fills_shared": 3
+   },
+   "split_holdout": {
+    "new_closes": 1,
+    "pnl_new": 0.09310000000000009,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -3.658500000000004,
+    "extra_fills_shared": 1
+   },
+   "days_positive": [
+    6,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 257,
+    "fills": 341,
+    "contracts": 6014.460000000001,
+    "pnl": 118.60025000000016,
+    "per_close": 0.2430332991803282,
+    "sd": 2.2638827019312346,
+    "se": 0.10248115468604846,
+    "t": 2.371492592222072,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.39588120901639373,
+    "ev_total": 193.19003000000015,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.956108504398827,
+    "mean_tau": 22.026392961876834
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 111,
+    "fills": 142,
+    "contracts": 2558.9,
+    "pnl": 0.07933000000005737,
+    "per_close": 0.0003795693779907051,
+    "sd": 3.4543970335198413,
+    "se": 0.23894563920217357,
+    "t": 0.001588517703265339,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.41115149760765574,
+    "ev_total": 85.93066300000005,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9542816901408452,
+    "mean_tau": 24.14788732394366
+   }
+  },
+  {
+   "name": "SIZE 20 frac 0.05",
+   "size": 20.0,
+   "ceiling": 0.98,
+   "tau_max": 30,
+   "min_fill_frac": 0.05,
+   "ev_gate": true,
+   "floor": 1.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 371,
+    "fills": 491,
+    "contracts": 7964.21,
+    "pnl": 131.6804000000002,
+    "per_close": 0.18892453371592566,
+    "sd": 2.533602097312979,
+    "se": 0.0959670225782671,
+    "t": 1.9686401499207282,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.37681544906743214,
+    "ev_total": 262.6403680000002,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9553340122199593,
+    "mean_tau": 22.694501018329937
+   },
+   "paired": {
+    "diff": -0.006874246771879509,
+    "se": 0.030774313895781533,
+    "mde": 0.060421618697175314,
+    "t": -0.2233761179911086,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.012827464114832592,
+    "se": 0.045121039991773,
+    "mde": 0.08895318206825897,
+    "t": -0.2842900810170033,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 8,
+    "pnl_new": 0.6091800000000006,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -5.400530000000018,
+    "extra_fills_shared": 8
+   },
+   "split_holdout": {
+    "new_closes": 1,
+    "pnl_new": 0.09310000000000009,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -2.774040000000012,
+    "extra_fills_shared": 1
+   },
+   "days_positive": [
+    5,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 260,
+    "fills": 349,
+    "contracts": 5632.89,
+    "pnl": 130.71661000000014,
+    "per_close": 0.26786190573770524,
+    "sd": 2.066999913811108,
+    "se": 0.09356868963335509,
+    "t": 2.8627301161030543,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.3745145491803281,
+    "ev_total": 182.76310000000012,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.9562148997134671,
+    "mean_tau": 22.111747851002864
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 111,
+    "fills": 142,
+    "contracts": 2331.32,
+    "pnl": 0.9637900000000507,
+    "per_close": 0.004611435406698807,
+    "sd": 3.380428964639531,
+    "se": 0.2338291608912983,
+    "t": 0.01972138714059944,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.3821878851674643,
+    "ev_total": 79.87726800000004,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.953169014084507,
+    "mean_tau": 24.12676056338028
+   }
+  },
+  {
+   "name": "ceiling 0.985",
+   "size": 20.0,
+   "ceiling": 0.985,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 388,
+    "fills": 517,
+    "contracts": 9878.07,
+    "pnl": 138.6425700000002,
+    "per_close": 0.19891329985652828,
+    "sd": 2.7407626811564407,
+    "se": 0.10381378922253098,
+    "t": 1.916058563570451,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.4164024189383074,
+    "ev_total": 290.2324860000002,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9586150870406189,
+    "mean_tau": 23.0
+   },
+   "paired": {
+    "diff": 0.0031145193687231016,
+    "se": 0.006482449150344893,
+    "mde": 0.012727499697065797,
+    "t": 0.48045411487067297,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.001776076555023935,
+    "se": 0.015412045097004841,
+    "mde": 0.030383839862912237,
+    "t": -0.11523951194310322,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 25,
+    "pnl_new": 7.223280000000007,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -5.052460000000005,
+    "extra_fills_shared": 17
+   },
+   "split_holdout": {
+    "new_closes": 7,
+    "pnl_new": 2.001700000000002,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -2.3729000000000045,
+    "extra_fills_shared": 6
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 271,
+    "fills": 364,
+    "contracts": 6967.75,
+    "pnl": 135.36904000000015,
+    "per_close": 0.2773955737704921,
+    "sd": 2.270398343220284,
+    "se": 0.10277610390857322,
+    "t": 2.6990279181749828,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.41249680532786914,
+    "ev_total": 201.29844100000014,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.9592307692307691,
+    "mean_tau": 22.521978021978022
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 117,
+    "fills": 153,
+    "contracts": 2910.32,
+    "pnl": 3.273530000000059,
+    "per_close": 0.01566282296650746,
+    "sd": 3.60810494653519,
+    "se": 0.2495778378665121,
+    "t": 0.06275726683266163,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.4255217464114835,
+    "ev_total": 88.93404500000005,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9571503267973855,
+    "mean_tau": 24.137254901960784
+   }
+  },
+  {
+   "name": "ceiling 0.987",
+   "size": 20.0,
+   "ceiling": 0.987,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 398,
+    "fills": 548,
+    "contracts": 10474.78,
+    "pnl": 153.5508000000002,
+    "per_close": 0.22030243902439053,
+    "sd": 2.659046210035922,
+    "se": 0.10071855716641763,
+    "t": 2.1873073366250075,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.40142387087517967,
+    "ev_total": 279.79243800000023,
+    "lost_closes": 11,
+    "lost_fills": 12,
+    "mean_px": 0.9615255474452553,
+    "mean_tau": 23.37773722627737
+   },
+   "paired": {
+    "diff": 0.024503658536585385,
+    "se": 0.029272375421534342,
+    "mde": 0.0574727453573859,
+    "t": 0.8370915644433546,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": 0.0006032057416267906,
+    "se": 0.01623570944544502,
+    "mde": 0.03200764030641469,
+    "t": 0.03715302639861062,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 35,
+    "pnl_new": 9.722780000000009,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": 7.356270000000002,
+    "extra_fills_shared": 37
+   },
+   "split_holdout": {
+    "new_closes": 10,
+    "pnl_new": 2.7182000000000026,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -2.5921300000000036,
+    "extra_fills_shared": 12
+   },
+   "days_positive": [
+    8,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 278,
+    "fills": 386,
+    "contracts": 7377.85,
+    "pnl": 149.78000000000014,
+    "per_close": 0.30692622950819703,
+    "sd": 2.126770914229082,
+    "se": 0.09627439569062955,
+    "t": 3.1880358978775742,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.39351392418032816,
+    "ev_total": 192.03479500000014,
+    "lost_closes": 6,
+    "lost_fills": 6,
+    "mean_px": 0.9623160621761658,
+    "mean_tau": 22.862694300518136
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 120,
+    "fills": 162,
+    "contracts": 3096.9300000000003,
+    "pnl": 3.7708000000000608,
+    "per_close": 0.018042105263158185,
+    "sd": 3.6069501126094385,
+    "se": 0.24949795633353153,
+    "t": 0.07231363947141638,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.4198930287081343,
+    "ev_total": 87.75764300000006,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9596419753086419,
+    "mean_tau": 24.604938271604937
+   }
+  },
+  {
+   "name": "ceiling 0.99",
+   "size": 20.0,
+   "ceiling": 0.99,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 398,
+    "fills": 548,
+    "contracts": 10474.78,
+    "pnl": 153.5508000000002,
+    "per_close": 0.22030243902439053,
+    "sd": 2.659046210035922,
+    "se": 0.10071855716641763,
+    "t": 2.1873073366250075,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.40142387087517967,
+    "ev_total": 279.79243800000023,
+    "lost_closes": 11,
+    "lost_fills": 12,
+    "mean_px": 0.9615255474452553,
+    "mean_tau": 23.37773722627737
+   },
+   "paired": {
+    "diff": 0.024503658536585385,
+    "se": 0.029272375421534342,
+    "mde": 0.0574727453573859,
+    "t": 0.8370915644433546,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": 0.0006032057416267906,
+    "se": 0.01623570944544502,
+    "mde": 0.03200764030641469,
+    "t": 0.03715302639861062,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 35,
+    "pnl_new": 9.722780000000009,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": 7.356270000000002,
+    "extra_fills_shared": 37
+   },
+   "split_holdout": {
+    "new_closes": 10,
+    "pnl_new": 2.7182000000000026,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -2.5921300000000036,
+    "extra_fills_shared": 12
+   },
+   "days_positive": [
+    8,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 278,
+    "fills": 386,
+    "contracts": 7377.85,
+    "pnl": 149.78000000000014,
+    "per_close": 0.30692622950819703,
+    "sd": 2.126770914229082,
+    "se": 0.09627439569062955,
+    "t": 3.1880358978775742,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.39351392418032816,
+    "ev_total": 192.03479500000014,
+    "lost_closes": 6,
+    "lost_fills": 6,
+    "mean_px": 0.9623160621761658,
+    "mean_tau": 22.862694300518136
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 120,
+    "fills": 162,
+    "contracts": 3096.9300000000003,
+    "pnl": 3.7708000000000608,
+    "per_close": 0.018042105263158185,
+    "sd": 3.6069501126094385,
+    "se": 0.24949795633353153,
+    "t": 0.07231363947141638,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.4198930287081343,
+    "ev_total": 87.75764300000006,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9596419753086419,
+    "mean_tau": 24.604938271604937
+   }
+  },
+  {
+   "name": "ceiling 0.995",
+   "size": 20.0,
+   "ceiling": 0.995,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 398,
+    "fills": 548,
+    "contracts": 10474.78,
+    "pnl": 153.5508000000002,
+    "per_close": 0.22030243902439053,
+    "sd": 2.659046210035922,
+    "se": 0.10071855716641763,
+    "t": 2.1873073366250075,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.40142387087517967,
+    "ev_total": 279.79243800000023,
+    "lost_closes": 11,
+    "lost_fills": 12,
+    "mean_px": 0.9615255474452553,
+    "mean_tau": 23.37773722627737
+   },
+   "paired": {
+    "diff": 0.024503658536585385,
+    "se": 0.029272375421534342,
+    "mde": 0.0574727453573859,
+    "t": 0.8370915644433546,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": 0.0006032057416267906,
+    "se": 0.01623570944544502,
+    "mde": 0.03200764030641469,
+    "t": 0.03715302639861062,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 35,
+    "pnl_new": 9.722780000000009,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": 7.356270000000002,
+    "extra_fills_shared": 37
+   },
+   "split_holdout": {
+    "new_closes": 10,
+    "pnl_new": 2.7182000000000026,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -2.5921300000000036,
+    "extra_fills_shared": 12
+   },
+   "days_positive": [
+    8,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 278,
+    "fills": 386,
+    "contracts": 7377.85,
+    "pnl": 149.78000000000014,
+    "per_close": 0.30692622950819703,
+    "sd": 2.126770914229082,
+    "se": 0.09627439569062955,
+    "t": 3.1880358978775742,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.39351392418032816,
+    "ev_total": 192.03479500000014,
+    "lost_closes": 6,
+    "lost_fills": 6,
+    "mean_px": 0.9623160621761658,
+    "mean_tau": 22.862694300518136
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 120,
+    "fills": 162,
+    "contracts": 3096.9300000000003,
+    "pnl": 3.7708000000000608,
+    "per_close": 0.018042105263158185,
+    "sd": 3.6069501126094385,
+    "se": 0.24949795633353153,
+    "t": 0.07231363947141638,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.4198930287081343,
+    "ev_total": 87.75764300000006,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9596419753086419,
+    "mean_tau": 24.604938271604937
+   }
+  },
+  {
+   "name": "ceiling 0.985 noEV",
+   "size": 20.0,
+   "ceiling": 0.985,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": false,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 388,
+    "fills": 517,
+    "contracts": 9878.07,
+    "pnl": 138.6425700000002,
+    "per_close": 0.19891329985652828,
+    "sd": 2.7407626811564407,
+    "se": 0.10381378922253098,
+    "t": 1.916058563570451,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.4164024189383074,
+    "ev_total": 290.2324860000002,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9586150870406189,
+    "mean_tau": 23.0
+   },
+   "paired": {
+    "diff": 0.0031145193687231016,
+    "se": 0.006482449150344893,
+    "mde": 0.012727499697065797,
+    "t": 0.48045411487067297,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.001776076555023935,
+    "se": 0.015412045097004841,
+    "mde": 0.030383839862912237,
+    "t": -0.11523951194310322,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 25,
+    "pnl_new": 7.223280000000007,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -5.052460000000005,
+    "extra_fills_shared": 17
+   },
+   "split_holdout": {
+    "new_closes": 7,
+    "pnl_new": 2.001700000000002,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -2.3729000000000045,
+    "extra_fills_shared": 6
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 271,
+    "fills": 364,
+    "contracts": 6967.75,
+    "pnl": 135.36904000000015,
+    "per_close": 0.2773955737704921,
+    "sd": 2.270398343220284,
+    "se": 0.10277610390857322,
+    "t": 2.6990279181749828,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.41249680532786914,
+    "ev_total": 201.29844100000014,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.9592307692307691,
+    "mean_tau": 22.521978021978022
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 117,
+    "fills": 153,
+    "contracts": 2910.32,
+    "pnl": 3.273530000000059,
+    "per_close": 0.01566282296650746,
+    "sd": 3.60810494653519,
+    "se": 0.2495778378665121,
+    "t": 0.06275726683266163,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.4255217464114835,
+    "ev_total": 88.93404500000005,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9571503267973855,
+    "mean_tau": 24.137254901960784
+   }
+  },
+  {
+   "name": "ceiling 0.99 noEV",
+   "size": 20.0,
+   "ceiling": 0.99,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": false,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 436,
+    "fills": 608,
+    "contracts": 11695.9,
+    "pnl": 150.3991000000002,
+    "per_close": 0.2157806312769013,
+    "sd": 2.649759488020141,
+    "se": 0.10036679748706162,
+    "t": 2.149920458553216,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.38108933715925425,
+    "ev_total": 265.6192680000002,
+    "lost_closes": 11,
+    "lost_fills": 12,
+    "mean_px": 0.9657335526315789,
+    "mean_tau": 23.96546052631579
+   },
+   "paired": {
+    "diff": 0.01998185078909615,
+    "se": 0.029843113083524626,
+    "mde": 0.058593319271906905,
+    "t": 0.6695632165843801,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": 0.007967799043062202,
+    "se": 0.01704685949565498,
+    "mde": 0.03360676962865904,
+    "t": 0.4674056851992644,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 73,
+    "pnl_new": 17.100880000000018,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -3.1735300000000013,
+    "extra_fills_shared": 57
+   },
+   "split_holdout": {
+    "new_closes": 21,
+    "pnl_new": 4.923500000000005,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -3.258230000000004,
+    "extra_fills_shared": 17
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 305,
+    "fills": 429,
+    "contracts": 8256.970000000001,
+    "pnl": 145.08910000000014,
+    "per_close": 0.297313729508197,
+    "sd": 2.110793559697683,
+    "se": 0.09555113483448655,
+    "t": 3.111566702197762,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.36763406762295114,
+    "ev_total": 179.40542500000015,
+    "lost_closes": 6,
+    "lost_fills": 6,
+    "mean_px": 0.9668578088578088,
+    "mean_tau": 23.662004662004662
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 131,
+    "fills": 179,
+    "contracts": 3438.9300000000003,
+    "pnl": 5.310000000000062,
+    "per_close": 0.025406698564593596,
+    "sd": 3.606984596192013,
+    "se": 0.24950034161281479,
+    "t": 0.10183031574369862,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.4125064258373209,
+    "ev_total": 86.21384300000007,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.9630391061452513,
+    "mean_tau": 24.692737430167597
+   }
+  },
+  {
+   "name": "ceiling 0.995 noEV",
+   "size": 20.0,
+   "ceiling": 0.995,
+   "tau_max": 30,
+   "min_fill_frac": 0.5,
+   "ev_gate": false,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 484,
+    "fills": 714,
+    "contracts": 13682.78,
+    "pnl": 113.34012000000021,
+    "per_close": 0.16261136298421838,
+    "sd": 2.8955448163855833,
+    "se": 0.10967658065375097,
+    "t": 1.48264435319681,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.3307922252510763,
+    "ev_total": 230.5621810000002,
+    "lost_closes": 11,
+    "lost_fills": 13,
+    "mean_px": 0.9722100840336134,
+    "mean_tau": 25.201680672268907
+   },
+   "paired": {
+    "diff": -0.03318741750358678,
+    "se": 0.04362828244593211,
+    "mde": 0.08565882103133177,
+    "t": -0.7606858588741251,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.12955631578947369,
+    "se": 0.10572545658425847,
+    "mde": 0.20843082939808377,
+    "t": -1.225403228088432,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 121,
+    "pnl_new": 21.37992000000002,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -44.51155000000001,
+    "extra_fills_shared": 103
+   },
+   "split_holdout": {
+    "new_closes": 34,
+    "pnl_new": 5.358440000000005,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -32.43571,
+    "extra_fills_shared": 32
+   },
+   "days_positive": [
+    6,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 340,
+    "fills": 505,
+    "contracts": 9684.52,
+    "pnl": 136.77266000000014,
+    "per_close": 0.2802718442622954,
+    "sd": 2.096992198455454,
+    "se": 0.0949263765662528,
+    "t": 2.952518092446969,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.3240923094262298,
+    "ev_total": 158.15704700000015,
+    "lost_closes": 6,
+    "lost_fills": 6,
+    "mean_px": 0.9727683168316832,
+    "mean_tau": 24.86930693069307
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 144,
+    "fills": 209,
+    "contracts": 3998.26,
+    "pnl": -23.432539999999936,
+    "per_close": -0.11211741626794228,
+    "sd": 4.201268438723529,
+    "se": 0.29060781456491064,
+    "t": -0.3858031706263685,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.34643604784689025,
+    "ev_total": 72.40513400000006,
+    "lost_closes": 5,
+    "lost_fills": 7,
+    "mean_px": 0.9708612440191388,
+    "mean_tau": 26.004784688995215
+   }
+  },
+  {
+   "name": "TAU_MAX 35",
+   "size": 20.0,
+   "ceiling": 0.98,
+   "tau_max": 35,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 394,
+    "fills": 527,
+    "contracts": 10137.86,
+    "pnl": 179.49414000000021,
+    "per_close": 0.2575238737446201,
+    "sd": 2.9985201536642476,
+    "se": 0.11357704968482214,
+    "t": 2.2673935839965234,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.480285322812052,
+    "ev_total": 334.75887000000023,
+    "lost_closes": 11,
+    "lost_fills": 13,
+    "mean_px": 0.9547817836812145,
+    "mean_tau": 26.011385199240987
+   },
+   "paired": {
+    "diff": 0.06172509325681493,
+    "se": 0.05159821003415792,
+    "mde": 0.10130680354722756,
+    "t": 1.1962642350568564,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.010082296650717703,
+    "se": 0.14028441973446645,
+    "mde": 0.2765615671149275,
+    "t": -0.07187039494337079,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 31,
+    "pnl_new": 13.824020000000013,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": 29.198369999999997,
+    "extra_fills_shared": 21
+   },
+   "split_holdout": {
+    "new_closes": 9,
+    "pnl_new": 4.587700000000004,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -6.694900000000004,
+    "extra_fills_shared": 10
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 275,
+    "fills": 368,
+    "contracts": 7079.67,
+    "pnl": 177.95661000000015,
+    "per_close": 0.3646651844262298,
+    "sd": 2.171600662918497,
+    "se": 0.09830374306187697,
+    "t": 3.709575780819378,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.458794592213115,
+    "ev_total": 223.89176100000014,
+    "lost_closes": 6,
+    "lost_fills": 6,
+    "mean_px": 0.9563070652173913,
+    "mean_tau": 25.483695652173914
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 119,
+    "fills": 159,
+    "contracts": 3058.19,
+    "pnl": 1.5375300000000616,
+    "per_close": 0.007356602870813691,
+    "sd": 4.353668404712156,
+    "se": 0.30114954064161376,
+    "t": 0.0244284047557904,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.5304646363636366,
+    "ev_total": 110.86710900000006,
+    "lost_closes": 5,
+    "lost_fills": 7,
+    "mean_px": 0.951251572327044,
+    "mean_tau": 27.232704402515722
+   }
+  },
+  {
+   "name": "TAU_MAX 40",
+   "size": 20.0,
+   "ceiling": 0.98,
+   "tau_max": 40,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 431,
+    "fills": 598,
+    "contracts": 11369.83,
+    "pnl": 164.50686000000022,
+    "per_close": 0.2360213199426115,
+    "sd": 3.1332823454866303,
+    "se": 0.1186815316865663,
+    "t": 1.9886945895334027,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.5540570717360118,
+    "ev_total": 386.17777900000027,
+    "lost_closes": 16,
+    "lost_fills": 17,
+    "mean_px": 0.9538060200668896,
+    "mean_tau": 30.01839464882943
+   },
+   "paired": {
+    "diff": 0.04022253945480632,
+    "se": 0.08431689331917142,
+    "mde": 0.16554595482174936,
+    "t": 0.4770401027768985,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.1275488038277512,
+    "se": 0.218896819531041,
+    "mde": 0.43154077666334384,
+    "t": -0.5826891596735325,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 68,
+    "pnl_new": 40.01040000000003,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -11.975290000000031,
+    "extra_fills_shared": 52
+   },
+   "split_holdout": {
+    "new_closes": 17,
+    "pnl_new": 8.127700000000008,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -34.7854,
+    "extra_fills_shared": 22
+   },
+   "days_positive": [
+    7,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 304,
+    "fills": 419,
+    "contracts": 8011.410000000001,
+    "pnl": 187.51983000000013,
+    "per_close": 0.38426194672131175,
+    "sd": 2.4613049343283704,
+    "se": 0.11141803923377554,
+    "t": 3.4488306324890488,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.5380678975409839,
+    "ev_total": 262.57713400000017,
+    "lost_closes": 8,
+    "lost_fills": 8,
+    "mean_px": 0.9550620525059665,
+    "mean_tau": 29.684964200477328
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 127,
+    "fills": 179,
+    "contracts": 3358.42,
+    "pnl": -23.01296999999993,
+    "per_close": -0.11010990430621977,
+    "sd": 4.300564966127884,
+    "se": 0.29747629898663724,
+    "t": -0.37014681398589655,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.5913906459330147,
+    "ev_total": 123.60064500000007,
+    "lost_closes": 8,
+    "lost_fills": 9,
+    "mean_px": 0.9508659217877095,
+    "mean_tau": 30.798882681564248
+   }
+  },
+  {
+   "name": "TAU_MAX 45",
+   "size": 20.0,
+   "ceiling": 0.98,
+   "tau_max": 45,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 461,
+    "fills": 660,
+    "contracts": 12518.630000000001,
+    "pnl": 151.06346000000022,
+    "per_close": 0.21673380200860864,
+    "sd": 3.4862652648675723,
+    "se": 0.13205171314872227,
+    "t": 1.6412797444324996,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.592019866571019,
+    "ev_total": 412.63784700000025,
+    "lost_closes": 18,
+    "lost_fills": 20,
+    "mean_px": 0.9549909090909091,
+    "mean_tau": 34.595454545454544
+   },
+   "paired": {
+    "diff": 0.02093502152080348,
+    "se": 0.10394600839614687,
+    "mde": 0.2040853325170735,
+    "t": 0.20140284214684198,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.03472014354066982,
+    "se": 0.20266925476278277,
+    "mde": 0.39954919305581765,
+    "t": -0.171314310013665,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 98,
+    "pnl_new": 66.86255000000004,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -52.27084000000002,
+    "extra_fills_shared": 77
+   },
+   "split_holdout": {
+    "new_closes": 25,
+    "pnl_new": 15.196800000000012,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -22.453310000000005,
+    "extra_fills_shared": 31
+   },
+   "days_positive": [
+    6,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 326,
+    "fills": 463,
+    "contracts": 8846.7,
+    "pnl": 154.67524000000014,
+    "per_close": 0.3169574590163937,
+    "sd": 3.1591339368020335,
+    "se": 0.14300727390830534,
+    "t": 2.216372988269277,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.5782383627049184,
+    "ev_total": 282.18032100000016,
+    "lost_closes": 10,
+    "lost_fills": 11,
+    "mean_px": 0.9561727861771058,
+    "mean_tau": 34.423326133909285
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 135,
+    "fills": 197,
+    "contracts": 3671.9300000000003,
+    "pnl": -3.611779999999929,
+    "per_close": -0.017281244019138414,
+    "sd": 4.150154292506251,
+    "se": 0.28707217514024497,
+    "t": -0.060198255057969,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.6241986889952156,
+    "ev_total": 130.45752600000006,
+    "lost_closes": 8,
+    "lost_fills": 9,
+    "mean_px": 0.9522131979695431,
+    "mean_tau": 35.0
+   }
+  },
+  {
+   "name": "TAU_MAX 60",
+   "size": 20.0,
+   "ceiling": 0.98,
+   "tau_max": 60,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 538,
+    "fills": 840,
+    "contracts": 15807.17,
+    "pnl": -68.38665999999964,
+    "per_close": -0.0981157245337154,
+    "sd": 4.762154380033919,
+    "se": 0.1803794595033656,
+    "t": -0.5439406726456275,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.6684377833572458,
+    "ev_total": 465.90113500000035,
+    "lost_closes": 30,
+    "lost_fills": 35,
+    "mean_px": 0.9587083333333333,
+    "mean_tau": 48.017857142857146
+   },
+   "paired": {
+    "diff": -0.2939145050215206,
+    "se": 0.1716104420698107,
+    "mde": 0.3369362101884958,
+    "t": -1.7126842718694062,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.23703239234449755,
+    "se": 0.3531379947318779,
+    "mde": 0.6961884820547611,
+    "t": -0.6712174727176151,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 175,
+    "pnl_new": 111.45707000000014,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -316.31548,
+    "extra_fills_shared": 142
+   },
+   "split_holdout": {
+    "new_closes": 49,
+    "pnl_new": 34.52413000000003,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -84.06390000000002,
+    "extra_fills_shared": 50
+   },
+   "days_positive": [
+    5,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 379,
+    "fills": 588,
+    "contracts": 11094.390000000001,
+    "pnl": -22.491619999999706,
+    "per_close": -0.04608938524590104,
+    "sd": 4.454181647122887,
+    "se": 0.2016313292155823,
+    "t": -0.22858246000363716,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.670376739754099,
+    "ev_total": 327.1438490000003,
+    "lost_closes": 21,
+    "lost_fills": 23,
+    "mean_px": 0.9587534013605441,
+    "mean_tau": 47.43197278911565
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 159,
+    "fills": 252,
+    "contracts": 4712.78,
+    "pnl": -45.89503999999992,
+    "per_close": -0.21959349282296614,
+    "sd": 5.423245897232203,
+    "se": 0.37513376282178623,
+    "t": -0.5853738441753851,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.6639104593301439,
+    "ev_total": 138.75728600000008,
+    "lost_closes": 9,
+    "lost_fills": 12,
+    "mean_px": 0.9586031746031746,
+    "mean_tau": 49.38492063492063
+   }
+  },
+  {
+   "name": "SIZE 5 + frac 0.05",
+   "size": 5.0,
+   "ceiling": 0.98,
+   "tau_max": 30,
+   "min_fill_frac": 0.05,
+   "ev_gate": true,
+   "floor": 1.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 371,
+    "fills": 491,
+    "contracts": 2297.0299999999997,
+    "pnl": 39.85580000000004,
+    "per_close": 0.057181922525107655,
+    "sd": 0.6595466553040318,
+    "se": 0.024982110974769885,
+    "t": 2.2889147591593537,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.10773535007173607,
+    "ev_total": 75.09153900000004,
+    "lost_closes": 12,
+    "lost_fills": 13,
+    "mean_px": 0.9553340122199593,
+    "mean_tau": 22.694501018329937
+   },
+   "paired": {
+    "diff": -0.13861685796269752,
+    "se": 0.07729424822005164,
+    "mde": 0.15175784614574192,
+    "t": -1.7933657568938952,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.013349138755981108,
+    "se": 0.17789153570778246,
+    "mde": 0.35070153895171274,
+    "t": -0.07504088771210211,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 8,
+    "pnl_new": 0.5886800000000005,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -97.20463000000017,
+    "extra_fills_shared": 8
+   },
+   "split_holdout": {
+    "new_closes": 1,
+    "pnl_new": 0.09310000000000009,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -2.8830700000000515,
+    "extra_fills_shared": 1
+   },
+   "days_positive": [
+    6,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 260,
+    "fills": 349,
+    "contracts": 1631.61,
+    "pnl": 39.00104000000003,
+    "per_close": 0.07992016393442629,
+    "sd": 0.529586204107974,
+    "se": 0.02397324104137046,
+    "t": 3.3337237879729575,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.10707158606557383,
+    "ev_total": 52.25093400000003,
+    "lost_closes": 7,
+    "lost_fills": 7,
+    "mean_px": 0.9562148997134671,
+    "mean_tau": 22.111747851002864
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 111,
+    "fills": 142,
+    "contracts": 665.42,
+    "pnl": 0.8547600000000105,
+    "per_close": 0.004089760765550289,
+    "sd": 0.89156042583163,
+    "se": 0.061670524195833513,
+    "t": 0.06631629646220188,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.10928519138755986,
+    "ev_total": 22.84060500000001,
+    "lost_closes": 5,
+    "lost_fills": 6,
+    "mean_px": 0.953169014084507,
+    "mean_tau": 24.12676056338028
+   }
+  },
+  {
+   "name": "SIZE 20 frac 0.05 + TAU_MAX 45",
+   "size": 20.0,
+   "ceiling": 0.98,
+   "tau_max": 45,
+   "min_fill_frac": 0.05,
+   "ev_gate": true,
+   "floor": 1.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 469,
+    "fills": 679,
+    "contracts": 10656.37,
+    "pnl": 92.5007100000002,
+    "per_close": 0.13271263988522267,
+    "sd": 3.4498318981399745,
+    "se": 0.13067170097906952,
+    "t": 1.0156188286435488,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.5192825322812055,
+    "ev_total": 361.93992500000024,
+    "lost_closes": 18,
+    "lost_fills": 20,
+    "mean_px": 0.9546627393225331,
+    "mean_tau": 34.59499263622975
+   },
+   "paired": {
+    "diff": -0.0630861406025825,
+    "se": 0.10431747718896683,
+    "mde": 0.20481466626708586,
+    "t": -0.6047514021864672,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": -0.13468296650717704,
+    "se": 0.20136843519617403,
+    "mde": 0.3969847122777239,
+    "t": -0.6688385216678487,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 106,
+    "pnl_new": 59.02182000000004,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -102.99286000000004,
+    "extra_fills_shared": 87
+   },
+   "split_holdout": {
+    "new_closes": 26,
+    "pnl_new": 10.86732000000001,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -39.01606000000001,
+    "extra_fills_shared": 32
+   },
+   "days_positive": [
+    6,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 333,
+    "fills": 481,
+    "contracts": 7571.7300000000005,
+    "pnl": 117.00472000000013,
+    "per_close": 0.23976377049180356,
+    "sd": 3.113161943928218,
+    "se": 0.14092621957235923,
+    "t": 1.7013425267446114,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.5062709282786889,
+    "ev_total": 247.06021300000018,
+    "lost_closes": 10,
+    "lost_fills": 11,
+    "mean_px": 0.9564033264033264,
+    "mean_tau": 34.28066528066528
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 136,
+    "fills": 198,
+    "contracts": 3084.64,
+    "pnl": -24.50400999999994,
+    "per_close": -0.11724406698564564,
+    "sd": 4.1282252882101185,
+    "se": 0.28555531419526337,
+    "t": -0.41058268278444254,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.5496636937799045,
+    "ev_total": 114.87971200000005,
+    "lost_closes": 8,
+    "lost_fills": 9,
+    "mean_px": 0.9504343434343435,
+    "mean_tau": 35.35858585858586
+   }
+  },
+  {
+   "name": "ceiling 0.987 + TAU_MAX 45",
+   "size": 20.0,
+   "ceiling": 0.987,
+   "tau_max": 45,
+   "min_fill_frac": 0.5,
+   "ev_gate": true,
+   "floor": 10.0,
+   "stats": {
+    "closes_denom": 697,
+    "closes_traded": 501,
+    "fills": 746,
+    "contracts": 14075.960000000001,
+    "pnl": 179.75445000000025,
+    "per_close": 0.25789734576757567,
+    "sd": 3.3755865107548244,
+    "se": 0.12785945639848623,
+    "t": 2.0170377149408014,
+    "tcrit": 1.9633782544038376,
+    "ev_per_close": 0.5599235351506461,
+    "ev_total": 390.2667040000003,
+    "lost_closes": 16,
+    "lost_fills": 18,
+    "mean_px": 0.9606179624664879,
+    "mean_tau": 35.91018766756032
+   },
+   "paired": {
+    "diff": 0.06209856527977049,
+    "se": 0.10448419654367605,
+    "mde": 0.20514199942271016,
+    "t": 0.5943345245882453,
+    "n": 697
+   },
+   "paired_holdout": {
+    "diff": 0.03486837320574167,
+    "se": 0.1817304844589659,
+    "mde": 0.35826977557207873,
+    "t": 0.19186859766290243,
+    "n": 209
+   },
+   "split": {
+    "new_closes": 138,
+    "pnl_new": 75.68994000000006,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 363,
+    "pnl_shared": -32.40724000000002,
+    "extra_fills_shared": 117
+   },
+   "split_holdout": {
+    "new_closes": 35,
+    "pnl_new": 17.840400000000013,
+    "lost_closes": 0,
+    "pnl_lost": 0,
+    "shared_closes": 110,
+    "pnl_shared": -10.552910000000006,
+    "extra_fills_shared": 43
+   },
+   "days_positive": [
+    6,
+    9
+   ],
+   "train": {
+    "closes_denom": 488,
+    "closes_traded": 356,
+    "fills": 525,
+    "contracts": 9953.03,
+    "pnl": 168.82223000000016,
+    "per_close": 0.34594719262295115,
+    "sd": 3.0333865079716884,
+    "se": 0.13731495526726345,
+    "t": 2.5193701002896267,
+    "tcrit": 1.9648471009786586,
+    "ev_per_close": 0.5457878647540988,
+    "ev_total": 266.3444780000002,
+    "lost_closes": 9,
+    "lost_fills": 10,
+    "mean_px": 0.9617619047619048,
+    "mean_tau": 35.59619047619048
+   },
+   "holdout": {
+    "closes_denom": 209,
+    "closes_traded": 145,
+    "fills": 221,
+    "contracts": 4122.93,
+    "pnl": 10.93222000000007,
+    "per_close": 0.05230727272727306,
+    "sd": 4.064926929618681,
+    "se": 0.2811768751775955,
+    "t": 0.1860297817672062,
+    "tcrit": 1.9714346585202374,
+    "ev_per_close": 0.592929311004785,
+    "ev_total": 123.92222600000007,
+    "lost_closes": 7,
+    "lost_fills": 8,
+    "mean_px": 0.9579004524886878,
+    "mean_tau": 36.65610859728507
+   }
+  }
+ ]
+}
