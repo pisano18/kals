@@ -2209,6 +2209,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     open_pos[_hoid] = (_hcs, _opp, float(_ask), _hn_take, _htk)
                     hedged.add(_hid)
                     rec("hedge", ticker=_htk, side=_opp, price=float(_ask),
+                        ask=float(_ask), ask_size=float(_asz),
                         n=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
                         locked_loss_c=round(100 * hedge_locked_loss(_hcost, _ask), 2),
                         edge_c=hedge_edge_c(_belief, _ask), live=False)
@@ -2232,6 +2233,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 _hpx = _hout.get("exec_price")
                 _hcost2 = float(_hpx) if _hpx is not None else float(_ask)
                 rec("hedge", ticker=_htk, side=_opp, price=_hcost2, n=_hfilled,
+                    ask=float(_ask), ask_size=float(_asz),      # criterion (b): fill vs the ask we hit
                     asked=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
                     locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hcost2), 2),
                     order_id=_hout.get("order_id"), status=_hout.get("status"),

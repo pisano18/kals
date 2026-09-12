@@ -206,4 +206,30 @@ on pid 858644.
 with locked loss matching `locked_loss_c` -- not yet. Zero of three; the
 count restarts on the paced code.
 
+## PLANT #2 RESULT 2026-09-12 09:59:35Z -- the full live hedge path, proven for 0.79c
+
+KXSOL15M-26SEP120600-00 (closes 10:00Z), fair 0.96502 YES. All in one second:
+
+- `plant` bought 1 NO @ 0.052, executed.
+- `hedge_alarm` belief 0.02019 (< 0.90), tau 25.
+- `hedge` bought 1 YES @ 0.949, executed, 1.0 of 1.0 asked, `locked_loss_c`
+  +0.1 (5.2 + 94.9 - 100), `edge_c` +3.08 (the ask was 3c under the model's
+  fair for YES).
+- `settled` 10:00:20 NO vs YES: -5.55c (5.2c + 0.35c fee).
+- `settled` 10:00:35 YES vs YES: +4.76c (5.1c - 0.34c fee).
+- **Pair net -0.79c = -0.1c locked - 0.69c fees. Reconciles to the cent.**
+
+**Exit criteria:** (a) fill -- MET; (b) price within one tick of the ask hit
+-- MET (an IOC at the ask executed at 0.949; the hedge record now carries
+`ask` and `ask_size` explicitly so this is read, not inferred, from here on);
+(c) both legs settled with locked loss matching `locked_loss_c` -- MET.
+
+**Decision, dated:** planting stops here. Plant #1 proved the refusal path
+and found the retry-pacing bug; plant #2 proved the fill-and-settle path. A
+third plant would prove the same mechanics a third time for another cent; the
+remaining uncertainty -- whether a REAL collapse leaves an ask we can reach,
+and at what price -- cannot be planted, only lived. The trader restarts in
+production mode without `--hedge-plant`, and the n=30 live bar counts real
+events from here. Total cost of both plants: 1.12c.
+
 ## If this bar moves again, the move is dated and explained here.

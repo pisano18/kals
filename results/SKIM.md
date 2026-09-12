@@ -209,6 +209,14 @@ one try per wall-clock second, self-tested. Settled -0.33c. Plant now targets
 NEARLY decided markets (winner 90-99%) so the hedge can actually FILL; plant
 #2 armed on pid 858644. Details and exit-criteria status in PREREG_hedge.md.
 
+**PLANT #2 FIRED 09:59:35Z -- THE FULL LIVE HEDGE PATH IS PROVEN.** Bought 1 NO
+@ 5.2c on a 96.5%-YES SOL market; alarm at belief 2%; hedge bought 1 YES @
+94.9c, executed; both legs settled (-5.55c, +4.76c); **pair net -0.79c =
+the +0.1c lock minus 0.69c fees, to the cent.** All three exit criteria met.
+Planting stops (two plants, 1.12c total); the n=30 live bar now counts REAL
+collapses only, because the one thing a plant cannot test is whether a real
+collapse leaves an ask we can reach. Trader in production on pid 854512.
+
 **Correction to an item below:** "SNAPSHOT BUG, OPEN" is STALE. `pindata.Book
 .snapshot()` was fixed 2026-09-10 (reads `yes_dollars_fp`), and on 2026-09-12
 the tape's snapshots were verified to carry levels for every market that has
