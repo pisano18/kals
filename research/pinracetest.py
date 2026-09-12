@@ -65,6 +65,7 @@ PRICE_CAP = 0.95          # never pay more; break-even at tau 15-20 is 97.28c
 TAU_LO, TAU_HI = 15, 20   # the measured band
 MAX_BOOK_AGE_MS = 2000
 MAX_INDEX_AGE_S = 5
+SUBSCRIBE_LEAD = 100      # seconds before the decision window to subscribe
 
 
 def fee(p, n=1.0):
@@ -241,6 +242,26 @@ def selftest():
     ck(abs(fee(0.16, 12.37) - 0.1164) < 1e-9,
        "the fee matches the account's own reconciled charge")
     ck(0.95 < 0.9728, "the price cap sits BELOW the measured break-even")
+
+    # ---- THE REGRESSION GUARD for the bug that wasted two races ----------
+    # LiveBook.watch() records a trajectory and subscribes to NOTHING. Calling
+    # it instead of subscribe() left every book empty and produced `no_book`
+    # on a ticker the log cheerfully reported as `watched: True`.
+    ck("book.subscribe(" in src,
+       "the loop calls book.subscribe() -- the method that actually asks the "
+       "exchange for a book")
+    # Match a CALL -- a line whose first token is the call -- not a mention.
+    # A plain substring test matches this very assertion and the comment above
+    # it. That is the SECOND time in this file a self-test has failed on its
+    # own text (the first was the "assigned exactly once" check), so the rule
+    # is now explicit: a source assertion must anchor to line structure.
+    ck(not [ln for ln in src.split("\n")
+            if ln.strip().startswith("book.watch(")],
+       "and never CALLS book.watch(), which only records a trajectory")
+    ck(SUBSCRIBE_LEAD >= 60,
+       "there is at least a minute of warm-up before the decision window "
+       "(%ds) -- one shot per race, so a cold book wastes the whole race"
+       % SUBSCRIBE_LEAD)
     print("SELF-TEST " + ("PASSED" if not f else "*** FAILED ***"))
     for x in f:
         print("   - " + x)
@@ -338,16 +359,29 @@ def main():
             for evt, e in sorted(events.items()):
                 cs = int(e["close"])
                 tau = cs - int(now)
-                if evt in done or not (TAU_LO <= tau <= TAU_HI + 25):
+                # SUBSCRIBE_LEAD seconds of warm-up before the decision window.
+                # 25s was the first value and it is too tight: a subscribe has
+                # to be queued, sent, acked and answered with a snapshot before
+                # best() returns anything, and we only get one shot per race.
+                if evt in done or not (TAU_LO <= tau <= TAU_HI + SUBSCRIBE_LEAD):
                     continue
-                for tkr in e["legs"].values():
-                    if tkr not in watched:
-                        watched.add(tkr)
-                        try:
-                            book.watch(tkr, True)
-                        except Exception as ex:               # noqa: BLE001
-                            rec("error", where="watch", ticker=tkr,
-                                err=str(ex)[:200])
+                # SUBSCRIBE, not watch. LiveBook.watch() only records a
+                # ticker's top-of-book TRAJECTORY for comparison against a
+                # REST read -- it asks the exchange for nothing. The first
+                # version called it and then wondered why every book was
+                # empty: the 00:15 race on 2026-09-12 logged `no_book` with
+                # `watched: True`, which is what caught this. subscribe() is
+                # the method that actually adds a ticker to `wanted` and
+                # pokes the socket.
+                fresh = [t for t in e["legs"].values() if t not in watched]
+                if fresh:
+                    watched.update(fresh)
+                    try:
+                        book.subscribe(fresh)
+                        rec("subscribe", event=evt, tickers=fresh, tau=tau)
+                    except Exception as ex:                   # noqa: BLE001
+                        rec("error", where="subscribe", tickers=fresh,
+                            err=str(ex)[:200])
                 if not (TAU_LO <= tau <= TAU_HI):
                     continue
                 rets = {}
