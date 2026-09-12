@@ -264,4 +264,37 @@ live/tape gap this project measures everywhere, and it is the kind of number tha
 would make 0.80 the better trade if it persists. **The threshold stays 0.90 until
 n=30, per this file.** Changing it on two events would be tuning on noise.
 
+## THRESHOLD MOVE 2026-09-12 18:2xZ -- 0.90 -> 0.80, from the REBUILT holdout, dated
+
+**Why this is legitimate and not tuning on two live events.** This file's original
+gate was "the threshold is chosen from a pinsim holdout on unseen days". That holdout
+(the 0.90 verdict above) was run on the OLD replay, which the fidelity harness has
+since shown reproduced our wins five times better than our losses (55% vs 11%),
+because a once-a-second sampler preferentially misses the adversely-selected fills
+-- the losing ones. The replay was rebuilt (`research/pinsim.py`, commit 8ec2ae7:
+seq-ordered book with real snapshot times, a decision after every book event,
+--gate-from) and now reproduces 9 of 9 of our losses under the live gate. The SAME
+72 unseen hours, re-run on the faithful replay:
+
+| | old replay | **rebuilt replay** |
+|---|---|---|
+| fills / closes | 162 / 101 | 195 / 117 |
+| losses | 4 (2.47%) | **6 (3.08%)** |
+| unhedged P&L (ceiling) | $+31.52 | **$+10.45** |
+| hedge net dP&L at 0.70 | +33.32 (fa 0.00%) | **+28.48 (fa 1.03%)** |
+| hedge net dP&L at 0.80 | +43.08 (fa 0.00%) | **+35.69 (fa 1.54%)** |
+| hedge net dP&L at 0.90 | +44.88 (fa 0.62%) | **+25.54 (fa 3.08%)** |
+
+On the instrument this file named, **0.80 is now the best threshold and 0.90 sits
+exactly at the 3% false-alarm bar.** The two real live events (both false alarms,
+at beliefs 0.887 and 0.664) point the same way but are NOT the reason; n=2 is not
+evidence. The reason is that the pre-registered instrument was corrected and gave
+a different answer.
+
+**What changes:** `HEDGE_BELIEF = 0.80`. Trader restarted on it.
+
+**What does not:** the four live-bar rules and the n=30 review. The two events at
+0.90 stay on the record and count toward n=30, flagged as taken at 0.90. If the
+rebuilt replay itself is later found wrong, this entry is the one to revisit.
+
 ## If this bar moves again, the move is dated and explained here.

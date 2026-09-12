@@ -271,6 +271,61 @@ legs. By close: 195 closes, SOL 3, XRP 1, BNB 1, DOGE 1, NEAR 1, BTC/HYPE/ETH/ZE
 
 ---
 
+## ⭐⭐⭐⭐ THE BACKTEST IS REBUILT AND REPRODUCES 7 OF 7 OF OUR LOSSES (2026-09-12 18:4xZ; `research/pinsim.py` commit 8ec2ae7, `results/RESULTS_replay_rebuild.md`)
+
+The operator's demand: "Don't stop until you can backtest our last trade and get
+the same results. I want to see more losses because we actually have losses."
+
+**Built:** a seq-ordered event stream merging snapshots and deltas in the exchange's
+own order with real `_rx_ms` snapshot times (the old loader stamped every snapshot 0);
+a decision after EVERY book event on a tracked market (3.06M decision moments over 72
+hours, was ~1,000/hour); the index fed to the event's millisecond; `--gate-from` to
+replay under the gate a live run actually used. Streamed, 80 MB resident.
+
+**Acceptance on our own 210 real fills (all 9 losses):**
+
+| pinsim's own book + evaluation | before | **after** |
+|---|---|---|
+| exact live-logged price | 33% | **75%** |
+| bought our fill, gate that was live | 143/210 | **180/210 (86%)** |
+| of the 9 losses, live gate | 1/9 | **9/9** |
+| of the 9 losses, today's gate | 1/9 | 6/9 |
+
+The old replay reproduced our WINS five times better than our LOSSES (55% vs 11%);
+the rebuilt one reproduces both at 66%. **Mechanism:** the offers that hurt us live a
+median 1.4 s; a once-a-second sampler preferentially missed the adversely-selected
+fills — the losing ones. The 201 winners move identically (control).
+
+**The literal test, run per loss-hour with `--gate-from`:** 6 of 7 printed our own
+loss as a `LOSS` line before the settlement refresh; after `pinsettle` (+477 markets,
+through 18:00Z) the seventh does too: `LOSS KXSOL15M-26SEP120400-00 yes 93.8c tau 19
+$-18.84` against our real YES @ 94.0c tau 19 −$18.88. **Seven of seven.**
+
+**And the faithful replay is WORSE — which is the point.** Same 72 unseen hours:
+
+| | old replay | rebuilt |
+|---|---|---|
+| fills / losses | 162 / 4 (2.47%) | 195 / 6 (3.08%) |
+| P&L ceiling | $+31.52 | **$+10.45** |
+| at the 70% live fill rate | $+22.06 | **$+7.31** |
+| last-30% slice | $+14.90 | **$−0.55** |
+
+It now agrees with the $2–9/day the live bot actually makes. **No $/day projection
+from the old replay may be quoted again.**
+
+**Hedge threshold re-read on the faithful replay:** 0.80 nets +$35.69 (false alarms
+1.54%) vs 0.90 +$25.54 (3.08%, exactly the bar). **HEDGE_BELIEF 0.90 → 0.80, dated in
+PREREG_hedge.md; trader restarted on it (pid 962352).** The two real live alarms (both
+false, at 0.887 and 0.664) point the same way but are not the reason.
+
+**Left in, named:** a collector reconnect resets `seq` and the merge does not segment
+on it (8 in 72 h, counted; one-line fix deferred); `MAX_PER_CLOSE` not enforced in the
+replay (one close took 5 correlated markets, −$95 in a quarter hour); index fed by
+stamp not arrival (8 of 207 fills); `pinreplay`'s `PINSIM_BOOK_DIFFERS...` flag now
+measures the OLD pinsim.
+
+---
+
 ## ⭐⭐⭐ WHY THE BACKTEST NEVER SHOWED OUR LOSSES — ANSWERED ON OUR OWN 207 FILLS (2026-09-12; `results/RESULTS_replay.md`, `research/pinreplay.py`)
 
 **207 real fills, 160 closes, all 9 losses, replayed at the exact second.** Fair

@@ -1,0 +1,22 @@
+SELF-TEST -- pinsettle
+  ok   the EXACT strike is stored (0.0845648), not the truncated 0.084564
+  ok   settle level, round_digits, result and series carried
+  ok   close_time -> epoch, UTC
+  ok   an open market is skipped
+  ok   a market without a result is skipped
+SELF-TEST PASSED
+  KXBTC15M: done (53 added so far)
+  KXETH15M: done (106 added so far)
+  KXSOL15M: done (159 added so far)
+  KXXRP15M: done (212 added so far)
+  KXDOGE15M: done (265 added so far)
+  KXBNB15M: done (318 added so far)
+  KXZEC15M: done (371 added so far)
+  KXHYPE15M: done (424 added so far)
+  KXNEAR15M: done (477 added so far)
+  KXADA15M: done (477 added so far)
+  KXBCH15M: done (477 added so far)
+  KXTON15M: done (477 added so far)
+
+  markets 15,781 -> 16,258 (+477, 0 gained a settle level); newest settled close 2026-09-12T18:00Z
+  previous file kept at C:\kals\fulltape\markets.json.bak

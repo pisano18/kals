@@ -257,11 +257,17 @@ MAX_PER_MARKET = 1       # AMENDMENT 13 (2026-09-12). FILLS ALLOWED ON ONE
 # Pre-registered live bar: results/PREREG_hedge.md, written before this code.
 # ===========================================================================
 HEDGE_ENABLED = True
-HEDGE_BELIEF = 0.90      # belief in OUR side below which we hedge. 0.70 catches
-                         # 11/11 tape losers with 2/1,642 false alarms; 0.90
-                         # fires one second earlier on the fast collapses (SOL
-                         # 08:00: 84% at tau 16, 0.05% at tau 15) with 4/1,642.
-                         # Set from the pinsim holdout sweep; see PREREG_hedge.
+HEDGE_BELIEF = 0.80      # belief in OUR side below which we hedge.
+                         # 0.90 -> 0.80 on 2026-09-12 18:2xZ, from the REBUILT
+                         # pinsim holdout (commit 8ec2ae7, seq-ordered book, a
+                         # decision after every book event). On the same 72
+                         # unseen hours the faithful replay nets +$35.69 at 0.80
+                         # (false alarms 1.54%) against +$25.54 at 0.90 (3.08%,
+                         # exactly the pre-registered bar). The old replay had
+                         # said 0.90; it missed the adversely-selected fills that
+                         # lose. Two real live alarms at 0.887 and 0.664 were both
+                         # false; they point the same way but are not the reason.
+                         # Dated entry in results/PREREG_hedge.md.
 HEDGE_MAX_ASK = 1.00     # the hedge leg must cost LESS than the $1 it pays.
                          # THE FIRST VERSION OF THIS RULE WAS WRONG, and the
                          # self-test caught it before any live hedge: it
@@ -1477,8 +1483,16 @@ def selftest():
         # the four real live losses, at the belief the model actually showed
         # one second after the alarm would have fired
         for _nm, _b in (("NEAR tau16", 0.4065), ("BNB tau24", 0.4627),
-                        ("SOL-08:00 tau16", 0.8372)):
+                        ("SOL-08:00 tau15", 0.0005)):
             ck(hedge_should_fire(_b), f"the real {_nm} collapse ({_b:.1%}) fires")
+        # THE COST OF 0.80, STATED: on the SOL-08:00 collapse belief was 83.7% at
+        # tau 16 and 0.05% at tau 15. At 0.90 the alarm fired at 16; at 0.80 it
+        # fires at 15 -- one second later on the fastest kind of collapse. The
+        # rebuilt holdout says 0.80 still nets more, because the false alarms
+        # it avoids outweigh that second. Asserted, not hidden.
+        ck(not hedge_should_fire(0.8372),
+           "and the SOL-08:00 tau-16 reading (83.7%) does NOT fire at 0.80 -- "
+           "the alarm comes one second later on that collapse, by design")
         ck(not hedge_should_fire(0.9976),
            "and the SOL-08:00 ENTRY belief (99.76%) does not -- we hedge the "
            "collapse, not the buy")
