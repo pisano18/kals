@@ -40,10 +40,26 @@ fired on a position we hold, whether or not the hedge order filled):
    ceiling is 49c; the bar is half of it.
 3. **Hedge fill rate >= 60%.** An alarm that cannot be acted on is not a
    hedge. The race is the oldest open risk here and this measures it.
-4. **No hedge ever increases a loss** beyond the unhedged amount, i.e. the
-   hedge leg's price is always < (1 - entry cost) + entry cost = it never
-   pays above the ask that makes the pair cost > $1.00 + fee. Enforced in
+4. **No hedge ever increases a loss** beyond the unhedged amount. Enforced in
    code as a hard refusal, and counted.
+
+   **CORRECTED 2026-09-12 08:4xZ, BEFORE ANY LIVE HEDGE, and this is a bar
+   move so it is dated and explained.** The first wording said "the pair must
+   cost under $1.00". That is WRONG and the self-test caught it: holding 20
+   NO at 96c and buying 20 YES at 35c pays 131c for a $1 payout -- a 31c loss
+   that BEATS the 96c loss from holding. The pair being over a dollar is the
+   normal, helpful case. The correct boundary: locked loss = entry + ask - 1,
+   unhedged loss = entry, so a hedge helps exactly when **the hedge leg's ask
+   is below $1.00**, whatever the entry was. `hedge_ask_ok()` enforces that;
+   a $1.00 leg is refused because it locks exactly the unhedged loss and the
+   fee makes it worse. The old rule would have refused nearly every real
+   hedge and made this whole amendment inert.
+
+   Separately recorded on every hedge, NOT as a gate: `edge_c` =
+   (1 - belief) - ask, the cents by which the hedge leg is cheaper than the
+   model's own fair value for that side. Positive = the market lags the
+   collapse and the hedge is +EV on its own; negative = we are paying EV for
+   variance reduction. The n=30 review reads its mean.
 
 **Any one failing at n=30 = the hedge is disabled and the reason logged.**
 All four passing = it stays on and the next review is at n=100.

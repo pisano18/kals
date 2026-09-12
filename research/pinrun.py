@@ -232,6 +232,89 @@ MAX_PER_MARKET = 1       # AMENDMENT 13 (2026-09-12). FILLS ALLOWED ON ONE
                          # would have done. MAX_PER_CLOSE stays at 2, so two
                          # DIFFERENT markets are still allowed -- they are
                          # correlated at rho ~ 0.8, not identical.
+# ===========================================================================
+# AMENDMENT 15 (2026-09-12): THE BELIEF-COLLAPSE HEDGE.
+#
+# Four live losses dissected second by second showed the model's OWN belief
+# in our side collapsing before settlement -- 98% -> 41% -> 1% (NEAR), 98% ->
+# 46% (BNB), 99.8% -> 84% -> 0.05% (SOL 08:00) -- while the bot held to zero.
+# On 48h of tape, 1,630 of 1,642 winners never dipped below 99% belief after
+# entry and all 11 losers fell below 20%. The prices that traded in the alarm
+# second recovered ~49c of the 96c on average.
+#
+# THE HEDGE: when belief falls below HEDGE_BELIEF, buy the OPPOSITE side for
+# the contracts we hold, at the best ask, through the SAME take() path every
+# fill uses. Holding both sides pays exactly $1/contract whatever settles, so
+# the loss is locked at (entry + hedge - 1.00) instead of the full entry.
+#
+# WHAT IT IS NOT: it is not a sell. It is not a new order type. It does not
+# touch pintake. Settlement is per ORDER via open_pos, so the two legs pay
+# independently and correctly. The A8 both-sides guard lives in the SIGNAL
+# path and reads `fired[...]["sides"]`; the hedge never calls _book_slot and
+# so never writes there, which means A8 still blocks any later ENTRY on the
+# opposite side -- the hedge is the only path allowed to hold both.
+#
+# Pre-registered live bar: results/PREREG_hedge.md, written before this code.
+# ===========================================================================
+HEDGE_ENABLED = True
+HEDGE_BELIEF = 0.90      # belief in OUR side below which we hedge. 0.70 catches
+                         # 11/11 tape losers with 2/1,642 false alarms; 0.90
+                         # fires one second earlier on the fast collapses (SOL
+                         # 08:00: 84% at tau 16, 0.05% at tau 15) with 4/1,642.
+                         # Set from the pinsim holdout sweep; see PREREG_hedge.
+HEDGE_MAX_ASK = 1.00     # the hedge leg must cost LESS than the $1 it pays.
+                         # THE FIRST VERSION OF THIS RULE WAS WRONG, and the
+                         # self-test caught it before any live hedge: it
+                         # required entry + hedge < $1.00, which would have
+                         # refused almost every real hedge. Holding 20 NO at
+                         # 96c and buying 20 YES at 35c pays 131c for a $1
+                         # payout -- a 31c loss, which BEATS the 96c loss from
+                         # holding. The pair being over a dollar is the whole
+                         # point; the only hedge that cannot help is one at
+                         # $1.00 or more, where the locked loss equals the
+                         # unhedged one. Recorded 2026-09-12 08:4xZ, and
+                         # PREREG_hedge.md rule 4 is corrected with this date.
+HEDGE_MAX_TRIES = 5      # seconds we keep trying once the alarm has fired.
+                         # Separate from MAX_ATTEMPTS_PER_CLOSE, which also
+                         # applies. A collapse leaves ~15s; five is generous.
+
+
+def hedge_should_fire(belief, threshold=None):
+    """True when the model's belief in OUR side has fallen below the gate."""
+    thr = HEDGE_BELIEF if threshold is None else threshold
+    return belief is not None and belief < thr
+
+
+def hedge_ask_ok(hedge_ask):
+    """A hedge helps iff its leg costs less than the $1 the pair pays.
+
+    Locked loss = entry + ask - 1. Unhedged loss = entry. So the hedge is an
+    improvement exactly when ask < 1.00, and never otherwise. The entry price
+    does not enter into it -- which is what the first version got wrong."""
+    try:
+        a = float(hedge_ask)
+    except (TypeError, ValueError):
+        return False
+    return 0.0 < a < HEDGE_MAX_ASK - 1e-9
+
+
+def hedge_edge_c(belief, hedge_ask):
+    """DIAGNOSTIC, not a gate: cents by which the hedge leg is cheaper than
+    the model's own fair value for that side, (1 - belief) - ask. Positive
+    means the market lags the collapse and the hedge is +EV on its own;
+    negative means we are paying EV for variance reduction. Recorded on every
+    hedge so the n=30 review can see which we are doing."""
+    try:
+        return round(100.0 * ((1.0 - float(belief)) - float(hedge_ask)), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def hedge_locked_loss(entry_cost, hedge_cost, n=1.0):
+    """Per-contract loss locked by the pair, before fees: entry + hedge - 1."""
+    return float(n) * (float(entry_cost) + float(hedge_cost) - 1.0)
+
+
 IMPROVE_BY = 0.005     # a second buy must be at least this much cheaper
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # our own size: a 0.01-contract order against a
@@ -891,7 +974,19 @@ def selftest():
     _b9 = _src9[_src9.index(chr(10) + "def trade_loop("):]
     ck("attempts.get(close_s, 0) >= MAX_ATTEMPTS_PER_CLOSE" in _b9,
        "the attempt cap is actually READ in the loop, not merely defined")
-    ck(_b9.index('attempts[close_s] = attempts.get') < _b9.index("pintake.take("),
+    # EVERY send in the loop must be preceded by an attempt increment, in its
+    # own block. The first version compared the FIRST increment against the
+    # FIRST take(); AMENDMENT 15 added a second take() (the hedge) that counts
+    # its attempt under a different name (_hcs), so the literal match could no
+    # longer see that the property still holds. Now: for each take(), the
+    # nearest preceding attempts[...] write must be an increment.
+    import re as _re9
+    _takes9 = [m.start() for m in _re9.finditer(r"pintake\.take\(", _b9)]
+    _incs9 = [m.start() for m in
+              _re9.finditer(r"attempts\[\w+\] = attempts\.get\(\w+, 0\) \+ 1", _b9)]
+    ck(len(_takes9) >= 2 and all(any(i < t for i in _incs9) for t in _takes9)
+       and all(max(i for i in _incs9 if i < t) >
+               (max((u for u in _takes9 if u < t), default=-1)) for t in _takes9),
        "and an attempt is counted BEFORE the order is sent, so a send that "
        "never returns still consumes one")
     ck('out.get("refused")' in _b9 and 'state["order_errors"]' in _b9,
@@ -1356,6 +1451,78 @@ def selftest():
         ck("continue" in _blk,
            "and it continues the loop, so reconcile() keeps releasing the "
            "positions it is waiting on")
+
+        # ---- AMENDMENT 15: the belief-collapse hedge ----------------------
+        # The decision functions, driven exactly as the loop drives them.
+        ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
+           f"belief below the {HEDGE_BELIEF:.2f} gate fires the hedge")
+        ck(not hedge_should_fire(HEDGE_BELIEF) and not hedge_should_fire(0.999),
+           "belief at or above the gate does not")
+        ck(not hedge_should_fire(None), "no belief at all never fires -- a "
+           "missing number is not a collapse")
+        ck(hedge_should_fire(0.5, threshold=0.7) and
+           not hedge_should_fire(0.8, threshold=0.7),
+           "and the threshold is a parameter, so the holdout can sweep it")
+        # the four real live losses, at the belief the model actually showed
+        # one second after the alarm would have fired
+        for _nm, _b in (("NEAR tau16", 0.4065), ("BNB tau24", 0.4627),
+                        ("SOL-08:00 tau16", 0.8372)):
+            ck(hedge_should_fire(_b), f"the real {_nm} collapse ({_b:.1%}) fires")
+        ck(not hedge_should_fire(0.9976),
+           "and the SOL-08:00 ENTRY belief (99.76%) does not -- we hedge the "
+           "collapse, not the buy")
+        # rule 4 of the pre-registration, CORRECTED 2026-09-12: the hedge leg
+        # must cost under a dollar. The pair being over a dollar is fine and
+        # is the normal case -- the first version of this rule refused it and
+        # this test caught that before any live hedge.
+        ck(hedge_ask_ok(0.35), "hedging 96c NO with 35c YES pays 131c for $1 -- "
+           "a 31c loss that BEATS the 96c from holding: allowed")
+        ck(hedge_ask_ok(0.65) and hedge_ask_ok(0.99),
+           "65c and 99c legs are allowed too -- any ask under $1 shrinks the loss")
+        ck(not hedge_ask_ok(1.00), "a $1.00 leg locks exactly the unhedged loss: "
+           "REFUSED, and the fee makes it worse")
+        ck(not hedge_ask_ok(0.0) and not hedge_ask_ok(-0.1),
+           "zero and negative asks are not prices")
+        ck(not hedge_ask_ok(None) and not hedge_ask_ok("x"),
+           "garbage inputs refuse rather than pass")
+        ck(hedge_edge_c(0.40, 0.55) == 5.0 and hedge_edge_c(0.40, 0.65) == -5.0,
+           "the EV diagnostic reads (1-belief)-ask: +5c when the market lags "
+           "the collapse, -5c when we pay for variance reduction")
+        ck(abs(hedge_locked_loss(0.962, 0.35, 20) - 20 * 0.312) < 1e-9,
+           "NEAR hedged at 35c locks -$6.24 on 20 contracts instead of -$19.24")
+        ck(abs(hedge_locked_loss(0.94, 0.55, 20) - 20 * 0.49) < 1e-9,
+           "BNB hedged at 55c locks -$9.80 instead of -$18.80")
+        # THE REFUSAL IS EXACTLY THE LINE WHERE A HEDGE STOPS HELPING: at
+        # ask = $1.00 the locked loss (entry + 1 - 1) equals the unhedged
+        # loss (entry), whatever the entry was.
+        for _e in (0.90, 0.96, 0.979):
+            ck(abs(hedge_locked_loss(_e, 1.0) - _e) < 1e-12 and not hedge_ask_ok(1.0)
+               and hedge_locked_loss(_e, 0.99) < _e and hedge_ask_ok(0.99),
+               f"at entry {_e:.3f}: a $1.00 leg locks exactly the unhedged loss "
+               f"and is refused; a 99c leg locks less and is allowed")
+        # the hedge path never books a scale-in slot (A8 must keep blocking
+        # re-ENTRY on the opposite side; only the hedge may hold both)
+        _l15 = open(os.path.abspath(__file__), encoding="utf-8").read().split(chr(10))
+        _i15 = next(i for i, ln in enumerate(_l15)
+                    if ln.strip() == "# ---------------- AMENDMENT 15: the hedge pass ----------------")
+        _j15 = next(i for i, ln in enumerate(_l15)
+                    if i > _i15 and ln.strip() == "# ---------------- end AMENDMENT 15 ----------------")
+        _hblk = _l15[_i15:_j15]
+        ck(not [ln for ln in _hblk if ln.strip().startswith("_book_slot(")],
+           "the hedge pass never calls _book_slot -- so A8 still blocks any "
+           "later ENTRY on the opposite side")
+        ck(any("hedge_ask_ok(" in ln for ln in _hblk),
+           "and it calls hedge_ask_ok before every order")
+        ck(any("pintake.take(" in ln for ln in _hblk),
+           "and places the hedge through the same take() path as every fill")
+        ck(any('rec("hedge_alarm"' in ln for ln in _hblk) and
+           any('rec("hedge_no_ask"' in ln for ln in _hblk) and
+           any('rec("hedge_refused"' in ln for ln in _hblk),
+           "every alarm, missing ask and refusal is recorded -- silence is "
+           "not an outcome")
+        ck(HEDGE_MAX_TRIES >= 3 and HEDGE_MAX_TRIES <= 10,
+           f"retries are bounded ({HEDGE_MAX_TRIES}) -- a runaway on the hedge "
+           "path would be the 160-order incident again")
         # the FORWARD bound: realised only moves after settlement, so the
         # advertised -$2.00 has to be checked against what is still open.
         pintake.LEDGER.update({"realised": 0.0, "committed": 0.0,
@@ -1740,6 +1907,9 @@ def trade_loop(a, rec, book, idx, series_index):
     # direction. MAX_PER_CLOSE 3 makes same-ticker repeats more likely, not
     # less. Value is (close_s, want, cost, nfill, ticker).
     open_pos = {}
+    hedge_meta = {}     # A15: oid -> (strike, digits, iid) so belief can be recomputed
+    hedged = set()      # A15: oids already hedged (or given up on)
+    hedge_tries = {}    # A15: oid -> attempts since the alarm fired
     # NEAR MISSES. "nothing fired" is not information; "the best on offer was
     # 0.2c and we need 0.5c" is. Per close, keep the best net edge seen on
     # each side and report it when the close passes, so a quiet run can be
@@ -1932,6 +2102,117 @@ def trade_loop(a, rec, book, idx, series_index):
 
         now = time.time()
         now_s = int(now)
+
+        # ---------------- AMENDMENT 15: the hedge pass ----------------
+        # Runs BEFORE the signal scan so a collapsing position is dealt with
+        # before any new money goes out. One belief recompute per open
+        # position per second; the alarm and every refusal are recorded.
+        if HEDGE_ENABLED:
+            for _hid, (_hcs, _hwant, _hcost, _hn, _htk) in list(open_pos.items()):
+                if _hid in hedged or _hid.startswith("hedge-"):
+                    continue
+                _meta = hedge_meta.get(_hid)
+                if _meta is None:
+                    continue
+                _hstrike, _hdig, _hiid = _meta
+                _htau = _hcs - now_s
+                if _htau < 1:
+                    continue
+                _hsg = idx.sigma(_hiid)
+                if _hsg is None:
+                    continue
+                _hf = fair(idx, _hiid, _hcs, now_s, _hstrike, _hsg * SIGMA_STRESS,
+                           round_digits=_hdig)
+                if _hf is None:
+                    continue
+                _belief = _hf if _hwant == "yes" else 1.0 - _hf
+                if not hedge_should_fire(_belief):
+                    continue
+                _tries = hedge_tries.get(_hid, 0)
+                if _tries == 0:
+                    state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
+                    rec("hedge_alarm", ticker=_htk, want=_hwant, entry=_hcost,
+                        n=_hn, belief=round(_belief, 5), tau=_htau,
+                        threshold=HEDGE_BELIEF)
+                    print(f"  !!! HEDGE ALARM {_htk} {_hwant} belief {_belief:.3f} "
+                          f"tau {_htau}s")
+                hedge_tries[_hid] = _tries + 1
+                if _tries + 1 > HEDGE_MAX_TRIES:
+                    hedged.add(_hid)
+                    rec("hedge_gave_up", ticker=_htk, tries=_tries, tau=_htau)
+                    continue
+                if attempts.get(_hcs, 0) >= MAX_ATTEMPTS_PER_CLOSE:
+                    hedged.add(_hid)
+                    rec("hedge_refused", ticker=_htk, why="attempt_cap", tau=_htau)
+                    continue
+                _opp = "no" if _hwant == "yes" else "yes"
+                try:
+                    _hb = book.best(_htk)
+                except Exception as _e:                      # noqa: BLE001
+                    rec("error", where="hedge_book", ticker=_htk, err=str(_e)[:200])
+                    continue
+                _ask = (_hb or {}).get(f"{_opp}_ask")
+                _asz = (_hb or {}).get(f"{_opp}_ask_size")
+                if not _hb or not _ask or not _asz or _ask >= 1.0:
+                    rec("hedge_no_ask", ticker=_htk, side=_opp, tau=_htau,
+                        belief=round(_belief, 5))
+                    continue
+                if not hedge_ask_ok(_ask):
+                    # RULE 4 OF THE PRE-REGISTRATION (corrected 2026-09-12): a
+                    # hedge leg at $1.00 or more cannot beat holding. Counted,
+                    # then give up on it.
+                    hedged.add(_hid)
+                    state["hedge_ask_refused"] = state.get("hedge_ask_refused", 0) + 1
+                    rec("hedge_refused", ticker=_htk, why="ask_at_or_over_dollar",
+                        entry=_hcost, ask=_ask, tau=_htau,
+                        edge_c=hedge_edge_c(_belief, _ask))
+                    continue
+                _hn_take = min(float(_hn), float(_asz))
+                attempts[_hcs] = attempts.get(_hcs, 0) + 1
+                if not live:
+                    _hoid = f"hedge-paper-{_htk}-{now_s}"
+                    open_pos[_hoid] = (_hcs, _opp, float(_ask), _hn_take, _htk)
+                    hedged.add(_hid)
+                    rec("hedge", ticker=_htk, side=_opp, price=float(_ask),
+                        n=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
+                        locked_loss_c=round(100 * hedge_locked_loss(_hcost, _ask), 2),
+                        edge_c=hedge_edge_c(_belief, _ask), live=False)
+                    print(f"  HEDGE(paper) {_htk} buy {_opp.upper()} {_hn_take:g} @ "
+                          f"{_ask:.3f} -> locked {100*hedge_locked_loss(_hcost,_ask):+.1f}c")
+                    continue
+                try:
+                    _hout = pintake.take(CREDS["base"], CREDS["pk"], CREDS["key_id"],
+                                         _htk, _opp, float(_ask), _hn_take,
+                                         float(_hcs), exchange_index=2)
+                except Exception as _e:                      # noqa: BLE001
+                    state["order_errors"] = state.get("order_errors", 0) + 1
+                    rec("error", where="hedge_take", ticker=_htk, err=str(_e)[:300])
+                    continue
+                _href = _hout.get("refused") or []
+                if _href or _hout.get("status_code") is None:
+                    rec("hedge_refused", ticker=_htk, why="take_refused",
+                        err=str(_href)[:300], tau=_htau)
+                    continue
+                _hfilled = float(_hout.get("filled") or 0)
+                _hpx = _hout.get("exec_price")
+                _hcost2 = float(_hpx) if _hpx is not None else float(_ask)
+                rec("hedge", ticker=_htk, side=_opp, price=_hcost2, n=_hfilled,
+                    asked=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
+                    locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hcost2), 2),
+                    order_id=_hout.get("order_id"), status=_hout.get("status"),
+                    edge_c=hedge_edge_c(_belief, _hcost2), live=True)
+                print(f"  HEDGE {_htk} buy {_opp.upper()} {_hfilled:g}/{_hn_take:g} @ "
+                      f"{_hcost2:.3f} -> locked {100*hedge_locked_loss(_hcost,_hcost2):+.1f}c")
+                if _hfilled > 0:
+                    _hoid = f"hedge-{_hout.get('order_id') or now_s}"
+                    open_pos[_hoid] = (_hcs, _opp, _hcost2, _hfilled, _htk)
+                    state["hedges"] = state.get("hedges", 0) + 1
+                    if _hfilled >= float(_hn) - 1e-9:
+                        hedged.add(_hid)
+                    else:
+                        # partial: shrink what is left to hedge and keep trying
+                        open_pos[_hid] = (_hcs, _hwant, _hcost, float(_hn) - _hfilled, _htk)
+        # ---------------- end AMENDMENT 15 ----------------
 
         if now - uni_at > 20:
             uni_at = now
@@ -2287,6 +2568,7 @@ def trade_loop(a, rec, book, idx, series_index):
                                     or out.get("order_id")
                                     or f"{tk}-{time.time():.6f}")
                         open_pos[_oid_new] = (close_s, want, cost, filled, tk)
+                        hedge_meta[_oid_new] = (strike, digits, iid)   # A15
                         state["fills"] = state.get("fills", 0) + 1
                         # AMENDMENT 12: a scrap (under half our size) keeps
                         # its position but does not spend a scale-in slot
@@ -2404,6 +2686,8 @@ def main():
         edge_floor=EDGE_FLOOR, ev_floor=EV_FLOOR,
         measured_flip=MEASURED_FLIP, max_per_close=MAX_PER_CLOSE,
         max_per_market=MAX_PER_MARKET,
+        hedge_enabled=HEDGE_ENABLED, hedge_belief=HEDGE_BELIEF,
+        hedge_max_ask=HEDGE_MAX_ASK, hedge_max_tries=HEDGE_MAX_TRIES,
         improve_by=IMPROVE_BY, min_level=MIN_LEVEL,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
