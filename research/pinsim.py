@@ -180,6 +180,51 @@ def record(f, want, price, take_n, avail, tau, series, sec, sg, spot,
     }
 
 
+def close_slot_ok(pc, tkk, price):
+    """pinrun's three PER-CLOSE rails, in pinrun's own order. None = may buy.
+
+    Until 2026-09-12 the replay enforced NONE of these, so one close took five
+    correlated markets and lost $95.06 in a quarter hour -- a shape the live
+    bot cannot produce. Twelve series settle on the same second at rho ~ 0.8,
+    so an unbounded close is leverage, and every $/close number computed
+    without these rails is wrong in the direction that flatters.
+
+    The rails, mirroring pinrun's live order (see AMENDMENT 3 / 13 there):
+      n         -- at most MAX_PER_CLOSE FILLS per close
+      per_tk    -- at most MAX_PER_MARKET fills on one market (A13)
+      best      -- a later buy must be IMPROVE_BY cheaper than the best so far,
+                   because re-buying at the same level doubles the risk without
+                   lowering the average paid
+
+    Called TWICE per candidate: once with price=None before decide(), which is
+    where live checks the two counting rails, and once with the price for the
+    improve bar. FAILING THE IMPROVE BAR MUST NOT RETIRE THE MARKET -- live
+    re-checks it on the next tick and a cheaper offer seconds later still
+    passes. The caller must not add it to `decided`.
+    """
+    if pc is None:
+        return None
+    if pc["n"] >= pinrun.MAX_PER_CLOSE:
+        return "close_cap"
+    if pc["per_tk"].get(tkk, 0) >= pinrun.MAX_PER_MARKET:
+        return "market_cap"
+    if price is not None and price >= pc["best"] - pinrun.IMPROVE_BY:
+        return "no_improve"
+    return None
+
+
+def close_slot_book(per_close, cs, tkk, price):
+    """Consume a slot. ONLY A BUY books one -- pinrun's AMENDMENT 6: a refusal
+    creates no exposure and must not spend an exposure budget."""
+    pc = per_close.get(cs)
+    if pc is None:
+        per_close[cs] = {"n": 1, "best": price, "per_tk": {tkk: 1}}
+    else:
+        pc["n"] += 1
+        pc["best"] = min(pc["best"], price)
+        pc["per_tk"][tkk] = pc["per_tk"].get(tkk, 0) + 1
+
+
 def apply_profile(profile):
     """Run pinrun's OWN decision code under a profile's params -- the
     constants are module attributes read at call time, so setting them is
@@ -258,6 +303,55 @@ def selftest():
         print(("  ok   " if c else "  FAIL ") + m)
         if not c:
             fails.append(m)
+
+    # ---- the PER-CLOSE RAILS, written in terms of the rails ---------------
+    _sv = (pinrun.MAX_PER_CLOSE, pinrun.MAX_PER_MARKET, pinrun.IMPROVE_BY)
+    try:
+        pinrun.MAX_PER_CLOSE, pinrun.MAX_PER_MARKET = 2, 1
+        pinrun.IMPROVE_BY = 0.005
+        ck(close_slot_ok(None, "A", 0.97) is None,
+           "the first buy of a close is never blocked")
+        _pc = {}
+        close_slot_book(_pc, 100, "A", 0.97)
+        ck(_pc[100] == {"n": 1, "best": 0.97, "per_tk": {"A": 1}},
+           "a buy books n, best and the per-market count")
+        ck(close_slot_ok(_pc[100], "A", None) == "market_cap",
+           "a second fill on the SAME market is refused (A13), before any price")
+        ck(close_slot_ok(_pc[100], "B", None) is None,
+           "but a DIFFERENT market in the same close may still be considered")
+        ck(close_slot_ok(_pc[100], "B", 0.97) == "no_improve",
+           "and is refused at the same price -- the improve bar")
+        ck(close_slot_ok(_pc[100], "B", 0.9651) == "no_improve",
+           "and just inside IMPROVE_BY (0.9651 vs 0.97-0.005) too")
+        ck(close_slot_ok(_pc[100], "B", 0.9649) is None,
+           "and allowed once it is IMPROVE_BY cheaper")
+        close_slot_book(_pc, 100, "B", 0.9649)
+        ck(_pc[100]["n"] == 2 and _pc[100]["best"] == 0.9649,
+           "the second buy raises n and lowers best")
+        ck(close_slot_ok(_pc[100], "C", None) == "close_cap",
+           f"and a third market is refused at MAX_PER_CLOSE={pinrun.MAX_PER_CLOSE}"
+           f" -- the rail that was MISSING, which let one close take 5 markets")
+        # the cap is read from pinrun, not typed: move it and the test moves
+        pinrun.MAX_PER_CLOSE = 3
+        ck(close_slot_ok(_pc[100], "C", None) is None,
+           "raising MAX_PER_CLOSE to 3 admits the third market -- the test "
+           "reads the rail rather than a literal")
+        pinrun.MAX_PER_CLOSE = 2
+        # a REFUSAL must not book a slot (pinrun's AMENDMENT 6)
+        _pc2 = {}
+        ck(close_slot_ok(_pc2.get(100), "A", 0.9) is None and not _pc2,
+           "checking a slot never consumes one -- only close_slot_book does")
+    finally:
+        pinrun.MAX_PER_CLOSE, pinrun.MAX_PER_MARKET, pinrun.IMPROVE_BY = _sv
+    # the loop must NOT retire a market that only failed the improve bar
+    _ls = open(os.path.abspath(__file__), encoding="utf-8").read().split(chr(10))
+    _i = next(k for k, ln in enumerate(_ls)
+              if ln.strip() == "_slot = close_slot_ok(per_close.get(cs), tkk, px)")
+    _blk = chr(10).join(_ls[_i:_i + 6])
+    ck("decided.add" not in _blk,
+       "and the improve-bar branch does not add the market to `decided` -- a "
+       "cheaper offer seconds later must still be able to pass")
+
 
     ck(TapeIndex.partial is pinrun.IndexWS.partial,
        "partial() is pinrun's own code, not a copy")
@@ -787,7 +881,20 @@ class EventStream:
                         if prev is not None and sq < prev:
                             self.seq_back += 1
                         prev = sq
-                        while i < len(snaps) and snaps[i][0] <= sq:
+                        # RECONNECT FIX (2026-09-12): place a pending
+                        # snapshot when EITHER the delta's seq has passed it OR
+                        # the wall clock has. A resubscribe restarts seq, so a
+                        # low-seq snapshot would otherwise sort to the front and
+                        # be applied near the start of the hour -- the old
+                        # snapshots-first bug, for that market. Residual, stated:
+                        # the list is seq-ordered, so a satisfied snapshot behind
+                        # an unsatisfied one still waits. Strictly better than
+                        # seq alone; `seq_back` still counts the resets.
+                        _drx = d.get("_rx_ms") or 0
+                        while i < len(snaps) and (
+                                snaps[i][0] <= sq
+                                or (snaps[i][1] and _drx
+                                    and snaps[i][1] <= _drx)):
                             _sq, rx, stk, sm = snaps[i]
                             i += 1
                             self.snaps_used += 1
@@ -1153,6 +1260,7 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
     ts_back = 0
     moments = 0
     decided = set()
+    per_close = {}      # close_s -> pinrun's `fired` shape; see close_slot_ok
 
     def _skip(reason, tkk):
         # COUNTED ONCE PER MARKET PER REASON. Event-driven evaluation visits a
@@ -1240,6 +1348,11 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
             if iid not in idx.ticks:
                 continue
             moments += 1
+            # pinrun's per-close rails, checked where live checks them
+            _slot = close_slot_ok(per_close.get(cs), tkk, None)
+            if _slot:
+                _skip(_slot, tkk)
+                continue
             b = book_view(bkk, ts)
             if b["age_ms"] is None or b["age_ms"] > pinrun.MAX_BOOK_AGE_MS:
                 _skip("stale_book", tkk)
@@ -1266,6 +1379,12 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
             if w is None:
                 _skip(px, tkk)
                 continue
+            # THE IMPROVE BAR. Not `decided`: live re-checks this market next
+            # tick and a cheaper offer still passes.
+            _slot = close_slot_ok(per_close.get(cs), tkk, px)
+            if _slot:
+                _skip(_slot, tkk)
+                continue
             res = r["result"]
             yes = (str(res).lower() == "yes") if \
                 isinstance(res, str) else float(res) >= 0.5
@@ -1286,6 +1405,7 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
                 refused.append((tkk, w, px, n, tau, won, pnl, cs))
                 continue
             bought.append((tkk, w, px, n, tau, won, pnl, cs))
+            close_slot_book(per_close, cs, tkk, px)
             if hedge_thrs:
                 # A15 holdout: hold this position open so the hedge pass can
                 # watch its belief every later second
