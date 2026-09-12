@@ -689,6 +689,47 @@ def selftest():
     ck(abs(hyper_ge(0, 50, 10, 5) - 1.0) < 1e-9,
        "and P(X >= 0) is exactly 1")
 
+    # ---- load_live throws out plants and hedge legs -----------------------
+    import tempfile as _tf
+    _saved_results = RESULTS
+    _d = _tf.mkdtemp(prefix="pincoin_st_")
+    with open(os.path.join(_d, "pinrun-live-20260101T000000Z.jsonl"), "w",
+              encoding="utf-8") as _fh:
+        for _r in [
+            {"kind": "start", "pin": 0.995},
+            # a real gate bet that lost
+            {"kind": "signal", "ticker": "KXSOL15M-A", "want": "no",
+             "fair": 0.004},
+            {"kind": "order", "ticker": "KXSOL15M-A", "filled": 20.0},
+            {"kind": "settled", "ticker": "KXSOL15M-A", "want": "no",
+             "result": "yes", "cost": 0.97, "pnl_c": -1940.0,
+             "t": "2026-01-01T00:00:00Z"},
+            # a 1-contract PLANT bought to lose, plus its hedge leg
+            {"kind": "plant", "ticker": "KXSOL15M-B", "side": "no",
+             "filled": 1.0, "price": 0.052},
+            {"kind": "hedge", "ticker": "KXSOL15M-B", "side": "yes",
+             "n": 1.0, "price": 0.949},
+            {"kind": "settled", "ticker": "KXSOL15M-B", "want": "no",
+             "result": "yes", "cost": 0.052, "pnl_c": -5.55,
+             "t": "2026-01-01T00:10:00Z"},
+            {"kind": "settled", "ticker": "KXSOL15M-B", "want": "yes",
+             "result": "yes", "cost": 0.949, "pnl_c": 4.76,
+             "t": "2026-01-01T00:10:35Z"},
+        ]:
+            _fh.write(json.dumps(_r) + "\n")
+    globals()["RESULTS"] = _d
+    _rows, _drop = load_live()
+    globals()["RESULTS"] = _saved_results
+    ck([r["ticker"] for r in _rows] == ["KXSOL15M-A"],
+       f"load_live keeps the gate bet and DROPS the 1-contract plant and its "
+       f"hedge leg (kept {[r['ticker'] for r in _rows]})")
+    ck(_drop == {"plant": 1, "hedge": 1},
+       f"and the guard prints exactly what it discarded ({_drop}) -- a guard "
+       f"that throws data away without saying so looks like a thin tape")
+    ck(sum(1 for r in _rows if r["lost"]) == 1,
+       "so the planted world has ONE losing close, not two: a plant bought at "
+       "5.2c to exercise the hedge path is not a bet the gate made")
+
     # ---- section 7: pairing signals to FILLS, not to attempts ------------
     recs = [
         {"kind": "start", "pin": 0.995},
@@ -910,7 +951,8 @@ def loss_cases(sc, say, ks=(5.0, 8.0)):
     for v in json.load(open(pinsim.FULLTAPE, encoding="utf-8")).values():
         for r in v:
             mk[r["ticker"]] = r
-    losers = sorted({r["ticker"] for r in load_live() if r["lost"]})
+    _lrows, _ = load_live()
+    losers = sorted({r["ticker"] for r in _lrows if r["lost"]})
     if not losers:
         say("  loaded nothing: no losing live fills on file")
         return
@@ -1073,6 +1115,11 @@ def margin_block(per, say):
     say("  0.995 and are absent from the saturated ones. Bands are on the "
         "LOWEST confidence")
     say("  actually bought on that close.")
+    say("  This section requires a SIGNAL followed by a filled ORDER, so the "
+        "hedge-test plants")
+    say("  never enter it -- an independent route to the same exclusion "
+        "section 4 makes by")
+    say("  name, which is why the two close counts agree.")
     for label, sel in (("ALL live runs", lambda v: True),
                        ("CURRENT GATE ONLY (pin = 0.995)",
                         lambda v: v["pin"] == 0.995)):
@@ -1416,13 +1463,35 @@ def homogeneity_p(closes_by_coin, losses_by_coin, draws=200000, seed=20260912):
 
 
 def load_live():
-    """Our own settled bets, from pinrun's order log. One row per FILL; the
-    market ticker is the close, because three fills on one market are ONE
-    outcome (CLAUDE.md hard rule 4) and counting them as three is exactly the
-    error this block exists to correct."""
+    """Our own settled GATE BETS, from pinrun's order log.
+
+    One row per FILL; the market ticker is the close, because three fills on
+    one market are ONE outcome (CLAUDE.md hard rule 4) and counting them as
+    three is exactly the error this block exists to correct.
+
+    TWO KINDS OF FILL ARE NOT GATE BETS AND ARE THROWN OUT HERE. Found
+    2026-09-12 by asking why a p-value had just crossed 0.05:
+
+      * `plant` -- a deliberate ONE-CONTRACT probe bought at a near-zero ask
+        (0.3c, 5.2c) to exercise the live hedge path (AMENDMENT 15,
+        results/PREREG_hedge.md). The log shows `plant_attempt` -> `plant` ->
+        `hedge_alarm` with belief 0.000 and 0.020 -- the model does NOT believe
+        these, they are BOUGHT TO LOSE, and no gate decision produced them.
+      * `hedge` -- the opposite-side leg bought when belief collapses. Its
+        outcome is the mirror of the position it protects, so counting it as
+        its own bet double-counts one close.
+
+    Leaving them in put two 1-contract plants (ETH at 0.3c, SOL at 5.2c) into
+    the per-coin gate table, took SOL from 3-of-14 to 4-of-15, and moved the
+    worst-of-nine p-value from 0.132 to 0.0285. A guard that discards data
+    prints what it discarded, so `load_live` returns the count alongside.
+    """
     rows = []
+    drop = defaultdict(int)
     for fp in sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))):
         pin = None
+        skip = {}
+        recs = []
         try:
             fh = open(fp, encoding="utf-8")
         except OSError:
@@ -1433,20 +1502,42 @@ def load_live():
                     d = json.loads(line)
                 except Exception:
                     continue
-                if d.get("kind") == "start":
-                    pin = d.get("pin")
-                elif d.get("kind") == "settled" and d.get("ticker"):
-                    rows.append({
-                        "t": d["t"], "ticker": d["ticker"],
-                        "coin": d["ticker"].split("-")[0], "pin": pin,
-                        "lost": (str(d.get("result", "")).lower()
-                                 != str(d.get("want", "")).lower()),
-                        "pnl_c": d.get("pnl_c"), "cost": d.get("cost")})
+                recs.append(d)
+        # pass 1: every fill in this run that was a plant or a hedge leg,
+        # keyed the way its `settled` record will present it
+        for d in recs:
+            k = d.get("kind")
+            if k in ("plant", "hedge") and d.get("ticker") \
+                    and float(d.get("filled", d.get("n")) or 0) > 0:
+                px = d.get("price")
+                if px is None:
+                    continue
+                skip[(d["ticker"], str(d.get("side", "")).lower(),
+                      round(float(px), 4))] = k
+        # pass 2: the settlements, minus those
+        for d in recs:
+            if d.get("kind") == "start":
+                pin = d.get("pin")
+                continue
+            if d.get("kind") != "settled" or not d.get("ticker"):
+                continue
+            key = (d["ticker"], str(d.get("want", "")).lower(),
+                   round(float(d.get("cost") or 0.0), 4))
+            if key in skip:
+                drop[skip[key]] += 1
+                continue
+            rows.append({
+                "t": d["t"], "ticker": d["ticker"],
+                "coin": d["ticker"].split("-")[0], "pin": pin,
+                "lost": (str(d.get("result", "")).lower()
+                         != str(d.get("want", "")).lower()),
+                "pnl_c": d.get("pnl_c"), "cost": d.get("cost")})
     rows.sort(key=lambda r: r["t"])
-    return rows
+    return rows, dict(drop)
 
 
-def live_block(rows, say):
+def live_block(loaded, say):
+    rows, dropped = loaded
     say()
     say("=" * 78)
     say("  4. OUR OWN LIVE FILLS -- the ONLY valid source for OUR loss rate")
@@ -1454,9 +1545,19 @@ def live_block(rows, say):
     if not rows:
         say("  loaded nothing: no pinrun-live-*.jsonl records")
         return
-    say(f"  {len(rows):,} settled fills, "
+    say(f"  {len(rows):,} settled GATE fills, "
         f"{len(set(r['ticker'] for r in rows)):,} distinct markets/closes, "
         f"{rows[0]['t']} .. {rows[-1]['t']}")
+    say(f"  GUARD: dropped "
+        f"{dropped.get('plant', 0)} one-contract hedge-test PLANT fills and "
+        f"{dropped.get('hedge', 0)} HEDGE legs -- neither is a gate decision. "
+        f"See load_live().")
+    if dropped.get("plant", 0) or dropped.get("hedge", 0):
+        say("  Leaving them in is what briefly made SOL look significant: two "
+            "plants bought at")
+        say("  0.3c and 5.2c, which exist to LOSE, took SOL from 3-of-14 to "
+            "4-of-15 and the")
+        say("  worst-of-nine p-value from 0.132 to 0.0285.")
     say()
     say("  *** THE FIRST CORRECTION IS A COUNTING ONE, AND IT MOVES THE "
         "ANSWER. ***")

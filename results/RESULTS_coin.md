@@ -1,4 +1,223 @@
-# RESULTS_coin -- is one coin's index structurally jumpier?
+# RESULTS_coin — does the run of SOL losses mean anything?
+
+Asked by the operator 2026-09-12: *"the last three losses have been SOL, does
+that mean anything?"* Produced by `research/pincoin.py`, whose `--selftest`
+(43 checks, all green) gates every number below and refuses real data if any
+check fails.
+
+```
+python research/pincoin.py --days 9 --split 5      # sections 1-7
+python research/pincoin.py --scale-only --days 9   # section 5 alone
+python research/pincoin.py --live-only             # sections 4 and 7 alone
+python research/pincoin.py --selftest
+```
+
+Tape window: closes 2026-09-03T04:45Z .. 2026-09-12T04:45Z — 211 hours,
+6,673,899 coin-seconds, 7,632 settled markets over 826 closes, 7,266 gate
+entries over 808 closes. Live window: our own 198 settled gate fills over 195
+closes, 2026-09-08T08:00Z .. 2026-09-12T13:00Z. The live sections grow every
+day the bot runs; these numbers are as of that last close.
+
+---
+
+## VERDICT
+
+**Probably not, and certainly not enough to act on — but SOL is the one coin
+where I would not close the question.** At the current 0.995 gate SOL is **3
+losing closes of 14 (21.4%, CI [4.7%, 50.8%])** while the other eight coins
+are 1 of 101 between them. Taken alone that is a hypergeometric p of 0.0055.
+Taken honestly — as *the worst of nine coins we went looking through*, scored
+by re-dealing the losses at random while holding each coin's close count fixed
+and using the worst coin's count as the statistic — it is **p = 0.060**. Over
+all live runs, including the older 0.98 gate, it is **p = 0.333**. So: short of
+significance on the only test that pays for the search, and the MDE says only
+a coin running **4–6× the pool rate** was ever detectable here. This will not
+resolve by staring at it; at ~25 bets/day it needs weeks.
+
+**Two counting corrections came out of this, and both moved the answer more
+than any coin effect did.**
+
+1. **Three of the "NEAR losses" are three fills on ONE market.**
+   `KXNEAR15M-26SEP082045-45`, paid 96.2c / 95.6c / 73.0c — one close, one
+   settlement, one outcome. Clustered by close as hard rule 4 requires, NEAR is
+   **1 of 18 overall and 0 of 10 at the current gate**, not 3 of 18. It was
+   never the second-worst coin.
+2. **Two of the "losses" were not bets the gate made.** Mid-session the live
+   log grew a 1-contract ETH fill at 0.3c and a 1-contract SOL fill at 5.2c,
+   and SOL went to 4-of-15 with the worst-of-nine p-value crossing 0.05 to
+   **0.0285**. Both are `kind: "plant"` records — deliberate near-zero-price
+   probes from another session's live hedge test (`results/PREREG_hedge.md`),
+   each followed immediately by `hedge_alarm` with belief 0.000 and 0.020. They
+   exist *to lose*. `load_live()` now drops plants and hedge legs by name and
+   prints what it dropped; section 7, which requires a signal followed by a
+   filled order, excludes them independently, and the two close counts agree at
+   195. **A p-value that crosses 0.05 on two contracts bought to lose is the
+   whole reason a bar has to be pre-registered rather than read off a moving
+   sample.**
+
+**On money the asymmetry is starker than on counts, and it deserves saying
+plainly: at the current gate SOL is the only coin losing money.** Clustered by
+close, plants and hedge legs excluded: SOL **−$38.39 over 14 closes
+(−$2.74/close)**; all eight other coins positive, +$67 between them; the run
+nets +$28.87. But that −$38 is *three events*, one of which is −$19.61 on its
+own, and on the all-runs window the worst coin on money is NEAR at −$44.19 —
+entirely from that single triple-filled 00:45 close. **Which coin is "worst on
+money" therefore flips with the window, which is itself an argument against
+acting per-coin.**
+
+**The mechanism behind the losses is real and it survived its control.** All
+six losing closes whose settlement is on file contained a one-second index move
+past 5 sigma of that coin's own trailing sigma (5.4, 7.6, 10.5, 15.0, 20.0,
+31.5), against **1.69 expected** from section 1's own per-coin base rates —
+Poisson-binomial **p = 0.00044**; four of six passed 8 sigma against 0.60
+expected, **p = 0.0012**. Belief collapse on a one-second jump is what kills
+these bets. **But the denominator is large — 21.6–37.2% of *all* closes carry a
+>5-sigma second in their final minute and we win nearly every one — so "there
+was a jump" can never be a gate by itself.**
+
+**On whether SOL's INDEX is structurally jumpier, three tests come back empty
+and the one that looked positive is an artefact I went and checked.**
+
+1. **At the gate, nothing.** Over 7,266 tape markets and 808 closes, no coin is
+   flagged on belief collapse or on flip at the |z| > 2.77 nine looks require.
+   SOL sits on the pool for both (collapse 0.37% vs 0.50%; flip 0.25% vs
+   0.23%). The only cell past threshold is SOL's collapse in the **fit** half —
+   z = −4.20, *zero* collapses in five days — and it **flips sign in the
+   holdout** (0.87%, z = +0.69). Four of nine coins change sign across the
+   split. That is the exact shape the RUNBOOK records for the dead t = 4.1
+   cell. MDE: only a 2.8× flip or 1.9× collapse difference was detectable.
+2. **The entry populations are interchangeable**, so the nulls are not hiding a
+   selection difference: mean entry tau 28.7–29.4 s, median entry margin at the
+   7.03-sigma cap for every coin, saturated share 73–85%.
+3. **Section 1 does find large per-coin differences in one-second jump tails —
+   NEAR +13.9 to +19.9 z, SOL −20 to −35 — but SOL and NEAR are precisely the
+   two coins whose numbers are not comparable, and the quantization guard says
+   so before the table is read.** SOL's index is quoted in 0.01 steps while its
+   own one-second sigma is 0.0082, so **69.6% of SOL seconds print no change at
+   all** and one step is 1.2 sigma (sigma/step = 0.8; NEAR 4.8; every other coin
+   ≥ 10). SOL reading as the calmest feed in the book is the coarse grid, not
+   safety; NEAR reading as the jumpiest is partly the same grid forcing its
+   non-zero moves into large multiples. **Section 1 ranks the other seven
+   coins. It does not rank SOL or NEAR, in either direction.**
+
+**Chasing that artefact produced the one general finding worth keeping — and
+then our own fills refused to confirm its prediction.** Asking what would have
+to be true for "SOL is calm" to be wrong led to section 5: each feed's
+one-second sd against its own 60-second sd ÷ √60, which is the exact scale
+`pinrun.fair()` projects over. **All nine come in below 1** (0.79 HYPE to 0.97
+BTC), so the one-second sigma the bot feeds `fair()` understates the diffusion
+at the horizon it projects across and every z-score is inflated by 3–26%. This
+is **not new** — it independently reproduces `results/RESULTS_implied.md`'s
+"sigma does NOT scale as sqrt(t)" (BNB 0.94, BTC 0.97, ETH 0.90, HYPE 0.75,
+NEAR 0.92, SOL 0.91, XRP 0.77, ZEC 0.83) on a different window with a different
+estimator, which is worth more than a new claim. And it does **not** single out
+SOL (0.90, mid-pack); HYPE is the worst feed at 0.79 and has zero live losses.
+
+That finding has a sharp prediction, because an inflated z can only change a
+decision *near the gate boundary*: losses should concentrate in entries barely
+past 0.995 and be absent from the saturated ones 7 sigma out. **Section 7 tests
+it on our own fills and it fails, in the direction that matters.** The loss rate
+does not fall as entry confidence rises — the point estimate *rises* (2.1% →
+2.6% → 8.7% across the three bands; every interval overlaps every other, so
+nothing is significant either way, but a gate change justified by section 5
+needs this table to lean the other way and it does not).
+
+**Section 7 did turn up one unambiguous thing, and it is not about margin: our
+entries are only ~12% saturated while the tape's gate entries are 73–85%
+saturated.** We cannot buy what nobody offers, and in a decided market the
+losing side's book is empty — so we systematically get the *less certain* end of
+the same gate. That is the adverse selection CLAUDE.md rule 5 is about, measured
+here in its own units, and it is the cleanest reason yet that no tape rate can
+stand in for ours.
+
+### What I would PROPOSE — nothing is deployed, and the main proposal is to change nothing yet
+
+1. **No per-coin gate, no SOL blacklist, no per-coin `PIN` or `SIGMA_STRESS`
+   today.** p = 0.060 on the corrected statistic, on 14 SOL closes, with every
+   index test flat and section 1 unable to rank SOL at all. Fitting nine coins
+   to seven losing closes is how this project has produced every edge it later
+   had to retract.
+2. **Instead, PRE-REGISTER the SOL test now, before more data arrives.** This is
+   the one place the evidence justifies spending something. Write the bar in
+   `results/PREREG_coin.md` before looking again: a fixed number of further SOL
+   closes at the current gate, a fixed threshold on the worst-of-nine statistic,
+   and the action if it fires. The p-value moved 0.060 → 0.0285 → 0.060 inside
+   one afternoon as one plant went in and came out; that volatility is the
+   argument for freezing the question, not for acting on it.
+3. **Re-count the live ledger by CLOSE, permanently, in the reporting path, and
+   exclude plants and hedge legs.** Both corrections above were pure counting,
+   and both changed the headline. `pincoin.load_live()` does it correctly.
+4. **The lever is still the exit.** The mechanism test points at the post-entry
+   jump, and `results/SKIM.md` already has a belief stop catching 11 of 11 tape
+   losers for 0.12% of winners. Nothing here gives a reason to spend effort on
+   coins instead.
+5. **If sigma is ever revisited it is pool-wide and needs its own
+   pre-registration.** Setting `SIGMA_STRESS` per feed from section 5's measured
+   sd60/sd1 (1.03× BTC to 1.26× HYPE) would make `fair()` project at the scale
+   the index actually diffuses at. **Weakly held, not proposed for deployment:**
+   it is fitted on the same nine days it is measured on, it needs a holdout and
+   a pre-registered live bar (AMENDMENT 2026-09-10 rule 4), section 7 declines
+   to confirm its prediction, and the realised tape flip rate at the gate is
+   **0.23% against a nominal 0.5%** — the arithmetic says "overconfident", the
+   outcomes do not agree, and the outcomes win.
+
+**THE TAPE RATES IN SECTIONS 1, 2, 3 AND 6 RANK COINS AGAINST EACH OTHER. THEY
+ARE NOT OUR LOSS RATE AND MUST NEVER BE QUOTED AS ONE.** The tape's population
+is "the model crossed the gate"; ours is "someone actively sold it to us", and
+only the second is adversely selected — a 31× gap with non-overlapping intervals
+(CLAUDE.md, AMENDMENT 2026-09-10, rule 5), one of whose mechanisms section 7
+measures directly (12% vs 73–85% saturated). Every statement about **our**
+losses above comes from sections 4 and 7, which read
+`results/pinrun-live-*.jsonl` and nothing else.
+
+## What this did NOT measure
+
+- **Whether an offer existed, or whether we would have won the race for it.** No
+  order book is read anywhere in this file. A tape "gate entry" is the model
+  crossing 99.5%, not a fill.
+- **Our live loss rate beyond the 195 closes on file.** Seven losing closes
+  cannot support a per-coin rate and the tape cannot substitute for them.
+- **One of the seven losing closes** (`KXSOL15M-26SEP120400-00`) has no
+  settlement in `fulltape/markets.json` yet, so section 6's index
+  reconstruction covers six of seven. It is listed as excluded, not estimated.
+- **Whether SOL's −$38.39 is a per-coin effect or three bad draws.** The money
+  table above is a measurement; the attribution is not, and the worst coin on
+  money flips between SOL and NEAR depending on the window chosen.
+- **Whether a pool-wide or per-coin `SIGMA_STRESS` would have changed a live
+  decision.** That needs `pinsim`, which is certified for decision reproduction
+  and explicitly *not* for loss rates.
+- **Why the `cost` field on some `settled` records disagrees with the `price` on
+  the matching `signal`** (the DOGE close signals 0.53 and settles at 0.0998).
+  It affects nothing above — outcomes and entry `fair` are what sections 4, 6
+  and 7 use — but it is unresolved and someone should look.
+- **The exchange-lead mechanism** — whether the constituent tapes moved before
+  the CF print on these closes. `research/pinjump.py` owns that, and the feeds
+  carry only BTC, ETH, SOL, XRP and DOGE.
+- **ADA, BCH, TON, CRYPTOCOMP and CRYPTOLEAD.** No settled markets, so nine
+  coins, not twelve or fourteen.
+- **Unconditional kurtosis.** Section 1's denominator is deliberately the
+  trailing-300s sigma *the bot actually uses*, which makes it the operationally
+  relevant statistic and not a statement about unconditional tails.
+  `research/volmodel.py` owns that separation.
+
+## How to read the machine output below
+
+Everything from here down is written by `pincoin.py` and regenerates from the
+commands at the top. This verdict is dated prose and does **not** regenerate —
+if the tables move, re-read it.
+
+- **Section 1** — per-coin one-second jump tail. **Read the quantization guard
+  at the end of it first**; it decides which coins the table can rank.
+- **Sections 2/3** — belief collapse and flip at the gate: MDE stated before the
+  estimate, fit/holdout split, guard nulls, entry-population check.
+- **Section 4** — our own live fills, clustered by close, plants and hedge legs
+  dropped by name.
+- **Section 5** — the scale audit: is the one-second sigma the right scale?
+- **Section 6** — our losing closes reconstructed on the index, with a base rate.
+- **Section 7** — entry margin vs our own outcomes: section 5's prediction,
+  tested and refuted.
+
+---
 
 ```
 
@@ -192,50 +411,54 @@
 ==============================================================================
   4. OUR OWN LIVE FILLS -- the ONLY valid source for OUR loss rate
 ==============================================================================
-  189 settled fills, 185 distinct markets/closes, 2026-09-08T08:00:20Z .. 2026-09-12T10:00:35Z
+  198 settled GATE fills, 195 distinct markets/closes, 2026-09-08T08:00:20Z .. 2026-09-12T13:00:20Z
+  GUARD: dropped 2 one-contract hedge-test PLANT fills and 1 HEDGE legs -- neither is a gate decision. See load_live().
+  Leaving them in is what briefly made SOL look significant: two plants bought at
+  0.3c and 5.2c, which exist to LOSE, took SOL from 3-of-14 to 4-of-15 and the
+  worst-of-nine p-value from 0.132 to 0.0285.
 
   *** THE FIRST CORRECTION IS A COUNTING ONE, AND IT MOVES THE ANSWER. ***
-  11 losing FILLS sit on 9 losing MARKETS. The multiply-filled ones:
+  9 losing FILLS sit on 7 losing MARKETS. The multiply-filled ones:
     KXNEAR15M-26SEP082045-45           3 fills, ONE close, ONE outcome (paid 0.962, 0.956, 0.73)
   Hundreds of fills can share one settlement, so `n` is markets and closes, never
   fills (CLAUDE.md hard rule 4). Counting fills is what turns one NEAR close into
   'three NEAR losses'.
 
-  ALL live runs: 189 fills -> 185 closes, 9 losing closes (4.9%)
+  ALL live runs: 198 fills -> 195 closes, 7 losing closes (3.6%)
   coin          closes  lost    rate      95% CI (Clopper-Pearson)     P(>= this|one rate)
-  KXSOL15M          24     4   16.7%                 [4.7%, 37.4%]                  0.0178
-  KXXRP15M          28     1    3.6%                 [0.1%, 18.3%]                  0.7797
-  KXBNB15M          21     1    4.8%                 [0.1%, 23.8%]                  0.6705
-  KXDOGE15M         19     1    5.3%                 [0.1%, 26.0%]                  0.6315
-  KXNEAR15M         16     1    6.2%                 [0.2%, 30.2%]                  0.5653
-  KXETH15M          15     1    6.7%                 [0.2%, 31.9%]                  0.5410
-  KXBTC15M          33     0    0.0%                 [0.0%, 10.6%]                        
-  KXHYPE15M         18     0    0.0%                 [0.0%, 18.5%]                        
-  KXZEC15M          11     0    0.0%                 [0.0%, 28.5%]                        
+  KXSOL15M          23     3   13.0%                 [2.8%, 33.6%]                  0.0368
+  KXXRP15M          29     1    3.4%                 [0.1%, 17.8%]                  0.6822
+  KXBNB15M          22     1    4.5%                 [0.1%, 22.8%]                  0.5734
+  KXDOGE15M         21     1    4.8%                 [0.1%, 23.8%]                  0.5556
+  KXNEAR15M         18     1    5.6%                 [0.1%, 27.3%]                  0.4980
+  KXBTC15M          36     0    0.0%                  [0.0%, 9.7%]                        
+  KXHYPE15M         19     0    0.0%                 [0.0%, 17.6%]                        
+  KXETH15M          15     0    0.0%                 [0.0%, 21.8%]                        
+  KXZEC15M          12     0    0.0%                 [0.0%, 26.5%]                        
   ONE SHARED LOSS RATE for every coin: the chance the WORST coin still reaches
-  4 losing closes is p = 0.1358 (9 losses over 185 closes, 200,000 random deals,
+  3 losing closes is p = 0.3327 (7 losses over 195 closes, 200,000 random deals,
   max-per-coin-count statistic). The max is what pays for having noticed the coin
   AFTER the fact; a per-coin p-value would not.
-  MDE at this live size: 18.3% against a base of 4.9% -- only a coin
+  MDE at this live size: 15.4% against a base of 3.6% -- only a coin
   4x the pool rate is detectable, so 'no effect' and 'no power' are not distinguishable here.
 
-  CURRENT GATE ONLY (pin = 0.995): 107 fills -> 105 closes, 6 losing closes (5.7%)
+  CURRENT GATE ONLY (pin = 0.995): 116 fills -> 115 closes, 4 losing closes (3.5%)
   coin          closes  lost    rate      95% CI (Clopper-Pearson)     P(>= this|one rate)
-  KXSOL15M          15     4   26.7%                 [7.8%, 55.1%]                  0.0036
-  KXETH15M           7     1   14.3%                 [0.4%, 57.9%]                  0.3459
-  KXDOGE15M          7     1   14.3%                 [0.4%, 57.9%]                  0.3459
-  KXBTC15M          21     0    0.0%                 [0.0%, 16.1%]                        
-  KXXRP15M          18     0    0.0%                 [0.0%, 18.5%]                        
-  KXBNB15M          13     0    0.0%                 [0.0%, 24.7%]                        
-  KXHYPE15M         10     0    0.0%                 [0.0%, 30.8%]                        
-  KXNEAR15M          8     0    0.0%                 [0.0%, 36.9%]                        
-  KXZEC15M           6     0    0.0%                 [0.0%, 45.9%]                        
+  KXSOL15M          14     3   21.4%                 [4.7%, 50.8%]                  0.0055
+  KXDOGE15M          9     1   11.1%                 [0.3%, 48.2%]                  0.2814
+  KXBTC15M          24     0    0.0%                 [0.0%, 14.2%]                        
+  KXXRP15M          19     0    0.0%                 [0.0%, 17.6%]                        
+  KXBNB15M          14     0    0.0%                 [0.0%, 23.2%]                        
+  KXHYPE15M         11     0    0.0%                 [0.0%, 28.5%]                        
+  KXNEAR15M         10     0    0.0%                 [0.0%, 30.8%]                        
+  KXZEC15M           7     0    0.0%                 [0.0%, 41.0%]                        
+  KXETH15M           7     0    0.0%                 [0.0%, 41.0%]                        
   ONE SHARED LOSS RATE for every coin: the chance the WORST coin still reaches
-  4 losing closes is p = 0.0285 (6 losses over 105 closes, 200,000 random deals,
+  3 losing closes is p = 0.0603 (4 losses over 115 closes, 200,000 random deals,
   max-per-coin-count statistic). The max is what pays for having noticed the coin
   AFTER the fact; a per-coin p-value would not.
-  MDE at this live size: 26.6% against a base of 5.7% -- only a coin
-  5x the pool rate is detectable, so 'no effect' and 'no power' are not distinguishable here.
+  MDE at this live size: 20.1% against a base of 3.5% -- only a coin
+  6x the pool rate is detectable, so 'no effect' and 'no power' are not distinguishable here.
 
   THE LOSS SEQUENCE THE OPERATOR ASKED ABOUT, oldest first:
     2026-09-09T00:45:20Z  KXNEAR15M-26SEP082045-45           gate 0.98  paid 0.962  -1929c
@@ -247,12 +470,10 @@
     2026-09-11T12:30:20Z  KXSOL15M-26SEP110830-30            gate 0.995  paid 0.591  -1216c
     2026-09-12T03:00:20Z  KXSOL15M-26SEP112300-00            gate 0.995  paid 0.979  -1961c
     2026-09-12T08:00:20Z  KXSOL15M-26SEP120400-00            gate 0.995  paid 0.94  -1888c
-    2026-09-12T09:45:20Z  KXETH15M-26SEP120545-45            gate 0.995  paid 0.003  -0c
-    2026-09-12T10:00:20Z  KXSOL15M-26SEP120600-00            gate 0.995  paid 0.052  -6c
 
-  The last three losses at the current gate are KXSOL15M, KXETH15M, KXSOL15M.
-  GIVEN that the 6 losses fell on the coins they did, the chance the three most
-  recent all share ONE coin is 20.0%. So the 'three in a row' framing
+  The last three losses at the current gate are KXSOL15M, KXSOL15M, KXSOL15M.
+  GIVEN that the 4 losses fell on the coins they did, the chance the three most
+  recent all share ONE coin is 25.0%. So the 'three in a row' framing
   adds essentially nothing beyond the count itself -- the evidence is the table
   above, not the ordering.
 
@@ -302,7 +523,7 @@
 ==============================================================================
   6. OUR OWN LOSING CLOSES, RECONSTRUCTED ON THE INDEX -- with a base rate
 ==============================================================================
-  9 losing closes in our own fill log. For each, the largest one-second
+  7 losing closes in our own fill log. For each, the largest one-second
   index move in the final 60 s, in units of that feed's own sigma one second earlier.
 
   market                            close (UTC)            max |move|/sigma   at tau   result
@@ -312,9 +533,7 @@
   KXSOL15M-26SEP110830-30           2026-09-11T12:30:00Z               10.5       26      yes
   KXSOL15M-26SEP112300-00           2026-09-12T03:00:00Z               31.5       11      yes
   KXXRP15M-26SEP100100-00           2026-09-10T05:00:00Z               15.0       20       no
-  KXETH15M-26SEP120545-45             settlement not yet in markets.json -- EXCLUDED, not estimated
   KXSOL15M-26SEP120400-00             settlement not yet in markets.json -- EXCLUDED, not estimated
-  KXSOL15M-26SEP120600-00             settlement not yet in markets.json -- EXCLUDED, not estimated
 
   THE DENOMINATOR. From section 1's last-60s panel: the chance a close's final minute
   contains at least one such second at all, per coin. A big jump is NOT rare.
@@ -348,20 +567,23 @@
   decision NEAR THE GATE. Prediction: losses concentrate in entries barely past
   0.995 and are absent from the saturated ones. Bands are on the LOWEST confidence
   actually bought on that close.
+  This section requires a SIGNAL followed by a filled ORDER, so the hedge-test plants
+  never enter it -- an independent route to the same exclusion section 4 makes by
+  name, which is why the two close counts agree.
 
-  ALL live runs: 183 closes with both an entry signal and a settlement
+  ALL live runs: 195 closes with both an entry signal and a settlement
   entry confidence band     closes  lost    rate              95% CI   median margin
-  0.9950-0.9990                 87     2    2.3%        [0.3%, 8.1%]          2.77 sd
-  0.9990-0.99999                35     1    2.9%       [0.1%, 14.9%]          3.41 sd
-  0.99999-1 (saturated)         22     2    9.1%       [1.1%, 29.2%]          7.03 sd
-  saturated share of ENTRIES 12.0% (22/183); of LOSSES 28.6% (2/7)
+  0.9950-0.9990                 95     2    2.1%        [0.3%, 7.4%]          2.78 sd
+  0.9990-0.99999                38     1    2.6%       [0.1%, 13.8%]          3.41 sd
+  0.99999-1 (saturated)         23     2    8.7%       [1.1%, 28.0%]          7.03 sd
+  saturated share of ENTRIES 11.8% (23/195); of LOSSES 28.6% (2/7)
 
-  CURRENT GATE ONLY (pin = 0.995): 103 closes with both an entry signal and a settlement
+  CURRENT GATE ONLY (pin = 0.995): 115 closes with both an entry signal and a settlement
   entry confidence band     closes  lost    rate              95% CI   median margin
-  0.9950-0.9990                 66     2    3.0%       [0.4%, 10.5%]          2.75 sd
-  0.9990-0.99999                24     1    4.2%       [0.1%, 21.1%]          3.41 sd
-  0.99999-1 (saturated)         13     1    7.7%       [0.2%, 36.0%]          7.03 sd
-  saturated share of ENTRIES 12.6% (13/103); of LOSSES 25.0% (1/4)
+  0.9950-0.9990                 74     2    2.7%        [0.3%, 9.4%]          2.77 sd
+  0.9990-0.99999                27     1    3.7%       [0.1%, 19.0%]          3.36 sd
+  0.99999-1 (saturated)         14     1    7.1%       [0.2%, 33.9%]          7.03 sd
+  saturated share of ENTRIES 12.2% (14/115); of LOSSES 25.0% (1/4)
 
   Our losing closes, least confident first:
     KXNEAR15M-26SEP082045-45           gate 0.98  entry conf 0.981740  margin 2.09 sd
