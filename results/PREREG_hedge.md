@@ -232,4 +232,36 @@ and at what price -- cannot be planted, only lived. The trader restarts in
 production mode without `--hedge-plant`, and the n=30 live bar counts real
 events from here. Total cost of both plants: 1.12c.
 
+## LIVE EVENTS 1 AND 2 (real, not planted) -- 2026-09-12 14:59Z and 15:14Z: BOTH FALSE ALARMS
+
+| event | held | alarm belief | tau | hedge | original result | pair P&L |
+|---|---|---|---|---|---|---|
+| BTC 11:00 | 20 NO @ 90c | **0.887** | 24 | 20 YES @ 14c, executed first try | **WON** (+$1.87) | **-$1.09** |
+| ETH 11:15 | 20 NO @ 98c | **0.664** | 28 | 28c IOC missed; 26c x14 then 27c x6 over three seconds | **WON** (+$0.11) | **-$5.42** |
+
+**Mechanics: correct on both.** The ETH hedge exercised the paced retry (three
+distinct seconds), the partial-fill continuation (14 then 6), the `ask` field
+on the record, and both legs settled and booked. Nothing to fix in the path.
+
+**Trigger: two false alarms.** Running tally against the bar above:
+
+| bar | required | running |
+|---|---|---|
+| false-alarm rate | <= 3% of positions held | **2 of 222 = 0.9% [0.1, 3.2]** |
+| mean recovery on caught losers | >= 25c/contract | no real loser caught yet (0 events) |
+| hedge fill rate | >= 60% | 2 of 2 alarms filled (100%) |
+| never increases a loss | hard refusal | 0 refusals needed; both asks < $1 |
+
+Net cost of the hedge so far: **-$6.51**, saved $0 -- no real collapse has
+occurred since deploy (the bot is 12-for-12 and better since 10:02Z). One caught
+loser is worth ~+$9.50, so this is variance at n=2, not a verdict.
+
+**Observation recorded for the n=30 review, NOT acted on:** BTC fired at 0.887 --
+a hair under 0.90 -- and ETH at 0.664 with 28 s left, both recovered. The holdout
+row for 0.80 showed zero false alarms in 162 positions at 55c recovery instead of
+68c. The live false-alarm rate is ~4x the tape's (0.9% vs 0.24%), the same
+live/tape gap this project measures everywhere, and it is the kind of number that
+would make 0.80 the better trade if it persists. **The threshold stays 0.90 until
+n=30, per this file.** Changing it on two events would be tuning on noise.
+
 ## If this bar moves again, the move is dated and explained here.
