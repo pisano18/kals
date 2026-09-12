@@ -1299,6 +1299,63 @@ def selftest():
         pintake.LEDGER.update({"committed": 0.0, "halt": "unknown order state"})
         s3 = risk_abort({"halted": False, "errors": 0}, _A)
         ck(s3 and "halted" in s3, f"abort fires on a pintake halt ({s3})")
+
+        # ---- AMENDMENT 14: transient vs terminal --------------------------
+        # Every string risk_abort can return is classified, and the test is
+        # driven by the FUNCTION's own output, not by retyped literals -- the
+        # rail-test rule. A condition that reads open_cost / committed /
+        # positions clears when reconcile() releases them; nothing else does.
+        _trans = [
+            "position cap: 3 open >= 3",
+            "loss bound: realised $+0.78 with $40.89 still open; one more "
+            "contract could take this run past $-60.00",
+            "stake cap reached: $60.00 committed",
+        ]
+        _term = [
+            "already halted",
+            "pintake halted: unknown order state",
+            "loss abort: realised $-61.00 <= $-60.00",
+            "loss COUNT brake: 3 losing trades this run >= 3; stop and "
+            "re-measure the flip rate",
+            "2 errors on the ORDER path",
+            "5 consecutive errors",
+        ]
+        for _w in _trans:
+            ck(halt_is_transient(_w),
+               f"PAUSE (clears when positions settle): {_w[:46]}")
+        for _w in _term:
+            ck(not halt_is_transient(_w),
+               f"HALT (needs a human): {_w[:46]}")
+        ck(not halt_is_transient(None) and not halt_is_transient(""),
+           "no halt at all is not a transient halt")
+        # the two real ones from tonight, verbatim from the live log
+        ck(halt_is_transient("position cap: 3 open >= 3"),
+           "the 02:00 halt that cost 23 minutes would now PAUSE")
+        ck(halt_is_transient("loss bound: realised $+0.78 with $40.89 still "
+                             "open; one more contract could take this run "
+                             "past $-60.00"),
+           "and so would the 03:29 one")
+        # the loop must not mark state halted on a pause, or risk_abort
+        # answers "already halted" for ever afterwards
+        # ANCHOR ON WHOLE LINES. Searching for the bare text finds this
+        # test's OWN reference to it first -- the THIRD time a source
+        # assertion in this project has matched itself (see also the
+        # "assigned exactly once" and "book.watch(" checks). The rule, now
+        # stated for the last time: a source assertion matches a LINE, at its
+        # real indentation, never a substring.
+        _lines14 = open(os.path.abspath(__file__),
+                        encoding="utf-8").read().split(chr(10))
+        _i14 = next(i for i, ln in enumerate(_lines14)
+                    if ln == "        if stop and halt_is_transient(stop):")
+        _j14 = next(i for i, ln in enumerate(_lines14)
+                    if i > _i14 and ln.startswith("        if state.get("))
+        _blk = chr(10).join(_lines14[_i14:_j14])
+        ck('state["halted"] = True' not in _blk,
+           "the pause branch never sets state['halted'] -- that would be a "
+           "terminal answer to a temporary question")
+        ck("continue" in _blk,
+           "and it continues the loop, so reconcile() keeps releasing the "
+           "positions it is waiting on")
         # the FORWARD bound: realised only moves after settlement, so the
         # advertised -$2.00 has to be checked against what is still open.
         pintake.LEDGER.update({"realised": 0.0, "committed": 0.0,
@@ -1591,6 +1648,30 @@ def risk_abort(state, a):
     return None
 
 
+# AMENDMENT 14 (2026-09-12). A HALT THAT CLEARS ITSELF MUST PAUSE, NOT QUIT.
+# The loop's reaction to risk_abort was `break`, so ANY condition ended the
+# run for good. Twice on 2026-09-12 that cost real trading time:
+#   02:00  "position cap: 3 open >= 3"      -- down 23 minutes
+#   03:29  "loss bound: ... $40.89 open"    -- down until noticed
+# Both conditions are TEMPORARY. They are functions of what is currently
+# OPEN, and every position here settles within 60 seconds of its close, at
+# which point reconcile() releases it and the condition evaporates. Quitting
+# on them throws away the rest of the day to avoid a risk that has already
+# passed.
+#
+# THE LIST IS A WHITELIST AND IT IS DELIBERATELY SHORT. Anything not named
+# here still ends the run, because misclassifying a terminal condition as
+# transient means trading on through the thing that was meant to stop us.
+# The three below are exactly the conditions that read `open_cost`,
+# `committed` or `positions` -- all of which reconcile() reduces.
+TRANSIENT_HALTS = ("position cap:", "loss bound:", "stake cap reached:")
+
+
+def halt_is_transient(why):
+    """True only for a halt that clears when open positions settle."""
+    return bool(why) and str(why).startswith(TRANSIENT_HALTS)
+
+
 # ===========================================================================
 def _fresh_near():
     # "depths" records the contracts ON OFFER at every moment we could have
@@ -1827,6 +1908,22 @@ def trade_loop(a, rec, book, idx, series_index):
         report_closes(int(time.time()) - 5)
         reconcile()
         stop = risk_abort(state, a)
+        if stop and halt_is_transient(stop):
+            # AMENDMENT 14: wait it out. reconcile() runs at the top of every
+            # iteration, so the open positions this is waiting on are released
+            # here and the condition clears on its own. state["halted"] is NOT
+            # set, because setting it would make risk_abort return "already
+            # halted" for ever -- a terminal answer to a temporary question.
+            if stop != state.get("paused_on"):
+                state["paused_on"] = stop
+                state["pauses"] = state.get("pauses", 0) + 1
+                rec("pause", why=stop, pauses=state["pauses"])
+                print(f"  --- PAUSE (will resume): {stop}")
+            time.sleep(1.0)
+            continue
+        if state.get("paused_on"):
+            rec("resume", after=state.pop("paused_on"))
+            print("  --- RESUMED")
         if stop:
             state["halted"] = True
             rec("halt", why=stop)
