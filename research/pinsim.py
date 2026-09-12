@@ -408,6 +408,51 @@ def book_hours(hours, end=None):
     return [os.path.basename(f)[:11] for f in bfiles[-hours:]]
 
 
+class DeltaStream:
+    """A re-iterable, file-backed stream of (ts_ms, ticker, side, price, dq).
+
+    Each __iter__ re-opens the gzip and yields in file order, so iterating
+    twice gives identical results (the replay player relies on that) and
+    nothing is held between iterations. `bad` counts deltas that failed to
+    parse on the MOST RECENT iteration; read it after the loop, not before.
+    """
+
+    def __init__(self, path, mk):
+        self.path = path
+        self.mk = mk
+        self.bad = 0
+
+    def __iter__(self):
+        self.bad = 0
+        try:
+            with gzip.open(self.path, "rt") as f:
+                for line in f:
+                    try:
+                        d = json.loads(line)
+                        m = d["msg"]
+                    except Exception:
+                        continue
+                    tk = m.get("market_ticker")
+                    ts = int(m.get("ts_ms") or 0)
+                    if not ts:
+                        continue
+                    if tk in self.mk:
+                        # VERBATIM from pindata's fixed reader. The tape says
+                        # `price_dollars`; a first version read
+                        # `price_dollars_fp`, every delta raised, the except
+                        # swallowed it, and six settled hours "bought 0".
+                        try:
+                            yield (ts, tk, str(m.get("side", "")).lower(),
+                                   float(m.get("price_dollars", m.get("price"))),
+                                   float(m.get("delta_fp", m.get("delta")) or 0.0))
+                        except Exception:
+                            self.bad += 1
+                    else:
+                        yield (ts, None, None, None, None)      # a clock tick
+        except (EOFError, zlib.error, OSError):
+            return
+
+
 def load_hour(stamp, mk):
     """Everything one book hour needs, parsed once: index ticks, snapshots,
     and the delta stream as (ts_ms, ticker, side, price, dq) tuples."""
@@ -437,40 +482,21 @@ def load_hour(stamp, mk):
                                       d.get("ts_ms") or 0))
         except (EOFError, zlib.error, OSError):
             pass
-    deltas = []
-    bad = 0
+    # THE DELTA STREAM IS NOT MATERIALISED. A first version built a Python
+    # list of one 5-tuple per delta message in the hour -- including a
+    # placeholder for every message on markets we do not track, kept so the
+    # replay clock advances -- and an hour of order-book deltas is millions
+    # of messages. That list was ~1 GB per hour; with the 12-hour cache it
+    # reached 3.3 GB after four hours and the OS killed the run (2026-09-12,
+    # twice: once with the cache, once with eviction but still one hour
+    # resident while the next was being parsed). The collector survived both
+    # times. DeltaStream holds no data: it re-opens the file on every
+    # iteration and yields the same tuples in the same order, so run() and
+    # stream() consume it unchanged and the cache may keep it for free.
     bf = os.path.join(DATA, "orderbook_delta", f"{stamp}.jsonl.gz")
-    try:
-        with gzip.open(bf, "rt") as f:
-            for line in f:
-                try:
-                    d = json.loads(line)
-                    m = d["msg"]
-                except Exception:
-                    continue
-                tk = m.get("market_ticker")
-                ts = int(m.get("ts_ms") or 0)
-                if not ts:
-                    continue
-                if tk in mk:
-                    # VERBATIM from pindata's fixed reader. The tape says
-                    # `price_dollars`; a first version read `price_dollars_fp`,
-                    # every delta raised, the except swallowed it, and six
-                    # settled hours "bought 0".
-                    try:
-                        deltas.append((ts, tk, str(m.get("side", "")).lower(),
-                                       float(m.get("price_dollars",
-                                                   m.get("price"))),
-                                       float(m.get("delta_fp",
-                                                   m.get("delta")) or 0.0)))
-                    except Exception:
-                        bad += 1
-                else:
-                    deltas.append((ts, None, None, None, None))  # a clock tick
-    except (EOFError, zlib.error, OSError):
-        pass
+    deltas = DeltaStream(bf, mk)
     hour = {"stamp": stamp, "ticks": ticks, "snaps": snaps,
-            "deltas": deltas, "bad_deltas": bad}
+            "deltas": deltas, "bad_deltas": 0}
     if len(_HOUR_CACHE) >= HOUR_CACHE_MAX:
         _HOUR_CACHE.pop(next(iter(_HOUR_CACHE)))
     _HOUR_CACHE[stamp] = hour
@@ -582,7 +608,6 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
     decided = set()
     for hi, stamp in enumerate(stamps):
         hour = load_hour(stamp, mk)
-        bad_deltas += hour["bad_deltas"]
         if not hour["ticks"]:
             continue
         idx = TapeIndex(sorted(hour["ticks"]))
@@ -724,6 +749,7 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
                                 "h": {t: None for t in hedge_thrs},
                                 "alarm_tau": {t: None for t in hedge_thrs},
                                 "tries": {}}
+        bad_deltas += getattr(hour["deltas"], "bad", 0) or hour.get("bad_deltas", 0)
         say(f"    {stamp}  bought {len(bought):,}", flush=True)
         # MEMORY. _HOUR_CACHE (cap 12) exists for the replay player, which
         # scrubs back and forth over a few hours. A one-pass run visits each
