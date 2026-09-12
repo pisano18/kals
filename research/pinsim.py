@@ -725,6 +725,14 @@ def run(profile, hours, end=None, size=None, log=None, progress=None,
                                 "alarm_tau": {t: None for t in hedge_thrs},
                                 "tries": {}}
         say(f"    {stamp}  bought {len(bought):,}", flush=True)
+        # MEMORY. _HOUR_CACHE (cap 12) exists for the replay player, which
+        # scrubs back and forth over a few hours. A one-pass run visits each
+        # hour once and never again, so caching it is pure waste: on
+        # 2026-09-12 a 72-hour run reached 3.3 GB after FOUR hours (~800 MB
+        # per hour of order-book deltas) and the OS killed it for low memory
+        # while the collector -- which outranks every job here -- was live.
+        # Collectors survived; the run did not. Evict the hour we just used.
+        _HOUR_CACHE.pop(stamp, None)
         if progress:
             progress(hi + 1, len(stamps))
 

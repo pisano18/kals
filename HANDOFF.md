@@ -1,3 +1,34 @@
+# 2026-09-12 08:2xZ -- OOM kill of the hedge holdout; collectors survived; cause found and fixed
+
+**What happened.** `pinsim.py --hours 72 --hedge 0.70,0.80,0.90` was killed by
+the system for low memory after processing FOUR of 72 hours, at 3.3 GB
+resident, with 2.0 GB free of 15.8 GB. The collector (35 MB), the feed
+recorder (27 MB), the live trader (60 MB) and the tool (26 MB) were all
+verified alive afterwards; the newest tape file was still being written.
+**Nothing was lost except the run.**
+
+**Cause -- NOT the new hedge code.** `_HOUR_CACHE` (cap `HOUR_CACHE_MAX = 12`)
+holds a full hour of parsed order-book deltas per entry, ~800 MB each. It
+exists for the replay player, which scrubs back and forth over a few hours. A
+one-pass `run()` visits each hour exactly once, so the cache was pure waste
+growing toward ~10 GB. `books` is reset per hour and was not the growth.
+
+**Fix.** `run()` now evicts each hour from `_HOUR_CACHE` the moment it has
+finished with it. Footprint should be ~1 hour (~800 MB) plus bookkeeping.
+
+**Protocol note.** Free RAM was 2.0 GB when I last checked and I chose to
+watch rather than stop. The guard in CLAUDE.md is about DISK (6 GB); there is
+no written RAM guard. **Proposed, not yet adopted: stop any analysis job that
+takes free RAM under 3 GB while the collector is live.** The collector's own
+footprint is tiny, so the risk is the OS killing it alongside the hog, as it
+could have here.
+
+**Holdout status:** relaunched with the fix on the same 72 unseen hours
+(09-06T22 -> 09-10T04). The four hours it completed bought 11 markets; those
+are re-run, not reused.
+
+---
+
 # 2026-09-11 23:xxZ -- Pyth KILLED structurally; Coin Race measured; discount cliff settled on 48h
 
 Four things landed. Newest first, all committed, **branch is 4 commits ahead of
