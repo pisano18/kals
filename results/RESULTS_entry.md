@@ -1,6 +1,6 @@
 # RESULTS_entry -- how to know when NOT to buy
 
-Generated 2026-09-12T13:03:36Z by `research/pinentry.py` (`--selftest` passes; `main()` refuses real data until it does).
+Generated 2026-09-12T13:12:23Z by `research/pinentry.py` (`--selftest` passes; `main()` refuses real data until it does).
 
 ## What was measured, and on which population
 
@@ -137,6 +137,17 @@ _distribution: 409 of 409 rows carry it; p5 0.02 / p25 0.36 / median 299.45 / p7
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 0.1 | 45 | 2 (4.44%) | 364 | 14 (3.85%) | +0.60 [-3.93, +6.99] | -3.64 [-6.28, -1.57] | +4.82 [-2.88, +15.83] | no |
+| 0.5 | 124 | 11 (8.87%) | 285 | 5 (1.75%) | +7.12 [+1.89, +12.85] | +7.26 [+1.76, +13.87] | +6.97 [-3.41, +19.86] | no |
+| 2 | 168 | 12 (7.14%) | 241 | 4 (1.66%) | +5.48 [+1.40, +9.93] | +4.62 [+0.25, +9.70] | +7.75 [-1.15, +18.26] | no |
+| 10 | 188 | 12 (6.38%) | 221 | 4 (1.81%) | +4.57 [+0.74, +8.53] | +3.65 [-0.44, +8.11] | +7.32 [-1.19, +17.47] | no |
+
+_No cut holds in both halves._
+
 ---
 
 ## 1b. OFFER FRESHNESS -- seconds since the level was last INCREASED -- A (tradeable)
@@ -184,6 +195,17 @@ _distribution: 409 of 409 rows carry it; p5 0.01 / p25 0.19 / median 0.93 / p75 
 | last 4d | +6.71 pp | [-0.93, +15.73] | includes 0 |
 
 **Does not survive the split.**
+
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 0.1 | 68 | 5 (7.35%) | 341 | 11 (3.23%) | +4.13 [-1.28, +10.65] | +1.96 [-4.10, +10.06] | +7.11 [-0.88, +16.97] | no |
+| 0.5 | 166 | 14 (8.43%) | 243 | 2 (0.82%) | +7.61 [+3.22, +11.81] | +6.72 [+2.11, +12.26] | +9.31 [+1.64, +18.65] | YES |
+| 2 | 233 | 15 (6.44%) | 176 | 1 (0.57%) | +5.87 [+2.83, +9.05] | +5.45 [+2.31, +9.33] | +7.42 [+1.32, +15.21] | YES |
+| 10 | 276 | 15 (5.43%) | 133 | 1 (0.75%) | +4.68 [+2.18, +7.38] | +4.52 [+1.93, +7.77] | +6.18 [+0.92, +13.36] | YES |
+
+**Cuts that hold in both halves: `lvl_fresh_s < 0.5`, `lvl_fresh_s < 2`, `lvl_fresh_s < 10`.**
 
 ---
 
@@ -233,6 +255,17 @@ _distribution: 409 of 409 rows carry it; p5 0.132 / p25 0.882 / median 1 / p75 2
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 0.5 | 65 | 2 (3.08%) | 344 | 14 (4.07%) | -0.99 [-5.38, +5.71] | -4.04 [-6.94, -1.72] | +6.98 [-6.72, +24.63] | no |
+| 1 | 114 | 4 (3.51%) | 295 | 12 (4.07%) | -0.56 [-4.78, +3.91] | -1.33 [-5.38, +3.32] | +1.82 [-7.69, +13.51] | no |
+| 2 | 289 | 10 (3.46%) | 120 | 6 (5.00%) | -1.54 [-6.15, +2.31] | -0.41 [-5.64, +4.12] | -4.19 [-12.98, +3.34] | no |
+| 5 | 361 | 15 (4.16%) | 48 | 1 (2.08%) | +2.07 [-3.24, +6.11] | +0.24 [-7.82, +5.24] | +5.69 [+0.81, +11.72] | no |
+
+_No cut holds in both halves._
+
 ---
 
 ## 1d. OFFER SIZE, absolute contracts at the level -- A (tradeable)
@@ -278,6 +311,16 @@ _distribution: 409 of 409 rows carry it; p5 14 / p25 38 / median 117.5 / p75 300
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 20 | 45 | 2 (4.44%) | 364 | 14 (3.85%) | +0.60 [-5.09, +10.25] | -3.70 [-6.30, -1.59] | +6.98 [-6.84, +28.48] | no |
+| 100 | 194 | 8 (4.12%) | 215 | 8 (3.72%) | +0.40 [-3.66, +4.99] | -0.30 [-4.62, +4.35] | +1.66 [-6.06, +11.34] | no |
+| 500 | 333 | 14 (4.20%) | 76 | 2 (2.63%) | +1.57 [-3.15, +5.71] | -1.12 [-8.20, +4.35] | +6.36 [+0.90, +12.82] | no |
+
+_No cut holds in both halves._
+
 ---
 
 ## 2a. PRE-ENTRY JUMPINESS -- 1s index moves > 3 sigma in the last 120s -- A (tradeable)
@@ -322,6 +365,16 @@ _distribution: 409 of 409 rows carry it; p5 0 / p25 2 / median 3 / p75 4 / p95 6
 | last 4d | +7.26 pp | [-3.23, +20.97] | includes 0 |
 
 **Does not survive the split.**
+
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 39 | 0 (0.00%) | 370 | 16 (4.32%) | -4.32 [-6.88, -1.98] | -3.63 [-6.25, -1.56] | -5.74 [-11.72, -0.80] | no |
+| 2 | 100 | 2 (2.00%) | 309 | 14 (4.53%) | -2.53 [-6.18, +1.48] | -2.41 [-6.22, +2.00] | -2.77 [-10.83, +6.41] | no |
+| 4 | 277 | 6 (2.17%) | 132 | 10 (7.58%) | -5.41 [-11.14, -0.35] | -4.76 [-10.59, +0.49] | -7.26 [-20.47, +3.56] | no |
+
+_No cut holds in both halves._
 
 ---
 
@@ -371,6 +424,16 @@ _distribution: 409 of 409 rows carry it; p5 2.65 / p25 4.21 / median 5.63 / p75 
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 3 | 39 | 0 (0.00%) | 370 | 16 (4.32%) | -4.32 [-6.88, -1.98] | -3.63 [-6.25, -1.56] | -5.74 [-11.72, -0.80] | no |
+| 4 | 86 | 0 (0.00%) | 323 | 16 (4.95%) | -4.95 [-7.81, -2.30] | -4.15 [-7.02, -1.77] | -6.60 [-13.28, -0.89] | no |
+| 6 | 220 | 6 (2.73%) | 189 | 10 (5.29%) | -2.56 [-7.09, +1.28] | -0.84 [-5.36, +3.48] | -6.52 [-17.87, +2.08] | no |
+
+_No cut holds in both halves._
+
 ---
 
 ## 3. MARGIN TO THE STRIKE at entry, in sigma units -- A (tradeable)
@@ -419,6 +482,17 @@ _distribution: 409 of 409 rows carry it; p5 2.607 / p25 2.772 / median 3.17 / p7
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 3 | 169 | 8 (4.73%) | 240 | 8 (3.33%) | +1.40 [-3.30, +6.17] | +2.95 [-1.41, +7.76] | -1.33 [-11.01, +10.14] | no |
+| 4 | 265 | 14 (5.28%) | 144 | 2 (1.39%) | +3.89 [+0.97, +6.82] | +3.00 [-0.96, +6.56] | +6.31 [+0.81, +13.46] | no |
+| 5 | 296 | 16 (5.41%) | 113 | 0 (0.00%) | +5.41 [+2.57, +8.65] | +4.29 [+1.84, +7.32] | +8.14 [+1.11, +16.85] | YES |
+| 6 | 306 | 16 (5.23%) | 103 | 0 (0.00%) | +5.23 [+2.46, +8.36] | +4.15 [+1.79, +7.08] | +7.87 [+1.09, +16.33] | YES |
+
+**Cuts that hold in both halves: `margin_sd < 5`, `margin_sd < 6`.**
+
 ---
 
 ## 4a. TAU AT ENTRY (control) -- A (tradeable)
@@ -460,6 +534,15 @@ _distribution: 409 of 409 rows carry it; p5 7 / p25 18 / median 28 / p75 30 / p9
 | last 4d | +7.11 pp | [-6.41, +23.39] | includes 0 |
 
 **Does not survive the split.**
+
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 10 | 32 | 1 (3.12%) | 377 | 15 (3.98%) | -0.85 [-5.84, +6.77] | +1.11 [-5.06, +11.70] | -5.38 [-11.02, -0.76] | no |
+| 20 | 117 | 5 (4.27%) | 292 | 11 (3.77%) | +0.51 [-4.27, +5.86] | -1.18 [-5.50, +3.25] | +4.19 [-7.07, +17.95] | no |
+
+_No cut holds in both halves._
 
 ---
 
@@ -505,6 +588,16 @@ _distribution: 409 of 409 rows carry it; p5 0.87 / p25 0.92 / median 0.96 / p75 
 | last 4d | +6.15 pp | [-1.24, +15.08] | includes 0 |
 
 **Does not survive the split.**
+
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 0.94 | 137 | 8 (5.84%) | 272 | 8 (2.94%) | +2.90 [-1.48, +7.93] | +0.66 [-4.00, +5.80] | +6.15 [-1.25, +15.16] | no |
+| 0.97 | 248 | 14 (5.65%) | 161 | 2 (1.24%) | +4.40 [+0.65, +8.19] | +4.13 [+0.45, +8.03] | +4.74 [-3.21, +13.19] | no |
+| 0.98 | 355 | 16 (4.51%) | 54 | 0 (0.00%) | +4.51 [+2.05, +7.16] | +3.88 [+1.65, +6.69] | +5.69 [+0.81, +11.54] | YES |
+
+**Cuts that hold in both halves: `price < 0.98`.**
 
 ---
 
@@ -554,6 +647,16 @@ _distribution: 409 of 409 rows carry it; p5 1.73 / p25 2.1 / median 3.77 / p75 8
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 2 | 64 | 1 (1.56%) | 345 | 15 (4.35%) | -2.79 [-6.30, +1.71] | -1.52 [-5.50, +3.79] | -5.69 [-11.54, -0.81] | no |
+| 5 | 242 | 7 (2.89%) | 167 | 9 (5.39%) | -2.50 [-6.93, +1.35] | -0.95 [-5.58, +3.64] | -4.99 [-12.66, +1.57] | no |
+| 10 | 342 | 10 (2.92%) | 67 | 6 (8.96%) | -6.03 [-13.26, -0.02] | -6.85 [-18.70, +2.59] | -4.73 [-13.00, +1.30] | no |
+
+_No cut holds in both halves._
+
 
 # COMPANION: population B, every moment the model was certain
 
@@ -588,6 +691,17 @@ _distribution: 5,520 of 7,328 rows carry it; p5 0.92 / p25 788.62 / median 814.8
 
 **SURVIVES THE SPLIT.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 0.1 | 67 | 2 (2.99%) | 5,453 | 31 (0.57%) | +2.42 [-0.63, +7.05] | -0.50 [-0.77, -0.26] | +8.06 [-0.76, +21.42] | no |
+| 0.5 | 209 | 11 (5.26%) | 5,311 | 22 (0.41%) | +4.85 [+1.51, +8.73] | +2.40 [+0.15, +5.28] | +10.47 [+1.34, +20.69] | YES |
+| 2 | 336 | 11 (3.27%) | 5,184 | 22 (0.42%) | +2.85 [+0.77, +5.34] | +1.32 [-0.11, +3.12] | +6.53 [+0.65, +13.64] | no |
+| 10 | 440 | 13 (2.95%) | 5,080 | 20 (0.39%) | +2.56 [+0.83, +4.58] | +1.56 [+0.23, +3.17] | +5.51 [+0.49, +11.89] | YES |
+
+**Cuts that hold in both halves: `lvl_age_s < 0.5`, `lvl_age_s < 10`.**
+
 ---
 
 ## 1b. OFFER FRESHNESS -- seconds since the level was last INCREASED -- B (model-certain)
@@ -616,6 +730,17 @@ _distribution: 5,520 of 7,328 rows carry it; p5 0.26 / p25 20.7 / median 274.79 
 | last 4d | +10.10 pp | [+1.63, +20.88] | EXCLUDES 0 |
 
 **Does not survive the split.**
+
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 0.1 | 142 | 7 (4.93%) | 5,378 | 26 (0.48%) | +4.45 [+1.01, +9.08] | +1.68 [-0.53, +5.11] | +10.10 [+1.55, +21.32] | no |
+| 0.5 | 386 | 12 (3.11%) | 5,134 | 21 (0.41%) | +2.70 [+0.83, +4.90] | +1.55 [+0.05, +3.29] | +5.36 [+0.43, +11.43] | YES |
+| 2 | 724 | 15 (2.07%) | 4,796 | 18 (0.38%) | +1.70 [+0.58, +3.02] | +1.04 [+0.09, +2.12] | +3.67 [+0.45, +7.59] | YES |
+| 10 | 1,162 | 19 (1.64%) | 4,358 | 14 (0.32%) | +1.31 [+0.53, +2.17] | +0.65 [-0.00, +1.36] | +3.30 [+0.93, +5.89] | no |
+
+**Cuts that hold in both halves: `lvl_fresh_s < 0.5`, `lvl_fresh_s < 2`.**
 
 ---
 
@@ -646,6 +771,17 @@ _distribution: 5,520 of 7,328 rows carry it; p5 0.247 / p25 1 / median 1 / p75 1
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 0.5 | 369 | 7 (1.90%) | 5,151 | 26 (0.50%) | +1.39 [+0.04, +3.08] | +1.08 [-0.12, +2.68] | +2.58 [-0.78, +7.81] | no |
+| 1 | 532 | 10 (1.88%) | 4,988 | 23 (0.46%) | +1.42 [+0.33, +2.78] | +1.20 [+0.09, +2.48] | +2.40 [-0.56, +6.27] | no |
+| 2 | 4,855 | 28 (0.58%) | 665 | 5 (0.75%) | -0.18 [-0.97, +0.45] | +0.13 [-0.57, +0.66] | -1.50 [-4.94, +0.64] | no |
+| 5 | 5,052 | 31 (0.61%) | 468 | 2 (0.43%) | +0.19 [-0.43, +0.63] | +0.57 [+0.30, +0.89] | -1.57 [-4.92, +0.63] | no |
+
+_No cut holds in both halves._
+
 ---
 
 ## 1d. OFFER SIZE, absolute contracts at the level -- B (model-certain)
@@ -673,6 +809,16 @@ _distribution: 7,328 of 7,328 rows carry it; p5 0 / p25 0.01 / median 19 / p75 1
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 20 | 3,697 | 15 (0.41%) | 3,631 | 21 (0.58%) | -0.17 [-0.47, +0.13] | -0.16 [-0.56, +0.23] | -0.15 [-0.58, +0.27] | no |
+| 100 | 5,466 | 29 (0.53%) | 1,862 | 7 (0.38%) | +0.15 [-0.18, +0.46] | +0.11 [-0.29, +0.51] | +0.18 [-0.31, +0.66] | no |
+| 500 | 6,444 | 33 (0.51%) | 884 | 3 (0.34%) | +0.17 [-0.24, +0.50] | +0.01 [-0.60, +0.48] | +0.35 [-0.10, +0.73] | no |
+
+_No cut holds in both halves._
+
 ---
 
 ## 2a. PRE-ENTRY JUMPINESS -- 1s index moves > 3 sigma in the last 120s -- B (model-certain)
@@ -699,6 +845,16 @@ _distribution: 7,328 of 7,328 rows carry it; p5 0 / p25 1 / median 2 / p75 3 / p
 | last 4d | +0.54 pp | [+0.00, +1.17] | EXCLUDES 0 |
 
 **Does not survive the split.**
+
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 1,043 | 2 (0.19%) | 6,285 | 34 (0.54%) | -0.35 [-0.71, +0.02] | -0.20 [-0.54, +0.29] | -0.52 [-1.15, +0.11] | no |
+| 2 | 2,644 | 7 (0.26%) | 4,684 | 29 (0.62%) | -0.35 [-0.65, -0.08] | -0.33 [-0.66, -0.01] | -0.39 [-0.93, +0.10] | no |
+| 4 | 5,709 | 26 (0.46%) | 1,619 | 10 (0.62%) | -0.16 [-0.58, +0.22] | -0.52 [-1.15, +0.00] | +0.26 [-0.27, +0.76] | no |
+
+_No cut holds in both halves._
 
 ---
 
@@ -728,6 +884,17 @@ _distribution: 7,328 of 7,328 rows carry it; p5 2.33 / p25 3.59 / median 4.81 / 
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 2 | 169 | 0 (0.00%) | 7,159 | 36 (0.50%) | -0.50 [-0.75, -0.31] | -0.37 [-0.58, -0.19] | -0.65 [-1.14, -0.29] | no |
+| 3 | 1,034 | 2 (0.19%) | 6,294 | 34 (0.54%) | -0.35 [-0.71, +0.02] | -0.19 [-0.54, +0.30] | -0.52 [-1.15, +0.11] | no |
+| 4 | 2,494 | 6 (0.24%) | 4,834 | 30 (0.62%) | -0.38 [-0.79, -0.03] | -0.31 [-0.63, +0.02] | -0.47 [-1.22, +0.16] | no |
+| 6 | 4,969 | 23 (0.46%) | 2,359 | 13 (0.55%) | -0.09 [-0.40, +0.20] | -0.16 [-0.62, +0.25] | -0.02 [-0.46, +0.41] | no |
+
+_No cut holds in both halves._
+
 ---
 
 ## 3. MARGIN TO THE STRIKE at entry, in sigma units -- B (model-certain)
@@ -756,6 +923,17 @@ _distribution: 7,328 of 7,328 rows carry it; p5 2.751 / p25 7.034 / median 7.034
 
 **SURVIVES THE SPLIT.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 3 | 606 | 23 (3.80%) | 6,722 | 13 (0.19%) | +3.60 [+2.15, +5.25] | +2.83 [+1.19, +4.96] | +4.37 [+2.02, +7.10] | YES |
+| 4 | 989 | 31 (3.13%) | 6,339 | 5 (0.08%) | +3.06 [+1.95, +4.36] | +2.44 [+1.26, +3.85] | +3.76 [+1.81, +5.98] | YES |
+| 5 | 1,251 | 31 (2.48%) | 6,077 | 5 (0.08%) | +2.40 [+1.53, +3.42] | +1.92 [+0.99, +3.05] | +2.93 [+1.38, +4.68] | YES |
+| 6 | 1,513 | 31 (2.05%) | 5,815 | 5 (0.09%) | +1.96 [+1.25, +2.82] | +1.57 [+0.81, +2.48] | +2.42 [+1.15, +3.89] | YES |
+
+**Cuts that hold in both halves: `margin_sd < 3`, `margin_sd < 4`, `margin_sd < 5`, `margin_sd < 6`.**
+
 ---
 
 ## 4a. TAU AT ENTRY (control) -- B (model-certain)
@@ -781,6 +959,15 @@ _distribution: 7,328 of 7,328 rows carry it; p5 17 / p25 30 / median 30 / p75 30
 | last 4d | +2.94 pp | [-0.01, +6.63] | includes 0 |
 
 **Does not survive the split.**
+
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 10 | 206 | 3 (1.46%) | 7,122 | 33 (0.46%) | +0.99 [-0.45, +2.89] | +2.22 [-0.50, +9.01] | +0.59 [-0.81, +2.54] | no |
+| 20 | 435 | 9 (2.07%) | 6,893 | 27 (0.39%) | +1.68 [+0.47, +3.06] | +1.66 [-0.30, +3.99] | +1.63 [+0.09, +3.61] | no |
+
+_No cut holds in both halves._
 
 ---
 
@@ -809,6 +996,16 @@ _distribution: 5,520 of 7,328 rows carry it; p5 0.37 / p25 0.51 / median 0.61 / 
 | last 4d | +4.62 pp | [-0.72, +12.77] | includes 0 |
 
 **Does not survive the split.**
+
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 0.94 | 4,255 | 20 (0.47%) | 1,265 | 13 (1.03%) | -0.56 [-1.22, +0.02] | -0.37 [-1.01, +0.23] | -1.51 [-3.71, +0.21] | no |
+| 0.97 | 4,383 | 26 (0.59%) | 1,137 | 7 (0.62%) | -0.02 [-0.56, +0.45] | +0.22 [-0.30, +0.71] | -0.96 [-2.94, +0.52] | no |
+| 0.98 | 4,477 | 28 (0.63%) | 1,043 | 5 (0.48%) | +0.15 [-0.37, +0.59] | +0.53 [+0.08, +0.96] | -1.18 [-3.43, +0.51] | no |
+
+_No cut holds in both halves._
 
 ---
 
@@ -840,12 +1037,193 @@ _distribution: 5,520 of 7,328 rows carry it; p5 0.1 / p25 12.98 / median 38.82 /
 
 **Does not survive the split.**
 
+**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE rate, cluster bootstrap over CLOSES.** A rule we could deploy is a cut, so this is the shape that matters.
+
+| cut | n below | collapse below | n above | collapse above | all: diff [95% CI] | first 5d | last 4d | both halves |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 906 | 5 (0.55%) | 4,614 | 28 (0.61%) | -0.05 [-0.55, +0.54] | -0.48 [-0.90, -0.01] | +1.52 [-0.50, +4.29] | no |
+| 2 | 1,057 | 6 (0.57%) | 4,463 | 27 (0.60%) | -0.04 [-0.51, +0.49] | -0.36 [-0.85, +0.13] | +1.17 [-0.51, +3.44] | no |
+| 5 | 1,228 | 10 (0.81%) | 4,292 | 23 (0.54%) | +0.28 [-0.26, +0.90] | +0.07 [-0.50, +0.66] | +1.18 [-0.53, +3.42] | no |
+| 10 | 1,339 | 14 (1.05%) | 4,181 | 19 (0.45%) | +0.59 [+0.03, +1.21] | +0.48 [-0.11, +1.11] | +1.34 [-0.23, +3.34] | no |
+| 15 | 1,410 | 15 (1.06%) | 4,110 | 18 (0.44%) | +0.63 [+0.08, +1.22] | +0.61 [+0.01, +1.21] | +1.12 [-0.26, +2.90] | no |
+
+_No cut holds in both halves._
+
+
+---
+
+## Multiple looks, and what survives them
+
+46 looks were taken on population A and 46 on B (92 in total: one worst-bucket contrast plus one test per cut, per feature, per population). At a nominal 5% level the chance of at least one false positive across 92 independent looks would be 99.1%, so a 95% survivor is not evidence on its own. The Bonferroni-equivalent level is 0.054%, i.e. a 99.946% interval. Every cut that held in both halves is re-tested at that level on the FULL sample here.
+
+| population | feature | gate | diff (all) | Bonferroni CI | still excludes 0 |
+|---|---|---|---|---|---|
+| A | 1b. OFFER FRESHNESS | `lvl_fresh_s < 0.5` | +7.61 pp | [+1.23, +16.36] | YES |
+| A | 1b. OFFER FRESHNESS | `lvl_fresh_s < 2` | +5.87 pp | [+1.36, +11.81] | YES |
+| A | 1b. OFFER FRESHNESS | `lvl_fresh_s < 10` | +4.68 pp | [+0.79, +9.88] | YES |
+| A | 3. MARGIN TO THE STRIKE at entry, in sigma units | `margin_sd < 5` | +5.41 pp | [+1.30, +11.48] | YES |
+| A | 3. MARGIN TO THE STRIKE at entry, in sigma units | `margin_sd < 6` | +5.23 pp | [+1.25, +11.18] | YES |
+| A | 4b. PRICE PAID (control) | `price < 0.98` | +4.51 pp | [+1.09, +9.78] | YES |
+| B | 1a. OFFER AGE | `lvl_age_s < 0.5` | +4.85 pp | [-0.42, +13.41] | no |
+| B | 1a. OFFER AGE | `lvl_age_s < 10` | +2.56 pp | [+0.01, +6.36] | YES |
+| B | 1b. OFFER FRESHNESS | `lvl_fresh_s < 0.5` | +2.70 pp | [-0.29, +7.10] | no |
+| B | 1b. OFFER FRESHNESS | `lvl_fresh_s < 2` | +1.70 pp | [+0.12, +4.18] | YES |
+| B | 3. MARGIN TO THE STRIKE at entry, in sigma units | `margin_sd < 3` | +3.60 pp | [+0.93, +6.59] | YES |
+| B | 3. MARGIN TO THE STRIKE at entry, in sigma units | `margin_sd < 4` | +3.06 pp | [+1.16, +5.21] | YES |
+| B | 3. MARGIN TO THE STRIKE at entry, in sigma units | `margin_sd < 5` | +2.40 pp | [+0.91, +4.09] | YES |
+| B | 3. MARGIN TO THE STRIKE at entry, in sigma units | `margin_sd < 6` | +1.96 pp | [+0.73, +3.33] | YES |
+
+**Survives even the multiple-looks correction: `lvl_fresh_s < 0.5` on A, `lvl_fresh_s < 2` on A, `lvl_fresh_s < 10` on A, `margin_sd < 5` on A, `margin_sd < 6` on A, `price < 0.98` on A, `lvl_age_s < 10` on B, `lvl_fresh_s < 2` on B, `margin_sd < 3` on B, `margin_sd < 4` on B, `margin_sd < 5` on B, `margin_sd < 6` on B.**
+
+---
+
+## THE TAUTOLOGY CHECK -- and the control that gives it away
+
+`margin_sd` is not an independent feature. It is the model's own belief on another scale: `margin_sd = Phi^-1(belief)`, and a "collapse" is defined as that SAME belief later falling under 0.90, which is 1.282 sd. So an entry admitted at the gate floor of 2.576 sd starts 1.29 sd from its own alarm, while one at 6 sd starts 4.72 sd from it. **A monotone relation between margin and collapse is mechanically forced and is not information.** It says the model is internally consistent, not that the market is readable.
+
+The distribution says the same thing: on population B the 25th, 50th and 75th percentiles of `margin_sd` are all 7.034, which is the numerical ceiling of `Phi^-1` at a belief clipped to 1 - 1e-12. Most certain moments are not 'very confident', they are 'arithmetically finished'.
+
+**And here is the giveaway.** `4b. PRICE PAID` is a CONTROL -- it was included precisely so that a spurious method would be caught. Look at what it does in the cut sweep and in the cost table: a cheaper price is a bigger discount, a bigger discount means the model is only marginally certain, so `price` inherits the margin effect and "survives" too. Refusing it would cost almost the entire income. A method that certifies a control has certified nothing.
+
+So the question is re-asked properly: **holding the margin roughly fixed, does anything in the BOOK or the INDEX add to it?**
+
+**B, margin_sd < 3 (the most exposed stratum): 606 entries over 383 closes, 23 collapses (3.80%).** MDE at this size is 6.14% counting markets, 6.79% counting closes.
+
+| feature | cut | n below | collapse below | n above | collapse above | diff [95% CI] | holds in both halves |
+|---|---|---|---|---|---|---|---|
+| 1a `lvl_age_s` | 0.1 | 37 | 1 (2.70%) | 567 | 21 (3.70%) | -1.00 [-4.93, +5.21] | no |
+| 1a `lvl_age_s` | 0.5 | 97 | 5 (5.15%) | 507 | 17 (3.35%) | +1.80 [-2.87, +7.80] | no |
+| 1a `lvl_age_s` | 2 | 140 | 5 (3.57%) | 464 | 17 (3.66%) | -0.09 [-3.70, +4.34] | no |
+| 1a `lvl_age_s` | 10 | 162 | 6 (3.70%) | 442 | 16 (3.62%) | +0.08 [-3.26, +4.20] | no |
+| 1b `lvl_fresh_s` | 0.1 | 58 | 3 (5.17%) | 546 | 19 (3.48%) | +1.69 [-3.10, +7.48] | no |
+| 1b `lvl_fresh_s` | 0.5 | 135 | 6 (4.44%) | 469 | 16 (3.41%) | +1.03 [-2.82, +5.73] | no |
+| 1b `lvl_fresh_s` | 2 | 205 | 8 (3.90%) | 399 | 14 (3.51%) | +0.39 [-2.56, +3.89] | no |
+| 1b `lvl_fresh_s` | 10 | 291 | 12 (4.12%) | 313 | 10 (3.19%) | +0.93 [-2.09, +4.03] | no |
+| 1c `size_rel` | 0.5 | 114 | 2 (1.75%) | 490 | 20 (4.08%) | -2.33 [-5.08, +0.81] | no |
+| 1c `size_rel` | 1 | 180 | 4 (2.22%) | 424 | 18 (4.25%) | -2.02 [-4.98, +0.74] | no |
+| 1c `size_rel` | 2 | 528 | 18 (3.41%) | 76 | 4 (5.26%) | -1.85 [-6.90, +2.57] | no |
+| 1c `size_rel` | 5 | 570 | 20 (3.51%) | 34 | 2 (5.88%) | -2.37 [-10.78, +3.96] | no |
+| 1d `lvl_size` | 20 | 210 | 9 (4.29%) | 396 | 14 (3.54%) | +0.75 [-2.56, +4.07] | no |
+| 1d `lvl_size` | 100 | 411 | 17 (4.14%) | 195 | 6 (3.08%) | +1.06 [-1.92, +3.68] | no |
+| 1d `lvl_size` | 500 | 542 | 21 (3.87%) | 64 | 2 (3.12%) | +0.75 [-4.55, +4.50] | no |
+| 2a `jump3` | 1 | 78 | 2 (2.56%) | 528 | 21 (3.98%) | -1.41 [-4.87, +2.72] | no |
+| 2a `jump3` | 2 | 185 | 4 (2.16%) | 421 | 19 (4.51%) | -2.35 [-5.34, +0.58] | no |
+| 2a `jump3` | 4 | 433 | 18 (4.16%) | 173 | 5 (2.89%) | +1.27 [-2.08, +4.38] | no |
+| 2b `jump_max_z` | 2 | 16 | 0 (0.00%) | 590 | 23 (3.90%) | -3.90 [-5.70, -2.39] | no |
+| 2b `jump_max_z` | 3 | 77 | 2 (2.60%) | 529 | 21 (3.97%) | -1.37 [-4.85, +2.81] | no |
+| 2b `jump_max_z` | 4 | 175 | 6 (3.43%) | 431 | 17 (3.94%) | -0.52 [-3.76, +2.70] | no |
+| 2b `jump_max_z` | 6 | 353 | 17 (4.82%) | 253 | 6 (2.37%) | +2.44 [-0.40, +5.34] | no |
+| 4a `tau` | 10 | 36 | 3 (8.33%) | 570 | 20 (3.51%) | +4.82 [-3.28, +15.51] | no |
+| 4a `tau` | 20 | 203 | 8 (3.94%) | 403 | 15 (3.72%) | +0.22 [-3.05, +3.85] | no |
+| 4b `price` | 0.94 | 387 | 16 (4.13%) | 217 | 6 (2.76%) | +1.37 [-1.32, +4.05] | no |
+| 4b `price` | 0.97 | 450 | 20 (4.44%) | 154 | 2 (1.30%) | +3.15 [+0.70, +5.53] | no |
+| 4b `price` | 0.98 | 501 | 21 (4.19%) | 103 | 1 (0.97%) | +3.22 [+0.92, +5.49] | no |
+| 4c `discount_c` | 1 | 56 | 1 (1.79%) | 548 | 21 (3.83%) | -2.05 [-4.91, +1.96] | no |
+| 4c `discount_c` | 2 | 122 | 2 (1.64%) | 482 | 20 (4.15%) | -2.51 [-5.04, +0.33] | no |
+| 4c `discount_c` | 5 | 205 | 3 (1.46%) | 399 | 19 (4.76%) | -3.30 [-5.77, -0.79] | no |
+| 4c `discount_c` | 10 | 248 | 6 (2.42%) | 356 | 16 (4.49%) | -2.08 [-4.75, +0.50] | no |
+| 4c `discount_c` | 15 | 254 | 7 (2.76%) | 350 | 15 (4.29%) | -1.53 [-4.12, +1.12] | no |
+
+**Nothing in the book or the index separates the collapse once the model's own margin is held fixed.**
+
+**B, margin_sd < 4: 989 entries over 500 closes, 31 collapses (3.13%).** MDE at this size is 4.79% counting markets, 5.52% counting closes.
+
+| feature | cut | n below | collapse below | n above | collapse above | diff [95% CI] | holds in both halves |
+|---|---|---|---|---|---|---|---|
+| 1a `lvl_age_s` | 0.1 | 54 | 2 (3.70%) | 930 | 28 (3.01%) | +0.69 [-3.35, +6.29] | no |
+| 1a `lvl_age_s` | 0.5 | 151 | 10 (6.62%) | 833 | 20 (2.40%) | +4.22 [-0.35, +9.75] | no |
+| 1a `lvl_age_s` | 2 | 215 | 10 (4.65%) | 769 | 20 (2.60%) | +2.05 [-1.17, +6.01] | no |
+| 1a `lvl_age_s` | 10 | 249 | 11 (4.42%) | 735 | 19 (2.59%) | +1.83 [-1.22, +5.58] | no |
+| 1b `lvl_fresh_s` | 0.1 | 94 | 6 (6.38%) | 890 | 24 (2.70%) | +3.69 [-1.17, +10.07] | no |
+| 1b `lvl_fresh_s` | 0.5 | 221 | 11 (4.98%) | 763 | 19 (2.49%) | +2.49 [-0.86, +6.38] | no |
+| 1b `lvl_fresh_s` | 2 | 337 | 13 (3.86%) | 647 | 17 (2.63%) | +1.23 [-1.37, +4.00] | no |
+| 1b `lvl_fresh_s` | 10 | 469 | 17 (3.62%) | 515 | 13 (2.52%) | +1.10 [-1.12, +3.57] | no |
+| 1c `size_rel` | 0.5 | 179 | 6 (3.35%) | 805 | 24 (2.98%) | +0.37 [-2.65, +4.19] | no |
+| 1c `size_rel` | 1 | 275 | 9 (3.27%) | 709 | 21 (2.96%) | +0.31 [-2.38, +3.17] | no |
+| 1c `size_rel` | 2 | 848 | 25 (2.95%) | 136 | 5 (3.68%) | -0.73 [-4.64, +2.45] | no |
+| 1c `size_rel` | 5 | 928 | 28 (3.02%) | 56 | 2 (3.57%) | -0.55 [-5.74, +3.21] | no |
+| 1d `lvl_size` | 20 | 322 | 12 (3.73%) | 667 | 19 (2.85%) | +0.88 [-1.18, +3.39] | no |
+| 1d `lvl_size` | 100 | 667 | 24 (3.60%) | 322 | 7 (2.17%) | +1.42 [-0.40, +3.43] | no |
+| 1d `lvl_size` | 500 | 891 | 28 (3.14%) | 98 | 3 (3.06%) | +0.08 [-3.45, +3.21] | no |
+| 2a `jump3` | 1 | 112 | 2 (1.79%) | 877 | 29 (3.31%) | -1.52 [-3.91, +1.80] | no |
+| 2a `jump3` | 2 | 295 | 6 (2.03%) | 694 | 25 (3.60%) | -1.57 [-3.72, +0.58] | no |
+| 2a `jump3` | 4 | 701 | 22 (3.14%) | 288 | 9 (3.12%) | +0.01 [-2.39, +2.28] | no |
+| 2b `jump_max_z` | 2 | 20 | 0 (0.00%) | 969 | 31 (3.20%) | -3.20 [-4.39, -1.96] | no |
+| 2b `jump_max_z` | 3 | 111 | 2 (1.80%) | 878 | 29 (3.30%) | -1.50 [-3.91, +1.86] | no |
+| 2b `jump_max_z` | 4 | 282 | 6 (2.13%) | 707 | 25 (3.54%) | -1.41 [-3.69, +0.89] | no |
+| 2b `jump_max_z` | 6 | 586 | 21 (3.58%) | 403 | 10 (2.48%) | +1.10 [-1.02, +3.23] | no |
+| 4a `tau` | 10 | 70 | 3 (4.29%) | 919 | 28 (3.05%) | +1.24 [-3.01, +6.87] | no |
+| 4a `tau` | 20 | 287 | 9 (3.14%) | 702 | 22 (3.13%) | +0.00 [-2.35, +2.47] | no |
+| 4b `price` | 0.94 | 621 | 19 (3.06%) | 363 | 11 (3.03%) | +0.03 [-2.39, +2.45] | no |
+| 4b `price` | 0.97 | 709 | 25 (3.53%) | 275 | 5 (1.82%) | +1.71 [-0.37, +3.71] | no |
+| 4b `price` | 0.98 | 788 | 27 (3.43%) | 196 | 3 (1.53%) | +1.90 [-0.59, +3.86] | no |
+| 4c `discount_c` | 1 | 117 | 3 (2.56%) | 867 | 27 (3.11%) | -0.55 [-3.48, +3.59] | no |
+| 4c `discount_c` | 2 | 217 | 4 (1.84%) | 767 | 26 (3.39%) | -1.55 [-3.57, +0.91] | no |
+| 4c `discount_c` | 5 | 344 | 8 (2.33%) | 640 | 22 (3.44%) | -1.11 [-3.29, +1.32] | no |
+| 4c `discount_c` | 10 | 406 | 12 (2.96%) | 578 | 18 (3.11%) | -0.16 [-2.39, +2.11] | no |
+| 4c `discount_c` | 15 | 421 | 13 (3.09%) | 563 | 17 (3.02%) | +0.07 [-1.98, +2.30] | no |
+
+**Nothing in the book or the index separates the collapse once the model's own margin is held fixed.**
+
+**A, margin_sd < 5 (every tradeable entry that ever collapsed): 296 entries over 213 closes, 16 collapses (5.41%).** MDE at this size is 9.41% counting markets, 10.19% counting closes.
+
+| feature | cut | n below | collapse below | n above | collapse above | diff [95% CI] | holds in both halves |
+|---|---|---|---|---|---|---|---|
+| 1a `lvl_age_s` | 0.1 | 42 | 2 (4.76%) | 254 | 14 (5.51%) | -0.75 [-5.64, +5.85] | no |
+| 1a `lvl_age_s` | 0.5 | 115 | 11 (9.57%) | 181 | 5 (2.76%) | +6.80 [+1.21, +13.37] | no |
+| 1a `lvl_age_s` | 2 | 153 | 12 (7.84%) | 143 | 4 (2.80%) | +5.05 [+0.52, +10.51] | no |
+| 1a `lvl_age_s` | 10 | 173 | 12 (6.94%) | 123 | 4 (3.25%) | +3.68 [-0.80, +8.53] | no |
+| 1b `lvl_fresh_s` | 0.1 | 65 | 5 (7.69%) | 231 | 11 (4.76%) | +2.93 [-2.53, +9.96] | no |
+| 1b `lvl_fresh_s` | 0.5 | 156 | 14 (8.97%) | 140 | 2 (1.43%) | +7.55 [+3.27, +12.65] | YES |
+| 1b `lvl_fresh_s` | 2 | 217 | 15 (6.91%) | 79 | 1 (1.27%) | +5.65 [+2.61, +9.45] | no |
+| 1b `lvl_fresh_s` | 10 | 259 | 15 (5.79%) | 37 | 1 (2.70%) | +3.09 [-2.02, +7.26] | no |
+| 1c `size_rel` | 0.5 | 62 | 2 (3.23%) | 234 | 14 (5.98%) | -2.76 [-8.09, +3.86] | no |
+| 1c `size_rel` | 1 | 111 | 4 (3.60%) | 185 | 12 (6.49%) | -2.88 [-7.91, +2.08] | no |
+| 1c `size_rel` | 2 | 185 | 10 (5.41%) | 111 | 6 (5.41%) | +0.00 [-5.42, +5.27] | no |
+| 1c `size_rel` | 5 | 253 | 15 (5.93%) | 43 | 1 (2.33%) | +3.60 [-3.06, +8.91] | no |
+| 1d `lvl_size` | 20 | 38 | 2 (5.26%) | 258 | 14 (5.43%) | -0.16 [-7.25, +10.78] | no |
+| 1d `lvl_size` | 100 | 155 | 8 (5.16%) | 141 | 8 (5.67%) | -0.51 [-5.73, +5.53] | no |
+| 1d `lvl_size` | 500 | 268 | 14 (5.22%) | 28 | 2 (7.14%) | -1.92 [-13.83, +6.69] | no |
+| 2a `jump3` | 1 | 25 | 0 (0.00%) | 271 | 16 (5.90%) | -5.90 [-9.74, -2.93] | no |
+| 2a `jump3` | 2 | 64 | 2 (3.12%) | 232 | 14 (6.03%) | -2.91 [-8.42, +3.56] | no |
+| 2a `jump3` | 4 | 186 | 6 (3.23%) | 110 | 10 (9.09%) | -5.87 [-13.06, +0.33] | no |
+| 2b `jump_max_z` | 3 | 25 | 0 (0.00%) | 271 | 16 (5.90%) | -5.90 [-9.74, -2.93] | no |
+| 2b `jump_max_z` | 4 | 52 | 0 (0.00%) | 244 | 16 (6.56%) | -6.56 [-10.80, -3.24] | no |
+| 2b `jump_max_z` | 6 | 147 | 6 (4.08%) | 149 | 10 (6.71%) | -2.63 [-8.65, +2.53] | no |
+| 4a `tau` | 10 | 30 | 1 (3.33%) | 266 | 15 (5.64%) | -2.31 [-8.42, +6.06] | no |
+| 4a `tau` | 20 | 107 | 5 (4.67%) | 189 | 11 (5.82%) | -1.15 [-7.32, +5.87] | no |
+| 4b `price` | 0.94 | 69 | 8 (11.59%) | 227 | 8 (3.52%) | +8.07 [+0.13, +17.46] | no |
+| 4b `price` | 0.97 | 153 | 14 (9.15%) | 143 | 2 (1.40%) | +7.75 [+2.08, +14.29] | no |
+| 4b `price` | 0.98 | 247 | 16 (6.48%) | 49 | 0 (0.00%) | +6.48 [+3.24, +10.67] | YES |
+| 4c `discount_c` | 2 | 64 | 1 (1.56%) | 232 | 15 (6.47%) | -4.90 [-9.70, +0.58] | no |
+| 4c `discount_c` | 5 | 213 | 7 (3.29%) | 83 | 9 (10.84%) | -7.56 [-15.32, -0.41] | no |
+| 4c `discount_c` | 10 | 272 | 10 (3.68%) | 24 | 6 (25.00%) | -21.32 [-41.50, -6.11] | no |
+
+**Holds inside the stratum: `lvl_fresh_s < 0.5`, `price < 0.98`.**
+
 
 ---
 
 ## The per-close arithmetic
 
 Money is only defined where we would actually have traded, so this is population A. Refusing a bucket changes two things -- the losses avoided and the wins given up -- and this project has twice been fooled by a per-contract table that reversed per close ("be more patient for a bigger discount", 2026-09-11; "stop paying above 94c", 2026-09-12). P&L is scaled linearly to size 20 and is a CEILING: the replay always wins the race.
+
+**Refusing everything below a cut, on population A.** A cut found on B is priced here too, because money only exists where we would have traded.
+
+| gate (refuse below) | found on | entries refused | closes | losses in it | collapses in it | $/close now | $/close if refused | change |
+|---|---|---|---|---|---|---|---|---|
+| `lvl_fresh_s < 0.5` | A | 166 of 409 | 274 | 3 of 3 | 14 of 16 | $1.321 | $0.998 | -0.323 |
+| `lvl_fresh_s < 2` | A | 233 of 409 | 274 | 3 of 3 | 15 of 16 | $1.321 | $0.814 | -0.507 |
+| `lvl_fresh_s < 10` | A | 276 of 409 | 274 | 3 of 3 | 15 of 16 | $1.321 | $0.677 | -0.644 |
+| `margin_sd < 5` | A | 296 of 409 | 274 | 3 of 3 | 16 of 16 | $1.321 | $0.618 | -0.703 |
+| `margin_sd < 6` | A | 306 of 409 | 274 | 3 of 3 | 16 of 16 | $1.321 | $0.579 | -0.741 |
+| `price < 0.98` | A | 355 of 409 | 274 | 3 of 3 | 16 of 16 | $1.321 | $0.073 | -1.247 |
+| `lvl_age_s < 0.5` | B | 124 of 409 | 274 | 2 of 3 | 11 of 16 | $1.321 | $1.060 | -0.261 |
+| `lvl_age_s < 10` | B | 188 of 409 | 274 | 3 of 3 | 12 of 16 | $1.321 | $0.907 | -0.414 |
+| `margin_sd < 3` | B | 169 of 409 | 274 | 1 of 3 | 8 of 16 | $1.321 | $0.880 | -0.441 |
+| `margin_sd < 4` | B | 265 of 409 | 274 | 3 of 3 | 14 of 16 | $1.321 | $0.703 | -0.617 |
+
+**And the single worst BUCKET of each feature, for comparison.**
 
 | feature / bucket refused | entries | closes | losses in it | $/close now | $/close if refused | change |
 |---|---|---|---|---|---|---|
@@ -856,15 +1234,45 @@ Money is only defined where we would actually have traded, so this is population
 
 ## Verdict
 
-**Nothing survives on the population that matters.** On the 409 entries the live gate would have taken over 9 days there are 3 losses and 16 post-entry collapses, and no entry-time feature separates them in both halves of the tape. That is a null with a stated MDE, not a discovery of absence: the smallest effect population A could have resolved on its loss column is roughly 2.2% against a 0.73% base, so anything short of a feature that triples the loss rate was never findable here.
+**How to know when not to buy: on this tape, the only entry-time quantity that predicts the post-entry collapse is the model's own margin to the strike -- and that is very nearly a tautology, it is not affordable to act on, and nothing in the order book or the index adds to it.** Three separate findings, in that order.
 
-On the 30x-larger model-certain population, 2 feature(s) do survive the split: `1a. OFFER AGE` bucket `0.1-0.5s`, `3. MARGIN TO THE STRIKE at entry, in sigma units` bucket `2.58-3`. That population is NOT what we trade -- it includes every moment nobody was offering -- so it cannot license a live rule on its own. It is the right place to look next, and the honest reading is that the effect is real in the model's behaviour and unproven at the prices we can actually get.
+**1. The margin result is real and monotone on both populations.** On the 409 tradeable entries, margin_sd >= 5 collapsed 0 times in 113 while margin_sd < 5 collapsed 16 times in 296 (5.41%); the cluster-bootstrap difference is +5.41 pp [+2.57, +8.65] overall and excludes zero in BOTH halves (+4.29 in sample, +8.14 on the holdout). On the 7,328 model-certain moments it is monotone across every cut with tight intervals, and it survives the multiple-looks correction. But `margin_sd = Phi^-1(belief)` and the collapse is defined on the same belief, so the relation is forced: an entry at the 2.576-sd gate floor starts 1.29 sd from its own alarm and one at 6 sd starts 4.72 sd away. See THE TAUTOLOGY CHECK. The `price` CONTROL survives the same test for the same reason, which is how a method announces it has found a mechanism rather than a signal.
 
+**2. It is not affordable.** Every surviving cut costs a large share of a small income. The cheapest one, refusing margin_sd < 3, gives up $0.441 of $1.321 per close -- a third of the money -- to remove 1 of 3 losses. Refusing margin_sd < 5, the cut with the cleanest statistics, gives up $0.703 of $1.321 (53%) and refuses 72% of all entries. The control, refusing price < 98c, gives up 94%. Note also that 13 of the 16 collapses on A went on to WIN, so most of what these gates buy is the avoidance of a scare, not of a loss.
+
+**3. Nothing in the book or the index adds to the margin.** With the margin held roughly fixed, offer age, offer freshness, offer size (absolute and relative to the market's own recent touch), the count of 3-sigma one-second index moves in the previous 120 s, the largest such move, tau and the discount all fail to separate the collapse in both halves of the tape. **So the hypothesis that a fresh, large offer is a dump by someone who knows is NOT supported at the entry second, on this tape, at this power.**
+
+**The positive control: the estimator DOES find the one entry-time effect this project already knows about.** Inside the same margin_sd < 5 stratum, entries taken at a discount of 10c or more below fair collapsed 6 of 24 times (25.0%) against 10 of 272 (3.68%) at smaller discounts, a difference of +21.3 pp. That is the DISCOUNT CLIFF, rediscovered from a different outcome variable on a different population -- and it is already a live guard at 15c (`pinrun.DUMP_DISCOUNT`). So the null on provenance and jumpiness is NOT the null of an estimator that cannot find anything. It is also not a reason to tighten the guard from 15c to 10c: on this sample that refusal costs -0.501 per close of $1.321 (-38%), and the 48-hour trade-tape study (results/SKIM.md) already measured the 10-15c band at +7.51c per contract, i.e. profitable.
+
+**And the control fires twice, which is the strongest single reason to disbelieve the survivors.** `4b. PRICE PAID` was put in the list as a control. It survives the split on A, survives the multiple-looks correction, and survives inside the margin stratum. A cheaper price is a larger discount, a larger discount means the model is only marginally certain, so `price` is a proxy for `margin` and nothing more. `lvl_fresh_s < 0.5` -- the one provenance cut that holds inside the A stratum -- fails on the 4x-larger B stratum (+1.03 pp [-2.82, +5.73]), which is what a proxy for price looks like rather than a real effect.
+
+**What that leaves, and it is the honest answer to the question asked:** the entry second does know something, but only what the model already tells it, and the live gate already uses that number as its own admission test. A new refusal would have to be a TIGHTENING of `PIN`, priced at 33-53% of the income, and the decision then rests on the drawdown the operator will sit through, not on a new feature. **Everything still rides on the exit**, which is where `PREREG_hedge.md` already points.
+
+**The null, with its MDE, so it is not read as an absence.** With 3 losses among the tradeable entries in 9 days, the smallest effect population A could resolve on its loss column was about 2.2% against a 0.73% base -- nothing short of a feature that triples the loss rate was ever findable there, which is why the collapse was made the primary outcome and a 30x-larger companion population was harvested alongside it. On the collapse column the companion resolves 0.74% against 0.49%, and it still finds nothing once the margin is held fixed.
+
+### PROPOSED gate
+
+**None. No gate is proposed and nothing here is deployed.** The two candidates a mechanical reading of the tables would produce are written out with their prices so the rejection is on the record:
+
+- `refuse margin_sd < 3` -- refuses 169 of 409 entries (41.3%), holds 1 of 3 losses and 8 of 16 collapses, and moves P&L from $1.321 to $0.880 per close at size 20 (-0.441, -33%). REJECTED on cost.
+- `refuse margin_sd < 5` -- refuses 296 of 409 entries (72.4%), holds 3 of 3 losses and 16 of 16 collapses, and moves P&L from $1.321 to $0.618 per close at size 20 (-0.703, -53%). REJECTED on cost.
+
+Were either ever to be reconsidered, AMENDMENT 2026-09-10 requires both a holdout split (this has one) and a pre-registered live bar written before the number is seen (this has none). And the P&L column above is a replay ceiling: it assumes we win every race for the offer, which live we do 70% of the time.
 
 ### What would have to be true for anything above to be an artefact
 
-1. **The collapse flag could be the feed, not the market.** Checked above at the alarm second.
-2. **The book could be wrong.** The replay is delta-driven with snapshots applied at their real `_rx_ms`; `pinsim.load_hour` stamps every snapshot 0, which this file does not use. A level seeded by a snapshot has an age that is only a lower bound and is flagged.
-3. **Clustering could manufacture the separation.** Every headline interval is a cluster bootstrap over CLOSES; the self-test contains a world where 240 markets carry 20 facts and per-market intervals separate while the clustered one does not.
-4. **The split could be luck.** Nothing is called a survivor unless the interval excludes zero in BOTH halves, holdout included.
+1. **The collapse flag could be the feed, not the market.** Checked at the alarm second: 0 of the alarms fired with a recorded index 3 s or more stale.
+2. **The margin effect could be a tautology.** It substantially IS one -- checked, stated, and the reason the `price` control was read as a refutation rather than a second discovery.
+3. **The book could be wrong.** The replay is delta-driven with snapshots applied at their real `_rx_ms`. `pinsim.load_hour` stamps every snapshot 0, which this file deliberately does not use -- with that bug a snapshot-seeded level is born at the epoch and `if born else None` silently drops the row, which is how it was found. A level seeded by a snapshot is a lower bound on its age and is flagged `age_cens`.
+4. **Clustering could manufacture the separation.** Every headline interval is a cluster bootstrap over CLOSES. The self-test contains a world where 240 markets carry 20 independent facts and the per-market Clopper-Pearson intervals separate while the clustered interval correctly does not.
+5. **The split could be luck, and 92 looks were taken.** Nothing is called a survivor unless its interval excludes zero in both halves, holdout included, and every such survivor is re-tested at the Bonferroni-equivalent level.
+
+### What was NOT measured
+
+- Whether the offer would have been OURS. The replay wins every race; live we fill 70% of attempts. No loss rate here is our loss rate, and none is quoted as one.
+- Anything about exiting or hedging after entry.
+- Per-coin jump tails, which are a separate stage.
+- `MAX_PER_CLOSE`, not applied, so A is every market the gate liked rather than the portfolio the bot would hold.
+- Live index staleness. In a replay the index age can only be non-zero where the recorded tape has a gap.
+- Interactions between features, and any multivariate model. Only one-at-a-time cuts and one margin stratification were tested.
 

@@ -636,7 +636,7 @@ def _by_close(rows):
     return d
 
 
-def boot_diff(rows, field, sel_hi, sel_lo, draws=3000, seed=11):
+def boot_diff(rows, field, sel_hi, sel_lo, draws=3000, seed=11, conf=0.95):
     """Cluster bootstrap over CLOSES for (rate in hi bucket) - (rate in lo).
 
     THE CLUSTER IS THE CLOSE. All twelve coins settle on the same second at
@@ -686,8 +686,9 @@ def boot_diff(rows, field, sel_hi, sel_lo, draws=3000, seed=11):
     if len(out) < draws * 0.5:
         return point, None, None, len(out)
     out.sort()
-    return (point, out[int(0.025 * len(out))],
-            out[min(len(out) - 1, int(0.975 * len(out)))], len(out))
+    aa = (1.0 - conf) / 2.0
+    return (point, out[int(aa * len(out))],
+            out[min(len(out) - 1, int((1.0 - aa) * len(out)))], len(out))
 
 
 def bucketise(rows, key, cuts, labels=None):
@@ -961,6 +962,15 @@ def selftest():
        f"refusing a bucket that only ever LOST saves money "
        f"({pcb['per_close_delta']:+.3f}/close)")
 
+    # ---- a wider interval must actually be wider ------------------------
+    _p, l95, h95, _ = boot_diff(pl, "collapse", hot, cold, draws=1200,
+                                seed=9)
+    _p2, l99, h99, _ = boot_diff(pl, "collapse", hot, cold, draws=1200,
+                                 seed=9, conf=0.999)
+    ck(l99 < l95 and h99 > h95,
+       f"a 99.9% interval is wider than a 95% one "
+       f"([{l99:+.3f},{h99:+.3f}] vs [{l95:+.3f},{h95:+.3f}])")
+
     # ---- the two-population round trip ----------------------------------
     import tempfile
     fd, tmp = tempfile.mkstemp(suffix=".jsonl")
@@ -1068,7 +1078,7 @@ def feature_section(w, rows, title, key, cuts, labels, base_c, base_l,
     if len(have) < 20:
         w(f"_only {len(have)} rows carry this feature -- not reported_")
         w("")
-        return False, None, None
+        return False, None, None, []
     vals = sorted(float(r[key]) for r in have)
     qs = [vals[int(q * (len(vals) - 1))] for q in (0.05, 0.25, 0.5, 0.75,
                                                    0.95)]
@@ -1096,7 +1106,7 @@ def feature_section(w, rows, title, key, cuts, labels, base_c, base_l,
             if sub:
                 w(fmt_table(bucket_table(sub, key, cuts, labels), nm, base_c))
     if len(real) < 2:
-        return False, None, None
+        return False, None, None, []
     worst = max(real, key=lambda t: t["collapse"]["rate"])
     wl = worst["bucket"]
     sel = _sel_bucket(key, cuts, labels, wl)
@@ -1129,7 +1139,150 @@ def feature_section(w, rows, title, key, cuts, labels, base_c, base_l,
     w("**SURVIVES THE SPLIT.**" if ok else
       "**Does not survive the split.**")
     w("")
-    return ok, wl, res
+
+    # ---- THE CUT SWEEP. A GATE IS A CUT, NOT A BUCKET. -------------------
+    # The bucket test above finds the single worst cell and misses monotone
+    # structure -- on margin-to-strike the informative fact is that every
+    # bucket from 4 sd up has ZERO collapses, which no single cell states.
+    # A deployable rule has the form "refuse below X", so every bucket
+    # boundary is tested as a binary split. Each cut is an extra look and
+    # they are counted in the multiple-looks table.
+    w("**Every boundary as a binary gate: `< cut` vs `>= cut`, COLLAPSE "
+      "rate, cluster bootstrap over CLOSES.** A rule we could deploy is a "
+      "cut, so this is the shape that matters.")
+    w("")
+    w("| cut | n below | collapse below | n above | collapse above | "
+      "all: diff [95% CI] | first 5d | last 4d | both halves |")
+    w("|---|---|---|---|---|---|---|---|---|")
+    survcuts = []
+    for c in cuts:
+        def lo_(r, _c=c, _k=key):
+            v = r.get(_k)
+            return v is not None and float(v) < _c
+
+        def hi_(r, _c=c, _k=key):
+            v = r.get(_k)
+            return v is not None and float(v) >= _c
+        nb_ = [r for r in rows if lo_(r)]
+        na_ = [r for r in rows if hi_(r)]
+        if len(nb_) < 10 or len(na_) < 10:
+            continue
+        kb = sum(r["collapse"] for r in nb_)
+        ka = sum(r["collapse"] for r in na_)
+        cr = {}
+        for nm, sub in (("all", rows), ("first 5d", first),
+                        ("last 4d", second)):
+            if sub:
+                cr[nm] = boot_diff(sub, "collapse", lo_, hi_, draws=2000,
+                                   seed=23)
+
+        def _cc(nm):
+            if nm not in cr or cr[nm][0] is None or cr[nm][1] is None:
+                return "-"
+            pp, l_, h_, _n = cr[nm]
+            return "%+.2f [%+.2f, %+.2f]" % (100 * pp, 100 * l_, 100 * h_)
+        both = all(nm in cr and cr[nm][1] is not None and cr[nm][1] > 0
+                   for nm in ("first 5d", "last 4d"))
+        if both:
+            survcuts.append((c, cr))
+        w(f"| {c:g} | {len(nb_):,} | {kb} ({100*kb/len(nb_):.2f}%) | "
+          f"{len(na_):,} | {ka} ({100*ka/len(na_):.2f}%) | {_cc('all')} | "
+          f"{_cc('first 5d')} | {_cc('last 4d')} | "
+          f"{'YES' if both else 'no'} |")
+    w("")
+    if survcuts:
+        w("**Cuts that hold in both halves: "
+          + ", ".join("`%s < %g`" % (key, c) for c, _ in survcuts) + ".**")
+    else:
+        w("_No cut holds in both halves._")
+    w("")
+    return ok, wl, res, survcuts
+
+
+def cut_verdicts(rows, key, cuts, outcome="collapse", draws=1200, seed=41):
+    """Every boundary as a binary gate, compactly. Returns a list of
+    (cut, n_lo, k_lo, n_hi, k_hi, diff, lo95, hi95, holds_in_both_halves)."""
+    first, second, _ = _split(rows)
+    out = []
+    for c in cuts:
+        def lo_(r, _c=c, _k=key):
+            v = r.get(_k)
+            return v is not None and float(v) < _c
+
+        def hi_(r, _c=c, _k=key):
+            v = r.get(_k)
+            return v is not None and float(v) >= _c
+        nb_ = [r for r in rows if lo_(r)]
+        na_ = [r for r in rows if hi_(r)]
+        if len(nb_) < 10 or len(na_) < 10:
+            continue
+        pp, l_, h_, _n = boot_diff(rows, outcome, lo_, hi_, draws=draws,
+                                   seed=seed)
+        both = True
+        for sub in (first, second):
+            if not sub:
+                both = False
+                continue
+            _p2, l2, _h2, _n2 = boot_diff(sub, outcome, lo_, hi_,
+                                          draws=draws, seed=seed)
+            if l2 is None or l2 <= 0:
+                both = False
+        out.append((c, len(nb_), sum(r[outcome] for r in nb_), len(na_),
+                    sum(r[outcome] for r in na_), pp, l_, h_, both))
+    return out
+
+
+def stratified_residual(w, rows, label, strat_key, strat_hi, skip_keys):
+    """Inside one margin stratum, does anything ELSE separate the collapse?
+
+    THE POINT. `margin_sd` is the model's own belief on another scale
+    (margin = Phi^-1(belief)), and a collapse is defined as that same belief
+    later falling under 0.90 = 1.282 sd. A monotone relation between the two
+    is mechanically forced and is NOT information -- an entry at the gate
+    floor of 2.576 sd sits 1.29 sd from the alarm, one at 6 sd sits 4.7 sd
+    from it. So the only question worth asking is whether anything in the
+    BOOK or the INDEX adds to what the margin already says. This holds the
+    margin roughly fixed and asks it.
+    """
+    sub = [r for r in rows if r.get(strat_key) is not None
+           and float(r[strat_key]) < strat_hi]
+    n = len(sub)
+    k = sum(r["collapse"] for r in sub)
+    nc = len({r["close"] for r in sub})
+    w(f"**{label}: {n:,} entries over {nc:,} closes, {k} collapses "
+      f"({100*k/max(1,n):.2f}%).** MDE at this size is "
+      f"{100*mde_rate(k/max(1,n), n):.2f}% counting markets, "
+      f"{100*mde_rate(k/max(1,n), nc):.2f}% counting closes.")
+    w("")
+    if n < 60 or k < 5:
+        w("_too few collapses inside the stratum to test anything_")
+        w("")
+        return []
+    w("| feature | cut | n below | collapse below | n above | "
+      "collapse above | diff [95% CI] | holds in both halves |")
+    w("|---|---|---|---|---|---|---|---|")
+    held = []
+    for title, key, cuts, _labels in FEATURES:
+        if key in skip_keys:
+            continue
+        for (c, nb_, kb, na_, ka, pp, l_, h_, both) in cut_verdicts(
+                sub, key, cuts):
+            if both:
+                held.append((title, key, c))
+            w(f"| {title.split('.')[0]} `{key}` | {c:g} | {nb_:,} | "
+              f"{kb} ({100*kb/nb_:.2f}%) | {na_:,} | "
+              f"{ka} ({100*ka/na_:.2f}%) | "
+              f"{100*pp:+.2f} [{100*l_:+.2f}, {100*h_:+.2f}] | "
+              f"{'YES' if both else 'no'} |")
+    w("")
+    if held:
+        w("**Holds inside the stratum: "
+          + ", ".join("`%s < %g`" % (k_, c_) for _t, k_, c_ in held) + ".**")
+    else:
+        w("**Nothing in the book or the index separates the collapse once "
+          "the model's own margin is held fixed.**")
+    w("")
+    return held
 
 
 def report(rowsA, rowsB, out_path, size=20.0, log=print):
@@ -1357,13 +1510,16 @@ def report(rowsA, rowsB, out_path, size=20.0, log=print):
     w("")
     w("# PRIMARY: population A, the entries the live gate would take")
     w("")
-    survA = []
+    survA, cutsA, looksA = [], [], 0
     for title, key, cuts, labels in FEATURES:
-        ok, wl, res = feature_section(w, rowsA, title, key, cuts, labels,
-                                      bcA, blA, ndays, full=True,
-                                      tag=" -- A (tradeable)")
+        ok, wl, res, sc = feature_section(w, rowsA, title, key, cuts, labels,
+                                          bcA, blA, ndays, full=True,
+                                          tag=" -- A (tradeable)")
+        looksA += 1 + len(cuts)
         if ok:
             survA.append((title, key, cuts, labels, wl, res))
+        for c, cr in sc:
+            cutsA.append((title, key, c, cr))
     w("")
     w("# COMPANION: population B, every moment the model was certain")
     w("")
@@ -1372,13 +1528,110 @@ def report(rowsA, rowsB, out_path, size=20.0, log=print):
       "a null needs to be interpretable: an estimator that finds nothing "
       "here has been shown incapable of finding anything.")
     w("")
-    survB = []
+    survB, cutsB, looksB = [], [], 0
     for title, key, cuts, labels in FEATURES:
-        ok, wl, res = feature_section(w, rowsB, title, key, cuts, labels,
-                                      bcB, blB, ndays, full=False,
-                                      tag=" -- B (model-certain)")
+        ok, wl, res, sc = feature_section(w, rowsB, title, key, cuts, labels,
+                                          bcB, blB, ndays, full=False,
+                                          tag=" -- B (model-certain)")
+        looksB += 1 + len(cuts)
         if ok:
             survB.append((title, key, cuts, labels, wl, res))
+        for c, cr in sc:
+            cutsB.append((title, key, c, cr))
+    w("")
+
+    # --- multiple looks ---------------------------------------------------
+    w("---")
+    w("")
+    w("## Multiple looks, and what survives them")
+    w("")
+    nlook = looksA + looksB
+    padj = 0.05 / max(1, nlook)
+    w(f"{looksA} looks were taken on population A and {looksB} on B "
+      f"({nlook} in total: one worst-bucket contrast plus one test per cut, "
+      f"per feature, per population). At a nominal 5% level the chance of at "
+      f"least one false positive across {nlook} independent looks would be "
+      f"{100*(1-0.95**nlook):.1f}%, so a 95% survivor is not evidence on its "
+      f"own. The Bonferroni-equivalent level is {100*padj:.3f}%, i.e. a "
+      f"{100*(1-padj):.3f}% interval. Every cut that held in both halves is "
+      f"re-tested at that level on the FULL sample here.")
+    w("")
+    w("| population | feature | gate | diff (all) | Bonferroni CI | "
+      "still excludes 0 |")
+    w("|---|---|---|---|---|---|")
+    conf_adj = 1.0 - padj
+    hard = []
+    for pop, rs, cl_ in (("A", rowsA, cutsA), ("B", rowsB, cutsB)):
+        for title, key, c, _cr in cl_:
+            def lo_(r, _c=c, _k=key):
+                v = r.get(_k)
+                return v is not None and float(v) < _c
+
+            def hi_(r, _c=c, _k=key):
+                v = r.get(_k)
+                return v is not None and float(v) >= _c
+            pp, l_, h_, _n = boot_diff(rs, "collapse", lo_, hi_, draws=4000,
+                                       seed=31, conf=conf_adj)
+            okb = l_ is not None and l_ > 0
+            if okb:
+                hard.append((pop, title, key, c))
+            w(f"| {pop} | {title.split('--')[0].strip()} | "
+              f"`{key} < {c:g}` | {100*pp:+.2f} pp | "
+              f"[{100*l_:+.2f}, {100*h_:+.2f}] | "
+              f"{'YES' if okb else 'no'} |")
+    if not (cutsA or cutsB):
+        w("| - | - | - | - | - | - |")
+    w("")
+    if hard:
+        w("**Survives even the multiple-looks correction: "
+          + ", ".join("%s on %s" % (g, pop) for pop, _t, _k, g in
+                      [(p_, t_, k_, "`%s < %g`" % (k_, c_))
+                       for p_, t_, k_, c_ in hard]) + ".**")
+    else:
+        w("**Nothing survives the multiple-looks correction.**")
+    w("")
+
+    # --- the tautology check and the control that gives it away ----------
+    w("---")
+    w("")
+    w("## THE TAUTOLOGY CHECK -- and the control that gives it away")
+    w("")
+    w("`margin_sd` is not an independent feature. It is the model's own "
+      "belief on another scale: `margin_sd = Phi^-1(belief)`, and a "
+      "\"collapse\" is defined as that SAME belief later falling under "
+      f"{COLLAPSE_BELIEF:.2f}, which is 1.282 sd. So an entry admitted at "
+      "the gate floor of 2.576 sd starts 1.29 sd from its own alarm, while "
+      "one at 6 sd starts 4.72 sd from it. **A monotone relation between "
+      "margin and collapse is mechanically forced and is not information.** "
+      "It says the model is internally consistent, not that the market is "
+      "readable.")
+    w("")
+    w("The distribution says the same thing: on population B the 25th, 50th "
+      "and 75th percentiles of `margin_sd` are all 7.034, which is the "
+      "numerical ceiling of `Phi^-1` at a belief clipped to 1 - 1e-12. Most "
+      "certain moments are not 'very confident', they are "
+      "'arithmetically finished'.")
+    w("")
+    w("**And here is the giveaway.** `4b. PRICE PAID` is a CONTROL -- it was "
+      "included precisely so that a spurious method would be caught. Look "
+      "at what it does in the cut sweep and in the cost table: a cheaper "
+      "price is a bigger discount, a bigger discount means the model is only "
+      "marginally certain, so `price` inherits the margin effect and "
+      "\"survives\" too. Refusing it would cost almost the entire income. "
+      "A method that certifies a control has certified nothing.")
+    w("")
+    w("So the question is re-asked properly: **holding the margin roughly "
+      "fixed, does anything in the BOOK or the INDEX add to it?**")
+    w("")
+    heldB = stratified_residual(
+        w, rowsB, "B, margin_sd < 3 (the most exposed stratum)",
+        "margin_sd", 3.0, {"margin_sd", "conf"})
+    heldB4 = stratified_residual(
+        w, rowsB, "B, margin_sd < 4", "margin_sd", 4.0,
+        {"margin_sd", "conf"})
+    heldA = stratified_residual(
+        w, rowsA, "A, margin_sd < 5 (every tradeable entry that ever "
+        "collapsed)", "margin_sd", 5.0, {"margin_sd", "conf"})
     w("")
 
     # --- money ------------------------------------------------------------
@@ -1393,6 +1646,38 @@ def report(rowsA, rowsB, out_path, size=20.0, log=print):
       "(\"be more patient for a bigger discount\", 2026-09-11; \"stop paying "
       "above 94c\", 2026-09-12). P&L is scaled linearly to size "
       f"{size:g} and is a CEILING: the replay always wins the race.")
+    w("")
+    # A gate is a cut, so the cuts that held in both halves are priced
+    # first, on population A, whichever population found them.
+    if cutsA or cutsB:
+        w("**Refusing everything below a cut, on population A.** A cut found "
+          "on B is priced here too, because money only exists where we would "
+          "have traded.")
+        w("")
+        w("| gate (refuse below) | found on | entries refused | closes | "
+          "losses in it | collapses in it | $/close now | $/close if "
+          "refused | change |")
+        w("|---|---|---|---|---|---|---|---|---|")
+        seen = set()
+        for pop, cl_ in (("A", cutsA), ("B", cutsB)):
+            for title, key, c, _cr in cl_:
+                if (key, c) in seen:
+                    continue
+                seen.add((key, c))
+
+                def below(r, _c=c, _k=key):
+                    v = r.get(_k)
+                    return v is not None and float(v) < _c
+                pc = per_close_cost(rowsA, below, size=size)
+                ncol = sum(r["collapse"] for r in rowsA if below(r))
+                w(f"| `{key} < {c:g}` | {pop} | {pc['n_refused']:,} of "
+                  f"{nA:,} | {pc['closes']:,} | {pc['n_refused_lost']} of "
+                  f"{lostA} | {ncol} of {colA} | "
+                  f"${pc['per_close_all']:.3f} | "
+                  f"${pc['per_close_kept']:.3f} | "
+                  f"{pc['per_close_delta']:+.3f} |")
+        w("")
+    w("**And the single worst BUCKET of each feature, for comparison.**")
     w("")
     shown = survA or survB
     if not shown:
@@ -1434,73 +1719,175 @@ def report(rowsA, rowsB, out_path, size=20.0, log=print):
     w("")
     w("## Verdict")
     w("")
-    if survA:
-        names = ", ".join(f"`{t.split('--')[0].strip()}` bucket `{wl}`"
-                          for t, _k, _c, _l, wl, _r in survA)
-        w(f"{len(survA)} feature(s) survived the split on the tradeable "
-          f"population: {names}. See the PROPOSED GATE below. Nothing is "
-          f"deployed by this file.")
-    else:
-        w(f"**Nothing survives on the population that matters.** On the "
-          f"{nA:,} entries the live gate would have taken over {ndays} days "
-          f"there are {lostA} losses and {colA} post-entry collapses, and no "
-          f"entry-time feature separates them in both halves of the tape. "
-          f"That is a null with a stated MDE, not a discovery of absence: "
-          f"the smallest effect population A could have resolved on its loss "
-          f"column is roughly {100*mde_rate(blA, len(rowsA)):.1f}% against a "
-          f"{100*blA:.2f}% base, so anything short of a feature that triples "
-          f"the loss rate was never findable here.")
-        w("")
-        if survB:
-            names = ", ".join(f"`{t.split('--')[0].strip()}` bucket `{wl}`"
-                              for t, _k, _c, _l, wl, _r in survB)
-            w(f"On the 30x-larger model-certain population, {len(survB)} "
-              f"feature(s) do survive the split: {names}. That population is "
-              f"NOT what we trade -- it includes every moment nobody was "
-              f"offering -- so it cannot license a live rule on its own. It "
-              f"is the right place to look next, and the honest reading is "
-              f"that the effect is real in the model's behaviour and "
-              f"unproven at the prices we can actually get.")
-        else:
-            w("The companion population, 30x larger, finds nothing either -- "
-              "and that matters, because an estimator never shown capable of "
-              "finding anything produces an uninterpretable null. This one "
-              "is shown capable: its self-test plants an effect and finds "
-              "it, and plants none and finds none, including against a "
-              "clustered world designed to fool a per-market interval.")
+    w(f"**How to know when not to buy: on this tape, the only entry-time "
+      f"quantity that predicts the post-entry collapse is the model's own "
+      f"margin to the strike -- and that is very nearly a tautology, it is "
+      f"not affordable to act on, and nothing in the order book or the "
+      f"index adds to it.** Three separate findings, in that order.")
     w("")
-    if survA:
-        w("### PROPOSED gate -- NOT DEPLOYED")
-        w("")
-        for title, key, cuts, labels, wl, res in survA:
-            sel = _sel_bucket(key, cuts, labels, wl)
-            pc = per_close_cost(rowsA, sel, size=size)
-            w(f"- Refuse an entry whose `{key}` falls in `{wl}`. It would "
-              f"have refused {pc['n_refused']} of {nA} entries "
-              f"({100*pc['n_refused']/max(1,nA):.1f}%), containing "
-              f"{pc['n_refused_lost']} of {lostA} losses, and moved P&L by "
-              f"{pc['per_close_delta']:+.3f} per close at size {size:g} "
-              f"(${pc['per_close_all']:.3f} -> "
-              f"${pc['per_close_kept']:.3f}).")
-        w("")
-        w("Before any of that is live it needs what AMENDMENT 2026-09-10 "
-          "requires: a holdout split (this has one) AND a pre-registered "
-          "live bar written before the number is seen (this has none).")
+    w(f"**1. The margin result is real and monotone on both populations.** "
+      f"On the {nA:,} tradeable entries, margin_sd >= 5 collapsed 0 times in "
+      f"113 while margin_sd < 5 collapsed 16 times in 296 (5.41%); the "
+      f"cluster-bootstrap difference is +5.41 pp [+2.57, +8.65] overall and "
+      f"excludes zero in BOTH halves (+4.29 in sample, +8.14 on the "
+      f"holdout). On the {nB:,} model-certain moments it is monotone across "
+      f"every cut with tight intervals, and it survives the "
+      f"multiple-looks correction. But `margin_sd = Phi^-1(belief)` and the "
+      f"collapse is defined on the same belief, so the relation is forced: "
+      f"an entry at the 2.576-sd gate floor starts 1.29 sd from its own "
+      f"alarm and one at 6 sd starts 4.72 sd away. See THE TAUTOLOGY CHECK. "
+      f"The `price` CONTROL survives the same test for the same reason, "
+      f"which is how a method announces it has found a mechanism rather "
+      f"than a signal.")
+    w("")
+    w(f"**2. It is not affordable.** Every surviving cut costs a large share "
+      f"of a small income. The cheapest one, refusing margin_sd < 3, gives "
+      f"up $0.441 of $1.321 per close -- a third of the money -- to remove "
+      f"1 of {lostA} losses. Refusing margin_sd < 5, the cut with the "
+      f"cleanest statistics, gives up $0.703 of $1.321 (53%) and refuses "
+      f"72% of all entries. The control, refusing price < 98c, gives up 94%. "
+      f"Note also that 13 of the {colA} collapses on A went on to WIN, so "
+      f"most of what these gates buy is the avoidance of a scare, not of a "
+      f"loss.")
+    w("")
+    w(f"**3. Nothing in the book or the index adds to the margin.** With the "
+      f"margin held roughly fixed, offer age, offer freshness, offer size "
+      f"(absolute and relative to the market's own recent touch), the count "
+      f"of 3-sigma one-second index moves in the previous 120 s, the largest "
+      f"such move, tau and the discount all fail to separate the collapse in "
+      f"both halves of the tape. **So the hypothesis that a fresh, large "
+      f"offer is a dump by someone who knows is NOT supported at the entry "
+      f"second, on this tape, at this power.**")
+    w("")
+    # the positive control: does the estimator recover a KNOWN effect?
+    _lo = [r for r in rowsA if r.get("margin_sd") is not None
+           and r["margin_sd"] < 5.0]
+
+    def _deep(r):
+        v = r.get("discount_c")
+        return v is not None and float(v) >= 10.0
+    _dn = [r for r in _lo if _deep(r)]
+    _sn = [r for r in _lo if r.get("discount_c") is not None
+           and not _deep(r)]
+    _dk = sum(r["collapse"] for r in _dn)
+    _sk = sum(r["collapse"] for r in _sn)
+    _pc = per_close_cost(rowsA, _deep, size=size)
+    w(f"**The positive control: the estimator DOES find the one entry-time "
+      f"effect this project already knows about.** Inside the same "
+      f"margin_sd < 5 stratum, entries taken at a discount of 10c or more "
+      f"below fair collapsed {_dk} of {len(_dn)} times "
+      f"({100*_dk/max(1,len(_dn)):.1f}%) against {_sk} of {len(_sn)} "
+      f"({100*_sk/max(1,len(_sn)):.2f}%) at smaller discounts, a difference "
+      f"of {100*(_dk/max(1,len(_dn)) - _sk/max(1,len(_sn))):+.1f} pp. That "
+      f"is the DISCOUNT CLIFF, rediscovered from a different outcome "
+      f"variable on a different population -- and it is already a live guard "
+      f"at 15c (`pinrun.DUMP_DISCOUNT`). So the null on provenance and "
+      f"jumpiness is NOT the null of an estimator that cannot find "
+      f"anything. It is also not a reason to tighten the guard from 15c to "
+      f"10c: on this sample that refusal costs "
+      f"{_pc['per_close_delta']:+.3f} per close of "
+      f"${_pc['per_close_all']:.3f} "
+      f"({100*_pc['per_close_delta']/_pc['per_close_all']:+.0f}%), and the "
+      f"48-hour trade-tape study (results/SKIM.md) already measured the "
+      f"10-15c band at +7.51c per contract, i.e. profitable.")
+    w("")
+    w("**And the control fires twice, which is the strongest single reason "
+      "to disbelieve the survivors.** `4b. PRICE PAID` was put in the list "
+      "as a control. It survives the split on A, survives the "
+      "multiple-looks correction, and survives inside the margin stratum. "
+      "A cheaper price is a larger discount, a larger discount means the "
+      "model is only marginally certain, so `price` is a proxy for `margin` "
+      "and nothing more. `lvl_fresh_s < 0.5` -- the one provenance cut that "
+      "holds inside the A stratum -- fails on the 4x-larger B stratum "
+      "(+1.03 pp [-2.82, +5.73]), which is what a proxy for price looks "
+      "like rather than a real effect.")
+    w("")
+    w(f"**What that leaves, and it is the honest answer to the question "
+      f"asked:** the entry second does know something, but only what the "
+      f"model already tells it, and the live gate already uses that number "
+      f"as its own admission test. A new refusal would have to be a "
+      f"TIGHTENING of `PIN`, priced at 33-53% of the income, and the "
+      f"decision then rests on the drawdown the operator will sit through, "
+      f"not on a new feature. **Everything still rides on the exit**, which "
+      f"is where `PREREG_hedge.md` already points.")
+    w("")
+    w(f"**The null, with its MDE, so it is not read as an absence.** With "
+      f"{lostA} losses among the tradeable entries in {ndays} days, the "
+      f"smallest effect population A could resolve on its loss column was "
+      f"about {100*mde_rate(blA, len(rowsA)):.1f}% against a "
+      f"{100*blA:.2f}% base -- nothing short of a feature that triples the "
+      f"loss rate was ever findable there, which is why the collapse was "
+      f"made the primary outcome and a 30x-larger companion population was "
+      f"harvested alongside it. On the collapse column the companion "
+      f"resolves {100*mde_rate(bcB, len(rowsB)):.2f}% against "
+      f"{100*bcB:.2f}%, and it still finds nothing once the margin is held "
+      f"fixed.")
+    w("")
+    w("### PROPOSED gate")
+    w("")
+    w("**None. No gate is proposed and nothing here is deployed.** The two "
+      "candidates a mechanical reading of the tables would produce are "
+      "written out with their prices so the rejection is on the record:")
+    w("")
+    for key, c in (("margin_sd", 3.0), ("margin_sd", 5.0)):
+        def below(r, _c=c, _k=key):
+            v = r.get(_k)
+            return v is not None and float(v) < _c
+        pc = per_close_cost(rowsA, below, size=size)
+        ncol = sum(r["collapse"] for r in rowsA if below(r))
+        w(f"- `refuse {key} < {c:g}` -- refuses {pc['n_refused']} of {nA} "
+          f"entries ({100*pc['n_refused']/max(1,nA):.1f}%), holds "
+          f"{pc['n_refused_lost']} of {lostA} losses and {ncol} of {colA} "
+          f"collapses, and moves P&L from ${pc['per_close_all']:.3f} to "
+          f"${pc['per_close_kept']:.3f} per close at size {size:g} "
+          f"({pc['per_close_delta']:+.3f}, "
+          f"{100*pc['per_close_delta']/pc['per_close_all']:+.0f}%). "
+          f"REJECTED on cost.")
+    w("")
+    w("Were either ever to be reconsidered, AMENDMENT 2026-09-10 requires "
+      "both a holdout split (this has one) and a pre-registered live bar "
+      "written before the number is seen (this has none). And the P&L column "
+      "above is a replay ceiling: it assumes we win every race for the "
+      "offer, which live we do 70% of the time.")
     w("")
     w("### What would have to be true for anything above to be an artefact")
     w("")
     w("1. **The collapse flag could be the feed, not the market.** Checked "
-      "above at the alarm second.")
-    w("2. **The book could be wrong.** The replay is delta-driven with "
-      "snapshots applied at their real `_rx_ms`; `pinsim.load_hour` stamps "
-      "every snapshot 0, which this file does not use. A level seeded by a "
-      "snapshot has an age that is only a lower bound and is flagged.")
-    w("3. **Clustering could manufacture the separation.** Every headline "
-      "interval is a cluster bootstrap over CLOSES; the self-test contains a "
-      "world where 240 markets carry 20 facts and per-market intervals "
-      "separate while the clustered one does not.")
-    w("4. **The split could be luck.** Nothing is called a survivor unless "
-      "the interval excludes zero in BOTH halves, holdout included.")
+      "at the alarm second: 0 of the alarms fired with a recorded index 3 s "
+      "or more stale.")
+    w("2. **The margin effect could be a tautology.** It substantially IS "
+      "one -- checked, stated, and the reason the `price` control was read "
+      "as a refutation rather than a second discovery.")
+    w("3. **The book could be wrong.** The replay is delta-driven with "
+      "snapshots applied at their real `_rx_ms`. `pinsim.load_hour` stamps "
+      "every snapshot 0, which this file deliberately does not use -- with "
+      "that bug a snapshot-seeded level is born at the epoch and "
+      "`if born else None` silently drops the row, which is how it was "
+      "found. A level seeded by a snapshot is a lower bound on its age and "
+      "is flagged `age_cens`.")
+    w("4. **Clustering could manufacture the separation.** Every headline "
+      "interval is a cluster bootstrap over CLOSES. The self-test contains a "
+      "world where 240 markets carry 20 independent facts and the per-market "
+      "Clopper-Pearson intervals separate while the clustered interval "
+      "correctly does not.")
+    w("5. **The split could be luck, and 92 looks were taken.** Nothing is "
+      "called a survivor unless its interval excludes zero in both halves, "
+      "holdout included, and every such survivor is re-tested at the "
+      "Bonferroni-equivalent level.")
+    w("")
+    w("### What was NOT measured")
+    w("")
+    w("- Whether the offer would have been OURS. The replay wins every "
+      "race; live we fill 70% of attempts. No loss rate here is our loss "
+      "rate, and none is quoted as one.")
+    w("- Anything about exiting or hedging after entry.")
+    w("- Per-coin jump tails, which are a separate stage.")
+    w("- `MAX_PER_CLOSE`, not applied, so A is every market the gate liked "
+      "rather than the portfolio the bot would hold.")
+    w("- Live index staleness. In a replay the index age can only be "
+      "non-zero where the recorded tape has a gap.")
+    w("- Interactions between features, and any multivariate model. Only "
+      "one-at-a-time cuts and one margin stratification were tested.")
     w("")
 
     with open(out_path, "w", encoding="utf-8", newline="\n") as fh:
