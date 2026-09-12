@@ -209,6 +209,29 @@ MAX_PER_CLOSE = 2        # 3 -> 2 on 2026-09-09, and NOT because cap 3 is
                          # the cap is also what concentrated three fills into
                          # one market on the losing close.
 
+MAX_PER_MARKET = 1       # AMENDMENT 13 (2026-09-12). FILLS ALLOWED ON ONE
+                         # MARKET IN ONE CLOSE. Scaling in buys MORE as the
+                         # price falls, which is buying into a move against
+                         # the position we already hold -- the same adverse
+                         # selection as the discount cliff, applied to
+                         # ourselves. Measured over 157 live bets on 127
+                         # closes:
+                         #   3 markets, 3 fills each  $+1.31   worst -$52.60
+                         #   3 markets, 2 fills each  $+15.44  worst -$38.47
+                         #   2 markets, 1 fill each   $+33.83  worst -$19.29
+                         #   3 markets, 1 fill each   $+34.29  worst -$19.29
+                         # BE HONEST ABOUT THE EVIDENCE: the P&L half of that
+                         # rests on THREE scale-in fills ever, of which two
+                         # lost (-$32.98), and n=3 proves nothing. Remove the
+                         # 09-09 NEAR close and cap 3 is the BEST rule, not
+                         # the worst. So the P&L case is not the reason.
+                         # THE REASON IS ARITHMETIC, NOT STATISTICS: three
+                         # fills on one market is 3x the stake on ONE
+                         # outcome, and the worst close falls from 30% of the
+                         # bank to 11%. That holds whatever those three fills
+                         # would have done. MAX_PER_CLOSE stays at 2, so two
+                         # DIFFERENT markets are still allowed -- they are
+                         # correlated at rho ~ 0.8, not identical.
 IMPROVE_BY = 0.005     # a second buy must be at least this much cheaper
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # our own size: a 0.01-contract order against a
@@ -1030,6 +1053,32 @@ def selftest():
     ck(_fired[1]["n"] >= MAX_PER_CLOSE,
        f"and {MAX_PER_CLOSE} FILLS still exhaust the close -- max exposure is "
        f"UNCHANGED by this amendment, only wasted attempts are recovered")
+
+    # ---- AMENDMENT 13: ONE FILL PER MARKET -----------------------------
+    # The rail, exercised the way the loop exercises it: book a fill, then ask
+    # whether a SECOND fill on the same ticker is allowed, and whether a fill
+    # on a DIFFERENT ticker still is. Written in terms of MAX_PER_MARKET, not
+    # as a literal 1, so raising the constant cannot silently pass this.
+    def _blocked(pv, tk):
+        return pv is not None and             pv.get("per_tk", {}).get(tk, 0) >= MAX_PER_MARKET
+    _f13 = {"n": 1, "best": 0.97, "tk": "A", "sides": {"A": "no"},
+            "tickers": {"A"}, "per_tk": {"A": MAX_PER_MARKET}}
+    ck(_blocked(_f13, "A"),
+       f"a market that already filled {MAX_PER_MARKET}x is refused a repeat "
+       f"-- this is what turned one bad NEAR close into -$52.60")
+    ck(not _blocked(_f13, "B"),
+       "but a DIFFERENT market on the same close is still allowed, because "
+       "MAX_PER_CLOSE governs that and rho ~ 0.8 is not rho = 1")
+    ck(not _blocked(None, "A"),
+       "and the first fill of a close is never blocked")
+    ck(MAX_PER_MARKET * SIZE <= MAX_PER_CLOSE * SIZE,
+       "one market can never stake more than the whole close is allowed to")
+    _worst13 = 1.00 * float(SIZE) * MAX_PER_CLOSE
+    _worst_old = 1.00 * float(SIZE) * MAX_PER_CLOSE   # unchanged by A13
+    ck(abs(_worst13 - _worst_old) < 1e-9,
+       f"A13 does not change the worst CLOSE (${_worst13:.2f}); it changes "
+       f"how much of it one market may be -- ${1.00*float(SIZE)*MAX_PER_MARKET:.2f} "
+       f"instead of all of it")
     _src2 = open(os.path.abspath(__file__), encoding="utf-8").read()
     # ANCHOR ON A NEWLINE. Searching for the bare text finds this test's OWN
     # string literal first, because selftest() is defined above trade_loop --
@@ -1869,6 +1918,11 @@ def trade_loop(a, rec, book, idx, series_index):
             prev = fired.get(close_s)
             if prev is not None and prev["n"] >= MAX_PER_CLOSE:
                 continue
+            # AMENDMENT 13: ONE FILL PER MARKET. See MAX_PER_MARKET.
+            if prev is not None and                     prev.get("per_tk", {}).get(tk, 0) >= MAX_PER_MARKET:
+                nb13 = near.setdefault(close_s, _fresh_near())
+                nb13["market_capped"] = nb13.get("market_capped", 0) + 1
+                continue
             # AMENDMENT 8(A): NEVER HOLD BOTH SIDES OF ONE MARKET.
             # `fired` was keyed by close alone, so the improve bar was compared
             # across markets AND across sides. Every price we can pay is above
@@ -2048,12 +2102,15 @@ def trade_loop(a, rec, book, idx, series_index):
                 if pv is None:
                     fired[close_s] = {"n": 1, "best": px, "tk": tk,
                                       "sides": {tk: want},
-                                      "tickers": {tk}}
+                                      "tickers": {tk},
+                                      "per_tk": {tk: 1}}
                 else:
                     pv["n"] += 1
                     pv["best"] = min(pv["best"], px)
                     pv.setdefault("sides", {})[tk] = want
                     pv.setdefault("tickers", set()).add(tk)
+                    d13 = pv.setdefault("per_tk", {})
+                    d13[tk] = d13.get(tk, 0) + 1
 
             def _note_scrap(px, nfilled):
                 """AMENDMENT 12 (2026-09-11): A SCRAP FILL IS NOT A SLOT.
@@ -2249,6 +2306,7 @@ def main():
     rec("start", mode=tag, tau_min=TAU_MIN, tau_max=TAU_MAX, pin=PIN,
         edge_floor=EDGE_FLOOR, ev_floor=EV_FLOOR,
         measured_flip=MEASURED_FLIP, max_per_close=MAX_PER_CLOSE,
+        max_per_market=MAX_PER_MARKET,
         improve_by=IMPROVE_BY, min_level=MIN_LEVEL,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
