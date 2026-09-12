@@ -92,4 +92,30 @@ tau 16, 0.05% at tau 15) at a tape false-alarm cost of 4/1,642 vs 2/1,642.
 finishes and may change the threshold; that change, if made, is a separate
 dated entry.
 
+## PILOT 2026-09-12 09:1xZ -- one-contract hedges first, at the operator's explicit sign-off
+
+Operator: "If you want to buy one share of a losing coin to attempt the hedge
+at a tiny scale you can do that." Also, in the same message: "I don't want to
+lose money," and the division of labour -- Fable for thinking, planning and
+new ideas; Opus for grunt work.
+
+**What changes:** `HEDGE_PILOT_CONTRACTS = 1`. When belief collapses on a
+live position, the hedge buys ONE contract of the opposite side and is then
+done for that position; the other contracts ride unhedged exactly as before
+this amendment. Cost of a pilot event: under $1. Purpose: prove the live
+mechanics -- does the order fill, at what price against the ask we saw, do
+both legs settle and book correctly, does the A8 guard stay quiet -- before
+a $19 position depends on them.
+
+**What it costs:** during the pilot a collapse still loses ~$18 instead of
+~$9. That is the price of not discovering a mechanics bug on a full-size
+event, and the operator chose it.
+
+**Exit from the pilot:** after THREE hedge events with (a) a fill, (b) fill
+price within one tick of the ask recorded in the alarm, (c) both legs
+settled with the locked loss matching `locked_loss_c` to the cent, the pilot
+is lifted to full size. That lift is a dated entry here. The n=30 live bar
+above counts pilot events as events; recovery per hedged contract is
+measured on the hedged contract.
+
 ## If this bar moves again, the move is dated and explained here.

@@ -274,6 +274,15 @@ HEDGE_MAX_ASK = 1.00     # the hedge leg must cost LESS than the $1 it pays.
                          # $1.00 or more, where the locked loss equals the
                          # unhedged one. Recorded 2026-09-12 08:4xZ, and
                          # PREREG_hedge.md rule 4 is corrected with this date.
+HEDGE_PILOT_CONTRACTS = 1   # PILOT (2026-09-12, operator: "buy one share of a
+                            # losing coin to attempt the hedge at a tiny scale").
+                            # While set, a hedge buys at most this many contracts
+                            # and is then DONE for that position -- the rest
+                            # rides unhedged as before. Purpose: prove the live
+                            # mechanics (fill, price vs the ask we saw, both legs
+                            # settling) for under a dollar before a $19 event
+                            # depends on them. None = full size. Lift after three
+                            # clean events; that lift is a dated PREREG entry.
 HEDGE_MAX_TRIES = 5      # seconds we keep trying once the alarm has fired.
                          # Separate from MAX_ATTEMPTS_PER_CLOSE, which also
                          # applies. A collapse leaves ~15s; five is generous.
@@ -1520,6 +1529,16 @@ def selftest():
            any('rec("hedge_refused"' in ln for ln in _hblk),
            "every alarm, missing ask and refusal is recorded -- silence is "
            "not an outcome")
+        if HEDGE_PILOT_CONTRACTS:
+            ck(HEDGE_PILOT_CONTRACTS == 1,
+               "PILOT: a live hedge buys exactly ONE contract until three clean "
+               "events lift it (operator sign-off 2026-09-12)")
+            ck(any("min(_hn_take, float(HEDGE_PILOT_CONTRACTS))" in ln for ln in _hblk),
+               "and the cap is applied to the size actually sent")
+            ck(any("if HEDGE_PILOT_CONTRACTS or _hfilled >= float(_hn)" in ln
+                   for ln in _hblk),
+               "and under the pilot any fill completes the hedge -- no "
+               "1-contract-per-second dribble for HEDGE_MAX_TRIES seconds")
         ck(HEDGE_MAX_TRIES >= 3 and HEDGE_MAX_TRIES <= 10,
            f"retries are bounded ({HEDGE_MAX_TRIES}) -- a runaway on the hedge "
            "path would be the 160-order incident again")
@@ -2168,6 +2187,8 @@ def trade_loop(a, rec, book, idx, series_index):
                         edge_c=hedge_edge_c(_belief, _ask))
                     continue
                 _hn_take = min(float(_hn), float(_asz))
+                if HEDGE_PILOT_CONTRACTS:
+                    _hn_take = min(_hn_take, float(HEDGE_PILOT_CONTRACTS))
                 attempts[_hcs] = attempts.get(_hcs, 0) + 1
                 if not live:
                     _hoid = f"hedge-paper-{_htk}-{now_s}"
@@ -2207,7 +2228,9 @@ def trade_loop(a, rec, book, idx, series_index):
                     _hoid = f"hedge-{_hout.get('order_id') or now_s}"
                     open_pos[_hoid] = (_hcs, _opp, _hcost2, _hfilled, _htk)
                     state["hedges"] = state.get("hedges", 0) + 1
-                    if _hfilled >= float(_hn) - 1e-9:
+                    if HEDGE_PILOT_CONTRACTS or _hfilled >= float(_hn) - 1e-9:
+                        # under the pilot ANY fill completes the hedge for this
+                        # position -- otherwise 1 contract/second for 5 seconds
                         hedged.add(_hid)
                     else:
                         # partial: shrink what is left to hedge and keep trying
@@ -2688,6 +2711,7 @@ def main():
         max_per_market=MAX_PER_MARKET,
         hedge_enabled=HEDGE_ENABLED, hedge_belief=HEDGE_BELIEF,
         hedge_max_ask=HEDGE_MAX_ASK, hedge_max_tries=HEDGE_MAX_TRIES,
+        hedge_pilot_contracts=HEDGE_PILOT_CONTRACTS,
         improve_by=IMPROVE_BY, min_level=MIN_LEVEL,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
