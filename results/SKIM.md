@@ -236,6 +236,41 @@ unusually calm.
 
 ---
 
+## ❌ "IS SOL STRUCTURALLY WORSE?" — NOT PROVEN, AND TWO OF MY OWN COUNTS WERE WRONG (Opus agent, 2026-09-12; `results/RESULTS_coin.md`, `results/PREREG_coin.md`)
+
+**Two corrections to what I reported earlier today, and both are mine:**
+1. **"NEAR 3 of 18" was wrong.** The three NEAR losses are three fills on ONE market in
+   ONE close (09-09 00:45). Hard rule 4 says cluster by close. NEAR is **1 of 18** by
+   close. My per-bet table broke my own rule.
+2. **"SOL's feed is the least jumpy" was a QUANTIZATION ARTEFACT.** SOL is quoted in 0.01
+   steps against a 0.0082 one-second sigma, so 70% of SOL seconds print NO change and the
+   jump-tail statistic sees a calm grid, not a calm coin. Withdrawn.
+
+**What is actually true:** at the current gate SOL has lost **3 of 14 closes** vs **1 of
+101** for the other eight. Alone p = 0.0055; **as the worst of nine coins we went looking
+through, p = 0.060**; over all runs p = 0.333. Only a coin 4–6× worse was detectable on 14
+closes. SOL is −$38.39 at the current gate while the other eight made +$67 — but that is
+three events, and on the all-runs window NEAR is worst on money from its one triple-filled
+close. **Which coin is "worst" flips with the window.** The worst-of-nine p went 0.060 →
+0.0285 → 0.060 in one afternoon as two half-penny hedge-test plants entered and left the
+loss count.
+
+**Mechanism confirmed, gate impossible:** every reconstructable losing close carried a
+one-second index jump past 5σ (p = 0.0004 vs Poisson), but **22–37% of ALL closes do and
+we win nearly all of them.**
+
+**Adverse selection in its own units:** our entries are ~12% "saturated" (belief at the
+numerical ceiling) vs 73–85% on the tape's model-certain moments — we get the
+less-certain end of the gate because that is where offers exist.
+
+**No SOL gate. Instead `results/PREREG_coin.md`: the next 30 SOL closes at the current
+gate, ≥3 losses excludes SOL, ≤1 closes the question, written before the data.**
+
+**Standing correction to the ledger:** count losses BY CLOSE and exclude `plant-`/`hedge-`
+legs. By close: 195 closes, SOL 3, XRP 1, BNB 1, DOGE 1, NEAR 1, BTC/HYPE/ETH/ZEC 0.
+
+---
+
 ## ⭐⭐⭐ WHY THE BACKTEST NEVER SHOWED OUR LOSSES — ANSWERED ON OUR OWN 207 FILLS (2026-09-12; `results/RESULTS_replay.md`, `research/pinreplay.py`)
 
 **207 real fills, 160 closes, all 9 losses, replayed at the exact second.** Fair
