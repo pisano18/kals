@@ -480,7 +480,7 @@ MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # 0.02-contract dust level is not a real fill test
 MAX_BOOK_AGE_MS = 2000
 MAX_INDEX_AGE_S = 2
-SIGMA_RULER = "live"      # AMENDMENT 20: "live" | "1800" | "max3600"
+SIGMA_RULER = "live"      # A20: "live"|"1800"|"max3600"|"maxdown"
 # THE DECLARED DEFAULTS, captured at import and never reassigned. The
 # self-test asserts against THESE, not against the live values: main() applies
 # --sigma-ruler and --honest BEFORE running the suite, so a check written
@@ -686,6 +686,41 @@ class IndexWS:
         mu = sum(diffs) / len(diffs)
         return math.sqrt(sum((x - mu) ** 2 for x in diffs) / (len(diffs) - 1))
 
+    @staticmethod
+    def _semi_over(d, win):
+        """DOWNSIDE-only deviation over the trailing `win` seconds.
+
+        AMENDMENT 20b. The model's claim is one-sided: it says the settlement
+        lands on its side of the strike, and we lose only when the index comes
+        in the other way. Every ruler this project has ever used is built from
+        moves in BOTH directions, which spends half its information on moves
+        that cannot hurt us.
+
+        Scored over 108,000 rebuilt decisions (results/RESULTS_ruler.md),
+        `max(downside 300s, downside 1800s)` beat the deployed
+        `max(sd 300s, sd 3600s)` on every axis at once, in BOTH halves of the
+        sample:
+
+                              deployed      downside-only
+          gated loss rate     -42.3%        -48.5%
+          sd(z)               0.919         0.950   (1.000 is honest)
+          kurtosis            69.1          53.5    (3 is a normal tail)
+          decisions kept      -1.0%         -0.9%
+          holdout loss        0.0813%       0.0717%
+          holdout sd(z)       0.986         1.025
+
+        The sqrt(2) is what makes it comparable to a two-sided sd: for a
+        symmetric distribution, twice the mean of the squared down-moves is
+        the variance.
+        """
+        secs = sorted(d)[-win:]
+        dn = [(d[secs[i]] - d[secs[i - 1]]) ** 2
+              for i in range(1, len(secs))
+              if secs[i] - secs[i - 1] == 1 and d[secs[i]] < d[secs[i - 1]]]
+        if len(dn) < 10:
+            return None
+        return math.sqrt(2.0 * sum(dn) / len(dn))
+
     def sigma(self, iid):
         """The model's volatility estimate.
 
@@ -728,6 +763,17 @@ class IndexWS:
             return max(a, b)
         if SIGMA_RULER == "1800":
             return self._sig_over(d, 1800) or self._sig_over(d, SIGMA_WIN)
+        if SIGMA_RULER == "maxdown":
+            # AMENDMENT 20b -- the best of the forty rulers scored.
+            a = self._semi_over(d, SIGMA_WIN)
+            b = self._semi_over(d, 1800)
+            v = max(a, b) if (a and b) else (a or b)
+            # If too few DOWN moves exist to estimate at all, fall back to the
+            # deployed two-sided ruler rather than to nothing. A None here
+            # means fair() returns None and the market is skipped silently,
+            # which would look exactly like a thin book.
+            return v or (lambda x, y: max(x, y) if (x and y) else (x or y))(
+                self._sig_over(d, SIGMA_WIN), self._sig_over(d, 3600))
         return self._sig_over(d, SIGMA_WIN)
 
     def partial(self, iid, close_s, now_s):
@@ -2410,6 +2456,7 @@ def selftest():
                 lock = threading.RLock()
                 ticks = {"X": _rd}
                 _sig_over = staticmethod(IndexWS._sig_over)
+                _semi_over = staticmethod(IndexWS._semi_over)
                 sigma = IndexWS.sigma
             _f = _FakeWS()
             globals()["SIGMA_RULER"] = "live"
@@ -2424,6 +2471,25 @@ def selftest():
                "'max3600' is never shorter than either input (%.4f)" % _v_max)
             ck(_v_18 is not None and _v_18 > _v_live,
                "'1800' reads wider than the live ruler here (%.4f)" % _v_18)
+            # AMENDMENT 20b: the downside ruler, and its fallback
+            globals()["SIGMA_RULER"] = "maxdown"
+            _v_dn = _f.sigma("X")
+            ck(_v_dn is not None and _v_dn > 0,
+               "'maxdown' returns a positive ruler (%.4f)" % _v_dn)
+            _one_sided = {t: 100.0 + 0.01 * t for t in range(1000, 5000)}
+            class _FakeUp:
+                lock = threading.RLock()
+                ticks = {"X": _one_sided}
+                _sig_over = staticmethod(IndexWS._sig_over)
+                _semi_over = staticmethod(IndexWS._semi_over)
+                sigma = IndexWS.sigma
+            ck(IndexWS._semi_over(_one_sided, 300) is None,
+               "a series that only ever rises has NO down moves, so the "
+               "downside estimator refuses rather than returning zero")
+            ck(_FakeUp().sigma("X") is not None,
+               "and sigma() falls back to the two-sided ruler there -- a None "
+               "would skip the market silently, indistinguishable from a thin "
+               "book")
         finally:
             globals()["SIGMA_RULER"] = _rs
         ck(SIGMA_RULER == _rs, "and the ruler is put back to %r" % _rs)
@@ -3812,7 +3878,7 @@ def main():
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
     ap.add_argument("--sigma-ruler", default="live",
-                    choices=("live", "1800", "max3600"),
+                    choices=("live", "1800", "max3600", "maxdown"),
                     help="AMENDMENT 20: how long a window the volatility "
                          "estimate spans. See results/PREREG_ruler.md")
     ap.add_argument("--honest", action="store_true",

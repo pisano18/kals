@@ -73,7 +73,7 @@ class Series:
     """
 
     __slots__ = ("t0", "t1", "val", "n", "c_n", "c_d", "c_d2", "c_abs",
-                 "c_bp", "c_dn2", "c_up2")
+                 "c_bp", "c_dn2", "c_up2", "c_d4")
 
     def __init__(self, ser):
         self.t0 = min(ser)
@@ -88,6 +88,7 @@ class Series:
         c_bp = [0.0] * (n + 1)
         c_dn2 = [0.0] * (n + 1)
         c_up2 = [0.0] * (n + 1)
+        c_d4 = [0.0] * (n + 1)
         prev_d = None
         g = ser.get
         for i in range(n):
@@ -106,10 +107,12 @@ class Series:
                                        else 0.0)
             c_up2[i + 1] = c_up2[i] + (d * d if (d is not None and d > 0)
                                        else 0.0)
+            c_d4[i + 1] = c_d4[i] + (d * d * d * d if d is not None else 0.0)
             prev_d = d
         self.c_n, self.c_d, self.c_d2 = c_n, c_d, c_d2
         self.c_abs, self.c_bp = c_abs, c_bp
         self.c_dn2, self.c_up2 = c_dn2, c_up2
+        self.c_d4 = c_d4
 
     def _idx(self, t):
         return min(max(t - self.t0, 0), self.n)
@@ -168,6 +171,34 @@ class Series:
         if n < minn or bp <= 0:
             return None
         return math.sqrt((bp / n) * (math.pi / 2.0))
+
+    def quartic(self, t, w, minn=20):
+        """(mean d^4)^(1/4) -- the jump-HEAVY counterpart to bipower.
+
+        Bipower deliberately excludes jumps and, on this tape, is one of the
+        WORST rulers tested: sd(z) 1.51 and a gated loss rate 53% above the
+        300-second baseline. That is the falsifiable prediction of the jump
+        story coming true. This is the opposite end of the same axis -- a
+        fourth moment weights a single large move enormously -- so if the
+        story is right this should be among the BEST. A ruler family where
+        both ends behave as the mechanism predicts is evidence; one tuned knob
+        is not.
+
+        For a Gaussian, (E d^4)^(1/4) = 3^(1/4) * sigma, so the constant below
+        makes it an unbiased sd estimate on jump-free data and the self-test
+        checks exactly that.
+        """
+        b = self._idx(t) + 1
+        a = self._idx(t - w + 2)
+        if b <= a:
+            return None
+        cnt = self.c_n[b] - self.c_n[a]
+        if cnt < minn:
+            return None
+        q = (self.c_d4[b] - self.c_d4[a]) / cnt
+        if q <= 0:
+            return None
+        return (q ** 0.25) / (3.0 ** 0.25)
 
     def semi(self, t, w, side="down", minn=20):
         """Downside-only (or upside-only) deviation, scaled by sqrt(2).
@@ -295,6 +326,21 @@ def make_rulers():
                 return a
             return max(a, frac * b)
         return f
+    for w in (300, 3600):
+        R["quartic %ds" % w] = (lambda W: lambda S, t: S.quartic(t, W))(w)
+    R["max(sd300, quartic3600)"] = (
+        lambda S, t: (lambda a, b: max(a, b) if (a and b) else (a or b))(
+            S.sd(t, 300), S.quartic(t, 3600)))
+    R["max(quartic300, quartic3600)"] = (
+        lambda S, t: (lambda a, b: max(a, b) if (a and b) else (a or b))(
+            S.quartic(t, 300), S.quartic(t, 3600)))
+    R["max(sd300, down1800)"] = (
+        lambda S, t: (lambda a, b: max(a, b) if (a and b) else (a or b))(
+            S.sd(t, 300), S.semi(t, 1800, "down")))
+    R["max(down300, down1800)"] = (
+        lambda S, t: (lambda a, b: max(a, b) if (a and b) else (a or b))(
+            S.semi(t, 300, "down"), S.semi(t, 1800, "down")))
+    R["max(60, 1800)"] = mx((60, 1800))
     R["sd300 floored at 0.7*sd3600"] = floored(300, 3600, 0.7)
     R["sd300 floored at 1.3*sd3600"] = floored(300, 3600, 1.3)
     return R
@@ -492,6 +538,16 @@ def selftest():
        "%.2fx) -- which is what makes bipower a falsifiable test of the jump "
        "story rather than another knob" % (r_sd, r_bp))
 
+    ck(abs(S.quartic(8000, 3600) / S.sd(8000, 3600) - 1.0) < 0.15,
+       "the fourth-moment ruler is unbiased on jump-free Gaussian data "
+       "(%.3f)" % (S.quartic(8000, 3600) / S.sd(8000, 3600)))
+    r_q = Sj.quartic(8000, 3600) / S.quartic(8000, 3600)
+    ck(r_q > r_sd > r_bp,
+       "and one planted jump inflates it MORE than the plain sd, which in "
+       "turn beats bipower (%.2fx > %.2fx > %.2fx). The three sit in that "
+       "order by construction, so the family spans the jump axis rather than "
+       "sampling one point on it" % (r_q, r_sd, r_bp))
+
     # downside must react to a one-sided world
     dn = {}
     v = 100.0
@@ -620,7 +676,7 @@ def report(res, out_path, say=print, window=""):
     w("| ruler | sd(z) train | sd(z) holdout | kurt train | kurt holdout | "
       "gate loss train | holdout |")
     w("|---|---|---|---|---|---|---|")
-    for lab, _sc in rows[:14]:
+    for lab, _sc in rows:
         a_, b_ = res[lab]
         sa, sb = a_.stats(), b_.stats()
         if not sa or not sb:

@@ -119,3 +119,64 @@ closes.
 No change to PIN, PRICE_CEILING, EDGE_FLOOR, EV_FLOOR, MEASURED_FLIP, the
 sweep, the hedge, BANK_BRAKE or size. One flag, one number: how far back the
 volatility estimate looks.
+
+---
+
+# AMENDED 2026-09-13 ~07:57 ET -- the ruler changed before the bar had run
+
+**Stated loudly because a bar is never moved quietly.** `max3600` was deployed
+at 11:10Z. Forty-five minutes later the forty-ruler sweep
+(`results/RESULTS_ruler.md`) found `max(downside 300s, downside 1800s)`
+**strictly better on every axis, in both halves of the sample**, so it was
+deployed at 11:57Z and **the 60-fill bar RESTARTED from zero**.
+
+The restart cost two fills. Doing it later would have cost the whole count.
+
+| | max3600 (11:10-11:57Z) | maxdown (now) |
+|---|---|---|
+| gated loss rate vs the old 300s ruler | -42.3% | **-48.5%** |
+| sd(z), where 1.000 is honest | 0.919 | **0.950** |
+| kurtosis, where 3 is a normal tail | 69.1 | **53.5** |
+| decisions kept | -1.0% | **-0.9%** |
+| holdout gated loss | 0.0813% | **0.0717%** |
+| holdout sd(z) | 0.986 | **1.025** |
+
+**Why a downside ruler at all.** The model's claim is one-sided -- it says the
+settlement lands on its side of the strike -- and we lose only when the index
+comes in the other way. Every ruler this project has used was built from moves
+in both directions, spending half its information on moves that cannot hurt
+us. Nobody had tried the one-sided version.
+
+**THE BAR IS UNCHANGED** -- 60 fills or 14 days, market-loss rate below 4.13%,
+trade count >= 70% of the concurrent rate, $/day not down. It starts at 11:57Z.
+
+## What the sweep also found, and did NOT deploy
+
+**The jump story was confirmed by a prediction that could have failed.** Rulers
+were built across the whole jump-weighting axis and they line up in exactly the
+predicted order:
+
+| ruler | weights jumps | gated loss vs baseline |
+|---|---|---|
+| `mean abs move 300s` | least | **+126.5%** |
+| `bipower 300s` | little (jump-blind by design) | **+53.3%** |
+| `sd 300s` | normally | baseline |
+| `quartic 3600s` | heavily (fourth moment) | **-78.2%** |
+| `max(quartic300, quartic3600)` | most | **-80.2%** |
+
+Monotone across five estimators. A ruler that deliberately ignores jumps is the
+worst; one that deliberately over-weights them is the best. That is the
+mechanism, not a tuned parameter.
+
+**The quartic family is NOT deployed, for an honest reason rather than a
+cautious one.** Its sd(z) is 0.50-0.54 -- it reads about twice as wide as the
+truth -- and it costs 6.5-7.2% of decisions on this population. On the
+population we actually trade, where an offer must also exist inside the
+ceiling, a ruler that halves every stated confidence will fail the edge and EV
+floors far more often than 7%. That cost is not measured and will not be
+guessed at.
+
+**Open question, and the most valuable one this sweep produced:** what does a
+ruler that reads twice as wide cost in TRADES on the offer-constrained
+population? If the answer is small, the quartic family deserves its own
+pre-registration, because -78% is far beyond anything else on the table.
