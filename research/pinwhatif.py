@@ -31,6 +31,14 @@ WHAT THIS COMPARISON IS GOOD FOR, and what it is not:
   NOT:  SIZE. Auto-sizing only runs live, so the paper run holds whatever
         --size it was started with while the live bot's size follows the bank.
         Contracts are reported so dollars can be read per contract.
+
+THE TWO RUNS DO NOT TAKE THE SAME TRADES, and that is the interesting part. At
+the 19:15Z close on 2026-09-13 the live bot bought ETH at 98.00c with 22
+seconds left; the what-if, whose wider ruler left it less certain about ETH,
+kept scanning and bought HYPE at 97.80c with 8 seconds left. Both won. A
+configuration change is not a filter on one stream of trades -- it redirects
+which market gets taken, so "did it catch that one" has three answers and not
+two: yes, no, or it took a different one.
 """
 import argparse
 import glob
@@ -170,7 +178,7 @@ def report(live, paper, say=print):
              else "-- (live produced none in the overlap)"))
     w("")
     w("  P&L IS NOT A FAIR COMPARISON. The what-if ASSUMES it gets every fill;")
-    w("  live loses about 28%% of its races. And auto-sizing runs only live, so")
+    w("  live loses about 28% of its races. And auto-sizing runs only live, so")
     w("  the what-if's size is frozen at what it was started with. Read the")
     w("  contracts column, not the dollars.")
     txt = "\n".join(lines)
