@@ -87,6 +87,20 @@ Concretely, and these are not suggestions:
 > Three parts -- the answer in plain language; a `Like you're five:` section;
 > a `What I need from you:` section. Set 2026-09-06, withdrawn 2026-09-13.
 
+**STANDING, set 2026-09-13: ANYTHING HE MUST DO OR DECIDE GOES IN A DEDICATED
+SECTION AT THE END OF THE MESSAGE.** His words: *"If you have something I need
+to do or answer always put it in a dedicated section at the end."*
+
+Head it `## What I need from you` and put NOTHING else in it. One line per
+item, each a decision or an action, each answerable without scrolling back --
+restate the choice inside the item rather than referring to a table above. If
+there is nothing, the section is omitted entirely; never pad it, and never
+invent a question to fill it.
+
+This does NOT reinstate the withdrawn 2026-09-06 three-part format. The body of
+the reply is unchanged: reason first, plain language, no jargon. This is one
+section, at the end, holding only what is his to act on.
+
 **STANDING PRIORITY ORDER, set 2026-09-13 by the operator, above all other
 work.** His words: *"Anything that makes more money, or makes us lose less, or
 identify things better is immediately a top priority above absolutely all other
