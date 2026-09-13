@@ -80,25 +80,49 @@ def open_markets(base, pk, kid, series, say=print):
 def book_of(base, pk, kid, ticker):
     """(yes_bid, yes_ask, ask_size) from the REST order book.
 
-    Kalshi's book gives BIDS on both sides: a `no` bid at q IS a `yes` ask at
-    1-q. Reading the `yes` side as an ask is the mapping error this project
-    already made once (pintake's docstring), so it is done explicitly here.
+    THE RESPONSE SHAPE, learned the hard way. It is
+
+        {"orderbook_fp": {"yes_dollars": [[price, size], ...],
+                          "no_dollars":  [[price, size], ...]}}
+
+    not {"orderbook": {"yes": ..., "no": ...}}. The first version read the
+    wrong keys and returned "no ask" for EVERY market -- including the
+    15-minute ones we demonstrably trade every day. A parser that returns a
+    clean null on markets known to be liquid is the only reason that bug was
+    visible at all; on the hourly series alone it would have read as a
+    finding.
+
+    BOTH SIDES ARE BIDS. A `no` bid at q IS a `yes` ask at 1-q, which is the
+    mapping pintake's docstring exists for. And NO depth parameter is passed:
+    `depth=5` returns five levels around the middle rather than the best, so
+    the top of book can be missing from it entirely.
     """
-    st, b = get(base, pk, kid, "/markets/%s/orderbook" % ticker,
-                query={"depth": "5"})
+    st, b = get(base, pk, kid, "/markets/%s/orderbook" % ticker)
     if not isinstance(b, dict):
         return None
-    ob = b.get("orderbook") or {}
-    yes = ob.get("yes") or []
-    no = ob.get("no") or []
-    ybid = max((float(p) for p, _s in yes), default=None) if yes else None
-    # best NO bid -> the cheapest YES ask
-    nbid = max((float(p) for p, _s in no), default=None) if no else None
+    ob = b.get("orderbook_fp") or b.get("orderbook") or {}
+    yes = ob.get("yes_dollars") or ob.get("yes") or []
+    no = ob.get("no_dollars") or ob.get("no") or []
+
+    def best(levels):
+        px = None
+        sz = 0.0
+        for p, q in levels:
+            try:
+                p = float(p)
+                q = float(q)
+            except (TypeError, ValueError):
+                continue
+            if px is None or p > px:
+                px, sz = p, q
+            elif px is not None and abs(p - px) < 1e-12:
+                sz += q
+        return px, sz
+
+    ybid, _ys = best(yes)
+    nbid, nsz = best(no)
     yask = (1.0 - nbid) if nbid is not None else None
-    asz = 0.0
-    if nbid is not None:
-        asz = sum(float(s) for p, s in no if abs(float(p) - nbid) < 1e-9)
-    return (ybid, yask, asz)
+    return (ybid, yask, nsz)
 
 
 def sample(base, pk, kid, tickers, out_path, seconds, say=print):
@@ -269,6 +293,30 @@ def main():
                   % (wait, time.strftime("%H:%M:%SZ",
                                          time.gmtime(target + a.seconds))))
             time.sleep(wait)
+        # RE-FETCH. The first run picked its tickers twenty minutes before
+        # sampling, so every 15-minute market in the list had already closed
+        # and the control arm was empty for a reason that had nothing to do
+        # with liquidity.
+        want = []
+        for s2 in HOURLY + FIFTEEN:
+            ms = open_markets(base, pk, kid, s2)
+            if not ms:
+                continue
+            soonest = min(m.get("close_time") or "" for m in ms)
+            near = [m for m in ms if (m.get("close_time") or "") == soonest]
+            # OUR BOT BUYS NEAR-CERTAINTY, 92-98c. On a ladder those are the
+            # strikes FAR from spot, not the near-money ones. The first
+            # version sorted TOWARD 0.5 -- it sampled exactly the strikes this
+            # strategy never touches, which would have answered a question
+            # nobody asked.
+            def extremity(m):
+                b = float(m.get("yes_bid_dollars") or 0)
+                if b <= 0.0 or b >= 1.0:
+                    return -1.0          # no quote at all: least interesting
+                return abs(b - 0.5)
+            near.sort(key=extremity, reverse=True)
+            want += [m["ticker"] for m in near[:6]]
+        print("  re-fetched at the close: %d tickers" % len(want))
     print("  sampling %d tickers for %d s" % (len(want), a.seconds))
     sample(base, pk, kid, want, a.out, a.seconds)
     summarise(a.out)
