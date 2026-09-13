@@ -381,6 +381,7 @@ MAX_PER_CLOSE = 2        # 3 -> 2 on 2026-09-09, and NOT because cap 3 is
 # ===========================================================================
 CLOSE_BUDGET = True
 
+_DEFAULT_MAX_PER_MARKET = 1   # --max-per-market is measured against this
 MAX_PER_MARKET = 1       # AMENDMENT 13 (2026-09-12). FILLS ALLOWED ON ONE
                          # MARKET IN ONE CLOSE. Scaling in buys MORE as the
                          # price falls, which is buying into a move against
@@ -404,6 +405,29 @@ MAX_PER_MARKET = 1       # AMENDMENT 13 (2026-09-12). FILLS ALLOWED ON ONE
                          # would have done. MAX_PER_CLOSE stays at 2, so two
                          # DIFFERENT markets are still allowed -- they are
                          # correlated at rho ~ 0.8, not identical.
+#
+# RE-OPENED 2026-09-13 BY THE OPERATOR, conditionally: "we can buy the same
+# coin twice if it leads to more profit because it goes cheaper, but that's a
+# very slippery slope into buying a flipping coin. If you can figure out a way
+# to do that safely I'll allow it... as long as the second coins purchase is
+# within the allowed contract size limit then that's certainly okay."
+#
+# HIS CONDITION IS ALREADY MET, AND A13'S ARITHMETIC REASON NO LONGER HOLDS.
+# A13 says "three fills on one market is 3x the stake on ONE outcome" -- true
+# when the close budget counted FILLS. AMENDMENT 17, the NEXT DAY, changed the
+# budget to CONTRACTS: MAX_PER_CLOSE * SIZE, whatever the fills. Two fills of
+# 47 on one market is 94 contracts, exactly the same 94 the budget already
+# allows. The 3x cannot happen any more. A13 is the second rule in two hours
+# found to be arguing against a world A17 replaced.
+#
+# WHAT DOES STILL HOLD, and it is the operator's own worry: 94 contracts on ONE
+# outcome is more concentrated than 47 + 47 across two coins at rho ~0.8. And
+# scaling in buys MORE as the price falls, which is buying into a move against
+# a position we already hold. That part is NOT solved by a contract cap and is
+# exactly "buying a flipping coin".
+#
+# SO IT GOES TO A WHAT-IF, NOT LIVE. --max-per-market raises it in a paper run
+# where it costs nothing, against the live bot on 1, and the comparison decides.
 # ===========================================================================
 # AMENDMENT 15 (2026-09-12): THE BELIEF-COLLAPSE HEDGE.
 #
@@ -2503,7 +2527,8 @@ def selftest():
         # never the live global, or it becomes a refusal to start.
         _dsrc = open(os.path.abspath(__file__), encoding="utf-8").read()
         _dwork = _dsrc[:_dsrc.index("def " + "selftest")]
-        for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN"):
+        for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN",
+                    "MAX_PER_MARKET"):
             ck(("_DEFAULT_%s" % _nm) in _dwork,
                "a _DEFAULT_%s exists to assert against, so its guard can "
                "never become a refusal to start" % _nm)
@@ -4008,6 +4033,11 @@ def main():
                          "This pins SIZE to --size instead.")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
+    ap.add_argument("--max-per-market", type=int, default=None,
+                    help="AMENDMENT 13 re-opened: fills allowed on ONE market "
+                         "in one close. Default %d. The close's CONTRACT "
+                         "budget is unchanged whatever this is."
+                         % _DEFAULT_MAX_PER_MARKET)
     ap.add_argument("--improve-scope", default="close",
                     choices=("close", "market"),
                     help="AMENDMENT 22: 'market' lets a SECOND COIN be bought "
@@ -4072,6 +4102,20 @@ def main():
                 f"stop by the fourth.")
         if a.max_positions > 6:
             raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
+    if a.max_per_market is not None:
+        if a.live:
+            raise SystemExit(
+                "--max-per-market is refused on a LIVE run. Scaling into one "
+                "market buys more as the price falls -- buying into a move "
+                "against a position we already hold -- and AMENDMENT 13 was "
+                "written on that. It may be raised only in a paper what-if "
+                "until that what-if says otherwise.")
+        if not (1 <= a.max_per_market <= MAX_PER_CLOSE):
+            raise SystemExit(
+                "--max-per-market %d outside [1, %d]: more fills than the "
+                "close cap cannot help, the CONTRACT budget binds first."
+                % (a.max_per_market, MAX_PER_CLOSE))
+        globals()["MAX_PER_MARKET"] = int(a.max_per_market)
     if a.improve_scope != "close":
         globals()["IMPROVE_SCOPE"] = a.improve_scope
     if a.pin is not None:
@@ -4132,7 +4176,7 @@ def main():
         hedge_max_ask=HEDGE_MAX_ASK, hedge_max_tries=HEDGE_MAX_TRIES,
         hedge_pilot_contracts=HEDGE_PILOT_CONTRACTS,
         improve_by=IMPROVE_BY, improve_scope=IMPROVE_SCOPE,
-        min_level=MIN_LEVEL,
+        max_per_market_run=MAX_PER_MARKET, min_level=MIN_LEVEL,
         sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
         sigma_ruler=SIGMA_RULER,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
