@@ -19,17 +19,24 @@ before changing anything. `BIASES.md` is the checklist.
 Set 2026-09-06 by the operator. These are not optional and they outlive any
 single session.
 
-**Every response is formatted in three parts, in this order:**
+**REVISED 2026-09-13 by the operator, replacing the three-part format below.**
+His words: *"I need more efficient wording and shorter replies. Don't leave out
+info but I'm tired of reading a book just to get to the reason something didn't
+work. Reason, supporting evidence, whatever else I may need to know to come up
+with a plan or new idea."*
 
-1. **The answer first, in plain language.** Numbers carry units.
-2. **A section headed `Like you're five:`** — what was just done and what is
-   happening next, written for someone who knows nothing about trading or
-   code. No jargon. Any term like *null*, *markout*, *t-stat* or *fair band*
-   is defined in the same sentence it appears in.
-3. **A section headed `What I need from you:`** — the explicit next action, or
-   `nothing, I'm continuing` when there isn't one.
+**Every response: reason first, then the evidence for it, then only what he
+needs to act on.** No preamble, no restating the question, no summary of what
+was just done unless it changed. The `Like you're five:` and `What I need from
+you:` sections are WITHDRAWN -- they duplicated the answer and buried it. If
+there is nothing he needs to decide, say nothing about it.
 
-**Never end a message without parts 2 and 3.**
+Numbers still carry units. A loss is still quoted next to the return that
+bought it. Failures are still reported as failures, never estimated.
+
+*The superseded format, kept so the change is visible:*
+> Three parts -- the answer in plain language; a `Like you're five:` section;
+> a `What I need from you:` section. Set 2026-09-06, withdrawn 2026-09-13.
 
 **Posture:**
 
