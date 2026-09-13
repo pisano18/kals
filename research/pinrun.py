@@ -505,6 +505,38 @@ def hedge_locked_loss(entry_cost, hedge_cost, n=1.0):
 
 
 IMPROVE_BY = 0.005     # a second buy must be at least this much cheaper
+# AMENDMENT 22 (2026-09-13): THE IMPROVE-BY RULE IS OBSOLETE ACROSS MARKETS AND
+# WAS SILENTLY OVERRIDING AMENDMENT 17.
+#
+# The operator, seeing the live bot take ETH and skip HYPE at the same close
+# while the what-if took HYPE: "I would've hoped my bot would grab eth, then
+# when hype looks like a good buy it'd see that and scoop it up too."
+#
+# WHAT HAPPENED, exactly. At the 19:15Z close the bot filled ETH at 98.0c. HYPE
+# was then offered at 97.7c with 2.14c of edge -- a BETTER trade than the one it
+# took -- and was refused because 97.7c is not at least 0.5c below 98.0c.
+#
+# WHY THAT IS A BUG AND NOT A CHOICE. AMENDMENT 3 wrote this rule for SCALING
+# INTO THE SAME MARKET: "re-buying at the same level would double the risk
+# without lowering the average paid". AMENDMENT 13 then set MAX_PER_MARKET = 1,
+# which forbids re-buying the same market at all. So since 2026-09-12 this rule
+# CANNOT do the job it was written for -- the only thing it can still do is
+# block a DIFFERENT COIN, which it was never meant to touch.
+#
+# And AMENDMENT 17, the same day, says a close is capped on CONTRACTS with
+# "coins unlimited". This rule was quietly contradicting that.
+#
+# WHY LIFTING IT DOES NOT ADD RISK. The close's CONTRACT budget is unchanged:
+# MAX_PER_CLOSE * SIZE either way. Two coins at 47 contracts each is the same
+# 94 contracts as one coin at 94. The worst case is identical; only WHICH
+# markets get bought changes. Every added trade still passes every gate.
+IMPROVE_SCOPE = "close"  # "close" = the old behaviour; "market" = A22
+_DEFAULT_IMPROVE_SCOPE = "close"   # THE THIRD TIME THIS PATTERN BIT. A guard
+                                   # that asserts the RUNNING value refuses to
+                                   # start the moment its flag is used; what it
+                                   # is actually for is "nobody changed the
+                                   # default in the source". Same fix as
+                                   # _DEFAULT_SIGMA_RULER and _DEFAULT_PIN.
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # our own size: a 0.01-contract order against a
                        # 0.02-contract dust level is not a real fill test
@@ -2461,6 +2493,48 @@ def selftest():
             pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
             pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
 
+        # ---- AMENDMENT 22: the improve-by rule's scope -----------------
+        ck(_DEFAULT_IMPROVE_SCOPE == "close",
+           "the DECLARED default improve scope is 'close' -- A22 is reached "
+           "only through --improve-scope (running now with %r)"
+           % IMPROVE_SCOPE)
+        # AND A GUARD AGAINST THE PATTERN ITSELF, because this is the third
+        # time: every "defaults to" assertion must read a _DEFAULT_ constant,
+        # never the live global, or it becomes a refusal to start.
+        _dsrc = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _dwork = _dsrc[:_dsrc.index("def " + "selftest")]
+        for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN"):
+            ck(("_DEFAULT_%s" % _nm) in _dwork,
+               "a _DEFAULT_%s exists to assert against, so its guard can "
+               "never become a refusal to start" % _nm)
+        ck(MAX_PER_MARKET == 1,
+           "MAX_PER_MARKET is 1 (AMENDMENT 13), which is WHY the improve-by "
+           "rule is obsolete: the same-market re-buy it was written to stop "
+           "is already impossible")
+        # the exact refusal that cost the HYPE trade at 19:15Z
+        _eth, _hype = 0.980, 0.977
+        ck(_hype >= _eth - IMPROVE_BY,
+           "under scope 'close' a second coin at %.3f IS refused after a fill "
+           "at %.3f, because %.3f is not below %.3f -- this is the live 19:15Z "
+           "refusal, reproduced from the constants"
+           % (_hype, _eth, _hype, _eth - IMPROVE_BY))
+        _src22 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _l22 = _src22.split("\n")
+        ck(any(ln.strip() == 'if (IMPROVE_SCOPE == "close" and prev is not None'
+               for ln in _l22),
+           "the trade loop branches on IMPROVE_SCOPE, so scope 'market' really "
+           "does skip the refusal rather than merely being accepted as a flag")
+        # exposure is UNCHANGED by the amendment: the budget is contracts
+        _sz22 = float(SIZE)
+        try:
+            globals()["SIZE"] = 47.0
+            ck(abs(close_budget() - 47.0 * MAX_PER_CLOSE) < 1e-9,
+               "the close budget is CONTRACTS (%g), so two coins at 47 is the "
+               "same worst case as one coin at 94 -- A22 changes which markets "
+               "are bought, never how much can be lost" % close_budget())
+        finally:
+            globals()["SIZE"] = _sz22
+
         # ---- AMENDMENT 21: the confidence gate is now a flag -----------
         ck(_DEFAULT_PIN == 0.995,
            "the DECLARED default PIN is 0.995 (running now with %.4f)" % PIN)
@@ -3674,7 +3748,12 @@ def trade_loop(a, rec, book, idx, series_index):
             # genuinely better price. Re-buying at the same level would double
             # the risk without lowering the average paid, which is the whole
             # mechanism -- a lower price wins more AND loses less.
-            if prev is not None and price >= prev["best"] - IMPROVE_BY:
+            # AMENDMENT 22: with MAX_PER_MARKET = 1 the same-market case can
+            # never arise, so under scope "market" this rule is a no-op and a
+            # second COIN is allowed at its own merits. Under "close" it keeps
+            # the old behaviour exactly.
+            if (IMPROVE_SCOPE == "close" and prev is not None
+                    and price >= prev["best"] - IMPROVE_BY):
                 continue
             if price > PRICE_CEILING:
                 nb["over_ceiling"] = nb.get("over_ceiling", 0) + 1
@@ -3929,6 +4008,13 @@ def main():
                          "This pins SIZE to --size instead.")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
+    ap.add_argument("--improve-scope", default="close",
+                    choices=("close", "market"),
+                    help="AMENDMENT 22: 'market' lets a SECOND COIN be bought "
+                         "at the same close on its own merits, which is what "
+                         "AMENDMENT 17 says and what the improve-by rule has "
+                         "been silently overriding since AMENDMENT 13 made it "
+                         "obsolete")
     ap.add_argument("--pin", type=float, default=None,
                     help="AMENDMENT 21: the confidence gate. Default %.3f. "
                          "May only be LOWERED toward 0.95; raising it from the "
@@ -3986,6 +4072,8 @@ def main():
                 f"stop by the fourth.")
         if a.max_positions > 6:
             raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
+    if a.improve_scope != "close":
+        globals()["IMPROVE_SCOPE"] = a.improve_scope
     if a.pin is not None:
         if not (0.95 <= a.pin <= _DEFAULT_PIN):
             raise SystemExit(
@@ -4043,7 +4131,8 @@ def main():
         hedge_enabled=HEDGE_ENABLED, hedge_belief=HEDGE_BELIEF,
         hedge_max_ask=HEDGE_MAX_ASK, hedge_max_tries=HEDGE_MAX_TRIES,
         hedge_pilot_contracts=HEDGE_PILOT_CONTRACTS,
-        improve_by=IMPROVE_BY, min_level=MIN_LEVEL,
+        improve_by=IMPROVE_BY, improve_scope=IMPROVE_SCOPE,
+        min_level=MIN_LEVEL,
         sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
         sigma_ruler=SIGMA_RULER,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,

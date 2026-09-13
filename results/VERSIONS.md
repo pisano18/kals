@@ -30,6 +30,44 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-a22 — 2026-09-13 19:3xZ — AMENDMENT 22: a second COIN at the same close is allowed on its own merits
+
+**What changed.** `--improve-scope market`. The improve-by rule no longer
+blocks a different coin.
+
+**The operator, watching the live bot take ETH and skip HYPE while the what-if
+took HYPE:** *"I would've hoped my bot would grab eth, then when hype looks
+like a good buy it'd see that and scoop it up too."*
+
+**What happened at 19:15Z.** The bot filled ETH at 98.0c. HYPE was then offered
+at 97.7c with **2.14c of edge — a better trade than the one it took** — and was
+refused, because 97.7c is not at least 0.5c below 98.0c.
+
+**Why that is a bug and not a design choice.** AMENDMENT 3 wrote the improve-by
+rule for SCALING INTO THE SAME MARKET: *"re-buying at the same level would
+double the risk without lowering the average paid."* AMENDMENT 13 then set
+`MAX_PER_MARKET = 1`, which forbids re-buying the same market at all. **Since
+2026-09-12 the rule has been unable to do the job it was written for.** The
+only thing it can still do is block a different coin — which it was never meant
+to touch — and AMENDMENT 17, the same day, says a close is capped on CONTRACTS
+with *"coins unlimited"*. The rule was silently contradicting it.
+
+**Why this does not add risk, and why it is not the ruler.** The close's
+contract budget is unchanged: `MAX_PER_CLOSE * SIZE` either way. Two coins at
+47 contracts is the same 94 contracts as one coin at 94 — **identical worst
+case**, only which markets get bought changes. And because coins at one close
+correlate at rho ~0.8 rather than 1.0, splitting the same budget across two
+markets can only reduce the chance that all of it loses together.
+
+That is why this went live directly while the ruler went to a what-if: the
+ruler was a statistical bet on a population that is not ours, with a measured
+cost in volume. This is a code-reading, its exposure is provably unchanged, and
+every trade it adds passes every existing gate.
+
+**Revert:** remove `"--improve-scope","market"` from `restart_bot.ps1`.
+
+---
+
 ## v-revert1 — 2026-09-13 18:49Z — AMENDMENTS 20, 20b and 21 REVERTED (operator call)
 
 **What changed.** `--sigma-ruler` and `--pin` removed. Back to the 300-second

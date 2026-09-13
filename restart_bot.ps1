@@ -45,8 +45,11 @@ if ($log) {
 }
 
 # --- 2. STOP ONLY pinrun.
+# ONLY THE LIVE ONE. On 2026-09-13 this matched '*pinrun*' and killed the
+# WHAT-IF tracker too -- a paper pinrun the operator had asked to keep running.
+# The live bot is the one carrying --live; nothing else may be stopped here.
 $old = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-    Where-Object { $_.CommandLine -like '*pinrun*' }
+    Where-Object { $_.CommandLine -like '*pinrun*' -and $_.CommandLine -like '*--live*' }
 foreach ($p in $old) {
     Write-Host "stopping pid $($p.ProcessId)"
     Stop-Process -Id $p.ProcessId -Force
@@ -57,13 +60,14 @@ Start-Sleep -Seconds 2
 Start-Process -FilePath $py -ArgumentList @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
-    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3"
+    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3",
+    "--improve-scope", "market"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 
 # --- 4. PROVE IT CAME BACK, and prove the collector survived.
 $new = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-    Where-Object { $_.CommandLine -like '*pinrun*' }
+    Where-Object { $_.CommandLine -like '*pinrun*' -and $_.CommandLine -like '*--live*' }
 if (-not $new) {
     Write-Host "FAILED: pinrun did not come back. Check results\pinrun-live-*.jsonl"
     exit 1
