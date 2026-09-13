@@ -4,3 +4,15 @@
 {"pair": ["F-O05", "F-P04"], "t": "20260913T0830Z", "verdict": "drawn"}
 {"pair": ["F-I02", "F-P09"], "t": "20260913T0830Z", "verdict": "drawn"}
 {"pair": ["F-P09", "F-P11"], "t": "20260913T0830Z", "verdict": "drawn"}
+{"pair": ["F-B01", "F-P02"], "t": "20260913T0848Z", "verdict": "drawn"}
+{"pair": ["F-O01", "F-R02"], "t": "20260913T0848Z", "verdict": "drawn"}
+{"pair": ["F-I08", "F-R05"], "t": "20260913T0848Z", "verdict": "drawn"}
+{"pair": ["F-I10", "F-M08"], "t": "20260913T0848Z", "verdict": "drawn"}
+{"pair": ["F-B03", "F-R05"], "t": "20260913T0848Z", "verdict": "drawn"}
+{"pair": ["F-I06", "F-I08"], "t": "20260913T0848Z", "verdict": "drawn"}
+{"note": "size drifts on a days timescale but the only stale-size channel is bounded at 300s, so it is arithmetically negligible; the residual question (do losses land at above-average size) is n=12 closes with an MDE far above any plausible effect -- no power, and a restatement of the record either way", "pair": ["F-B01", "F-P02"], "t": "2026-09-13T08:50:51Z", "verdict": "nothing"}
+{"note": "a disk stop ends the tape exogenously to market state, so it is missing-at-random w.r.t. the population question; R05 is a population-DEFINITION problem that no amount of complete tape fixes", "pair": ["F-I08", "F-R05"], "t": "2026-09-13T08:50:51Z", "verdict": "nothing"}
+{"note": "B03 is a bound derived from arithmetic (MAX_PER_CLOSE x size x ceiling) and holds for any population; a rate fact has nothing to say about a maximum, and the only version that would connect them is a forbidden loss-rate-from-tape estimate", "pair": ["F-B03", "F-R05"], "t": "2026-09-13T08:50:51Z", "verdict": "nothing"}
+{"note": "both are silent-failure modes, but pairing them yields only an ops health monitor, not a measurement; the targeted version that IS worth running is the F-I10 x F-M08 lead, and proposing the general 376-hour census alongside it would cost a day for the same answer", "pair": ["F-I06", "F-I08"], "t": "2026-09-13T08:50:51Z", "verdict": "nothing"}
+{"note": "F-O07's 'the other side did not change' (88.6 -> 86.8%) was never clustered by close and never had an MDE stated -- if the design effect applies it may be no-power, not no-effect, and that claim is load-bearing for 'what changed is the MODEL'", "pair": ["F-O01", "F-R02"], "t": "2026-09-13T08:50:56Z", "verdict": "lead"}
+{"note": "the low-volatility worst-arm finding rests on 8 closes; a 300s collector gap leaves partial index coverage that both depresses measured sigma and corrupts locked_sum, so check index-print completeness on those 8 closes before spending a day on the clustered test", "pair": ["F-I10", "F-M08"], "t": "2026-09-13T08:50:56Z", "verdict": "lead"}
