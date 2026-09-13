@@ -179,6 +179,10 @@ def era_of(t, ers):
     return cur
 
 
+MIN_FILLS_FOR_RATE = 30      # below this, a $/hour figure is noise wearing a
+                             # decimal point and is refused rather than printed
+
+
 def era_table(rows, ers, say=print):
     """Measured results per configuration. The ONLY honest answer to 'was the
     old setup better' -- and it is confounded by the market changing at the
@@ -200,17 +204,27 @@ def era_table(rows, ers, say=print):
             r[5], "%Y-%m-%dT%H:%M:%SZ").timetuple())
         a[3] = ts if a[3] is None else min(a[3], ts)
         a[4] = ts if a[4] is None else max(a[4], ts)
-    lines = ["  gate | ruler      | sweep | hours | fills | losses | loss% | "
-             "net $ | $/hour",
+    # the %% is not a typo: the two literals concatenate BEFORE the % applies,
+    # so a bare "loss%" reads as a format specifier and raises
+    lines = ["  gate | ruler      | sweep | hours | fills | losses | loss%% | "
+             "net $ | $/hour (needs n>=%d)" % MIN_FILLS_FOR_RATE,
              "  -----|------------|-------|-------|-------|--------|-------|"
              "-------|-------"]
     for (pin, ruler, sw), (f, L, d, t0, t1) in sorted(
             per.items(), key=lambda kv: kv[1][3] or 0):
         h = max((t1 - t0) / 3600.0, 0.01)
+        # A RATE FROM FOUR FILLS IS NOT A RATE. The first version of this
+        # table printed "+$17.37/hour" off 4 fills in 48 minutes and
+        # "+$563.09/hour" off 2 fills in two minutes, and the operator quite
+        # reasonably asked for more of the second one. Both were noise wearing
+        # a decimal point. Anything under MIN_FILLS_FOR_RATE now prints the
+        # sample size instead of a number nobody should act on.
+        rate = ("%+.2f" % (d / h)) if f >= MIN_FILLS_FOR_RATE else (
+            "n=%d, too few" % f)
         lines.append("  %-5s| %-11s| %-6s| %5.1f | %5d | %6d | %5s | %+6.2f "
-                     "| %+.2f"
+                     "| %s"
                      % (pin, ruler, sw, h, f, L,
-                        ("%.1f%%" % (100.0 * L / f)) if f else "-", d, d / h))
+                        ("%.1f%%" % (100.0 * L / f)) if f else "-", d, rate))
     txt = "\n".join(lines)
     if say:
         say(txt)
@@ -424,6 +438,13 @@ def main():
             print("pinshadow: no settled fill carries a signal yet -- nothing "
                   "to analyse")
             return 0
+        _ent = [r for r in rows if not r[4]]
+        print("ACCOUNT TOTAL, ALL TIME: $%+.2f  (%d entry fills, %d losses)"
+              % (sum(r[3] for r in rows), len(_ent),
+                 sum(1 for r in _ent if r[3] < 0)))
+        print("  Every row below is ONE SLICE of that total, not the total. "
+              "The slices sum to it.")
+        print("")
         print("CONFIGURATIONS, in order:")
         for t, pin, ruler, sw in ers:
             print("  from %s | gate %-6s | ruler %-11s | sweep %s"
