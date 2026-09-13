@@ -180,3 +180,42 @@ guessed at.
 ruler that reads twice as wide cost in TRADES on the offer-constrained
 population? If the answer is small, the quartic family deserves its own
 pre-registration, because -78% is far beyond anything else on the table.
+
+
+---
+
+# AMENDED 2026-09-13 ~12:35 ET -- BAR ITEM 4, added BEFORE the bar was scored
+
+**A gap in my own bar, found by a live event rather than by thinking.**
+
+At 16:29:56Z, one second after a swept fill on KXBNB15M at 92.3c, the model's
+belief collapsed from ~99.6% to 64.3% and the hedge bought the opposite side at
+10c. The underlying bet then WON. Net: +$2.30 on the bet, -$3.40 on the hedge,
+**-$1.10**.
+
+That hedge was the right decision -- holding was worth about -28c per contract
+in expectation against a locked -2.3c -- and it lost anyway. Nothing is wrong
+with it.
+
+**What is wrong is the bar.** AMENDMENT 20b makes the model deliberately LESS
+certain. Belief therefore crosses the 0.80 hedge threshold more easily, so the
+ruler can increase how often we buy insurance. The hedge already costs about
+$1.29/day at size 20 (CURRENT_STATE.md). **Bar items 1-3 score the loss rate,
+the trade count and $/day -- a ruler that halves the loss rate while doubling
+the insurance bill could pass items 1 and 2 and only show up in item 3 once the
+damage was done.**
+
+Early and far too small to mean anything: 5 alarms on 282 fills under the old
+ruler (0.02 per fill), 1 alarm on 6 fills under the new one (0.17). One event.
+It is recorded because it was noticed, not because it is evidence.
+
+**BAR ITEM 4, added now and scored alongside the others:**
+
+4. **Hedge alarms per fill <= 0.10**, measured over the same 60 fills. The old
+   ruler ran at 0.02. Above 0.10 the ruler is buying materially more insurance
+   than the strategy was designed around, and it REVERTS regardless of what the
+   loss rate says.
+
+Items 1-3 are unchanged and the 60-fill count is unchanged. This item is added
+before any of them has been scored, which is the only reason it may be added
+at all.
