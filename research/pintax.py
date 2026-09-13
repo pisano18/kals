@@ -181,6 +181,9 @@ FIELDS = [
     "Datetime Disposed (UTC)", "Holding Period", "Proceeds ($)",
     "Cost Basis incl. Fees ($)", "Gain/Loss ($)", "Leg Type", "Side Bought",
     "Status", "Settlement Result", "Order ID",
+    # Google's suggestion, and a good one: a permanent running total so the
+    # position at any point in the year is readable off the row itself.
+    "Cumulative Net P/L ($)",
 ]
 
 
@@ -219,6 +222,18 @@ def to_sheet(r):
     }
 
 
+def with_cumulative(sheet):
+    """Add the running net, in ledger order. Settled legs only contribute --
+    an OPEN leg has no realised figure to accumulate."""
+    run = 0.0
+    for r in sheet:
+        v = r.get("Net Profit/Loss ($)")
+        if str(v) != "":
+            run += float(v)
+        r["Cumulative Net P/L ($)"] = round(run, 4)
+    return sheet
+
+
 def write_csv(rows, path):
     """The sheet, plus an automated TOTAL row at the bottom.
 
@@ -227,7 +242,7 @@ def write_csv(rows, path):
     left BLANK on prices, because an average entry price dressed as a total is
     the kind of number that ends up on a return.
     """
-    sheet = [to_sheet(r) for r in rows]
+    sheet = with_cumulative([to_sheet(r) for r in rows])
     with open(path, "w", encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()
@@ -239,6 +254,8 @@ def write_csv(rows, path):
                              if str(r.get(col, "")) != ""), 4)
         total = {k: "" for k in FIELDS}
         total["Date"] = "TOTAL"
+        total["Cumulative Net P/L ($)"] = (sheet[-1]["Cumulative Net P/L ($)"]
+                                           if sheet else 0.0)
         total["Market/Asset"] = "%d legs (%d settled, %d open)" % (
             len(sheet), sum(1 for r in sheet if r["Status"] == "SETTLED"),
             sum(1 for r in sheet if r["Status"] == "OPEN"))
@@ -369,7 +386,60 @@ def summary(rows):
       "question is open and 1256 is the most favourable of the three, so it is "
       "the advisor's call; the data supports either.")
     w("")
-    w("## 5. Two Virginia questions to put to the advisor")
+    w("## 5. How much to hold back for tax")
+    w("")
+    # "28%% of" -- the escape is not optional: `% o` is a valid format spec
+    # (octal, space flag) and Python read it as one, which is why this line
+    # raised "%o format: an integer is required" on its first run.
+    w("A common suggestion is a flat **28%% of net profit**. On this ledger "
+      "that is **$%.2f**. It is offered here with the arithmetic that "
+      "contradicts it, because a single percentage cannot be right across "
+      "three treatments that differ by more than a factor of two."
+      % (0.28 * net))
+    w("")
+    w("**Two reasons a flat rate on NET understates the reserve:**")
+    w("")
+    w("1. **Under the gambling treatment the tax is on GROSS WINNINGS, not "
+      "net.** Winnings are income; losses are an itemised deduction capped at "
+      "winnings. With the federal standard deduction there is no offset at "
+      "all, so the base is **$%.2f, not $%.2f**." % (gross_win, net))
+    w("2. **Section 1256 is the opposite** - 60% of the gain at long-term "
+      "rates and 40% at ordinary, which is materially cheaper than either.")
+    w("")
+    w("Virginia's top rate is 5.75% and Virginia starts from federal AGI, so "
+      "the combined rate is federal + 5.75%. Short-term gains are taxed at "
+      "ordinary rates.")
+    w("")
+    w("| treatment | taxed on | at 22%+5.75% | at 24%+5.75% | at 32%+5.75% |")
+    w("|---|---|---|---|---|")
+    for lab, base, kind in (
+            ("Capital gain (short-term)", net, "ord"),
+            ("Section 1256 (60/40)", net, "1256"),
+            ("Gambling, itemised", net, "ord"),
+            ("Gambling, STANDARD deduction", gross_win, "ord")):
+        cells = ""
+        for fed in (0.22, 0.24, 0.32):
+            if kind == "1256":
+                ltcg = 0.15 if fed <= 0.24 else 0.20
+                rate = 0.6 * ltcg + 0.4 * fed + 0.0575
+            else:
+                rate = fed + 0.0575
+            cells += "| $%.2f " % (rate * base)
+        w("| %s | $%.2f %s|" % (lab, base, cells))
+    w("")
+    _worst = max(((0.32 + 0.0575) * gross_win), ((0.32 + 0.0575) * net))
+    w("**The spread across those cells is the point.** The lowest is a "
+      "Section 1256 reserve; the highest is gambling treatment with a "
+      "standard deduction, at **$%.2f - %.0f%% of the $%.2f actually "
+      "earned**. Until the advisor picks a treatment, reserving toward the "
+      "high end is the only choice that cannot leave a shortfall."
+      % (_worst, 100.0 * _worst / net if net else 0.0, net))
+    w("")
+    w("*Rates above are illustrative brackets, not a determination of the "
+      "taxpayer's marginal rate, and state and federal liability are combined "
+      "crudely. The advisor supplies the real figure.*")
+    w("")
+    w("## 6. Two Virginia questions to put to the advisor")
     w("")
     w("Virginia begins from federal adjusted gross income and has no separate "
       "capital-gains rate, so the federal characterisation decides almost "
@@ -384,7 +454,7 @@ def summary(rows):
     w("2. **Virginia allows itemised deductions only if they were itemised "
       "federally**, so that decision carries straight into the state return.")
     w("")
-    w("## 6. Wash sales")
+    w("## 7. Wash sales")
     w("")
     w("Each contract is a distinct market that expires within 15 minutes, and "
       "no position was closed at a loss and repurchased. The ledger carries "
@@ -392,13 +462,13 @@ def summary(rows):
       "directly rather than taken on trust.")
     w("")
     if done:
-        w("## 7. Period covered")
+        w("## 8. Period covered")
         w("")
         w("First trade **%s %s %s**, last **%s %s %s**."
           % (done[0]["date_et"], done[0]["time_et"], done[0]["zone"],
              done[-1]["date_et"], done[-1]["time_et"], done[-1]["zone"]))
         w("")
-    w("## 8. By month (US Eastern)")
+    w("## 9. By month (US Eastern)")
     w("")
     w("| month | legs | gross cost | fees | net P/L |")
     w("|---|---|---|---|---|")
@@ -406,7 +476,7 @@ def summary(rows):
         n2, c, fe, pl = by_month[m]
         w("| %s | %d | $%.2f | $%.2f | $%+.2f |" % (m, n2, c, fe, pl))
     w("")
-    w("## 9. The line-by-line ledger")
+    w("## 10. The line-by-line ledger")
     w("")
     w("`results/TAX_TRADES.csv` - one row per leg, ending in an automatic "
       "**TOTAL** row. Columns in order:")
@@ -415,7 +485,7 @@ def summary(rows):
       "Price, Exit Price, Fees, Net Profit/Loss, Time (ET), Timezone, "
       "Datetime Acquired (UTC), Datetime Disposed (UTC), Holding Period, "
       "Proceeds, Cost Basis incl. Fees, Gain/Loss, Leg Type, Side Bought, "
-      "Status, Settlement Result, Order ID.")
+      "Status, Settlement Result, Order ID, Cumulative Net P/L.")
     w("")
     w("**Fees are the exchange's own billed figure** (`fee_total` from the "
       "order confirmation), never a reconstruction of the fee formula.")
