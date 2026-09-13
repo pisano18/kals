@@ -34,6 +34,19 @@ there is nothing he needs to decide, say nothing about it.
 Numbers still carry units. A loss is still quoted next to the return that
 bought it. Failures are still reported as failures, never estimated.
 
+**ALL TIMES TO THE OPERATOR ARE EASTERN. STANDING, set 2026-09-12, no
+exceptions and no expiry.** His words: *"Use est only please for ever."*
+Write them as `ET` -- the zone is EDT (UTC-4) from March to November and EST
+(UTC-5) the rest of the year, so a literal "EST" in July would be an hour
+wrong. Convert; never hand him a UTC timestamp and never append the UTC one
+in brackets.
+
+This is presentation only. **Everything INSIDE the repo stays UTC** -- log
+filenames, `t` fields, close identifiers, market tickers, commit messages,
+`results/*.md`. The tape, the exchange and the settlement index are all UTC,
+and a local timestamp written into data is a bug waiting for the November
+clock change. Convert at the moment of speaking, not before.
+
 *The superseded format, kept so the change is visible:*
 > Three parts -- the answer in plain language; a `Like you're five:` section;
 > a `What I need from you:` section. Set 2026-09-06, withdrawn 2026-09-13.

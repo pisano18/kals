@@ -250,7 +250,19 @@ AUTO_SIZE_MAX = 250      # nothing above this without a fresh depth study.
                          # MIN_FILL_FRAC refuses a fill under half of SIZE, so
                          # past here the bot skips more closes than it takes
                          # and the bank stops being the binding constraint.
-AUTO_SIZE_STEP_UP = 1.5  # max multiplicative rise per adjustment
+AUTO_SIZE_STEP_UP = None # None = go straight to the size the bank supports.
+                         # Set by the operator 2026-09-12 23:2x ET ("why not
+                         # just jump to what it's supposed to be"), replacing
+                         # a 1.5x-per-step ramp.
+                         # THE RAMP'S ONLY JOB WAS TO BLUNT A MISREAD BALANCE,
+                         # and two things already do that better: read_bank()
+                         # refuses unless `balance` (cents) and
+                         # `balance_dollars` agree to the cent, so a unit error
+                         # returns None rather than a wrong number; and
+                         # AUTO_SIZE_MAX caps the result whatever it says. The
+                         # ramp bought nothing those two do not, and it cost
+                         # ~10 minutes of trading at the wrong size after every
+                         # restart. Set to a float to restore damping.
 AUTO_SIZE_EVERY_S = 300  # seconds between adjustments
 MAX_PER_CLOSE = 2        # 3 -> 2 on 2026-09-09, and NOT because cap 3 is
                          # wrong. Cap 3 still measures better on every number
@@ -1990,16 +2002,27 @@ def selftest():
                "a rail must NEVER move while a position is open")
             _st2 = {}
             autosize_tick(_st2, _a2, {}, now=1e9, bank_reader=lambda: 192.15)
-            ck(abs(float(SIZE) - 30.0) < 1e-9,
-               f"$192.15 supports size 65 but the first step is damped to "
-               f"20*{AUTO_SIZE_STEP_UP} = 30, got {SIZE}")
+            _tgt = size_for_bank(192.15)
+            ck(abs(float(SIZE) - float(_tgt)) < 1e-9,
+               f"with AUTO_SIZE_STEP_UP={AUTO_SIZE_STEP_UP} the bot goes "
+               f"STRAIGHT to the size the bank supports ({_tgt}), got {SIZE}")
             ck(autosize_tick(_st2, _a2, {}, now=1e9 + 1,
                              bank_reader=lambda: 192.15) is None,
                "a second adjustment inside AUTO_SIZE_EVERY_S must be refused")
-            autosize_tick(_st2, _a2, {}, now=1e9 + AUTO_SIZE_EVERY_S + 1,
-                          bank_reader=lambda: 192.15)
-            ck(abs(float(SIZE) - 45.0) < 1e-9,
-               f"the next step ramps 30 -> 45, got {SIZE}")
+            # The damping MECHANISM stays tested even while it is switched
+            # off, so turning it back on cannot ship broken.
+            _old_step = AUTO_SIZE_STEP_UP
+            try:
+                globals()["AUTO_SIZE_STEP_UP"] = 1.5
+                globals()["SIZE"] = 20.0
+                _st2b = {}
+                autosize_tick(_st2b, _a2, {}, now=1e9,
+                              bank_reader=lambda: 192.15)
+                ck(abs(float(SIZE) - 30.0) < 1e-9,
+                   f"with damping at 1.5 the first step is 20 -> 30, got "
+                   f"{SIZE}")
+            finally:
+                globals()["AUTO_SIZE_STEP_UP"] = _old_step
             _st3 = {}
             globals()["SIZE"] = 60.0
             autosize_tick(_st3, _a2, {}, now=1e9, bank_reader=lambda: 30.0)
@@ -2259,7 +2282,7 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
     state["bank"] = bank
     want = size_for_bank(bank)
     cur = float(SIZE)
-    if want > cur:
+    if want > cur and AUTO_SIZE_STEP_UP:
         want = min(want, max(cur + 1.0, int(cur * AUTO_SIZE_STEP_UP)))
     if abs(want - cur) < 1e-9:
         return None
