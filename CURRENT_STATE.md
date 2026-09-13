@@ -75,6 +75,31 @@ All live history is 12 losing of 248 closes = 4.84%; the current version is
 | Is there anything in the 11 GB of `feed_data`? | **NO, on all three things worth trying.** (1) Our own index reconstruction does NOT lead the published one -- it LAGS (peak r 0.249 at lag -1 against 0.025 at +1; gap-regression slope -0.004, t=-6.9). (2) Exchange disagreement does not predict blow-ups (best 1.48x against an MDE of 2.58x, 3 of 4 features flip in the holdout). (3) The ORDER BOOK does not either -- 55.7M snapshots, all five features between 0.87x and 1.36x against an MDE of 2.53x, including the one I bet on (withdrawal, 0.95x). | `RESULTS_feed_BTC.md`, `RESULTS_disagree.md`, `RESULTS_book.md` |
 | Trade more carefully after a loss? | **NO.** 0 of 18 closes following a loss lost (vs 2.62% baseline). Mean $ after a loss is HIGHER. A 1-close cooldown costs 6% of profit and saves nothing measurable. | this file |
 
+## Per-function attribution — what is and is not knowable
+
+Set up 2026-09-13 on the operator's request to see "each individual
+implementation and function and algorithm and decision of the bot and see how
+it alone affected what happens". Three layers, and they are not equally good:
+
+1. **Refusals — solid.** AMENDMENT 25 instruments 18 decision points; every one
+   records, once per (close, market), that it stopped a trade and what was on
+   the table. `research/pinattrib.py` reads it. Gives: how often it came into
+   play, over how many closes, whether it merely DELAYED a trade we made anyway
+   or genuinely BLOCKED one, and whether the blocked ones would have won.
+   **Binding-by-construction**: the loop stops at the first objection, so a
+   recorded refusal IS the deciding one — but only in the order the gates run.
+2. **Money on a refusal — an UPPER BOUND, never P&L.** A price showing is not a
+   fill; rule 5. Always labelled `if filled`.
+3. **True marginal value of a change — only a PAPER TWIN gives it.** Gates share
+   one contract budget, so the columns never add to total P&L. The general
+   pattern, and the one to reuse for any future change: run a paper bot
+   identical to live except for that one flag, and difference them. That is what
+   the `--pick` and `--max-per-market` what-ifs are.
+
+**What is NOT covered:** anything that shapes a trade we DID make (the sweep's
+limit, the auto-sizer, the hedge threshold) leaves no refusal record. Those need
+a paper twin, layer 3.
+
 ## Open, and worth work
 
 1. **The sweep (race harder).** `results/PREREG_sweep.md` is written and the

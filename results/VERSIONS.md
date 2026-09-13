@@ -30,23 +30,71 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
-## NOT LIVE — AMENDMENTS 23 and 24, in paper what-ifs since 2026-09-13 21:5xZ
+## v-a24 — 2026-09-13 22:2xZ — AMENDMENT 24: buy the BEST market of the second, not the first one reached (`6d85371`)
 
-**Listed here because the FLAGS now exist in `pinrun.py` and a future session
-must not mistake "the flag is there" for "it is running".** Neither changes the
-live bot. Live is still `--size 20 --loss-abort -60.00 --max-positions 3
---max-losses 3 --improve-scope market`, with `MAX_PER_MARKET` 1 and
-`PICK` "first".
+**What the bot now does differently.** When two or more markets clear every
+gate in the same scan second, it buys the one with the most edge instead of
+whichever the loop happened to reach first. Also deployed in the same restart:
+AMENDMENT 25, which makes every gate record why it refused a trade (logging
+only — it decides nothing).
+
+**Evidence.** `research/pinpick.py` over 13,984 gate-passing candidate rows on
+738 closes. Two or more different markets pass in the same second on **6.3%**
+of passes; when they do the first one reached is the best-edge one only
+**56.3%** of the time, giving up a mean 2.10c of edge and paying 2.21c more.
+Replayed one contract per close: **+2.07c → +2.76c per contract with IDENTICAL
+loss counts (10 and 10)**. Holdout on close time, last 40% never fitted:
+**+1.63c → +2.43c, six losses either way.** Ranking by confidence instead of
+edge reaches only +2.19c, so the gain is price and not a riskier appetite.
+
+**Why it adds no risk and loses no race.** The ordering comes from the edge
+measured on the *previous* pass, 50ms earlier at 20Hz. Nothing is computed
+twice and no order is deferred. The old order was dict insertion order — the
+one gate in this bot that was never an EV comparison. Every gate still has to
+pass; only the sequence changed.
+
+**What is NOT deployed:** `--max-per-market` (AMENDMENT 23). It pays, but it
+concentrates a close on one coin, and the operator's condition was "if it's
+good and does not raise risk". Still in a paper what-if against the bar in
+`results/PREREG_pin_live_AMENDMENT_23_24.md`.
+
+**REVERT:**
+
+```powershell
+cd C:\kals-repo
+git revert --no-edit 6d85371
+# then remove "--pick", "best" from the Start-Process line in restart_bot.ps1
+.\restart_bot.ps1
+```
+
+To revert ONLY the scan order without losing the gate instrumentation, drop
+`"--pick", "best"` from `restart_bot.ps1` and run `.\restart_bot.ps1`; the
+default is `"first"`, which is the old behaviour exactly.
+
+---
+
+## NOT LIVE — AMENDMENT 23, in a paper what-if since 2026-09-13 21:5xZ
+
+**Listed here because the FLAG now exists in `pinrun.py` and a future session
+must not mistake "the flag is there" for "it is running".** `MAX_PER_MARKET`
+is still 1 on the live bot.
 
 - **AMENDMENT 23 — the re-buy band.** `rebuy_ok()`: a SAME-market second buy
   must be cheaper by at least `IMPROVE_BY` (0.5c) and at most `IMPROVE_MAX`
   (1.0c, `--improve-max`). Only reachable when `--max-per-market` > 1, which is
   still refused on `--live`.
   Paper run: `--max-per-market 2 --improve-max 0.010`.
-- **AMENDMENT 24 — best-first scan order.** `PICK = "best"` (`--pick best`)
-  orders each scan pass by the edge measured on the previous pass, so when two
-  markets pass in the same second the better one is reached first.
-  Paper run: `--pick best`.
+
+**Why it is here and not live, when AMENDMENT 24 went live the same evening.**
+The operator's condition was *"if it's good and does not raise risk, implement
+it."* A23 is good and it DOES raise one risk: the contract budget caps the
+dollars on a close either way, but allowing a second fill on the same coin
+makes the close more likely to spend that whole budget on ONE outcome instead
+of splitting it across two. Same worst case, reached more often. A24 had no
+such cost — identical loss counts in both halves of the sample — so it went.
+
+*(AMENDMENT 24 was in a paper what-if alongside this one from 21:5xZ and was
+deployed at 22:2xZ; see the v-a24 entry above.)*
 
 Evidence, bars and the strike conditions:
 `results/PREREG_pin_live_AMENDMENT_23_24.md`, written before either run took a
