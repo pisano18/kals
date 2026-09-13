@@ -59,6 +59,30 @@ filenames, `t` fields, close identifiers, market tickers, commit messages,
 and a local timestamp written into data is a bug waiting for the November
 clock change. Convert at the moment of speaking, not before.
 
+**AMENDED AGAIN 2026-09-13 by the operator, and this one outranks the
+revision above.** His words: *"I need you to take what's important for me to
+know and consider and explain it very simple. Like I'm five."* He is not a
+quant and the jargon was making the reports useless to him.
+
+**So: plain language, always, for the whole report. Not a plain-language
+SECTION appended to a technical one -- that was the 2026-09-06 format he
+killed, and it failed because the technical part came first and he had to wade
+through it.** The whole answer is the simple one.
+
+Concretely, and these are not suggestions:
+
+- No term he has not used himself, unless it is defined in the same sentence
+  in ordinary words. No `tau`, `rho`, `MDE`, `Clopper-Pearson`, `bootstrap`,
+  `adverse selection`, `standardised`, `IOC`, `p90` in a report to him. They
+  are fine in the repo, in commits, in code comments -- never in a reply.
+- Every number carries what it MEANS in dollars, days, or times-out-of-a-
+  hundred. "2.86%" alone is not a report; "loses about 3 times out of 100" is.
+- Percentages become counts where a count is clearer.
+- Say what it means for his money BEFORE saying how it was measured.
+- Reason first is unchanged. Failures are still reported as failures, ET
+  is still ET, and hard rule 3 is untouched -- simple never means vague, and
+  it never means rounding a bad number in a kind direction.
+
 *The superseded format, kept so the change is visible:*
 > Three parts -- the answer in plain language; a `Like you're five:` section;
 > a `What I need from you:` section. Set 2026-09-06, withdrawn 2026-09-13.
