@@ -614,6 +614,56 @@ samples manufacture confident nonsense.
 
 ---
 
+## ⭐⭐⭐⭐ EARNINGS BY SIZE, FULL HISTORY — AND THE WINDOW'S SECOND HALF IS 3× WORSE (2026-09-13; `research/pinlevels.py`, `results/RESULTS_levels.md`, commit 3f7ba14)
+
+422 book hours, 2026-08-25T03Z → 2026-09-12T18Z, **18.62 days**, one tape pass scored
+offline at 13 sizes. Anchor: reproduces `pinsim.run()`'s own 72-hour result **field for
+field** (156 fills, 117 closes, 6 losses, −$11.01, 96.14c) — after finding two real bugs
+in its own scorer (a later *cheaper* offer could never be emitted, so second fills of a
+close were lost; and same-millisecond candidates were re-sorted alphabetically instead
+of in tape order).
+
+**The 70% column is the headline** — live fills 70% of attempts, and a replay cannot
+lose a race it never ran. The loss rate below is the REPLAY's (2.09%), not ours (4.13%
+live); at our real rate every figure shrinks.
+
+| size | $/day @70% | bootstrap 95% | worst close | bank at the 1.5× brake | marginal return per extra $ |
+|---|---|---|---|---|---|
+| 20 | **$11.96** | [+4.73, +18.45] | −$35.26 | $52.89 | +32%/day |
+| 50 | $25.32 | — | −$94.81 | $142.22 | +22%/day |
+| 125 | $55.21 | [+27.12, +125.09]¹ | −$237.04 | $355.55 | +21%/day |
+| 250 | $84.53 | — | −$444.88 | $713 | +12%/day |
+| 1000 | $242.23 | — | −$958.01 | $2,885 | +2–3%/day |
+| 2000 | $280.55 | **includes zero** | −$1,923.50 | $5,772 | ~0 |
+
+¹ceiling figures. **Saturation never happens inside 2,000 contracts — what runs out is
+the bank and the interval, not the book.** Sweeping the ladder (up to 12 levels, VWAP,
+ceiling applied to every level) costs +0.08c of slippage at size 20 rising to +1.93c at
+2,000, and changes no conclusion.
+
+### THE DECISION-RELEVANT LINE: the tape's second half is much worse
+
+Split at close 2026-09-07T15:30Z, size 20:
+
+| | fit (13.0 days) | holdout (5.6 days) |
+|---|---|---|
+| $/day @70% | $15.03 | **$4.82** |
+| loss rate | 1.59% | **3.20%** |
+
+**The recent third earns 32% of the earlier two-thirds at double the loss rate**, and at
+sizes 1000/2000 the holdout is outright negative. This reconciles the figures that
+looked contradictory: the 72-hour window showing −$11.01 sits INSIDE the bad half, and
+the live per-gate rates of $21–23/day come from the good half. Same strategy, different
+weeks. **Whether the market changed or 5.6 days is simply too few closes cannot be
+separated on this window.**
+
+**Standing read: do not size up on this.** The trend inside the window points the wrong
+way, and that matters more than its average. Bootstrap intervals exclude zero at every
+size except 2,000, so the edge is real ACROSS the window — the question is whether it
+is still there at the end of it.
+
+---
+
 ## ⚠️⚠️ ON 72 UNSEEN HOURS THE BASE STRATEGY IS NEGATIVE, AND THE HEDGE IS CARRYING IT (2026-09-12 22:xxZ; `results/pinsim_hedge_holdout_railed.log`)
 
 The same 72 unseen hours (09-06T22 → 09-10T04), re-run on the replay with pinrun's
