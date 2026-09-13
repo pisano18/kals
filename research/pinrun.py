@@ -2665,6 +2665,49 @@ def selftest():
            "a fill records the price paid per market, which is the input the "
            "band needs -- without it rebuy_ok silently allows everything")
 
+        # ---- AMENDMENT 25: every gate says why, once, on the record -----
+        _src25 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _nl25 = chr(10)
+        _l25 = _src25.split(_nl25)
+        _names, _bad25 = [], []
+        for _i, _ln in enumerate(_l25):
+            _t = _ln.strip()
+            if not _t.startswith('_gate("'):
+                continue
+            _names.append(_t.split('"')[1])
+            # EVERY CALL MUST SIT ON A PATH THAT REFUSES. A _gate() left on a
+            # path that goes on to TRADE would count a refusal that never
+            # happened, and every rate built on it would be wrong.
+            _tail = _nl25.join(_l25[_i:_i + 12])
+            if "continue" not in _tail:
+                _bad25.append(_t[:50])
+        ck(not _bad25,
+           "every _gate() call is followed by a `continue` within 12 lines, "
+           "so a gate can only ever record a refusal it actually made (%s)"
+           % _bad25)
+        ck(len(_names) == len(set(_names)),
+           "no gate name is used at two different places -- a duplicated name "
+           "silently merges two unrelated refusals into one row (%s)"
+           % [x for x in _names if _names.count(x) > 1])
+        ck(len(_names) >= 15,
+           "at least fifteen decision points are instrumented, got %d: %s"
+           % (len(_names), sorted(_names)))
+        # the reader must know every name, or a gate is invisible in the report
+        _attr = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "pinattrib.py")
+        if os.path.exists(_attr):
+            _atxt = open(_attr, encoding="utf-8").read()
+            _unknown = [x for x in _names if ('"%s"' % x) not in _atxt]
+            ck(not _unknown,
+               "research/pinattrib.py names every instrumented gate, so none "
+               "is silently missing from the report (%s)" % _unknown)
+        # dedupe is what keeps this out of the settlement reader's way
+        ck("if key in gate_seen:" in _src25 and "gate_seen.add(key)" in _src25,
+           "a gate is recorded ONCE per (close, market) -- the loop runs at "
+           "20Hz over every watched market and one close produced 4,446 "
+           "looks on 2026-09-13, so one line per look would swamp the log "
+           "the settlement reader shares")
+
         # ---- AMENDMENT 24: best-first scan order ------------------------
         ck(_DEFAULT_PICK == "first",
            "the DECLARED default scan order is 'first' -- A24 is a measured "
@@ -3302,6 +3345,57 @@ def trade_loop(a, rec, book, idx, series_index):
     # told apart from a blind one.
     near = {}                # close_s -> dict of the best look at that close
     dumped_seen = set()      # (close_s, ticker) already written as `dumped`
+
+    # ===================================================================
+    # AMENDMENT 25 (2026-09-13): EVERY GATE SAYS WHY, ONCE, ON THE RECORD.
+    #
+    # THE OPERATOR: "can we keep a separate metric tracking how both
+    # separately actually affecting our p/l ... Is it actually possible to
+    # implement that for every single function and method of the bot? It
+    # would be so powerful to look at each individual implementation and
+    # function and algorithm and decision of the bot and see how it alone
+    # affected what happens."
+    #
+    # THIS IS THE INPUT SIDE OF THAT. `research/pinattrib.py` is the reader.
+    #
+    # WHAT IT RECORDS AND WHY THAT SHAPE. One line per (close, market, gate)
+    # -- NOT one per evaluation. The loop runs at 20Hz over every watched
+    # market, so a single close produces thousands of looks (4,446 on
+    # 2026-09-13 19:45Z) and logging each would drown the file that the
+    # settlement reader also reads. Deduping to the first refusal per market
+    # per gate keeps it to tens of lines per close and loses nothing: the
+    # question is "did this gate stop this trade", which is answered once.
+    #
+    # WHAT IT CANNOT ANSWER, stated here so the reader cannot overclaim.
+    # A refusal records the price that was SHOWING, not a fill. Whether we
+    # would have WON that race is unknowable -- CLAUDE.md rule 5, the tape's
+    # population is "an offer was sitting there" and ours is "someone
+    # actively sold it to us", measured 31x apart. So a gate's money column
+    # is an UPPER BOUND on what refusing cost or saved, never a P&L.
+    #
+    # BEHAVIOUR IS UNCHANGED. Every call sits immediately before a `continue`
+    # that was already there. It reads no state, decides nothing, and the
+    # self-test asserts the gate names in the source match the ones the
+    # reader knows about.
+    # ===================================================================
+    gate_seen = set()        # (close_s, ticker, gate) already recorded
+
+    def _gate(name, close_s_, tk_, **detail):
+        """Record that `name` refused this market, once per close."""
+        nbg = near.setdefault(close_s_, _fresh_near())
+        g = nbg.setdefault("gates", {})
+        g[name] = g.get(name, 0) + 1
+        key = (close_s_, tk_, name)
+        if key in gate_seen:
+            return
+        gate_seen.add(key)
+        # SIZE travels with every record. Without it the reader cannot say how
+        # many contracts the refusal was worth, and SIZE moves with the bank
+        # (AMENDMENT 16) -- it was 20 at 17:51Z and 50 by 21:18Z the same day,
+        # so reconstructing it afterwards from the autosize trail is exactly
+        # the kind of join that goes quietly wrong.
+        rec("refused", gate=name, ticker=tk_, close_s=close_s_,
+            size_now=float(SIZE), **detail)
     reported = set()
     recon_at = {}            # ticker -> when the settlement was last polled
     state = {"halted": False, "errors": 0, "signals": 0, "considered": 0}
@@ -3428,6 +3522,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     decided=nb["decided"], undecided=nb["undecided"],
                     no_offer=nb["no_offer"], dust=nb["dust"],
                     fired=(cs in fired), best=None,
+                    gates=nb.get("gates", {}),      # AMENDMENT 25
                     depth=_depth_report(nb.get("depths")),
                     why=("decided but NOBODY OFFERED the winning side"
                          if nb["no_offer"] else
@@ -3444,6 +3539,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     best_ticker=b["ticker"], best_want=b["want"],
                     over_ceiling=nb.get("over_ceiling", 0),
                     neg_ev=nb.get("neg_ev", 0),
+                    gates=nb.get("gates", {}),      # AMENDMENT 25
                     depth=_depth_report(nb.get("depths")),
                     shallow_skips=nb.get("shallow", {}),
                     price_ceiling=PRICE_CEILING,
@@ -3745,7 +3841,7 @@ def trade_loop(a, rec, book, idx, series_index):
         for tk, (iid, close_s, strike, digits, exi) in _mk:
             tau = close_s - now_s
             if not (TAU_MIN <= tau <= TAU_MAX):
-                continue
+                continue                 # not a refusal: outside the window
             # AMENDMENT 3: scale in as the price IMPROVES, up to MAX_PER_CLOSE.
             # One shot at the first safe price leaves money on the table:
             # measured over 70 closes, adding only on improvement raised profit
@@ -3760,13 +3856,18 @@ def trade_loop(a, rec, book, idx, series_index):
                 # the close is done when its contract budget is spent.
                 _spent = prev.get("contracts", 0.0) if prev else 0.0
                 if _spent >= close_budget() - 1e-9:
+                    _gate("close_budget", close_s, tk, spent=_spent,
+                          budget=close_budget())
                     continue
             elif prev is not None and prev["n"] >= MAX_PER_CLOSE:
+                _gate("max_per_close", close_s, tk, n=prev["n"])
                 continue
             # AMENDMENT 13: ONE FILL PER MARKET. See MAX_PER_MARKET.
             if prev is not None and                     prev.get("per_tk", {}).get(tk, 0) >= MAX_PER_MARKET:
                 nb13 = near.setdefault(close_s, _fresh_near())
                 nb13["market_capped"] = nb13.get("market_capped", 0) + 1
+                _gate("max_per_market", close_s, tk,
+                      fills=prev.get("per_tk", {}).get(tk, 0))
                 continue
             # AMENDMENT 8(A): NEVER HOLD BOTH SIDES OF ONE MARKET.
             # `fired` was keyed by close alone, so the improve bar was compared
@@ -3782,6 +3883,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 if prev["sides"][tk] != want:
                     nb0 = near.setdefault(close_s, _fresh_near())
                     nb0["both_sides_blocked"] =                         nb0.get("both_sides_blocked", 0) + 1
+                    _gate("both_sides", close_s, tk, held=prev["sides"][tk])
                     continue
             # AND A SEPARATE CAP ON ATTEMPTS. AMENDMENT 6 stopped a no-fill
             # from burning a FILL slot, which is right -- an unfilled order
@@ -3789,6 +3891,8 @@ def trade_loop(a, rec, book, idx, series_index):
             # we may try, so a persistently refused order retried at 20 Hz
             # forever. Fills and attempts need separate budgets.
             if attempts.get(close_s, 0) >= MAX_ATTEMPTS_PER_CLOSE:
+                _gate("attempts_cap", close_s, tk,
+                      tried=attempts.get(close_s, 0))
                 continue
             try:
                 b = book.best(tk)
@@ -3797,14 +3901,18 @@ def trade_loop(a, rec, book, idx, series_index):
                 rec("error", where="book", ticker=tk, err=str(e)[:200])
                 continue
             if not b or b.get("suspect"):
+                _gate("book_suspect", close_s, tk)
                 continue
             if b.get("age_ms") is None or b["age_ms"] > MAX_BOOK_AGE_MS:
+                _gate("book_stale", close_s, tk, age_ms=b.get("age_ms"))
                 continue
             sec, spot, iage = idx.spot(iid)
             if spot is None or iage is None or iage > MAX_INDEX_AGE_S:
+                _gate("index_stale", close_s, tk, age_s=iage)
                 continue
             sg = idx.sigma(iid)
             if sg is None:
+                _gate("no_sigma", close_s, tk)
                 continue
             f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS,
                      round_digits=digits)
@@ -3889,8 +3997,11 @@ def trade_loop(a, rec, book, idx, series_index):
                 if f >= PIN or f <= 1.0 - PIN:
                     nb["decided"] += 1
                     nb["no_offer"] += 1
+                    _gate("no_offer", close_s, tk, fair=round(f, 5), tau=tau)
                 else:
                     nb["undecided"] += 1
+                    _gate("confidence", close_s, tk, fair=round(f, 5),
+                          tau=tau)
                 continue
             # AMENDMENT 6: buy what is THERE, down to MIN_FILL_FRAC of what
             # we wanted. Below that, skip -- a scrap fill burns a scale-in
@@ -3908,6 +4019,9 @@ def trade_loop(a, rec, book, idx, series_index):
                 _nb = near.setdefault(close_s, _fresh_near())
                 _nb["depths"].append(float(size))
                 _nb["shallow"][str(int(SIZE))] =                     _nb["shallow"].get(str(int(SIZE)), 0) + 1
+                _gate("depth_floor", close_s, tk, want=want,
+                      price=round(price, 4), offered=float(size),
+                      wanted=float(SIZE), fair=round(f, 5), tau=tau)
                 continue
             e = net_edge(f, price, want)
             # AMENDMENT 24: remember it so the NEXT pass can visit the best
@@ -3926,6 +4040,10 @@ def trade_loop(a, rec, book, idx, series_index):
                               "price": price, "fair": f, "tau": tau,
                               "size": size}
             if e < EDGE_FLOOR:
+                _gate("edge_floor", close_s, tk, want=want,
+                      price=round(price, 4), edge_c=round(100 * e, 3),
+                      need_c=round(100 * EDGE_FLOOR, 3), fair=round(f, 5),
+                      tau=tau, size=float(size))
                 continue
             # AMENDMENT 10: a certainty at a discount is someone else's
             # information, not our edge. See DUMP_CONF / DUMP_DISCOUNT.
@@ -3945,6 +4063,9 @@ def trade_loop(a, rec, book, idx, series_index):
                         size=size, take_n=take_n, close_s=close_s,
                         refused=bool(DUMP_ENABLED))
                 if DUMP_ENABLED:
+                    _gate("dump_guard", close_s, tk, want=want,
+                          price=round(price, 4), disc_c=round(100 * _disc, 2),
+                          fair=round(f, 5), tau=tau, size=float(size))
                     continue
             # THE EXPECTED-VALUE GATE (AMENDMENT 2). The model edge above uses
             # the model's own confidence, which implies ~0.06% error at the
@@ -3962,6 +4083,9 @@ def trade_loop(a, rec, book, idx, series_index):
             # the old behaviour exactly.
             if (IMPROVE_SCOPE == "close" and prev is not None
                     and price >= prev["best"] - IMPROVE_BY):
+                _gate("improve_by", close_s, tk, want=want,
+                      price=round(price, 4), best=prev["best"],
+                      fair=round(f, 5), tau=tau, size=float(size))
                 continue
             # ---- AMENDMENT 23 (2026-09-13): THE RE-BUY BAND ----------------
             # A SECOND BUY IN THE SAME MARKET MUST BE A LITTLE CHEAPER, NOT A
@@ -4004,15 +4128,25 @@ def trade_loop(a, rec, book, idx, series_index):
             if not rebuy_ok(prev, tk, price):
                 nb23 = near.setdefault(close_s, _fresh_near())
                 nb23["rebuy_band"] = nb23.get("rebuy_band", 0) + 1
+                _gate("rebuy_band", close_s, tk, want=want,
+                      price=round(price, 4),
+                      paid=(prev.get("px_tk", {}) or {}).get(tk),
+                      fair=round(f, 5), tau=tau, size=float(size))
                 continue
             if price > PRICE_CEILING:
                 nb["over_ceiling"] = nb.get("over_ceiling", 0) + 1
+                _gate("price_ceiling", close_s, tk, want=want,
+                      price=round(price, 4), ceiling=PRICE_CEILING,
+                      fair=round(f, 5), tau=tau, size=float(size))
                 continue
             ev = expected_value(price)
             if ev < EV_FLOOR:
                 nb["neg_ev"] = nb.get("neg_ev", 0) + 1
                 if nb["best"] is not None and nb["best"]["ticker"] == tk:
                     nb["best"]["ev_c"] = round(100 * ev, 3)
+                _gate("ev_floor", close_s, tk, want=want,
+                      price=round(price, 4), ev_c=round(100 * ev, 3),
+                      fair=round(f, 5), tau=tau, size=float(size))
                 continue
 
             state["signals"] += 1

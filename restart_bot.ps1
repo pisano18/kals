@@ -14,6 +14,18 @@
 # THE ARGUMENTS ARE THE DEPLOYED ONES from CURRENT_STATE.md. --size 20 is only
 # a starting value; the bot re-reads the bank every 300 s and sizes itself.
 #
+# ADDED 2026-09-13 ~22:2xZ: --pick best (AMENDMENT 24). When two markets clear
+# every gate in the same second the bot now buys the better one instead of
+# whichever the loop happened to reach first. Measured +2.07c -> +2.76c per
+# contract on IDENTICAL loss counts, and again out of sample (+1.63c ->
+# +2.43c, six losses either way). The ordering comes from the edge measured on
+# the previous 50 ms pass, so nothing is recomputed and no order waits. See
+# results/PREREG_pin_live_AMENDMENT_23_24.md.
+#
+# NOT ADDED, deliberately: --max-per-market (AMENDMENT 23). It pays, but it
+# puts more of one close on a single coin, and the operator's condition was
+# "if it's good and does not raise risk". It stays in a paper what-if.
+#
 # REVERTED 2026-09-13 ~18:1xZ: --sigma-ruler and --pin are GONE. The ruler cut
 # live signals by 63% (4.21/hour -> 1.55/hour, measured on the day) against a
 # benefit measured only on the index population, which rule 5 says may not
@@ -61,7 +73,7 @@ Start-Process -FilePath $py -ArgumentList @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
     "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3",
-    "--improve-scope", "market"
+    "--improve-scope", "market", "--pick", "best"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 
