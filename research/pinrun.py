@@ -96,7 +96,7 @@ from statistics import NormalDist
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from engine import var_factor, N_AVG                        # noqa: E402
+from engine import var_factor, N_AVG, tick_at               # noqa: E402
 import livebook                                             # noqa: E402
 import pintake                                              # noqa: E402
 
@@ -954,6 +954,72 @@ def net_edge(f, price, want):
     """
     gross = (f - price) if want == "yes" else ((1.0 - f) - price)
     return gross - billed_fee(price, SIZE) / float(SIZE)
+
+
+# ===========================================================================
+# AMENDMENT 18 -- RACE HARDER. THE LIMIT WE SEND IS NOT THE PRICE WE SAW.
+#
+# THE PROBLEM. 28.2% of our live orders fill NOTHING (249 filled, 113 zero of
+# 362 carrying a latency). It is NOT our speed: filled and zero-filled orders
+# have the SAME median latency, 96 ms both. The competing take lands at a
+# median 67 ms (results/RESULTS_contest.md section 4). We cannot out-run them.
+# We send a limit at exactly the ask we saw, so when that level is gone we buy
+# nothing at all -- and there is usually another level sitting just above it.
+#
+# WHY RAISING THE LIMIT IS FREE ON EVERY RACE WE ALREADY WIN -- MEASURED, NOT
+# ASSUMED. A crossing IOC fills at the RESTING order's price, not at ours. On
+# 283 live fills the executed price was at or below the signalled price on
+# EVERY ONE: 207 exactly at it, 76 strictly better (best -43c), ZERO worse.
+# Recorded in RUNBOOK.md under CONFIRMED FACTS.
+#
+# THE OPERATOR'S ARGUMENT, and he is right, 2026-09-13: "How can it be a worse
+# ticket if it's one we already calculated is a good buy, it would just be our
+# normal w/l ratio." It is the SAME market, the SAME side and the SAME
+# settlement -- the outcome cannot depend on what we paid. My earlier caveat
+# treated a swept fill as a different ticket and that was wrong. What actually
+# changes is (a) we pay a little more, which the gate below bounds, and (b) we
+# now trade in moments we used to skip, which is the only real unknown.
+#
+# THE RAIL. The limit is the HIGHEST price that still passes EVERY gate the
+# seen price passed -- the ceiling, the model edge floor AFTER the fee, and
+# the measured-flip EV floor. So the WORST fill this can produce still clears
+# the identical bar every fill today clears. It is not a new rule; it is the
+# existing rule applied to the price we might actually pay instead of the
+# price we hoped for. An IOC sweeps levels in order, so the average fill is
+# better than the limit and the limit is the worst case.
+#
+# Pre-registered bar, written before the code: results/PREREG_sweep.md.
+# ===========================================================================
+SWEEP_ENABLED = True     # --no-sweep disables; the limit then IS the ask seen
+
+
+def sweep_limit(f, price, want, ceiling=None, edge_floor=None, ev_floor=None):
+    """Highest price we may pay and still pass the SAME gate. Never below
+    `price`, never above the ceiling, and never a price the gate refuses.
+
+    Both tests are monotonically decreasing in price -- edge falls as we pay
+    more, EV falls as we pay more -- so walking up one exchange tick at a time
+    and stopping at the first refusal returns the true maximum. The tick is
+    tapered (0.1c above 90c, 1c between), so this is at most ~80 steps and the
+    step size is read from engine.tick_at rather than assumed.
+    """
+    ceiling = PRICE_CEILING if ceiling is None else ceiling
+    edge_floor = EDGE_FLOOR if edge_floor is None else edge_floor
+    ev_floor = EV_FLOOR if ev_floor is None else ev_floor
+    p = float(price)
+    if not SWEEP_ENABLED:
+        return p
+    best = p
+    for _ in range(200):
+        nxt = round(best + tick_at(best), 4)
+        if nxt > ceiling + 1e-9:
+            break
+        if net_edge(f, nxt, want) < edge_floor:
+            break
+        if expected_value(nxt) < ev_floor:
+            break
+        best = nxt
+    return best
 
 
 # ===========================================================================
@@ -2150,6 +2216,70 @@ def selftest():
             pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
             pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
 
+        # ---- AMENDMENT 18: the sweep limit -----------------------------
+        # The estimator is easy; the rail is the deliverable. Every check here
+        # is about what the limit may NEVER be, because the limit is the worst
+        # price this bot can pay and nothing downstream re-checks it.
+        _swf = 0.9998
+        _swp = 0.952
+        _swL = sweep_limit(_swf, _swp, "yes")
+        ck(_swL >= _swp - 1e-12,
+           f"the sweep limit is never BELOW the ask we saw ({_swL} >= {_swp})")
+        ck(_swL <= PRICE_CEILING + 1e-9,
+           f"and never above PRICE_CEILING ({_swL} <= {PRICE_CEILING})")
+        ck(net_edge(_swf, _swL, "yes") >= EDGE_FLOOR,
+           f"at the limit the model edge still clears the floor "
+           f"({100 * net_edge(_swf, _swL, 'yes'):.3f}c >= "
+           f"{100 * EDGE_FLOOR:.3f}c)")
+        ck(expected_value(_swL) >= EV_FLOOR,
+           f"and the measured-flip EV still clears its floor "
+           f"({100 * expected_value(_swL):.3f}c >= {100 * EV_FLOOR:.3f}c)")
+        _swN = round(_swL + tick_at(_swL), 4)
+        ck(_swN > PRICE_CEILING + 1e-9
+           or net_edge(_swf, _swN, "yes") < EDGE_FLOOR
+           or expected_value(_swN) < EV_FLOOR,
+           "and it is the HIGHEST such price -- one tick more fails the "
+           "ceiling, the edge floor or the EV floor")
+        # a fair only just above the ask leaves no room, and must not invent any
+        ck(abs(sweep_limit(0.9550, 0.9540, "yes") - 0.9540) < 1e-12,
+           "with no headroom the limit IS the ask -- the sweep invents none")
+        # the NO side reads its own fair, not the YES one
+        _swNo = sweep_limit(0.0002, 0.952, "no")
+        ck(_swNo >= 0.952 - 1e-12 and net_edge(0.0002, _swNo, "no") >= EDGE_FLOOR,
+           f"the NO side sweeps on (1-fair), not fair ({_swNo})")
+        # the kill switch
+        _swSave = SWEEP_ENABLED
+        try:
+            globals()["SWEEP_ENABLED"] = False
+            ck(abs(sweep_limit(_swf, _swp, "yes") - _swp) < 1e-12,
+               "--no-sweep makes the limit exactly the ask we saw, which is "
+               "the behaviour every live fill before 2026-09-13 had")
+        finally:
+            globals()["SWEEP_ENABLED"] = _swSave
+        # AND THE ORDER PATH MUST ACTUALLY SEND IT. Anchored on the whole line
+        # at its real indentation -- "out = pintake.take(" is a SUBSTRING of
+        # the hedge path's "_hout = pintake.take(", and that alone has broken
+        # four checks in this file already.
+        _swsrc = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _swlines = _swsrc.split("\n")
+        ck(any(ln.strip() == "_limit = sweep_limit(f, price, want)"
+               for ln in _swlines),
+           "the live order path computes the sweep limit")
+        _i_lim = next(i for i, ln in enumerate(_swlines)
+                      if ln.strip() == "_limit = sweep_limit(f, price, want)")
+        _i_tk = next(i for i, ln in enumerate(_swlines)
+                     if ln.strip().startswith("out = pintake.take("))
+        ck(_i_lim < _i_tk,
+           "and computes it BEFORE the order is sent")
+        _swblk = "\n".join(_swlines[_i_tk:_i_tk + 4])
+        ck("_limit," in _swblk and " price," not in _swblk,
+           "and pintake.take() is handed the LIMIT, never the ask we saw -- "
+           "if this ever reverts, a lost race silently buys nothing again")
+        ck(any("ask_seen=round(float(price), 4)" in ln for ln in _swlines)
+           and any("limit_sent=round(float(_limit), 4)" in ln
+                   for ln in _swlines),
+           "and both prices are logged, so PREREG_sweep.md's bar is scorable")
+
         # ---- AMENDMENT 17: the CONTRACT budget -------------------------
         _szB = float(SIZE)
         try:
@@ -3291,14 +3421,28 @@ def trade_loop(a, rec, book, idx, series_index):
                     # how stale the book was when we decided, how long the
                     # round trip took, and whether misses differ from fills on
                     # either. Pure instrumentation -- it changes no decision.
+                    # AMENDMENT 18: the LIMIT is the highest price that
+                    # still passes the same gate, not the ask we saw. When we
+                    # win the race we still fill at the resting price (283 of
+                    # 283 live fills at or better than signalled, zero worse);
+                    # when we lose it we take the next level instead of
+                    # nothing. `ask_seen` and `limit_sent` are both logged so
+                    # PREREG_sweep.md's bar can be scored.
+                    _limit = sweep_limit(f, price, want)
                     _t0 = time.time()
                     out = pintake.take(CREDS["base"], CREDS["pk"],
-                                       CREDS["key_id"], tk, want, price,
+                                       CREDS["key_id"], tk, want, _limit,
                                        take_n, close_s, exchange_index=exi)
                     _lat_ms = round(1000.0 * (time.time() - _t0), 1)
+                    _xp = out.get("exec_price")
                     rec("order", ticker=tk, latency_ms=_lat_ms,
                         book_age_ms=b.get("age_ms"),
                         index_age_s=round(iage, 2), tau_at_send=tau,
+                        ask_seen=round(float(price), 4),
+                        limit_sent=round(float(_limit), 4),
+                        sweep_headroom_c=round(100.0 * (_limit - price), 3),
+                        swept=bool(_xp is not None
+                                   and float(_xp) > float(price) + 1e-9),
                         **{k: v for k, v in out.items() if k != "raw"})
                     # A RETURNED REFUSAL IS AN ERROR AND MUST BE COUNTED.
                     # take() returns its violations rather than raising, so
@@ -3393,6 +3537,9 @@ def main():
                          "This pins SIZE to --size instead.")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
+    ap.add_argument("--no-sweep", action="store_true",
+                    help="AMENDMENT 18 off: send the limit at the ask we saw, "
+                         "so a lost race buys nothing")
     ap.add_argument("--max-losses", type=int, default=0,
                     help="halt after this many LOSING trades, whatever the "
                          "dollars. 0 disables. The dollar brake asks 'have we "
@@ -3433,6 +3580,8 @@ def main():
                 f"stop by the fourth.")
         if a.max_positions > 6:
             raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
+    if a.no_sweep:
+        globals()["SWEEP_ENABLED"] = False
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
     if not selftest():
@@ -3469,6 +3618,7 @@ def main():
         hedge_max_ask=HEDGE_MAX_ASK, hedge_max_tries=HEDGE_MAX_TRIES,
         hedge_pilot_contracts=HEDGE_PILOT_CONTRACTS,
         improve_by=IMPROVE_BY, min_level=MIN_LEVEL,
+        sweep_enabled=SWEEP_ENABLED,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
         size=a.size, loss_abort=a.loss_abort,
