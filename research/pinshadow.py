@@ -129,6 +129,140 @@ def multi_fill_closes(rows):
     return sum(1 for v in per.values() if v > 1), len(per)
 
 
+
+
+# ---------------------------------------------------------------------------
+# ERAS AND BANDS, added 2026-09-13 after I quoted a band across an era boundary
+#
+# THE MISTAKE. `--all` was used to report "the 0.990-0.995 band is worth
+# +$13.13 on 37 fills". Every one of those 37 fills is dated 2026-09-08 to
+# 2026-09-10, when the gate was **0.98**, the ruler was the 300-second one and
+# the sweep did not exist. They are not what loosening the gate adds today;
+# they are a different strategy in a different market. Forward evidence on the
+# 0.990-0.995 band began at 17:51Z on 2026-09-13 and was, at the time of
+# writing, zero fills.
+#
+# So: nothing in this file may pool fills across a configuration change without
+# saying so, and `bands()` carries the era of every row it counts.
+# ---------------------------------------------------------------------------
+def eras(glob_pat=LIVE):
+    """[(started, pin, ruler, sweep)] -- the configuration in force, in order.
+
+    Read from each run's `start` record, which has logged `pin` since before
+    it was a flag, so the gate is known for every fill ever taken.
+    """
+    out = []
+    for path in sorted(glob.glob(glob_pat), key=os.path.getmtime):
+        for line in open(path, encoding="utf-8", errors="replace"):
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("kind") != "start":
+                continue
+            cfg = (d.get("pin"), d.get("sigma_ruler") or "live(300s)",
+                   bool(d.get("sweep_enabled")))
+            if not out or out[-1][1:] != cfg:
+                out.append((d.get("t"), ) + cfg)
+            break
+    return out
+
+
+def era_of(t, ers):
+    """The configuration in force at time `t`."""
+    cur = None
+    for e in ers:
+        if e[0] and t >= e[0]:
+            cur = e
+        else:
+            break
+    return cur
+
+
+def era_table(rows, ers, say=print):
+    """Measured results per configuration. The ONLY honest answer to 'was the
+    old setup better' -- and it is confounded by the market changing at the
+    same time, which is stated rather than hidden."""
+    import calendar
+    import datetime
+    per = defaultdict(lambda: [0, 0, 0.0, None, None])
+    for r in rows:
+        e = era_of(r[5], ers)
+        if e is None:
+            continue
+        key = (e[1], e[2], e[3])
+        a = per[key]
+        if not r[4]:
+            a[0] += 1
+            a[1] += 1 if r[3] < 0 else 0
+        a[2] += r[3]
+        ts = calendar.timegm(datetime.datetime.strptime(
+            r[5], "%Y-%m-%dT%H:%M:%SZ").timetuple())
+        a[3] = ts if a[3] is None else min(a[3], ts)
+        a[4] = ts if a[4] is None else max(a[4], ts)
+    lines = ["  gate | ruler      | sweep | hours | fills | losses | loss% | "
+             "net $ | $/hour",
+             "  -----|------------|-------|-------|-------|--------|-------|"
+             "-------|-------"]
+    for (pin, ruler, sw), (f, L, d, t0, t1) in sorted(
+            per.items(), key=lambda kv: kv[1][3] or 0):
+        h = max((t1 - t0) / 3600.0, 0.01)
+        lines.append("  %-5s| %-11s| %-6s| %5.1f | %5d | %6d | %5s | %+6.2f "
+                     "| %+.2f"
+                     % (pin, ruler, sw, h, f, L,
+                        ("%.1f%%" % (100.0 * L / f)) if f else "-", d, d / h))
+    txt = "\n".join(lines)
+    if say:
+        say(txt)
+    return txt
+
+
+BANDS = (0.95, 0.97, 0.98, 0.985, 0.99, 0.995, 0.998, 0.999, 0.9999, 1.01)
+
+
+def bands(rows, ers, say=print):
+    """Fills, losses and dollars by CONFIDENCE BAND, with the gate that was in
+    force -- because a band below the gate of its era cannot have been produced
+    by that gate and is evidence about a different strategy."""
+    per = defaultdict(lambda: [0, 0, 0.0, set()])
+    for r in rows:
+        if r[4]:
+            continue
+        c = r[2]
+        lo = BANDS[0]
+        for i in range(len(BANDS) - 1):
+            if BANDS[i] <= c < BANDS[i + 1]:
+                lo = BANDS[i]
+                break
+        else:
+            lo = BANDS[-2]
+        a = per[lo]
+        a[0] += 1
+        a[1] += 1 if r[3] < 0 else 0
+        a[2] += r[3]
+        e = era_of(r[5], ers)
+        if e:
+            a[3].add(str(e[1]))
+    lines = ["  confidence band | fills | losses | loss% | net $ | $/fill | "
+             "gate(s) in force then",
+             "  ----------------|-------|--------|-------|-------|--------|"
+             "----------------------"]
+    for i in range(len(BANDS) - 1):
+        lo, hi = BANDS[i], BANDS[i + 1]
+        if lo not in per:
+            continue
+        f, L, d, gates = per[lo]
+        lines.append("  %.4f-%.4f | %5d | %6d | %5s | %+6.2f | %+6.3f | %s"
+                     % (lo, min(hi, 1.0), f, L,
+                        ("%.1f%%" % (100.0 * L / f)) if f else "-", d,
+                        d / f if f else float("nan"),
+                        ",".join(sorted(gates))))
+    txt = "\n".join(lines)
+    if say:
+        say(txt)
+    return txt
+
+
 def selftest():
     n = [0]
 
@@ -268,6 +402,10 @@ def main():
                     help="ISO UTC; default is the AMENDMENT 21 deploy")
     ap.add_argument("--all", action="store_true",
                     help="every fill ever, not just since the deploy")
+    ap.add_argument("--bands", action="store_true",
+                    help="fills, losses and dollars by confidence band")
+    ap.add_argument("--eras", action="store_true",
+                    help="measured results per configuration")
     ap.add_argument("--watch", action="store_true",
                     help="emit one line each time a trade lands that the old "
                          "gate would have refused")
@@ -279,6 +417,34 @@ def main():
         if rc:
             return rc
     since = None if a.all else a.since
+    if a.bands or a.eras:
+        rows = load(since=None)
+        ers = eras()
+        if not rows:
+            print("pinshadow: no settled fill carries a signal yet -- nothing "
+                  "to analyse")
+            return 0
+        print("CONFIGURATIONS, in order:")
+        for t, pin, ruler, sw in ers:
+            print("  from %s | gate %-6s | ruler %-11s | sweep %s"
+                  % (t, pin, ruler, sw))
+        print("")
+        if a.eras:
+            print("MEASURED RESULTS PER CONFIGURATION")
+            print("  (the market changed at the same time as every one of "
+                  "these, so this")
+            print("   is a record of what happened, NOT an experiment)")
+            era_table(rows, ers)
+            print("")
+        if a.bands:
+            print("BY CONFIDENCE BAND -- every fill ever")
+            print("  (a band BELOW the gate of its era could not have been "
+                  "produced by that")
+            print("   gate; it is evidence about a different strategy, and "
+                  "the last column")
+            print("   says which)")
+            bands(rows, ers)
+        return 0
     if not a.watch:
         rows = load(since=since)
         if not rows:
