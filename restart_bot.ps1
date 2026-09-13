@@ -13,6 +13,10 @@
 #
 # THE ARGUMENTS ARE THE DEPLOYED ONES from CURRENT_STATE.md. --size 20 is only
 # a starting value; the bot re-reads the bank every 300 s and sizes itself.
+#
+# --sigma-ruler max3600 added 2026-09-13 (AMENDMENT 20) on the operator's
+# instruction, against the bar in results/PREREG_ruler.md. If that bar fails,
+# the revert is to delete the two arguments below and run this file again.
 
 $ErrorActionPreference = "Stop"
 $repo = "C:\kals-repo"
@@ -51,7 +55,8 @@ Start-Sleep -Seconds 2
 Start-Process -FilePath $py -ArgumentList @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
-    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3"
+    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3",
+    "--sigma-ruler", "max3600"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 

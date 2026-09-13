@@ -481,6 +481,16 @@ MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
 MAX_BOOK_AGE_MS = 2000
 MAX_INDEX_AGE_S = 2
 SIGMA_RULER = "live"      # AMENDMENT 20: "live" | "1800" | "max3600"
+# THE DECLARED DEFAULTS, captured at import and never reassigned. The
+# self-test asserts against THESE, not against the live values: main() applies
+# --sigma-ruler and --honest BEFORE running the suite, so a check written
+# against the live value refuses to start the moment the flag is used. That is
+# exactly what happened on 2026-09-13 -- the guard was right, the thing it
+# read was wrong, and the bot stayed down until it was fixed. What the guard
+# is actually for is "nobody quietly changed the default in the source", and
+# that is what these hold.
+_DEFAULT_SIGMA_RULER = "live"
+_DEFAULT_HONEST_CONF = False
 SIGMA_WIN = 300
 # THE LIVE CONDITIONS INDEX (2026-09-10). Fast/slow roughness ratio per feed,
 # then a leave-one-out average across the other coins. Measured, not guessed:
@@ -2376,10 +2386,11 @@ def selftest():
             pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
 
         # ---- AMENDMENT 20: the volatility ruler ------------------------
-        ck(SIGMA_RULER == "live",
-           "SIGMA_RULER defaults to 'live' -- AMENDMENT 20 is a model change "
-           "and may only be turned on by --sigma-ruler, against the bar in "
-           "results/PREREG_ruler.md")
+        ck(_DEFAULT_SIGMA_RULER == "live",
+           "the DECLARED default ruler is 'live' -- AMENDMENT 20 is a model "
+           "change and may only be reached through --sigma-ruler, against the "
+           "bar in results/PREREG_ruler.md (running now with %r)"
+           % SIGMA_RULER)
         _rd = {}
         for _t in range(1000, 1000 + 3600):
             # quiet for the last 300s, loud before it: the exact shape that
@@ -2415,17 +2426,18 @@ def selftest():
                "'1800' reads wider than the live ruler here (%.4f)" % _v_18)
         finally:
             globals()["SIGMA_RULER"] = _rs
-        ck(SIGMA_RULER == "live", "and the ruler is put back")
+        ck(SIGMA_RULER == _rs, "and the ruler is put back to %r" % _rs)
 
         # ---- AMENDMENT 19: honest confidence ---------------------------
         # THE RISK HERE IS SILENT REVERSION, not arithmetic. If the table
         # fails to load, or some gate reads Phi while another reads the table,
         # the run is labelled honest and behaves exactly as before -- the
         # worst possible outcome, because it would be believed.
-        ck(HONEST_CONF is False,
-           "HONEST_CONF is OFF by default -- AMENDMENT 19 is a threshold "
-           "change and may only be turned on by --honest, against the bar in "
-           "results/PREREG_honest.md")
+        ck(_DEFAULT_HONEST_CONF is False,
+           "the DECLARED default for honest confidence is OFF -- AMENDMENT 19 "
+           "is a threshold change and may only be reached through --honest, "
+           "against the bar in results/PREREG_honest.md (running now with %r)"
+           % HONEST_CONF)
         _ht = {"grid": [0.0, 1.0, 2.0, 3.0, 4.0],
                "tail": [0.5, 0.20, 0.05, 0.02, 0.01]}
         ck(abs(honest_tail(2.0, _ht) - 0.05) < 1e-12,
@@ -2439,6 +2451,7 @@ def selftest():
         ck(abs(honest_tail(-5.0, _ht) - 0.5) < 1e-12,
            "and below the table it holds the first")
         _hs = _HONEST
+        _hc0 = HONEST_CONF
         try:
             globals()["_HONEST"] = _ht
             globals()["HONEST_CONF"] = True
@@ -2453,7 +2466,7 @@ def selftest():
                "and with it off, conf_of IS the Gaussian, bit for bit")
         finally:
             globals()["_HONEST"] = _hs
-            globals()["HONEST_CONF"] = False
+            globals()["HONEST_CONF"] = _hc0
         # fair() must route through conf_of and nothing else may call ND.cdf
         # on the decision path -- one gate reading Phi while another reads the
         # table is the silent reversion above.
