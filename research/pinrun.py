@@ -278,6 +278,48 @@ MAX_PER_CLOSE = 2        # 3 -> 2 on 2026-09-09, and NOT because cap 3 is
                          # the cap is also what concentrated three fills into
                          # one market on the losing close.
 
+# ===========================================================================
+# AMENDMENT 17 (2026-09-13): A CLOSE IS CAPPED ON CONTRACTS, NOT ON FILLS.
+#
+# The operator's design, in his words: "instead of max 2 coins make it a max
+# amount of contracts... unlimited coins, but maxed at the total contracts
+# allowed", and a later coin may take the remainder "ONLY IF IT IS ONE YOU'D
+# USUALLY BUY IF IT HAD ALL 68 AND MEETS CRITERIA".
+#
+# THE PROBLEM IT FIXES. MAX_PER_CLOSE counted FILLS, so a fill cost a whole
+# slot whatever its size. On 2026-09-11T23:00 a BTC market offered 1 contract
+# at 96c and, seconds later in the same close, 48,762 contracts at 98c --
+# taking the first retires the market (A13) and spends a slot, so that close
+# earned $0.04 where it could have earned $1.26.
+#
+#     budget = MAX_PER_CLOSE * SIZE contracts per close
+#
+# EXPOSURE IS IDENTICAL AND THAT IS THE POINT. worst_close is
+# MAX_PER_CLOSE * SIZE * PRICE_CEILING under both rules -- the same number
+# the --loss-abort band, pintake's stake cap and pinbank all already use, so
+# no downstream rail moves. Measured worst close matched to the cent
+# (-$128.95 both ways) over 422 book hours. Capping coins bounds exposure
+# only indirectly; capping contracts bounds it exactly, which is the better
+# answer to twelve series settling on one second at rho ~ 0.8.
+#
+# MEASURED (research/pinlevels.py, 16,683 candidate rows, 18.75 days, each
+# slice on its own span, size 68):
+#     slots=2    all $31.49/day   fit $40.72   holdout  $8.22
+#     budget 2x  all $33.58/day   fit $40.07   holdout $17.65
+# Neutral in the fit, doubles the recent third. Absent at size 20 (11.88 ->
+# 11.47), which fits the mechanism: the spill only matters when depth binds.
+# It is a STRUCTURAL rule with no fitted parameter, so there is no threshold
+# here tuned to its own evidence.
+#
+# THE OPERATOR'S CONDITION IS ENFORCED: MIN_FILL_FRAC is measured against the
+# FULL SIZE, never against the remaining budget, so the tail of a budget
+# cannot be spent on a moment we would not otherwise have touched. Only the
+# QUANTITY is trimmed to what is left.
+#
+# Set CLOSE_BUDGET = False to return to counting fills.
+# ===========================================================================
+CLOSE_BUDGET = True
+
 MAX_PER_MARKET = 1       # AMENDMENT 13 (2026-09-12). FILLS ALLOWED ON ONE
                          # MARKET IN ONE CLOSE. Scaling in buys MORE as the
                          # price falls, which is buying into a move against
@@ -1268,7 +1310,7 @@ def selftest():
     # and is corrected the same way.
     _b2 = _src2[_src2.index(chr(10) + "def trade_loop("):]
     _i_take = _b2.index("out = pintake.take(")
-    _i_slot = _b2.index("_book_slot(cost)")
+    _i_slot = _b2.index("_book_slot(cost, filled)")
     ck(_i_slot > _i_take,
        "STRUCTURAL: the live slot is booked AFTER the order returns, so a "
        "zero-fill cannot burn it")
@@ -1281,6 +1323,11 @@ def selftest():
        "our size; a scrap keeps its position and spends no slot")
     ck("_note_scrap(cost, filled)" in _b2 and 'rec("scrap"' in _b2,
        "and a scrap is recorded, not silent")
+    # --- AMENDMENT 17: under a CONTRACT budget a scrap still spends budget --
+    ck("_book_slot(cost, filled, raise_bar=False)" in _b2,
+       "under CLOSE_BUDGET a scrap must book its CONTRACTS -- they are real "
+       "exposure however small -- while still not raising the improve bar, "
+       "which is the only thing A12's exemption was actually protecting")
     # AMENDMENT 12a: scraps accumulate, so exposure stays bounded
     ck('pv["scrap_n"] = pv.get("scrap_n", 0.0) + float(nfilled)' in _b2
        and 'pv["n"] += 1' in _b2[_b2.index('pv["scrap_n"] ='):],
@@ -2070,6 +2117,61 @@ def selftest():
             pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
             pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
 
+        # ---- AMENDMENT 17: the CONTRACT budget -------------------------
+        _szB = float(SIZE)
+        try:
+            globals()["SIZE"] = 68.0
+            ck(abs(close_budget() - 68.0 * MAX_PER_CLOSE) < 1e-9,
+               f"budget must be MAX_PER_CLOSE x SIZE = "
+               f"{68.0 * MAX_PER_CLOSE}, got {close_budget()}")
+            # THE INVARIANT THE WHOLE AMENDMENT RESTS ON: exposure unchanged.
+            ck(abs(close_budget() * PRICE_CEILING
+                   - worst_close_cost(68.0)) < 1e-9,
+               "budget x ceiling must equal worst_close_cost -- if these ever "
+               "disagree, the --loss-abort band, pintake's stake cap and "
+               "pinbank are all sized against a different bet than the one "
+               "being placed")
+            ck(abs(close_budget(20.0) - 40.0) < 1e-9,
+               "close_budget(size) must honour an explicit size")
+        finally:
+            globals()["SIZE"] = _szB
+
+        _lb3 = src[src.index(chr(10) + "def trade_loop("):]
+        _ln3 = _lb3.splitlines()
+        ck("                if _spent >= close_budget() - 1e-9:" in _ln3,
+           "the per-close cap must read CONTRACTS, not the fill count")
+        ck('                _spent = prev.get("contracts", 0.0) if prev else 0.0'
+           in _ln3,
+           "and `contracts` must come from the close's own record")
+        ck("            elif prev is not None and prev[\"n\"] >= MAX_PER_CLOSE:"
+           in _ln3,
+           "and the old fill-count cap must survive behind CLOSE_BUDGET so "
+           "the rule can be reverted without an edit")
+        # ORDERING: the floor is tested against FULL SIZE, then take_n is
+        # trimmed. Reversed, the tail of a budget buys a moment the floor
+        # exists to refuse -- the operator's explicit condition.
+        _i_floor = _lb3.index(
+            "if take_n < max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE)):")
+        _i_trim = _lb3.index("take_n = min(take_n, _left)")
+        ck(_i_trim > _i_floor,
+           "STRUCTURAL: take_n is trimmed to the remaining budget only AFTER "
+           "the MIN_FILL_FRAC floor has been tested against the FULL size -- "
+           "trimming first would relax the floor to the remainder")
+        ck("_left = close_budget() - (" in _lb3,
+           "and the remainder is measured against close_budget()")
+        # ANCHOR ON THE WHOLE LINE. "out = pintake.take(" is a SUBSTRING of
+        # "_hout = pintake.take(" in the hedge path, which sits EARLIER in
+        # trade_loop -- the substring match found the hedge's call and
+        # compared the trim against the wrong statement. Same self-inspection
+        # trap that broke three checks in this file on 2026-09-11.
+        _take_ln = next(i for i, ln in enumerate(_ln3)
+                        if ln.strip().startswith("out = pintake.take("))
+        _trim_ln = next(i for i, ln in enumerate(_ln3)
+                        if ln.strip() == "take_n = min(take_n, _left)")
+        ck(_trim_ln < _take_ln,
+           f"the trim (line {_trim_ln}) must happen before the order is sent "
+           f"(line {_take_ln}), not after")
+
         # ---- quote age: LOGGED, NEVER GATED ON -------------------------
         _lb2 = src[src.index(chr(10) + "def trade_loop("):]
         ck("                       level_age_ms=_lvl_age, "
@@ -2193,6 +2295,14 @@ def halt_is_transient(why):
 # ===========================================================================
 # AMENDMENT 16 -- the auto-sizer. See the block above SIZE for the reasoning.
 # ===========================================================================
+def close_budget(size=None):
+    """Contracts a single close may buy (AMENDMENT 17). Deliberately the same
+    MAX_PER_CLOSE * SIZE product the --loss-abort band, pintake's stake cap
+    and pinbank.worst_close all use, so switching CLOSE_BUDGET on moves no
+    other rail."""
+    return float(MAX_PER_CLOSE) * float(SIZE if size is None else size)
+
+
 def worst_close_cost(size):
     """The most one close can lose. Exact: a long binary cannot lose more
     than it cost, and one close deploys at most MAX_PER_CLOSE legs of `size`
@@ -2812,7 +2922,13 @@ def trade_loop(a, rec, book, idx, series_index):
             # outright. In this bet a lower price wins more AND loses less, so
             # averaging down improves both sides.
             prev = fired.get(close_s)
-            if prev is not None and prev["n"] >= MAX_PER_CLOSE:
+            if CLOSE_BUDGET:
+                # AMENDMENT 17: contracts, not fills. Coins are unlimited;
+                # the close is done when its contract budget is spent.
+                _spent = prev.get("contracts", 0.0) if prev else 0.0
+                if _spent >= close_budget() - 1e-9:
+                    continue
+            elif prev is not None and prev["n"] >= MAX_PER_CLOSE:
                 continue
             # AMENDMENT 13: ONE FILL PER MARKET. See MAX_PER_MARKET.
             if prev is not None and                     prev.get("per_tk", {}).get(tk, 0) >= MAX_PER_MARKET:
@@ -2948,6 +3064,10 @@ def trade_loop(a, rec, book, idx, series_index):
             # slot and raises the improve bar for the better price still to
             # come, which measured WORSE than not trading at all.
             take_n = min(float(SIZE), float(size))
+            # THE FLOOR IS MEASURED AGAINST FULL SIZE, NEVER THE REMAINDER --
+            # the operator's own condition (A17). Trimming take_n first would
+            # let the tail of a budget buy a moment the floor exists to
+            # refuse, so the trim happens strictly AFTER this test.
             if take_n < max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE)):
                 # RECORD IT ANYWAY. A moment we skip for being too shallow is
                 # still a moment the market offered something, and it is the
@@ -3012,6 +3132,14 @@ def trade_loop(a, rec, book, idx, series_index):
                 continue
 
             state["signals"] += 1
+            if CLOSE_BUDGET:
+                _pvb = fired.get(close_s)
+                _left = close_budget() - (
+                    _pvb.get("contracts", 0.0) if _pvb else 0.0)
+                if _left <= 0:
+                    continue
+                take_n = min(take_n, _left)
+
             # THE CONDITIONS AT THE MOMENT WE DECIDED. Logged, never gated on
             # -- see IndexWS.conditions(). Without this the live losses carry
             # no record of the state they happened in, and the tape has
@@ -3050,7 +3178,7 @@ def trade_loop(a, rec, book, idx, series_index):
                   f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
                   f"taking {take_n:g}")
 
-            def _book_slot(px):
+            def _book_slot(px, n=None, raise_bar=True):
                 """AMENDMENT 6: a scale-in slot is consumed by a FILL, never by
                 an attempt. Until 2026-09-08 this ran BEFORE the order, so an
                 order that filled ZERO contracts still burned one of
@@ -3064,19 +3192,23 @@ def trade_loop(a, rec, book, idx, series_index):
                 P&L $40.29 -> $53.72, +33.3%. MAX EXPOSURE IS UNCHANGED,
                 because the cap always meant two FILLS; the bug made it two
                 ATTEMPTS."""
+                _n = float(take_n if n is None else n)
                 pv = fired.get(close_s)
                 if pv is None:
                     fired[close_s] = {"n": 1, "best": px, "tk": tk,
                                       "sides": {tk: want},
                                       "tickers": {tk},
-                                      "per_tk": {tk: 1}}
+                                      "per_tk": {tk: 1},
+                                      "contracts": _n}
                 else:
                     pv["n"] += 1
-                    pv["best"] = min(pv["best"], px)
+                    if raise_bar:
+                        pv["best"] = min(pv["best"], px)
                     pv.setdefault("sides", {})[tk] = want
                     pv.setdefault("tickers", set()).add(tk)
                     d13 = pv.setdefault("per_tk", {})
                     d13[tk] = d13.get(tk, 0) + 1
+                    pv["contracts"] = pv.get("contracts", 0.0) + _n
 
             def _note_scrap(px, nfilled):
                 """AMENDMENT 12 (2026-09-11): A SCRAP FILL IS NOT A SLOT.
@@ -3113,7 +3245,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     pv["best"] = min(pv["best"], px)
 
             if not live:
-                _book_slot(price)
+                _book_slot(price, take_n)
                 open_pos[f"paper-{tk}-{now_s}"] = (close_s, want, price,
                                                    take_n, tk)
             if live:
@@ -3162,7 +3294,19 @@ def trade_loop(a, rec, book, idx, series_index):
                         # its position but does not spend a scale-in slot
                         _real = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))
                         if filled >= _real:
-                            _book_slot(cost)
+                            _book_slot(cost, filled)
+                        elif CLOSE_BUDGET:
+                            # A17 + A12: contracts are exposure however small,
+                            # so a scrap spends budget. It still must not raise
+                            # the improve bar -- that exemption is what A12 was
+                            # actually protecting, not the exposure count.
+                            _book_slot(cost, filled, raise_bar=False)
+                            state["scraps"] = state.get("scraps", 0) + 1
+                            rec("scrap", ticker=tk, want=want, filled=filled,
+                                asked=take_n, price=cost, real_min=_real,
+                                budget_spent=True)
+                            print(f"    SCRAP {filled:g} of {take_n:g} -- "
+                                  f"budget spent, improve bar NOT raised")
                         else:
                             _note_scrap(cost, filled)
                             state["scraps"] = state.get("scraps", 0) + 1
