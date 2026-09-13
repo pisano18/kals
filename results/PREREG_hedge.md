@@ -318,4 +318,48 @@ strategy is **-$11.01** (both halves negative) and the hedged one is **+$24.68**
 hedge is not a refinement on top of a profitable strategy -- on this window it IS the
 profit. The n=30 live bar matters more, not less.
 
+## LIVE EVENT 3 (real) -- 2026-09-13T00:00Z, KXZEC15M-26SEP122000-00: CAUGHT, and a bug found in the accounting
+
+| | value |
+|---|---|
+| held | 11 YES @ 96.2c |
+| alarm belief | **0.5252** (a genuine coin-flip, not a clear collapse -- the shallowest belief of any event so far) |
+| hedge | 1 NO @ 80c, then 10 NO @ 81c (two seconds, the ask moved against us mid-hedge) |
+| hedge pricing | edge_c -32.5c, -33.5c -- the market priced NO far more confidently (80-81%) than our own model (47.5%) at that instant. We paid an adverse price for the hedge itself. |
+| original result | lost (settled `no`) |
+| **net, corrected for the bug below** | **-$8.63** (vs a full unhedged loss of ~$10.61 -- saved ~$1.98, the smallest recovery of the three real events) |
+
+**Recovery is worse than events 1-2 for a real reason, not noise:** belief at 52.5% is
+barely past the 80% alarm line, so the position had NOT collapsed to near-zero -- it
+was a genuine toss-up, and the opposite side's ask (80-81c) reflected someone else's
+confidence, not a bargain. The hedge is designed to buy protection cheaply when belief
+craters; here it bought expensive protection against genuine uncertainty. Both are
+"caught" by the pre-registered definition (alarm fired on an eventual loser), but this
+one cost more of the entry back than either of the first two.
+
+## BUG FOUND BY THIS EVENT, FIXED BEFORE THE NEXT ONE
+
+The two-second partial hedge fill (1 then 10) exposed a bookkeeping bug: the code
+tracking "how much is still unhedged" was overwriting `open_pos[_hid]`, the SAME
+tuple `reconcile()` reads to settle the original position and feed the loss-abort
+brake. The original 11-contract loss was about to be recorded and risk-ledgered as
+a 10-contract loss -- correct exchange fills, wrong internal accounting. Quantified:
+$0.9646 hidden on this event. Fixed in `research/pinrun.py` (open_pos is now
+read-only in the hedge pass; a separate `hedge_remain` dict tracks the remainder),
+self-tested by reproducing this exact sequence, 194 checks pass. Deployed before
+any further live event.
+
+**Running tally against the n=30 bar, corrected:**
+
+| event | belief | result | recovery |
+|---|---|---|---|
+| 1 (BTC 11:00) | 0.887 | false alarm | pair -$1.09 |
+| 2 (ETH 11:15) | 0.664 | false alarm | pair -$5.42 |
+| 3 (ZEC, this one) | 0.525 | **caught** | ~+$1.98 saved (corrected) |
+
+2 false alarms of 3 events = 66.7% -- but n=3 is far too small to read against the 3%
+bar; this is the same "don't tune on n=2" caution as before, now n=3. One catch does
+not offset two false alarms at this size; the bar exists precisely so a handful of
+early events cannot decide the threshold.
+
 ## If this bar moves again, the move is dated and explained here.

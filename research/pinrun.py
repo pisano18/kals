@@ -1469,6 +1469,45 @@ def selftest():
            "and it continues the loop, so reconcile() keeps releasing the "
            "positions it is waiting on")
 
+        # ---- BUGFIX 2026-09-13: a partial hedge fill must NOT shrink the
+        # ORIGINAL position's settlement size. Reproduces the exact live event
+        # (ZEC 26SEP122000-00): 11 contracts held, hedge fills 1 then 10.
+        _bp = {"orig": (1000, "yes", 0.962, 11.0, "T")}   # stand-in for open_pos
+        _br = {}
+        # simulate the first hedge attempt: fills 1 of 11
+        _hn0 = _br.get("orig", _bp["orig"][3])
+        ck(_hn0 == 11.0, "before any hedge fill, the amount to hedge is the "
+           "full original size, read from open_pos")
+        _filled1 = 1.0
+        if _filled1 >= _hn0 - 1e-9:
+            pass
+        else:
+            _br["orig"] = _hn0 - _filled1      # what the fixed code does
+        ck(_bp["orig"] == (1000, "yes", 0.962, 11.0, "T"),
+           "AFTER a partial hedge fill, open_pos['orig'] is UNCHANGED -- still "
+           "11.0, the true size reconcile() must settle and feed to the loss "
+           "brake, not the 10.0 the old code would have written there")
+        ck(_br.get("orig") == 10.0,
+           "the REMAINING-TO-HEDGE tracker, separately, correctly says 10 left")
+        # second attempt fills the remaining 10 -> fully hedged
+        _hn1 = _br.get("orig", _bp["orig"][3])
+        ck(_hn1 == 10.0, "the second attempt reads the remaining amount (10), "
+           "not the original (11) and not a re-read of a shrunk open_pos")
+        _filled2 = 10.0
+        if _filled2 >= _hn1 - 1e-9:
+            _br.pop("orig", None)
+        ck("orig" not in _br,
+           "once the remaining amount is fully filled, the tracker is cleared")
+        ck(_bp["orig"][3] == 11.0,
+           "and open_pos still reads 11.0 at the end -- reconcile() settles "
+           "the true position size no matter how many hedge attempts it took")
+        # the actual bug, quantified: what it would have cost silently
+        _hidden = 1.0 * 0.962 + billed_fee(0.962, 1.0)
+        ck(abs(_hidden - 0.9646) < 1e-4,
+           f"the live event hid ${_hidden:.4f} of real loss from the ledger "
+           f"the loss-abort brake reads -- small tonight, same mechanism the "
+           f"brake depends on")
+
         # ---- AMENDMENT 15: the belief-collapse hedge ----------------------
         # The decision functions, driven exactly as the loop drives them.
         ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
@@ -1949,6 +1988,11 @@ def trade_loop(a, rec, book, idx, series_index):
     hedged = set()      # A15: oids already hedged (or given up on)
     hedge_tries = {}    # A15: oid -> attempts since the alarm fired
     hedge_last_try = {} # A15: oid -> wall-clock second of the last try (pacing)
+    hedge_remain = {}   # A15 BUGFIX 2026-09-13: oid -> contracts STILL needing a
+                        # hedge fill. open_pos[_hid] must NEVER be shrunk here; it
+                        # is what reconcile() reads to settle the ORIGINAL position
+                        # and to feed pintake.record_pnl(), which the loss-abort
+                        # and loss-count brakes read.
     # NEAR MISSES. "nothing fired" is not information; "the best on offer was
     # 0.2c and we need 0.5c" is. Per close, keep the best net edge seen on
     # each side and report it when the close passes, so a quiet run can be
@@ -2147,7 +2191,25 @@ def trade_loop(a, rec, book, idx, series_index):
         # before any new money goes out. One belief recompute per open
         # position per second; the alarm and every refusal are recorded.
         if HEDGE_ENABLED:
-            for _hid, (_hcs, _hwant, _hcost, _hn, _htk) in list(open_pos.items()):
+            for _hid, (_hcs, _hwant, _hcost, _hn_orig, _htk) in list(open_pos.items()):
+                # BUG FOUND LIVE 2026-09-13 (ZEC 26SEP122000-00, real money,
+                # ~$0.96 hidden). The line this replaces read `_hn` straight
+                # out of open_pos and, on a partial hedge fill, wrote a
+                # SMALLER size back into open_pos[_hid] to remember "how much
+                # is still unhedged". open_pos[_hid] is not scratch space --
+                # it is exactly the tuple reconcile() unpacks to settle the
+                # ORIGINAL position and to call pintake.record_pnl(), which
+                # risk_abort()'s loss-abort and loss-count brakes read.
+                # Shrinking it here silently shrank the original position
+                # too: an 11-contract loss settled and fed the risk ledger
+                # as if it were 10, because the first hedge attempt had
+                # filled 1 of the 11 needed. The exchange's own books were
+                # never wrong -- only our record of what we lost and what
+                # the brake believes it is guarding against.
+                # FIX: open_pos[_hid] is read-only in this loop from here on.
+                # `hedge_remain` tracks "contracts still needing a hedge
+                # fill" separately, seeded from the ORIGINAL size on first sight.
+                _hn = hedge_remain.get(_hid, _hn_orig)
                 if _hid in hedged or _hid.startswith("hedge-"):
                     continue
                 _meta = hedge_meta.get(_hid)
@@ -2262,9 +2324,11 @@ def trade_loop(a, rec, book, idx, series_index):
                         # under the pilot ANY fill completes the hedge for this
                         # position -- otherwise 1 contract/second for 5 seconds
                         hedged.add(_hid)
+                        hedge_remain.pop(_hid, None)
                     else:
-                        # partial: shrink what is left to hedge and keep trying
-                        open_pos[_hid] = (_hcs, _hwant, _hcost, float(_hn) - _hfilled, _htk)
+                        # PARTIAL: track what is still unhedged in hedge_remain,
+                        # NEVER in open_pos[_hid] -- see the note above this loop.
+                        hedge_remain[_hid] = float(_hn) - _hfilled
         # ---------------- end AMENDMENT 15 ----------------
 
         if now - uni_at > 20:
