@@ -30,6 +30,51 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-revert1 — 2026-09-13 18:49Z — AMENDMENTS 20, 20b and 21 REVERTED (operator call)
+
+**What changed.** `--sigma-ruler` and `--pin` removed. Back to the 300-second
+ruler and the 0.995 gate. **The sweep (v-a18) stays** — it is separately
+evidenced, needs no flag, and is 3 for 3.
+
+**Why.** The operator: *"I have barely seen any trades since I woke up and
+cannot see how that's smarter... I'm having a very hard time trusting this new
+idea."*
+
+He was right and the measurement backs him, not me:
+
+| | signals per hour |
+|---|---|
+| today, before the ruler change | **4.21** |
+| today, after it | **1.55** |
+
+**A 63% cut in signals.** I had measured that cost in advance — 46.6% of
+signals, from re-scoring 619 real ones — and deployed anyway, then tried to
+buy the volume back by loosening the gate, which is a second change to fix the
+first.
+
+**The asymmetry I should have weighted properly the first time.** The ruler's
+COST is measured on our own real signals and is certain. Its BENEFIT is
+measured on the index population, and CLAUDE.md rule 5 exists precisely because
+that population is not ours — it differs by 31x on the one number we care
+about. Certain cost, unproven benefit, no forward evidence after 7 hours. That
+is a bad trade whoever proposes it.
+
+**What is NOT concluded.** The ruler may still be right — `RESULTS_ruler.md`,
+`RESULTS_calib.md` and `RESULTS_flood.md` all stand, and the model's tails
+really are 8x too thin. What is concluded is that it may not be deployed on
+index-population evidence alone. It needs a test that costs nothing while it
+runs.
+
+**Next step for it, if it is revisited:** score the ruler in SHADOW against
+live signals — recompute what it would have said at each real decision and
+compare, without touching what trades. That is `pinshadow`'s method applied to
+the ruler, and it should have been built before the deploy, not after.
+
+**Revert of the revert:** add back `"--sigma-ruler","maxdown","--pin","0.990"`
+in `restart_bot.ps1`.
+
+---
+
 ## v-a21 — 2026-09-13 17:0xZ — AMENDMENT 21: the confidence gate 0.995 → 0.990
 
 **What changed.** `--pin 0.990`. The gate the model must clear before a trade
@@ -59,7 +104,8 @@ start. Raising it needs a code change and a version entry, not a flag.
 
 ```powershell
 # edit restart_bot.ps1: delete the "--pin","0.990" arguments
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repo
+estart_bot.ps1
 ```
 
 ---

@@ -14,11 +14,11 @@
 # THE ARGUMENTS ARE THE DEPLOYED ONES from CURRENT_STATE.md. --size 20 is only
 # a starting value; the bot re-reads the bank every 300 s and sizes itself.
 #
-# --sigma-ruler added 2026-09-13 (AMENDMENT 20) on the operator's instruction,
-# against the bar in results/PREREG_ruler.md. max3600 at 11:10Z; replaced by
-# maxdown at ~11:55Z when the forty-ruler sweep found it strictly better on
-# every axis in both halves of the sample. If the bar fails, the revert is to
-# delete the two arguments below and run this file again.
+# REVERTED 2026-09-13 ~18:1xZ: --sigma-ruler and --pin are GONE. The ruler cut
+# live signals by 63% (4.21/hour -> 1.55/hour, measured on the day) against a
+# benefit measured only on the index population, which rule 5 says may not
+# transfer to us. Certain cost, unproven benefit. The sweep (AMENDMENT 18)
+# stays -- it is separately evidenced and needs no flag.
 
 $ErrorActionPreference = "Stop"
 $repo = "C:\kals-repo"
@@ -57,9 +57,7 @@ Start-Sleep -Seconds 2
 Start-Process -FilePath $py -ArgumentList @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
-    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3",
-    "--sigma-ruler", "maxdown",
-    "--pin", "0.990"
+    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 
