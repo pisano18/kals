@@ -30,6 +30,40 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-a21 — 2026-09-13 17:0xZ — AMENDMENT 21: the confidence gate 0.995 → 0.990
+
+**What changed.** `--pin 0.990`. The gate the model must clear before a trade
+is considered.
+
+**Why it is a partial REVERT, not a new bet.** v-a20b moved this gate without
+touching it: a wider ruler lowers every stated confidence, so the same PIN
+became a stricter gate overnight. Measured — the new ruler reads a median
+**1.167x wider** (2,666 tape samples), and re-scoring **619 real live signals**
+through `z -> z/1.167` shows it cost **46.6% of them**. Lowering PIN to 0.990
+gives back most of that volume at the same expected money.
+
+**Evidence.** `results/PREREG_ruler.md`, amended before this deploy. Both 0.995
+and 0.990 are worth the same expected $/hour; 0.990 keeps 83% of trades against
+53%, so it leans a third as hard on the one number rule 5 says cannot be
+assumed to transfer — that a loss reduction measured on the index population
+applies to fills someone chose to sell US.
+
+**Also recorded:** the index population said tightening 0.995 → 0.998 costs
+0.7% of decisions; on real signals it costs 51%. A 70x error. That population
+may compare rulers and may NOT count trades.
+
+**`--pin` may only LOWER the gate** — outside [0.95, 0.995] it refuses to
+start. Raising it needs a code change and a version entry, not a flag.
+
+**Revert:**
+
+```powershell
+# edit restart_bot.ps1: delete the "--pin","0.990" arguments
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1
+```
+
+---
+
 ## v-a20b — 2026-09-13 11:57Z — AMENDMENT 20b: the ruler reads DOWN moves only (`9591ec8`)
 
 **What changed.** The volatility estimate is now `max(downside 300s, downside
@@ -56,7 +90,8 @@ reconstructed from the tape and is not claimed.
 
 ```powershell
 # edit restart_bot.ps1: delete the "--sigma-ruler","maxdown" arguments
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repo
+estart_bot.ps1
 ```
 
 ---

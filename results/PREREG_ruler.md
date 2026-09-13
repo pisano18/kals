@@ -219,3 +219,55 @@ It is recorded because it was noticed, not because it is evidence.
 Items 1-3 are unchanged and the 60-fill count is unchanged. This item is added
 before any of them has been scored, which is the only reason it may be added
 at all.
+
+
+---
+
+# AMENDED 2026-09-13 ~13:05 ET -- AMENDMENT 21: PIN 0.995 -> 0.990
+
+**Written before the deploy.** The operator asked for a confidence sweep, was
+shown the table below, and chose 0.990.
+
+**WHY THIS IS A PARTIAL REVERT, NOT A NEW BET.** AMENDMENT 20b moved this gate
+without touching it. A wider ruler lowers every stated confidence, so the same
+PIN became a stricter gate overnight. Measured: the new ruler reads a median
+**1.167x wider** (2,666 tape samples, wider on 79.2%), and re-scoring **619
+REAL live signals** through `z -> z/1.167` shows it costs **46.6% of them** at
+PIN 0.995. I halved the trade count by accident and did not notice for five
+hours.
+
+**THE ERROR THAT ALMOST WENT THE OTHER WAY.** The index population says moving
+PIN 0.995 -> 0.998 costs 0.7% of decisions. On our real signals it costs 51%.
+A **70x** error in the direction of "tightening is free". The cause is
+population: 95% of index decisions sit miles from the strike, while our signals
+cluster ON the gate -- median live confidence 0.9980, tenth percentile 0.9871.
+**That population may compare rulers against each other and may NOT be used to
+count trades.** Recorded here because it nearly produced a recommendation that
+would have halved the strategy.
+
+| PIN | trades kept | implied q | per trade | relative $/hour |
+|---|---|---|---|---|
+| 0.995 (was) | 53% | 1.64% | +2.36c | +54% |
+| **0.990 (now)** | **83%** | **2.47%** | **+1.53c** | **+54%** |
+| 0.980 | 104% | 3.11% | +0.89c | +13% |
+| old ruler @0.995 | 100% | 3.18% | +0.82c | base |
+
+Win 4c, loss 96c, live q = 3.18% (9 of 283 fills). Trades-kept from the real
+signals; **loss cuts from the index population, which is the one number here
+that rule 5 says cannot be assumed to transfer to fills someone chose to sell
+US.**
+
+**The reason 0.990 rather than 0.995, given both are worth the same expected
+money:** if the loss cut does NOT transfer, 0.990 has given up a sixth of the
+volume and 0.995 has given up nearly half. Same upside, a third of the exposure
+to the one unverifiable assumption.
+
+**THE BAR IS UNCHANGED AND THE COUNT IS NOT RESTARTED.** Items 1-4 stand: 60
+fills or 14 days, market-loss rate below 4.13%, trade count >= 70% of the
+concurrent rate, $/day not down, hedge alarms per fill <= 0.10. AMENDMENT 21
+makes item 2 EASIER to pass and that is the point -- if the strategy now passes
+only because the gate was loosened, item 1 is what catches it.
+
+**`--pin` may only LOWER the gate** (refused outside [0.95, 0.995]). Raising it
+is the change that silently halves the trade count, so it needs a code change
+and a version entry, not a flag. Self-tested.

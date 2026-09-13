@@ -58,7 +58,8 @@ Start-Process -FilePath $py -ArgumentList @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
     "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3",
-    "--sigma-ruler", "maxdown"
+    "--sigma-ruler", "maxdown",
+    "--pin", "0.990"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 

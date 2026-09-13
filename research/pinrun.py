@@ -130,6 +130,36 @@ SERIES_TO_INDEX = {
 # What it costs is unmeasured: deeper markets are priced higher, so the
 # same opportunity count may fill less often. Revert: PIN = 0.98.
 PIN = 0.995
+_DEFAULT_PIN = 0.995     # what --pin is measured against; never reassigned
+# AMENDMENT 21 (2026-09-13): --pin, because AMENDMENT 20b MOVED THIS GATE
+# WITHOUT TOUCHING IT.
+#
+# A wider ruler lowers every stated confidence, so the same PIN is a stricter
+# gate than it was the day before. Measured rather than reasoned: the new ruler
+# reads a median 1.167x wider (2,666 tape samples, wider on 79.2% of them), and
+# re-scoring 619 REAL live signals through z -> z/1.167 shows it costs 46.6% of
+# them at PIN 0.995. I tightened the strategy by nearly half without intending
+# to and without noticing.
+#
+# THE NUMBER THAT NEARLY MADE THIS WORSE. The index population says moving PIN
+# 0.995 -> 0.998 costs 0.7% of decisions. On our real signals it costs 51%. A
+# 70x error, because 95% of index decisions sit miles from the strike while our
+# signals cluster ON the gate -- median live confidence 0.9980, tenth
+# percentile 0.9871. That population may compare rulers and may NOT count
+# trades.
+#
+# THE TRADE-OFF (win 4c, loss 96c, live q = 3.18%; trades from the real
+# signals, loss cuts from the index population):
+#
+#   PIN 0.995   53% of trades   q 1.64%   +2.36c/trade   +54%/hour
+#   PIN 0.990   83% of trades   q 2.47%   +1.53c/trade   +54%/hour
+#   PIN 0.980  104% of trades   q 3.11%   +0.89c/trade   +13%/hour
+#
+# 0.995 and 0.990 are worth the same expected money. They are NOT equally safe:
+# the loss-cut column is measured on the index population and whether it
+# transfers to fills someone chose to sell US is exactly what rule 5 says
+# cannot be assumed. If it fails, 0.990 gives up a sixth of the volume and
+# 0.995 gives up nearly half. Operator chose 0.990 on that reasoning.
 # AMENDMENT 10 (2026-09-10 23:3xZ): DO NOT BUY A CERTAINTY AT A DISCOUNT.
 # Operator: "why can't we just not buy the crazy 'deals' that basically always
 # end up being someone knowing what's happening?" -- and he is right.
@@ -2431,6 +2461,28 @@ def selftest():
             pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
             pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
 
+        # ---- AMENDMENT 21: the confidence gate is now a flag -----------
+        ck(_DEFAULT_PIN == 0.995,
+           "the DECLARED default PIN is 0.995 (running now with %.4f)" % PIN)
+        ck(PIN <= _DEFAULT_PIN + 1e-12,
+           "and the running PIN is never ABOVE the declared default -- a "
+           "tighter gate is the change that silently halves the trade count, "
+           "so it needs a code change and a version entry, not a flag "
+           "(running %.4f)" % PIN)
+        _p0 = PIN
+        try:
+            globals()["PIN"] = 0.990
+            ck(abs(PIN - 0.990) < 1e-12, "--pin moves the gate")
+            _f_lo = conf_of(2.40)
+            ck(_f_lo >= PIN,
+               "a decision at z=2.40 clears 0.990 (%.5f) ..." % _f_lo)
+            globals()["PIN"] = 0.995
+            ck(_f_lo < PIN,
+               "... and does NOT clear 0.995 (%.5f) -- the flag is the whole "
+               "difference between a trade and no trade" % _f_lo)
+        finally:
+            globals()["PIN"] = _p0
+
         # ---- AMENDMENT 20: the volatility ruler ------------------------
         ck(_DEFAULT_SIGMA_RULER == "live",
            "the DECLARED default ruler is 'live' -- AMENDMENT 20 is a model "
@@ -3877,6 +3929,12 @@ def main():
                          "This pins SIZE to --size instead.")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
+    ap.add_argument("--pin", type=float, default=None,
+                    help="AMENDMENT 21: the confidence gate. Default %.3f. "
+                         "May only be LOWERED toward 0.95; raising it from the "
+                         "command line is refused, because a tighter gate is "
+                         "the change that silently halves the trade count."
+                         % _DEFAULT_PIN)
     ap.add_argument("--sigma-ruler", default="live",
                     choices=("live", "1800", "max3600", "maxdown"),
                     help="AMENDMENT 20: how long a window the volatility "
@@ -3928,6 +3986,15 @@ def main():
                 f"stop by the fourth.")
         if a.max_positions > 6:
             raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
+    if a.pin is not None:
+        if not (0.95 <= a.pin <= _DEFAULT_PIN):
+            raise SystemExit(
+                "--pin %.4f refused: it must sit in [0.95, %.4f]. Raising the "
+                "gate above the default from the command line is exactly the "
+                "change that costs half the trades without anyone noticing, "
+                "and it needs a code change and a version entry, not a flag."
+                % (a.pin, _DEFAULT_PIN))
+        globals()["PIN"] = float(a.pin)
     if a.sigma_ruler != "live":
         globals()["SIGMA_RULER"] = a.sigma_ruler
     if a.honest:
