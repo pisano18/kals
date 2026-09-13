@@ -112,6 +112,30 @@ and it is consistent with `RESULTS_levels`' note that the second half of the
 window was 3x worse. Any threshold fitted on the whole window is fitted on a
 gentler market than the current one.
 
+**WHAT CHANGED, measured 2026-09-13 -- and it is NOT the other side.** Their
+behaviour is flat: someone else takes the offer within 1s 88.6% -> 86.8% of the
+time, at a median 66 -> 70 ms, with MORE depth on screen (217 -> 271). What
+moved is the MODEL. Its stated confidence barely changed (0.99851 -> 0.99837)
+while its realised error went from **12.5x its own claim to 28.2x**. Same
+offers, same competition, same promise -- more losses.
+
+**So the thing to watch is the model's own miss ratio: what it PROMISES versus
+what it delivers, on the candidate population, rolling.** That is a statement
+about the model and not about our losses, so the tape is allowed to compute it
+(rule 5's own carve-out: the tape is valid for what the model computed). It is
+the closest thing to an early warning this project has, and it is not yet
+automated. **Building that monitor is the obvious next job.**
+
+**And the obvious fix does NOT work -- do not re-try it.** Multiplying the
+volatility estimate by k before deciding (a bigger `SIGMA_STRESS`) throws away
+most of the trades and makes the remainder WORSE: k=1.25 keeps 44% of rows at
+3.09% bad, k=1.5 keeps 26% at 3.41%, k=2.0 keeps 14% at 4.62%, against 2.90%
+at k=1.0. Distrusting the model uniformly removes the trades it is most right
+about. The failures are not in the confidence tail; they are a different
+animal. Within each coin the LOWEST-volatility fifth is the worst arm (5.19%
+bad, 43.7x overconfident) and the middle fifth the best (1.38%, 8.3x) -- worth
+a proper clustered test, but note only 8 losing closes of 161 sit in that arm.
+
 ## Hard-won gotchas that will bite again
 
 - **A self-test must match a whole LINE at its real indentation**, never a
