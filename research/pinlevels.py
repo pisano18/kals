@@ -620,7 +620,8 @@ def minfill_sweep(rows, sizes, fracs, days, span, cut, mode="touch",
     return out
 
 
-def score(rows, size, hedge_thr=None, mode="touch"):
+def score(rows, size, hedge_thr=None, mode="touch", budget_mult=None,
+          improve=True):
     """Score the candidate ledger at one SIZE. Returns (fills, refused).
 
     Every gate re-applied here is re-applied by CALLING pinrun/pinsim:
@@ -640,6 +641,24 @@ def score(rows, size, hedge_thr=None, mode="touch"):
     pinrun.SIZE = float(size)          # net_edge reads this for the fee
     try:
         bar = depth_bar(size)
+        # BUDGET MODE (operator, 2026-09-13). Today a close is capped at
+        # MAX_PER_CLOSE *fills*, which is why a small fill is expensive: it
+        # costs a whole slot whatever its size. Cap CONTRACTS instead and a
+        # small fill costs only its own contracts. Coins are then unlimited.
+        #
+        # RISK IS UNCHANGED, and that is what makes it worth testing: the most
+        # a close can lose is budget * PRICE_CEILING either way (2 * 68 * 0.98
+        # = 136 * 0.98). Capping coins caps exposure only indirectly; capping
+        # contracts caps it exactly. Correlation (rho ~ 0.8, twelve series on
+        # one second) is an argument for bounding TOTAL contracts, which this
+        # does directly.
+        #
+        # THE OPERATOR'S CONDITION: a candidate must clear the same bar it
+        # would need at FULL size -- `bar` above is depth_bar(size), never
+        # depth_bar(remaining) -- so the tail of the budget cannot be spent on
+        # a moment we would not otherwise have touched. Only the QUANTITY is
+        # trimmed to what is left.
+        budget = None if budget_mult is None else float(budget_mult) * size
         per_close, decided = {}, set()
         fills, refused = [], []
         # SORT BY THE TIMESTAMP ALONE, AND LET THE SORT'S STABILITY DO THE
@@ -669,11 +688,42 @@ def score(rows, size, hedge_thr=None, mode="touch"):
                 continue
             if px > pinrun.PRICE_CEILING + 1e-12:
                 continue
-            if pinsim.close_slot_ok(per_close.get(cs), tk, None):
-                continue
-            if pinsim.close_slot_ok(per_close.get(cs), tk, px):
-                continue               # the improve bar -- no retirement
+            pc = per_close.get(cs)
+            if budget is None:
+                if pinsim.close_slot_ok(pc, tk, None):
+                    continue
+            else:
+                # one fill per market still holds (A13); the CLOSE cap is now
+                # contracts, and coins are unlimited.
+                if pc and pc["per_tk"].get(tk, 0) >= pinrun.MAX_PER_MARKET:
+                    continue
+                used = pc["contracts"] if pc else 0.0
+                if used >= budget - 1e-9:
+                    continue
+                n = min(n, budget - used)
+                if n <= 0:
+                    continue
+            if improve:
+                # IN BUDGET MODE THE IMPROVE BAR MUST BE CHECKED ON ITS OWN.
+                # pinsim.close_slot_ok() applies ALL THREE rails including the
+                # MAX_PER_CLOSE fill count, so routing the improve check
+                # through it silently re-imposed the very cap budget mode
+                # replaces -- the third coin was refused as "close_cap" no
+                # matter how much budget was left. Caught by the self-test.
+                if budget is None:
+                    if pinsim.close_slot_ok(pc, tk, px):
+                        continue       # the improve bar -- no retirement
+                elif pc is not None and px >= pc["best"] - pinrun.IMPROVE_BY:
+                    continue
             decided.add(tk)
+            if budget is not None:
+                if pc is None:
+                    per_close[cs] = pc = {"n": 0, "best": px,
+                                          "per_tk": {}, "contracts": 0.0}
+                pc["n"] += 1
+                pc["best"] = min(pc["best"], px)
+                pc["per_tk"][tk] = pc["per_tk"].get(tk, 0) + 1
+                pc["contracts"] += n
             if r["verdict"] == "refuse":
                 refused.append(dict(r, take_n=0.0, pnl=0.0))
                 continue
@@ -703,7 +753,11 @@ def score(rows, size, hedge_thr=None, mode="touch"):
             fills.append(dict(r, take_n=n, price_paid=px, levels=lv,
                               slip_c=round(100.0 * (px - r["price"]), 4),
                               pnl=pnl, hedged=hedged, notional=n * px))
-            pinsim.close_slot_book(per_close, cs, tk, px)
+            if budget is None:
+                pinsim.close_slot_book(per_close, cs, tk, px)
+            # in budget mode the book was written above, BEFORE the refuse
+            # branch, so a refused-but-decided candidate still consumes its
+            # contracts exactly as pinsim's slot version consumes its slot
         return fills, refused
     finally:
         pinrun.SIZE = saved
@@ -1151,6 +1205,90 @@ def selftest():
     finally:
         for k, v in sv.items():
             setattr(pinrun, k, v)
+    # ---- BUDGET MODE (operator, 2026-09-13) -----------------------------
+    # "instead of max 2 coins make it a max amount of contracts... unlimited
+    # coins, but maxed at the total contracts allowed."
+    _sv2 = {k: getattr(pinrun, k) for k in
+            ("MAX_PER_CLOSE", "MAX_PER_MARKET", "IMPROVE_BY", "MIN_FILL_FRAC",
+             "MIN_LEVEL", "EDGE_FLOOR", "EV_FLOOR", "PRICE_CEILING", "SIZE")}
+    try:
+        pinrun.MAX_PER_CLOSE, pinrun.MAX_PER_MARKET = 2, 1
+        pinrun.IMPROVE_BY, pinrun.MIN_FILL_FRAC = 0.005, 0.5
+        pinrun.MIN_LEVEL, pinrun.EDGE_FLOOR = 1.0, 0.003
+        pinrun.EV_FLOOR, pinrun.PRICE_CEILING = 0.003, 0.98
+
+        # FOUR coins in one close, each deep, each cheaper than the last so
+        # the improve bar never blocks anything and the caps alone decide.
+        Q = [row("Q1", 5000, 4980, 0.960, 500.0, True),
+             row("Q2", 5000, 4981, 0.950, 500.0, True),
+             row("Q3", 5000, 4982, 0.940, 500.0, True),
+             row("Q4", 5000, 4983, 0.930, 500.0, True)]
+        f_slot, _ = score(Q, 20.0)
+        ck(len(f_slot) == 2 and sum(x["take_n"] for x in f_slot) == 40.0,
+           f"TODAY: 2 fills of 20 = 40 contracts, and coins 3-4 are refused "
+           f"however deep they are. got {len(f_slot)} fills, "
+           f"{sum(x['take_n'] for x in f_slot)} contracts")
+        f_bud, _ = score(Q, 20.0, budget_mult=2.0)
+        ck(sum(x["take_n"] for x in f_bud) == 40.0,
+           f"BUDGET: the same 40 contracts -- risk is UNCHANGED, which is the "
+           f"whole claim. got {sum(x['take_n'] for x in f_bud)}")
+        ck(len(f_bud) == 2,
+           "with four DEEP coins the budget is spent by the first two, so "
+           "budget mode matches slot mode exactly when depth is plentiful")
+
+        # THE CASE THE OPERATOR DESCRIBED: the first coins cannot fill, so
+        # the budget spills onto later coins that slot mode would refuse.
+        S = [row("S1", 6000, 5980, 0.960, 20.0, True),   # only 20 resting
+             row("S2", 6000, 5981, 0.950, 15.0, True),   # only 15
+             row("S3", 6000, 5982, 0.940, 500.0, True)]  # deep
+        fs, _ = score(S, 20.0)
+        ck(len(fs) == 2 and abs(sum(x["take_n"] for x in fs) - 35.0) < 1e-9,
+           f"TODAY: 20 + 15 = 35 contracts and the DEEP third coin is locked "
+           f"out by the 2-fill cap. got {sum(x['take_n'] for x in fs)}")
+        fb, _ = score(S, 20.0, budget_mult=2.0)
+        ck(abs(sum(x["take_n"] for x in fb) - 40.0) < 1e-9 and len(fb) == 3,
+           f"BUDGET: 20 + 15 + 5 = the full 40, spilling 5 onto a THIRD coin. "
+           f"got {len(fb)} fills, {sum(x['take_n'] for x in fb)} contracts")
+        ck(abs(fb[-1]["take_n"] - 5.0) < 1e-9,
+           f"and the third fill is trimmed to the 5 contracts of budget left, "
+           f"not a full 20. got {fb[-1]['take_n']}")
+
+        # THE OPERATOR'S CONDITION -- the tail of the budget may only be spent
+        # on a moment that would have qualified at FULL size.
+        pinrun.MIN_FILL_FRAC = 0.5                  # floor = 10 at size 20
+        Sh = [row("H1", 7000, 6980, 0.960, 20.0, True),
+              row("H2", 7000, 6981, 0.950, 15.0, True),
+              row("H3", 7000, 6982, 0.940, 8.0, True)]   # 8 < floor 10
+        fh, _ = score(Sh, 20.0, budget_mult=2.0)
+        ck(len(fh) == 2,
+           f"a market with 8 resting fails depth_bar(FULL size)=10 and must "
+           f"be refused EVEN THOUGH only 5 contracts of budget remain -- the "
+           f"bar is never relaxed to the remainder. got {len(fh)} fills")
+
+        # The budget must be a HARD cap, never exceeded by a partial.
+        B = [row("B1", 8000, 7980, 0.960, 500.0, True),
+             row("B2", 8000, 7981, 0.950, 500.0, True),
+             row("B3", 8000, 7982, 0.940, 500.0, True)]
+        fbb, _ = score(B, 20.0, budget_mult=2.5)     # 50 contracts
+        ck(abs(sum(x["take_n"] for x in fbb) - 50.0) < 1e-9,
+           f"a 50-contract budget spends exactly 50 (20+20+10), never 60. "
+           f"got {sum(x['take_n'] for x in fbb)}")
+        ck(abs(max(x["notional"] for x in fbb)
+               - max(x["take_n"] * x["price_paid"] for x in fbb)) < 1e-9,
+           "notional must be recomputed from the TRIMMED size, or peak "
+           "capital and the worst close are both overstated")
+
+        # One fill per market still holds in budget mode.
+        M = [row("M1", 9000, 8980, 0.960, 500.0, True),
+             row("M1", 9000, 8981, 0.950, 500.0, True)]
+        fm, _ = score(M, 20.0, budget_mult=5.0)
+        ck(len(fm) == 1,
+           f"MAX_PER_MARKET=1 is untouched by budget mode -- the same market "
+           f"cannot be bought twice in one close. got {len(fm)}")
+    finally:
+        for k, v in _sv2.items():
+            setattr(pinrun, k, v)
+
     # ---- MIN_FILL_FRAC sweep -------------------------------------------
     # Two invariants. A lower floor can only ADD fills (it never refuses a
     # moment the higher floor accepted), and the sweep must put the live
