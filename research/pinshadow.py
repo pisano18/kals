@@ -179,8 +179,51 @@ def era_of(t, ers):
     return cur
 
 
+
+
+def logged_changes(versions_path=None):
+    """[(utc stamp, tag, one line)] from results/VERSIONS.md, oldest first.
+
+    THE OPERATOR, 2026-09-13: "Are you taking into account that isn't the only
+    thing that's been changing... and other things too in the version history."
+
+    He is right and it is not a detail, it is the whole problem with the era
+    table. The window I had been quoting as "gate 0.995, +$1.44/hour" contains
+    TWELVE logged changes -- the dump guard on, off and fixed; scrap
+    accumulation; THE HEDGE ITSELF; a hedge bug that was UNDERSTATING losses;
+    auto-sizing; the contract budget; and BANK_BRAKE. Plus A13 and A14, which
+    are not even in the log. "Gate 0.995 made $1.44/hour" is not a statement
+    about the gate.
+
+    So the era table now prints how many logged changes fall inside each row,
+    and refuses to let a row be read as a measurement of the thing it is named
+    after.
+    """
+    import re
+    if versions_path is None:
+        versions_path = os.path.join(REPO, "results", "VERSIONS.md")
+    out = []
+    if not os.path.exists(versions_path):
+        return out
+    pat = re.compile(r"^## (v-[a-z0-9]+) . (\d{4}-\d{2}-\d{2}) ([0-9:xZ]+) . (.*)$")
+    for line in open(versions_path, encoding="utf-8", errors="replace"):
+        m = pat.match(line)
+        if m:
+            out.append(("%sT%s" % (m.group(2), m.group(3)[:5]), m.group(1),
+                        m.group(4).split("(`")[0].strip()))
+    out.sort()
+    return out
+
+
+def changes_in(t0_iso, t1_iso, changes):
+    return [c for c in changes if t0_iso <= c[0] <= t1_iso]
+
+
 MIN_FILLS_FOR_RATE = 30      # below this, a $/hour figure is noise wearing a
                              # decimal point and is refused rather than printed
+
+
+_CHANGES = []
 
 
 def era_table(rows, ers, say=print):
@@ -189,6 +232,9 @@ def era_table(rows, ers, say=print):
     same time, which is stated rather than hidden."""
     import calendar
     import datetime
+    global _CHANGES
+    if not _CHANGES:
+        _CHANGES = logged_changes()
     per = defaultdict(lambda: [0, 0, 0.0, None, None])
     for r in rows:
         e = era_of(r[5], ers)
@@ -207,9 +253,9 @@ def era_table(rows, ers, say=print):
     # the %% is not a typo: the two literals concatenate BEFORE the % applies,
     # so a bare "loss%" reads as a format specifier and raises
     lines = ["  gate | ruler      | sweep | hours | fills | losses | loss%% | "
-             "net $ | $/hour (needs n>=%d)" % MIN_FILLS_FOR_RATE,
+             "net $ | $/hour(n>=%d) | OTHER CHANGES INSIDE" % MIN_FILLS_FOR_RATE,
              "  -----|------------|-------|-------|-------|--------|-------|"
-             "-------|-------"]
+             "-------|--------------|---------------------"]
     for (pin, ruler, sw), (f, L, d, t0, t1) in sorted(
             per.items(), key=lambda kv: kv[1][3] or 0):
         h = max((t1 - t0) / 3600.0, 0.01)
@@ -221,10 +267,14 @@ def era_table(rows, ers, say=print):
         # sample size instead of a number nobody should act on.
         rate = ("%+.2f" % (d / h)) if f >= MIN_FILLS_FOR_RATE else (
             "n=%d, too few" % f)
+        t0s = time.strftime("%Y-%m-%dT%H:%M", time.gmtime(t0))
+        t1s = time.strftime("%Y-%m-%dT%H:%M", time.gmtime(t1))
+        nch = len(changes_in(t0s, t1s, _CHANGES))
         lines.append("  %-5s| %-11s| %-6s| %5.1f | %5d | %6d | %5s | %+6.2f "
-                     "| %s"
+                     "| %-12s | %d"
                      % (pin, ruler, sw, h, f, L,
-                        ("%.1f%%" % (100.0 * L / f)) if f else "-", d, rate))
+                        ("%.1f%%" % (100.0 * L / f)) if f else "-", d, rate,
+                        nch))
     txt = "\n".join(lines)
     if say:
         say(txt)
