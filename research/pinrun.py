@@ -2527,15 +2527,41 @@ def selftest():
         # never the live global, or it becomes a refusal to start.
         _dsrc = open(os.path.abspath(__file__), encoding="utf-8").read()
         _dwork = _dsrc[:_dsrc.index("def " + "selftest")]
+        # THE GUARD AGAINST THE PATTERN, STRENGTHENED AFTER IT BIT A FOURTH
+        # TIME. Checking that a _DEFAULT_ constant EXISTS is not enough -- the
+        # assertion has to USE it. So this also scans the suite for any
+        # `ck(<NAME> ==` on the live global, which is precisely the shape that
+        # turns a guard into a refusal to start the moment its flag is used.
+        _dtest = _dsrc[_dsrc.index("def " + "selftest"):]
         for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN",
                     "MAX_PER_MARKET"):
             ck(("_DEFAULT_%s" % _nm) in _dwork,
                "a _DEFAULT_%s exists to assert against, so its guard can "
                "never become a refusal to start" % _nm)
-        ck(MAX_PER_MARKET == 1,
-           "MAX_PER_MARKET is 1 (AMENDMENT 13), which is WHY the improve-by "
-           "rule is obsolete: the same-market re-buy it was written to stop "
-           "is already impossible")
+            # The broken shape is a comparison to a LITERAL -- `ck(X == 1)`,
+            # `ck(X == "close")`, `ck(X is False)`. Comparing to a SAVED value
+            # (`ck(X == _saved)`) is a teardown check and is fine, so the test
+            # looks at what follows the operator rather than banning the name.
+            _bad = []
+            _pos = 0
+            _pat = "ck(%s ==" % _nm
+            while True:
+                _i = _dtest.find(_pat, _pos)
+                if _i < 0:
+                    break
+                _pos = _i + len(_pat)
+                _rest = _dtest[_pos:_pos + 12].strip()
+                if _rest[:1] in ('"', "'") or _rest[:1].isdigit():
+                    _bad.append(_dtest[_i:_i + 40])
+            ck(not _bad,
+               "and nothing asserts `%s ==` against a LITERAL -- that shape "
+               "has stopped this bot from starting four times today, once per "
+               "flag added (%s)" % (_nm, _bad))
+        ck(_DEFAULT_MAX_PER_MARKET == 1,
+           "the DECLARED default MAX_PER_MARKET is 1 (AMENDMENT 13), which is "
+           "WHY the improve-by rule is obsolete: the same-market re-buy it was "
+           "written to stop is already impossible by default (running now "
+           "with %d)" % MAX_PER_MARKET)
         # the exact refusal that cost the HYPE trade at 19:15Z
         _eth, _hype = 0.980, 0.977
         ck(_hype >= _eth - IMPROVE_BY,
