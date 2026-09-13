@@ -195,6 +195,63 @@ EDGE_FLOOR = 0.003     # AFTER fee. 0.5c -> 0.3c per
                        # Better on every dimension measured. REVERTS to
                        # 0.005 if the live flip rate exceeds 1.0%.
 SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
+
+# ===========================================================================
+# AMENDMENT 16 (2026-09-13): SIZE FOLLOWS THE BANK, AUTOMATICALLY.
+#
+# Set by the operator: "edit the bot to automatically scale up with the bank."
+# Until now SIZE was a launch argument, so every increase needed a restart and
+# in practice lagged the balance by days.
+#
+# THE RAIL IS THE ONE ALREADY IN THIS FILE, not a new one. MAX_PER_CLOSE's
+# comment and main()'s --loss-abort band both size risk as a multiple of the
+# WORST CLOSE, and both use 1.5x as the minimum survivable brake. The same
+# number sets size here:
+#
+#     worst_close(size) = MAX_PER_CLOSE * size * PRICE_CEILING
+#     size              = bank / (BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING)
+#
+# worst_close is EXACT, not a backtest statistic. A long binary cannot lose
+# more than it cost, so this is a ceiling no tape or regime can exceed. The
+# earlier ladder used the largest loss OBSERVED in an 18.6-day replay, which
+# is a sample maximum: at size 1000 only 398 of 730 closes filled, so there
+# were 45% fewer draws and the observed worst came in at 58% of the bound.
+# Fewer chances to draw a bad close is not less risk. See research/pinbank.py.
+#
+# WHAT THIS DOES NOT CLAIM. It bounds the bank against one bad close. It is
+# not a statement that expectancy is positive -- pinbank.break_even_rate()
+# puts the break-even close-loss rate at 3.58% and our 248-close live record
+# is 4.84% (upper bound 7.72%). If that holds, a bigger size loses money
+# faster. The operator has seen that measurement and set the rule anyway; it
+# is recorded here so the choice is visible, not so it can be relitigated.
+#
+# FOUR SAFETY PROPERTIES, each one earned from a failure in this file:
+#
+#  1. EVERY SIZE-DERIVED RAIL MOVES WITH SIZE. pintake.MAX_TAKE_COUNT,
+#     MAX_RUN_STAKE and --loss-abort are all computed once from --size at
+#     startup. On 2026-09-08 four separate size-1 literals silently REFUSED
+#     every order at --size 20 -- 160 orders sent, 0 filled, no error raised.
+#     apply_size() re-derives all of them; raising SIZE without them is the
+#     single most likely way this amendment breaks.
+#  2. THE UNIT IS READ, NEVER INFERRED. /portfolio/balance returns `balance`
+#     in CENTS and `balance_dollars` as a string. read_bank() requires both
+#     and refuses if they disagree by more than a cent. Treating 19215 cents
+#     as dollars would ask for size 6535.
+#  3. UP IS DAMPED, DOWN IS IMMEDIATE. A rise is capped at AUTO_SIZE_STEP_UP
+#     per adjustment, so a misread balance cannot jump size in one move; a
+#     fall applies at once. Asymmetric on purpose.
+#  4. ONLY WHEN FLAT. Rails never change while a position is open.
+# ===========================================================================
+AUTO_SIZE = True         # --no-auto-size disables
+BANK_BRAKE = 1.5         # bank must cover this many worst-closes
+AUTO_SIZE_MIN = 1
+AUTO_SIZE_MAX = 250      # nothing above this without a fresh depth study.
+                         # Median resting size is 69 contracts and
+                         # MIN_FILL_FRAC refuses a fill under half of SIZE, so
+                         # past here the bot skips more closes than it takes
+                         # and the bank stops being the binding constraint.
+AUTO_SIZE_STEP_UP = 1.5  # max multiplicative rise per adjustment
+AUTO_SIZE_EVERY_S = 300  # seconds between adjustments
 MAX_PER_CLOSE = 2        # 3 -> 2 on 2026-09-09, and NOT because cap 3 is
                          # wrong. Cap 3 still measures better on every number
                          # I have. It is a BANK constraint: at size 20 cap 3 a
@@ -1832,6 +1889,179 @@ def selftest():
        "and the count happens BEFORE the enable check, so the class is "
        "recorded whether or not it is refused")
 
+    # ---- AMENDMENT 16: the auto-sizer ------------------------------------
+    _sz0 = float(SIZE)
+    try:
+        ck(abs(worst_close_cost(20) - 2 * 20 * 0.98) < 1e-12,
+           f"worst_close_cost(20) must be MAX_PER_CLOSE*20*PRICE_CEILING = "
+           f"{2 * 20 * 0.98}, got {worst_close_cost(20)}")
+        ck(abs(worst_close_cost(200) / worst_close_cost(20) - 10.0) < 1e-12,
+           "worst_close_cost must be EXACTLY linear in size -- that is the "
+           "whole reason it replaced a sampled maximum, which was not")
+
+        # The ladder, by hand. bank / (1.5 * 2 * 0.98) = bank / 2.94.
+        ck(size_for_bank(192.15) == int(192.15 // 2.94),
+           f"$192.15 / $2.94 = {int(192.15 // 2.94)}, got "
+           f"{size_for_bank(192.15)}")
+        ck(size_for_bank(0.0) == AUTO_SIZE_MIN and size_for_bank(None)
+           == AUTO_SIZE_MIN,
+           "an empty or unreadable bank must fall to the floor, never to 0")
+        ck(size_for_bank(1e9) == AUTO_SIZE_MAX,
+           f"the cap must bind, got {size_for_bank(1e9)}")
+        _prev = -1
+        for _b in (10, 50, 100, 200, 400, 800, 1600):
+            _s = size_for_bank(_b)
+            ck(_s >= _prev, f"size_for_bank fell from {_prev} to {_s} at "
+                            f"bank ${_b} -- more money can never permit less")
+            _prev = _s
+        ck(size_for_bank(200, brake=3.0) < size_for_bank(200, brake=1.5),
+           "a harsher brake must give a SMALLER size")
+
+        # THE UNIT. This is the check that stops a 6535-contract order.
+        class _A:
+            live = True
+            auto_size = True
+            loss_abort = -2.0
+        _fake = {"base": "b", "pk": "k", "key_id": "i"}
+        _resp = {}
+
+        def _mkget(payload, status=200):
+            def _g(base, pk, key_id, path, query=None):
+                return status, payload
+            return _g
+        _real_get = pintake._get
+        try:
+            pintake._get = _mkget({"balance": 19215,
+                                   "balance_dollars": "192.1520"})
+            ck(abs(read_bank(_fake) - 192.152) < 1e-6,
+               f"cents and dollars agreeing must read $192.152, got "
+               f"{read_bank(_fake)}")
+            pintake._get = _mkget({"balance": 19215})
+            ck(read_bank(_fake) is None,
+               "balance WITHOUT balance_dollars must be refused, not divided "
+               "by 100 on faith -- the unit is read, never inferred")
+            pintake._get = _mkget({"balance": 19215,
+                                   "balance_dollars": "19215.00"})
+            ck(read_bank(_fake) is None,
+               "cents and dollars DISAGREEING must be refused; this is the "
+               "19215-read-as-dollars failure, which asks for size 6535")
+            pintake._get = _mkget({"balance": 19215,
+                                   "balance_dollars": "192.1520"}, status=503)
+            ck(read_bank(_fake) is None, "a non-200 must read as unknown")
+            ck(read_bank({}) is None,
+               "no credentials (paper mode) must read as unknown, never 0")
+        finally:
+            pintake._get = _real_get
+
+        # apply_size moves EVERY size-derived rail. This is the 2026-09-08
+        # failure: four size-1 literals refused 160 orders silently.
+        _a = _A()
+        _mtc0, _mrs0 = pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE
+        _la0, _hm0 = pintake.LOSS_ABORT, pintake.HARD_MAX
+        try:
+            globals()["SIZE"] = 1.0
+            _ok, _msg = apply_size(60, _a, "selftest")
+            ck(_ok and abs(float(SIZE) - 60.0) < 1e-9,
+               f"apply_size must set SIZE, got {SIZE} ({_msg})")
+            ck(pintake.MAX_TAKE_COUNT >= 60.0,
+               f"MAX_TAKE_COUNT must reach the new size or every order is "
+               f"refused in silence, got {pintake.MAX_TAKE_COUNT}")
+            ck(pintake.MAX_RUN_STAKE >= 3.0 * 60.0 * MAX_PER_CLOSE,
+               f"MAX_RUN_STAKE must cover 3 worst closes at the new size, "
+               f"got {pintake.MAX_RUN_STAKE}")
+            _wc = 1.00 * 60.0 * MAX_PER_CLOSE
+            ck(-4.0 * _wc <= _a.loss_abort <= -1.5 * _wc,
+               f"loss_abort {_a.loss_abort} must land inside main()'s own "
+               f"[{-4.0 * _wc}, {-1.5 * _wc}] band, or the run halts on its "
+               f"first trade")
+        finally:
+            globals()["SIZE"] = _sz0
+            pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
+            pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
+
+        # The tick: damped up, immediate down, never under a position.
+        _a2 = _A()
+        _st = {}
+        globals()["SIZE"] = 20.0
+        try:
+            ck(autosize_tick(_st, _a2, {"open": 1}, now=1e9,
+                             bank_reader=lambda: 192.15) is None
+               and abs(float(SIZE) - 20.0) < 1e-9,
+               "a rail must NEVER move while a position is open")
+            _st2 = {}
+            autosize_tick(_st2, _a2, {}, now=1e9, bank_reader=lambda: 192.15)
+            ck(abs(float(SIZE) - 30.0) < 1e-9,
+               f"$192.15 supports size 65 but the first step is damped to "
+               f"20*{AUTO_SIZE_STEP_UP} = 30, got {SIZE}")
+            ck(autosize_tick(_st2, _a2, {}, now=1e9 + 1,
+                             bank_reader=lambda: 192.15) is None,
+               "a second adjustment inside AUTO_SIZE_EVERY_S must be refused")
+            autosize_tick(_st2, _a2, {}, now=1e9 + AUTO_SIZE_EVERY_S + 1,
+                          bank_reader=lambda: 192.15)
+            ck(abs(float(SIZE) - 45.0) < 1e-9,
+               f"the next step ramps 30 -> 45, got {SIZE}")
+            _st3 = {}
+            globals()["SIZE"] = 60.0
+            autosize_tick(_st3, _a2, {}, now=1e9, bank_reader=lambda: 30.0)
+            ck(abs(float(SIZE) - 10.0) < 1e-9,
+               f"a FALL is immediate and undamped -- $30 supports 10, got "
+               f"{SIZE}")
+            _st4 = {}
+            globals()["SIZE"] = 20.0
+            ck(autosize_tick(_st4, _a2, {}, now=1e9,
+                             bank_reader=lambda: None) is None
+               and abs(float(SIZE) - 20.0) < 1e-9,
+               "an unreadable bank must leave SIZE exactly where it was")
+            _a3 = _A()
+            _a3.auto_size = False
+            _st5 = {}
+            globals()["SIZE"] = 20.0
+            ck(autosize_tick(_st5, _a3, {}, now=1e9,
+                             bank_reader=lambda: 1e6) is None,
+               "--no-auto-size must pin SIZE to --size")
+            _a4 = _A()
+            _a4.live = False
+            _st6 = {}
+            ck(autosize_tick(_st6, _a4, {}, now=1e9,
+                             bank_reader=lambda: 1e6) is None,
+               "paper mode must never auto-size")
+            # THE DIRECTION THAT MUST ALWAYS WORK. Once the rails have been
+            # loosened for a big size, a shrink asks set_limits to tighten;
+            # it refuses, apply_size rolls back, and the bot is stuck large
+            # exactly after the loss that should have shrunk it.
+            _a5 = _A()
+            _st7 = {}
+            globals()["SIZE"] = 1.0
+            apply_size(120, _a5, "loosen the rails first")
+            _st8 = {}
+            globals()["SIZE"] = 120.0
+            autosize_tick(_st8, _a5, {}, now=1e9, bank_reader=lambda: 60.0)
+            ck(abs(float(SIZE) - 20.0) < 1e-9,
+               f"after the rails were loosened for size 120, a $60 bank must "
+               f"still shrink SIZE to 20, got {SIZE}")
+            ck(pintake.LOSS_ABORT <= -240.0,
+               f"and the brake must stay at its loosest high-water mark, not "
+               f"be tightened on the way down, got {pintake.LOSS_ABORT}")
+        finally:
+            globals()["SIZE"] = _sz0
+            pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
+            pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
+
+        # Wired into the loop AFTER reconcile(), or 'only when flat' is never
+        # true. Anchored on a whole line at its real indentation.
+        _lb = src[src.index(chr(10) + "def trade_loop("):]
+        ck("        _asz = autosize_tick(state, a, open_pos, rec=rec)"
+           in _lb.splitlines(),
+           "autosize_tick must be called in the trade loop")
+        ck(_lb.index("_asz = autosize_tick(") > _lb.index("        reconcile()"),
+           "and it must come AFTER reconcile(), which is what drains "
+           "open_pos of settled positions")
+        ck(_lb.index("_asz = autosize_tick(") < _lb.index("stop = risk_abort("),
+           "and BEFORE risk_abort, so the loss bound is evaluated against "
+           "the size we are about to trade, not the previous one")
+    finally:
+        globals()["SIZE"] = _sz0
+
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
         print("   - " + m)
@@ -1914,6 +2144,127 @@ TRANSIENT_HALTS = ("position cap:", "loss bound:", "stake cap reached:")
 def halt_is_transient(why):
     """True only for a halt that clears when open positions settle."""
     return bool(why) and str(why).startswith(TRANSIENT_HALTS)
+
+
+# ===========================================================================
+# AMENDMENT 16 -- the auto-sizer. See the block above SIZE for the reasoning.
+# ===========================================================================
+def worst_close_cost(size):
+    """The most one close can lose. Exact: a long binary cannot lose more
+    than it cost, and one close deploys at most MAX_PER_CLOSE legs of `size`
+    at at most PRICE_CEILING."""
+    return float(MAX_PER_CLOSE) * float(size) * float(PRICE_CEILING)
+
+
+def size_for_bank(bank, brake=None, lo=None, hi=None):
+    """Largest size whose worst close the bank covers `brake` times over."""
+    brake = BANK_BRAKE if brake is None else brake
+    lo = AUTO_SIZE_MIN if lo is None else lo
+    hi = AUTO_SIZE_MAX if hi is None else hi
+    per = worst_close_cost(1.0) * float(brake)
+    if per <= 0 or bank is None:
+        return lo
+    return int(max(lo, min(hi, int(float(bank) // per))))
+
+
+def read_bank(creds=None):
+    """Live cash, in DOLLARS, or None.
+
+    THE UNIT IS READ FROM THE RESPONSE, NEVER INFERRED FROM THE MAGNITUDE
+    (CLAUDE.md hard rule 5). /portfolio/balance carries `balance` in cents AND
+    `balance_dollars` as a decimal string. Both are required and they must
+    agree, because the failure mode is not subtle: 19215 read as dollars asks
+    for size 6535.
+    """
+    c = creds or CREDS
+    if not c.get("pk"):
+        return None
+    try:
+        st, j = pintake._get(c["base"], c["pk"], c["key_id"],
+                             "/portfolio/balance")
+    except Exception:
+        return None
+    if st != 200 or not isinstance(j, dict):
+        return None
+    cents, dollars = j.get("balance"), j.get("balance_dollars")
+    if cents is None or dollars is None:
+        return None
+    try:
+        a, b = float(cents) / 100.0, float(dollars)
+    except (TypeError, ValueError):
+        return None
+    if abs(a - b) > 0.01:
+        return None
+    return b
+
+
+def apply_size(new_size, a, why, rec=None):
+    """Move SIZE and EVERY rail derived from it, together.
+
+    THIS IS THE WHOLE RISK OF AMENDMENT 16. MAX_TAKE_COUNT, MAX_RUN_STAKE and
+    --loss-abort are computed once from --size in main(). Raising SIZE without
+    them reproduces 2026-09-08 exactly: orders sent, none filled, no error
+    raised, because take() RETURNS its refusal rather than raising. Every one
+    of these is loosened only -- set_limits() refuses to tighten.
+    """
+    new_size = float(new_size)
+    old = float(SIZE)
+    globals()["SIZE"] = new_size
+    wc = 1.00 * new_size * float(MAX_PER_CLOSE)   # the loss-abort band's unit
+    want_abort = -2.0 * wc                        # mid-band: survives 2 closes
+    if want_abort < float(a.loss_abort):
+        a.loss_abort = want_abort
+    # NEVER HAND set_limits A TIGHTENING. It refuses one, and a refusal here
+    # would roll SIZE back -- which on a size DECREASE means the bot could
+    # never shrink after a loss, the one direction that must always work.
+    # Caught by the self-test on 2026-09-13. The brake stays at its loosest
+    # high-water mark; that is the safe side, because a decrease is already
+    # reducing what can be lost.
+    _abort = min(float(a.loss_abort), float(pintake.LOSS_ABORT))
+    try:
+        pintake.set_limits(
+            loss_abort=_abort,
+            max_run_stake=max(pintake.MAX_RUN_STAKE, 3.0 * wc + 10.0),
+            max_take_count=max(pintake.MAX_TAKE_COUNT, new_size),
+            why=f"auto-size {old:g} -> {new_size:g}: {why}")
+    except Exception as e:                        # a refused loosening must
+        globals()["SIZE"] = old                   # not leave SIZE ahead of
+        return False, f"set_limits refused ({e}); size held at {old:g}"
+    if rec:
+        rec("autosize", old=old, new=new_size, why=why,
+            loss_abort=float(a.loss_abort),
+            max_run_stake=pintake.MAX_RUN_STAKE,
+            max_take_count=pintake.MAX_TAKE_COUNT)
+    return True, (f"size {old:g} -> {new_size:g} ({why}); abort "
+                  f"${a.loss_abort:.2f}, stake cap "
+                  f"${pintake.MAX_RUN_STAKE:.2f}, take count "
+                  f"{pintake.MAX_TAKE_COUNT:g}")
+
+
+def autosize_tick(state, a, open_positions, rec=None, now=None,
+                  bank_reader=None):
+    """Called at the top of the loop. Returns a message when size moved."""
+    if not (AUTO_SIZE and getattr(a, "auto_size", True) and a.live):
+        return None
+    now = time.time() if now is None else now
+    if now - state.get("autosize_at", 0.0) < AUTO_SIZE_EVERY_S:
+        return None
+    if open_positions:
+        return None                      # never move a rail under a position
+    state["autosize_at"] = now
+    bank = (bank_reader or read_bank)()
+    if bank is None:
+        state["autosize_fails"] = state.get("autosize_fails", 0) + 1
+        return None
+    state["bank"] = bank
+    want = size_for_bank(bank)
+    cur = float(SIZE)
+    if want > cur:
+        want = min(want, max(cur + 1.0, int(cur * AUTO_SIZE_STEP_UP)))
+    if abs(want - cur) < 1e-9:
+        return None
+    ok, msg = apply_size(want, a, f"bank ${bank:.2f}", rec=rec)
+    return msg if ok else msg
 
 
 # ===========================================================================
@@ -2160,6 +2511,12 @@ def trade_loop(a, rec, book, idx, series_index):
     while time.time() < end:
         report_closes(int(time.time()) - 5)
         reconcile()
+        # AMENDMENT 16. AFTER reconcile(), so open_pos is already drained of
+        # everything that has settled -- otherwise the "only when flat" guard
+        # would almost never be true and size could never move.
+        _asz = autosize_tick(state, a, open_pos, rec=rec)
+        if _asz:
+            print(f"  --- AUTO-SIZE: {_asz}")
         stop = risk_abort(state, a)
         if stop and halt_is_transient(stop):
             # AMENDMENT 14: wait it out. reconcile() runs at the top of every
@@ -2790,6 +3147,13 @@ def main():
                          "that is about to LOSE, book it as a normal position, "
                          "and let the live hedge pass fire on it. Costs a few "
                          "cents. Off by default; fires at most once per run.")
+    ap.add_argument("--no-auto-size", dest="auto_size", action="store_false",
+                    default=True,
+                    help="AMENDMENT 16: by default SIZE follows the live bank "
+                         "(bank / (BANK_BRAKE * MAX_PER_CLOSE * "
+                         "PRICE_CEILING)), re-checked every "
+                         "AUTO_SIZE_EVERY_S seconds and only while flat. "
+                         "This pins SIZE to --size instead.")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
     ap.add_argument("--max-losses", type=int, default=0,
