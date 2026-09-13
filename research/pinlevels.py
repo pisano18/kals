@@ -565,6 +565,61 @@ def load_rows(path, stamps=None):
 
 
 # ---------------------------------------------------------------- the scorer
+def minfill_sweep(rows, sizes, fracs, days, span, cut, mode="touch",
+                  log=print):
+    """Does the DEPTH FLOOR earn its keep at the size we now trade?
+
+    `MIN_FILL_FRAC` refuses a moment unless at least that fraction of SIZE is
+    resting. It is 0.50, and the 0.50 was measured at sizes 10 and 25 --
+    floors of 5 and 12 contracts. At size 67 the same rule asks for 34, and
+    nothing has ever tested it there.
+
+    THE OPERATOR'S ARGUMENT, which this is built to test: a lower floor is
+    more opportunity, and a small early fill is not purely a cost because
+    IMPROVE_BY forces the NEXT buy in that close to be cheaper. The counter-
+    argument on file is that the scrap burns one of MAX_PER_CLOSE slots and
+    raises that same bar, trading a big cheap buy later for a small dear one
+    now. Both are mechanisms; only the tape decides which dominates.
+
+    Pure re-score of the cached ledger -- no tape walk. Every gate is
+    pinrun's/pinsim's own, exactly as score() applies them.
+    """
+    out = {}
+    saved = pinrun.MIN_FILL_FRAC
+    fitrows = [r for r in rows if r["cs"] < cut]
+    holrows = [r for r in rows if r["cs"] >= cut]
+    try:
+        for size in sizes:
+            log(f"\n  SIZE {size}  (floor = max(MIN_LEVEL {pinrun.MIN_LEVEL:g}, "
+                f"frac x {size}))")
+            log(f"  {'frac':>6}{'floor':>7}{'closes':>8}{'fills':>7}"
+                f"{'mean n':>8}{'loss%':>7}{'meanpx':>8}{'$/day@70%':>11}"
+                f"{'worst close':>13}{'fit $/d':>9}{'hold $/d':>10}")
+            base = None
+            for fr in fracs:
+                pinrun.MIN_FILL_FRAC = float(fr)
+                a = summarise(score(rows, size, mode=mode)[0], days, span)
+                fit = summarise(score(fitrows, size, mode=mode)[0], days, span)
+                hol = summarise(score(holrows, size, mode=mode)[0], days, span)
+                per70 = a["per_day"] * pinsim.LIVE_FILL_RATE
+                if base is None:
+                    base = per70
+                out[(size, fr)] = {"all": a, "fit": fit, "holdout": hol,
+                                   "per70": per70,
+                                   "floor": depth_bar(size)}
+                log(f"  {fr:>6.2f}{depth_bar(size):>7.1f}{a['closes']:>8}"
+                    f"{a['fills']:>7}{(a['mean_take'] or 0):>8.1f}"
+                    f"{(a['loss_rate'] or 0):>7.2f}"
+                    f"{(a['mean_price'] or 0):>8.2f}{per70:>11.2f}"
+                    f"{a['worst_close']:>13.2f}"
+                    f"{fit['per_day'] * pinsim.LIVE_FILL_RATE:>9.2f}"
+                    f"{hol['per_day'] * pinsim.LIVE_FILL_RATE:>10.2f}",
+                    flush=True)
+    finally:
+        pinrun.MIN_FILL_FRAC = saved
+    return out
+
+
 def score(rows, size, hedge_thr=None, mode="touch"):
     """Score the candidate ledger at one SIZE. Returns (fills, refused).
 
@@ -1096,6 +1151,28 @@ def selftest():
     finally:
         for k, v in sv.items():
             setattr(pinrun, k, v)
+    # ---- MIN_FILL_FRAC sweep -------------------------------------------
+    # Two invariants. A lower floor can only ADD fills (it never refuses a
+    # moment the higher floor accepted), and the sweep must put the live
+    # constant back -- it is mutating a module global that pinrun trades on.
+    _mf0 = pinrun.MIN_FILL_FRAC
+    _sw = [row("MF1", 1000, 980, 0.96, 12.0, True),      # 12 resting
+           row("MF2", 2000, 1980, 0.96, 60.0, True)]     # 60 resting
+    _r = minfill_sweep(_sw, [50.0], [1.0, 0.5, 0.1], ["d"], 1.0, 0,
+                       log=lambda *a, **k: None)
+    ck(abs(pinrun.MIN_FILL_FRAC - _mf0) < 1e-12,
+       f"the sweep MUST restore pinrun.MIN_FILL_FRAC (was {_mf0}, now "
+       f"{pinrun.MIN_FILL_FRAC}) -- it is the live trading constant")
+    _f = [_r[(50.0, x)]["all"]["fills"] for x in (1.0, 0.5, 0.1)]
+    ck(_f[0] <= _f[1] <= _f[2],
+       f"a LOWER floor can only add fills, never remove one: got {_f} at "
+       f"fracs 1.0, 0.5, 0.1")
+    ck(_r[(50.0, 1.0)]["floor"] == 50.0 and _r[(50.0, 0.5)]["floor"] == 25.0,
+       "the floor reported must be frac x size, via pinrun's own depth_bar")
+    ck(_f[0] == 1 and _f[2] == 2,
+       f"planted: a 12-deep and a 60-deep moment at size 50 -- floor 50 takes "
+       f"only the deep one, floor 5 takes both. got {_f}")
+
     ck(abs(pinrun.PIN - 0.995) < 1e-12 and pinrun.MAX_PER_CLOSE == 2
        and abs(pinrun.PRICE_CEILING - 0.98) < 1e-12,
        f"and the live constants are put back exactly (PIN {pinrun.PIN}, "
@@ -1164,6 +1241,9 @@ def main():
     ap.add_argument("--report", default=None,
                     help="write the markdown report here")
     ap.add_argument("--profile", default="default")
+    ap.add_argument("--minfill", default=None,
+                    help="SIZES:FRACS -- re-score the cached ledger at these "
+                         "MIN_FILL_FRAC values, e.g. 20,67:1.0,0.5,0.25,0.1,0")
     a = ap.parse_args()
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
@@ -1221,6 +1301,19 @@ def main():
                   f"mean price {st['mean_price']}c, {len(r)} rule-refused, "
                   f"peak ${st['peak_capital']:.2f}, worst close "
                   f"${st['worst_close']:+.2f}")
+        return
+
+    if a.minfill:
+        rows, hours = load_rows(a.rows)
+        lo, span, days = span_days(hours, newest)
+        cut = split_closes(rows)
+        _sz, _fr = a.minfill.split(":")
+        sizes = [float(x) for x in _sz.split(",")]
+        fracs = [float(x) for x in _fr.split(",")]
+        print(f"  MIN_FILL_FRAC sweep on {len(rows)} cached rows, "
+              f"{len(hours)} book hours, span {span:.2f} days. "
+              f"Deployed value is {pinrun.MIN_FILL_FRAC:g}.")
+        minfill_sweep(rows, sizes, fracs, days, span, cut)
         return
 
     if a.score or a.report:
