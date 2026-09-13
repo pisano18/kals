@@ -1,0 +1,34 @@
+﻿  KXBTCD     318 open, soonest close 2026-09-13T22:00:00Z, sampling 6 strikes
+  KXETHD     390 open, soonest close 2026-09-13T22:00:00Z, sampling 6 strikes
+  KXSOLD     425 open, soonest close 2026-09-13T22:00:00Z, sampling 6 strikes
+  KXXRPD     165 open, soonest close 2026-09-13T22:00:00Z, sampling 6 strikes
+  KXDOGED    128 open, soonest close 2026-09-13T22:00:00Z, sampling 6 strikes
+  KXBNBD     165 open, soonest close 2026-09-13T22:00:00Z, sampling 6 strikes
+  KXHYPED    165 open, soonest close 2026-09-13T22:00:00Z, sampling 6 strikes
+  KXBTC15M   1 open, soonest close 2026-09-13T21:15:00Z, sampling 1 strikes
+  KXETH15M   1 open, soonest close 2026-09-13T21:15:00Z, sampling 1 strikes
+  KXSOL15M   1 open, soonest close 2026-09-13T21:15:00Z, sampling 1 strikes
+  KXXRP15M   1 open, soonest close 2026-09-13T21:15:00Z, sampling 1 strikes
+  KXDOGE15M  1 open, soonest close 2026-09-13T21:15:00Z, sampling 1 strikes
+  KXBNB15M   1 open, soonest close 2026-09-13T21:15:00Z, sampling 1 strikes
+  KXHYPE15M  1 open, soonest close 2026-09-13T21:15:00Z, sampling 1 strikes
+  waiting 3414 s for the close at 22:00:00Z
+  re-fetched at the close: 49 tickers
+  sampling 49 tickers for 75 s
+  sampled 833 book reads into C:\kals-repo\results\hourly_book_sample.jsonl
+  series       | book reads | any ask | ask UNDER the 98c ceiling | cheapest
+  ------------|------------|---------|---------------------------|---------
+  KXBNB15M     |         17 |      16 |                16 (94.1%) | 0.001
+  KXBNBD       |        102 |       0 |                  0 (0.0%) | -
+  KXBTC15M     |         17 |      16 |                16 (94.1%) | 0.001
+  KXBTCD       |        102 |       0 |                  0 (0.0%) | -
+  KXDOGE15M    |         17 |      16 |                16 (94.1%) | 0.001
+  KXDOGED      |        102 |       0 |                  0 (0.0%) | -
+  KXETH15M     |         17 |      16 |                16 (94.1%) | 0.001
+  KXETHD       |        102 |       0 |                  0 (0.0%) | -
+  KXHYPE15M    |         17 |      16 |                16 (94.1%) | 0.001
+  KXHYPED      |        102 |       0 |                  0 (0.0%) | -
+  KXSOL15M     |         17 |      13 |                13 (76.5%) | 0.006
+  KXSOLD       |        102 |       0 |                  0 (0.0%) | -
+  KXXRP15M     |         17 |      16 |                16 (94.1%) | 0.001
+  KXXRPD       |        102 |       0 |                  0 (0.0%) | -

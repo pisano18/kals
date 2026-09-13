@@ -53,6 +53,33 @@ HOURLY = ["KXBTCD", "KXETHD", "KXSOLD", "KXXRPD", "KXDOGED", "KXBNBD",
 FIFTEEN = ["KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M", "KXDOGE15M",
            "KXBNB15M", "KXHYPE15M"]
 CEILING = 0.98          # pinrun.PRICE_CEILING -- what we would ever pay
+BUY_LO = 0.90           # and the bottom of the band we actually buy in.
+                        # A strike quoted at 99c is NOT a near-miss of
+                        # this band -- it is unbuyable, because its ask
+                        # would have to be 100c.
+
+
+def buyable(m):
+    """Sort key: how close this strike is to the middle of the band we BUY in.
+
+    Lower is better. Anything outside BUY_LO..CEILING sorts last.
+    """
+    b = float(m.get("yes_bid_dollars") or 0)
+    for p_ in (b, 1.0 - b):                  # either side may be the buy
+        if BUY_LO <= p_ <= CEILING:
+            return abs(p_ - 0.5 * (BUY_LO + CEILING))
+    return 9.9
+
+
+def same_close(markets, want_close):
+    """The markets whose close_time really is the one we waited for.
+
+    THE GUARD THIS FILE NEEDED. The 2026-09-13 22:00Z run sampled tickers
+    stamped 26SEP1318 -- a close four hours gone -- and reported a liquidity
+    finding from them. A market can still be listed `open` after its close,
+    and nothing here checked.
+    """
+    return [m for m in markets if (m.get("close_time") or "") == want_close]
 
 
 def creds():
@@ -240,6 +267,38 @@ def selftest():
         for f in os.listdir(tmp):
             os.remove(os.path.join(tmp, f))
         os.rmdir(tmp)
+    # ---- WHICH STRIKES GET SAMPLED, which is what broke the first two runs
+    _m99 = {"ticker": "T99", "yes_bid_dollars": 0.99}
+    _m95 = {"ticker": "T95", "yes_bid_dollars": 0.95}
+    _m50 = {"ticker": "T50", "yes_bid_dollars": 0.50}
+    _m05 = {"ticker": "T05", "yes_bid_dollars": 0.05}
+    _order = [m["ticker"] for m in sorted([_m99, _m50, _m95, _m05],
+                                          key=buyable)]
+    ck(_order[0] == "T95",
+       "the 95c strike is sampled FIRST -- it is the one this bot would buy")
+    ck(_order[1] == "T05",
+       "then the 5c strike, because buying its NO side costs 95c -- the "
+       "mirror is a trade too and skipping it halves the sample")
+    ck(set(_order[2:]) == {"T99", "T50"},
+       "and a 99c strike sorts with the 50c one, at the BACK. THIS IS THE "
+       "BUG THAT MANUFACTURED A FINDING: a yes bid of 99c has no ask by "
+       "construction, since the ask would have to be 100c. The 22:00Z run "
+       "on 2026-09-13 sampled only 99c strikes and reported '0 of 612 book "
+       "reads had any ask' on the hourly series. That number came from this "
+       "sort, not from the market.")
+
+    # ---- and that a market whose close has PASSED is never sampled
+    _ms = [{"ticker": "OLD", "close_time": "2026-09-13T18:00:00Z"},
+           {"ticker": "NOW", "close_time": "2026-09-13T22:00:00Z"},
+           {"ticker": "NEXT", "close_time": "2026-09-13T23:00:00Z"}]
+    _got = [m["ticker"] for m in same_close(_ms, "2026-09-13T22:00:00Z")]
+    ck(_got == ["NOW"],
+       "only the market closing at the instant we waited for is sampled -- "
+       "a settled market can stay listed as `open`, and the 22:00Z run "
+       "sampled tickers stamped 26SEP1318, a close four hours gone")
+    ck(same_close(_ms, "2026-09-13T21:00:00Z") == [],
+       "and when nothing closes at that instant the answer is an empty list, "
+       "which the caller must report as SKIPPED rather than sample anyway")
     print("pinhourly selftest: %d checks OK" % n[0])
     return 0
 
@@ -302,19 +361,38 @@ def main():
             ms = open_markets(base, pk, kid, s2)
             if not ms:
                 continue
-            soonest = min(m.get("close_time") or "" for m in ms)
-            near = [m for m in ms if (m.get("close_time") or "") == soonest]
-            # OUR BOT BUYS NEAR-CERTAINTY, 92-98c. On a ladder those are the
-            # strikes FAR from spot, not the near-money ones. The first
-            # version sorted TOWARD 0.5 -- it sampled exactly the strikes this
-            # strategy never touches, which would have answered a question
-            # nobody asked.
-            def extremity(m):
-                b = float(m.get("yes_bid_dollars") or 0)
-                if b <= 0.0 or b >= 1.0:
-                    return -1.0          # no quote at all: least interesting
-                return abs(b - 0.5)
-            near.sort(key=extremity, reverse=True)
+            # THE CLOSE WE ARE ACTUALLY STANDING IN, not the soonest thing
+            # still listed as open. A settled market can stay `open` in the
+            # listing, and taking `min(close_time)` then hands back a close
+            # that is already gone -- which is exactly what happened at
+            # 22:00Z on 2026-09-13.
+            want_close = time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                       time.gmtime(target + a.seconds))
+            near = same_close(ms, want_close)
+            if not near:
+                _future = sorted(set((m.get("close_time") or "") for m in ms
+                                     if (m.get("close_time") or "")
+                                     > want_close))
+                print("  %-10s SKIPPED -- nothing closes at %s (next: %s)"
+                      % (s2, want_close, _future[0] if _future else "none"))
+                continue
+            # OUR BOT BUYS NEAR-CERTAINTY BUT NOT TOTAL CERTAINTY, and
+            # the difference is the whole selection.
+            #
+            # FIRST VERSION sorted TOWARD 0.5 and sampled the strikes this
+            # strategy never touches. SECOND VERSION sorted toward maximum
+            # extremity and was WORSE: it picked every strike quoted at 99c,
+            # and a YES bid of 99c has no ask BY CONSTRUCTION -- the ask
+            # would have to be 100c, which is not a quotable price. The
+            # 2026-09-13 22:00Z run reported "0 of 612 book reads had any
+            # ask" on the hourly series and that number was manufactured
+            # entirely by this sort. It is not evidence about liquidity.
+            #
+            # SO: target the band the bot actually pays, BUY_LO..CEILING, and
+            # rank by distance from its middle. A strike at 99c or at 50c
+            # both sort last, which is correct -- neither is a trade we would
+            # ever make.
+            near.sort(key=buyable)
             want += [m["ticker"] for m in near[:6]]
         print("  re-fetched at the close: %d tickers" % len(want))
     print("  sampling %d tickers for %d s" % (len(want), a.seconds))
