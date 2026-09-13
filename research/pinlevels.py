@@ -133,6 +133,21 @@ REPORT = os.path.join(HERE, "..", "results", "RESULTS_levels.md")
 BOOT_DRAWS = 4000
 BOOT_SEED = 20260912
 
+# ACCEPTANCE ANCHOR 1, run 2026-09-12: this file's scorer at size 20 against
+# pinsim.run()'s own report on the same 72 book hours ending 20260910T04,
+# same profile sha. It is a mechanical self-consistency check -- if the two
+# disagree, the scorer is wrong -- and it found two real bugs before it
+# passed (see the commit log: the one-dimensional emission rule, and the sort
+# tie-break). Every field now reproduces.
+ANCHOR1 = [
+    ("fills", "156", "156"), ("closes", "117", "117"),
+    ("wins / losses", "150 / 6", "150 / 6"),
+    ("loss rate", "3.85% [1.42, 8.18]", "3.85% [1.42, 8.18]"),
+    ("P&L", "$-11.01", "$-11.01"),
+    ("mean price", "96.14c", "96.14c"),
+    ("refused by the dump rule", "9", "9"),
+]
+
 # The live record split by the gate each run STARTED with, supplied by the
 # coordinating agent 2026-09-12. Printed as CONTEXT ONLY: the longest
 # single-gate window is 1.66 days, so no live window is long enough to anchor
@@ -1271,6 +1286,29 @@ def write_report(path, rows, hours, res_t, res_s, newest):
       f"its own day-block bootstrap interval is the honest uncertainty** -- "
       f"agreement with a blended live number would be a coincidence, not a "
       f"check.\n")
+    W("## Acceptance anchor 1 -- this scorer reproduces pinsim.run() exactly\n")
+    W("Same 72 book hours ending `20260910T04`, same profile sha, size 20, "
+      "TOUCH mode. `pinsim.run()` is the certified backtest; this file only "
+      "re-scores the candidates it finds, so if the two disagree the scorer "
+      "is wrong.\n")
+    W("| field | pinsim.run() | pinlevels | ")
+    W("|---|---|---|")
+    for f_, a_, b_ in ANCHOR1:
+        W(f"| {f_} | {a_} | {b_} |")
+    W("\n**It did NOT pass first time, and both failures were real bugs in "
+      "this file.** (i) The emission rule tracked DEPTH only, so a later "
+      "offer that was cheaper but no deeper was never emitted and could never "
+      "clear the IMPROVE_BY bar -- 153 fills against 156, with the closes "
+      "matching 117 to 117 and all three misses being SECOND fills of a "
+      "close. (ii) The scorer sorted rows by `(entry_ts, ticker)`, which "
+      "re-orders two candidates at the same millisecond alphabetically "
+      "instead of in the exchange's own order; whichever books the close's "
+      "slot first sets `best` for the improve bar, so that alone cost one "
+      "fill and $0.85. Sorting by `entry_ts` alone -- the sort is stable, so "
+      "ties keep tape order -- matched exactly.\n")
+    W("**And note what the anchor window itself says:** over those 72 hours "
+      "the current model at size 20 LOST $11.01 on 156 fills. Three days is "
+      "not a verdict, but it is the same direction as the holdout below.\n")
     for tag, res, note in (
             ("TOUCH -- what the deployed bot would do", res_t,
              "One price, one level: the order sees the best ask and the size "
@@ -1314,17 +1352,30 @@ def write_report(path, rows, hours, res_t, res_s, newest):
           + (f", and first FALLS at size {fall}.\n" if fall else
              ", and never falls inside the sizes tested.\n"))
         W("| size | mean filled | $/day @70% | $/day per contract of size | "
-          "peak concurrent $ | worst close | bank needed at 1.5x brake |")
-        W("|---|---|---|---|---|---|---|")
+          "peak concurrent $ | %/day on the LAST dollar added | worst close | "
+          "bank needed at 1.5x brake |")
+        W("|---|---|---|---|---|---|---|---|")
+        prev = None
         for s in SIZES:
             a = res["sizes"][str(s)]["all"]
             if not a["fills"]:
-                W(f"| {s} |" + " -- |" * 6)
+                W(f"| {s} |" + " -- |" * 7)
                 continue
+            marg = "--"
+            if prev is not None:
+                dcap = a["peak_capital"] - prev["peak_capital"]
+                dpnl = (a["per_day"] - prev["per_day"]) * F
+                if dcap > 0:
+                    marg = f"{100.0 * dpnl / dcap:+.1f}%"
+            prev = a
             W(f"| {s} | {a['mean_take']:.1f} | ${a['per_day'] * F:+.2f} | "
               f"${a['per_day'] * F / s:+.4f} | ${a['peak_capital']:.2f} | "
-              f"${a['worst_close']:+.2f} | ${a['bank_needed']:.2f} |")
-        W("")
+              f"{marg} | ${a['worst_close']:+.2f} | ${a['bank_needed']:.2f} |")
+        W("**The last column is the number that answers \"should I add "
+          "capital\":** the extra $/day the step bought, divided by the extra "
+          "peak capital it required. The average return on capital stays high "
+          "long after the MARGINAL return has collapsed, and it is the "
+          "marginal one that prices the next dollar.\n")
     W("## 70/30 split by close -- nothing is a claim unless the holdout "
       "agrees\n")
     W(f"Cut at close {time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(cut))}. "
@@ -1341,6 +1392,19 @@ def write_report(path, rows, hours, res_t, res_s, newest):
           f"{(f_['loss_rate'] if f_['loss_rate'] is not None else 0):.2f}% | "
           f"{h_['fills']} | ${h_['pnl']:+.2f} | "
           f"{(h_['loss_rate'] if h_['loss_rate'] is not None else 0):.2f}% |")
+    fitp = res_t["sizes"]["20"]["fit"]
+    holp = res_t["sizes"]["20"]["holdout"]
+    W("\n**THE HOLDOUT IS MUCH WEAKER THAN THE FIT, AND THAT IS THE MOST "
+      "DECISION-RELEVANT LINE IN THIS FILE.** At size 20 the first 70% of "
+      f"closes made ${fitp['pnl']:+.2f} on {fitp['fills']} fills at a "
+      f"{fitp['loss_rate']:.2f}% loss rate; the last 30% made "
+      f"${holp['pnl']:+.2f} on {holp['fills']} fills at "
+      f"{holp['loss_rate']:.2f}% -- the loss rate DOUBLED. At sizes 1000 and "
+      f"2000 the holdout is outright negative. The 72-hour acceptance window "
+      f"above, which sits inside the holdout, lost money. Two readings are "
+      f"open and this window cannot separate them: the market has got harder, "
+      f"or nine days of holdout is too few closes to tell. Nothing here "
+      f"should be sized as though the fit half were the expectation.\n")
     W("\n## Block bootstrap BY DAY -- 95% interval on $/day\n")
     W(f"{BOOT_DRAWS:,} resamples of the {len(days)} UTC days with "
       f"replacement, seed {BOOT_SEED}. The block is the DAY and not the fill: "
@@ -1390,7 +1454,11 @@ def write_report(path, rows, hours, res_t, res_s, newest):
       "resting bids at the prices they rest at. A real 2,000-contract order "
       "into a book this thin would be seen, and the levels behind it would "
       "move away. So the sweep column is an upper bound on an upper bound.")
-    W("- **Anything about the tape's recording holes.** 6.42% of covered "
+    W("- **An offer whose TOUCH holds less than one contract.** pinrun\'s "
+      "MIN_LEVEL refuses those outright, so the pass never records them and "
+      "no size can fill from them -- even a sweep that would have taken the "
+      "level behind. Live-faithful for TOUCH, conservative for SWEEP.")
+    W("- **Anything about the tape\'s recording holes.** 6.42% of covered "
       "seconds are silent (`results/RESULTS_tapegaps.md`), 3.28% inside the "
       "tau band, so every COUNT here is a lower bound by roughly 3%.")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
