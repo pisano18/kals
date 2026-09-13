@@ -243,7 +243,38 @@ SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
 #  4. ONLY WHEN FLAT. Rails never change while a position is open.
 # ===========================================================================
 AUTO_SIZE = True         # --no-auto-size disables
-BANK_BRAKE = 1.5         # bank must cover this many worst-closes
+BANK_BRAKE = 3.0         # bank must cover this many worst-closes.
+                         # 1.5 -> 3.0 on 2026-09-13, operator: "calculate a
+                         # good number that still pulls profits, but is able
+                         # to come back after losing relatively quickly".
+                         #
+                         # 1.5 was inherited from the --loss-abort band and
+                         # never checked for what it IMPLIES: the worst close
+                         # costs bank/1.5 = 64% of the bank. The operator
+                         # caught that; it was his arithmetic, not mine.
+                         #
+                         # Measured on 695 real closes (research/pinbank.py,
+                         # simulate_brake), bank $229, auto-sizing every close:
+                         #   brake  size  worst  %bank  $/day  days to recover
+                         #    1.5     77   $148    64%  38.02      4.2
+                         #    3.0     38    $73    32%  18.77      2.5
+                         #    4.0     29    $56    24%  14.32      2.4
+                         #
+                         # WHY 3.0 AND NOT 4.0. Under uncertainty about the
+                         # true loss rate, 4.0 maximises the geometric mean of
+                         # the good and bad worlds (449 vs 396) -- but the
+                         # curve is flat and 3.0 keeps a third more earning
+                         # rate. What 3.0 buys is the thing that matters: the
+                         # worst close falls from 64% to 32% of the bank, so
+                         # it now takes TWO bad closes back to back to do what
+                         # ONE does today, and recovery is 2.5 days not 4.2.
+                         #
+                         # NOTHING HERE MAKES A LOSING STRATEGY SAFE. At a
+                         # 4.6% close-loss rate every brake loses; the brake
+                         # only sets the bleed rate. Break-even is 3.58% and
+                         # our live record (12 losing of 248 closes) sits
+                         # above it on too few closes to trust either way.
+                         # This setting buys time to find out.
 AUTO_SIZE_MIN = 1
 AUTO_SIZE_MAX = 250      # nothing above this without a fresh depth study.
                          # Median resting size is 69 contracts and
@@ -1959,9 +1990,11 @@ def selftest():
            "whole reason it replaced a sampled maximum, which was not")
 
         # The ladder, by hand. bank / (1.5 * 2 * 0.98) = bank / 2.94.
-        ck(size_for_bank(192.15) == int(192.15 // 2.94),
-           f"$192.15 / $2.94 = {int(192.15 // 2.94)}, got "
-           f"{size_for_bank(192.15)}")
+        _per = BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING
+        ck(size_for_bank(192.15) == int(192.15 // _per),
+           f"$192.15 / ${_per:.2f} (BANK_BRAKE {BANK_BRAKE} x MAX_PER_CLOSE "
+           f"{MAX_PER_CLOSE} x ceiling {PRICE_CEILING}) = "
+           f"{int(192.15 // _per)}, got {size_for_bank(192.15)}")
         ck(size_for_bank(0.0) == AUTO_SIZE_MIN and size_for_bank(None)
            == AUTO_SIZE_MIN,
            "an empty or unreadable bank must fall to the floor, never to 0")
@@ -2073,9 +2106,9 @@ def selftest():
             _st3 = {}
             globals()["SIZE"] = 60.0
             autosize_tick(_st3, _a2, {}, now=1e9, bank_reader=lambda: 30.0)
-            ck(abs(float(SIZE) - 10.0) < 1e-9,
-               f"a FALL is immediate and undamped -- $30 supports 10, got "
-               f"{SIZE}")
+            ck(abs(float(SIZE) - float(size_for_bank(30.0))) < 1e-9,
+               f"a FALL is immediate and undamped -- $30 supports "
+               f"{size_for_bank(30.0)}, got {SIZE}")
             _st4 = {}
             globals()["SIZE"] = 20.0
             ck(autosize_tick(_st4, _a2, {}, now=1e9,
@@ -2106,9 +2139,9 @@ def selftest():
             _st8 = {}
             globals()["SIZE"] = 120.0
             autosize_tick(_st8, _a5, {}, now=1e9, bank_reader=lambda: 60.0)
-            ck(abs(float(SIZE) - 20.0) < 1e-9,
+            ck(abs(float(SIZE) - float(size_for_bank(60.0))) < 1e-9,
                f"after the rails were loosened for size 120, a $60 bank must "
-               f"still shrink SIZE to 20, got {SIZE}")
+               f"still shrink SIZE to {size_for_bank(60.0)}, got {SIZE}")
             ck(pintake.LOSS_ABORT <= -240.0,
                f"and the brake must stay at its loosest high-water mark, not "
                f"be tightened on the way down, got {pintake.LOSS_ABORT}")
