@@ -480,6 +480,7 @@ MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # 0.02-contract dust level is not a real fill test
 MAX_BOOK_AGE_MS = 2000
 MAX_INDEX_AGE_S = 2
+SIGMA_RULER = "live"      # AMENDMENT 20: "live" | "1800" | "max3600"
 SIGMA_WIN = 300
 # THE LIVE CONDITIONS INDEX (2026-09-10). Fast/slow roughness ratio per feed,
 # then a leave-one-out average across the other coins. Measured, not guessed:
@@ -664,18 +665,60 @@ class IndexWS:
             return None, None, own
         return tot / k, nr, own
 
-    def sigma(self, iid):
-        with self.lock:
-            d = dict(self.ticks.get(iid) or {})
-        if len(d) < 30:
-            return None
-        secs = sorted(d)[-SIGMA_WIN:]
+    @staticmethod
+    def _sig_over(d, win):
+        """sigma over the trailing `win` seconds of a {sec: value} dict."""
+        secs = sorted(d)[-win:]
         diffs = [d[secs[i]] - d[secs[i - 1]]
                  for i in range(1, len(secs)) if secs[i] - secs[i - 1] == 1]
         if len(diffs) < 20:
             return None
         mu = sum(diffs) / len(diffs)
         return math.sqrt(sum((x - mu) ** 2 for x in diffs) / (len(diffs) - 1))
+
+    def sigma(self, iid):
+        """The model's volatility estimate.
+
+        AMENDMENT 20 (OFF by default, --sigma-ruler turns it on). Measured
+        2026-09-13 on the index feed alone, 108,414 decisions: the 300-second
+        ruler this has always used is the single biggest identified source of
+        the model's blow-ups. The calmer the last five minutes, the more often
+        it misses badly -- 4.28% of the calmest fifth against 1.05% of the
+        choppiest, 4.05x, and it holds out of sample.
+
+        The cause is not that calm markets are dangerous. Volatility reverts,
+        so a quiet 300 seconds understates the next minute and the model's
+        RULER is too short. Lengthening it collapses the gradient (4.09x at
+        300s, 1.15x at 3600s) and -- the decisive part -- drops kurtosis from
+        132 to 47. KURTOSIS IS SCALE-FREE, so no amount of merely widening sd
+        could do that. The shape gets better, not just the width.
+
+        `max(300s, 3600s)` is the strongest: on the index population it cut
+        the loss rate on gated decisions by 42% for 1.0% of the opportunities.
+        It is a max and not an average because a short ruler is wrong after a
+        quiet patch and a long one is wrong during a burst; the larger of the
+        two is wrong in neither direction and can never shorten the ruler.
+
+        NOT DEPLOYED. results/PREREG_ruler.md holds the bar. Retention is
+        already COND_SLOW + 400 seconds, so the hour is on hand live.
+        """
+        with self.lock:
+            d = dict(self.ticks.get(iid) or {})
+        if len(d) < 30:
+            return None
+        if SIGMA_RULER == "live":
+            return self._sig_over(d, SIGMA_WIN)
+        if SIGMA_RULER == "max3600":
+            a = self._sig_over(d, SIGMA_WIN)
+            b = self._sig_over(d, 3600)
+            if a is None:
+                return b
+            if b is None:
+                return a
+            return max(a, b)
+        if SIGMA_RULER == "1800":
+            return self._sig_over(d, 1800) or self._sig_over(d, SIGMA_WIN)
+        return self._sig_over(d, SIGMA_WIN)
 
     def partial(self, iid, close_s, now_s):
         """(locked sum, how many settle prints are still to come), or None.
@@ -2332,6 +2375,48 @@ def selftest():
             pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
             pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
 
+        # ---- AMENDMENT 20: the volatility ruler ------------------------
+        ck(SIGMA_RULER == "live",
+           "SIGMA_RULER defaults to 'live' -- AMENDMENT 20 is a model change "
+           "and may only be turned on by --sigma-ruler, against the bar in "
+           "results/PREREG_ruler.md")
+        _rd = {}
+        for _t in range(1000, 1000 + 3600):
+            # quiet for the last 300s, loud before it: the exact shape that
+            # makes a short ruler understate.
+            _rd[_t] = (0.0 if _t >= 1000 + 3300
+                       else ((_t % 7) - 3) * 5.0)
+        _short = IndexWS._sig_over(_rd, 300)
+        _long = IndexWS._sig_over(_rd, 3600)
+        ck(_short is not None and _long is not None,
+           "both rulers measure on the same series")
+        ck(_long > _short,
+           "after a quiet patch the HOUR reads wider than the five minutes "
+           "(%.4f vs %.4f) -- which is the whole finding" % (_long, _short))
+        _rs = SIGMA_RULER
+        try:
+            class _FakeWS:
+                lock = threading.RLock()
+                ticks = {"X": _rd}
+                _sig_over = staticmethod(IndexWS._sig_over)
+                sigma = IndexWS.sigma
+            _f = _FakeWS()
+            globals()["SIGMA_RULER"] = "live"
+            _v_live = _f.sigma("X")
+            globals()["SIGMA_RULER"] = "max3600"
+            _v_max = _f.sigma("X")
+            globals()["SIGMA_RULER"] = "1800"
+            _v_18 = _f.sigma("X")
+            ck(abs(_v_live - _short) < 1e-12,
+               "'live' reproduces the 300s ruler exactly, bit for bit")
+            ck(_v_max >= _v_live - 1e-12 and _v_max >= _long - 1e-12,
+               "'max3600' is never shorter than either input (%.4f)" % _v_max)
+            ck(_v_18 is not None and _v_18 > _v_live,
+               "'1800' reads wider than the live ruler here (%.4f)" % _v_18)
+        finally:
+            globals()["SIGMA_RULER"] = _rs
+        ck(SIGMA_RULER == "live", "and the ruler is put back")
+
         # ---- AMENDMENT 19: honest confidence ---------------------------
         # THE RISK HERE IS SILENT REVERSION, not arithmetic. If the table
         # fails to load, or some gate reads Phi while another reads the table,
@@ -3713,6 +3798,10 @@ def main():
                          "This pins SIZE to --size instead.")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
+    ap.add_argument("--sigma-ruler", default="live",
+                    choices=("live", "1800", "max3600"),
+                    help="AMENDMENT 20: how long a window the volatility "
+                         "estimate spans. See results/PREREG_ruler.md")
     ap.add_argument("--honest", action="store_true",
                     help="AMENDMENT 19: map confidence through the MEASURED "
                          "tail table instead of a Gaussian. Strictly a "
@@ -3760,6 +3849,8 @@ def main():
                 f"stop by the fourth.")
         if a.max_positions > 6:
             raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
+    if a.sigma_ruler != "live":
+        globals()["SIGMA_RULER"] = a.sigma_ruler
     if a.honest:
         if load_honest() is None:
             raise SystemExit(
@@ -3808,6 +3899,7 @@ def main():
         hedge_pilot_contracts=HEDGE_PILOT_CONTRACTS,
         improve_by=IMPROVE_BY, min_level=MIN_LEVEL,
         sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
+        sigma_ruler=SIGMA_RULER,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
         size=a.size, loss_abort=a.loss_abort,

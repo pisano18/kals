@@ -233,6 +233,107 @@ def split_half(rows, frac=0.70):
     return [r for r in rows if r[1] < cut], [r for r in rows if r[1] >= cut]
 
 
+
+
+# ---------------------------------------------------------------------------
+# THE RULER. Added 2026-09-13 after pinflood found the strongest predictor of
+# a blow-up is the OPPOSITE of intuition: the CALMER the last five minutes, the
+# more likely the model misses badly (flood rate 4.28% in the calmest fifth
+# against 1.05% in the choppiest, 4.05x, holding out of sample).
+#
+# THE MECHANISM, and it is not that calm markets are dangerous. z = miss / sd,
+# and sd comes from sigma measured over the last 300 seconds. Volatility
+# mean-reverts, so a calm 300 seconds UNDERSTATES what the next minute will do
+# -- the model's ruler is too short, and every miss measured against it looks
+# enormous. The market is not more dangerous after a quiet patch; the model is
+# more wrong about it.
+#
+# THE TEST THAT SEPARATES THOSE TWO STORIES, and the reason this is a cause and
+# not a correlation: lengthen the ruler and the gradient should collapse. It
+# does -- 4.09x at 300s, 2.19x at 900s, 1.57x at 1800s, 1.15x at 3600s.
+#
+# AND THE REASON IT IS NOT MERELY TIMIDITY: KURTOSIS IS SCALE-FREE. Multiplying
+# every sd by a constant cannot change it. It falls from 132 to 47. A wider
+# ruler could never do that; a RIGHT one can.
+# ---------------------------------------------------------------------------
+RULERS = {"300s (live)": 300, "900s": 900, "1800s": 1800, "3600s": 3600}
+
+
+def sigma_window(series, t, win):
+    """sigma over an arbitrary trailing window. sigma_at() with win fixed at
+    SIGMA_WIN is the live one; this is the same arithmetic, parameterised."""
+    secs = [s for s in range(t - win + 1, t + 1) if s in series]
+    if len(secs) < 30:
+        return None
+    d = [series[secs[i]] - series[secs[i - 1]]
+         for i in range(1, len(secs)) if secs[i] - secs[i - 1] == 1]
+    if len(d) < MIN_DIFFS:
+        return None
+    m = sum(d) / len(d)
+    return math.sqrt(sum((x - m) ** 2 for x in d) / (len(d) - 1))
+
+
+def sigma_for(series, t, spec):
+    """`spec` is an int window, or ("max", (a, b)) for the larger of two.
+
+    max() is not a hedge. A short ruler is wrong after a calm patch and a long
+    one is wrong during a burst; taking the larger is wrong in neither
+    direction, and it is the only combination that never shortens the ruler.
+    """
+    if isinstance(spec, int):
+        return sigma_window(series, t, spec)
+    kind, arg = spec
+    if kind != "max":
+        return None
+    a = sigma_window(series, t, arg[0])
+    b = sigma_window(series, t, arg[1])
+    return max(a, b) if (a and b) else None
+
+
+def z_with_sigma(series, close_s, tau, sg):
+    """pincalib.zscore's arithmetic with sigma supplied instead of measured."""
+    settle = settle_of(series, close_s)
+    if settle is None or not sg:
+        return None
+    now = close_s - tau
+    spot = series.get(now - 1)
+    if spot is None:
+        return None
+    locked = 0.0
+    for s in range(close_s - WINDOW, close_s - tau):
+        v = series.get(s)
+        if v is None:
+            return None
+        locked += v
+    mu = (locked + tau * spot) / float(N_AVG)
+    sd = sg * math.sqrt(var_factor(int(tau), [1.0]))
+    if sd <= 0:
+        return None
+    return (settle - mu) / sd
+
+
+def ruler_rows(index, specs, taus=TAUS):
+    """{label: [(close, iid, tau, z)]} -- the same cells under each ruler."""
+    out = {lab: [] for lab in specs}
+    for iid, series in index.items():
+        if not series:
+            continue
+        lo, hi = min(series), max(series)
+        c = lo - (lo % 900) + 900
+        while c <= hi:
+            for tau in taus:
+                now = c - tau
+                for lab, spec in specs.items():
+                    sg = sigma_for(series, now - 1, spec)
+                    if not sg:
+                        continue
+                    z = z_with_sigma(series, c, tau, sg)
+                    if z is not None:
+                        out[lab].append((c, iid, tau, z))
+            c += 900
+    return out
+
+
 # ---------------------------------------------------------------------------
 def selftest():
     n = [0]
@@ -380,6 +481,86 @@ def selftest():
         for f in os.listdir(tmpd):
             os.remove(os.path.join(tmpd, f))
         os.rmdir(tmpd)
+
+    # -- THE RULER: a longer one must fix a world where volatility reverts --
+    # PLANT the exact mechanism: quiet stretches followed by loud ones. A 300s
+    # ruler measured inside a quiet stretch understates the loud one that
+    # follows; a 3600s ruler spans both. If the estimator cannot tell those
+    # apart it cannot have found anything on the real tape either.
+    def revert_world(n_closes, seed, quiet=0.15, loud=3.0, block=60):
+        """Volatility that switches FAST and INDEPENDENTLY, around a stable
+        long-run level.
+
+        THE FIRST VERSION OF THIS FIXTURE WAS WRONG and the self-test caught
+        it. It alternated quiet and loud in runs of three closes, so the
+        regime PERSISTED -- and there a 300-second ruler is the better
+        forecast, because it tracks the block you are standing in. The short
+        ruler duly won, the check failed, and the failure was the fixture's,
+        not the estimator's.
+
+        The real mechanism is the opposite: the regime turns over faster than
+        the ruler can follow, so a short window is a noisy read of a stable
+        long-run level and a long window is a good one. Here the regime is
+        redrawn every `block` seconds, independently, which is what makes a
+        quiet five minutes carry no promise about the next sixty seconds.
+        """
+        rnd = random.Random(seed)
+        ser = {}
+        v = 1000.0
+        t0 = 1788700000 - (1788700000 % 900)
+        sd = quiet
+        for s in range(t0 - 3700, t0 + 900 * n_closes + 900):
+            if s % block == 0:
+                sd = quiet if rnd.random() < 0.5 else loud
+            v += rnd.gauss(0.0, sd)
+            ser[s] = v
+        return {"REV": ser}
+
+    rw = revert_world(300, seed=41)
+    specs = {"short": 300, "long": 3600, "max": ("max", (300, 3600))}
+    rr = ruler_rows(rw, specs, taus=(20,))
+    ck(all(len(v) > 100 for v in rr.values()),
+       "every ruler scores the same cells (%s)"
+       % {k: len(v) for k, v in rr.items()})
+    ck(len({len(v) for v in rr.values()}) == 1,
+       "and scores EXACTLY the same number of them, so the comparison is "
+       "like for like and not a different sample per ruler")
+
+    def tail_of(rs, zc=3.0):
+        return sum(1 for r in rs if abs(r[3]) > zc) / float(len(rs))
+
+    t_short = tail_of(rr["short"])
+    t_long = tail_of(rr["long"])
+    ck(t_short > t_long,
+       "in a world where volatility reverts, the SHORT ruler blows up more "
+       "often than the long one (%.3f%% vs %.3f%%) -- the planted mechanism"
+       % (100 * t_short, 100 * t_long))
+
+    def kurt_of(rs):
+        zs = [r[3] for r in rs]
+        m = sum(zs) / len(zs)
+        sd = math.sqrt(sum((z - m) ** 2 for z in zs) / (len(zs) - 1))
+        return sum(((z - m) / sd) ** 4 for z in zs) / len(zs)
+
+    ck(kurt_of(rr["short"]) > kurt_of(rr["long"]),
+       "and its SHAPE is worse too -- kurtosis %.1f vs %.1f. Kurtosis is "
+       "scale-free, so this cannot be produced by simply widening sd, which "
+       "is the whole argument that a longer ruler is RIGHT and not merely "
+       "timid" % (kurt_of(rr["short"]), kurt_of(rr["long"])))
+
+    # THE NULL: constant volatility, no reversion. A longer ruler must NOT win.
+    flat = {"FLAT": world(300, 0.5, seed=43)["TEST"]}
+    rf = ruler_rows(flat, specs, taus=(20,))
+    ck(abs(tail_of(rf["short"]) - tail_of(rf["long"])) < 0.01,
+       "and in a world with CONSTANT volatility the two rulers agree "
+       "(%.3f%% vs %.3f%%) -- the finding is about reversion, not about "
+       "long windows being magic"
+       % (100 * tail_of(rf["short"]), 100 * tail_of(rf["long"])))
+
+    ck(sigma_for(rw["REV"], 1788700000, ("max", (300, 3600)))
+       >= max(sigma_window(rw["REV"], 1788700000, 300),
+              sigma_window(rw["REV"], 1788700000, 3600)) - 1e-12,
+       "max() never returns a shorter ruler than either input")
 
     print("pincalib selftest: %d checks OK" % n[0])
     return 0
