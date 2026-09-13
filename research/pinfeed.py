@@ -164,6 +164,80 @@ def load_published(data_dir, index_id, say=print):
     return out
 
 
+
+
+# ---------------------------------------------------------------------------
+# 2. WHAT THE PUBLISHED INDEX CANNOT SHOW: the exchanges DISAGREEING.
+#
+# The settlement index is one number per second. `index_replica` carries the
+# bid and ask of every constituent exchange behind that number. When Coinbase
+# says BTC is 76,777 and Gemini says 76,795, the index shows one price and the
+# disagreement is invisible in it.
+#
+# THE OPERATOR'S THEORY, applied to a quantity the index physically cannot
+# contain: "tracking volume, volatility, or anything else you can think of and
+# seeing how that correlates to lumpiness and large price swings."
+#
+# Four features, all knowable at the instant the settlement window opens:
+#   spread_rel   (max mid - min mid) / price across exchanges
+#   wmid_gap     |weighted mid - median mid| / price -- do the big venues
+#                disagree with the middle one?
+#   n_ex         how many exchanges reported at all. THIS IS ALSO A DATA
+#                HEALTH CHECK: a second with fewer venues is a second the
+#                index itself was computed from less.
+#   quote_spread the mean bid-ask spread across venues, relative to price --
+#                the closest thing to LIQUIDITY available without opening the
+#                7.8 GB of Bitstamp books.
+# ---------------------------------------------------------------------------
+def load_disagree(feed_dir, coin, say=print):
+    """{second: (spread_rel, wmid_gap, n_ex, quote_spread)} for one coin."""
+    out = {}
+    pat = os.path.join(feed_dir, "index_replica", "*.jsonl.gz")
+    files = sorted(glob.glob(pat))
+    key = '"%s"' % coin
+    stats = {}
+    for k, path in enumerate(files):
+        for line in gzsalvage.iter_lines(path, stats=stats):
+            if key not in line:
+                continue
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            sec = d.get("sec")
+            c = d.get(coin)
+            if sec is None or not isinstance(c, dict):
+                continue
+            per = c.get("per_ex") or {}
+            mids = []
+            spreads = []
+            for _ex, q in per.items():
+                if not isinstance(q, dict):
+                    continue
+                b, a = q.get("b"), q.get("a")
+                if b is None or a is None or b <= 0 or a <= 0:
+                    continue
+                mids.append(0.5 * (b + a))
+                spreads.append(a - b)
+            if len(mids) < 2:
+                continue
+            px = sum(mids) / len(mids)
+            if px <= 0:
+                continue
+            wm = c.get("wmid")
+            md = c.get("median_mid")
+            gap = (abs(wm - md) / px) if (wm and md) else 0.0
+            out[int(sec)] = ((max(mids) - min(mids)) / px, gap,
+                             float(c.get("n_ex") or len(mids)),
+                             (sum(spreads) / len(spreads)) / px)
+        if say and (k + 1) % 120 == 0:
+            say("    ...%d/%d replica hours, %d seconds"
+                % (k + 1, len(files), len(out)))
+    if say:
+        say("    disagreement %s: %d seconds" % (coin, len(out)))
+    return out
+
+
 # ---------------------------------------------------------------------------
 def changes(series, secs):
     """{sec: one-second change} over seconds whose predecessor exists."""
