@@ -337,6 +337,19 @@ def make_rulers():
     R["max(sd300, down1800)"] = (
         lambda S, t: (lambda a, b: max(a, b) if (a and b) else (a or b))(
             S.sd(t, 300), S.semi(t, 1800, "down")))
+    # THE OPERATOR'S QUESTION, 2026-09-13: "are you sure that reading price
+    # movement in the other direction doesn't help know when it may go sharply
+    # in the bad direction?" It is a fair question and the answer was assumed
+    # rather than measured. UP moves are now scored on their own and against
+    # the down ones, so the asymmetry is a finding instead of a guess.
+    for w in (300, 1800, 3600):
+        R["upside %ds" % w] = (lambda W: lambda S, t: S.semi(t, W, "up"))(w)
+    R["max(up300, up1800)"] = (
+        lambda S, t: (lambda a, b: max(a, b) if (a and b) else (a or b))(
+            S.semi(t, 300, "up"), S.semi(t, 1800, "up")))
+    R["max(up1800, down1800)"] = (
+        lambda S, t: (lambda a, b: max(a, b) if (a and b) else (a or b))(
+            S.semi(t, 1800, "up"), S.semi(t, 1800, "down")))
     R["max(down300, down1800)"] = (
         lambda S, t: (lambda a, b: max(a, b) if (a and b) else (a or b))(
             S.semi(t, 300, "down"), S.semi(t, 1800, "down")))

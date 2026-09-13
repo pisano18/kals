@@ -185,6 +185,7 @@ it has no power.
 ## Cheap commands
 
 ```bash
+python research/versioncheck.py                  # live flags vs VERSIONS.md
 python research/pinver.py                    # how is the current version doing
 python research/pinbank.py --bank 234        # what size does the bank support
 python research/pinlevels.py --minfill 39:1.0,0.5,0.25   # re-score, no tape walk

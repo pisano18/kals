@@ -5,6 +5,166 @@ evidence, and the exact command to revert.** Newest first.
 
 ---
 
+## HOW TO USE THIS FILE — read before adding a version
+
+**Every change to what trades real money gets an entry here, at the moment it
+is deployed, not afterwards.** The log lapsed between 2026-09-11 and
+2026-09-13 while eight live changes went out; the back-fill below was written
+from git on 2026-09-13 and is thinner than it should be, which is exactly the
+cost of letting it lapse.
+
+An entry needs five things and nothing else:
+
+1. **A version tag** `v-<short name>`, and the same tag in the deploy command.
+2. **The UTC time it went live** and the **git SHA** it was deployed from.
+3. **What changed, in one sentence**, in terms of what the bot now does
+   differently.
+4. **The evidence**, or the honest absence of it, with the pre-registration
+   filename if there is one.
+5. **THE EXACT REVERT COMMAND.** Not a description of how to revert. The
+   command, copy-pasteable.
+
+`research/versioncheck.py` fails if `restart_bot.ps1` carries a flag that no
+entry mentions, so a live change without an entry is caught rather than
+remembered. Run it in any session that touches the live bot.
+
+---
+
+## v-a20b — 2026-09-13 11:57Z — AMENDMENT 20b: the ruler reads DOWN moves only (`9591ec8`)
+
+**What changed.** The volatility estimate is now `max(downside 300s, downside
+1800s)` instead of `max(two-sided 300s, two-sided 3600s)`. The model's claim is
+one-sided — the settle lands on its side of the strike — and we lose only when
+the index comes in the other way, so a ruler built from both directions spends
+half its information on moves that cannot hurt us.
+
+**Evidence.** 45 rulers scored over 108,000 decisions rebuilt from the index
+alone (`results/RESULTS_ruler.md`). Beat the ruler deployed 47 minutes earlier
+on every axis in both halves: gated loss −48.5% vs −42.3%, sd(z) 0.950 vs
+0.919 (1.000 is honest), kurtosis 53.5 vs 69.1, decisions kept −0.9% vs −1.0%.
+Bar and kill criterion in `results/PREREG_ruler.md`, including BAR ITEM 4
+(hedge frequency) added 12:32Z before anything was scored.
+
+**Known cost, measured 2026-09-13 on the 12:30 PM ET BNB close:** this ruler
+read **40% wider** than the old one at that second (0.0271 → 0.0379). A wider
+ruler pushes every belief toward 0.5 and the hedge fires below 0.80, so it
+makes the hedge fire more readily. That is arithmetic, not a counterfactual —
+whether that particular hedge would have fired under the old ruler could NOT be
+reconstructed from the tape and is not claimed.
+
+**Revert:**
+
+```powershell
+# edit restart_bot.ps1: delete the "--sigma-ruler","maxdown" arguments
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1
+```
+
+---
+
+## v-a20 — 2026-09-13 11:10Z — AMENDMENT 20: the volatility ruler lengthens (`a988c71`)
+
+**What changed.** `--sigma-ruler max3600`: volatility measured over the larger
+of 300s and 3600s instead of 300s alone. **Superseded by v-a20b 47 minutes
+later; it took two fills.**
+
+**Evidence.** `results/RESULTS_calib.md` and `results/RESULTS_flood.md`: the
+calmer the last five minutes, the MORE often the model blew up (4.28% in the
+calmest fifth vs 1.05% in the choppiest, 4.05x, holding out of sample) because
+a quiet 300 seconds understates the next minute. Lengthening the ruler
+collapsed that gradient from 4.09x to 1.15x and cut kurtosis 132 → 47.
+
+**The deploy failed on my own guard and the bot was down ~4 minutes.** The
+self-test asserted `SIGMA_RULER == "live"`, but `main()` applies the flag
+BEFORE running the suite. Fixed by asserting the DECLARED default
+(`_DEFAULT_SIGMA_RULER`) instead. The same latent bug was in AMENDMENT 19's
+guard and was fixed at the same time.
+
+---
+
+## v-a18 — 2026-09-13 09:24Z — AMENDMENT 18: bid up to the gate, not to the ask (`986cc71`)
+
+**What changed.** The IOC limit is now the highest price that still passes the
+SAME gate, instead of exactly the ask we saw. When we win the race we still pay
+the resting price; when we lose it we take the next level instead of buying
+nothing.
+
+**Evidence.** 28.2% of orders filled nothing and it was not latency — filled
+and zero-filled orders have the same median latency, 96 ms. A crossing IOC
+fills at the RESTING price: 283 of 283 live fills at or below the signalled
+price, 76 strictly better, ZERO worse (RUNBOOK CONFIRMED FACTS). 43% of lost
+races had a next level still inside the gate at a median +0.20c.
+`results/PREREG_sweep.md` holds the bar.
+
+**First three swept fills, all winners:** SOL 6:15 AM ET (85.0→87.0c, +$5.01),
+XRP 7:00 AM (95.1→97.5c, +$0.98), BNB 12:30 PM (92.0→92.3c, +$2.30 on the bet
+before the hedge). n=3 proves the mechanism, not the economics.
+
+**Revert:** add `"--no-sweep"` to the argument list in `restart_bot.ps1`.
+
+---
+
+## v-brake3 — 2026-09-13 02:26Z — BANK_BRAKE 1.5 → 3.0 (`f04087d`)
+
+Size is `bank / (BANK_BRAKE x 2 x 0.98)`. The worst single close falls from 64%
+of bank to 32%. Operator's decision; the reason recorded in the commit is not
+the one either of us first gave.
+
+**Revert:** `BANK_BRAKE = 1.5` in `research/pinrun.py`, restart.
+
+---
+
+## v-a17 — 2026-09-13 01:49Z — AMENDMENT 17: a close is capped on CONTRACTS (`3f393ea`)
+
+`MAX_PER_CLOSE x SIZE` contracts per close, coins unlimited, instead of a cap
+on the number of fills. Same worst-case exposure under both rules.
+
+**Revert:** set `CLOSE_BUDGET = False`; the old fill-count cap is kept behind
+it for exactly this.
+
+---
+
+## v-a16 — 2026-09-12 23:13Z — AMENDMENT 16: SIZE follows the bank (`c0f8e33`)
+
+Size is re-read from `/portfolio/balance` every 300 s while flat, so it grows
+and shrinks with the account instead of being a fixed argument. `--size` became
+a starting value only.
+
+**Revert:** `--no-auto-size`.
+
+---
+
+## v-hedgefix — 2026-09-12 20:07Z — a partial hedge fill was shrinking the original position (`2ffb40d`)
+
+**A correctness fix, not a strategy change.** A partial hedge fill silently
+reduced the ORIGINAL position's settled size, which understated losses fed to
+the loss-abort brake. Every loss number computed before this commit is
+suspect.
+
+---
+
+## v-a15 — 2026-09-12 18:06Z — AMENDMENT 15: the belief-collapse hedge, threshold 0.80
+
+When the model's belief in a held position falls below 0.80, buy the opposite
+side. Recovers about one third of a loss; costs ~$1.29/day at size 20 and saves
+money in bad stretches. `results/PREREG_hedge.md` holds the bar.
+**On 2026-09-12 the railed holdout showed the base strategy NEGATIVE on 72
+unseen hours with the hedge carrying it** (`aa257ce`), which is the single most
+important caveat attached to any live version.
+
+**Revert:** `HEDGE_ENABLED = False` in `research/pinrun.py`.
+
+---
+
+## BACK-FILL NOTE
+
+v-a13 (one fill per market) and v-a14 are NOT reconstructed here — they were
+deployed while the log was lapsed and the commits do not state deploy times.
+`git log --grep "AMENDMENT 13"` is the starting point if either needs reverting.
+This gap is the cost of letting the log lapse and is left visible rather than
+guessed at.
+
+---
+
 ## v-a12a — 2026-09-11 13:25Z — AMENDMENT 12a: scraps accumulate, exposure re-bounded (`9aa2014`)
 
 **Found by auditing my own change rather than admiring it.** A12 said a scrap

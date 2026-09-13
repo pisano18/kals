@@ -119,6 +119,23 @@ This goes further than the 2026-09-10 amendment, which merely certified
 - When the replay is genuinely the only source, say so in the first sentence
   of the report, not in a footnote.
 
+**STANDING, set 2026-09-13: EVERY LIVE CHANGE GETS A VERSION ENTRY, AT THE
+MOMENT IT IS DEPLOYED.** The operator's words: *"Can we start naming update
+versions so it's easier to revert when something goes bad?"*
+
+`results/VERSIONS.md` is the log and it already existed -- and it had LAPSED.
+Eight live changes went out between 2026-09-11 and 2026-09-13 with no entry,
+and nobody noticed because nothing checked. So:
+
+- A version is `v-<short name>`. The entry carries the UTC deploy time, the git
+  SHA, one sentence on what the bot now does differently, the evidence (or the
+  honest absence of it), and **the exact revert command, copy-pasteable**.
+- Write it WHEN DEPLOYING. An entry written later is a reconstruction, and the
+  2026-09-11..13 back-fill shows how thin those are.
+- `python research/versioncheck.py` fails if `restart_bot.ps1` passes a flag
+  VERSIONS.md does not mention, or mentions with a different value. **Run it in
+  any session that touches the live bot.**
+
 **Posture:**
 
 - Say what was measured and what was not. If a script fails, report the
