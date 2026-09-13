@@ -798,6 +798,122 @@ def eff_strike(strike, round_digits):
     return float(strike) - 0.5 * (10.0 ** (-int(round_digits)))
 
 
+# ===========================================================================
+# AMENDMENT 19 (NOT DEPLOYED -- default OFF, --honest turns it on)
+# THE MODEL'S STATED CONFIDENCE IS NOT A PROBABILITY.
+#
+# MEASURED ON THE INDEX ALONE, 109,122 z-scores over 1,672 closes
+# (results/RESULTS_calib.md, research/pincalib.py -- no order book, no replay,
+# no fills). Writing z for how many of its own standard deviations the model
+# is from the strike, and counting only the side we lose on:
+#
+#     the model says     it will be wrong     it IS wrong      off by
+#     99.00%             1.00%                2.10%            2.1x
+#     99.50%             0.50%                1.67%            3.3x
+#     99.85%  <- ours    0.15%                1.21%            8.0x
+#     99.99%             0.01%                0.70%           69.6x
+#
+# The BODY of the distribution is nearly right: sd(z) is 1.151, only 15% too
+# narrow. The TAIL is not: kurtosis 132 against a normal's 3. The index makes
+# jumps a Gaussian says are impossible, and every one of them lands in the
+# only region this strategy ever trades in.
+#
+# WHY SCALING SIGMA CANNOT FIX IT, measured the same day: multiplying sigma by
+# 1.25 before deciding keeps 44% of candidates and makes them WORSE (2.90% ->
+# 3.09% bad), and 2.0x gives 4.62%. Scaling stretches the body, where the
+# model is already nearly right, and barely moves the tail, which is the whole
+# problem. A wider Gaussian is still a Gaussian.
+#
+# WHY NOT A STUDENT-t: the realised lower tail is fatter than a unit-variance
+# t with df=3.5, and df=10 is not close. Nothing with a closed form fits, so
+# the replacement is the MEASURED table itself.
+#
+# WHAT THIS CHANGES IF TURNED ON. `fair()` maps z through the empirical table
+# instead of Phi(). Every stated confidence falls, so every computed edge
+# falls with it -- at the gate's typical z the honest confidence is ~0.988
+# rather than ~0.9985, about 1c of edge per contract that was never there.
+# PIN 0.995 then means what it says: it demands z >= 4.3 instead of z >= 2.6.
+# That is a MUCH stricter gate and it will cut the trade count hard.
+#
+# THAT IS WHY IT IS OFF. It is a threshold change, and CLAUDE.md's 2026-09-10
+# amendment forbids deploying one from anything but a pre-registered live bar.
+# results/PREREG_honest.md holds that bar. `--honest` exists so the change can
+# be run and measured, not so it can be slipped in.
+# ===========================================================================
+HONEST_CONF = False              # --honest turns it on
+HONEST_TABLE_PATH = os.path.join(os.path.dirname(HERE), "results",
+                                 "calib_table.json")
+_HONEST = None
+
+
+def load_honest(path=None):
+    """Read the empirical tail table, or None if it is not there.
+
+    Never falls back silently to something that looks similar: if --honest is
+    asked for and the table is missing, main() refuses to start. A calibration
+    table that quietly reverts to a Gaussian is the worst of both worlds --
+    the run would be labelled honest and behave exactly as before.
+    """
+    global _HONEST
+    p = path or HONEST_TABLE_PATH
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as fh:
+            t = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not (t.get("grid") and t.get("tail")
+            and len(t["grid"]) == len(t["tail"])):
+        return None
+    _HONEST = t
+    return t
+
+
+def honest_tail(z, table=None):
+    """Empirical P(the settle lands on the wrong side), given z.
+
+    Linear between grid points; beyond the last point it HOLDS the last
+    measured value rather than extrapolating to zero. Extrapolating a tail we
+    have not observed is how a model claims 99.99% on evidence that cannot
+    support 99.9%, which is the exact failure this whole file is about.
+    """
+    t = table if table is not None else _HONEST
+    if not t:
+        return None
+    g, tl = t["grid"], t["tail"]
+    if z <= g[0]:
+        return tl[0]
+    if z >= g[-1]:
+        return tl[-1]
+    lo, hi = 0, len(g) - 1
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if g[mid] <= z:
+            lo = mid
+        else:
+            hi = mid
+    span = g[hi] - g[lo]
+    if span <= 0:
+        return tl[lo]
+    w = (z - g[lo]) / span
+    return tl[lo] + w * (tl[hi] - tl[lo])
+
+
+def conf_of(z):
+    """The probability the model's side wins, at z standard deviations.
+
+    Phi(z) unless --honest, in which case the measured table. This is the ONLY
+    place the two can differ, so a run is honest or it is not -- there is no
+    path where some gates see one number and some see the other.
+    """
+    if HONEST_CONF:
+        tl = honest_tail(float(z))
+        if tl is not None:
+            return max(0.0, min(1.0, 1.0 - tl))
+    return ND.cdf(float(z))
+
+
 def fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
     """P(settle >= effective strike) with the locked prints already counted."""
     part = idx.partial(iid, close_s, now_s)
@@ -814,7 +930,7 @@ def fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
     sd = sigma * math.sqrt(var_factor(int(r), [1.0]))
     if sd <= 0:
         return 1.0 if mu >= K else 0.0
-    return ND.cdf((mu - K) / sd)
+    return conf_of((mu - K) / sd)
 
 
 def billed_fee(price, count=1):
@@ -2216,6 +2332,66 @@ def selftest():
             pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
             pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
 
+        # ---- AMENDMENT 19: honest confidence ---------------------------
+        # THE RISK HERE IS SILENT REVERSION, not arithmetic. If the table
+        # fails to load, or some gate reads Phi while another reads the table,
+        # the run is labelled honest and behaves exactly as before -- the
+        # worst possible outcome, because it would be believed.
+        ck(HONEST_CONF is False,
+           "HONEST_CONF is OFF by default -- AMENDMENT 19 is a threshold "
+           "change and may only be turned on by --honest, against the bar in "
+           "results/PREREG_honest.md")
+        _ht = {"grid": [0.0, 1.0, 2.0, 3.0, 4.0],
+               "tail": [0.5, 0.20, 0.05, 0.02, 0.01]}
+        ck(abs(honest_tail(2.0, _ht) - 0.05) < 1e-12,
+           "honest_tail reads a grid point exactly")
+        ck(abs(honest_tail(2.5, _ht) - 0.035) < 1e-12,
+           "and interpolates between two (%.4f)" % honest_tail(2.5, _ht))
+        ck(abs(honest_tail(9.9, _ht) - 0.01) < 1e-12,
+           "and BEYOND the table it holds the last measured value rather "
+           "than extrapolating to zero -- claiming a tail we never observed "
+           "is the exact failure this amendment exists to fix")
+        ck(abs(honest_tail(-5.0, _ht) - 0.5) < 1e-12,
+           "and below the table it holds the first")
+        _hs = _HONEST
+        try:
+            globals()["_HONEST"] = _ht
+            globals()["HONEST_CONF"] = True
+            ck(abs(conf_of(2.0) - 0.95) < 1e-12,
+               "with --honest, conf_of reads the TABLE (0.95 at z=2)")
+            ck(conf_of(2.0) < ND.cdf(2.0),
+               "which is STRICTLY LESS SURE than the Gaussian (%.4f < %.4f) "
+               "-- this amendment can only ever tighten"
+               % (conf_of(2.0), ND.cdf(2.0)))
+            globals()["HONEST_CONF"] = False
+            ck(abs(conf_of(2.0) - ND.cdf(2.0)) < 1e-12,
+               "and with it off, conf_of IS the Gaussian, bit for bit")
+        finally:
+            globals()["_HONEST"] = _hs
+            globals()["HONEST_CONF"] = False
+        # fair() must route through conf_of and nothing else may call ND.cdf
+        # on the decision path -- one gate reading Phi while another reads the
+        # table is the silent reversion above.
+        _hsrc = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _hlines = _hsrc.split("\n")
+        ck(any(ln.strip() == "return conf_of((mu - K) / sd)"
+               for ln in _hlines),
+           "fair() returns conf_of(z), not ND.cdf(z)")
+        # Scan the WORKING code only -- everything above `def selftest`. The
+        # checks themselves legitimately mention ND.cdf, and so do fixtures
+        # below, and including them would make this assertion unwriteable.
+        _work = _hsrc[:_hsrc.index("def " + "selftest")]
+        _bad = [ln.strip()[:60] for ln in _work.split("\n")
+                if "ND.cdf(" in ln and "return ND.cdf(float(z))" not in ln
+                and not ln.strip().startswith("#")]
+        ck(not _bad,
+           "and in the working code ND.cdf appears ONLY inside conf_of -- no "
+           "gate can read a different distribution from the one fair() uses "
+           "(offenders: %s)" % _bad)
+        ck(load_honest(os.path.join(HERE, "no-such-table.json")) is None,
+           "a missing table loads as None, so main() can refuse rather than "
+           "silently running a Gaussian under an honest label")
+
         # ---- AMENDMENT 18: the sweep limit -----------------------------
         # The estimator is easy; the rail is the deliverable. Every check here
         # is about what the limit may NEVER be, because the limit is the worst
@@ -3537,6 +3713,10 @@ def main():
                          "This pins SIZE to --size instead.")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="halt after this many open positions")
+    ap.add_argument("--honest", action="store_true",
+                    help="AMENDMENT 19: map confidence through the MEASURED "
+                         "tail table instead of a Gaussian. Strictly a "
+                         "tightening; see results/PREREG_honest.md")
     ap.add_argument("--no-sweep", action="store_true",
                     help="AMENDMENT 18 off: send the limit at the ask we saw, "
                          "so a lost race buys nothing")
@@ -3580,6 +3760,15 @@ def main():
                 f"stop by the fourth.")
         if a.max_positions > 6:
             raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
+    if a.honest:
+        if load_honest() is None:
+            raise SystemExit(
+                "--honest asked for but %s is missing or malformed. Build it "
+                "with: python research/pincalib.py --data <tape> "
+                "--emit-table results/calib_table.json  --  REFUSING to fall "
+                "back to the Gaussian under an honest label."
+                % HONEST_TABLE_PATH)
+        globals()["HONEST_CONF"] = True
     if a.no_sweep:
         globals()["SWEEP_ENABLED"] = False
     if a.selftest:
@@ -3618,7 +3807,7 @@ def main():
         hedge_max_ask=HEDGE_MAX_ASK, hedge_max_tries=HEDGE_MAX_TRIES,
         hedge_pilot_contracts=HEDGE_PILOT_CONTRACTS,
         improve_by=IMPROVE_BY, min_level=MIN_LEVEL,
-        sweep_enabled=SWEEP_ENABLED,
+        sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
         size=a.size, loss_abort=a.loss_abort,

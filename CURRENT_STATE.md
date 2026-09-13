@@ -112,29 +112,51 @@ and it is consistent with `RESULTS_levels`' note that the second half of the
 window was 3x worse. Any threshold fitted on the whole window is fitted on a
 gentler market than the current one.
 
-**WHAT CHANGED, measured 2026-09-13 -- and it is NOT the other side.** Their
-behaviour is flat: someone else takes the offer within 1s 88.6% -> 86.8% of the
-time, at a median 66 -> 70 ms, with MORE depth on screen (217 -> 271). What
-moved is the MODEL. Its stated confidence barely changed (0.99851 -> 0.99837)
-while its realised error went from **12.5x its own claim to 28.2x**. Same
-offers, same competition, same promise -- more losses.
+**WHAT CHANGED -- AND MY FIRST TWO ANSWERS WERE BOTH WRONG. Read this whole
+block before quoting anything about the deterioration.**
 
-**So the thing to watch is the model's own miss ratio: what it PROMISES versus
-what it delivers, on the candidate population, rolling.** That is a statement
-about the model and not about our losses, so the tape is allowed to compute it
-(rule 5's own carve-out: the tape is valid for what the model computed). It is
-the closest thing to an early warning this project has, and it is not yet
-automated. **Building that monitor is the obvious next job.**
+Answer 1, WITHDRAWN: "the model got more wrong." Answer 2, WITHDRAWN: "and it
+got worse in the quantiles we trade." Both rested on `pincalib`'s first
+version, which counted `abs(z)` -- the two-sided tail -- against a ONE-SIDED
+promise, and so doubled every overconfidence figure and reversed the sign of
+the early/late comparison. Corrected 2026-09-13 and re-run.
 
-**And the obvious fix does NOT work -- do not re-try it.** Multiplying the
-volatility estimate by k before deciding (a bigger `SIGMA_STRESS`) throws away
-most of the trades and makes the remainder WORSE: k=1.25 keeps 44% of rows at
-3.09% bad, k=1.5 keeps 26% at 3.41%, k=2.0 keeps 14% at 4.62%, against 2.90%
-at k=1.0. Distrusting the model uniformly removes the trades it is most right
-about. The failures are not in the confidence tail; they are a different
-animal. Within each coin the LOWEST-volatility fifth is the worst arm (5.19%
-bad, 43.7x overconfident) and the middle fifth the best (1.38%, 8.3x) -- worth
-a proper clustered test, but note only 8 losing closes of 161 sit in that arm.
+**What is TRUE, on the corrected numbers (`results/RESULTS_calib.md`, the
+index feed alone, 109,122 z-scores over 1,672 closes):**
+
+- The model is **8.0x overconfident** at the confidence the gate operates at:
+  it promises to be wrong 0.15% of the time and is wrong 1.21%. At 99.99% it
+  is 69.6x out. sd(z) is 1.151 -- the body is nearly right -- and kurtosis is
+  **132 against a normal's 3**. The index jumps in ways a Gaussian says cannot
+  happen, and every jump lands in the only region this strategy trades.
+- **That has NOT changed over the window.** Early closes 1.22% realised
+  failure at the 99.85% level, late closes 1.17%. Flat, if anything better.
+- **The counterparty has not changed either** (contest 88.6% -> 86.8%, speed
+  66 -> 70 ms, depth UP) -- though the nightly `collide` robot is right that
+  this claim has never had its power stated, so treat it as unsettled.
+
+**So WHY the candidate population's bad rate roughly doubled (1.87% -> 4.61%)
+is OPEN. It is not model drift and it is not coin mix (8 of 9 coins worsened
+individually). That question is now the top open item.**
+
+**The obvious fix is dead -- do not re-try it.** Multiplying the volatility
+estimate by k keeps 44% of candidates at 3.09% bad (k=1.25), 26% at 3.41%
+(k=1.5), 14% at 4.62% (k=2.0), against 2.90% at k=1.0. The corrected
+calibration says exactly why: the error is SHAPE, not WIDTH. sd(z) is 15% off;
+kurtosis is 44x off. Scaling sigma stretches the body, where the model is
+nearly right, and barely touches the tail, which is the whole problem.
+
+**AMENDMENT 19 exists and is OFF.** `pinrun --honest` maps confidence through
+the measured table instead of a Gaussian. At PIN 0.995 it demands **z >= 4.33**
+where today's gate demands 2.58 -- a much stricter bar. Bar and kill criterion
+in `results/PREREG_honest.md`; the trade-count impact is deliberately NOT
+estimated from the replay.
+
+**From live fills only** (270 entry fills, 9 losses, net +$81.42): below 96c,
+106 fills, 6 losses, +$58.14. At 96c and above, 164 fills, 3 losses, +$23.27.
+Both halves make money, so there is no support for simply lowering the price
+ceiling. The one negative bucket is 94-96c (49 fills, 3 losses, -$18.32) and
+it has no power.
 
 ## Hard-won gotchas that will bite again
 

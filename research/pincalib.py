@@ -47,6 +47,7 @@ it is wrong, this file is measuring exactly the thing that is wrong, which is
 the point.
 """
 import argparse
+import json
 import math
 import os
 import random
@@ -182,17 +183,25 @@ def collect(index, taus=TAUS, say=print):
 def tail_table(rows, levels=LEVELS):
     """For each confidence the gate uses: promised failure rate vs realised.
 
-    One-sided, because the model's claim IS one-sided -- it says the settle
-    will land on its side of the strike. A two-sided tail would halve the
-    promise and flatter the model by a factor of two.
+    ONE-SIDED AND SIGNED, and the first version of this file got it wrong.
+
+    The model says the settle lands ABOVE the strike. We lose only when it
+    comes in BELOW -- that is `z < -z_conf`, a lower-tail event. The first
+    version counted `abs(z) > z_conf`, which is the two-sided tail, and so
+    reported every overconfidence factor at roughly TWICE its true size
+    (14.8x at the gate's operating point where the honest answer is 7.9x).
+    Found 2026-09-13 while deriving the price ceiling from this table: the
+    ceiling it implied was absurdly tight, which is the only reason the error
+    surfaced at all. Corrected here, and the corrected numbers are still bad
+    enough to be the headline.
     """
-    zs = [abs(r[3]) for r in rows]
+    zs = [r[3] for r in rows]
     n = len(zs)
     out = []
     for L in levels:
         zc = norm_ppf(L)
         promised = 1.0 - L
-        hit = sum(1 for z in zs if z > zc)
+        hit = sum(1 for z in zs if z < -zc)
         out.append((L, zc, promised, hit / n if n else float("nan"), hit, n))
     return out
 
@@ -340,6 +349,38 @@ def selftest():
        "and no loader is imported at module level; `replay` is reached only "
        "inside main(), for the index feed alone")
 
+    # -- the emitted table -------------------------------------------------
+    import tempfile
+    tmpd = tempfile.mkdtemp(prefix="pincalib-")
+    try:
+        tp = os.path.join(tmpd, "t.json")
+        t = emit_table(rows, tp)
+        tl = t["tail"]
+        ck(all(tl[i] >= tl[i + 1] - 1e-12 for i in range(len(tl) - 1)),
+           "the emitted table is monotone -- a bet can never get SAFER by "
+           "moving further from the strike")
+        ck(abs(tl[0] - 0.5) < 0.05,
+           "at z=0 it says a coin flip (%.3f)" % tl[0])
+        i2 = t["grid"].index(2.0)
+        ck(tl[i2] > 0.0, "and it has mass at z=2 in a Gaussian world")
+        ck(abs(tl[i2] - (1 - norm_cdf(2.0))) < 0.01,
+           "which matches the Gaussian there, because the null world IS "
+           "Gaussian (%.4f vs %.4f)" % (tl[i2], 1 - norm_cdf(2.0)))
+        fat = emit_table(collect(world(400, 0.5, seed=77, fat=0.03,
+                                       fat_mult=9.0), say=None),
+                         os.path.join(tmpd, "f.json"))
+        i4 = fat["grid"].index(4.0)
+        ck(fat["tail"][i4] > tl[i4],
+           "and a fat-tailed world produces a FATTER table at z=4 "
+           "(%.4f vs %.4f) -- which is the whole point"
+           % (fat["tail"][i4], tl[i4]))
+        ck(json.loads(open(tp, encoding="utf-8").read())["n"] == t["n"],
+           "the table round-trips through JSON")
+    finally:
+        for f in os.listdir(tmpd):
+            os.remove(os.path.join(tmpd, f))
+        os.rmdir(tmpd)
+
     print("pincalib selftest: %d checks OK" % n[0])
     return 0
 
@@ -378,6 +419,11 @@ def report(rows, out_path, say=print, window=""):
           % (s, 100 * (s - 1.0), m))
         w("")
     w("## 2. What it promises at each confidence, against what happens")
+    w("")
+    w("*Corrected 2026-09-13: these were computed on `abs(z)`, the two-sided "
+      "tail, against a one-sided promise, and so were roughly 2x too large. "
+      "We lose only when the settle comes in BELOW the forecast. The numbers "
+      "below are the signed lower tail and are the right ones.*")
     w("")
     w("| the model says it is this sure | z | promised failure | realised | "
       "off by | n |")
@@ -421,10 +467,13 @@ def report(rows, out_path, say=print, window=""):
       "index has actually delivered over %d closes."
       % len({r[1] for r in rows}))
     w("")
-    az = sorted(abs(r[3]) for r in rows)
+    # SIGNED lower tail, matching section 2's correction: we lose when the
+    # settle comes in BELOW the model's forecast, so -z is the quantity, and
+    # folding it with the upper tail would average a fat side with a thin one.
+    az = sorted(-r[3] for r in rows)
     a_, b_ = split_half(rows)
-    ae = sorted(abs(r[3]) for r in a_)
-    be = sorted(abs(r[3]) for r in b_)
+    ae = sorted(-r[3] for r in a_)
+    be = sorted(-r[3] for r in b_)
 
     def _q(xs, p):
         return xs[min(len(xs) - 1, int(p * len(xs)))] if xs else float("nan")
@@ -434,16 +483,17 @@ def report(rows, out_path, say=print, window=""):
     w("|---|---|---|---|---|---|")
     for L in LEVELS:
         gz = norm_ppf(L)
-        p = 1.0 - 2.0 * (1.0 - L)
+        p = L
         e = _q(az, p)
         w("| %.4f sure | %.2f | **%.2f** | %.2f | %.2f | %.2fx |"
           % (L, gz, e, _q(ae, p), _q(be, p), e / gz if gz else float("nan")))
     w("")
-    w("**No Student-t fits this.** At the Gaussian 99.85 per-cent point the "
-      "index delivers a 2.22 per-cent tail; the fattest sensible t (df=3.5) "
-      "predicts 1.43 and df=10 predicts 0.78. It is fatter than any of them, "
-      "so the honest replacement for `Phi()` is THIS TABLE, measured, not a "
-      "closed form.")
+    w("**No Student-t fits this.** The lower tail beyond the Gaussian 99.85 "
+      "point is fatter than a t with df=3.5 predicts even after that t is "
+      "scaled to unit variance, and df=10 is not close. The honest "
+      "replacement for `Phi()` is THIS TABLE, measured, not a closed form -- "
+      "and `results/calib_table.json` is that table, emitted by "
+      "`--emit-table`.")
     w("")
     w("**CAVEAT ON THE FAR ROWS.** The z-scores are clustered: %d of them sit "
       "on only %d closes, six taus share each market and twelve coins share "
@@ -471,9 +521,58 @@ def report(rows, out_path, say=print, window=""):
     return txt
 
 
+def emit_table(rows, path, grid=None):
+    """Write the ONE-SIDED empirical tail table the gate can use.
+
+    For each z on the grid: the share of observations where the settlement came
+    in more than z model-sds BELOW the model's forecast. That is exactly the
+    quantity `Phi(z)` claims to give and gets wrong, so it is a drop-in
+    replacement and nothing else in the model has to change.
+
+    SIGNED, not absolute. The model's claim is one-sided -- it says the settle
+    lands on its side of the strike -- and folding the tails would average a
+    fat side with a thin one and flatter whichever is worse.
+
+    MONOTONE BY CONSTRUCTION. A raw empirical tail wobbles where the counts are
+    small, and a non-monotone confidence curve means a bet can get SAFER by
+    moving further from the strike, which is nonsense the gate would happily
+    trade on. The running maximum from the far end fixes it in the conservative
+    direction: it can only ever make us less sure, never more.
+    """
+    zs = sorted(r[3] for r in rows)
+    n = len(zs)
+    if grid is None:
+        grid = [i / 20.0 for i in range(0, 401)]     # 0.00 .. 20.00 by 0.05
+    import bisect
+    tail = []
+    for z in grid:
+        k = bisect.bisect_right(zs, -z)              # how many fell below -z
+        tail.append(k / float(n))
+    # enforce monotone non-increasing in z, from the far end back
+    run = 0.0
+    for i in range(len(tail) - 1, -1, -1):
+        run = max(run, tail[i])
+        tail[i] = run
+    out = {"built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+           "n": n, "closes": len({r[1] for r in rows}),
+           "first_close": min(r[1] for r in rows),
+           "last_close": max(r[1] for r in rows),
+           "taus": sorted({r[2] for r in rows}),
+           "grid": grid, "tail": tail,
+           "floor": max(tail[-1], 1.0 / n),
+           "note": ("one-sided empirical P(settle - mu < -z*sd). Built by "
+                    "research/pincalib.py from the settlement index alone -- "
+                    "no order book, no replay, no fills.")}
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(out, fh)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--emit-table", default=None,
+                    help="write the empirical tail table to this path")
     ap.add_argument("--data", default="./kalshi_data")
     ap.add_argument("--out", default=os.path.join(
         os.path.dirname(HERE), "results", "RESULTS_calib.md"))
@@ -500,6 +599,10 @@ def main():
                  time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(hi)),
                  (hi - lo) / 86400.0))
     report(rows, a.out, window=window)
+    if a.emit_table:
+        t = emit_table(rows, a.emit_table)
+        print("  table: %d points, %d z-scores, %d closes -> %s"
+              % (len(t["grid"]), t["n"], t["closes"], a.emit_table))
     return 0
 
 
