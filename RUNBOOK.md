@@ -51,6 +51,14 @@ A collector has been running since 2026-08-25 under `run_all.ps1` (watchdog +
 
 ## CONFIRMED FACTS — do not re-derive
 
+**Execution price (2026-09-13).** A crossing IOC limit fills at the RESTING
+order's price, not at our limit. Measured on 283 live fills: the executed price
+was at or below the signalled price on every one — 207 exactly at it, 76
+strictly better (best −43c), **zero worse**. So raising our limit cannot make a
+fill we already win worse; it can only add fills we currently miss. This is the
+load-bearing fact under `results/PREREG_sweep.md`; it was an assumption until
+it was checked.
+
 **Contract.** `KXBTC15M` and siblings (ETH, SOL, XRP, DOGE, BNB, ADA, BCH,
 ZEC, HYPE, NEAR, TON). A new window opens every 15 minutes, 24/7.
 

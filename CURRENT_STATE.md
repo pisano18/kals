@@ -1,7 +1,7 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
 Written so a session that has just been `/clear`ed can pick up without
-re-deriving anything. **Updated 2026-09-13 ~2:40 AM ET.** If the date above is
+re-deriving anything. **Updated 2026-09-13 ~4:20 AM ET.** If the date above is
 more than a day old, verify the live numbers before quoting them.
 
 `CLAUDE.md` = the rules. `PROJECT_HISTORY.md` = why things were killed.
@@ -64,19 +64,26 @@ All live history is 12 losing of 248 closes = 4.84%; the current version is
 | Should the depth floor be lowered/removed? | **NO.** Removing it costs 30% of the money: +15% fills, -35% mean size, -25% contracts. | `results/RESULTS_levels.md` |
 | Are some coins safer? | **NO.** Spread appears 53% of the time by chance; rank correlation between halves +0.35; out of sample the rule fails non-monotonically. | `results/PREREG_coinrank.md` |
 | Do S&P/Nasdaq 15-min series exist? | They exist, `fifteen_min`, `quadratic` -- and have **NEVER run a market**. Contradiction 3 closed, IDEAS.md B3 struck. | this file |
+| Does "did anyone else take this offer" recover the population rule 5 says the tape cannot see? | **NO as a trading rule, PARTLY as a population filter.** The forward split is contaminated by outcome leakage (gap grows 3.2 -> 88.6 pp as the window widens 250 ms -> 60 s); the clean backward version has NO POWER (+1.27 pp, [-1.62, +4.57], MDE 4.05). | `results/RESULTS_contest.md` |
+| Can we win more races by bidding above the ask? | **Probably, and it is nearly free** -- a crossing IOC fills at the RESTING price (283/283 live fills at or better than signalled, zero worse). 43% of lost races have a next level that still clears the SAME gate, median +0.20c. NOT DEPLOYED: needs the live bar. | `results/PREREG_sweep.md` |
+| Is losing 28% of races a latency problem? | **NO.** Filled and zero-filled orders have identical latency (median 96 ms both). The competing take lands at a median 67 ms. We cannot out-run them; we can only cross a level. | this file |
 | Trade more carefully after a loss? | **NO.** 0 of 18 closes following a loss lost (vs 2.62% baseline). Mean $ after a loss is HIGHER. A 1-close cooldown costs 6% of profit and saves nothing measurable. | this file |
 
 ## Open, and worth work
 
-1. **Quote age.** `pinselect` found every bad fill sat on a price under 0.25s
+1. **The sweep (race harder).** `results/PREREG_sweep.md` is written and the
+   bar is set; the code is not. Order **+17% more fills at the same gate**,
+   ~+$4-6/day at today's size, and the one risk the tape cannot measure is
+   whether swept fills are adversely selected. **Operator decision, not mine.**
+2. **Quote age.** `pinselect` found every bad fill sat on a price under 0.25s
    old; prices resting 30s+ had 0 failures in 302. Now LOGGED live as
    `level_age_ms` / `level_age_exact` on every signal, and **deliberately not
    gated on** -- four self-tests assert nothing branches on it. Needs a
    pre-registered bar once there is live data. **Best lead open.**
-2. **The loss rate itself.** Everything hinges on it. Keep counting.
-3. `results/PREREG_hedge.md` -- n=30 live bar, 3 events so far.
-4. `results/PREREG_coinrank.md` -- 147 forward clean fills for one coin.
-5. `results/PREREG_coin.md` -- 30 SOL closes.
+3. **The loss rate itself.** Everything hinges on it. Keep counting.
+4. `results/PREREG_hedge.md` -- n=30 live bar, 3 events so far.
+5. `results/PREREG_coinrank.md` -- 147 forward clean fills for one coin.
+6. `results/PREREG_coin.md` -- 30 SOL closes.
 
 ## Hedge, measured 2026-09-13
 
@@ -95,6 +102,16 @@ Holds to ~125, then the opposite side's depth runs out. **The hedge IS a sale**
 pays $1. Over the full 18.6-day window the hedge COSTS ~$1.29/day at size 20
 and SAVES money in bad stretches. It is insurance, not edge.
 
+## The tape got worse in the last third -- not our loss rate, the environment
+
+`pincontest`, live-gate candidate population, split on close time: the
+**first 70% of closes fail on 1.87% of rows, the last 30% on 4.61%** (11 losing
+closes of 501, then 10 of 215). This is a TAPE population and is not our loss
+rate (rule 5). It is the environment the bot trades in, it is getting harder,
+and it is consistent with `RESULTS_levels`' note that the second half of the
+window was 3x worse. Any threshold fitted on the whole window is fitted on a
+gentler market than the current one.
+
 ## Hard-won gotchas that will bite again
 
 - **A self-test must match a whole LINE at its real indentation**, never a
@@ -109,6 +126,12 @@ and SAVES money in bad stretches. It is insurance, not edge.
   `balance_dollars`; `read_bank()` requires both to agree.
 - **Cluster by close TIME, not series+time.** Twelve series settle on one
   second at rho ~ 0.8. Getting this wrong inflated n from 25 to 36 today.
+- **`pinlevels_rows.jsonl` holds candidates the live bot REFUSES.** 2,699 of
+  the 16,683 rows are `verdict: refuse`, fired by the dump guard -- offers at
+  2c on a side the model calls certain, which lose 77% of the time. Any
+  re-score must filter (`pincontest.gate(rows, "live")` does). Including them
+  manufactured a 10 pp gap out of a population the bot never trades, in the
+  first run of `pincontest` today.
 - **`pinlevels` caches candidates** in `results/pinlevels_rows.jsonl` (422
   book hours, 16,683 rows). Re-scoring is seconds; re-walking the tape is
   hours. Almost every question below is a re-score.
@@ -119,5 +142,6 @@ and SAVES money in bad stretches. It is insurance, not edge.
 python research/pinver.py                    # how is the current version doing
 python research/pinbank.py --bank 234        # what size does the bank support
 python research/pinlevels.py --minfill 39:1.0,0.5,0.25   # re-score, no tape walk
+python research/pincontest.py --rescore --gate live      # contest split, 3 s
 python research/<file>.py --selftest         # always before trusting a file
 ```
