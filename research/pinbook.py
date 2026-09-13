@@ -115,19 +115,75 @@ def _levels(blob, key, limit=5):
     return out
 
 
-def wanted_seconds(index, taus=(Z_TAU,)):
+def tape_range(data_dir):
+    """(first, last) epoch seconds covered by the index tape, FROM THE FILE
+    NAMES.
+
+    THE WHOLE POINT IS NOT LOADING THE INDEX. The first version of this file
+    called replay.load_index() just to find out which seconds to keep, which
+    holds all twelve series -- about 2.5 GB -- for the entire duration of an
+    8.3 GB book scan. The job was killed for memory, and CLAUDE.md's resource
+    protocol exists because an analysis job once OOM-killed the COLLECTOR, and
+    the tape is unreproducible while an analysis result is not.
+
+    The close grid is every 900 seconds. The tape's range is in the filenames.
+    Nothing needs to be decompressed to work out which seconds matter.
+    """
+    stamps = sorted(os.path.basename(p)[:11] for p in glob.glob(
+        os.path.join(data_dir, "cfbenchmarks_value", "*.jsonl.gz")))
+    if not stamps:
+        return None, None
+
+    def to_epoch(st):
+        return int(time.mktime(time.strptime(st, "%Y%m%dT%H"))
+                   - time.timezone)
+    return to_epoch(stamps[0]), to_epoch(stamps[-1]) + 3600
+
+
+def wanted_seconds(first, last):
     """The seconds a snapshot is worth keeping: T and T-BACK for every close."""
     keep = set()
-    for _iid, ser in index.items():
-        if not ser:
-            continue
-        lo, hi = min(ser), max(ser)
-        c = lo - (lo % 900) + 900
-        while c <= hi:
-            keep.add(c - WINDOW)
-            keep.add(c - WINDOW - BACK)
-            c += 900
+    c = first - (first % 900) + 900
+    while c <= last:
+        keep.add(c - WINDOW)
+        keep.add(c - WINDOW - BACK)
+        c += 900
     return keep
+
+
+def load_one_index(data_dir, index_id, say=None):
+    """{second: value} for ONE index id -- a twelfth of the memory of loading
+    them all, and the reason this file can now run beside the live bot."""
+    out = {}
+    key = '"%s"' % index_id
+    for path in sorted(glob.glob(os.path.join(data_dir, "cfbenchmarks_value",
+                                              "*.jsonl.gz"))):
+        for line in gzsalvage.iter_lines(path):
+            if key not in line:
+                continue
+            try:
+                m = json.loads(line)
+            except ValueError:
+                continue
+            d = m.get("msg") or {}
+            if d.get("index_id") != index_id:
+                continue
+            inner = d.get("data")
+            if isinstance(inner, str):
+                try:
+                    inner = json.loads(inner)
+                except ValueError:
+                    continue
+            if not isinstance(inner, dict):
+                continue
+            try:
+                out[int(round(float(inner["time"]) / 1000.0))] = float(
+                    inner["value"])
+            except (KeyError, TypeError, ValueError):
+                continue
+    if say:
+        say("    %s: %d seconds" % (index_id, len(out)))
+    return out
 
 
 def scan(feed_dir, keep_secs, say=print):
@@ -200,12 +256,17 @@ def features(book, pair, close_s):
     return f
 
 
-def build(index, book, z_tau=Z_TAU, say=print):
-    """pinflood-shaped rows: [(close, pair, features, |z|)]."""
+def build(data_dir, book, z_tau=Z_TAU, say=print):
+    """pinflood-shaped rows: [(close, pair, features, |z|)].
+
+    ONE COIN AT A TIME, released before the next is read. The book dict is
+    already in memory; holding twelve index series alongside it is what got the
+    first version killed.
+    """
     rows = []
     n_noz = n_nofeat = 0
     for pair, iid in PAIR_TO_INDEX.items():
-        ser = index.get(iid)
+        ser = load_one_index(data_dir, iid, say=say)
         if not ser:
             continue
         lo, hi = min(ser), max(ser)
@@ -223,6 +284,8 @@ def build(index, book, z_tau=Z_TAU, say=print):
                 continue
             rows.append((c, pair, f, abs(r[0])))
             c += 900
+        ser.clear()
+        del ser
     if say:
         say("  rows: %d (%d closes had no z, %d had no book snapshot at the "
             "window open)" % (len(rows), n_noz, n_nofeat))
@@ -288,8 +351,8 @@ def selftest():
        "a pair with no snapshot returns None rather than a guess")
 
     # NO LOOKAHEAD: the features cannot see inside the settlement window
-    want = wanted_seconds({"BRTI": {1789318000: 1.0, 1789319000: 1.0}})
-    ck(all((s % 900) in (840, 780) for s in want),
+    want = wanted_seconds(1789318000, 1789319000)
+    ck(want and all((s % 900) in (840, 780) for s in want),
        "only close-60 and close-120 are ever requested, both at or before the "
        "window open (%s)" % sorted(s % 900 for s in want))
 
@@ -411,19 +474,20 @@ def main():
         rc = selftest()
         if rc:
             return rc
-    import replay                                              # noqa: E402
-    idx = replay.load_index(a.data, verbose=False)
-    if not idx:
+    first, last = tape_range(a.data)
+    if first is None:
         print("pinbook: no cfbenchmarks_value on disk -- nothing to analyse")
         return 0
-    keep = wanted_seconds(idx)
-    print("  %d seconds wanted from the book" % len(keep))
+    keep = wanted_seconds(first, last)
+    print("  tape spans %s .. %s; %d seconds wanted from the book"
+          % (time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(first)),
+             time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(last)), len(keep)))
     book = scan(a.feed, keep)
     if not book:
         print("pinbook: no book snapshot landed on a wanted second -- nothing "
               "to analyse")
         return 0
-    rows = build(idx, book)
+    rows = build(a.data, book)
     if not rows:
         print("pinbook: no close had both a z-score and a book snapshot -- "
               "nothing to analyse")
