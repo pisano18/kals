@@ -121,6 +121,9 @@ class LiveBook:
         self.lock = threading.RLock()
         # ticker -> {"yes": {px: size}, "no": {px: size}}
         self.books = {}
+        self._age = {}   # ticker -> {side: {price: first_seen_rx_ms}}.
+                         # A price present here was watched into existence by
+                         # a delta; absent means unknown (see level_age_ms).
         # ticker -> dict(rx_ms, ts_ms, seq, sid, suspect, snapshots, deltas)
         self.meta = {}
         self.wanted = set()          # tickers we want subscribed
@@ -164,11 +167,57 @@ class LiveBook:
                                 sorted(b["no"].items(), reverse=True)[:n]))
 
     # ---------------- pure book mechanics (self-tested) ----------------
+    # ======================================================================
+    # LEVEL AGE -- how long a price has been RESTING.
+    #
+    # Added 2026-09-13 from research/pinselect.py (RESULTS_select.md): the
+    # model's excess loss is concentrated entirely in the population where
+    # somebody was willing to sell to us, and every failure in that arm sat on
+    # a level that had appeared within 0.25 s. Levels resting >= 30 s had 0
+    # failures in 302 observations. Age is the candidate tell, and nothing in
+    # this class measured it -- `rx_ms` is the age of the last message on the
+    # ticker, not of the price we are about to hit.
+    #
+    # THIS IS LOGGING ONLY. No decision reads it yet; the slices above were
+    # chosen after seeing the tape and need a pre-registered live test first.
+    #
+    # UNKNOWN IS NOT ZERO, AND THAT DISTINCTION IS THE WHOLE POINT. A snapshot
+    # says a level EXISTS, never when it arrived, so after every reconnect the
+    # entire book would look brand new -- precisely the signature we would be
+    # refusing. So a level we did not watch appear reports a LOWER BOUND
+    # (it has been there at least since the snapshot) flagged inexact, and
+    # only a level created by a delta we applied reports an exact age.
+    # ======================================================================
+    def _age_map(self, tk):
+        return self._age.setdefault(tk, {"yes": {}, "no": {}})
+
+    def level_age_ms(self, tk, side, price, now=None):
+        """(age_ms, exact) for a resting level, or (None, False) if unknown.
+
+        exact=True  -- we saw this level appear; age is when it did.
+        exact=False -- it was already in a snapshot; age is a LOWER BOUND,
+                       measured from that snapshot's arrival.
+        """
+        now = now_ms() if now is None else now
+        with self.lock:
+            a = self._age.get(tk)
+            if not a or side not in a:
+                return None, False
+            st = a[side].get(round(float(price), 4))
+            if st is not None:
+                return max(0, now - st), True
+            m = self.meta.get(tk) or {}
+            snap = m.get("snap_rx_ms")
+            if snap is None:
+                return None, False
+            return max(0, now - snap), False
+
     def _ensure(self, tk):
         if tk not in self.books:
             self.books[tk] = {"yes": {}, "no": {}}
             self.meta[tk] = {"rx_ms": None, "ts_ms": None, "seq": None,
                              "sid": None, "suspect": False, "await_snapshot": False,
+                             "snap_rx_ms": None,
                              "snapshots": 0, "deltas": 0, "ooo": 0}
 
     def _on_connect(self):
@@ -208,9 +257,17 @@ class LiveBook:
         with self.lock:
             self._ensure(tk)
             self.books[tk] = book
+            # A level that was ALREADY known and is still quoted at the same
+            # price kept resting across the resubscribe -- its stamp is still
+            # true. Anything else is unknown, not new.
+            old = self._age.get(tk) or {"yes": {}, "no": {}}
+            self._age[tk] = {
+                sd: {p: old.get(sd, {}).get(p)
+                     for p in book[sd] if old.get(sd, {}).get(p) is not None}
+                for sd in ("yes", "no")}
             m = self.meta[tk]
             m.update(rx_ms=rx_ms, seq=seq, sid=sid, suspect=False,
-                     await_snapshot=False)
+                     await_snapshot=False, snap_rx_ms=rx_ms)
             m["snapshots"] += 1
             self.subscribed.add(tk)
         self.stats["snapshots_applied"] += 1
@@ -246,13 +303,21 @@ class LiveBook:
                             tk, seq, m["seq"])
                 return False
             lv = self.books[tk][side]
-            new = round(lv.get(p, 0.0) + d, 2)
+            am = self._age_map(tk)[side]
+            was = lv.get(p, 0.0)
+            new = round(was + d, 2)
             if new <= 0:
                 lv.pop(p, None)
+                am.pop(p, None)      # the level died; a later one is NEW
                 if new < 0:
                     self.stats["delta_below_zero"] += 1
             else:
-                lv[p] = new
+                if was <= 0:
+                    # WE WATCHED THIS PRICE COME INTO EXISTENCE. Only this
+                    # path produces an exact age.
+                    am[p] = rx_ms
+                lv[p] = new          # a resize keeps the original stamp:
+                                     # growing a quote does not restart it
             m.update(rx_ms=rx_ms, seq=seq, sid=sid)
             if tk in self._watch:
                 self._record(tk, rx_ms)
@@ -767,6 +832,83 @@ def selftest():
     print("  seq gap: resync flagged AND loop woken at once; gap frame still "
           "applied to the (now suspect) book  ok")
     print(f"  stats: {dict(lb.stats)}")
+
+    # ---- LEVEL AGE (2026-09-13) --------------------------------------------
+    # Everything here turns on one distinction: a level we WATCHED appear has
+    # an exact age; a level that was merely present in a snapshot has a LOWER
+    # BOUND. Collapsing those two is what would make every book look new after
+    # a reconnect -- the exact signature pinselect found on the bad fills.
+    A = "KXAGE15M-26SEP130000-00"
+    lb2 = LiveBook(key_id="x", key_file="x")
+    lb2.on_frame(f({"type": "orderbook_snapshot", "sid": 1, "seq": 1,
+                    "msg": {"market_ticker": A,
+                            "yes_dollars_fp": [["0.9000", "50.00"]],
+                            "no_dollars_fp": []}}), 100_000)
+    age, exact = lb2.level_age_ms(A, "yes", 0.90, now=130_000)
+    assert age == 30_000 and exact is False, (age, exact)
+    assert lb2.level_age_ms(A, "yes", 0.5, now=130_000) == (30_000, False), \
+        "a price absent from the book still reports the snapshot bound"
+    print("  age: a snapshot level reports a LOWER BOUND (30000 ms), flagged "
+          "inexact -- it existed, we never saw it arrive  ok")
+
+    # A delta that CREATES a level is the only exact stamp.
+    lb2.on_frame(f({"type": "orderbook_delta", "sid": 1, "seq": 2,
+                    "msg": {"market_ticker": A, "price_dollars": "0.8000",
+                            "delta_fp": "20.00", "side": "yes",
+                            "ts_ms": 120_000}}), 120_000)
+    assert lb2.level_age_ms(A, "yes", 0.80, now=130_000) == (10_000, True)
+    # ...and GROWING it does not restart the clock. A quote being added to is
+    # the same quote; treating a resize as a new level would make every
+    # actively-managed (and therefore old) level look fresh.
+    lb2.on_frame(f({"type": "orderbook_delta", "sid": 1, "seq": 3,
+                    "msg": {"market_ticker": A, "price_dollars": "0.8000",
+                            "delta_fp": "5.00", "side": "yes",
+                            "ts_ms": 125_000}}), 125_000)
+    assert lb2.books[A]["yes"][0.80] == 25.0
+    assert lb2.level_age_ms(A, "yes", 0.80, now=130_000) == (10_000, True), \
+        "growing a level must KEEP its original stamp"
+    print("  age: a delta-created level is exact (10000 ms) and a resize does "
+          "not restart its clock  ok")
+
+    # A level that dies and comes back IS new -- that is the whole tell.
+    lb2.on_frame(f({"type": "orderbook_delta", "sid": 1, "seq": 4,
+                    "msg": {"market_ticker": A, "price_dollars": "0.8000",
+                            "delta_fp": "-25.00", "side": "yes",
+                            "ts_ms": 126_000}}), 126_000)
+    assert 0.80 not in lb2.books[A]["yes"]
+    lb2.on_frame(f({"type": "orderbook_delta", "sid": 1, "seq": 5,
+                    "msg": {"market_ticker": A, "price_dollars": "0.8000",
+                            "delta_fp": "9.00", "side": "yes",
+                            "ts_ms": 129_900}}), 129_900)
+    assert lb2.level_age_ms(A, "yes", 0.80, now=130_000) == (100, True), \
+        "a level that was deleted and re-quoted is 100 ms old, not 10000"
+    print("  age: deleted then re-quoted reads 100 ms -- the 0.25 s signature "
+          "pinselect found on every bad fill  ok")
+
+    # A RESUBSCRIBE MUST NOT RESET AGES. This is the failure that would make
+    # the tell useless: reconnect, and the whole book looks freshly quoted.
+    lb2.on_frame(f({"type": "orderbook_snapshot", "sid": 2, "seq": 1,
+                    "msg": {"market_ticker": A,
+                            "yes_dollars_fp": [["0.8000", "9.00"],
+                                               ["0.7000", "4.00"]],
+                            "no_dollars_fp": []}}), 200_000)
+    assert lb2.level_age_ms(A, "yes", 0.80, now=230_000) == (100_100, True), \
+        "0.80 was still quoted across the resubscribe, so its exact stamp " \
+        "survives -- it has been resting the whole time"
+    a70, e70 = lb2.level_age_ms(A, "yes", 0.70, now=230_000)
+    assert (a70, e70) == (30_000, False), \
+        "0.70 is new to us; it reports the snapshot bound, NOT zero"
+    assert lb2.level_age_ms(A, "yes", 0.90, now=230_000) == (30_000, False), \
+        "0.90 left the book across the resubscribe; its stale stamp is gone"
+    print("  age: a resubscribe KEEPS the stamp of a level still quoted and "
+          "reports a bound for the rest -- a reconnect cannot fake freshness "
+          " ok")
+
+    assert LiveBook(key_id="x", key_file="x").level_age_ms(
+        "NOPE", "yes", 0.5) == (None, False), \
+        "an unknown ticker is (None, False) -- unknown, never 0"
+    print("  age: an unseen ticker reads unknown, not zero  ok")
+
     print("SELF-TEST PASSED")
     return 0
 

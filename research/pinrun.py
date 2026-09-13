@@ -2070,6 +2070,27 @@ def selftest():
             pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
             pintake.LOSS_ABORT, pintake.HARD_MAX = _la0, _hm0
 
+        # ---- quote age: LOGGED, NEVER GATED ON -------------------------
+        _lb2 = src[src.index(chr(10) + "def trade_loop("):]
+        ck("                       level_age_ms=_lvl_age, "
+           "level_age_exact=_lvl_exact," in _lb2.splitlines(),
+           "the signal record must carry the resting age of the level we hit")
+        ck("_lvl_side = \"no\" if want == \"yes\" else \"yes\"" in _lb2,
+           "and it must read the OPPOSITE side -- buying YES at p hits the "
+           "NO bid at 1-p, and reading our own side would measure a level we "
+           "are not trading against")
+        ck("book.level_age_ms(" in _lb2 and "round(1.0 - price, 4)" in _lb2,
+           "at the complementary price, not at the price we pay")
+        for _bad in ("if _lvl_age", "_lvl_age <", "_lvl_age >",
+                     "_lvl_age is not None and"):
+            ck(_bad not in _lb2,
+               f"NOTHING may branch on the quote age yet ({_bad!r} found). "
+               f"The slices in RESULTS_select.md were chosen after seeing "
+               f"the tape and need a pre-registered live bar first; a filter "
+               f"deployed from them would be tuned on its own evidence.")
+        ck(hasattr(livebook.LiveBook, "level_age_ms"),
+           "livebook must expose level_age_ms")
+
         # Wired into the loop AFTER reconcile(), or 'only when flat' is never
         # true. Anchored on a whole line at its real indentation.
         _lb = src[src.index(chr(10) + "def trade_loop("):]
@@ -2998,7 +3019,23 @@ def trade_loop(a, rec, book, idx, series_index):
             # tradeable population flips 0.79% [0.10, 2.82] while live has
             # flipped 8.8% [2.9, 19.3], intervals that do not overlap.
             cx_, cn_, cown_ = idx.conditions(iid)
+            # HOW LONG THE PRICE WE ARE ABOUT TO HIT HAS BEEN RESTING.
+            # LOGGED, NEVER GATED ON -- results/RESULTS_select.md found the
+            # model's excess loss concentrated entirely in the population
+            # where somebody chose to sell to us, with every failure sitting
+            # on a level under 0.25 s old and zero failures on levels resting
+            # 30 s+. Those slices were picked after seeing the tape, so this
+            # builds the LIVE record a pre-registered filter would need.
+            # THE LEVEL WE CONSUME IS THE OPPOSITE SIDE'S BID: buying YES at
+            # p means hitting the NO bid at 1-p (livebook's book holds bids).
+            try:
+                _lvl_side = "no" if want == "yes" else "yes"
+                _lvl_age, _lvl_exact = book.level_age_ms(
+                    tk, _lvl_side, round(1.0 - price, 4))
+            except Exception:
+                _lvl_age, _lvl_exact = None, False
             sig = dict(ticker=tk, want=want, price=round(price, 4),
+                       level_age_ms=_lvl_age, level_age_exact=_lvl_exact,
                        fair=round(f, 5), tau=tau, edge_c=round(100 * e, 3),
                        size=size, take_n=take_n, strike=strike, digits=digits,
                        spot=spot, sigma=round(sg, 6), book_age_ms=b["age_ms"],
