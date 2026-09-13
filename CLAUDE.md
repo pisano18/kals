@@ -10,6 +10,12 @@ plus 2 Coin Race relative-performance series. No money has been deployed. Every
 number in this repo was produced by a script that refuses to touch real data
 until its self-test passes.
 
+**READ `CURRENT_STATE.md` FIRST.** It is small and deliberately kept
+current: what is deployed right now, the live loss rate against break-even,
+what was settled this week and must not be re-litigated, what is still open,
+and the gotchas that have already cost time. A session that has just been
+`/clear`ed should read it before anything else.
+
 `PROJECT_HISTORY.md` holds the killed approaches, the known measurement
 artefacts, the two unreconciled thesis versions and the kill-criteria change
 log -- read it before resurrecting an idea or quoting a confidence number.
