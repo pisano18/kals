@@ -30,6 +30,46 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## NOT LIVE — AMENDMENTS 23 and 24, in paper what-ifs since 2026-09-13 21:5xZ
+
+**Listed here because the FLAGS now exist in `pinrun.py` and a future session
+must not mistake "the flag is there" for "it is running".** Neither changes the
+live bot. Live is still `--size 20 --loss-abort -60.00 --max-positions 3
+--max-losses 3 --improve-scope market`, with `MAX_PER_MARKET` 1 and
+`PICK` "first".
+
+- **AMENDMENT 23 — the re-buy band.** `rebuy_ok()`: a SAME-market second buy
+  must be cheaper by at least `IMPROVE_BY` (0.5c) and at most `IMPROVE_MAX`
+  (1.0c, `--improve-max`). Only reachable when `--max-per-market` > 1, which is
+  still refused on `--live`.
+  Paper run: `--max-per-market 2 --improve-max 0.010`.
+- **AMENDMENT 24 — best-first scan order.** `PICK = "best"` (`--pick best`)
+  orders each scan pass by the edge measured on the previous pass, so when two
+  markets pass in the same second the better one is reached first.
+  Paper run: `--pick best`.
+
+Evidence, bars and the strike conditions:
+`results/PREREG_pin_live_AMENDMENT_23_24.md`, written before either run took a
+fill. Measurements: `research/pinpick.py` (first-vs-best, and the re-buy band
+with a 60/40 holdout on close time) and `research/pinwarn.py` (18,653 closes
+rebuilt from the index, uncensored, on whether confidence warns before a flip).
+
+**Revert (removes both flags from anything that could use them):**
+
+```powershell
+cd C:\kals-repo
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+  Where-Object {$_.CommandLine -like '*pinrun*' -and
+                ($_.CommandLine -like '*--pick*' -or
+                 $_.CommandLine -like '*--max-per-market*')} |
+  ForEach-Object { Stop-Process -Id $_.ProcessId }
+```
+
+That stops the two paper runs and touches nothing else — the live bot carries
+neither flag, and the filter requires one of them.
+
+---
+
 ## v-a22 — 2026-09-13 19:3xZ — AMENDMENT 22: a second COIN at the same close is allowed on its own merits
 
 **What changed.** `--improve-scope market`. The improve-by rule no longer

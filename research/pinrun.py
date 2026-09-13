@@ -528,6 +528,8 @@ def hedge_locked_loss(entry_cost, hedge_cost, n=1.0):
     return float(n) * (float(entry_cost) + float(hedge_cost) - 1.0)
 
 
+IMPROVE_MAX = 0.010    # AMENDMENT 23: and NO MORE than this much cheaper.
+_DEFAULT_IMPROVE_MAX = 0.010   # --improve-max is measured against this
 IMPROVE_BY = 0.005     # a second buy must be at least this much cheaper
 # AMENDMENT 22 (2026-09-13): THE IMPROVE-BY RULE IS OBSOLETE ACROSS MARKETS AND
 # WAS SILENTLY OVERRIDING AMENDMENT 17.
@@ -561,6 +563,37 @@ _DEFAULT_IMPROVE_SCOPE = "close"   # THE THIRD TIME THIS PATTERN BIT. A guard
                                    # is actually for is "nobody changed the
                                    # default in the source". Same fix as
                                    # _DEFAULT_SIGMA_RULER and _DEFAULT_PIN.
+PICK = "first"           # AMENDMENT 24: "first" = scan in discovery order and
+_DEFAULT_PICK = "first"  # take the first market that clears every gate, which
+                         # is what this bot has always done. "best" orders the
+                         # scan by the edge measured on the previous pass, so
+                         # the first market to clear is also the best one
+                         # offered. See the long note at the loop head.
+
+
+def rebuy_ok(prev, tk, price):
+    """AMENDMENT 23: may we buy market `tk` AGAIN at `price` in this close?
+
+    Only the SAME market is governed here. A different market is a different
+    outcome and is governed by AMENDMENT 22's scope rule, not this one.
+
+    The band is (IMPROVE_BY, IMPROVE_MAX]: at least half a cent cheaper --
+    AMENDMENT 3's rule, unchanged -- and at most a cent cheaper. See the long
+    note at the call site in the trade loop for the 1,260-market measurement
+    and its 60/40 holdout. Reads the module globals at call time on purpose,
+    so --improve-max takes effect.
+    """
+    if prev is None:
+        return True
+    if prev.get("per_tk", {}).get(tk, 0) <= 0:
+        return True                      # not a re-buy at all
+    paid = prev.get("px_tk", {}).get(tk)
+    if paid is None:
+        return True                      # no price on record; A3 still applies
+    drop = paid - price
+    return IMPROVE_BY - 1e-12 <= drop <= IMPROVE_MAX + 1e-12
+
+
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
                        # our own size: a 0.01-contract order against a
                        # 0.02-contract dust level is not a real fill test
@@ -2534,7 +2567,7 @@ def selftest():
         # turns a guard into a refusal to start the moment its flag is used.
         _dtest = _dsrc[_dsrc.index("def " + "selftest"):]
         for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN",
-                    "MAX_PER_MARKET"):
+                    "MAX_PER_MARKET", "IMPROVE_MAX", "PICK"):
             ck(("_DEFAULT_%s" % _nm) in _dwork,
                "a _DEFAULT_%s exists to assert against, so its guard can "
                "never become a refusal to start" % _nm)
@@ -2585,6 +2618,89 @@ def selftest():
                "are bought, never how much can be lost" % close_budget())
         finally:
             globals()["SIZE"] = _sz22
+
+        # ---- AMENDMENT 23: the re-buy band ------------------------------
+        ck(abs(_DEFAULT_IMPROVE_MAX - 0.010) < 1e-12,
+           "the DECLARED default IMPROVE_MAX is 1.0c (running now with "
+           "%.4f)" % IMPROVE_MAX)
+        ck(IMPROVE_MAX > IMPROVE_BY,
+           "the band has width: at most %.3f cheaper is above at least %.3f "
+           "cheaper, so some second buy can qualify"
+           % (IMPROVE_MAX, IMPROVE_BY))
+        _p23 = {"per_tk": {"A": 1}, "px_tk": {"A": 0.960}}
+        ck(rebuy_ok(None, "A", 0.90),
+           "with nothing yet bought in the close there is no re-buy to judge")
+        ck(rebuy_ok(_p23, "B", 0.90),
+           "a DIFFERENT market is not a re-buy -- AMENDMENT 22 governs that, "
+           "and A23 must not quietly re-impose a cross-market bar")
+        ck(not rebuy_ok(_p23, "A", 0.958),
+           "0.2c cheaper is refused: AMENDMENT 3's floor still binds")
+        ck(rebuy_ok(_p23, "A", 0.955),
+           "0.5c cheaper is allowed -- exactly IMPROVE_BY, the edge of the "
+           "band, which is where an off-by-one would hide")
+        ck(rebuy_ok(_p23, "A", 0.950),
+           "1.0c cheaper is allowed -- exactly IMPROVE_MAX, the other edge")
+        ck(not rebuy_ok(_p23, "A", 0.949),
+           "1.1c cheaper is REFUSED. THIS IS THE WHOLE AMENDMENT: measured "
+           "over 398 markets that offered a second buy, 0.5-1c cheaper lost "
+           "0.70% and paid +3.08c/contract, while 5-10c cheaper lost 26.09% "
+           "and cost -11.45c. Break-even is 3.58%.")
+        ck(not rebuy_ok(_p23, "A", 0.30),
+           "and a 66c collapse is refused rather than treated as a bargain")
+        # the cheapest price paid in THIS market is what the band measures
+        # px_tk says 0.950 for this market; the close's overall best is 0.940,
+        # set by some OTHER market. A re-buy at 0.935 is 1.5c under our own
+        # 0.950 (refuse) but only 0.5c under the close's 0.940 (would allow),
+        # so the two readings genuinely disagree here.
+        _p23b = {"per_tk": {"A": 2}, "px_tk": {"A": 0.950}, "best": 0.940}
+        ck(not rebuy_ok(_p23b, "A", 0.935),
+           "the band is measured against the cheapest price paid in THIS "
+           "market (0.950), not against the close's overall best (0.940) -- "
+           "the latter would compare a BTC re-buy to a price paid on ETH")
+        _src23 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck("if not rebuy_ok(prev, tk, price):" in _src23,
+           "and the trade loop actually calls rebuy_ok, so the band is live "
+           "logic rather than a function nothing reaches")
+        ck('"px_tk": {tk: px}' in _src23 and 'd23[tk] = min(' in _src23,
+           "a fill records the price paid per market, which is the input the "
+           "band needs -- without it rebuy_ok silently allows everything")
+
+        # ---- AMENDMENT 24: best-first scan order ------------------------
+        ck(_DEFAULT_PICK == "first",
+           "the DECLARED default scan order is 'first' -- A24 is a measured "
+           "improvement that has not yet been through a what-if, so it must "
+           "be opt-in (running now with %r)" % PICK)
+        # the ordering key, exactly as the loop builds it
+        _le24 = {"A": (900, 0.010), "B": (900, 0.040), "C": (900, 0.025),
+                 "D": (1800, 0.900)}
+
+        def _rank24(kv):
+            got = _le24.get(kv[0])
+            if not got or got[0] != kv[1][1]:
+                return 0.0
+            return -got[1]
+
+        _mk24 = [("A", (0, 900)), ("B", (0, 900)), ("C", (0, 900)),
+                 ("D", (0, 900)), ("E", (0, 900))]
+        _mk24.sort(key=_rank24)
+        ck([k for k, _ in _mk24][:3] == ["B", "C", "A"],
+           "the scan visits the biggest previous-pass edge first (B 4.0c, "
+           "C 2.5c, A 1.0c), got %s" % [k for k, _ in _mk24])
+        ck([k for k, _ in _mk24][3:] == ["D", "E"],
+           "and a market with NO edge yet (E) or an edge left over from "
+           "ANOTHER close (D, whose 90c edge was measured on close 1800) "
+           "sorts last rather than jumping the queue -- a stale edge from a "
+           "settled close would otherwise dominate every pass")
+        _src24 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck("last_edge[tk] = (close_s, e)" in _src24,
+           "the loop records each pass's edge, which is the only input the "
+           "ordering has")
+        ck('if PICK == "best":' in _src24 and "_mk.sort(key=_rank)" in _src24,
+           "and it really re-orders the scan rather than accepting the flag "
+           "and ignoring it")
+        ck(_src24.index("_mk.sort(key=_rank)")
+           < _src24.index("for tk, (iid, close_s, strike, digits, exi) in _mk:"),
+           "the sort happens BEFORE the scan it orders")
 
         # ---- AMENDMENT 21: the confidence gate is now a flag -----------
         ck(_DEFAULT_PIN == 0.995,
@@ -3149,6 +3265,8 @@ def trade_loop(a, rec, book, idx, series_index):
     live = a.live
     fired = {}                 # close_s -> ticker we already fired on
     attempts = {}              # close_s -> orders SENT, filled or not
+    last_edge = {}             # AMENDMENT 24: ticker -> (close_s, net edge)
+                               # as measured on the PREVIOUS pass, 50ms ago.
     seen_markets = {}          # ticker -> (iid, close_s, strike, digits, exi)
     uni_at = 0.0
     watching = {}            # ticker -> close_s, so closed ones drop out
@@ -3589,7 +3707,42 @@ def trade_loop(a, rec, book, idx, series_index):
                 state["errors"] += 1
                 rec("error", where="universe", err=str(e)[:200])
 
-        for tk, (iid, close_s, strike, digits, exi) in list(seen_markets.items()):
+        # ---- AMENDMENT 24 (2026-09-13): SCAN ORDER IS THE BEST FIRST ------
+        # THE OPERATOR, 2026-09-13: "I'm not certain if it should take the
+        # first or scan for the best because prices move quick but also what
+        # if there's better options."
+        #
+        # WHAT IT DID BEFORE: iterate `seen_markets` and fire on the first
+        # market that clears every gate. That order is dict insertion order --
+        # discovery order -- which is not a rule anyone chose. It is stable,
+        # so it systematically favours the same coins, and it is the only gate
+        # in this bot that is not an EV comparison.
+        #
+        # MEASURED, research/pinpick.py, 13,984 gate-passing candidate rows on
+        # 738 closes: two or more DIFFERENT markets pass in the same scan
+        # second 6.3% of the time, and when they do the first one seen is the
+        # best-edge one only 56.3% of the time. Taking the first gives up a
+        # mean 2.10c of edge (median 0.28c, p90 7.43c) and pays 2.21c more.
+        # Replayed one contract per close: +2.07c -> +2.76c per contract with
+        # the SAME number of losses (10 and 10). It survives a 60/40 split on
+        # close time, and the untouched last 40% shows +1.63c -> +2.43c, again
+        # on identical loss counts. The gain is price, not risk: "highest
+        # confidence" only reaches +2.19c.
+        #
+        # WHY IT COSTS NO TIME AND LOSES NO RACE, which was the operator's
+        # actual worry. The order comes from the edge measured on the PREVIOUS
+        # pass, 50ms ago at 20Hz -- nothing is computed twice and no take is
+        # deferred. Compare that with the status quo, whose ordering is not
+        # 50ms stale but permanently stale.
+        _mk = list(seen_markets.items())
+        if PICK == "best":
+            def _rank(kv):
+                got = last_edge.get(kv[0])
+                if not got or got[0] != kv[1][1]:      # edge from another close
+                    return 0.0
+                return -got[1]
+            _mk.sort(key=_rank)
+        for tk, (iid, close_s, strike, digits, exi) in _mk:
             tau = close_s - now_s
             if not (TAU_MIN <= tau <= TAU_MAX):
                 continue
@@ -3757,6 +3910,10 @@ def trade_loop(a, rec, book, idx, series_index):
                 _nb["shallow"][str(int(SIZE))] =                     _nb["shallow"].get(str(int(SIZE)), 0) + 1
                 continue
             e = net_edge(f, price, want)
+            # AMENDMENT 24: remember it so the NEXT pass can visit the best
+            # market first. Keyed with the close, because a ticker's edge from
+            # a settled close must never order the following one.
+            last_edge[tk] = (close_s, e)
             nb = near.setdefault(close_s, _fresh_near())
             nb["n"] += 1
             nb["decided"] += 1
@@ -3805,6 +3962,48 @@ def trade_loop(a, rec, book, idx, series_index):
             # the old behaviour exactly.
             if (IMPROVE_SCOPE == "close" and prev is not None
                     and price >= prev["best"] - IMPROVE_BY):
+                continue
+            # ---- AMENDMENT 23 (2026-09-13): THE RE-BUY BAND ----------------
+            # A SECOND BUY IN THE SAME MARKET MUST BE A LITTLE CHEAPER, NOT A
+            # LOT CHEAPER. Only reachable when MAX_PER_MARKET > 1, which is
+            # still a paper-only setting, so this changes nothing live today.
+            #
+            # THE OPERATOR'S PREMISE, 2026-09-13: "if it's really going to
+            # flip then the confidence should be dropping." MEASURED, and it
+            # is half right. research/pinwarn.py, 18,653 closes reconstructed
+            # from the index with NOTHING filtered: confidence does fall below
+            # the gate on 31 of 31 closes the model got wrong -- but LATE. At
+            # tau 25 it had caught only 11 of 18, at tau 20 only 12 of 19. On
+            # our own money it was later still: SOL 2026-09-12 23:00 was
+            # bought three times at tau 30/29/28 while confidence ROSE
+            # 0.9994 -> 0.9997 -> 0.9998, and the flip only showed at tau~12.
+            # So confidence is a true warning and a useless one at the moment
+            # a second buy happens.
+            #
+            # WHAT IS FAST ENOUGH IS THE PRICE. research/pinpick.py, 1,260
+            # gate-passing markets over 738 closes: of the 862 markets where
+            # no cheaper second ever appeared, ZERO lost. Of the 398 where one
+            # did, 25 lost -- 6.28%, difference +6.28pp with a 95% interval of
+            # [+3.46, +9.82] bootstrapped over CLOSES rather than markets.
+            # And it is a dose-response, which is the part that is hard to get
+            # by accident:
+            #     0.5-1c cheaper   142 markets   0.70% lost   2nd leg +3.08c
+            #     1-2c             141           5.67%                -0.09c
+            #     2-5c              87          11.49%                -4.92c
+            #     5-10c             23          26.09%               -11.45c
+            # Break-even is 3.58%. A small improvement is liquidity and pays;
+            # a large one is someone selling into us and costs more than the
+            # whole edge. The ordering survives a 60/40 split on close time,
+            # and the last 40% were never fitted: 1.79 / 6.06 / 21.21 / 44.44.
+            #
+            # CAVEAT, STATED RATHER THAN BURIED: those loss rates come from the
+            # tape, whose population is "an offer was sitting there" and not
+            # ours. Rule 5 forbids reading OUR loss rate off it. What is used
+            # here is the ORDERING and the fact that the groups differ, both of
+            # which are statements about what the market did.
+            if not rebuy_ok(prev, tk, price):
+                nb23 = near.setdefault(close_s, _fresh_near())
+                nb23["rebuy_band"] = nb23.get("rebuy_band", 0) + 1
                 continue
             if price > PRICE_CEILING:
                 nb["over_ceiling"] = nb.get("over_ceiling", 0) + 1
@@ -3884,6 +4083,7 @@ def trade_loop(a, rec, book, idx, series_index):
                                       "sides": {tk: want},
                                       "tickers": {tk},
                                       "per_tk": {tk: 1},
+                                      "px_tk": {tk: px},
                                       "contracts": _n}
                 else:
                     pv["n"] += 1
@@ -3893,6 +4093,12 @@ def trade_loop(a, rec, book, idx, series_index):
                     pv.setdefault("tickers", set()).add(tk)
                     d13 = pv.setdefault("per_tk", {})
                     d13[tk] = d13.get(tk, 0) + 1
+                    # AMENDMENT 23: the CHEAPEST price paid in THIS market, so
+                    # the re-buy band is measured per market. pv["best"] is
+                    # the cheapest across the whole close and would compare a
+                    # BTC re-buy against a price paid on ETH.
+                    d23 = pv.setdefault("px_tk", {})
+                    d23[tk] = min(d23.get(tk, px), px)
                     pv["contracts"] = pv.get("contracts", 0.0) + _n
 
             def _note_scrap(px, nfilled):
@@ -4064,6 +4270,21 @@ def main():
                          "in one close. Default %d. The close's CONTRACT "
                          "budget is unchanged whatever this is."
                          % _DEFAULT_MAX_PER_MARKET)
+    ap.add_argument("--pick", default=None, choices=("first", "best"),
+                    help="AMENDMENT 24: scan order. 'first' (default) visits "
+                         "markets in discovery order; 'best' visits them in "
+                         "order of the edge measured on the previous pass, so "
+                         "when two markets pass in the same second the better "
+                         "one is bought. Measured +2.07c -> +2.76c per "
+                         "contract on identical loss counts.")
+    ap.add_argument("--improve-max", type=float, default=None,
+                    help="AMENDMENT 23: the CEILING on how much cheaper a "
+                         "SAME-MARKET second buy may be, in dollars. Default "
+                         "%.3f. Only bites when --max-per-market > 1. A small "
+                         "improvement is liquidity and pays (+3.08c at 0.5-1c "
+                         "cheaper); a large one is someone selling into us "
+                         "(-11.45c at 5-10c cheaper)."
+                         % _DEFAULT_IMPROVE_MAX)
     ap.add_argument("--improve-scope", default="close",
                     choices=("close", "market"),
                     help="AMENDMENT 22: 'market' lets a SECOND COIN be bought "
@@ -4142,6 +4363,16 @@ def main():
                 "close cap cannot help, the CONTRACT budget binds first."
                 % (a.max_per_market, MAX_PER_CLOSE))
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
+    if a.pick is not None:
+        globals()["PICK"] = a.pick
+    if a.improve_max is not None:
+        if not (IMPROVE_BY < a.improve_max <= 0.10):
+            raise SystemExit(
+                "--improve-max %.4f refused: it must sit in (%.3f, 0.10]. "
+                "At or below IMPROVE_BY no second buy could ever qualify, "
+                "and above 10c the band stops meaning anything."
+                % (a.improve_max, IMPROVE_BY))
+        globals()["IMPROVE_MAX"] = float(a.improve_max)
     if a.improve_scope != "close":
         globals()["IMPROVE_SCOPE"] = a.improve_scope
     if a.pin is not None:
