@@ -56,6 +56,15 @@ TAUS = (5, 10, 15, 20, 25, 30)
 WINDOW = 60
 PIN = 0.995
 GATE_Z = pincalib.norm_ppf(PIN)
+# THE OPERATOR, 2026-09-13: "run testing on some different levels of
+# confidence and see what you can tweak."
+#
+# WHY THIS IS THE RIGHT KNOB TO TURN ALONGSIDE THE RULER, and not a separate
+# question. A wider ruler makes every stated confidence LOWER, so the SAME PIN
+# is a STRICTER gate than it used to be. Changing the ruler without re-reading
+# PIN silently tightened the strategy. Sweeping both together is the only way
+# to separate "this ruler is better" from "this ruler trades less".
+PINS = (0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9999)
 SUB = 1              # score every Nth close; 1 = all
 
 
@@ -373,7 +382,8 @@ class Acc:
     is a sum of powers, so nothing has to be stored at all.
     """
 
-    __slots__ = ("n", "s1", "s2", "s3", "s4", "gate", "gate_loss", "tail")
+    __slots__ = ("n", "s1", "s2", "s3", "s4", "gate", "gate_loss", "tail",
+                 "pin_n", "pin_loss")
 
     def __init__(self):
         self.n = 0
@@ -381,6 +391,10 @@ class Acc:
         self.gate = 0
         self.gate_loss = 0
         self.tail = 0
+        # one (kept, lost) pair per confidence level, so the whole gate curve
+        # comes out of the same single pass over the tape
+        self.pin_n = [0] * len(PINS)
+        self.pin_loss = [0] * len(PINS)
 
     def add(self, z, conf, won):
         self.n += 1
@@ -395,6 +409,11 @@ class Acc:
                 self.gate_loss += 1
         if z < -GATE_Z:
             self.tail += 1
+        lost = 0 if won else 1
+        for i, p in enumerate(PINS):
+            if conf >= p:
+                self.pin_n[i] += 1
+                self.pin_loss[i] += lost
 
     def stats(self):
         """(n, sd, kurtosis, gate n, gate loss rate, tail rate)."""
@@ -610,6 +629,22 @@ def selftest():
        "machine precision, not approximately" % (s2[2], s1[2]))
     # stats() needs at least 10 observations, so the fixture has 10: four
     # losers and six winners, all of them inside the gate.
+    # the confidence curve must be MONOTONE and must agree with the single-PIN
+    # counters at the PIN they share -- two separate code paths computing the
+    # same thing is how a table once disagreed with the text above it
+    Ap = Acc()
+    for z in zs:
+        Ap.add(z, pincalib.norm_cdf(abs(z)), z > -1.0)
+    ck(all(Ap.pin_n[i] >= Ap.pin_n[i + 1] for i in range(len(PINS) - 1)),
+       "the confidence curve is monotone -- a stricter PIN can never keep "
+       "MORE decisions (%s)" % Ap.pin_n)
+    _i995 = PINS.index(PIN)
+    ck(Ap.pin_n[_i995] == Ap.gate and Ap.pin_loss[_i995] == Ap.gate_loss,
+       "and at the deployed PIN the curve agrees with the single-PIN counter "
+       "exactly (%d==%d, %d==%d) -- two paths computing one number is how a "
+       "table once disagreed with its own headline"
+       % (Ap.pin_n[_i995], Ap.gate, Ap.pin_loss[_i995], Ap.gate_loss))
+
     Ag = Acc()
     for z in (-9.0, -9.0, -9.0, -9.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1):
         Ag.add(z, 0.999, z > -1.0)
@@ -644,9 +679,16 @@ def report(res, out_path, say=print, window=""):
             m.gate += src.gate
             m.gate_loss += src.gate_loss
             m.tail += src.tail
-        return m.stats()
+            for i in range(len(PINS)):
+                m.pin_n[i] += src.pin_n[i]
+                m.pin_loss[i] += src.pin_loss[i]
+        return m
 
-    b = merged(base) if base in res else None
+    def stats_of(lab):
+        m = merged(lab)
+        return m.stats() if m else None
+
+    b = stats_of(base) if base in res else None
     w("# RESULTS_ruler -- every way of measuring volatility, scored")
     w("")
     w("*`research/pinruler.py`, %s. %s. Decisions rebuilt from the settlement "
@@ -668,7 +710,7 @@ def report(res, out_path, say=print, window=""):
     w("|---|---|---|---|---|---|---|")
     rows = []
     for lab in res:
-        sc = merged(lab)
+        sc = stats_of(lab)
         if sc is None:
             continue
         rows.append((lab, sc))
@@ -681,6 +723,40 @@ def report(res, out_path, say=print, window=""):
         nm = ("**`%s`**" % lab) if mark else ("`%s`" % lab)
         w("| %s | %.3f | %.1f | %d | %+.1f%% | %.4f%% | %+.1f%% |"
           % (nm, s_, k_, gn, dn, 100 * gl, dl))
+    w("")
+    w("## THE CONFIDENCE CURVE -- what each PIN buys, under each ruler")
+    w("")
+    w("A wider ruler lowers every stated confidence, so **the same PIN is a "
+      "stricter gate than it used to be**. This is the table that separates "
+      "'this ruler is better' from 'this ruler simply trades less'. Counts "
+      "are relative to the OLD ruler at the deployed PIN of 0.995.")
+    w("")
+    interesting = [base, "max(300, 3600)", "max(down300, down1800)",
+                   "max(sd300, down1800)", "sd 1800s", "quartic 3600s"]
+    interesting = [k for k in interesting if k in res]
+    bm = merged(base)
+    ref_n = bm.pin_n[PINS.index(0.995)] if bm else 0
+    w("| ruler | PIN | decisions kept | vs old@0.995 | loss rate | vs old@0.995 |")
+    w("|---|---|---|---|---|---|")
+    ref_l = ((bm.pin_loss[PINS.index(0.995)] / ref_n) if ref_n else
+             float("nan"))
+    for lab in interesting:
+        m = merged(lab)
+        for i, p in enumerate(PINS):
+            nn = m.pin_n[i]
+            if not nn:
+                continue
+            lr = m.pin_loss[i] / nn
+            w("| `%s` | %.4f | %d | %+.1f%% | %.4f%% | %+.1f%% |"
+              % (lab, p, nn, 100.0 * (nn / ref_n - 1.0) if ref_n else
+                 float("nan"), 100 * lr,
+                 100.0 * (lr / ref_l - 1.0) if ref_l else float("nan")))
+    w("")
+    w("**The question this answers:** is there a PIN at which the new ruler "
+      "keeps as many decisions as the old one did, while still losing less? "
+      "If yes, the ruler is a free improvement and PIN should move with it. "
+      "If no, the ruler's gain is bought with volume and that is a trade, not "
+      "a win.")
     w("")
     w("## Holdout -- first 70% of closes against the last 30%")
     w("")
