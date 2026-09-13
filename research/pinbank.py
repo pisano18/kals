@@ -316,6 +316,40 @@ def selftest():
     sd, _, _ = auto_size(1e9, 0, 100000, floor=1, cap=20, trials=400, days=10)
     ck(sd == 20, "the cap must bind above everything else, got %s" % sd)
 
+    # ---- simulate_brake (2026-09-13) -----------------------------------
+    # Planted worlds first: an all-wins tape must never draw down, an
+    # all-losses tape must end at the floor whatever the brake.
+    up = simulate_brake([+10.0] * 20, 3.0, 200.0, days=2, closes_per_day=5,
+                        trials=40)
+    ck(up[0] > 200.0 and abs(up[2]) < 1e-9 and up[3] == 0.0,
+       f"an all-wins tape must grow and never draw down, got {up}")
+    dn = simulate_brake([-50.0] * 20, 3.0, 200.0, days=2, closes_per_day=5,
+                        trials=40)
+    ck(dn[0] < 200.0 and dn[3] == 1.0,
+       f"an all-losses tape must shrink and halve every time, got {dn}")
+    # A HARSHER BRAKE MUST LOSE MORE SLOWLY. If this ever inverts, the size
+    # is not actually being derived from the brake.
+    mix = [+3.0] * 18 + [-60.0] * 2
+    slow = simulate_brake(mix, 6.0, 200.0, days=5, closes_per_day=10,
+                          trials=200, loss_inflate=3)
+    fast = simulate_brake(mix, 1.5, 200.0, days=5, closes_per_day=10,
+                          trials=200, loss_inflate=3)
+    ck(slow[0] > fast[0],
+       f"on a losing tape a brake of 6 must outlast a brake of 1.5, got "
+       f"{slow[0]:.2f} vs {fast[0]:.2f}")
+    ck(slow[3] <= fast[3],
+       "and it must halve the bank no more often")
+    # loss_inflate must actually bite.
+    a1 = simulate_brake(mix, 3.0, 200.0, days=5, closes_per_day=10,
+                        trials=200, loss_inflate=1)
+    a3 = simulate_brake(mix, 3.0, 200.0, days=5, closes_per_day=10,
+                        trials=200, loss_inflate=3)
+    ck(a3[0] < a1[0],
+       f"loss_inflate=3 must end poorer than 1, got {a3[0]:.2f} vs "
+       f"{a1[0]:.2f} -- otherwise the live-rate column is decoration")
+    # the bank can decay but must never go negative
+    ck(dn[1] >= 0.0, "the bank must never be reported negative")
+
     print("  pinbank selftest: %d checks, %d failures" % (ck_n[0], len(fails)))
     for f in fails:
         print("    FAIL %s" % f)
@@ -352,6 +386,65 @@ def main():
     if a.bank is not None:
         s, _ = safe_size(a.bank, q)
         print("\n  BANK $%.2f -> largest safe size %d" % (a.bank, s))
+
+
+# ---------------------------------------------------------------------------
+# BRAKE CHOICE, 2026-09-13. The operator: "is the contract max size increasing
+# too much? 154 would wipe more than half of the entire bank?"
+#
+# He is right and the arithmetic is his: at BANK_BRAKE = 1.5 the worst close
+# costs bank/1.5 = 67% of the bank. The earlier ladder in this file answered a
+# DIFFERENT question -- it modelled every losing close as a total loss and
+# every win as a fixed payoff. The real distribution is not like that, and the
+# difference matters:
+#
+#   measured over 422 book hours at size 68 (budget 136), 695 traded closes:
+#     17 losing closes, about 0.9 PER DAY -- not a rare event
+#     median losing close -$64.20   = HALF the budget (one market of two)
+#     worst              -$128.95   = 99% of the budget (both markets, which
+#                                     is what rho ~ 0.8 buys you)
+#
+# So the honest model draws per-close P&L from that empirical distribution,
+# re-sizes after every close exactly as autosize_tick does live, and asks what
+# the drawdown looks like. That is what brake_table() does.
+# ---------------------------------------------------------------------------
+def simulate_brake(per_close_pnl, brake, bank0, days=30, closes_per_day=37.0,
+                   trials=4000, seed=20260913, size_ref=68.0, lo=1, hi=250,
+                   loss_inflate=1.0):
+    """Monte Carlo of the live loop: draw a close, scale it to the size the
+    bank currently supports, apply it, re-size. Returns (median final bank,
+    5th-percentile final bank, median max drawdown %, P(bank halves)).
+
+    `loss_inflate` repeats losing draws to model a loss rate higher than the
+    replay's -- ours is about 4% live against the tape's 2.4%.
+    """
+    import random
+    wins = [p for p in per_close_pnl if p >= 0]
+    losses = [p for p in per_close_pnl if p < 0]
+    pool = wins + losses * max(1, int(round(loss_inflate)))
+    rng = random.Random(seed)
+    n = int(days * closes_per_day)
+    per = 1.96 * float(brake)          # MAX_PER_CLOSE * ceiling * brake
+    finals, dds, halved = [], [], 0
+    for _ in range(trials):
+        bank = float(bank0)
+        peak = bank
+        worst = 0.0
+        for _ in range(n):
+            size = max(lo, min(hi, int(bank // per)))
+            bank += rng.choice(pool) * (size / size_ref)
+            if bank <= 0:
+                bank = 0.01
+            peak = max(peak, bank)
+            worst = max(worst, (peak - bank) / peak)
+        finals.append(bank)
+        dds.append(worst)
+        if min(finals[-1], bank) < bank0 * 0.5:
+            halved += 1
+    finals.sort()
+    dds.sort()
+    return (finals[len(finals) // 2], finals[int(0.05 * len(finals))],
+            dds[len(dds) // 2], halved / trials)
 
 
 if __name__ == "__main__":
