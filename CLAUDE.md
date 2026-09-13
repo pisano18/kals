@@ -87,6 +87,38 @@ Concretely, and these are not suggestions:
 > Three parts -- the answer in plain language; a `Like you're five:` section;
 > a `What I need from you:` section. Set 2026-09-06, withdrawn 2026-09-13.
 
+**STANDING PRIORITY ORDER, set 2026-09-13 by the operator, above all other
+work.** His words: *"Anything that makes more money, or makes us lose less, or
+identify things better is immediately a top priority above absolutely all other
+things and we should constantly be looking for anything that meets those
+criteria, with #1 being lose less or identify better. Thats what this fucking
+lives and dies on."*
+
+So: **lose less / identify better > make more > everything else.** Tidying,
+refactoring, documentation and infrastructure are done only in service of one
+of those three, or when something is actively broken. And "constantly looking"
+is a standing instruction, not a request to be asked for permission each time
+-- read-only measurement is run and reported, never proposed.
+
+**STANDING, same date: LENGTH. Reply with less text.** His words: *"Only
+include what's needed for me to know and consider. If I don't need to know it
+don't waste text on it. Just don't leave out anything important."* Cut the
+recap of what was just done, the restatement of the question, and every number
+he does not need to act on. Keep every number he does.
+
+**STANDING, same date: THE BACKTEST IS NOT EVIDENCE.** His words: *"Stop
+trusting that stupid backtest it's never been accurate about anything."*
+This goes further than the 2026-09-10 amendment, which merely certified
+`pinsim` for decision reproduction. The operative rule now:
+
+- A finding that rests on the replay is a HYPOTHESIS, whatever its n.
+- Prefer, in order: (1) the raw index feed, (2) the trade tape, (3) our own
+  live fills, (4) the replay. `research/pincalib.py` is the worked example --
+  it answers a first-order question from the index alone and its self-test
+  fails if any replay import appears in its working code.
+- When the replay is genuinely the only source, say so in the first sentence
+  of the report, not in a footnote.
+
 **Posture:**
 
 - Say what was measured and what was not. If a script fails, report the
