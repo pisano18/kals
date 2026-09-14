@@ -142,7 +142,7 @@ Start-Process -FilePath $py -ArgumentList @(
     "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3",
     "--improve-scope", "market", "--pick", "best",
     "--max-per-market", "2", "--improve-max", "0.010",
-    "--min-fill-frac", "0.10"
+    "--min-fill-frac", "0.10", "--sweep-depth"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 
