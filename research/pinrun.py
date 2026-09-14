@@ -626,22 +626,41 @@ def _clear_pidfile(path, mypid):
         pass
 
 
-def rebuy_ok(prev, tk, price):
-    """AMENDMENT 23: may we buy market `tk` AGAIN at `price` in this close?
+def rebuy_ok(prev, tk, price, size=None):
+    """May we buy market `tk` AGAIN at `price` in this close?
 
     Only the SAME market is governed here. A different market is a different
     outcome and is governed by AMENDMENT 22's scope rule, not this one.
 
-    The band is (IMPROVE_BY, IMPROVE_MAX]: at least half a cent cheaper --
-    AMENDMENT 3's rule, unchanged -- and at most a cent cheaper. See the long
-    note at the call site in the trade loop for the 1,260-market measurement
-    and its 60/40 holdout. Reads the module globals at call time on purpose,
-    so --improve-max takes effect.
+    TWO CASES, AND CONFLATING THEM WAS THE BUG (AMENDMENT 29, 2026-09-14).
+
+    TOPPING UP an unfinished position is NOT scaling in. The operator: "It can
+    buy less on one coin if it's all that's available after checking them all,
+    then if another opens up anywhere even on the same coin buy more." If a
+    thin book gave us 5 contracts of the 52 we wanted, and 40 more appear a
+    second later at the SAME price, taking them finishes the position we
+    already decided to hold. AMENDMENT 3's improve-by rule was written against
+    "re-buying at the same level would double the risk without lowering the
+    average paid" -- which is true of a position that is already FULL SIZE and
+    false of one that is 10% filled. Below a full size there is no bar beyond
+    the gates every buy passes anyway.
+
+    SCALING IN past a full size is the case A23 measured, and the band
+    (IMPROVE_BY, IMPROVE_MAX] applies: at least half a cent cheaper --
+    AMENDMENT 3's rule, unchanged -- and at most a cent cheaper, because a
+    large discount is the market turning against a position we already hold.
+
+    Reads the module globals at call time on purpose, so --improve-max takes
+    effect.
     """
     if prev is None:
         return True
     if prev.get("per_tk", {}).get(tk, 0) <= 0:
         return True                      # not a re-buy at all
+    have = float((prev.get("n_tk") or {}).get(tk, 0.0))
+    want = float(SIZE if size is None else size)
+    if have < want - 1e-9:
+        return True                      # TOP-UP: the position is unfinished
     paid = prev.get("px_tk", {}).get(tk)
     if paid is None:
         return True                      # no price on record; A3 still applies
@@ -2657,12 +2676,27 @@ def selftest():
             ck(autosize_tick(_st5, _a3, {}, now=1e9,
                              bank_reader=lambda: 1e6) is None,
                "--no-auto-size must pin SIZE to --size")
+            # THIS BAR MOVED, 2026-09-14, AND IT IS STATED RATHER THAN
+            # DELETED. It used to read "paper mode must never auto-size".
+            # The consequence was that every paper what-if traded at its
+            # --size while the live bot auto-sized to the bank: on 2026-09-14
+            # live ran 52 contracts and all four arms ran 20, so not one of
+            # their dollar figures could be compared with live's. An arm that
+            # is not comparable to live measures nothing. Reading the balance
+            # is a GET.
             _a4 = _A()
             _a4.live = False
             _st6 = {}
             ck(autosize_tick(_st6, _a4, {}, now=1e9,
+                             bank_reader=lambda: 1e6) is not None,
+               "a PAPER arm auto-sizes exactly as live does, or its dollars "
+               "cannot be compared with live's and the arm is worthless")
+            _a4b = _A()
+            _a4b.live = False
+            _a4b.auto_size = False
+            ck(autosize_tick({}, _a4b, {}, now=1e9,
                              bank_reader=lambda: 1e6) is None,
-               "paper mode must never auto-size")
+               "and --no-auto-size still pins it, in paper as in live")
             # THE DIRECTION THAT MUST ALWAYS WORK. Once the rails have been
             # loosened for a big size, a shrink asks set_limits to tighten;
             # it refuses, apply_size rolls back, and the bot is stuck large
@@ -2763,33 +2797,68 @@ def selftest():
            "the band has width: at most %.3f cheaper is above at least %.3f "
            "cheaper, so some second buy can qualify"
            % (IMPROVE_MAX, IMPROVE_BY))
-        _p23 = {"per_tk": {"A": 1}, "px_tk": {"A": 0.960}}
-        ck(rebuy_ok(None, "A", 0.90),
+        # A FULL position already held: the band applies.
+        _p23 = {"per_tk": {"A": 1}, "px_tk": {"A": 0.960},
+                "n_tk": {"A": 50.0}}
+        ck(rebuy_ok(None, "A", 0.90, 50.0),
            "with nothing yet bought in the close there is no re-buy to judge")
-        ck(rebuy_ok(_p23, "B", 0.90),
+        ck(rebuy_ok(_p23, "B", 0.90, 50.0),
            "a DIFFERENT market is not a re-buy -- AMENDMENT 22 governs that, "
            "and A23 must not quietly re-impose a cross-market bar")
-        ck(not rebuy_ok(_p23, "A", 0.958),
+        ck(not rebuy_ok(_p23, "A", 0.958, 50.0),
            "0.2c cheaper is refused: AMENDMENT 3's floor still binds")
-        ck(rebuy_ok(_p23, "A", 0.955),
+        ck(rebuy_ok(_p23, "A", 0.955, 50.0),
            "0.5c cheaper is allowed -- exactly IMPROVE_BY, the edge of the "
            "band, which is where an off-by-one would hide")
-        ck(rebuy_ok(_p23, "A", 0.950),
+        ck(rebuy_ok(_p23, "A", 0.950, 50.0),
            "1.0c cheaper is allowed -- exactly IMPROVE_MAX, the other edge")
-        ck(not rebuy_ok(_p23, "A", 0.949),
+        ck(not rebuy_ok(_p23, "A", 0.949, 50.0),
            "1.1c cheaper is REFUSED. THIS IS THE WHOLE AMENDMENT: measured "
            "over 398 markets that offered a second buy, 0.5-1c cheaper lost "
            "0.70% and paid +3.08c/contract, while 5-10c cheaper lost 26.09% "
            "and cost -11.45c. Break-even is 3.58%.")
-        ck(not rebuy_ok(_p23, "A", 0.30),
+        ck(not rebuy_ok(_p23, "A", 0.30, 50.0),
            "and a 66c collapse is refused rather than treated as a bargain")
+
+        # ---- AMENDMENT 29: TOPPING UP IS NOT SCALING IN -----------------
+        # The operator: "It can buy less on one coin if it's all that's
+        # available after checking them all, then if another opens up
+        # anywhere even on the same coin buy more."
+        _p29 = {"per_tk": {"A": 1}, "px_tk": {"A": 0.960},
+                "n_tk": {"A": 5.0}}
+        ck(rebuy_ok(_p29, "A", 0.960, 50.0),
+           "holding 5 of the 50 we wanted, MORE AT THE SAME PRICE is taken. "
+           "A3's improve rule was written against 'doubling the risk without "
+           "lowering the average paid', which describes a FULL position, not "
+           "one that is 10% filled -- this is finishing the order, not "
+           "scaling in")
+        ck(rebuy_ok(_p29, "A", 0.970, 50.0),
+           "and a top-up at a slightly WORSE price is still taken, because "
+           "every other gate -- ceiling, edge, expected value, dump guard -- "
+           "has already passed on it at that price")
+        ck(not rebuy_ok({"per_tk": {"A": 1}, "px_tk": {"A": 0.960},
+                         "n_tk": {"A": 50.0}}, "A", 0.960, 50.0),
+           "but once the full 50 are held, the same price is refused again -- "
+           "the band is back in force the moment the position is complete")
+        ck(not rebuy_ok(_p29, "A", 0.960, 5.0),
+           "and 'full' is measured against the size we are RUNNING, not a "
+           "literal: those same 5 contracts ARE a complete position at size "
+           "5, so the band applies and the same price is refused")
+        _src29 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck("if not rebuy_ok(prev, tk, price, SIZE):" in _src29,
+           "the loop passes the RUNNING size, or every position looks "
+           "unfinished and the band never applies at all")
+        ck('d29[tk] = d29.get(tk, 0.0) + _n' in _src29,
+           "and a fill adds its CONTRACTS to the per-market count, which is "
+           "the only input that separates a top-up from a scale-in")
         # the cheapest price paid in THIS market is what the band measures
         # px_tk says 0.950 for this market; the close's overall best is 0.940,
         # set by some OTHER market. A re-buy at 0.935 is 1.5c under our own
         # 0.950 (refuse) but only 0.5c under the close's 0.940 (would allow),
         # so the two readings genuinely disagree here.
-        _p23b = {"per_tk": {"A": 2}, "px_tk": {"A": 0.950}, "best": 0.940}
-        ck(not rebuy_ok(_p23b, "A", 0.935),
+        _p23b = {"per_tk": {"A": 2}, "px_tk": {"A": 0.950}, "best": 0.940,
+                 "n_tk": {"A": 50.0}}
+        ck(not rebuy_ok(_p23b, "A", 0.935, 50.0),
            "the band is measured against the cheapest price paid in THIS "
            "market (0.950), not against the close's overall best (0.940) -- "
            "the latter would compare a BTC re-buy to a price paid on ETH")
@@ -3530,7 +3599,13 @@ def apply_size(new_size, a, why, rec=None):
 def autosize_tick(state, a, open_positions, rec=None, now=None,
                   bank_reader=None):
     """Called at the top of the loop. Returns a message when size moved."""
-    if not (AUTO_SIZE and getattr(a, "auto_size", True) and a.live):
+    # NOT GATED ON a.live ANY MORE (2026-09-14). It was, and the consequence
+    # was that every paper what-if traded at its --size while the live bot
+    # auto-sized to the bank: on 2026-09-14 live ran 52 contracts and all four
+    # arms ran 20, so none of their dollar figures could be compared with
+    # live's. The whole point of an arm is to be identical but for one flag.
+    # Reading the balance is a GET and costs nothing.
+    if not (AUTO_SIZE and getattr(a, "auto_size", True)):
         return None
     now = time.time() if now is None else now
     if now - state.get("autosize_at", 0.0) < AUTO_SIZE_EVERY_S:
@@ -4446,7 +4521,7 @@ def trade_loop(a, rec, book, idx, series_index):
             # ours. Rule 5 forbids reading OUR loss rate off it. What is used
             # here is the ORDERING and the fact that the groups differ, both of
             # which are statements about what the market did.
-            if not rebuy_ok(prev, tk, price):
+            if not rebuy_ok(prev, tk, price, SIZE):
                 nb23 = near.setdefault(close_s, _fresh_near())
                 nb23["rebuy_band"] = nb23.get("rebuy_band", 0) + 1
                 _gate("rebuy_band", close_s, tk, want=want,
@@ -4540,6 +4615,7 @@ def trade_loop(a, rec, book, idx, series_index):
                                       "tickers": {tk},
                                       "per_tk": {tk: 1},
                                       "px_tk": {tk: px},
+                                      "n_tk": {tk: _n},
                                       "contracts": _n}
                 else:
                     pv["n"] += 1
@@ -4555,6 +4631,11 @@ def trade_loop(a, rec, book, idx, series_index):
                     # BTC re-buy against a price paid on ETH.
                     d23 = pv.setdefault("px_tk", {})
                     d23[tk] = min(d23.get(tk, px), px)
+                    # AMENDMENT 29: contracts held in THIS market, which is
+                    # what separates "topping up an unfinished position" from
+                    # "scaling into a full one".
+                    d29 = pv.setdefault("n_tk", {})
+                    d29[tk] = d29.get(tk, 0.0) + _n
                     pv["contracts"] = pv.get("contracts", 0.0) + _n
 
             def _note_scrap(px, nfilled):
@@ -4813,13 +4894,28 @@ def main():
         if a.max_positions > 6:
             raise SystemExit(f"--max-positions {a.max_positions} > 6; refusing")
     if a.max_per_market is not None:
-        if a.live:
-            raise SystemExit(
-                "--max-per-market is refused on a LIVE run. Scaling into one "
-                "market buys more as the price falls -- buying into a move "
-                "against a position we already hold -- and AMENDMENT 13 was "
-                "written on that. It may be raised only in a paper what-if "
-                "until that what-if says otherwise.")
+        # THE LIVE REFUSAL IS LIFTED, 2026-09-14, BY OPERATOR DECISION, and it
+        # is written here rather than deleted because a bar is never moved
+        # quietly. It used to read: "--max-per-market is refused on a LIVE
+        # run ... it may be raised only in a paper what-if until that what-if
+        # says otherwise."
+        #
+        # WHAT CHANGED HIS MIND, and mine: the measurement that the bot spends
+        # only 58% of the contract budget it is already allowed, with a MEDIAN
+        # close spending exactly 50% -- one fill, never the second. I had
+        # argued A23 "raises risk" because a close concentrates on one coin.
+        # That framed the alternative wrongly. The alternative is not 52+52
+        # across two coins; only 6.3% of scan seconds have a second coin
+        # passing at all. The real alternative is 52 and the other 52 UNSPENT.
+        # The contract cap, and therefore the worst close, does not move. His
+        # words: "definitely allow double coin buys if it's causing this many
+        # losses opportunities."
+        #
+        # WHAT STILL PROTECTS IT: rebuy_ok(). Below a full size a top-up needs
+        # nothing beyond the ordinary gates (A29); at or above one, a second
+        # buy must be 0.5-1.0c cheaper (A23), and the band is where the
+        # measurement put it -- 0.70% losses at 0.5-1c against 26.09% at
+        # 5-10c.
         if not (1 <= a.max_per_market <= MAX_PER_CLOSE):
             raise SystemExit(
                 "--max-per-market %d outside [1, %d]: more fills than the "
@@ -4827,12 +4923,21 @@ def main():
                 % (a.max_per_market, MAX_PER_CLOSE))
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
     if a.min_fill_frac is not None:
-        if a.live:
-            raise SystemExit(
-                "--min-fill-frac is refused on a LIVE run. It changes which "
-                "moments are taken, and AMENDMENT 6's measurement against it "
-                "predates the contract budget (A17) and the scrap exemption "
-                "(A12). Re-measure it in a paper what-if first.")
+        # THE LIVE REFUSAL IS LIFTED, 2026-09-14, BY OPERATOR DECISION. It
+        # used to read: "--min-fill-frac is refused on a LIVE run ...
+        # re-measure it in a paper what-if first."
+        #
+        # His words: "DEFINITELY buy smaller if it can't reach the max
+        # contract that was the entire point of opening multiple coins so we
+        # can mix the way up to the contract threshold."
+        #
+        # AND THE ARGUMENT IS MECHANICAL, NOT STATISTICAL, WHICH IS WHY IT
+        # DOES NOT NEED THE WHAT-IF FIRST. A smaller fill is the same bet at
+        # the same gate on fewer contracts -- min(SIZE, offered) can only
+        # LOWER exposure. The comment on MIN_FILL_FRAC justified the floor by
+        # two harms, a scrap "burns a scale-in slot" and "raises the improve
+        # bar", and AMENDMENT 17 and AMENDMENT 12 removed both. MIN_LEVEL is
+        # still the backstop and this flag cannot get underneath it.
         if not (0.0 < a.min_fill_frac <= _DEFAULT_MIN_FILL_FRAC):
             raise SystemExit(
                 "--min-fill-frac %.3f refused: it must sit in (0, %.2f]. "

@@ -30,6 +30,66 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-spend — 2026-09-14 02:0xZ — SAME-COIN RE-BUY + TOP-UPS + A TENTH-SIZE DEPTH FLOOR (`b73e757`)
+
+**Operator decision.** His words: *"definitely allow double coin buys if it's
+causing this many losses opportunities"* and *"DEFINITELY buy smaller if it
+can't reach the max contract that was the entire point of opening multiple
+coins so we can mix the way up to the contract threshold."*
+
+**What the bot now does differently.** Three things, all aimed at one finding:
+
+1. **`--max-per-market 2`** — a close may buy the same coin twice.
+2. **`--min-fill-frac 0.10`** — the depth floor drops from half of SIZE to a
+   tenth, so a thin book is taken instead of skipped. `MIN_LEVEL` (1 contract)
+   is still the hard backstop.
+3. **AMENDMENT 29, topping up** — if a market is holding LESS than a full
+   SIZE, more of it is taken at any price that passes every ordinary gate,
+   with no improve-by requirement. Once a full size is held, the A23 band
+   (0.5c–1.0c cheaper) applies again.
+
+**THE MEASUREMENT THAT DECIDED IT.** Over 234 live closes we bought on, the
+bot spent **6,639 contracts of an allowed 11,488 — 58%**. The **median close
+spent exactly 50%**: one fill, never the second. The unspent half needs a
+second market to qualify, and only **6.3%** of scan seconds have one. So the
+contract cap was never the binding constraint; the inability to reach it was.
+Separately, of 404 closes with a tradeable moment, **170 produced no fill**.
+
+**THE WORST CLOSE DOES NOT MOVE.** It is `MAX_PER_CLOSE x SIZE x 0.98` either
+way — about a third of the bank at BANK_BRAKE 3.0. What changes is how often
+the budget is actually spent, which is the risk that was already accepted and
+was not being taken.
+
+**What protects it.** `rebuy_ok()`: below a full size, a top-up needs nothing
+beyond the gates every buy passes; at or above one, a second buy must be
+0.5–1.0c cheaper. That band is where the measurement put it — **0.70% losses
+at 0.5–1c against 26.09% at 5–10c**, over 398 markets, ordering intact in a
+60/40 holdout on close time.
+
+**Two refusals were LIFTED, not deleted** — both `--max-per-market` and
+`--min-fill-frac` used to raise `SystemExit` on `--live`, and the old text
+plus the reason it moved is written next to each in `pinrun.py`.
+
+**Also in this version, and not a trading change:** paper what-ifs now
+auto-size from the bank exactly as live does. They did not, so on 2026-09-14
+live ran 52 contracts while all four arms ran 20 and none of their dollar
+figures could be compared with live's.
+
+**REVERT:**
+
+```powershell
+cd C:\kals-repo
+# drop "--max-per-market","2","--improve-max","0.010","--min-fill-frac","0.10"
+# from the Start-Process line in restart_bot.ps1, then:
+powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
+```
+
+The declared defaults in the source are unchanged (`MAX_PER_MARKET` 1,
+`MIN_FILL_FRAC` 0.50), so removing the flags restores the old behaviour
+exactly. To revert the code as well: `git revert --no-edit b73e757`.
+
+---
+
 ## v-a24 — 2026-09-13 22:2xZ — AMENDMENT 24: buy the BEST market of the second, not the first one reached (`6d85371`)
 
 **What the bot now does differently.** When two or more markets clear every

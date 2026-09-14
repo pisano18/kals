@@ -22,9 +22,22 @@
 # the previous 50 ms pass, so nothing is recomputed and no order waits. See
 # results/PREREG_pin_live_AMENDMENT_23_24.md.
 #
-# NOT ADDED, deliberately: --max-per-market (AMENDMENT 23). It pays, but it
-# puts more of one close on a single coin, and the operator's condition was
-# "if it's good and does not raise risk". It stays in a paper what-if.
+# ADDED 2026-09-14 BY OPERATOR DECISION: --max-per-market 2 (A23 + A29) and
+# --min-fill-frac 0.10 (A28). Both were paper-only and both refusals are now
+# lifted, in pinrun.py, with the reasoning written next to them.
+#
+# THE MEASUREMENT THAT DECIDED IT: over 234 live closes the bot spent only 58%
+# of the contract budget it was ALREADY allowed, and the MEDIAN close spent
+# exactly 50% -- one fill, never the second. The unspent half needs a second
+# market to qualify and only 6.3% of scan seconds have one. So the cap was
+# never the binding constraint; the inability to use it was.
+#
+# THE WORST CLOSE DOES NOT MOVE. It is MAX_PER_CLOSE x SIZE x ceiling either
+# way. What changes is how often the budget is actually spent.
+#
+# --min-fill-frac 0.10 lowers the depth floor from half of SIZE to a tenth, so
+# a thin book is taken rather than skipped. MIN_LEVEL (1 contract) is still the
+# backstop. A smaller fill is the same bet at the same gate on fewer contracts.
 #
 # REVERTED 2026-09-13 ~18:1xZ: --sigma-ruler and --pin are GONE. The ruler cut
 # live signals by 63% (4.21/hour -> 1.55/hour, measured on the day) against a
@@ -127,7 +140,9 @@ Start-Process -FilePath $py -ArgumentList @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
     "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3",
-    "--improve-scope", "market", "--pick", "best"
+    "--improve-scope", "market", "--pick", "best",
+    "--max-per-market", "2", "--improve-max", "0.010",
+    "--min-fill-frac", "0.10"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 
