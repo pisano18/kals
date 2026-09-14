@@ -1261,21 +1261,53 @@ def health_and_size(tr, cfg):
     kl = pinhealth.kill_line(lr)
     last = trend[-1][2] if trend else 0.0
     alarm, why = pinhealth.assess(trend)
-    cards = [
-        ("EARNED PER CONTRACT", "%+.2f¢" % last, "most recent day",
-         "up" if last > kl else "dn"),
-        ("THE EDGE DIES BELOW", "%+.2f¢" % kl,
-         "at a %.2f%% loss rate" % (100 * lr), "warn"),
-        ("HEADROOM", ("%.1fx" % (last / kl)) if kl and last > 0 else "--",
-         "how far above the line", "up" if last > kl else "dn"),
-        ("LOSING CLOSES", "%d of %d" % (tot_b, tot_c),
-         "%.2f%% of everything traded" % (100 * lr), ""),
-    ]
+    BAND = {"peak": "up", "ok": "acc", "warn": "warn", "dead": "dn"}
+
+    def card(title, key, value, shown, note):
+        b, scale = pinhealth.grade(key, value)
+        return (title, shown, "%s · %s" % (b.upper(), scale) if scale
+                else note, BAND.get(b, ""))
+    margin = (last / kl) if kl else None
+    cards = [card("EARNED PER CONTRACT", "edge", last,
+                  "%+.2f¢" % last, "most recent day"),
+             card("HEADROOM OVER THE KILL LINE", "margin", margin,
+                  ("%.1fx" % margin) if margin else "--", ""),
+             card("CLOSES THAT LOSE", "loss", 100 * lr,
+                  "%.2f%%" % (100 * lr), "%d of %d" % (tot_b, tot_c))]
+    hist_pre = pinhealth.crowd_history()
+    hist = hist_pre
+    if hist:
+        c = hist[-1]
+        cards += [
+            card("LIQUIDITY FROM THE TOP 5 ORDERS", "top5",
+                 c.get("top5_share"), "%.1f%%" % (c.get("top5_share") or 0),
+                 "a crowd, or a desk?"),
+            card("TYPICAL ORDER AGAINST US", "median", c.get("median_size"),
+                 "%g" % (c.get("median_size") or 0), "contracts"),
+            card("OFFERED TO US PER HOUR", "supply",
+                 c.get("per_hour_contracts"),
+                 "%.0f" % (c.get("per_hour_contracts") or 0), "contracts"),
+        ]
+    crowd_line = ""
+    if hist_pre:
+        c0 = hist_pre[-1]
+        if (c0.get("top5_share") or 0) < 25 and (c0.get("median_size") or 0) < 40:
+            crowd_line = (" <b>The other side is a CROWD, not a desk</b> — "
+                          "the biggest five orders supply only %.1f%% of what "
+                          "we buy, across %d different order sizes. No single "
+                          "participant loses enough here to notice us."
+                          % (c0.get("top5_share") or 0,
+                             c0.get("distinct_sizes") or 0))
+        else:
+            crowd_line = (" <b>WARNING: the other side is CONCENTRATED</b> "
+                          "— the biggest five orders supply %.1f%% of "
+                          "what we buy. If one of them notices, this ends."
+                          % (c0.get("top5_share") or 0))
     note = (("warn", "<b>ALARM: %s</b>" % why) if alarm else
             ("", "<b>No sign of the edge being competed away.</b> " + why +
              ". A winning close pays about +4.6¢ a contract and a losing "
              "one costs about 35.8¢, so at this loss rate the break-even "
-             "point is %+.2f¢." % kl))
+             "point is %+.2f¢." % kl + crowd_line))
     # the size ladder
     P = cfg
     size_rows = []

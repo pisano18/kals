@@ -1,4 +1,4 @@
-EDGE HEALTH -- written 2026-09-14 03:32 ET
+EDGE HEALTH -- written 2026-09-14 03:41 ET
 
   THE ONE NUMBER: cents earned per contract.
 
@@ -18,3 +18,11 @@ EDGE HEALTH -- written 2026-09-14 03:32 ET
   headroom                : +2.44c  (2.6x the kill line)
 
   DECAY TEST: no decay pattern
+
+  WHO IS SELLING TO US (order book fingerprint, 2026-09-14)
+    liquidity from the biggest 5 orders          10.8   [PEAK]  peak 25%, trouble at 50%, dead at 70%
+    typical order size                             20   [OK]  peak 10, trouble at 40, dead at 100
+    contracts offered per hour                94186.3   [PEAK]  peak 600, trouble at 250, dead at 80
+    distinct order sizes seen                     151
+    posted at a round lot of 50+                 2.4%
+    -> A CROWD, not a desk. No single participant supplies enough for their withdrawal to matter.

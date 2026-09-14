@@ -50,6 +50,165 @@ WIN_C = 4.58             # measured cents/contract on winning closes
 TREND_DAYS = 3           # consecutive days of the decay pairing before alarm
 
 
+# ===========================================================================
+# WHO IS ON THE OTHER SIDE, AND ARE THEY THINNING OUT?
+#
+# THE OPERATOR, 2026-09-14: "Small participants, that's great!!! They're very
+# much unlikely to notice a systemic takeover of a tiny portion of their
+# strategy that they already don't expect to win and hardly hurts them. A
+# metric about that should be on the health check."
+#
+# He is right that it matters, and it is measurable even though Kalshi's tape
+# carries NO counterparty identity. What it does carry is every individual ADD
+# of liquidity, and behaviour has a fingerprint:
+#
+#   A DESK quotes round lots, repeatedly, at consistent size. If the top few
+#   orders supply most of the liquidity we eat, we depend on a handful of
+#   participants and one of them noticing ends us.
+#
+#   A CROWD posts odd little sizes -- 3, 4, 6, 9, 42 -- each one once. No
+#   member loses enough to care, and there is nobody to coordinate a
+#   withdrawal.
+#
+# CONCENTRATION is the measure: what share of the contracts we could buy comes
+# from the biggest five orders. Low is safe. It is the Herfindahl idea without
+# pretending we can identify accounts we cannot see.
+#
+# FLEETING is the second half of his question -- whether the supply itself is
+# drying up. Counted as adds per hour and contracts per hour in the final
+# thirty seconds, tracked day over day.
+# ===========================================================================
+CROWD_FILE = os.path.join(REPO, "results", "CROWD.json")
+
+
+def crowd_scan(delta_dir, hours=2, lo=0.90, hi=0.98, tau_max=30):
+    """Fingerprint the liquidity offered at prices we would buy.
+
+    Reads the raw orderbook deltas, which is the only place individual orders
+    appear. Expensive (~117 MB/hour), so it is a separate pass, cached.
+    """
+    import calendar
+    import gzsalvage
+    MON = {'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+           'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12}
+    PFX = ("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXHYPE",
+           "KXNEAR", "KXZEC")
+
+    def close_of(tk):
+        try:
+            p = tk.split("-")[1]
+            return calendar.timegm((2000 + int(p[:2]), MON[p[2:5]],
+                                    int(p[5:7]), int(p[7:9]) + 4,
+                                    int(p[9:11]), 0, 0, 0, 0))
+        except Exception:                                # noqa: BLE001
+            return None
+    files = sorted(glob.glob(os.path.join(delta_dir, "*.jsonl.gz")))[-hours:]
+    adds = []
+    for fp in files:
+        for line in gzsalvage.iter_lines(fp):
+            if "15M-" not in line:
+                continue
+            try:
+                m = json.loads(line)["msg"]
+            except (ValueError, KeyError):
+                continue
+            tk = m.get("market_ticker")
+            if not tk or not tk.startswith(PFX):
+                continue
+            try:
+                d = float(m["delta_fp"])
+                if d <= 0:
+                    continue
+                cl = close_of(tk)
+                if cl is None:
+                    continue
+                tau = cl - int(m["ts_ms"]) / 1000.0
+                if not (0 < tau <= tau_max):
+                    continue
+                ask = 1.0 - round(float(m["price_dollars"]), 4)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if lo <= ask <= hi:
+                adds.append(d)
+    if not adds:
+        return None
+    adds.sort(reverse=True)
+    tot = sum(adds)
+    return {"adds": len(adds), "contracts": round(tot, 1),
+            "distinct_sizes": len(set(round(x, 1) for x in adds)),
+            "median_size": adds[len(adds) // 2],
+            "top5_share": round(100.0 * sum(adds[:5]) / tot, 1),
+            "round50_share": round(
+                100.0 * sum(1 for x in adds
+                            if x >= 50 and abs(x - round(x / 50) * 50) < 0.01)
+                / len(adds), 1),
+            "hours": len(files),
+            "per_hour_adds": round(len(adds) / max(1, len(files)), 1),
+            "per_hour_contracts": round(tot / max(1, len(files)), 1),
+            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+
+def crowd_history(rec=None, path=None):
+    """Append today's scan and return the stored history."""
+    path = path or CROWD_FILE
+    try:
+        with open(path, encoding="utf-8") as fh:
+            hist = json.load(fh)
+    except (OSError, ValueError):
+        hist = []
+    if rec:
+        day = rec["at"][:10]
+        hist = [h for h in hist if h.get("at", "")[:10] != day] + [rec]
+        hist.sort(key=lambda h: h.get("at", ""))
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(hist[-60:], fh, indent=1)
+        except OSError:
+            pass
+    return hist
+
+
+# ---------------------------------------------------------------- grading
+# Each metric gets a PEAK (what good looks like) and a DEAD line (where the
+# strategy stops working). The operator asked for exactly this: "what peak
+# health is and what deadly unhealthy starting is."
+GRADES = {
+    "edge":   {"peak": 4.0,  "warn": 2.5,  "dead": 1.55, "hi_good": True,
+               "unit": "c", "what": "cents earned per contract"},
+    "margin": {"peak": 2.5,  "warn": 1.5,  "dead": 1.0,  "hi_good": True,
+               "unit": "x", "what": "how far above the kill line"},
+    "loss":   {"peak": 3.0,  "warn": 7.0,  "dead": 11.4, "hi_good": False,
+               "unit": "%", "what": "closes that lose money"},
+    "top5":   {"peak": 25.0, "warn": 50.0, "dead": 70.0, "hi_good": False,
+               "unit": "%", "what": "liquidity from the biggest 5 orders"},
+    "median": {"peak": 10.0, "warn": 40.0, "dead": 100.0, "hi_good": False,
+               "unit": "", "what": "typical order size on the other side"},
+    "supply": {"peak": 600.0, "warn": 250.0, "dead": 80.0, "hi_good": True,
+               "unit": "", "what": "contracts offered per hour"},
+}
+
+
+def grade(key, value):
+    """('peak'|'ok'|'warn'|'dead', explanation) for one metric."""
+    g = GRADES.get(key)
+    if g is None or value is None:
+        return "ok", ""
+    hi = g["hi_good"]
+    def worse(a, b):
+        return a < b if hi else a > b
+    if worse(value, g["dead"]):
+        band = "dead"
+    elif worse(value, g["warn"]):
+        band = "warn"
+    elif worse(value, g["peak"]):
+        band = "ok"
+    else:
+        band = "peak"
+    return band, ("peak %g%s, trouble at %g%s, dead at %g%s"
+                  % (g["peak"], g["unit"], g["warn"], g["unit"],
+                     g["dead"], g["unit"]))
+
+
 def kill_line(loss_rate):
     """Cents per contract at which the edge is exactly zero."""
     if loss_rate >= 1.0:
@@ -148,6 +307,36 @@ def report(tr, loss_rate=None, say=print):
     alarm, why = assess(rows)
     w("")
     w("  DECAY TEST: %s" % ("*** ALARM *** " + why if alarm else why))
+    # ---- who is on the other side -----------------------------------
+    hist = crowd_history()
+    if hist:
+        c = hist[-1]
+        w("")
+        w("  WHO IS SELLING TO US (order book fingerprint, %s)" % c["at"][:10])
+        for key, val, lab in (
+                ("top5", c.get("top5_share"),
+                 "liquidity from the biggest 5 orders"),
+                ("median", c.get("median_size"), "typical order size"),
+                ("supply", c.get("per_hour_contracts"),
+                 "contracts offered per hour")):
+            band, scale = grade(key, val)
+            w("    %-38s %10s   [%s]  %s"
+              % (lab, ("%g" % val) if val is not None else "--",
+                 band.upper(), scale))
+        w("    %-38s %10d" % ("distinct order sizes seen",
+                              c.get("distinct_sizes", 0)))
+        w("    %-38s %9.1f%%" % ("posted at a round lot of 50+",
+                                 c.get("round50_share", 0)))
+        if (c.get("top5_share") or 0) < 25 and (c.get("median_size") or 0) < 40:
+            w("    -> A CROWD, not a desk. No single participant supplies "
+              "enough for their withdrawal to matter.")
+        else:
+            w("    -> CONCENTRATED. A few participants supply most of what we "
+              "buy; one of them noticing would end this.")
+        if len(hist) > 1:
+            a0, a1 = hist[-2], hist[-1]
+            dc = a1.get("per_hour_contracts", 0) - a0.get("per_hour_contracts", 0)
+            w("    supply vs the previous scan: %+.0f contracts/hour" % dc)
     txt = "\n".join(lines)
     if say:
         say(txt)
@@ -208,6 +397,40 @@ def selftest():
                     "ticker": "KXBTC15M-26SEP140100-00",
                     "t": "2026-09-14T05:00:00Z"}], loss_rate=0.0415, say=None)
     ck("headroom" in txt2, "and a healthy day reports its headroom")
+    # ---- grading, both directions ------------------------------------
+    ck(grade("edge", 5.0)[0] == "peak" and grade("edge", 3.0)[0] == "ok"
+       and grade("edge", 2.0)[0] == "warn" and grade("edge", 1.0)[0] == "dead",
+       "cents per contract grades peak/ok/warn/dead as it falls")
+    ck(grade("loss", 2.0)[0] == "peak" and grade("loss", 12.0)[0] == "dead",
+       "and the loss RATE grades the other way round -- lower is better, so a "
+       "metric read backwards would paint a dying strategy green")
+    ck(grade("top5", 20.0)[0] == "peak" and grade("top5", 80.0)[0] == "dead",
+       "counterparty concentration: a crowd is healthy, a handful is not")
+    ck(grade("supply", 800.0)[0] == "peak" and grade("supply", 50.0)[0] == "dead",
+       "and supply is the opposite again -- more offered is better")
+    ck(grade("nope", 1.0)[0] == "ok" and grade("edge", None)[0] == "ok",
+       "an unknown metric or a missing value never invents a verdict")
+
+    # ---- the crowd fingerprint ---------------------------------------
+    import tempfile as _tf
+    _d = _tf.mkdtemp(prefix="crowd-")
+    try:
+        _p = os.path.join(_d, "c.json")
+        h = crowd_history({"at": "2026-09-14T05:00:00Z", "top5_share": 10.0},
+                          path=_p)
+        ck(len(h) == 1, "a scan is stored")
+        h = crowd_history({"at": "2026-09-14T09:00:00Z", "top5_share": 12.0},
+                          path=_p)
+        ck(len(h) == 1 and h[0]["top5_share"] == 12.0,
+           "a second scan the SAME day replaces it rather than double-counting")
+        h = crowd_history({"at": "2026-09-15T09:00:00Z", "top5_share": 30.0},
+                          path=_p)
+        ck(len(h) == 2 and h[-1]["top5_share"] == 30.0,
+           "and a new day is appended, so the trend is one point per day")
+    finally:
+        for f in os.listdir(_d):
+            os.remove(os.path.join(_d, f))
+        os.rmdir(_d)
     print("pinhealth selftest: %d checks OK" % n[0])
     return 0
 
@@ -220,6 +443,11 @@ def main():
     ap.add_argument("--markets", default="C:/kals/fulltape/markets.json")
     ap.add_argument("--out", default=os.path.join(REPO, "results",
                                                   "HEALTH.txt"))
+    ap.add_argument("--crowd", type=int, default=0,
+                    help="also fingerprint the other side from this many "
+                         "hours of raw order book deltas (~117MB/hour)")
+    ap.add_argument("--deltas",
+                    default="C:/kals/kalshi_data/orderbook_delta")
     a = ap.parse_args()
     if a.selftest:
         return selftest()
@@ -229,6 +457,15 @@ def main():
             return rc
     ev = pindash.load(sorted(glob.glob(a.logs)))
     tr = pindash.build_trades(ev, pindash.load_outcomes(a.markets))
+    if a.crowd:
+        print("  fingerprinting the other side from %d hours of book..."
+              % a.crowd)
+        rec = crowd_scan(a.deltas, hours=a.crowd)
+        if rec:
+            crowd_history(rec)
+            print("    %d orders, %d distinct sizes, median %g contracts, "
+                  "top-5 share %.1f%%" % (rec["adds"], rec["distinct_sizes"],
+                                          rec["median_size"], rec["top5_share"]))
     txt = report(tr)
     nl = chr(10)
     with open(a.out, "w", encoding="utf-8") as fh:

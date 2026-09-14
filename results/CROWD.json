@@ -1,0 +1,14 @@
+[
+ {
+  "adds": 2210,
+  "contracts": 282558.8,
+  "distinct_sizes": 151,
+  "median_size": 20.0,
+  "top5_share": 10.8,
+  "round50_share": 2.4,
+  "hours": 3,
+  "per_hour_adds": 736.7,
+  "per_hour_contracts": 94186.3,
+  "at": "2026-09-14T07:41:17Z"
+ }
+]
