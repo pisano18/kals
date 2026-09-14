@@ -4567,6 +4567,11 @@ def main():
         hedge_max_ask=HEDGE_MAX_ASK, hedge_max_tries=HEDGE_MAX_TRIES,
         hedge_pilot_contracts=HEDGE_PILOT_CONTRACTS,
         improve_by=IMPROVE_BY, improve_scope=IMPROVE_SCOPE,
+        # A23/A24/A25: the running values, so a reader does not have to guess
+        # them from module defaults. research/pindash.py shows what is ACTUALLY
+        # running from this record, and a flag missing here reads as its
+        # default -- which is how a page ends up describing a bot nobody runs.
+        improve_max=IMPROVE_MAX, pick=PICK, gate_audit=True,
         max_per_market_run=MAX_PER_MARKET, min_level=MIN_LEVEL,
         sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
         sigma_ruler=SIGMA_RULER,

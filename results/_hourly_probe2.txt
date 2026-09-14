@@ -1,0 +1,49 @@
+  ok: the working code contains no 'build_order' -- this file cannot place an order
+  ok: the working code contains no 'pintake.take' -- this file cannot place an order
+  ok: the working code contains no '"POST"' -- this file cannot place an order
+  ok: the working code contains no "'POST'" -- this file cannot place an order
+  ok: every request it makes goes through one GET helper
+  ok: the summary groups by series
+  ok: and counts every book read
+  ok: one of three reads carried an ask under the ceiling (  KXBTCD       |          3 |       2 |                 1 (33.3%) | 0.950)
+  ok: and the cheapest is reported (0.950)
+  ok: the 95c strike is sampled FIRST -- it is the one this bot would buy
+  ok: then the 5c strike, because buying its NO side costs 95c -- the mirror is a trade too and skipping it halves the sample
+  ok: and a 99c strike sorts with the 50c one, at the BACK. THIS IS THE BUG THAT MANUFACTURED A FINDING: a yes bid of 99c has no ask by construction, since the ask would have to be 100c. The 22:00Z run on 2026-09-13 sampled only 99c strikes and reported '0 of 612 book reads had any ask' on the hourly series. That number came from this sort, not from the market.
+  ok: only the market closing at the instant we waited for is sampled -- a settled market can stay listed as `open`, and the 22:00Z run sampled tickers stamped 26SEP1318, a close four hours gone
+  ok: and when nothing closes at that instant the answer is an empty list, which the caller must report as SKIPPED rather than sample anyway
+pinhourly selftest: 14 checks OK
+  KXBTCD     318 open, soonest close 2026-09-13T23:00:00Z, sampling 6 strikes
+  KXETHD     390 open, soonest close 2026-09-13T23:00:00Z, sampling 6 strikes
+  KXSOLD     425 open, soonest close 2026-09-13T23:00:00Z, sampling 6 strikes
+  KXXRPD     165 open, soonest close 2026-09-13T23:00:00Z, sampling 6 strikes
+  KXDOGED    128 open, soonest close 2026-09-13T23:00:00Z, sampling 6 strikes
+  KXBNBD     165 open, soonest close 2026-09-13T23:00:00Z, sampling 6 strikes
+  KXHYPED    165 open, soonest close 2026-09-13T23:00:00Z, sampling 6 strikes
+  KXBTC15M   1 open, soonest close 2026-09-13T22:15:00Z, sampling 1 strikes
+  KXETH15M   1 open, soonest close 2026-09-13T22:15:00Z, sampling 1 strikes
+  KXSOL15M   1 open, soonest close 2026-09-13T22:15:00Z, sampling 1 strikes
+  KXXRP15M   1 open, soonest close 2026-09-13T22:15:00Z, sampling 1 strikes
+  KXDOGE15M  1 open, soonest close 2026-09-13T22:15:00Z, sampling 1 strikes
+  KXBNB15M   1 open, soonest close 2026-09-13T22:15:00Z, sampling 1 strikes
+  KXHYPE15M  1 open, soonest close 2026-09-13T22:15:00Z, sampling 1 strikes
+  waiting 3372 s for the close at 23:00:00Z
+  re-fetched at the close: 49 tickers
+  sampling 49 tickers for 75 s
+  sampled 784 book reads into C:\kals-repo\results\hourly_book_sample.jsonl
+  series       | book reads | any ask | ask UNDER the 98c ceiling | cheapest
+  ------------|------------|---------|---------------------------|---------
+  KXBNB15M     |         16 |      12 |                12 (75.0%) | 0.002
+  KXBNBD       |         96 |      65 |                65 (67.7%) | 0.010
+  KXBTC15M     |         16 |      15 |                15 (93.8%) | 0.001
+  KXBTCD       |         96 |      77 |                77 (80.2%) | 0.010
+  KXDOGE15M    |         16 |      11 |                11 (68.8%) | 0.007
+  KXDOGED      |         96 |      90 |                90 (93.8%) | 0.010
+  KXETH15M     |         16 |      12 |                12 (75.0%) | 0.004
+  KXETHD       |         96 |       0 |                  0 (0.0%) | -
+  KXHYPE15M    |         16 |       9 |                 9 (56.2%) | 0.007
+  KXHYPED      |         96 |      90 |                90 (93.8%) | 0.010
+  KXSOL15M     |         16 |      15 |                15 (93.8%) | 0.001
+  KXSOLD       |         96 |       0 |                  0 (0.0%) | -
+  KXXRP15M     |         16 |      15 |                15 (93.8%) | 0.001
+  KXXRPD       |         96 |      90 |                90 (93.8%) | 0.010

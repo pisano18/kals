@@ -334,13 +334,39 @@ def reconstruction_agrees(ev, trades, tol=1.50):
 
 
 # ---------------------------------------------------------------- strategy
-def strategy_steps():
+def live_config(ev):
+    """What the RUNNING bot is set to, from its own start record.
+
+    NOT pinrun's module defaults. The live bot takes flags, so the defaults in
+    the source describe a bot nobody is running -- read `--pick best` off the
+    command line and the module still says "first". Falls back to the defaults
+    only when there is no start record to read, and says so.
+    """
+    starts = [m for m in ev.get("start", []) if m.get("mode") == "live"]
+    return (starts[-1] if starts else {}), bool(starts)
+
+
+class _Cfg(object):
+    """pinrun's constants, overridden by whatever the live bot actually ran."""
+
+    def __init__(self, rec):
+        self._rec = rec or {}
+
+    def __getattr__(self, name):
+        v = self._rec.get(name.lower())
+        if v is None:
+            return getattr(pinrun, name)
+        return v
+
+
+def strategy_steps(cfg=None):
     """EVERY step the bot takes, in order, with its live value.
 
-    Values are read from pinrun's own constants at render time, so the page
-    cannot drift from the code the way a hand-written list would.
+    Values come from the running bot's own start record where there is one and
+    from pinrun's constants otherwise, so the page cannot drift from the code
+    the way a hand-written list would.
     """
-    P = pinrun
+    P = cfg if cfg is not None else pinrun
     return [
         ("WATCH", [
             ("Which markets it looks at",
@@ -1184,6 +1210,8 @@ def build(logs_glob, markets_json):
                 "only started reading the balance on Sep 13. Checked against "
                 "%d real movements and they agree to within %s."
                 % (nchk, usd(gap, sign=False)))
+    cfgrec, have_cfg = live_config(ev)
+    cfg = _Cfg(cfgrec)
     grows, gempty = gate_rows(ev, outcomes)
     span = ""
     if curve:
@@ -1194,19 +1222,22 @@ def build(logs_glob, markets_json):
         "built": et(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
         "window": span,
         "status": [("LIVE BOT", bool(ev.get("order"))),
-                   ("SWEEP ON", True),
-                   ("BEST-FIRST %s" % ("ON" if pinrun.PICK == "best"
-                                       else "OFF"), pinrun.PICK == "best"),
+                   ("SWEEP %s" % ("ON" if cfg.SWEEP_ENABLED else "OFF"),
+                    bool(cfg.SWEEP_ENABLED)),
+                   ("BEST-FIRST %s" % ("ON" if cfg.PICK == "best"
+                                       else "OFF"), cfg.PICK == "best"),
                    ("SAME-COIN RE-BUY %s"
-                    % ("ON" if pinrun.MAX_PER_MARKET > 1 else "OFF"),
-                    pinrun.MAX_PER_MARKET > 1)],
+                    % ("ON" if cfg.MAX_PER_MARKET > 1 else "OFF"),
+                    cfg.MAX_PER_MARKET > 1),
+                   ("CONFIG FROM THE RUNNING BOT" if have_cfg
+                    else "CONFIG FROM SOURCE DEFAULTS", have_cfg)],
         "summary": summary(ev, trades, curve),
         "chart": [[int(e), round(v, 2),
                    time.strftime("%b %d, %I:%M %p", time.localtime(e)),
                    bool(r)] for e, v, r in curve],
         "bank_note": note,
         "trades_html": trade_rows_html(trades),
-        "steps": strategy_steps(),
+        "steps": strategy_steps(cfg),
         "gates_rows": grows,
         "gates_empty": gempty,
         "n_trades": len(trades),
@@ -1369,6 +1400,25 @@ def selftest():
     flat = json.dumps(steps)
     ck(str(pinrun.PIN * 100)[:4] in flat or "99.5" in flat,
        "the live confidence gate is shown, read from the running code")
+
+    # THE PAGE MUST DESCRIBE THE RUNNING BOT, NOT THE SOURCE DEFAULTS. The bot
+    # takes flags: run it with --pick best and pinrun.PICK in the module is
+    # still "first", so a page reading the module describes a bot nobody runs.
+    cfg = _Cfg({"pick": "best", "max_per_market": 2, "pin": 0.99})
+    ck(cfg.PICK == "best" and cfg.MAX_PER_MARKET == 2,
+       "the running bot's own start record overrides the source defaults")
+    ck(cfg.TAU_MAX == pinrun.TAU_MAX,
+       "and anything the start record does not carry still falls back to the "
+       "source, rather than coming back empty")
+    ck("BEST" in json.dumps(strategy_steps(cfg)),
+       "so a bot started with --pick best is described as buying the best")
+    ck("BEST" not in json.dumps(strategy_steps(_Cfg({"pick": "first"}))),
+       "and one started without it is not")
+    rec, have = live_config({"start": [{"mode": "live", "pick": "best"},
+                                       {"mode": "paper", "pick": "first"}]})
+    ck(have and rec.get("pick") == "best",
+       "the LIVE start record is the one read -- a paper what-if writes start "
+       "records too, and reading one of those would describe the wrong bot")
     ck("%g" % pinrun.MAX_PER_CLOSE in flat and "%g" % pinrun.BANK_BRAKE in flat,
        "as are the close budget and the bankroll safety factor")
 
