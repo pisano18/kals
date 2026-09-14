@@ -60,12 +60,32 @@ line ~103 puts it on `sys.path` itself, so a plain restart works.
 - 48 markets, 47W 1L. Fill ratio 71.8% (we lose ~28% of races).
 - Mean entry 95.6c, mean edge at signal +3.9c.
 
-**BREAK-EVEN IS A 3.58% CLOSE-LOSS RATE.** A win pays ~3.7c, a loss costs
-~96c, so one loss undoes ~26 wins. Above 3.58% the strategy loses money and
-**no bank size or brake fixes that** -- the brake only sets the bleed rate.
-All live history is 12 losing of 248 closes = 4.84%; the current version is
-2.86%. The two straddle break-even and neither has the sample to settle it.
-**This is the single most important open number in the project.**
+**BREAK-EVEN IS NOT 3.58%. CORRECTED 2026-09-14.** That figure assumed a win
+pays 3.7c and a loss costs 96c PER CONTRACT -- no hedge, every loss total. The
+belief-collapse hedge (A15) and the sweep (A18) changed both sides, and the
+right way to compute it is from our own settled closes:
+
+| window | avg winning close | avg losing close | break-even loss rate | we lose |
+|---|---|---|---|---|
+| all time (232 closes) | +$1.36 | -$14.55 | **8.55%** | **4.31%** |
+| second half | +$1.79 | -$9.77 | 15.45% | 4.31% |
+| last 100 closes | +$1.87 | -$7.92 | **19.11%** | **4.00%** |
+
+**Our 95% range on the loss rate is [2.09%, 7.78%]** (10 losing of 232, exact
+Clopper-Pearson). Even the WORST end of that range, 7.78%, sits under the
+most conservative break-even, 8.55%. **So the strategy is profitable at 95%
+confidence** -- which the stale 3.58% figure said it was not.
+
+**What is still uncertain is the SIZE of a loss, not the rate.** The average
+losing close rests on TEN events and the distribution is fat-tailed (the worst
+was -$52.60). A few bad closes would move the 8.55% number a long way, and it
+is the number the whole conclusion hangs on. Watch it, not the loss rate.
+
+*The superseded claim, kept so the change is visible: "BREAK-EVEN IS A 3.58%
+CLOSE-LOSS RATE ... All live history is 12 losing of 248 closes = 4.84%; the
+current version is 2.86%. The two straddle break-even and neither has the
+sample to settle it. This is the single most important open number in the
+project."*
 
 ## Settled recently -- do not re-litigate
 
