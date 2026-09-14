@@ -504,6 +504,18 @@ def strategy_steps(cfg=None):
              "%g to %g contracts" % (P.AUTO_SIZE_MIN, P.AUTO_SIZE_MAX)),
         ]),
         ("BRAKES -- what stops it trading", [
+            ("Drawdown from your best-ever balance",
+             "The main stop. Measured from the highest your bank has ever "
+             "been, which is kept in a file so restarting the bot cannot "
+             "wipe it. It clears itself the moment your balance makes a new "
+             "high. A WITHDRAWAL looks exactly like a loss to this rule and "
+             "will stop the bot -- that is the safe direction.",
+             "stop at %d%% down" % int(100 * P.MAX_DRAWDOWN)),
+            ("Bet size follows the bank down, immediately",
+             "The moment a loss settles, the balance is re-read and the bet "
+             "is re-sized. It used to wait out the rest of a five-minute "
+             "timer, betting the size a larger bank supported.",
+             "same second"),
             ("Losing-trade count",
              "The most important brake. Losses arriving faster than the model "
              "predicts means the model is wrong, and the answer is to stop "
@@ -517,7 +529,11 @@ def strategy_steps(cfg=None):
              "stop always allows one more bet. This one counts every open "
              "position as if it were already lost.",
              "always on"),
-            ("Positions open at once", "", "%d" % 3),
+            ("How much can be open at once",
+             "Counted in CONTRACTS, not in number of trades. Eighteen small "
+             "fills and three big ones are the same money at risk, and only "
+             "the count would have stopped the small ones.",
+             "3 x bet size"),
             ("Errors", "Repeated failures on the order path stop the run.",
              "2 on orders, 5 in a row anywhere"),
         ]),

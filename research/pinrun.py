@@ -571,6 +571,97 @@ _DEFAULT_PICK = "first"  # take the first market that clears every gate, which
                          # offered. See the long note at the loop head.
 
 
+# ===========================================================================
+# AMENDMENT 30 (2026-09-14): THE DRAWDOWN BRAKE.
+#
+# THE OPERATOR: "make it 1/5 of bank or 3 losses whichever comes first. Then
+# drop the contract size to whatever the new calculated amount is and wait."
+#
+# WHY IT REPLACES NOTHING AND SITS BESIDE EVERYTHING. There were already two
+# brakes and each answers a different question:
+#   --loss-abort        "have we lost too much THIS RUN?"  -- in dollars, and
+#                       it RESETS TO ZERO ON EVERY RESTART, which is the hole
+#                       this amendment exists to close. We restarted three
+#                       times on 2026-09-13 and cleared it three times.
+#   max-losses 3        "is the MODEL still what we think it is?" -- three
+#                       losing closes should be about a 1-in-100 event, and
+#                       three SMALL losses can mean a broken model while no
+#                       dollar figure has been reached at all.
+# This one asks the third question: "how far are we off our best?" It is
+# measured from a HIGH-WATER MARK KEPT ON DISK, so a restart cannot clear it,
+# and it is a percentage, so it cannot drift as the bank grows.
+#
+# THE OPERATOR'S OWN RESET RULE, in his words: "It can reset the 1/3 of losses
+# once the full balance has been restored." That is exactly what a high-water
+# mark does, with no separate reset logic -- the drawdown returns to zero the
+# moment the bank makes a new high.
+#
+# A WITHDRAWAL LOOKS LIKE A DRAWDOWN and will trip this. That is the safe
+# direction (it stops trading rather than starting it) and the halt message
+# says so, so it is not mistaken for a trading loss.
+# ===========================================================================
+MAX_DRAWDOWN = 0.20      # 1/5 of the high-water bank. Operator, 2026-09-14.
+_DEFAULT_MAX_DRAWDOWN = 0.20
+HWM_FILE = os.path.join(RESULTS, "pinrun-hwm.json")
+
+
+def read_hwm(path=None):
+    """The highest bank ever recorded, in dollars, or None."""
+    try:
+        with open(path or HWM_FILE, encoding="utf-8") as fh:
+            v = float((json.load(fh) or {}).get("hwm") or 0.0)
+        return v if v > 0 else None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def write_hwm(bank, path=None):
+    """Raise the high-water mark. NEVER lowers it -- that is the whole point."""
+    if bank is None:
+        return read_hwm(path)        # a failed balance read changes nothing
+    cur = read_hwm(path)
+    if cur is not None and float(bank) <= cur:
+        return cur
+    try:
+        with open(path or HWM_FILE, "w", encoding="utf-8") as fh:
+            json.dump({"hwm": round(float(bank), 2),
+                       "at": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                           time.gmtime())}, fh)
+    except OSError:
+        return cur
+    return float(bank)
+
+
+def open_contracts(led):
+    """Contracts held open RIGHT NOW, across every market (AMENDMENT 31).
+
+    pintake's ledger keys `positions` by ticker and each value is a dict with
+    a `contracts` field -- NOT a tuple. The first version of this indexed it
+    positionally and silently summed zero, which would have made the open cap
+    unreachable and removed the rail entirely rather than converting it.
+    """
+    n = 0.0
+    for v in (led.get("positions") or {}).values():
+        if isinstance(v, dict):
+            try:
+                n += float(v.get("contracts") or 0.0)
+            except (TypeError, ValueError):
+                continue
+    return n
+
+
+def drawdown(bank, hwm):
+    """How far below its best the bank is, as a fraction. 0.0 when unknown.
+
+    Returns 0.0 rather than guessing when either figure is missing: a brake
+    that fires on a failed balance read would stop the bot every time the API
+    hiccups, and one that fires on a missing file would stop it on first run.
+    """
+    if bank is None or hwm is None or hwm <= 0:
+        return 0.0
+    return max(0.0, (float(hwm) - float(bank)) / float(hwm))
+
+
 def _pid_alive(pid):
     """Is this process id running RIGHT NOW?
 
@@ -1758,16 +1849,36 @@ def selftest():
            f"the forward loss bound tolerates all three open (${_want:.2f} vs "
            f"a $-90.00 brake)")
 
-        # the position cap must leave room for MAX_PER_CLOSE fills PLUS a
-        # straggler still settling from the previous close. Expressed against
-        # the cap, so it stays true at any setting.
+        # AMENDMENT 31 RESTATES THIS TEST. It used to set max_positions to
+        # MAX_PER_CLOSE and require the cap to REFUSE, showing that the
+        # setting must leave room for a straggler from the previous close.
+        # The cap now counts CONTRACTS, so the same point is made in
+        # contracts: a cap that only covers one close's worth of them refuses
+        # the moment anything is still settling.
+        # the positions are planted here rather than inherited, so the test
+        # cannot quietly pass on an empty ledger
+        _sz31 = float(SIZE)
+        pintake.LEDGER["positions"] = {
+            "PREV": {"want": "yes", "contracts": _sz31},      # straggler
+            "NOW1": {"want": "yes", "contracts": _sz31},      # this close
+        }
+        _held = open_contracts(pintake.LEDGER)
+        ck(abs(_held - 2 * _sz31) < 1e-9,
+           f"the fixture holds two full sizes ({_held:g} contracts), or the "
+           f"test below would prove nothing")
+
         class _A7b(_A7):
-            max_positions = int(MAX_PER_CLOSE)
+            max_positions = 2                     # 2 x SIZE = exactly held
         _r7 = risk_abort({"halted": False, "errors": 0}, _A7b)
-        ck(_r7 is not None and "position cap" in _r7,
-           f"--max-positions equal to the cap ({MAX_PER_CLOSE:g}) REFUSES the "
-           f"last fill once a straggler is still open, which is why it must be "
-           f"at least MAX_PER_CLOSE + 1 ({_r7})")
+        ck(_r7 is not None and "open cap" in _r7,
+           f"a cap of 2 x size refuses the next fill while a straggler from "
+           f"the previous close is STILL OPEN, which is why --max-positions "
+           f"must leave room for one ({_r7})")
+
+        class _A7c(_A7):
+            max_positions = 3                     # 3 x SIZE leaves room
+        ck(risk_abort({"halted": False, "errors": 0}, _A7c) is None,
+           "and a cap of 3 x size lets that fill through -- the live setting")
     finally:
         pintake.LEDGER.clear()
         pintake.LEDGER.update(_sv7)
@@ -2870,6 +2981,83 @@ def selftest():
            "a fill records the price paid per market, which is the input the "
            "band needs -- without it rebuy_ok silently allows everything")
 
+        # ---- AMENDMENT 30: the drawdown brake ---------------------------
+        ck(abs(_DEFAULT_MAX_DRAWDOWN - 0.20) < 1e-12,
+           "the DECLARED drawdown limit is a fifth of the high-water bank -- "
+           "the operator's number, 2026-09-14 (running %.3f)" % MAX_DRAWDOWN)
+        ck(abs(drawdown(80.0, 100.0) - 0.20) < 1e-12,
+           "a bank of $80 against a high of $100 is a 20%% drawdown")
+        ck(drawdown(120.0, 100.0) == 0.0,
+           "and a bank ABOVE its previous high is not a drawdown at all")
+        # THE FAILURE MODES THAT MATTER MOST: never trip on missing data.
+        ck(drawdown(None, 100.0) == 0.0 and drawdown(80.0, None) == 0.0
+           and drawdown(80.0, 0.0) == 0.0,
+           "a failed balance read or a missing high-water file reads as ZERO "
+           "drawdown, never as a trip -- a brake that fires whenever the API "
+           "hiccups would stop the bot on a network blip, and one that fires "
+           "on a missing file would stop it on its very first run")
+        import tempfile as _tf30
+        _d30 = _tf30.mkdtemp(prefix="pin30-")
+        try:
+            _hf = os.path.join(_d30, "hwm.json")
+            ck(read_hwm(_hf) is None, "no file yet means no high-water mark")
+            ck(write_hwm(100.0, _hf) == 100.0, "the first bank sets the mark")
+            ck(write_hwm(150.0, _hf) == 150.0, "a new high raises it")
+            ck(write_hwm(90.0, _hf) == 150.0,
+               "but a FALL NEVER LOWERS IT. This is the whole amendment: if "
+               "the mark tracked the bank down, the drawdown would always "
+               "read zero and the brake could never fire")
+            ck(read_hwm(_hf) == 150.0, "and it survives being re-read")
+            ck(abs(drawdown(120.0, read_hwm(_hf)) - 0.20) < 1e-12,
+               "so $120 against a $150 high is exactly the 20%% limit")
+            ck(write_hwm(None, _hf) == 150.0,
+               "a failed balance read does not disturb the mark")
+        finally:
+            for _f in os.listdir(_d30):
+                os.remove(os.path.join(_d30, _f))
+            os.rmdir(_d30)
+        _src30 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck('_dd >= MAX_DRAWDOWN' in _src30 and "DRAWDOWN brake" in _src30,
+           "risk_abort actually reads the drawdown, rather than it being "
+           "computed and discarded")
+        ck('state["autosize_at"] = 0.0' in _src30,
+           "and a settled LOSS clears the sizer's timer, so the bet shrinks "
+           "on the next pass instead of up to five minutes later -- the "
+           "operator's 'if we lose it should immediately recalculate'")
+        _ratchet30 = "if want_abort < " + "float(a.loss_abort):"
+        ck(_ratchet30 not in _src30,
+           "the dollar stop TIGHTENS as well as loosens. It used to ratchet "
+           "one way, so a stop set when the bank was $310 stayed at -$208 "
+           "even after the bank halved")
+
+        # ---- AMENDMENT 31: the open cap counts CONTRACTS -----------------
+        _led31 = {"positions": {
+            "A": {"want": "yes", "contracts": 8.0},
+            "B": {"want": "no", "contracts": 12.0}}}
+        ck(abs(open_contracts(_led31) - 20.0) < 1e-9,
+           "open contracts are summed across markets (%g)"
+           % open_contracts(_led31))
+        ck(open_contracts({}) == 0.0 and open_contracts({"positions": {}}) == 0.0,
+           "and an empty ledger holds nothing")
+        ck(open_contracts({"positions": {"A": ("x", "y", 1, 99.0)}}) == 0.0,
+           "a position that is NOT the dict shape contributes zero rather "
+           "than a wrong number -- the first version indexed it positionally "
+           "and would have summed zero for every real position, removing the "
+           "rail instead of converting it")
+        # eighteen small fills and three big ones must hit the cap together
+        _big = {"positions": dict(("M%d" % i, {"contracts": 52.0})
+                                  for i in range(3))}
+        _small = {"positions": dict(("M%d" % i, {"contracts": 8.7})
+                                    for i in range(18))}
+        ck(abs(open_contracts(_big) - 156.0) < 1e-9
+           and abs(open_contracts(_small) - 156.6) < 1e-9,
+           "three fills of 52 and eighteen of 8.7 are the SAME exposure "
+           "(%g vs %g), so they now hit the cap together -- under the old "
+           "position count the eighteen would have halted the bot after "
+           "three" % (open_contracts(_big), open_contracts(_small)))
+        ck("open cap:" in _src30 and "_open_n = open_contracts(led)" in _src30,
+           "and risk_abort uses it")
+
         # ---- AMENDMENT 28: the depth floor is a flag, paper only --------
         ck(abs(_DEFAULT_MIN_FILL_FRAC - 0.50) < 1e-12,
            "the DECLARED depth floor is half of SIZE (running %.2f)"
@@ -3448,9 +3636,26 @@ def risk_abort(state, a):
                 f"with ${float(state.get('open_cost', 0.0)):.2f} still open; "
                 f"one more contract could take this run past "
                 f"${a.loss_abort:.2f}")
-    if len(led.get("positions") or {}) >= a.max_positions:
-        return (f"position cap: {len(led['positions'])} open "
-                f">= {a.max_positions}")
+    # AMENDMENT 31 (2026-09-14): THE OPEN CAP COUNTS CONTRACTS, NOT POSITIONS.
+    #
+    # It counted positions, and that was fine while a close produced one or
+    # two fills. AMENDMENTS 23, 28 and 29 changed that: under the contract
+    # budget there is no limit on the NUMBER of fills, only their total, and
+    # with the depth floor at a tenth of SIZE one close can now produce ten to
+    # eighteen small fills instead of two. A cap of three positions would have
+    # halted the bot three fills into every close and throttled the exact
+    # buying those amendments exist to enable -- the operator's "make sure
+    # it'll increase the amount of contract fills we're getting".
+    #
+    # EXPOSURE IS UNCHANGED, which is the point. The limit is set to
+    # max_positions x SIZE contracts, so three fills of 52 and eighteen fills
+    # of 8.7 are both at the cap. This is the same correction AMENDMENT 17
+    # made to the per-close budget, applied to the concurrent one.
+    _open_n = open_contracts(led)
+    _open_cap = float(a.max_positions) * float(SIZE)
+    if _open_n >= _open_cap - 1e-9:
+        return (f"open cap: {_open_n:g} contracts held >= {_open_cap:g} "
+                f"({a.max_positions} x size {SIZE:g})")
     # THE LOSS-COUNT BRAKE. The dollar brake asks "have we lost too much?".
     # This asks a different and more important question: "is the model still
     # the thing we think it is?" The entire edge rests on a 0.90% flip rate
@@ -3462,6 +3667,18 @@ def risk_abort(state, a):
     if getattr(a, "max_losses", 0) and             int(led.get("losses", 0) or 0) >= a.max_losses:
         return (f"loss COUNT brake: {led['losses']} losing trades this run "
                 f">= {a.max_losses}; stop and re-measure the flip rate")
+    # AMENDMENT 30: the drawdown brake. `state["drawdown"]` is refreshed by
+    # autosize_tick (every AUTO_SIZE_EVERY_S, and immediately after any loss
+    # settles). Reads state rather than the API because risk_abort is the
+    # FIRST statement in a 20 Hz loop and must never block on a network call.
+    _dd = float(state.get("drawdown", 0.0) or 0.0)
+    if _dd >= MAX_DRAWDOWN:
+        return (f"DRAWDOWN brake: bank ${state.get('bank', 0.0):.2f} is "
+                f"{100.0 * _dd:.1f}% below its high of "
+                f"${state.get('hwm', 0.0):.2f}, limit {100.0 * MAX_DRAWDOWN:.0f}%. "
+                f"Size has been reduced to {SIZE:g}. STOP AND LOOK. "
+                f"(A WITHDRAWAL from the account looks identical to a trading "
+                f"loss here -- check the balance before assuming the worst.)")
     if state.get("order_errors", 0) >= 2:
         return f"{state['order_errors']} errors on the ORDER path"
     if state["errors"] >= 5:
@@ -3567,8 +3784,18 @@ def apply_size(new_size, a, why, rec=None):
     globals()["SIZE"] = new_size
     wc = 1.00 * new_size * float(MAX_PER_CLOSE)   # the loss-abort band's unit
     want_abort = -2.0 * wc                        # mid-band: survives 2 closes
-    if want_abort < float(a.loss_abort):
-        a.loss_abort = want_abort
+    # AMENDMENT 30: THIS NOW TIGHTENS AS WELL AS LOOSENS, and the one-way
+    # ratchet it replaces was the weakest rail in the bot. It read
+    # `if want_abort < a.loss_abort`, so the dollar stop followed the bank UP
+    # and never came back DOWN: once the bank reached $310 the stop sat at
+    # -$208 and stayed there even if the bank halved. The operator found it
+    # from the other end -- "if we lose it should signal it to immediately
+    # recalculate the contract size" -- and it is the same defect.
+    #
+    # Tightening is safe HERE, unlike in set_limits(): this is a plain float
+    # on the args object, not a rail that refuses a decrease and would roll
+    # SIZE back with it.
+    a.loss_abort = want_abort
     # NEVER HAND set_limits A TIGHTENING. It refuses one, and a refusal here
     # would roll SIZE back -- which on a size DECREASE means the bot could
     # never shrink after a loss, the one direction that must always work.
@@ -3618,6 +3845,12 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
         state["autosize_fails"] = state.get("autosize_fails", 0) + 1
         return None
     state["bank"] = bank
+    # AMENDMENT 30: refresh the high-water mark and the drawdown BEFORE the
+    # size is chosen, so a fall in the bank shrinks the bet on the same tick
+    # that notices it rather than on the next one.
+    hwm = write_hwm(bank) or bank
+    state["hwm"] = hwm
+    state["drawdown"] = drawdown(bank, hwm)
     want = size_for_bank(bank)
     cur = float(SIZE)
     if want > cur and AUTO_SIZE_STEP_UP:
@@ -3868,6 +4101,14 @@ def trade_loop(a, rec, book, idx, series_index):
                 print(f"  *** A LOSS. losing trades "
                       f"{state['losing_trades']}, losing CLOSES "
                       f"{pintake.LEDGER['losses']} (the brake counts closes) ***")
+                # AMENDMENT 30, and it is the operator's own instruction:
+                # "if we lose it should signal it to immediately recalculate
+                # the contract size". The sizer otherwise waits out the rest
+                # of AUTO_SIZE_EVERY_S -- up to five minutes of betting the
+                # size a LARGER bank supported. Clearing the timestamp makes
+                # the next pass re-read the balance and re-size at once, which
+                # also refreshes the drawdown the brake reads.
+                state["autosize_at"] = 0.0
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
                 pnl_c=round(100 * pnl, 2),
                 realised=round(pintake.LEDGER["realised"], 4))
