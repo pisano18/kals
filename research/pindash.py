@@ -697,6 +697,7 @@ def render(data, say=print):
 
     # ---- nav
     tabs = [("ov", "OVERVIEW"), ("bk", "BANKROLL"), ("tr", "TRANSACTIONS"),
+            ("he", "EDGE HEALTH"), ("sz", "SIZE LADDER"),
             ("st", "HOW IT DECIDES"), ("ga", "GATE SCORECARD"),
             ("hp", "WHAT IT ALL MEANS")]
     w("<nav>")
@@ -751,6 +752,36 @@ def render(data, say=print):
           '<th>OUTCOME</th></tr></thead><tbody>')
         w(data["trades_html"])
         w("</tbody></table>")
+    w("</div></section>")
+
+    # ---- EDGE HEALTH
+    w('<section id="he"><div class="panel">')
+    w('<h2>IS THE EDGE BEING COMPETED AWAY?</h2>')
+    w('<div class="grid">')
+    for k, v, n, cls in data.get("health_cards", []):
+        w('<div class="card"><div class="k">%s</div><div class="v %s">%s</div>'
+          '<div class="n">%s</div></div>' % (esc(k), cls, esc(v), esc(n)))
+    w("</div>")
+    _hn = data.get("health_note", ("", ""))
+    w('<div class="note %s">%s</div>' % (_hn[0], _hn[1]))
+    w(_table(["DAY", "CLOSES", "CONTRACTS", "NET", "PER CONTRACT",
+              "MEAN PRICE"], data.get("health_rows", [])))
+    w('<div class="note">The alarm needs BOTH halves: more contracts AND less '
+      'per contract, three days running. A falling number on falling volume '
+      'is a quiet market, not competition.</div>')
+    w("</div></section>")
+
+    # ---- SIZE LADDER
+    w('<section id="sz"><div class="panel">')
+    w('<h2>WHAT YOUR BET SIZE BECOMES AS THE BANKROLL GROWS</h2>')
+    w('<div class="note">Bet size is your balance divided by 5.88, capped at '
+      '250 contracts. The worst a single close can cost is always about a '
+      'third of the balance &mdash; that ratio never changes.</div>')
+    w(_table(["BANKROLL", "BET SIZE", "MOST A CLOSE CAN BUY",
+              "WORST CLOSE COULD COST", "% OF BANK"], data.get("size_rows", [])))
+    w('<div class="note warn">At 250 contracts the size stops growing, which '
+      'happens at a balance of about $1,470. After that the bankroll grows in '
+      'a straight line instead of compounding.</div>')
     w("</div></section>")
 
     # ---- STRATEGY
@@ -1203,6 +1234,61 @@ def gate_rows(ev, outcomes):
     return out, ""
 
 
+def health_and_size(tr, cfg):
+    """The edge-health tab and the size ladder, for the page.
+
+    The health numbers come from research/pinhealth.py so the page and the
+    command line can never disagree -- two implementations of a kill line is
+    one implementation too many.
+    """
+    import pinhealth
+    d = pinhealth.daily(tr)
+    days = sorted(d)
+    rows, trend = [], []
+    tot_c = tot_b = 0
+    for k in days:
+        a = d[k]
+        c = a["contracts"]
+        cpc = 100.0 * a["net"] / c if c else 0.0
+        rows.append([k, "%d" % len(a["closes"]), "%.0f" % c,
+                     (usd(a["net"]), "up" if a["net"] >= 0 else "dn"),
+                     ("%+.2f¢" % cpc, "up" if cpc >= 0 else "dn"),
+                     "%.1f¢" % (100.0 * a["px"] / c if c else 0)])
+        trend.append((k, c, cpc))
+        tot_c += len(a["closes"])
+        tot_b += len(a["bad"])
+    lr = tot_b / tot_c if tot_c else 0.0
+    kl = pinhealth.kill_line(lr)
+    last = trend[-1][2] if trend else 0.0
+    alarm, why = pinhealth.assess(trend)
+    cards = [
+        ("EARNED PER CONTRACT", "%+.2f¢" % last, "most recent day",
+         "up" if last > kl else "dn"),
+        ("THE EDGE DIES BELOW", "%+.2f¢" % kl,
+         "at a %.2f%% loss rate" % (100 * lr), "warn"),
+        ("HEADROOM", ("%.1fx" % (last / kl)) if kl and last > 0 else "--",
+         "how far above the line", "up" if last > kl else "dn"),
+        ("LOSING CLOSES", "%d of %d" % (tot_b, tot_c),
+         "%.2f%% of everything traded" % (100 * lr), ""),
+    ]
+    note = (("warn", "<b>ALARM: %s</b>" % why) if alarm else
+            ("", "<b>No sign of the edge being competed away.</b> " + why +
+             ". A winning close pays about +4.6¢ a contract and a losing "
+             "one costs about 35.8¢, so at this loss rate the break-even "
+             "point is %+.2f¢." % kl))
+    # the size ladder
+    P = cfg
+    size_rows = []
+    for bank in (100, 200, 326, 500, 750, 1000, 1470, 2000, 5000, 10000):
+        size = min(bank / 5.88, float(P.AUTO_SIZE_MAX))
+        worst = size * float(P.MAX_PER_CLOSE) * float(P.PRICE_CEILING)
+        size_rows.append([
+            usd(bank, sign=False), "%.0f" % size,
+            "%.0f" % (size * float(P.MAX_PER_CLOSE)),
+            (usd(-worst), "dn"), "%.0f%%" % (100 * worst / bank)])
+    return cards, rows, note, size_rows
+
+
 def build(logs_glob, markets_json):
     paths = sorted(glob.glob(logs_glob))
     ev = load(paths)
@@ -1228,6 +1314,7 @@ def build(logs_glob, markets_json):
                 % (nchk, usd(gap, sign=False)))
     cfgrec, have_cfg = live_config(ev)
     cfg = _Cfg(cfgrec)
+    hcards, hrows, hnote, srows = health_and_size(trades, cfg)
     grows, gempty = gate_rows(ev, outcomes)
     span = ""
     if curve:
@@ -1256,6 +1343,8 @@ def build(logs_glob, markets_json):
         "steps": strategy_steps(cfg),
         "gates_rows": grows,
         "gates_empty": gempty,
+        "health_cards": hcards, "health_rows": hrows, "health_note": hnote,
+        "size_rows": srows,
         "n_trades": len(trades),
     }
 

@@ -1,0 +1,20 @@
+EDGE HEALTH -- written 2026-09-14 03:32 ET
+
+  THE ONE NUMBER: cents earned per contract.
+
+  day        | closes | contracts |     net | c/contract | mean price
+  -----------|--------|-----------|---------|------------|-----------
+  2026-09-08 |     24 |       326 |  -43.07 |    -13.21c |      94.7c
+  2026-09-09 |     31 |       779 |  +39.85 |     +5.11c |      91.9c
+  2026-09-10 |     42 |       820 |  +11.20 |     +1.37c |      93.6c
+  2026-09-11 |     35 |       778 |   +0.56 |     +0.07c |      94.5c
+  2026-09-12 |     69 |      1884 |  +38.26 |     +2.03c |      93.8c
+  2026-09-13 |     35 |      2209 | +120.72 |     +5.46c |      92.7c
+  2026-09-14 |      7 |       386 |  +15.34 |     +3.98c |      95.8c
+
+  loss rate so far        : 4.12%  (10 losing of 243 closes)
+  the edge dies below     : +1.54c per contract
+  most recent day         : +3.98c per contract
+  headroom                : +2.44c  (2.6x the kill line)
+
+  DECAY TEST: no decay pattern
