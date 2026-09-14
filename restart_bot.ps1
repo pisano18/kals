@@ -171,25 +171,25 @@ Write-Host "pinrun running: pid $($new.ProcessId)"
 # on the hour.
 $fresh = 0
 
-$newest = Get-ChildItem "C:\kals\kalshi_data" -Recurse -File -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if ($newest) {
-    $age = [int]((Get-Date) - $newest.LastWriteTime).TotalSeconds
-    Write-Host "kalshi_data  -- newest write $age s ago ($($newest.Name))"
-    if ($age -lt 900) { $fresh++ }
-} else {
-    Write-Host "kalshi_data  -- NO FILES FOUND"
-}
-
-# For the feeds, the proof of life is that the PREVIOUS hour landed with
-# content in it, plus a file open for the hour in progress.
+# BOTH recorders gzip a whole hour in memory and write it at the ROTATION.
+# An in-progress file therefore sits at 0 bytes for up to 59 minutes, and a
+# "newest write was N seconds ago" test alarms on a perfectly healthy recorder
+# for most of every hour. The first version of this check applied that test to
+# kalshi_data and duly cried wolf at 23:21 on 2026-09-14 with both collectors
+# alive and burning CPU since Sep 9.
+#
+# The real proof of life: the PREVIOUS hour landed with bytes in it, and a
+# file is open for the hour in progress.
 $prevName = (Get-Date).ToUniversalTime().AddHours(-1).ToString("yyyyMMddTHH") + ".jsonl.gz"
 $curName  = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHH") + ".jsonl.gz"
-$prev = Get-ChildItem "C:\kals\feed_data" -Recurse -File -Filter $prevName -ErrorAction SilentlyContinue
-$cur  = Get-ChildItem "C:\kals\feed_data" -Recurse -File -Filter $curName  -ErrorAction SilentlyContinue
-$prevBytes = ($prev | Measure-Object -Property Length -Sum).Sum
-Write-Host "feed_data    -- last full hour $prevName = $prevBytes bytes across $($prev.Count) feeds; $($cur.Count) open for $curName"
-if ($prevBytes -gt 0 -and $cur.Count -gt 0) { $fresh++ }
+foreach ($d in @("C:\kals\kalshi_data", "C:\kals\feed_data")) {
+    $prev = Get-ChildItem $d -Recurse -File -Filter $prevName -ErrorAction SilentlyContinue
+    $cur  = Get-ChildItem $d -Recurse -File -Filter $curName  -ErrorAction SilentlyContinue
+    $prevBytes = ($prev | Measure-Object -Property Length -Sum).Sum
+    $name = Split-Path $d -Leaf
+    Write-Host "$name -- last full hour $prevBytes bytes across $($prev.Count) channels; $($cur.Count) open now"
+    if ($prevBytes -gt 0 -and $cur.Count -gt 0) { $fresh++ }
+}
 
 if ($fresh -lt 2) {
     Write-Host "WARNING: a recorder may have stopped. The tape is NOT"

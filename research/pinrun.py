@@ -1570,6 +1570,37 @@ def sweep_limit(f, price, want, ceiling=None, edge_floor=None, ev_floor=None):
 
 # ===========================================================================
 def selftest():
+    """
+    THE HIGH-WATER FILE IS REDIRECTED FOR THE WHOLE OF THIS FUNCTION, and the
+    reason is a production outage. On 2026-09-14 a check called autosize_tick
+    with a fake bank of $1,000,000 to prove the size cap held. write_hwm()
+    duly recorded $1,000,000 in results/pinrun-hwm.json. The self-test runs
+    before every live start, so the next live bot read a real bank of $313
+    against a $1,000,000 high, computed a 100% drawdown and halted on its
+    first pass -- with the previous bot already stopped. The bot was down.
+
+    Redirecting HERE rather than at each call site is deliberate: several
+    calls span multiple lines, and a per-call fix is one forgotten argument
+    away from repeating it. A test must not be able to write production state
+    at all.
+    """
+    _hwm_real = HWM_FILE
+    import tempfile as _tfhw
+    _hwm_dir = _tfhw.mkdtemp(prefix="pinhwm-")
+    globals()["HWM_FILE"] = os.path.join(_hwm_dir, "hwm.json")
+    try:
+        return _selftest_body()
+    finally:
+        globals()["HWM_FILE"] = _hwm_real
+        try:
+            for _f in os.listdir(_hwm_dir):
+                os.remove(os.path.join(_hwm_dir, _f))
+            os.rmdir(_hwm_dir)
+        except OSError:
+            pass
+
+
+def _selftest_body():
     print("SELF-TEST -- pinrun")
     fails = []
 
@@ -3030,6 +3061,23 @@ def selftest():
            "one way, so a stop set when the bank was $310 stayed at -$208 "
            "even after the bank halved")
 
+        # THE SELF-TEST MUST NOT BE ABLE TO WRITE PRODUCTION STATE.
+        # This is the check for the 2026-09-14 outage: a test wrote a fake
+        # $1,000,000 bank into the real high-water file, and the next live
+        # start read it, computed a 100% drawdown and halted immediately.
+        ck(HWM_FILE != os.path.join(RESULTS, "pinrun-hwm.json"),
+           "while the self-test runs, HWM_FILE points at a sandbox and NOT at "
+           "results/pinrun-hwm.json -- currently %r" % HWM_FILE)
+        ck(os.path.dirname(HWM_FILE) != RESULTS,
+           "and not anywhere else in results/ either")
+        write_hwm(1e6)
+        ck(read_hwm() == 1e6, "a test CAN move the sandboxed mark freely")
+        _real_now = read_hwm(os.path.join(RESULTS, "pinrun-hwm.json"))
+        ck(_real_now is None or _real_now < 1e6,
+           "and the REAL file is untouched by that (%s) -- if this ever fails, "
+           "the live bot's next start will see a false drawdown and halt"
+           % _real_now)
+
         # ---- AMENDMENT 31: the open cap counts CONTRACTS -----------------
         _led31 = {"positions": {
             "A": {"want": "yes", "contracts": 8.0},
@@ -3824,7 +3872,7 @@ def apply_size(new_size, a, why, rec=None):
 
 
 def autosize_tick(state, a, open_positions, rec=None, now=None,
-                  bank_reader=None):
+                  bank_reader=None, hwm_path=None):
     """Called at the top of the loop. Returns a message when size moved."""
     # NOT GATED ON a.live ANY MORE (2026-09-14). It was, and the consequence
     # was that every paper what-if traded at its --size while the live bot
@@ -3848,7 +3896,7 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
     # AMENDMENT 30: refresh the high-water mark and the drawdown BEFORE the
     # size is chosen, so a fall in the bank shrinks the bet on the same tick
     # that notices it rather than on the next one.
-    hwm = write_hwm(bank) or bank
+    hwm = write_hwm(bank, hwm_path) or bank
     state["hwm"] = hwm
     state["drawdown"] = drawdown(bank, hwm)
     want = size_for_bank(bank)
