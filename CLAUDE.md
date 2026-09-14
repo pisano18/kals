@@ -4,11 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Read-only quantitative research into whether a tradeable edge exists in Kalshi's
-15-minute crypto binary markets: 12 up/down series (`KXBTC15M` and siblings)
-plus 2 Coin Race relative-performance series. No money has been deployed. Every
-number in this repo was produced by a script that refuses to touch real data
-until its self-test passes.
+Quantitative research into a tradeable edge in Kalshi's 15-minute crypto binary
+markets: 12 up/down series (`KXBTC15M` and siblings) plus 2 Coin Race
+relative-performance series. Every number in this repo was produced by a script
+that refuses to touch real data until its self-test passes.
+
+**REAL MONEY IS DEPLOYED.** `research/pinrun.py --live` has been trading the
+operator's account since 2026-09-08. This file used to say "no money has been
+deployed"; that was true when it was written and is not true now. What is
+deployed right now is in `CURRENT_STATE.md` and `results/VERSIONS.md`.
 
 **READ `CURRENT_STATE.md` FIRST.** It is small and deliberately kept
 current: what is deployed right now, the live loss rate against break-even,
@@ -198,8 +202,13 @@ analysis result is not. So:
 
 ## Hard rules
 
-1. **Never place, amend, or cancel an order.** No `POST /portfolio/orders`.
-   `kalshi.pem` exists only so the WebSocket can authenticate for market data.
+1. **NARROWED 2026-09-06 — READ THE AMENDMENT AT THE BOTTOM OF THIS FILE
+   BEFORE ACTING ON THIS RULE.** The operative rule is now *no order that risks
+   real money without per-instance operator sign-off*; `pinrun --live` runs
+   under that sign-off. The original text, kept so the change is visible:
+   *"Never place, amend, or cancel an order. No `POST /portfolio/orders`.
+   `kalshi.pem` exists only so the WebSocket can authenticate for market
+   data."*
 2. **Never modify anything under `kalshi_data/` or `feed_data/`.** A collector
    is actively writing there.
 3. **Never claim a result you did not measure.** If a script fails, report the
@@ -440,61 +449,18 @@ Two things that will bite:
    when something looks good.
 5. Commit with the reasoning, not just the change.
 
-## State as of 2026-09-06
+## State — see CURRENT_STATE.md
 
-**Two results are alive** (both detailed in `HANDOFF.md`, newest first):
+**The 2026-09-06 status block that lived here is superseded and has been moved
+verbatim to `PROJECT_HISTORY.md` (section "CLAUDE.md's 2026-09-06 status
+block").** It described `pin` as a pre-live research result with a forward test
+still ahead of it, and listed four next actions that are all now closed. It
+also ended with the line "No order has ever been placed. No money has been
+deployed", which stopped being true on 2026-09-08. Keeping it here cost ~3 KB
+of every single turn and, worse, read as current.
 
-- `pin` — **ALIVE, small, and going to forward test.** Out of sample
-  **+2.54c per contract, t=+5.0**. It is a TAKER and the book is thin: median
-  resting size 69 contracts, and 50 fails to fill 42.3% of the time. At a
-  fillable cap of 50 the bootstrap 95% interval on $/day is **[+19, +48]
-  one-per-close** — small, and **confidently positive**. The honest sentence
-  is "pin makes ~$33/day and we are confident it is positive."
-  **PRIMARY OPEN RISK, above everything else: the backtest cannot test whether
-  we win the race for a stale quote.** In the backtest we always get the
-  quote; in reality we are racing everyone else for it, and real fills will be
-  worse by an unknown amount. Two further caveats travel with every pin
-  number: the sample is **9 days**, so the worst close in it is not the real
-  downside; and the money is concentrated (top 10 of 336 closes = 45%), which
-  is real but is a screen most fat-tailed strategies fail. Note 78.3% of
-  closes are individually profitable, which is not a lottery shape.
-- `informed` — market-making at the touch. **+0.48c per fill, t = +6.4** on
-  17.1M fills, takers there carrying zero information (t = 0.2). Sweeps print
-  per level (59% of same-instant groups, median 8 legs), so the touch leg of a
-  sweep is already counted.
-
-**Immediate next actions, in order:**
-
-1. **Run `pin` once.** The all-coins portfolio table (`run_portfolio`,
-   `evaluate_markets`, `_walk_markets`) was pushed *after* the last run and
-   **has never executed against real data**. It reports P&L per close summed
-   over every coin, coins per close, and the worst single close. Twelve series
-   settle on the same quarter hour at rho ~ 0.8, so this is leverage, not
-   diversification — read the worst-close column first.
-2. **Build the queue-position simulator.** `+0.48c` is per fill; how many fills
-   a resting quote actually receives is unmeasured, and it is the only thing
-   between the maker result and a number in dollars. The rebuilt book in
-   `flow.py` is now replay-correct (seq-ordered, stale fills quarantined) and
-   is the input.
-3. **Fix `KXCRYPTOCOMP15M`.** It is in `CRYPTO_15M` but nothing arrives;
-   the ticker is wrong or the series does not exist under that name. One API
-   call. `KXCRYPTOLEAD15M` **is** recording (since 2026-09-04) and needs days
-   of tape before it is testable. Verify with:
-
-   ```powershell
-   python research\newseries.py --data C:\kals\kalshi_data
-   ```
-
-4. **Settle contradiction 3** (short-cadence equity series) with one API call —
-   it decides whether `IDEAS.md` B3 lives or is struck.
-
-**Do not** re-run `flow` unless the book itself is in question; it costs ~100
-minutes on a cold cache and neither live result depends on re-mining it.
-
-## What this project has never done
-
-No order has ever been placed. No money has been deployed. Nothing above
-changes that, and the kill criteria are still blank.
+**What is true now lives in `CURRENT_STATE.md` and `results/VERSIONS.md`.**
+`pin` is deployed and trading real money.
 
 ---
 

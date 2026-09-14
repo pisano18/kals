@@ -286,3 +286,70 @@ recorded for honesty:
 
 ---
 
+
+
+---
+
+## CLAUDE.md's 2026-09-06 status block — moved here 2026-09-14, verbatim
+
+Removed from `CLAUDE.md` because that file is loaded on every turn and this
+block had become false: it called `pin` a pre-live research result and ended
+by stating no order had ever been placed. `pin` went live 2026-09-08. Nothing
+below was edited; it is kept so the change is visible and so any past claim
+that cites it can still be checked.
+
+## State as of 2026-09-06
+
+**Two results are alive** (both detailed in `HANDOFF.md`, newest first):
+
+- `pin` — **ALIVE, small, and going to forward test.** Out of sample
+  **+2.54c per contract, t=+5.0**. It is a TAKER and the book is thin: median
+  resting size 69 contracts, and 50 fails to fill 42.3% of the time. At a
+  fillable cap of 50 the bootstrap 95% interval on $/day is **[+19, +48]
+  one-per-close** — small, and **confidently positive**. The honest sentence
+  is "pin makes ~$33/day and we are confident it is positive."
+  **PRIMARY OPEN RISK, above everything else: the backtest cannot test whether
+  we win the race for a stale quote.** In the backtest we always get the
+  quote; in reality we are racing everyone else for it, and real fills will be
+  worse by an unknown amount. Two further caveats travel with every pin
+  number: the sample is **9 days**, so the worst close in it is not the real
+  downside; and the money is concentrated (top 10 of 336 closes = 45%), which
+  is real but is a screen most fat-tailed strategies fail. Note 78.3% of
+  closes are individually profitable, which is not a lottery shape.
+- `informed` — market-making at the touch. **+0.48c per fill, t = +6.4** on
+  17.1M fills, takers there carrying zero information (t = 0.2). Sweeps print
+  per level (59% of same-instant groups, median 8 legs), so the touch leg of a
+  sweep is already counted.
+
+**Immediate next actions, in order:**
+
+1. **Run `pin` once.** The all-coins portfolio table (`run_portfolio`,
+   `evaluate_markets`, `_walk_markets`) was pushed *after* the last run and
+   **has never executed against real data**. It reports P&L per close summed
+   over every coin, coins per close, and the worst single close. Twelve series
+   settle on the same quarter hour at rho ~ 0.8, so this is leverage, not
+   diversification — read the worst-close column first.
+2. **Build the queue-position simulator.** `+0.48c` is per fill; how many fills
+   a resting quote actually receives is unmeasured, and it is the only thing
+   between the maker result and a number in dollars. The rebuilt book in
+   `flow.py` is now replay-correct (seq-ordered, stale fills quarantined) and
+   is the input.
+3. **Fix `KXCRYPTOCOMP15M`.** It is in `CRYPTO_15M` but nothing arrives;
+   the ticker is wrong or the series does not exist under that name. One API
+   call. `KXCRYPTOLEAD15M` **is** recording (since 2026-09-04) and needs days
+   of tape before it is testable. Verify with:
+
+   ```powershell
+   python research\newseries.py --data C:\kals\kalshi_data
+   ```
+
+4. **Settle contradiction 3** (short-cadence equity series) with one API call —
+   it decides whether `IDEAS.md` B3 lives or is struck.
+
+**Do not** re-run `flow` unless the book itself is in question; it costs ~100
+minutes on a cold cache and neither live result depends on re-mining it.
+
+## What this project has never done
+
+No order has ever been placed. No money has been deployed. Nothing above
+changes that, and the kill criteria are still blank.
