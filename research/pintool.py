@@ -50,6 +50,7 @@ KAUTH = r"C:\Users\Joe\AppData\Local\Temp\kals-work"
 BARS = {"fills_to_scale": 180, "dump_review": 40}     # pre-registered, SKIM.md
 PYTHON = sys.executable
 PINSIM = os.path.join(HERE, "pinsim.py")
+TOKENF = os.path.join(RESULTS, ".tooltoken")
 DATA = r"C:\kals\kalshi_data"
 FULLTAPE = r"C:\kals\fulltape\markets.json"
 OBJECTIVES = {
@@ -64,6 +65,51 @@ OBJECTIVES = {
 
 def ts(s):
     return calendar.timegm(time.strptime(s, "%Y-%m-%dT%H:%M:%SZ"))
+
+
+# ------------------------------------------------------------------- auth
+def token():
+    """A secret for anything that is not the loopback interface.
+
+    The first version of this server had NO authentication. On 127.0.0.1 that
+    is fine -- anyone who can reach it can already run anything on this box.
+    The moment it binds the network (the phone), it is a page that shows a
+    live balance and writes control requests, so it needs a key. Generated
+    once, stored in results/.tooltoken (gitignored), never logged in full.
+    """
+    os.makedirs(RESULTS, exist_ok=True)
+    if os.path.exists(TOKENF):
+        t = open(TOKENF, encoding="utf-8").read().strip()
+        if len(t) >= 24:
+            return t
+    import secrets
+    t = secrets.token_urlsafe(24)
+    with open(TOKENF, "w", encoding="utf-8") as f:
+        f.write(t)
+    try:                                    # best effort on Windows
+        subprocess.run(["icacls", TOKENF, "/inheritance:r", "/grant:r",
+                        f"{os.environ.get('USERNAME', 'Joe')}:F"],
+                       capture_output=True, timeout=10)
+    except Exception:
+        pass
+    return t
+
+
+def local_urls(port):
+    """Every address this machine can be reached on, for the phone."""
+    import socket
+    out = []
+    try:
+        host = socket.gethostname()
+        for info in socket.getaddrinfo(host, None):
+            ip = info[4][0]
+            if ":" in ip or ip.startswith("127."):
+                continue
+            if ip not in out:
+                out.append(ip)
+    except Exception:
+        pass
+    return out
 
 
 def fee(p, n=1.0):

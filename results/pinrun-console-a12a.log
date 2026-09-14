@@ -163,3 +163,131 @@ SELF-TEST PASSED
   close 15:15Z: 4281 looks, best was KXNEAR15M-26SEP111115- YES @0.9580 edge +3.73c (need +0.3c) -> no trade
   close 15:30Z: 4464 looks, 4464 decided, 4464 decided-but-nothing-offered, 0 undecided
   close 15:45Z: 4233 looks, 3754 decided, 3754 decided-but-nothing-offered, 479 undecided
+  close 16:00Z: 4320 looks, 4320 decided, 4320 decided-but-nothing-offered, 0 undecided
+  close 16:15Z: 4232 looks, best was KXNEAR15M-26SEP111215- YES @0.9960 edge +0.37c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP111230-30 tau=30s buy NO @0.9780 fair 0.0015 edge +1.90c size 148.00 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXXRP15M-26SEP111230-30 tau=30s buy NO @0.9790 fair 0.0028 edge +1.67c size 236.28 taking 20
+    ORDER -> status executed filled 20.0 @ 0.9776 fee 0.0015
+  close 16:30Z: 3698 looks, best was KXXRP15M-26SEP111230-3 NO @0.9780 edge +1.90c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP111230-30 no vs no -> +41.73c (run realised $+0.4173)
+  close 16:45Z: 4266 looks, best was KXBNB15M-26SEP111245-4 NO @0.4600 edge +52.20c (need +0.3c) -> no trade
+  close 17:00Z: 4177 looks, 4177 decided, 4177 decided-but-nothing-offered, 0 undecided
+  close 17:15Z: 4392 looks, 4392 decided, 4392 decided-but-nothing-offered, 0 undecided
+  close 17:30Z: 4414 looks, best was KXZEC15M-26SEP111330-3 YES @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 17:45Z: 4455 looks, best was KXNEAR15M-26SEP111345- NO @0.9940 edge +0.38c (need +0.3c) -> no trade
+  close 18:00Z: 4366 looks, best was KXBNB15M-26SEP111400-0 NO @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 18:15Z: 4419 looks, 4419 decided, 4419 decided-but-nothing-offered, 0 undecided
+  close 18:30Z: 4172 looks, 4172 decided, 4172 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXZEC15M-26SEP111445-45 tau=10s buy YES @0.9730 fair 0.9992 edge +2.44c size 13.00 taking 13
+    SCRAP 3 of 13 -- position kept, slot NOT spent
+    ORDER -> status partially_filled_then_canceled filled 3.0 @ 0.973 fee 0.0018
+  close 18:45Z: 4190 looks, best was KXZEC15M-26SEP111445-4 YES @0.9730 edge +2.44c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP111445-45 yes vs yes -> +7.54c (run realised $+0.4927)
+  close 19:00Z: 4437 looks, 4437 decided, 4437 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXXRP15M-26SEP111515-15 tau=23s buy NO @0.9380 fair 0.0009 edge +5.71c size 77.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.938 fee 0.004
+  close 19:15Z: 3972 looks, best was KXDOGE15M-26SEP111515- NO @0.9360 edge +5.83c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP111515-15 no vs no -> +115.85c (run realised $+1.6512)
+  close 19:30Z: 4303 looks, 4303 decided, 4303 decided-but-nothing-offered, 0 undecided
+  close 19:45Z: 4295 looks, best was KXXRP15M-26SEP111545-4 YES @0.9860 edge +1.28c (need +0.3c) -> no trade
+  close 20:00Z: 4213 looks, best was KXBNB15M-26SEP111600-0 YES @0.9970 edge +0.26c (need +0.3c) -> no trade
+  close 20:15Z: 4229 looks, best was KXNEAR15M-26SEP111615- NO @0.9850 edge +1.39c (need +0.3c) -> no trade
+  close 20:30Z: 4247 looks, 4247 decided, 4247 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXETH15M-26SEP111645-45 tau=28s buy NO @0.9680 fair 0.0043 edge +2.55c size 48.00 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXETH15M-26SEP111645-45 tau=28s buy NO @0.9780 fair 0.0043 edge +1.62c size 118.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.977 fee 0.0015
+  close 20:45Z: 3808 looks, best was KXETH15M-26SEP111645-4 NO @0.9680 edge +2.55c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP111645-45 no vs no -> +42.85c (run realised $+2.0797)
+  close 21:00Z: 4131 looks, best was KXSOL15M-26SEP111700-0 NO @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 21:15Z: 4234 looks, best was KXBTC15M-26SEP111715-1 YES @0.9900 edge +0.92c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP111730-30 tau=29s buy YES @0.9750 fair 0.9964 edge +1.97c size 239.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.975 fee 0.0017
+  close 21:30Z: 3684 looks, best was KXXRP15M-26SEP111730-3 NO @0.7400 edge +24.35c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP111730-30 yes vs yes -> +46.58c (run realised $+2.5455)
+  SIGNAL KXBTC15M-26SEP111745-45 tau=30s buy NO @0.9750 fair 0.0002 edge +2.31c size 314.46 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXBTC15M-26SEP111745-45 tau=30s buy NO @0.9760 fair 0.0001 edge +2.22c size 222.34 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXBTC15M-26SEP111745-45 tau=30s buy NO @0.9790 fair 0.0001 edge +1.94c size 2926.44 taking 20
+    ORDER -> status executed filled 20.0 @ 0.979 fee 0.0014
+  close 21:45Z: 3906 looks, best was KXBTC15M-26SEP111745-4 NO @0.9750 edge +2.31c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP111745-45 no vs no -> +39.12c (run realised $+2.9367)
+  close 22:00Z: 4419 looks, 4419 decided, 4419 decided-but-nothing-offered, 0 undecided
+  close 22:15Z: 4339 looks, 4339 decided, 4339 decided-but-nothing-offered, 0 undecided
+  close 22:30Z: 4392 looks, best was KXETH15M-26SEP111830-3 NO @0.9960 edge +0.37c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP111845-45 tau=30s buy NO @0.9200 fair 0.0006 edge +7.42c size 199.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.92 fee 0.0051
+  SIGNAL KXSOL15M-26SEP111845-45 tau=27s buy NO @0.8600 fair 0.0024 edge +12.92c size 51.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.83 fee 0.0098
+  close 22:45Z: 509 looks, best was KXSOL15M-26SEP111845-4 NO @0.8600 edge +12.92c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP111845-45 no vs no -> +149.69c (run realised $+4.4336)
+  SETTLED KXSOL15M-26SEP111845-45 no vs no -> +320.24c (run realised $+7.6360)
+  SIGNAL KXBTC15M-26SEP111900-00 tau=6s buy NO @0.9330 fair 0.0007 edge +6.19c size 150.00 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXBTC15M-26SEP111900-00 tau=6s buy NO @0.9480 fair 0.0007 edge +4.78c size 63.38 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXBTC15M-26SEP111900-00 tau=6s buy NO @0.9550 fair 0.0007 edge +4.13c size 444.02 taking 20
+    ORDER -> status executed filled 20.0 @ 0.953 fee 0.0031
+  close 23:00Z: 4248 looks, best was KXBTC15M-26SEP111900-0 NO @0.9330 edge +6.19c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP111900-00 no vs no -> +87.72c (run realised $+8.5132)
+  close 23:15Z: 4361 looks, best was KXBTC15M-26SEP111915-1 NO @0.9980 edge +0.19c (need +0.3c) -> no trade
+  SIGNAL KXETH15M-26SEP111930-30 tau=30s buy NO @0.9680 fair 0.0019 edge +2.79c size 21.00 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXETH15M-26SEP111930-30 tau=30s buy NO @0.9690 fair 0.0018 edge +2.70c size 52.70 taking 20
+    ORDER -> status executed filled 20.0 @ 0.969 fee 0.0021
+  close 23:30Z: 3652 looks, best was KXETH15M-26SEP111930-3 NO @0.9680 edge +2.79c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP111930-30 no vs no -> +57.79c (run realised $+9.0911)
+  SIGNAL KXNEAR15M-26SEP111945-45 tau=23s buy NO @0.9510 fair 0.0026 edge +4.31c size 15.00 taking 15
+    ORDER -> status partially_filled_then_canceled filled 14.3 @ 0.951 fee 0.0032
+  close 23:45Z: 3999 looks, best was KXNEAR15M-26SEP111945- NO @0.9510 edge +4.31c (need +0.3c) -> FIRED
+  SETTLED KXNEAR15M-26SEP111945-45 no vs no -> +65.40c (run realised $+9.7451)
+  SIGNAL KXBTC15M-26SEP112000-00 tau=30s buy YES @0.9520 fair 0.9968 edge +4.16c size 218.72 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXBTC15M-26SEP112000-00 tau=30s buy YES @0.9630 fair 0.9984 edge +3.29c size 33.03 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXBTC15M-26SEP112000-00 tau=30s buy YES @0.9640 fair 0.9984 edge +3.20c size 273.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.963 fee 0.0024
+  close 00:00Z: 3716 looks, best was KXBTC15M-26SEP112000-0 YES @0.9520 edge +4.16c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP112000-00 yes vs yes -> +69.01c (run realised $+10.4352)
+  SIGNAL KXETH15M-26SEP112015-15 tau=23s buy YES @0.9780 fair 0.9951 edge +1.56c size 301.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.9752 fee 0.0016
+  close 00:15Z: 3852 looks, best was KXETH15M-26SEP112015-1 YES @0.9780 edge +1.56c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP112015-15 yes vs yes -> +46.21c (run realised $+10.8973)
+  SIGNAL KXBTC15M-26SEP112030-30 tau=28s buy NO @0.9500 fair 0.0030 edge +4.37c size 2723.23 taking 20
+    ORDER -> status executed filled 20.0 @ 0.948 fee 0.0034
+  close 00:30Z: 3770 looks, best was KXBTC15M-26SEP112030-3 NO @0.9500 edge +4.37c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP112030-30 no vs no -> +97.09c (run realised $+11.8682)
+  SIGNAL KXHYPE15M-26SEP112045-45 tau=30s buy NO @0.9750 fair 0.0009 edge +2.24c size 116.90 taking 20
+    ORDER -> status canceled filled 0.0 @ None fee None
+  SIGNAL KXHYPE15M-26SEP112045-45 tau=30s buy NO @0.9790 fair 0.0000 edge +1.96c size 20.50 taking 20
+    ORDER -> status executed filled 20.0 @ 0.979 fee 0.0014
+  SIGNAL KXXRP15M-26SEP112045-45 tau=30s buy YES @0.9690 fair 1.0000 edge +2.89c size 200.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.969 fee 0.0021
+  close 00:45Z: 18 looks, best was KXXRP15M-26SEP112045-4 YES @0.9690 edge +2.89c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP112045-45 no vs no -> +39.12c (run realised $+12.2594)
+  SETTLED KXXRP15M-26SEP112045-45 yes vs yes -> +57.79c (run realised $+12.8373)
+  SIGNAL KXBTC15M-26SEP112100-00 tau=30s buy YES @0.9620 fair 0.9961 edge +3.15c size 948.02 taking 20
+    SCRAP 0.02 of 20 -- position kept, slot NOT spent
+    ORDER -> status partially_filled_then_canceled filled 0.02 @ 0.961 fee 0.009
+  SIGNAL KXDOGE15M-26SEP112100-00 tau=30s buy NO @0.9800 fair 0.0028 edge +1.58c size 363.24 taking 20
+    ORDER -> status executed filled 20.0 @ 0.98 fee 0.0013
+  close 01:00Z: 3468 looks, best was KXBTC15M-26SEP112100-0 YES @0.9620 edge +3.15c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP112100-00 yes vs yes -> +0.07c (run realised $+12.8380)
+  SETTLED KXDOGE15M-26SEP112100-00 no vs no -> +37.25c (run realised $+13.2105)
+  close 01:15Z: 4239 looks, 4239 decided, 4239 decided-but-nothing-offered, 0 undecided
+  close 01:30Z: 4097 looks, best was KXBTC15M-26SEP112130-3 NO @0.9940 edge +0.56c (need +0.3c) -> no trade
+  close 01:45Z: 3933 looks, best was KXHYPE15M-26SEP112145- NO @0.9870 edge +0.92c (need +0.3c) -> no trade
+  SIGNAL KXHYPE15M-26SEP112200-00 tau=30s buy YES @0.9770 fair 0.9983 edge +1.98c size 17.50 taking 17.5
+    SCRAP 4.5 of 17.5 -- position kept, slot NOT spent
+    ORDER -> status partially_filled_then_canceled filled 4.5 @ 0.977 fee 0.0015
+  SIGNAL KXSOL15M-26SEP112200-00 tau=28s buy NO @0.9700 fair 0.0017 edge +2.63c size 96.00 taking 20
+    ORDER -> status executed filled 20.0 @ 0.939 fee 0.004
+  SIGNAL KXBTC15M-26SEP112200-00 tau=14s buy NO @0.9160 fair 0.0040 edge +7.46c size 720.08 taking 20
+    ORDER -> status executed filled 20.0 @ 0.916 fee 0.0053
+  *** HALT: position cap: 3 open >= 3
+
+  33 signals, 206898 evaluations
+  ledger {'committed': 41.4965, 'filled_contracts': 361.82, 'filled_dollars': 344.69002, 'fees': 1.0920900000000002, 'realised': 13.210480000000006, 'losses': 0, 'sends': 33, 'unknown': 0, 'rested': 0, 'anomalies': [], 'halt': None, 'positions': {'KXHYPE15M-26SEP112200-00': {'want': 'yes', 'contracts': 4.5, 'cost': 4.3965, 'order_ids': ['01a09357-57d0-79b1-8d9e-1771a1356947']}, 'KXSOL15M-26SEP112200-00': {'want': 'no', 'contracts': 20.0, 'cost': 18.779999999999998, 'order_ids': ['01a09357-5fa0-708d-bd43-8c9e7a1e2171']}, 'KXBTC15M-26SEP112200-00': {'want': 'no', 'contracts': 20.0, 'cost': 18.32, 'order_ids': ['01a09357-9650-7d0a-abe6-c7bc12dde85f']}}, 'takes': [{'status_code': 201, 'order_id': '01a09108-f718-7a29-8a7b-f6730cfdb6a5', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789139679121-85bf8c', 't': 1789139679.2756317}, {'status_code': 201, 'order_id': '01a09109-0aa0-7468-88f5-3ae0cdee2977', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789139684128-cd13ea', 't': 1789139684.2201407}, {'status_code': 201, 'order_id': '01a0914d-7e10-73ba-ac49-d466a888ae9f', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789144170028-465751', 't': 1789144170.2128246}, {'status_code': 201, 'order_id': '01a0914d-7e10-7553-bb92-856ff5fa35e8', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.9776, 'fee': 0.0015, 'fee_total': 0.03, 'client_order_id': 'pin-1789144170279-c43fff', 't': 1789144170.3810108}, {'kind': 'pnl', 'delta': 0.4172999999999995, 'note': 'KXXRP15M-26SEP111230-30 no vs no', 't': 1789144220.1259212}, {'status_code': 201, 'order_id': '01a091c9-64d0-7759-bfda-ffb6ca3384d1', 'status': 'partially_filled_then_canceled', 'filled': 3.0, 'remaining': 0.0, 'exec_price': 0.973, 'fee': 0.0018, 'fee_total': 0.0054, 'client_order_id': 'pin-1789152290130-f5e582', 't': 1789152290.2159283}, {'kind': 'pnl', 'delta': 0.07540000000000008, 'note': 'KXZEC15M-26SEP111445-45 yes vs yes', 't': 1789152320.1007552}, {'status_code': 201, 'order_id': '01a091e4-a948-7868-ad1b-1c15f7bbd85f', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.938, 'fee': 0.004, 'fee_total': 0.08, 'client_order_id': 'pin-1789154077093-ebd3cc', 't': 1789154077.1911347}, {'kind': 'pnl', 'delta': 1.1585000000000012, 'note': 'KXXRP15M-26SEP111515-15 no vs no', 't': 1789154120.1456022}, {'status_code': 201, 'order_id': '01a09236-fb80-7f43-ba60-88acb8f4390d', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789159472123-4ff94f', 't': 1789159472.210886}, {'status_code': 201, 'order_id': '01a09236-fb80-725b-897b-36226da574ff', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.977, 'fee': 0.0015, 'fee_total': 0.03, 'client_order_id': 'pin-1789159472272-92ac23', 't': 1789159472.378808}, {'kind': 'pnl', 'delta': 0.42850000000000044, 'note': 'KXETH15M-26SEP111645-45 no vs no', 't': 1789159520.1337018}, {'status_code': 201, 'order_id': '01a09260-2a78-7384-a172-bc3faa2efacd', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.975, 'fee': 0.0017, 'fee_total': 0.033999999999999996, 'client_order_id': 'pin-1789162171114-5a9075', 't': 1789162171.2006369}, {'kind': 'pnl', 'delta': 0.46580000000000044, 'note': 'KXBTC15M-26SEP111730-30 yes vs yes', 't': 1789162220.137218}, {'status_code': 201, 'order_id': '01a0926d-e230-7e59-96e2-3f829cccfbe9', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789163070058-852619', 't': 1789163070.1658204}, {'status_code': 201, 'order_id': '01a0926d-e230-7128-aa92-b49cfae805c6', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789163070232-e03968', 't': 1789163070.3163733}, {'status_code': 201, 'order_id': '01a0926d-e230-78c9-ab06-1ce205ad8ce3', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.979, 'fee': 0.0014, 'fee_total': 0.028, 'client_order_id': 'pin-1789163070485-2e3d30', 't': 1789163070.5656884}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXBTC15M-26SEP111745-45 no vs no', 't': 1789163120.121417}, {'status_code': 201, 'order_id': '01a092a4-d0b0-7c4b-bb6a-c7b975890111', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.92, 'fee': 0.0051, 'fee_total': 0.10200000000000001, 'client_order_id': 'pin-1789166670040-9eaed2', 't': 1789166670.1317213}, {'status_code': 201, 'order_id': '01a092a4-dc68-7354-bada-4ee979dca045', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.83, 'fee': 0.0098, 'fee_total': 0.196, 'client_order_id': 'pin-1789166673591-f60dcd', 't': 1789166673.712339}, {'kind': 'pnl', 'delta': 1.4968999999999992, 'note': 'KXXRP15M-26SEP111845-45 no vs no', 't': 1789166720.1327949}, {'kind': 'pnl', 'delta': 3.202400000000001, 'note': 'KXSOL15M-26SEP111845-45 no vs no', 't': 1789166720.21796}, {'status_code': 201, 'order_id': '01a092b2-ea10-714e-beee-75120718eb09', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789167594108-0d298e', 't': 1789167594.1968153}, {'status_code': 201, 'order_id': '01a092b2-ea10-73ba-8b7f-bb04c6f53720', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789167594365-da66a7', 't': 1789167594.4489114}, {'status_code': 201, 'order_id': '01a092b2-ea10-7a93-8a89-d3e54eed08aa', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.953, 'fee': 0.0031, 'fee_total': 0.062, 'client_order_id': 'pin-1789167594507-b68ef4', 't': 1789167594.6130922}, {'kind': 'pnl', 'delta': 0.8772000000000009, 'note': 'KXBTC15M-26SEP111900-00 no vs no', 't': 1789167620.1299672}, {'status_code': 201, 'order_id': '01a092ce-0390-766c-8ce8-d0714b3a922f', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789169370063-e8409a', 't': 1789169370.1532795}, {'status_code': 201, 'order_id': '01a092ce-0390-7732-9a5b-68cbda6ccf43', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.969, 'fee': 0.0021, 'fee_total': 0.041999999999999996, 'client_order_id': 'pin-1789169370219-aaf6b2', 't': 1789169370.3002112}, {'kind': 'pnl', 'delta': 0.5779000000000005, 'note': 'KXETH15M-26SEP111930-30 no vs no', 't': 1789169420.1524794}, {'status_code': 201, 'order_id': '01a092db-da88-7c44-bc8f-42ceb52baa29', 'status': 'partially_filled_then_canceled', 'filled': 14.3, 'remaining': 0.0, 'exec_price': 0.951, 'fee': 0.0032, 'fee_total': 0.04576, 'client_order_id': 'pin-1789170277142-9cfc2f', 't': 1789170277.2298365}, {'kind': 'pnl', 'delta': 0.6540000000000007, 'note': 'KXNEAR15M-26SEP111945-45 no vs no', 't': 1789170320.1709583}, {'status_code': 201, 'order_id': '01a092e9-7ad0-7788-aef2-63857f41c7ac', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789171170061-eae124', 't': 1789171170.1584415}, {'status_code': 201, 'order_id': '01a092e9-7ad0-7e31-a957-1daa78ff01b4', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789171170226-922b28', 't': 1789171170.3056033}, {'status_code': 201, 'order_id': '01a092e9-7ad0-73d8-9701-22ad3bd8419a', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.963, 'fee': 0.0024, 'fee_total': 0.047999999999999994, 'client_order_id': 'pin-1789171170366-279b6e', 't': 1789171170.4521117}, {'kind': 'pnl', 'delta': 0.6901000000000006, 'note': 'KXBTC15M-26SEP112000-00 yes vs yes', 't': 1789171220.129624}, {'status_code': 201, 'order_id': '01a092f7-51c8-7a0c-a06a-d11df5e96fa3', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.9752, 'fee': 0.0016, 'fee_total': 0.032, 'client_order_id': 'pin-1789172077679-856116', 't': 1789172077.7946684}, {'kind': 'pnl', 'delta': 0.4621000000000009, 'note': 'KXETH15M-26SEP112015-15 yes vs yes', 't': 1789172120.1671731}, {'status_code': 201, 'order_id': '01a09304-f9e0-7c21-9e27-132fc08b6a51', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.948, 'fee': 0.0034, 'fee_total': 0.06799999999999999, 'client_order_id': 'pin-1789172972151-3e5c85', 't': 1789172972.2578762}, {'kind': 'pnl', 'delta': 0.970900000000001, 'note': 'KXBTC15M-26SEP112030-30 no vs no', 't': 1789173020.1500554}, {'status_code': 201, 'order_id': '01a09312-adb0-7494-88dc-0d73869def6b', 'status': 'canceled', 'filled': 0.0, 'remaining': 0.0, 'exec_price': None, 'fee': None, 'fee_total': None, 'client_order_id': 'pin-1789173870057-fc626b', 't': 1789173870.1505005}, {'status_code': 201, 'order_id': '01a09312-adb0-77c4-a14f-202bdbe024bf', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.979, 'fee': 0.0014, 'fee_total': 0.028, 'client_order_id': 'pin-1789173870216-bd165e', 't': 1789173870.303684}, {'status_code': 201, 'order_id': '01a09312-adb0-7952-959a-17794a186306', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.969, 'fee': 0.0021, 'fee_total': 0.041999999999999996, 'client_order_id': 'pin-1789173870360-273a68', 't': 1789173870.476026}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXHYPE15M-26SEP112045-45 no vs no', 't': 1789173920.118802}, {'kind': 'pnl', 'delta': 0.5779000000000005, 'note': 'KXXRP15M-26SEP112045-45 yes vs yes', 't': 1789173920.238846}, {'status_code': 201, 'order_id': '01a09320-6950-7a60-82e3-b02f61fcdb65', 'status': 'partially_filled_then_canceled', 'filled': 0.02, 'remaining': 0.0, 'exec_price': 0.961, 'fee': 0.009, 'fee_total': 0.00017999999999999998, 'client_order_id': 'pin-1789174770035-d02af5', 't': 1789174770.1311674}, {'status_code': 201, 'order_id': '01a09320-6950-744b-bdd0-0dd75840571f', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.98, 'fee': 0.0013, 'fee_total': 0.026, 'client_order_id': 'pin-1789174770147-5e5695', 't': 1789174770.2493489}, {'kind': 'pnl', 'delta': 0.0006800000000000007, 'note': 'KXBTC15M-26SEP112100-00 yes vs yes', 't': 1789174820.1209867}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXDOGE15M-26SEP112100-00 no vs no', 't': 1789174820.2064378}, {'status_code': 201, 'order_id': '01a09357-57d0-79b1-8d9e-1771a1356947', 'status': 'partially_filled_then_canceled', 'filled': 4.5, 'remaining': 0.0, 'exec_price': 0.977, 'fee': 0.0015, 'fee_total': 0.00675, 'client_order_id': 'pin-1789178370018-99fbc6', 't': 1789178370.1312149}, {'status_code': 201, 'order_id': '01a09357-5fa0-708d-bd43-8c9e7a1e2171', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.939, 'fee': 0.004, 'fee_total': 0.08, 'client_order_id': 'pin-1789178372149-329513', 't': 1789178372.2325406}, {'status_code': 201, 'order_id': '01a09357-9650-7d0a-abe6-c7bc12dde85f', 'status': 'executed', 'filled': 20.0, 'remaining': 0.0, 'exec_price': 0.916, 'fee': 0.0053, 'fee_total': 0.106, 'client_order_id': 'pin-1789178386100-f25f2b', 't': 1789178386.1864586}]}
+  log C:\kals-repo\results\pinrun-live-20260911T132358Z.jsonl

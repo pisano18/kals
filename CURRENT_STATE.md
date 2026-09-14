@@ -4,6 +4,11 @@ Written so a session that has just been `/clear`ed can pick up without
 re-deriving anything. **Updated 2026-09-13 ~8:45 PM ET.** If the date above is
 more than a day old, verify the live numbers before quoting them.
 
+**2026-09-14: READ `HANDOFF_2026-09-14.md` FIRST.** It holds everything from
+the 13th/14th session -- what shipped and why, what was tried and failed, nine
+mistakes worth not repeating, and the ideas that were never acted on. That
+session was cleared for tokens and the handoff is all that survives of it.
+
 `CLAUDE.md` = the rules. `PROJECT_HISTORY.md` = why things were killed.
 `HANDOFF.md` = the long running log (66k tokens, read only when you need a
 specific past result). **This file = what is true right now.**

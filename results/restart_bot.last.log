@@ -1,0 +1,34 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260914021210
+Username: LAPTOP-2L9Q5JAM\Joe
+RunAs User: LAPTOP-2L9Q5JAM\Joe
+Configuration Name: 
+Machine: LAPTOP-2L9Q5JAM (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command try { $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8' } catch {}; if ($ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') { try { $OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}; if ($null -ne $PSStyle) { try { $PSStyle.OutputRendering = 'PlainText' } catch {} } }; Set-Location C:\kals-repo; .\restart_bot.ps1 2>&1 | Select-Object -Last 8
+; $_ec = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } elseif ($?) { 0 } else { 1 }
+; (Get-Location).Path | Out-File -FilePath 'C:\Users\Joe\AppData\Local\Temp\claude\claude-pwd-ps-72ef' -Encoding utf8 -NoNewline
+; if ($ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') { $host.SetShouldExit($_ec) } else { exit $_ec }
+Process ID: 1406792
+PSVersion: 5.1.26100.9444
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.9444
+BuildVersion: 10.0.26100.9444
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+restart_bot.ps1 starting 2026-09-14T02:12:10.8960780-04:00
+newest log: pinrun-live-20260914T032044Z.jsonl -- 8 filled orders, 8 settled
+stopping live pinrun pid 1374176
+pinrun running: pid 1409808
+kalshi_data -- last full hour 131015513 bytes across 9 channels; 8 open now
+feed_data -- last full hour 7862933 bytes across 5 channels; 5 open now
+both recorders are writing
+flags now live: "C:\Python314\python.exe" -u C:\kals-repo\research\pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 3 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0.10 --sweep-depth
+restart_bot.ps1 done 2026-09-14T02:12:36.5936850-04:00
+**********************
+Windows PowerShell transcript end
+End time: 20260914021236
+**********************

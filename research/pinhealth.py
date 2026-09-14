@@ -134,7 +134,22 @@ def crowd_scan(delta_dir, hours=2, lo=0.90, hi=0.98, tau_max=30):
         return None
     adds.sort(reverse=True)
     tot = sum(adds)
+    # EFFECTIVE NUMBER OF SUPPLIERS, the operator's own question: "how many
+    # different people are supplying the contracts at the end". We cannot see
+    # accounts -- Kalshi's tape has no identity. What we CAN compute is the
+    # inverse Herfindahl of the order sizes: 1 / sum(share^2). It answers
+    # "how many EQUAL-SIZED suppliers would produce this much concentration".
+    # Ten orders of equal size gives 10. One order of 90% plus ten tiny ones
+    # gives about 1.2. It is the standard competition measure and it does not
+    # pretend to identify anybody.
+    #
+    # IT IS AN UPPER BOUND ON PEOPLE, NOT A COUNT OF THEM: one participant
+    # posting twenty separate orders reads as twenty. It still moves the right
+    # way -- if suppliers withdraw, it falls.
+    hhi = sum((x / tot) ** 2 for x in adds) if tot else 1.0
+    eff = (1.0 / hhi) if hhi else 0.0
     return {"adds": len(adds), "contracts": round(tot, 1),
+            "effective_suppliers": round(eff, 1),
             "distinct_sizes": len(set(round(x, 1) for x in adds)),
             "median_size": adds[len(adds) // 2],
             "top5_share": round(100.0 * sum(adds[:5]) / tot, 1),
@@ -185,6 +200,8 @@ GRADES = {
                "unit": "", "what": "typical order size on the other side"},
     "supply": {"peak": 600.0, "warn": 250.0, "dead": 80.0, "hi_good": True,
                "unit": "", "what": "contracts offered per hour"},
+    "suppliers": {"peak": 30.0, "warn": 10.0, "dead": 4.0, "hi_good": True,
+                  "unit": "", "what": "effective number of separate suppliers"},
 }
 
 
@@ -317,6 +334,8 @@ def report(tr, loss_rate=None, say=print):
                 ("top5", c.get("top5_share"),
                  "liquidity from the biggest 5 orders"),
                 ("median", c.get("median_size"), "typical order size"),
+                ("suppliers", c.get("effective_suppliers"),
+                 "effective number of separate suppliers"),
                 ("supply", c.get("per_hour_contracts"),
                  "contracts offered per hour")):
             band, scale = grade(key, val)
@@ -410,6 +429,23 @@ def selftest():
        "and supply is the opposite again -- more offered is better")
     ck(grade("nope", 1.0)[0] == "ok" and grade("edge", None)[0] == "ok",
        "an unknown metric or a missing value never invents a verdict")
+
+    # ---- effective number of suppliers --------------------------------
+    def eff(sizes):
+        t=float(sum(sizes))
+        return 1.0/sum((x/t)**2 for x in sizes)
+    ck(abs(eff([10]*10)-10.0)<1e-9,
+       "ten equal orders read as ten effective suppliers")
+    ck(abs(eff([100])-1.0)<1e-9, "one order reads as one")
+    ck(eff([900]+[10]*10) < 1.5,
+       "one whale plus ten minnows reads as ~1, not 11 -- counting orders "
+       "would call that a crowd when it is one participant (%.2f)"
+       % eff([900]+[10]*10))
+    ck(eff([20]*150) > 100,
+       "and 150 small equal orders reads as a genuine crowd (%.0f)"
+       % eff([20]*150))
+    ck(grade("suppliers", 40)[0]=="peak" and grade("suppliers", 3)[0]=="dead",
+       "more separate suppliers is healthier; a handful is the dead zone")
 
     # ---- the crowd fingerprint ---------------------------------------
     import tempfile as _tf

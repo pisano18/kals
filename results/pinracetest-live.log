@@ -1,0 +1,44 @@
+SELF-TEST -- pinracetest
+  ok   the sanctioned scope is exactly 1 contract, 10 orders, $10, 95c, tau 15-20
+  ok   an in-scope order is allowed
+  ok   a price above the 95c cap is refused
+  ok   a size of 2 is refused -- the literal is 1
+  ok   zero and negative prices refused
+  ok   after 10 attempts every further order is refused
+  ok   and the rail latches stopped, it does not reset
+  ok   worst case is 10 x 0.95 = $9.50, inside the $10.00 backstop
+  ok   a rail driven until it refuses spends at most $9.50 over 10 orders
+  ok   a stopped rail refuses even a 10c order
+  ok   MAX_ATTEMPTS is bound once at module level and never reassigned
+  ok   MAX_SPEND is bound once at module level and never reassigned
+  ok   PRICE_CAP is bound once at module level and never reassigned
+  ok   SIZE is bound once at module level and never reassigned
+  ok   a flat 60-print window averages to the level
+  ok   59 prints is not a window -- None, never a partial mean
+  ok   a ramp averages to the midpoint
+  ok   40 locked prints at 1.0 plus spot 1.0 forecasts 1.0
+  ok   40 zeros and a spot of 60 forecasts (0 + 20*60)/60 = 20, not 60
+  ok   the leader is the largest return
+  ok   an exact tie names both
+  ok   one leg is not a race -- it names nobody rather than guessing
+  ok   a planted 2% leader is named at tau 20
+  ok   a dead heat names all five with zero margin, so the margin gate can see it
+  ok   the fee matches the account's own reconciled charge
+  ok   the price cap sits BELOW the measured break-even
+  ok   the loop calls book.subscribe() -- the method that actually asks the exchange for a book
+  ok   and never CALLS book.watch(), which only records a trajectory
+  ok   there is at least a minute of warm-up before the decision window (100s) -- one shot per race, so a cold book wastes the whole race
+  ok   the margin gate is 0.005%% of return, the level above which 507 of 507 events were called correctly
+  ok   the real photo finish we got WRONG (HYPE vs SOL, 2026-09-12 01:15) is refused by the gate
+  ok   a 0.018%% margin, comfortably inside the 100%%-correct band, passes
+  ok   silence is measured from the NEWEST message on any ticker
+  ok   and a book that has never received anything reports None, not zero
+  ok   and it is NOT used to refuse a trade -- index freshness and the suspect flag already prove the socket is alive
+  ok   one quiet ticker is tolerated for at least a minute (300s) -- an unchanged book is not a stale one
+SELF-TEST PASSED
+
+  COIN RACE PENNY TEST -- LIVE, real money
+  rails: 1 contracts max, 10 orders max, $10.00 max, <= 95c, tau 15-20
+  log: C:\kals-repo\results\pinracetest-20260912T033834Z.jsonl
+
+  index up: 10 ticks, 5 feeds

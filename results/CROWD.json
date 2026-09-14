@@ -1,14 +1,15 @@
 [
  {
-  "adds": 2210,
-  "contracts": 282558.8,
-  "distinct_sizes": 151,
+  "adds": 2618,
+  "contracts": 377950.7,
+  "effective_suppliers": 129.8,
+  "distinct_sizes": 173,
   "median_size": 20.0,
-  "top5_share": 10.8,
-  "round50_share": 2.4,
+  "top5_share": 8.1,
+  "round50_share": 2.3,
   "hours": 3,
-  "per_hour_adds": 736.7,
-  "per_hour_contracts": 94186.3,
-  "at": "2026-09-14T07:41:17Z"
+  "per_hour_adds": 872.7,
+  "per_hour_contracts": 125983.6,
+  "at": "2026-09-14T07:50:53Z"
  }
 ]

@@ -1,0 +1,51 @@
+  ok: money always carries a dollar sign, losses included (+$4.20 / -$18.88)
+  ok: zero is still money; a missing figure is a dash, never $0.00 -- those mean completely different things on a trading page
+  ok: a balance is not signed
+  ok: one filled order makes exactly one trade row
+  ok: the trade is matched to the LAST signal at or before it, not the first -- pairing it with the earlier look would report a price and a confidence the bot had already moved on from
+  ok: profit comes through in dollars, not cents (+$5.26)
+  ok: two buys on the SAME market in one close stay two rows with their own prices and their own profit -- merging them is how a scaled-in position gets reported at the wrong price
+  ok: a hedged trade shows BOTH legs -- the buy and the hedge
+  ok: and the hedge leg is labelled as one
+  ok: the two legs add to the real result (-$0.04), not just the winning half -- dropping the hedge leg is how a loss disappears off a dashboard
+  ok: every settled leg in the log reaches the page: $-0.04 on the page against $-0.04 in the log
+  ok: with a real balance reading the curve is anchored to it
+  ok: the real readings appear in the curve untouched
+  ok: the EARLIEST point is the first real reading MINUS every profit since -- the curve is walked backwards from a known balance ($294.74)
+  ok: and each settled trade puts TWO points on the line, just before and just after, so a loss draws as a cliff rather than a gentle slope between settlements
+  ok: the curve is checked against real balance movements
+  ok: a $200 deposit the page cannot see is DETECTED (gap $200.00), so the page warns instead of drawing a confident wrong line
+  ok: two coins settling on the same second share one close -- hard rule 4, or one bad minute reads as twelve separate disasters
+  ok: the page explains the WATCH stage -- the operator asked for 'every single strategy the bot uses ... a buy, a sell, a hedge, every step in the process'
+  ok: the page explains the MODEL stage -- the operator asked for 'every single strategy the bot uses ... a buy, a sell, a hedge, every step in the process'
+  ok: the page explains the BUYING stage -- the operator asked for 'every single strategy the bot uses ... a buy, a sell, a hedge, every step in the process'
+  ok: the page explains the ORDER stage -- the operator asked for 'every single strategy the bot uses ... a buy, a sell, a hedge, every step in the process'
+  ok: the page explains the SELLING stage -- the operator asked for 'every single strategy the bot uses ... a buy, a sell, a hedge, every step in the process'
+  ok: the page explains the HEDG stage -- the operator asked for 'every single strategy the bot uses ... a buy, a sell, a hedge, every step in the process'
+  ok: the page explains the SIZE stage -- the operator asked for 'every single strategy the bot uses ... a buy, a sell, a hedge, every step in the process'
+  ok: the page explains the BRAKE stage -- the operator asked for 'every single strategy the bot uses ... a buy, a sell, a hedge, every step in the process'
+  ok: the live confidence gate is shown, read from the running code
+  ok: the running bot's own start record overrides the source defaults
+  ok: and anything the start record does not carry still falls back to the source, rather than coming back empty
+  ok: so a bot started with --pick best is described as buying the best
+  ok: and one started without it is not
+  ok: the LIVE start record is the one read -- a paper what-if writes start records too, and reading one of those would describe the wrong bot
+  ok: as are the close budget and the bankroll safety factor
+  ok: the bankroll chart is on the page
+  ok: and it has a hover readout, which is the Robinhood behaviour asked for
+  ok: every trade is listed and carries a hidden detail row to open
+  ok: the detail shows what was true AT THE MOMENT OF PURCHASE
+  ok: and a timeline of what happened after it, through to settlement
+  ok: the help section is built in, not a separate document
+  ok: the page contains no 'http://' -- it loads nothing from the internet and sends nothing out, because it holds his account balance and every trade he has ever made
+  ok: the page contains no 'https://' -- it loads nothing from the internet and sends nothing out, because it holds his account balance and every trade he has ever made
+  ok: the page contains no '//cdn' -- it loads nothing from the internet and sends nothing out, because it holds his account balance and every trade he has ever made
+  ok: the page contains no '<img' -- it loads nothing from the internet and sends nothing out, because it holds his account balance and every trade he has ever made
+  ok: the page contains no 'fetch(' -- it loads nothing from the internet and sends nothing out, because it holds his account balance and every trade he has ever made
+  ok: the page contains no 'XMLHttpRequest' -- it loads nothing from the internet and sends nothing out, because it holds his account balance and every trade he has ever made
+  ok: the page contains no 'WebSocket' -- it loads nothing from the internet and sends nothing out, because it holds his account balance and every trade he has ever made
+  ok: money appears with dollar signs
+  ok: with no data at all the page says so instead of showing blank boxes
+pindash selftest: 48 checks OK
+  rebuilding C:\kals-repo\results\dashboard.html every 120 s -- Ctrl-C to stop
+  03:42:47  335 trades

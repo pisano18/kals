@@ -1,0 +1,3 @@
+{"live": false, "size": 1, "max_attempts": 10, "max_spend": 10.0, "price_cap": 0.95, "tau_lo": 15, "tau_hi": 20, "series": "KXCRYPTOLEAD15M", "scope": "operator approved a handful of 1-contract buys in the last 20 seconds of a race", "kind": "start", "t": "2026-09-11T23:20:09Z"}
+{"event": "KXCRYPTOLEAD15M-26SEP111930", "tau": 20, "why": "no_open_window:BTC", "have": [], "close_s": 1789169400, "kind": "cannot_evaluate", "t": "2026-09-11T23:29:40Z"}
+{"attempts": 0, "spent": 0.0, "stopped": null, "kind": "end", "t": "2026-09-12T00:12:09Z"}
