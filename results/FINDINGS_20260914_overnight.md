@@ -21,6 +21,62 @@ seven paper arms were left alone. Only documentation was edited.
 
 ---
 
+## 1a. RETRACTION, 05:30 ET — A SIXTH HEDGE FIRED AND REVERSED SECTION 1
+
+**Section 1 below is superseded. Do not act on it.** It is kept unedited so the
+reversal is visible.
+
+At **05:30 ET (09:29:49Z)**, minutes after section 1 was written, the live bot
+hedged `KXBTC15M-26SEP140530-30`. It is the largest hedge ever placed and it
+was **right**.
+
+| | |
+|---|---|
+| entry | NO, **60 contracts** @ 97.2c, edge only 1.948c, tau 13 |
+| belief 2 seconds later | **0.214** — a collapse from certainty in two seconds |
+| hedge | YES, 60 @ 58c (ask was 61c) |
+| result | **YES** — our entry lost |
+| entry leg settled | **−$58.43** |
+| hedge leg settled | **+$24.18** (`pnl_c 2417.68`, matches the hand calculation exactly) |
+| close net | **−$34.26** instead of **−$58.43** |
+
+**The hedge saved $24.18.** Belief was 0.214, so at the 0.10 trigger section 1
+recommends, **this hedge would not have fired** and the close would have cost
+$24.18 more.
+
+### The running total, all six live hedges
+
+| trigger | net effect over all 6 events |
+|---|---|
+| **0.80 — what is live now** | **+$15.10** |
+| 0.10 — what section 1 recommended | +$0.05 |
+| 0.30 | +$24.23 |
+
+**The sign flipped when n went from 5 to 6.** Section 1 stated that n=5 was the
+honest sample and then led with a recommendation anyway. That was the error,
+and it is the exact failure this repo's own rules exist to prevent. **The live
+0.80 setting is now net positive and should not be changed.**
+
+The 0.30 column is NOT a recommendation. It is a threshold picked after seeing
+which six events worked, on six events.
+
+**What does survive is a mechanism, not a threshold.** The two hedges that paid
+had hard, fast collapses — belief **0.02** and **0.214**. The four that cost
+money had mild ones — **0.525, 0.643, 0.664, 0.887**. Still six events.
+
+**Section 1's SECOND recommendation is unaffected and still stands.** An EV
+gate on the hedge (`h < 1 − belief`, which `hedge_edge_c()` already computes and
+its own docstring calls "DIAGNOSTIC, not a gate") would have **allowed** this
+hedge (`edge_c +20.56`) and blocked only the two that fired at negative edge —
+BTC 11:00 (`−2.72`) and ZEC 20:00 (`−32.52`). Blocking both is +$2.80 − $2.13 =
+**+$0.67**, and it never touches either hedge that mattered.
+
+**Every rail behaved correctly.** Bank $354.89 → $320.64, size re-sized 60 → 54
+within the same second (AMENDMENT 30 working as designed), drawdown 9.6%
+against the 20% brake.
+
+---
+
 ## 1. THE HEDGE HAS COST REAL MONEY — from our own fills, not the tape
 
 Every live hedge since the feature went in, reconstructed from dollars paid in
