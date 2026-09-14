@@ -1538,6 +1538,11 @@ def net_edge(f, price, want):
 # Pre-registered bar, written before the code: results/PREREG_sweep.md.
 # ===========================================================================
 SWEEP_ENABLED = True     # --no-sweep disables; the limit then IS the ask seen
+SWEEP_DEPTH = False      # AMENDMENT 35: also size the ORDER from the ladder,
+_DEFAULT_SWEEP_DEPTH = False   # not just from the touch. --sweep-depth turns
+                         # it on. OFF by default because it buys MORE per
+                         # fill, and more per fill is the one thing that
+                         # changes exposure rather than merely who we buy.
 
 
 def sweep_limit(f, price, want, ceiling=None, edge_floor=None, ev_floor=None):
@@ -2897,7 +2902,7 @@ def _selftest_body():
         _dtest = _dsrc[_dsrc.index("def " + "selftest"):]
         for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN",
                     "MAX_PER_MARKET", "IMPROVE_MAX", "PICK",
-                    "MIN_FILL_FRAC", "HEDGE_BELIEF"):
+                    "MIN_FILL_FRAC", "HEDGE_BELIEF", "SWEEP_DEPTH"):
             ck(("_DEFAULT_%s" % _nm) in _dwork,
                "a _DEFAULT_%s exists to assert against, so its guard can "
                "never become a refusal to start" % _nm)
@@ -3029,6 +3034,42 @@ def _selftest_body():
         ck('"px_tk": {tk: px}' in _src23 and 'd23[tk] = min(' in _src23,
            "a fill records the price paid per market, which is the input the "
            "band needs -- without it rebuy_ok silently allows everything")
+
+        # ---- AMENDMENT 35: size from the LADDER, not the touch ---------
+        ck(_DEFAULT_SWEEP_DEPTH is False,
+           "ladder sizing is OFF by default -- it buys MORE per fill, which "
+           "is the one change that moves exposure rather than merely which "
+           "market is bought (running %r)" % SWEEP_DEPTH)
+
+        class _BK35(object):
+            def __init__(self, book):
+                import threading as _th
+                self.books = {"T": book}
+                self.lock = _th.Lock()
+            buyable = livebook.LiveBook.buyable
+
+        # a YES ask at p IS a NO bid at 1-p. Six at 96.3c, 211 more at 98c.
+        _b35 = _BK35({"yes": {}, "no": {round(1 - 0.963, 4): 6.0,
+                                        round(1 - 0.98, 4): 211.0}})
+        ck(abs(_b35.buyable("T", "yes", 0.963) - 6.0) < 1e-9,
+           "at the touch price only the touch size is buyable (6)")
+        ck(abs(_b35.buyable("T", "yes", 0.98) - 217.0) < 1e-9,
+           "but up to the 98c limit the ladder holds 217 -- THE WHOLE "
+           "AMENDMENT. Live on 2026-09-14 the bot asked for 6 of them and "
+           "made $0.21 while the rest sat one cent away")
+        ck(_b35.buyable("T", "no", 0.98) == 0.0,
+           "and buying the OTHER side reads the OTHER book -- summing the "
+           "wrong one reports the depth of the people we trade AGAINST")
+        ck(_b35.buyable("MISSING", "yes", 0.98) == 0.0,
+           "an unknown market is zero, never an exception in the order path")
+        _src35 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck("if SWEEP_DEPTH and _limit > price + 1e-9:" in _src35,
+           "it only reaches for depth when the limit is ABOVE the touch -- "
+           "with no sweep there is no extra ladder to take")
+        ck("take_n = min(float(SIZE), _deep, max(0.0, _room))" in _src35,
+           "and the enlarged order is still capped by SIZE and by what is "
+           "left of the close's contract budget, so exposure per close "
+           "cannot grow")
 
         # ---- AMENDMENT 30: the drawdown brake ---------------------------
         ck(abs(_DEFAULT_MAX_DRAWDOWN - 0.20) < 1e-12,
@@ -4908,6 +4949,27 @@ def trade_loop(a, rec, book, idx, series_index):
                                  if cown_ is not None else None))
             attempts[close_s] = attempts.get(close_s, 0) + 1
             attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 0) + 1
+            # ---- AMENDMENT 36: STORE THE BOOK WITH THE TRADE ---------------
+            # The operator, 2026-09-14: "Are you able to see the order book
+            # yourself for that trade? If not can we start storing that with
+            # our transaction data."
+            #
+            # We could not. The signal recorded the touch price and the touch
+            # SIZE and nothing else, so when he found the bot buying 6
+            # contracts with 500 more one cent away, the log could not show
+            # what had been on screen -- I had to take his word from a
+            # screenshot. Every trade now carries the ladder it was looking
+            # at, so that question is answerable from the log alone.
+            #
+            # The BUY side is the OTHER side's bids: a YES ask at p IS a NO
+            # bid at 1-p. Stored as asks, cheapest first, the way we read it.
+            try:
+                _raw = book.depth(tk, "no" if want == "yes" else "yes", 8)
+                sig["ladder"] = [[round(1.0 - float(_p), 4), float(_sz)]
+                                 for _p, _sz in (_raw or [])]
+                sig["ladder_total"] = round(sum(x[1] for x in sig["ladder"]), 2)
+            except Exception:                            # noqa: BLE001
+                sig["ladder"] = None
             rec("signal", live=live, **sig)
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
                   f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
@@ -5014,6 +5076,43 @@ def trade_loop(a, rec, book, idx, series_index):
                     # nothing. `ask_seen` and `limit_sent` are both logged so
                     # PREREG_sweep.md's bar can be scored.
                     _limit = sweep_limit(f, price, want)
+                    # ---- AMENDMENT 35: ASK FOR WHAT THE LADDER HOLDS -------
+                    # THE SWEEP WAS HALF-BUILT. AMENDMENT 18 raised the PRICE
+                    # we are willing to pay to _limit, so a lost race takes
+                    # the next level instead of nothing -- but the QUANTITY
+                    # was still min(SIZE, touch size). So the bot would offer
+                    # up to 98c and then ask for only the handful sitting at
+                    # the best price.
+                    #
+                    # LIVE, 2026-09-14, the 02:00 SOL close: ask 96.3c with
+                    # SIX contracts on it, limit sent 98c, order placed for 6,
+                    # filled 6, profit $0.21 -- while 211 contracts sat at 88c
+                    # and 306 at 89c. The operator caught it from his phone:
+                    # "We only bought $6 worth. THERE WAS SO MUCH AVAILABLE."
+                    #
+                    # EVERY EXTRA CONTRACT IS ALREADY GATE-APPROVED. sweep_
+                    # limit() returns the HIGHEST price that still passes the
+                    # same confidence, edge, ceiling and EV tests, so anything
+                    # filled at or under it is a trade we had already decided
+                    # to make. The close's contract budget still binds, and
+                    # SIZE still caps it.
+                    if SWEEP_DEPTH and _limit > price + 1e-9:
+                        try:
+                            _deep = float(book.buyable(tk, want, _limit))
+                        except Exception:              # noqa: BLE001
+                            _deep = 0.0
+                        if _deep > take_n:
+                            _room = (close_budget()
+                                     - (prev.get("contracts", 0.0)
+                                        if prev else 0.0)) if CLOSE_BUDGET                                 else float(SIZE)
+                            _was = take_n
+                            take_n = min(float(SIZE), _deep, max(0.0, _room))
+                            if take_n > _was:
+                                rec("sweep_depth", ticker=tk, want=want,
+                                    touch=round(float(size), 2),
+                                    ladder=round(_deep, 2),
+                                    was=round(_was, 2), now=round(take_n, 2),
+                                    limit=round(_limit, 4))
                     _t0 = time.time()
                     out = pintake.take(CREDS["base"], CREDS["pk"],
                                        CREDS["key_id"], tk, want, _limit,
@@ -5127,6 +5226,13 @@ def main():
                          "in one close. Default %d. The close's CONTRACT "
                          "budget is unchanged whatever this is."
                          % _DEFAULT_MAX_PER_MARKET)
+    ap.add_argument("--sweep-depth", action="store_true",
+                    help="AMENDMENT 35: size the order from the whole ladder "
+                         "up to the sweep limit, not just the contracts at "
+                         "the best price. Live 2026-09-14 the bot asked for 6 "
+                         "contracts because 6 sat at the touch, while 211 and "
+                         "306 waited one and two cents behind -- at prices its "
+                         "own limit had already approved.")
     ap.add_argument("--hedge-belief", type=float, default=None,
                     help="AMENDMENT 34: belief in OUR side below which we buy "
                          "the other one. Default %.2f. MEASURED 2026-09-14 on "
@@ -5250,6 +5356,8 @@ def main():
                 "close cap cannot help, the CONTRACT budget binds first."
                 % (a.max_per_market, MAX_PER_CLOSE))
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
+    if a.sweep_depth:
+        globals()["SWEEP_DEPTH"] = True
     if a.hedge_belief is not None:
         if not (0.0 < a.hedge_belief <= _DEFAULT_HEDGE_BELIEF):
             raise SystemExit(

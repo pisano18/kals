@@ -450,6 +450,35 @@ class LiveBook:
                 return None
             return sorted(b[side].items(), reverse=True)[:n]
 
+    def buyable(self, tk, want, limit):
+        """Contracts we could BUY of `want` at any price up to `limit`.
+
+        AMENDMENT 35. The bot used to size its order from the TOUCH alone --
+        `yes_ask_size` -- while sending a limit high enough to sweep several
+        levels. So it would pay up to 98c but only ever ASK for the handful
+        sitting at the best price. Live on 2026-09-14 at the 02:00 SOL close:
+        best ask 96.3c with SIX contracts on it, limit sent 98c, order placed
+        for 6, filled 6, profit $0.21 -- while 211 contracts sat at 88c and
+        306 at 89c on the operator's own screen a moment earlier.
+
+        BUYING `want` MEANS HITTING THE OTHER SIDE'S BIDS. A YES ask at p IS a
+        NO bid at 1-p; there is one book and the two sides are the same orders
+        seen from opposite ends. Summing the wrong side is how this would
+        report the depth of the people we are trading AGAINST.
+        """
+        other = "no" if want == "yes" else "yes"
+        with self.lock:
+            b = self.books.get(tk)
+            if b is None:
+                return 0.0
+            tot = 0.0
+            for bid, sz in b[other].items():
+                if bid is None or sz is None:
+                    continue
+                if (1.0 - bid) <= limit + 1e-9:
+                    tot += float(sz)
+            return tot
+
     def median_latency_ms(self):
         with self.lock:
             return statistics.median(self.latency_ms) if self.latency_ms else None
