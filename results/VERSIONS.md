@@ -133,7 +133,17 @@ default is `"first"`, which is the old behaviour exactly.
 
 ---
 
-## NOT LIVE — AMENDMENT 23, in a paper what-if since 2026-09-13 21:5xZ
+## ~~NOT LIVE — AMENDMENT 23~~ — SUPERSEDED 2026-09-14 by `v-spend` above
+
+**This entry is kept, not edited, so the reversal is visible.** A23 went LIVE
+about four hours after this was written, by operator decision, once the 58%
+budget-utilisation measurement showed the concentration argument below had the
+wrong counterfactual: the alternative to "both fills on one coin" is not "one
+fill each on two coins", it is "one fill and the rest unspent", because only
+6.3% of scan seconds offer a second coin. Everything below was true when
+written and is left exactly as it was.
+
+---
 
 **Listed here because the FLAG now exists in `pinrun.py` and a future session
 must not mistake "the flag is there" for "it is running".** `MAX_PER_MARKET`
