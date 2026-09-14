@@ -30,7 +30,7 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
-## v-spend — 2026-09-14 02:0xZ — SAME-COIN RE-BUY + TOP-UPS + A TENTH-SIZE DEPTH FLOOR (`b73e757`)
+## v-spend — 2026-09-14 02:0xZ — SAME-COIN RE-BUY + TOP-UPS + A TENTH-SIZE DEPTH FLOOR (`6ee8409`)
 
 **Operator decision.** His words: *"definitely allow double coin buys if it's
 causing this many losses opportunities"* and *"DEFINITELY buy smaller if it
@@ -86,7 +86,7 @@ powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
 
 The declared defaults in the source are unchanged (`MAX_PER_MARKET` 1,
 `MIN_FILL_FRAC` 0.50), so removing the flags restores the old behaviour
-exactly. To revert the code as well: `git revert --no-edit b73e757`.
+exactly. To revert the code as well: `git revert --no-edit 6ee8409`.
 
 ---
 
