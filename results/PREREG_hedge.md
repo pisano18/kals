@@ -435,3 +435,49 @@ wrong -- `pinhedge.py` derived that rule on 2026-09-08 and
 docstring calls it *"DIAGNOSTIC, not a gate"*. It would have ALLOWED the 05:30
 hedge (`edge_c +20.56`) and blocked only the two that fired at negative edge.
 Worth **+$0.99** over five events, and it never touches the one that mattered.
+
+
+---
+
+# UPDATE 2026-09-14 16:00 ET -- A SEVENTH HEDGE, AND THE EV GATE IS NOW DEAD
+
+`KXHYPE15M-26SEP141600-00`. Entry NO 62 @ 95.16c at tau 30 on a 4.285c edge.
+Eleven seconds later belief collapsed to **0.559**; hedged YES 62 @ 51c (ask
+was 54c). **Our side lost.** Entry leg -$59.20, hedge leg **+$29.30**, close
+-$29.90 instead of -$59.20.
+
+## Running total, six hedges with a matched entry -- `python research/pinhedgelive.py`
+
+| trigger | net |
+|---|---|
+| **live 0.80, no EV gate** | **+$43.55** |
+| with an EV gate | **+$15.24  (-$28.31)** |
+
+**THE EV GATE IS RULED OUT.** It fired against this hedge -- `edge_c = -6.9`,
+meaning we paid 51c for something the model priced at 44.1c -- and blocking it
+would have cost **$29.30**. Across all six it is now **-$28.31**, not the
++$0.99 measured on five.
+
+**And the reason is structural, not luck.** The EV rule requires trusting the
+model's belief at the moment of collapse. `pinhedge.py` said this on
+2026-09-08 and it was right: *"It is a bet that our model beats the market a
+second time, in the exact situation where our model is least trustworthy."*
+
+Twice now the market's price has beaten our belief:
+
+| close | our model said we win | market's price implied | who was right |
+|---|---|---|---|
+| ZEC 09-12 | 52.5% | 19-20% | **market** |
+| HYPE 09-14 | 55.9% | 46% | **market** |
+
+A gate built on `1 - belief` is a gate built on the number that is wrong. **Do
+not build it.** `hedge_edge_c()` stays a diagnostic, which is what its own
+docstring always called it.
+
+## The pattern from the bar above still holds
+
+Hedges that PAID had belief 0.02, 0.214, 0.525, 0.559. Hedges that COST money
+had 0.643, 0.664, 0.887. The line sits somewhere around **0.6**, not 0.8 and
+certainly not 0.10 -- but that is four events against three and the
+pre-registered bar (10 further hedges, settled after 2026-09-14) is unchanged.
+**Leave the trigger at 0.80.**
