@@ -139,7 +139,7 @@ if ($stillAlive.Count -gt 0) {
 Start-Process -FilePath $py -ArgumentList @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
-    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "3",
+    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "2",
     "--improve-scope", "market", "--pick", "best",
     "--max-per-market", "2", "--improve-max", "0.010",
     "--min-fill-frac", "0.10", "--sweep-depth"

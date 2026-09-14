@@ -30,6 +30,73 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-brake2 — 2026-09-14 10:0xZ — THE LOSS BRAKE STOPS AT TWO, NOT THREE (`032c73d`)
+
+**Operator decision, 2026-09-14 ~05:5x ET.** His words: *"Brake should be at
+either 1/5 of bank lost, or after 2 losses. Which ever comes first. It should
+reset once the bank hits its original size again."*
+
+**What the bot now does differently.** `--max-losses 3` → **`--max-losses 2`**.
+The other half of his sentence — 1/5 of bank, resetting at a new high — is
+already `MAX_DRAWDOWN = 0.20` against `results/pinrun-hwm.json` and is
+unchanged by this entry.
+
+**Evidence: none, and none was asked for.** This is a risk preference, not a
+measured threshold, and it is strictly more protective than what it replaces.
+Cost is real though: of the ten losing closes in live history, no run has yet
+had two losses close enough together for this to bind, so the expected cost is
+small but is not zero.
+
+**KNOWN GAP, recorded rather than fixed.** `--max-losses` counts losses **in
+the current run**. A restart resets the count to zero, so "two losses" means
+two since the bot last started. Every restart therefore hands the brake a
+clean slate. The drawdown brake does NOT have this problem — its high-water
+mark is on disk and survives restarts.
+
+**Also note `versioncheck.py` did not catch this change.** It tracks flag
+PRESENCE for the flags it knows about, and `--max-losses` is not one of them,
+so changing 3 to 2 passed clean. Worth widening.
+
+**REVERT:** in `restart_bot.ps1` change `"--max-losses", "2"` back to
+`"--max-losses", "3"` and run
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
+
+---
+
+## (not deployed) AMENDMENT 37 — the depth floor reads the ladder. FLAG IS OFF.
+
+Shipped in code on 2026-09-14, **default OFF**, awaiting the operator's word to
+turn on. Recorded here so that a future `--depth-ladder` in `restart_bot.ps1`
+has an entry to match.
+
+**What it would change.** `pinrun.py`'s depth floor refuses a market when the
+contracts at the **best price** are under `MIN_FILL_FRAC x SIZE`. AMENDMENT 35
+taught the ORDER to read the whole ladder but never touched this GATE, so a
+market showing 3 contracts at the touch with 1,600 one tick behind — the exact
+02:00 SOL shape A35 exists for — is still refused outright. A37 judges the
+floor on what `book.buyable()` can actually fill up to `sweep_limit()`.
+
+**Why it is not simply "removing the floor".** Every market it lets through
+still faces `edge_floor`, the dump guard, `price_ceiling` and `ev_floor`
+unchanged — the ladder check runs strictly before them and waves nothing past.
+`take_n` is never reassigned, so the order still sizes through A35's own block
+and the SIZE cap is untouched: **the worst close does not move.** A thin touch
+in front of a thin LADDER still fails, which is the self-tested null.
+
+**It requires `--sweep-depth` and refuses to start without it** — passing the
+gate on ladder depth while the order sized from the touch would buy exactly
+the scrap fill AMENDMENT 6 added the floor to prevent.
+
+**Evidence so far:** 63 depth-floor refusals in the live gate audit, **7 of
+which (11%) passed edge, EV and the ceiling**. A paper arm carrying only this
+flag is running from 2026-09-14 10:0xZ.
+
+**TO DEPLOY:** add `"--depth-ladder"` after `"--sweep-depth"` in
+`restart_bot.ps1` and restart.
+**REVERT:** remove it; the default is OFF. Code: `git revert` the A37 commit.
+
+---
+
 ## v-ladder — 2026-09-14 06:1xZ — ASK FOR THE WHOLE LADDER, NOT JUST THE TOUCH (`d0c3d60`)
 
 **Operator-directed, urgent.** His words: *"It better buy as much as it can

@@ -1544,6 +1544,27 @@ _DEFAULT_SWEEP_DEPTH = False   # not just from the touch. --sweep-depth turns
                          # fill, and more per fill is the one thing that
                          # changes exposure rather than merely who we buy.
 
+# AMENDMENT 37 -- THE DEPTH FLOOR MUST MEASURE WHAT WE CAN BUY.
+#
+# A35 taught the ORDER to read the whole ladder. It did not touch the GATE
+# that decides whether to place one, and that gate still asks only how many
+# contracts sit at the single best price. So a market showing 3 at the touch
+# with 1,600 one tick behind -- the exact 02:00 SOL shape A35 exists for -- is
+# still refused outright, because 3 < 0.10 x SIZE.
+#
+# This makes the floor ask the question it was always meant to ask: how many
+# contracts can we actually buy, at prices sweep_limit() has ALREADY approved
+# against the same confidence, edge, ceiling and EV tests. Nothing new is
+# bought; a decision that was being thrown away early is allowed to reach the
+# gates that actually judge it -- edge_floor, the dump guard, the ceiling and
+# the EV floor all still run afterwards, unchanged.
+#
+# IT REQUIRES --sweep-depth AND IS OFF WITHOUT IT. Passing this gate on the
+# strength of the ladder while the ORDER still sizes from the touch would buy
+# exactly the scrap fill AMENDMENT 6 added the floor to prevent.
+DEPTH_LADDER = False
+_DEFAULT_DEPTH_LADDER = False
+
 
 def sweep_limit(f, price, want, ceiling=None, edge_floor=None, ev_floor=None):
     """Highest price we may pay and still pass the SAME gate. Never below
@@ -3062,6 +3083,68 @@ def _selftest_body():
            "wrong one reports the depth of the people we trade AGAINST")
         ck(_b35.buyable("MISSING", "yes", 0.98) == 0.0,
            "an unknown market is zero, never an exception in the order path")
+        # ---- AMENDMENT 37: the depth FLOOR reads the ladder too --------
+        ck(_DEFAULT_DEPTH_LADDER is False,
+           "the ladder-aware depth floor is OFF by default -- it lets the bot "
+           "trade markets it used to refuse outright, which is new exposure, "
+           "not merely a bigger fill (running %r)" % DEPTH_LADDER)
+
+        # The live shape this exists for: a thin touch in front of a deep
+        # ladder. 3 contracts at 96.3c, 1600 more at or under 98c.
+        _b37 = type(_b35)({"yes": {}, "no": {round(1 - 0.963, 4): 3.0,
+                                             round(1 - 0.98, 4): 1600.0}})
+        _FLOOR37 = max(MIN_LEVEL, 0.10 * 58.0)      # --min-fill-frac 0.10, SIZE 58
+        ck(_FLOOR37 > 3.0,
+           "at SIZE 58 and a tenth-size floor, a 3-contract touch IS refused "
+           "today -- the floor is %.1f" % _FLOOR37)
+        ck(_b37.buyable("T", "yes", 0.963) == 3.0,
+           "the touch alone holds 3, which is what the floor sees today")
+        ck(min(58.0, _b37.buyable("T", "yes", 0.98)) == 58.0,
+           "but the ladder up to a 98c sweep limit holds a full 58 -- so the "
+           "refusal is thrown away on a number that does not describe what we "
+           "could buy")
+
+        # THE NULL. A thin touch in front of a thin LADDER must still refuse,
+        # or this amendment has simply deleted the floor.
+        _b37n = type(_b35)({"yes": {}, "no": {round(1 - 0.963, 4): 3.0,
+                                              round(1 - 0.98, 4): 1.0}})
+        ck(min(58.0, _b37n.buyable("T", "yes", 0.98)) < _FLOOR37,
+           "A THIN LADDER STILL FAILS THE FLOOR (4 < %.1f). Without this the "
+           "amendment would be indistinguishable from removing the floor, "
+           "which RESULTS_levels.md measured as costing 30%% of the money"
+           % _FLOOR37)
+
+        _src37 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck("if DEPTH_LADDER and SWEEP_DEPTH and take_n < _floor:" in _src37,
+           "the floor consults the ladder ONLY with both flags on -- passing "
+           "on ladder depth while the ORDER still sizes from the touch buys "
+           "the scrap fill AMENDMENT 6 added the floor to prevent")
+        # SLICE FROM trade_loop FIRST. The literal "_reach = take_n" also
+        # appears in THIS self-test, which sits EARLIER in the file, so a
+        # split over the whole source finds the test's own string and measures
+        # nothing. Same self-inspection trap that broke three checks here on
+        # 2026-09-11.
+        _tl37 = _src37[_src37.index(chr(10) + "def trade_loop("):]
+        _blk37 = _tl37.split("_reach = take_n", 1)[1].split("if _reach < _floor:", 1)[0]
+        ck(len(_blk37) > 80 and "DEPTH_LADDER" in _blk37,
+           "the block under test is the real one in trade_loop, not this "
+           "file's own description of it")
+        ck("take_n =" not in _blk37,
+           "and it NEVER reassigns take_n -- every downstream user keeps the "
+           "touch number and the A35 order block does the widening, so this "
+           "change decides only whether to REFUSE")
+        ck("_reach = min(float(SIZE)," in _blk37,
+           "the reach is still capped by SIZE, so the worst close is unchanged")
+        ck('reach=round(float(_reach), 2)' in _src37 and
+           'depth_ladder=bool(DEPTH_LADDER and SWEEP_DEPTH)' in _src37,
+           "and a refusal records what the ladder held, so the next session "
+           "can measure this instead of re-deriving it")
+        ck(_src37.index("_reach = take_n") <
+           _src37.index('_gate("edge_floor"'),
+           "the ladder check still runs BEFORE the edge floor, so every market "
+           "it lets through is judged by edge, dump guard, ceiling and EV "
+           "exactly as before -- nothing is waved past them")
+
         _src35 = open(os.path.abspath(__file__), encoding="utf-8").read()
         ck("if SWEEP_DEPTH and _limit > price + 1e-9:" in _src35,
            "it only reaches for depth when the limit is ABOVE the touch -- "
@@ -3646,13 +3729,21 @@ def _selftest_body():
         # ORDERING: the floor is tested against FULL SIZE, then take_n is
         # trimmed. Reversed, the tail of a budget buys a moment the floor
         # exists to refuse -- the operator's explicit condition.
+        # RE-ANCHORED 2026-09-14 for AMENDMENT 37, which named the floor
+        # `_floor` instead of inlining it. The INVARIANT is unchanged and is
+        # what this checks: the floor is computed from the FULL size and
+        # tested before take_n is trimmed to the remaining budget.
         _i_floor = _lb3.index(
-            "if take_n < max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE)):")
+            "_floor = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))")
+        _i_test = _lb3.index("if _reach < _floor:")
         _i_trim = _lb3.index("take_n = min(take_n, _left)")
-        ck(_i_trim > _i_floor,
+        ck(_i_trim > _i_test > _i_floor,
            "STRUCTURAL: take_n is trimmed to the remaining budget only AFTER "
            "the MIN_FILL_FRAC floor has been tested against the FULL size -- "
            "trimming first would relax the floor to the remainder")
+        ck("float(SIZE)" in _lb3[_i_floor:_i_floor + 80],
+           "and the floor is still measured against FULL SIZE, never the "
+           "remainder -- the operator's own condition (A17)")
         ck("_left = close_budget() - (" in _lb3,
            "and the remainder is measured against close_budget()")
         # ANCHOR ON THE WHOLE LINE. "out = pintake.take(" is a SUBSTRING of
@@ -4769,7 +4860,24 @@ def trade_loop(a, rec, book, idx, series_index):
             # the operator's own condition (A17). Trimming take_n first would
             # let the tail of a budget buy a moment the floor exists to
             # refuse, so the trim happens strictly AFTER this test.
-            if take_n < max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE)):
+            _floor = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))
+            # AMENDMENT 37: how many can we actually BUY, not how many sit at
+            # the touch. take_n is deliberately NOT reassigned here -- every
+            # downstream user of it keeps the touch number, and the order path's
+            # own A35 block does the widening. This decides ONLY whether to
+            # refuse. Computed inside the thin branch so it costs nothing on
+            # the 96% of looks that are not shallow.
+            _reach = take_n
+            if DEPTH_LADDER and SWEEP_DEPTH and take_n < _floor:
+                _dlim = sweep_limit(f, price, want)
+                if _dlim > price + 1e-9:
+                    try:
+                        _reach = min(float(SIZE),
+                                     max(take_n,
+                                         float(book.buyable(tk, want, _dlim))))
+                    except Exception:              # noqa: BLE001
+                        _reach = take_n
+            if _reach < _floor:
                 # RECORD IT ANYWAY. A moment we skip for being too shallow is
                 # still a moment the market offered something, and it is the
                 # number that decides how far we can scale.
@@ -4778,6 +4886,8 @@ def trade_loop(a, rec, book, idx, series_index):
                 _nb["shallow"][str(int(SIZE))] =                     _nb["shallow"].get(str(int(SIZE)), 0) + 1
                 _gate("depth_floor", close_s, tk, want=want,
                       price=round(price, 4), offered=float(size),
+                      reach=round(float(_reach), 2),
+                      depth_ladder=bool(DEPTH_LADDER and SWEEP_DEPTH),
                       wanted=float(SIZE), fair=round(f, 5), tau=tau)
                 continue
             e = net_edge(f, price, want)
@@ -5233,6 +5343,13 @@ def main():
                          "contracts because 6 sat at the touch, while 211 and "
                          "306 waited one and two cents behind -- at prices its "
                          "own limit had already approved.")
+    ap.add_argument("--depth-ladder", action="store_true",
+                    help="AMENDMENT 37: judge the depth floor on what the "
+                         "LADDER can fill up to the sweep limit, not on the "
+                         "contracts at the best price alone. Requires "
+                         "--sweep-depth and does nothing without it. Every "
+                         "later gate -- edge, dump guard, ceiling, EV -- still "
+                         "runs on the market this lets through.")
     ap.add_argument("--hedge-belief", type=float, default=None,
                     help="AMENDMENT 34: belief in OUR side below which we buy "
                          "the other one. Default %.2f. MEASURED 2026-09-14 on "
@@ -5358,6 +5475,14 @@ def main():
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
     if a.sweep_depth:
         globals()["SWEEP_DEPTH"] = True
+    if a.depth_ladder:
+        if not a.sweep_depth:
+            raise SystemExit(
+                "--depth-ladder refused without --sweep-depth. The floor would "
+                "pass a market on the strength of its ladder while the order "
+                "still sized from the touch, which buys exactly the scrap fill "
+                "AMENDMENT 6 added the floor to prevent.")
+        globals()["DEPTH_LADDER"] = True
     if a.hedge_belief is not None:
         if not (0.0 < a.hedge_belief <= _DEFAULT_HEDGE_BELIEF):
             raise SystemExit(
@@ -5506,7 +5631,8 @@ def main():
         # running from this record, and a flag missing here reads as its
         # default -- which is how a page ends up describing a bot nobody runs.
         improve_max=IMPROVE_MAX, pick=PICK, gate_audit=True,
-        sweep_depth=SWEEP_DEPTH, min_fill_frac_running=MIN_FILL_FRAC,
+        sweep_depth=SWEEP_DEPTH, depth_ladder=DEPTH_LADDER,
+        min_fill_frac_running=MIN_FILL_FRAC,
         max_drawdown=MAX_DRAWDOWN,
         max_per_market_run=MAX_PER_MARKET, min_level=MIN_LEVEL,
         sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
