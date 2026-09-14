@@ -30,6 +30,51 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-brake20 — 2026-09-14 02:3xZ — DRAWDOWN BRAKE AT 1/5, AND THE OPEN CAP COUNTS CONTRACTS (`07b3004`)
+
+**Operator decision.** *"make it 1/5 of bank or 3 losses whichever comes first.
+Then drop the contract size to whatever the new calculated amount is and wait."*
+
+**What the bot now does differently.**
+
+1. **Stops when the bank is 20% below its highest-ever level.** The high-water
+   mark lives in `results/pinrun-hwm.json`, so a restart cannot clear it. It
+   resets itself when the balance makes a new high — which is the operator's
+   own *"reset once the full balance has been restored"*, with no extra logic.
+2. **Re-sizes the instant a loss settles**, instead of waiting out the rest of
+   a five-minute timer while betting the size a larger bank supported.
+3. **The dollar stop can tighten**, not only loosen. It used to follow the
+   bank up and never come back down.
+4. **The open cap counts CONTRACTS** (`max_positions x SIZE`) rather than the
+   number of open trades.
+
+**Why 4 was urgent.** `v-spend` removed the limit on the *number* of fills per
+close and cut the depth floor to a tenth of SIZE, so one close can now produce
+10–18 small fills. A cap of 3 *positions* would have halted the bot three fills
+into every close and throttled the exact buying `v-spend` exists to enable.
+Exposure is unchanged: three fills of 52 and eighteen of 8.7 are both at the
+cap.
+
+**All three brakes now run together**, answering different questions —
+`--loss-abort` "too much this run", `--max-losses 3` "is the model broken", and
+the new one "how far off our best". Whichever trips first, stops.
+
+**Walked through a losing streak at $310:** size steps 52 → 47 → 41 as the bank
+falls, and the brake trips at 20.5% down after **two typical losing closes**,
+ahead of the 3-loss brake.
+
+**Chosen failure modes.** A failed balance read or a missing high-water file
+reads as **zero** drawdown, never as a trip. A **withdrawal looks identical to
+a trading loss** and will stop the bot — the safe direction, and the halt
+message says so.
+
+**No new flags.** `MAX_DRAWDOWN = 0.20` is a constant; `--max-positions 3` is
+unchanged in the command and now means 3 × SIZE contracts.
+
+**REVERT:** `git revert --no-edit 07b3004`, then restart.
+
+---
+
 ## v-spend — 2026-09-14 02:0xZ — SAME-COIN RE-BUY + TOP-UPS + A TENTH-SIZE DEPTH FLOOR (`6ee8409`)
 
 **Operator decision.** His words: *"definitely allow double coin buys if it's
