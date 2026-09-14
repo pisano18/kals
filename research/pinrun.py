@@ -1256,6 +1256,34 @@ MAX_ATTEMPTS_PER_CLOSE = 24  # AMENDMENT 26: 8 -> 24. Twelve coins settle on
                              # stopped a no-fill from consuming a slot. Fills
                              # and attempts need separate budgets. 8 allows the
                              # 3 fills plus a generous margin of lost races.
+_DEFAULT_MIN_FILL_FRAC = 0.50  # --min-fill-frac is measured against this
+#
+# AMENDMENT 28 (2026-09-14) -- RE-OPENED, AND THE REASON BELOW IS OBSOLETE.
+# The operator: "Is there anyway to increase the amount it's buying without
+# increasing risk of losing or lost percentage?"
+#
+# MEASURED FIRST, over 234 live closes we bought on: the bot spends only 58%
+# of the contract budget it is already allowed. The MEDIAN close spends
+# exactly 50% -- one fill of SIZE, never the second. And of 404 closes that
+# had a tradeable moment, 170 produced no fill at all; 141 of those had at
+# least one moment refused for being too small.
+#
+# THE JUSTIFICATION BELOW NAMES TWO HARMS, AND BOTH ARE GONE:
+#   "burns a scale-in slot"   -- AMENDMENT 17 made the close budget CONTRACTS,
+#                                not slots. A 5-contract fill spends 5
+#                                contracts and leaves the rest of the budget.
+#   "raises the improve bar"  -- AMENDMENT 12 sets raise_bar=False for exactly
+#                                this case, and AMENDMENT 22 scoped the
+#                                improve rule to one market.
+# So the -2.3% measured at frac 0.05 was measuring a penalty that no longer
+# exists -- the THIRD rule found arguing against a world A17 replaced, after
+# A13 and A22. It is not flipped on that reasoning alone: it goes to a paper
+# what-if, like the other two.
+#
+# WHY IT CANNOT RAISE THE LOSS RATE. A smaller fill is the SAME bet at the
+# SAME gate -- same confidence, same edge, same expected value, same price --
+# with fewer contracts on it. Exposure per close is still bounded by the
+# contract budget. What it does cost is fee efficiency and smaller wins.
 MIN_FILL_FRAC = 0.50     # AMENDMENT 6. Take a PARTIAL rather than skip a
                          # moment outright. The dust gate used to refuse any
                          # offer smaller than SIZE, so at size 10 a 9-contract
@@ -2649,7 +2677,8 @@ def selftest():
         # turns a guard into a refusal to start the moment its flag is used.
         _dtest = _dsrc[_dsrc.index("def " + "selftest"):]
         for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN",
-                    "MAX_PER_MARKET", "IMPROVE_MAX", "PICK"):
+                    "MAX_PER_MARKET", "IMPROVE_MAX", "PICK",
+                    "MIN_FILL_FRAC"):
             ck(("_DEFAULT_%s" % _nm) in _dwork,
                "a _DEFAULT_%s exists to assert against, so its guard can "
                "never become a refusal to start" % _nm)
@@ -2746,6 +2775,31 @@ def selftest():
         ck('"px_tk": {tk: px}' in _src23 and 'd23[tk] = min(' in _src23,
            "a fill records the price paid per market, which is the input the "
            "band needs -- without it rebuy_ok silently allows everything")
+
+        # ---- AMENDMENT 28: the depth floor is a flag, paper only --------
+        ck(abs(_DEFAULT_MIN_FILL_FRAC - 0.50) < 1e-12,
+           "the DECLARED depth floor is half of SIZE (running %.2f)"
+           % MIN_FILL_FRAC)
+        ck(MIN_FILL_FRAC <= _DEFAULT_MIN_FILL_FRAC + 1e-12,
+           "and the running floor is never ABOVE the declared default -- this "
+           "flag exists to LOWER it; raising it cuts trading and needs a code "
+           "change and a version entry, not a flag (running %.3f)"
+           % MIN_FILL_FRAC)
+        _src28 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck('"--min-fill-frac is refused on a LIVE run' in _src28,
+           "and it is refused on --live: A6's measurement against a lower "
+           "floor predates the contract budget (A17) and the scrap exemption "
+           "(A12), so it has to be re-measured before it ships")
+        # a smaller fill cannot raise exposure -- that is the whole argument
+        _sz28 = float(SIZE)
+        try:
+            globals()["SIZE"] = 50.0
+            ck(min(float(SIZE), 7.0) == 7.0,
+               "taking min(SIZE, offered) on a 7-contract book buys 7, not "
+               "50 -- a smaller fill can only LOWER exposure, never raise it, "
+               "which is why lowering the floor cannot raise the loss rate")
+        finally:
+            globals()["SIZE"] = _sz28
 
         # ---- AMENDMENT 27: one live bot, ever ---------------------------
         ck(_pid_alive(os.getpid()),
@@ -4629,6 +4683,13 @@ def main():
                          "in one close. Default %d. The close's CONTRACT "
                          "budget is unchanged whatever this is."
                          % _DEFAULT_MAX_PER_MARKET)
+    ap.add_argument("--min-fill-frac", type=float, default=None,
+                    help="AMENDMENT 28: the share of SIZE that must be on "
+                         "offer before we will take it. Default %.2f. "
+                         "Lowering it takes SMALLER fills at the identical "
+                         "gate, which cannot change the loss rate -- it is "
+                         "the same bet, smaller. PAPER ONLY until a what-if "
+                         "says otherwise." % _DEFAULT_MIN_FILL_FRAC)
     ap.add_argument("--pick", default=None, choices=("first", "best"),
                     help="AMENDMENT 24: scan order. 'first' (default) visits "
                          "markets in discovery order; 'best' visits them in "
@@ -4722,6 +4783,20 @@ def main():
                 "close cap cannot help, the CONTRACT budget binds first."
                 % (a.max_per_market, MAX_PER_CLOSE))
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
+    if a.min_fill_frac is not None:
+        if a.live:
+            raise SystemExit(
+                "--min-fill-frac is refused on a LIVE run. It changes which "
+                "moments are taken, and AMENDMENT 6's measurement against it "
+                "predates the contract budget (A17) and the scrap exemption "
+                "(A12). Re-measure it in a paper what-if first.")
+        if not (0.0 < a.min_fill_frac <= _DEFAULT_MIN_FILL_FRAC):
+            raise SystemExit(
+                "--min-fill-frac %.3f refused: it must sit in (0, %.2f]. "
+                "This flag exists to LOWER the floor; raising it cuts trading "
+                "and needs a code change and a version entry, not a flag."
+                % (a.min_fill_frac, _DEFAULT_MIN_FILL_FRAC))
+        globals()["MIN_FILL_FRAC"] = float(a.min_fill_frac)
     if a.pick is not None:
         globals()["PICK"] = a.pick
     if a.improve_max is not None:
