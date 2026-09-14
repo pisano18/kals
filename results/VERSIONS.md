@@ -30,6 +30,58 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-ladder — 2026-09-14 06:1xZ — ASK FOR THE WHOLE LADDER, NOT JUST THE TOUCH (`d0c3d60`)
+
+**Operator-directed, urgent.** His words: *"It better buy as much as it can
+that we allow for the trade. That was unacceptable and has happened a lot …
+you're losing me quite a bit of money with this bug."*
+
+**What the bot now does differently.** It sizes each order from every price
+level up to its own sweep limit, instead of only the contracts resting at the
+single best price.
+
+**The bug.** AMENDMENT 18 raised the LIMIT PRICE we send so a lost race takes
+the next level instead of nothing — but left the QUANTITY at
+`min(SIZE, touch size)`. So the bot declared itself willing to pay 98c and then
+asked for only what sat at the top.
+
+**Live evidence, the 02:00 SOL close.** Best ask 96.3c with **six** contracts;
+limit sent 98c; order placed for 6; filled 6; profit **$0.21**. SIZE was 53.
+Reconstructed from our own orderbook tape (05:46:24Z snapshot + 63,232 deltas)
+at the second the order went out:
+
+| price | contracts |
+|---|---|
+| 95.8c | 10 |
+| 95.9c | 48 |
+| 96.0c | 204 |
+| 96.4c | 202 |
+| **≤ 98c total** | **1,636** |
+
+Replaying that exact book through the fix: **it asks for 53, not 6.**
+
+**Why it is safe to deploy without a paper run** — and it was, deliberately,
+against the usual rule. Every extra contract is at a price `sweep_limit()` had
+ALREADY approved against the same confidence, edge, ceiling and expected-value
+tests. Nothing new is bought; the same decision is simply filled. The order is
+still capped by SIZE and by what remains of the close's contract budget, so
+**the worst case per close is unchanged**.
+
+**Not a regression.** `take_n = min(SIZE, touch size)` dates from AMENDMENT 6
+(`47f399b`), long before this week. What IS new is that `--min-fill-frac 0.10`
+lets six-contract fills through at all; at the old floor of 26 that close would
+have been refused outright and earned nothing. So the tiny fills are new, the
+sizing limitation is old, and the fix addresses the old one.
+
+**Also live:** AMENDMENT 36 — every signal now records the eight book levels it
+was looking at and their total, so this class of question is answerable from
+the log instead of from a screenshot and a tape replay.
+
+**REVERT:** drop `"--sweep-depth"` from `restart_bot.ps1` and restart; the
+default is OFF. Code: `git revert --no-edit af42b1b`.
+
+---
+
 ## v-brake20 — 2026-09-14 02:3xZ — DRAWDOWN BRAKE AT 1/5, AND THE OPEN CAP COUNTS CONTRACTS (`07b3004`)
 
 **Operator decision.** *"make it 1/5 of bank or 3 losses whichever comes first.
