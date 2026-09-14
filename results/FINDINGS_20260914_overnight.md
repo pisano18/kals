@@ -380,3 +380,93 @@ Disk is 38 GB free. There is no cleanup here worth any risk.
 Early entry keeps losing, consistent with the handoff. **Every other arm is
 uninformative at this length**, and the hedge arm is structurally uninformative
 — zero hedges have fired in any paper arm, ever.
+
+
+---
+
+# PART 2 — THE HUNT FOR A LOSS FILTER, 2026-09-14 afternoon/evening ET
+
+The operator, verbatim: *"Do whatever it takes to find something real here that
+reduces our losses without also taking our winners with it."* This is what was
+tried, in order, and what survived. **Nothing entry-side survived a fair test.
+One structural fact did, and it points at a paper arm, not a gate.**
+
+## What was tried and killed (each by holdout or placebo)
+
+| candidate | looked like | on data it had not seen | verdict |
+|---|---|---|---|
+| cushion under 2 one-second moves | +$47.67 saved | **reverses** (+5.36c → −8.51c) | dead |
+| touch under 15 contracts (best single rule of ~300) | +$65.91 | **costs $23.27**; 16% of coin-flip shuffles match | dead |
+| touch < 21.5 AND book age < 6 ms (best pair of ~45,000) | +$79.63 | **costs $5.13** | dead |
+| hedge trigger 0.60 instead of 0.80 | +0.5c/contract unclustered | **+0.12c clustered by market** (25 losing markets) | wash |
+| hedge trigger 0.90 instead of 0.80 | +0.26c/contract clustered | live 7 events say −$2.97 | wash |
+| rate-of-change hedge trigger | plausible | false alarms are cliffs too (73% same-second vs 56%) | dead before build |
+| quote resting ≥ 3 s (RESULTS_select's lead) | tape: 0 failures in 302 | live: fresh offers earn **2.7x per contract** and carried 1 of 2 logged losses | trades profit for safety ~1:1 |
+
+`research/pinsep.py` is the reusable search, with holdout and placebo built in.
+Re-run it at 40–50 losses; at 12 every answer is an accident.
+
+## The one structural fact that IS real
+
+**When a trade loses, the collapse begins within seconds of our entry.**
+
+| population | seconds from entry to belief crossing 0.90 |
+|---|---|
+| tape, 25 losing markets | median **2 s**; 64% within 3 s; 80% within 5 s |
+| ours, 10 losing markets | 1, 2, 2, 3, 4, 6, 7, 11, 19, never — median **~4 s**; 40% within 3 s |
+
+That is not "we held it and it drifted." It is "we bought and it jumped." The
+mechanism is already settled in `RESULTS_select.md`: the seller is informed by
+26x. The timing signature says *how* — the cheap offer we take is the leading
+edge of the jump the seller already sees.
+
+## What that implies, and why it is not a gate yet
+
+A **confirmation wait** — see the signal, wait k seconds, buy only if belief is
+still over 0.90 and the offer is still there. On the cache:
+
+| wait | of the tape's losers we would still buy | of its winners we would still buy |
+|---|---|---|
+| 2 s | 36% | 34% |
+| 3 s | **3%** | 31% |
+| 5 s | **0%** | 36% |
+
+It removes essentially every loss. **It also removes two thirds of the
+winners**, because most offers are gone within seconds (42% survive 1 s, 31%
+survive 3 s). And the survivors are the resting quotes — makers, not dumpers —
+which on our own 93 logged fills earn **1.16c per contract against 3.18c** for
+the fresh ones. Fresh offers are both the danger and most of the profit.
+
+Rough dollars on our history: a 5 s wait keeps ~36% of winners (~$122) and
+none of the entry-leg losses (−$260 avoided) versus the actual ~+$78 on entry
+legs — **better by ~$40 on a third of the volume, before the hedge**, and that
+assumes the surviving winners are average, which they are not. Honest range:
+modest positive to break-even in dollars, far better per contract, far less
+volume. **It conflicts directly with the operator's stated #1 priority of
+buying everything available.**
+
+**Only a paper arm can price this.** The cache cannot say what the surviving
+offers' edge is or what our fill rate becomes. Flag design, not built:
+`--confirm k` — hold a signal k seconds, re-check belief ≥ 0.90 and the offer,
+then send. Variant worth running alongside: confirm only when the quote is
+under 1 s old, buy resting quotes at once.
+
+## Hedge: the level is a wash, the SPEED is worth ~17c per rescued contract
+
+Clustered by market (1,192 markets, 25 losers): trigger 0.60 → +0.84c, 0.70 →
++0.69c, 0.80 → +0.72c, 0.90 → +0.98c per contract. Three sources disagree on
+direction inside a 0.3c band. **Leave it at 0.80.**
+
+What moves is the price: hedging at the 0.90 crossing instead of the 0.70
+crossing gets a mean **16.7c better hedge price** on the 25 losers (10 of 25
+gain 14–70c, 14 gain nothing, 1 loses 9c). Every second of delay is paid for.
+A rate trigger cannot buy that second (false alarms are cliffs too). The one
+untested lever with a mechanism is **cross-coin warning** — twelve indices
+move together at rho ~0.8 and a BTC collapse may precede an alt's by a second
+or two. `leadlag.py` measured contract-follows-index, never coin-follows-coin.
+Unbuilt.
+
+## The un-hedgeable loss
+
+BNB 2026-09-10 01:30: belief never left 1.000 and it lost. No warning, no
+hedge possible. One of ten. The floor on any loss-side rule.
