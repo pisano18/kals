@@ -571,6 +571,50 @@ _DEFAULT_PICK = "first"  # take the first market that clears every gate, which
                          # offered. See the long note at the loop head.
 
 
+def _pid_alive(pid):
+    """Is this process id running RIGHT NOW?
+
+    AMENDMENT 27. Deliberately does NOT read the command line: Windows hides
+    that field from a caller who cannot open the process, and a guard that
+    silently sees nothing is worse than no guard -- that is precisely how two
+    live bots ended up trading the same account on 2026-09-14.
+    """
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(int(pid), 0)             # POSIX: signal 0 tests existence
+        return True
+    except OSError as e:
+        import errno
+        # EPERM means it EXISTS and belongs to someone else -- still alive.
+        return getattr(e, "errno", None) == errno.EPERM
+    except (AttributeError, TypeError):
+        pass
+    try:                                  # Windows fallback
+        import ctypes
+        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
+        if not h:
+            return False
+        ctypes.windll.kernel32.CloseHandle(h)
+        return True
+    except Exception:                     # noqa: BLE001
+        # CANNOT TELL. Say YES: a false "already running" costs a refused
+        # start the operator can clear in one command; a false "nothing
+        # running" costs a second live bot on the same account.
+        return True
+
+
+def _clear_pidfile(path, mypid):
+    """Remove the pid file, but only if it is still OURS."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            if int((fh.read() or "0").strip() or 0) != int(mypid):
+                return
+        os.remove(path)
+    except (OSError, ValueError):
+        pass
+
+
 def rebuy_ok(prev, tk, price):
     """AMENDMENT 23: may we buy market `tk` AGAIN at `price` in this close?
 
@@ -2703,6 +2747,59 @@ def selftest():
            "a fill records the price paid per market, which is the input the "
            "band needs -- without it rebuy_ok silently allows everything")
 
+        # ---- AMENDMENT 27: one live bot, ever ---------------------------
+        ck(_pid_alive(os.getpid()),
+           "the liveness test says THIS process is alive -- if it cannot see "
+           "itself it can see nothing, and the guard is decorative")
+        ck(not _pid_alive(0) and not _pid_alive(None),
+           "and a nonsense pid is not alive")
+        # a pid nobody owns must read as DEAD, or the guard refuses forever
+        _dead = 999999
+        while _pid_alive(_dead) and _dead < 1000600:
+            _dead += 1
+        ck(not _pid_alive(_dead),
+           "a pid that is not running reads as dead (%d), so a stale pid file "
+           "from a crashed run does not lock the bot out permanently" % _dead)
+        import tempfile as _tf27
+        _d27 = _tf27.mkdtemp(prefix="pin27-")
+        try:
+            _pf = os.path.join(_d27, "x.pid")
+            with open(_pf, "w", encoding="utf-8") as _fh:
+                _fh.write(str(os.getpid()))
+            _clear_pidfile(_pf, os.getpid() + 1)
+            ck(os.path.exists(_pf),
+               "a pid file belonging to ANOTHER process is never deleted -- "
+               "deleting it would let a third bot start behind the second")
+            _clear_pidfile(_pf, os.getpid())
+            ck(not os.path.exists(_pf),
+               "and our own is cleared on exit, so the next restart is not "
+               "blocked by a file we left behind")
+        finally:
+            for _f in os.listdir(_d27):
+                os.remove(os.path.join(_d27, _f))
+            os.rmdir(_d27)
+        _src27 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck("REFUSING TO START: live pinrun pid" in _src27
+           and "if a.live:" in _src27,
+           "and main() actually refuses a second LIVE start rather than "
+           "merely warning -- on 2026-09-14 two live bots traded the same "
+           "account for 24 minutes because a shell script's process lookup "
+           "came back empty and it started a second one anyway")
+        # ...and never by reading a command line. Comment lines are stripped
+        # first, because the reasoning for this rule necessarily names the
+        # thing the rule forbids, and scanning the explanation would fail on
+        # the explanation.
+        # The token is BUILT rather than written, so this test's own lines do
+        # not contain the string they are looking for.
+        _tok27 = "Command" + "Line"
+        _code27 = [ln for ln in _src27.split(chr(10))
+                   if not ln.strip().startswith("#")]
+        ck(not [ln for ln in _code27 if _tok27 in ln],
+           "no CODE in this file reads a process command line to decide "
+           "anything. Windows returns that field EMPTY to a caller which "
+           "cannot open the process, and a guard that silently sees nothing "
+           "is how two live bots ended up on one account")
+
         # ---- AMENDMENT 26: keep walking down to the next-best market -----
         ck(_DEFAULT_MAX_ATTEMPTS_PER_MARKET == 3,
            "the DECLARED per-market attempt cap is 3 (running %d)"
@@ -4677,6 +4774,47 @@ def main():
             with open(logpath, "a", encoding="utf-8", newline="\n") as fh:
                 fh.write(json.dumps(kw, default=str) + "\n")
         except Exception:
+            pass
+
+    # ===================================================================
+    # AMENDMENT 27 (2026-09-14): ONE LIVE BOT. EVER.
+    #
+    # WHAT HAPPENED. restart_bot.ps1 finds the running bot by matching on
+    # Win32_Process CommandLine. In the operator's own shell that field came
+    # back EMPTY -- Windows hides it for processes the caller cannot open --
+    # so the kill loop matched nothing, said nothing, and the script went
+    # straight on to start a second one. For 24 minutes TWO live bots traded
+    # the same account, each sizing itself off the same bank and each
+    # believing it was the only one. Every risk rail in this file -- the loss
+    # abort, the stake cap, the position cap, the losing-trade brake -- is
+    # per-process, so all of them were silently doubled.
+    #
+    # A SHELL SCRIPT CANNOT BE THE ONLY GUARD, because the failure was the
+    # shell script not seeing the world. This check lives in the bot itself
+    # and uses a PID FILE, which needs no permission to read.
+    # ===================================================================
+    if a.live:
+        _pidfile = os.path.join(RESULTS, "pinrun-live.pid")
+        _other = None
+        try:
+            with open(_pidfile, encoding="utf-8") as _fh:
+                _other = int((_fh.read() or "0").strip() or 0)
+        except (OSError, ValueError):
+            _other = None
+        if _other and _other != os.getpid() and _pid_alive(_other):
+            raise SystemExit(
+                "REFUSING TO START: live pinrun pid %d is already running "
+                "(%s).\nTwo live bots trade the same account while each one's "
+                "loss abort, stake cap, position cap and losing-trade brake "
+                "count only its own fills -- every rail silently doubles.\n"
+                "Stop it first:  Stop-Process -Id %d -Force"
+                % (_other, _pidfile, _other))
+        try:
+            with open(_pidfile, "w", encoding="utf-8") as _fh:
+                _fh.write(str(os.getpid()))
+            import atexit as _atexit
+            _atexit.register(lambda: _clear_pidfile(_pidfile, os.getpid()))
+        except OSError:
             pass
 
     print(f"  MODE {'LIVE size 1' if a.live else 'PAPER'}   "

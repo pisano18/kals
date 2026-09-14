@@ -71,13 +71,56 @@ if ($log) {
 # ONLY THE LIVE ONE. On 2026-09-13 this matched '*pinrun*' and killed the
 # WHAT-IF tracker too -- a paper pinrun the operator had asked to keep running.
 # The live bot is the one carrying --live; nothing else may be stopped here.
-$old = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-    Where-Object { $_.CommandLine -like '*pinrun*' -and $_.CommandLine -like '*--live*' }
-foreach ($p in $old) {
-    Write-Host "stopping pid $($p.ProcessId)"
-    Stop-Process -Id $p.ProcessId -Force
+#
+# 2026-09-14: AND THE PID FILE IS THE PRIMARY SOURCE, NOT CommandLine.
+# When the operator ran this himself, Win32_Process returned CommandLine EMPTY
+# for the running bot -- Windows hides it from a caller that cannot open the
+# process -- so this loop matched nothing, printed nothing, and the script went
+# on to start a SECOND live bot. Two bots then traded the same account for 24
+# minutes, each sizing off the same bank, each counting only its own fills
+# against the loss abort, stake cap, position cap and losing-trade brake. Every
+# rail was silently doubled.
+$pidfile = "$repo\results\pinrun-live.pid"
+$targets = @()
+if (Test-Path $pidfile) {
+    $wanted = (Get-Content $pidfile -Raw).Trim()
+    if ($wanted -match '^\d+$') {
+        $proc = Get-Process -Id ([int]$wanted) -ErrorAction SilentlyContinue
+        if ($proc) { $targets += [int]$wanted }
+    }
 }
-Start-Sleep -Seconds 2
+# belt and braces: the CommandLine sweep as well, in case the pid file is
+# missing (a bot started before this amendment leaves none).
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -like '*pinrun*' -and $_.CommandLine -like '*--live*' } |
+    ForEach-Object { if ($targets -notcontains $_.ProcessId) { $targets += $_.ProcessId } }
+
+if ($targets.Count -eq 0) {
+    Write-Host "no live pinrun found to stop (pid file: $(Test-Path $pidfile))"
+} else {
+    foreach ($id in $targets) {
+        Write-Host "stopping live pinrun pid $id"
+        Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+    }
+}
+Start-Sleep -Seconds 3
+
+# --- 2b. PROVE IT IS GONE BEFORE STARTING ANYTHING.
+# THIS IS THE RULE THAT MATTERS: a kill that failed must ABORT the restart,
+# never fall through into a second start. Checked by PID, which needs no
+# permission to read, rather than by CommandLine, which is what failed.
+$stillAlive = @()
+foreach ($id in $targets) {
+    if (Get-Process -Id $id -ErrorAction SilentlyContinue) { $stillAlive += $id }
+}
+if ($stillAlive.Count -gt 0) {
+    Write-Host "ABORTING: could not stop live pinrun pid(s) $($stillAlive -join ', ')."
+    Write-Host "Starting a second one would put TWO bots on the same account."
+    Write-Host "Stop it by hand, then run this again:"
+    foreach ($id in $stillAlive) { Write-Host "    Stop-Process -Id $id -Force" }
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 1
+}
 
 # --- 3. START IT AGAIN.
 Start-Process -FilePath $py -ArgumentList @(
@@ -97,10 +140,48 @@ if (-not $new) {
     exit 1
 }
 Write-Host "pinrun running: pid $($new.ProcessId)"
-$coll = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-    Where-Object { $_.CommandLine -like '*kalshi_collector*' -or $_.CommandLine -like '*crypto_feeds*' }
-Write-Host "collector processes alive: $($coll.Count)"
-if ($coll.Count -lt 2) { Write-Host "WARNING: expected 2 collector processes" }
+# THE COLLECTOR CHECK IS BY FILE, NOT BY PROCESS LIST. The 2026-09-14 run
+# reported "collector processes alive: 0" and raised a false alarm, for the
+# same reason the kill failed: CommandLine came back empty. Both collectors
+# were in fact running and had been since Sep 9. What actually proves a
+# recorder is alive is that it is still WRITING, so that is what is checked.
+# THE TWO RECORDERS WRITE DIFFERENTLY AND MUST BE CHECKED DIFFERENTLY.
+# kalshi_collector flushes continuously, so its newest file is always seconds
+# old. crypto_feeds gzips a whole hour in memory and writes it at the
+# ROTATION: every one of its files has a LastWriteTime of exactly the top of
+# the following hour, and the file for the hour in progress sits at 0 bytes
+# until that hour ends. A naive "newest file is fresh" test therefore fails on
+# a perfectly healthy feed recorder for 59 minutes out of every 60. Verified
+# against six consecutive hours on 2026-09-14, each 280-690 KB, each written
+# on the hour.
+$fresh = 0
+
+$newest = Get-ChildItem "C:\kals\kalshi_data" -Recurse -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($newest) {
+    $age = [int]((Get-Date) - $newest.LastWriteTime).TotalSeconds
+    Write-Host "kalshi_data  -- newest write $age s ago ($($newest.Name))"
+    if ($age -lt 900) { $fresh++ }
+} else {
+    Write-Host "kalshi_data  -- NO FILES FOUND"
+}
+
+# For the feeds, the proof of life is that the PREVIOUS hour landed with
+# content in it, plus a file open for the hour in progress.
+$prevName = (Get-Date).ToUniversalTime().AddHours(-1).ToString("yyyyMMddTHH") + ".jsonl.gz"
+$curName  = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHH") + ".jsonl.gz"
+$prev = Get-ChildItem "C:\kals\feed_data" -Recurse -File -Filter $prevName -ErrorAction SilentlyContinue
+$cur  = Get-ChildItem "C:\kals\feed_data" -Recurse -File -Filter $curName  -ErrorAction SilentlyContinue
+$prevBytes = ($prev | Measure-Object -Property Length -Sum).Sum
+Write-Host "feed_data    -- last full hour $prevName = $prevBytes bytes across $($prev.Count) feeds; $($cur.Count) open for $curName"
+if ($prevBytes -gt 0 -and $cur.Count -gt 0) { $fresh++ }
+
+if ($fresh -lt 2) {
+    Write-Host "WARNING: a recorder may have stopped. The tape is NOT"
+    Write-Host "reproducible -- check run_all.ps1 before anything else."
+} else {
+    Write-Host "both recorders are writing"
+}
 Write-Host "flags now live: $($new.CommandLine)"
 Write-Host "restart_bot.ps1 done $(Get-Date -Format o)"
 try { Stop-Transcript | Out-Null } catch {}
