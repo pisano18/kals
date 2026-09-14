@@ -1184,7 +1184,26 @@ MEASURED_FLIP = 0.0090   # 3 flips in 333 dear trades, corrected OOS run. The
                          # seller may know something.
                          # See results/PREREG_pin_live_AMENDMENT_2.md.
 EV_FLOOR = 0.003         # dollars per contract required IN EXPECTATION
-MAX_ATTEMPTS_PER_CLOSE = 8   # orders SENT per close, filled or not. Distinct
+MAX_ATTEMPTS_PER_MARKET = 3  # AMENDMENT 26 (2026-09-14): orders SENT into ONE
+_DEFAULT_MAX_ATTEMPTS_PER_MARKET = 3   # market in one close, filled or not.
+                             # THIS is what the 160-order runaway actually
+                             # needed: it was one market retried at 20 Hz, not
+                             # many markets tried once. With this in place the
+                             # close-level cap no longer has to be small, so it
+                             # can stop being the thing that prevents the bot
+                             # walking down to the next-best market when the
+                             # best one has been taken.
+                             # 3 allows a lost race, a retry, and one more.
+MAX_ATTEMPTS_PER_CLOSE = 24  # AMENDMENT 26: 8 -> 24. Twelve coins settle on
+                             # the same second, so 8 could not even try them
+                             # all once, let alone come back. 24 is every coin
+                             # twice. The runaway protection did not weaken --
+                             # it moved to MAX_ATTEMPTS_PER_MARKET above, which
+                             # is tighter than 8 was for the case it was
+                             # written for, and `order_errors >= 2` still halts
+                             # the run on rail refusals regardless.
+                             #
+                             # WAS: orders SENT per close, filled or not. Distinct
                              # from MAX_PER_CLOSE, which caps FILLS. Added
                              # 2026-09-08 after a runaway sent 160 orders into
                              # one close in a single second: every one was
@@ -1526,13 +1545,32 @@ def selftest():
        f"attempts ({MAX_ATTEMPTS_PER_CLOSE}) are capped ABOVE fills "
        f"({MAX_PER_CLOSE}) -- separate budgets, because a lost race should "
        f"cost a retry but not a fill slot")
-    ck(MAX_ATTEMPTS_PER_CLOSE < 20,
-       f"and the attempt cap is small enough that a 20 Hz loop cannot spam "
-       f"({MAX_ATTEMPTS_PER_CLOSE})")
+    # THIS BAR MOVED, 2026-09-14, AND IT IS SAID LOUDLY BECAUSE IT IS A
+    # SAFETY BAR. It used to read `MAX_ATTEMPTS_PER_CLOSE < 20`, on the
+    # reasoning that a small close-level cap is what stops a 20 Hz loop
+    # spamming. That reasoning was wrong about WHICH cap does that work: the
+    # runaway it was written for put 160 orders into ONE market, and a
+    # close-level cap only stops that after it has also stopped the bot
+    # trying every OTHER market. AMENDMENT 26 moved the spam protection to
+    # MAX_ATTEMPTS_PER_MARKET, which is strictly tighter for the runaway case
+    # (3 orders, not 8), and freed the close cap to cover all twelve coins.
+    ck(MAX_ATTEMPTS_PER_MARKET <= 3,
+       f"spam into ONE market is capped at {MAX_ATTEMPTS_PER_MARKET} orders "
+       f"-- this is the bar that replaced `MAX_ATTEMPTS_PER_CLOSE < 20`, and "
+       f"it is tighter than that one was for the runaway it was written for")
+    ck(MAX_ATTEMPTS_PER_CLOSE <= 2 * 12 + 4,
+       f"and the close cap is still bounded -- every coin twice plus a little "
+       f"({MAX_ATTEMPTS_PER_CLOSE}), not unlimited")
     _src9 = open(os.path.abspath(__file__), encoding="utf-8").read()
     _b9 = _src9[_src9.index(chr(10) + "def trade_loop("):]
     ck("attempts.get(close_s, 0) >= MAX_ATTEMPTS_PER_CLOSE" in _b9,
        "the attempt cap is actually READ in the loop, not merely defined")
+    ck("attempts_tk.get((close_s, tk), 0) >= MAX_ATTEMPTS_PER_MARKET" in _b9,
+       "and so is the per-market cap -- a safety bar that is defined but "
+       "never read is the exact defect risk_abort was once caught with")
+    ck("attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 0) + 1"
+       in _b9,
+       "and it is incremented on every send, or it can never bind")
     # EVERY send in the loop must be preceded by an attempt increment, in its
     # own block. The first version compared the FIRST increment against the
     # FIRST take(); AMENDMENT 15 added a second take() (the hedge) that counts
@@ -2665,6 +2703,67 @@ def selftest():
            "a fill records the price paid per market, which is the input the "
            "band needs -- without it rebuy_ok silently allows everything")
 
+        # ---- AMENDMENT 26: keep walking down to the next-best market -----
+        ck(_DEFAULT_MAX_ATTEMPTS_PER_MARKET == 3,
+           "the DECLARED per-market attempt cap is 3 (running %d)"
+           % MAX_ATTEMPTS_PER_MARKET)
+        ck(MAX_ATTEMPTS_PER_CLOSE >= 24,
+           "the per-CLOSE attempt cap is at least 24 -- twelve coins settle "
+           "on the same second, so a cap of 8 could not try them all once and "
+           "the bot could run out of attempts before reaching a market whose "
+           "ask was still there (running %d)" % MAX_ATTEMPTS_PER_CLOSE)
+        ck(MAX_ATTEMPTS_PER_MARKET * 2 <= MAX_ATTEMPTS_PER_CLOSE,
+           "and the close cap leaves room for more than two markets to be "
+           "tried to their own limit, or the per-market cap is decorative")
+        # the runaway that MAX_ATTEMPTS_PER_CLOSE was written for, replayed
+        _at, _atk = {}, {}
+        _sent = 0
+        for _i in range(160):                 # 160 orders into ONE market
+            if _atk.get((1, "A"), 0) >= MAX_ATTEMPTS_PER_MARKET:
+                continue
+            if _at.get(1, 0) >= MAX_ATTEMPTS_PER_CLOSE:
+                continue
+            _at[1] = _at.get(1, 0) + 1
+            _atk[(1, "A")] = _atk.get((1, "A"), 0) + 1
+            _sent += 1
+        ck(_sent == MAX_ATTEMPTS_PER_MARKET,
+           "the 2026-09-08 runaway -- 160 orders into ONE market in one "
+           "second -- now sends %d, not 160 and not 8. The per-market cap "
+           "stops it at its actual source." % _sent)
+        # and the thing the operator asked for: twelve markets, each tried
+        _at2, _atk2 = {}, {}
+        _reached = []
+        for _tk in ["C%d" % i for i in range(12)]:
+            if _atk2.get((1, _tk), 0) >= MAX_ATTEMPTS_PER_MARKET:
+                continue
+            if _at2.get(1, 0) >= MAX_ATTEMPTS_PER_CLOSE:
+                continue
+            _at2[1] = _at2.get(1, 0) + 1
+            _atk2[(1, _tk)] = 1
+            _reached.append(_tk)
+        ck(len(_reached) == 12,
+           "and with every one of twelve coins offering something, all twelve "
+           "are reached (%d) -- under the old cap of 8 the last four could "
+           "never be tried, which is exactly 'if that one is sold out keep "
+           "checking the others'" % len(_reached))
+        # NOTHING MAY `break` OUT OF THE SCAN AFTER AN ORDER. If anything ever
+        # did, the walk down the ladder would stop at the first market tried
+        # and every number above would be describing code that no longer runs.
+        _src26 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _l26 = _src26.split(chr(10))
+        _i26 = next(i for i, ln in enumerate(_l26)
+                    if ln.strip() == "for tk, (iid, close_s, strike, digits, "
+                                     "exi) in _mk:")
+        _j26 = next(i for i, ln in enumerate(_l26)
+                    if i > _i26 and ln.strip() == "time.sleep(0.05)")
+        _body = _l26[_i26 + 1:_j26]
+        ck(not [ln for ln in _body
+                if ln.strip() == "break" and not ln.startswith(" " * 20)],
+           "the scan loop contains no shallow `break`, so an order on one "
+           "market is always followed by the next market in the pass -- and "
+           "since AMENDMENT 24 sorted the pass, the next market is the next "
+           "best one")
+
         # ---- AMENDMENT 25: every gate says why, once, on the record -----
         _src25 = open(os.path.abspath(__file__), encoding="utf-8").read()
         _nl25 = chr(10)
@@ -3310,6 +3409,7 @@ def trade_loop(a, rec, book, idx, series_index):
     attempts = {}              # close_s -> orders SENT, filled or not
     last_edge = {}             # AMENDMENT 24: ticker -> (close_s, net edge)
                                # as measured on the PREVIOUS pass, 50ms ago.
+    attempts_tk = {}           # AMENDMENT 26: (close_s, ticker) -> orders sent
     seen_markets = {}          # ticker -> (iid, close_s, strike, digits, exi)
     uni_at = 0.0
     watching = {}            # ticker -> close_s, so closed ones drop out
@@ -3890,6 +3990,33 @@ def trade_loop(a, rec, book, idx, series_index):
             # creates no exposure. But it left NOTHING bounding how many times
             # we may try, so a persistently refused order retried at 20 Hz
             # forever. Fills and attempts need separate budgets.
+            # ---- AMENDMENT 26 (2026-09-14): DON'T STOP WALKING THE LADDER ---
+            # THE OPERATOR: "make sure that if it goes through all, and goes
+            # back to buy the best, if that's sold out it keeps checking to see
+            # if the next best or any others are still available and gets
+            # those."
+            #
+            # THE LOOP ALREADY DOES THAT -- there is no `break` after an order,
+            # so a market that fails to fill is followed by the next market in
+            # the pass, and since AMENDMENT 24 sorted the pass by edge, the
+            # next market IS the next best. What could stop it was this cap.
+            #
+            # MAX_ATTEMPTS_PER_CLOSE was 8, written on 2026-09-08 against a
+            # runaway that sent 160 orders into ONE market in ONE second. But
+            # 8 is also fewer than the twelve coins that settle on the same
+            # second, so a close where the first few asks vanished could run
+            # out of attempts before ever reaching a market that was still
+            # there -- the exact thing he is asking for, blocked by a cap
+            # aimed at something else.
+            #
+            # THE RUNAWAY IS NOW STOPPED AT ITS ACTUAL SOURCE. It was one
+            # market retried, not many markets tried, so the per-MARKET cap
+            # below makes 160-into-one impossible however high the close cap
+            # goes. That lets the close cap rise to cover every coin twice.
+            if attempts_tk.get((close_s, tk), 0) >= MAX_ATTEMPTS_PER_MARKET:
+                _gate("market_attempts", close_s, tk,
+                      tried=attempts_tk.get((close_s, tk), 0))
+                continue
             if attempts.get(close_s, 0) >= MAX_ATTEMPTS_PER_CLOSE:
                 _gate("attempts_cap", close_s, tk,
                       tried=attempts.get(close_s, 0))
@@ -4191,6 +4318,7 @@ def trade_loop(a, rec, book, idx, series_index):
                        cond_own=(round(cown_, 4)
                                  if cown_ is not None else None))
             attempts[close_s] = attempts.get(close_s, 0) + 1
+            attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 0) + 1
             rec("signal", live=live, **sig)
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
                   f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "

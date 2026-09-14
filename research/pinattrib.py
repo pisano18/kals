@@ -10,7 +10,7 @@ play, how close to correct it ended up being, if it actually led to a decision
 or over shadowed by something else, how much extra money it actually earned us
 compared to without or how much it's lost us."
 
-IT IS POSSIBLE FOR THE REFUSALS, WHICH IS MOST OF THE BOT. Eighteen decision
+IT IS POSSIBLE FOR THE REFUSALS, WHICH IS MOST OF THE BOT. Nineteen decision
 points now record, once per market per close, that they stopped a trade and
 what was on the table at the time (AMENDMENT 25 in pinrun.py). Every one of
 those has an outcome we can look up afterwards, because the market settles
@@ -74,7 +74,8 @@ import pinrun                                                  # noqa: E402
 # the "came into play" column honestly.
 GATE_ORDER = [
     "close_budget", "max_per_close", "max_per_market", "both_sides",
-    "attempts_cap", "book_suspect", "book_stale", "index_stale", "no_sigma",
+    "market_attempts", "attempts_cap", "book_suspect", "book_stale",
+    "index_stale", "no_sigma",
     "confidence", "no_offer", "depth_floor", "edge_floor", "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
 ]
@@ -84,6 +85,7 @@ WHAT = {
     "max_per_close": "the close has already had its allowed number of fills",
     "max_per_market": "we already own this market in this close",
     "both_sides": "we hold the other side of this market already",
+    "market_attempts": "already tried this market enough times this close",
     "attempts_cap": "too many orders already sent on this close",
     "book_suspect": "the order book looked wrong",
     "book_stale": "the order book was too old to trust",
