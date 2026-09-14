@@ -390,6 +390,12 @@ def main():
                          "than another full pass over the index")
     ap.add_argument("--refresh", action="store_true",
                     help="ignore the cache and re-read the index")
+    ap.add_argument("--taus", default="",
+                    help="comma-separated seconds-to-close to measure. The "
+                         "settlement window is 60 seconds long, so at tau=60 "
+                         "NOTHING is locked yet and the model has no edge at "
+                         "all; above 60 the arithmetic is undefined and is "
+                         "refused rather than silently wrong.")
     a = ap.parse_args()
     if a.selftest:
         return selftest()
@@ -397,6 +403,18 @@ def main():
         rc = selftest()
         if rc:
             return rc
+    taus = TAUS
+    if a.taus:
+        taus = tuple(sorted((int(x) for x in a.taus.split(",") if x.strip()),
+                            reverse=True))
+        if max(taus) >= WINDOW:
+            raise SystemExit(
+                "--taus %s refused: the settlement window is %d seconds. At "
+                "tau=%d not one print is locked, so the model's whole edge is "
+                "zero, and above it `locked` is an EMPTY sum that makes mu "
+                "silently wrong rather than merely weak."
+                % (a.taus, WINDOW, WINDOW))
+        a.cache = ""            # a different tau set is a different dataset
     allrows = None
     if a.cache and not a.refresh and os.path.exists(a.cache):
         with open(a.cache, encoding="utf-8") as fh:
@@ -405,7 +423,7 @@ def main():
                        for r in json.load(fh)]
         print("  %d closes from cache %s" % (len(allrows), a.cache))
     if allrows is None:
-        allrows = _read_index(a.data)
+        allrows = _read_index(a.data, taus)
         if a.cache:
             with open(a.cache, "w", encoding="utf-8") as fh:
                 json.dump([[r["close"], r["settle"], r["strike"], r["conf"]]
@@ -414,7 +432,7 @@ def main():
     if not allrows:
         print("pinwarn: no complete close on the index -- nothing to analyse")
         return 0
-    txt = summarise(allrows)
+    txt = summarise(allrows, taus=taus)
     nl = chr(10)
     with open(a.out, "w", encoding="utf-8") as fh:
         fh.write("# RESULTS_warn -- does confidence warn before a "
@@ -424,7 +442,7 @@ def main():
     return 0
 
 
-def _read_index(data_dir):
+def _read_index(data_dir, taus=None):
     """Every complete close on the tape, one index at a time.
 
     ONE COIN AT A TIME AND THEN DROPPED, deliberately: loading all twelve
@@ -438,7 +456,7 @@ def _read_index(data_dir):
         ser = load_one_index(data_dir, iid)
         if not ser:
             continue
-        rs = walk(ser)
+        rs = walk(ser, taus or TAUS)
         print("  %-14s %d closes" % (iid, len(rs)))
         allrows += rs
         ser.clear()
