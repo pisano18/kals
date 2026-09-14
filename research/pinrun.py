@@ -3147,6 +3147,25 @@ def _selftest_body():
            "wrong one reports the depth of the people we trade AGAINST")
         ck(_b35.buyable("MISSING", "yes", 0.98) == 0.0,
            "an unknown market is zero, never an exception in the order path")
+        # ---- MIN_FILL_FRAC 0: no percentage floor at all ---------------
+        # The operator, 2026-09-14: "No thinking 'is it worth it there's no
+        # point in that it's wasted time.' ... No 10%."
+        _mff_floor = lambda frac, size: max(MIN_LEVEL, frac * float(size))
+        ck(_mff_floor(0.0, 58.0) == MIN_LEVEL == 1.0,
+           "at --min-fill-frac 0 the only floor left is MIN_LEVEL, ONE "
+           "contract -- the percentage floor is gone, not merely small")
+        ck(_mff_floor(0.0, 250.0) == 1.0,
+           "and it stays one contract at SIZE 250. THIS IS THE POINT: a 10%% "
+           "floor GROWS with the bank -- 6 contracts at SIZE 58, 25 at SIZE "
+           "250 -- so it refuses MORE of the book exactly as we scale in")
+        ck(_mff_floor(0.10, 58.0) == 5.800000000000001 or
+           abs(_mff_floor(0.10, 58.0) - 5.8) < 1e-9,
+           "for contrast, the old 10%% floor at SIZE 58 refused anything under "
+           "5.8 contracts at the best price")
+        ck(_mff_floor(0.0, 58.0) <= _mff_floor(0.10, 58.0),
+           "and zero is never TIGHTER than the floor it replaces -- this flag "
+           "may only ever loosen")
+
         # ---- AMENDMENT 38: thin edge while the price runs against us ---
         ck(_DEFAULT_AGAINST_SIGMA == 1.0 and _DEFAULT_AGAINST_EDGE == 0.020
            and _DEFAULT_AGAINST_ENABLED is True,
@@ -5708,9 +5727,21 @@ def main():
         # two harms, a scrap "burns a scale-in slot" and "raises the improve
         # bar", and AMENDMENT 17 and AMENDMENT 12 removed both. MIN_LEVEL is
         # still the backstop and this flag cannot get underneath it.
-        if not (0.0 < a.min_fill_frac <= _DEFAULT_MIN_FILL_FRAC):
+        # ZERO IS NOW ALLOWED, 2026-09-14, BY OPERATOR DECISION. His words:
+        # "No thinking 'is it worth it there's no point in that it's wasted
+        # time. That's how it needs to function right now. No 10%."
+        #
+        # At 0 the percentage floor is gone entirely and MIN_LEVEL -- one
+        # contract -- is the only floor left, at every SIZE. That is the
+        # intended end state, not a degenerate case: the two harms the
+        # percentage floor was written to prevent were a scrap fill "burning a
+        # scale-in slot" and "raising the improve bar", and AMENDMENT 17 and
+        # AMENDMENT 29 removed both. A floor of 0.10 x SIZE also GROWS with the
+        # bank -- 6 contracts at SIZE 58 but 25 at SIZE 250 -- so it would have
+        # refused more and more of the book exactly as we scaled into it.
+        if not (0.0 <= a.min_fill_frac <= _DEFAULT_MIN_FILL_FRAC):
             raise SystemExit(
-                "--min-fill-frac %.3f refused: it must sit in (0, %.2f]. "
+                "--min-fill-frac %.3f refused: it must sit in [0, %.2f]. "
                 "This flag exists to LOWER the floor; raising it cuts trading "
                 "and needs a code change and a version entry, not a flag."
                 % (a.min_fill_frac, _DEFAULT_MIN_FILL_FRAC))

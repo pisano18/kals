@@ -30,6 +30,77 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-nofloor — 2026-09-14 14:5xZ — NO PERCENTAGE FLOOR AT ALL, AND THE GATE READS THE LADDER
+
+**Operator-directed and urgent.** His words, verbatim: *"I've said it a million
+times and I'm tired of saying it. I need it implemented immediately if it's
+not. It's number one priority. ... we buy every contract possible starting for
+the best price then the next all the way til we max our size. And if we can't
+max we do as much as we can. No limit on total coins only total contracts. No
+thinking 'is it worth it there's no point in that it's wasted time.' That's how
+it needs to function right now. No 10%."*
+
+**What the bot now does differently. Two flags, and the FIRST is the one that
+does the work.**
+
+1. **`--min-fill-frac 0`** — the percentage floor is **gone**. `MIN_LEVEL`,
+   one contract, is the only floor left at any SIZE.
+2. **`--depth-ladder`** (AMENDMENT 37) — the floor, whatever is left of it,
+   counts what the LADDER can fill rather than what sits at the best price.
+
+**AND THE SECOND IS NEARLY REDUNDANT ONCE THE FIRST IS ON.** A37 only consults
+the ladder when the touch fails the floor, and at a one-contract floor almost
+nothing fails it. It is deployed anyway because it is the safety net if the
+floor is ever raised again, and because it still catches the genuine dust case
+— an ask of 0.02 contracts, which the live log does contain.
+
+**WHY THE FLOOR HAD TO GO, and it is not only the operator's preference.** The
+floor was `0.10 x SIZE`, so **it grows with the bank**: 6 contracts at SIZE 58,
+**25 at SIZE 250**. It would have refused more and more of the book exactly as
+we scaled into it. Five of the eight successful ladder walks on 2026-09-14 had
+**fewer than 25** contracts at the best price and would have been refused
+outright at SIZE 250.
+
+**Its original justification had already expired.** `MIN_FILL_FRAC`'s own
+comment gives two harms — a scrap fill "burns a scale-in slot" and "raises the
+improve bar" — and AMENDMENT 17 and AMENDMENT 29 removed both. A29 in
+particular lets a partial position be topped up at **any** passing price with
+no improvement required, so a 6-contract fill can no longer block a
+52-contract top-up. The floor has been a leftover from a replaced world since
+2026-09-14 02:0xZ.
+
+**Exposure does not change.** The worst close is still
+`MAX_PER_CLOSE x SIZE x 0.98`. A smaller fill is the same bet at the same gate
+on fewer contracts; `min(SIZE, offered)` can only LOWER exposure. What changes
+is how often the budget actually gets spent.
+
+**The measured counter-argument, and why it is stale.**
+`results/RESULTS_levels.md` measured removing the floor as costing 30% of the
+money (+15% fills, −35% mean size, −25% contracts). **That was measured before
+the order walked the ladder.** In that world a thin touch really did mean a
+thin fill; it no longer does. The measurement needs redoing and should not be
+quoted against this change as though it still applied.
+
+**Latency: no change.** The extra work A37 does is inside the branch that only
+runs when the touch fails the floor, and at a one-contract floor that branch
+is almost never entered. The operator's condition — *"if it doesn't cause us to
+miss deals because we spend extra time searching all of them"* — is met by
+construction.
+
+**Coins are already unlimited.** `CLOSE_BUDGET = True` makes the per-close cap
+count **contracts** (`MAX_PER_CLOSE x SIZE`), not coins and not fills. The
+fill-count cap survives only behind that flag. Nothing needed changing.
+
+**Self-tested:** at `--min-fill-frac 0` the floor is exactly `MIN_LEVEL` at
+SIZE 58 **and** at SIZE 250; zero is never tighter than what it replaces; and
+the guard still refuses any value above the 0.50 default, so this flag can only
+ever loosen.
+
+**REVERT:** in `restart_bot.ps1` set `"--min-fill-frac", "0.10"` and drop
+`"--depth-ladder"`, then run the restart script.
+
+---
+
 ## v-against — 2026-09-14 14:2xZ — REFUSE A THIN EDGE WHEN THE PRICE IS ALREADY RUNNING AGAINST US
 
 **Operator-approved.** His words: *"if you mean both on the other side and
