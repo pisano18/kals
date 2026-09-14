@@ -363,3 +363,75 @@ not offset two false alarms at this size; the bar exists precisely so a handful 
 early events cannot decide the threshold.
 
 ## If this bar moves again, the move is dated and explained here.
+
+
+---
+
+# NOTE ADDED 2026-09-14 ~06:00 ET -- THE OPERATOR'S DECISION AFTER SIX HEDGES
+
+**Keep the hedge. Do NOT lower the trigger to 0.10.** His words: *"Obviously
+this changed. Keep the hedge. Put a note in to look at different numbers but
+certainly not down to 10."*
+
+## What changed his mind, and mine
+
+At **05:30 ET on 2026-09-14** (09:29:49Z) the sixth live hedge fired on
+`KXBTC15M-26SEP140530-30` and was **right**:
+
+| | |
+|---|---|
+| entry | NO, 60 contracts @ 97.2c, edge 1.948c, tau 13 |
+| belief two seconds later | **0.214** |
+| hedge | YES, 60 @ 58c |
+| result | **YES** -- our side lost |
+| unhedged | **-$58.43** |
+| hedged | **-$34.26** |
+| **hedge saved** | **+$24.18** |
+
+Six hours earlier, on five events, I wrote that the hedge had cost -$9.08 and
+recommended moving the trigger to 0.10. **That recommendation is withdrawn.**
+Belief was 0.214, so a 0.10 trigger would not have fired and this one close
+would have cost $24.18 more. The sign of the whole finding flipped between
+n=5 and n=6. The write-up named n=5 as the honest sample and then led with a
+recommendation anyway; that was the error, not the arithmetic.
+
+## The standing numbers -- regenerate with `python research/pinhedgelive.py`
+
+Live fills only, five hedges with a matched entry order (a sixth, SOL
+2026-09-12 06:00, logged no entry order at n=1 and is worth $0.05):
+
+| | net over those closes |
+|---|---|
+| **live trigger 0.80, no EV gate -- what runs today** | **+$14.26** |
+| with an EV gate (`ask < 1 - belief`) | +$15.24 |
+| trigger 0.30 | +$24.18 |
+| trigger 0.10 (the withdrawn proposal) | +$0.05 |
+
+## THE NUMBERS TO LOOK AT NEXT, per his instruction -- AND THE BAR
+
+**Not below 0.30.** Everything under it gives up the 05:30 BTC hedge, which is
+the single largest thing the hedge has ever done.
+
+The pattern worth watching, stated now so it is not fitted later: **the two
+hedges that paid had HARD, FAST collapses -- belief 0.02 and 0.214. The three
+that cost money had mild ones -- 0.525, 0.643, 0.664, 0.887.** If that holds,
+the right trigger is nearer 0.30 than either 0.80 or 0.10.
+
+**PRE-REGISTERED BAR, written before more data exists.** Do not move the
+trigger off 0.80 until, counting only hedges that settle AFTER 2026-09-14:
+
+1. at least **10** further hedge events have settled, and
+2. `pinhedgelive.py --trigger 0.30` shows 0.30 ahead of 0.80 on those events
+   alone, not on the pooled history, and
+3. no single event accounts for more than half the difference.
+
+Condition 3 exists because the 05:30 close alone is bigger than every other
+hedge put together, and a rule fitted to one event is not a rule.
+
+**The EV gate is a separate question and is not covered by this bar.** It asks
+only that the hedge leg cost less than the model's own probability that we are
+wrong -- `pinhedge.py` derived that rule on 2026-09-08 and
+`pinrun.hedge_edge_c()` has computed it on every hedge since while its own
+docstring calls it *"DIAGNOSTIC, not a gate"*. It would have ALLOWED the 05:30
+hedge (`edge_c +20.56`) and blocked only the two that fired at negative edge.
+Worth **+$0.99** over five events, and it never touches the one that mattered.
