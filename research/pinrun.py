@@ -2031,8 +2031,18 @@ def _selftest_body():
         pintake.LEDGER.update(_sv)
 
     # --- AMENDMENT 6: partial fills, and a slot consumed by a FILL ----------
-    ck(0.0 < MIN_FILL_FRAC <= 1.0,
-       f"MIN_FILL_FRAC is a fraction ({MIN_FILL_FRAC})")
+    # ZERO IS VALID SINCE 2026-09-14 (v-nofloor). This check used to demand
+    # 0.0 < MIN_FILL_FRAC and so REFUSED TO START the moment the operator's
+    # "no 10%" went live -- the bot was down for four minutes. It is the same
+    # trap as 2026-09-13: a self-test asserted against the RUNNING value that
+    # a new flag is allowed to change. Assert the DECLARED default instead,
+    # and bound the running value only by what it may never exceed.
+    ck(0.0 < _DEFAULT_MIN_FILL_FRAC <= 1.0,
+       f"the DECLARED depth floor is a fraction ({_DEFAULT_MIN_FILL_FRAC})")
+    ck(0.0 <= MIN_FILL_FRAC <= _DEFAULT_MIN_FILL_FRAC,
+       f"and the running floor sits in [0, {_DEFAULT_MIN_FILL_FRAC}] -- zero "
+       f"means MIN_LEVEL is the only floor, which is the operator's 'no 10%' "
+       f"(running {MIN_FILL_FRAC})")
 
     # THE FLOOR IS PASSED IN, NOT READ FROM THE GLOBAL. AMENDMENT 28 made
     # MIN_FILL_FRAC a flag, and a test that asserts a specific refusal while
