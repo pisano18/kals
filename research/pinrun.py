@@ -4682,7 +4682,20 @@ def trade_loop(a, rec, book, idx, series_index):
                 if f >= PIN or f <= 1.0 - PIN:
                     nb["decided"] += 1
                     nb["no_offer"] += 1
-                    _gate("no_offer", close_s, tk, fair=round(f, 5), tau=tau)
+                    # RECORD WHAT WAS ACTUALLY ON THE SCREEN. "no_offer" does
+                    # NOT mean nobody was selling -- it means no ask BELOW
+                    # 100c, and an ask at exactly 100c (worthless to us, but a
+                    # real seller) lands here too. Without these fields the
+                    # log cannot tell the two apart, and on 2026-09-14 I told
+                    # the operator "nobody was selling" when I could not know
+                    # that. The distinction matters: no seller at all is a
+                    # hard ceiling on the strategy, while a seller at 100c is
+                    # a pricing problem.
+                    _gate("no_offer", close_s, tk, fair=round(f, 5), tau=tau,
+                          yes_ask=b.get("yes_ask"), no_ask=b.get("no_ask"),
+                          yes_ask_size=b.get("yes_ask_size"),
+                          no_ask_size=b.get("no_ask_size"),
+                          wanted_side=("yes" if f >= PIN else "no"))
                 else:
                     nb["undecided"] += 1
                     _gate("confidence", close_s, tk, fair=round(f, 5),
