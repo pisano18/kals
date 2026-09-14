@@ -453,6 +453,7 @@ MAX_PER_MARKET = 1       # AMENDMENT 13 (2026-09-12). FILLS ALLOWED ON ONE
 # Pre-registered live bar: results/PREREG_hedge.md, written before this code.
 # ===========================================================================
 HEDGE_ENABLED = True
+_DEFAULT_HEDGE_BELIEF = 0.80   # --hedge-belief is measured against this
 HEDGE_BELIEF = 0.80      # belief in OUR side below which we hedge.
                          # 0.90 -> 0.80 on 2026-09-12 18:2xZ, from the REBUILT
                          # pinsim holdout (commit 8ec2ae7, seq-ordered book, a
@@ -2364,9 +2365,26 @@ def _selftest_body():
            "and the threshold is a parameter, so the holdout can sweep it")
         # the four real live losses, at the belief the model actually showed
         # one second after the alarm would have fired
+        # AGAINST THE DECLARED DEFAULT, not the running value. --hedge-belief
+        # (A34) moves this trigger, and asserting the running one refuses to
+        # start the moment the flag is used -- the shape that has stopped this
+        # bot booting five times.
         for _nm, _b in (("NEAR tau16", 0.4065), ("BNB tau24", 0.4627),
                         ("SOL-08:00 tau15", 0.0005)):
-            ck(hedge_should_fire(_b), f"the real {_nm} collapse ({_b:.1%}) fires")
+            ck(hedge_should_fire(_b, threshold=_DEFAULT_HEDGE_BELIEF),
+               f"at the DECLARED 0.80 trigger the real {_nm} collapse "
+               f"({_b:.1%}) fires")
+        # AND THE MEASURED TRADE-OFF, 2026-09-14, 594 tape entries: a LATER
+        # trigger catches the SAME 25 real losses while buying far fewer
+        # needless opposite legs (38 false alarms at 0.90, 1 at 0.10). The
+        # deep collapse fires at every trigger; the shallow ones are exactly
+        # the false alarms a late trigger is meant to skip.
+        ck(hedge_should_fire(0.0005, threshold=0.10),
+           "the SOL-08:00 collapse to 0.05% fires even at a 0.10 trigger -- a "
+           "late trigger gives up none of the real rescues")
+        ck(not hedge_should_fire(0.4065, threshold=0.10),
+           "while a shallow drop to 40.6% does NOT, which is the point: 37 of "
+           "the 38 false alarms at 0.90 look like that one")
         # THE COST OF 0.80, STATED: on the SOL-08:00 collapse belief was 83.7% at
         # tau 16 and 0.05% at tau 15. At 0.90 the alarm fired at 16; at 0.80 it
         # fires at 15 -- one second later on the fastest kind of collapse. The
@@ -2879,7 +2897,7 @@ def _selftest_body():
         _dtest = _dsrc[_dsrc.index("def " + "selftest"):]
         for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN",
                     "MAX_PER_MARKET", "IMPROVE_MAX", "PICK",
-                    "MIN_FILL_FRAC"):
+                    "MIN_FILL_FRAC", "HEDGE_BELIEF"):
             ck(("_DEFAULT_%s" % _nm) in _dwork,
                "a _DEFAULT_%s exists to assert against, so its guard can "
                "never become a refusal to start" % _nm)
@@ -5109,6 +5127,14 @@ def main():
                          "in one close. Default %d. The close's CONTRACT "
                          "budget is unchanged whatever this is."
                          % _DEFAULT_MAX_PER_MARKET)
+    ap.add_argument("--hedge-belief", type=float, default=None,
+                    help="AMENDMENT 34: belief in OUR side below which we buy "
+                         "the other one. Default %.2f. MEASURED 2026-09-14 on "
+                         "594 tape entries: every trigger from 0.90 down to "
+                         "0.10 rescues the SAME 25 real losses; what changes "
+                         "is the false alarms, 38 at 0.90 against 1 at 0.10. "
+                         "Worth -0.43c per contract at 0.90 and +0.49c at "
+                         "0.10." % _DEFAULT_HEDGE_BELIEF)
     ap.add_argument("--min-fill-frac", type=float, default=None,
                     help="AMENDMENT 28: the share of SIZE that must be on "
                          "offer before we will take it. Default %.2f. "
@@ -5224,6 +5250,15 @@ def main():
                 "close cap cannot help, the CONTRACT budget binds first."
                 % (a.max_per_market, MAX_PER_CLOSE))
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
+    if a.hedge_belief is not None:
+        if not (0.0 < a.hedge_belief <= _DEFAULT_HEDGE_BELIEF):
+            raise SystemExit(
+                "--hedge-belief %.3f refused: it must sit in (0, %.2f]. This "
+                "flag exists to make the trigger LATER (fewer false alarms); "
+                "an EARLIER one buys more needless opposite legs and needs a "
+                "code change and a version entry, not a flag."
+                % (a.hedge_belief, _DEFAULT_HEDGE_BELIEF))
+        globals()["HEDGE_BELIEF"] = float(a.hedge_belief)
     if a.min_fill_frac is not None:
         # THE LIVE REFUSAL IS LIFTED, 2026-09-14, BY OPERATOR DECISION. It
         # used to read: "--min-fill-frac is refused on a LIVE run ...
