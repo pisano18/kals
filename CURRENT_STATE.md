@@ -189,6 +189,40 @@ Both halves make money, so there is no support for simply lowering the price
 ceiling. The one negative bucket is 94-96c (49 fills, 3 losses, -$18.32) and
 it has no power.
 
+## 2026-09-14: TWO LIVE BOTS RAN AT ONCE FOR 24 MINUTES
+
+Read this before touching `restart_bot.ps1` or starting the bot by hand.
+
+`restart_bot.ps1` found the running bot by matching `Win32_Process`
+**CommandLine**. Run from the operator's own shell that field came back
+**EMPTY** -- Windows hides it from a caller that cannot open the process -- so
+the kill loop matched nothing, said nothing, and the script started a SECOND
+live bot. pid 1277276 (old code) and pid 1340892 (`--pick best`) both traded
+the live account 20:35-20:59 ET.
+
+**Nothing actually traded in the overlap** (zero orders, zero settlements from
+either) and both were flat when found, so no money was doubled. The risk was
+real anyway: every rail in `pinrun` is per-process and counts only its own
+fills -- loss abort, loss bound, stake cap, position cap, losing-trade brake --
+so two processes double all of them, while both size off the same bank.
+
+**AMENDMENT 27 fixes it in the BOT, not the script**, because the failure was
+the script being unable to see. `pinrun --live` writes
+`results/pinrun-live.pid` and refuses to start while that pid is alive.
+`_pid_alive()` reads no command line and answers **YES when it cannot tell** --
+a false "already running" costs one command to clear, a false "nothing
+running" costs a second bot on the account. `restart_bot.ps1` now reads the
+pid file first, proves the target is gone by pid, and **aborts rather than
+falling through to a start**.
+
+**The same fault also produced a FALSE ALARM: "collector processes alive: 0".**
+Both recorders had been running since Sep 9. That check is now by file -- and
+it had to learn that the two recorders write differently: `kalshi_collector`
+flushes continuously, `crypto_feeds` gzips a whole hour in memory and writes
+at the rotation, so its in-progress file sits at **0 bytes for up to 59
+minutes**. A naive freshness test alarms on a healthy feed recorder almost
+permanently. Six consecutive hours verified at 280-690 KB per feed.
+
 ## Hard-won gotchas that will bite again
 
 - **A self-test must match a whole LINE at its real indentation**, never a
