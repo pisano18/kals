@@ -76,7 +76,8 @@ GATE_ORDER = [
     "close_budget", "max_per_close", "max_per_market", "both_sides",
     "market_attempts", "attempts_cap", "book_suspect", "book_stale",
     "index_stale", "no_sigma",
-    "confidence", "no_offer", "depth_floor", "edge_floor", "dump_guard",
+    "confidence", "no_offer", "depth_floor", "edge_floor", "against_thin",
+    "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
 ]
 
@@ -95,6 +96,8 @@ WHAT = {
     "no_offer": "the model was sure but nobody was selling that side",
     "depth_floor": "too few contracts on offer to be worth taking",
     "edge_floor": "the profit on offer was too thin",
+    "against_thin": ("thin profit AND the live price was already past the "
+                     "strike against us"),
     "dump_guard": "priced far below fair -- someone else knew something",
     "improve_by": "a second buy that was not cheaper than the first",
     "rebuy_band": "a same-coin re-buy outside the 0.5-1c band",

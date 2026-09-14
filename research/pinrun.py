@@ -215,6 +215,70 @@ TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # of sample. 31-45 is a measured wall, not a soft edge:
                        # do NOT extend past 30 on this evidence.
 TAU_MIN = 3            # a one-second misalignment is fatal below this
+# AMENDMENT 38 -- DO NOT BUY A THIN EDGE WHILE THE PRICE IS ALREADY RUNNING
+# AGAINST US.
+#
+# OPERATOR-APPROVED 2026-09-14: "if you mean both on the other side and under
+# 2c you can block it off. It's only happened 5 times so not worth too much
+# (it's also 2c not a huge profit) and it caused loss most times."
+#
+# THE CONDITION IS THE CONJUNCTION AND ONLY THE CONJUNCTION. Either half alone
+# is a bad gate and both were measured:
+#   spot against us alone : 15 fills, 13 winners given up, ratio 6.5:1
+#   edge under 2c alone   : 105 fills, 102 winners given up, ratio 34:1  <- 31%
+#                           of everything we trade; the repo's own history says
+#                           every entry gate tested cost 22-44 winners per loss
+#   BOTH TOGETHER         : 5 fills, 4 winners given up worth $1.81 TOTAL,
+#                           1 loss avoided worth $58.43. Ratio 4:1.
+#
+# WHY IT IS DEPLOYED ON FIVE EVENTS, against the usual bar. The four winners
+# it refuses are worth 41c, 47c, 56c and 37c -- $1.81 between them, because a
+# sub-2c edge at 97c is pennies by construction. So the COST OF BEING WRONG is
+# about $2 a week, and the cost of being right is one $58 loss. That asymmetry,
+# not the significance, is the argument. It is NOT evidence of an effect and
+# must not be quoted as one: the loss that motivated the rule is inside the
+# five, so +$56.62 is a description of the past, never a forecast.
+#
+# "AGAINST US" MEANS THE LIVE PRICE IS ON THE WRONG SIDE OF THE STRIKE, in
+# units of one second's typical move. Buying NO needs the average to land
+# BELOW the strike, so spot ABOVE it is against us; buying YES is the mirror.
+# The model already knows both numbers -- this is not new information, it is a
+# claim that the model is OVERCONFIDENT in exactly this region, which is what
+# RESULTS_calib.md measured (kurtosis 132 against a normal's 3).
+AGAINST_SIGMA = 1.0      # spot this many one-second moves past the strike,
+_DEFAULT_AGAINST_SIGMA = 1.0   # against us, counts as "running against us"
+AGAINST_EDGE = 0.020     # ...and only matters below this edge. 2c.
+_DEFAULT_AGAINST_EDGE = 0.020
+AGAINST_ENABLED = True
+_DEFAULT_AGAINST_ENABLED = True
+
+
+def against_us(strike, spot, sigma, want):
+    """How far the LIVE price sits past the strike on the side that hurts us,
+    in one-second moves. Positive = against us. None when unmeasurable."""
+    try:
+        if strike is None or spot is None or not sigma or float(sigma) <= 0:
+            return None
+        d = (float(spot) - float(strike)) if want == "no"             else (float(strike) - float(spot))
+        return d / float(sigma)
+    except (TypeError, ValueError):
+        return None
+
+
+def against_block(strike, spot, sigma, want, edge):
+    """AMENDMENT 38. True when BOTH halves hold and the trade is refused.
+
+    Unmeasurable inputs never block -- a missing sigma is not evidence that
+    the price is against us, and a gate that fired on missing data would stop
+    trading whenever the index hiccuped."""
+    if not AGAINST_ENABLED:
+        return False
+    a = against_us(strike, spot, sigma, want)
+    if a is None or edge is None:
+        return False
+    return a >= AGAINST_SIGMA and float(edge) < AGAINST_EDGE
+
+
 EDGE_FLOOR = 0.003     # AFTER fee. 0.5c -> 0.3c per
                        # results/PREREG_pin_live_AMENDMENT_1.md, written
                        # 2026-09-08 08:20Z BEFORE the change went live.
@@ -3083,6 +3147,98 @@ def _selftest_body():
            "wrong one reports the depth of the people we trade AGAINST")
         ck(_b35.buyable("MISSING", "yes", 0.98) == 0.0,
            "an unknown market is zero, never an exception in the order path")
+        # ---- AMENDMENT 38: thin edge while the price runs against us ---
+        ck(_DEFAULT_AGAINST_SIGMA == 1.0 and _DEFAULT_AGAINST_EDGE == 0.020
+           and _DEFAULT_AGAINST_ENABLED is True,
+           "A38 declared defaults: 1.0 sigma past the strike AND under 2c "
+           "(running %.2f / %.3f / %r)"
+           % (AGAINST_SIGMA, AGAINST_EDGE, AGAINST_ENABLED))
+
+        # direction, both sides. Buying NO needs the average BELOW the strike,
+        # so spot ABOVE it is against us; YES is the mirror. Getting this
+        # backwards would refuse exactly the trades we most want.
+        ck(abs(against_us(100.0, 104.0, 2.0, "no") - 2.0) < 1e-12,
+           "buying NO with spot 4 above the strike and a 2-unit move is "
+           "2.0 AGAINST us")
+        ck(abs(against_us(100.0, 104.0, 2.0, "yes") + 2.0) < 1e-12,
+           "buying YES in that same market is 2.0 in our FAVOUR -- the sign "
+           "must flip with the side")
+        ck(abs(against_us(100.0, 96.0, 2.0, "no") + 2.0) < 1e-12,
+           "and NO with spot below the strike is in our favour")
+
+        # THE FIVE REAL FILLS THE OPERATOR APPROVED THIS FOR. Four won, and
+        # they are worth 41c, 47c, 56c and 37c -- $1.81 between them. One lost
+        # $58.43. All five must be refused, or the rule is not the rule.
+        for _sk, _sp, _sig38, _w38, _e38, _lab in (
+                (1.0, 1.0 + 1.4, 1.0, "no", 0.0047, "NEAR 09-09 00:29, won 41c"),
+                (1.0, 1.0 + 3.2, 1.0, "no", 0.0152, "ZEC 09-09 05:29, won 47c"),
+                (1.0, 1.0 + 1.8, 1.0, "no", 0.0053, "ZEC 09-09 07:29, won 56c"),
+                (1.0, 1.0 + 1.1, 1.0, "no", 0.0185, "BNB 09-10 09:29, won 37c"),
+                (77695.85, 77708.10, 4.073757, "no", 0.01948,
+                 "BTC 09-14 05:30, LOST $58.43")):
+            ck(against_block(_sk, _sp, _sig38, _w38, _e38),
+               "A38 refuses %s" % _lab)
+
+        # THE NULL, and it is the important half: each condition ALONE must
+        # NOT block. Either one on its own was measured as a bad gate --
+        # 6.5:1 and 34:1 winners given up per loss avoided, against 4:1 for
+        # the pair.
+        ck(not against_block(77695.85, 77708.10, 4.073757, "no", 0.0250),
+           "the SAME 05:30 book with a 2.5c edge is NOT refused -- a price "
+           "running against us is fine when we are paid enough for it")
+        ck(not against_block(77695.85, 77680.00, 4.073757, "no", 0.01948),
+           "and the SAME thin 1.9c edge with spot on OUR side is NOT refused "
+           "-- 31%% of everything we trade is under 2c and blocking it all "
+           "costs 34 winners per loss avoided")
+        ck(not against_block(100.0, 100.5, 1.0, "no", 0.01),
+           "half a sigma past the strike is under the 1.0 threshold")
+
+        # unmeasurable inputs must never block -- a gate that fired on a
+        # missing sigma would stop trading whenever the index hiccuped
+        for _bad38 in ((None, 1.0, 1.0), (1.0, None, 1.0), (1.0, 1.0, None),
+                       (1.0, 1.0, 0.0)):
+            ck(against_us(_bad38[0], _bad38[1], _bad38[2], "no") is None,
+               "unmeasurable input %r reads as None, never as a number"
+               % (_bad38,))
+            ck(not against_block(_bad38[0], _bad38[1], _bad38[2], "no", 0.001),
+               "and never blocks -- missing data is not evidence the price is "
+               "against us")
+        ck(not against_block(1.0, 99.0, 1.0, "no", None),
+           "a missing edge never blocks either")
+
+        _src38 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _tl38 = _src38[_src38.index(chr(10) + "def trade_loop("):]
+        ck(_tl38.index("against_block(strike, spot, sg, want, e)")
+           > _tl38.index('_gate("edge_floor"'),
+           "the A38 gate runs AFTER the edge floor -- it is the same question "
+           "with one more fact, and a market the edge floor already refuses "
+           "must be attributed to the edge floor")
+        ck(_tl38.index("against_block(strike, spot, sg, want, e)")
+           < _tl38.index("if _disc > DUMP_DISCOUNT:"),
+           "and BEFORE the dump guard, so the two refusals stay separable in "
+           "the gate audit")
+        ck('_gate("against_thin"' in _tl38,
+           "and every refusal is recorded, so the rule can be scored instead "
+           "of trusted -- it was deployed on FIVE events")
+
+        # ---- AMENDMENT 39: the loss counter resets when the bank is whole --
+        ck("_hwm_before = read_hwm(hwm_path)" in _src38
+           and _src38.index("_hwm_before = read_hwm(hwm_path)")
+           < _src38.index("hwm = write_hwm(bank, hwm_path) or bank"),
+           "A39 reads the high-water mark BEFORE write_hwm raises it -- "
+           "reading after would make EVERY tick look like a recovery and the "
+           "brake would never hold")
+        _blk39 = _src38.split("_hwm_before = read_hwm(hwm_path)", 1)[1][:1800]
+        ck('pintake.LEDGER["losses"] = 0' in _blk39
+           and 'state["losing_closes"] = set()' in _blk39,
+           "and it clears BOTH the ledger count the brake reads and the set "
+           "of losing closes -- clearing one and not the other would let the "
+           "next loss on an old close fail to count")
+        ck("float(bank) >= float(_hwm_before)" in _blk39,
+           "the trigger is the bank reaching the level it fell FROM, which is "
+           "the operator's own words and the same event the drawdown brake "
+           "treats as recovery")
+
         # ---- AMENDMENT 37: the depth FLOOR reads the ladder too --------
         ck(_DEFAULT_DEPTH_LADDER is False,
            "the ladder-aware depth floor is OFF by default -- it lets the bot "
@@ -3139,8 +3295,11 @@ def _selftest_body():
            'depth_ladder=bool(DEPTH_LADDER and SWEEP_DEPTH)' in _src37,
            "and a refusal records what the ladder held, so the next session "
            "can measure this instead of re-deriving it")
-        ck(_src37.index("_reach = take_n") <
-           _src37.index('_gate("edge_floor"'),
+        # SLICE FROM trade_loop -- the A38 block above this one also contains
+        # the literal '_gate("edge_floor"', and a whole-file index finds THAT.
+        # Third time this exact trap has bitten in this file.
+        ck(_tl37.index("_reach = take_n") <
+           _tl37.index('_gate("edge_floor"'),
            "the ladder check still runs BEFORE the edge floor, so every market "
            "it lets through is judged by edge, dump guard, ceiling and EV "
            "exactly as before -- nothing is waved past them")
@@ -4046,9 +4205,36 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
     # AMENDMENT 30: refresh the high-water mark and the drawdown BEFORE the
     # size is chosen, so a fall in the bank shrinks the bet on the same tick
     # that notices it rather than on the next one.
+    _hwm_before = read_hwm(hwm_path)
     hwm = write_hwm(bank, hwm_path) or bank
     state["hwm"] = hwm
     state["drawdown"] = drawdown(bank, hwm)
+    # AMENDMENT 39 -- THE LOSS COUNTER RESETS WHEN THE BANK IS WHOLE AGAIN.
+    #
+    # The operator, 2026-09-14: "the loss brakes change automatically counter
+    # should reset when the balance hits the balance where it originally fell
+    # from."
+    #
+    # Until now the count only ever went up, and the only thing that cleared
+    # it was a RESTART -- so the brake's memory was tied to process lifetime
+    # rather than to money, and restarting the bot was a way to launder two
+    # losses away. Now it clears exactly when the bank gets back to the level
+    # it fell from, which is the same event that the drawdown brake treats as
+    # recovery. One rule, one definition of "whole".
+    #
+    # `bank >= _hwm_before` is the test, evaluated against the mark as it
+    # stood BEFORE this tick wrote to it -- write_hwm() raises the mark to the
+    # new bank, so reading it afterwards would make every tick look like a
+    # recovery.
+    if (_hwm_before and bank is not None
+            and float(bank) >= float(_hwm_before) - 1e-9
+            and int(pintake.LEDGER.get("losses", 0) or 0) > 0):
+        _was = int(pintake.LEDGER.get("losses", 0) or 0)
+        pintake.LEDGER["losses"] = 0
+        state["losing_closes"] = set()
+        state["loss_resets"] = state.get("loss_resets", 0) + 1
+        print(f"  *** LOSS COUNTER RESET: bank ${bank:.2f} is back to its high "
+              f"of ${float(_hwm_before):.2f}; {_was} losing close(s) cleared ***")
     want = size_for_bank(bank)
     cur = float(SIZE)
     if want > cur and AUTO_SIZE_STEP_UP:
@@ -4911,6 +5097,20 @@ def trade_loop(a, rec, book, idx, series_index):
                       price=round(price, 4), edge_c=round(100 * e, 3),
                       need_c=round(100 * EDGE_FLOOR, 3), fair=round(f, 5),
                       tau=tau, size=float(size))
+                continue
+            # AMENDMENT 38: a thin edge while the LIVE price is already past
+            # the strike against us. Placed immediately after the edge floor
+            # because it is the same question asked with one more fact, and
+            # before the dump guard so the two refusals stay distinguishable
+            # in the audit.
+            _agn = against_us(strike, spot, sg, want)
+            if against_block(strike, spot, sg, want, e):
+                _gate("against_thin", close_s, tk, want=want,
+                      price=round(price, 4), edge_c=round(100 * e, 3),
+                      against_sigma=round(float(_agn), 3),
+                      strike=strike, spot=spot, sigma=round(sg, 6),
+                      need_edge_c=round(100 * AGAINST_EDGE, 3),
+                      fair=round(f, 5), tau=tau, size=float(size))
                 continue
             # AMENDMENT 10: a certainty at a discount is someone else's
             # information, not our edge. See DUMP_CONF / DUMP_DISCOUNT.

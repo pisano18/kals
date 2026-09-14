@@ -30,6 +30,88 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## v-against — 2026-09-14 14:2xZ — REFUSE A THIN EDGE WHEN THE PRICE IS ALREADY RUNNING AGAINST US
+
+**Operator-approved.** His words: *"if you mean both on the other side and
+under 2c you can block it off. It's only happened 5 times so not worth too much
+(it's also 2c not a huge profit) and it caused loss most times."*
+
+**What the bot now does differently.** AMENDMENT 38 refuses a trade when BOTH
+hold: the live index sits **1.0 or more one-second moves past the strike on the
+side that hurts us**, AND the edge is **under 2c**. Either half alone changes
+nothing.
+
+**THE CONJUNCTION IS THE WHOLE RULE.** Both halves were measured separately on
+332 live fills and both are bad gates:
+
+| rule | fills blocked | winners given up | losses avoided | winners per loss |
+|---|---|---|---|---|
+| price against us alone | 15 | 13 (+$27.77) | 2 (−$70.59) | 6.5 |
+| edge under 2c alone | 105 (**31% of all trading**) | 102 (+$46.30) | 3 (−$97.33) | 34.0 |
+| **both together** | **5** | **4 (+$1.81)** | **1 (−$58.43)** | **4.0** |
+
+Every entry gate previously tested in this project cost **22–44 winning trades
+per loss avoided** (`PROJECT_HISTORY`). This one costs 4.
+
+**WHY IT IS DEPLOYED ON FIVE EVENTS, against the usual bar.** The four winners
+it refuses are worth **41c, 47c, 56c and 37c — $1.81 between them**, because a
+sub-2c edge at 97c is pennies by construction. So the cost of being wrong is
+about **$2 a week** and the cost of being right is one **$58** loss. The
+argument is the asymmetry, not the significance.
+
+**IT IS NOT EVIDENCE AND MUST NOT BE QUOTED AS ANY.** The loss that motivated
+the rule is one of the five, so **+$56.62 describes the past and forecasts
+nothing**. `results/PREREG_against.md` holds the bar for judging it forward.
+
+**Note the operator's own correction to my framing**, recorded because he was
+right: I called it a mirage on the strength of a bootstrap that straddles zero.
+That test asks "is the effect real"; the decision actually facing us is "what
+does acting cost if it is not", and the answer is $1.81. Significance was the
+wrong tool for the question.
+
+**Self-tested:** all five real fills refused by name and by their own numbers;
+the same 05:30 book with a 2.5c edge NOT refused; the same 1.9c edge with spot
+on our side NOT refused; a missing strike, spot or sigma never blocks.
+
+**REVERT:** set `AGAINST_ENABLED = False` in `research/pinrun.py` and restart.
+
+---
+
+## v-lossreset — 2026-09-14 14:2xZ — THE LOSS COUNTER RESETS WHEN THE BANK IS WHOLE
+
+**Operator-directed.** His words: *"the loss brakes change automatically
+counter should reset when the balance hits the balance where it originally
+fell from."*
+
+**What the bot now does differently.** AMENDMENT 39 clears the losing-close
+count the moment the bank gets back to the high-water mark it fell from.
+
+**The bug this fixes.** The count only ever went up, and the only thing that
+cleared it was a **restart** — so the brake's memory was tied to process
+lifetime rather than to money, and restarting the bot laundered two losses
+away. It now uses the same definition of "recovered" the drawdown brake uses.
+
+**The one trap, and it is self-tested.** The mark must be read **before**
+`write_hwm()` raises it. Reading after would make every tick look like a
+recovery and the brake would never hold at all.
+
+**REVERT:** `git revert` this commit, or delete the `_hwm_before` block in
+`autosize_tick`.
+
+---
+
+## (SUPERSEDED SAME DAY) the 0.10 hedge trigger proposal — WITHDRAWN
+
+Recorded here because a recommendation was made and reversed inside six hours,
+and the reversal is the useful part. On five hedge events the hedge looked like
+it had cost −$9.08 and 0.10 looked $9.13 better. The sixth hedge, 05:30 ET on
+BTC, **saved $24.18** at a belief of 0.214 — which 0.10 would not have fired
+on. Net over six: **0.80 is +$14.26, 0.10 is +$0.05.** The trigger stays at
+0.80. Bar for revisiting it is in `results/PREREG_hedge.md`; the floor is 0.30,
+never lower.
+
+---
+
 ## v-brake2 — 2026-09-14 10:0xZ — THE LOSS BRAKE STOPS AT TWO, NOT THREE (`032c73d`)
 
 **Operator decision, 2026-09-14 ~05:5x ET.** His words: *"Brake should be at
