@@ -581,26 +581,37 @@ def _pid_alive(pid):
     """
     if not pid or pid <= 0:
         return False
+    if os.name == "nt":
+        # NEVER os.kill ON WINDOWS. CPython's os.kill has no concept of
+        # signal 0 there: for any signal that is not CTRL_C_EVENT or
+        # CTRL_BREAK_EVENT it calls TerminateProcess(handle, sig). So
+        # `os.kill(pid, 0)` does not TEST the process, it KILLS it with exit
+        # code 0. The first version of this function did exactly that and the
+        # paper run testing it terminated itself mid-self-test on 2026-09-14.
+        # OpenProcess with SYNCHRONIZE (0x00100000) only asks whether the
+        # process can be opened; it cannot affect it.
+        try:
+            import ctypes
+            k32 = ctypes.windll.kernel32
+            h = k32.OpenProcess(0x00100000, False, int(pid))
+            if h:
+                k32.CloseHandle(h)
+                return True
+            # ERROR_ACCESS_DENIED (5) means it EXISTS and we may not open it.
+            return k32.GetLastError() == 5
+        except Exception:                 # noqa: BLE001
+            # CANNOT TELL. Say YES: a false "already running" costs a refused
+            # start the operator clears in one command; a false "nothing
+            # running" costs a second live bot on the same account.
+            return True
     try:
-        os.kill(int(pid), 0)             # POSIX: signal 0 tests existence
+        os.kill(int(pid), 0)             # POSIX ONLY: signal 0 tests existence
         return True
     except OSError as e:
         import errno
         # EPERM means it EXISTS and belongs to someone else -- still alive.
         return getattr(e, "errno", None) == errno.EPERM
-    except (AttributeError, TypeError):
-        pass
-    try:                                  # Windows fallback
-        import ctypes
-        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
-        if not h:
-            return False
-        ctypes.windll.kernel32.CloseHandle(h)
-        return True
     except Exception:                     # noqa: BLE001
-        # CANNOT TELL. Say YES: a false "already running" costs a refused
-        # start the operator can clear in one command; a false "nothing
-        # running" costs a second live bot on the same account.
         return True
 
 
@@ -1771,9 +1782,16 @@ def selftest():
     ck(0.0 < MIN_FILL_FRAC <= 1.0,
        f"MIN_FILL_FRAC is a fraction ({MIN_FILL_FRAC})")
 
-    def _take_n(offered, size):
+    # THE FLOOR IS PASSED IN, NOT READ FROM THE GLOBAL. AMENDMENT 28 made
+    # MIN_FILL_FRAC a flag, and a test that asserts a specific refusal while
+    # reading the RUNNING value refuses to start the moment the flag is used.
+    # That exact shape has stopped this bot booting five times; the fix is
+    # always the same -- test the RULE at a stated floor, and test the
+    # DECLARED default separately.
+    def _take_n(offered, size, frac=None):
+        f = _DEFAULT_MIN_FILL_FRAC if frac is None else frac
         t = min(float(size), float(offered))
-        return t if t >= max(MIN_LEVEL, MIN_FILL_FRAC * float(size)) else None
+        return t if t >= max(MIN_LEVEL, f * float(size)) else None
 
     ck(_take_n(1000, 10) == 10.0,
        "a deep book fills the whole size we asked for")
@@ -1781,11 +1799,15 @@ def selftest():
        "a 7-contract offer at size 10 is TAKEN as a partial, not thrown away "
        "-- the old dust gate refused it outright")
     ck(_take_n(4, 10) is None,
-       "but a 4-contract scrap at size 10 is still refused: below half, a tiny "
-       "fill burns a scale-in slot and raises the improve bar, which measured "
-       "WORSE than not trading")
-    ck(_take_n(0.5, 1) is None,
-       "sub-contract dust is refused at every size (MIN_LEVEL)")
+       "at the DECLARED floor of half, a 4-contract scrap at size 10 is "
+       "refused -- the behaviour AMENDMENT 6 shipped")
+    ck(_take_n(4, 10, frac=0.10) == 4.0,
+       "and at a floor of 0.10 the same scrap is TAKEN, which is what "
+       "AMENDMENT 28 puts in a what-if: the same bet at the same gate, on "
+       "fewer contracts")
+    ck(_take_n(0.5, 1, frac=0.01) is None,
+       "sub-contract dust is refused at EVERY floor -- MIN_LEVEL is the "
+       "backstop and --min-fill-frac cannot get underneath it")
     ck(_take_n(30, 10) == 10.0 and _take_n(10, 10) == 10.0,
        "a partial can only ever LOWER the contracts bought, never raise them, "
        "so this amendment cannot increase exposure")
@@ -1922,7 +1944,10 @@ def selftest():
        f"no slot at all -- the case A12 exists for")
     ck(_scrap_sim(9.99, MAX_ATTEMPTS_PER_CLOSE) >= MAX_PER_CLOSE,
        "while near-full scraps exhaust the slots inside the same cap")
-    _real20 = max(MIN_LEVEL, MIN_FILL_FRAC * 20.0)
+    # AT THE DECLARED FLOOR, not the running one -- --min-fill-frac (A28)
+    # moves this line, and asserting the running value would refuse to start
+    # the moment the flag is used.
+    _real20 = max(MIN_LEVEL, _DEFAULT_MIN_FILL_FRAC * 20.0)
     ck(2.0 < _real20 and 0.02 < _real20 and 10.0 >= _real20,
        f"at size 20 the real-fill line is {_real20:g}: the 2.0 and 0.02 "
        f"fills of 2026-09-11 07:00 ET are scraps, a 10 is a fill")
@@ -2802,9 +2827,27 @@ def selftest():
             globals()["SIZE"] = _sz28
 
         # ---- AMENDMENT 27: one live bot, ever ---------------------------
+        # AND IT MUST NOT KILL THE THING IT IS ASKING ABOUT. The first version
+        # called os.kill(pid, 0), which on Windows is not a test at all --
+        # CPython maps any signal but CTRL_C/CTRL_BREAK to TerminateProcess,
+        # so it terminated the caller with exit code 0. The paper run testing
+        # this amendment killed itself mid-self-test on 2026-09-14. This check
+        # runs the liveness test against THIS process and then proves the
+        # process is still here afterwards.
         ck(_pid_alive(os.getpid()),
            "the liveness test says THIS process is alive -- if it cannot see "
            "itself it can see nothing, and the guard is decorative")
+        _still = os.getpid()
+        ck(_pid_alive(_still) and _pid_alive(_still),
+           "and asking twice more does not kill it -- os.kill(pid, 0) on "
+           "Windows TERMINATES rather than tests, which is why this function "
+           "uses OpenProcess(SYNCHRONIZE) there and never os.kill")
+        _src27k = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _fn = _src27k[_src27k.index("def _pid_alive("):]
+        _fn = _fn[:_fn.index(chr(10) + "def ")]
+        ck('if os.name == "nt":' in _fn
+           and _fn.index('if os.name == "nt":') < _fn.index("os.kill"),
+           "and the Windows branch is taken BEFORE os.kill is ever reached")
         ck(not _pid_alive(0) and not _pid_alive(None),
            "and a nonsense pid is not alive")
         # a pid nobody owns must read as DEAD, or the guard refuses forever
