@@ -36,6 +36,16 @@ $ErrorActionPreference = "Stop"
 $repo = "C:\kals-repo"
 $py = "C:\Python314\python.exe"
 
+# --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
+# did not change; nothing on disk said why, so the next session had to guess
+# between "it refused because a position was open", "the execution policy
+# blocked the script" and "it was run from the wrong directory". A restart that
+# fails silently is worse than one that fails loudly.
+$transcript = "$repo\results\restart_bot.last.log"
+try { Stop-Transcript | Out-Null } catch {}
+Start-Transcript -Path $transcript -Force | Out-Null
+Write-Host "restart_bot.ps1 starting $(Get-Date -Format o)"
+
 # --- 1. REFUSE IF NOT FLAT. Restarting mid-position abandons a live bet: the
 # new process does not know about it, so it never settles it, never hedges it
 # and never counts it against the loss brake.
@@ -52,6 +62,7 @@ if ($log) {
     if ($settled -lt $filled) {
         Write-Host "REFUSING: the bot is holding a position ($filled filled, $settled settled)."
         Write-Host "Wait for the close to settle, then run this again."
+        try { Stop-Transcript | Out-Null } catch {}
         exit 1
     }
 }
@@ -82,6 +93,7 @@ $new = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
     Where-Object { $_.CommandLine -like '*pinrun*' -and $_.CommandLine -like '*--live*' }
 if (-not $new) {
     Write-Host "FAILED: pinrun did not come back. Check results\pinrun-live-*.jsonl"
+    try { Stop-Transcript | Out-Null } catch {}
     exit 1
 }
 Write-Host "pinrun running: pid $($new.ProcessId)"
@@ -89,3 +101,6 @@ $coll = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
     Where-Object { $_.CommandLine -like '*kalshi_collector*' -or $_.CommandLine -like '*crypto_feeds*' }
 Write-Host "collector processes alive: $($coll.Count)"
 if ($coll.Count -lt 2) { Write-Host "WARNING: expected 2 collector processes" }
+Write-Host "flags now live: $($new.CommandLine)"
+Write-Host "restart_bot.ps1 done $(Get-Date -Format o)"
+try { Stop-Transcript | Out-Null } catch {}
