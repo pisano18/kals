@@ -1,7 +1,7 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
 Written so a session that has just been `/clear`ed can pick up without
-re-deriving anything. **Updated 2026-09-13 ~4:20 AM ET.** If the date above is
+re-deriving anything. **Updated 2026-09-13 ~8:45 PM ET.** If the date above is
 more than a day old, verify the live numbers before quoting them.
 
 `CLAUDE.md` = the rules. `PROJECT_HISTORY.md` = why things were killed.
@@ -12,29 +12,41 @@ specific past result). **This file = what is true right now.**
 
 | | |
 |---|---|
-| process | `research/pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 3` |
+| process | `research/pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 3 --improve-scope market --pick best` |
 | launched | `C:\Python314\python.exe -u`, cwd `C:\kals-repo`, detached |
-| bank | ~$234 (read live from `/portfolio/balance`) |
+| bank | ~$310 as of 2026-09-13 8:40 PM ET (read live from `/portfolio/balance`) |
 | SIZE | **auto**, from the bank -- `--size` is only a starting value |
 | BANK_BRAKE | **3.0** -> size = bank / (3.0 x 2 x 0.98) = bank / 5.88 |
 | close cap | **CONTRACTS, not fills** (A17): `MAX_PER_CLOSE x SIZE`, coins unlimited |
 | hedge | on, fires at belief < 0.80 |
 | gate | PIN 0.995, ceiling 0.98, tau 3-30s, edge >= 0.3c, EV >= 0.3c |
-| per market | 1 fill (A13) |
+| per market | 1 fill (A13); re-buy band A23 exists but is PAPER ONLY |
+| scan order | **BEST first** (A24, live 2026-09-13 8:35 PM ET) |
+| attempts | 3 per market per close, 24 per close (A26) |
+| gate audit | on -- every refusal recorded (A25), read by `pinattrib.py` |
 | depth floor | MIN_FILL_FRAC 0.50, measured against FULL size |
 
-**To restart it** (only while FLAT -- check `settled` count >= filled `order`
-count in the newest `results/pinrun-live-*.jsonl`):
+**To restart it -- USE THE SCRIPT, AND ONLY THE SCRIPT:**
 
-```powershell
-Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-  Where-Object {$_.CommandLine -like '*pinrun*'} |
-  ForEach-Object { Stop-Process -Id $_.ProcessId }
-Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList "-u",
-  "C:\kals-repo\research\pinrun.py","--live","--size","20","--minutes","4320",
-  "--loss-abort","-60.00","--max-positions","3","--max-losses","3" `
-  -WorkingDirectory "C:\kals-repo" -WindowStyle Hidden
 ```
+powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
+```
+
+That form works from bash, cmd or PowerShell. `.\restart_bot.ps1` typed into a
+bash prompt silently does nothing, which wasted two attempts on 2026-09-13.
+The script refuses if the bot is holding a position, proves the old one is gone
+**by pid** before starting a new one, aborts rather than starting a second if
+it cannot, and writes `results/restart_bot.last.log` either way.
+
+**THE HAND-ROLLED RECIPE THAT USED TO LIVE HERE IS DELETED, NOT MOVED.** It
+matched processes on `CommandLine`, which Windows returns EMPTY to a caller
+that cannot open the process. That is exactly how two live bots ended up
+trading the same account on 2026-09-14 -- see the incident section below. It
+also killed every `pinrun`, paper what-ifs included. Do not reconstruct it.
+
+If the script ever refuses because of a stale `results/pinrun-live.pid`, check
+the pid is really dead and delete the file; the bot itself also refuses to
+start a second live copy while that pid is alive.
 
 `kauth` lives at `C:\Users\Joe\AppData\Local\Temp\kals-work` and `pinrun.py`
 line ~103 puts it on `sys.path` itself, so a plain restart works.
