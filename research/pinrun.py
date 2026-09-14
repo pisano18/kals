@@ -5506,6 +5506,8 @@ def main():
         # running from this record, and a flag missing here reads as its
         # default -- which is how a page ends up describing a bot nobody runs.
         improve_max=IMPROVE_MAX, pick=PICK, gate_audit=True,
+        sweep_depth=SWEEP_DEPTH, min_fill_frac_running=MIN_FILL_FRAC,
+        max_drawdown=MAX_DRAWDOWN,
         max_per_market_run=MAX_PER_MARKET, min_level=MIN_LEVEL,
         sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
         sigma_ruler=SIGMA_RULER,
