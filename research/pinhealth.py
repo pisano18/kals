@@ -359,6 +359,29 @@ def report(tr, loss_rate=None, say=print):
           % (k, len(a["closes"]), c, a["net"],
              100.0 * a["net"] / c if c else 0.0,
              100.0 * a["px"] / c if c else 0.0))
+    # ---- DOWNTIME: a day the bot could not trade is not a weak day ------
+    # Operator, 2026-09-15: "We lost 7 hours of trade time today. Make sure
+    # that's known for any future calculations so it doesn't make our daily
+    # calculations look worse." results/DOWNTIME.json holds the windows.
+    try:
+        import downtime
+        _lost = downtime.lost_by_et_day()
+    except (ImportError, OSError, ValueError) as _e:
+        _lost = {}
+        w("  (downtime file unreadable: %s -- daily $ below is per CALENDAR day)" % _e)
+    _hit = [k for k in days if _lost.get(k, 0) > 0]
+    if _hit:
+        w("")
+        w("  DAYS THE BOT COULD NOT TRADE FOR PART OF (results/DOWNTIME.json):")
+        w("  day        | hours lost | hours up |  net $ | $ per hour up | same, if it had traded 24h")
+        for k in _hit:
+            up = 24.0 - _lost[k]
+            rate = downtime.per_trading_hour(d[k]["net"], 24.0, _lost[k])
+            w("  %-10s | %10.2f | %8.2f | %+6.2f | %13s | %s"
+              % (k, _lost[k], up, d[k]["net"],
+                 "-" if rate is None else "%+.2f" % rate,
+                 "-" if rate is None else "%+.2f" % (rate * 24.0)))
+        w("  Compare days on $ per hour up, never on the raw daily total.")
     w("")
     w("  loss rate so far        : %.2f%%  (%d losing of %d closes)"
       % (100 * lr, tot_bad, tot_closes))

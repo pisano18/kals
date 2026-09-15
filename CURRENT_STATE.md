@@ -262,6 +262,16 @@ permanently. Six consecutive hours verified at 280-690 KB per feed.
 
 ## Hard-won gotchas that will bite again
 
+- **DOWNTIME IS NOT A WEAK DAY.** Operator, 2026-09-15: "We lost 7 hours of
+  trade time today. Make sure that's known for any future calculations so it
+  doesn't make our daily calculations look worse." The live bot could not trade
+  **7.57 h on 2026-09-15 (ET)**: 13:29Z-20:24Z (Windows Update restart -> Kalshi
+  TRADING_BLOCKED pending ID verification -> API key deleted, new key 5163259c)
+  plus two crashes 04:29-04:49Z and 04:59-05:19Z. Every $/day, trades/day or
+  growth figure divides by hours UP, from `results/DOWNTIME.json` via
+  `research/downtime.py`; pinhealth prints the per-hour-up table. **Add a window
+  the moment an outage happens.** 2026-09-15: +$57.26 in 16.43 h up = $3.49/h.
+
 - **A self-test must match a whole LINE at its real indentation**, never a
   substring. `out = pintake.take(` is a substring of `_hout = pintake.take(`;
   that alone broke a check today, and three more on 2026-09-11.

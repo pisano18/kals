@@ -1,0 +1,15 @@
+{
+  "_what": "Windows when the LIVE bot could not trade. Any $/day, trades/day or growth calculation must divide by hours the bot could actually trade, not by calendar hours. Read with research/downtime.py. All times UTC.",
+  "windows": [
+    {"start": "2026-09-15T04:29:30Z", "end": "2026-09-15T04:49:19Z",
+     "cause": "bot crash: A43 rec('external', kind=...) TypeError, then refused to boot on --min-fill-frac 0 (old self-test)"},
+    {"start": "2026-09-15T04:59:30Z", "end": "2026-09-15T05:19:13Z",
+     "cause": "bot crash: A41 widen_factor UnboundLocalError"},
+    {"start": "2026-09-15T13:29:10Z", "end": "2026-09-15T15:12:00Z",
+     "cause": "Windows Update forced 3 restarts; nothing auto-starts"},
+    {"start": "2026-09-15T15:12:00Z", "end": "2026-09-15T19:47:00Z",
+     "cause": "Kalshi account TRADING_BLOCKED (409) pending ID verification; bot stopped on operator instruction between retries"},
+    {"start": "2026-09-15T19:47:00Z", "end": "2026-09-15T20:24:01Z",
+     "cause": "API key deleted on Kalshi's side during verification (401 NOT_FOUND); new key 5163259c installed 20:23Z"}
+  ]
+}
