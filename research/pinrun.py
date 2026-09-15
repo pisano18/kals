@@ -3512,6 +3512,56 @@ def _selftest_body():
             for _x in os.listdir(_d43):
                 os.remove(os.path.join(_d43, _x))
             os.rmdir(_d43)
+        # DRIVE THE WHOLE BRANCH, not just its parts. The isolated tests
+        # above all passed while autosize_tick crashed on the logging line.
+        _d43b = _tf43.mkdtemp(prefix="pinext-")
+        try:
+            _h43b = os.path.join(_d43b, "hwm.json")
+            write_hwm(1500.0, _h43b)
+
+            class _A43(object):
+                live = False
+                auto_size = True
+                size = 20
+                max_positions = 3
+                loss_abort = -60.0
+
+            _got = []
+            _st43 = {}
+            _sv43 = dict(pintake.LEDGER)
+            _lim43 = (pintake.LOSS_ABORT, pintake.MAX_RUN_STAKE,
+                      pintake.MAX_TAKE_COUNT, pintake.HARD_MAX)
+            _sz43 = SIZE
+            try:
+                pintake.LEDGER["realised"] = 0.0
+                autosize_tick(_st43, _A43(), {}, rec=lambda k, **kw: _got.append((k, kw)),
+                              now=1e9, bank_reader=lambda: 1500.0, hwm_path=_h43b)
+                autosize_tick(_st43, _A43(), {}, rec=lambda k, **kw: _got.append((k, kw)),
+                              now=1e9 + 1000, bank_reader=lambda: 1000.0,
+                              hwm_path=_h43b)
+            finally:
+                pintake.LEDGER.clear()
+                pintake.LEDGER.update(_sv43)
+                (pintake.LOSS_ABORT, pintake.MAX_RUN_STAKE,
+                 pintake.MAX_TAKE_COUNT, pintake.HARD_MAX) = _lim43
+                globals()["SIZE"] = _sz43
+            _ext = [kw for k, kw in _got if k == "external"]
+            ck(len(_ext) == 1 and _ext[0].get("move") == "withdrawal"
+               and abs(_ext[0].get("amount", 0) + 500.0) < 1e-9,
+               "autosize_tick END TO END: $500 vanishing with no realised loss "
+               "logs ONE external record saying withdrawal, -500")
+            ck("kind" not in _ext[0],
+               "and it does NOT pass `kind` as a keyword -- rec(kind, **kw) "
+               "takes it positionally, and rec('external', kind=...) raises "
+               "TypeError. That crashed the live bot on 2026-09-15 at "
+               "04:29:30Z and the isolated tests all passed through it")
+            ck(abs(read_hwm(_h43b) - 1000.0) < 1e-9,
+               "and the high-water mark really moved on disk, so the next tick "
+               "sees zero drawdown instead of 33%")
+        finally:
+            for _x in os.listdir(_d43b):
+                os.remove(os.path.join(_d43b, _x))
+            os.rmdir(_d43b)
         _src43 = open(os.path.abspath(__file__), encoding="utf-8").read()
         # ANCHOR ON A NEWLINE-PREFIXED def. Without the newline this finds the
         # string inside THIS TEST, which sits earlier in the file than the
@@ -4743,7 +4793,15 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
             _moved = shift_hwm(_amt, hwm_path)
             state["ext_events"] = state.get("ext_events", 0) + 1
             if rec:
-                rec("external", kind=_kind, amount=round(_amt, 2),
+                # `move`, NOT `kind`. rec(kind, **kw) takes kind POSITIONALLY,
+                # so rec("external", kind=...) raises TypeError: got multiple
+                # values for argument 'kind'. That is exactly what killed the
+                # live bot at 2026-09-15 04:29:30Z -- a late settlement from
+                # the previous run landed in the balance, read correctly as a
+                # deposit, and the logging line crashed the trade loop. The
+                # unit tests covered classify_bank_move and shift_hwm in
+                # isolation and never drove autosize_tick through the branch.
+                rec("external", move=_kind, amount=round(_amt, 2),
                     bank=round(bank, 2), hwm_now=_moved,
                     realised_since=round(_real - (state.get("ext_realised") or 0.0), 4))
             print(f"  *** {_kind.upper()} of ${abs(_amt):.2f} detected -- not a "

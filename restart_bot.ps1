@@ -136,7 +136,14 @@ if ($stillAlive.Count -gt 0) {
 }
 
 # --- 3. START IT AGAIN.
-Start-Process -FilePath $py -ArgumentList @(
+# CAPTURE STDERR. Until 2026-09-15 this started the bot with no redirect at
+# all, so when trade_loop raised the traceback went to a hidden window and
+# vanished. The bot died at 04:29:30Z on a TypeError in a logging line and
+# nobody knew for sixteen minutes -- the only evidence was an `end` record
+# with an empty state. Two files, appended, never rotated by this script.
+$errLog = "$repo\results\pinrun-live.err"
+$outLog = "$repo\results\pinrun-live.out"
+Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutput $outLog -ArgumentList @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
     "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "2",
