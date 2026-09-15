@@ -1,3 +1,22 @@
+# 2026-09-15 20:1xZ -- THE API KEY WAS REVOKED (401 NOT_FOUND). Needs a new key.
+
+- Operator asked for a cheap test buy. One contract, KXCRYPTOLEAD15M-26SEP151630-ETH
+  YES at 0.04, built with pintake.build_take and sent with ordercli.send to
+  PROD_ELECTIONS -- the bot's own path. Response **HTTP 401 authentication_error
+  "NOT_FOUND"**. Nothing placed. GET /portfolio/balance now also 401 (it was 200 at
+  ~16:30Z). So key b48b406b... no longer exists on Kalshi's side -- almost certainly
+  reset during the ID verification. The earlier 409 TRADING_BLOCKED may be gone; it
+  cannot be tested until a new key exists.
+- The live bot restarted 20:14Z logged "index up: 0 ticks, 0 feeds": its
+  authenticated WebSocket cannot connect, so it cannot price or trade.
+- The COLLECTOR is still recording on its WebSocket opened at 15:11Z, and the paper
+  arms on theirs -- existing sessions survive, but ANY reconnect will fail auth and
+  the tape stops. Swap the key promptly.
+- Places the key id / key file live: C:\kals\kalshi.pem; kauth.py (research/ AND the
+  Windows TEMP kals-work copy -- pinrun loads TEMP first); C:\kalsun_all.ps1
+  ($KeyId, collector args); repo run_all.ps1; research/goldquote.py (analysis).
+  livebook honours KALSHI_KEY_ID env first.
+
 # 2026-09-15 19:4xZ -- Kalshi sent an ID verification link; operator completed it; STILL BLOCKED
 
 - Restarted normally 19:37Z (pid 91052, watchdog 19:37:50Z). 19:45Z close: 9 orders,
