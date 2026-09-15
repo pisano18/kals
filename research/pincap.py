@@ -32,7 +32,7 @@ import os
 import sys
 
 CEILING = 0.98          # the deployed price ceiling; nothing above it is ours
-SIZES = (10, 25, 50, 75, 125, 250, 500)
+SIZES = (10, 25, 50, 75, 125, 250, 500, 1000, 2000, 3000)
 ROWS = os.path.join("results", "pinlevels_rows.jsonl")
 
 
