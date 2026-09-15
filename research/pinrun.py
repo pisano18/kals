@@ -200,6 +200,11 @@ _DEFAULT_PIN = 0.995     # what --pin is measured against; never reassigned
 #    because the operator's decision was to refuse deals this extreme.
 #    It does not get to claim significance. The pre-registered review at 40
 #    records stands and decides it on data this threshold never saw.
+LADDER_LEVELS = 150      # AMENDMENT 45: price levels stored on every signal.
+_DEFAULT_LADDER_LEVELS = 150   # The tick is 0.1c above 90c, so the 88-98c band
+                         # we trade is ~100 levels; 8 covered a fifth of the
+                         # book on the BTC 05:30 loss. Read once per SIGNAL,
+                         # never in the scan loop.
 DUMP_DISCOUNT = 0.15     # cents below fair that make an offer a warning
 DUMP_ENABLED = True
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
@@ -3422,6 +3427,34 @@ def _selftest_body():
            "and zero is never TIGHTER than the floor it replaces -- this flag "
            "may only ever loosen")
 
+        # ---- AMENDMENT 45: the whole ladder on every signal --------------
+        ck(_DEFAULT_LADDER_LEVELS >= 100,
+           "at least 100 levels are stored -- the tick is 0.1c above 90c, so "
+           "the 88-98c band we trade is about a hundred prices and 8 covered "
+           "a fifth of the book on the BTC 05:30 loss (running %d)"
+           % LADDER_LEVELS)
+        _src45 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _tl45 = _src45[_src45.index(chr(10) + "def trade_loop("):]
+        ck('book.depth(tk, "no" if want == "yes" else "yes",' in _tl45
+           and "LADDER_LEVELS)" in _tl45,
+           "the signal reads LADDER_LEVELS deep, not a literal 8")
+        ck('sig["ladder_under"]' in _tl45 and "PRICE_CEILING + 1e-9" in _tl45,
+           "and records ladder_under -- what we could actually BUY at or under "
+           "the ceiling, which is the number every capacity question wants")
+        ck(_tl45.index("book.depth(tk,") > _tl45.index('rec("signal"') - 4000,
+           "the read sits on the SIGNAL path, which fires a few dozen times a "
+           "day, not in the 20 Hz scan loop")
+        # the arithmetic of ladder_under, on a planted ladder
+        _lad45 = [[0.95, 100.0], [0.97, 200.0], [0.98, 50.0], [0.99, 9999.0]]
+        _under = sum(x[1] for x in _lad45 if x[0] <= PRICE_CEILING + 1e-9)
+        ck(_under == 350.0,
+           "ladder_under counts 100+200+50 = 350 at or under the 98c ceiling "
+           "and EXCLUDES the 9,999 sitting at 99c, which we may never buy")
+        ck(sum(x[1] for x in _lad45) == 10349.0 and _under < sum(x[1] for x in _lad45),
+           "ladder_total is the whole book (10,349) and is always at least "
+           "ladder_under -- reporting the total as capacity is how a 99c wall "
+           "gets counted as something we could take")
+
         # ---- AMENDMENT 44: book depth is logged past the cap ------------
         _d44 = _depth_report([1.0, 300.0, 600.0, 900.0, 3000.0])
         for _k in ("250", "500", "750", "1000", "2000"):
@@ -5950,11 +5983,33 @@ def trade_loop(a, rec, book, idx, series_index):
             #
             # The BUY side is the OTHER side's bids: a YES ask at p IS a NO
             # bid at 1-p. Stored as asks, cheapest first, the way we read it.
+            # AMENDMENT 45 -- THE WHOLE LADDER, NOT EIGHT LEVELS.
+            #
+            # The operator, 2026-09-15: "for each price in the range of what we
+            # actually purchase track the full amount available at the time of
+            # our purchase."
+            #
+            # A36 stored 8 levels, which sounded like plenty and is not. On the
+            # BTC 05:30 loss those 8 levels covered 2,136 contracts while
+            # 10,610 sat under our own 98c limit -- so the log showed a fifth
+            # of what was actually buyable and the rest was invisible. The tick
+            # is tapered (0.1c above 90c), so the band we trade, roughly 88c to
+            # 98c, is about a hundred levels. LADDER_LEVELS is set past that.
+            #
+            # Cost: one book read on a SIGNAL, which happens a few dozen times
+            # a day, not in the scan loop. `ladder_under` is what we could
+            # actually buy at or under the ceiling, which is the number every
+            # capacity question wants and none of the earlier fields held.
             try:
-                _raw = book.depth(tk, "no" if want == "yes" else "yes", 8)
+                _raw = book.depth(tk, "no" if want == "yes" else "yes",
+                                  LADDER_LEVELS)
                 sig["ladder"] = [[round(1.0 - float(_p), 4), float(_sz)]
                                  for _p, _sz in (_raw or [])]
                 sig["ladder_total"] = round(sum(x[1] for x in sig["ladder"]), 2)
+                sig["ladder_under"] = round(
+                    sum(x[1] for x in sig["ladder"]
+                        if x[0] <= PRICE_CEILING + 1e-9), 2)
+                sig["ladder_levels"] = len(sig["ladder"])
             except Exception:                            # noqa: BLE001
                 sig["ladder"] = None
             rec("signal", live=live, **sig)
