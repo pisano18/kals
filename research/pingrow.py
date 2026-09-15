@@ -83,6 +83,58 @@ def eff(size):
     return DEPTH[-1][1]
 
 
+def real_curve():
+    """[(size, $/day)] measured by SPENDING against the real book.
+
+    Replaces the old size x fixed-rate arithmetic, which asked for contracts
+    that do not exist. research/pinreal.py replays 738 closes of real ladders
+    with the live contract budget, the real VWAP, the measured fill rate and
+    the per-market depletion -- the same resting orders seen a second apart are
+    not twice the book."""
+    import pinreal
+    import collections as _c
+    byclose = _c.defaultdict(list)
+    for line in open(os.path.join(REPO, "results", "pinlevels_rows.jsonl"),
+                     encoding="utf-8"):
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if d.get("kind") != "row" or d.get("verdict") != "trade":
+            continue
+        if d.get("price", 1.0) > 0.98 + 1e-9 or not d.get("ladder"):
+            continue
+        byclose[d["cs"]].append(d)
+    for cs in byclose:
+        byclose[cs].sort(key=lambda r: -r["tau"])
+    n = len(byclose)
+    out = []
+    for size in (10, 25, 50, 100, 150, 250, 400, 600, 900, 1400,
+                 2000, 3000, 4500, 6000, 10000, 20000):
+        tc = te = 0.0
+        for ms in byclose.values():
+            g, _, e = pinreal.spend_close(ms, size)
+            tc += g
+            te += e
+        per = tc / n * pinreal.FILL_RATE
+        cpc = (te / tc * 100) if tc else 0.0
+        out.append((size, per * pinreal.CLOSES_PER_DAY * cpc / 100.0))
+    return out
+
+
+def daily_from(curve, size):
+    """$/day at `size`, linear between measured points, FLAT past the last --
+    past there the book has nothing left to sell us."""
+    if size <= curve[0][0]:
+        return curve[0][1] * size / curve[0][0]
+    if size >= curve[-1][0]:
+        return curve[-1][1]
+    for (x0, y0), (x1, y1) in zip(curve, curve[1:]):
+        if x0 <= size <= x1:
+            return y0 + (y1 - y0) * (size - x0) / (x1 - x0)
+    return curve[-1][1]
+
+
 def project(bank, cpc, base_size, cap=CAP, cps=CPS, brake=BRAKE, days=60):
     """(bank, size, contracts, earned) per day. `cpc` is cents per contract
     measured at `base_size`; the depth curve rescales it as size moves."""

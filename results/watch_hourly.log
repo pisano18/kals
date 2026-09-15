@@ -1,0 +1,7 @@
+﻿2026-09-15T03:20:17-04:00  watch_hourly starting: 10 closes, appending to hourly_book_sample.jsonl
+2026-09-15T03:20:17-04:00  waiting for close 1 of 10
+2026-09-15T04:00:04-04:00      KXSOLD       |        198 |       0 |                  0 (0.0%) | -
+2026-09-15T04:00:04-04:00      KXXRP15M     |         33 |      31 |                31 (93.9%) | 0.001
+2026-09-15T04:00:04-04:00      KXXRPD       |        198 |     186 |               186 (93.9%) | 0.010
+2026-09-15T04:00:04-04:00    sample file now 1617 rows
+2026-09-15T04:00:04-04:00  waiting for close 2 of 10
