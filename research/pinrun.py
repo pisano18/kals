@@ -324,28 +324,73 @@ def jump_block(moves, sigma, want):
 # state where the shape is measurably wrong.
 #
 # OFF BY DEFAULT. --jump-widen turns it on.
-JUMP_WIDEN = 2.0          # sigma multiplier while a recent jump is in view
+JUMP_WIDEN = 2.0          # sigma multiplier after a jump AGAINST our side
 _DEFAULT_JUMP_WIDEN = 2.0
+# AMENDMENT 42 -- A JUMP IN OUR FAVOUR IS NOT AS DANGEROUS AS ONE AGAINST US.
+#
+# The operator, 2026-09-14: "Why can't you just make the double less cautious
+# for jumps in our favour?" Mostly right, and the amount is measurable.
+#
+# The first version of A41 widened by 2.0 after ANY jump. But the tail that
+# can hurt a position is the move AGAINST it, and after a jump those two
+# directions are not the same size. Over the same 17,856 jumps, the 5-second
+# move in each direction, as a share exceeding 5 sd:
+#
+#     with the jump    (hurts a position the jump went against)   7.9%
+#     against the jump (hurts a position the jump went FOR)       5.0%
+#     after a calm second                                         2.2%
+#
+# Solving for the sigma multiplier that makes a Gaussian reproduce each tail,
+# then taking it relative to calm -- which is the state the model is already
+# tuned for -- gives 1.43x for an adverse jump and 1.22x for a favourable
+# one. The EXCESS over 1.0 is therefore 0.43 vs 0.22, a ratio of 0.51. So at
+# JUMP_WIDEN 2.0 (excess 1.0) the favourable side earns excess 0.51:
+JUMP_WIDEN_FAVOUR = 1.5   # ...and after a jump that went OUR way
+_DEFAULT_JUMP_WIDEN_FAVOUR = 1.5
+#
+# NOT 1.0, and that is the part the question got wrong: a favourable jump
+# still leaves the reversal tail at 2.6x the calm baseline. A jump makes the
+# next few seconds less predictable in BOTH directions -- just less so in the
+# direction it is already running.
 JUMP_WIDEN_WINDOW = 5     # seconds a jump stays "recent" -- the horizon the
 _DEFAULT_JUMP_WIDEN_WINDOW = 5   # continuation was measured over
 WIDEN_ENABLED = False
 _DEFAULT_WIDEN_ENABLED = False
 
 
-def widen_factor(idx, iid, sigma):
-    """AMENDMENT 41. The sigma multiplier for this market right now: JUMP_WIDEN
-    if any of the last JUMP_WIDEN_WINDOW one-second moves was >= JUMP_SIGMA
-    in EITHER direction, else 1.0. Off, or unmeasurable, is exactly 1.0 --
-    a feed hiccup must never widen anything."""
+def widen_factor(idx, iid, sigma, want=None):
+    """AMENDMENT 41, direction-aware since AMENDMENT 42. The sigma multiplier
+    for this market right now, given the side we hold or are about to buy:
+
+      JUMP_WIDEN         a jump in the last JUMP_WIDEN_WINDOW seconds went
+                         AGAINST `want`
+      JUMP_WIDEN_FAVOUR  a jump went in its favour
+      1.0                no jump, or unmeasurable
+
+    `want=None` means "no side in mind" and takes the cautious branch, so a
+    future caller that forgets to pass a side never gets the LOOSER number by
+    accident. Off, or unmeasurable, is exactly 1.0 -- a feed hiccup must never
+    widen anything.
+    """
     if not WIDEN_ENABLED:
         return 1.0
     try:
         if not sigma or float(sigma) <= 0:
             return 1.0
-        moves = idx.recent_moves(iid, JUMP_WIDEN_WINDOW)
-        for m in moves:
-            if abs(float(m)) / float(sigma) >= JUMP_SIGMA:
-                return float(JUMP_WIDEN)
+        worst = 0.0          # biggest move AGAINST us, in sd, signed
+        best = 0.0           # biggest move FOR us
+        for m in idx.recent_moves(iid, JUMP_WIDEN_WINDOW):
+            z = float(m) / float(sigma)
+            if want == "yes":
+                z = -z       # buying YES: a DOWN move is against us
+            elif want is None:
+                z = abs(z)   # no side given: treat any jump as adverse
+            worst = max(worst, z)
+            best = max(best, -z)
+        if worst >= JUMP_SIGMA:
+            return float(JUMP_WIDEN)
+        if best >= JUMP_SIGMA:
+            return float(JUMP_WIDEN_FAVOUR)
     except (TypeError, ValueError, AttributeError):
         return 1.0
     return 1.0
@@ -3315,16 +3360,30 @@ def _selftest_body():
         _on41 = WIDEN_ENABLED
         try:
             globals()["WIDEN_ENABLED"] = False
-            ck(widen_factor(_i41, "W", _sg41) == 1.0,
-               "with the flag OFF the factor is exactly 1.0 even on a jump -- "
-               "the flag is the whole switch")
+            ck(widen_factor(_i41, "W", _sg41, "no") == 1.0
+               and widen_factor(_i41, "W", _sg41, "yes") == 1.0,
+               "with the flag OFF the factor is exactly 1.0 even on a jump, "
+               "either side -- the flag is the whole switch")
             globals()["WIDEN_ENABLED"] = True
+            ck(widen_factor(_i41, "W", _sg41, "no") == 2.0,
+               "with the flag ON, the +22.25 move (5.5 sd) is AGAINST a NO "
+               "holder and doubles sigma")
+            # AMENDMENT 42: the same jump, the other side
+            ck(widen_factor(_i41, "W", _sg41, "yes") == _DEFAULT_JUMP_WIDEN_FAVOUR,
+               "and the SAME jump is in a YES holder's favour, so it widens by "
+               "%.1f, not 2.0 -- the operator's question, and the measured "
+               "answer" % _DEFAULT_JUMP_WIDEN_FAVOUR)
+            ck(_DEFAULT_JUMP_WIDEN_FAVOUR < _DEFAULT_JUMP_WIDEN,
+               "a favourable jump is ALWAYS less cautious than an adverse one")
+            ck(_DEFAULT_JUMP_WIDEN_FAVOUR > 1.0,
+               "but never 1.0: the reversal tail after a favourable jump is "
+               "still 2.6x calm, so a favourable jump is not a calm market")
             ck(widen_factor(_i41, "W", _sg41) == 2.0,
-               "with the flag ON, the +22.25 move (5.5 sd) in the last 5 s "
-               "doubles sigma")
-            ck(widen_factor(_i41, "W", None) == 1.0
-               and widen_factor(_i41, "W", 0.0) == 1.0
-               and widen_factor(_i41, "MISSING", _sg41) == 1.0,
+               "with NO side given, the CAUTIOUS branch is taken -- a caller "
+               "that forgets the side must never get the looser number")
+            ck(widen_factor(_i41, "W", None, "no") == 1.0
+               and widen_factor(_i41, "W", 0.0, "no") == 1.0
+               and widen_factor(_i41, "MISSING", _sg41, "no") == 1.0,
                "a missing sigma or a missing market never widens -- a feed "
                "hiccup must not make the model humbler by accident")
             # THE MECHANISM: the widened model is LESS sure, on the BTC shape
@@ -3342,22 +3401,26 @@ def _selftest_body():
             _i42.ticks["V"][_C41 - 12] = 200.0            # a huge move, 7 s back
             for _s in range(_C41 - 11, _C41 - 5):
                 _i42.ticks["V"][_s] = 200.0
-            ck(widen_factor(_i42, "V", 1.0) == 1.0,
+            ck(widen_factor(_i42, "V", 1.0, "no") == 1.0
+               and widen_factor(_i42, "V", 1.0, "yes") == 1.0,
                "a jump seven seconds ago is outside the 5 s window and does "
-               "not widen")
+               "not widen, on either side")
             # THE NULL: calm prints never widen
             _i43 = IndexWS(["U"])
             for _s in range(_C41 - 60, _C41):
                 _i43.ticks["U"][_s] = 100.0 + 0.5 * ((_s % 3) - 1)
-            ck(widen_factor(_i43, "U", 1.0) == 1.0,
-               "NULL: sub-sd wobbles never widen")
+            ck(widen_factor(_i43, "U", 1.0, "no") == 1.0
+               and widen_factor(_i43, "U", 1.0, "yes") == 1.0,
+               "NULL: sub-sd wobbles never widen, on either side")
         finally:
             globals()["WIDEN_ENABLED"] = _on41
         _src41 = open(os.path.abspath(__file__), encoding="utf-8").read()
         _tl41 = _src41[_src41.index(chr(10) + "def trade_loop("):]
-        ck("sg * SIGMA_STRESS * _wf," in _tl41,
-           "the ENTRY decision multiplies sigma by the widen factor")
-        ck("_hsg * SIGMA_STRESS * widen_factor(idx, _hiid, _hsg)," in _tl41,
+        ck("sg * SIGMA_STRESS * _wf," in _tl41
+           and "widen_factor(idx, iid, sg, want)" in _tl41,
+           "the ENTRY decision multiplies sigma by the widen factor, and "
+           "passes the SIDE so the direction is known")
+        ck("* widen_factor(idx, _hiid, _hsg, _hwant)," in _tl41,
            "and so does the HEDGE's belief -- both places the model prices a "
            "position, or a held position would be priced by a different model "
            "than the one that bought it")
@@ -4908,7 +4971,8 @@ def trade_loop(a, rec, book, idx, series_index):
                 if _hsg is None:
                     continue
                 _hf = fair(idx, _hiid, _hcs, now_s, _hstrike,
-                           _hsg * SIGMA_STRESS * widen_factor(idx, _hiid, _hsg),
+                           _hsg * SIGMA_STRESS
+                           * widen_factor(idx, _hiid, _hsg, _hwant),
                            round_digits=_hdig)                  # AMENDMENT 41
                 if _hf is None:
                     continue
@@ -5222,7 +5286,7 @@ def trade_loop(a, rec, book, idx, series_index):
             if sg is None:
                 _gate("no_sigma", close_s, tk)
                 continue
-            _wf = widen_factor(idx, iid, sg)          # AMENDMENT 41
+            _wf = widen_factor(idx, iid, sg, want)    # AMENDMENT 41/42
             f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS * _wf,
                      round_digits=digits)
             if f is None:
@@ -6166,6 +6230,7 @@ def main():
         jump_gate=JUMP_ENABLED, jump_sigma=JUMP_SIGMA,
         jump_lookback=JUMP_LOOKBACK,
         jump_widen=WIDEN_ENABLED, jump_widen_factor=JUMP_WIDEN,
+        jump_widen_favour=JUMP_WIDEN_FAVOUR,
         jump_widen_window=JUMP_WIDEN_WINDOW,
         min_fill_frac_running=MIN_FILL_FRAC,
         max_drawdown=MAX_DRAWDOWN,
