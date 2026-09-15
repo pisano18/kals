@@ -470,3 +470,88 @@ Unbuilt.
 
 BNB 2026-09-10 01:30: belief never left 1.000 and it lost. No warning, no
 hedge possible. One of ten. The floor on any loss-side rule.
+
+
+---
+
+# PART 3 — WHICH EARNS MOST, ACCOUNTING FOR LOSSES  (2026-09-14 evening ET)
+
+The operator's question: *"buy then hedge harder once we know, or wait then
+buy and lose 1/3, or a third option, or a dynamic blend?"* Three tools built
+and run: `pinstrat.py` (every strategy on the same markets), the crossing-
+instant test (collapse vs wobble), and `pinxlead.py` (cross-coin warning).
+
+## 1. Buy-then-hedge beats wait-then-buy by about 2.5x — `research/pinstrat.py`
+
+Same 227 markets (192 closes, 9 losers) for every strategy, one row per
+market, bootstrap by close, 60/40 holdout on close time. **Per 100 markets
+SEEN**, so a wait is charged for the trades it never makes, at our loss rate:
+
+| strategy | trades | losses | per trade | **per 100 seen** | first 60% | last 40% |
+|---|---|---|---|---|---|---|
+| buy now, no hedge | 227 | 9 | +1.91c | +190c | +2.46c | **−0.25c** |
+| buy now, hedge 0.90 | 227 | 13 | +2.44c | +243c | +2.43c | +1.62c |
+| **buy now, hedge 0.80 — LIVE** | 227 | 11 | +2.75c | **+273c** | +2.68c | +1.98c |
+| buy now, hedge 0.70 | 227 | 8 | +3.09c | +307c | +3.14c | +2.13c |
+| wait 3 s, no hedge | **69** | **0** | +3.37c | +103c | +3.64c | +2.91c |
+| wait 3 s, then hedge | 69 | 3 | +2.26c | +69c | | |
+| wait 5 s, no hedge | 69 | 0 | +3.35c | +102c | +3.34c | +3.36c |
+| wait 5 s, then hedge | 69 | 3 | +2.23c | +68c | | |
+
+Waiting has the best per-trade number and zero losses, and **throws away 70%
+of trades to get it**. Both halves of the holdout agree on the ranking. **No
+hedge at all goes negative on the last 40%** — the hedge is what keeps the
+recent stretch positive.
+
+The 0.70-vs-0.80 gap (+34c per 100) **reverses sign** on the full 1,192-market
+cut (+0.69c vs +0.72c per contract). Inside noise. Trigger stays at 0.80.
+
+**The confirmation-wait paper arm is therefore NOT worth building.** The tape
+already says it loses in total, and the live fill data says its survivors —
+the resting quotes — earn a third of what the fresh ones do.
+
+## 2. Collapse vs wobble CAN be told apart at the instant the trigger fires — by depth, not speed
+
+47 markets crossed 0.80 (one row per market). 31 went on under 0.60 (23 lost,
+8 won — real collapses). 16 bottomed in 0.60–0.80 (2 lost, 14 won — wobbles).
+
+| at the first tick through 0.80 | real collapse | wobble |
+|---|---|---|
+| belief lands at (median) | **0.13** (p25 0.01, p75 0.44) | **0.70** (p25 0.64, p75 0.76) |
+| other side's ask (median) | 62c | 36c |
+
+**Rule: at the 0.80 crossing, hedge only if belief has already fallen under
+0.60.** Keeps 27 of 31 real (87%), fires on **0 of 16** wobbles. The
+other-side ask separates less well (30c: 23 of 31 vs 8 of 16).
+
+**Why it is a refinement, not a breakthrough.** Cutting 16 wobbles saves ~40c
+each; missing 4 real collapses costs ~40c each; on the two cuts of the tape
+the net is inside noise and reverses. It is a cleaner mechanism than the level
+trigger — the size of the first crack is the signal — and worth a paper flag
+(`--hedge-first-tick 0.60`) when there is nothing better to run. Not now.
+
+## 3. Cross-coin warning: DEAD — `research/pinxlead.py`
+
+2,007 close windows, 1,834 scored per coin, index alone. Self-test recovers a
+planted 2-second lag and passes a null.
+
+**Every coin moves with BTC in the SAME second** (r 0.25–0.59 at lag 0). BTC
+leads by one second at r 0.06–0.11 — statistically real on 1,834 closes,
+practically nothing. Before an alt JUMPS (>3 sd in one second), BTC's move in
+the prior 3 s is +0.3 to +0.6 sd against a calm baseline of 0.55; the share
+with BTC already ≥1 sd the same way is **15–23% vs a 15–17% baseline**. XRP is
+the only coin with any daylight (23% vs 16%). **The alt's jump is news to BTC
+too.** There is no warning to be had from the leader.
+
+## 4. The answers, in the operator's own framing
+
+- *How often does a winner wobble and recover?* 2.9% dip under 0.90; 1.9%
+  under 0.80; **0.7% under 0.60**. Losers: 100% / 100% / 92%.
+- *Sell and hedge?* The same action: buying the other side IS selling ours,
+  and `RESULTS_exit` showed selling outright gets a worse price.
+- *Wait then buy, or buy then hedge?* **Buy then hedge, by 2.5x in total.**
+- *Dynamic blend?* The data supports exactly one dynamic element — the depth
+  of the first crack — and it is worth roughly nothing over the level trigger.
+- *Cross-coin?* Measured. Dead.
+
+**What is running is, on every test here, the best of the options measured.**
