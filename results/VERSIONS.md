@@ -30,6 +30,68 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## (NOT DEPLOYED) AMENDMENT 40 — do not buy into a jump that just went against us. FLAG IS OFF.
+
+Shipped in code 2026-09-15 01:xxZ, **default OFF**, `--jump-gate` turns it on.
+A paper arm identical to live plus the flag is running from 01:28Z (pid
+1646604). Recorded here so a future `--jump-gate` in `restart_bot.ps1` has an
+entry to match.
+
+**What it would change.** Refuse a trade when the settlement index made a
+**one-second move of 3 sd or more against our side in any of the last 3
+seconds**. Runs after AMENDMENT 38 and before the dump guard; every refusal
+records the moves and sigma it saw.
+
+**The mechanism — the first entry-side rule today with one.** Index alone,
+17,811 jumps over 1,785 closes: after a >3 sd second, the NEXT five seconds
+continue the same way with a tail the model does not have. Share followed by
+a further >=5 sd inside 5 s: **7.9%**, vs 2.2% after a calm second and
+**1.3% under the Gaussian the model assumes**. p99 of the 5-s continuation:
++15.4 sd vs +7.0 after calm. The median is ~0 — most jumps stop — but the
+ones that run are the ones that settle against us.
+
+**The live evidence.** BTC 2026-09-14 05:30 ET, second by second: the index
+moved +18.5 (4.5 sd) at :46; we bought NO at :47 with spot +12 over the
+strike; the model priced it as survivable, and it was, had it stopped; it ran
++22, +18, +18 more. -$58.43. Across all 359 live fills, a >=3 sd move against
+us in the prior 3 s:
+
+| move against us in last 3 s | fills | contracts | net | c/contract | losers |
+|---|---|---|---|---|---|
+| under +1 sd | 323 | 8,460 | +$223.78 | +2.65c | 8 (2.5%) |
+| +1 to +2 sd | 26 | 742 | +$15.26 | +2.06c | 2 (7.7%) |
+| +2 to +3 sd | 3 | 60 | +$5.10 | +8.50c | 0 |
+| **over +3 sd** | **7** | **180** | **-$65.67** | **-36.48c** | **2 (28.6%)** |
+
+Gate at 3 sd: blocks 7 fills over 7 closes — **5 winners worth $4.92 total,
+2 losers worth $70.59**. 2.5 winners given up per loss avoided (every
+previously tested entry gate cost 22–44). 2% of contracts. **Both holdout
+halves positive**: first 60% +$8.94 net of blocking, last 40% +$56.73.
+Bootstrap over the 7 blocked closes: mean -$9.38, 95% [-26.36, +1.11] — the
+interval touches zero on 7 closes, and that is the honest limit.
+
+**Why this is different from the four entry rules killed earlier today.**
+Those had no mechanism and reversed out of sample. This one's mechanism is
+measured on 17,811 independent events; the threshold (3 sd) and lookback (3 s)
+were fixed in that measurement BEFORE the fill test was run, so it is not a
+search; and it holds on both halves. It catches 2 of 12 live losses — but 27%
+of the loss dollars — and does nothing about the no-warning kind (HYPE 16:00,
++0.3 sd, correctly passes).
+
+**Not deployed because it changes what trades and no one has said yes.**
+
+**TO DEPLOY:** add `"--jump-gate"` after `"--depth-ladder"` in
+`restart_bot.ps1` and run the restart script. **REVERT:** remove it; the
+default is OFF.
+
+**The principled follow-up, not built:** widen the model's sigma for a few
+seconds AFTER a jump, by the measured tail ratio. That would refuse the same
+entries by lowering confidence, AND fire the hedge sooner on positions held
+through a jump. `CURRENT_STATE`'s dead "scale sigma by k" was global; this is
+conditional on the one state where the model is measurably wrong.
+
+---
+
 ## v-nofloor — 2026-09-14 14:5xZ — NO PERCENTAGE FLOOR AT ALL, AND THE GATE READS THE LADDER
 
 **Operator-directed and urgent.** His words, verbatim: *"I've said it a million

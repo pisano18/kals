@@ -77,7 +77,7 @@ GATE_ORDER = [
     "market_attempts", "attempts_cap", "book_suspect", "book_stale",
     "index_stale", "no_sigma",
     "confidence", "no_offer", "depth_floor", "edge_floor", "against_thin",
-    "dump_guard",
+    "jump_against", "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
 ]
 
@@ -98,6 +98,8 @@ WHAT = {
     "edge_floor": "the profit on offer was too thin",
     "against_thin": ("thin profit AND the live price was already past the "
                      "strike against us"),
+    "jump_against": ("the index just made a big one-second move against us "
+                     "-- jumps keep going more often than the model thinks"),
     "dump_guard": "priced far below fair -- someone else knew something",
     "improve_by": "a second buy that was not cheaper than the first",
     "rebuy_band": "a same-coin re-buy outside the 0.5-1c band",

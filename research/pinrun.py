@@ -245,6 +245,60 @@ TAU_MIN = 3            # a one-second misalignment is fatal below this
 # The model already knows both numbers -- this is not new information, it is a
 # claim that the model is OVERCONFIDENT in exactly this region, which is what
 # RESULTS_calib.md measured (kurtosis 132 against a normal's 3).
+# AMENDMENT 40 -- DO NOT BUY INTO A JUMP THAT JUST WENT AGAINST US.
+#
+# THE MECHANISM, measured on the index alone, 17,811 jumps over 1,785 closes
+# (2026-09-14): after a one-second move over 3 sd, the NEXT five seconds
+# continue the same way with a tail the model does not have. Share of jumps
+# followed by a further >= 5 sd inside 5 s: 7.9%, against 2.2% after a calm
+# second and 1.3% under the Gaussian the model assumes. Median continuation is
+# ~0 -- most jumps stop -- but when they run, they run: p99 +15.4 sd against
+# +7.0 after calm. The model treats each second as an independent draw around
+# the new level. In the seconds after a jump that is wrong, in the tail, which
+# is where every loss lives.
+#
+# THE LIVE EVIDENCE. BTC 2026-09-14 05:30 ET: the index moved +18.5 (4.5 sd)
+# the second before we bought NO at 97.2c. The model saw spot at +12 over the
+# strike and priced it as survivable -- correctly, had it stopped. It ran
+# +22, +18, +18 more. -$58.43. Across all 359 live fills, a >= 3 sd move
+# against us in the prior 3 s: 7 fills, 2 lost (28.6% vs 2.5%), -$65.67.
+# Gating them gives up 5 winners worth $4.92 TOTAL. Both holdout halves
+# positive. Threshold and lookback were fixed BEFORE the fill test was run.
+#
+# OFF BY DEFAULT. It changes what trades; --jump-gate turns it on.
+JUMP_SIGMA = 3.0         # a one-second move this many sd against our side...
+_DEFAULT_JUMP_SIGMA = 3.0
+JUMP_LOOKBACK = 3        # ...in any of the last this-many seconds, refuses
+_DEFAULT_JUMP_LOOKBACK = 3
+JUMP_ENABLED = False
+_DEFAULT_JUMP_ENABLED = False
+
+
+def jump_against(moves, sigma, want):
+    """Largest recent one-second move AGAINST our side, in sd units.
+
+    `moves` are price changes newest-first. Buying NO needs the average to
+    land BELOW the strike, so an UP move (+) is against us; YES is the mirror.
+    Getting this sign wrong refuses exactly the trades we most want -- the
+    first version of the fill test had it backwards and reported the
+    dangerous bucket as our safest. None when unmeasurable."""
+    try:
+        if not moves or not sigma or float(sigma) <= 0:
+            return None
+        sgn = 1.0 if want == "no" else -1.0
+        return max(sgn * float(m) / float(sigma) for m in moves)
+    except (TypeError, ValueError):
+        return None
+
+
+def jump_block(moves, sigma, want):
+    """AMENDMENT 40. Refuse when the index just jumped against us."""
+    if not JUMP_ENABLED:
+        return False
+    j = jump_against(moves, sigma, want)
+    return j is not None and j >= JUMP_SIGMA
+
+
 AGAINST_SIGMA = 1.0      # spot this many one-second moves past the strike,
 _DEFAULT_AGAINST_SIGMA = 1.0   # against us, counts as "running against us"
 AGAINST_EDGE = 0.020     # ...and only matters below this edge. 2c.
@@ -932,6 +986,23 @@ class IndexWS:
         self.stats["ticks"] += 1
 
     # ---- reads ----
+    def recent_moves(self, iid, n=3):
+        """The last `n` ONE-SECOND moves of the index, newest first, in price
+        units. Only adjacent seconds count -- a gap yields no move for that
+        step, so a gappy feed produces FEWER moves, never a fabricated one.
+        AMENDMENT 40 reads this; nothing else does."""
+        with self.lock:
+            d = self.ticks.get(iid)
+            if not d:
+                return []
+            secs = sorted(d)[-(n + 1):]
+            vals = {s: d[s] for s in secs}
+        out = []
+        for i in range(len(secs) - 1, 0, -1):
+            if secs[i] - secs[i - 1] == 1:
+                out.append(vals[secs[i]] - vals[secs[i - 1]])
+        return out
+
     def spot(self, iid):
         """(second, value, age_seconds) of the newest tick, or (None,None,None)."""
         with self.lock:
@@ -3176,6 +3247,74 @@ def _selftest_body():
            "and zero is never TIGHTER than the floor it replaces -- this flag "
            "may only ever loosen")
 
+        # ---- AMENDMENT 40: do not buy into a jump against us -----------
+        ck(_DEFAULT_JUMP_SIGMA == 3.0 and _DEFAULT_JUMP_LOOKBACK == 3
+           and _DEFAULT_JUMP_ENABLED is False,
+           "A40 declared defaults: 3 sd, 3 s lookback, OFF (running %.1f / %d / %r)"
+           % (JUMP_SIGMA, JUMP_LOOKBACK, JUMP_ENABLED))
+        _sg40 = 4.073757                        # BTC's sigma at 05:30 ET
+        _btc40 = [2.39, 18.53, 0.25]            # :47-:46, :46-:45, :45-:44
+        ck(abs(jump_against(_btc40, _sg40, "no") - 18.53 / _sg40) < 1e-9,
+           "BTC 05:30 ET: buying NO, the +18.53 move the second before entry "
+           "is %.2f sd AGAINST us" % (18.53 / _sg40))
+        ck(jump_against(_btc40, _sg40, "yes") < 0,
+           "and buying YES in that same market every one of those moves is in "
+           "our FAVOUR -- the sign flips with the side (the fill test first "
+           "had this backwards and called the dangerous bucket our safest)")
+        ck(abs(jump_against([-18.53], _sg40, "yes") - 18.53 / _sg40) < 1e-9,
+           "a DOWN move of the same size is against a YES holder by the same "
+           "amount")
+        _on40 = JUMP_ENABLED
+        try:
+            globals()["JUMP_ENABLED"] = True
+            ck(jump_block(_btc40, _sg40, "no"),
+               "with the gate ON, the BTC 05:30 entry is REFUSED (4.55 sd >= 3)")
+            ck(not jump_block([0.0011, -0.0004, 0.0009], 0.003675, "no"),
+               "HYPE 16:00 ET (worst move +0.3 sd) is NOT refused -- this gate "
+               "catches the jump losses, not the no-warning ones")
+            ck(not jump_block([2.9 * _sg40], _sg40, "no"),
+               "2.9 sd is under the bar; the threshold is >= 3.0, fixed before "
+               "the fill test was run")
+            ck(not jump_block([-18.53, -30.0], _sg40, "no"),
+               "big moves in OUR FAVOUR never block")
+            ck(not jump_block([0.5, -0.3, 0.8], 1.0, "no") and
+               not jump_block([0.5, -0.3, 0.8], 1.0, "yes"),
+               "NULL: sub-sd wobbles never block, either side")
+            ck(not jump_block([], 1.0, "no") and not jump_block(None, 1.0, "no")
+               and not jump_block([50.0], None, "no")
+               and not jump_block([50.0], 0.0, "no"),
+               "unmeasurable inputs never block -- missing data is not a jump")
+            ck(jump_against([], 1.0, "no") is None
+               and jump_against([1.0], None, "no") is None,
+               "and read as None, never as a number")
+        finally:
+            globals()["JUMP_ENABLED"] = _on40
+        # ASSERT THE DEFAULT, NOT THE RUNNING VALUE. The first version of this
+        # line sat after the restore above and read the live flag -- so with
+        # --jump-gate on, the bot REFUSED TO START. Same trap as this
+        # morning's --min-fill-frac 0 outage; the boot check caught it first.
+        try:
+            globals()["JUMP_ENABLED"] = False
+            ck(not jump_block(_btc40, _sg40, "no"),
+               "with the gate OFF (the default) even the BTC entry passes -- "
+               "the flag is the whole switch")
+        finally:
+            globals()["JUMP_ENABLED"] = _on40
+        _src40 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _tl40 = _src40[_src40.index(chr(10) + "def trade_loop("):]
+        ck(_tl40.index("if jump_block(_mv, sg, want):")
+           > _tl40.index("against_block(strike, spot, sg, want, e)"),
+           "A40 runs AFTER A38")
+        ck(_tl40.index("if jump_block(_mv, sg, want):")
+           < _tl40.index("if _disc > DUMP_DISCOUNT:"),
+           "and BEFORE the dump guard, so the three refusals stay separable")
+        ck('_gate("jump_against"' in _tl40 and "moves=[" in _tl40,
+           "every refusal records the moves and sigma it saw, so the rule can "
+           "be scored instead of trusted")
+        ck("def recent_moves(self, iid, n=3):" in _src40 and
+           "with self.lock:" in _src40.split("def recent_moves(", 1)[1][:700],
+           "IndexWS.recent_moves exists and reads the tick dict under the lock")
+
         # ---- AMENDMENT 38: thin edge while the price runs against us ---
         ck(_DEFAULT_AGAINST_SIGMA == 1.0 and _DEFAULT_AGAINST_EDGE == 0.020
            and _DEFAULT_AGAINST_ENABLED is True,
@@ -5141,6 +5280,20 @@ def trade_loop(a, rec, book, idx, series_index):
                       need_edge_c=round(100 * AGAINST_EDGE, 3),
                       fair=round(f, 5), tau=tau, size=float(size))
                 continue
+            # AMENDMENT 40: the index just jumped against us. After the A38
+            # test and before the dump guard, so the three refusals stay
+            # separable in the audit. Reads the model's own sigma.
+            if JUMP_ENABLED:
+                _mv = idx.recent_moves(iid, JUMP_LOOKBACK)
+                _jmp = jump_against(_mv, sg, want)
+                if jump_block(_mv, sg, want):
+                    _gate("jump_against", close_s, tk, want=want,
+                          price=round(price, 4), edge_c=round(100 * e, 3),
+                          jump_sd=round(float(_jmp), 2),
+                          moves=[round(float(m), 6) for m in _mv],
+                          sigma=round(sg, 6), need_sd=JUMP_SIGMA,
+                          fair=round(f, 5), tau=tau, size=float(size))
+                    continue
             # AMENDMENT 10: a certainty at a discount is someone else's
             # information, not our edge. See DUMP_CONF / DUMP_DISCOUNT.
             _conf = f if want == "yes" else (1.0 - f)
@@ -5579,6 +5732,12 @@ def main():
                          "--sweep-depth and does nothing without it. Every "
                          "later gate -- edge, dump guard, ceiling, EV -- still "
                          "runs on the market this lets through.")
+    ap.add_argument("--jump-gate", action="store_true",
+                    help="AMENDMENT 40: refuse a trade when the index made a "
+                         "one-second move of 3 sd or more against our side in "
+                         "the last 3 seconds. Jumps continue in the tail (7.9%% "
+                         "are followed by another >=5 sd within 5 s, vs 1.3%% "
+                         "the model assumes). OFF by default.")
     ap.add_argument("--hedge-belief", type=float, default=None,
                     help="AMENDMENT 34: belief in OUR side below which we buy "
                          "the other one. Default %.2f. MEASURED 2026-09-14 on "
@@ -5704,6 +5863,8 @@ def main():
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
     if a.sweep_depth:
         globals()["SWEEP_DEPTH"] = True
+    if a.jump_gate:
+        globals()["JUMP_ENABLED"] = True
     if a.depth_ladder:
         if not a.sweep_depth:
             raise SystemExit(
@@ -5873,6 +6034,8 @@ def main():
         # default -- which is how a page ends up describing a bot nobody runs.
         improve_max=IMPROVE_MAX, pick=PICK, gate_audit=True,
         sweep_depth=SWEEP_DEPTH, depth_ladder=DEPTH_LADDER,
+        jump_gate=JUMP_ENABLED, jump_sigma=JUMP_SIGMA,
+        jump_lookback=JUMP_LOOKBACK,
         min_fill_frac_running=MIN_FILL_FRAC,
         max_drawdown=MAX_DRAWDOWN,
         max_per_market_run=MAX_PER_MARKET, min_level=MIN_LEVEL,

@@ -596,3 +596,64 @@ So the question is no longer "can we see it sooner" — we saw it. It is
 "after a jump, does the index keep going, and by how much." If it does, the
 fix is conditional, not global: widen the model only in the seconds after a
 jump, which is exactly what CURRENT_STATE's dead "scale sigma by k" never did.
+
+
+---
+
+# PART 5 — WHAT WAS MISSING: JUMPS CONTINUE  (2026-09-15 ~01:30 ET)
+
+The operator: *"I know there's something missing and this isn't the absolute
+max peak performance of the bot, help figure out what it is!"*
+
+## The chain that found it
+
+1. Does the order BOOK crack before our belief? **Yes, on 12 of 12 tape
+   losers, by ~1.6 s.** But as a replacement trigger it false-alarms 3x more
+   (9.3% vs 3.4% of winners) and nets **-1.22c/contract**. Blending it with
+   belief: at the second the book cracks, belief is still 0.998 on losers AND
+   winners — nothing to blend. Dead.
+2. Is it our feed, then? `index_age_s` is `now - print_second`; our fastest
+   receipt is 0.11 s, so the 0.39 s median is mostly waiting for the NEXT
+   print. And on the BTC 05:30 loss the **official print led Bitstamp by
+   half a second** — the composite is faster than any exchange. **The
+   information was on screen a full second before we bought.** Feed
+   hypothesis withdrawn.
+3. So why did the model buy? It saw spot +12 over the strike and said 99.99%
+   — correctly for a one-off move: 47 locked prints below still average under
+   the strike. **It lost because the move continued: +18, +22, +18, +18 in
+   four seconds.** The model treats each second as an independent draw.
+4. **Test that on 17,811 jumps.** After a >3 sd second, the next 5 s: p90
+   +4.2 sd (calm +2.1), p95 +6.7 (+3.2), p99 **+15.4** (+7.0). Share followed
+   by another >=5 sd: **7.9% vs 2.2% calm vs 1.3% Gaussian.** The median is
+   ~0. The tail is 3.6–6x. **The model's independence assumption fails
+   exactly after a jump, exactly in the tail, which is exactly where every
+   loss lives.**
+5. **Then on our own fills** (sign bug caught and fixed — first run had the
+   dangerous bucket as our safest): >=3 sd against us in the prior 3 s —
+   7 fills, **28.6% lost** vs 2.5%, -$65.67. Gate cost $4.92 for $70.59.
+   Both holdout halves positive. Threshold and lookback fixed before the
+   fill test.
+
+## What shipped
+
+AMENDMENT 40, `--jump-gate`, **default OFF**, paper arm running (pid
+1646604). Self-tests plant the BTC 05:30 moves (refused), HYPE's +0.3 sd
+(passes), both sides' sign, a 2.9 sd near-miss, missing data, and the null.
+One of my own tests asserted the RUNNING flag instead of the default and made
+the flag-on boot refuse — mistake #7 from the handoff, an hour after citing
+it — caught by the boot check, fixed.
+
+## What it is and is not
+
+It is the first entry rule today with a mechanism measured independently of
+the fills that motivated it, that survives a holdout, and that costs under
+$5. It catches the *jump* losses (2 of 12, 27% of loss dollars). It does not
+catch the *no-warning* kind. It is 7 fills; the bootstrap interval touches
+zero; it earns its keep on the mechanism, not the count.
+
+**The deeper version** is a model change: widen sigma for a few seconds after
+a jump by the measured tail ratio. That refuses the same entries by lowering
+confidence AND fires the hedge sooner on a position held through a jump.
+`CURRENT_STATE`'s "scale sigma by k" was global and dead; this is conditional
+on the one state where the model is provably wrong. Not built. Needs its own
+self-tests and a paper arm.
