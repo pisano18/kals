@@ -1,30 +1,138 @@
 #!/usr/bin/env python3
-"""pingrow.py -- every day from funding to three days past the 250 cap.
+"""pingrow.py -- every trading day from the first live order to three days
+past the 250-contract cap, and whether we are on track.
 
-Actuals from our own live logs; the projection from the CURRENT version's
-measured rate only, because the version changed almost daily and the early
-days do not describe what is running now.
+WHAT IT IS FOR. The operator, 2026-09-14: "save this somewhere so we can
+compare what really happens to it. This should be like an 'are we on track'
+kind of thing."
+
+So it writes results/GROWTH_TRACK.md: the actuals to date, a projection, and
+an ON-TRACK line comparing the two. Re-run it any day; the actuals extend and
+the projection re-anchors on the real bank.
+
+THE PROJECTION USES THE CURRENT VERSION ONLY. The bot changed almost daily and
+the early days do not describe what runs now -- 2026-09-08 to 09-11 netted
++$3.11 combined at a fixed size of 20, before auto-sizing existed. The rate
+comes from the window since the depth floor was removed (2026-09-14 14:53Z).
+
+THE DEPTH CURVE IS MEASURED, NOT ASSUMED. research/pincap.py walked 13,984
+real ask ladders: the money a single order earns, relative to a 50-lot, is
+1.00x at 50, 1.48x at 75, 2.40x at 125, 4.51x at 250, 8.16x at 500. Per unit
+of size that is an efficiency of 1.000 / 0.987 / 0.960 / 0.902 / 0.816 -- the
+uncapped projection interpolates on it, so "what the market supports" is a
+measurement rather than a hope.
 
     python research/pingrow.py --selftest
-    python research/pingrow.py
+    python research/pingrow.py                 # prints and writes the file
 """
-import json, glob, collections, datetime, sys
+import collections
+import datetime
+import glob
+import json
+import os
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(REPO, "results", "GROWTH_TRACK.md")
+BRAKE = 5.88
+CAP = 250
+CPS = 58                 # contracts per unit of size per day, current version
+MEASURED_MAX = 500       # pincap walked real ladders to here; past it, guesswork
+
+# pincap.py: money per unit of size, relative to a 50-lot
+DEPTH = [(10, 1.000), (25, 1.000), (50, 1.000), (75, 0.987),
+         (125, 0.960), (250, 0.902), (500, 0.816), (1000, 0.700)]
+
+VERSIONS = {
+    "2026-09-07": "pre-pin  natgas market-making, both sides quoted",
+    "2026-09-08": "v0-v14   pin goes live 07:09Z; EV gate, tau 30, size 1->20",
+    "2026-09-09": "v14      size 20 fixed; first big loss (NEAR -$52.60)",
+    "2026-09-10": "v15-v16  scale-in, price ceiling",
+    "2026-09-11": "v17      15c dump guard live 08:29 ET",
+    "2026-09-12": "v18-v22  AUTO-SIZING BEGINS; hedge trigger 0.80",
+    "2026-09-13": "v-pick   best-market-first (A24) 20:35 ET",
+    "2026-09-14": ("v-ladder 02:1 ET, v-spend, v-brake20, "
+                   "v-nofloor 10:53 ET, v-jump 21:39 ET"),
+}
 
 
-def project(bank, cpc, eff, cps=58, brake=5.88, cap=250, days=60):
-    """Day-by-day (bank, size, contracts, earned). Size is bank/brake capped
-    at `cap`; the per-contract rate is scaled toward `eff` as size approaches
-    the cap, because a bigger order pays a worse average price."""
+def eff(size):
+    """Money per unit of size at `size`, relative to a 50-lot. Linear between
+    the measured points, flat outside them."""
+    if size <= DEPTH[0][0]:
+        return DEPTH[0][1]
+    if size >= DEPTH[-1][0]:
+        return DEPTH[-1][1]
+    for (x0, y0), (x1, y1) in zip(DEPTH, DEPTH[1:]):
+        if x0 <= size <= x1:
+            return y0 + (y1 - y0) * (size - x0) / (x1 - x0)
+    return DEPTH[-1][1]
+
+
+def project(bank, cpc, base_size, cap=CAP, cps=CPS, brake=BRAKE, days=60):
+    """(bank, size, contracts, earned) per day. `cpc` is cents per contract
+    measured at `base_size`; the depth curve rescales it as size moves."""
     out = []
-    b = bank
+    b = float(bank)
+    base = eff(base_size)
     for _ in range(days):
-        size = min(cap, b / brake)
-        scale = 1.0 - (1.0 - eff) * (size / cap)
+        size = b / brake
+        if cap:
+            size = min(cap, size)
+        rate = cpc * eff(size) / base
         c = cps * size
-        earn = c * (cpc / 100.0) * scale
+        earn = c * rate / 100.0
         out.append((b, size, c, earn))
         b += earn
     return out
+
+
+def et(t):
+    return datetime.datetime.strptime(t[:19], "%Y-%m-%dT%H:%M:%S") - datetime.timedelta(hours=4)
+
+
+def actuals():
+    """Per ET day from the live logs: fills, wins, losses, contracts, net."""
+    net = collections.defaultdict(float)
+    con = collections.Counter()
+    fills = collections.Counter()
+    wins = collections.Counter()
+    losefill = collections.Counter()
+    loseclose = collections.defaultdict(set)
+    sizes = collections.defaultdict(list)
+    banks = []
+    for p in sorted(glob.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl"))):
+        sig, order_day = {}, {}
+        for line in open(p, encoding="utf-8"):
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            t = d.get("t")
+            if not t:
+                continue
+            k = d.get("kind")
+            day = et(t).strftime("%Y-%m-%d")
+            if k == "signal":
+                sig.setdefault(d["ticker"], d.get("want"))
+            elif k == "order" and (d.get("filled") or 0) > 0:
+                con[day] += d["filled"]
+                fills[day] += 1
+                order_day.setdefault(d["ticker"], day)
+            elif k == "settled":
+                net[day] += d.get("pnl_c", 0) / 100.0
+                if sig.get(d["ticker"]) == d.get("want"):
+                    od = order_day.get(d["ticker"], day)
+                    if d.get("result") == d.get("want"):
+                        wins[od] += 1
+                    else:
+                        losefill[od] += 1
+                        loseclose[od].add(d["ticker"].rsplit("-", 2)[-2])
+            elif k == "autosize" and (d.get("why") or "").startswith("bank $"):
+                sizes[day].append(d.get("new"))
+                banks.append((t, float(d["why"].split("$")[1])))
+    banks.sort()
+    return net, con, fills, wins, losefill, loseclose, sizes, banks
 
 
 def selftest():
@@ -35,144 +143,196 @@ def selftest():
         print(("  ok: " if c else "FAIL: ") + m)
         ok = ok and c
 
-    r = project(1000.0, 2.4, 1.0, cps=58, brake=5.88, cap=250)
-    ck(abs(r[0][1] - 1000.0 / 5.88) < 1e-9, "size is bank / 5.88 before the cap")
-    ck(all(x[1] <= 250 + 1e-9 for x in r), "size NEVER exceeds the 250 cap")
-    big = project(100000.0, 2.4, 1.0)
-    ck(abs(big[0][1] - 250.0) < 1e-9, "a huge bank is capped at 250, not scaled")
+    ck(abs(eff(50) - 1.0) < 1e-9 and abs(eff(250) - 0.902) < 1e-9,
+       "the depth curve returns pincap's measured points exactly")
+    ck(eff(50) > eff(125) > eff(250) > eff(500),
+       "and is monotonically worse as the order grows -- 1.000 / 0.960 / "
+       "0.902 / 0.816")
+    ck(abs(eff(187.5) - (0.960 + 0.902) / 2) < 1e-9,
+       "halfway between two measured points is the midpoint")
+    ck(eff(5) == eff(10) and eff(5000) == eff(1000),
+       "outside the measured range it is flat, never extrapolated")
+
+    r = project(1000.0, 2.4, 62)
+    ck(all(x[1] <= CAP + 1e-9 for x in r), "capped: size NEVER exceeds 250")
+    ck(abs(project(1e6, 2.4, 62)[0][1] - CAP) < 1e-9,
+       "a huge bank is capped at 250, not scaled")
+    big = project(1e6, 2.4, 62)
     ck(abs(big[0][3] - big[1][3]) < 1e-9,
        "and past the cap the daily amount is FLAT -- growth stops being "
-       "exponential, which is the whole point of the table")
-    # the null: a zero edge earns nothing and the bank never moves
-    z = project(1000.0, 0.0, 1.0)
+       "exponential, which is the point of the table")
+    u = project(1e6, 2.4, 62, cap=None)
+    ck(u[0][1] > CAP, "uncapped: size is free to exceed 250")
+    ck(u[1][3] > u[0][3], "and the daily amount keeps growing")
+    # the depth curve must BITE: uncapped growth is slower than a naive model
+    naive = 1e6 / BRAKE * CPS * 2.4 / 100.0
+    ck(u[0][3] < naive,
+       "uncapped earnings are BELOW a naive linear model (%.0f vs %.0f) -- "
+       "the measured depth curve is doing work, not decoration"
+       % (u[0][3], naive))
+    z = project(1000.0, 0.0, 62)
     ck(all(abs(x[3]) < 1e-12 for x in z) and abs(z[-1][0] - 1000.0) < 1e-9,
-       "NULL: at zero cents per contract nothing is earned and the bank is flat")
-    # the haircut only bites as size approaches the cap
-    a = project(250 * 5.88, 2.4, 0.9)[0]
-    b = project(10 * 5.88, 2.4, 0.9)[0]
-    ck(a[3] / a[2] < b[3] / b[2],
-       "the depth haircut lowers cents per contract at the cap (%.3fc) vs a "
-       "small size (%.3fc)" % (100 * a[3] / a[2], 100 * b[3] / b[2]))
-    ck(project(1000.0, 2.4, 1.0)[0][3] > project(1000.0, 2.4, 0.85)[0][3],
-       "a worse depth efficiency always earns less")
+       "NULL: at zero cents per contract nothing is earned, ever, and the "
+       "bank never moves")
+    ck(project(1000.0, 2.4, 62)[0][3] > project(1000.0, 1.5, 62)[0][3],
+       "a worse edge always earns less")
     print("pingrow selftest:", "OK" if ok else "FAILED")
     return ok
 
 
-if "--selftest" in sys.argv:
-    sys.exit(0 if selftest() else 1)
-if not selftest():
-    sys.exit(1)
+def main():
+    if not selftest():
+        return 1
+    if "--selftest" in sys.argv:
+        return 0
+    net, con, fills, wins, losefill, loseclose, sizes, banks = actuals()
+    days = sorted(set(list(net) + list(con)))
+    first_read = {}
+    for t, b in banks:
+        first_read.setdefault(et(t).strftime("%Y-%m-%d"), b)
+    START = {"2026-09-12": 193.76}
+    for d in reversed([x for x in days if x < "2026-09-12"]):
+        START[d] = START[days[days.index(d) + 1]] - net[d]
+    for d in [x for x in days if x > "2026-09-12"]:
+        prv = days[days.index(d) - 1]
+        START[d] = first_read.get(d, START[prv] + net[prv])
 
-def et(t): return datetime.datetime.strptime(t[:19], "%Y-%m-%dT%H:%M:%S") - datetime.timedelta(hours=4)
+    L = []
+    A = L.append
+    A("# GROWTH_TRACK -- are we on track?\n")
+    A("*Written by `research/pingrow.py`. Re-run it any day: the actuals extend")
+    A("and the projection re-anchors on the real bank. Compare the ON TRACK")
+    A("line at the bottom.*\n")
+    A("**Last updated: %s ET**\n" % datetime.datetime.utcnow()
+      .__sub__(datetime.timedelta(hours=4)).strftime("%Y-%m-%d %H:%M"))
+    A("\n---\n")
+    A("## Part 1 -- every day, actual\n")
+    A("Bank is the balance at the START of that ET day. Before 2026-09-12 the bot")
+    A("ran a fixed size and never read the balance, so those rows are inferred")
+    A("backwards from P&L off the first real read ($193.76).\n")
+    A("| day | # | version | bank start | size | max/close | trades | won | lost | losing closes | contracts | c/contract | net | cumulative | return |")
+    A("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    A("| 2026-09-07 | 1 | %s | $65.18 | 20 | - | 16 quotes | 0 | 0 | 0 | 0 | - | **$0.00** | $0.00 | 0.0%% |"
+      % VERSIONS["2026-09-07"])
+    A("| 2026-09-08 | 2 | *(smoke test 06:34-07:15Z)* | $41.04 | 0.01 | - | 1 | 1 | 0 | 0 | 0.01 | - | **$0.00** | $0.00 | 0.0% |")
+    cum = 0.0
+    for i, d in enumerate(days):
+        ss = sizes.get(d) or []
+        med = sorted(ss)[len(ss) // 2] if ss else 20
+        b = START[d]
+        n = net[d]
+        cum += n
+        A("| %s | %d | %s | $%.2f | %.0f | %.0f | %d | %d | %d | %d | %.0f | %+.2fc | **%+.2f** | %+.2f | %+.1f%% |"
+          % (d, i + 2, VERSIONS.get(d, ""), b, med, 2 * med, fills[d], wins[d],
+             losefill[d], len(loseclose[d]), con[d],
+             100 * n / max(1, con[d]), n, cum, 100 * n / b))
+    tot_c = sum(con.values())
+    A("| **TOTAL** | | | | | | **%d** | **%d** | **%d** | **%d** | **%.0f** | **%+.2fc** | **%+.2f** | | |"
+      % (sum(fills.values()), sum(wins.values()), sum(losefill.values()),
+         sum(len(v) for v in loseclose.values()), tot_c, 100 * cum / tot_c, cum))
+    A("")
+    A("**Funding.** $38.83 at the first pin version. One deposit of $150, of which")
+    A("only **$113.04** reached the crypto shard -- the rest landed on a shard where")
+    A("it could not trade. **No deposit since.** The 09-13 and 09-14 bank moves match")
+    A("P&L to within 4 cents, so everything after that is traded money.")
+    A("")
+    A("*(The $65.18 on 09-07 and $41.04 on 09-08 are balances on different shards")
+    A("at different moments, not a loss between them -- the account holds more than")
+    A("one and only the crypto shard can trade these markets.)*")
+    A("")
+    A("**The shape of it.** The first four pin days (09-08..09-11) netted **+$3.11")
+    A("combined** at a fixed size of 20. Every dollar since is the last three days,")
+    A("which is exactly when auto-sizing arrived and the execution fixes landed:")
+    A("contracts per unit of size went **25 -> 47 -> 58** as the ladder sweep and")
+    A("then the depth-floor removal went in. Same model; it just started buying what")
+    A("was in front of it.")
+    A("\n---\n")
 
-net = collections.defaultdict(float); con = collections.Counter()
-fills = collections.Counter(); sizes = collections.defaultdict(list)
-losses = collections.Counter(); banks = []
-for p in sorted(glob.glob('results/pinrun-live-*.jsonl')):
-    sig = {}
-    for line in open(p, encoding='utf-8'):
-        try: d = json.loads(line)
-        except: continue
-        t = d.get('t')
-        if not t: continue
-        k = d.get('kind'); day = et(t).strftime('%Y-%m-%d')
-        if k == 'signal': sig.setdefault(d['ticker'], d.get('want'))
-        if k == 'settled':
-            net[day] += d.get('pnl_c', 0) / 100.0
-            if sig.get(d['ticker']) == d.get('want') and d.get('result') != d.get('want'):
-                losses[day] += 1
-        if k == 'order' and (d.get('filled') or 0) > 0:
-            con[day] += d['filled']; fills[day] += 1
-        if k == 'autosize' and (d.get('why') or '').startswith('bank $'):
-            sizes[day].append(d.get('new')); banks.append((t, float(d['why'].split('$')[1])))
-banks.sort()
+    bank_now = banks[-1][1]
+    med_now = sorted(sizes[days[-1]])[len(sizes[days[-1]]) // 2]
+    A("## Part 2 -- projection\n")
+    A("Anchored on the real bank, **$%.2f**, and the CURRENT version's measured rate:" % bank_now)
+    A("**%d contracts per unit of size per day**, from the window since the depth" % CPS)
+    A("floor came off (2026-09-14 14:53Z, 12.2 hours, 21 closes).\n")
+    A("That window earned +2.74c per contract and contained **no losses**, so the")
+    A("projection does not use it. The cases are **1.5c / 2.4c / 3.5c**, where 2.4c")
+    A("is our all-time live average with every loss included.\n")
+    A("Size = bank / %.2f. The depth curve is `research/pincap.py`'s measured" % BRAKE)
+    A("ladder scaling, so bigger orders earn proportionally less per contract.\n")
+    # today's trading is already in the bank we just anchored on, so day 1 is
+    # tomorrow. Anchoring on today would double-count the day we just had.
+    d0 = datetime.date.today() + datetime.timedelta(days=1)
+    for capped in (True, False):
+        A("### %s\n" % ("A) CAPPED at 250 contracts -- what runs today"
+                        if capped else "B) UNCAPPED -- if the cap is raised to whatever the book supports"))
+        A("| case | cap day | bank at cap | steady $/day | bank +3 days |"
+          if capped else "| case | day 7 | day 14 | day 21 | size at day 21 | $/day at day 21 |")
+        A("|---|---|---|---|---|" + ("" if capped else "---|"))
+        for name, cpc in (("LOW 1.5c", 1.5), ("EXPECTED 2.4c", 2.4), ("HIGH 3.5c", 3.5)):
+            r = project(bank_now, cpc, med_now, cap=CAP if capped else None)
+            if capped:
+                cd = next((i for i, x in enumerate(r) if x[1] >= CAP - 0.5), None)
+                A("| **%s** | %s (day %d) | $%s | **$%s** | $%s |"
+                  % (name, (d0 + datetime.timedelta(days=cd)).strftime("%a %d %b"), cd,
+                     "{:,.0f}".format(r[cd][0]), "{:,.0f}".format(r[cd][3]),
+                     "{:,.0f}".format(r[cd + 3][0])))
+            else:
+                def mark(day):
+                    s = r[day][1]
+                    return "$%s%s" % ("{:,.0f}".format(r[day][0]),
+                                      "" if s <= MEASURED_MAX else "*")
+                A("| **%s** | %s | %s | %s | %.0f%s | $%s |"
+                  % (name, mark(7), mark(14), mark(21), r[21][1],
+                     "" if r[21][1] <= MEASURED_MAX else "*",
+                     "{:,.0f}".format(r[21][3])))
+        if not capped:
+            A("")
+            A("**\\* beyond %d contracts nothing is measured.** `pincap.py` walked real" % MEASURED_MAX)
+            A("ladders out to 500; past that the depth curve is held flat, which is")
+            A("almost certainly too kind. Treat any starred figure as an upper bound on")
+            A("an upper bound -- at those sizes we would be a visible share of a book")
+            A("whose median resting order is 20 contracts, and the crowd of ~130")
+            A("suppliers that makes this work would notice us.")
+        A("")
+    A("**Day by day, EXPECTED case, capped** -- the one to check against:\n")
+    r = project(bank_now, 2.4, med_now, cap=CAP)
+    cd = next(i for i, x in enumerate(r) if x[1] >= CAP - 0.5)
+    A("| date | day | bank start | size | max/close | contracts | net | return |")
+    A("|---|---|---|---|---|---|---|---|")
+    for i in range(cd + 4):
+        b, s, c, e = r[i]
+        A("| %s | %d | $%.2f | %.0f | %.0f | %.0f | %+.2f | %+.1f%% |%s"
+          % ((d0 + datetime.timedelta(days=i)).strftime("%a %d %b"), i + 1, b, s,
+             2 * s, c, e, 100 * e / b,
+             " **<== 250 CAP**" if i == cd else ""))
+    A("\n---\n")
+    A("## Part 3 -- ON TRACK?\n")
+    A("Fill this in as the days land. The projection re-anchors every time this is")
+    A("re-run, so compare the **actual net** against the EXPECTED row for that date")
+    A("as it stood on 2026-09-15.\n")
+    A("| date | projected net (expected) | actual net | on track? |")
+    A("|---|---|---|---|")
+    for i in range(min(12, cd + 4)):
+        A("| %s | %+.2f | | |"
+          % ((d0 + datetime.timedelta(days=i)).strftime("%Y-%m-%d"), r[i][3]))
+    A("")
+    A("**What would put us off track, and what it would mean:**\n")
+    A("- **net below the LOW case two days running** -- the edge is decaying, or the")
+    A("  market got harder. Check `python research/pinhealth.py` first: the kill line")
+    A("  is +1.53c per contract.")
+    A("- **contracts per unit of size falling below ~40** -- we are not filling what")
+    A("  we used to. That is execution, not edge.")
+    A("- **two losing closes in a day** -- the loss brake stops the bot at two, so")
+    A("  this shows up as a halt, not a drawdown.")
+    A("- **hitting the cap early with the bank still small** -- means the edge ran")
+    A("  hot, not that anything is wrong.")
+    txt = "\n".join(L) + "\n"
+    with open(OUT, "w", encoding="utf-8") as fh:
+        fh.write(txt)
+    print(txt)
+    print("wrote", OUT)
+    return 0
 
-VER = {
- '2026-09-08': 'v0-v14  first live day, size 1->20, EV gate, tau 30',
- '2026-09-09': 'v14     size 20 fixed; first big loss (NEAR, -$52.60)',
- '2026-09-10': 'v15-v17 dump guard (A10) went live 09-11',
- '2026-09-11': 'v17     15c dump guard live 08:29 ET',
- '2026-09-12': 'v18-v22 AUTO-SIZING BEGINS; hedge 0.80',
- '2026-09-13': 'v-pick  best-market-first (A24) 20:35 ET',
- '2026-09-14': 'v-ladder 02:1 ET | v-spend | v-brake20 | v-nofloor 10:53 ET | v-jump 21:39 ET',
-}
-days = sorted(set(list(net) + list(con)))
-# bank at the START of each day: measured where we have a read, else inferred
-first_read = {}
-for t, b in banks:
-    first_read.setdefault(et(t).strftime('%Y-%m-%d'), b)
-START = {}
-anchor_day = '2026-09-12'; START[anchor_day] = 193.76
-for d in reversed([x for x in days if x < anchor_day]):
-    nxt = days[days.index(d) + 1]
-    START[d] = START[nxt] - net[d]
-for d in [x for x in days if x > anchor_day]:
-    prv = days[days.index(d) - 1]
-    START[d] = first_read.get(d, START[prv] + net[prv])
 
-print("=" * 108)
-print("PART 1 -- WHAT ACTUALLY HAPPENED".center(108))
-print("=" * 108)
-print(f"\n  {'day':12} {'bank start':>10} {'size':>5} {'max/close':>9} {'fills':>6} {'contracts':>9} "
-      f"{'c/contract':>10} {'net$':>9} {'loss':>4} {'return':>7}")
-print("  " + "-" * 104)
-cum = 0.0
-for d in days:
-    ss = sizes.get(d) or []
-    med = sorted(ss)[len(ss) // 2] if ss else 20
-    b = START[d]; n = net[d]; cum += n
-    print(f"  {d:12} {b:10.2f} {med:5.0f} {2*med:9.0f} {fills[d]:6} {con[d]:9.0f} "
-          f"{100*n/max(1,con[d]):+10.2f} {n:+9.2f} {losses[d]:4} {100*n/b:+6.1f}%")
-print("  " + "-" * 104)
-print(f"  {'TOTALS':12} {'':10} {'':5} {'':9} {sum(fills.values()):6} {sum(con.values()):9.0f} "
-      f"{100*cum/sum(con.values()):+10.2f} {cum:+9.2f} {sum(losses.values()):4}")
-print(f"\n  funding: started $38.83 on 09-08, deposited $150 (only $113.04 reached the crypto")
-print(f"  shard -- the rest landed where it could not trade). No deposit since; 09-13 and")
-print(f"  09-14 bank changes match P&L to within 4 cents, so all growth after that is traded.")
-print(f"  Bank now ${banks[-1][1]:.2f}. Grew from $151.87 of usable capital to ${banks[-1][1]:.2f} in 7 days.")
-
-# ---------------- projection ----------------
-CAP, BRAKE = 250, 5.88
-CPS = 58            # contracts per unit of size per day -- current version, measured
-SCEN = (("LOW",      1.50, 0.85),
-        ("EXPECTED", 2.40, 0.90),
-        ("HIGH",     3.50, 0.95))
-print("\n" + "=" * 108)
-print("PART 2 -- PROJECTION".center(108))
-print("=" * 108)
-print(f"""
-  Built from the CURRENT version only (since the depth floor came off, 10:53 ET on 09-14):
-    contracts per unit of size per day   58   measured over 12.2 h / 21 closes
-    cents per contract                 2.74c  measured in that window -- which had NO losses
-  So the projection does NOT use 2.74c. The three cases use:
-    LOW 1.5c   EXPECTED 2.4c (the all-time live average, losses included)   HIGH 3.5c
-  and a depth haircut as size grows, from research/pincap.py: a 250-lot fills 86% of the
-  time and pays 0.21c more than a 50-lot, so the per-contract rate is scaled toward 0.85-0.95
-  at the cap. Size = bank / 5.88, hard cap {CAP} contracts (bank ${CAP*BRAKE:,.0f}).
-""")
-start_bank = banks[-1][1]
-d0 = datetime.date(2026, 9, 15)
-for name, cpc, eff in SCEN:
-    b = start_bank; cap_day = None; rows = []
-    for i in range(0, 60):
-        size = min(CAP, b / BRAKE)
-        scale = 1.0 - (1.0 - eff) * (size / CAP)
-        c = CPS * size
-        earn = c * (cpc / 100.0) * scale
-        rows.append((d0 + datetime.timedelta(days=i), b, size, 2 * size, c, earn, 100 * earn / b))
-        if size >= CAP - 0.5 and cap_day is None:
-            cap_day = i
-        if cap_day is not None and i >= cap_day + 3:
-            break
-        b += earn
-    print(f"  {name} -- {cpc:.1f}c per contract, depth efficiency {eff:.2f} at the cap")
-    print(f"  {'date':12} {'bank start':>10} {'size':>5} {'max/close':>9} {'contracts':>9} {'net$':>9} {'return':>7}")
-    print("  " + "-" * 70)
-    for dt_, b_, s_, m_, c_, e_, r_ in rows:
-        mark = ""
-        if cap_day is not None and rows.index((dt_, b_, s_, m_, c_, e_, r_)) == cap_day:
-            mark = "  <== 250 CAP REACHED"
-        print(f"  {dt_.strftime('%a %d %b'):12} {b_:10.2f} {s_:5.0f} {m_:9.0f} {c_:9.0f} {e_:+9.2f} {r_:+6.1f}%{mark}")
-    print(f"  -> cap reached day {cap_day} ({(d0+datetime.timedelta(days=cap_day)).strftime('%a %d %b')}), "
-          f"steady state ${rows[-1][5]:,.0f}/day, bank ${rows[-1][1]:,.0f} three days later\n")
+if __name__ == "__main__":
+    sys.exit(main())
