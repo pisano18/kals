@@ -3648,10 +3648,16 @@ def _selftest_body():
             globals()["WIDEN_ENABLED"] = _on41
         _src41 = open(os.path.abspath(__file__), encoding="utf-8").read()
         _tl41 = _src41[_src41.index(chr(10) + "def trade_loop("):]
-        ck("sg * SIGMA_STRESS * _wf," in _tl41
-           and "widen_factor(idx, iid, sg, want)" in _tl41,
-           "the ENTRY decision multiplies sigma by the widen factor, and "
-           "passes the SIDE so the direction is known")
+        ck("widen_factor(idx, iid, sg, _lean)" in _tl41
+           and "sg * SIGMA_STRESS * _wf, round_digits=digits)" in _tl41,
+           "the ENTRY decision takes the lean from the UNWIDENED price, then "
+           "re-prices widened -- `want` does not exist yet at that point and "
+           "passing it raised UnboundLocalError on every market that reached "
+           "the line")
+        ck(_tl41.index("f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS,")
+           < _tl41.index("widen_factor(idx, iid, sg, _lean)"),
+           "and the unwidened price is computed BEFORE the widen factor, "
+           "which is the only order in which the lean is knowable")
         ck("* widen_factor(idx, _hiid, _hsg, _hwant)," in _tl41,
            "and so does the HEDGE's belief -- both places the model prices a "
            "position, or a held position would be priced by a different model "
@@ -5559,11 +5565,33 @@ def trade_loop(a, rec, book, idx, series_index):
             if sg is None:
                 _gate("no_sigma", close_s, tk)
                 continue
-            _wf = widen_factor(idx, iid, sg, want)    # AMENDMENT 41/42
-            f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS * _wf,
+            # AMENDMENT 41/42. THE SIDE IS NOT KNOWN YET -- `want` is chosen
+            # from the ask side further down, and the first version of this
+            # line passed it anyway. Python evaluates arguments before the
+            # call, so it raised UnboundLocalError on the first market that
+            # ever reached here, whatever the flag said. It killed the live
+            # bot at 2026-09-15 04:59:30Z, ten minutes after a restart --
+            # ten minutes because nothing reaches this line until a market
+            # clears the book, index and sigma gates.
+            #
+            # So: price it UNWIDENED first, take the lean from that, then
+            # widen and price it again. Widening sigma moves confidence
+            # toward 0.5 and can never flip which side the model leans to, so
+            # the lean read off the unwidened number is the same lean.
+            # Two fair() calls, and only when the flag is on.
+            f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS,
                      round_digits=digits)
             if f is None:
                 continue
+            _wf = 1.0
+            if WIDEN_ENABLED:
+                _lean = "yes" if f >= 0.5 else "no"
+                _wf = widen_factor(idx, iid, sg, _lean)
+                if _wf != 1.0:
+                    f = fair(idx, iid, close_s, now_s, strike,
+                             sg * SIGMA_STRESS * _wf, round_digits=digits)
+                    if f is None:
+                        continue
             state["considered"] += 1
 
             # ---- --hedge-plant: the planted one-contract hedge test -------
