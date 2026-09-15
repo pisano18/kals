@@ -48,8 +48,14 @@ MEASURED_MAX = 500       # pincap walked real ladders to here; past it, guesswor
 REALISTIC_CAP = 500
 
 # pincap.py: money per unit of size, relative to a 50-lot
+# MEASURED, not guessed. research/pincap.py walked 13,984 real ask ladders;
+# "money vs a 50-lot" divided by size gives efficiency per unit of size. The
+# 1000 entry used to be a round 0.700 placeholder -- it is 0.716 measured. The
+# curve now runs to 3,000 contracts, which is where the measurement stops.
 DEPTH = [(10, 1.000), (25, 1.000), (50, 1.000), (75, 0.987),
-         (125, 0.960), (250, 0.902), (500, 0.816), (1000, 0.700)]
+         (125, 0.960), (250, 0.902), (500, 0.816), (1000, 0.716),
+         (2000, 0.611), (3000, 0.551)]
+MEASURED_SIZE_MAX = 3000
 
 VERSIONS = {
     "2026-09-07": "pre-pin  natgas market-making, both sides quoted",
@@ -158,8 +164,12 @@ def selftest():
        "0.902 / 0.816")
     ck(abs(eff(187.5) - (0.960 + 0.902) / 2) < 1e-9,
        "halfway between two measured points is the midpoint")
-    ck(eff(5) == eff(10) and eff(5000) == eff(1000),
-       "outside the measured range it is flat, never extrapolated")
+    ck(eff(5) == eff(10) and eff(5000) == eff(MEASURED_SIZE_MAX),
+       "outside the measured range it is flat, never extrapolated -- the "
+       "curve now runs to %d contracts" % MEASURED_SIZE_MAX)
+    ck(abs(eff(2000) - 0.611) < 1e-9 and abs(eff(3000) - 0.551) < 1e-9,
+       "and the far end is pincap's measured 0.611 at 2000, 0.551 at 3000 -- "
+       "not the round 0.700 placeholder that used to sit at 1000")
 
     r = project(1000.0, 2.4, 62)
     ck(all(x[1] <= CAP + 1e-9 for x in r), "capped: size NEVER exceeds 250")
