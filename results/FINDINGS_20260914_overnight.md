@@ -702,3 +702,41 @@ arms started within 30 minutes of each other on the same bank, so a straight
 comparison of net and losing closes is fair. Three days at ~40 closes a day
 is ~120 closes each — enough to see a gap in losses, not enough to prove a
 gap in cents per contract unless it is large.
+
+
+---
+
+# PART 7 — WHAT TODAY WOULD HAVE LOOKED LIKE  (2026-09-14 ~22:30 ET)
+
+The operator: *"What would've happened if it ran today vs what did happen?"*
+`research/pinreplay41.py` — every one of today's 59 live fills reproduced
+through pinrun's own `fair()` and `IndexWS`, with the index object rebuilt
+per second so it can never see the future (self-tested). Reproduction check:
+replayed belief vs the belief the bot logged — median difference 0.00000,
+max 0.00164 over 59 fills.
+
+| | fills refused | of which lost | winners given up | net for the day |
+|---|---|---|---|---|
+| **as it happened** | — | — | — | **+$22.84** (2 losses) |
+| **A40 jump gate (live now)** | 1 | 1 (BTC 05:30, −$58.43) | 0 | **+$81.28** (+$58.43) |
+| **A41 widening (paper)** | 10* | 1 (the same BTC) | 9 worth $23.07 | **+$54.89** (+$32.05) |
+| both | 10* | 1 | 9 | +$54.89 |
+
+\* the replay lists 11; one (DOGE 15:14, belief 0.9942 both ways) sits
+inside the replay's own precision of the 99.5% gate and is not a widening
+effect. The honest widening count is 10.
+
+**The hedge.** On the one loss that would still have been made (HYPE 16:00),
+the widened model fires the hedge at the **same second** (19 s left) — HYPE's
+collapse was not preceded by a jump (+0.3 sd), so the widening never
+engaged. **Zero** new false hedges on today's winners.
+
+**What this says.** Today the gate was strictly better: it refused exactly
+the loss and nothing else. The widening refused the same loss and nine
+winners worth $23 — the symmetric-widening cost, stated in advance: moderate
+jumps that did not continue. One day. The paper arms will say whether that
+ratio holds; today it was $58 saved for $23 given up, which is still +$32.
+
+**What it cannot say.** Nothing about trades either rule would have ADDED
+(there are none — both only refuse or fire earlier), and nothing about the
+hedge PRICE at an earlier second, which needs the book at that second.
