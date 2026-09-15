@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# VERSION: 2026-09-15-arm2
+# VERSION: 2026-09-15-arm3
 """pinracearm.py -- THE COIN RACE PAPER ARM. Nothing is ever sent.
 
 THE OPERATOR, 2026-09-15: "you can absolutely start on a coin race paper arm.
@@ -163,6 +163,32 @@ def price_leg(table, tau, gap_bp):
     return "no", (None if p is None else 1.0 - p)
 
 
+def gate_arm3(tau, gap_bp, price, tau_max, min_gap_bp, min_price):
+    """ARM3: the one form of this idea the evidence supports. None = allowed.
+
+    arm2 lost on paper (73 bets, 44 won, -$1,560 at 250 a bet, 12 races,
+    2026-09-15). No wiring bug: every bet was the right coin and side. The
+    losses were PHOTO FINISHES -- every late-window loss had a lead under
+    1.4bp, where the market priced 65-78c and the table claimed ~89c -- and
+    cheap bets bought while the race was still open. So:
+
+      tau_max    only the last seconds: RESULTS_coinrace found the market
+                 efficient before tau 30 and the edge only inside it
+      min_gap_bp only a CLEAR lead or a clear deficit: at tau <= 25 no lead of
+                 4bp+ was overturned in 795 races, and the tape's 93c+ winners
+                 (pinraceno) all had gaps past 4bp
+      min_price  never the cheap end: a cheap price on a "clear" lead means the
+                 market knows something (RESULTS_coinrace discount cliff)
+    """
+    if tau > tau_max:
+        return "outside_tau_max"
+    if abs(gap_bp) < min_gap_bp:
+        return "small_gap"
+    if price is not None and price < min_price - 1e-9:
+        return "below_min_price"
+    return None
+
+
 def band_of(tau):
     """The time band a moment belongs to, as a label, or None outside them."""
     for lo, hi in BANDS:
@@ -271,6 +297,24 @@ def selftest():
        "never scored a single race")
     ck("known.update(events)" in body,
        "and every discovered race is added to `known` before it can drop out")
+
+    # ---- ARM3 gate -------------------------------------------------------
+    ck(gate_arm3(29, 1.26, 0.78, 30, 4.0, 0.90) == "small_gap",
+       "the 3:30 PM race bet -- BTC ahead by 1.26bp at 29 s, bought at 78c, "
+       "lost when ETH passed -- is refused for its tiny lead")
+    ck(gate_arm3(90, -10.1, 0.95, 30, 4.0, 0.90) == "outside_tau_max",
+       "the 4:15 PM race bet -- HYPE 10bp behind with 90 s left, 95c, lost "
+       "when HYPE came back -- is refused for being too early")
+    ck(gate_arm3(27, 4.27, 0.87, 30, 4.0, 0.90) == "below_min_price",
+       "a clear lead offered at only 87c is refused -- a cheap price on a "
+       "'clear' lead means the market knows something")
+    ck(gate_arm3(12, -8.0, 0.95, 30, 4.0, 0.90) is None,
+       "a coin 8bp behind with 12 s left, its NO at 95c, is allowed")
+    ck(gate_arm3(12, 8.0, None, 30, 4.0, 0.90) is None,
+       "and the pre-book check (no price yet) passes a clear late lead")
+    ck(gate_arm3(150, 0.1, 0.30, TAU_HI, 0.0, 0.0) is None,
+       "with the defaults every arm2 bet is still allowed, so old logs stay "
+       "reproducible")
 
     # ---- the fee -------------------------------------------------------
     ck(abs(fee(0.95) - 0.0034) < 1e-9,
@@ -417,6 +461,15 @@ def main():
     ap.add_argument("--size", type=int, default=SIZE)
     ap.add_argument("--min-edge", type=float, default=MIN_EDGE)
     ap.add_argument("--log", default=None)
+    ap.add_argument("--tau-max", type=int, default=TAU_HI,
+                    help="ARM3: price nothing further out than this")
+    ap.add_argument("--min-gap-bp", type=float, default=0.0,
+                    help="ARM3: only leads/deficits at least this wide")
+    ap.add_argument("--min-price", type=float, default=0.0,
+                    help="ARM3: never buy cheaper than this")
+    ap.add_argument("--one-per-race-band", action="store_true",
+                    help="ARM3: at most one bet per race per time band -- "
+                         "'BTC wins' and 'ETH won't win' are one bet twice")
     a = ap.parse_args()
     if not selftest():
         return 1
@@ -454,7 +507,9 @@ def main():
         tau=[TAU_LO, TAU_HI], bands=[list(b) for b in BANDS],
         table=os.path.basename(M.TABLE),
         table_cells=cells, table_mtime=int(tstat.st_mtime),
-        table_size=tstat.st_size, version="2026-09-15-arm2")
+        table_size=tstat.st_size, version="2026-09-15-arm3",
+        tau_max=a.tau_max, min_gap_bp=a.min_gap_bp, min_price=a.min_price,
+        one_per_race_band=bool(a.one_per_race_band))
 
     idx = pinrun.IndexWS(sorted(set(COINS.values()))).start()
     book = livebook.LiveBook()
@@ -476,6 +531,7 @@ def main():
     seen_why = set()
     fills = []                                   # every paper position
     done_band = set()                       # (event, ticker, side, band)
+    race_band_done = set()                  # (event, band) -- ARM3
     taken = collections.defaultdict(float)  # (event, ticker, side) -> held
     scored = set()
     last_disc = 0.0
@@ -576,6 +632,19 @@ def main():
                     band = band_of(tau)
                     if band is None or (evt, tkr, side, band) in done_band:
                         continue
+                    if a.one_per_race_band and (evt, band) in race_band_done:
+                        continue
+                    g3 = gate_arm3(tau, gap * 1e4, None, a.tau_max,
+                                   a.min_gap_bp, a.min_price)
+                    if g3:
+                        if g3 != "outside_tau_max":
+                            key = (evt, coin, g3)
+                            if key not in seen_why:
+                                seen_why.add(key)
+                                rec("no_trade", event=evt, coin=coin,
+                                    ticker=tkr, tau=tau, side=side, why=g3,
+                                    gap_bp=round(gap * 1e4, 4))
+                        continue
                     b = book.best(tkr)
                     bad = None
                     if not b:
@@ -608,6 +677,9 @@ def main():
                         bad = "no_offer"
                     elif ask > PRICE_CEILING + 1e-9:
                         bad = "above_ceiling"
+                    elif gate_arm3(tau, gap * 1e4, float(ask), a.tau_max,
+                                   a.min_gap_bp, a.min_price):
+                        bad = "below_min_price"
                     else:
                         edge = net_edge(worth, float(ask))
                         if edge < a.min_edge:
@@ -655,6 +727,7 @@ def main():
                            "edge": round(edge, 6), "band": band}
                     fills.append(pos)
                     done_band.add((evt, tkr, side, band))
+                    race_band_done.add((evt, band))
                     taken[(evt, tkr, side)] += take
                     rec("fill", assumed=True, ask_size=float(asz),
                         buyable=float(have or 0), ladder=ladder,

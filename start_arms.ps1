@@ -42,7 +42,8 @@ foreach ($a in $arms) {
 }
 
 # the Coin Race paper arm, on the fixed model
-Start-Process -FilePath $py -ArgumentList @("-u","research\pinracearm.py","--minutes","720") `
+# ARM3 (results/PREREG_race_arm3.md): last 30 s, 4bp+ gaps, 90c+, one bet per race band
+Start-Process -FilePath $py -ArgumentList @("-u","research\pinracearm.py","--minutes","4320","--tau-max","30","--min-gap-bp","4","--min-price","0.90","--one-per-race-band") `
   -WorkingDirectory "C:\kals-repo" `
   -RedirectStandardOutput "$r\pinracearm-live.log" `
   -RedirectStandardError  "$r\pinracearm-live.err" -WindowStyle Hidden
