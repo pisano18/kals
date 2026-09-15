@@ -4,7 +4,7 @@
 and the projection re-anchors on the real bank. Compare the ON TRACK
 line at the bottom.*
 
-**Last updated: 2026-09-14 23:25 ET**
+**Last updated: 2026-09-14 23:35 ET**
 
 
 ---
@@ -59,44 +59,122 @@ is our all-time live average with every loss included.
 Size = bank / 5.88. The depth curve is `research/pincap.py`'s measured
 ladder scaling, so bigger orders earn proportionally less per contract.
 
-### A) CAPPED at 250 contracts -- what runs today
+### The cap, and why 500
 
-| case | cap day | bank at cap | steady $/day | bank +3 days |
-|---|---|---|---|---|
-| **LOW 1.5c** | Fri 25 Sep (day 10) | $1,494 | **$197** | $2,085 |
-| **EXPECTED 2.4c** | Tue 22 Sep (day 7) | $1,656 | **$315** | $2,602 |
-| **HIGH 3.5c** | Sun 20 Sep (day 5) | $1,658 | **$460** | $3,038 |
+`pinrun` caps size at **250** contracts today. That number was chosen
+before the book had ever been measured. `research/pincap.py` then walked
+**13,984 real ask ladders**: a **500-lot still fills in full on 75.3%** of
+tradeable moments, at a mean price of 95.45c against 95.10c for a 50-lot.
+So **500 is the largest size the market is measured to support**, and it is
+the cap used below. Past 500 there is no measurement and this file refuses
+to guess -- size simply stops growing there.
 
-### B) UNCAPPED -- if the cap is raised to whatever the book supports
+Reaching 500 needs a bank of **$2,940** (500 x 5.88). For comparison, the
+250 cap needs $1,470 and is reached roughly a week earlier.
 
-| case | day 7 | day 14 | day 21 | size at day 21 | $/day at day 21 |
-|---|---|---|---|---|---|
-| **LOW 1.5c** | $1,014 | $2,444 | $5,339* | 908* | $573 |
-| **EXPECTED 2.4c** | $1,656 | $5,748* | $16,911* | 2876* | $2,816 |
-| **HIGH 3.5c** | $2,819 | $13,883* | $63,578* | 10813* | $15,437 |
+**The risk does not change shape.** At any size, one worst-case close costs
+`2 x size x 0.98` -- a third of the bank, by design. At 500 that is **$980**
+of a $2,940 bank. The 20% drawdown brake still stops the bot before a full
+worst close completes.
 
-**\* beyond 500 contracts nothing is measured.** `pincap.py` walked real
-ladders out to 500; past that the depth curve is held flat, which is
-almost certainly too kind. Treat any starred figure as an upper bound on
-an upper bound -- at those sizes we would be a visible share of a book
-whose median resting order is 20 contracts, and the crowd of ~130
-suppliers that makes this work would notice us.
+### LOW -- 1.5c per contract
 
-**Day by day, EXPECTED case, capped** -- the one to check against:
+| date | day | bank start | size | max/close | contracts | net | cumulative | return |
+|---|---|---|---|---|---|---|---|---|
+| Tue 15 Sep | 1 | $394.59 | 67 | 134 | 3,892 | +58.14 | 58.14 | +14.7% |
+| Wed 16 Sep | 2 | $452.73 | 77 | 154 | 4,466 | +66.35 | 124.49 | +14.7% |
+| Thu 17 Sep | 3 | $519.08 | 88 | 177 | 5,120 | +75.61 | 200.10 | +14.6% |
+| Fri 18 Sep | 4 | $594.69 | 101 | 202 | 5,866 | +86.01 | 286.10 | +14.5% |
+| Sat 19 Sep | 5 | $680.69 | 116 | 232 | 6,714 | +97.65 | 383.75 | +14.3% |
+| Sun 20 Sep | 6 | $778.34 | 132 | 265 | 7,677 | +110.68 | 494.43 | +14.2% |
+| Mon 21 Sep | 7 | $889.02 | 151 | 302 | 8,769 | +125.26 | 619.69 | +14.1% |
+| Tue 22 Sep | 8 | $1,014.28 | 172 | 345 | 10,005 | +141.42 | 761.11 | +13.9% |
+| Wed 23 Sep | 9 | $1,155.70 | 197 | 393 | 11,400 | +159.23 | 920.34 | +13.8% |
+| Thu 24 Sep | 10 | $1,314.93 | 224 | 447 | 12,970 | +178.71 | 1,099.05 | +13.6% |
+| Fri 25 Sep | 11 | $1,493.64 | 254 | 508 | 14,733 | +199.97 | 1,299.02 | +13.4% | *(250 cap would bind here)*
+| Sat 26 Sep | 12 | $1,693.61 | 288 | 576 | 16,706 | +223.80 | 1,522.81 | +13.2% |
+| Sun 27 Sep | 13 | $1,917.40 | 326 | 652 | 18,913 | +249.64 | 1,772.45 | +13.0% |
+| Mon 28 Sep | 14 | $2,167.04 | 369 | 737 | 21,376 | +277.43 | 2,049.89 | +12.8% |
+| Tue 29 Sep | 15 | $2,444.48 | 416 | 831 | 24,112 | +307.06 | 2,356.94 | +12.6% |
+| Wed 30 Sep | 16 | $2,751.53 | 468 | 936 | 27,141 | +338.28 | 2,695.22 | +12.3% |
+| Thu 01 Oct | 17 | $3,089.81 | 500 | 1000 | 29,000 | +356.63 | 3,051.85 | +11.5% | **<== 500 CAP, flat from here**
+| Fri 02 Oct | 18 | $3,446.44 | 500 | 1000 | 29,000 | +356.63 | 3,408.48 | +10.3% |
+| Sat 03 Oct | 19 | $3,803.07 | 500 | 1000 | 29,000 | +356.63 | 3,765.11 | +9.4% |
+| Sun 04 Oct | 20 | $4,159.70 | 500 | 1000 | 29,000 | +356.63 | 4,121.73 | +8.6% |
+| Mon 05 Oct | 21 | $4,516.32 | 500 | 1000 | 29,000 | +356.63 | 4,478.36 | +7.9% |
+| Tue 06 Oct | 22 | $4,872.95 | 500 | 1000 | 29,000 | +356.63 | 4,834.99 | +7.3% |
+| Wed 07 Oct | 23 | $5,229.58 | 500 | 1000 | 29,000 | +356.63 | 5,191.62 | +6.8% |
+| Thu 08 Oct | 24 | $5,586.21 | 500 | 1000 | 29,000 | +356.63 | 5,548.25 | +6.4% |
+| Fri 09 Oct | 25 | $5,942.84 | 500 | 1000 | 29,000 | +356.63 | 5,904.88 | +6.0% |
+| Sat 10 Oct | 26 | $6,299.47 | 500 | 1000 | 29,000 | +356.63 | 6,261.51 | +5.7% |
+| Sun 11 Oct | 27 | $6,656.10 | 500 | 1000 | 29,000 | +356.63 | 6,618.14 | +5.4% |
 
-| date | day | bank start | size | max/close | contracts | net | return |
-|---|---|---|---|---|---|---|---|
-| Tue 15 Sep | 1 | $394.59 | 67 | 134 | 3892 | +93.02 | +23.6% |
-| Wed 16 Sep | 2 | $487.61 | 83 | 166 | 4810 | +113.97 | +23.4% |
-| Thu 17 Sep | 3 | $601.58 | 102 | 205 | 5934 | +139.11 | +23.1% |
-| Fri 18 Sep | 4 | $740.69 | 126 | 252 | 7306 | +169.05 | +22.8% |
-| Sat 19 Sep | 5 | $909.74 | 155 | 309 | 8974 | +204.74 | +22.5% |
-| Sun 20 Sep | 6 | $1114.48 | 190 | 379 | 10993 | +246.54 | +22.1% |
-| Mon 21 Sep | 7 | $1361.02 | 231 | 463 | 13425 | +294.77 | +21.7% |
-| Tue 22 Sep | 8 | $1655.79 | 250 | 500 | 14500 | +315.37 | +19.0% | **<== 250 CAP**
-| Wed 23 Sep | 9 | $1971.16 | 250 | 500 | 14500 | +315.37 | +16.0% |
-| Thu 24 Sep | 10 | $2286.54 | 250 | 500 | 14500 | +315.37 | +13.8% |
-| Fri 25 Sep | 11 | $2601.91 | 250 | 500 | 14500 | +315.37 | +12.1% |
+- reaches 500 contracts on **Thu 01 Oct** (day 17), bank $3,090
+- steady state from there: **$357/day**, flat
+- for comparison, capped at 250 it would be **$197/day** -- the extra
+  250 contracts are worth **$160/day more**, forever
+
+### EXPECTED -- 2.4c per contract
+
+| date | day | bank start | size | max/close | contracts | net | cumulative | return |
+|---|---|---|---|---|---|---|---|---|
+| Tue 15 Sep | 1 | $394.59 | 67 | 134 | 3,892 | +93.02 | 93.02 | +23.6% |
+| Wed 16 Sep | 2 | $487.61 | 83 | 166 | 4,810 | +113.97 | 206.99 | +23.4% |
+| Thu 17 Sep | 3 | $601.58 | 102 | 205 | 5,934 | +139.11 | 346.10 | +23.1% |
+| Fri 18 Sep | 4 | $740.69 | 126 | 252 | 7,306 | +169.05 | 515.15 | +22.8% |
+| Sat 19 Sep | 5 | $909.74 | 155 | 309 | 8,974 | +204.74 | 719.89 | +22.5% |
+| Sun 20 Sep | 6 | $1,114.48 | 190 | 379 | 10,993 | +246.54 | 966.43 | +22.1% |
+| Mon 21 Sep | 7 | $1,361.02 | 231 | 463 | 13,425 | +294.77 | 1,261.20 | +21.7% |
+| Tue 22 Sep | 8 | $1,655.79 | 282 | 563 | 16,333 | +350.95 | 1,612.15 | +21.2% | *(250 cap would bind here)*
+| Wed 23 Sep | 9 | $2,006.74 | 341 | 683 | 19,794 | +415.54 | 2,027.69 | +20.7% |
+| Thu 24 Sep | 10 | $2,422.28 | 412 | 824 | 23,893 | +487.58 | 2,515.26 | +20.1% |
+| Fri 25 Sep | 11 | $2,909.85 | 495 | 990 | 28,703 | +565.98 | 3,081.24 | +19.5% |
+| Sat 26 Sep | 12 | $3,475.83 | 500 | 1000 | 29,000 | +570.61 | 3,651.85 | +16.4% | **<== 500 CAP, flat from here**
+| Sun 27 Sep | 13 | $4,046.44 | 500 | 1000 | 29,000 | +570.61 | 4,222.45 | +14.1% |
+| Mon 28 Sep | 14 | $4,617.04 | 500 | 1000 | 29,000 | +570.61 | 4,793.06 | +12.4% |
+| Tue 29 Sep | 15 | $5,187.65 | 500 | 1000 | 29,000 | +570.61 | 5,363.67 | +11.0% |
+| Wed 30 Sep | 16 | $5,758.26 | 500 | 1000 | 29,000 | +570.61 | 5,934.27 | +9.9% |
+| Thu 01 Oct | 17 | $6,328.86 | 500 | 1000 | 29,000 | +570.61 | 6,504.88 | +9.0% |
+| Fri 02 Oct | 18 | $6,899.47 | 500 | 1000 | 29,000 | +570.61 | 7,075.49 | +8.3% |
+| Sat 03 Oct | 19 | $7,470.08 | 500 | 1000 | 29,000 | +570.61 | 7,646.09 | +7.6% |
+| Sun 04 Oct | 20 | $8,040.68 | 500 | 1000 | 29,000 | +570.61 | 8,216.70 | +7.1% |
+| Mon 05 Oct | 21 | $8,611.29 | 500 | 1000 | 29,000 | +570.61 | 8,787.31 | +6.6% |
+| Tue 06 Oct | 22 | $9,181.90 | 500 | 1000 | 29,000 | +570.61 | 9,357.91 | +6.2% |
+
+- reaches 500 contracts on **Sat 26 Sep** (day 12), bank $3,476
+- steady state from there: **$571/day**, flat
+- for comparison, capped at 250 it would be **$315/day** -- the extra
+  250 contracts are worth **$255/day more**, forever
+
+### HIGH -- 3.5c per contract
+
+| date | day | bank start | size | max/close | contracts | net | cumulative | return |
+|---|---|---|---|---|---|---|---|---|
+| Tue 15 Sep | 1 | $394.59 | 67 | 134 | 3,892 | +135.65 | 135.65 | +34.4% |
+| Wed 16 Sep | 2 | $530.24 | 90 | 180 | 5,230 | +180.02 | 315.67 | +34.0% |
+| Thu 17 Sep | 3 | $710.26 | 121 | 242 | 7,006 | +237.07 | 552.74 | +33.4% |
+| Fri 18 Sep | 4 | $947.33 | 161 | 322 | 9,344 | +309.94 | 862.68 | +32.7% |
+| Sat 19 Sep | 5 | $1,257.27 | 214 | 428 | 12,402 | +400.68 | 1,263.37 | +31.9% |
+| Sun 20 Sep | 6 | $1,657.96 | 282 | 564 | 16,354 | +512.40 | 1,775.76 | +30.9% | *(250 cap would bind here)*
+| Mon 21 Sep | 7 | $2,170.35 | 369 | 738 | 21,408 | +648.19 | 2,423.96 | +29.9% |
+| Tue 22 Sep | 8 | $2,818.55 | 479 | 959 | 27,802 | +804.70 | 3,228.66 | +28.6% |
+| Wed 23 Sep | 9 | $3,623.25 | 500 | 1000 | 29,000 | +832.13 | 4,060.79 | +23.0% | **<== 500 CAP, flat from here**
+| Thu 24 Sep | 10 | $4,455.38 | 500 | 1000 | 29,000 | +832.13 | 4,892.93 | +18.7% |
+| Fri 25 Sep | 11 | $5,287.52 | 500 | 1000 | 29,000 | +832.13 | 5,725.06 | +15.7% |
+| Sat 26 Sep | 12 | $6,119.65 | 500 | 1000 | 29,000 | +832.13 | 6,557.20 | +13.6% |
+| Sun 27 Sep | 13 | $6,951.79 | 500 | 1000 | 29,000 | +832.13 | 7,389.33 | +12.0% |
+| Mon 28 Sep | 14 | $7,783.92 | 500 | 1000 | 29,000 | +832.13 | 8,221.47 | +10.7% |
+| Tue 29 Sep | 15 | $8,616.06 | 500 | 1000 | 29,000 | +832.13 | 9,053.60 | +9.7% |
+| Wed 30 Sep | 16 | $9,448.19 | 500 | 1000 | 29,000 | +832.13 | 9,885.74 | +8.8% |
+| Thu 01 Oct | 17 | $10,280.33 | 500 | 1000 | 29,000 | +832.13 | 10,717.87 | +8.1% |
+| Fri 02 Oct | 18 | $11,112.46 | 500 | 1000 | 29,000 | +832.13 | 11,550.00 | +7.5% |
+| Sat 03 Oct | 19 | $11,944.59 | 500 | 1000 | 29,000 | +832.13 | 12,382.14 | +7.0% |
+
+- reaches 500 contracts on **Wed 23 Sep** (day 9), bank $3,623
+- steady state from there: **$832/day**, flat
+- for comparison, capped at 250 it would be **$460/day** -- the extra
+  250 contracts are worth **$372/day more**, forever
+
 
 ---
 
@@ -115,10 +193,14 @@ as it stood on 2026-09-15.
 | 2026-09-19 | +204.74 | | |
 | 2026-09-20 | +246.54 | | |
 | 2026-09-21 | +294.77 | | |
-| 2026-09-22 | +315.37 | | |
-| 2026-09-23 | +315.37 | | |
-| 2026-09-24 | +315.37 | | |
-| 2026-09-25 | +315.37 | | |
+| 2026-09-22 | +350.95 | | |
+| 2026-09-23 | +415.54 | | |
+| 2026-09-24 | +487.58 | | |
+| 2026-09-25 | +565.98 | | |
+| 2026-09-26 | +570.61 | | |
+| 2026-09-27 | +570.61 | | |
+| 2026-09-28 | +570.61 | | |
+| 2026-09-29 | +570.61 | | |
 
 **What would put us off track, and what it would mean:**
 

@@ -38,6 +38,14 @@ BRAKE = 5.88
 CAP = 250
 CPS = 58                 # contracts per unit of size per day, current version
 MEASURED_MAX = 500       # pincap walked real ladders to here; past it, guesswork
+# THE REALISTIC CAP. 250 is the constant in the code today; it was chosen
+# before the book had been measured. pincap.py walked 13,984 real ask ladders:
+# a 500-lot still fills IN FULL on 75.3% of tradeable moments, at a mean
+# 95.45c against 95.10c for a 50-lot. So 500 is the largest size the market is
+# MEASURED to support, and it is the cap this file projects. Past 500 there is
+# no measurement, so the projection stops growing size there rather than
+# guessing.
+REALISTIC_CAP = 500
 
 # pincap.py: money per unit of size, relative to a 50-lot
 DEPTH = [(10, 1.000), (25, 1.000), (50, 1.000), (75, 0.987),
@@ -176,6 +184,16 @@ def selftest():
        "bank never moves")
     ck(project(1000.0, 2.4, 62)[0][3] > project(1000.0, 1.5, 62)[0][3],
        "a worse edge always earns less")
+    ck(REALISTIC_CAP == MEASURED_MAX,
+       "the realistic cap IS the edge of measurement (%d) -- the projection "
+       "never grows size into a region pincap never walked" % REALISTIC_CAP)
+    ck(REALISTIC_CAP > CAP,
+       "and it is above the %d in the code today, which predates the "
+       "measurement" % CAP)
+    rr = project(1e7, 2.4, 62, cap=REALISTIC_CAP)
+    ck(abs(rr[0][1] - REALISTIC_CAP) < 1e-9 and abs(rr[0][3] - rr[1][3]) < 1e-9,
+       "at the realistic cap the daily amount is FLAT too -- raising the cap "
+       "moves the ceiling, it does not remove it")
     print("pingrow selftest:", "OK" if ok else "FAILED")
     return ok
 
@@ -262,49 +280,64 @@ def main():
     # today's trading is already in the bank we just anchored on, so day 1 is
     # tomorrow. Anchoring on today would double-count the day we just had.
     d0 = datetime.date.today() + datetime.timedelta(days=1)
-    for capped in (True, False):
-        A("### %s\n" % ("A) CAPPED at 250 contracts -- what runs today"
-                        if capped else "B) UNCAPPED -- if the cap is raised to whatever the book supports"))
-        A("| case | cap day | bank at cap | steady $/day | bank +3 days |"
-          if capped else "| case | day 7 | day 14 | day 21 | size at day 21 | $/day at day 21 |")
-        A("|---|---|---|---|---|" + ("" if capped else "---|"))
-        for name, cpc in (("LOW 1.5c", 1.5), ("EXPECTED 2.4c", 2.4), ("HIGH 3.5c", 3.5)):
-            r = project(bank_now, cpc, med_now, cap=CAP if capped else None)
-            if capped:
-                cd = next((i for i, x in enumerate(r) if x[1] >= CAP - 0.5), None)
-                A("| **%s** | %s (day %d) | $%s | **$%s** | $%s |"
-                  % (name, (d0 + datetime.timedelta(days=cd)).strftime("%a %d %b"), cd,
-                     "{:,.0f}".format(r[cd][0]), "{:,.0f}".format(r[cd][3]),
-                     "{:,.0f}".format(r[cd + 3][0])))
-            else:
-                def mark(day):
-                    s = r[day][1]
-                    return "$%s%s" % ("{:,.0f}".format(r[day][0]),
-                                      "" if s <= MEASURED_MAX else "*")
-                A("| **%s** | %s | %s | %s | %.0f%s | $%s |"
-                  % (name, mark(7), mark(14), mark(21), r[21][1],
-                     "" if r[21][1] <= MEASURED_MAX else "*",
-                     "{:,.0f}".format(r[21][3])))
-        if not capped:
-            A("")
-            A("**\\* beyond %d contracts nothing is measured.** `pincap.py` walked real" % MEASURED_MAX)
-            A("ladders out to 500; past that the depth curve is held flat, which is")
-            A("almost certainly too kind. Treat any starred figure as an upper bound on")
-            A("an upper bound -- at those sizes we would be a visible share of a book")
-            A("whose median resting order is 20 contracts, and the crowd of ~130")
-            A("suppliers that makes this work would notice us.")
+    def day_table(cpc, cap, limit_after=10):
+        """Every day to the cap, plus `limit_after` beyond it."""
+        r = project(bank_now, cpc, med_now, cap=cap, days=200)
+        cd = next((k for k, x in enumerate(r) if x[1] >= cap - 0.5), None)
+        end = (cd + limit_after + 1) if cd is not None else 30
+        return r, cd, min(end, len(r))
+
+    A("### The cap, and why 500\n")
+    A("`pinrun` caps size at **250** contracts today. That number was chosen")
+    A("before the book had ever been measured. `research/pincap.py` then walked")
+    A("**13,984 real ask ladders**: a **500-lot still fills in full on 75.3%** of")
+    A("tradeable moments, at a mean price of 95.45c against 95.10c for a 50-lot.")
+    A("So **500 is the largest size the market is measured to support**, and it is")
+    A("the cap used below. Past 500 there is no measurement and this file refuses")
+    A("to guess -- size simply stops growing there.\n")
+    A("Reaching 500 needs a bank of **$%s** (500 x %.2f). For comparison, the"
+      % ("{:,.0f}".format(REALISTIC_CAP * BRAKE), BRAKE))
+    A("250 cap needs $%s and is reached roughly a week earlier.\n"
+      % "{:,.0f}".format(CAP * BRAKE))
+    A("**The risk does not change shape.** At any size, one worst-case close costs")
+    A("`2 x size x 0.98` -- a third of the bank, by design. At 500 that is **$980**")
+    A("of a $2,940 bank. The 20% drawdown brake still stops the bot before a full")
+    A("worst close completes.\n")
+
+    for name, cpc in (("LOW -- 1.5c per contract", 1.5),
+                      ("EXPECTED -- 2.4c per contract", 2.4),
+                      ("HIGH -- 3.5c per contract", 3.5)):
+        r, cd, end = day_table(cpc, REALISTIC_CAP)
+        A("### %s\n" % name)
+        A("| date | day | bank start | size | max/close | contracts | net | cumulative | return |")
+        A("|---|---|---|---|---|---|---|---|---|")
+        cum2 = 0.0
+        for k in range(end):
+            b, s, c, e = r[k]
+            cum2 += e
+            A("| %s | %d | $%s | %.0f | %.0f | %s | %+.2f | %s | %+.1f%% |%s"
+              % ((d0 + datetime.timedelta(days=k)).strftime("%a %d %b"), k + 1,
+                 "{:,.2f}".format(b), s, 2 * s, "{:,.0f}".format(c), e,
+                 "{:,.2f}".format(cum2), 100 * e / b,
+                 " **<== 500 CAP, flat from here**" if k == cd else
+                 (" *(250 cap would bind here)*" if abs(s - CAP) < 0.5 or
+                  (k and r[k - 1][1] < CAP <= s) else "")))
         A("")
-    A("**Day by day, EXPECTED case, capped** -- the one to check against:\n")
-    r = project(bank_now, 2.4, med_now, cap=CAP)
-    cd = next(i for i, x in enumerate(r) if x[1] >= CAP - 0.5)
-    A("| date | day | bank start | size | max/close | contracts | net | return |")
-    A("|---|---|---|---|---|---|---|---|")
-    for i in range(cd + 4):
-        b, s, c, e = r[i]
-        A("| %s | %d | $%.2f | %.0f | %.0f | %.0f | %+.2f | %+.1f%% |%s"
-          % ((d0 + datetime.timedelta(days=i)).strftime("%a %d %b"), i + 1, b, s,
-             2 * s, c, e, 100 * e / b,
-             " **<== 250 CAP**" if i == cd else ""))
+        A("- reaches 500 contracts on **%s** (day %d), bank $%s"
+          % ((d0 + datetime.timedelta(days=cd)).strftime("%a %d %b"), cd + 1,
+             "{:,.0f}".format(r[cd][0])))
+        A("- steady state from there: **$%s/day**, flat"
+          % "{:,.0f}".format(r[cd][3]))
+        r250, cd250, _ = day_table(cpc, CAP)
+        A("- for comparison, capped at 250 it would be **$%s/day** -- the extra"
+          % "{:,.0f}".format(r250[cd250][3]))
+        A("  250 contracts are worth **$%s/day more**, forever"
+          % "{:,.0f}".format(r[cd][3] - r250[cd250][3]))
+        A("")
+
+    # Part 3 scores against the EXPECTED case at the realistic cap
+    r, cd, _ = day_table(2.4, REALISTIC_CAP)
+
     A("\n---\n")
     A("## Part 3 -- ON TRACK?\n")
     A("Fill this in as the days land. The projection re-anchors every time this is")
@@ -312,7 +345,7 @@ def main():
     A("as it stood on 2026-09-15.\n")
     A("| date | projected net (expected) | actual net | on track? |")
     A("|---|---|---|---|")
-    for i in range(min(12, cd + 4)):
+    for i in range(min(21, cd + 4)):
         A("| %s | %+.2f | | |"
           % ((d0 + datetime.timedelta(days=i)).strftime("%Y-%m-%d"), r[i][3]))
     A("")
