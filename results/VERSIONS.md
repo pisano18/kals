@@ -30,6 +30,52 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
+## (NOT DEPLOYED) AMENDMENT 41 — after a jump, sigma is doubled at entry AND in the hedge. FLAG IS OFF.
+
+Shipped in code 2026-09-15 02:xxZ, **default OFF**, `--jump-widen` turns it on.
+Two paper arms carry it from 02:0xZ: **WIDEN** (today's live minus the jump
+gate, plus widening) and **BOTH** (today's live plus widening). Recorded so a
+future `--jump-widen` in `restart_bot.ps1` has an entry to match.
+
+**What it would change.** For 5 seconds after any one-second index move of
+3 sd or more, in either direction, the model's sigma is multiplied by **2.0**
+at both places a position is priced — the entry decision and the hedge's
+belief. Every signal records whether it was priced widened.
+
+**What it does that the jump gate cannot.** A40 refuses an ENTRY into a jump.
+A41 also lowers the belief in a position we ALREADY HOLD when the index jumps
+under it, so the hedge fires sooner. Hedging one tier sooner was measured at
+~17c per rescued contract on the tape's 25 losing markets.
+
+**The number that put it in.** Same measurement as A40 — 17,811 jumps, index
+alone: the 5-second continuation after a >3 sd second has p90 +4.2 sd (calm
++2.1), p95 +6.7 (+3.2), p99 +15.4 (+7.0). The tail is about twice as wide, so
+the multiplier is 2.0 and the window is the 5 s the continuation was measured
+over. Neither was tuned on our fills.
+
+**Self-tested mechanism.** On the BTC 05:30 shape — 47 prints below the
+strike, then the +18.5 second, 13 s left — doubling sigma moves confidence in
+NO from **0.9986 to 0.9327**: from passing the 99.5% gate to nowhere near it.
+Also: the factor is exactly 1.0 with the flag off, on a missing sigma or
+market, on a jump seven seconds old, and on sub-sd wobbles; both `fair()`
+call sites carry it (a held position must be priced by the same model that
+bought it); the signal records `widened`.
+
+**Why this is not the dead "scale sigma by k".** That multiplied EVERY
+decision and shrank the population without touching the loss rate, because
+the error is shape, not width. This multiplies only in the one state where
+the shape is measurably wrong. It is symmetric on purpose — a jump in our
+favour also widens, which costs a few good entries; a directional drift term
+is the refinement, not this version.
+
+**Not deployed. The three-day comparison decides it** (see v-jump).
+
+**TO DEPLOY:** add `"--jump-widen"` after `"--jump-gate"` in
+`restart_bot.ps1` and run the restart script. **REVERT:** remove it; the
+default is OFF.
+
+---
+
 ## v-jump — 2026-09-15 02:xxZ — DO NOT BUY INTO A JUMP THAT JUST WENT AGAINST US (`6f05769`)
 
 **Operator decision, 2026-09-14 ~21:45 ET.** His words: *"If it earns more

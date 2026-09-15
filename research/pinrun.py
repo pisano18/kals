@@ -299,6 +299,58 @@ def jump_block(moves, sigma, want):
     return j is not None and j >= JUMP_SIGMA
 
 
+# AMENDMENT 41 -- AFTER A JUMP, THE MODEL IS TWICE AS UNSURE AS IT THINKS.
+#
+# The same measurement that motivated A40 (17,811 jumps, index alone): after
+# a one-second move over 3 sd, the next five seconds' continuation has p90
+# +4.2 sd against +2.1 after calm, p95 +6.7 against +3.2, p99 +15.4 against
+# +7.0. The TAIL is about twice as wide. So for the few seconds after a jump,
+# sigma is multiplied by JUMP_WIDEN at BOTH places the model prices a
+# position -- the entry decision and the hedge's belief.
+#
+# What that does that A40 cannot: A40 refuses an ENTRY into a jump. A41 also
+# lowers the belief in a position we ALREADY HOLD when the index jumps under
+# it, so the hedge fires sooner -- and hedging one tier sooner was measured at
+# ~17c per rescued contract on the tape's 25 losing markets.
+#
+# Symmetric on purpose: a jump in our FAVOUR also widens sigma, which lowers
+# confidence on a position that just got safer. That costs a few good entries
+# and is the honest first version; a directional (drift) term is the
+# refinement, not this.
+#
+# This is NOT the dead "scale sigma by k" in CURRENT_STATE. That multiplied
+# every decision, which shrank the population without touching the loss rate
+# because the error is shape, not width. This multiplies only in the one
+# state where the shape is measurably wrong.
+#
+# OFF BY DEFAULT. --jump-widen turns it on.
+JUMP_WIDEN = 2.0          # sigma multiplier while a recent jump is in view
+_DEFAULT_JUMP_WIDEN = 2.0
+JUMP_WIDEN_WINDOW = 5     # seconds a jump stays "recent" -- the horizon the
+_DEFAULT_JUMP_WIDEN_WINDOW = 5   # continuation was measured over
+WIDEN_ENABLED = False
+_DEFAULT_WIDEN_ENABLED = False
+
+
+def widen_factor(idx, iid, sigma):
+    """AMENDMENT 41. The sigma multiplier for this market right now: JUMP_WIDEN
+    if any of the last JUMP_WIDEN_WINDOW one-second moves was >= JUMP_SIGMA
+    in EITHER direction, else 1.0. Off, or unmeasurable, is exactly 1.0 --
+    a feed hiccup must never widen anything."""
+    if not WIDEN_ENABLED:
+        return 1.0
+    try:
+        if not sigma or float(sigma) <= 0:
+            return 1.0
+        moves = idx.recent_moves(iid, JUMP_WIDEN_WINDOW)
+        for m in moves:
+            if abs(float(m)) / float(sigma) >= JUMP_SIGMA:
+                return float(JUMP_WIDEN)
+    except (TypeError, ValueError, AttributeError):
+        return 1.0
+    return 1.0
+
+
 AGAINST_SIGMA = 1.0      # spot this many one-second moves past the strike,
 _DEFAULT_AGAINST_SIGMA = 1.0   # against us, counts as "running against us"
 AGAINST_EDGE = 0.020     # ...and only matters below this edge. 2c.
@@ -3247,6 +3299,72 @@ def _selftest_body():
            "and zero is never TIGHTER than the floor it replaces -- this flag "
            "may only ever loosen")
 
+        # ---- AMENDMENT 41: after a jump, sigma is doubled ---------------
+        ck(_DEFAULT_JUMP_WIDEN == 2.0 and _DEFAULT_JUMP_WIDEN_WINDOW == 5
+           and _DEFAULT_WIDEN_ENABLED is False,
+           "A41 declared defaults: x2.0, 5 s window, OFF (running %.1f / %d / %r)"
+           % (JUMP_WIDEN, JUMP_WIDEN_WINDOW, WIDEN_ENABLED))
+        _i41 = IndexWS(["W"])
+        _C41 = 2_000_000
+        _sg41 = 4.073757
+        # 47 locked prints ~10 under the strike, then the BTC 05:30 jump
+        _K41 = 77695.85
+        for _s in range(_C41 - 60, _C41 - 13):
+            _i41.ticks["W"][_s] = _K41 - 10.0
+        _i41.ticks["W"][_C41 - 13] = _K41 + 12.25        # the +18.5 second
+        _on41 = WIDEN_ENABLED
+        try:
+            globals()["WIDEN_ENABLED"] = False
+            ck(widen_factor(_i41, "W", _sg41) == 1.0,
+               "with the flag OFF the factor is exactly 1.0 even on a jump -- "
+               "the flag is the whole switch")
+            globals()["WIDEN_ENABLED"] = True
+            ck(widen_factor(_i41, "W", _sg41) == 2.0,
+               "with the flag ON, the +22.25 move (5.5 sd) in the last 5 s "
+               "doubles sigma")
+            ck(widen_factor(_i41, "W", None) == 1.0
+               and widen_factor(_i41, "W", 0.0) == 1.0
+               and widen_factor(_i41, "MISSING", _sg41) == 1.0,
+               "a missing sigma or a missing market never widens -- a feed "
+               "hiccup must not make the model humbler by accident")
+            # THE MECHANISM: the widened model is LESS sure, on the BTC shape
+            _f1 = fair(_i41, "W", _C41, _C41 - 13, _K41, _sg41)
+            _f2 = fair(_i41, "W", _C41, _C41 - 13, _K41, _sg41 * 2.0)
+            _c1, _c2 = 1.0 - _f1, 1.0 - _f2               # confidence in NO
+            ck(_c1 > _c2 and (_c1 - _c2) > 1e-4,
+               "on the BTC 05:30 shape, doubling sigma lowers confidence in "
+               "NO from %.5f to %.5f -- the widened model is humbler exactly "
+               "where the unwidened one was 99.99%% sure and wrong" % (_c1, _c2))
+            # a jump 6+ seconds ago is out of the 5 s window
+            _i42 = IndexWS(["V"])
+            for _s in range(_C41 - 60, _C41 - 5):
+                _i42.ticks["V"][_s] = 100.0
+            _i42.ticks["V"][_C41 - 12] = 200.0            # a huge move, 7 s back
+            for _s in range(_C41 - 11, _C41 - 5):
+                _i42.ticks["V"][_s] = 200.0
+            ck(widen_factor(_i42, "V", 1.0) == 1.0,
+               "a jump seven seconds ago is outside the 5 s window and does "
+               "not widen")
+            # THE NULL: calm prints never widen
+            _i43 = IndexWS(["U"])
+            for _s in range(_C41 - 60, _C41):
+                _i43.ticks["U"][_s] = 100.0 + 0.5 * ((_s % 3) - 1)
+            ck(widen_factor(_i43, "U", 1.0) == 1.0,
+               "NULL: sub-sd wobbles never widen")
+        finally:
+            globals()["WIDEN_ENABLED"] = _on41
+        _src41 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _tl41 = _src41[_src41.index(chr(10) + "def trade_loop("):]
+        ck("sg * SIGMA_STRESS * _wf," in _tl41,
+           "the ENTRY decision multiplies sigma by the widen factor")
+        ck("_hsg * SIGMA_STRESS * widen_factor(idx, _hiid, _hsg)," in _tl41,
+           "and so does the HEDGE's belief -- both places the model prices a "
+           "position, or a held position would be priced by a different model "
+           "than the one that bought it")
+        ck("widened=bool(_wf > 1.0)," in _tl41,
+           "and every signal records whether it was priced widened, so the "
+           "paper arm's effect is auditable")
+
         # ---- AMENDMENT 40: do not buy into a jump against us -----------
         ck(_DEFAULT_JUMP_SIGMA == 3.0 and _DEFAULT_JUMP_LOOKBACK == 3
            and _DEFAULT_JUMP_ENABLED is False,
@@ -4789,8 +4907,9 @@ def trade_loop(a, rec, book, idx, series_index):
                 _hsg = idx.sigma(_hiid)
                 if _hsg is None:
                     continue
-                _hf = fair(idx, _hiid, _hcs, now_s, _hstrike, _hsg * SIGMA_STRESS,
-                           round_digits=_hdig)
+                _hf = fair(idx, _hiid, _hcs, now_s, _hstrike,
+                           _hsg * SIGMA_STRESS * widen_factor(idx, _hiid, _hsg),
+                           round_digits=_hdig)                  # AMENDMENT 41
                 if _hf is None:
                     continue
                 _belief = _hf if _hwant == "yes" else 1.0 - _hf
@@ -5103,7 +5222,8 @@ def trade_loop(a, rec, book, idx, series_index):
             if sg is None:
                 _gate("no_sigma", close_s, tk)
                 continue
-            f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS,
+            _wf = widen_factor(idx, iid, sg)          # AMENDMENT 41
+            f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS * _wf,
                      round_digits=digits)
             if f is None:
                 continue
@@ -5435,6 +5555,7 @@ def trade_loop(a, rec, book, idx, series_index):
                        size=size, take_n=take_n, strike=strike, digits=digits,
                        spot=spot, sigma=round(sg, 6), book_age_ms=b["age_ms"],
                        index_age_s=round(iage, 2), exchange_index=exi,
+                       widened=bool(_wf > 1.0),
                        cond_x=(round(cx_, 4) if cx_ is not None else None),
                        cond_n=cn_,
                        cond_own=(round(cown_, 4)
@@ -5738,6 +5859,12 @@ def main():
                          "the last 3 seconds. Jumps continue in the tail (7.9%% "
                          "are followed by another >=5 sd within 5 s, vs 1.3%% "
                          "the model assumes). OFF by default.")
+    ap.add_argument("--jump-widen", action="store_true",
+                    help="AMENDMENT 41: for 5 s after any one-second index "
+                         "move of 3 sd or more, double the model's sigma at "
+                         "both the entry decision and the hedge's belief. "
+                         "The tail after a jump is ~2x wider than the model "
+                         "assumes. OFF by default.")
     ap.add_argument("--hedge-belief", type=float, default=None,
                     help="AMENDMENT 34: belief in OUR side below which we buy "
                          "the other one. Default %.2f. MEASURED 2026-09-14 on "
@@ -5865,6 +5992,8 @@ def main():
         globals()["SWEEP_DEPTH"] = True
     if a.jump_gate:
         globals()["JUMP_ENABLED"] = True
+    if a.jump_widen:
+        globals()["WIDEN_ENABLED"] = True
     if a.depth_ladder:
         if not a.sweep_depth:
             raise SystemExit(
@@ -6036,6 +6165,8 @@ def main():
         sweep_depth=SWEEP_DEPTH, depth_ladder=DEPTH_LADDER,
         jump_gate=JUMP_ENABLED, jump_sigma=JUMP_SIGMA,
         jump_lookback=JUMP_LOOKBACK,
+        jump_widen=WIDEN_ENABLED, jump_widen_factor=JUMP_WIDEN,
+        jump_widen_window=JUMP_WIDEN_WINDOW,
         min_fill_frac_running=MIN_FILL_FRAC,
         max_drawdown=MAX_DRAWDOWN,
         max_per_market_run=MAX_PER_MARKET, min_level=MIN_LEVEL,

@@ -657,3 +657,48 @@ confidence AND fires the hedge sooner on a position held through a jump.
 `CURRENT_STATE`'s "scale sigma by k" was global and dead; this is conditional
 on the one state where the model is provably wrong. Not built. Needs its own
 self-tests and a paper arm.
+
+
+---
+
+# PART 6 — DEPLOYED AND ARMED  (2026-09-14 ~22:00 ET)
+
+The operator: *"If it earns more money, do it! But perhaps also have a paper
+trade version going for each and both that check if these implementations
+weren't in (the version running today) would we earn more. That's the realest
+check if it's good. We'll compare all in 3 days."*
+
+## Live
+
+**v-jump.** `--jump-gate` on. Restarted clean 21:39 ET, pid 1647780, both
+recorders confirmed writing. `versioncheck` clean.
+
+## The comparison, all auto-sized off the same bank
+
+| arm | pid | jump gate | widening | started |
+|---|---|---|---|---|
+| **LIVE** | 1647780 | **on** | off | 21:39 ET |
+| CONTROL (today's version, unchanged) | 1649636 | off | off | 21:39 ET |
+| WIDEN | 1650424 | off | **on** | 21:42 ET |
+| BOTH | 1643080 | **on** | **on** | 21:42 ET |
+| GATE twin (paper copy of live) | 1646604 | on | off | 21:28 ET |
+
+**Compare on 2026-09-17**: net per contract and losing closes, per arm. The
+CONTROL arm is the one that answers the operator's question directly —
+"would today's version have earned more without it."
+
+## AMENDMENT 41 shipped, flag OFF
+
+The model version: for 5 s after any >=3 sd second, sigma x2.0 at both the
+entry and the hedge. Mechanism self-test on the BTC 05:30 shape: confidence
+in NO falls from 0.9986 to 0.9327 — that trade is not made. Both `fair()`
+sites carry it, so a held position is priced by the model that bought it.
+
+## Read on the 17th
+
+`python research/pinhedgelive.py` for the hedge; per-arm net from the
+`settled` records in each arm's `results/pinrun-paper-*.jsonl`. The four
+arms started within 30 minutes of each other on the same bank, so a straight
+comparison of net and losing closes is fair. Three days at ~40 closes a day
+is ~120 closes each — enough to see a gap in losses, not enough to prove a
+gap in cents per contract unless it is large.
