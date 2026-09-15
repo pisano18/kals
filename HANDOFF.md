@@ -1,3 +1,19 @@
+# 2026-09-15 16:1xZ -- ACCOUNT TRADING BLOCKED BY KALSHI. Not a bot fault.
+
+- Every order since the 15:12Z restart returns **409 `TRADING_BLOCKED`** (7 of 7,
+  first 15:44:43Z). Last accepted order 13:14:32Z (201, 76 filled). Never seen before
+  in any live log. The operator's phone app shows the same block: "We're unable to
+  process your trade right now. Please contact support." Operator contacting support.
+- Exchange status: trading_active true on index 2. Balance $453.26 readable, no
+  positions. So it is account-level, not exchange-level and not the key.
+- pintake treats a 4xx as rejected-nothing-placed and releases the stake, so the
+  blocked attempts do NOT consume MAX_RUN_STAKE and the bot resumes on its own
+  when the block lifts. Leave it running.
+- Order volume for support context, orders sent per UTC day: 09-12 127, 09-13 75,
+  09-14 57, 09-15 47. No rejection of any kind before today.
+- Operator decisions: **no Windows changes for now** (no auto-start, no update
+  pause). **Possible migration of everything to the Raspberry Pi tonight.**
+
 # 2026-09-15 15:3xZ -- WINDOWS UPDATE RESTART killed everything for 1h43m; restored. Coin Race paper arm live.
 
 ## What happened
