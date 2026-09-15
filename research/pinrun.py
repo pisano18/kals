@@ -207,6 +207,7 @@ _DEFAULT_LADDER_LEVELS = 150   # The tick is 0.1c above 90c, so the 88-98c band
                          # never in the scan loop.
 DUMP_DISCOUNT = 0.15     # cents below fair that make an offer a warning
 DUMP_ENABLED = True
+_DEFAULT_DUMP_ENABLED = True   # --take-dumps clears it, PAPER ONLY
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
                        # moments it calls <2% risk:
@@ -3023,7 +3024,7 @@ def _selftest_body():
     ck('nb["dumped"]' in src and "_conf >= DUMP_CONF and _disc > DUMP_DISCOUNT" in src,
        "the guard is wired into the trade loop and counted in the near-miss "
        "record, so refusals are visible rather than silent")
-    ck(DUMP_ENABLED is True,
+    ck(_DEFAULT_DUMP_ENABLED is True,
        "AMENDMENT 10b: the guard is ON by operator decision (undeterminable "
        "EV, owner chose fewer losses); would-be outcomes are recorded")
     _b10b = src[src.index(chr(10) + "def trade_loop("):]
@@ -6282,6 +6283,15 @@ def main():
                          "--sweep-depth and does nothing without it. Every "
                          "later gate -- edge, dump guard, ceiling, EV -- still "
                          "runs on the market this lets through.")
+    ap.add_argument("--take-dumps", action="store_true",
+                    help="PAPER RESEARCH ONLY. Turn OFF AMENDMENT 10's dump "
+                         "guard and buy the offers it refuses -- a certainty "
+                         "priced 15c+ below fair. Scored over 132 refused "
+                         "markets the win rate falls as the discount widens "
+                         "(91%% -> 53%%) but the PRICE falls faster: at 8.2c "
+                         "the break-even is 8.7%%. Our 4 live fills in the "
+                         "band all lost, but all four sat at 59-82c and the "
+                         "cheap end is untested. REFUSED ON A LIVE RUN.")
     ap.add_argument("--no-external-detect", action="store_true",
                     help="AMENDMENT 43: turn OFF telling a withdrawal from a "
                          "trading loss. With it off, taking money out of the "
@@ -6424,6 +6434,17 @@ def main():
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
     if a.sweep_depth:
         globals()["SWEEP_DEPTH"] = True
+    if getattr(a, "take_dumps", False):
+        # NEVER LIVE. This deliberately removes a guard that was built from
+        # four real losses; it exists to measure the population the guard
+        # refuses, in paper, beside the live bot.
+        if a.live:
+            raise SystemExit(
+                "--take-dumps is refused on a LIVE run. It turns off the dump "
+                "guard, which was built from four live losses (XRP 82c, DOGE "
+                "10c, SOL 59c, NEAR 73c -- 0 of 4). Run it as a paper arm and "
+                "compare.")
+        globals()["DUMP_ENABLED"] = False
     if getattr(a, "no_external_detect", False):
         globals()["EXTERNAL_DETECT"] = False
     if a.jump_gate:
