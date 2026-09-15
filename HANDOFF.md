@@ -1,3 +1,14 @@
+# 2026-09-15 19:3xZ -- STILL BLOCKED after the operator's browser location check; bot stopped again
+
+- Operator verified location in a browser ("verified to api trade") and asked for a
+  normal restart: restart_bot.ps1 at 18:33Z (pid 83680), watch_bot.ps1 18:36Z.
+- 18:45Z no offer; 19:00Z best 98.3c over ceiling; 19:15Z best 98.6c over ceiling --
+  no orders sent, so nothing tested. 19:29-19:30Z: **9 orders, all 409
+  TRADING_BLOCKED.** Stopped watchdog then bot again (standing instruction: no trade
+  requests while blocked).
+- Open question: the location check was done in a browser -- if it is tied to the
+  device/IP, it may need doing FROM THE PC's connection, where API orders come from.
+
 # 2026-09-15 17:5xZ -- LIKELY CAUSE OF THE TRADING BLOCK: VPN logins from work
 
 - Operator: his work network blocks Kalshi, so he logged in through a VPN at work.
