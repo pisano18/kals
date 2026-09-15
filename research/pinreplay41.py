@@ -56,13 +56,15 @@ def index_upto(iid, dense, lo, t):
     return ix
 
 
-def widen_at(ix, iid, sg):
-    """The A41 multiplier at this second: 2.0 if any of the last 5 adjacent
-    one-second moves is >= 3 sd in either direction."""
-    for m in ix.recent_moves(iid, pinrun.JUMP_WIDEN_WINDOW):
-        if abs(m) / sg >= pinrun.JUMP_SIGMA:
-            return pinrun.JUMP_WIDEN
-    return 1.0
+def widen_at(ix, iid, sg, want):
+    """The A41/A42 multiplier at this second.
+
+    CALLS THE BOT'S OWN FUNCTION. The first version of this file reimplemented
+    the rule, symmetrically -- so when AMENDMENT 42 made it direction-aware,
+    the replay would have gone on scoring the OLD rule and reported it as the
+    new one. A replay that reimplements the decision is not a replay.
+    """
+    return pinrun.widen_factor(ix, iid, sg, want)
 
 
 def belief(ix, iid, close_s, t, strike, sg, digits, want):
@@ -74,7 +76,8 @@ def belief(ix, iid, close_s, t, strike, sg, digits, want):
 
 def walk(iid, dense, close_s, t0, strike, sg, digits, want, factor_fn):
     """From the signal second to close-TAU_MIN: the first second belief falls
-    under the hedge line, or None. `factor_fn(ix)` gives the sigma multiplier."""
+    under the hedge line, or None. `factor_fn(ix)` gives the sigma multiplier
+    and is called with the index as it stood at each second."""
     lo = close_s - 70
     for t in range(t0, close_s - TAU_MIN + 1):
         ix = index_upto(iid, dense, lo, t)
@@ -102,14 +105,26 @@ def selftest():
     D.v[(close - 13) - D.base] = K + 0.6          # the jump second
     D.v[(close - 12) - D.base] = K + 50.0         # the FUTURE, must be invisible at t=close-13
     sg = 0.1                                       # so +1.1 is an 11-sd jump
+    pinrun.WIDEN_ENABLED = True
     ix = index_upto("T", D, close - 70, close - 13)
     ck(ix.spot("T")[0] == close - 13 and ix.spot("T")[1] == K + 0.6,
        "NO LOOKAHEAD: the index object at t holds t as its newest print, not "
        "the +50 planted one second later")
     ck(len(ix.recent_moves("T", 3)) == 3 and abs(ix.recent_moves("T", 3)[0] - 1.1) < 1e-9,
        "recent_moves sees the +1.1 jump as the newest move")
-    ck(widen_at(ix, "T", sg) == pinrun.JUMP_WIDEN,
-       "an 11-sd jump inside the window widens by %.1f" % pinrun.JUMP_WIDEN)
+    ck(widen_at(ix, "T", sg, "no") == pinrun.JUMP_WIDEN,
+       "an 11-sd UP jump is against a NO holder and widens by %.1f"
+       % pinrun.JUMP_WIDEN)
+    ck(widen_at(ix, "T", sg, "yes") == pinrun.JUMP_WIDEN_FAVOUR,
+       "AMENDMENT 42: the SAME jump is in a YES holder's favour and widens by "
+       "%.1f -- the replay reads the bot's own rule, so it cannot drift from it"
+       % pinrun.JUMP_WIDEN_FAVOUR)
+    _was = pinrun.WIDEN_ENABLED
+    pinrun.WIDEN_ENABLED = False
+    ck(widen_at(ix, "T", sg, "no") == 1.0,
+       "and with the bot's flag off it is 1.0 -- the replay is reading the "
+       "real switch, not a copy of it")
+    pinrun.WIDEN_ENABLED = _was
     b1 = belief(ix, "T", close, close - 13, K, sg, None, "no")
     b2 = belief(ix, "T", close, close - 13, K, sg * pinrun.JUMP_WIDEN, None, "no")
     ck(b1 is not None and b2 is not None and b2 < b1,
@@ -125,9 +140,11 @@ def selftest():
     for s in range(close - 100, close + 1):
         D2.v[s - D2.base] = K - 0.5 + (0.01 if s % 2 else 0.0)
     ix2 = index_upto("C", D2, close - 70, close - 20)
-    ck(widen_at(ix2, "C", sg) == 1.0, "NULL: a calm index never widens")
+    ck(widen_at(ix2, "C", sg, "no") == 1.0 and widen_at(ix2, "C", sg, "yes") == 1.0,
+       "NULL: a calm index never widens, either side")
     ck(walk("C", D2, close, close - 20, K, sg, None, "no", lambda ix: 1.0) is None
-       and walk("C", D2, close, close - 20, K, sg, None, "no", lambda ix: widen_at(ix, "C", sg)) is None,
+       and walk("C", D2, close, close - 20, K, sg, None, "no",
+                lambda ix: widen_at(ix, "C", sg, "no")) is None,
        "NULL: on a calm index neither model ever crosses the hedge line")
     print("pinreplay41 selftest:", "OK" if ok else "FAILED")
     return ok
@@ -141,6 +158,8 @@ def load_fills(day_et):
     out = []
     for p in sorted(glob.glob(os.path.join(HERE, "..", "results", "pinrun-live-*.jsonl"))):
         sig, res, orders = {}, {}, []
+        hedge = collections.defaultdict(float)
+        settles = []
         for line in open(p, encoding="utf-8"):
             try:
                 d = json.loads(line)
@@ -153,6 +172,13 @@ def load_fills(day_et):
                 orders.append(d)
             elif k == "settled":
                 res[(d["ticker"], d.get("want"))] = d.get("result")
+                settles.append(d)
+        # a settled leg on the side we did NOT buy is a hedge leg; it belongs
+        # to the same market, so refusing the entry removes it too
+        for d in settles:
+            s = sig.get(d["ticker"])
+            if s is not None and d.get("want") != s.get("want"):
+                hedge[d["ticker"]] += d.get("pnl_c", 0) / 100.0
         for o in orders:
             s = sig.get(o["ticker"])
             if not s or not (lo <= s["t"] < hi):
@@ -162,7 +188,7 @@ def load_fills(day_et):
                 continue
             won = (r == s["want"])
             n, px, fee = o["filled"], o["exec_price"], o.get("fee_total") or 0
-            out.append(dict(sig=s, n=n, px=px, won=won,
+            out.append(dict(sig=s, n=n, px=px, won=won, hedge=hedge.get(o["ticker"], 0.0),
                             pnl=(n * (1 - px) - fee) if won else -(n * px + fee)))
     return out
 
@@ -178,6 +204,11 @@ def main():
     if not fills:
         print("loaded nothing -- no live fills on", day)
         return 0
+    # THE FLAG IS OFF IN pinrun BY DEFAULT. This file never trades, so it is
+    # forced on here to answer "what if it had been running"; without this the
+    # bot's own widen_factor would correctly return 1.0 everywhere and the
+    # widening rows would silently read as "no effect".
+    pinrun.WIDEN_ENABLED = True
     idx = idxload.load(list(replay.SERIES_TO_INDEX.values()), verbose=False)
 
     rows = []
@@ -194,14 +225,14 @@ def main():
         ix = index_upto(iid, D, close_s - 70, t0)
         b_logged = (1 - s["fair"]) if want == "no" else s["fair"]
         b_base = belief(ix, iid, close_s, t0, strike, sg, digits, want)
-        wf = widen_at(ix, iid, sg)
+        wf = widen_at(ix, iid, sg, want)
         b_wide = belief(ix, iid, close_s, t0, strike, sg * wf, digits, want)
         gate = pinrun.jump_against(ix.recent_moves(iid, pinrun.JUMP_LOOKBACK), sg, want)
         refused_gate = gate is not None and gate >= pinrun.JUMP_SIGMA
         refused_wide = b_wide is not None and b_wide < PIN
         h_base = walk(iid, D, close_s, t0 + 1, strike, sg, digits, want, lambda ix: 1.0)
         h_wide = walk(iid, D, close_s, t0 + 1, strike, sg, digits, want,
-                      lambda ix, iid=iid, sg=sg: widen_at(ix, iid, sg))
+                      lambda ix, iid=iid, sg=sg, want=want: widen_at(ix, iid, sg, want))
         rows.append(dict(f=f, coin=s["ticker"].split("15M")[0][2:], t=s["t"][11:19],
                          tau=s["tau"], b_logged=b_logged, b_base=b_base, b_wide=b_wide,
                          wf=wf, gate=gate, rg=refused_gate, rw=refused_wide,
@@ -215,26 +246,46 @@ def main():
           "rebuilt from the index -- small means the replay is faithful)\n"
           % (max(diffs), sorted(diffs)[len(diffs) // 2], len(diffs)))
 
-    tot = sum(r["f"]["pnl"] for r in rows)
-    print("  WHAT HAPPENED: %d fills, net $%+.2f, %d losses\n"
-          % (len(rows), tot, sum(1 for r in rows if not r["f"]["won"])))
+    def allin(keep):
+        """Entry P&L plus the hedge legs of the markets still traded."""
+        tk = set()
+        v = 0.0
+        for r in keep:
+            v += r["f"]["pnl"]
+            t = r["f"]["sig"]["ticker"]
+            if t not in tk:
+                v += r["f"]["hedge"]
+                tk.add(t)
+        return v
 
-    for name, key in (("A40 JUMP GATE", "rg"), ("A41 WIDENING", "rw")):
+    SCEN = (("as it happened",            lambda r: False),
+            ("A40 jump gate  (LIVE now)", lambda r: r["rg"]),
+            ("A41/42 widening",           lambda r: r["rw"]),
+            ("BOTH together",             lambda r: r["rg"] or r["rw"]))
+    base_in = allin(rows)
+    print("  THE COMPARISON, ALL-IN (entry legs plus the hedge legs of the markets kept)\n")
+    print("    %-28s %7s %7s %10s %10s %11s"
+          % ("scenario", "refused", "losses", "entries$", "hedges$", "ALL-IN$"))
+    for name, fn in SCEN:
+        ref = [r for r in rows if fn(r)]
+        keep = [r for r in rows if not fn(r)]
+        ent = sum(r["f"]["pnl"] for r in keep)
+        tot_in = allin(keep)
+        print("    %-28s %7d %7d %+10.2f %+10.2f %+11.2f%s"
+              % (name, len(ref), sum(1 for r in keep if not r["f"]["won"]),
+                 ent, tot_in - ent, tot_in,
+                 "" if not ref else "   (%+.2f)" % (tot_in - base_in)))
+    print()
+    for name, key in (("A40 JUMP GATE", "rg"), ("A41/42 WIDENING", "rw")):
         ref = [r for r in rows if r[key]]
-        print("  %s would have REFUSED %d of %d fills:" % (name, len(ref), len(rows)))
+        print("  %s refuses %d of %d fills:" % (name, len(ref), len(rows)))
         for r in ref:
-            print("    %-5s %s tau %2d  %s  $%+7.2f   %s"
+            print("    %-5s %s tau %2d  %s  entry $%+7.2f  hedge $%+6.2f   %s"
                   % (r["coin"], r["t"], r["tau"], "LOST" if not r["f"]["won"] else "won ",
-                     r["f"]["pnl"],
+                     r["f"]["pnl"], r["f"]["hedge"],
                      ("jump %+.1f sd against" % r["gate"]) if key == "rg"
-                     else ("belief %.4f -> %.4f widened" % (r["b_base"], r["b_wide"]))))
-        kept = tot - sum(r["f"]["pnl"] for r in ref)
-        print("    -> net would have been $%+.2f instead of $%+.2f (%+.2f)\n"
-              % (kept, tot, kept - tot))
-    both = [r for r in rows if r["rg"] or r["rw"]]
-    kept = tot - sum(r["f"]["pnl"] for r in both)
-    print("  BOTH together refuse %d fills -> net $%+.2f instead of $%+.2f (%+.2f)\n"
-          % (len(both), kept, tot, kept - tot))
+                     else ("belief %.4f -> %.4f (x%.1f)" % (r["b_base"], r["b_wide"], r["wf"]))))
+        print()
 
     print("  THE HEDGE, on the fills that would still have been made:")
     print("    first second belief falls under %.2f -- baseline model vs widened model\n" % HEDGE_AT)

@@ -740,3 +740,65 @@ ratio holds; today it was $58 saved for $23 given up, which is still +$32.
 **What it cannot say.** Nothing about trades either rule would have ADDED
 (there are none — both only refuse or fire earlier), and nothing about the
 hedge PRICE at an earlier second, which needs the book at that second.
+
+
+---
+
+# PART 8 — ALL FOUR VERSIONS ON TODAY, ALL-IN  (2026-09-15 ~03:00 ET)
+
+Operator: *"calculate what would've happened today if you had this latest
+version and the gate running simultaneously today."*
+
+`research/pinreplay41.py`, rebuilt so it calls **pinrun's own
+`widen_factor()`** instead of its own copy — the first version reimplemented
+the rule symmetrically, so AMENDMENT 42 would have been invisible to it and
+the replay would have scored the old rule while reporting the new one. It now
+also carries the **hedge legs** of each market, so every row is all-in and
+comparable to the $76 the operator sees.
+
+61 live fills, 2026-09-14 ET. Reproduction check against the beliefs the bot
+logged at the time: median difference 0.00000, max 0.00164.
+
+| scenario | refused | losses | entries | hedges | **ALL-IN** | vs actual |
+|---|---|---|---|---|---|---|
+| as it happened | 0 | 2 | +$27.82 | +$53.47 | **+$81.30** | — |
+| **A40 jump gate (LIVE now)** | 1 | 1 | +$86.26 | +$29.30 | **+$115.55** | **+$34.26** |
+| A41/42 widening | 10 | 1 | +$59.99 | +$29.30 | +$89.28 | +$7.99 |
+| **BOTH together** | 10 | 1 | +$59.99 | +$29.30 | **+$89.28** | **+$7.99** |
+
+**BOTH is identical to widening alone.** The widening already refuses the one
+trade the gate refuses, plus nine more — so on today's data the gate adds
+nothing on top of the widening, and the widening *subtracts* from the gate.
+The gate is the precise instrument; the widening is the blunt one.
+
+**Note on the count:** one of the ten (DOGE 15:14) shows belief 0.9942 at a
+multiplier of x1.0 — it sits a hair under the 99.5% gate in the replay's own
+arithmetic and is not a widening effect. The honest widening cost today is
+**8 winners worth ~$22**, plus the BTC loss it correctly refused.
+
+**The asymmetry helped, a little.** At the symmetric 2.0 the widening netted
++$54.89 on entries; at 1.5 for favourable jumps, +$59.99. The nine winners are
+still refused — their beliefs fall from ~0.998 to ~0.97, still under the
+99.5% gate even at the gentler multiplier. So AMENDMENT 42 is directionally
+right and was not enough to save them.
+
+**The hedge.** On HYPE — the loss neither rule prevents — the widened model
+fires at the **same second**, because no jump preceded that collapse. Zero
+new false hedges on today's winners.
+
+**One day, one jump-loss.** The gate looks perfect because today contained
+exactly one trade of the kind it exists to refuse. The arms decide.
+
+## The seven arms now running
+
+| arm | gate | widen | favour | log |
+|---|---|---|---|---|
+| **LIVE** | on | — | — | `pinrun-live-20260915T013908Z` |
+| GATE twin | on | — | — | `...paper-20260915T012843Z` |
+| CONTROL | off | — | — | `...paper-20260915T013933Z` |
+| ~~WIDEN sym~~ | off | on | 2.0 | stopped 02:47Z |
+| ~~BOTH sym~~ | on | on | 2.0 | stopped 02:47Z |
+| **WIDEN** | off | on | **1.5** | `...paper-20260915T024715Z` |
+| **BOTH** | on | on | **1.5** | `...paper-20260915T024718Z` |
+
+Compare 2026-09-17 on all-in net and losing closes.
