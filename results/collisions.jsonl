@@ -28,3 +28,15 @@
 {"note": "you cannot calibrate a model on series that have never run a market. Zero rows. Contradiction 3 is closed.", "pair": ["F-C09", "F-M03"], "t": "2026-09-14T08:49:51Z", "verdict": "nothing"}
 {"note": "both rules are already applied at their conservative limit -- we cluster by close time, which assumes 1 observation per close, and F-B03 bounds the worst close by construction. Measuring our own intra-close loss correlation rests on 10 losing closes: cannot separate rho 0.6 from 0.9.", "pair": ["F-R01", "F-R05"], "t": "2026-09-14T08:49:51Z", "verdict": "nothing"}
 {"note": "coin identity failed as a risk sorter; sweep intensity in the 60s BEFORE the signal is a per-event sorter we already hold and have never scored.", "pair": ["F-P11", "F-X05"], "t": "2026-09-14T08:49:51Z", "verdict": "lead"}
+{"pair": ["F-I03", "F-X02"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-I10", "F-M03"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-B01", "F-R02"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-P10", "F-X05"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-M02", "F-R03"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-P04", "F-P07"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"note": "", "pair": ["F-I03", "F-X02"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-B01", "F-R02"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-M02", "F-R03"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-P04", "F-P07"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
+{"note": "collector gaps are hour-sized, not 5-min (F-I05); count index coverage per close and check the unexplained 1.87->4.61pp deterioration is not a tape artefact", "pair": ["F-I10", "F-M03"], "t": "2026-09-15T08:51:10Z", "verdict": "lead"}
+{"note": "a level-clearing sweep fills every resting order regardless of queue position, so the swept-volume fraction is a queue-free LOWER BOUND on maker fill rate -- no simulator needed", "pair": ["F-P10", "F-X05"], "t": "2026-09-15T08:51:10Z", "verdict": "lead"}
