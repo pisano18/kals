@@ -1,3 +1,15 @@
+# 2026-09-15 17:5xZ -- LIKELY CAUSE OF THE TRADING BLOCK: VPN logins from work
+
+- Operator: his work network blocks Kalshi, so he logged in through a VPN at work.
+  Kalshi confirms eligibility from IP address; one account seen from home Verizon
+  (Chesapeake VA), a phone, and a VPN exit is a plausible automatic
+  compliance/location block. NOT confirmed by Kalshi yet.
+- The home PC has no VPN (single Wi-Fi adapter, Verizon Business, Chesapeake VA),
+  so the bot never traded through one. The iPhone Kalshi app has no location
+  permission at all.
+- Advised: stop using the VPN for Kalshi; disclose it to support plainly.
+- API account endpoints (docs.kalshi.com llms.txt) expose no restriction reason.
+
 # 2026-09-15 16:3xZ -- LIVE BOT STOPPED BY OPERATOR while Kalshi resolves the block
 
 - Operator: "Don't keep sending trade requests for now." Stopped watch_bot.ps1 first
