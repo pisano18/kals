@@ -1,3 +1,11 @@
+# 2026-09-15 19:4xZ -- Kalshi sent an ID verification link; operator completed it; STILL BLOCKED
+
+- Restarted normally 19:37Z (pid 91052, watchdog 19:37:50Z). 19:45Z close: 9 orders,
+  all 409 TRADING_BLOCKED. Stopped watchdog then bot. Kalshi's help center says the
+  user is "notified via email or within the platform when the review is finalized",
+  so a submitted ID check is not the same as a lifted block.
+- Next restart only after Kalshi confirms, or after a $1 app trade succeeds.
+
 # 2026-09-15 19:3xZ -- STILL BLOCKED after the operator's browser location check; bot stopped again
 
 - Operator verified location in a browser ("verified to api trade") and asked for a
