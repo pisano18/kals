@@ -1,3 +1,50 @@
+# 2026-09-15 15:3xZ -- WINDOWS UPDATE RESTART killed everything for 1h43m; restored. Coin Race paper arm live.
+
+## What happened
+- 13:29:10Z `MoUsoCoreWorker.exe` (Windows Update) forced a restart, then
+  `TrustedInstaller.exe` restarted twice more (13:30:44Z, 13:31:43Z). System
+  event log ids 1074/109. Not a power loss. **It will recur on the next update.**
+- Nothing auto-starts. Live bot, collector, feeds, watchdogs, 11 paper arms,
+  race arm, hourly sampler were ALL down 13:29Z -> ~15:11Z. **1h43m of tape is
+  lost and unrecoverable.** No position was held (restart_bot: 20 filled, 20 settled).
+- Restored 15:11-15:18Z: run_all.ps1 (collector+feeds), restart_bot.ps1 (live,
+  pid 43852, self-test passed, versioncheck clean), watch_bot.ps1, 6 paper arms +
+  race arm via the new `start_arms.ps1`, watch_hourly.ps1 -Hours 3.
+- Operator decision pending: auto-start on boot + Windows Update active hours.
+
+## Bank -- quote THIS, not the log
+- $364.90 at 23:30Z 09-14 -> $453.26 at 13:16Z 09-15 = **+$88.36**, no withdrawals.
+- **A report earlier today said "+$731.74 overnight". WRONG.** The `settled`
+  record's `realised` field is `pintake.LEDGER["realised"]` -- a RUNNING TOTAL
+  since process start. Summing it across records adds running totals together.
+  Per-log P&L is the LAST `realised` in that log; the day is the bank.
+- Size was 77 (bank-driven), not 250. 250 is the cap.
+
+## Paper arms now running (start_arms.ps1). Their jsonl series restart at 15:17Z.
+| arm | question |
+|---|---|
+| `--pick first` (old flag set, max-losses 3) | control for A24 |
+| live flags exactly (`arm-mirror`) | baseline for the four below |
+| live minus `--jump-gate` (`arm-nogate`) | is A40 worth it |
+| `--jump-widen` without gate | A41 alone |
+| `--jump-gate --jump-widen` | A40 + A41 |
+| `--jump-gate --take-dumps` | the 15c+ dump-guard population |
+Dropped as redundant (their setting went live): a23 mpm2, a28 fill 0.10, a35
+sweep-depth, the depth-ladder arm, the old maxdown arm.
+
+## Coin Race (commits e974c05, 25448c2)
+- `pinracemodel.py`: winner rebuilt from the index **761/761** vs Kalshi `result`.
+  Per-COIN signed-gap table (race_gaptable.json), every cell read at its 95%
+  UPPER bound. No data -> None -> stand aside (was 0.5, which licensed cheap
+  bets). Tau lookup snaps UP (nearest-tau was 4 s of look-ahead: BTC led +3.09bp
+  at tau 54, trailed -2.26bp at tau 50, 09-12 15:15 race).
+- `pinraceno.py`: the four LOSING legs (buy NO), trade tape, table fit on the
+  earlier half only. 59 legs / 43 races / 240h = ~1 a day. Money splits on the
+  known cheap-leg cliff: <50c 41.7% lost (tape); 93-99c 0 of 11 lost, +4.66c.
+  TAPE loss rates, not ours.
+- `pinracearm.py`: paper, all five legs, tau 2-150, 2c floor, depth-capped,
+  self-scores at close+75s. Cannot send an order (self-test proves no order path).
+
 # 2026-09-12 18:1xZ -- SESSION STATE: backtest rebuilt (7 of 7 losses reproduced), hedge live at 0.80, five studies closed, two pre-registrations open
 
 **Read `results/SKIM.md` top-down for the findings. This entry is the state.**
