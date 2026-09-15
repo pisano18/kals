@@ -270,7 +270,7 @@ permanently. Six consecutive hours verified at 280-690 KB per feed.
   plus two crashes 04:29-04:49Z and 04:59-05:19Z. Every $/day, trades/day or
   growth figure divides by hours UP, from `results/DOWNTIME.json` via
   `research/downtime.py`; pinhealth prints the per-hour-up table. **Add a window
-  the moment an outage happens.** 2026-09-15: +$57.26 in 16.43 h up = $3.49/h.
+  the moment an outage happens.** Hours up count ONLY time that has passed (24 - lost overstated it on a partial day and read $3.49/h; the operator caught it). 2026-09-15 as of 16:48 ET: +$58.83 in 9.24 h up = $6.37/h, ~$153 on a 24h basis.
 
 - **A self-test must match a whole LINE at its real indentation**, never a
   substring. `out = pintake.take(` is a substring of `_hout = pintake.take(`;

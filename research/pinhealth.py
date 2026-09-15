@@ -374,9 +374,10 @@ def report(tr, loss_rate=None, say=print):
         w("")
         w("  DAYS THE BOT COULD NOT TRADE FOR PART OF (results/DOWNTIME.json):")
         w("  day        | hours lost | hours up |  net $ | $ per hour up | same, if it had traded 24h")
+        w("  (hours up counts only time that has already happened -- today is partial)")
         for k in _hit:
-            up = 24.0 - _lost[k]
-            rate = downtime.per_trading_hour(d[k]["net"], 24.0, _lost[k])
+            up = downtime.hours_up_et_day(k)
+            rate = (d[k]["net"] / up) if up > 0 else None
             w("  %-10s | %10.2f | %8.2f | %+6.2f | %13s | %s"
               % (k, _lost[k], up, d[k]["net"],
                  "-" if rate is None else "%+.2f" % rate,

@@ -94,6 +94,28 @@ def lost_by_et_day(spans=None):
     return out
 
 
+def hours_up_et_day(day, now_epoch=None, spans=None):
+    """Hours the bot COULD trade on an Eastern day, counting only time that has
+    already happened.
+
+    The first version used 24 - lost. On an unfinished day that counts hours
+    that have not happened yet: at 4:50 PM on 2026-09-15 it spread $57 over
+    16.4 "hours up" when only 9.2 had actually passed with the bot able to
+    trade, and reported $3.49/h where the truth was about $6.40/h. The operator
+    caught it: "It made $58 just between 12:01 am and 9:15"."""
+    import time as _time
+    spans = load() if spans is None else spans
+    now = _time.time() if now_epoch is None else now_epoch
+    y, m, d = (int(x) for x in day.split("-"))
+    noon_utc = calendar.timegm((y, m, d, 12, 0, 0))
+    off = et_offset(noon_utc)
+    start = calendar.timegm((y, m, d, 0, 0, 0)) - off
+    end = min(start + 86400, now)
+    if end <= start:
+        return 0.0
+    return max(0.0, (end - start - lost_seconds(start, end, spans)) / 3600.0)
+
+
 def per_trading_hour(amount, day_hours, lost_hours):
     """`amount` spread over the hours the bot could actually trade, or None."""
     up = day_hours - lost_hours
@@ -127,6 +149,16 @@ def selftest():
        "$100 on a day that lost 7 hours is $5.88 per trading hour, not $4.17")
     ck(per_trading_hour(10.0, 24.0, 24.0) is None,
        "and a day with no trading hours has no rate at all, not a division by zero")
+    # hours up count only time that has HAPPENED
+    day_sp = [(_epoch("2026-09-15T17:00:00Z"), _epoch("2026-09-15T19:00:00Z"), "x")]
+    at_1650 = _epoch("2026-09-15T20:50:00Z")          # 4:50 PM Eastern
+    ck(abs(hours_up_et_day("2026-09-15", at_1650, day_sp) - (16 + 50 / 60.0 - 2)) < 1e-9,
+       "at 4:50 PM a day that lost 2 hours has 14.83 hours up, NOT 22 -- the "
+       "hours after 4:50 PM have not happened yet")
+    ck(abs(hours_up_et_day("2026-09-15", _epoch("2026-09-17T00:00:00Z"), day_sp) - 22.0) < 1e-9,
+       "and once the day is over it has 24 - 2 = 22")
+    ck(hours_up_et_day("2026-09-20", at_1650, day_sp) == 0.0,
+       "a day that has not started has no hours up")
     sep15 = _epoch("2026-09-15T13:29:10Z")
     ck(et_offset(sep15) == -4 * 3600, "September is EDT, UTC-4")
     ck(et_offset(_epoch("2026-12-15T13:00:00Z")) == -5 * 3600, "December is EST, UTC-5")
