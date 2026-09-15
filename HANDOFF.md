@@ -1,3 +1,20 @@
+# 2026-09-15 16:3xZ -- LIVE BOT STOPPED BY OPERATOR while Kalshi resolves the block
+
+- Operator: "Don't keep sending trade requests for now." Stopped watch_bot.ps1 first
+  (else it restarts the bot within 60 s), then pinrun --live pid 43852. Verified 0
+  live processes. Force-kill: no `end` record in pinrun-live-20260915T151200Z.jsonl.
+- No positions were held. Collector, feeds, 7 paper processes (6 pinrun paper +
+  pinracearm) and watch_hourly keep running -- none can send an order.
+- Operator changed his password and re-logged in; no limits set in app settings;
+  told support his volume increased (~$2,400/day bought, ~$9,900 in 7 days on a
+  ~$450 balance) and asked to escalate as a likely verification check. The API
+  key still authenticates after the password change (GET balance 200).
+- **TO RESUME, only on the operator's word:** `restart_bot.ps1`, then
+  `watch_bot.ps1`. Run versioncheck first.
+- GOTCHA hit here: a PowerShell filter `-like '*watch_bot.ps1*'` matched the
+  tool's OWN process (its command text contains the pattern) and killed it. Exclude
+  `$PID` and match on `-File*watch_bot`.
+
 # 2026-09-15 16:1xZ -- ACCOUNT TRADING BLOCKED BY KALSHI. Not a bot fault.
 
 - Every order since the 15:12Z restart returns **409 `TRADING_BLOCKED`** (7 of 7,
