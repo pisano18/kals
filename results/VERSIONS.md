@@ -30,7 +30,36 @@ remembered. Run it in any session that touches the live bot.
 
 ---
 
-## (NOT DEPLOYED) AMENDMENT 40 — do not buy into a jump that just went against us. FLAG IS OFF.
+## v-jump — 2026-09-15 02:xxZ — DO NOT BUY INTO A JUMP THAT JUST WENT AGAINST US (`6f05769`)
+
+**Operator decision, 2026-09-14 ~21:45 ET.** His words: *"If it earns more
+money, do it! But perhaps also have a paper trade version going for each and
+both that check if these implementations weren't in (the version running
+today) would we earn more. That's the realest check if it's good. We'll
+compare all in 3 days and see who has made and lost the most."*
+
+**What the bot now does differently.** `--jump-gate` is on: it refuses a
+trade when the settlement index made a one-second move of 3 sd or more
+against our side in any of the last 3 seconds.
+
+**The three-day comparison, all auto-sized from the same bank:**
+
+| arm | jump gate | post-jump widening | what it answers |
+|---|---|---|---|
+| **LIVE** | on | off | — |
+| paper CONTROL | off | off | "would today's version have earned more without the gate" |
+| paper WIDEN | off | on | the model version alone |
+| paper BOTH | on | on | the two together |
+
+Compare on 2026-09-17: net per contract and losses, per arm. The evidence
+below is what put it live; the arms are what will keep it live or not.
+
+**REVERT:** drop `"--jump-gate"` from `restart_bot.ps1` and run the restart
+script; the default is OFF.
+
+### The entry as it stood before deployment, unedited:
+
+#### (was) AMENDMENT 40 — do not buy into a jump that just went against us. FLAG IS OFF.
 
 Shipped in code 2026-09-15 01:xxZ, **default OFF**, `--jump-gate` turns it on.
 A paper arm identical to live plus the flag is running from 01:28Z (pid
