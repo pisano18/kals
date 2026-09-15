@@ -848,6 +848,84 @@ def write_hwm(bank, path=None):
     return float(bank)
 
 
+# AMENDMENT 43 -- TELL A WITHDRAWAL FROM A LOSS.
+#
+# The operator, 2026-09-15: "can you code it so it dynamically checks its own
+# price and knows if it's a withdrawal or a loss? ... once it hits cap I'll
+# take anything above that every day."
+#
+# Until now a withdrawal was INDISTINGUISHABLE from a catastrophic loss: the
+# drawdown brake compares the balance to its all-time high, so taking $500 out
+# of a $1,500 bank read as "33% below the high -- STOP AND LOOK" and halted the
+# bot. Safe, but with a daily withdrawal policy it would halt every single day.
+#
+# THE BOT ALREADY KNOWS WHICH IT IS, and it does not need a price feed to know.
+# It keeps a running total of its own settled P&L. Between two balance reads:
+#
+#     expected change  = realised P&L booked in that interval
+#     actual change    = bank now - bank then
+#     unexplained      = actual - expected
+#
+# A trading loss is fully explained -- it IS the realised P&L. Money that moves
+# without a settlement to account for it came from outside: a withdrawal if
+# negative, a deposit if positive. The high-water mark is then shifted by that
+# amount, so the drawdown brake keeps measuring TRADING performance and ignores
+# the operator's own cash movements.
+#
+# THE READ IS ONLY EVER TAKEN WHEN FLAT. autosize_tick returns early while any
+# position is open, so the balance is never compared against a moment when
+# money is tied up as collateral -- which would otherwise read as a withdrawal
+# every time we bought something.
+#
+# THE FIRST TICK OF A RUN NEVER CLASSIFIES. A restart resets the realised
+# counter to zero while the bank carries over, so the very first comparison has
+# no baseline; without this guard every restart would look like a withdrawal of
+# the entire previous run's profit.
+EXTERNAL_MIN = 1.00      # dollars of unexplained movement before it counts;
+_DEFAULT_EXTERNAL_MIN = 1.00   # below this it is settlement timing and fees
+EXTERNAL_DETECT = True   # --no-external-detect disables
+_DEFAULT_EXTERNAL_DETECT = True
+
+
+def classify_bank_move(bank_now, bank_prev, realised_now, realised_prev,
+                       floor=None):
+    """(kind, amount). `kind` is "trading", "withdrawal" or "deposit".
+
+    `amount` is the unexplained dollars -- negative for a withdrawal. Anything
+    inside `floor` is trading noise: fees and settlement timing.
+    """
+    floor = EXTERNAL_MIN if floor is None else floor
+    if bank_prev is None or realised_prev is None:
+        return "trading", 0.0            # no baseline -- never guess
+    try:
+        unexplained = ((float(bank_now) - float(bank_prev))
+                       - (float(realised_now) - float(realised_prev)))
+    except (TypeError, ValueError):
+        return "trading", 0.0
+    if unexplained <= -abs(floor):
+        return "withdrawal", unexplained
+    if unexplained >= abs(floor):
+        return "deposit", unexplained
+    return "trading", unexplained
+
+
+def shift_hwm(amount, path=None):
+    """Move the high-water mark by `amount` (negative for a withdrawal) so the
+    drawdown brake keeps measuring trading only. Never moves it below zero,
+    and a missing mark is left missing rather than invented."""
+    cur = read_hwm(path)
+    if cur is None:
+        return None
+    new = max(0.0, float(cur) + float(amount))
+    try:
+        with open(path or HWM_FILE, "w", encoding="utf-8") as fh:
+            json.dump({"hwm": round(new, 2),
+                       "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, fh)
+    except OSError:
+        return cur
+    return new
+
+
 def open_contracts(led):
     """Contracts held open RIGHT NOW, across every market (AMENDMENT 31).
 
@@ -3344,6 +3422,81 @@ def _selftest_body():
            "and zero is never TIGHTER than the floor it replaces -- this flag "
            "may only ever loosen")
 
+        # ---- AMENDMENT 43: a withdrawal is not a loss -------------------
+        ck(_DEFAULT_EXTERNAL_MIN == 1.00 and _DEFAULT_EXTERNAL_DETECT is True,
+           "A43 declared defaults: $1.00 floor, detection ON (running %.2f / %r)"
+           % (EXTERNAL_MIN, EXTERNAL_DETECT))
+        # a pure trading loss: the bank fell by exactly what we lost
+        ck(classify_bank_move(900.0, 1000.0, -100.0, 0.0)[0] == "trading",
+           "a $100 fall fully explained by $100 of realised losses is TRADING")
+        # a withdrawal: the bank fell and nothing was lost
+        _k, _a = classify_bank_move(500.0, 1000.0, 0.0, 0.0)
+        ck(_k == "withdrawal" and abs(_a + 500.0) < 1e-9,
+           "a $500 fall with NO realised loss is a WITHDRAWAL of $500")
+        # both at once -- the operator takes $400 out on a day we lost $100
+        _k, _a = classify_bank_move(500.0, 1000.0, -100.0, 0.0)
+        ck(_k == "withdrawal" and abs(_a + 400.0) < 1e-9,
+           "losing $100 AND withdrawing $400 reports the WITHDRAWAL as $400 -- "
+           "the loss is still charged to trading")
+        # a winning day plus a withdrawal of the winnings
+        _k, _a = classify_bank_move(1000.0, 1000.0, 200.0, 0.0)
+        ck(_k == "withdrawal" and abs(_a + 200.0) < 1e-9,
+           "the operator's stated policy -- win $200, take $200 out, bank flat "
+           "-- reads as a $200 withdrawal, not as a mysterious zero")
+        # a deposit
+        ck(classify_bank_move(1500.0, 1000.0, 0.0, 0.0)[0] == "deposit",
+           "money appearing with no trade is a DEPOSIT")
+        # noise stays trading
+        for _n in (0.0, 0.40, -0.99, 0.99):
+            ck(classify_bank_move(1000.0 + _n, 1000.0, 0.0, 0.0)[0] == "trading",
+               "an unexplained $%+.2f is inside the floor and stays TRADING "
+               "-- fees and settlement timing must not read as cash movements"
+               % _n)
+        # THE RESTART GUARD, and it is the one that would have hurt: a restart
+        # zeroes `realised` while the bank carries over
+        ck(classify_bank_move(1000.0, None, 0.0, None)[0] == "trading",
+           "the FIRST tick of a run never classifies -- a restart resets the "
+           "realised counter while the bank carries over, so without this "
+           "every restart would look like a withdrawal of the whole run")
+        ck(classify_bank_move(None, 1000.0, 0.0, 0.0)[0] == "trading",
+           "and an unreadable balance never classifies either")
+        # shift_hwm
+        import tempfile as _tf43
+        _d43 = _tf43.mkdtemp(prefix="pinhwm43-")
+        try:
+            _f43 = os.path.join(_d43, "hwm.json")
+            write_hwm(1500.0, _f43)
+            ck(abs(shift_hwm(-500.0, _f43) - 1000.0) < 1e-9,
+               "withdrawing $500 from a $1500 high-water mark leaves it at "
+               "$1000, so the brake measures trading and not the withdrawal")
+            ck(abs(read_hwm(_f43) - 1000.0) < 1e-9, "and it is written to disk")
+            ck(abs(drawdown(1000.0, read_hwm(_f43))) < 1e-12,
+               "a bank of $1000 against the shifted mark is ZERO drawdown -- "
+               "the brake does not fire. Before A43 this was a 33% drawdown "
+               "and halted the bot")
+            ck(shift_hwm(-99999.0, _f43) == 0.0,
+               "the mark never goes negative")
+            _miss = os.path.join(_d43, "nope.json")
+            ck(shift_hwm(-10.0, _miss) is None and read_hwm(_miss) is None,
+               "a missing mark is left missing, never invented")
+        finally:
+            for _x in os.listdir(_d43):
+                os.remove(os.path.join(_d43, _x))
+            os.rmdir(_d43)
+        _src43 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        # ANCHOR ON A NEWLINE-PREFIXED def. Without the newline this finds the
+        # string inside THIS TEST, which sits earlier in the file than the
+        # function -- so the slice began mid-test and the ordering checks
+        # compared lines of the test against each other. Fourth time this exact
+        # self-inspection trap has bitten this file (2026-09-11 x3, tonight x4).
+        _ab43 = _src43[_src43.index(chr(10) + "def autosize_tick("):]
+        ck(_ab43.index("classify_bank_move(") < _ab43.index('state["drawdown"] = drawdown('),
+           "the classifier runs BEFORE the drawdown is computed -- after it, "
+           "the brake would already have tripped on the operator's own cash")
+        ck(_ab43.index("if open_positions:") < _ab43.index("classify_bank_move("),
+           "and only when FLAT, so collateral on an open position is never "
+           "mistaken for a withdrawal")
+
         # ---- AMENDMENT 41: after a jump, sigma is doubled ---------------
         ck(_DEFAULT_JUMP_WIDEN == 2.0 and _DEFAULT_JUMP_WIDEN_WINDOW == 5
            and _DEFAULT_WIDEN_ENABLED is False,
@@ -4551,6 +4704,25 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
         state["autosize_fails"] = state.get("autosize_fails", 0) + 1
         return None
     state["bank"] = bank
+    # AMENDMENT 43: was this a withdrawal, or did we lose it? Must run BEFORE
+    # the drawdown is computed, or the brake trips on the operator's own cash.
+    _real = float(pintake.LEDGER.get("realised", 0.0) or 0.0)
+    if EXTERNAL_DETECT:
+        _kind, _amt = classify_bank_move(bank, state.get("ext_bank"), _real,
+                                         state.get("ext_realised"))
+        if _kind in ("withdrawal", "deposit"):
+            _moved = shift_hwm(_amt, hwm_path)
+            state["ext_events"] = state.get("ext_events", 0) + 1
+            if rec:
+                rec("external", kind=_kind, amount=round(_amt, 2),
+                    bank=round(bank, 2), hwm_now=_moved,
+                    realised_since=round(_real - (state.get("ext_realised") or 0.0), 4))
+            print(f"  *** {_kind.upper()} of ${abs(_amt):.2f} detected -- not a "
+                  f"trading loss. High-water mark moved to "
+                  f"${(_moved if _moved is not None else 0.0):.2f}; the drawdown "
+                  f"brake keeps measuring trading only. ***")
+    state["ext_bank"] = bank
+    state["ext_realised"] = _real
     # AMENDMENT 30: refresh the high-water mark and the drawdown BEFORE the
     # size is chosen, so a fall in the bank shrinks the bet on the same tick
     # that notices it rather than on the next one.
@@ -5917,6 +6089,11 @@ def main():
                          "--sweep-depth and does nothing without it. Every "
                          "later gate -- edge, dump guard, ceiling, EV -- still "
                          "runs on the market this lets through.")
+    ap.add_argument("--no-external-detect", action="store_true",
+                    help="AMENDMENT 43: turn OFF telling a withdrawal from a "
+                         "trading loss. With it off, taking money out of the "
+                         "account trips the drawdown brake and halts the bot, "
+                         "which is what happened before this existed.")
     ap.add_argument("--jump-gate", action="store_true",
                     help="AMENDMENT 40: refuse a trade when the index made a "
                          "one-second move of 3 sd or more against our side in "
@@ -6054,6 +6231,8 @@ def main():
         globals()["MAX_PER_MARKET"] = int(a.max_per_market)
     if a.sweep_depth:
         globals()["SWEEP_DEPTH"] = True
+    if getattr(a, "no_external_detect", False):
+        globals()["EXTERNAL_DETECT"] = False
     if a.jump_gate:
         globals()["JUMP_ENABLED"] = True
     if a.jump_widen:
@@ -6227,6 +6406,7 @@ def main():
         # default -- which is how a page ends up describing a bot nobody runs.
         improve_max=IMPROVE_MAX, pick=PICK, gate_audit=True,
         sweep_depth=SWEEP_DEPTH, depth_ladder=DEPTH_LADDER,
+        external_detect=EXTERNAL_DETECT, external_min=EXTERNAL_MIN,
         jump_gate=JUMP_ENABLED, jump_sigma=JUMP_SIGMA,
         jump_lookback=JUMP_LOOKBACK,
         jump_widen=WIDEN_ENABLED, jump_widen_factor=JUMP_WIDEN,

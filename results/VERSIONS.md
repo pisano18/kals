@@ -76,6 +76,58 @@ default is OFF.
 
 ---
 
+## v-withdraw — 2026-09-15 04:xxZ — THE BOT TELLS A WITHDRAWAL FROM A LOSS
+
+**Operator-directed.** His words: *"can you code it so it dynamically checks
+its own price and knows if it's a withdrawal or a loss? ... once it hits cap
+I'll take anything above that every day."*
+
+**The problem it fixes.** The drawdown brake compares the balance to its
+all-time high. A withdrawal was **indistinguishable from a catastrophic
+loss**: taking $500 out of a $1,500 bank read as *"33% below the high -- STOP
+AND LOOK"* and halted the bot. With a daily-withdrawal policy that is a halt
+every single day.
+
+**How it knows, without any price feed.** The bot already keeps a running
+total of its own settled P&L. Between two balance reads:
+
+```
+expected change = realised P&L booked in that interval
+actual change   = bank now - bank then
+unexplained     = actual - expected
+```
+
+A trading loss is *fully explained* -- it IS the realised P&L. Money that moves
+with no settlement to account for it came from outside. Negative is a
+withdrawal, positive a deposit, and the high-water mark is shifted by that
+amount so the brake keeps measuring **trading** and ignores the operator's cash.
+
+**Two guards, both self-tested, both of which would have caused real damage:**
+
+1. **Only when flat.** `autosize_tick` returns early while any position is
+   open, so collateral is never mistaken for a withdrawal.
+2. **The first tick of a run never classifies.** A restart zeroes the realised
+   counter while the bank carries over -- without this, *every restart would
+   look like a withdrawal of the entire previous run's profit* and shift the
+   high-water mark down by it.
+
+**The floor is $1.00.** Below that it is settlement timing and fees, and stays
+classified as trading.
+
+**Worked cases from the self-test:** lose $100 -> trading. Withdraw $500 with
+no loss -> withdrawal $500. Lose $100 *and* withdraw $400 -> withdrawal $400,
+with the $100 still charged to trading. **Win $200 and withdraw exactly $200
+so the bank is flat -> withdrawal $200**, which is the operator's stated daily
+policy and would otherwise read as a mysterious nothing.
+
+**ON by default** -- the previous behaviour was a known false alarm, not a
+safety feature. `--no-external-detect` restores it.
+
+**REVERT:** add `"--no-external-detect"` to `restart_bot.ps1` and restart, or
+`git revert` this commit.
+
+---
+
 ## v-jump — 2026-09-15 02:xxZ — DO NOT BUY INTO A JUMP THAT JUST WENT AGAINST US (`6f05769`)
 
 **Operator decision, 2026-09-14 ~21:45 ET.** His words: *"If it earns more
