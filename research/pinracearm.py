@@ -140,14 +140,27 @@ def price_leg(table, tau, gap_bp):
     A coin AHEAD of the field is a YES, and the number that matters is its
     chance of being overtaken, bounded above. A coin BEHIND is a NO, and the
     number that matters is its chance of still winning, also bounded above.
-    Both bounds push the same way: they make the contract worth LESS."""
+    Both bounds push the same way: they make the contract worth LESS.
+
+    `worth` is None when the table has nothing for this gap and tau, and None
+    means STAND ASIDE at any price. An earlier version returned 0.5 there, on
+    the reasoning that a coin flip licenses nothing -- true at 95c, false at
+    21c, where "worth 50c" reads as a 29c edge. Measured on 77 tape legs
+    2026-09-15: the no-data cases were the BULK of what a 2c edge floor let
+    through, and they were the cheap ones."""
     if gap_bp > 0:
-        return "yes", 1.0 - M.p_lose(table, tau, gap_bp)
-    return "no", 1.0 - M.p_win(table, tau, gap_bp)
+        p = M.p_lose(table, tau, gap_bp)
+        return "yes", (None if p is None else 1.0 - p)
+    p = M.p_win(table, tau, gap_bp)
+    return "no", (None if p is None else 1.0 - p)
 
 
 def net_edge(worth, price):
-    """Cents of edge per contract after the taker fee, as a fraction."""
+    """Cents of edge per contract after the taker fee, as a fraction.
+
+    None worth is None edge -- never a number, so it can never clear a floor."""
+    if worth is None:
+        return None
     return worth - price - fee(price)
 
 
@@ -245,15 +258,20 @@ def selftest():
     tbl = {"12": {str(M.bucket(-15.0)): {"n": 200, "won": 0},
                   str(M.bucket(15.0)): {"n": 200, "won": 200}}}
     side, worth = price_leg(tbl, 12, -15.0)
-    ck(side == "no" and 0.98 < worth < 1.0,
+    ck(side == "no" and worth is not None and 0.98 < worth < 1.0,
        "a coin 15bp BEHIND is a NO worth %.4f -- not 1.0, because 0 wins in "
        "200 races bounds at %.2f%%, not at zero" % (worth, 100 * (1 - worth)))
     side2, worth2 = price_leg(tbl, 12, 15.0)
     ck(side2 == "yes" and 0.98 < worth2 < 1.0,
        "a coin 15bp AHEAD is a YES worth %.4f, bounded the same way" % worth2)
-    ck(price_leg({}, 12, 15.0)[1] == 0.5 and price_leg({}, 12, -15.0)[1] == 0.5,
-       "NULL: with no table at all every leg is a coin flip, which buys "
-       "nothing at any price above 50c")
+    ck(price_leg({}, 12, 15.0)[1] is None and price_leg({}, 12, -15.0)[1] is None,
+       "NULL: with no table at all a leg is worth NOTHING KNOWN, and None is "
+       "not a number that can clear an edge floor")
+    ck(net_edge(None, 0.21) is None and not (net_edge(None, 0.21) or 0) >= MIN_EDGE,
+       "so a 21c longshot the table has never seen produces no edge at all -- "
+       "the case that was worth 50c, and therefore a 29c edge, before this")
+    ck(net_edge(None, 0.97) is None,
+       "and the same at 97c, where the old 0.5 happened to refuse by accident")
 
     # ---- the edge arithmetic -------------------------------------------
     ck(abs(net_edge(0.99, 0.95) - (0.04 - fee(0.95))) < 1e-9,
@@ -308,8 +326,8 @@ def selftest():
        "the forecast module reads a 0-of-120 cell as %.1f%% risk, not zero -- "
        "if that ever becomes 0 this arm sizes as though it cannot lose"
        % (100 * M.upper95(0, 120)))
-    ck(M.p_lose({}, 10, 50.0) == 0.5,
-       "and an empty table is a coin flip both ways")
+    ck(M.p_lose({}, 10, 50.0) is None and M.p_win({}, 10, 50.0) is None,
+       "and an empty table stands aside both ways rather than guessing")
     print("SELF-TEST", "PASSED" if not f else "FAILED (%d)" % len(f))
     return not f
 
@@ -519,7 +537,14 @@ def main():
                     ask = b.get("yes_ask") if side == "yes" else b.get("no_ask")
                     asz = (b.get("yes_ask_size") if side == "yes"
                            else b.get("no_ask_size"))
-                    if not ask or not asz:
+                    edge = None
+                    if worth is None:
+                        # The table has never seen a gap like this at this tau.
+                        # STAND ASIDE at any price -- this is not the same as
+                        # a 50/50, and treating it as one is what made cheap
+                        # legs look like free money.
+                        bad = "no_model"
+                    elif not ask or not asz:
                         bad = "no_offer"
                     elif ask > PRICE_CEILING + 1e-9:
                         bad = "above_ceiling"
@@ -534,11 +559,12 @@ def main():
                             rec("no_trade", event=evt, coin=coin, ticker=tkr,
                                 tau=tau, side=side, why=bad,
                                 gap_bp=round(gap * 1e4, 4),
-                                worth=round(worth, 6),
+                                worth=(None if worth is None
+                                       else round(worth, 6)),
                                 ask=(float(ask) if ask else None),
                                 ask_size=(float(asz) if asz else None),
-                                edge=(round(net_edge(worth, float(ask)), 6)
-                                      if ask else None))
+                                edge=(None if edge is None
+                                      else round(edge, 6)))
                         continue
                     # SUPPLY, not arithmetic, caps the size. buyable() walks
                     # the ladder to our limit; the touch alone once cost the
@@ -560,7 +586,7 @@ def main():
                            "side": side, "price": float(ask), "size": take,
                            "tau": tau, "worth": round(worth, 6),
                            "gap_bp": round(gap * 1e4, 4),
-                           "edge": round(net_edge(worth, float(ask)), 6)}
+                           "edge": round(edge, 6)}
                     fills.append(pos)
                     per_leg[tkr] += 1
                     per_close[evt] += 1

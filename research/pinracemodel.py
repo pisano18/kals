@@ -159,7 +159,23 @@ def bucket_label(i):
 
 
 def nearest_tau(tau):
-    return min(TAUS, key=lambda t: abs(t - tau))
+    """The table column to read for a moment `tau` seconds from the close.
+
+    IT SNAPS UP, NEVER TO THE NEAREST. A column at a SMALLER tau was measured
+    closer to the close, where more prints are locked and the answer is more
+    certain -- so reading tau 54 out of the tau-50 column quietly borrows four
+    seconds of information we do not have yet.
+
+    That is not hypothetical. Scoring the 2026-09-12 15:15 race, BTC was
+    LEADING by 3.09bp at tau 54 and had fallen to 2.26bp BEHIND by tau 50. A
+    nearest-tau lookup called the market's 94c quote badly wrong when the
+    market was right. The same look-ahead in its first form inflated
+    RESULTS_coinrace from a true 89.4% to a reported 98.9%.
+
+    So: the smallest measured tau at or above this one, and the largest column
+    we have when the moment is further out than anything measured."""
+    above = [t for t in TAUS if t >= tau]
+    return min(above) if above else max(TAUS)
 
 
 def upper95(k, n):
@@ -192,7 +208,13 @@ def _read(table, tau, gap_bp, field):
     A thin cell falls back TOWARD ZERO GAP -- toward a coin closer to the lead,
     which wins more often and is overtaken more often. Both directions of that
     fallback are pessimistic for the bet being priced, which is the point.
-    With nothing populated at all it returns None."""
+
+    With nothing populated at all it returns None, and None means STAND ASIDE.
+    It used to mean 0.5, on the reasoning that a coin flip licenses nothing --
+    and that is true only while the price is high. Measured 2026-09-15 on 77
+    tape legs: at a price of 21c, "worth 50c" licensed a 29c edge, and legs the
+    model knew NOTHING about were the bulk of what a 2c edge floor let through.
+    A refusal has to be a refusal at every price."""
     t = nearest_tau(tau)
     b = bucket(gap_bp)
     zero = bucket(0.0)
@@ -217,10 +239,13 @@ def p_win(table, tau, gap_bp, point=False):
 
     This is the number for buying a trailer's NO: an upper bound on its win
     chance is a lower bound on ours, which is conservative directly. For a
-    leader's YES use p_lose, which bounds the tail that can actually hurt."""
+    leader's YES use p_lose, which bounds the tail that can actually hurt.
+
+    Returns None when the table has nothing for this gap and tau. None is not
+    a probability and must not be turned into one -- see _read."""
     kn = _read(table, tau, gap_bp, "won")
     if kn is None:
-        return 0.5
+        return None
     k, n = kn
     return (k / n) if point else upper95(k, n)
 
@@ -231,10 +256,12 @@ def p_lose(table, tau, gap_bp, point=False):
     For a leader we need the chance it gets overtaken, and that chance must be
     bounded ABOVE. So this counts the losses directly and bounds those, rather
     than taking 1 - p_win, which would bound the comfortable tail and leave the
-    dangerous one open."""
+    dangerous one open.
+
+    Returns None when the table has nothing for this gap and tau."""
     kn = _read(table, tau, gap_bp, "lost")
     if kn is None:
-        return 0.5
+        return None
     k, n = kn
     return (k / n) if point else upper95(k, n)
 
@@ -302,8 +329,20 @@ def selftest():
        "a coin 0.2bp behind buckets strictly below one 0.2bp ahead")
     ck(all(bucket(EDGES_BP[i]) <= bucket(EDGES_BP[i + 1])
            for i in range(len(EDGES_BP) - 1)), "and buckets are monotone")
-    ck(nearest_tau(4) == 3 and nearest_tau(30) in (25, 35),
-       "an arbitrary tau snaps to the nearest measured one")
+    ck(nearest_tau(4) == 5 and nearest_tau(30) == 35 and nearest_tau(54) == 60,
+       "a tau snaps UP to the next measured column, never down -- tau 54 "
+       "reads the tau-60 row, because the tau-50 row knows four seconds we "
+       "do not. On the 2026-09-12 15:15 race BTC led by 3.09bp at tau 54 and "
+       "trailed by 2.26bp at tau 50")
+    ck(nearest_tau(5) == 5 and nearest_tau(3) == 3,
+       "an exact column reads itself")
+    ck(nearest_tau(9999) == max(TAUS),
+       "and a moment further out than anything measured reads the widest "
+       "column we have, which is the least confident one")
+    ck(all(nearest_tau(t) >= t for t in range(1, max(TAUS) + 1)),
+       "the snap is never below the real tau, anywhere inside the measured "
+       "range -- past the widest column it clamps, which is the only place it "
+       "can sit below and is the least confident column we have")
 
     # ---- the zero cell, which is most of this table --------------------
     ck(0.02 < upper95(0, 120) < 0.03,
@@ -324,11 +363,13 @@ def selftest():
        "and the bound is never BELOW the measured rate, anywhere")
 
     # ---- reading the table ---------------------------------------------
-    ck(p_win({}, 10, 30.0) == 0.5 and p_lose({}, 10, 30.0) == 0.5,
-       "NULL: an empty table returns 0.5 both ways, never 0 -- a cell with no "
-       "data must not license a bet")
+    ck(p_win({}, 10, 30.0) is None and p_lose({}, 10, 30.0) is None,
+       "NULL: an empty table returns None both ways -- STAND ASIDE, not 0.5. "
+       "A coin flip refuses a 95c bet and happily licenses a 21c one, and 21c "
+       "legs the table knew nothing about were most of what a 2c edge floor "
+       "let through when this returned 0.5")
     thin = {"12": {str(bucket(30.0)): {"n": 3, "won": 3}}}
-    ck(p_win(thin, 12, 30.0) == 0.5,
+    ck(p_win(thin, 12, 30.0) is None,
        "and a cell with 3 races is ignored rather than read as certainty")
     zero = {"12": {str(bucket(-30.0)): {"n": 120, "won": 0}}}
     ck(p_win(zero, 12, -30.0) == upper95(0, 120)
@@ -465,8 +506,11 @@ def main():
     print("   %5s %10s %10s %10s" % ("tau", "gap", "P(win)", "P(lose)"))
     for t in (5, 12, 25, 60):
         for gbp in (-15.0, -4.0, 4.0, 15.0):
-            print("   %5d %8.1fbp %9.2f%% %9.2f%%"
-                  % (t, gbp, 100 * p_win(out, t, gbp), 100 * p_lose(out, t, gbp)))
+            pw, pl = p_win(out, t, gbp), p_lose(out, t, gbp)
+            print("   %5d %8.1fbp %9s %9s"
+                  % (t, gbp,
+                     "-" if pw is None else "%.2f%%" % (100 * pw),
+                     "-" if pl is None else "%.2f%%" % (100 * pl)))
 
     # ---- 3. CALIBRATION ------------------------------------------------
     print("\n3. CALIBRATION -- when it claims this, how often is it right?")
@@ -484,7 +528,10 @@ def main():
             for coin, gap in g.items():
                 if gap > 0:
                     continue          # the leader is the YES side, scored apart
-                claim = 1.0 - p_win(out, t, gap * 1e4)
+                pw = p_win(out, t, gap * 1e4)
+                if pw is None:
+                    continue          # the table knows nothing: stand aside
+                claim = 1.0 - pw
                 for lo, hi in buckets:
                     if lo <= claim < hi:
                         agg[(lo, hi)][0] += 1
