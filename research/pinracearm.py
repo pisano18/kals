@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# VERSION: 2026-09-15-arm1
+# VERSION: 2026-09-15-arm2
 """pinracearm.py -- THE COIN RACE PAPER ARM. Nothing is ever sent.
 
 THE OPERATOR, 2026-09-15: "you can absolutely start on a coin race paper arm.
@@ -86,8 +86,16 @@ WINDOW = M.WINDOW
 
 # ---- the rails ------------------------------------------------------------
 SIZE = 250                # contracts we would ask for per fill
-MAX_PER_LEG = 2           # fills per leg per race
-MAX_PER_CLOSE = 4         # fills per race, across all five legs
+# ONE FILL PER LEG PER SIDE PER TIME BAND, and no per-race cap.
+#
+# arm1 capped at 2 fills a leg and 4 a race. On its first live race (11:45 ET,
+# 2026-09-15) all four went at tau 126-150 -- ETH NO at 66c twice against the
+# SAME 1,081 resting contracts, then BTC YES at 74c and 58c -- and the race was
+# then closed to the last 30 seconds, which is the only band the tape
+# (pinraceno) says is safe. The caps made the arm measure the known trap and
+# nothing else. A paper arm has no bank to protect, so each band is its own
+# measurement instead.
+BANDS = ((61, 151), (30, 61), (15, 30), (2, 15))   # [lo, hi) seconds out
 PRICE_CEILING = 0.98      # never pay 99c, the same ceiling the live bot uses
 MIN_EDGE = 0.02           # 2c net of fee. RESULTS_coinrace measured the live
                           # bands at +2.5c to +4.8c a contract, so this sits at
@@ -155,6 +163,28 @@ def price_leg(table, tau, gap_bp):
     return "no", (None if p is None else 1.0 - p)
 
 
+def band_of(tau):
+    """The time band a moment belongs to, as a label, or None outside them."""
+    for lo, hi in BANDS:
+        if lo <= tau < hi:
+            return "%d-%d" % (lo, hi)
+    return None
+
+
+def take_size(size, buyable, already):
+    """Contracts a new fill may take from a book we have already bought from.
+
+    THE BOOK DEPLETES. Inside one race, two looks at a leg are largely the SAME
+    resting orders. arm1 took 250 of ETH's 1,081 NO contracts at 66c and then,
+    a quarter-second later, took the same 250 again. So what we already hold
+    on this leg and side comes off what the book shows -- the rule pinreal
+    uses, and pessimistic when the book has genuinely refilled."""
+    left = (buyable or 0.0) - already
+    if left <= 0:
+        return 0
+    return int(min(size, left))
+
+
 def net_edge(worth, price):
     """Cents of edge per contract after the taker fee, as a fraction.
 
@@ -215,9 +245,32 @@ def selftest():
     ck(MIN_EDGE >= 0.02,
        "the edge floor is at least 2c, the bottom of the +2.5c..+4.8c bands "
        "RESULTS_coinrace actually measured, not whatever the table allows")
-    ck(MAX_PER_LEG * 5 >= MAX_PER_CLOSE,
-       "the per-race cap is reachable across five legs")
+    ck(band_of(150) == "61-151" and band_of(61) == "61-151"
+       and band_of(60) == "30-61" and band_of(29) == "15-30"
+       and band_of(2) == "2-15" and band_of(1) is None and band_of(151) is None,
+       "every tau from 2 to 150 lands in exactly one band, and nothing outside")
+    ck(len({band_of(t) for t in range(TAU_LO, TAU_HI + 1)}) == len(BANDS),
+       "and all four bands are reachable from the scanned range")
+    ck(take_size(250, 1081, 0) == 250,
+       "the first look at ETH's 1,081 NO contracts takes 250")
+    ck(take_size(250, 1081, 250) == 250 and take_size(250, 1081, 1000) == 81,
+       "a later look takes only what the book holds BEYOND what we already "
+       "bought -- 81 once 1,000 are ours, not another 250")
+    ck(take_size(250, 1081, 1081) == 0 and take_size(250, 900, 1081) == 0,
+       "and nothing at all once we hold the whole book, or the book shrank "
+       "below what we hold -- the arm1 double-count, closed")
+    ck(take_size(250, None, 0) == 0, "NULL: an unreadable book takes nothing")
     ck(TAU_LO >= 1, "we never price a race after it has closed")
+
+    # ---- scoring reads the races that OUTLIVE their close --------------
+    body = src[src.index(chr(10) + "def main("):]
+    sc = body[body.index("# ---- SCORE"):body.index("# ---- PRICE")]
+    ck("known.items()" in sc and "events.items()" not in sc,
+       "the scorer walks `known`, not `events` -- `events` is what Kalshi "
+       "calls OPEN, a race stops being open at its close, and arm1 therefore "
+       "never scored a single race")
+    ck("known.update(events)" in body,
+       "and every discovered race is added to `known` before it can drop out")
 
     # ---- the fee -------------------------------------------------------
     ck(abs(fee(0.95) - 0.0034) < 1e-9,
@@ -390,18 +443,18 @@ def main():
         logf.flush()
 
     print("\n  COIN RACE PAPER ARM -- nothing is ever sent")
-    print("  size %d, <= %.0fc, edge floor %.1fc, tau %d-%d, %d fills/race"
-          % (a.size, 100 * PRICE_CEILING, 100 * a.min_edge, TAU_LO, TAU_HI,
-             MAX_PER_CLOSE))
+    print("  size %d, <= %.0fc, edge floor %.1fc, tau %d-%d, one fill per "
+          "leg per band %s" % (a.size, 100 * PRICE_CEILING, 100 * a.min_edge,
+                                TAU_LO, TAU_HI, [band_of(lo) for lo, _ in BANDS]))
     print("  forecast: %s, %d cells, built %s"
           % (os.path.basename(M.TABLE), cells,
              time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(tstat.st_mtime))))
     print("  log: %s\n" % os.path.abspath(logpath))
     rec("start", size=a.size, min_edge=a.min_edge, ceiling=PRICE_CEILING,
-        tau=[TAU_LO, TAU_HI], max_per_leg=MAX_PER_LEG,
-        max_per_close=MAX_PER_CLOSE, table=os.path.basename(M.TABLE),
+        tau=[TAU_LO, TAU_HI], bands=[list(b) for b in BANDS],
+        table=os.path.basename(M.TABLE),
         table_cells=cells, table_mtime=int(tstat.st_mtime),
-        table_size=tstat.st_size, version="2026-09-15-arm1")
+        table_size=tstat.st_size, version="2026-09-15-arm2")
 
     idx = pinrun.IndexWS(sorted(set(COINS.values()))).start()
     book = livebook.LiveBook()
@@ -413,11 +466,17 @@ def main():
           % (idx.stats.get("ticks", 0), len(idx.ticks)))
 
     events = {}
+    # EVERY RACE EVER SEEN, kept until it is scored. `events` is only what
+    # discover() calls OPEN, and a race stops being open at its close -- so
+    # arm1, which scored from `events`, dropped each race from view 75 seconds
+    # before it was due to be scored and never recorded a single result. Found
+    # on its first race, 11:45 ET 2026-09-15, which never settled.
+    known = {}
     watched = set()
     seen_why = set()
     fills = []                                   # every paper position
-    per_leg = collections.Counter()
-    per_close = collections.Counter()
+    done_band = set()                       # (event, ticker, side, band)
+    taken = collections.defaultdict(float)  # (event, ticker, side) -> held
     scored = set()
     last_disc = 0.0
     try:
@@ -427,11 +486,12 @@ def main():
                 last_disc = now
                 try:
                     events = discover()
+                    known.update(events)
                 except Exception as e:                        # noqa: BLE001
                     rec("error", where="discover", err=str(e)[:200])
 
             # ---- SCORE anything that has closed and settled ------------
-            for evt, e in sorted(events.items()):
+            for evt, e in sorted(known.items()):
                 cs = int(e["close"])
                 if evt in scored or now < cs + SCORE_DELAY:
                     continue
@@ -440,6 +500,7 @@ def main():
                           for c, iid in COINS.items()}
                 won, rets = winner_from(tb, cs)
                 scored.add(evt)
+                known.pop(evt, None)
                 if won is None:
                     rec("unscored", event=evt, close_s=cs,
                         why="index incomplete at close+%ds" % SCORE_DELAY)
@@ -477,8 +538,6 @@ def main():
                         rec("error", where="subscribe", err=str(ex)[:200])
                 if not (TAU_LO <= tau <= TAU_HI):
                     continue
-                if per_close[evt] >= MAX_PER_CLOSE:
-                    continue
 
                 rets = {}
                 why = None
@@ -513,9 +572,10 @@ def main():
                 g = M.gaps(rets)
                 for coin, gap in sorted(g.items(), key=lambda kv: -abs(kv[1])):
                     tkr = e["legs"][coin]
-                    if per_leg[tkr] >= MAX_PER_LEG or per_close[evt] >= MAX_PER_CLOSE:
-                        continue
                     side, worth = price_leg(table, tau, gap * 1e4)
+                    band = band_of(tau)
+                    if band is None or (evt, tkr, side, band) in done_band:
+                        continue
                     b = book.best(tkr)
                     bad = None
                     if not b:
@@ -573,8 +633,14 @@ def main():
                         have = book.buyable(tkr, side, PRICE_CEILING)
                     except Exception:                        # noqa: BLE001
                         have = float(asz)
-                    take = int(min(a.size, have or 0))
+                    take = take_size(a.size, have, taken[(evt, tkr, side)])
                     if take <= 0:
+                        key = (evt, coin, "book_already_ours")
+                        if key not in seen_why:
+                            seen_why.add(key)
+                            rec("no_trade", event=evt, coin=coin, ticker=tkr,
+                                tau=tau, side=side, why="book_already_ours",
+                                buyable=have, held=taken[(evt, tkr, side)])
                         continue
                     try:
                         lad = book.depth(tkr, "no" if side == "yes" else "yes", 60)
@@ -586,10 +652,10 @@ def main():
                            "side": side, "price": float(ask), "size": take,
                            "tau": tau, "worth": round(worth, 6),
                            "gap_bp": round(gap * 1e4, 4),
-                           "edge": round(edge, 6)}
+                           "edge": round(edge, 6), "band": band}
                     fills.append(pos)
-                    per_leg[tkr] += 1
-                    per_close[evt] += 1
+                    done_band.add((evt, tkr, side, band))
+                    taken[(evt, tkr, side)] += take
                     rec("fill", assumed=True, ask_size=float(asz),
                         buyable=float(have or 0), ladder=ladder,
                         returns={k: round(v, 8) for k, v in rets.items()},
