@@ -1,0 +1,5602 @@
+{
+"26SEP150000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP142345": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP150830": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150800": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP150730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP150715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP150700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP150645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150615": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150545": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150530": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150515": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150500": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150445": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150430": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP150415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150345": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150330": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150315": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP150230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP150215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP150115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP150100": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150045": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150030": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP150015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP142300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP142245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142230": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142215": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP142145": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142130": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142115": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP142045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP142030": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP142000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141930": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP141845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP141830": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141815": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP141730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP141715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP141700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP141645": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP141615": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141600": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP141530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP141515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP141500": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141445": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141430": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141345": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141315": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141300": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP141200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP141145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141130": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141115": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141100": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP141030": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP141000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP140945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140930": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP140900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP140845": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140830": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP140745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP140730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140645": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP140600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140545": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140530": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP140500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140445": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140430": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP140400": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP140315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140300": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140245": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140215": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140200": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP140115": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140100": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140030": {
+"XRP": "scalar",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "scalar",
+"BTC": "no"
+},
+"26SEP140015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP140000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132345": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132300": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132215": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132200": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP132130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132115": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132100": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132015": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP132000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP131945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP131930": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131915": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131845": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131830": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP131815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP131800": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131745": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP131715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP131700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131600": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP131515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131500": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131445": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131430": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131415": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131400": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP131330": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131315": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131245": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131230": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP131200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP130645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130630": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP130545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130515": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130500": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130445": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130430": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP130330": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP130115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130045": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP130000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP122345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP122330": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP122245": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP122200": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122145": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122130": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122045": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122030": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP122015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP122000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP121945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121930": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121845": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121830": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121745": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP121700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121645": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121530": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121515": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121445": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121430": {
+"XRP": "scalar",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "scalar"
+},
+"26SEP121415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP121345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121315": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP121200": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121145": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP121115": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP121030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP121000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP120930": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120830": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120815": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120800": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP120700": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120645": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120530": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120515": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120445": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120430": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120400": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120330": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120200": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120130": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP120030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120015": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP120000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112330": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112315": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP112230": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP112145": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112130": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112115": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP112045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP112030": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP112015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP112000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP111945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111930": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP111830": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP111815": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111730": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP111700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111615": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111600": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP111500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111445": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111430": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111345": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111330": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP111230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP111215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111130": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP111100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP111015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP111000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP110945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP110930": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP110915": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110830": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP110815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP110800": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110745": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP110700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP110645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP110630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110615": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110600": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP110530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP110515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP110500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110445": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110430": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP110400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP110345": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110315": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110230": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP110200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP110145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP110115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110100": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP110000": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102345": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102245": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP102215": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102200": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP102130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP102115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102100": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP102030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102015": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP102000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101945": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101930": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP101845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP101830": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101815": {
+"XRP": "scalar",
+"SOL": "scalar",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP101745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101700": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP101630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP101545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101530": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101515": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101445": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101430": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP101400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101145": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP101100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP101030": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101015": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP101000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP100945": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100930": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP100845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100830": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100815": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP100745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP100700": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100645": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP100615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100600": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP100530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP100245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100230": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP100200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP100130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP100115": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP100045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP100015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP100000": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP092330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092300": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092230": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP092130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP092115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP092100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP092045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP092030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP092015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP092000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091945": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091930": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP091830": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091730": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP091600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091445": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091430": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091415": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091300": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091215": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP091130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP091115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP091100": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP091030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP091015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP091000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP090930": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP090900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP090845": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090830": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090745": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP090700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090645": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090615": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090600": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090545": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090445": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP090430": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP090415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP090400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP090345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090330": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP090300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP090130": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP090100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP090030": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090015": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP090000": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082345": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP082315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP082300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP082245": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082215": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082145": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP082115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP082045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082015": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP082000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP081930": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081915": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP081830": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP081745": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP081715": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP081645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP081615": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP081545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP081530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP081515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081445": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081430": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081415": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081345": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081330": {
+"XRP": "no",
+"SOL": "scalar",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "scalar"
+},
+"26SEP081315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP081300": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081230": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081215": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081200": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP081130": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081115": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081100": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081045": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP081015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP081000": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP080930": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP080915": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080845": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080830": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP080800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "scalar",
+"BTC": "scalar"
+},
+"26SEP080745": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080730": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP080700": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080645": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080630": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080615": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080600": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080545": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080530": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080515": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080500": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080445": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080430": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP080400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080345": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP080300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP080230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP080215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP080145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080130": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP080045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP080000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072345": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP072315": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP072245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP072230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072215": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072200": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072115": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072045": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP072015": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP072000": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071930": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071915": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071845": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071830": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP071815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071800": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071745": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071715": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071645": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071630": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071615": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071515": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071445": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071430": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP071415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071330": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071300": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP071230": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071200": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP071115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP071100": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP071030": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP071015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP071000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP070945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070930": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP070900": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070845": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070830": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070800": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070745": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070730": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP070715": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070700": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070645": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070630": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070615": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070600": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP070545": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070530": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070515": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070500": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070445": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070430": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070415": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070400": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP070345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP070330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070315": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070300": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070245": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070230": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070215": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP070145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070130": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070100": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP070045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP070030": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP070015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP070000": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062345": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062330": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP062315": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP062300": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP062245": {
+"XRP": "yes",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062230": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062215": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062200": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062145": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP062130": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062115": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP062100": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062045": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP062030": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP062015": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "yes",
+"BTC": "no"
+},
+"26SEP062000": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP061945": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP061930": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP061915": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP061900": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "yes",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP061845": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP061830": {
+"XRP": "no",
+"SOL": "yes",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "no"
+},
+"26SEP061815": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+},
+"26SEP061800": {
+"XRP": "no",
+"SOL": "no",
+"HYPE": "no",
+"ETH": "no",
+"BTC": "yes"
+}
+}
