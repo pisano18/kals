@@ -163,6 +163,56 @@ def crowd_scan(delta_dir, hours=2, lo=0.90, hi=0.98, tau_max=30):
             "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
+def book_trend(rows=None, bar=0.50):
+    """Per ET day: closes, median and p75 touch depth, and the largest logged
+    size still fillable at `bar` of the buyable moments.
+
+    Reads `close_summary` rows the bot already writes. `logged_to` is the
+    largest size that day's curve actually recorded -- when CAP equals it, the
+    answer is CENSORED and the true ceiling is higher. Reporting a censored
+    value as a measurement is exactly how a capacity limit gets invented."""
+    import datetime as _dt
+    if rows is None:
+        rows = []
+        for q in sorted(glob.glob(os.path.join(REPO, "results",
+                                                "pinrun-live-*.jsonl"))):
+            for line in open(q, encoding="utf-8"):
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if d.get("kind") == "close_summary" and d.get("depth"):
+                    rows.append(d)
+    byday = {}
+    for d in rows:
+        try:
+            day = (_dt.datetime.strptime(d["t"][:19], "%Y-%m-%dT%H:%M:%S")
+                   - _dt.timedelta(hours=4)).strftime("%Y-%m-%d")
+        except (KeyError, ValueError):
+            continue
+        byday.setdefault(day, []).append(d)
+    out = []
+    for day in sorted(byday):
+        rs = byday[day]
+        med = sorted(r["depth"]["median"] for r in rs)
+        p75 = sorted(r["depth"]["p75"] for r in rs)
+        agg = {}
+        for r in rs:
+            for k, v in (r["depth"].get("kept") or {}).items():
+                agg[int(k)] = agg.get(int(k), 0) + v
+        base = agg.get(1) or 0
+        cap = None
+        if base:
+            for s in sorted(agg, reverse=True):
+                if agg[s] / float(base) >= bar:
+                    cap = s
+                    break
+        out.append({"day": day, "closes": len(rs),
+                    "med": med[len(med) // 2], "p75": p75[len(p75) // 2],
+                    "cap": cap, "logged_to": max(agg) if agg else None})
+    return out
+
+
 def crowd_history(rec=None, path=None):
     """Append today's scan and return the stored history."""
     path = path or CROWD_FILE
@@ -324,6 +374,54 @@ def report(tr, loss_rate=None, say=print):
     alarm, why = assess(rows)
     w("")
     w("  DECAY TEST: %s" % ("*** ALARM *** " + why if alarm else why))
+    # ---- how deep is the book, and how high can the cap go ----------
+    # Operator, 2026-09-15: "start tracking the order books ... Also to get an
+    # idea of how high the cap will go." Read from the close summaries the bot
+    # already writes -- no book walk, no extra cost.
+    # NO BARE SWALLOW. The first version wrapped this in `except Exception:
+    # bt = None`, and `RESULTS` was not a name in this file -- so the whole
+    # section disappeared from the report with no error and no gap. A health
+    # check that silently drops a section is worse than one that crashes.
+    try:
+        bt = book_trend()
+    except (OSError, ValueError, KeyError, TypeError) as _e:
+        bt = None
+        w("")
+        w("  THE BOOK WE BUY FROM: unavailable (%s: %s)"
+          % (type(_e).__name__, _e))
+    if bt:
+        w("")
+        w("  THE BOOK WE BUY FROM (per ET day, from %d closes)"
+          % sum(x["closes"] for x in bt))
+        w("    %-12s %8s %10s %10s %9s %10s"
+          % ("day", "closes", "touch med", "touch p75", "CAP", "logged to"))
+        for x in bt[-7:]:
+            w("    %-12s %8d %10.0f %10.0f %9s %10s"
+              % (x["day"], x["closes"], x["med"], x["p75"],
+                 ("%d" % x["cap"]) if x["cap"] else "--",
+                 ("%d" % x["logged_to"]) if x["logged_to"] else "--"))
+        if len(bt) >= 4:
+            old = sum(x["med"] for x in bt[:len(bt) // 2]) / (len(bt) // 2)
+            new = sum(x["med"] for x in bt[len(bt) // 2:]) / (len(bt) - len(bt) // 2)
+            if old > 0:
+                r = new / old
+                verdict = ("DEEPER" if r >= 1.15 else
+                           "THINNER -- fewer contracts to buy" if r <= 0.85
+                           else "flat")
+                w("    -> book depth %s (%.2fx, first half of the record vs "
+                  "second)" % (verdict, r))
+        cap = bt[-1]["cap"]
+        lg = bt[-1]["logged_to"]
+        if cap and lg and cap >= lg:
+            w("    -> CAP is censored: the log stops at %d and the book still "
+              "fills there." % lg)
+            w("       The real ceiling is higher than this number and is not "
+              "yet measured.")
+        elif cap:
+            w("    -> at the touch alone, %d contracts still fill at half the "
+              "buyable moments." % cap)
+            w("       The bot buys down the LADDER, so this is a FLOOR on what "
+              "it can actually take.")
     # ---- who is on the other side -----------------------------------
     hist = crowd_history()
     if hist:
@@ -446,6 +544,36 @@ def selftest():
        % eff([20]*150))
     ck(grade("suppliers", 40)[0]=="peak" and grade("suppliers", 3)[0]=="dead",
        "more separate suppliers is healthier; a handful is the dead zone")
+
+    # ---- the book-depth trend ----------------------------------------
+    def _cs(day, kept, med=100.0, p75=200.0):
+        return {"kind": "close_summary", "t": "%sT12:00:00Z" % day,
+                "depth": {"median": med, "p75": p75, "kept": kept}}
+    _k250 = {"1": 100, "250": 90}
+    _bt = book_trend([_cs("2026-09-10", _k250)], bar=0.50)
+    ck(len(_bt) == 1 and _bt[0]["cap"] == 250 and _bt[0]["logged_to"] == 250,
+       "a curve that STOPS at 250 while still filling reports cap 250 AND "
+       "logged_to 250 -- the pair is what says the answer is censored")
+    _bt2 = book_trend([_cs("2026-09-16", {"1": 100, "250": 90, "1000": 80})],
+                      bar=0.50)
+    ck(_bt2[0]["cap"] == 1000 and _bt2[0]["logged_to"] == 1000,
+       "with the extended curve the same book reports 1000 -- the old number "
+       "was a floor, not a ceiling")
+    _bt3 = book_trend([_cs("2026-09-16", {"1": 100, "250": 90, "1000": 10})],
+                      bar=0.50)
+    ck(_bt3[0]["cap"] == 250 and _bt3[0]["logged_to"] == 1000,
+       "and when the book genuinely runs out, cap is BELOW logged_to -- that "
+       "is the shape of a real measurement rather than a censored one")
+    ck(book_trend([]) == [],
+       "NULL: no close summaries reports nothing, never a fabricated day")
+    _bt4 = book_trend([_cs("2026-09-10", {"1": 0})], bar=0.5)
+    ck(_bt4[0]["cap"] is None,
+       "a day with no buyable moments reports no cap, never zero")
+    _many = book_trend([_cs("2026-09-10", _k250, med=50.0),
+                        _cs("2026-09-11", _k250, med=200.0)])
+    ck([x["day"] for x in _many] == ["2026-09-10", "2026-09-11"]
+       and _many[0]["med"] == 50.0 and _many[1]["med"] == 200.0,
+       "days come back in order with their own medians, so a trend can be read")
 
     # ---- the crowd fingerprint ---------------------------------------
     import tempfile as _tf

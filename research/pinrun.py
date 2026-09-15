@@ -3422,6 +3422,35 @@ def _selftest_body():
            "and zero is never TIGHTER than the floor it replaces -- this flag "
            "may only ever loosen")
 
+        # ---- AMENDMENT 44: book depth is logged past the cap ------------
+        _d44 = _depth_report([1.0, 300.0, 600.0, 900.0, 3000.0])
+        for _k in ("250", "500", "750", "1000", "2000"):
+            ck(_k in _d44["kept"],
+               "the kept curve reaches %s -- it used to stop at 250, the exact "
+               "number the operator wants to see past" % _k)
+        ck(_d44["kept"]["500"] == 3 and _d44["kept"]["1000"] == 1
+           and _d44["kept"]["2000"] == 1,
+           "and it counts correctly out there (3 moments hold 500+, 1 holds "
+           "1000+, 1 holds 2000+)")
+        ck(_d44["kept"]["1"] >= _d44["kept"]["250"] >= _d44["kept"]["2000"],
+           "the curve is monotonically non-increasing -- a bigger order can "
+           "never be fillable at more moments than a smaller one")
+        _n44 = _fresh_near()
+        ck("ladders" in _n44 and "ladder_seen" in _n44
+           and isinstance(_n44["ladder_seen"], set),
+           "a fresh close carries a ladder sample and a per-market seen set")
+        ck(_depth_report([]) is None,
+           "and an empty ladder list reports None rather than a fake zero")
+        _src44 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _tl44 = _src44[_src44.index(chr(10) + "def trade_loop("):]
+        ck('nb["ladder_seen"].add(tk)' in _tl44
+           and 'if tk not in nb["ladder_seen"]:' in _tl44,
+           "the ladder is sampled ONCE PER MARKET per close, not per look -- "
+           "per look would put a book walk inside a 20 Hz loop")
+        ck(_tl44.count("ladder=_depth_report(nb.get(\"ladders\"))") == 2,
+           "and BOTH close_summary emitters carry it, or half the closes "
+           "would silently have no ladder trend")
+
         # ---- AMENDMENT 43: a withdrawal is not a loss -------------------
         ck(_DEFAULT_EXTERNAL_MIN == 1.00 and _DEFAULT_EXTERNAL_DETECT is True,
            "A43 declared defaults: $1.00 floor, detection ON (running %.2f / %r)"
@@ -4773,9 +4802,16 @@ def _fresh_near():
     # request: "track the times we would buy/do buy and how many orders are
     # available at that moment". Without it the only depth we ever saw was the
     # single best moment, which cannot answer how far we can scale.
+    #
+    # AMENDMENT 44: "ladders" is the same question asked of the WHOLE book
+    # rather than the touch. Since the sweep (A35) and the ladder-aware floor
+    # (A37) the touch is no longer what we can buy, so a depth trend built on
+    # it understates capacity. Sampled ONCE PER MARKET PER CLOSE -- about nine
+    # calls a close against four thousand looks -- so it costs nothing in the
+    # 20 Hz loop. "ladder_seen" is a set and is deliberately never serialised.
     return {"best": None, "n": 0, "decided": 0, "tradeable": 0,
             "no_offer": 0, "undecided": 0, "dust": 0, "depths": [],
-            "shallow": {}}
+            "ladders": [], "ladder_seen": set(), "shallow": {}}
 
 
 def committed_for(cost, nfill):
@@ -4804,9 +4840,14 @@ def _depth_report(depths):
         "p75": round(d[(3 * n) // 4], 2),
         "max": round(d[-1], 2),
         "total": round(sum(d), 2),
-        # moments that would still qualify at each size
+        # moments that would still qualify at each size.
+        # AMENDMENT 44: extended past 250. The old list stopped exactly at the
+        # size cap, so the log could never answer "how much higher could the
+        # cap go" -- the one question the operator asks of it. Costs nothing:
+        # it is a comprehension over a list already in memory.
         "kept": {str(k): sum(1 for x in d if x >= k)
-                 for k in (1, 5, 10, 15, 25, 50, 75, 125, 250)},
+                 for k in (1, 5, 10, 15, 25, 50, 75, 125, 250,
+                           500, 750, 1000, 2000)},
     }
 
 
@@ -5039,6 +5080,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     fired=(cs in fired), best=None,
                     gates=nb.get("gates", {}),      # AMENDMENT 25
                     depth=_depth_report(nb.get("depths")),
+                    ladder=_depth_report(nb.get("ladders")),
                     why=("decided but NOBODY OFFERED the winning side"
                          if nb["no_offer"] else
                          "no market ever reached the 98% gate"))
@@ -5056,6 +5098,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     neg_ev=nb.get("neg_ev", 0),
                     gates=nb.get("gates", {}),      # AMENDMENT 25
                     depth=_depth_report(nb.get("depths")),
+                    ladder=_depth_report(nb.get("ladders")),
                     shallow_skips=nb.get("shallow", {}),
                     price_ceiling=PRICE_CEILING,
                     best_edge_c=round(100 * b["edge"], 3),
@@ -5610,6 +5653,15 @@ def trade_loop(a, rec, book, idx, series_index):
             nb["decided"] += 1
             nb["tradeable"] += 1
             nb["depths"].append(float(size))
+            # AMENDMENT 44: how deep is the BOOK here, not just the touch?
+            # Once per market per close. Never raises into the trade loop.
+            if tk not in nb["ladder_seen"]:
+                nb["ladder_seen"].add(tk)
+                try:
+                    nb["ladders"].append(
+                        float(book.buyable(tk, want, PRICE_CEILING)))
+                except Exception:              # noqa: BLE001
+                    pass
             if take_n < float(SIZE):
                 nb["dust"] += 1        # a PARTIAL, not a refusal, since A6
             if nb["best"] is None or e > nb["best"]["edge"]:
