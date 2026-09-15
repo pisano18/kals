@@ -555,3 +555,44 @@ too.** There is no warning to be had from the leader.
 - *Cross-coin?* Measured. Dead.
 
 **What is running is, on every test here, the best of the options measured.**
+
+
+---
+
+# PART 4 — THE BTC 05:30 LOSS, SECOND BY SECOND  (2026-09-14 late evening ET)
+
+Official CF Benchmarks print against Bitstamp's BTC/USD book mid (189 ticks in
+20 s — the raw exchange feeds ARE sub-second). Strike 77,695.85. We bought NO
+at 09:29:47–48Z, needing the 60-second average to land BELOW it.
+
+| time Z | Bitstamp mid vs strike | official print vs strike |
+|---|---|---|
+| :42 | −13.68 | −10.24 |
+| :45 | −13.68 | −8.67 |
+| **:46.0** | −2.10 | **+9.86 ← official first above** |
+| :46.5 | +3.79 ← Bitstamp first above | |
+| **:47** (we buy) | +3.79 | **+12.25** |
+| :48 | +24.07 | +34.57 |
+| :49 | +43.13 | +52.14 |
+| :53 | +52.35 | +63.72 |
+
+**Three things this settles.**
+
+1. **The feed was not the problem.** The official print led Bitstamp by half a
+   second — the composite index is faster than any one exchange. The
+   information was on our screen a full second before we bought. The
+   "sub-second feed" hypothesis from earlier today is withdrawn.
+
+2. **The model saw the jump and priced it as survivable — correctly, IF it had
+   stopped.** Spot at +12 with 47 prints locked well below still averages under
+   the strike. Belief 99.99% NO was the right number for a one-off move.
+
+3. **It lost because the move kept going**: +18.5, +22.3, +17.6, +17.6 in four
+   consecutive seconds. A 4.5-sigma jump was the START of a 15-sigma run. The
+   model treats each second as an independent draw around the new level.
+   That is the assumption to test, and it is testable on 18,000 closes.
+
+So the question is no longer "can we see it sooner" — we saw it. It is
+"after a jump, does the index keep going, and by how much." If it does, the
+fix is conditional, not global: widen the model only in the seconds after a
+jump, which is exactly what CURRENT_STATE's dead "scale sigma by k" never did.
