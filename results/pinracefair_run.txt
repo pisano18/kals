@@ -1,0 +1,86 @@
+  ok: nothing left to come, no uncertainty
+  ok: one print left moves the mean by 1/60 of one second's move: 1/3600
+  ok: a fresh window: 60*61*121/6/3600 = 20.50 seconds' worth, not 60
+  ok: 10 s out is 0.107 seconds' worth -- far below the naive sqrt-time 10
+  ok: uncertainty only grows with time left
+  ok: 30 s before the window adds 30 in full: it shifts every print alike
+  ok: cholesky reconstructs its matrix
+  ok: 2 coins, lead of half a spread-sd, 40,000 draws: simulated 0.6879 vs closed form 0.6915
+  ok: a test that asks for 40,000 draws gets 40,000 -- the cache no longer swaps in the default size
+  ok: two coins that move IDENTICALLY: a tiny lead wins 1.000 -- a common move cannot decide a race, which the gap table cannot see
+  ok: fat-tail inflation lowers a leader's chance (0.688 -> 0.597)
+  ok: NULL: five identical independent coins level on points each win ~1 in 5 [0.198, 0.199, 0.203, 0.202, 0.198]
+  ok: and the probabilities sum to one
+  ok: planted 1e-4 per-second moves read back as variance ~1e-8 [1.03, 1.0, 0.85, 1.02, 1.01]
+  ok: and independent coins read back with near-zero covariance
+  ok: a fair value is produced on a full planted race
+  ok: NO LOOK-AHEAD: violent moves planted after second close-500 leave the covariance at close-500 exactly unchanged
+  ok: while a window that includes them sees them (1023355.4x)
+  ok: log loss is clipped, so one confident miss cannot read as infinity
+pinracefair selftest: OK
+
+795 races with an hour of index history: 397 FIT, 398 TEST (split by time)
+  ... 100 races forecast
+  ... 200 races forecast
+  ... 300 races forecast
+  ... 400 races forecast
+  ... 500 races forecast
+  ... 600 races forecast
+  ... 700 races forecast
+
+FIT HALF -- choosing the ruler and the fat-tail factor (lower is better)
+  ruler   kappa   log loss      brier
+  300      1.00    0.02418    0.00672
+  300      1.25    0.02677    0.00739
+  300      1.50    0.03010    0.00816
+  300      2.00    0.03740    0.00990
+  300      2.50    0.04489    0.01176
+  3600     1.00    0.02413    0.00671
+  3600     1.25    0.02741    0.00746
+  3600     1.50    0.03118    0.00832
+  3600     2.00    0.03936    0.01029
+  3600     2.50    0.04765    0.01238
+  max      1.00    0.02451    0.00676
+  max      1.25    0.02798    0.00757
+  max      1.50    0.03196    0.00849
+  max      2.00    0.04045    0.01056
+  max      2.50    0.04898    0.01274
+  -> chosen on the fit half: ruler 3600, kappa 1.00
+
+TEST HALF (never used to choose anything): fair value vs the gap table
+                             legs    fair LL   table LL fair Brier table Brier
+  all moments               15910    0.03291    0.05497    0.00965    0.01688
+  all moments tau<=30       11930    0.01706    0.04295    0.00505    0.01340
+  photo finish (<2bp)        3940    0.09931    0.18495    0.03087    0.05961
+  photo finish (<2bp) tau<=30     3010    0.06313    0.16357    0.01889    0.05182
+  clear lead (>=4bp)         9650    0.00476    0.00451    0.00083    0.00082
+  clear lead (>=4bp) tau<=30     7230    0.00011    0.00010    0.00000    0.00000
+
+RELIABILITY on the TEST half -- when it says X, how often does it happen?
+  claimed        fair n   claimed    actual    table n   claimed    actual
+     0-  5%      12134      0.1%      0.0%      12201      0.1%      0.1%
+     5- 20%        318     11.5%      6.9%        323     10.9%     12.7%
+    20- 50%        292     34.3%     27.4%         28     33.3%     42.9%
+    50- 80%        272     65.2%     75.4%         90     70.3%     72.2%
+    80- 90%        149     85.1%     90.6%         62     87.5%     93.5%
+    90- 95%         93     92.9%     95.7%         67     92.9%     85.1%
+    95- 99%        171     97.2%     97.7%        375     98.3%     97.9%
+    99-100%       2481    100.0%    100.0%       2321    100.0%     99.8%
+
+THE TRADE TAPE, TEST HALF, tau 2-30. Every figure is what the MARKET did
+(an offer that existed and was taken), NOT our loss rate.
+  2156 race prints in the test half, tau 2-30
+
+  rule: buy the FIRST print in a race where fair value beats the price
+  by at least the edge shown. One bet per race, leg and side.
+  edge >=    price       bets  races     won  avg paid  c/contract   lost (TAPE)
+  2c         any          100     60      66     57.7c      +7.39c   34 of 100
+  2c         90c+          37     33      37     94.2c      +5.45c   0 of 37
+  2c         <90c          70     38      36     41.9c      +8.43c   34 of 70
+  5c         any           70     43      44     50.2c     +11.56c   26 of 70
+  5c         90c+          15     14      15     92.3c      +7.17c   0 of 15
+  5c         <90c          60     34      34     43.1c     +12.42c   26 of 60
+
+  Counted in bets and races, never trades. The tape shows offers that
+  were there; whether we would win them, and whether the ones we win
+  are the bad ones, only live or paper fills can say.

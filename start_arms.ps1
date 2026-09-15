@@ -48,6 +48,13 @@ Start-Process -FilePath $py -ArgumentList @("-u","research\pinracearm.py","--min
   -RedirectStandardOutput "$r\pinracearm-live.log" `
   -RedirectStandardError  "$r\pinracearm-live.err" -WindowStyle Hidden
 
+# ARM4 (results/PREREG_race_arm4.md): pinracefair fair value, last 30 s, 90c+, 2c edge
+Start-Sleep -Seconds 3
+Start-Process -FilePath $py -ArgumentList @("-u","research\pinracearm.py","--minutes","4320","--model","fair","--tau-max","30","--min-price","0.90","--min-edge","0.02") `
+  -WorkingDirectory "C:\kals-repo" `
+  -RedirectStandardOutput "$r\pinracearm4-live.log" `
+  -RedirectStandardError  "$r\pinracearm4-live.err" -WindowStyle Hidden
+
 Start-Sleep -Seconds 40
 $all = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
   Where-Object { ($_.CommandLine -like '*pinrun*' -and $_.CommandLine -notlike '*--live*') -or $_.CommandLine -like '*pinracearm*' }

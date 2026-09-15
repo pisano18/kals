@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# VERSION: 2026-09-15-arm3
+# VERSION: 2026-09-15-arm4
 """pinracearm.py -- THE COIN RACE PAPER ARM. Nothing is ever sent.
 
 THE OPERATOR, 2026-09-15: "you can absolutely start on a coin race paper arm.
@@ -78,6 +78,7 @@ os.environ.setdefault("KALS_SELFTESTED", "1")
 import livebook                                              # noqa: E402
 import pinrun                                                # noqa: E402
 import pinracemodel as M                                     # noqa: E402
+import pinracefair as F                                      # noqa: E402
 
 SERIES = "KXCRYPTOLEAD15M"
 COINS = M.COINS
@@ -139,6 +140,34 @@ def close_mu(ticks, close_s, now_s, spot):
     if n > N_AVG or spot is None:
         return None
     return (sum(got) + (N_AVG - n) * float(spot)) / float(N_AVG)
+
+
+def fair_worth(probs, coin, side):
+    """ARM4: what one side of a leg is worth under pinracefair's probability.
+    YES is P(coin wins); NO is 1 - P(coin wins). None when there is no forecast."""
+    if not probs or coin not in probs:
+        return None
+    p = probs[coin]
+    return p if side == "yes" else 1.0 - p
+
+
+def live_fair(ticks_by_iid, close, tau, rets):
+    """({coin: P(win)}, ruler) from the arm's own live ticks, or (None, why).
+
+    The same maths pinracefair scored on 398 unseen races: variance collapse
+    times the five-coin covariance of 1-second returns. The 3600 s ruler won on
+    the fit half; a freshly started arm has no hour of history, so it falls
+    back to 300 s (log loss 0.02418 vs 0.02413 on the fit half) and says so
+    in every record."""
+    ser = F.RaceSeries(ticks_by_iid, close)
+    now = close - tau
+    for which in ("3600", "300"):
+        c = F.pick_cov(ser, now, which)
+        if c is not None:
+            rnow = [math.log(rets[k]) for k in F.COINS]
+            pr = F.win_probs(rnow, c, F.var_factor(tau))[1.0]
+            return dict(zip(F.COINS, pr)), which
+    return None, "no_cov_history"
 
 
 def price_leg(table, tau, gap_bp):
@@ -297,6 +326,39 @@ def selftest():
        "never scored a single race")
     ck("known.update(events)" in body,
        "and every discovered race is added to `known` before it can drop out")
+
+    # ---- ARM4 fair value ---------------------------------------------------
+    pr = {"BTC": 0.93, "ETH": 0.05, "SOL": 0.01, "XRP": 0.005, "HYPE": 0.005}
+    ck(fair_worth(pr, "BTC", "yes") == 0.93
+       and abs(fair_worth(pr, "ETH", "no") - 0.95) < 1e-12,
+       "fair value: BTC's YES is worth its 93%, ETH's NO is worth 1 - 5%")
+    ck(fair_worth(None, "BTC", "yes") is None and fair_worth(pr, "DOGE", "no") is None,
+       "NULL: no forecast, or a coin not in the race, is worth nothing known")
+    ck(net_edge(fair_worth(pr, "BTC", "yes"), 0.95) < 0,
+       "and a 93% leader offered at 95c is refused on edge -- the market's "
+       "price beat the table on the 3:30 PM race exactly like this")
+    base4 = 9_000_000 - (9_000_000 % WINDOW)
+    close4 = base4 + 10 * WINDOW
+    import random as _r
+    rng4 = _r.Random(11)
+    snap4 = {}
+    for iid in F.IIDS:
+        lvl, d4 = 100.0, {}
+        for s in range(close4 - 2000, close4 - 20):
+            lvl *= math.exp(rng4.gauss(0, 1e-4))
+            d4[s] = lvl
+        snap4[iid] = d4
+    rets4 = {c: 1.0 + 0.0004 * i for i, c in enumerate(F.COINS)}
+    p4, ruler4 = live_fair(snap4, close4, 20, rets4)
+    ck(p4 is not None and ruler4 == "300",
+       "a fresh arm with only ~33 minutes of ticks gets a forecast on the 300 s "
+       "ruler (got %s), not a refusal and not a pretend hour" % ruler4)
+    ck(p4 is not None and max(p4, key=p4.get) == "HYPE" and p4["HYPE"] > 0.99,
+       "and a 4bp lead with 20 s left on calm independent coins is ~certain "
+       "(%.3f)" % (p4 or {}).get("HYPE", 0))
+    p5, why5 = live_fair({iid: {} for iid in F.IIDS}, close4, 20, rets4)
+    ck(p5 is None and why5 == "no_cov_history",
+       "NULL: with no tick history at all it refuses rather than guessing")
 
     # ---- ARM3 gate -------------------------------------------------------
     ck(gate_arm3(29, 1.26, 0.78, 30, 4.0, 0.90) == "small_gap",
@@ -467,6 +529,10 @@ def main():
                     help="ARM3: only leads/deficits at least this wide")
     ap.add_argument("--min-price", type=float, default=0.0,
                     help="ARM3: never buy cheaper than this")
+    ap.add_argument("--model", choices=("table", "fair"), default="table",
+                    help="ARM4: 'fair' prices every leg with pinracefair "
+                         "(variance collapse x five-coin covariance) and "
+                         "considers BOTH sides of every leg")
     ap.add_argument("--one-per-race-band", action="store_true",
                     help="ARM3: at most one bet per race per time band -- "
                          "'BTC wins' and 'ETH won't win' are one bet twice")
@@ -509,7 +575,7 @@ def main():
         table_cells=cells, table_mtime=int(tstat.st_mtime),
         table_size=tstat.st_size, version="2026-09-15-arm3",
         tau_max=a.tau_max, min_gap_bp=a.min_gap_bp, min_price=a.min_price,
-        one_per_race_band=bool(a.one_per_race_band))
+        one_per_race_band=bool(a.one_per_race_band), model=a.model)
 
     idx = pinrun.IndexWS(sorted(set(COINS.values()))).start()
     book = livebook.LiveBook()
@@ -532,6 +598,7 @@ def main():
     fills = []                                   # every paper position
     done_band = set()                       # (event, ticker, side, band)
     race_band_done = set()                  # (event, band) -- ARM3
+    fair_cache = {}                         # (event, tau) -> (probs, ruler)
     taken = collections.defaultdict(float)  # (event, ticker, side) -> held
     scored = set()
     last_disc = 0.0
@@ -626,9 +693,38 @@ def main():
                     continue
 
                 g = M.gaps(rets)
+                fprobs, ruler = None, None
+                if a.model == "fair":
+                    if tau > a.tau_max:
+                        continue
+                    fk = (evt, tau)
+                    if fk not in fair_cache:
+                        fair_cache.clear()
+                        with idx.lock:
+                            snap = {iid: dict(idx.ticks.get(iid) or {})
+                                    for iid in F.IIDS}
+                        fair_cache[fk] = live_fair(snap, cs, tau, rets)
+                    fprobs, ruler = fair_cache[fk]
+                    if fprobs is None:
+                        key = (evt, "no_fair_value")
+                        if key not in seen_why:
+                            seen_why.add(key)
+                            rec("cannot_evaluate", event=evt, tau=tau,
+                                why="no_fair_value:%s" % ruler, close_s=cs)
+                        continue
+                legs_sides = []
                 for coin, gap in sorted(g.items(), key=lambda kv: -abs(kv[1])):
+                    if a.model == "fair":
+                        legs_sides.append((coin, gap, "yes"))
+                        legs_sides.append((coin, gap, "no"))
+                    else:
+                        legs_sides.append((coin, gap, None))
+                for coin, gap, fside in legs_sides:
                     tkr = e["legs"][coin]
-                    side, worth = price_leg(table, tau, gap * 1e4)
+                    if fside is None:
+                        side, worth = price_leg(table, tau, gap * 1e4)
+                    else:
+                        side, worth = fside, fair_worth(fprobs, coin, fside)
                     band = band_of(tau)
                     if band is None or (evt, tkr, side, band) in done_band:
                         continue
@@ -724,7 +820,8 @@ def main():
                            "side": side, "price": float(ask), "size": take,
                            "tau": tau, "worth": round(worth, 6),
                            "gap_bp": round(gap * 1e4, 4),
-                           "edge": round(edge, 6), "band": band}
+                           "edge": round(edge, 6), "band": band,
+                           "model": a.model, "ruler": ruler}
                     fills.append(pos)
                     done_band.add((evt, tkr, side, band))
                     race_band_done.add((evt, band))
