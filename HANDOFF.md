@@ -1,3 +1,17 @@
+# 2026-09-16 06:15Z -- THE DUMP GUARD PAID FOR ITSELF AGAIN, on the tape this time
+
+- KXXRP15M-26SEP160215-15: someone offered the YES at **0.45 with tau 4** while the
+  model read fair 0.99524. The guard refused it (`gate: dump_guard`).
+- It settled **NO**: expiration_value 1.2959 against strike 1.2960 -- it lost by one
+  ten-thousandth. An 80-contract fill would have cost about $35.
+- That is a fifth case pointing the same way (the four live losses that built
+  AMENDMENT 10 were XRP 82c, DOGE 10c, SOL 59c, NEAR 73c, 0 of 4). The
+  `--take-dumps` paper arm did NOT take this one either, so the counterfactual arm
+  still has no fill in the deep-discount band; its evidence is still pending.
+- Same close, unrelated: a brief Kalshi WebSocket drop hit both the live bot and the
+  race arm; both logged `ConnectionClosedError ... retry in 1s` and reconnected by
+  themselves. No trade was missed because of it.
+
 # 2026-09-16 04:xxZ -- race basket arb measured and PARKED; dashboards built
 
 - `research/pinarb.py` + `results/RESULTS_racearb.md`: the five legs of a race must
