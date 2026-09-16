@@ -1,0 +1,124 @@
+<title>Pin Deck</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+ --ink:#0A0E16; --panel:#111726; --edge:#1C2436; --text:#E8EDF7; --dim:#7D8AA3;
+ --gain:#31C48D; --loss:#E4572E; --watch:#F0B429; --grid:#151C2B;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+ --ink:#F2F4F8; --panel:#FFFFFF; --edge:#DFE4EC; --text:#111826; --dim:#5A6577;
+ --gain:#12855C; --loss:#C04120; --watch:#9A6B12; --grid:#E7EBF1;}}
+:root[data-theme="light"]{
+ --ink:#F2F4F8; --panel:#FFFFFF; --edge:#DFE4EC; --text:#111826; --dim:#5A6577;
+ --gain:#12855C; --loss:#C04120; --watch:#9A6B12; --grid:#E7EBF1;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:var(--text);
+ font-family:Archivo,"Segoe UI",system-ui,sans-serif;font-size:15px;line-height:1.5}
+.deck{max-width:1000px;margin:0 auto;padding-block:26px 60px;
+ padding-left:18px;padding-right:18px;display:flex;flex-direction:column;gap:20px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}
+h1{margin:0;font-size:25px;font-weight:700;letter-spacing:-.02em}
+.stamp{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11.5px;color:var(--dim);
+ text-align:right;line-height:1.7}
+h2{margin:0 0 10px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+ color:var(--dim);font-family:"JetBrains Mono",ui-monospace,monospace;font-weight:500}
+.panel{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:18px}
+.rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px}
+.sig{background:var(--panel);border:1px solid var(--edge);border-left:3px solid var(--gain);
+ border-radius:8px;padding:11px 13px}
+.sig.warn{border-left-color:var(--watch)} .sig.bad{border-left-color:var(--loss)}
+.sig b{display:block;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:15px;
+ font-weight:500;font-variant-numeric:tabular-nums}
+.sig span{font-size:11px;color:var(--dim);letter-spacing:.04em}
+.hero{display:grid;grid-template-columns:minmax(0,1fr) 168px;gap:18px;align-items:center}
+.big{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:40px;font-weight:500;
+ font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
+.sub{color:var(--dim);font-size:13px;margin-top:4px}
+.curve{width:100%;height:auto;display:block}
+.curve .fill{fill:color-mix(in srgb,var(--gain) 16%,transparent)}
+.curve .line{fill:none;stroke:var(--gain);stroke-width:2;stroke-linejoin:round}
+.curve .dot{fill:var(--gain)}
+.curve .tick{stroke:var(--grid);stroke-width:1}
+.curve .tk,.curve .ax{fill:var(--dim);font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10px}
+.curve .hi{fill:var(--text)}
+.ring{width:150px;height:150px;border-radius:50%;display:grid;place-items:center;
+ background:conic-gradient(var(--gain) 0turn, var(--grid) 0turn);justify-self:end}
+.ringface{width:124px;height:124px;border-radius:50%;background:var(--panel);
+ display:grid;place-items:center;text-align:center}
+.ringface b{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:26px;
+ font-variant-numeric:tabular-nums;display:block}
+.ringface span{font-size:10.5px;color:var(--dim);display:block;max-width:104px;letter-spacing:.03em}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:start}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10px;
+ letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:500;padding:0 8px 7px 0}
+td{padding:7px 8px 7px 0;border-top:1px solid var(--edge);vertical-align:top}
+td.n{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;text-align:right}
+.gain{color:var(--gain)} .loss{color:var(--loss)} .watch{color:var(--watch)}
+.meter{height:9px;border-radius:5px;background:var(--grid);overflow:hidden;margin:9px 0 6px}
+.meter i{display:block;height:100%;background:var(--watch)}
+.note{color:var(--dim);font-size:12.5px;max-width:62ch}
+footer{color:var(--dim);font-size:11.5px;border-top:1px solid var(--edge);padding-top:14px;max-width:70ch}
+@media (max-width:620px){.hero{grid-template-columns:1fr}.ring{justify-self:start}.big{font-size:32px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<div class="deck">
+<div class="top"><div><h1>Pin Deck</h1><div class="sub">Kalshi 15-minute crypto &middot; one bot, nine coins</div></div><div class="stamp">built 2026-09-15 22:48 ET<br>rebuilt from the bot&#x27;s own logs</div></div>
+<div><h2>Is it alive</h2><div class="rail">
+<div class="sig "><b>0s ago</b><span>exchange feeds</span></div>
+<div class="sig "><b>0s ago</b><span>order books</span></div>
+<div class="sig "><b>0s ago</b><span>settlement index</span></div>
+<div class="sig warn"><b>2m ago</b><span>race arm</span></div>
+<div class="sig warn"><b>2m ago</b><span>bot</span></div>
+</div></div>
+<div class="panel"><h2>The bank</h2><div class="hero"><div>
+<div class="big">$470.90</div>
+<div class="sub">from $193.76 deposited, 2.4x in 8 days</div>
+<svg viewBox="0 0 760 170" class="curve" role="img" aria-label="bank from $194 to $471"><line x1="26.0" y1="18" x2="26.0" y2="144" class="tick"/><text x="29.0" y="160" class="tk">09-12</text><line x1="33.9" y1="18" x2="33.9" y2="144" class="tick"/><text x="36.9" y="160" class="tk">09-13</text><line x1="282.3" y1="18" x2="282.3" y2="144" class="tick"/><text x="285.3" y="160" class="tk">09-14</text><line x1="519.8" y1="18" x2="519.8" y2="144" class="tick"/><text x="522.8" y="160" class="tk">09-15</text><polygon points="26.0,144.0 26.0,144.0 26.8,144.0 27.7,142.9 27.7,142.9 30.3,141.9 33.9,141.9 35.6,141.4 43.2,139.8 48.2,133.2 50.5,129.0 55.5,127.0 57.1,127.0 60.5,126.1 70.5,123.8 87.1,123.1 96.3,120.9 103.9,117.5 104.9,117.5 104.9,117.5 105.8,115.1 112.8,115.1 123.8,111.9 126.3,111.1 172.3,109.3 176.5,107.8 182.1,107.8 189.5,107.5 197.0,106.0 202.1,103.2 207.1,101.1 227.3,97.9 229.8,95.2 240.2,94.4 244.4,93.3 267.6,93.0 268.0,93.0 282.3,88.4 296.8,87.8 305.2,85.7 307.7,82.2 312.8,81.2 322.9,78.5 327.9,75.4 330.1,90.0 347.8,88.3 357.9,85.1 364.4,84.6 367.9,83.4 375.5,81.1 379.3,81.1 388.5,78.5 394.4,77.1 398.6,75.1 403.7,72.2 413.7,71.2 436.0,83.2 451.1,80.1 468.8,77.3 471.3,71.1 483.9,67.4 486.4,66.1 492.9,64.4 497.1,63.5 499.6,60.6 507.2,58.5 519.8,57.9 524.3,57.9 524.8,57.9 529.9,57.9 532.4,55.3 539.9,51.8 550.4,51.8 559.6,50.7 564.7,47.3 574.8,44.2 577.3,43.5 582.3,41.1 589.9,38.4 605.0,35.7 610.1,33.5 629.5,33.5 663.3,33.5 674.1,33.5 681.9,33.5 721.4,30.0 726.4,28.1 734.0,26.0 734.0,144.0" class="fill"/><polyline points="26.0,144.0 26.8,144.0 27.7,142.9 27.7,142.9 30.3,141.9 33.9,141.9 35.6,141.4 43.2,139.8 48.2,133.2 50.5,129.0 55.5,127.0 57.1,127.0 60.5,126.1 70.5,123.8 87.1,123.1 96.3,120.9 103.9,117.5 104.9,117.5 104.9,117.5 105.8,115.1 112.8,115.1 123.8,111.9 126.3,111.1 172.3,109.3 176.5,107.8 182.1,107.8 189.5,107.5 197.0,106.0 202.1,103.2 207.1,101.1 227.3,97.9 229.8,95.2 240.2,94.4 244.4,93.3 267.6,93.0 268.0,93.0 282.3,88.4 296.8,87.8 305.2,85.7 307.7,82.2 312.8,81.2 322.9,78.5 327.9,75.4 330.1,90.0 347.8,88.3 357.9,85.1 364.4,84.6 367.9,83.4 375.5,81.1 379.3,81.1 388.5,78.5 394.4,77.1 398.6,75.1 403.7,72.2 413.7,71.2 436.0,83.2 451.1,80.1 468.8,77.3 471.3,71.1 483.9,67.4 486.4,66.1 492.9,64.4 497.1,63.5 499.6,60.6 507.2,58.5 519.8,57.9 524.3,57.9 524.8,57.9 529.9,57.9 532.4,55.3 539.9,51.8 550.4,51.8 559.6,50.7 564.7,47.3 574.8,44.2 577.3,43.5 582.3,41.1 589.9,38.4 605.0,35.7 610.1,33.5 629.5,33.5 663.3,33.5 674.1,33.5 681.9,33.5 721.4,30.0 726.4,28.1 734.0,26.0" class="line"/><circle cx="734.0" cy="26.0" r="3.5" class="dot"/><text x="6" y="144" class="ax">$194</text><text x="690.0" y="16.0" class="ax hi">$471</text></svg>
+</div><div class="ring" id="ring"><div class="ringface"><b id="cd">--:--</b><span id="phase">to the next close</span></div></div></div></div>
+<div class="rail">
+<div class="sig "><b>$+76.44</b><span>today, 15.2 h up</span></div>
+<div class="sig "><b>2.21c</b><span>kept per contract, all time</span></div>
+<div class="sig warn"><b>1.51c</b><span>break-even sits at</span></div>
+<div class="sig warn"><b>10 of 396</b><span>losses</span></div>
+<div class="sig "><b>2.33%</b><span>returned per $ staked</span></div>
+<div class="sig bad"><b>7.6 h</b><span>hours lost today</span></div>
+</div>
+<div class="cols">
+<div class="panel"><h2>Every loss</h2>
+<table><tr><th>when (ET)</th><th>market</th><th>paid</th><th class='n'>cost</th></tr>
+<tr><td>09-14 16:00</td><td>HYPE</td><td class='n'>95.2c x62</td><td class='n loss'>$-59.20</td></tr>
+<tr><td>09-14 05:30</td><td>BTC</td><td class='n'>97.2c x60</td><td class='n loss'>$-58.43</td></tr>
+<tr><td>09-12 20:00</td><td>ZEC</td><td class='n'>96.2c x11</td><td class='n loss'>$-10.61</td></tr>
+<tr><td>09-12 04:00</td><td>SOL</td><td class='n'>94.0c x20</td><td class='n loss'>$-18.88</td></tr>
+<tr><td>09-11 23:00</td><td>SOL</td><td class='n'>97.9c x20</td><td class='n loss'>$-19.61</td></tr>
+<tr><td>09-11 08:30</td><td>SOL</td><td class='n'>59.1c x20</td><td class='n loss'>$-12.16</td></tr>
+<tr><td>09-10 18:15</td><td>DOGE</td><td class='n'>10.0c x20</td><td class='n loss'>$-2.12</td></tr>
+<tr><td>09-10 01:30</td><td>BNB</td><td class='n'>94.0c x18</td><td class='n loss'>$-17.59</td></tr>
+<tr><td>09-10 01:00</td><td>XRP</td><td class='n'>82.0c x20</td><td class='n loss'>$-16.61</td></tr>
+<tr><td>09-08 20:45</td><td>NEAR</td><td class='n'>96.2c x59</td><td class='n loss'>$-52.60</td></tr>
+</table>
+<p class="note">10 losses in 396 buys. This strategy wins about 2c and loses about 95c, so roughly 40 wins pay for one loss -- the losses ARE the strategy&#x27;s risk, which is why they are listed one by one rather than as a rate.</p></div>
+<div class="panel"><h2>How much room is left</h2>
+<div class="big">24%</div><div class="sub">of the contracts for sale at our prices, taken on a typical trade</div>
+<div class="meter"><i style="width:24%"></i></div>
+<p class="note">Measured on 29 markets where the full book was recorded. At this size we already take about a quarter of everything offered at our prices; the growth ends when that reaches all of it, not when the edge fails.</p>
+<table><tr><th>silence</th><th class="n">how normal</th></tr><tr><td>right now</td><td class='n'>1.3 h</td></tr><tr><td>normal (half are under)</td><td class='n'>0.0 h</td></tr><tr><td>19 in 20 are under</td><td class='n'>1.0 h</td></tr><tr><td>99 in 100 are under</td><td class='n'>2.2 h</td></tr><tr><td>longest ever</td><td class='n'>3.8 h</td></tr></table>
+<p class="note">Dry spells are real, not bad luck: the chance of a buy falls from 51% right after one to 25% after two quiet hours. Past 2.2 h of silence, suspect the bot before the market.</p></div>
+</div>
+<footer>Rebuilt from results/pinrun-live-*.jsonl at the time stamped above; only the cycle clock keeps moving. Profit is reconstructed from the fills and reconciles with the bank. Closes inside a recorded outage are excluded so downtime cannot read as a quiet market. Times Eastern.</footer>
+</div>
+<script>
+(function(){
+ var ring=document.getElementById('ring'),cd=document.getElementById('cd'),ph=document.getElementById('phase');
+ function tick(){
+  var now=Date.now()/1000, cycle=900, into=now%cycle, left=cycle-into;
+  var m=Math.floor(left/60), s=Math.floor(left%60);
+  cd.textContent=m+':'+(s<10?'0':'')+s;
+  var frac=into/cycle, colour= left<=30 ? 'var(--watch)' : 'var(--gain)';
+  ring.style.background='conic-gradient('+colour+' '+frac+'turn, var(--grid) '+frac+'turn)';
+  ph.textContent = left<=30 ? 'DECIDING NOW' : (left>870 ? 'settling the last close' : 'watching, no bets yet');
+ }
+ tick(); setInterval(tick,1000);
+})();
+</script>
