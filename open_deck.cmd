@@ -15,4 +15,4 @@ if errorlevel 1 (
   pause
 )
 start "" "C:\kals-repo\results\pindeck.html"
-exit
+exit /b 0
