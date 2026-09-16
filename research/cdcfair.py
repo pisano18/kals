@@ -237,13 +237,13 @@ def main():
                 if fair - ask >= a.edge:
                     bets.append((sym, coin, tau, "YES", ask, fair,
                                  (1.0 if yes_won else 0.0) - ask,
-                                 float(asks[0][1])))
+                                 float(asks[0][1]), close))
             if bids:
                 bid = float(bids[0][0])
                 if bid - fair >= a.edge:
                     bets.append((sym, coin, tau, "NO", round(1 - bid, 4), 1 - fair,
                                  (0.0 if yes_won else 1.0) - (1 - bid),
-                                 float(bids[0][1])))
+                                 float(bids[0][1]), close))
 
     print("\n%d quotes priced; %d closes skipped as too close to call "
           "(under %.0f bp)" % (quotes, skipped_margin, a.min_margin))
@@ -255,7 +255,7 @@ def main():
     print("\n%-26s %-5s %6s %5s %7s %7s %8s %8s"
           % ("contract", "coin", "t-left", "side", "paid", "fair", "P&L", "size"))
     print("  " + "-" * 82)
-    for sym, coin, tau, side, paid, fair, pnl, size in sorted(bets, key=lambda b: -b[2])[:30]:
+    for sym, coin, tau, side, paid, fair, pnl, size, _ in sorted(bets, key=lambda b: -b[2])[:30]:
         print("%-26s %-5s %5.0fs %5s %7.2f %7.2f %+8.2f %8.0f"
               % (sym.replace("NX.F.OPT.", "")[:26], coin, tau, side, paid,
                  fair, pnl, size))
@@ -271,7 +271,7 @@ def main():
     # settlement, so counting them as nine independent wins inflates both the
     # hit rate and any interval built on it. One number per close.
     per = {}
-    for sym, coin, tau, side, paid, fair, pnl, size in bets:
+    for sym, coin, tau, side, paid, fair, pnl, size, close in bets:
         per.setdefault(sym, []).append(pnl)
     means = [sum(v) / len(v) for v in per.values()]
     cwon = sum(1 for m in means if m > 0)
@@ -294,6 +294,65 @@ def main():
     mins = sorted(means)[:3]
     print("  Worst three closes: %s"
           % ", ".join("%+.0fc" % (100 * m) for m in mins))
+
+    # WHAT FEE KILLS IT. This is the single most decision-relevant number we
+    # can produce without trading access. CDNA's fee schedule is unknown and
+    # Nadex historically billed a FLAT amount per contract at trade and again
+    # at settlement -- flat in notional, which on a contract that pays at most
+    # one dollar is enormous. Kalshi charges 0.07*p*(1-p), about a fifth of a
+    # cent on a 97c contract. If the break-even fee here is below whatever
+    # CDNA charges, no amount of access or engineering makes this work, and
+    # that is worth knowing before anyone builds an order client.
+    def clustered(fee):
+        d = {}
+        for sym, coin, tau, side, paid, fair, pnl, size, close in bets:
+            d.setdefault(sym, []).append(pnl - fee)
+        m = [sum(v) / len(v) for v in d.values()]
+        return sum(m) / len(m), sum(1 for x in m if x > 0), len(m)
+
+    print("\n  BREAK-EVEN FEE -- charged per contract, once each way:")
+    print("  %-14s %14s %14s" % ("fee/contract", "cents per close", "closes ahead"))
+    print("  " + "-" * 46)
+    breakeven = None
+    for cents in (0, 1, 2, 3, 4, 5, 6, 8, 10):
+        avg, wins, n = clustered(2 * cents / 100.0)
+        print("  %-14s %13.1fc %10d of %d"
+              % ("%dc" % cents, 100 * avg, wins, n))
+        if breakeven is None and avg <= 0:
+            breakeven = cents
+    if breakeven:
+        print("\n  The edge dies at about %dc a contract each way." % breakeven)
+    else:
+        print("\n  Still positive at 10c a contract each way.")
+    print("  For scale, Kalshi charges us about 0.2c on a 97c contract.")
+
+    # HOLDOUT. CLAUDE.md: no threshold is deployed from a replay without a
+    # split. Closes are ordered by time and cut in half; the edge threshold is
+    # chosen on the first half and scored on the second, which it has not seen.
+    order = sorted({(c, s) for s, _, _, _, _, _, _, _, c in bets})
+    if len(order) >= 20:
+        cut = order[len(order) // 2][0]
+        print("\n  HOLDOUT, first half of the day against the second:")
+        print("  %-10s %18s %18s" % ("min edge", "early (cents/close)",
+                                     "late (cents/close)"))
+        print("  " + "-" * 50)
+        for thr in (0.03, 0.05, 0.08, 0.12, 0.20):
+            halves = []
+            for early in (True, False):
+                d = {}
+                for sym, coin, tau, side, paid, fair, pnl, size, close in bets:
+                    if abs(fair - paid) < thr:
+                        continue
+                    if (close < cut) != early:
+                        continue
+                    d.setdefault(sym, []).append(pnl)
+                m = [sum(v) / len(v) for v in d.values()]
+                halves.append((100 * sum(m) / len(m), len(m)) if m else (0.0, 0))
+            print("  %-10s %12.1fc n=%-4d %12.1fc n=%-4d"
+                  % ("%.0fc" % (100 * thr), halves[0][0], halves[0][1],
+                     halves[1][0], halves[1][1]))
+        print("  A threshold that only works in one half is a fitted number,")
+        print("  not an edge.")
     print("\n  THIS IS AN UPPER BOUND, not a forecast. Every bet is a fill at a")
     print("  price we merely SAW quoted; a maker about to be picked off cancels,")
     print("  and hard rule: our live loss rate has run 31x the tape's before.")
