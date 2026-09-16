@@ -265,6 +265,35 @@ def main():
     print("\n  %d bets, %d won, %d lost." % (len(bets), won, len(bets) - won))
     print("  Total profit at one contract each: $%+.2f  (average %+.1f cents "
           "a contract)" % (tot, 100 * tot / len(bets)))
+
+    # HARD RULE 4: CLUSTER BY CLOSE. Nine of those "bets" can be the same
+    # contract re-quoted nine times three seconds apart. They share one
+    # settlement, so counting them as nine independent wins inflates both the
+    # hit rate and any interval built on it. One number per close.
+    per = {}
+    for sym, coin, tau, side, paid, fair, pnl, size in bets:
+        per.setdefault(sym, []).append(pnl)
+    means = [sum(v) / len(v) for v in per.values()]
+    cwon = sum(1 for m in means if m > 0)
+    print("\n  CLUSTERED BY CLOSE, which is the only count that means anything:")
+    print("  %d closes, %d profitable, %d not. Average per close %+.1f cents."
+          % (len(means), cwon, len(means) - cwon,
+             100 * sum(means) / len(means)))
+    # sign test against a fair coin: how surprising is cwon of len(means)?
+    n, k = len(means), cwon
+    p = sum(math.comb(n, i) for i in range(k, n + 1)) / (2.0 ** n)
+    print("  If the venue were priced correctly and we were guessing, %d or"
+          % k)
+    print("  more profitable closes out of %d happens with probability %.4g."
+          % (n, p))
+    if p > 0.05:
+        print("  That is NOT significant. This is a promising shape, not a result.")
+    else:
+        print("  The direction is unlikely to be chance. The SIZE of the edge")
+        print("  is still an upper bound for the fill reason below.")
+    mins = sorted(means)[:3]
+    print("  Worst three closes: %s"
+          % ", ".join("%+.0fc" % (100 * m) for m in mins))
     print("\n  THIS IS AN UPPER BOUND, not a forecast. Every bet is a fill at a")
     print("  price we merely SAW quoted; a maker about to be picked off cancels,")
     print("  and hard rule: our live loss rate has run 31x the tape's before.")
