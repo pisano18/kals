@@ -1,35 +1,59 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
 Written so a session that has just been `/clear`ed can pick up without
-re-deriving anything. **Updated 2026-09-13 ~8:45 PM ET.** If the date above is
+re-deriving anything. **Updated 2026-09-16 ~5:35 PM ET.** If the date above is
 more than a day old, verify the live numbers before quoting them.
 
-**2026-09-14: READ `HANDOFF_2026-09-14.md` FIRST.** It holds everything from
-the 13th/14th session -- what shipped and why, what was tried and failed, nine
-mistakes worth not repeating, and the ideas that were never acted on. That
-session was cleared for tokens and the handoff is all that survives of it.
+**2026-09-16: READ THE TOP OF `HANDOFF.md` FIRST.** That session produced
+mostly NEGATIVE results and, more importantly, FIVE of its own headline numbers
+were artefacts that a holdout or the operator caught. They are listed there with
+the corrected values. Do not re-run those analyses from scratch.
 
 `CLAUDE.md` = the rules. `PROJECT_HISTORY.md` = why things were killed.
-`HANDOFF.md` = the long running log (66k tokens, read only when you need a
-specific past result). **This file = what is true right now.**
+`HANDOFF.md` = the long running log (read the newest section, then only what you
+need). **This file = what is true right now.**
 
 ## The bot, as deployed
 
 | | |
 |---|---|
-| process | `research/pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 3 --improve-scope market --pick best` |
-| launched | `C:\Python314\python.exe -u`, cwd `C:\kals-repo`, detached |
-| bank | ~$310 as of 2026-09-13 8:40 PM ET (read live from `/portfolio/balance`) |
-| SIZE | **auto**, from the bank -- `--size` is only a starting value |
-| BANK_BRAKE | **3.0** -> size = bank / (3.0 x 2 x 0.98) = bank / 5.88 |
-| close cap | **CONTRACTS, not fills** (A17): `MAX_PER_CLOSE x SIZE`, coins unlimited |
-| hedge | on, fires at belief < 0.80 |
+| process | `research/pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.60` |
+| launched | `C:\Python314\python.exe -u`, cwd `C:\kals-repo`, detached, via `restart_bot.ps1` |
+| bank | **$529.98** at 2026-09-16 21:30Z (read live from `/portfolio/balance`) |
+| SIZE | **auto**, from the bank -- currently **90 contracts**. `--size` is only a starting value |
+| BANK_BRAKE | 3.0 -> size = bank / (3.0 x 2 x 0.98) = bank / 5.88 |
+| close cap | CONTRACTS, not fills (A17): `MAX_PER_CLOSE x SIZE`, MAX_PER_CLOSE = 2 |
+| hedge | on, fires at belief < **0.60** (was 0.80; lowered 2026-09-15) |
 | gate | PIN 0.995, ceiling 0.98, tau 3-30s, edge >= 0.3c, EV >= 0.3c |
-| per market | 1 fill (A13); re-buy band A23 exists but is PAPER ONLY |
-| scan order | **BEST first** (A24, live 2026-09-13 8:35 PM ET) |
-| attempts | 3 per market per close, 24 per close (A26) |
-| gate audit | on -- every refusal recorded (A25), read by `pinattrib.py` |
-| depth floor | MIN_FILL_FRAC 0.50, measured against FULL size |
+| per market | **2 fills** (A23 + A29, live since 2026-09-14) |
+| scan order | BEST first (A24) |
+| depth floor | **MIN_FILL_FRAC 0** -- a thin book is taken rather than skipped (A28) |
+| sweep | on. Swept fills are 62 contracts at the median against 20 unswept, at the SAME 2.4c per contract and a LOWER loss rate |
+
+## Live record, all time
+
+451 closes, 430 won, **21 lost (4.66%)**, net **+$374.92**. Wins grow with size
+($26 -> $175 a day gross); losses are lumpy ($0 to $118 a day) and are what
+actually decides a day. Sep 13 looked like a great day because it lost only
+$13, not because it won more -- Sep 14 won MORE and finished at half the money.
+
+## What is settled and must not be re-litigated
+
+- **The book is NOT the constraint.** Median fill is 100% of what the bot asked
+  for on every single day. The BANK is the lever, with ~4x headroom before our
+  share of book starts to bind. (`research/pinfill.py`)
+- **Opportunities are NOT falling.** 2.0-5.7 signals per hour up, no trend.
+  (`research/pinwhy.py`)
+- **Extreme confidence was being picked off at the cheap end** -- big-edge
+  trades lost 8.8% before 2026-09-12 and 1.4% after. The dump guard and jump
+  gate fixed it. No change needed. (`research/pinadverse.py`)
+- **Crypto.com / CDNA: FIX is the only order-entry route**, and an
+  exchange.crypto.com API key is NOT valid on /dcm or /fcm (escalated support
+  answer, matches our 40101s). Onboarding is opened through the in-app support
+  chat. Blocking question: the per-contract fee -- the strategy there dies above
+  about 4c. (`results/RESULTS_fcm_b2c.md`)
+- **Dead ends, with evidence, in HANDOFF.md:** raising EDGE_FLOOR, a depth gate,
+  hourly markets, more Kalshi series, Polymarket on-chain venues.
 
 **To restart it -- USE THE SCRIPT, AND ONLY THE SCRIPT:**
 
