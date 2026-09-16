@@ -167,6 +167,7 @@ def main():
     best = {}                     # event -> best long edge seen (edge, size, stale, ts)
     best_s = {}
     hits = collections.Counter()
+    real_moments = []            # every leg fresh, and a whole contract on each
     hit_events = collections.defaultdict(set)
     sizes = collections.defaultdict(list)
     seen_events = set()
@@ -204,6 +205,8 @@ def main():
                         break
                 if evt not in best or e > best[evt][0]:
                     best[evt] = (e, min(asz), stale, ts)
+                if stale <= 1.0 and min(asz) >= 1.0:
+                    real_moments.append(("long", evt, e, min(asz), list(asks)))
         # SHORT: buy every NO, i.e. sell every YES at its bid.
         bids = [legs[c][0] for c in COINS]
         bsz = [legs[c][1] for c in COINS]
@@ -218,6 +221,8 @@ def main():
                         break
                 if evt not in best_s or e > best_s[evt][0]:
                     best_s[evt] = (e, min(bsz), stale, ts)
+                if stale <= 1.0 and min(bsz) >= 1.0:
+                    real_moments.append(("short", evt, e, min(bsz), list(bids)))
 
     n = scan_files(files, on_row)
     print("\n%d Coin Race ticker updates over %d hours, %d races"
@@ -247,6 +252,28 @@ def main():
               "summed to a dollar,")
         print("  which is what a market with any attention on it should do.")
         return 0
+
+    print("\n  ONLY WHAT WAS ACTUALLY BUYABLE -- every leg fresh within one second")
+    print("  and at least one whole contract on the thinnest leg:")
+    if not real_moments:
+        print("    NONE. Every apparent chance was a stale quote or a fraction")
+        print("    of a contract.")
+    else:
+        byrace = {}
+        for side, evt, e, sz, px in real_moments:
+            k = (side, evt)
+            if k not in byrace or e > byrace[k][0]:
+                byrace[k] = (e, sz, px)
+        print("    %-6s %-13s %9s %7s   %s"
+              % ("basket", "race", "profit", "size", "the five prices"))
+        tot = 0.0
+        for (side, evt), (e, sz, px) in sorted(byrace.items(), key=lambda kv: -kv[1][0]):
+            tot += e * min(sz, 100)
+            print("    %-6s %-13s %8.2fc %7.0f   %s"
+                  % (side, evt[-12:], 100 * e, sz,
+                     " ".join("%.2f" % x for x in px)))
+        print("    %d chances over %d races -- at the sizes shown (capped at 100 "
+              "a leg) that is $%.2f in total." % (len(byrace), len(seen_events), tot))
 
     for label, store in (("LONG (buy all five YES)", best),
                          ("SHORT (buy all five NO)", best_s)):

@@ -1,0 +1,134 @@
+pinarb selftest: OK
+
+1344636 Coin Race ticker updates over 240 hours, 930 races
+
+MOMENTS WHERE THE FIVE LEGS DID NOT SUM TO $1
+  basket  all legs fresh within   moments    races   med size   med profit
+  long    1 s                          41       26          1    see below
+  long    5 s                         194       79          0    see below
+  long    30 s                        546      101          0    see below
+  long    300 s                       740      169          0    see below
+  short   1 s                         170       84          2    see below
+  short   5 s                         479      172          1    see below
+  short   30 s                        734      209          1    see below
+  short   300 s                       793      239          1    see below
+
+  ONLY WHAT WAS ACTUALLY BUYABLE -- every leg fresh within one second
+  and at least one whole contract on the thinnest leg:
+    basket race             profit    size   the five prices
+    long   -26SEP110830     87.18c       1   0.04 0.05 0.01 0.01 0.01
+    short  -26SEP111430     26.62c      22   0.01 0.01 0.74 0.52 0.02
+    short  -26SEP130015     21.46c       5   0.01 0.01 0.41 0.19 0.64
+    long   -26SEP090845     19.79c       1   0.08 0.34 0.08 0.15 0.11
+    short  -26SEP051815     13.69c       1   0.40 0.01 0.09 0.23 0.46
+    short  -26SEP110200     13.35c       1   0.01 0.56 0.01 0.01 0.58
+    long   -26SEP080515     11.89c       1   0.08 0.20 0.04 0.07 0.45
+    short  -26SEP121800      9.67c       2   0.73 0.03 0.01 0.01 0.35
+    short  -26SEP120500      9.11c      58   0.02 0.57 0.03 0.01 0.50
+    short  -26SEP092115      8.78c       8   0.01 0.02 0.21 0.10 0.78
+    short  -26SEP080815      8.70c     100   0.10 0.40 0.44 0.10 0.10
+    short  -26SEP120430      8.68c      16   0.04 0.52 0.03 0.05 0.49
+    short  -26SEP120745      8.04c      50   0.02 0.48 0.03 0.02 0.57
+    short  -26SEP102030      7.98c       1   0.01 0.76 0.01 0.01 0.32
+    short  -26SEP091915      6.13c       1   0.01 0.01 0.15 0.02 0.89
+    short  -26SEP091800      5.98c       1   0.16 0.01 0.66 0.26 0.01
+    short  -26SEP100515      5.60c     120   0.02 0.03 0.07 0.11 0.85
+    short  -26SEP092245      5.48c       1   0.03 0.11 0.07 0.84 0.03
+    long   -26SEP111700      5.16c       1   0.71 0.04 0.02 0.08 0.07
+    short  -26SEP102315      4.36c       1   0.23 0.02 0.01 0.01 0.80
+    long   -26SEP072100      4.28c       3   0.05 0.09 0.38 0.26 0.13
+    short  -26SEP120630      3.50c     120   0.02 0.02 0.02 0.68 0.33
+    short  -26SEP060830      3.37c       1   0.09 0.02 0.02 0.02 0.90
+    long   -26SEP101145      3.28c       8   0.08 0.08 0.04 0.12 0.61
+    long   -26SEP062230      3.03c      90   0.07 0.07 0.28 0.26 0.24
+    short  -26SEP111615      2.99c       1   0.03 0.03 0.19 0.04 0.77
+    short  -26SEP090015      2.97c       4   0.01 0.28 0.09 0.64 0.05
+    short  -26SEP081300      2.90c      34   0.02 0.05 0.02 0.10 0.86
+    short  -26SEP082015      2.85c     120   0.01 0.08 0.01 0.46 0.51
+    long   -26SEP092345      2.84c      14   0.18 0.54 0.07 0.06 0.08
+    short  -26SEP140715      2.77c      14   0.03 0.03 0.02 0.03 0.93
+    short  -26SEP081200      2.54c      13   0.06 0.01 0.01 0.91 0.05
+    short  -26SEP151445      2.36c       1   0.70 0.03 0.14 0.01 0.18
+    short  -26SEP112345      2.28c       3   0.01 0.02 0.01 0.44 0.58
+    short  -26SEP150800      2.13c       1   0.02 0.02 0.22 0.77 0.02
+    short  -26SEP092315      2.02c       3   0.09 0.19 0.06 0.21 0.52
+    short  -26SEP120530      1.99c      10   0.02 0.02 0.86 0.12 0.02
+    short  -26SEP092215      1.89c       3   0.01 0.01 0.05 0.24 0.74
+    short  -26SEP110430      1.84c       1   0.02 0.02 0.06 0.09 0.85
+    long   -26SEP150145      1.84c       1   0.02 0.02 0.19 0.04 0.68
+    short  -26SEP130145      1.72c      52   0.03 0.04 0.01 0.03 0.92
+    short  -26SEP092130      1.62c      11   0.30 0.38 0.24 0.07 0.08
+    short  -26SEP060345      1.58c       2   0.01 0.01 0.01 0.01 0.98
+    short  -26SEP081030      1.53c       9   0.01 0.10 0.01 0.01 0.90
+    short  -26SEP111030      1.49c       6   0.02 0.07 0.02 0.02 0.90
+    short  -26SEP061830      1.40c       3   0.32 0.06 0.15 0.28 0.26
+    short  -26SEP140145      1.38c       1   0.01 0.02 0.01 0.79 0.21
+    short  -26SEP082200      1.31c     110   0.04 0.02 0.09 0.09 0.80
+    short  -26SEP081530      1.27c       1   0.67 0.25 0.02 0.09 0.02
+    long   -26SEP110130      1.14c       1   0.40 0.09 0.10 0.11 0.24
+    short  -26SEP110315      1.09c       1   0.02 0.02 0.06 0.77 0.17
+    short  -26SEP130300      0.91c       1   0.27 0.02 0.09 0.05 0.62
+    long   -26SEP121230      0.88c       1   0.33 0.08 0.22 0.18 0.13
+    short  -26SEP052200      0.87c       6   0.01 0.15 0.84 0.02 0.01
+    long   -26SEP102245      0.85c       1   0.24 0.16 0.07 0.30 0.17
+    long   -26SEP102145      0.79c       1   0.11 0.16 0.13 0.29 0.25
+    short  -26SEP092300      0.76c      28   0.03 0.10 0.35 0.56 0.01
+    short  -26SEP101630      0.75c      40   0.05 0.01 0.02 0.24 0.72
+    short  -26SEP081415      0.67c       5   0.02 0.06 0.10 0.29 0.58
+    short  -26SEP132300      0.56c       2   0.04 0.12 0.04 0.12 0.72
+    short  -26SEP101215      0.55c      18   0.02 0.90 0.04 0.05 0.01
+    short  -26SEP090230      0.54c       9   0.04 0.03 0.02 0.90 0.03
+    short  -26SEP121900      0.47c      61   0.01 0.01 0.01 0.10 0.89
+    short  -26SEP122130      0.43c      95   0.52 0.06 0.33 0.01 0.13
+    short  -26SEP052245      0.42c       1   0.02 0.01 0.38 0.01 0.62
+    short  -26SEP131430      0.42c     105   0.01 0.03 0.06 0.89 0.03
+    short  -26SEP062015      0.39c       1   0.65 0.01 0.05 0.01 0.32
+    short  -26SEP090030      0.38c       1   0.02 0.01 0.01 0.96 0.01
+    short  -26SEP090845      0.38c       1   0.01 0.02 0.01 0.96 0.01
+    short  -26SEP100730      0.38c      14   0.01 0.01 0.01 0.02 0.96
+    short  -26SEP110600      0.36c       1   0.01 0.01 0.11 0.01 0.88
+    short  -26SEP130245      0.25c      40   0.87 0.01 0.01 0.12 0.01
+    long   -26SEP092245      0.25c      39   0.01 0.01 0.01 0.02 0.94
+    short  -26SEP140730      0.24c       1   0.02 0.01 0.01 0.95 0.02
+    short  -26SEP151415      0.20c       1   0.13 0.09 0.02 0.01 0.78
+    long   -26SEP092130      0.15c       1   0.28 0.13 0.39 0.04 0.11
+    long   -26SEP110015      0.13c       1   0.10 0.41 0.10 0.10 0.24
+    short  -26SEP111300      0.11c     118   0.02 0.13 0.02 0.22 0.65
+    long   -26SEP111130      0.11c       1   0.05 0.38 0.07 0.25 0.20
+    short  -26SEP120645      0.11c       4   0.02 0.02 0.01 0.94 0.02
+    short  -26SEP120830      0.11c       5   0.01 0.02 0.94 0.02 0.02
+    short  -26SEP150745      0.11c     119   0.94 0.02 0.03 0.01 0.01
+    short  -26SEP051615      0.03c       1   0.01 0.02 0.07 0.35 0.59
+    short  -26SEP102100      0.01c       1   0.15 0.06 0.37 0.42 0.05
+    84 chances over 930 races -- at the sizes shown (capped at 100 a leg) that is $52.01 in total.
+
+  BEST LONG (buy all five YES) -- the ten fattest moments
+    race                               profit     size    stale
+    -26SEP110830                       87.18c        1     0.4s
+    -26SEP122330                       77.61c        2    25.9s
+    -26SEP121415                       57.47c      120   104.1s
+    -26SEP070200                       57.46c      120    93.1s
+    -26SEP061945                       51.46c      120    80.0s
+    -26SEP061200                       47.11c      120    87.9s
+    -26SEP070800                       46.96c       87    46.7s
+    -26SEP100030                       44.85c      120     2.1s
+    -26SEP080100                       43.44c      120    71.1s
+    -26SEP100100                       39.96c      120    90.4s
+    total if every one were filled at its size: $1901.35 over 260 races
+
+  BEST SHORT (buy all five NO) -- the ten fattest moments
+    race                               profit     size    stale
+    -26SEP080630                       41.61c        1    38.8s
+    -26SEP120900                       28.37c       14     6.6s
+    -26SEP150830                       27.72c        1     7.3s
+    -26SEP111430                       26.62c       22     0.9s
+    -26SEP082345                       25.38c        1     2.5s
+    -26SEP101800                       23.90c        1     3.6s
+    -26SEP121145                       22.93c        1    76.7s
+    -26SEP100200                       22.30c        1    67.9s
+    -26SEP101030                       22.28c        1    67.9s
+    -26SEP061200                       22.27c        7    42.9s
+    total if every one were filled at its size: $289.40 over 436 races
+
+  A basket needs ALL FIVE fills. Four fills and a miss leaves an open position,
+  which is the real risk here -- not the arithmetic.

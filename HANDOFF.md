@@ -1,3 +1,26 @@
+# 2026-09-16 04:xxZ -- race basket arb measured and PARKED; dashboards built
+
+- `research/pinarb.py` + `results/RESULTS_racearb.md`: the five legs of a race must
+  sum to $1. Measured on the ticker channel (988 MB, not the 47 GB book channel),
+  1.34M updates / 930 races / 240 h, counting only moments when all five legs were
+  fresh within 1 s with a whole contract on the thinnest: **84 moments, $52 total,
+  ~$5/day**; 28 with 10+ contracts. 25 of 28 are the NO basket, which costs ~$4 a
+  unit to earn ~8c. PARKED on capital (the pin earns more on the same dollars) and
+  on all-five-or-nothing execution (0.9^5 = 59%). Revisit when capital is idle.
+- `research/pindeck.py` -> results/pindeck.html, published artifact, and a Desktop
+  shortcut + `open_deck.cmd` that rebuilds it from the logs and opens it.
+- `research/pinwhen.py` / `pinstreak.py` / `pinvalue.py` / `pinboard.py`: opportunity
+  timing, droughts and value. The findings: chances are REAL-predictable from
+  volatility (59.5% of closes when calmest, 31.0% when choppiest, monotone, and the
+  clock effect vanishes once volatility is held still); value per buy is NOT
+  predictable (p 0.26 by volatility, p 0.84 by hour) because only 10 of 389 buys
+  lost; droughts persist (51% -> 25% after two dry hours); past 2.2 h of silence
+  suspect the bot.
+- CAPACITY, correcting the earlier $2,785/day ceiling: on 29 markets with a full
+  recorded ladder we already take a **median 24%** of everything offered under the
+  ceiling, p90 90%. Headroom on the median trade is ~4x, not ~34x. The operator
+  called this out and was right.
+
 # 2026-09-15 20:1xZ -- THE API KEY WAS REVOKED (401 NOT_FOUND). Needs a new key.
 
 - Operator asked for a cheap test buy. One contract, KXCRYPTOLEAD15M-26SEP151630-ETH
@@ -13,7 +36,8 @@
   arms on theirs -- existing sessions survive, but ANY reconnect will fail auth and
   the tape stops. Swap the key promptly.
 - Places the key id / key file live: C:\kals\kalshi.pem; kauth.py (research/ AND the
-  Windows TEMP kals-work copy -- pinrun loads TEMP first); C:\kalsun_all.ps1
+  Windows TEMP kals-work copy -- pinrun loads TEMP first); C:\kals
+un_all.ps1
   ($KeyId, collector args); repo run_all.ps1; research/goldquote.py (analysis).
   livebook honours KALSHI_KEY_ID env first.
 
