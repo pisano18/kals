@@ -1,3 +1,52 @@
+# v-hedge60 -- 2026-09-16 ~14:10Z -- hedge trigger 0.80 -> 0.60
+
+**Operator instruction, 2026-09-16: "Change the hedge trigger immediately".**
+
+`restart_bot.ps1` now passes `--hedge-belief 0.60`.
+
+**What the bot does differently.** The hedge buys the opposite side of a held
+position when the model's belief in that position falls below the trigger. At
+0.80 it fired on shallow dips that then recovered; at 0.60 it waits for a real
+collapse.
+
+**Evidence, all 9 hedge events on file (entry leg and hedge leg rebuilt from the
+fills, not from the log's pnl field):**
+
+| when ET | belief | entry | hedge | net |
+|---|---|---|---|---|
+| 09-12 BTC | 0.89 | +1.87 | -2.97 | -1.09 |
+| 09-12 ETH | 0.69 | +0.37 | -5.53 | -5.16 |
+| 09-12 ZEC | 0.53 | -10.61 | **+1.98** | -8.63 |
+| 09-13 BNB | 0.64 | +2.31 | -3.40 | -1.09 |
+| 09-14 BTC | 0.21 | -58.43 | **+24.18** | -34.26 |
+| 09-14 HYPE | 0.56 | -59.20 | **+29.30** | -29.90 |
+| 09-16 NEAR | 0.77 | +6.78 | -15.99 | -9.21 |
+| 09-16 DOGE | 0.49 | +1.68 | -13.83 | -12.15 |
+
+Hedge alone at 0.80: **+$13.78**. Every hedge that SAVED money fired at 0.56 or
+below; four of the five that COST money fired at 0.64-0.89. At a 0.60 trigger the
+same nine events give **+$41.68**, about $28 better, and BOTH disasters (0.21,
+0.56) are still caught.
+
+**The honest caveat:** 9 events, and 0.60 was chosen after seeing them. The
+mechanism is the argument: a shallow dip is usually noise, a collapse usually a
+real move. 2026-09-14's lesson was that a five-event recommendation got reversed
+by its sixth, so this is a live change made on the operator's explicit call, not
+a proven threshold.
+
+**Revert, copy-pasteable:**
+
+```powershell
+cd C:\kals-repo
+(Get-Content restart_bot.ps1) -replace '"--hedge-belief", "0.60"', '"--hedge-belief", "0.80"' | Set-Content restart_bot.ps1
+powershell -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1
+```
+(or delete the `--hedge-belief` line entirely to return to the 0.80 default)
+
+git SHA at deploy: 50329e2
+
+---
+
 # Live strategy versions — what is running, and how to go back
 
 **Every change to what trades real money is listed here with its git SHA, the
