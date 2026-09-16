@@ -40,3 +40,15 @@
 {"note": "", "pair": ["F-P04", "F-P07"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
 {"note": "collector gaps are hour-sized, not 5-min (F-I05); count index coverage per close and check the unexplained 1.87->4.61pp deterioration is not a tape artefact", "pair": ["F-I10", "F-M03"], "t": "2026-09-15T08:51:10Z", "verdict": "lead"}
 {"note": "a level-clearing sweep fills every resting order regardless of queue position, so the swept-volume fraction is a queue-free LOWER BOUND on maker fill rate -- no simulator needed", "pair": ["F-P10", "F-X05"], "t": "2026-09-15T08:51:10Z", "verdict": "lead"}
+{"pair": ["F-I03", "F-O05"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-C10", "F-M01"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-P01", "F-R04"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-I09", "F-R02"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-P03", "F-X03"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-O04", "F-O06"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"note": "", "pair": ["F-I03", "F-O05"], "t": "2026-09-16T08:50:51Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-C10", "F-M01"], "t": "2026-09-16T08:50:51Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-P03", "F-X03"], "t": "2026-09-16T08:50:51Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-O04", "F-O06"], "t": "2026-09-16T08:50:52Z", "verdict": "nothing"}
+{"note": "break-even 8.55% is a point estimate off 10 losing closes; put an interval on it before comparing to our loss rate", "pair": ["F-P01", "F-R04"], "t": "2026-09-16T08:50:56Z", "verdict": "lead"}
+{"note": "the refused dump-guard rows are a cross-coin jump marker; at rho 0.65 a refusal on one coin is news about the coins we do trade", "pair": ["F-I09", "F-R02"], "t": "2026-09-16T08:50:56Z", "verdict": "lead"}
