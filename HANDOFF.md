@@ -1,3 +1,95 @@
+# 2026-09-16 21:xxZ -- A DAY OF NEGATIVE RESULTS, AND FIVE OF MY OWN NUMBERS WERE WRONG
+
+**Read this before re-running any of it. Almost everything tested today came back
+negative, and several headline numbers I reported were artefacts that the
+operator or a holdout caught.**
+
+## The one positive finding, and it closes itself
+
+`research/pinsure.py`, `pinadverse.py`. The operator asked how the model can print
+100% and then lose. It can, and the calibration is INVERTED at the top: by
+confidence at decision, under 99% loses 3.33%, 99-99.9% loses 2.32%, 99.9-99.99%
+loses 1.32%, and 99.99%+ loses **4.48%**.
+
+Cause is adverse selection, not staleness -- losers' index reads were 0.28s against
+winners' 0.26s and their books were FRESHER (3ms vs 7ms). Loss rate rises with the
+apparent bargain: 0-1c edge 0.00%, 1-2c 1.63%, 2-4c 1.29%, 4-8c 4.26%, 8c+ 6.67%.
+Pooled, >4c loses 5.04% vs 1.36%, permutation p = 0.030.
+
+**But it is already fixed.** Before 2026-09-12 big edges lost 8.8% (6 of 68) against
+1.2% for small; after, 1.4% (1 of 71) against 1.6%. The dump guard and jump gate went
+live in between and target exactly this shape. Two of the three 100%-confidence
+losses are from Sep 10, pre-guard, one a 45.26c edge at a price of 0.53. NO CHANGE
+WARRANTED; the guards are worth more than we had measured.
+
+## Killed today, with the evidence, so nobody resurrects them
+
+- **Raising EDGE_FLOOR.** Raw bands said the 1-2c band loses $16.34 over 124 closes.
+  The holdout says -$19.31 over 57 closes early and +$2.97 over 67 late. Does not
+  persist. (`research/pinedge.py`)
+- **A depth gate.** My idea: thin offers = informed seller. Measured on the OFFER
+  size at decision, 433 closes: 0-10 on offer loses 2.3%, 10-25 4.2%, 25-60 1.2%,
+  60-150 2.2%, 150+ 4.0%. No pattern; the thinnest band was the most profitable per
+  close. (`research/pindepth.py`)
+- **Hourly markets.** 2,568 near-certain moments, **1 buyable** under the 98c
+  ceiling, 99.5% had no offer at all. Structural: 188 strikes, nobody holds the far
+  ones so nobody ever exits them. (`research/pinhourlyedge.py`)
+- **More Kalshi series.** 274 crypto series, 37 short-dated; we already trade every
+  one with live markets. ADA, BCH, TON 15M still list nothing. (`C:\kals\series_scan.py`)
+- **Polymarket on-chain alternatives.** Trueo (Base) has no short-dated crypto
+  markets at all, individual markets trading $735. Nothing to trade.
+- **Hedge trigger tuning.** 9 hedges ever: 4 needed, 5 wasted. Needed fired at belief
+  median 0.53 (range 0.21-0.56), wasted at 0.69 (0.49-0.89) -- a real-looking tell on
+  4 events against 5. Far too few. Revisit at ~30.
+
+## FIVE NUMBERS I REPORTED THAT WERE WRONG
+
+1. **"94% of fills come back short, the book is starving us"** -- `pincap` scored
+   every historical fill against TODAY's target of 86. The bot wanted 20 when the
+   bank was small. Correct answer (`pinfill.py`): **median fill is 100% of the ask on
+   every single day**, 82% of 440 fills at 90%+. The operator caught this from memory
+   of yesterday's fills. The book is NOT the constraint and the bank IS a live lever.
+2. **"$19,554 profit"** on a $511 bank -- multiplied `pnl_c` by fill size. `pnl_c`
+   is the WHOLE trade in cents. Real total $354, cross-checked against `realised`.
+3. **"Opportunities are plummeting"** -- raw daily counts compared a spike day to an
+   unfinished one. Per hour up: 2.0, 3.3, 2.5, 5.7, 3.1, 2.4, 2.8, 2.3. No trend.
+   (`research/pinwhy.py`). Sep 8's 13.7/hr is not comparable: 25 bot restarts that day
+   on an experimental config accepting prices to 99.2c.
+4. **"The 403 on /fcm/v1 proves we are unentitled"** -- an unsigned request with no
+   credentials gets the same 403. Gateway rule, says nothing. (`C:\kalscm_probe.py`)
+5. **"0 of 39 wapi routes exist"** -- probed with GET; three of four routes taken from
+   the vendor's own source also came back missing because wapi scopes routes by
+   method. (`C:\kals\cdc_routes.py`, which now carries its control inline)
+
+## Crypto.com / CDNA -- the real state
+
+- `/fcm/v1` and `/dcm/v1` serve the IDENTICAL instrument set (742 event combos, 258
+  binary options, 29 underlyings). The GEN4 FCM US B2C API is the market we tape, it
+  is REST+WebSocket with `private/create-order`, and **FIX is not required**.
+- Sandbox is live at `uat-api.3ona.co/fcm/v1` with 990 binaries.
+- Signing verified against the published spec, including the FCM-only rule that every
+  number must be a quoted string. `C:\kalscm_auth.py` implements it.
+- Support confirmed there is **no separate FCM key** -- it is the same
+  exchange.crypto.com API key, once **FCM account status is approved**. That status is
+  the entire blocker. Our key returns 40101 everywhere, never 40103 (IP), and a
+  deliberate bad nonce returns 40102, proving the server parses us and rejects the
+  credential.
+- Their book DIES about 40s before every close (both sides quoted on 1% of looks in
+  the last 15 seconds, 52,174 snapshots / 2,074 closes) so the pin cannot run there.
+  A fair-value strategy at 1-5 minutes out looked positive -- 43 closes, +6.5c per
+  close, sign test p = 0.016, holdout holds -- and **dies at a 4c per-contract fee**.
+  Get the fee schedule before building anything. (`research/cdcfair.py`, `cdcalive.py`)
+- Our CF feed reproduces their published strikes to ~1.7 bp on BTC/ETH/SOL/XRP
+  5-minute. We can price their market. (`research/cdcchain.py`)
+
+## Running now
+
+- Two shadow paper arms started 20:46Z per the operator: a control on live's exact
+  flags, and a loose arm with `--max-positions 5 --take-dumps`. Compare with
+  `research/pinshadow.py`. Needs 30+ closes before it means anything.
+- `C:\kals\cdc_record.py` rewritten: hot contracts polled every ~3s (was 48s median,
+  which was hiding the shape of their close entirely).
+
 # 2026-09-16 06:15Z -- THE DUMP GUARD PAID FOR ITSELF AGAIN, on the tape this time
 
 - KXXRP15M-26SEP160215-15: someone offered the YES at **0.45 with tau 4** while the
