@@ -69,9 +69,16 @@ WARRANTED; the guards are worth more than we had measured.
 - Sandbox is live at `uat-api.3ona.co/fcm/v1` with 990 binaries.
 - Signing verified against the published spec, including the FCM-only rule that every
   number must be a quoted string. `C:\kalscm_auth.py` implements it.
-- Support confirmed there is **no separate FCM key** -- it is the same
-  exchange.crypto.com API key, once **FCM account status is approved**. That status is
-  the entire blocker. Our key returns 40101 everywhere, never 40103 (IP), and a
+- **CORRECTED 2026-09-16 ~23:xxZ.** A first-line agent said there is no separate FCM
+  key and that the exchange.crypto.com key works once FCM status is approved. A
+  SECOND agent, after escalating, said the opposite and the second one matches our
+  measurements: **FIX is the only route for CDNA prediction contracts, and an
+  exchange.crypto.com API key is NOT valid against /dcm or /fcm.** Our key returns
+  40101 on every one of those endpoints, which is exactly what that answer predicts.
+  Believe the escalated answer; the first-line desk was wrong three separate times
+  today. Onboarding is opened through the in-app support chat itself ("you can
+  contact us"), not through institutions.crypto.com, whose Contact tab funnels into a
+  business application needing a Certificate of Incorporation. Our key returns 40101 everywhere, never 40103 (IP), and a
   deliberate bad nonce returns 40102, proving the server parses us and rejects the
   credential.
 - Their book DIES about 40s before every close (both sides quoted on 1% of looks in
