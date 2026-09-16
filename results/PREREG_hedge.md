@@ -481,3 +481,23 @@ had 0.643, 0.664, 0.887. The line sits somewhere around **0.6**, not 0.8 and
 certainly not 0.10 -- but that is four events against three and the
 pre-registered bar (10 further hedges, settled after 2026-09-14) is unchanged.
 **Leave the trigger at 0.80.**
+
+
+## Event 8 -- 2026-09-16 08:29:42Z, KXNEAR15M-26SEP160430-30. The first hedge that COST money under the 0.80 rule.
+
+Entry: 84 YES at 0.9139 (fair 1.0). Three seconds later belief fell to **0.76557**
+and the hedge bought 84 NO at 0.18, locking 9.39c. NEAR settled YES: the entry won
++$6.77, the hedge lost -$15.99, **net -$9.22** on the close.
+
+Had NEAR gone the other way the entry loses $76.77 and the hedge pays ~$69, so this
+is insurance that cost $16 and would have saved ~$69.
+
+**The observation worth keeping, NOT acting on yet:** 0.76557 is the HIGHEST belief
+ever to trigger a hedge under the 0.80 rule. Every hedge that saved money fired at
+0.664 or below (0.02019, 0.21437, 0.5252, 0.55902, 0.64325, 0.66423). A 0.70 trigger
+would have skipped this one and kept all the others.
+
+That is ONE event. On 2026-09-14 a recommendation to move the trigger was made off
+five events and the sixth reversed it. The bar for moving it: at least three more
+hedge events, reported with the belief at trigger and the net P&L of the close, and
+the rule written down before the data is seen.
