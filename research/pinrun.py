@@ -2827,6 +2827,29 @@ def _selftest_body():
         # The decision functions, driven exactly as the loop drives them.
         _src_pinrun = open(os.path.abspath(__file__), encoding="utf-8").read()
         # AMENDMENT 47 -- the market must agree before we pay for insurance.
+        # AMENDMENT 8, after the 2026-09-17 fix that moved it to where `want`
+        # exists. Only the OPPOSITE side blocks; a same-side re-look is a
+        # top-up. The old placement read `want` from the PREVIOUS market.
+        _pv = {"sides": {"T": "yes"}}
+        ck(_both_sides_block(_pv, "T", "no"),
+           "A8: holding YES and now wanting NO on the SAME market is blocked -- "
+           "the two legs pay $1 between them and cost more than that")
+        ck(not _both_sides_block(_pv, "T", "yes"),
+           "...but wanting the SAME side is a TOP-UP and must pass. The old "
+           "misplaced test blocked ~94% of these by comparing against whatever "
+           "the previous market in the scan happened to want")
+        ck(not _both_sides_block(_pv, "OTHER", "no"),
+           "NULL: a different market is not blocked by this one's position")
+        ck(not _both_sides_block(None, "T", "no")
+           and not _both_sides_block({}, "T", "no")
+           and not _both_sides_block(_pv, "T", None),
+           "NULL: no previous state, no sides map, or no side wanted -> no block")
+        _src8 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp8 = _src8[_src8.rindex(chr(10) + "def " + "trade_loop("):]
+        _call = "_both_sides_block(" + "prev, tk, want)"
+        ck(_call in _lp8 and _lp8.index("want = price = size = None") < _lp8.index(_call),
+           "and the trade loop calls it AFTER `want` is assigned -- the entire "
+           "bug was that this test ran 143 lines too early")
         ck(hedge_price_ok(0.60, threshold=0.50)
            and not hedge_price_ok(0.40, threshold=0.50),
            "A47: we buy the opposite side at 60c, so OUR side is at 40c and the "
@@ -5001,6 +5024,20 @@ def one_coin_cap(size, bank, hwm, mult=None):
     return max(size, min(cap, room))
 
 
+def _both_sides_block(prev, ticker, want):
+    """True when we already hold the OPPOSITE side of this market.
+
+    AMENDMENT 8. Holding both sides of one binary cannot win: the two legs pay
+    $1.00 between them and cost more than that, so the pair locks in the
+    difference. Only an opposite side blocks; a SAME-side re-look is a top-up
+    and must pass, which is exactly what the misplaced version got wrong.
+    """
+    if prev is None or want is None:
+        return False
+    held = (prev.get("sides") or {}).get(ticker)
+    return held is not None and held != want
+
+
 def staged_take(tau, take_n, size, early_held):
     """AMENDMENT 46: (contracts, leg) for one candidate order.
 
@@ -5880,12 +5917,17 @@ def trade_loop(a, rec, book, idx, series_index):
             # budget with certainty. Measured: 3 pairs over 2 closes in the
             # wide sample, ZERO in 82 live-window closes, so this costs ~$4 of
             # EV out of $230 and nothing at all where we actually trade.
-            if prev is not None and prev.get("sides", {}).get(tk) not in (None,):
-                if prev["sides"][tk] != want:
-                    nb0 = near.setdefault(close_s, _fresh_near())
-                    nb0["both_sides_blocked"] =                         nb0.get("both_sides_blocked", 0) + 1
-                    _gate("both_sides", close_s, tk, held=prev["sides"][tk])
-                    continue
+            # MOVED 2026-09-17: this test USED TO LIVE HERE and read `want` --
+            # which is not assigned until ~140 lines below, inside this same
+            # scan loop. So it compared the side we hold in THIS market against
+            # the side we happened to want in the PREVIOUS market of the scan,
+            # or None on the first pass. It therefore blocked roughly 94% of
+            # re-looks at a market we already hold, including legitimate
+            # same-side top-ups, and let a genuine opposite-side buy through
+            # whenever the previous market happened to want the same side.
+            # Found by the 2026-09-17 fresh-eyes review and confirmed by three
+            # independent readers. The test now runs where `want` exists; see
+            # `_both_sides_block` below.
             # AND A SEPARATE CAP ON ATTEMPTS. AMENDMENT 6 stopped a no-fill
             # from burning a FILL slot, which is right -- an unfilled order
             # creates no exposure. But it left NOTHING bounding how many times
@@ -6034,6 +6076,17 @@ def trade_loop(a, rec, book, idx, series_index):
                 na, ns = b.get("no_ask"), b.get("no_ask_size")
                 if na and ns and na < 1.0:
                     want, price, size = "no", na, ns
+            # AMENDMENT 8, NOW READ AT THE RIGHT MOMENT. Never hold both sides
+            # of one market: the two legs cannot both win, so the pair costs
+            # more than the $1 it pays and locks in the difference. `want` is
+            # assigned immediately above, so this is the first line in the loop
+            # where the comparison is even meaningful.
+            if want is not None and _both_sides_block(prev, tk, want):
+                nb0 = near.setdefault(close_s, _fresh_near())
+                nb0["both_sides_blocked"] = nb0.get("both_sides_blocked", 0) + 1
+                _gate("both_sides", close_s, tk, held=prev["sides"][tk],
+                      wanted=want)
+                continue
             if want is None:
                 # WHY did this not produce a candidate? The two cases are very
                 # different and conflating them hides the real constraint:

@@ -1,0 +1,146 @@
+VERDICTS: {'confirmed': 27, 'refuted': 7, 'uncertain': 2} (n=36)
+
+[CONFIRMED] CLEAN BILL on `hedge_ask_ok` — and a war
+   MONEY: $31.79 over 6 closes CONFIRMED as the historical cost of an `edge_c > 0` gate, and it is a FLOOR, not a point estimate: skipping the HYPE and BTC hedges would have settled those closes at -$59.20 and -$58.43, within a dollar of the live `--loss-abort -60.00` brake, so the knock-on halt is unpriced. 
+   CORRECTED: The operative recommendation is CORRECT and the headline number is exact: do not gate hedges on `hedge_edge_c`; on the live record it would have dropped $31.79 of the $42.19 the hedge earned, over 6 closes, and $29.30 of that is a single close (HYPE, 2026-09-14 12:00 ET). Verified to the cent from `
+
+[CONFIRMED] The hedge order sizes from the TOUCH and
+   MONEY: Realised hedge contribution to date is +$14.30 over 14 live hedge legs across 5 days (~$2.86/day), not +$42.19/~$8.44 per day — HANDOFF.md:118-120: 6 needed +$56.01, 6 wasted -$41.72. The claimant's $42.19 is $56.01 - $13.83, the today's-0.60-gate counterfactual (HANDOFF.md:124-127), quoted as if it
+   CORRECTED: The hedge path sends the TOUCH as its limit (pinrun.py:5672) and caps the order at top-of-book size (pinrun.py:5654); neither AMENDMENT 18's sweep limit nor AMENDMENT 35 / v-ladder was ever applied to it, and no self-test guards either property. That is ONE defect, not two — `buyable()` at a limit e
+
+[CONFIRMED] A second spent WAITING burns one of HEDG
+   MONEY: Measured on the record: at most +/-$0.51 over five days, not $42.19 -- roughly an 80x overstatement. Of the seven motivating hedges (PREREG_hedgeprice.md:50-56), five already had our side under 50c at the alarm and fire on try 1 with no wait; only the 85c one (wasted, -$13.83, correctly skipped by b
+   CORRECTED: The mechanism is confirmed exactly: research/pinrun.py:5609-5613 increments `hedge_tries` and permanently retires the position into `hedged` before the code has looked at a book (5620), so seconds lost to `hedge_no_ask` (5626) or to A47's price-wait (5630) consume the 5-try budget, contradicting res
+
+[CONFIRMED] Clean bill of health: the book is read s
+   MONEY: $0, now with a ceiling on it rather than an assertion. The entire recoverable population in this area is the 2 market-closes where book_stale fired without a no_offer companion (2 of 66, both on one close). At the live record's $0.894 per fill ($422 / 472 fills), loosening MAX_BOOK_AGE_MS has an upp
+   CORRECTED: The conclusion stands and is better supported than stated; two numbers in the accounting are wrong.  Corrected: of 2,801 no_offer records, 2,616 carry the ask fields, and in 2,616 of 2,616 the wanted-side ask was absent while the LOSING side's ask was present (1,874 of them at 0.1c) -- so the book w
+
+[CONFIRMED] pindash.py converts every UTC timestamp
+   MONEY: $0 of trading loss — confirmed, not merely asserted. pinrun.py:5722-5724 parses close times with calendar.timegm, and the only importer of pindash anywhere in research/ is pinhealth.py:46, an offline tool. The real cost is bounded and I measured it rather than estimating: 23 of 482 live fill legs (4
+   CORRECTED: pindash.py:54-62 reads every UTC timestamp one hour early from March to November — the same bug pinpickoff.py:119-129 found, fixed and documented, never propagated. Confirmed by executing the real module: pindash.et('2026-09-15T07:29:32Z') returns 'Sep 15, 02:29:32 AM EDT' against a truth of 03:29:3
+
+[CONFIRMED] "no_offer = 51.8% of everything" oversta
+   MONEY: Not +$45 to +$150 per 9 days. Corrected: roughly $0, with the pointed-at population ranging from about -$25 to +$15 over the same window depending on a flip rate only live fills can supply.  Breakdown. The accounting fix is worth exactly $0 in P&L — the claimant says this and is right; both branches
+   CORRECTED: The counting artefact is real and every figure reproduces exactly: `_gate` (pinrun.py:5331-5336) dedupes per (close, ticker, gate), no_offer is stamped at 6041 before every later gate, 1,112 of 2,792 no_offer market-closes (39.8%) also carry a later gate, and at the close level only 128 of 810 decid
+
+[CONFIRMED] HEDGE_MAX_TRIES is a 5-second wall clock
+   MONEY: TODAY (A47 off, no-ask path only): approximately $0 realized. One give-up in 11 live alarms, and that one was the 1-contract planted test at a 0.3c entry, so the position it abandoned was worth under a dollar. Every other alarm found an ask on the first pass. The claimant's "not claiming this has co
+   CORRECTED: Confirmed as stated, with three refinements. (1) It is not a wall clock: tries are spent only in seconds where belief is still below the 0.60 gate (pinrun.py:5591-5592 continues first). But `hedge_tries` is never reset, so tries accumulate across separate collapse episodes inside one close -- worse 
+
+[CONFIRMED] The hedge pass is structurally dead in p
+   MONEY: Direct cost of the defect: $0. No real money is hedged in paper and the live bot writes hedge_meta correctly.  Component (a), the A47 decision, is NOT worth ~$970/yr. The +$13.32 is 7 hedges over 5 days and it is one event: skipping the 85c DOGE hedge is +$13.83 and skipping the 53c BNB one is -$0.5
+   CORRECTED: Confirmed as stated on the code and on the logs, with three corrections. (1) The expected alarm count in paper is ~14-37, not "at least ~26" — alarms fire on winners as well as losers (6 of 10 live episodes were on positions that recovered). Observed is 0 and the cause is structural, so the expectat
+
+[CONFIRMED] A8 both-sides guard compares the held si
+   MONEY: $5-$30 over the 4 days the guard has actually been reachable (2026-09-14 to 09-17), i.e. roughly $1-$8/day against $451.78 booked — about 1-7% uplift, not the claimed 9-29%. Derivation: the only population with no price bar is the 37 partial-fill blocked market-closes (rebuy_ok top-up branch, pinrun
+   CORRECTED: The defect, the mechanism and the 139-block count are all correct as stated and reproduce exactly; only the dating and the money need correcting. Corrected version: the A8 both-sides guard at research/pinrun.py:5861-5866 compares the side we hold against a stale `want` left over from whichever ticke
+
+[CONFIRMED] MAX_PER_CLOSE cancels out of both the ex
+   MONEY: The claimant's two figures contradict each other by ~10x and both need fixing.  Their per-close number is slightly too big. It assumes contracts scale linearly with SIZE, but CURRENT_STATE.md:92-98 measures the opposite: offers are p25 23 / p50 67 / p75 202 contracts, "2.2x the size buys 1.68x the v
+   CORRECTED: Under AUTO_SIZE, MAX_PER_CLOSE cancels exactly out of both the contract budget (`MAX_PER_CLOSE * SIZE` = bank/(BANK_BRAKE*PRICE_CEILING) = bank/2.94) and the worst-close rail (= bank/BANK_BRAKE = bank/3.0), for any bank between AUTO_SIZE_MIN and AUTO_SIZE_MAX. Verified against live autosize records,
+
+[CONFIRMED] A rejected order (any 4xx/5xx from the e
+   MONEY: THE EPISODE: ~$0 of trading dollars, not ~$2. First 409 at 15:44:43Z, discovered ~16:1xZ (HANDOFF.md:737), but the block was account-level and persisted until the first successful 201 at 20:44:37Z (pinrun-live-20260915T202401Z.jsonl). No detector would have lifted it. CURRENT_STATE.md:396-405 alread
+   CORRECTED: The mechanism is confirmed as stated, with the class narrowed and the value re-priced:  A 4xx rejection from the exchange (400/401/403/404/409/422/429) is indistinguishable in the bot's own state from a lost race. pinrun.py:6570 counts an order error only when pintake's rails refused or status_code 
+
+[CONFIRMED] EDGE_FLOOR is structurally unreachable —
+   MONEY: $0 from EDGE_FLOOR — confirmed, and confirmed twice over: 0 of 997 refusals priced at or below the ceiling (gate at :6112), and the ceiling always breaks sweep_limit's walk before the edge floor can (:2003), so the limit we send is unchanged too. The redirect's money is also near zero and probably n
+   CORRECTED: EDGE_FLOOR is unreachable AT THE DEPLOYED CONFIG (PIN 0.995, PRICE_CEILING 0.980, SIZE >= 1) in BOTH of its uses — the gate at research/pinrun.py:6112 and the limit walk at :2003 — because the edge floor binds at p ~ 0.9913 and the ceiling refuses everything above 0.980. It is not unreachable in pri
+
+[CONFIRMED] The both-sides guard compares against a
+   MONEY: $32-$92 ($3-10/day, 7-20% of earnings) is overstated by roughly 3-9x. Two inputs are wrong.  Contracts per fill: 35-50 is the ALL-ORDERS mean (35.5 confirmed: 482 filled orders, 17,114.7 contracts). The live mean for a SECOND fill on a market we already hold is 19.8 contracts (5 such fills, 99.0 con
+   CORRECTED: The A8 both-sides gate at research/pinrun.py:5862 does read a `want` that belongs to a different market — confirmed by AST: in `trade_loop`'s own scope `want` is bound only at 6006/6010/6014 and its first read is 5862. But the stale value does NOT come from the settlement loop at 5381: that line is 
+
+[CONFIRMED] AMENDMENT 31 renamed the concurrent-posi
+   MONEY: ~$0-2/month, versus the claimed $50-100/month. Per occurrence: ~$0.06-0.11 of downtime (1-2 min at their own $3.4/hour), not $1.30; and $0 of the claimed ~$47 hedge mitigation, because the recommended fix pauses before the hedge pass and so leaves the second leg just as unhedged. Occurrences measure
+   CORRECTED: The code defect is exactly as described: AMENDMENT 31's rename (07b3004, 2026-09-13) left "open cap:" out of TRANSIENT_HALTS (pinrun.py:4951), so it is treated as terminal at pinrun.py:5558-5562, and the A14 self-test (pinrun.py:2733, :2756) asserts on "position cap: 3 open >= 3", a string no code p
+
+[CONFIRMED] The one-coin-depth paper arm is structur
+   MONEY: The claimant's source numbers are quoted accurately but the headline figure is the best case presented as the typical case.  Accurate as quoted, from RESULTS_quiet.md:57-62: 1.2x SIZE = +384 contracts (+18%) in the current version, ~$19-25/day; 2.0x = +1,702 (+80%), $81-112/day. Both are what-if rep
+   CORRECTED: CONFIRMED with two amendments.  The mechanism is exactly as stated: in paper mode `CREDS["pk"]` is never set (arm() is live-only, pinrun.py:7129), `read_bank()` returns None (:5026-5027), `autosize_tick` returns before setting `state["bank"]`/`state["hwm"]` (:5119-5122), and `one_coin_cap()` therefo
+
+[CONFIRMED] PREREG_sweep.md was never scored, and it
+   MONEY: The direction is right; the derivation is wrong and the volume attribution is overstated 2.4x.  Measured, per-fill-joined to settlements, 2026-09-13 to 09-17: - swept: 99 fills, 6,311 contracts, +$166.07, 2.632c/contract - unswept post-deploy: 105 fills, 5,586 contracts, +$178.85, 3.202c/contract  S
+   CORRECTED: PREREG_sweep.md was never scored, and all four bars pass — but with four corrections to how it should be written down.  (1) Bar 1 is a PASS on the point estimate, not "decisively". Scored the way the file asks — per swept FILL, not per ticker — it is 1 loss in 99 swept fills (1.01%, 95% CI [0.03, 5.
+
+[CONFIRMED] Two routes to the same one-coin exposure
+   MONEY: Their ~$237 / ~$25 a day is the right order of magnitude but attached to the wrong mechanism, and it is not achievable.  Corrected, measured on live fills only: over the current-version window (2026-09-14 to 2026-09-17, ~3.85 days), letting one order take min(2 x SIZE, touch depth, remaining close b
+   CORRECTED: The two routes to one-coin exposure are indeed governed by different rails, and the median close does spend exactly 50% of its budget — both reproduce exactly. Four corrections:  (1) The asymmetry is documented and already escalated, not an accident: results/RESULTS_quiet.md (2026-09-17) makes the i
+
+[CONFIRMED] EDGE_FLOOR is 100% redundant and EV_FLOO
+   MONEY: $0/day today — confirmed. Nothing these two gates refuse is anything the ceiling would not refuse first, and neither lowers the sweep limit either. The forward-looking number is wrong band and understated. If the ceiling were raised to 0.99, the EV floor would still refuse 98.71-99.0c, so the claima
+   CORRECTED: At the deployed settings (PIN = 0.995, PRICE_CEILING = 0.980) neither EDGE_FLOOR nor EV_FLOOR can fire: the edge floor is unreachable below 99.13c (not 99.06c — the claimant used the fee at 0.98 rather than at the boundary price) and the EV floor is unreachable below 98.71c, both above the 98.0c cei
+
+[CONFIRMED] Every documented revert for the live 31-
+   MONEY: The 15% trigger arithmetic is right; the cost side is misframed, and the dominant cost is the one the claimant buried.  P(bar trips) ≈ 15%: 1 − 0.9534^15 − 15(0.0466)(0.9534^14) = 1 − 0.489 − 0.358 = 0.153. I reproduced it. Caveat the claimant should have stated: 4.66% is a per-FILL rate over all fi
+   CORRECTED: The v-early-full revert block is three-quarters broken, not wholly broken, and the defect class is wider than described.  WORKS: "edit `--early-frac 1.0` back to `0.333` and restart" (VERSIONS.md:47) — 0.333 passes pinrun.py:6906's 0.1–1.0 check, and this is the true revert of v-early-full, whose on
+
+[CONFIRMED] TAU_MAX's cited evidence is stale by one
+   MONEY: The documentation fix is worth $0 directly and is still worth doing: it is the only place in the repo that misstates the live rule, and the self-test string is the mechanism this project relies on to stop exactly that.  The "+25% larger pool of candidate moments at 46-60 s" is WRONG and should not b
+   CORRECTED: CONFIRMED as stated on all three factual legs: (1) the AMENDMENT 4 table at pinrun.py:273-284 was computed at the 2% risk bar, i.e. PIN=0.98, and AMENDMENT 9 (pinrun.py:118, 2026-09-10) moved the live bar to 0.995 after it; (2) results/RESULTS_pinbefore.md is a rule-5-clean index-only re-measurement
+
+[CONFIRMED] A position the bot fails to reconcile is
+   MONEY: Not $89.86, and not bounded by one close's budget ($206). The exposure is unbounded and compounding, because the high-water mark now follows the bank down one-for-one on every loss pinrun does not book, so the 20% drawdown brake can never fire on an account-level loss at all.  Measured, on the class
+   CORRECTED: A43's external-cash classifier does erase unbooked trading losses from the drawdown brake, the loss counter and the loss abort at once — and it also lets A39 reset `LEDGER["losses"]` to zero on the same tick, because `_hwm_before` (pinrun.py:5172) is read after `shift_hwm` has already moved the mark
+
+[CONFIRMED] The tape comparison used to justify a FU
+   MONEY: **Their headline live figures are exactly right; their win average is 3% low; the exposure framing needs replacing.**  Verified from all `results/pinrun-live-*.jsonl`: the early leg has **13 fills, 363.47 contracts, 0 losses, +$8.50**, and the loss asymmetry is **$14.74 average loss** — both reprodu
+   CORRECTED: The claim stands as written, with four corrections, none of which change its conclusion:  1. **The close-budget citation is wrong.** `close_budget()` is `pinrun.py:4965`, not 4948. And the early leg is capped per market at `EARLY_FRAC * SIZE` = one SIZE (`pinrun.py:5021`), not 2 x SIZE; the full 2 x
+
+[CONFIRMED] Depth is not what caps the order — SIZE
+   MONEY: Claimed: 2,146 contracts / $41.58 model edge / ~$13.9 per day / ~+15% of captured edge.  Corrected, three nested numbers: - Their method reproduces (2,278 contracts, $43.72 by my join) but prices the contracts at the TOUCH. Those contracts do not exist at the touch — by construction they sit above t
+   CORRECTED: The mechanism is confirmed and is actually cleaner than claimed: in 154 live orders since 2026-09-15 there is exactly ONE that asked for less than SIZE with more genuinely on offer under the limit (KXSOL 2026-09-15T09:59:38Z), and it is a verified book race — the 6@97.1c + 200@97.2c stack was gone w
+
+[CONFIRMED] `against_thin` (A38) is deployed in dire
+   MONEY: $5.26 gross forgone over 3.5 days (14 refusals across 14 closes), not $7.53 — $2.27 of the claimed total is for positions the bot took anyway on the same ticker and side in the same close, or for a rebuy another gate had already refused. At the measured post-deploy fill rate of 77.9% (141 of 181 ord
+   CORRECTED: A38 `against_thin` is live (pinrun.py:474) at 14 of the 30 closes its own PREREG_against.md §4 requires before anything branches on the signal, and its forward record is 14 refusals across 14 distinct closes, 14 winners, 0 losses, confirmed ticker-by-ticker against the exchange. That record is NOT e
+
+[CONFIRMED] `both_sides` reads `want` 144 lines befo
+   MONEY: Roughly $5 to $40 over the four days since 2026-09-14, not $242 — and only the first ~$5 is grounded in live fills. Breakdown: 8 of 174 filled markets since 2026-09-14 had an unfinished position (174 contracts short), the only channel rebuy_ok lets through with no price bar, worth $4.80 at +2.76c/co
+   CORRECTED: The bug, the mechanism and every consequence measurement are confirmed as stated; only the money and two details of degree need correcting. Corrections: (a) the gate blocks ~94% of re-looks on a held market, not all of them — it passes whenever the previously scanned market happened to want the same
+
+[CONFIRMED] The EV floor can never fire and the edge
+   MONEY: $0 today — confirmed. Neither gate is blocking a single trade: 0 ev_floor refusals and 0 edge_floor refusals at or under the 98c ceiling in 5,510 live refusal records, and all 252 live order limits are 0.9800. Loosening or deleting either buys exactly zero extra trades, and the three labelling/comme
+   CORRECTED: Confirmed as stated on the mechanism and on the money, with four corrections.  CONFIRMED: with PIN 0.995 and PRICE_CEILING 0.980, the EV floor cannot bind below 98.8c and the edge floor cannot bind below 99.2c (recomputed on the real tick taper and the ceil-to-$0.0001 fee, for SIZE 1, 20 and 50). Li
+
+[CONFIRMED] Above PIN=0.995 the model's stated confi
+   MONEY: The claim UNDERSTATES the money it is protecting, by roughly 1.8x. Deploying --honest forgoes $412.22 of the $451.24 realised since 2026-09-08 — $41/day averaged over the whole run, which is what the claimant's "$45/day" is measuring. But size grew ~80x over that run (median 1 contract on 09-08, 20 
+   CORRECTED: Above PIN=0.995 the model's stated confidence shows NO MEASURABLE relation to our realised loss rate on 422 live entry fills over 331 closes (1.72% / 1.25% / 1.72% across bands whose promised failure falls 50x), and the measurement has no power to detect anything short of near-total elimination — 95
+
+[UNCERTAIN] The book is NOT the constraint on size —
+   MONEY: Claimed: +$15 to +$19/day for BANK_BRAKE 3.0 -> 2.5, and +$36 to +$47/day for 3.0 -> 2.0, from 0.745 marginal contracts x 2.6c x 35 fills/day = $0.68/day per +1 of SIZE.  Corrected, roughly half that. Two fixes: (a) The bank is $560.06 and SIZE is 95 today (autosize record 2026-09-17T20:16:58Z), not
+   CORRECTED: BANK_BRAKE = 3.0, not the order book, is what caps SIZE today: of 102 live sweep_depth events only 8 were capped by the ladder, the median contracts buyable at the sweep limit is 433 against a SIZE of 95, and sweep_limit sent the 98c ceiling on 102 of 102 sweeps, so the 140-signal capacity curve (p2
+
+[UNCERTAIN] PIN is tau-flat, and the evidence cited
+   MONEY: The claimant's money is wrong by about 2.5x on its driving count. Measured from the live settlement records, clustered by close time (rule 4): 360 closes, 15 losing closes = 4.17% (not 6 and 1.82%), mean losing close -$15.43 (not -$27.16), worst close -$52.60 (not -$59.20 — that is a hedge entry leg
+   CORRECTED: PIN is tau-flat — confirmed at research/pinrun.py:6028-6035, with no compensating sigma widening (SIGMA_STRESS 1.0, WIDEN_ENABLED False), and `--early-tau 45 --early-frac 1.0` is live on pid 532412 so a full-size bet is now placed anywhere in tau 3-45 on that flat gate. The restart_bot.ps1:193-195 j
+
+[REFUTED] The hedge sizes from the touch only and
+   MONEY: ~$0.00 directly observed, not the claimed ~$9.10.  BTC 26SEP140530: $0.00, not $9.00. The $9.00 assumes 60 contracts were buyable at 0.43; the cited record's own `ask_size: 0.02` says the entire best level held 0.02. We filled all 60 the next second at exec 0.58, better than that second's 0.61 ask, 
+   CORRECTED: What survives, stripped of the A35 framing and the fabricated dollars:  1. The hedge sends its limit at the touch (`float(_ask)`, pinrun.py:5671-5673) while the entry sends a gate-approved sweep limit. That is a real and verifiable asymmetry — but it is a PRICE policy difference, not the A35 quantit
+
+[REFUTED] EV_FLOOR has never fired once in live hi
+   MONEY: $0 expected, and the claimed downside is overstated by ~48% and is in any case unreachable. Correcting the arithmetic only: contracts at or above the refreshed EV break since 2026-09-11 are 7,740 of 15,337 (50.5%, not the claimed 10,821 of 15,250 / 71%), carrying $82.65 of the $436.91 realised (19%,
+   CORRECTED: EV_FLOOR is not dormant and its refresh is not silent. It fired 64 times on real money across 3 live closes on 2026-09-08/09, while PRICE_CEILING was 0.988; it stopped firing on 2026-09-09 when the ceiling was cut to 0.980, below the EV break of 0.987 (not 0.988 — the start record at pinrun.py:7097 
+
+[REFUTED] The floors gate on MODEL edge, and model
+   MONEY: The 3.5x mis-calibration finding is worth $0 — it does not survive close clustering.  The two operational numbers, corrected: 1. "Refusing 95-98c costs -$85.79 per 7 days." The point estimate reproduces exactly, but quote it with its clustered interval: that band is 0.97c/ct on 8,868 contracts, CI [
+   CORRECTED: Realised cents per contract falls steeply with fill price — 13.4c at 80-90c, 5.96c at 90-95c, 0.97c at 95-98c, 1.85c at >=98c (regime, 15,250 contracts) — and every one of the claimant's figures reproduces exactly. But the model does NOT over-predict by 3.5x in the 95-98c band: clustered by close as
+
+[REFUTED] No price floor exists — confirmed — but
+   MONEY: **Dump guard: $107.73, not $193.** Computed per-record from the logged `take_n` (the contracts actually on offer, capped at SIZE at that instant) and `billed_fee` = ceil(0.07*n*p*(1-p), $0.0001), over the 13 settled closes the current 15c threshold would refuse: +10.05, +10.45, +4.93, +3.01, +4.16, 
+   CORRECTED: There is no price floor constant anywhere in the buy path — confirmed. ONE gate, not two, behaves like a floor: DUMP_DISCOUNT = 0.15 (pinrun.py:208, gate at :6147-6167) refuses any offer more than 15c below the model's confidence, which with PIN = 0.995 upstream is a hard floor at 84.5-85.0c. That i
+
+[REFUTED] The 98c ceiling is correct and correctly
+   MONEY: Point estimate: the ceiling SAVES about $2.2/day, not costs $2.5/day. Arithmetic on the same 2,664 contracts over four days at 98.1-98.7c, EV/contract = (1-f)(1-p) - f*p - ceil(0.07p(1-p)) to $0.0001, x0.70 fill rate, /4 days: f = 1.89% (live, 3 losses / 159 fills at 97-98c) gives -$12.27 -> -$2.15/
+   CORRECTED: The 98c ceiling is correctly implemented and correctly applied — the gate reads the price we would PAY, sweep_limit never walks above it, and all 397 refusals logged ceiling 0.98. RESULTS_decay.md section 7 does undercount what the ceiling uniquely blocks, and the mechanism is confirmed: close_summa
+
+[REFUTED] `dump_guard` has refused 14 deep-discoun
+   MONEY: Claimed: about +$49.6 of forgone profit over six days (~$8.3/day, ~$250/month).  Corrected, split by the two populations the claim conflates:  - **Blocked (4 markets, the only ones the guard actually stops): -$12.42**, i.e. the guard *made* us about $12 net of fees, or $8.69 at the 70% fill rate. Fu
+   CORRECTED: `dump_guard` fired on 17 markets across live history, 14 above the current 15c threshold — but only **4** of those 14 were actually blocked. The other 10 were bought anyway within 0-6 seconds, same ticker and close, and are already in the +$422.  On the 4 it truly blocked: 3 settled our way (+$26.40
+
+[REFUTED] The 20% drawdown brake and BANK_BRAKE 3.
+   MONEY: The run rate is right: 09-15 +$91.72, 09-16 +$74.00, 09-17 +$76.85 across 359 settled closes, so a full day dark is $74-92. Overnight (8 h) is $25-31, not "the whole night's $74-92". The one drawdown halt on record cost 2.4 minutes, about $0.13.  The frequency is wrong by enough to invert the trade.
+   CORRECTED: BANK_BRAKE 3.0 and MAX_DRAWDOWN 0.20 do disagree by 1.67x — the sizer plans for a worst close of bank/3 (pinrun.py:5005-5013, :4973-4977) while the halt is at 20% of the high-water bank (:922) — and a drawdown halt is terminal, not transient (:4954), against a mark that survives restart, so it would
+

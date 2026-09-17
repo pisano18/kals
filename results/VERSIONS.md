@@ -1,3 +1,56 @@
+# v-a8fix -- 2026-09-17 ~21:0xZ -- AMENDMENT 8's both-sides guard finally reads the right variable
+
+**Found by the fresh-eyes review of the whole crypto buy path, and confirmed by
+three independent readers plus an adversarial verifier.**
+
+**The bug.** The both-sides test sat at `pinrun.py:~5883` and compared
+`prev["sides"][tk] != want`. But `want` is not assigned until ~140 lines below,
+inside the same scan loop. So it compared the side we hold in THIS market
+against the side we happened to want in the PREVIOUS market of the scan -- or
+`None` on the first pass.
+
+**What that did.** It blocked roughly **94% of re-looks at a market we already
+hold**, including legitimate SAME-side top-ups, and it let a genuine
+opposite-side buy through whenever the previous market in the scan happened to
+want the same side. Both directions wrong, neither detectable by reading the
+gate's name in a log.
+
+**The fix.** The comparison moved to immediately after `want` is assigned --
+the first line in the loop where it is meaningful -- and is now a named
+function, `_both_sides_block(prev, ticker, want)`, so it can be tested
+directly. Only an OPPOSITE side blocks; a same-side re-look is a top-up and
+passes.
+
+**What the bot now does differently.** Top-ups on a market we already hold are
+no longer blocked at random. Every other gate -- ceiling, edge, EV, dump guard,
+rebuy band, per-market cap -- still applies to them unchanged, so this does not
+create a new trade type, it stops suppressing an existing one.
+
+**Money.** Small and honestly bounded: the verifier put it at **$5-$40 over the
+four days the guard has been reachable**, of which only about $5 is grounded in
+live fills (8 of 174 filled markets since 09-14 had an unfinished position, 174
+contracts short, worth $4.80 at the measured 2.76c a contract). The original
+review claimed $242; that did not survive checking.
+
+**Risk.** This LOOSENS a gate, so it can only increase trading. The protection
+it was supposed to provide is now actually present for the first time -- before
+the fix, a real opposite-side buy could slip through. So it is safer in the
+direction that matters and looser in the direction that costs money.
+
+**Self-tests:** opposite side blocks, same side passes, a different market is
+unaffected, all the null paths return False, and the loop is asserted to call
+it AFTER `want` exists.
+
+**Deploys on the next restart of `pinrun.py --live`** -- there is no flag; it
+is a plain bug fix in the file the watchdog launches.
+
+**REVERT:**
+
+```
+git revert --no-edit <this commit>
+powershell -File C:\kals-repoestart_bot.ps1
+```
+
 # v-early-full -- 2026-09-17 ~19:5xZ -- LIVE: the 31-45 s leg becomes a FULL bet
 
 **Operator: "Bump 45 seconds up to normal price as well."** `restart_bot.ps1`
@@ -42,7 +95,8 @@ stage 2, scored over the first 40 live closes carrying an early leg:
 
 ```
 git checkout HEAD~1 -- restart_bot.ps1
-powershell -File C:\kals-repoestart_bot.ps1
+powershell -File C:\kals-repo
+estart_bot.ps1
 ```
 
 or edit `--early-frac 1.0` back to `0.333` and restart. Setting it to `0`
