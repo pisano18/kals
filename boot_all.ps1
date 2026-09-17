@@ -179,7 +179,8 @@ if (-not $NoArms) {
                 @{ n = "arm-tau45";    x = @("--max-positions", "3", "--hedge-belief", "0.60", "--tau-max", "45") },
                 @{ n = "arm-hedge70";  x = @("--max-positions", "3", "--hedge-belief", "0.70") },
                 @{ n = "arm-mirror";   x = @("--max-positions", "3", "--hedge-belief", "0.80") },
-                @{ n = "arm-dumps";    x = @("--max-positions", "3", "--hedge-belief", "0.80", "--take-dumps") }
+                @{ n = "arm-dumps";    x = @("--max-positions", "3", "--hedge-belief", "0.80", "--take-dumps") },
+                @{ n = "arm-onecoin";  x = @("--max-positions", "3", "--hedge-belief", "0.60", "--one-coin-depth", "--one-coin-max", "2.0") }
             )
             foreach ($a in $arms) {
                 Start-Process -FilePath $py -ArgumentList ($live + $a.x) -WorkingDirectory $repo -WindowStyle Hidden `

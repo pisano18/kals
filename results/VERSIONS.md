@@ -1,3 +1,27 @@
+# (NOT DEPLOYED) AMENDMENT 45 -- one-coin depth. FLAG IS OFF LIVE. -- 2026-09-17 13:2xZ
+
+**The live bot's flags did not change and `versioncheck` is clean.** But
+`research/pinrun.py` on disk did change, and the live bot restarts from that
+file, so this is recorded here. The full self-test passed (exit 0) before the
+file was left in place; the paper arm started from it at ~13:25Z.
+
+`--one-coin-depth --one-coin-max 2.0` (refused with `--live`) lets ONE market
+take more than SIZE from a deep offer at the same limit, capped by the lowest
+of: the multiple x SIZE, the close budget, and the drawdown brake's headroom
+`(bank - 0.8 x high-water) / 0.98` -- so a single widened position can never
+halt the bot. `one_coin_cap()`; bar in `results/PREREG_onecoin.md`; evidence
+in `results/RESULTS_quiet.md`. Operator, 2026-09-17: "Build the one coin
+depth" and "The brakes are a whichever comes first, which I'm fine with."
+
+Revert (removes the code; the live bot is unaffected until its next restart):
+
+```powershell
+cd C:\kals-repo
+git checkout eade429 -- research/pinrun.py
+```
+
+---
+
 # v-selfheal -- 2026-09-17 04:22Z -- the bot relaunches itself until it works, and the operator gets buttons
 
 **Operator instruction, 2026-09-17: "Does the bot automatically catch itself

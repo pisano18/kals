@@ -208,6 +208,19 @@ _DEFAULT_LADDER_LEVELS = 150   # The tick is 0.1c above 90c, so the 88-98c band
 DUMP_DISCOUNT = 0.15     # cents below fair that make an offer a warning
 DUMP_ENABLED = True
 _DEFAULT_DUMP_ENABLED = True   # --take-dumps clears it, PAPER ONLY
+# AMENDMENT 45 (2026-09-17): ONE-COIN DEPTH, PAPER ONLY. THE OPERATOR: "Build
+# the one coin depth." When on, a single market may take more than SIZE from
+# an offer that is deep at or under the limit the bot already sends -- but
+# never more than ONE_COIN_MAX x SIZE, never more than the close budget, and
+# never more than a TOTAL LOSS of the position could cost before the drawdown
+# brake (MAX_DRAWDOWN of the high-water bank) would halt the bot. Measured
+# 2026-09-17 (results/RESULTS_quiet.md): at 2.0x the offers we already hit
+# carried +80-87% more contracts; the brake caps that at ~1.2x at a fresh high
+# and at ~nothing when the bank sits 3% under its high. one_coin_cap() is the
+# whole rule. Off by default; --one-coin-depth is REFUSED on a live run.
+ONE_COIN_DEPTH = False
+_DEFAULT_ONE_COIN_DEPTH = False
+ONE_COIN_MAX = 2.0             # multiple of SIZE; may not exceed MAX_PER_CLOSE
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
                        # moments it calls <2% risk:
@@ -3934,6 +3947,48 @@ def _selftest_body():
            "left of the close's contract budget, so exposure per close "
            "cannot grow")
 
+        # ---- AMENDMENT 45: one-coin depth, PAPER ONLY ---------------------
+        ck(ONE_COIN_DEPTH is False and _DEFAULT_ONE_COIN_DEPTH is False,
+           "A45: one-coin depth is OFF by default -- a live bot started "
+           "without the flag cannot take more than SIZE on one market")
+        ck(abs(one_coin_cap(94.0, 556.02, 574.79) - 98.15) < 0.05,
+           "A45: bank $556.02 under a $574.79 high leaves $96.19 before the "
+           "20% brake, = 98.15 contracts at the 98c ceiling -- the cap")
+        ck(abs(one_coin_cap(94.0, 574.79, 574.79) - 117.30) < 0.05,
+           "A45: at a fresh high the room is 20% of bank = 117.3 contracts, "
+           "1.25x SIZE, well under the 2.0x multiple")
+        ck(one_coin_cap(94.0, 2000.0, 2000.0) == 188.0,
+           "A45: with a big enough bank the multiple binds first (2.0 x 94)")
+        ck(one_coin_cap(94.0, 400.0, 574.79) == 94.0,
+           "A45: deep in a drawdown the room is negative -> the cap is SIZE, "
+           "never below it: the flag only ever ADDS")
+        ck(one_coin_cap(94.0, None, 574.79) == 94.0 and one_coin_cap(94.0, 556.0, None) == 94.0
+           and one_coin_cap(94.0, 556.0, 0) == 94.0,
+           "A45: unknown bank or high-water mark -> SIZE (the flag does nothing)")
+        ck(one_coin_cap(94.0, 2000.0, 2000.0, mult=1.0) == 94.0,
+           "A45: --one-coin-max 1.0 is exactly today's behaviour")
+        _tl45 = _src35[_src35.index(chr(10) + "def trade_loop("):]
+        ck("if ONE_COIN_DEPTH:" in _tl45 and "one_coin_cap(SIZE, state.get(\"bank\"), state.get(\"hwm\"))" in _tl45,
+           "A45: the trade loop consults one_coin_cap with the LIVE bank and "
+           "high-water mark, so the cap moves with the money")
+        # ANCHOR ON THE WHOLE LINE: "out = pintake.take(" is a substring of the
+        # hedge path's "_hout = pintake.take(", which sits EARLIER in
+        # trade_loop. Fourth time this trap has bitten in this file.
+        ck(_tl45.index("take_n = min(float(SIZE), _deep, max(0.0, _room))")
+           < _tl45.index("if ONE_COIN_DEPTH:")
+           < _tl45.index("\n                    out = pintake.take("),
+           "A45: the widening runs AFTER A35 has sized the order and BEFORE "
+           "the order is sent")
+        ck("take_n = max(take_n, min(_cap45, _avail45, max(0.0, _room45)))" in _tl45,
+           "A45: the widened order is still capped by the close budget "
+           "(_room45), so the per-close worst case is unchanged")
+        ck("--one-coin-depth is refused on a LIVE run" in _src35,
+           "A45: the flag is refused with --live; only a paper arm may carry it")
+        ck("new_size * (ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0)" in _src35
+           and "float(a.size) * (ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0)" in _src35,
+           "A45: pintake's per-order cap follows the multiple, or every widened "
+           "order would be refused in silence (the A16 failure shape)")
+
         # ---- AMENDMENT 30: the drawdown brake ---------------------------
         ck(abs(_DEFAULT_MAX_DRAWDOWN - 0.20) < 1e-12,
            "the DECLARED drawdown limit is a fifth of the high-water bank -- "
@@ -4706,6 +4761,30 @@ def worst_close_cost(size):
     return float(MAX_PER_CLOSE) * float(size) * float(PRICE_CEILING)
 
 
+def one_coin_cap(size, bank, hwm, mult=None):
+    """AMENDMENT 45: contracts ONE market may hold when --one-coin-depth is on.
+
+    Three ceilings, the lowest wins, and the answer is never below SIZE (the
+    flag only ever ADDS):
+      1. mult x SIZE                     (ONE_COIN_MAX, default 2.0)
+      2. the close budget, applied by the caller (_room)
+      3. what a TOTAL loss at the price ceiling could cost before the drawdown
+         brake fires:  (bank - (1 - MAX_DRAWDOWN) x hwm) / PRICE_CEILING
+    Unknown bank or high-water mark -> SIZE, i.e. the flag does nothing. So a
+    single bad close cannot halt the bot, whatever the flag says.
+    """
+    size = float(size)
+    mult = float(ONE_COIN_MAX if mult is None else mult)
+    cap = mult * size
+    try:
+        if bank is None or hwm is None or float(hwm) <= 0:
+            return size
+        room = (float(bank) - (1.0 - float(MAX_DRAWDOWN)) * float(hwm)) / float(PRICE_CEILING)
+    except (TypeError, ValueError):
+        return size
+    return max(size, min(cap, room))
+
+
 def size_for_bank(bank, brake=None, lo=None, hi=None):
     """Largest size whose worst close the bank covers `brake` times over."""
     brake = BANK_BRAKE if brake is None else brake
@@ -4785,7 +4864,8 @@ def apply_size(new_size, a, why, rec=None):
         pintake.set_limits(
             loss_abort=_abort,
             max_run_stake=max(pintake.MAX_RUN_STAKE, 3.0 * wc + 10.0),
-            max_take_count=max(pintake.MAX_TAKE_COUNT, new_size),
+            max_take_count=max(pintake.MAX_TAKE_COUNT,
+                               new_size * (ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0)),
             why=f"auto-size {old:g} -> {new_size:g}: {why}")
     except Exception as e:                        # a refused loosening must
         globals()["SIZE"] = old                   # not leave SIZE ahead of
@@ -6156,6 +6236,32 @@ def trade_loop(a, rec, book, idx, series_index):
                                     ladder=round(_deep, 2),
                                     was=round(_was, 2), now=round(take_n, 2),
                                     limit=round(_limit, 4))
+                    # ---- AMENDMENT 45: ONE-COIN DEPTH (paper only) --------
+                    # After A35 has sized the order to SIZE, and only when the
+                    # flag is on, widen past SIZE toward what the offer holds
+                    # at or under the SAME limit -- capped by one_coin_cap()
+                    # (mult x SIZE, and the drawdown brake's headroom) and by
+                    # what is left of the close budget. Nothing here changes
+                    # the price, the gate or the per-close worst case.
+                    if ONE_COIN_DEPTH:
+                        _cap45 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"))
+                        _avail45 = float(size)
+                        if SWEEP_DEPTH and _limit > price + 1e-9:
+                            try:
+                                _avail45 = max(_avail45, float(book.buyable(tk, want, _limit)))
+                            except Exception:              # noqa: BLE001
+                                pass
+                        _room45 = (close_budget()
+                                   - (prev.get("contracts", 0.0)
+                                      if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
+                        _was45 = take_n
+                        take_n = max(take_n, min(_cap45, _avail45, max(0.0, _room45)))
+                        if take_n > _was45 + 1e-9:
+                            rec("one_coin_depth", ticker=tk, want=want,
+                                was=round(_was45, 2), now=round(take_n, 2),
+                                cap=round(_cap45, 2), avail=round(_avail45, 2),
+                                room=round(_room45, 2), size=float(SIZE),
+                                bank=state.get("bank"), hwm=state.get("hwm"))
                     _t0 = time.time()
                     out = pintake.take(CREDS["base"], CREDS["pk"],
                                        CREDS["key_id"], tk, want, _limit,
@@ -6292,6 +6398,16 @@ def main():
                          "the break-even is 8.7%%. Our 4 live fills in the "
                          "band all lost, but all four sat at 59-82c and the "
                          "cheap end is untested. REFUSED ON A LIVE RUN.")
+    ap.add_argument("--one-coin-depth", action="store_true",
+                    help="PAPER RESEARCH ONLY (AMENDMENT 45). Let ONE market "
+                         "take more than SIZE from a deep offer at the same "
+                         "limit, up to --one-coin-max x SIZE, the close budget, "
+                         "and the drawdown brake's headroom. REFUSED ON A LIVE "
+                         "RUN. See results/PREREG_onecoin.md.")
+    ap.add_argument("--one-coin-max", type=float, default=2.0,
+                    help="AMENDMENT 45: the multiple of SIZE one market may "
+                         "hold under --one-coin-depth (default 2.0, never above "
+                         "MAX_PER_CLOSE).")
     ap.add_argument("--no-external-detect", action="store_true",
                     help="AMENDMENT 43: turn OFF telling a withdrawal from a "
                          "trading loss. With it off, taking money out of the "
@@ -6445,6 +6561,21 @@ def main():
                 "10c, SOL 59c, NEAR 73c -- 0 of 4). Run it as a paper arm and "
                 "compare.")
         globals()["DUMP_ENABLED"] = False
+    if getattr(a, "one_coin_depth", False):
+        # NEVER LIVE. This raises the exposure a single market may carry; the
+        # measured concentration risk and the live bar are in
+        # results/PREREG_onecoin.md, and a live run must cross that bar first.
+        if a.live:
+            raise SystemExit(
+                "--one-coin-depth is refused on a LIVE run. It lets one market "
+                "hold more than SIZE; results/PREREG_onecoin.md sets the bar a "
+                "paper arm must clear first.")
+        _m45 = float(a.one_coin_max)
+        if not (1.0 <= _m45 <= float(MAX_PER_CLOSE)):
+            raise SystemExit("--one-coin-max must be between 1.0 and MAX_PER_CLOSE "
+                             "(%g); got %g" % (MAX_PER_CLOSE, _m45))
+        globals()["ONE_COIN_DEPTH"] = True
+        globals()["ONE_COIN_MAX"] = _m45
     if getattr(a, "no_external_detect", False):
         globals()["EXTERNAL_DETECT"] = False
     if a.jump_gate:
@@ -6630,6 +6761,7 @@ def main():
         max_drawdown=MAX_DRAWDOWN,
         max_per_market_run=MAX_PER_MARKET, min_level=MIN_LEVEL,
         sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
+        one_coin_depth=ONE_COIN_DEPTH, one_coin_max=ONE_COIN_MAX,
         sigma_ruler=SIGMA_RULER,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,
@@ -6672,7 +6804,8 @@ def main():
             loss_abort=float(a.loss_abort),
             max_run_stake=max(pintake.MAX_RUN_STAKE,
                               3.0 * _worst_close + 10.0),
-            max_take_count=max(pintake.MAX_TAKE_COUNT, float(a.size)),
+            max_take_count=max(pintake.MAX_TAKE_COUNT,
+                               float(a.size) * (ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0)),
             why=f"size {a.size:g}, worst close ${_worst_close:.2f}")
         arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}, "
             f"PREREG_pin_live.md")
