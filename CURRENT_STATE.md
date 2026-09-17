@@ -324,6 +324,29 @@ at the rotation, so its in-progress file sits at **0 bytes for up to 59
 minutes**. A naive freshness test alarms on a healthy feed recorder almost
 permanently. Six consecutive hours verified at 280-690 KB per feed.
 
+## REVISIT WHEN POPULATED -- the pickoff tracker (set 2026-09-17)
+
+**`python research/pinpickoff.py`** (cache `results/pinpickoff_cache.json`,
+report `results/RESULTS_pickoff.md`). The operator asked for it: *"Track the
+things we'd buy and when they're getting picked off ... possibly act on it
+with strategy. Add a note to revisit that once populated with data."*
+
+It counts, per Eastern day, every taker buying the WINNING side at 90-98c
+within 60 s of a close -- the pool we compete for -- and splits it into ours
+and theirs. TAPE population: what the market did, never our loss rate (rule 5).
+
+**Backfilled over the whole tape on 2026-09-17. REVISIT AFTER ~2 MORE WEEKS**,
+and act on whichever of the three moves:
+
+1. **median tau falling** -> competitors are moving earlier. Widen our own
+   early window (AMENDMENT 46 sits at 45 s) or take a thinner edge sooner.
+2. **our share falling while bargains per close holds** -> we are losing
+   RACES, not opportunities. The answer is latency and the sweep, not the gates.
+3. **bargains per close falling** -> the pool itself is drying up. That is the
+   one that argues for a second product rather than a better bot.
+
+Background for why it exists: `results/RESULTS_decay.md`.
+
 ## Hard-won gotchas that will bite again
 
 - **THE CLOCK INSIDE A TICKER IS EASTERN, NOT UTC.** `KXXRP15M-26SEP170000-00`

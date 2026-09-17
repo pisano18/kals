@@ -97,7 +97,62 @@ most -- which is what competition for a known pattern looks like.
   as wrong on 2026-09-09 when offers sat lower; the population has moved since.
   **Not changed without him.**
 
-## 7. What would tell us this is getting worse
+## 7. THE CEILING DECISION -- DELEGATED TO ME, AND THE ANSWER IS NO
+
+The operator, 2026-09-17: *"Raising max fill price, if you think it makes us
+more money, do it."* **It does not, and here is why. The ceiling is not left
+at 98c out of caution; it is left there because the arithmetic says so.**
+
+My last message implied the 98c ceiling was the big lever because it blocks
+52% of quarter-hours. That framing was misleading and this corrects it: the
+52% is a count, and what it counts is nearly all worthless. Of the **290**
+quarter-hours we refused with the best offer above 98c:
+
+| where the refused best offer sat | count | share of the refused | share of ALL quarter-hours |
+|---|---|---|---|
+| 98.0-98.5c | 24 | 8% | 4% |
+| 98.5-99.0c | 49 | 17% | 7% |
+| 99.0-99.5c | 77 | 27% | 12% |
+| **99.5c and above** | **140** | **48%** | 21% |
+
+**Three quarters of what the ceiling blocks sits above 99c.**
+
+Break-even, from the real fee (`0.07 x p x (1-p)`):
+
+| ceiling | fee | break-even loss rate | one loss in |
+|---|---|---|---|
+| 98.0c (today) | 0.137c | 1.86% | 54 |
+| 98.5c | 0.103c | 1.40% | 72 |
+| 99.0c | 0.069c | **0.93%** | **107** |
+| 99.5c | 0.035c | 0.47% | 215 |
+
+Against that, **our own calibration** (`research/pincalib.py`, 109,122
+z-scores from the index feed): at the confidence the gate operates at, the
+model promises to be wrong 0.15% of the time and **is wrong 1.21%**. A 1.21%
+error rate puts the highest price with positive expected value at **98.79c**.
+Even at the model's most confident (99.99%, where it is wrong 0.70%) the
+highest positive-EV price is about 99.3c -- so the 140 offers at 99.5c+ are
+negative expected value under every reading of our own numbers.
+
+That leaves the 98.0-98.5c band: 24 quarter-hours over eleven days, about
+**two a day**. At ~1.5c kept on a win and ~90 contracts that is roughly
+**$1-2 a day**, and it is claimed on a break-even of 1 loss in 72 against a
+measured 1.21% (1 in 83) -- a margin of 0.19 percentage points, well inside
+the error on both numbers. **One loss there costs ~$88, or six weeks of the
+gain.**
+
+Live evidence, for completeness and against over-reading: entry fills at 98c+
+are **62, none lost**. Rule of three puts that at up to ~4.8% -- it is
+consistent with 1.21% and equally consistent with 4%, so it cannot carry this
+decision either way.
+
+**Decision: the ceiling stays at 98c.** It is revisited if `pincalib` is
+re-run on more tape and the measured error at the gate falls below ~1.0%, or
+if the 98c+ live count reaches ~300 fills with at most one loss. Both are
+counting exercises, not judgement calls, and both are written here so the bar
+is not moved later by mood.
+
+## 8. What would tell us this is getting worse
 
 Track weekly, on this same per-watched-quarter-hour basis: share of best
 offers above 98c (44 -> 52%), mean best edge (3.76 -> 2.72c), and kept cents
