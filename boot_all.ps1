@@ -76,7 +76,12 @@ function PidFileAlive($path) {
 
 $procs = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'python.exe', 'powershell.exe', 'pwsh.exe' })
 $blind = @($procs | Where-Object { $_.Name -eq 'python.exe' -and -not $_.CommandLine }).Count
-function Running($like) { return [bool]($procs | Where-Object { $_.CommandLine -like $like }) }
+function Running($like) { return [bool]($procs | Where-Object { $_.CommandLine -like $like -and $_.ProcessId -ne $PID }) }
+# python scripts are matched on python.exe ONLY: a PowerShell whose command
+# text merely mentions 'pinphone.py' (an operator typing a check, or this very
+# script's caller) must not count as the program running. That false match
+# reported 'all up' with the phone link dead on 2026-09-17.
+function RunningPy($like) { return [bool]($procs | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like $like }) }
 
 $started = 0
 
@@ -85,7 +90,7 @@ if ((PidFileAlive "$kals\logs\run_all.pid") -or (Running '*run_all.ps1*')) {
     # fine
 } elseif ($blind -gt 0) {
     Say "run_all.ps1 not visible, but $blind python process(es) hide their command line -- REFUSING to start collectors (a duplicate collector corrupts the tape). Check by hand."
-} elseif ((Running '*kalshi_collector.py*') -or (Running '*crypto_feeds.py*')) {
+} elseif ((RunningPy '*kalshi_collector.py*') -or (RunningPy '*crypto_feeds.py*')) {
     Say "a collector is running without run_all.ps1 -- leaving it alone"
 } else {
     Say "run_all.ps1 is NOT running -- starting the collectors' watchdog"
@@ -105,7 +110,7 @@ if ((PidFileAlive "$res\watch_bot.pid") -or (Running '*watch_bot.ps1*')) {
 }
 
 # --- 3. the Crypto.com recorder (public data, no key, no orders).
-if (Running '*cdc_record.py*') {
+if (RunningPy '*cdc_record.py*') {
     # fine
 } elseif ($blind -gt 0) {
     Say "cdc_record.py not visible and $blind python process(es) are blind -- not starting it"
@@ -119,7 +124,7 @@ if (Running '*cdc_record.py*') {
 # --- 3b. the phone link (Telegram). Only when the operator has written the
 # token file; polls Telegram, opens no port, answers one paired chat.
 if (Test-Path "$kals\telegram.json") {
-    if (Running '*pinphone.py*') {
+    if (RunningPy '*pinphone.py*') {
         # fine
     } elseif ($blind -gt 0) {
         Say "pinphone.py not visible and $blind python process(es) are blind -- not starting it"
@@ -136,8 +141,8 @@ if (Test-Path "$kals\telegram.json") {
 # running, i.e. after a reboot -- never topped up one by one, because the
 # comparison arms must share a window.
 if (-not $NoArms) {
-    $paper = @($procs | Where-Object { $_.CommandLine -like '*pinrun.py*' -and $_.CommandLine -notlike '*--live*' })
-    $race = @($procs | Where-Object { $_.CommandLine -like '*pinracearm.py*' })
+    $paper = @($procs | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*pinrun.py*' -and $_.CommandLine -notlike '*--live*' })
+    $race = @($procs | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*pinracearm.py*' })
     if ($blind -gt 0 -and ($paper.Count -eq 0 -or $race.Count -eq 0)) {
         Say "paper arms not all visible and $blind python process(es) are blind -- not starting arms"
     } else {
