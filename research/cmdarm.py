@@ -338,6 +338,8 @@ def main():
     bets = []
     per_close = collections.Counter()
     pending = {}
+    looks = {}
+    looked = set()
     end = time.time() + a.minutes * 60
     last_disc = 0.0
     while time.time() < end:
@@ -357,16 +359,41 @@ def main():
             for t in gone:
                 watching.pop(t, None)
                 pending[t] = time.time()
+                looks.pop(t, None)
+                looked.discard(t)
             watching.update(fresh)
 
         for tk, close_s in list(watching.items()):
             tau = int(close_s - time.time())
             ser = tk.split("-")[0]
-            if per_close[tk] >= MAX_PER_CLOSE:
-                continue
             try:
                 best = book.best(tk)
             except Exception:                                     # noqa: BLE001
+                continue
+            # ---- WHAT THE BOOK SHOWED, whether or not we bet. One record per
+            # market per close, written when the band closes: the cheapest ask
+            # on each side seen INSIDE the band and the tau it was seen at. So
+            # "why no bet on that close" is answerable from the log instead of
+            # guessed -- three closes passed with one bet before this existed.
+            lo, hi = BANDS.get(ser, (2, 15))
+            lk = looks.setdefault(tk, {"ser": ser, "close": close_s, "yes": None, "no": None,
+                                       "looks": 0, "fresh": 0})
+            if best and lo <= tau <= hi:
+                lk["looks"] += 1
+                if best.get("age_ms") is not None and best["age_ms"] <= MAX_BOOK_AGE_MS:
+                    lk["fresh"] += 1
+                for want in ("yes", "no"):
+                    px = best.get("%s_ask" % want)
+                    sz = best.get("%s_ask_size" % want)
+                    if px is not None and sz:
+                        cur = lk[want]
+                        if cur is None or px < cur[0]:
+                            lk[want] = (float(px), float(sz), tau)
+            if tau < lo and tk not in looked:
+                looked.add(tk)
+                rec("look", ticker=tk, series=ser, looks=lk["looks"], fresh=lk["fresh"],
+                    yes_ask=lk["yes"], no_ask=lk["no"], bet=per_close[tk] > 0)
+            if per_close[tk] >= MAX_PER_CLOSE:
                 continue
             d = decide(best, tau, BANDS.get(ser, (2, 15)))
             if not d:

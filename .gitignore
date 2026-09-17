@@ -43,3 +43,4 @@ results/dashboard.html
 
 # 65 MB of walked tape rows -- rebuildable from the tape, never committed
 results/pinpickoff_cache.json
+results/pingrid_cache.json
