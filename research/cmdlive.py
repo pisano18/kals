@@ -80,7 +80,7 @@ SIGNOFF_PHRASE = "commodity penny test"
 # which 26 won, and roughly half of that loss was the one-bet-per-WINDOW defect
 # doubling a single adverse event. The defect is fixed; the size steps back
 # until there are ~60 clean fills, then returns to $30.
-SIZE_DOLLARS = 10.0         # dollars of contracts per order
+SIZE_DOLLARS = 20.0         # dollars of contracts per order
 MAX_SIZE = 60.0             # --size (dollars) may never exceed this
 MAX_CONTRACTS = 40.0        # hard contract ceiling; $30 at the 90c floor is 33
 # GROSS TURNOVER, not risk. Raised 10.00 -> 40.00 on 2026-09-17 ~17:0xZ, after the
@@ -91,7 +91,7 @@ MAX_CONTRACTS = 40.0        # hard contract ceiling; $30 at the 90c floor is 33
 # about $2) and MAX_NET_LOSS (the day's realised dollars). Both are untouched --
 # this number only stops the thing running away in VOLUME.
 MAX_SPEND = 1200.00         # dollars of cost across the DAY (gross; it recycles)
-MAX_NET_LOSS = 25.00        # dollars NET REALISED down on the day, then stop.
+MAX_NET_LOSS = 50.00        # dollars NET REALISED down on the day, then stop.
                             # THE REAL BRAKE, and it scales with the size: about
                             # 2.5 losing trades. At $10 a trade a loss costs
                             # ~$9.9 and a win pays ~$0.39, so it still takes ~26
@@ -123,6 +123,29 @@ HEARTBEAT = os.path.join(RESULTS, "cmdlive.heartbeat")
 # label starts with "anti" is a deliberate LOSER used as a control and can
 # never be live.
 LIVE_SERIES = ("KXGOLD15M", "KXWTI15M")
+
+# WINDOWS ALLOWED LIVE, by label. Narrowed 2026-09-17 ~21:3xZ to the CLOSE band
+# only, on the operator's read: "it wasn't very solid on the far band. You
+# believe in the close band right?" He is right, on two grounds.
+#
+# 1. ALL THREE live losses came from far or boundary windows -- WTI at 180 s,
+#    WTI at exactly 60 s, GOLD at 180 s. None came from inside 45 seconds.
+# 2. The far band's case rests on a MECHANISM STORY (far from the close the
+#    market prices in a reversion that mostly does not come). The close band's
+#    case does not need a story: a commodity settles on the close of a 1-minute
+#    candle, and inside 15 seconds that candle is nearly formed. That is
+#    arithmetic, and it is the half of the U-shape I actually believe.
+#
+# The tape by markets, for what stays live:
+#     gold-near  2-15 s, 95-99c : 149 markets, 2 lost (1.3%)
+#     wti-near   2-60 s, 95-99c : 519 markets, 4 lost (0.8%)
+# and for what is now paper-only:
+#     wti-mid    16-45 s, 90-95c: 104 markets, 6 lost (5.8%) -- marginal
+#     gold-far / wti-far        : good on tape, and where every loss came from
+#
+# The far windows keep running in `cmdarm` (paper), so we keep learning about
+# them without paying for the lesson.
+LIVE_WINDOWS = ("gold-near", "wti-near")
 # The widest window any live commodity series uses, handed to pintake per call.
 # Its shipped rail is 90 s (right for the crypto bot); the commodity edge sits
 # at 91-180 s. pintake refuses anything past what is asked, and past its own
@@ -167,6 +190,9 @@ def guard(state, tau, price, count, balance, stop=None, series=None, window=None
     if window is not None and str(window).startswith("anti"):
         bad.append("window %r is a NEGATIVE CONTROL -- it exists to lose and "
                    "must never reach the wire" % (window,))
+    elif window is not None and window not in LIVE_WINDOWS:
+        bad.append("window %r is paper-only; live is the close band (%s)"
+                   % (window, ", ".join(LIVE_WINDOWS)))
     if not state.armed:
         bad.append("not armed -- --live and the sign-off phrase are both required")
     if stop:
@@ -488,8 +514,20 @@ def selftest():
        "...gold and oil, the two with evidence at both ends, are the live list")
     ck(guard(s, series="KXGOLD15M", window="anti-silver-mid", **ok_args),
        "NULL: a window labelled 'anti' is a deliberate loser and never goes live")
-    ck(guard(s, series="KXGOLD15M", window="gold-far", **ok_args) == [],
-       "...a real window passes")
+    ck(guard(s, series="KXGOLD15M", window="gold-near", **ok_args) == []
+       and guard(s, series="KXWTI15M", window="wti-near", **ok_args) == [],
+       "the CLOSE band is what trades live: gold 2-15 s and WTI 2-60 s, both "
+       "95-99c, 668 tape markets and 6 losses between them")
+    ck(guard(s, series="KXGOLD15M", window="gold-far", **ok_args)
+       and guard(s, series="KXWTI15M", window="wti-far", **ok_args)
+       and guard(s, series="KXWTI15M", window="wti-mid", **ok_args),
+       "and the FAR and MID windows are refused live -- all three real losses "
+       "came from 180 s, 180 s and exactly 60 s, and the far band's case rests "
+       "on a mechanism story rather than on a nearly-formed candle")
+    ck(all(w in [cmdarm.label(b) for v in cmdarm.BANDS.values() for b in v]
+           for w in LIVE_WINDOWS),
+       "every live window label actually exists in cmdarm.BANDS -- a typo here "
+       "would silently trade nothing at all")
 
     # ---- the money ceilings
     s2 = State(); s2.armed = True; s2.spent = MAX_SPEND - 0.50
