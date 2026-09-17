@@ -188,6 +188,44 @@ restriction is the 98c CEILING. (The 90c number that appears in commodity work
 is `cmdarm`'s window, a different system entirely. If a future reader thinks
 crypto has a 90c floor, they have confused the two -- it has happened.)
 
+### 5a. THE CAPACITY CEILING -- the most important structural fact about this strategy
+
+The funnel, in markets (not evaluations): **7,422 markets watched -> 526 we
+decided to buy (7.1%) -> 467 filled (6.3%).**
+
+`no_offer` is by far the largest blocker, and it is REAL, not a book-reading
+artefact. Every one of the 2,736 `no_offer` records was checked: **2,736 of
+2,736 had genuinely no ask at all on the side we wanted** -- not an ask at 100c,
+not an ask we discarded for size or staleness. Nothing. Meanwhile **2,551 of
+them (93%) DID have an ask on the losing side.**
+
+On a binary book those two facts are the same fact. An ask on the loser at 2c
+is a bid for the winner at 98c. So the picture is: **when the outcome becomes
+obvious, the winning side has BIDS but no ASKS.** Everyone wants to buy the
+near-certain dollar; nobody will sell it. That is not a policy we can loosen.
+It is the supply of the whole strategy.
+
+**The one avenue it leaves is resting a bid and waiting -- and that has been
+measured and KILLED**, with a mechanism that should be remembered every time
+someone re-proposes it (`results/RESULTS_maker.md`, 9 days, 7,266 gated
+markets, 793 closes; resting loses to taking in 113 of 114 rows):
+
+> a bid resting one tick under the ask for 5 s was filled on **29.0% of the
+> markets that went on to WIN** and on **100% of the 17 that LOST**.
+
+Nobody sells you a near-certain contract for no reason. The seller who reaches
+down to your bid is the one who already knows. Resting does not even deliver a
+better price (94.16c vs the taker's 94.05c), because the entries where a
+resting bid fills are the contested expensive ones. Cancelling on a belief flip
+does not save it either: every loser fill lands BEFORE the pull.
+
+**What this means for anyone hunting for money here:** roughly a third of all
+opportunities are unreachable by any gate change, and the reachable levers are
+only the ones we chose -- the edge floor (12.7% of watched markets), the
+ceiling (5.0%), depth (5.3%), and the close budget (3.6%). Do not spend effort
+trying to convert `no_offer`; spend it on those four, on the SIZE of the fills
+we do get, and on losing less.
+
 ---
 
 ## 6. The wobble: when a favourite is really flipping
