@@ -18,12 +18,16 @@ THE WINDOWS ARE NOT DEFINED HERE. They are imported from `cmdarm.BANDS`, by
 object, so the paper control and the live test can never drift apart. They
 came from the grid's BY-MARKETS table (rule 4), not its trade counts:
 
-  GOLD    2-15 s at 90-99c, SKIPPING 08-14 ET (in the COMEX session that cell
-          is 32 markets / 2 lost; outside it 117 / 0), plus a FAR window at
-          91-180 s and 98-99c (129 markets, 0 lost -- the safest cell found).
-  WTI     2-60 s at 95-99c (153 markets, 3 lost); 2-45 s at 90-95c.
-  SILVER  2-5 s, the NEGATIVE control: it loses 5.4% of markets even there.
-          If silver comes out ahead in this test, the test is wrong.
+Only GOLD and WTI can reach the wire (`LIVE_SERIES`), whatever is passed on
+the command line, and a window labelled "anti..." -- a deliberate loser used
+as a control -- can never reach it at all. Silver, copper and natural gas are
+traded in `cmdarm` (paper) on their own best windows.
+
+The shape those windows follow: commodities are good at BOTH ENDS of the
+quarter hour and dangerous in the middle (16-90 s), the opposite of crypto,
+because they settle on the CLOSE of a 1-minute candle rather than a 60-second
+average. Gold at 95-99c: 149 markets / 2 lost inside 15 s, 423 / 21 in the
+middle, 379 / 2 at 91-180 s.
 
 HARD RULE 1 (as narrowed 2026-09-06): no order that risks real money without
 the operator's per-instance sign-off. The sign-off for THIS instance is his
@@ -71,6 +75,16 @@ STOP_FILE = os.path.join(RESULTS, "cmdlive.stop")
 # The operator's desktop app stands the LIVE bot down with this file. If he
 # stood the crypto bot down, he stood everything down.
 DESK_STOP = os.path.join(RESULTS, "pinrun-live.stop")
+HEARTBEAT = os.path.join(RESULTS, "cmdlive.heartbeat")
+
+# ONLY these two series may reach the wire, whatever is passed on the command
+# line. The operator's instruction, 2026-09-17: "Make the good commodities
+# live, also run paper tests on the ones you don't have confidence in." Gold
+# and oil are the good ones -- both have 300+ market cells losing under 2%.
+# Silver, copper and natural gas stay in `cmdarm` (paper), and a window whose
+# label starts with "anti" is a deliberate LOSER used as a control and can
+# never be live.
+LIVE_SERIES = ("KXGOLD15M", "KXWTI15M")
 
 
 def stopped(stop_file=STOP_FILE, desk_stop=DESK_STOP):
@@ -96,13 +110,19 @@ class State:
         self.armed = False
 
 
-def guard(state, tau, price, count, balance, stop=None):
+def guard(state, tau, price, count, balance, stop=None, series=None, window=None):
     """Every reason NOT to send, in a list. Empty list means send.
 
     Runs before pintake's own rails, not instead of them: pintake refuses on
     the order body and the close time, this refuses on the money.
     """
     bad = []
+    if series is not None and series not in LIVE_SERIES:
+        bad.append("%s is paper-only; the live list is %s"
+                   % (series, ", ".join(LIVE_SERIES)))
+    if window is not None and str(window).startswith("anti"):
+        bad.append("window %r is a NEGATIVE CONTROL -- it exists to lose and "
+                   "must never reach the wire" % (window,))
     if not state.armed:
         bad.append("not armed -- --live and the sign-off phrase are both required")
     if stop:
@@ -204,17 +224,23 @@ def selftest():
             raise SystemExit("cmdlive selftest: FAILED -- " + msg)
 
     # ---- the windows are cmdarm's, by reference. They cannot drift.
-    ck(cmdarm.BANDS is not None and "KXGOLD15M" in cmdarm.BANDS
-       and "KXCOPPER15M" not in cmdarm.BANDS,
-       "the windows come from cmdarm.BANDS -- one source for the paper control "
-       "and the live test; copper and gas are in neither")
+    ck(cmdarm.BANDS is not None and all(s_ in cmdarm.BANDS for s_ in LIVE_SERIES),
+       "the windows come from cmdarm.BANDS -- one source, so the paper control "
+       "and the live test can never drift apart")
+    ck("KXCOPPER15M" in cmdarm.BANDS and "KXCOPPER15M" not in LIVE_SERIES,
+       "copper IS traded now, in paper only: the separation is the live list, "
+       "not the absence of a window")
     g_near, g_far = cmdarm.BANDS["KXGOLD15M"]
-    ck(cmdarm.decide({"yes_ask": 0.95, "yes_ask_size": 50.0, "age_ms": 100}, 10,
+    ck(cmdarm.decide({"yes_ask": 0.96, "yes_ask_size": 50.0, "age_ms": 100}, 10,
                      g_near, hour=11) is None,
        "the live test inherits the COMEX skip: no gold at 11:00 ET")
-    ck(cmdarm.decide({"yes_ask": 0.985, "yes_ask_size": 50.0, "age_ms": 100}, 120,
-                     g_far, hour=11) == ("yes", 0.985, 50.0),
-       "...and inherits the far window: gold at 98.5c with 120 s left is a bet")
+    ck(cmdarm.decide({"yes_ask": 0.96, "yes_ask_size": 50.0, "age_ms": 100}, 120,
+                     g_far, hour=11) == ("yes", 0.96, 50.0),
+       "...and inherits the far window: gold at 96c with 120 s left is a bet")
+    ck(all(s_ in cmdarm.BANDS for s_ in LIVE_SERIES)
+       and not any(cmdarm.label(b).startswith("anti")
+                   for s_ in LIVE_SERIES for b in cmdarm.BANDS[s_]),
+       "every live series exists in cmdarm and none of their windows is a control")
 
     # ---- arming
     s = State()
@@ -250,6 +276,17 @@ def selftest():
        "NULL: an order that would take the account under the $300 floor")
     ck(guard(s, tau=10, price=0.95, count=1.0, balance=500.0, stop="cmdlive.stop"),
        "NULL: the stop flag refuses")
+    ck(guard(s, series="KXSILVER15M", **ok_args)
+       and guard(s, series="KXCOPPER15M", **ok_args)
+       and guard(s, series="KXNATGAS15M", **ok_args),
+       "NULL: silver, copper and gas are paper-only and cannot reach the wire")
+    ck(guard(s, series="KXGOLD15M", **ok_args) == []
+       and guard(s, series="KXWTI15M", **ok_args) == [],
+       "...gold and oil, the two with evidence at both ends, are the live list")
+    ck(guard(s, series="KXGOLD15M", window="anti-silver-mid", **ok_args),
+       "NULL: a window labelled 'anti' is a deliberate loser and never goes live")
+    ck(guard(s, series="KXGOLD15M", window="gold-far", **ok_args) == [],
+       "...a real window passes")
 
     # ---- the money ceilings
     s2 = State(); s2.armed = True; s2.spent = 9.50
@@ -296,6 +333,9 @@ def selftest():
     ck(loop.count(wire) == 1, "there is exactly ONE path to the wire in the loop")
     ck("state.orders += 1" in loop and "state.spent +=" in loop,
        "attempts and dollars are both counted, or the ceilings are decoration")
+    ck("HEARTBEAT" in loop and "last_beat" in loop,
+       "the loop writes a heartbeat: the operator's rule is that state is "
+       "derived from evidence of WORK, never from a process being alive")
     ck("said.add(k)" in loop and "if k not in said:" in loop,
        "a repeated refusal is reported ONCE, not four times a second for a "
        "minute -- and it still does not consume the market's one shot")
@@ -313,10 +353,23 @@ def trade_loop(state, series, minutes, rec, dry=False):
     book = livebook.LiveBook().start()
     watching, pend, per_close, looked, bets = {}, {}, collections.Counter(), set(), []
     said = set()            # (ticker, window, reasons) already reported
-    last_disc, last_bal, balance = 0.0, 0.0, None
+    last_disc, last_bal, last_beat, balance = 0.0, 0.0, 0.0, None
     end = time.time() + minutes * 60
     while time.time() < end:
         now = time.time()
+        # A heartbeat, not a process check. The operator's standing rule is
+        # that state is DERIVED, never trusted: "running" is not "working".
+        if now - last_beat > 20:
+            last_beat = now
+            try:
+                with open(HEARTBEAT, "w", encoding="utf-8") as hb:
+                    hb.write(json.dumps({
+                        "t": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "pid": os.getpid(), "orders": state.orders,
+                        "fills": state.fills, "spent": round(state.spent, 4),
+                        "losses": state.losses, "watching": len(watching)}))
+            except OSError:
+                pass
         flag = stopped()
         if flag:
             rec("stop", why=flag)
@@ -366,7 +419,8 @@ def trade_loop(state, series, minutes, rec, dry=False):
                     continue
                 want, px, offer = d
                 n = min(state.size, float(offer))
-                refused = guard(state, tau, px, n, balance, stopped())
+                refused = guard(state, tau, px, n, balance, stopped(),
+                                series=ser, window=cmdarm.label(band))
                 if refused:
                     # ONCE per market per window per reason. A refusal does not
                     # consume the market's one shot (a transient one, like a
@@ -455,7 +509,7 @@ def main():
     ap.add_argument("--signoff", default=None)
     ap.add_argument("--dry", action="store_true",
                     help="arm, guard, log what WOULD be sent, send nothing")
-    ap.add_argument("--series", nargs="*", default=sorted(cmdarm.BANDS))
+    ap.add_argument("--series", nargs="*", default=list(LIVE_SERIES))
     ap.add_argument("--size", type=float, default=SIZE)
     ap.add_argument("--minutes", type=float, default=1440)
     a = ap.parse_args()

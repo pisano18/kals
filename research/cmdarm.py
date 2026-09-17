@@ -91,36 +91,81 @@ sys.path.append(r"C:\Users\Joe\AppData\Local\Temp\kals-work")
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 
-# series -> LIST of windows (tau_lo, tau_hi, price_lo, price_hi, skip_hours),
-# from the GRID (research/pingrid.py, results/RESULTS_grid.md, 5 days, 300
-# settled markets per series, tape population). Each series gets its own
-# windows because they behave differently -- the operator's question.
+# series -> LIST of windows. A window is
+#   (tau_lo, tau_hi, price_lo, price_hi, skip_hours, label)
+# from the GRID's BY-MARKETS table (rule 4), results/RESULTS_grid.md, 5 days,
+# 300 settled markets per series. skip_hours is an ET hour range [lo, hi) read
+# from the TICKER's clock (tickers encode ET); None = every hour.
 #
-# REVISED 2026-09-17 ~15:4xZ on the grid's BY-MARKETS table (rule 4: the
-# first cut counted trades, and three huge markets can make a cell look
-# safe). Markets touched / markets where a buyer took the loser:
+# REVISED AGAIN 2026-09-17 ~16:2xZ. The full by-markets table shows a shape
+# nobody had looked for: **commodities are good at BOTH ENDS and dangerous in
+# the middle.** Every series is worst between roughly 16 and 90 seconds.
 #
-#   GOLD    0-15 s at 95-99c: night 68/0, late 49/0, US 08-14 ET 32/2 --
-#           the COMEX session is where gold loses, so the near window SKIPS
-#           08-14 ET. 16-60 s: 3-8% of markets lose -> dead, as before.
-#           NEW, the safest cell in the whole table: 98-99c with 91-180 s
-#           left, 129 markets, 0 lost (~26 a day). A gold market already at
-#           98c+ two minutes out is a different animal from one that only
-#           got there in the last 30 s. -> a second, FAR window.
-#   WTI     95-99c: 0-60 s 153 markets, 3 lost (2.0%; break-even ~3%).
-#           90-95c: 2-45 s 4-6% (marginal), 46-60 s 58/6 = 10% -> the
-#           90-95c window stops at 45 s.
-#   SILVER  loses even at 0-5 s by markets (95-99c: 74/4 = 5.4%). Kept as
-#           the NEGATIVE CONTROL at (2, 5): if it wins in paper, the arm is
-#           reading the world wrong.
-#   COPPER, NATGAS: negative at nearly every cell. Not traded.
+#   gold, markets/lost: 0-15 s at 95-99c 149/2; 16-90 s 95-99c 423/21 (5%);
+#   91-180 s at 95-99c 379/2 (0.5%).
 #
-# skip_hours is an ET hour range [lo, hi) read from the TICKER's clock, which
-# encodes ET (`26SEP171100` is 11:00 ET); None = every hour.
+# The mechanism fits the contract. These settle on the CLOSE of the 1-minute
+# candle, with the strike the previous candle's close. Far out, the price has
+# already moved away from the strike and the market still prices in a return
+# that mostly does not come -- the favourite is UNDERpriced. In the middle,
+# the outcome genuinely hangs on the last candle, and a "near-certainty" is
+# not one. In the last seconds the candle is nearly closed. Crypto is the
+# opposite shape because it settles on a 60-second AVERAGE that locks in
+# progressively -- which is why its edge lives in the last minute and these
+# live at both ends.
+#
+# THE STANDING CAVEAT (rule 5): every number here is the TAPE. It says an
+# offer was taken at that price, not that WE could have taken it. At 91-180 s
+# the book is wide and some of those trades are resting offers we would never
+# reach. That is exactly what the live penny test (`cmdlive.py`) measures and
+# paper cannot.
 BANDS = {
-    "KXGOLD15M":   [(2, 15, 0.90, 0.99, (8, 14)), (91, 180, 0.98, 0.99, None)],
-    "KXWTI15M":    [(2, 60, 0.95, 0.99, None), (2, 45, 0.90, 0.95, None)],
-    "KXSILVER15M": [(2, 5, 0.90, 0.99, None)],
+    # ---- LIVE-ELIGIBLE (cmdlive.LIVE_SERIES): the two with evidence at both ends
+    "KXGOLD15M": [
+        # 0-15 s: 149 mkts / 2 lost at 95-99c. The 90-95c cells there lose
+        # 5-9% and are NOT included. The near window still skips the COMEX
+        # session, where this cell is 32/2 against 117/0 outside it.
+        (2, 15, 0.95, 0.99, (8, 14), "gold-near"),
+        # 91-180 s: 379 mkts / 2 lost (0.5%) at 95-99c. +1.4 to +2.3c.
+        (91, 180, 0.95, 0.99, None, "gold-far"),
+    ],
+    "KXWTI15M": [
+        # 2-60 s at 95-99c: 254 mkts / 3 lost. Oil's near window is the widest
+        # of anything traded here, crypto included.
+        (2, 60, 0.95, 0.99, None, "wti-near"),
+        # 16-45 s at 90-95c: 104 / 6 (5.8%) against a 7.5% break-even. Thin.
+        (16, 45, 0.90, 0.95, None, "wti-mid"),
+        # 121-180 s at 90-99c: 308 / 6 (1.9%). The 90-95c corner of it is the
+        # best single commodity cell found: 105 mkts, 3 lost, +4.16c. 91-120 s
+        # is NOT included -- oil is negative there except at 98-99c.
+        (121, 180, 0.90, 0.99, None, "wti-far"),
+    ],
+    # ---- PAPER ONLY. Each of these is the best window its series HAS, not a
+    # shrug: the operator asked for a real strategy for the doubtful ones.
+    "KXSILVER15M": [
+        # Silver has no near edge at all (16-60 s loses 5-29% of markets), but
+        # far out it is as good as gold: 187 mkts / 2 lost at 95-99c, +1.4c.
+        (121, 180, 0.95, 0.99, None, "silver-far"),
+        # THE NEGATIVE CONTROL, and a much better one than "silver near" was:
+        # the grid says this exact cell LOSES 5-12% of markets. If the paper
+        # arm comes out ahead here, the machinery is misreading the world and
+        # nothing else it says can be trusted. Never live (label starts "anti").
+        (16, 60, 0.95, 0.99, None, "anti-silver-mid"),
+    ],
+    "KXCOPPER15M": [
+        # Copper is negative in 28 of 32 cells -- but 46-90 s at 98-99c is
+        # 227 mkts / 2 lost (0.9%), +0.5c. Its good zone is the middle, where
+        # the others are worst, which is either a real structural difference
+        # or the sort of thing that evaporates. Paper will say which.
+        (46, 90, 0.98, 0.99, None, "copper-mid"),
+    ],
+    "KXNATGAS15M": [
+        # The weakest window in the file, included because the operator asked
+        # for the doubtful ones to be tried properly: 91-120 s at 95-98c,
+        # 96 mkts / 3 lost, +0.14c a contract. That is break-even with a
+        # rounding error. If it surprises us, this is where.
+        (91, 120, 0.95, 0.98, None, "natgas-far"),
+    ],
 }
 
 
@@ -130,6 +175,10 @@ def hour_et(tk):
         return int(tk.split("-")[1][7:9])
     except (IndexError, ValueError):
         return None
+
+
+def label(band):
+    return band[5] if len(band) > 5 else "?"
 
 
 def band_open(band, tau, hour=None):
@@ -347,32 +396,55 @@ def selftest():
        "the summary splits by series, which is the whole comparison")
     ck(not summarise([]), "NULL: nothing scored -> nothing reported")
 
-    # the windows are the grid's BY-MARKETS table (rule 4), one list per series
+    # The windows are the grid's BY-MARKETS table (rule 4). REVISED 16:2xZ to
+    # the both-ends shape: every commodity is worst between 16 and 90 s.
     g_near, g_far = BANDS["KXGOLD15M"]
-    ck(g_near[:2] == (2, 15) and g_near[4] == (8, 14) and g_far[:4] == (91, 180, 0.98, 0.99),
-       "GOLD: near window 2-15 s skipping the COMEX session 08-14 ET (32 mkts/2 lost there, 117/0 outside); "
-       "far window 91-180 s at 98-99c (129 mkts, 0 lost)")
-    ck(hour_et("KXGOLD15M-26SEP171100-00") == 11 and hour_et("KXGOLD15M-26SEP170345-45") == 3 and hour_et("junk") is None,
+    ck(label(g_near) == "gold-near" and g_near[:4] == (2, 15, 0.95, 0.99) and g_near[4] == (8, 14),
+       "GOLD near: 2-15 s at 95-99c only (the 90-95c cells there lose 5-9%), "
+       "skipping the COMEX session 08-14 ET (32 mkts/2 lost inside, 117/0 outside)")
+    ck(label(g_far) == "gold-far" and g_far[:4] == (91, 180, 0.95, 0.99),
+       "GOLD far: 91-180 s at 95-99c -- 379 markets, 2 lost")
+    ck(hour_et("KXGOLD15M-26SEP171100-00") == 11 and hour_et("KXGOLD15M-26SEP170345-45") == 3
+       and hour_et("junk") is None,
        "the close's ET hour is read from the ticker's own clock")
-    ck(decide(book(yes_ask=0.95), 10, g_near, hour=11) is None and decide(book(yes_ask=0.95), 10, g_near, hour=3) == ("yes", 0.95, 50.0)
-       and decide(book(yes_ask=0.95), 10, g_near, hour=14) == ("yes", 0.95, 50.0),
-       "NULL at 11:00 ET, a bet at 03:00 and at 14:00: the skip is [8, 14)")
-    ck(decide(book(yes_ask=0.985), 120, g_far, hour=11) == ("yes", 0.985, 50.0) and decide(book(yes_ask=0.97), 120, g_far) is None
-       and decide(book(yes_ask=0.985), 60, g_far) is None,
-       "the far window buys 98.5c at 120 s in any hour, refuses 97c there, and refuses 60 s (16-60 s loses 3-8% of markets)")
-    w_hi, w_lo = BANDS["KXWTI15M"]
-    ck(w_hi[:4] == (2, 60, 0.95, 0.99) and w_lo[:4] == (2, 45, 0.90, 0.95)
-       and decide(book(yes_ask=0.92), 55, w_lo) is None and decide(book(yes_ask=0.92), 40, w_lo) == ("yes", 0.92, 50.0)
-       and decide(book(yes_ask=0.96), 55, w_hi) == ("yes", 0.96, 50.0),
-       "WTI: 95-99c to 60 s (153 mkts, 3 lost); 90-95c only to 45 s (46-60 s: 58 mkts, 6 lost)")
-    ck(BANDS["KXSILVER15M"] == [(2, 5, 0.90, 0.99, None)],
-       "SILVER stays as the NEGATIVE control: by markets it loses 5.4% even at 0-5 s")
-    ck(span(BANDS["KXGOLD15M"]) == (2, 180) and span(BANDS["KXWTI15M"]) == (2, 60),
+    ck(decide(book(yes_ask=0.96), 10, g_near, hour=11) is None
+       and decide(book(yes_ask=0.96), 10, g_near, hour=3) == ("yes", 0.96, 50.0)
+       and decide(book(yes_ask=0.96), 10, g_near, hour=14) == ("yes", 0.96, 50.0),
+       "NULL at 11:00 ET; a bet at 03:00 and at 14:00 -- the skip is [8, 14)")
+    ck(decide(book(yes_ask=0.92), 10, g_near, hour=3) is None,
+       "NULL: 92c is below gold's near window, which the table says loses 9%")
+    ck(decide(book(yes_ask=0.96), 120, g_far, hour=11) == ("yes", 0.96, 50.0)
+       and decide(book(yes_ask=0.96), 60, g_far) is None,
+       "the far window buys at 120 s in ANY hour and refuses 60 s -- the dead middle")
+    w_near, w_mid, w_far = BANDS["KXWTI15M"]
+    ck(w_near[:4] == (2, 60, 0.95, 0.99) and w_mid[:4] == (16, 45, 0.90, 0.95)
+       and w_far[:4] == (121, 180, 0.90, 0.99),
+       "WTI: 95-99c to 60 s; 90-95c only 16-45 s; and 121-180 s at 90-99c, "
+       "whose 90-95c corner is the best commodity cell found (105 mkts, 3 lost)")
+    ck(decide(book(yes_ask=0.92), 150, w_far) == ("yes", 0.92, 50.0)
+       and decide(book(yes_ask=0.92), 100, w_far) is None,
+       "WTI far starts at 121 s: 91-120 s is negative for oil except at 98-99c")
+    s_far, s_anti = BANDS["KXSILVER15M"]
+    ck(label(s_far) == "silver-far" and s_far[:4] == (121, 180, 0.95, 0.99),
+       "SILVER has a real strategy after all -- far out it is as good as gold "
+       "(187 markets, 2 lost). Its near window was the mistake, not the series")
+    ck(label(s_anti).startswith("anti") and s_anti[:4] == (16, 60, 0.95, 0.99),
+       "and the NEGATIVE CONTROL is now a cell the grid says LOSES 5-12%, "
+       "which is a real control; if paper wins there, nothing here is trusted")
+    ck(label(BANDS["KXCOPPER15M"][0]) == "copper-mid"
+       and BANDS["KXCOPPER15M"][0][:4] == (46, 90, 0.98, 0.99),
+       "COPPER's only positive zone is the MIDDLE, where every other series is "
+       "worst: 227 markets, 2 lost")
+    ck(label(BANDS["KXNATGAS15M"][0]) == "natgas-far"
+       and BANDS["KXNATGAS15M"][0][:4] == (91, 120, 0.95, 0.98),
+       "NATGAS gets its single best cell (+0.14c) rather than being dropped")
+    ck(span(BANDS["KXGOLD15M"]) == (2, 180) and span(BANDS["KXWTI15M"]) == (2, 180)
+       and span(BANDS["KXCOPPER15M"]) == (46, 90),
        "the look records span every window of the series")
-    ck(all(max(b[3] for b in v) == 0.99 for v in BANDS.values()) and PRICE_HI == 0.98,
-       "every traded series has a window to 99c on the grid's evidence; the DEFAULT stays at the live bot's 98c")
-    ck("KXCOPPER15M" not in BANDS and "KXNATGAS15M" not in BANDS,
-       "COPPER and NATGAS are not traded: negative in nearly every grid cell")
+    ck(all(max(b[3] for b in v) <= 0.99 for v in BANDS.values()) and PRICE_HI == 0.98,
+       "no window runs above 99c; the DEFAULT stays at the live bot's 98c")
+    ck(len(BANDS) == 5 and all(len(b) == 6 for v in BANDS.values() for b in v),
+       "all five series are traded in paper now, and every window carries its label")
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
     body = src[:src.index("def selftest(")]
     loop = src[src.index("def main("):]

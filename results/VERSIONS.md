@@ -1,3 +1,73 @@
+# v-cmdpenny -- 2026-09-17 16:14Z -- LIVE: the COMMODITY PENNY TEST, gold and oil, ONE contract
+
+**Operator, 2026-09-17: "I'm ready for commodity penny testing"**, and then
+*"Make the good commodities live, also run paper tests on the ones you don't
+have confidence in, but do your best to create the best strategy you possibly
+can for them."*
+
+**This is a SECOND live process, not a change to the crypto bot.** `pinrun.py
+--live` is untouched: same flags, same size, same gates. Nothing about
+v-staged or any earlier version changed.
+
+    C:\Python314\python.exe -u research\cmdlive.py --live
+        --signoff "commodity penny test" --minutes 1440
+
+**What it does.** Watches KXGOLD15M and KXWTI15M. When the book offers the
+priced-in side inside one of that series' windows, it buys **one contract**.
+First live fill, 16:14:5xZ: `KXWTI15M-26SEP171215-15` YES @ 90c, 1 contract,
+41 s left, $0.90 committed.
+
+**The windows** (`cmdarm.BANDS`, imported by reference so the paper control
+cannot drift from the live test), from the grid's BY-MARKETS table:
+
+| window | when | price | tape, by markets |
+|---|---|---|---|
+| gold-near | 2-15 s, **skips 08-14 ET** | 95-99c | 149 / 2 lost; inside COMEX hours 32 / 2, outside 117 / 0 |
+| gold-far | 91-180 s | 95-99c | 379 / 2 lost (0.5%) |
+| wti-near | 2-60 s | 95-99c | 254 / 3 |
+| wti-mid | 16-45 s | 90-95c | 104 / 6 (5.8% against a 7.5% break-even) |
+| wti-far | 121-180 s | 90-99c | 308 / 6; its 90-95c corner is the best commodity cell found, 105 / 3, +4.16c |
+
+The shape behind them: commodities are good at BOTH ENDS of the quarter hour
+and dangerous between 16 and 90 seconds -- the opposite of crypto, because
+they settle on the CLOSE of a 1-minute candle rather than a 60-second average.
+
+**Silver, copper and natural gas are PAPER ONLY** (`cmdarm.py`, all five
+series), each on the best window its series has: silver 121-180 s at 95-99c
+(187 / 2 -- silver's near window was the mistake, not the series), copper
+46-90 s at 98-99c (227 / 2, and the middle is where every other series is
+worst), natural gas 91-120 s at 95-98c (96 / 3, +0.14c, the weakest window in
+the file). `cmdarm` also runs `anti-silver-mid`, a window the grid says LOSES
+5-12%, as a negative control. `cmdlive.LIVE_SERIES` and an "anti" label check
+mean none of those can reach the wire even if passed on the command line.
+
+**What it can cost.** One contract per order; **$10.00 total across the run**,
+counted from fills; 60 orders; **2 losses and it writes its own stop file**; a
+$300 account floor so the crypto bot's capital is untouchable; 90-99c only;
+never inside 2 s. Realistic worst case is the 2-loss brake at about $2.
+Balance at launch $579.44.
+
+**Evidence, and its limit.** All tape (rule 5). The tape says an offer was
+taken at that price, not that WE could take it; on crypto those populations
+differed 31x in loss rate. Measuring that gap IS this test.
+`results/PREREG_commodity_live.md` fixes the bar BEFORE the first fill: kill
+at 3 losses in 30 fills, or if silver's paper control beats gold and oil;
+proceed only at <= 1 loss in 30 fills with at least 20 fills; **no size
+increase without a fresh sign-off.**
+
+**Deliberately NOT in `boot_all.ps1`.** A process that spends money should not
+come back from a reboot without a human deciding.
+
+**REVERT -- either alone is enough:**
+
+```
+type nul > C:\kals-repoesults\cmdlive.stop
+powershell -Command "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | ? { $_.CommandLine -like '*cmdlive.py*' } | % { Stop-Process -Id $_.ProcessId -Force }"
+```
+
+Deleting `results/cmdlive.stop` is what allows a restart. The crypto bot is
+unaffected by either command.
+
 # v-staged -- 2026-09-17 ~15:1xZ -- LIVE: a THIRD of a bet at 31-45 s, topped up at 30
 
 **Operator, 2026-09-17: "As long as you have the 45 second is built as safely
@@ -205,7 +275,8 @@ a proven threshold.
 ```powershell
 cd C:\kals-repo
 (Get-Content restart_bot.ps1) -replace '"--hedge-belief", "0.60"', '"--hedge-belief", "0.80"' | Set-Content restart_bot.ps1
-powershell -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1
+powershell -ExecutionPolicy Bypass -File C:\kals-repo
+estart_bot.ps1
 ```
 (or delete the `--hedge-belief` line entirely to return to the 0.80 default)
 

@@ -103,6 +103,48 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 16:1xZ -- COMMODITIES GO LIVE (gold + oil, one contract), AND THE U-SHAPE
+
+Operator: *"I'm ready for commodity penny testing"*, then *"Make the good
+commodities live, also run paper tests on the ones you don't have confidence
+in, but do your best to create the best strategy you possibly can for them.
+Maybe we'll be surprised."*
+
+**THE FINDING that reshaped everything: commodities are good at BOTH ENDS of
+the quarter hour and dangerous in the middle (16-90 s).** Gold at 95-99c, by
+markets: 149/2 inside 15 s, 423/21 in the middle, **379/2 at 91-180 s**. The
+mechanism fits the contract -- these settle on the CLOSE of a 1-minute candle
+with the strike the previous candle's close, so far out the price has already
+left the strike and the market still prices a return that mostly does not
+come; in the middle the outcome really does hang on the last candle. Crypto
+is the opposite shape because it settles on a 60-second AVERAGE. The earlier
+"commodities only work in the last seconds" read was an artefact of never
+looking past 60 s.
+
+**Silver was misjudged.** Its NEAR window is terrible (16-60 s loses 5-29% of
+markets) but 121-180 s at 95-99c is 187 markets / 2 lost, as good as gold. The
+near window was the mistake, not the series. Copper's only positive zone is
+the MIDDLE (46-90 s at 98-99c, 227/2) -- inverted from everything else.
+Natural gas has one barely-positive cell (91-120 s at 95-98c, 96/3, +0.14c)
+and is in paper because the operator asked for the doubtful ones to be tried
+properly, not because it looks good.
+
+- `research/cmdlive.py` (NEW, LIVE, v-cmdpenny): gold + WTI, ONE contract,
+  $10 run ceiling, 60 orders, 2 losses then it writes its own stop file, $300
+  account floor, 90-99c, never inside 2 s, honours the desktop app's stop
+  file, heartbeat at `results/cmdlive.heartbeat`. `LIVE_SERIES` and an "anti"
+  label check mean silver/copper/gas and the control window cannot reach the
+  wire even if passed on the command line. NOT in boot_all: a money process
+  should not return from a reboot without a human.
+- `results/PREREG_commodity_live.md` written BEFORE the first fill.
+- First fills 16:14:5xZ: WTI YES @90c (wti-mid) and @95c (wti-near), same
+  market, two windows, $1.85 committed.
+- `cmdarm.py` (paper) now runs ALL FIVE series on their own best windows plus
+  `anti-silver-mid`, a window the grid says loses 5-12%, as a real negative
+  control -- much better than the old "silver near" control.
+- Windows are imported by reference from `cmdarm.BANDS`, so paper and live
+  cannot drift.
+
 ## 16:0xZ -- A WRONG DAY TOTAL, AND THE FILE THAT STOPS IT REPEATING (`research/pinday.py`)
 
 The operator was told the day was "+$47". It was **+$23**. The query behind
