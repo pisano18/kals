@@ -77,6 +77,8 @@ PX_BANDS = [(0.80, 0.90), (0.90, 0.95), (0.95, 0.98), (0.98, 0.99)]
 def tau_label(tb):
     return "%d-%d s" % (tb[0], tb[1] - 1)
 FAV_TAU = 60          # the side trading >= 90c here is "the favourite"
+WOBBLE_TAU = 30       # the wobble is measured inside the last 30 s
+WOBBLE_BANDS = [(0.90, 1.01), (0.80, 0.90), (0.70, 0.80), (0.50, 0.70), (0.0, 0.50)]
 CRYPTO = {"KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M", "KXDOGE15M", "KXBNB15M",
           "KXZEC15M", "KXHYPE15M", "KXNEAR15M", "KXADA15M", "KXBCH15M", "KXTON15M"}
 
@@ -173,6 +175,15 @@ class Acc:
         self.fav = {}                   # tk -> (side, fav_won)  decided from trades near FAV_TAU
         self.late = collections.defaultdict(list)   # tk -> late rows (kept only while unknown or flipped)
         self.markets = collections.Counter()
+        # THE WOBBLE: for every market WITH a favourite, the lowest price the
+        # favourite's side traded at inside the last WOBBLE_TAU seconds, and
+        # when. One tuple per market. The reversal question is then honest:
+        # "when the favourite traded down to X, how often did it end up
+        # losing?" -- conditioned on what a trader could SEE, not on the
+        # outcome. The first screen kept rows only for markets whose
+        # favourite LOST, so every new-side buyer in it was right by
+        # construction, and it printed 0.0% everywhere. That was leakage.
+        self.wob = {}                   # tk -> (min_fav_price, tau_at_min)
 
     def add(self, r):
         tb = band_of(r["tau"], TAU_BANDS)
@@ -193,6 +204,15 @@ class Acc:
                 self.markets[r["ser"], "flips"] += 1
             else:
                 self.late.pop(tk, None)     # favourite won: nothing to keep
+        f0 = self.fav.get(tk)
+        if f0 is not None and r["tau"] <= WOBBLE_TAU:
+            # price of the FAVOURITE's side implied by this trade: a buyer of
+            # the favourite paid `paid`; a buyer of the other side at p implies
+            # the favourite at 1 - p.
+            fav_px = r["paid"] if r["side"] == f0[0] else 1.0 - r["paid"]
+            cur = self.wob.get(tk)
+            if cur is None or fav_px < cur[0]:
+                self.wob[tk] = (round(fav_px, 4), r["tau"])
         if r["tau"] <= FAV_TAU:
             f = self.fav.get(tk)
             # Keep late rows only for a KNOWN flip, or while the favourite is
@@ -209,6 +229,7 @@ class Acc:
         return {"grid": [[k[0], list(k[1]), list(k[2]), v] for k, v in self.grid.items()],
                 "fav": {tk: list(v) for tk, v in self.fav.items()},
                 "late": {tk: v for tk, v in self.late.items() if tk in self.fav and not self.fav[tk][1]},
+                "wob": {tk: list(v) for tk, v in self.wob.items()},
                 "markets": [[k[0], k[1], v] for k, v in self.markets.items()]}
 
     @classmethod
@@ -218,9 +239,29 @@ class Acc:
             a.grid[(ser, tuple(tb), tuple(pb))] = v
         a.fav = {tk: tuple(v) for tk, v in d.get("fav", {}).items()}
         a.late = collections.defaultdict(list, {tk: [tuple(x) for x in v] for tk, v in d.get("late", {}).items()})
+        a.wob = {tk: tuple(v) for tk, v in d.get("wob", {}).items()}
         for ser, k, v in d.get("markets", []):
             a.markets[ser, k] = v
         return a
+
+
+def wobble(acc):
+    """{series: {wobble_band: [markets, favourite_lost]}}: of the markets whose
+    favourite traded DOWN to that band inside the last WOBBLE_TAU seconds, how
+    many ended with the favourite losing. Conditioned on the visible price,
+    never on the outcome."""
+    out = collections.defaultdict(lambda: collections.defaultdict(lambda: [0, 0]))
+    for tk, (side, fav_won) in acc.fav.items():
+        w = acc.wob.get(tk)
+        if w is None:
+            continue
+        b = band_of(w[0], WOBBLE_BANDS[::-1])          # ascending for band_of
+        if b is None:
+            continue
+        c = out[tk.split("-")[0]][b]
+        c[0] += 1
+        c[1] += (not fav_won)
+    return out
 
 
 def walk(files, settled, acc, on_progress=None, every=25):
@@ -319,19 +360,34 @@ def report(acc, out=sys.stdout):
         if s < 1000:
             continue
         p("  %-12s " % ser + "  ".join("%s %3.0f%%" % (tau_label(tb), 100 * tot[tb] / s) for tb in TAU_BANDS))
-    flips, rv = reversal(acc)
+    wb = wobble(acc)
     p("")
-    p("THE REVERSAL SCREEN: the favourite at %d s LOST. What buyers of the NEW side then paid, and whether they were right." % FAV_TAU)
-    for ser in sorted(rv, key=lambda s: (s not in CRYPTO, s)):
-        nm, nf = flips[ser, "markets"], flips[ser, "flips"]
-        p("  %s: %d markets with a favourite at %ds, %d flipped (%.1f%%)" % (ser, nm, nf, 100 * nf / max(1, nm)))
-        for (tb, pb), c in sorted(rv[ser].items(), key=lambda kv: (kv[0][0], kv[0][1])):
-            if c[0] < 10:
-                continue
-            p("     %-9s  %-6s  %5d trades  bought the LOSER %4.1f%%  mean paid %5.1fc  contracts %.0f"
-              % (tau_label(tb), pb, c[0], 100 * c[1] / c[0], 100 * c[3] / c[0], c[2]))
+    p("THE REVERSAL SCREEN, done honestly: markets with a favourite (>=90c at %ds), bucketed by the LOWEST price" % FAV_TAU)
+    p("  the favourite traded at inside the last %ds. Of those, how many ended with the favourite LOSING." % WOBBLE_TAU)
+    p("  This is what a trader could SEE at the time. A wobble to 50-70c that flips 80%% of the time is a buy of the")
+    p("  new side at ~30-50c; one that flips 30%% of the time is the hedge-only rule being right.")
     p("")
-    p("  Read the reversal rows against this: a NEW-side buyer at 70-90c breaks even at ~%d%% lost." % 20)
+    p("  %-12s | " % "series" + " | ".join("%-16s" % ("fav fell to %.0f-%.0fc" % (100 * lo, 100 * min(hi, 1.0))) for lo, hi in WOBBLE_BANDS))
+    for ser in sorted(wb, key=lambda s: (s not in CRYPTO, s)):
+        cells = []
+        for b in WOBBLE_BANDS:
+            c = wb[ser].get(b)
+            if not c or c[0] < 5:
+                cells.append("%-16s" % ("%d mkts" % (c[0] if c else 0)))
+            else:
+                cells.append("%-16s" % ("%4d mkts %3.0f%% lost" % (c[0], 100 * c[1] / c[0])))
+        p("  %-12s | " % ser + " | ".join(cells))
+    tot = collections.defaultdict(lambda: [0, 0])
+    for ser in wb:
+        if ser in CRYPTO:
+            for b, c in wb[ser].items():
+                tot[b][0] += c[0]
+                tot[b][1] += c[1]
+    p("  %-12s | " % "ALL CRYPTO" + " | ".join("%-16s" % (("%4d mkts %3.0f%% lost" % (tot[b][0], 100 * tot[b][1] / tot[b][0])) if tot[b][0] else "") for b in WOBBLE_BANDS))
+    flips, _rv = reversal(acc)
+    p("")
+    p("  Flip rate overall (favourite at %ds lost): " % FAV_TAU + ", ".join(
+        "%s %.1f%%" % (s, 100 * flips[s, "flips"] / max(1, flips[s, "markets"])) for s in sorted({k[0] for k in flips}) if flips[s, "markets"]))
 
 
 def selftest():
@@ -400,11 +456,25 @@ def selftest():
     acc5.add(scan_trade(tr("yes", 0.62, 20, ticker=tk5), {tk5: 1.0}))   # past it, still no favourite
     ck(tk5 not in acc5.late and tk5 not in acc5.fav,
        "a market with no favourite at 60 s keeps NO late rows -- most markets are like this")
+    # THE WOBBLE: what the favourite traded down to, conditioned on the visible price
+    acc6 = Acc()
+    # both on the SAME close as tr()'s timestamps: a ticker on a later close
+    # would put every planted trade 900 s out and scan_trade would drop it
+    tk6 = "KXXRP15M-26SEP161000-00"; tk7 = "KXETH15M-26SEP161000-00"
+    s6 = {tk6: 0.0, tk7: 1.0}
+    acc6.add(scan_trade(tr("yes", 0.95, 60, ticker=tk6), s6))   # favourite YES...
+    acc6.add(scan_trade(tr("no", 0.45, 20, ticker=tk6), s6))    # ...someone buys NO at 45c: favourite implied 55c
+    acc6.add(scan_trade(tr("yes", 0.95, 60, ticker=tk7), s6))   # favourite YES, holds
+    acc6.add(scan_trade(tr("yes", 0.97, 10, ticker=tk7), s6))   # traded UP, min stays 95c
+    ck(acc6.wob[tk6] == (0.55, 20) and acc6.wob[tk7] == (0.95, 60) or acc6.wob[tk7][0] == 0.95,
+       "the wobble is the LOWEST price the favourite's side implied inside the window, from either side's trades")
+    wb = wobble(acc6)
+    ck(wb["KXXRP15M"][(0.50, 0.70)] == [1, 1] and wb["KXXRP15M"][(0.90, 1.01)] == [1, 0],
+       "wobble to 50-70c: 1 market, favourite lost; stayed at 90c+: 1 market, favourite won -- conditioned on the price, not the outcome")
     # the accumulator survives a round trip through the cache
-    acc4 = Acc.from_json(json.loads(json.dumps(acc2.to_json())))
-    f4, r4 = reversal(acc4)
-    ck(f4["KXSOL15M", "flips"] == 1 and r4["KXSOL15M"][((16, 31), "70-90c")][0] == 1
-       and grid(acc4) == grid(acc2), "the cache round-trip preserves the grid and the flip rows")
+    acc4 = Acc.from_json(json.loads(json.dumps(acc6.to_json())))
+    ck(wobble(acc4) == wobble(acc6) and grid(acc4) == grid(acc6) and acc4.fav == acc6.fav,
+       "the cache round-trip preserves the grid, the favourites and the wobbles")
     print("pingrid selftest: OK")
 
 

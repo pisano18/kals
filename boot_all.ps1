@@ -190,6 +190,16 @@ if (-not $NoArms) {
                 $started++
             }
         }
+        # the commodities paper arm (gold / silver / WTI). Paper only: its own
+        # self-test asserts it cannot order. results/RESULTS_commodities.md.
+        if (-not (RunningPy '*cmdarm.py*')) {
+            Say "cmdarm.py is NOT running -- starting the commodities paper arm"
+            Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\cmdarm.py", "--minutes", "4320") `
+                -WorkingDirectory $repo -WindowStyle Hidden `
+                -RedirectStandardOutput "$res\arm-cmd.out" -RedirectStandardError "$res\arm-cmd.err"
+            Start-Sleep -Seconds 3
+            $started++
+        }
         if ($race.Count -eq 0) {
             Say "no Coin Race arms running -- starting arm3 and arm4"
             Start-Process -FilePath $py -ArgumentList @("-u", "research\pinracearm.py", "--minutes", "4320", "--tau-max", "30", "--min-gap-bp", "4", "--min-price", "0.90", "--one-per-race-band") `

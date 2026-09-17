@@ -91,17 +91,27 @@ sys.path.append(r"C:\Users\Joe\AppData\Local\Temp\kals-work")
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 
-# series -> (tau_lo, tau_hi) the tape says is worth buying. GOLD dies at 16-30s
-# (7.69% lost) so its window stops at 15; WTI is good at every horizon and is
-# given the widest. SILVER is marginal and included ONLY to keep a losing arm
-# in the sample -- if it prints worse than gold and WTI live, that is evidence
-# the whole thing is real rather than a fluke of two series.
+# series -> (tau_lo, tau_hi, price_lo, price_hi), from the GRID
+# (research/pingrid.py, results/RESULTS_grid.md, 5 days, 300 settled markets
+# per series, tape population). Each series gets its own window because they
+# behave differently -- the operator's question, and the grid's answer:
+#
+#   GOLD    0-5 s: 90-99c lose 0.0-0.5%. 6-15 s: 90-95c 3.5%, 95-98c 2.1%,
+#           98-99c 0.1%. 16-30 s: 95-98c loses 10.3%. -> (2, 15) at 90-99c.
+#           The 98-99c column is NEW: 0.0-0.1% lost on 3,700 trades, +1.1c
+#           a contract, and by far the deepest.
+#   WTI     good at EVERY horizon to 60 s: 95-99c 0.0-1.5% from 0 to 60 s,
+#           90-95c 2-4% at 16-45 s. -> (2, 60) at 90-99c. The widest window
+#           of anything we trade, including crypto.
+#   SILVER  only 0-5 s at 90-95c (2.3%) and 98-99c (0.4-0.9%) pay; 95-98c
+#           loses at every horizon. Kept as the CONTROL at (2, 5), 90-99c.
+#   COPPER, NATGAS: negative at nearly every cell. Not traded.
 BANDS = {
-    "KXGOLD15M":   (2, 15),
-    "KXWTI15M":    (2, 30),
-    "KXSILVER15M": (2, 5),
+    "KXGOLD15M":   (2, 15, 0.90, 0.99),
+    "KXWTI15M":    (2, 60, 0.90, 0.99),
+    "KXSILVER15M": (2, 5, 0.90, 0.99),
 }
-PRICE_LO = 0.90
+PRICE_LO = 0.90          # defaults, used when a series has no entry
 PRICE_HI = 0.98
 MAX_BOOK_AGE_MS = 2500
 SIZE = 100.0                  # contracts per paper bet, fixed: this arm is
@@ -109,13 +119,15 @@ SIZE = 100.0                  # contracts per paper bet, fixed: this arm is
 MAX_PER_CLOSE = 1             # one paper bet per market per close
 
 
-def decide(best, tau, band, price_lo=PRICE_LO, price_hi=PRICE_HI,
+def decide(best, tau, band, price_lo=None, price_hi=None,
            max_age=MAX_BOOK_AGE_MS):
     """(want, price, size) to buy, or None.
 
     The rule: inside the series' time band, if either side's ASK sits in the
     price window, buy that side. At most one side can qualify, because the two
     asks sum to about 100c -- so there is never a choice to get wrong.
+    `band` is (tau_lo, tau_hi) or (tau_lo, tau_hi, price_lo, price_hi); an
+    explicit price_lo/price_hi argument wins over the band's.
     """
     if not best or best.get("suspect"):
         return None
@@ -124,6 +136,10 @@ def decide(best, tau, band, price_lo=PRICE_LO, price_hi=PRICE_HI,
         return None
     if not (band[0] <= tau <= band[1]):
         return None
+    if price_lo is None:
+        price_lo = band[2] if len(band) > 2 else PRICE_LO
+    if price_hi is None:
+        price_hi = band[3] if len(band) > 3 else PRICE_HI
     for want in ("yes", "no"):
         px = best.get("%s_ask" % want)
         sz = best.get("%s_ask_size" % want)
@@ -241,7 +257,17 @@ def selftest():
     ck(decide(book(no_ask=0.93), 10, band) == ("no", 0.93, 50.0),
        "so is a NO ask at 93c -- the side is whichever one is expensive")
     ck(decide(book(yes_ask=0.99), 10, band) is None,
-       "NULL: 99c is above the window; the win no longer pays for the fee")
+       "NULL: 99c is above the default window; the win no longer pays for the fee")
+    ck(decide(book(yes_ask=0.985), 10, BANDS["KXGOLD15M"]) == ("yes", 0.985, 50.0),
+       "...but GOLD's own window runs to 99c: the grid found 98-99c loses 0.0-0.1% inside 15 s")
+    ck(decide(book(yes_ask=0.995), 10, BANDS["KXGOLD15M"]) is None,
+       "NULL: 99.5c is above even GOLD's window")
+    ck(decide(book(yes_ask=0.95), 55, BANDS["KXWTI15M"]) == ("yes", 0.95, 50.0),
+       "WTI's window runs to 60 s: the grid found 95-99c loses 0.0-1.5% at every horizon to 60")
+    ck(decide(book(yes_ask=0.95), 55, BANDS["KXGOLD15M"]) is None,
+       "NULL: 55 s is outside GOLD's window, where 95-98c loses 10%")
+    ck(decide(book(yes_ask=0.95), 10, (2, 15), price_hi=0.94) is None,
+       "an explicit price window overrides the band's")
     ck(decide(book(yes_ask=0.80), 10, band) is None,
        "NULL: 80c is below the window -- not a near-certainty")
     ck(decide(book(yes_ask=0.95), 20, band) is None,
@@ -286,11 +312,12 @@ def selftest():
     ck(not summarise([]), "NULL: nothing scored -> nothing reported")
 
     # the bands are the tape's, and GOLD's stops before the band it loses in
-    ck(BANDS["KXGOLD15M"][1] == 15 and BANDS["KXWTI15M"][1] == 30,
-       "GOLD's window stops at 15 s (16-30 s lost 7.69% on the tape); WTI's "
-       "runs to 30 s (1.04% there, its best band)")
-    ck(PRICE_HI == 0.98,
-       "the price window tops out at the same 98c ceiling the live bot uses")
+    ck(BANDS["KXGOLD15M"][:2] == (2, 15) and BANDS["KXWTI15M"][:2] == (2, 60) and BANDS["KXSILVER15M"][:2] == (2, 5),
+       "GOLD stops at 15 s (95-98c loses 10.3% at 16-30 s); WTI runs to 60 s; SILVER, the control, to 5 s")
+    ck(all(b[3] == 0.99 for b in BANDS.values()) and PRICE_HI == 0.98,
+       "every traded series runs to 99c on the grid's evidence; the DEFAULT stays at the live bot's 98c")
+    ck("KXCOPPER15M" not in BANDS and "KXNATGAS15M" not in BANDS,
+       "COPPER and NATGAS are not traded: negative in nearly every grid cell")
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
     body = src[:src.index("def selftest(")]
     for bad in ("pintake", "ordercli", "post_only", "/portfolio/orders"):
@@ -328,10 +355,9 @@ def main():
         fh.write(json.dumps(kw) + "\n")
 
     rec("start", series=a.series, bands={k: list(v) for k, v in BANDS.items()},
-        price_lo=PRICE_LO, price_hi=PRICE_HI, size=SIZE, mode="paper")
-    print("cmdarm PAPER -- %s | bands %s | %.0f-%.0fc | log %s"
-          % (", ".join(a.series), {k: BANDS[k] for k in a.series},
-             100 * PRICE_LO, 100 * PRICE_HI, os.path.basename(log)), flush=True)
+        price_lo=PRICE_LO, price_hi=PRICE_HI, size=SIZE, mode="paper", version="grid-1")
+    print("cmdarm PAPER -- %s | bands %s | log %s"
+          % (", ".join(a.series), {k: BANDS[k] for k in a.series}, os.path.basename(log)), flush=True)
 
     book = livebook.LiveBook().start()
     watching = {}
@@ -375,24 +401,36 @@ def main():
             # on each side seen INSIDE the band and the tau it was seen at. So
             # "why no bet on that close" is answerable from the log instead of
             # guessed -- three closes passed with one bet before this existed.
-            lo, hi = BANDS.get(ser, (2, 15))
+            lo, hi = BANDS.get(ser, (2, 15))[:2]
             lk = looks.setdefault(tk, {"ser": ser, "close": close_s, "yes": None, "no": None,
                                        "looks": 0, "fresh": 0})
             if best and lo <= tau <= hi:
                 lk["looks"] += 1
-                if best.get("age_ms") is not None and best["age_ms"] <= MAX_BOOK_AGE_MS:
+                fresh = (best.get("age_ms") is not None and best["age_ms"] <= MAX_BOOK_AGE_MS
+                         and not best.get("suspect"))
+                if fresh:
                     lk["fresh"] += 1
-                for want in ("yes", "no"):
-                    px = best.get("%s_ask" % want)
-                    sz = best.get("%s_ask_size" % want)
-                    if px is not None and sz:
-                        cur = lk[want]
-                        if cur is None or px < cur[0]:
-                            lk[want] = (float(px), float(sz), tau)
+                # Track the PRICED-IN side only: an ask at or above 50c is a
+                # seller of the side the market thinks wins, and that is the
+                # only offer this strategy can use. The first version tracked
+                # the cheapest ask on each side and faithfully reported the
+                # LOSER at 0.1c, which says nothing. Suspect or stale books
+                # are not tracked, so a resync's garbage cannot post a price.
+                if fresh:
+                    for want in ("yes", "no"):
+                        px = best.get("%s_ask" % want)
+                        sz = best.get("%s_ask_size" % want)
+                        if px is not None and sz and px >= 0.50:
+                            cur = lk[want]
+                            if cur is None or px < cur[0]:
+                                lk[want] = (float(px), float(sz), tau)
             if tau < lo and tk not in looked:
                 looked.add(tk)
+                offered = lk["yes"] or lk["no"]          # the priced-in side, if anyone sold it
                 rec("look", ticker=tk, series=ser, looks=lk["looks"], fresh=lk["fresh"],
-                    yes_ask=lk["yes"], no_ask=lk["no"], bet=per_close[tk] > 0)
+                    winner_side_ask=lk["yes"] or lk["no"],
+                    side="yes" if lk["yes"] else ("no" if lk["no"] else None),
+                    nobody_selling=offered is None, bet=per_close[tk] > 0)
             if per_close[tk] >= MAX_PER_CLOSE:
                 continue
             d = decide(best, tau, BANDS.get(ser, (2, 15)))
