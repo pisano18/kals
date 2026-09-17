@@ -39,23 +39,70 @@ this version -- the sweep fixed that.
 
 ## 3. The levers, with numbers
 
-**A. Take the whole offer, not just SIZE (NEW, biggest, cheapest).** The bot asks
-for SIZE contracts per order. The offers it hits are often much deeper at or
-under the very limit price it sent, and the per-close budget (2 x SIZE) already
-permits twice that exposure -- it just needs a SECOND market to spend it, which
-only 6% of scan-seconds have.
+**A. Take deeper on one coin -- AND MY FIRST VERSION OF THIS WAS WRONG.**
 
-| window | asked | more contracts at the SAME limit within the existing budget | daytime | at the window's realised c/contract |
-|---|---|---|---|---|
-| current version, 14 h | 1,657 | **+753 (+45%)**, on 11 of 21 closes | +55% | ~$49/day at 3.83c |
-| sweep era, 3.5 days | 12,143 | **+3,769 (+31%)**, on 57 of 131 closes | +24% | ~$31/day at 2.89c |
+**WITHDRAWN: "+45% more contracts at the same limit, same worst case, free."**
+That was computed from the `signal` record's `take_n`/`size` fields, which
+describe the depth at the TOUCH price only. The order the bot actually sends is
+larger: `--depth-ladder` already expands the ask to the full SIZE and sweeps the
+ladder up to the limit. Checked order by order against `body.count`:
+**0 of 31 orders in the current version asked for less than SIZE while more was
+on offer under the same limit.** There are no free contracts. The bot is
+already taking everything its per-market rule allows.
 
-Same price, same gate, same close, same worst case per close as today's budget.
-The one new risk is CONCENTRATION: up to 2 x SIZE on one coin instead of spread
-over two coins that settle on the same second at rho ~0.8 anyway. Not built:
-`pintake` caps an order at SIZE (`max_take_count`) and the change touches the
-live order path, so it goes in as a PAPER-ONLY flag first, after the 3-5 AM
-maintenance window, with its own PREREG. Do not deploy from this file.
+So the real proposal is the one I described as merely a side effect: **raise the
+per-market cap above SIZE.** That is new exposure on one coin, and it must be
+priced as such.
+
+| cap on ONE market | extra contracts, current version | extra, sweep era | ~$/day at the realised rate |
+|---|---|---|---|
+| 1.0 x SIZE (today) | +0 (+0%) | +238 (+2%) | $0-2 |
+| **1.2 x SIZE** | **+384 (+18%)** | **+2,252 (+20%)** | **$19-25** |
+| 1.6 x SIZE | +1,067 (+50%) | +6,100 (+54%) | $50-70 |
+| 2.0 x SIZE (full close budget) | +1,702 (+80%) | +9,796 (+87%) | $81-112 |
+
+**What caps it is the DRAWDOWN BRAKE, and the arithmetic is unforgiving.**
+`MAX_DRAWDOWN = 0.20` measures the bank against a high-water mark stored in
+`results/pinrun-hwm.json`, which never falls on its own. Bank $556.02,
+high-water $574.79: the bank may fall to $459.83 before the bot HALTS, so there
+is room for a **$96.19** loss.
+
+Measured cost of a losing coin-leg, all 11 on the record, 430 contracts:
+**62.3c per contract gross, 49.3c net after the hedge (which recovered 21%
+overall and NOTHING on 7 of the 11), worst observed 98.0c.**
+
+- At the worst observed 98c: $96.19 / 0.98 = **98 contracts**. SIZE is 94.
+  **Today's single-coin position is already at 96% of what the brake allows.**
+- At a fresh high the room is 20% of bank = $111.20 = 113 contracts = **1.21 x SIZE**.
+- The FULL close budget on one coin (2 x SIZE = 188) loses $184 = **33% of the
+  bank**, which is **1.66x what the brake permits**.
+
+**And it cannot be grown out of.** SIZE = bank / 5.88 (BANK_BRAKE 3.0), so the
+worst close is always bank/3 = 33%, while the brake is always 20%. Both scale
+with the bank. The ratio is fixed until SIZE hits `AUTO_SIZE_MAX` 250 at a bank
+of ~$1,470; the full budget only fits under the brake above a bank of ~$2,450.
+
+**THE LATENT INCONSISTENCY THIS EXPOSED, which is worth more than the idea.**
+The sizing rail (BANK_BRAKE 3.0) permits a close that the ruin rail
+(MAX_DRAWDOWN 0.20) would halt the bot for. They contradict each other by 1.66x.
+It has never fired because **two coins have never both lost** (below) -- an
+empirical fact that no rail enforces. If one close ever did lose both legs, the
+bot would halt, and because the high-water mark persists it would **halt again on
+every restart** until the bank recovered, which it cannot do while halted. That
+is a bot-offline-until-manual-intervention failure mode sitting in the current
+design, not in the proposal.
+
+**A TWO-COIN CLOSE IS GENUINELY TWO BETS -- so the current spreading is real.**
+Over 101 closes where 2+ different coins were held: **0 had every coin lose.**
+Given one coin lost, the other lost **0 of 9** times (baseline per-leg loss rate
+4.00%). The 95% upper bound on that conditional rate is 33% (rule of three on
+9), so this is a lean, not a proof -- but it leans the safe way, and it is why
+the 1.66x inconsistency has stayed harmless.
+
+**Not built, and not recommended as a fixed multiple.** If it is done, the honest
+rule is a LIVE cap: contracts on one market <= (bank - 0.8 x high-water) / 0.98,
+which is 98 today (i.e. nothing) and ~1.2 x SIZE at a fresh high. That is
+~$20/day, not the ~$50 I first wrote.
 
 **B. Trading sooner (tau 45).** Arm running since 10:01 PM ET; 13 settled
 records and 11 NEW markets by 1:30 AM ET, against the pre-registered minimum of

@@ -110,15 +110,31 @@ fills, a third of the money per hour. Of the current version's 64
 quarter-hours: 28% bought, 47% had sellers whose offers failed a rule (99.9c
 offers, or above the cap), 25% nobody selling.
 
-**The one new lever, and it is cheap: take the whole offer.** The bot asks
-for SIZE; the offers it hits carry +45% more contracts at the SAME limit price
-within the per-close budget that already exists (+55% in the daytime; +31%
-over the sweep era). ~$30-50/day at today's size. Same price, gate and
-per-close worst case; the only new risk is concentration on one coin. NOT
-BUILT -- `pintake` caps orders at SIZE, and it is the live order path, so:
-paper-only flag first, after the 3-5 AM maintenance, with a PREREG. Do not
-edit `pinrun.py` before that window has passed: the live bot restarts from the
-file on disk, and a broken self-test would leave it down.
+**THE "+45% FREE CONTRACTS" CLAIM IS WITHDRAWN -- I COMPUTED IT FROM THE WRONG
+FIELD.** It came from the `signal` record's `take_n`/`size`, which are the depth
+at the TOUCH. The order actually sent is bigger: `--depth-ladder` already
+expands the ask to full SIZE and sweeps the ladder to the limit. Order by order
+against `body.count`: **0 of 31 orders asked for less than SIZE while more was
+on offer under the same limit.** There are no free contracts.
+
+The real proposal is raising the per-market cap above SIZE, which IS new
+one-coin exposure: 1.2x = +18-20% contracts (~$20/day), 2.0x = +80-87%
+(~$81-112/day). **The drawdown brake caps it at ~1.2x and there is no growing
+out of that** -- SIZE = bank/5.88 so the full close budget always costs 33% of
+bank while MAX_DRAWDOWN is 20%, both scaling together (until AUTO_SIZE_MAX 250
+bites at a bank of ~$1,470; the full budget fits only above ~$2,450). Today the
+room to the brake is $96.19, i.e. **98 contracts against a SIZE of 94** --
+essentially nothing.
+
+**The finding worth more than the idea: the two rails contradict each other by
+1.66x.** BANK_BRAKE permits a close the drawdown brake would halt for. It has
+never fired only because **two coins have never both lost (0 of 101 closes;
+given one lost, the other lost 0 of 9)**. If it ever did, the halt would repeat
+on every restart -- the high-water mark persists in `results/pinrun-hwm.json`
+and the bank cannot recover while halted. Operator has been told; his call.
+
+Measured loss per losing contract, 11 legs / 430 contracts: 62.3c gross, 49.3c
+net after a hedge that recovered 21% overall and nothing on 7 of 11, worst 98.0c.
 
 Also: `--honest` fails the bot's self-test (pre-existing), so the strict
 tau-45 variant could not start. Ceiling to 99c is ~$7/day and dies above 1
