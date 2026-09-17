@@ -126,9 +126,37 @@ function Attempt($why) {
     $script:lastAttempt = Get-Date
     $restarts.Add((Get-Date)) | Out-Null
     Say ("restarting ({0}) -- {1}" -f $why, (& { $t = ""; if (Test-Path $errFile) { $l = Get-Content $errFile -Tail 3 -ErrorAction SilentlyContinue; if ($l) { $t = "last stderr: " + ($l -join " | ") } }; $t }))
-    & powershell -ExecutionPolicy Bypass -File "$repo\restart_bot.ps1" 2>&1 |
-        ForEach-Object { Say ("  restart_bot: " + $_) }
-    Start-Sleep -Seconds 20
+
+    # 2026-09-17 INCIDENT: this used to be
+    #     & powershell -File restart_bot.ps1 2>&1 | ForEach-Object { Say ... }
+    # and it HUNG FOR FOUR HOURS. The restart itself worked (the bot came back
+    # as pid 544616 at 03:25), but the pipeline never closed -- a grandchild of
+    # the restart script kept the write end of the pipe open, so ForEach-Object
+    # waited for EOF that never came. The watchdog was alive, unhung-able and
+    # blind: no heartbeat, no further checks, nothing watching the money.
+    #
+    # A watchdog must never block on a child. Start-Process writes to FILES,
+    # so there is no pipe to keep open, and WaitForExit has a hard timeout.
+    $rOut = "$res\watch_restart.out"
+    $rErr = "$res\watch_restart.err"
+    try {
+        $proc = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$repo\restart_bot.ps1") `
+            -RedirectStandardOutput $rOut -RedirectStandardError $rErr -WindowStyle Hidden -PassThru
+        if (-not $proc.WaitForExit(180000)) {
+            Say "restart_bot.ps1 did not finish in 3 minutes -- killing it and retrying next cycle"
+            try { $proc.Kill() } catch {}
+        }
+    } catch {
+        Say ("could not run restart_bot.ps1: " + $_.Exception.Message)
+    }
+    foreach ($l in @(Get-Content $rOut -ErrorAction SilentlyContinue)) {
+        if ($l -and $l.Trim() -and $l -notmatch 'transcript|^\*{4,}|^$') { Say ("  restart_bot: " + $l.Trim()) }
+    }
+    foreach ($l in @(Get-Content $rErr -ErrorAction SilentlyContinue)) {
+        if ($l -and $l.Trim()) { Say ("  restart_bot ERR: " + $l.Trim()) }
+    }
+    Start-Sleep -Seconds 15
     $now = LiveBotPid
     if ($now) { Say "back up, pid $now" } else { Say "STILL DOWN after restart_bot.ps1 -- will retry" }
 }

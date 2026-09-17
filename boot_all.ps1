@@ -100,7 +100,28 @@ if ((PidFileAlive "$kals\logs\run_all.pid") -or (Running '*run_all.ps1*')) {
 }
 
 # --- 2. the live bot's watchdog. It starts the bot itself, through restart_bot.ps1.
-if ((PidFileAlive "$res\watch_bot.pid") -or (Running '*watch_bot.ps1*')) {
+#
+# 2026-09-17: "RUNNING" IS NOT "WORKING". The watchdog hung inside a pipe after
+# a restart and sat alive-but-blind for four hours, while this check said "all
+# up; nothing to do" every ten minutes because the process existed. A watchdog
+# that is not writing its heartbeat is dead to us, whatever the process table
+# says, so it is killed and replaced. The threshold is generous: a restart
+# attempt legitimately takes ~40 s, during which no heartbeat is written.
+$wdStale = $false
+$hb = "$res\watch_bot.heartbeat"
+if (Test-Path $hb) {
+    $age = ((Get-Date) - (Get-Item $hb).LastWriteTime).TotalSeconds
+    if ($age -gt 300) {
+        $wdStale = $true
+        Say ("watch_bot heartbeat is {0:N0} s old -- it is alive but not watching. Killing it." -f $age)
+        if (Test-Path "$res\watch_bot.pid") {
+            $wp = (Get-Content "$res\watch_bot.pid" -Raw).Trim()
+            if ($wp -match '^\d+$') { Stop-Process -Id ([int]$wp) -Force -ErrorAction SilentlyContinue }
+        }
+        Start-Sleep -Seconds 2
+    }
+}
+if ((-not $wdStale) -and ((PidFileAlive "$res\watch_bot.pid") -or (Running '*watch_bot.ps1*'))) {
     # fine
 } else {
     Say "watch_bot.ps1 is NOT running -- starting it (it will bring the live bot up unless results\pinrun-live.stop exists)"

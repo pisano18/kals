@@ -103,6 +103,35 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 11:2xZ -- INCIDENT: the watchdog restarted the bot, then HUNG FOR FOUR HOURS
+
+**It worked, then it stopped working, and nothing noticed.** At 03:25 ET
+`watch_bot.ps1` correctly found the live bot stale (alive, nothing written for
+25 min), stopped it, and restarted it -- pid 544616, trading fine since,
++$11.43 on 3 closes. Then the watchdog itself hung and wrote no heartbeat from
+03:25:13 to 07:22, four hours with nothing supervising the money.
+
+**Cause, and it is a classic.** The restart was invoked as
+`& powershell -File restart_bot.ps1 2>&1 | ForEach-Object { Say ... }`.
+The pipeline waits for the pipe to close, not just for the child to exit; a
+grandchild of the restart script kept the write end open, so `ForEach-Object`
+blocked for ever on EOF that never came. Fixed: `Start-Process` with
+`-RedirectStandardOutput/-RedirectStandardError` to FILES (no pipe at all) plus
+`WaitForExit(180000)` and a kill on timeout, then the files are read and logged.
+
+**`boot_all.ps1` did not catch it because it asked the wrong question.** It
+checked whether the watchdog process EXISTED -- it did -- and printed "all up;
+nothing to do" every ten minutes for four hours. It now treats a heartbeat
+older than 300 s as dead, kills that process and starts a fresh one. Verified
+on the spot: it reported "watch_bot heartbeat is 14,223 s old -- it is alive
+but not watching. Killing it." and replaced it (new pid 591708, heartbeat
+current).
+
+**The general lesson, worth more than the fix: RUNNING IS NOT WORKING.** Every
+liveness check in this project should be a freshness check on something the
+process WRITES, never on the process table. The collector checks were already
+by file for the same reason (2026-09-14).
+
 ## 06:3xZ -- QUIET MARKETS: the operator's top priority, measured (`results/RESULTS_quiet.md`)
 
 Quiet = US daytime (9 AM-4 PM ET): sellers on half as many looks, half the
