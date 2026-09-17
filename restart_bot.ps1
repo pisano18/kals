@@ -62,21 +62,43 @@ Write-Host "restart_bot.ps1 starting $(Get-Date -Format o)"
 # --- 1. REFUSE IF NOT FLAT. Restarting mid-position abandons a live bet: the
 # new process does not know about it, so it never settles it, never hedges it
 # and never counts it against the loss brake.
-$log = Get-ChildItem "$repo\results\pinrun-live-*.jsonl" |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if ($log) {
-    $filled = 0
-    $settled = 0
-    foreach ($line in Get-Content $log.FullName) {
-        if ($line -match '"kind":\s*"order"' -and $line -notmatch '"filled":\s*0(\.0+)?[,}]') { $filled++ }
-        if ($line -match '"kind":\s*"settled"') { $settled++ }
-    }
-    Write-Host "newest log: $($log.Name) -- $filled filled orders, $settled settled"
-    if ($settled -lt $filled) {
-        Write-Host "REFUSING: the bot is holding a position ($filled filled, $settled settled)."
-        Write-Host "Wait for the close to settle, then run this again."
-        try { Stop-Transcript | Out-Null } catch {}
-        exit 1
+#
+# 2026-09-17: THE CHECK IS research\pinflat.py, NOT A COUNT. The count
+# ("filled orders > settled records") deadlocked when the bot DIED holding a
+# bet: the settled record it would have written never arrives, so the count
+# never balances and this script refused forever -- with the watchdog calling
+# it every minute. pinflat knows whether the bot is alive (pid file) and reads
+# each open fill's close time from its ticker: alive + open fill = wait; dead +
+# market still ahead = wait (a new bot could buy that close twice); dead +
+# market closed = flat, it settled on the exchange without us.
+$flatOut = & $py "$repo\research\pinflat.py" 2>&1
+$flatCode = $LASTEXITCODE
+foreach ($l in $flatOut) { Write-Host "pinflat: $l" }
+if ($flatCode -eq 1) {
+    Write-Host "REFUSING: the bot is holding a position (see pinflat above)."
+    Write-Host "Wait for the close to settle, then run this again."
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 1
+}
+if ($flatCode -ne 0) {
+    # the helper itself failed: fall back to the old count, which errs on
+    # the side of refusing.
+    Write-Host "pinflat could not answer (exit $flatCode) -- falling back to the count"
+    $log = Get-ChildItem "$repo\results\pinrun-live-*.jsonl" |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($log) {
+        $filled = 0
+        $settled = 0
+        foreach ($line in Get-Content $log.FullName) {
+            if ($line -match '"kind":\s*"order"' -and $line -notmatch '"filled":\s*0(\.0+)?[,}]') { $filled++ }
+            if ($line -match '"kind":\s*"settled"') { $settled++ }
+        }
+        Write-Host "newest log: $($log.Name) -- $filled filled orders, $settled settled"
+        if ($settled -lt $filled) {
+            Write-Host "REFUSING: the bot is holding a position ($filled filled, $settled settled)."
+            try { Stop-Transcript | Out-Null } catch {}
+            exit 1
+        }
     }
 }
 

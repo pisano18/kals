@@ -1,8 +1,10 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
 Written so a session that has just been `/clear`ed can pick up without
-re-deriving anything. **Updated 2026-09-16 ~5:35 PM ET.** If the date above is
-more than a day old, verify the live numbers before quoting them.
+re-deriving anything. **Updated 2026-09-17 00:35 ET** (self-healing watchdog,
+boot task and the Pin Bot desktop app -- v-selfheal; four superseded paper arms
+killed; `results/PREREG_tau45.md` written, arm NOT yet read). If the date above
+is more than a day old, verify the live numbers before quoting them.
 
 **2026-09-17: READ `HANDOFF_2026-09-17.md` FIRST.** It is the complete handoff
 from the 2026-09-16 session, written for a context clear: what is running (pid
@@ -80,7 +82,18 @@ pinproject is the one to plan on. If it holds near 90%, the expected column is.
 - **Dead ends, with evidence, in HANDOFF.md:** raising EDGE_FLOOR, a depth gate,
   hourly markets, more Kalshi series, Polymarket on-chain venues.
 
-**To restart it -- USE THE SCRIPT, AND ONLY THE SCRIPT:**
+**2026-09-17: IT RESTARTS ITSELF, AND THE OPERATOR HAS BUTTONS.** See
+`results/VERSIONS.md` v-selfheal. `watch_bot.ps1` relaunches the bot for ever
+(4 quick tries, then every 3 min); the scheduled task `KalsBoot` restarts the
+watchdogs at logon and every 10 min; `restart_bot.ps1` no longer deadlocks on a
+bot that died holding a bet (`research/pinflat.py`). The desktop shortcut
+**Pin Bot** (`research/pindesk.py`) has START / PAUSE / STOP. A file
+`results/pinrun-live.stop` means the operator said stand down: the watchdog
+will NOT relaunch while it exists, and START removes it. **If the bot is down
+and that file exists, that is why.** The one hole left: a reboot with nobody
+signed in (no auto sign-in, no admin for a boot task).
+
+**To restart it by hand -- USE THE SCRIPT, AND ONLY THE SCRIPT:**
 
 ```
 powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1

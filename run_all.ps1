@@ -11,6 +11,9 @@ $KeyId  = "5163259c-ecb0-4966-9053-0d2776cf061e"
 $KeyFile= "kalshi.pem"
 Set-Location $Dir
 New-Item -ItemType Directory -Force -Path "$Dir\logs" | Out-Null
+# 2026-09-17: our own pid, so boot_all.ps1 can see this watchdog is alive
+# without reading a command line (which Windows may return empty).
+$PID | Set-Content "$Dir\logs\run_all.pid" -Encoding ascii
 
 function Start-Job2($name, $args2) {
     Start-Process -FilePath "python" -ArgumentList $args2 `

@@ -1,3 +1,59 @@
+# v-selfheal -- 2026-09-17 04:22Z -- the bot relaunches itself until it works, and the operator gets buttons
+
+**Operator instruction, 2026-09-17: "Does the bot automatically catch itself
+being down and relaunch until it works? If not it should. Tonight has
+maintenance 3-5am it should auto fire back up when it's done without you or I
+needing to do anything. Also ... a program on my desktop and I can click start
+pause and stop."**
+
+**The bot's own flags did NOT change** (`versioncheck` clean). What changed is
+everything around it:
+
+- `watch_bot.ps1` (rewritten, swapped in at 04:22Z, pid 507780): checks every
+  30 s; 4 quick restarts per 15 min, then one every 3 min FOREVER (it used to
+  stop for good after 4 in an hour -- during a 2-hour exchange outage that gave
+  up in the first 10 minutes). A bot alive but silent 25 min is restarted as
+  hung. A money-brake halt (loss COUNT / loss abort / DRAWDOWN) waits 15 min
+  before the first relaunch. A stand-down flag `results\pinrun-live.stop`
+  stops all relaunching until removed.
+- `restart_bot.ps1`: the "is it holding a bet" check is now
+  `research\pinflat.py`. The old count (filled orders > settled records)
+  DEADLOCKED when the bot died holding a bet: the settled record never came,
+  so the restart refused forever, every minute. pinflat reads each open
+  fill's close time from its ticker: dead + market closed = flat.
+- `boot_all.ps1` + scheduled task **KalsBoot** (at logon +1 min, and every 10
+  min all day): starts whatever is missing -- run_all.ps1 (collectors),
+  watch_bot.ps1, cdc_record, the paper arms -- and refuses to start collectors
+  if any python process hides its command line (the 2026-09-14 lesson).
+  Nothing starts the LIVE bot except watch_bot -> restart_bot.
+- `research\pindesk.py`, desktop shortcut **Pin Bot**: START / PAUSE / STOP,
+  status, health, money, trades, days, losses, logs. PAUSE waits for open bets
+  to settle before stopping; STOP asks first if a bet is open. Both set the
+  stand-down flag so the watchdog does not undo them.
+
+**What it cannot do:** bring the machine back from a reboot while nobody is
+signed in. This account has no auto sign-in and is not an administrator, so a
+boot-time task was refused (S4U: access denied). Windows Update's active hours
+are 3 PM-9 AM, so no update reboot can land in the 3-5 AM window.
+
+**Evidence:** `pinflat --selftest` (16 checks), `pindesk --selftest` (30
+checks), watch_bot `-Once` dry run, boot_all dry run ("all up; nothing to
+do"), KalsBoot fired through the scheduler with result 0. No live restart was
+performed; the bot (pid 327184) ran through the whole change.
+
+**Revert, copy-pasteable** (puts back the old watchdog policy; the deadlock fix
+and the app are harmless to leave):
+
+```powershell
+cd C:\kals-repo
+git checkout 879f5b4 -- watch_bot.ps1 restart_bot.ps1
+Stop-Process -Id (Get-Content results\watch_bot.pid) -Force
+Unregister-ScheduledTask -TaskName KalsBoot -Confirm:$false
+Start-Process powershell -ArgumentList '-ExecutionPolicy Bypass -File C:\kals-repo\watch_bot.ps1' -WindowStyle Hidden
+```
+
+---
+
 # v-hedge60 -- 2026-09-16 ~14:10Z -- hedge trigger 0.80 -> 0.60
 
 **Operator instruction, 2026-09-16: "Change the hedge trigger immediately".**

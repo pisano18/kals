@@ -1,3 +1,91 @@
+# 2026-09-17 04:4xZ -- SELF-HEALING, A DESKTOP APP, AND THE TAU-45 RULE WRITTEN BEFORE THE ARM WAS READ
+
+Operator, at 00:05 ET: *"Does the bot automatically catch itself being down and
+relaunch until it works? If not it should. Tonight has maintenance 3-5am it
+should auto fire back up when it's done without you or I needing to do
+anything. Also at this point it should be a proper tool on my desktop with a
+dashboard and status viewer and controls ... click start pause and stop."*
+
+## What was true before, and the three holes
+
+- `watch_bot.ps1` WAS running (since Sep 15 4:15 PM ET) and had not needed to
+  act. It stopped for good after 4 restarts in an hour. The bot halts on "5
+  consecutive errors" and exits within minutes of starting into a dead API, so
+  a 2-hour exchange outage would have burned all four tries in ~10 minutes
+  and then sat silent until a human noticed.
+- `restart_bot.ps1` refused while "filled orders > settled records". A bot
+  that DIED holding a bet never writes the settled record, so the refusal was
+  permanent -- the watchdog would call it every minute and be refused every
+  minute. Nobody had hit this yet because the bot had not died mid-bet since
+  the watchdog existed.
+- Nothing started ANYTHING after a reboot. No scheduled task, nothing in the
+  Startup folder. Sep 15's 7.57 lost hours were this.
+
+## What is deployed now (v-selfheal in VERSIONS.md; bot flags unchanged)
+
+- `research/pinflat.py` -- FLAT / HOLDING from the pid file plus each open
+  fill's close time read from its ticker. Alive + open = wait. Dead + market
+  still ahead = wait (a new bot could buy that close twice). Dead + market
+  closed = flat. 16 self-test checks. `restart_bot.ps1` calls it, falling back
+  to the old count only if the helper itself errors.
+- `watch_bot.ps1` rewritten: 30 s checks; 4 quick restarts per 15 min then
+  one every 3 min forever; alive-but-silent 25 min = hung, restarted; money
+  brake halt waits 15 min first; honours `results/pinrun-live.stop`. Writes
+  `watch_bot.pid` and `watch_bot.heartbeat`. Old one (pid 105196) stopped,
+  new one pid 507780 started 04:22Z.
+- `boot_all.ps1` + task `KalsBoot` (logon +1 min, every 10 min all day, as
+  Joe, interactive). Idempotent. Refuses to start collectors when any python
+  process hides its command line. `run_all.ps1` now writes `logs\run_all.pid`
+  (both copies edited; the running instance is the old one -- it does not
+  matter until a reboot).
+- `research/pindesk.py` + desktop shortcut **Pin Bot**. tkinter, stdlib only.
+  START clears the flag, runs boot_all -NoArms, then restart_bot if the bot is
+  down. PAUSE writes the flag, waits for pinflat FLAT, then kills by pid --
+  only after reading that pid's command line and finding pinrun.py + --live;
+  an empty command line = refuse. STOP asks first if a bet is open. Every
+  number is from `pinrun-live-*.jsonl`, incrementally re-read; closes are
+  counted by close time (rule 4). Reconciled: 459 bets / 338 closes / 21
+  losing bets / 15 losing closes / +$400.93 all time, matching the handoff
+  figure plus the eight bets since. 30 self-test checks. Errors under pythonw
+  go to `results/pindesk.err`.
+
+## What it still cannot do
+
+A reboot with nobody signed in. AutoAdminLogon is 0, ARSO unset, and the
+account is not an administrator, so an at-startup S4U task was refused
+("Access is denied"); the logon-trigger task registered fine. Windows Update
+active hours are 3 PM-9 AM, so an update reboot cannot land in the 3-5 AM
+window; the risk is any OTHER reboot. The fix is his: enable auto sign-in
+(netplwiz) or grant admin for one task registration. Asked in the report.
+
+## Killed: four of the six Sep 15 paper what-ifs (00:12 ET)
+
+pids 106568 (`--pick first`, A24 control -- question settled), 43104 (no jump
+gate), 44520 (jump-widen only), 100040 (gate + widen). The jump-gate trio
+tested adverse selection, which paper cannot see by construction (rule 5), so
+more rows could never have answered it. Their logs stay on disk. KEPT: 107076
+(`arm-mirror`, hedge 0.80 -- the only arm at the old live config, so a
+0.80/0.70/0.60 three-way with the hedge-0.70 arm and live) and 106588
+(`arm-dumps`, hedge 0.80 + `--take-dumps` -- differs from 107076 by ONE flag,
+which the new `loose` arm does not: it moves max-positions too).
+
+## The tau-45 pre-registration
+
+`results/PREREG_tau45.md`, commit e8ddcae, written BEFORE the arm's log was
+opened (the control's log was opened once, for field names). Two stages: paper
+can only KILL (30 closes per arm + 20 NEW markets; kill at 3 losses in 30 NEW,
+or net negative, or >1c dearer than control); live bar of 40 closes with a
+31-45s fill, revert at 4 losses or 3 in the first 20. Deploy is a TAU_MAX
+edit + commit because `pinrun --live` refuses the flag above the constant.
+
+## Live since the 09:57 ET restart (hedge 0.60), at 00:02 ET
+
+18 closes, 17 won, 1 lost (-$0.47), +$57.09; 22 of 24 orders filled in full;
+size now 94 (bank $556.02 at the last autosize read). Recorders both writing;
+disk 34.1 GB; RAM 4.0 GB free.
+
+---
+
 # 2026-09-16 21:xxZ -- A DAY OF NEGATIVE RESULTS, AND FIVE OF MY OWN NUMBERS WERE WRONG
 
 **Read this before re-running any of it. Almost everything tested today came back
