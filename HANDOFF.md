@@ -103,6 +103,37 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 06:3xZ -- QUIET MARKETS: the operator's top priority, measured (`results/RESULTS_quiet.md`)
+
+Quiet = US daytime (9 AM-4 PM ET): sellers on half as many looks, half the
+fills, a third of the money per hour. Of the current version's 64
+quarter-hours: 28% bought, 47% had sellers whose offers failed a rule (99.9c
+offers, or above the cap), 25% nobody selling.
+
+**The one new lever, and it is cheap: take the whole offer.** The bot asks
+for SIZE; the offers it hits carry +45% more contracts at the SAME limit price
+within the per-close budget that already exists (+55% in the daytime; +31%
+over the sweep era). ~$30-50/day at today's size. Same price, gate and
+per-close worst case; the only new risk is concentration on one coin. NOT
+BUILT -- `pintake` caps orders at SIZE, and it is the live order path, so:
+paper-only flag first, after the 3-5 AM maintenance, with a PREREG. Do not
+edit `pinrun.py` before that window has passed: the live bot restarts from the
+file on disk, and a broken self-test would leave it down.
+
+Also: `--honest` fails the bot's self-test (pre-existing), so the strict
+tau-45 variant could not start. Ceiling to 99c is ~$7/day and dies above 1
+loss in 107 (0 of 61 at 98c+ so far) -- parked. Resting bids, other series,
+hourly, lower edge floor: dead, evidence in the results file.
+
+Four Sep-15 paper arms were killed at 00:12 ET. Coin Race arm4: 20 of 20 on
+paper, bar is 40. tau-45 arm: 13 settled / 11 NEW markets vs 30 / 20 minimum;
+outcomes not read.
+
+The Market tab's "Passed gates" column was WRONG (the bot's `tradeable` means
+"someone was selling at some price", not "passed every rule") -- renamed
+"Sellers seen"; a quarter-hour where we ordered and got nothing now reads LOST
+THE RACE instead of a rule name.
+
 ## 05:2xZ -- deposit confirmed, the phone link built, maintenance is Kalshi's
 
 - Operator: "$160 I put in total." `results/DEPOSITED.txt` holds it; the app

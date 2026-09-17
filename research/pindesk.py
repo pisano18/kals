@@ -495,6 +495,20 @@ class Ledger:
         k = max(g, key=g.get)
         return GATE_WORDS.get(k, k)
 
+    def reason(self, c):
+        """What happened on a quarter-hour, in words -- checking OUR ORDERS
+        first. 'tradeable' in the bot's summary only means somebody was
+        selling at SOME price; the offer usually then failed a rule. And an
+        order that was sent and got nothing is a lost race, not a rule."""
+        if c["fired"]:
+            got = sum(o["filled"] for o in self.orders if o["close"] == c["close"])
+            return "BOUGHT %g contracts" % got
+        sent = [o for o in self.orders if o["close"] == c["close"]]
+        if sent:
+            asked = sum(o["asked"] or 0 for o in sent)
+            return "LOST THE RACE: ordered %g, got 0 (someone bought it first)" % asked
+        return Ledger.why_no_trade(c)
+
 
 # ===========================================================================
 # stories -- one bet, one hedge, one quarter-hour, one day, in plain words
@@ -667,9 +681,8 @@ def story_close(ledger, c):
     lines = ["The quarter-hour closing %s ET on %s" % (et_str(c["close"]), et_str(c["close"], "%b %d")) if c["close"] else "A quarter-hour", ""]
     lines.append("The bot checked the books %d times in the last 30 seconds." % c["looks"])
     if share is not None:
-        lines.append("On %.0f%% of those checks somebody was selling the winning side at all." % (100 * share))
-    if passed is not None:
-        lines.append("On %.0f%% the offer also passed every rule (price under 98c, enough edge, enough size, fresh feed)." % (100 * passed))
+        lines.append("On %.0f%% of those checks somebody was selling the winning side at some price." % (100 * share))
+    _ = passed
     if c.get("best_edge_c") is not None:
         lines.append("The best bargain seen was %.2fc of edge at %.1fc%s." % (
             c["best_edge_c"], 100 * float(c.get("best_price") or 0), (" on " + coin(c["best_ticker"])) if c.get("best_ticker") else ""))
@@ -681,10 +694,9 @@ def story_close(ledger, c):
         lines.append("Why looks were passed over: " + "; ".join(words) + ".")
     lines.append("")
     if c["fired"]:
-        got = sum(o["filled"] for o in ledger.orders if o["close"] == c["close"])
-        lines.append("RESULT: it bought %g contracts on this quarter-hour." % got)
+        lines.append("RESULT: " + ledger.reason(c).lower() + " on this quarter-hour.")
     else:
-        lines.append("RESULT: no trade -- " + Ledger.why_no_trade(c) + ".")
+        lines.append("RESULT: no trade -- " + ledger.reason(c) + ".")
     return "\n".join(lines)
 
 
@@ -1072,10 +1084,12 @@ The bot can only buy when someone is SELLING the winning side cheaply in the las
 This tab shows how often that happened.
   QUIET / NORMAL / BUSY   how the last four quarter-hours compare with the whole record.
   looks          how many times the bot checked the books in that quarter-hour.
-  offered        share of those looks where anybody was selling the winning side at all.
-  passed gates   share where the offer also passed every rule (price cap, edge, depth...).
+  sellers seen   share of those looks where anybody was selling the winning side at ANY price.
+                 Most such offers then fail a rule: too close to what the contract is worth
+                 (an offer at 99.9c), or above the 98c cap.
   best edge      the best bargain seen, in cents.  offer size   contracts on offer (median).
-  what happened  BOUGHT, or the main reason nothing was bought.
+  what happened  BOUGHT, LOST THE RACE (we ordered, someone else got it first), or the main
+                 reason the offers were turned down.
 Below the table: today's counts -- closes with anything to buy, orders sent, filled, and
 lost races (someone else took the offer first)."""),
     ("days", "DAYS", """\
@@ -1526,8 +1540,8 @@ def run_gui():
     mk_level.pack(side="left")
     mk_desc = tk.Label(mk_head, text="", bg=C["panel"], fg=C["muted"], font=("Segoe UI", 10), justify="left")
     mk_desc.pack(side="left", padx=16)
-    f_mk, tv_mk = table(mk_tab, ("Close (ET)", "Looks", "Offered", "Passed gates", "Best edge c", "Best price", "Offer size", "What happened"),
-                        (110, 70, 80, 100, 90, 80, 90, 360), height=16, title="THE LAST QUARTER-HOURS, NEWEST FIRST", key="market",
+    f_mk, tv_mk = table(mk_tab, ("Close (ET)", "Looks", "Sellers seen", "Best edge c", "Best price", "Offer size", "What happened"),
+                        (110, 70, 100, 90, 80, 90, 420), height=16, title="THE LAST QUARTER-HOURS, NEWEST FIRST", key="market",
                         story=lambda c: story_close(ledger, c))
     f_mk.pack(fill="both", expand=True)
     register(mk_head, "market", "How active sellers are")
@@ -1905,13 +1919,9 @@ def run_gui():
         rows = []
         for c in list(reversed(ledger.closes))[:40]:
             share = Ledger.offer_share(c)
-            passed = (c["tradeable"] / c["looks"]) if c["looks"] else None
-            what = Ledger.why_no_trade(c)
-            if c["fired"]:
-                got = sum(o["filled"] for o in ledger.orders if o["close"] == c["close"])
-                what = "BOUGHT %g contracts" % got
+            what = ledger.reason(c)
             rows.append(((et_str(c["close"], "%m/%d %I:%M %p") if c["close"] else "?", "%d" % c["looks"],
-                          pct(share, False) if share is not None else "-", pct(passed, False) if passed is not None else "-",
+                          pct(share, False) if share is not None else "-",
                           ("%+.2f" % c["best_edge_c"]) if c.get("best_edge_c") is not None else "-",
                           ("%.1fc" % (100 * c["best_price"])) if c.get("best_price") else "-",
                           ("%.0f" % c["depth_med"]) if c.get("depth_med") is not None else "-", what),

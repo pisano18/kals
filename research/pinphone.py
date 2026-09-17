@@ -252,10 +252,7 @@ class Phone:
         out.append("")
         for c in list(reversed(self.ledger.closes))[:8]:
             share = Ledger.offer_share(c)
-            what = Ledger.why_no_trade(c)
-            if c["fired"]:
-                what = "BOUGHT %g" % sum(o["filled"] for o in self.ledger.orders if o["close"] == c["close"])
-            out.append("%s  offered %s  %s" % (et_str(c["close"]) if c["close"] else "?", pct(share, False) if share is not None else "-", what))
+            out.append("%s  sellers %s  %s" % (et_str(c["close"]) if c["close"] else "?", pct(share, False) if share is not None else "-", self.ledger.reason(c)))
         today = et_day(self.now())
         fs = Ledger.fill_stats(self.ledger.fills_on(today))
         out.append("")
