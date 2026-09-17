@@ -103,6 +103,48 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 12:4xZ -- operator's round: tau-45 read early, one-coin depth BUILT (paper), candle series reopened
+
+Operator: *"I didn't create that rule, check how trading sooner has performed.
+Double check each dead thoroughly before killing them completely, and be
+creative. Isn't a candlestick an average too? ... Build the one coin depth. The
+brakes are a whichever comes first, which I'm fine with. You can close the
+desktop app."*
+
+- **tau-45 read at his instruction (PREREG bars unchanged).** Same 9.2 h
+  window: arm 27 bets / 17 closes, 0 lost, +$9.32 paper (size 20); control 9
+  bets / 8 closes, 0 lost, +$3.64. NEW population (only exist because of
+  31-45 s): 19 bets / 11 closes, 0 lost, +$5.75; SHIFTED 8 markets, arm paid
+  +0.03c vs control. Seven of the 19 NEW are HYPE. 0 of 27 is not evidence of
+  safety at a 4.7% rate (p~0.28); the count is the finding: 3x the bets.
+- **AMENDMENT 45 one-coin depth: built, paper only, arm running** (pid
+  602972, log `pinrun-paper-20260917T123904Z.jsonl`, `--one-coin-depth
+  --one-coin-max 2.0`). `one_coin_cap()` = lowest of mult x SIZE, close
+  budget, and the drawdown brake's headroom `(bank - 0.8 x hwm) / 0.98`; never
+  below SIZE. Refused with `--live`. Full self-test exit 0 twice; two of my
+  own new checks had to be fixed for the two documented self-inspection traps
+  (running value vs shipped default; a literal matching its own text). Bars:
+  `results/PREREG_onecoin.md`. In `boot_all.ps1`'s manifest. VERSIONS.md
+  carries a "(NOT DEPLOYED)" entry because the file on disk changed.
+- **Candle series REOPENED as a question.** A candle CLOSE is a single last
+  print, not an average -- the operator's premise is wrong on that point --
+  but the tape shows real late buying: in 3 tape hours, taker buys at 90-98c
+  in the last 30 s were GOLD 2,054 contracts, SILVER 3,610, COPPER 2,743, WTI
+  6,509, NATGAS 4,049 (BTC 23,996). Sellers exist. Whether those buyers WIN
+  needs those series' settlements, which we never pulled:
+  `kalshi_fulltape.py --series KXGOLD15M KXSILVER15M KXCOPPER15M KXWTI15M
+  KXNATGAS15M --out C:\kalsulltape_candle --markets-only` is running
+  (slow; log `results/fulltape_candle.log`). Next: score the late 90-98c
+  buys against the settled result by tau band -- a TAPE population, rule 5,
+  but enough to kill or to justify a Pyth feed + paper arm. Pyth benchmarks
+  API failed here on an expired SSL cert; retry or use `hermes.pyth.network`.
+- Other three "dead" items re-examined and STAY dead on their own evidence:
+  resting bids (`RESULTS_maker`, 100% of losers filled a resting bid; the
+  cancel-on-belief defence was tested and does not help); hourly (1 buyable
+  of 2,568, a book fact); edge floor under 0.3c (pennies at 99.8c).
+- Desktop app closed at his request. Stack at 12:40Z: live bot, 7 paper arms,
+  2 race arms, 2 recorders, phone link -- all up; watchdog heartbeat current.
+
 ## 11:2xZ -- INCIDENT: the watchdog restarted the bot, then HUNG FOR FOUR HOURS
 
 **It worked, then it stopped working, and nothing noticed.** At 03:25 ET
