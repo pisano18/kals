@@ -52,3 +52,15 @@
 {"note": "", "pair": ["F-O04", "F-O06"], "t": "2026-09-16T08:50:52Z", "verdict": "nothing"}
 {"note": "break-even 8.55% is a point estimate off 10 losing closes; put an interval on it before comparing to our loss rate", "pair": ["F-P01", "F-R04"], "t": "2026-09-16T08:50:56Z", "verdict": "lead"}
 {"note": "the refused dump-guard rows are a cross-coin jump marker; at rho 0.65 a refusal on one coin is news about the coins we do trade", "pair": ["F-I09", "F-R02"], "t": "2026-09-16T08:50:56Z", "verdict": "lead"}
+{"pair": ["F-B06", "F-R03"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-I06", "F-X02"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-I04", "F-M02"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-C10", "F-P08"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-M08", "F-O07"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-M06", "F-M08"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"note": "chain strike(N+1)==settle(N) suggests bad closes cluster, but pinflood already tested it: prev_z 0.86x [0.55,1.36], prev_worst_any 0.93x, both flat, and F-P08 live agrees. Re-walking measured ground.", "pair": ["F-B06", "F-R03"], "t": "2026-09-17T08:51:10Z", "verdict": "nothing"}
+{"note": "only link is 'both could be silently wrong' -- an analogy, not a mechanism. A fee reconciliation against actual billings is hygiene, not a measurement connecting these two.", "pair": ["F-I06", "F-X02"], "t": "2026-09-17T08:51:10Z", "verdict": "nothing"}
+{"note": "inverting trade prices to an implied sd to test its tau-scaling is ill-conditioned exactly where we trade (F-C07: zero sigma sensitivity at 50c), and edge-by-tau is measurable directly per candidate without the inversion. Roundabout route to an answer already in reach.", "pair": ["F-I04", "F-M02"], "t": "2026-09-17T08:51:17Z", "verdict": "nothing"}
+{"note": "dead series and post-loss behaviour share no mechanism. Nothing to compute.", "pair": ["F-C10", "F-P08"], "t": "2026-09-17T08:51:17Z", "verdict": "nothing"}
+{"note": "volatility mix WITHIN coin is the one explanation of the 1.87->4.61 doubling not yet ruled out -- coin mix and drift are; decompose candidates by rv_short fifth, early edges applied late", "pair": ["F-M08", "F-O07"], "t": "2026-09-17T08:51:17Z", "verdict": "lead"}
+{"note": "scaling sd by k keeps the highest-z rows and z is high when sd is small, so k may have failed by COMPOSITION into the bad volatility fifth, not because the error is shape -- one cross-tab separates them", "pair": ["F-M06", "F-M08"], "t": "2026-09-17T08:51:17Z", "verdict": "lead"}
