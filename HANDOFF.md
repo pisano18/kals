@@ -78,6 +78,31 @@ or net negative, or >1c dearer than control); live bar of 40 closes with a
 31-45s fill, revert at 4 losses or 3 in the first 20. Deploy is a TAU_MAX
 edit + commit because `pinrun --live` refuses the flag above the constant.
 
+## 05:1xZ -- the ticker clock is ET, and the app's second round
+
+The operator's check "yesterday had $85.11, today $1.75" caught a 4-hour
+shift: `pinflat.close_epoch` read the ticker's date-time as UTC. It is ET
+(`26SEP170000` settled at 04:00:20Z). Fixed; both self-tests pin it. With the
+fix the app reads Sep 16 = $85.10, Sep 17 = $1.75 -- his numbers. THE SAME
+MISTAKE WOULD HAVE MADE restart_bot's dead-bot rule call a market closed four
+hours early, so this was a money bug, not a display one.
+
+`pindesk.py` second round, all from his list: % return next to every money
+figure (bank at the start of that day; all time on what was put in --
+`results/DEPOSITED.txt` overrides the reconstruction, which currently reads
+$156.85 = first balance reading $193.76 minus $36.91 made before it);
+click-to-sort on every table; an interactive chart (money made / bank / per
+day $ / per day %, ranges, hover); a "What's this?" mode (dims the window,
+highlights what the mouse is over, explains on click) plus "?" on every panel
+and a Help tab; double-click on any row for that item's story in words
+(bet, hedge, signal, loss, quarter-hour, day); a Market tab (sellers QUIET /
+NORMAL / BUSY from the share of looks with an offer, last quarter-hours with
+why nothing was bought, today's lost races and fill share); hedges joined to
+their outcome (NEEDED / WASTED with bet $, hedge $, net); a System tab naming
+each recorder and what it tapes; and the banner now prints its evidence
+(process opened by pid, log age, flag on disk) so the state is derived, never
+trusted -- his last instruction of the night.
+
 ## Live since the 09:57 ET restart (hedge 0.60), at 00:02 ET
 
 18 closes, 17 won, 1 lost (-$0.47), +$57.09; 22 of 24 orders filled in full;

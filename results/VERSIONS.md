@@ -31,6 +31,18 @@ everything around it:
   to settle before stopping; STOP asks first if a bet is open. Both set the
   stand-down flag so the watchdog does not undo them.
 
+**Amended 05:1xZ the same night -- THE TICKER'S CLOCK IS EASTERN.**
+`KXXRP15M-26SEP170000-00` settled at 04:00:20Z: "26SEP17 0000" is midnight
+ET. The first `pinflat.close_epoch` read it as UTC and put every close FOUR
+HOURS EARLY, so its "dead bot + market already closed = flat" rule would have
+called a market closed while it still had up to four hours to run. Caught
+because the app's day totals did not match the operator's ($63.75 vs his
+$85.11 for Sep 16; correct now, $85.10). Fixed in `pinflat.close_epoch` with
+`downtime.et_offset`, self-test pins 26SEP161000 -> 14:00Z and a January
+ticker -> +5 h. `pindesk` gained the operator's second round the same night:
+% returns, sortable columns, an interactive chart, a "What's this?" mode,
+per-row stories, a Market tab, hedge verdicts and a System tab.
+
 **What it cannot do:** bring the machine back from a reboot while nobody is
 signed in. This account has no auto sign-in and is not an administrator, so a
 boot-time task was refused (S4U: access denied). Windows Update's active hours

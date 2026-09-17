@@ -324,6 +324,12 @@ permanently. Six consecutive hours verified at 280-690 KB per feed.
 
 ## Hard-won gotchas that will bite again
 
+- **THE CLOCK INSIDE A TICKER IS EASTERN, NOT UTC.** `KXXRP15M-26SEP170000-00`
+  settles at 04:00Z: "26SEP17 0000" is midnight ET. Read it as UTC and every
+  close lands four hours early (five in winter). `research/pinflat.close_epoch`
+  is the one correct parser; use it. Found 2026-09-17 when the app's day
+  totals missed the operator's by a 4-hour slice.
+
 - **DOWNTIME IS NOT A WEAK DAY.** Operator, 2026-09-15: "We lost 7 hours of
   trade time today. Make sure that's known for any future calculations so it
   doesn't make our daily calculations look worse." The live bot could not trade

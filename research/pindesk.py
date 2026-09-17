@@ -4,7 +4,12 @@ r"""pindesk.py -- the desktop app. START / PAUSE / STOP, and what an owner needs
 THE OPERATOR, 2026-09-17: "it should be a proper tool on my desktop with a
 dashboard and status viewer and controls. Make it so it's a program on my
 desktop and I can click start pause and stop. Make it that simple so anyone can
-do it."
+do it." Then, on the first version: percentage returns next to the money ("I
+like to treat this like an investment"), an interactive chart, a help feature
+because "I don't know what everything means", a view of how active the market
+is ("not too many people were selling or orders weren't filling"), whether each
+hedge turned out to be needed, click-to-sort on every table, and the recorders
+named with what they actually do.
 
 WHAT THE THREE BUTTONS DO -- and, more important, what they never do.
 
@@ -28,9 +33,12 @@ returns the command line empty (it does, for a process the caller cannot open
 rather than guess. The collectors are never touched by anything here.
 
 EVERY NUMBER ON THE SCREEN comes from results\pinrun-live-*.jsonl, the log the
-live bot writes as it trades. Nothing is modelled. Days are EASTERN. Closes
-are counted by close time (rule 4), so twelve coins settling on one quarter
-hour are one close, won if the close made money and lost if it did not.
+live bot writes as it trades. Nothing is modelled. Days are EASTERN, and so is
+the clock inside a ticker (KXXRP15M-26SEP170000-00 closes at midnight ET, which
+is 04:00Z -- the first version read it as UTC and put every close four hours
+early, which is why its "yesterday" did not match the operator's). Closes are
+counted by close time (rule 4): all coins settling on one quarter hour are one
+close, won if it made money and lost if it did not.
 
 Runs under pythonw (no console); anything that would have been a traceback
 goes to results\pindesk.err instead.
@@ -40,7 +48,6 @@ goes to results\pindesk.err instead.
 """
 import calendar
 import ctypes
-import datetime as dt
 import glob
 import json
 import os
@@ -54,8 +61,8 @@ import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from downtime import et_offset                                  # noqa: E402
-import pinflat                                                  # noqa: E402
+from downtime import et_offset, hours_up_et_day, lost_by_et_day     # noqa: E402
+import pinflat                                                       # noqa: E402
 
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
@@ -68,9 +75,22 @@ REFRESH_MS = 5000
 STALE_MIN = 20
 CREATE_NO_WINDOW = 0x08000000
 
-C = {"bg": "#0F1420", "panel": "#171E2E", "panel2": "#1D2536", "text": "#E6EAF2",
+C = {"bg": "#0F1420", "panel": "#171E2E", "panel2": "#1D2536", "panel3": "#242E44", "text": "#E6EAF2",
      "muted": "#8A94A8", "gain": "#31C48D", "loss": "#E4572E", "watch": "#F0B429",
      "blue": "#4C8DFF", "grey": "#5B6478"}
+
+GATE_WORDS = {
+    "no_offer": "nobody was selling the winning side",
+    "edge_floor": "the price was too close to what it is worth (edge too thin)",
+    "price_ceiling": "the only offers were above the 98c cap",
+    "both_sides": "the book quoted both sides (not settled enough)",
+    "depth_floor": "the offer was too small",
+    "book_stale": "the order book feed was stale",
+    "confidence": "the model was not sure enough yet",
+    "ev_floor": "the expected profit after fees was too small",
+    "dump": "a suspiciously cheap offer (dump guard)",
+    "jump": "the price had just jumped against us (jump gate)",
+}
 
 
 # ===========================================================================
@@ -88,6 +108,13 @@ def et_day(epoch):
     """ET calendar day of an epoch, as 'YYYY-MM-DD'."""
     e = epoch + et_offset(epoch)
     return time.strftime("%Y-%m-%d", time.gmtime(e))
+
+
+def et_day_start(day):
+    """Epoch of midnight ET at the start of 'YYYY-MM-DD'."""
+    y, m, d = (int(x) for x in day.split("-"))
+    noon = calendar.timegm((y, m, d, 12, 0, 0))
+    return calendar.timegm((y, m, d, 0, 0, 0)) - et_offset(noon)
 
 
 def et_str(epoch, fmt="%I:%M %p"):
@@ -111,7 +138,25 @@ def close_et(ticker):
 
 
 def money(x, sign=True):
-    return ("%+.2f" if sign else "%.2f") % x
+    return ("$%+.2f" if sign else "$%.2f") % x
+
+
+def pct(x, sign=True):
+    if x is None:
+        return "-"
+    return ("%+.2f%%" if sign else "%.2f%%") % (100 * x)
+
+
+def sort_key(v):
+    """Numbers sort as numbers whatever they are dressed in ($, +, c, %, x)."""
+    s = str(v).strip()
+    m = re.match(r"^[\$+]?\s*(-?[\d,]*\.?\d+)\s*(c|%|x|GB|s|h|min)?$", s)
+    if m:
+        try:
+            return (0, float(m.group(1).replace(",", "")))
+        except ValueError:
+            pass
+    return (1, s.lower())
 
 
 # ===========================================================================
@@ -131,13 +176,14 @@ class Ledger:
     def __init__(self, results=RESULTS):
         self.results = results
         self.files = {}            # path -> bytes consumed
-        self.settled = []          # dicts with epoch, tk, pnl ($), cost, want, result, file
+        self.settled = []          # dicts with t, tk, pnl ($), cost, want, result, close, file
         self.orders = []
         self.signals = []
         self.hedges = []
         self.autosize = []
         self.halts = []
         self.starts = []
+        self.closes = []           # close_summary records, trimmed
         self.newest = None
         self.newest_rows = []      # every row of the newest file (for open positions)
 
@@ -162,7 +208,6 @@ class Ledger:
             with open(p, "rb") as fh:
                 fh.seek(done)
                 chunk = fh.read()
-            # only consume whole lines; a partial line is read next time
             cut = chunk.rfind(b"\n")
             if cut < 0:
                 continue
@@ -176,6 +221,8 @@ class Ledger:
                     self.newest_rows.append(r)
             self.files[p] = done + cut + 1
             changed = True
+        if changed:
+            self.settled.sort(key=lambda s: s["t"] or 0)
         return changed
 
     def _ingest(self, r, path):
@@ -204,16 +251,22 @@ class Ledger:
             self.orders.append({"t": t, "tk": r.get("ticker"), "filled": filled,
                                 "asked": asked, "price": r.get("exec_price"),
                                 "status": r.get("status"), "swept": bool(r.get("swept")),
-                                "file": f})
+                                "fee": r.get("fee_total"), "latency_ms": r.get("latency_ms"),
+                                "ask_seen": r.get("ask_seen"), "limit_sent": r.get("limit_sent"),
+                                "tau": r.get("tau_at_send"), "error": r.get("error"),
+                                "close": pinflat.close_epoch(r.get("ticker")), "file": f})
         elif k == "signal":
             self.signals.append({"t": t, "tk": r.get("ticker"), "want": r.get("want"),
                                  "price": r.get("price"), "edge_c": r.get("edge_c"),
                                  "size": r.get("size"), "take_n": r.get("take_n"),
-                                 "tau": r.get("tau"), "file": f})
+                                 "tau": r.get("tau"), "fair": r.get("fair"), "spot": r.get("spot"),
+                                 "strike": r.get("strike"), "digits": r.get("digits"),
+                                 "level_age_ms": r.get("level_age_ms"), "file": f})
         elif k in ("hedge", "hedge_alarm"):
             self.hedges.append({"t": t, "kind": k, "tk": r.get("ticker"),
                                 "belief": r.get("belief"), "n": r.get("n"),
                                 "price": r.get("price"), "status": r.get("status"),
+                                "side": r.get("side"), "entry": r.get("entry"),
                                 "tau": r.get("tau"), "file": f})
         elif k == "autosize":
             self.autosize.append({"t": t, "size": r.get("new"), "bank": _bank_from_why(r.get("why")),
@@ -222,7 +275,19 @@ class Ledger:
             self.halts.append({"t": t, "kind": k, "why": r.get("why"), "file": f})
         elif k == "start":
             self.starts.append({"t": t, "file": f, "size": r.get("size"),
-                                "hedge": r.get("hedge_belief"), "tau_max": r.get("tau_max")})
+                                "hedge": r.get("hedge_belief"), "tau_max": r.get("tau_max"),
+                                "mode": r.get("mode")})
+        elif k == "close_summary":
+            looks = r.get("looks") or 0
+            dep = r.get("depth") or {}
+            self.closes.append({
+                "t": t, "close": r.get("close"), "looks": looks,
+                "no_offer": r.get("no_offer") or 0, "tradeable": r.get("tradeable") or 0,
+                "fired": bool(r.get("fired")), "gates": r.get("gates") or {},
+                "best_edge_c": r.get("best_edge_c"), "best_price": r.get("best_price"),
+                "best_ticker": r.get("best_ticker"), "best_want": r.get("best_want"),
+                "depth_med": dep.get("median") if isinstance(dep, dict) else None,
+                "why": r.get("why"), "file": f})
 
     # ---- aggregations ----
     @staticmethod
@@ -242,25 +307,37 @@ class Ledger:
         net = sum(closes.values())
         worst = min(closes.values()) if closes else 0.0
         best = max(closes.values()) if closes else 0.0
+        wins = [v for v in closes.values() if v >= 0]
+        losses = [v for v in closes.values() if v < 0]
         return {"closes": len(closes), "won": won, "lost": lost, "net": net,
                 "worst": worst, "best": best, "markets": len(settled),
-                "loss_rate": (100.0 * lost / len(closes)) if closes else None}
+                "loss_rate": (100.0 * lost / len(closes)) if closes else None,
+                "avg_win": (sum(wins) / len(wins)) if wins else None,
+                "avg_loss": (sum(losses) / len(losses)) if losses else None}
 
     def settled_on(self, day):
         return [s for s in self.settled if s["t"] and et_day(s["close"] or s["t"]) == day]
 
     def fills_on(self, day):
-        return [o for o in self.orders if o["t"] and et_day(o["t"]) == day]
+        return [o for o in self.orders if o["t"] and et_day(o["close"] or o["t"]) == day]
+
+    def signals_on(self, day):
+        return [s for s in self.signals if s["t"] and et_day(s["t"]) == day]
+
+    def closes_on(self, day):
+        return [c for c in self.closes if c["close"] and et_day(c["close"]) == day]
 
     @staticmethod
     def fill_stats(orders):
         f = [o for o in orders if o["filled"] > 0]
         zero = sum(1 for o in orders if o["filled"] <= 0)
         contracts = sum(o["filled"] for o in f)
+        asked = sum(o["asked"] for o in orders if o["asked"])
         pcts = sorted(o["filled"] / o["asked"] for o in f if o["asked"])
         med = pcts[len(pcts) // 2] if pcts else None
         return {"orders": len(orders), "fills": len(f), "zero": zero,
-                "contracts": contracts, "median_pct": med}
+                "contracts": contracts, "asked": asked, "median_pct": med,
+                "share": (contracts / asked) if asked else None}
 
     def days(self):
         seen = {}
@@ -269,7 +346,7 @@ class Ledger:
                 seen.setdefault(et_day(s["close"] or s["t"]), True)
         for o in self.orders:
             if o["t"]:
-                seen.setdefault(et_day(o["t"]), True)
+                seen.setdefault(et_day(o["close"] or o["t"]), True)
         return sorted(seen)
 
     def bank(self):
@@ -278,18 +355,74 @@ class Ledger:
                 return a
         return None
 
+    def first_bank(self):
+        for a in self.autosize:
+            if a["bank"] is not None and a["t"]:
+                return a
+        return None
+
+    def deposited(self):
+        """What the account started with. If results\\DEPOSITED.txt holds a
+        number, that is the operator's own figure and wins. Otherwise: the
+        first real bank reading minus the profit made before it (the bot only
+        began reading the balance on 2026-09-13), which is a reconstruction."""
+        try:
+            with open(os.path.join(self.results, "DEPOSITED.txt"), encoding="utf-8") as fh:
+                v = float(re.sub(r"[^0-9.]", "", fh.read().split("\n")[0]))
+                if v > 0:
+                    return v
+        except (OSError, ValueError):
+            pass
+        fb = self.first_bank()
+        if not fb:
+            return None
+        before = sum(s["pnl"] for s in self.settled if s["t"] and s["t"] < fb["t"])
+        return fb["bank"] - before
+
+    def bank_at(self, epoch):
+        """The bank at an instant: the last real reading at or before it, plus
+        every settlement since. Between readings this is a reconstruction."""
+        last = None
+        for a in self.autosize:
+            if a["bank"] is not None and a["t"] and a["t"] <= epoch:
+                last = a
+        if last is None:
+            dep = self.deposited()
+            if dep is None:
+                return None
+            return dep + sum(s["pnl"] for s in self.settled if s["t"] and s["t"] <= epoch)
+        return last["bank"] + sum(s["pnl"] for s in self.settled if s["t"] and last["t"] < s["t"] <= epoch)
+
+    def bank_series(self):
+        """(t, bank) over time: real readings marked real=True, settlements
+        between them reconstructed."""
+        pts = []
+        for s in self.settled:
+            if s["t"]:
+                b = self.bank_at(s["t"])
+                if b is not None:
+                    pts.append((s["t"], b, False))
+        for a in self.autosize:
+            if a["bank"] is not None and a["t"]:
+                pts.append((a["t"], a["bank"], True))
+        pts.sort()
+        return pts
+
     def contracts_for(self, ticker):
         return sum(o["filled"] for o in self.orders if o["tk"] == ticker)
 
     def last_halt(self):
         return self.halts[-1] if self.halts else None
 
+    def last_start(self):
+        return self.starts[-1] if self.starts else None
+
     def run_settled(self):
         f = os.path.basename(self.newest) if self.newest else None
         return [s for s in self.settled if s["file"] == f]
 
     def losing_closes(self):
-        """Every losing close, all time, newest first: (close, net, coins)."""
+        """Every losing close, all time, newest first: (close, net, legs)."""
         rows = {}
         for s in self.settled:
             key = s["close"] if s["close"] is not None else s["t"]
@@ -299,6 +432,276 @@ class Ledger:
         out = [(k, v["net"], v["legs"]) for k, v in rows.items() if v["net"] < 0]
         out.sort(key=lambda x: -(x[0] or 0))
         return out
+
+    def hedge_outcomes(self):
+        """Each executed hedge joined to how the bet ended. 'needed' when the
+        bet it protected LOST (the hedge paid), 'wasted' when the bet held."""
+        out = []
+        for g in self.hedges:
+            if g["kind"] != "hedge" or str(g.get("status")) != "executed":
+                continue
+            legs = [s for s in self.settled if s["tk"] == g["tk"]]
+            side = g.get("side")
+            hedge_legs = [s for s in legs if s["want"] == side]
+            bet_legs = [s for s in legs if s["want"] != side]
+            bet_pnl = sum(s["pnl"] for s in bet_legs) if bet_legs else None
+            hedge_pnl = sum(s["pnl"] for s in hedge_legs) if hedge_legs else None
+            verdict = None
+            if bet_pnl is not None:
+                verdict = "NEEDED" if bet_pnl < 0 else "WASTED"
+            out.append(dict(g, bet_pnl=bet_pnl, hedge_pnl=hedge_pnl, verdict=verdict,
+                            net=(bet_pnl or 0) + (hedge_pnl or 0) if bet_pnl is not None else None))
+        return out
+
+    # ---- market activity ----
+    @staticmethod
+    def offer_share(c):
+        return (1.0 - c["no_offer"] / c["looks"]) if c["looks"] else None
+
+    def activity(self, last_n=4):
+        """How active sellers are right now against the whole record."""
+        shares = [Ledger.offer_share(c) for c in self.closes]
+        shares = sorted(s for s in shares if s is not None)
+        recent = [Ledger.offer_share(c) for c in self.closes[-last_n:]]
+        recent = [s for s in recent if s is not None]
+        if not shares or not recent:
+            return {"level": "UNKNOWN", "recent": None, "p25": None, "p75": None, "median": None}
+        rec = sorted(recent)[len(recent) // 2]
+        p25 = shares[len(shares) // 4]
+        med = shares[len(shares) // 2]
+        p75 = shares[(3 * len(shares)) // 4]
+        level = "QUIET" if rec < p25 else ("BUSY" if rec > p75 else "NORMAL")
+        return {"level": level, "recent": rec, "p25": p25, "median": med, "p75": p75}
+
+    @staticmethod
+    def why_no_trade(c):
+        if c["fired"]:
+            return "BOUGHT"
+        if c.get("why") and "NOBODY OFFERED" in str(c["why"]).upper():
+            return GATE_WORDS["no_offer"]
+        g = {k: v for k, v in (c.get("gates") or {}).items() if k != "no_offer"}
+        if not g:
+            return GATE_WORDS["no_offer"] if c["no_offer"] else "nothing passed"
+        k = max(g, key=g.get)
+        return GATE_WORDS.get(k, k)
+
+
+# ===========================================================================
+# stories -- one bet, one hedge, one quarter-hour, one day, in plain words
+# ===========================================================================
+def _fmt_px(v, digits):
+    try:
+        return ("%%.%df" % int(digits or 2)) % float(v)
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _find_signal(ledger, tk, before=None):
+    for s in reversed(ledger.signals):
+        if s["tk"] == tk and (before is None or (s["t"] or 0) <= before + 1):
+            return s
+    return None
+
+
+def _saw(sig, side):
+    """'WHAT IT SAW' for a signal, for the side it wanted."""
+    if not sig:
+        return "WHAT IT SAW: (no signal record found for this bet)"
+    fair = sig.get("fair")
+    chance = None
+    if fair is not None:
+        chance = float(fair) if side == "YES" else 1.0 - float(fair)
+    worth = (100 * chance) if chance is not None else None
+    spot = _fmt_px(sig.get("spot"), sig.get("digits"))
+    strike = _fmt_px(sig.get("strike"), sig.get("digits"))
+    rel = "above" if side == "YES" else "below"
+    out = ("WHAT IT SAW: with %s seconds left the price stood at %s and the line was %s. "
+           "The bet is that it finishes %s the line." % (sig.get("tau", "?"), spot, strike, rel))
+    if worth is not None:
+        out += (" The model put the chance of that at %.2f%%, so a %s contract was worth about %.1fc. "
+                "Someone was selling it at %.1fc -- %.2fc cheaper than that (the \"edge\")."
+                % (worth, side, worth, 100 * float(sig.get("price") or 0), float(sig.get("edge_c") or 0)))
+    age = sig.get("level_age_ms")
+    if age is not None:
+        try:
+            out += " That offer had been sitting there %.1f s." % (float(age) / 1000.0)
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _did(orders):
+    if not orders:
+        return "WHAT IT DID: sent no order."
+    parts = []
+    for o in orders:
+        if o["filled"] > 0:
+            p = "bought %g contracts at %.1fc" % (o["filled"], 100 * float(o["price"] or 0))
+            if o.get("asked") and o["filled"] < o["asked"] - 1e-9:
+                p += " (asked for %g; the seller had fewer)" % o["asked"]
+            if o.get("fee") is not None:
+                p += ", fee $%.2f" % float(o["fee"])
+            if o.get("latency_ms") is not None:
+                p += ", the order took %.0f ms" % float(o["latency_ms"])
+            if o.get("swept") and o.get("ask_seen") is not None and o.get("limit_sent") is not None:
+                p += " (it saw %.1fc and was willing to pay up to %.1fc so a faster buyer could not beat it)" % (
+                    100 * float(o["ask_seen"]), 100 * float(o["limit_sent"]))
+        else:
+            p = "asked for %g contracts and got NONE -- someone else bought that offer first (a lost race)" % float(o.get("asked") or 0)
+            if o.get("error"):
+                p += "; error: %s" % str(o["error"])[:80]
+        parts.append(p)
+    return "WHAT IT DID: " + "; ".join(parts) + "."
+
+
+def story_settled(ledger, s):
+    tk = s["tk"]
+    side = str(s["want"]).upper()
+    close = s["close"]
+    hedges = [g for g in ledger.hedge_outcomes() if g["tk"] == tk]
+    is_hedge_leg = any(str(g.get("side")).upper() == side for g in hedges)
+    head = "%s -- the market closing %s ET on %s" % (coin(tk), close_et(tk), et_str(close, "%b %d") if close else "?")
+    lines = [head, ""]
+    if is_hedge_leg:
+        g = next(g for g in hedges if str(g.get("side")).upper() == side)
+        lines.append("THIS ROW IS THE INSURANCE LEG of a hedge: %g %s contracts bought at %.0fc when the model's belief in the "
+                     "original bet fell to %.0f%%." % (float(g.get("n") or 0), side, 100 * float(g.get("price") or 0), 100 * float(g.get("belief") or 0)))
+        lines.append("")
+        lines.append("HOW IT WENT: the market settled %s, so this leg %s: %s." % (
+            str(s["result"]).upper(), "paid $1.00 a contract" if s["pnl"] >= 0 else "paid nothing", money(s["pnl"])))
+        lines.append("Double-click the original bet's row (same coin, same close, the other side) for the whole story.")
+        return "\n".join(lines)
+    sig = _find_signal(ledger, tk, s["t"])
+    orders = [o for o in ledger.orders if o["tk"] == tk]
+    n = sum(o["filled"] for o in orders)
+    lines.append(_saw(sig, side))
+    lines.append("")
+    lines.append(_did(orders))
+    lines.append("")
+    res = str(s["result"]).upper()
+    if s["pnl"] >= 0:
+        lines.append("HOW IT WENT: the market settled %s -- the side it held. Each contract paid $1.00. After the price paid "
+                     "and the fee, the bet made %s (%.2fc per contract)." % (res, money(s["pnl"]), 100 * s["pnl"] / n if n else 0))
+    else:
+        lines.append("HOW IT WENT: the market settled %s -- AGAINST the side it held. The contracts paid nothing, so the money "
+                     "paid for them is lost: %s. The price must have crossed the line inside the final seconds, which the model "
+                     "put at under 1 in 200 -- and every such loss costs many wins." % (res, money(s["pnl"])))
+    for g in hedges:
+        if g["verdict"] is None:
+            continue
+        lines.append("")
+        lines.append("INSURANCE: at belief %.0f%% it bought %g %s at %.0fc. That turned out %s: the hedge leg made %s, so the close "
+                     "finished at %s instead of %s." % (100 * float(g.get("belief") or 0), float(g.get("n") or 0),
+                                                       str(g.get("side")).upper(), 100 * float(g.get("price") or 0),
+                                                       g["verdict"], money(g["hedge_pnl"] or 0), money(g["net"] or 0), money(g["bet_pnl"] or 0)))
+    return "\n".join(lines)
+
+
+def story_hedge(ledger, g):
+    tk = g["tk"]
+    side = str(g.get("side")).upper()
+    other = "NO" if side == "YES" else "YES"
+    n_bet = sum(o["filled"] for o in ledger.orders if o["tk"] == tk)
+    lines = ["%s -- insurance on the market closing %s ET on %s" % (coin(tk), close_et(tk), et_str(g["t"], "%b %d") if g["t"] else "?"), ""]
+    lines.append("WHAT HAPPENED: with %s seconds left the bot held %g %s contracts bought at %.1fc. The price moved toward the "
+                 "line and the model's belief that the bet would win fell to %.0f%% (it acts under 60%%). So it bought %g contracts "
+                 "of the other side, %s, at %.0fc." % (g.get("tau", "?"), n_bet, other, 100 * float(g.get("entry") or 0),
+                                                        100 * float(g.get("belief") or 0), float(g.get("n") or 0), side, 100 * float(g.get("price") or 0)))
+    lines.append("")
+    lines.append("WHY: if the bet then loses, the %s contracts pay $1.00 each and cover part of the loss. If the bet wins anyway, "
+                 "the insurance is lost -- a small cost for a big saving when it is needed. It recovers about a third of a loss on average." % side)
+    lines.append("")
+    if g["verdict"] == "NEEDED":
+        lines.append("HOW IT WENT: NEEDED. The bet did lose (%s) and the insurance paid %s, so the close finished at %s instead of %s."
+                     % (money(g["bet_pnl"]), money(g["hedge_pnl"]), money(g["net"]), money(g["bet_pnl"])))
+    elif g["verdict"] == "WASTED":
+        lines.append("HOW IT WENT: WASTED, this time. The bet held and made %s; the insurance cost %s; net %s. That is the premium "
+                     "for being covered when it does flip." % (money(g["bet_pnl"]), money(g["hedge_pnl"]), money(g["net"])))
+    else:
+        lines.append("HOW IT WENT: not settled yet.")
+    return "\n".join(lines)
+
+
+def story_signal(ledger, s):
+    side = str(s["want"]).upper()
+    tk = s["tk"]
+    orders = [o for o in ledger.orders if o["tk"] == tk and o["t"] and s["t"] and 0 <= o["t"] - s["t"] <= 10]
+    lines = ["%s -- a buy decision at %s ET for the market closing %s" % (coin(tk), et_str(s["t"], "%I:%M:%S %p") if s["t"] else "?", close_et(tk)), ""]
+    lines.append(_saw(s, side))
+    lines.append("")
+    lines.append(_did(orders))
+    settled = [x for x in ledger.settled if x["tk"] == tk and x["want"] == s["want"]]
+    if settled and any(o["filled"] > 0 for o in orders):
+        lines.append("")
+        lines.append("HOW IT WENT: %s, %s. Double-click the bet in LAST SETTLED BETS for the full story." % (
+            "WON" if settled[0]["pnl"] >= 0 else "LOST", money(settled[0]["pnl"])))
+    return "\n".join(lines)
+
+
+def story_loss(ledger, close, net, legs):
+    lines = ["The quarter-hour closing %s ET on %s lost %s" % (et_str(close), et_str(close, "%b %d"), money(net)), ""]
+    for l in legs:
+        n = ledger.contracts_for(l["tk"])
+        lines.append("  %s %s at %.1fc, %g contracts -> settled %s: %s" % (
+            coin(l["tk"]), str(l["want"]).upper(), 100 * float(l["cost"] or 0), n, str(l["result"]).upper(), money(l["pnl"])))
+    lines.append("")
+    lines.append("WHY IT HURTS: a win here makes 2c to 4c a contract; a loss costs most of the 96c-98c paid. So one losing close "
+                 "wipes out many winning ones, and the list on this tab is what decides a day.")
+    lines.append("Double-click a row in LAST SETTLED BETS for what the bot saw and did on each leg.")
+    return "\n".join(lines)
+
+
+def story_close(ledger, c):
+    share = Ledger.offer_share(c)
+    passed = (c["tradeable"] / c["looks"]) if c["looks"] else None
+    lines = ["The quarter-hour closing %s ET on %s" % (et_str(c["close"]), et_str(c["close"], "%b %d")) if c["close"] else "A quarter-hour", ""]
+    lines.append("The bot checked the books %d times in the last 30 seconds." % c["looks"])
+    if share is not None:
+        lines.append("On %.0f%% of those checks somebody was selling the winning side at all." % (100 * share))
+    if passed is not None:
+        lines.append("On %.0f%% the offer also passed every rule (price under 98c, enough edge, enough size, fresh feed)." % (100 * passed))
+    if c.get("best_edge_c") is not None:
+        lines.append("The best bargain seen was %.2fc of edge at %.1fc%s." % (
+            c["best_edge_c"], 100 * float(c.get("best_price") or 0), (" on " + coin(c["best_ticker"])) if c.get("best_ticker") else ""))
+    if c.get("depth_med") is not None:
+        lines.append("A typical offer held %.0f contracts." % c["depth_med"])
+    g = c.get("gates") or {}
+    if g:
+        words = ["%s (%d)" % (GATE_WORDS.get(k, k), v) for k, v in sorted(g.items(), key=lambda kv: -kv[1])]
+        lines.append("Why looks were passed over: " + "; ".join(words) + ".")
+    lines.append("")
+    if c["fired"]:
+        got = sum(o["filled"] for o in ledger.orders if o["close"] == c["close"])
+        lines.append("RESULT: it bought %g contracts on this quarter-hour." % got)
+    else:
+        lines.append("RESULT: no trade -- " + Ledger.why_no_trade(c) + ".")
+    return "\n".join(lines)
+
+
+def story_day(ledger, d, now=None):
+    now = time.time() if now is None else now
+    s = Ledger.summary(ledger.settled_on(d))
+    fs = Ledger.fill_stats(ledger.fills_on(d))
+    b0 = ledger.bank_at(et_day_start(d))
+    cl = ledger.closes_on(d)
+    wo = sum(1 for c in cl if c["no_offer"] < c["looks"])
+    try:
+        up = hours_up_et_day(d, now if d == et_day(now) else et_day_start(d) + 86400)
+    except Exception:                                    # noqa: BLE001
+        up = None
+    lines = ["%s (Eastern day)" % d, ""]
+    lines.append("MONEY: %s, which is %s of the $%.2f the bank held when the day started." % (money(s["net"]), pct((s["net"] / b0) if b0 else None), b0 or 0))
+    lines.append("BETS: %d closes (%d contracts bought over %d fills), %d won, %d lost. %s" % (
+        s["closes"], fs["contracts"], fs["fills"], s["won"], s["lost"],
+        ("The worst close cost %s." % money(s["worst"])) if s["lost"] else "No losing close."))
+    lines.append("SELLERS: of %d quarter-hours watched, %d had somebody selling. %d orders were sent; %d filled; %d were lost races."
+                 % (len(cl), wo, fs["orders"], fs["fills"], fs["zero"]))
+    if fs["share"] is not None:
+        lines.append("FILL: it asked for %g contracts and got %g (%s). This share is what limits growth as bets get bigger." % (
+            fs["asked"], fs["contracts"], pct(fs["share"], False)))
+    if up:
+        lines.append("TIME: the bot could trade %.1f hours of this day: %s per hour." % (up, money(s["net"] / up)))
+    return "\n".join(lines)
 
 
 # ===========================================================================
@@ -335,16 +738,41 @@ def recorder_ok(root):
     cur = time.strftime("%Y%m%dT%H", time.gmtime(now)) + ".jsonl.gz"
     pb = 0
     cn = 0
-    for dp, _dn, fn in os.walk(root):
-        for f in fn:
-            if f == prev:
+    chans = []
+    try:
+        for name in os.listdir(root):
+            d = os.path.join(root, name)
+            if not os.path.isdir(d):
+                continue
+            p = os.path.join(d, prev)
+            c = os.path.join(d, cur)
+            if os.path.exists(p):
                 try:
-                    pb += os.path.getsize(os.path.join(dp, f))
+                    pb += os.path.getsize(p)
                 except OSError:
                     pass
-            elif f == cur:
+            if os.path.exists(c):
                 cn += 1
-    return pb > 0 and cn > 0, pb, cn
+                chans.append(name)
+    except OSError:
+        pass
+    return pb > 0 and cn > 0, pb, cn, chans
+
+
+def newest_mtime_age(root):
+    best = None
+    try:
+        for dp, _dn, fn in os.walk(root):
+            for f in fn:
+                try:
+                    m = os.path.getmtime(os.path.join(dp, f))
+                except OSError:
+                    continue
+                if best is None or m > best:
+                    best = m
+    except OSError:
+        pass
+    return None if best is None else time.time() - best
 
 
 def read_flag():
@@ -353,6 +781,15 @@ def read_flag():
             return fh.read().strip() or "(no reason)"
     except OSError:
         return None
+
+
+def last_line(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+        return lines[-1].strip() if lines else ""
+    except OSError:
+        return ""
 
 
 def health(ledger):
@@ -370,8 +807,14 @@ def health(ledger):
             h["run_all"] = pinflat.pid_alive(int(fh.read().strip()))
     except (OSError, ValueError):
         h["run_all"] = None
-    h["kalshi_ok"], h["kalshi_prev"], _ = recorder_ok(os.path.join(KALS, "kalshi_data"))
-    h["feeds_ok"], h["feeds_prev"], _ = recorder_ok(os.path.join(KALS, "feed_data"))
+    h["kalshi_ok"], h["kalshi_prev"], h["kalshi_open"], h["kalshi_chans"] = recorder_ok(os.path.join(KALS, "kalshi_data"))
+    h["feeds_ok"], h["feeds_prev"], h["feeds_open"], h["feeds_chans"] = recorder_ok(os.path.join(KALS, "feed_data"))
+    h["cdc_age"] = newest_mtime_age(os.path.join(KALS, "cdc_data"))
+    now = time.time()
+    h["paper_arms"] = sum(1 for p in glob.glob(os.path.join(RESULTS, "pinrun-paper-*.jsonl"))
+                          if now - os.path.getmtime(p) < 900)
+    h["race_arms"] = sum(1 for p in glob.glob(os.path.join(RESULTS, "pinracearm-*.jsonl"))
+                         if now - os.path.getmtime(p) < 900)
     try:
         h["disk_gb"] = shutil.disk_usage("C:\\").free / 1e9
     except OSError:
@@ -386,11 +829,32 @@ def health(ledger):
         h["open"] = {}
         h["flat_err"] = str(e)[:120]
     h["halt"] = ledger.last_halt()
+    h["boot_last"] = last_line(os.path.join(RESULTS, "boot_all.log"))
+    h["watch_last"] = last_line(os.path.join(RESULTS, "watch_bot.log"))
     return h
 
 
+def evidence(h):
+    """What the state was DERIVED from, so the banner is never a label
+    somebody set. THE OPERATOR: 'make sure ... it's actually derived by
+    checking if it's running or not and not trusting'. The process is checked
+    by opening its pid; 'trading' means its own log was written recently; the
+    stand-down flag is a file on disk, read every refresh."""
+    q = h.get("quiet_s")
+    return "Checked just now: process %s %s; its log was written %s; stand-down flag %s." % (
+        h.get("pid") or "?", "is OPEN (alive)" if h["alive"] else "is NOT running",
+        ("%d s ago" % q) if q is not None else "never",
+        "PRESENT" if h.get("flag") else "absent")
+
+
 def status_of(h, now=None):
-    """(state, headline, detail, colour) for the banner."""
+    """(state, headline, detail, colour) for the banner. Every state is
+    derived from evidence(h), never from a stored label."""
+    st = _status_of(h, now)
+    return (st[0], st[1], st[2] + "\n" + evidence(h), st[3])
+
+
+def _status_of(h, now=None):
     now = time.time() if now is None else now
     n_open = sum(v if isinstance(v, (int, float)) else (v.get("n", 1) if isinstance(v, dict) else 1)
                  for v in (h.get("open") or {}).values())
@@ -522,6 +986,126 @@ def do_stop(log):
 
 
 # ===========================================================================
+# help text -- plain words, one entry per panel and per column
+# ===========================================================================
+HELP = [
+    ("what", "WHAT THE BOT DOES", """\
+Kalshi runs a market every 15 minutes on each coin: "will the price be above X at the close?"
+The close price is an AVERAGE of the last 60 seconds. With 30 seconds left, half of that
+average is already locked in, so the bot can be very sure which side wins. It buys that side
+when someone is selling it a little too cheap -- typically 96c to 98c for a contract that pays
+$1.00 -- and holds to the close.
+
+A win makes 2c to 4c per contract (minus a fee of about a tenth of a cent). A loss costs most
+of the 96c-98c paid. So one loss wipes out many wins, and LOSSES ARE THE WHOLE STORY: a good
+day is a day with few losses, not a day with many wins.
+
+The bot sizes each bet from the bank (bank divided by about 5.9), never more than 2 bets on one
+quarter-hour, and buys insurance (a "hedge") when a bet it holds starts to look wrong."""),
+    ("banner", "THE BIG BANNER AND THE THREE BUTTONS", """\
+TRADING (green)   the bot is running and writing its log.
+PAUSED / STOPPED (grey)   you pressed PAUSE or STOP. Nothing restarts it until you press START.
+NOT RUNNING (red)   it is down and the watchdog is bringing it back (or the watchdog is down too).
+SAFETY BRAKE (red)   the bot stopped itself: two losing bets in one run, or the run lost more than
+                    its limit, or the bank fell 20% from its high. The watchdog relaunches it
+                    15 minutes later. Press START to relaunch sooner.
+RUNNING BUT QUIET (yellow)   alive, but nothing logged for 20+ minutes. Watchdog restarts at 25.
+
+START   clears your stand-down, makes sure the watchdogs are up, starts the bot if it is down.
+PAUSE   no new bets; waits for any open bet to settle; then stops. Safe at any moment.
+STOP    stops right now. Asks first if a bet is open (the bet still settles on Kalshi by
+        itself, but there will be nobody to hedge it)."""),
+    ("chips", "THE STRIP UNDER THE BUTTONS", """\
+BOT        alive or not, and how many seconds since it last wrote to its log.
+WATCHDOG   the helper that relaunches the bot when it dies. It checks every 30 seconds.
+RECORDERS  the two programs taping the market for research (see the System tab). They are
+           worth more than the bot: their tape cannot be re-made if it is lost.
+DISK FREE  the tape stops for good below 5 GB. Yellow under 10, red under 6.
+RAM FREE   red under 1.5 GB.
+BANK       the account balance the bot last read, and the return on what was put in.
+SIZE PER BET   how many contracts the bot asks for per bet right now (grows with the bank)."""),
+    ("tiles", "TODAY / YESTERDAY / THIS RUN / ALL TIME", """\
+The dollar figure is money actually settled, after fees. Under it:
+  % return      that money as a share of the bank at the START of that day (all time: of what
+                was put in). This is the number to compare with any other investment.
+  closes        a close is one quarter-hour. Every coin settling on that quarter-hour counts as
+                ONE close, because they all move together. "bets" is the individual contracts
+                bought. A close is LOST if it lost money overall.
+  hours up      how much of the day the bot was able to trade, and $ per hour of that.
+  fills / contracts   how many orders filled, and how many contracts in total.
+THIS RUN is since the bot last (re)started."""),
+    ("open", "OPEN BETS", """\
+Bets bought and not yet settled. "Closes at" is when the market settles (ET); "In" is seconds
+to go. A bet settles within about a minute of its close."""),
+    ("settled", "LAST SETTLED BETS", """\
+Coin      which market.        Close   the quarter-hour it settled on (ET).
+Side      YES = bet the price finishes above the line, NO = below.
+Paid      cents per contract. At 98c a win makes 2c a contract; a loss costs 98c.
+Contracts how many were bought.   $   what the bet made or lost after fees.
+Click any column heading to sort by it. Click again to flip the order."""),
+    ("signals", "LAST SIGNALS", """\
+Every time the bot decided to buy. Edge c = how many cents cheaper the offer was than what the
+model says the contract is worth (bigger is better, but the biggest edges are also where
+informed sellers hide). Wanted = contracts asked for. Got = contracts actually received --
+0 means someone else bought that offer first (we lose about a quarter of these races); a partial
+number means the seller had fewer than we wanted."""),
+    ("hedges", "HEDGES", """\
+When a bet the bot holds starts to look wrong (its "belief" that the bet wins drops under 60%),
+it buys the OTHER side as insurance so the worst case is smaller.
+  Bet flipped?   NEEDED = the bet did lose, the insurance paid.  WASTED = the bet won anyway and
+                 the insurance cost a little.  Pending = not settled yet.
+  Bet $ / Hedge $ / Net   what the original bet made, what the insurance made, and the total.
+Over time insurance costs a little on quiet days and saves a lot on bad ones."""),
+    ("market", "MARKET -- HOW ACTIVE SELLERS ARE", """\
+The bot can only buy when someone is SELLING the winning side cheaply in the last 30 seconds.
+This tab shows how often that happened.
+  QUIET / NORMAL / BUSY   how the last four quarter-hours compare with the whole record.
+  looks          how many times the bot checked the books in that quarter-hour.
+  offered        share of those looks where anybody was selling the winning side at all.
+  passed gates   share where the offer also passed every rule (price cap, edge, depth...).
+  best edge      the best bargain seen, in cents.  offer size   contracts on offer (median).
+  what happened  BOUGHT, or the main reason nothing was bought.
+Below the table: today's counts -- closes with anything to buy, orders sent, filled, and
+lost races (someone else took the offer first)."""),
+    ("days", "DAYS", """\
+One row per Eastern day. % return is net $ over the bank at the start of that day. Hours up is
+the time the bot was able to trade (outages are recorded in results/DOWNTIME.json). Median fill %
+is what share of the contracts it asked for the book actually handed over -- THE number that
+decides how far the bank can grow, because bets grow with the bank but the sellers do not.
+Fill share is the same thing over all contracts. Closes w/ offers = quarter-hours where anybody
+was selling at all."""),
+    ("chart", "THE CHART", """\
+Hover to read a point. Modes:
+  Money made    every settled bet added up over time.
+  Bank          the account balance: real readings are dots, the line between them is the
+                readings plus settlements since (a reconstruction).
+  Per day $ / %   one bar per Eastern day.
+Range buttons narrow the time window."""),
+    ("losses", "LOSSES", """\
+Every losing close, all time. This is the list that decides whether the strategy works: it wins
+small and loses big, so a few rows here explain most of any bad day."""),
+    ("system", "SYSTEM", """\
+Every program that has to be running, what it does, and proof it is alive.
+LIVE BOT             the one that spends money (research/pinrun.py --live).
+BOT WATCHDOG         relaunches the bot when it dies (watch_bot.ps1).
+BOOT TASK            Windows task "KalsBoot": at sign-in and every 10 minutes, starts anything
+                     that is missing (boot_all.ps1).
+KALSHI RECORDER      tapes Kalshi's own feed: prices, trades, full order books, and the
+                     settlement index (one print per second). One file per channel per hour.
+                     This tape is how every rule was found; it cannot be re-made.
+EXCHANGE RECORDER    tapes the order books of Coinbase, Kraken, Bitstamp and Gemini, the
+                     exchanges whose prices make up the settlement index.
+CRYPTO.COM RECORDER  tapes Crypto.com's prediction markets every few seconds, in case that
+                     becomes a second venue.
+PAPER ARMS           copies of the bot with one setting changed each, pretending to trade,
+                     so a change can be judged before it touches money."""),
+    ("log", "LOG", """\
+Top: what this app did (start/pause/stop and their results).
+Bottom: the bot's own console and the watchdog's log, newest at the end."""),
+]
+
+
+# ===========================================================================
 # GUI
 # ===========================================================================
 def run_gui():
@@ -534,8 +1118,8 @@ def run_gui():
     root = tk.Tk()
     root.title("Pin Bot")
     root.configure(bg=C["bg"])
-    root.geometry("1180x760")
-    root.minsize(900, 600)
+    root.geometry("1240x800")
+    root.minsize(960, 640)
 
     def _tk_err(*a):
         with open(ERR_FILE, "a", encoding="utf-8") as fh:
@@ -546,11 +1130,6 @@ def run_gui():
     st.theme_use("clam")
     st.configure(".", background=C["bg"], foreground=C["text"], fieldbackground=C["panel"])
     st.configure("TFrame", background=C["bg"])
-    st.configure("Panel.TFrame", background=C["panel"])
-    st.configure("TLabel", background=C["bg"], foreground=C["text"], font=("Segoe UI", 10))
-    st.configure("Panel.TLabel", background=C["panel"], foreground=C["text"], font=("Segoe UI", 10))
-    st.configure("Muted.TLabel", background=C["panel"], foreground=C["muted"], font=("Segoe UI", 9))
-    st.configure("Big.TLabel", background=C["panel"], foreground=C["text"], font=("Segoe UI", 20, "bold"))
     st.configure("TNotebook", background=C["bg"], borderwidth=0)
     st.configure("TNotebook.Tab", background=C["panel"], foreground=C["muted"], padding=(14, 6), font=("Segoe UI", 10, "bold"))
     st.map("TNotebook.Tab", background=[("selected", C["panel2"])], foreground=[("selected", C["text"])])
@@ -558,14 +1137,39 @@ def run_gui():
                  rowheight=24, font=("Consolas", 10), borderwidth=0)
     st.configure("Treeview.Heading", background=C["panel2"], foreground=C["muted"], font=("Segoe UI", 9, "bold"))
     st.map("Treeview", background=[("selected", C["blue"])])
+    st.configure("Vertical.TScrollbar", background=C["panel2"], troughcolor=C["bg"], arrowcolor=C["muted"])
+
+    # ---- tooltip ----
+    class Tip:
+        def __init__(self, w, text):
+            self.w, self.text, self.top = w, text, None
+            w.bind("<Enter>", self.show)
+            w.bind("<Leave>", self.hide)
+
+        def show(self, _e=None):
+            if self.top:
+                return
+            x = self.w.winfo_rootx() + 10
+            y = self.w.winfo_rooty() + self.w.winfo_height() + 4
+            self.top = tk.Toplevel(self.w)
+            self.top.overrideredirect(True)
+            self.top.configure(bg=C["panel3"])
+            tk.Label(self.top, text=self.text, bg=C["panel3"], fg=C["text"], font=("Segoe UI", 9),
+                     justify="left", wraplength=360, padx=8, pady=6).pack()
+            self.top.geometry("+%d+%d" % (x, y))
+
+        def hide(self, _e=None):
+            if self.top:
+                self.top.destroy()
+                self.top = None
 
     # ---- banner ----
-    banner = tk.Frame(root, bg=C["grey"], height=96)
+    banner = tk.Frame(root, bg=C["grey"], height=110)
     banner.pack(fill="x", padx=12, pady=(12, 6))
     banner.pack_propagate(False)
     head = tk.Label(banner, text="...", bg=C["grey"], fg="white", font=("Segoe UI", 22, "bold"), anchor="w")
-    head.pack(fill="x", padx=16, pady=(12, 0))
-    sub = tk.Label(banner, text="", bg=C["grey"], fg="white", font=("Segoe UI", 11), anchor="w")
+    head.pack(fill="x", padx=16, pady=(10, 0))
+    sub = tk.Label(banner, text="", bg=C["grey"], fg="white", font=("Segoe UI", 11), anchor="w", justify="left")
     sub.pack(fill="x", padx=16)
 
     btns = tk.Frame(root, bg=C["bg"])
@@ -624,11 +1228,21 @@ def run_gui():
     b_start = big_button("▶  START", C["gain"], guarded(on_start))
     b_pause = big_button("⏸  PAUSE", C["watch"], guarded(on_pause))
     b_stop = big_button("■  STOP", C["loss"], guarded(on_stop))
-    tk.Button(btns, text="Open Deck (web view)", command=lambda: os.startfile(os.path.join(REPO, "open_deck.cmd")),
-              bg=C["panel2"], fg=C["text"], font=("Segoe UI", 10), relief="flat", cursor="hand2", bd=0,
-              padx=10).pack(side="left", padx=(20, 6))
-    tk.Button(btns, text="Refresh", command=lambda: tick(force=True), bg=C["panel2"], fg=C["text"],
-              font=("Segoe UI", 10), relief="flat", cursor="hand2", bd=0, padx=10).pack(side="left")
+    Tip(b_start, "Clears your stand-down, makes sure the watchdogs are running, starts the bot if it is down.")
+    Tip(b_pause, "No new bets. Waits for open bets to settle, then stops. Press START to resume.")
+    Tip(b_stop, "Stops right now. Asks first if a bet is open.")
+
+    def small_button(parent, txt, cmd, **kw):
+        b = tk.Button(parent, text=txt, command=cmd, bg=C["panel2"], fg=C["text"], font=("Segoe UI", 10),
+                      relief="flat", cursor="hand2", bd=0, padx=10, **kw)
+        return b
+
+    small_button(btns, "Open Deck (web view)", lambda: os.startfile(os.path.join(REPO, "open_deck.cmd"))).pack(side="left", padx=(20, 6))
+    small_button(btns, "Refresh", lambda: tick(force=True)).pack(side="left")
+    b_what = tk.Button(btns, text="?  What's this", command=lambda: start_explain(), bg=C["blue"], fg="white",
+                       font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", bd=0, padx=10)
+    b_what.pack(side="left", padx=(6, 0))
+    Tip(b_what, "Click, then hover over anything on the screen and click it to get it explained. Double-click any row in any table for that item's story.")
     clock = tk.Label(btns, text="", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 10))
     clock.pack(side="right")
 
@@ -636,6 +1250,13 @@ def run_gui():
     strip = tk.Frame(root, bg=C["bg"])
     strip.pack(fill="x", padx=12, pady=(0, 6))
     chips = {}
+    chip_tips = {"bot": "Is the money bot running, and when did it last write to its log.",
+                 "wd": "The helper that relaunches the bot when it dies. Checks every 30 s.",
+                 "rec": "The two market recorders (System tab). Their tape cannot be re-made.",
+                 "disk": "The tape stops for good below 5 GB free.",
+                 "ram": "Free memory. Red under 1.5 GB.",
+                 "bank": "The balance the bot last read, and the return on what was put in.",
+                 "size": "Contracts the bot asks for per bet. Grows with the bank."}
 
     def chip(key, title):
         f = tk.Frame(strip, bg=C["panel"], padx=10, pady=6)
@@ -643,7 +1264,10 @@ def run_gui():
         tk.Label(f, text=title, bg=C["panel"], fg=C["muted"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
         v = tk.Label(f, text="...", bg=C["panel"], fg=C["text"], font=("Segoe UI", 11, "bold"))
         v.pack(anchor="w")
-        chips[key] = v
+        s = tk.Label(f, text="", bg=C["panel"], fg=C["muted"], font=("Segoe UI", 8))
+        s.pack(anchor="w")
+        chips[key] = (v, s)
+        Tip(f, chip_tips[key])
 
     for key, title in (("bot", "BOT"), ("wd", "WATCHDOG"), ("rec", "RECORDERS"), ("disk", "DISK FREE"),
                        ("ram", "RAM FREE"), ("bank", "BANK"), ("size", "SIZE PER BET")):
@@ -653,93 +1277,336 @@ def run_gui():
     nb = ttk.Notebook(root)
     nb.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
+    # ---- "What's this?": a registry of explainable things, a popup, and an
+    # overlay mode that highlights whatever the mouse is over and explains it
+    # on click. THE OPERATOR: "a question mark somewhere and you click it then
+    # you can go hover over what you want to know and click to get your info."
+    registry = []                                   # (widget, key, title, text-or-None)
+    help_by_key = {k: (t, b) for k, t, b in HELP}
+
+    def register(widget, key, title=None, text=None):
+        registry.append((widget, key, title or help_by_key.get(key, (key, ""))[0], text))
+
+    def popup(title, text, key=None, near=None, width=640):
+        top = tk.Toplevel(root)
+        top.title(title)
+        top.configure(bg=C["panel"])
+        top.transient(root)
+        x = (near[0] if near else root.winfo_rootx() + 120)
+        y = (near[1] if near else root.winfo_rooty() + 120)
+        top.geometry("+%d+%d" % (min(x, root.winfo_screenwidth() - width - 20), min(y, root.winfo_screenheight() - 360)))
+        tk.Label(top, text=title, bg=C["panel"], fg=C["blue"], font=("Segoe UI", 12, "bold"), anchor="w",
+                 padx=14, pady=8).pack(fill="x")
+        body = tk.Text(top, bg=C["panel2"], fg=C["text"], font=("Segoe UI", 10), relief="flat", wrap="word",
+                       padx=12, pady=10, width=int(width / 8), height=min(22, max(6, text.count("\n") + 4)))
+        body.insert("end", text)
+        body.configure(state="disabled")
+        body.pack(fill="both", expand=True, padx=10, pady=(0, 6))
+        bar = tk.Frame(top, bg=C["panel"])
+        bar.pack(fill="x", padx=10, pady=(0, 10))
+        if key:
+            small_button(bar, "Open the full help", lambda: (top.destroy(), show_help(key))).pack(side="left")
+        small_button(bar, "Close", top.destroy).pack(side="right")
+        top.bind("<Escape>", lambda _e: top.destroy())
+        top.focus_set()
+
+    def explain(entry, near=None):
+        w, key, title, text = entry
+        body = text or help_by_key.get(key, ("", "No help written for this yet."))[1]
+        popup(title, body, key=key, near=near)
+
+    def hit_test(xr, yr):
+        best = None
+        for entry in registry:
+            w = entry[0]
+            try:
+                if not w.winfo_ismapped():
+                    continue
+                x0, y0 = w.winfo_rootx(), w.winfo_rooty()
+                x1, y1 = x0 + w.winfo_width(), y0 + w.winfo_height()
+            except tk.TclError:
+                continue
+            if x0 <= xr < x1 and y0 <= yr < y1:
+                area = (x1 - x0) * (y1 - y0)
+                if best is None or area < best[0]:
+                    best = (area, entry, (x0, y0, x1, y1))
+        return best
+
+    explain_state = {"top": None}
+
+    def end_explain():
+        if explain_state["top"]:
+            explain_state["top"].destroy()
+            explain_state["top"] = None
+        root.configure(cursor="")
+
+    def start_explain():
+        if explain_state["top"]:
+            end_explain()
+            return
+        top = tk.Toplevel(root)
+        top.overrideredirect(True)
+        top.attributes("-alpha", 0.35)
+        top.attributes("-topmost", True)
+        top.geometry("%dx%d+%d+%d" % (root.winfo_width(), root.winfo_height(), root.winfo_rootx(), root.winfo_rooty()))
+        cv = tk.Canvas(top, bg="black", highlightthickness=0, cursor="question_arrow")
+        cv.pack(fill="both", expand=True)
+        cv.create_text(root.winfo_width() // 2, 24, text="WHAT'S THIS?  hover over anything, click it for an explanation.  Esc or right-click to leave.",
+                       fill="white", font=("Segoe UI", 13, "bold"))
+        explain_state["top"] = top
+
+        def on_move(e):
+            cv.delete("hl")
+            hit = hit_test(e.x_root, e.y_root)
+            if not hit:
+                return
+            _a, entry, (x0, y0, x1, y1) = hit
+            ox, oy = root.winfo_rootx(), root.winfo_rooty()
+            cv.create_rectangle(x0 - ox, y0 - oy, x1 - ox, y1 - oy, outline=C["watch"], width=3, tags="hl")
+            cv.create_rectangle(x0 - ox, y0 - oy - 22, x0 - ox + 8 * len(entry[2]) + 16, y0 - oy, fill=C["watch"], outline="", tags="hl")
+            cv.create_text(x0 - ox + 8, y0 - oy - 11, text=entry[2], fill="black", anchor="w", font=("Segoe UI", 10, "bold"), tags="hl")
+
+        def on_click(e):
+            hit = hit_test(e.x_root, e.y_root)
+            end_explain()
+            if hit:
+                explain(hit[1], near=(e.x_root + 10, e.y_root + 10))
+
+        cv.bind("<Motion>", on_move)
+        cv.bind("<Button-1>", on_click)
+        cv.bind("<Button-3>", lambda _e: end_explain())
+        top.bind("<Escape>", lambda _e: end_explain())
+        top.focus_set()
+
+    def section(parent, title, key, text=None):
+        f = tk.Frame(parent, bg=C["bg"])
+        tk.Label(f, text=title, bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9, "bold")).pack(side="left")
+        q = tk.Label(f, text=" ? ", bg=C["panel2"], fg=C["blue"], font=("Segoe UI", 8, "bold"), cursor="hand2")
+        q.pack(side="left", padx=6)
+        q.bind("<Button-1>", lambda e, k=key, ttl=title, tx=text: explain((None, k, ttl, tx), near=(e.x_root, e.y_root)))
+        f.pack(fill="x", pady=(6, 2), anchor="w")
+        return f
+
+    def table(parent, cols, widths, height=8, title=None, key=None, story=None):
+        f = tk.Frame(parent, bg=C["bg"])
+        if title:
+            section(f, title, key or "what")
+        inner = tk.Frame(f, bg=C["bg"])
+        inner.pack(fill="both", expand=True)
+        tv = ttk.Treeview(inner, columns=cols, show="headings", height=height)
+        sb = ttk.Scrollbar(inner, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        tv.pack(side="left", fill="both", expand=True)
+        sb.pack(side="left", fill="y")
+        for c_, w in zip(cols, widths):
+            tv.heading(c_, text=c_, command=lambda c=c_, t=tv: sort_tv(t, c))
+            tv.column(c_, width=w, anchor="w", stretch=(w > 120))
+        for tag, col in (("gain", C["gain"]), ("loss", C["loss"]), ("watch", C["watch"]), ("muted", C["muted"]),
+                         ("text", C["text"])):
+            tv.tag_configure(tag, foreground=col)
+        tv._sort = None
+        tv._objs = {}
+        tv._story = story
+        if story:
+            def on_dbl(e, t=tv):
+                item = t.identify_row(e.y)
+                obj = t._objs.get(item)
+                if obj is None:
+                    return
+                try:
+                    txt = t._story(obj)
+                except Exception as ex:                  # noqa: BLE001
+                    txt = "could not build this story: %s" % ex
+                popup(txt.split("\n", 1)[0], txt, key=key, near=(e.x_root + 10, e.y_root + 10))
+            tv.bind("<Double-1>", on_dbl)
+        register(tv, key or "what", (title or key or "table") + ("  (double-click a row for its story)" if story else ""))
+        return f, tv
+
+    def sort_tv(tv, col):
+        rows = [(tv.set(i, col), i) for i in tv.get_children("")]
+        rev = tv._sort == (col, False)
+        rows.sort(key=lambda r: sort_key(r[0]), reverse=rev)
+        for n, (_v, i) in enumerate(rows):
+            tv.move(i, "", n)
+        tv._sort = (col, rev)
+        for c in tv["columns"]:
+            tv.heading(c, text=c + (" ▼" if (c == col and rev) else (" ▲" if c == col else "")))
+
+    def fill(tv, rows):
+        tv.delete(*tv.get_children())
+        tv._objs = {}
+        for row in rows:
+            vals, tag = row[0], row[1]
+            item = tv.insert("", "end", values=vals, tags=(tag,) if tag else ())
+            if len(row) > 2:
+                tv._objs[item] = row[2]
+        if tv._sort:
+            col, rev = tv._sort
+            tv._sort = (col, not rev)
+            sort_tv(tv, col)
+
+    for key, (v_, _s) in chips.items():
+        register(v_.master, "chips", v_.master.winfo_children()[0].cget("text"), chip_tips[key] + "\n\n" + help_by_key["chips"][1])
+    register(banner, "banner", "The status banner")
+    register(b_start, "banner", "START", "Clears your stand-down, makes sure the watchdogs are running, and starts the bot if it is down.\n\n" + help_by_key["banner"][1])
+    register(b_pause, "banner", "PAUSE", "No new bets. Waits for any open bet to settle, then stops the bot. Press START to resume.\n\n" + help_by_key["banner"][1])
+    register(b_stop, "banner", "STOP", "Stops the bot right now. Asks first if a bet is open.\n\n" + help_by_key["banner"][1])
+
     # NOW tab
     now_tab = ttk.Frame(nb)
     nb.add(now_tab, text="  Now  ")
     tiles = tk.Frame(now_tab, bg=C["bg"])
-    tiles.pack(fill="x", pady=(8, 6))
+    tiles.pack(fill="x", pady=(8, 2))
     tile_vals = {}
 
     def tile(key, title):
         f = tk.Frame(tiles, bg=C["panel"], padx=12, pady=8)
         f.pack(side="left", padx=(0, 6), fill="x", expand=True)
-        tk.Label(f, text=title, bg=C["panel"], fg=C["muted"], font=("Segoe UI", 9, "bold")).pack(anchor="w")
-        v = tk.Label(f, text="...", bg=C["panel"], fg=C["text"], font=("Segoe UI", 18, "bold"))
-        v.pack(anchor="w")
-        s = tk.Label(f, text="", bg=C["panel"], fg=C["muted"], font=("Segoe UI", 9))
+        top = tk.Frame(f, bg=C["panel"])
+        top.pack(fill="x")
+        tk.Label(top, text=title, bg=C["panel"], fg=C["muted"], font=("Segoe UI", 9, "bold")).pack(side="left")
+        q = tk.Label(top, text=" ? ", bg=C["panel2"], fg=C["blue"], font=("Segoe UI", 8, "bold"), cursor="hand2")
+        q.pack(side="left", padx=6)
+        q.bind("<Button-1>", lambda _e: show_help("tiles"))
+        row = tk.Frame(f, bg=C["panel"])
+        row.pack(fill="x")
+        v = tk.Label(row, text="...", bg=C["panel"], fg=C["text"], font=("Segoe UI", 18, "bold"))
+        v.pack(side="left")
+        p = tk.Label(row, text="", bg=C["panel"], fg=C["muted"], font=("Segoe UI", 12, "bold"))
+        p.pack(side="left", padx=(10, 0), pady=(6, 0))
+        s = tk.Label(f, text="", bg=C["panel"], fg=C["muted"], font=("Segoe UI", 9), justify="left", anchor="w")
         s.pack(anchor="w")
-        tile_vals[key] = (v, s)
+        tile_vals[key] = (v, p, s)
+        register(f, "tiles", title)
 
     for key, title in (("today", "TODAY (ET)"), ("yday", "YESTERDAY"), ("run", "THIS RUN"), ("all", "ALL TIME")):
         tile(key, title)
 
     lower = tk.Frame(now_tab, bg=C["bg"])
     lower.pack(fill="both", expand=True)
-
-    def table(parent, cols, widths, height=8, title=None):
-        f = tk.Frame(parent, bg=C["bg"])
-        if title:
-            tk.Label(f, text=title, bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(4, 2))
-        tv = ttk.Treeview(f, columns=cols, show="headings", height=height)
-        for c_, w in zip(cols, widths):
-            tv.heading(c_, text=c_)
-            tv.column(c_, width=w, anchor="w", stretch=(w > 120))
-        tv.pack(fill="both", expand=True)
-        tv.tag_configure("gain", foreground=C["gain"])
-        tv.tag_configure("loss", foreground=C["loss"])
-        tv.tag_configure("watch", foreground=C["watch"])
-        tv.tag_configure("muted", foreground=C["muted"])
-        return f, tv
-
     left = tk.Frame(lower, bg=C["bg"])
     left.pack(side="left", fill="both", expand=True, padx=(0, 6))
     right = tk.Frame(lower, bg=C["bg"])
     right.pack(side="left", fill="both", expand=True)
 
     f_open, tv_open = table(left, ("Open bet", "Side", "Contracts", "Paid", "Closes at (ET)", "In"),
-                            (110, 60, 80, 70, 110, 60), height=4, title="OPEN BETS")
+                            (110, 60, 80, 70, 110, 60), height=3, title="OPEN BETS", key="open",
+                            story=lambda s: story_signal(ledger, s))
     f_open.pack(fill="x")
     f_tr, tv_tr = table(left, ("Settled (ET)", "Coin", "Close", "Side", "Paid", "Contracts", "Result", "$"),
-                        (110, 60, 80, 50, 60, 80, 60, 80), height=14, title="LAST SETTLED BETS")
+                        (120, 60, 80, 50, 60, 80, 60, 80), height=14, title="LAST SETTLED BETS", key="settled",
+                        story=lambda s: story_settled(ledger, s))
     f_tr.pack(fill="both", expand=True)
     f_sig, tv_sig = table(right, ("Seen (ET)", "Coin", "Close", "Side", "Price", "Edge c", "Wanted", "Got"),
-                          (110, 60, 80, 50, 60, 60, 70, 70), height=10, title="LAST SIGNALS (what it tried to buy)")
+                          (120, 60, 80, 50, 60, 60, 70, 70), height=9, title="LAST SIGNALS (what it tried to buy)", key="signals",
+                          story=lambda s: story_signal(ledger, s))
     f_sig.pack(fill="both", expand=True)
-    f_hg, tv_hg = table(right, ("When (ET)", "Coin", "What", "Belief", "Contracts", "Price"),
-                        (110, 60, 90, 70, 80, 70), height=5, title="HEDGES (insurance bought when a bet turned)")
+    f_hg, tv_hg = table(right, ("When (ET)", "Coin", "Belief", "Contracts", "Price", "Bet flipped?", "Bet $", "Hedge $", "Net $"),
+                        (120, 55, 60, 70, 55, 100, 70, 70, 70), height=5, title="HEDGES (insurance bought when a bet turned)", key="hedges",
+                        story=lambda g: story_hedge(ledger, g))
     f_hg.pack(fill="x")
+
+    # MARKET tab
+    mk_tab = ttk.Frame(nb)
+    nb.add(mk_tab, text="  Market  ")
+    mk_head = tk.Frame(mk_tab, bg=C["panel"], padx=14, pady=10)
+    mk_head.pack(fill="x", pady=(8, 4))
+    mk_level = tk.Label(mk_head, text="...", bg=C["panel"], fg=C["text"], font=("Segoe UI", 20, "bold"))
+    mk_level.pack(side="left")
+    mk_desc = tk.Label(mk_head, text="", bg=C["panel"], fg=C["muted"], font=("Segoe UI", 10), justify="left")
+    mk_desc.pack(side="left", padx=16)
+    f_mk, tv_mk = table(mk_tab, ("Close (ET)", "Looks", "Offered", "Passed gates", "Best edge c", "Best price", "Offer size", "What happened"),
+                        (110, 70, 80, 100, 90, 80, 90, 360), height=16, title="THE LAST QUARTER-HOURS, NEWEST FIRST", key="market",
+                        story=lambda c: story_close(ledger, c))
+    f_mk.pack(fill="both", expand=True)
+    register(mk_head, "market", "How active sellers are")
+    mk_today = tk.Label(mk_tab, text="", bg=C["bg"], fg=C["text"], font=("Segoe UI", 10), justify="left", anchor="w")
+    mk_today.pack(fill="x", pady=(4, 6))
 
     # DAYS tab
     days_tab = ttk.Frame(nb)
     nb.add(days_tab, text="  Days  ")
-    f_days, tv_days = table(days_tab, ("Day (ET)", "Closes", "Won", "Lost", "Net $", "$ / close", "Worst close $",
-                                       "Orders", "Filled", "Zero-fills", "Contracts", "Median fill %"),
-                            (100, 60, 60, 60, 80, 80, 100, 60, 60, 80, 90, 100), height=12, title="EACH DAY, NEWEST FIRST")
+    f_days, tv_days = table(days_tab, ("Day (ET)", "Net $", "% return", "Closes", "Won", "Lost", "$ / close", "Worst $",
+                                       "Hours up", "$ / hour", "Orders", "Filled", "Lost races", "Contracts", "Median fill %", "Fill share", "Closes w/ offers"),
+                            (95, 75, 75, 60, 50, 50, 75, 75, 70, 70, 60, 60, 80, 80, 95, 80, 110), height=9,
+                            title="EACH DAY, NEWEST FIRST (click a heading to sort)", key="days",
+                            story=lambda d: story_day(ledger, d))
     f_days.pack(fill="x", padx=2, pady=(8, 4))
-    tk.Label(days_tab, text="MONEY MADE, ADDED UP OVER TIME (every settled bet, all time)", bg=C["bg"], fg=C["muted"],
-             font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(6, 2))
-    chart = tk.Canvas(days_tab, bg=C["panel"], highlightthickness=0, height=220)
+    ch_bar = section(days_tab, "THE CHART", "chart")
+    mode_var = tk.StringVar(value="cum")
+    range_var = tk.StringVar(value="all")
+    for txt, val in (("Money made", "cum"), ("Bank", "bank"), ("Per day $", "day"), ("Per day %", "daypct")):
+        tk.Radiobutton(ch_bar, text=txt, variable=mode_var, value=val, command=lambda: draw_chart(),
+                       bg=C["bg"], fg=C["text"], selectcolor=C["panel2"], activebackground=C["bg"],
+                       activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+    tk.Label(ch_bar, text="   range:", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9)).pack(side="left")
+    for txt, val in (("all", "all"), ("7 days", "7"), ("3 days", "3"), ("today", "1")):
+        tk.Radiobutton(ch_bar, text=txt, variable=range_var, value=val, command=lambda: draw_chart(),
+                       bg=C["bg"], fg=C["text"], selectcolor=C["panel2"], activebackground=C["bg"],
+                       activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(6, 0))
+    chart = tk.Canvas(days_tab, bg=C["panel"], highlightthickness=0, height=240)
     chart.pack(fill="both", expand=True, padx=2, pady=(0, 6))
+    chart_pts = {"pts": [], "kind": "line"}
+    register(chart, "chart", "The chart")
 
     # LOSSES tab
     loss_tab = ttk.Frame(nb)
     nb.add(loss_tab, text="  Losses  ")
-    tk.Label(loss_tab, text="Every losing close, all time, newest first. A close is one quarter-hour; all coins settling "
-                            "on it count as one bet.", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9)).pack(anchor="w", pady=(8, 2))
-    f_loss, tv_loss = table(loss_tab, ("Close (ET)", "Day", "Net $", "Coins", "Legs", "Paid (avg)"),
-                            (140, 100, 90, 200, 60, 90), height=24)
-    f_loss.pack(fill="both", expand=True, padx=2)
+    f_loss, tv_loss = table(loss_tab, ("Close (ET)", "Day", "Net $", "Coins", "Legs", "Paid (avg)", "Contracts"),
+                            (140, 100, 90, 200, 60, 90, 90), height=24,
+                            title="EVERY LOSING CLOSE, ALL TIME, NEWEST FIRST", key="losses",
+                            story=lambda x: story_loss(ledger, *x))
+    f_loss.pack(fill="both", expand=True, padx=2, pady=(8, 0))
+    loss_sum = tk.Label(loss_tab, text="", bg=C["bg"], fg=C["text"], font=("Segoe UI", 10), justify="left", anchor="w")
+    loss_sum.pack(fill="x", pady=(4, 6))
+
+    # SYSTEM tab
+    sys_tab = ttk.Frame(nb)
+    nb.add(sys_tab, text="  System  ")
+    f_sys, tv_sys = table(sys_tab, ("Program", "What it does", "Status", "Proof"),
+                          (170, 470, 130, 330), height=10, title="EVERYTHING THAT HAS TO BE RUNNING", key="system")
+    f_sys.pack(fill="both", expand=True, padx=2, pady=(8, 4))
+    sys_foot = tk.Label(sys_tab, text="", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9), justify="left", anchor="w")
+    sys_foot.pack(fill="x", pady=(0, 6))
 
     # LOG tab
     log_tab = ttk.Frame(nb)
     nb.add(log_tab, text="  Log  ")
-    tk.Label(log_tab, text="WHAT THIS APP DID", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(8, 2))
+    section(log_tab, "WHAT THIS APP DID", "log")
     console = tk.Text(log_tab, height=8, bg=C["panel"], fg=C["text"], font=("Consolas", 10), relief="flat", wrap="word")
     console.pack(fill="x", padx=2)
-    tk.Label(log_tab, text="THE BOT'S OWN CONSOLE (last lines) and THE WATCHDOG'S LOG", bg=C["bg"], fg=C["muted"],
-             font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(8, 2))
+    register(console, "log", "What this app did")
+    section(log_tab, "THE BOT'S OWN CONSOLE (last lines) and THE WATCHDOG'S LOG", "log")
     tails = tk.Text(log_tab, bg=C["panel"], fg=C["muted"], font=("Consolas", 9), relief="flat", wrap="none")
     tails.pack(fill="both", expand=True, padx=2, pady=(0, 6))
+
+    # HELP tab
+    help_tab = ttk.Frame(nb)
+    nb.add(help_tab, text="  Help  ")
+    hf = tk.Frame(help_tab, bg=C["bg"])
+    hf.pack(fill="both", expand=True, pady=(8, 6))
+    help_txt = tk.Text(hf, bg=C["panel"], fg=C["text"], font=("Segoe UI", 10), relief="flat", wrap="word", padx=14, pady=10)
+    hsb = ttk.Scrollbar(hf, orient="vertical", command=help_txt.yview)
+    help_txt.configure(yscrollcommand=hsb.set)
+    help_txt.pack(side="left", fill="both", expand=True)
+    hsb.pack(side="left", fill="y")
+    help_txt.tag_configure("h", font=("Segoe UI", 12, "bold"), foreground=C["blue"], spacing1=14, spacing3=4)
+    help_txt.tag_configure("b", font=("Consolas", 10), foreground=C["text"])
+    for key, title, body in HELP:
+        help_txt.mark_set("sec_" + key, "end-1c")
+        help_txt.mark_gravity("sec_" + key, "left")
+        help_txt.insert("end", title + "\n", "h")
+        help_txt.insert("end", body + "\n", "b")
+    help_txt.configure(state="disabled")
+
+    def show_help(key):
+        nb.select(help_tab)
+        try:
+            help_txt.see("sec_" + key)
+            idx = help_txt.index("sec_" + key)
+            help_txt.yview_moveto(max(0.0, (float(idx.split(".")[0]) - 1) / float(help_txt.index("end").split(".")[0])))
+        except tk.TclError:
+            pass
 
     def console_log(msg):
         line = "%s  %s\n" % (et_str(time.time(), "%I:%M:%S %p"), msg)
@@ -751,99 +1618,212 @@ def run_gui():
         with open(os.path.join(RESULTS, "pindesk.log"), "a", encoding="utf-8") as fh:
             fh.write(time.strftime("%Y-%m-%dT%H:%M:%S") + "  " + msg + "\n")
 
-    # ---- rendering ----
-    def fill(tv, rows):
-        tv.delete(*tv.get_children())
-        for vals, tag in rows:
-            tv.insert("", "end", values=vals, tags=(tag,) if tag else ())
+    # ---- chart ----
+    def chart_series():
+        mode = ledger_mode = mode_var.get()
+        rng = range_var.get()
+        now = time.time()
+        t_min = None
+        if rng == "1":
+            t_min = et_day_start(et_day(now))
+        elif rng in ("3", "7"):
+            t_min = et_day_start(et_day(now - (int(rng) - 1) * 86400))
+        if mode == "cum":
+            pts, tot = [], 0.0
+            for s in ledger.settled:
+                if s["t"]:
+                    tot += s["pnl"]
+                    if t_min is None or s["t"] >= t_min:
+                        pts.append((s["t"], tot, "%s  $%+.2f (this bet %+.2f, %s)" % (
+                            et_str(s["t"], "%m/%d %I:%M %p"), tot, s["pnl"], coin(s["tk"]))))
+            if t_min is not None and pts:
+                base = pts[0][1] - 0.0
+                _ = base
+            return "line", pts, "$"
+        if mode == "bank":
+            pts = []
+            for t, b, real in ledger.bank_series():
+                if t_min is None or t >= t_min:
+                    pts.append((t, b, "%s  bank $%.2f%s" % (et_str(t, "%m/%d %I:%M %p"), b, "  (real reading)" if real else "  (reconstructed)")))
+            return "line", pts, "$"
+        pts = []
+        for d in ledger.days():
+            ds = et_day_start(d)
+            if t_min is not None and ds < t_min:
+                continue
+            s = Ledger.summary(ledger.settled_on(d))
+            if mode == "day":
+                pts.append((ds, s["net"], "%s  $%+.2f  (%d closes, %d lost)" % (d, s["net"], s["closes"], s["lost"])))
+            else:
+                b0 = ledger.bank_at(ds)
+                r = (s["net"] / b0) if b0 else 0.0
+                pts.append((ds, 100 * r, "%s  %+.2f%% of $%.2f" % (d, 100 * r, b0 or 0)))
+        return "bar", pts, ("$" if mode == "day" else "%")
+        _ = ledger_mode
 
     def draw_chart():
         chart.delete("all")
-        pts = sorted((s["t"], s["pnl"]) for s in ledger.settled if s["t"])
-        if len(pts) < 2:
-            chart.create_text(20, 20, text="not enough settled bets yet", fill=C["muted"], anchor="w")
+        kind, pts, unit = chart_series()
+        chart_pts["pts"], chart_pts["kind"] = pts, kind
+        if len(pts) < (2 if kind == "line" else 1):
+            chart.create_text(20, 20, text="not enough data in this range yet", fill=C["muted"], anchor="w")
             return
         W = max(chart.winfo_width(), 200)
         H = max(chart.winfo_height(), 100)
-        m = {"l": 60, "r": 16, "t": 14, "b": 24}
-        cum = []
-        tot = 0.0
-        for t, p in pts:
-            tot += p
-            cum.append((t, tot))
-        t0, t1 = cum[0][0], cum[-1][0]
-        lo = min(0.0, min(v for _, v in cum))
-        hi = max(0.0, max(v for _, v in cum))
+        m = {"l": 64, "r": 16, "t": 16, "b": 26}
+        vals = [v for _, v, _ in pts]
+        lo = min(0.0, min(vals))
+        hi = max(0.0, max(vals))
         if hi - lo < 1e-9:
             hi = lo + 1
+        if kind == "line":
+            t0, t1 = pts[0][0], pts[-1][0]
+        else:
+            t0, t1 = pts[0][0], pts[-1][0] + 86400
+
         def X(t):
             return m["l"] + (t - t0) / max(1, t1 - t0) * (W - m["l"] - m["r"])
+
         def Y(v):
             return m["t"] + (hi - v) / (hi - lo) * (H - m["t"] - m["b"])
+
+        chart_pts["X"], chart_pts["Y"] = X, Y
         chart.create_line(m["l"], Y(0), W - m["r"], Y(0), fill=C["grey"], dash=(3, 3))
         for v in (lo, hi, 0.0):
-            chart.create_text(m["l"] - 6, Y(v), text="$%.0f" % v, fill=C["muted"], anchor="e", font=("Segoe UI", 8))
-        # day ticks
-        d0 = et_day(t0)
+            lab = ("$%.0f" % v) if unit == "$" else ("%.1f%%" % v)
+            chart.create_text(m["l"] - 6, Y(v), text=lab, fill=C["muted"], anchor="e", font=("Segoe UI", 8))
         last = None
-        for t, _ in cum:
+        for t, _v, _lab in pts:
             d = et_day(t)
             if d != last:
                 x = X(t)
                 chart.create_line(x, m["t"], x, H - m["b"], fill=C["panel2"])
                 chart.create_text(x + 2, H - m["b"] + 10, text=d[5:], fill=C["muted"], anchor="w", font=("Segoe UI", 8))
                 last = d
-        coords = []
-        for t, v in cum:
-            coords += [X(t), Y(v)]
-        chart.create_line(*coords, fill=C["gain"] if tot >= 0 else C["loss"], width=2)
-        chart.create_text(W - m["r"], m["t"] + 4, text="$%+.2f" % tot, fill=C["text"], anchor="ne", font=("Segoe UI", 12, "bold"))
-        _ = d0
+        if kind == "line":
+            coords = []
+            for t, v, _ in pts:
+                coords += [X(t), Y(v)]
+            chart.create_line(*coords, fill=C["gain"] if pts[-1][1] >= (pts[0][1] if mode_var.get() == "bank" else 0) else C["loss"], width=2)
+            if mode_var.get() == "bank":
+                for t, b, real in ledger.bank_series():
+                    if real and pts[0][0] <= t <= pts[-1][0]:
+                        chart.create_oval(X(t) - 3, Y(b) - 3, X(t) + 3, Y(b) + 3, fill=C["blue"], outline="")
+            lab = ("$%+.2f" % pts[-1][1]) if mode_var.get() == "cum" else ("$%.2f" % pts[-1][1])
+            chart.create_text(W - m["r"], m["t"] + 4, text=lab, fill=C["text"], anchor="ne", font=("Segoe UI", 12, "bold"))
+        else:
+            bw = max(4, (W - m["l"] - m["r"]) / max(1, len(pts)) * 0.7)
+            for t, v, _ in pts:
+                x = X(t + 43200)
+                chart.create_rectangle(x - bw / 2, Y(v), x + bw / 2, Y(0), fill=C["gain"] if v >= 0 else C["loss"], outline="")
+                chart.create_text(x, Y(v) - 8 if v >= 0 else Y(v) + 8, text=("%+.0f" % v) if unit == "$" else ("%+.1f%%" % v),
+                                  fill=C["text"], font=("Segoe UI", 8))
 
+    def chart_hover(e):
+        chart.delete("hover")
+        pts = chart_pts.get("pts") or []
+        if not pts or "X" not in chart_pts:
+            return
+        X, Y = chart_pts["X"], chart_pts["Y"]
+        if chart_pts["kind"] == "bar":
+            best = min(pts, key=lambda p: abs(X(p[0] + 43200) - e.x))
+            x, y = X(best[0] + 43200), Y(best[1])
+        else:
+            best = min(pts, key=lambda p: abs(X(p[0]) - e.x))
+            x, y = X(best[0]), Y(best[1])
+        chart.create_line(x, 0, x, chart.winfo_height(), fill=C["muted"], dash=(2, 2), tags="hover")
+        chart.create_oval(x - 4, y - 4, x + 4, y + 4, fill=C["watch"], outline="", tags="hover")
+        tx = min(max(e.x + 12, 70), chart.winfo_width() - 240)
+        ty = 18 if e.y > 60 else chart.winfo_height() - 30
+        chart.create_rectangle(tx - 6, ty - 10, tx + 236, ty + 12, fill=C["panel3"], outline="", tags="hover")
+        chart.create_text(tx, ty, text=best[2], fill=C["text"], anchor="w", font=("Segoe UI", 9), tags="hover")
+
+    chart.bind("<Motion>", chart_hover)
+    chart.bind("<Leave>", lambda _e: chart.delete("hover"))
+    chart.bind("<Configure>", lambda _e: draw_chart())
+
+    # ---- rendering ----
     def render(h):
         state, hl, det, colour = status_of(h)
         banner.configure(bg=colour)
         head.configure(text=hl, bg=colour)
         sub.configure(text=det, bg=colour)
         clock.configure(text=et_now_str())
+        now = time.time()
+        today = et_day(now)
+        yday = et_day(now - 86400)
 
         # chips
         q = h.get("quiet_s")
-        chips["bot"].configure(text=("alive, wrote %ds ago" % q) if h["alive"] and q is not None else ("alive" if h["alive"] else "not running"),
-                               fg=C["gain"] if h["alive"] else C["loss"])
+        v, s_ = chips["bot"]
+        v.configure(text="alive" if h["alive"] else "not running", fg=C["gain"] if h["alive"] else C["loss"])
+        s_.configure(text=("wrote %ds ago" % q) if q is not None else "")
         wd = h.get("watchdog_s")
-        chips["wd"].configure(text=("checked %ds ago" % wd) if wd is not None and wd < 120 else "NOT RUNNING",
-                              fg=C["gain"] if wd is not None and wd < 120 else C["loss"])
+        v, s_ = chips["wd"]
+        ok = wd is not None and wd < 120
+        v.configure(text="running" if ok else "NOT RUNNING", fg=C["gain"] if ok else C["loss"])
+        s_.configure(text=("checked %ds ago" % wd) if wd is not None else "no heartbeat file")
         rec_ok = h["kalshi_ok"] and h["feeds_ok"]
-        chips["rec"].configure(text="both writing" if rec_ok else ("kalshi %s, feeds %s" % ("ok" if h["kalshi_ok"] else "STOPPED?", "ok" if h["feeds_ok"] else "STOPPED?")),
-                               fg=C["gain"] if rec_ok else C["loss"])
+        v, s_ = chips["rec"]
+        v.configure(text="both writing" if rec_ok else "CHECK SYSTEM TAB", fg=C["gain"] if rec_ok else C["loss"])
+        s_.configure(text="Kalshi %s, exchanges %s" % ("ok" if h["kalshi_ok"] else "STOPPED?", "ok" if h["feeds_ok"] else "STOPPED?"))
         dg = h.get("disk_gb")
-        chips["disk"].configure(text=("%.1f GB" % dg) if dg is not None else "?",
-                                fg=C["loss"] if dg is not None and dg < 6 else (C["watch"] if dg is not None and dg < 10 else C["text"]))
+        v, s_ = chips["disk"]
+        v.configure(text=("%.1f GB" % dg) if dg is not None else "?",
+                    fg=C["loss"] if dg is not None and dg < 6 else (C["watch"] if dg is not None and dg < 10 else C["text"]))
+        s_.configure(text="tape stops below 5 GB")
         rg = h.get("ram_gb")
-        chips["ram"].configure(text=("%.1f GB" % rg) if rg is not None else "?",
-                               fg=C["loss"] if rg is not None and rg < 1.5 else C["text"])
+        v, s_ = chips["ram"]
+        v.configure(text=("%.1f GB" % rg) if rg is not None else "?", fg=C["loss"] if rg is not None and rg < 1.5 else C["text"])
+        s_.configure(text="")
         b = ledger.bank()
-        chips["bank"].configure(text=("$%.2f" % b["bank"]) if b else "?")
-        chips["size"].configure(text=("%g contracts" % b["size"]) if b and b.get("size") else "?")
+        dep = ledger.deposited()
+        v, s_ = chips["bank"]
+        v.configure(text=("$%.2f" % b["bank"]) if b else "?")
+        if b and dep:
+            s_.configure(text="%s on $%.2f put in (%.2fx)" % (pct((b["bank"] - dep) / dep), dep, b["bank"] / dep))
+        v, s_ = chips["size"]
+        v.configure(text=("%g contracts" % b["size"]) if b and b.get("size") else "?")
+        s_.configure(text=("about $%.0f a bet" % (b["size"] * 0.97)) if b and b.get("size") else "")
 
         # tiles
-        today = et_day(time.time())
-        yday = et_day(time.time() - 86400)
-        for key, rows in (("today", ledger.settled_on(today)), ("yday", ledger.settled_on(yday)),
-                          ("run", ledger.run_settled()), ("all", ledger.settled)):
+        for key, rows, day in (("today", ledger.settled_on(today), today), ("yday", ledger.settled_on(yday), yday),
+                               ("run", ledger.run_settled(), None), ("all", ledger.settled, None)):
             s = Ledger.summary(rows)
-            v, sub_ = tile_vals[key]
+            v, p, sub_ = tile_vals[key]
             v.configure(text="$%+.2f" % s["net"], fg=C["gain"] if s["net"] >= 0 else C["loss"])
-            extra = ""
-            if key in ("today", "yday"):
-                fs = Ledger.fill_stats(ledger.fills_on(today if key == "today" else yday))
-                extra = "  |  %d fills, %g contracts" % (fs["fills"], fs["contracts"])
-            if s["closes"]:
-                sub_.configure(text="%d closes (%d bets): %d won, %d lost (%.1f%%)%s" % (
-                    s["closes"], s["markets"], s["won"], s["lost"], s["loss_rate"], extra))
+            if day:
+                b0 = ledger.bank_at(et_day_start(day))
+                r = (s["net"] / b0) if b0 else None
+            elif key == "run" and ledger.last_start() and ledger.last_start()["t"]:
+                b0 = ledger.bank_at(ledger.last_start()["t"])
+                r = (s["net"] / b0) if b0 else None
             else:
-                sub_.configure(text="no settled bets" + extra)
+                r = (s["net"] / dep) if dep else None
+            p.configure(text=pct(r), fg=C["gain"] if (r or 0) >= 0 else C["loss"])
+            lines = []
+            if s["closes"]:
+                lines.append("%d close%s (%d bet%s): %d won, %d lost (%.1f%%)" % (
+                    s["closes"], "" if s["closes"] == 1 else "s", s["markets"], "" if s["markets"] == 1 else "s",
+                    s["won"], s["lost"], s["loss_rate"]))
+            else:
+                lines.append("no settled bets yet")
+            if day:
+                fs = Ledger.fill_stats(ledger.fills_on(day))
+                try:
+                    up = hours_up_et_day(day, now if day == today else et_day_start(day) + 86400)
+                except Exception:                        # noqa: BLE001
+                    up = None
+                lines.append("%d fills, %g contracts%s" % (fs["fills"], fs["contracts"],
+                             ("  |  %.1f h up, $%.2f/h" % (up, s["net"] / up)) if up else ""))
+            elif key == "all":
+                if s["avg_win"] is not None and s["avg_loss"] is not None:
+                    lines.append("avg win $%.2f, avg loss $%.2f: one loss = %.0f wins" % (s["avg_win"], s["avg_loss"], -s["avg_loss"] / max(0.01, s["avg_win"])))
+            else:
+                ls = ledger.last_start()
+                if ls and ls["t"]:
+                    lines.append("since %s" % et_str(ls["t"], "%m/%d %I:%M %p"))
+            sub_.configure(text="\n".join(lines))
 
         # open bets
         rows = []
@@ -852,28 +1832,26 @@ def run_gui():
             c = pinflat.close_epoch(tk_)
             sig = next((s for s in reversed(ledger.signals) if s["tk"] == tk_), None)
             paid = next((o["price"] for o in reversed(ledger.orders) if o["tk"] == tk_ and o["filled"] > 0), None)
-            left = ("%d s" % max(0, c - time.time())) if c else "?"
+            left = ("%d s" % max(0, c - now)) if c else "?"
             rows.append(((coin(tk_) + "  " + tk_.split("-")[-1], (sig or {}).get("want", "?").upper(),
                           "%g" % ledger.contracts_for(tk_), ("%.1fc" % (100 * paid)) if paid else "?",
-                          close_et(tk_), left), "watch"))
+                          close_et(tk_), left), "watch", sig))
         fill(tv_open, rows or [(("none", "", "", "", "", ""), "muted")])
 
         # settled
         rows = []
-        for s in list(reversed(ledger.settled))[:60]:
+        for s in list(reversed(ledger.settled))[:80]:
             won = s["pnl"] >= 0
             rows.append(((et_str(s["t"], "%m/%d %I:%M %p") if s["t"] else "?", coin(s["tk"]), close_et(s["tk"]),
                           str(s["want"]).upper(), ("%.1fc" % (100 * float(s["cost"]))) if s["cost"] is not None else "?",
                           "%g" % ledger.contracts_for(s["tk"]), "WON" if won else "LOST", money(s["pnl"])),
-                         "gain" if won else "loss"))
+                         "gain" if won else "loss", s))
         fill(tv_tr, rows)
 
-        # signals -- each paired with ITS order: the first unclaimed order on
-        # the same ticker at or after the signal (two signals on one ticker can
-        # land in the same second, so "nearest in time" pairs them wrongly).
+        # signals -- each paired with ITS order (first unclaimed on the same ticker at/after it)
         rows = []
         recent_sig = list(reversed(ledger.signals))[:40]
-        pool = [o for o in ledger.orders[-400:]]
+        pool = ledger.orders[-400:]
         claimed = set()
         for s in reversed(recent_sig):
             s["_o"] = None
@@ -889,40 +1867,133 @@ def run_gui():
             tag = "gain" if (o and o["filled"] > 0) else ("muted" if o else "watch")
             rows.append(((et_str(s["t"], "%m/%d %I:%M:%S %p") if s["t"] else "?", coin(s["tk"]), close_et(s["tk"]),
                           str(s["want"]).upper(), "%.1fc" % (100 * float(s["price"] or 0)), "%+.2f" % float(s["edge_c"] or 0),
-                          "%g" % float(s["take_n"] or s["size"] or 0), got), tag))
+                          "%g" % float(s["take_n"] or s["size"] or 0), got), tag, s))
         fill(tv_sig, rows)
 
         # hedges
         rows = []
-        for g in list(reversed(ledger.hedges))[:20]:
+        for g in list(reversed(ledger.hedge_outcomes()))[:30]:
+            ver = g["verdict"] or "pending"
             rows.append(((et_str(g["t"], "%m/%d %I:%M %p") if g["t"] else "?", coin(g["tk"]),
-                          "bought insurance" if g["kind"] == "hedge" else "alarm",
                           ("%.0f%%" % (100 * float(g["belief"]))) if g.get("belief") is not None else "?",
-                          "%g" % float(g.get("n") or 0), ("%.0fc" % (100 * float(g["price"]))) if g.get("price") else "-"),
-                         "watch" if g["kind"] == "hedge" else "muted"))
-        fill(tv_hg, rows or [(("none yet", "", "", "", "", ""), "muted")])
+                          "%g" % float(g.get("n") or 0), ("%.0fc" % (100 * float(g["price"]))) if g.get("price") else "-",
+                          ver, money(g["bet_pnl"]) if g["bet_pnl"] is not None else "-",
+                          money(g["hedge_pnl"]) if g["hedge_pnl"] is not None else "-",
+                          money(g["net"]) if g["net"] is not None else "-"),
+                         "gain" if ver == "NEEDED" else ("muted" if ver == "pending" else "watch"), g))
+        fill(tv_hg, rows or [(("none yet", "", "", "", "", "", "", "", ""), "muted")])
+
+        # market
+        act = ledger.activity()
+        lvl = act["level"]
+        mk_level.configure(text="SELLERS: %s" % lvl, fg={"QUIET": C["watch"], "BUSY": C["gain"], "NORMAL": C["text"]}.get(lvl, C["muted"]))
+        if act["recent"] is not None:
+            mk_desc.configure(text=("In the last four quarter-hours someone was selling the winning side on %.0f%% of looks.\n"
+                                    "Over the whole record: a quiet quarter-hour is under %.0f%%, a typical one %.0f%%, a busy one over %.0f%%."
+                                    % (100 * act["recent"], 100 * act["p25"], 100 * act["median"], 100 * act["p75"])))
+        rows = []
+        for c in list(reversed(ledger.closes))[:40]:
+            share = Ledger.offer_share(c)
+            passed = (c["tradeable"] / c["looks"]) if c["looks"] else None
+            what = Ledger.why_no_trade(c)
+            if c["fired"]:
+                got = sum(o["filled"] for o in ledger.orders if o["close"] == c["close"])
+                what = "BOUGHT %g contracts" % got
+            rows.append(((et_str(c["close"], "%m/%d %I:%M %p") if c["close"] else "?", "%d" % c["looks"],
+                          pct(share, False) if share is not None else "-", pct(passed, False) if passed is not None else "-",
+                          ("%+.2f" % c["best_edge_c"]) if c.get("best_edge_c") is not None else "-",
+                          ("%.1fc" % (100 * c["best_price"])) if c.get("best_price") else "-",
+                          ("%.0f" % c["depth_med"]) if c.get("depth_med") is not None else "-", what),
+                         "gain" if c["fired"] else ("muted" if (share or 0) == 0 else "text"), c))
+        fill(tv_mk, rows)
+        cl_today = ledger.closes_on(today)
+        fs_t = Ledger.fill_stats(ledger.fills_on(today))
+        with_offer = sum(1 for c in cl_today if c["no_offer"] < c["looks"])
+        passed_any = sum(1 for c in cl_today if c["tradeable"] > 0)
+        mk_today.configure(text=("TODAY: %d quarter-hours watched, %d had somebody selling, %d had an offer that passed every rule, "
+                                 "%d bought.  Orders sent %d, filled %d, lost races %d (someone took the offer first).  "
+                                 "Asked for %g contracts, got %g (%s)."
+                                 % (len(cl_today), with_offer, passed_any, sum(1 for c in cl_today if c["fired"]),
+                                    fs_t["orders"], fs_t["fills"], fs_t["zero"], fs_t["asked"], fs_t["contracts"],
+                                    pct(fs_t["share"], False) if fs_t["share"] is not None else "-")))
 
         # days
         rows = []
+        lost_h = {}
+        try:
+            lost_h = lost_by_et_day()
+        except Exception:                                # noqa: BLE001
+            pass
         for d in reversed(ledger.days()):
             s = Ledger.summary(ledger.settled_on(d))
             fs = Ledger.fill_stats(ledger.fills_on(d))
-            rows.append(((d, s["closes"], s["won"], s["lost"], money(s["net"]),
+            b0 = ledger.bank_at(et_day_start(d))
+            r = (s["net"] / b0) if b0 else None
+            try:
+                up = hours_up_et_day(d, now if d == today else et_day_start(d) + 86400)
+            except Exception:                            # noqa: BLE001
+                up = None
+            cl = ledger.closes_on(d)
+            wo = sum(1 for c in cl if c["no_offer"] < c["looks"])
+            rows.append(((d, money(s["net"]), pct(r), s["closes"], s["won"], s["lost"],
                           money(s["net"] / s["closes"]) if s["closes"] else "-", money(s["worst"]),
+                          ("%.1f h" % up) if up else "-", ("$%.2f" % (s["net"] / up)) if up else "-",
                           fs["orders"], fs["fills"], fs["zero"], "%g" % fs["contracts"],
-                          ("%.0f%%" % (100 * fs["median_pct"])) if fs["median_pct"] is not None else "-"),
-                         "gain" if s["net"] >= 0 else "loss"))
+                          ("%.0f%%" % (100 * fs["median_pct"])) if fs["median_pct"] is not None else "-",
+                          pct(fs["share"], False) if fs["share"] is not None else "-",
+                          ("%d of %d" % (wo, len(cl))) if cl else "-"),
+                         "gain" if s["net"] >= 0 else "loss", d))
+            _ = lost_h
         fill(tv_days, rows)
         draw_chart()
 
         # losses
         rows = []
+        tot_loss = 0.0
         for close, net, legs in ledger.losing_closes():
             coins = ", ".join(sorted({coin(l["tk"]) for l in legs}))
             paid = [float(l["cost"]) for l in legs if l["cost"] is not None]
+            n = sum(ledger.contracts_for(l["tk"]) for l in legs)
+            tot_loss += net
             rows.append(((et_str(close, "%m/%d %I:%M %p") if close else "?", et_day(close) if close else "?",
-                          money(net), coins, len(legs), ("%.1fc" % (100 * sum(paid) / len(paid))) if paid else "?"), "loss"))
-        fill(tv_loss, rows or [(("no losing closes", "", "", "", "", ""), "muted")])
+                          money(net), coins, len(legs), ("%.1fc" % (100 * sum(paid) / len(paid))) if paid else "?", "%g" % n),
+                         "loss", (close, net, legs)))
+        fill(tv_loss, rows or [(("no losing closes", "", "", "", "", "", ""), "muted")])
+        s_all = Ledger.summary(ledger.settled)
+        if s_all["closes"]:
+            loss_sum.configure(text="%d losing closes out of %d (%.1f out of 100). They cost $%.2f in total against $%.2f won on the other %d."
+                               % (s_all["lost"], s_all["closes"], s_all["loss_rate"], -tot_loss, s_all["net"] - tot_loss, s_all["won"]))
+
+        # system
+        ls = ledger.last_start() or {}
+        rows = [
+            (("Live bot", "The one that spends money: research\\pinrun.py --live. Buys the winning side in the last 30 s, hedges at belief < %s." % ls.get("hedge", "?"),
+              "RUNNING" if h["alive"] else "DOWN", ("pid %s, wrote %ds ago" % (h["pid"], q)) if h["alive"] and q is not None else (h.get("flag") or "not running")),
+             "gain" if h["alive"] else "loss"),
+            (("Bot watchdog", "Relaunches the bot when it dies: 4 quick tries, then every 3 min for ever. Honours your PAUSE/STOP. watch_bot.ps1",
+              "RUNNING" if ok else "DOWN", ("checked %ds ago" % wd) if wd is not None else "no heartbeat"), "gain" if ok else "loss"),
+            (("Boot task", "Windows task KalsBoot: at sign-in and every 10 min, starts anything missing. boot_all.ps1",
+              "installed", h.get("boot_last", "")[-70:]), "text"),
+            (("Kalshi recorder", "Tapes Kalshi's feed: prices, trades, full order books, and the settlement index (1 print/s). One file per channel per hour. kalshi_collector.py",
+              "WRITING" if h["kalshi_ok"] else "CHECK", "last full hour %.1f MB, %d channels open" % (h["kalshi_prev"] / 1e6, h["kalshi_open"])),
+             "gain" if h["kalshi_ok"] else "loss"),
+            (("Exchange recorder", "Tapes the order books of Coinbase, Kraken, Bitstamp and Gemini -- the exchanges behind the settlement index. crypto_feeds.py",
+              "WRITING" if h["feeds_ok"] else "CHECK", "last full hour %.1f MB, %d feeds open" % (h["feeds_prev"] / 1e6, h["feeds_open"])),
+             "gain" if h["feeds_ok"] else "loss"),
+            (("Recorders' watchdog", "Restarts the two recorders if they die. run_all.ps1",
+              "RUNNING" if h.get("run_all") else ("unknown" if h.get("run_all") is None else "DOWN"),
+              "pid file logs\\run_all.pid" if h.get("run_all") else "no pid file yet (written on next start)"),
+             "gain" if h.get("run_all") else "muted"),
+            (("Crypto.com recorder", "Tapes Crypto.com's prediction markets every few seconds, for a possible second venue. cdc_record.py",
+              "WRITING" if (h.get("cdc_age") is not None and h["cdc_age"] < 600) else "QUIET",
+              ("wrote %ds ago" % h["cdc_age"]) if h.get("cdc_age") is not None else "no files"),
+             "gain" if (h.get("cdc_age") is not None and h["cdc_age"] < 600) else "muted"),
+            (("Paper arms", "Copies of the bot with one setting changed, pretending to trade, so a change is judged before it touches money.",
+              "%d pin + %d race" % (h["paper_arms"], h["race_arms"]), "logs written in the last 15 min"), "text"),
+        ]
+        fill(tv_sys, rows)
+        sys_foot.configure(text="Disk %.1f GB free (tape stops below 5).  RAM %.1f GB free.  Hours lost to outages today: %.1f."
+                           % (h.get("disk_gb") or 0, h.get("ram_gb") or 0, (lost_h or {}).get(today, 0.0)))
 
         # tails
         try:
@@ -967,6 +2038,10 @@ def run_gui():
         root.after(REFRESH_MS, loop)
 
     console_log("Pin Bot opened")
+    try:                                   # PINDESK_TAB=n opens on a tab (used to screenshot each one)
+        nb.select(int(os.environ.get("PINDESK_TAB", "0")))
+    except (ValueError, tk.TclError):
+        pass
     loop()
     root.mainloop()
 
@@ -982,31 +2057,54 @@ def selftest():
 
     ck(parse_t("2026-09-16T13:59:31Z") == calendar.timegm((2026, 9, 16, 13, 59, 31)), "ISO time parses")
     ck(parse_t(None) is None and parse_t("junk") is None, "NULL: junk time is None")
-    # 2026-09-17 03:00Z is 2026-09-16 11 PM ET -- the UTC day cut at 8 PM ET was mistake 3 in the handoff
     e = calendar.timegm((2026, 9, 17, 3, 0, 0))
     ck(et_day(e) == "2026-09-16", "03:00Z on the 17th is still the 16th in ET")
     ck(et_str(e) == "11:00 PM", "and reads 11:00 PM")
+    ck(et_day_start("2026-09-16") == calendar.timegm((2026, 9, 16, 4, 0, 0)), "an ET day starts at 04:00Z in September")
     ck(coin("KXBNB15M-26SEP161000-00") == "BNB" and coin("KXBTC15M-26SEP161000-00") == "BTC", "coin from ticker")
-    ck(close_et("KXBNB15M-26SEP161000-00") == "6:00 AM", "close 10:00Z is 6:00 AM ET")
+    ck(close_et("KXBNB15M-26SEP161000-00") == "10:00 AM", "the ticker clock is ET: 26SEP161000 closes 10:00 AM ET")
+    ck(et_day(pinflat.close_epoch("KXXRP15M-26SEP170000-00")) == "2026-09-17",
+       "THE OPERATOR'S CHECK: the midnight-ET XRP close belongs to the 17th, not the 16th")
     ck(_bank_from_why("bank $500.67") == 500.67 and _bank_from_why("bank $1,234.50") == 1234.5, "bank parses from the autosize reason")
     ck(_bank_from_why("size cap") is None, "NULL: no bank in the reason")
+    ck(sort_key("$+1.75") < sort_key("$+15.04") and sort_key("98.0c") < sort_key("100.0c") and sort_key("-3.5%") < sort_key("2%"),
+       "column sort reads numbers through $, +, c and %")
+    ck(sort_key("BNB") > sort_key("$5") and sort_key("abc") < sort_key("xyz"), "text sorts after numbers, alphabetically")
+    ck(pct(0.1234) == "+12.34%" and pct(None) == "-" and pct(0.5, False) == "50.00%", "percent formatting")
 
     with tempfile.TemporaryDirectory() as td:
         p = os.path.join(td, "pinrun-live-20260916T135734Z.jsonl")
-        c1 = "KXBNB15M-26SEP161000-00"          # closes 10:00Z
+        c1 = "KXBNB15M-26SEP161000-00"          # closes 10:00 AM ET = 14:00Z
         c2 = "KXBTC15M-26SEP161000-00"          # SAME close
-        c3 = "KXSOL15M-26SEP161015-15"          # 10:15Z
+        c3 = "KXSOL15M-26SEP161015-15"          # 10:15 AM ET
+        c4 = "KXETH15M-26SEP161030-30"          # 10:30 AM ET, hedged and the bet flipped
+        c5 = "KXDOGE15M-26SEP161045-45"         # 10:45 AM ET, hedged and the bet held
         rows = [
-            {"kind": "start", "t": "2026-09-16T09:00:00Z", "size": 20},
-            {"kind": "autosize", "t": "2026-09-16T09:00:01Z", "old": 20, "new": 85, "why": "bank $500.67"},
-            {"kind": "signal", "t": "2026-09-16T09:59:30Z", "ticker": c1, "want": "no", "price": 0.98, "edge_c": 1.5, "size": 85, "take_n": 85, "tau": 29},
-            {"kind": "order", "t": "2026-09-16T09:59:31Z", "ticker": c1, "filled": 85.0, "exec_price": 0.979, "status": "executed", "body": {"count": "85.00"}},
-            {"kind": "order", "t": "2026-09-16T09:59:35Z", "ticker": c2, "filled": 40.0, "exec_price": 0.97, "status": "executed", "body": {"count": "80.00"}},
-            {"kind": "order", "t": "2026-09-16T10:14:35Z", "ticker": c3, "filled": 0.0, "status": "canceled", "body": {"count": "50.00"}},
-            {"kind": "settled", "t": "2026-09-16T10:00:20Z", "ticker": c1, "want": "no", "result": "no", "cost": 0.979, "pnl_c": 166.26, "realised": 1.6626},
-            {"kind": "settled", "t": "2026-09-16T10:00:21Z", "ticker": c2, "want": "no", "result": "yes", "cost": 0.97, "pnl_c": -3880.0, "realised": -37.1374},
-            {"kind": "hedge_alarm", "t": "2026-09-16T10:14:40Z", "ticker": c3, "belief": 0.5, "n": 1.0, "tau": 20},
-            {"kind": "halt", "t": "2026-09-16T10:30:00Z", "why": "loss COUNT brake: 2 losing trades this run >= 2"},
+            {"kind": "start", "t": "2026-09-16T13:00:00Z", "size": 20, "hedge_belief": 0.6, "tau_max": 30, "mode": "live"},
+            {"kind": "autosize", "t": "2026-09-16T13:00:01Z", "old": 20, "new": 85, "why": "bank $500.00"},
+            {"kind": "signal", "t": "2026-09-16T13:59:30Z", "ticker": c1, "want": "no", "price": 0.98, "edge_c": 1.5, "size": 85, "take_n": 85, "tau": 29},
+            {"kind": "order", "t": "2026-09-16T13:59:31Z", "ticker": c1, "filled": 85.0, "exec_price": 0.979, "status": "executed", "body": {"count": "85.00"}},
+            {"kind": "order", "t": "2026-09-16T13:59:35Z", "ticker": c2, "filled": 40.0, "exec_price": 0.97, "status": "executed", "body": {"count": "80.00"}},
+            {"kind": "close_summary", "t": "2026-09-16T14:00:05Z", "close": calendar.timegm((2026, 9, 16, 14, 0, 0)), "looks": 1000, "no_offer": 600,
+             "tradeable": 100, "fired": True, "gates": {"no_offer": 600, "edge_floor": 300}, "best_edge_c": 1.5, "best_price": 0.98, "depth": {"median": 120.0}},
+            {"kind": "settled", "t": "2026-09-16T14:00:20Z", "ticker": c1, "want": "no", "result": "no", "cost": 0.979, "pnl_c": 166.26, "realised": 1.6626},
+            {"kind": "settled", "t": "2026-09-16T14:00:21Z", "ticker": c2, "want": "no", "result": "yes", "cost": 0.97, "pnl_c": -3880.0, "realised": -37.1374},
+            {"kind": "order", "t": "2026-09-16T14:14:35Z", "ticker": c3, "filled": 0.0, "status": "canceled", "body": {"count": "50.00"}},
+            {"kind": "close_summary", "t": "2026-09-16T14:15:05Z", "close": calendar.timegm((2026, 9, 16, 14, 15, 0)), "looks": 1000, "no_offer": 1000,
+             "tradeable": 0, "fired": False, "gates": {"no_offer": 1000}, "why": "decided but NOBODY OFFERED the winning side"},
+            {"kind": "close_summary", "t": "2026-09-16T14:30:05Z", "close": calendar.timegm((2026, 9, 16, 14, 30, 0)), "looks": 1000, "no_offer": 900,
+             "tradeable": 0, "fired": False, "gates": {"no_offer": 900, "price_ceiling": 100}},
+            # hedged, bet flipped: entry YES lost, hedge NO won
+            {"kind": "order", "t": "2026-09-16T14:29:35Z", "ticker": c4, "filled": 50.0, "exec_price": 0.97, "status": "executed", "body": {"count": "50.00"}},
+            {"kind": "hedge", "t": "2026-09-16T14:29:50Z", "ticker": c4, "side": "no", "price": 0.5, "n": 50.0, "belief": 0.4, "entry": 0.97, "status": "executed"},
+            {"kind": "settled", "t": "2026-09-16T14:30:20Z", "ticker": c4, "want": "yes", "result": "no", "cost": 0.97, "pnl_c": -4850.0, "realised": -85.6374},
+            {"kind": "settled", "t": "2026-09-16T14:30:21Z", "ticker": c4, "want": "no", "result": "no", "cost": 0.5, "pnl_c": 2500.0, "realised": -60.6374},
+            # hedged, bet held: entry won, hedge lost
+            {"kind": "order", "t": "2026-09-16T14:44:35Z", "ticker": c5, "filled": 50.0, "exec_price": 0.97, "status": "executed", "body": {"count": "50.00"}},
+            {"kind": "hedge", "t": "2026-09-16T14:44:50Z", "ticker": c5, "side": "no", "price": 0.3, "n": 10.0, "belief": 0.55, "entry": 0.97, "status": "executed"},
+            {"kind": "settled", "t": "2026-09-16T14:45:20Z", "ticker": c5, "want": "yes", "result": "yes", "cost": 0.97, "pnl_c": 500.0, "realised": -55.6374},
+            {"kind": "settled", "t": "2026-09-16T14:45:21Z", "ticker": c5, "want": "no", "result": "yes", "cost": 0.3, "pnl_c": -300.0, "realised": -58.6374},
+            {"kind": "halt", "t": "2026-09-16T15:30:00Z", "why": "loss COUNT brake: 2 losing trades this run >= 2"},
         ]
         with open(p, "w", encoding="utf-8") as fh:
             for r in rows[:-1]:
@@ -1014,27 +2112,69 @@ def selftest():
             fh.write('{"kind": "close_summary", "t": "2026-09-16T10:1')      # cut off mid-line
         L = Ledger(results=td)
         ck(L.refresh(), "first refresh reads the file")
-        ck(len(L.settled) == 2 and len(L.orders) == 3 and len(L.signals) == 1 and len(L.hedges) == 1, "every kind was ingested")
+        ck(len(L.settled) == 6 and len(L.orders) == 5 and len(L.signals) == 1 and len(L.hedges) == 2 and len(L.closes) == 3,
+           "every kind was ingested")
         ck(L.halts == [], "the truncated tail line is not read, and nothing after it is")
-        s = Ledger.summary(L.settled)
-        ck(s["closes"] == 1 and s["lost"] == 1 and s["won"] == 0 and abs(s["net"] - (-37.1374)) < 1e-6,
-           "RULE 4: two coins on one close are ONE close; it lost, net -$37.14")
-        ck(s["markets"] == 2 and s["worst"] < 0, "two markets, worst close is negative")
+        s = Ledger.summary(L.settled_on("2026-09-16"))
+        ck(s["closes"] == 3 and s["lost"] == 2 and s["won"] == 1, "RULE 4: c1+c2 are ONE close (lost); c3 never filled so no close; c4 lost net; c5 won net")
+        ck(abs(s["net"] - (1.6626 - 38.80 - 48.50 + 25.00 + 5.00 - 3.00)) < 1e-6, "net adds every leg")
+        ck(s["avg_win"] is not None and s["avg_loss"] is not None and s["avg_loss"] < 0 < s["avg_win"], "average win and loss are signed the right way")
+        ck(L.settled_on("2026-09-15") == [] and L.settled_on("2026-09-17") == [], "nothing leaks into the neighbouring ET days")
         fs = Ledger.fill_stats(L.orders)
-        ck(fs["orders"] == 3 and fs["fills"] == 2 and fs["zero"] == 1 and fs["contracts"] == 125.0, "fill stats count fills, zero-fills and contracts")
-        ck(fs["median_pct"] == 1.0, "median fill share of (1.00, 0.50) is the upper middle, 1.00")
-        ck(L.bank()["bank"] == 500.67 and L.bank()["size"] == 85, "bank and size from the last autosize")
+        ck(fs["orders"] == 5 and fs["fills"] == 4 and fs["zero"] == 1 and fs["contracts"] == 225.0 and fs["asked"] == 315.0
+           and abs(fs["share"] - 225.0 / 315.0) < 1e-9, "fill stats: fills, lost races, contracts asked vs got")
+        ck(L.bank()["bank"] == 500.0 and L.bank()["size"] == 85, "bank and size from the last autosize")
+        ck(L.deposited() == 500.0, "nothing settled before the first reading, so deposited = first reading")
+        with open(os.path.join(td, "DEPOSITED.txt"), "w") as fh:
+            fh.write("$450.00  (what I actually put in)\n")
+        ck(L.deposited() == 450.0, "results\\DEPOSITED.txt overrides the reconstruction with the operator's own figure")
+        os.remove(os.path.join(td, "DEPOSITED.txt"))
+        ck(abs(L.bank_at(calendar.timegm((2026, 9, 16, 14, 1, 0))) - (500.0 + 1.6626 - 38.80)) < 1e-6,
+           "bank at 14:01Z = reading + the two settlements since")
+        ck(abs(L.bank_at(calendar.timegm((2026, 9, 16, 4, 0, 0))) - 500.0) < 1e-6,
+           "bank at the ET day start (before the first reading) falls back to deposited + settlements so far")
+        ho = L.hedge_outcomes()
+        ck(len(ho) == 2 and ho[0]["verdict"] == "NEEDED" and abs(ho[0]["bet_pnl"] + 48.5) < 1e-9 and abs(ho[0]["hedge_pnl"] - 25.0) < 1e-9,
+           "hedge 1: the bet flipped, the insurance paid -> NEEDED, bet -$48.50, hedge +$25.00")
+        ck(ho[1]["verdict"] == "WASTED" and abs(ho[1]["net"] - (5.0 - 3.0)) < 1e-9, "hedge 2: the bet held -> WASTED, net +$2.00")
+        act = L.activity(last_n=2)
+        ck(act["level"] in ("QUIET", "NORMAL", "BUSY") and act["recent"] is not None, "activity level is one of three words")
+        ck(Ledger.why_no_trade(L.closes[0]) == "BOUGHT", "a fired close says BOUGHT")
+        ck(Ledger.why_no_trade(L.closes[1]) == GATE_WORDS["no_offer"], "nobody offered -> says so in words")
+        ck(Ledger.why_no_trade(L.closes[2]) == GATE_WORDS["price_ceiling"], "the biggest non-empty gate is named (price cap)")
+        ck(abs(Ledger.offer_share(L.closes[0]) - 0.4) < 1e-9, "offered = 1 - no_offer/looks")
         ck(L.days() == ["2026-09-16"], "one ET day")
         ck(L.contracts_for(c2) == 40.0, "contracts per ticker from orders")
-        ck(len(L.losing_closes()) == 1 and L.losing_closes()[0][1] < 0, "the losses ledger holds the one losing close")
-        # append the halt: only the new bytes are read
+        ck(len(L.losing_closes()) == 2, "the losses ledger holds the two losing closes")
+        # stories, in words
+        won_story = story_settled(L, [s for s in L.settled if s["tk"] == c1][0])
+        ck("WHAT IT SAW" in won_story and "WHAT IT DID" in won_story and "HOW IT WENT" in won_story
+           and "bought 85 contracts at 97.9c" in won_story and "the side it held" in won_story,
+           "a winning bet's story has what it saw, did, and how it went")
+        lost_story = story_settled(L, [s for s in L.settled if s["tk"] == c2][0])
+        ck("AGAINST the side it held" in lost_story and "$-38.80" in lost_story, "a losing bet's story says so, with the money")
+        hedged_story = story_settled(L, [s for s in L.settled if s["tk"] == c4 and s["want"] == "yes"][0])
+        ck("INSURANCE" in hedged_story and "NEEDED" in hedged_story, "a hedged bet's story carries the insurance verdict")
+        leg_story = story_settled(L, [s for s in L.settled if s["tk"] == c4 and s["want"] == "no"][0])
+        ck("INSURANCE LEG" in leg_story, "the hedge leg's own row explains it is the insurance")
+        hs = story_hedge(L, ho[0])
+        ck("belief" in hs and "NEEDED" in hs and "$+25.00" in hs, "a hedge's story: why, and how it went")
+        ck("WASTED" in story_hedge(L, ho[1]), "a wasted hedge says so")
+        cs = story_close(L, L.closes[1])
+        ck("nobody was selling" in cs and "no trade" in cs, "a quiet quarter-hour's story says nobody was selling")
+        ck("bought 125 contracts" in story_close(L, L.closes[0]), "a bought quarter-hour's story says how many")
+        ds = story_day(L, "2026-09-16", now=calendar.timegm((2026, 9, 17, 12, 0, 0)))
+        ck("MONEY" in ds and "$500.00" in ds and "3 closes" in ds and "1 were lost races" in ds, "a day's story: money, bets, sellers")
+        ss = story_signal(L, L.signals[0])
+        ck("bought 85 contracts" in ss and "WON" in ss, "a signal's story pairs it with its order and outcome")
+        ls_ = story_loss(L, *L.losing_closes()[0])
+        ck("lost $" in ls_ and "WHY IT HURTS" in ls_, "a loss story lists the legs and why it matters")
         with open(p, "a", encoding="utf-8") as fh:
             fh.write("\n" + json.dumps(rows[-1]) + "\n")
-        ck(L.refresh() and len(L.halts) == 1 and len(L.settled) == 2,
+        ck(L.refresh() and len(L.halts) == 1 and len(L.settled) == 6,
            "an appended record is picked up incrementally without re-reading the rest")
         ck(not L.refresh(), "NULL: nothing new -> nothing read")
 
-        # status derivation, planted
         base = {"pid": 1, "alive": True, "flag": None, "quiet_s": 30, "watchdog_s": 10, "open": {}, "halt": None}
         ck(status_of(dict(base))[0] == "TRADING", "alive, quiet 30 s, no flag -> TRADING")
         ck(status_of(dict(base, quiet_s=30 * 60))[0] == "STALE", "alive but silent 30 min -> STALE")
@@ -1047,6 +2187,12 @@ def selftest():
            "dead, watchdog alive -> DOWN, watchdog restarting")
         ck("watchdog is not running" in status_of(dict(base, alive=False, watchdog_s=None))[1],
            "dead, no watchdog heartbeat -> says so")
+        ev = status_of(dict(base, flag="operator PAUSE at x"))[2]
+        ck("is OPEN (alive)" in ev and "30 s ago" in ev and "flag PRESENT" in ev,
+           "the banner carries its evidence: the process was opened, the log age, the flag on disk")
+        ck("is NOT running" in status_of(dict(base, alive=False))[2] and "flag absent" in status_of(dict(base, alive=False))[2],
+           "...and says NOT running when the pid could not be opened")
+    ck(all(k for k, _t, _b in HELP) and len({k for k, _t, _b in HELP}) == len(HELP), "help sections have unique keys")
     print("pindesk selftest: OK")
 
 

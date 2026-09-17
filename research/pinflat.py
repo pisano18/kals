@@ -47,9 +47,27 @@ _MON = {m.upper(): i for i, m in enumerate(calendar.month_abbr) if m}
 _TK = re.compile(r"^[A-Z0-9]+-(\d{2})([A-Z]{3})(\d{2})(\d{2})(\d{2})(?:-|$)")
 
 
+def _et_offset(epoch):
+    """Seconds to ADD to an Eastern wall-clock reading to get UTC... negated:
+    downtime.et_offset gives UTC->ET (-14400 in summer)."""
+    try:
+        from downtime import et_offset
+        return et_offset(epoch)
+    except Exception:                                     # noqa: BLE001
+        return -4 * 3600
+
+
 def close_epoch(ticker):
     """UTC epoch of a 15-minute market's close, from its ticker. None if the
-    ticker is not shaped like one."""
+    ticker is not shaped like one.
+
+    THE TICKER'S CLOCK IS EASTERN. KXXRP15M-26SEP170000-00 settled at
+    2026-09-17T04:00:20Z: '26SEP17 0000' is midnight ET, which is 04:00Z.
+    The first version read it as UTC and put every close four hours early --
+    which for the dead-bot rule below would have called a market 'closed'
+    while it still had up to four hours to run. Caught by the operator's
+    day totals not matching the app's on 2026-09-17.
+    """
     m = _TK.match(str(ticker or ""))
     if not m:
         return None
@@ -58,9 +76,14 @@ def close_epoch(ticker):
     if not mon_i:
         return None
     try:
-        return calendar.timegm((2000 + int(yy), mon_i, int(dd), int(hh), int(mm), 0))
+        naive = calendar.timegm((2000 + int(yy), mon_i, int(dd), int(hh), int(mm), 0))
     except (ValueError, OverflowError):
         return None
+    # naive is the ET wall clock read as if UTC; the true instant is later by
+    # the (negative) offset. Two passes so a close near the DST switch lands
+    # on the right side of it.
+    e = naive - _et_offset(naive)
+    return naive - _et_offset(e)
 
 
 def pid_alive(pid):
@@ -202,11 +225,15 @@ def selftest():
         if not cond:
             raise SystemExit("pinflat selftest: FAILED -- " + msg)
 
-    # ticker -> close
-    ck(close_epoch("KXBNB15M-26SEP161000-00") == calendar.timegm((2026, 9, 16, 10, 0, 0)),
-       "the close time is read from the ticker: 26SEP161000 is 2026-09-16 10:00Z")
-    ck(close_epoch("KXXRP15M-26SEP170000-00") == calendar.timegm((2026, 9, 17, 0, 0, 0)),
-       "and midnight parses (0000)")
+    # ticker -> close. THE TICKER CLOCK IS EASTERN: the live log settled
+    # KXBNB15M-26SEP161000-00 at 2026-09-16T14:00:20Z and
+    # KXXRP15M-26SEP170000-00 at 2026-09-17T04:00:20Z.
+    ck(close_epoch("KXBNB15M-26SEP161000-00") == calendar.timegm((2026, 9, 16, 14, 0, 0)),
+       "26SEP161000 is 10:00 AM ET = 14:00Z (the live log settled it at 14:00:20Z)")
+    ck(close_epoch("KXXRP15M-26SEP170000-00") == calendar.timegm((2026, 9, 17, 4, 0, 0)),
+       "26SEP170000 is midnight ET = 04:00Z, NOT 00:00Z")
+    ck(close_epoch("KXBTC15M-26JAN151200-00") == calendar.timegm((2026, 1, 15, 17, 0, 0)),
+       "and in January the offset is five hours")
     ck(close_epoch("garbage") is None and close_epoch(None) is None,
        "NULL: a non-ticker has no close")
 
@@ -216,9 +243,9 @@ def selftest():
     def settled(tk):
         return {"kind": "settled", "ticker": tk, "pnl_c": 1.0}
 
-    now = calendar.timegm((2026, 9, 16, 10, 5, 0))          # 10:05Z
-    past = "KXBNB15M-26SEP161000-00"                        # closed 10:00Z
-    ahead = "KXBTC15M-26SEP161015-15"                       # closes 10:15Z
+    now = calendar.timegm((2026, 9, 16, 14, 5, 0))          # 10:05 AM ET = 14:05Z
+    past = "KXBNB15M-26SEP161000-00"                        # closed 10:00 AM ET = 14:00Z
+    ahead = "KXBTC15M-26SEP161015-15"                       # closes 10:15 AM ET = 14:15Z
 
     st, d = verdict([order(past, 85), settled(past)], alive=True, now=now)
     ck(st == "FLAT", "a fill with its settlement is flat")
