@@ -43,6 +43,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import sys
 import time
 
@@ -318,6 +319,8 @@ def release(ticker, bets, ledger=None):
         led["positions"].pop(ticker, None)
     return owed
 
+
+_RE_NUM = re.compile(r'[-+]?[0-9]*\.?[0-9]+')
 
 OFFSET_MAX_TAU = 60      # only a window ending inside this may offset
 
@@ -874,7 +877,13 @@ def trade_loop(state, series, minutes, rec, dry=False):
                     # this the loop would log four times a second for a whole
                     # minute. The ancestor of that bug sent 160 orders in one
                     # close.
-                    k = (tk, bi, tuple(refused))
+                    # KEY ON THE REASON SHAPE, NOT ITS TEXT. The messages
+                    # embed the current tau ("tau 39 s is earlier than..."),
+                    # which changes every second, so a text key never matches
+                    # itself and the throttle does nothing -- it logged ~40
+                    # lines per market per close before this. Strip the numbers
+                    # and the key is stable for as long as the reason is.
+                    k = (tk, bi, tuple(_RE_NUM.sub("#", r) for r in refused))
                     if k not in said:
                         said.add(k)
                         rec("refused", ticker=tk, series=ser, tau=tau, want=want,
