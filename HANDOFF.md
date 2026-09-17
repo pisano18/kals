@@ -103,6 +103,65 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 21:0xZ -- THE FRESH-EYES REVIEW LANDED: 45 agents, 27 confirmed, 7 refuted, 2 uncertain
+
+Operator: *"re read everything crypto... see if anything is unnecessarily
+lowering our amount of trades/profit per trade... question everything."*
+Twelve agents took one area of the buy path each; every money claim then went
+to an adversarial verifier told to REFUTE it. All verdicts:
+`results/review_verdicts.txt`. **The verifiers cut nearly every dollar figure
+down while upholding the mechanisms -- that is the pattern to expect.**
+
+**THE REAL BUG (fixed, v-a8fix).** AMENDMENT 8's both-sides guard compared
+`prev["sides"][tk] != want` at pinrun.py:~5883, but `want` is assigned ~140
+lines LOWER in the same scan loop. It compared the side held in THIS market
+against the side wanted in the PREVIOUS market of the scan. It blocked ~94% of
+re-looks at a held market (legitimate top-ups included) AND let a genuine
+opposite-side buy through when the previous market wanted the same side. Both
+directions wrong. Now `_both_sides_block()`, called where `want` exists.
+Verifier's money: $5-$40 over four days, ~$5 grounded in live fills; the
+review's $242 did not survive.
+
+**CLAIMS KILLED BY VERIFICATION, INCLUDING TWO OF MINE:**
+- **dump_guard**: of 17 flagged markets only **4** were ever truly blocked; the
+  other 10 were bought within 0-6 s and are already in the +$422. On those 4 the
+  guard **MADE us ~$12**. My "$82 of blocked winners" was double-counting money
+  we have. No change deployed. `results/RESULTS_dumpguard.md`.
+- **the 98c ceiling SAVES ~$2.2/day**, it does not cost $2.5/day.
+- **"no_offer is 51.8% of everything"** overstates it; by closes it binds far
+  less. My framing to the operator was wrong.
+- EDGE_FLOOR and EV_FLOOR are **arithmetically unreachable** below the 98c
+  ceiling (0 of 5,510 refusals). Harmless now, but **a ceiling raise past 98.7c
+  silently hands control to EV_FLOOR, a gate that has never fired once** and is
+  parameterised by MEASURED_FLIP = 0.0090, a replay number.
+
+**THE ONE TO WATCH (live money).** The model is **9.6x overconfident**: over 421
+live fills across 330 closes it promised 0.63 losing closes and delivered 6.
+PIN is **tau-flat** -- the same 0.995 at 5 seconds and at 45 -- while two
+independent measurements say the model is ~3x worse at 31-45 s than 21-30 s.
+`--early-frac 1.0` went live today, so a FULL bet now sits anywhere in 3-45 s on
+that flat gate.
+
+**OUR OWN LIVE RECORD BY TAU, though, is not yet alarming** (rule 4, closes):
+
+    0-5 s     23 fills   0 lost    0.0% of closes   5.35c/contract
+    6-15 s    98 fills   2 lost    2.0%             3.80c
+    16-30 s  316 fills  11 lost    2.9%             1.90c
+    31-45 s   13 fills   0 lost    0.0%             2.34c
+
+31-45 s is 13 fills -- statistically nothing (0/13 bounds the rate only below
+~21%) -- but it is not worse so far, and it earns MORE per contract than our
+main 16-30 s window. Note also that cents per contract RISES as the close
+approaches (1.90c -> 3.80c -> 5.35c): the last seconds are where the bargains
+are, not where the risk is. PREREG_staged stage 2 (revert at 3 losses in 40
+early-leg closes, or 2 in the first 15) is the live instrument; leave it to do
+its job rather than reverting on a calibration argument.
+
+**STILL OPEN from the review, not yet acted on:** MAX_PER_CLOSE cancels out of
+the close budget under AUTO_SIZE; the hedge sends its limit at the TOUCH while
+entries send a swept limit; an exchange rejection is invisible to the bot's own
+error accounting; nothing watches local clock drift.
+
 ## 16:3xZ -- THE TAU RAIL WAS BLOCKING THE BEST COMMODITY CELLS; A47; THE HEDGE RECORD, MEASURED PROPERLY
 
 - **`pintake.MAX_TAU` (90 s) refused every far-window commodity order.** Two
