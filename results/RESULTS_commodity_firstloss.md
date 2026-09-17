@@ -65,3 +65,34 @@ Whether to resume, and at what size, is the operator's call. The defect is
 fixed; the evidence base is unchanged (20 clean fills before today, now 26 wins
 and 2 losses); and the statistical position is still that ~60 clean fills are
 needed before the loss-rate ceiling drops under break-even.
+
+## ADDENDUM: a third loss, found only because the operator asked
+
+**The operator, 2026-09-17: "The gold lost 10? Didn't lose again?" He was right
+and my answer was wrong.**
+
+Killing the live process left FOUR positions open on the exchange. Killing a
+process does not close positions -- they settle regardless -- and because the
+bot was gone, nothing wrote a `settled` record for them. Our P&L reporting
+reads those records, so it was blind to every one of them:
+
+| market | side | price | n | outcome |
+|---|---|---|---|---|
+| KXWTI15M-26SEP171545-45 | yes | 0.9000 | 33 | won +$3.30 |
+| KXGOLD15M-26SEP171545-45 | yes | 0.9500 | 31 | won +$1.55 |
+| KXWTI15M-26SEP171700-00 | no | 0.9840 | 10 | won +$0.16 |
+| **KXGOLD15M-26SEP171700-00** | **no** | **0.9790** | **10** | **LOST -$9.79** |
+
+**Corrected commodity total for 2026-09-17: 32 settled, 29 won, 3 lost, net
+-$57.84** (not the -$53.06 reported while those four were in flight).
+
+The gold loss was in the `gold-far` window (91-180 s at 95-99c), the cell with
+379 tape markets and 2 losses behind it. One live loss there is inside that
+rate; it is not evidence the window is wrong. What it IS evidence of:
+
+**LESSON: stopping the process is not stopping the exposure, and our reporting
+cannot see what the process did not settle.** Any future "turn it off" needs to
+either wait for open positions to settle before reporting a total, or read the
+exchange directly for tickers with a fill and no settlement. The check is two
+lines against `/markets/<ticker>`; it should be part of the stop path, not
+something a person has to notice.

@@ -205,6 +205,20 @@ _DEFAULT_LADDER_LEVELS = 150   # The tick is 0.1c above 90c, so the 88-98c band
                          # we trade is ~100 levels; 8 covered a fifth of the
                          # book on the BTC 05:30 loss. Read once per SIGNAL,
                          # never in the scan loop.
+# AMENDMENT 48 (2026-09-17): BUY BIGGER IN THE LAST FEW SECONDS. Shipped OFF.
+# Our own live fills, which is the strongest evidence class we have:
+#   0-5 s   1,028 contracts  5.35c each  0 losing closes of 23
+#   6-15 s  4,125 contracts  3.80c each  2 losing closes of 98
+#   16-30 s 11,363 contracts 1.90c each  9 losing closes of 313
+# The last seconds earn 2.8x the main window on 6% of the volume, and the book
+# is not the constraint -- median contracts buyable at our own sweep limit is
+# 433 against a SIZE of 95, and only 8 of 102 sweeps were capped by the ladder.
+# BANK_BRAKE is what caps SIZE, not the market. So this raises the PER-ORDER cap
+# inside the late window only; the drawdown headroom, the close budget and the
+# book all still apply unchanged.
+_DEFAULT_LATE_TAU, _DEFAULT_LATE_MULT = 0, 1.0    # the SHIPPED values: OFF
+LATE_TAU = 0             # --late-tau: seconds-to-close at or under which...
+LATE_MULT = 1.0          # --late-mult: ...one order may reach this x SIZE
 DUMP_DISCOUNT = 0.15     # dollars below fair that make an offer a warning
 # THIS CONSTANT IS ALSO A PRICE FLOOR AND ITS NAME DOES NOT SAY SO. The
 # confidence gate upstream guarantees our belief in our own side is at least
@@ -2827,6 +2841,31 @@ def _selftest_body():
         # The decision functions, driven exactly as the loop drives them.
         _src_pinrun = open(os.path.abspath(__file__), encoding="utf-8").read()
         # AMENDMENT 47 -- the market must agree before we pay for insurance.
+        # AMENDMENT 48: bigger orders in the last seconds. SHIPPED OFF.
+        ck(_DEFAULT_LATE_TAU == 0 and _DEFAULT_LATE_MULT == 1.0,
+           "A48 ships OFF -- the DECLARED defaults, not the running values, so "
+           "an arm that sets the flags does not fail its own gate")
+        _b48 = one_coin_cap(100.0, 1000.0, 1000.0, mult=1.5)
+        ck(_b48 == max(100.0, min(150.0, (1000.0 - 0.8 * 1000.0) / PRICE_CEILING)),
+           "A48 reuses A45's drawdown headroom: it can never stake more than a "
+           "total loss the brake could absorb")
+        ck(one_coin_cap(100.0, None, 1000.0, mult=1.5) == 100.0
+           and one_coin_cap(100.0, 1000.0, None, mult=1.5) == 100.0,
+           "NULL: an unknown bank or high-water mark means A48 does NOTHING, so "
+           "a failed balance read cannot size us up")
+        ck(one_coin_cap(100.0, 810.0, 1000.0, mult=5.0) < 5 * 100.0,
+           "and the headroom, not the multiplier, is what binds when the bank "
+           "has fallen toward the brake")
+        _src48 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp48 = _src48[_src48.rindex(chr(10) + "def " + "trade_loop("):]
+        _c48p, _c48l = "_late48(take_n)   # paper", "_late48(take_n)   # live"
+        ck(_c48p in _lp48 and _c48l in _lp48,
+           "A48 runs on BOTH the paper and the live path, or the arm measures "
+           "something the bot does not do -- the A45 bug, repeated")
+        ck(_lp48.index("take_n = _widen45(take_n)  # live") < _lp48.index(_c48l)
+           < _lp48.index("take_n = _stage46(take_n)", _lp48.index(_c48l)),
+           "...and in the right order: A35 sizes, A45 widens, A48 widens late, "
+           "A46 re-caps an early leg last")
         # AMENDMENT 8, after the 2026-09-17 fix that moved it to where `want`
         # exists. Only the OPPOSITE side blocks; a same-side re-look is a
         # top-up. The old placement read `want` from the PREVIOUS market.
@@ -6544,6 +6583,52 @@ def trade_loop(a, rec, book, idx, series_index):
                         bank=state.get("bank"), hwm=state.get("hwm"))
                 return take_n
 
+            def _late48(take_n):
+                """AMENDMENT 48: BUY BIGGER IN THE LAST FEW SECONDS.
+
+                The operator, 2026-09-17: "What if we increase to above our size
+                level when buying near close with a high enough confidence
+                level?" Our OWN LIVE FILLS say the last seconds are where the
+                money is, and by a wide margin:
+
+                    0-5 s    1,028 contracts   5.35c each   0 losing closes
+                    6-15 s   4,125 contracts   3.80c each
+                    16-30 s 11,363 contracts   1.90c each
+
+                2.8x the per-contract return of our main window, on 6% of our
+                volume. And the book is not what stops us going bigger: of 102
+                live sweep events only 8 were capped by the ladder, the median
+                contracts buyable at our own sweep limit is 433 against a SIZE
+                of 95. BANK_BRAKE is the binding constraint, not the market.
+
+                Every existing ceiling still applies -- the same drawdown
+                headroom A45 uses, the close budget, and the book. This only
+                raises the per-order cap inside the window.
+                """
+                if LATE_MULT <= 1.0 or tau > LATE_TAU:
+                    return take_n
+                _cap48 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"),
+                                      mult=LATE_MULT)
+                _avail48 = float(size)
+                _lim48 = sweep_limit(f, price, want)
+                if SWEEP_DEPTH and _lim48 > price + 1e-9:
+                    try:
+                        _avail48 = max(_avail48, float(book.buyable(tk, want, _lim48)))
+                    except Exception:              # noqa: BLE001
+                        pass
+                _room48 = (close_budget()
+                           - (prev.get("contracts", 0.0)
+                              if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
+                _was48 = take_n
+                take_n = max(take_n, min(_cap48, _avail48, max(0.0, _room48)))
+                if take_n > _was48 + 1e-9:
+                    rec("late_boost", ticker=tk, want=want, tau=tau,
+                        was=round(_was48, 2), now=round(take_n, 2),
+                        cap=round(_cap48, 2), avail=round(_avail48, 2),
+                        room=round(_room48, 2), mult=LATE_MULT, late_tau=LATE_TAU,
+                        size=float(SIZE))
+                return take_n
+
             def _stage46(take_n):
                 """AMENDMENT 46: an early or top-up leg keeps its cap however
                 much A35/A45 widened the order. A full leg is untouched."""
@@ -6553,6 +6638,7 @@ def trade_loop(a, rec, book, idx, series_index):
 
             if not live:
                 take_n = _widen45(take_n)  # paper
+                take_n = _late48(take_n)   # paper
                 take_n = _stage46(take_n)
                 _book_slot(price, take_n)
                 open_pos[f"paper-{tk}-{now_s}"] = (close_s, want, price,
@@ -6617,6 +6703,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     # re-apply the staged-entry cap (if on). Same helpers the
                     # paper path uses above, so both paths book the same size.
                     take_n = _widen45(take_n)  # live
+                    take_n = _late48(take_n)   # live
                     take_n = _stage46(take_n)
                     _t0 = time.time()
                     out = pintake.take(CREDS["base"], CREDS["pk"],
@@ -6790,6 +6877,14 @@ def main():
                          "both the entry decision and the hedge's belief. "
                          "The tail after a jump is ~2x wider than the model "
                          "assumes. OFF by default.")
+    ap.add_argument("--late-tau", type=int, default=None,
+                    help="AMENDMENT 48: seconds-to-close at or under which an "
+                         "order may exceed SIZE. Our live fills earn 5.35c a "
+                         "contract inside 5 s against 1.90c at 16-30 s.")
+    ap.add_argument("--late-mult", type=float, default=None,
+                    help="AMENDMENT 48: the multiple of SIZE one order may "
+                         "reach inside --late-tau. Still capped by the drawdown "
+                         "headroom, the close budget and the book.")
     ap.add_argument("--hedge-price", type=float, default=None,
                     help="AMENDMENT 47: only hedge when OUR side's market "
                          "price has also fallen below this (e.g. 0.50). The "
@@ -6978,6 +7073,17 @@ def main():
                 "still sized from the touch, which buys exactly the scrap fill "
                 "AMENDMENT 6 added the floor to prevent.")
         globals()["DEPTH_LADDER"] = True
+    if a.late_tau is not None:
+        if not (0 <= a.late_tau <= TAU_MAX):
+            raise SystemExit("--late-tau must be between 0 and TAU_MAX (%d), got %r"
+                             % (TAU_MAX, a.late_tau))
+        globals()["LATE_TAU"] = int(a.late_tau)
+    if a.late_mult is not None:
+        if not (1.0 <= a.late_mult <= MAX_PER_CLOSE):
+            raise SystemExit("--late-mult must be between 1.0 and MAX_PER_CLOSE "
+                             "(%.1f) -- the close budget bounds it anyway, got %r"
+                             % (float(MAX_PER_CLOSE), a.late_mult))
+        globals()["LATE_MULT"] = float(a.late_mult)
     if a.hedge_price is not None:
         if not (0.0 < a.hedge_price < 1.0):
             raise SystemExit("--hedge-price must be between 0 and 1, got %r"
