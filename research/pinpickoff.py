@@ -54,6 +54,7 @@ reported too -- that gap is the join's error bar.
     python research/pinpickoff.py --audit         # show the ours/theirs join
 """
 import argparse
+import calendar
 import collections
 import glob
 import gzip
@@ -116,7 +117,16 @@ def load_settlements(path=SETTLE):
 
 
 def load_our_fills(results=RESULTS):
-    """[(ticker, epoch, price)] for every live fill we made."""
+    """[(ticker, epoch, price)] for every live fill we made.
+
+    THE TIME CONVERSION IS calendar.timegm AND NOTHING ELSE. The first version
+    used `time.mktime(strptime(...)) - time.timezone`, which reads a UTC string
+    as LOCAL time: mktime applies the DST offset in force (EDT, -4) while
+    time.timezone is the STANDARD offset (EST, -5), so every fill came out
+    exactly one hour early. The join window is six seconds, so not one of our
+    463 fills could ever match a tape trade and the report read "our share 0%"
+    -- a number that looked like a finding and was a bug.
+    """
     out = []
     for f in sorted(glob.glob(os.path.join(results, "pinrun-live-*.jsonl"))):
         for line in open(f, encoding="utf-8", errors="replace"):
@@ -132,9 +142,8 @@ def load_our_fills(results=RESULTS):
                 continue
             if filled <= 0:
                 continue
-            t = r.get("t")
             try:
-                ep = time.mktime(time.strptime(str(t)[:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+                ep = calendar.timegm(time.strptime(str(r.get("t"))[:19], "%Y-%m-%dT%H:%M:%S"))
             except (TypeError, ValueError):
                 continue
             px = r.get("exec_price")
@@ -226,6 +235,19 @@ def walk(files, settled, ours_index, verbose=False, on_progress=None, every=40):
     return rows, bad
 
 
+def mark_ours(rows, ours_index):
+    """Re-decide 'ours' at REPORT time rather than at walk time.
+
+    The walk over 531 tape hours takes ~25 minutes; our own fills change every
+    day and the join logic had a bug in it. Deciding this here means a fix, or
+    a new day of fills, costs a second instead of a re-walk. `ts` is recovered
+    as close - tau, exactly the value the walk saw.
+    """
+    for r in rows:
+        r["ours"] = is_ours(r["ticker"], r["close"] - r["tau"], r.get("paid"), ours_index)
+    return rows
+
+
 def summarise(rows):
     """Per ET day, and per close, the four numbers."""
     by = collections.defaultdict(lambda: {"n": 0, "ours": 0, "tau": [], "paid": [],
@@ -281,6 +303,11 @@ def report(by, out=sys.stdout):
             st.median(pool(f, "tau")), st.median(pool(l, "tau"))))
         p("    mean price           %5.1fc  ->  %5.1fc" % (
             st.mean(pool(f, "paid")), st.mean(pool(l, "paid"))))
+    p("")
+    p("  HOW TO READ 'our share': one of our orders prints as MANY tape trades")
+    p("  (it sweeps several resting orders), and the join accepts any print")
+    p("  within 6 s and 1c of one of our fills. The share is an UPPER bound on")
+    p("  the slice we take. Use the TREND and the pool size, not the level.")
     p("")
     p("  REVISIT THIS ONCE IT HAS TWO MORE WEEKS IN IT. Three things to act on:")
     p("    1. median tau falling  -> competitors are moving earlier; widen our own early")
@@ -350,6 +377,23 @@ def selftest():
     ck(abs(d["contracts"] - d["ours_contracts"] - 16.0) < 1e-9,
        "16 of those contracts went to somebody else")
     ck(not summarise([]), "NULL: no bargains -> no rows, not a fabricated zero day")
+
+    # THE BUG THAT READ AS A FINDING: a UTC timestamp converted with
+    # mktime()-timezone lands an hour off under DST, so no fill can ever match.
+    t_str = "2026-09-16T13:59:31Z"
+    good = calendar.timegm(time.strptime(t_str[:19], "%Y-%m-%dT%H:%M:%S"))
+    bad = time.mktime(time.strptime(t_str[:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+    ck(good == calendar.timegm((2026, 9, 16, 13, 59, 31)),
+       "our fill times are read as UTC with calendar.timegm")
+    ck(abs(good - bad) >= 3600,
+       "...and the old mktime()-timezone form is at least an hour out under "
+       "DST, which is why the join found 0 of 583,424 and called it 0%% share")
+    # and the report-time re-marking recovers ts from close - tau
+    rr = [{"ticker": tk, "close": close, "tau": 20, "paid": 0.95, "n": 5.0, "ours": False}]
+    mark_ours(rr, {tk: [(close - 20, 0.95)]})
+    ck(rr[0]["ours"], "mark_ours recovers the trade time as close - tau and matches our fill")
+    mark_ours(rr, {})
+    ck(not rr[0]["ours"], "...and un-marks it when the fill is not ours, with no re-walk")
 
     # end to end over a written tape file, including a torn one
     import tempfile
@@ -433,6 +477,7 @@ def main():
     if not rows:
         print("loaded nothing -- no bargains on file yet")
         return 0
+    mark_ours(rows, ours_index)          # decided here, so a fix needs no re-walk
     by = summarise(rows)
     report(by)
     if a.audit:

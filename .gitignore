@@ -40,3 +40,6 @@ results/pinexit_positions.jsonl
 # rebuilt every two minutes by research/pindash.py --watch; committing it
 # would churn ~840 KB per run and it is regenerable in seconds
 results/dashboard.html
+
+# 65 MB of walked tape rows -- rebuildable from the tape, never committed
+results/pinpickoff_cache.json
