@@ -103,6 +103,55 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 14:2xZ (next day's clock) -- THE COMMODITIES METHOD, and it needs no price feed
+
+Operator: *"Most important thing right now is figuring out the commodities
+method."* Full write-up `results/RESULTS_commodities.md`. Three findings:
+
+1. **Settlement rule, from Kalshi's own `rules_primary`:** settle = the close
+   of the 1-minute Pyth candle AT the close; strike = the same one window
+   earlier. `strike(N+1) == settle(N)` on **38 of 39** gold closes, so the
+   strike chain is a FREE 15-minute price history. Nothing is locked early --
+   the original kill was right about the mechanism. Median strike-to-settle
+   move: $4.61 on ~$4,360 gold (10.6 bp per 15 min).
+2. **We cannot see that price.** Pyth hermes/benchmarks answer **401** without
+   an API key (and need `certifi`, not the Windows store -- `/v1/price_feeds/`
+   works with it). Kalshi's own **`pyth_value`** channel accepts a
+   subscription for all five commodities and publishes **nothing** -- and
+   nothing for BTC/ETH either, which was the control, so the channel simply
+   is not serving us. 100 s, zero frames.
+3. **We do not need it.** Scoring every taker buy at 90-98c within 30 s of a
+   close over 300 settled markets per series (TAPE population, rule 5):
+
+   | series | band | trades | lost | EV/contract |
+   |---|---|---|---|---|
+   | WTI | **16-30 s** | 2,596 | **1.04%** | **+3.82c** |
+   | GOLD | 0-5 s | 1,547 | **0.13%** | +3.72c |
+   | GOLD | 6-15 s | 2,893 | 2.45% | +2.22c |
+   | GOLD | 16-30 s | 3,615 | 7.69% | **-2.82c** |
+   | SILVER | 0-5 s | 1,089 | 2.85% | +1.16c |
+   | COPPER / NATGAS | all | -- | 5.7-11.3% | dead |
+
+   Break-even at 95c ~5%; our crypto bot keeps ~3c. **WTI at 16-30 s beats the
+   business we already run, at the horizon we already trade. The BAND is the
+   strategy** -- gold is a loser at 16-30 s and a star inside 5.
+
+**`research/cmdarm.py` is running** (pid 621952, paper, log
+`results/cmdarm-20260917T140829Z.jsonl`): buy whatever the book offers at
+90-98c inside each series' band. No model, no feed. Silver is kept as a
+LOSING CONTROL. Self-test asserts it cannot order and that it loads the repo's
+`livebook` -- **kals-work holds a scratch `livebook.py` that shadowed it and
+ran an unrelated Coin Race analysis on import**; my first import order let the
+scratch copy win, which would have had the arm trading on a different book
+implementation than it was written against. pinrun has the correct ordering;
+copy it (repo imports first, kals-work appended after, only for `kauth`).
+
+**The 31x caveat governs everything here:** the tape's population is "a trade
+happened", ours is "we took a resting offer", and on crypto those differed 31x
+(0.11% vs 3.4%). A paper arm assumes its fills and cannot answer it. **Only a
+live penny test can, and that needs operator sign-off.** Next: run to ~40 bets
+per series, then propose that test.
+
 ## 15:4xZ -- v-staged LIVE, and the operator was right twice: the cheap offers ARE disappearing
 
 - **v-staged DEPLOYED** on his instruction (`results/VERSIONS.md`): live pid
