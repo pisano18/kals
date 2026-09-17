@@ -119,11 +119,45 @@ about $0.87 a fill = ~$7/day; a loss at 99c costs ~$93, so it dies above 1 loss
 in 107. Live fills at 98c+: 61, 0 lost -- consistent with, not proof of, that.
 Not now; revisit when 98c+ fills reach ~200 with no loss.
 
-**E. Dead, with the evidence, do not re-try:** resting bids instead of taking
-(`RESULTS_maker`, 09/12: filled on 100% of losers, 29% of winners); the other
-15-minute series (settle on a 1-minute candle, no locked average, 18x worse);
-hourly series (1 buyable of 2,568); lowering the 0.3c edge floor (pennies at
-99.9c); every idea in `IDEAS.md`'s graveyard.
+**E. Dead, re-checked 2026-09-17 at the operator's instruction ("double check
+each dead thoroughly before killing them completely").**
+
+- Resting bids instead of taking: STAYS DEAD. `RESULTS_maker` (09/12) measured
+  the exact population a resting bid fills -- 100% of losers, 29% of winners --
+  and tested the cancel-on-belief defence (every loser fill lands before the
+  pull). No variant survives that mechanism.
+- Hourly series: STAYS DEAD. 1 buyable moment of 2,568 is a fact about the
+  book, not the model.
+- Edge floor under 0.3c: STAYS DEAD. The refused offers sit at 99.8-99.9c;
+  a win pays 0.1-0.2c a contract, a loss 99c.
+- **The candle-settled 15-minute series: REOPENED.** The original kill was
+  about the MODEL (a candle close is a single last print, not a 60-second
+  average -- the operator's premise "isn't a candlestick an average too" is
+  wrong on that point, and nothing is locked ahead of time). It never looked
+  at the MARKET. The market says, over 300 settled markets per series
+  (09/14-09/17) and 76 tape hours, scoring every taker buy at 90-98c in the
+  last 30 s against the settled result -- a TAPE population, not our loss rate:
+
+  | series | 16-30 s lost | 6-15 s lost | **0-5 s lost** | contracts 0-5 s |
+  |---|---|---|---|---|
+  | **gold** | 7.7% (278/3,615) | 2.5% | **0.1% (2/1,547)** | 93,524 |
+  | **oil (WTI)** | 1.0% | 2.0% | **1.6%** | 237,133 |
+  | silver | 9.2% | 3.8% | 2.8% | 131,967 |
+  | copper | 11.3% | 9.3% | 10.2% | dead |
+  | natural gas | 8.6% | 9.4% | 5.7% | dead |
+
+  Break-even at ~95c is ~5 losses in 100. Gold in the final five seconds and
+  oil at every horizon clear it on the tape; copper and gas do not. These
+  buyers had no model -- a price feed showing distance to the strike would
+  select better than "anyone who bought". What it needs, none of which
+  exists yet: a fast price feed for the settlement source (Pyth; the
+  benchmarks API failed here on an expired SSL certificate, `hermes` untried),
+  a distance-vs-seconds model, and a book subscription for those series
+  (the collector tapes their trades but only ~12 book snapshots an hour).
+  Then a paper arm. It is a multi-hour build and a NEW product line; it goes
+  on the list behind the two paper arms already running, not ahead of them.
+  Note the sellers: 30,000 gold contracts a day change hands at 90-98c in
+  the last five seconds -- depth is not the constraint there.
 
 ## 4. Loss rates by price and edge, live entry fills, all time
 

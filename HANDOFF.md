@@ -103,6 +103,48 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 14:5xZ -- "8 trades today": maintenance + a quiet morning; A46 STAGED ENTRY built; candle series ALIVE on gold and oil
+
+- **Operator scared: 8 fills by 8:41 AM vs ~22 yesterday.** Same clock window
+  from the logs: today 7 fills / 8 orders / 1 lost race, yesterday 21 / 25 / 4.
+  Two causes, both visible: (1) Kalshi maintenance -- the bot watched NOTHING
+  from 3:00 to 5:15 AM ET (watchdog restarted it at 3:25, exchange dark until
+  5:15); yesterday those hours gave 5 fills. (2) a quieter morning -- sellers
+  on 9% of looks vs 14%, 7 of 27 watched quarter-hours bought vs 15 of 35,
+  every rule refused proportionally less. Nothing broken: settled +$21.34 vs
+  +$39.30 same window. Reported plainly to him.
+- **AMENDMENT 46 built, paper arm running** (pid 607520, log
+  `pinrun-paper-20260917T125326Z.jsonl`, `--early-tau 45 --early-frac 0.5`).
+  His design: half a bet at 31-45 s, top up to SIZE at <= 30 s if the gate
+  still passes; a collapse before that fails the confidence gate and the
+  hedge pass covers the half. A29 already exempts an unfinished position from
+  the re-buy band, so no new bypass. One early leg per market (`early_once`).
+  `staged_take()`; `leg`/`early_held` on every signal and order. Refused live
+  until `EARLY_LIVE_OK` is flipped citing `results/PREREG_staged.md` (bars:
+  30 closes + 20 early markets to read; kill at 3 losses in 30 early markets;
+  live bar 40 closes, revert at 3 losses / 2 in 15). Plan told to him: live
+  when the bar is crossed, not before.
+- **A45 was broken in paper:** its widening sat inside the live-only order
+  block, after the paper path had already booked the order. Both widenings
+  are now helpers called on both paths; the one-coin arm was relaunched
+  (pid 609204, `pinrun-paper-20260917T125331Z.jsonl`). Full self-test exit 0.
+- **Candle series, scored (tape population, 300 settled markets/series,
+  76 tape hours):** late buyers at 90-98c LOSE 8-11% at 16-30 s on gold,
+  silver, copper, gas -- but **gold in the last 5 s: 2 of 1,547 trades
+  (0.1%), 93,524 contracts; oil ~1-2% at every horizon**; copper and gas dead
+  at every horizon. Break-even ~5%. Numbers in `RESULTS_quiet.md` E. This is
+  a NEW product line needing a Pyth feed (`benchmarks` API failed on an
+  expired SSL cert; try `hermes.pyth.network`), a distance-vs-seconds model,
+  and a book subscription (the collector tapes their trades, ~12 book
+  snapshots/hour). Queued behind the two running arms.
+- Settlements for the five candle series: `C:\kals\fulltape_candle\
+  markets.json` (pulled via `kalshi_fulltape.pull_markets_only` directly --
+  `main()`'s `feed_check` walks the whole tape and burned 14 CPU-minutes
+  producing nothing; use the function, not the script).
+- Still due: score the flat tau-45 arm at its bar (30 closes each + 20 NEW;
+  it was 16/16/18 at 1:30 AM, ~8 h to go), the Coin Race arm4 at 40 bets,
+  and the one-coin/staged arms at theirs.
+
 ## 12:4xZ -- operator's round: tau-45 read early, one-coin depth BUILT (paper), candle series reopened
 
 Operator: *"I didn't create that rule, check how trading sooner has performed.
