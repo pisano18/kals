@@ -151,11 +151,12 @@ def scan_trade(msg, settled, tau_max=TAU_MAX):
     if side not in ("yes", "no"):
         return None
     paid = yes_px if side == "yes" else 1.0 - yes_px
-    # 50c floor, not 80c: the GRID only tabulates 80c+ (band_of returns None
-    # below that), but the REVERSAL screen needs the new side's cheap buys at
-    # 50-90c after a flip. The first version floored at 80c and the self-test's
-    # planted 75c new-side buy came back None.
-    if paid < 0.50:
+    # 20c floor, not 80c: the GRID only tabulates 80c+ (band_of returns None
+    # below that), but the WOBBLE needs the OTHER side's cheap buys -- a buyer
+    # of the new side at 45c is the trade that says the favourite fell to 55c.
+    # An 80c floor lost the self-test's planted 75c buy; a 50c floor lost the
+    # planted 45c one. Nothing is stored per row, so a low floor costs nothing.
+    if paid < 0.20:
         return None
     took_winner = (side == "yes" and won_yes >= 0.5) or (side == "no" and won_yes < 0.5)
     return {"tk": tk, "ser": tk.split("-")[0], "close": close, "tau": tau,
@@ -407,7 +408,7 @@ def selftest():
     ck(r and r["won"] and r["paid"] == 0.95 and r["tau"] == 20, "a YES buyer at 95c on a YES market: kept, won")
     r = scan_trade(tr("no", 0.05, 20), settled)
     ck(r and not r["won"] and r["paid"] == 0.95, "a NO buyer at 95c on a YES market: kept, LOST -- the grid needs losers")
-    ck(scan_trade(tr("yes", 0.40, 20), settled) is None, "NULL: 40c is kept by nobody")
+    ck(scan_trade(tr("yes", 0.10, 20), settled) is None, "NULL: 10c is kept by nobody")
     r = scan_trade(tr("yes", 0.75, 20), settled)
     ck(r is not None and band_of(r["paid"], PX_BANDS) is None,
        "a 75c buy is scanned (the reversal screen needs it) but sits in no GRID cell")
@@ -463,13 +464,14 @@ def selftest():
     tk6 = "KXXRP15M-26SEP161000-00"; tk7 = "KXETH15M-26SEP161000-00"
     s6 = {tk6: 0.0, tk7: 1.0}
     acc6.add(scan_trade(tr("yes", 0.95, 60, ticker=tk6), s6))   # favourite YES...
-    acc6.add(scan_trade(tr("no", 0.45, 20, ticker=tk6), s6))    # ...someone buys NO at 45c: favourite implied 55c
-    acc6.add(scan_trade(tr("yes", 0.95, 60, ticker=tk7), s6))   # favourite YES, holds
-    acc6.add(scan_trade(tr("yes", 0.97, 10, ticker=tk7), s6))   # traded UP, min stays 95c
-    ck(acc6.wob[tk6] == (0.55, 20) and acc6.wob[tk7] == (0.95, 60) or acc6.wob[tk7][0] == 0.95,
-       "the wobble is the LOWEST price the favourite's side implied inside the window, from either side's trades")
+    acc6.add(scan_trade(tr("no", 0.55, 20, ticker=tk6), s6))    # ...a NO buyer pays 45c: favourite implied 55c
+    acc6.add(scan_trade(tr("yes", 0.95, 60, ticker=tk7), s6))   # favourite YES, holds (60 s is outside the wobble window)
+    acc6.add(scan_trade(tr("yes", 0.97, 10, ticker=tk7), s6))   # inside the window it traded at 97c
+    ck(acc6.wob[tk6] == (0.55, 20) and acc6.wob[tk7] == (0.97, 10),
+       "the wobble is the LOWEST price the favourite's side implied inside the window, from either side's "
+       "trades: a NO buyer paying 45c puts the YES favourite at 55c")
     wb = wobble(acc6)
-    ck(wb["KXXRP15M"][(0.50, 0.70)] == [1, 1] and wb["KXXRP15M"][(0.90, 1.01)] == [1, 0],
+    ck(wb["KXXRP15M"][(0.50, 0.70)] == [1, 1] and wb["KXETH15M"][(0.90, 1.01)] == [1, 0],
        "wobble to 50-70c: 1 market, favourite lost; stayed at 90c+: 1 market, favourite won -- conditioned on the price, not the outcome")
     # the accumulator survives a round trip through the cache
     acc4 = Acc.from_json(json.loads(json.dumps(acc6.to_json())))

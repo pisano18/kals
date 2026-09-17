@@ -103,6 +103,40 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 15:1xZ -- THE GRID, THE WOBBLE, AND WHAT WAS DONE WITH THEM (`results/RESULTS_actions.md`)
+
+`research/pingrid.py` (tape, 5 days, aggregated in place after two memory
+kills): per series x seconds-left x price, how often buyers of the priced-in
+side bought the LOSER. Findings and actions:
+
+- **Crypto "trade sooner": the frontier is 60 s.** 46-60 s buyers of 95-98c
+  lose ~2% (break-even ~3.4%); 61-90 s lose 5-10% -- dead. "Use the full 15
+  minutes" is NO. Paper arm `--early-tau 60 --early-frac 0.333` started
+  (pid 637500) to see if our gate rescues 46-60. 60-78% of all 90-98c buying
+  happens at 61-180 s, where the grid says buyers lose: competitors moving
+  earlier are moving into the losing part of the table.
+- **Commodities re-banded per series** in `cmdarm.py` (pid 637468): GOLD
+  (2,15 s) 90-99c -- 98-99c inside 15 s loses 0.0-0.1% on 3,700 trades;
+  WTI (2,60 s) 90-99c -- good at every horizon to 60; SILVER (2,5 s) control;
+  COPPER/NATGAS not traded. "Earlier bets on commodities": yes for oil, no for
+  gold, and the mechanism is calmness of the asset in its last minute.
+- **The reversal idea has a population.** Conditioned on the lowest price
+  the favourite traded at inside the last 30 s (visible at the time): stays
+  90c+ -> 0% lost (1,511 mkts); dips to 50-90c -> 0% lost (48 mkts); crosses
+  BELOW 50c -> **76% lost (158 mkts)**. Two uses: hedge on the MARKET price
+  crossing 50c rather than belief 0.60 (5 of 9 live hedges were wasted at
+  belief 0.49-0.89); and a "buy the new side at ~50c" arm, EV ~+11c/contract
+  before adverse selection, the largest number of the day and the most
+  suspect (rule 5). Neither built yet; both paper-first.
+- **Closed:** per-close budget lever (0.5 markets/day), ceiling raise in the
+  main window (RESULTS_decay.md s7), trading beyond 60 s.
+- The first reversal screen was TAUTOLOGICAL (kept only markets whose
+  favourite lost) and printed 0% everywhere; replaced by the wobble. Four
+  self-test rounds caught: closed bands double-counting boundaries, a
+  full-row walk heading for a memory kill, a leak of late rows for markets
+  with no favourite, an 80c/50c floor dropping the new-side buys the wobble
+  needs, and my own price arithmetic (a NO buyer at yes-price 45c pays 55c).
+
 ## 14:2xZ (next day's clock) -- THE COMMODITIES METHOD, and it needs no price feed
 
 Operator: *"Most important thing right now is figuring out the commodities
