@@ -103,6 +103,38 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 15:4xZ -- v-staged LIVE, and the operator was right twice: the cheap offers ARE disappearing
+
+- **v-staged DEPLOYED** on his instruction (`results/VERSIONS.md`): live pid
+  614944, `--early-tau 45 --early-frac 0.333`. A THIRD of a bet at 31-45 s,
+  topped up to a full bet at <= 30 s if the same gate passes. TAU_MIN is still
+  3 and TAU_MAX still 30, so the live window is **3-45 s**, and a FULL bet can
+  never be bought early. Recorded as a BAR OVERRIDE in PREREG_staged.md (stage
+  1 wanted 30 paper closes; the arm had run 20 minutes). Stage 2's live bar
+  governs: 40 closes with an early leg, revert at 3 losses or 2 in the first 15.
+- **HE CAUGHT A WRONG EXPLANATION AGAIN.** I said fewer fills came from the
+  bigger bet size. He said "we buy any size" -- correct: MIN_FILL_FRAC is 0 and
+  the close budget is 2 x SIZE, so fill count is near scale-invariant. Withdrawn.
+- **THE REAL MECHANISM, and it validates his fear** (`results/RESULTS_decay.md`,
+  per WATCHED quarter-hour so downtime cannot distort it): sellers appear just
+  as often (82% -> 83%) and the share of quarter-hours whose best offer clears
+  our 0.3c floor is FLAT (64% -> 66%) -- but the **cheap tail is vanishing**.
+  Best offer under 96c: 28% -> 20% -> **12% today**. Best offer ABOVE our 98c
+  ceiling: 44% -> 52% -> **68% today**. Mean best edge 3.76c -> 2.72c (-28%,
+  falling in 34 of 45 day pairs) while the MEDIAN fell only 9% -- the bargains
+  are being taken, the ordinary offers remain. That, not our size, is why fills
+  per watched quarter-hour went 0.64 -> 0.47 -> 0.27.
+- **What has NOT decayed: kept cents per contract** -- 5.23, 2.44, 3.14, 2.83,
+  **3.18 today**. The trades we still take are as good as ever. THIS IS THE
+  NUMBER TO WATCH WEEKLY; below ~2c the strategy itself is in trouble.
+- **His "hot hours aren't hot" is also right:** fills per watched quarter-hour
+  23:00 0.95 -> 0.06, 22:00 0.89 -> 0.25, 19:00 0.95 -> 0.50, 18:00 0.68 ->
+  0.25. Some hours rose (03:00 0.62 -> 0.82, 16:00 0.42 -> 0.79).
+- **The 98c ceiling is now the binding constraint** and is HIS call, not mine.
+  Put to him with the arithmetic: at 98.5c break-even is ~1 loss in 66; live
+  record at 98c+ is 61 fills, 0 losses; the 2026-09-09 measurement that set 98c
+  was taken when offers sat a cent lower.
+
 ## 14:5xZ -- "8 trades today": maintenance + a quiet morning; A46 STAGED ENTRY built; candle series ALIVE on gold and oil
 
 - **Operator scared: 8 fills by 8:41 AM vs ~22 yesterday.** Same clock window
