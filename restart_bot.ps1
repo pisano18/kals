@@ -172,7 +172,16 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     "--improve-scope", "market", "--pick", "best",
     "--max-per-market", "2", "--improve-max", "0.010",
     "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate",
-    "--hedge-belief", "0.60"
+    "--hedge-belief", "0.60",
+    # AMENDMENT 46, deployed 2026-09-17 on the operator's instruction ("As long
+    # as you have the 45 second is built as safely as you described, deploy
+    # now"), at ONE THIRD of a bet on his follow-up ("Bump it down to 1/3 the
+    # current size instead of half"). A THIRD of a bet at 31-45 s; topped up to
+    # a full bet at <= 30 s only if the same gate still passes; if belief
+    # collapsed first the hedge covers the third. TAU_MAX is still 30 -- a FULL
+    # bet cannot be bought early.
+    # Bar and revert: results/PREREG_staged.md, results/VERSIONS.md v-staged.
+    "--early-tau", "45", "--early-frac", "0.333"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 

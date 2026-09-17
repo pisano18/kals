@@ -1,4 +1,54 @@
-# (NOT DEPLOYED) AMENDMENT 46 -- staged early entry (tau 45, half a bet, top up at 30). OFF LIVE. -- 2026-09-17 14:3xZ
+# v-staged -- 2026-09-17 ~15:1xZ -- LIVE: a THIRD of a bet at 31-45 s, topped up at 30
+
+**Operator, 2026-09-17: "As long as you have the 45 second is built as safely
+as you described, deploy now."** And, on the same message: *"Unless you can
+give me a reason to feel okay about the way less opportunity we're getting
+push the 45 second."*
+
+`restart_bot.ps1` now passes `--early-tau 45 --early-frac 0.333`, and
+`EARLY_LIVE_OK` is True in `research/pinrun.py`. The fraction is his:
+*"Bump it down to 1/3 the current size instead of half."* At SIZE 94 the early
+leg is ~31 contracts, ~$30 at 97c.
+
+**What the bot does differently.** With 31-45 seconds left, a market that
+passes EVERY existing gate (confidence, edge, depth, ceiling, EV, dump guard,
+jump gate) may be bought for **one third of a bet**. With 30 seconds or less it is
+**topped up to a full bet** only if the same gate still passes at that
+moment's price. One early leg per market. If belief has collapsed by the
+top-up point, the top-up fails the confidence gate and the hedge pass -- which
+covers every open position every second -- buys the other side at belief
+< 0.60. **`TAU_MAX` is still 30: a FULL bet can never be bought early.**
+
+**THIS IS A BAR OVERRIDE AND IT IS RECORDED AS ONE.** `results/PREREG_staged.md`
+stage 1 asked for 30 paper closes and 20 early markets before reading
+anything; the staged arm had run ~20 minutes. The operator deployed on the
+evidence that existed:
+
+- the flat tau-45 paper arm, 9.2 h: **27 bets, 27 won, 0 lost**, 3x the
+  control's bet count, +0.03c on the 8 markets both arms bought;
+- `pinbefore` on the index alone (14,261 closes): model error at 31-45 s is
+  **0.058%** against 0.021% at 21-30 s, both trivial next to a 4.66% live
+  loss rate;
+- exposure per early leg is ONE THIRD of today's per-market worst case.
+
+**The STAGE 2 live bar in PREREG_staged.md is unchanged and now governs:**
+40 live closes carrying an early leg; **revert at 3 losses, or 2 in the first
+15**; top-up price within 1.0c of the early price; net positive.
+
+**Revert, copy-pasteable:**
+
+```powershell
+cd C:\kals-repo
+git checkout 83fd965 -- restart_bot.ps1
+powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
+```
+
+(The code can stay; without the flag it buys no early leg. To disable it
+everywhere, set `EARLY_LIVE_OK = False` in `research/pinrun.py`.)
+
+---
+
+# (superseded by v-staged above) AMENDMENT 46 -- built, paper only -- 2026-09-17 14:3xZ
 
 **Live flags unchanged, `versioncheck` clean, full self-test exit 0.** The
 file on disk changed again, and the live bot restarts from it. Operator:

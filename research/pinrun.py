@@ -240,7 +240,17 @@ ONE_COIN_MAX = 2.0             # multiple of SIZE; may not exceed MAX_PER_CLOSE
 EARLY_TAU_MAX = 30             # == TAU_MAX means OFF
 _DEFAULT_EARLY_TAU_MAX = 30
 EARLY_FRAC = 0.5
-EARLY_LIVE_OK = False
+# FLIPPED TO True 2026-09-17 ~15:0xZ ON THE OPERATOR'S EXPLICIT INSTRUCTION:
+# "As long as you have the 45 second is built as safely as you described,
+# deploy now." This is a BAR OVERRIDE and it is recorded as one, loudly, in
+# results/PREREG_staged.md and results/VERSIONS.md (v-staged): stage 1's paper
+# minimum (30 closes + 20 early markets) was NOT reached -- the staged arm had
+# run ~20 minutes. What WAS in hand: the flat tau-45 arm's 27 of 27 over 9.2 h
+# (0 losses, 3x the control's bets, +0.03c on shared markets) and pinbefore's
+# index measurement (0.058% model error at 31-45 s vs 0.021% at 21-30 s).
+# The STAGE 2 live bar in that file is unchanged and now governs: 40 live
+# closes with an early leg, revert at 3 losses, or 2 in the first 15.
+EARLY_LIVE_OK = True
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
                        # moments it calls <2% risk:
@@ -3984,9 +3994,16 @@ def _selftest_body():
            "refusal")
 
         # ---- AMENDMENT 46: staged early entry --------------------------------
-        ck(_DEFAULT_EARLY_TAU_MAX == 30 and _DEFAULT_EARLY_TAU_MAX <= TAU_MAX
-           and EARLY_LIVE_OK is False,
-           "A46: OFF by default (early window == TAU_MAX) and not allowed live")
+        ck(_DEFAULT_EARLY_TAU_MAX == 30 and _DEFAULT_EARLY_TAU_MAX <= TAU_MAX,
+           "A46: OFF by default -- a run without --early-tau buys no early leg, "
+           "whatever EARLY_LIVE_OK says")
+        ck(isinstance(EARLY_LIVE_OK, bool),
+           "A46: EARLY_LIVE_OK is an explicit switch. True since 2026-09-17 on "
+           "the operator's instruction; the STAGE 2 bar in PREREG_staged.md "
+           "governs and a revert is a one-line edit back to False")
+        ck(TAU_MAX == 30,
+           "A46: the FROZEN RULE IS UNTOUCHED -- a FULL bet still needs tau <= "
+           "30. The early window only ever buys EARLY_FRAC x SIZE")
         _g46 = globals()
         _sv46 = (_g46["EARLY_TAU_MAX"], _g46["EARLY_FRAC"])
         try:
@@ -6985,8 +7002,10 @@ def main():
             max_take_count=max(pintake.MAX_TAKE_COUNT,
                                float(a.size) * (ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0)),
             why=f"size {a.size:g}, worst close ${_worst_close:.2f}")
-        arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}, "
-            f"PREREG_pin_live.md")
+        arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}"
+            + (f" (+A46 early leg {EARLY_FRAC:g}xSIZE to tau<={EARLY_TAU_MAX}, "
+               f"PREREG_staged.md)" if EARLY_TAU_MAX > TAU_MAX else "")
+            + ", PREREG_pin_live.md")
         print(f"  ARMED: {CREDS['base']}  key {CREDS['key_id'][:8]}...  "
               f"stake cap ${pintake.MAX_RUN_STAKE:.2f}")
         rec("armed", base=CREDS["base"], stake_cap=pintake.MAX_RUN_STAKE)

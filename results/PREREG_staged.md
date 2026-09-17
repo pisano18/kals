@@ -2,8 +2,18 @@
 ## Written 2026-09-17 ~14:0xZ, before the staged paper arm's first fill
 
 **Rule:** a bar is never moved after seeing a result without saying so loudly.
-**Nothing is live.** `--early-tau` above 30 is refused on a live run until
-`EARLY_LIVE_OK` is flipped in a commit that cites this file.
+
+**AMENDED 2026-09-17 ~15:1xZ -- THIS WENT LIVE BEFORE STAGE 1's BAR WAS MET,
+ON THE OPERATOR'S EXPLICIT INSTRUCTION, AND THAT IS RECORDED HERE RATHER THAN
+QUIETLY.** His words: *"As long as you have the 45 second is built as safely
+as you described, deploy now"*, and *"Bump it down to 1/3 the current size
+instead of half."* Stage 1 below asked for 30 paper closes and 20 early
+markets; the staged arm had run about 20 minutes. What was in hand instead:
+the flat tau-45 arm's 27 bets / 27 won over 9.2 h (3x the control's bets,
++0.03c on shared markets) and `pinbefore`'s index measurement (0.058% model
+error at 31-45 s vs 0.021% at 21-30 s). **Stage 2's live bar is unchanged and
+now governs.** The paper arms keep running as the comparison they were built
+to be.
 
 ## The operator's instruction, 2026-09-17
 
@@ -15,8 +25,12 @@ smart and safe and track it heavily so we know how it performs."*
 ## The rule as built (`staged_take()` in `pinrun.py`)
 
 - With 31-45 s left, a market that passes EVERY existing gate may be bought
-  for at most **EARLY_FRAC x SIZE** (0.5 in this arm): the EARLY leg. One per
-  market; a second early look is refused (`early_once`).
+  for at most **EARLY_FRAC x SIZE**: the EARLY leg. One per market; a second
+  early look is refused (`early_once`).
+  **DEPLOYED LIVE 2026-09-17 at EARLY_FRAC = 0.333** (the operator: "Bump it
+  down to 1/3 the current size instead of half"). The paper arm that was
+  started before the deploy runs at 0.5; when comparing, the live legs are a
+  third and the arm's are a half.
 - With <= 30 s left, a market holding an early leg may be **TOPPED UP to SIZE**
   if the same gate still passes at that moment's price (AMENDMENT 29 already
   exempts an unfinished position from the re-buy band). Never past SIZE.
