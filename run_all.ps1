@@ -7,7 +7,7 @@
 #
 $ErrorActionPreference = "Continue"
 $Dir    = "C:\kals"
-$KeyId  = "b48b406b-b498-4d14-b640-be989913526f"
+$KeyId  = "5163259c-ecb0-4966-9053-0d2776cf061e"
 $KeyFile= "kalshi.pem"
 Set-Location $Dir
 New-Item -ItemType Directory -Force -Path "$Dir\logs" | Out-Null

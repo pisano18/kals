@@ -24,7 +24,7 @@ import urllib.error
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-KEY_ID = "b48b406b-b498-4d14-b640-be989913526f"
+KEY_ID = "5163259c-ecb0-4966-9053-0d2776cf061e"
 # The key FILE is the secret and never enters git. On Windows it is C:\kals;
 # on the Pi set KALSHI_KEY_FILE. Unset, this is exactly the old path.
 KEY_FILE = os.environ.get("KALSHI_KEY_FILE", r"C:\kals\kalshi.pem")
