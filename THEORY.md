@@ -47,6 +47,54 @@ nothing is locked; at 30 seconds half the average is already on disk; at 5
 seconds the answer is nearly arithmetic. Our whole edge is buying the moment
 the arithmetic is decided but before the price fully reflects it.
 
+### 1a-ii. WHY 60 SECONDS IS A WALL, AND WHY 30 AND 45 ARE ROUND NUMBERS
+
+The operator asked the right question: *"The number should be based on math and
+it seems highly unlikely the math would select such a clean number like 45."*
+
+He is right that 45 is not derived, and there is a clean reason the numbers
+look round. **The settlement window is exactly the last 60 seconds** --
+`settlewin.partial()` sets `lo = close_sec - N_AVG` with `N_AVG = 60`, and
+returns "nothing locked in yet" before that. So the fraction of the settlement
+average already determined is
+
+    locked fraction = (60 - tau) / 60        for tau <= 60, and ZERO beyond it
+
+| tau | share of the settlement already fixed |
+|---|---|
+| 60 s | 0% |
+| 45 s | 25% |
+| 30 s | 50% |
+| 20 s | 67% |
+| 10 s | 83% |
+
+**So 30 and 45 are round in TAU because they are round in LOCKED FRACTION --
+one half and one quarter.** That is the whole explanation for the clean
+numbers, and it means the answer to "can we go further back" is:
+
+**No further than 60 seconds, and that is arithmetic, not opinion.** At tau =
+60 nothing is locked, the averaging has not begun, and our entire mechanism --
+knowing part of the answer already -- contributes exactly zero. Past 60 we
+would be forecasting a price a minute out with no privileged information,
+which is what every other participant is doing.
+
+**The market's own record agrees with the arithmetic, which is the strongest
+kind of confirmation.** By markets, buyers of 95-98c lose 2.8% at 31-45 s
+(25-50% locked), 3.6% at 46-60 s (0-23% locked, break-even ~3.4%), and 4.9% at
+61-90 s (nothing locked). The edge decays to zero exactly where the locked
+fraction does.
+
+**One correction to how people think about TAU_MAX here.** The bot's real
+decision is already continuous and derived: `fair()` computes the win
+probability from the locked sum, the spot, sigma and the strike, and the gate
+is "probability >= 99.5%". **That is the math choosing the moment, per market,
+every second.** TAU_MAX is a separate, cruder rail bolted on top of it. What
+that rail actually protects is not the settlement arithmetic but the SIGMA
+estimate: the less of the average is locked, the more `fair` leans on a
+volatility guess, so an error in sigma is amplified as tau grows. If TAU_MAX is
+ever revisited, the principled replacement is not another round number -- it is
+to require more confidence when less is locked.
+
 ### 1b. Commodities (KXGOLD15M, KXWTI15M, KXSILVER15M, KXCOPPER15M, KXNATGAS15M) -- settle on ONE INSTANT
 
 The rules text is explicit: settlement is the **close of the 1-minute Pyth
@@ -187,6 +235,35 @@ allows. Of 472 live fills: 0.4% under 50c, 6% at 80-90c, 21% at 90-95c, 58% at
 restriction is the 98c CEILING. (The 90c number that appears in commodity work
 is `cmdarm`'s window, a different system entirely. If a future reader thinks
 crypto has a 90c floor, they have confused the two -- it has happened.)
+
+### 5a-ii. THE SQUEEZE: why the run earns less per day than it did
+
+Measured 2026-09-17. **The margin is NOT falling. The volume is.**
+
+| ET day | bets | contracts | cents per contract | made |
+|---|---|---|---|---|
+| 09-13 | 50 | 2,194 | 5.23c | +$114.77 |
+| 09-14 | 63 | 3,319 | 2.44c | +$81.14 |
+| 09-15 | 35 | 2,431 | 3.14c | +$76.32 |
+| 09-16 | 48 | 3,012 | 2.83c | +$85.10 |
+| 09-17 | 29 | 1,682 | 3.13c | +$52.60 |
+
+Cents per contract is flat at 2.4-3.1c. What has fallen is how many bets exist
+to make. **We are being squeezed from both ends of the price range:**
+
+- **From above:** the share of refusals that are "too expensive" -- price
+  ceiling plus edge floor, which the review showed are the same class because
+  every edge_floor refusal sits at 99.2c or higher -- has gone from **20.4% of
+  refusals on 09-13 to 29.0% on 09-17**, with the ceiling class alone doubling
+  from 4.4% to 8.6%. Offers are drifting above 98c.
+- **From below:** the dump guard refuses everything under ~84.5c
+  (`results/RESULTS_dumpguard.md`), and on the live record it is 10-0 against
+  itself, costing about $82 in six days.
+
+So the honest diagnosis is not "the edge is decaying". It is **"the window of
+prices we are willing to pay is narrowing while the market drifts out of it."**
+Those are different problems with different fixes, and the second one is
+partly self-inflicted.
 
 ### 5a. THE CAPACITY CEILING -- the most important structural fact about this strategy
 
