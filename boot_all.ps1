@@ -116,6 +116,21 @@ if (Running '*cdc_record.py*') {
     $started++
 }
 
+# --- 3b. the phone link (Telegram). Only when the operator has written the
+# token file; polls Telegram, opens no port, answers one paired chat.
+if (Test-Path "$kals\telegram.json") {
+    if (Running '*pinphone.py*') {
+        # fine
+    } elseif ($blind -gt 0) {
+        Say "pinphone.py not visible and $blind python process(es) are blind -- not starting it"
+    } else {
+        Say "pinphone.py is NOT running -- starting the phone link"
+        Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\pinphone.py") -WorkingDirectory $repo -WindowStyle Hidden `
+            -RedirectStandardOutput "$res\pinphone.out" -RedirectStandardError "$res\pinphone.err"
+        $started++
+    }
+}
+
 # --- 4. the paper arms. READ-ONLY, none can send an order (pinrun without
 # --live is paper; pinracearm has no order path). Started only when NONE are
 # running, i.e. after a reboot -- never topped up one by one, because the

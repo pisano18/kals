@@ -103,6 +103,24 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 05:2xZ -- deposit confirmed, the phone link built, maintenance is Kalshi's
+
+- Operator: "$160 I put in total." `results/DEPOSITED.txt` holds it; the app
+  and phone read it first. All-time return is therefore on $160.
+- "Kalshi maintenance" for 3-5 AM ET: the covered case (watchdog relaunches
+  for ever; no reboot involved).
+- `research/pinphone.py` -- a Telegram bot. Polls Telegram (no open port),
+  answers ONE chat paired with a secret, commands /status /today /yesterday
+  /days /open /market /losses /hedges /pause /start "/stop yes" /mute.
+  Pushes: state changes, every losing close with its story, yesterday's
+  summary at 8 AM ET. Same control functions as the desktop app, same
+  stand-down flag. Needs `C:\kals\telegram.json` with `token` and `secret`
+  from him; `boot_all.ps1` starts it when that file exists; heartbeat
+  `results/pinphone.heartbeat`; shows on the app's System tab. 38 self-test
+  checks with a fake transport. NOT yet running: waiting on his token.
+- Hedge outcomes now merge several hedge tries on one ticker into one row
+  (ZEC 09-12 was listed twice).
+
 ## Live since the 09:57 ET restart (hedge 0.60), at 00:02 ET
 
 18 closes, 17 won, 1 lost (-$0.47), +$57.09; 22 of 24 orders filled in full;

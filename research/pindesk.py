@@ -437,9 +437,19 @@ class Ledger:
         """Each executed hedge joined to how the bet ended. 'needed' when the
         bet it protected LOST (the hedge paid), 'wasted' when the bet held."""
         out = []
+        merged = {}                    # one hedge per ticker: several tries add up
         for g in self.hedges:
             if g["kind"] != "hedge" or str(g.get("status")) != "executed":
                 continue
+            m = merged.get(g["tk"])
+            if m is None:
+                merged[g["tk"]] = dict(g)
+            else:
+                n0, n1 = float(m.get("n") or 0), float(g.get("n") or 0)
+                if n0 + n1 > 0 and m.get("price") is not None and g.get("price") is not None:
+                    m["price"] = (float(m["price"]) * n0 + float(g["price"]) * n1) / (n0 + n1)
+                m["n"] = n0 + n1
+        for g in merged.values():
             legs = [s for s in self.settled if s["tk"] == g["tk"]]
             side = g.get("side")
             hedge_legs = [s for s in legs if s["want"] == side]
@@ -802,6 +812,7 @@ def health(ledger):
                         _file_age_s(os.path.join(RESULTS, "pinrun-live.out"))) if a is not None]
     h["quiet_s"] = min(ages) if ages else None
     h["watchdog_s"] = _file_age_s(HEARTBEAT)
+    h["phone_s"] = _file_age_s(os.path.join(RESULTS, "pinphone.heartbeat"))
     try:
         with open(os.path.join(KALS, "logs", "run_all.pid")) as fh:
             h["run_all"] = pinflat.pid_alive(int(fh.read().strip()))
@@ -1990,6 +2001,10 @@ def run_gui():
              "gain" if (h.get("cdc_age") is not None and h["cdc_age"] < 600) else "muted"),
             (("Paper arms", "Copies of the bot with one setting changed, pretending to trade, so a change is judged before it touches money.",
               "%d pin + %d race" % (h["paper_arms"], h["race_arms"]), "logs written in the last 15 min"), "text"),
+            (("Phone link", "Telegram bot you message for status and controls; sends alerts on state changes and losses. research\\pinphone.py",
+              "RUNNING" if (h.get("phone_s") is not None and h["phone_s"] < 120) else ("not set up" if not os.path.exists(os.path.join(KALS, "telegram.json")) else "DOWN"),
+              ("polled %ds ago" % h["phone_s"]) if h.get("phone_s") is not None else "needs C:\\kals\\telegram.json (see pinphone.py)"),
+             "gain" if (h.get("phone_s") is not None and h["phone_s"] < 120) else "muted"),
         ]
         fill(tv_sys, rows)
         sys_foot.configure(text="Disk %.1f GB free (tape stops below 5).  RAM %.1f GB free.  Hours lost to outages today: %.1f."

@@ -91,7 +91,9 @@ bot that died holding a bet (`research/pinflat.py`). The desktop shortcut
 `results/pinrun-live.stop` means the operator said stand down: the watchdog
 will NOT relaunch while it exists, and START removes it. **If the bot is down
 and that file exists, that is why.** The one hole left: a reboot with nobody
-signed in (no auto sign-in, no admin for a boot task).
+signed in (no auto sign-in, no admin for a boot task). `research/pinphone.py`
+is the phone link (Telegram; needs `C:\kals\telegram.json`; same flag, same
+controls). `results/DEPOSITED.txt` = $160, the operator's own figure.
 
 **To restart it by hand -- USE THE SCRIPT, AND ONLY THE SCRIPT:**
 

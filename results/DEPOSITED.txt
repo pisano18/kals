@@ -1,0 +1,2 @@
+160.00
+The operator's own figure, 2026-09-17: "$160 I put in total." Overrides the reconstruction in research/pindesk.py.
