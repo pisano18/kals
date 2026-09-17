@@ -79,6 +79,7 @@ GATE_ORDER = [
     "confidence", "no_offer", "depth_floor", "edge_floor", "against_thin",
     "jump_against", "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
+    "early_once", "staged_none",
 ]
 
 WHAT = {
@@ -104,6 +105,8 @@ WHAT = {
     "improve_by": "a second buy that was not cheaper than the first",
     "rebuy_band": "a same-coin re-buy outside the 0.5-1c band",
     "price_ceiling": "priced above the 98c ceiling",
+    "early_once": "A46: this market already holds an early leg (31-45 s); only one per market",
+    "staged_none": "A46: the staged leg came to nothing (market already at full size, or under the minimum)",
     "ev_floor": "expected value negative at that price",
 }
 

@@ -221,6 +221,26 @@ _DEFAULT_DUMP_ENABLED = True   # --take-dumps clears it, PAPER ONLY
 ONE_COIN_DEPTH = False
 _DEFAULT_ONE_COIN_DEPTH = False
 ONE_COIN_MAX = 2.0             # multiple of SIZE; may not exceed MAX_PER_CLOSE
+# AMENDMENT 46 (2026-09-17): STAGED EARLY ENTRY. THE OPERATOR: "implement tau
+# 45 in a safe way. Maybe not buying full coins and topping up what's
+# available once we hit the normal purchase point? Perhaps that normal
+# purchase point will need to be a hedge sometimes?"
+# With EARLY_TAU_MAX above TAU_MAX, a market may be bought at tau in
+# (TAU_MAX, EARLY_TAU_MAX] for EARLY_FRAC x SIZE at most -- the EARLY leg, one
+# per market -- and then TOPPED UP to SIZE at tau <= TAU_MAX if the same gate
+# still passes (AMENDMENT 29 already exempts an unfinished position from the
+# re-buy band). If belief collapses before the top-up point the top-up simply
+# fails the confidence gate and the hedge pass, which covers every open
+# position, buys the other side: that is the "needs to be a hedge sometimes".
+# staged_take() is the whole rule. Evidence: research/pinbefore.py (index:
+# 31-45 s model error 0.058% vs 0.021% at 21-30 s), and the tau-45 paper arm
+# (27 of 27 in its first 9 h, 3x the control's bets, +0.03c price). OFF by
+# default; refused live until results/PREREG_staged.md's bar is crossed and
+# EARLY_LIVE_OK is flipped in a commit that cites it.
+EARLY_TAU_MAX = 30             # == TAU_MAX means OFF
+_DEFAULT_EARLY_TAU_MAX = 30
+EARLY_FRAC = 0.5
+EARLY_LIVE_OK = False
 TAU_MAX = 30           # AMENDMENT 4: 20 -> 30. Model calibration measured by
                        # horizon on the order-book dataset, restricted to
                        # moments it calls <2% risk:
@@ -3962,6 +3982,50 @@ def _selftest_body():
         ck(_mn45.count(_on45) == 1 and _mn45.index(_rf45) < _mn45.index(_on45),
            "A45: the only place the flag is switched on sits behind the live "
            "refusal")
+
+        # ---- AMENDMENT 46: staged early entry --------------------------------
+        ck(_DEFAULT_EARLY_TAU_MAX == 30 and _DEFAULT_EARLY_TAU_MAX <= TAU_MAX
+           and EARLY_LIVE_OK is False,
+           "A46: OFF by default (early window == TAU_MAX) and not allowed live")
+        _g46 = globals()
+        _sv46 = (_g46["EARLY_TAU_MAX"], _g46["EARLY_FRAC"])
+        try:
+            _g46["EARLY_TAU_MAX"], _g46["EARLY_FRAC"] = 45, 0.5
+            ck(staged_take(40, 94.0, 94.0, 0.0) == (47.0, "early"),
+               "A46: an early look with nothing held buys half a bet")
+            ck(staged_take(40, 30.0, 94.0, 0.0) == (30.0, "early"),
+               "A46: ...or what is there, if the offer is thinner than that")
+            ck(staged_take(40, 94.0, 94.0, 47.0) == (0.0, "early_once"),
+               "A46: a second early look on the same market buys nothing")
+            ck(staged_take(20, 94.0, 94.0, 47.0) == (47.0, "topup"),
+               "A46: at the normal point the top-up completes the bet to SIZE")
+            ck(staged_take(20, 94.0, 94.0, 94.0) == (0.0, "topup"),
+               "A46: ...and a market already at SIZE gets nothing more")
+            ck(staged_take(20, 94.0, 94.0, 0.0) == (94.0, "full"),
+               "A46: no early leg held -> today's full buy, untouched")
+            _g46["EARLY_TAU_MAX"] = 30
+            ck(staged_take(40, 94.0, 94.0, 0.0) == (94.0, "full"),
+               "A46: with the window off every look is a full buy")
+        finally:
+            _g46["EARLY_TAU_MAX"], _g46["EARLY_FRAC"] = _sv46
+        ck("if not (TAU_MIN <= tau <= max(TAU_MAX, EARLY_TAU_MAX)):" in _tl45,
+           "A46: the tau gate opens to the early window only when it is set")
+        ck(_tl45.index('_gate("early_once"') < _tl45.index('rec("signal", live=live, **sig)'),
+           "A46: a second early look is refused before any signal is recorded")
+        ck(_tl45.index("take_n, _leg46 = staged_take(") < _tl45.index('rec("signal", live=live, **sig)'),
+           "A46: the leg is sized BEFORE the signal record, so the record shows "
+           "what will be asked for and which leg it is")
+        ck(_tl45.index("take_n = min(float(SIZE), _deep, max(0.0, _room))")
+           < _tl45.index("take_n = _stage46(take_n)\n                    _t0 = time.time()"),
+           "A46: the live path re-applies the leg cap AFTER A35/A45 widening, "
+           "so an early leg can never be widened back to a full bet")
+        ck('"early_tk": ({tk: _n} if _leg46 == "early" else {})' in _tl45
+           and "d46[tk] = d46.get(tk, 0.0) + _n" in _tl45,
+           "A46: fills book what the market holds from an early leg")
+        _rf46 = "--early-tau %d is refused " + "on a LIVE run until "
+        _on46 = 'globals()["EARLY_TAU_MAX"] = ' + "int(a.early_tau)"
+        ck(_mn45.count(_on46) == 1 and _mn45.index(_rf46) < _mn45.index(_on46),
+           "A46: the only place the window opens sits behind the live refusal")
         ck(abs(one_coin_cap(94.0, 556.02, 574.79) - 98.15) < 0.05,
            "A45: bank $556.02 under a $574.79 high leaves $96.19 before the "
            "20% brake, = 98.15 contracts at the 98c ceiling -- the cap")
@@ -3979,17 +4043,22 @@ def _selftest_body():
         ck(one_coin_cap(94.0, 2000.0, 2000.0, mult=1.0) == 94.0,
            "A45: --one-coin-max 1.0 is exactly today's behaviour")
         _tl45 = _src35[_src35.index(chr(10) + "def trade_loop("):]
-        ck("if ONE_COIN_DEPTH:" in _tl45 and "one_coin_cap(SIZE, state.get(\"bank\"), state.get(\"hwm\"))" in _tl45,
+        ck("if not ONE_COIN_DEPTH:" in _tl45 and "one_coin_cap(SIZE, state.get(\"bank\"), state.get(\"hwm\"))" in _tl45,
            "A45: the trade loop consults one_coin_cap with the LIVE bank and "
            "high-water mark, so the cap moves with the money")
         # ANCHOR ON THE WHOLE LINE: "out = pintake.take(" is a substring of the
         # hedge path's "_hout = pintake.take(", which sits EARLIER in
         # trade_loop. Fourth time this trap has bitten in this file.
         ck(_tl45.index("take_n = min(float(SIZE), _deep, max(0.0, _room))")
-           < _tl45.index("if ONE_COIN_DEPTH:")
+           < _tl45.index("take_n = _widen45(take_n)  # live")
            < _tl45.index("\n                    out = pintake.take("),
-           "A45: the widening runs AFTER A35 has sized the order and BEFORE "
-           "the order is sent")
+           "A45: on the live path the widening runs AFTER A35 has sized the "
+           "order and BEFORE the order is sent")
+        ck("take_n = _widen45(take_n)  # paper" in _tl45
+           and _tl45.index("take_n = _widen45(take_n)  # paper") < _tl45.index("_book_slot(price, take_n)"),
+           "A45: and the PAPER path widens too, before it books the order -- "
+           "the first version widened only live orders, so the paper arm "
+           "could never have exercised the flag")
         ck("take_n = max(take_n, min(_cap45, _avail45, max(0.0, _room45)))" in _tl45,
            "A45: the widened order is still capped by the close budget "
            "(_room45), so the per-close worst case is unchanged")
@@ -4796,6 +4865,29 @@ def one_coin_cap(size, bank, hwm, mult=None):
     return max(size, min(cap, room))
 
 
+def staged_take(tau, take_n, size, early_held):
+    """AMENDMENT 46: (contracts, leg) for one candidate order.
+
+    leg is one of:
+      "full"        the flag is off, or tau <= TAU_MAX with no early leg held:
+                    today's order, untouched.
+      "early"       tau > TAU_MAX and nothing held yet: at most EARLY_FRAC x SIZE.
+      "early_once"  tau > TAU_MAX but an early leg is already held: 0, refuse.
+      "topup"       tau <= TAU_MAX with an early leg held: complete the position
+                    to SIZE and no further.
+    """
+    take_n, size, early_held = float(take_n), float(size), float(early_held or 0.0)
+    if EARLY_TAU_MAX <= TAU_MAX:
+        return take_n, "full"
+    if tau > TAU_MAX:
+        if early_held > 0:
+            return 0.0, "early_once"
+        return min(take_n, EARLY_FRAC * size), "early"
+    if early_held > 0:
+        return min(take_n, max(0.0, size - early_held)), "topup"
+    return take_n, "full"
+
+
 def size_for_bank(bank, brake=None, lo=None, hi=None):
     """Largest size whose worst close the bank covers `brake` times over."""
     brake = BANK_BRAKE if brake is None else brake
@@ -5589,7 +5681,7 @@ def trade_loop(a, rec, book, idx, series_index):
             _mk.sort(key=_rank)
         for tk, (iid, close_s, strike, digits, exi) in _mk:
             tau = close_s - now_s
-            if not (TAU_MIN <= tau <= TAU_MAX):
+            if not (TAU_MIN <= tau <= max(TAU_MAX, EARLY_TAU_MAX)):
                 continue                 # not a refusal: outside the window
             # AMENDMENT 3: scale in as the price IMPROVES, up to MAX_PER_CLOSE.
             # One shot at the first safe price leaves money on the table:
@@ -5600,6 +5692,15 @@ def trade_loop(a, rec, book, idx, series_index):
             # outright. In this bet a lower price wins more AND loses less, so
             # averaging down improves both sides.
             prev = fired.get(close_s)
+            # ---- AMENDMENT 46: staged early entry -- what this market holds
+            # from an early leg, and whether this look is itself early. One
+            # early leg per market; a second early look is refused here,
+            # before any signal is recorded.
+            _held46 = float((prev.get("early_tk", {}) if prev else {}).get(tk, 0.0))
+            _early46 = EARLY_TAU_MAX > TAU_MAX and tau > TAU_MAX
+            if _early46 and _held46 > 0:
+                _gate("early_once", close_s, tk, held=_held46, tau=tau)
+                continue
             if CLOSE_BUDGET:
                 # AMENDMENT 17: contracts, not fills. Coins are unlimited;
                 # the close is done when its contract budget is spent.
@@ -6104,10 +6205,23 @@ def trade_loop(a, rec, book, idx, series_index):
                 sig["ladder_levels"] = len(sig["ladder"])
             except Exception:                            # noqa: BLE001
                 sig["ladder"] = None
+            # ---- AMENDMENT 46: size the leg BEFORE the signal is recorded, so
+            # the record carries what will actually be asked for and which
+            # leg it is (full / early / topup).
+            _leg46 = "full"
+            if EARLY_TAU_MAX > TAU_MAX:
+                take_n, _leg46 = staged_take(tau, take_n, float(SIZE), _held46)
+                sig["take_n"] = take_n
+                if take_n < MIN_LEVEL:
+                    _gate("staged_none", close_s, tk, leg=_leg46, held=_held46,
+                          tau=tau, price=round(price, 4))
+                    continue
+            sig["leg"] = _leg46
+            sig["early_held"] = _held46
             rec("signal", live=live, **sig)
             print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
                   f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
-                  f"taking {take_n:g}")
+                  f"taking {take_n:g}" + (f" [{_leg46}]" if _leg46 != "full" else ""))
 
             def _book_slot(px, n=None, raise_bar=True):
                 """AMENDMENT 6: a scale-in slot is consumed by a FILL, never by
@@ -6132,8 +6246,15 @@ def trade_loop(a, rec, book, idx, series_index):
                                       "per_tk": {tk: 1},
                                       "px_tk": {tk: px},
                                       "n_tk": {tk: _n},
+                                      # A46: what this market holds from an
+                                      # EARLY leg, so the top-up knows how much
+                                      # is left and a second early is refused
+                                      "early_tk": ({tk: _n} if _leg46 == "early" else {}),
                                       "contracts": _n}
                 else:
+                    if _leg46 == "early":
+                        d46 = pv.setdefault("early_tk", {})
+                        d46[tk] = d46.get(tk, 0.0) + _n
                     pv["n"] += 1
                     if raise_bar:
                         pv["best"] = min(pv["best"], px)
@@ -6188,7 +6309,47 @@ def trade_loop(a, rec, book, idx, series_index):
                     pv["scrap_n"] = 0.0
                     pv["best"] = min(pv["best"], px)
 
+            def _widen45(take_n):
+                """AMENDMENT 45 one-coin depth, for BOTH paths. The paper path
+                books the order right here; the live path calls this after
+                A35 has sized the order (A35 reassigns take_n to at most SIZE,
+                so it must run first). Widens toward what the offer holds at
+                or under the sweep limit, capped by one_coin_cap() and by what
+                is left of the close budget. Price, gate and per-close worst
+                case unchanged."""
+                if not ONE_COIN_DEPTH:
+                    return take_n
+                _cap45 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"))
+                _avail45 = float(size)
+                _limit45 = sweep_limit(f, price, want)
+                if SWEEP_DEPTH and _limit45 > price + 1e-9:
+                    try:
+                        _avail45 = max(_avail45, float(book.buyable(tk, want, _limit45)))
+                    except Exception:              # noqa: BLE001
+                        pass
+                _room45 = (close_budget()
+                           - (prev.get("contracts", 0.0)
+                              if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
+                _was45 = take_n
+                take_n = max(take_n, min(_cap45, _avail45, max(0.0, _room45)))
+                if take_n > _was45 + 1e-9:
+                    rec("one_coin_depth", ticker=tk, want=want,
+                        was=round(_was45, 2), now=round(take_n, 2),
+                        cap=round(_cap45, 2), avail=round(_avail45, 2),
+                        room=round(_room45, 2), size=float(SIZE),
+                        bank=state.get("bank"), hwm=state.get("hwm"))
+                return take_n
+
+            def _stage46(take_n):
+                """AMENDMENT 46: an early or top-up leg keeps its cap however
+                much A35/A45 widened the order. A full leg is untouched."""
+                if EARLY_TAU_MAX > TAU_MAX and _leg46 != "full":
+                    return min(take_n, staged_take(tau, take_n, float(SIZE), _held46)[0])
+                return take_n
+
             if not live:
+                take_n = _widen45(take_n)  # paper
+                take_n = _stage46(take_n)
                 _book_slot(price, take_n)
                 open_pos[f"paper-{tk}-{now_s}"] = (close_s, want, price,
                                                    take_n, tk)
@@ -6247,32 +6408,12 @@ def trade_loop(a, rec, book, idx, series_index):
                                     ladder=round(_deep, 2),
                                     was=round(_was, 2), now=round(take_n, 2),
                                     limit=round(_limit, 4))
-                    # ---- AMENDMENT 45: ONE-COIN DEPTH (paper only) --------
-                    # After A35 has sized the order to SIZE, and only when the
-                    # flag is on, widen past SIZE toward what the offer holds
-                    # at or under the SAME limit -- capped by one_coin_cap()
-                    # (mult x SIZE, and the drawdown brake's headroom) and by
-                    # what is left of the close budget. Nothing here changes
-                    # the price, the gate or the per-close worst case.
-                    if ONE_COIN_DEPTH:
-                        _cap45 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"))
-                        _avail45 = float(size)
-                        if SWEEP_DEPTH and _limit > price + 1e-9:
-                            try:
-                                _avail45 = max(_avail45, float(book.buyable(tk, want, _limit)))
-                            except Exception:              # noqa: BLE001
-                                pass
-                        _room45 = (close_budget()
-                                   - (prev.get("contracts", 0.0)
-                                      if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
-                        _was45 = take_n
-                        take_n = max(take_n, min(_cap45, _avail45, max(0.0, _room45)))
-                        if take_n > _was45 + 1e-9:
-                            rec("one_coin_depth", ticker=tk, want=want,
-                                was=round(_was45, 2), now=round(take_n, 2),
-                                cap=round(_cap45, 2), avail=round(_avail45, 2),
-                                room=round(_room45, 2), size=float(SIZE),
-                                bank=state.get("bank"), hwm=state.get("hwm"))
+                    # ---- AMENDMENT 45 / 46, live path: after A35 has sized
+                    # the order, widen for one-coin depth (if on), then
+                    # re-apply the staged-entry cap (if on). Same helpers the
+                    # paper path uses above, so both paths book the same size.
+                    take_n = _widen45(take_n)  # live
+                    take_n = _stage46(take_n)
                     _t0 = time.time()
                     out = pintake.take(CREDS["base"], CREDS["pk"],
                                        CREDS["key_id"], tk, want, _limit,
@@ -6280,6 +6421,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     _lat_ms = round(1000.0 * (time.time() - _t0), 1)
                     _xp = out.get("exec_price")
                     rec("order", ticker=tk, latency_ms=_lat_ms,
+                        leg=_leg46, early_held=_held46,
                         book_age_ms=b.get("age_ms"),
                         index_age_s=round(iage, 2), tau_at_send=tau,
                         ask_seen=round(float(price), 4),
@@ -6419,6 +6561,14 @@ def main():
                     help="AMENDMENT 45: the multiple of SIZE one market may "
                          "hold under --one-coin-depth (default 2.0, never above "
                          "MAX_PER_CLOSE).")
+    ap.add_argument("--early-tau", type=int, default=TAU_MAX,
+                    help="AMENDMENT 46: buy an EARLY leg of --early-frac x SIZE "
+                         "with up to this many seconds left, then top up to "
+                         "SIZE at or under TAU_MAX. Default TAU_MAX = off. "
+                         "REFUSED ON A LIVE RUN until PREREG_staged.md's bar.")
+    ap.add_argument("--early-frac", type=float, default=0.5,
+                    help="AMENDMENT 46: the early leg as a fraction of SIZE "
+                         "(default 0.5).")
     ap.add_argument("--no-external-detect", action="store_true",
                     help="AMENDMENT 43: turn OFF telling a withdrawal from a "
                          "trading loss. With it off, taking money out of the "
@@ -6587,6 +6737,22 @@ def main():
                              "(%g); got %g" % (MAX_PER_CLOSE, _m45))
         globals()["ONE_COIN_DEPTH"] = True
         globals()["ONE_COIN_MAX"] = _m45
+    if int(getattr(a, "early_tau", TAU_MAX) or TAU_MAX) > TAU_MAX:
+        # AMENDMENT 46. Paper until the bar in results/PREREG_staged.md is
+        # crossed; then EARLY_LIVE_OK is flipped in a commit that cites it.
+        if a.live and not EARLY_LIVE_OK:
+            raise SystemExit(
+                "--early-tau %d is refused on a LIVE run until "
+                "results/PREREG_staged.md's bar is crossed and EARLY_LIVE_OK "
+                "is flipped in a commit that cites it." % int(a.early_tau))
+        if not (TAU_MAX < int(a.early_tau) <= 60):
+            raise SystemExit("--early-tau must be between %d and 60; got %d"
+                             % (TAU_MAX + 1, int(a.early_tau)))
+        if not (0.1 <= float(a.early_frac) <= 1.0):
+            raise SystemExit("--early-frac must be between 0.1 and 1.0; got %g"
+                             % float(a.early_frac))
+        globals()["EARLY_TAU_MAX"] = int(a.early_tau)
+        globals()["EARLY_FRAC"] = float(a.early_frac)
     if getattr(a, "no_external_detect", False):
         globals()["EXTERNAL_DETECT"] = False
     if a.jump_gate:
@@ -6773,6 +6939,7 @@ def main():
         max_per_market_run=MAX_PER_MARKET, min_level=MIN_LEVEL,
         sweep_enabled=SWEEP_ENABLED, honest_conf=HONEST_CONF,
         one_coin_depth=ONE_COIN_DEPTH, one_coin_max=ONE_COIN_MAX,
+        early_tau_max=EARLY_TAU_MAX, early_frac=EARLY_FRAC,
         sigma_ruler=SIGMA_RULER,
         max_book_age_ms=MAX_BOOK_AGE_MS, max_index_age_s=MAX_INDEX_AGE_S,
         sigma_stress=SIGMA_STRESS, sigma_win=SIGMA_WIN,

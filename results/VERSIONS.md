@@ -1,3 +1,27 @@
+# (NOT DEPLOYED) AMENDMENT 46 -- staged early entry (tau 45, half a bet, top up at 30). OFF LIVE. -- 2026-09-17 14:3xZ
+
+**Live flags unchanged, `versioncheck` clean, full self-test exit 0.** The
+file on disk changed again, and the live bot restarts from it. Operator:
+*"implement tau 45 in a safe way. Maybe not buying full coins and topping up
+what's available once we hit the normal purchase point?"*
+
+`--early-tau 45 --early-frac 0.5` (refused live until `EARLY_LIVE_OK` is
+flipped in a commit citing `results/PREREG_staged.md`): with 31-45 s left a
+market that passes every gate may be bought for half a bet; with <= 30 s left
+it is topped up to a full bet if the gate still passes; if belief collapsed
+first the hedge pass covers the half. `staged_take()`; records carry `leg`.
+Also fixes AMENDMENT 45 so the paper path widens too (the first version
+widened only live orders).
+
+Revert (code only; live bot unaffected until its next restart):
+
+```powershell
+cd C:\kals-repo
+git checkout bc05d04 -- research/pinrun.py research/pinattrib.py
+```
+
+---
+
 # (NOT DEPLOYED) AMENDMENT 45 -- one-coin depth. FLAG IS OFF LIVE. -- 2026-09-17 13:2xZ
 
 **The live bot's flags did not change and `versioncheck` is clean.** But
