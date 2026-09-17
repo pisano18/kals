@@ -296,6 +296,9 @@ def selftest():
     ck(loop.count(wire) == 1, "there is exactly ONE path to the wire in the loop")
     ck("state.orders += 1" in loop and "state.spent +=" in loop,
        "attempts and dollars are both counted, or the ceilings are decoration")
+    ck("said.add(k)" in loop and "if k not in said:" in loop,
+       "a repeated refusal is reported ONCE, not four times a second for a "
+       "minute -- and it still does not consume the market's one shot")
     head = src[:src.rindex("def " + "selftest(")]
     ck(head.count("arm_" + "prod(") == 1,
        "production is armed in exactly one place in the working code")
@@ -309,6 +312,7 @@ def trade_loop(state, series, minutes, rec, dry=False):
     then at most one order."""
     book = livebook.LiveBook().start()
     watching, pend, per_close, looked, bets = {}, {}, collections.Counter(), set(), []
+    said = set()            # (ticker, window, reasons) already reported
     last_disc, last_bal, balance = 0.0, 0.0, None
     end = time.time() + minutes * 60
     while time.time() < end:
@@ -364,10 +368,19 @@ def trade_loop(state, series, minutes, rec, dry=False):
                 n = min(state.size, float(offer))
                 refused = guard(state, tau, px, n, balance, stopped())
                 if refused:
-                    rec("refused", ticker=tk, series=ser, tau=tau, want=want,
-                        price=px, count=n, why=refused)
-                    print("  REFUSED %s tau=%3ds %s @%.4f -- %s"
-                          % (tk, tau, want.upper(), px, "; ".join(refused)), flush=True)
+                    # ONCE per market per window per reason. A refusal does not
+                    # consume the market's one shot (a transient one, like a
+                    # failed balance read, must be able to retry), so without
+                    # this the loop would log four times a second for a whole
+                    # minute. The ancestor of that bug sent 160 orders in one
+                    # close.
+                    k = (tk, bi, tuple(refused))
+                    if k not in said:
+                        said.add(k)
+                        rec("refused", ticker=tk, series=ser, tau=tau, want=want,
+                            price=px, count=n, why=refused)
+                        print("  REFUSED %s tau=%3ds %s @%.4f -- %s"
+                              % (tk, tau, want.upper(), px, "; ".join(refused)), flush=True)
                     continue
                 per_close[(tk, bi)] += 1
                 state.orders += 1

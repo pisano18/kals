@@ -1,9 +1,8 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
 Written so a session that has just been `/clear`ed can pick up without
-re-deriving anything. **Updated 2026-09-17 00:35 ET** (self-healing watchdog,
-boot task and the Pin Bot desktop app -- v-selfheal; four superseded paper arms
-killed; `results/PREREG_tau45.md` written, arm NOT yet read). If the date above
+re-deriving anything. **Updated 2026-09-17 12:2x ET** (v-staged live at 1/3 size;
+the grid re-cut BY MARKETS; the COMMODITY PENNY TEST armed -- see below). If the date above
 is more than a day old, verify the live numbers before quoting them.
 
 **2026-09-17: READ `HANDOFF_2026-09-17.md` FIRST.** It is the complete handoff
@@ -34,6 +33,34 @@ for a specific past result.** `HANDOFF_2026-09-14.md` is the previous handoff.
 | scan order | BEST first (A24) |
 | depth floor | **MIN_FILL_FRAC 0** -- a thin book is taken rather than skipped (A28) |
 | sweep | on. Swept fills are 62 contracts at the median against 20 unswept, at the SAME 2.4c per contract and a LOWER loss rate |
+
+## WHAT CHANGED 2026-09-17 (newest first)
+
+- **The commodity penny test is LIVE-CAPABLE**, `research/cmdlive.py`, on the
+  operator's sign-off ("I'm ready for commodity penny testing"). ONE contract,
+  $10 total, 60 orders, **2 losses then it stops itself**, a $300 account
+  floor, 90-99c, never inside 2 s. It honours the desktop app's stop file.
+  Bar fixed first in `results/PREREG_commodity_live.md`. It is deliberately
+  NOT in `boot_all.ps1`: a money process should not come back from a reboot
+  without a human. `cmdarm.py` keeps running as the paper control on the same
+  windows BY IMPORT.
+- **Day totals now come from `research/pinday.py` and nowhere else.** A UTC
+  date filter reported +$47 for a day that was +$23. Never write another
+  ad-hoc day total.
+- **The grid was re-cut BY MARKETS (rule 4) and by ET session**
+  (`results/RESULTS_actions.md` s7, `RESULTS_grid.md`): gold's "0.1% inside
+  15 s" was 53 markets / 1 lost, and its loss lives in the COMEX session
+  (08-14 ET 32/2, outside it 117/0); gold at 98-99c with 91-180 s left is
+  129 markets / 0 lost, the safest cell found; WTI 95-99c to 60 s is 153/3;
+  silver loses 5.4% even at 0-5 s and is now the NEGATIVE control.
+- **The wobble**: a favourite (>=90c at 60 s) that dips but stays above 50c
+  inside the last 30 s recovered 48 times out of 48; one that crosses BELOW
+  50c lost 76% of 158 markets. The live hedge fires on model belief < 0.60
+  and 5 of 9 live hedges were wasted; the market price is the better trigger.
+  Not built yet.
+- **Crypto beyond 60 s is dead** on the market's own record (61-90 s: 5-10%
+  of near-certainties flip). "Use the full 15 minutes" is closed. 46-60 s
+  sits AT model-less break-even; the `--early-tau 60` paper arm is the judge.
 
 ## Live record, all time
 
