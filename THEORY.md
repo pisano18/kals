@@ -257,8 +257,10 @@ to make. **We are being squeezed from both ends of the price range:**
   refusals on 09-13 to 29.0% on 09-17**, with the ceiling class alone doubling
   from 4.4% to 8.6%. Offers are drifting above 98c.
 - **From below:** the dump guard refuses everything under ~84.5c
-  (`results/RESULTS_dumpguard.md`), and on the live record it is 10-0 against
-  itself, costing about $82 in six days.
+  (`results/RESULTS_dumpguard.md`). An earlier claim here that this costs $82
+  a week was WRONG and is corrected in that file: of 17 flagged markets the bot
+  BOUGHT 10 of them seconds later when the discount narrowed, so they were
+  delayed rather than blocked. Its true cost is unmeasured and small.
 
 So the honest diagnosis is not "the edge is decaying". It is **"the window of
 prices we are willing to pay is narrowing while the market drifts out of it."**
@@ -362,6 +364,17 @@ ever accumulates real losses, the "dips recover" claim dies.
 1. **Population confusion** -- quoting a tape number as if it were ours. See 3.
 2. **Trades where closes belong** -- see 4.
 3. **The ET/UTC ticker clock** -- see 7.
+4. **A refusal record marks a MOMENT, not a market.** Before claiming a gate
+   cost money, check whether the market was traded anyway a second later. On
+   2026-09-17 this turned a confident "the dump guard blocked $82 of winners"
+   into "it delayed 10 of 17 and we own them". Same family as counting trades
+   where rule 4 wants closes.
+5. **Reading a field that does not exist scores every row the same way.**
+   Order records carry the side in `body.side` (`bid`=YES, `ask`=NO) and have
+   no `want`; hedge records use `side`, not `want`. Both mistakes were made in
+   one day and each one INVERTED the conclusion -- once to "all 14 hedges
+   wasted", once to "13 of 13 cheap fills lost". If a result is unanimous,
+   suspect the field before believing the finding.
 4. **Self-test needles that match the self-test's own source.** A check like
    `src.index("def trade_loop(")` finds the literal inside the test and slices
    the wrong region, then passes vacuously. **Build needles from pieces.**

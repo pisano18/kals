@@ -205,7 +205,29 @@ _DEFAULT_LADDER_LEVELS = 150   # The tick is 0.1c above 90c, so the 88-98c band
                          # we trade is ~100 levels; 8 covered a fifth of the
                          # book on the BTC 05:30 loss. Read once per SIGNAL,
                          # never in the scan loop.
-DUMP_DISCOUNT = 0.15     # cents below fair that make an offer a warning
+DUMP_DISCOUNT = 0.15     # dollars below fair that make an offer a warning
+# THIS CONSTANT IS ALSO A PRICE FLOOR AND ITS NAME DOES NOT SAY SO. The
+# confidence gate upstream guarantees our belief in our own side is at least
+# PIN (0.995), and this gate refuses when belief - price > DUMP_DISCOUNT, so
+# the refusal condition is exactly
+#       price < PIN - DUMP_DISCOUNT
+# which at the shipped values is price < 84.5c. Nothing in the buy path is
+# NAMED a price floor; this is one.
+#
+# WHAT IT ACTUALLY COSTS: essentially nothing that has been measured, and a
+# 2026-09-17 analysis claiming "+$82 of blocked winners" was WRONG. The error
+# is worth stating because it is a trap in the log format itself:
+#
+#   A `dumped` record marks a MOMENT, not a market's fate. It is written once
+#   per (close, market) the first time the discount exceeds the threshold. The
+#   bot keeps looking at that market every tick, and when the discount narrows
+#   below the threshold a moment later it BUYS.
+#
+# Of 17 flagged markets, TEN WERE BOUGHT ANYWAY seconds later and their wins
+# are already in the run's P&L -- counting them as "blocked" double-counts
+# money we have. The other seven have no settlement record at all, so the
+# guard's true cost is UNMEASURED, not $82. See results/RESULTS_dumpguard.md,
+# which now carries the correction rather than the original claim.
 DUMP_ENABLED = True
 _DEFAULT_DUMP_ENABLED = True   # --take-dumps clears it, PAPER ONLY
 # AMENDMENT 45 (2026-09-17): ONE-COIN DEPTH, PAPER ONLY. THE OPERATOR: "Build
