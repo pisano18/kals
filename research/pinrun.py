@@ -3948,9 +3948,20 @@ def _selftest_body():
            "cannot grow")
 
         # ---- AMENDMENT 45: one-coin depth, PAPER ONLY ---------------------
-        ck(ONE_COIN_DEPTH is False and _DEFAULT_ONE_COIN_DEPTH is False,
+        # The SHIPPED default, not the running value: a paper arm applies the
+        # flag before this self-test runs (the same shape that makes --honest
+        # fail its own self-test), and the arm must still be able to start.
+        ck(_DEFAULT_ONE_COIN_DEPTH is False,
            "A45: one-coin depth is OFF by default -- a live bot started "
            "without the flag cannot take more than SIZE on one market")
+        # Scan main() only, and build the needle from pieces: a literal here
+        # would be its own second match (the self-inspection trap, again).
+        _mn45 = _src35[_src35.index(chr(10) + "def main("):]
+        _on45 = 'globals()["ONE_COIN_DEPTH"] = ' + "True"
+        _rf45 = "--one-coin-depth is refused " + "on a LIVE run"
+        ck(_mn45.count(_on45) == 1 and _mn45.index(_rf45) < _mn45.index(_on45),
+           "A45: the only place the flag is switched on sits behind the live "
+           "refusal")
         ck(abs(one_coin_cap(94.0, 556.02, 574.79) - 98.15) < 0.05,
            "A45: bank $556.02 under a $574.79 high leaves $96.19 before the "
            "20% brake, = 98.15 contracts at the 98c ceiling -- the cap")
