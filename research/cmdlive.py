@@ -85,6 +85,11 @@ HEARTBEAT = os.path.join(RESULTS, "cmdlive.heartbeat")
 # label starts with "anti" is a deliberate LOSER used as a control and can
 # never be live.
 LIVE_SERIES = ("KXGOLD15M", "KXWTI15M")
+# The widest window any live commodity series uses, handed to pintake per call.
+# Its shipped rail is 90 s (right for the crypto bot); the commodity edge sits
+# at 91-180 s. pintake refuses anything past what is asked, and past its own
+# MAX_TAU_CEILING whatever is asked.
+MAX_TAU_ASK = max(b[1] for v in cmdarm.BANDS.values() for b in v) + 5
 
 
 def stopped(stop_file=STOP_FILE, desk_stop=DESK_STOP):
@@ -194,6 +199,44 @@ def balance_dollars(creds):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def spent_today(results=None, now=None):
+    """Dollars already committed by EARLIER runs on the same Eastern day.
+
+    A restart used to reset the $10 ceiling, so three restarts meant $30. The
+    cap is meant to bound the DAY, not the process, so a new run starts from
+    what the day's logs already show. Reads fills only, never intents.
+    """
+    import glob as _glob
+    import pinday
+    res = RESULTS if results is None else results
+    day = pinday.et_day_of_epoch(time.time() if now is None else now)
+    total = 0.0
+    for f in sorted(_glob.glob(os.path.join(res, "cmdlive-*.jsonl"))):
+        try:
+            fh = open(f, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                if '"order"' not in line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get("kind") != "order":
+                    continue
+                if pinday.et_day_of_record(r) != day:
+                    continue
+                filled = float(r.get("filled") or 0)
+                if filled <= 0:
+                    continue
+                px = r.get("exec_price")
+                px = float(px) if px is not None else float(r.get("ask_seen") or 0)
+                total += px * filled
+    return total
 
 
 def open_markets(series):
@@ -336,12 +379,36 @@ def selftest():
     ck("HEARTBEAT" in loop and "last_beat" in loop,
        "the loop writes a heartbeat: the operator's rule is that state is "
        "derived from evidence of WORK, never from a process being alive")
+    ck("max_tau=MAX_TAU_ASK" in loop,
+       "the wire call passes this caller's own tau rail, or every far-window "
+       "order is refused by pintake's 90 s default (it was, twice, live)")
+    ck(MAX_TAU_ASK >= 180 and MAX_TAU_ASK <= pintake.MAX_TAU_CEILING
+       and pintake.MAX_TAU == 90.0,
+       "the ask covers the 91-180 s windows, sits under pintake's ceiling, and "
+       "leaves pintake's shipped 90 s default untouched for the crypto bot")
     ck("said.add(k)" in loop and "if k not in said:" in loop,
        "a repeated refusal is reported ONCE, not four times a second for a "
        "minute -- and it still does not consume the market's one shot")
     head = src[:src.rindex("def " + "selftest(")]
     ck(head.count("arm_" + "prod(") == 1,
        "production is armed in exactly one place in the working code")
+    # THE DAILY CEILING: a restart must not hand the run a fresh $10.
+    import tempfile
+    _td = tempfile.mkdtemp()
+    _day = time.strftime("%y%b%d", time.gmtime(time.time() - 4 * 3600)).upper()
+    with open(os.path.join(_td, "cmdlive-x.jsonl"), "w", encoding="utf-8") as _fh:
+        for _r in ({"kind": "order", "ticker": "KXWTI15M-%s1100-00" % _day,
+                    "filled": 1, "exec_price": 0.95},
+                   {"kind": "order", "ticker": "KXWTI15M-%s1115-15" % _day,
+                    "filled": 0, "ask_seen": 0.95},
+                   {"kind": "order", "ticker": "KXWTI15M-25JAN011100-00",
+                    "filled": 1, "exec_price": 0.99}):
+            _fh.write(json.dumps(_r) + chr(10))
+    ck(abs(spent_today(results=_td) - 0.95) < 1e-9,
+       "spent_today counts only TODAY's FILLS: the unfilled order and the one "
+       "from another day are both excluded")
+    ck(spent_today(results=os.path.join(_td, "nope")) == 0.0,
+       "NULL: no logs, no spend -- and no crash")
     ck(float(SIZE) == 1.0 and MAX_SPEND <= 10.0 and MAX_LOSSES <= 2,
        "the SHIPPED defaults are one contract, a $10 run ceiling and a 2-loss brake")
     print("cmdlive selftest: OK")
@@ -445,9 +512,15 @@ def trade_loop(state, series, minutes, rec, dry=False):
                           % (tk, tau, want.upper(), px, n), flush=True)
                     continue
                 t0 = time.time()
+                # pintake's shipped rail is 90 s, written for the crypto bot
+                # whose edge lives in the last minute. The commodity grid's
+                # best cells are at 91-180 s, so this caller asks for its own
+                # widest window and pintake still refuses anything past it (and
+                # past its own 240 s ceiling).
                 out = pintake.take(state.creds["base"], state.creds["pk"],
                                    state.creds["key_id"], tk, want, px, n,
-                                   close_s, exchange_index=exi)
+                                   close_s, exchange_index=exi,
+                                   max_tau=MAX_TAU_ASK)
                 filled = float(out.get("filled") or 0)
                 xp = out.get("exec_price")
                 cost = float(xp) if xp is not None else float(px)
@@ -520,6 +593,7 @@ def main():
         selftest()
 
     state = State(size=a.size)
+    state.spent = spent_today()      # the $10 ceiling bounds the DAY, not the run
     if a.size > MAX_SIZE:
         print("--size %.2f is above the hard ceiling of %.0f" % (a.size, MAX_SIZE))
         return 2
@@ -546,6 +620,7 @@ def main():
         bands={k: [list(b) for b in v] for k, v in cmdarm.BANDS.items()},
         max_spend=MAX_SPEND, max_orders=MAX_ORDERS, max_losses=MAX_LOSSES,
         balance_floor=BALANCE_FLOOR, balance_at_start=bal,
+        spent_earlier_today=round(state.spent, 4),
         signoff="operator 2026-09-17: ready for commodity penny testing",
         version="cmdpenny-1")
     print("cmdlive %s -- %s | size %.0f | caps: $%.2f spend, %d orders, %d losses, "

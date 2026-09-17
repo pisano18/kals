@@ -763,6 +763,50 @@ def hedge_should_fire(belief, threshold=None):
     return belief is not None and belief < thr
 
 
+# AMENDMENT 47 -- THE MARKET MUST AGREE BEFORE WE PAY FOR INSURANCE.
+# `--hedge-price P` (default None = off, the shipped behaviour is unchanged).
+# When set, a hedge fires only if the model's belief has collapsed AND our
+# side's own market price has fallen below P.
+#
+# Why: `research/pingrid.py`'s wobble screen, 1,717 crypto markets. Take every
+# market whose favourite was at 90c+ with a minute left, and bucket it by the
+# LOWEST price that favourite traded at inside the last 30 seconds:
+#
+#     stayed 90c+   1,511 markets, favourite lost 0
+#     dipped 50-90c    48 markets, favourite lost 0
+#     fell under 50c  158 markets, favourite lost 120  (76%)
+#
+# A favourite that merely wobbles recovers -- 48 times out of 48. One that
+# crosses below 50c is a real flip three times in four. The model's belief
+# does not know that; it re-prices on the index alone and panics at moves the
+# market shrugs off.
+#
+# On our own live hedges (7 of them would fire under today's 0.60 gate), the
+# one WASTED hedge bought insurance while our side was still trading at 85c
+# and cost $13.83. Every hedge that was NEEDED had our side under 50c, except
+# one at 53c that made $0.51. So on the record this filter is +$13.32 over
+# five days -- suggestive at n=7, which is why it ships OFF and goes to a
+# paper arm first (`results/PREREG_hedgeprice.md`).
+HEDGE_PRICE = None       # --hedge-price; None = the market's opinion is ignored
+
+
+def hedge_price_ok(hedge_ask, threshold=None):
+    """True when OUR side's market price is low enough to hedge.
+
+    We buy the opposite side at `hedge_ask`, so our side is trading at about
+    `1 - hedge_ask`. With no threshold set this is always True, which is the
+    shipped behaviour.
+    """
+    thr = HEDGE_PRICE if threshold is None else threshold
+    if thr is None:
+        return True
+    try:
+        ours = 1.0 - float(hedge_ask)
+    except (TypeError, ValueError):
+        return False
+    return ours < float(thr)
+
+
 def hedge_ask_ok(hedge_ask):
     """A hedge helps iff its leg costs less than the $1 the pair pays.
 
@@ -2749,6 +2793,41 @@ def _selftest_body():
 
         # ---- AMENDMENT 15: the belief-collapse hedge ----------------------
         # The decision functions, driven exactly as the loop drives them.
+        _src_pinrun = open(os.path.abspath(__file__), encoding="utf-8").read()
+        # AMENDMENT 47 -- the market must agree before we pay for insurance.
+        ck(hedge_price_ok(0.60, threshold=0.50)
+           and not hedge_price_ok(0.40, threshold=0.50),
+           "A47: we buy the opposite side at 60c, so OUR side is at 40c and the "
+           "hedge fires; at an opposite ask of 40c our side is 60c and it waits")
+        ck(hedge_price_ok(0.50, threshold=0.50) is False,
+           "exactly 50c on our side does NOT fire -- the wobble table's own "
+           "boundary is 'below 50c', and 48 of 48 dips at or above it recovered")
+        ck(hedge_price_ok(0.15, threshold=0.50) is False,
+           "the one WASTED live hedge under today's gate bought at 15c with our "
+           "side still at 85c, and cost $13.83; A47 would have waited")
+        ck(hedge_price_ok(0.949, threshold=0.50)
+           and hedge_price_ok(0.81, threshold=0.50)
+           and hedge_price_ok(0.58, threshold=0.50),
+           "...and every hedge that was NEEDED at our side under 50c still fires")
+        ck(hedge_price_ok(0.20) and hedge_price_ok(0.80) and hedge_price_ok(None),
+           "SHIPPED DEFAULT: with HEDGE_PRICE unset nothing is filtered, so the "
+           "live bot's behaviour is exactly what it was")
+        ck(hedge_price_ok("junk", threshold=0.50) is False,
+           "NULL: an unparseable ask does not hedge on a guess")
+        # Needles from PIECES and a slice of the LOOP only: a literal here
+        # matches the self-test's own source, which is how the first version of
+        # this check failed while the code was correct.
+        _needle = "hedge_price_ok(" + "_ask)"
+        _lp = _src_pinrun[_src_pinrun.rindex("def " + "trade_loop("):]
+        ck(_lp.count(_needle) == 1
+           and _lp.index(_needle) < _lp.index("_hout = " + "pintake.take"),
+           "A47 is checked in the trade loop BEFORE the hedge reaches the wire")
+        ck("hedged.add(_hid)" not in _lp[_lp.index("if not " + _needle):
+                                        _lp.index("if not hedge_ask_ok(" + "_ask)")],
+           "a price-wait does NOT retire the position: the price can still fall "
+           "inside this close, and then we hedge")
+        ck(HEDGE_PRICE is None,
+           "the SHIPPED value of HEDGE_PRICE is None -- A47 is opt-in")
         ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
            f"belief below the {HEDGE_BELIEF:.2f} gate fires the hedge")
         ck(not hedge_should_fire(HEDGE_BELIEF) and not hedge_should_fire(0.999),
@@ -5179,7 +5258,8 @@ def trade_loop(a, rec, book, idx, series_index):
     hedge_meta = {}     # A15: oid -> (strike, digits, iid) so belief can be recomputed
     hedged = set()      # A15: oids already hedged (or given up on)
     hedge_tries = {}    # A15: oid -> attempts since the alarm fired
-    hedge_last_try = {} # A15: oid -> wall-clock second of the last try (pacing)
+    hedge_last_try = {}
+    hedge_price_said = set()      # A47: one 'waiting on price' line per position # A15: oid -> wall-clock second of the last try (pacing)
     hedge_remain = {}   # A15 BUGFIX 2026-09-13: oid -> contracts STILL needing a
                         # hedge fill. open_pos[_hid] must NEVER be shrunk here; it
                         # is what reconcile() reads to settle the ORIGINAL position
@@ -5528,6 +5608,20 @@ def trade_loop(a, rec, book, idx, series_index):
                 if not _hb or not _ask or not _asz or _ask >= 1.0:
                     rec("hedge_no_ask", ticker=_htk, side=_opp, tau=_htau,
                         belief=round(_belief, 5))
+                    continue
+                if not hedge_price_ok(_ask):
+                    # NOT added to `hedged`: the price can still fall inside
+                    # this close, and if it does we hedge then. That is the
+                    # whole point -- wait for the market to agree. Recorded
+                    # once per position so a 20 Hz loop cannot flood the log.
+                    if _hid not in hedge_price_said:
+                        hedge_price_said.add(_hid)
+                        rec("hedge_wait_price", ticker=_htk, ask=float(_ask),
+                            our_price=round(1.0 - float(_ask), 4),
+                            threshold=HEDGE_PRICE, belief=round(_belief, 5),
+                            tau=_htau)
+                        print(f"  hedge WAITING on price {_htk}: our side "
+                              f"{1.0 - float(_ask):.2f} is above {HEDGE_PRICE:.2f}")
                     continue
                 if not hedge_ask_ok(_ask):
                     # RULE 4 OF THE PRE-REGISTRATION (corrected 2026-09-12): a
@@ -6603,6 +6697,13 @@ def main():
                          "both the entry decision and the hedge's belief. "
                          "The tail after a jump is ~2x wider than the model "
                          "assumes. OFF by default.")
+    ap.add_argument("--hedge-price", type=float, default=None,
+                    help="AMENDMENT 47: only hedge when OUR side's market "
+                         "price has also fallen below this (e.g. 0.50). The "
+                         "wobble screen says a favourite that dips but stays "
+                         "above 50c recovered 48 times out of 48; one that "
+                         "crosses below 50c really flipped 76%% of the time. "
+                         "Default off -- the shipped behaviour is unchanged.")
     ap.add_argument("--hedge-belief", type=float, default=None,
                     help="AMENDMENT 34: belief in OUR side below which we buy "
                          "the other one. Default %.2f. MEASURED 2026-09-14 on "
@@ -6784,6 +6885,11 @@ def main():
                 "still sized from the touch, which buys exactly the scrap fill "
                 "AMENDMENT 6 added the floor to prevent.")
         globals()["DEPTH_LADDER"] = True
+    if a.hedge_price is not None:
+        if not (0.0 < a.hedge_price < 1.0):
+            raise SystemExit("--hedge-price must be between 0 and 1, got %r"
+                             % (a.hedge_price,))
+        globals()["HEDGE_PRICE"] = float(a.hedge_price)
     if a.hedge_belief is not None:
         if not (0.0 < a.hedge_belief <= _DEFAULT_HEDGE_BELIEF):
             raise SystemExit(

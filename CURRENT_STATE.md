@@ -27,7 +27,7 @@ for a specific past result.** `HANDOFF_2026-09-14.md` is the previous handoff.
 | SIZE | **auto**, from the bank -- currently **90 contracts**. `--size` is only a starting value |
 | BANK_BRAKE | 3.0 -> size = bank / (3.0 x 2 x 0.98) = bank / 5.88 |
 | close cap | CONTRACTS, not fills (A17): `MAX_PER_CLOSE x SIZE`, MAX_PER_CLOSE = 2 |
-| hedge | on, fires at belief < **0.60** (was 0.80; lowered 2026-09-15) |
+| hedge | on, fires at belief < **0.60** (was 0.80; lowered 2026-09-16 13:57Z -- the log's `start` records say 13:57Z on the 16th, not the 15th as this table used to claim) |
 | gate | PIN 0.995, ceiling 0.98, tau 3-30s, edge >= 0.3c, EV >= 0.3c |
 | per market | **2 fills** (A23 + A29, live since 2026-09-14) |
 | scan order | BEST first (A24) |
@@ -44,6 +44,18 @@ for a specific past result.** `HANDOFF_2026-09-14.md` is the previous handoff.
   NOT in `boot_all.ps1`: a money process should not come back from a reboot
   without a human. `cmdarm.py` keeps running as the paper control on the same
   windows BY IMPORT.
+- **AMENDMENT 47 (`--hedge-price`, OFF in live, paper arm running).** A hedge
+  fires only if our side's MARKET price has also fallen below 50c, not just
+  the model's belief. Of the 7 live hedges that would fire under today's 0.60
+  gate, 6 were needed and the 1 wasted one bought insurance while our side
+  still traded at 85c, costing $13.83. The wobble table (1,717 markets) is the
+  real evidence: 48 of 48 dips that stopped above 50c recovered.
+  `results/PREREG_hedgeprice.md`. Arm: `results/arm-hedgeprice.out`.
+- **Hedging has MADE money, not lost it**: 12 filled live hedges, 6 needed
+  (+$56.01), 6 wasted (-$41.72), net **+$14.30**. An earlier note in this
+  session said "5 of 9 wasted" -- that read the wrong field and ignored that
+  the 0.80 and 0.90 gates no longer exist. Under today's 0.60 gate only 7 of
+  the 14 would have fired, and 6 of those 7 were needed.
 - **Day totals now come from `research/pinday.py` and nowhere else.** A UTC
   date filter reported +$47 for a day that was +$23. Never write another
   ad-hoc day total.

@@ -150,6 +150,14 @@ HARD_MAX = 25.0           # nothing may exceed this even if the line above is
                           # roughly 60% of the crypto shard -- the real ceiling
                           # whatever any other constant says.
 MAX_TAU = 90.0            # seconds to close; pin trades only in the last minute
+# A caller may RAISE this for itself, per call, and only with a reason it can
+# defend. `cmdlive.py` does: the commodity grid's best cells sit at 91-180 s
+# (gold 95-99c there is 379 markets / 2 lost), because a 15-minute commodity
+# settles on the CLOSE of a 1-minute candle rather than a 60-second average,
+# so its certainty arrives EARLY and again at the very end. The default is
+# unchanged and `pinrun` never passes the argument, so the crypto bot's rail
+# is exactly what it was.
+MAX_TAU_CEILING = 240.0   # no caller may go past this, whatever it asks for
 MAX_RUN_STAKE = 60.00     # dollars committed per process. The shard holds ~$38
                           # and positions settle within 60 s, so this bounds
                           # CONCURRENT exposure, not turnover; pinrun releases
@@ -337,7 +345,8 @@ def expected_fee(price, count=1):
 
 
 # ---------- rails -------------------------------------------------------------
-def check_take(body, market_close_epoch, now_epoch, base=None, ledger=None):
+def check_take(body, market_close_epoch, now_epoch, base=None, ledger=None,
+               max_tau=None):
     """Every reason NOT to send. Empty list == ok. Runs before signing."""
     bad = []
     L = LEDGER if ledger is None else ledger
@@ -402,9 +411,14 @@ def check_take(body, market_close_epoch, now_epoch, base=None, ledger=None):
     if tau is not None:
         if tau <= 0:
             bad.append(f"market closed {-tau:.1f} s ago")
-        elif tau > MAX_TAU:
-            bad.append(f"market closes in {tau:.1f} s; pin only trades inside "
-                       f"the last {MAX_TAU:.0f} s")
+        else:
+            _mt = MAX_TAU if max_tau is None else float(max_tau)
+            if _mt > MAX_TAU_CEILING:
+                bad.append(f"max_tau {_mt:.0f} s is past the {MAX_TAU_CEILING:.0f} s "
+                           f"ceiling; refusing rather than honouring it")
+            elif tau > _mt:
+                bad.append(f"market closes in {tau:.1f} s; this caller only "
+                           f"trades inside the last {_mt:.0f} s")
 
     if c is not None and p is not None and c > 0:
         try:
@@ -663,7 +677,7 @@ def _book(out, body, stk):
 
 # ---------- the one path to the wire ----------------------------------------
 def take(base, pk, key_id, ticker, want, price, count, market_close_epoch,
-         exchange_index=0, client_id=None, now_epoch=None):
+         exchange_index=0, client_id=None, now_epoch=None, max_tau=None):
     """Build, CHECK, then -- only with an empty violation list -- POST.
 
     Returns the normalised dict from normalise(), plus "refused": [...] and
@@ -672,7 +686,8 @@ def take(base, pk, key_id, ticker, want, price, count, market_close_epoch,
     """
     now = time.time() if now_epoch is None else float(now_epoch)
     body = build_take(ticker, want, price, count, exchange_index, client_id)
-    violations = check_take(body, market_close_epoch, now, base=base)
+    violations = check_take(body, market_close_epoch, now, base=base,
+                            max_tau=max_tau)
     if base is None:
         violations.append("base is None -- no environment named; refused")
     if now_epoch is not None and base != DEMO:
@@ -784,6 +799,29 @@ def selftest():
     ok = check_take(n, close_ok, now, base=DEMO)
     if ok:
         fails.append(f"a legal NO take was refused: {ok}")
+
+    # THE PER-CALLER TAU RAIL (added 2026-09-17 for cmdlive's 91-180 s
+    # commodity windows). The DEFAULT must not move, and no caller may go past
+    # the ceiling. pintake's self-test collects into `fails`; it has no ck().
+    _y = dict(y)
+    _y["client_order_id"] = "cid-tau"
+    _n2 = time.time()
+    def _has(vs, frag):
+        return any(frag in v for v in vs)
+    if not _has(check_take(_y, _n2 + 150, _n2, base=DEMO), "only trades inside"):
+        fails.append("DEFAULT MOVED: 150 s to close was allowed with no max_tau")
+    if _has(check_take(_y, _n2 + 150, _n2, base=DEMO, max_tau=180), "only trades inside"):
+        fails.append("a caller passing max_tau=180 was still refused at 150 s")
+    if not _has(check_take(_y, _n2 + 200, _n2, base=DEMO, max_tau=180), "only trades inside"):
+        fails.append("max_tau=180 did not refuse a market 200 s out")
+    if not _has(check_take(_y, _n2 + 150, _n2, base=DEMO, max_tau=9999), "ceiling"):
+        fails.append("a caller asking past MAX_TAU_CEILING was obeyed instead of refused")
+    if not _has(check_take(_y, _n2 - 1, _n2, base=DEMO, max_tau=180), "closed"):
+        fails.append("a closed market was allowed when max_tau was raised")
+    if MAX_TAU != 90.0 or MAX_TAU_CEILING != 240.0:
+        fails.append(f"shipped rails moved: MAX_TAU {MAX_TAU}, ceiling {MAX_TAU_CEILING}")
+    print(f"  per-caller tau rail: default still {MAX_TAU:g} s, ceiling "
+          f"{MAX_TAU_CEILING:g} s, 150 s allowed only when asked for")
 
     # --- every rail must REFUSE ------------------------------------------------
     print("\n  every rail must REFUSE, before signing:")
