@@ -75,7 +75,12 @@ SIGNOFF_PHRASE = "commodity penny test"
 # a loss costs about -$29.8, so ONE loss needs ~26 wins to recover. That is the
 # arithmetic of near-certainty trading and it is why the brakes below are in
 # NET DOLLARS, not trade counts.
-SIZE_DOLLARS = 30.0         # dollars of contracts per order
+# STEPPED BACK 30.00 -> 10.00 on 2026-09-17 ~20:5xZ, the operator's call after
+# the first losing day: "$10". The $30 run lost $53.06 on 28 settled trades of
+# which 26 won, and roughly half of that loss was the one-bet-per-WINDOW defect
+# doubling a single adverse event. The defect is fixed; the size steps back
+# until there are ~60 clean fills, then returns to $30.
+SIZE_DOLLARS = 10.0         # dollars of contracts per order
 MAX_SIZE = 60.0             # --size (dollars) may never exceed this
 MAX_CONTRACTS = 40.0        # hard contract ceiling; $30 at the 90c floor is 33
 # GROSS TURNOVER, not risk. Raised 10.00 -> 40.00 on 2026-09-17 ~17:0xZ, after the
@@ -86,10 +91,12 @@ MAX_CONTRACTS = 40.0        # hard contract ceiling; $30 at the 90c floor is 33
 # about $2) and MAX_NET_LOSS (the day's realised dollars). Both are untouched --
 # this number only stops the thing running away in VOLUME.
 MAX_SPEND = 1200.00         # dollars of cost across the DAY (gross; it recycles)
-MAX_NET_LOSS = 60.00        # dollars NET REALISED down on the day, then stop.
-                            # THE REAL BRAKE. Two losing trades at this size.
-                            # Chosen so it stops before the hole needs more than
-                            # ~52 wins to climb out of.
+MAX_NET_LOSS = 25.00        # dollars NET REALISED down on the day, then stop.
+                            # THE REAL BRAKE, and it scales with the size: about
+                            # 2.5 losing trades. At $10 a trade a loss costs
+                            # ~$9.9 and a win pays ~$0.39, so it still takes ~26
+                            # wins to repay one loss -- the ratio is a property
+                            # of near-certainty trading, not of the size.
 MAX_RUN_STAKE = 250.00      # dollars IN FLIGHT at once (pintake's own rail,
                             # shipped at $60 for a one-contract caller). Five
                             # windows across two series can be open together, so
@@ -264,6 +271,40 @@ def release(ticker, bets, ledger=None):
     if isinstance(led.get("positions"), dict):
         led["positions"].pop(ticker, None)
     return owed
+
+
+OFFSET_MAX_TAU = 60      # only a window ending inside this may offset
+
+
+def market_block(held_side, want, band, offset_done):
+    """Why this market must not be traded again, or None to allow it.
+
+    ONE POSITION PER MARKET, with one exception.
+
+    The windows are not independent opportunities -- they are different moments
+    looking at the SAME binary outcome. A second bet on the SAME side doubles
+    the stake on one event (that is what cost $58.84 on 2026-09-17, two NO legs
+    on one oil market).
+
+    The exception, and why it is not just a hedge: a NEAR window may take the
+    OPPOSITE side once. Buying the other side at the market price is EV-NEUTRAL
+    by construction, because the price IS the probability -- as a hedge it earns
+    nothing and merely converts a probable loss into a certain smaller one. But
+    the near windows are independently profitable on their own record (WTI
+    0-60 s: 519 markets, 4 lost; GOLD 0-15 s: 149, 2). So that trade is worth
+    taking whether or not we already hold something, and capping the loss is a
+    side effect rather than the reason. Far windows get no such exception:
+    their information is worse than the position they would be offsetting.
+    """
+    if held_side is None:
+        return None
+    if want == held_side:
+        return "same_side"                       # doubling one event's stake
+    if offset_done:
+        return "offset_used"                     # one offset per market
+    if band[1] > OFFSET_MAX_TAU:
+        return "far_window_cannot_offset"
+    return None
 
 
 def contracts_for(dollars, price, offer):
@@ -587,12 +628,29 @@ def selftest():
     # ONE POSITION PER MARKET. The windows look at the SAME binary outcome, so a
     # second bet doubles the stake on one event and an opposite-side bet locks a
     # loss. This cost $58.84 on one oil market before the check existed.
-    ck("held[tk] = want" in _lp2 and "if held.get(tk) is not None:" in _lp2,
-       "the loop claims a market on the first FILL and refuses every later "
-       "window on that ticker, whichever side it wants")
-    ck(_lp2.index("if held.get(tk) is not None:") < _lp2.index("d = cmdarm.decide("),
-       "...and it does so BEFORE deciding, so a second window cannot even price")
-    ck("held[tk] = want" in _lp2.split("if filled > 0:")[1][:600],
+    # ONE POSITION PER MARKET, with the near-window offset as the one exception.
+    _nearb, _farb = (2, 60, 0.95, 0.99, None, "n"), (121, 180, 0.9, 0.99, None, "f")
+    ck(market_block(None, "yes", _farb, False) is None,
+       "an untouched market is free to trade from any window")
+    ck(market_block("yes", "yes", _nearb, False) == "same_side",
+       "the SAME side again is refused -- that doubles one event's stake, which "
+       "is what turned one adverse oil market into -$58.84")
+    ck(market_block("no", "yes", _nearb, False) is None,
+       "but a NEAR window may take the OPPOSITE side once: that bet is "
+       "independently profitable (WTI 0-60 s, 519 markets, 4 lost) and capping "
+       "the loss is a side effect, not the reason")
+    ck(market_block("no", "yes", _farb, False) == "far_window_cannot_offset",
+       "a FAR window may NOT offset -- its information is worse than the "
+       "position it would be offsetting")
+    ck(market_block("no", "yes", _nearb, True) == "offset_used",
+       "and only ONE offset per market, or we are back to stacking legs")
+    ck("market_block(" in _lp2 and _lp2.index("want, px, offer = d") < _lp2.index("market_block("),
+       "the loop tests it AFTER `want` is decided -- testing it earlier would "
+       "compare against an undecided side, the exact bug just fixed in pinrun's "
+       "AMENDMENT 8")
+    ck("sizes[tk] = filled" in _lp2 and "min(n, float(sizes.get(tk, n)))" in _lp2,
+       "an offset never stakes more than the position it offsets")
+    ck("held[tk] = want" in _lp2.split("if filled > 0:")[1][:700],
        "the claim is made on a FILL, not on an attempt -- a refused order must "
        "not lock a market out")
     ck("release(t, mine)" in _lp2,
@@ -601,12 +659,19 @@ def selftest():
     _s8 = State(); _s8.armed = True
     ck(guard(_s8, tau=10, price=0.96, count=MAX_CONTRACTS + 1, balance=5000.0),
        "NULL: a count above MAX_CONTRACTS is refused even when funded")
-    ck(float(SIZE_DOLLARS) == 30.0 and MAX_CONTRACTS <= 40.0
-       and MAX_LOSSES <= 4 and MAX_NET_LOSS <= 60.0 and BALANCE_FLOOR >= 300.0,
-       "the SHIPPED settings are $30 a trade, at most 40 contracts, and it STOPS "
-       "at $60 net down or 4 losses. At this size one loss costs about $29.8 and "
-       "one win pays about $1.16, so the brake is in NET DOLLARS on purpose -- a "
-       "trade-count brake would not describe the damage")
+    # The shipped size is deliberately not pinned to one number -- it steps with
+    # the evidence. What IS pinned is the RELATIONSHIP between the size and the
+    # brakes, because that is what stops a size change from quietly widening the
+    # risk. At any size: one loss costs about the trade size, one win pays about
+    # a thirtieth of it, and the brake must stop inside ~2.5 losing trades.
+    ck(5.0 <= SIZE_DOLLARS <= 30.0 and MAX_CONTRACTS <= 40.0
+       and MAX_LOSSES <= 4 and BALANCE_FLOOR >= 300.0,
+       "the SHIPPED size is between $5 and $30 a trade, at most 40 contracts, "
+       "a 4-loss brake and a $300 account floor")
+    ck(abs(MAX_NET_LOSS - 2.5 * SIZE_DOLLARS) < 1e-9,
+       "and the net-loss brake is exactly 2.5 trades' worth, so stepping the "
+       "size NEVER silently widens the risk: $%.0f a trade -> stop at $%.0f down"
+       % (SIZE_DOLLARS, MAX_NET_LOSS))
     ck(MAX_NET_LOSS < 3 * SIZE_DOLLARS,
        "the net brake must stop inside three losing trades, or it is not a brake")
     ck(BALANCE_FLOOR > 4 * MAX_NET_LOSS,
@@ -621,6 +686,8 @@ def trade_loop(state, series, minutes, rec, dry=False):
     watching, pend, per_close, looked, bets = {}, {}, collections.Counter(), set(), []
     said = set()            # (ticker, window, reasons) already reported
     held = {}               # ticker -> the side we already hold. ONE per market.
+    sizes = {}              # ticker -> contracts held, so an offset never exceeds it
+    offsets = set()         # tickers that have already used their one offset
     last_disc, last_bal, last_beat, balance = 0.0, 0.0, 0.0, None
     end = time.time() + minutes * 60
     while time.time() < end:
@@ -696,18 +763,41 @@ def trade_loop(state, series, minutes, rec, dry=False):
                 # the opposite side is refused outright rather than treated as
                 # one. The crypto bot has a `both_sides` gate for exactly this;
                 # this file had nothing.
-                if held.get(tk) is not None:
-                    k = (tk, "held")
-                    if k not in said:
-                        said.add(k)
-                        rec("one_per_market", ticker=tk, series=ser,
-                            holding=held[tk], window=cmdarm.label(band), tau=tau)
-                    continue
+                #
+                # THE ONE EXCEPTION, added 2026-09-17 on the operator's idea:
+                # a NEAR window may take the OPPOSITE side of a position we
+                # already hold. That is not a hedge in the usual sense, and the
+                # distinction is the whole reason it is allowed. Buying the
+                # other side at the market price is EV-NEUTRAL by construction,
+                # because the price IS the probability -- it converts a probable
+                # loss into a certain smaller one and earns nothing. But the
+                # near windows are independently profitable on their own record
+                # (WTI 0-60 s: 519 markets, 4 lost; GOLD 0-15 s: 149, 2), so
+                # taking that bet is worth doing whether or not we hold anything
+                # -- and it happens to cap the loss. Once per market, near
+                # windows only, opposite side only.
+                # The test itself lives BELOW, right after `want` is known --
+                # putting it here would compare against a side that has not been
+                # decided yet, which is precisely the bug just fixed in
+                # pinrun's AMENDMENT 8.
                 d = cmdarm.decide(best, tau, band, hour=hour)
                 if not d:
                     continue
                 want, px, offer = d
+                _why = market_block(held.get(tk), want, band, offset_done=tk in offsets)
+                if _why:
+                    k = (tk, _why)
+                    if k not in said:
+                        said.add(k)
+                        rec("one_per_market", ticker=tk, series=ser, why=_why,
+                            holding=held.get(tk), wanted=want,
+                            window=cmdarm.label(band), tau=tau)
+                    continue
                 n = contracts_for(state.size, px, offer)
+                if held.get(tk) is not None:
+                    # an offset: never stake more than the position it offsets
+                    n = min(n, float(sizes.get(tk, n)))
+                    offsets.add(tk)
                 refused = guard(state, tau, px, n, balance, stopped(),
                                 series=ser, window=cmdarm.label(band))
                 if refused:
@@ -753,6 +843,8 @@ def trade_loop(state, series, minutes, rec, dry=False):
                     # refused from here, whichever side it wants: a same-side
                     # bet doubles one event's stake, an opposite-side bet locks
                     # in a loss on one leg.
+                    if tk not in held:
+                        sizes[tk] = filled
                     held[tk] = want
                     bets.append({"ticker": tk, "series": ser, "want": want,
                                  "price": cost, "n": filled, "tau": tau, "band": bi})
@@ -829,6 +921,10 @@ def main():
     ap.add_argument("--series", nargs="*", default=list(LIVE_SERIES))
     ap.add_argument("--size", type=float, default=SIZE_DOLLARS,
                     help="DOLLARS per order (not contracts)")
+    ap.add_argument("--reset-day", action="store_true",
+                    help="clear today's seeded loss brakes. BY HAND ONLY: the "
+                         "brakes normally seed from the day's logs so a crash "
+                         "cannot disarm them.")
     ap.add_argument("--minutes", type=float, default=1440)
     a = ap.parse_args()
     if a.selftest:
@@ -842,6 +938,16 @@ def main():
     # 2-loss brake would make it a formality: crash twice and it never fires.
     state.spent = spent_today()
     state.realised, state.losses = _settled_today()
+    if a.reset_day:
+        # DELIBERATE, LOGGED, AND ONLY EVER BY HAND. The brakes seed from the
+        # day's own logs so a crash cannot disarm them; this clears that seed
+        # because the operator has decided the earlier losses belong to a
+        # configuration that no longer exists. It is not a default and there is
+        # no automation that can reach it.
+        rec_reset = {"cleared_realised": round(state.realised, 4),
+                     "cleared_losses": state.losses, "cleared_spent": round(state.spent, 4)}
+        state.realised, state.losses, state.spent = 0.0, 0, 0.0
+        print("  --reset-day: cleared %s" % rec_reset, flush=True)
     if a.size > MAX_SIZE:
         print("--size %.2f is above the hard ceiling of %.0f" % (a.size, MAX_SIZE))
         return 2
