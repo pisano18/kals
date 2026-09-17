@@ -103,6 +103,27 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 16:0xZ -- A WRONG DAY TOTAL, AND THE FILE THAT STOPS IT REPEATING (`research/pinday.py`)
+
+The operator was told the day was "+$47". It was **+$23**. The query behind
+the $47 filtered the live log on `t.startswith("2026-09-17")`, and `t` is
+UTC, so it swept in every settlement from 20:00-23:59 ET the previous
+evening -- the SAME ticker-clock trap fixed inside `pinflat` a day earlier,
+repeated in a throwaway one-liner because there was nothing to call. He
+caught it; I did not.
+
+`research/pinday.py` is now the only place that answers "what did we make
+today". `et_day_of_record()` prefers the ET clock inside the ticker and falls
+back to the log time converted through `downtime.et_offset` (never a
+hard-coded -4: in January the offset is -5 and the self-test pins that).
+`by_et_day()` de-duplicates on (ticker, t) because the logs overlap on every
+self-heal restart. `python research/pinday.py` prints the table.
+
+**NO SESSION WRITES ANOTHER AD-HOC DAY TOTAL.** Truth as of 16:0xZ:
+09/12 +$38.75 (7 losses), 09/13 +$114.77, 09/14 +$81.14, 09/15 +$76.32,
+09/16 +$85.10, 09/17 +$23.45 (0 losses). All time +$422.63 over 471
+settlements, balance $579.44 against $160 deposited.
+
 ## 15:3xZ -- THE GRID BY MARKETS (rule 4) AND BY ET SESSION; cmdarm re-windowed (`RESULTS_actions.md` s7)
 
 Operator: *"Double check you like your commodities ideas, make sure there's
