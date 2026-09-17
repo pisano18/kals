@@ -4,14 +4,17 @@ Written so a session that has just been `/clear`ed can pick up without
 re-deriving anything. **Updated 2026-09-16 ~5:35 PM ET.** If the date above is
 more than a day old, verify the live numbers before quoting them.
 
-**2026-09-16: READ THE TOP OF `HANDOFF.md` FIRST.** That session produced
-mostly NEGATIVE results and, more importantly, FIVE of its own headline numbers
-were artefacts that a holdout or the operator caught. They are listed there with
-the corrected values. Do not re-run those analyses from scratch.
+**2026-09-17: READ `HANDOFF_2026-09-17.md` FIRST.** It is the complete handoff
+from the 2026-09-16 session, written for a context clear: what is running (pid
+by pid), the next task (the tau-45 paper arm and the decision rule to
+pre-register before reading it), everything killed and why, ideas not yet
+raised with the operator, the four venues checked, and ten mistakes with the
+fix for each. Read it before anything else.
 
 `CLAUDE.md` = the rules. `PROJECT_HISTORY.md` = why things were killed.
-`HANDOFF.md` = the long running log (read the newest section, then only what you
-need). **This file = what is true right now.**
+`HANDOFF.md` = the long running log, 288 KB -- **do not read it whole; grep it
+for a specific past result.** `HANDOFF_2026-09-14.md` is the previous handoff.
+**This file = what is true right now.**
 
 ## The bot, as deployed
 
