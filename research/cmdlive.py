@@ -64,7 +64,17 @@ RESULTS = os.path.join(os.path.dirname(HERE), "results")
 SIGNOFF_PHRASE = "commodity penny test"
 SIZE = 1.0                  # contracts per order. The whole point.
 MAX_SIZE = 5.0              # --size may never exceed this
-MAX_SPEND = 10.00           # dollars of cost across the entire run
+# GROSS TURNOVER, not risk. Raised 10.00 -> 40.00 on 2026-09-17 ~17:0xZ, after the
+# first day hit it at 10 fills (10 won, 0 lost, +$0.47) and began refusing every
+# further trade. The $10 was measuring the WRONG THING: a winning contract returns
+# its dollar and the capital recycles, so gross spend climbs while the risk does
+# not move at all. What actually bounds the downside is MAX_LOSSES (2 losses is
+# about $2) and MAX_NET_LOSS (the day's realised dollars). Both are untouched --
+# this number only stops the thing running away in VOLUME.
+MAX_SPEND = 40.00           # dollars of cost across the DAY (gross; it recycles)
+MAX_NET_LOSS = 5.00         # dollars NET REALISED down on the day, then stop. The
+                            # honest risk cap: it counts money that is GONE, not
+                            # money in flight.
 MAX_ORDERS = 60             # hard ceiling on attempts that reach the wire
 MAX_LOSSES = 2              # then it stops itself and writes the stop file
 BALANCE_FLOOR = 300.00      # never trade the account below this
@@ -112,6 +122,7 @@ class State:
         self.orders = 0         # attempts that reached the wire
         self.fills = 0
         self.losses = 0
+        self.realised = 0.0     # net dollars settled today: wins minus losses
         self.armed = False
 
 
@@ -156,6 +167,9 @@ def guard(state, tau, price, count, balance, stop=None, series=None, window=None
         bad.append("%d orders already sent; the ceiling is %d" % (state.orders, MAX_ORDERS))
     if state.losses >= MAX_LOSSES:
         bad.append("%d losses; the brake is %d" % (state.losses, MAX_LOSSES))
+    if state.realised <= -MAX_NET_LOSS:
+        bad.append("$%.2f net realised down today; the cap is $%.2f"
+                   % (state.realised, MAX_NET_LOSS))
     if tau is None or float(tau) < MIN_TAU:
         bad.append("tau %r is under %d s -- the order could land after the close"
                    % (tau, MIN_TAU))
@@ -199,6 +213,39 @@ def balance_dollars(creds):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _settled_today(results=None, now=None):
+    """(net realised dollars, losing settlements) for today, from the day's logs.
+
+    Same reason as `spent_today`: every brake must bound the DAY, not the
+    process. A restart that reset the 2-loss brake would make the brake a
+    formality -- crash twice and it never fires.
+    """
+    import glob as _glob
+    import pinday
+    res = RESULTS if results is None else results
+    day = pinday.et_day_of_epoch(time.time() if now is None else now)
+    net, lost = 0.0, 0
+    for f in sorted(_glob.glob(os.path.join(res, "cmdlive-*.jsonl"))):
+        try:
+            fh = open(f, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                if '"settled"' not in line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get("kind") != "settled" or pinday.et_day_of_record(r) != day:
+                    continue
+                net += float(r.get("pnl_c") or 0.0) / 100.0
+                if not r.get("won"):
+                    lost += 1
+    return net, lost
 
 
 def spent_today(results=None, now=None):
@@ -332,10 +379,11 @@ def selftest():
        "...a real window passes")
 
     # ---- the money ceilings
-    s2 = State(); s2.armed = True; s2.spent = 9.50
-    ck(guard(s2, **ok_args), "NULL: $9.50 spent + 95c is past the $10 run ceiling")
-    s2.spent = 9.00
-    ck(guard(s2, **ok_args) == [], "...but $9.00 spent leaves room for one more")
+    s2 = State(); s2.armed = True; s2.spent = MAX_SPEND - 0.50
+    ck(guard(s2, **ok_args),
+       "NULL: 50c of turnover left will not cover a 95c contract")
+    s2.spent = MAX_SPEND - 1.00
+    ck(guard(s2, **ok_args) == [], "...but a dollar of room takes one more")
     s3 = State(); s3.armed = True; s3.orders = MAX_ORDERS
     ck(guard(s3, **ok_args), "NULL: the order ceiling refuses attempt %d" % (MAX_ORDERS + 1))
     s4 = State(); s4.armed = True; s4.losses = MAX_LOSSES
@@ -409,8 +457,32 @@ def selftest():
        "from another day are both excluded")
     ck(spent_today(results=os.path.join(_td, "nope")) == 0.0,
        "NULL: no logs, no spend -- and no crash")
-    ck(float(SIZE) == 1.0 and MAX_SPEND <= 10.0 and MAX_LOSSES <= 2,
-       "the SHIPPED defaults are one contract, a $10 run ceiling and a 2-loss brake")
+    # THE LOSS BRAKES MUST SURVIVE A RESTART TOO, or crashing twice disarms them
+    with open(os.path.join(_td, "cmdlive-s.jsonl"), "w", encoding="utf-8") as _fh:
+        for _r in ({"kind": "settled", "ticker": "KXWTI15M-%s1100-00" % _day,
+                    "won": True, "pnl_c": 9.0},
+                   {"kind": "settled", "ticker": "KXWTI15M-%s1115-15" % _day,
+                    "won": False, "pnl_c": -95.0},
+                   {"kind": "settled", "ticker": "KXWTI15M-25JAN011100-00",
+                    "won": False, "pnl_c": -99.0}):
+            _fh.write(json.dumps(_r) + chr(10))
+    _net, _lost = _settled_today(results=_td)
+    ck(abs(_net - (-0.86)) < 1e-9 and _lost == 1,
+       "_settled_today nets TODAY's settlements (+9c and -95c = -86c) and counts "
+       "ONE loss; yesterday's loss is not today's brake")
+    ck(_settled_today(results=os.path.join(_td, "nope")) == (0.0, 0),
+       "NULL: no logs, no losses -- and no crash")
+    _s6 = State(); _s6.armed = True; _s6.realised = -MAX_NET_LOSS
+    ck(guard(_s6, **ok_args), "NULL: at the net-loss cap the day is over")
+    _s7 = State(); _s7.armed = True; _s7.realised = -MAX_NET_LOSS + 0.01
+    ck(guard(_s7, **ok_args) == [], "...a cent short of it still trades")
+    ck(MAX_NET_LOSS <= 5.0 and MAX_LOSSES <= 2,
+       "the RISK caps are unchanged by the turnover raise: 2 losses, $5 net")
+    ck(float(SIZE) == 1.0 and MAX_LOSSES <= 2 and MAX_NET_LOSS <= 5.0
+       and MAX_SPEND <= 40.0 and BALANCE_FLOOR >= 300.0,
+       "the SHIPPED defaults are one contract, a 2-loss brake, a $5 net-loss cap, "
+       "$40 of daily turnover and a $300 account floor. The RISK caps are the "
+       "first two; turnover is not risk, because a winning contract recycles")
     print("cmdlive selftest: OK")
 
 
@@ -559,18 +631,24 @@ def trade_loop(state, series, minutes, rec, dry=False):
                 for sc in cmdarm.score(mine, got):
                     for b in mine:
                         b.update(won=sc["won"], pnl=sc["pnl"])
+                    state.realised += float(sc["pnl"])
                     if not sc["won"]:
                         state.losses += 1
                     rec("settled", ticker=t, result=got[t], won=sc["won"],
-                        pnl_c=round(100 * sc["pnl"], 2), losses=state.losses)
-                    print("  SETTLED %s -> %s  $%+.2f   (losses %d/%d)"
+                        pnl_c=round(100 * sc["pnl"], 2), losses=state.losses,
+                        realised=round(state.realised, 4))
+                    print("  SETTLED %s -> %s  $%+.2f   (losses %d/%d, day $%+.2f)"
                           % (t, "WON" if sc["won"] else "LOST", sc["pnl"],
-                             state.losses, MAX_LOSSES), flush=True)
-                if state.losses >= MAX_LOSSES:
+                             state.losses, MAX_LOSSES, state.realised), flush=True)
+                _brake = ("%d losses" % state.losses if state.losses >= MAX_LOSSES
+                          else ("$%.2f net down" % state.realised
+                                if state.realised <= -MAX_NET_LOSS else None))
+                if _brake:
                     with open(STOP_FILE, "w", encoding="utf-8") as fh:
-                        fh.write("%d losses at %s\n" % (state.losses, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
-                    rec("brake", losses=state.losses)
-                    print("  *** %d LOSSES -- BRAKE. stop file written. ***" % state.losses, flush=True)
+                        fh.write("%s at %s\n" % (_brake, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+                    rec("brake", losses=state.losses, realised=round(state.realised, 4),
+                        why=_brake)
+                    print("  *** BRAKE: %s. stop file written. ***" % _brake, flush=True)
         time.sleep(0.25)
     return bets
 
@@ -593,7 +671,10 @@ def main():
         selftest()
 
     state = State(size=a.size)
-    state.spent = spent_today()      # the $10 ceiling bounds the DAY, not the run
+    # EVERY brake bounds the DAY, not the process. A restart that reset the
+    # 2-loss brake would make it a formality: crash twice and it never fires.
+    state.spent = spent_today()
+    state.realised, state.losses = _settled_today()
     if a.size > MAX_SIZE:
         print("--size %.2f is above the hard ceiling of %.0f" % (a.size, MAX_SIZE))
         return 2
@@ -619,6 +700,8 @@ def main():
     rec("start", series=a.series, size=state.size, dry=bool(a.dry),
         bands={k: [list(b) for b in v] for k, v in cmdarm.BANDS.items()},
         max_spend=MAX_SPEND, max_orders=MAX_ORDERS, max_losses=MAX_LOSSES,
+        max_net_loss=MAX_NET_LOSS, realised_earlier_today=round(state.realised, 4),
+        losses_earlier_today=state.losses,
         balance_floor=BALANCE_FLOOR, balance_at_start=bal,
         spent_earlier_today=round(state.spent, 4),
         signoff="operator 2026-09-17: ready for commodity penny testing",

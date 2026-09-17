@@ -20,6 +20,12 @@ what was settled this week and must not be re-litigated, what is still open,
 and the gotchas that have already cost time. A session that has just been
 `/clear`ed should read it before anything else.
 
+**`THEORY.md` is the MENTAL MODEL** -- why the edge exists, how the two
+contract families move and why they are opposite, the population trap that has
+produced every false result here, what is measured versus merely believed, and
+the recurring bug classes. Read it before changing the strategy, and check its
+claims: every section says what would falsify it.
+
 `PROJECT_HISTORY.md` holds the killed approaches, the known measurement
 artefacts, the two unreconciled thesis versions and the kill-criteria change
 log -- read it before resurrecting an idea or quoting a confidence number.
