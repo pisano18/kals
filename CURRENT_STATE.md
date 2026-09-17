@@ -37,6 +37,28 @@ need). **This file = what is true right now.**
 actually decides a day. Sep 13 looked like a great day because it lost only
 $13, not because it won more -- Sep 14 won MORE and finished at half the money.
 
+## THE ONE NUMBER TO WATCH: what fraction of our size the book fills
+
+`python research/pinfill.py`. The bot asks for `size` contracts and the book
+hands back what it has. That ratio is the leading indicator of the whole
+compounding projection, because size grows with the bank but the offers do not.
+
+    ET day   size   contracts per fill   % of size we got
+    Sep 13     47          44.8                95%
+    Sep 14     58          54.4                94%
+    Sep 15     74          69.8                94%
+    Sep 16     84          67.3                80%   <-- first slip
+
+Measured over 446 signals, the offer waiting for us is p25 23 contracts, p50
+67, p75 202. Half of all opportunities cannot fill an order of 67, and we are
+already asking for 90. Replaying those signals at bigger caps: 2.2x the size
+buys 1.68x the volume, 5.6x buys 2.44x. Volume grows like a SQUARE ROOT of
+size, which is why `research/pinproject.py` exists and why the older linear
+projection (\$3,476 by day 12, \$570/day) is roughly double the truth.
+
+If that percentage keeps falling as the bank grows, the cautious column of
+pinproject is the one to plan on. If it holds near 90%, the expected column is.
+
 ## What is settled and must not be re-litigated
 
 - **The book is NOT the constraint.** Median fill is 100% of what the bot asked
