@@ -126,3 +126,63 @@ Conditioned on what a trader could SEE -- the lowest price the favourite
    under 50c" arm. Both rest on the wobble table above.
 3. Commodities: after ~40 paper bets per series, propose the 1-contract live
    test -- the only instrument that can see the fill population.
+
+## 7. SECOND LOOK (operator: "double check you like your commodities ideas ... anything deeper") -- the grid BY MARKETS, and by ET session
+
+The first grid counted TRADES. Rule 4 says cluster by close: three huge
+markets can make a cell look safe. `pingrid.py` now also keeps, per cell and
+per ET day-part (read from the ticker's own clock), the MARKETS touched and
+how many had a buyer of the losing side. Five things changed.
+
+**a. Gold's "0.1% at 98-99c inside 15 s" was three big markets.** By markets
+it is 53 touched, 1 lost (1.9%) -- break-even at 98.5c is 1.5%. Flat, not
++1.1c. And the loss sits in one place: **the COMEX session.** 95-99c inside
+15 s: night 68 markets 0 lost, late afternoon/evening 49/0, **08-14 ET
+32/2**. -> the near window now SKIPS 08:00-14:00 ET.
+
+**b. The safest cell in the whole table is gold two minutes out.** 98-99c
+with 91-180 s left: **129 markets, 0 lost**, about 26 a day, +1.2c a
+contract at the trade level. A gold market already at 98c+ two minutes
+before the close has moved far from its strike; one that only reaches 98c in
+the last 30 s is a coin that just landed. Different animals -- the 16-60 s
+cells lose 3-8% of markets. -> a second, FAR window (91-180 s, 98-99c) in
+the paper arm. This is "earlier bets on commodities" in the one place the
+tape says it is safe.
+
+**c. WTI holds up by markets.** 95-99c, 0-60 s: 153 markets, 3 lost (2.0%
+against ~3% break-even). 90-95c: 4-6% at 2-45 s (marginal), **10% at 46-60
+s** (58/6) -> the 90-95c window stops at 45 s; 95-99c runs to 60.
+
+**d. Silver loses even in the last 5 seconds** by markets (95-99c: 74
+markets, 4 lost = 5.4%). It stays in the arm as the NEGATIVE control: if
+silver wins in paper, the arm is reading the world wrong.
+
+**e. Why the arm saw "nobody selling" this morning.** The tape for the six
+closes it watched (11:00 and 11:15 ET): every one of gold, silver and oil was
+priced 99.7-99.9c in its last minute. Above the 99c ceiling there is nothing
+to buy, and at 99.9c a win pays 0.1c -- one loss in a thousand breaks even.
+Not raised. The commodity trade lives on the CONTESTED closes (90-99c),
+which the by-markets counts size at roughly: gold near window outside the
+US session ~11 markets/day, gold far window ~26/day, WTI ~31/day.
+
+**Crypto, by markets, is harsher than by trades -- and it bears on 46-60 s.**
+Buyers of the priced-in side, all nine crypto series (a market counts as lost
+if ANY buyer in the cell took the loser, so this is an upper bound):
+
+| seconds left | 95-98c | 98-99c |
+|---|---|---|
+| 0-5 | 67 mkts, 1 lost (1.5%) | 98, 1 (1.0%) |
+| 6-15 | 173, 5 (2.9%) | 228, 3 (1.3%) |
+| 16-30 | 389, 15 (3.9%) | 483, 7 (1.4%) |
+| **31-45** | **606, 17 (2.8%)** | **751, 7 (0.9%)** |
+| 46-60 | 900, 32 (3.6%) | 1101, 20 (1.8%) |
+| 61-90 | 1291, 63 (4.9%) | 1446, 33 (2.3%) |
+
+Break-even without a model: ~3.4% at 96.5c, ~1.5% at 98.5c. So 31-45 s is
+at or under break-even for a buyer with NO model (the live early leg adds
+the 99.5% gate on top). 46-60 s is AT break-even without a model: the gate
+has to do the work, which is exactly what the early-60 paper arm measures.
+Not a deployment candidate on this table; a paper question.
+
+**Not changed:** the 99c ceiling on commodities; copper and natural gas (out);
+the crypto main window.

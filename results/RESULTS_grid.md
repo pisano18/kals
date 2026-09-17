@@ -1,6 +1,6 @@
 # RESULTS -- the grid: who loses buying near-certainties, by seconds left and price; and the reversal screen
 
-Rebuilt 2026-09-17 15:03Z from `research/pingrid.py`. TAPE population (rule 5): what the market did, never our loss rate.
+Rebuilt 2026-09-17 15:26Z from `research/pingrid.py`. TAPE population (rule 5): what the market did, never our loss rate.
 
 ```
 BUYERS OF THE PRICED-IN SIDE, BY SECONDS LEFT AND PRICE PAID -- TAPE POPULATION (rule 5)
@@ -159,6 +159,220 @@ BUYERS OF THE PRICED-IN SIDE, BY SECONDS LEFT AND PRICE PAID -- TAPE POPULATION 
     61-90 s       |  1879  15.4% -0.99c    |  1414   4.2% +2.83c    |  1730   0.9% +2.13c    |  1359   1.6% -0.33c   
     91-120 s      |  1580  11.8% +2.16c    |  1530   6.7% +0.59c    |  1531   2.3% +0.73c    |  1424   1.3% -0.05c   
     121-180 s     |  3083  10.7% +4.27c    |  2737   4.0% +3.15c    |  2334   2.7% +0.41c    |  1679   0.2% +1.05c   
+
+THE SAME GRID BY MARKETS (rule 4): markets with a buyer in the cell / markets where such a buyer took the LOSER.
+  A cell that reads 10% above but 1/3 here is ONE market. Blank = under 10 markets.
+
+  KXBNB15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |                |   11 mkts   1 lost |   12 mkts   1 lost
+    6-15 s        |   15 mkts   2 lost |   17 mkts   1 lost |   19 mkts   1 lost |   23 mkts   0 lost
+    16-30 s       |   29 mkts  11 lost |   41 mkts   4 lost |   47 mkts   3 lost |   51 mkts   1 lost
+    31-45 s       |   54 mkts  10 lost |   67 mkts   9 lost |   81 mkts   4 lost |   81 mkts   1 lost
+    46-60 s       |   84 mkts  13 lost |   93 mkts   8 lost |  116 mkts   4 lost |  108 mkts   0 lost
+    61-90 s       |  113 mkts  23 lost |  123 mkts  11 lost |  135 mkts   2 lost |  118 mkts   2 lost
+    91-120 s      |  128 mkts  19 lost |  128 mkts   7 lost |  129 mkts   4 lost |  123 mkts   1 lost
+    121-180 s     |  177 mkts  34 lost |  169 mkts  20 lost |  155 mkts   4 lost |  172 mkts   2 lost
+
+  KXBTC15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |                |   11 mkts   0 lost |   20 mkts   0 lost
+    6-15 s        |   21 mkts   7 lost |   25 mkts   2 lost |   37 mkts   1 lost |   48 mkts   1 lost
+    16-30 s       |   41 mkts   7 lost |   49 mkts   3 lost |   57 mkts   2 lost |   75 mkts   2 lost
+    31-45 s       |   67 mkts  10 lost |   62 mkts   5 lost |   73 mkts   3 lost |   89 mkts   1 lost
+    46-60 s       |   88 mkts  25 lost |   73 mkts  14 lost |   98 mkts   8 lost |  127 mkts   6 lost
+    61-90 s       |  127 mkts  30 lost |  126 mkts  16 lost |  152 mkts  12 lost |  187 mkts   9 lost
+    91-120 s      |  131 mkts  27 lost |  134 mkts  17 lost |  169 mkts   6 lost |  174 mkts   2 lost
+    121-180 s     |  183 mkts  34 lost |  201 mkts  19 lost |  234 mkts   9 lost |  202 mkts   6 lost
+
+  KXDOGE15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |                |                |   11 mkts   0 lost
+    6-15 s        |   12 mkts   3 lost |   14 mkts   3 lost |   16 mkts   1 lost |   22 mkts   1 lost
+    16-30 s       |   27 mkts   8 lost |   32 mkts   6 lost |   43 mkts   3 lost |   63 mkts   2 lost
+    31-45 s       |   47 mkts   8 lost |   71 mkts   7 lost |   82 mkts   2 lost |  112 mkts   0 lost
+    46-60 s       |   81 mkts  15 lost |   90 mkts  11 lost |  105 mkts   2 lost |  125 mkts   2 lost
+    61-90 s       |  128 mkts  26 lost |  130 mkts  11 lost |  146 mkts   6 lost |  173 mkts   5 lost
+    91-120 s      |  128 mkts  26 lost |  117 mkts   8 lost |  148 mkts   4 lost |  196 mkts   3 lost
+    121-180 s     |  175 mkts  35 lost |  189 mkts  17 lost |  207 mkts   9 lost |  198 mkts   2 lost
+
+  KXETH15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |                |                |   12 mkts   0 lost
+    6-15 s        |   13 mkts   1 lost |   16 mkts   0 lost |   17 mkts   0 lost |   23 mkts   0 lost
+    16-30 s       |   30 mkts   5 lost |   28 mkts   0 lost |   37 mkts   0 lost |   44 mkts   0 lost
+    31-45 s       |   56 mkts   9 lost |   53 mkts   4 lost |   61 mkts   1 lost |   82 mkts   1 lost
+    46-60 s       |   75 mkts  17 lost |   77 mkts   5 lost |   95 mkts   4 lost |  129 mkts   3 lost
+    61-90 s       |  125 mkts  22 lost |  134 mkts  12 lost |  164 mkts   9 lost |  169 mkts   3 lost
+    91-120 s      |  138 mkts  21 lost |  127 mkts  13 lost |  139 mkts   4 lost |  150 mkts   1 lost
+    121-180 s     |  174 mkts  35 lost |  170 mkts  17 lost |  206 mkts   8 lost |  213 mkts   5 lost
+
+  KXHYPE15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |                |                |               
+    6-15 s        |                |   11 mkts   0 lost |   13 mkts   0 lost |   19 mkts   0 lost
+    16-30 s       |   21 mkts   5 lost |   31 mkts   2 lost |   39 mkts   1 lost |   54 mkts   1 lost
+    31-45 s       |   41 mkts   8 lost |   55 mkts   5 lost |   74 mkts   3 lost |   95 mkts   1 lost
+    46-60 s       |   71 mkts  13 lost |   85 mkts   7 lost |  101 mkts   3 lost |  133 mkts   2 lost
+    61-90 s       |  118 mkts  26 lost |  125 mkts  14 lost |  131 mkts   6 lost |  150 mkts   3 lost
+    91-120 s      |  129 mkts  26 lost |  138 mkts  14 lost |  140 mkts   8 lost |  169 mkts   5 lost
+    121-180 s     |  171 mkts  34 lost |  167 mkts  22 lost |  174 mkts  11 lost |  195 mkts   5 lost
+
+  KXNEAR15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |                |                |               
+    6-15 s        |                |                |   12 mkts   0 lost |   16 mkts   0 lost
+    16-30 s       |   18 mkts   2 lost |   26 mkts   2 lost |   35 mkts   0 lost |   44 mkts   0 lost
+    31-45 s       |   37 mkts   7 lost |   45 mkts   2 lost |   62 mkts   0 lost |   67 mkts   0 lost
+    46-60 s       |   58 mkts   9 lost |   65 mkts   3 lost |   92 mkts   1 lost |  110 mkts   1 lost
+    61-90 s       |   87 mkts  15 lost |   96 mkts   7 lost |  121 mkts   5 lost |  139 mkts   2 lost
+    91-120 s      |   99 mkts  14 lost |  110 mkts   8 lost |  138 mkts   7 lost |  147 mkts   4 lost
+    121-180 s     |  159 mkts  18 lost |  176 mkts  16 lost |  181 mkts   6 lost |  181 mkts   2 lost
+
+  KXSOL15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |                |                |   10 mkts   0 lost
+    6-15 s        |   13 mkts   1 lost |   17 mkts   1 lost |   27 mkts   1 lost |   36 mkts   1 lost
+    16-30 s       |   34 mkts   7 lost |   48 mkts   4 lost |   55 mkts   4 lost |   59 mkts   0 lost
+    31-45 s       |   53 mkts  10 lost |   56 mkts   4 lost |   62 mkts   1 lost |   80 mkts   1 lost
+    46-60 s       |   79 mkts  12 lost |   80 mkts   8 lost |  102 mkts   5 lost |  118 mkts   4 lost
+    61-90 s       |  128 mkts  32 lost |  139 mkts  19 lost |  156 mkts  12 lost |  158 mkts   3 lost
+    91-120 s      |  141 mkts  31 lost |  142 mkts  19 lost |  164 mkts   9 lost |  151 mkts   4 lost
+    121-180 s     |  192 mkts  41 lost |  185 mkts  24 lost |  193 mkts   8 lost |  177 mkts   2 lost
+
+  KXXRP15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |                |                |               
+    6-15 s        |                |                |   15 mkts   0 lost |   23 mkts   0 lost
+    16-30 s       |   25 mkts   0 lost |   34 mkts   0 lost |   46 mkts   0 lost |   60 mkts   1 lost
+    31-45 s       |   43 mkts   6 lost |   51 mkts   3 lost |   64 mkts   2 lost |   90 mkts   1 lost
+    46-60 s       |   66 mkts  10 lost |   72 mkts   7 lost |  108 mkts   2 lost |  141 mkts   0 lost
+    61-90 s       |  101 mkts  14 lost |  129 mkts   9 lost |  157 mkts   6 lost |  202 mkts   2 lost
+    91-120 s      |  111 mkts  18 lost |  140 mkts  10 lost |  170 mkts   7 lost |  194 mkts   3 lost
+    121-180 s     |  172 mkts  22 lost |  197 mkts  15 lost |  214 mkts   6 lost |  207 mkts   1 lost
+
+  KXZEC15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |                |   10 mkts   0 lost |   13 mkts   0 lost |   17 mkts   0 lost
+    6-15 s        |   19 mkts   3 lost |   19 mkts   2 lost |   17 mkts   1 lost |   18 mkts   0 lost
+    16-30 s       |   24 mkts   9 lost |   23 mkts   4 lost |   30 mkts   2 lost |   33 mkts   0 lost
+    31-45 s       |   39 mkts   6 lost |   41 mkts   3 lost |   47 mkts   1 lost |   55 mkts   1 lost
+    46-60 s       |   69 mkts  12 lost |   71 mkts   9 lost |   83 mkts   3 lost |  110 mkts   2 lost
+    61-90 s       |   93 mkts  18 lost |  104 mkts   9 lost |  129 mkts   5 lost |  150 mkts   4 lost
+    91-120 s      |  113 mkts  20 lost |  122 mkts   9 lost |  138 mkts   5 lost |  131 mkts   0 lost
+    121-180 s     |  179 mkts  31 lost |  182 mkts  17 lost |  172 mkts   2 lost |  154 mkts   1 lost
+
+  KXCOPPER15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |   21 mkts   8 lost |   22 mkts   8 lost |   35 mkts   4 lost |   75 mkts   3 lost
+    6-15 s        |   29 mkts   7 lost |   33 mkts   6 lost |   44 mkts   5 lost |   96 mkts   4 lost
+    16-30 s       |   43 mkts   7 lost |   50 mkts   5 lost |   53 mkts   5 lost |  109 mkts   3 lost
+    31-45 s       |   50 mkts   9 lost |   53 mkts   6 lost |   57 mkts   2 lost |  108 mkts   2 lost
+    46-60 s       |   54 mkts  10 lost |   50 mkts   7 lost |   56 mkts   4 lost |  107 mkts   1 lost
+    61-90 s       |   72 mkts  13 lost |   69 mkts   7 lost |   77 mkts   4 lost |  120 mkts   1 lost
+    91-120 s      |   75 mkts  15 lost |   84 mkts  12 lost |   77 mkts   4 lost |  116 mkts   2 lost
+    121-180 s     |   98 mkts  15 lost |  101 mkts   8 lost |   99 mkts   7 lost |  119 mkts   2 lost
+
+  KXGOLD15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |   15 mkts   2 lost |   20 mkts   1 lost |   26 mkts   0 lost |   34 mkts   0 lost
+    6-15 s        |   26 mkts   4 lost |   33 mkts   3 lost |   36 mkts   1 lost |   53 mkts   1 lost
+    16-30 s       |   39 mkts   8 lost |   46 mkts   7 lost |   47 mkts   4 lost |   56 mkts   3 lost
+    31-45 s       |   40 mkts  10 lost |   37 mkts   6 lost |   42 mkts   3 lost |   67 mkts   2 lost
+    46-60 s       |   43 mkts  11 lost |   41 mkts   7 lost |   67 mkts   5 lost |   79 mkts   4 lost
+    61-90 s       |   65 mkts  15 lost |   73 mkts   7 lost |   89 mkts   4 lost |   85 mkts   2 lost
+    91-120 s      |   77 mkts  14 lost |   81 mkts   6 lost |   91 mkts   1 lost |   74 mkts   0 lost
+    121-180 s     |   96 mkts  13 lost |  103 mkts   7 lost |  108 mkts   1 lost |  106 mkts   0 lost
+
+  KXNATGAS15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |   17 mkts   3 lost |   19 mkts   1 lost |   23 mkts   4 lost |   78 mkts   6 lost
+    6-15 s        |   18 mkts   7 lost |   28 mkts   5 lost |   50 mkts   6 lost |  124 mkts   7 lost
+    16-30 s       |   31 mkts  10 lost |   49 mkts   7 lost |   80 mkts   9 lost |  148 mkts   5 lost
+    31-45 s       |   43 mkts   9 lost |   65 mkts   7 lost |   93 mkts   6 lost |  146 mkts   6 lost
+    46-60 s       |   56 mkts  10 lost |   71 mkts   8 lost |   98 mkts   7 lost |  144 mkts   6 lost
+    61-90 s       |   84 mkts  15 lost |   95 mkts  11 lost |  106 mkts   8 lost |  130 mkts   3 lost
+    91-120 s      |   94 mkts  15 lost |   96 mkts   9 lost |   96 mkts   3 lost |  125 mkts   4 lost
+    121-180 s     |  112 mkts  20 lost |  118 mkts  11 lost |  117 mkts   8 lost |  102 mkts   3 lost
+
+  KXSILVER15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |   22 mkts   2 lost |   28 mkts   2 lost |   29 mkts   2 lost |   45 mkts   2 lost
+    6-15 s        |   30 mkts   4 lost |   31 mkts   5 lost |   45 mkts   5 lost |   42 mkts   2 lost
+    16-30 s       |   34 mkts   9 lost |   42 mkts   8 lost |   51 mkts   6 lost |   62 mkts   4 lost
+    31-45 s       |   37 mkts   9 lost |   49 mkts  11 lost |   67 mkts   4 lost |   60 mkts   2 lost
+    46-60 s       |   35 mkts  10 lost |   55 mkts   6 lost |   80 mkts   4 lost |   72 mkts   2 lost
+    61-90 s       |   76 mkts  11 lost |   91 mkts   9 lost |   91 mkts   3 lost |   82 mkts   1 lost
+    91-120 s      |   79 mkts  12 lost |   72 mkts   5 lost |   82 mkts   3 lost |   80 mkts   2 lost
+    121-180 s     |   93 mkts  18 lost |  100 mkts  10 lost |  107 mkts   2 lost |   80 mkts   0 lost
+
+  KXWTI15M
+    seconds left | 80-90c         | 90-95c         | 95-98c         | 98-99c        
+    0-5 s         |   17 mkts   1 lost |   25 mkts   2 lost |   36 mkts   0 lost |   50 mkts   0 lost
+    6-15 s        |   23 mkts   5 lost |   34 mkts   2 lost |   47 mkts   1 lost |   53 mkts   0 lost
+    16-30 s       |   41 mkts   5 lost |   53 mkts   3 lost |   53 mkts   0 lost |   51 mkts   0 lost
+    31-45 s       |   50 mkts   5 lost |   51 mkts   3 lost |   59 mkts   1 lost |   51 mkts   0 lost
+    46-60 s       |   55 mkts   9 lost |   58 mkts   6 lost |   59 mkts   1 lost |   60 mkts   1 lost
+    61-90 s       |   68 mkts  11 lost |   67 mkts   4 lost |   81 mkts   2 lost |   84 mkts   1 lost
+    91-120 s      |   69 mkts  11 lost |   72 mkts   6 lost |   87 mkts   4 lost |   80 mkts   1 lost
+    121-180 s     |  107 mkts  17 lost |  105 mkts   3 lost |  107 mkts   2 lost |   96 mkts   1 lost
+
+BY ET DAY-PART, COMMODITIES, buyers at 95-99c: markets / lost, by seconds left. Is the quiet session safer?
+
+  KXCOPPER15M
+    seconds left | night 00-08 ET     | US 08-14 ET        | late 14-24 ET     
+    0-5 s         |   49 mkts   4 lost |   18 mkts   0 lost |   43 mkts   3 lost
+    6-15 s        |   59 mkts   4 lost |   30 mkts   0 lost |   51 mkts   5 lost
+    16-30 s       |   59 mkts   3 lost |   44 mkts   0 lost |   59 mkts   5 lost
+    31-45 s       |   68 mkts   2 lost |   36 mkts   0 lost |   61 mkts   2 lost
+    46-60 s       |   62 mkts   2 lost |   41 mkts   0 lost |   60 mkts   3 lost
+    61-90 s       |   70 mkts   1 lost |   46 mkts   0 lost |   81 mkts   4 lost
+    91-120 s      |   64 mkts   1 lost |   45 mkts   1 lost |   84 mkts   4 lost
+    121-180 s     |   67 mkts   3 lost |   50 mkts   1 lost |  101 mkts   5 lost
+
+  KXGOLD15M
+    seconds left | night 00-08 ET     | US 08-14 ET        | late 14-24 ET     
+    0-5 s         |   25 mkts   0 lost |   11 mkts   0 lost |   24 mkts   0 lost
+    6-15 s        |   43 mkts   0 lost |   21 mkts   2 lost |   25 mkts   0 lost
+    16-30 s       |   39 mkts   2 lost |   19 mkts   2 lost |   45 mkts   3 lost
+    31-45 s       |   38 mkts   2 lost |   25 mkts   1 lost |   46 mkts   2 lost
+    46-60 s       |   49 mkts   4 lost |   35 mkts   2 lost |   62 mkts   3 lost
+    61-90 s       |   55 mkts   3 lost |   42 mkts   1 lost |   77 mkts   2 lost
+    91-120 s      |   57 mkts   0 lost |   36 mkts   0 lost |   72 mkts   1 lost
+    121-180 s     |   73 mkts   0 lost |   45 mkts   0 lost |   96 mkts   1 lost
+
+  KXNATGAS15M
+    seconds left | night 00-08 ET     | US 08-14 ET        | late 14-24 ET     
+    0-5 s         |   45 mkts   0 lost |   11 mkts   0 lost |   45 mkts  10 lost
+    6-15 s        |   63 mkts   0 lost |   29 mkts   0 lost |   82 mkts  13 lost
+    16-30 s       |   82 mkts   2 lost |   40 mkts   0 lost |  106 mkts  12 lost
+    31-45 s       |   75 mkts   1 lost |   52 mkts   0 lost |  112 mkts  11 lost
+    46-60 s       |   71 mkts   1 lost |   48 mkts   0 lost |  123 mkts  12 lost
+    61-90 s       |   74 mkts   1 lost |   55 mkts   1 lost |  107 mkts   9 lost
+    91-120 s      |   73 mkts   1 lost |   52 mkts   0 lost |   96 mkts   6 lost
+    121-180 s     |   76 mkts   4 lost |   49 mkts   0 lost |   94 mkts   7 lost
+
+  KXSILVER15M
+    seconds left | night 00-08 ET     | US 08-14 ET        | late 14-24 ET     
+    0-5 s         |   28 mkts   4 lost |   17 mkts   0 lost |   29 mkts   0 lost
+    6-15 s        |   27 mkts   3 lost |   21 mkts   2 lost |   39 mkts   2 lost
+    16-30 s       |   48 mkts   6 lost |   24 mkts   2 lost |   41 mkts   2 lost
+    31-45 s       |   58 mkts   2 lost |   27 mkts   2 lost |   42 mkts   2 lost
+    46-60 s       |   64 mkts   1 lost |   35 mkts   3 lost |   53 mkts   2 lost
+    61-90 s       |   66 mkts   0 lost |   41 mkts   1 lost |   66 mkts   3 lost
+    91-120 s      |   53 mkts   0 lost |   45 mkts   2 lost |   64 mkts   3 lost
+    121-180 s     |   60 mkts   0 lost |   45 mkts   1 lost |   82 mkts   1 lost
+
+  KXWTI15M
+    seconds left | night 00-08 ET     | US 08-14 ET        | late 14-24 ET     
+    0-5 s         |   33 mkts   0 lost |   13 mkts   0 lost |   40 mkts   0 lost
+    6-15 s        |   38 mkts   1 lost |   14 mkts   0 lost |   48 mkts   0 lost
+    16-30 s       |   38 mkts   0 lost |   11 mkts   0 lost |   55 mkts   0 lost
+    31-45 s       |   52 mkts   1 lost |   13 mkts   0 lost |   45 mkts   0 lost
+    46-60 s       |   52 mkts   0 lost |   17 mkts   0 lost |   50 mkts   2 lost
+    61-90 s       |   65 mkts   2 lost |   29 mkts   0 lost |   71 mkts   1 lost
+    91-120 s      |   62 mkts   2 lost |   36 mkts   0 lost |   69 mkts   3 lost
+    121-180 s     |   74 mkts   1 lost |   47 mkts   0 lost |   82 mkts   2 lost
 
 WHERE THE 90-98c BUYING HAPPENS, share of contracts by seconds left (which windows matter)
   KXBNB15M     0-5 s  10%  6-15 s   4%  16-30 s   8%  31-45 s  12%  46-60 s  13%  61-90 s  17%  91-120 s  15%  121-180 s  21%

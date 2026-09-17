@@ -103,6 +103,31 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 15:3xZ -- THE GRID BY MARKETS (rule 4) AND BY ET SESSION; cmdarm re-windowed (`RESULTS_actions.md` s7)
+
+Operator: *"Double check you like your commodities ideas, make sure there's
+nothing deeper."* There was. `pingrid.py` now keeps per cell, per ET
+day-part (from the ticker's clock), the markets touched and the markets
+where a buyer took the loser (`Acc.cellmk`, `markets_by_cell`, `daypart`;
+self-test plants one market/three trades and checks it counts once).
+
+- Gold 98-99c inside 15 s: 0.1% by TRADES was 53 mkts / 1 lost by MARKETS;
+  the loss lives in the COMEX session (08-14 ET 32/2; outside it 117/0).
+  Near window now skips 08-14 ET.
+- NEW: gold 98-99c at 91-180 s: 129 mkts, 0 lost -- the safest cell in the
+  table. Far window added to the paper arm.
+- WTI 95-99c to 60 s holds (153/3); 90-95c stops at 45 s (46-60 s 58/6).
+- Silver loses 5.4% of markets even at 0-5 s: negative control.
+- "Nobody selling" this morning: all six watched closes were at 99.7-99.9c.
+- Crypto by markets: 31-45 s 2.8%/0.9% (at or under model-less break-even);
+  46-60 s 3.6%/1.8% (AT break-even) -> the early-60 arm is the only judge.
+- `cmdarm.py` BANDS is now a LIST of windows per series with an ET
+  skip-hours element; one paper bet per market per WINDOW; `look` records
+  span every window. Restarted 15:31Z, log `cmdarm-20260917T153102Z.jsonl`,
+  start record `version: grid-2-by-markets`.
+- The rebuild was memory-killed at 50/130 hours (background wrapper); the
+  checkpoint resumed in the foreground. Foreground for walks, from now on.
+
 ## 15:1xZ -- THE GRID, THE WOBBLE, AND WHAT WAS DONE WITH THEM (`results/RESULTS_actions.md`)
 
 `research/pingrid.py` (tape, 5 days, aggregated in place after two memory

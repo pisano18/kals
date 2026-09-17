@@ -83,6 +83,38 @@ CRYPTO = {"KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M", "KXDOGE15M", "KXBNB15M
           "KXZEC15M", "KXHYPE15M", "KXNEAR15M", "KXADA15M", "KXBCH15M", "KXTON15M"}
 
 
+DAYPARTS = [("night 00-08 ET", 0, 8), ("US 08-14 ET", 8, 14), ("late 14-24 ET", 14, 24)]
+
+
+def daypart(tk):
+    """ET day-part of the close, read from the TICKER's clock -- tickers encode
+    ET, not UTC (`26SEP161000` is 10:00 ET). No conversion, no DST trap.
+    Gold and silver's busy session is COMEX 08:20-13:30 ET; oil's is NYMEX
+    09:00-14:30. Outside them the Pyth price is quieter, or thinner."""
+    try:
+        hour = int(tk.split("-")[1][7:9])
+    except (IndexError, ValueError):
+        return "?"
+    for name, lo, hi in DAYPARTS:
+        if lo <= hour < hi:
+            return name
+    return "?"
+
+
+def markets_by_cell(acc, ser, dp=None):
+    """{(tb, pb): [markets touched, markets where a buyer took the loser]},
+    summed over day-parts unless one is named."""
+    out = collections.defaultdict(lambda: [0, 0])
+    for (s, d, tb, pb), mk in acc.cellmk.items():
+        if s != ser or (dp is not None and d != dp):
+            continue
+        # a market can appear in the cell under two day-parts only if dp is
+        # None and the SAME ticker... it cannot: one ticker, one close.
+        out[(tb, pb)][0] += len(mk)
+        out[(tb, pb)][1] += sum(mk.values())
+    return out
+
+
 def outcome_of(m):
     r = m.get("result")
     if isinstance(r, str):
@@ -185,10 +217,16 @@ class Acc:
         # favourite LOST, so every new-side buyer in it was right by
         # construction, and it printed 0.0% everywhere. That was leakage.
         self.wob = {}                   # tk -> (min_fav_price, tau_at_min)
+        # RULE 4: the grid above counts TRADES, and hundreds of trades share
+        # one settlement. Per cell, per ET day-part, the MARKETS touched and
+        # how many of them had a buyer of the losing side. A 10% cell built
+        # from three markets is one market.
+        self.cellmk = collections.defaultdict(dict)   # (ser, daypart, tb, pb) -> {tk: lost}
 
     def add(self, r):
         tb = band_of(r["tau"], TAU_BANDS)
         pb = band_of(r["paid"], PX_BANDS)
+        tk = r["tk"]
         if tb is not None and pb is not None:
             c = self.grid[(r["ser"], tb, pb)]
             c[0] += 1
@@ -196,7 +234,8 @@ class Acc:
             c[2] += r["n"]
             c[3] += 0 if r["won"] else r["n"]
             c[4] += r["paid"]
-        tk = r["tk"]
+            d = self.cellmk[(r["ser"], daypart(tk), tb, pb)]
+            d[tk] = d.get(tk, 0) | int(not r["won"])
         if tk not in self.fav and abs(r["tau"] - FAV_TAU) <= 15 and r["paid"] >= 0.90:
             fav_won = r["won"]              # this buyer bought the favourite; did it win?
             self.fav[tk] = (r["side"], fav_won)
@@ -231,6 +270,7 @@ class Acc:
                 "fav": {tk: list(v) for tk, v in self.fav.items()},
                 "late": {tk: v for tk, v in self.late.items() if tk in self.fav and not self.fav[tk][1]},
                 "wob": {tk: list(v) for tk, v in self.wob.items()},
+                "cellmk": [[k[0], k[1], list(k[2]), list(k[3]), v] for k, v in self.cellmk.items()],
                 "markets": [[k[0], k[1], v] for k, v in self.markets.items()]}
 
     @classmethod
@@ -241,6 +281,8 @@ class Acc:
         a.fav = {tk: tuple(v) for tk, v in d.get("fav", {}).items()}
         a.late = collections.defaultdict(list, {tk: [tuple(x) for x in v] for tk, v in d.get("late", {}).items()})
         a.wob = {tk: tuple(v) for tk, v in d.get("wob", {}).items()}
+        for ser, dp, tb, pb, v in d.get("cellmk", []):
+            a.cellmk[(ser, dp, tuple(tb), tuple(pb))] = dict(v)
         for ser, k, v in d.get("markets", []):
             a.markets[ser, k] = v
         return a
@@ -349,6 +391,39 @@ def report(acc, out=sys.stdout):
                     continue
                 cells.append("%-22s" % ("%5d %5.1f%% %+5.2fc" % (c[0], 100 * c[1] / c[0], 100 * cell_ev(c))))
             p("    %-11s   | " % tau_label(tb) + " | ".join(cells))
+    p("")
+    p("THE SAME GRID BY MARKETS (rule 4): markets with a buyer in the cell / markets where such a buyer took the LOSER.")
+    p("  A cell that reads 10% above but 1/3 here is ONE market. Blank = under 10 markets.")
+    for ser in sorted(g, key=lambda s: (s not in CRYPTO, s)):
+        mc = markets_by_cell(acc, ser)
+        p("")
+        p("  %s" % ser)
+        p("    seconds left | " + " | ".join("%-14s" % ("%.0f-%.0fc" % (100 * a, 100 * b)) for a, b in PX_BANDS))
+        for tb in TAU_BANDS:
+            cells = []
+            for pb in PX_BANDS:
+                c = mc.get((tb, pb))
+                if not c or c[0] < 10:
+                    cells.append("%-14s" % "")
+                else:
+                    cells.append("%-14s" % ("%4d mkts %3d lost" % (c[0], c[1])))
+            p("    %-11s   | " % tau_label(tb) + " | ".join(cells))
+    p("")
+    p("BY ET DAY-PART, COMMODITIES, buyers at 95-99c: markets / lost, by seconds left. Is the quiet session safer?")
+    for ser in sorted(g, key=lambda s: (s not in CRYPTO, s)):
+        if ser in CRYPTO:
+            continue
+        p("")
+        p("  %s" % ser)
+        p("    seconds left | " + " | ".join("%-18s" % name for name, _lo, _hi in DAYPARTS))
+        for tb in TAU_BANDS:
+            cells = []
+            for name, _lo, _hi in DAYPARTS:
+                mc = markets_by_cell(acc, ser, dp=name)
+                n = sum(mc.get((tb, pb), [0, 0])[0] for pb in PX_BANDS[2:])
+                l = sum(mc.get((tb, pb), [0, 0])[1] for pb in PX_BANDS[2:])
+                cells.append("%-18s" % ("%4d mkts %3d lost" % (n, l) if n >= 10 else ""))
+            p("    %-11s   | " % tau_label(tb) + " | ".join(cells))
     # where the volume sits by tau, per series, at 90-98c (the pool we compete for)
     p("")
     p("WHERE THE 90-98c BUYING HAPPENS, share of contracts by seconds left (which windows matter)")
@@ -427,6 +502,15 @@ def selftest():
         acc.add(r)
     c = grid(acc)["KXBTC15M"][((16, 31), (0.95, 0.98))]
     ck(c[0] == 3 and c[1] == 1 and c[2] == 50.0 and c[3] == 10.0, "grid: 3 trades, 1 lost, 50 contracts of which 10 lost")
+    ck(daypart(tk) == "US 08-14 ET" and daypart("KXGOLD15M-26SEP160345-00") == "night 00-08 ET"
+       and daypart("KXWTI15M-26SEP161400-00") == "late 14-24 ET" and daypart("junk") == "?",
+       "day-part is read from the ticker's ET clock: 10:00 is US, 03:45 night, 14:00 late")
+    mc = markets_by_cell(acc, "KXBTC15M")
+    ck(mc[((16, 31), (0.95, 0.98))] == [1, 1] and len(mc) == 1,
+       "RULE 4: those 3 trades are ONE market, and it counts as lost once because one buyer took the loser")
+    ck(markets_by_cell(acc, "KXBTC15M", dp="US 08-14 ET")[((16, 31), (0.95, 0.98))] == [1, 1]
+       and not markets_by_cell(acc, "KXBTC15M", dp="night 00-08 ET"),
+       "...and it sits in the US day-part only")
     ev = cell_ev(c)
     q, pm = 1 / 3, (0.95 + 0.95 + 0.96) / 3
     ck(abs(ev - ((1 - q) * (1 - pm) - q * pm - fee(pm))) < 1e-12, "cell EV = (1-q)(1-p) - q p - fee, at the cell's own mean price")
@@ -475,8 +559,9 @@ def selftest():
        "wobble to 50-70c: 1 market, favourite lost; stayed at 90c+: 1 market, favourite won -- conditioned on the price, not the outcome")
     # the accumulator survives a round trip through the cache
     acc4 = Acc.from_json(json.loads(json.dumps(acc6.to_json())))
-    ck(wobble(acc4) == wobble(acc6) and grid(acc4) == grid(acc6) and acc4.fav == acc6.fav,
-       "the cache round-trip preserves the grid, the favourites and the wobbles")
+    ck(wobble(acc4) == wobble(acc6) and grid(acc4) == grid(acc6) and acc4.fav == acc6.fav
+       and markets_by_cell(acc4, "KXXRP15M") == markets_by_cell(acc6, "KXXRP15M") and acc4.cellmk == acc6.cellmk,
+       "the cache round-trip preserves the grid, the favourites, the wobbles and the per-cell market sets")
     print("pingrid selftest: OK")
 
 

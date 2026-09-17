@@ -91,26 +91,61 @@ sys.path.append(r"C:\Users\Joe\AppData\Local\Temp\kals-work")
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 
-# series -> (tau_lo, tau_hi, price_lo, price_hi), from the GRID
-# (research/pingrid.py, results/RESULTS_grid.md, 5 days, 300 settled markets
-# per series, tape population). Each series gets its own window because they
-# behave differently -- the operator's question, and the grid's answer:
+# series -> LIST of windows (tau_lo, tau_hi, price_lo, price_hi, skip_hours),
+# from the GRID (research/pingrid.py, results/RESULTS_grid.md, 5 days, 300
+# settled markets per series, tape population). Each series gets its own
+# windows because they behave differently -- the operator's question.
 #
-#   GOLD    0-5 s: 90-99c lose 0.0-0.5%. 6-15 s: 90-95c 3.5%, 95-98c 2.1%,
-#           98-99c 0.1%. 16-30 s: 95-98c loses 10.3%. -> (2, 15) at 90-99c.
-#           The 98-99c column is NEW: 0.0-0.1% lost on 3,700 trades, +1.1c
-#           a contract, and by far the deepest.
-#   WTI     good at EVERY horizon to 60 s: 95-99c 0.0-1.5% from 0 to 60 s,
-#           90-95c 2-4% at 16-45 s. -> (2, 60) at 90-99c. The widest window
-#           of anything we trade, including crypto.
-#   SILVER  only 0-5 s at 90-95c (2.3%) and 98-99c (0.4-0.9%) pay; 95-98c
-#           loses at every horizon. Kept as the CONTROL at (2, 5), 90-99c.
+# REVISED 2026-09-17 ~15:4xZ on the grid's BY-MARKETS table (rule 4: the
+# first cut counted trades, and three huge markets can make a cell look
+# safe). Markets touched / markets where a buyer took the loser:
+#
+#   GOLD    0-15 s at 95-99c: night 68/0, late 49/0, US 08-14 ET 32/2 --
+#           the COMEX session is where gold loses, so the near window SKIPS
+#           08-14 ET. 16-60 s: 3-8% of markets lose -> dead, as before.
+#           NEW, the safest cell in the whole table: 98-99c with 91-180 s
+#           left, 129 markets, 0 lost (~26 a day). A gold market already at
+#           98c+ two minutes out is a different animal from one that only
+#           got there in the last 30 s. -> a second, FAR window.
+#   WTI     95-99c: 0-60 s 153 markets, 3 lost (2.0%; break-even ~3%).
+#           90-95c: 2-45 s 4-6% (marginal), 46-60 s 58/6 = 10% -> the
+#           90-95c window stops at 45 s.
+#   SILVER  loses even at 0-5 s by markets (95-99c: 74/4 = 5.4%). Kept as
+#           the NEGATIVE CONTROL at (2, 5): if it wins in paper, the arm is
+#           reading the world wrong.
 #   COPPER, NATGAS: negative at nearly every cell. Not traded.
+#
+# skip_hours is an ET hour range [lo, hi) read from the TICKER's clock, which
+# encodes ET (`26SEP171100` is 11:00 ET); None = every hour.
 BANDS = {
-    "KXGOLD15M":   (2, 15, 0.90, 0.99),
-    "KXWTI15M":    (2, 60, 0.90, 0.99),
-    "KXSILVER15M": (2, 5, 0.90, 0.99),
+    "KXGOLD15M":   [(2, 15, 0.90, 0.99, (8, 14)), (91, 180, 0.98, 0.99, None)],
+    "KXWTI15M":    [(2, 60, 0.95, 0.99, None), (2, 45, 0.90, 0.95, None)],
+    "KXSILVER15M": [(2, 5, 0.90, 0.99, None)],
 }
+
+
+def hour_et(tk):
+    """ET hour of the close, from the ticker. None if unreadable."""
+    try:
+        return int(tk.split("-")[1][7:9])
+    except (IndexError, ValueError):
+        return None
+
+
+def band_open(band, tau, hour=None):
+    if not (band[0] <= tau <= band[1]):
+        return False
+    skip = band[4] if len(band) > 4 else None
+    if skip and hour is not None and skip[0] <= hour < skip[1]:
+        return False
+    return True
+
+
+def span(bands):
+    """(earliest tau_lo, latest tau_hi) over a series' windows, for the looks."""
+    return min(b[0] for b in bands), max(b[1] for b in bands)
+
+
 PRICE_LO = 0.90          # defaults, used when a series has no entry
 PRICE_HI = 0.98
 MAX_BOOK_AGE_MS = 2500
@@ -120,21 +155,22 @@ MAX_PER_CLOSE = 1             # one paper bet per market per close
 
 
 def decide(best, tau, band, price_lo=None, price_hi=None,
-           max_age=MAX_BOOK_AGE_MS):
+           max_age=MAX_BOOK_AGE_MS, hour=None):
     """(want, price, size) to buy, or None.
 
     The rule: inside the series' time band, if either side's ASK sits in the
     price window, buy that side. At most one side can qualify, because the two
     asks sum to about 100c -- so there is never a choice to get wrong.
-    `band` is (tau_lo, tau_hi) or (tau_lo, tau_hi, price_lo, price_hi); an
-    explicit price_lo/price_hi argument wins over the band's.
+    `band` is (tau_lo, tau_hi) or (tau_lo, tau_hi, price_lo, price_hi[, skip_hours]);
+    an explicit price_lo/price_hi argument wins over the band's. `hour` is the
+    close's ET hour, checked against skip_hours.
     """
     if not best or best.get("suspect"):
         return None
     age = best.get("age_ms")
     if age is None or age > max_age:
         return None
-    if not (band[0] <= tau <= band[1]):
+    if not band_open(band, tau, hour):
         return None
     if price_lo is None:
         price_lo = band[2] if len(band) > 2 else PRICE_LO
@@ -258,13 +294,13 @@ def selftest():
        "so is a NO ask at 93c -- the side is whichever one is expensive")
     ck(decide(book(yes_ask=0.99), 10, band) is None,
        "NULL: 99c is above the default window; the win no longer pays for the fee")
-    ck(decide(book(yes_ask=0.985), 10, BANDS["KXGOLD15M"]) == ("yes", 0.985, 50.0),
+    ck(decide(book(yes_ask=0.985), 10, BANDS["KXGOLD15M"][0]) == ("yes", 0.985, 50.0),
        "...but GOLD's own window runs to 99c: the grid found 98-99c loses 0.0-0.1% inside 15 s")
-    ck(decide(book(yes_ask=0.995), 10, BANDS["KXGOLD15M"]) is None,
+    ck(decide(book(yes_ask=0.995), 10, BANDS["KXGOLD15M"][0]) is None,
        "NULL: 99.5c is above even GOLD's window")
-    ck(decide(book(yes_ask=0.95), 55, BANDS["KXWTI15M"]) == ("yes", 0.95, 50.0),
+    ck(decide(book(yes_ask=0.95), 55, BANDS["KXWTI15M"][0]) == ("yes", 0.95, 50.0),
        "WTI's window runs to 60 s: the grid found 95-99c loses 0.0-1.5% at every horizon to 60")
-    ck(decide(book(yes_ask=0.95), 55, BANDS["KXGOLD15M"]) is None,
+    ck(decide(book(yes_ask=0.95), 55, BANDS["KXGOLD15M"][0]) is None,
        "NULL: 55 s is outside GOLD's window, where 95-98c loses 10%")
     ck(decide(book(yes_ask=0.95), 10, (2, 15), price_hi=0.94) is None,
        "an explicit price window overrides the band's")
@@ -311,15 +347,37 @@ def selftest():
        "the summary splits by series, which is the whole comparison")
     ck(not summarise([]), "NULL: nothing scored -> nothing reported")
 
-    # the bands are the tape's, and GOLD's stops before the band it loses in
-    ck(BANDS["KXGOLD15M"][:2] == (2, 15) and BANDS["KXWTI15M"][:2] == (2, 60) and BANDS["KXSILVER15M"][:2] == (2, 5),
-       "GOLD stops at 15 s (95-98c loses 10.3% at 16-30 s); WTI runs to 60 s; SILVER, the control, to 5 s")
-    ck(all(b[3] == 0.99 for b in BANDS.values()) and PRICE_HI == 0.98,
-       "every traded series runs to 99c on the grid's evidence; the DEFAULT stays at the live bot's 98c")
+    # the windows are the grid's BY-MARKETS table (rule 4), one list per series
+    g_near, g_far = BANDS["KXGOLD15M"]
+    ck(g_near[:2] == (2, 15) and g_near[4] == (8, 14) and g_far[:4] == (91, 180, 0.98, 0.99),
+       "GOLD: near window 2-15 s skipping the COMEX session 08-14 ET (32 mkts/2 lost there, 117/0 outside); "
+       "far window 91-180 s at 98-99c (129 mkts, 0 lost)")
+    ck(hour_et("KXGOLD15M-26SEP171100-00") == 11 and hour_et("KXGOLD15M-26SEP170345-45") == 3 and hour_et("junk") is None,
+       "the close's ET hour is read from the ticker's own clock")
+    ck(decide(book(yes_ask=0.95), 10, g_near, hour=11) is None and decide(book(yes_ask=0.95), 10, g_near, hour=3) == ("yes", 0.95, 50.0)
+       and decide(book(yes_ask=0.95), 10, g_near, hour=14) == ("yes", 0.95, 50.0),
+       "NULL at 11:00 ET, a bet at 03:00 and at 14:00: the skip is [8, 14)")
+    ck(decide(book(yes_ask=0.985), 120, g_far, hour=11) == ("yes", 0.985, 50.0) and decide(book(yes_ask=0.97), 120, g_far) is None
+       and decide(book(yes_ask=0.985), 60, g_far) is None,
+       "the far window buys 98.5c at 120 s in any hour, refuses 97c there, and refuses 60 s (16-60 s loses 3-8% of markets)")
+    w_hi, w_lo = BANDS["KXWTI15M"]
+    ck(w_hi[:4] == (2, 60, 0.95, 0.99) and w_lo[:4] == (2, 45, 0.90, 0.95)
+       and decide(book(yes_ask=0.92), 55, w_lo) is None and decide(book(yes_ask=0.92), 40, w_lo) == ("yes", 0.92, 50.0)
+       and decide(book(yes_ask=0.96), 55, w_hi) == ("yes", 0.96, 50.0),
+       "WTI: 95-99c to 60 s (153 mkts, 3 lost); 90-95c only to 45 s (46-60 s: 58 mkts, 6 lost)")
+    ck(BANDS["KXSILVER15M"] == [(2, 5, 0.90, 0.99, None)],
+       "SILVER stays as the NEGATIVE control: by markets it loses 5.4% even at 0-5 s")
+    ck(span(BANDS["KXGOLD15M"]) == (2, 180) and span(BANDS["KXWTI15M"]) == (2, 60),
+       "the look records span every window of the series")
+    ck(all(max(b[3] for b in v) == 0.99 for v in BANDS.values()) and PRICE_HI == 0.98,
+       "every traded series has a window to 99c on the grid's evidence; the DEFAULT stays at the live bot's 98c")
     ck("KXCOPPER15M" not in BANDS and "KXNATGAS15M" not in BANDS,
        "COPPER and NATGAS are not traded: negative in nearly every grid cell")
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
     body = src[:src.index("def selftest(")]
+    loop = src[src.index("def main("):]
+    ck("hour=hour" in loop and "hour_et(tk)" in loop and "per_close[(tk, bi)]" in loop,
+       "the trade loop passes the close's ET hour into decide and limits bets per market per WINDOW")
     for bad in ("pintake", "ordercli", "post_only", "/portfolio/orders"):
         ck(bad not in body,
            "PAPER ONLY: %r appears nowhere in the working code" % bad)
@@ -354,8 +412,8 @@ def main():
         kw["t"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         fh.write(json.dumps(kw) + "\n")
 
-    rec("start", series=a.series, bands={k: list(v) for k, v in BANDS.items()},
-        price_lo=PRICE_LO, price_hi=PRICE_HI, size=SIZE, mode="paper", version="grid-1")
+    rec("start", series=a.series, bands={k: [list(b) for b in v] for k, v in BANDS.items()},
+        price_lo=PRICE_LO, price_hi=PRICE_HI, size=SIZE, mode="paper", version="grid-2-by-markets")
     print("cmdarm PAPER -- %s | bands %s | log %s"
           % (", ".join(a.series), {k: BANDS[k] for k in a.series}, os.path.basename(log)), flush=True)
 
@@ -401,7 +459,7 @@ def main():
             # on each side seen INSIDE the band and the tau it was seen at. So
             # "why no bet on that close" is answerable from the log instead of
             # guessed -- three closes passed with one bet before this existed.
-            lo, hi = BANDS.get(ser, (2, 15))[:2]
+            lo, hi = span(BANDS.get(ser, [(2, 15)]))
             lk = looks.setdefault(tk, {"ser": ser, "close": close_s, "yes": None, "no": None,
                                        "looks": 0, "fresh": 0})
             if best and lo <= tau <= hi:
@@ -430,22 +488,27 @@ def main():
                 rec("look", ticker=tk, series=ser, looks=lk["looks"], fresh=lk["fresh"],
                     winner_side_ask=lk["yes"] or lk["no"],
                     side="yes" if lk["yes"] else ("no" if lk["no"] else None),
-                    nobody_selling=offered is None, bet=per_close[tk] > 0)
-            if per_close[tk] >= MAX_PER_CLOSE:
-                continue
-            d = decide(best, tau, BANDS.get(ser, (2, 15)))
-            if not d:
-                continue
-            want, px, sz = d
-            n = min(SIZE, sz)
-            per_close[tk] += 1
-            bet = {"ticker": tk, "series": ser, "want": want, "price": px,
-                   "n": n, "tau": tau, "offer": sz,
-                   "age_ms": best.get("age_ms")}
-            bets.append(bet)
-            rec("bet", **bet)
-            print("  BET %s tau=%2ds %s @%.4f  offer %.0f  taking %.0f"
-                  % (tk, tau, want.upper(), px, sz, n), flush=True)
+                    nobody_selling=offered is None,
+                    bet=any(per_close[(tk, i)] > 0 for i in range(len(BANDS.get(ser, [(2, 15)])))))
+            hour = hour_et(tk)
+            for bi, band in enumerate(BANDS.get(ser, [(2, 15)])):
+                # one paper bet per market per WINDOW: gold's far window and
+                # its near window are different bets on the same market
+                if per_close[(tk, bi)] >= MAX_PER_CLOSE:
+                    continue
+                d = decide(best, tau, band, hour=hour)
+                if not d:
+                    continue
+                want, px, sz = d
+                n = min(SIZE, sz)
+                per_close[(tk, bi)] += 1
+                bet = {"ticker": tk, "series": ser, "want": want, "price": px,
+                       "n": n, "tau": tau, "offer": sz, "band": bi,
+                       "window": list(band[:4]), "age_ms": best.get("age_ms")}
+                bets.append(bet)
+                rec("bet", **bet)
+                print("  BET %s tau=%3ds %s @%.4f  offer %.0f  taking %.0f  window %d"
+                      % (tk, tau, want.upper(), px, sz, n, bi), flush=True)
 
         # settle anything whose close passed at least 90 s ago
         due = [t for t, when in pending.items() if time.time() - when > 90]
