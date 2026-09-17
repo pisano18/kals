@@ -34,6 +34,33 @@ for a specific past result.** `HANDOFF_2026-09-14.md` is the previous handoff.
 | depth floor | **MIN_FILL_FRAC 0** -- a thin book is taken rather than skipped (A28) |
 | sweep | on. Swept fills are 62 contracts at the median against 20 unswept, at the SAME 2.4c per contract and a LOWER loss rate |
 
+## COMMODITIES, as of 2026-09-17 ~21:4xZ -- ONE CELL LIVE
+
+**Live: `research/cmdlive.py`, WTI only, the last 15 seconds, $10 a trade.**
+Stops at $25 net down or 4 losses; $300 account floor; one position per market.
+Not in `boot_all.ps1` and never will be without a decision -- a money process
+should not return from a reboot on its own. To stop it: write
+`results/cmdlive.stop`. To start it: delete that file and launch by hand.
+
+**Everything else is paper** (`research/cmdarm.py`, all five series, every
+window, including `anti-silver-mid` which exists to lose).
+
+**The day's record, and the lesson.** 32 settled, 29 won, 3 lost, **-$57.84**.
+All three losses came from far or boundary windows (180 s, 180 s, and exactly
+60 s). Two separate defects were found and fixed along the way: one bet per
+WINDOW instead of per MARKET (which turned one adverse market into two losses,
+-$58.84), and a committed-stake ledger that never released and silently jammed
+the wire.
+
+**THE REAL LESSON, and it outranks any window:** every commodity window is
+backed by tape plus six to seventeen live bets. **A sample that small cannot
+distinguish a good window from a bad one.** On 2026-09-17 I recommended the
+close band on three live losses, then twenty minutes later produced paper data
+showing the close band was the worst performer, and both readings were noise.
+The operator's call -- shrink to the single best-evidenced cell and paper-trade
+the rest -- is the correct response to that, and the next session should resist
+re-tuning the live window on anything under ~60 clean fills.
+
 ## WHAT CHANGED 2026-09-17 (newest first)
 
 - **The commodity penny test is LIVE-CAPABLE**, `research/cmdlive.py`, on the
