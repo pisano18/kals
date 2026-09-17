@@ -584,6 +584,17 @@ def selftest():
        "NULL: an unparseable fill releases nothing rather than guessing")
     _s0 = open(os.path.abspath(__file__), encoding="utf-8").read()
     _lp2 = _s0[_s0.rindex("def " + "trade_loop("):_s0.rindex("def " + "main(")]
+    # ONE POSITION PER MARKET. The windows look at the SAME binary outcome, so a
+    # second bet doubles the stake on one event and an opposite-side bet locks a
+    # loss. This cost $58.84 on one oil market before the check existed.
+    ck("held[tk] = want" in _lp2 and "if held.get(tk) is not None:" in _lp2,
+       "the loop claims a market on the first FILL and refuses every later "
+       "window on that ticker, whichever side it wants")
+    ck(_lp2.index("if held.get(tk) is not None:") < _lp2.index("d = cmdarm.decide("),
+       "...and it does so BEFORE deciding, so a second window cannot even price")
+    ck("held[tk] = want" in _lp2.split("if filled > 0:")[1][:600],
+       "the claim is made on a FILL, not on an attempt -- a refused order must "
+       "not lock a market out")
     ck("release(t, mine)" in _lp2,
        "and the trade loop actually CALLS it on settlement -- a release nothing "
        "reaches is the leak with extra steps")
@@ -609,6 +620,7 @@ def trade_loop(state, series, minutes, rec, dry=False):
     book = livebook.LiveBook().start()
     watching, pend, per_close, looked, bets = {}, {}, collections.Counter(), set(), []
     said = set()            # (ticker, window, reasons) already reported
+    held = {}               # ticker -> the side we already hold. ONE per market.
     last_disc, last_bal, last_beat, balance = 0.0, 0.0, 0.0, None
     end = time.time() + minutes * 60
     while time.time() < end:
@@ -668,7 +680,28 @@ def trade_loop(state, series, minutes, rec, dry=False):
                     bet=any(per_close[(tk, i)] for i in range(len(bands))))
             hour = cmdarm.hour_et(tk)
             for bi, band in enumerate(bands):
-                if per_close[(tk, bi)] >= 1:
+                # ONE POSITION PER MARKET, NOT PER WINDOW.
+                #
+                # 2026-09-17: KXWTI15M-26SEP171615-15 took NO at 180 s (31
+                # contracts, 94c) and NO AGAIN at 60 s (30 contracts, 98.5c)
+                # through two different windows, then YES at 23 s. The market
+                # settled YES. ONE adverse event became TWO losses, -$58.84,
+                # and the day's -$53 was almost entirely this.
+                #
+                # The windows are not independent opportunities. They are
+                # different moments to look at the SAME binary outcome, so a
+                # second bet doubles the stake on one event rather than
+                # diversifying it -- and a bet on the OTHER side locks in a
+                # guaranteed loss on one leg. `cmdlive` has no hedge logic, so
+                # the opposite side is refused outright rather than treated as
+                # one. The crypto bot has a `both_sides` gate for exactly this;
+                # this file had nothing.
+                if held.get(tk) is not None:
+                    k = (tk, "held")
+                    if k not in said:
+                        said.add(k)
+                        rec("one_per_market", ticker=tk, series=ser,
+                            holding=held[tk], window=cmdarm.label(band), tau=tau)
                     continue
                 d = cmdarm.decide(best, tau, band, hour=hour)
                 if not d:
@@ -716,6 +749,11 @@ def trade_loop(state, series, minutes, rec, dry=False):
                 if filled > 0:
                     state.fills += 1
                     state.spent += cost * filled
+                    # CLAIM THE MARKET. Every later window on this ticker is
+                    # refused from here, whichever side it wants: a same-side
+                    # bet doubles one event's stake, an opposite-side bet locks
+                    # in a loss on one leg.
+                    held[tk] = want
                     bets.append({"ticker": tk, "series": ser, "want": want,
                                  "price": cost, "n": filled, "tau": tau, "band": bi})
                 rec("order", ticker=tk, series=ser, tau=tau, want=want,
