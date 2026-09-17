@@ -1,3 +1,53 @@
+# v-early-full -- 2026-09-17 ~19:5xZ -- LIVE: the 31-45 s leg becomes a FULL bet
+
+**Operator: "Bump 45 seconds up to normal price as well."** `restart_bot.ps1`
+now passes `--early-tau 45 --early-frac 1.0` (was `0.333`, and `0.5` before
+that on the same day).
+
+**What the bot does differently.** A market that passes every gate with 31-45
+seconds left is now bought at **full size**, not a third. The top-up leg
+becomes a no-op by construction: `staged_take` returns `size - early_held`,
+which is zero once the position is already full. **One early leg per market is
+still enforced** by the `early_once` refusal, so this cannot double up, and
+`MAX_PER_MARKET` is untouched. In effect `TAU_MAX` is 45 for the first bet.
+
+**What supports it.**
+
+- The flat tau-45 paper arm is the same configuration and has **33 settled
+  closes, 0 losses, +$10.17**, with 22 NEW markets (ones that exist only
+  because of 31-45 s) and **0 lost**. It takes +230% more closes than its
+  control.
+- On the tape BY MARKETS (rule 4), buyers of 95-98c lost **2.8% at 31-45 s
+  (606 markets)** against **3.9% at 16-30 s (389 markets)**; at 98-99c it is
+  0.9% (751) against 1.4% (483). **The earlier window is not the worse one on
+  the market's own record.** Break-even is ~3.4% at 96.5c.
+- Model error at 31-45 s is 0.058% of moments against 0.021% at 21-30 s
+  (`pinbefore`, 14,261 closes, index only). Both are ~1/200th of our 4.66%
+  live loss rate, so **the risk here is adverse selection, not arithmetic.**
+- Live so far on the staged third: 3 early legs, 3 won.
+
+**What it gives up, stated because it is real.** At a third we took a foot in
+the door early and completed at 30 s when more of the settlement average was
+locked. At full size we commit at the earlier, worse-information moment and
+cannot improve the price afterwards. The compensating fact is that the tape
+says 31-45 s is not a worse window; the uncompensated risk is that the tape
+cannot see adverse selection, which is precisely what killed every optimistic
+tape number this project has produced (rule 5, 31x).
+
+**THE BAR IS UNCHANGED AND STILL BINDING** -- `results/PREREG_staged.md`
+stage 2, scored over the first 40 live closes carrying an early leg:
+**revert at 3 losses in 40, or 2 in the first 15.** Three closes are in.
+
+**REVERT:**
+
+```
+git checkout HEAD~1 -- restart_bot.ps1
+powershell -File C:\kals-repoestart_bot.ps1
+```
+
+or edit `--early-frac 1.0` back to `0.333` and restart. Setting it to `0`
+disables the early leg entirely and returns the bot to TAU_MAX 30.
+
 # v-cmdpenny -- 2026-09-17 16:14Z -- LIVE: the COMMODITY PENNY TEST, gold and oil, ONE contract
 
 **Operator, 2026-09-17: "I'm ready for commodity penny testing"**, and then
@@ -61,7 +111,8 @@ come back from a reboot without a human deciding.
 **REVERT -- either alone is enough:**
 
 ```
-type nul > C:\kals-repoesults\cmdlive.stop
+type nul > C:\kals-repo
+esults\cmdlive.stop
 powershell -Command "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | ? { $_.CommandLine -like '*cmdlive.py*' } | % { Stop-Process -Id $_.ProcessId -Force }"
 ```
 

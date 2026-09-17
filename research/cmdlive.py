@@ -62,8 +62,22 @@ sys.path.append(r"C:\Users\Joe\AppData\Local\Temp\kals-work")
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 
 SIGNOFF_PHRASE = "commodity penny test"
-SIZE = 1.0                  # contracts per order. The whole point.
-MAX_SIZE = 5.0              # --size may never exceed this
+# SCALED UP 2026-09-17 ~18:2xZ on the operator's instruction: "up the live
+# commodity trading to 30 dollars size per trade. It's doing well." It was one
+# contract (~95c); it is now THIRTY DOLLARS of contracts, about 31 at 96c.
+#
+# Size is set in DOLLARS, not contracts, because the windows span 90-99c and a
+# fixed contract count would stake 3x more risk at 30c of price difference. The
+# count is dollars/price, floored at 1 and capped by MAX_CONTRACTS and by what
+# the book is actually offering.
+#
+# WHAT THIS CHANGES ABOUT THE RISK, stated plainly: a win pays about +$1.16 and
+# a loss costs about -$29.8, so ONE loss needs ~26 wins to recover. That is the
+# arithmetic of near-certainty trading and it is why the brakes below are in
+# NET DOLLARS, not trade counts.
+SIZE_DOLLARS = 30.0         # dollars of contracts per order
+MAX_SIZE = 60.0             # --size (dollars) may never exceed this
+MAX_CONTRACTS = 40.0        # hard contract ceiling; $30 at the 90c floor is 33
 # GROSS TURNOVER, not risk. Raised 10.00 -> 40.00 on 2026-09-17 ~17:0xZ, after the
 # first day hit it at 10 fills (10 won, 0 lost, +$0.47) and began refusing every
 # further trade. The $10 was measuring the WRONG THING: a winning contract returns
@@ -71,12 +85,19 @@ MAX_SIZE = 5.0              # --size may never exceed this
 # not move at all. What actually bounds the downside is MAX_LOSSES (2 losses is
 # about $2) and MAX_NET_LOSS (the day's realised dollars). Both are untouched --
 # this number only stops the thing running away in VOLUME.
-MAX_SPEND = 40.00           # dollars of cost across the DAY (gross; it recycles)
-MAX_NET_LOSS = 5.00         # dollars NET REALISED down on the day, then stop. The
-                            # honest risk cap: it counts money that is GONE, not
-                            # money in flight.
+MAX_SPEND = 1200.00         # dollars of cost across the DAY (gross; it recycles)
+MAX_NET_LOSS = 60.00        # dollars NET REALISED down on the day, then stop.
+                            # THE REAL BRAKE. Two losing trades at this size.
+                            # Chosen so it stops before the hole needs more than
+                            # ~52 wins to climb out of.
+MAX_RUN_STAKE = 250.00      # dollars IN FLIGHT at once (pintake's own rail,
+                            # shipped at $60 for a one-contract caller). Five
+                            # windows across two series can be open together, so
+                            # $30 each needs headroom. This is exposure, not
+                            # loss: the loss brakes above are what bound damage.
 MAX_ORDERS = 60             # hard ceiling on attempts that reach the wire
-MAX_LOSSES = 2              # then it stops itself and writes the stop file
+MAX_LOSSES = 4              # the disaster catch. The NET cap above normally
+                            # fires first; this one catches many small losses.
 BALANCE_FLOOR = 300.00      # never trade the account below this
 MIN_TAU = 2                 # seconds; an order any later can land after close
 PRICE_FLOOR = 0.90
@@ -116,8 +137,8 @@ class State:
     ATTEMPTS for the order ceiling, because a refused order costs nothing but
     a runaway of refusals is exactly what once sent 160 orders in one close."""
 
-    def __init__(self, size=SIZE):
-        self.size = float(size)
+    def __init__(self, size=SIZE_DOLLARS):
+        self.size = float(size)     # DOLLARS per order, not contracts
         self.spent = 0.0        # dollars of cost from FILLS, never from intents
         self.orders = 0         # attempts that reached the wire
         self.fills = 0
@@ -149,9 +170,9 @@ def guard(state, tau, price, count, balance, stop=None, series=None, window=None
         n = -1.0
     if n < 1.0:
         bad.append("count %r is less than one contract" % (count,))
-    elif n > MAX_SIZE:
+    elif n > MAX_CONTRACTS:
         bad.append("count %.2f is above the hard ceiling of %.0f contracts"
-                   % (n, MAX_SIZE))
+                   % (n, MAX_CONTRACTS))
     try:
         p = float(price)
     except (TypeError, ValueError):
@@ -192,7 +213,17 @@ def arm(state, live, signoff):
     state.creds = {"base": pintake.PROD_ELECTIONS,
                    "key_id": kauth.KEY_ID,
                    "pk": ordercli.load_key(pintake.PROD_KEY_FILE)}
-    pintake.arm_prod("cmdlive commodity penny test, operator sign-off 2026-09-17")
+    # pintake ships MAX_TAKE_COUNT 10 / HARD_MAX 25, which would refuse a $30
+    # order outright (about 31 contracts at 96c). set_limits is one-way -- it
+    # can only LOOSEN, and it prints the change rather than moving silently.
+    # Two rails, both shipped for a much smaller caller. MAX_TAKE_COUNT 10 /
+    # HARD_MAX 25 would refuse a $30 order outright (~31 contracts at 96c), and
+    # MAX_RUN_STAKE $60 is total dollars IN FLIGHT -- two open positions at this
+    # size exhaust it. set_limits is one-way (loosen only) and prints the change.
+    pintake.set_limits(max_take_count=MAX_CONTRACTS,
+                       max_run_stake=MAX_RUN_STAKE,
+                       why="cmdlive $%.0f per trade" % SIZE_DOLLARS)
+    pintake.arm_prod("cmdlive commodity live test, operator sign-off 2026-09-17")
     state.armed = True
     return None
 
@@ -213,6 +244,47 @@ def balance_dollars(creds):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def release(ticker, bets, ledger=None):
+    """Return the committed dollars for a settled market. Returns what it freed.
+
+    Mirrors `pinrun._release`: subtract exactly `price * filled` per fill, floor
+    the ledger at zero, and drop the ticker's position record only when no other
+    open fill still references it.
+    """
+    led = pintake.LEDGER if ledger is None else ledger
+    owed = 0.0
+    for b in bets:
+        try:
+            owed += float(b.get("price", 0.0)) * float(b.get("n", 0.0))
+        except (TypeError, ValueError):
+            continue
+    led["committed"] = max(0.0, float(led.get("committed", 0.0)) - owed)
+    if isinstance(led.get("positions"), dict):
+        led["positions"].pop(ticker, None)
+    return owed
+
+
+def contracts_for(dollars, price, offer):
+    """How many contracts $`dollars` buys at `price`, given what is `offer`ed.
+
+    Sizing is in DOLLARS because the windows span 90-99c: a fixed contract
+    count would stake noticeably more at the cheap end, and the thing we want
+    constant is the money at risk, not the count. Floored at one contract (a
+    sub-dollar order is still a real test), capped by MAX_CONTRACTS and by the
+    book -- we never ask for more than is actually being offered.
+    """
+    try:
+        p = float(price)
+        off = float(offer)
+        d = float(dollars)
+    except (TypeError, ValueError):
+        return 0.0
+    if p <= 0 or off <= 0 or d <= 0:
+        return 0.0
+    want = int(d / p)                      # whole contracts only
+    return float(max(1, min(want, int(MAX_CONTRACTS), int(off))))
 
 
 def _settled_today(results=None, now=None):
@@ -356,8 +428,8 @@ def selftest():
        "NULL: 99.5c is above the penny test's ceiling")
     ck(guard(s, tau=10, price=0.80, count=1.0, balance=500.0),
        "NULL: 80c is below the window -- not a near-certainty")
-    ck(guard(s, tau=10, price=0.95, count=6.0, balance=500.0),
-       "NULL: 6 contracts is past the hard ceiling of 5")
+    ck(guard(s, tau=10, price=0.95, count=MAX_CONTRACTS + 1.0, balance=5000.0),
+       "NULL: one contract past MAX_CONTRACTS is refused, however well funded")
     ck(guard(s, tau=10, price=0.95, count=0.0, balance=500.0),
        "NULL: zero contracts is not an order")
     ck(guard(s, tau=10, price=0.95, count=1.0, balance=None),
@@ -476,13 +548,58 @@ def selftest():
     ck(guard(_s6, **ok_args), "NULL: at the net-loss cap the day is over")
     _s7 = State(); _s7.armed = True; _s7.realised = -MAX_NET_LOSS + 0.01
     ck(guard(_s7, **ok_args) == [], "...a cent short of it still trades")
-    ck(MAX_NET_LOSS <= 5.0 and MAX_LOSSES <= 2,
-       "the RISK caps are unchanged by the turnover raise: 2 losses, $5 net")
-    ck(float(SIZE) == 1.0 and MAX_LOSSES <= 2 and MAX_NET_LOSS <= 5.0
-       and MAX_SPEND <= 40.0 and BALANCE_FLOOR >= 300.0,
-       "the SHIPPED defaults are one contract, a 2-loss brake, a $5 net-loss cap, "
-       "$40 of daily turnover and a $300 account floor. The RISK caps are the "
-       "first two; turnover is not risk, because a winning contract recycles")
+    ck(MAX_NET_LOSS <= 2.5 * SIZE_DOLLARS and MAX_LOSSES <= 4,
+       "the RISK caps scale WITH the trade size and stay inside ~2.5 losing "
+       "trades; turnover is not risk, because a winning contract recycles")
+    # SIZING IS IN DOLLARS. A fixed contract count would stake a third more at
+    # the 90c end of the window than at 99c; what we want held constant is the
+    # money, not the count.
+    ck(contracts_for(30.0, 0.96, 500) == 31.0,
+       "$30 at 96c is 31 contracts (whole contracts only, rounded DOWN so the "
+       "order never exceeds the dollars asked for)")
+    ck(contracts_for(30.0, 0.90, 500) == 33.0 and contracts_for(30.0, 0.99, 500) == 30.0,
+       "...33 at the 90c floor and 30 at 99c -- the DOLLARS are what stays fixed")
+    ck(contracts_for(30.0, 0.96, 12) == 12.0,
+       "we never ask for more than the book is offering")
+    ck(contracts_for(3000.0, 0.96, 99999) == MAX_CONTRACTS,
+       "MAX_CONTRACTS is a hard ceiling no dollar figure can climb past")
+    ck(contracts_for(0.10, 0.96, 500) == 1.0,
+       "a sub-contract dollar figure still buys ONE -- a tiny order is a real test")
+    ck(contracts_for(30.0, 0, 500) == 0 and contracts_for(30.0, 0.96, 0) == 0
+       and contracts_for(30.0, "junk", 500) == 0,
+       "NULL: no price, no offer, or an unparseable price buys nothing")
+    # THE LEDGER LEAK. pintake commits filled*price and never learns a market
+    # settled; without a release the stake cap silently refuses everything.
+    _led = {"committed": 100.0, "positions": {"KXWTI15M-A": {"n": 31}, "KXGOLD15M-B": {}}}
+    _freed = release("KXWTI15M-A", [{"price": 0.96, "n": 31.0}], ledger=_led)
+    ck(abs(_freed - 29.76) < 1e-9 and abs(_led["committed"] - 70.24) < 1e-9,
+       "releasing a settled $29.76 position gives back exactly price x filled")
+    ck("KXWTI15M-A" not in _led["positions"] and "KXGOLD15M-B" in _led["positions"],
+       "...and drops only that ticker's position record")
+    _led2 = {"committed": 5.0, "positions": {}}
+    ck(release("T", [{"price": 0.96, "n": 31.0}], ledger=_led2) > 0
+       and _led2["committed"] == 0.0,
+       "the ledger floors at zero rather than going negative")
+    ck(release("T", [{"price": "junk", "n": 1}], ledger={"committed": 1.0}) == 0.0,
+       "NULL: an unparseable fill releases nothing rather than guessing")
+    _s0 = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _lp2 = _s0[_s0.rindex("def " + "trade_loop("):_s0.rindex("def " + "main(")]
+    ck("release(t, mine)" in _lp2,
+       "and the trade loop actually CALLS it on settlement -- a release nothing "
+       "reaches is the leak with extra steps")
+    _s8 = State(); _s8.armed = True
+    ck(guard(_s8, tau=10, price=0.96, count=MAX_CONTRACTS + 1, balance=5000.0),
+       "NULL: a count above MAX_CONTRACTS is refused even when funded")
+    ck(float(SIZE_DOLLARS) == 30.0 and MAX_CONTRACTS <= 40.0
+       and MAX_LOSSES <= 4 and MAX_NET_LOSS <= 60.0 and BALANCE_FLOOR >= 300.0,
+       "the SHIPPED settings are $30 a trade, at most 40 contracts, and it STOPS "
+       "at $60 net down or 4 losses. At this size one loss costs about $29.8 and "
+       "one win pays about $1.16, so the brake is in NET DOLLARS on purpose -- a "
+       "trade-count brake would not describe the damage")
+    ck(MAX_NET_LOSS < 3 * SIZE_DOLLARS,
+       "the net brake must stop inside three losing trades, or it is not a brake")
+    ck(BALANCE_FLOOR > 4 * MAX_NET_LOSS,
+       "and the account floor must sit well clear of a full brake-out")
     print("cmdlive selftest: OK")
 
 
@@ -557,7 +674,7 @@ def trade_loop(state, series, minutes, rec, dry=False):
                 if not d:
                     continue
                 want, px, offer = d
-                n = min(state.size, float(offer))
+                n = contracts_for(state.size, px, offer)
                 refused = guard(state, tau, px, n, balance, stopped(),
                                 series=ser, window=cmdarm.label(band))
                 if refused:
@@ -634,6 +751,17 @@ def trade_loop(state, series, minutes, rec, dry=False):
                     state.realised += float(sc["pnl"])
                     if not sc["won"]:
                         state.losses += 1
+                    # GIVE BACK EXACTLY WHAT WAS COMMITTED. pintake._book()
+                    # adds filled*price to LEDGER["committed"] and has no idea
+                    # a market ever settles, so anything that closes a position
+                    # must subtract the same product. Without this the ledger
+                    # leaks until MAX_RUN_STAKE silently refuses every further
+                    # order -- no halt, no error, no log line, because take()
+                    # RETURNS its refusal rather than raising. This is the exact
+                    # bug pinrun's _release() was written for, and cmdlive had
+                    # it too: it jammed at $59.15 committed on the first day at
+                    # $30 a trade.
+                    release(t, mine)
                     rec("settled", ticker=t, result=got[t], won=sc["won"],
                         pnl_c=round(100 * sc["pnl"], 2), losses=state.losses,
                         realised=round(state.realised, 4))
@@ -661,7 +789,8 @@ def main():
     ap.add_argument("--dry", action="store_true",
                     help="arm, guard, log what WOULD be sent, send nothing")
     ap.add_argument("--series", nargs="*", default=list(LIVE_SERIES))
-    ap.add_argument("--size", type=float, default=SIZE)
+    ap.add_argument("--size", type=float, default=SIZE_DOLLARS,
+                    help="DOLLARS per order (not contracts)")
     ap.add_argument("--minutes", type=float, default=1440)
     a = ap.parse_args()
     if a.selftest:
@@ -697,26 +826,33 @@ def main():
         fh.write(json.dumps(kw) + "\n")
 
     bal = balance_dollars(state.creds)
-    rec("start", series=a.series, size=state.size, dry=bool(a.dry),
+    rec("start", series=a.series, size_dollars=state.size, dry=bool(a.dry),
+        max_contracts=MAX_CONTRACTS,
         bands={k: [list(b) for b in v] for k, v in cmdarm.BANDS.items()},
         max_spend=MAX_SPEND, max_orders=MAX_ORDERS, max_losses=MAX_LOSSES,
         max_net_loss=MAX_NET_LOSS, realised_earlier_today=round(state.realised, 4),
         losses_earlier_today=state.losses,
         balance_floor=BALANCE_FLOOR, balance_at_start=bal,
         spent_earlier_today=round(state.spent, 4),
-        signoff="operator 2026-09-17: ready for commodity penny testing",
-        version="cmdpenny-1")
-    print("cmdlive %s -- %s | size %.0f | caps: $%.2f spend, %d orders, %d losses, "
-          "balance floor $%.0f | balance now $%s | log %s"
+        signoff="operator 2026-09-17: ready for commodity penny testing, "
+                "then: up the live commodity trading to 30 dollars size per trade",
+        version="cmdlive-30dollar")
+    print("cmdlive %s -- %s | $%.0f per trade (up to %.0f contracts) | STOPS at "
+          "$%.2f net down or %d losses | turnover cap $%.0f/day, %d orders, "
+          "account floor $%.0f | balance now $%s | today so far: $%+.2f, %d losses "
+          "| log %s"
           % ("DRY RUN" if a.dry else "*** LIVE, REAL MONEY ***", ", ".join(a.series),
-             state.size, MAX_SPEND, MAX_ORDERS, MAX_LOSSES, BALANCE_FLOOR,
-             ("%.2f" % bal) if bal is not None else "?", os.path.basename(log)), flush=True)
+             state.size, MAX_CONTRACTS, MAX_NET_LOSS, MAX_LOSSES, MAX_SPEND,
+             MAX_ORDERS, BALANCE_FLOOR,
+             ("%.2f" % bal) if bal is not None else "?",
+             state.realised, state.losses, os.path.basename(log)), flush=True)
 
     try:
         bets = trade_loop(state, a.series, a.minutes, rec, dry=a.dry)
     finally:
         rec("end", orders=state.orders, fills=state.fills,
-            spent=round(state.spent, 4), losses=state.losses)
+            spent=round(state.spent, 4), losses=state.losses,
+            realised=round(state.realised, 4))
         print("  end: %d orders, %d fills, $%.2f spent, %d losses"
               % (state.orders, state.fills, state.spent, state.losses), flush=True)
     done = [b for b in bets if "won" in b]

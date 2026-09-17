@@ -173,15 +173,29 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     "--max-per-market", "2", "--improve-max", "0.010",
     "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate",
     "--hedge-belief", "0.60",
-    # AMENDMENT 46, deployed 2026-09-17 on the operator's instruction ("As long
-    # as you have the 45 second is built as safely as you described, deploy
-    # now"), at ONE THIRD of a bet on his follow-up ("Bump it down to 1/3 the
-    # current size instead of half"). A THIRD of a bet at 31-45 s; topped up to
-    # a full bet at <= 30 s only if the same gate still passes; if belief
-    # collapsed first the hedge covers the third. TAU_MAX is still 30 -- a FULL
-    # bet cannot be bought early.
-    # Bar and revert: results/PREREG_staged.md, results/VERSIONS.md v-staged.
-    "--early-tau", "45", "--early-frac", "0.333"
+    # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
+    # built as safely as you described, deploy now"), first at half, then at a
+    # THIRD, and from ~19:5xZ the same day at a FULL bet on his instruction:
+    # "Bump 45 seconds up to normal price as well."
+    #
+    # So 31-45 s now buys a FULL bet, and the top-up leg becomes a no-op
+    # (staged_take returns size - early_held = 0). One early leg per market is
+    # still enforced by the "early_once" refusal, so this cannot double up.
+    # In effect TAU_MAX is 45 for the first bet, which is exactly what the flat
+    # tau-45 paper arm has been testing: 33 settled closes, 0 losses, +230% more
+    # closes than its control.
+    #
+    # WHAT IT GIVES UP: at a third we got a foot in the door early and completed
+    # at 30 s when the information was better. At full we commit at the earlier,
+    # worse-information moment and cannot improve the price afterwards.
+    # WHAT SUPPORTS IT: on the tape BY MARKETS, buyers of 95-98c at 31-45 s lost
+    # 2.8% (606 markets) against 3.9% at 16-30 s (389) -- the earlier window is
+    # not the worse one. Model error at 31-45 s is 0.058% of moments, ~1/200th
+    # of our live loss rate, so the risk here is adverse selection, not
+    # arithmetic, and only live fills can measure it.
+    # Bar and revert UNCHANGED: results/PREREG_staged.md stage 2 -- revert at 3
+    # losses on early-leg closes in the first 40, or 2 in the first 15.
+    "--early-tau", "45", "--early-frac", "1.0"
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 
