@@ -181,7 +181,9 @@ if (-not $NoArms) {
                 @{ n = "arm-mirror";   x = @("--max-positions", "3", "--hedge-belief", "0.80") },
                 @{ n = "arm-dumps";    x = @("--max-positions", "3", "--hedge-belief", "0.80", "--take-dumps") },
                 @{ n = "arm-onecoin";  x = @("--max-positions", "3", "--hedge-belief", "0.60", "--one-coin-depth", "--one-coin-max", "2.0") },
-                @{ n = "arm-staged";   x = @("--max-positions", "3", "--hedge-belief", "0.60", "--early-tau", "45", "--early-frac", "0.5") }
+                @{ n = "arm-staged";   x = @("--max-positions", "3", "--hedge-belief", "0.60", "--early-tau", "45", "--early-frac", "0.5") },
+                # 46-60 s: the grid's frontier (RESULTS_grid.md). Does our gate rescue it?
+                @{ n = "arm-early60";  x = @("--max-positions", "3", "--hedge-belief", "0.60", "--early-tau", "60", "--early-frac", "0.333") }
             )
             foreach ($a in $arms) {
                 Start-Process -FilePath $py -ArgumentList ($live + $a.x) -WorkingDirectory $repo -WindowStyle Hidden `
