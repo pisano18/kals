@@ -103,6 +103,42 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 16:3xZ -- THE TAU RAIL WAS BLOCKING THE BEST COMMODITY CELLS; A47; THE HEDGE RECORD, MEASURED PROPERLY
+
+- **`pintake.MAX_TAU` (90 s) refused every far-window commodity order.** Two
+  live orders were refused before the monitor caught it ("market closes in
+  180.8 s; pin only trades inside the last 90 s"). The 90 s rail is right for
+  the crypto bot and fatal for the 91-180 s commodity windows, which is where
+  gold is 379 markets / 2 lost. `check_take`/`take` now accept `max_tau`; the
+  SHIPPED default is unchanged, `pinrun` never passes it, and
+  `MAX_TAU_CEILING` (240 s) refuses any caller that asks for more.
+  `cmdlive.MAX_TAU_ASK` is derived from the widest window in `cmdarm.BANDS`.
+- **THE HEDGE RECORD, corrected twice.** I told the operator "5 of 9 live
+  hedges were wasted". That read `want` on a record whose field is `side`,
+  which labelled all 14 wasted. Properly: **12 filled live hedges, 6 needed
+  (+$56.01), 6 wasted (-$41.72), net +$14.30 -- hedging has MADE money.** And
+  5 of the 6 wasted ones fired under the OLD 0.80/0.90 gates: the `start`
+  records show 0.90 until 09/12 18:06Z, 0.80 until **09/16 13:57Z** (not
+  09/15, as CURRENT_STATE claimed), 0.60 since. Under today's gate only 7 of
+  the 14 would fire and 6 of those were needed. **The 0.80 -> 0.60 move was an
+  excellent change**: it removes exactly the five wasted hedges and keeps
+  every needed one.
+- **AMENDMENT 47, `--hedge-price` (shipped OFF, paper arm running).** Hedge
+  only when our side's MARKET price is also below 50c. The one wasted hedge
+  under today's gate bought while our side still traded at 85c (-$13.83); the
+  wobble table (1,717 markets, 48 of 48 dips above 50c recovered) is the real
+  evidence and 50c is the TABLE's boundary, not a fit to our seven.
+  `results/PREREG_hedgeprice.md` discloses the seven as motivation and scores
+  only future hedges. A position failing the price test is NOT retired -- the
+  loop waits and hedges if the price falls later in the close.
+- **cmdlive's $10 ceiling now bounds the DAY, not the process** (`spent_today`
+  seeds from today's own fills): a restart used to hand it a fresh $10.
+- Traps caught, all old friends: a self-test needle that matched the
+  self-test's own source (sliced a 24-char "loop"); a gate asserting the
+  RUNNING value so any arm setting the flag failed it (now `_DEFAULT_HEDGE_PRICE`);
+  and `None` meaning both "not supplied" and "off" in the same argument
+  (now `_HP_UNSET`).
+
 ## 16:1xZ -- COMMODITIES GO LIVE (gold + oil, one contract), AND THE U-SHAPE
 
 Operator: *"I'm ready for commodity penny testing"*, then *"Make the good

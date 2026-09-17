@@ -787,17 +787,27 @@ def hedge_should_fire(belief, threshold=None):
 # one at 53c that made $0.51. So on the record this filter is +$13.32 over
 # five days -- suggestive at n=7, which is why it ships OFF and goes to a
 # paper arm first (`results/PREREG_hedgeprice.md`).
+_DEFAULT_HEDGE_PRICE = None   # the SHIPPED value. --hedge-price overrides the
+                              # one below; self-tests assert against THIS, or an
+                              # arm that sets the flag would fail its own gate.
 HEDGE_PRICE = None       # --hedge-price; None = the market's opinion is ignored
 
 
-def hedge_price_ok(hedge_ask, threshold=None):
+_HP_UNSET = object()      # "argument not supplied" -- distinct from None, which
+                          # is a REAL value here meaning "A47 is off". The first
+                          # version used None for both, so passing the shipped
+                          # default explicitly fell back to the running global
+                          # and the self-test failed on any arm that set the flag.
+
+
+def hedge_price_ok(hedge_ask, threshold=_HP_UNSET):
     """True when OUR side's market price is low enough to hedge.
 
     We buy the opposite side at `hedge_ask`, so our side is trading at about
-    `1 - hedge_ask`. With no threshold set this is always True, which is the
-    shipped behaviour.
+    `1 - hedge_ask`. A threshold of None means the filter is off, which is the
+    shipped behaviour; omitting the argument uses whatever is running.
     """
-    thr = HEDGE_PRICE if threshold is None else threshold
+    thr = HEDGE_PRICE if threshold is _HP_UNSET else threshold
     if thr is None:
         return True
     try:
@@ -2809,9 +2819,13 @@ def _selftest_body():
            and hedge_price_ok(0.81, threshold=0.50)
            and hedge_price_ok(0.58, threshold=0.50),
            "...and every hedge that was NEEDED at our side under 50c still fires")
-        ck(hedge_price_ok(0.20) and hedge_price_ok(0.80) and hedge_price_ok(None),
-           "SHIPPED DEFAULT: with HEDGE_PRICE unset nothing is filtered, so the "
-           "live bot's behaviour is exactly what it was")
+        ck(hedge_price_ok(0.20, threshold=_DEFAULT_HEDGE_PRICE)
+           and hedge_price_ok(0.80, threshold=_DEFAULT_HEDGE_PRICE)
+           and hedge_price_ok(None, threshold=_DEFAULT_HEDGE_PRICE),
+           "SHIPPED DEFAULT: at the DECLARED default nothing is filtered, so the "
+           "live bot's behaviour is exactly what it was. Asserted against "
+           "_DEFAULT_HEDGE_PRICE, never the running value -- an arm that sets "
+           "the flag must not fail the gate that describes the shipped bot")
         ck(hedge_price_ok("junk", threshold=0.50) is False,
            "NULL: an unparseable ask does not hedge on a guess")
         # Needles from PIECES and a slice of the LOOP only: a literal here
@@ -2826,8 +2840,12 @@ def _selftest_body():
                                         _lp.index("if not hedge_ask_ok(" + "_ask)")],
            "a price-wait does NOT retire the position: the price can still fall "
            "inside this close, and then we hedge")
-        ck(HEDGE_PRICE is None,
+        ck(_DEFAULT_HEDGE_PRICE is None,
            "the SHIPPED value of HEDGE_PRICE is None -- A47 is opt-in")
+        ck("--hedge-price" not in open(os.path.join(
+               os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+               "restart_bot.ps1"), encoding="utf-8", errors="replace").read(),
+           "and restart_bot.ps1 does NOT pass it: A47 is not live")
         ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
            f"belief below the {HEDGE_BELIEF:.2f} gate fires the hedge")
         ck(not hedge_should_fire(HEDGE_BELIEF) and not hedge_should_fire(0.999),
