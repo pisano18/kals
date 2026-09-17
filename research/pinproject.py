@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
 """pinproject.py -- an honest compounding projection, with the measured ceiling.
 
-THE OPERATOR, 2026-09-17: an earlier session projected the bank compounding to
-\\$3,476 by 26 September and \\$570/day thereafter. Day one of that table was
-close (\\$93.02 projected, \\$79.62 actual). Day two was 40% short (\\$113.97
-projected, \\$68.36 actual). He asked for the numbers redone accurately.
+THE OPERATOR, 2026-09-16: an earlier session projected the bank compounding to
+$3,476 by 26 September and $570/day thereafter. He asked for it redone
+accurately.
+
+DAYS HERE ARE EASTERN, and that correction came from him too -- the first
+version of this bucketed by UTC, which cuts the trading day at 8pm ET and
+counted a fifth of the previous evening into each day. On Eastern days:
+
+    Sep 14   3,319 contracts   +$81.14   full day
+    Sep 15   2,511             +$76.32   full day, 5.7 h of downtime
+    Sep 16   2,557             +$62.69   PARTIAL, 20 h in, on pace for ~$75
+
+Sep 15's $76.32 is the number he quoted from his own screen; the UTC bucketing
+had reported it as $91.72, which was a different slice of time altogether.
+
+Against that, the old table projected +$93.02 for the 15th and +$113.97 for the
+16th. The 15th came in at 82% of prediction with 5.7 hours lost; the 16th is on
+pace for about 66% with no downtime at all. So downtime explains one day and
+nothing explains the other -- which is what sent me looking at the books.
 
 THE PROJECTION'S ONE FATAL ASSUMPTION: that daily contract VOLUME scales
 linearly with our order size. It does not, and the reason is in the order books
