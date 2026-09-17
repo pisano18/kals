@@ -189,9 +189,18 @@ def scan_trade(msg, settled, ours_index, band=(BAND_LO, BAND_HI), tau_max=TAU_MA
             "ours": is_ours(tk, ts, paid, ours_index)}
 
 
-def walk(files, settled, ours_index, verbose=False):
+def walk(files, settled, ours_index, verbose=False, on_progress=None, every=40):
+    """Walk tape hours into bargain rows.
+
+    `on_progress(done_files, rows, bad)` is called every `every` files so the
+    caller can checkpoint. THIS EXISTS BECAUSE THE FIRST BACKFILL WAS KILLED:
+    531 tape hours is ~25 minutes, the machine is shared, and a run that only
+    saves at the end throws away everything it has done. A long job that cannot
+    survive being interrupted is a job that will have to be run twice.
+    """
     rows = []
     bad = 0
+    done = []
     for f in files:
         try:
             with gzip.open(f, "rt", encoding="utf-8", errors="replace") as fh:
@@ -207,8 +216,13 @@ def walk(files, settled, ours_index, verbose=False):
                         rows.append(r)
         except (EOFError, zlib.error, OSError):
             bad += 1          # the hour still being written, or a torn file
+        done.append(f)
         if verbose:
             print("  %s -> %d rows" % (os.path.basename(f), len(rows)), flush=True)
+        if on_progress and len(done) % every == 0:
+            on_progress(done, rows, bad)
+    if on_progress and done:
+        on_progress(done, rows, bad)
     return rows, bad
 
 
@@ -347,10 +361,15 @@ def selftest():
         torn = os.path.join(td, "20260916T15.jsonl.gz")
         with open(torn, "wb") as fh:
             fh.write(gzip.compress(b'{"type":"trade"}\n')[:12])   # truncated
-        rows, bad = walk([good, torn], settled, {})
+        seen = []
+        rows, bad = walk([good, torn], settled, {},
+                         on_progress=lambda d, r, b: seen.append((len(d), len(r))), every=1)
         ck(len(rows) == 1 and bad == 1,
            "end to end: one bargain found, and the torn hour is SKIPPED rather "
            "than crashing the run or silently reading as empty")
+        ck(seen and seen[0] == (1, 1) and seen[-1][0] == 2,
+           "and progress is reported as it goes, so a long walk can checkpoint "
+           "instead of losing everything when it is killed")
     print("pinpickoff selftest: OK")
 
 
@@ -388,17 +407,27 @@ def main():
         len(files), len(files) - len(todo), len(todo)))
     if todo:
         t0 = time.time()
-        rows, bad = walk(todo, settled, ours_index)
+        base_rows = list(cache["rows"])
+
+        def checkpoint(done, rows, bad):
+            """Save what has been walked so far. A kill then costs one chunk,
+            not the whole run."""
+            cache["rows"] = base_rows + rows
+            for f in done:
+                cache["hours"][os.path.basename(f)] = 1
+            try:
+                tmp = CACHE + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump(cache, fh)
+                os.replace(tmp, CACHE)      # atomic: never a half-written cache
+            except OSError:
+                return
+            print("  ... %d/%d hours, %d bargains, %.0f s elapsed"
+                  % (len(done), len(todo), len(cache["rows"]), time.time() - t0), flush=True)
+
+        rows, bad = walk(todo, settled, ours_index, on_progress=checkpoint)
         print("  walked %d hours in %.0f s (%d unreadable, skipped), %d bargains found"
               % (len(todo), time.time() - t0, bad, len(rows)))
-        cache["rows"].extend(rows)
-        for f in todo:
-            cache["hours"][os.path.basename(f)] = 1
-        try:
-            with open(CACHE, "w", encoding="utf-8") as fh:
-                json.dump(cache, fh)
-        except OSError:
-            pass
 
     rows = cache["rows"]
     if not rows:
