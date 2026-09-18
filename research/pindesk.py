@@ -64,6 +64,7 @@ sys.path.insert(0, HERE)
 from downtime import et_offset, hours_up_et_day, lost_by_et_day     # noqa: E402
 import pinflat                                                       # noqa: E402
 import pinlab                                                        # noqa: E402
+import pinsupply                                                     # noqa: E402
 
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
@@ -931,6 +932,26 @@ def health(ledger):
         h["flat"] = "UNKNOWN"
         h["open"] = {}
         h["flat_err"] = str(e)[:120]
+    # IS THE OPPORTUNITY GOING AWAY? The operator, 2026-09-18: *"Something
+    # like this needs to be on the health tab to track this trend. This needs
+    # to be watched like a hawk and is terrifying."* Reads two small JSON
+    # files that `pinsupply --rebuild` writes; it never touches the 115 MB
+    # cache or the tape, so it is safe on the refresh path.
+    try:
+        vol = None
+        vp = os.path.join(RESULTS, "pinsupply_vol.json")
+        if os.path.exists(vp):
+            with open(vp, encoding="utf-8") as fh:
+                vol = json.load(fh)
+        h["supply"] = pinsupply.assess(vol=vol)
+        h["supply_lines"] = pinsupply.lines(a=h["supply"])
+        h["supply_age_d"] = None
+        a = _file_age_s(os.path.join(RESULTS, "pinsupply_daily.json"))
+        if a is not None:
+            h["supply_age_d"] = a / 86400.0
+    except Exception as e:                              # noqa: BLE001
+        h["supply"], h["supply_lines"] = None, ["Opportunity: could not be "
+                                                "read (%s)" % str(e)[:60]]
     h["halt"] = ledger.last_halt()
     h["boot_last"] = last_line(os.path.join(RESULTS, "boot_all.log"))
     h["watch_last"] = last_line(os.path.join(RESULTS, "watch_bot.log"))
@@ -1625,6 +1646,17 @@ def run_gui():
                         story=lambda c: story_close(ledger, c))
     f_mk.pack(fill="both", expand=True)
     register(mk_head, "market", "How active sellers are")
+    # IS THE OPPORTUNITY GOING AWAY -- the thing to watch like a hawk.
+    mk_supply = tk.Frame(mk_tab, bg=C["panel"], padx=14, pady=8)
+    mk_supply.pack(fill="x", pady=(4, 0))
+    tk.Label(mk_supply, text="IS THE OPPORTUNITY GOING AWAY?", bg=C["panel"],
+             fg=C["muted"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
+    mk_supply_v = tk.Label(mk_supply, text="...", bg=C["panel"], fg=C["text"],
+                           font=("Segoe UI", 10), justify="left", anchor="w")
+    mk_supply_v.pack(anchor="w", fill="x")
+    mk_supply_age = tk.Label(mk_supply, text="", bg=C["panel"], fg=C["muted"],
+                             font=("Segoe UI", 8), justify="left", anchor="w")
+    mk_supply_age.pack(anchor="w", fill="x")
     mk_today = tk.Label(mk_tab, text="", bg=C["bg"], fg=C["text"], font=("Segoe UI", 10), justify="left", anchor="w")
     mk_today.pack(fill="x", pady=(4, 6))
 
@@ -2347,6 +2379,19 @@ def run_gui():
                                  % (len(cl_today), with_offer, passed_any, sum(1 for c in cl_today if c["fired"]),
                                     fs_t["orders"], fs_t["fills"], fs_t["zero"], fs_t["asked"], fs_t["contracts"],
                                     pct(fs_t["share"], False) if fs_t["share"] is not None else "-")))
+
+        sl = h.get("supply_lines") or []
+        mk_supply_v.configure(text="\n".join(sl) if sl else "not measured yet")
+        # A STALE TREND IS WORSE THAN NO TREND -- it is a reassuring number
+        # about a week that has already ended. Say its age, every time.
+        age = h.get("supply_age_d")
+        mk_supply_age.configure(
+            text=("measured up to %.1f days ago, from our own recording of "
+                  "every trade near a close. Rebuild: "
+                  "python research/pinsupply.py --rebuild --vol" % age)
+            if age is not None else
+            "never measured -- run: python research/pinsupply.py --rebuild --vol",
+            fg=C["loss"] if (age is None or age > 2) else C["muted"])
 
         # days
         rows = []

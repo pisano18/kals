@@ -258,6 +258,21 @@ class Phone:
         out.append("")
         out.append("Today: %d orders, %d filled, %d lost races; asked %g got %g (%s)." % (
             fs["orders"], fs["fills"], fs["zero"], fs["asked"], fs["contracts"], pct(fs["share"], False) if fs["share"] is not None else "-"))
+        # IS THE OPPORTUNITY GOING AWAY. Same lines the desktop shows, from
+        # the same function, so the phone and the app cannot drift apart.
+        # Read from health() rather than recomputed: it is already there.
+        try:
+            h = self.health_fn()
+            sl = h.get("supply_lines") or []
+            if sl:
+                out.append("")
+                out.append("IS THE OPPORTUNITY GOING AWAY?")
+                out += sl
+                age = h.get("supply_age_d")
+                if age is not None:
+                    out.append("(measured up to %.1f days ago)" % age)
+        except Exception:                                   # noqa: BLE001
+            pass
         return "\n".join(out)
 
     def text_losses(self):
@@ -501,6 +516,21 @@ def selftest():
         ck("$+1.66" in t and "+0.33%" in t and "1 closes" in t, "/today: money, %% of the bank at day start, closes")
         ck("no settled bets" in ph.handle(111, "/yesterday"), "/yesterday with nothing settled says so")
         ck("SELLERS:" in ph.handle(111, "/market") and "BOUGHT 85" in ph.handle(111, "/market"), "/market: level and what happened")
+        # THE OPPORTUNITY TREND REACHES THE PHONE, and a health dict that does
+        # not carry it must not break the command -- the operator reads
+        # /market from his phone when the app is not in front of him.
+        state["h"]["supply_lines"] = ["Cheap offers: up 7% on a normal day."]
+        state["h"]["supply_age_d"] = 0.5
+        mk = ph.handle(111, "/market")
+        ck("IS THE OPPORTUNITY GOING AWAY?" in mk and "up 7%" in mk,
+           "/market carries the opportunity trend, from the same lines the "
+           "desktop shows, so the two cannot drift apart")
+        ck("0.5 days ago" in mk,
+           "...and says how old the measurement is, because a stale trend is a "
+           "reassuring number about a week that already ended")
+        state["h"].pop("supply_lines")
+        ck("SELLERS:" in ph.handle(111, "/market"),
+           "NULL: a health reading with no opportunity block still answers")
         ck(ph.handle(111, "/losses") == "No losing closes.", "/losses with none")
         ck(ph.handle(111, "/hedges") == "No hedges yet.", "/hedges with none")
         ck(ph.handle(111, "/open") == "No open bets.", "/open with none")
