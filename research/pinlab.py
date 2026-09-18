@@ -141,8 +141,9 @@ EXPERIMENTS = [
         "name": "The 45-second early leg (A46 + A49)",
         "status": RUNNING, "match": "--early-tau", "since": "2026-09-17",
         "select": {"early_tau_max": 45, "pin": 0.995, "early_max_edge": UNSET},
-        "what": "Buys a THIRD of a bet between 31 and 45 seconds out, and only if "
-                "the price is at least 90c. Also live at that size.",
+        "what": "Buys between 31 and 45 seconds out at FULL size since 2026-09-18 "
+                "~17:0xZ (a third before that), only if the price is at least "
+                "90c and the model is within 3c of the market.",
         "why": "The cheap offers get taken a median of 41 seconds before the close "
                "while our window starts at 30. This is the only lever aimed at "
                "that.",
@@ -387,8 +388,18 @@ for _pin, _pct in ((0.99, "99.0%"), (0.985, "98.5%"), (0.98, "98.0%"),
                    (0.975, "97.5%"), (0.97, "97.0%")):
     EXPERIMENTS.insert(0, {
         "name": "Lower confidence to %s" % _pct,
-        "status": RUNNING, "match": "--pin %s" % _pin, "since": "2026-09-18",
+        "status": KILLED, "match": "--pin %s" % _pin, "since": "2026-09-18",
         "select": {"pin": _pin},
+        "outcome": "STOPPED 2026-09-18 ~16:30Z after 12-13 settled markets each, "
+                   "to free memory for a settlement refresh. Every one of the "
+                   "five was BEHIND the live bot on the what-if, scaled to our "
+                   "contracts: 97.0%% -25%%, 97.5%% -36%%, 98.0%% -20%%, "
+                   "98.5%% -32%%, 99.0%% -31%%, with 54-68%% less swing. Small "
+                   "samples, but all five pointed the same way.",
+        "attribution": "None shipped. The bar stays at 99.5%%: lowering it took "
+                       "more trades and made less money per contract, which is "
+                       "the supply story (offers are scarce), not the gate "
+                       "story (the gate is too strict).",
         "what": "A paper bot identical to the live one except it buys once it is "
                 "%s sure instead of 99.5%% sure." % _pct,
         "why": "Our cheap fills (under 95c) fell from 28 a day to 7. The question "
