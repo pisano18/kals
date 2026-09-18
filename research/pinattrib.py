@@ -134,7 +134,7 @@ def load_log(paths):
     silently mixes several different bots into one table.
     """
     refusals, bought, settled = [], set(), {}
-    starts, per_file = {}, {}
+    starts, per_file, hedges = {}, {}, []
     for p in paths:
         nm = os.path.basename(p)
         n = 0
@@ -155,8 +155,13 @@ def load_log(paths):
                     settled.setdefault(m.get("ticker"), []).append(m)
                 elif k == "start" and nm not in starts:
                     starts[nm] = m
+                elif isinstance(k, str) and k.startswith("hedge"):
+                    # kept SEPARATELY from refusals: insurance decisions carry
+                    # their own kind, which is exactly why the gate table
+                    # could never see them
+                    hedges.append(m)
         per_file[nm] = n
-    return refusals, bought, settled, starts, per_file
+    return refusals, bought, settled, starts, per_file, hedges
 
 
 def load_outcomes(markets_json):
@@ -388,6 +393,139 @@ def config_currency(starts, refusals_by_file):
             if first is None:
                 first = nm
     return same, nsame, ntot, first
+
+
+def hedge_attrib(records, outcomes):
+    """What every insurance ALARM was actually worth.
+
+    THE GAP THIS FILLS. The gate table cannot see insurance at all -- those
+    decisions are written under their own names, not as refusals -- so the
+    single most expensive discretionary act the bot performs had no
+    attribution of any kind. The operator caught the hole: *"I don't see an
+    insurance test in the table."*
+
+    The population is the ALARM, not the purchase. Asking "did the hedges we
+    bought pay?" only ever looks at hedges we bought, which cannot say whether
+    buying was the right call. Every alarm is one decision, and it has exactly
+    two honest outcomes:
+
+      our side went on to LOSE   -- insurance was genuinely needed
+      our side went on to WIN    -- any premium paid was thrown away
+
+    Money follows from the binary. A hedge contract costs `price` and pays a
+    dollar iff our original side loses, so:
+
+      needed: + n * (1 - price)      the hedge pays out
+      wasted: - n * price            the hedge expires worthless
+
+    Fees are NOT netted here: the hedge's fee is billed on the hedge leg and
+    is already inside the close's own P&L, and subtracting it again would
+    double-count it against the gate table's convention.
+    """
+    alarms, bought, noask = {}, {}, set()
+    for r in records:
+        k = r.get("kind")
+        tk = r.get("ticker")
+        if not tk:
+            continue
+        if k == "hedge_alarm":
+            alarms.setdefault(tk, r)
+        elif k == "hedge":
+            b = bought.setdefault(tk, [0.0, 0.0])
+            n = float(r.get("n") or 0)
+            b[0] += n
+            b[1] += n * float(r.get("price") or 0)
+        elif k == "hedge_no_ask":
+            noask.add(tk)
+    out = {"needed": 0, "wasted": 0, "unresolved": 0, "uninsured": 0,
+           "paid_out": 0.0, "thrown_away": 0.0, "no_ask": 0, "rows": []}
+    for tk, a in sorted(alarms.items()):
+        want = a.get("want")
+        res = outcomes.get(tk)
+        n, cost = bought.get(tk, [0.0, 0.0])
+        px = (cost / n) if n else None
+        row = {"ticker": tk, "want": want, "result": res, "n": n,
+               "price": px, "no_ask": tk in noask}
+        if res not in ("yes", "no") or want not in ("yes", "no"):
+            row["verdict"] = "not settled on file"
+            out["unresolved"] += 1
+        elif res == want:
+            row["verdict"] = ("our side won -- premium thrown away" if n
+                              else "our side won -- nothing paid, correct")
+            row["money"] = -cost
+            out["thrown_away"] += cost
+            if n:
+                out["wasted"] += 1
+        else:
+            row["verdict"] = ("our side lost -- insurance paid" if n
+                              else "our side lost -- UNINSURED")
+            row["money"] = n * 1.0 - cost
+            out["paid_out"] += n - cost
+            out["needed"] += 1
+            if not n:
+                out["uninsured"] += 1
+        if tk in noask:
+            out["no_ask"] += 1
+        out["rows"].append(row)
+    out["alarms"] = len(alarms)
+    out["net"] = out["paid_out"] - out["thrown_away"]
+    return out
+
+
+def hedge_report(h, say=print):
+    lines = []
+    w = lines.append
+    w("  INSURANCE -- EVERY ALARM, AND WHETHER IT WAS WORTH ANYTHING")
+    w("")
+    w("  The gate table above cannot see any of this: insurance decisions are")
+    w("  not recorded as refusals. This is the population the gate table")
+    w("  misses, and it is counted by ALARM, not by purchase -- asking only")
+    w("  whether the hedges we bought paid cannot say whether buying was the")
+    w("  right call in the first place.")
+    w("")
+    if not h["alarms"]:
+        w("  No insurance alarm on record yet.")
+        txt = "\n".join(lines)
+        if say:
+            say(txt)
+        return txt
+    judged = h["needed"] + h["wasted"] + (h["rows"] and 0)
+    w("  %d alarms on real money." % h["alarms"])
+    w("    %d times our bet went on to LOSE  -- insurance was needed"
+      % h["needed"])
+    w("    %d times our bet went on to WIN   -- the premium was thrown away"
+      % h["wasted"])
+    if h["uninsured"]:
+        w("    (%d of the needed ones we never managed to insure at all)"
+          % h["uninsured"])
+    if h["unresolved"]:
+        w("    %d have not settled on file yet" % h["unresolved"])
+    if h["no_ask"]:
+        w("    %d found nobody selling the other side" % h["no_ask"])
+    w("")
+    w("  WHAT IT WAS WORTH")
+    w("    paid out when needed      %+9.2f" % h["paid_out"])
+    w("    thrown away when not      %+9.2f" % -h["thrown_away"])
+    w("    ------------------------------------")
+    w("    insurance, all in         %+9.2f" % h["net"])
+    w("")
+    w("  A POSITIVE total does not make the rule right and a negative one does")
+    w("  not make it wrong: this counts only markets where the alarm fired, and")
+    w("  the alarm is the thing being judged. What matters is the HIT RATE --")
+    w("  how often an alarm was followed by a real loss. Two paper tests are")
+    w("  aimed at exactly that: A47 waits for the market price to agree, A51")
+    w("  waits until the other side is a bet we would make on its own.")
+    w("")
+    w("  every alarm")
+    for r in h["rows"]:
+        w("    %-30s ours %-3s -> %-4s  %5.0f @ %s  %s"
+          % (r["ticker"][:30], r["want"] or "?", r["result"] or "?",
+             r["n"], ("%.3f" % r["price"]) if r["price"] else "  -  ",
+             r["verdict"]))
+    txt = "\n".join(lines)
+    if say:
+        say(txt)
+    return txt
 
 
 def report(rows, say=print, order=GATE_ORDER, start=None, currency=None):
@@ -675,6 +813,45 @@ def selftest():
     ck("would lose" in _txt and "99.5" in _txt,
        "the report explains WHY 'would lose' is so often zero -- these gates "
        "only ever see markets the model is already sure of")
+    # INSURANCE, which the gate table structurally cannot see.
+    _hrec = [
+        # alarm, our side went on to LOSE, we insured 10 at 50c -> pays $10
+        {"kind": "hedge_alarm", "ticker": "H-NEED", "want": "yes"},
+        {"kind": "hedge", "ticker": "H-NEED", "n": 10.0, "price": 0.50},
+        # alarm, our side went on to WIN, we insured 10 at 20c -> $2 wasted
+        {"kind": "hedge_alarm", "ticker": "H-WASTE", "want": "yes"},
+        {"kind": "hedge", "ticker": "H-WASTE", "n": 10.0, "price": 0.20},
+        # alarm, our side lost, nobody was selling the other side
+        {"kind": "hedge_alarm", "ticker": "H-NOASK", "want": "yes"},
+        {"kind": "hedge_no_ask", "ticker": "H-NOASK"},
+        # alarm on a market that has not settled
+        {"kind": "hedge_alarm", "ticker": "H-OPEN", "want": "yes"},
+    ]
+    _hout = {"H-NEED": "no", "H-WASTE": "yes", "H-NOASK": "no"}
+    _h = hedge_attrib(_hrec, _hout)
+    ck(_h["alarms"] == 4, "the population is the ALARM, not the purchase -- "
+       "asking only whether the hedges we BOUGHT paid cannot say whether "
+       "buying was the right call")
+    ck(_h["needed"] == 2 and _h["wasted"] == 1 and _h["unresolved"] == 1,
+       "each alarm resolves to needed, wasted, or not-yet-settled")
+    ck(_h["uninsured"] == 1 and _h["no_ask"] == 1,
+       "an alarm we could not act on is counted as needed AND as uninsured, "
+       "because the loss happened whether or not anyone would sell to us")
+    ck(abs(_h["paid_out"] - 5.0) < 1e-9,
+       "a hedge bought at 50c that pays a dollar earns 50c a contract: $5.00 "
+       "on ten")
+    ck(abs(_h["thrown_away"] - 2.0) < 1e-9,
+       "a hedge bought at 20c on a bet that WON is worth nothing: $2.00 gone")
+    ck(abs(_h["net"] - 3.0) < 1e-9, "and the two net to $3.00")
+    ck(hedge_attrib([], {})["alarms"] == 0
+       and "No insurance alarm on record" in hedge_report(
+           hedge_attrib([], {}), say=None),
+       "NULL: no alarms says so, rather than printing a $0.00 that reads as "
+       "insurance having been free")
+    _ht = hedge_report(_h, say=None)
+    ck("HIT RATE" in _ht and "A47" in _ht and "A51" in _ht,
+       "the report says the hit rate is the thing being judged, and names the "
+       "two tests aimed at it -- a positive total does not make the rule right")
     ck(would_be({"price": None, "want": "yes"}, "yes") is None,
        "a refusal with no price is NOT scored -- the early gates fire before "
        "a price exists and inventing one is the whole point thrown away")
@@ -785,7 +962,7 @@ def main():
     if not paths:
         print("pinattrib: loaded nothing -- no log matched %s" % a.glob)
         return 0
-    refusals, bought, _settled, starts, per_file = load_log(paths)
+    refusals, bought, _settled, starts, per_file, hedges = load_log(paths)
     outcomes = load_outcomes(a.markets)
     print("  %d logs, %d gate refusals, %d markets ordered, %d settlements"
           % (len(paths), len(refusals), len(bought), len(outcomes)))
@@ -808,6 +985,8 @@ def main():
     newest = starts[sorted(starts)[-1]] if starts else None
     txt = report(rows, start=newest,
                  currency=config_currency(starts, per_file))
+    txt += chr(10) + chr(10) + hedge_report(hedge_attrib(hedges, outcomes),
+                                            say=print)
     nl = chr(10)
     with open(a.out, "w", encoding="utf-8") as fh:
         fh.write("# RESULTS_attrib -- what each gate in the bot actually did"

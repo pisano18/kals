@@ -9,7 +9,7 @@
   EVERY ROW ADDS UP:  fired = moved + blocked, and
                       blocked = won + lost + the three 'cannot say' columns.
 
-  HOW MUCH OF THIS IS TODAY'S BOT: 5359 of 7007 refusals (76%) come
+  HOW MUCH OF THIS IS TODAY'S BOT: 5374 of 7022 refusals (77%) come
   from runs with exactly the settings that are live now, starting
   pinrun-live-20260915T013908Z.jsonl. The rest ran under older settings and describe
   a bot that no longer exists.
@@ -23,19 +23,19 @@
   market_attempts |  on |     14 |     9 |      5 |    - |    - |      5 |     0 |       0 |      -
   attempts_cap    |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
   book_suspect    |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  book_stale      |  on |     87 |     3 |     84 |    - |    - |     84 |     0 |       0 |      -
+  book_stale      |  on |     88 |     3 |     85 |    - |    - |     85 |     0 |       0 |      -
   index_stale     |  on |     27 |     0 |     27 |    - |    - |     27 |     0 |       0 |      -
   no_sigma        |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  confidence      |  on |    420 |   202 |    218 |    - |    - |    218 |     0 |       0 |      -
-  no_offer        |  on |   3362 |    53 |   3309 |    - |    - |   3309 |     0 |       0 |      -
-  depth_floor     |  on |    550 |    47 |    503 |    - |    - |      0 |   503 |       0 |      -
-  edge_floor      |  on |   1357 |    67 |   1290 | 1048 |    0 |      0 |     0 |     242 |    +136.51
+  confidence      |  on |    421 |   202 |    219 |    - |    - |    219 |     0 |       0 |      -
+  no_offer        |  on |   3371 |    53 |   3318 |    - |    - |   3318 |     0 |       0 |      -
+  depth_floor     |  on |    551 |    47 |    504 |    - |    - |      0 |   504 |       0 |      -
+  edge_floor      |  on |   1359 |    67 |   1292 | 1048 |    0 |      0 |     0 |     244 |    +136.51
   against_thin    |  on |     19 |     7 |     12 |   10 |    0 |      0 |     0 |       2 |      +5.45
   jump_against    |  on |     26 |     2 |     24 |   19 |    0 |      0 |     0 |       5 |      +3.72
   dump_guard      |  on |      9 |     8 |      1 |    0 |    1 |      0 |     0 |       0 |     -37.85
   improve_by      |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
   rebuy_band      |  on |     19 |    19 |      0 |    - |    - |      0 |     0 |       0 |      -
-  price_ceiling   |  on |    550 |    88 |    462 |  379 |    0 |      0 |     0 |      83 |    +122.80
+  price_ceiling   |  on |    551 |    88 |    463 |  379 |    0 |      0 |     0 |      84 |    +122.80
   ev_floor        |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
   early_once      |  on |     56 |    56 |      0 |    - |    - |      0 |     0 |       0 |      -
   staged_none     |  on |      3 |     2 |      1 |    - |    - |      1 |     0 |       0 |      -
@@ -114,4 +114,47 @@
     staged_none      A46: the staged leg came to nothing (market already at full size, or under the minimum)
     early_cheap      A49: the 31-45 s early leg wanted an ask under the 90c floor. Out that far less of the settlement average is locked, so a cheap ask is the market disagreeing with us where the model is weakest
     early_wide       A50: the 31-45 s early leg found our model MORE than the cap above the market price. Late, that disagreement is the whole edge (6c or more made 1.44 $/bet inside 30 s); early, three quarters of the settlement window has not happened yet and the same band lost 3.01 $/bet, so out there a big edge means our volatility guess is wrong rather than the market
+
+  INSURANCE -- EVERY ALARM, AND WHETHER IT WAS WORTH ANYTHING
+
+  The gate table above cannot see any of this: insurance decisions are
+  not recorded as refusals. This is the population the gate table
+  misses, and it is counted by ALARM, not by purchase -- asking only
+  whether the hedges we bought paid cannot say whether buying was the
+  right call in the first place.
+
+  13 alarms on real money.
+    7 times our bet went on to LOSE  -- insurance was needed
+    5 times our bet went on to WIN   -- the premium was thrown away
+    (1 of the needed ones we never managed to insure at all)
+    1 have not settled on file yet
+    1 found nobody selling the other side
+
+  WHAT IT WAS WORTH
+    paid out when needed         +85.98
+    thrown away when not         -39.43
+    ------------------------------------
+    insurance, all in            +46.55
+
+  A POSITIVE total does not make the rule right and a negative one does
+  not make it wrong: this counts only markets where the alarm fired, and
+  the alarm is the thing being judged. What matters is the HIT RATE --
+  how often an alarm was followed by a real loss. Two paper tests are
+  aimed at exactly that: A47 waits for the market price to agree, A51
+  waits until the other side is a bet we would make on its own.
+
+  every alarm
+    KXBNB15M-26SEP131230-30        ours no  -> no       32 @ 0.100  our side won -- premium thrown away
+    KXBNB15M-26SEP161230-30        ours no  -> yes       1 @ 0.470  our side lost -- insurance paid
+    KXBTC15M-26SEP121100-00        ours no  -> no       20 @ 0.140  our side won -- premium thrown away
+    KXBTC15M-26SEP140530-30        ours no  -> yes      60 @ 0.580  our side lost -- insurance paid
+    KXBTC15M-26SEP172115-15        ours yes -> no       99 @ 0.720  our side lost -- insurance paid
+    KXDOGE15M-26SEP160900-00       ours no  -> no       87 @ 0.150  our side won -- premium thrown away
+    KXDOGE15M-26SEP180015-15       ours yes -> ?        34 @ 0.740  not settled on file
+    KXETH15M-26SEP120545-45        ours yes -> no        0 @   -    our side lost -- UNINSURED
+    KXETH15M-26SEP121115-15        ours no  -> no       20 @ 0.263  our side won -- premium thrown away
+    KXHYPE15M-26SEP141600-00       ours no  -> yes      62 @ 0.510  our side lost -- insurance paid
+    KXNEAR15M-26SEP160430-30       ours yes -> yes      84 @ 0.180  our side won -- premium thrown away
+    KXSOL15M-26SEP120600-00        ours no  -> yes       1 @ 0.949  our side lost -- insurance paid
+    KXZEC15M-26SEP122000-00        ours yes -> no       11 @ 0.809  our side lost -- insurance paid
 ```
