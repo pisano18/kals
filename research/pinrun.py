@@ -7338,6 +7338,16 @@ def main():
         dump_discount=DUMP_DISCOUNT,
         dump_enabled=DUMP_ENABLED,
         min_fill_frac=MIN_FILL_FRAC,
+        # SAME LESSON AGAIN, A47/A48/A49 (added 2026-09-18). These three were
+        # deployed as paper arms and NONE of them appeared here, so the start
+        # record of the hedge-price arm was byte-identical in every setting to
+        # the control's. `pinlab` matches an arm to its log by the settings
+        # that distinguish it, found nothing to distinguish, and showed the
+        # Lab tab a blank where two live experiments should be. An arm whose
+        # own log cannot say what it is testing is not measurable.
+        hedge_price=HEDGE_PRICE,
+        late_tau=LATE_TAU, late_mult=LATE_MULT,
+        early_min_price=EARLY_MIN_PRICE,
         code_sha=_source_fingerprint())
 
     if a.live:

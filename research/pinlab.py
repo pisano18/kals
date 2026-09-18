@@ -33,30 +33,22 @@ RESULTS = os.path.join(os.path.dirname(HERE), "results")
 
 RUNNING, SHIPPED, KILLED, PAUSED, IDEA = "RUNNING", "SHIPPED", "KILLED", "PAUSED", "IDEA"
 
+# `select` values: an entry names the start-record fields that distinguish its
+# arm from every other arm, because the start record holds the WHOLE
+# configuration and a flag's mere presence there means nothing.
+SET = "<set>"          # the field is present and not null (the flag was passed)
+UNSET = "<unset>"      # the field is absent or null (the flag was NOT passed)
+
 # match: a substring of the arm's command line, used to find its paper log and
 #        to tell whether it is running right now.
 EXPERIMENTS = [
     # ---------------------------------------------------------------- RUNNING
     {
-        "name": "Lower confidence (5 arms: 0.99 / 0.985 / 0.98 / 0.975 / 0.97)",
-        "status": RUNNING, "match": "--pin ", "since": "2026-09-18",
-        "what": "Five paper bots identical to the live one except they need less "
-                "certainty before buying. The live bot demands 99.5%.",
-        "why": "Our cheap fills (under 95c) fell from 28 a day to 7. The question "
-               "is whether those trades are still there but now sit just under our "
-               "confidence bar, or whether they are genuinely gone.",
-        "good": "A looser arm makes MORE money per day without its loss rate "
-                "rising past break-even. Then the bar is too strict and we lower it.",
-        "bad": "Looser arms take more trades and lose more than the extra trades "
-               "pay for. Then 99.5% is right and the missing fills are a supply "
-               "problem, not a gate problem -- which is what the pickoff tracker "
-               "already suggests.",
-        "watch": "Dollars per day, not win rate. At 96c a 3% loss rate is "
-                 "break-even, so an arm can win 97 times in 100 and make nothing.",
-    },
-    {
         "name": "Hedge on the market price, not the model (A47)",
         "status": RUNNING, "match": "--hedge-price", "since": "2026-09-17",
+        "select": {"hedge_price": SET},
+        "legacy_logs": ["pinrun-paper-20260917T163428Z.jsonl",
+                        "pinrun-paper-20260918T041353Z.jsonl"],
         "what": "Insurance fires only when OUR side's market price has also fallen "
                 "below 50c, instead of firing on the model's belief alone.",
         "why": "The wobble study, 1,717 markets: a favourite that dips but stops "
@@ -73,6 +65,9 @@ EXPERIMENTS = [
     {
         "name": "Buy bigger in the last seconds (A48)",
         "status": RUNNING, "match": "--late-mult", "since": "2026-09-17",
+        # late_mult SHIPS AT 1.0, so `SET` would match every log ever written.
+        "select": {"late_mult": lambda v: v is not None and float(v) > 1.0},
+        "legacy_logs": ["pinrun-paper-20260917T212112Z.jsonl"],
         "what": "Lets one order exceed the normal size when there are under 10 "
                 "seconds left. Operator's idea.",
         "why": "Our own fills earn 5.35c a contract inside 5 seconds against 1.90c "
@@ -90,6 +85,7 @@ EXPERIMENTS = [
     {
         "name": "The 45-second early leg (A46 + A49)",
         "status": RUNNING, "match": "--early-tau", "since": "2026-09-17",
+        "select": {"early_tau_max": 45, "pin": 0.995},
         "what": "Buys a THIRD of a bet between 31 and 45 seconds out, and only if "
                 "the price is at least 90c. Also live at that size.",
         "why": "The cheap offers get taken a median of 41 seconds before the close "
@@ -106,6 +102,8 @@ EXPERIMENTS = [
     {
         "name": "Commodities, paper (all five, every window)",
         "status": RUNNING, "match": "cmdarm.py", "since": "2026-09-17",
+        # cmdarm's start record has no `mode`; `size_dollars` is cmdlive's.
+        "select": {"series": SET, "dry": UNSET},
         "what": "Gold, oil, silver, copper and natural gas on their own best "
                 "windows, plus one window deliberately chosen to LOSE as a control.",
         "why": "Commodities settle on the close of a one-minute candle, not a "
@@ -120,6 +118,7 @@ EXPERIMENTS = [
     {
         "name": "Commodities, LIVE (oil, last 15 seconds, $10)",
         "status": RUNNING, "match": "cmdlive.py", "since": "2026-09-17",
+        "select": {"size_dollars": SET},
         "what": "Real money on ONE cell: oil at 95-99c inside the final 15 seconds.",
         "why": "Paper cannot answer whether an offer would reach US -- on crypto "
                "the tape and our fills differed 31x in loss rate. Only real fills "
@@ -134,6 +133,7 @@ EXPERIMENTS = [
     {
         "name": "Coin Race (KXCRYPTOLEAD15M), paper",
         "status": RUNNING, "match": "pinracearm.py", "since": "2026-09-15",
+        "select": {"table": SET},
         "what": "Which coin leads over a quarter hour. Five legs per race and four "
                 "of them lose, so the NO side of a trailer is a much flatter bet "
                 "than the leader's YES.",
@@ -302,9 +302,68 @@ EXPERIMENTS = [
     },
 ]
 
+# THE FIVE CONFIDENCE ARMS, one entry each rather than one entry for the set.
+# They are the comparison the operator asked for -- "start a paper arm at .99,
+# .985, .98, .975, .97" -- and a single lumped row could only ever show one of
+# their logs, which is exactly the bug that made every arm report the same five
+# markets. Generated in a loop because only the number differs.
+for _pin, _pct in ((0.99, "99.0%"), (0.985, "98.5%"), (0.98, "98.0%"),
+                   (0.975, "97.5%"), (0.97, "97.0%")):
+    EXPERIMENTS.insert(0, {
+        "name": "Lower confidence to %s" % _pct,
+        "status": RUNNING, "match": "--pin %s" % _pin, "since": "2026-09-18",
+        "select": {"pin": _pin},
+        "what": "A paper bot identical to the live one except it buys once it is "
+                "%s sure instead of 99.5%% sure." % _pct,
+        "why": "Our cheap fills (under 95c) fell from 28 a day to 7. The question "
+               "is whether those trades are still there but now sit just under our "
+               "confidence bar, or whether they are genuinely gone.",
+        "good": "It makes MORE money per day than the live bot without its loss "
+                "rate rising past break-even. Then the bar is too strict.",
+        "bad": "It takes more trades and loses more than the extra trades pay for. "
+               "Then 99.5% is right and the missing fills are a supply problem, "
+               "not a gate problem -- which is what the pickoff tracker suggests.",
+        "watch": "Dollars per day, not win rate. At 96c a 3% loss rate is "
+                 "break-even, so an arm can win 97 times in 100 and make nothing.",
+    })
+del _pin, _pct
+
 
 def _paper_logs():
-    return sorted(glob.glob(os.path.join(RESULTS, "pinrun-paper-*.jsonl")))
+    """Every arm's log, not just the crypto ones.
+
+    This globbed `pinrun-paper-*` alone, so the commodity arms and the Coin
+    Race arm -- which write their own prefixes -- showed the operator a blank
+    where three running experiments should be. An arm that is invisible in the
+    Lab is an arm nobody checks.
+    """
+    out = []
+    for pat in ("pinrun-paper-*.jsonl", "cmdarm-*.jsonl", "cmdlive-*.jsonl",
+                "pinracearm-*.jsonl"):
+        out += glob.glob(os.path.join(RESULTS, pat))
+    return sorted(out)
+
+
+def _sel_ok(got, want):
+    """One `select` clause against one start-record field.
+
+    `want` is a value, SET/UNSET, or a callable -- a callable is the right
+    answer whenever the arm's setting has a non-null DEFAULT (late_mult ships
+    at 1.0, so SET would match every log ever written and put another arm's
+    money under this one's name).
+    """
+    if callable(want):
+        try:
+            return bool(want(got))
+        except Exception:                                          # noqa: BLE001
+            return False
+    if want is SET or want == SET:
+        return got is not None
+    if want is UNSET or want == UNSET:
+        return got is None
+    if isinstance(want, (int, float)) and isinstance(got, (int, float)):
+        return abs(float(got) - float(want)) < 1e-9
+    return got == want
 
 
 def _first_record(path):
@@ -318,6 +377,28 @@ def _first_record(path):
     except OSError:
         return None
     return None
+
+
+_NOPOS = object()
+
+
+def _settled_pnl(r):
+    """Dollars from one settled record, or _NOPOS if we held nothing.
+
+    THREE ARMS, THREE SPELLINGS. `pinrun` writes `pnl_c` in CENTS; the Coin
+    Race arm writes `pnl` in DOLLARS and emits a settled record for EVERY race
+    whether or not it traded. Reading only `pnl_c` scored the race arm at
+    exactly $0.00 across 214 "settled" markets, of which it had actually
+    traded 34 -- a flat zero that reads as a real, harmless result.
+    """
+    if r.get("pnl_c") is not None:
+        return float(r["pnl_c"]) / 100.0
+    if r.get("pnl") is not None:
+        # a race record with no position is not a market we were in
+        if r.get("positions") is not None and not r.get("positions"):
+            return _NOPOS
+        return float(r["pnl"])
+    return _NOPOS
 
 
 def summarise_log(path):
@@ -338,7 +419,9 @@ def summarise_log(path):
                 continue
             if r.get("kind") != "settled":
                 continue
-            v = float(r.get("pnl_c") or 0) / 100.0
+            v = _settled_pnl(r)
+            if v is _NOPOS:
+                continue
             n += 1
             net += v
             if v < 0:
@@ -359,7 +442,8 @@ def arm_series(path):
         return [], 0.0
     with fh:
         for line in fh:
-            if '"settled"' not in line and '"order"' not in line:
+            if ('"settled"' not in line and '"order"' not in line
+                    and '"signal"' not in line):
                 continue
             try:
                 r = json.loads(line)
@@ -368,13 +452,24 @@ def arm_series(path):
             k = r.get("kind")
             if k == "order":
                 contracts += float(r.get("filled") or 0)
+            elif k == "signal" and not r.get("live"):
+                # A PAPER ARM WRITES NO ORDER RECORDS -- there is no wire call
+                # to record. Its contracts live on the signal as `take_n`, and
+                # counting only `order` rows gave every arm zero contracts, so
+                # the scaling divided by zero and every what-if came back
+                # empty. Live rows are excluded here because the live path DOES
+                # write orders and would double-count.
+                contracts += float(r.get("take_n") or 0)
             elif k == "settled":
+                v = _settled_pnl(r)
+                if v is _NOPOS:
+                    continue
                 t = r.get("t") or ""
                 try:
                     ts = calendar.timegm(_t.strptime(t[:19], "%Y-%m-%dT%H:%M:%S"))
                 except (TypeError, ValueError):
                     continue
-                pts.append((ts, float(r.get("pnl_c") or 0) / 100.0))
+                pts.append((ts, v))
     pts.sort()
     return pts, contracts
 
@@ -407,10 +502,31 @@ def whatif(arm_pts, arm_contracts, live_pts, live_contracts):
     for t, v in arm_pts:
         cum += v * scale
         acurve.append((t, cum))
+    # VOLATILITY, so "better" is not judged on the total alone. A strategy that
+    # earns the same with half the swing is a better strategy, and one that
+    # earns slightly more by risking far more is usually not. Measured as the
+    # standard deviation of per-market P&L, scaled the same way.
+    def _sd(vals):
+        if len(vals) < 2:
+            return 0.0
+        mu = sum(vals) / len(vals)
+        return (sum((v - mu) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5
+
+    live_vals = [v for _, v in live]
+    arm_vals = [v * scale for _, v in arm_pts]
+    lsd, asd = _sd(live_vals), _sd(arm_vals)
+    lworst = min(live_vals) if live_vals else 0.0
+    aworst = min(arm_vals) if arm_vals else 0.0
     return {"live": lcurve, "arm": acurve,
             "live_net": lcurve[-1][1], "arm_net": acurve[-1][1],
             "diff": acurve[-1][1] - lcurve[-1][1], "from": t0,
-            "scale": scale}
+            "scale": scale,
+            "pct": (100.0 * (acurve[-1][1] - lcurve[-1][1]) / abs(lcurve[-1][1]))
+                   if abs(lcurve[-1][1]) > 1e-9 else None,
+            "live_sd": lsd, "arm_sd": asd,
+            "sd_pct": (100.0 * (asd - lsd) / lsd) if lsd > 1e-9 else None,
+            "live_worst": lworst, "arm_worst": aworst,
+            "n_live": len(live_vals), "n_arm": len(arm_vals)}
 
 
 def live_progress(cmdlines=None, logs=None):
@@ -427,14 +543,38 @@ def live_progress(cmdlines=None, logs=None):
             continue
         running = any(m in (c or "") for c in cmdlines)
         best = None
-        for p in (logs if logs is not None else _paper_logs()):
-            r = _first_record(p)
-            if r is None:
-                continue
-            blob = json.dumps(r)
-            key = m.strip().lstrip("-").split()[0] if m.startswith("--") else None
-            if key and key.replace("-", "_") in blob:
-                best = p
+        # HOW AN ARM IS MATCHED TO ITS LOG, and why the first version was
+        # silently wrong. It looked for the flag NAME anywhere in the start
+        # record -- but the start record is the WHOLE configuration, so every
+        # log carries `pin` and `early_tau_max` whether or not the arm changed
+        # them. Every experiment therefore matched every log and took the
+        # newest, so five confidence arms and the 45-second arm all reported
+        # the same five markets, and the what-if compared an arm against
+        # itself. An entry now names the field VALUES that distinguish it
+        # (`select`), and an entry with no `select` gets no log at all --
+        # blank is honest, a stranger's numbers under your name is not.
+        sel = e.get("select")
+        pool = logs if logs is not None else _paper_logs()
+        if sel:
+            for p in pool:
+                r = _first_record(p)
+                if r is None or r.get("kind") != "start":
+                    continue
+                if all(_sel_ok(r.get(k), want) for k, want in sel.items()):
+                    best = p
+        if best is None and e.get("legacy_logs"):
+            # RUNS THAT PREDATE THE START-RECORD FIX. A47 and A48 were launched
+            # on 2026-09-17, before `hedge_price` and `late_mult` were written
+            # into the start record, so their logs cannot say what they are
+            # testing and no `select` can find them. These names were matched
+            # by hand, from process creation time against log filename, and are
+            # here so three days of arm history stays visible instead of being
+            # thrown away by a restart. Runs started after the fix identify
+            # themselves and never reach this branch.
+            known = {os.path.basename(p): p for p in pool}
+            for nm in e["legacy_logs"]:
+                if nm in known:
+                    best = known[nm]
         info = {"running": running}
         if best:
             s = summarise_log(best)
@@ -482,16 +622,73 @@ def selftest():
         fh.write(json.dumps({"kind": "start", "pin": 0.97, "hedge_price": None}) + "\n")
         fh.write(json.dumps({"kind": "settled", "pnl_c": 250.0}) + "\n")
         fh.write(json.dumps({"kind": "settled", "pnl_c": -900.0}) + "\n")
+    ap2, ac2 = arm_series(p)
+    ck(ac2 == 0.0, "no signals in this fixture yet, so no contracts")
+    with open(p, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "signal", "live": False, "take_n": 20.0}) + "\n")
+        fh.write(json.dumps({"kind": "signal", "live": True, "take_n": 99.0}) + "\n")
+    ap3, ac3 = arm_series(p)
+    ck(ac3 == 20.0,
+       "a PAPER arm's contracts come from its signals (it writes no order "
+       "records at all), and a live row is not counted -- reading only orders "
+       "gave every arm zero contracts and silently emptied every what-if")
     s = summarise_log(p)
     ck(s["settled"] == 2 and s["won"] == 1 and s["lost"] == 1
        and abs(s["net"] + 6.50) < 1e-9,
        "a paper log summarises to settled, won, lost and NET DOLLARS -- the net "
        "is what matters, and here one loss swamps one win (-$6.50 on 1-1)")
+    # THE COIN RACE ARM SPELLS ITS MONEY DIFFERENTLY, and gets a settled
+    # record for every race whether it traded or not.
+    rp = os.path.join(td, "pinracearm-x.jsonl")
+    with open(rp, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "start", "table": "race_gaptable.json"}) + "\n")
+        fh.write(json.dumps({"kind": "settled", "pnl": 0, "positions": 0}) + "\n")
+        fh.write(json.dumps({"kind": "settled", "pnl": 3.25, "positions": 2}) + "\n")
+        fh.write(json.dumps({"kind": "settled", "pnl": -1.25, "positions": 1}) + "\n")
+    rs = summarise_log(rp)
+    ck(rs["settled"] == 2 and abs(rs["net"] - 2.00) < 1e-9,
+       "a race log counts only races it HELD, and reads `pnl` as DOLLARS -- "
+       "reading `pnl_c` scored 214 races at a flat $0.00, which looks like a "
+       "harmless result rather than a unit bug")
+    ck(rs["won"] == 1 and rs["lost"] == 1, "...and splits them into won and lost")
     ck(summarise_log(os.path.join(td, "nope.jsonl")) is None,
        "NULL: a missing log summarises to nothing rather than zeros that read "
        "as a real result")
+    # TWO ARMS THAT DIFFER ONLY IN CONFIDENCE MUST NOT SHARE A LOG. The first
+    # matcher looked for the flag NAME in the start record, but the start
+    # record holds the whole configuration, so every arm matched every log and
+    # took the newest -- five arms all reported the same five markets and the
+    # what-if compared an arm against itself.
+    q97 = os.path.join(td, "pinrun-paper-a97.jsonl")
+    q98 = os.path.join(td, "pinrun-paper-a98.jsonl")
+    for path, pinv, pnl in ((q97, 0.97, 300.0), (q98, 0.98, -400.0)):
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"kind": "start", "pin": pinv,
+                                 "early_tau_max": 30, "hedge_price": None}) + "\n")
+            fh.write(json.dumps({"kind": "settled", "pnl_c": pnl}) + "\n")
+    lp2 = live_progress(cmdlines=[], logs=[q97, q98])
+    ck(lp2["--pin 0.97"].get("log") == "pinrun-paper-a97.jsonl"
+       and lp2["--pin 0.98"].get("log") == "pinrun-paper-a98.jsonl",
+       "each confidence arm finds ITS OWN log, by the value of `pin` and not by "
+       "the flag's name appearing somewhere in the configuration")
+    ck(abs(lp2["--pin 0.97"]["net"] - 3.0) < 1e-9
+       and abs(lp2["--pin 0.98"]["net"] + 4.0) < 1e-9,
+       "...so their money is reported separately (+$3.00 against -$4.00), which "
+       "is the whole point of running five of them")
+    # A SETTING WITH A NON-NULL DEFAULT NEEDS A CALLABLE, NOT `SET`.
+    ck(_sel_ok(1.0, SET) is True and _sel_ok(1.0, lambda v: v > 1.0) is False,
+       "`SET` is true of a setting sitting at its shipped default (late_mult "
+       "1.0), so an arm testing a RAISED value must select on the value -- "
+       "otherwise it matches every log there has ever been")
+    ck(_sel_ok(None, lambda v: v > 1.0) is False,
+       "...and a callable that would raise on a missing field refuses rather "
+       "than matching")
+    ck(lp2["--hedge-price"].get("log") is None,
+       "NULL: an arm whose distinguishing flag is not set in ANY log gets no "
+       "log at all -- blank is honest; another arm's numbers under its name is "
+       "the bug this replaced")
     lp = live_progress(cmdlines=["python pinrun.py --pin 0.97 --size 20"], logs=[p])
-    ck(lp["--pin "]["running"] is True, "a matching command line marks it running")
+    ck(lp["--pin 0.97"]["running"] is True, "a matching command line marks it running")
     ck(lp["--hedge-price"]["running"] is False, "and a missing one does not")
     ck(live_progress(cmdlines=[], logs=[])["cmdarm.py"]["running"] is False,
        "NULL: nothing running, nothing claimed")
@@ -511,6 +708,17 @@ def selftest():
     ck(abs(w["arm_net"] - 0.0) < 1e-9 and abs(w["live_net"] - 1.0) < 1e-9,
        "arm nets (1-3+2)x10 = 0; live nets 2-1 = 1 over the same window")
     ck(abs(w["diff"] + 1.0) < 1e-9, "so the arm would have been $1 WORSE")
+    ck(w["pct"] is not None and abs(w["pct"] + 100.0) < 1e-6,
+       "and that is expressed as a PERCENTAGE of what we actually made, which "
+       "is the number that survives a change of stake")
+    ck(w["arm_sd"] > w["live_sd"],
+       "volatility is reported too: this arm swings harder per market, and a "
+       "strategy that earns the same with a bigger swing is not an improvement")
+    ck(w["arm_worst"] <= w["live_worst"],
+       "so is the worst single market, which is what actually hurts on a bad day")
+    ck(whatif([(100, 1.0)], 10.0, [(100, 1.0)], 10.0)["sd_pct"] is None,
+       "NULL: one market either side gives no volatility comparison rather than "
+       "a made-up zero")
     ck(whatif([], 0, lp_, lc) is None and whatif(ap_, 0.0, lp_, lc) is None,
        "NULL: no arm data, or no contracts to scale by, produces NO comparison "
        "rather than a divide-by-zero or a fake zero")

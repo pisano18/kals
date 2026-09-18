@@ -1645,7 +1645,7 @@ def run_gui():
                        bg=C["bg"], fg=C["text"], selectcolor=C["panel2"], activebackground=C["bg"],
                        activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
     tk.Label(ch_bar, text="   range:", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9)).pack(side="left")
-    for txt, val in (("all", "all"), ("7 days", "7"), ("3 days", "3"), ("today", "1")):
+    for txt, val in (("all", "all"), ("month", "30"), ("7 days", "7"), ("3 days", "3"), ("today", "1")):
         tk.Radiobutton(ch_bar, text=txt, variable=range_var, value=val, command=lambda: draw_chart(),
                        bg=C["bg"], fg=C["text"], selectcolor=C["panel2"], activebackground=C["bg"],
                        activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(6, 0))
@@ -1706,7 +1706,8 @@ def run_gui():
     lab_which = tk.StringVar(value="ALL")
     lab_body = tk.Text(lab_tab, bg=C["panel"], fg=C["text"], font=("Segoe UI", 10),
                        relief="flat", wrap="word", padx=14, pady=10)
-    lab_body.pack(fill="both", expand=True, padx=2, pady=(4, 6))
+    # PACKED LATER, below the overlay chart -- tk stacks in pack() order, and
+    # an expanding body packed first pushes the chart off the bottom.
     for _w, _v in (("All", "ALL"), ("Running", pinlab.RUNNING), ("Shipped", pinlab.SHIPPED),
                    ("Killed", pinlab.KILLED), ("Ideas", pinlab.IDEA)):
         tk.Radiobutton(lab_filter, text=_w, variable=lab_which, value=_v,
@@ -1714,11 +1715,135 @@ def run_gui():
                        selectcolor=C["panel2"], activebackground=C["bg"],
                        activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
-    lab_cache = {"prog": {}, "whatif": {}}
+    lab_cache = {"prog": {}, "whatif": {}, "names": {}, "b0": {}}
 
     def lab_whatif(logname):
         """Cached. Computed on the worker thread by lab_compute()."""
         return (lab_cache.get("whatif") or {}).get(logname)
+
+    # ---- the what-if overlay -------------------------------------------
+    # The operator, 2026-09-18: *"I don't see anywhere showing what effect it
+    # would've had on the actual running bank. I wanted to see how our profit
+    # and bankroll would be different if it had been running like it was
+    # running... price chart with effect of paper run overlayed the real
+    # chart."* The text summary above answers it in percentages; this answers
+    # it in dollars, on the same axis as the real balance.
+    #
+    # BOTH lines start from the SAME real bank reading at the moment the arm
+    # started, and both add up realised settlements from there. That is the
+    # only way the comparison is fair: a bank curve drawn from real readings
+    # for one line and from arithmetic for the other would differ by every
+    # deposit and every open position, and would read as strategy.
+    lab_pickbar = tk.Frame(lab_tab, bg=C["bg"])
+    lab_pickbar.pack(fill="x", padx=2, pady=(6, 0))
+    tk.Label(lab_pickbar, text="WHAT IF THIS HAD BEEN LIVE:", bg=C["bg"], fg=C["muted"],
+             font=("Segoe UI", 8, "bold")).pack(side="left", padx=(8, 8))
+    lab_pick = tk.StringVar(value="")
+    lab_pickmenu = tk.OptionMenu(lab_pickbar, lab_pick, "")
+    lab_pickmenu.configure(bg=C["panel"], fg=C["text"], font=("Segoe UI", 9),
+                           relief="flat", highlightthickness=0,
+                           activebackground=C["panel2"], activeforeground=C["text"])
+    lab_pickmenu["menu"].configure(bg=C["panel"], fg=C["text"], font=("Segoe UI", 9))
+    lab_pickmenu.pack(side="left")
+    lab_pickhead = tk.Label(lab_pickbar, text="", bg=C["bg"], fg=C["muted"],
+                            font=("Segoe UI", 10, "bold"))
+    lab_pickhead.pack(side="left", padx=12)
+    lab_chart = tk.Canvas(lab_tab, bg=C["panel"], height=200, highlightthickness=0)
+    lab_chart.pack(fill="x", padx=2, pady=(4, 0))
+
+    def lab_menu_refresh():
+        """Repopulate the arm picker from whatever the worker just computed."""
+        wf = lab_cache.get("whatif") or {}
+        names = lab_cache.get("names") or {}
+        opts = sorted(names.get(k, k) for k in wf if wf.get(k))
+        menu = lab_pickmenu["menu"]
+        menu.delete(0, "end")
+        for o in opts:
+            menu.add_command(label=o, command=lambda v=o: (lab_pick.set(v), draw_lab_chart()))
+        if lab_pick.get() not in opts:
+            lab_pick.set(opts[0] if opts else "")
+
+    def draw_lab_chart(*_a):
+        """Draw only. Every number here came off the worker thread."""
+        lab_chart.delete("all")
+        wf = lab_cache.get("whatif") or {}
+        names = lab_cache.get("names") or {}
+        want = lab_pick.get()
+        log = None
+        for k, v in names.items():
+            if v == want and wf.get(k):
+                log = k
+                break
+        w = wf.get(log) if log else None
+        if not w or len(w.get("live") or []) < 2 or len(w.get("arm") or []) < 2:
+            lab_pickhead.configure(text="")
+            lab_chart.create_text(16, 18, anchor="w", fill=C["muted"], font=("Segoe UI", 9),
+                                  text="no settled markets on both sides yet, so there is "
+                                       "nothing honest to compare")
+            return
+        b0 = (lab_cache.get("b0") or {}).get(log)
+        base = b0 if b0 else 0.0
+        lab_pickhead.configure(
+            text="%s   %s" % (
+                ("%+.1f%% on the money" % w["pct"]) if w.get("pct") is not None
+                else money(w["diff"]),
+                ("%+.0f%% swing" % w["sd_pct"]) if w.get("sd_pct") is not None
+                else "swing not comparable"),
+            fg=C["gain"] if w["diff"] > 0 else C["loss"])
+        lv = [(t, base + v) for t, v in w["live"]]
+        av = [(t, base + v) for t, v in w["arm"]]
+        W = max(lab_chart.winfo_width(), 300)
+        H = max(int(lab_chart["height"]), 120)
+        m = {"l": 60, "r": 132, "t": 14, "b": 22}
+        allv = [v for _, v in lv] + [v for _, v in av]
+        lo, hi = min(allv), max(allv)
+        if hi - lo < 1e-9:
+            hi = lo + 1
+        pad = (hi - lo) * 0.08
+        lo, hi = lo - pad, hi + pad
+        ts = [t for t, _ in lv] + [t for t, _ in av]
+        t0, t1 = min(ts), max(ts)
+
+        def X(t):
+            return m["l"] + (t - t0) / max(1, t1 - t0) * (W - m["l"] - m["r"])
+
+        def Y(v):
+            return m["t"] + (hi - v) / (hi - lo) * (H - m["t"] - m["b"])
+
+        if lo <= base <= hi:
+            lab_chart.create_line(m["l"], Y(base), W - m["r"], Y(base),
+                                  fill=C["grey"], dash=(3, 3))
+            lab_chart.create_text(m["l"] - 6, Y(base), text="$%.0f" % base,
+                                  fill=C["muted"], anchor="e", font=("Segoe UI", 8))
+        for v in (lo, hi):
+            lab_chart.create_text(m["l"] - 6, Y(v), text="$%.0f" % v, fill=C["muted"],
+                                  anchor="e", font=("Segoe UI", 8))
+        last = None
+        for t, _v in lv:
+            d = et_day(t)
+            if d != last:
+                lab_chart.create_line(X(t), m["t"], X(t), H - m["b"], fill=C["panel2"])
+                lab_chart.create_text(X(t) + 2, H - m["b"] + 9, text=d[5:], fill=C["muted"],
+                                      anchor="w", font=("Segoe UI", 8))
+                last = d
+        for pts, col, wid in ((lv, C["blue"], 2),
+                              (av, C["gain"] if w["diff"] > 0 else C["loss"], 2)):
+            co = []
+            for t, v in pts:
+                co += [X(t), Y(v)]
+            lab_chart.create_line(*co, fill=col, width=wid)
+        for pts, col, txt in (
+                (lv, C["blue"], "REAL  $%.0f" % lv[-1][1]),
+                (av, C["gain"] if w["diff"] > 0 else C["loss"],
+                 "WHAT IF  $%.0f" % av[-1][1])):
+            lab_chart.create_text(W - m["r"] + 8, Y(pts[-1][1]), text=txt, fill=col,
+                                  anchor="w", font=("Segoe UI", 9, "bold"))
+        lab_chart.create_text(W - m["r"] + 8, H - m["b"] + 9, anchor="w", fill=C["muted"],
+                              font=("Segoe UI", 8),
+                              text="both start at the real balance")
+
+    lab_chart.bind("<Configure>", draw_lab_chart)
+    lab_body.pack(fill="both", expand=True, padx=2, pady=(4, 6))
 
 
     def lab_compute():
@@ -1743,9 +1868,10 @@ def run_gui():
             prog = pinlab.live_progress(cmdlines=cmds)
         except Exception:                                         # noqa: BLE001
             prog = {}
-        wf = {}
+        wf, names, b0s = {}, {}, {}
+        bymatch = {e.get("match"): e.get("name") for e in pinlab.EXPERIMENTS}
         live_pts = sorted((s["t"], s["pnl"]) for s in ledger.settled if s.get("t"))
-        for info in prog.values():
+        for match, info in prog.items():
             log = info.get("log")
             if not log or log in wf:
                 continue
@@ -1757,9 +1883,12 @@ def run_gui():
                 live_ct = sum(float(o.get("filled") or 0) for o in ledger.orders
                               if (o.get("t") or 0) >= t0)
                 wf[log] = pinlab.whatif(arm_pts, arm_ct, live_pts, live_ct)
+                names[log] = bymatch.get(match) or match
+                b0s[log] = ledger.bank_at(t0)
             except Exception:                                     # noqa: BLE001
                 continue
         lab_cache["prog"], lab_cache["whatif"] = prog, wf
+        lab_cache["names"], lab_cache["b0"] = names, b0s
 
     def draw_lab():
         lab_body.configure(state="normal")
@@ -1788,15 +1917,24 @@ def run_gui():
                                    "" if p.get("running") else "   (not running now)"), "prog")
                 w = lab_whatif(p.get("log"))
                 if w:
-                    verdict = ("BETTER by %s" % money(abs(w["diff"]))) if w["diff"] > 0 \
-                        else ("WORSE by %s" % money(abs(w["diff"])))
+                    pct = ("%+.1f%% on the money" % w["pct"]) if w.get("pct") is not None \
+                        else ("%s" % money(w["diff"]))
+                    sd = ("%+.0f%% swing" % w["sd_pct"]) if w.get("sd_pct") is not None \
+                        else "swing not comparable yet"
                     lab_body.insert(
                         "end",
-                        "   IF IT HAD BEEN LIVE since it started: it would have made %s "
-                        "where we actually made %s -- %s.\n"
-                        "      (its money per contract, applied to the contracts we really "
-                        "traded, so this compares the STRATEGY and not the stake)\n"
-                        % (money(w["arm_net"]), money(w["live_net"]), verdict), "whatif")
+                        "   IF IT HAD BEEN LIVE since it started:  %s   %s\n"
+                        % (pct, sd),
+                        "whatif_good" if w["diff"] > 0 else "whatif_bad")
+                    lab_body.insert(
+                        "end",
+                        "      it would have made %s where we actually made %s. "
+                        "Worst single market %s against our %s.\n"
+                        "      Scaled to the contracts we really traded, so this compares "
+                        "the STRATEGY and not the stake (%d of its markets, %d of ours).\n"
+                        % (money(w["arm_net"]), money(w["live_net"]),
+                           money(w["arm_worst"]), money(w["live_worst"]),
+                           w["n_arm"], w["n_live"]), "prog")
             elif e["status"] == pinlab.RUNNING:
                 lab_body.insert("end", "   SO FAR: %s\n"
                                 % ("running, nothing settled yet" if p.get("running")
@@ -1814,13 +1952,16 @@ def run_gui():
         lab_body.tag_configure("name", font=("Segoe UI", 11, "bold"), foreground=C["text"])
         lab_body.tag_configure("label", font=("Segoe UI", 9, "bold"), foreground=C["muted"])
         lab_body.tag_configure("prog", foreground=C["watch"], font=("Segoe UI", 9))
-        lab_body.tag_configure("whatif", foreground=C["gain"], font=("Segoe UI", 9))
+        lab_body.tag_configure("whatif_good", foreground=C["gain"], font=("Segoe UI", 10, "bold"))
+        lab_body.tag_configure("whatif_bad", foreground=C["loss"], font=("Segoe UI", 10, "bold"))
         lab_body.tag_configure(pinlab.RUNNING, foreground=C["gain"], font=("Segoe UI", 9, "bold"))
         lab_body.tag_configure(pinlab.SHIPPED, foreground=C["gain"], font=("Segoe UI", 9, "bold"))
         lab_body.tag_configure(pinlab.KILLED, foreground=C["loss"], font=("Segoe UI", 9, "bold"))
         lab_body.tag_configure(pinlab.IDEA, foreground=C["watch"], font=("Segoe UI", 9, "bold"))
         lab_body.tag_configure(pinlab.PAUSED, foreground=C["muted"], font=("Segoe UI", 9, "bold"))
         lab_body.configure(state="disabled")
+        lab_menu_refresh()
+        draw_lab_chart()
 
     # LOG tab
     log_tab = ttk.Frame(nb)
@@ -1879,7 +2020,7 @@ def run_gui():
         t_min = None
         if rng == "1":
             t_min = et_day_start(et_day(now))
-        elif rng in ("3", "7"):
+        elif rng in ("3", "7", "30"):
             t_min = et_day_start(et_day(now - (int(rng) - 1) * 86400))
         if mode == "cum":
             pts, tot = [], 0.0
@@ -1887,8 +2028,14 @@ def run_gui():
                 if s["t"]:
                     tot += s["pnl"]
                     if t_min is None or s["t"] >= t_min:
-                        pts.append((s["t"], tot, "%s  $%+.2f (this bet %+.2f, %s)" % (
-                            et_str(s["t"], "%m/%d %I:%M %p"), tot, s["pnl"], coin(s["tk"]))))
+                        # MONEY FIRST. The readout splits on the double space:
+                        # everything before it becomes the big coloured number,
+                        # the rest the grey line beside it. The operator asked
+                        # for the price to be the visible part, not a small
+                        # dark-grey afterthought.
+                        pts.append((s["t"], tot, "$%+.2f  %s  %s, this bet %s" % (
+                            tot, et_str(s["t"], "%a %b %d, %I:%M %p"), coin(s["tk"]),
+                            money(s["pnl"]))))
             if t_min is not None and pts:
                 base = pts[0][1] - 0.0
                 _ = base
@@ -1897,7 +2044,9 @@ def run_gui():
             pts = []
             for t, b, real in ledger.bank_series():
                 if t_min is None or t >= t_min:
-                    pts.append((t, b, "%s  bank $%.2f%s" % (et_str(t, "%m/%d %I:%M %p"), b, "  (real reading)" if real else "  (reconstructed)")))
+                    pts.append((t, b, "$%.2f  %s%s" % (
+                        b, et_str(t, "%a %b %d, %I:%M %p"),
+                        " -- a real balance reading" if real else " -- reconstructed between readings")))
             return "line", pts, "$"
         pts = []
         for d in ledger.days():
@@ -1906,11 +2055,14 @@ def run_gui():
                 continue
             s = Ledger.summary(ledger.settled_on(d))
             if mode == "day":
-                pts.append((ds, s["net"], "%s  $%+.2f  (%d closes, %d lost)" % (d, s["net"], s["closes"], s["lost"])))
+                pts.append((ds, s["net"], "$%+.2f  %s -- %d closes, %d lost, %s a close" % (
+                    s["net"], et_str(ds, "%a %b %d"), s["closes"], s["lost"],
+                    money(s["net"] / s["closes"]) if s["closes"] else "-")))
             else:
                 b0 = ledger.bank_at(ds)
                 r = (s["net"] / b0) if b0 else 0.0
-                pts.append((ds, 100 * r, "%s  %+.2f%% of $%.2f" % (d, 100 * r, b0 or 0)))
+                pts.append((ds, 100 * r, "%+.2f%%  %s -- on a bank of $%.2f that morning" % (
+                    100 * r, et_str(ds, "%a %b %d"), b0 or 0)))
         return "bar", pts, ("$" if mode == "day" else "%")
         _ = ledger_mode
 
@@ -1980,8 +2132,9 @@ def run_gui():
                 for t, b, real in ledger.bank_series():
                     if real and pts[0][0] <= t <= pts[-1][0]:
                         chart.create_oval(X(t) - 3, Y(b) - 3, X(t) + 3, Y(b) + 3, fill=C["blue"], outline="")
-            lab = ("$%+.2f" % pts[-1][1]) if mode_var.get() == "cum" else ("$%.2f" % pts[-1][1])
-            chart.create_text(W - m["r"], m["t"] + 4, text=lab, fill=C["text"], anchor="ne", font=("Segoe UI", 12, "bold"))
+            # the headline moved OUT of the chart corner and into the readout
+            # above it, where it is 22pt instead of 12 and does not fight the
+            # line for space.
         else:
             bw = max(4, (W - m["l"] - m["r"]) / max(1, len(pts)) * 0.7)
             for t, v, _ in pts:
