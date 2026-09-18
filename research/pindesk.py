@@ -486,8 +486,30 @@ class Ledger:
         return self.starts[-1] if self.starts else None
 
     def run_settled(self):
-        f = os.path.basename(self.newest) if self.newest else None
-        return [s for s in self.settled if s["file"] == f]
+        """Everything settled since the bot last started.
+
+        THIS WAS STUCK AT ZERO AND THE OPERATOR CAUGHT IT: *"The 'this run'
+        value is at 0. Not right. Says 0 since 5pm yesterday."*
+
+        It used to select settlements whose `file` matched the newest live log.
+        That worked while settlements were parsed out of our own logs. They are
+        not any more -- they come from Kalshi's own settlement record and every
+        one of them carries `file == "kalshi"`, which matches no log name ever,
+        so the filter returned an empty list and the tile showed a confident
+        $0.00. A filter that can never match is indistinguishable from a
+        quiet day.
+
+        Now it uses the START TIME, which is what the tile has always claimed
+        to mean. A missing or unreadable start time returns None, not an empty
+        list -- "we do not know when this run began" and "this run has made
+        nothing" are different answers and the tile must not show the second
+        when the first is true.
+        """
+        st = self.last_start()
+        t0 = (st or {}).get("t")
+        if not t0:
+            return None
+        return [s for s in self.settled if s.get("t") and s["t"] >= t0]
 
     def losing_closes(self):
         """Every losing close, all time, newest first: (close, net, legs)."""
@@ -2256,8 +2278,14 @@ def run_gui():
         # tiles
         for key, rows, day in (("today", ledger.settled_on(today), today), ("yday", ledger.settled_on(yday), yday),
                                ("run", ledger.run_settled(), None), ("all", ledger.settled, None)):
-            s = Ledger.summary(rows)
             v, p, sub_ = tile_vals[key]
+            if rows is None:
+                # "we cannot tell when this run started" is NOT "$0.00".
+                v.configure(text="?", fg=C["muted"])
+                p.configure(text="", fg=C["muted"])
+                sub_.configure(text="cannot tell when this run started")
+                continue
+            s = Ledger.summary(rows)
             v.configure(text="$%+.2f" % s["net"], fg=C["gain"] if s["net"] >= 0 else C["loss"])
             if day:
                 b0 = ledger.bank_at(et_day_start(day))
@@ -2669,6 +2697,35 @@ def selftest():
            "and the net is every market's own P&L added up")
         ck(s["avg_win"] is not None and s["avg_loss"] is not None and s["avg_loss"] < 0 < s["avg_win"], "average win and loss are signed the right way")
         ck(L.settled_on("2026-09-15") == [] and L.settled_on("2026-09-17") == [], "nothing leaks into the neighbouring ET days")
+        # THIS RUN. It sat at exactly $0.00 for a day and the operator caught
+        # it: the old filter matched a settlement's `file` against the newest
+        # log name, and settlements now come from Kalshi carrying
+        # `file == "kalshi"`, which matches no log name that will ever exist.
+        rs = L.run_settled()
+        ck(rs is not None and len(rs) == len([s for s in L.settled
+                                              if s["t"] >= L.last_start()["t"]]),
+           "THIS RUN counts what settled since the bot last started, by TIME "
+           "-- the old version filtered on a log filename that Kalshi's "
+           "settlements do not carry, so it could never match and showed a "
+           "confident $0.00 all day")
+        L.settled.append({"t": L.last_start()["t"] + 60, "tk": "KXBTC15M-X",
+                          "pnl": 7.25, "cost": None, "want": "yes",
+                          "result": "yes", "close": None, "file": "kalshi",
+                          "hedged": False, "book": "crypto"})
+        rs2 = L.run_settled()
+        ck(any(s.get("file") == "kalshi" for s in rs2)
+           and abs(Ledger.summary(rs2)["net"] - (Ledger.summary(rs)["net"] + 7.25)) < 1e-9,
+           "...and a row that came from KALSHI rather than from a log is "
+           "counted -- that is now every row, and excluding them is exactly "
+           "what pinned the tile to zero")
+        L.settled.pop()
+        _sv = L.starts
+        L.starts = []
+        ck(L.run_settled() is None,
+           "NULL: with no start on file it is None, not an empty list -- 'we "
+           "cannot tell when this run began' and 'this run made nothing' are "
+           "different answers and the tile shows '?' for the first")
+        L.starts = _sv
         fs = Ledger.fill_stats(L.orders)
         ck(fs["orders"] == 5 and fs["fills"] == 4 and fs["zero"] == 1 and fs["contracts"] == 225.0 and fs["asked"] == 315.0
            and abs(fs["share"] - 225.0 / 315.0) < 1e-9, "fill stats: fills, lost races, contracts asked vs got")
