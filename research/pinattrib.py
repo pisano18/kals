@@ -80,7 +80,17 @@ GATE_ORDER = [
     "jump_against", "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
     "early_once", "staged_none", "early_cheap", "early_wide",
-    "hedge_wait_normal",
+    # NOT hedge_wait_normal, and not any other insurance decision. They are
+    # written with rec(), so their `kind` is their own name and NOT "refused"
+    # -- load_log() collects only refusals, so a row for one could never hold
+    # a number. Listing it here printed a permanent, authoritative-looking
+    # zero for a test that is in fact PAPER-ONLY, and the operator caught it:
+    # "I don't see an insurance test in the table."
+    #
+    # A name in this list that is not a real `_gate()` call is a promise the
+    # table cannot keep. The self-test now checks that in BOTH directions; it
+    # only ever checked that every real gate is listed, never that every
+    # listed name is real.
 ]
 
 WHAT = {
@@ -427,6 +437,13 @@ def report(rows, say=print, order=GATE_ORDER, start=None, currency=None):
              a["lost"] if a["scored"] else "-",
              nop, a["no_size"], a["unsettled"], money))
     w("")
+    w("  WHAT THIS TABLE DOES NOT COVER: the INSURANCE decisions. Whether to")
+    w("  buy the other side when a bet turns, and at what price, is decided")
+    w("  somewhere else in the bot and is not recorded as a refusal, so no row")
+    w("  here can ever describe it. Read those from the hedge list instead")
+    w("  (`/hedges` on the phone, or the Now tab). As of 2026-09-18 that is 12")
+    w("  insured quarter-hours of which 11 still ended negative.")
+    w("")
     w("  'on?' IS THE LIVE BOT RIGHT NOW, read from its own newest start")
     w("  record -- not from this file's defaults. A gate marked OFF is not")
     w("  running for real money, so its zero means 'switched off', not 'never")
@@ -632,7 +649,11 @@ def selftest():
     ck(gate_on("early_cheap", {"early_tau_max": 30}) is False,
        "the early-leg gates read OFF when the early window is closed, which "
        "is what `early_tau_max == TAU_MAX` means")
-    _txt2 = report(_rows, say=None, start=_live)
+    # A REAL gate switched off, not the phantom row. This used to assert on
+    # `hedge_wait_normal`, which was never a gate at all -- so the check
+    # passed on the strength of the very bug it should have caught.
+    _off = dict(_live, jump_gate=False)
+    _txt2 = report(_rows, say=None, start=_off)
     ck(" on |" in _txt2 and "OFF |" in _txt2 and "on? |" in _txt2,
        "and the table carries an on/off column read from the LIVE bot's own "
        "start record, not from this file's defaults")
@@ -730,6 +751,14 @@ def selftest():
     ck(set(GATE_ORDER) <= set(WHAT),
        "and every one has a plain-English description (%s)"
        % sorted(set(GATE_ORDER) - set(WHAT)))
+    # THE OTHER DIRECTION, which was never checked. A name in GATE_ORDER that
+    # is not a real `_gate()` call prints a permanent zero row that looks
+    # measured and cannot ever be. `hedge_wait_normal` sat there doing exactly
+    # that -- an authoritative zero for a test that is paper-only.
+    ck(set(GATE_ORDER) <= live,
+       "every name in GATE_ORDER is a REAL _gate() call in pinrun, so the "
+       "table cannot show a row that could never hold a number (%s)"
+       % sorted(set(GATE_ORDER) - live))
     print("pinattrib selftest: %d checks OK" % n[0])
     return 0
 

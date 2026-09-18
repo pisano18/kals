@@ -9,7 +9,7 @@
   EVERY ROW ADDS UP:  fired = moved + blocked, and
                       blocked = won + lost + the three 'cannot say' columns.
 
-  HOW MUCH OF THIS IS TODAY'S BOT: 5303 of 6951 refusals (76%) come
+  HOW MUCH OF THIS IS TODAY'S BOT: 5359 of 7007 refusals (76%) come
   from runs with exactly the settings that are live now, starting
   pinrun-live-20260915T013908Z.jsonl. The rest ran under older settings and describe
   a bot that no longer exists.
@@ -23,25 +23,31 @@
   market_attempts |  on |     14 |     9 |      5 |    - |    - |      5 |     0 |       0 |      -
   attempts_cap    |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
   book_suspect    |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  book_stale      |  on |     83 |     3 |     80 |    - |    - |     80 |     0 |       0 |      -
+  book_stale      |  on |     87 |     3 |     84 |    - |    - |     84 |     0 |       0 |      -
   index_stale     |  on |     27 |     0 |     27 |    - |    - |     27 |     0 |       0 |      -
   no_sigma        |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  confidence      |  on |    418 |   201 |    217 |    - |    - |    217 |     0 |       0 |      -
-  no_offer        |  on |   3335 |    52 |   3283 |    - |    - |   3283 |     0 |       0 |      -
-  depth_floor     |  on |    545 |    46 |    499 |    - |    - |      0 |   499 |       0 |      -
-  edge_floor      |  on |   1344 |    66 |   1278 | 1048 |    0 |      0 |     0 |     230 |    +136.51
+  confidence      |  on |    420 |   202 |    218 |    - |    - |    218 |     0 |       0 |      -
+  no_offer        |  on |   3362 |    53 |   3309 |    - |    - |   3309 |     0 |       0 |      -
+  depth_floor     |  on |    550 |    47 |    503 |    - |    - |      0 |   503 |       0 |      -
+  edge_floor      |  on |   1357 |    67 |   1290 | 1048 |    0 |      0 |     0 |     242 |    +136.51
   against_thin    |  on |     19 |     7 |     12 |   10 |    0 |      0 |     0 |       2 |      +5.45
-  jump_against    |  on |     25 |     1 |     24 |   19 |    0 |      0 |     0 |       5 |      +3.72
+  jump_against    |  on |     26 |     2 |     24 |   19 |    0 |      0 |     0 |       5 |      +3.72
   dump_guard      |  on |      9 |     8 |      1 |    0 |    1 |      0 |     0 |       0 |     -37.85
   improve_by      |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
   rebuy_band      |  on |     19 |    19 |      0 |    - |    - |      0 |     0 |       0 |      -
-  price_ceiling   |  on |    548 |    87 |    461 |  379 |    0 |      0 |     0 |      82 |    +122.80
+  price_ceiling   |  on |    550 |    88 |    462 |  379 |    0 |      0 |     0 |      83 |    +122.80
   ev_floor        |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  early_once      |  on |     55 |    55 |      0 |    - |    - |      0 |     0 |       0 |      -
-  staged_none     |  on |      2 |     1 |      1 |    - |    - |      1 |     0 |       0 |      -
+  early_once      |  on |     56 |    56 |      0 |    - |    - |      0 |     0 |       0 |      -
+  staged_none     |  on |      3 |     2 |      1 |    - |    - |      1 |     0 |       0 |      -
   early_cheap     |  on |      1 |     1 |      0 |    - |    - |      0 |     0 |       0 |      -
   early_wide      |  on |      9 |     4 |      5 |    - |    - |      5 |     0 |       0 |      -
-  hedge_wait_normal|   ? |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+
+  WHAT THIS TABLE DOES NOT COVER: the INSURANCE decisions. Whether to
+  buy the other side when a bet turns, and at what price, is decided
+  somewhere else in the bot and is not recorded as a refusal, so no row
+  here can ever describe it. Read those from the hedge list instead
+  (`/hedges` on the phone, or the Now tab). As of 2026-09-18 that is 12
+  insured quarter-hours of which 11 still ended negative.
 
   'on?' IS THE LIVE BOT RIGHT NOW, read from its own newest start
   record -- not from this file's defaults. A gate marked OFF is not
@@ -108,5 +114,4 @@
     staged_none      A46: the staged leg came to nothing (market already at full size, or under the minimum)
     early_cheap      A49: the 31-45 s early leg wanted an ask under the 90c floor. Out that far less of the settlement average is locked, so a cheap ask is the market disagreeing with us where the model is weakest
     early_wide       A50: the 31-45 s early leg found our model MORE than the cap above the market price. Late, that disagreement is the whole edge (6c or more made 1.44 $/bet inside 30 s); early, three quarters of the settlement window has not happened yet and the same band lost 3.01 $/bet, so out there a big edge means our volatility guess is wrong rather than the market
-    hedge_wait_normal A51: insurance held off because the OTHER side was not yet a bet we would make on its own -- our model was not PIN sure of it, or it cost more than the price ceiling. The old rule fired on the model alone and 11 of 12 insured closes still ended negative, five of them paying 10-18c while the market still liked our side
 ```
