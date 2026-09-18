@@ -135,6 +135,19 @@ BANDS = {
         (2, 60, 0.95, 0.99, None, "wti-near"),
         # 16-45 s at 90-95c: 104 / 6 (5.8%) against a 7.5% break-even. Thin.
         (16, 45, 0.90, 0.95, None, "wti-mid"),
+        # 16-30 s at 93-97c -- ADDED 2026-09-18 from research/oilband.py, which
+        # walked 147,401 WTI takers over ~300 settled closes and counted them
+        # by CLOSE rather than by trade. Oil is better between 16 and 30
+        # seconds than inside 15 AT EVERY PRICE, and the gap is widest just
+        # below 95c, which the live window excludes entirely:
+        #     0-15 s  93-95c   43 closes  3 lost (6.98%)  be 5.61%  FAILS
+        #     16-30 s 93-95c   47 closes  1 lost (2.13%)  be 5.61%  +5.05c
+        #     0-15 s  95-97c   55 closes  1 lost (1.82%)  be 3.73%  +2.79c
+        #     16-30 s 95-97c   41 closes  0 lost (0.00%)  be 3.73%  +3.54c
+        # So the clock and the floor interact: under 95c is dangerous inside 15
+        # seconds and safe between 16 and 30. TAPE population -- rule 5 -- so
+        # this arm exists to see whether the shape survives being a fill.
+        (16, 30, 0.93, 0.97, None, "wti-sweet"),
         # 121-180 s at 90-99c: 308 / 6 (1.9%). The 90-95c corner of it is the
         # best single commodity cell found: 105 mkts, 3 lost, +4.16c. 91-120 s
         # is NOT included -- oil is negative there except at 98-99c.
@@ -416,11 +429,21 @@ def selftest():
     ck(decide(book(yes_ask=0.96), 120, g_far, hour=11) == ("yes", 0.96, 50.0)
        and decide(book(yes_ask=0.96), 60, g_far) is None,
        "the far window buys at 120 s in ANY hour and refuses 60 s -- the dead middle")
-    w_near, w_mid, w_far = BANDS["KXWTI15M"]
+    w_near, w_mid, w_sweet, w_far = BANDS["KXWTI15M"]
     ck(w_near[:4] == (2, 60, 0.95, 0.99) and w_mid[:4] == (16, 45, 0.90, 0.95)
        and w_far[:4] == (121, 180, 0.90, 0.99),
        "WTI: 95-99c to 60 s; 90-95c only 16-45 s; and 121-180 s at 90-99c, "
        "whose 90-95c corner is the best commodity cell found (105 mkts, 3 lost)")
+    ck(label(w_sweet) == "wti-sweet" and w_sweet[:4] == (16, 30, 0.93, 0.97),
+       "and 16-30 s at 93-97c, which oilband found beats the LIVE window at "
+       "every price it shares with it")
+    ck(decide(book(yes_ask=0.94), 20, w_sweet) == ("yes", 0.94, 50.0)
+       and decide(book(yes_ask=0.94), 10, w_sweet) is None,
+       "the sweet window starts at 16 s: under 95c INSIDE 15 s is the one oil "
+       "cell that fails its own break-even (3 of 43 closes, 6.98% vs 5.61%)")
+    ck(decide(book(yes_ask=0.98), 20, w_sweet) is None,
+       "NULL: 98c is above it -- the cell's whole point is the cheap end, and "
+       "98-99c there earns a tenth as much (+1.14c against +5.05c)")
     ck(decide(book(yes_ask=0.92), 150, w_far) == ("yes", 0.92, 50.0)
        and decide(book(yes_ask=0.92), 100, w_far) is None,
        "WTI far starts at 121 s: 91-120 s is negative for oil except at 98-99c")
