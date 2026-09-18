@@ -287,6 +287,39 @@ EARLY_FRAC = 0.5
 # back to a third rather than a full bet.
 EARLY_MIN_PRICE = 0.90
 _DEFAULT_EARLY_MIN_PRICE = 0.90
+# AMENDMENT 50 (2026-09-18): on the EARLY leg, a BIG edge is a WARNING, not a
+# prize -- and the sign flips at 30 seconds.
+#
+# Measured over every signal joined to its settlement, split by how far our
+# model sat above the market price on our own side (`edge_c`, already net of
+# fee). Paper arms, so the LEVELS assume fills we might not get and rule 5
+# applies; the SHAPE is the finding and it is not subtle:
+#
+#   31-45 s   under 3c   177 bets   3 lost   +0.06 $/bet
+#             3-6c        62 bets   5 lost   -0.57 $/bet
+#             6c or more  11 bets   3 lost   -3.01 $/bet
+#   30 s or less
+#             under 3c   934 bets  15 lost   +0.14 $/bet
+#             3-6c       445 bets   6 lost   +0.47 $/bet
+#             6c or more 263 bets   1 lost   +1.44 $/bet
+#
+# Live fills agree on the late half: 102 fills at 6c or more, 4 losses,
+# +3.08 $/bet. There has never been a live early fill at 6c or more.
+#
+# WHY THE SIGN FLIPS, and why this is mechanism and not curve-fitting.
+# Settlement is the mean of 60 one-second prints. At 15 s left, 45 of them are
+# already on disk; at 30 s, 30 are; at 45 s, only 15 are. So late, our model
+# is mostly reading RECORDED data and a cheap market price is simply wrong --
+# that disagreement IS the edge. Early, three quarters of the window has not
+# happened yet and our confidence rests on a volatility ESTIMATE; a market
+# that disagrees by six cents out there is usually disagreeing correctly, and
+# raising the confidence bar cannot help because confidence is computed FROM
+# the same estimate. A price cap is independent evidence. This is the thing
+# to try before sizing the early leg up.
+#
+# None = off, which is the shipped behaviour. In CENTS on our side.
+EARLY_MAX_EDGE = None
+_DEFAULT_EARLY_MAX_EDGE = None
 # FLIPPED TO True 2026-09-17 ~15:0xZ ON THE OPERATOR'S EXPLICIT INSTRUCTION:
 # "As long as you have the 45 second is built as safely as you described,
 # deploy now." This is a BAR OVERRIDE and it is recorded as one, loudly, in
@@ -2865,6 +2898,23 @@ def _selftest_body():
         ck(_lp49.index(_n49) < _lp49.index("take_n < MIN_LEVEL"),
            "and it is checked before the size floor, so a cheap early ask is "
            "refused for being CHEAP rather than for being small")
+        # AMENDMENT 50: on the EARLY leg a big edge is a warning, not a prize.
+        ck(_DEFAULT_EARLY_MAX_EDGE is None,
+           "A50 ships OFF, so adding it changed nothing about the live bot -- "
+           "asserted against the DECLARED default, not the running value, so "
+           "an arm that sets the flag does not fail its own self-test")
+        _n50 = "EARLY_MAX" + "_EDGE is not None"
+        ck(_n50 in _lp49 and '_gate("early_wide"' in _lp49,
+           "the loop can refuse an EARLY leg whose edge is too WIDE, under its "
+           "own gate name, so what the cap costs us is measurable")
+        ck("100.0 * e > float(EARLY_MAX" + "_EDGE)" in _lp49,
+           "...compared in CENTS against the same net-of-fee edge the signal "
+           "records, so the flag means what the log means")
+        ck(_lp49.index(_n50) > _lp49.index(_n49),
+           "and it sits inside the same early-leg block as the price floor, so "
+           "it can never reach a main-leg trade -- inside 30 s a wide edge is "
+           "the most profitable thing we do (+1.44 $/bet) and capping it there "
+           "would throw away the edge instead of protecting it")
         ck('_leg46 in ("early", "early_once")' in _lp49,
            "it applies ONLY to the early leg -- a full bet inside TAU_MAX is "
            "untouched, which is the whole point of a staged entry")
@@ -6497,6 +6547,13 @@ def trade_loop(a, rec, book, idx, series_index):
                           price=round(price, 4), floor=EARLY_MIN_PRICE,
                           fair=round(f, 5))
                     continue
+                # A50: too GOOD to be true, on the early leg only.
+                if (EARLY_MAX_EDGE is not None
+                        and 100.0 * e > float(EARLY_MAX_EDGE)):
+                    _gate("early_wide", close_s, tk, leg=_leg46, tau=tau,
+                          price=round(price, 4), edge_c=round(100 * e, 3),
+                          cap_c=float(EARLY_MAX_EDGE), fair=round(f, 5))
+                    continue
                 if take_n < MIN_LEVEL:
                     _gate("staged_none", close_s, tk, leg=_leg46, held=_held46,
                           tau=tau, price=round(price, 4))
@@ -6924,6 +6981,15 @@ def main():
                          "ask at or above this. Default 0.90. A cheap ask that "
                          "far out is the market disagreeing with us where our "
                          "model is weakest.")
+    ap.add_argument("--early-max-edge", type=float, default=None,
+                    help="AMENDMENT 50: on an EARLY leg (31-45 s) only, refuse "
+                         "when our model sits MORE than this many cents above "
+                         "the market on our side. Out there a big edge is the "
+                         "market disagreeing with us where three quarters of "
+                         "the settlement window has not happened yet, and it "
+                         "loses: 3c-6c lost 0.57 $/bet and 6c+ lost 3.01 "
+                         "$/bet, while the SAME band inside 30 s made 0.47 and "
+                         "1.44. Off by default. Does not touch the main leg.")
     ap.add_argument("--late-tau", type=int, default=None,
                     help="AMENDMENT 48: seconds-to-close at or under which an "
                          "order may exceed SIZE. Our live fills earn 5.35c a "
@@ -7125,6 +7191,16 @@ def main():
             raise SystemExit("--early-min-price must be in (0, 0.99], got %r"
                              % (a.early_min_price,))
         globals()["EARLY_MIN_PRICE"] = float(a.early_min_price)
+    if a.early_max_edge is not None:
+        if not (0.0 < a.early_max_edge <= 50.0):
+            raise SystemExit("--early-max-edge is in CENTS and must be in "
+                             "(0, 50], got %r" % (a.early_max_edge,))
+        if a.early_tau <= TAU_MAX:
+            raise SystemExit(
+                "--early-max-edge does nothing without --early-tau above %d. "
+                "It gates the EARLY leg only; passing it alone would look like "
+                "a live change and be none." % TAU_MAX)
+        globals()["EARLY_MAX_EDGE"] = float(a.early_max_edge)
     if a.late_tau is not None:
         if not (0 <= a.late_tau <= TAU_MAX):
             raise SystemExit("--late-tau must be between 0 and TAU_MAX (%d), got %r"
@@ -7347,7 +7423,7 @@ def main():
         # own log cannot say what it is testing is not measurable.
         hedge_price=HEDGE_PRICE,
         late_tau=LATE_TAU, late_mult=LATE_MULT,
-        early_min_price=EARLY_MIN_PRICE,
+        early_min_price=EARLY_MIN_PRICE, early_max_edge=EARLY_MAX_EDGE,
         code_sha=_source_fingerprint())
 
     if a.live:

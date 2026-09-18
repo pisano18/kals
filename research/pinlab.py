@@ -83,9 +83,35 @@ EXPERIMENTS = [
                  "close.",
     },
     {
+        "name": "45 seconds at FULL size, but only when the market agrees (A50)",
+        "status": RUNNING, "match": "--early-max-edge", "since": "2026-09-18",
+        "select": {"early_max_edge": SET},
+        "what": "Buys a WHOLE bet at 31-45 seconds out, not a third -- but only "
+                "when our model and the market price are within 3 cents of each "
+                "other.",
+        "why": "Operator: 'we need to figure out how to be able to buy it at "
+               "full price 45 seconds out.' Size is a blunt protection; it "
+               "costs us on every good trade to survive the bad ones. Out at "
+               "45 seconds only a quarter of the settlement average is locked, "
+               "so when the market disagrees with us by a lot the MARKET is "
+               "usually right -- the reverse of inside 30 seconds, where that "
+               "same disagreement is the entire edge. The one loss in the "
+               "current 45-second arm was exactly this: bought at 93c while "
+               "the model said 99.9%, and it cost more than the other "
+               "seventeen trades made.",
+        "good": "It makes more per early bet than the uncapped arm AND refuses "
+                "at least 5 of its trades. Then full size at 45 seconds is "
+                "defensible and the third goes away.",
+        "bad": "It refuses trades that went on to win while still losing money. "
+               "That is the expensive direction and it kills the idea.",
+        "watch": "Early markets that the cap refused, and what they did next. "
+                 "Bars are in results/PREREG_a50_early_edge_cap.md and are not "
+                 "moved after the fact.",
+    },
+    {
         "name": "The 45-second early leg (A46 + A49)",
         "status": RUNNING, "match": "--early-tau", "since": "2026-09-17",
-        "select": {"early_tau_max": 45, "pin": 0.995},
+        "select": {"early_tau_max": 45, "pin": 0.995, "early_max_edge": UNSET},
         "what": "Buys a THIRD of a bet between 31 and 45 seconds out, and only if "
                 "the price is at least 90c. Also live at that size.",
         "why": "The cheap offers get taken a median of 41 seconds before the close "

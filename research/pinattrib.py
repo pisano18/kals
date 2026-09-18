@@ -79,7 +79,7 @@ GATE_ORDER = [
     "confidence", "no_offer", "depth_floor", "edge_floor", "against_thin",
     "jump_against", "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
-    "early_once", "staged_none", "early_cheap",
+    "early_once", "staged_none", "early_cheap", "early_wide",
 ]
 
 WHAT = {
@@ -107,6 +107,7 @@ WHAT = {
     "price_ceiling": "priced above the 98c ceiling",
     "early_once": "A46: this market already holds an early leg (31-45 s); only one per market",
     "staged_none": "A46: the staged leg came to nothing (market already at full size, or under the minimum)",
+    "early_wide": "A50: the 31-45 s early leg found our model MORE than the cap above the market price. Late, that disagreement is the whole edge (6c or more made 1.44 $/bet inside 30 s); early, three quarters of the settlement window has not happened yet and the same band lost 3.01 $/bet, so out there a big edge means our volatility guess is wrong rather than the market",
     "early_cheap": "A49: the 31-45 s early leg wanted an ask under the 90c floor. Out that far less of the settlement average is locked, so a cheap ask is the market disagreeing with us where the model is weakest",
     "ev_floor": "expected value negative at that price",
 }
