@@ -986,6 +986,45 @@ def hedge_ask_ok(hedge_ask):
     return 0.0 < a < HEDGE_MAX_ASK - 1e-9
 
 
+_EW_UNSET = object()      # "cap not supplied" -- distinct from None, which is
+                          # a REAL value meaning "A50 is off". Passing None to
+                          # mean "no cap" fell back to the running global and
+                          # the NULL check failed under the flag, taking the
+                          # live bot down a second time in one day. Same trap
+                          # as _HP_UNSET above.
+
+
+def early_wide_block(leg, edge, cap=_EW_UNSET):
+    """A50: refuse a WIDE edge, on the EARLY leg ONLY. `edge` is in DOLLARS.
+
+    THIS IS A FUNCTION BECAUSE THE INLINE VERSION SHIPPED BROKEN. It sat
+    inside `if EARLY_TAU_MAX > TAU_MAX:` -- which is true whenever the
+    45-second window is open AT ALL, for every leg -- and tested only
+    `EARLY_MAX_EDGE is not None`. So from 2026-09-18 07:0xZ it refused a wide
+    edge at EVERY tau, including the full leg inside 30 seconds where a wide
+    edge is the single most profitable thing the bot does (+1.44 $/bet on the
+    tape, +3.08 on live fills).
+
+    Caught by running the 2026-09-13 bot beside the live one: at 18:44:35Z
+    both saw KXBTC15M-26SEP181445-45 at 94.8c with a 4.674c edge and tau 25.
+    The old bot bought it and won 97c. The live bot refused it as `early_wide`.
+
+    My self-test had asserted the check "sits inside the same early-leg block
+    as the price floor" by comparing POSITIONS IN THE FILE. File order says
+    nothing about the enclosing condition. The test below drives the predicate
+    instead.
+    """
+    cap = EARLY_MAX_EDGE if cap is _EW_UNSET else cap
+    if cap is None:
+        return False
+    if leg not in ("early", "early_once"):
+        return False
+    try:
+        return 100.0 * float(edge) > float(cap)
+    except (TypeError, ValueError):
+        return False
+
+
 def hedge_normal_ok(belief, hedge_ask, pin=None, ceiling=None):
     """A51: would the OPPOSITE side pass the gates a normal entry must pass?
 
@@ -3103,18 +3142,35 @@ def _selftest_body():
            "A50 ships OFF, so adding it changed nothing about the live bot -- "
            "asserted against the DECLARED default, not the running value, so "
            "an arm that sets the flag does not fail its own self-test")
-        _n50 = "EARLY_MAX" + "_EDGE is not None"
-        ck(_n50 in _lp49 and '_gate("early_wide"' in _lp49,
-           "the loop can refuse an EARLY leg whose edge is too WIDE, under its "
-           "own gate name, so what the cap costs us is measurable")
-        ck("100.0 * e > float(EARLY_MAX" + "_EDGE)" in _lp49,
-           "...compared in CENTS against the same net-of-fee edge the signal "
-           "records, so the flag means what the log means")
-        ck(_lp49.index(_n50) > _lp49.index(_n49),
-           "and it sits inside the same early-leg block as the price floor, so "
-           "it can never reach a main-leg trade -- inside 30 s a wide edge is "
-           "the most profitable thing we do (+1.44 $/bet) and capping it there "
-           "would throw away the edge instead of protecting it")
+        ck('_gate("early_wide"' in _lp49 and "early_wide" + "_block(_leg46, e)" in _lp49,
+           "the loop asks the PREDICATE and logs the refusal under its own "
+           "gate name, so what the cap costs us is measurable")
+        # THE PREDICATE ITSELF, driven -- not its position in the file. The
+        # inline version shipped broken for ten hours of live trading because
+        # this test compared file offsets and concluded "it sits inside the
+        # early-leg block". File order says nothing about the enclosing `if`.
+        ck(early_wide_block("early", 0.05, cap=3.0) is True,
+           "A50: a 5c edge on an EARLY leg is over a 3c cap and is refused")
+        ck(early_wide_block("early", 0.02, cap=3.0) is False,
+           "...a 2c edge on an early leg is under the cap and passes")
+        for _lg in ("full", "topup", None):
+            ck(early_wide_block(_lg, 0.05, cap=3.0) is False,
+               "A WIDE EDGE ON A %s LEG IS NEVER REFUSED. Inside 30 s a wide "
+               "edge is the most profitable thing the bot does (+1.44 $/bet on "
+               "the tape, +3.08 live); the broken inline version refused it at "
+               "every tau from 07:0xZ on 2026-09-18 and cost the day's cheap "
+               "fills" % (_lg or "None"))
+        ck(early_wide_block("early", 0.05, cap=None) is False,
+           "NULL: cap=None means A50 is OFF and nothing is refused -- and it "
+           "must NOT fall through to the running global, which is why the cap "
+           "argument has its own not-supplied sentinel")
+        ck(early_wide_block("early", 0.05) is (EARLY_MAX_EDGE is not None
+                                               and 5.0 > EARLY_MAX_EDGE),
+           "...while OMITTING the cap uses whatever is running, so the loop's "
+           "own call is tested against the live setting either way")
+        ck(early_wide_block("early", None, cap=3.0) is False,
+           "NULL: an unreadable edge passes rather than refusing a trade on a "
+           "number nobody has")
         ck('_leg46 in ("early", "early_once")' in _lp49,
            "it applies ONLY to the early leg -- a full bet inside TAU_MAX is "
            "untouched, which is the whole point of a staged entry")
@@ -6830,8 +6886,7 @@ def trade_loop(a, rec, book, idx, series_index):
                           want=want, size=float(take_n or SIZE))
                     continue
                 # A50: too GOOD to be true, on the early leg only.
-                if (EARLY_MAX_EDGE is not None
-                        and 100.0 * e > float(EARLY_MAX_EDGE)):
+                if early_wide_block(_leg46, e):
                     _gate("early_wide", close_s, tk, leg=_leg46, tau=tau,
                           price=round(price, 4), edge_c=round(100 * e, 3),
                           cap_c=float(EARLY_MAX_EDGE), fair=round(f, 5),
