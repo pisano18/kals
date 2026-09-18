@@ -1,0 +1,12 @@
+  ok   a first refresh writes the settlement
+  ok   ...to the ledger file on disk
+  ok   a second refresh adds nothing -- append-only on (ticker, settled_time), so the file cannot grow by re-reading the same rows. That stacking is exactly what the log-parsing tools used to do
+  ok   and the file still holds exactly one row
+pinledgerd selftest: OK
+pinledgerd: refreshing Kalshi's settlements every 60 s
+  +1 settlements (555 on file)
+  +1 settlements (556 on file)
+  +1 settlements (557 on file)
+  +1 settlements (558 on file)
+  +2 settlements (560 on file)
+  +1 settlements (561 on file)

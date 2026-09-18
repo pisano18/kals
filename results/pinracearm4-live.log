@@ -110,3 +110,9 @@ SELF-TEST PASSED
   SETTLED KXCRYPTOLEAD15M-26SEP171645  BTC   1/1 won  $+5.97
   PAPER  -26SEP171930                   ETH  YES 250 @ 90c  tau 26  gap   +0.91bp  worth 0.9360  edge +2.97c
   SETTLED KXCRYPTOLEAD15M-26SEP171930  ETH   1/1 won  $+23.43
+  PAPER  -26SEP172330                   XRP  YES 250 @ 91c  tau 22  gap   +1.37bp  worth 0.9430  edge +2.72c
+  PAPER  -26SEP172330                   SOL  NO  250 @ 92c  tau 21  gap   -1.45bp  worth 0.9620  edge +3.68c
+  SETTLED KXCRYPTOLEAD15M-26SEP172330  XRP   2/2 won  $+39.75
+  PAPER  -26SEP180000                   SOL  YES 27 @ 95c  tau 30  gap   +5.06bp  worth 0.9960  edge +4.26c
+  PAPER  -26SEP180000                   HYPE NO  83 @ 97c  tau 22  gap   -5.86bp  worth 1.0000  edge +2.79c
+  SETTLED KXCRYPTOLEAD15M-26SEP180000  SOL   2/2 won  $+3.57

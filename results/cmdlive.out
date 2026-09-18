@@ -555,3 +555,21 @@ cmdlive *** LIVE, REAL MONEY *** -- KXWTI15M | $10 per trade (up to 40 contracts
   REFUSED KXWTI15M-26SEP172300-00 tau=180s YES @0.9500 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
   REFUSED KXWTI15M-26SEP172315-15 tau=180s YES @0.9610 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
   REFUSED KXWTI15M-26SEP172315-15 tau= 60s YES @0.9790 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172330-30 tau=180s NO @0.9880 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172345-45 tau=180s NO @0.9000 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172345-45 tau= 60s NO @0.9810 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180000-00 tau=180s YES @0.9050 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180000-00 tau= 60s YES @0.9840 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180015-15 tau=134s NO @0.9000 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 134 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180015-15 tau= 59s NO @0.9540 -- tau 59 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180015-15 tau= 45s NO @0.9460 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 45 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180030-30 tau=180s YES @0.9900 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180045-45 tau=180s NO @0.9790 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180100-00 tau=180s YES @0.9220 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180100-00 tau= 60s YES @0.9900 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  ORDER KXWTI15M-26SEP180115-15 tau= 14s YES @0.9700 x1 -> filled 1  spent $42.00
+  SETTLED KXWTI15M-26SEP180115-15 -> WON  $+0.03   (losses 0/4, day $+0.93)
+  REFUSED KXWTI15M-26SEP180145-45 tau=180s NO @0.9330 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180145-45 tau= 60s NO @0.9900 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180200-00 tau=180s YES @0.9200 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP180215-15 tau=171s NO @0.9000 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 171 s is earlier than live trades (15 s); the paper arm still takes it
