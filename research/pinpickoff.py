@@ -102,17 +102,34 @@ def outcome_of(m):
 
 
 def load_settlements(path=SETTLE):
+    """Outcomes from EVERY fulltape directory, newest winning.
+
+    2026-09-18: this read ONE file, `C:\\kals\\fulltape\\markets.json`, which
+    was last refreshed on 09-12. A trade can only be scored if its market's
+    settlement is on file, so the report silently STOPPED AT 09-12 -- and
+    because it stopped without complaining, four separate attempts to extend
+    it were spent re-walking the tape and being memory-killed, when the tape
+    was never the problem. The refreshed settlements were sitting in
+    `fulltape_recent` the whole time.
+
+    A report that runs out of data should say so. This one just ended.
+    """
     out = {}
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return out
-    for lst in data.values():
-        for m in lst:
-            o = outcome_of(m)
-            if o is not None and m.get("ticker"):
-                out[m["ticker"]] = o
+    paths = [path]
+    if path == SETTLE:
+        paths += sorted(glob.glob(os.path.join(os.path.dirname(path) + "_*",
+                                               "markets.json")))
+    for p in paths:
+        try:
+            with open(p, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        for lst in data.values():
+            for m in lst:
+                o = outcome_of(m)
+                if o is not None and m.get("ticker"):
+                    out[m["ticker"]] = o
     return out
 
 

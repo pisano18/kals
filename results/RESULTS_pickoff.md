@@ -1,6 +1,6 @@
 # RESULTS -- the offers we would buy, and who gets them
 
-Rebuilt 2026-09-18 02:23Z from `research/pinpickoff.py`. TAPE population (rule 5):
+Rebuilt 2026-09-18 03:44Z from `research/pinpickoff.py`. TAPE population (rule 5):
 what the market did, never our loss rate.
 
 ```
@@ -23,17 +23,22 @@ THE OFFERS WE WOULD BUY, AND WHO GOT THEM
   2026-09-05      90     53290      592.1      0    53290         0% |        38s       95.3c |       2780532
   2026-09-06      80     36208      452.6      0    36208         0% |        40s       95.3c |       1688876
   2026-09-07      73     31817      435.8      0    31817         0% |        42s       95.5c |       1495370
-  2026-09-08      81     35283      435.6   1737    33546         5% |        38s       95.3c |       1659228
-  2026-09-09      45     28413      631.4   2105    26308         7% |        44s       95.3c |       1177689
-  2026-09-10      69     49175      712.7   1928    47247         4% |        45s       95.2c |       2370454
-  2026-09-11      73     41498      568.5   4033    37465        10% |        40s       95.2c |       1656915
-  2026-09-12      53     38952      734.9   3570    35382         9% |        35s       95.1c |       1254541
+  2026-09-08      81     41066      507.0   1854    39212         5% |        40s       95.3c |       1887921
+  2026-09-09      45     56826     1262.8   4210    52616         7% |        44s       95.3c |       2355378
+  2026-09-10      69     98350     1425.4   3856    94494         4% |        45s       95.2c |       4740909
+  2026-09-11      73     82996     1136.9   8066    74930        10% |        40s       95.2c |       3313829
+  2026-09-12      90    115612     1284.6   9733   105879         8% |        36s       95.1c |       3987095
+  2026-09-13      75     46424      619.0   3141    43283         7% |        39s       95.2c |       1491489
+  2026-09-14      89     54660      614.2   2414    52246         4% |        42s       95.3c |       2089651
+  2026-09-15      84     57856      688.8   1703    56153         3% |        35s       95.0c |       2455447
+  2026-09-16      92     51454      559.3   3201    48253         6% |        36s       95.4c |       2064556
+  2026-09-17      72     35340      490.8   2851    32489         8% |        45s       95.1c |       1569959
 
   first 3 days vs last 3 days:
-    bargains per close    280.0  ->   664.7
-    our share                0%  ->      7%
-    median tau taken        45s  ->     41s   (EARLIER means they are moving earlier)
-    mean price            95.5c  ->   95.1c
+    bargains per close    280.0  ->   583.3
+    our share                0%  ->      5%
+    median tau taken        45s  ->     38s   (EARLIER means they are moving earlier)
+    mean price            95.5c  ->   95.2c
 
   HOW TO READ 'our share': one of our orders prints as MANY tape trades
   (it sweeps several resting orders), and the join accepts any print
