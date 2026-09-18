@@ -192,6 +192,18 @@ if (-not $NoArms) {
                 $started++
             }
         }
+        # THE LEDGER REFRESHER. results/kalshi_ledger.json is what the desktop
+        # app and the phone bot now read for money, and nothing was keeping it
+        # current -- a ledger frozen at whenever someone last ran the command by
+        # hand still reads as today's number. It trades nothing; it fetches
+        # settlements and writes a file.
+        if (-not (RunningPy '*pinledgerd.py*')) {
+            Say "pinledgerd.py is NOT running -- starting the Kalshi ledger refresher"
+            Start-Process -FilePath $py -ArgumentList @("-u", "$repoesearch\pinledgerd.py") `
+                -WorkingDirectory $repo -WindowStyle Hidden `
+                -RedirectStandardOutput "$res\pinledgerd.out" -RedirectStandardError "$res\pinledgerd.err"
+            $started++
+        }
         # the commodities paper arm (gold / silver / WTI). Paper only: its own
         # self-test asserts it cannot order. results/RESULTS_commodities.md.
         if (-not (RunningPy '*cmdarm.py*')) {
