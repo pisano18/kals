@@ -1771,9 +1771,18 @@ def run_gui():
 
     lab_cache = {"prog": {}, "whatif": {}, "names": {}, "b0": {}}
 
-    def lab_whatif(logname):
-        """Cached. Computed on the worker thread by lab_compute()."""
-        return (lab_cache.get("whatif") or {}).get(logname)
+    def lab_whatif(match):
+        """Cached, keyed by the ARM (its `match`), not by a log filename.
+
+        THE OPERATOR, 2026-09-18: "Make sure all the arms are on the app lab
+        section with the chart ... some charts cut off because we stopped."
+        Keying by filename had two faults. An arm that had been restarted
+        owns SEVERAL logs and this saw only the newest, so its chart began at
+        the restart and the earlier hours vanished. And when two arms matched
+        the same log, the second was skipped entirely (`if log in wf:
+        continue`) and never got a chart at all.
+        """
+        return (lab_cache.get("whatif") or {}).get(match)
 
     # ---- the what-if overlay -------------------------------------------
     # The operator, 2026-09-18: *"I don't see anywhere showing what effect it
@@ -1926,19 +1935,26 @@ def run_gui():
         bymatch = {e.get("match"): e.get("name") for e in pinlab.EXPERIMENTS}
         live_pts = sorted((s["t"], s["pnl"]) for s in ledger.settled if s.get("t"))
         for match, info in prog.items():
-            log = info.get("log")
-            if not log or log in wf:
+            # EVERY log the arm owns, oldest first. `logs` is present when the
+            # arm was restarted; `log` alone is the single-log case. Feeding
+            # only the newest is what cut the charts off at the last restart.
+            logs = info.get("logs") or ([info["log"]] if info.get("log") else [])
+            if not logs:
                 continue
             try:
-                arm_pts, arm_ct = pinlab.arm_series(os.path.join(ledger.results, log))
+                arm_pts, arm_ct = pinlab.arm_series(
+                    [os.path.join(ledger.results, l) for l in logs])
                 if not arm_pts:
                     continue
                 t0 = arm_pts[0][0]
                 live_ct = sum(float(o.get("filled") or 0) for o in ledger.orders
                               if (o.get("t") or 0) >= t0)
-                wf[log] = pinlab.whatif(arm_pts, arm_ct, live_pts, live_ct)
-                names[log] = bymatch.get(match) or match
-                b0s[log] = ledger.bank_at(t0)
+                # keyed by the ARM: two arms may legitimately share a log
+                # (a base arm and one layered on it), and keying by filename
+                # silently dropped the second one's chart
+                wf[match] = pinlab.whatif(arm_pts, arm_ct, live_pts, live_ct)
+                names[match] = bymatch.get(match) or match
+                b0s[match] = ledger.bank_at(t0)
             except Exception:                                     # noqa: BLE001
                 continue
         lab_cache["prog"], lab_cache["whatif"] = prog, wf
@@ -1966,10 +1982,21 @@ def run_gui():
             lab_body.insert("end", "%s\n" % e["status"], e["status"])
             p = prog.get(e.get("match") or "", {})
             if p.get("settled"):
-                lab_body.insert("end", "   SO FAR: %d settled, %d won, %d lost, %s%s\n"
+                _nlogs = len(p.get("logs") or [])
+                lab_body.insert("end", "   SO FAR: %d settled, %d won, %d lost, %s%s%s\n"
                                 % (p["settled"], p["won"], p["lost"], money(p["net"]),
+                                   "   (across %d runs)" % _nlogs if _nlogs > 1 else "",
                                    "" if p.get("running") else "   (not running now)"), "prog")
-                w = lab_whatif(p.get("log"))
+                if p.get("overlap_dropped"):
+                    # TWO PROCESSES ON ONE SETTING IS NOT ONE ARM. Said out
+                    # loud rather than summed, because summing them would
+                    # double every market they shared.
+                    lab_body.insert(
+                        "end", "   NOTE: %d duplicate run(s) ignored (two "
+                        "processes overlapped): %s\n"
+                        % (len(p["overlap_dropped"]),
+                           ", ".join(p["overlap_dropped"])), "whatif_bad")
+                w = lab_whatif(e.get("match"))
                 if w:
                     pct = ("%+.1f%% on the money" % w["pct"]) if w.get("pct") is not None \
                         else ("%s" % money(w["diff"]))
