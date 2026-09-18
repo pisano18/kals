@@ -1714,30 +1714,20 @@ def run_gui():
                        selectcolor=C["panel2"], activebackground=C["bg"],
                        activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
-    def lab_whatif(logname):
-        """What this arm would have done to the REAL account since it started."""
-        if not logname:
-            return None
-        try:
-            path = os.path.join(ledger.results, logname)
-            arm_pts, arm_ct = pinlab.arm_series(path)
-            if not arm_pts:
-                return None
-            live_pts = [(s["t"], s["pnl"]) for s in ledger.settled if s.get("t")]
-            live_pts.sort()
-            t0 = arm_pts[0][0]
-            live_ct = sum(float(o.get("filled") or 0) for o in ledger.orders
-                          if (o.get("t") or 0) >= t0)
-            return pinlab.whatif(arm_pts, arm_ct, live_pts, live_ct)
-        except Exception:                                         # noqa: BLE001
-            return None
+    lab_cache = {"prog": {}, "whatif": {}}
 
-    def draw_lab():
-        lab_body.configure(state="normal")
-        lab_body.delete("1.0", "end")
-        # which arms are alive right now. One PowerShell call, and a failure
-        # here must never blank the page -- the catalogue is still worth reading
-        # when the process list is unavailable.
+    def lab_whatif(logname):
+        """Cached. Computed on the worker thread by lab_compute()."""
+        return (lab_cache.get("whatif") or {}).get(logname)
+
+
+    def lab_compute():
+        """Everything the Lab tab needs, computed OFF the interface thread.
+
+        Called from the background worker. Reading a dozen paper logs and
+        shelling out to PowerShell takes seconds, and doing that where the app
+        draws is what made it freeze on every click.
+        """
         cmds = []
         try:
             out = subprocess.run(
@@ -1753,6 +1743,32 @@ def run_gui():
             prog = pinlab.live_progress(cmdlines=cmds)
         except Exception:                                         # noqa: BLE001
             prog = {}
+        wf = {}
+        live_pts = sorted((s["t"], s["pnl"]) for s in ledger.settled if s.get("t"))
+        for info in prog.values():
+            log = info.get("log")
+            if not log or log in wf:
+                continue
+            try:
+                arm_pts, arm_ct = pinlab.arm_series(os.path.join(ledger.results, log))
+                if not arm_pts:
+                    continue
+                t0 = arm_pts[0][0]
+                live_ct = sum(float(o.get("filled") or 0) for o in ledger.orders
+                              if (o.get("t") or 0) >= t0)
+                wf[log] = pinlab.whatif(arm_pts, arm_ct, live_pts, live_ct)
+            except Exception:                                     # noqa: BLE001
+                continue
+        lab_cache["prog"], lab_cache["whatif"] = prog, wf
+
+    def draw_lab():
+        lab_body.configure(state="normal")
+        lab_body.delete("1.0", "end")
+        # NO I/O HERE. This runs on the interface thread, and the first version
+        # called PowerShell with an 8 second timeout and then read every paper
+        # arm's log -- so the whole app froze on every click and on every
+        # refresh. The worker thread fills lab_cache; this only draws it.
+        prog = lab_cache.get("prog") or {}
         c = pinlab.counts()
         lab_count.configure(text="%d running   %d shipped   %d killed   %d ideas"
                             % (c[pinlab.RUNNING], c[pinlab.SHIPPED],
@@ -2208,10 +2224,10 @@ def run_gui():
             _ = lost_h
         fill(tv_days, rows)
         draw_chart()
-        # the Lab tab reads the process table, so refresh it on the slow beat
-        # rather than every tick
+        # redraw the Lab only when the worker has produced something new
         try:
-            if int(time.time()) % 30 < 3 or not lab_body.get("1.0", "1.5").strip():
+            if lab_cache.get("at", 0) != lab_cache.get("drawn", -1):
+                lab_cache["drawn"] = lab_cache.get("at", 0)
                 draw_lab()
         except Exception:                                         # noqa: BLE001
             pass
@@ -2292,6 +2308,9 @@ def run_gui():
             try:
                 ledger.refresh()
                 pending["h"] = health(ledger)
+                if time.time() - lab_cache.get("at", 0) > 45:
+                    lab_cache["at"] = time.time()
+                    lab_compute()
             except Exception:                            # noqa: BLE001
                 with open(ERR_FILE, "a", encoding="utf-8") as fh:
                     fh.write(traceback.format_exc())
