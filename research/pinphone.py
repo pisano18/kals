@@ -124,6 +124,7 @@ HELP_TEXT = """Commands:
 /status - is it trading, with the evidence
 /today /yesterday /days - money and % return
 /open - open bets
+/brief - the daily briefing: money, what changed, what it did, the market, what to watch
 /market - how active sellers are
 /losses - losing closes
 /hedges - insurance and whether it was needed
@@ -243,6 +244,21 @@ class Phone:
             out.append("%s x%g, closes %s (%d s)" % (coin(t), self.ledger.contracts_for(t), close_et(t), max(0, (c or 0) - self.now())))
         return "\n".join(out)
 
+    def text_brief(self):
+        """The daily briefing, from pinbrief -- the same words the CLI prints.
+
+        NOT rebuilt here. The operator asked for one daily summary, and a
+        phone copy that assembles its own version is a second summary to keep
+        honest; the app and this bot have already disagreed about one day.
+        """
+        try:
+            import pinbrief
+            return pinbrief.text(pinbrief.brief(ledger=self.ledger))
+        except Exception as e:                                  # noqa: BLE001
+            return ("Could not build today's briefing: %s\n"
+                    "Everything else still works -- try /today again, or "
+                    "/days for the plain numbers." % str(e)[:160])
+
     def text_market(self):
         act = self.ledger.activity()
         out = ["SELLERS: %s" % act["level"]]
@@ -349,6 +365,11 @@ class Phone:
             return self.text_days()
         if cmd == "/open":
             return self.text_open()
+        # NOT `/today` -- that command already exists and gives the plain
+        # money for the day. Taking its name would have silently replaced
+        # something he uses with something longer.
+        if cmd in ("/brief", "/summary"):
+            return self.text_brief()
         if cmd == "/market":
             return self.text_market()
         if cmd == "/losses":
@@ -516,6 +537,19 @@ def selftest():
         ck("$+1.66" in t and "+0.33%" in t and "1 closes" in t, "/today: money, %% of the bank at day start, closes")
         ck("no settled bets" in ph.handle(111, "/yesterday"), "/yesterday with nothing settled says so")
         ck("SELLERS:" in ph.handle(111, "/market") and "BOUGHT 85" in ph.handle(111, "/market"), "/market: level and what happened")
+        # THE DAILY BRIEFING REACHES THE PHONE, and a failure inside it must
+        # not take the command down -- he reads this when the app is not in
+        # front of him.
+        _br = ph.handle(111, "/brief")
+        ck("THE DAY --" in _br or "Could not build" in _br,
+           "/brief answers with the daily briefing, or says plainly that it "
+           "could not build one")
+        ck(ph.handle(111, "/summary") == _br,
+           "/summary is the same command under its other name")
+        ck("THE DAY --" not in (ph.handle(111, "/today") or ""),
+           "and /today is UNTOUCHED -- it already existed and gives the plain "
+           "money for the day; taking its name would have quietly replaced "
+           "something he uses with something longer")
         # THE OPPORTUNITY TREND REACHES THE PHONE, and a health dict that does
         # not carry it must not break the command -- the operator reads
         # /market from his phone when the app is not in front of him.

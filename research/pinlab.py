@@ -108,7 +108,13 @@ EXPERIMENTS = [
     {
         "name": "45 seconds at FULL size, but only when the market agrees (A50)",
         "status": RUNNING, "match": "--early-max-edge", "since": "2026-09-18",
-        "select": {"early_max_edge": SET},
+        # A51 ALSO CARRIES `--early-max-edge`, because it is built on top of
+        # this one. Selecting on that flag alone matched both logs and took
+        # the newer, so A50 displayed A51's markets -- the same
+        # arm-reads-another-arm's-log bug this `select` mechanism was added to
+        # kill, re-introduced the moment a second arm inherited the flag.
+        # Whenever an arm is layered on another, the older one must exclude it.
+        "select": {"early_max_edge": SET, "hedge_normal": lambda v: not v},
         "what": "Buys a WHOLE bet at 31-45 seconds out, not a third -- but only "
                 "when our model and the market price are within 3 cents of each "
                 "other.",
@@ -732,6 +738,28 @@ def selftest():
     ck(_sel_ok(None, lambda v: v > 1.0) is False,
        "...and a callable that would raise on a missing field refuses rather "
        "than matching")
+    # AN ARM LAYERED ON ANOTHER MUST NOT STEAL ITS LOG. A51 sets
+    # --early-max-edge as well as --hedge-normal, so selecting on the shared
+    # flag alone matched both and the older arm displayed the newer's markets.
+    base = os.path.join(td, "pinrun-paper-b1.jsonl")
+    layer = os.path.join(td, "pinrun-paper-b2.jsonl")
+    for path, extra, pnl in ((base, {}, 500.0),
+                             (layer, {"hedge_normal": True}, -700.0)):
+        with open(path, "w", encoding="utf-8") as fh:
+            rec = {"kind": "start", "pin": 0.995, "early_max_edge": 3.0}
+            rec.update(extra)
+            fh.write(json.dumps(rec) + "\n")
+            fh.write(json.dumps({"kind": "settled", "pnl_c": pnl}) + "\n")
+    lp3 = live_progress(cmdlines=[], logs=[base, layer])
+    ck(lp3["--early-max-edge"].get("log") == "pinrun-paper-b1.jsonl",
+       "the base arm keeps its OWN log when a later arm inherits its flag -- "
+       "selecting on the shared flag alone showed the older arm the newer "
+       "arm's markets, which is exactly the bug `select` was added to kill")
+    ck(lp3["--hedge-normal"].get("log") == "pinrun-paper-b2.jsonl",
+       "...and the layered arm finds its own")
+    ck(abs(lp3["--early-max-edge"]["net"] - 5.0) < 1e-9
+       and abs(lp3["--hedge-normal"]["net"] + 7.0) < 1e-9,
+       "...so a winning arm and a losing one are never shown the same money")
     ck(lp2["--hedge-price"].get("log") is None,
        "NULL: an arm whose distinguishing flag is not set in ANY log gets no "
        "log at all -- blank is honest; another arm's numbers under its name is "
