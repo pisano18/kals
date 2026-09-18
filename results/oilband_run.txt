@@ -1,0 +1,104 @@
+  settlements on file: 22294
+  walking 556 tape hours for KXWTI15M...
+    0/556 hours, 0 trades
+    25/556 hours, 0 trades
+    50/556 hours, 0 trades
+    75/556 hours, 0 trades
+    100/556 hours, 0 trades
+    125/556 hours, 0 trades
+    150/556 hours, 0 trades
+    175/556 hours, 0 trades
+    200/556 hours, 0 trades
+    225/556 hours, 0 trades
+    250/556 hours, 0 trades
+    275/556 hours, 0 trades
+    300/556 hours, 0 trades
+    325/556 hours, 0 trades
+    350/556 hours, 0 trades
+    375/556 hours, 0 trades
+    400/556 hours, 0 trades
+    425/556 hours, 0 trades
+    450/556 hours, 0 trades
+    475/556 hours, 41186 trades
+    500/556 hours, 88307 trades
+    525/556 hours, 142643 trades
+    550/556 hours, 147401 trades
+  147401 trades, 10 unreadable hours skipped
+  OIL (KXWTI15M) -- EVERY TAKER NEAR A CLOSE, BY PRICE AND CLOCK
+
+  TAPE POPULATION. This is what the MARKET did, never our loss rate
+  (rule 5): an offer sitting there is not an offer sold to us, and on
+  crypto those two differed by 31x. Read the SHAPE, not the level.
+
+  'break-even' is the loss rate at which that price stops paying, so a
+  cell is never called good on its win rate alone.
+
+  RULE 4: `closes` is the evidence, `trades` is not -- hundreds of
+  trades share one settlement, so a cell of 1,600 trades can be 40
+  independent observations. Cells are filtered on CLOSES.
+
+  seconds    price         closes  trades   lost closes lost break-even c/contract
+  0-15       0.85-0.90         28     455      6      21.43%     11.73%    +2.425
+  0-15       0.90-0.93         34     388      4      11.76%      7.96%    +1.412
+  0-15       0.93-0.95         43     603      3       6.98%      5.61%    +3.818
+  0-15       0.95-0.97         55     701      1       1.82%      3.73%    +2.792  <-- pays
+  0-15       0.97-0.98         65    1375      1       1.54%      2.33%    +1.231  <-- pays
+  0-15       0.98-0.99         79    1489      0       0.00%      1.40%    +1.018  <-- pays
+  0-15       0.99-1.00        193    4145      0       0.00%      0.47%    +0.229  <-- pays
+  16-30      0.85-0.90         37     488      4      10.81%     11.73%    +6.102  <-- pays
+  16-30      0.90-0.93         42     615      2       4.76%      7.96%    +4.454  <-- pays
+  16-30      0.93-0.95         47     675      1       2.13%      5.61%    +5.054  <-- pays
+  16-30      0.95-0.97         41     492      0       0.00%      3.73%    +3.541  <-- pays
+  16-30      0.97-0.98         40     713      0       0.00%      2.33%    +2.088  <-- pays
+  16-30      0.98-0.99         44     581      0       0.00%      1.40%    +1.136  <-- pays
+  16-30      0.99-1.00        157    1671      0       0.00%      0.47%    +0.278  <-- pays
+  31-45      0.85-0.90         44     768      3       6.82%     11.73%    +3.053  <-- pays
+  31-45      0.90-0.93         46     527      3       6.52%      7.96%    +2.399  <-- pays
+  31-45      0.93-0.95         42     618      3       7.14%      5.61%    +1.107
+  31-45      0.95-0.97         45     413      1       2.22%      3.73%    +2.781  <-- pays
+  31-45      0.97-0.98         43     514      0       0.00%      2.33%    +2.146  <-- pays
+  31-45      0.98-0.99         47     512      0       0.00%      1.40%    +1.150  <-- pays
+  31-45      0.99-1.00        147    1257      1       0.68%      0.47%    -0.484
+  46-60      0.85-0.90         51     891      6      11.76%     11.73%    -3.892
+  46-60      0.90-0.93         47     554      4       8.51%      7.96%    -0.383
+  46-60      0.93-0.95         44     502      2       4.55%      5.61%    +0.696  <-- pays
+  46-60      0.95-0.97         38     353      1       2.63%      3.73%    +3.177  <-- pays
+  46-60      0.97-0.98         42     469      1       2.38%      2.33%    +1.641
+  46-60      0.98-0.99         58     743      1       1.72%      1.40%    +0.733
+  46-60      0.99-1.00        147    1275      1       0.68%      0.47%    -0.103
+  61-90      0.85-0.90         57    1173     11      19.30%     11.73%    -1.644
+  61-90      0.90-0.93         55     679      4       7.27%      7.96%    +3.691  <-- pays
+  61-90      0.93-0.95         52     713      1       1.92%      5.61%    +2.093  <-- pays
+  61-90      0.95-0.97         68     854      2       2.94%      3.73%    +2.165  <-- pays
+  61-90      0.97-0.98         63     989      1       1.59%      2.33%    +2.001  <-- pays
+  61-90      0.98-0.99         82    1077      1       1.22%      1.40%    -0.900
+  61-90      0.99-1.00        143    2010      1       0.70%      0.47%    +0.120
+  91-120     0.85-0.90         58    1128      6      10.34%     11.73%    +1.354  <-- pays
+  91-120     0.90-0.93         58     818      5       8.62%      7.96%    +1.445
+  91-120     0.93-0.95         51     590      4       7.84%      5.61%    -1.796
+  91-120     0.95-0.97         68     772      4       5.88%      3.73%    +0.149
+  91-120     0.97-0.98         67     919      1       1.49%      2.33%    +1.576  <-- pays
+  91-120     0.98-0.99         77    1172      1       1.30%      1.40%    -0.031
+  91-120     0.99-1.00        120    1527      0       0.00%      0.47%    +0.327  <-- pays
+  121-180    0.85-0.90         88    1671      4       4.55%     11.73%    +7.047  <-- pays
+  121-180    0.90-0.93         85    1366      3       3.53%      7.96%    +3.559  <-- pays
+  121-180    0.93-0.95         85    1190      2       2.35%      5.61%    +2.882  <-- pays
+  121-180    0.95-0.97         88    1300      2       2.27%      3.73%    +0.769  <-- pays
+  121-180    0.97-0.98         81    1241      1       1.23%      2.33%    +0.173  <-- pays
+  121-180    0.98-0.99         88    1316      0       0.00%      1.40%    +1.134  <-- pays
+  121-180    0.99-1.00         92    1578      0       0.00%      0.47%    +0.428  <-- pays
+  181-240    0.85-0.90         88    1706      8       9.09%     11.73%    +6.365  <-- pays
+  181-240    0.90-0.93         87    1330      2       2.30%      7.96%    +5.311  <-- pays
+  181-240    0.93-0.95         84    1064      2       2.38%      5.61%    +3.443  <-- pays
+  181-240    0.95-0.97         77    1027      1       1.30%      3.73%    +0.586  <-- pays
+  181-240    0.97-0.98         74     918      1       1.35%      2.33%    +1.807  <-- pays
+  181-240    0.98-0.99         64     713      0       0.00%      1.40%    +1.158  <-- pays
+  181-240    0.99-1.00         37     448      0       0.00%      0.47%    +0.484  <-- pays
+
+  BEST CELLS BY MONEY PER CONTRACT
+    121-180 s at 0.85-0.90 : +7.047 c/contract, 4 of 88 CLOSES lost (4.55%), 72968 contracts changed hands
+    181-240 s at 0.85-0.90 : +6.365 c/contract, 8 of 88 CLOSES lost (9.09%), 74280 contracts changed hands
+    16-30 s at 0.85-0.90 : +6.102 c/contract, 4 of 37 CLOSES lost (10.81%), 25910 contracts changed hands
+    181-240 s at 0.90-0.93 : +5.311 c/contract, 2 of 87 CLOSES lost (2.30%), 72539 contracts changed hands
+    16-30 s at 0.93-0.95 : +5.054 c/contract, 1 of 47 CLOSES lost (2.13%), 41537 contracts changed hands
+    16-30 s at 0.90-0.93 : +4.454 c/contract, 2 of 42 CLOSES lost (4.76%), 31560 contracts changed hands
