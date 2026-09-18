@@ -172,7 +172,27 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     "--improve-scope", "market", "--pick", "best",
     "--max-per-market", "2", "--improve-max", "0.010",
     "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate",
-    "--hedge-belief", "0.60"
+    "--hedge-belief", "0.60",
+    # AMENDMENT 46 REOPENED 2026-09-18 ~02:2xZ, at a THIRD and with a PRICE
+    # FLOOR. The operator: "Can you re open 45 seconds with a cap at 90c, or
+    # whatever number you like?"
+    #
+    # Why it is back: the pickoff tracker says the cheap offers are taken a
+    # median of 41 s before the close while our window starts at 30 s, so the
+    # 31-45 s band is where the trades we are missing actually live. Closing it
+    # entirely gives up the only lever that addresses the real problem.
+    #
+    # Why a THIRD and not a full bet: its full-size life was 31 markets, 29
+    # settled, 29 won, +$35.81, and then ONE fill took $27.87 back --
+    # KXBTC15M-26SEP172115-15, ask seen 97.8c, FILLED AT 53.0c because the book
+    # collapsed inside our 160 ms round trip. A limit is a MAXIMUM, so no price
+    # rule can prevent that fill; only size bounds it. At a third it costs ~$9.
+    #
+    # Why the 90c floor (AMENDMENT 49): out at 31-45 s less of the settlement
+    # average is locked, so `fair` leans harder on the sigma estimate. A cheap
+    # ask there is the market disagreeing with us exactly where our model is
+    # weakest. Inside 30 s the full leg is untouched.
+    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.90"
     # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
     # built as safely as you described, deploy now"), first at half, then at a
     # THIRD, and from ~19:5xZ the same day at a FULL bet on his instruction:

@@ -1,3 +1,46 @@
+# v-early49 -- 2026-09-18 ~02:3xZ -- LIVE: the 31-45 s leg reopens at a THIRD, with a 90c price floor
+
+**Operator: "Can you re open 45 seconds with a cap at 90c, or whatever number
+you like?"** `restart_bot.ps1` passes
+`--early-tau 45 --early-frac 0.333 --early-min-price 0.90`.
+
+**Why it is back at all.** `results/RESULTS_pickoff.md`: the cheap offers are
+taken a median of **41 seconds** before the close while our window starts at
+**30**. The 31-45 s band is where the trades we are missing actually live, so
+closing it gives up the only lever aimed at the real problem.
+
+**Why a THIRD, not a full bet.** Full-size life: 31 markets, 29 settled, **29
+won, +$35.81** -- then one fill took **$27.87** back.
+`KXBTC15M-26SEP172115-15`: ask seen **97.8c**, **FILLED AT 53.0c**, 99
+contracts, because the book collapsed inside our 160 ms round trip. **A limit
+price is a MAXIMUM, so no price rule can prevent that fill -- only size bounds
+it.** At a third the same event costs about $9.
+
+**AMENDMENT 49, the 90c floor.** An early leg now also needs the ask at or
+above `EARLY_MIN_PRICE` (0.90). Out at 31-45 s only a quarter of the
+settlement average is locked, so `fair` leans much harder on the sigma
+estimate; a cheap ask there is the market disagreeing with us exactly where
+the model is weakest. **Inside TAU_MAX the full leg is untouched** -- we still
+buy at any price down to the dump guard's 84.5c in the 3-30 s window.
+Refusals log as `early_cheap` and are named in `pinattrib`, so the floor's
+cost is measurable rather than invisible.
+
+**Shipped defaults unchanged and asserted:** `_DEFAULT_EARLY_TAU_MAX = 30`
+(off), `_DEFAULT_EARLY_MIN_PRICE = 0.90`.
+
+**Bar:** `results/PREREG_staged.md` stage 2 still stands -- revert at 3 losses
+on early-leg closes in the first 40, or 2 in the first 15. The count restarts,
+because the size and the floor both changed.
+
+**REVERT:**
+
+```
+git revert --no-edit <this commit>
+powershell -File C:\kals-repoestart_bot.ps1
+```
+
+or drop `--early-tau/--early-frac/--early-min-price` from `restart_bot.ps1`.
+
 # v-a8fix -- 2026-09-17 ~21:0xZ -- AMENDMENT 8's both-sides guard finally reads the right variable
 
 **Found by the fresh-eyes review of the whole crypto buy path, and confirmed by
@@ -48,7 +91,8 @@ is a plain bug fix in the file the watchdog launches.
 
 ```
 git revert --no-edit <this commit>
-powershell -File C:\kals-repoestart_bot.ps1
+powershell -File C:\kals-repo
+estart_bot.ps1
 ```
 
 # v-early-full -- 2026-09-17 ~19:5xZ -- LIVE: the 31-45 s leg becomes a FULL bet

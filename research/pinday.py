@@ -33,6 +33,10 @@ from downtime import et_offset                                   # noqa: E402
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 LIVE_GLOB = os.path.join(RESULTS, "pinrun-live-*.jsonl")
+# The COMMODITY bot writes here and nothing used to read it, so every "today"
+# figure was crypto-only. On 2026-09-17 that reported +$88 on a day that was
+# +$88 crypto and -$58 commodity, and the operator caught the gap himself.
+CMD_GLOB = os.path.join(RESULTS, "cmdlive-*.jsonl")
 
 _MONTHS = {m: i + 1 for i, m in enumerate(
     ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"])}
@@ -180,6 +184,9 @@ def main():
     if not os.environ.get("KALS_SELFTESTED"):
         selftest()
     recs = load(sorted(glob.glob(a.glob)))
+    # only when reading the default crypto glob -- an explicit --glob means the
+    # caller asked for one specific set and must not be handed a second one.
+    oil = load(sorted(glob.glob(CMD_GLOB))) if a.glob == LIVE_GLOB else []
     if not recs:
         print("loaded nothing")
         return 0
@@ -201,6 +208,21 @@ def main():
     print("\n  TODAY (%s ET): %s" % (
         today, "nothing settled yet" if not v else
         "%d settled, %+.2f, %d losses" % (v["n"], v["dollars"], v["losses"])))
+    # BOTH BOTS. A total that silently omits one of two live bots is worse than
+    # no total: on 2026-09-17 the crypto-only figure read +$88 on a day that was
+    # +$88 crypto and -$58 commodity, and the operator found the gap himself.
+    if oil:
+        od = by_et_day(oil)
+        print("\n  COMMODITY bot, by EASTERN day (%d records)" % len(oil))
+        print("  %-12s %6s %10s %8s" % ("ET day", "bets", "made", "losses"))
+        for dd in sorted(od)[-a.days:]:
+            w = od[dd]
+            print("  %-12s %6d %+10.2f %8d" % (dd, w["n"], w["dollars"], w["losses"]))
+        ov = od.get(today)
+        c_d = v["dollars"] if v else 0.0
+        o_d = ov["dollars"] if ov else 0.0
+        print("\n  ===> BOTH BOTS TODAY: crypto %+.2f  commodity %+.2f  =  %+.2f"
+              % (c_d, o_d, c_d + o_d))
     return 0
 
 

@@ -276,6 +276,17 @@ ONE_COIN_MAX = 2.0             # multiple of SIZE; may not exceed MAX_PER_CLOSE
 EARLY_TAU_MAX = 30             # == TAU_MAX means OFF
 _DEFAULT_EARLY_TAU_MAX = 30
 EARLY_FRAC = 0.5
+# AMENDMENT 49 (2026-09-18): the EARLY leg also needs a price FLOOR.
+# The operator: "Can you re open 45 seconds with a cap at 90c". Out at 31-45 s
+# less of the settlement average is locked, so `fair` leans harder on the sigma
+# estimate; a cheap ask there is the market disagreeing with us exactly where
+# our model is weakest. Inside TAU_MAX the full leg is untouched by this.
+# Note what it does NOT protect against: a limit price is a MAXIMUM, so a
+# collapsing book can still fill us far below the ask we saw (97.8c seen, 53.0c
+# paid, 2026-09-17). Only SIZE bounds that, which is why the early fraction is
+# back to a third rather than a full bet.
+EARLY_MIN_PRICE = 0.90
+_DEFAULT_EARLY_MIN_PRICE = 0.90
 # FLIPPED TO True 2026-09-17 ~15:0xZ ON THE OPERATOR'S EXPLICIT INSTRUCTION:
 # "As long as you have the 45 second is built as safely as you described,
 # deploy now." This is a BAR OVERRIDE and it is recorded as one, loudly, in
@@ -2841,6 +2852,22 @@ def _selftest_body():
         # The decision functions, driven exactly as the loop drives them.
         _src_pinrun = open(os.path.abspath(__file__), encoding="utf-8").read()
         # AMENDMENT 47 -- the market must agree before we pay for insurance.
+        # AMENDMENT 49: the early leg needs a PRICE floor too.
+        ck(_DEFAULT_EARLY_MIN_PRICE == 0.90,
+           "A49 ships with a 90c floor on the EARLY leg, asserted against the "
+           "DECLARED default so an arm that sets the flag does not fail it")
+        _src49 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp49 = _src49[_src49.rindex(chr(10) + "def " + "trade_loop("):]
+        _n49 = "price < EARLY_MIN" + "_PRICE"
+        ck(_n49 in _lp49 and '_gate("early_cheap"' in _lp49,
+           "the loop refuses a cheap EARLY ask and logs it under its own gate "
+           "name, so the cost of the floor is measurable rather than invisible")
+        ck(_lp49.index(_n49) < _lp49.index("take_n < MIN_LEVEL"),
+           "and it is checked before the size floor, so a cheap early ask is "
+           "refused for being CHEAP rather than for being small")
+        ck('_leg46 in ("early", "early_once")' in _lp49,
+           "it applies ONLY to the early leg -- a full bet inside TAU_MAX is "
+           "untouched, which is the whole point of a staged entry")
         # AMENDMENT 48: bigger orders in the last seconds. SHIPPED OFF.
         ck(_DEFAULT_LATE_TAU == 0 and _DEFAULT_LATE_MULT == 1.0,
            "A48 ships OFF -- the DECLARED defaults, not the running values, so "
@@ -6455,6 +6482,21 @@ def trade_loop(a, rec, book, idx, series_index):
             if EARLY_TAU_MAX > TAU_MAX:
                 take_n, _leg46 = staged_take(tau, take_n, float(SIZE), _held46)
                 sig["take_n"] = take_n
+                # AMENDMENT 49: an EARLY leg needs the price to be high as well
+                # as the model to be confident. The operator, 2026-09-18:
+                # "Can you re open 45 seconds with a cap at 90c".
+                #
+                # At 31-45 s the model leans harder on the sigma estimate than
+                # it does at 30 s, because less of the settlement average is
+                # locked. A cheap ask out there is not a bargain -- it is the
+                # market disagreeing with us at the moment we can least afford
+                # to be wrong, and it is the population that produced the
+                # 53c Bitcoin fill. Inside 30 s the full leg is unaffected.
+                if _leg46 in ("early", "early_once") and price < EARLY_MIN_PRICE:
+                    _gate("early_cheap", close_s, tk, leg=_leg46, tau=tau,
+                          price=round(price, 4), floor=EARLY_MIN_PRICE,
+                          fair=round(f, 5))
+                    continue
                 if take_n < MIN_LEVEL:
                     _gate("staged_none", close_s, tk, leg=_leg46, held=_held46,
                           tau=tau, price=round(price, 4))
@@ -6877,6 +6919,11 @@ def main():
                          "both the entry decision and the hedge's belief. "
                          "The tail after a jump is ~2x wider than the model "
                          "assumes. OFF by default.")
+    ap.add_argument("--early-min-price", type=float, default=None,
+                    help="AMENDMENT 49: an EARLY leg (31-45 s) also needs the "
+                         "ask at or above this. Default 0.90. A cheap ask that "
+                         "far out is the market disagreeing with us where our "
+                         "model is weakest.")
     ap.add_argument("--late-tau", type=int, default=None,
                     help="AMENDMENT 48: seconds-to-close at or under which an "
                          "order may exceed SIZE. Our live fills earn 5.35c a "
@@ -7073,6 +7120,11 @@ def main():
                 "still sized from the touch, which buys exactly the scrap fill "
                 "AMENDMENT 6 added the floor to prevent.")
         globals()["DEPTH_LADDER"] = True
+    if a.early_min_price is not None:
+        if not (0.0 < a.early_min_price <= 0.99):
+            raise SystemExit("--early-min-price must be in (0, 0.99], got %r"
+                             % (a.early_min_price,))
+        globals()["EARLY_MIN_PRICE"] = float(a.early_min_price)
     if a.late_tau is not None:
         if not (0 <= a.late_tau <= TAU_MAX):
             raise SystemExit("--late-tau must be between 0 and TAU_MAX (%d), got %r"

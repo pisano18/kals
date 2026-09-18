@@ -188,7 +188,16 @@ class Ledger:
         self.newest_rows = []      # every row of the newest file (for open positions)
 
     def refresh(self):
-        paths = sorted(glob.glob(os.path.join(self.results, "pinrun-live-*.jsonl")))
+        # BOTH LIVE BOTS. Added 2026-09-18: the commodity bot writes to
+        # cmdlive-*.jsonl and NOTHING read it, so the desktop app and the
+        # Telegram bot both showed a crypto-only total. On 2026-09-17 that
+        # reported "+$88 today" on a day that was +$88 crypto and -$58 oil.
+        # A number that silently omits one of two live bots is worse than no
+        # number. The record shapes differ (the commodity log has `won` where
+        # the crypto log has `want`/`cost`), and `_ingest` reads every one of
+        # those with .get(), so a missing field shows blank instead of lying.
+        paths = sorted(glob.glob(os.path.join(self.results, "pinrun-live-*.jsonl"))
+                       + glob.glob(os.path.join(self.results, "cmdlive-*.jsonl")))
         if not paths:
             return False
         changed = False
@@ -237,7 +246,10 @@ class Ledger:
             tk = r.get("ticker")
             self.settled.append({"t": t, "tk": tk, "pnl": pnl, "cost": r.get("cost"),
                                  "want": r.get("want"), "result": r.get("result"),
-                                 "close": pinflat.close_epoch(tk), "file": f})
+                                 "close": pinflat.close_epoch(tk), "file": f,
+                                 # which bot this came from, so a total can be
+                                 # split and nothing is silently merged away
+                                 "book": "oil" if f.startswith("cmdlive") else "crypto"})
         elif k == "order":
             try:
                 filled = float(r.get("filled") or 0)
