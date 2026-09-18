@@ -349,6 +349,37 @@ EXPERIMENTS = [
     },
     # ------------------------------------------------------------------ IDEAS
     {
+        "name": "Hedge on the JUMP, not on the belief (post-entry jump trigger)",
+        "status": IDEA, "since": "2026-09-18",
+        "what": "Buy insurance the instant the index makes a one-second move of "
+                "N sigma against us AFTER entry, instead of waiting for the "
+                "model's belief to fall through 60%. It is a reaction, not a "
+                "refusal: no trade is turned away.",
+        "why": "Every loss we have is a post-entry jump of 10-18 sigma that "
+               "nothing at entry sees coming (the entry-time vote, killed the "
+               "same day, proved that). The current hedge fires on belief, "
+               "which is DOWNSTREAM of the jump, by which time the other side "
+               "costs 50-70c. A trigger on the jump itself fires while the "
+               "market still likes our side, when the other side is 10-20c -- "
+               "so a needed hedge pays 80-90c a contract instead of 30-50c, and "
+               "a wasted one costs a few dollars, not twenty.",
+        "good": "Measured on 920 markets (results/sigcheck_out.json), a firing "
+                "upper bound: live 3-30 s at 5 sigma catches 11 of 11 losses "
+                "and fires on 9% of winners; at 8 sigma, 7 of 11 and 4%; at 10 "
+                "sigma, 5 of 11 and 2%. Live 31-45 s at 8 sigma catches its one "
+                "loss and fires on 5% of winners.",
+        "bad": "These records hold the biggest move, not WHEN it came relative "
+               "to the price collapse. If the jump and the collapse are the "
+               "same second, the hedge fills at 60c anyway and this buys "
+               "nothing over the belief trigger. The smallest jump among the 19 "
+               "misses is 4.3 sigma and the largest among winners is 62.6, so "
+               "no threshold is clean; the money is in the fill price, which "
+               "only a paper arm can measure.",
+        "watch": "For each alarm: the index-jump time, the hedge fill time, and "
+                 "the fill price, against what the belief trigger would have "
+                 "paid on the same market.",
+    },
+    {
         "name": "Crypto.com prediction markets (FIX API)",
         "status": IDEA, "since": "2026-09-17", "match": None,
         "what": "A second venue. They run 5- and 15-minute crypto markets on more "
