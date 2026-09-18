@@ -187,6 +187,37 @@ EXPERIMENTS = [
                  "market twice through different windows), now fixed.",
     },
     {
+        "name": "Score several entry-time warnings and refuse on a vote (measured, dead)",
+        "status": KILLED, "since": "2026-09-18",
+        "what": "The operator's idea after a single sigma stress refused 88% of "
+                "wins: treat each warning as one box, refuse only when several "
+                "are ticked. Boxes tried: cushion under 3 sd at entry, sigma "
+                "under 0.7x the coin's median (a calm patch), edge over 3c.",
+        "why": "Every loss in both windows is a 10-18 sigma single-second jump "
+               "with sigma understated 2-3x at entry, and the losers sit inside "
+               "the winners' confidence range. If any entry-time signal saw the "
+               "jump coming, a vote would catch it without a single veto's cost.",
+        "outcome": "NOTHING AT ENTRY SEES IT. 920 live+paper markets, 19 misses. "
+                   "31-45 s pooled: one flag catches 4/4 misses but refuses 121 "
+                   "of 161 wins (75%); two flags catch 1/4 and refuse 22%; three "
+                   "catch 0/4. Singly, every entry-time feature -- cushion, edge, "
+                   "price, relative sigma, book age, index age -- needs a "
+                   "threshold that refuses 45-98% of wins to catch every miss, "
+                   "and the misses are barely enriched in any feature's worst "
+                   "fifth (live 3-30 s: 4 of 11 misses vs 91 of 463 wins on "
+                   "cushion). The HINDSIGHT features -- realized/sigma ratio and "
+                   "biggest one-second move -- put 100% of misses in the worst "
+                   "fifth every time, which proves the losses ARE jumps and "
+                   "proves they are invisible beforehand. And the calm-patch "
+                   "story is contradicted here: all four 45 s misses had sigma "
+                   "1.2-1.8x ABOVE their coin's median, not below.",
+        "attribution": "None shipped. The defence against a jump is after "
+                       "entry, not before: the hedge (+$46.55 net across every "
+                       "alarm) and, if anything, a faster post-entry reaction to "
+                       "the jump itself (A47 waits for the market price to "
+                       "agree). Study: results/sigcheck.py, results/sigcheck_out.json.",
+    },
+    {
         "name": "Refuse a market where the model reverses itself (measured, dead)",
         "status": KILLED, "since": "2026-09-18",
         "what": "The idea: if the model wants one side early in a quarter-hour "
