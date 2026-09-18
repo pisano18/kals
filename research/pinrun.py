@@ -854,6 +854,37 @@ HEDGE_BELIEF = 0.80      # belief in OUR side below which we hedge.
 # paying a premium eleven times out of twelve for nothing.
 HEDGE_NORMAL = False
 _DEFAULT_HEDGE_NORMAL = False
+# AMENDMENT 52 (2026-09-18): hedge on the JUMP, not on the belief.
+#
+# Every loss this bot has taken is a post-entry jump: a single-second index
+# move of 10-18 sigma, with sigma understated 2-3x at entry, and the losers
+# sitting inside the winners' confidence range. Nothing at entry sees it --
+# a scored vote of every entry-time warning was measured the same day on 920
+# markets and killed (one flag catches 4/4 misses at 31-45 s and refuses 75%
+# of wins; two flags catch 1/4). So the defence is AFTER entry.
+#
+# The current hedge fires when the model's belief in our side falls through
+# HEDGE_BELIEF. Belief is DOWNSTREAM of the jump: by the time it has fallen,
+# the market has moved and the other side costs 50-70c. This fires on the
+# jump itself -- the largest one-second move against our side since entry, in
+# sigma units -- while the market may still like our side and the other side
+# is 10-20c. A needed hedge then pays 80-90c a contract instead of 30-50c; a
+# wasted one costs a few dollars, not twenty.
+#
+# Firing upper bound on those 920 markets (results/sigcheck_out.json):
+#     live 3-30 s   5 sigma  catches 11/11 losses, fires on  9% of winners
+#                   8 sigma            7/11                   4%
+#                  10 sigma            5/11                   2%
+#     live 31-45 s  8 sigma             1/1                   5%
+# What those records CANNOT say is when the jump came relative to the price
+# collapse. If they are the same second the hedge fills at 60c anyway and this
+# buys nothing. The money is in the fill price, which only a paper arm sees.
+#
+# None = off, the shipped behaviour. The belief trigger is untouched; this
+# ADDS a second reason to fire and records which one it was.
+HEDGE_JUMP_SIGMA = None
+_DEFAULT_HEDGE_JUMP_SIGMA = None
+HEDGE_JUMP_LOOKBACK_MAX = 60   # never read more than a minute of moves
 HEDGE_MAX_ASK = 1.00     # the hedge leg must cost LESS than the $1 it pays.
                          # THE FIRST VERSION OF THIS RULE WAS WRONG, and the
                          # self-test caught it before any live hedge: it
@@ -2996,6 +3027,44 @@ def _selftest_body():
         ck(_lp51.index("hedge_normal" + "_ok") < _lp51.index("hedge_ask" + "_ok"),
            "...and it is asked BEFORE the under-a-dollar check, so a refusal "
            "is recorded as 'not a normal bet' rather than as a pricing failure")
+        # AMENDMENT 52: hedge on the JUMP, not on the belief.
+        ck(_DEFAULT_HEDGE_JUMP_SIGMA is None,
+           "A52 ships OFF, asserted against the DECLARED default so an arm "
+           "that sets --hedge-jump does not fail its own self-test")
+        # the trigger reuses jump_against(), so its sign convention is the
+        # gate's: buying NO, an UP move is against us; YES is the mirror
+        ck(jump_against([+3.0, -1.0, +0.5], 0.5, "no") == 6.0
+           and jump_against([+3.0, -1.0, +0.5], 0.5, "yes") == 2.0,
+           "since-entry moves against a NO holder read the largest UP move in "
+           "sigma (6.0), and against a YES holder the largest DOWN move (2.0) "
+           "-- the sign is the entry gate's, which was once backwards and "
+           "reported the dangerous bucket as safest")
+        ck(jump_against([-4.0, -2.0], 0.5, "no") == -4.0,
+           "a series that only ever moved FOR a NO holder reads negative, so "
+           "no threshold above zero can fire on it")
+        ck(jump_against([], 0.5, "yes") is None
+           and jump_against([1.0], 0.0, "yes") is None,
+           "NULL: no moves, or no sigma, is None -- never a fabricated zero "
+           "that reads as 'calm'")
+        _lp52 = _src49[_src49.rindex(chr(10) + "def " + "trade_loop("):]
+        ck(_lp52.index("_htrig = \"belief\"") < _lp52.index("if _htrig != \"jump\" and not hedge_should_fire(_belief)"),
+           "the loop asks the JUMP before the belief, because the jump is the "
+           "earlier signal -- belief only falls after the price has moved")
+        ck('trigger=_htrig' in _lp52 and 'jump_sd=' in _lp52,
+           "and every alarm records WHICH reason fired and the jump size, so "
+           "the two triggers can be scored against each other on the same "
+           "alarms")
+        for _site in ("open_pos[_poid] = ", "open_pos[f\"paper-{tk}-{now_s}\"] = ",
+                      "open_pos[_oid_new] = "):
+            _i = _lp52.index(_site)
+            _win = _lp52[_i - 200:_i + 200]
+            ck("entry_at[" in _win,
+               "every ENTRY position records when it was entered beside the "
+               "position itself (%s) -- without it the trigger would measure "
+               "the last three seconds, not the time since entry" % _site.strip())
+        ck("HEDGE_JUMP_LOOKBACK_MAX" in _lp52 and HEDGE_JUMP_LOOKBACK_MAX == 60,
+           "and the lookback is capped at a minute, so a position held from "
+           "45 s cannot ask the feed for more than it holds")
         # THE RISK SETTING. The operator asked for one bet to be the bank
         # divided by 8 rather than 5.88, and the divisor is a PRODUCT of three
         # constants -- so asserting the brake alone would pass while a change
@@ -5565,6 +5634,9 @@ def trade_loop(a, rec, book, idx, series_index):
     # direction. MAX_PER_CLOSE 3 makes same-ticker repeats more likely, not
     # less. Value is (close_s, want, cost, nfill, ticker).
     open_pos = {}
+    entry_at = {}            # A52: oid -> wall-clock second we ENTERED, so the
+                             # jump trigger measures moves since entry and not
+                             # since the last three seconds
     hedge_meta = {}     # A15: oid -> (strike, digits, iid) so belief can be recomputed
     hedged = set()      # A15: oids already hedged (or given up on)
     hedge_tries = {}    # A15: oid -> attempts since the alarm fired
@@ -5654,6 +5726,7 @@ def trade_loop(a, rec, book, idx, series_index):
         pintake.LEDGER["committed"] = max(
             0.0, float(pintake.LEDGER.get("committed", 0.0)) - owed)
         open_pos.pop(oid, None)
+        entry_at.pop(oid, None)
         # only drop the ticker from pintake's position map once NO other open
         # fill still references it, or a second fill on the same market would
         # release the first's position record early.
@@ -5881,7 +5954,19 @@ def trade_loop(a, rec, book, idx, series_index):
                 if _hf is None:
                     continue
                 _belief = _hf if _hwant == "yes" else 1.0 - _hf
-                if not hedge_should_fire(_belief):
+                # A52: two reasons to fire, recorded separately. The jump is
+                # asked FIRST because it is the earlier signal -- belief only
+                # falls after the price has already moved.
+                _htrig = "belief"
+                _hjmp = None
+                if HEDGE_JUMP_SIGMA is not None:
+                    _since = int(now_s - entry_at.get(_hid, now_s))
+                    _hjmp = jump_against(
+                        idx.recent_moves(_hiid, max(1, min(HEDGE_JUMP_LOOKBACK_MAX, _since))),
+                        _hsg, _hwant)
+                    if _hjmp is not None and _hjmp >= HEDGE_JUMP_SIGMA:
+                        _htrig = "jump"
+                if _htrig != "jump" and not hedge_should_fire(_belief):
                     continue
                 # ONE TRY PER SECOND. The loop runs ~20x/second; the first live
                 # alarm (planted, 2026-09-12 09:44:35Z) burned all five tries in
@@ -5896,7 +5981,13 @@ def trade_loop(a, rec, book, idx, series_index):
                     state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
                     rec("hedge_alarm", ticker=_htk, want=_hwant, entry=_hcost,
                         n=_hn, belief=round(_belief, 5), tau=_htau,
-                        threshold=HEDGE_BELIEF)
+                        threshold=HEDGE_BELIEF,
+                        # A52: WHICH reason fired, and the jump size either
+                        # way, so the two triggers can be scored against each
+                        # other on the same alarms
+                        trigger=_htrig,
+                        jump_sd=(round(_hjmp, 2) if _hjmp is not None else None),
+                        jump_threshold=HEDGE_JUMP_SIGMA)
                     print(f"  !!! HEDGE ALARM {_htk} {_hwant} belief {_belief:.3f} "
                           f"tau {_htau}s")
                 hedge_tries[_hid] = _tries + 1
@@ -6309,6 +6400,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         _poid = f"plant-{_po.get('order_id') or now_s}"
                         _pc = float(_pp) if _pp is not None else float(_la)
                         open_pos[_poid] = (close_s, _lose, _pc, _pf, tk)
+                        entry_at[_poid] = now_s
                         hedge_meta[_poid] = (strike, digits, iid)
                         print(f"  PLANT filled {_pf:g} @ {_pc:.3f}; the hedge "
                               f"pass should fire on it within a second")
@@ -6889,6 +6981,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 take_n = _late48(take_n)   # paper
                 take_n = _stage46(take_n)
                 _book_slot(price, take_n)
+                entry_at[f"paper-{tk}-{now_s}"] = now_s
                 open_pos[f"paper-{tk}-{now_s}"] = (close_s, want, price,
                                                    take_n, tk)
             if live:
@@ -6990,6 +7083,7 @@ def trade_loop(a, rec, book, idx, series_index):
                                     or out.get("order_id")
                                     or f"{tk}-{time.time():.6f}")
                         open_pos[_oid_new] = (close_s, want, cost, filled, tk)
+                        entry_at[_oid_new] = now_s
                         hedge_meta[_oid_new] = (strike, digits, iid)   # A15
                         state["fills"] = state.get("fills", 0) + 1
                         # AMENDMENT 12: a scrap (under half our size) keeps
@@ -7053,6 +7147,14 @@ def main():
                          "that is about to LOSE, book it as a normal position, "
                          "and let the live hedge pass fire on it. Costs a few "
                          "cents. Off by default; fires at most once per run.")
+    ap.add_argument("--hedge-jump", type=float, default=None,
+                    help="AMENDMENT 52: ALSO buy insurance the instant the "
+                         "index makes a one-second move of this many sigma "
+                         "against our side since entry, without waiting for "
+                         "the belief to fall. Belief is downstream of the "
+                         "jump, by which time the other side costs 50-70c; "
+                         "this fires while it may still be 10-20c. Off by "
+                         "default; the belief trigger is untouched.")
     ap.add_argument("--hedge-normal", action="store_true",
                     help="AMENDMENT 51: only buy insurance when the OTHER side "
                          "would pass the gates a normal entry passes -- our "
@@ -7359,6 +7461,11 @@ def main():
         globals()["EARLY_MIN_PRICE"] = float(a.early_min_price)
     if a.hedge_normal:
         globals()["HEDGE_NORMAL"] = True
+    if a.hedge_jump is not None:
+        if not (1.0 <= a.hedge_jump <= 50.0):
+            raise SystemExit("--hedge-jump is in SIGMA and must be in [1, 50], "
+                             "got %r" % (a.hedge_jump,))
+        globals()["HEDGE_JUMP_SIGMA"] = float(a.hedge_jump)
     if a.bank_brake is not None:
         if not (1.0 <= a.bank_brake <= 20.0):
             raise SystemExit("--bank-brake must be between 1 and 20, got %r"
@@ -7600,7 +7707,7 @@ def main():
         # THE RISK SETTING ITSELF, in the record. Bet size is derived from it,
         # so a log that shows the size but not the brake cannot say whether a
         # small size meant a cautious setting or a small bank.
-        hedge_normal=HEDGE_NORMAL,
+        hedge_normal=HEDGE_NORMAL, hedge_jump=HEDGE_JUMP_SIGMA,
         bank_brake=BANK_BRAKE,
         bank_divisor=round(BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING, 4),
         code_sha=_source_fingerprint())
