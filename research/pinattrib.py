@@ -117,9 +117,17 @@ WHAT = {
 
 # --------------------------------------------------------------- loading
 def load_log(paths):
-    """(refusals, bought, settled_by_market) from pinrun's own jsonl logs."""
+    """(refusals, bought, settled, starts, refusals_per_file).
+
+    `starts` and the per-file count exist so the report can say WHICH BOT it
+    is describing. Pooling ninety-two restarts without checking their settings
+    silently mixes several different bots into one table.
+    """
     refusals, bought, settled = [], set(), {}
+    starts, per_file = {}, {}
     for p in paths:
+        nm = os.path.basename(p)
+        n = 0
         with open(p, encoding="utf-8", errors="replace") as fh:
             for ln in fh:
                 try:
@@ -129,12 +137,16 @@ def load_log(paths):
                 k = m.get("kind")
                 if k == "refused":
                     refusals.append(m)
+                    n += 1
                 elif k == "order":
                     # an order SENT on this market; the close is in the ticker
                     bought.add(m.get("ticker"))
                 elif k == "settled":
                     settled.setdefault(m.get("ticker"), []).append(m)
-    return refusals, bought, settled
+                elif k == "start" and nm not in starts:
+                    starts[nm] = m
+        per_file[nm] = n
+    return refusals, bought, settled, starts, per_file
 
 
 def load_outcomes(markets_json):
@@ -305,7 +317,70 @@ def attribute(refusals, bought, outcomes):
     return rows
 
 
-def report(rows, say=print, order=GATE_ORDER):
+# WHICH GATES CAN BE SWITCHED OFF, and the start-record field that says so.
+# The operator, 2026-09-18: *"Wait those are the gates that are currently
+# running for us? Live on the real bot?"* -- a fair question the table could
+# not answer, because a gate that is OFF and a gate that simply never fired
+# both printed 0. Those are opposite facts. Anything not named here is always
+# on and cannot be disabled by a flag.
+SWITCHES = {
+    "jump_against": ("jump_gate", lambda v: bool(v)),
+    "dump_guard": ("dump_enabled", lambda v: bool(v)),
+    "early_wide": ("early_max_edge", lambda v: v is not None),
+    "hedge_wait_normal": ("hedge_normal", lambda v: bool(v)),
+    "early_cheap": ("early_tau_max", lambda v: bool(v) and float(v) > 30),
+    "early_once": ("early_tau_max", lambda v: bool(v) and float(v) > 30),
+    "staged_none": ("early_tau_max", lambda v: bool(v) and float(v) > 30),
+    "book_suspect": ("sweep_enabled", lambda v: bool(v)),
+}
+
+# The settings that decide what the gates DO. A log written under different
+# values describes a different bot, so `config_currency` counts how much of
+# the table is on today's settings rather than pooling ten days silently.
+CONFIG_KEYS = ("pin", "edge_floor", "ev_floor", "price_ceiling", "jump_gate",
+               "dump_enabled", "dump_discount", "max_per_close",
+               "max_per_market", "min_level", "improve_by")
+
+
+def gate_on(gate, start):
+    """True / False / None (unknown) for whether a gate is switched on."""
+    if not start:
+        return None
+    sw = SWITCHES.get(gate)
+    if sw is None:
+        return True
+    field, test = sw
+    if field not in start:
+        return None
+    try:
+        return bool(test(start.get(field)))
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
+def config_currency(starts, refusals_by_file):
+    """(logs on today's settings, refusals on them, total, earliest day).
+
+    `starts` is {basename: start record}, newest last.
+    """
+    if not starts:
+        return 0, 0, 0, None
+    names = sorted(starts)
+    cur = tuple(starts[names[-1]].get(k) for k in CONFIG_KEYS)
+    same = nsame = ntot = 0
+    first = None
+    for nm in names:
+        n = refusals_by_file.get(nm, 0)
+        ntot += n
+        if tuple(starts[nm].get(k) for k in CONFIG_KEYS) == cur:
+            same += 1
+            nsame += n
+            if first is None:
+                first = nm
+    return same, nsame, ntot, first
+
+
+def report(rows, say=print, order=GATE_ORDER, start=None, currency=None):
     lines = []
     w = lines.append
     w("  EVERY GATE IN THE BOT, IN THE ORDER IT IS ASKED")
@@ -316,16 +391,28 @@ def report(rows, say=print, order=GATE_ORDER):
     w("  EVERY ROW ADDS UP:  fired = moved + blocked, and")
     w("                      blocked = won + lost + the three 'cannot say' columns.")
     w("")
-    w("  gate            |  fired | moved |blocked |  won | lost |no price|no size|unsettled| $ if filled")
-    w("  ----------------|--------|-------|--------|------|------|--------|-------|---------|------------")
+    if currency:
+        _same, _nsame, _ntot, _first = currency
+        w("  HOW MUCH OF THIS IS TODAY'S BOT: %d of %d refusals (%.0f%%) come"
+          % (_nsame, _ntot, (100.0 * _nsame / _ntot) if _ntot else 0))
+        w("  from runs with exactly the settings that are live now, starting")
+        w("  %s. The rest ran under older settings and describe"
+          % (_first or "?"))
+        w("  a bot that no longer exists.")
+        w("")
+    w("  gate            | on? |  fired | moved |blocked |  won | lost |no price|no size|unsettled| $ if filled")
+    w("  ----------------|-----|--------|-------|--------|------|------|--------|-------|---------|------------")
     seen = []
     for g in order + sorted(x for x in rows if x not in order):
         if g in seen:
             continue
         seen.append(g)
+        _on = gate_on(g, start)
+        _onw = {True: " on", False: "OFF", None: "  ?"}[_on]
         a = rows.get(g)
         if a is None:
-            w("  %-16s|      0 |     0 |      0 |    - |    - |      - |     - |       - |      -" % g)
+            w("  %-16s| %s |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -"
+              % (g, _onw))
             continue
         nop = a["no_price"] + a["no_side"] + a["unscorable"]
         money = ("%+11.2f" % a["money"]) if a["scored"] else "      -"
@@ -334,11 +421,16 @@ def report(rows, say=print, order=GATE_ORDER):
         # on every line -- the exact arithmetic failure this rewrite existed to
         # remove. The self-test now reads the RENDERED table back and checks
         # the identity, because checking it on the data would have passed.
-        w("  %-16s| %6d | %5d | %6d | %4s | %4s | %6d | %5d | %7d |%s"
-          % (g, a["n"], a["delayed"], a["blocked"],
+        w("  %-16s| %s | %6d | %5d | %6d | %4s | %4s | %6d | %5d | %7d |%s"
+          % (g, _onw, a["n"], a["delayed"], a["blocked"],
              a["won"] if a["scored"] else "-",
              a["lost"] if a["scored"] else "-",
              nop, a["no_size"], a["unsettled"], money))
+    w("")
+    w("  'on?' IS THE LIVE BOT RIGHT NOW, read from its own newest start")
+    w("  record -- not from this file's defaults. A gate marked OFF is not")
+    w("  running for real money, so its zero means 'switched off', not 'never")
+    w("  needed'. Those are opposite facts and they used to print the same.")
     w("")
     w("  WHY A BLOCKED MARKET MAY HAVE NO WIN/LOSE")
     w("    no price   the gate fired BEFORE any price existed -- nothing was")
@@ -521,6 +613,44 @@ def selftest():
     ck(not _bad,
        "in the RENDERED table every row satisfies fired = moved + blocked: %r"
        % (_bad[:3],))
+    # IS THIS GATE ACTUALLY RUNNING FOR REAL MONEY? A gate that is switched
+    # OFF and a gate that never fired both printed 0. Opposite facts.
+    _live = {"jump_gate": True, "dump_enabled": True, "early_max_edge": 3.0,
+             "hedge_normal": None, "early_tau_max": 45, "sweep_enabled": True}
+    ck(gate_on("jump_against", _live) is True
+       and gate_on("early_wide", _live) is True,
+       "a gate whose flag is set reads as ON")
+    ck(gate_on("hedge_wait_normal", _live) is False,
+       "A51's gate reads OFF, because the live bot does not pass "
+       "--hedge-normal -- its zero means 'not running', not 'never needed'")
+    ck(gate_on("confidence", _live) is True,
+       "a gate with no switch at all is always on")
+    ck(gate_on("jump_against", {}) is None
+       and gate_on("anything", None) is None,
+       "NULL: with no start record on file the answer is '?' rather than a "
+       "confident claim that everything is running")
+    ck(gate_on("early_cheap", {"early_tau_max": 30}) is False,
+       "the early-leg gates read OFF when the early window is closed, which "
+       "is what `early_tau_max == TAU_MAX` means")
+    _txt2 = report(_rows, say=None, start=_live)
+    ck(" on |" in _txt2 and "OFF |" in _txt2 and "on? |" in _txt2,
+       "and the table carries an on/off column read from the LIVE bot's own "
+       "start record, not from this file's defaults")
+
+    # WHICH BOT IS THIS TABLE DESCRIBING? Pooling restarts with different
+    # settings silently mixes several different bots into one row.
+    _starts = {"a.jsonl": {"pin": 0.99}, "b.jsonl": {"pin": 0.995},
+               "c.jsonl": {"pin": 0.995}}
+    _same, _nsame, _ntot, _first = config_currency(
+        _starts, {"a.jsonl": 100, "b.jsonl": 30, "c.jsonl": 70})
+    ck(_same == 2 and _nsame == 100 and _ntot == 200,
+       "currency counts only the runs whose settings match the NEWEST one, so "
+       "a table pooling ten days says how much of itself is today's bot")
+    ck(_first == "b.jsonl",
+       "...and names the first run that matches, which is how far back the "
+       "current configuration actually goes")
+    ck(config_currency({}, {}) == (0, 0, 0, None),
+       "NULL: no start records is zeros and no date, not a claim of 100%")
     ck("would lose" in _txt and "99.5" in _txt,
        "the report explains WHY 'would lose' is so often zero -- these gates "
        "only ever see markets the model is already sure of")
@@ -626,7 +756,7 @@ def main():
     if not paths:
         print("pinattrib: loaded nothing -- no log matched %s" % a.glob)
         return 0
-    refusals, bought, _settled = load_log(paths)
+    refusals, bought, _settled, starts, per_file = load_log(paths)
     outcomes = load_outcomes(a.markets)
     print("  %d logs, %d gate refusals, %d markets ordered, %d settlements"
           % (len(paths), len(refusals), len(bought), len(outcomes)))
@@ -646,7 +776,9 @@ def main():
               "next bot restart.")
         return 0
     rows = attribute(refusals, bought, outcomes)
-    txt = report(rows)
+    newest = starts[sorted(starts)[-1]] if starts else None
+    txt = report(rows, start=newest,
+                 currency=config_currency(starts, per_file))
     nl = chr(10)
     with open(a.out, "w", encoding="utf-8") as fh:
         fh.write("# RESULTS_attrib -- what each gate in the bot actually did"

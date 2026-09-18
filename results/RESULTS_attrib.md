@@ -9,34 +9,44 @@
   EVERY ROW ADDS UP:  fired = moved + blocked, and
                       blocked = won + lost + the three 'cannot say' columns.
 
-  gate            |  fired | moved |blocked |  won | lost |no price|no size|unsettled| $ if filled
-  ----------------|--------|-------|--------|------|------|--------|-------|---------|------------
-  close_budget    |    340 |    78 |    262 |    - |    - |    262 |     0 |       0 |      -
-  max_per_close   |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  max_per_market  |      9 |     9 |      0 |    - |    - |      0 |     0 |       0 |      -
-  both_sides      |    149 |   149 |      0 |    - |    - |      0 |     0 |       0 |      -
-  market_attempts |     13 |     9 |      4 |    - |    - |      4 |     0 |       0 |      -
-  attempts_cap    |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  book_suspect    |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  book_stale      |     83 |     3 |     80 |    - |    - |     80 |     0 |       0 |      -
-  index_stale     |     27 |     0 |     27 |    - |    - |     27 |     0 |       0 |      -
-  no_sigma        |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  confidence      |    417 |   201 |    216 |    - |    - |    216 |     0 |       0 |      -
-  no_offer        |   3327 |    52 |   3275 |    - |    - |   3275 |     0 |       0 |      -
-  depth_floor     |    545 |    46 |    499 |    - |    - |      0 |   499 |       0 |      -
-  edge_floor      |   1340 |    66 |   1274 | 1048 |    0 |      0 |     0 |     226 |    +136.51
-  against_thin    |     19 |     7 |     12 |   10 |    0 |      0 |     0 |       2 |      +5.45
-  jump_against    |     25 |     1 |     24 |   19 |    0 |      0 |     0 |       5 |      +3.72
-  dump_guard      |      9 |     8 |      1 |    0 |    1 |      0 |     0 |       0 |     -37.85
-  improve_by      |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  rebuy_band      |     19 |    19 |      0 |    - |    - |      0 |     0 |       0 |      -
-  price_ceiling   |    545 |    87 |    458 |  379 |    0 |      0 |     0 |      79 |    +122.80
-  ev_floor        |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
-  early_once      |     55 |    55 |      0 |    - |    - |      0 |     0 |       0 |      -
-  staged_none     |      2 |     1 |      1 |    - |    - |      1 |     0 |       0 |      -
-  early_cheap     |      1 |     1 |      0 |    - |    - |      0 |     0 |       0 |      -
-  early_wide      |      8 |     4 |      4 |    - |    - |      4 |     0 |       0 |      -
-  hedge_wait_normal|      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  HOW MUCH OF THIS IS TODAY'S BOT: 5303 of 6951 refusals (76%) come
+  from runs with exactly the settings that are live now, starting
+  pinrun-live-20260915T013908Z.jsonl. The rest ran under older settings and describe
+  a bot that no longer exists.
+
+  gate            | on? |  fired | moved |blocked |  won | lost |no price|no size|unsettled| $ if filled
+  ----------------|-----|--------|-------|--------|------|------|--------|-------|---------|------------
+  close_budget    |  on |    340 |    78 |    262 |    - |    - |    262 |     0 |       0 |      -
+  max_per_close   |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  max_per_market  |  on |      9 |     9 |      0 |    - |    - |      0 |     0 |       0 |      -
+  both_sides      |  on |    149 |   149 |      0 |    - |    - |      0 |     0 |       0 |      -
+  market_attempts |  on |     14 |     9 |      5 |    - |    - |      5 |     0 |       0 |      -
+  attempts_cap    |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  book_suspect    |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  book_stale      |  on |     83 |     3 |     80 |    - |    - |     80 |     0 |       0 |      -
+  index_stale     |  on |     27 |     0 |     27 |    - |    - |     27 |     0 |       0 |      -
+  no_sigma        |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  confidence      |  on |    418 |   201 |    217 |    - |    - |    217 |     0 |       0 |      -
+  no_offer        |  on |   3335 |    52 |   3283 |    - |    - |   3283 |     0 |       0 |      -
+  depth_floor     |  on |    545 |    46 |    499 |    - |    - |      0 |   499 |       0 |      -
+  edge_floor      |  on |   1344 |    66 |   1278 | 1048 |    0 |      0 |     0 |     230 |    +136.51
+  against_thin    |  on |     19 |     7 |     12 |   10 |    0 |      0 |     0 |       2 |      +5.45
+  jump_against    |  on |     25 |     1 |     24 |   19 |    0 |      0 |     0 |       5 |      +3.72
+  dump_guard      |  on |      9 |     8 |      1 |    0 |    1 |      0 |     0 |       0 |     -37.85
+  improve_by      |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  rebuy_band      |  on |     19 |    19 |      0 |    - |    - |      0 |     0 |       0 |      -
+  price_ceiling   |  on |    548 |    87 |    461 |  379 |    0 |      0 |     0 |      82 |    +122.80
+  ev_floor        |  on |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  early_once      |  on |     55 |    55 |      0 |    - |    - |      0 |     0 |       0 |      -
+  staged_none     |  on |      2 |     1 |      1 |    - |    - |      1 |     0 |       0 |      -
+  early_cheap     |  on |      1 |     1 |      0 |    - |    - |      0 |     0 |       0 |      -
+  early_wide      |  on |      9 |     4 |      5 |    - |    - |      5 |     0 |       0 |      -
+  hedge_wait_normal|   ? |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+
+  'on?' IS THE LIVE BOT RIGHT NOW, read from its own newest start
+  record -- not from this file's defaults. A gate marked OFF is not
+  running for real money, so its zero means 'switched off', not 'never
+  needed'. Those are opposite facts and they used to print the same.
 
   WHY A BLOCKED MARKET MAY HAVE NO WIN/LOSE
     no price   the gate fired BEFORE any price existed -- nothing was
