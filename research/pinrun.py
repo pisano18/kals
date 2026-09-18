@@ -994,6 +994,90 @@ _EW_UNSET = object()      # "cap not supplied" -- distinct from None, which is
                           # as _HP_UNSET above.
 
 
+# ---------------------------------------------------------------------------
+# AMENDMENT 53 (2026-09-18): PRICE BANDS -- skip a band, or bet bigger in one.
+#
+# Where the money comes from, 566 live fills since 09-08, clustered by close:
+#
+#   paid        closes  lost  break-even   staked     money    return
+#   80-90c          29     1       15%       $864  +$117.01   +13.6%
+#   90-94c          64     0        8%     $2,583  +$207.46    +8.0%
+#   94-96c          83     4        5%     $2,970   +$25.01    +0.8%
+#   96-97.5c       130     3        3%     $4,711   +$55.59    +1.2%
+#   97.5c+         234     2        1%     $8,834  +$159.82    +1.8%
+#
+# The break-even loss rate at price p is exactly 1 - p. The 94-96c band sits
+# ON it: 15% of every dollar ever staked for 4% of the profit, holding one of
+# three position slots while it does so. The 90-94c band has never lost, and
+# on 09-18 the touch offered a median 192 contracts against the 97 we took.
+# One uniform SIZE gives an 8% trade and a 1.8% trade the same bet.
+#
+# Two flags, both shipped OFF, both repeatable:
+#   --skip-band LO HI        refuse any ask in [LO, HI) on EVERY leg, and stop
+#                            the sweep limit under LO, so an IOC sent from
+#                            below the band cannot fill inside it.
+#   --band-mult LO HI MULT   inside [LO, HI) one order may reach MULT x SIZE,
+#                            through the same drawdown headroom A45 and A48
+#                            use, capped by the book and the close budget.
+# Operator, 2026-09-18: "We can remove 94-96 ... If it's safe then yea you
+# figure out a way to buy more beneath 94."
+SKIP_BANDS = ()                 # ((lo, hi), ...)        asks refused
+_DEFAULT_SKIP_BANDS = ()
+BAND_MULTS = ()                 # ((lo, hi, mult), ...)  size multiples
+_DEFAULT_BAND_MULTS = ()
+_PB_UNSET = object()            # "not supplied" -- the _HP_UNSET / _EW_UNSET trap
+
+
+def band_blocked(price, bands=_PB_UNSET):
+    """True when `price` falls inside a skipped band [lo, hi)."""
+    bands = SKIP_BANDS if bands is _PB_UNSET else bands
+    if not bands:
+        return False
+    try:
+        p = float(price)
+    except (TypeError, ValueError):
+        return False
+    for lo, hi in bands:
+        if float(lo) <= p < float(hi):
+            return True
+    return False
+
+
+def band_mult(price, bands=_PB_UNSET):
+    """The size multiple for `price`: the largest matching band's, else 1.0.
+
+    Never below 1.0. This flag only ever ADDS, exactly like A45 and A48, so a
+    mistyped band cannot shrink a bet -- shrinking is --skip-band's job, and a
+    refusal is loud where a quietly smaller order is not.
+    """
+    bands = BAND_MULTS if bands is _PB_UNSET else bands
+    if not bands:
+        return 1.0
+    try:
+        p = float(price)
+    except (TypeError, ValueError):
+        return 1.0
+    m = 1.0
+    for lo, hi, mult in bands:
+        if float(lo) <= p < float(hi):
+            m = max(m, float(mult))
+    return m
+
+
+def max_band_mult(bands=_PB_UNSET):
+    """The largest multiple any band can ask for.
+
+    The order path's per-order count cap must admit it. pintake.MAX_TAKE_COUNT
+    is raised to SIZE (x ONE_COIN_MAX when that flag is on) and to nothing
+    else -- so A48's late boost, live since 09-17 at a multiple of 1.0, would
+    have been REFUSED by the order path the first time it widened, while the
+    paper arm booked the wider order. That is the A45 bug, and this helper is
+    what closes it for both.
+    """
+    bands = BAND_MULTS if bands is _PB_UNSET else bands
+    return max([1.0] + [float(b[2]) for b in (bands or ())])
+
+
 def early_wide_block(leg, edge, cap=_EW_UNSET):
     """A50: refuse a WIDE edge, on the EARLY leg ONLY. `edge` is in DOLLARS.
 
@@ -2227,6 +2311,8 @@ def sweep_limit(f, price, want, ceiling=None, edge_floor=None, ev_floor=None):
         nxt = round(best + tick_at(best), 4)
         if nxt > ceiling + 1e-9:
             break
+        if band_blocked(nxt):
+            break               # A53: the limit stops under a skipped band
         if net_edge(f, nxt, want) < edge_floor:
             break
         if expected_value(nxt) < ev_floor:
@@ -3199,6 +3285,94 @@ def _selftest_body():
            < _lp48.index("take_n = _stage46(take_n)", _lp48.index(_c48l)),
            "...and in the right order: A35 sizes, A45 widens, A48 widens late, "
            "A46 re-caps an early leg last")
+        # ---- AMENDMENT 53: price bands. SHIPPED OFF. -----------------------
+        ck(_DEFAULT_SKIP_BANDS == () and _DEFAULT_BAND_MULTS == (),
+           "A53 ships with no band skipped and no band boosted -- the DECLARED "
+           "defaults, so an arm that sets either flag does not fail its gate")
+        _sb = ((0.94, 0.96),)
+        ck(band_blocked(0.94, _sb) and band_blocked(0.9599, _sb)
+           and not band_blocked(0.96, _sb) and not band_blocked(0.9399, _sb),
+           "a band is closed at the bottom and open at the top: 94.0c is "
+           "refused, 96.0c is not -- the same half-open rule every price "
+           "bucket in the attribution uses, so the two can never disagree "
+           "about which side of 96c a fill sits")
+        ck(not band_blocked(0.95, ()) and not band_blocked(None, _sb)
+           and not band_blocked("x", _sb),
+           "NULL: no bands, no price, or garbage refuses nothing -- a bad "
+           "reading must not turn into a refusal of every trade")
+        _bm = ((0.90, 0.94, 2.0), (0.80, 0.94, 1.5))
+        ck(band_mult(0.92, _bm) == 2.0 and band_mult(0.85, _bm) == 1.5
+           and band_mult(0.95, _bm) == 1.0,
+           "the multiple is the LARGEST band that matches (2.0 at 92c where "
+           "two overlap), and 1.0 outside every band")
+        ck(band_mult(0.92, ()) == 1.0 and band_mult(None, _bm) == 1.0
+           and band_mult(0.92, ((0.9, 0.94, 0.5),)) == 1.0,
+           "NULL: no bands, no price, or a multiple UNDER one all give 1.0 -- "
+           "this flag can only add; it can never quietly shrink a bet")
+        ck(max_band_mult(_bm) == 2.0 and max_band_mult(()) == 1.0,
+           "the order path's count cap is raised to the largest multiple, and "
+           "to nothing when the flag is off")
+        _g53 = globals()
+        _sv53 = (_g53["SKIP_BANDS"], _g53["SWEEP_ENABLED"])
+        try:
+            _g53["SKIP_BANDS"] = ()
+            _g53["SWEEP_ENABLED"] = True
+            _lim0 = sweep_limit(1.0, 0.93, "yes")
+            _g53["SKIP_BANDS"] = ((0.94, 0.96),)
+            _lim1 = sweep_limit(1.0, 0.93, "yes")
+        finally:
+            _g53["SKIP_BANDS"], _g53["SWEEP_ENABLED"] = _sv53
+        ck(_lim0 > 0.94 + 1e-9,
+           "without the band the sweep from 93c walks well past 94c (to %.3f) "
+           "-- the case the next check needs to be a real one" % _lim0)
+        ck(0.93 <= _lim1 < 0.94,
+           "with 94-96c skipped the limit sent from a 93c ask stops UNDER 94c "
+           "(%.3f): an IOC at 96c would have filled inside the very band the "
+           "gate refuses, so the sweep is bounded where the gate is" % _lim1)
+        _sv46b = (_g53["EARLY_TAU_MAX"], _g53["TAU_MAX"], _g53["EARLY_FRAC"])
+        try:
+            _g53["EARLY_TAU_MAX"], _g53["TAU_MAX"], _g53["EARLY_FRAC"] = 45, 30, 1.0
+            _e1 = staged_take(40, 120.0, 78.0 * 2.0, 0.0)
+            _e0 = staged_take(40, 120.0, 78.0, 0.0)
+            _t1 = staged_take(20, 120.0, 78.0 * 2.0, 78.0)
+        finally:
+            _g53["EARLY_TAU_MAX"], _g53["TAU_MAX"], _g53["EARLY_FRAC"] = _sv46b
+        ck(_e1 == (120.0, "early") and _e0 == (78.0, "early"),
+           "an early leg scaled by a x2 band keeps a 120-contract order; at "
+           "x1 the same order is capped to SIZE -- without this the A46 re-cap "
+           "quietly undid every boost on the 45 s leg")
+        ck(_t1 == (78.0, "topup"),
+           "and the top-up completes the position to SIZE x mult, not to SIZE")
+        _src53 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp53 = _src53[_src53.rindex(chr(10) + "def " + "trade_loop("):]
+        _c53p, _c53l = "_band53(take_n)   # paper", "_band53(take_n)   # live"
+        ck(_c53p in _lp53 and _c53l in _lp53,
+           "A53 runs on BOTH the paper and the live path (the A45 bug)")
+        ck(_lp53.index("_late48(take_n)   # live") < _lp53.index(_c53l)
+           < _lp53.index("take_n = _stage46(take_n)", _lp53.index(_c53l)),
+           "...after A48 and before the A46 re-cap, on the live path")
+        ck(_lp53.index("_late48(take_n)   # paper") < _lp53.index(_c53p)
+           < _lp53.index("take_n = _stage46(take_n)"),
+           "...and the same order on the paper path")
+        ck("staged_take(tau, take_n, float(SIZE) * band_mult(price), _held46)" in _lp53,
+           "the A46 re-cap reads the band multiple, or it undoes the boost")
+        ck('_gate("price_band"' in _lp53
+           and _lp53.index('_gate("price_band"') < _lp53.index('rec("signal", live=live, **sig)'),
+           "a skipped band is refused under its own gate name BEFORE the signal "
+           "is recorded, so the cost of the skip is scorable and a refusal "
+           "never reads as a lost race")
+        ck(_lp53.index('_gate("early_wide"') < _lp53.index('_gate("price_band"'),
+           "and after the early-leg gates, so a cheap early ask is refused for "
+           "being cheap rather than for its band")
+        _nd53 = "LATE_MULT, max_band" + "_mult())"     # built, so this line is not counted
+        ck(_src53.count(_nd53) == 2,
+           "pintake's per-order count cap admits the band multiple AND the late "
+           "multiple, at live start and at every autosize -- the live path "
+           "would otherwise refuse the wider order the paper path books")
+        ck("skip_bands=[list(b) for b in SKIP_BANDS]" in _src53
+           and "band_mults=[list(b) for b in BAND_MULTS]" in _src53,
+           "the start record carries both band lists, so the Lab can tell one "
+           "band arm from another (the A47/A48/A49 blank-tab lesson)")
         # AMENDMENT 8, after the 2026-09-17 fix that moved it to where `want`
         # exists. Only the OPPOSITE side blocks; a same-side re-look is a
         # top-up. The old placement read `want` from the PREVIOUS market.
@@ -3259,10 +3433,21 @@ def _selftest_body():
            "inside this close, and then we hedge")
         ck(_DEFAULT_HEDGE_PRICE is None,
            "the SHIPPED value of HEDGE_PRICE is None -- A47 is opt-in")
-        ck("--hedge-price" not in open(os.path.join(
+        # 2026-09-18: A47 IS LIVE at 0.60 (v-hedge-market). Until today this
+        # asserted the flag was ABSENT from restart_bot.ps1 -- a self-test
+        # that runs at every live start and would have refused to start the
+        # bot the moment the flag was used, the --price-ceiling outage
+        # again. The invariant that matters is the one versioncheck.py
+        # enforces: a live flag has a version entry.
+        _rb47 = open(os.path.join(
                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-               "restart_bot.ps1"), encoding="utf-8", errors="replace").read(),
-           "and restart_bot.ps1 does NOT pass it: A47 is not live")
+               "restart_bot.ps1"), encoding="utf-8", errors="replace").read()
+        _vs47 = open(os.path.join(
+               os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+               "results", "VERSIONS.md"), encoding="utf-8", errors="replace").read()
+        ck(("--hedge-price" not in _rb47) or ("--hedge-price" in _vs47),
+           "if restart_bot.ps1 passes --hedge-price, VERSIONS.md names it -- "
+           "a live flag with no entry is the lapse versioncheck exists for")
         ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
            f"belief below the {HEDGE_BELIEF:.2f} gate fires the hedge")
         ck(not hedge_should_fire(HEDGE_BELIEF) and not hedge_should_fire(0.999),
@@ -3822,7 +4007,8 @@ def _selftest_body():
         _dtest = _dsrc[_dsrc.index("def " + "selftest"):]
         for _nm in ("SIGMA_RULER", "IMPROVE_SCOPE", "HONEST_CONF", "PIN",
                     "MAX_PER_MARKET", "IMPROVE_MAX", "PICK",
-                    "MIN_FILL_FRAC", "HEDGE_BELIEF", "SWEEP_DEPTH"):
+                    "MIN_FILL_FRAC", "HEDGE_BELIEF", "SWEEP_DEPTH",
+                    "SKIP_BANDS", "BAND_MULTS"):
             ck(("_DEFAULT_%s" % _nm) in _dwork,
                "a _DEFAULT_%s exists to assert against, so its guard can "
                "never become a refusal to start" % _nm)
@@ -5129,9 +5315,14 @@ def _selftest_body():
         _swN = round(_swL + tick_at(_swL), 4)
         ck(_swN > PRICE_CEILING + 1e-9
            or net_edge(_swf, _swN, "yes") < EDGE_FLOOR
-           or expected_value(_swN) < EV_FLOOR,
+           or expected_value(_swN) < EV_FLOOR
+           # A53: or the next tick sits in a skipped band. This check runs at
+           # every live start WITH the flags applied, and without this clause
+           # --skip-band would have refused to start the bot -- caught by the
+           # control arm on 2026-09-18, not by the live restart, for once.
+           or band_blocked(_swN),
            "and it is the HIGHEST such price -- one tick more fails the "
-           "ceiling, the edge floor or the EV floor")
+           "ceiling, the edge floor, the EV floor, or a skipped band")
         # a fair only just above the ask leaves no room, and must not invent any
         ck(abs(sweep_limit(0.9550, 0.9540, "yes") - 0.9540) < 1e-12,
            "with no headroom the limit IS the ask -- the sweep invents none")
@@ -5542,8 +5733,11 @@ def apply_size(new_size, a, why, rec=None):
         pintake.set_limits(
             loss_abort=_abort,
             max_run_stake=max(pintake.MAX_RUN_STAKE, 3.0 * wc + 10.0),
+            # A53: the cap admits every multiple a flag can ask for, or the
+            # live path refuses the wider order while the paper path books it
             max_take_count=max(pintake.MAX_TAKE_COUNT,
-                               new_size * (ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0)),
+                               new_size * max(ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0,
+                                              LATE_MULT, max_band_mult())),
             why=f"auto-size {old:g} -> {new_size:g}: {why}")
     except Exception as e:                        # a refused loosening must
         globals()["SIZE"] = old                   # not leave SIZE ahead of
@@ -6898,6 +7092,16 @@ def trade_loop(a, rec, book, idx, series_index):
                           tau=tau, price=round(price, 4),
                           want=want, size=float(take_n or SIZE))
                     continue
+            # A53: a skipped price band refuses on EVERY leg. After the early
+            # gates, so a cheap early ask is refused for being cheap (A49)
+            # rather than for its band; before the signal is recorded, so a
+            # refusal can never read as a lost race.
+            if band_blocked(price):
+                _gate("price_band", close_s, tk, leg=_leg46, tau=tau,
+                      price=round(price, 4), fair=round(f, 5),
+                      bands=[list(b) for b in SKIP_BANDS],
+                      want=want, size=float(take_n or SIZE))
+                continue
             sig["leg"] = _leg46
             sig["early_held"] = _held46
             rec("signal", live=live, **sig)
@@ -7068,16 +7272,53 @@ def trade_loop(a, rec, book, idx, series_index):
                         size=float(SIZE))
                 return take_n
 
+            def _band53(take_n):
+                """AMENDMENT 53: bet bigger inside a price band that has earned
+                it. Same shape as A48: the per-order cap rises to MULT x SIZE
+                through A45's drawdown headroom, and the book and the close
+                budget still bind. Records `band_boost` when it widens, with
+                every number that decided the width."""
+                _m53 = band_mult(price)
+                if _m53 <= 1.0:
+                    return take_n
+                _cap53 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"),
+                                      mult=_m53)
+                _avail53 = float(size)
+                _lim53 = sweep_limit(f, price, want)
+                if SWEEP_DEPTH and _lim53 > price + 1e-9:
+                    try:
+                        _avail53 = max(_avail53, float(book.buyable(tk, want, _lim53)))
+                    except Exception:              # noqa: BLE001
+                        pass
+                _room53 = (close_budget()
+                           - (prev.get("contracts", 0.0)
+                              if prev else 0.0)) if CLOSE_BUDGET else float(SIZE) * _m53
+                _was53 = take_n
+                take_n = max(take_n, min(_cap53, _avail53, max(0.0, _room53)))
+                if take_n > _was53 + 1e-9:
+                    rec("band_boost", ticker=tk, want=want, tau=tau,
+                        price=round(price, 4), mult=_m53,
+                        was=round(_was53, 2), now=round(take_n, 2),
+                        cap=round(_cap53, 2), avail=round(_avail53, 2),
+                        room=round(_room53, 2), size=float(SIZE),
+                        bank=state.get("bank"), hwm=state.get("hwm"))
+                return take_n
+
             def _stage46(take_n):
                 """AMENDMENT 46: an early or top-up leg keeps its cap however
-                much A35/A45 widened the order. A full leg is untouched."""
+                much A35/A45 widened the order. A full leg is untouched.
+                A53: a band multiple scales the WHOLE position for this
+                market, so the early cap is EARLY_FRAC x SIZE x mult and a
+                top-up completes to SIZE x mult -- otherwise the re-cap here
+                would silently undo the boost on every early leg."""
                 if EARLY_TAU_MAX > TAU_MAX and _leg46 != "full":
-                    return min(take_n, staged_take(tau, take_n, float(SIZE), _held46)[0])
+                    return min(take_n, staged_take(tau, take_n, float(SIZE) * band_mult(price), _held46)[0])
                 return take_n
 
             if not live:
                 take_n = _widen45(take_n)  # paper
                 take_n = _late48(take_n)   # paper
+                take_n = _band53(take_n)   # paper
                 take_n = _stage46(take_n)
                 _book_slot(price, take_n)
                 entry_at[f"paper-{tk}-{now_s}"] = now_s
@@ -7144,6 +7385,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     # paper path uses above, so both paths book the same size.
                     take_n = _widen45(take_n)  # live
                     take_n = _late48(take_n)   # live
+                    take_n = _band53(take_n)   # live
                     take_n = _stage46(take_n)
                     _t0 = time.time()
                     out = pintake.take(CREDS["base"], CREDS["pk"],
@@ -7375,6 +7617,19 @@ def main():
                     help="AMENDMENT 48: the multiple of SIZE one order may "
                          "reach inside --late-tau. Still capped by the drawdown "
                          "headroom, the close budget and the book.")
+    ap.add_argument("--skip-band", type=float, nargs=2, action="append",
+                    default=None, metavar=("LO", "HI"),
+                    help="AMENDMENT 53: refuse any ask in [LO, HI) on every "
+                         "leg, and stop the sweep under LO. Repeatable. The "
+                         "live record for 94-96c: +0.8%% on $2,970 across 83 "
+                         "closes, a loss rate level with its break-even. "
+                         "Shipped off.")
+    ap.add_argument("--band-mult", type=float, nargs=3, action="append",
+                    default=None, metavar=("LO", "HI", "MULT"),
+                    help="AMENDMENT 53: inside [LO, HI) one order may reach "
+                         "MULT x SIZE, through A45's drawdown headroom, the "
+                         "book and the close budget. MULT in (1, "
+                         "MAX_PER_CLOSE]. Repeatable. Shipped off.")
     ap.add_argument("--hedge-price", type=float, default=None,
                     help="AMENDMENT 47: only hedge when OUR side's market "
                          "price has also fallen below this (e.g. 0.50). The "
@@ -7609,6 +7864,26 @@ def main():
                              "(%.1f) -- the close budget bounds it anyway, got %r"
                              % (float(MAX_PER_CLOSE), a.late_mult))
         globals()["LATE_MULT"] = float(a.late_mult)
+    if a.skip_band:
+        _sb53 = []
+        for _lo, _hi in a.skip_band:
+            if not (0.0 < _lo < _hi <= 1.0):
+                raise SystemExit("--skip-band needs 0 < LO < HI <= 1, got %r %r"
+                                 % (_lo, _hi))
+            _sb53.append((float(_lo), float(_hi)))
+        globals()["SKIP_BANDS"] = tuple(_sb53)
+    if a.band_mult:
+        _bm53 = []
+        for _lo, _hi, _m in a.band_mult:
+            if not (0.0 < _lo < _hi <= 1.0):
+                raise SystemExit("--band-mult needs 0 < LO < HI <= 1, got %r %r"
+                                 % (_lo, _hi))
+            if not (1.0 < _m <= MAX_PER_CLOSE):
+                raise SystemExit("--band-mult MULT must sit in (1, MAX_PER_CLOSE"
+                                 "=%g] -- the close budget bounds it anyway, "
+                                 "got %r" % (float(MAX_PER_CLOSE), _m))
+            _bm53.append((float(_lo), float(_hi), float(_m)))
+        globals()["BAND_MULTS"] = tuple(_bm53)
     if a.hedge_price is not None:
         if not (0.0 < a.hedge_price < 1.0):
             raise SystemExit("--hedge-price must be between 0 and 1, got %r"
@@ -7820,6 +8095,9 @@ def main():
         # own log cannot say what it is testing is not measurable.
         hedge_price=HEDGE_PRICE,
         late_tau=LATE_TAU, late_mult=LATE_MULT,
+        # A53: lists, so the Lab can select an arm by its exact bands
+        skip_bands=[list(b) for b in SKIP_BANDS],
+        band_mults=[list(b) for b in BAND_MULTS],
         early_min_price=EARLY_MIN_PRICE, early_max_edge=EARLY_MAX_EDGE,
         # THE RISK SETTING ITSELF, in the record. Bet size is derived from it,
         # so a log that shows the size but not the brake cannot say whether a
@@ -7846,7 +8124,8 @@ def main():
             max_run_stake=max(pintake.MAX_RUN_STAKE,
                               3.0 * _worst_close + 10.0),
             max_take_count=max(pintake.MAX_TAKE_COUNT,
-                               float(a.size) * (ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0)),
+                               float(a.size) * max(ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0,
+                                                   LATE_MULT, max_band_mult())),
             why=f"size {a.size:g}, worst close ${_worst_close:.2f}")
         arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}"
             + (f" (+A46 early leg {EARLY_FRAC:g}xSIZE to tau<={EARLY_TAU_MAX}, "

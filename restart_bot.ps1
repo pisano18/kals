@@ -233,7 +233,29 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # ladder_under, two A45 room checks). Those must be rewritten against the
     # declared default before the flag can be used live. Removed; see
     # results/VERSIONS.md v-ceiling99 for the full account.
-    "--bank-brake", "4.08"
+    "--bank-brake", "4.08",
+    # v-bands, 2026-09-18 ~21:5xZ, three flags on the operator's word:
+    # "Okay remove insurance. But keep hedging. We can remove 94-96. If it's
+    # safe then yea you figure out a way to buy more beneath 94."
+    #
+    # --hedge-price 0.60 (A47): the hedge still fires when OUR belief drops
+    # under 0.60, but only if the market agrees -- our side under 60c, so
+    # the other side's ask over 40c. Every live hedge bought at 10-27c (the
+    # market still 73-90% on us) hurt: 5 of 5, -$41.72. Both bought at 47c
+    # and 74c helped: +$8.80. Same threshold as the belief, so the rule is
+    # "model AND market both say under 60%".
+    "--hedge-price", "0.60",
+    # --skip-band 0.94 0.96 (A53): 83 live closes in that band returned
+    # +$25 on $2,970 (0.8%), loss rate 4.8% against a 5.0% break-even, and
+    # held one of three slots to do it. The sweep also stops under 94c.
+    "--skip-band", "0.94", "0.96",
+    # --band-mult 0.90 0.94 1.5 (A53): 64 live closes at 90-94c, no loss,
+    # break-even 8%; the touch held a median 192 against the 97 we took on
+    # 09-18. One order may reach 1.5x SIZE there, through the A45 drawdown
+    # headroom, the book and the close budget. BAR: revert at the first
+    # loss on a boosted fill in the first 20 boosted closes; at 20 clean,
+    # 2.0. Fill quality at the larger size is the unproven part (rule 5).
+    "--band-mult", "0.90", "0.94", "1.5"
     # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
     # built as safely as you described, deploy now"), first at half, then at a
     # THIRD, and from ~19:5xZ the same day at a FULL bet on his instruction:

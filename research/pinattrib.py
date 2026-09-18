@@ -80,6 +80,7 @@ GATE_ORDER = [
     "jump_against", "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
     "early_once", "staged_none", "early_cheap", "early_wide",
+    "price_band",
     # NOT hedge_wait_normal, and not any other insurance decision. They are
     # written with rec(), so their `kind` is their own name and NOT "refused"
     # -- load_log() collects only refusals, so a row for one could never hold
@@ -119,6 +120,7 @@ WHAT = {
     "early_once": "A46: this market already holds an early leg (31-45 s); only one per market",
     "staged_none": "A46: the staged leg came to nothing (market already at full size, or under the minimum)",
     "hedge_wait_normal": "A51: insurance held off because the OTHER side was not yet a bet we would make on its own -- our model was not PIN sure of it, or it cost more than the price ceiling. The old rule fired on the model alone and 11 of 12 insured closes still ended negative, five of them paying 10-18c while the market still liked our side",
+    "price_band": "A53: the ask sat inside a skipped price band (--skip-band). Live record for 94-96c, 83 closes: +$25 on $2,970, a loss rate level with its break-even; the band held a position slot and earned nothing measurable",
     "early_wide": "A50: the 31-45 s early leg found our model MORE than the cap above the market price. Late, that disagreement is the whole edge (6c or more made 1.44 $/bet inside 30 s); early, three quarters of the settlement window has not happened yet and the same band lost 3.01 $/bet, so out there a big edge means our volatility guess is wrong rather than the market",
     "early_cheap": "A49: the 31-45 s early leg wanted an ask under the 90c floor. Out that far less of the settlement average is locked, so a cheap ask is the market disagreeing with us where the model is weakest",
     "ev_floor": "expected value negative at that price",
@@ -342,6 +344,7 @@ SWITCHES = {
     "jump_against": ("jump_gate", lambda v: bool(v)),
     "dump_guard": ("dump_enabled", lambda v: bool(v)),
     "early_wide": ("early_max_edge", lambda v: v is not None),
+    "price_band": ("skip_bands", lambda v: bool(v)),
     "hedge_wait_normal": ("hedge_normal", lambda v: bool(v)),
     "early_cheap": ("early_tau_max", lambda v: bool(v) and float(v) > 30),
     "early_once": ("early_tau_max", lambda v: bool(v) and float(v) > 30),

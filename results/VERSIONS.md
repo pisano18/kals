@@ -1,3 +1,102 @@
+# v-bands -- 2026-09-18 ~21:5xZ -- LIVE: hedge only when the market agrees, skip 94-96c, and 1.5x at 90-94c (`SHA_PENDING`)
+
+Three flags in `restart_bot.ps1`, one entry, each with its own revert line.
+Operator, 2026-09-18: *"Okay remove insurance. But keep hedging. We can remove
+94-96. If it's safe then yea you figure out a way to buy more beneath 94."*
+
+## 1. `--hedge-price 0.60` (AMENDMENT 47, live for the first time)
+
+**What the bot does differently.** It still buys the other side when its own
+belief in our side falls below 0.60 (`--hedge-belief 0.60`, unchanged) -- but
+now ONLY if the market agrees: our side must also be trading under 60c, i.e.
+the other side's ask must be over 40c. A hedge bought at 10-27c, when the
+market still gave our side 73-90%, was insurance against a scare; a hedge at
+47-74c is the market confirming the loss.
+
+**Evidence (live fills, every hedge ever placed).** 7 genuine hedges (the two
+`plant_attempt` test trades and two standalone cheap bets excluded):
+
+| hedge ask | our side's price | closes | helped | hurt | net vs no hedge |
+|---|---|---|---|---|---|
+| under 40c | 73-90c | 5 | 0 | 5 | **-$41.72** |
+| 47c and 74c | 53c, 26c | 2 | 2 | 0 | **+$8.80** |
+
+Total as traded -$32.92 against the primary leg alone. The 0.60 line passes
+both helpers and blocks all five hurters with margin on each side (0.53 vs
+0.72). It is also the same number as the belief trigger, so the rule reads:
+hedge when the model AND the market both put us under 60%.
+
+**Pre-registered bar.** Every alarm now writes `hedge_wait_price` when the
+market disagrees. After 20 such waits, score them: if the blocked hedges
+would have helped by more than the fired ones cost, lower the threshold to
+0.70. If a position we waited on then lost unhedged, that is the price of
+this rule and it is counted against it.
+
+## 2. `--skip-band 0.94 0.96` (AMENDMENT 53, new)
+
+**What the bot does differently.** Any ask from 94.0c up to but not
+including 96.0c is refused on every leg (gate `price_band`), and the sweep
+limit sent from a cheaper ask stops under 94c so an IOC cannot fill inside
+the band it was refused at.
+
+**Evidence (566 live fills since 09-08, clustered by close).** 94-96c: 83
+closes, 4 lost (4.8%) against a break-even of exactly 5.0% (1 - price);
+$2,970 staked -- 15% of everything ever risked -- for +$25.01, 0.84%. It
+earns nothing measurable and holds one of three position slots while it does
+so. The bands either side: 90-94c +8.0% on 64 closes with no loss;
+96-97.5c +1.2%, 97.5c+ +1.8%.
+
+**Pre-registered bar.** `pinattrib` now scores `price_band` refusals "as if
+filled". After 40 skipped closes, if that upper bound shows the band at over
++5% with at most one loss, the skip is reconsidered. Volume lost is expected
+and is not by itself a reason to revert.
+
+## 3. `--band-mult 0.90 0.94 1.5` (AMENDMENT 53, new)
+
+**What the bot does differently.** Inside 90.0-93.9c one order may reach
+1.5 x SIZE (about 117 contracts at today's 78), through the same three rails
+A45 and A48 use: the drawdown headroom `(bank - 0.8 x high-water) / ceiling`,
+what the book actually holds at or under the sweep limit, and the close
+budget. After one ordinary loss the headroom alone shrinks the boost back to
+SIZE. The order path's count cap now admits the multiple (it did not admit
+A48's, which was a latent refusal). An early leg keeps the boost through the
+A46 re-cap (`SIZE x mult`), so the 45 s leg can carry it.
+
+**Evidence.** 90-94c: 64 live closes, 0 losses; the 95% upper bound on that
+is about 4.6%, against an 8% break-even. On 09-18 the touch at 90-94c held a
+median 192 contracts against the 97 we took (4 of 5 signals had 1.5x
+available). What is NOT proven: that a 1.5x order fills at the same price
+and the same loss rate -- a bigger order meets a smarter seller, and that is
+the population rule 5 exists for. Hence 1.5x and not 2x, and the bar below.
+
+**Pre-registered bar.** Revert at the FIRST loss on a boosted fill in the
+first 20 boosted closes. At 20 boosted closes with no loss and an average
+fill within 0.3c of the ask seen, raise to 2.0 (the `arm-b-mult2` paper arm
+runs it meanwhile). `band_boost` records carry was/now/cap/avail/room so the
+binding rail is visible on every boost.
+
+## What this is expected to be worth
+
+Small and positive per day, larger for what it unlocks: the 1.5x step at
+recent frequency (4-7 such fills a day, ~$70 stake) adds roughly $3/day at
+the band's 8%; going to 2x and to 80-90c adds several times that. The skip
+moves risk, not money. The hedge rule saves about the $33 it has cost so far
+per week of similar alarms.
+
+## Revert
+
+All three are FLAGS. Edit `restart_bot.ps1`, then run `.\restart_bot.ps1`:
+
+- **hedge rule only:** delete the `"--hedge-price", "0.60",` line.
+- **band skip only:** delete the `"--skip-band", "0.94", "0.96",` line.
+- **1.5x only:** delete the `"--band-mult", "0.90", "0.94", "1.5",` line.
+- **all three:** delete all three lines.
+
+The paper arms in `start_bands.ps1` each change one of these against the
+new baseline; `arm-b-control` is the new baseline itself in paper.
+
+---
+
 # v-ceiling99 -- 2026-09-18 ~17:4xZ -- NEVER LIVE: the 99c cap took the bot DOWN for ~5 minutes and was reverted
 
 **What happened.** `restart_bot.ps1` was given `--price-ceiling 0.99` and the
@@ -296,7 +395,8 @@ because the size and the floor both changed.
 
 ```
 git revert --no-edit <this commit>
-powershell -File C:\kals-repoestart_bot.ps1
+powershell -File C:\kals-repo
+estart_bot.ps1
 ```
 
 or drop `--early-tau/--early-frac/--early-min-price` from `restart_bot.ps1`.

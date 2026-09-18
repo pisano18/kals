@@ -460,6 +460,126 @@ EXPERIMENTS = [
                  "the fill price, against what the belief trigger would have "
                  "paid on the same market.",
     },
+    # ---- AMENDMENT 53 arms (2026-09-18). All share the v-bands live
+    # baseline; each changes one thing; the last changes everything. The
+    # selectors name EVERY distinguishing field, because the layered-arm trap
+    # has now been sprung three times.
+    {
+        "name": "v-bands baseline, in paper (the control for the band arms)",
+        "status": RUNNING, "match": "arm-b-control", "since": "2026-09-18",
+        "select": {"skip_bands": lambda v: v == [[0.94, 0.96]], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
+                   "early_min_price": 0.9, "early_max_edge": 3.0},
+        "what": "Exactly the live flag set after v-bands: hedge only when the "
+                "market agrees (0.60), 94-96c skipped, 1.5x at 90-94c, the "
+                "45 s leg at 90c+ with the 3c edge cap.",
+        "why": "Every other band arm is read against this one on the same "
+               "markets at the same instant. Its start record is also the "
+               "proof that the live startup path comes up with the new flags.",
+        "good": "It tracks the live bot's fills. Then the control is honest.",
+        "bad": "It diverges from live. Then paper fills are not our fills "
+               "here and none of the arms can be read.",
+        "watch": "Fills per day and the `band_boost` records: was/now/cap/"
+                 "avail/room say which rail bound each boost.",
+    },
+    {
+        "name": "The 45 s leg opened to the bands that earn (no edge cap, 80c floor)",
+        "status": RUNNING, "match": "arm-b-early-open", "since": "2026-09-18",
+        "select": {"early_min_price": 0.8, "early_max_edge": UNSET,
+                   "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == [[0.94, 0.96]]},
+        "what": "The 31-45 s leg may buy from 80c up, with A50's 3c edge cap "
+                "off. Today it refuses anything under 90c and anything with "
+                "more than 3c of edge -- which is every trade in the 80-94c "
+                "band, the one that returns 8-14%.",
+        "why": "Operator: 'We need to see if we can buy 45s at better bands "
+               "that are currently blocked.' A50 exists because on the tape "
+               "6c+ edges at 31-45 s lost 3 of 11; that was a tape count, "
+               "never a live one, and A50 shipped broken for ten hours, so "
+               "nothing live has ever measured it.",
+        "good": "Early fills under 94c settle like the late ones (0-1 losses "
+                "in the first 30). Then a graduated live step follows.",
+        "bad": "Two or more losses in the first 20 early sub-94c closes. Paper "
+               "understates our loss rate (rule 5), so a bad paper result is "
+               "final.",
+        "watch": "Early-leg fills under 94c: count, price, and settled result, "
+                 "against the control's late fills on the same markets.",
+    },
+    {
+        "name": "The 45 s leg with the edge cap off, floor kept at 90c",
+        "status": RUNNING, "match": "arm-b-early-nocap", "since": "2026-09-18",
+        "select": {"early_min_price": 0.9, "early_max_edge": UNSET,
+                   "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == [[0.94, 0.96]]},
+        "what": "Same as the control but A50's 3c cap is off: the early leg "
+                "may take a 90-94c ask with 6-10c of edge.",
+        "why": "Separates the two blocks. If this arm matches early-open, the "
+               "floor is not what is costing us; if it lags, the 80-90c band "
+               "at 45 s is where the money was.",
+        "good": "More early fills at 90-94c, settling clean.",
+        "bad": "Losses appear that the control does not have.",
+        "watch": "Early fills at 90-94c vs the control's, same markets.",
+    },
+    {
+        "name": "Skip 94-97.5c instead of 94-96c",
+        "status": RUNNING, "match": "arm-b-skip975", "since": "2026-09-18",
+        "select": {"skip_bands": lambda v: v == [[0.94, 0.975]], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
+                   "early_max_edge": 3.0},
+        "what": "The refused band widens to take in 96-97.5c as well.",
+        "why": "Operator: 'omitting 94-96 and 94-97.5'. 96-97.5c returned "
+               "+1.2% on 130 closes with a 2.3% loss rate against a 3% "
+               "break-even -- thin, but positive, unlike 94-96c.",
+        "good": "Nothing: this arm can only lose volume. It is here to price "
+                "that volume: what the wider skip gives up per day.",
+        "bad": "It gives up more than the band's +1.2% is worth in slots "
+               "freed. Then 94-96c stays the skip.",
+        "watch": "Money per day against the control, and the `price_band` "
+                 "refusals scored as if filled.",
+    },
+    {
+        "name": "2x at 90-94c (the next sizing step, run ahead in paper)",
+        "status": RUNNING, "match": "arm-b-mult2", "since": "2026-09-18",
+        "select": {"band_mults": lambda v: v == [[0.9, 0.94, 2.0]], "skip_bands": lambda v: v == [[0.94, 0.96]]},
+        "what": "Inside 90-94c one order may reach 2 x SIZE instead of 1.5x.",
+        "why": "The live step is 1.5x with a bar (v-bands). This arm shows how "
+               "often the book holds 2x, and which rail binds, so the step to "
+               "2x is sized before it is taken.",
+        "good": "Most boosts reach 2x and the binding rail is the book, not "
+                "the drawdown headroom.",
+        "bad": "The headroom binds most of the time. Then the bank, not the "
+               "flag, is the limit and 2x changes nothing.",
+        "watch": "`band_boost` records: now/cap/avail/room.",
+    },
+    {
+        "name": "Go harder: 2x across 80-94c, skip 94-97.5c",
+        "status": RUNNING, "match": "arm-b-harder", "since": "2026-09-18",
+        "select": {"band_mults": lambda v: v == [[0.8, 0.9, 2.0], [0.9, 0.94, 2.0]], "early_max_edge": 3.0},
+        "what": "Two boosted bands (80-90c and 90-94c, both 2x) and the wider "
+                "skip, with the 45 s leg as live.",
+        "why": "Operator: 'just going harder by either more money, doubling "
+               "down, or buying earlier.' 80-90c returned +13.6% on 29 closes "
+               "with ONE loss -- its upper bound sits at its 15% break-even, "
+               "which is why it is NOT in the live step.",
+        "good": "The 80-90c band keeps its record at 2x in paper. Then it is "
+                "a candidate for a live 1.5x.",
+        "bad": "A second loss in 80-90c. Then the band stays at 1x live "
+               "whatever the average says.",
+        "watch": "80-90c closes and losses; boosts per day; the drawdown "
+                 "headroom hitting its floor.",
+    },
+    {
+        "name": "Everything at once: early open + go harder",
+        "status": RUNNING, "match": "arm-b-all", "since": "2026-09-18",
+        "select": {"band_mults": lambda v: v == [[0.8, 0.9, 2.0], [0.9, 0.94, 2.0]], "early_max_edge": UNSET,
+                   "early_min_price": 0.8},
+        "what": "The early leg opened to 80c+ with no cap, 2x across 80-94c, "
+                "94-97.5c skipped.",
+        "why": "The interactions: an early 85c fill at 2x is the largest, "
+               "earliest, least-locked bet any arm makes. If this arm wins "
+               "and the single-change arms do not, the win is an interaction "
+               "and needs its own test before anything goes live.",
+        "good": "Beats every single-change arm on the same closes.",
+        "bad": "Its worst close. One 2x early loss at 85c is about $130 at "
+               "today's size.",
+        "watch": "Worst close, and the early 2x fills specifically.",
+    },
     {
         "name": "Crypto.com prediction markets (FIX API)",
         "status": IDEA, "since": "2026-09-17", "match": None,

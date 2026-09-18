@@ -173,17 +173,20 @@ if (-not $NoArms) {
                   "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate")
         if ($paper.Count -eq 0) {
             Say "no paper arms running -- starting the current experiment set"
+            # 2026-09-18: the AMENDMENT 53 band arms replace the 09-15 set,
+            # whose questions are answered (tau45/staged shipped as v-early-*,
+            # onecoin/hedge70/dumps/loose/early60 dead or superseded). The
+            # flag lists are the ones in start_bands.ps1; keep the two in step.
+            $band = @("--early-tau", "45", "--early-frac", "1.0", "--bank-brake", "4.08",
+                      "--hedge-price", "0.60", "--max-positions", "3", "--hedge-belief", "0.60")
             $arms = @(
-                @{ n = "arm-control";  x = @("--max-positions", "3", "--hedge-belief", "0.60") },
-                @{ n = "arm-loose";    x = @("--max-positions", "5", "--hedge-belief", "0.60", "--take-dumps") },
-                @{ n = "arm-tau45";    x = @("--max-positions", "3", "--hedge-belief", "0.60", "--tau-max", "45") },
-                @{ n = "arm-hedge70";  x = @("--max-positions", "3", "--hedge-belief", "0.70") },
-                @{ n = "arm-mirror";   x = @("--max-positions", "3", "--hedge-belief", "0.80") },
-                @{ n = "arm-dumps";    x = @("--max-positions", "3", "--hedge-belief", "0.80", "--take-dumps") },
-                @{ n = "arm-onecoin";  x = @("--max-positions", "3", "--hedge-belief", "0.60", "--one-coin-depth", "--one-coin-max", "2.0") },
-                @{ n = "arm-staged";   x = @("--max-positions", "3", "--hedge-belief", "0.60", "--early-tau", "45", "--early-frac", "0.5") },
-                # 46-60 s: the grid's frontier (RESULTS_grid.md). Does our gate rescue it?
-                @{ n = "arm-early60";  x = @("--max-positions", "3", "--hedge-belief", "0.60", "--early-tau", "60", "--early-frac", "0.333") }
+                @{ n = "arm-b-control";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
+                @{ n = "arm-b-early-open";  x = $band + @("--early-min-price", "0.80", "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
+                @{ n = "arm-b-early-nocap"; x = $band + @("--early-min-price", "0.90", "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
+                @{ n = "arm-b-skip975";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975", "--band-mult", "0.90", "0.94", "1.5") },
+                @{ n = "arm-b-mult2";       x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "2.0") },
+                @{ n = "arm-b-harder";      x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") },
+                @{ n = "arm-b-all";         x = $band + @("--early-min-price", "0.80", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") }
             )
             foreach ($a in $arms) {
                 Start-Process -FilePath $py -ArgumentList ($live + $a.x) -WorkingDirectory $repo -WindowStyle Hidden `
@@ -199,7 +202,8 @@ if (-not $NoArms) {
         # settlements and writes a file.
         if (-not (RunningPy '*pinledgerd.py*')) {
             Say "pinledgerd.py is NOT running -- starting the Kalshi ledger refresher"
-            Start-Process -FilePath $py -ArgumentList @("-u", "$repoesearch\pinledgerd.py") `
+            Start-Process -FilePath $py -ArgumentList @("-u", "$repo
+esearch\pinledgerd.py") `
                 -WorkingDirectory $repo -WindowStyle Hidden `
                 -RedirectStandardOutput "$res\pinledgerd.out" -RedirectStandardError "$res\pinledgerd.err"
             $started++

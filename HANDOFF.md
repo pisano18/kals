@@ -1,3 +1,98 @@
+# 2026-09-18 ~21:0xZ -- WHY THE MONEY FELL: IT WAS OIL, PLUS A PRICE BAND THAT EARNS NOTHING
+
+The operator: *"figure out why we make so much less money now. And then make
+it so we make that money back."* Answered from live fills only, reconciled
+against the actual bank balance. `research/pinfloor.py` (self-tested) is the
+day-by-day attribution; scratch scripts for the bands are in the session
+scratchpad and their numbers are reproduced below.
+
+## The crypto bot did NOT get worse
+
+Money per Eastern day from `settled` records, matching the bank to the penny
+on 09-13..09-16: $114.77, $81.14, $76.32, $85.10, $115.68, and $60.42 on
+09-18 at ~70% of the day. The 13th and the 17th are the two BEST days and they
+are four days apart. There is no decline in dollars.
+
+**`realised` IS A RUNNING TOTAL AND RESETS ON RESTART.** Summing it reports
+2026-09-18 as $768.58 against a true $60.42. The per-fill field is `pnl_c`,
+in cents. This is the same shape as the "$47 vs $22" error the operator
+caught on 09-17.
+
+## What actually took the money: oil
+
+`cmdlive-*.jsonl` is oil with real money (`dry: false`). It lost **$59.46 on
+09-17 and $27.28 on 09-18** -- $86.74 over two days, against crypto's $115.68
+and $60.42. That is the whole of "we're only up $22". The unattributed
+`external` "withdrawals" in the live log (-$58.37, -$19.96, ...) are oil's
+fills moving the shared balance, NOT the operator moving money.
+Oil braked itself at 17:31:52Z on 09-18 and `results/cmdlive.stop` is present.
+
+## Return per dollar risked HAS halved, and it is the price
+
+5.54% on 09-13 -> 2.86% on 09-18. The bet went 47 -> 78-98 contracts while the
+mean price paid went 92.9c -> 95.5c. Same dollars, twice the risk.
+Like-for-like Thursdays (09-11 vs 09-18): markets offering a sub-90c winning
+side went 10.5% -> 6.6%, and the cheapest 10% at 40 s out went 56c -> 84c.
+
+## The band table -- 566 live fills, clustered by close (rule 4)
+
+| paid | closes | our loss | break-even | staked | money | return |
+|---|---|---|---|---|---|---|
+| under 50c (insurance) | 11 | 81.8% | 75% | $53 | -$31.95 | -60.6% |
+| 50-80c | 6 | 33.3% | 35% | $130 | +$42.35 | +32.5% |
+| 80-90c | 29 | 3.4% | 15% | $864 | +$117.01 | +13.6% |
+| 90-94c | 64 | 0.0% | 8% | $2583 | +$207.46 | +8.0% |
+| 94-96c | 83 | 4.8% | 5% | $2970 | +$25.01 | +0.8% |
+| 96-97.5c | 130 | 2.3% | 3% | $4711 | +$55.59 | +1.2% |
+| 97.5c+ | 234 | 0.9% | 1% | $8834 | +$159.82 | +1.8% |
+
+Break-even loss rate at price p is exactly `1 - p`.
+
+- **94-96c has no edge.** 15% of all capital, 4% of all profit, loss rate
+  level with break-even across 83 closes. It also holds one of three slots.
+- **80-94c is the engine**: 17% of capital, 56% of profit.
+- **Insurance loses against the real alternative.** 11 markets, 8 genuine
+  hedges; it helped ONCE by $0.51 and cost $31.95 net. The earlier
+  "+$46.55 across 13 alarms" was alarms, not trades, and is WITHDRAWN.
+
+## The lever: one size for every trade
+
+From our own `signal` records, mean book depth at the touch vs what we took:
+
+| price | book at touch | we took | ladder behind |
+|---|---|---|---|
+| under 90c | 253 | 29 | 5358 |
+| 90-94c | 157 | 28 | 3513 |
+| 94-96c | 216 | 27 | 2139 |
+| 97.5c+ | 644 | 28 | 200 |
+
+The book will sell us 5x what we buy in the band that returns 8-14%. NOT YET
+PROVEN that it fills at the same price at 4x size -- bigger orders are more
+adversely selected, and that is the population rule 5 exists for. Graduate it.
+
+## The 45 s leg can never take a good trade
+
+`early_min_price 0.90` and `early_max_edge 3.0`: the early leg refuses
+anything under 90c and anything with more than 3c of edge. Every trade in the
+80-94c band is refused there BY DESIGN and can only be caught under 30 s.
+
+## Two hypotheses killed here, do not re-run them
+
+- **The depth floor is not the cause.** `_floor = max(1, 0.5 * SIZE)` does ride
+  on the bank, but cheap depth_floor refusals are 0-5 a day worth $0, and
+  `min_fill_frac` is already 0 live.
+- **Buying early is not costing us.** Of 33 early buys on 09-18, 30 had a
+  DEARER price later in the same market (97.0c paid vs 96.0c best later, and
+  most of those later prices were 99c+).
+
+## Instrument traps found
+
+- `_gate()` records once per (close, ticker, gate). A sparse list of "seconds
+  we looked at" is the logbook deduplicating, NOT the bot sleeping.
+- `pinlook.best_price` ranked hindsight lottery tickets (a 1.8c ask at 43 s
+  that won). `confident_best` is the reachable version; read them side by side.
+- Browser for both days: https://claude.ai/artifact/E8CrwW6RDHUgfxLVsgB7EM
+
 # 2026-09-18 ~17:3xZ -- THE POOL DID NOT HALVE, THE 45 s LEG IS FULL SIZE, OIL MOVED, AND THE LOSSES ARE JUMPS
 
 Read `results/VERSIONS.md` (v-bank8, v-oilsweet, v-early-full2) for what is
