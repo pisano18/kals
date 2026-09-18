@@ -1,4 +1,4 @@
-# v-bands -- 2026-09-18 ~21:5xZ -- LIVE: hedge only when the market agrees, skip 94-96c, and 1.5x at 90-94c (`SHA_PENDING`)
+# v-bands -- 2026-09-18 ~21:5xZ -- LIVE: hedge only when the market agrees, skip 94-96c, and 1.5x at 90-94c (`c015709`)
 
 Three flags in `restart_bot.ps1`, one entry, each with its own revert line.
 Operator, 2026-09-18: *"Okay remove insurance. But keep hedging. We can remove
