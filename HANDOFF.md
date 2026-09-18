@@ -1,3 +1,74 @@
+# 2026-09-18 ~17:3xZ -- THE POOL DID NOT HALVE, THE 45 s LEG IS FULL SIZE, OIL MOVED, AND THE LOSSES ARE JUMPS
+
+Read `results/VERSIONS.md` (v-bank8, v-oilsweet, v-early-full2) for what is
+live and how to revert each. `research/pinlab.py` is the drawing board and is
+current. This section is what a fresh session needs that those do not say.
+
+## Live right now (all verified from the running processes' own start records)
+
+- Crypto bot: bet = bank/8 (BANK_BRAKE 4.08), 31-45 s leg at FULL size with
+  the 90c floor and the 3c edge cap (A50), both-sides gate instrumented.
+- Oil: 16-30 s at 93-99c, $20 a bet, in `boot_all.ps1`. Brake $25 / 4 losses.
+- Paper arms: A47 (hedge on market price), A48 (late size), A50, A51
+  (insurance only when the other side is a normal bet), A52 (hedge on the
+  JUMP, `--hedge-jump 8`, bars in `results/PREREG_a52_jump_hedge.md`), the
+  2-30 s oil arm, and four restarted flagless controls. The five
+  lower-confidence arms were STOPPED (all behind live, 20-36%).
+
+## What was settled today -- do not re-litigate
+
+1. **"The pool halved" was a baseline error.** Measured against 09-09..12,
+   the four busiest days on record. Against a normal day cheap offers are +7%,
+   contracts +22%, and Kalshi's own 67-day history is at an all-time high.
+   `research/pinsupply.py`; the trend is on the Market tab and in `/market`.
+2. **The 45 s leg is as safe as 30 s on live money**: 57 markets, 1 miss
+   (hedged to +$4.36), +$64.79; main window 475 markets, 11 misses. The raw
+   tape at 31-45 s fails break-even below 98c -- our number is the confidence
+   filter working. Post-fix, 26 of 34 early legs got no top-up because by
+   30 s nothing was left to buy: the early leg IS the trade.
+3. **Every loss is a post-entry jump** (10-18 sigma, sigma understated 2-3x,
+   losers inside the winners' confidence range). Nothing at entry sees it: a
+   1.5x sigma stress refuses 88% of wins; a vote of entry-time flags catches
+   4/4 at one flag and 75% of wins, 1/4 at two. `results/sigcheck_out.json`.
+   The calm-patch story is contradicted (misses had sigma ABOVE median).
+   The defence is after entry -- A52 is that.
+4. **Beyond 45 s is dead on the crypto tape** (25M trades, by close): 31-45 s
+   clears only at 98c+, 46-60 s barely at 99c, nothing past 60 s. Oil is the
+   mirror image. `python research/oilband.py --all-crypto --min-n 25`.
+5. **Oil's old window was wrong.** 16-30 s beats 0-15 s at every price; the
+   floor and the clock interact (under 95c is dangerous inside 15 s, safe at
+   16-30). Stressed at 5x the tape loss rate, 16-30 s at 93-99c holds while
+   the wider clocks collapse. `results/oilband_KXWTI15M.json`.
+6. **The both-sides top-up block was real and was fixed on 09-17 (v-a8fix).**
+   An hour went into logs that predated the fix. Post-fix live: two blocks,
+   both genuine reversals, three real top-ups. Four paper arms started before
+   the fix were still running the old code; restarted.
+7. **Insurance has made money**: 13 alarms, 7 needed, 5 wasted, +$46.55 net.
+   The "11 of 12 ended negative" figure was the CLOSE's net, not insurance's.
+
+## Open, and whose call it is
+
+- **Operator's:** lift the 98c ceiling to 99c (82 live markets at 98-99c, 1
+  loss, +$51 -- but he lowered it on 09-09 with his own arithmetic); lower the
+  edge floor (I advised against: 13c a trade against a $76 loss).
+- **Waiting on data:** A52 needs 25 jump-fired alarms; A50/A51 need 40 closes;
+  oil at $20 needs 30 clean fills before any size talk.
+- **The settlement refresh** (`kalshi_fulltape.py --markets-only`, REPO copy
+  -- the C:\kals copy lacks the flag and the runner's nightly refresh had been
+  failing silently) was still running at time of writing; until it lands,
+  09-18 is invisible to every tape study.
+
+## Traps found today, each with a self-test now
+
+Kalshi's Bitcoin index is `BRTI`, not `BTCUSD_RTI` (a wrong name reads 90
+hours and measures nothing, no error). `fulltape_recent` writes `result: 1.0`,
+`fulltape` writes `"yes"`. The commodity series joined the tape 09-14 and
+inflate any pooled trend. A paper arm layered on another's flag steals its log
+unless the older selector excludes it by name (hit three times). A heredoc
+`"\\n"` inside a python `'''` string becomes a real newline. And: **histogram a
+log pattern against VERSIONS.md deploy times before reading code to explain
+it** -- a paper arm runs whatever source it loaded at launch.
+
 # 2026-09-17 04:4xZ -- SELF-HEALING, A DESKTOP APP, AND THE TAU-45 RULE WRITTEN BEFORE THE ARM WAS READ
 
 Operator, at 00:05 ET: *"Does the bot automatically catch itself being down and
