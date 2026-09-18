@@ -6,35 +6,60 @@
   A gate only gets asked if every gate above it said yes, so a quiet
   row near the bottom may just mean the rows above got there first.
 
-  gate            | stopped | closes | only  | really  | of those blocked      | $ if we had
-                  |  it     |        | moved | blocked | would WIN / would LOSE|  been filled
-  ----------------|---------|--------|-------|---------|-----------------------|-------------
-  close_budget    |     340 |     38 |    78 |     262 |    -   (no price)     |       -
-  max_per_close   |       0 |      0 |     0 |       0 |        -              |      -
-  max_per_market  |       9 |      7 |     9 |       0 |    -   (no price)     |       -
-  both_sides      |     149 |    134 |   149 |       0 |    -   (no price)     |       -
-  market_attempts |      12 |      7 |     8 |       4 |    -   (no price)     |       -
-  attempts_cap    |       0 |      0 |     0 |       0 |        -              |      -
-  book_suspect    |       0 |      0 |     0 |       0 |        -              |      -
-  book_stale      |      79 |     40 |     3 |      76 |    -   (no price)     |       -
-  index_stale     |      27 |      3 |     0 |      27 |    -   (no price)     |       -
-  no_sigma        |       0 |      0 |     0 |       0 |        -              |      -
-  confidence      |     412 |    208 |   199 |     213 |    -   (no price)     |       -
-  no_offer        |    3283 |    399 |    48 |    3235 |    -   (no price)     |       -
-  depth_floor     |     538 |    261 |    45 |     493 |    -   (no price)     |       -
-  edge_floor      |    1305 |    340 |    61 |    1244 |  1048 / 0             |     +136.51
-  against_thin    |      18 |     18 |     6 |      12 |    10 / 0             |       +5.45
-  jump_against    |      25 |     21 |     1 |      24 |    19 / 0             |       +3.72
-  dump_guard      |       9 |      9 |     8 |       1 |     0 / 1             |      -37.85
-  improve_by      |       0 |      0 |     0 |       0 |        -              |      -
-  rebuy_band      |      19 |     19 |    19 |       0 |    -   (no price)     |       -
-  price_ceiling   |     534 |    247 |    83 |     451 |   379 / 0             |     +122.80
-  ev_floor        |       0 |      0 |     0 |       0 |        -              |      -
-  early_once      |      51 |     37 |    51 |       0 |    -   (no price)     |       -
-  staged_none     |       2 |      2 |     1 |       1 |    -   (no price)     |       -
-  early_cheap     |       1 |      1 |     1 |       0 |    -   (no price)     |       -
-  early_wide      |       6 |      6 |     2 |       4 |    -   (no price)     |       -
-  hedge_wait_normal|       0 |      0 |     0 |       0 |        -              |      -
+  EVERY ROW ADDS UP:  fired = moved + blocked, and
+                      blocked = won + lost + the three 'cannot say' columns.
+
+  gate            |  fired | moved |blocked |  won | lost |no price|no size|unsettled| $ if filled
+  ----------------|--------|-------|--------|------|------|--------|-------|---------|------------
+  close_budget    |    340 |    78 |    262 |    - |    - |    262 |     0 |       0 |      -
+  max_per_close   |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  max_per_market  |      9 |     9 |      0 |    - |    - |      0 |     0 |       0 |      -
+  both_sides      |    149 |   149 |      0 |    - |    - |      0 |     0 |       0 |      -
+  market_attempts |     13 |     9 |      4 |    - |    - |      4 |     0 |       0 |      -
+  attempts_cap    |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  book_suspect    |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  book_stale      |     83 |     3 |     80 |    - |    - |     80 |     0 |       0 |      -
+  index_stale     |     27 |     0 |     27 |    - |    - |     27 |     0 |       0 |      -
+  no_sigma        |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  confidence      |    417 |   201 |    216 |    - |    - |    216 |     0 |       0 |      -
+  no_offer        |   3327 |    52 |   3275 |    - |    - |   3275 |     0 |       0 |      -
+  depth_floor     |    545 |    46 |    499 |    - |    - |      0 |   499 |       0 |      -
+  edge_floor      |   1340 |    66 |   1274 | 1048 |    0 |      0 |     0 |     226 |    +136.51
+  against_thin    |     19 |     7 |     12 |   10 |    0 |      0 |     0 |       2 |      +5.45
+  jump_against    |     25 |     1 |     24 |   19 |    0 |      0 |     0 |       5 |      +3.72
+  dump_guard      |      9 |     8 |      1 |    0 |    1 |      0 |     0 |       0 |     -37.85
+  improve_by      |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  rebuy_band      |     19 |    19 |      0 |    - |    - |      0 |     0 |       0 |      -
+  price_ceiling   |    545 |    87 |    458 |  379 |    0 |      0 |     0 |      79 |    +122.80
+  ev_floor        |      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+  early_once      |     55 |    55 |      0 |    - |    - |      0 |     0 |       0 |      -
+  staged_none     |      2 |     1 |      1 |    - |    - |      1 |     0 |       0 |      -
+  early_cheap     |      1 |     1 |      0 |    - |    - |      0 |     0 |       0 |      -
+  early_wide      |      8 |     4 |      4 |    - |    - |      4 |     0 |       0 |      -
+  hedge_wait_normal|      0 |     0 |      0 |    - |    - |      - |     - |       - |      -
+
+  WHY A BLOCKED MARKET MAY HAVE NO WIN/LOSE
+    no price   the gate fired BEFORE any price existed -- nothing was
+               ever on the table, so there is nothing to value. This
+               will never be scorable and that is correct.
+    no size    a price and a side were recorded but not the size. That
+               is a LOGGING GAP in the bot, not a limit, and it is
+               being closed gate by gate.
+    unsettled  the market has not settled yet, or the settlement pull
+               has not caught up. It resolves itself.
+
+  WHY 'would lose' IS SO OFTEN ZERO, and why that is not a broken column.
+  Every gate below `confidence` is only ever asked about a market the
+  model is ALREADY at least 99.5% sure of. That is the population, not
+  a sample of it. Those markets win almost every time whether we buy
+  them or not, so a gate that turns them away turns away winners -- by
+  construction. The outcomes behind this column were checked against
+  Kalshi's own settlement record on 503 shared markets and agreed on
+  503 of 503, with the underlying results running a balanced 50/50.
+  A gate stopping winners is therefore the EXPECTED reading; what makes
+  a gate worth keeping is the size of the loss it prevents when it is
+  right, which is why one -$37.85 row can outweigh a thousand small
+  forgone wins.
 
   `$ if we had been filled` is an UPPER BOUND, not profit and loss. A
   price showing is not a fill -- we would have been racing for it, and

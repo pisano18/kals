@@ -252,7 +252,9 @@ def attribute(refusals, bought, outcomes):
             continue
         a = rows.setdefault(g, {"n": 0, "closes": set(), "delayed": 0,
                                 "blocked": 0, "won": 0, "lost": 0,
-                                "money": 0.0, "scored": 0, "unscorable": 0})
+                                "money": 0.0, "scored": 0, "unscorable": 0,
+                                "no_price": 0, "no_side": 0, "no_size": 0,
+                                "unsettled": 0})
         a["n"] += 1
         a["closes"].add(r.get("close_s"))
         tk = r.get("ticker")
@@ -263,6 +265,33 @@ def attribute(refusals, bought, outcomes):
             a["delayed"] += 1
             continue
         a["blocked"] += 1
+        # WHY a refusal cannot be scored, split out. The operator, 2026-09-18:
+        # *"How can something block more than it would of won but not lost
+        # anything."* Because `blocked` counted every refusal while
+        # `won`/`lost` counted only the SCORABLE ones, and the difference --
+        # 196 markets on one row -- was printed nowhere. A table whose columns
+        # do not add up is a table nobody should believe, and he was right not
+        # to. The three reasons are different things and only one of them is
+        # a real limit:
+        #   no_price  the gate fired before a price existed. Nothing was ever
+        #             on the table, so there is nothing to value. Permanent.
+        #   no_size   a price and a side were recorded but not the size. That
+        #             is a LOGGING GAP, not a limit, and it silently threw
+        #             away 545 of depth_floor's refusals.
+        #   unsettled the market has not settled yet, or the pull has not
+        #             caught up. Temporary; it resolves itself.
+        if r.get("price") is None:
+            a["no_price"] += 1
+            continue
+        if r.get("want") not in ("yes", "no"):
+            a["no_side"] += 1
+            continue
+        if min(float(r.get("size_now") or 0.0), float(r.get("size") or 0.0)) <= 0:
+            a["no_size"] += 1
+            continue
+        if not outcomes.get(tk):
+            a["unsettled"] += 1
+            continue
         pl = would_be(r, outcomes.get(tk))
         if pl is None:
             a["unscorable"] += 1
@@ -284,9 +313,11 @@ def report(rows, say=print, order=GATE_ORDER):
     w("  A gate only gets asked if every gate above it said yes, so a quiet")
     w("  row near the bottom may just mean the rows above got there first.")
     w("")
-    w("  gate            | stopped | closes | only  | really  | of those blocked      | $ if we had")
-    w("                  |  it     |        | moved | blocked | would WIN / would LOSE|  been filled")
-    w("  ----------------|---------|--------|-------|---------|-----------------------|-------------")
+    w("  EVERY ROW ADDS UP:  fired = moved + blocked, and")
+    w("                      blocked = won + lost + the three 'cannot say' columns.")
+    w("")
+    w("  gate            |  fired | moved |blocked |  won | lost |no price|no size|unsettled| $ if filled")
+    w("  ----------------|--------|-------|--------|------|------|--------|-------|---------|------------")
     seen = []
     for g in order + sorted(x for x in rows if x not in order):
         if g in seen:
@@ -294,15 +325,43 @@ def report(rows, say=print, order=GATE_ORDER):
         seen.append(g)
         a = rows.get(g)
         if a is None:
-            w("  %-16s|       0 |      0 |     0 |       0 |        -              |      -"
-              % g)
+            w("  %-16s|      0 |     0 |      0 |    - |    - |      - |     - |       - |      -" % g)
             continue
-        scored = "%5d / %-5d" % (a["won"], a["lost"]) if a["scored"] else \
-                 "   -   (no price)"
+        nop = a["no_price"] + a["no_side"] + a["unscorable"]
         money = ("%+11.2f" % a["money"]) if a["scored"] else "      -"
-        w("  %-16s| %7d | %6d | %5d | %7d | %-21s | %s"
-          % (g, a["n"], len(a["closes"]), a["delayed"], a["blocked"],
-             scored, money))
+        # `delayed`, NOT len(closes). The first version of this row printed the
+        # close count under the "moved" heading, so fired != moved + blocked
+        # on every line -- the exact arithmetic failure this rewrite existed to
+        # remove. The self-test now reads the RENDERED table back and checks
+        # the identity, because checking it on the data would have passed.
+        w("  %-16s| %6d | %5d | %6d | %4s | %4s | %6d | %5d | %7d |%s"
+          % (g, a["n"], a["delayed"], a["blocked"],
+             a["won"] if a["scored"] else "-",
+             a["lost"] if a["scored"] else "-",
+             nop, a["no_size"], a["unsettled"], money))
+    w("")
+    w("  WHY A BLOCKED MARKET MAY HAVE NO WIN/LOSE")
+    w("    no price   the gate fired BEFORE any price existed -- nothing was")
+    w("               ever on the table, so there is nothing to value. This")
+    w("               will never be scorable and that is correct.")
+    w("    no size    a price and a side were recorded but not the size. That")
+    w("               is a LOGGING GAP in the bot, not a limit, and it is")
+    w("               being closed gate by gate.")
+    w("    unsettled  the market has not settled yet, or the settlement pull")
+    w("               has not caught up. It resolves itself.")
+    w("")
+    w("  WHY 'would lose' IS SO OFTEN ZERO, and why that is not a broken column.")
+    w("  Every gate below `confidence` is only ever asked about a market the")
+    w("  model is ALREADY at least 99.5% sure of. That is the population, not")
+    w("  a sample of it. Those markets win almost every time whether we buy")
+    w("  them or not, so a gate that turns them away turns away winners -- by")
+    w("  construction. The outcomes behind this column were checked against")
+    w("  Kalshi's own settlement record on 503 shared markets and agreed on")
+    w("  503 of 503, with the underlying results running a balanced 50/50.")
+    w("  A gate stopping winners is therefore the EXPECTED reading; what makes")
+    w("  a gate worth keeping is the size of the loss it prevents when it is")
+    w("  right, which is why one -$37.85 row can outweigh a thousand small")
+    w("  forgone wins.")
     w("")
     w("  `$ if we had been filled` is an UPPER BOUND, not profit and loss. A")
     w("  price showing is not a fill -- we would have been racing for it, and")
@@ -401,6 +460,70 @@ def selftest():
        "stale the settlement pull is")
     ck(outcome_coverage([], _o) == (0, 0, None),
        "NULL: no refusals is (0, 0, None), not a fabricated 100% coverage")
+    # EVERY ROW MUST ADD UP. The operator: "How can something block more than
+    # it would of won but not lost anything." It could because `blocked`
+    # counted every refusal while won/lost counted only the scorable ones, and
+    # the 196-market difference was printed nowhere.
+    _refs = [
+        # scorable, and wins
+        {"gate": "g", "ticker": "T-WIN", "close_s": 1, "want": "yes",
+         "price": 0.9, "size": 10.0, "size_now": 10.0},
+        # scorable, and loses
+        {"gate": "g", "ticker": "T-LOSE", "close_s": 1, "want": "no",
+         "price": 0.9, "size": 10.0, "size_now": 10.0},
+        # fired before a price existed
+        {"gate": "g", "ticker": "T-NOPX", "close_s": 1},
+        # price and side, but the size was never logged
+        {"gate": "g", "ticker": "T-NOSZ", "close_s": 1, "want": "yes",
+         "price": 0.9, "size_now": 10.0},
+        # everything logged, but the market has not settled
+        {"gate": "g", "ticker": "T-UNSET", "close_s": 1, "want": "yes",
+         "price": 0.9, "size": 10.0, "size_now": 10.0},
+        # we refused it and then bought it anyway
+        {"gate": "g", "ticker": "T-MOVED", "close_s": 1, "want": "yes",
+         "price": 0.9, "size": 10.0, "size_now": 10.0},
+    ]
+    _out = {"T-WIN": "yes", "T-LOSE": "yes", "T-NOSZ": "yes", "T-MOVED": "yes"}
+    _rows = attribute(_refs, {"T-MOVED"}, _out)
+    _a = _rows["g"]
+    ck(_a["n"] == 6 and _a["delayed"] == 1 and _a["blocked"] == 5,
+       "fired = moved + blocked, exactly")
+    ck(_a["won"] == 1 and _a["lost"] == 1,
+       "one blocked market would have won and one would have lost")
+    ck(_a["no_price"] == 1 and _a["no_size"] == 1 and _a["unsettled"] == 1,
+       "and the three markets that cannot be judged are split by WHY, because "
+       "'no price was ever showing' and 'we forgot to log the size' are "
+       "different problems and only the second is fixable")
+    ck(_a["blocked"] == _a["won"] + _a["lost"] + _a["no_price"]
+       + _a["no_side"] + _a["no_size"] + _a["unsettled"] + _a["unscorable"],
+       "BLOCKED ADDS UP to won + lost + every reason we cannot say -- a table "
+       "whose columns do not reconcile is a table nobody should believe")
+    _txt = report(_rows, say=None)
+    ck("EVERY ROW ADDS UP" in _txt and "no size" in _txt,
+       "...and the report states the identity and shows the columns that make "
+       "it true, rather than hiding the remainder")
+    # READ THE RENDERED TABLE BACK AND CHECK THE ARITHMETIC ON THE PAGE.
+    # Checking `rows` would have passed while the printed row put the CLOSE
+    # COUNT under the "moved" heading, so fired != moved + blocked on every
+    # line. The number a person reads is the number that has to reconcile.
+    _bad = []
+    for _line in _txt.splitlines():
+        if not _line.startswith("  g  ") and not _line.strip().startswith("g |"):
+            if "|" not in _line or _line.strip().startswith("gate"):
+                continue
+        _cells = [c.strip() for c in _line.split("|")]
+        if len(_cells) < 9 or not _cells[1].isdigit():
+            continue
+        _fired, _moved, _blocked = (int(_cells[1]), int(_cells[2]),
+                                    int(_cells[3]))
+        if _fired != _moved + _blocked:
+            _bad.append((_cells[0], _fired, _moved, _blocked))
+    ck(not _bad,
+       "in the RENDERED table every row satisfies fired = moved + blocked: %r"
+       % (_bad[:3],))
+    ck("would lose" in _txt and "99.5" in _txt,
+       "the report explains WHY 'would lose' is so often zero -- these gates "
+       "only ever see markets the model is already sure of")
     ck(would_be({"price": None, "want": "yes"}, "yes") is None,
        "a refusal with no price is NOT scored -- the early gates fire before "
        "a price exists and inventing one is the whole point thrown away")

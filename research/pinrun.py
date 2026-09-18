@@ -6404,7 +6404,12 @@ def trade_loop(a, rec, book, idx, series_index):
                       price=round(price, 4), offered=float(size),
                       reach=round(float(_reach), 2),
                       depth_ladder=bool(DEPTH_LADDER and SWEEP_DEPTH),
-                      wanted=float(SIZE), fair=round(f, 5), tau=tau)
+                      # `size` is what makes a refusal SCORABLE: pinattrib
+                      # values a blocked trade at min(size_now, size), so 545
+                      # of this gate's refusals were discarded over a missing
+                      # key while the report blamed a missing price.
+                      wanted=float(SIZE), fair=round(f, 5), tau=tau,
+                      size=float(SIZE))
                 continue
             e = net_edge(f, price, want)
             # AMENDMENT 24: remember it so the NEXT pass can visit the best
@@ -6676,18 +6681,22 @@ def trade_loop(a, rec, book, idx, series_index):
                 if _leg46 in ("early", "early_once") and price < EARLY_MIN_PRICE:
                     _gate("early_cheap", close_s, tk, leg=_leg46, tau=tau,
                           price=round(price, 4), floor=EARLY_MIN_PRICE,
-                          fair=round(f, 5))
+                          fair=round(f, 5),
+                          want=want, size=float(take_n or SIZE))
                     continue
                 # A50: too GOOD to be true, on the early leg only.
                 if (EARLY_MAX_EDGE is not None
                         and 100.0 * e > float(EARLY_MAX_EDGE)):
                     _gate("early_wide", close_s, tk, leg=_leg46, tau=tau,
                           price=round(price, 4), edge_c=round(100 * e, 3),
-                          cap_c=float(EARLY_MAX_EDGE), fair=round(f, 5))
+                          cap_c=float(EARLY_MAX_EDGE), fair=round(f, 5),
+                          # without want AND size this gate cannot be scored
+                          want=want, size=float(take_n or SIZE))
                     continue
                 if take_n < MIN_LEVEL:
                     _gate("staged_none", close_s, tk, leg=_leg46, held=_held46,
-                          tau=tau, price=round(price, 4))
+                          tau=tau, price=round(price, 4),
+                          want=want, size=float(take_n or SIZE))
                     continue
             sig["leg"] = _leg46
             sig["early_held"] = _held46
