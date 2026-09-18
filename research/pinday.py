@@ -97,7 +97,16 @@ def load(paths):
                     continue
                 if r.get("kind") != "settled":
                     continue
-                k = (r.get("ticker"), r.get("t"))
+                # DE-DUPLICATE ON THE WHOLE LINE, NOT ON (ticker, t).
+                # Two legs of the SAME market settle in the same second with
+                # the same ticker, and keying on (ticker, t) silently threw the
+                # second one away -- it reported the commodity day as -$23.14
+                # when the records summed to -$51.94, because most losing
+                # markets carried two legs. The thing we actually need to guard
+                # against is a whole line repeated when logs overlap after a
+                # restart, and the full line catches exactly that and nothing
+                # else.
+                k = line.strip()
                 if k in seen:
                     continue
                 seen.add(k)
@@ -166,6 +175,21 @@ def selftest():
        "the 23:00 ET market is the 16th's loss, though its log line says 17th")
     ck(len(load([])) == 0 and by_et_day([]) == {},
        "NULL: no files, no records, no invented days")
+    # TWO LEGS OF ONE MARKET ARE TWO SETTLEMENTS, NOT A DUPLICATE.
+    import tempfile as _tf
+    _d = _tf.mkdtemp()
+    _f = os.path.join(_d, "cmdlive-x.jsonl")
+    _same = {"kind": "settled", "ticker": "KXWTI15M-26SEP171615-15",
+             "t": "2026-09-17T20:30:20Z"}
+    with open(_f, "w", encoding="utf-8") as _fh:
+        _fh.write(json.dumps(dict(_same, pnl_c=-2926.0)) + chr(10))
+        _fh.write(json.dumps(dict(_same, pnl_c=-2958.0)) + chr(10))
+        _fh.write(json.dumps(dict(_same, pnl_c=-2926.0)) + chr(10))   # a true repeat
+    _got = load([_f])
+    ck(len(_got) == 2 and abs(sum(float(x["pnl_c"]) for x in _got) + 5884.0) < 1e-9,
+       "two DIFFERENT legs on one ticker at one second both count (-$58.84); an "
+       "identical line repeated after a restart does not. Keying on (ticker, t) "
+       "reported that market as -$29.26 and hid half the loss")
     rec = {"kind": "settled", "ticker": "", "pnl_c": 10.0, "t": "2026-09-17T15:00:20Z"}
     ck(et_day_of_record(rec) == "2026-09-17",
        "with no usable ticker it falls back to the timestamp, converted to ET")
