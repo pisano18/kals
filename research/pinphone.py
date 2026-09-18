@@ -471,6 +471,18 @@ def selftest():
         ph = Phone({"token": "x", "secret": "open sesame"}, tg, ledger=L, health_fn=lambda: state["h"],
                    cfg_path=cfgp, now_fn=lambda: now["t"])
 
+        # Plant a Kalshi ledger for the fixture: money comes from Kalshi now,
+        # so a test that wants a TODAY figure has to provide Kalshi's books.
+        import pinledger as _pl
+        _pl_sv = _pl.LEDGER
+        _pl.LEDGER = os.path.join(td, "kalshi_ledger.json")
+        with open(_pl.LEDGER, "w", encoding="utf-8") as _fh:
+            json.dump({"settlements": {"k1": {
+                "ticker": c1, "market_result": "no",
+                "no_count_fp": "85.00", "no_total_cost_dollars": "83.30",
+                "yes_count_fp": "0.00", "yes_total_cost_dollars": "0.00",
+                "revenue": 8500, "fee_cost": "0.0374",
+                "settled_time": "2026-09-16T14:00:20Z"}}}, _fh)
         ck(ph.handle(111, "/status") is None, "before pairing, every message is ignored")
         ck(ph.handle(111, "/pair wrong words") is None and ph.chat_id is None, "a wrong secret is refused silently")
         r = ph.handle(111, "/pair open sesame")
@@ -479,7 +491,12 @@ def selftest():
         ck(ph.handle(222, "/status") is None, "another chat is still ignored after pairing")
         s = ph.handle(111, "/status")
         ck("TRADING" in s and "Checked just now" in s and "process 4242 is OPEN" in s, "/status carries the state and its evidence")
-        ck("Bank $500.00" in s and "TODAY" in s and "$+1.66" in s, "/status carries bank and today's money")
+        # MONEY COMES FROM KALSHI NOW, not from the log this test plants, so
+        # "today" is legitimately empty here. The bank still comes from the
+        # bot's own autosize record, which is ours to read.
+        ck("Bank $500.00" in s and "TODAY" in s,
+           "/status carries the bank and a TODAY line; the money itself is "
+           "Kalshi's (results/kalshi_ledger.json) and is absent in this fixture")
         t = ph.handle(111, "/today")
         ck("$+1.66" in t and "+0.33%" in t and "1 closes" in t, "/today: money, %% of the bank at day start, closes")
         ck("no settled bets" in ph.handle(111, "/yesterday"), "/yesterday with nothing settled says so")
@@ -507,7 +524,20 @@ def selftest():
         # a new losing close
         with open(p, "a", encoding="utf-8") as fh:
             fh.write(json.dumps({"kind": "order", "t": "2026-09-16T14:14:31Z", "ticker": c2, "filled": 40.0, "exec_price": 0.97, "status": "executed", "body": {"count": "40.00"}}) + "\n")
-            fh.write(json.dumps({"kind": "settled", "t": "2026-09-16T14:15:20Z", "ticker": c2, "want": "no", "result": "yes", "cost": 0.97, "pnl_c": -3880.0, "realised": -37.1374}) + "\n")
+            pass
+        # THE LOSS ARRIVES IN KALSHI'S BOOKS, not in our log -- that is where
+        # money lives now, and it is why the alert can no longer mistake one
+        # leg of a hedged market for a losing trade.
+        _led = json.load(open(_pl.LEDGER, encoding="utf-8"))
+        _led["settlements"]["k2"] = {
+            "ticker": c2, "market_result": "yes",
+            "no_count_fp": "40.00", "no_total_cost_dollars": "38.80",
+            "yes_count_fp": "0.00", "yes_total_cost_dollars": "0.00",
+            "revenue": 0, "fee_cost": "0.00",
+            "settled_time": "2026-09-16T14:15:20Z"}
+        with open(_pl.LEDGER, "w", encoding="utf-8") as _fh:
+            json.dump(_led, _fh)
+        os.utime(_pl.LEDGER, (time.time() + 5, time.time() + 5))
         sent = ph.alerts_tick()
         ck(len(sent) == 1 and sent[0].startswith("LOSS") and "$-38.80" in sent[0] and "WHY IT HURTS" in sent[0], "a new losing close is sent with its story")
         ck(ph.alerts_tick() == [], "...once")
@@ -531,6 +561,7 @@ def selftest():
         tg.push(333, "/status")
         ph.poll_once()
         ck(tg.sent[-1][0] == 111 and "Commands:" in tg.sent[-1][1] and ph.offset == 3, "poll: the paired chat gets its reply, the stranger nothing, offset advances")
+    _pl.LEDGER = _pl_sv
     print("pinphone selftest: OK")
 
 

@@ -187,6 +187,59 @@ class Ledger:
         self.newest = None
         self.newest_rows = []      # every row of the newest file (for open positions)
 
+    def _load_kalshi(self):
+        """Settled MONEY, one row per MARKET, from Kalshi's own books.
+
+        `results/kalshi_ledger.json` is written by `research/pinledger.py`,
+        which reads `/portfolio/settlements`. Everything here is the
+        exchange's: what it paid, what both sides cost, what it charged. A
+        market we hedged is ONE row with the net, not two legs that each look
+        like a separate trade.
+
+        If the cache is missing or unreadable the app shows no settlements
+        rather than falling back to the logs -- a wrong number displayed
+        confidently is what this replaced.
+        """
+        try:
+            import pinledger
+        except ImportError:
+            return False
+        try:
+            mtime = os.path.getmtime(pinledger.LEDGER)
+        except OSError:
+            return False
+        if mtime == getattr(self, "_kalshi_mtime", None):
+            return False
+        self._kalshi_mtime = mtime
+        # PASS THE PATH. `load_cache(path=LEDGER)` binds its default at import,
+        # so pointing `pinledger.LEDGER` somewhere else changes the mtime check
+        # here and NOT the file actually read -- the two would silently
+        # disagree, which is how the self-test read the real account's books
+        # while believing it had been isolated.
+        rows = pinledger.load_cache(pinledger.LEDGER)
+        out = []
+        for s in rows.values():
+            tk = s.get("ticker") or ""
+            st = s.get("settled_time") or ""
+            out.append({
+                "t": parse_t(st[:19] + "Z" if len(st) > 19 else st),
+                "tk": tk,
+                "pnl": pinledger.pnl(s),
+                "cost": None,
+                "want": s.get("market_result"),
+                "result": s.get("market_result"),
+                "close": pinflat.close_epoch(tk),
+                "file": "kalshi",
+                "hedged": (pinledger.money(s, "yes_count_fp") > 0
+                           and pinledger.money(s, "no_count_fp") > 0),
+                "book": "oil" if tk.split("-")[0] in (
+                    "KXGOLD15M", "KXWTI15M", "KXSILVER15M",
+                    "KXCOPPER15M", "KXNATGAS15M") else "crypto",
+            })
+        out.sort(key=lambda s: s["t"] or 0)
+        self.settled = out
+        return True
+
     def refresh(self):
         # BOTH LIVE BOTS. Added 2026-09-18: the commodity bot writes to
         # cmdlive-*.jsonl and NOTHING read it, so the desktop app and the
@@ -230,8 +283,10 @@ class Ledger:
                     self.newest_rows.append(r)
             self.files[p] = done + cut + 1
             changed = True
-        if changed:
-            self.settled.sort(key=lambda s: s["t"] or 0)
+        # Money comes from Kalshi, and it replaces self.settled wholesale --
+        # the log pass above contributes signals, orders and gates only.
+        if self._load_kalshi():
+            changed = True
         return changed
 
     def _ingest(self, r, path):
@@ -239,17 +294,16 @@ class Ledger:
         t = parse_t(r.get("t"))
         f = os.path.basename(path)
         if k == "settled":
-            try:
-                pnl = float(r.get("pnl_c") or 0) / 100.0
-            except (TypeError, ValueError):
-                return
-            tk = r.get("ticker")
-            self.settled.append({"t": t, "tk": tk, "pnl": pnl, "cost": r.get("cost"),
-                                 "want": r.get("want"), "result": r.get("result"),
-                                 "close": pinflat.close_epoch(tk), "file": f,
-                                 # which bot this came from, so a total can be
-                                 # split and nothing is silently merged away
-                                 "book": "oil" if f.startswith("cmdlive") else "crypto"})
+            # DELIBERATELY IGNORED. Money now comes from Kalshi's own
+            # settlements (`_load_kalshi`), never from our logs. The logs
+            # record one line PER LEG, and a hedged market has two -- so this
+            # path reported `KXDOGE15M-26SEP180015-15` as a -$3.93 LOSS (the
+            # 11c YES hedge leg, alone) on a market that Kalshi settled at
+            # +$4.36. It also double-counted days, missed the positions that
+            # were open when a process was killed, and had no idea the
+            # commodity bot existed. A tool that reports legs cannot report a
+            # day. See pinledger.py.
+            return
         elif k == "order":
             try:
                 filled = float(r.get("filled") or 0)
@@ -462,17 +516,23 @@ class Ledger:
                     m["price"] = (float(m["price"]) * n0 + float(g["price"]) * n1) / (n0 + n1)
                 m["n"] = n0 + n1
         for g in merged.values():
+            # THE VERDICT IS NOW READ FROM THE MARKET, NOT THE LEGS. Money
+            # comes from Kalshi as ONE row per market, so there is no longer a
+            # separate "hedge leg" P&L to look up -- and that is the honest
+            # view anyway: what a hedge cost or saved is the difference between
+            # the market's net and what the unhedged bet would have paid.
+            # `market_result` tells us which way it went; the hedge was NEEDED
+            # when the side we originally held is the side that LOST.
             legs = [s for s in self.settled if s["tk"] == g["tk"]]
-            side = g.get("side")
-            hedge_legs = [s for s in legs if s["want"] == side]
-            bet_legs = [s for s in legs if s["want"] != side]
-            bet_pnl = sum(s["pnl"] for s in bet_legs) if bet_legs else None
-            hedge_pnl = sum(s["pnl"] for s in hedge_legs) if hedge_legs else None
+            side = g.get("side")                 # the side the HEDGE bought
+            net = sum(s["pnl"] for s in legs) if legs else None
+            res = next((s.get("result") for s in legs if s.get("result")), None)
             verdict = None
-            if bet_pnl is not None:
-                verdict = "NEEDED" if bet_pnl < 0 else "WASTED"
-            out.append(dict(g, bet_pnl=bet_pnl, hedge_pnl=hedge_pnl, verdict=verdict,
-                            net=(bet_pnl or 0) + (hedge_pnl or 0) if bet_pnl is not None else None))
+            if res:
+                # the hedge bought `side`; it was needed if `side` won
+                verdict = "NEEDED" if str(res).lower() == str(side).lower() else "WASTED"
+            out.append(dict(g, bet_pnl=None, hedge_pnl=None, verdict=verdict,
+                            net=net, result=res))
         return out
 
     # ---- market activity ----
@@ -647,12 +707,19 @@ def story_hedge(ledger, g):
     lines.append("WHY: if the bet then loses, the %s contracts pay $1.00 each and cover part of the loss. If the bet wins anyway, "
                  "the insurance is lost -- a small cost for a big saving when it is needed. It recovers about a third of a loss on average." % side)
     lines.append("")
+    # The market's NET is all we can honestly quote now: Kalshi settles a
+    # hedged market as one row, so there is no separate "what the bet alone
+    # did" to compare against. Splitting it was how the old tool reported a
+    # hedge leg as its own losing trade.
+    net = g.get("net")
     if g["verdict"] == "NEEDED":
-        lines.append("HOW IT WENT: NEEDED. The bet did lose (%s) and the insurance paid %s, so the close finished at %s instead of %s."
-                     % (money(g["bet_pnl"]), money(g["hedge_pnl"]), money(g["net"]), money(g["bet_pnl"])))
+        lines.append("HOW IT WENT: NEEDED. The side the bot originally held did lose, and the insurance covered part of it. "
+                     "The market finished at %s, which is better than the unhedged bet would have paid."
+                     % (money(net) if net is not None else "not settled yet"))
     elif g["verdict"] == "WASTED":
-        lines.append("HOW IT WENT: WASTED, this time. The bet held and made %s; the insurance cost %s; net %s. That is the premium "
-                     "for being covered when it does flip." % (money(g["bet_pnl"]), money(g["hedge_pnl"]), money(g["net"])))
+        lines.append("HOW IT WENT: WASTED, this time. The original bet held, so the insurance expired worthless. "
+                     "The market still finished at %s. That is the premium for being covered when it does flip."
+                     % (money(net) if net is not None else "not settled yet"))
     else:
         lines.append("HOW IT WENT: not settled yet.")
     return "\n".join(lines)
@@ -2147,14 +2214,73 @@ def selftest():
             for r in rows[:-1]:
                 fh.write(json.dumps(r) + "\n")
             fh.write('{"kind": "close_summary", "t": "2026-09-16T10:1')      # cut off mid-line
+        # point the Kalshi ledger at a path that does not exist, so this half
+        # of the test cannot accidentally read the real account's books
+        import pinledger as _pl
+        _sv = _pl.LEDGER
+        _pl.LEDGER = os.path.join(td, "no-such-ledger.json")
         L = Ledger(results=td)
         ck(L.refresh(), "first refresh reads the file")
-        ck(len(L.settled) == 6 and len(L.orders) == 5 and len(L.signals) == 1 and len(L.hedges) == 2 and len(L.closes) == 3,
-           "every kind was ingested")
+        ck(len(L.settled) == 0,
+           "SETTLED MONEY NO LONGER COMES FROM THE LOGS. The logs hold one line "
+           "PER LEG, so a hedged market appeared as two trades and one of them "
+           "as a pure loss -- KXDOGE15M-26SEP180015-15 was shown as -$3.93 (the "
+           "11c hedge leg alone) on a market Kalshi settled at +$4.36")
+        ck(len(L.orders) == 5 and len(L.signals) == 1 and len(L.hedges) == 2 and len(L.closes) == 3,
+           "everything that explains WHY we traded is still read from the logs")
+        # ...and the money comes from Kalshi's books, ONE ROW PER MARKET
+        _lg = os.path.join(td, "kalshi_ledger.json")
+        _pl.LEDGER = _lg
+        try:
+            with open(_lg, "w", encoding="utf-8") as _fh:
+                json.dump({"settlements": {"k1": {
+                    "ticker": "KXDOGE15M-26SEP180015-15", "market_result": "no",
+                    "yes_count_fp": "33.63", "yes_total_cost_dollars": "3.699300",
+                    "no_count_fp": "33.63", "no_total_cost_dollars": "24.886200",
+                    "revenue": 0, "fee_cost": "0.683500",
+                    "settled_time": "2026-09-18T04:15:04Z"}}}, _fh)
+            L2 = Ledger(results=td)
+            L2._kalshi_mtime = None
+            L2.refresh()
+            if not L2.settled:          # same-second mtime on a fast disk
+                L2._kalshi_mtime = None
+                L2._load_kalshi()
+            ck(len(L2.settled) == 1,
+               "a market we HEDGED is ONE row, not two legs")
+            ck(abs(L2.settled[0]["pnl"] - 4.36) < 0.01,
+               "and it carries Kalshi's own net (+$4.36), not the losing leg")
+            ck(L2.settled[0]["hedged"] is True and L2.settled[0]["book"] == "crypto",
+               "it is marked as hedged and attributed to the right book")
+        finally:
+            # back to a path that does NOT exist -- restoring the real one here
+            # would let the rest of this test read the live account's books
+            _pl.LEDGER = os.path.join(td, "no-such-ledger.json")
         ck(L.halts == [], "the truncated tail line is not read, and nothing after it is")
-        s = Ledger.summary(L.settled_on("2026-09-16"))
-        ck(s["closes"] == 3 and s["lost"] == 2 and s["won"] == 1, "RULE 4: c1+c2 are ONE close (lost); c3 never filled so no close; c4 lost net; c5 won net")
-        ck(abs(s["net"] - (1.6626 - 38.80 - 48.50 + 25.00 + 5.00 - 3.00)) < 1e-6, "net adds every leg")
+        # RULE 4 STILL APPLIES, on Kalshi rows now: several MARKETS share one
+        # close, and a day is counted in closes. Built directly, because the
+        # money no longer comes from the log this Ledger just read.
+        L.settled = [
+            {"t": calendar.timegm((2026, 9, 16, 14, 0, 20)), "tk": c1,
+             "pnl": 1.6626, "close": calendar.timegm((2026, 9, 16, 14, 0, 0)),
+             "want": "no", "result": "no", "cost": 0.979, "book": "crypto"},
+            {"t": calendar.timegm((2026, 9, 16, 14, 0, 21)), "tk": c2,
+             "pnl": -38.80, "close": calendar.timegm((2026, 9, 16, 14, 0, 0)),
+             "want": "yes", "result": "no", "cost": 0.97, "book": "crypto"},
+            {"t": calendar.timegm((2026, 9, 16, 14, 30, 20)), "tk": c4,
+             "pnl": -25.00, "close": calendar.timegm((2026, 9, 16, 14, 30, 0)),
+             "want": "yes", "result": "no", "cost": 0.97, "book": "crypto"},
+            {"t": calendar.timegm((2026, 9, 16, 14, 45, 20)), "tk": c5,
+             "pnl": +5.00, "close": calendar.timegm((2026, 9, 16, 14, 45, 0)),
+             "want": "no", "result": "no", "cost": 0.30, "book": "crypto"},
+        ]
+        s = Ledger.summary(L.settled)
+        ck(s["closes"] == 3,
+           "three CLOSES from four markets -- two of them settled on the same "
+           "quarter hour and are one observation, not two (rule 4)")
+        ck(s["lost"] == 2 and s["won"] == 1,
+           "the shared close lost as a whole; so did one other; one won")
+        ck(abs(s["net"] - (1.6626 - 38.80 - 25.00 + 5.00)) < 1e-6,
+           "and the net is every market's own P&L added up")
         ck(s["avg_win"] is not None and s["avg_loss"] is not None and s["avg_loss"] < 0 < s["avg_win"], "average win and loss are signed the right way")
         ck(L.settled_on("2026-09-15") == [] and L.settled_on("2026-09-17") == [], "nothing leaks into the neighbouring ET days")
         fs = Ledger.fill_stats(L.orders)
@@ -2166,14 +2292,39 @@ def selftest():
             fh.write("$450.00  (what I actually put in)\n")
         ck(L.deposited() == 450.0, "results\\DEPOSITED.txt overrides the reconstruction with the operator's own figure")
         os.remove(os.path.join(td, "DEPOSITED.txt"))
+        # bank_at walks the bank reading forward through settlements. Give it
+        # two of its own, since the money no longer arrives from the log.
+        _keep = L.settled
+        L.settled = [
+            {"t": calendar.timegm((2026, 9, 16, 14, 0, 20)), "tk": c1,
+             "pnl": 1.6626, "close": 100, "book": "crypto"},
+            {"t": calendar.timegm((2026, 9, 16, 14, 0, 50)), "tk": c2,
+             "pnl": -38.80, "close": 100, "book": "crypto"},
+        ]
         ck(abs(L.bank_at(calendar.timegm((2026, 9, 16, 14, 1, 0))) - (500.0 + 1.6626 - 38.80)) < 1e-6,
            "bank at 14:01Z = reading + the two settlements since")
         ck(abs(L.bank_at(calendar.timegm((2026, 9, 16, 4, 0, 0))) - 500.0) < 1e-6,
            "bank at the ET day start (before the first reading) falls back to deposited + settlements so far")
+        L.settled = _keep
+        # The hedge verdict now reads the MARKET, because Kalshi settles a
+        # hedged market as one row. Give it two markets to read.
+        _k2 = L.settled
+        L.settled = [
+            # c4: the hedge bought NO and NO won -> the original bet flipped
+            {"t": 1, "tk": c4, "pnl": -23.50, "close": 100, "result": "no", "book": "crypto"},
+            # c5: the hedge bought NO and YES won -> the original bet held
+            {"t": 2, "tk": c5, "pnl": +2.00, "close": 300, "result": "yes", "book": "crypto"},
+        ]
         ho = L.hedge_outcomes()
-        ck(len(ho) == 2 and ho[0]["verdict"] == "NEEDED" and abs(ho[0]["bet_pnl"] + 48.5) < 1e-9 and abs(ho[0]["hedge_pnl"] - 25.0) < 1e-9,
-           "hedge 1: the bet flipped, the insurance paid -> NEEDED, bet -$48.50, hedge +$25.00")
-        ck(ho[1]["verdict"] == "WASTED" and abs(ho[1]["net"] - (5.0 - 3.0)) < 1e-9, "hedge 2: the bet held -> WASTED, net +$2.00")
+        ck(len(ho) == 2, "one entry per hedged market, however many tries it took")
+        by = {h["tk"]: h for h in ho}
+        ck(by[c4]["verdict"] == "NEEDED" and abs(by[c4]["net"] + 23.50) < 1e-9,
+           "the hedge bought NO and NO won -> NEEDED; the market netted -$23.50 "
+           "and would have been worse unhedged")
+        ck(by[c5]["verdict"] == "WASTED" and abs(by[c5]["net"] - 2.00) < 1e-9,
+           "the hedge bought NO and YES won -> WASTED; the market still netted "
+           "+$2.00 because the original bet carried it")
+        L.settled = _k2
         act = L.activity(last_n=2)
         ck(act["level"] in ("QUIET", "NORMAL", "BUSY") and act["recent"] is not None, "activity level is one of three words")
         ck(Ledger.why_no_trade(L.closes[0]) == "BOUGHT", "a fired close says BOUGHT")
@@ -2192,11 +2343,16 @@ def selftest():
         ck("AGAINST the side it held" in lost_story and "$-38.80" in lost_story, "a losing bet's story says so, with the money")
         hedged_story = story_settled(L, [s for s in L.settled if s["tk"] == c4 and s["want"] == "yes"][0])
         ck("INSURANCE" in hedged_story and "NEEDED" in hedged_story, "a hedged bet's story carries the insurance verdict")
-        leg_story = story_settled(L, [s for s in L.settled if s["tk"] == c4 and s["want"] == "no"][0])
-        ck("INSURANCE LEG" in leg_story, "the hedge leg's own row explains it is the insurance")
+        # There is no longer a separate "hedge leg" row to tell a story about:
+        # Kalshi settles a hedged market as ONE row, which is the honest unit
+        # and the whole reason the tool stopped reporting -$3.93 on a market
+        # that made +$4.36.
+        ck(not [x for x in L.settled if x["tk"] == c4 and x["want"] == "no"],
+           "a hedged market has ONE row, so there is no orphan insurance leg "
+           "masquerading as its own losing trade")
         hs = story_hedge(L, ho[0])
-        ck("belief" in hs and "NEEDED" in hs and "$+25.00" in hs, "a hedge's story: why, and how it went")
-        ck("WASTED" in story_hedge(L, ho[1]), "a wasted hedge says so")
+        ck("belief" in hs and ho[0]["verdict"] in hs,
+           "a hedge's story still says why it fired and how it went")
         cs = story_close(L, L.closes[1])
         ck("nobody was selling" in cs and "no trade" in cs, "a quiet quarter-hour's story says nobody was selling")
         ck("bought 125 contracts" in story_close(L, L.closes[0]), "a bought quarter-hour's story says how many")
@@ -2208,9 +2364,13 @@ def selftest():
         ck("lost $" in ls_ and "WHY IT HURTS" in ls_, "a loss story lists the legs and why it matters")
         with open(p, "a", encoding="utf-8") as fh:
             fh.write("\n" + json.dumps(rows[-1]) + "\n")
-        ck(L.refresh() and len(L.halts) == 1 and len(L.settled) == 6,
-           "an appended record is picked up incrementally without re-reading the rest")
+        _before = len(L.settled)
+        ck(L.refresh() and len(L.halts) == 1 and len(L.settled) == _before,
+           "an appended LOG record is picked up incrementally, and it does not "
+           "touch the settled money -- that comes from Kalshi and only changes "
+           "when the ledger file does")
         ck(not L.refresh(), "NULL: nothing new -> nothing read")
+        _pl.LEDGER = _sv
 
         base = {"pid": 1, "alive": True, "flag": None, "quiet_s": 30, "watchdog_s": 10, "open": {}, "halt": None}
         ck(status_of(dict(base))[0] == "TRADING", "alive, quiet 30 s, no flag -> TRADING")
