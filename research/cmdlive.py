@@ -138,9 +138,32 @@ HEARTBEAT = os.path.join(RESULTS, "cmdlive.heartbeat")
 # so it rests on the candle being nearly formed rather than on any story about
 # why the market misprices reversion.
 LIVE_SERIES = ("KXWTI15M",)
-# Live never trades earlier than this, whatever window fires. wti-near spans
-# 2-60 s in the paper arm; live takes only its last 15 seconds.
-LIVE_MAX_TAU = 15
+# RAISED 15 -> 30 on 2026-09-18, operator: "Okay just do 16-30 93c+ then do a
+# paper arm for 2-30. Increase to $20."
+#
+# The 0-15 s window was chosen from a mechanism story -- inside 15 seconds the
+# one-minute candle is nearly formed -- and `research/oilband.py` measured the
+# story wrong. Walking 147,401 WTI takers over 287 settled closes, counted by
+# CLOSE and not by trade, oil is better between 16 and 30 seconds than inside
+# 15 AT EVERY PRICE THEY SHARE:
+#     0-15 s  95-97c  55 closes  1 lost (1.82%)  break-even 3.73%  +2.79c
+#     16-30 s 95-97c  41 closes  0 lost (0.00%)  break-even 3.73%  +3.54c
+#     0-15 s  93-95c  43 closes  3 lost (6.98%)  break-even 5.61%  FAILS
+#     16-30 s 93-95c  47 closes  1 lost (2.13%)  break-even 5.61%  +5.05c
+#
+# So the clock and the price floor INTERACT: under 95c is dangerous inside 15
+# seconds and safe between 16 and 30. The old rule had the worse half of the
+# clock and a floor that excluded the best cell.
+#
+# Dollars over those three days at $10 a bet, stressed at 2x/3x/5x the tape
+# loss rate, because a tape offer is not a fill (rule 5, the 31x):
+#     2-15  95-99c (the old rule)  $13   $8   $4   -$5
+#     2-30  93-97c                 $32  $27  $22   $13
+#     2-45  93-97c                 $33  $20   $7  -$17
+#     16-30 93-99c (this one)      $29  $28  $27   $24
+# The rules that look best on tape are the ones that collapse. This one holds
+# one loss in 86 closes, and multiplying one loss by five is still one loss.
+LIVE_MAX_TAU = 30
 
 # WINDOWS ALLOWED LIVE, by label. Narrowed 2026-09-17 ~21:3xZ to the CLOSE band
 # only, on the operator's read: "it wasn't very solid on the far band. You
@@ -163,7 +186,11 @@ LIVE_MAX_TAU = 15
 #
 # The far windows keep running in `cmdarm` (paper), so we keep learning about
 # them without paying for the lesson.
-LIVE_WINDOWS = ("wti-near",)
+# SWITCHED 2026-09-18 from wti-near (2-60 s, 95-99c, live-capped to 15 s) to
+# wti-sweet (16-30 s, 93-99c). The band itself carries the 16 s floor, and
+# LIVE_MAX_TAU above carries the 30 s ceiling, so the two agree by
+# construction rather than by comment.
+LIVE_WINDOWS = ("wti-sweet",)
 # The widest window any live commodity series uses, handed to pintake per call.
 # Its shipped rail is 90 s (right for the crypto bot); the commodity edge sits
 # at 91-180 s. pintake refuses anything past what is asked, and past its own
@@ -539,9 +566,14 @@ def selftest():
        "came from, and its live sample is six bets")
     ck(guard(s, series="KXGOLD15M", window="anti-silver-mid", **ok_args),
        "NULL: a window labelled 'anti' is a deliberate loser and never goes live")
-    ck(guard(s, series="KXWTI15M", window="wti-near", **ok_args) == [],
-       "LIVE IS ONE CELL: WTI's near window, and only its last 15 seconds -- "
-       "186 tape markets, 1 loss, against a ~3% break-even")
+    ck(guard(s, series="KXWTI15M", window="wti-sweet", **ok_args) == [],
+       "LIVE IS ONE CELL: WTI's SWEET window, 16-30 s at 93-99c -- 86 tape "
+       "closes, 1 loss, against a break-even between 0.5% and 5.6% depending "
+       "where in the band the ask sits")
+    ck(guard(s, series="KXWTI15M", window="wti-near", **ok_args),
+       "and the old 0-15 s window is now PAPER-ONLY: oilband measured it worse "
+       "than 16-30 s at every price they share, and it is the only rule on the "
+       "board that goes NEGATIVE if our fills are five times worse than the tape")
     ck(guard(s, series="KXGOLD15M", window="gold-near", **ok_args)
        and guard(s, series="KXGOLD15M", window="gold-far", **ok_args)
        and guard(s, series="KXWTI15M", window="wti-far", **ok_args)
@@ -551,11 +583,15 @@ def selftest():
        "from a bad one, so each has to earn its way back")
     ck(guard(s, series="KXWTI15M", window="wti-near",
              tau=LIVE_MAX_TAU + 1, price=0.96, count=1.0, balance=500.0),
-       "NULL: the same window one second too early is refused -- live takes "
-       "only the last %d s of a window the paper arm runs to 60" % LIVE_MAX_TAU)
-    ck(guard(s, series="KXWTI15M", window="wti-near",
+       "NULL: one second too early is refused -- live stops at %d s"
+       % LIVE_MAX_TAU)
+    ck(guard(s, series="KXWTI15M", window="wti-sweet",
              tau=LIVE_MAX_TAU, price=0.96, count=1.0, balance=500.0) == [],
        "...and exactly at the boundary it trades")
+    ck(LIVE_MAX_TAU == 30,
+       "the live ceiling is 30 s, matching the measured cell -- a ceiling that "
+       "disagreed with the band would silently trade a different rule than the "
+       "one the evidence is about")
     ck(all(w in [cmdarm.label(b) for v in cmdarm.BANDS.values() for b in v]
            for w in LIVE_WINDOWS),
        "every live window label actually exists in cmdarm.BANDS -- a typo here "

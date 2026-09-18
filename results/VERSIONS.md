@@ -1,3 +1,69 @@
+# v-oilsweet -- 2026-09-18 ~15:4xZ -- LIVE: oil moves to 16-30 s at 93-99c, and to $20
+
+**Operator: "Okay just do 16-30 93c+ then do a paper arm for 2-30. Increase to
+$20."** `cmdlive` now runs `LIVE_WINDOWS = ("wti-sweet",)`, `LIVE_MAX_TAU = 30`,
+launched with `--size 20`.
+
+## Why the old window was wrong
+
+The 0-15 s rule came from a MECHANISM STORY -- inside 15 seconds the one-minute
+settlement candle is nearly formed -- and `research/oilband.py` measured the
+story wrong. It walked **147,401 WTI takers over 287 settled closes**, counted
+by CLOSE and not by trade (rule 4), and oil is better between 16 and 30 seconds
+than inside 15 **at every price they share**:
+
+| seconds | price | closes | lost | break-even | c/contract |
+|---|---|---|---|---|---|
+| 0-15 | 95-97c | 55 | 1 (1.82%) | 3.73% | +2.79 |
+| **16-30** | **95-97c** | **41** | **0** | 3.73% | **+3.54** |
+| 0-15 | 93-95c | 43 | 3 (6.98%) | 5.61% | **fails** |
+| **16-30** | **93-95c** | **47** | **1 (2.13%)** | 5.61% | **+5.05** |
+
+So the clock and the price floor INTERACT: under 95c is dangerous inside 15
+seconds and safe between 16 and 30. The old rule had the worse half of the
+clock AND a floor that excluded the best cell.
+
+## Why 93-99c and not the wider clock the operator asked about
+
+He asked whether 2-30 s would beat 16-30 s, since it fires more often. On the
+tape it does -- 73 closes to 57, $32 to $28. But its extra closes carry THREE
+losses instead of one, and losses are what get worse when a tape offer becomes
+a real fill (rule 5, the 31x). Stressed at 2x, 3x and 5x the tape loss rate,
+dollars over those three days at $10 a bet:
+
+| rule | tape | 2x | 3x | 5x |
+|---|---|---|---|---|
+| 2-15 95-99c (the old live rule) | $13 | $8 | $4 | **-$5** |
+| 2-30 93-97c | $32 | $27 | $22 | $13 |
+| 2-45 93-97c | $33 | $20 | $7 | **-$17** |
+| **16-30 93-99c** | **$29** | **$28** | **$27** | **$24** |
+
+The rules that look best on tape are the ones that collapse. This one holds one
+loss in 86 closes, and multiplying one loss by five is still one loss. It also
+answers the volume worry outright: **86 closes, MORE than the 72 the old live
+rule got** -- widening the PRICE band buys the volume back without buying the
+losses.
+
+**Rule 5 stands: this is all tape.** A paper arm on `2:30:0.93:0.99` is running
+alongside (`results/cmdarm-wide230.jsonl`) so the wider clock keeps being
+measured on real fills without being paid for.
+
+## Size $10 -> $20
+
+Operator's instruction. `MAX_CONTRACTS` is 40 and $20 at the 93c floor is 22
+contracts, so the contract ceiling is not binding. The brake is unchanged:
+stops at $25 net down or 4 losses in a day.
+
+## Revert
+
+```powershell
+cd C:\kals-repo
+# research/cmdlive.py: LIVE_WINDOWS = ("wti-near",) and LIVE_MAX_TAU = 15
+# then relaunch with --size 10
+```
+
+---
+
 # v-bank8 -- 2026-09-18 ~07:0xZ -- LIVE: one bet is the bank divided by 8, and the 45-second leg refuses a wide edge
 
 Two changes, both of which REDUCE risk, deployed together on the operator's

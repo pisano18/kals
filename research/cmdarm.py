@@ -229,6 +229,37 @@ SIZE = 100.0                  # contracts per paper bet, fixed: this arm is
 MAX_PER_CLOSE = 1             # one paper bet per market per close
 
 
+def parse_window(spec):
+    """'2:30:0.93:0.99' -> a band tuple, or die loudly.
+
+    Refuses rather than guessing: a window silently parsed wrong would run a
+    paper arm on a cell nobody chose and report it under a name that means
+    something else.
+    """
+    parts = str(spec).split(":")
+    if len(parts) != 4:
+        raise SystemExit("--only-window wants LO:HI:PLO:PHI, got %r" % (spec,))
+    try:
+        lo, hi = int(parts[0]), int(parts[1])
+        plo, phi = float(parts[2]), float(parts[3])
+    except ValueError:
+        raise SystemExit("--only-window: seconds must be whole, prices "
+                         "decimal, got %r" % (spec,))
+    if not (0 <= lo < hi <= 600):
+        raise SystemExit("--only-window: need 0 <= LO < HI <= 600, got %d:%d"
+                         % (lo, hi))
+    # PRICES ARE DOLLARS HERE, NEVER CENTS (hard rule 5: the unit is decided
+    # once, not inferred from the magnitude). 93 would silently become a floor
+    # no ask can clear and the arm would trade nothing, looking like a dead
+    # cell rather than a typo.
+    if not (0.0 < plo < phi <= 1.0):
+        raise SystemExit("--only-window: prices are DOLLARS (0.93, not 93) "
+                         "and need 0 < PLO < PHI <= 1, got %s:%s"
+                         % (parts[2], parts[3]))
+    return (lo, hi, plo, phi, None, "only-%d-%ds-%.0f-%.0fc"
+            % (lo, hi, 100 * plo, 100 * phi))
+
+
 def decide(best, tau, band, price_lo=None, price_hi=None,
            max_age=MAX_BOOK_AGE_MS, hour=None):
     """(want, price, size) to buy, or None.
@@ -447,6 +478,23 @@ def selftest():
        and w_far[:4] == (121, 180, 0.90, 0.99),
        "WTI: 95-99c to 60 s; 90-95c only 16-45 s; and 121-180 s at 90-99c, "
        "whose 90-95c corner is the best commodity cell found (105 mkts, 3 lost)")
+    # --only-window, for running a second arm on an OVERLAPPING cell.
+    _w = parse_window("2:30:0.93:0.99")
+    ck(_w[:4] == (2, 30, 0.93, 0.99) and label(_w).startswith("only-"),
+       "a window override parses to a band and names itself after the cell")
+    ck(decide(book(yes_ask=0.94), 5, _w) == ("yes", 0.94, 50.0),
+       "...and the 2-30 arm takes at 5 s, which wti-sweet refuses -- that is "
+       "the whole comparison the operator asked for")
+    for _bad in ("2:30:93:99", "30:2:0.9:0.99", "2:30:0.99:0.93", "2:30:0.9"):
+        try:
+            parse_window(_bad)
+            ck(False, "a malformed window must be refused: %r" % _bad)
+        except SystemExit:
+            pass
+    ck(True, "prices in CENTS, a backwards clock, a backwards band and a "
+             "short spec are all REFUSED rather than guessed at -- 93 read as "
+             "a dollar floor would trade nothing and look like a dead cell "
+             "instead of a typo (hard rule 5)")
     ck(label(w_sweet) == "wti-sweet" and w_sweet[:4] == (16, 30, 0.93, 0.99),
        "and 16-30 s at 93-99c, which oilband found beats the LIVE window at "
        "every price it shares with it")
@@ -508,12 +556,26 @@ def main():
     ap.add_argument("--minutes", type=float, default=1440)
     ap.add_argument("--series", nargs="*", default=sorted(BANDS))
     ap.add_argument("--out", default=None)
+    ap.add_argument("--only-window", default=None, metavar="LO:HI:PLO:PHI",
+                    help="Replace the chosen series' bands with this ONE "
+                         "window, e.g. 2:30:0.93:0.99. For running a second "
+                         "arm on a cell that OVERLAPS a band already in the "
+                         "table: put both in one process and the one-per-"
+                         "market rule refuses the second, so the overlapping "
+                         "cell is never measured. A separate process with its "
+                         "own band is the only way to compare them honestly.")
     a = ap.parse_args()
     if a.selftest:
         selftest()
         return 0
     if not os.environ.get("KALS_SELFTESTED"):
         selftest()
+    if a.only_window:
+        w = parse_window(a.only_window)
+        for s in a.series:
+            BANDS[s] = [w]
+        print("  --only-window: %s bands replaced with %s"
+              % (", ".join(a.series), w), flush=True)
 
     log = a.out or os.path.join(
         RESULTS, "cmdarm-%s.jsonl" % time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
