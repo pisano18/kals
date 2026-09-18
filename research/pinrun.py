@@ -3024,9 +3024,13 @@ def _selftest_body():
                "the model merely LEANING the other way is refused -- that is "
                "the 10-18c case, where the market still liked our side and we "
                "paid a premium for nothing five times in twelve")
-            ck(not hedge_normal_ok(0.0, 0.99),
-               "certain but too EXPENSIVE is refused: at 99c the other side "
-               "returns a cent and cannot offset anything")
+            # a tick ABOVE the running ceiling, not the literal 0.99 -- with
+            # --price-ceiling 0.99 that price is inside the ceiling and this
+            # check inverted
+            ck(not hedge_normal_ok(0.0, PRICE_CEILING + 0.005),
+               "certain but too EXPENSIVE is refused: above the %.0fc ceiling "
+               "the other side returns almost nothing and cannot offset "
+               "anything" % (100 * PRICE_CEILING))
             ck(not hedge_normal_ok(None, 0.90) and not hedge_normal_ok(0.0, None),
                "NULL: an unreadable belief or ask refuses rather than firing "
                "insurance on a number nobody has")
@@ -3090,9 +3094,10 @@ def _selftest_body():
         ck(_DEFAULT_PRICE_CEILING == 0.980,
            "the DECLARED ceiling is still 98c; the live 99c comes from the "
            "--price-ceiling flag and is asserted in VERSIONS.md, not here")
-        ck(abs(size_for_bank(800.0) - 100.0) < 1.0,
-           "so an $800 bank asks for about 100 contracts, not the 136 the old "
-           "setting asked for")
+        ck(size_for_bank(800.0) == int(800.0 // (worst_close_cost(1.0) * BANK_BRAKE)),
+           "so an $800 bank asks for %d contracts -- derived from the running "
+           "brake and ceiling, not a literal, against the 136 the old setting "
+           "asked for" % size_for_bank(800.0))
         # AMENDMENT 50: on the EARLY leg a big edge is a warning, not a prize.
         ck(_DEFAULT_EARLY_MAX_EDGE is None,
            "A50 ships OFF, so adding it changed nothing about the live bot -- "
@@ -3544,9 +3549,17 @@ def _selftest_body():
     # ---- AMENDMENT 16: the auto-sizer ------------------------------------
     _sz0 = float(SIZE)
     try:
-        ck(abs(worst_close_cost(20) - 2 * 20 * 0.98) < 1e-12,
+        # DERIVED FROM THE RUNNING CEILING, not the literal 0.98. Hard-coding
+        # it meant --price-ceiling made pinrun fail its own STARTUP self-test,
+        # and on 2026-09-18 that took the live bot down for six minutes: the
+        # flag was applied before the test ran, the test asserted 0.98, the
+        # process wrote "self-test failed -- nothing ran" and exited.
+        ck(abs(worst_close_cost(20) - MAX_PER_CLOSE * 20 * PRICE_CEILING) < 1e-12,
            f"worst_close_cost(20) must be MAX_PER_CLOSE*20*PRICE_CEILING = "
-           f"{2 * 20 * 0.98}, got {worst_close_cost(20)}")
+           f"{MAX_PER_CLOSE * 20 * PRICE_CEILING}, got {worst_close_cost(20)}")
+        ck(_DEFAULT_PRICE_CEILING == 0.980,
+           "and the DECLARED ceiling is 98c -- asserted separately, so a flag "
+           "that moves the running value cannot silently move the bar too")
         ck(abs(worst_close_cost(200) / worst_close_cost(20) - 10.0) < 1e-12,
            "worst_close_cost must be EXACTLY linear in size -- that is the "
            "whole reason it replaced a sampled maximum, which was not")
@@ -3950,11 +3963,18 @@ def _selftest_body():
            "the read sits on the SIGNAL path, which fires a few dozen times a "
            "day, not in the 20 Hz scan loop")
         # the arithmetic of ladder_under, on a planted ladder
-        _lad45 = [[0.95, 100.0], [0.97, 200.0], [0.98, 50.0], [0.99, 9999.0]]
+        # THE LADDER IS PLANTED RELATIVE TO THE RUNNING CEILING so the
+        # arithmetic holds whatever --price-ceiling says: three rungs at or
+        # under it, and one enormous rung a tick above it that must never be
+        # counted as capacity.
+        _c45 = float(PRICE_CEILING)
+        _lad45 = [[_c45 - 0.03, 100.0], [_c45 - 0.01, 200.0],
+                  [_c45, 50.0], [_c45 + 0.01, 9999.0]]
         _under = sum(x[1] for x in _lad45 if x[0] <= PRICE_CEILING + 1e-9)
         ck(_under == 350.0,
-           "ladder_under counts 100+200+50 = 350 at or under the 98c ceiling "
-           "and EXCLUDES the 9,999 sitting at 99c, which we may never buy")
+           "ladder_under counts 100+200+50 = 350 at or under the %.2fc ceiling "
+           "and EXCLUDES the 9,999 sitting a tick above it, which we may never "
+           "buy" % (100 * _c45))
         ck(sum(x[1] for x in _lad45) == 10349.0 and _under < sum(x[1] for x in _lad45),
            "ladder_total is the whole book (10,349) and is always at least "
            "ladder_under -- reporting the total as capacity is how a 99c wall "
@@ -4504,12 +4524,19 @@ def _selftest_body():
         _on46 = 'globals()["EARLY_TAU_MAX"] = ' + "int(a.early_tau)"
         ck(_mn45.count(_on46) == 1 and _mn45.index(_rf46) < _mn45.index(_on46),
            "A46: the only place the window opens sits behind the live refusal")
-        ck(abs(one_coin_cap(94.0, 556.02, 574.79) - 98.15) < 0.05,
-           "A45: bank $556.02 under a $574.79 high leaves $96.19 before the "
-           "20% brake, = 98.15 contracts at the 98c ceiling -- the cap")
-        ck(abs(one_coin_cap(94.0, 574.79, 574.79) - 117.30) < 0.05,
-           "A45: at a fresh high the room is 20% of bank = 117.3 contracts, "
-           "1.25x SIZE, well under the 2.0x multiple")
+        # Both expectations are DERIVED from the running ceiling: the room is
+        # dollars, and dollars buy fewer contracts as the ceiling rises.
+        _room45 = 556.02 - (1.0 - MAX_DRAWDOWN) * 574.79
+        ck(abs(one_coin_cap(94.0, 556.02, 574.79)
+               - _room45 / PRICE_CEILING) < 0.05,
+           "A45: bank $556.02 under a $574.79 high leaves $%.2f before the "
+           "20%% brake, = %.2f contracts at the %.0fc ceiling -- the cap"
+           % (_room45, _room45 / PRICE_CEILING, 100 * PRICE_CEILING))
+        _room45b = 574.79 * MAX_DRAWDOWN
+        ck(abs(one_coin_cap(94.0, 574.79, 574.79)
+               - _room45b / PRICE_CEILING) < 0.05,
+           "A45: at a fresh high the room is 20%% of bank = %.2f contracts, "
+           "well under the 2.0x multiple" % (_room45b / PRICE_CEILING))
         ck(one_coin_cap(94.0, 2000.0, 2000.0) == 188.0,
            "A45: with a big enough bank the multiple binds first (2.0 x 94)")
         ck(one_coin_cap(94.0, 400.0, 574.79) == 94.0,

@@ -220,6 +220,32 @@ EXPERIMENTS = [
                        "agree). Study: results/sigcheck.py, results/sigcheck_out.json.",
     },
     {
+        "name": "Sell the winner early at 99.9c instead of holding (measured, dead)",
+        "status": KILLED, "since": "2026-09-18",
+        "what": "Operator's question: once a position is worth ~99.9c, post a "
+                "resting ask and take the money rather than carrying it to "
+                "settlement.",
+        "why": "It would convert a small tail risk into certainty, and the bot "
+               "has never sold anything -- every position runs to settlement.",
+        "outcome": "THE ARITHMETIC IS REAL BUT TOO THIN TO BUILD FOR. Measured "
+                   "on 36 tape hours: a side that traded at 99c+ inside a "
+                   "minute of the close still flipped 3 times in 1,080 "
+                   "(0.28%), so HOLDING is worth 99.72c. Selling at 99.9c is "
+                   "worth 99.9c, a gain of 0.18c a contract. Liquidity is not "
+                   "the obstacle -- 62% of near-close winning-side volume "
+                   "(1.95M contracts in 24 hours) trades at 99.8c or better, "
+                   "and as a MAKER we would pay no fee. At 77 contracts that "
+                   "is 14c a market, and at today's ~12 signals a day, under "
+                   "$2 a day.",
+        "attribution": "Not built. It needs the first sell path this bot has "
+                       "ever had -- new order state, cancel-before-settlement, "
+                       "and a bug there sells a winner at a bad price. That "
+                       "risk is larger than $2 a day. The usual second reason "
+                       "to exit early (free the capital) does not apply: we "
+                       "are limited by SUPPLY, about 12 signals a day, not by "
+                       "capital or open-position count.",
+    },
+    {
         "name": "Refuse a market where the model reverses itself (measured, dead)",
         "status": KILLED, "since": "2026-09-18",
         "what": "The idea: if the model wants one side early in a quarter-hour "
@@ -350,6 +376,28 @@ EXPERIMENTS = [
         "attribution": "No change deployed. The guard stays at 0.15.",
     },
     # ------------------------------------------------------------------ IDEAS
+    {
+        "name": "Price cap 98c -> 99c (7-day arm)",
+        "status": RUNNING, "match": "--price-ceiling", "since": "2026-09-18",
+        "select": {"price_ceiling": lambda v: v is not None and float(v) > 0.985},
+        "what": "Buys asks up to 99c instead of stopping at 98c. Everything "
+                "else identical to the live bot. Running SEVEN days, not the "
+                "usual 40 closes, on the operator's word: 'This one will "
+                "probably run for some time longer than the others to really "
+                "be sure.'",
+        "why": "The 98c cap has blocked 461 markets and turned away 379 "
+               "would-be winners and ZERO losers (+$122.80 if every one had "
+               "filled). When the band was allowed live it was 82 markets, 1 "
+               "loss, +$51.07 including the loss.",
+        "good": "It earns more per day than the live bot without its loss rate "
+                "passing 1 in 70, which is break-even at 98-99c.",
+        "bad": "A loss at 98.5c takes about 65 wins to earn back where one at "
+               "98c takes 53, so a single extra loss erases weeks of the gain. "
+               "The live margin is 0.2 points on ONE loss -- its upper bound is "
+               "near 5%, which is why this needs a week and not a day.",
+        "watch": "Loss rate in the 98-99c band alone, not the arm's total. The "
+                 "cheaper trades it also takes will swamp the signal otherwise.",
+    },
     {
         "name": "Hedge on the JUMP, not on the belief (A52)",
         "status": RUNNING, "match": "--hedge-jump", "since": "2026-09-18",
