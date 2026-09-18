@@ -9,27 +9,32 @@
   gate            | stopped | closes | only  | really  | of those blocked      | $ if we had
                   |  it     |        | moved | blocked | would WIN / would LOSE|  been filled
   ----------------|---------|--------|-------|---------|-----------------------|-------------
-  close_budget    |     261 |     29 |    62 |     199 |    -   (no price)     |       -
+  close_budget    |     340 |     38 |    78 |     262 |    -   (no price)     |       -
   max_per_close   |       0 |      0 |     0 |       0 |        -              |      -
-  max_per_market  |       3 |      2 |     3 |       0 |    -   (no price)     |       -
-  both_sides      |     112 |    105 |   112 |       0 |    -   (no price)     |       -
-  market_attempts |       8 |      3 |     8 |       0 |    -   (no price)     |       -
+  max_per_market  |       9 |      7 |     9 |       0 |    -   (no price)     |       -
+  both_sides      |     149 |    134 |   149 |       0 |    -   (no price)     |       -
+  market_attempts |      12 |      7 |     8 |       4 |    -   (no price)     |       -
   attempts_cap    |       0 |      0 |     0 |       0 |        -              |      -
   book_suspect    |       0 |      0 |     0 |       0 |        -              |      -
-  book_stale      |      48 |     24 |     3 |      45 |    -   (no price)     |       -
-  index_stale     |       9 |      1 |     0 |       9 |    -   (no price)     |       -
+  book_stale      |      79 |     40 |     3 |      76 |    -   (no price)     |       -
+  index_stale     |      27 |      3 |     0 |      27 |    -   (no price)     |       -
   no_sigma        |       0 |      0 |     0 |       0 |        -              |      -
-  confidence      |     252 |    133 |   132 |     120 |    -   (no price)     |       -
-  no_offer        |    2383 |    288 |    19 |    2364 |    -   (no price)     |       -
-  depth_floor     |     339 |    176 |    31 |     308 |    -   (no price)     |       -
-  edge_floor      |     810 |    236 |    28 |     782 |    -   (no price)     |       -
-  against_thin    |      12 |     12 |     5 |       7 |    -   (no price)     |       -
-  jump_against    |      10 |      8 |     0 |      10 |    -   (no price)     |       -
-  dump_guard      |       7 |      7 |     6 |       1 |    -   (no price)     |       -
+  confidence      |     412 |    208 |   199 |     213 |    -   (no price)     |       -
+  no_offer        |    3283 |    399 |    48 |    3235 |    -   (no price)     |       -
+  depth_floor     |     538 |    261 |    45 |     493 |    -   (no price)     |       -
+  edge_floor      |    1305 |    340 |    61 |    1244 |  1048 / 0             |     +136.51
+  against_thin    |      18 |     18 |     6 |      12 |    10 / 0             |       +5.45
+  jump_against    |      25 |     21 |     1 |      24 |    19 / 0             |       +3.72
+  dump_guard      |       9 |      9 |     8 |       1 |     0 / 1             |      -37.85
   improve_by      |       0 |      0 |     0 |       0 |        -              |      -
-  rebuy_band      |      12 |     12 |    12 |       0 |    -   (no price)     |       -
-  price_ceiling   |     320 |    164 |    48 |     272 |    -   (no price)     |       -
+  rebuy_band      |      19 |     19 |    19 |       0 |    -   (no price)     |       -
+  price_ceiling   |     534 |    247 |    83 |     451 |   379 / 0             |     +122.80
   ev_floor        |       0 |      0 |     0 |       0 |        -              |      -
+  early_once      |      51 |     37 |    51 |       0 |    -   (no price)     |       -
+  staged_none     |       2 |      2 |     1 |       1 |    -   (no price)     |       -
+  early_cheap     |       1 |      1 |     1 |       0 |    -   (no price)     |       -
+  early_wide      |       6 |      6 |     2 |       4 |    -   (no price)     |       -
+  hedge_wait_normal|       0 |      0 |     0 |       0 |        -              |      -
 
   `$ if we had been filled` is an UPPER BOUND, not profit and loss. A
   price showing is not a fill -- we would have been racing for it, and
@@ -64,4 +69,9 @@
     rebuy_band       a same-coin re-buy outside the 0.5-1c band
     price_ceiling    priced above the 98c ceiling
     ev_floor         expected value negative at that price
+    early_once       A46: this market already holds an early leg (31-45 s); only one per market
+    staged_none      A46: the staged leg came to nothing (market already at full size, or under the minimum)
+    early_cheap      A49: the 31-45 s early leg wanted an ask under the 90c floor. Out that far less of the settlement average is locked, so a cheap ask is the market disagreeing with us where the model is weakest
+    early_wide       A50: the 31-45 s early leg found our model MORE than the cap above the market price. Late, that disagreement is the whole edge (6c or more made 1.44 $/bet inside 30 s); early, three quarters of the settlement window has not happened yet and the same band lost 3.01 $/bet, so out there a big edge means our volatility guess is wrong rather than the market
+    hedge_wait_normal A51: insurance held off because the OTHER side was not yet a bet we would make on its own -- our model was not PIN sure of it, or it cost more than the price ceiling. The old rule fired on the model alone and 11 of 12 insured closes still ended negative, five of them paying 10-18c while the market still liked our side
 ```

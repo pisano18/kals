@@ -138,18 +138,86 @@ def load_log(paths):
 
 
 def load_outcomes(markets_json):
-    """{ticker: "yes"/"no"} from the settlement pull."""
+    """{ticker: "yes"/"no"} from EVERY settlement directory, newest winning.
+
+    2026-09-18: this read ONE file, `C:\\kals\\fulltape\\markets.json`, last
+    refreshed on 09-12. A refusal can only be scored if its market's
+    settlement is on file, so EVERY gate's money column read
+    "- (no price)" -- the one column that answers "does this gate prevent
+    losses or only trim volume" was blank for all twenty-seven of them, and
+    the report said nothing was wrong. The fresh settlements were sitting in
+    `fulltape_recent` the whole time.
+
+    This is the SECOND tool to fail this exact way; `pinpickoff` silently
+    stopped at 09-12 for the same reason and four rebuilds were spent blaming
+    the tape. `outcome_coverage()` below exists so the third one cannot.
+    """
     out = {}
-    if not os.path.exists(markets_json):
-        return out
-    with open(markets_json, encoding="utf-8") as fh:
-        d = json.load(fh)
-    for _ser, rows in (d or {}).items():
-        for r in rows or []:
-            res = r.get("result")
-            if res in ("yes", "no"):
-                out[r["ticker"]] = res
+    paths = [markets_json]
+    base = os.path.dirname(markets_json)
+    paths += sorted(glob.glob(os.path.join(base + "_*", "markets.json")))
+    for p in paths:
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, encoding="utf-8") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        for _ser, rows in (d or {}).items():
+            for r in rows or []:
+                res = _result_word(r.get("result"))
+                if res and r.get("ticker"):
+                    out[r["ticker"]] = res
     return out
+
+
+def _result_word(res):
+    """'yes'/'no' from a settlement's `result`, whichever way it is written.
+
+    THE REFRESHED PULL WRITES A NUMBER, THE OLD ONE WROTE A WORD. `fulltape`
+    holds `"result": "yes"`; `fulltape_recent` holds `"result": 1.0`. Testing
+    `res in ("yes", "no")` silently dropped every single fresh settlement, so
+    even after the directory glob was fixed the coverage was 0 of 6,442 and
+    every gate's money column stayed blank.
+
+    NOT a magnitude guess (hard rule 5): 1.0 and 0.0 are the only numbers this
+    field takes, and anything else returns None rather than being rounded into
+    an outcome.
+    """
+    if isinstance(res, str):
+        r = res.strip().lower()
+        return r if r in ("yes", "no") else None
+    if isinstance(res, bool):
+        return "yes" if res else "no"
+    if isinstance(res, (int, float)):
+        if float(res) == 1.0:
+            return "yes"
+        if float(res) == 0.0:
+            return "no"
+    return None
+
+
+def outcome_coverage(refusals, outcomes):
+    """(matched, total, newest ticker with no settlement) over BLOCKED rows.
+
+    A REPORT THAT HAS RUN OUT OF DATA MUST SAY SO. Low coverage is the only
+    thing that distinguishes "these gates turned nothing away" from "we cannot
+    see what they turned away", and those are opposite findings.
+    """
+    have = miss = 0
+    worst = None
+    for r in refusals:
+        tk = r.get("ticker")
+        if not tk:
+            continue
+        if outcomes.get(tk):
+            have += 1
+        else:
+            miss += 1
+            if worst is None or (r.get("t") or "") > (worst[1] or ""):
+                worst = (tk, r.get("t"))
+    return have, have + miss, worst
 
 
 # --------------------------------------------------------------- scoring
@@ -282,6 +350,57 @@ def selftest():
        "the contracts counted are the SMALLER of what was offered and what "
        "the bot was sized for -- taking the larger would inflate every gate "
        "that fired on a thin book")
+    # SETTLEMENTS COME FROM EVERY fulltape DIRECTORY, NEWEST WINNING. Reading
+    # only the base file left every gate's money column blank for six days
+    # while the report claimed nothing was wrong.
+    import tempfile as _tf
+    _td = _tf.mkdtemp()
+    _base = os.path.join(_td, "fulltape")
+    _recent = os.path.join(_td, "fulltape_recent")
+    os.makedirs(_base)
+    os.makedirs(_recent)
+    with open(os.path.join(_base, "markets.json"), "w", encoding="utf-8") as fh:
+        json.dump({"KXBTC15M": [{"ticker": "OLD-1", "result": "yes"},
+                                {"ticker": "BOTH-1", "result": "no"}]}, fh)
+    with open(os.path.join(_recent, "markets.json"), "w", encoding="utf-8") as fh:
+        json.dump({"KXBTC15M": [{"ticker": "NEW-1", "result": "no"},
+                                {"ticker": "BOTH-1", "result": "yes"}]}, fh)
+    _o = load_outcomes(os.path.join(_base, "markets.json"))
+    ck(_o.get("OLD-1") == "yes" and _o.get("NEW-1") == "no",
+       "settlements are read from the base directory AND every fulltape_* "
+       "beside it -- reading only the base is what blanked the money column "
+       "for every one of the bot's gates")
+    ck(_o.get("BOTH-1") == "yes",
+       "...and where they disagree the LATER directory wins, because that is "
+       "the refreshed pull")
+    # THE FRESH PULL WRITES A NUMBER, THE OLD ONE WROTE A WORD.
+    ck(_result_word(1.0) == "yes" and _result_word(0.0) == "no",
+       "a settlement whose result is the NUMBER 1.0 or 0.0 is read -- testing "
+       "only for the words dropped every fresh settlement and left coverage "
+       "at 0 of 6,442 even after the directory glob was fixed")
+    ck(_result_word("Yes") == "yes" and _result_word("no") == "no",
+       "...and the old word form still reads, in any case")
+    ck(_result_word(0.5) is None and _result_word("void") is None
+       and _result_word(None) is None,
+       "NULL: anything that is not plainly one or zero is NOT an outcome, "
+       "rather than being rounded into one (hard rule 5)")
+    with open(os.path.join(_recent, "markets.json"), "w", encoding="utf-8") as fh:
+        json.dump({"KXBTC15M": [{"ticker": "NUM-1", "result": 1.0},
+                                {"ticker": "NUM-0", "result": 0.0}]}, fh)
+    _o2 = load_outcomes(os.path.join(_base, "markets.json"))
+    ck(_o2.get("NUM-1") == "yes" and _o2.get("NUM-0") == "no",
+       "and a real numeric settlement file loads end to end")
+    _h, _t, _w = outcome_coverage(
+        [{"ticker": "OLD-1", "t": "2026-09-10T00:00:00Z"},
+         {"ticker": "GONE-1", "t": "2026-09-17T00:00:00Z"},
+         {"ticker": "GONE-2", "t": "2026-09-12T00:00:00Z"}], _o)
+    ck(_h == 1 and _t == 3,
+       "coverage counts how many refused markets we can actually score")
+    ck(_w and _w[0] == "GONE-1",
+       "...and names the NEWEST one we cannot, which is the one that says how "
+       "stale the settlement pull is")
+    ck(outcome_coverage([], _o) == (0, 0, None),
+       "NULL: no refusals is (0, 0, None), not a fabricated 100% coverage")
     ck(would_be({"price": None, "want": "yes"}, "yes") is None,
        "a refusal with no price is NOT scored -- the early gates fire before "
        "a price exists and inventing one is the whole point thrown away")
@@ -388,6 +507,16 @@ def main():
     outcomes = load_outcomes(a.markets)
     print("  %d logs, %d gate refusals, %d markets ordered, %d settlements"
           % (len(paths), len(refusals), len(bought), len(outcomes)))
+    _have, _tot, _worst = outcome_coverage(refusals, outcomes)
+    _cov = (100.0 * _have / _tot) if _tot else 0.0
+    print("  settlement coverage: %d of %d refused markets (%.0f%%)"
+          % (_have, _tot, _cov))
+    if _cov < 80.0:
+        print("  *** COVERAGE IS LOW. The money column below is blank or "
+              "partial because settlements are MISSING, not because the gates "
+              "turned nothing away. Those are opposite findings. Newest "
+              "unsettled: %s (%s). Refresh with kalshi_fulltape.py. ***"
+              % (_worst or ("?", "?")))
     if not refusals:
         print("pinattrib: loaded nothing -- no gate refusal is on record yet. "
               "AMENDMENT 25 instrumentation only starts recording from the "
