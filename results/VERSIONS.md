@@ -13,18 +13,25 @@ the other side's ask must be over 40c. A hedge bought at 10-27c, when the
 market still gave our side 73-90%, was insurance against a scare; a hedge at
 47-74c is the market confirming the loss.
 
-**Evidence (live fills, every hedge ever placed).** 7 genuine hedges (the two
-`plant_attempt` test trades and two standalone cheap bets excluded):
+**Evidence (live fills, every hedge ever placed).** 9 genuine hedged
+closes (the two `plant_attempt` test trades and two standalone cheap bets
+excluded). The first cut of this table missed the two full-size losses of
+09-14 because it was built from legs under 50c; the operator asked "this
+version better still hedge when I lose", and the answer is in the rows:
 
-| hedge ask | our side's price | closes | helped | hurt | net vs no hedge |
-|---|---|---|---|---|---|
-| under 40c | 73-90c | 5 | 0 | 5 | **-$41.72** |
-| 47c and 74c | 53c, 26c | 2 | 2 | 0 | **+$8.80** |
+| hedge ask | our side's price | closes | primary lost? | helped | hurt | net vs no hedge |
+|---|---|---|---|---|---|---|
+| 10-27c | 73-90c | 5 | no (all false alarms) | 0 | 5 | **-$41.72** |
+| 43c, 47c, 51c, 58c, 74c | 26-57c | 4 | yes, 4 of 4 | 4 | 0 | **+$62.28** |
 
-Total as traded -$32.92 against the primary leg alone. The 0.60 line passes
-both helpers and blocks all five hurters with margin on each side (0.53 vs
-0.72). It is also the same number as the belief trigger, so the rule reads:
-hedge when the model AND the market both put us under 60%.
+The real losses: BTC 09-14 (-$58.43, hedged at 43c and 58c, +$24.18 back),
+HYPE 09-14 (-$59.20, hedged at 51c, +$29.30 back), DOGE 09-18 (-$3.93,
+hedged at 74c, +$8.29), BNB 09-16 (-$0.98, hedged at 47c, +$0.51). Every
+one of those hedges was bought with our side under 60c, so the rule passes
+all four; every false alarm was bought with our side at 73c or more, so the
+rule blocks all five. The margin between the two groups is 57c vs 73c. It is
+also the same number as the belief trigger, so the rule reads: hedge when the
+model AND the market both put us under 60%.
 
 **Pre-registered bar.** Every alarm now writes `hedge_wait_price` when the
 market disagrees. After 20 such waits, score them: if the blocked hedges
