@@ -63,6 +63,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from downtime import et_offset, hours_up_et_day, lost_by_et_day     # noqa: E402
 import pinflat                                                       # noqa: E402
+import pinlab                                                        # noqa: E402
 
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
@@ -1648,6 +1649,18 @@ def run_gui():
         tk.Radiobutton(ch_bar, text=txt, variable=range_var, value=val, command=lambda: draw_chart(),
                        bg=C["bg"], fg=C["text"], selectcolor=C["panel2"], activebackground=C["bg"],
                        activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(6, 0))
+    # THE READOUT. It used to be a 9pt tooltip chasing the mouse in the corner
+    # of the canvas, which is the hardest place on the screen to read. Now it is
+    # a fixed line under the controls: the headline number when the mouse is
+    # away, and whatever the mouse is over when it is on the chart.
+    ch_read = tk.Frame(days_tab, bg=C["panel"], padx=14, pady=8)
+    ch_read.pack(fill="x", padx=2, pady=(0, 2))
+    ch_big = tk.Label(ch_read, text="", bg=C["panel"], fg=C["text"],
+                      font=("Segoe UI", 22, "bold"), anchor="w")
+    ch_big.pack(side="left")
+    ch_sub = tk.Label(ch_read, text="", bg=C["panel"], fg=C["muted"],
+                      font=("Segoe UI", 11), anchor="w", justify="left")
+    ch_sub.pack(side="left", padx=(16, 0))
     chart = tk.Canvas(days_tab, bg=C["panel"], highlightthickness=0, height=240)
     chart.pack(fill="both", expand=True, padx=2, pady=(0, 6))
     chart_pts = {"pts": [], "kind": "line"}
@@ -1672,6 +1685,126 @@ def run_gui():
     f_sys.pack(fill="both", expand=True, padx=2, pady=(8, 4))
     sys_foot = tk.Label(sys_tab, text="", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9), justify="left", anchor="w")
     sys_foot.pack(fill="x", pady=(0, 6))
+
+    # LAB tab -- the drawing board. Content lives in research/pinlab.py.
+    lab_tab = ttk.Frame(nb)
+    nb.add(lab_tab, text="  Lab  ")
+    lab_head = tk.Frame(lab_tab, bg=C["panel"], padx=14, pady=10)
+    lab_head.pack(fill="x", pady=(8, 4))
+    lab_count = tk.Label(lab_head, text="", bg=C["panel"], fg=C["text"],
+                         font=("Segoe UI", 16, "bold"))
+    lab_count.pack(side="left")
+    lab_note = tk.Label(lab_head, bg=C["panel"], fg=C["muted"], font=("Segoe UI", 10),
+                        justify="left", anchor="w",
+                        text="Everything we are trying, everything we shipped, and everything "
+                             "that died. The dead ones are kept on purpose --\nhalf of what we "
+                             "know came from ideas that looked good and were not.")
+    lab_note.pack(side="left", padx=16)
+    register(lab_head, "lab", "The drawing board")
+    lab_filter = tk.Frame(lab_tab, bg=C["bg"])
+    lab_filter.pack(fill="x", padx=2)
+    lab_which = tk.StringVar(value="ALL")
+    lab_body = tk.Text(lab_tab, bg=C["panel"], fg=C["text"], font=("Segoe UI", 10),
+                       relief="flat", wrap="word", padx=14, pady=10)
+    lab_body.pack(fill="both", expand=True, padx=2, pady=(4, 6))
+    for _w, _v in (("All", "ALL"), ("Running", pinlab.RUNNING), ("Shipped", pinlab.SHIPPED),
+                   ("Killed", pinlab.KILLED), ("Ideas", pinlab.IDEA)):
+        tk.Radiobutton(lab_filter, text=_w, variable=lab_which, value=_v,
+                       command=lambda: draw_lab(), bg=C["bg"], fg=C["text"],
+                       selectcolor=C["panel2"], activebackground=C["bg"],
+                       activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+
+    def lab_whatif(logname):
+        """What this arm would have done to the REAL account since it started."""
+        if not logname:
+            return None
+        try:
+            path = os.path.join(ledger.results, logname)
+            arm_pts, arm_ct = pinlab.arm_series(path)
+            if not arm_pts:
+                return None
+            live_pts = [(s["t"], s["pnl"]) for s in ledger.settled if s.get("t")]
+            live_pts.sort()
+            t0 = arm_pts[0][0]
+            live_ct = sum(float(o.get("filled") or 0) for o in ledger.orders
+                          if (o.get("t") or 0) >= t0)
+            return pinlab.whatif(arm_pts, arm_ct, live_pts, live_ct)
+        except Exception:                                         # noqa: BLE001
+            return None
+
+    def draw_lab():
+        lab_body.configure(state="normal")
+        lab_body.delete("1.0", "end")
+        # which arms are alive right now. One PowerShell call, and a failure
+        # here must never blank the page -- the catalogue is still worth reading
+        # when the process list is unavailable.
+        cmds = []
+        try:
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+                 "ForEach-Object { $_.CommandLine }"],
+                capture_output=True, text=True, timeout=8,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            cmds = [l for l in (out.stdout or "").splitlines() if l.strip()]
+        except Exception:                                         # noqa: BLE001
+            cmds = []
+        try:
+            prog = pinlab.live_progress(cmdlines=cmds)
+        except Exception:                                         # noqa: BLE001
+            prog = {}
+        c = pinlab.counts()
+        lab_count.configure(text="%d running   %d shipped   %d killed   %d ideas"
+                            % (c[pinlab.RUNNING], c[pinlab.SHIPPED],
+                               c[pinlab.KILLED], c[pinlab.IDEA]))
+        want = lab_which.get()
+        order = {pinlab.RUNNING: 0, pinlab.IDEA: 1, pinlab.SHIPPED: 2,
+                 pinlab.KILLED: 3, pinlab.PAUSED: 4}
+        for e in sorted(pinlab.EXPERIMENTS, key=lambda x: order.get(x["status"], 9)):
+            if want != "ALL" and e["status"] != want:
+                continue
+            lab_body.insert("end", "%s   " % e["name"], "name")
+            lab_body.insert("end", "%s\n" % e["status"], e["status"])
+            p = prog.get(e.get("match") or "", {})
+            if p.get("settled"):
+                lab_body.insert("end", "   SO FAR: %d settled, %d won, %d lost, %s%s\n"
+                                % (p["settled"], p["won"], p["lost"], money(p["net"]),
+                                   "" if p.get("running") else "   (not running now)"), "prog")
+                w = lab_whatif(p.get("log"))
+                if w:
+                    verdict = ("BETTER by %s" % money(abs(w["diff"]))) if w["diff"] > 0 \
+                        else ("WORSE by %s" % money(abs(w["diff"])))
+                    lab_body.insert(
+                        "end",
+                        "   IF IT HAD BEEN LIVE since it started: it would have made %s "
+                        "where we actually made %s -- %s.\n"
+                        "      (its money per contract, applied to the contracts we really "
+                        "traded, so this compares the STRATEGY and not the stake)\n"
+                        % (money(w["arm_net"]), money(w["live_net"]), verdict), "whatif")
+            elif e["status"] == pinlab.RUNNING:
+                lab_body.insert("end", "   SO FAR: %s\n"
+                                % ("running, nothing settled yet" if p.get("running")
+                                   else "NOT RUNNING"), "prog")
+            for label, k in (("WHAT IT DOES", "what"), ("WHY", "why"),
+                             ("GOOD LOOKS LIKE", "good"), ("BAD LOOKS LIKE", "bad"),
+                             ("WHAT TO WATCH", "watch"), ("WHAT HAPPENED", "outcome"),
+                             ("WHAT IT WAS WORTH", "attribution"), ("WHERE IT IS", "where")):
+                if e.get(k):
+                    lab_body.insert("end", "   %s: " % label, "label")
+                    lab_body.insert("end", "%s\n" % e[k])
+            if e.get("since"):
+                lab_body.insert("end", "   since %s\n" % e["since"], "prog")
+            lab_body.insert("end", "\n")
+        lab_body.tag_configure("name", font=("Segoe UI", 11, "bold"), foreground=C["text"])
+        lab_body.tag_configure("label", font=("Segoe UI", 9, "bold"), foreground=C["muted"])
+        lab_body.tag_configure("prog", foreground=C["watch"], font=("Segoe UI", 9))
+        lab_body.tag_configure("whatif", foreground=C["gain"], font=("Segoe UI", 9))
+        lab_body.tag_configure(pinlab.RUNNING, foreground=C["gain"], font=("Segoe UI", 9, "bold"))
+        lab_body.tag_configure(pinlab.SHIPPED, foreground=C["gain"], font=("Segoe UI", 9, "bold"))
+        lab_body.tag_configure(pinlab.KILLED, foreground=C["loss"], font=("Segoe UI", 9, "bold"))
+        lab_body.tag_configure(pinlab.IDEA, foreground=C["watch"], font=("Segoe UI", 9, "bold"))
+        lab_body.tag_configure(pinlab.PAUSED, foreground=C["muted"], font=("Segoe UI", 9, "bold"))
+        lab_body.configure(state="disabled")
 
     # LOG tab
     log_tab = ttk.Frame(nb)
@@ -1769,6 +1902,24 @@ def run_gui():
         chart.delete("all")
         kind, pts, unit = chart_series()
         chart_pts["pts"], chart_pts["kind"] = pts, kind
+        # THE HEADLINE, shown whenever the mouse is not on the chart.
+        MODE_WORDS = {"cum": ("Money made, all time", "every settled market added up"),
+                      "bank": ("Bank now", "what is in the account"),
+                      "day": ("Best day", "money made on the strongest day in range"),
+                      "daypct": ("Best day", "return on the bank that day")}
+        if pts:
+            last = pts[-1][1]
+            if mode_var.get() in ("cum", "bank"):
+                big = ("$%+.2f" % last) if mode_var.get() == "cum" else ("$%.2f" % last)
+            else:
+                best = max(pts, key=lambda p: p[1])
+                big = ("$%+.2f" % best[1]) if mode_var.get() == "day" else ("%+.2f%%" % best[1])
+            w = MODE_WORDS.get(mode_var.get(), ("", ""))
+            chart_pts["headline"] = (big, "%s -- %s. Hover the chart for any single day."
+                                     % (w[0], w[1]))
+        else:
+            chart_pts["headline"] = ("", "")
+        chart_rest()
         if len(pts) < (2 if kind == "line" else 1):
             chart.create_text(20, 20, text="not enough data in this range yet", fill=C["muted"], anchor="w")
             return
@@ -1836,14 +1987,25 @@ def run_gui():
             best = min(pts, key=lambda p: abs(X(p[0]) - e.x))
             x, y = X(best[0]), Y(best[1])
         chart.create_line(x, 0, x, chart.winfo_height(), fill=C["muted"], dash=(2, 2), tags="hover")
-        chart.create_oval(x - 4, y - 4, x + 4, y + 4, fill=C["watch"], outline="", tags="hover")
-        tx = min(max(e.x + 12, 70), chart.winfo_width() - 240)
-        ty = 18 if e.y > 60 else chart.winfo_height() - 30
-        chart.create_rectangle(tx - 6, ty - 10, tx + 236, ty + 12, fill=C["panel3"], outline="", tags="hover")
-        chart.create_text(tx, ty, text=best[2], fill=C["text"], anchor="w", font=("Segoe UI", 9), tags="hover")
+        chart.create_oval(x - 5, y - 5, x + 5, y + 5, fill=C["watch"], outline=C["panel"],
+                          width=2, tags="hover")
+        # the label goes to the fixed readout, not to a box under the cursor
+        label = str(best[2])
+        head, _, rest = label.partition("  ")
+        ch_big.configure(text=head.strip() or label,
+                         fg=(C["loss"] if head.strip().startswith("-") or "$-" in head
+                             else C["gain"] if "$+" in head else C["text"]))
+        ch_sub.configure(text=rest.strip())
+
+    def chart_rest(_e=None):
+        chart.delete("hover")
+        d = chart_pts.get("headline") or ("", "")
+        ch_big.configure(text=d[0], fg=(C["loss"] if "$-" in d[0] else
+                                        C["gain"] if "$+" in d[0] else C["text"]))
+        ch_sub.configure(text=d[1])
 
     chart.bind("<Motion>", chart_hover)
-    chart.bind("<Leave>", lambda _e: chart.delete("hover"))
+    chart.bind("<Leave>", chart_rest)
     chart.bind("<Configure>", lambda _e: draw_chart())
 
     # ---- rendering ----
@@ -2046,6 +2208,13 @@ def run_gui():
             _ = lost_h
         fill(tv_days, rows)
         draw_chart()
+        # the Lab tab reads the process table, so refresh it on the slow beat
+        # rather than every tick
+        try:
+            if int(time.time()) % 30 < 3 or not lab_body.get("1.0", "1.5").strip():
+                draw_lab()
+        except Exception:                                         # noqa: BLE001
+            pass
 
         # losses
         rows = []
