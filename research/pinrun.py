@@ -617,7 +617,26 @@ SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
 #  4. ONLY WHEN FLAT. Rails never change while a position is open.
 # ===========================================================================
 AUTO_SIZE = True         # --no-auto-size disables
-BANK_BRAKE = 3.0         # bank must cover this many worst-closes.
+BANK_BRAKE = 4.08        # bank must cover this many worst-closes.
+                         #
+                         # 3.0 -> 4.08 on 2026-09-18, ON THE OPERATOR'S WORD:
+                         # "Sure divide by 8." He had asked whether we were
+                         # betting too high and was shown this arithmetic at
+                         # a $613.66 bank and 104 contracts a bet:
+                         #
+                         #   loss            costs   quarter-hours to earn back
+                         #   typical          $31    12   (~8 hours)
+                         #   worst ever       $93    37   (~1 day)
+                         #   total wipeout   $100    40   (~1.1 days)
+                         #
+                         # size = bank / (BANK_BRAKE * MAX_PER_CLOSE *
+                         # PRICE_CEILING), so 4.08 * 2 * 0.98 = 7.997 and one
+                         # bet becomes bank/8 rather than bank/5.88. At the
+                         # same bank that is 76 contracts, about $75 a bet:
+                         # the worst close falls from 33% of the bank to 25%,
+                         # and the earning rate falls by about a quarter.
+                         # That trade was his to make and he made it.
+                         #
                          # 1.5 -> 3.0 on 2026-09-13, operator: "calculate a
                          # good number that still pulls profits, but is able
                          # to come back after losing relatively quickly".
@@ -809,6 +828,32 @@ HEDGE_BELIEF = 0.80      # belief in OUR side below which we hedge.
                          # lose. Two real live alarms at 0.887 and 0.664 were both
                          # false; they point the same way but are not the reason.
                          # Dated entry in results/PREREG_hedge.md.
+# AMENDMENT 51 (2026-09-18): insurance only when the other side would be a
+# NORMAL BET. The operator's idea, in his words: *"If we buy early, then
+# calculate at <30 it's the other side then buy enough there just like a
+# normal bet to offset it or even profit. Just like how we normally would on
+# any other bet."*
+#
+# Today the hedge fires on the MODEL's belief alone, at any ask under a
+# dollar. Its record is poor: 12 insured closes, 11 ended negative, and five
+# of the twelve bought the other side at 10-18c -- meaning the market still
+# favoured our ORIGINAL side and we paid for nothing. That is the model
+# panicking at a move the market shrugs off, which is the same weakness A47
+# and A50 are aimed at.
+#
+# This requires the opposite side to clear the gates an ENTRY has to clear:
+# our model at least PIN sure of it, and its ask at or under PRICE_CEILING.
+# Then insurance is not insurance at a panic price -- it is a second good bet
+# that happens to cancel the first.
+#
+# THE KNOWN LIMIT, stated because it decides whether this can ever work: by
+# the time the model is PIN-sure the other side wins, that side is usually
+# expensive, and a contract bought at 97c returns 3c. Our twelve real hedges
+# paid between 10c and 95c. So this will fire RARELY, and when it does the
+# offset will be partial. Firing rarely is the point; the alternative is
+# paying a premium eleven times out of twelve for nothing.
+HEDGE_NORMAL = False
+_DEFAULT_HEDGE_NORMAL = False
 HEDGE_MAX_ASK = 1.00     # the hedge leg must cost LESS than the $1 it pays.
                          # THE FIRST VERSION OF THIS RULE WAS WRONG, and the
                          # self-test caught it before any live hedge: it
@@ -908,6 +953,25 @@ def hedge_ask_ok(hedge_ask):
     except (TypeError, ValueError):
         return False
     return 0.0 < a < HEDGE_MAX_ASK - 1e-9
+
+
+def hedge_normal_ok(belief, hedge_ask, pin=None, ceiling=None):
+    """A51: would the OPPOSITE side pass the gates a normal entry must pass?
+
+    `belief` is our confidence in OUR side, so confidence in the other side is
+    `1 - belief`. Returns True when the filter is off, so a caller that never
+    sets the flag behaves exactly as before.
+    """
+    if not HEDGE_NORMAL:
+        return True
+    pin = PIN if pin is None else pin
+    ceiling = PRICE_CEILING if ceiling is None else ceiling
+    try:
+        b = float(belief)
+        a = float(hedge_ask)
+    except (TypeError, ValueError):
+        return False
+    return (1.0 - b) >= pin and 0.0 < a <= ceiling
 
 
 def hedge_edge_c(belief, hedge_ask):
@@ -2898,6 +2962,51 @@ def _selftest_body():
         ck(_lp49.index(_n49) < _lp49.index("take_n < MIN_LEVEL"),
            "and it is checked before the size floor, so a cheap early ask is "
            "refused for being CHEAP rather than for being small")
+        # AMENDMENT 51: insurance only when the other side is a NORMAL bet.
+        ck(_DEFAULT_HEDGE_NORMAL is False,
+           "A51 ships OFF, asserted against the DECLARED default so an arm "
+           "that sets the flag does not fail its own self-test")
+        _svhn = HEDGE_NORMAL
+        try:
+            globals()["HEDGE_NORMAL"] = False
+            ck(hedge_normal_ok(0.30, 0.15) and hedge_normal_ok(0.99, 0.99),
+               "with the filter OFF nothing is refused, so a bot that never "
+               "passes the flag behaves exactly as it did before")
+            globals()["HEDGE_NORMAL"] = True
+            ck(hedge_normal_ok(1.0 - PIN, 0.90),
+               "the other side at PIN confidence and a 90c ask is a normal bet "
+               "and insurance fires")
+            ck(not hedge_normal_ok(0.30, 0.15),
+               "the model merely LEANING the other way is refused -- that is "
+               "the 10-18c case, where the market still liked our side and we "
+               "paid a premium for nothing five times in twelve")
+            ck(not hedge_normal_ok(0.0, 0.99),
+               "certain but too EXPENSIVE is refused: at 99c the other side "
+               "returns a cent and cannot offset anything")
+            ck(not hedge_normal_ok(None, 0.90) and not hedge_normal_ok(0.0, None),
+               "NULL: an unreadable belief or ask refuses rather than firing "
+               "insurance on a number nobody has")
+        finally:
+            globals()["HEDGE_NORMAL"] = _svhn
+        _lp51 = _src49[_src49.rindex(chr(10) + "def " + "trade_loop("):]
+        ck("hedge_normal" + "_ok(_belief, _ask)" in _lp51
+           and '"hedge_wait_normal"' in _lp51,
+           "the loop asks it before buying insurance and logs the wait under "
+           "its own name, so what the filter costs is measurable")
+        ck(_lp51.index("hedge_normal" + "_ok") < _lp51.index("hedge_ask" + "_ok"),
+           "...and it is asked BEFORE the under-a-dollar check, so a refusal "
+           "is recorded as 'not a normal bet' rather than as a pricing failure")
+        # THE RISK SETTING. The operator asked for one bet to be the bank
+        # divided by 8 rather than 5.88, and the divisor is a PRODUCT of three
+        # constants -- so asserting the brake alone would pass while a change
+        # to MAX_PER_CLOSE or PRICE_CEILING silently moved the bet size.
+        _div = BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING
+        ck(abs(_div - 8.0) < 0.02,
+           "one bet is the bank divided by 8.0 (got %.3f) -- set 2026-09-18 on "
+           "the operator's word 'Sure divide by 8'" % _div)
+        ck(abs(size_for_bank(800.0) - 100.0) < 1.0,
+           "so an $800 bank asks for about 100 contracts, not the 136 the old "
+           "setting asked for")
         # AMENDMENT 50: on the EARLY leg a big edge is a warning, not a prize.
         ck(_DEFAULT_EARLY_MAX_EDGE is None,
            "A50 ships OFF, so adding it changed nothing about the live bot -- "
@@ -3463,11 +3572,19 @@ def _selftest_body():
                 globals()["AUTO_SIZE_STEP_UP"] = 1.5
                 globals()["SIZE"] = 20.0
                 _st2b = {}
+                # A BANK THE CAP MUST BITE ON, derived rather than hard-coded.
+                # This used to pass a fixed $192.15, which only exceeded the
+                # 1.5x cap while one bet was bank/5.88; raising the brake to
+                # bank/8 on 2026-09-18 made that bank ask for 24, under the
+                # cap, and the damping test started failing for a reason that
+                # had nothing to do with damping. A test of the CAP must pick
+                # a bank the cap actually binds at, whatever the brake is.
+                _big = 20.0 * 1.5 * 3.0 * BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING
                 autosize_tick(_st2b, _a2, {}, now=1e9,
-                              bank_reader=lambda: 192.15)
+                              bank_reader=lambda: _big)
                 ck(abs(float(SIZE) - 30.0) < 1e-9,
-                   f"with damping at 1.5 the first step is 20 -> 30, got "
-                   f"{SIZE}")
+                   f"with damping at 1.5 the first step is 20 -> 30 however "
+                   f"big the bank is, got {SIZE}")
             finally:
                 globals()["AUTO_SIZE_STEP_UP"] = _old_step
             _st3 = {}
@@ -5453,6 +5570,7 @@ def trade_loop(a, rec, book, idx, series_index):
     hedge_tries = {}    # A15: oid -> attempts since the alarm fired
     hedge_last_try = {}
     hedge_price_said = set()      # A47: one 'waiting on price' line per position # A15: oid -> wall-clock second of the last try (pacing)
+    hedge_normal_said = set()     # A51: one 'waiting for a normal bet' line per position
     hedge_remain = {}   # A15 BUGFIX 2026-09-13: oid -> contracts STILL needing a
                         # hedge fill. open_pos[_hid] must NEVER be shrunk here; it
                         # is what reconcile() reads to settle the ORIGINAL position
@@ -5815,6 +5933,19 @@ def trade_loop(a, rec, book, idx, series_index):
                             tau=_htau)
                         print(f"  hedge WAITING on price {_htk}: our side "
                               f"{1.0 - float(_ask):.2f} is above {HEDGE_PRICE:.2f}")
+                    continue
+                if not hedge_normal_ok(_belief, _ask):
+                    # A51: NOT added to `hedged` -- the model can get surer and
+                    # the price can still fall inside this close, and if both
+                    # happen we insure then. Same reasoning as the A47 wait.
+                    if _hid not in hedge_normal_said:
+                        hedge_normal_said.add(_hid)
+                        rec("hedge_wait_normal", ticker=_htk, ask=float(_ask),
+                            other_side_belief=round(1.0 - _belief, 5),
+                            need_belief=PIN, need_price=PRICE_CEILING,
+                            belief=round(_belief, 5), tau=_htau)
+                        print(f"  hedge WAITING for a normal bet {_htk}: other "
+                              f"side {1.0 - _belief:.4f} sure @ {_ask:.3f}")
                     continue
                 if not hedge_ask_ok(_ask):
                     # RULE 4 OF THE PRE-REGISTRATION (corrected 2026-09-12): a
@@ -6904,6 +7035,23 @@ def main():
                          "that is about to LOSE, book it as a normal position, "
                          "and let the live hedge pass fire on it. Costs a few "
                          "cents. Off by default; fires at most once per run.")
+    ap.add_argument("--hedge-normal", action="store_true",
+                    help="AMENDMENT 51: only buy insurance when the OTHER side "
+                         "would pass the gates a normal entry passes -- our "
+                         "model at least PIN sure of it and its ask at or "
+                         "under the price ceiling. The operator's idea. Today "
+                         "the hedge fires on belief alone at any ask under a "
+                         "dollar, and 11 of 12 insured closes still ended "
+                         "negative, five of them buying the other side at "
+                         "10-18c while the market still liked ours. Off by "
+                         "default.")
+    ap.add_argument("--bank-brake", type=float, default=None,
+                    help="How many worst-closes the bank must cover. Bet size "
+                         "is bank / (this * 2 * 0.98), so 3.0 is bank/5.88 and "
+                         "4.08 is bank/8. Higher is safer and earns less. "
+                         "Default %.2f. Exists as a FLAG so the operator's "
+                         "risk setting can be moved and reverted without an "
+                         "edit to this file." % BANK_BRAKE)
     ap.add_argument("--no-auto-size", dest="auto_size", action="store_false",
                     default=True,
                     help="AMENDMENT 16: by default SIZE follows the live bank "
@@ -7191,6 +7339,13 @@ def main():
             raise SystemExit("--early-min-price must be in (0, 0.99], got %r"
                              % (a.early_min_price,))
         globals()["EARLY_MIN_PRICE"] = float(a.early_min_price)
+    if a.hedge_normal:
+        globals()["HEDGE_NORMAL"] = True
+    if a.bank_brake is not None:
+        if not (1.0 <= a.bank_brake <= 20.0):
+            raise SystemExit("--bank-brake must be between 1 and 20, got %r"
+                             % (a.bank_brake,))
+        globals()["BANK_BRAKE"] = float(a.bank_brake)
     if a.early_max_edge is not None:
         if not (0.0 < a.early_max_edge <= 50.0):
             raise SystemExit("--early-max-edge is in CENTS and must be in "
@@ -7424,6 +7579,12 @@ def main():
         hedge_price=HEDGE_PRICE,
         late_tau=LATE_TAU, late_mult=LATE_MULT,
         early_min_price=EARLY_MIN_PRICE, early_max_edge=EARLY_MAX_EDGE,
+        # THE RISK SETTING ITSELF, in the record. Bet size is derived from it,
+        # so a log that shows the size but not the brake cannot say whether a
+        # small size meant a cautious setting or a small bank.
+        hedge_normal=HEDGE_NORMAL,
+        bank_brake=BANK_BRAKE,
+        bank_divisor=round(BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING, 4),
         code_sha=_source_fingerprint())
 
     if a.live:

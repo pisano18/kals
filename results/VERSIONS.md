@@ -1,3 +1,75 @@
+# v-bank8 -- 2026-09-18 ~07:0xZ -- LIVE: one bet is the bank divided by 8, and the 45-second leg refuses a wide edge
+
+Two changes, both of which REDUCE risk, deployed together on the operator's
+word. `restart_bot.ps1` now also passes `--bank-brake 4.08 --early-max-edge 3.0`.
+
+## 1. Bet size: bank/5.88 -> bank/8
+
+**Operator: "Sure divide by 8."** He asked whether we were betting too high and
+was shown this, at a $613.66 bank and 104 contracts a bet:
+
+| if this happens | costs | quarter-hours to earn back |
+|---|---|---|
+| a typical loss (our 16 losses averaged) | $31 | 12 (~8 hours) |
+| the worst we have ever taken | $93 | 37 (~1 day) |
+| insurance fails completely, 96c to zero | $100 | 40 (~1.1 days) |
+
+Size is `bank / (BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING)`, so `BANK_BRAKE`
+3.0 -> 4.08 makes the divisor 7.997. At the same bank: **104 contracts -> 76,
+about $75 a bet.** The worst one close can cost falls from 33% of the bank to
+25%; the earning rate falls by about a quarter. He was shown both halves.
+
+It is now a FLAG rather than an edit, so the risk setting can be moved and
+reverted without touching the source. `bank_brake` and the derived
+`bank_divisor` are both in the start record -- a log showing the size but not
+the brake cannot say whether a small size meant caution or a small bank.
+
+## 2. AMENDMENT 50: the 31-45 s leg refuses a WIDE edge
+
+**Operator, on the 45-second leg: "It's earning good it'd be a shame to shut it
+off, but also a shame to lose money... It might mean smaller gains but that's
+better than none."**
+
+This is a REFUSAL, not a new way to buy, so its worst case is fewer trades --
+which is why it went live ahead of its paper arm finishing. Measured over every
+signal joined to its settlement, split by how far our model sat above the
+market on our side:
+
+| when | model above market | bets | lost | $/bet |
+|---|---|---|---|---|
+| 31-45 s | under 3c | 177 | 3 | +0.06 |
+| 31-45 s | 3-6c | 62 | 5 | **-0.57** |
+| 31-45 s | 6c or more | 11 | 3 | **-3.01** |
+| 30 s or less | 6c or more | 263 | 1 | **+1.44** |
+
+Live fills agree on the late half: 102 fills at 6c+, 4 losses, +3.08 $/bet.
+There has never been a live early fill at 6c+.
+
+**Rule 5 limit, stated:** the 31-45 s rows are dominated by PAPER arms, which
+book a fill the moment they see an offer. The LEVELS are not evidence; the
+SHAPE is, and the shape is what this acts on. A paper arm at FULL early size
+with the same 3c cap is running as the confirmation
+(`results/PREREG_a50_early_edge_cap.md`, bars written before any result).
+
+**Why the sign flips:** settlement is the mean of 60 one-second prints. At 15 s
+left, 45 are already recorded and a cheap market price is simply wrong -- that
+disagreement IS the edge. At 45 s only 15 are, and our confidence rests on a
+volatility estimate, so a market disagreeing by six cents is usually right.
+**Inside 30 s nothing changes.** `--early-max-edge` refuses to start without
+`--early-tau` above 30, and the self-test asserts the check sits inside the
+early-leg block. Refusals log as `early_wide` and are named in `pinattrib`.
+
+## Revert
+
+Both are FLAGS, so neither revert needs a code change. Edit
+`restart_bot.ps1`, then run `.\restart_bot.ps1`:
+
+- **Size only:** change `"--bank-brake", "4.08"` to `"--bank-brake", "3.0"`.
+- **45-second cap only:** delete the `"--early-max-edge", "3.0",` line.
+- **Both:** delete both lines.
+
+---
+
 # v-early49 -- 2026-09-18 ~02:3xZ -- LIVE: the 31-45 s leg reopens at a THIRD, with a 90c price floor
 
 **Operator: "Can you re open 45 seconds with a cap at 90c, or whatever number

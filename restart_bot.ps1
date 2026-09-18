@@ -192,7 +192,33 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # average is locked, so `fair` leans harder on the sigma estimate. A cheap
     # ask there is the market disagreeing with us exactly where our model is
     # weakest. Inside 30 s the full leg is untouched.
-    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.90"
+    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.90",
+    # AMENDMENT 50, 2026-09-18. The operator asked what to do with the
+    # 45-second leg in the meantime: "It's earning good it'd be a shame to
+    # shut it off, but also a shame to lose money... It might mean smaller
+    # gains but that's better than none."
+    #
+    # This is a REFUSAL, not a new way to buy, so its worst case is fewer
+    # trades. Out at 31-45 s, our model being far ABOVE the market price is a
+    # warning rather than a bargain, and the sign flips at 30 seconds:
+    #
+    #   31-45 s   under 3c  177 bets  3 lost  +0.06 $/bet
+    #             3-6c       62 bets  5 lost  -0.57 $/bet
+    #             6c+        11 bets  3 lost  -3.01 $/bet
+    #   <=30 s    6c+       263 bets  1 lost  +1.44 $/bet   (live: +3.08)
+    #
+    # Because at 45 s only a quarter of the settlement average is locked, so
+    # our confidence rests on a volatility estimate; at 15 s three quarters is
+    # already recorded and the market is simply wrong. Refusals log as
+    # `early_wide`. INSIDE 30 s NOTHING CHANGES -- a wide edge there is the
+    # single most profitable thing the bot does.
+    "--early-max-edge", "3.0",
+    # THE RISK SETTING, 2026-09-18, operator: "Sure divide by 8." One bet goes
+    # from bank/5.88 to bank/8 -- at a $613 bank that is 104 contracts down to
+    # 76, about $75 a bet. The worst a single close can cost falls from 33% of
+    # the bank to 25%; the earning rate falls about a quarter. He was shown
+    # both halves and chose it.
+    "--bank-brake", "4.08"
     # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
     # built as safely as you described, deploy now"), first at half, then at a
     # THIRD, and from ~19:5xZ the same day at a FULL bet on his instruction:

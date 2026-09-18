@@ -83,6 +83,29 @@ EXPERIMENTS = [
                  "close.",
     },
     {
+        "name": "Insurance only when the other side is a normal bet (A51)",
+        "status": RUNNING, "match": "--hedge-normal", "since": "2026-09-18",
+        "select": {"hedge_normal": True},
+        "what": "Only buys insurance when the OTHER side would pass the same "
+                "tests a normal bet passes: our model 99.5% sure of it, and "
+                "its price at or under 98c.",
+        "why": "Operator's idea: 'buy enough there just like a normal bet to "
+               "offset it or even profit.' Today insurance fires on the model's "
+               "panic alone at any price under a dollar, and the record is bad "
+               "-- 12 insured quarter-hours, 11 ended negative, and five of "
+               "them bought the other side at 10-18c, meaning the market still "
+               "liked our side and we paid for nothing.",
+        "good": "It fires rarely and the quarter-hours it skips end up costing "
+                "less than the premiums we save. Firing rarely IS the point.",
+        "bad": "It waits so long that real insurance is missed. By the time the "
+               "model is 99.5% sure the other side wins, that side is usually "
+               "expensive, and a contract bought at 97c returns 3c -- so the "
+               "offset will be partial at best. This may turn out to be an "
+               "argument for not taking the bet at all rather than rescuing it.",
+        "watch": "Quarter-hours where insurance was HELD OFF and the bet then "
+                 "lost, against the premiums saved on the ones that recovered.",
+    },
+    {
         "name": "45 seconds at FULL size, but only when the market agrees (A50)",
         "status": RUNNING, "match": "--early-max-edge", "since": "2026-09-18",
         "select": {"early_max_edge": SET},
