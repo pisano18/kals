@@ -1,0 +1,281 @@
+<title>Pin Bot Mobile</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#F4F6F9;--surface:#FFFFFF;--sunk:#E9EDF3;--ink:#161C24;--muted:#5D6A7C;
+  --rule:#D8DEE7;--gain:#17795A;--loss:#B4491F;--watch:#8A6410;--blue:#2B5FBF;
+  --gain-wash:#E2F2EC;--loss-wash:#FAE8E1;--watch-wash:#F7EEDC;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0F1420;--surface:#171E2E;--sunk:#1D2536;--ink:#E6EAF2;--muted:#8A94A8;
+  --rule:#2A3442;--gain:#31C48D;--loss:#E4572E;--watch:#F0B429;--blue:#4C8DFF;
+  --gain-wash:#14302A;--loss-wash:#331F18;--watch-wash:#302716;}}
+:root[data-theme="dark"]{
+  --ground:#0F1420;--surface:#171E2E;--sunk:#1D2536;--ink:#E6EAF2;--muted:#8A94A8;
+  --rule:#2A3442;--gain:#31C48D;--loss:#E4572E;--watch:#F0B429;--blue:#4C8DFF;
+  --gain-wash:#14302A;--loss-wash:#331F18;--watch-wash:#302716;}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);
+  line-height:1.45;padding:0;-webkit-text-size-adjust:100%}
+.app{max-width:720px;margin-inline:auto;padding-inline:14px;
+  padding-block:14px calc(76px + env(safe-area-inset-bottom,0px))}
+.num,.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.gain{color:var(--gain)}.loss{color:var(--loss)}.watch{color:var(--watch)}
+.muted{color:var(--muted)}
+h2{font-size:.68rem;font-weight:600;margin:0 0 10px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.11em}
+section{margin-bottom:26px}
+p{margin:0 0 .6em;max-width:60ch;font-size:.9rem}p:last-child{margin-bottom:0}
+
+/* status */
+.status{border-radius:10px;padding:14px 16px;margin-bottom:18px;
+  background:var(--surface);border:1px solid var(--rule);border-left-width:4px}
+.status .hl{font-weight:600;font-size:1.05rem;letter-spacing:-.01em}
+.status .dt{font-size:.8rem;color:var(--muted);margin-top:4px;white-space:pre-line}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.tile{background:var(--surface);padding:13px 14px;display:flex;flex-direction:column;gap:2px}
+.tile .k{font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.tile .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.2rem;
+  font-weight:500;letter-spacing:-.02em}
+.tile .s{font-size:.72rem;color:var(--muted)}
+
+/* tables */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+th{text-align:left;font-weight:500;font-size:.62rem;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--muted);padding:0 10px 7px 0;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:8px 10px 8px 0;border-bottom:1px solid var(--rule);vertical-align:baseline}
+td:last-child,th:last-child{padding-right:0}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+
+/* lab cards */
+.exp{background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:14px;margin-bottom:10px}
+.exp h3{margin:0 0 8px;font-size:.95rem;font-weight:600;letter-spacing:-.01em;
+  text-wrap:balance}
+.pill{display:inline-block;font-size:.6rem;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;padding:3px 8px;border-radius:999px;margin-left:6px;
+  vertical-align:2px}
+.RUNNING{background:var(--gain-wash);color:var(--gain)}
+.SHIPPED{background:var(--gain-wash);color:var(--gain)}
+.KILLED{background:var(--loss-wash);color:var(--loss)}
+.IDEA{background:var(--watch-wash);color:var(--watch)}
+.PAUSED{background:var(--sunk);color:var(--muted)}
+.exp .row{font-size:.82rem;margin-top:7px}
+.exp .lbl{font-size:.6rem;font-weight:600;letter-spacing:.09em;color:var(--muted);
+  text-transform:uppercase;display:block;margin-bottom:1px}
+.prog{font-family:var(--mono);font-size:.8rem;color:var(--blue);margin-bottom:6px}
+
+ul{margin:0;padding-left:1.05em;display:flex;flex-direction:column;gap:6px}
+li{font-size:.86rem;max-width:58ch}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip{font-size:.7rem;padding:4px 10px;border-radius:999px;background:var(--sunk);
+  color:var(--muted);border:1px solid var(--rule);white-space:nowrap}
+.chip.ok{background:var(--gain-wash);color:var(--gain);border-color:transparent}
+.chip.bad{background:var(--loss-wash);color:var(--loss);border-color:transparent}
+.note{font-size:.76rem;color:var(--muted);max-width:58ch}
+
+/* tab bar */
+nav{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);
+  border-top:1px solid var(--rule);display:flex;
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;appearance:none;background:none;border:0;cursor:pointer;
+  font-family:var(--sans);font-size:.66rem;font-weight:600;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--muted);padding:13px 2px;
+  border-top:2px solid transparent;margin-top:-1px}
+nav button[aria-selected="true"]{color:var(--blue);border-top-color:var(--blue)}
+nav button:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:no-preference){
+  .pane{animation:fade .14s ease-out}
+  @keyframes fade{from{opacity:.4}to{opacity:1}}}
+</style>
+
+<div class="app">
+  <div class="status" id="status">
+    <div class="hl" id="hl">&hellip;</div>
+    <div class="dt" id="dt"></div>
+  </div>
+  <div id="panes"></div>
+  <p class="note" style="margin-top:26px" id="stamp"></p>
+</div>
+<nav id="tabs" role="tablist"></nav>
+
+<script id="data" type="application/json">{"built": "2026-09-18T06:59:57Z", "built_et": "Sep 18, 02:59 AM", "state": "TRADING", "headline": "TRADING  (pid 817428)", "detail": "1 open bet\nChecked just now: process 817428 is OPEN (alive); its log was written 8 s ago; stand-down flag absent.", "bank": 622.57, "size": 77.0, "deposited": 160.0, "tiles": {"today": {"closes": 11, "won": 11, "lost": 0, "net": 23.52, "worst": 0.03, "best": 6.02, "markets": 17, "loss_rate": 0.0, "avg_win": 2.14, "avg_loss": null, "pct": 3.93}, "yday": {"closes": 50, "won": 47, "lost": 3, "net": 43.04, "worst": -58.37, "best": 16.41, "markets": 86, "loss_rate": 6.0, "avg_win": 2.7, "avg_loss": -27.94, "pct": 7.74}, "run": {"closes": 0, "won": 0, "lost": 0, "net": 0, "worst": 0.0, "best": 0.0, "markets": 0, "loss_rate": null, "avg_win": null, "avg_loss": null, "pct": 0.0}, "all": {"closes": 416, "won": 386, "lost": 30, "net": 408.58, "worst": -58.37, "best": 16.41, "markets": 569, "loss_rate": 7.21, "avg_win": 2.07, "avg_loss": -12.96, "pct": 255.36}}, "run_since": "2:51 AM", "open": {"KXHYPE15M-26SEP180300-00": 1}, "supply": ["Cheap offers near the close, last 5 days: 484 a quarter-hour.", "A normal day before this ran 453, so we are up 7%.", "Against 09-09..09-12, the four busiest days ever recorded, we are down 62% -- those four days are not a normal week and must not be used as the yardstick.", "Contracts changing hands near the close: up 22% against a normal day.", "It does NOT track how much the coins move (r = -0.38), so a quiet week does not explain a thin one."], "supply_age_d": 0.039152885730619785, "sys": {"disk_gb": 34.3, "ram_gb": 3.6, "kalshi_ok": true, "feeds_ok": true, "kalshi_chans": 8, "feeds_chans": 5, "paper_arms": 15, "flat": "HOLDING", "watchdog_s": 6.671186923980713, "phone_s": 20.83057188987732}, "settled": [{"when": "2:45 AM", "coin": "ZEC", "close": "2:45 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 2.47, "hedged": false}, {"when": "2:45 AM", "coin": "BTC", "close": "2:45 AM", "want": "NO", "cost": null, "result": "no", "pnl": 0.65, "hedged": false}, {"when": "2:30 AM", "coin": "ETH", "close": "2:30 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.05, "hedged": false}, {"when": "2:30 AM", "coin": "DOGE", "close": "2:30 AM", "want": "NO", "cost": null, "result": "no", "pnl": 0.71, "hedged": false}, {"when": "2:30 AM", "coin": "HYPE", "close": "2:30 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.65, "hedged": false}, {"when": "2:15 AM", "coin": "WTI", "close": "2:15 AM", "want": "NO", "cost": null, "result": "no", "pnl": 0.09, "hedged": false}, {"when": "2:15 AM", "coin": "BTC", "close": "2:15 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.94, "hedged": false}, {"when": "2:15 AM", "coin": "SOL", "close": "2:15 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.68, "hedged": false}, {"when": "2:00 AM", "coin": "SOL", "close": "2:00 AM", "want": "NO", "cost": null, "result": "no", "pnl": 0.68, "hedged": false}, {"when": "1:45 AM", "coin": "ETH", "close": "1:45 AM", "want": "NO", "cost": null, "result": "no", "pnl": 4.1, "hedged": false}, {"when": "1:45 AM", "coin": "HYPE", "close": "1:45 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.92, "hedged": false}, {"when": "1:30 AM", "coin": "BTC", "close": "1:30 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.52, "hedged": false}, {"when": "1:15 AM", "coin": "WTI", "close": "1:15 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.03, "hedged": false}, {"when": "1:00 AM", "coin": "BNB", "close": "1:00 AM", "want": "NO", "cost": null, "result": "no", "pnl": 1.57, "hedged": false}, {"when": "12:45 AM", "coin": "XRP", "close": "12:45 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.98, "hedged": false}, {"when": "12:30 AM", "coin": "SOL", "close": "12:30 AM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.13, "hedged": false}, {"when": "12:15 AM", "coin": "DOGE", "close": "12:15 AM", "want": "NO", "cost": null, "result": "no", "pnl": 4.36, "hedged": true}, {"when": "11:45 PM", "coin": "NEAR", "close": "11:45 PM", "want": "NO", "cost": null, "result": "no", "pnl": 0.07, "hedged": false}, {"when": "11:30 PM", "coin": "HYPE", "close": "11:30 PM", "want": "NO", "cost": null, "result": "no", "pnl": 16.41, "hedged": false}, {"when": "11:00 PM", "coin": "XRP", "close": "11:00 PM", "want": "NO", "cost": null, "result": "no", "pnl": 9.43, "hedged": false}, {"when": "10:45 PM", "coin": "NEAR", "close": "10:45 PM", "want": "NO", "cost": null, "result": "no", "pnl": 0.01, "hedged": false}, {"when": "10:45 PM", "coin": "BNB", "close": "10:45 PM", "want": "NO", "cost": null, "result": "no", "pnl": 1.17, "hedged": false}, {"when": "10:30 PM", "coin": "WTI", "close": "10:30 PM", "want": "NO", "cost": null, "result": "no", "pnl": 0.33, "hedged": false}, {"when": "10:15 PM", "coin": "WTI", "close": "10:15 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.09, "hedged": false}, {"when": "9:30 PM", "coin": "HYPE", "close": "9:30 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 2.77, "hedged": false}, {"when": "9:30 PM", "coin": "BTC", "close": "9:30 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.76, "hedged": false}, {"when": "9:30 PM", "coin": "XRP", "close": "9:30 PM", "want": "NO", "cost": null, "result": "no", "pnl": 1.08, "hedged": false}, {"when": "9:15 PM", "coin": "ZEC", "close": "9:15 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 12.09, "hedged": false}, {"when": "9:15 PM", "coin": "BTC", "close": "9:15 PM", "want": "NO", "cost": null, "result": "no", "pnl": -27.87, "hedged": true}, {"when": "8:00 PM", "coin": "XRP", "close": "8:00 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.83, "hedged": false}, {"when": "7:30 PM", "coin": "BTC", "close": "7:30 PM", "want": "NO", "cost": null, "result": "no", "pnl": 2.98, "hedged": false}, {"when": "7:30 PM", "coin": "XRP", "close": "7:30 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.84, "hedged": false}, {"when": "7:20 PM", "coin": "WTI", "close": "7:15 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.31, "hedged": false}, {"when": "7:00 PM", "coin": "BNB", "close": "7:00 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.53, "hedged": false}, {"when": "7:00 PM", "coin": "XRP", "close": "7:00 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.63, "hedged": false}, {"when": "7:00 PM", "coin": "DOGE", "close": "7:00 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.81, "hedged": false}, {"when": "6:45 PM", "coin": "WTI", "close": "6:45 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 0.09, "hedged": false}, {"when": "6:30 PM", "coin": "ZEC", "close": "6:30 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 1.88, "hedged": false}, {"when": "6:30 PM", "coin": "BNB", "close": "6:30 PM", "want": "NO", "cost": null, "result": "no", "pnl": 1.47, "hedged": false}, {"when": "6:15 PM", "coin": "XRP", "close": "6:15 PM", "want": "YES", "cost": null, "result": "yes", "pnl": 2.95, "hedged": false}], "losses": [{"close": "Sep 17, 09:15 PM", "net": -15.79, "coins": ["BTC", "ZEC"], "legs": 2}, {"close": "Sep 17, 05:00 PM", "net": -9.66, "coins": ["GOLD", "WTI"], "legs": 2}, {"close": "Sep 17, 04:15 PM", "net": -58.37, "coins": ["GOLD", "WTI"], "legs": 2}, {"close": "Sep 16, 12:30 PM", "net": -0.47, "coins": ["BNB"], "legs": 1}, {"close": "Sep 16, 09:00 AM", "net": -12.14, "coins": ["DOGE"], "legs": 1}, {"close": "Sep 16, 04:30 AM", "net": -9.22, "coins": ["NEAR"], "legs": 1}, {"close": "Sep 15, 04:30 PM", "net": -0.0, "coins": ["CRYPTOLEAD"], "legs": 1}, {"close": "Sep 14, 04:00 PM", "net": -29.9, "coins": ["HYPE"], "legs": 1}, {"close": "Sep 14, 05:30 AM", "net": -34.26, "coins": ["BTC"], "legs": 1}, {"close": "Sep 12, 08:00 PM", "net": -8.2, "coins": ["NEAR", "ZEC"], "legs": 2}, {"close": "Sep 12, 11:15 AM", "net": -5.16, "coins": ["ETH"], "legs": 1}, {"close": "Sep 12, 11:00 AM", "net": -1.09, "coins": ["BTC"], "legs": 1}, {"close": "Sep 12, 04:00 AM", "net": -17.95, "coins": ["HYPE", "SOL"], "legs": 2}, {"close": "Sep 11, 11:00 PM", "net": -17.17, "coins": ["SOL", "XRP"], "legs": 2}, {"close": "Sep 11, 08:30 AM", "net": -12.16, "coins": ["SOL"], "legs": 1}, {"close": "Sep 10, 06:15 PM", "net": -2.12, "coins": ["DOGE"], "legs": 1}, {"close": "Sep 10, 01:30 AM", "net": -16.89, "coins": ["BNB", "XRP"], "legs": 2}, {"close": "Sep 10, 01:00 AM", "net": -12.83, "coins": ["DOGE", "XRP"], "legs": 2}, {"close": "Sep 08, 08:45 PM", "net": -52.6, "coins": ["NEAR"], "legs": 1}, {"close": "Sep 08, 03:15 AM", "net": -0.0, "coins": ["BTC"], "legs": 1}, {"close": "Sep 07, 05:30 AM", "net": -8.6, "coins": ["NATGAS"], "legs": 1}, {"close": "Sep 07, 05:15 AM", "net": -8.22, "coins": ["NATGAS"], "legs": 1}, {"close": "Sep 07, 05:00 AM", "net": -7.32, "coins": ["NATGAS"], "legs": 1}, {"close": "Sep 07, 03:30 AM", "net": -0.01, "coins": ["GOLD"], "legs": 1}, {"close": "Sep 07, 01:15 AM", "net": -0.02, "coins": ["CRYPTOLEAD"], "legs": 2}, {"close": "Sep 06, 10:00 PM", "net": -0.01, "coins": ["CRYPTOLEAD"], "legs": 1}, {"close": "Sep 06, 09:45 PM", "net": -0.0, "coins": ["BTC"], "legs": 1}, {"close": "Aug 22, 09:15 PM", "net": -10.51, "coins": ["BTC"], "legs": 1}, {"close": "Aug 15, 01:30 AM", "net": -19.0, "coins": ["BTC"], "legs": 1}, {"close": "Aug 15, 01:02 AM", "net": -19.0, "coins": ["KXBTCD-2"], "legs": 1}], "days": [{"closes": 11, "won": 11, "lost": 0, "net": 23.52, "worst": 0.03, "best": 6.02, "markets": 17, "loss_rate": 0.0, "avg_win": 2.14, "avg_loss": null, "pct": 3.93, "day": "2026-09-18", "bank_start": 599.05}, {"closes": 50, "won": 47, "lost": 3, "net": 43.04, "worst": -58.37, "best": 16.41, "markets": 86, "loss_rate": 6.0, "avg_win": 2.7, "avg_loss": -27.94, "pct": 7.74, "day": "2026-09-17", "bank_start": 556.02}, {"closes": 34, "won": 31, "lost": 3, "net": 85.11, "worst": -12.14, "best": 15.13, "markets": 45, "loss_rate": 8.82, "avg_win": 3.45, "avg_loss": -7.28, "pct": 18.07, "day": "2026-09-16", "bank_start": 470.9}, {"closes": 27, "won": 26, "lost": 1, "net": 76.31, "worst": -0.0, "best": 6.66, "markets": 37, "loss_rate": 3.7, "avg_win": 2.94, "avg_loss": -0.0, "pct": 19.34, "day": "2026-09-15", "bank_start": 394.59}, {"closes": 46, "won": 44, "lost": 2, "net": 81.1, "worst": -34.26, "best": 14.45, "markets": 61, "loss_rate": 4.35, "avg_win": 3.3, "avg_loss": -32.08, "pct": 25.87, "day": "2026-09-14", "bank_start": 313.49}, {"closes": 34, "won": 34, "lost": 0, "net": 114.78, "worst": 0.25, "best": 15.54, "markets": 49, "loss_rate": 0.0, "avg_win": 3.38, "avg_loss": null, "pct": 57.77, "day": "2026-09-13", "bank_start": 198.7}, {"closes": 69, "won": 65, "lost": 4, "net": 38.04, "worst": -17.95, "best": 3.38, "markets": 96, "loss_rate": 5.8, "avg_win": 1.08, "avg_loss": -8.1, "pct": 35.66, "day": "2026-09-12", "bank_start": 106.67}, {"closes": 38, "won": 36, "lost": 2, "net": 1.25, "worst": -17.17, "best": 4.7, "markets": 49, "loss_rate": 5.26, "avg_win": 0.85, "avg_loss": -14.66, "pct": 1.19, "day": "2026-09-11", "bank_start": 105.42}, {"closes": 41, "won": 38, "lost": 3, "net": 0.23, "worst": -16.89, "best": 3.78, "markets": 44, "loss_rate": 7.32, "avg_win": 0.84, "avg_loss": -10.61, "pct": 0.22, "day": "2026-09-10", "bank_start": 105.19}, {"closes": 29, "won": 29, "lost": 0, "net": 48.74, "worst": 0.0, "best": 15.36, "markets": 40, "loss_rate": 0.0, "avg_win": 1.68, "avg_loss": null, "pct": 86.33, "day": "2026-09-09", "bank_start": 56.46}, {"closes": 25, "won": 23, "lost": 2, "net": -40.59, "worst": -52.6, "best": 2.98, "markets": 32, "loss_rate": 8.0, "avg_win": 0.52, "avg_loss": -26.3, "pct": -41.82, "day": "2026-09-08", "bank_start": 97.05}, {"closes": 6, "won": 1, "lost": 5, "net": -23.95, "worst": -8.6, "best": 0.21, "markets": 7, "loss_rate": 83.33, "avg_win": 0.21, "avg_loss": -4.83, "pct": -19.79, "day": "2026-09-07", "bank_start": 121.0}, {"closes": 2, "won": 0, "lost": 2, "net": -0.01, "worst": -0.01, "best": -0.0, "markets": 2, "loss_rate": 100.0, "avg_win": null, "avg_loss": -0.01, "pct": -0.01, "day": "2026-09-06", "bank_start": 121.01}, {"closes": 1, "won": 0, "lost": 1, "net": -10.51, "worst": -10.51, "best": -10.51, "markets": 1, "loss_rate": 100.0, "avg_win": null, "avg_loss": -10.51, "pct": -7.99, "day": "2026-08-23", "bank_start": 131.52}, {"closes": 3, "won": 1, "lost": 2, "net": -28.48, "worst": -19.0, "best": 9.52, "markets": 3, "loss_rate": 66.67, "avg_win": 9.52, "avg_loss": -19.0, "pct": -17.8, "day": "2026-08-15", "bank_start": 160.0}], "closes": [{"close": "2:45 AM", "share": 0.45493485632696773, "why": "BOUGHT 139.97 contracts", "fired": true}, {"close": "2:30 AM", "share": 0.4462328767123288, "why": "BOUGHT 98.26 contracts", "fired": true}, {"close": "2:15 AM", "share": 0.39544715447154477, "why": "BOUGHT 148.63 contracts", "fired": true}, {"close": "2:00 AM", "share": 0.2790143084260731, "why": "BOUGHT 34.63 contracts", "fired": true}, {"close": "1:45 AM", "share": 0.909130624726955, "why": "BOUGHT 206 contracts", "fired": true}, {"close": "1:30 AM", "share": 0.485201358563804, "why": "BOUGHT 34.3 contracts", "fired": true}, {"close": "1:15 AM", "share": 0.42114384748700173, "why": "LOST THE RACE: ordered 35.3, got 0 (someone bought it first)", "fired": false}, {"close": "1:00 AM", "share": 0.10578718108276286, "why": "BOUGHT 33.97 contracts", "fired": true}, {"close": "12:45 AM", "share": 0.1471138845553822, "why": "BOUGHT 33.97 contracts", "fired": true}, {"close": "12:30 AM", "share": 0.3120882740447958, "why": "BOUGHT 6 contracts", "fired": true}, {"close": "12:15 AM", "share": 0.24743108791388024, "why": "BOUGHT 33.63 contracts", "fired": true}, {"close": "12:00 AM", "share": 0.14954221770091558, "why": "the price was too close to what it is worth (edge too thin)", "fired": false}, {"close": "11:45 PM", "share": 0.4308029197080292, "why": "BOUGHT 4 contracts", "fired": true}, {"close": "11:30 PM", "share": 0.3784490960989534, "why": "BOUGHT 198 contracts", "fired": true}, {"close": "11:15 PM", "share": 0.022561659192825156, "why": "the price was too close to what it is worth (edge too thin)", "fired": false}, {"close": "11:00 PM", "share": 0.7862068965517242, "why": "BOUGHT 194 contracts", "fired": true}, {"close": "10:45 PM", "share": 0.3160657234139662, "why": "BOUGHT 60.5 contracts", "fired": true}, {"close": "10:30 PM", "share": 0.16648435790855398, "why": "LOST THE RACE: ordered 10, got 0 (someone bought it first)", "fired": false}, {"close": "10:15 PM", "share": 0.2911221270842722, "why": "LOST THE RACE: ordered 107, got 0 (someone bought it first)", "fired": false}, {"close": "10:00 PM", "share": 0.15357222345871357, "why": "the price was too close to what it is worth (edge too thin)", "fired": false}, {"close": "9:45 PM", "share": 0.18305814788226848, "why": "the price was too close to what it is worth (edge too thin)", "fired": false}, {"close": "9:30 PM", "share": 0.7213114754098361, "why": "BOUGHT 192 contracts", "fired": true}, {"close": "9:00 PM", "share": 0.01825713409021168, "why": "the price was too close to what it is worth (edge too thin)", "fired": false}, {"close": "8:45 PM", "share": 0.1654732254047323, "why": "the price was too close to what it is worth (edge too thin)", "fired": false}, {"close": "8:30 PM", "share": 0.0, "why": "nobody was selling the winning side", "fired": false}], "sellers": {"level": "BUSY", "recent": 0.4462328767123288, "median": 0.14055944055944058}, "fills_today": {"orders": 26, "fills": 21, "zero": 5, "contracts": 796.0, "asked": 1052.98, "median_pct": 1.0, "share": 0.7559497806226139}, "lab": [{"name": "Lower confidence to 97.0%", "status": "RUNNING", "what": "A paper bot identical to the live one except it buys once it is 97.0% sure instead of 99.5% sure.", "why": "Our cheap fills (under 95c) fell from 28 a day to 7. The question is whether those trades are still there but now sit just under our confidence bar, or whether they are genuinely gone.", "good": "It makes MORE money per day than the live bot without its loss rate rising past break-even. Then the bar is too strict.", "bad": "It takes more trades and loses more than the extra trades pay for. Then 99.5% is right and the missing fills are a supply problem, not a gate problem -- which is what the pickoff tracker suggests.", "watch": "Dollars per day, not win rate. At 96c a 3% loss rate is break-even, so an arm can win 97 times in 100 and make nothing.", "outcome": null, "attribution": null, "since": "2026-09-18", "running": true, "settled": 16, "won": 16, "lost": 0, "net": 10.56}, {"name": "Lower confidence to 97.5%", "status": "RUNNING", "what": "A paper bot identical to the live one except it buys once it is 97.5% sure instead of 99.5% sure.", "why": "Our cheap fills (under 95c) fell from 28 a day to 7. The question is whether those trades are still there but now sit just under our confidence bar, or whether they are genuinely gone.", "good": "It makes MORE money per day than the live bot without its loss rate rising past break-even. Then the bar is too strict.", "bad": "It takes more trades and loses more than the extra trades pay for. Then 99.5% is right and the missing fills are a supply problem, not a gate problem -- which is what the pickoff tracker suggests.", "watch": "Dollars per day, not win rate. At 96c a 3% loss rate is break-even, so an arm can win 97 times in 100 and make nothing.", "outcome": null, "attribution": null, "since": "2026-09-18", "running": true, "settled": 16, "won": 16, "lost": 0, "net": 9.08}, {"name": "Lower confidence to 98.0%", "status": "RUNNING", "what": "A paper bot identical to the live one except it buys once it is 98.0% sure instead of 99.5% sure.", "why": "Our cheap fills (under 95c) fell from 28 a day to 7. The question is whether those trades are still there but now sit just under our confidence bar, or whether they are genuinely gone.", "good": "It makes MORE money per day than the live bot without its loss rate rising past break-even. Then the bar is too strict.", "bad": "It takes more trades and loses more than the extra trades pay for. Then 99.5% is right and the missing fills are a supply problem, not a gate problem -- which is what the pickoff tracker suggests.", "watch": "Dollars per day, not win rate. At 96c a 3% loss rate is break-even, so an arm can win 97 times in 100 and make nothing.", "outcome": null, "attribution": null, "since": "2026-09-18", "running": true, "settled": 17, "won": 17, "lost": 0, "net": 12.11}, {"name": "Lower confidence to 98.5%", "status": "RUNNING", "what": "A paper bot identical to the live one except it buys once it is 98.5% sure instead of 99.5% sure.", "why": "Our cheap fills (under 95c) fell from 28 a day to 7. The question is whether those trades are still there but now sit just under our confidence bar, or whether they are genuinely gone.", "good": "It makes MORE money per day than the live bot without its loss rate rising past break-even. Then the bar is too strict.", "bad": "It takes more trades and loses more than the extra trades pay for. Then 99.5% is right and the missing fills are a supply problem, not a gate problem -- which is what the pickoff tracker suggests.", "watch": "Dollars per day, not win rate. At 96c a 3% loss rate is break-even, so an arm can win 97 times in 100 and make nothing.", "outcome": null, "attribution": null, "since": "2026-09-18", "running": true, "settled": 17, "won": 17, "lost": 0, "net": 10.24}, {"name": "Lower confidence to 99.0%", "status": "RUNNING", "what": "A paper bot identical to the live one except it buys once it is 99.0% sure instead of 99.5% sure.", "why": "Our cheap fills (under 95c) fell from 28 a day to 7. The question is whether those trades are still there but now sit just under our confidence bar, or whether they are genuinely gone.", "good": "It makes MORE money per day than the live bot without its loss rate rising past break-even. Then the bar is too strict.", "bad": "It takes more trades and loses more than the extra trades pay for. Then 99.5% is right and the missing fills are a supply problem, not a gate problem -- which is what the pickoff tracker suggests.", "watch": "Dollars per day, not win rate. At 96c a 3% loss rate is break-even, so an arm can win 97 times in 100 and make nothing.", "outcome": null, "attribution": null, "since": "2026-09-18", "running": true, "settled": 15, "won": 15, "lost": 0, "net": 9.75}, {"name": "Hedge on the market price, not the model (A47)", "status": "RUNNING", "what": "Insurance fires only when OUR side's market price has also fallen below 50c, instead of firing on the model's belief alone.", "why": "The wobble study, 1,717 markets: a favourite that dips but stops above 50c recovered 48 times out of 48. One that crosses below 50c really flipped 76% of the time. The model panics at moves the market shrugs off.", "good": "It skips the wasted hedges and keeps the needed ones. Each wasted hedge costs a real premium.", "bad": "It waits too long and misses insurance we needed, which is the expensive direction. A hedge that arrives late is worse than none.", "watch": "Alarms it SKIPPED that went on to lose. Three of those and the idea is dead.", "outcome": null, "attribution": null, "since": "2026-09-17", "running": true, "settled": 8, "won": 8, "lost": 0, "net": 2.76}, {"name": "Buy bigger in the last seconds (A48)", "status": "RUNNING", "what": "Lets one order exceed the normal size when there are under 10 seconds left. Operator's idea.", "why": "Our own fills earn 5.35c a contract inside 5 seconds against 1.90c at 16-30 seconds -- 2.8x -- and that window is only 6% of our volume. The book is not the limit either: the median depth at our own price is 433 contracts against a size of 95.", "good": "The best-paying window gets more of our money. This is the largest upside on the board.", "bad": "Bigger size in the last seconds is also bigger size when a book collapses mid-flight, which is exactly how the Bitcoin trade cost $27.87.", "watch": "Money per contract in the late window, and the worst single close.", "outcome": null, "attribution": null, "since": "2026-09-17", "running": true, "settled": 21, "won": 21, "lost": 0, "net": 9.87}, {"name": "Insurance only when the other side is a normal bet (A51)", "status": "RUNNING", "what": "Only buys insurance when the OTHER side would pass the same tests a normal bet passes: our model 99.5% sure of it, and its price at or under 98c.", "why": "Operator's idea: 'buy enough there just like a normal bet to offset it or even profit.' Today insurance fires on the model's panic alone at any price under a dollar, and the record is bad -- 12 insured quarter-hours, 11 ended negative, and five of them bought the other side at 10-18c, meaning the market still liked our side and we paid for nothing.", "good": "It fires rarely and the quarter-hours it skips end up costing less than the premiums we save. Firing rarely IS the point.", "bad": "It waits so long that real insurance is missed. By the time the model is 99.5% sure the other side wins, that side is usually expensive, and a contract bought at 97c returns 3c -- so the offset will be partial at best. This may turn out to be an argument for not taking the bet at all rather than rescuing it.", "watch": "Quarter-hours where insurance was HELD OFF and the bet then lost, against the premiums saved on the ones that recovered.", "outcome": null, "attribution": null, "since": "2026-09-18", "running": true, "settled": 0, "won": 0, "lost": 0, "net": 0.0}, {"name": "45 seconds at FULL size, but only when the market agrees (A50)", "status": "RUNNING", "what": "Buys a WHOLE bet at 31-45 seconds out, not a third -- but only when our model and the market price are within 3 cents of each other.", "why": "Operator: 'we need to figure out how to be able to buy it at full price 45 seconds out.' Size is a blunt protection; it costs us on every good trade to survive the bad ones. Out at 45 seconds only a quarter of the settlement average is locked, so when the market disagrees with us by a lot the MARKET is usually right -- the reverse of inside 30 seconds, where that same disagreement is the entire edge. The one loss in the current 45-second arm was exactly this: bought at 93c while the model said 99.9%, and it cost more than the other seventeen trades made.", "good": "It makes more per early bet than the uncapped arm AND refuses at least 5 of its trades. Then full size at 45 seconds is defensible and the third goes away.", "bad": "It refuses trades that went on to win while still losing money. That is the expensive direction and it kills the idea.", "watch": "Early markets that the cap refused, and what they did next. Bars are in results/PREREG_a50_early_edge_cap.md and are not moved after the fact.", "outcome": null, "attribution": null, "since": "2026-09-18", "running": true, "settled": 0, "won": 0, "lost": 0, "net": 0.0}, {"name": "The 45-second early leg (A46 + A49)", "status": "RUNNING", "what": "Buys a THIRD of a bet between 31 and 45 seconds out, and only if the price is at least 90c. Also live at that size.", "why": "The cheap offers get taken a median of 41 seconds before the close while our window starts at 30. This is the only lever aimed at that.", "good": "More trades from the window where the buying actually happens.", "bad": "Less of the settlement average is locked that far out, so the model leans harder on a volatility guess. It went live at FULL size for one day and one bad fill took back most of what thirty good ones made.", "watch": "Losses on closes that carried an early leg. Revert at 3 in 40, or 2 in the first 15.", "outcome": null, "attribution": null, "since": "2026-09-17", "running": true, "settled": 26, "won": 25, "lost": 1, "net": -1.95}, {"name": "Commodities, paper (all five, every window)", "status": "RUNNING", "what": "Gold, oil, silver, copper and natural gas on their own best windows, plus one window deliberately chosen to LOSE as a control.", "why": "Commodities settle on the close of a one-minute candle, not a 60-second average, so their safe zones are at BOTH ends of the quarter hour with a dangerous middle. Opposite shape to crypto.", "good": "A second product. The crypto pool halved on 09-13 and more venues is the only answer to that.", "bad": "If the deliberate loser makes money, the whole method is misreading the world and nothing else it says can be trusted.", "watch": "The anti-silver control above all else.", "outcome": null, "attribution": null, "since": "2026-09-17", "running": true, "settled": 257, "won": 248, "lost": 9, "net": 49.6}, {"name": "Commodities, LIVE (oil, last 15 seconds, $10)", "status": "RUNNING", "what": "Real money on ONE cell: oil at 95-99c inside the final 15 seconds.", "why": "Paper cannot answer whether an offer would reach US -- on crypto the tape and our fills differed 31x in loss rate. Only real fills can.", "good": "It fills and holds its loss rate. Then the window widens.", "bad": "Losses at a rate the tape did not predict, which would mean commodity offers are adversely selected the way crypto's are.", "watch": "Stops itself at $25 down or 4 losses. First day: 29 won, 3 lost, -$56.83, and two thirds of that was one defect (betting the same market twice through different windows), now fixed.", "outcome": null, "attribution": null, "since": "2026-09-17", "running": true, "settled": 7, "won": 7, "lost": 0, "net": 1.03}, {"name": "Coin Race (KXCRYPTOLEAD15M), paper", "status": "RUNNING", "what": "Which coin leads over a quarter hour. Five legs per race and four of them lose, so the NO side of a trailer is a much flatter bet than the leader's YES.", "why": "A whole series we do not trade at all, and volume is the binding constraint.", "good": "A second crypto product with no new venue needed.", "bad": "An early version took up to 17 legs on one race and lost $1,682 in paper. Uncapped legs on one event is not diversification.", "watch": "Money per race, never legs won. One arm went 8 of 9 legs and still lost.", "outcome": null, "attribution": null, "since": "2026-09-15", "running": true, "settled": 23, "won": 23, "lost": 0, "net": 349.5}, {"name": "Hedge threshold 0.80 -> 0.60", "status": "SHIPPED", "what": "Insurance fires when belief in our side drops under 60%, not 80%.", "why": "Hedges at high belief were firing on noise.", "good": null, "bad": null, "watch": null, "outcome": "GOOD, and measurable. Of 14 live hedges, the 5 wasted ones at belief 0.64-0.89 could not happen under the new gate. Under 0.60 exactly 7 would have fired and 6 of those were needed.", "attribution": "Hedging is +$14.30 across its whole life (6 needed paying +$56.01, 6 wasted costing -$41.72). The change removes most of the wasted side.", "since": "2026-09-16", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "One position per MARKET (commodities)", "status": "SHIPPED", "what": "The first window to fill claims a market; later windows on the same market are refused whichever side they want.", "why": "Windows are not independent opportunities. They are different moments looking at the same yes-or-no question.", "good": null, "bad": null, "watch": null, "outcome": "Found by losing. One oil market was bought NO at 180 seconds AND NO again at 60 seconds through a different window, then YES at 23 seconds. One adverse event became two losses, -$58.84.", "attribution": "Would have halved that day's commodity loss. $67.72 of unintended extra stake went on across 7 of 22 markets.", "since": "2026-09-17", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "The books come from Kalshi, not our logs", "status": "SHIPPED", "what": "pinledger reads /portfolio/settlements; the app and the phone bot read that. Our logs still explain WHY we traded.", "why": "Our logs write one line per LEG, so a hedged market looked like two trades and one of them like a pure loss.", "good": null, "bad": null, "watch": null, "outcome": "The phone bot had texted a -$3.93 LOSS on a DOGE market Kalshi settled at +$4.36. Day totals were crypto-only, double-counted, and missed every position open when a process was killed.", "attribution": "No money either way -- it changes what we SEE, which had been wrong by tens of dollars a day in both directions.", "since": "2026-09-18", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "Resting a bid instead of crossing the spread", "status": "KILLED", "what": "Post an offer and wait instead of taking what is there.", "why": "Makers pay no fee, and a third of all opportunities die because nobody is selling the winning side.", "good": null, "bad": null, "watch": null, "outcome": "KILLED, and the mechanism should stop this ever being re-proposed: a bid resting one tick under the ask was filled on 29% of markets that WON and on 100% of the 17 that LOST. Whoever reaches down to your resting bid already knows. It did not even get a better price (94.16c against the taker's 94.05c).", "attribution": "Resting lost to taking in 113 of 114 comparisons across 9 days and 793 closes.", "since": "2026-09-12", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "A minimum distance-from-the-line gate", "status": "KILLED", "what": "Refuse trades where the price sits too few standard deviations from the strike, however confident the model is.", "why": "6 of our 13 all-time losses sat under 3 sd, including the $27.87 Bitcoin loss at 2.70 sd. The model maps that distance through a normal curve while the index has a tail 44x fatter.", "good": null, "bad": null, "watch": null, "outcome": "KILLED BY THE MONEY. Every threshold loses: a 3 sd floor skips 144 settled markets to avoid 5 losers, and those 144 markets MADE $86.85. Thin-cushion trades lose more often AND are still profitable.", "attribution": "-$5.80 at 2.0 sd, -$86.85 at 3.0, -$105.31 at 4.0. The lesson: counting losses is not counting money.", "since": "2026-09-18", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "Raise the 98c price ceiling", "status": "KILLED", "what": "Buy the near-certainties priced above 98c that we currently refuse.", "why": "431 refusals, and 311 of the markets behind them settled our way with ZERO losses.", "good": null, "bad": null, "watch": null, "outcome": "Not worth it. It would roughly DOUBLE the number of trades and add about $10 a day, because at 99c a win pays one cent. A dormant gate also takes over at 98.7c, so a straight change delivers a third of what it looks like.", "attribution": "+$1.94/day reachable immediately. Against a run earning $70-115 a day, it is noise with a risk attached.", "since": "2026-09-17", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "The dump guard is costing us winners", "status": "KILLED", "what": "The gate that refuses any offer more than 15c under fair value -- an unnamed price floor at 84.5c.", "why": "It had flagged 17 markets, and 10 of them went on to win.", "good": null, "bad": null, "watch": null, "outcome": "THE CLAIM WAS WRONG. A refusal marks a MOMENT, not a market's fate: the bot kept looking and BOUGHT 10 of those 17 seconds later when the discount narrowed. Their wins are already in our P&L. Of the 4 it truly blocked, it MADE us about $12.", "attribution": "No change deployed. The guard stays at 0.15.", "since": "2026-09-17", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "Crypto.com prediction markets (FIX API)", "status": "IDEA", "what": "A second venue. They run 5- and 15-minute crypto markets on more coins than Kalshi.", "why": "THE most valuable thread open. The cheap-offer pool on Kalshi halved on 09-13 and our share never moved -- when the pool itself dries up, the answer is another product, not a better bot.", "good": "A whole second supply of the same trade.", "bad": "Predictions are FIX-only there (REST and WebSocket say 'coming soon'), and FIX is a heavyweight session protocol our stack does not speak. And we do not yet know their settlement rule, which decides whether ANY of our modelling transfers.", "watch": null, "outcome": null, "attribution": null, "since": "2026-09-17", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "Polymarket", "status": "IDEA", "what": "Another prediction venue.", "why": "Same reason: more supply.", "good": null, "bad": "Their crypto predictions are not offered to US users, so the main exchange is out of reach.", "watch": null, "outcome": null, "attribution": null, "since": "2026-09-17", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "Buy the NEW side when a favourite crosses below 50c", "status": "IDEA", "what": "Not a hedge -- a fresh bet on the side that is taking over.", "why": "When the favourite falls under 50c inside the last 30 seconds it goes on to lose 76% of the time across 158 markets. Buying the other side at ~50c is worth about +11c a contract on paper, the biggest per-contract number found.", "good": null, "bad": "Also the most suspect. The person selling you the new side at 50c may be the one who knows why it moved -- exactly the population trap that makes tape numbers lie.", "watch": null, "outcome": null, "attribution": null, "since": "2026-09-17", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "Size taper on thin cushions", "status": "IDEA", "what": "Take the trades that sit close to the line, but SMALLER.", "why": "Refusing them loses money (see the killed gate above), but they do earn less: about 60c a market against $1.04 for the rest.", "good": "Keeps the profit, cuts the size of the worst days.", "bad": "Any size rule is another thing that can be wrong in the direction of trading less.", "watch": null, "outcome": null, "attribution": null, "since": "2026-09-18", "running": false, "settled": null, "won": null, "lost": null, "net": null}, {"name": "Gemini prediction markets", "status": "KILLED", "what": "A venue we built support for.", "why": "More supply.", "good": null, "bad": null, "watch": null, "outcome": "Almost zero volume. Built and shelved.", "attribution": "No money either way.", "since": "2026-09-16", "running": false, "settled": null, "won": null, "lost": null, "net": null}], "lab_counts": {"RUNNING": 13, "SHIPPED": 3, "KILLED": 5, "IDEA": 4}}</script>
+<script>
+(function(){
+  var D = JSON.parse(document.getElementById('data').textContent);
+  var esc = function(s){ var d=document.createElement('div'); d.textContent=(s==null?'':String(s)); return d.innerHTML; };
+  var money = function(v){ if(v==null) return '-'; return (v<0?'-$':'+$')+Math.abs(v).toFixed(2); };
+  var cls = function(v){ return v==null?'':(v>=0?'gain':'loss'); };
+  var pct = function(v){ return v==null?'':(v>=0?'+':'')+v.toFixed(2)+'%'; };
+
+  function tiles(){
+    var t=D.tiles, out='<div class="tiles">';
+    [['today','Today'],['yday','Yesterday'],['run','This run'],['all','All time']].forEach(function(p){
+      var s=t[p[0]];
+      out += '<div class="tile"><span class="k">'+p[1]+'</span>';
+      if(!s){ out += '<span class="v muted">?</span><span class="s">cannot tell when this run started</span></div>'; return; }
+      out += '<span class="v '+cls(s.net)+'">'+money(s.net)+'</span>';
+      var sub = s.closes ? (s.closes+' quarter-hour'+(s.closes==1?'':'s')+', '+s.won+' won, '+s.lost+' lost') : 'nothing settled yet';
+      if(s.pct!=null) sub = pct(s.pct)+' &middot; '+sub;
+      out += '<span class="s">'+sub+'</span></div>';
+    });
+    return out+'</div>';
+  }
+
+  function table(cols, rows){
+    if(!rows.length) return '<p class="note">Nothing here yet.</p>';
+    var h='<div class="scroll"><table><thead><tr>';
+    cols.forEach(function(c){ h+='<th'+(c[2]?' style="text-align:right"':'')+'>'+esc(c[0])+'</th>'; });
+    h+='</tr></thead><tbody>';
+    rows.forEach(function(r){
+      h+='<tr>';
+      cols.forEach(function(c){ h+='<td'+(c[2]?' class="n"':'')+'>'+c[1](r)+'</td>'; });
+      h+='</tr>';
+    });
+    return h+'</tbody></table></div>';
+  }
+
+  var PANES = {
+    now: function(){
+      var openN = 0; for(var k in D.open){ var v=D.open[k]; openN += (typeof v==='number')?v:(v&&v.n?v.n:1); }
+      var h = '<section>'+tiles()+'</section>';
+      h += '<section><h2>The account</h2><div class="chips">'
+        + '<span class="chip">Bank <b class="num">$'+(D.bank==null?'?':D.bank.toFixed(2))+'</b></span>'
+        + '<span class="chip">Put in <b class="num">$'+(D.deposited==null?'?':D.deposited.toFixed(2))+'</b></span>'
+        + '<span class="chip">Bet size <b class="num">'+(D.size||'?')+'</b> contracts</span>'
+        + '<span class="chip">Open bets <b class="num">'+openN+'</b></span>'
+        + (D.run_since?'<span class="chip">Running since '+esc(D.run_since)+'</span>':'')
+        + '</div></section>';
+      h += '<section><h2>Last settled bets</h2>'+table([
+        ['When', function(r){return esc(r.when)}],
+        ['Coin', function(r){return esc(r.coin)}],
+        ['Side', function(r){return esc(r.want)}],
+        ['Result', function(r){return esc(r.result||'')+(r.hedged?' <span class="muted">(insured)</span>':'')}],
+        ['$', function(r){return '<span class="'+cls(r.pnl)+'">'+money(r.pnl)+'</span>'}, 1]
+      ], D.settled)+'</section>';
+      return h;
+    },
+    market: function(){
+      var s=D.sellers, f=D.fills_today;
+      var h='<section><h2>How active sellers are</h2>';
+      h+='<p><b>'+esc(s.level||'?')+'</b>';
+      if(s.recent!=null) h+=' &mdash; someone selling the winning side on <span class="num">'+(100*s.recent).toFixed(0)+'%</span> of the last few looks, against a usual <span class="num">'+(100*(s.median||0)).toFixed(0)+'%</span>.';
+      h+='</p></section>';
+      if(D.supply.length){
+        h+='<section><h2>Is the opportunity going away?</h2><ul>';
+        D.supply.forEach(function(l){ h+='<li>'+esc(l)+'</li>'; });
+        h+='</ul>';
+        if(D.supply_age_d!=null) h+='<p class="note" style="margin-top:10px">Measured up to '+D.supply_age_d.toFixed(1)+' days ago.</p>';
+        h+='</section>';
+      }
+      h+='<section><h2>Today\u2019s orders</h2><div class="chips">'
+        +'<span class="chip">Sent <b class="num">'+f.orders+'</b></span>'
+        +'<span class="chip">Filled <b class="num">'+f.fills+'</b></span>'
+        +'<span class="chip">Lost the race <b class="num">'+f.zero+'</b></span>'
+        +'<span class="chip">Asked <b class="num">'+f.asked+'</b> got <b class="num">'+f.contracts+'</b></span>'
+        +'</div></section>';
+      h+='<section><h2>The last quarter-hours</h2>'+table([
+        ['Close', function(r){return esc(r.close)}],
+        ['Sellers', function(r){return r.share==null?'-':(100*r.share).toFixed(0)+'%'}, 1],
+        ['What happened', function(r){return esc(r.why)}]
+      ], D.closes)+'</section>';
+      return h;
+    },
+    days: function(){
+      return '<section><h2>One row per day, newest first</h2>'+table([
+        ['Day', function(r){return esc(r.day)}],
+        ['$', function(r){return '<span class="'+cls(r.net)+'">'+money(r.net)+'</span>'}, 1],
+        ['%', function(r){return r.pct==null?'-':'<span class="'+cls(r.pct)+'">'+pct(r.pct)+'</span>'}, 1],
+        ['Won', function(r){return r.won}, 1],
+        ['Lost', function(r){return r.lost}, 1]
+      ], D.days)+'<p class="note" style="margin-top:12px">The percentage is that day\u2019s money over the bank at the start of that day.</p></section>';
+    },
+    losses: function(){
+      return '<section><h2>Every losing quarter-hour</h2>'+table([
+        ['When', function(r){return esc(r.close)}],
+        ['Coins', function(r){return esc(r.coins.join(', '))}],
+        ['$', function(r){return '<span class="loss">'+money(r.net)+'</span>'}, 1]
+      ], D.losses)+'</section>';
+    },
+    lab: function(){
+      var c=D.lab_counts||{};
+      var h='<section><h2>The drawing board</h2><div class="chips" style="margin-bottom:14px">'
+        +'<span class="chip ok">'+(c.RUNNING||0)+' running</span>'
+        +'<span class="chip ok">'+(c.SHIPPED||0)+' shipped</span>'
+        +'<span class="chip bad">'+(c.KILLED||0)+' killed</span>'
+        +'<span class="chip">'+(c.IDEA||0)+' ideas</span></div>';
+      var order={RUNNING:0,IDEA:1,SHIPPED:2,KILLED:3,PAUSED:4};
+      D.lab.slice().sort(function(a,b){return (order[a.status]||9)-(order[b.status]||9)}).forEach(function(e){
+        h+='<div class="exp"><h3>'+esc(e.name)+'<span class="pill '+e.status+'">'+e.status+'</span></h3>';
+        if(e.settled) h+='<div class="prog">So far: '+e.settled+' settled, '+e.won+' won, '+e.lost+' lost, '
+          +money(e.net)+(e.running?'':' (not running now)')+'</div>';
+        else if(e.status==='RUNNING') h+='<div class="prog">'+(e.running?'running, nothing settled yet':'NOT RUNNING')+'</div>';
+        [['What it does','what'],['Why','why'],['Good looks like','good'],['Bad looks like','bad'],
+         ['What to watch','watch'],['What happened','outcome'],['What it was worth','attribution']].forEach(function(p){
+          if(e[p[1]]) h+='<div class="row"><span class="lbl">'+p[0]+'</span>'+esc(e[p[1]])+'</div>';
+        });
+        h+='</div>';
+      });
+      return h+'</section>';
+    },
+    system: function(){
+      var s=D.sys;
+      var h='<section><h2>The machines</h2><div class="chips">'
+        +'<span class="chip '+(s.kalshi_ok?'ok':'bad')+'">Kalshi recorder '+(s.kalshi_ok?'alive':'DOWN')+' &middot; '+s.kalshi_chans+' channels</span>'
+        +'<span class="chip '+(s.feeds_ok?'ok':'bad')+'">Exchange feeds '+(s.feeds_ok?'alive':'DOWN')+' &middot; '+s.feeds_chans+' channels</span>'
+        +'<span class="chip '+(s.disk_gb<6?'bad':'')+'">Disk free '+s.disk_gb+' GB</span>'
+        +'<span class="chip '+(s.ram_gb<1.5?'bad':'')+'">Memory free '+s.ram_gb+' GB</span>'
+        +'<span class="chip">Paper tests running '+(s.paper_arms||0)+'</span>'
+        +'<span class="chip">Positions: '+esc(s.flat||'?')+'</span>'
+        +'</div>';
+      h+='<p class="note" style="margin-top:14px">The tape stops for good below 5 GB free, so the disk chip turns red at 6. '
+        +'Money comes from Kalshi\u2019s own settlement record, not from our logs.</p></section>';
+      h+='<section><h2>What this page is not</h2><p class="note">A snapshot, not the live app. '
+        +'It cannot start, pause or stop the bot &mdash; a button that silently does nothing would be worse than no button. '
+        +'Use the desktop app or the Telegram bot for that.</p></section>';
+      return h;
+    }
+  };
+
+  var TABS=[['now','Now'],['market','Market'],['days','Days'],['losses','Losses'],['lab','Lab'],['system','System']];
+  var nav=document.getElementById('tabs'), panes=document.getElementById('panes');
+  TABS.forEach(function(t,i){
+    var b=document.createElement('button');
+    b.id='tab-'+t[0]; b.type='button'; b.textContent=t[1];
+    b.setAttribute('role','tab'); b.setAttribute('aria-selected', i===0?'true':'false');
+    b.onclick=function(){ show(t[0]); };
+    nav.appendChild(b);
+    var p=document.createElement('div');
+    p.className='pane'; p.id='pane-'+t[0]; p.hidden = i!==0;
+    panes.appendChild(p);
+  });
+  function show(key){
+    TABS.forEach(function(t){
+      var sel = t[0]===key;
+      document.getElementById('tab-'+t[0]).setAttribute('aria-selected', sel?'true':'false');
+      var p=document.getElementById('pane-'+t[0]);
+      p.hidden=!sel;
+      if(sel && !p.dataset.done){ p.innerHTML=PANES[t[0]](); p.dataset.done='1'; }
+    });
+    try{ localStorage.setItem('pinmobile.tab', key); }catch(e){}
+    window.scrollTo(0,0);
+  }
+  var hl=document.getElementById('hl'), dt=document.getElementById('dt'), st=document.getElementById('status');
+  hl.textContent=D.headline; dt.textContent=D.detail;
+  var col = D.state==='TRADING' ? 'var(--gain)' : (D.state==='DOWN'||D.state==='BRAKE' ? 'var(--loss)' : 'var(--watch)');
+  st.style.borderLeftColor=col; hl.style.color=col;
+  document.getElementById('stamp').textContent='Snapshot taken '+D.built_et+' ET. This page does not update on its own.';
+  var start='now';
+  try{ var s=localStorage.getItem('pinmobile.tab'); if(s && PANES[s]) start=s; }catch(e){}
+  show(start);
+})();
+</script>
