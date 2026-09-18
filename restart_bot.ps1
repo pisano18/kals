@@ -226,6 +226,13 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # 76, about $75 a bet. The worst a single close can cost falls from 33% of
     # the bank to 25%; the earning rate falls about a quarter. He was shown
     # both halves and chose it.
+    # --price-ceiling 0.99 was passed here for about four minutes on
+    # 2026-09-18 ~17:0x ET and the bot DID NOT COME BACK: pinrun runs its own
+    # self-test at startup with the flag already applied, and four older checks
+    # assert the 98c ceiling against the RUNNING value (worst_close_cost,
+    # ladder_under, two A45 room checks). Those must be rewritten against the
+    # declared default before the flag can be used live. Removed; see
+    # results/VERSIONS.md v-ceiling99 for the full account.
     "--bank-brake", "4.08"
     # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
     # built as safely as you described, deploy now"), first at half, then at a

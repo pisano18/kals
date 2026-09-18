@@ -2010,6 +2010,19 @@ MIN_FILL_FRAC = 0.50     # AMENDMENT 6. Take a PARTIAL rather than skip a
                          # early fill burns a scale-in slot and raises the
                          # improve bar, so it trades a big cheap buy later for
                          # a small dear one now. Half is the measured optimum.
+_DEFAULT_PRICE_CEILING = 0.980   # the DECLARED default; --price-ceiling moves
+                                 # the running value and the self-test asserts
+                                 # this one, so an arm that sets the flag does
+                                 # not fail its own gate.
+#
+# RAISED LIVE TO 0.99 BY FLAG on 2026-09-18 ~17:4xZ, operator: "The two gates
+# that trim volume without preventing loss, remove or severely lessen them",
+# then "I'm just following your words" when shown the +$122.80 the cap had
+# turned away. That figure is an upper bound (every refusal filled, none lost);
+# the REAL record when the band was allowed live is 82 markets at 98-99c, one
+# loss, +$51.07 including the loss. The 09-09 resilience arithmetic below is
+# unchanged and still true: a loss at 98.5c takes ~65 wins to earn back where
+# one at 98c takes 53. He was shown both and chose the volume.
 PRICE_CEILING = 0.980    # 98.8c -> 98.0c, 2026-09-09. THE OPERATOR'S
                          # ARGUMENT, and it is arithmetic rather than a fitted
                          # parameter: "unless it eliminates 100% of losses it
@@ -3070,9 +3083,13 @@ def _selftest_body():
         # constants -- so asserting the brake alone would pass while a change
         # to MAX_PER_CLOSE or PRICE_CEILING silently moved the bet size.
         _div = BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING
-        ck(abs(_div - 8.0) < 0.02,
-           "one bet is the bank divided by 8.0 (got %.3f) -- set 2026-09-18 on "
-           "the operator's word 'Sure divide by 8'" % _div)
+        ck(abs(_div - 8.0) < 0.1,
+           "one bet is the bank divided by about 8 (got %.3f) -- set 2026-09-18 "
+           "on the operator's word 'Sure divide by 8'; the tolerance admits the "
+           "ceiling moving 0.98 -> 0.99, which makes it 8.08" % _div)
+        ck(_DEFAULT_PRICE_CEILING == 0.980,
+           "the DECLARED ceiling is still 98c; the live 99c comes from the "
+           "--price-ceiling flag and is asserted in VERSIONS.md, not here")
         ck(abs(size_for_bank(800.0) - 100.0) < 1.0,
            "so an $800 bank asks for about 100 contracts, not the 136 the old "
            "setting asked for")
@@ -7165,6 +7182,16 @@ def main():
                          "negative, five of them buying the other side at "
                          "10-18c while the market still liked ours. Off by "
                          "default.")
+    # argparse %-formats help strings ITSELF, so this one is not pre-formatted:
+    # a pre-formatted "1%%" reaches argparse as "1%" and raises "incomplete
+    # format" at the first --help or self-test. That is what failed the
+    # deploy's first self-test on 2026-09-18.
+    ap.add_argument("--price-ceiling", type=float, default=None,
+                    help="Highest ask the bot will pay, in dollars. Default "
+                         "0.980. Exists as a FLAG so the operator's setting "
+                         "can be moved and reverted without an edit. Note it "
+                         "also enters the bet-size divisor (bank / (brake * "
+                         "2 * ceiling)), so 0.98 -> 0.99 trims size by 1%%.")
     ap.add_argument("--bank-brake", type=float, default=None,
                     help="How many worst-closes the bank must cover. Bet size "
                          "is bank / (this * 2 * 0.98), so 3.0 is bank/5.88 and "
@@ -7471,6 +7498,14 @@ def main():
             raise SystemExit("--bank-brake must be between 1 and 20, got %r"
                              % (a.bank_brake,))
         globals()["BANK_BRAKE"] = float(a.bank_brake)
+    if a.price_ceiling is not None:
+        # PRICES ARE DOLLARS, never cents (hard rule 5): 99 would be a ceiling
+        # nothing can exceed and the bot would buy at any price at all.
+        if not (0.50 < a.price_ceiling <= 0.999):
+            raise SystemExit("--price-ceiling is in DOLLARS (0.99, not 99) and "
+                             "must be in (0.50, 0.999], got %r"
+                             % (a.price_ceiling,))
+        globals()["PRICE_CEILING"] = float(a.price_ceiling)
     if a.early_max_edge is not None:
         if not (0.0 < a.early_max_edge <= 50.0):
             raise SystemExit("--early-max-edge is in CENTS and must be in "

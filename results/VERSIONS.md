@@ -1,3 +1,72 @@
+# v-ceiling99 -- 2026-09-18 ~17:4xZ -- NEVER LIVE: the 99c cap took the bot DOWN for ~5 minutes and was reverted
+
+**What happened.** `restart_bot.ps1` was given `--price-ceiling 0.99` and the
+bot did not come back: `pinrun` runs its own self-test at startup WITH the flag
+already applied, and four older checks assert the 98c ceiling against the
+RUNNING value (`worst_close_cost(20) must be ... 39.2, got 39.6`, `ladder_under
+... under the 98c ceiling`, two A45 room checks "at the 98c ceiling"). They
+failed, the process wrote "self-test failed -- nothing ran", and the live bot
+was down from ~17:04 to ~17:09Z. The operator saw it before I did: "Also the
+bot is down." My own `--selftest` had passed because it ran WITHOUT the flag.
+
+**Reverted** to the 98c default. The `--price-ceiling` flag stays in the code
+(the declared default is asserted, so it is harmless) but MUST NOT be passed
+live until those four checks are rewritten against `_DEFAULT_PRICE_CEILING`.
+This is the trap already in memory -- self-tests asserting running values
+instead of declared defaults -- and it bit a fifth time.
+
+**And the operator's condition was not met.** He said "As long as you're
+certain 99c is more profitable." The evidence is 82 live markets at 98-99c,
+1 loss (1.22%) against a ~1.4% break-even -- a margin of 0.2 points on one
+loss, whose 95% upper bound is near 5%. That is "probably", not "certain".
+
+## What the change WOULD be, for when he decides
+
+**Operator, twice: "The two gates that trim volume without preventing loss,
+remove or severely lessen them" and, shown the numbers, "I'm just following
+your words."** The cap would become a FLAG at 0.99; the declared default stays
+0.98.
+
+## The two numbers he was following, reconciled
+
+`pinattrib` reports, per gate, what every BLOCKED refusal would have paid if
+it had filled, using the market's real settlement. Those are UPPER BOUNDS --
+every refusal filled, none lost -- and they were quoted to him as money on the
+table without the tail beside them. Put beside it:
+
+| gate | "if filled" | per trade | our REAL record in that band | one loss |
+|---|---|---|---|---|
+| 98c cap | +$122.80 (379 trades) | 32c | 82 live markets, 1 lost, **+$51.07** | ~$76 |
+| thin-profit floor | +$136.51 (1,048 trades) | 13c | 5 live markets, +$0.03 | ~$76 |
+
+**The cap is lifted** because the band it excludes has a real, positive live
+record including its one loss. The 09-09 resilience arithmetic is unchanged
+and still true -- a loss at 98.5c takes ~65 wins to earn back where one at
+98c takes 53 -- and he chose the volume with that in front of him.
+
+**The floor is NOT lowered.** At ~99.5c a win is 13c and a loss $76, so one
+loss erases 580 wins; break-even is one loss in 200. The 1,048 blocked
+trades span roughly 300 closes (rule 4), which bounds the loss rate at
+about 1 in 100 -- five times break-even. At any loss rate the data allows the
+expected value is negative; the +$136.51 is the ceiling of the outcome, not
+its middle. Standing offer: it moves only on his explicit word after this.
+
+## Side effect
+
+The ceiling enters the bet-size divisor: bank / (4.08 * 2 * 0.99) = 8.08, so
+size is about 1% smaller than at 0.98. The bank-divisor self-test tolerance
+was widened to admit it.
+
+## Revert
+
+```powershell
+cd C:\kals-repo
+# restart_bot.ps1: delete the "--price-ceiling", "0.99" line
+.\restart_bot.ps1
+```
+
+---
+
 # v-early-full2 -- 2026-09-18 ~17:0xZ -- LIVE: the 31-45 s leg goes from a THIRD to FULL size
 
 **Operator: "If you're ready, then yes increase to 45."** `restart_bot.ps1`
