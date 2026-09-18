@@ -124,6 +124,7 @@ HELP_TEXT = """Commands:
 /status - is it trading, with the evidence
 /today /yesterday /days - money and % return
 /open - open bets
+/fills - every order today: filled, price paid, seconds out
 /brief - the daily briefing: money, what changed, what it did, the market, what to watch
 /market - how active sellers are
 /losses - losing closes
@@ -242,6 +243,49 @@ class Phone:
         for t in opn:
             c = pinflat.close_epoch(t)
             out.append("%s x%g, closes %s (%d s)" % (coin(t), self.ledger.contracts_for(t), close_et(t), max(0, (c or 0) - self.now())))
+        return "\n".join(out)
+
+    def text_fills(self, day=None):
+        """Every order the bot sent today: what filled, what we paid, how late.
+
+        The operator, 2026-09-18: *"Make a telegram command to see the filled,
+        paid, and seconds out info for the days bets."* He had asked where to
+        see a fill price and the only answer was a column in the desktop app.
+
+        ZERO-FILL ORDERS ARE SHOWN, not hidden. An order that filled nothing is
+        a race we lost, and it is about one in five -- a list that quietly drops
+        them would report a fill rate of 100%.
+        """
+        day = day or et_day(self.now())
+        rows = [o for o in self.ledger.orders
+                if o.get("t") and et_day(o["t"]) == day]
+        if not rows:
+            return "No orders today (%s)." % day
+        rows.sort(key=lambda o: o["t"])
+        out = ["ORDERS TODAY (%s)" % day, ""]
+        nf = got = asked = 0.0
+        zero = 0
+        for o in rows:
+            f = float(o.get("filled") or 0)
+            a = float(o.get("asked") or 0)
+            got += f
+            asked += a
+            if f <= 0:
+                zero += 1
+            else:
+                nf += 1
+            px = o.get("price") or o.get("ask_seen")
+            tau = o.get("tau")
+            out.append("%s  %-5s %s  %s  %s" % (
+                et_str(o["t"]),
+                coin(o.get("tk") or ""),
+                ("%g/%g" % (f, a)) if a else ("%g" % f),
+                ("%.1fc" % (100 * float(px))) if px else "  -  ",
+                ("%ss out" % tau) if tau is not None else "(oil)"))
+        out.append("")
+        out.append("%d orders: %d filled, %d lost the race. Asked %g contracts, "
+                   "got %g (%s)." % (len(rows), int(nf), zero, asked, got,
+                                     pct(got / asked, False) if asked else "-"))
         return "\n".join(out)
 
     def text_brief(self):
@@ -368,6 +412,8 @@ class Phone:
         # NOT `/today` -- that command already exists and gives the plain
         # money for the day. Taking its name would have silently replaced
         # something he uses with something longer.
+        if cmd in ("/fills", "/bets"):
+            return self.text_fills()
         if cmd in ("/brief", "/summary"):
             return self.text_brief()
         if cmd == "/market":
@@ -540,6 +586,36 @@ def selftest():
         # THE DAILY BRIEFING REACHES THE PHONE, and a failure inside it must
         # not take the command down -- he reads this when the app is not in
         # front of him.
+        # /fills -- the operator's ask: filled, paid, seconds out, per order.
+        _fl = ph.handle(111, "/fills")
+        ck("ORDERS TODAY" in _fl or "No orders today" in _fl,
+           "/fills answers with today's orders or says there were none")
+        ck(ph.handle(111, "/bets") == _fl, "/bets is the same command")
+        _sv_o = L.orders
+        L.orders = [
+            {"t": now["t"], "tk": "KXBTC15M-26SEP180100-00", "filled": 77.0,
+             "asked": 77.0, "price": 0.968, "tau": 12},
+            {"t": now["t"], "tk": "KXETH15M-26SEP180100-00", "filled": 0.0,
+             "asked": 50.0, "price": None, "tau": 30},
+            {"t": now["t"], "tk": "KXWTI15M-26SEP180100-00", "filled": 20.0,
+             "asked": 20.0, "ask_seen": 0.945, "tau": None},
+        ]
+        try:
+            _f2 = ph.handle(111, "/fills")
+            ck("96.8c" in _f2 and "12s out" in _f2 and "77/77" in _f2,
+               "an order shows what filled, the price PAID in cents, and how "
+               "many seconds were left -- the three things he asked for")
+            ck("0/50" in _f2 and "1 lost the race" in _f2,
+               "a ZERO-FILL order is shown, not hidden -- about one order in "
+               "five fills nothing, and dropping them would report a 100% fill "
+               "rate")
+            ck("94.5c" in _f2 and "(oil)" in _f2,
+               "an oil order shows its price from `ask_seen` and says (oil) "
+               "where the seconds would be, because cmdlive does not record a "
+               "tau on the order")
+            ck("got 97" in _f2, "...and the footer totals contracts asked vs got")
+        finally:
+            L.orders = _sv_o
         _br = ph.handle(111, "/brief")
         ck("THE DAY --" in _br or "Could not build" in _br,
            "/brief answers with the daily briefing, or says plainly that it "

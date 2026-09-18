@@ -222,7 +222,12 @@ if (-not $NoArms) {
         # (v-oilsweet). NOTE the embedded quotes: Start-Process splits an
         # ArgumentList element on spaces, and the first two relaunches on
         # 2026-09-18 failed exactly that way, leaving oil down for four minutes.
-        if (-not (RunningPy '*cmdlive.py*')) {
+        # LIVE OIL IS OFF, 2026-09-18 ~13:3xZ. Operator: "Oil is sucking bad.
+        # Ruined gains 2 days in a row now. Turn it off, figure out a strategy
+        # for it, then paper trade it." It hit its own $25 brake twice in two
+        # days. The 2-30 s paper arm and cmdarm keep measuring it for free.
+        # To bring it back, delete this $false.
+        if ($false -and -not (RunningPy '*cmdlive.py*')) {
             Say "cmdlive.py is NOT running -- starting LIVE oil (real money, \$20 a bet)"
             Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\cmdlive.py", "--live", "--signoff", '"commodity penny test"', "--size", "20", "--minutes", "1440") `
                 -WorkingDirectory $repo -WindowStyle Hidden `
