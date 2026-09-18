@@ -186,6 +186,27 @@ EXPERIMENTS = [
                  "market twice through different windows), now fixed.",
     },
     {
+        "name": "Refuse a market where the model reverses itself (measured, dead)",
+        "status": KILLED, "since": "2026-09-18",
+        "what": "The idea: if the model wants one side early in a quarter-hour "
+                "and the other side seconds later, it has contradicted itself, "
+                "so refuse the market.",
+        "why": "It came out of the 09-18 oil loss, where the bot bought NO at "
+               "9 seconds out and YES at 2 seconds out and lost $9.41.",
+        "outcome": "NO RELATIONSHIP, and the phenomenon is nearly absent. Live "
+                   "crypto: ZERO reversals in 558 settled markets -- the "
+                   "settlement average is mostly locked by the time we look, "
+                   "so a late reverse is close to impossible by construction. "
+                   "Commodities can reverse, because only the final print of a "
+                   "one-minute candle matters, but paper found 4 reversals in "
+                   "311 markets and NONE of them lost (+$6.47), while live oil "
+                   "had 2 in 45 and split one-one.",
+        "attribution": "Nothing. Six reversal markets in total across every "
+                       "source, no measurable edge, and refusing them would "
+                       "have changed almost nothing. Do not resurrect this "
+                       "without a much larger commodity sample.",
+    },
+    {
         "name": "Coin Race (KXCRYPTOLEAD15M), paper",
         "status": RUNNING, "match": "pinracearm.py", "since": "2026-09-15",
         "select": {"table": SET},
