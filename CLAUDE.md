@@ -130,6 +130,27 @@ don't waste text on it. Just don't leave out anything important."* Cut the
 recap of what was just done, the restatement of the question, and every number
 he does not need to act on. Keep every number he does.
 
+**HARDENED 2026-09-18, because the replies got long again.** His words: *"I
+really need you to permanently be more concise your messages are extremely
+long and eat tokens, can be exhausting to read multiple of, and make me miss
+important things... That definitely doesn't mean think less or do less detail,
+or miss extra stuff you think I should know, or not ask me questions, just
+shorter overall replies."*
+
+So the cut is in the WRITING, never in the work. Same depth of measurement,
+same willingness to raise something he did not ask about, same questions when
+a decision is his. Concretely:
+
+- **Say a thing ONCE.** He counted five separate admissions of one mistake in
+  a single reply: *"you said it was ur mistake 5 times there, just once is
+  fine."* One sentence, then move on. The same applies to a caveat, a
+  correction, or a warning -- repeating it is not emphasis, it is noise that
+  buries the next point.
+- No paragraph that re-explains a table that is already on screen.
+- No closing summary of the message the reader just read.
+- Lead with the answer to what he actually asked, not with what was
+  interesting to find.
+
 **STANDING, same date: THE BACKTEST IS NOT EVIDENCE.** His words: *"Stop
 trusting that stupid backtest it's never been accurate about anything."*
 This goes further than the 2026-09-10 amendment, which merely certified
