@@ -214,6 +214,33 @@ if (-not $NoArms) {
             Start-Sleep -Seconds 3
             $started++
         }
+        # LIVE OIL -- REAL MONEY. Added 2026-09-18 on the operator's word
+        # ("Boot script"). Trades KXWTI15M only, 16-30 s at 93-99c, $20 a bet,
+        # stops itself at $25 down or 4 losses in a day. The sign-off phrase is
+        # cmdlive's fixed per-instance token; the operator's actual sign-off
+        # for this window and size is recorded in results/VERSIONS.md
+        # (v-oilsweet). NOTE the embedded quotes: Start-Process splits an
+        # ArgumentList element on spaces, and the first two relaunches on
+        # 2026-09-18 failed exactly that way, leaving oil down for four minutes.
+        if (-not (RunningPy '*cmdlive.py*')) {
+            Say "cmdlive.py is NOT running -- starting LIVE oil (real money, \$20 a bet)"
+            Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\cmdlive.py", "--live", "--signoff", '"commodity penny test"', "--size", "20", "--minutes", "1440") `
+                -WorkingDirectory $repo -WindowStyle Hidden `
+                -RedirectStandardOutput "$res\cmdlive.out" -RedirectStandardError "$res\cmdlive.err"
+            Start-Sleep -Seconds 3
+            $started++
+        }
+        # the 2-30 s oil PAPER arm the operator asked for alongside the live
+        # 16-30 s rule. Its own process, because an overlapping band inside
+        # cmdarm is refused by the one-per-market rule and never measured.
+        if (-not (RunningPy '*cmdarm-wide230*')) {
+            Say "2-30 s oil paper arm is NOT running -- starting it"
+            Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\cmdarm.py", "--minutes", "4320", "--series", "KXWTI15M", "--only-window", "2:30:0.93:0.99", "--out", "$res\cmdarm-wide230.jsonl") `
+                -WorkingDirectory $repo -WindowStyle Hidden `
+                -RedirectStandardOutput "$res\arm-wide230.out" -RedirectStandardError "$res\arm-wide230.err"
+            Start-Sleep -Seconds 3
+            $started++
+        }
         if ($race.Count -eq 0) {
             Say "no Coin Race arms running -- starting arm3 and arm4"
             Start-Process -FilePath $py -ArgumentList @("-u", "research\pinracearm.py", "--minutes", "4320", "--tau-max", "30", "--min-gap-bp", "4", "--min-price", "0.90", "--one-per-race-band") `
