@@ -103,6 +103,58 @@ each recorder and what it tapes; and the banner now prints its evidence
 (process opened by pid, log age, flag on disk) so the state is derived, never
 trusted -- his last instruction of the night.
 
+## 2026-09-18 ~02:0xZ -- WE ARE NOT TOO STRICT AND NOT TOO SLOW. WE ARE TOO LATE IN THE QUARTER-HOUR.
+
+The operator: *"28 fills under 95c vs 7 whyyyy did these disappear"* and then,
+sharply, *"so are you saying other people are getting those \$216 and we're too
+slow!"* **He was closer than I was. I told him "the market repriced" and that
+is NOT what the data says.**
+
+`results/RESULTS_pickoff.md` (through 2026-09-12 only -- see the gap below):
+
+    bargains per close   280.0  ->  664.7     the pool MORE THAN DOUBLED
+    our share               0%  ->     7%     we take almost none of it
+    median tau taken       45s  ->    41s     they buy EARLIER every week
+    mean price           95.5c  ->  95.1c     price of a bargain barely moved
+
+And our own speed is NOT the problem: order latency is 88 ms median (96 ms a
+week ago -- we got FASTER), book age 5-8 ms.
+
+**The mechanism.** The cheap offers are taken at ~41 s before the close. Our
+window was 3-30 s. By the time we look, the bargains are gone and only the
+97-99c leftovers remain. That single fact explains everything the day spent
+chasing:
+
+- why sub-95c fills fell 28/day -> 7/day while 98c+ fills ROSE 9 -> 16;
+- why loosening gates found only \$2-10/day (the gates were never the binding
+  thing);
+- why raising the ceiling only buys expensive leftovers;
+- why the 45 s window looked attractive -- it moves us into where the buying
+  actually happens.
+
+**The tension that has to be solved, not ignored.** Buying earlier is the
+answer AND it is what cost us money today: the full-size 45 s leg took
+KXBTC15M-26SEP172115-15 at an ask of 97.8c and FILLED AT 53.0c because the
+book collapsed inside our 160 ms round trip; the hedge locked -\$27.87. Its
+whole live record was 31 markets, 29 settled, 29 won, +\$35.81, so one bad
+fill took back most of what thirty good ones made. **Early AND SMALL is the
+shape to test, not early and full.** Reverted to paper on the operator's
+instruction; arm `results/arm-early45.out`.
+
+**THE DATA GAP, and it matters.** RESULTS_pickoff stops at 09-12, which is
+immediately BEFORE the drop the operator is asking about. The settlement file
+has now been refreshed through 09-17 (`kalshi_fulltape.pull_markets_only(
+SERIES, 700, r"C:\kalsulltape_recent")`), but the tracker's cache marks
+09-13..09-17 as already walked (they were walked when settlements did not
+cover them, so they scored nothing). **`pinpickoff.py --rebuild` is the fix and
+it was MEMORY-KILLED TWICE** at ~1.6 GB free with 22 python processes. Do it
+when fewer arms are running, and check the collector after.
+
+**Also running, all paper, at the operator's request:** five confidence arms at
+pin 0.99 / 0.985 / 0.98 / 0.975 / 0.97 beside the live 0.995, to answer whether
+the cheap trades are hiding behind the confidence gate rather than behind the
+clock.
+
 ## 21:0xZ -- THE FRESH-EYES REVIEW LANDED: 45 agents, 27 confirmed, 7 refuted, 2 uncertain
 
 Operator: *"re read everything crypto... see if anything is unnecessarily

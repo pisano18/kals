@@ -172,7 +172,7 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     "--improve-scope", "market", "--pick", "best",
     "--max-per-market", "2", "--improve-max", "0.010",
     "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate",
-    "--hedge-belief", "0.60",
+    "--hedge-belief", "0.60"
     # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
     # built as safely as you described, deploy now"), first at half, then at a
     # THIRD, and from ~19:5xZ the same day at a FULL bet on his instruction:
@@ -195,7 +195,16 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # arithmetic, and only live fills can measure it.
     # Bar and revert UNCHANGED: results/PREREG_staged.md stage 2 -- revert at 3
     # losses on early-leg closes in the first 40, or 2 in the first 15.
-    "--early-tau", "45", "--early-frac", "1.0"
+    # REVERTED TO PAPER 2026-09-18 ~01:5xZ on the operator's instruction:
+    # "Revert 45 seconds to just a paper". It ran live for ~12 hours at a third
+    # and then a full bet. Record: 31 markets carried an early leg, 29 settled,
+    # 29 won, +$35.81 -- but the two still open include KXBTC15M-26SEP172115-15,
+    # where we saw an ask of 97.8c, filled at 53.0c because the book collapsed
+    # inside our 160 ms round trip, and the hedge locked -$27.87. At the old
+    # third-size that loss would have been about -$9. So the honest net is
+    # roughly +$8 on 31 markets, and the one bad fill cost more than the other
+    # thirty made.
+    # The flags now live on a PAPER arm only (results/arm-early45.out).
 ) -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 
