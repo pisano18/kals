@@ -147,7 +147,20 @@ BANDS = {
         # So the clock and the floor interact: under 95c is dangerous inside 15
         # seconds and safe between 16 and 30. TAPE population -- rule 5 -- so
         # this arm exists to see whether the shape survives being a fill.
-        (16, 30, 0.93, 0.97, None, "wti-sweet"),
+        # WIDENED to 99c the same day, before it had settled anything. The
+        # operator asked whether 2-30 would beat 16-30 because it fires more
+        # often. On the tape it does (73 closes to 57, $32 to $28 over three
+        # days) -- but its extra closes come with THREE losses instead of one,
+        # and losses are exactly what gets worse when a tape offer becomes a
+        # real fill. Stressed at 2x, 3x and 5x the tape loss rate:
+        #     2-15  95-99c (LIVE today)  $13  $8  $4  -$5
+        #     2-30  93-97c               $32 $27 $22  $13
+        #     2-45  93-97c               $33 $20  $7 -$17
+        #     16-30 93-99c               $29 $28 $27  $24   <-- barely moves
+        # Widening the PRICE band rather than the clock buys the volume back
+        # without buying the losses: 86 closes, more than the 72 the live rule
+        # gets today, still one loss.
+        (16, 30, 0.93, 0.99, None, "wti-sweet"),
         # 121-180 s at 90-99c: 308 / 6 (1.9%). The 90-95c corner of it is the
         # best single commodity cell found: 105 mkts, 3 lost, +4.16c. 91-120 s
         # is NOT included -- oil is negative there except at 98-99c.
@@ -434,16 +447,20 @@ def selftest():
        and w_far[:4] == (121, 180, 0.90, 0.99),
        "WTI: 95-99c to 60 s; 90-95c only 16-45 s; and 121-180 s at 90-99c, "
        "whose 90-95c corner is the best commodity cell found (105 mkts, 3 lost)")
-    ck(label(w_sweet) == "wti-sweet" and w_sweet[:4] == (16, 30, 0.93, 0.97),
-       "and 16-30 s at 93-97c, which oilband found beats the LIVE window at "
+    ck(label(w_sweet) == "wti-sweet" and w_sweet[:4] == (16, 30, 0.93, 0.99),
+       "and 16-30 s at 93-99c, which oilband found beats the LIVE window at "
        "every price it shares with it")
     ck(decide(book(yes_ask=0.94), 20, w_sweet) == ("yes", 0.94, 50.0)
        and decide(book(yes_ask=0.94), 10, w_sweet) is None,
        "the sweet window starts at 16 s: under 95c INSIDE 15 s is the one oil "
        "cell that fails its own break-even (3 of 43 closes, 6.98% vs 5.61%)")
-    ck(decide(book(yes_ask=0.98), 20, w_sweet) is None,
-       "NULL: 98c is above it -- the cell's whole point is the cheap end, and "
-       "98-99c there earns a tenth as much (+1.14c against +5.05c)")
+    ck(decide(book(yes_ask=0.98), 20, w_sweet) is not None,
+       "98c IS inside it -- the band was widened up rather than the clock "
+       "widened down, which buys back the volume without buying the losses "
+       "(86 closes against the live rule's 72, still one loss)")
+    ck(decide(book(yes_ask=0.92), 20, w_sweet) is None,
+       "NULL: 92c is below the floor -- under 93c oil loses 4.8% to 10.8% of "
+       "closes even in this window")
     ck(decide(book(yes_ask=0.92), 150, w_far) == ("yes", 0.92, 50.0)
        and decide(book(yes_ask=0.92), 100, w_far) is None,
        "WTI far starts at 121 s: 91-120 s is negative for oil except at 98-99c")
