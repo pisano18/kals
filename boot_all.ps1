@@ -177,18 +177,21 @@ if (-not $NoArms) {
             # whose questions are answered (tau45/staged shipped as v-early-*,
             # onecoin/hedge70/dumps/loose/early60 dead or superseded). The
             # flag lists are the ones in start_bands.ps1; keep the two in step.
-            $band = @("--early-tau", "45", "--early-frac", "1.0", "--bank-brake", "4.08",
-                      "--hedge-price", "0.60", "--max-positions", "3", "--hedge-belief", "0.60")
+            # NO early-leg settings in $band: every arm below sets its own,
+            # and a duplicated --early-tau makes argparse take the LAST one,
+            # which silently turned a 60 s arm into a 45 s one.
+            $band = @("--bank-brake", "4.08", "--hedge-price", "0.60",
+                      "--max-positions", "3", "--hedge-belief", "0.60")
             $m15 = @("--band-mult", "0.90", "0.94", "1.5")
             $arms = @(
-                @{ n = "arm-b-control";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0") + $m15 },
-                @{ n = "arm-b-early-open";  x = $band + @("--early-min-price", "0.80") + $m15 },
-                @{ n = "arm-b-early-nocap"; x = $band + @("--early-min-price", "0.90") + $m15 },
-                @{ n = "arm-b-skip9496";    x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.96") + $m15 },
-                @{ n = "arm-b-skip975";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975") + $m15 },
-                @{ n = "arm-b-mult2";       x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--band-mult", "0.90", "0.94", "2.0") },
-                @{ n = "arm-b-harder";      x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") },
-                @{ n = "arm-b-all";         x = $band + @("--early-min-price", "0.80", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") },
+                @{ n = "arm-b-control";     x = $band + @("--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--early-min-price", "0.90", "--early-max-edge", "3.0") + $m15 },
+                @{ n = "arm-b-early-open";  x = $band + @("--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.80", "--early-min-price", "0.80") + $m15 },
+                @{ n = "arm-b-early-nocap"; x = $band + @("--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.90", "--early-min-price", "0.90") + $m15 },
+                @{ n = "arm-b-skip9496";    x = $band + @("--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.96") + $m15 },
+                @{ n = "arm-b-skip975";     x = $band + @("--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975") + $m15 },
+                @{ n = "arm-b-mult2";       x = $band + @("--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--band-mult", "0.90", "0.94", "2.0") },
+                @{ n = "arm-b-harder";      x = $band + @("--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") },
+                @{ n = "arm-b-all";         x = $band + @("--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.80", "--early-min-price", "0.80", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") },
                 # the confidence arms (Lab: "Lower confidence to X"), relaunched
                 # 2026-09-18 ~22:49Z after dying at ~16:36Z with no `end`
                 # record. No early leg, no bands: the 09-15 base plus --pin.
@@ -196,7 +199,11 @@ if (-not $NoArms) {
                 @{ n = "arm-pin0.975";      x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.975") },
                 @{ n = "arm-pin0.98";       x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.98") },
                 @{ n = "arm-pin0.985";      x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.985") },
-                @{ n = "arm-pin0.99";       x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.99") }
+                @{ n = "arm-pin0.99";       x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.99") },
+                # the 60-second ladder (start_early60.ps1; keep the two in step)
+                @{ n = "arm-e60-third";     x = $band + @("--early-tau", "60", "--early-frac", "0.333", "--early-min-price", "0.90", "--early-max-edge", "3.0") + $m15 },
+                @{ n = "arm-e60-full";      x = $band + @("--early-tau", "60", "--early-frac", "1.0", "--early-min-price", "0.90", "--early-max-edge", "3.0") + $m15 },
+                @{ n = "arm-e60-open";      x = $band + @("--early-tau", "60", "--early-frac", "0.333", "--early-min-price", "0.80") + $m15 }
             )
             foreach ($a in $arms) {
                 Start-Process -FilePath $py -ArgumentList ($live + $a.x) -WorkingDirectory $repo -WindowStyle Hidden `

@@ -6198,11 +6198,17 @@ def trade_loop(a, rec, book, idx, series_index):
                     best_size=b["size"],
                     needed_c=round(100 * EDGE_FLOOR, 2))
                 v = "FIRED" if cs in fired else "no trade"
+                # SIZE BELONGS IN THIS LINE. Without it, 2026-09-18 23:00Z
+                # read "best ... @0.9760 edge +2.20c (need +0.3c) -> no trade"
+                # and looked like a gate wrongly refusing a good trade. The
+                # offer held 0.02 CONTRACTS -- two cents of exposure, nothing
+                # to buy. The operator read the line the same way I did.
                 print(f"  close {time.strftime('%H:%M', time.gmtime(cs))}Z: "
                       f"{nb['n']} looks, best was {b['ticker'][:22]} "
                       f"{b['want'].upper()} @{b['price']:.4f} "
                       f"edge {100*b['edge']:+.2f}c "
-                      f"(need +{100*EDGE_FLOOR:.1f}c) -> {v}")
+                      f"(need +{100*EDGE_FLOOR:.1f}c) "
+                      f"x{b['size']:.4g} on offer -> {v}")
             near.pop(cs, None)
 
     while time.time() < end:

@@ -24,6 +24,7 @@ import glob
 import json
 import os
 import re
+import time
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -195,7 +196,15 @@ EXPERIMENTS = [
     },
     {
         "name": "Commodities, LIVE (oil, last 15 seconds, $10)",
-        "status": RUNNING, "match": "cmdlive.py", "since": "2026-09-17",
+        "status": PAUSED, "match": "cmdlive.py", "since": "2026-09-17",
+        "until": "STOOD DOWN 2026-09-18 17:31:52Z, by its own brake at "
+                 "-$27.28 and then by the operator: 'Oil is sucking bad. "
+                 "Ruined gains 2 days in a row now. Turn it off, figure out "
+                 "a strategy for it, then paper trade it.' It lost $59.46 on "
+                 "09-17 and $27.28 on 09-18 -- $86.74 against crypto's $115.68 "
+                 "and $67.40 those days, which is the whole of 'we are only up "
+                 "$22'. results/cmdlive.stop is present; boot_all.ps1 has it "
+                 "behind `if ($false ...)`. It does NOT restart on a reboot.",
         "select": {"size_dollars": SET},
         "what": "Real money on ONE cell: oil at 95-99c inside the final 15 seconds.",
         "why": "Paper cannot answer whether an offer would reach US -- on crypto "
@@ -620,6 +629,70 @@ EXPERIMENTS = [
                "today's size.",
         "watch": "Worst close, and the early 2x fills specifically.",
     },
+    # ---- THE 60-SECOND LADDER (2026-09-18). Operator: "Do we have an arm
+    # for testing buying early in increments up to 60 seconds?" We did not --
+    # the old arm-early60 ended on 09-17 and the band rewrite dropped it.
+    # All three carry the v-bands live baseline and differ only in the early
+    # leg, so the selectors name early_tau_max 60 plus what separates them.
+    {
+        "name": "A third at 46-60 s, topped up inside 30 s (the increments)",
+        "status": RUNNING, "match": "arm-e60-third", "since": "2026-09-18",
+        "select": {"early_tau_max": 60, "early_frac": 0.333,
+                   "early_min_price": 0.9, "early_max_edge": 3.0},
+        "what": "Buys a THIRD of a bet as soon as a market qualifies between "
+                "46 and 60 seconds out, then completes it to a full bet once "
+                "inside 30 seconds -- two bites, at two different levels of "
+                "certainty.",
+        "why": "Settlement is the mean of sixty one-second prints, so at 60 s "
+               "NONE of them is recorded, at 45 s a quarter is, at 30 s a "
+               "half. A third early is a foot in the door at the moment the "
+               "price is best and our model is weakest; the top-up commits "
+               "the rest when three times as much of the answer is on disk. "
+               "The 45 s version of exactly this shipped and is live.",
+        "good": "It gets a materially better average price than the control "
+                "with no more losses in the first 40 early closes.",
+        "bad": "Losses the control does not have, or top-ups that never come "
+               "because the price has run away by 30 s -- then the early "
+               "third is just a smaller bet at a worse moment.",
+        "watch": "How often the top-up actually fills (a `topup` leg in the "
+                 "signal records), and the price of the early third against "
+                 "the control's single fill on the same market.",
+    },
+    {
+        "name": "The whole bet at 46-60 s (control for the increments)",
+        "status": RUNNING, "match": "arm-e60-full", "since": "2026-09-18",
+        "select": {"early_tau_max": 60, "early_frac": 1.0,
+                   "early_min_price": 0.9, "early_max_edge": 3.0},
+        "what": "Same 46-60 s window, but the whole bet goes in at once.",
+        "why": "Separates 'earlier is better' from 'staging is better'. If "
+               "this matches the thirds arm, staging earns nothing and the "
+               "simpler rule wins; if it loses more, the staging is what "
+               "makes 60 s survivable.",
+        "good": "It matches the thirds arm on money with fewer moving parts.",
+        "bad": "It carries the losses the thirds arm avoids. At 60 s nothing "
+               "of the settlement average is locked, so this is the most "
+               "exposed bet any arm makes.",
+        "watch": "Losing closes, and the worst single close, against the "
+                 "thirds arm on the same markets.",
+    },
+    {
+        "name": "60 s increments into the bands that earn (no edge cap, 80c floor)",
+        "status": RUNNING, "match": "arm-e60-open", "since": "2026-09-18",
+        "select": {"early_tau_max": 60, "early_frac": 0.333,
+                   "early_min_price": 0.8, "early_max_edge": UNSET},
+        "what": "A third at 46-60 s, with the 90c floor lowered to 80c and "
+                "A50's 3c edge cap off.",
+        "why": "The 80-94c band returns 8-14% and the early leg is forbidden "
+               "from all of it. This asks whether that ban is right at 60 s, "
+               "where it is least likely to be -- the further out, the more "
+               "a cheap ask is the market's honest opinion rather than a "
+               "mistake, so this is the arm most likely to fail.",
+        "good": "Early fills under 94c that settle like the late ones.",
+        "bad": "Two or more losses in the first 20 early sub-94c closes. "
+               "Paper understates our own loss rate, so a bad paper result "
+               "here is final and the band stays shut out that far.",
+        "watch": "Early fills under 94c: count, price, settled result.",
+    },
     {
         "name": "Crypto.com prediction markets (FIX API)",
         "status": IDEA, "since": "2026-09-17", "match": None,
@@ -768,6 +841,12 @@ def _first_record(path):
         return None
     return None
 
+
+# A paper arm writes a record every close (15 minutes) and usually far more
+# often. Twenty-five minutes is comfortably past one close and well short of
+# two, so a live arm is never called dead and a dead one is not called live
+# for long.
+FRESH_S = 25 * 60
 
 _NOPOS = object()
 
@@ -1030,6 +1109,17 @@ def live_progress(cmdlines=None, logs=None):
             continue
         running = any(m in (c or "") for c in cmdlines)
         best = None
+        # A LOG THAT IS STILL BEING WRITTEN IS A RUNNING ARM, and that test is
+        # applied below once the arm's log is known. TWO reasons it is needed.
+        #
+        # 1. An arm whose `match` is a NAME ("arm-b-control") has that name
+        #    nowhere in its command line -- it is only the redirect filename,
+        #    which Win32_Process does not report. Every one of the eleven
+        #    named arms therefore read "NOT RUNNING" in the app while alive.
+        # 2. Windows returns CommandLine EMPTY for a process a caller cannot
+        #    open. That has already broken restart_bot.ps1 once, badly enough
+        #    to start a second live bot, and the fix there was the same:
+        #    believe the file, not the process list.
         # HOW AN ARM IS MATCHED TO ITS LOG, and why the first version was
         # silently wrong. It looked for the flag NAME anywhere in the start
         # record -- but the start record is the WHOLE configuration, so every
@@ -1080,6 +1170,15 @@ def live_progress(cmdlines=None, logs=None):
             for nm in e["legacy_logs"]:
                 if nm in known:
                     best = known[nm]
+        if not running and best:
+            # ...the freshness test. A paper arm writes at least a `watch`
+            # record every close, so a log untouched for FRESH_S is a dead
+            # arm however its command line reads.
+            newest = best[-1] if isinstance(best, (list, tuple)) else best
+            try:
+                running = (time.time() - os.path.getmtime(newest)) < FRESH_S
+            except OSError:
+                pass
         info = {"running": running}
         if best:
             s = summarise_log(best)
@@ -1234,6 +1333,20 @@ def selftest():
     lp = live_progress(cmdlines=["python pinrun.py --pin 0.97 --size 20"], logs=[p])
     ck(lp["--pin 0.97"]["running"] is True, "a matching command line marks it running")
     ck(lp["--hedge-price"]["running"] is False, "and a missing one does not")
+    # A LOG STILL BEING WRITTEN IS A RUNNING ARM, whatever the process list says.
+    ck(live_progress(cmdlines=[], logs=[p])["--pin 0.97"]["running"] is True,
+       "an arm whose log was just written is RUNNING even with an EMPTY "
+       "process list -- eleven arms are matched by a NAME that appears "
+       "nowhere in their command line, and Windows also hides CommandLine "
+       "from a caller that cannot open the process")
+    _old = os.path.join(td, "pinrun-paper-stale.jsonl")
+    with open(_old, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "start", "pin": 0.97}) + chr(10))
+        fh.write(json.dumps({"kind": "settled", "pnl_c": 100.0}) + chr(10))
+    os.utime(_old, (time.time() - FRESH_S - 60, time.time() - FRESH_S - 60))
+    ck(live_progress(cmdlines=[], logs=[_old])["--pin 0.97"]["running"] is False,
+       "...and a log untouched for longer than one close is a DEAD arm, so "
+       "the freshness rule cannot report a stopped arm as running")
     ck(live_progress(cmdlines=[], logs=[])["cmdarm.py"]["running"] is False,
        "NULL: nothing running, nothing claimed")
 
