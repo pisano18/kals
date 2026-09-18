@@ -1,6 +1,6 @@
-# v-bands -- 2026-09-18 ~21:5xZ -- LIVE: hedge only when the market agrees, skip 94-96c, and 1.5x at 90-94c (`c015709`)
+# v-bands -- 2026-09-18 ~22:3xZ -- LIVE: hedge only when the market agrees, and 1.5x at 90-94c that switches itself off after one boosted loss (`c015709`, off-switch and the skip's withdrawal in the commit after)
 
-Three flags in `restart_bot.ps1`, one entry, each with its own revert line.
+Two flags in `restart_bot.ps1` (a third was staged and withdrawn before it ran -- section 2), one entry, each with its own revert line.
 Operator, 2026-09-18: *"Okay remove insurance. But keep hedging. We can remove
 94-96. If it's safe then yea you figure out a way to buy more beneath 94."*
 
@@ -32,24 +32,27 @@ would have helped by more than the fired ones cost, lower the threshold to
 0.70. If a position we waited on then lost unhedged, that is the price of
 this rule and it is counted against it.
 
-## 2. `--skip-band 0.94 0.96` (AMENDMENT 53, new)
+## 2. `--skip-band 0.94 0.96` -- STAGED, THEN WITHDRAWN BEFORE IT RAN
 
-**What the bot does differently.** Any ask from 94.0c up to but not
-including 96.0c is refused on every leg (gate `price_band`), and the sweep
-limit sent from a cheaper ask stops under 94c so an IOC cannot fill inside
-the band it was refused at.
+The flag exists (gate `price_band`; the sweep stops under a skipped band)
+and stays in the code, OFF. It was in `restart_bot.ps1` for about an hour on
+09-18 and was taken out before the operator restarted, because he asked the
+right question: *"are we sure there's a correlation behind the 94 band
+losing ... and it's not just coincidence."* It was coincidence.
 
-**Evidence (566 live fills since 09-08, clustered by close).** 94-96c: 83
-closes, 4 lost (4.8%) against a break-even of exactly 5.0% (1 - price);
-$2,970 staked -- 15% of everything ever risked -- for +$25.01, 0.84%. It
-earns nothing measurable and holds one of three position slots while it does
-so. The bands either side: 90-94c +8.0% on 64 closes with no loss;
-96-97.5c +1.2%, 97.5c+ +1.8%.
+The "+0.8% on 83 closes" that justified it is the WHOLE history, and three
+of its four losses are from the first-week bot (09-09 NEAR, 09-10 BNB, 09-12
+SOL) before the jump gate, the both-sides guard and the close-clustered
+brake existed. On the modern bot (09-13 on): 38 closes, 1 loss, +$51.82 on
+$2,305 -- **2.25%**, better than 96-97.5c (1.18%) and level with 97.5c+
+(2.03%). The 95% bounds on every band from 94c up overlap. And the slot
+argument had no evidence either: not one refusal under 94c has ever been for
+a close budget or a position cap. The skip would have cost about 6.5 fills a
+day at ~2.3% of ~$59 -- roughly $8/day -- to prevent nothing measurable.
 
-**Pre-registered bar.** `pinattrib` now scores `price_band` refusals "as if
-filled". After 40 skipped closes, if that upper bound shows the band at over
-+5% with at most one loss, the skip is reconsidered. Volume lost is expected
-and is not by itself a reason to revert.
+Lesson, already in memory as "check the log dates against the deploy first"
+and broken again here: split by bot era BEFORE recommending a refusal.
+The paper arm `arm-b-skip9496` now tests the skip beside the control.
 
 ## 3. `--band-mult 0.90 0.94 1.5` (AMENDMENT 53, new)
 
@@ -69,8 +72,11 @@ available). What is NOT proven: that a 1.5x order fills at the same price
 and the same loss rate -- a bigger order meets a smarter seller, and that is
 the population rule 5 exists for. Hence 1.5x and not 2x, and the bar below.
 
-**Pre-registered bar.** Revert at the FIRST loss on a boosted fill in the
-first 20 boosted closes. At 20 boosted closes with no loss and an average
+**Pre-registered bar, ENFORCED BY THE BOT.** One boosted loss switches
+`--band-mult` off for the rest of the run (`band_boost_off` record); the
+extra cost of the boost is therefore bounded by one trade's extra size,
+about $36 at today's bet. Revert the flag at the FIRST loss on a boosted
+fill in the first 20 boosted closes. At 20 boosted closes with no loss and an average
 fill within 0.3c of the ask seen, raise to 2.0 (the `arm-b-mult2` paper arm
 runs it meanwhile). `band_boost` records carry was/now/cap/avail/room so the
 binding rail is visible on every boost.
@@ -88,9 +94,8 @@ per week of similar alarms.
 All three are FLAGS. Edit `restart_bot.ps1`, then run `.\restart_bot.ps1`:
 
 - **hedge rule only:** delete the `"--hedge-price", "0.60",` line.
-- **band skip only:** delete the `"--skip-band", "0.94", "0.96",` line.
-- **1.5x only:** delete the `"--band-mult", "0.90", "0.94", "1.5",` line.
-- **all three:** delete all three lines.
+- **1.5x only:** delete the `"--band-mult", "0.90", "0.94", "1.5"` line.
+- **both:** delete both lines.
 
 The paper arms in `start_bands.ps1` each change one of these against the
 new baseline; `arm-b-control` is the new baseline itself in paper.

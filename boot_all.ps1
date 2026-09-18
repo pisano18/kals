@@ -179,12 +179,14 @@ if (-not $NoArms) {
             # flag lists are the ones in start_bands.ps1; keep the two in step.
             $band = @("--early-tau", "45", "--early-frac", "1.0", "--bank-brake", "4.08",
                       "--hedge-price", "0.60", "--max-positions", "3", "--hedge-belief", "0.60")
+            $m15 = @("--band-mult", "0.90", "0.94", "1.5")
             $arms = @(
-                @{ n = "arm-b-control";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
-                @{ n = "arm-b-early-open";  x = $band + @("--early-min-price", "0.80", "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
-                @{ n = "arm-b-early-nocap"; x = $band + @("--early-min-price", "0.90", "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
-                @{ n = "arm-b-skip975";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975", "--band-mult", "0.90", "0.94", "1.5") },
-                @{ n = "arm-b-mult2";       x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "2.0") },
+                @{ n = "arm-b-control";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0") + $m15 },
+                @{ n = "arm-b-early-open";  x = $band + @("--early-min-price", "0.80") + $m15 },
+                @{ n = "arm-b-early-nocap"; x = $band + @("--early-min-price", "0.90") + $m15 },
+                @{ n = "arm-b-skip9496";    x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.96") + $m15 },
+                @{ n = "arm-b-skip975";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975") + $m15 },
+                @{ n = "arm-b-mult2";       x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--band-mult", "0.90", "0.94", "2.0") },
                 @{ n = "arm-b-harder";      x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") },
                 @{ n = "arm-b-all";         x = $band + @("--early-min-price", "0.80", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") }
             )

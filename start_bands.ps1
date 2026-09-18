@@ -7,11 +7,17 @@
 # 94-97.5, doubling down on more certain trades with better staked to return
 # ratios, just going harder ... in the good ranges."
 #
-# EVERY ARM SHARES THE NEW LIVE BASELINE (v-bands: hedge on the market's
-# agreement at 0.60, 94-96c skipped, 1.5x at 90-94c) and changes ONE thing,
-# except the last, which changes everything at once. `arm-b-control` IS the
-# live flag set in paper, so its start record is the proof that the live
-# startup path -- self-test WITH flags applied -- comes up; start it first.
+# EVERY ARM SHARES THE LIVE BASELINE (v-bands: hedge on the market's agreement
+# at 0.60, 1.5x at 90-94c that switches itself off after one boosted loss)
+# and changes ONE thing, except the last, which changes everything at once.
+# `arm-b-control` IS the live flag set in paper, so its start record is the
+# proof that the live startup path -- self-test WITH flags applied -- comes
+# up; start it first.
+#
+# REVISED ~22:3xZ the same day: the 94-96c skip came OUT of the baseline and
+# out of the live set (VERSIONS.md v-bands section 2 -- the "dead band" was
+# three first-week losses; on the modern bot it earns 2.25%). It is now one
+# arm, `arm-b-skip9496`, read against the control like every other change.
 #
 #     powershell -ExecutionPolicy Bypass -File C:\kals-repo\start_bands.ps1
 #     powershell -ExecutionPolicy Bypass -File C:\kals-repo\start_bands.ps1 -Only control
@@ -33,23 +39,24 @@ $core = @("-u", "C:\kals-repo\research\pinrun.py", "--size", "20", "--minutes", 
           "--improve-max", "0.010", "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder",
           "--jump-gate", "--hedge-belief", "0.60", "--early-tau", "45", "--early-frac", "1.0",
           "--bank-brake", "4.08", "--hedge-price", "0.60")
+$m15 = @("--band-mult", "0.90", "0.94", "1.5")
 
 $arms = @(
   # the live set, in paper: the control every other arm is read against
-  @{ n = "arm-b-control";     x = @("--early-min-price", "0.90", "--early-max-edge", "3.0",
-                                    "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
+  @{ n = "arm-b-control";     x = @("--early-min-price", "0.90", "--early-max-edge", "3.0") + $m15 },
   # the 45 s leg opened to the bands that earn: no 3c edge cap, floor at 80c
-  @{ n = "arm-b-early-open";  x = @("--early-min-price", "0.80",
-                                    "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
+  @{ n = "arm-b-early-open";  x = @("--early-min-price", "0.80") + $m15 },
   # the 45 s leg with the edge cap off but the 90c floor kept (isolates the cap)
-  @{ n = "arm-b-early-nocap"; x = @("--early-min-price", "0.90",
-                                    "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "1.5") },
-  # skip 94-97.5c instead of 94-96c
+  @{ n = "arm-b-early-nocap"; x = @("--early-min-price", "0.90") + $m15 },
+  # skip 94-96c -- withdrawn from live, tested here
+  @{ n = "arm-b-skip9496";    x = @("--early-min-price", "0.90", "--early-max-edge", "3.0",
+                                    "--skip-band", "0.94", "0.96") + $m15 },
+  # skip 94-97.5c
   @{ n = "arm-b-skip975";     x = @("--early-min-price", "0.90", "--early-max-edge", "3.0",
-                                    "--skip-band", "0.94", "0.975", "--band-mult", "0.90", "0.94", "1.5") },
+                                    "--skip-band", "0.94", "0.975") + $m15 },
   # 2x at 90-94c instead of 1.5x
   @{ n = "arm-b-mult2";       x = @("--early-min-price", "0.90", "--early-max-edge", "3.0",
-                                    "--skip-band", "0.94", "0.96", "--band-mult", "0.90", "0.94", "2.0") },
+                                    "--band-mult", "0.90", "0.94", "2.0") },
   # go harder: 2x across 80-94c, and skip 94-97.5c
   @{ n = "arm-b-harder";      x = @("--early-min-price", "0.90", "--early-max-edge", "3.0",
                                     "--skip-band", "0.94", "0.975",

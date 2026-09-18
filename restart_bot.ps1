@@ -245,10 +245,14 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # and 74c helped: +$8.80. Same threshold as the belief, so the rule is
     # "model AND market both say under 60%".
     "--hedge-price", "0.60",
-    # --skip-band 0.94 0.96 (A53): 83 live closes in that band returned
-    # +$25 on $2,970 (0.8%), loss rate 4.8% against a 5.0% break-even, and
-    # held one of three slots to do it. The sweep also stops under 94c.
-    "--skip-band", "0.94", "0.96",
+    # --skip-band 0.94 0.96 was staged here for about an hour on 2026-09-18
+    # and REMOVED BEFORE IT RAN. The "+0.8% on 83 closes" figure was three
+    # losses from the first-week bot (09-09, 09-10, 09-12); on the modern
+    # bot (09-13 on) the band is 38 closes, 1 loss, +$51.82, 2.25% --
+    # better than 96-97.5c. And no refusal under 94c has ever been for a
+    # slot or a close budget, so "it frees a slot" had no evidence either.
+    # The operator asked whether it was coincidence; it was. Paper arm
+    # `arm-b-skip9496` tests the skip beside the control instead.
     # --band-mult 0.90 0.94 1.5 (A53): 64 live closes at 90-94c, no loss,
     # break-even 8%; the touch held a median 192 against the 97 we took on
     # 09-18. One order may reach 1.5x SIZE there, through the A45 drawdown

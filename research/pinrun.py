@@ -3373,6 +3373,24 @@ def _selftest_body():
            and "band_mults=[list(b) for b in BAND_MULTS]" in _src53,
            "the start record carries both band lists, so the Lab can tell one "
            "band arm from another (the A47/A48/A49 blank-tab lesson)")
+        # THE OFF-SWITCH: a boosted loss ends the boost for the run.
+        _off53 = 'globals()["BAND_MULTS"] = ()'
+        ck(_off53 in _lp53 and 'rec("band_boost_off"' in _lp53,
+           "a boosted loss switches --band-mult OFF for the rest of the run and "
+           "says so in the log -- the bar enforces itself")
+        ck("boosted.add((close_s, tk))" in _lp53
+           and _lp53.rindex("if not won:", 0, _lp53.index(_off53))
+           > _lp53.rindex('rec("settled"', 0, _lp53.index(_off53)) if 'rec("settled"' in _lp53[:_lp53.index(_off53)] else True,
+           "...the pair is marked where the order is widened, and the switch "
+           "sits inside the LOSS branch of settlement -- the nearest `if not "
+           "won:` above it is closer than any earlier settled record, so a "
+           "win can never trip it")
+        ck(_lp53.index(_off53)
+           < _lp53.index('rec("settled", ticker=tk, want=want, result=res'),
+           "...and before the settled record is written, so the record that "
+           "carries the loss is preceded by the record that says what it did")
+        ck(_lp53.index("boosted = set()") < _lp53.index(_off53),
+           "and the set is declared before the switch reads it")
         # AMENDMENT 8, after the 2026-09-17 fix that moved it to where `want`
         # exists. Only the OPPOSITE side blocks; a same-side re-look is a
         # top-up. The old placement read `want` from the PREVIOUS market.
@@ -5928,6 +5946,8 @@ def trade_loop(a, rec, book, idx, series_index):
     # direction. MAX_PER_CLOSE 3 makes same-ticker repeats more likely, not
     # less. Value is (close_s, want, cost, nfill, ticker).
     open_pos = {}
+    boosted = set()          # A53: (close_s, ticker) pairs an order was widened
+                             # for, so a boosted LOSS can switch the boost off
     entry_at = {}            # A52: oid -> wall-clock second we ENTERED, so the
                              # jump trigger measures moves since entry and not
                              # since the last three seconds
@@ -6111,6 +6131,21 @@ def trade_loop(a, rec, book, idx, series_index):
                 # the next pass re-read the balance and re-size at once, which
                 # also refreshes the drawdown the brake reads.
                 state["autosize_at"] = 0.0
+                # A53: ONE BOOSTED LOSS SWITCHES THE BOOST OFF for the rest of
+                # the run. The operator, 2026-09-18: "we aren't just going to
+                # boost a trade above our normal level then just lose a bunch
+                # of money" -- the pre-registered bar says revert at the first
+                # boosted loss, and a bar the bot enforces itself cannot wait
+                # on somebody reading a log. The extra cost of the boost is
+                # then bounded by ONE trade's extra size. Every other rail is
+                # untouched; ordinary bets continue at SIZE.
+                if BAND_MULTS and (close_s, tk) in boosted:
+                    globals()["BAND_MULTS"] = ()
+                    rec("band_boost_off", ticker=tk, close_s=close_s,
+                        cost=round(cost, 4), pnl_c=round(100 * pnl, 2),
+                        was=[list(b) for b in _DEFAULT_BAND_MULTS] or None)
+                    print(f"  *** A BOOSTED LOSS on {tk}: --band-mult is OFF "
+                          f"for the rest of this run ***")
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
                 pnl_c=round(100 * pnl, 2),
                 realised=round(pintake.LEDGER["realised"], 4))
@@ -7296,6 +7331,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 _was53 = take_n
                 take_n = max(take_n, min(_cap53, _avail53, max(0.0, _room53)))
                 if take_n > _was53 + 1e-9:
+                    boosted.add((close_s, tk))
                     rec("band_boost", ticker=tk, want=want, tau=tau,
                         price=round(price, 4), mult=_m53,
                         was=round(_was53, 2), now=round(take_n, 2),

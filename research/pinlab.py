@@ -467,11 +467,12 @@ EXPERIMENTS = [
     {
         "name": "v-bands baseline, in paper (the control for the band arms)",
         "status": RUNNING, "match": "arm-b-control", "since": "2026-09-18",
-        "select": {"skip_bands": lambda v: v == [[0.94, 0.96]], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
+        "select": {"skip_bands": lambda v: v == [], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
                    "early_min_price": 0.9, "early_max_edge": 3.0},
         "what": "Exactly the live flag set after v-bands: hedge only when the "
-                "market agrees (0.60), 94-96c skipped, 1.5x at 90-94c, the "
-                "45 s leg at 90c+ with the 3c edge cap.",
+                "market agrees (0.60), 1.5x at 90-94c that switches itself "
+                "off after one boosted loss, the 45 s leg at 90c+ with the 3c "
+                "edge cap. (The 94-96c skip was withdrawn before it ran.)",
         "why": "Every other band arm is read against this one on the same "
                "markets at the same instant. Its start record is also the "
                "proof that the live startup path comes up with the new flags.",
@@ -485,7 +486,7 @@ EXPERIMENTS = [
         "name": "The 45 s leg opened to the bands that earn (no edge cap, 80c floor)",
         "status": RUNNING, "match": "arm-b-early-open", "since": "2026-09-18",
         "select": {"early_min_price": 0.8, "early_max_edge": UNSET,
-                   "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == [[0.94, 0.96]]},
+                   "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == []},
         "what": "The 31-45 s leg may buy from 80c up, with A50's 3c edge cap "
                 "off. Today it refuses anything under 90c and anything with "
                 "more than 3c of edge -- which is every trade in the 80-94c "
@@ -507,7 +508,7 @@ EXPERIMENTS = [
         "name": "The 45 s leg with the edge cap off, floor kept at 90c",
         "status": RUNNING, "match": "arm-b-early-nocap", "since": "2026-09-18",
         "select": {"early_min_price": 0.9, "early_max_edge": UNSET,
-                   "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == [[0.94, 0.96]]},
+                   "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == []},
         "what": "Same as the control but A50's 3c cap is off: the early leg "
                 "may take a 90-94c ask with 6-10c of edge.",
         "why": "Separates the two blocks. If this arm matches early-open, the "
@@ -518,7 +519,24 @@ EXPERIMENTS = [
         "watch": "Early fills at 90-94c vs the control's, same markets.",
     },
     {
-        "name": "Skip 94-97.5c instead of 94-96c",
+        "name": "Skip 94-96c (withdrawn from live; tested here instead)",
+        "status": RUNNING, "match": "arm-b-skip9496", "since": "2026-09-18",
+        "select": {"skip_bands": lambda v: v == [[0.94, 0.96]], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
+                   "early_max_edge": 3.0},
+        "what": "The control with one change: any ask at 94.0-95.9c is refused.",
+        "why": "It was staged for live on the whole-history figure (+0.8%, 83 "
+               "closes) and withdrawn when the operator asked whether that was "
+               "coincidence: on the modern bot the band is 38 closes, 1 loss, "
+               "+2.25%. So it is tested, not deployed.",
+        "good": "The arm matches the control on money while taking fewer "
+                "trades. Then the band was dead weight after all.",
+        "bad": "It trails the control by about the band's +2.3% a day. Then "
+               "the skip is dead and the band stays.",
+        "watch": "Money per day against the control; the `price_band` "
+                 "refusals scored as if filled.",
+    },
+    {
+        "name": "Skip 94-97.5c",
         "status": RUNNING, "match": "arm-b-skip975", "since": "2026-09-18",
         "select": {"skip_bands": lambda v: v == [[0.94, 0.975]], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
                    "early_max_edge": 3.0},
@@ -536,7 +554,7 @@ EXPERIMENTS = [
     {
         "name": "2x at 90-94c (the next sizing step, run ahead in paper)",
         "status": RUNNING, "match": "arm-b-mult2", "since": "2026-09-18",
-        "select": {"band_mults": lambda v: v == [[0.9, 0.94, 2.0]], "skip_bands": lambda v: v == [[0.94, 0.96]]},
+        "select": {"band_mults": lambda v: v == [[0.9, 0.94, 2.0]], "skip_bands": lambda v: v == []},
         "what": "Inside 90-94c one order may reach 2 x SIZE instead of 1.5x.",
         "why": "The live step is 1.5x with a bar (v-bands). This arm shows how "
                "often the book holds 2x, and which rail binds, so the step to "
