@@ -23,6 +23,7 @@ import collections
 import glob
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -45,8 +46,16 @@ EXPERIMENTS = [
     # ---------------------------------------------------------------- RUNNING
     {
         "name": "Hedge on the market price, not the model (A47)",
-        "status": RUNNING, "match": "--hedge-price", "since": "2026-09-17",
-        "select": {"hedge_price": SET},
+        "status": SHIPPED, "match": "--hedge-price", "since": "2026-09-17",
+        "select": {"hedge_price": SET, "band_mults": lambda v: not v},
+        "outcome": "LIVE at 0.60 from 2026-09-18 (v-bands), on the live record "
+                   "rather than this arm: every real loss was hedged with our "
+                   "side already under 60c (4 of 4 pass -- BTC and HYPE on "
+                   "09-14 at 43-58c, DOGE and BNB later), and every false "
+                   "alarm was bought with our side at 73c or more (5 of 5 "
+                   "blocked, -$41.72 saved). The paper arm never produced a "
+                   "hedge of its own to score; the operator's 'this version "
+                   "better still hedge when I lose' is answered by those four.",
         "legacy_logs": ["pinrun-paper-20260917T163428Z.jsonl",
                         "pinrun-paper-20260918T041353Z.jsonl"],
         "what": "Insurance fires only when OUR side's market price has also fallen "
@@ -66,7 +75,8 @@ EXPERIMENTS = [
         "name": "Buy bigger in the last seconds (A48)",
         "status": RUNNING, "match": "--late-mult", "since": "2026-09-17",
         # late_mult SHIPS AT 1.0, so `SET` would match every log ever written.
-        "select": {"late_mult": lambda v: v is not None and float(v) > 1.0},
+        "select": {"late_mult": lambda v: v is not None and float(v) > 1.0, 
+                   "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "legacy_logs": ["pinrun-paper-20260917T212112Z.jsonl"],
         "what": "Lets one order exceed the normal size when there are under 10 "
                 "seconds left. Operator's idea.",
@@ -85,7 +95,8 @@ EXPERIMENTS = [
     {
         "name": "Insurance only when the other side is a normal bet (A51)",
         "status": RUNNING, "match": "--hedge-normal", "since": "2026-09-18",
-        "select": {"hedge_normal": True},
+        "select": {"hedge_normal": True, 
+                   "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "what": "Only buys insurance when the OTHER side would pass the same "
                 "tests a normal bet passes: our model 99.5% sure of it, and "
                 "its price at or under 98c.",
@@ -116,7 +127,12 @@ EXPERIMENTS = [
         # Whenever an arm is layered on another, the older one must exclude it.
         "select": {"early_max_edge": SET, "hedge_normal": lambda v: not v,
                    # A52 inherits this flag as well; same trap, third time
-                   "hedge_jump": lambda v: v is None},
+                   "hedge_jump": lambda v: v is None,
+                   # the 99c arm carries the cap too; A50 proper is at 98c.
+                   # A start record without the field predates it and means
+                   # the default, which is 98c.
+                   "price_ceiling": lambda v: v is None or abs(float(v) - 0.98) < 1e-9,
+                   "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "what": "Buys a WHOLE bet at 31-45 seconds out, not a third -- but only "
                 "when our model and the market price are within 3 cents of each "
                 "other.",
@@ -142,7 +158,11 @@ EXPERIMENTS = [
     {
         "name": "The 45-second early leg (A46 + A49)",
         "status": RUNNING, "match": "--early-tau", "since": "2026-09-17",
-        "select": {"early_tau_max": 45, "pin": 0.995, "early_max_edge": UNSET},
+        "select": {"early_tau_max": 45, "pin": 0.995, "early_max_edge": UNSET,
+                   # the staged arm (a third, then topped up) shares every
+                   # other setting; a FULL early bet is early_frac 1.0
+                   "early_frac": 1.0,
+                   "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "what": "Buys between 31 and 45 seconds out at FULL size since 2026-09-18 "
                 "~17:0xZ (a third before that), only if the price is at least "
                 "90c and the model is within 3c of the market.",
@@ -379,7 +399,8 @@ EXPERIMENTS = [
     {
         "name": "Price cap 98c -> 99c (7-day arm)",
         "status": RUNNING, "match": "--price-ceiling", "since": "2026-09-18",
-        "select": {"price_ceiling": lambda v: v is not None and float(v) > 0.985},
+        "select": {"price_ceiling": lambda v: v is not None and float(v) > 0.985, 
+                   "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "what": "Buys asks up to 99c instead of stopping at 98c. Everything "
                 "else identical to the live bot. Running SEVEN days, not the "
                 "usual 40 closes, on the operator's word: 'This one will "
@@ -431,7 +452,8 @@ EXPERIMENTS = [
     {
         "name": "Hedge on the JUMP, not on the belief (A52)",
         "status": RUNNING, "match": "--hedge-jump", "since": "2026-09-18",
-        "select": {"hedge_jump": SET},
+        "select": {"hedge_jump": SET, 
+                   "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "what": "Buy insurance the instant the index makes a one-second move of "
                 "N sigma against us AFTER entry, instead of waiting for the "
                 "model's belief to fall through 60%. It is a reaction, not a "
@@ -769,8 +791,96 @@ def _settled_pnl(r):
     return _NOPOS
 
 
+def _log_span(path):
+    """(first_epoch, last_epoch) of a log's timestamped records; None when
+    the log is readable but carries no timestamps; False when it cannot be
+    read at all. The two are different answers and join_logs treats them
+    differently -- one is kept, the other dropped."""
+    import calendar
+    import time as _t
+    lo = hi = None
+    try:
+        fh = open(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    with fh:
+        for line in fh:
+            i = line.find('"t": "')
+            if i < 0:
+                continue
+            t = line[i + 6:i + 25]
+            try:
+                ts = calendar.timegm(_t.strptime(t, "%Y-%m-%dT%H:%M:%S"))
+            except (TypeError, ValueError):
+                continue
+            lo = ts if lo is None else min(lo, ts)
+            hi = ts if hi is None else max(hi, ts)
+    return None if lo is None else (lo, hi)
+
+
+def join_logs(paths):
+    """The logs that together ARE one arm, oldest first, overlaps refused.
+
+    THE OPERATOR, 2026-09-18: "i see some charts cut off because we stopped".
+    An arm that is stopped and started again writes a NEW log, and the Lab
+    showed only the newest one -- so a restart did not cut the chart, it
+    threw the earlier hours away. This returns every matching log in time
+    order so the chart is the arm's whole life with a gap where it was down.
+
+    TWO LOGS THAT OVERLAP IN TIME ARE NOT ONE ARM. They are two processes on
+    the same settings at once (a stale duplicate, or a relaunch that failed
+    to kill the old one), and summing them double-counts every market. When
+    a later log starts before an earlier one ends, the earlier one is dropped
+    and the caller is told, rather than the money being quietly doubled.
+
+    Returns (kept_paths, dropped_paths).
+    """
+    spans, unplaced = [], []
+    for p in paths:
+        sp = _log_span(p)
+        if sp is False:
+            continue                      # unreadable: not a log at all
+        if sp is None:
+            # NO TIMESTAMPS (a log that never got past its start record, or a
+            # hand-made one): it cannot be ordered or overlap-checked, so it
+            # is KEPT, last, by name -- dropping it would make an arm with one
+            # such log vanish from the Lab, which is what the first version
+            # of this did to every confidence arm in the self-test
+            unplaced.append(p)
+            continue
+        spans.append((sp[0], sp[1], p))
+    spans.sort()
+    kept, dropped = [], []
+    for lo, hi, p in spans:
+        if kept and lo <= kept[-1][1]:
+            # overlap: the log that ENDS LATER is the arm -- it is the one
+            # still running, or the one that ran longest. A relaunch that
+            # died in a minute must not displace the arm it duplicated. The
+            # loser is dropped whole rather than sliced, because a sliced log
+            # would hide that two processes ran at once.
+            if hi > kept[-1][1]:
+                dropped.append(kept[-1][2])
+                kept[-1] = (lo, hi, p)
+            else:
+                dropped.append(p)
+            continue
+        kept.append((lo, hi, p))
+    return [p for _, _, p in kept] + sorted(unplaced), dropped
+
+
 def summarise_log(path):
-    """{settled, won, lost, net} for one paper log. Cheap: reads settled lines."""
+    """{settled, won, lost, net} for one paper log, or a LIST of logs joined
+    in time order (join_logs). Cheap: reads settled lines."""
+    if isinstance(path, (list, tuple)):
+        parts = [summarise_log(p) for p in path]
+        parts = [x for x in parts if x]
+        if not parts:
+            return None
+        return {"settled": sum(x["settled"] for x in parts),
+                "won": sum(x["won"] for x in parts),
+                "lost": sum(x["lost"] for x in parts),
+                "net": sum(x["net"] for x in parts),
+                "logs": len(parts)}
     n = won = lost = 0
     net = 0.0
     try:
@@ -800,9 +910,18 @@ def summarise_log(path):
 
 
 def arm_series(path):
-    """[(epoch, pnl)] and total contracts for one paper arm, oldest first."""
+    """[(epoch, pnl)] and total contracts for one paper arm, oldest first.
+    `path` may be a list of logs (join_logs), read in order and merged."""
     import calendar
     import time as _t
+    if isinstance(path, (list, tuple)):
+        pts, contracts = [], 0.0
+        for p in path:
+            a, b = arm_series(p)
+            pts.extend(a)
+            contracts += b
+        pts.sort()
+        return pts, contracts
     pts, contracts = [], 0.0
     try:
         fh = open(path, encoding="utf-8", errors="replace")
@@ -923,13 +1042,31 @@ def live_progress(cmdlines=None, logs=None):
         # blank is honest, a stranger's numbers under your name is not.
         sel = e.get("select")
         pool = logs if logs is not None else _paper_logs()
+        matched = []
+        # AN ARM'S LOGS START NO EARLIER THAN THE ARM. A `select` names the
+        # settings, and settings recur: `pin 0.99` was a paper run on 09-13
+        # under different code, and joining that on to an arm declared on
+        # 09-18 stitched two experiments into one chart. The filename carries
+        # the start stamp, so a log from before `since` is not this arm's.
+        since = str(e.get("since") or "").replace("-", "")[:8]
         if sel:
             for p in pool:
+                stamp = re.search(r"(\d{8})T\d{6}Z", os.path.basename(p))
+                if since and stamp and stamp.group(1) < since:
+                    continue
                 r = _first_record(p)
                 if r is None or r.get("kind") != "start":
                     continue
                 if all(_sel_ok(r.get(k), want) for k, want in sel.items()):
-                    best = p
+                    matched.append(p)
+        dropped = []
+        if len(matched) == 1:
+            best = matched[0]
+        elif matched:
+            kept, dropped = join_logs(matched)
+            # ONE log stays a plain path so every caller that reads `log`
+            # as a filename keeps working; two or more become the joined list
+            best = kept[-1] if len(kept) == 1 else kept
         if best is None and e.get("legacy_logs"):
             # RUNS THAT PREDATE THE START-RECORD FIX. A47 and A48 were launched
             # on 2026-09-17, before `hedge_price` and `late_mult` were written
@@ -948,7 +1085,14 @@ def live_progress(cmdlines=None, logs=None):
             s = summarise_log(best)
             if s:
                 info.update(s)
-                info["log"] = os.path.basename(best)
+                if isinstance(best, (list, tuple)):
+                    info["log"] = os.path.basename(best[-1])
+                    info["logs"] = [os.path.basename(p) for p in best]
+                else:
+                    info["log"] = os.path.basename(best)
+            if dropped:
+                # said out loud, never summed: two processes ran at once
+                info["overlap_dropped"] = [os.path.basename(p) for p in dropped]
         out[m] = info
     return out
 
@@ -1092,6 +1236,69 @@ def selftest():
     ck(lp["--hedge-price"]["running"] is False, "and a missing one does not")
     ck(live_progress(cmdlines=[], logs=[])["cmdarm.py"]["running"] is False,
        "NULL: nothing running, nothing claimed")
+
+    # AN ARM IS EVERY LOG THAT MATCHES IT, IN ORDER -- A RESTART IS A GAP,
+    # NOT A RESET. And two logs that overlap are two processes, never summed.
+    ja = os.path.join(td, "pinrun-paper-j1.jsonl")
+    jb = os.path.join(td, "pinrun-paper-j2.jsonl")
+    jc = os.path.join(td, "pinrun-paper-j3.jsonl")
+    for path, t0, t1, pnl in ((ja, "2026-09-18T10:00:00Z", "2026-09-18T11:00:00Z", 100.0),
+                              (jb, "2026-09-18T12:00:00Z", "2026-09-18T13:00:00Z", -50.0),
+                              (jc, "2026-09-18T12:30:00Z", "2026-09-18T14:00:00Z", 700.0)):
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"kind": "start", "pin": 0.975, "t": t0}) + "\n")
+            fh.write(json.dumps({"kind": "signal", "take_n": 20.0, "t": t0}) + "\n")
+            fh.write(json.dumps({"kind": "settled", "pnl_c": pnl, "t": t1}) + "\n")
+    kept, dropped = join_logs([jb, ja])
+    ck(kept == [ja, jb] and dropped == [],
+       "two logs that do not overlap are ONE arm, oldest first, whichever "
+       "order they were handed over in")
+    sm = summarise_log(kept)
+    ck(sm["settled"] == 2 and abs(sm["net"] - 0.5) < 1e-9 and sm["logs"] == 2,
+       "...and their money is summed ($1.00 then -$0.50), so a restarted arm "
+       "keeps its history with a gap instead of starting from zero")
+    pts, ctr = arm_series(kept)
+    ck([v for _, v in pts] == [1.0, -0.5] and abs(ctr - 40.0) < 1e-9,
+       "...the series runs oldest first across the join, and contracts add")
+    kept2, dropped2 = join_logs([ja, jb, jc])
+    ck(kept2 == [ja, jc] and dropped2 == [jb],
+       "a log that starts BEFORE the previous one ended is a second process "
+       "on the same settings: the one that ends first is dropped whole and "
+       "named, and the $7.00 is never added to the $-0.50 it overlapped")
+    jd = os.path.join(td, "pinrun-paper-j4.jsonl")
+    with open(jd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "start", "pin": 0.975, "t": "2026-09-18T12:40:00Z"}) + chr(10))
+        fh.write(json.dumps({"kind": "end", "t": "2026-09-18T12:41:00Z"}) + chr(10))
+    kept3, dropped3 = join_logs([jb, jd])
+    ck(kept3 == [jb] and dropped3 == [jd],
+       "a relaunch that started inside a running arm and DIED a minute later "
+       "does not displace it -- the arm is the log that ends later, not the "
+       "one that started later; the first rule got this backwards and would "
+       "have shown a dead 0-trade log in place of a live one")
+    lpj = live_progress(cmdlines=[], logs=[ja, jb])
+    ck(lpj["--pin 0.975"].get("logs") == ["pinrun-paper-j1.jsonl", "pinrun-paper-j2.jsonl"]
+       and abs(lpj["--pin 0.975"]["net"] - 0.5) < 1e-9,
+       "the Lab reports the joined arm and lists every log it stands on")
+    lpo = live_progress(cmdlines=[], logs=[ja, jb, jc])
+    ck(lpo["--pin 0.975"].get("overlap_dropped") == ["pinrun-paper-j2.jsonl"],
+       "...and when logs overlap it says which one it refused to count")
+    jold = os.path.join(td, "pinrun-paper-20260913T010000Z.jsonl")
+    with open(jold, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "start", "pin": 0.975, "t": "2026-09-13T01:00:00Z"}) + "\n")
+        fh.write(json.dumps({"kind": "settled", "pnl_c": 9999.0, "t": "2026-09-13T02:00:00Z"}) + "\n")
+    lps = live_progress(cmdlines=[], logs=[jold, ja, jb])
+    ck(abs(lps["--pin 0.975"]["net"] - 0.5) < 1e-9,
+       "a log stamped BEFORE the arm's `since` date is not the arm's, however "
+       "well its settings match -- the $99.99 from 09-13 stays out of an arm "
+       "declared on 09-18")
+    ck(join_logs([]) == ([], []) and join_logs([os.path.join(td, "nope.jsonl")]) == ([], []),
+       "NULL: no logs, or an unreadable one, join to nothing")
+    jn = os.path.join(td, "pinrun-paper-j0.jsonl")
+    with open(jn, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "start", "pin": 0.975}) + "\n")
+    ck(join_logs([jn, ja]) == ([ja, jn], []),
+       "NULL: a log with no timestamps is KEPT, last, and never counted as an "
+       "overlap -- dropping it made every confidence arm disappear")
 
     # WHAT IF THE ARM HAD BEEN LIVE
     ap_, ac = [(100, 1.0), (200, -3.0), (300, 2.0)], 60.0

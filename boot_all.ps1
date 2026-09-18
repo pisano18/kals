@@ -188,7 +188,15 @@ if (-not $NoArms) {
                 @{ n = "arm-b-skip975";     x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975") + $m15 },
                 @{ n = "arm-b-mult2";       x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--band-mult", "0.90", "0.94", "2.0") },
                 @{ n = "arm-b-harder";      x = $band + @("--early-min-price", "0.90", "--early-max-edge", "3.0", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") },
-                @{ n = "arm-b-all";         x = $band + @("--early-min-price", "0.80", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") }
+                @{ n = "arm-b-all";         x = $band + @("--early-min-price", "0.80", "--skip-band", "0.94", "0.975", "--band-mult", "0.80", "0.90", "2.0", "--band-mult", "0.90", "0.94", "2.0") },
+                # the confidence arms (Lab: "Lower confidence to X"), relaunched
+                # 2026-09-18 ~22:49Z after dying at ~16:36Z with no `end`
+                # record. No early leg, no bands: the 09-15 base plus --pin.
+                @{ n = "arm-pin0.97";       x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.97") },
+                @{ n = "arm-pin0.975";      x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.975") },
+                @{ n = "arm-pin0.98";       x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.98") },
+                @{ n = "arm-pin0.985";      x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.985") },
+                @{ n = "arm-pin0.99";       x = @("--max-positions", "3", "--hedge-belief", "0.60", "--pin", "0.99") }
             )
             foreach ($a in $arms) {
                 Start-Process -FilePath $py -ArgumentList ($live + $a.x) -WorkingDirectory $repo -WindowStyle Hidden `
