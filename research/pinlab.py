@@ -399,6 +399,36 @@ EXPERIMENTS = [
                  "cheaper trades it also takes will swamp the signal otherwise.",
     },
     {
+        "name": "The 2026-09-13 bot, re-run beside today's",
+        "status": RUNNING, "match": "pinrun913.py", "since": "2026-09-18",
+        # code_sha is the hash of pinrun913.py itself and cannot collide with
+        # any other arm. Selecting on max_per_market=1 would also match nine
+        # historical logs from before the flag changed.
+        "select": {"code_sha": "1e57c5cf45bb"},
+        "what": "The bot exactly as it ran on 09-13, when it made $114.78 and "
+                "took 21 cheap fills, running as a paper arm next to today's "
+                "live bot on the same markets at the same instant.",
+        "why": "Operator: 'Are you absolutely certain it isn't our bot "
+               "filtering them out... Do we still have that version from way "
+               "back then?' Our cheap (<95c) fills fell from 21-22 a day to "
+               "2-8 while the tape's cheap supply stayed flat, and my check "
+               "that we were not refusing them was blind: the confidence gate "
+               "fires BEFORE a price is read, so a cheap offer refused there "
+               "carries no price and the query counted zero. Three gates exist "
+               "now that did not on 09-13 (both_sides, jump_against, "
+               "against_thin), all added 09-14.",
+        "good": "It takes cheap fills today's bot refuses. Then we are "
+                "filtering them out and the gate is findable -- which it "
+                "ALREADY DID within 15 minutes, catching A50 refusing a 94.8c "
+                "fill at tau 25 that the old bot bought and won.",
+        "bad": "It sees the same empty book we do. Then we are arriving after "
+               "the offers and the answer is speed or a second venue, not a "
+               "setting.",
+        "watch": "Cheap (<95c) fills per day, side by side. Saturday is the "
+                 "biggest cheap-supply day of the week (2x a weekday), so the "
+                 "first Saturday is the sharpest test.",
+    },
+    {
         "name": "Hedge on the JUMP, not on the belief (A52)",
         "status": RUNNING, "match": "--hedge-jump", "since": "2026-09-18",
         "select": {"hedge_jump": SET},
