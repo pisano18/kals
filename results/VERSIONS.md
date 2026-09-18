@@ -1,3 +1,56 @@
+# v-early-full2 -- 2026-09-18 ~17:0xZ -- LIVE: the 31-45 s leg goes from a THIRD to FULL size
+
+**Operator: "If you're ready, then yes increase to 45."** `restart_bot.ps1`
+now passes `--early-frac 1.0` (was `0.333`). The 90c floor and the 3c edge cap
+on the early leg are unchanged.
+
+## Why the third was never supported by the evidence
+
+It was a precaution from a mechanism story -- at 45 s only a quarter of the
+settlement average is locked -- and the live record does not bear it out:
+
+| live window | markets | model misses | net |
+|---|---|---|---|
+| 31-45 s | 57 | 1 (hedged to +$4.36) | +$64.79 |
+| 3-30 s | 475 | 11 | +$496.62 |
+
+Same miss rate. The raw market at 31-45 s FAILS break-even on the tape in every
+price band this week (research on 2026-09-18, `supplyclock.py`), so what makes
+the live number good is the confidence filter doing real work at 45 s -- the
+test it needed to pass.
+
+Every miss in both windows is a single-second jump of 10-18 sigma with sigma
+understated 2-3x at entry, and the losers sit inside the winners' confidence
+range (`sigcheck.py`). No entry filter separates them: a 1.5x sigma stress
+refuses all four 45 s misses and 88% of the wins. The defence is the hedge,
+which is +$46.55 net across every alarm.
+
+## Why full size matters more than the miss rate
+
+Post-fix (after v-a8fix), of 34 early legs on live, **26 got no top-up because
+by 30 s nothing was left to buy** (`no_offer`), 3 were topped up, 1 hit the
+depth floor, 4 had no look. The early leg is not a starter position; on three
+markets in four it IS the trade. At a third size that forgoes two thirds of
+the position. Post-fix early legs at a third: 31 markets, 31 won, 0 lost,
++$33.59 -- roughly +$100 at full.
+
+## The tail, stated
+
+A jump loss at full size is three times a jump loss at a third. The one live
+45 s miss cost the model leg $3.93 at a third; at full it is about $12 before
+the hedge. The stage-2 bar from `PREREG_staged.md` still governs: revert to a
+third at 3 losing early markets in 40, or 2 in the first 15.
+
+## Revert
+
+```powershell
+cd C:\kals-repo
+# restart_bot.ps1: change "--early-frac", "1.0" back to "--early-frac", "0.333"
+.\restart_bot.ps1
+```
+
+---
+
 # v-oilsweet -- 2026-09-18 ~15:4xZ -- LIVE: oil moves to 16-30 s at 93-99c, and to $20
 
 **Operator: "Okay just do 16-30 93c+ then do a paper arm for 2-30. Increase to

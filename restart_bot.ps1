@@ -192,7 +192,15 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # average is locked, so `fair` leans harder on the sigma estimate. A cheap
     # ask there is the market disagreeing with us exactly where our model is
     # weakest. Inside 30 s the full leg is untouched.
-    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.90",
+    # A THIRD -> FULL, 2026-09-18 ~17:0xZ, on the operator's word: "If you're
+    # ready, then yes increase to 45." The third was a precaution from a
+    # mechanism story; the live record does not support it. 31-45 s on real
+    # money: 57 markets, 1 model miss (hedged to +$4.36), +$64.79. The main
+    # window: 475 markets, 11 misses. Same miss rate. And post-fix, 26 of 34
+    # early legs got NO top-up because by 30 s nothing was left to buy -- at a
+    # third that forgoes two thirds of the position on three markets in four.
+    # Post-fix early legs at a third: 31 markets, 31 won, +$33.59.
+    "--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.90",
     # AMENDMENT 50, 2026-09-18. The operator asked what to do with the
     # 45-second leg in the meantime: "It's earning good it'd be a shame to
     # shut it off, but also a shame to lose money... It might mean smaller
