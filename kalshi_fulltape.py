@@ -331,13 +331,34 @@ def pull_markets_only(series_list, n_markets, out_dir, force=False):
 
     if not force and old_n and (new_n < 0.9 * old_n
                                 or new_series < old_series):
-        print(f"\n  *** REFUSING TO WRITE. The fetch returned {new_n:,} "
-              f"settled markets across {new_series} series;")
-        print(f"  *** the file on disk already has {old_n:,} across "
-              f"{old_series}. That is a fetch failure, not a shrinking")
-        print("  *** market. markets.json is UNCHANGED. Re-run when the API")
-        print("  *** is cooperating, or pass --force if the shrink is real.")
-        return prev
+        # A SMALLER FETCH IS MERGED, NEVER WRITTEN OVER THE FILE AND NEVER
+        # THROWN AWAY. The refusal above was right about the first half: a
+        # rate-limited fetch must not overwrite 16,000 settlements with 3,600.
+        # But returning the old file untouched threw the fresh rows away too,
+        # so on 2026-09-18 a refresh that had just fetched every 09-18 market
+        # in eleven seconds left the day invisible. A refresh of the OUTCOMES
+        # is a union: every existing ticker kept, every fetched ticker added
+        # or replaced. Nothing is ever removed by this path.
+        added = 0
+        merged = {s: list(v or []) for s, v in prev.items()}
+        for s, rows in markets.items():
+            have = {m.get("ticker"): i for i, m in enumerate(merged.setdefault(s, []))}
+            for m in rows or []:
+                tk = m.get("ticker")
+                if not tk:
+                    continue
+                if tk in have:
+                    merged[s][have[tk]] = m
+                else:
+                    merged[s].append(m)
+                    added += 1
+        print(f"\n  fetch returned {new_n:,} settled markets across "
+              f"{new_series} series; the file already holds {old_n:,} across "
+              f"{old_series}.")
+        print(f"  MERGED rather than overwritten: {added:,} new markets added, "
+              f"nothing removed. (--force would overwrite instead.)")
+        _write(out_dir, merged)
+        return merged
     _write(out_dir, markets)
     return markets
 
@@ -478,11 +499,18 @@ def tails_per_series(markets):
         # pull never reads. This statistic needs settle, so it uses only the
         # rows that have one and says nothing for a series that has none,
         # instead of raising KeyError after the outcomes are already in hand.
-        ms = [m for m in ms if m.get("settle") is not None
-              and m.get("strike")]
-        if len(ms) < 300:
+        # ...and the REST pull returns `strike` as a STRING ("76641.2"), so a
+        # truthiness check let it through and the subtraction raised. Decide
+        # the type here, once, and drop what does not convert.
+        clean = []
+        for m in ms:
+            try:
+                clean.append((float(m["settle"]), float(m["strike"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(clean) < 300:
             continue
-        rel = sorted((m["settle"] - m["strike"]) / m["strike"] for m in ms)
+        rel = sorted((st - k) / k for st, k in clean if k)
         k = max(int(len(rel) * 0.001), 1)
         rel = rel[k:len(rel) - k]                      # winsorize
         sd = pstdev(rel)
