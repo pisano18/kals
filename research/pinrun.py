@@ -6331,7 +6331,16 @@ def trade_loop(a, rec, book, idx, series_index):
             if want is not None and _both_sides_block(prev, tk, want):
                 nb0 = near.setdefault(close_s, _fresh_near())
                 nb0["both_sides_blocked"] = nb0.get("both_sides_blocked", 0) + 1
+                # `want`, `fair`, `tau`, `spot` and `strike` are RECORDED
+                # HERE because on 2026-09-18 this gate fired after every
+                # early leg on twenty straight live markets, and with only
+                # `held` in the record nobody could tell whether the model had
+                # genuinely reversed or the fair value was being computed for
+                # the wrong thing. A refusal that cannot say why it refused
+                # is one nobody can argue with.
                 _gate("both_sides", close_s, tk, held=prev["sides"][tk],
+                      want=want, fair=round(f, 5), tau=tau,
+                      spot=spot, strike=strike,
                       wanted=want)
                 continue
             if want is None:
