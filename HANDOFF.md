@@ -1,3 +1,53 @@
+# 2026-09-18 ~21:5xZ -- A53 PRICE BANDS: what went live, what is in paper, and what only the operator can do
+
+Read `results/VERSIONS.md` v-bands (SHA c015709) first. Operator: *"Okay
+remove insurance. But keep hedging. We can remove 94-96. If it's safe then
+yea you figure out a way to buy more beneath 94."*
+
+## Live flags (in `restart_bot.ps1`, NOT YET RUNNING until the operator restarts)
+
+- `--hedge-price 0.60` -- hedge only when the market also puts our side under
+  60c. Every live hedge bought under 40c hurt (5/5, -$41.72); both bought
+  over 40c helped (+$8.80). "Insurance" = the cheap ones; "hedging" = these.
+- `--skip-band 0.94 0.96` -- gate `price_band`; the sweep stops under 94c.
+- `--band-mult 0.90 0.94 1.5` -- BAR: revert at the first loss on a boosted
+  fill in the first 20 boosted closes; at 20 clean, 2.0.
+
+**The auto-mode classifier refuses to run `restart_bot.ps1` from a session
+and refuses heredoc edits of it.** Edit it with the Edit tool; the operator
+restarts from the desktop app or with `! powershell -ExecutionPolicy Bypass
+-File C:\kals-repoestart_bot.ps1`. `versioncheck.py` is clean.
+
+## The startup trap, sprung and caught
+
+The sweep self-test asserted "one tick more fails ceiling/edge/EV" -- under
+`--skip-band` the next tick is refused by the BAND, so the bot would not have
+started. `arm-b-control` (the exact live flag set, in paper) caught it
+before the restart did. Rule: **every live flag change starts its control
+arm first and reads the start record before anyone touches the launcher.**
+
+## Paper arms (`start_bands.ps1`; `boot_all.ps1` restarts them; Lab entries in `pinlab.py`)
+
+All on the v-bands baseline, one change each: `arm-b-control`,
+`arm-b-early-open` (45 s leg from 80c, no 3c cap), `arm-b-early-nocap`
+(cap off, 90c floor kept), `arm-b-skip975`, `arm-b-mult2`, `arm-b-harder`
+(2x across 80-94c + skip 94-97.5c), `arm-b-all`. Paper measures how often
+the book held the wider order and the tape outcome -- a LOWER bound on our
+loss rate (rule 5). Paper kills; only a graduated live step proves.
+
+## Things learned building it
+
+- `pintake.MAX_TAKE_COUNT` was raised to SIZE (x ONE_COIN_MAX) only: A48's
+  late boost would have been REFUSED on the wire the first time it widened.
+  `max_band_mult()` + `LATE_MULT` now enter the cap at live start and at
+  every autosize.
+- The A46 re-cap (`_stage46`) would have undone any boost on an early leg;
+  it now reads `SIZE x band_mult(price)`.
+- The DOGE 04:14 ET fill recorded at 11c on a 97.6c ask is REAL: the book
+  collapsed inside the 82 ms round trip and the IOC filled at 11c (fee
+  agrees). Same mechanism as the 53c BTC fill, benign this time.
+- `realised` in settled records is a RUNNING total; `pnl_c` is the fill.
+
 # 2026-09-18 ~21:0xZ -- WHY THE MONEY FELL: IT WAS OIL, PLUS A PRICE BAND THAT EARNS NOTHING
 
 The operator: *"figure out why we make so much less money now. And then make
