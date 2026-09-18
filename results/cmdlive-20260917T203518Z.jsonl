@@ -1,0 +1,12 @@
+{"series": ["KXGOLD15M", "KXWTI15M"], "size_dollars": 10.0, "dry": false, "max_contracts": 40.0, "bands": {"KXGOLD15M": [[2, 15, 0.95, 0.99, [8, 14], "gold-near"], [91, 180, 0.95, 0.99, null, "gold-far"]], "KXWTI15M": [[2, 60, 0.95, 0.99, null, "wti-near"], [16, 45, 0.9, 0.95, null, "wti-mid"], [121, 180, 0.9, 0.99, null, "wti-far"]], "KXSILVER15M": [[121, 180, 0.95, 0.99, null, "silver-far"], [16, 60, 0.95, 0.99, null, "anti-silver-mid"]], "KXCOPPER15M": [[46, 90, 0.98, 0.99, null, "copper-mid"]], "KXNATGAS15M": [[91, 120, 0.95, 0.98, null, "natgas-far"]]}, "max_spend": 1200.0, "max_orders": 60, "max_losses": 4, "max_net_loss": 25.0, "realised_earlier_today": -53.064, "losses_earlier_today": 2, "balance_floor": 300.0, "balance_at_start": 566.7252, "spent_earlier_today": 259.659, "signoff": "operator 2026-09-17: ready for commodity penny testing, then: up the live commodity trading to 30 dollars size per trade", "version": "cmdlive-30dollar", "kind": "start", "t": "2026-09-17T20:35:18Z"}
+{"added": ["KXGOLD15M-26SEP171645-45", "KXWTI15M-26SEP171645-45"], "kind": "watch", "t": "2026-09-17T20:35:18Z"}
+{"added": ["KXGOLD15M-26SEP171645-45"], "kind": "watch", "t": "2026-09-17T20:41:20Z"}
+{"ticker": "KXWTI15M-26SEP171645-45", "series": "KXWTI15M", "tau": 180, "want": "yes", "price": 0.96, "count": 10.0, "why": ["$-53.06 net realised down today; the cap is $25.00"], "kind": "refused", "t": "2026-09-17T20:41:59Z"}
+{"ticker": "KXGOLD15M-26SEP171645-45", "series": "KXGOLD15M", "tau": 15, "want": "no", "price": 0.989, "count": 10.0, "why": ["$-53.06 net realised down today; the cap is $25.00"], "kind": "refused", "t": "2026-09-17T20:44:44Z"}
+{"ticker": "KXWTI15M-26SEP171645-45", "series": "KXWTI15M", "bet": false, "kind": "look", "t": "2026-09-17T20:44:58Z"}
+{"ticker": "KXGOLD15M-26SEP171645-45", "series": "KXGOLD15M", "bet": false, "kind": "look", "t": "2026-09-17T20:44:58Z"}
+{"added": ["KXGOLD15M-26SEP171700-00", "KXWTI15M-26SEP171700-00"], "kind": "watch", "t": "2026-09-17T20:45:21Z"}
+{"losses": 2, "realised": -53.064, "why": "$-53.06 net down", "kind": "brake", "t": "2026-09-17T20:46:52Z"}
+{"losses": 2, "realised": -53.064, "why": "$-53.06 net down", "kind": "brake", "t": "2026-09-17T20:46:52Z"}
+{"why": "cmdlive.stop", "kind": "stop", "t": "2026-09-17T20:46:52Z"}
+{"orders": 0, "fills": 0, "spent": 259.659, "losses": 2, "realised": -53.064, "kind": "end", "t": "2026-09-17T20:46:52Z"}

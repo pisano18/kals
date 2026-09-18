@@ -1,3 +1,82 @@
 ﻿2026-09-15T01:25:28-04:00  watch_bot starting: checking every 60 s, at most 4 restarts an hour
 2026-09-15T01:25:32-04:00  live bot alive, pid 1691816
 2026-09-15T01:25:42-04:00  watch_bot starting: checking every 60 s, at most 4 restarts an hour
+2026-09-15T11:14:46-04:00  watch_bot starting: checking every 60 s, at most 4 restarts an hour
+2026-09-15T14:36:20-04:00  watch_bot starting: checking every 60 s, at most 4 restarts an hour
+2026-09-15T15:37:50-04:00  watch_bot starting: checking every 60 s, at most 4 restarts an hour
+2026-09-15T16:15:01-04:00  watch_bot starting: checking every 60 s, at most 4 restarts an hour
+2026-09-17T00:21:45-04:00  watch_bot starting: every 30 s; 4 quick restarts per 15 min, then one every 3 min forever; stale after 25 min; money-brake cooldown 15 min
+2026-09-17T00:21:45-04:00  live bot alive, pid 327184, last wrote 102 s ago
+2026-09-17T00:22:07-04:00  watch_bot starting: every 30 s; 4 quick restarts per 15 min, then one every 3 min forever; stale after 25 min; money-brake cooldown 15 min
+2026-09-17T03:25:13-04:00  STALE: pid 327184 alive but nothing written for 25 min
+2026-09-17T03:25:13-04:00  stale bot: stopping pid 327184 first
+2026-09-17T03:25:16-04:00  restarting (quick 1 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30, PREREG_pin_live.md ***
+2026-09-17T03:25:16-04:00    restart_bot: restart_bot.ps1 starting 2026-09-17T03:25:16.9130514-04:00
+2026-09-17T03:25:17-04:00    restart_bot: pinflat: FLAT -- every fill has settled (pid 327184, pinrun-live-20260916T135734Z.jsonl)
+2026-09-17T03:25:18-04:00    restart_bot: no live pinrun found to stop (pid file: True)
+2026-09-17T03:25:38-04:00    restart_bot: pinrun running: pid 544616
+2026-09-17T03:25:38-04:00    restart_bot: kalshi_data -- last full hour 136108922 bytes across 8 channels; 7 open now
+2026-09-17T03:25:38-04:00    restart_bot: feed_data -- last full hour 8437508 bytes across 5 channels; 5 open now
+2026-09-17T03:25:38-04:00    restart_bot: both recorders are writing
+2026-09-17T03:25:38-04:00    restart_bot: flags now live: "C:\Python314\python.exe" -u C:\kals-repo\research\pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.60 
+2026-09-17T03:25:38-04:00    restart_bot: restart_bot.ps1 done 2026-09-17T03:25:38.1024487-04:00
+2026-09-17T07:22:18-04:00  watch_bot starting: every 30 s; 4 quick restarts per 15 min, then one every 3 min forever; stale after 25 min; money-brake cooldown 15 min
+2026-09-17T15:41:56-04:00  LIVE BOT IS DOWN
+2026-09-17T15:41:56-04:00  restarting (quick 1 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 0.333xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-17T15:41:57-04:00    restart_bot ERR: Start-Transcript : Transcription cannot be started.
+2026-09-17T15:41:57-04:00    restart_bot ERR: At C:\kals-repo\restart_bot.ps1:59 char:1
+2026-09-17T15:41:57-04:00    restart_bot ERR: + Start-Transcript -Path $transcript -Force | Out-Null
+2026-09-17T15:41:57-04:00    restart_bot ERR: + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-09-17T15:41:57-04:00    restart_bot ERR: + CategoryInfo          : InvalidOperation: (:) [Start-Transcript], PSInvalidOperationException
+2026-09-17T15:41:57-04:00    restart_bot ERR: + FullyQualifiedErrorId : CannotStartTranscription,Microsoft.PowerShell.Commands.StartTranscriptCommand
+2026-09-17T15:42:12-04:00  back up, pid 532412
+2026-09-17T21:14:48-04:00  LIVE BOT IS DOWN after halt: open cap: 297 contracts held >= 297 (3 x size 99)
+2026-09-17T21:14:48-04:00  restarting (quick 1 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 1xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-17T21:14:49-04:00    restart_bot: restart_bot.ps1 starting 2026-09-17T21:14:49.2338470-04:00
+2026-09-17T21:14:49-04:00    restart_bot: pinflat: HOLDING -- bot is dead but 2 market(s) have not closed yet; a new bot could buy the same close twice (pid None, pinrun-live-20260917T194157Z.jsonl)
+2026-09-17T21:14:49-04:00    restart_bot: pinflat:     open: KXBTC15M-26SEP172115-15 {'n': 2, 'closes_in_s': 10}
+2026-09-17T21:14:49-04:00    restart_bot: pinflat:     open: KXZEC15M-26SEP172115-15 {'n': 1, 'closes_in_s': 10}
+2026-09-17T21:14:49-04:00    restart_bot: REFUSING: the bot is holding a position (see pinflat above).
+2026-09-17T21:14:49-04:00    restart_bot: Wait for the close to settle, then run this again.
+2026-09-17T21:15:07-04:00  STILL DOWN after restart_bot.ps1 -- will retry
+2026-09-17T21:15:39-04:00  LIVE BOT IS DOWN after halt: open cap: 297 contracts held >= 297 (3 x size 99)
+2026-09-17T21:15:39-04:00  restarting (quick 2 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 1xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-17T21:15:40-04:00    restart_bot: restart_bot.ps1 starting 2026-09-17T21:15:40.2393347-04:00
+2026-09-17T21:15:40-04:00    restart_bot: pinflat: HOLDING -- bot is dead but 2 market(s) have not closed yet; a new bot could buy the same close twice (pid None, pinrun-live-20260917T194157Z.jsonl)
+2026-09-17T21:15:40-04:00    restart_bot: pinflat:     open: KXBTC15M-26SEP172115-15 {'n': 2, 'closes_in_s': -40}
+2026-09-17T21:15:40-04:00    restart_bot: pinflat:     open: KXZEC15M-26SEP172115-15 {'n': 1, 'closes_in_s': -40}
+2026-09-17T21:15:40-04:00    restart_bot: REFUSING: the bot is holding a position (see pinflat above).
+2026-09-17T21:15:40-04:00    restart_bot: Wait for the close to settle, then run this again.
+2026-09-17T21:15:57-04:00  STILL DOWN after restart_bot.ps1 -- will retry
+2026-09-17T21:16:30-04:00  LIVE BOT IS DOWN after halt: open cap: 297 contracts held >= 297 (3 x size 99)
+2026-09-17T21:16:30-04:00  restarting (quick 3 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 1xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-17T21:16:31-04:00    restart_bot: restart_bot.ps1 starting 2026-09-17T21:16:31.0444241-04:00
+2026-09-17T21:16:31-04:00    restart_bot: pinflat: HOLDING -- bot is dead but 2 market(s) have not closed yet; a new bot could buy the same close twice (pid None, pinrun-live-20260917T194157Z.jsonl)
+2026-09-17T21:16:31-04:00    restart_bot: pinflat:     open: KXBTC15M-26SEP172115-15 {'n': 2, 'closes_in_s': -91}
+2026-09-17T21:16:31-04:00    restart_bot: pinflat:     open: KXZEC15M-26SEP172115-15 {'n': 1, 'closes_in_s': -91}
+2026-09-17T21:16:31-04:00    restart_bot: REFUSING: the bot is holding a position (see pinflat above).
+2026-09-17T21:16:31-04:00    restart_bot: Wait for the close to settle, then run this again.
+2026-09-17T21:16:48-04:00  STILL DOWN after restart_bot.ps1 -- will retry
+2026-09-17T21:17:21-04:00  LIVE BOT IS DOWN after halt: open cap: 297 contracts held >= 297 (3 x size 99)
+2026-09-17T21:17:21-04:00  restarting (quick 4 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 1xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-17T21:17:22-04:00    restart_bot: restart_bot.ps1 starting 2026-09-17T21:17:21.7742528-04:00
+2026-09-17T21:17:22-04:00    restart_bot: pinflat: HOLDING -- bot is dead but 2 market(s) have not closed yet; a new bot could buy the same close twice (pid None, pinrun-live-20260917T194157Z.jsonl)
+2026-09-17T21:17:22-04:00    restart_bot: pinflat:     open: KXBTC15M-26SEP172115-15 {'n': 2, 'closes_in_s': -141}
+2026-09-17T21:17:22-04:00    restart_bot: pinflat:     open: KXZEC15M-26SEP172115-15 {'n': 1, 'closes_in_s': -141}
+2026-09-17T21:17:22-04:00    restart_bot: REFUSING: the bot is holding a position (see pinflat above).
+2026-09-17T21:17:22-04:00    restart_bot: Wait for the close to settle, then run this again.
+2026-09-17T21:17:39-04:00  STILL DOWN after restart_bot.ps1 -- will retry
+2026-09-17T21:18:12-04:00  LIVE BOT IS DOWN after halt: open cap: 297 contracts held >= 297 (3 x size 99)
+2026-09-17T21:47:53-04:00  LIVE BOT IS DOWN
+2026-09-17T21:47:53-04:00  restarting (quick 1 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 1xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-17T21:48:00-04:00    restart_bot: restart_bot.ps1 starting 2026-09-17T21:47:54.3502085-04:00
+2026-09-17T21:48:00-04:00    restart_bot: pinflat: FLAT -- every fill has settled (pid 765512, pinrun-live-20260918T011820Z.jsonl)
+2026-09-17T21:48:00-04:00    restart_bot: no live pinrun found to stop (pid file: True)
+2026-09-17T21:48:00-04:00    restart_bot ERR: Start-Process : Cannot validate argument on parameter 'ArgumentList'. The argument is null or empty. Provide an
+2026-09-17T21:48:00-04:00    restart_bot ERR: argument that is not null or empty, and then try the command again.
+2026-09-17T21:48:00-04:00    restart_bot ERR: At C:\kals-repo\restart_bot.ps1:168 char:106
+2026-09-17T21:48:00-04:00    restart_bot ERR: + ... tandardError $errLog -RedirectStandardOutput $outLog -ArgumentList @(
+2026-09-17T21:48:00-04:00    restart_bot ERR: +                                                                        ~~
+2026-09-17T21:48:00-04:00    restart_bot ERR: + CategoryInfo          : InvalidData: (:) [Start-Process], ParentContainsErrorRecordException
+2026-09-17T21:48:00-04:00    restart_bot ERR: + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.PowerShell.Commands.StartProcessCommand
+2026-09-17T21:48:15-04:00  back up, pid 773296

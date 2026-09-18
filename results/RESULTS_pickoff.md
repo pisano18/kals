@@ -1,6 +1,6 @@
 # RESULTS -- the offers we would buy, and who gets them
 
-Rebuilt 2026-09-18 02:02Z from `research/pinpickoff.py`. TAPE population (rule 5):
+Rebuilt 2026-09-18 02:23Z from `research/pinpickoff.py`. TAPE population (rule 5):
 what the market did, never our loss rate.
 
 ```

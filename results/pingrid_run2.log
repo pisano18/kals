@@ -1,0 +1,371 @@
+settlements: 6000 markets, closes 09/12 07:45Z .. 09/17 14:30Z
+tape hours in range 129, cached 129, to walk 0
+BUYERS OF THE PRICED-IN SIDE, BY SECONDS LEFT AND PRICE PAID -- TAPE POPULATION (rule 5)
+  cell = trades / % that bought the LOSING side / EV per contract at that rate. Blank = under 30 trades.
+
+  KXBNB15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |    58   8.6% +4.50c    |   209   0.0% +6.50c    |   282   1.8% +1.29c    |   158   0.6% +0.68c   
+    6-15 s        |   215   7.4% +6.64c    |   618   1.1% +5.65c    |   618   1.5% +1.63c    |   349   0.0% +1.30c   
+    16-30 s       |   384  28.9% -14.57c   |   873  12.7% -5.99c    |  1655   2.2% +0.80c    |   968   2.4% -1.06c   
+    31-45 s       |   751  19.8% -5.92c    |  2315  12.2% -5.38c    |  2833   6.0% -2.96c    |  1725   0.4% +0.91c   
+    46-60 s       |  1103  18.6% -4.50c    |  2828   6.2% +0.61c    |  3145   2.1% +0.97c    |  2099   0.0% +1.29c   
+    61-90 s       |  1774  19.6% -5.41c    |  3967   8.5% -1.56c    |  5058   1.9% +1.11c    |  2579   1.4% -0.02c   
+    91-120 s      |  1520  14.1% -0.09c    |  4143   5.4% +1.49c    |  4213   3.8% -0.71c    |  2626   1.3% -0.03c   
+    121-180 s     |  3196  17.4% -3.19c    |  6084   9.0% -2.13c    |  6544   2.2% +0.86c    |  4881   1.7% -0.39c   
+
+  KXBTC15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |    58   0.0% +13.91c   |   533   0.0% +5.69c    |   853   0.0% +3.21c    |  3382   0.0% +1.13c   
+    6-15 s        |  2441   7.4% +7.21c    |  4713   1.2% +5.69c    |  7822   0.4% +2.69c    |  9087   1.4% -0.11c   
+    16-30 s       |  7773   6.2% +8.26c    |  9803   3.1% +3.88c    | 14429   0.4% +2.68c    | 17258   1.2% +0.05c   
+    31-45 s       | 12602  11.8% +2.45c    | 17453   3.3% +3.84c    | 17669   1.9% +1.23c    | 21278   0.1% +1.16c   
+    46-60 s       | 19343  20.9% -6.27c    | 19582  17.5% -10.40c   | 20188   3.9% -0.80c    | 27627   3.3% -2.05c   
+    61-90 s       | 35807  19.5% -5.08c    | 52567  10.2% -3.24c    | 58129  10.0% -6.78c    | 49846   2.2% -0.92c   
+    91-120 s      | 40687  19.6% -5.21c    | 54394   9.0% -1.91c    | 55809   2.2% +0.95c    | 54387   0.1% +1.24c   
+    121-180 s     | 83013  17.5% -3.09c    | 113589   5.5% +1.49c   | 117094   2.8% +0.40c   | 72201   1.4% -0.12c   
+
+  KXDOGE15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |                        |   185   0.0% +5.65c    |   347   0.0% +3.11c    |   257   0.0% +1.31c   
+    6-15 s        |   216   9.3% +5.28c    |   605   2.0% +5.06c    |   513   0.6% +2.38c    |   571   0.4% +0.88c   
+    16-30 s       |   475  29.3% -15.03c   |  1399  20.1% -13.54c   |  1887   5.8% -2.75c    |  1831   2.3% -1.11c   
+    31-45 s       |  1044  18.3% -4.15c    |  2246   6.4% +0.28c    |  2990   1.0% +1.96c    |  3681   0.0% +1.23c   
+    46-60 s       |  1465  22.2% -8.09c    |  2975   7.7% -0.92c    |  3464   0.3% +2.77c    |  2858   0.8% +0.44c   
+    61-90 s       |  2771  18.5% -4.27c    |  4878   6.6% +0.20c    |  6411   6.1% -3.05c    |  5759   2.0% -0.73c   
+    91-120 s      |  2491  15.4% -0.98c    |  4177  10.5% -3.63c    |  5371   3.0% +0.02c    |  5783   1.4% -0.11c   
+    121-180 s     |  4609  19.6% -5.30c    |  8544  10.2% -3.32c    | 10402   3.1% +0.03c    |  8407   1.2% +0.05c   
+
+  KXETH15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |                        |   162   0.0% +6.22c    |   562   0.0% +2.95c    |   573   0.0% +1.26c   
+    6-15 s        |   402   1.2% +12.39c   |   922   0.0% +6.69c    |   890   0.0% +3.17c    |   855   0.0% +1.25c   
+    16-30 s       |   953   8.0% +6.16c    |  1296   0.0% +6.90c    |  2053   0.0% +2.97c    |  2352   0.0% +1.27c   
+    31-45 s       |  1988  16.9% -2.61c    |  2910   4.7% +2.26c    |  3153   0.0% +3.09c    |  3986   0.6% +0.59c   
+    46-60 s       |  2320  17.1% -2.80c    |  3444   3.1% +3.76c    |  5169   2.0% +1.01c    |  5934   2.0% -0.69c   
+    61-90 s       |  5999  11.9% +2.21c    |  9939  12.7% -5.64c    | 12034   7.3% -4.29c    | 11102   1.8% -0.46c   
+    91-120 s      |  5782  14.8% -0.53c    |  8549   7.1% -0.09c    |  8560   2.1% +1.04c    |  8957   0.1% +1.13c   
+    121-180 s     | 11868  18.4% -4.15c    | 16067   8.0% -0.87c    | 20187   3.5% -0.47c    | 16710   1.3% +0.04c   
+
+  KXHYPE15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |                        |                        |    38   0.0% +2.48c    |    31   0.0% +1.17c   
+    6-15 s        |    46   0.0% +12.77c   |   232   0.0% +6.60c    |   393   0.0% +3.11c    |   379   0.0% +1.28c   
+    16-30 s       |   416  12.5% +1.33c    |  1038   0.4% +6.43c    |  1328   0.5% +2.60c    |  1112   1.3% +0.00c   
+    31-45 s       |   646  12.1% +1.78c    |  1426   6.2% +0.68c    |  2203   1.1% +1.90c    |  1903   0.3% +1.01c   
+    46-60 s       |   943  15.3% -1.61c    |  2161   3.1% +3.70c    |  2476   1.6% +1.49c    |  2186   0.1% +1.19c   
+    61-90 s       |  1945  13.8% +0.40c    |  3140   7.9% -1.03c    |  3733   1.8% +1.35c    |  3117   0.8% +0.53c   
+    91-120 s      |  2082  14.9% -0.78c    |  3965   7.4% -0.32c    |  4310   5.0% -1.85c    |  2848   1.5% -0.17c   
+    121-180 s     |  3825  21.5% -7.12c    |  6441  12.9% -5.84c    |  5826   6.2% -3.04c    |  4182   3.3% -1.97c   
+
+  KXNEAR15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |                        |    37   0.0% +5.67c    |   109   0.0% +3.29c    |    47   0.0% +1.27c   
+    6-15 s        |    48   8.3% +5.12c    |    91   0.0% +6.54c    |   293   0.0% +2.94c    |   255   0.0% +1.23c   
+    16-30 s       |   237  16.0% -2.02c    |   588  10.7% -3.89c    |   978   0.0% +2.86c    |   766   0.0% +1.21c   
+    31-45 s       |   383  13.3% +1.29c    |  1147   1.7% +4.96c    |  1514   0.0% +3.10c    |  1329   0.0% +1.18c   
+    46-60 s       |   652   9.8% +4.38c    |  1746   3.2% +3.57c    |  2085   0.3% +2.81c    |  2024   0.9% +0.25c   
+    61-90 s       |   989  14.3% +0.03c    |  1790   2.8% +4.01c    |  3264   1.8% +1.21c    |  2780   0.5% +0.68c   
+    91-120 s      |   924  16.1% -1.58c    |  1831   5.6% +1.17c    |  3360   4.2% -1.11c    |  2193   2.0% -0.73c   
+    121-180 s     |  2332  10.0% +4.32c    |  4121   8.1% -1.29c    |  5375   3.3% -0.25c    |  4617   0.9% +0.31c   
+
+  KXSOL15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |   101   4.0% +9.88c    |   410   0.0% +6.80c    |   330   0.0% +3.23c    |   182   0.0% +1.28c   
+    6-15 s        |   295   7.1% +7.05c    |   691   2.9% +3.95c    |  1147   2.8% +0.16c    |  1001   1.1% +0.18c   
+    16-30 s       |   978  10.1% +3.72c    |  2368  10.9% -4.26c    |  3394   2.3% +0.72c    |  1986   0.0% +1.28c   
+    31-45 s       |  1526  11.8% +2.49c    |  2699   7.4% -0.41c    |  2674   0.1% +2.67c    |  2985   0.6% +0.68c   
+    46-60 s       |  1708  18.3% -4.07c    |  2861   5.0% +1.89c    |  4223   1.9% +1.08c    |  3331   2.6% -1.36c   
+    61-90 s       |  3634  20.9% -6.70c    |  5739  11.3% -4.49c    |  7812   5.7% -2.77c    |  5898   1.5% -0.21c   
+    91-120 s      |  3974  21.5% -7.18c    |  6747  14.1% -7.28c    |  7329   5.3% -2.22c    |  5117   2.8% -1.55c   
+    121-180 s     |  7174  20.1% -5.77c    | 11272   9.0% -2.01c    | 14031   3.2% -0.20c    |  8454   0.6% +0.62c   
+
+  KXXRP15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |    31   0.0% +15.61c   |    64   0.0% +6.58c    |   148   0.0% +3.04c    |   219   0.0% +1.19c   
+    6-15 s        |    71  49.3% -35.90c   |    95   0.0% +6.42c    |   328   0.0% +2.87c    |   636   0.0% +1.15c   
+    16-30 s       |   609   0.0% +13.74c   |  1411   0.0% +6.72c    |  2034   0.0% +3.04c    |  2090   0.3% +0.89c   
+    31-45 s       |  1345   7.1% +7.13c    |  2007   5.0% +2.03c    |  2561   6.0% -2.85c    |  3026   2.9% -1.72c   
+    46-60 s       |  1726  19.9% -5.99c    |  2858   8.0% -1.15c    |  4352   1.2% +1.85c    |  4986   0.0% +1.23c   
+    61-90 s       |  3616  12.4% +1.88c    |  6169   8.4% -1.56c    |  6931   2.7% +0.50c    |  7355   0.9% +0.31c   
+    91-120 s      |  3356  14.3% -0.23c    |  6075   7.6% -0.84c    |  7912   5.0% -1.87c    |  7958   1.5% -0.30c   
+    121-180 s     |  7005  13.7% +0.37c    | 14443   5.7% +1.16c    | 14734   2.5% +0.70c    | 12599   0.3% +0.97c   
+
+  KXZEC15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |    54   0.0% +13.68c   |   185   0.0% +6.84c    |   268   0.0% +3.03c    |   233   0.0% +1.32c   
+    6-15 s        |   232   9.9% +4.43c    |   709   5.5% +0.99c    |   604  10.3% -7.14c    |   278   0.0% +1.24c   
+    16-30 s       |   516  24.6% -10.23c   |   800  17.5% -10.63c   |   971   5.8% -2.69c    |   582   0.0% +1.20c   
+    31-45 s       |   513  15.6% -1.18c    |  1201   6.5% +0.18c    |  1426   4.6% -1.46c    |  1348   0.7% +0.54c   
+    46-60 s       |  1055  12.5% +1.68c    |  2095   7.3% -0.44c    |  2600   2.4% +0.68c    |  1751   0.8% +0.44c   
+    61-90 s       |  1674  15.5% -1.31c    |  3552   5.8% +0.97c    |  4579   4.6% -1.65c    |  3691   1.2% +0.06c   
+    91-120 s      |  1492  15.7% -1.21c    |  2950   9.3% -2.49c    |  4060   4.0% -0.94c    |  2708   0.0% +1.27c   
+    121-180 s     |  3147  16.7% -2.44c    |  6579   4.8% +2.10c    |  7123   0.3% +2.73c    |  4474   0.4% +0.83c   
+
+  KXCOPPER15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |   365  18.1% -4.30c    |   359  15.6% -8.16c    |   430  11.6% -8.16c    |  1421   1.3% -0.08c   
+    6-15 s        |   328  31.4% -17.10c   |   313  22.0% -15.06c   |   534   6.4% -2.82c    |  1586   3.4% -2.18c   
+    16-30 s       |   842  20.7% -6.50c    |   765  21.2% -13.92c   |   847   7.1% -3.55c    |  1724   2.1% -0.87c   
+    31-45 s       |   998  21.0% -7.03c    |   727   9.1% -1.73c    |   683   2.2% +1.37c    |  1404   1.5% -0.27c   
+    46-60 s       |   732  20.1% -5.97c    |   486   9.1% -1.71c    |   618   4.9% -1.28c    |  1270   0.1% +1.23c   
+    61-90 s       |  1286  16.8% -3.02c    |  1209  10.5% -3.26c    |  1094   3.8% -0.19c    |  1593   0.7% +0.58c   
+    91-120 s      |  1270  17.7% -3.82c    |  1064  16.6% -9.35c    |   871  10.1% -6.41c    |  1549   1.0% +0.21c   
+    121-180 s     |  2202  17.5% -3.10c    |  1919   8.8% -1.48c    |  1461   3.8% -0.14c    |  1965   1.1% +0.26c   
+
+  KXGOLD15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |   342   5.6% +8.64c    |   434   0.5% +6.41c    |   815   0.0% +2.97c    |  1581   0.0% +1.19c   
+    6-15 s        |  1112  16.3% -2.61c    |  1300   3.5% +3.55c    |  1211   2.1% +0.91c    |  2102   0.1% +1.06c   
+    16-30 s       |  1542  15.6% -1.61c    |  1695   6.5% +0.66c    |  1586  10.3% -7.25c    |  1994   2.1% -0.82c   
+    31-45 s       |  1959  26.5% -12.11c   |  1165  12.5% -5.09c    |  1333   7.8% -4.78c    |  2405   5.6% -4.42c   
+    46-60 s       |  1552  23.2% -9.12c    |  1205  16.3% -9.10c    |  1686   7.7% -4.72c    |  2782   6.2% -4.98c   
+    61-90 s       |  2871  19.7% -5.65c    |  2933  11.4% -4.38c    |  3789   3.3% -0.12c    |  3143   4.8% -3.52c   
+    91-120 s      |  2852  18.2% -3.81c    |  3495   9.6% -2.37c    |  2953   1.4% +1.86c    |  2886   0.0% +1.24c   
+    121-180 s     |  6211  16.5% -2.38c    |  5618   9.7% -2.51c    |  5101   1.5% +1.67c    |  4494   0.0% +1.25c   
+
+  KXNATGAS15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |   247   4.9% +8.70c    |   247   0.4% +6.89c    |   301  12.0% -8.35c    |  1303   5.6% -4.47c   
+    6-15 s        |   226  25.7% -11.46c   |   181  21.0% -13.81c   |   451   7.8% -4.42c    |  2017   3.0% -1.75c   
+    16-30 s       |   394  16.2% -2.68c    |   564  10.6% -3.47c    |  1001  10.5% -7.01c    |  1989   2.7% -1.41c   
+    31-45 s       |   649  17.6% -4.33c    |   741   5.1% +2.21c    |  1057   8.6% -5.07c    |  1808   3.8% -2.35c   
+    46-60 s       |   938  12.9% +1.16c    |   869   8.5% -1.19c    |  1243   9.0% -5.50c    |  1406   6.4% -5.00c   
+    61-90 s       |  1622  27.6% -13.60c   |  1531  20.2% -12.91c   |  1570   6.3% -2.67c    |  1652   2.8% -1.51c   
+    91-120 s      |  1585  23.7% -9.74c    |  1350   6.5% +0.86c    |  1192   2.5% +1.14c    |  1521   2.1% -0.83c   
+    121-180 s     |  2689  13.3% +0.89c    |  1844   5.6% +1.85c    |  1658   4.3% -0.69c    |  1549   2.5% -0.97c   
+
+  KXSILVER15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |   256   3.9% +9.93c    |   348   2.3% +4.96c    |   473   3.0% -0.12c    |   951   0.9% +0.29c   
+    6-15 s        |   668   4.2% +10.18c   |   659   5.3% +1.79c    |   827   3.5% -0.64c    |  1006   0.4% +0.89c   
+    16-30 s       |   771  22.8% -7.98c    |   724  10.2% -3.09c    |   899   8.8% -5.88c    |  1148   2.3% -1.03c   
+    31-45 s       |   918  29.7% -15.40c   |   803  29.3% -22.24c   |   954  13.0% -10.07c   |  1074   0.9% +0.38c   
+    46-60 s       |   810  39.5% -25.12c   |   977  13.7% -6.77c    |  1260   3.6% -0.58c    |   970   2.3% -0.97c   
+    61-90 s       |  1906  15.0% -0.86c    |  1734   7.3% +0.02c    |  1430   1.2% +1.82c    |  1155   2.3% -1.05c   
+    91-120 s      |  1785  14.7% -0.29c    |  1154   4.2% +2.91c    |  1169   6.6% -3.57c    |  1394   2.0% -0.75c   
+    121-180 s     |  2445  17.5% -3.07c    |  2505  10.5% -3.33c    |  2006   0.9% +2.15c    |  1453   0.0% +1.27c   
+
+  KXWTI15M
+    seconds left | 80-90c                 | 90-95c                 | 95-98c                 | 98-99c                
+    0-5 s         |   202   6.4% +7.29c    |   297   6.4% +0.54c    |   578   0.0% +2.83c    |  1094   0.0% +1.21c   
+    6-15 s        |   503   8.7% +5.55c    |   637   3.9% +2.73c    |  1002   1.5% +1.44c    |  1016   0.0% +1.33c   
+    16-30 s       |   777   9.9% +4.51c    |  1315   2.1% +4.82c    |  1053   0.0% +3.00c    |   809   0.0% +1.34c   
+    31-45 s       |   911   9.3% +4.15c    |  1204   4.3% +2.70c    |   890   0.7% +2.41c    |   644   0.0% +1.30c   
+    46-60 s       |  1349  17.0% -2.78c    |  1142   7.6% -0.54c    |   697   0.4% +2.58c    |   919   0.3% +0.95c   
+    61-90 s       |  1879  15.4% -0.99c    |  1414   4.2% +2.83c    |  1730   0.9% +2.13c    |  1359   1.6% -0.33c   
+    91-120 s      |  1580  11.8% +2.16c    |  1530   6.7% +0.59c    |  1531   2.3% +0.73c    |  1424   1.3% -0.05c   
+    121-180 s     |  3083  10.7% +4.27c    |  2737   4.0% +3.15c    |  2334   2.7% +0.41c    |  1679   0.2% +1.05c   
+
+WHERE THE 90-98c BUYING HAPPENS, share of contracts by seconds left (which windows matter)
+  KXBNB15M     0-5 s  10%  6-15 s   4%  16-30 s   8%  31-45 s  12%  46-60 s  13%  61-90 s  17%  91-120 s  15%  121-180 s  21%
+  KXBTC15M     0-5 s   1%  6-15 s   3%  16-30 s   4%  31-45 s   6%  46-60 s   7%  61-90 s  18%  91-120 s  19%  121-180 s  41%
+  KXDOGE15M    0-5 s   2%  6-15 s   3%  16-30 s   7%  31-45 s  11%  46-60 s  12%  61-90 s  20%  91-120 s  15%  121-180 s  29%
+  KXETH15M     0-5 s   2%  6-15 s   3%  16-30 s   6%  31-45 s   8%  46-60 s  10%  61-90 s  24%  91-120 s  16%  121-180 s  30%
+  KXHYPE15M    0-5 s   0%  6-15 s   2%  16-30 s   9%  31-45 s  11%  46-60 s  15%  61-90 s  18%  91-120 s  20%  121-180 s  25%
+  KXNEAR15M    0-5 s   0%  6-15 s   2%  16-30 s   7%  31-45 s   8%  46-60 s  14%  61-90 s  19%  91-120 s  18%  121-180 s  31%
+  KXSOL15M     0-5 s   3%  6-15 s   4%  16-30 s  12%  31-45 s   8%  46-60 s   9%  61-90 s  17%  91-120 s  19%  121-180 s  28%
+  KXXRP15M     0-5 s   1%  6-15 s   1%  16-30 s   7%  31-45 s   7%  46-60 s  10%  61-90 s  20%  91-120 s  18%  121-180 s  36%
+  KXZEC15M     0-5 s   3%  6-15 s   4%  16-30 s   5%  31-45 s   6%  46-60 s  11%  61-90 s  21%  91-120 s  17%  121-180 s  33%
+  KXCOPPER15M  0-5 s   5%  6-15 s   8%  16-30 s  12%  31-45 s  10%  46-60 s   8%  61-90 s  18%  91-120 s  14%  121-180 s  25%
+  KXGOLD15M    0-5 s   3%  6-15 s   6%  16-30 s   8%  31-45 s   6%  46-60 s   8%  61-90 s  20%  91-120 s  18%  121-180 s  29%
+  KXNATGAS15M  0-5 s   4%  6-15 s   4%  16-30 s  10%  31-45 s  11%  46-60 s  14%  61-90 s  21%  91-120 s  14%  121-180 s  22%
+  KXSILVER15M  0-5 s  15%  6-15 s  11%  16-30 s   7%  31-45 s  10%  46-60 s  12%  61-90 s  15%  91-120 s  11%  121-180 s  20%
+  KXWTI15M     0-5 s  19%  6-15 s   8%  16-30 s  10%  31-45 s   8%  46-60 s   7%  61-90 s  13%  91-120 s  13%  121-180 s  21%
+
+THE REVERSAL SCREEN: the favourite at 60 s LOST. What buyers of the NEW side then paid, and whether they were right.
+  KXBNB15M: 410 markets with a favourite at 60s, 11 flipped (2.7%)
+     0-5 s      90c+      348 trades  bought the LOSER  0.0%  mean paid  98.1c  contracts 16761
+     6-15 s     70-90c    130 trades  bought the LOSER  0.0%  mean paid  82.3c  contracts 3311
+     6-15 s     90c+      889 trades  bought the LOSER  0.0%  mean paid  95.8c  contracts 14518
+     6-15 s     <70c       38 trades  bought the LOSER  0.0%  mean paid  62.1c  contracts 929
+     16-30 s    70-90c    224 trades  bought the LOSER  0.0%  mean paid  79.7c  contracts 5908
+     16-30 s    90c+      344 trades  bought the LOSER  0.0%  mean paid  95.5c  contracts 6281
+     16-30 s    <70c      154 trades  bought the LOSER  0.0%  mean paid  59.6c  contracts 3878
+     31-45 s    70-90c    166 trades  bought the LOSER  0.0%  mean paid  79.3c  contracts 4764
+     31-45 s    90c+      405 trades  bought the LOSER  0.0%  mean paid  94.8c  contracts 3909
+     31-45 s    <70c       81 trades  bought the LOSER  0.0%  mean paid  59.8c  contracts 3039
+     46-60 s    70-90c     77 trades  bought the LOSER  0.0%  mean paid  82.6c  contracts 2169
+     46-60 s    90c+       25 trades  bought the LOSER  0.0%  mean paid  90.8c  contracts 51
+     46-60 s    <70c       99 trades  bought the LOSER  0.0%  mean paid  59.9c  contracts 2533
+  KXBTC15M: 388 markets with a favourite at 60s, 22 flipped (5.7%)
+     0-5 s      70-90c    151 trades  bought the LOSER  0.0%  mean paid  78.3c  contracts 24736
+     0-5 s      90c+     3163 trades  bought the LOSER  0.0%  mean paid  98.4c  contracts 906598
+     6-15 s     70-90c    991 trades  bought the LOSER  0.0%  mean paid  81.1c  contracts 110440
+     6-15 s     90c+     8966 trades  bought the LOSER  0.0%  mean paid  97.2c  contracts 1109721
+     6-15 s     <70c      647 trades  bought the LOSER  0.0%  mean paid  58.1c  contracts 53563
+     16-30 s    70-90c   3659 trades  bought the LOSER  0.0%  mean paid  80.0c  contracts 261897
+     16-30 s    90c+    12467 trades  bought the LOSER  0.0%  mean paid  97.2c  contracts 1020636
+     16-30 s    <70c     2177 trades  bought the LOSER  0.0%  mean paid  59.9c  contracts 146378
+     31-45 s    70-90c   5932 trades  bought the LOSER  0.0%  mean paid  80.4c  contracts 419025
+     31-45 s    90c+     6257 trades  bought the LOSER  0.0%  mean paid  94.5c  contracts 443951
+     31-45 s    <70c     3509 trades  bought the LOSER  0.0%  mean paid  59.1c  contracts 232383
+     46-60 s    70-90c   2966 trades  bought the LOSER  0.0%  mean paid  77.8c  contracts 227138
+     46-60 s    90c+      636 trades  bought the LOSER  0.0%  mean paid  91.9c  contracts 33455
+     46-60 s    <70c     2612 trades  bought the LOSER  0.0%  mean paid  59.8c  contracts 204414
+  KXDOGE15M: 448 markets with a favourite at 60s, 16 flipped (3.6%)
+     0-5 s      90c+      239 trades  bought the LOSER  0.0%  mean paid  97.9c  contracts 7641
+     6-15 s     70-90c     40 trades  bought the LOSER  0.0%  mean paid  82.0c  contracts 217
+     6-15 s     90c+      852 trades  bought the LOSER  0.0%  mean paid  97.4c  contracts 28588
+     16-30 s    70-90c    252 trades  bought the LOSER  0.0%  mean paid  81.2c  contracts 7456
+     16-30 s    90c+     1659 trades  bought the LOSER  0.0%  mean paid  96.6c  contracts 32582
+     16-30 s    <70c       79 trades  bought the LOSER  0.0%  mean paid  60.4c  contracts 5870
+     31-45 s    70-90c    267 trades  bought the LOSER  0.0%  mean paid  82.8c  contracts 6341
+     31-45 s    90c+     1341 trades  bought the LOSER  0.0%  mean paid  95.9c  contracts 18683
+     31-45 s    <70c       91 trades  bought the LOSER  0.0%  mean paid  59.9c  contracts 3898
+     46-60 s    70-90c    263 trades  bought the LOSER  0.0%  mean paid  81.0c  contracts 6935
+     46-60 s    90c+      422 trades  bought the LOSER  0.0%  mean paid  93.4c  contracts 3929
+     46-60 s    <70c      226 trades  bought the LOSER  0.0%  mean paid  58.7c  contracts 8254
+  KXETH15M: 426 markets with a favourite at 60s, 14 flipped (3.3%)
+     0-5 s      90c+      622 trades  bought the LOSER  0.0%  mean paid  98.2c  contracts 31885
+     6-15 s     70-90c    190 trades  bought the LOSER  0.0%  mean paid  81.7c  contracts 9057
+     6-15 s     90c+     1234 trades  bought the LOSER  0.0%  mean paid  96.9c  contracts 52351
+     6-15 s     <70c      122 trades  bought the LOSER  0.0%  mean paid  60.4c  contracts 10126
+     16-30 s    70-90c    554 trades  bought the LOSER  0.0%  mean paid  80.4c  contracts 36724
+     16-30 s    90c+     1546 trades  bought the LOSER  0.0%  mean paid  97.0c  contracts 67399
+     16-30 s    <70c      191 trades  bought the LOSER  0.0%  mean paid  55.1c  contracts 13151
+     31-45 s    70-90c    661 trades  bought the LOSER  0.0%  mean paid  81.4c  contracts 29018
+     31-45 s    90c+     1909 trades  bought the LOSER  0.0%  mean paid  95.1c  contracts 53297
+     31-45 s    <70c      397 trades  bought the LOSER  0.0%  mean paid  60.5c  contracts 23994
+     46-60 s    70-90c    244 trades  bought the LOSER  0.0%  mean paid  80.9c  contracts 10554
+     46-60 s    90c+      151 trades  bought the LOSER  0.0%  mean paid  93.8c  contracts 1027
+     46-60 s    <70c      357 trades  bought the LOSER  0.0%  mean paid  57.4c  contracts 15086
+  KXHYPE15M: 413 markets with a favourite at 60s, 10 flipped (2.4%)
+     6-15 s     70-90c     22 trades  bought the LOSER  0.0%  mean paid  81.7c  contracts 320
+     6-15 s     90c+      339 trades  bought the LOSER  0.0%  mean paid  97.5c  contracts 10356
+     16-30 s    70-90c    208 trades  bought the LOSER  0.0%  mean paid  82.2c  contracts 8185
+     16-30 s    90c+     1021 trades  bought the LOSER  0.0%  mean paid  95.4c  contracts 16704
+     16-30 s    <70c       27 trades  bought the LOSER  0.0%  mean paid  58.5c  contracts 2562
+     31-45 s    70-90c    142 trades  bought the LOSER  0.0%  mean paid  80.4c  contracts 2017
+     31-45 s    90c+      162 trades  bought the LOSER  0.0%  mean paid  96.9c  contracts 3067
+     31-45 s    <70c      106 trades  bought the LOSER  0.0%  mean paid  60.9c  contracts 5353
+     46-60 s    70-90c     85 trades  bought the LOSER  0.0%  mean paid  83.4c  contracts 4564
+     46-60 s    90c+      272 trades  bought the LOSER  0.0%  mean paid  94.6c  contracts 3273
+     46-60 s    <70c       45 trades  bought the LOSER  0.0%  mean paid  58.7c  contracts 1287
+  KXNEAR15M: 417 markets with a favourite at 60s, 8 flipped (1.9%)
+     0-5 s      90c+       39 trades  bought the LOSER  0.0%  mean paid  99.4c  contracts 1052
+     6-15 s     90c+      156 trades  bought the LOSER  0.0%  mean paid  97.2c  contracts 3474
+     16-30 s    70-90c     36 trades  bought the LOSER  0.0%  mean paid  85.1c  contracts 945
+     16-30 s    90c+      432 trades  bought the LOSER  0.0%  mean paid  98.4c  contracts 8588
+     16-30 s    <70c       17 trades  bought the LOSER  0.0%  mean paid  64.2c  contracts 283
+     31-45 s    70-90c    149 trades  bought the LOSER  0.0%  mean paid  80.7c  contracts 2114
+     31-45 s    90c+      408 trades  bought the LOSER  0.0%  mean paid  94.8c  contracts 2957
+     31-45 s    <70c       53 trades  bought the LOSER  0.0%  mean paid  63.0c  contracts 899
+     46-60 s    70-90c    120 trades  bought the LOSER  0.0%  mean paid  79.0c  contracts 1878
+     46-60 s    90c+       54 trades  bought the LOSER  0.0%  mean paid  93.6c  contracts 856
+     46-60 s    <70c       70 trades  bought the LOSER  0.0%  mean paid  59.3c  contracts 1363
+  KXSOL15M: 445 markets with a favourite at 60s, 15 flipped (3.4%)
+     0-5 s      70-90c    116 trades  bought the LOSER  0.0%  mean paid  83.6c  contracts 5606
+     0-5 s      90c+      689 trades  bought the LOSER  0.0%  mean paid  96.2c  contracts 37156
+     0-5 s      <70c       18 trades  bought the LOSER  0.0%  mean paid  58.9c  contracts 617
+     6-15 s     70-90c    195 trades  bought the LOSER  0.0%  mean paid  80.3c  contracts 4291
+     6-15 s     90c+      936 trades  bought the LOSER  0.0%  mean paid  97.5c  contracts 26025
+     6-15 s     <70c       28 trades  bought the LOSER  0.0%  mean paid  57.7c  contracts 369
+     16-30 s    70-90c    373 trades  bought the LOSER  0.0%  mean paid  81.4c  contracts 11695
+     16-30 s    90c+     1294 trades  bought the LOSER  0.0%  mean paid  96.1c  contracts 29961
+     16-30 s    <70c      107 trades  bought the LOSER  0.0%  mean paid  62.5c  contracts 5442
+     31-45 s    70-90c    415 trades  bought the LOSER  0.0%  mean paid  78.2c  contracts 14352
+     31-45 s    90c+      621 trades  bought the LOSER  0.0%  mean paid  97.5c  contracts 13358
+     31-45 s    <70c      251 trades  bought the LOSER  0.0%  mean paid  60.6c  contracts 8142
+     46-60 s    70-90c    143 trades  bought the LOSER  0.0%  mean paid  81.5c  contracts 5015
+     46-60 s    90c+      757 trades  bought the LOSER  0.0%  mean paid  95.2c  contracts 10147
+     46-60 s    <70c      185 trades  bought the LOSER  0.0%  mean paid  58.6c  contracts 4239
+  KXXRP15M: 454 markets with a favourite at 60s, 12 flipped (2.6%)
+     0-5 s      70-90c     22 trades  bought the LOSER  0.0%  mean paid  83.6c  contracts 5917
+     0-5 s      90c+      271 trades  bought the LOSER  0.0%  mean paid  97.4c  contracts 19303
+     6-15 s     70-90c     24 trades  bought the LOSER  0.0%  mean paid  80.9c  contracts 1380
+     6-15 s     90c+      429 trades  bought the LOSER  0.0%  mean paid  99.5c  contracts 26453
+     16-30 s    70-90c    280 trades  bought the LOSER  0.0%  mean paid  83.3c  contracts 9316
+     16-30 s    90c+     1689 trades  bought the LOSER  0.0%  mean paid  97.2c  contracts 46758
+     31-45 s    70-90c    503 trades  bought the LOSER  0.0%  mean paid  82.1c  contracts 10464
+     31-45 s    90c+      803 trades  bought the LOSER  0.0%  mean paid  95.5c  contracts 10500
+     31-45 s    <70c      141 trades  bought the LOSER  0.0%  mean paid  59.1c  contracts 3781
+     46-60 s    70-90c    335 trades  bought the LOSER  0.0%  mean paid  81.4c  contracts 7995
+     46-60 s    90c+      410 trades  bought the LOSER  0.0%  mean paid  93.4c  contracts 3583
+     46-60 s    <70c      180 trades  bought the LOSER  0.0%  mean paid  60.1c  contracts 5217
+  KXZEC15M: 415 markets with a favourite at 60s, 13 flipped (3.1%)
+     0-5 s      70-90c     49 trades  bought the LOSER  0.0%  mean paid  82.2c  contracts 460
+     0-5 s      90c+      499 trades  bought the LOSER  0.0%  mean paid  97.3c  contracts 17639
+     0-5 s      <70c       17 trades  bought the LOSER  0.0%  mean paid  60.2c  contracts 542
+     6-15 s     70-90c    133 trades  bought the LOSER  0.0%  mean paid  82.5c  contracts 2261
+     6-15 s     90c+      379 trades  bought the LOSER  0.0%  mean paid  95.9c  contracts 5994
+     6-15 s     <70c       86 trades  bought the LOSER  0.0%  mean paid  57.0c  contracts 941
+     16-30 s    70-90c    121 trades  bought the LOSER  0.0%  mean paid  81.6c  contracts 2278
+     16-30 s    90c+      621 trades  bought the LOSER  0.0%  mean paid  96.5c  contracts 7892
+     16-30 s    <70c      134 trades  bought the LOSER  0.0%  mean paid  61.5c  contracts 2204
+     31-45 s    70-90c    287 trades  bought the LOSER  0.0%  mean paid  78.9c  contracts 4332
+     31-45 s    90c+      385 trades  bought the LOSER  0.0%  mean paid  96.3c  contracts 4256
+     31-45 s    <70c      244 trades  bought the LOSER  0.0%  mean paid  60.2c  contracts 4652
+     46-60 s    70-90c    124 trades  bought the LOSER  0.0%  mean paid  81.7c  contracts 1957
+     46-60 s    90c+      360 trades  bought the LOSER  0.0%  mean paid  94.0c  contracts 1865
+     46-60 s    <70c       76 trades  bought the LOSER  0.0%  mean paid  57.8c  contracts 1543
+  KXCOPPER15M: 163 markets with a favourite at 60s, 9 flipped (5.5%)
+     0-5 s      70-90c    278 trades  bought the LOSER  0.0%  mean paid  80.5c  contracts 3100
+     0-5 s      90c+      546 trades  bought the LOSER  0.0%  mean paid  96.9c  contracts 14398
+     0-5 s      <70c      186 trades  bought the LOSER  0.0%  mean paid  61.1c  contracts 2059
+     6-15 s     70-90c     26 trades  bought the LOSER  0.0%  mean paid  77.4c  contracts 3890
+     6-15 s     90c+       91 trades  bought the LOSER  0.0%  mean paid  94.2c  contracts 3834
+     6-15 s     <70c       81 trades  bought the LOSER  0.0%  mean paid  56.5c  contracts 1672
+     16-30 s    70-90c    137 trades  bought the LOSER  0.0%  mean paid  81.8c  contracts 1857
+     16-30 s    90c+      156 trades  bought the LOSER  0.0%  mean paid  94.4c  contracts 5531
+     16-30 s    <70c       92 trades  bought the LOSER  0.0%  mean paid  58.5c  contracts 1795
+     31-45 s    70-90c     42 trades  bought the LOSER  0.0%  mean paid  80.5c  contracts 1032
+     31-45 s    90c+       65 trades  bought the LOSER  0.0%  mean paid  92.6c  contracts 2387
+     31-45 s    <70c       80 trades  bought the LOSER  0.0%  mean paid  59.6c  contracts 1647
+     46-60 s    70-90c     35 trades  bought the LOSER  0.0%  mean paid  79.5c  contracts 1824
+     46-60 s    <70c       15 trades  bought the LOSER  0.0%  mean paid  60.0c  contracts 253
+  KXGOLD15M: 244 markets with a favourite at 60s, 10 flipped (4.1%)
+     0-5 s      70-90c    470 trades  bought the LOSER  0.0%  mean paid  80.3c  contracts 40163
+     0-5 s      90c+     1196 trades  bought the LOSER  0.0%  mean paid  97.2c  contracts 122634
+     0-5 s      <70c       53 trades  bought the LOSER  0.0%  mean paid  63.9c  contracts 5401
+     6-15 s     70-90c    422 trades  bought the LOSER  0.0%  mean paid  79.9c  contracts 19089
+     6-15 s     90c+      299 trades  bought the LOSER  0.0%  mean paid  95.5c  contracts 24410
+     6-15 s     <70c      273 trades  bought the LOSER  0.0%  mean paid  58.2c  contracts 14272
+     16-30 s    70-90c     36 trades  bought the LOSER  0.0%  mean paid  73.8c  contracts 1152
+     16-30 s    <70c      377 trades  bought the LOSER  0.0%  mean paid  59.1c  contracts 21469
+     31-45 s    70-90c     14 trades  bought the LOSER  0.0%  mean paid  74.8c  contracts 1290
+     31-45 s    <70c       40 trades  bought the LOSER  0.0%  mean paid  56.5c  contracts 2449
+  KXNATGAS15M: 223 markets with a favourite at 60s, 14 flipped (6.3%)
+     0-5 s      70-90c    233 trades  bought the LOSER  0.0%  mean paid  80.9c  contracts 3930
+     0-5 s      90c+      482 trades  bought the LOSER  0.0%  mean paid  96.1c  contracts 19985
+     0-5 s      <70c      113 trades  bought the LOSER  0.0%  mean paid  57.9c  contracts 3757
+     6-15 s     70-90c    133 trades  bought the LOSER  0.0%  mean paid  81.2c  contracts 1303
+     6-15 s     90c+      281 trades  bought the LOSER  0.0%  mean paid  96.2c  contracts 8685
+     6-15 s     <70c      107 trades  bought the LOSER  0.0%  mean paid  61.2c  contracts 1581
+     16-30 s    70-90c    149 trades  bought the LOSER  0.0%  mean paid  78.1c  contracts 2450
+     16-30 s    90c+       90 trades  bought the LOSER  0.0%  mean paid  93.4c  contracts 1715
+     16-30 s    <70c      152 trades  bought the LOSER  0.0%  mean paid  59.3c  contracts 1843
+     31-45 s    70-90c     38 trades  bought the LOSER  0.0%  mean paid  81.9c  contracts 243
+     31-45 s    <70c       79 trades  bought the LOSER  0.0%  mean paid  56.6c  contracts 1211
+     46-60 s    <70c       22 trades  bought the LOSER  0.0%  mean paid  60.3c  contracts 361
+  KXSILVER15M: 251 markets with a favourite at 60s, 9 flipped (3.6%)
+     0-5 s      70-90c    115 trades  bought the LOSER  0.0%  mean paid  81.6c  contracts 2826
+     0-5 s      90c+      399 trades  bought the LOSER  0.0%  mean paid  97.2c  contracts 20845
+     0-5 s      <70c       16 trades  bought the LOSER  0.0%  mean paid  61.3c  contracts 604
+     6-15 s     70-90c    250 trades  bought the LOSER  0.0%  mean paid  82.3c  contracts 7003
+     6-15 s     90c+      412 trades  bought the LOSER  0.0%  mean paid  95.2c  contracts 20011
+     6-15 s     <70c       82 trades  bought the LOSER  0.0%  mean paid  62.1c  contracts 5106
+     16-30 s    70-90c    111 trades  bought the LOSER  0.0%  mean paid  77.2c  contracts 5126
+     16-30 s    90c+      136 trades  bought the LOSER  0.0%  mean paid  93.2c  contracts 7181
+     16-30 s    <70c       40 trades  bought the LOSER  0.0%  mean paid  61.8c  contracts 1280
+     31-45 s    70-90c     80 trades  bought the LOSER  0.0%  mean paid  83.3c  contracts 4023
+     31-45 s    90c+       22 trades  bought the LOSER  0.0%  mean paid  90.2c  contracts 1351
+     31-45 s    <70c       20 trades  bought the LOSER  0.0%  mean paid  63.8c  contracts 592
+     46-60 s    70-90c     41 trades  bought the LOSER  0.0%  mean paid  72.9c  contracts 1168
+     46-60 s    <70c       36 trades  bought the LOSER  0.0%  mean paid  66.9c  contracts 957
+  KXWTI15M: 244 markets with a favourite at 60s, 7 flipped (2.9%)
+     0-5 s      70-90c     96 trades  bought the LOSER  0.0%  mean paid  82.3c  contracts 1536
+     0-5 s      90c+      429 trades  bought the LOSER  0.0%  mean paid  97.8c  contracts 27488
+     0-5 s      <70c       32 trades  bought the LOSER  0.0%  mean paid  59.1c  contracts 326
+     6-15 s     70-90c    143 trades  bought the LOSER  0.0%  mean paid  80.6c  contracts 3147
+     6-15 s     90c+      294 trades  bought the LOSER  0.0%  mean paid  96.6c  contracts 9723
+     6-15 s     <70c       57 trades  bought the LOSER  0.0%  mean paid  58.9c  contracts 2467
+     16-30 s    70-90c    303 trades  bought the LOSER  0.0%  mean paid  79.1c  contracts 11642
+     16-30 s    90c+       80 trades  bought the LOSER  0.0%  mean paid  92.6c  contracts 4046
+     16-30 s    <70c      115 trades  bought the LOSER  0.0%  mean paid  59.3c  contracts 2591
+     31-45 s    <70c       49 trades  bought the LOSER  0.0%  mean paid  61.8c  contracts 1278
+     46-60 s    <70c       22 trades  bought the LOSER  0.0%  mean paid  51.9c  contracts 1712
+
+  Read the reversal rows against this: a NEW-side buyer at 70-90c breaks even at ~20% lost.
+
+wrote C:\kals-repo\results\RESULTS_grid.md

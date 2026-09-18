@@ -1,0 +1,10 @@
+2026-09-17T07:22:18-04:00  watch_bot starting: every 30 s; 4 quick restarts per 15 min, then one every 3 min forever; stale after 25 min; money-brake cooldown 15 min
+2026-09-17T15:41:56-04:00  LIVE BOT IS DOWN
+2026-09-17T15:41:56-04:00  restarting (quick 1 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 0.333xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-17T15:41:57-04:00    restart_bot ERR: Start-Transcript : Transcription cannot be started.
+2026-09-17T15:41:57-04:00    restart_bot ERR: At C:\kals-repo\restart_bot.ps1:59 char:1
+2026-09-17T15:41:57-04:00    restart_bot ERR: + Start-Transcript -Path $transcript -Force | Out-Null
+2026-09-17T15:41:57-04:00    restart_bot ERR: + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-09-17T15:41:57-04:00    restart_bot ERR: + CategoryInfo          : InvalidOperation: (:) [Start-Transcript], PSInvalidOperationException
+2026-09-17T15:41:57-04:00    restart_bot ERR: + FullyQualifiedErrorId : CannotStartTranscription,Microsoft.PowerShell.Commands.StartTranscriptCommand
+2026-09-17T15:42:12-04:00  back up, pid 532412

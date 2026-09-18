@@ -1,0 +1,10 @@
+2026-09-17T01:03:11
+Traceback (most recent call last):
+  File "C:\kals-repo\research\pindesk.py", line 2160, in main
+    run_gui()
+    ~~~~~~~^^
+  File "C:\kals-repo\research\pindesk.py", line 1248, in run_gui
+    register(chips[key][0].master, "chips", title, chip_tips[key] + "\n\n" + help_by_key["chips"][1])
+    ^^^^^^^^
+UnboundLocalError: cannot access local variable 'register' where it is not associated with a value
+

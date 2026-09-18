@@ -1,0 +1,1 @@
+{"size": 250, "min_edge": 0.02, "ceiling": 0.98, "tau": [2, 150], "max_per_leg": 2, "max_per_close": 4, "table": "race_gaptable.json", "table_cells": 198, "table_mtime": 1789477543, "table_size": 6776, "version": "2026-09-15-arm1", "kind": "start", "t": "2026-09-15T13:19:33Z"}

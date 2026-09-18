@@ -1,0 +1,8 @@
+Start-Process : Cannot validate argument on parameter 'ArgumentList'. The argument is null or empty. Provide an 
+argument that is not null or empty, and then try the command again.
+At C:\kals-repo\restart_bot.ps1:168 char:106
++ ... tandardError $errLog -RedirectStandardOutput $outLog -ArgumentList @(
++                                                                        ~~
+    + CategoryInfo          : InvalidData: (:) [Start-Process], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.PowerShell.Commands.StartProcessCommand
+ 

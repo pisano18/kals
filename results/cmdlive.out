@@ -1,0 +1,557 @@
+  *** PRODUCTION ARMED: cmdlive commodity penny test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | size 1 | caps: $10.00 spend, 60 orders, 2 losses, balance floor $300 | balance now $580.19 | log cmdlive-20260917T163021Z.jsonl
+  *** PRODUCTION ARMED: cmdlive commodity penny test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | size 1 | caps: $10.00 spend, 60 orders, 2 losses, balance floor $300 | balance now $580.19 | log cmdlive-20260917T163146Z.jsonl
+  ORDER KXWTI15M-26SEP171245-45 tau=180s YES @0.9880 x1 -> filled 1  spent $2.84
+  SETTLED KXWTI15M-26SEP171245-45 -> WON  $+0.01   (losses 0/2)
+  ORDER KXWTI15M-26SEP171300-00 tau=180s YES @0.9900 x1 -> filled 1  spent $3.83
+  SETTLED KXWTI15M-26SEP171300-00 -> WON  $+0.01   (losses 0/2)
+  ORDER KXWTI15M-26SEP171315-15 tau=180s YES @0.9640 x1 -> filled 1  spent $4.79
+  ORDER KXWTI15M-26SEP171315-15 tau= 58s YES @0.9900 x1 -> filled 1  spent $5.78
+  SETTLED KXWTI15M-26SEP171315-15 -> WON  $+0.03   (losses 0/2)
+  SETTLED KXWTI15M-26SEP171315-15 -> WON  $+0.01   (losses 0/2)
+  ORDER KXWTI15M-26SEP171330-30 tau= 28s NO @0.9000 x1 -> filled 1  spent $6.68
+  ORDER KXWTI15M-26SEP171330-30 tau= 27s NO @0.9560 x1 -> filled 0  spent $6.68
+  SETTLED KXWTI15M-26SEP171330-30 -> WON  $+0.09   (losses 0/2)
+  ORDER KXWTI15M-26SEP171345-45 tau=180s NO @0.9290 x1 -> filled 1  spent $7.61
+  ORDER KXWTI15M-26SEP171345-45 tau= 45s NO @0.9220 x1 -> filled 0  spent $7.61
+  ORDER KXWTI15M-26SEP171345-45 tau= 19s NO @0.9580 x1 -> filled 1  spent $8.55
+  SETTLED KXWTI15M-26SEP171345-45 -> WON  $+0.07   (losses 0/2)
+  SETTLED KXWTI15M-26SEP171345-45 -> WON  $+0.05   (losses 0/2)
+  ORDER KXWTI15M-26SEP171400-00 tau= 60s YES @0.9530 x1 -> filled 0  spent $8.55
+  ORDER KXWTI15M-26SEP171400-00 tau= 45s YES @0.9460 x1 -> filled 1  spent $9.50
+  REFUSED KXGOLD15M-26SEP171400-00 tau=  5s YES @0.9640 -- $9.50 spent + $0.96 this order is past the $10.00 run ceiling
+  REFUSED KXGOLD15M-26SEP171400-00 tau=  4s YES @0.9790 -- $9.50 spent + $0.98 this order is past the $10.00 run ceiling
+  REFUSED KXGOLD15M-26SEP171400-00 tau=  4s YES @0.9890 -- $9.50 spent + $0.99 this order is past the $10.00 run ceiling
+  SETTLED KXWTI15M-26SEP171400-00 -> WON  $+0.05   (losses 0/2)
+  *** PRODUCTION ARMED: cmdlive commodity penny test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | size 1 | caps: $40.00 spend, 60 orders, 2 losses, balance floor $300 | balance now $585.75 | log cmdlive-20260917T181115Z.jsonl
+  ORDER KXWTI15M-26SEP171415-15 tau=180s NO @0.9850 x1 -> filled 1  spent $10.49
+  ORDER KXGOLD15M-26SEP171415-15 tau=176s YES @0.9500 x1 -> filled 1  spent $11.44
+  SETTLED KXGOLD15M-26SEP171415-15 -> WON  $+0.05   (losses 0/2, day $+0.51)
+  SETTLED KXWTI15M-26SEP171415-15 -> WON  $+0.01   (losses 0/2, day $+0.53)
+  ORDER KXWTI15M-26SEP171430-30 tau=151s YES @0.9070 x1 -> filled 1  spent $12.34
+  SETTLED KXWTI15M-26SEP171430-30 -> WON  $+0.09   (losses 0/2, day $+0.62)
+  ORDER KXWTI15M-26SEP171445-45 tau=180s NO @0.9880 x1 -> filled 1  spent $13.32
+  ORDER KXGOLD15M-26SEP171445-45 tau=180s NO @0.9740 x1 -> filled 1  spent $14.30
+  SETTLED KXWTI15M-26SEP171445-45 -> WON  $+0.01   (losses 0/2, day $+0.63)
+  SETTLED KXGOLD15M-26SEP171445-45 -> WON  $+0.03   (losses 0/2, day $+0.66)
+  ORDER KXWTI15M-26SEP171500-00 tau=163s YES @0.9000 x1 -> filled 1  spent $15.20
+  ORDER KXWTI15M-26SEP171500-00 tau= 60s YES @0.9900 x1 -> filled 1  spent $16.19
+  ORDER KXGOLD15M-26SEP171500-00 tau= 15s NO @0.9870 x1 -> filled 1  spent $17.17
+  SETTLED KXWTI15M-26SEP171500-00 -> WON  $+0.09   (losses 0/2, day $+0.75)
+  SETTLED KXWTI15M-26SEP171500-00 -> WON  $+0.01   (losses 0/2, day $+0.76)
+  SETTLED KXGOLD15M-26SEP171500-00 -> WON  $+0.01   (losses 0/2, day $+0.77)
+  ORDER KXGOLD15M-26SEP171515-15 tau=180s YES @0.9860 x1 -> filled 1  spent $18.16
+  SETTLED KXGOLD15M-26SEP171515-15 -> WON  $+0.01   (losses 0/2, day $+0.79)
+  ORDER KXWTI15M-26SEP171530-30 tau=180s NO @0.9900 x1 -> filled 1  spent $19.15
+  SETTLED KXWTI15M-26SEP171530-30 -> WON  $+0.01   (losses 0/2, day $+0.80)
+  pintake rails raised: HARD_MAX 25 -> 60; MAX_TAKE_COUNT 10 -> 40  (cmdlive $30 per trade)
+  *** PRODUCTION ARMED: cmdlive commodity live test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | $30 per trade (up to 40 contracts) | STOPS at $60.00 net down or 4 losses | turnover cap $1200/day, 60 orders, account floor $300 | balance now $602.85 | today so far: $+0.80, 0 losses | log cmdlive-20260917T193950Z.jsonl
+  ORDER KXWTI15M-26SEP171545-45 tau=152s YES @0.9000 x33 -> filled 33  spent $48.85
+  ORDER KXGOLD15M-26SEP171545-45 tau=109s YES @0.9500 x31 -> filled 31  spent $78.30
+    ORDER REFUSED BY PINTAKE ['stake $29.0400 + committed $59.1500 would exceed MAX_RUN_STAKE $60.00']
+    ORDER REFUSED BY PINTAKE ['stake $29.4190 + committed $59.1500 would exceed MAX_RUN_STAKE $60.00']
+  pintake rails raised: HARD_MAX 25 -> 60; MAX_TAKE_COUNT 10 -> 40; MAX_RUN_STAKE $60.00 -> $250.00  (cmdlive $30 per trade)
+  *** PRODUCTION ARMED: cmdlive commodity live test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | $30 per trade (up to 40 contracts) | STOPS at $60.00 net down or 4 losses | turnover cap $1200/day, 60 orders, account floor $300 | balance now $607.39 | today so far: $+0.80, 0 losses | log cmdlive-20260917T194612Z.jsonl
+  ORDER KXGOLD15M-26SEP171600-00 tau=180s YES @0.9700 x30 -> filled 30  spent $107.40
+  ORDER KXWTI15M-26SEP171600-00 tau= 28s YES @0.9000 x33 -> filled 33  spent $137.10
+  ORDER KXWTI15M-26SEP171600-00 tau= 25s YES @0.9560 x4 -> filled 4  spent $140.92
+  ORDER KXGOLD15M-26SEP171600-00 tau= 15s YES @0.9850 x30 -> filled 30  spent $170.47
+  SETTLED KXGOLD15M-26SEP171600-00 -> WON  $+0.84   (losses 0/4, day $+1.63)
+  SETTLED KXGOLD15M-26SEP171600-00 -> WON  $+0.42   (losses 0/4, day $+2.05)
+  SETTLED KXWTI15M-26SEP171600-00 -> WON  $+3.09   (losses 0/4, day $+5.15)
+  SETTLED KXWTI15M-26SEP171600-00 -> WON  $+0.16   (losses 0/4, day $+5.31)
+  ORDER KXGOLD15M-26SEP171615-15 tau=180s NO @0.9860 x30 -> filled 30  spent $200.05
+  ORDER KXWTI15M-26SEP171615-15 tau=180s NO @0.9400 x31 -> filled 31  spent $229.19
+  ORDER KXWTI15M-26SEP171615-15 tau= 60s NO @0.9850 x30 -> filled 30  spent $258.74
+  ORDER KXWTI15M-26SEP171615-15 tau= 23s YES @0.9160 x1 -> filled 1  spent $259.66
+  SETTLED KXGOLD15M-26SEP171615-15 -> WON  $+0.39   (losses 0/4, day $+5.70)
+  SETTLED KXWTI15M-26SEP171615-15 -> LOST  $-29.26   (losses 1/4, day $-23.56)
+  SETTLED KXWTI15M-26SEP171615-15 -> LOST  $-29.58   (losses 2/4, day $-53.14)
+  SETTLED KXWTI15M-26SEP171615-15 -> WON  $+0.08   (losses 2/4, day $-53.06)
+  STOPPED: cmdlive.stop
+  end: 8 orders, 8 fills, $259.66 spent, 2 losses
+  settled 8: $+1.79
+  pintake rails raised: HARD_MAX 25 -> 60; MAX_TAKE_COUNT 10 -> 40; MAX_RUN_STAKE $60.00 -> $250.00  (cmdlive $10 per trade)
+  *** PRODUCTION ARMED: cmdlive commodity live test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | $10 per trade (up to 40 contracts) | STOPS at $25.00 net down or 4 losses | turnover cap $1200/day, 60 orders, account floor $300 | balance now $566.73 | today so far: $-53.06, 2 losses | log cmdlive-20260917T203418Z.jsonl
+  ok   the windows come from cmdarm.BANDS -- one source, so the paper control and the live test can never drift apart
+  ok   copper IS traded now, in paper only: the separation is the live list, not the absence of a window
+  ok   the live test inherits the COMEX skip: no gold at 11:00 ET
+  ok   ...and inherits the far window: gold at 96c with 120 s left is a bet
+  ok   every live series exists in cmdarm and none of their windows is a control
+  ok   NULL: no --live means no arming, whatever the sign-off says
+  ok   NULL: --live with the wrong phrase does NOT arm (hard rule 1)
+  ok   NULL: --live with no sign-off does not arm
+  ok   after three refusals the state is still unarmed
+  ok   an unarmed state refuses a perfectly good order
+  ok   armed, in window, funded: no refusals
+  ok   NULL: 1 s left is refused -- the order could land after the close
+  ok   NULL: an unknown tau is refused, not assumed safe
+  ok   NULL: 99.5c is above the penny test's ceiling
+  ok   NULL: 80c is below the window -- not a near-certainty
+  ok   NULL: one contract past MAX_CONTRACTS is refused, however well funded
+  ok   NULL: zero contracts is not an order
+  ok   NULL: an unreadable balance refuses -- a failed read is not a green light
+  ok   NULL: an order that would take the account under the $300 floor
+  ok   NULL: the stop flag refuses
+  ok   NULL: silver, copper and gas are paper-only and cannot reach the wire
+  ok   ...gold and oil, the two with evidence at both ends, are the live list
+  ok   NULL: a window labelled 'anti' is a deliberate loser and never goes live
+  ok   ...a real window passes
+  ok   NULL: 50c of turnover left will not cover a 95c contract
+  ok   ...but a dollar of room takes one more
+  ok   NULL: the order ceiling refuses attempt 61
+  ok   NULL: the 2-loss brake refuses
+  ok   ...one loss does not
+  ok   no flag file, no stop
+  ok   our own stop flag is seen
+  ok   the DESKTOP APP's stop flag also stops the penny test
+  ok   the loop slice is the real function, not a fragment of the self-test (11074 chars)
+  ok   in the trade loop the guard runs BEFORE the wire call
+  ok   ...and a non-empty refusal list skips the order rather than logging and carrying on
+  ok   there is exactly ONE path to the wire in the loop
+  ok   attempts and dollars are both counted, or the ceilings are decoration
+  ok   the loop writes a heartbeat: the operator's rule is that state is derived from evidence of WORK, never from a process being alive
+  ok   the wire call passes this caller's own tau rail, or every far-window order is refused by pintake's 90 s default (it was, twice, live)
+  ok   the ask covers the 91-180 s windows, sits under pintake's ceiling, and leaves pintake's shipped 90 s default untouched for the crypto bot
+  ok   a repeated refusal is reported ONCE, not four times a second for a minute -- and it still does not consume the market's one shot
+  ok   production is armed in exactly one place in the working code
+  ok   spent_today counts only TODAY's FILLS: the unfilled order and the one from another day are both excluded
+  ok   NULL: no logs, no spend -- and no crash
+  ok   _settled_today nets TODAY's settlements (+9c and -95c = -86c) and counts ONE loss; yesterday's loss is not today's brake
+  ok   NULL: no logs, no losses -- and no crash
+  ok   NULL: at the net-loss cap the day is over
+  ok   ...a cent short of it still trades
+  ok   the RISK caps scale WITH the trade size and stay inside ~2.5 losing trades; turnover is not risk, because a winning contract recycles
+  ok   $30 at 96c is 31 contracts (whole contracts only, rounded DOWN so the order never exceeds the dollars asked for)
+  ok   ...33 at the 90c floor and 30 at 99c -- the DOLLARS are what stays fixed
+  ok   we never ask for more than the book is offering
+  ok   MAX_CONTRACTS is a hard ceiling no dollar figure can climb past
+  ok   a sub-contract dollar figure still buys ONE -- a tiny order is a real test
+  ok   NULL: no price, no offer, or an unparseable price buys nothing
+  ok   releasing a settled $29.76 position gives back exactly price x filled
+  ok   ...and drops only that ticker's position record
+  ok   the ledger floors at zero rather than going negative
+  ok   NULL: an unparseable fill releases nothing rather than guessing
+  ok   the loop claims a market on the first FILL and refuses every later window on that ticker, whichever side it wants
+  ok   ...and it does so BEFORE deciding, so a second window cannot even price
+  ok   the claim is made on a FILL, not on an attempt -- a refused order must not lock a market out
+  ok   and the trade loop actually CALLS it on settlement -- a release nothing reaches is the leak with extra steps
+  ok   NULL: a count above MAX_CONTRACTS is refused even when funded
+  ok   the SHIPPED size is between $5 and $30 a trade, at most 40 contracts, a 4-loss brake and a $300 account floor
+  ok   and the net-loss brake is exactly 2.5 trades' worth, so stepping the size NEVER silently widens the risk: $10 a trade -> stop at $25 down
+  ok   the net brake must stop inside three losing trades, or it is not a brake
+  ok   and the account floor must sit well clear of a full brake-out
+cmdlive selftest: OK
+  pintake rails raised: HARD_MAX 25 -> 60; MAX_TAKE_COUNT 10 -> 40; MAX_RUN_STAKE $60.00 -> $250.00  (cmdlive $10 per trade)
+  *** PRODUCTION ARMED: cmdlive commodity live test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | $10 per trade (up to 40 contracts) | STOPS at $25.00 net down or 4 losses | turnover cap $1200/day, 60 orders, account floor $300 | balance now $566.73 | today so far: $-53.06, 2 losses | log cmdlive-20260917T203518Z.jsonl
+  REFUSED KXWTI15M-26SEP171645-45 tau=180s YES @0.9600 -- $-53.06 net realised down today; the cap is $25.00
+  REFUSED KXGOLD15M-26SEP171645-45 tau= 15s NO @0.9890 -- $-53.06 net realised down today; the cap is $25.00
+  *** BRAKE: $-53.06 net down. stop file written. ***
+  *** BRAKE: $-53.06 net down. stop file written. ***
+  STOPPED: cmdlive.stop
+  end: 0 orders, 0 fills, $259.66 spent, 2 losses
+  ok   the windows come from cmdarm.BANDS -- one source, so the paper control and the live test can never drift apart
+  ok   copper IS traded now, in paper only: the separation is the live list, not the absence of a window
+  ok   the live test inherits the COMEX skip: no gold at 11:00 ET
+  ok   ...and inherits the far window: gold at 96c with 120 s left is a bet
+  ok   every live series exists in cmdarm and none of their windows is a control
+  ok   NULL: no --live means no arming, whatever the sign-off says
+  ok   NULL: --live with the wrong phrase does NOT arm (hard rule 1)
+  ok   NULL: --live with no sign-off does not arm
+  ok   after three refusals the state is still unarmed
+  ok   an unarmed state refuses a perfectly good order
+  ok   armed, in window, funded: no refusals
+  ok   NULL: 1 s left is refused -- the order could land after the close
+  ok   NULL: an unknown tau is refused, not assumed safe
+  ok   NULL: 99.5c is above the penny test's ceiling
+  ok   NULL: 80c is below the window -- not a near-certainty
+  ok   NULL: one contract past MAX_CONTRACTS is refused, however well funded
+  ok   NULL: zero contracts is not an order
+  ok   NULL: an unreadable balance refuses -- a failed read is not a green light
+  ok   NULL: an order that would take the account under the $300 floor
+  ok   NULL: the stop flag refuses
+  ok   NULL: silver, copper and gas are paper-only and cannot reach the wire
+  ok   ...gold and oil, the two with evidence at both ends, are the live list
+  ok   NULL: a window labelled 'anti' is a deliberate loser and never goes live
+  ok   ...a real window passes
+  ok   NULL: 50c of turnover left will not cover a 95c contract
+  ok   ...but a dollar of room takes one more
+  ok   NULL: the order ceiling refuses attempt 61
+  ok   NULL: the 2-loss brake refuses
+  ok   ...one loss does not
+  ok   no flag file, no stop
+  ok   our own stop flag is seen
+  ok   the DESKTOP APP's stop flag also stops the penny test
+  ok   the loop slice is the real function, not a fragment of the self-test (12860 chars)
+  ok   in the trade loop the guard runs BEFORE the wire call
+  ok   ...and a non-empty refusal list skips the order rather than logging and carrying on
+  ok   there is exactly ONE path to the wire in the loop
+  ok   attempts and dollars are both counted, or the ceilings are decoration
+  ok   the loop writes a heartbeat: the operator's rule is that state is derived from evidence of WORK, never from a process being alive
+  ok   the wire call passes this caller's own tau rail, or every far-window order is refused by pintake's 90 s default (it was, twice, live)
+  ok   the ask covers the 91-180 s windows, sits under pintake's ceiling, and leaves pintake's shipped 90 s default untouched for the crypto bot
+  ok   a repeated refusal is reported ONCE, not four times a second for a minute -- and it still does not consume the market's one shot
+  ok   production is armed in exactly one place in the working code
+  ok   spent_today counts only TODAY's FILLS: the unfilled order and the one from another day are both excluded
+  ok   NULL: no logs, no spend -- and no crash
+  ok   _settled_today nets TODAY's settlements (+9c and -95c = -86c) and counts ONE loss; yesterday's loss is not today's brake
+  ok   NULL: no logs, no losses -- and no crash
+  ok   NULL: at the net-loss cap the day is over
+  ok   ...a cent short of it still trades
+  ok   the RISK caps scale WITH the trade size and stay inside ~2.5 losing trades; turnover is not risk, because a winning contract recycles
+  ok   $30 at 96c is 31 contracts (whole contracts only, rounded DOWN so the order never exceeds the dollars asked for)
+  ok   ...33 at the 90c floor and 30 at 99c -- the DOLLARS are what stays fixed
+  ok   we never ask for more than the book is offering
+  ok   MAX_CONTRACTS is a hard ceiling no dollar figure can climb past
+  ok   a sub-contract dollar figure still buys ONE -- a tiny order is a real test
+  ok   NULL: no price, no offer, or an unparseable price buys nothing
+  ok   releasing a settled $29.76 position gives back exactly price x filled
+  ok   ...and drops only that ticker's position record
+  ok   the ledger floors at zero rather than going negative
+  ok   NULL: an unparseable fill releases nothing rather than guessing
+  ok   an untouched market is free to trade from any window
+  ok   the SAME side again is refused -- that doubles one event's stake, which is what turned one adverse oil market into -$58.84
+  ok   but a NEAR window may take the OPPOSITE side once: that bet is independently profitable (WTI 0-60 s, 519 markets, 4 lost) and capping the loss is a side effect, not the reason
+  ok   a FAR window may NOT offset -- its information is worse than the position it would be offsetting
+  ok   and only ONE offset per market, or we are back to stacking legs
+  ok   the loop tests it AFTER `want` is decided -- testing it earlier would compare against an undecided side, the exact bug just fixed in pinrun's AMENDMENT 8
+  ok   an offset never stakes more than the position it offsets
+  ok   the claim is made on a FILL, not on an attempt -- a refused order must not lock a market out
+  ok   and the trade loop actually CALLS it on settlement -- a release nothing reaches is the leak with extra steps
+  ok   NULL: a count above MAX_CONTRACTS is refused even when funded
+  ok   the SHIPPED size is between $5 and $30 a trade, at most 40 contracts, a 4-loss brake and a $300 account floor
+  ok   and the net-loss brake is exactly 2.5 trades' worth, so stepping the size NEVER silently widens the risk: $10 a trade -> stop at $25 down
+  ok   the net brake must stop inside three losing trades, or it is not a brake
+  ok   and the account floor must sit well clear of a full brake-out
+cmdlive selftest: OK
+  --reset-day: cleared {'cleared_realised': -53.064, 'cleared_losses': 2, 'cleared_spent': 259.659}
+  pintake rails raised: HARD_MAX 25 -> 60; MAX_TAKE_COUNT 10 -> 40; MAX_RUN_STAKE $60.00 -> $250.00  (cmdlive $10 per trade)
+  *** PRODUCTION ARMED: cmdlive commodity live test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | $10 per trade (up to 40 contracts) | STOPS at $25.00 net down or 4 losses | turnover cap $1200/day, 60 orders, account floor $300 | balance now $568.51 | today so far: $+0.00, 0 losses | log cmdlive-20260917T205641Z.jsonl
+  ORDER KXWTI15M-26SEP171700-00 tau=180s NO @0.9850 x10 -> filled 10  spent $9.84
+  ORDER KXGOLD15M-26SEP171700-00 tau= 15s NO @0.9750 x10 -> filled 0  spent $9.84
+  ORDER KXGOLD15M-26SEP171700-00 tau= 15s NO @0.9790 x10 -> filled 10  spent $19.63
+  STOPPED: cmdlive.stop
+  end: 3 orders, 2 fills, $19.63 spent, 0 losses
+  ok   the windows come from cmdarm.BANDS -- one source, so the paper control and the live test can never drift apart
+  ok   copper IS traded now, in paper only: the separation is the live list, not the absence of a window
+  ok   the live test inherits the COMEX skip: no gold at 11:00 ET
+  ok   ...and inherits the far window: gold at 96c with 120 s left is a bet
+  ok   every live series exists in cmdarm and none of their windows is a control
+  ok   NULL: no --live means no arming, whatever the sign-off says
+  ok   NULL: --live with the wrong phrase does NOT arm (hard rule 1)
+  ok   NULL: --live with no sign-off does not arm
+  ok   after three refusals the state is still unarmed
+  ok   an unarmed state refuses a perfectly good order
+  ok   armed, in window, funded: no refusals
+  ok   NULL: 1 s left is refused -- the order could land after the close
+  ok   NULL: an unknown tau is refused, not assumed safe
+  ok   NULL: 99.5c is above the penny test's ceiling
+  ok   NULL: 80c is below the window -- not a near-certainty
+  ok   NULL: one contract past MAX_CONTRACTS is refused, however well funded
+  ok   NULL: zero contracts is not an order
+  ok   NULL: an unreadable balance refuses -- a failed read is not a green light
+  ok   NULL: an order that would take the account under the $300 floor
+  ok   NULL: the stop flag refuses
+  ok   NULL: silver, copper and gas are paper-only and cannot reach the wire
+  ok   ...gold and oil, the two with evidence at both ends, are the live list
+  ok   NULL: a window labelled 'anti' is a deliberate loser and never goes live
+  ok   the CLOSE band is what trades live: gold 2-15 s and WTI 2-60 s, both 95-99c, 668 tape markets and 6 losses between them
+  ok   and the FAR and MID windows are refused live -- all three real losses came from 180 s, 180 s and exactly 60 s, and the far band's case rests on a mechanism story rather than on a nearly-formed candle
+  ok   every live window label actually exists in cmdarm.BANDS -- a typo here would silently trade nothing at all
+  ok   NULL: 50c of turnover left will not cover a 95c contract
+  ok   ...but a dollar of room takes one more
+  ok   NULL: the order ceiling refuses attempt 61
+  ok   NULL: the 2-loss brake refuses
+  ok   ...one loss does not
+  ok   no flag file, no stop
+  ok   our own stop flag is seen
+  ok   the DESKTOP APP's stop flag also stops the penny test
+  ok   the loop slice is the real function, not a fragment of the self-test (12860 chars)
+  ok   in the trade loop the guard runs BEFORE the wire call
+  ok   ...and a non-empty refusal list skips the order rather than logging and carrying on
+  ok   there is exactly ONE path to the wire in the loop
+  ok   attempts and dollars are both counted, or the ceilings are decoration
+  ok   the loop writes a heartbeat: the operator's rule is that state is derived from evidence of WORK, never from a process being alive
+  ok   the wire call passes this caller's own tau rail, or every far-window order is refused by pintake's 90 s default (it was, twice, live)
+  ok   the ask covers the 91-180 s windows, sits under pintake's ceiling, and leaves pintake's shipped 90 s default untouched for the crypto bot
+  ok   a repeated refusal is reported ONCE, not four times a second for a minute -- and it still does not consume the market's one shot
+  ok   production is armed in exactly one place in the working code
+  ok   spent_today counts only TODAY's FILLS: the unfilled order and the one from another day are both excluded
+  ok   NULL: no logs, no spend -- and no crash
+  ok   _settled_today nets TODAY's settlements (+9c and -95c = -86c) and counts ONE loss; yesterday's loss is not today's brake
+  ok   NULL: no logs, no losses -- and no crash
+  ok   NULL: at the net-loss cap the day is over
+  ok   ...a cent short of it still trades
+  ok   the RISK caps scale WITH the trade size and stay inside ~2.5 losing trades; turnover is not risk, because a winning contract recycles
+  ok   $30 at 96c is 31 contracts (whole contracts only, rounded DOWN so the order never exceeds the dollars asked for)
+  ok   ...33 at the 90c floor and 30 at 99c -- the DOLLARS are what stays fixed
+  ok   we never ask for more than the book is offering
+  ok   MAX_CONTRACTS is a hard ceiling no dollar figure can climb past
+  ok   a sub-contract dollar figure still buys ONE -- a tiny order is a real test
+  ok   NULL: no price, no offer, or an unparseable price buys nothing
+  ok   releasing a settled $29.76 position gives back exactly price x filled
+  ok   ...and drops only that ticker's position record
+  ok   the ledger floors at zero rather than going negative
+  ok   NULL: an unparseable fill releases nothing rather than guessing
+  ok   an untouched market is free to trade from any window
+  ok   the SAME side again is refused -- that doubles one event's stake, which is what turned one adverse oil market into -$58.84
+  ok   but a NEAR window may take the OPPOSITE side once: that bet is independently profitable (WTI 0-60 s, 519 markets, 4 lost) and capping the loss is a side effect, not the reason
+  ok   a FAR window may NOT offset -- its information is worse than the position it would be offsetting
+  ok   and only ONE offset per market, or we are back to stacking legs
+  ok   the loop tests it AFTER `want` is decided -- testing it earlier would compare against an undecided side, the exact bug just fixed in pinrun's AMENDMENT 8
+  ok   an offset never stakes more than the position it offsets
+  ok   the claim is made on a FILL, not on an attempt -- a refused order must not lock a market out
+  ok   and the trade loop actually CALLS it on settlement -- a release nothing reaches is the leak with extra steps
+  ok   NULL: a count above MAX_CONTRACTS is refused even when funded
+  ok   the SHIPPED size is between $5 and $30 a trade, at most 40 contracts, a 4-loss brake and a $300 account floor
+  ok   and the net-loss brake is exactly 2.5 trades' worth, so stepping the size NEVER silently widens the risk: $20 a trade -> stop at $50 down
+  ok   the net brake must stop inside three losing trades, or it is not a brake
+  ok   and the account floor must sit well clear of a full brake-out
+cmdlive selftest: OK
+  --reset-day: cleared {'cleared_realised': -53.064, 'cleared_losses': 2, 'cleared_spent': 279.289}
+  pintake rails raised: HARD_MAX 25 -> 60; MAX_TAKE_COUNT 10 -> 40; MAX_RUN_STAKE $60.00 -> $250.00  (cmdlive $20 per trade)
+  *** PRODUCTION ARMED: cmdlive commodity live test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXGOLD15M, KXWTI15M | $20 per trade (up to 40 contracts) | STOPS at $50.00 net down or 4 losses | turnover cap $1200/day, 60 orders, account floor $300 | balance now $559.00 | today so far: $+0.00, 0 losses | log cmdlive-20260917T212549Z.jsonl
+  REFUSED KXWTI15M-26SEP171730-30 tau=157s NO @0.9080 -- window 'wti-far' is paper-only; live is the close band (gold-near, wti-near)
+  REFUSED KXGOLD15M-26SEP171730-30 tau=109s NO @0.9690 -- window 'gold-far' is paper-only; live is the close band (gold-near, wti-near)
+  ORDER KXWTI15M-26SEP171730-30 tau= 60s NO @0.9770 x10 -> filled 10  spent $9.77
+  SETTLED KXWTI15M-26SEP171730-30 -> WON  $+0.21   (losses 0/4, day $+0.21)
+  ok   the windows come from cmdarm.BANDS -- one source, so the paper control and the live test can never drift apart
+  ok   copper IS traded now, in paper only: the separation is the live list, not the absence of a window
+  ok   the live test inherits the COMEX skip: no gold at 11:00 ET
+  ok   ...and inherits the far window: gold at 96c with 120 s left is a bet
+  ok   every live series exists in cmdarm and none of their windows is a control
+  ok   NULL: no --live means no arming, whatever the sign-off says
+  ok   NULL: --live with the wrong phrase does NOT arm (hard rule 1)
+  ok   NULL: --live with no sign-off does not arm
+  ok   after three refusals the state is still unarmed
+  ok   an unarmed state refuses a perfectly good order
+  ok   armed, in window, funded: no refusals
+  ok   NULL: 1 s left is refused -- the order could land after the close
+  ok   NULL: an unknown tau is refused, not assumed safe
+  ok   NULL: 99.5c is above the penny test's ceiling
+  ok   NULL: 80c is below the window -- not a near-certainty
+  ok   NULL: one contract past MAX_CONTRACTS is refused, however well funded
+  ok   NULL: zero contracts is not an order
+  ok   NULL: an unreadable balance refuses -- a failed read is not a green light
+  ok   NULL: an order that would take the account under the $300 floor
+  ok   NULL: the stop flag refuses
+  ok   NULL: silver, copper and gas are paper-only and cannot reach the wire
+  ok   ...oil alone is the live list now
+  ok   ...and gold is paper-only: it is where two of the three real losses came from, and its live sample is six bets
+  ok   NULL: a window labelled 'anti' is a deliberate loser and never goes live
+  ok   LIVE IS ONE CELL: WTI's near window, and only its last 15 seconds -- 186 tape markets, 1 loss, against a ~3% break-even
+  ok   and EVERYTHING else -- gold entirely, and oil's far and mid windows -- is paper-only. Six to seventeen live bets cannot tell a good window from a bad one, so each has to earn its way back
+  ok   NULL: the same window one second too early is refused -- live takes only the last 15 s of a window the paper arm runs to 60
+  ok   ...and exactly at the boundary it trades
+  ok   every live window label actually exists in cmdarm.BANDS -- a typo here would silently trade nothing at all
+  ok   NULL: 50c of turnover left will not cover a 95c contract
+  ok   ...but a dollar of room takes one more
+  ok   NULL: the order ceiling refuses attempt 61
+  ok   NULL: the 2-loss brake refuses
+  ok   ...one loss does not
+  ok   no flag file, no stop
+  ok   our own stop flag is seen
+  ok   the DESKTOP APP's stop flag also stops the penny test
+  ok   the loop slice is the real function, not a fragment of the self-test (12860 chars)
+  ok   in the trade loop the guard runs BEFORE the wire call
+  ok   ...and a non-empty refusal list skips the order rather than logging and carrying on
+  ok   there is exactly ONE path to the wire in the loop
+  ok   attempts and dollars are both counted, or the ceilings are decoration
+  ok   the loop writes a heartbeat: the operator's rule is that state is derived from evidence of WORK, never from a process being alive
+  ok   the wire call passes this caller's own tau rail, or every far-window order is refused by pintake's 90 s default (it was, twice, live)
+  ok   the ask covers the 91-180 s windows, sits under pintake's ceiling, and leaves pintake's shipped 90 s default untouched for the crypto bot
+  ok   a repeated refusal is reported ONCE, not four times a second for a minute -- and it still does not consume the market's one shot
+  ok   production is armed in exactly one place in the working code
+  ok   spent_today counts only TODAY's FILLS: the unfilled order and the one from another day are both excluded
+  ok   NULL: no logs, no spend -- and no crash
+  ok   _settled_today nets TODAY's settlements (+9c and -95c = -86c) and counts ONE loss; yesterday's loss is not today's brake
+  ok   NULL: no logs, no losses -- and no crash
+  ok   NULL: at the net-loss cap the day is over
+  ok   ...a cent short of it still trades
+  ok   the RISK caps scale WITH the trade size and stay inside ~2.5 losing trades; turnover is not risk, because a winning contract recycles
+  ok   $30 at 96c is 31 contracts (whole contracts only, rounded DOWN so the order never exceeds the dollars asked for)
+  ok   ...33 at the 90c floor and 30 at 99c -- the DOLLARS are what stays fixed
+  ok   we never ask for more than the book is offering
+  ok   MAX_CONTRACTS is a hard ceiling no dollar figure can climb past
+  ok   a sub-contract dollar figure still buys ONE -- a tiny order is a real test
+  ok   NULL: no price, no offer, or an unparseable price buys nothing
+  ok   releasing a settled $29.76 position gives back exactly price x filled
+  ok   ...and drops only that ticker's position record
+  ok   the ledger floors at zero rather than going negative
+  ok   NULL: an unparseable fill releases nothing rather than guessing
+  ok   an untouched market is free to trade from any window
+  ok   the SAME side again is refused -- that doubles one event's stake, which is what turned one adverse oil market into -$58.84
+  ok   but a NEAR window may take the OPPOSITE side once: that bet is independently profitable (WTI 0-60 s, 519 markets, 4 lost) and capping the loss is a side effect, not the reason
+  ok   a FAR window may NOT offset -- its information is worse than the position it would be offsetting
+  ok   and only ONE offset per market, or we are back to stacking legs
+  ok   the loop tests it AFTER `want` is decided -- testing it earlier would compare against an undecided side, the exact bug just fixed in pinrun's AMENDMENT 8
+  ok   an offset never stakes more than the position it offsets
+  ok   the claim is made on a FILL, not on an attempt -- a refused order must not lock a market out
+  ok   and the trade loop actually CALLS it on settlement -- a release nothing reaches is the leak with extra steps
+  ok   NULL: a count above MAX_CONTRACTS is refused even when funded
+  ok   the SHIPPED size is between $5 and $30 a trade, at most 40 contracts, a 4-loss brake and a $300 account floor
+  ok   and the net-loss brake is exactly 2.5 trades' worth, so stepping the size NEVER silently widens the risk: $10 a trade -> stop at $25 down
+  ok   the net brake must stop inside three losing trades, or it is not a brake
+  ok   and the account floor must sit well clear of a full brake-out
+cmdlive selftest: OK
+  --reset-day: cleared {'cleared_realised': -52.8497, 'cleared_losses': 2, 'cleared_spent': 289.059}
+  pintake rails raised: HARD_MAX 25 -> 60; MAX_TAKE_COUNT 10 -> 40; MAX_RUN_STAKE $60.00 -> $250.00  (cmdlive $10 per trade)
+  *** PRODUCTION ARMED: cmdlive commodity live test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXWTI15M | $10 per trade (up to 40 contracts) | STOPS at $25.00 net down or 4 losses | turnover cap $1200/day, 60 orders, account floor $300 | balance now $559.66 | today so far: $+0.00, 0 losses | log cmdlive-20260917T214029Z.jsonl
+  REFUSED KXWTI15M-26SEP171745-45 tau= 39s NO @0.9300 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 39 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 38s NO @0.9260 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 38 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 37s NO @0.9160 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 37 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 36s NO @0.9180 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 36 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 35s NO @0.9280 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 35 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 34s NO @0.9260 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 34 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 33s NO @0.9200 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 33 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 32s NO @0.9270 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 32 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 31s NO @0.9230 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 31 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 29s NO @0.9030 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 29 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 28s NO @0.9000 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 28 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 27s NO @0.9050 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 27 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 26s NO @0.9450 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 26 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 25s NO @0.9450 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 25 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 24s NO @0.9600 -- tau 24 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 23s NO @0.9700 -- tau 23 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 22s NO @0.9700 -- tau 22 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 22s NO @0.9080 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 22 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 21s NO @0.9690 -- tau 21 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 20s NO @0.9770 -- tau 20 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 19s NO @0.9720 -- tau 19 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 18s NO @0.9720 -- tau 18 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 17s NO @0.9720 -- tau 17 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171745-45 tau= 16s NO @0.9720 -- tau 16 s is earlier than live trades (15 s); the paper arm still takes it
+  ORDER KXWTI15M-26SEP171745-45 tau= 15s NO @0.9730 x10 -> filled 0  spent $0.00
+  ORDER KXWTI15M-26SEP171745-45 tau= 15s NO @0.9760 x10 -> filled 10  spent $9.76
+  ok   the windows come from cmdarm.BANDS -- one source, so the paper control and the live test can never drift apart
+  ok   copper IS traded now, in paper only: the separation is the live list, not the absence of a window
+  ok   the live test inherits the COMEX skip: no gold at 11:00 ET
+  ok   ...and inherits the far window: gold at 96c with 120 s left is a bet
+  ok   every live series exists in cmdarm and none of their windows is a control
+  ok   NULL: no --live means no arming, whatever the sign-off says
+  ok   NULL: --live with the wrong phrase does NOT arm (hard rule 1)
+  ok   NULL: --live with no sign-off does not arm
+  ok   after three refusals the state is still unarmed
+  ok   an unarmed state refuses a perfectly good order
+  ok   armed, in window, funded: no refusals
+  ok   NULL: 1 s left is refused -- the order could land after the close
+  ok   NULL: an unknown tau is refused, not assumed safe
+  ok   NULL: 99.5c is above the penny test's ceiling
+  ok   NULL: 80c is below the window -- not a near-certainty
+  ok   NULL: one contract past MAX_CONTRACTS is refused, however well funded
+  ok   NULL: zero contracts is not an order
+  ok   NULL: an unreadable balance refuses -- a failed read is not a green light
+  ok   NULL: an order that would take the account under the $300 floor
+  ok   NULL: the stop flag refuses
+  ok   NULL: silver, copper and gas are paper-only and cannot reach the wire
+  ok   ...oil alone is the live list now
+  ok   ...and gold is paper-only: it is where two of the three real losses came from, and its live sample is six bets
+  ok   NULL: a window labelled 'anti' is a deliberate loser and never goes live
+  ok   LIVE IS ONE CELL: WTI's near window, and only its last 15 seconds -- 186 tape markets, 1 loss, against a ~3% break-even
+  ok   and EVERYTHING else -- gold entirely, and oil's far and mid windows -- is paper-only. Six to seventeen live bets cannot tell a good window from a bad one, so each has to earn its way back
+  ok   NULL: the same window one second too early is refused -- live takes only the last 15 s of a window the paper arm runs to 60
+  ok   ...and exactly at the boundary it trades
+  ok   every live window label actually exists in cmdarm.BANDS -- a typo here would silently trade nothing at all
+  ok   NULL: 50c of turnover left will not cover a 95c contract
+  ok   ...but a dollar of room takes one more
+  ok   NULL: the order ceiling refuses attempt 61
+  ok   NULL: the 2-loss brake refuses
+  ok   ...one loss does not
+  ok   no flag file, no stop
+  ok   our own stop flag is seen
+  ok   the DESKTOP APP's stop flag also stops the penny test
+  ok   the loop slice is the real function, not a fragment of the self-test (13348 chars)
+  ok   in the trade loop the guard runs BEFORE the wire call
+  ok   ...and a non-empty refusal list skips the order rather than logging and carrying on
+  ok   there is exactly ONE path to the wire in the loop
+  ok   attempts and dollars are both counted, or the ceilings are decoration
+  ok   the loop writes a heartbeat: the operator's rule is that state is derived from evidence of WORK, never from a process being alive
+  ok   the wire call passes this caller's own tau rail, or every far-window order is refused by pintake's 90 s default (it was, twice, live)
+  ok   the ask covers the 91-180 s windows, sits under pintake's ceiling, and leaves pintake's shipped 90 s default untouched for the crypto bot
+  ok   a repeated refusal is reported ONCE, not four times a second for a minute -- and it still does not consume the market's one shot
+  ok   production is armed in exactly one place in the working code
+  ok   spent_today counts only TODAY's FILLS: the unfilled order and the one from another day are both excluded
+  ok   NULL: no logs, no spend -- and no crash
+  ok   _settled_today nets TODAY's settlements (+9c and -95c = -86c) and counts ONE loss; yesterday's loss is not today's brake
+  ok   NULL: no logs, no losses -- and no crash
+  ok   NULL: at the net-loss cap the day is over
+  ok   ...a cent short of it still trades
+  ok   the RISK caps scale WITH the trade size and stay inside ~2.5 losing trades; turnover is not risk, because a winning contract recycles
+  ok   $30 at 96c is 31 contracts (whole contracts only, rounded DOWN so the order never exceeds the dollars asked for)
+  ok   ...33 at the 90c floor and 30 at 99c -- the DOLLARS are what stays fixed
+  ok   we never ask for more than the book is offering
+  ok   MAX_CONTRACTS is a hard ceiling no dollar figure can climb past
+  ok   a sub-contract dollar figure still buys ONE -- a tiny order is a real test
+  ok   NULL: no price, no offer, or an unparseable price buys nothing
+  ok   releasing a settled $29.76 position gives back exactly price x filled
+  ok   ...and drops only that ticker's position record
+  ok   the ledger floors at zero rather than going negative
+  ok   NULL: an unparseable fill releases nothing rather than guessing
+  ok   an untouched market is free to trade from any window
+  ok   the SAME side again is refused -- that doubles one event's stake, which is what turned one adverse oil market into -$58.84
+  ok   but a NEAR window may take the OPPOSITE side once: that bet is independently profitable (WTI 0-60 s, 519 markets, 4 lost) and capping the loss is a side effect, not the reason
+  ok   a FAR window may NOT offset -- its information is worse than the position it would be offsetting
+  ok   and only ONE offset per market, or we are back to stacking legs
+  ok   the loop tests it AFTER `want` is decided -- testing it earlier would compare against an undecided side, the exact bug just fixed in pinrun's AMENDMENT 8
+  ok   an offset never stakes more than the position it offsets
+  ok   the claim is made on a FILL, not on an attempt -- a refused order must not lock a market out
+  ok   and the trade loop actually CALLS it on settlement -- a release nothing reaches is the leak with extra steps
+  ok   NULL: a count above MAX_CONTRACTS is refused even when funded
+  ok   the SHIPPED size is between $5 and $30 a trade, at most 40 contracts, a 4-loss brake and a $300 account floor
+  ok   and the net-loss brake is exactly 2.5 trades' worth, so stepping the size NEVER silently widens the risk: $10 a trade -> stop at $25 down
+  ok   the net brake must stop inside three losing trades, or it is not a brake
+  ok   and the account floor must sit well clear of a full brake-out
+cmdlive selftest: OK
+  --reset-day: cleared {'cleared_realised': -52.8497, 'cleared_losses': 2, 'cleared_spent': 298.819}
+  pintake rails raised: HARD_MAX 25 -> 60; MAX_TAKE_COUNT 10 -> 40; MAX_RUN_STAKE $60.00 -> $250.00  (cmdlive $10 per trade)
+  *** PRODUCTION ARMED: cmdlive commodity live test, operator sign-off 2026-09-17 ***
+cmdlive *** LIVE, REAL MONEY *** -- KXWTI15M | $10 per trade (up to 40 contracts) | STOPS at $25.00 net down or 4 losses | turnover cap $1200/day, 60 orders, account floor $300 | balance now $565.31 | today so far: $+0.00, 0 losses | log cmdlive-20260917T214531Z.jsonl
+  REFUSED KXWTI15M-26SEP171800-00 tau=180s YES @0.9300 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171800-00 tau= 60s YES @0.9880 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  ORDER KXWTI15M-26SEP171800-00 tau=  3s YES @0.9540 x2 -> filled 2  spent $1.91
+  SETTLED KXWTI15M-26SEP171800-00 -> WON  $+0.09   (losses 0/4, day $+0.09)
+  REFUSED KXWTI15M-26SEP171815-15 tau=143s YES @0.9030 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 143 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171815-15 tau= 60s YES @0.9840 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171830-30 tau=180s YES @0.9590 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171830-30 tau= 60s YES @0.9890 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171845-45 tau= 60s YES @0.9730 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  ORDER KXWTI15M-26SEP171845-45 tau= 15s YES @0.9900 x10 -> filled 10  spent $11.81
+  SETTLED KXWTI15M-26SEP171845-45 -> WON  $+0.09   (losses 0/4, day $+0.18)
+  REFUSED KXWTI15M-26SEP171900-00 tau=132s NO @0.9200 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 132 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171900-00 tau= 56s NO @0.9500 -- tau 56 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171915-15 tau=180s YES @0.9760 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171915-15 tau= 60s YES @0.9890 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  ORDER KXWTI15M-26SEP171915-15 tau= 15s YES @0.9680 x10 -> filled 10  spent $21.48
+  SETTLED KXWTI15M-26SEP171915-15 -> WON  $+0.31   (losses 0/4, day $+0.49)
+  REFUSED KXWTI15M-26SEP171930-30 tau=180s NO @0.9290 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP171945-45 tau=180s YES @0.9460 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172000-00 tau= 45s NO @0.9080 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 45 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172000-00 tau= 36s NO @0.9500 -- tau 36 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172015-15 tau=180s NO @0.9770 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172030-30 tau=180s YES @0.9220 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172100-00 tau=180s YES @0.9900 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172115-15 tau=180s NO @0.9480 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172115-15 tau= 60s NO @0.9610 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172130-30 tau=180s YES @0.9380 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172200-00 tau=153s YES @0.9880 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 153 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172215-15 tau=180s YES @0.9850 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172215-15 tau= 58s YES @0.9530 -- tau 58 s is earlier than live trades (15 s); the paper arm still takes it
+  ORDER KXWTI15M-26SEP172215-15 tau= 15s YES @0.9900 x10 -> filled 10  spent $31.38
+  SETTLED KXWTI15M-26SEP172215-15 -> WON  $+0.09   (losses 0/4, day $+0.58)
+  REFUSED KXWTI15M-26SEP172230-30 tau= 45s NO @0.9360 -- window 'wti-mid' is paper-only; live is the close band (wti-near); tau 45 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172230-30 tau= 40s NO @0.9500 -- tau 40 s is earlier than live trades (15 s); the paper arm still takes it
+  ORDER KXWTI15M-26SEP172230-30 tau= 15s NO @0.9650 x10 -> filled 10  spent $41.03
+  SETTLED KXWTI15M-26SEP172230-30 -> WON  $+0.33   (losses 0/4, day $+0.91)
+  REFUSED KXWTI15M-26SEP172245-45 tau=178s NO @0.9900 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 178 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172300-00 tau=180s YES @0.9500 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172315-15 tau=180s YES @0.9610 -- window 'wti-far' is paper-only; live is the close band (wti-near); tau 180 s is earlier than live trades (15 s); the paper arm still takes it
+  REFUSED KXWTI15M-26SEP172315-15 tau= 60s YES @0.9790 -- tau 60 s is earlier than live trades (15 s); the paper arm still takes it

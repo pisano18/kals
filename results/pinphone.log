@@ -1,0 +1,65 @@
+2026-09-17T01:16:06  refused pairing from chat 111
+2026-09-17T01:16:06  paired with chat 111
+2026-09-17T01:17:00  refused pairing from chat 111
+2026-09-17T01:17:00  paired with chat 111
+2026-09-17T01:17:37  refused pairing from chat 111
+2026-09-17T01:17:37  paired with chat 111
+2026-09-17T01:25:15  pinphone starting; paired chat: None
+2026-09-17T01:29:58  paired with chat 1498727727
+2026-09-17T01:51:05  refused pairing from chat 111
+2026-09-17T01:51:05  paired with chat 111
+2026-09-17T01:52:06  pinphone starting; paired chat: 1498727727
+2026-09-17T02:05:27  getUpdates failed: The read operation timed out
+2026-09-17T03:12:25  getUpdates failed: The read operation timed out
+2026-09-17T04:14:12  getUpdates failed: The read operation timed out
+2026-09-17T04:22:04  getUpdates failed: The read operation timed out
+2026-09-17T04:32:55  getUpdates failed: The read operation timed out
+2026-09-17T07:28:50  getUpdates failed: The read operation timed out
+2026-09-17T08:14:59  getUpdates failed: The read operation timed out
+2026-09-17T08:54:46  getUpdates failed: The read operation timed out
+2026-09-17T08:59:21  getUpdates failed: The read operation timed out
+2026-09-17T09:21:50  getUpdates failed: The read operation timed out
+2026-09-17T10:36:19  getUpdates failed: The read operation timed out
+2026-09-17T10:59:04  getUpdates failed: The read operation timed out
+2026-09-17T13:19:03  getUpdates failed: The read operation timed out
+2026-09-17T13:50:47  getUpdates failed: The read operation timed out
+2026-09-17T14:47:37  getUpdates failed: The read operation timed out
+2026-09-17T15:55:19  getUpdates failed: The read operation timed out
+2026-09-17T16:16:35  getUpdates failed: The read operation timed out
+2026-09-17T16:19:03  getUpdates failed: The read operation timed out
+2026-09-17T17:00:40  getUpdates failed: The read operation timed out
+2026-09-17T17:06:05  getUpdates failed: The read operation timed out
+2026-09-17T17:08:01  getUpdates failed: The read operation timed out
+2026-09-17T17:36:55  getUpdates failed: The read operation timed out
+2026-09-17T17:52:55  getUpdates failed: The read operation timed out
+2026-09-17T18:24:15  getUpdates failed: The read operation timed out
+2026-09-17T19:06:41  getUpdates failed: The read operation timed out
+2026-09-17T19:28:44  getUpdates failed: The read operation timed out
+2026-09-17T19:58:19  getUpdates failed: The read operation timed out
+2026-09-17T19:59:35  getUpdates failed: The read operation timed out
+2026-09-17T20:05:32  getUpdates failed: The read operation timed out
+2026-09-17T20:20:42  getUpdates failed: The read operation timed out
+2026-09-17T20:56:04  getUpdates failed: The read operation timed out
+2026-09-17T20:57:45  getUpdates failed: The read operation timed out
+2026-09-17T21:47:45  Traceback (most recent call last):
+  File "C:\kals-repo\research\pinphone.py", line 294, in worker
+    pindesk.do_start(lambda m: self.say("start: " + m))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\kals-repo\research\pindesk.py", line 977, in do_start
+    code, out = _ps(os.path.join(REPO, "restart_bot.ps1"))
+                ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\kals-repo\research\pindesk.py", line 921, in _ps
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                       creationflags=CREATE_NO_WINDOW, cwd=REPO)
+  File "C:\Python314\Lib\subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\subprocess.py", line 1221, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\subprocess.py", line 1664, in _communicate
+    raise TimeoutExpired(self.args, orig_timeout)
+subprocess.TimeoutExpired: Command '['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\kals-repo\\restart_bot.ps1']' timed out after 180 seconds
+
+2026-09-17T22:41:14  getUpdates failed: The read operation timed out
+2026-09-17T23:17:42  getUpdates failed: The read operation timed out

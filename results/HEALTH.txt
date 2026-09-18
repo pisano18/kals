@@ -1,4 +1,4 @@
-EDGE HEALTH -- written 2026-09-15 00:45 ET
+EDGE HEALTH -- written 2026-09-15 16:48 ET
 
   THE ONE NUMBER: cents earned per contract.
 
@@ -11,15 +11,22 @@ EDGE HEALTH -- written 2026-09-15 00:45 ET
   2026-09-12 |     69 |      1884 |  +38.26 |     +2.03c |      93.8c
   2026-09-13 |     35 |      2209 | +120.72 |     +5.46c |      92.7c
   2026-09-14 |     43 |      3334 |  +71.67 |     +2.15c |      93.8c
+  2026-09-15 |     19 |      1740 |  +58.83 |     +3.38c |      96.4c
 
-  loss rate so far        : 4.30%  (12 losing of 279 closes)
-  the edge dies below     : +1.61c per contract
-  most recent day         : +2.15c per contract
-  headroom                : +0.54c  (1.3x the kill line)
+  DAYS THE BOT COULD NOT TRADE FOR PART OF (results/DOWNTIME.json):
+  day        | hours lost | hours up |  net $ | $ per hour up | same, if it had traded 24h
+  (hours up counts only time that has already happened -- today is partial)
+  2026-09-15 |       7.57 |     9.24 | +58.83 |         +6.37 | +152.81
+  Compare days on $ per hour up, never on the raw daily total.
+
+  loss rate so far        : 4.03%  (12 losing of 298 closes)
+  the edge dies below     : +1.50c per contract
+  most recent day         : +3.38c per contract
+  headroom                : +1.88c  (2.3x the kill line)
 
   DECAY TEST: no decay pattern
 
-  THE BOOK WE BUY FROM (per ET day, from 481 closes)
+  THE BOOK WE BUY FROM (per ET day, from 518 closes)
     day            closes  touch med  touch p75       CAP  logged to
     2026-09-09         48        140        314       125        250
     2026-09-10         72        139        296       125        250
@@ -27,8 +34,8 @@ EDGE HEALTH -- written 2026-09-15 00:45 ET
     2026-09-12         95        213        465       125        250
     2026-09-13         82        188        421       125        250
     2026-09-14         84        167        420       125        250
-    2026-09-15          2        399        399       125        250
-    -> book depth DEEPER (1.96x, first half of the record vs second)
+    2026-09-15         39        150        344       125       2000
+    -> book depth DEEPER (1.46x, first half of the record vs second)
     -> at the touch alone, 125 contracts still fill at half the buyable moments.
        The bot buys down the LADDER, so this is a FLOOR on what it can actually take.
 

@@ -9,24 +9,26 @@
   gate            | stopped | closes | only  | really  | of those blocked      | $ if we had
                   |  it     |        | moved | blocked | would WIN / would LOSE|  been filled
   ----------------|---------|--------|-------|---------|-----------------------|-------------
-  close_budget    |       0 |      0 |     0 |       0 |        -              |      -
+  close_budget    |     261 |     29 |    62 |     199 |    -   (no price)     |       -
   max_per_close   |       0 |      0 |     0 |       0 |        -              |      -
-  max_per_market  |       0 |      0 |     0 |       0 |        -              |      -
-  both_sides      |       0 |      0 |     0 |       0 |        -              |      -
-  market_attempts |       0 |      0 |     0 |       0 |        -              |      -
+  max_per_market  |       3 |      2 |     3 |       0 |    -   (no price)     |       -
+  both_sides      |     112 |    105 |   112 |       0 |    -   (no price)     |       -
+  market_attempts |       8 |      3 |     8 |       0 |    -   (no price)     |       -
   attempts_cap    |       0 |      0 |     0 |       0 |        -              |      -
   book_suspect    |       0 |      0 |     0 |       0 |        -              |      -
-  book_stale      |       0 |      0 |     0 |       0 |        -              |      -
-  index_stale     |       0 |      0 |     0 |       0 |        -              |      -
+  book_stale      |      48 |     24 |     3 |      45 |    -   (no price)     |       -
+  index_stale     |       9 |      1 |     0 |       9 |    -   (no price)     |       -
   no_sigma        |       0 |      0 |     0 |       0 |        -              |      -
-  confidence      |       0 |      0 |     0 |       0 |        -              |      -
-  no_offer        |       9 |      1 |     0 |       9 |    -   (no price)     |       -
-  depth_floor     |       0 |      0 |     0 |       0 |        -              |      -
-  edge_floor      |       0 |      0 |     0 |       0 |        -              |      -
-  dump_guard      |       0 |      0 |     0 |       0 |        -              |      -
+  confidence      |     252 |    133 |   132 |     120 |    -   (no price)     |       -
+  no_offer        |    2383 |    288 |    19 |    2364 |    -   (no price)     |       -
+  depth_floor     |     339 |    176 |    31 |     308 |    -   (no price)     |       -
+  edge_floor      |     810 |    236 |    28 |     782 |    -   (no price)     |       -
+  against_thin    |      12 |     12 |     5 |       7 |    -   (no price)     |       -
+  jump_against    |      10 |      8 |     0 |      10 |    -   (no price)     |       -
+  dump_guard      |       7 |      7 |     6 |       1 |    -   (no price)     |       -
   improve_by      |       0 |      0 |     0 |       0 |        -              |      -
-  rebuy_band      |       0 |      0 |     0 |       0 |        -              |      -
-  price_ceiling   |       0 |      0 |     0 |       0 |        -              |      -
+  rebuy_band      |      12 |     12 |    12 |       0 |    -   (no price)     |       -
+  price_ceiling   |     320 |    164 |    48 |     272 |    -   (no price)     |       -
   ev_floor        |       0 |      0 |     0 |       0 |        -              |      -
 
   `$ if we had been filled` is an UPPER BOUND, not profit and loss. A
@@ -55,6 +57,8 @@
     no_offer         the model was sure but nobody was selling that side
     depth_floor      too few contracts on offer to be worth taking
     edge_floor       the profit on offer was too thin
+    against_thin     thin profit AND the live price was already past the strike against us
+    jump_against     the index just made a big one-second move against us -- jumps keep going more often than the model thinks
     dump_guard       priced far below fair -- someone else knew something
     improve_by       a second buy that was not cheaper than the first
     rebuy_band       a same-coin re-buy outside the 0.5-1c band
