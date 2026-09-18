@@ -473,6 +473,13 @@ def tails_per_series(markets):
     print(f"  {'series':>11}{'n':>7}{'kurt':>8}"
           f"{'  90c':>8}{'  95c':>8}{'  98c':>8}{'  99c':>8}{'crossover':>11}")
     for s, ms in sorted(markets.items()):
+        # Rows from a --markets-only pull carry ticker/result/close/strike and
+        # NO settle level -- that is computed from the tape, which the REST
+        # pull never reads. This statistic needs settle, so it uses only the
+        # rows that have one and says nothing for a series that has none,
+        # instead of raising KeyError after the outcomes are already in hand.
+        ms = [m for m in ms if m.get("settle") is not None
+              and m.get("strike")]
         if len(ms) < 300:
             continue
         rel = sorted((m["settle"] - m["strike"]) / m["strike"] for m in ms)
@@ -540,7 +547,15 @@ def main():
                          "mode an automated refresh wants.")
     a = ap.parse_args()
 
-    feed_check(a.data)
+    # THE FEED CHECK WALKS EVERY TAPE FILE -- 564 hours, 21 million messages
+    # on 2026-09-18 -- and it ran UNCONDITIONALLY, before the branch below.
+    # So `--markets-only`, which is a REST pull and touches no tape, sat for
+    # ten minutes doing a scan it did not need and then hit every timeout it
+    # was given. Three refreshes died that way in one afternoon and 09-18 was
+    # invisible to every settlement-dependent study all day. A refresh of the
+    # OUTCOMES has no business reading the tape.
+    if not a.markets_only:
+        feed_check(a.data)
     if a.markets_only:
         # markets.json is CHEAP -- a few paginated /markets calls per series.
         # tapes.json is the expensive part and nothing that needs a fresh
