@@ -64,3 +64,15 @@
 {"note": "dead series and post-loss behaviour share no mechanism. Nothing to compute.", "pair": ["F-C10", "F-P08"], "t": "2026-09-17T08:51:17Z", "verdict": "nothing"}
 {"note": "volatility mix WITHIN coin is the one explanation of the 1.87->4.61 doubling not yet ruled out -- coin mix and drift are; decompose candidates by rv_short fifth, early edges applied late", "pair": ["F-M08", "F-O07"], "t": "2026-09-17T08:51:17Z", "verdict": "lead"}
 {"note": "scaling sd by k keeps the highest-z rows and z is high when sd is small, so k may have failed by COMPOSITION into the bad volatility fifth, not because the error is shape -- one cross-tab separates them", "pair": ["F-M06", "F-M08"], "t": "2026-09-17T08:51:17Z", "verdict": "lead"}
+{"pair": ["F-M03", "F-P05"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-I01", "F-O06"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-C02", "F-R01"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-P06", "F-X05"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-B03", "F-X02"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-O02", "F-O07"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"note": "Edge size has a floor in the gate and no ceiling; bucket discount_c against model-wrong on the cached candidate rows, holding price and tau fixed.", "pair": ["F-M03", "F-P05"], "t": "2026-09-18T08:50:34Z", "verdict": "lead"}
+{"note": "Test whether quote age survives conditioning on time-since-index-print: a young quote may just be everyone repricing off the 1/sec tick we also see.", "pair": ["F-I01", "F-O06"], "t": "2026-09-18T08:50:34Z", "verdict": "lead"}
+{"note": "Cross-coin correlation from the shared 60s averaging window is just rho restated; already measured (0.62-0.69, design effect 31-46x) and already bounded by MAX_PER_CLOSE. No new number changes a decision.", "pair": ["F-C02", "F-R01"], "t": "2026-09-18T08:50:41Z", "verdict": "nothing"}
+{"note": "Sweep leg counts are a worse instrument for hedge-side depth than the orderbook we already record directly; hedge decay was measured at five sizes and live hedge events are n=3.", "pair": ["F-P06", "F-X05"], "t": "2026-09-18T08:50:41Z", "verdict": "nothing"}
+{"note": "Killed by arithmetic: the per-ORDER fee ceiling is 0.0001 dollars, so 362 live orders cap the rounding cost at 3.6 cents total, and fee is 0.3 percent of the worst-close bound.", "pair": ["F-B03", "F-X02"], "t": "2026-09-18T08:50:41Z", "verdict": "nothing"}
+{"note": "Duplicate: CURRENT_STATE already flags the unchanged-counterparty claim as having no stated power, from an earlier collide run. Re-raising it adds a record, not a lead.", "pair": ["F-O02", "F-O07"], "t": "2026-09-18T08:50:41Z", "verdict": "nothing"}
