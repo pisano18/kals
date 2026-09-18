@@ -114,7 +114,9 @@ EXPERIMENTS = [
         # arm-reads-another-arm's-log bug this `select` mechanism was added to
         # kill, re-introduced the moment a second arm inherited the flag.
         # Whenever an arm is layered on another, the older one must exclude it.
-        "select": {"early_max_edge": SET, "hedge_normal": lambda v: not v},
+        "select": {"early_max_edge": SET, "hedge_normal": lambda v: not v,
+                   # A52 inherits this flag as well; same trap, third time
+                   "hedge_jump": lambda v: v is None},
         "what": "Buys a WHOLE bet at 31-45 seconds out, not a third -- but only "
                 "when our model and the market price are within 3 cents of each "
                 "other.",
@@ -349,8 +351,9 @@ EXPERIMENTS = [
     },
     # ------------------------------------------------------------------ IDEAS
     {
-        "name": "Hedge on the JUMP, not on the belief (post-entry jump trigger)",
-        "status": IDEA, "since": "2026-09-18",
+        "name": "Hedge on the JUMP, not on the belief (A52)",
+        "status": RUNNING, "match": "--hedge-jump", "since": "2026-09-18",
+        "select": {"hedge_jump": SET},
         "what": "Buy insurance the instant the index makes a one-second move of "
                 "N sigma against us AFTER entry, instead of waiting for the "
                 "model's belief to fall through 60%. It is a reaction, not a "
@@ -844,7 +847,17 @@ def selftest():
             rec.update(extra)
             fh.write(json.dumps(rec) + "\n")
             fh.write(json.dumps({"kind": "settled", "pnl_c": pnl}) + "\n")
-    lp3 = live_progress(cmdlines=[], logs=[base, layer])
+    layer2 = os.path.join(td, "pinrun-paper-b3.jsonl")
+    with open(layer2, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "start", "pin": 0.995, "early_max_edge": 3.0,
+                             "hedge_jump": 8.0}) + "\n")
+        fh.write(json.dumps({"kind": "settled", "pnl_c": 900.0}) + "\n")
+    lp3 = live_progress(cmdlines=[], logs=[base, layer, layer2])
+    ck(lp3["--hedge-jump"].get("log") == "pinrun-paper-b3.jsonl",
+       "a THIRD arm layered on the same flag finds its own log")
+    ck(lp3["--early-max-edge"].get("log") == "pinrun-paper-b1.jsonl",
+       "...and the base arm still does not claim it -- the trap has now been "
+       "sprung twice, so every layered arm must be excluded by name")
     ck(lp3["--early-max-edge"].get("log") == "pinrun-paper-b1.jsonl",
        "the base arm keeps its OWN log when a later arm inherits its flag -- "
        "selecting on the shared flag alone showed the older arm the newer "

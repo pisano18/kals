@@ -438,14 +438,28 @@ def hedge_attrib(records, outcomes):
         elif k == "hedge_no_ask":
             noask.add(tk)
     out = {"needed": 0, "wasted": 0, "unresolved": 0, "uninsured": 0,
-           "paid_out": 0.0, "thrown_away": 0.0, "no_ask": 0, "rows": []}
+           "paid_out": 0.0, "thrown_away": 0.0, "no_ask": 0, "rows": [],
+           # A52: the same tallies split by WHICH reason fired the alarm.
+           # "belief" is the shipped trigger; "jump" is the post-entry jump
+           # trigger. An alarm with no `trigger` field predates A52 and is
+           # counted under "belief", which is what fired it.
+           "by_trigger": {}}
     for tk, a in sorted(alarms.items()):
         want = a.get("want")
         res = outcomes.get(tk)
         n, cost = bought.get(tk, [0.0, 0.0])
         px = (cost / n) if n else None
+        trig = a.get("trigger") or "belief"
+        bt = out["by_trigger"].setdefault(trig, {"alarms": 0, "needed": 0,
+                                                 "wasted": 0, "paid_out": 0.0,
+                                                 "thrown_away": 0.0,
+                                                 "prices": []})
+        bt["alarms"] += 1
+        if px:
+            bt["prices"].append(px)
         row = {"ticker": tk, "want": want, "result": res, "n": n,
-               "price": px, "no_ask": tk in noask}
+               "price": px, "no_ask": tk in noask, "trigger": trig,
+               "jump_sd": a.get("jump_sd")}
         if res not in ("yes", "no") or want not in ("yes", "no"):
             row["verdict"] = "not settled on file"
             out["unresolved"] += 1
@@ -454,14 +468,18 @@ def hedge_attrib(records, outcomes):
                               else "our side won -- nothing paid, correct")
             row["money"] = -cost
             out["thrown_away"] += cost
+            bt["thrown_away"] += cost
             if n:
                 out["wasted"] += 1
+                bt["wasted"] += 1
         else:
             row["verdict"] = ("our side lost -- insurance paid" if n
                               else "our side lost -- UNINSURED")
             row["money"] = n * 1.0 - cost
             out["paid_out"] += n - cost
             out["needed"] += 1
+            bt["needed"] += 1
+            bt["paid_out"] += n - cost
             if not n:
                 out["uninsured"] += 1
         if tk in noask:
@@ -509,6 +527,20 @@ def hedge_report(h, say=print):
     w("    ------------------------------------")
     w("    insurance, all in         %+9.2f" % h["net"])
     w("")
+    if len(h.get("by_trigger") or {}) > 1:
+        w("  BY WHICH REASON FIRED (A52 -- the jump trigger against the belief trigger,")
+        w("  on the SAME arm; this is the comparison PREREG_a52_jump_hedge.md scores)")
+        w("    %-8s %7s %7s %7s %10s %10s %12s" % ("trigger", "alarms", "needed",
+                                                     "wasted", "paid out", "thrown", "median paid"))
+        for trig, bt in sorted(h["by_trigger"].items()):
+            ps = sorted(bt["prices"])
+            med = ("%.3f" % ps[len(ps) // 2]) if ps else "  -  "
+            w("    %-8s %7d %7d %7d %+10.2f %+10.2f %12s" % (
+                trig, bt["alarms"], bt["needed"], bt["wasted"],
+                bt["paid_out"], -bt["thrown_away"], med))
+        w("    The thesis is that 'jump' pays a LOWER median price and is needed at")
+        w("    least as often. Cheaper and mostly right, or it is buying noise.")
+        w("")
     w("  A POSITIVE total does not make the rule right and a negative one does")
     w("  not make it wrong: this counts only markets where the alarm fired, and")
     w("  the alarm is the thing being judged. What matters is the HIT RATE --")
@@ -843,6 +875,31 @@ def selftest():
     ck(abs(_h["thrown_away"] - 2.0) < 1e-9,
        "a hedge bought at 20c on a bet that WON is worth nothing: $2.00 gone")
     ck(abs(_h["net"] - 3.0) < 1e-9, "and the two net to $3.00")
+    # A52: alarms split by which trigger fired, so the jump arm's bars read
+    # straight off the report.
+    _hrec2 = _hrec + [
+        {"kind": "hedge_alarm", "ticker": "H-JUMP", "want": "yes",
+         "trigger": "jump", "jump_sd": 9.1},
+        {"kind": "hedge", "ticker": "H-JUMP", "n": 10.0, "price": 0.15},
+    ]
+    _h2 = hedge_attrib(_hrec2, dict(_hout, **{"H-JUMP": "no"}))
+    ck(set(_h2["by_trigger"]) == {"belief", "jump"},
+       "alarms are split by trigger, and an alarm with no trigger field -- one "
+       "written before A52 -- is counted as 'belief', which is what fired it")
+    ck(_h2["by_trigger"]["jump"]["needed"] == 1
+       and abs(_h2["by_trigger"]["jump"]["paid_out"] - 8.5) < 1e-9,
+       "a jump-fired hedge bought at 15c on a bet that LOST pays 85c a "
+       "contract -- the whole thesis is that it fires while the other side is "
+       "still cheap")
+    ck(_h2["by_trigger"]["belief"]["needed"] == 2
+       and _h2["needed"] == 3,
+       "...and the totals still add up across triggers")
+    _ht2 = hedge_report(_h2, say=None)
+    ck("BY WHICH REASON FIRED" in _ht2 and "median paid" in _ht2,
+       "the report shows the per-trigger block when two triggers exist")
+    ck("BY WHICH REASON FIRED" not in hedge_report(_h, say=None),
+       "NULL: with one trigger only there is nothing to compare and the block "
+       "is omitted rather than printing a one-row table")
     ck(hedge_attrib([], {})["alarms"] == 0
        and "No insurance alarm on record" in hedge_report(
            hedge_attrib([], {}), say=None),
