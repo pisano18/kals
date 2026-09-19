@@ -57,6 +57,22 @@ Full flag list (also in the launcher, each with its reasoning):
 | `--early-max-edge 10.0` | was 3.0, which was a **96.5c price floor in disguise** | 09-19 01:08Z |
 | `--late-extra 1` | one extra bet of budget inside the last 10 s; **SHARES** the `--extra-coin` allowance | 09-19 01:08Z |
 
+### A62 -- NOT YET RUNNING, needs a restart
+
+**At or under 35% belief NO filter may block a hedge** -- not the
+market-agreement test, not the normal-bet test, not the attempt cap, not the
+try cap. And `HEDGE_MAX_TRIES` went 5 -> 30. This is code, not a flag
+(`--hedge-panic` exists to disable it, default 0.35).
+
+**Why it exists: `--hedge-price 0.60`, deployed 09-18 22:46Z, blocked a
+hedge and cost $57.98 four hours later.** KXBNB15M-26SEP190145-45: belief
+fell to 0.227 one second after the fill, the other side was 21c, and the
+rule held us back because OUR side still quoted 79c. Hedging at 21c would
+have made the close **+$3.06 instead of -$57.98**. See
+`results/VERSIONS.md` v-nohedgeblock for the second-by-second account.
+
+**THE LIVE BOT IS STILL RUNNING WITHOUT THIS.** It needs a restart.
+
 ## Money, by Eastern day, ACCOUNT not one bot
 
 `research/pinfloor.py` prints this. **The ACCOUNT column is the one that
@@ -87,6 +103,17 @@ Every one of these has its full reasoning in `results/VERSIONS.md`.
 | **`--hedge-price 0.60`** | after 20 `hedge_wait_price` records, score them: if the blocked hedges would have helped more than the fired ones cost, loosen to 0.70 | `hedge_wait_price` records |
 | **`--extra-coin` / `--late-extra`** | nothing yet -- both went live on a measurement, neither has a paper arm of its own | `close_budget` refusals (now scorable: they carry want/price/fair/tau/size) |
 | **oil** | STOOD DOWN. `results/cmdlive.stop` present, `boot_all.ps1` has it behind `if ($false ...)`. Needs a strategy from the tape and a paper arm before any restart | `cmdlive-*.jsonl` |
+
+### The next thing to look at -- the ENTRY that caused that loss
+
+The dump guard refuses an ask more than 15c under fair. On the BNB close it
+refused 82c, then the next signal came at **85c -- 14.9c under fair,
+squeaking below the bar by a tenth of a cent** -- and the IOC swept down and
+filled at **74.98c, 25c under fair**. **The guard checks the price we SEE;
+it cannot check the price we GET.** Someone sold us 76 contracts at 75c
+because they knew where BNB was going. Nothing currently reacts to a fill
+landing far below the ask we saw, and that is a picked-off signal sitting
+unused in every `order` record (`ask_seen` vs `exec_price`).
 
 ### Also open
 

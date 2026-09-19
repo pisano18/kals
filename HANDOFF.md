@@ -1,3 +1,97 @@
+# 2026-09-19 ~02:2xZ -- THE PRICE IS EVERYTHING: six live changes, a $58 lesson, and 33 arms
+
+**READ `CURRENT_STATE.md` FIRST** -- it was rewritten from scratch tonight
+and holds the live flags, the bars being watched, and the traps. This
+section is the narrative of how we got there.
+
+## The question that drove the whole session
+
+*"Figure out why we make so much less money now."* The answer turned out to
+be two things, and neither was what either of us expected.
+
+1. **Oil.** The crypto bot never got worse -- $114.77 on the 13th, $115.68
+   on the 17th. Oil lost $51.94 and $27.28 on the 17th and 18th on the same
+   account. That is the whole of "we're only up $22". Oil is stood down.
+2. **The price we pay.** Money per day is `contracts x profit per contract`,
+   and profit per contract is set by the price. It went 92.9c -> 95.5c and
+   halved the return on every dollar risked.
+
+**And a bigger bet does not fix it.** Size went 47 -> 98 contracts over six
+days; daily money did not move (correlation **-0.05**). The paper arms,
+which never autosize, saw the IDENTICAL price rise -- so the rise is the
+market, not us.
+
+## What went live tonight, in order
+
+| version | change |
+|---|---|
+| v-bands | hedge only when the market agrees (`--hedge-price 0.60`); 1.5x at 90-94c |
+| v-late10 | 1.5x inside the last 10 s, with a 99.75% confidence bar and a 2-sigma jump bar |
+| v-thirdcoin | a third COIN may spend beyond the close budget; brake 4.08 -> 3.00 |
+| v-cheap | **`--early-max-edge` 3.0 -> 10.0** and the late top-up can be boosted |
+| v-latebudget | the coin allowance actually fires; `--late-extra` shares it |
+| v-nohedgeblock | **NO filter may block a hedge under 35% belief**; tries 5 -> 30 |
+
+### The two findings that mattered most
+
+**The 3c early-edge cap was a 96.5c PRICE FLOOR in disguise.** With the
+model at ~100% sure, edge is `(1 - price) - fee`, so a cap on edge is a
+floor on price. Every fill was 97-98c by construction. It had refused 18
+live trades, cheapest 90.0c with 8.88c of edge; **11 of 11 scorable ones
+WON**, worth about $3.64/day.
+
+**The third-coin allowance was dead in 68% of closes.** It demanded two
+COINS, but a close spends its budget in CONTRACTS and 282 of 417 closes
+hold exactly one coin. 97 of the 126 markets refused inside the last ten
+seconds were blocked by that test alone.
+
+## THE $58 LESSON -- read this before touching the hedge
+
+`--hedge-price 0.60` shipped at 22:46Z and cost $57.98 at 01:45. Belief fell
+to 0.227 one second after a fill; the other side was 21c; the rule held us
+back because OUR side still quoted 79c. Hedging at 21c would have netted
++$3.06 instead of -$57.98.
+
+**The operator has said many times that hedging is critical and that a
+hedge which turns out wrong is not a trap** -- once confidence rebuilds on
+either side you simply buy more of that side. A62 now bypasses every
+discretionary filter under 35% belief. **Do not put a filter in front of the
+hedge again.**
+
+## The entry that caused it -- NOT FIXED, next job
+
+The dump guard refused 82c as a crazy deal (>15c under fair); the next
+signal came at 85c, 14.9c under, squeaking below the bar by a tenth of a
+cent; the IOC then swept down and filled at **74.98c, 25c under fair**. The
+guard checks the price we SEE, not the price we GET. `ask_seen` vs
+`exec_price` is a picked-off signal sitting unused in every order record.
+
+## Tools written tonight
+
+- `research/pinfloor.py` -- money by ET day, **by every real-money bot**.
+  Its self-test plants 09-18 and fails unless the account total is $57.39.
+- `research/pinlook.py` + `pinlookweb.py` -- every opportunity second by
+  second. `flip_cost()` is the one measure that owes nothing to the bot.
+  Browser: https://claude.ai/artifact/E8CrwW6RDHUgfxLVsgB7EM
+- `research/pinvin_*.py` -- five historical bots (09-12, 09-13) running as
+  arms. See `research/pinvin_README.md`.
+- `start_bands.ps1`, `start_early60.ps1`, `start_sigma.ps1`.
+
+## Lab: 33 arms, 54 entries
+
+The most valuable open question is the **sigma arms** (0.8/1.25/1.5/2.0):
+everything the bot believes rests on one estimated number, and if it is too
+small every confidence we print is too high.
+
+## Two corrections I had to make to myself, both caught by the operator
+
+- **"Today made $79.44"** -- that was the crypto sub-ledger, mid-day. The
+  account made **$57.39**. `pinfloor` now cannot print one bot as the day.
+- **"rebuy_band blocked $64.69 of good trades"** -- I used the BOOK's
+  offered size as the contracts we would buy. Correctly scored it is
+  **$13.81 over eleven days**, and four of its five refusals were at the
+  same price or worse than we had already paid. It is doing its job.
+
 # 2026-09-18 ~21:5xZ -- A53 PRICE BANDS: what went live, what is in paper, and what only the operator can do
 
 Read `results/VERSIONS.md` v-bands (SHA c015709) first. Operator: *"Okay
@@ -16,7 +110,8 @@ yea you figure out a way to buy more beneath 94."*
 **The auto-mode classifier refuses to run `restart_bot.ps1` from a session
 and refuses heredoc edits of it.** Edit it with the Edit tool; the operator
 restarts from the desktop app or with `! powershell -ExecutionPolicy Bypass
--File C:\kals-repoestart_bot.ps1`. `versioncheck.py` is clean.
+-File C:\kals-repo
+estart_bot.ps1`. `versioncheck.py` is clean.
 
 ## The startup trap, sprung and caught
 
