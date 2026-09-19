@@ -3579,8 +3579,28 @@ def _selftest_body():
         ck(_lp53.index("_late48(take_n)   # paper") < _lp53.index(_c53p)
            < _lp53.index("take_n = _stage46(take_n)"),
            "...and the same order on the paper path")
-        ck("staged_take(tau, take_n, float(SIZE) * band_mult(price), _held46)" in _lp53,
-           "the A46 re-cap reads the band multiple, or it undoes the boost")
+        ck("_mult46 = max(band" + "_mult(price)," in _lp53
+           and "LATE_MULT if tau <= LATE_TAU else 1.0)" in _lp53,
+           "the A46 re-cap reads the band multiple AND the late multiple, or "
+           "it undoes the boost -- a top-up entered outside the late window "
+           "could never be boosted inside it, which is exactly the trade the "
+           "operator asked about")
+        _svA60 = (_g53["EARLY_TAU_MAX"], _g53["TAU_MAX"], _g53["LATE_TAU"],
+                  _g53["LATE_MULT"], _g53["EARLY_FRAC"])
+        try:
+            (_g53["EARLY_TAU_MAX"], _g53["TAU_MAX"], _g53["LATE_TAU"],
+             _g53["LATE_MULT"], _g53["EARLY_FRAC"]) = 45, 30, 10, 1.5, 1.0
+            # held 60 of an 80 bet from an early leg; now at 8 s
+            _topup_old = staged_take(8, 200.0, 80.0, 60.0)
+            _topup_new = staged_take(8, 200.0, 80.0 * 1.5, 60.0)
+        finally:
+            (_g53["EARLY_TAU_MAX"], _g53["TAU_MAX"], _g53["LATE_TAU"],
+             _g53["LATE_MULT"], _g53["EARLY_FRAC"]) = _svA60
+        ck(_topup_old == (20.0, "topup") and _topup_new == (60.0, "topup"),
+           "holding 60 of an 80-contract bet, a top-up at 8 s could add only "
+           "20 more; with the late multiple counted it may add 60. That gap "
+           "is why no market has EVER been bought outside 10 s and again "
+           "inside it in 547 fills")
         ck('_gate("price_band"' in _lp53
            and _lp53.index('_gate("price_band"') < _lp53.index('rec("signal", live=live, **sig)'),
            "a skipped band is refused under its own gate name BEFORE the signal "
@@ -7916,9 +7936,27 @@ def trade_loop(a, rec, book, idx, series_index):
                 A53: a band multiple scales the WHOLE position for this
                 market, so the early cap is EARLY_FRAC x SIZE x mult and a
                 top-up completes to SIZE x mult -- otherwise the re-cap here
-                would silently undo the boost on every early leg."""
+                would silently undo the boost on every early leg.
+
+                A60 (2026-09-19): AND THE LATE BOOST COUNTS THE SAME WAY.
+                The operator: "Even the bnb at 16 seconds it should've
+                boosted once time got lower." It could not. A48 widens the
+                order inside LATE_TAU, and then this line put it straight
+                back: a top-up was capped at SIZE - early_held whatever the
+                boost had asked for, so a market entered outside the window
+                could never be boosted inside it. That is the exact trade he
+                described, and the cap here was the reason.
+
+                The boost's own conditions still decide whether the extra
+                contracts are bought at all -- `_late48` returns `take_n`
+                untouched when the confidence or jump bar fails, and a
+                larger cap cannot raise a number that was never widened."""
                 if EARLY_TAU_MAX > TAU_MAX and _leg46 != "full":
-                    return min(take_n, staged_take(tau, take_n, float(SIZE) * band_mult(price), _held46)[0])
+                    _mult46 = max(band_mult(price),
+                                  LATE_MULT if tau <= LATE_TAU else 1.0)
+                    return min(take_n, staged_take(tau, take_n,
+                                                   float(SIZE) * _mult46,
+                                                   _held46)[0])
                 return take_n
 
             if not live:

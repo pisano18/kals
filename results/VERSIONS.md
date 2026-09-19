@@ -1,3 +1,76 @@
+# v-cheap -- 2026-09-19 ~01:0xZ -- LIVE: the 96.5c price floor is gone, and a top-up can finally be boosted
+
+Two changes, one cause. The operator: *"WOAH WHAT WE CANT BUY CHEAPER THAN
+96.5??? ... boost needs to apply to all trades ... please get rid of
+whatever is blocking us from cheap trades."*
+
+## 1. `--early-max-edge` 3.0 -> 10.0 : the cap was a price floor in disguise
+
+Our model is usually ~100% sure, so edge is `(1 - price) - fee`. A cap on
+EDGE is therefore a floor on PRICE, and nobody intended it:
+
+| price | edge | 3c cap | 10c cap |
+|---|---|---|---|
+| 90.0c | 9.37c | refused | allowed |
+| 94.0c | 5.60c | refused | allowed |
+| 96.0c | 3.73c | refused | allowed |
+| 96.5c | 3.26c | refused | allowed |
+| 97.0c | 2.79c | allowed | allowed |
+
+**That is why every fill was 97-98c.** The 90c floor we deployed on 09-18
+as the adverse-selection guard never got a chance to bind. At 10.0 the
+floor binds instead, so the 31-45 s leg may now buy 90-98c.
+
+It refused 18 live trades, the cheapest **90.0c with 8.88c of edge**.
+
+**What we give up.** A50 was built on the TAPE -- 6c+ edges at 31-45 s lost
+3 of 11 -- and rule 5 says the tape cannot price our losses. The one live
+loss of that shape was 93c, 6.43c edge, -$18.69, in the uncapped arm. Both
+uncapped arms lead live (+12% on 27 markets, +41% on 28); neither is old
+enough to be a result.
+
+**BAR: revert to 3.0 at TWO losing closes on early fills under 96c in the
+first 40 such fills.** The 90c floor does not move tonight.
+
+## 2. A60: the top-up re-cap now counts the late boost
+
+`_stage46` capped a top-up at `SIZE - early_held`, whatever A48's boost had
+asked for. So a market entered outside the last 10 seconds could NEVER be
+boosted inside it -- which is why, in 547 filled markets, **not one was
+bought outside 10 s and again inside it**.
+
+Holding 60 of an 80-contract bet, a top-up at 8 s could add 20 more; it may
+now add 60. The boost's own conditions still decide whether the extra
+contracts are bought: `--late-pin 0.9975` and `--late-jump 2.0` are
+unchanged, and a larger cap cannot raise a number the boost never widened.
+
+## What this does NOT fix, and the arm that tests it
+
+`close_budget` still refused 126 markets inside the last 10 seconds -- 97
+we did not hold and 29 we did. `--late-extra` (A59) adds a bet of budget
+there and is PAPER ONLY tonight: `arm-lateextra` and `arm-nocap-late`.
+
+## Why the last ten seconds is worth this trouble
+
+Our own live fills, every one:
+
+| seconds left | fills | contracts | median price | per contract | losing |
+|---|---|---|---|---|---|
+| 0-5 | 23 | 1,028 | 94.3c | 5.354c | 0 |
+| 6-10 | 45 | 2,158 | 94.8c | 5.461c | 0 |
+| 16-30 | 344 | 13,023 | 97.2c | 2.103c | 11 |
+| 31-45 | 81 | 3,933 | 97.8c | 2.197c | 1 |
+
+## Revert
+
+`restart_bot.ps1`, then `.estart_bot.ps1`:
+
+- **the price floor only:** set `"--early-max-edge", "3.0"`.
+- **the top-up boost only:** it is code, not a flag -- set `--late-mult 1.0`
+  to switch the whole late boost off, or revert commit.
+
+---
+
 # v-thirdcoin -- 2026-09-19 ~00:2xZ -- LIVE: a third COIN may spend beyond the close budget, and the brake moves 4.08 -> 3.00
 
 Operator: *"if we've never lost multiple coins at once, allow extra total
@@ -60,7 +133,8 @@ a $235 worst close.
 
 ## Revert
 
-`restart_bot.ps1`, then `.estart_bot.ps1`:
+`restart_bot.ps1`, then `.
+estart_bot.ps1`:
 
 - **third coin only:** delete `"--extra-coin", "1",` and set
   `"--bank-brake", "4.08"`. Both, or the bet size stays cut for nothing.

@@ -129,7 +129,28 @@ $botArgs = @(
     # already recorded and the market is simply wrong. Refusals log as
     # `early_wide`. INSIDE 30 s NOTHING CHANGES -- a wide edge there is the
     # single most profitable thing the bot does.
-    "--early-max-edge", "3.0",
+    # 3.0 -> 10.0, 2026-09-19. THE CAP WAS A PRICE FLOOR IN DISGUISE AND
+    # NOBODY INTENDED IT. Our model is usually ~100% sure, so edge is
+    # (1 - price) - fee; a 3c cap therefore forbade ANY early buy under
+    # about 96.5c, and the 90c floor below never got a chance to bind. That
+    # is why every fill was 97-98c. The operator, shown the arithmetic:
+    # "WOAH WHAT WE CANT BUY CHEAPER THAN 96.5??? ... please get rid of
+    # whatever is blocking us from cheap trades."
+    #
+    # At 10.0 the 90c FLOOR is what binds (90c is worth 9.37c of edge), so
+    # the early leg may now buy 90-98c instead of 96.5-98c. The gate stays
+    # in place, still logs `early_wide`, and can be tightened again without
+    # a code change.
+    #
+    # WHAT WE GIVE UP. A50 was built on the tape -- 6c+ edges at 31-45 s
+    # lost 3 of 11 -- and rule 5 says the tape cannot price OUR losses. The
+    # one live loss of that shape was 93c with 6.43c of edge, -$18.69, in
+    # the uncapped paper arm. Both uncapped arms are ahead of live (+12% on
+    # 27 markets, +41% on 28), but neither is old enough to be a result.
+    # BAR: revert to 3.0 at TWO losing closes on early fills under 96c in
+    # the first 40 such fills. The 90c floor is the adverse-selection guard
+    # and it does not move tonight.
+    "--early-max-edge", "10.0",
     # THE RISK SETTING, 2026-09-18, operator: "Sure divide by 8." One bet goes
     # from bank/5.88 to bank/8 -- at a $613 bank that is 104 contracts down to
     # 76, about $75 a bet. The worst a single close can cost falls from 33% of
