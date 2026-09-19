@@ -16,3 +16,75 @@
 {"note": "both are silent-failure modes, but pairing them yields only an ops health monitor, not a measurement; the targeted version that IS worth running is the F-I10 x F-M08 lead, and proposing the general 376-hour census alongside it would cost a day for the same answer", "pair": ["F-I06", "F-I08"], "t": "2026-09-13T08:50:51Z", "verdict": "nothing"}
 {"note": "F-O07's 'the other side did not change' (88.6 -> 86.8%) was never clustered by close and never had an MDE stated -- if the design effect applies it may be no-power, not no-effect, and that claim is load-bearing for 'what changed is the MODEL'", "pair": ["F-O01", "F-R02"], "t": "2026-09-13T08:50:56Z", "verdict": "lead"}
 {"note": "the low-volatility worst-arm finding rests on 8 closes; a 300s collector gap leaves partial index coverage that both depresses measured sigma and corrupts locked_sum, so check index-print completeness on those 8 closes before spending a day on the clustered test", "pair": ["F-I10", "F-M08"], "t": "2026-09-13T08:50:56Z", "verdict": "lead"}
+{"pair": ["F-M03", "F-O05"], "t": "20260914T0848Z", "verdict": "drawn"}
+{"pair": ["F-O05", "F-X04"], "t": "20260914T0848Z", "verdict": "drawn"}
+{"pair": ["F-B07", "F-X07"], "t": "20260914T0848Z", "verdict": "drawn"}
+{"pair": ["F-P11", "F-X05"], "t": "20260914T0848Z", "verdict": "drawn"}
+{"pair": ["F-C09", "F-M03"], "t": "20260914T0848Z", "verdict": "drawn"}
+{"pair": ["F-R01", "F-R05"], "t": "20260914T0848Z", "verdict": "drawn"}
+{"note": "already measured both ways: the 250ms forward gap IS 3.18pp and the clean backward version has MDE 4.05pp with no power (F-R06). Nothing new to compute.", "pair": ["F-M03", "F-O05"], "t": "2026-09-14T08:49:51Z", "verdict": "nothing"}
+{"note": "F-X04 is an API encoding convention, not a population. Any link runs through 'does the contest code count both sides symmetrically', which is a code audit, not a measurement, and I cannot name an artefact for it.", "pair": ["F-O05", "F-X04"], "t": "2026-09-14T08:49:51Z", "verdict": "nothing"}
+{"note": "latency is already shown irrelevant to fills (F-P04, 96ms both). The only untried version -- latency of orders that LOST -- rests on ~10 losing closes against a 96/116ms distribution: no power, and no mechanism, since F-X03 means we fill at the resting price regardless.", "pair": ["F-B07", "F-X07"], "t": "2026-09-14T08:49:51Z", "verdict": "nothing"}
+{"note": "you cannot calibrate a model on series that have never run a market. Zero rows. Contradiction 3 is closed.", "pair": ["F-C09", "F-M03"], "t": "2026-09-14T08:49:51Z", "verdict": "nothing"}
+{"note": "both rules are already applied at their conservative limit -- we cluster by close time, which assumes 1 observation per close, and F-B03 bounds the worst close by construction. Measuring our own intra-close loss correlation rests on 10 losing closes: cannot separate rho 0.6 from 0.9.", "pair": ["F-R01", "F-R05"], "t": "2026-09-14T08:49:51Z", "verdict": "nothing"}
+{"note": "coin identity failed as a risk sorter; sweep intensity in the 60s BEFORE the signal is a per-event sorter we already hold and have never scored.", "pair": ["F-P11", "F-X05"], "t": "2026-09-14T08:49:51Z", "verdict": "lead"}
+{"pair": ["F-I03", "F-X02"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-I10", "F-M03"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-B01", "F-R02"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-P10", "F-X05"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-M02", "F-R03"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"pair": ["F-P04", "F-P07"], "t": "20260915T0848Z", "verdict": "drawn"}
+{"note": "", "pair": ["F-I03", "F-X02"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-B01", "F-R02"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-M02", "F-R03"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-P04", "F-P07"], "t": "2026-09-15T08:51:03Z", "verdict": "nothing"}
+{"note": "collector gaps are hour-sized, not 5-min (F-I05); count index coverage per close and check the unexplained 1.87->4.61pp deterioration is not a tape artefact", "pair": ["F-I10", "F-M03"], "t": "2026-09-15T08:51:10Z", "verdict": "lead"}
+{"note": "a level-clearing sweep fills every resting order regardless of queue position, so the swept-volume fraction is a queue-free LOWER BOUND on maker fill rate -- no simulator needed", "pair": ["F-P10", "F-X05"], "t": "2026-09-15T08:51:10Z", "verdict": "lead"}
+{"pair": ["F-I03", "F-O05"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-C10", "F-M01"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-P01", "F-R04"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-I09", "F-R02"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-P03", "F-X03"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"pair": ["F-O04", "F-O06"], "t": "20260916T0848Z", "verdict": "drawn"}
+{"note": "", "pair": ["F-I03", "F-O05"], "t": "2026-09-16T08:50:51Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-C10", "F-M01"], "t": "2026-09-16T08:50:51Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-P03", "F-X03"], "t": "2026-09-16T08:50:51Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-O04", "F-O06"], "t": "2026-09-16T08:50:52Z", "verdict": "nothing"}
+{"note": "break-even 8.55% is a point estimate off 10 losing closes; put an interval on it before comparing to our loss rate", "pair": ["F-P01", "F-R04"], "t": "2026-09-16T08:50:56Z", "verdict": "lead"}
+{"note": "the refused dump-guard rows are a cross-coin jump marker; at rho 0.65 a refusal on one coin is news about the coins we do trade", "pair": ["F-I09", "F-R02"], "t": "2026-09-16T08:50:56Z", "verdict": "lead"}
+{"pair": ["F-B06", "F-R03"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-I06", "F-X02"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-I04", "F-M02"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-C10", "F-P08"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-M08", "F-O07"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"pair": ["F-M06", "F-M08"], "t": "20260917T0847Z", "verdict": "drawn"}
+{"note": "chain strike(N+1)==settle(N) suggests bad closes cluster, but pinflood already tested it: prev_z 0.86x [0.55,1.36], prev_worst_any 0.93x, both flat, and F-P08 live agrees. Re-walking measured ground.", "pair": ["F-B06", "F-R03"], "t": "2026-09-17T08:51:10Z", "verdict": "nothing"}
+{"note": "only link is 'both could be silently wrong' -- an analogy, not a mechanism. A fee reconciliation against actual billings is hygiene, not a measurement connecting these two.", "pair": ["F-I06", "F-X02"], "t": "2026-09-17T08:51:10Z", "verdict": "nothing"}
+{"note": "inverting trade prices to an implied sd to test its tau-scaling is ill-conditioned exactly where we trade (F-C07: zero sigma sensitivity at 50c), and edge-by-tau is measurable directly per candidate without the inversion. Roundabout route to an answer already in reach.", "pair": ["F-I04", "F-M02"], "t": "2026-09-17T08:51:17Z", "verdict": "nothing"}
+{"note": "dead series and post-loss behaviour share no mechanism. Nothing to compute.", "pair": ["F-C10", "F-P08"], "t": "2026-09-17T08:51:17Z", "verdict": "nothing"}
+{"note": "volatility mix WITHIN coin is the one explanation of the 1.87->4.61 doubling not yet ruled out -- coin mix and drift are; decompose candidates by rv_short fifth, early edges applied late", "pair": ["F-M08", "F-O07"], "t": "2026-09-17T08:51:17Z", "verdict": "lead"}
+{"note": "scaling sd by k keeps the highest-z rows and z is high when sd is small, so k may have failed by COMPOSITION into the bad volatility fifth, not because the error is shape -- one cross-tab separates them", "pair": ["F-M06", "F-M08"], "t": "2026-09-17T08:51:17Z", "verdict": "lead"}
+{"pair": ["F-M03", "F-P05"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-I01", "F-O06"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-C02", "F-R01"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-P06", "F-X05"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-B03", "F-X02"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"pair": ["F-O02", "F-O07"], "t": "20260918T0848Z", "verdict": "drawn"}
+{"note": "Edge size has a floor in the gate and no ceiling; bucket discount_c against model-wrong on the cached candidate rows, holding price and tau fixed.", "pair": ["F-M03", "F-P05"], "t": "2026-09-18T08:50:34Z", "verdict": "lead"}
+{"note": "Test whether quote age survives conditioning on time-since-index-print: a young quote may just be everyone repricing off the 1/sec tick we also see.", "pair": ["F-I01", "F-O06"], "t": "2026-09-18T08:50:34Z", "verdict": "lead"}
+{"note": "Cross-coin correlation from the shared 60s averaging window is just rho restated; already measured (0.62-0.69, design effect 31-46x) and already bounded by MAX_PER_CLOSE. No new number changes a decision.", "pair": ["F-C02", "F-R01"], "t": "2026-09-18T08:50:41Z", "verdict": "nothing"}
+{"note": "Sweep leg counts are a worse instrument for hedge-side depth than the orderbook we already record directly; hedge decay was measured at five sizes and live hedge events are n=3.", "pair": ["F-P06", "F-X05"], "t": "2026-09-18T08:50:41Z", "verdict": "nothing"}
+{"note": "Killed by arithmetic: the per-ORDER fee ceiling is 0.0001 dollars, so 362 live orders cap the rounding cost at 3.6 cents total, and fee is 0.3 percent of the worst-close bound.", "pair": ["F-B03", "F-X02"], "t": "2026-09-18T08:50:41Z", "verdict": "nothing"}
+{"note": "Duplicate: CURRENT_STATE already flags the unchanged-counterparty claim as having no stated power, from an earlier collide run. Re-raising it adds a record, not a lead.", "pair": ["F-O02", "F-O07"], "t": "2026-09-18T08:50:41Z", "verdict": "nothing"}
+{"pair": ["F-B01", "F-R04"], "t": "20260919T0848Z", "verdict": "drawn"}
+{"pair": ["F-B03", "F-X04"], "t": "20260919T0848Z", "verdict": "drawn"}
+{"pair": ["F-M07", "F-R01"], "t": "20260919T0848Z", "verdict": "drawn"}
+{"pair": ["F-B02", "F-M04"], "t": "20260919T0848Z", "verdict": "drawn"}
+{"pair": ["F-I07", "F-R04"], "t": "20260919T0848Z", "verdict": "drawn"}
+{"pair": ["F-M02", "F-M07"], "t": "20260919T0848Z", "verdict": "drawn"}
+{"note": "size has no variation independent of calendar time: it only moves when the bank moves (slow, monotone up) or after a loss (endogenous to the outcome), so a size-vs-fill-quality slope is collinear with the tape deterioration and with recent losses; no clean within-period contrast exists", "pair": ["F-B01", "F-R04"], "t": "2026-09-19T08:49:45Z", "verdict": "nothing"}
+{"note": "the natural measurement -- set size from the measured 2.90% rather than the claimed 0.15% -- is forbidden: 2.90% is a TAPE-population rate and rule 5 bars using it for our exposure. The legal version (size from live loss rate + live loss sizes) already exists in pinbank", "pair": ["F-B02", "F-M04"], "t": "2026-09-19T08:49:45Z", "verdict": "nothing"}
+{"note": "newseries.py and F-C10 already enumerate the silently-skipped tickers; counting distinct series in the cached candidate rows is a one-line sanity check, not a measurement, and no new number comes out of it", "pair": ["F-I07", "F-R04"], "t": "2026-09-19T08:49:45Z", "verdict": "nothing"}
+{"note": "killed on power before it costs a day: splitting the 0.697pp offer/no-offer gap by tau band leaves ~140 effective rows per cell after the 31-46x design effect, on a 1-3% base -- MDE roughly 10x the effect. Subsumed by the F-M07 x F-R01 lead, which computes that interval once at the margin", "pair": ["F-M02", "F-M07"], "t": "2026-09-19T08:49:45Z", "verdict": "nothing"}
+{"note": "the worst-close bound is a LOSS bound, but F-X04 makes the hedge a second PURCHASE, not a sale -- so cash committed on one close can reach entry+hedge while the sizer and MAX_RUN_STAKE were both derived from entry alone; measure whether our own stake rail can refuse the hedge at the worst moment", "pair": ["F-B03", "F-X04"], "t": "2026-09-19T08:50:13Z", "verdict": "lead"}
+{"note": "the 26x offer/no-offer selection gap (0.697pp absolute) has never had a close-time-clustered interval or an MDE printed; at a 31-46x design effect the effective failure count is single digits, so a load-bearing settled conclusion may rest on an unstated null", "pair": ["F-M07", "F-R01"], "t": "2026-09-19T08:50:13Z", "verdict": "lead"}
