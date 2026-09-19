@@ -71,7 +71,11 @@ $started = 0
 foreach ($a in $arms) {
   if ($Only -ne "" -and $a.n -ne "arm-b-$Only") { continue }
   if ($SkipControl -and $a.n -eq "arm-b-control") { continue }
-  Start-Process -FilePath $py -ArgumentList ($core + $a.x) -WorkingDirectory "C:\kals-repo" `
+  # --arm-name puts $a.n in the COMMAND LINE. These eight arms share every
+  # flag that matters, so before this they were distinguishable only by the
+  # redirect filename below -- which Windows does not report -- and the
+  # desktop app rightly refused to pause or stop any of them.
+  Start-Process -FilePath $py -ArgumentList ($core + $a.x + @("--arm-name", $a.n)) -WorkingDirectory "C:\kals-repo" `
     -RedirectStandardOutput "$r\$($a.n).out" -RedirectStandardError "$r\$($a.n).err" -WindowStyle Hidden
   "started $($a.n)"
   $started++

@@ -39,7 +39,10 @@ $core = @("-u","C:\kals-repo\research\pinrun.py","--size","20","--minutes","4320
 # markets 1.0 refuses and pays more for them. pinrun already refuses anything
 # under 1.0 on a --live command line, so these can only ever run in paper.
 foreach ($s in @("0.40","0.60","0.80","1.25","1.50","2.00")) {
-  Start-Process -FilePath $py -ArgumentList ($core + @("--sigma-stress", $s)) `
+  # --arm-name puts the arm's identity in its own command line so the desktop
+  # app can prove which process it is before stopping it. A label; read by
+  # nothing, and refused outright on a --live command line.
+  Start-Process -FilePath $py -ArgumentList ($core + @("--sigma-stress", $s, "--arm-name", "arm-sigma$s")) `
     -WorkingDirectory "C:\kals-repo" -WindowStyle Hidden `
     -RedirectStandardOutput "$r\arm-sig$s.out" -RedirectStandardError "$r\arm-sig$s.err"
   "started --sigma-stress $s"

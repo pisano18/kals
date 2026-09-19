@@ -65,7 +65,9 @@ $arms = @(
 )
 
 foreach ($a in $arms) {
-  Start-Process -FilePath $py -ArgumentList ($core + $a.x) -WorkingDirectory "C:\kals-repo" `
+  # --arm-name puts $a.n in the COMMAND LINE, so the desktop app can prove
+  # which of these near-identical arms a process is before stopping it.
+  Start-Process -FilePath $py -ArgumentList ($core + $a.x + @("--arm-name", $a.n)) -WorkingDirectory "C:\kals-repo" `
     -RedirectStandardOutput "$r\$($a.n).out" -RedirectStandardError "$r\$($a.n).err" -WindowStyle Hidden
   "started $($a.n)"
   Start-Sleep -Seconds 4
