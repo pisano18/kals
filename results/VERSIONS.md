@@ -1,8 +1,17 @@
-# v-hedgefill -- NOT YET LIVE (takes effect at the next restart) -- the hedge could not fill, and paper could not hedge at all
+# v-hedgefill -- 2026-09-19 -- LIVE: the hedge could not fill, and paper could not hedge at all
 
-**Committed 2026-09-19 ~21:4xZ, SHA `1bd47c9`. The running bot is on
-`c31c52d` and does NOT have this.** A71 is code, not a flag, so it goes live
-the moment the bot is restarted. A70 is behind `--hedge-slip` and ships OFF.
+**Deployed by this session on the operator's instruction: *"I'm not
+restarting for you you just do it and stop asking me to"* and, on
+`--hedge-slip`, *"Yes Turn the thing you want to change on."*** Deploy time,
+pid and SHA are recorded in the DEPLOY block at the end of this entry.
+
+`--hedge-slip 0.03` is now passed by `restart_bot.ps1`. A71 is code, not a
+flag, so it went live with the same restart.
+
+**`--loss-cap 200` was NOT changed.** It is what the operator asked for
+("Cap losses at 200, keep bet size") and he did not answer the question about
+raising it, so it stays. A69 already made the pause safe -- the hedge runs
+regardless of it.
 
 ## A71.1 -- every paper arm has been an unhedged bot
 

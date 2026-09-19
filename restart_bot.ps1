@@ -177,6 +177,33 @@ $botArgs = @(
     # and 74c helped: +$8.80. Same threshold as the belief, so the rule is
     # "model AND market both say under 60%".
     "--hedge-price", "0.60",
+    # --hedge-slip 0.03 (A70), v-hedgefill, 2026-09-19, on the operator's
+    # word: "Yes Turn the thing you want to change on."
+    #
+    # THE HEDGE COULD NOT FILL. The entry path has sent a limit ABOVE the
+    # touch and sized from the ladder since A35; the hedge sent the ask it
+    # saw and the touch size -- one stale level, priced to the tick. So the
+    # moment the market moved, which is the moment a hedge is needed, the
+    # order crossed nothing. All 29 live hedge attempts we have ever sent:
+    #
+    #   KXBTC15M-26SEP172115-15  tau 36  asked 99  touch  283.8  FILLED 0
+    #   KXBTC15M-26SEP172115-15  tau 35  asked 99  touch 7419.0  FILLED 0
+    #   KXBNB15M-26SEP190145-45  tau 20  asked 76  touch   96.0  FILLED 0
+    #   KXBNB15M-26SEP190145-45  tau 19  asked 25  touch   25.0  FILLED 1
+    #   KXBNB15M-26SEP191230-30  tau 11  asked 28  touch   28.0  FILLED 1
+    #
+    # Ten of twenty-nine filled nothing or one contract against a book
+    # showing everything we asked for. The 01:45 BNB close is the ONLY escape
+    # failure in this project's history (-$57.76) and this is its mechanism:
+    # A62 removed the FILTERS that blocked it and it still did not fill.
+    #
+    # WHAT IT CANNOT DO. It cannot buy more risk: the ladder's contribution
+    # is capped at the contracts still unhedged, past which a leg is naked
+    # (A63). It cannot shrink a hedge that fills today -- hedge_depth() never
+    # returns less than the touch. It cannot reach $1, where a hedge leg
+    # stops beating holding. And if the ladder read raises, it falls back to
+    # the touch and hedges anyway.
+    "--hedge-slip", "0.03",
     # --skip-band 0.94 0.96 was staged here for about an hour on 2026-09-18
     # and REMOVED BEFORE IT RAN. The "+0.8% on 83 closes" figure was three
     # losses from the first-week bot (09-09, 09-10, 09-12); on the modern
