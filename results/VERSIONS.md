@@ -1,3 +1,100 @@
+# v-hedgefill -- NOT YET LIVE (takes effect at the next restart) -- the hedge could not fill, and paper could not hedge at all
+
+**Committed 2026-09-19 ~21:4xZ, SHA `1bd47c9`. The running bot is on
+`c31c52d` and does NOT have this.** A71 is code, not a flag, so it goes live
+the moment the bot is restarted. A70 is behind `--hedge-slip` and ships OFF.
+
+## A71.1 -- every paper arm has been an unhedged bot
+
+The hedge pass skips any position missing from `hedge_meta`, and `hedge_meta`
+was written at two sites, both live-only. A paper position never had a
+strike, so its belief was never computed, so the alarm never fired.
+
+**Measured: the five paper arms running on 09-19 logged 151 signals between
+them, ZERO `hedge_alarm` and ZERO `hedge` records. Live on the same markets:
+2 alarms, 8 hedges, 2 panics.**
+
+A filled hedge turns a -73c..-96c loss into -26.9c per contract. So every
+arm-vs-live head to head has compared a bot that eats its losses whole
+against one that insures them. **Arm numbers on losing closes are not
+comparable before this SHA.** It also means no hedge change was ever
+testable without real money -- A62, A69 and A70 all went straight to live.
+
+## A71.2 -- an ENTRY rail could permanently disable a hedge
+
+The hedge's per-close cap read `attempts`, which the entry path increments,
+against `MAX_ATTEMPTS_PER_CLOSE` = 24. Twelve coins settle on the same
+quarter hour, so the bot's own buying could spend the budget and then refuse
+-- permanently, via `hedged.add()` -- to insure a position already held.
+The hedge now counts its own sends against `MAX_HEDGE_ATTEMPTS_PER_CLOSE`
+= 120, above anything ordinary hedging can reach (3 positions x 30 tries,
+one per second).
+
+## A71.3 -- three hedge skips were silent
+
+No `hedge_meta`, no sigma, no fair value: all skipped the hedge writing
+nothing. A feed stutter during a collapse looked exactly like the A69 pause
+bug. They now write `hedge_blind`, deduped per (position, reason).
+
+## A71.4 -- bookkeeping above the hedge could kill the process
+
+`report_closes()` and `reconcile()` run before the hedge pass and neither was
+wrapped. A69 moved the hedge above the risk check because a `continue` there
+cost $107.95; an exception above it ends the process holding a position,
+which is the $66.34 loss from the same day. Both are now guarded. A
+persistent reconcile failure still halts -- a frozen ledger makes every brake
+in `risk_abort` inert -- but it halts IN `risk_abort`, below the hedge pass,
+so the last iteration insures what is open first.
+
+## A70 -- `--hedge-slip` (ships at 0.0, OFF)
+
+The entry path has sent a limit above the touch and sized from the ladder
+since A35. The hedge sent the ask it saw and the touch size -- one stale
+level, priced to the tick -- so when the market moved, which is when a hedge
+is needed, the IOC crossed nothing.
+
+**All 29 live hedge attempts, the failures:**
+
+| ticker | tau | asked | touch | filled |
+|---|---|---|---|---|
+| KXBTC15M-26SEP172115-15 | 36 | 99 | 283.8 | **0** |
+| KXBTC15M-26SEP172115-15 | 35 | 99 | 7419.0 | **0** |
+| KXBNB15M-26SEP190145-45 | 20 | 76 | 96.0 | **0** |
+| KXBNB15M-26SEP190145-45 | 19 | 25 | 25.0 | **1** |
+| KXBNB15M-26SEP191230-30 | 11 | 28 | 28.0 | **1** |
+
+Ten of twenty-nine filled nothing or one contract against a book displaying
+everything we asked for. The 01:45 BNB close is the **only escape failure in
+the project's history** (-$57.76): A62 removed the FILTERS that blocked it
+and it still did not fill, because nothing had fixed the EXECUTION.
+
+`hedge_depth()` can only return MORE than the touch, so no hedge that fills
+today stops filling; the ladder's contribution is capped at the contracts
+still unhedged, past which a leg is naked (A63). `hedge_vwap()` makes a paper
+arm pay the ladder average, not the touch.
+
+## Evidence
+
+- **832 self-test checks pass, 66 new.** `shadow.py` and `markers.py` clean.
+  `versioncheck.py` clean.
+- The launcher's exact flag list **plus `--hedge-slip 0.03`** was run through
+  the startup path in paper before commit -- the check that has stopped this
+  bot booting five times.
+- Fill counts are from live fills only (rule 5). No replay was used.
+
+## Revert, copy-pasteable
+
+```powershell
+cd C:\kals-repo
+git revert --no-edit 1bd47c9
+powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
+```
+
+A70 alone is off by default; simply do not pass `--hedge-slip`. A71 has no
+flag -- reverting the commit is the way back.
+
+---
+
 # v-taper -- 2026-09-19 ~13:2xZ -- LIVE: buy LESS as the price gets worse (A67), and a bounded bet on the side that is now winning (A68)
 
 Both came out of `KXBNB15M-26SEP191230-30`, which cost **$61.75**.

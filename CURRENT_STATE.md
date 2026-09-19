@@ -93,7 +93,12 @@ Full flag list (also in the launcher, each with its reasoning):
 | `--early-max-edge 10.0` | was 3.0, which was a **96.5c price floor in disguise** | 09-19 01:08Z |
 | `--late-extra 1` | one extra bet of budget inside the last 10 s; **SHARES** the `--extra-coin` allowance | 09-19 01:08Z |
 
-### A62 -- NOT YET RUNNING, needs a restart
+### A62 -- RUNNING. (This section said "NOT YET RUNNING"; that was stale.)
+
+Verified 2026-09-19 21:0xZ: the live process (pid 1294432) was started at
+16:22 ET from code that already carried A62, A67, A68 and A69. The paragraph
+below describes what it does and is kept for the reasoning.
+
 
 **At or under 35% belief NO filter may block a hedge** -- not the
 market-agreement test, not the normal-bet test, not the attempt cap, not the
@@ -107,7 +112,31 @@ rule held us back because OUR side still quoted 79c. Hedging at 21c would
 have made the close **+$3.06 instead of -$57.98**. See
 `results/VERSIONS.md` v-nohedgeblock for the second-by-second account.
 
-**THE LIVE BOT IS STILL RUNNING WITHOUT THIS.** It needs a restart.
+~~**THE LIVE BOT IS STILL RUNNING WITHOUT THIS.** It needs a restart.~~
+**Superseded: it has been running WITH it since the 16:22 ET restart.**
+
+### WHAT IS NOW WAITING FOR A RESTART -- A70 + A71, SHA `1bd47c9`
+
+Committed 21:4xZ, **not live**. Found by auditing every gate in the trade
+loop against today's rule. Full account in `results/VERSIONS.md`
+(v-hedgefill); the short version:
+
+- **Every paper arm has been an unhedged bot.** `hedge_meta` was written at
+  two live-only sites, so a paper position had no strike, so its belief was
+  never computed and the alarm never fired. Measured: 151 signals across the
+  five paper arms today, **zero** hedge alarms; live on the same markets, 2
+  alarms and 8 hedges. **Arm numbers on losing closes are not comparable
+  before this SHA**, and no hedge change was ever testable without real money.
+- **An entry rail could permanently disable a hedge.** The hedge's per-close
+  cap read the ENTRY path's counter (24). A busy close could spend it and
+  then refuse, permanently, to insure a position already held.
+- **The hedge could not sweep.** It sent the ask it saw and the touch size,
+  while the entry has swept the ladder since A35. Ten of twenty-nine live
+  hedge attempts filled 0 or 1 contract against a book that displayed
+  everything we asked for. This is the mechanism of the only escape failure
+  the project has had (-$57.76). Behind `--hedge-slip`, ships OFF.
+- **Three hedge skips were silent**, and bookkeeping above the hedge pass
+  could kill the process holding a position.
 
 ## Money, by Eastern day, ACCOUNT not one bot
 
@@ -122,8 +151,26 @@ matters** -- it is what the bank moves by, and it includes oil.
 | 09-16 | +$85.10 | - | +$85.10 | 2.92% |
 | 09-17 | +$115.68 | **-$51.94** | +$63.74 | 1.89% |
 | 09-18 | +$91.87 | **-$27.28** | +$64.59 | 1.80% |
+| 09-19 | **-$104.87** | $0.00 | **-$104.87** | **-2.38%** |
 
-Bank: $198.70 on 09-12 -> **$674.20** now.
+**09-18 had ZERO losing crypto closes.** Its -$27.28 was oil, which is stood
+down. So "yesterday's losses" and "today's losses" are not the same kind of
+thing: yesterday the crypto bot did not lose a single close.
+
+**09-19's -$104.87 EXCLUDES the 02:00 ET BTC close (-$66.34).** The bot
+crashed at 01:59:30 ET holding it, so there is no `settled` record and
+`pinfloor` cannot see it. Kalshi's settlements can. True day is about
+**-$171**.
+
+Bank: $198.70 on 09-12 -> **$865.00** at the 20:22Z read.
+
+**A CAUTION ABOUT THE BANK NUMBERS.** They come from `autosize` records,
+which read available cash -- and available cash DIPS by the stake while a
+position is open. The 09-19 series shows a **+$371.67 jump in one step at
+03:13 ET**, far larger than any day's trading. That is almost certainly
+positions settling back into cash rather than money arriving, but it has not
+been confirmed, and until it is, **do not read the bank series as a P&L
+ledger.** Open item.
 
 ---
 
