@@ -3874,11 +3874,15 @@ def _selftest_body():
         _lp59 = _src59[_src59.rindex(chr(10) + "def " + "trade_loop("):]
         _cb59 = _lp59[_lp59.index('_gate("close_budget"'):
                       _lp59.index('_gate("close_budget"') + 420]
-        for _f in ("want=want", "price=round(price, 4)", "tau=tau", "size=float(SIZE)"):
+        for _f in ("tau=tau", "size=float(SIZE)"):
             ck(_f in _cb59,
-               "the close_budget gate records %s -- it refuses more than any "
-               "other gate inside the last ten seconds and could not be "
-               "scored without it" % _f)
+               "the close_budget gate records %s" % _f)
+        for _f in ("want=want", "price=round(price", "fair=round(f"):
+            ck(_f not in _cb59,
+               "and it does NOT record %s: this gate fires BEFORE the book "
+               "is read, so those names hold a STALE value from an earlier "
+               "market or None. Logging them killed the live bot on "
+               "2026-09-19 at 01:59Z with a TypeError on round(None)" % _f)
 
         # ---- A61: the two allowances SHARE one extra bet.
         _sv61 = (_g59["SIZE"], _g59["LATE_EXTRA"], _g59["LATE_TAU"],
@@ -7288,18 +7292,24 @@ def trade_loop(a, rec, book, idx, series_index):
                 _spent = prev.get("contracts", 0.0) if prev else 0.0
                 _bud56 = close_budget_for(prev, tk, tau=tau)
                 if _spent >= _bud56 - 1e-9:
-                    # WITHOUT want AND price THIS GATE CANNOT BE SCORED.
-                    # It is the gate that refuses most inside the last ten
-                    # seconds -- our best window -- and when the operator
-                    # asked what those refusals were worth, the records could
-                    # not say which side we would have taken. `pinattrib`
-                    # values a blocked trade at min(size_now, size) against
-                    # the market's real settlement, and needs both.
+                    # THIS GATE CANNOT RECORD want/price/fair AND MUST NOT
+                    # TRY. It fires here, BEFORE the book is read: `f` is
+                    # assigned further down and `want, price, size` further
+                    # down still. On 2026-09-19 01:59Z an attempt to log them
+                    # read a STALE `price` left as None by an earlier market
+                    # and killed the live bot with
+                    #   TypeError: type NoneType doesn't define __round__
+                    # after an hour of trading, with two positions open.
+                    #
+                    # Making this gate scorable means moving the budget check
+                    # to AFTER the book read -- a change to WHEN we refuse,
+                    # not just to what we log, and not one to make on a
+                    # crashed bot at 2am. Until then `close_budget` refusals
+                    # are counted, not valued.
                     _gate("close_budget", close_s, tk, spent=_spent,
                           budget=_bud56, base=close_budget(),
                           extra_coin=float(EXTRA_COIN), tau=tau,
-                          want=want, price=round(price, 4),
-                          fair=round(f, 5), size=float(SIZE))
+                          size=float(SIZE))
                     continue
             elif prev is not None and prev["n"] >= MAX_PER_CLOSE:
                 _gate("max_per_close", close_s, tk, n=prev["n"])
