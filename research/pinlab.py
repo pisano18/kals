@@ -429,6 +429,141 @@ EXPERIMENTS = [
                  "cheaper trades it also takes will swamp the signal otherwise.",
     },
     {
+        "name": "AMENDMENT 15 -- the belief-collapse hedge, built and NOT yet deployed (09-12 00:11 ET)",
+        "status": RUNNING, "match": "pinvin_0912a.py", "since": "2026-09-18",
+        # code_sha is the hash of that vintage file itself and cannot collide
+        # with any other arm -- the settings alone would match dozens of logs.
+        "select": {"code_sha": "438725fabfde"},
+        "what": "The bot exactly as commit `7b6e7d7` posted it, 09-12 00:11 ET, running as a "
+                "paper arm on today's markets. The oldest version in the window. Hedge trigger 0.90, no bank brake, no auto-size, no jump gate, no both-sides guard, no close contract budget, one bet per market. Nine amendments behind today.",
+        "why": "Operator, 2026-09-18: 'Run any version posted on the 12th "
+               "12am through 13th end of day and run them and put them in "
+               "the lab.' The 13th was our best day ($114.77) and the 12th "
+               "the day before it; every version since has been an "
+               "improvement on paper and the account has not moved with "
+               "them. These five run on their OWN shipped defaults -- no "
+               "flags -- so each is the version as posted, not the version "
+               "as we would configure it now.",
+        "good": "It beats today's bot on the same markets. Then something "
+                "between 09-12 00:11 ET and now is costing us, and the diff is a short "
+                "list: this file against the current one.",
+        "bad": "It trails today's bot. Then the amendments since were right "
+               "and the fall in daily money is the market, which is what "
+               "the fixed-size paper arms already say (they saw the same "
+               "1.5c price rise the live bot did).",
+        "watch": "Money per settled market against the live bot and against "
+                 "the other vintages -- the ladder between them is where any "
+                 "single bad change would show.",
+    },
+    {
+        "name": "AMENDMENT 16 -- SIZE follows the bank automatically (09-12 19:13 ET)",
+        "status": RUNNING, "match": "pinvin_0912b.py", "since": "2026-09-18",
+        # code_sha is the hash of that vintage file itself and cannot collide
+        # with any other arm -- the settings alone would match dozens of logs.
+        "select": {"code_sha": "20b28c8fa0a4"},
+        "what": "The bot exactly as commit `c0f8e33` posted it, 09-12 19:13 ET, running as a "
+                "paper arm on today's markets. The first version that sized itself off the balance. Hedge trigger down to 0.80 after the backtest rebuild; still no bank brake, no jump gate, no close budget.",
+        "why": "Operator, 2026-09-18: 'Run any version posted on the 12th "
+               "12am through 13th end of day and run them and put them in "
+               "the lab.' The 13th was our best day ($114.77) and the 12th "
+               "the day before it; every version since has been an "
+               "improvement on paper and the account has not moved with "
+               "them. These five run on their OWN shipped defaults -- no "
+               "flags -- so each is the version as posted, not the version "
+               "as we would configure it now.",
+        "good": "It beats today's bot on the same markets. Then something "
+                "between 09-12 19:13 ET and now is costing us, and the diff is a short "
+                "list: this file against the current one.",
+        "bad": "It trails today's bot. Then the amendments since were right "
+               "and the fall in daily money is the market, which is what "
+               "the fixed-size paper arms already say (they saw the same "
+               "1.5c price rise the live bot did).",
+        "watch": "Money per settled market against the live bot and against "
+                 "the other vintages -- the ladder between them is where any "
+                 "single bad change would show.",
+    },
+    {
+        "name": "AMENDMENT 17 -- a close is capped on CONTRACTS, coins unlimited (09-12 21:49 ET)",
+        "status": RUNNING, "match": "pinvin_0913a.py", "since": "2026-09-18",
+        # code_sha is the hash of that vintage file itself and cannot collide
+        # with any other arm -- the settings alone would match dozens of logs.
+        "select": {"code_sha": "4b3abeba0cbc"},
+        "what": "The bot exactly as commit `3f393ea` posted it, 09-12 21:49 ET, running as a "
+                "paper arm on today's markets. The close budget arrives: a close may spend MAX_PER_CLOSE x SIZE contracts across any number of coins. This is the shape the bot still has today.",
+        "why": "Operator, 2026-09-18: 'Run any version posted on the 12th "
+               "12am through 13th end of day and run them and put them in "
+               "the lab.' The 13th was our best day ($114.77) and the 12th "
+               "the day before it; every version since has been an "
+               "improvement on paper and the account has not moved with "
+               "them. These five run on their OWN shipped defaults -- no "
+               "flags -- so each is the version as posted, not the version "
+               "as we would configure it now.",
+        "good": "It beats today's bot on the same markets. Then something "
+                "between 09-12 21:49 ET and now is costing us, and the diff is a short "
+                "list: this file against the current one.",
+        "bad": "It trails today's bot. Then the amendments since were right "
+               "and the fall in daily money is the market, which is what "
+               "the fixed-size paper arms already say (they saw the same "
+               "1.5c price rise the live bot did).",
+        "watch": "Money per settled market against the live bot and against "
+                 "the other vintages -- the ladder between them is where any "
+                 "single bad change would show.",
+    },
+    {
+        "name": "v-a21 -- the confidence gate 0.995 -> 0.990 (09-13 09:52 ET)",
+        "status": RUNNING, "match": "pinvin_0913b.py", "since": "2026-09-18",
+        # code_sha is the hash of that vintage file itself and cannot collide
+        # with any other arm -- the settings alone would match dozens of logs.
+        "select": {"code_sha": "1472f4e77e63"},
+        "what": "The bot exactly as commit `a8973c1` posted it, 09-13 09:52 ET, running as a "
+                "paper arm on today's markets. The loosest confidence gate the bot has ever run live, reverted the same day. Also carries the volatility ruler and the down-only ruler (A20/A20b), both since reverted for cutting signals 63%.",
+        "why": "Operator, 2026-09-18: 'Run any version posted on the 12th "
+               "12am through 13th end of day and run them and put them in "
+               "the lab.' The 13th was our best day ($114.77) and the 12th "
+               "the day before it; every version since has been an "
+               "improvement on paper and the account has not moved with "
+               "them. These five run on their OWN shipped defaults -- no "
+               "flags -- so each is the version as posted, not the version "
+               "as we would configure it now.",
+        "good": "It beats today's bot on the same markets. Then something "
+                "between 09-13 09:52 ET and now is costing us, and the diff is a short "
+                "list: this file against the current one.",
+        "bad": "It trails today's bot. Then the amendments since were right "
+               "and the fall in daily money is the market, which is what "
+               "the fixed-size paper arms already say (they saw the same "
+               "1.5c price rise the live bot did).",
+        "watch": "Money per settled market against the live bot and against "
+                 "the other vintages -- the ladder between them is where any "
+                 "single bad change would show.",
+    },
+    {
+        "name": "AMENDMENTS 28 and 29 -- spend the budget we already allow ourselves (09-13 18:33 ET)",
+        "status": RUNNING, "match": "pinvin_0913c.py", "since": "2026-09-18",
+        # code_sha is the hash of that vintage file itself and cannot collide
+        # with any other arm -- the settings alone would match dozens of logs.
+        "select": {"code_sha": "100ca4058a18"},
+        "what": "The bot exactly as commit `6ee8409` posted it, 09-13 18:33 ET, running as a "
+                "paper arm on today's markets. Late on the best day. Two bets per MARKET, the depth floor lowered, best-first scan order, per-gate refusal records. Within hours of the 09-13 23:51 version that pinrun913.py already runs.",
+        "why": "Operator, 2026-09-18: 'Run any version posted on the 12th "
+               "12am through 13th end of day and run them and put them in "
+               "the lab.' The 13th was our best day ($114.77) and the 12th "
+               "the day before it; every version since has been an "
+               "improvement on paper and the account has not moved with "
+               "them. These five run on their OWN shipped defaults -- no "
+               "flags -- so each is the version as posted, not the version "
+               "as we would configure it now.",
+        "good": "It beats today's bot on the same markets. Then something "
+                "between 09-13 18:33 ET and now is costing us, and the diff is a short "
+                "list: this file against the current one.",
+        "bad": "It trails today's bot. Then the amendments since were right "
+               "and the fall in daily money is the market, which is what "
+               "the fixed-size paper arms already say (they saw the same "
+               "1.5c price rise the live bot did).",
+        "watch": "Money per settled market against the live bot and against "
+                 "the other vintages -- the ladder between them is where any "
+                 "single bad change would show.",
+    },
+    {
         "name": "The 2026-09-13 bot, re-run beside today's",
         "status": RUNNING, "match": "pinrun913.py", "since": "2026-09-18",
         # code_sha is the hash of pinrun913.py itself and cannot collide with
