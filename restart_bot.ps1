@@ -59,113 +59,22 @@ try { Stop-Transcript | Out-Null } catch {}
 Start-Transcript -Path $transcript -Force | Out-Null
 Write-Host "restart_bot.ps1 starting $(Get-Date -Format o)"
 
-# --- 1. REFUSE IF NOT FLAT. Restarting mid-position abandons a live bet: the
-# new process does not know about it, so it never settles it, never hedges it
-# and never counts it against the loss brake.
+# --- 0b. BUILD AND CHECK THE ARGUMENT LIST *BEFORE* KILLING ANYTHING.
 #
-# 2026-09-17: THE CHECK IS research\pinflat.py, NOT A COUNT. The count
-# ("filled orders > settled records") deadlocked when the bot DIED holding a
-# bet: the settled record it would have written never arrives, so the count
-# never balances and this script refused forever -- with the watchdog calling
-# it every minute. pinflat knows whether the bot is alive (pid file) and reads
-# each open fill's close time from its ticker: alive + open fill = wait; dead +
-# market still ahead = wait (a new bot could buy that close twice); dead +
-# market closed = flat, it settled on the exchange without us.
-$flatOut = & $py "$repo\research\pinflat.py" 2>&1
-$flatCode = $LASTEXITCODE
-foreach ($l in $flatOut) { Write-Host "pinflat: $l" }
-if ($flatCode -eq 1) {
-    Write-Host "REFUSING: the bot is holding a position (see pinflat above)."
-    Write-Host "Wait for the close to settle, then run this again."
-    try { Stop-Transcript | Out-Null } catch {}
-    exit 1
-}
-if ($flatCode -ne 0) {
-    # the helper itself failed: fall back to the old count, which errs on
-    # the side of refusing.
-    Write-Host "pinflat could not answer (exit $flatCode) -- falling back to the count"
-    $log = Get-ChildItem "$repo\results\pinrun-live-*.jsonl" |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($log) {
-        $filled = 0
-        $settled = 0
-        foreach ($line in Get-Content $log.FullName) {
-            if ($line -match '"kind":\s*"order"' -and $line -notmatch '"filled":\s*0(\.0+)?[,}]') { $filled++ }
-            if ($line -match '"kind":\s*"settled"') { $settled++ }
-        }
-        Write-Host "newest log: $($log.Name) -- $filled filled orders, $settled settled"
-        if ($settled -lt $filled) {
-            Write-Host "REFUSING: the bot is holding a position ($filled filled, $settled settled)."
-            try { Stop-Transcript | Out-Null } catch {}
-            exit 1
-        }
-    }
-}
-
-# --- 2. STOP ONLY pinrun.
-# ONLY THE LIVE ONE. On 2026-09-13 this matched '*pinrun*' and killed the
-# WHAT-IF tracker too -- a paper pinrun the operator had asked to keep running.
-# The live bot is the one carrying --live; nothing else may be stopped here.
+# 2026-09-19 00:02Z: a bare `,` on its own line between two flags is
+# PowerShell's unary array operator. It wrapped the tail of the list in a
+# nested array; this script killed the live bot, then Start-Process refused
+# with "Cannot convert 'System.Object[]' to the type 'System.String'", and
+# the bot stayed down. watch_bot.ps1 calls this same script, so every retry
+# failed the same way. The operator had been told the new bot was live; it
+# was not running at all.
 #
-# 2026-09-14: AND THE PID FILE IS THE PRIMARY SOURCE, NOT CommandLine.
-# When the operator ran this himself, Win32_Process returned CommandLine EMPTY
-# for the running bot -- Windows hides it from a caller that cannot open the
-# process -- so this loop matched nothing, printed nothing, and the script went
-# on to start a SECOND live bot. Two bots then traded the same account for 24
-# minutes, each sizing off the same bank, each counting only its own fills
-# against the loss abort, stake cap, position cap and losing-trade brake. Every
-# rail was silently doubled.
-$pidfile = "$repo\results\pinrun-live.pid"
-$targets = @()
-if (Test-Path $pidfile) {
-    $wanted = (Get-Content $pidfile -Raw).Trim()
-    if ($wanted -match '^\d+$') {
-        $proc = Get-Process -Id ([int]$wanted) -ErrorAction SilentlyContinue
-        if ($proc) { $targets += [int]$wanted }
-    }
-}
-# belt and braces: the CommandLine sweep as well, in case the pid file is
-# missing (a bot started before this amendment leaves none).
-Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-    Where-Object { $_.CommandLine -like '*pinrun*' -and $_.CommandLine -like '*--live*' } |
-    ForEach-Object { if ($targets -notcontains $_.ProcessId) { $targets += $_.ProcessId } }
-
-if ($targets.Count -eq 0) {
-    Write-Host "no live pinrun found to stop (pid file: $(Test-Path $pidfile))"
-} else {
-    foreach ($id in $targets) {
-        Write-Host "stopping live pinrun pid $id"
-        Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
-    }
-}
-Start-Sleep -Seconds 3
-
-# --- 2b. PROVE IT IS GONE BEFORE STARTING ANYTHING.
-# THIS IS THE RULE THAT MATTERS: a kill that failed must ABORT the restart,
-# never fall through into a second start. Checked by PID, which needs no
-# permission to read, rather than by CommandLine, which is what failed.
-$stillAlive = @()
-foreach ($id in $targets) {
-    if (Get-Process -Id $id -ErrorAction SilentlyContinue) { $stillAlive += $id }
-}
-if ($stillAlive.Count -gt 0) {
-    Write-Host "ABORTING: could not stop live pinrun pid(s) $($stillAlive -join ', ')."
-    Write-Host "Starting a second one would put TWO bots on the same account."
-    Write-Host "Stop it by hand, then run this again:"
-    foreach ($id in $stillAlive) { Write-Host "    Stop-Process -Id $id -Force" }
-    try { Stop-Transcript | Out-Null } catch {}
-    exit 1
-}
-
-# --- 3. START IT AGAIN.
-# CAPTURE STDERR. Until 2026-09-15 this started the bot with no redirect at
-# all, so when trade_loop raised the traceback went to a hidden window and
-# vanished. The bot died at 04:29:30Z on a TypeError in a logging line and
-# nobody knew for sixteen minutes -- the only evidence was an `end` record
-# with an empty state. Two files, appended, never rotated by this script.
-$errLog = "$repo\results\pinrun-live.err"
-$outLog = "$repo\results\pinrun-live.out"
-Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutput $outLog -ArgumentList @(
+# THE ORDER OF OPERATIONS IS THE WHOLE LESSON. This script's one dangerous
+# act is stopping a money process before starting another, so anything that
+# can make the START fail must be checked while the OLD bot is still
+# running. Then the worst case is "nothing happened" rather than "nothing
+# is running".
+$botArgs = @(
     "-u", "$repo\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
     "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "2",
@@ -284,12 +193,19 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     #    TIGHTER than --jump-gate's 3.0, which already refused the trade
     #    outright; at 4.0 it could never have fired and the bot now refuses
     #    to start on such a value.
-    "--late-jump", "2.0"
     #  * "cut at first loss": one late-boosted loss sets LATE_MULT back to
     #    1.0 for the rest of the run (record `late_boost_off`). No flag; the
     #    bot enforces it. Hedging is unchanged and still fires at any tau,
     #    including inside the last seconds.
-    ,
+    #
+    # THE COMMA GOES HERE, ON THE VALUE, NEVER ON ITS OWN LINE. A bare `,`
+    # between elements is PowerShell's unary array operator: it wrapped the
+    # rest of this list in a nested array, Start-Process refused
+    # "Cannot convert 'System.Object[]' to the type 'System.String'", and on
+    # 2026-09-19 00:02Z this script killed the live bot and then failed to
+    # start it. THE BOT WAS DOWN AND NOTHING SAID SO -- watch_bot.ps1 calls
+    # this same script, so it failed the same way every minute.
+    "--late-jump", "2.0",
     # AMENDMENT 56, 2026-09-18. The operator: "if we've never lost multiple
     # coins at once, allow extra total size if it comes in the way of an
     # extra coin after two have been maxed out. I'm okay with that."
@@ -349,7 +265,126 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # roughly +$8 on 31 markets, and the one bad fill cost more than the other
     # thirty made.
     # The flags now live on a PAPER arm only (results/arm-early45.out).
-) -WorkingDirectory $repo -WindowStyle Hidden
+)
+
+$__bad = @($botArgs | Where-Object { $_ -isnot [string] })
+if ($__bad.Count -gt 0 -or $botArgs.Count -lt 5) {
+    Write-Host "ABORTING: the argument list is not a flat list of strings"
+    Write-Host "  elements: $($botArgs.Count), non-string: $($__bad.Count)"
+    Write-Host "  A bare comma on its own line makes a nested array."
+    Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 1
+}
+Write-Host "argument list ok: $($botArgs.Count) flat strings"
+
+# --- 1. REFUSE IF NOT FLAT. Restarting mid-position abandons a live bet: the
+# new process does not know about it, so it never settles it, never hedges it
+# and never counts it against the loss brake.
+#
+# 2026-09-17: THE CHECK IS research\pinflat.py, NOT A COUNT. The count
+# ("filled orders > settled records") deadlocked when the bot DIED holding a
+# bet: the settled record it would have written never arrives, so the count
+# never balances and this script refused forever -- with the watchdog calling
+# it every minute. pinflat knows whether the bot is alive (pid file) and reads
+# each open fill's close time from its ticker: alive + open fill = wait; dead +
+# market still ahead = wait (a new bot could buy that close twice); dead +
+# market closed = flat, it settled on the exchange without us.
+$flatOut = & $py "$repo\research\pinflat.py" 2>&1
+$flatCode = $LASTEXITCODE
+foreach ($l in $flatOut) { Write-Host "pinflat: $l" }
+if ($flatCode -eq 1) {
+    Write-Host "REFUSING: the bot is holding a position (see pinflat above)."
+    Write-Host "Wait for the close to settle, then run this again."
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 1
+}
+if ($flatCode -ne 0) {
+    # the helper itself failed: fall back to the old count, which errs on
+    # the side of refusing.
+    Write-Host "pinflat could not answer (exit $flatCode) -- falling back to the count"
+    $log = Get-ChildItem "$repo\results\pinrun-live-*.jsonl" |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($log) {
+        $filled = 0
+        $settled = 0
+        foreach ($line in Get-Content $log.FullName) {
+            if ($line -match '"kind":\s*"order"' -and $line -notmatch '"filled":\s*0(\.0+)?[,}]') { $filled++ }
+            if ($line -match '"kind":\s*"settled"') { $settled++ }
+        }
+        Write-Host "newest log: $($log.Name) -- $filled filled orders, $settled settled"
+        if ($settled -lt $filled) {
+            Write-Host "REFUSING: the bot is holding a position ($filled filled, $settled settled)."
+            try { Stop-Transcript | Out-Null } catch {}
+            exit 1
+        }
+    }
+}
+
+# --- 2. STOP ONLY pinrun.
+# ONLY THE LIVE ONE. On 2026-09-13 this matched '*pinrun*' and killed the
+# WHAT-IF tracker too -- a paper pinrun the operator had asked to keep running.
+# The live bot is the one carrying --live; nothing else may be stopped here.
+#
+# 2026-09-14: AND THE PID FILE IS THE PRIMARY SOURCE, NOT CommandLine.
+# When the operator ran this himself, Win32_Process returned CommandLine EMPTY
+# for the running bot -- Windows hides it from a caller that cannot open the
+# process -- so this loop matched nothing, printed nothing, and the script went
+# on to start a SECOND live bot. Two bots then traded the same account for 24
+# minutes, each sizing off the same bank, each counting only its own fills
+# against the loss abort, stake cap, position cap and losing-trade brake. Every
+# rail was silently doubled.
+$pidfile = "$repo\results\pinrun-live.pid"
+$targets = @()
+if (Test-Path $pidfile) {
+    $wanted = (Get-Content $pidfile -Raw).Trim()
+    if ($wanted -match '^\d+$') {
+        $proc = Get-Process -Id ([int]$wanted) -ErrorAction SilentlyContinue
+        if ($proc) { $targets += [int]$wanted }
+    }
+}
+# belt and braces: the CommandLine sweep as well, in case the pid file is
+# missing (a bot started before this amendment leaves none).
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -like '*pinrun*' -and $_.CommandLine -like '*--live*' } |
+    ForEach-Object { if ($targets -notcontains $_.ProcessId) { $targets += $_.ProcessId } }
+
+if ($targets.Count -eq 0) {
+    Write-Host "no live pinrun found to stop (pid file: $(Test-Path $pidfile))"
+} else {
+    foreach ($id in $targets) {
+        Write-Host "stopping live pinrun pid $id"
+        Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+    }
+}
+Start-Sleep -Seconds 3
+
+# --- 2b. PROVE IT IS GONE BEFORE STARTING ANYTHING.
+# THIS IS THE RULE THAT MATTERS: a kill that failed must ABORT the restart,
+# never fall through into a second start. Checked by PID, which needs no
+# permission to read, rather than by CommandLine, which is what failed.
+$stillAlive = @()
+foreach ($id in $targets) {
+    if (Get-Process -Id $id -ErrorAction SilentlyContinue) { $stillAlive += $id }
+}
+if ($stillAlive.Count -gt 0) {
+    Write-Host "ABORTING: could not stop live pinrun pid(s) $($stillAlive -join ', ')."
+    Write-Host "Starting a second one would put TWO bots on the same account."
+    Write-Host "Stop it by hand, then run this again:"
+    foreach ($id in $stillAlive) { Write-Host "    Stop-Process -Id $id -Force" }
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 1
+}
+
+# --- 3. START IT AGAIN.
+# CAPTURE STDERR. Until 2026-09-15 this started the bot with no redirect at
+# all, so when trade_loop raised the traceback went to a hidden window and
+# vanished. The bot died at 04:29:30Z on a TypeError in a logging line and
+# nobody knew for sixteen minutes -- the only evidence was an `end` record
+# with an empty state. Two files, appended, never rotated by this script.
+$errLog = "$repo\results\pinrun-live.err"
+$outLog = "$repo\results\pinrun-live.out"
+Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutput $outLog -ArgumentList $botArgs -WorkingDirectory $repo -WindowStyle Hidden
 Start-Sleep -Seconds 15
 
 # --- 4. PROVE IT CAME BACK, and prove the collector survived.
