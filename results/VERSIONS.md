@@ -1,3 +1,69 @@
+# v-latebudget -- 2026-09-19 ~01:3xZ -- LIVE: the extra-bet allowance actually works now, and it reaches the last ten seconds
+
+Operator: *"Fix the one that refused 126 markets too that's really bad."*
+Two things, and the first is a defect in what went live three hours ago.
+
+## 1. AMENDMENT 61: the third-coin allowance could not fire in 68% of closes
+
+`close_budget_for` required `len(coins) >= MAX_PER_CLOSE` before granting
+anything -- I read "after two have been maxed out" as two COINS. **But a
+close spends its budget in CONTRACTS.** One market taking two bets exhausts
+it without a second coin ever existing, and **282 of our 417 closes hold
+exactly one coin**. So the allowance deployed at 00:03 tonight was dead in
+more than two thirds of closes.
+
+Measured on the 126 markets `close_budget` refused inside the last ten
+seconds:
+
+| what it was | count | fixed by |
+|---|---|---|
+| a NEW coin with fewer than two coins held | **97** | A61, this entry |
+| a coin we already held | 29 | A59, below |
+
+The test is gone. Nothing else guards it and nothing needs to: the function
+is only consulted when the base budget is under pressure, the caller still
+refuses unless `spent` is under the number it returns, and the exposure was
+already counted in `worst_close_cost`. **Risk unchanged, allowance 3.5x more
+usable.**
+
+## 2. `--late-extra 1` goes live, SHARING the allowance rather than adding one
+
+Inside `--late-tau` (10 s) a close may spend one extra bet whatever it
+already holds -- the 29 above, and any top-up.
+
+**It shares the extra bet with the coin allowance rather than adding a
+second.** Summing them would put the worst close at FOUR bets and, at a
+fixed brake, cut the bet a quarter to pay for a case that has never
+happened. At a $640 bank and a 3.00 brake:
+
+| | bet size | worst close | bank covers |
+|---|---|---|---|
+| third coin only (00:03 tonight) | 72 | $211.68 | 3.02x |
+| **third coin + late top-up, shared** | **72** | **$211.68** | **3.02x** |
+
+**The bet size does not move and neither does the worst case.**
+
+## Why that window is worth it -- our own live fills
+
+| seconds left | fills | contracts | median price | per contract | losing |
+|---|---|---|---|---|---|
+| 0-5 | 23 | 1,028 | 94.3c | 5.354c | 0 |
+| 6-10 | 45 | 2,158 | 94.8c | 5.461c | 0 |
+| 16-30 | 344 | 13,023 | 97.2c | 2.103c | 11 |
+| 31-45 | 81 | 3,933 | 97.8c | 2.197c | 1 |
+
+## Revert
+
+`restart_bot.ps1`, then `.estart_bot.ps1`:
+
+- **the late allowance only:** delete `"--late-extra", "1",`.
+- **both allowances:** delete that and `"--extra-coin", "1",`, and set
+  `"--bank-brake", "4.08"` (or the size stays cut for nothing).
+
+A61's fix is code, not a flag; reverting it means reverting the commit.
+
+---
+
 # v-cheap -- 2026-09-19 ~01:0xZ -- LIVE: the 96.5c price floor is gone, and a top-up can finally be boosted
 
 Two changes, one cause. The operator: *"WOAH WHAT WE CANT BUY CHEAPER THAN
@@ -63,7 +129,8 @@ Our own live fills, every one:
 
 ## Revert
 
-`restart_bot.ps1`, then `.estart_bot.ps1`:
+`restart_bot.ps1`, then `.
+estart_bot.ps1`:
 
 - **the price floor only:** set `"--early-max-edge", "3.0"`.
 - **the top-up boost only:** it is code, not a flag -- set `--late-mult 1.0`

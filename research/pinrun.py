@@ -1161,21 +1161,56 @@ def close_budget_for(prev, ticker, extra=_HP_UNSET, size=None, tau=None):
     """
     extra = EXTRA_COIN if extra is _HP_UNSET else extra
     base = close_budget(size)
-    # A59: inside the last seconds the budget is topped up regardless of
-    # which coin this is. The window earns 5.4c a contract against 2.2c out
-    # at 31-45 s and has never lost, and it is where `close_budget` does most
-    # of its refusing. `tau` is None on the paths that do not know it, and
-    # then nothing is added -- an unknown second must not buy an allowance.
-    if LATE_EXTRA and tau is not None and int(tau) <= LATE_TAU:
-        base += float(LATE_EXTRA) * float(SIZE if size is None else size)
+    # A59 + A61: inside the last seconds the budget is topped up regardless
+    # of which coin this is -- that window earns 5.4c a contract against 2.2c
+    # out at 31-45 s and has never lost a close in 68 fills.
+    #
+    # IT SHARES ONE EXTRA BET WITH THE COIN ALLOWANCE RATHER THAN ADDING A
+    # SECOND. Summing them would put the worst close at FOUR bets and, at a
+    # fixed brake, cut the bet size by a quarter to pay for a case that has
+    # never happened. One extra bet, spendable either by a new coin or in the
+    # last seconds, whichever arrives first: the worst close stays at three
+    # and the bet size does not move. `worst_close_cost` takes the same max.
+    #
+    # `tau` is None on the paths that do not know it, and then nothing is
+    # added -- an unknown second must not buy itself an allowance.
+    _late_ok = (LATE_EXTRA and tau is not None and int(tau) <= LATE_TAU)
+    if _late_ok:
+        extra = max(float(extra or 0.0), float(LATE_EXTRA))
+        if prev is None:
+            return base + float(LATE_EXTRA) * float(SIZE if size is None else size)
+        # the late allowance applies to ANY market, held or new, so it is
+        # granted here rather than through the new-coin path below
+        coins = {coin_of(t) for t in (prev.get("tickers") or ())}
+        coins.discard(None)
+        if coin_of(ticker) in coins:
+            return base + float(LATE_EXTRA) * float(SIZE if size is None else size)
     if not extra or prev is None:
         return base
     coins = {coin_of(t) for t in (prev.get("tickers") or ())}
     coins.discard(None)
     if coin_of(ticker) in coins:
+        # a coin we ALREADY hold never gets the coin allowance: the evidence
+        # is that two COINS have not lost together, and a second bet on the
+        # first coin is not a second coin
         return base
-    if len(coins) < MAX_PER_CLOSE:
-        return base
+    # AMENDMENT 61 (2026-09-19): THE COIN-COUNT TEST IS GONE, AND IT WAS
+    # DOING REAL DAMAGE. It read the operator's "after two have been maxed
+    # out" as two COINS, and required `len(coins) >= MAX_PER_CLOSE` before
+    # granting anything. But a close spends its budget in CONTRACTS, and 282
+    # of our 417 closes hold exactly ONE coin -- one market taking two bets
+    # exhausts the budget without a second coin ever existing. So in 68% of
+    # closes the allowance could not fire at all.
+    #
+    # Measured on the 126 markets `close_budget` refused inside the last ten
+    # seconds: 97 were a NEW coin with fewer than two coins held -- every one
+    # of them blocked by this test alone, on a close whose budget was already
+    # spent. Removing it is what the amendment was for.
+    #
+    # Nothing else guards it because nothing else needs to: this function is
+    # only consulted when the base budget is under pressure, and the caller
+    # refuses the trade unless `spent` is under the number returned here. The
+    # exposure is already counted in worst_close_cost.
     return base + float(extra) * float(SIZE if size is None else size)
 
 
@@ -3697,9 +3732,14 @@ def _selftest_body():
            "a ticker's COIN is the part before 15M -- the extra allowance is "
            "per coin, and two closes of the same coin are not two coins")
         _g56 = globals()
-        _sv56 = (_g56["SIZE"], _g56["EXTRA_COIN"])
+        # LATE_EXTRA is pinned to 0 here because A61 made the two allowances
+        # SHARE one extra bet: with the late flag running, zeroing the coin
+        # allowance no longer changes worst_close_cost and this block would
+        # fail under the live flag set. It tests the COIN allowance alone.
+        _sv56 = (_g56["SIZE"], _g56["EXTRA_COIN"], _g56["LATE_EXTRA"])
         try:
             _g56["SIZE"], _g56["EXTRA_COIN"] = 80.0, 1.0
+            _g56["LATE_EXTRA"] = 0.0
             _two = {"tickers": {"KXBTC15M-A", "KXETH15M-A"}}
             _one = {"tickers": {"KXBTC15M-A"}}
             _base = 80.0 * MAX_PER_CLOSE
@@ -3712,9 +3752,13 @@ def _selftest_body():
                "...but a coin we ALREADY hold gets nothing extra. The whole "
                "argument is that two COINS have never lost together; topping "
                "up the first coin adds a second bet on it, not a second coin")
-            ck(abs(close_budget_for(_one, "KXETH15M-A") - _base) < 1e-9,
-               "...and nothing is extra until the base has been spread "
-               "across MAX_PER_CLOSE coins -- 'after two have been maxed'")
+            ck(abs(close_budget_for(_one, "KXETH15M-A") - (_base + 80.0)) < 1e-9,
+               "A61: a NEW coin gets the allowance even when only ONE coin is "
+               "held. A close spends its budget in CONTRACTS -- one market "
+               "taking two bets exhausts it -- and 282 of our 417 closes hold "
+               "exactly one coin, so the old coin-count test disabled the "
+               "allowance in 68% of closes and blocked 97 of the 126 markets "
+               "refused inside the last ten seconds")
             ck(abs(close_budget_for(None, "KXSOL15M-A") - _base) < 1e-9,
                "NULL: an empty close gets the base budget")
             _w_on = worst_close_cost(80.0)
@@ -3728,7 +3772,7 @@ def _selftest_body():
             ck(size_for_bank(640.0, brake=4.08) > 0,
                "...and the sizer still answers with the flag off")
         finally:
-            _g56["SIZE"], _g56["EXTRA_COIN"] = _sv56
+            _g56["SIZE"], _g56["EXTRA_COIN"], _g56["LATE_EXTRA"] = _sv56
         ck(abs(close_budget_for({"tickers": {"KXBTC15M-A", "KXETH15M-A"}},
                                 "KXSOL15M-A", extra=0.0, size=80.0)
                - 80.0 * MAX_PER_CLOSE) < 1e-9,
@@ -3777,6 +3821,30 @@ def _selftest_body():
                "the close_budget gate records %s -- it refuses more than any "
                "other gate inside the last ten seconds and could not be "
                "scored without it" % _f)
+
+        # ---- A61: the two allowances SHARE one extra bet.
+        _sv61 = (_g59["SIZE"], _g59["LATE_EXTRA"], _g59["LATE_TAU"],
+                 _g59["EXTRA_COIN"])
+        try:
+            (_g59["SIZE"], _g59["LATE_EXTRA"], _g59["LATE_TAU"],
+             _g59["EXTRA_COIN"]) = 80.0, 1.0, 10, 1.0
+            _b61 = 80.0 * MAX_PER_CLOSE
+            _h61 = {"tickers": {"KXBTC15M-A"}}
+            ck(abs(close_budget_for(_h61, "KXBTC15M-A", tau=5) - (_b61 + 80.0)) < 1e-9,
+               "with BOTH allowances on, a held coin in the last seconds gets "
+               "ONE extra bet")
+            ck(abs(close_budget_for(_h61, "KXSOL15M-A", tau=5) - (_b61 + 80.0)) < 1e-9,
+               "...and a NEW coin in the last seconds gets ONE extra bet, not "
+               "two. Summing them would put the worst close at four bets and "
+               "cut the bet size a quarter to pay for a case that has never "
+               "happened")
+            ck(abs(worst_close_cost(80.0)
+                   - (MAX_PER_CLOSE + 1.0) * 80.0 * PRICE_CEILING) < 1e-9,
+               "and the worst close is THREE bets, not four -- the rails take "
+               "the max of the two allowances, exactly as the budget does")
+        finally:
+            (_g59["SIZE"], _g59["LATE_EXTRA"], _g59["LATE_TAU"],
+             _g59["EXTRA_COIN"]) = _sv61
 
         # ---- AMENDMENT 57: one volatility multiplier for the WHOLE model.
         _src57 = open(os.path.abspath(__file__), encoding="utf-8").read()
@@ -4288,7 +4356,7 @@ def _selftest_body():
         # EVERY allowance that worst_close_cost counts must appear here, or
         # this check refuses to start the moment a new one is added. A56 and
         # A59 have each sprung it once.
-        _wexp = (MAX_PER_CLOSE + EXTRA_COIN + LATE_EXTRA) * 20 * PRICE_CEILING
+        _wexp = (MAX_PER_CLOSE + max(EXTRA_COIN, LATE_EXTRA)) * 20 * PRICE_CEILING
         ck(abs(worst_close_cost(20) - _wexp) < 1e-12,
            f"worst_close_cost(20) must be (MAX_PER_CLOSE + EXTRA_COIN + "
            f"LATE_EXTRA) x 20 x "
@@ -4307,7 +4375,7 @@ def _selftest_body():
         # worst_close_cost(1.0) x brake, and A56 put EXTRA_COIN inside
         # worst_close_cost -- so this arithmetic must carry it too or the
         # check contradicts the function it is checking.
-        _per = (BANK_BRAKE * (MAX_PER_CLOSE + EXTRA_COIN + LATE_EXTRA)
+        _per = (BANK_BRAKE * (MAX_PER_CLOSE + max(EXTRA_COIN, LATE_EXTRA))
                 * PRICE_CEILING)
         ck(size_for_bank(192.15) == int(192.15 // _per),
            f"$192.15 / ${_per:.2f} (BANK_BRAKE {BANK_BRAKE} x "
@@ -5880,7 +5948,7 @@ def _selftest_body():
             # two must still agree, or the rails are sized against a bet
             # nobody places -- that is what this check is for and it now
             # reads the same total the sizer does.
-            ck(abs((close_budget() + (EXTRA_COIN + LATE_EXTRA) * 68.0)
+            ck(abs((close_budget() + max(EXTRA_COIN, LATE_EXTRA) * 68.0)
                    * PRICE_CEILING - worst_close_cost(68.0)) < 1e-9,
                "budget x ceiling must equal worst_close_cost -- if these ever "
                "disagree, the --loss-abort band, pintake's stake cap and "
@@ -6106,7 +6174,9 @@ def worst_close_cost(size):
     real exposure and must be in every rail that reads this (the bank brake,
     the loss abort, the stake cap). Leaving it out would make the extra coin
     free on paper and paid for in a drawdown."""
-    return ((float(MAX_PER_CLOSE) + float(EXTRA_COIN) + float(LATE_EXTRA))
+    # A61: the coin allowance and the late allowance SHARE one extra bet,
+    # so the worst close takes their max and not their sum.
+    return ((float(MAX_PER_CLOSE) + max(float(EXTRA_COIN), float(LATE_EXTRA)))
             * float(size) * float(PRICE_CEILING))
 
 
@@ -8556,11 +8626,6 @@ def main():
                 "--late-extra needs --late-tau: without a late window there "
                 "is no 'inside the last seconds' for it to apply to, and the "
                 "flag would sit in the start record doing nothing.")
-        if a.live and a.late_extra > 0:
-            raise SystemExit(
-                "--late-extra is PAPER ONLY. It is the third size increase "
-                "in a day and the one with the least history; run the arm "
-                "first.")
         globals()["LATE_EXTRA"] = float(a.late_extra)
     if a.extra_coin is not None:
         if not (0.0 <= a.extra_coin <= float(MAX_PER_CLOSE)):

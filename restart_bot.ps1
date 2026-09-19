@@ -241,6 +241,18 @@ $botArgs = @(
     # we ALREADY hold gets nothing extra -- the argument is about two COINS
     # never losing together, not about a second bet on the first coin.
     "--extra-coin", "1",
+    # AMENDMENT 59 + 61, 2026-09-19. Inside --late-tau a close may spend one
+    # extra bet whatever it already holds. That window is the best we have:
+    # 94.8c median against 97.8c at 31-45 s, 5.4c a contract against 2.2c,
+    # and no losing close in 68 fills -- and `close_budget` refused 126
+    # markets in it.
+    #
+    # IT SHARES the --extra-coin allowance rather than adding a second, so
+    # the worst close stays at THREE bets and the bet size does not move
+    # (72 contracts at a $640 bank and a 3.00 brake, identical to before).
+    # One extra bet, spendable by a new coin OR in the last seconds,
+    # whichever arrives first.
+    "--late-extra", "1",
     # THE PRICE, stated because it is the only change tonight that raises
     # the worst case. worst_close_cost grows from 2 bets to 3, and every
     # rail reads it, so at a fixed brake the bet size would fall. At a $640
