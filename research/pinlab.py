@@ -857,6 +857,126 @@ EXPERIMENTS = [
         "watch": "Early fills under 94c: count, price, settled result.",
     },
     {
+        "name": "Volatility x0.8 -- the model BOLDER",
+        "status": RUNNING, "match": "--sigma-stress 0.8", "since": "2026-09-18",
+        "select": {"sigma_stress": lambda v, _w=0.8: v is not None and abs(float(v) - _w) < 1e-9},
+        "what": "The live bot in every respect but one: the volatility "
+                "estimate is multiplied by 0.8 before ANY decision -- the fair "
+                "value at entry, the highest price the sweep will pay, and "
+                "the hedge's belief while a position is open. It believes the coin is calmer than measured, so it is surer of itself, takes more trades and pays more for them. Refused on a live run: every live number we have was measured at 1.0.",
+        "why": "Operator: 'can you make paper arms with different sigmas. The "
+               "whole thing not just the boost.' Everything the bot believes "
+               "rests on one number -- how far the coin can move in the "
+               "seconds left -- and that number is ESTIMATED from the last "
+               "300 seconds of the index. If the estimate is systematically "
+               "low, every confidence we print is too high and the losses "
+               "are not surprises but arithmetic. This is the cheapest way "
+               "to find out: run the same bot at four different beliefs "
+               "about it, on the same markets, at the same instant.",
+        "good": "A humbler arm (1.25-2.0) matches or beats live on money "
+                "while losing less. That says our sigma is too small and the "
+                "live bot is overconfident -- the single most valuable thing "
+                "we could learn, because it would explain every loss we have.",
+        "bad": "The humbler arms trade far less for the same loss rate. Then "
+               "the estimate is honest, the confidence is real, and the "
+               "losses are genuine tail events rather than a mis-measured "
+               "ruler.",
+        "watch": "Trades per day and losing closes, TOGETHER. A humbler arm "
+                 "will always lose less by trading less; what matters is "
+                 "money per dollar staked and whether the loss rate falls "
+                 "faster than the volume does.",
+    },
+    {
+        "name": "Volatility x1.25 -- the model a quarter humbler",
+        "status": RUNNING, "match": "--sigma-stress 1.25", "since": "2026-09-18",
+        "select": {"sigma_stress": lambda v, _w=1.25: v is not None and abs(float(v) - _w) < 1e-9},
+        "what": "The live bot in every respect but one: the volatility "
+                "estimate is multiplied by 1.25 before ANY decision -- the fair "
+                "value at entry, the highest price the sweep will pay, and "
+                "the hedge's belief while a position is open. It believes the coin can move a quarter further than measured.",
+        "why": "Operator: 'can you make paper arms with different sigmas. The "
+               "whole thing not just the boost.' Everything the bot believes "
+               "rests on one number -- how far the coin can move in the "
+               "seconds left -- and that number is ESTIMATED from the last "
+               "300 seconds of the index. If the estimate is systematically "
+               "low, every confidence we print is too high and the losses "
+               "are not surprises but arithmetic. This is the cheapest way "
+               "to find out: run the same bot at four different beliefs "
+               "about it, on the same markets, at the same instant.",
+        "good": "A humbler arm (1.25-2.0) matches or beats live on money "
+                "while losing less. That says our sigma is too small and the "
+                "live bot is overconfident -- the single most valuable thing "
+                "we could learn, because it would explain every loss we have.",
+        "bad": "The humbler arms trade far less for the same loss rate. Then "
+               "the estimate is honest, the confidence is real, and the "
+               "losses are genuine tail events rather than a mis-measured "
+               "ruler.",
+        "watch": "Trades per day and losing closes, TOGETHER. A humbler arm "
+                 "will always lose less by trading less; what matters is "
+                 "money per dollar staked and whether the loss rate falls "
+                 "faster than the volume does.",
+    },
+    {
+        "name": "Volatility x1.5 -- the model half again humbler",
+        "status": RUNNING, "match": "--sigma-stress 1.5", "since": "2026-09-18",
+        "select": {"sigma_stress": lambda v, _w=1.5: v is not None and abs(float(v) - _w) < 1e-9},
+        "what": "The live bot in every respect but one: the volatility "
+                "estimate is multiplied by 1.5 before ANY decision -- the fair "
+                "value at entry, the highest price the sweep will pay, and "
+                "the hedge's belief while a position is open. It believes the coin can move half again further than measured -- fewer trades, cheaper ones.",
+        "why": "Operator: 'can you make paper arms with different sigmas. The "
+               "whole thing not just the boost.' Everything the bot believes "
+               "rests on one number -- how far the coin can move in the "
+               "seconds left -- and that number is ESTIMATED from the last "
+               "300 seconds of the index. If the estimate is systematically "
+               "low, every confidence we print is too high and the losses "
+               "are not surprises but arithmetic. This is the cheapest way "
+               "to find out: run the same bot at four different beliefs "
+               "about it, on the same markets, at the same instant.",
+        "good": "A humbler arm (1.25-2.0) matches or beats live on money "
+                "while losing less. That says our sigma is too small and the "
+                "live bot is overconfident -- the single most valuable thing "
+                "we could learn, because it would explain every loss we have.",
+        "bad": "The humbler arms trade far less for the same loss rate. Then "
+               "the estimate is honest, the confidence is real, and the "
+               "losses are genuine tail events rather than a mis-measured "
+               "ruler.",
+        "watch": "Trades per day and losing closes, TOGETHER. A humbler arm "
+                 "will always lose less by trading less; what matters is "
+                 "money per dollar staked and whether the loss rate falls "
+                 "faster than the volume does.",
+    },
+    {
+        "name": "Volatility x2.0 -- the model twice as humble",
+        "status": RUNNING, "match": "--sigma-stress 2.0", "since": "2026-09-18",
+        "select": {"sigma_stress": lambda v, _w=2.0: v is not None and abs(float(v) - _w) < 1e-9},
+        "what": "The live bot in every respect but one: the volatility "
+                "estimate is multiplied by 2.0 before ANY decision -- the fair "
+                "value at entry, the highest price the sweep will pay, and "
+                "the hedge's belief while a position is open. It believes the coin can move twice as far as measured. The strongest brake on the list; it should take very few trades and only the clearest.",
+        "why": "Operator: 'can you make paper arms with different sigmas. The "
+               "whole thing not just the boost.' Everything the bot believes "
+               "rests on one number -- how far the coin can move in the "
+               "seconds left -- and that number is ESTIMATED from the last "
+               "300 seconds of the index. If the estimate is systematically "
+               "low, every confidence we print is too high and the losses "
+               "are not surprises but arithmetic. This is the cheapest way "
+               "to find out: run the same bot at four different beliefs "
+               "about it, on the same markets, at the same instant.",
+        "good": "A humbler arm (1.25-2.0) matches or beats live on money "
+                "while losing less. That says our sigma is too small and the "
+                "live bot is overconfident -- the single most valuable thing "
+                "we could learn, because it would explain every loss we have.",
+        "bad": "The humbler arms trade far less for the same loss rate. Then "
+               "the estimate is honest, the confidence is real, and the "
+               "losses are genuine tail events rather than a mis-measured "
+               "ruler.",
+        "watch": "Trades per day and losing closes, TOGETHER. A humbler arm "
+                 "will always lose less by trading less; what matters is "
+                 "money per dollar staked and whether the loss rate falls "
+                 "faster than the volume does.",
+    },
+    {
         "name": "Crypto.com prediction markets (FIX API)",
         "status": IDEA, "since": "2026-09-17", "match": None,
         "what": "A second venue. They run 5- and 15-minute crypto markets on more "

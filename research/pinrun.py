@@ -230,6 +230,32 @@ _DEFAULT_LADDER_LEVELS = 150   # The tick is 0.1c above 90c, so the 88-98c band
 #                to a loss": take the ordinary size, not the extra.
 # Both are checked in _late48 and BOTH default to off, so A48 without them
 # behaves exactly as the paper arm that earned the deployment.
+# AMENDMENT 56 (2026-09-18): A THIRD COIN MAY SPEND BEYOND THE CLOSE BUDGET.
+#
+# The operator: "if we've never lost multiple coins at once, allow extra
+# total size if it comes in the way of an extra coin after two have been
+# maxed out. I'm okay with that."
+#
+# The condition he set is MEASURED and it holds: across 417 closes we have
+# traded, 19 had a losing coin and NOT ONE had two. In every case the other
+# coins at that close won. Twelve of those closes already held three coins.
+#
+# Why that is not luck: all twelve series settle on the same second against
+# their own index, and a close loses only when the last seconds move against
+# the side we took ON THAT COIN. Correlated moves are common; correlated
+# moves that cross twelve different strikes in the same direction inside the
+# same second are not.
+#
+# WHAT IT COSTS, stated plainly, because this is the one change here that
+# RAISES the worst case. `worst_close_cost` grows from MAX_PER_CLOSE to
+# MAX_PER_CLOSE + EXTRA_COIN bets, so at a given BANK_BRAKE the bet size
+# falls -- 2 -> 3 bets is bank/8 -> bank/12, about 80 contracts down to 53.
+# That is the honest accounting and every rail (the brake, the loss abort,
+# the stake cap) reads it. The operator can keep the old size by lowering
+# --bank-brake, which is the same trade stated the other way round.
+EXTRA_COIN = 0.0                # extra SIZE a close may spend, new coins only
+_DEFAULT_EXTRA_COIN = 0.0
+
 LATE_PIN = None                 # None = no extra confidence bar
 _DEFAULT_LATE_PIN = None
 LATE_JUMP_SD = None             # None = do not read the jump before boosting
@@ -636,7 +662,9 @@ SIZE = 1               # contracts we buy (--size; 0.01 = a penny test)
 #  4. ONLY WHEN FLAT. Rails never change while a position is open.
 # ===========================================================================
 AUTO_SIZE = True         # --no-auto-size disables
-BANK_BRAKE = 4.08        # bank must cover this many worst-closes.
+BANK_BRAKE = 4.08
+_DEFAULT_BANK_BRAKE = 4.08      # the SHIPPED value; --bank-brake moves the
+                              # running one, and the guard must read THIS        # bank must cover this many worst-closes.
                          #
                          # 3.0 -> 4.08 on 2026-09-18, ON THE OPERATOR'S WORD:
                          # "Sure divide by 8." He had asked whether we were
@@ -707,7 +735,8 @@ AUTO_SIZE_STEP_UP = None # None = go straight to the size the bank supports.
                          # ~10 minutes of trading at the wrong size after every
                          # restart. Set to a float to restore damping.
 AUTO_SIZE_EVERY_S = 300  # seconds between adjustments
-MAX_PER_CLOSE = 2        # 3 -> 2 on 2026-09-09, and NOT because cap 3 is
+MAX_PER_CLOSE = 2
+_DEFAULT_MAX_PER_CLOSE = 2   # likewise: asserted, never the running value        # 3 -> 2 on 2026-09-09, and NOT because cap 3 is
                          # wrong. Cap 3 still measures better on every number
                          # I have. It is a BANK constraint: at size 20 cap 3 a
                          # worst close costs $60, the deployment rail requires
@@ -1072,6 +1101,43 @@ _DEFAULT_SKIP_BANDS = ()
 BAND_MULTS = ()                 # ((lo, hi, mult), ...)  size multiples
 _DEFAULT_BAND_MULTS = ()
 _PB_UNSET = object()            # "not supplied" -- the _HP_UNSET / _EW_UNSET trap
+
+
+def coin_of(ticker):
+    """The coin a ticker belongs to: KXBTC15M-26SEP...-15 -> KXBTC."""
+    if not ticker:
+        return None                 # `str(None)` is "None", which would have
+                                    # become a coin named None and matched
+                                    # every other unreadable ticker
+    try:
+        return str(ticker).split("15M", 1)[0] or None
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
+def close_budget_for(prev, ticker, extra=_HP_UNSET, size=None):
+    """Contracts this close may buy, for THIS candidate.
+
+    The base budget (AMENDMENT 17) is MAX_PER_CLOSE x SIZE, shared by every
+    coin. A56 adds `extra` x SIZE on top, but ONLY for a candidate whose COIN
+    is not already held here, and ONLY once the base has been spread across
+    at least MAX_PER_CLOSE distinct coins -- "after two have been maxed out".
+
+    A coin we already hold NEVER gets the extra: the whole argument is that
+    two coins have not lost together, and topping up a coin we already own
+    does not add a second coin, it adds a second bet on the first.
+    """
+    extra = EXTRA_COIN if extra is _HP_UNSET else extra
+    base = close_budget(size)
+    if not extra or prev is None:
+        return base
+    coins = {coin_of(t) for t in (prev.get("tickers") or ())}
+    coins.discard(None)
+    if coin_of(ticker) in coins:
+        return base
+    if len(coins) < MAX_PER_CLOSE:
+        return base
+    return base + float(extra) * float(SIZE if size is None else size)
 
 
 def late_boost_ok(fair_ours, jump_sd, pin=_HP_UNSET, jump_max=_HP_UNSET):
@@ -3321,11 +3387,21 @@ def _selftest_body():
         # divided by 8 rather than 5.88, and the divisor is a PRODUCT of three
         # constants -- so asserting the brake alone would pass while a change
         # to MAX_PER_CLOSE or PRICE_CEILING silently moved the bet size.
-        _div = BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING
+        # THE DECLARED VALUES, NEVER THE RUNNING ONES. This asserted the
+        # running product against 8.0, so --bank-brake 3.00 (AMENDMENT 56,
+        # which deliberately moves it) made pinrun fail its own STARTUP
+        # self-test and refuse to start. That is the fifth time this exact
+        # pattern has stopped the bot; the rule is in CLAUDE.md and in
+        # memory, and it applies to DERIVED products too, not just to single
+        # constants.
+        _div = (_DEFAULT_BANK_BRAKE * _DEFAULT_MAX_PER_CLOSE
+                * _DEFAULT_PRICE_CEILING)
         ck(abs(_div - 8.0) < 0.1,
-           "one bet is the bank divided by about 8 (got %.3f) -- set 2026-09-18 "
-           "on the operator's word 'Sure divide by 8'; the tolerance admits the "
-           "ceiling moving 0.98 -> 0.99, which makes it 8.08" % _div)
+           "the SHIPPED bet is the bank divided by about 8 (got %.3f) -- set "
+           "2026-09-18 on the operator's word 'Sure divide by 8'. The RUNNING "
+           "divisor moves with --bank-brake and --extra-coin and is reported "
+           "in the start record; only the shipped default is asserted here"
+           % _div)
         ck(_DEFAULT_PRICE_CEILING == 0.980,
            "the DECLARED ceiling is still 98c; the live 99c comes from the "
            "--price-ceiling flag and is asserted in VERSIONS.md, not here")
@@ -3551,6 +3627,79 @@ def _selftest_body():
         ck(_src55.count(_nd55) == 2,
            "the order path still admits the late multiple at live start and "
            "at every autosize")
+
+        # ---- AMENDMENT 56: a third COIN may spend beyond the close budget.
+        ck(_DEFAULT_EXTRA_COIN == 0.0,
+           "A56 ships OFF -- the DECLARED default, so an arm that sets the "
+           "flag does not fail its own gate")
+        ck(coin_of("KXBTC15M-26SEP180015-15") == "KXBTC"
+           and coin_of("KXDOGE15M-26SEP180015-15") == "KXDOGE"
+           and coin_of(None) is None,
+           "a ticker's COIN is the part before 15M -- the extra allowance is "
+           "per coin, and two closes of the same coin are not two coins")
+        _g56 = globals()
+        _sv56 = (_g56["SIZE"], _g56["EXTRA_COIN"])
+        try:
+            _g56["SIZE"], _g56["EXTRA_COIN"] = 80.0, 1.0
+            _two = {"tickers": {"KXBTC15M-A", "KXETH15M-A"}}
+            _one = {"tickers": {"KXBTC15M-A"}}
+            _base = 80.0 * MAX_PER_CLOSE
+            ck(abs(close_budget_for(_two, "KXSOL15M-A") - (_base + 80.0)) < 1e-9,
+               "with two coins already held, a THIRD coin gets one extra bet "
+               "of budget -- which is the operator's rule exactly: 'allow "
+               "extra total size if it comes in the way of an extra coin "
+               "after two have been maxed out'")
+            ck(abs(close_budget_for(_two, "KXBTC15M-B") - _base) < 1e-9,
+               "...but a coin we ALREADY hold gets nothing extra. The whole "
+               "argument is that two COINS have never lost together; topping "
+               "up the first coin adds a second bet on it, not a second coin")
+            ck(abs(close_budget_for(_one, "KXETH15M-A") - _base) < 1e-9,
+               "...and nothing is extra until the base has been spread "
+               "across MAX_PER_CLOSE coins -- 'after two have been maxed'")
+            ck(abs(close_budget_for(None, "KXSOL15M-A") - _base) < 1e-9,
+               "NULL: an empty close gets the base budget")
+            _w_on = worst_close_cost(80.0)
+            _g56["EXTRA_COIN"] = 0.0
+            _w_off = worst_close_cost(80.0)
+            ck(abs(_w_on - _w_off - 80.0 * PRICE_CEILING) < 1e-9,
+               "and the worst close GROWS by exactly one bet when the flag "
+               "is on. Every rail reads worst_close_cost -- the bank brake, "
+               "the loss abort, the stake cap -- so the extra coin is paid "
+               "for in the size, not discovered in a drawdown")
+            ck(size_for_bank(640.0, brake=4.08) > 0,
+               "...and the sizer still answers with the flag off")
+        finally:
+            _g56["SIZE"], _g56["EXTRA_COIN"] = _sv56
+        ck(abs(close_budget_for({"tickers": {"KXBTC15M-A", "KXETH15M-A"}},
+                                "KXSOL15M-A", extra=0.0, size=80.0)
+               - 80.0 * MAX_PER_CLOSE) < 1e-9,
+           "NULL: extra=0 is the shipped behaviour on every path")
+
+        # ---- AMENDMENT 57: one volatility multiplier for the WHOLE model.
+        _src57 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        for _where in ("sg * SIGMA_STRESS", "_hsg * SIGMA_STRESS"):
+            ck(_where in _src57,
+               "--sigma-stress multiplies sigma at %s, so the flag moves the "
+               "WHOLE model and not one corner of it" % _where.split()[0])
+        ck('"--sigma-stress below 1.0 makes the model BOLDER' in _src57,
+           "and a LIVE run refuses a value under 1.0: every live number we "
+           "have was measured at 1.0, and a bolder model is not a safer one")
+
+        # ---- AMENDMENT 58: every settled trade says what the boost did.
+        _lp58 = _src57[_src57.rindex(chr(10) + "def " + "trade_loop("):]
+        ck("boost_why[(close_s, tk)]" in _lp58 and "boost=boost_why.get(" in _lp58,
+           "every settled record carries ONE PLAIN SENTENCE saying whether "
+           "the last-seconds boost fired and why -- the operator asked to be "
+           "able to ask that of any trade without a log dive")
+        for _why in ("off: --late-mult", "no: bought at", "no: confidence",
+                     "sigma move against us", "no: allowed, but nothing to add",
+                     "FIRED:"):
+            ck(_why in _lp58,
+               "...and the reason distinguishes '%s' from the others -- a "
+               "single 'no' would not answer the question" % _why)
+        ck('"no: never reached the "' in _lp58,
+           "NULL: a trade that never reached the check says so, rather than "
+           "borrowing another trade's reason or reading as a refusal")
 
         # ---- AMENDMENT 54: flip into the side the later look prefers. OFF.
         ck(_DEFAULT_FLIP_MULT == 1.0,
@@ -4033,9 +4182,13 @@ def _selftest_body():
         # and on 2026-09-18 that took the live bot down for six minutes: the
         # flag was applied before the test ran, the test asserted 0.98, the
         # process wrote "self-test failed -- nothing ran" and exited.
-        ck(abs(worst_close_cost(20) - MAX_PER_CLOSE * 20 * PRICE_CEILING) < 1e-12,
-           f"worst_close_cost(20) must be MAX_PER_CLOSE*20*PRICE_CEILING = "
-           f"{MAX_PER_CLOSE * 20 * PRICE_CEILING}, got {worst_close_cost(20)}")
+        _wexp = (MAX_PER_CLOSE + EXTRA_COIN) * 20 * PRICE_CEILING
+        ck(abs(worst_close_cost(20) - _wexp) < 1e-12,
+           f"worst_close_cost(20) must be (MAX_PER_CLOSE + EXTRA_COIN) x 20 x "
+           f"PRICE_CEILING = {_wexp}, got {worst_close_cost(20)}. A56 added a "
+           f"third coin's worth of exposure and every rail reads this number, "
+           f"so leaving EXTRA_COIN out here would size the brake against a "
+           f"bet nobody places")
         ck(_DEFAULT_PRICE_CEILING == 0.980,
            "and the DECLARED ceiling is 98c -- asserted separately, so a flag "
            "that moves the running value cannot silently move the bar too")
@@ -4043,11 +4196,15 @@ def _selftest_body():
            "worst_close_cost must be EXACTLY linear in size -- that is the "
            "whole reason it replaced a sampled maximum, which was not")
 
-        # The ladder, by hand. bank / (1.5 * 2 * 0.98) = bank / 2.94.
-        _per = BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING
+        # The ladder, by hand. size_for_bank divides by
+        # worst_close_cost(1.0) x brake, and A56 put EXTRA_COIN inside
+        # worst_close_cost -- so this arithmetic must carry it too or the
+        # check contradicts the function it is checking.
+        _per = BANK_BRAKE * (MAX_PER_CLOSE + EXTRA_COIN) * PRICE_CEILING
         ck(size_for_bank(192.15) == int(192.15 // _per),
-           f"$192.15 / ${_per:.2f} (BANK_BRAKE {BANK_BRAKE} x MAX_PER_CLOSE "
-           f"{MAX_PER_CLOSE} x ceiling {PRICE_CEILING}) = "
+           f"$192.15 / ${_per:.2f} (BANK_BRAKE {BANK_BRAKE} x "
+           f"(MAX_PER_CLOSE {MAX_PER_CLOSE} + EXTRA_COIN {EXTRA_COIN}) x "
+           f"ceiling {PRICE_CEILING}) = "
            f"{int(192.15 // _per)}, got {size_for_bank(192.15)}")
         ck(size_for_bank(0.0) == AUTO_SIZE_MIN and size_for_bank(None)
            == AUTO_SIZE_MIN,
@@ -5606,10 +5763,15 @@ def _selftest_body():
         try:
             globals()["SIZE"] = 68.0
             ck(abs(close_budget() - 68.0 * MAX_PER_CLOSE) < 1e-9,
-               f"budget must be MAX_PER_CLOSE x SIZE = "
+               f"the BASE budget is MAX_PER_CLOSE x SIZE = "
                f"{68.0 * MAX_PER_CLOSE}, got {close_budget()}")
             # THE INVARIANT THE WHOLE AMENDMENT RESTS ON: exposure unchanged.
-            ck(abs(close_budget() * PRICE_CEILING
+            # A56: the worst case is the base budget PLUS the extra-coin
+            # allowance, because a third coin may spend beyond the base. The
+            # two must still agree, or the rails are sized against a bet
+            # nobody places -- that is what this check is for and it now
+            # reads the same total the sizer does.
+            ck(abs((close_budget() + EXTRA_COIN * 68.0) * PRICE_CEILING
                    - worst_close_cost(68.0)) < 1e-9,
                "budget x ceiling must equal worst_close_cost -- if these ever "
                "disagree, the --loss-abort band, pintake's stake cap and "
@@ -5622,8 +5784,12 @@ def _selftest_body():
 
         _lb3 = src[src.index(chr(10) + "def trade_loop("):]
         _ln3 = _lb3.splitlines()
-        ck("                if _spent >= close_budget() - 1e-9:" in _ln3,
-           "the per-close cap must read CONTRACTS, not the fill count")
+        ck("                if _spent >= _bud56 - 1e-9:" in _ln3
+           and "                _bud56 = close_budget_for(prev, tk)" in _ln3,
+           "the per-close cap must read CONTRACTS, not the fill count -- and "
+           "since A56 it reads the budget for THIS CANDIDATE, which is the "
+           "base plus the extra-coin allowance when the candidate is a coin "
+           "this close does not already hold")
         ck('                _spent = prev.get("contracts", 0.0) if prev else 0.0'
            in _ln3,
            "and `contracts` must come from the close's own record")
@@ -5827,8 +5993,12 @@ def close_budget(size=None):
 def worst_close_cost(size):
     """The most one close can lose. Exact: a long binary cannot lose more
     than it cost, and one close deploys at most MAX_PER_CLOSE legs of `size`
-    at at most PRICE_CEILING."""
-    return float(MAX_PER_CLOSE) * float(size) * float(PRICE_CEILING)
+    at at most PRICE_CEILING -- PLUS A56's extra-coin allowance, which is
+    real exposure and must be in every rail that reads this (the bank brake,
+    the loss abort, the stake cap). Leaving it out would make the extra coin
+    free on paper and paid for in a drawdown."""
+    return ((float(MAX_PER_CLOSE) + float(EXTRA_COIN))
+            * float(size) * float(PRICE_CEILING))
 
 
 def one_coin_cap(size, bank, hwm, mult=None):
@@ -6169,6 +6339,9 @@ def trade_loop(a, rec, book, idx, series_index):
     boosted = set()          # A53: (close_s, ticker) pairs an order was widened
                              # for, so a boosted LOSS can switch the boost off
     _boosted48 = set()       # A55: the same, for the last-seconds boost
+    boost_why = {}           # A58: (close_s, ticker) -> why the last-seconds
+                             # boost did or did not fire, carried into the
+                             # settled record so every trade can be asked
     entry_at = {}            # A52: oid -> wall-clock second we ENTERED, so the
                              # jump trigger measures moves since entry and not
                              # since the last three seconds
@@ -6379,6 +6552,12 @@ def trade_loop(a, rec, book, idx, series_index):
                           f"OFF for the rest of this run ***")
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
                 pnl_c=round(100 * pnl, 2),
+                # A58, the operator: "Start recording the end of each trade
+                # we make and why or why didn't the boost fire so I can ask".
+                # One plain sentence per settled trade, so the question never
+                # needs a log dive.
+                boost=boost_why.get((close_s, tk), "no: never reached the "
+                                    "last-seconds check"),
                 realised=round(pintake.LEDGER["realised"], 4))
             print(f"  SETTLED {tk} {want} vs {res} -> {100 * pnl:+.2f}c "
                   f"(run realised ${pintake.LEDGER['realised']:+.4f})")
@@ -6808,9 +6987,11 @@ def trade_loop(a, rec, book, idx, series_index):
                 # AMENDMENT 17: contracts, not fills. Coins are unlimited;
                 # the close is done when its contract budget is spent.
                 _spent = prev.get("contracts", 0.0) if prev else 0.0
-                if _spent >= close_budget() - 1e-9:
+                _bud56 = close_budget_for(prev, tk)
+                if _spent >= _bud56 - 1e-9:
                     _gate("close_budget", close_s, tk, spent=_spent,
-                          budget=close_budget())
+                          budget=_bud56, base=close_budget(),
+                          extra_coin=float(EXTRA_COIN))
                     continue
             elif prev is not None and prev["n"] >= MAX_PER_CLOSE:
                 _gate("max_per_close", close_s, tk, n=prev["n"])
@@ -7496,7 +7677,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         _avail45 = max(_avail45, float(book.buyable(tk, want, _limit45)))
                     except Exception:              # noqa: BLE001
                         pass
-                _room45 = (close_budget()
+                _room45 = (close_budget_for(prev, tk)
                            - (prev.get("contracts", 0.0)
                               if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
                 _was45 = take_n
@@ -7531,7 +7712,16 @@ def trade_loop(a, rec, book, idx, series_index):
                 headroom A45 uses, the close budget, and the book. This only
                 raises the per-order cap inside the window.
                 """
-                if LATE_MULT <= 1.0 or tau > LATE_TAU:
+                if LATE_MULT <= 1.0:
+                    boost_why[(close_s, tk)] = (
+                        "off: --late-mult is 1.0"
+                        if _DEFAULT_LATE_MULT >= LATE_MULT else
+                        "off: switched off by an earlier boosted loss")
+                    return take_n
+                if tau > LATE_TAU:
+                    boost_why[(close_s, tk)] = (
+                        "no: bought at %ds, outside the last %ds"
+                        % (tau, LATE_TAU))
                     return take_n
                 # A55: the operator's two conditions on the EXTRA contracts.
                 # `f` is the model's probability of YES, so our side's
@@ -7545,6 +7735,13 @@ def trade_loop(a, rec, book, idx, series_index):
                     except Exception:              # noqa: BLE001
                         _jmp48 = None
                 if not late_boost_ok(_ours48, _jmp48):
+                    boost_why[(close_s, tk)] = (
+                        "no: confidence %.4f%% under the %.4g%% bar"
+                        % (100 * _ours48, 100 * LATE_PIN)
+                        if (LATE_PIN is not None and _ours48 < LATE_PIN)
+                        else "no: %s sigma move against us (bar %.4g)"
+                        % (("%.1f" % _jmp48) if _jmp48 is not None
+                           else "unmeasurable", LATE_JUMP_SD or 0))
                     rec("late_refused", ticker=tk, want=want, tau=tau,
                         fair_ours=round(float(_ours48), 5), jump_sd=_jmp48,
                         need_pin=LATE_PIN, max_jump=LATE_JUMP_SD,
@@ -7559,12 +7756,20 @@ def trade_loop(a, rec, book, idx, series_index):
                         _avail48 = max(_avail48, float(book.buyable(tk, want, _lim48)))
                     except Exception:              # noqa: BLE001
                         pass
-                _room48 = (close_budget()
+                _room48 = (close_budget_for(prev, tk)
                            - (prev.get("contracts", 0.0)
                               if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
                 _was48 = take_n
                 take_n = max(take_n, min(_cap48, _avail48, max(0.0, _room48)))
+                if take_n <= _was48 + 1e-9:
+                    boost_why[(close_s, tk)] = (
+                        "no: allowed, but nothing to add (book %.0f, "
+                        "headroom %.0f, close budget %.0f left)"
+                        % (_avail48, _cap48, max(0.0, _room48)))
                 if take_n > _was48 + 1e-9:
+                    boost_why[(close_s, tk)] = (
+                        "FIRED: %.0f -> %.0f contracts at %ds, confidence "
+                        "%.4f%%" % (_was48, take_n, tau, 100 * _ours48))
                     _boosted48.add((close_s, tk))
                     rec("late_boost", ticker=tk, want=want, tau=tau,
                         fair_ours=round(float(_ours48), 5), jump_sd=_jmp48,
@@ -7592,7 +7797,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         _avail53 = max(_avail53, float(book.buyable(tk, want, _lim53)))
                     except Exception:              # noqa: BLE001
                         pass
-                _room53 = (close_budget()
+                _room53 = (close_budget_for(prev, tk)
                            - (prev.get("contracts", 0.0)
                               if prev else 0.0)) if CLOSE_BUDGET else float(SIZE) * _m53
                 _was53 = take_n
@@ -7671,7 +7876,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         except Exception:              # noqa: BLE001
                             _deep = 0.0
                         if _deep > take_n:
-                            _room = (close_budget()
+                            _room = (close_budget_for(prev, tk)
                                      - (prev.get("contracts", 0.0)
                                         if prev else 0.0)) if CLOSE_BUDGET                                 else float(SIZE)
                             _was = take_n
@@ -7920,6 +8125,20 @@ def main():
                     help="AMENDMENT 48: the multiple of SIZE one order may "
                          "reach inside --late-tau. Still capped by the drawdown "
                          "headroom, the close budget and the book.")
+    ap.add_argument("--extra-coin", type=float, default=None,
+                    help="AMENDMENT 56: extra SIZE a close may spend, for a "
+                         "coin it is NOT already holding, once the base "
+                         "budget has been spread across MAX_PER_CLOSE coins. "
+                         "Measured: 0 of 417 closes have ever lost two coins. "
+                         "It RAISES the worst close, so worst_close_cost and "
+                         "every rail that reads it grow too -- at a fixed "
+                         "--bank-brake the bet size falls by the same ratio.")
+    ap.add_argument("--sigma-stress", type=float, default=None,
+                    help="AMENDMENT 57: multiply the volatility estimate by "
+                         "this EVERYWHERE the model runs -- entry, the sweep "
+                         "limit and the hedge. Above 1 makes the bot humbler "
+                         "(fewer, safer trades); below 1 makes it bolder. "
+                         "1.0 is the shipped value.")
     ap.add_argument("--late-pin", type=float, default=None,
                     help="AMENDMENT 55: the EXTRA contracts of the "
                          "last-seconds boost need at least this much "
@@ -8185,6 +8404,20 @@ def main():
                              "(%.1f) -- the close budget bounds it anyway, got %r"
                              % (float(MAX_PER_CLOSE), a.late_mult))
         globals()["LATE_MULT"] = float(a.late_mult)
+    if a.extra_coin is not None:
+        if not (0.0 <= a.extra_coin <= float(MAX_PER_CLOSE)):
+            raise SystemExit("--extra-coin must sit in [0, MAX_PER_CLOSE=%g], "
+                             "got %r" % (float(MAX_PER_CLOSE), a.extra_coin))
+        globals()["EXTRA_COIN"] = float(a.extra_coin)
+    if a.sigma_stress is not None:
+        if not (0.25 <= a.sigma_stress <= 5.0):
+            raise SystemExit("--sigma-stress must sit in [0.25, 5], got %r"
+                             % (a.sigma_stress,))
+        if a.live and a.sigma_stress < 1.0:
+            raise SystemExit(
+                "--sigma-stress below 1.0 makes the model BOLDER than the "
+                "one every live number was measured under. Paper only.")
+        globals()["SIGMA_STRESS"] = float(a.sigma_stress)
     if a.late_pin is not None:
         if not (0.5 <= a.late_pin < 1.0):
             raise SystemExit("--late-pin must sit in [0.5, 1), got %r"
@@ -8458,7 +8691,7 @@ def main():
         # own log cannot say what it is testing is not measurable.
         hedge_price=HEDGE_PRICE,
         late_tau=LATE_TAU, late_mult=LATE_MULT,
-        late_pin=LATE_PIN, late_jump=LATE_JUMP_SD,
+        late_pin=LATE_PIN, late_jump=LATE_JUMP_SD, extra_coin=EXTRA_COIN,
         # A53: lists, so the Lab can select an arm by its exact bands
         skip_bands=[list(b) for b in SKIP_BANDS],
         band_mults=[list(b) for b in BAND_MULTS],

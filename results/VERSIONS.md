@@ -1,3 +1,72 @@
+# v-thirdcoin -- 2026-09-19 ~00:2xZ -- LIVE: a third COIN may spend beyond the close budget, and the brake moves 4.08 -> 3.00
+
+Operator: *"if we've never lost multiple coins at once, allow extra total
+size if it comes in the way of an extra coin after two have been maxed out.
+I'm okay with that."*
+
+## The condition he set, measured
+
+**Of 417 closes we have traded, 19 had a losing coin and NOT ONE had two.**
+In every one of the nineteen, the other coins at that close won or there
+were none. Twelve of those closes already held three coins.
+
+Why it is not luck: a close loses only when the last seconds move against
+the side we took ON THAT COIN. Correlated moves across coins are common;
+correlated moves that cross twelve different strikes in the same direction
+inside the same second are not.
+
+## And the budget really does bind
+
+`close_budget` refused **326 markets on a coin we were NOT holding** -- about
+**65 a day** -- against 95 on a coin we already had. So this is not a
+theoretical allowance.
+
+## What the bot does differently
+
+A close may now spend **one extra bet of budget on a coin it is not already
+holding**, once the base budget has been spread across MAX_PER_CLOSE coins.
+A coin we ALREADY hold gets nothing extra: the argument is that two COINS
+have never lost together, and topping up the first coin adds a second bet on
+it, not a second coin.
+
+## The price, and the choice he has
+
+`worst_close_cost` grows from two bets to three, and **every rail reads it**
+-- the bank brake, the loss abort, the stake cap -- so the extra coin is
+paid for in the bet size rather than discovered in a drawdown. At a $640
+bank:
+
+| brake | extra-coin | bet size | worst close | bank covers it |
+|---|---|---|---|---|
+| 4.08 | 0 (before tonight) | 80 | $157 | 4.1x |
+| 4.08 | 1 | **53** | $156 | 4.1x |
+| **3.00** | **1 (deployed)** | **72** | **$212** | **3.0x** |
+| 2.72 | 1 | 80 | $235 | 2.7x |
+
+He asked for extra TOTAL size, not the same total spread thinner, so the
+brake moves to **3.00**: bets 80 -> 72, a third coin allowed, worst close
+$157 -> $212. **One line changes it either way** -- 4.08 keeps tonight's
+risk exactly and accepts 53-contract bets; 2.72 keeps 80-contract bets and
+a $235 worst close.
+
+## Also in this restart
+
+- **AMENDMENT 57, `--sigma-stress`** exists as a flag now (it was a constant).
+  It multiplies the volatility estimate EVERYWHERE -- entry, sweep limit and
+  hedge. **Not live**: four paper arms run it at 0.8, 1.25, 1.5 and 2.0, and
+  a live run refuses anything under 1.0.
+- **AMENDMENT 58**, every settled record now carries a `boost` field: one
+  plain sentence saying whether the last-seconds boost fired and why not.
+
+## Revert
+
+`restart_bot.ps1`, then `.estart_bot.ps1`:
+
+- **third coin only:** delete `"--extra-coin", "1",` and set
+  `"--bank-brake", "4.08"`. Both, or the bet size stays cut for nothing.
+
+---
+
 # v-late10 -- 2026-09-18 ~23:5xZ -- LIVE: 1.5x the bet inside the last 10 seconds, on three conditions the operator set
 
 Operator: *"Yes a48 live, make sure it's got good confidence when buying in
@@ -59,7 +128,8 @@ agree.
 
 ## Revert
 
-`restart_bot.ps1`, then `.estart_bot.ps1`:
+`restart_bot.ps1`, then `.
+estart_bot.ps1`:
 
 - **boost only:** delete `"--late-tau", "10", "--late-mult", "1.5",`
 - **its conditions only:** delete the `--late-pin` and `--late-jump` lines

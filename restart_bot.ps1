@@ -233,7 +233,9 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # ladder_under, two A45 room checks). Those must be rewritten against the
     # declared default before the flag can be used live. Removed; see
     # results/VERSIONS.md v-ceiling99 for the full account.
-    "--bank-brake", "4.08",
+    # (--bank-brake moved to the bottom of this list with AMENDMENT 56; a
+    # duplicated flag makes argparse take the LAST one, so there must be
+    # exactly one.)
     # v-bands, 2026-09-18 ~21:5xZ, three flags on the operator's word:
     # "Okay remove insurance. But keep hedging. We can remove 94-96. If it's
     # safe then yea you figure out a way to buy more beneath 94."
@@ -287,6 +289,34 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     #    1.0 for the rest of the run (record `late_boost_off`). No flag; the
     #    bot enforces it. Hedging is unchanged and still fires at any tau,
     #    including inside the last seconds.
+    ,
+    # AMENDMENT 56, 2026-09-18. The operator: "if we've never lost multiple
+    # coins at once, allow extra total size if it comes in the way of an
+    # extra coin after two have been maxed out. I'm okay with that."
+    #
+    # His condition is MEASURED and holds: of 417 closes we have traded, 19
+    # had a losing coin and NOT ONE had two -- in every case the other coins
+    # at that close won. Twelve of those closes already held three coins.
+    # And the budget really does bind: 326 markets were refused for
+    # close_budget on a coin we were NOT holding, about 65 a day.
+    #
+    # A THIRD coin at a close may now spend one extra bet of budget. A coin
+    # we ALREADY hold gets nothing extra -- the argument is about two COINS
+    # never losing together, not about a second bet on the first coin.
+    "--extra-coin", "1",
+    # THE PRICE, stated because it is the only change tonight that raises
+    # the worst case. worst_close_cost grows from 2 bets to 3, and every
+    # rail reads it, so at a fixed brake the bet size would fall. At a $640
+    # bank:
+    #     brake 4.08 + extra-coin 1 -> 53 contracts, worst close $156 (as now)
+    #     brake 3.00 + extra-coin 1 -> 72 contracts, worst close $212
+    #     brake 2.72 + extra-coin 1 -> 80 contracts, worst close $235
+    # He asked for extra TOTAL size, not the same total spread thinner, so
+    # the brake moves to 3.00: bets 80 -> 72, a third coin allowed, and the
+    # worst close $157 -> $212 (the bank covers it 3.0x instead of 4.1x).
+    # To keep 80-contract bets instead, set 2.72; to keep tonight's risk
+    # exactly, set 4.08 and accept 53.
+    "--bank-brake", "3.00"
     # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
     # built as safely as you described, deploy now"), first at half, then at a
     # THIRD, and from ~19:5xZ the same day at a FULL bet on his instruction:
