@@ -18,37 +18,45 @@ The naive break-even (`1 - price` = 3.0%) assumes a TOTAL loss. Ours are not:
 margin. Do not quote "3.0% against a 3.0% break-even" as break-even -- it is
 not the same denominator and it is not the same loss.
 
-## Hedging is worth 43c per contract
+## A HEDGE THAT FILLS CUTS THE LOSS BY THREE TIMES
 
-| | markets | per contract |
-|---|---|---|
-| losses WITH a hedge attempt | 10 | **-35.1c** |
-| losses with NO hedge attempt | 7 | **-78.6c** |
-
-**Not causal** -- a slow collapse allows a hedge AND is smaller; an instant
-one allows neither. And 6 of the 7 unhedged losses pre-date 09-13, so this is
-partly before-and-after. But it is the strongest live evidence we have for
-the operator's most-repeated instruction.
-
-## The addressable half
-
-Split on `fair` at the LAST look before settlement:
+All 17, split by what the ESCAPE actually did:
 
 | | markets | money | per contract |
 |---|---|---|---|
-| model NEVER saw it (fair still >50%) | 6 | -$127.72 | -55.6c |
-| model SAW the flip, we could not escape | 11 | **-$170.88** | -42.6c |
+| no hedge -- feature not live yet (09-08..11) | 5 | -$101.08 | -73.4c |
+| no hedge -- feature WAS live | 2 | -$38.49 | **-96.2c** |
+| **hedged, filled in FULL** | 9 | -$101.27 | **-26.9c** |
+| hedged, filled PART | 1 | -$57.76 | -76.0c |
 
-**64% of every dollar we have lost is in the second group** -- markets where
-our own model had already flipped and we were still holding. That is exactly
-what A62 (panic hedge, live) and A63 (`--rebuy-hedged`, built, OFF) target.
-The first group is a model problem, not an escape problem, and is what the
-sigma arms are for.
+**-26.9c against -73 to -96c.** When the hedge fires and fills, we keep about
+three quarters of the stake. That residual is not a failure -- it is what the
+insurance COSTS, and it is the whole reason a 3% loss rate at 97c is
+profitable.
 
-Reproduce: the script is gone with the scratchpad; it reads every
-`results/pinrun-live-*.jsonl`, folds `settled` rows per ticker (a hedged
-market writes TWO -- summing, not overwriting, matters), counts contracts
-from `order.filled`, and splits on the last `signal.fair`.
+**There has been exactly ONE escape failure in the project's history**:
+`KXBNB15M-26SEP190145-45`, 09-19 01:45, 76 held and 1 hedged, belief falling
+0.268 -> 0.116 across three attempts. A62 (panic below 40% belief, 30 tries)
+is live as of 02:5xZ specifically for it and **has not yet been exercised**.
+
+**OPEN -- two losses where hedging was live and NOTHING fired:**
+`KXSOL15M-26SEP112300-00` (-$19.61) and `KXSOL15M-26SEP120400-00` (-$18.88),
+both full losses at -96.2c per contract, no hedge record at all. Not
+explained. Worth an hour.
+
+### A CORRECTION, and the field that caused it
+
+An earlier version of this section claimed *"64% of every dollar we have lost
+is in markets our model saw flip"*, split on the last `signal.fair`. **That
+was wrong and is withdrawn.** `signal.fair` is the fair value at the moment
+we wanted to BUY, not the model's belief while HOLDING -- so it put the BNB
+close (belief 0.227 while holding) into the "model never saw it" bucket
+because its last buy signal read 0.9993. The belief while holding exists only
+on `hedge` records, which is why the table above splits on the escape instead.
+
+Reproduce: read every `results/pinrun-live-*.jsonl`; fold `settled` rows per
+ticker (a hedged market writes TWO -- sum, never overwrite); contracts from
+`order.filled`; hedge fills and belief from `hedge`.
 
 ---
 
