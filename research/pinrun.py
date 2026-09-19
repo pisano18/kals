@@ -1207,6 +1207,152 @@ def hedge_ask_ok(hedge_ask):
     return 0.0 < a < HEDGE_MAX_ASK - 1e-9
 
 
+# ---------------------------------------------------------------------------
+# AMENDMENT 70 (2026-09-19): THE HEDGE COULD NOT SWEEP, AND THAT IS WHY IT
+# DID NOT FILL.
+#
+# The ENTRY path has been sweeping the ladder since A35/A67: it sends
+# `sweep_limit(...)` -- a price ABOVE the touch -- and sizes the order from
+# `book.rungs`. The self-test at "pintake.take() is handed the LIMIT, never
+# the ask we saw" enforces it.
+#
+# THE HEDGE PATH DOES NEITHER. It sent `float(_ask)` as the limit and
+# `min(_hn_want, _asz)` as the size -- one stale level, priced to the tick.
+# So the moment the market moves, which is exactly the moment a hedge is
+# needed, the IOC crosses nothing and we get zero.
+#
+# THE EVIDENCE, live fills only (rule 5), all 29 hedge attempts we have ever
+# sent:
+#
+#   KXBTC15M-26SEP172115-15  tau 36  asked 99  touch  283.8  FILLED 0
+#   KXBTC15M-26SEP172115-15  tau 35  asked 99  touch 7419.0  FILLED 0
+#   KXBNB15M-26SEP190145-45  tau 20  asked 76  touch   96.0  FILLED 0
+#   KXBNB15M-26SEP190145-45  tau 19  asked 25  touch   25.0  FILLED 1
+#   KXBNB15M-26SEP191230-30  tau 11  asked 28  touch   28.0  FILLED 1
+#
+# Ten of twenty-nine attempts filled nothing or one contract while the book
+# displayed everything we asked for. The 01:45 BNB close is the ONLY escape
+# failure in the project's history (-$57.76) and this is its mechanism: A62
+# removed the FILTERS that blocked that hedge, and the hedge still did not
+# fill, because nothing had fixed the EXECUTION.
+#
+# WHAT THIS CHANGES AND WHAT IT CANNOT. It raises the price a hedge may pay
+# by at most `--hedge-slip` cents over the ask we saw, and it lets the size
+# come from the ladder instead of the touch. It is OFF by default (slip 0.0),
+# so the shipped behaviour is byte-identical to today's until the flag is
+# passed.
+#
+# WHAT IT BLOCKS -- the question today's rule says to answer first: NOTHING.
+# There is no path on which a hedge that fires today does not fire with the
+# flag on. `hedge_depth` returns at least the touch size, so a hedge can only
+# get bigger, never smaller; `hedge_limit` returns at least the ask, so it can
+# only cross more of the book, never less; and if `book.rungs` raises, the
+# caller falls back to the touch and hedges anyway.
+#
+# AND IT CANNOT RAISE EXPOSURE. The extra depth is capped at `unhedged` --
+# the contracts of ours still without a matching leg. A close pays
+# `min(yes_n, no_n)`, so every contract past the other side's count is naked
+# (A63 was refused for exactly that). The cap is what keeps this a hedge.
+
+HEDGE_SLIP = 0.0         # --hedge-slip: dollars above the ask a hedge may pay
+_DEFAULT_HEDGE_SLIP = 0.0
+
+
+def hedge_limit(ask, slip=None):
+    """The LIMIT to send for a hedge leg: the ask we saw, plus the slip, hard
+    stopped below HEDGE_MAX_ASK.
+
+    Never returns less than `ask` -- a smaller limit would cross less of the
+    book than today and could turn a hedge that fills into one that does not.
+    Returns None only when the ask itself is unusable, which the caller has
+    already refused on via hedge_ask_ok().
+    """
+    s = HEDGE_SLIP if slip is None else slip
+    try:
+        a = float(ask)
+    except (TypeError, ValueError):
+        return None
+    if not (a > 0.0):
+        return None
+    try:
+        s = max(0.0, float(s))
+    except (TypeError, ValueError):
+        s = 0.0
+    # a hedge leg at or over $1 cannot beat holding (hedge_ask_ok), so the
+    # limit stops one tenth of a cent below it however big the slip is.
+    return min(a + s, HEDGE_MAX_ASK - 0.001)
+
+
+def hedge_depth(touch_size, rungs, unhedged):
+    """Contracts a hedge may take: the ladder up to the limit, but never more
+    than the contracts still unhedged, and never LESS than the touch.
+
+    `rungs` is [(price, contracts)] from book.rungs() at the hedge limit --
+    already filtered to prices we are willing to pay, so the total is what an
+    IOC at that limit could cross.
+
+    The two bounds are the whole safety argument:
+      - `max(touch, ...)` means this can only ever take MORE than today, so
+        no hedge that fills now stops filling.
+      - `min(..., unhedged)` bounds THE LADDER'S CONTRIBUTION to the
+        contracts still needing a leg. Past `unhedged` a leg is naked, which
+        is a directional bet, not insurance.
+
+    BE PRECISE ABOUT WHAT THIS DOES NOT BOUND. The return value is
+    `max(touch, ...)`, so when the touch alone is deeper than `unhedged` the
+    result exceeds `unhedged` -- that is the PRE-A70 number, unchanged, and
+    the caller's `min(_hn_want, ...)` is what bounds it. A70 adds no exposure
+    the touch did not already offer; it only lets the ladder reach the same
+    ceiling when the touch is thin.
+    """
+    try:
+        touch = max(0.0, float(touch_size))
+    except (TypeError, ValueError):
+        touch = 0.0
+    try:
+        cap = max(0.0, float(unhedged))
+    except (TypeError, ValueError):
+        return touch
+    total = 0.0
+    for r in (rungs or ()):
+        try:
+            total += max(0.0, float(r[1]))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return max(touch, min(total, cap))
+
+
+def hedge_vwap(rungs, n, fallback):
+    """What `n` contracts swept cheapest-first actually cost, per contract.
+
+    PAPER ONLY. The live path reads `exec_price` off the fill and never
+    guesses. This exists so a paper arm running --hedge-slip does not book
+    ladder depth at the touch price and report an edge the exchange would
+    never have given it -- the flattering error that makes an arm look good.
+
+    Falls back to `fallback` (the touch) when the rungs cannot answer, which
+    is the pre-A70 number.
+    """
+    try:
+        want = float(n)
+    except (TypeError, ValueError):
+        return fallback
+    if want <= 0 or not rungs:
+        return fallback
+    left, spend = want, 0.0
+    for r in rungs:
+        try:
+            price, depth = float(r[0]), max(0.0, float(r[1]))
+        except (TypeError, ValueError, IndexError):
+            return fallback
+        take = min(left, depth)
+        spend += take * price
+        left -= take
+        if left <= 1e-9:
+            return spend / want
+    return fallback          # the ladder did not hold n; do not invent a price
+
+
 _EW_UNSET = object()      # "cap not supplied" -- distinct from None, which is
                           # a REAL value meaning "A50 is off". Passing None to
                           # mean "no cap" fell back to the running global and
@@ -2463,6 +2609,20 @@ _DEFAULT_MAX_ATTEMPTS_PER_MARKET = 3   # market in one close, filled or not.
                              # walking down to the next-best market when the
                              # best one has been taken.
                              # 3 allows a lost race, a retry, and one more.
+# AMENDMENT 71: consecutive reconcile() failures after which the run stops.
+# Not 1 -- a single HTTP hiccup must not end a trading day. Not unlimited --
+# a frozen ledger makes every loss brake inert. At 20 Hz this is a couple of
+# seconds of a genuinely broken settlement reader.
+RECONCILE_FAIL_HALT = 40
+
+# AMENDMENT 71: the HEDGE's own per-close send cap, deliberately above
+# anything ordinary hedging can reach (3 positions x HEDGE_MAX_TRIES, one try
+# per position per second). It exists only so a bug cannot turn the hedge into
+# a 20 Hz runaway; it must never be the reason a real hedge does not fire.
+# Before A71 the hedge read MAX_ATTEMPTS_PER_CLOSE, which the ENTRY path
+# spends -- so the bot's own buying could permanently disable its insurance.
+MAX_HEDGE_ATTEMPTS_PER_CLOSE = 120
+
 MAX_ATTEMPTS_PER_CLOSE = 24  # AMENDMENT 26: 8 -> 24. Twelve coins settle on
                              # the same second, so 8 could not even try them
                              # all once, let alone come back. 24 is every coin
@@ -3678,14 +3838,38 @@ def _selftest_body():
            "and every alarm records WHICH reason fired and the jump size, so "
            "the two triggers can be scored against each other on the same "
            "alarms")
-        for _site in ("open_pos[_poid] = ", "open_pos[f\"paper-{tk}-{now_s}\"] = ",
-                      "open_pos[_oid_new] = "):
-            _i = _lp52.index(_site)
-            _win = _lp52[_i - 200:_i + 200]
-            ck("entry_at[" in _win,
-               "every ENTRY position records when it was entered beside the "
-               "position itself (%s) -- without it the trigger would measure "
-               "the last three seconds, not the time since entry" % _site.strip())
+        # AMENDMENT 71. This loop used to check `entry_at[` ONLY, and that is
+        # precisely why the paper hedge path was dead for the whole life of
+        # the project without anybody noticing. `entry_at` decides how the
+        # JUMP trigger measures elapsed time; `hedge_meta` decides whether the
+        # position can be hedged AT ALL -- the hedge pass gives up on any
+        # position it cannot find there. The paper site set the first and not
+        # the second, so every paper arm ran a bot that could not insure a
+        # collapsing bet, and every arm-vs-live comparison on a losing close
+        # was measuring that difference instead of the flag it was testing.
+        #
+        # MEASURED: 151 signals across the five paper arms running on
+        # 2026-09-19, ZERO hedge_alarm and ZERO hedge records; live on the
+        # same markets, 2 alarms and 8 hedges.
+        # Matched on the KEY, not on proximity. The old version looked in a
+        # +/-200 character window, which is a test that a comment can break
+        # and -- worse -- a test that passes while the registration it is
+        # checking sits on a different position entirely.
+        for _key in ("_poid", "_poid46", "_oid_new"):
+            _site = "open_pos[%s] = " % _key
+            ck(_site in _lp52,
+               "the entry site %s still exists" % _site.strip())
+            ck("entry_at[%s]" % _key in _lp52,
+               "every ENTRY position records when it was entered under the "
+               "SAME key (%s) -- without it the jump trigger would measure "
+               "the last three seconds, not the time since entry" % _key)
+            ck("hedge_meta[%s]" % _key in _lp52,
+               "and every ENTRY position is registered for HEDGING under the "
+               "same key (%s). The hedge pass skips any position missing from "
+               "hedge_meta, for ever -- that is a gate on a hedge, which "
+               "nothing is allowed to be. This check did not exist, and that "
+               "is why every paper arm ran a bot that could not insure a "
+               "losing bet" % _key)
         ck("HEDGE_JUMP_LOOKBACK_MAX" in _lp52 and HEDGE_JUMP_LOOKBACK_MAX == 60,
            "and the lookback is capped at a minute, so a position held from "
            "45 s cannot ask the feed for more than it holds")
@@ -4610,6 +4794,235 @@ def _selftest_body():
         ck(_lp62.index('_panic = hedge_panic(_belief)')
            < _lp62.index("if not _panic and not hedge_price_ok(_ask):"),
            "the panic is decided BEFORE the first filter that could block it")
+
+        # ---- AMENDMENT 70: the hedge sweeps, and it still cannot go naked --
+        #
+        # The failure this plants for: the touch holds a handful of contracts
+        # and the real depth is one tick up. Pre-A70 the hedge asked for the
+        # touch and sent a limit at the touch price, so it took 5 of the 76 it
+        # needed -- or, when the level had already moved, none of them.
+        _r70 = [(0.70, 5.0), (0.71, 300.0)]
+
+        # OFF by default: the shipped numbers are the pre-A70 numbers exactly.
+        ck(_DEFAULT_HEDGE_SLIP == 0.0,
+           "A70 ships OFF -- with no flag the hedge prices and sizes itself "
+           "exactly as it did before, so this cannot change live behaviour "
+           "until somebody passes --hedge-slip")
+        ck(hedge_limit(0.70, 0.0) == 0.70,
+           "NULL: slip 0 sends the ask we saw, which IS the old behaviour")
+        ck(hedge_depth(5.0, [], 76.0) == 5.0,
+           "NULL: no rungs (slip off, so they are never read) leaves the "
+           "size at the touch -- the old behaviour again")
+
+        # ON: the limit reaches one tick up, and the ladder fills the hedge.
+        ck(abs(hedge_limit(0.70, 0.03) - 0.73) < 1e-9,
+           "with 3c of slip the limit clears the 0.71 rung the touch could "
+           "not reach")
+        ck(hedge_depth(5.0, _r70, 76.0) == 76.0,
+           "and the size comes from the LADDER (305 available) capped at the "
+           "76 contracts still unhedged -- not the 5 at the touch")
+
+        # THE EXPOSURE PROOF. This is the bound that keeps it a hedge.
+        ck(hedge_depth(5.0, [(0.70, 5.0), (0.71, 9999.0)], 76.0) == 76.0,
+           "EXPOSURE: a bottomless ladder still stops at the unhedged count. "
+           "A close pays min(yes_n, no_n), so every contract past the other "
+           "side's count is NAKED -- that is what A63 was refused for")
+        for _t70, _u70 in ((5.0, 76.0), (500.0, 76.0), (5.0, 0.0), (0.0, 0.0)):
+            ck(hedge_depth(_t70, [(0.7, 1e6)], _u70) <= max(_t70, _u70) + 1e-9,
+               "EXPOSURE: hedge_depth never exceeds max(touch, unhedged) "
+               "(touch %g, unhedged %g)" % (_t70, _u70))
+
+        # IT CANNOT BLOCK A HEDGE -- today's rule, asserted rather than hoped.
+        ck(hedge_depth(500.0, _r70, 76.0) == 500.0,
+           "BLOCKS NOTHING: when the touch is already deeper than the ladder "
+           "cap, the touch wins -- a hedge that fills today cannot fill less")
+        for _bad in (None, (), [(None, None)], [("x", "y")], "junk"):
+            ck(hedge_depth(5.0, _bad, 76.0) >= 5.0,
+               "BLOCKS NOTHING: garbage rungs (%r) fall back to the touch and "
+               "the hedge still goes" % (_bad,))
+        ck(hedge_limit(0.70, None) is not None
+           and hedge_limit(0.70, "junk") == 0.70,
+           "BLOCKS NOTHING: a garbage slip is treated as no slip, never as a "
+           "refusal to hedge")
+        ck(hedge_limit(None) is None and hedge_limit(0.0) is None,
+           "an unusable ask returns None -- the caller falls back to _ask, "
+           "which hedge_ask_ok has already passed")
+
+        # The $1 wall. A hedge leg at or over $1 cannot beat holding, so no
+        # amount of slip may carry the limit there.
+        for _a70 in (0.96, 0.98, 0.999):
+            ck(hedge_limit(_a70, 0.10) < HEDGE_MAX_ASK,
+               "slip can never carry the limit to $%.2f, where the leg costs "
+               "more than the pair pays (ask %.3f)" % (HEDGE_MAX_ASK, _a70))
+        ck(hedge_limit(0.70, 0.03) >= 0.70 and hedge_limit(0.98, 0.10) >= 0.98,
+           "and the limit is never BELOW the ask -- that would cross less of "
+           "the book than today")
+
+        # PAPER HONESTY: ladder depth is booked at the ladder's average, never
+        # at the touch. Booking 76 contracts at 0.70 when 71 of them came from
+        # the 0.71 rung is the flattering error that makes an arm look good.
+        _vw70 = hedge_vwap(_r70, 76.0, 0.70)
+        ck(abs(_vw70 - (5 * 0.70 + 71 * 0.71) / 76.0) < 1e-9,
+           "hedge_vwap charges each rung its own price (%.5f)" % _vw70)
+        ck(_vw70 > 0.70,
+           "...so a paper arm running the slip pays MORE than the touch, and "
+           "cannot report an edge the exchange would not have given it")
+        ck(hedge_vwap(_r70, 400.0, 0.70) == 0.70
+           and hedge_vwap([], 10.0, 0.66) == 0.66
+           and hedge_vwap(_r70, 0.0, 0.70) == 0.70,
+           "NULL: a ladder that does not hold n, no ladder, or no contracts "
+           "all fall back rather than invent a price")
+
+        # And the wire: the hedge must be handed the LIMIT, not the ask. This
+        # is the entry path's rule since A35 and the hedge never had it.
+        # ANCHOR ON THE WHOLE LINE and search from the END of the file: this
+        # very check contains the string it is looking for, and a plain
+        # index() has silently matched a self-test's own copy four times.
+        _h70 = next(ln for ln in reversed(_lp62.splitlines())
+                    if ln.strip().startswith("_hout = pintake.take("))
+        ck("_hout = pintake.take(" in _h70,
+           "the hedge send was found in trade_loop, not in this test")
+        _hsend70 = _lp62[_lp62.rindex("_hout = pintake.take("):][:400]
+        ck("float(_hlimit)" in _hsend70 and "float(_ask), _hn_take" not in _hsend70,
+           "A70: the hedge is handed the LIMIT, never the ask it saw. Sending "
+           "the ask is why ten of twenty-nine live hedge attempts filled 0 or "
+           "1 contract against a book that displayed everything we asked for")
+        ck("_hdepth = hedge_depth(_asz, _hrungs, _hn)" in _lp62,
+           "...and the size is capped at _hn, the contracts still unhedged")
+        ck(_lp62.rindex("_hdepth = hedge_depth(")
+           < _lp62.rindex("_hn_take = min(float(_hn_want), float(_hdepth))"),
+           "the depth is computed before the size that uses it")
+        ck("if HEDGE_SLIP:" in _lp62,
+           "the ladder is only READ when the slip is on, so with the flag off "
+           "the hedge path does not even touch the book differently")
+
+        # ---- AMENDMENT 71: NO ENTRY RAIL MAY SPEND THE HEDGE'S BUDGET -----
+        #
+        # The hedge's per-close cap used to read `attempts`, the counter the
+        # ENTRY path increments at two sites. MAX_ATTEMPTS_PER_CLOSE is 24 and
+        # twelve coins settle on the same quarter hour, so the bot's own
+        # buying could exhaust it and then permanently disable the hedge on a
+        # position it was already holding -- `hedged.add(_hid)` is never
+        # cleared. A runaway rail was gating insurance.
+        ck("attempts.get(_hcs, 0) >= MAX_ATTEMPTS_PER_CLOSE" not in _lp62,
+           "A71: the hedge must NOT read the entry path's attempt counter -- "
+           "an entry rail that can permanently disable a hedge is exactly "
+           "what the standing rule forbids")
+        ck("hedge_attempts.get(_hcs, 0) >= MAX_HEDGE_ATTEMPTS_PER_CLOSE"
+           in _lp62,
+           "...it reads its OWN counter instead")
+        ck("hedge_attempts[_hcs] = hedge_attempts.get(_hcs, 0) + 1" in _lp62,
+           "...which only the hedge path increments")
+        ck(_lp62.count("hedge_attempts[_hcs] = ") == 1,
+           "and exactly one site increments it, so no entry path can reach it")
+        # THE CAP MUST BE UNREACHABLE BY ORDINARY HEDGING. One try per
+        # position per wall-clock second (hedge_last_try), at most
+        # HEDGE_MAX_TRIES per position, at most MAX_PER_CLOSE positions.
+        _worst71 = MAX_PER_CLOSE * HEDGE_MAX_TRIES
+        ck(MAX_HEDGE_ATTEMPTS_PER_CLOSE >= _worst71,
+           "the hedge's own cap (%d) sits at or above everything ordinary "
+           "hedging can send in a close (%d positions x %d tries = %d), so it "
+           "is a runaway backstop and never the reason a hedge does not fire"
+           % (MAX_HEDGE_ATTEMPTS_PER_CLOSE, MAX_PER_CLOSE, HEDGE_MAX_TRIES,
+              _worst71))
+        ck(MAX_HEDGE_ATTEMPTS_PER_CLOSE < 10000,
+           "but it is still a bound -- the 160-order runaway of 2026-09-08 is "
+           "why any cap exists at all")
+
+        # ---- AMENDMENT 71: A HEDGE THAT DOES NOT HAPPEN MUST SAY WHY ------
+        #
+        # Three skips wrote nothing at all: no hedge_meta, no sigma, no fair
+        # value. A feed stutter during a collapse then looked identical to the
+        # A69 pause bug -- a position going to zero with no alarm and no
+        # refusal -- and that cost a day finding.
+        _blind71 = _lp62[:_lp62.index("_htrig = \"belief\"")]
+        for _sk71, _wh71 in (("if _meta is None:", "no_hedge_meta"),
+                             ("if _hsg is None:", "no_sigma"),
+                             ("if _hf is None:", "no_fair")):
+            _j71 = _blind71.index(_sk71)
+            ck('_hquiet("%s"' % _wh71 in _blind71[_j71:_j71 + 260],
+               "A71: the hedge skip `%s` records %r instead of failing "
+               "silently" % (_sk71, _wh71))
+        ck('rec("hedge_blind"' in _lp62,
+           "...and they all land in one record kind, so a feed outage during "
+           "a collapse is greppable")
+        ck("if _k in _hq71:" in _lp62 and "_hq71.add(_k)" in _lp62,
+           "deduped per (position, reason) -- this sits in a 20 Hz loop and "
+           "an unrecovered feed would otherwise write tens of thousands of "
+           "lines; per REASON, so a new failure still speaks")
+        # NULL: the dedupe must not be per position alone, or the SECOND
+        # reason on the same position would be swallowed -- which is the
+        # failure mode the record was added to catch.
+        ck("(_hid, _why)" in _lp62,
+           "NULL: the dedupe key carries the REASON as well as the position")
+
+        # ---- A71: BOOKKEEPING ABOVE THE HEDGE CANNOT KILL THE LOOP --------
+        #
+        # A69 proved a `continue` above the hedge pass costs money ($107.95).
+        # An EXCEPTION above it is worse -- it ends the process with the
+        # position still open, which is the $66.34 loss from the same day.
+        # Both calls that run before the hedge are bookkeeping, and
+        # bookkeeping must never outrank insurance.
+        _pre71 = _lp62[_lp62.index("while time.time() < end:"):
+                       _lp62.index("# ---------------- AMENDMENT 15")]
+        # ANCHOR ON THE WHOLE INDENTED LINE. The comment above these calls
+        # NAMES them, and a bare index() finds the prose, not the code -- the
+        # trap that has now cost this project five separate debugging runs.
+        for _call71 in ("\n            report_closes(int(time.time()) - 5)\n",
+                        "\n            reconcile()\n"):
+            ck(_pre71.count(_call71) == 1,
+               "exactly one real call site for %s" % _call71.strip())
+            _c71 = _pre71.index(_call71)
+            _before = _pre71[:_c71]
+            ck(_before.rstrip().endswith("try:"),
+               "A71: `%s` runs above the hedge pass, so it is wrapped in "
+               "try: -- an exception there ends the process while a position "
+               "is open, and nothing would say why" % _call71)
+        ck(_pre71.count("except Exception as _e71:") == 2,
+           "...both of them, and only them")
+        # THE GUARD MUST NOT SWALLOW FOR EVER. reconcile() drives record_pnl,
+        # which is what every brake in risk_abort reads.
+        ck('state["reconcile_fail_streak"] = 0' in _pre71,
+           "a reconcile that works CLEARS the streak")
+        _ab71 = _src62[_src62.rindex(chr(10) + "def " + "risk_abort(state, a):"):]
+        ck("RECONCILE_FAIL_HALT" in _ab71,
+           "and a reconcile that keeps failing halts the run -- a frozen "
+           "ledger makes the loss abort, the stake cap and the loss-count "
+           "brake all inert, and the bot would trade on blind to its losses")
+        ck(RECONCILE_FAIL_HALT >= 20,
+           "the streak is not 1 -- one HTTP hiccup must not end a day "
+           "(running %d)" % RECONCILE_FAIL_HALT)
+        # AND IT HALTS BELOW THE HEDGE. risk_abort is called after the hedge
+        # pass (A69), so the last iteration still insures what is open.
+        ck(_lp62.index("# ---------------- AMENDMENT 15")
+           < _lp62.index("stop = risk_abort(state, a)"),
+           "the reconcile halt lands in risk_abort, which sits BELOW the "
+           "hedge pass -- so it stops NEW bets and never a hedge. A halt at "
+           "the top of the loop would be the A69 bug again")
+        _st71 = {"halted": False, "errors": 0, "reconcile_fail_streak":
+                 RECONCILE_FAIL_HALT}
+
+        class _A71:
+            loss_abort = -1e9
+            max_positions = 99
+        _saved71 = dict(pintake.LEDGER)
+        try:
+            pintake.LEDGER.update({"halt": None, "realised": 0.0,
+                                   "committed": 0.0, "positions": {}})
+            _r71 = risk_abort(_st71, _A71)
+            ck(_r71 and "reconcile has failed" in _r71,
+               "PLANTED: a %d-failure streak really does halt (%r)"
+               % (RECONCILE_FAIL_HALT, _r71))
+            _st71["reconcile_fail_streak"] = RECONCILE_FAIL_HALT - 1
+            ck(risk_abort(_st71, _A71) is None,
+               "NULL: one short of the streak does NOT halt -- the brake has "
+               "to be reachable and not trigger-happy")
+            _st71.pop("reconcile_fail_streak")
+            ck(risk_abort(_st71, _A71) is None,
+               "NULL: a state that never set the key at all does not halt")
+        finally:
+            pintake.LEDGER.clear()
+            pintake.LEDGER.update(_saved71)
 
         ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
            f"belief below the {HEDGE_BELIEF:.2f} gate fires the hedge")
@@ -6748,6 +7161,22 @@ def risk_abort(state, a):
     """
     if state["halted"]:
         return "already halted"
+    # AMENDMENT 71: RECONCILE IS NOW GUARDED, AND A GUARD THAT SWALLOWS FOR
+    # EVER IS WORSE THAN THE CRASH IT REPLACED.
+    #
+    # reconcile() is what settles positions and calls pintake.record_pnl(),
+    # which is what `realised`, `committed` and the loss-count brake below all
+    # read. If it fails every iteration, those numbers freeze and every brake
+    # in this function is quietly measuring a world that stopped updating --
+    # the bot trades on, blind to its own losses.
+    #
+    # So a persistent failure stops the run. It stops it HERE, in risk_abort,
+    # which A69 placed BELOW the hedge pass -- so the final iteration still
+    # hedges everything open before the halt lands. A halt at the top of the
+    # loop would have been the A69 bug again, wearing a different hat.
+    if state.get("reconcile_fail_streak", 0) >= RECONCILE_FAIL_HALT:
+        return (f"reconcile has failed {state['reconcile_fail_streak']} times "
+                f"in a row: the loss brakes are reading a frozen ledger")
     led = pintake.LEDGER
     if led.get("halt"):
         return f"pintake halted: {led['halt']}"
@@ -7462,6 +7891,11 @@ def trade_loop(a, rec, book, idx, series_index):
     hedged = set()      # A15: oids already hedged (or given up on)
     hedge_tries = {}    # A15: oid -> attempts since the alarm fired
     hedge_last_try = {}
+    _hq71 = set()                 # A71: (position, reason) already reported as
+                                  # a silent hedge skip -- see _hquiet below
+    hedge_attempts = {}           # A71: close -> HEDGE sends, counted apart
+                                  # from the entry path's `attempts` so an
+                                  # entry rail can never disable a hedge
     hedge_price_said = set()      # A47: one 'waiting on price' line per position # A15: oid -> wall-clock second of the last try (pacing)
     hedge_normal_said = set()     # A51: one 'waiting for a normal bet' line per position
     hedge_panic_said = set()      # A62: one 'every filter bypassed' line per position
@@ -7746,8 +8180,46 @@ def trade_loop(a, rec, book, idx, series_index):
             near.pop(cs, None)
 
     while time.time() < end:
-        report_closes(int(time.time()) - 5)
-        reconcile()
+        # AMENDMENT 71: EVERYTHING ABOVE THE HEDGE PASS IS NOW GUARDED.
+        #
+        # A69 moved the hedge above the risk check because a `continue` there
+        # skipped it and cost $107.95. But `continue` was never the only way
+        # to skip the hedge -- an EXCEPTION above it kills the whole process
+        # while a position is open, which is the $66.34 loss from the same
+        # day (`round(None)` in a log call, 30 seconds before a close). Both
+        # of these run first and neither was wrapped:
+        #
+        #   report_closes() -- eleven bare subscripts on the `near` and `best`
+        #     dicts. Safe only while two writers agree about their keys.
+        #   reconcile()     -- bare pintake.LEDGER['losses'] / ['realised']
+        #     subscripts inside f-strings, plus one blocking HTTP GET per
+        #     open position (kauth timeout 20 s, throttled to one per ticker
+        #     per 15 s). Three unfinalised tickers timing out is SIXTY SECONDS
+        #     above the hedge pass -- longer than the whole hedge window, and
+        #     it reproduces the A69 shape exactly with nothing in the log.
+        #
+        # Reporting and reconciliation are bookkeeping. A hedge is the only
+        # thing in this loop that reduces a loss already taken. Bookkeeping
+        # must never be able to stop it, so a failure here is counted, said
+        # once, and stepped over -- the loop continues to the hedge.
+        try:
+            report_closes(int(time.time()) - 5)
+        except Exception as _e71:                        # noqa: BLE001
+            state["report_errors"] = state.get("report_errors", 0) + 1
+            if state["report_errors"] <= 3:
+                rec("error", where="report_closes", err=str(_e71)[:300])
+                print(f"  report_closes failed (stepping over it): {_e71}")
+        try:
+            reconcile()
+            state["reconcile_fail_streak"] = 0
+        except Exception as _e71:                        # noqa: BLE001
+            state["reconcile_errors"] = state.get("reconcile_errors", 0) + 1
+            state["reconcile_fail_streak"] = (
+                state.get("reconcile_fail_streak", 0) + 1)
+            if state["reconcile_errors"] <= 3:
+                rec("error", where="reconcile", err=str(_e71)[:300],
+                    streak=state["reconcile_fail_streak"])
+                print(f"  reconcile failed (stepping over it): {_e71}")
         # AMENDMENT 16. AFTER reconcile(), so open_pos is already drained of
         # everything that has settled -- otherwise the "only when flat" guard
         # would almost never be true and size could never move.
@@ -7816,21 +8288,48 @@ def trade_loop(a, rec, book, idx, series_index):
                 _hn = hedge_remain.get(_hid, _hn_orig)
                 if _hid in hedged or _hid.startswith("hedge-"):
                     continue
+                # AMENDMENT 71: THESE THREE SKIPS USED TO BE SILENT.
+                #
+                # A missing strike, an unmeasurable sigma or an unmeasurable
+                # fair value all skipped the hedge for that second and wrote
+                # NOTHING -- no record, no print. If the index feed stutters
+                # during a collapse, the log shows a position going to zero
+                # with no alarm and no refusal, which is indistinguishable
+                # from the A69 pause bug we spent today finding. A hedge that
+                # does not happen must always say why.
+                #
+                # Recorded ONCE per position per reason (_hq71), because this
+                # sits in a 20 Hz loop and an unrecovered feed would otherwise
+                # write tens of thousands of lines. The dedupe is per REASON,
+                # so a feed that fails in a new way still speaks up.
+                def _hquiet(_why, **_kw):
+                    _k = (_hid, _why)
+                    if _k in _hq71:
+                        return
+                    _hq71.add(_k)
+                    rec("hedge_blind", ticker=_htk, why=_why, tau=_hcs - now_s,
+                        **_kw)
+                    print(f"  hedge BLIND {_htk}: {_why}")
+
                 _meta = hedge_meta.get(_hid)
                 if _meta is None:
+                    # Before A71 this was every PAPER position, for ever.
+                    _hquiet("no_hedge_meta")
                     continue
                 _hstrike, _hdig, _hiid = _meta
                 _htau = _hcs - now_s
                 if _htau < 1:
-                    continue
+                    continue                    # the close has passed; not blind
                 _hsg = idx.sigma(_hiid)
                 if _hsg is None:
+                    _hquiet("no_sigma", iid=_hiid)
                     continue
                 _hf = fair(idx, _hiid, _hcs, now_s, _hstrike,
                            _hsg * SIGMA_STRESS
                            * widen_factor(idx, _hiid, _hsg, _hwant),
                            round_digits=_hdig)                  # AMENDMENT 41
                 if _hf is None:
+                    _hquiet("no_fair", iid=_hiid, sigma=round(float(_hsg), 6))
                     continue
                 _belief = _hf if _hwant == "yes" else 1.0 - _hf
                 # A68: the NEWEST belief for this market, recorded every tick
@@ -7880,10 +8379,40 @@ def trade_loop(a, rec, book, idx, series_index):
                     hedged.add(_hid)
                     rec("hedge_gave_up", ticker=_htk, tries=_tries, tau=_htau)
                     continue
-                if (attempts.get(_hcs, 0) >= MAX_ATTEMPTS_PER_CLOSE
+                # AMENDMENT 71: THIS USED TO READ THE ENTRY PATH'S COUNTER --
+                # the `attempts` dict, against MAX_ATTEMPTS_PER_CLOSE. The old
+                # line is NOT reproduced here: the self-test below asserts it
+                # is gone by searching this function's source, and a comment
+                # quoting it verbatim makes that search find the comment. That
+                # exact trap has now bitten this project five times.
+                #
+                # `attempts[close]` is incremented by every ENTRY order (two
+                # sites in the scan loop) as well as by hedge orders, and
+                # MAX_ATTEMPTS_PER_CLOSE is 24. So on a busy close -- twelve
+                # coins settling on the same quarter hour, which is the normal
+                # case, not the rare one -- the bot's own buying could spend
+                # the budget and then PERMANENTLY disable the hedge on a
+                # position it was already holding. `hedged.add(_hid)` is never
+                # cleared.
+                #
+                # A rail written to stop a 160-order runaway was gating
+                # insurance. That is the exact shape of all three losses on
+                # 2026-09-19 and it is what the standing rule forbids.
+                #
+                # The hedge now counts only its OWN sends, against its own
+                # cap, which no entry can touch. The real bound on hedging was
+                # never this: `hedge_last_try` allows one try per position per
+                # WALL-CLOCK SECOND and HEDGE_MAX_TRIES stops at 30, so at
+                # most 3 positions x 30 = 90 hedge orders can exist in a
+                # close, spread over at least thirty seconds. This cap sits
+                # above that and is a runaway backstop only -- ordinary
+                # hedging cannot reach it.
+                if (hedge_attempts.get(_hcs, 0) >= MAX_HEDGE_ATTEMPTS_PER_CLOSE
                         and not hedge_panic(_belief)):
                     hedged.add(_hid)
-                    rec("hedge_refused", ticker=_htk, why="attempt_cap", tau=_htau)
+                    rec("hedge_refused", ticker=_htk, why="hedge_attempt_cap",
+                        tried=hedge_attempts.get(_hcs, 0),
+                        cap=MAX_HEDGE_ATTEMPTS_PER_CLOSE, tau=_htau)
                     continue
                 _opp = "no" if _hwant == "yes" else "yes"
                 try:
@@ -7949,30 +8478,58 @@ def trade_loop(a, rec, book, idx, series_index):
                 # side the better-informed look prefers.
                 _entry_tau = (_hcs - entry_at[_hid]) if _hid in entry_at else None
                 _hn_want = flip_size(_hn, _entry_tau, _htau)
-                _hn_take = min(float(_hn_want), float(_asz))
+                # A70: the limit we SEND, and the depth we may size from. With
+                # --hedge-slip 0 (the default) _hlimit == _ask and _hdepth ==
+                # _asz, which is exactly the pre-A70 pair of numbers.
+                _hlimit = hedge_limit(_ask)
+                if _hlimit is None:
+                    _hlimit = float(_ask)
+                _hrungs = []
+                if HEDGE_SLIP:
+                    try:
+                        _hrungs = book.rungs(_htk, _opp, _hlimit)
+                    except Exception:                    # noqa: BLE001
+                        # A ladder read must NEVER stop a hedge. Fall back to
+                        # the touch and insure anyway.
+                        _hrungs = []
+                _hdepth = hedge_depth(_asz, _hrungs, _hn)
+                _hn_take = min(float(_hn_want), float(_hdepth))
                 if HEDGE_PILOT_CONTRACTS:
                     _hn_take = min(_hn_take, float(HEDGE_PILOT_CONTRACTS))
+                # A hedge order still spends the ENTRY budget -- an order is an
+                # order and a hedge outranks a new bet -- but the entry budget
+                # no longer spends the HEDGE's.
                 attempts[_hcs] = attempts.get(_hcs, 0) + 1
+                hedge_attempts[_hcs] = hedge_attempts.get(_hcs, 0) + 1
                 if not live:
+                    # A70: pay the LADDER average, not the touch, for whatever
+                    # the slip let us reach. With slip 0 there are no rungs and
+                    # this is float(_ask) -- the pre-A70 number exactly.
+                    _hpaper = float(hedge_vwap(_hrungs, _hn_take, float(_ask)))
                     _hoid = f"hedge-paper-{_htk}-{now_s}"
-                    open_pos[_hoid] = (_hcs, _opp, float(_ask), _hn_take, _htk)
+                    open_pos[_hoid] = (_hcs, _opp, _hpaper, _hn_take, _htk)
                     hedged.add(_hid)
                     hedged_side[_htk] = _opp
-                    rec("hedge", ticker=_htk, side=_opp, price=float(_ask),
+                    rec("hedge", ticker=_htk, side=_opp, price=_hpaper,
                         ask=float(_ask), ask_size=float(_asz),
+                        limit_sent=round(float(_hlimit), 4),
+                        slip_c=round(100.0 * (float(_hlimit) - float(_ask)), 3),
+                        ladder_n=round(float(_hdepth), 2),
                         # A54: what we ASKED for and why, so a flip is never
                         # mistaken for an ordinary hedge in the attribution
                         flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
                         entry_tau=_entry_tau,
                         n=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
-                        locked_loss_c=round(100 * hedge_locked_loss(_hcost, _ask), 2),
-                        edge_c=hedge_edge_c(_belief, _ask), live=False)
+                        locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hpaper), 2),
+                        edge_c=hedge_edge_c(_belief, _hpaper), live=False)
                     print(f"  HEDGE(paper) {_htk} buy {_opp.upper()} {_hn_take:g} @ "
-                          f"{_ask:.3f} -> locked {100*hedge_locked_loss(_hcost,_ask):+.1f}c")
+                          f"{_hpaper:.3f} -> locked {100*hedge_locked_loss(_hcost,_hpaper):+.1f}c")
                     continue
                 try:
+                    # A70: the LIMIT, never the ask we saw -- same rule the
+                    # entry path has followed since A35.
                     _hout = pintake.take(CREDS["base"], CREDS["pk"], CREDS["key_id"],
-                                         _htk, _opp, float(_ask), _hn_take,
+                                         _htk, _opp, float(_hlimit), _hn_take,
                                          float(_hcs), exchange_index=2)
                 except Exception as _e:                      # noqa: BLE001
                     state["order_errors"] = state.get("order_errors", 0) + 1
@@ -7991,6 +8548,15 @@ def trade_loop(a, rec, book, idx, series_index):
                 rec("hedge", ticker=_htk, side=_opp, price=_hcost2, n=_hfilled,
                     flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
                     entry_tau=_entry_tau,
+                    # A70: what we were willing to pay over the ask, how much
+                    # ladder that reached, and whether it actually cost more.
+                    # This is how --hedge-slip gets scored: slip paid in cents
+                    # against contracts that would otherwise have filled 0.
+                    limit_sent=round(float(_hlimit), 4),
+                    slip_c=round(100.0 * (float(_hlimit) - float(_ask)), 3),
+                    ladder_n=round(float(_hdepth), 2),
+                    swept=bool(_hpx is not None
+                               and float(_hpx) > float(_ask) + 1e-9),
                     ask=float(_ask), ask_size=float(_asz),      # criterion (b): fill vs the ask we hit
                     asked=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
                     locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hcost2), 2),
@@ -9066,9 +9632,35 @@ def trade_loop(a, rec, book, idx, series_index):
                 take_n = _band53(take_n)   # paper
                 take_n = _stage46(take_n)
                 _book_slot(price, take_n)
-                entry_at[f"paper-{tk}-{now_s}"] = now_s
-                open_pos[f"paper-{tk}-{now_s}"] = (close_s, want, price,
-                                                   take_n, tk)
+                _poid46 = f"paper-{tk}-{now_s}"
+                entry_at[_poid46] = now_s
+                open_pos[_poid46] = (close_s, want, price, take_n, tk)
+                # AMENDMENT 71 (2026-09-19): THE PAPER HEDGE PATH WAS DEAD
+                # CODE, AND EVERY PAPER ARM HAS BEEN AN UNHEDGED BOT.
+                #
+                # The hedge pass gives up on any position with no hedge_meta
+                # ("if _meta is None: continue"), and hedge_meta was written at
+                # exactly two places, BOTH live-only: the plant path and the
+                # live fill. A paper position therefore never had a strike, so
+                # its belief was never computed, so the alarm never fired.
+                #
+                # MEASURED, not argued: the five paper arms running today
+                # logged 151 signals between them and ZERO hedge_alarm and
+                # ZERO hedge records. The live bot on the same markets logged
+                # 2 alarms, 8 hedges and 2 panics.
+                #
+                # WHAT THAT INVALIDATES. A hedge that fills turns a -73c to
+                # -96c loss into -26.9c (the 17-loss table in HANDOFF.md). So
+                # every head-to-head between an arm and the live bot has been
+                # comparing a bot that eats its losses whole against one that
+                # insures them -- and the arm was flattered on every winning
+                # close and punished on every losing one. Arm numbers on
+                # losing closes are not comparable before this line existed.
+                #
+                # It also means NO hedge change has ever been testable without
+                # real money. A62, A69 and A70 all had to go straight to live
+                # because paper could not exercise them.
+                hedge_meta[_poid46] = (strike, digits, iid)
             if live:
                 try:
                     # LATENCY INSTRUMENTATION, added 2026-09-08. 26% of our
@@ -9512,6 +10104,16 @@ def main():
                          "cap. Default %.2f. Set 0 to disable the bypass, "
                          "which is what cost $57.98 on 2026-09-19."
                          % _DEFAULT_HEDGE_PANIC)
+    ap.add_argument("--hedge-slip", type=float, default=None,
+                    help="AMENDMENT 70: dollars above the ask we saw that a "
+                         "hedge leg may pay, so the IOC sweeps the ladder "
+                         "instead of tapping one stale level. Sizes the hedge "
+                         "from the ladder too, capped at the contracts still "
+                         "unhedged. Default %.3f (OFF = today's behaviour). "
+                         "Ten of twenty-nine live hedge attempts filled 0 or 1 "
+                         "contract with the book displaying everything we "
+                         "asked for; that is the only escape failure this "
+                         "project has had." % _DEFAULT_HEDGE_SLIP)
     ap.add_argument("--hedge-price", type=float, default=None,
                     help="AMENDMENT 47: only hedge when OUR side's market "
                          "price has also fallen below this (e.g. 0.50). The "
@@ -9873,6 +10475,15 @@ def main():
             raise SystemExit("--hedge-panic must sit in [0, 1), got %r"
                              % (a.hedge_panic,))
         globals()["HEDGE_PANIC"] = float(a.hedge_panic) or None
+    if a.hedge_slip is not None:
+        # The cap is 0.10 because the slip is paid on the WHOLE hedge and a
+        # hedge leg at or over $1 cannot beat holding (hedge_ask_ok); anything
+        # bigger than a dime is a different decision that needs its own
+        # evidence, not a flag.
+        if not (0.0 <= a.hedge_slip <= 0.10):
+            raise SystemExit("--hedge-slip must sit in [0, 0.10] dollars, got "
+                             "%r" % (a.hedge_slip,))
+        globals()["HEDGE_SLIP"] = float(a.hedge_slip)
     if a.hedge_price is not None:
         if not (0.0 < a.hedge_price < 1.0):
             raise SystemExit("--hedge-price must be between 0 and 1, got %r"
