@@ -1,3 +1,50 @@
+# v-late15 -- 2026-09-19 ~02:5xZ -- LIVE: the extra BUDGET reaches 15 s while the 1.5x boost stays at 10
+
+Operator, on being shown that 423 markets were refused for `close_budget`:
+*"Those sound like good trades why refuse them."* Then: *"Then increase to
+15 seconds if it means better cheaper buys."*
+
+## Why they were refused, and it is not a shortage
+
+On the **97 closes where the budget actually ran out**:
+
+| | |
+|---|---|
+| budget spent at MORE than 15 s left | **75%** of fills, median **97.6c** |
+| budget spent at 15 s or less | 25% of fills, median 96.0c |
+| when the refusals landed | median **21 s**; **38% inside 15 s** |
+
+**We were spending three quarters of each close's budget early at 97.6c --
+worth about 2.2c a contract -- and then refusing the cheaper trades later
+because it was gone.** Not a budget shortage: the wrong trades first.
+
+## The change
+
+`--late-tau` was doing two unrelated jobs:
+
+- **when an order may be 1.5x SIZE** (A48) -- extra RISK, on the bets with
+  the least time to recover. Wants a TIGHT window. **Stays at 10 s.**
+- **when a close may spend an extra bet of budget** (A59) -- not extra risk
+  at all, only permission to spend what the close was already allowed.
+  Wants a WIDE one. **Now 15 s, via `--late-extra-tau`.**
+
+At a shared value of 10 the entire 11-15 second band was left out -- 38% of
+every `close_budget` refusal we have.
+
+## What it cannot do
+
+It cannot raise the worst close. The extra bet still SHARES the
+`--extra-coin` allowance (A61), so `worst_close_cost` is unchanged at three
+bets, the bet size is unchanged at ~76 contracts, and the bank still covers
+the worst close 3.0x.
+
+## Revert
+
+`restart_bot.ps1`: delete `"--late-extra-tau", "15",` and the budget window
+falls back to `--late-tau` (10 s), which is the shipped behaviour.
+
+---
+
 # v-panic40 -- 2026-09-19 ~02:2xZ -- LIVE: the no-block line moves to 40% belief
 
 Operator: *"Nothing can block a hedge under 40%. And most hedges just

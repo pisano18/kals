@@ -285,6 +285,30 @@ _DEFAULT_LADDER_LEVELS = 150   # The tick is 0.1c above 90c, so the 88-98c band
 LATE_EXTRA = 0.0                # extra SIZE a close may spend inside LATE_TAU
 _DEFAULT_LATE_EXTRA = 0.0
 
+# AMENDMENT 64 (2026-09-19): THE LATE BUDGET AND THE LATE BOOST NEED DIFFERENT
+# WINDOWS, and sharing one number was costing us the 11-15 second band.
+#
+# `--late-tau` does two unrelated jobs. It says when an order may be 1.5x
+# SIZE (A48) -- which wants to be TIGHT, because that is extra risk on the
+# least-time-to-recover bets. And it said when a close may spend an extra bet
+# of budget (A59) -- which wants to be WIDE, because that is not extra risk
+# at all, only permission to spend money the close was already allowed.
+#
+# MEASURED on the 97 closes where `close_budget` ran out: 75% of the budget
+# had gone at MORE than 15 seconds left at a median of 97.6c, and 38% of the
+# refusals landed INSIDE 15 seconds where the median price is 96.0c and the
+# last ten seconds return 5.4c a contract against 2.2c out at 31-45 s. At a
+# shared value of 10 the whole 11-15 s band was left out.
+#
+# None means "use LATE_TAU", which is the shipped behaviour.
+LATE_EXTRA_TAU = None
+_DEFAULT_LATE_EXTRA_TAU = None
+
+
+def late_extra_tau():
+    """Seconds-to-close inside which the extra BUDGET applies."""
+    return LATE_TAU if LATE_EXTRA_TAU is None else LATE_EXTRA_TAU
+
 EXTRA_COIN = 0.0                # extra SIZE a close may spend, new coins only
 _DEFAULT_EXTRA_COIN = 0.0
 
@@ -1252,7 +1276,8 @@ def close_budget_for(prev, ticker, extra=_HP_UNSET, size=None, tau=None):
     #
     # `tau` is None on the paths that do not know it, and then nothing is
     # added -- an unknown second must not buy itself an allowance.
-    _late_ok = (LATE_EXTRA and tau is not None and int(tau) <= LATE_TAU)
+    _late_ok = (LATE_EXTRA and tau is not None
+                and int(tau) <= late_extra_tau())
     if _late_ok:
         extra = max(float(extra or 0.0), float(LATE_EXTRA))
         if prev is None:
@@ -3874,6 +3899,21 @@ def _selftest_body():
                "budget already spent")
             ck(abs(close_budget_for(_held, "KXBTC15M-A", tau=20) - _base59) < 1e-9,
                "...and outside the window nothing is added")
+            # A64: the BUDGET window is separate from the BOOST window
+            _g59["LATE_EXTRA_TAU"] = 15
+            ck(late_extra_tau() == 15 and LATE_TAU == 10,
+               "the extra BUDGET may reach 15 s while the 1.5x BOOST stays at "
+               "10 -- one is permission to spend money the close already had, "
+               "the other is extra risk, and sharing one number left the "
+               "11-15 s band out (38% of all close_budget refusals)")
+            ck(abs(close_budget_for(_held, "KXBTC15M-A", tau=13) - (_base59 + 80.0)) < 1e-9,
+               "so a market at 13 s now gets the extra bet")
+            ck(abs(close_budget_for(_held, "KXBTC15M-A", tau=16) - _base59) < 1e-9,
+               "and one at 16 s still does not")
+            _g59["LATE_EXTRA_TAU"] = None
+            ck(late_extra_tau() == LATE_TAU,
+               "NULL: unset means the boost window, which is the shipped "
+               "behaviour")
             ck(abs(close_budget_for(_held, "KXBTC15M-A", tau=None) - _base59) < 1e-9,
                "NULL: an unknown second adds nothing -- a path that does not "
                "know the time must not buy itself an allowance")
@@ -4017,6 +4057,38 @@ def _selftest_body():
         # exists. Only the OPPOSITE side blocks; a same-side re-look is a
         # top-up. The old placement read `want` from the PREVIOUS market.
         _pv = {"sides": {"T": "yes"}}
+        # ---- AMENDMENT 63: more of the side we HEDGED INTO is an ordinary bet
+        ck(_DEFAULT_REBUY_HEDGED is False, "A63 ships OFF")
+        _g63 = globals()
+        _sv63 = _g63["REBUY_HEDGED"]
+        try:
+            _pv63 = {"sides": {"T": "yes"}}
+            _g63["REBUY_HEDGED"] = True
+            ck(_both_sides_block(_pv63, "T", "no", "no") is False,
+               "holding YES and having HEDGED into NO, more NO is allowed: on "
+               "the margin one more NO pays (1-price) if NO lands and costs "
+               "`price` if it does not, which is EXACTLY a fresh bet on NO. "
+               "Live 2026-09-19 01:44:52 this gate refused NO at 99.865% "
+               "confidence on the close that lost $57.98")
+            ck(_both_sides_block(_pv63, "T", "no", "yes") is True,
+               "...but if we hedged into YES, more NO is still refused -- that "
+               "is averaging into the side the model has given up on")
+            ck(_both_sides_block(_pv63, "T", "no", None) is True,
+               "NULL: a market we never hedged is unchanged. A8 exists to stop "
+               "us opening both sides BY ACCIDENT, and that still holds")
+            _g63["REBUY_HEDGED"] = False
+            ck(_both_sides_block(_pv63, "T", "no", "no") is True,
+               "and with the flag OFF nothing changes at all")
+        finally:
+            _g63["REBUY_HEDGED"] = _sv63
+        _src63 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp63 = _src63[_src63.rindex(chr(10) + "def " + "trade_loop("):]
+        ck("hedged_side[_htk] = _opp" in _lp63 and "hedged_side = {}" in _lp63,
+           "the loop remembers which side each hedge went INTO -- without it "
+           "the rule cannot tell the side we escaped to from the one we fled")
+        ck("hedged_side.get(tk))" in _lp63,
+           "...and the gate is asked with it")
+
         ck(_both_sides_block(_pv, "T", "no"),
            "A8: holding YES and now wanting NO on the SAME market is blocked -- "
            "the two legs pay $1 between them and cost more than that")
@@ -4032,10 +4104,15 @@ def _selftest_body():
            "NULL: no previous state, no sides map, or no side wanted -> no block")
         _src8 = open(os.path.abspath(__file__), encoding="utf-8").read()
         _lp8 = _src8[_src8.rindex(chr(10) + "def " + "trade_loop("):]
-        _call = "_both_sides_block(" + "prev, tk, want)"
+        # A63 gave the call a fourth argument, so the needle is the opening
+        # of the call rather than the whole thing.
+        _call = "_both_sides_block(" + chr(10)
         ck(_call in _lp8 and _lp8.index("want = price = size = None") < _lp8.index(_call),
            "and the trade loop calls it AFTER `want` is assigned -- the entire "
            "bug was that this test ran 143 lines too early")
+        ck("hedged_side.get(tk))" in _lp8[_lp8.index(_call):_lp8.index(_call) + 120],
+           "...and it is passed the side we hedged INTO (A63), or more of the "
+           "side the model now prefers stays refused")
         ck(hedge_price_ok(0.60, threshold=0.50)
            and not hedge_price_ok(0.40, threshold=0.50),
            "A47: we buy the opposite side at 60c, so OUR side is at 40c and the "
@@ -6342,18 +6419,60 @@ def one_coin_cap(size, bank, hwm, mult=None):
     return max(size, min(cap, room))
 
 
-def _both_sides_block(prev, ticker, want):
+# AMENDMENT 63 (2026-09-19): ONCE WE HAVE HEDGED, MORE OF THE HEDGED SIDE IS
+# AN ORDINARY BET, NOT A SECOND HEDGE.
+#
+# The operator: "is there anything in there to buy more once a hedge is
+# successful and you have the confidence and other criteria for the new
+# actual winning side? ... Does arithmetic support any way of doing that?"
+#
+# IT DOES, COMPLETELY. Holding n YES at p and m NO at q, one more NO contract
+# at r pays (1 - r) if NO lands and costs r if YES lands. That is EXACTLY the
+# arithmetic of a fresh bet on NO at r -- the position we already hold does
+# not enter into it at all. So the question "should we buy more of the side
+# that is now winning" is the question the ordinary gate already answers, and
+# the ordinary gate is not being asked.
+#
+# AMENDMENT 8's reasoning -- "the two legs pay $1.00 between them and cost
+# more than that" -- is true of the PAIR and irrelevant to the MARGIN. It was
+# written to stop us opening both sides by accident. It should never have
+# applied after we deliberately hedged.
+#
+# LIVE, 2026-09-19 01:44:52, the BNB close that lost $57.98: at 8 seconds our
+# model put NO at 99.865% and this gate refused to buy it, because the YES we
+# were trying to escape was still on the books.
+#
+# AND IT CANNOT RAISE THE WORST CLOSE. Every contract of either side counts
+# against the same close budget, and holding both sides LOWERS the worst case
+# for a given contract count, because one side always pays $1. So this only
+# ever converts budget we were already allowed to spend into a bet on the
+# side our model now prefers.
+REBUY_HEDGED = False     # --rebuy-hedged; shipped OFF
+_DEFAULT_REBUY_HEDGED = False
+
+
+def _both_sides_block(prev, ticker, want, hedged_side=None):
     """True when we already hold the OPPOSITE side of this market.
 
     AMENDMENT 8. Holding both sides of one binary cannot win: the two legs pay
     $1.00 between them and cost more than that, so the pair locks in the
     difference. Only an opposite side blocks; a SAME-side re-look is a top-up
     and must pass, which is exactly what the misplaced version got wrong.
+
+    A63: `hedged_side` is the side we deliberately hedged INTO on this market,
+    if any. Buying more of THAT side is an ordinary bet on the margin and is
+    allowed when REBUY_HEDGED is on. Buying more of the side we are escaping
+    is still refused -- that is averaging into a position the model has
+    already given up on.
     """
     if prev is None or want is None:
         return False
     held = (prev.get("sides") or {}).get(ticker)
-    return held is not None and held != want
+    if held is None or held == want:
+        return False
+    if REBUY_HEDGED and hedged_side is not None and want == hedged_side:
+        return False
+    return True
 
 
 def staged_take(tau, take_n, size, early_held):
@@ -6669,6 +6788,9 @@ def trade_loop(a, rec, book, idx, series_index):
     hedge_price_said = set()      # A47: one 'waiting on price' line per position # A15: oid -> wall-clock second of the last try (pacing)
     hedge_normal_said = set()     # A51: one 'waiting for a normal bet' line per position
     hedge_panic_said = set()      # A62: one 'every filter bypassed' line per position
+    hedged_side = {}              # A63: ticker -> the side we hedged INTO, so
+                                  # more of it is an ordinary bet and not a
+                                  # second hedge
     hedge_remain = {}   # A15 BUGFIX 2026-09-13: oid -> contracts STILL needing a
                         # hedge fill. open_pos[_hid] must NEVER be shrunk here; it
                         # is what reconcile() reads to settle the ORIGINAL position
@@ -7135,6 +7257,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     _hoid = f"hedge-paper-{_htk}-{now_s}"
                     open_pos[_hoid] = (_hcs, _opp, float(_ask), _hn_take, _htk)
                     hedged.add(_hid)
+                    hedged_side[_htk] = _opp
                     rec("hedge", ticker=_htk, side=_opp, price=float(_ask),
                         ask=float(_ask), ask_size=float(_asz),
                         # A54: what we ASKED for and why, so a flip is never
@@ -7163,6 +7286,8 @@ def trade_loop(a, rec, book, idx, series_index):
                 _hfilled = float(_hout.get("filled") or 0)
                 _hpx = _hout.get("exec_price")
                 _hcost2 = float(_hpx) if _hpx is not None else float(_ask)
+                if _hfilled > 0:
+                    hedged_side[_htk] = _opp
                 rec("hedge", ticker=_htk, side=_opp, price=_hcost2, n=_hfilled,
                     flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
                     entry_tau=_entry_tau,
@@ -7522,7 +7647,8 @@ def trade_loop(a, rec, book, idx, series_index):
             # more than the $1 it pays and locks in the difference. `want` is
             # assigned immediately above, so this is the first line in the loop
             # where the comparison is even meaningful.
-            if want is not None and _both_sides_block(prev, tk, want):
+            if want is not None and _both_sides_block(
+                    prev, tk, want, hedged_side.get(tk)):
                 nb0 = near.setdefault(close_s, _fresh_near())
                 nb0["both_sides_blocked"] = nb0.get("both_sides_blocked", 0) + 1
                 # `want`, `fair`, `tau`, `spot` and `strike` are RECORDED
@@ -7535,6 +7661,10 @@ def trade_loop(a, rec, book, idx, series_index):
                 _gate("both_sides", close_s, tk, held=prev["sides"][tk],
                       want=want, fair=round(f, 5), tau=tau,
                       spot=spot, strike=strike,
+                      # A63: so a reader can tell "we never hedged this" from
+                      # "we hedged the other way and the flag is off"
+                      hedged_into=hedged_side.get(tk),
+                      rebuy_hedged=bool(REBUY_HEDGED),
                       wanted=want)
                 continue
             if want is None:
@@ -8487,6 +8617,13 @@ def main():
                     help="AMENDMENT 48: the multiple of SIZE one order may "
                          "reach inside --late-tau. Still capped by the drawdown "
                          "headroom, the close budget and the book.")
+    ap.add_argument("--late-extra-tau", type=int, default=None,
+                    help="AMENDMENT 64: seconds-to-close inside which the "
+                         "extra BUDGET applies. Defaults to --late-tau. They "
+                         "want different values: the 1.5x boost is extra RISK "
+                         "and wants a tight window; the extra budget is only "
+                         "permission to spend what the close already had, and "
+                         "wants a wide one.")
     ap.add_argument("--late-extra", type=float, default=None,
                     help="AMENDMENT 59: extra SIZE a close may spend inside "
                          "--late-tau seconds, whatever it already holds. Our "
@@ -8539,6 +8676,15 @@ def main():
                          "MULT x SIZE, through A45's drawdown headroom, the "
                          "book and the close budget. MULT in (1, "
                          "MAX_PER_CLOSE]. Repeatable. Shipped off.")
+    ap.add_argument("--rebuy-hedged", action="store_true",
+                    help="AMENDMENT 63: after we have hedged a market, allow "
+                         "buying MORE of the side we hedged INTO, at the "
+                         "ordinary gate. One more contract of that side pays "
+                         "(1-price) if it lands and costs `price` if it does "
+                         "not -- identical to a fresh bet -- and it cannot "
+                         "raise the worst close, because both legs share the "
+                         "close budget and holding both sides LOWERS the "
+                         "worst case per contract. Shipped off.")
     ap.add_argument("--hedge-panic", type=float, default=None,
                     help="AMENDMENT 62: belief at or under which NO filter "
                          "may block a hedge -- not the market-agreement "
@@ -8780,6 +8926,12 @@ def main():
                              "(%.1f) -- the close budget bounds it anyway, got %r"
                              % (float(MAX_PER_CLOSE), a.late_mult))
         globals()["LATE_MULT"] = float(a.late_mult)
+    if a.late_extra_tau is not None:
+        if not (TAU_MIN <= a.late_extra_tau <= max(TAU_MAX, EARLY_TAU_MAX)):
+            raise SystemExit("--late-extra-tau must sit in [%d, %d], got %r"
+                             % (TAU_MIN, max(TAU_MAX, EARLY_TAU_MAX),
+                                a.late_extra_tau))
+        globals()["LATE_EXTRA_TAU"] = int(a.late_extra_tau)
     if a.late_extra is not None:
         if not (0.0 <= a.late_extra <= float(MAX_PER_CLOSE)):
             raise SystemExit("--late-extra must sit in [0, MAX_PER_CLOSE=%g], "
@@ -8866,6 +9018,8 @@ def main():
                                  "got %r" % (float(MAX_PER_CLOSE), _m))
             _bm53.append((float(_lo), float(_hi), float(_m)))
         globals()["BAND_MULTS"] = tuple(_bm53)
+    if a.rebuy_hedged:
+        globals()["REBUY_HEDGED"] = True
     if a.hedge_panic is not None:
         if not (0.0 <= a.hedge_panic < 1.0):
             raise SystemExit("--hedge-panic must sit in [0, 1), got %r"
@@ -9081,9 +9235,10 @@ def main():
         # Lab tab a blank where two live experiments should be. An arm whose
         # own log cannot say what it is testing is not measurable.
         hedge_price=HEDGE_PRICE, hedge_panic=HEDGE_PANIC,
+        rebuy_hedged=REBUY_HEDGED,
         late_tau=LATE_TAU, late_mult=LATE_MULT,
         late_pin=LATE_PIN, late_jump=LATE_JUMP_SD, extra_coin=EXTRA_COIN,
-        late_extra=LATE_EXTRA,
+        late_extra=LATE_EXTRA, late_extra_tau=late_extra_tau(),
         # A53: lists, so the Lab can select an arm by its exact bands
         skip_bands=[list(b) for b in SKIP_BANDS],
         band_mults=[list(b) for b in BAND_MULTS],

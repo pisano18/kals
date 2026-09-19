@@ -253,6 +253,18 @@ $botArgs = @(
     # One extra bet, spendable by a new coin OR in the last seconds,
     # whichever arrives first.
     "--late-extra", "1",
+    # AMENDMENT 64, 2026-09-19, operator: "Then increase to 15 seconds if it
+    # means better cheaper buys." The extra BUDGET reaches 15 s while the
+    # 1.5x BOOST stays at 10 -- they were sharing --late-tau and should not.
+    # The boost is extra RISK on the bets with least time to recover and
+    # wants a tight window; the extra budget is only permission to spend
+    # what the close was already allowed, and wants a wide one.
+    #
+    # MEASURED, on the 97 closes where close_budget ran out: 75% of the
+    # budget had gone at MORE than 15 s left, median 97.6c (worth ~2.2c a
+    # contract), and 38% of the refusals landed inside 15 s where the median
+    # is 96.0c and the last ten seconds return 5.4c a contract.
+    "--late-extra-tau", "15",
     # THE PRICE, stated because it is the only change tonight that raises
     # the worst case. worst_close_cost grows from 2 bets to 3, and every
     # rail reads it, so at a fixed brake the bet size would fall. At a $640
