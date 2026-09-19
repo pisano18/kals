@@ -2729,14 +2729,24 @@ def selftest():
     away from repeating it. A test must not be able to write production state
     at all.
     """
-    _hwm_real = HWM_FILE
+    # A66, 2026-09-19: SIZE_MIRROR joins HWM_FILE here, for the identical
+    # reason and after the identical failure. The startup self-test drives
+    # autosize_tick with a FAKE $60 bank and a live-ish args object; that
+    # published {"size": 7.0, "bank": 60.0} into the real mirror, and the 36
+    # arms restarted minutes later all obediently sized themselves to SEVEN
+    # contracts. Paper only, caught within two minutes, and the lesson is the
+    # one already written above: a per-call `mirror_path=` is one forgotten
+    # argument away from doing it again, so the global is redirected instead.
+    _hwm_real, _mir_real = HWM_FILE, SIZE_MIRROR
     import tempfile as _tfhw
     _hwm_dir = _tfhw.mkdtemp(prefix="pinhwm-")
     globals()["HWM_FILE"] = os.path.join(_hwm_dir, "hwm.json")
+    globals()["SIZE_MIRROR"] = os.path.join(_hwm_dir, "size-mirror.json")
     try:
         return _selftest_body()
     finally:
         globals()["HWM_FILE"] = _hwm_real
+        globals()["SIZE_MIRROR"] = _mir_real
         try:
             for _f in os.listdir(_hwm_dir):
                 os.remove(os.path.join(_hwm_dir, _f))
@@ -4190,6 +4200,84 @@ def _selftest_body():
                "and with the flag OFF nothing changes at all")
         finally:
             _g63["REBUY_HEDGED"] = _sv63
+
+        # ---- AMENDMENT 66: a paper arm trades the size LIVE trades ---------
+        # A SANDBOX PATH, never SIZE_MIRROR. The 2026-09-14 outage was a
+        # self-test writing a fake bank into the real high-water file; a test
+        # writing a fake size into the real mirror would pin every arm.
+        import tempfile as _tf66
+        _mp = os.path.join(_tf66.mkdtemp(prefix="pinmirror-"), "size.json")
+        ck(_mp != SIZE_MIRROR,
+           "A66: the self-test writes to a SANDBOX, not to the real mirror "
+           "every paper arm reads")
+        ck(read_mirror_size(_mp) is None,
+           "A66 NULL: no mirror file means no size change -- an arm keeps its "
+           "--size, which is exactly the behaviour that shipped before, so a "
+           "missing file can never produce a wild bet")
+        publish_size(109.0, 966.31, _mp)
+        ck(read_mirror_size(_mp) == 109.0,
+           "A66: live publishes its size and an arm reads it back")
+        ck(read_mirror_size(_mp, max_age_s=10, now=time.time() + 3600) is None,
+           "A66 NULL: a STALE mirror is ignored -- if the live bot has been "
+           "down an hour its last size must not keep pinning 43 arms")
+        with open(_mp, "w", encoding="utf-8") as _fh:
+            _fh.write("{not json")
+        ck(read_mirror_size(_mp) is None, "A66 NULL: unreadable file -> None")
+        for _bad in ({"size": 0, "epoch": time.time()},
+                     {"size": -5, "epoch": time.time()},
+                     {"size": "x", "epoch": time.time()},
+                     {"size": 20}, [1, 2, 3]):
+            with open(_mp, "w", encoding="utf-8") as _fh:
+                json.dump(_bad, _fh)
+            ck(read_mirror_size(_mp) is None,
+               "A66 NULL: a malformed mirror (%s) reads as None, never as a "
+               "size" % (str(_bad)[:34],))
+
+        class _A66:
+            live = False
+            auto_size = True
+            loss_abort = -240.0
+        _st66 = {}
+        _sv66 = float(SIZE)
+        _svla = pintake.LOSS_ABORT
+        try:
+            publish_size(109.0, 966.31, _mp)
+            # No bank_reader -- exactly how the real trade loop calls it. If
+            # the mirror branch did not fire, read_bank() would run, return
+            # None for want of a key, and SIZE would stay at 20: the bug.
+            # REAL wall-clock `now`. `autosize_at` defaults to 0, so a real
+            # clock already clears AUTO_SIZE_EVERY_S -- and a far-future one
+            # made the freshly written mirror read as an hour stale, which is
+            # the test failing for the opposite of the reason it exists.
+            _m66 = autosize_tick(_st66, _A66(), [], now=time.time(),
+                                 mirror_path=_mp)
+            ck(abs(float(SIZE) - 109.0) < 1e-9,
+               "A66: a PAPER arm moved 20 -> 109 to match live, through the "
+               "same call the trade loop makes (no injected bank reader). "
+               "Every arm has been pinned at 20 since 2026-09-14 because "
+               "read_bank() needs a key paper has not got")
+            ck(_m66 and "mirror" in _m66,
+               "...and it says so in the autosize message")
+            _st66["autosize_at"] = 0.0
+            os.remove(_mp)
+            _before = float(SIZE)
+            autosize_tick(_st66, _A66(), [], now=time.time(),
+                          mirror_path=_mp)
+            ck(abs(float(SIZE) - _before) < 1e-9 and _st66.get("mirror_misses"),
+               "...and when the file goes away the arm HOLDS its size and "
+               "counts the miss, rather than falling back to a bank read it "
+               "cannot do")
+        finally:
+            globals()["SIZE"] = _sv66
+            pintake.LOSS_ABORT = _svla
+        ck(SIZE_MIRROR_ON is True,
+           "A66 ships ON: the whole point is that an arm is proportional "
+           "unless it is deliberately testing a size")
+        _lp66 = _src63x[_src63x.rindex(chr(10) + "def autosize_tick("):]
+        _lp66 = _lp66[:_lp66.index(chr(10) + "def ", 10)]
+        ck(_lp66.index("read_mirror_size") < _lp66.index("bank_reader or read_bank"),
+           "...and the mirror is read BEFORE the bank, because the bank read "
+           "is the line that has been silently returning None in every arm")
         _src63 = open(os.path.abspath(__file__), encoding="utf-8").read()
         _lp63 = _src63[_src63.rindex(chr(10) + "def " + "trade_loop("):]
         ck("hedged_side[_htk] = _opp" in _lp63 and "hedged_side = {}" in _lp63,
@@ -5771,6 +5859,31 @@ def _selftest_body():
         # This is the check for the 2026-09-14 outage: a test wrote a fake
         # $1,000,000 bank into the real high-water file, and the next live
         # start read it, computed a 100% drawdown and halted immediately.
+        # A66: the SAME check for the size mirror, added after the self-test
+        # published a $60-bank size of 7 into the real file and 36 paper arms
+        # adopted it. If this ever fails, the next arm restart sizes every arm
+        # to whatever number the test happened to be holding.
+        ck(SIZE_MIRROR != os.path.join(RESULTS, "pinrun-live-size.json"),
+           "THE SELF-TEST MUST NOT BE ABLE TO WRITE THE SIZE MIRROR every "
+           "paper arm reads. It did on 2026-09-19 and sized 36 arms to 7 "
+           "contracts; SIZE_MIRROR is now redirected for the whole test, "
+           "not per call, because a per-call path is one forgotten argument "
+           "away from repeating it")
+        _real_mir = os.path.join(RESULTS, "pinrun-live-size.json")
+        try:
+            with open(_real_mir, encoding="utf-8") as _fh:
+                _mir_before = _fh.read()
+        except OSError:
+            _mir_before = None
+        publish_size(7.0, 60.0)          # the exact write that caused it
+        try:
+            with open(_real_mir, encoding="utf-8") as _fh:
+                _mir_after = _fh.read()
+        except OSError:
+            _mir_after = None
+        ck(_mir_after == _mir_before,
+           "...and a publish_size() with NO path argument -- the shape that "
+           "did the damage -- leaves the real mirror byte-identical")
         ck(HWM_FILE != os.path.join(RESULTS, "pinrun-hwm.json"),
            "while the self-test runs, HWM_FILE points at a sandbox and NOT at "
            "results/pinrun-hwm.json -- currently %r" % HWM_FILE)
@@ -6772,8 +6885,80 @@ def apply_size(new_size, a, why, rec=None):
                   f"{pintake.MAX_TAKE_COUNT:g}")
 
 
+# AMENDMENT 66 (2026-09-19): PAPER ARMS MUST TRADE THE SIZE LIVE TRADES.
+#
+# The operator: "make sure the whole issue of non proportional paper contracts
+# is solved and they're dynamic and changing to the live one too."
+#
+# A16's comment already claims arms auto-size "exactly as live does", and
+# `autosize_tick` was deliberately un-gated from `a.live` on 2026-09-14 to
+# make that true. IT WAS NEVER TRUE. Measured 2026-09-19: **0 autosize
+# records across all 43 running arms**, every one pinned at 20 while live ran
+# 109. The reason is two lines away and is a SAFETY feature, not a bug --
+# `read_bank()` returns None without `CREDS["pk"]`, and `arm()` fills CREDS
+# only under --live. A paper arm has no key, by design, and must not get one.
+#
+# So live PUBLISHES its size and paper READS it. No credentials leave the
+# live process, the arms need no network call at all, and an arm's size is
+# exactly live's rather than live's recomputed -- which also fixes the second
+# break: arms launched with `--bank-brake 4.08` would have sized to 77 where
+# live at 3.00 sizes to 109, so even a working bank read would not have made
+# them proportional.
+#
+# WHAT THIS DOES NOT FIX, and what the Lab's head-to-head does: the dollars
+# already recorded. Those are corrected by reading cents per contract instead
+# of dollars, which is stake-free. What per-contract CANNOT correct is fill
+# realism -- a 109-contract order eats further into the book than a
+# 20-contract one -- and only real sizing fixes that. Every arm-hour before
+# this amendment was measured at a stake that never faced live's depth.
+SIZE_MIRROR = os.path.join(RESULTS, "pinrun-live-size.json")
+SIZE_MIRROR_MAX_AGE_S = 3600.0   # a stale file must not pin an arm forever
+SIZE_MIRROR_ON = True            # --no-size-mirror for an arm testing a size
+
+
+def publish_size(size, bank=None, path=None):
+    """LIVE ONLY: record the size every paper arm should copy."""
+    try:
+        with open(path or SIZE_MIRROR, "w", encoding="utf-8") as fh:
+            json.dump({"size": float(size),
+                       "bank": None if bank is None else round(float(bank), 2),
+                       "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                       "epoch": time.time()}, fh)
+    except (OSError, TypeError, ValueError):
+        return None
+    return float(size)
+
+
+def read_mirror_size(path=None, max_age_s=None, now=None):
+    """The live bot's current size, or None.
+
+    None on every doubt -- missing, unreadable, malformed, non-positive, or
+    older than `max_age_s`. An arm that cannot read it keeps its --size,
+    which is exactly the behaviour that shipped before this amendment, so
+    the failure mode is the status quo and never a wild bet.
+    """
+    age = SIZE_MIRROR_MAX_AGE_S if max_age_s is None else max_age_s
+    try:
+        with open(path or SIZE_MIRROR, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    try:
+        size = float(d.get("size"))
+        stamp = float(d.get("epoch"))
+    except (TypeError, ValueError):
+        return None
+    if not (size > 0):
+        return None
+    if (time.time() if now is None else now) - stamp > float(age):
+        return None
+    return size
+
+
 def autosize_tick(state, a, open_positions, rec=None, now=None,
-                  bank_reader=None, hwm_path=None):
+                  bank_reader=None, hwm_path=None, mirror_path=None):
     """Called at the top of the loop. Returns a message when size moved."""
     # NOT GATED ON a.live ANY MORE (2026-09-14). It was, and the consequence
     # was that every paper what-if traded at its --size while the live bot
@@ -6789,6 +6974,27 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
     if open_positions:
         return None                      # never move a rail under a position
     state["autosize_at"] = now
+    # A66: a PAPER arm copies live's size instead of reading a balance it has
+    # no key for. Done before the bank read, because that read is the thing
+    # that has been silently returning None in every arm since 2026-09-14.
+    #
+    # `bank_reader is None` IS PART OF THE CONDITION. The real trade loop calls
+    # `autosize_tick(state, a, open_pos, rec=rec)` with no reader, so a live
+    # arm takes the real path and a paper arm takes the mirror. Every caller
+    # that INJECTS a reader is a test saying "drive the bank path", and the
+    # first version of this line short-circuited the deposit-detection tests
+    # out of existence -- they went green by not running.
+    if (not getattr(a, "live", False) and SIZE_MIRROR_ON
+            and bank_reader is None):
+        _m = read_mirror_size(mirror_path, now=now)
+        if _m is None:
+            state["mirror_misses"] = state.get("mirror_misses", 0) + 1
+            return None
+        state["mirror_size"] = _m
+        if abs(_m - float(SIZE)) < 1e-9:
+            return None
+        _ok, _msg = apply_size(_m, a, f"mirroring live size {_m:g}", rec=rec)
+        return _msg
     bank = (bank_reader or read_bank)()
     if bank is None:
         state["autosize_fails"] = state.get("autosize_fails", 0) + 1
@@ -6861,6 +7067,10 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
     if abs(want - cur) < 1e-9:
         return None
     ok, msg = apply_size(want, a, f"bank ${bank:.2f}", rec=rec)
+    # A66: publish AFTER the rails moved, and only when they actually moved,
+    # so an arm never copies a size the live bot failed to adopt.
+    if ok and getattr(a, "live", False):
+        publish_size(float(SIZE), bank, mirror_path)
     return msg if ok else msg
 
 
@@ -8858,6 +9068,12 @@ def main():
                          "MULT x SIZE, through A45's drawdown headroom, the "
                          "book and the close budget. MULT in (1, "
                          "MAX_PER_CLOSE]. Repeatable. Shipped off.")
+    ap.add_argument("--no-size-mirror", action="store_true",
+                    help="AMENDMENT 66: a PAPER arm normally copies the live "
+                         "bot's contract size from %s so its dollars are "
+                         "comparable with live's. Pass this to pin the arm "
+                         "at --size instead -- only for an arm that is "
+                         "deliberately testing a SIZE." % os.path.basename(SIZE_MIRROR))
     ap.add_argument("--rebuy-hedged", action="store_true",
                     help="AMENDMENT 63: after we have hedged a market, allow "
                          "buying MORE of the side we hedged INTO, at the "
@@ -9208,6 +9424,8 @@ def main():
                                  "got %r" % (float(MAX_PER_CLOSE), _m))
             _bm53.append((float(_lo), float(_hi), float(_m)))
         globals()["BAND_MULTS"] = tuple(_bm53)
+    if a.no_size_mirror:
+        globals()["SIZE_MIRROR_ON"] = False
     if a.rebuy_hedged:
         globals()["REBUY_HEDGED"] = True
     if a.hedge_panic is not None:
