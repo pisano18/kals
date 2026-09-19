@@ -1013,8 +1013,28 @@ HEDGE_PILOT_CONTRACTS = None  # FULL SIZE. I set this to 1 for ~30 minutes on
 # hedge that turns out wrong is not a trap. "ONCE CONFIDENCE REBUILDS ON
 # EITHER SIDE YOU CAN JUST BUY MORE OF THAT SIDE." Being on both sides is
 # recoverable; being naked in a collapse is not.
-HEDGE_PANIC = 0.35       # belief at or under which NO filter may block a hedge
-_DEFAULT_HEDGE_PANIC = 0.35
+# 0.35 -> 0.40 on the operator's instruction, 2026-09-19: "Nothing can block
+# a hedge under 40%. And most hedges just shouldn't be getting blocked
+# anyway." THE RECORD AGREES. Every hedge we have ever placed, by the belief
+# that triggered it:
+#
+#   belief   ask   what it did to the close
+#    2.0%    95c   HELPED
+#   11.6%    76c   HELPED   <- the BNB that cost $57.98; the 21c hedge was blocked
+#   21.4%    43c   HELPED   (+$24.18)
+#   24.3%    74c   HELPED   (+$8.29)
+#   48.5%    15c   hurt     (-$13.83)
+#   52.5%    80c   HELPED
+#   53.3%    47c   HELPED
+#   55.9%    51c   HELPED   (+$29.30)
+#
+# EVERY hedge at or under 24.3% belief helped. The only one that hurt sat at
+# 48.5% and was bought at 15c -- which is exactly what `--hedge-price 0.60`
+# refuses. So at a 40% panic line the market filter survives only in the
+# 40-60% band, where on this record it blocks the one that hurt and passes
+# all three that helped. Below 40% nothing touches the hedge at all.
+HEDGE_PANIC = 0.40       # belief at or under which NO filter may block a hedge
+_DEFAULT_HEDGE_PANIC = 0.40
 
 HEDGE_MAX_TRIES = 30     # seconds we keep trying once the alarm has fired.
                          # 5 -> 30 on 2026-09-19 (A62b). On the BNB close
@@ -4078,15 +4098,21 @@ def _selftest_body():
            "the hedge keeps trying for at least 30 seconds. At five it gave "
            "up on the BNB close with eighteen seconds left and the position "
            "naked; hedge_ask_ok already refuses a leg that cannot help")
-        ck(_DEFAULT_HEDGE_PANIC == 0.35,
-           "the DECLARED panic threshold is 35% belief -- asserted against "
+        ck(_DEFAULT_HEDGE_PANIC == 0.40,
+           "the DECLARED panic threshold is 40% belief -- asserted against "
            "the default so an arm that moves it does not fail its own gate")
-        ck(hedge_panic(0.227) is True and hedge_panic(0.35) is True,
+        ck(hedge_panic(0.227) is True and hedge_panic(0.40) is True,
            "at 22.7% belief -- the BNB close that lost $57.98 on 2026-09-19 "
            "-- every filter is bypassed, and the threshold itself panics")
-        ck(hedge_panic(0.36) is False and hedge_panic(0.60) is False,
-           "a shallower dip does NOT panic: the market-agreement rule still "
-           "applies there, which is where its 5-of-5 evidence came from")
+        ck(hedge_panic(0.243) is True and hedge_panic(0.214) is True,
+           "and so do the 24.3% and 21.4% hedges, the two biggest helpers we "
+           "have on record (+$8.29 and +$24.18)")
+        ck(hedge_panic(0.485) is False,
+           "the ONE hedge that ever hurt sat at 48.5% belief and was bought "
+           "at 15c -- above the panic line, where --hedge-price still refuses "
+           "it. That is the whole reason the line is not simply the trigger")
+        ck(hedge_panic(0.60) is False,
+           "and a shallow dip does not panic")
         ck(hedge_panic(None) is False,
            "NULL: an unmeasurable belief is NOT a panic -- it must not "
            "trigger the one path that ignores every other safeguard")

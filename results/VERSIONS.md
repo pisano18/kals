@@ -1,3 +1,47 @@
+# v-panic40 -- 2026-09-19 ~02:2xZ -- LIVE: the no-block line moves to 40% belief
+
+Operator: *"Nothing can block a hedge under 40%. And most hedges just
+shouldn't be getting 'blocked' anyway."*
+
+## Every hedge we have ever placed, by the belief that triggered it
+
+| belief | ask | what it did to the close |
+|---|---|---|
+| 2.0% | 95c | **HELPED** |
+| 11.6% | 76c | **HELPED** -- the BNB that cost $57.98; its 21c hedge was BLOCKED |
+| 21.4% | 43c | **HELPED** (+$24.18) |
+| 24.3% | 74c | **HELPED** (+$8.29) |
+| 48.5% | 15c | hurt (-$13.83) |
+| 52.5% | 80c | **HELPED** |
+| 53.3% | 47c | **HELPED** |
+| 55.9% | 51c | **HELPED** (+$29.30) |
+
+(Four more at 64-89% belief all hurt, but `--hedge-belief 0.60` already
+stops the hedge firing that high, so they cannot recur.)
+
+**Every hedge at or under 24.3% belief helped.** The only one that hurt sat
+at **48.5%** and was bought at **15c** -- precisely what `--hedge-price
+0.60` refuses.
+
+## So the 40% line is the right one
+
+- **Below 40%:** nothing touches the hedge. Not the market-agreement test,
+  not the normal-bet test, not the attempt cap, not the try cap. Only
+  arithmetic: the leg must cost under $1, and there must be an ask.
+- **40-60%:** the market-agreement rule survives, and on this record it
+  blocks the ONE hedge that hurt and passes all three that helped.
+
+Of the eight hedges that would fire under today's trigger, exactly one is
+still subject to a filter, and it is the one that lost money. That is what
+"most hedges shouldn't be getting blocked" looks like in code.
+
+## Revert
+
+`--hedge-panic 0` disables the bypass entirely -- the behaviour that cost
+$57.98. `--hedge-panic 0.35` returns to the first version of this rule.
+
+---
+
 # v-nohedgeblock -- 2026-09-19 ~02:1xZ -- LIVE: NO filter may block a hedge on a collapsed bet, and it keeps trying for 30 s
 
 **This entry exists because a rule I deployed four hours earlier cost
