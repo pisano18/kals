@@ -4270,6 +4270,24 @@ def _selftest_body():
         finally:
             globals()["SIZE"] = _sv66
             pintake.LOSS_ABORT = _svla
+        # --arm-name: a label, and it must STAY a label. The parser is built
+        # inside main(), so this is asserted against the source.
+        _mn_an = _src63x[_src63x.rindex(chr(10) + "def main("):]
+        ck('ap.add_argument("--arm-name"' in _mn_an,
+           "--arm-name carries the arm's name into its own command line, so "
+           "the desktop app can prove which process is which. Eleven band "
+           "arms were known only by a redirect FILENAME, which Windows does "
+           "not report in a command line, so none could be paused or stopped")
+        # +/- 600 chars, because the guard carries a comment between the
+        # condition and the message and 200 fell short of its own text.
+        _uses = [_mn_an[max(0, _i - 600):_i + 600]
+                 for _i in range(len(_mn_an))
+                 if _mn_an.startswith("a.arm_name", _i)]
+        ck(_uses and all("is a PAPER label" in _u for _u in _uses),
+           "...and the ONLY thing that reads it is the guard refusing it on a "
+           "--live command line. A label that changed a decision would make "
+           "every arm carrying one a different bot from the one it claims to "
+           "be, which is the whole failure this flag exists to prevent")
         ck(SIZE_MIRROR_ON is True,
            "A66 ships ON: the whole point is that an arm is proportional "
            "unless it is deliberately testing a size")
@@ -9068,6 +9086,14 @@ def main():
                          "MULT x SIZE, through A45's drawdown headroom, the "
                          "book and the close budget. MULT in (1, "
                          "MAX_PER_CLOSE]. Repeatable. Shipped off.")
+    ap.add_argument("--arm-name", default=None, metavar="NAME",
+                    help="A LABEL, read by nothing. It exists so the arm is "
+                         "identifiable in its own command line: eleven band "
+                         "arms were known only by the redirect FILENAME "
+                         "boot_all.ps1 gave them, Windows does not report a "
+                         "redirect in a command line, and so the desktop app "
+                         "could not prove which process was which and refused "
+                         "to stop any of them. Never affects a decision.")
     ap.add_argument("--no-size-mirror", action="store_true",
                     help="AMENDMENT 66: a PAPER arm normally copies the live "
                          "bot's contract size from %s so its dollars are "
@@ -9424,6 +9450,12 @@ def main():
                                  "got %r" % (float(MAX_PER_CLOSE), _m))
             _bm53.append((float(_lo), float(_hi), float(_m)))
         globals()["BAND_MULTS"] = tuple(_bm53)
+    if a.arm_name is not None and a.live:
+        # A label is harmless, but a LIVE command line that carries one is a
+        # paper arm's flag list that got --live added to it by hand. Refuse
+        # the whole start rather than trade a paper configuration for money.
+        raise SystemExit("--arm-name is a PAPER label; it has no business on "
+                         "a --live command line. Got %r." % (a.arm_name,))
     if a.no_size_mirror:
         globals()["SIZE_MIRROR_ON"] = False
     if a.rebuy_hedged:

@@ -206,7 +206,17 @@ if (-not $NoArms) {
                 @{ n = "arm-e60-open";      x = $band + @("--early-tau", "60", "--early-frac", "0.333", "--early-min-price", "0.80") + $m15 }
             )
             foreach ($a in $arms) {
-                Start-Process -FilePath $py -ArgumentList ($live + $a.x) -WorkingDirectory $repo -WindowStyle Hidden `
+                # --arm-name PUTS THE NAME IN THE COMMAND LINE. Until
+                # 2026-09-19 an arm here was known only by the redirect
+                # filename below, and Windows does not report a redirect in a
+                # process's command line -- so eleven of these arms could not
+                # be told apart from one another and the desktop app refused
+                # to pause or stop any of them (correctly: they share flags,
+                # so a heuristic would have killed the wrong one). The flag is
+                # a label; pinrun reads it for nothing and refuses it outright
+                # on a --live command line.
+                Start-Process -FilePath $py -ArgumentList ($live + $a.x + @("--arm-name", $a.n)) `
+                    -WorkingDirectory $repo -WindowStyle Hidden `
                     -RedirectStandardOutput "$res\$($a.n).out" -RedirectStandardError "$res\$($a.n).err"
                 Start-Sleep -Seconds 3
                 $started++
