@@ -85,3 +85,67 @@ subprocess.TimeoutExpired: Command '['powershell.exe', '-NoProfile', '-Execution
 2026-09-18T02:06:22  paired with chat 111
 2026-09-18T02:11:49  refused pairing from chat 111
 2026-09-18T02:11:49  paired with chat 111
+2026-09-18T02:45:36  getUpdates failed: The read operation timed out
+2026-09-18T05:15:49  getUpdates failed: The read operation timed out
+2026-09-18T05:51:56  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-18T05:54:54  getUpdates failed: The read operation timed out
+2026-09-18T07:46:39  getUpdates failed: The read operation timed out
+2026-09-18T08:03:55  refused pairing from chat 111
+2026-09-18T08:03:55  paired with chat 111
+2026-09-18T08:04:06  refused pairing from chat 111
+2026-09-18T08:04:06  paired with chat 111
+2026-09-18T08:04:45  refused pairing from chat 111
+2026-09-18T08:04:45  paired with chat 111
+2026-09-18T08:05:15  pinphone starting; paired chat: 1498727727
+2026-09-18T08:40:25  getUpdates failed: The read operation timed out
+2026-09-18T09:53:42  getUpdates failed: The read operation timed out
+2026-09-18T10:07:21  getUpdates failed: The read operation timed out
+2026-09-18T10:45:29  getUpdates failed: The read operation timed out
+2026-09-18T11:08:59  getUpdates failed: The read operation timed out
+2026-09-18T12:23:09  getUpdates failed: The read operation timed out
+2026-09-18T12:31:02  getUpdates failed: The read operation timed out
+2026-09-18T13:38:03  refused pairing from chat 111
+2026-09-18T13:38:03  paired with chat 111
+2026-09-18T13:38:13  refused pairing from chat 111
+2026-09-18T13:38:13  paired with chat 111
+2026-09-18T13:38:29  pinphone starting; paired chat: 1498727727
+2026-09-18T14:42:15  getUpdates failed: The read operation timed out
+2026-09-18T15:11:28  getUpdates failed: The read operation timed out
+2026-09-18T15:46:19  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-18T15:58:07  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-18T16:03:14  getUpdates failed: The read operation timed out
+2026-09-18T16:51:35  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-18T17:18:05  getUpdates failed: The read operation timed out
+2026-09-18T17:40:37  getUpdates failed: The read operation timed out
+2026-09-18T18:23:16  getUpdates failed: The read operation timed out
+2026-09-18T18:38:34  getUpdates failed: The read operation timed out
+2026-09-18T18:39:57  getUpdates failed: The read operation timed out
+2026-09-18T19:24:02  getUpdates failed: The read operation timed out
+2026-09-18T20:42:45  getUpdates failed: The read operation timed out
+2026-09-18T21:09:27  getUpdates failed: The read operation timed out
+2026-09-18T21:52:20  getUpdates failed: [WinError 10054] An existing connection was forcibly closed by the remote host
+2026-09-19T00:06:39  getUpdates failed: The read operation timed out
+2026-09-19T02:05:16  getUpdates failed: The read operation timed out
+2026-09-19T02:35:08  getUpdates failed: The read operation timed out
+2026-09-19T03:11:54  getUpdates failed: The read operation timed out
+2026-09-19T03:24:34  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-19T04:28:39  getUpdates failed: The read operation timed out
+2026-09-19T04:59:43  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-19T06:01:41  getUpdates failed: The read operation timed out
+2026-09-19T06:38:24  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-19T07:54:29  getUpdates failed: The read operation timed out
+2026-09-19T08:25:20  getUpdates failed: The read operation timed out
+2026-09-19T08:35:54  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-19T09:14:25  getUpdates failed: The read operation timed out
+2026-09-19T10:06:11  getUpdates failed: The read operation timed out
+2026-09-19T10:24:55  getUpdates failed: The read operation timed out
+2026-09-19T10:28:37  getUpdates failed: The read operation timed out
+2026-09-19T10:40:31  getUpdates failed: The read operation timed out
+2026-09-19T12:08:49  getUpdates failed: <urlopen error [WinError 10054] An existing connection was forcibly closed by the remote host>
+2026-09-19T12:42:06  getUpdates failed: The read operation timed out
+2026-09-19T13:26:37  getUpdates failed: The read operation timed out
+2026-09-19T13:56:05  getUpdates failed: The read operation timed out
+2026-09-19T14:12:45  getUpdates failed: The read operation timed out
+2026-09-19T14:33:07  getUpdates failed: The read operation timed out
+2026-09-19T14:36:15  getUpdates failed: The read operation timed out
+2026-09-19T16:16:56  getUpdates failed: The read operation timed out

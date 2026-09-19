@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "C:\kals-repo\research\pinrun.py", line 8887, in <module>
+    # I read that as proof the change was not live. It was live, and it was
+  File "C:\kals-repo\research\pinrun.py", line 8871, in main
+    jump_widen_favour=JUMP_WIDEN_FAVOUR,
+                   ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\kals-repo\research\pinrun.py", line 7091, in trade_loop
+    # "Subscription buffer overflow" (livebook error code 25).
+TypeError: type NoneType doesn't define __round__ method

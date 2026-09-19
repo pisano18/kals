@@ -15,6 +15,12 @@ SELF-TEST -- pinracearm
   ok   we never price a race after it has closed
   ok   the scorer walks `known`, not `events` -- `events` is what Kalshi calls OPEN, a race stops being open at its close, and arm1 therefore never scored a single race
   ok   and every discovered race is added to `known` before it can drop out
+  ok   fair value: BTC's YES is worth its 93%, ETH's NO is worth 1 - 5%
+  ok   NULL: no forecast, or a coin not in the race, is worth nothing known
+  ok   and a 93% leader offered at 95c is refused on edge -- the market's price beat the table on the 3:30 PM race exactly like this
+  ok   a fresh arm with only ~33 minutes of ticks gets a forecast on the 300 s ruler (got 300), not a refusal and not a pretend hour
+  ok   and a 4bp lead with 20 s left on calm independent coins is ~certain (1.000)
+  ok   NULL: with no tick history at all it refuses rather than guessing
   ok   the 3:30 PM race bet -- BTC ahead by 1.26bp at 29 s, bought at 78c, lost when ETH passed -- is refused for its tiny lead
   ok   the 4:15 PM race bet -- HYPE 10bp behind with 90 s left, 95c, lost when HYPE came back -- is refused for being too early
   ok   a clear lead offered at only 87c is refused -- a cheap price on a 'clear' lead means the market knows something
@@ -51,8 +57,12 @@ SELF-TEST PASSED
   COIN RACE PAPER ARM -- nothing is ever sent
   size 250, <= 98c, edge floor 2.0c, tau 2-150, one fill per leg per band ['61-151', '30-61', '15-30', '2-15']
   forecast: race_gaptable.json, 198 cells, built 2026-09-15 13:05Z
-  log: C:\kals-repo\results\pinracearm-20260915T215105Z.jsonl
+  log: C:\kals-repo\results\pinracearm-20260918T222007Z.jsonl
 
   index up: 10 ticks, 5 feeds
-  PAPER  -26SEP160615                   HYPE YES 250 @ 90c  tau 29  gap   +6.14bp  worth 0.9840  edge +7.77c
-  SETTLED KXCRYPTOLEAD15M-26SEP160615  HYPE  1/1 won  $+23.43
+  PAPER  -26SEP182315                   ETH  NO  3 @ 97c  tau 30  gap   -8.45bp  worth 0.9961  edge +2.40c
+  SETTLED KXCRYPTOLEAD15M-26SEP182315  XRP   1/1 won  $+0.08
+  PAPER  -26SEP190715                   XRP  YES 107 @ 96c  tau 30  gap   +5.23bp  worth 0.9840  edge +2.13c
+  SETTLED KXCRYPTOLEAD15M-26SEP190715  XRP   1/1 won  $+3.99
+  PAPER  -26SEP191245                   XRP  NO  10 @ 97c  tau 30  gap   -4.02bp  worth 0.9940  edge +2.19c
+  SETTLED KXCRYPTOLEAD15M-26SEP191245  HYPE  1/1 won  $+0.28

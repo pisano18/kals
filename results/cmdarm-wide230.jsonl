@@ -1,0 +1,165 @@
+{"series": ["KXWTI15M"], "bands": {"KXGOLD15M": [[2, 15, 0.95, 0.99, [8, 14], "gold-near"], [91, 180, 0.95, 0.99, null, "gold-far"]], "KXWTI15M": [[2, 30, 0.93, 0.99, null, "only-2-30s-93-99c"]], "KXSILVER15M": [[121, 180, 0.95, 0.99, null, "silver-far"], [16, 60, 0.95, 0.99, null, "anti-silver-mid"]], "KXCOPPER15M": [[46, 90, 0.98, 0.99, null, "copper-mid"]], "KXNATGAS15M": [[91, 120, 0.95, 0.98, null, "natgas-far"]]}, "price_lo": 0.9, "price_hi": 0.98, "size": 100.0, "mode": "paper", "version": "grid-2-by-markets", "kind": "start", "t": "2026-09-18T15:39:28Z"}
+{"added": ["KXWTI15M-26SEP181145-45"], "n": 1, "kind": "watch", "t": "2026-09-18T15:39:29Z"}
+{"ticker": "KXWTI15M-26SEP181145-45", "series": "KXWTI15M", "want": "no", "price": 0.99, "n": 100.0, "tau": 30, "offer": 946.94, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 2, "kind": "bet", "t": "2026-09-18T15:44:29Z"}
+{"ticker": "KXWTI15M-26SEP181145-45", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.99, 946.94, 30], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T15:44:58Z"}
+{"added": ["KXWTI15M-26SEP181200-00"], "n": 1, "kind": "watch", "t": "2026-09-18T15:45:30Z"}
+{"ticker": "KXWTI15M-26SEP181145-45", "result": 0.0, "won": true, "pnl_c": 93.07, "kind": "settled", "t": "2026-09-18T15:46:30Z"}
+{"ticker": "KXWTI15M-26SEP181200-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.998, 688.96, 30], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T15:59:58Z"}
+{"added": ["KXWTI15M-26SEP181215-15"], "n": 1, "kind": "watch", "t": "2026-09-18T16:00:33Z"}
+{"ticker": "KXWTI15M-26SEP181215-15", "series": "KXWTI15M", "looks": 73, "fresh": 69, "winner_side_ask": [0.998, 598.42, 30], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T16:14:58Z"}
+{"added": ["KXWTI15M-26SEP181230-30"], "n": 1, "kind": "watch", "t": "2026-09-18T16:15:36Z"}
+{"ticker": "KXWTI15M-26SEP181230-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.998, 100.0, 19], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T16:29:58Z"}
+{"added": ["KXWTI15M-26SEP181245-45"], "n": 1, "kind": "watch", "t": "2026-09-18T16:30:10Z"}
+{"ticker": "KXWTI15M-26SEP181245-45", "series": "KXWTI15M", "looks": 72, "fresh": 64, "winner_side_ask": null, "side": null, "nobody_selling": true, "bet": false, "kind": "look", "t": "2026-09-18T16:44:58Z"}
+{"added": ["KXWTI15M-26SEP181300-00"], "n": 1, "kind": "watch", "t": "2026-09-18T16:45:43Z"}
+{"ticker": "KXWTI15M-26SEP181300-00", "series": "KXWTI15M", "want": "yes", "price": 0.975, "n": 79.0, "tau": 2, "offer": 79.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 44, "kind": "bet", "t": "2026-09-18T16:59:57Z"}
+{"ticker": "KXWTI15M-26SEP181300-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.5, 1423.0, 27], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T16:59:58Z"}
+{"added": ["KXWTI15M-26SEP181315-15"], "n": 1, "kind": "watch", "t": "2026-09-18T17:00:46Z"}
+{"ticker": "KXWTI15M-26SEP181300-00", "result": 1.0, "won": true, "pnl_c": 184.02, "kind": "settled", "t": "2026-09-18T17:01:47Z"}
+{"ticker": "KXWTI15M-26SEP181315-15", "series": "KXWTI15M", "want": "no", "price": 0.95, "n": 22.0, "tau": 10, "offer": 22.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 2, "kind": "bet", "t": "2026-09-18T17:14:49Z"}
+{"ticker": "KXWTI15M-26SEP181315-15", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.64, 579.0, 13], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T17:14:58Z"}
+{"added": ["KXWTI15M-26SEP181330-30"], "n": 1, "kind": "watch", "t": "2026-09-18T17:15:50Z"}
+{"ticker": "KXWTI15M-26SEP181315-15", "result": 0.0, "won": true, "pnl_c": 102.69, "kind": "settled", "t": "2026-09-18T17:16:50Z"}
+{"ticker": "KXWTI15M-26SEP181330-30", "series": "KXWTI15M", "want": "no", "price": 0.942, "n": 100.0, "tau": 30, "offer": 400.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 3, "kind": "bet", "t": "2026-09-18T17:29:29Z"}
+{"ticker": "KXWTI15M-26SEP181330-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.84, 1.83, 2], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T17:29:58Z"}
+{"added": ["KXWTI15M-26SEP181345-45"], "n": 1, "kind": "watch", "t": "2026-09-18T17:30:23Z"}
+{"ticker": "KXWTI15M-26SEP181330-30", "result": 1.0, "won": false, "pnl_c": -9458.25, "kind": "settled", "t": "2026-09-18T17:31:53Z"}
+{"ticker": "KXWTI15M-26SEP181345-45", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.998, 285.89, 30], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T17:44:58Z"}
+{"added": ["KXWTI15M-26SEP181400-00"], "n": 1, "kind": "watch", "t": "2026-09-18T17:45:26Z"}
+{"ticker": "KXWTI15M-26SEP181400-00", "series": "KXWTI15M", "want": "no", "price": 0.936, "n": 100.0, "tau": 29, "offer": 406.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 3, "kind": "bet", "t": "2026-09-18T17:59:30Z"}
+{"ticker": "KXWTI15M-26SEP181400-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.81, 790.0, 27], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T17:59:58Z"}
+{"added": ["KXWTI15M-26SEP181415-15"], "n": 1, "kind": "watch", "t": "2026-09-18T18:00:30Z"}
+{"ticker": "KXWTI15M-26SEP181400-00", "result": 0.0, "won": true, "pnl_c": 598.07, "kind": "settled", "t": "2026-09-18T18:02:00Z"}
+{"added": ["KXWTI15M-26SEP181415-15"], "n": 1, "kind": "watch", "t": "2026-09-18T18:10:32Z"}
+{"ticker": "KXWTI15M-26SEP181415-15", "series": "KXWTI15M", "want": "no", "price": 0.988, "n": 69.0, "tau": 30, "offer": 69.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 0, "kind": "bet", "t": "2026-09-18T18:14:29Z"}
+{"ticker": "KXWTI15M-26SEP181415-15", "series": "KXWTI15M", "looks": 59, "fresh": 59, "winner_side_ask": [0.988, 69.0, 30], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T18:14:58Z"}
+{"added": ["KXWTI15M-26SEP181430-30"], "n": 1, "kind": "watch", "t": "2026-09-18T18:15:34Z"}
+{"ticker": "KXWTI15M-26SEP181415-15", "result": 0.0, "won": true, "pnl_c": 77.07, "kind": "settled", "t": "2026-09-18T18:16:34Z"}
+{"ticker": "KXWTI15M-26SEP181430-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.998, 820.0, 30], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T18:29:58Z"}
+{"added": ["KXWTI15M-26SEP181445-45"], "n": 1, "kind": "watch", "t": "2026-09-18T18:30:38Z"}
+{"ticker": "KXWTI15M-26SEP181445-45", "series": "KXWTI15M", "looks": 72, "fresh": 62, "winner_side_ask": null, "side": null, "nobody_selling": true, "bet": false, "kind": "look", "t": "2026-09-18T18:44:58Z"}
+{"added": ["KXWTI15M-26SEP181500-00"], "n": 1, "kind": "watch", "t": "2026-09-18T18:45:41Z"}
+{"added": ["KXWTI15M-26SEP181500-00"], "n": 1, "kind": "watch", "t": "2026-09-18T18:58:13Z"}
+{"ticker": "KXWTI15M-26SEP181500-00", "series": "KXWTI15M", "looks": 54, "fresh": 54, "winner_side_ask": [0.998, 665.6, 30], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T18:59:58Z"}
+{"added": ["KXWTI15M-26SEP181515-15"], "n": 1, "kind": "watch", "t": "2026-09-18T19:00:44Z"}
+{"ticker": "KXWTI15M-26SEP181515-15", "series": "KXWTI15M", "want": "yes", "price": 0.936, "n": 33.0, "tau": 23, "offer": 33.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 2, "kind": "bet", "t": "2026-09-18T19:14:36Z"}
+{"ticker": "KXWTI15M-26SEP181515-15", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.81, 2274.0, 26], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T19:14:58Z"}
+{"added": ["KXWTI15M-26SEP181530-30"], "n": 1, "kind": "watch", "t": "2026-09-18T19:15:47Z"}
+{"ticker": "KXWTI15M-26SEP181515-15", "result": 1.0, "won": true, "pnl_c": 197.36, "kind": "settled", "t": "2026-09-18T19:16:47Z"}
+{"ticker": "KXWTI15M-26SEP181530-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.996, 30.0, 30], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T19:29:58Z"}
+{"added": ["KXWTI15M-26SEP181545-45"], "n": 1, "kind": "watch", "t": "2026-09-18T19:30:50Z"}
+{"ticker": "KXWTI15M-26SEP181545-45", "series": "KXWTI15M", "want": "no", "price": 0.97, "n": 100.0, "tau": 30, "offer": 500.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 70, "kind": "bet", "t": "2026-09-18T19:44:29Z"}
+{"ticker": "KXWTI15M-26SEP181545-45", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.929, 400.0, 23], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T19:44:58Z"}
+{"added": ["KXWTI15M-26SEP181600-00"], "n": 1, "kind": "watch", "t": "2026-09-18T19:45:23Z"}
+{"ticker": "KXWTI15M-26SEP181545-45", "result": 0.0, "won": true, "pnl_c": 279.63, "kind": "settled", "t": "2026-09-18T19:46:54Z"}
+{"ticker": "KXWTI15M-26SEP181600-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.997, 103.0, 23], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T19:59:58Z"}
+{"added": ["KXWTI15M-26SEP181615-15"], "n": 1, "kind": "watch", "t": "2026-09-18T20:00:27Z"}
+{"ticker": "KXWTI15M-26SEP181615-15", "series": "KXWTI15M", "looks": 72, "fresh": 62, "winner_side_ask": null, "side": null, "nobody_selling": true, "bet": false, "kind": "look", "t": "2026-09-18T20:14:58Z"}
+{"added": ["KXWTI15M-26SEP181630-30"], "n": 1, "kind": "watch", "t": "2026-09-18T20:15:30Z"}
+{"ticker": "KXWTI15M-26SEP181630-30", "series": "KXWTI15M", "want": "no", "price": 0.936, "n": 100.0, "tau": 30, "offer": 104.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 1, "kind": "bet", "t": "2026-09-18T20:29:29Z"}
+{"ticker": "KXWTI15M-26SEP181630-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.928, 109.0, 27], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T20:29:58Z"}
+{"added": ["KXWTI15M-26SEP181645-45"], "n": 1, "kind": "watch", "t": "2026-09-18T20:30:33Z"}
+{"ticker": "KXWTI15M-26SEP181630-30", "result": 0.0, "won": true, "pnl_c": 598.07, "kind": "settled", "t": "2026-09-18T20:31:33Z"}
+{"ticker": "KXWTI15M-26SEP181645-45", "series": "KXWTI15M", "want": "yes", "price": 0.938, "n": 4.0, "tau": 30, "offer": 4.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 1, "kind": "bet", "t": "2026-09-18T20:44:29Z"}
+{"ticker": "KXWTI15M-26SEP181645-45", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.938, 4.0, 30], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T20:44:58Z"}
+{"added": ["KXWTI15M-26SEP181700-00"], "n": 1, "kind": "watch", "t": "2026-09-18T20:45:37Z"}
+{"ticker": "KXWTI15M-26SEP181645-45", "result": 1.0, "won": true, "pnl_c": 23.17, "kind": "settled", "t": "2026-09-18T20:46:37Z"}
+{"ticker": "KXWTI15M-26SEP181700-00", "series": "KXWTI15M", "want": "yes", "price": 0.984, "n": 100.0, "tau": 29, "offer": 1200.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 2, "kind": "bet", "t": "2026-09-18T20:59:30Z"}
+{"ticker": "KXWTI15M-26SEP181700-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.949, 97.0, 13], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T20:59:58Z"}
+{"added": ["KXWTI15M-26SEP181715-15"], "n": 1, "kind": "watch", "t": "2026-09-18T21:01:10Z"}
+{"ticker": "KXWTI15M-26SEP181700-00", "result": 1.0, "won": true, "pnl_c": 148.98, "kind": "settled", "t": "2026-09-18T21:01:40Z"}
+{"added": ["KXWTI15M-26SEP181715-15"], "n": 1, "kind": "watch", "t": "2026-09-18T21:14:43Z"}
+{"ticker": "KXWTI15M-26SEP181715-15", "series": "KXWTI15M", "looks": 37, "fresh": 32, "winner_side_ask": null, "side": null, "nobody_selling": true, "bet": false, "kind": "look", "t": "2026-09-18T21:14:58Z"}
+{"added": ["KXWTI15M-26SEP181730-30"], "n": 1, "kind": "watch", "t": "2026-09-18T21:15:43Z"}
+{"ticker": "KXWTI15M-26SEP181730-30", "series": "KXWTI15M", "want": "yes", "price": 0.977, "n": 50.0, "tau": 29, "offer": 50.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 63, "kind": "bet", "t": "2026-09-18T21:29:30Z"}
+{"ticker": "KXWTI15M-26SEP181730-30", "series": "KXWTI15M", "looks": 73, "fresh": 73, "winner_side_ask": [0.76, 40.22, 29], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T21:29:58Z"}
+{"added": ["KXWTI15M-26SEP181745-45"], "n": 1, "kind": "watch", "t": "2026-09-18T21:30:46Z"}
+{"ticker": "KXWTI15M-26SEP181730-30", "result": 1.0, "won": true, "pnl_c": 107.14, "kind": "settled", "t": "2026-09-18T21:31:46Z"}
+{"ticker": "KXWTI15M-26SEP181745-45", "series": "KXWTI15M", "want": "no", "price": 0.973, "n": 40.0, "tau": 30, "offer": 40.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 5, "kind": "bet", "t": "2026-09-18T21:44:29Z"}
+{"ticker": "KXWTI15M-26SEP181745-45", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.72, 14.0, 8], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T21:44:58Z"}
+{"added": ["KXWTI15M-26SEP181800-00"], "n": 1, "kind": "watch", "t": "2026-09-18T21:45:49Z"}
+{"ticker": "KXWTI15M-26SEP181745-45", "result": 0.0, "won": true, "pnl_c": 100.64, "kind": "settled", "t": "2026-09-18T21:46:50Z"}
+{"ticker": "KXWTI15M-26SEP181800-00", "series": "KXWTI15M", "want": "yes", "price": 0.972, "n": 14.0, "tau": 9, "offer": 14.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 1, "kind": "bet", "t": "2026-09-18T21:59:50Z"}
+{"ticker": "KXWTI15M-26SEP181800-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.972, 14.0, 9], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T21:59:58Z"}
+{"added": ["KXWTI15M-26SEP181815-15"], "n": 1, "kind": "watch", "t": "2026-09-18T22:00:53Z"}
+{"ticker": "KXWTI15M-26SEP181800-00", "result": 1.0, "won": true, "pnl_c": 36.53, "kind": "settled", "t": "2026-09-18T22:01:53Z"}
+{"ticker": "KXWTI15M-26SEP181815-15", "series": "KXWTI15M", "looks": 72, "fresh": 69, "winner_side_ask": [0.999, 4527.82, 30], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T22:14:58Z"}
+{"added": ["KXWTI15M-26SEP181830-30"], "n": 1, "kind": "watch", "t": "2026-09-18T22:15:26Z"}
+{"ticker": "KXWTI15M-26SEP181830-30", "series": "KXWTI15M", "want": "no", "price": 0.979, "n": 100.0, "tau": 30, "offer": 155.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 62, "kind": "bet", "t": "2026-09-18T22:29:29Z"}
+{"ticker": "KXWTI15M-26SEP181830-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.979, 155.0, 30], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T22:29:58Z"}
+{"added": ["KXWTI15M-26SEP181845-45"], "n": 1, "kind": "watch", "t": "2026-09-18T22:30:29Z"}
+{"ticker": "KXWTI15M-26SEP181830-30", "result": 0.0, "won": true, "pnl_c": 195.61, "kind": "settled", "t": "2026-09-18T22:32:00Z"}
+{"ticker": "KXWTI15M-26SEP181845-45", "series": "KXWTI15M", "looks": 72, "fresh": 71, "winner_side_ask": [0.999, 3586.83, 30], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T22:44:58Z"}
+{"added": ["KXWTI15M-26SEP181900-00"], "n": 1, "kind": "watch", "t": "2026-09-18T22:45:33Z"}
+{"ticker": "KXWTI15M-26SEP181900-00", "series": "KXWTI15M", "want": "yes", "price": 0.99, "n": 4.01, "tau": 28, "offer": 4.01, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 10, "kind": "bet", "t": "2026-09-18T22:59:31Z"}
+{"ticker": "KXWTI15M-26SEP181900-00", "series": "KXWTI15M", "looks": 73, "fresh": 72, "winner_side_ask": [0.99, 4.01, 28], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T22:59:58Z"}
+{"added": ["KXWTI15M-26SEP181915-15"], "n": 1, "kind": "watch", "t": "2026-09-18T23:00:36Z"}
+{"ticker": "KXWTI15M-26SEP181900-00", "result": 1.0, "won": true, "pnl_c": 3.73, "kind": "settled", "t": "2026-09-18T23:01:37Z"}
+{"ticker": "KXWTI15M-26SEP181915-15", "series": "KXWTI15M", "want": "yes", "price": 0.936, "n": 20.72, "tau": 18, "offer": 20.72, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 2, "kind": "bet", "t": "2026-09-18T23:14:41Z"}
+{"ticker": "KXWTI15M-26SEP181915-15", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.81, 86.46, 30], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-18T23:14:58Z"}
+{"added": ["KXWTI15M-26SEP181930-30"], "n": 1, "kind": "watch", "t": "2026-09-18T23:15:41Z"}
+{"ticker": "KXWTI15M-26SEP181915-15", "result": 1.0, "won": true, "pnl_c": 123.92, "kind": "settled", "t": "2026-09-18T23:16:41Z"}
+{"ticker": "KXWTI15M-26SEP181930-30", "series": "KXWTI15M", "looks": 72, "fresh": 71, "winner_side_ask": [0.996, 99.09, 28], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T23:29:58Z"}
+{"added": ["KXWTI15M-26SEP181945-45"], "n": 1, "kind": "watch", "t": "2026-09-18T23:30:44Z"}
+{"ticker": "KXWTI15M-26SEP181945-45", "series": "KXWTI15M", "looks": 72, "fresh": 71, "winner_side_ask": [0.997, 524.16, 24], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T23:44:58Z"}
+{"added": ["KXWTI15M-26SEP182000-00"], "n": 1, "kind": "watch", "t": "2026-09-18T23:45:48Z"}
+{"ticker": "KXWTI15M-26SEP182000-00", "series": "KXWTI15M", "looks": 72, "fresh": 69, "winner_side_ask": [0.998, 2350.0, 30], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-18T23:59:58Z"}
+{"added": ["KXWTI15M-26SEP182015-15"], "n": 1, "kind": "watch", "t": "2026-09-19T00:00:21Z"}
+{"ticker": "KXWTI15M-26SEP182015-15", "series": "KXWTI15M", "want": "no", "price": 0.958, "n": 78.0, "tau": 19, "offer": 78.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 2, "kind": "bet", "t": "2026-09-19T00:14:40Z"}
+{"ticker": "KXWTI15M-26SEP182015-15", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.74, 232.0, 26], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T00:14:58Z"}
+{"added": ["KXWTI15M-26SEP182030-30"], "n": 1, "kind": "watch", "t": "2026-09-19T00:15:24Z"}
+{"ticker": "KXWTI15M-26SEP182015-15", "result": 0.0, "won": true, "pnl_c": 305.63, "kind": "settled", "t": "2026-09-19T00:16:55Z"}
+{"ticker": "KXWTI15M-26SEP182030-30", "series": "KXWTI15M", "looks": 73, "fresh": 73, "winner_side_ask": [0.995, 2077.0, 30], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-19T00:29:58Z"}
+{"added": ["KXWTI15M-26SEP182045-45"], "n": 1, "kind": "watch", "t": "2026-09-19T00:30:58Z"}
+{"ticker": "KXWTI15M-26SEP182045-45", "series": "KXWTI15M", "looks": 72, "fresh": 70, "winner_side_ask": [0.998, 386.0, 22], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-19T00:44:58Z"}
+{"added": ["KXWTI15M-26SEP182100-00"], "n": 1, "kind": "watch", "t": "2026-09-19T00:45:31Z"}
+{"ticker": "KXWTI15M-26SEP182100-00", "series": "KXWTI15M", "want": "no", "price": 0.979, "n": 99.0, "tau": 30, "offer": 99.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 204, "kind": "bet", "t": "2026-09-19T00:59:29Z"}
+{"ticker": "KXWTI15M-26SEP182100-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.978, 27.0, 30], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T00:59:58Z"}
+{"added": ["KXWTI15M-26SEP182115-15"], "n": 1, "kind": "watch", "t": "2026-09-19T01:00:35Z"}
+{"ticker": "KXWTI15M-26SEP182100-00", "result": 0.0, "won": true, "pnl_c": 193.65, "kind": "settled", "t": "2026-09-19T01:01:35Z"}
+{"added": ["KXWTI15M-26SEP182115-15"], "n": 1, "kind": "watch", "t": "2026-09-19T01:12:08Z"}
+{"ticker": "KXWTI15M-26SEP182115-15", "series": "KXWTI15M", "want": "yes", "price": 0.956, "n": 63.0, "tau": 15, "offer": 63.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 3, "kind": "bet", "t": "2026-09-19T01:14:44Z"}
+{"ticker": "KXWTI15M-26SEP182115-15", "series": "KXWTI15M", "looks": 58, "fresh": 58, "winner_side_ask": [0.63, 250.0, 16], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T01:14:58Z"}
+{"added": ["KXWTI15M-26SEP182130-30"], "n": 1, "kind": "watch", "t": "2026-09-19T01:16:09Z"}
+{"ticker": "KXWTI15M-26SEP182115-15", "result": 1.0, "won": true, "pnl_c": 258.65, "kind": "settled", "t": "2026-09-19T01:16:39Z"}
+{"ticker": "KXWTI15M-26SEP182130-30", "series": "KXWTI15M", "want": "yes", "price": 0.986, "n": 28.99, "tau": 30, "offer": 28.99, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 84, "kind": "bet", "t": "2026-09-19T01:29:29Z"}
+{"ticker": "KXWTI15M-26SEP182130-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.986, 28.99, 30], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T01:29:58Z"}
+{"added": ["KXWTI15M-26SEP182145-45"], "n": 1, "kind": "watch", "t": "2026-09-19T01:30:42Z"}
+{"ticker": "KXWTI15M-26SEP182130-30", "result": 1.0, "won": true, "pnl_c": 37.78, "kind": "settled", "t": "2026-09-19T01:31:42Z"}
+{"ticker": "KXWTI15M-26SEP182145-45", "series": "KXWTI15M", "want": "yes", "price": 0.989, "n": 4.0, "tau": 30, "offer": 4.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 4, "kind": "bet", "t": "2026-09-19T01:44:29Z"}
+{"ticker": "KXWTI15M-26SEP182145-45", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.989, 4.0, 30], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T01:44:58Z"}
+{"added": ["KXWTI15M-26SEP182200-00"], "n": 1, "kind": "watch", "t": "2026-09-19T01:45:45Z"}
+{"ticker": "KXWTI15M-26SEP182145-45", "result": 1.0, "won": true, "pnl_c": 4.1, "kind": "settled", "t": "2026-09-19T01:46:46Z"}
+{"ticker": "KXWTI15M-26SEP182200-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.995, 9.0, 30], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-19T01:59:58Z"}
+{"added": ["KXWTI15M-26SEP182215-15"], "n": 1, "kind": "watch", "t": "2026-09-19T02:00:49Z"}
+{"ticker": "KXWTI15M-26SEP182215-15", "series": "KXWTI15M", "want": "no", "price": 0.937, "n": 18.0, "tau": 23, "offer": 18.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 1, "kind": "bet", "t": "2026-09-19T02:14:36Z"}
+{"ticker": "KXWTI15M-26SEP182215-15", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.86, 182.93, 30], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T02:14:58Z"}
+{"added": ["KXWTI15M-26SEP182230-30"], "n": 1, "kind": "watch", "t": "2026-09-19T02:15:52Z"}
+{"ticker": "KXWTI15M-26SEP182215-15", "result": 0.0, "won": true, "pnl_c": 105.96, "kind": "settled", "t": "2026-09-19T02:16:53Z"}
+{"ticker": "KXWTI15M-26SEP182230-30", "series": "KXWTI15M", "want": "no", "price": 0.978, "n": 10.94, "tau": 30, "offer": 10.94, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 60, "kind": "bet", "t": "2026-09-19T02:29:29Z"}
+{"ticker": "KXWTI15M-26SEP182230-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.978, 10.94, 30], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T02:29:58Z"}
+{"added": ["KXWTI15M-26SEP182245-45"], "n": 1, "kind": "watch", "t": "2026-09-19T02:30:26Z"}
+{"ticker": "KXWTI15M-26SEP182230-30", "result": 0.0, "won": true, "pnl_c": 22.42, "kind": "settled", "t": "2026-09-19T02:31:56Z"}
+{"ticker": "KXWTI15M-26SEP182245-45", "series": "KXWTI15M", "want": "yes", "price": 0.977, "n": 79.48, "tau": 30, "offer": 79.48, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 35, "kind": "bet", "t": "2026-09-19T02:44:29Z"}
+{"ticker": "KXWTI15M-26SEP182245-45", "series": "KXWTI15M", "looks": 73, "fresh": 73, "winner_side_ask": [0.975, 21.0, 28], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T02:44:58Z"}
+{"added": ["KXWTI15M-26SEP182300-00"], "n": 1, "kind": "watch", "t": "2026-09-19T02:45:29Z"}
+{"ticker": "KXWTI15M-26SEP182245-45", "result": 1.0, "won": true, "pnl_c": 170.3, "kind": "settled", "t": "2026-09-19T02:47:00Z"}
+{"ticker": "KXWTI15M-26SEP182300-00", "series": "KXWTI15M", "want": "yes", "price": 0.957, "n": 63.0, "tau": 20, "offer": 63.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 28, "kind": "bet", "t": "2026-09-19T02:59:39Z"}
+{"ticker": "KXWTI15M-26SEP182300-00", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.69, 110.23, 3], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T02:59:58Z"}
+{"added": ["KXWTI15M-26SEP182315-15"], "n": 1, "kind": "watch", "t": "2026-09-19T03:00:33Z"}
+{"ticker": "KXWTI15M-26SEP182300-00", "result": 1.0, "won": true, "pnl_c": 252.75, "kind": "settled", "t": "2026-09-19T03:01:33Z"}
+{"added": ["KXWTI15M-26SEP182315-15"], "n": 1, "kind": "watch", "t": "2026-09-19T03:06:35Z"}
+{"ticker": "KXWTI15M-26SEP182315-15", "series": "KXWTI15M", "want": "no", "price": 0.966, "n": 79.0, "tau": 30, "offer": 79.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 4, "kind": "bet", "t": "2026-09-19T03:14:29Z"}
+{"ticker": "KXWTI15M-26SEP182315-15", "series": "KXWTI15M", "looks": 55, "fresh": 55, "winner_side_ask": [0.96, 63.19, 28], "side": "no", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T03:14:58Z"}
+{"added": ["KXWTI15M-26SEP182330-30"], "n": 1, "kind": "watch", "t": "2026-09-19T03:16:08Z"}
+{"ticker": "KXWTI15M-26SEP182315-15", "result": 0.0, "won": true, "pnl_c": 250.44, "kind": "settled", "t": "2026-09-19T03:16:38Z"}
+{"ticker": "KXWTI15M-26SEP182330-30", "series": "KXWTI15M", "want": "yes", "price": 0.973, "n": 20.0, "tau": 30, "offer": 20.0, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 163, "kind": "bet", "t": "2026-09-19T03:29:29Z"}
+{"ticker": "KXWTI15M-26SEP182330-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.966, 84.0, 27], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T03:29:58Z"}
+{"added": ["KXWTI15M-26SEP182345-45"], "n": 1, "kind": "watch", "t": "2026-09-19T03:30:42Z"}
+{"ticker": "KXWTI15M-26SEP182330-30", "result": 1.0, "won": true, "pnl_c": 50.32, "kind": "settled", "t": "2026-09-19T03:31:42Z"}
+{"ticker": "KXWTI15M-26SEP182345-45", "series": "KXWTI15M", "want": "yes", "price": 0.99, "n": 100.0, "tau": 30, "offer": 4215.51, "band": 0, "window": [2, 30, 0.93, 0.99], "age_ms": 3, "kind": "bet", "t": "2026-09-19T03:44:29Z"}
+{"ticker": "KXWTI15M-26SEP182345-45", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.99, 4215.51, 30], "side": "yes", "nobody_selling": false, "bet": true, "kind": "look", "t": "2026-09-19T03:44:58Z"}
+{"added": ["KXWTI15M-26SEP190000-00"], "n": 1, "kind": "watch", "t": "2026-09-19T03:45:15Z"}
+{"ticker": "KXWTI15M-26SEP182345-45", "result": 1.0, "won": true, "pnl_c": 93.07, "kind": "settled", "t": "2026-09-19T03:46:46Z"}
+{"added": ["KXWTI15M-26SEP190000-00"], "n": 1, "kind": "watch", "t": "2026-09-19T03:55:18Z"}
+{"ticker": "KXWTI15M-26SEP190000-00", "series": "KXWTI15M", "looks": 58, "fresh": 56, "winner_side_ask": [0.999, 101753.26, 30], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-19T03:59:58Z"}

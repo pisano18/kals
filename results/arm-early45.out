@@ -642,3 +642,303 @@ SELF-TEST PASSED
   SIGNAL KXSOL15M-26SEP180200-00 tau=39s buy NO @0.9790 fair 0.0000 edge +1.96c size 451.37 taking 20 [early]
   close 06:00Z: 6489 looks, best was KXSOL15M-26SEP180200-0 NO @0.9790 edge +1.96c (need +0.3c) -> FIRED
   SETTLED KXSOL15M-26SEP180200-00 no vs no -> +39.12c (run realised $-5.4732)
+  SIGNAL KXSOL15M-26SEP180215-15 tau=40s buy YES @0.9790 fair 0.9953 edge +1.49c size 139.30 taking 20 [early]
+  SIGNAL KXBTC15M-26SEP180215-15 tau=14s buy YES @0.9800 fair 1.0000 edge +1.86c size 2577.56 taking 20
+  --- PAUSE (will resume): loss bound: realised $-5.47 with $39.18 still open; one more contract could take this run past $-60.00
+  close 06:15Z: 4388 looks, best was KXBTC15M-26SEP180215-1 YES @0.9800 edge +1.86c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP180215-15 yes vs yes -> +39.12c (run realised $-5.0820)
+  SETTLED KXBTC15M-26SEP180215-15 yes vs yes -> +37.25c (run realised $-4.7095)
+  --- RESUMED
+  SIGNAL KXHYPE15M-26SEP180230-30 tau=45s buy YES @0.9800 fair 1.0000 edge +1.86c size 68.51 taking 20 [early]
+  SIGNAL KXDOGE15M-26SEP180230-30 tau=42s buy NO @0.9200 fair 0.0024 edge +7.25c size 62.00 taking 20 [early]
+  --- PAUSE (will resume): loss bound: realised $-4.71 with $38.00 still open; one more contract could take this run past $-60.00
+  close 06:30Z: 551 looks, best was KXDOGE15M-26SEP180230- NO @0.9200 edge +7.25c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP180230-30 yes vs yes -> +37.25c (run realised $-4.3370)
+  SETTLED KXDOGE15M-26SEP180230-30 no vs no -> +149.69c (run realised $-2.8401)
+  --- RESUMED
+  SIGNAL KXZEC15M-26SEP180245-45 tau=42s buy YES @0.9640 fair 0.9961 edge +2.97c size 9.00 taking 9 [early]
+  SIGNAL KXBTC15M-26SEP180245-45 tau=37s buy NO @0.9800 fair 0.0001 edge +1.85c size 1050.02 taking 20 [early]
+  SIGNAL KXZEC15M-26SEP180245-45 tau=30s buy YES @0.9790 fair 0.9965 edge +1.60c size 60.00 taking 11 [topup]
+  --- PAUSE (will resume): loss bound: realised $-2.84 with $39.05 still open; one more contract could take this run past $-60.00
+  close 06:45Z: 2045 looks, best was KXZEC15M-26SEP180245-4 YES @0.9640 edge +2.97c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP180245-45 yes vs yes -> +30.21c (run realised $-2.5380)
+  SETTLED KXBTC15M-26SEP180245-45 no vs no -> +37.25c (run realised $-2.1655)
+  --- RESUMED
+  SETTLED KXZEC15M-26SEP180245-45 yes vs yes -> +21.51c (run realised $-1.9504)
+  SIGNAL KXBTC15M-26SEP180300-00 tau=45s buy YES @0.9790 fair 0.9998 edge +1.93c size 335.76 taking 20 [early]
+  SIGNAL KXHYPE15M-26SEP180300-00 tau=45s buy NO @0.9780 fair 0.0007 edge +1.98c size 44.00 taking 20 [early]
+  --- PAUSE (will resume): loss bound: realised $-1.95 with $39.14 still open; one more contract could take this run past $-60.00
+  close 07:00Z: 7 looks, best was KXHYPE15M-26SEP180300- NO @0.9780 edge +1.98c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP180300-00 yes vs yes -> +39.12c (run realised $-1.5592)
+  SETTLED KXHYPE15M-26SEP180300-00 no vs no -> +40.98c (run realised $-1.1494)
+  --- RESUMED
+  SIGNAL KXHYPE15M-26SEP180315-15 tau=40s buy NO @0.9800 fair 0.0028 edge +1.58c size 61.95 taking 20 [early]
+  close 07:15Z: 6366 looks, best was KXHYPE15M-26SEP180315- NO @0.9800 edge +1.58c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP180315-15 no vs no -> +37.25c (run realised $-0.7769)
+  SIGNAL KXBNB15M-26SEP180330-30 tau=40s buy NO @0.9760 fair 0.0041 edge +1.82c size 27.80 taking 20 [early]
+  close 07:30Z: 6443 looks, best was KXBNB15M-26SEP180330-3 NO @0.9760 edge +1.82c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP180330-30 no vs no -> +44.72c (run realised $-0.3297)
+  close 07:45Z: 6368 looks, best was KXDOGE15M-26SEP180345- YES @0.9880 edge +1.11c (need +0.3c) -> no trade
+  SIGNAL KXNEAR15M-26SEP180400-00 tau=45s buy NO @0.9760 fair 0.0008 edge +2.16c size 1.69 taking 1.69 [early]
+  SIGNAL KXZEC15M-26SEP180400-00 tau=45s buy NO @0.9760 fair 0.0030 edge +1.94c size 47.00 taking 20 [early]
+  SIGNAL KXHYPE15M-26SEP180400-00 tau=23s buy NO @0.9790 fair 0.0032 edge +1.64c size 2.00 taking 2
+  SIGNAL KXHYPE15M-26SEP180400-00 tau=23s buy NO @0.9790 fair 0.0032 edge +1.64c size 2.00 taking 2
+  close 08:00Z: 5604 looks, best was KXNEAR15M-26SEP180400- NO @0.9760 edge +2.16c (need +0.3c) -> FIRED
+  SETTLED KXNEAR15M-26SEP180400-00 no vs no -> +3.78c (run realised $-0.2919)
+  SETTLED KXZEC15M-26SEP180400-00 no vs no -> +44.72c (run realised $+0.1553)
+  SETTLED KXHYPE15M-26SEP180400-00 no vs no -> +3.91c (run realised $+0.1944)
+  SIGNAL KXBTC15M-26SEP180415-15 tau=45s buy YES @0.9660 fair 1.0000 edge +3.17c size 1108.62 taking 20 [early]
+  SIGNAL KXDOGE15M-26SEP180415-15 tau=41s buy NO @0.9690 fair 0.0015 edge +2.74c size 24.24 taking 20 [early]
+  close 08:15Z: 583 looks, best was KXBTC15M-26SEP180415-1 YES @0.9660 edge +3.17c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP180415-15 yes vs yes -> +63.40c (run realised $+0.8284)
+  SETTLED KXDOGE15M-26SEP180415-15 no vs no -> +57.79c (run realised $+1.4063)
+  close 08:30Z: 6500 looks, best was KXNEAR15M-26SEP180430- NO @0.9860 edge +1.20c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP180445-45 tau=33s buy YES @0.9730 fair 0.9953 edge +2.05c size 204.56 taking 20 [early]
+  SIGNAL KXBNB15M-26SEP180445-45 tau=20s buy YES @0.9800 fair 0.9966 edge +1.52c size 58.65 taking 20
+  close 08:45Z: 3756 looks, best was KXBTC15M-26SEP180445-4 YES @0.9730 edge +2.05c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP180445-45 yes vs yes -> +50.32c (run realised $+1.9095)
+  SETTLED KXBNB15M-26SEP180445-45 yes vs yes -> +37.25c (run realised $+2.2820)
+  close 09:00Z: 6564 looks, best was KXNEAR15M-26SEP180500- NO @0.9960 edge +0.37c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP180515-15 tau=45s buy NO @0.9640 fair 0.0042 edge +2.93c size 58.87 taking 20 [early]
+  SIGNAL KXXRP15M-26SEP180515-15 tau=16s buy YES @0.9600 fair 0.9956 edge +3.29c size 23.46 taking 20
+  close 09:15Z: 4233 looks, best was KXXRP15M-26SEP180515-1 YES @0.9600 edge +3.29c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP180515-15 no vs no -> +67.14c (run realised $+2.9534)
+  SETTLED KXXRP15M-26SEP180515-15 yes vs yes -> +74.62c (run realised $+3.6996)
+  close 09:30Z: 6600 looks, best was KXDOGE15M-26SEP180530- YES @0.9810 edge +1.51c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP180545-45 tau=40s buy NO @0.9510 fair 0.0041 edge +4.16c size 310.00 taking 20 [early]
+  SIGNAL KXHYPE15M-26SEP180545-45 tau=37s buy YES @0.9670 fair 0.9954 edge +2.62c size 4.41 taking 4.41 [early]
+  SIGNAL KXSOL15M-26SEP180545-45 tau=21s buy YES @0.9760 fair 0.9989 edge +2.12c size 1.68 taking 1.68
+  SIGNAL KXSOL15M-26SEP180545-45 tau=21s buy YES @0.9800 fair 0.9989 edge +1.75c size 250.00 taking 13.91
+  close 09:45Z: 3393 looks, best was KXXRP15M-26SEP180545-4 NO @0.9510 edge +4.16c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP180545-45 no vs no -> +91.47c (run realised $+4.6143)
+  SETTLED KXHYPE15M-26SEP180545-45 yes vs yes -> +13.56c (run realised $+4.7499)
+  SETTLED KXSOL15M-26SEP180545-45 yes vs yes -> +25.91c (run realised $+5.0090)
+  close 10:00Z: 6516 looks, best was KXXRP15M-26SEP180600-0 YES @0.9960 edge +0.37c (need +0.3c) -> no trade
+  close 10:15Z: 6452 looks, best was KXNEAR15M-26SEP180615- NO @0.9940 edge +0.54c (need +0.3c) -> no trade
+  close 10:30Z: 6406 looks, 6406 decided, 6406 decided-but-nothing-offered, 0 undecided
+  close 10:45Z: 6536 looks, best was KXSOL15M-26SEP180645-4 NO @0.9970 edge +0.28c (need +0.3c) -> no trade
+  close 11:00Z: 6552 looks, best was KXHYPE15M-26SEP180700- YES @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 11:15Z: 5823 looks, best was KXNEAR15M-26SEP180715- NO @0.9990 edge +0.09c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP180730-30 tau=36s buy NO @0.9640 fair 0.0033 edge +3.03c size 12.00 taking 12 [early]
+  SIGNAL KXXRP15M-26SEP180730-30 tau=30s buy NO @0.9750 fair 0.0006 edge +2.27c size 25.17 taking 8 [topup]
+  close 11:30Z: 5932 looks, best was KXXRP15M-26SEP180730-3 NO @0.9640 edge +3.03c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP180730-30 no vs no -> +40.28c (run realised $+5.4118)
+  SETTLED KXXRP15M-26SEP180730-30 no vs no -> +18.63c (run realised $+5.5981)
+  SIGNAL KXZEC15M-26SEP180745-45 tau=27s buy YES @0.8900 fair 0.9998 edge +10.30c size 60.00 taking 20
+  close 11:45Z: 6577 looks, best was KXZEC15M-26SEP180745-4 YES @0.8900 edge +10.30c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP180745-45 yes vs yes -> +206.29c (run realised $+7.6610)
+  SIGNAL KXHYPE15M-26SEP180800-00 tau=45s buy NO @0.9670 fair 0.0011 edge +2.96c size 21.56 taking 20 [early]
+  SIGNAL KXBNB15M-26SEP180800-00 tau=36s buy NO @0.9750 fair 0.0044 edge +1.89c size 144.00 taking 20 [early]
+  close 12:00Z: 1193 looks, best was KXHYPE15M-26SEP180800- NO @0.9670 edge +2.96c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP180800-00 no vs no -> +61.53c (run realised $+8.2763)
+  SETTLED KXBNB15M-26SEP180800-00 no vs no -> +46.58c (run realised $+8.7421)
+  SIGNAL KXZEC15M-26SEP180815-15 tau=45s buy NO @0.9770 fair 0.0024 edge +1.91c size 32.29 taking 20 [early]
+  close 12:15Z: 6189 looks, best was KXZEC15M-26SEP180815-1 NO @0.9770 edge +1.91c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP180815-15 no vs no -> +42.85c (run realised $+9.1706)
+  SIGNAL KXETH15M-26SEP180830-30 tau=31s buy YES @0.9800 fair 0.9953 edge +1.39c size 15.00 taking 15 [early]
+  close 12:30Z: 6394 looks, best was KXETH15M-26SEP180830-3 YES @0.9800 edge +1.39c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP180830-30 yes vs yes -> +27.94c (run realised $+9.4500)
+  close 12:45Z: 6439 looks, best was KXETH15M-26SEP180845-4 YES @0.9950 edge +0.46c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP180900-00 tau=16s buy NO @0.9330 fair 0.0019 edge +6.08c size 60.00 taking 20
+  close 13:00Z: 6508 looks, best was KXBNB15M-26SEP180900-0 NO @0.9330 edge +6.08c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP180900-00 no vs no -> +125.24c (run realised $+10.7024)
+  SIGNAL KXBTC15M-26SEP180915-15 tau=37s buy NO @0.9770 fair 0.0044 edge +1.70c size 215.04 taking 20 [early]
+  close 13:15Z: 6320 looks, best was KXBTC15M-26SEP180915-1 NO @0.9750 edge +1.89c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP180915-15 no vs no -> +42.85c (run realised $+11.1309)
+  close 13:30Z: 6337 looks, best was KXZEC15M-26SEP180930-3 YES @0.9990 edge +0.09c (need +0.3c) -> no trade
+  close 13:45Z: 6506 looks, best was KXHYPE15M-26SEP180945- YES @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 14:00Z: 6464 looks, best was KXBNB15M-26SEP181000-0 YES @0.9830 edge +1.58c (need +0.3c) -> no trade
+  close 14:15Z: 6461 looks, best was KXBNB15M-26SEP181015-1 NO @0.9900 edge +0.76c (need +0.3c) -> no trade
+  close 14:30Z: 6287 looks, best was KXNEAR15M-26SEP181030- NO @0.9960 edge +0.37c (need +0.3c) -> no trade
+  SIGNAL KXHYPE15M-26SEP181045-45 tau=45s buy YES @0.9700 fair 0.9959 edge +2.39c size 22.00 taking 20 [early]
+  SIGNAL KXDOGE15M-26SEP181045-45 tau=40s buy YES @0.9800 fair 0.9965 edge +1.51c size 45.75 taking 20 [early]
+  close 14:45Z: 598 looks, best was KXHYPE15M-26SEP181045- YES @0.9700 edge +2.39c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP181045-45 yes vs yes -> +55.92c (run realised $+11.6901)
+  SETTLED KXDOGE15M-26SEP181045-45 yes vs yes -> +37.25c (run realised $+12.0626)
+  close 15:00Z: 6379 looks, best was KXBNB15M-26SEP181100-0 YES @0.9970 edge +0.28c (need +0.3c) -> no trade
+  SIGNAL KXZEC15M-26SEP181115-15 tau=9s buy YES @0.9260 fair 1.0000 edge +6.92c size 99.00 taking 20
+  close 15:15Z: 6561 looks, best was KXZEC15M-26SEP181115-1 YES @0.9260 edge +6.92c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP181115-15 yes vs yes -> +138.40c (run realised $+13.4466)
+  close 15:30Z: 6495 looks, best was KXXRP15M-26SEP181130-3 NO @0.9880 edge +1.12c (need +0.3c) -> no trade
+  SIGNAL KXSOL15M-26SEP181145-45 tau=45s buy NO @0.9690 fair 0.0024 edge +2.65c size 9.00 taking 9 [early]
+  close 15:45Z: 6193 looks, best was KXSOL15M-26SEP181145-4 NO @0.9690 edge +2.65c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP181145-45 no vs no -> +26.00c (run realised $+13.7066)
+  close 16:00Z: 6132 looks, best was KXHYPE15M-26SEP181200- YES @0.9900 edge +0.86c (need +0.3c) -> no trade
+  close 16:15Z: 6452 looks, best was KXSOL15M-26SEP181215-1 YES @0.9930 edge +0.65c (need +0.3c) -> no trade
+  close 16:30Z: 6545 looks, best was KXBNB15M-26SEP181230-3 NO @0.9950 edge +0.45c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP181245-45 tau=43s buy YES @0.9780 fair 0.9959 edge +1.64c size 8.39 taking 8.39 [early]
+  close 16:45Z: 6281 looks, best was KXXRP15M-26SEP181245-4 YES @0.9780 edge +1.64c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP181245-45 yes vs yes -> +17.19c (run realised $+13.8785)
+  close 17:00Z: 6441 looks, best was KXDOGE15M-26SEP181300- NO @0.9970 edge +0.28c (need +0.3c) -> no trade
+  SIGNAL KXETH15M-26SEP181315-15 tau=44s buy NO @0.9780 fair 0.0004 edge +2.01c size 400.00 taking 20 [early]
+  SIGNAL KXBTC15M-26SEP181315-15 tau=41s buy YES @0.9780 fair 0.9969 edge +1.73c size 375.74 taking 20 [early]
+  close 17:15Z: 601 looks, best was KXETH15M-26SEP181315-1 NO @0.9780 edge +2.01c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP181315-15 no vs no -> +40.98c (run realised $+14.2883)
+  SETTLED KXBTC15M-26SEP181315-15 yes vs yes -> +40.98c (run realised $+14.6981)
+  SIGNAL KXHYPE15M-26SEP181330-30 tau=19s buy NO @0.9730 fair 0.0028 edge +2.23c size 2.00 taking 2
+  close 17:30Z: 6417 looks, best was KXHYPE15M-26SEP181330- NO @0.9730 edge +2.23c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP181330-30 no vs no -> +5.03c (run realised $+14.7484)
+  SIGNAL KXETH15M-26SEP181345-45 tau=38s buy YES @0.9690 fair 0.9975 edge +2.64c size 146.24 taking 20 [early]
+  SIGNAL KXBTC15M-26SEP181345-45 tau=20s buy YES @0.9690 fair 1.0000 edge +2.88c size 351.71 taking 20
+  close 17:45Z: 3756 looks, best was KXBTC15M-26SEP181345-4 YES @0.9680 edge +2.98c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP181345-45 yes vs yes -> +57.79c (run realised $+15.3263)
+  SETTLED KXBTC15M-26SEP181345-45 yes vs yes -> +57.79c (run realised $+15.9042)
+  SIGNAL KXSOL15M-26SEP181400-00 tau=45s buy YES @0.9800 fair 0.9978 edge +1.64c size 31.00 taking 20 [early]
+  close 18:00Z: 6127 looks, best was KXSOL15M-26SEP181400-0 YES @0.9800 edge +1.64c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP181400-00 yes vs yes -> +37.25c (run realised $+16.2767)
+  SIGNAL KXZEC15M-26SEP181415-15 tau=45s buy YES @0.9630 fair 0.9977 edge +3.22c size 1.36 taking 1.36 [early]
+  SIGNAL KXNEAR15M-26SEP181415-15 tau=29s buy NO @0.9800 fair 0.0031 edge +1.55c size 4.00 taking 4
+  SIGNAL KXNEAR15M-26SEP181415-15 tau=29s buy NO @0.9800 fair 0.0031 edge +1.55c size 4.00 taking 4
+  close 18:15Z: 5846 looks, best was KXZEC15M-26SEP181415-1 YES @0.9630 edge +3.22c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP181415-15 yes vs yes -> +4.69c (run realised $+16.3236)
+  SETTLED KXNEAR15M-26SEP181415-15 no vs no -> +7.45c (run realised $+16.3981)
+  SIGNAL KXZEC15M-26SEP181430-30 tau=45s buy NO @0.9560 fair 0.0014 edge +3.97c size 6.00 taking 6 [early]
+  SIGNAL KXHYPE15M-26SEP181430-30 tau=44s buy NO @0.9750 fair 0.0016 edge +2.17c size 14.00 taking 14 [early]
+  SIGNAL KXZEC15M-26SEP181430-30 tau=28s buy NO @0.9790 fair 0.0002 edge +1.93c size 15.00 taking 14 [topup]
+  close 18:30Z: 5458 looks, best was KXZEC15M-26SEP181430-3 NO @0.9560 edge +3.97c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP181430-30 no vs no -> +24.63c (run realised $+16.6444)
+  SETTLED KXHYPE15M-26SEP181430-30 no vs no -> +32.61c (run realised $+16.9705)
+  SETTLED KXZEC15M-26SEP181430-30 no vs no -> +27.38c (run realised $+17.2443)
+  SIGNAL KXBTC15M-26SEP181445-45 tau=26s buy NO @0.9480 fair 0.0031 edge +4.55c size 1577.86 taking 20
+  close 18:45Z: 6356 looks, best was KXBTC15M-26SEP181445-4 NO @0.9480 edge +4.67c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP181445-45 no vs no -> +97.09c (run realised $+18.2152)
+  close 19:00Z: 6278 looks, best was KXBTC15M-26SEP181500-0 NO @0.9810 edge +1.63c (need +0.3c) -> no trade
+  close 19:15Z: 6340 looks, best was KXNEAR15M-26SEP181515- YES @0.9990 edge +0.09c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP181530-30 tau=35s buy YES @0.9700 fair 0.9999 edge +2.78c size 60.00 taking 20 [early]
+  close 19:30Z: 6523 looks, best was KXBNB15M-26SEP181530-3 YES @0.9700 edge +2.78c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP181530-30 yes vs yes -> +55.92c (run realised $+18.7744)
+  close 19:45Z: 6317 looks, best was KXSOL15M-26SEP181545-4 YES @0.9810 edge +1.77c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP181600-00 tau=45s buy YES @0.9790 fair 0.9994 edge +1.90c size 15.00 taking 15 [early]
+  SIGNAL KXETH15M-26SEP181600-00 tau=31s buy NO @0.9570 fair 0.0032 edge +3.69c size 40.00 taking 20 [early]
+  SIGNAL KXSOL15M-26SEP181600-00 tau=27s buy YES @0.9170 fair 0.9950 edge +7.27c size 18.00 taking 5
+  close 20:00Z: 2378 looks, best was KXSOL15M-26SEP181600-0 YES @0.9170 edge +7.27c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP181600-00 yes vs yes -> +29.34c (run realised $+19.0678)
+  SETTLED KXETH15M-26SEP181600-00 no vs no -> +80.23c (run realised $+19.8701)
+  SETTLED KXSOL15M-26SEP181600-00 yes vs yes -> +38.83c (run realised $+20.2584)
+  close 20:15Z: 6583 looks, best was KXDOGE15M-26SEP181615- NO @0.9890 edge +0.98c (need +0.3c) -> no trade
+  close 20:30Z: 6513 looks, best was KXDOGE15M-26SEP181630- NO @0.9940 edge +0.56c (need +0.3c) -> no trade
+  close 20:45Z: 6493 looks, best was KXNEAR15M-26SEP181645- NO @0.9940 edge +0.56c (need +0.3c) -> no trade
+  close 21:00Z: 6584 looks, best was KXDOGE15M-26SEP181700- YES @0.9930 edge +0.65c (need +0.3c) -> no trade
+  close 21:15Z: 6631 looks, best was KXZEC15M-26SEP181715-1 NO @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 21:30Z: 6488 looks, best was KXHYPE15M-26SEP181730- NO @0.9940 edge +0.55c (need +0.3c) -> no trade
+  SIGNAL KXZEC15M-26SEP181745-45 tau=37s buy YES @0.9770 fair 0.9951 edge +1.65c size 22.00 taking 20 [early]
+  close 21:45Z: 6267 looks, best was KXZEC15M-26SEP181745-4 YES @0.9770 edge +1.65c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP181745-45 yes vs yes -> +42.85c (run realised $+20.6869)
+  SIGNAL KXBTC15M-26SEP181800-00 tau=34s buy YES @0.9800 fair 0.9996 edge +1.82c size 50.00 taking 20 [early]
+  SIGNAL KXSOL15M-26SEP181800-00 tau=23s buy YES @0.9790 fair 0.9951 edge +1.47c size 108.00 taking 20
+  close 22:00Z: 3242 looks, best was KXBTC15M-26SEP181800-0 YES @0.9790 edge +1.95c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP181800-00 yes vs yes -> +37.25c (run realised $+21.0594)
+  SETTLED KXSOL15M-26SEP181800-00 yes vs yes -> +39.12c (run realised $+21.4506)
+  close 22:15Z: 6414 looks, best was KXXRP15M-26SEP181815-1 YES @0.9820 edge +1.63c (need +0.3c) -> no trade
+  SIGNAL KXDOGE15M-26SEP181830-30 tau=43s buy NO @0.9800 fair 0.0032 edge +1.54c size 285.29 taking 20 [early]
+  SIGNAL KXBNB15M-26SEP181830-30 tau=42s buy YES @0.9800 fair 0.9982 edge +1.68c size 60.00 taking 20 [early]
+  close 22:30Z: 426 looks, best was KXBNB15M-26SEP181830-3 YES @0.9800 edge +1.68c (need +0.3c) -> FIRED
+  SETTLED KXDOGE15M-26SEP181830-30 no vs no -> +37.25c (run realised $+21.8231)
+  SETTLED KXBNB15M-26SEP181830-30 yes vs yes -> +37.25c (run realised $+22.1956)
+  close 22:45Z: 6489 looks, best was KXDOGE15M-26SEP181845- NO @0.9950 edge +0.46c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP181900-00 tau=45s buy YES @0.9800 fair 0.9996 edge +1.83c size 79.48 taking 20 [early]
+  close 23:00Z: 6082 looks, best was KXBTC15M-26SEP181900-0 YES @0.9800 edge +1.83c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP181900-00 yes vs yes -> +37.25c (run realised $+22.5681)
+  SIGNAL KXXRP15M-26SEP181915-15 tau=28s buy NO @0.9800 fair 0.0035 edge +1.51c size 210.15 taking 20
+  close 23:15Z: 5831 looks, best was KXXRP15M-26SEP181915-1 NO @0.9790 edge +1.83c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP181915-15 no vs no -> +37.25c (run realised $+22.9406)
+  close 23:30Z: 6021 looks, best was KXHYPE15M-26SEP181930- YES @0.9900 edge +0.91c (need +0.3c) -> no trade
+  close 23:45Z: 5917 looks, best was KXZEC15M-26SEP181945-4 NO @0.9890 edge +0.99c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP182000-00 tau=33s buy NO @0.9730 fair 0.0013 edge +2.38c size 17.00 taking 17 [early]
+  SIGNAL KXXRP15M-26SEP182000-00 tau=27s buy NO @0.9640 fair 0.0034 edge +3.02c size 11.00 taking 11
+  SIGNAL KXXRP15M-26SEP182000-00 tau=27s buy NO @0.9680 fair 0.0034 edge +2.64c size 5.00 taking 5
+  close 00:00Z: 5451 looks, best was KXXRP15M-26SEP182000-0 NO @0.9640 edge +3.02c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP182000-00 no vs no -> +42.77c (run realised $+23.3683)
+  SETTLED KXXRP15M-26SEP182000-00 no vs no -> +14.91c (run realised $+23.5174)
+  SIGNAL KXETH15M-26SEP182015-15 tau=38s buy NO @0.8900 fair 0.0004 edge +10.27c size 1264.00 taking 20 [early]
+  SIGNAL KXBNB15M-26SEP182015-15 tau=18s buy YES @0.9600 fair 0.9994 edge +3.67c size 10.00 taking 10
+  SIGNAL KXBNB15M-26SEP182015-15 tau=18s buy YES @0.9610 fair 0.9994 edge +3.58c size 88.00 taking 10
+  close 00:15Z: 3338 looks, best was KXETH15M-26SEP182015-1 NO @0.7400 edge +24.61c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP182015-15 no vs no -> +206.29c (run realised $+25.5803)
+  SETTLED KXBNB15M-26SEP182015-15 yes vs yes -> +36.37c (run realised $+25.9440)
+  SIGNAL KXBNB15M-26SEP182030-30 tau=45s buy YES @0.9560 fair 0.9992 edge +4.02c size 60.00 taking 20 [early]
+  close 00:30Z: 5515 looks, best was KXBNB15M-26SEP182030-3 YES @0.9500 edge +4.67c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP182030-30 yes vs yes -> +82.11c (run realised $+26.7651)
+  close 00:45Z: 5797 looks, best was KXNEAR15M-26SEP182045- NO @0.9910 edge +0.84c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP182100-00 tau=25s buy NO @0.9700 fair 0.0000 edge +2.79c size 60.00 taking 20
+  close 01:00Z: 5763 looks, best was KXBNB15M-26SEP182100-0 NO @0.9700 edge +2.79c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP182100-00 no vs no -> +55.92c (run realised $+27.3243)
+  close 01:15Z: 5306 looks, best was KXZEC15M-26SEP182115-1 NO @0.9890 edge +1.01c (need +0.3c) -> no trade
+  SIGNAL KXSOL15M-26SEP182130-30 tau=43s buy NO @0.9760 fair 0.0044 edge +1.80c size 10.14 taking 10.14 [early]
+  SIGNAL KXBTC15M-26SEP182130-30 tau=43s buy NO @0.9670 fair 0.0050 edge +2.58c size 126.91 taking 20 [early]
+  SIGNAL KXETH15M-26SEP182130-30 tau=41s buy NO @0.9800 fair 0.0001 edge +1.85c size 3.00 taking 3 [early]
+  close 01:30Z: 4572 looks, best was KXBTC15M-26SEP182130-3 NO @0.9660 edge +2.67c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP182130-30 no vs no -> +22.67c (run realised $+27.5510)
+  SETTLED KXBTC15M-26SEP182130-30 no vs no -> +61.53c (run realised $+28.1663)
+  SETTLED KXETH15M-26SEP182130-30 no vs no -> +5.58c (run realised $+28.2221)
+  SIGNAL KXETH15M-26SEP182145-45 tau=45s buy NO @0.9670 fair 0.0001 edge +3.06c size 10.00 taking 10 [early]
+  SIGNAL KXSOL15M-26SEP182145-45 tau=33s buy YES @0.9730 fair 0.9984 edge +2.36c size 13.00 taking 13 [early]
+  SIGNAL KXSOL15M-26SEP182145-45 tau=30s buy YES @0.9790 fair 0.9994 edge +1.90c size 290.93 taking 7 [topup]
+  SIGNAL KXDOGE15M-26SEP182145-45 tau=15s buy NO @0.9780 fair 0.0036 edge +1.69c size 126.83 taking 10
+  close 01:45Z: 3686 looks, best was KXETH15M-26SEP182145-4 NO @0.9670 edge +3.06c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP182145-45 no vs no -> +30.76c (run realised $+28.5297)
+  SETTLED KXSOL15M-26SEP182145-45 yes vs yes -> +32.70c (run realised $+28.8567)
+  SETTLED KXDOGE15M-26SEP182145-45 no vs no -> +20.49c (run realised $+29.0616)
+  SETTLED KXSOL15M-26SEP182145-45 yes vs yes -> +13.69c (run realised $+29.1985)
+  close 02:00Z: 5770 looks, best was KXSOL15M-26SEP182200-0 YES @0.9960 edge +0.36c (need +0.3c) -> no trade
+  close 02:15Z: 5895 looks, best was KXSOL15M-26SEP182215-1 YES @0.9970 edge +0.28c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP182230-30 tau=11s buy YES @0.9740 fair 0.9972 edge +2.14c size 2.81 taking 2.81
+  SIGNAL KXXRP15M-26SEP182230-30 tau=11s buy YES @0.9740 fair 0.9972 edge +2.14c size 2.81 taking 2.81
+  close 02:30Z: 5170 looks, best was KXXRP15M-26SEP182230-3 YES @0.9720 edge +2.33c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP182230-30 yes vs yes -> +6.81c (run realised $+29.2665)
+  SIGNAL KXBTC15M-26SEP182245-45 tau=36s buy NO @0.9720 fair 0.0017 edge +2.44c size 1838.57 taking 20 [early]
+  close 02:45Z: 5246 looks, best was KXNEAR15M-26SEP182245- NO @0.9660 edge +2.68c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP182245-45 no vs no -> +52.18c (run realised $+29.7883)
+  SIGNAL KXZEC15M-26SEP182300-00 tau=42s buy NO @0.9700 fair 0.0034 edge +2.45c size 6.01 taking 6.01 [early]
+  SIGNAL KXSOL15M-26SEP182300-00 tau=41s buy YES @0.9780 fair 0.9959 edge +1.64c size 15.59 taking 15.59 [early]
+  close 03:00Z: 4993 looks, best was KXZEC15M-26SEP182300-0 NO @0.9700 edge +2.45c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP182300-00 no vs no -> +16.80c (run realised $+29.9563)
+  SETTLED KXSOL15M-26SEP182300-00 yes vs yes -> +31.95c (run realised $+30.2758)
+  SIGNAL KXSOL15M-26SEP182315-15 tau=45s buy YES @0.9800 fair 0.9973 edge +1.59c size 5.04 taking 5.04 [early]
+  SIGNAL KXBNB15M-26SEP182315-15 tau=45s buy YES @0.9150 fair 0.9951 edge +7.46c size 56.00 taking 20 [early]
+  SIGNAL KXDOGE15M-26SEP182315-15 tau=43s buy NO @0.9790 fair 0.0000 edge +1.96c size 66.00 taking 14.96 [early]
+  close 03:15Z: 255 looks, best was KXBNB15M-26SEP182315-1 YES @0.9150 edge +7.46c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP182315-15 yes vs yes -> +9.38c (run realised $+30.3696)
+  SETTLED KXBNB15M-26SEP182315-15 yes vs yes -> +159.11c (run realised $+31.9607)
+  SETTLED KXDOGE15M-26SEP182315-15 no vs no -> +29.26c (run realised $+32.2533)
+  close 03:30Z: 5155 looks, best was KXNEAR15M-26SEP182330- YES @0.9980 edge +0.18c (need +0.3c) -> no trade
+  SIGNAL KXHYPE15M-26SEP182345-45 tau=45s buy YES @0.9730 fair 1.0000 edge +2.52c size 3.00 taking 3 [early]
+  SIGNAL KXBTC15M-26SEP182345-45 tau=45s buy YES @0.9750 fair 0.9975 edge +2.08c size 160.92 taking 20 [early]
+  SIGNAL KXETH15M-26SEP182345-45 tau=27s buy YES @0.9630 fair 0.9995 edge +3.40c size 259.90 taking 17
+  close 03:45Z: 1775 looks, best was KXETH15M-26SEP182345-4 YES @0.9630 edge +3.40c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP182345-45 yes vs yes -> +7.54c (run realised $+32.3287)
+  SETTLED KXBTC15M-26SEP182345-45 yes vs yes -> +46.58c (run realised $+32.7945)
+  SETTLED KXETH15M-26SEP182345-45 yes vs yes -> +58.65c (run realised $+33.3810)
+  SIGNAL KXBNB15M-26SEP190000-00 tau=20s buy NO @0.9800 fair 0.0001 edge +1.85c size 5.00 taking 5
+  close 04:00Z: 4578 looks, best was KXBNB15M-26SEP190000-0 NO @0.9800 edge +1.85c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP190000-00 no vs no -> +9.31c (run realised $+33.4741)
+  close 04:15Z: 4326 looks, best was KXNEAR15M-26SEP190015- NO @0.9590 edge +3.82c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP190030-30 tau=16s buy YES @0.9800 fair 0.9999 edge +1.85c size 59.84 taking 20
+  close 04:30Z: 4419 looks, best was KXBNB15M-26SEP190030-3 YES @0.9800 edge +1.85c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP190030-30 yes vs yes -> +37.25c (run realised $+33.8466)
+  close 04:45Z: 4479 looks, best was KXXRP15M-26SEP190045-4 NO @0.9840 edge +1.34c (need +0.3c) -> no trade
+  SIGNAL KXZEC15M-26SEP190100-00 tau=39s buy NO @0.9770 fair 0.0046 edge +1.69c size 30.00 taking 20 [early]
+  SIGNAL KXDOGE15M-26SEP190100-00 tau=36s buy YES @0.9770 fair 0.9981 edge +1.95c size 3.42 taking 3.42 [early]
+  SIGNAL KXSOL15M-26SEP190100-00 tau=21s buy NO @0.9490 fair 0.0001 edge +4.75c size 185.69 taking 16.58
+  close 05:00Z: 2088 looks, best was KXZEC15M-26SEP190100-0 NO @0.7400 edge +24.65c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP190100-00 no vs no -> +42.85c (run realised $+34.2751)
+  SETTLED KXDOGE15M-26SEP190100-00 yes vs yes -> +7.33c (run realised $+34.3483)
+  SETTLED KXSOL15M-26SEP190100-00 no vs no -> +78.94c (run realised $+35.1377)
+  SIGNAL KXZEC15M-26SEP190115-15 tau=32s buy NO @0.9750 fair 0.0044 edge +1.89c size 83.88 taking 20 [early]
+  close 05:15Z: 4156 looks, best was KXZEC15M-26SEP190115-1 NO @0.9750 edge +1.89c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP190115-15 no vs no -> +46.58c (run realised $+35.6035)
+ConnectionClosedError: no close frame received or sent -- retry in 1s
+  SIGNAL KXNEAR15M-26SEP190130-30 tau=9s buy NO @0.9790 fair 0.0013 edge +1.83c size 12.64 taking 12.64
+  SIGNAL KXNEAR15M-26SEP190130-30 tau=9s buy NO @0.9740 fair 0.0013 edge +2.29c size 20.10 taking 20
+  close 05:30Z: 3659 looks, best was KXNEAR15M-26SEP190130- NO @0.9740 edge +2.29c (need +0.3c) -> FIRED
+  SETTLED KXNEAR15M-26SEP190130-30 no vs no -> +48.45c (run realised $+36.0880)
+  SIGNAL KXBNB15M-26SEP190145-45 tau=30s buy YES @0.9700 fair 0.9959 edge +2.39c size 15.00 taking 15
+  SIGNAL KXBNB15M-26SEP190145-45 tau=24s buy YES @0.8500 fair 0.9993 edge +14.03c size 60.00 taking 20
+  close 05:45Z: 3719 looks, best was KXBNB15M-26SEP190145-4 YES @0.7900 edge +19.76c (need +0.3c) -> FIRED
+  *** A LOSS. losing trades 2, losing CLOSES 2 (the brake counts closes) ***
+  SETTLED KXBNB15M-26SEP190145-45 yes vs no -> -1458.06c (run realised $+21.5074)
+  *** HALT: loss COUNT brake: 2 losing trades this run >= 2; stop and re-measure the flip rate
+
+  130 signals, 589319 evaluations
+  ledger {'committed': 0.0, 'filled_contracts': 0.0, 'filled_dollars': 0.0, 'fees': 0.0, 'realised': 21.50739000000003, 'losses': 2, 'sends': 0, 'unknown': 0, 'rested': 0, 'anomalies': [], 'halt': None, 'positions': {}, 'takes': [{'kind': 'pnl', 'delta': -18.691200000000002, 'note': 'KXBNB15M-26SEP172200-00 yes vs no', 't': 1789696820.3855724}, {'kind': 'pnl', 'delta': 0.8772000000000009, 'note': 'KXSOL15M-26SEP172215-15 yes vs yes', 't': 1789697720.1518228}, {'kind': 'pnl', 'delta': 0.019500000000000017, 'note': 'KXNEAR15M-26SEP172245-45 no vs no', 't': 1789699520.1809788}, {'kind': 'pnl', 'delta': 0.46580000000000044, 'note': 'KXBNB15M-26SEP172245-45 no vs no', 't': 1789699520.2830467}, {'kind': 'pnl', 'delta': 0.5592000000000006, 'note': 'KXDOGE15M-26SEP172300-00 no vs no', 't': 1789700420.2145996}, {'kind': 'pnl', 'delta': 0.9147000000000008, 'note': 'KXBNB15M-26SEP172300-00 no vs no', 't': 1789700420.317682}, {'kind': 'pnl', 'delta': 1.5721999999999992, 'note': 'KXHYPE15M-26SEP172330-30 no vs no', 't': 1789702220.3954148}, {'kind': 'pnl', 'delta': 1.7418999999999993, 'note': 'KXHYPE15M-26SEP172330-30 no vs no', 't': 1789702235.4431977}, {'kind': 'pnl', 'delta': 0.07450000000000007, 'note': 'KXNEAR15M-26SEP172345-45 no vs no', 't': 1789703120.1295874}, {'kind': 'pnl', 'delta': 0.07540000000000008, 'note': 'KXSOL15M-26SEP180030-30 yes vs yes', 't': 1789705820.096147}, {'kind': 'pnl', 'delta': 0.06420000000000006, 'note': 'KXSOL15M-26SEP180030-30 yes vs yes', 't': 1789705835.157621}, {'kind': 'pnl', 'delta': 0.47730000000000045, 'note': 'KXXRP15M-26SEP180045-45 yes vs yes', 't': 1789706720.1179295}, {'kind': 'pnl', 'delta': 0.9334000000000009, 'note': 'KXBNB15M-26SEP180100-00 no vs no', 't': 1789707620.1203167}, {'kind': 'pnl', 'delta': 2.2521, 'note': 'KXZEC15M-26SEP180115-15 no vs no', 't': 1789708520.1497593}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXSOL15M-26SEP180130-30 yes vs yes', 't': 1789709420.356956}, {'kind': 'pnl', 'delta': 0.9147000000000008, 'note': 'KXBTC15M-26SEP180130-30 yes vs yes', 't': 1789709420.4349914}, {'kind': 'pnl', 'delta': 1.121000000000001, 'note': 'KXETH15M-26SEP180145-45 no vs no', 't': 1789710320.3852499}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXHYPE15M-26SEP180145-45 yes vs yes', 't': 1789710320.4882398}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXSOL15M-26SEP180200-00 no vs no', 't': 1789711220.112661}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXSOL15M-26SEP180215-15 yes vs yes', 't': 1789712120.4834404}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBTC15M-26SEP180215-15 yes vs yes', 't': 1789712120.5798528}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXHYPE15M-26SEP180230-30 yes vs yes', 't': 1789713021.0470262}, {'kind': 'pnl', 'delta': 1.4968999999999992, 'note': 'KXDOGE15M-26SEP180230-30 no vs no', 't': 1789713021.1308143}, {'kind': 'pnl', 'delta': 0.3021000000000003, 'note': 'KXZEC15M-26SEP180245-45 yes vs yes', 't': 1789713920.0948462}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBTC15M-26SEP180245-45 no vs no', 't': 1789713920.1894803}, {'kind': 'pnl', 'delta': 0.2151000000000002, 'note': 'KXZEC15M-26SEP180245-45 yes vs yes', 't': 1789713935.0942903}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXBTC15M-26SEP180300-00 yes vs yes', 't': 1789714820.2113175}, {'kind': 'pnl', 'delta': 0.4098000000000004, 'note': 'KXHYPE15M-26SEP180300-00 no vs no', 't': 1789714820.299306}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXHYPE15M-26SEP180315-15 no vs no', 't': 1789715720.1170793}, {'kind': 'pnl', 'delta': 0.44720000000000043, 'note': 'KXBNB15M-26SEP180330-30 no vs no', 't': 1789716620.1096401}, {'kind': 'pnl', 'delta': 0.03776000000000004, 'note': 'KXNEAR15M-26SEP180400-00 no vs no', 't': 1789718420.098007}, {'kind': 'pnl', 'delta': 0.44720000000000043, 'note': 'KXZEC15M-26SEP180400-00 no vs no', 't': 1789718420.1795385}, {'kind': 'pnl', 'delta': 0.03910000000000004, 'note': 'KXHYPE15M-26SEP180400-00 no vs no', 't': 1789718420.2628055}, {'kind': 'pnl', 'delta': 0.6340000000000006, 'note': 'KXBTC15M-26SEP180415-15 yes vs yes', 't': 1789719320.0912814}, {'kind': 'pnl', 'delta': 0.5779000000000005, 'note': 'KXDOGE15M-26SEP180415-15 no vs no', 't': 1789719320.1772246}, {'kind': 'pnl', 'delta': 0.5032000000000005, 'note': 'KXBTC15M-26SEP180445-45 yes vs yes', 't': 1789721120.1202826}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBNB15M-26SEP180445-45 yes vs yes', 't': 1789721120.207194}, {'kind': 'pnl', 'delta': 0.6714000000000007, 'note': 'KXBNB15M-26SEP180515-15 no vs no', 't': 1789722920.1163166}, {'kind': 'pnl', 'delta': 0.7462000000000008, 'note': 'KXXRP15M-26SEP180515-15 yes vs yes', 't': 1789722920.2032652}, {'kind': 'pnl', 'delta': 0.9147000000000008, 'note': 'KXXRP15M-26SEP180545-45 no vs no', 't': 1789724720.130345}, {'kind': 'pnl', 'delta': 0.13563000000000014, 'note': 'KXHYPE15M-26SEP180545-45 yes vs yes', 't': 1789724720.2185109}, {'kind': 'pnl', 'delta': 0.2591000000000002, 'note': 'KXSOL15M-26SEP180545-45 yes vs yes', 't': 1789724720.298}, {'kind': 'pnl', 'delta': 0.4028000000000004, 'note': 'KXXRP15M-26SEP180730-30 no vs no', 't': 1789731020.125561}, {'kind': 'pnl', 'delta': 0.1863000000000002, 'note': 'KXXRP15M-26SEP180730-30 no vs no', 't': 1789731035.109205}, {'kind': 'pnl', 'delta': 2.0629, 'note': 'KXZEC15M-26SEP180745-45 yes vs yes', 't': 1789731920.0991087}, {'kind': 'pnl', 'delta': 0.6153000000000006, 'note': 'KXHYPE15M-26SEP180800-00 no vs no', 't': 1789732820.108765}, {'kind': 'pnl', 'delta': 0.46580000000000044, 'note': 'KXBNB15M-26SEP180800-00 no vs no', 't': 1789732820.19122}, {'kind': 'pnl', 'delta': 0.42850000000000044, 'note': 'KXZEC15M-26SEP180815-15 no vs no', 't': 1789733720.124543}, {'kind': 'pnl', 'delta': 0.27940000000000026, 'note': 'KXETH15M-26SEP180830-30 yes vs yes', 't': 1789734620.1235003}, {'kind': 'pnl', 'delta': 1.252399999999999, 'note': 'KXBNB15M-26SEP180900-00 no vs no', 't': 1789736420.1277137}, {'kind': 'pnl', 'delta': 0.42850000000000044, 'note': 'KXBTC15M-26SEP180915-15 no vs no', 't': 1789737320.4721403}, {'kind': 'pnl', 'delta': 0.5592000000000006, 'note': 'KXHYPE15M-26SEP181045-45 yes vs yes', 't': 1789742720.1344967}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXDOGE15M-26SEP181045-45 yes vs yes', 't': 1789742720.2313907}, {'kind': 'pnl', 'delta': 1.383999999999999, 'note': 'KXZEC15M-26SEP181115-15 yes vs yes', 't': 1789744520.112726}, {'kind': 'pnl', 'delta': 0.26000000000000023, 'note': 'KXSOL15M-26SEP181145-45 no vs no', 't': 1789746320.091333}, {'kind': 'pnl', 'delta': 0.1718800000000002, 'note': 'KXXRP15M-26SEP181245-45 yes vs yes', 't': 1789749920.1212635}, {'kind': 'pnl', 'delta': 0.4098000000000004, 'note': 'KXETH15M-26SEP181315-15 no vs no', 't': 1789751720.1324656}, {'kind': 'pnl', 'delta': 0.4098000000000004, 'note': 'KXBTC15M-26SEP181315-15 yes vs yes', 't': 1789751720.2185555}, {'kind': 'pnl', 'delta': 0.050300000000000046, 'note': 'KXHYPE15M-26SEP181330-30 no vs no', 't': 1789752620.1373732}, {'kind': 'pnl', 'delta': 0.5779000000000005, 'note': 'KXETH15M-26SEP181345-45 yes vs yes', 't': 1789753520.103584}, {'kind': 'pnl', 'delta': 0.5779000000000005, 'note': 'KXBTC15M-26SEP181345-45 yes vs yes', 't': 1789753520.1951687}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXSOL15M-26SEP181400-00 yes vs yes', 't': 1789754420.1266687}, {'kind': 'pnl', 'delta': 0.046920000000000045, 'note': 'KXZEC15M-26SEP181415-15 yes vs yes', 't': 1789755320.1259203}, {'kind': 'pnl', 'delta': 0.07450000000000007, 'note': 'KXNEAR15M-26SEP181415-15 no vs no', 't': 1789755320.215257}, {'kind': 'pnl', 'delta': 0.24630000000000024, 'note': 'KXZEC15M-26SEP181430-30 no vs no', 't': 1789756220.1020932}, {'kind': 'pnl', 'delta': 0.32610000000000033, 'note': 'KXHYPE15M-26SEP181430-30 no vs no', 't': 1789756220.1980073}, {'kind': 'pnl', 'delta': 0.27380000000000027, 'note': 'KXZEC15M-26SEP181430-30 no vs no', 't': 1789756235.192922}, {'kind': 'pnl', 'delta': 0.970900000000001, 'note': 'KXBTC15M-26SEP181445-45 no vs no', 't': 1789757120.1136563}, {'kind': 'pnl', 'delta': 0.5592000000000006, 'note': 'KXBNB15M-26SEP181530-30 yes vs yes', 't': 1789759820.1238067}, {'kind': 'pnl', 'delta': 0.29340000000000027, 'note': 'KXXRP15M-26SEP181600-00 yes vs yes', 't': 1789761620.1120853}, {'kind': 'pnl', 'delta': 0.8023000000000008, 'note': 'KXETH15M-26SEP181600-00 no vs no', 't': 1789761620.1963181}, {'kind': 'pnl', 'delta': 0.3882999999999998, 'note': 'KXSOL15M-26SEP181600-00 yes vs yes', 't': 1789761620.278386}, {'kind': 'pnl', 'delta': 0.42850000000000044, 'note': 'KXZEC15M-26SEP181745-45 yes vs yes', 't': 1789767920.115127}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBTC15M-26SEP181800-00 yes vs yes', 't': 1789768820.1127746}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXSOL15M-26SEP181800-00 yes vs yes', 't': 1789768820.2070506}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXDOGE15M-26SEP181830-30 no vs no', 't': 1789770620.1001058}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBNB15M-26SEP181830-30 yes vs yes', 't': 1789770620.1829653}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBTC15M-26SEP181900-00 yes vs yes', 't': 1789772420.2150612}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXXRP15M-26SEP181915-15 no vs no', 't': 1789773320.1093132}, {'kind': 'pnl', 'delta': 0.4277000000000004, 'note': 'KXBTC15M-26SEP182000-00 no vs no', 't': 1789776020.1329944}, {'kind': 'pnl', 'delta': 0.14910000000000015, 'note': 'KXXRP15M-26SEP182000-00 no vs no', 't': 1789776020.222655}, {'kind': 'pnl', 'delta': 2.0629, 'note': 'KXETH15M-26SEP182015-15 no vs no', 't': 1789776920.777939}, {'kind': 'pnl', 'delta': 0.36370000000000036, 'note': 'KXBNB15M-26SEP182015-15 yes vs yes', 't': 1789776920.8615284}, {'kind': 'pnl', 'delta': 0.8211000000000008, 'note': 'KXBNB15M-26SEP182030-30 yes vs yes', 't': 1789777820.094217}, {'kind': 'pnl', 'delta': 0.5592000000000006, 'note': 'KXBNB15M-26SEP182100-00 no vs no', 't': 1789779620.1358697}, {'kind': 'pnl', 'delta': 0.22666000000000025, 'note': 'KXSOL15M-26SEP182130-30 no vs no', 't': 1789781420.143889}, {'kind': 'pnl', 'delta': 0.6153000000000006, 'note': 'KXBTC15M-26SEP182130-30 no vs no', 't': 1789781420.2345645}, {'kind': 'pnl', 'delta': 0.05580000000000005, 'note': 'KXETH15M-26SEP182130-30 no vs no', 't': 1789781420.3244014}, {'kind': 'pnl', 'delta': 0.3076000000000003, 'note': 'KXETH15M-26SEP182145-45 no vs no', 't': 1789782320.1146276}, {'kind': 'pnl', 'delta': 0.3270000000000003, 'note': 'KXSOL15M-26SEP182145-45 yes vs yes', 't': 1789782320.2051795}, {'kind': 'pnl', 'delta': 0.2049000000000002, 'note': 'KXDOGE15M-26SEP182145-45 no vs no', 't': 1789782320.290392}, {'kind': 'pnl', 'delta': 0.13690000000000013, 'note': 'KXSOL15M-26SEP182145-45 yes vs yes', 't': 1789782335.2427793}, {'kind': 'pnl', 'delta': 0.06806000000000006, 'note': 'KXXRP15M-26SEP182230-30 yes vs yes', 't': 1789785020.1296809}, {'kind': 'pnl', 'delta': 0.5218000000000005, 'note': 'KXBTC15M-26SEP182245-45 no vs no', 't': 1789785920.096799}, {'kind': 'pnl', 'delta': 0.16800000000000015, 'note': 'KXZEC15M-26SEP182300-00 no vs no', 't': 1789786820.12098}, {'kind': 'pnl', 'delta': 0.31948000000000026, 'note': 'KXSOL15M-26SEP182300-00 yes vs yes', 't': 1789786820.2324114}, {'kind': 'pnl', 'delta': 0.09380000000000008, 'note': 'KXSOL15M-26SEP182315-15 yes vs yes', 't': 1789787720.103108}, {'kind': 'pnl', 'delta': 1.5910999999999993, 'note': 'KXBNB15M-26SEP182315-15 yes vs yes', 't': 1789787720.1932855}, {'kind': 'pnl', 'delta': 0.29256000000000026, 'note': 'KXDOGE15M-26SEP182315-15 no vs no', 't': 1789787720.2944872}, {'kind': 'pnl', 'delta': 0.07540000000000008, 'note': 'KXHYPE15M-26SEP182345-45 yes vs yes', 't': 1789789520.1209302}, {'kind': 'pnl', 'delta': 0.46580000000000044, 'note': 'KXBTC15M-26SEP182345-45 yes vs yes', 't': 1789789520.206915}, {'kind': 'pnl', 'delta': 0.5865000000000006, 'note': 'KXETH15M-26SEP182345-45 yes vs yes', 't': 1789789520.295095}, {'kind': 'pnl', 'delta': 0.09310000000000009, 'note': 'KXBNB15M-26SEP190000-00 no vs no', 't': 1789790420.1100533}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBNB15M-26SEP190030-30 yes vs yes', 't': 1789792220.7749476}, {'kind': 'pnl', 'delta': 0.42850000000000044, 'note': 'KXZEC15M-26SEP190100-00 no vs no', 't': 1789794020.1478033}, {'kind': 'pnl', 'delta': 0.07326000000000006, 'note': 'KXDOGE15M-26SEP190100-00 yes vs yes', 't': 1789794020.2268949}, {'kind': 'pnl', 'delta': 0.7893800000000006, 'note': 'KXSOL15M-26SEP190100-00 no vs no', 't': 1789794020.3626652}, {'kind': 'pnl', 'delta': 0.46580000000000044, 'note': 'KXZEC15M-26SEP190115-15 no vs no', 't': 1789794920.124737}, {'kind': 'pnl', 'delta': 0.4845000000000005, 'note': 'KXNEAR15M-26SEP190130-30 no vs no', 't': 1789795820.1203701}, {'kind': 'pnl', 'delta': -14.580599999999999, 'note': 'KXBNB15M-26SEP190145-45 yes vs no', 't': 1789796720.15825}]}
+  log C:\kals-repo\results\pinrun-paper-20260918T015139Z.jsonl

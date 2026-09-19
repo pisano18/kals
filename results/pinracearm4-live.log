@@ -57,62 +57,47 @@ SELF-TEST PASSED
   COIN RACE PAPER ARM -- nothing is ever sent
   size 250, <= 98c, edge floor 2.0c, tau 2-150, one fill per leg per band ['61-151', '30-61', '15-30', '2-15']
   forecast: race_gaptable.json, 198 cells, built 2026-09-15 13:05Z
-  log: C:\kals-repo\results\pinracearm-20260915T221119Z.jsonl
+  log: C:\kals-repo\results\pinracearm-20260918T222009Z.jsonl
 
-  index up: 11 ticks, 5 feeds
-  PAPER  -26SEP160415                   XRP  YES 14 @ 97c  tau 30  gap   +6.99bp  worth 1.0000  edge +2.79c
-  SETTLED KXCRYPTOLEAD15M-26SEP160415  XRP   1/1 won  $+0.39
-  PAPER  -26SEP160615                   HYPE YES 250 @ 90c  tau 29  gap   +6.14bp  worth 1.0000  edge +9.37c
-  PAPER  -26SEP160615                   BTC  NO  250 @ 90c  tau 29  gap   -6.14bp  worth 1.0000  edge +9.37c
-  SETTLED KXCRYPTOLEAD15M-26SEP160615  HYPE  2/2 won  $+46.85
-  PAPER  -26SEP160630                   XRP  YES 14 @ 97c  tau 18  gap   +1.49bp  worth 1.0000  edge +2.79c
-  SETTLED KXCRYPTOLEAD15M-26SEP160630  XRP   1/1 won  $+0.39
-  PAPER  -26SEP160645                   XRP  YES 250 @ 90c  tau 18  gap   +0.95bp  worth 0.9900  edge +8.37c
-  PAPER  -26SEP160645                   ETH  NO  241 @ 91c  tau 18  gap   -0.95bp  worth 0.9900  edge +7.42c
-  SETTLED KXCRYPTOLEAD15M-26SEP160645  XRP   2/2 won  $+43.72
-  PAPER  -26SEP161100                   BTC  YES 235 @ 95c  tau  3  gap   +0.02bp  worth 1.0000  edge +4.66c
-  PAPER  -26SEP161100                   SOL  NO  242 @ 94c  tau  3  gap   -0.02bp  worth 1.0000  edge +5.60c
-  SETTLED KXCRYPTOLEAD15M-26SEP161100  BTC   2/2 won  $+24.50
-  PAPER  -26SEP161400                   HYPE NO  250 @ 91c  tau 28  gap   -3.17bp  worth 0.9940  edge +7.82c
-  PAPER  -26SEP161400                   SOL  YES 250 @ 90c  tau 26  gap   +3.10bp  worth 0.9920  edge +8.57c
-  SETTLED KXCRYPTOLEAD15M-26SEP161400  SOL   2/2 won  $+44.48
-  PAPER  -26SEP161430                   XRP  YES 21 @ 97c  tau 29  gap   +9.32bp  worth 0.9980  edge +2.59c
-  SETTLED KXCRYPTOLEAD15M-26SEP161430  XRP   1/1 won  $+0.59
-  PAPER  -26SEP161630                   BTC  NO  250 @ 96c  tau 29  gap   -3.21bp  worth 0.9900  edge +2.73c
-  SETTLED KXCRYPTOLEAD15M-26SEP161630  SOL   1/1 won  $+9.32
-  PAPER  -26SEP161800                   HYPE YES 55 @ 97c  tau  8  gap   +0.45bp  worth 0.9960  edge +2.39c
-  SETTLED KXCRYPTOLEAD15M-26SEP161800  HYPE  1/1 won  $+1.53
-  PAPER  -26SEP161945                   XRP  YES 250 @ 97c  tau 30  gap   +4.48bp  worth 1.0000  edge +2.79c
-  PAPER  -26SEP161945                   XRP  YES 250 @ 97c  tau 29  gap   +4.55bp  worth 1.0000  edge +2.79c
-  SETTLED KXCRYPTOLEAD15M-26SEP161945  XRP   2/2 won  $+13.95
-  PAPER  -26SEP162100                   BTC  YES 123 @ 95c  tau 14  gap   +0.74bp  worth 0.9890  edge +3.56c
-  PAPER  -26SEP162100                   HYPE NO  250 @ 91c  tau 14  gap   -0.74bp  worth 0.9890  edge +7.32c
-  SETTLED KXCRYPTOLEAD15M-26SEP162100  BTC   2/2 won  $+26.78
-  PAPER  -26SEP162230                   XRP  YES 7 @ 97c  tau 30  gap   +3.79bp  worth 1.0000  edge +2.79c
-  SETTLED KXCRYPTOLEAD15M-26SEP162230  XRP   1/1 won  $+0.20
-  PAPER  -26SEP170130                   XRP  YES 16 @ 97c  tau 30  gap   +2.42bp  worth 0.9970  edge +2.49c
-  PAPER  -26SEP170130                   ETH  NO  2 @ 95c  tau 30  gap   -2.42bp  worth 0.9970  edge +4.36c
-  SETTLED KXCRYPTOLEAD15M-26SEP170130  XRP   2/2 won  $+0.54
-  PAPER  -26SEP170200                   XRP  YES 13 @ 97c  tau 23  gap   +1.48bp  worth 0.9940  edge +2.19c
-  SETTLED KXCRYPTOLEAD15M-26SEP170200  XRP   1/1 won  $+0.36
-  PAPER  -26SEP170800                   XRP  NO  4 @ 95c  tau 30  gap   -1.84bp  worth 0.9920  edge +3.86c
-  SETTLED KXCRYPTOLEAD15M-26SEP170800  ETH   1/1 won  $+0.19
-  PAPER  -26SEP171100                   ETH  YES 102 @ 95c  tau  4  gap   +0.18bp  worth 0.9840  edge +3.06c
-  PAPER  -26SEP171100                   SOL  NO  122 @ 95c  tau  4  gap   -0.18bp  worth 0.9840  edge +3.06c
-  SETTLED KXCRYPTOLEAD15M-26SEP171100  ETH   2/2 won  $+10.44
-  PAPER  -26SEP171345                   SOL  YES 111 @ 97c  tau 25  gap   +4.12bp  worth 1.0000  edge +2.79c
-  SETTLED KXCRYPTOLEAD15M-26SEP171345  SOL   1/1 won  $+3.10
-  PAPER  -26SEP171600                   HYPE YES 135 @ 95c  tau 30  gap   +2.79bp  worth 0.9810  edge +2.76c
-  PAPER  -26SEP171600                   HYPE YES 218 @ 91c  tau 28  gap   +2.28bp  worth 0.9700  edge +5.42c
-  PAPER  -26SEP171600                   XRP  NO  243 @ 90c  tau 28  gap   -2.28bp  worth 0.9700  edge +6.37c
-  SETTLED KXCRYPTOLEAD15M-26SEP171600  HYPE  3/3 won  $+47.42
-  PAPER  -26SEP171645                   BTC  YES 214 @ 97c  tau 29  gap   +2.33bp  worth 0.9930  edge +2.09c
-  SETTLED KXCRYPTOLEAD15M-26SEP171645  BTC   1/1 won  $+5.97
-  PAPER  -26SEP171930                   ETH  YES 250 @ 90c  tau 26  gap   +0.91bp  worth 0.9360  edge +2.97c
-  SETTLED KXCRYPTOLEAD15M-26SEP171930  ETH   1/1 won  $+23.43
-  PAPER  -26SEP172330                   XRP  YES 250 @ 91c  tau 22  gap   +1.37bp  worth 0.9430  edge +2.72c
-  PAPER  -26SEP172330                   SOL  NO  250 @ 92c  tau 21  gap   -1.45bp  worth 0.9620  edge +3.68c
-  SETTLED KXCRYPTOLEAD15M-26SEP172330  XRP   2/2 won  $+39.75
-  PAPER  -26SEP180000                   SOL  YES 27 @ 95c  tau 30  gap   +5.06bp  worth 0.9960  edge +4.26c
-  PAPER  -26SEP180000                   HYPE NO  83 @ 97c  tau 22  gap   -5.86bp  worth 1.0000  edge +2.79c
-  SETTLED KXCRYPTOLEAD15M-26SEP180000  SOL   2/2 won  $+3.57
+  index up: 10 ticks, 5 feeds
+  PAPER  -26SEP182000                   ETH  YES 29 @ 94c  tau 17  gap   +0.83bp  worth 0.9710  edge +2.70c
+  PAPER  -26SEP182000                   XRP  NO  16 @ 97c  tau 11  gap   -0.60bp  worth 0.9960  edge +2.39c
+  SETTLED KXCRYPTOLEAD15M-26SEP182000  ETH   2/2 won  $+2.07
+  PAPER  -26SEP182030                   XRP  YES 45 @ 94c  tau 12  gap   +0.79bp  worth 0.9650  edge +2.10c
+  PAPER  -26SEP182030                   HYPE NO  121 @ 94c  tau 11  gap   -0.79bp  worth 0.9830  edge +3.90c
+  SETTLED KXCRYPTOLEAD15M-26SEP182030  XRP   2/2 won  $+9.30
+  PAPER  -26SEP182130                   BTC  YES 11 @ 90c  tau 25  gap   +1.30bp  worth 0.9330  edge +2.67c
+  SETTLED KXCRYPTOLEAD15M-26SEP182130  BTC   1/1 won  $+1.03
+  PAPER  -26SEP182315                   XRP  YES 21 @ 97c  tau 30  gap   +8.84bp  worth 1.0000  edge +2.79c
+  PAPER  -26SEP182315                   ETH  NO  3 @ 97c  tau 30  gap   -8.84bp  worth 1.0000  edge +2.79c
+  SETTLED KXCRYPTOLEAD15M-26SEP182315  XRP   2/2 won  $+0.67
+  PAPER  -26SEP182330                   ETH  YES 20 @ 97c  tau 27  gap   +1.51bp  worth 0.9940  edge +2.19c
+  SETTLED KXCRYPTOLEAD15M-26SEP182330  ETH   1/1 won  $+0.56
+  PAPER  -26SEP190330                   BTC  NO  13 @ 97c  tau 29  gap   -2.82bp  worth 1.0000  edge +2.79c
+  SETTLED KXCRYPTOLEAD15M-26SEP190330  ETH   1/1 won  $+0.36
+  PAPER  -26SEP190545                   HYPE NO  34 @ 96c  tau  8  gap   -0.67bp  worth 0.9930  edge +3.03c
+  SETTLED KXCRYPTOLEAD15M-26SEP190545  SOL   1/1 won  $+1.27
+  PAPER  -26SEP190615                   XRP  NO  55 @ 97c  tau  3  gap   -0.20bp  worth 1.0000  edge +2.79c
+  SETTLED KXCRYPTOLEAD15M-26SEP190615  HYPE  1/1 won  $+1.53
+  PAPER  -26SEP190715                   XRP  YES 107 @ 96c  tau 30  gap   +5.24bp  worth 1.0000  edge +3.73c
+  SETTLED KXCRYPTOLEAD15M-26SEP190715  XRP   1/1 won  $+3.99
+  PAPER  -26SEP190900                   XRP  YES 25 @ 96c  tau 26  gap   +4.01bp  worth 1.0000  edge +3.73c
+  SETTLED KXCRYPTOLEAD15M-26SEP190900  XRP   1/1 won  $+0.93
+  PAPER  -26SEP191000                   XRP  YES 17 @ 97c  tau 28  gap   +5.26bp  worth 0.9980  edge +2.59c
+  SETTLED KXCRYPTOLEAD15M-26SEP191000  XRP   1/1 won  $+0.47
+  PAPER  -26SEP191015                   XRP  YES 35 @ 97c  tau 18  gap   +2.38bp  worth 0.9960  edge +2.39c
+  SETTLED KXCRYPTOLEAD15M-26SEP191015  XRP   1/1 won  $+0.98
+  PAPER  -26SEP191030                   XRP  YES 25 @ 97c  tau  8  gap   +0.84bp  worth 0.9990  edge +2.69c
+  SETTLED KXCRYPTOLEAD15M-26SEP191030  XRP   1/1 won  $+0.70
+  PAPER  -26SEP191100                   BTC  NO  250 @ 90c  tau  4  gap   -0.23bp  worth 0.9820  edge +7.57c
+  PAPER  -26SEP191100                   XRP  YES 250 @ 90c  tau  4  gap   +0.23bp  worth 0.9820  edge +7.57c
+  SETTLED KXCRYPTOLEAD15M-26SEP191100  XRP   2/2 won  $+46.85
+  PAPER  -26SEP191115                   HYPE YES 15 @ 97c  tau 11  gap   +0.72bp  worth 0.9970  edge +2.49c
+  SETTLED KXCRYPTOLEAD15M-26SEP191115  HYPE  1/1 won  $+0.42
+  PAPER  -26SEP191145                   XRP  YES 16 @ 97c  tau 30  gap   +6.54bp  worth 1.0000  edge +2.79c
+  SETTLED KXCRYPTOLEAD15M-26SEP191145  XRP   1/1 won  $+0.45
+  PAPER  -26SEP191245                   XRP  NO  8 @ 97c  tau 30  gap   -4.02bp  worth 0.9960  edge +2.39c
+  SETTLED KXCRYPTOLEAD15M-26SEP191245  HYPE  1/1 won  $+0.22
+  PAPER  -26SEP191415                   BTC  YES 138 @ 94c  tau 11  gap   +0.53bp  worth 0.9710  edge +2.70c
+  PAPER  -26SEP191415                   XRP  NO  250 @ 90c  tau 11  gap   -0.53bp  worth 0.9710  edge +6.47c
+  SETTLED KXCRYPTOLEAD15M-26SEP191415  BTC   2/2 won  $+31.15

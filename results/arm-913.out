@@ -1,0 +1,583 @@
+SELF-TEST -- pinrun
+  ok   all 60 prints locked at now=close (remaining 0)
+  ok   locked sum excludes tick@close and includes tick@close-60 (5900.0, expected 5900.0)
+  ok   decided yes on the corrected window (fair 1.0)
+  ok   old and new windows genuinely differ on this fixture
+  ok   eff_strike(2492.82, d=2) == 2492.815
+  ok   rounding-aware fair calls the real ETH market YES (1.0)
+  ok   the un-rounded model calls it NO (0.0) -- the -90.91c loss
+  ok   the locked window ends at the newest print HELD, not at now (remaining 3, locked 58596.0)
+  ok   with the newest print in flight on a rising index the corrected model says YES (fair 1.0000); mean-imputation said NO (fair 0.0000) -- a wrong-side buy at ~99c
+  ok   an interior gap takes the nearest print (6899.0, expected 6899.0; the window-mean rule would say 6914.2)
+  ok   partial refuses a window missing more than 5% of its prints
+  ok   buying YES at 98.3c and NO at 90.8c on ONE market pays 189.1c for a guaranteed $1.00 -- a locked 89.1c loss carrying NO directional risk
+  ok   and EVERY price the rule can pay is above 50c, so a both-sides pair is ALWAYS a locked loss -- there is no price at which it is not
+  ok   the side taken is recorded PER TICKER, so a second market is unaffected -- the guard must not block ordinary diversification
+  ok   three losing trades on ONE close plus one on another is TWO losing closes, not four (2) -- tonight three fills on one NEAR market spent the whole 3-loss budget on a SINGLE draw
+  ok   so one bad close can no longer exhaust a 3-close brake by itself, which is what 'three losses is roughly a 1% event' actually assumed
+  ok   two fills on the SAME ticker occupy TWO entries -- keyed by order id, the second cannot overwrite the first
+  ok   and open exposure is the SUM of both stakes ($36.82), not just the last
+  ok   releasing ONE of them leaves the ticker still referenced, so the position record must NOT be dropped yet
+  ok   and only when the last one goes is the ticker free -- the null, so a release cannot fire early
+  ok   and NOTHING in the loop still keys open_pos by ticker
+  ok   attempts (24) are capped ABOVE fills (2) -- separate budgets, because a lost race should cost a retry but not a fill slot
+  ok   spam into ONE market is capped at 3 orders -- this is the bar that replaced `MAX_ATTEMPTS_PER_CLOSE < 20`, and it is tighter than that one was for the runaway it was written for
+  ok   and the close cap is still bounded -- every coin twice plus a little (24), not unlimited
+  ok   the attempt cap is actually READ in the loop, not merely defined
+  ok   and so is the per-market cap -- a safety bar that is defined but never read is the exact defect risk_abort was once caught with
+  ok   and it is incremented on every send, or it can never bind
+  ok   and an attempt is counted BEFORE the order is sent, so a send that never returns still consumes one
+  ok   a RETURNED refusal is counted as an order error -- take() does not raise, so nothing noticed 160 refusals in a row
+  ok   pintake's own count rail is below its hard ceiling (10 <= 25)
+  pintake rails raised: MAX_TAKE_COUNT 10 -> 15  (selftest)
+  ok   set_limits RAISES the count rail so it can never be the thing that silently blocks a bigger size again
+  ok   and it REFUSES to lower it
+  ok   the fixture buys exactly MAX_PER_CLOSE times (2)
+  ok   and every later buy is at least IMPROVE_BY cheaper -- so the marginal trade cap 3 adds is the CHEAPEST of the close, which is why it cannot degrade the average price paid
+  ok   three fills commit $38.80, the sum of their stakes, not three times the first
+  ok   and that is at or below the $40 worst case the deployment rail sizes the brake against -- the rail is conservative, as it must be
+  ok   and releasing all three gives back EXACTLY what was committed
+  ok   the forward loss bound tolerates all three open ($38.80 vs a $-90.00 brake)
+  ok   the fixture holds two full sizes (2 contracts), or the test below would prove nothing
+  ok   a cap of 2 x size refuses the next fill while a straggler from the previous close is STILL OPEN, which is why --max-positions must leave room for one (open cap: 2 contracts held >= 2 (2 x size 1))
+  ok   and a cap of 3 x size lets that fill through -- the live setting
+  ok   2 losses does NOT halt a run whose brake is 3
+  ok   3 losses DOES halt it, on COUNT and not on dollars (loss COUNT brake: 3 losing trades this run >= 3; stop and re-measure the flip rate)
+  ok   and max_losses=0 DISABLES it -- the null, so the brake cannot fire on a run that never asked for it
+  ok   MIN_FILL_FRAC is a fraction (0.5)
+  ok   a deep book fills the whole size we asked for
+  ok   a 7-contract offer at size 10 is TAKEN as a partial, not thrown away -- the old dust gate refused it outright
+  ok   at the DECLARED floor of half, a 4-contract scrap at size 10 is refused -- the behaviour AMENDMENT 6 shipped
+  ok   and at a floor of 0.10 the same scrap is TAKEN, which is what AMENDMENT 28 puts in a what-if: the same bet at the same gate, on fewer contracts
+  ok   sub-contract dust is refused at EVERY floor -- MIN_LEVEL is the backstop and --min-fill-frac cannot get underneath it
+  ok   a partial can only ever LOWER the contracts bought, never raise them, so this amendment cannot increase exposure
+  ok   a filled buy books a slot and sets the improve bar
+  ok   a second fill books the second slot and LOWERS the bar to the better price
+  ok   and 2 FILLS still exhaust the close -- max exposure is UNCHANGED by this amendment, only wasted attempts are recovered
+  ok   a market that already filled 1x is refused a repeat -- this is what turned one bad NEAR close into -$52.60
+  ok   but a DIFFERENT market on the same close is still allowed, because MAX_PER_CLOSE governs that and rho ~ 0.8 is not rho = 1
+  ok   and the first fill of a close is never blocked
+  ok   one market can never stake more than the whole close is allowed to
+  ok   A13 does not change the worst CLOSE ($2.00); it changes how much of it one market may be -- $1.00 instead of all of it
+  ok   STRUCTURAL: the live slot is booked AFTER the order returns, so a zero-fill cannot burn it
+  ok   and it is booked only inside the filled>0 branch
+  ok   STRUCTURAL: the slot is booked only when the FILL is at least half our size; a scrap keeps its position and spends no slot
+  ok   and a scrap is recorded, not silent
+  ok   under CLOSE_BUDGET a scrap must book its CONTRACTS -- they are real exposure however small -- while still not raising the improve bar, which is the only thing A12's exemption was actually protecting
+  ok   STRUCTURAL: scraps ACCUMULATE and spend a slot once they add up to a real fill -- without this, 8 scraps of 9.99 would double the worst-case close from $39.20 to $78.32
+  ok   eight 0.02-contract crumbs spend NO slot (0.16 of 10) -- the case A12 exists for
+  ok   scraps of 9.99: at most 39.96 contracts fill in one close, against the intended 40 -- bounded
+  ok   scraps of 5: at most 20.00 contracts fill in one close, against the intended 40 -- bounded
+  ok   scraps of 2: at most 20.00 contracts fill in one close, against the intended 40 -- bounded
+  ok   scraps of 0.5: at most 20.00 contracts fill in one close, against the intended 40 -- bounded
+  ok   within the 24-attempt cap, 0.02 crumbs spend no slot at all -- the case A12 exists for
+  ok   while near-full scraps exhaust the slots inside the same cap
+  ok   at size 20 the real-fill line is 10: the 2.0 and 0.02 fills of 2026-09-11 07:00 ET are scraps, a 10 is a fill
+  ok   take() is called with take_n, the contracts actually available, not the raw SIZE
+  ok   an EMPTY close reports NO depth rather than a zero -- a close where nothing was offered must not look like a close offering 0 contracts
+  ok   depth percentiles come back sorted (median 30.0)
+  ok   the size ladder counts moments that SURVIVE each size (4 at 5, 2 at 125)
+  ok   at size 1 every offered moment survives -- the ladder's own null
+  ok   a single 7-contract offer survives at size 5 but NOT at size 10, which is exactly the opportunity cost of scaling
+  ok   EV is ~zero exactly at p = 1 - flip = 0.9910 (got -0.070c)
+  ok   a trade at 99.6c is NEGATIVE EV (-0.53c) -- matches the 2026-09-08 live trades
+  ok   a trade at 99.3c is NEGATIVE EV (-0.25c) -- matches the 2026-09-08 live trades
+  ok   a trade at 99.2c is NEGATIVE EV (-0.16c) -- matches the 2026-09-08 live trades
+  ok   a trade at 99.1c is NEGATIVE EV (-0.07c) -- matches the 2026-09-08 live trades
+  ok   a trade at 97.9c is positive EV (+1.05c) -- matches the 2026-09-08 live trades
+  ok   a trade at 94.7c is positive EV (+4.04c) -- matches the 2026-09-08 live trades
+  ok   the EV floor puts the price ceiling between 98c and 99c
+  ok   a higher flip rate makes even 95c negative (the gate tracks f)
+  ok   net edge subtracts the taker fee (0.430c at p=0.99)
+  ok   billed fee at p=0.95 is $0.0034, not the raw $0.003325 (0.0034)
+  ok   the billed fee is never below the raw formula (conservative)
+  ok   the billed fee on 0.01 contracts is the $0.0001 floor (0.0001)
+  ok   at --size 0.01 a 0.9c gross edge is NEGATIVE once the order's own fee is charged (-0.100c), where the one-contract fee would have called it +0.83c
+  ok   edge sign behaves at the boundary
+  ok   NO-side edge is (1-fair) - price - fee
+  ok   YES take is a bid at the seen price (bid 0.9910)
+  ok   NO take at 0.989 is an ask at 0.0110 = the yes bid we hit (ask 0.0110)
+  ok   a NO take at 0.989 costs $0.989, not $0.011 ($0.9890)
+  ok   both bodies have post_only False -- pin must cross, never rest
+  ok   tif never rests (immediate_or_cancel)
+  ok   stale index reports its age (30s)
+  ok   on_frame parses a real cfbenchmarks_value frame
+  ok   junk and off-channel frames are counted, not fatal
+  ok   pintake ledger has the key the abort reads: 'halt'
+  ok   pintake ledger has the key the abort reads: 'realised'
+  ok   pintake ledger has the key the abort reads: 'committed'
+  ok   pintake ledger has the key the abort reads: 'positions'
+  ok   every ledger key the abort reads exists (['committed', 'halt', 'losses', 'realised'])
+  ok   abort fires on realised -3.00 vs limit -2.00 (loss abort: realised $-3.00 <= $-2.00)
+  ok   abort fires at the stake cap (stake cap reached: $60.00 committed)
+  ok   abort fires on a pintake halt (pintake halted: unknown order state)
+  ok   PAUSE (clears when positions settle): position cap: 3 open >= 3
+  ok   PAUSE (clears when positions settle): loss bound: realised $+0.78 with $40.89 still 
+  ok   PAUSE (clears when positions settle): stake cap reached: $60.00 committed
+  ok   HALT (needs a human): already halted
+  ok   HALT (needs a human): pintake halted: unknown order state
+  ok   HALT (needs a human): loss abort: realised $-61.00 <= $-60.00
+  ok   HALT (needs a human): loss COUNT brake: 3 losing trades this run >= 
+  ok   HALT (needs a human): 2 errors on the ORDER path
+  ok   HALT (needs a human): 5 consecutive errors
+  ok   no halt at all is not a transient halt
+  ok   the 02:00 halt that cost 23 minutes would now PAUSE
+  ok   and so would the 03:29 one
+  ok   the pause branch never sets state['halted'] -- that would be a terminal answer to a temporary question
+  ok   and it continues the loop, so reconcile() keeps releasing the positions it is waiting on
+  ok   before any hedge fill, the amount to hedge is the full original size, read from open_pos
+  ok   AFTER a partial hedge fill, open_pos['orig'] is UNCHANGED -- still 11.0, the true size reconcile() must settle and feed to the loss brake, not the 10.0 the old code would have written there
+  ok   the REMAINING-TO-HEDGE tracker, separately, correctly says 10 left
+  ok   the second attempt reads the remaining amount (10), not the original (11) and not a re-read of a shrunk open_pos
+  ok   once the remaining amount is fully filled, the tracker is cleared
+  ok   and open_pos still reads 11.0 at the end -- reconcile() settles the true position size no matter how many hedge attempts it took
+  ok   the live event hid $0.9646 of real loss from the ledger the loss-abort brake reads -- small tonight, same mechanism the brake depends on
+  ok   belief below the 0.80 gate fires the hedge
+  ok   belief at or above the gate does not
+  ok   no belief at all never fires -- a missing number is not a collapse
+  ok   and the threshold is a parameter, so the holdout can sweep it
+  ok   the real NEAR tau16 collapse (40.6%) fires
+  ok   the real BNB tau24 collapse (46.3%) fires
+  ok   the real SOL-08:00 tau15 collapse (0.1%) fires
+  ok   and the SOL-08:00 tau-16 reading (83.7%) does NOT fire at 0.80 -- the alarm comes one second later on that collapse, by design
+  ok   and the SOL-08:00 ENTRY belief (99.76%) does not -- we hedge the collapse, not the buy
+  ok   hedging 96c NO with 35c YES pays 131c for $1 -- a 31c loss that BEATS the 96c from holding: allowed
+  ok   65c and 99c legs are allowed too -- any ask under $1 shrinks the loss
+  ok   a $1.00 leg locks exactly the unhedged loss: REFUSED, and the fee makes it worse
+  ok   zero and negative asks are not prices
+  ok   garbage inputs refuse rather than pass
+  ok   the EV diagnostic reads (1-belief)-ask: +5c when the market lags the collapse, -5c when we pay for variance reduction
+  ok   NEAR hedged at 35c locks -$6.24 on 20 contracts instead of -$19.24
+  ok   BNB hedged at 55c locks -$9.80 instead of -$18.80
+  ok   at entry 0.900: a $1.00 leg locks exactly the unhedged loss and is refused; a 99c leg locks less and is allowed
+  ok   at entry 0.960: a $1.00 leg locks exactly the unhedged loss and is refused; a 99c leg locks less and is allowed
+  ok   at entry 0.979: a $1.00 leg locks exactly the unhedged loss and is refused; a 99c leg locks less and is allowed
+  ok   the hedge pass never calls _book_slot -- so A8 still blocks any later ENTRY on the opposite side
+  ok   and it calls hedge_ask_ok before every order
+  ok   and places the hedge through the same take() path as every fill
+  ok   every alarm, missing ask and refusal is recorded -- silence is not an outcome
+  ok   retries are paced to ONE PER SECOND -- the first live alarm burned all five in ~250 ms and gave up inside the alarm second
+  ok   retries are bounded (5) -- a runaway on the hedge path would be the 160-order incident again
+  ok   abort fires FORWARD: $1.20 open plus one more contract would pass -$2.00 (loss bound: realised $+0.00 with $1.20 still open; one more contract could take this run past $-2.00)
+  ok   $0.90 open still leaves room for one more contract (None)
+  ok   abort fires on order-path errors, which the universe pass cannot reset (2 errors on the ORDER path)
+  ok   a settled position releases its FULL stake at size 1 (committed 0.0000, was 0.9750)
+  ok   a settled position releases its FULL stake at size 5 (committed 0.0000, was 4.8750)
+  ok   a settled position releases its FULL stake at size 8 (committed 0.0000, was 7.8000)
+  ok   a settled position releases its FULL stake at size 10 (committed 0.0000, was 9.7500)
+  ok   a settled position releases its FULL stake at size 25 (committed 0.0000, was 24.3750)
+  ok   and releasing only ONE contract at size 5 LEAKS $3.9000 -- the bug this test now catches, stated as a positive so it cannot pass vacuously
+  ok   P&L is booked to realised, which the abort reads
+  ok   every exit path releases the stake -- finalized, both give-ups, and the definition (4 references)
+  ok   pintake ships a size-1 loss abort of $-2.00
+  ok   ONE ordinary loss at size 5 is $-4.88, which is past that default -- so an unraised order path dies on the first loss
+  pintake rails raised: LOSS_ABORT $-2.00 -> $-30.00  (selftest)
+  ok   set_limits LOOSENS the order-path brake to match the run's own
+  ok   and it REFUSES to tighten -- a hidden brake tighter than the operator's is not a brake, it is an outage
+  ok   risk_abort() runs before the first `continue` in the loop
+  ok   no direct send path in this file (found [])
+  ok   take() is called with the market's exchange_index, not the default 0
+  ok   exchange_index is read from the market record in the universe pass
+  ok   zrough is ~1.0 on a feed whose roughness never changes (got 0.98)
+  ok   a calm board reads X~0.92 with 0 coins moving
+  ok   coin A's OWN volatility spike leaves A's cross index EXACTLY unchanged -- otherwise this is the refuted own-sigma filter under a new name
+  ok   but A's OWN roughness does spike (10.9 vs 0.98)
+  ok   and B DOES see it: X 0.92 -> 2.34, 1 coin(s) moving
+  ok   tick retention (4000) covers the 3600s baseline the ratio is divided by
+  ok   a revised print does not change how many seconds we hold, so (newest, count) alone cannot detect it
+  ok   and it STILL busts the cache -- a revised print must not be served stale from a conditions read
+  ok   while an identical duplicate does NOT bust it -- otherwise every repeated frame recomputes a 3600-second window on the order path
+  ok   and the signal record actually carries the conditions columns
+  ok   a 15c discount is >10x the 0.3c edge floor, so the honest edge can never trip it
+  ok   XRP 04:59Z (fair 1.0, filled 82c, 18c disc, LOST -$16.61) refused
+  ok   DOGE 22:14Z (fair 0.0, filled 10c, 90c disc, LOST -$2.12) refused
+  ok   SOL 2026-09-11 12:30Z (99.508% sure, filled 59.1c, 40.4c disc, LOST -$12.16) IS refused now -- the 0.999 condition let it through
+  ok   NEAR 09-09 (99.827% sure, 73c, 26.8c disc, LOST -$14.13) refused
+  ok   BNB 89c (10.7c disc, WON +$2.06) is NOT refused -- the 5-15c band went 24-0 for +$32.20 and refusing it was the guard's worst error
+  ok   SOL 91.9c (8.1c disc, WON) passes
+  ok   a certainty at 97.8c (2.2c discount, WON) passes -- the normal edge
+  ok   and a boundary fill at the ceiling passes untouched
+  ok   the guard is wired into the trade loop and counted in the near-miss record, so refusals are visible rather than silent
+  ok   AMENDMENT 10b: the guard is ON by operator decision (undeterminable EV, owner chose fewer losses); would-be outcomes are recorded
+  ok   every refusal writes ONE `dumped` record per (close, market) with side, price, fair and tau, so the would-be P&L can be resolved later
+  ok   and the record is written before the enable check, whether or not the trade is refused
+  ok   and the count happens BEFORE the enable check, so the class is recorded whether or not it is refused
+  ok   worst_close_cost(20) must be MAX_PER_CLOSE*20*PRICE_CEILING = 39.2, got 39.2
+  ok   worst_close_cost must be EXACTLY linear in size -- that is the whole reason it replaced a sampled maximum, which was not
+  ok   $192.15 / $5.88 (BANK_BRAKE 3.0 x MAX_PER_CLOSE 2 x ceiling 0.98) = 32, got 32
+  ok   an empty or unreadable bank must fall to the floor, never to 0
+  ok   the cap must bind, got 250
+  ok   size_for_bank fell from -1 to 1 at bank $10 -- more money can never permit less
+  ok   size_for_bank fell from 1 to 8 at bank $50 -- more money can never permit less
+  ok   size_for_bank fell from 8 to 17 at bank $100 -- more money can never permit less
+  ok   size_for_bank fell from 17 to 34 at bank $200 -- more money can never permit less
+  ok   size_for_bank fell from 34 to 68 at bank $400 -- more money can never permit less
+  ok   size_for_bank fell from 68 to 136 at bank $800 -- more money can never permit less
+  ok   size_for_bank fell from 136 to 250 at bank $1600 -- more money can never permit less
+  ok   a harsher brake must give a SMALLER size
+  ok   cents and dollars agreeing must read $192.152, got 192.152
+  ok   balance WITHOUT balance_dollars must be refused, not divided by 100 on faith -- the unit is read, never inferred
+  ok   cents and dollars DISAGREEING must be refused; this is the 19215-read-as-dollars failure, which asks for size 6535
+  ok   a non-200 must read as unknown
+  ok   no credentials (paper mode) must read as unknown, never 0
+  pintake rails raised: HARD_MAX 25 -> 90; MAX_TAKE_COUNT 10 -> 60; LOSS_ABORT $-2.00 -> $-240.00; MAX_RUN_STAKE $60.00 -> $370.00  (auto-size 1 -> 60: selftest)
+  ok   apply_size must set SIZE, got 60.0 (size 1 -> 60 (selftest); abort $-240.00, stake cap $370.00, take count 60)
+  ok   MAX_TAKE_COUNT must reach the new size or every order is refused in silence, got 60.0
+  ok   MAX_RUN_STAKE must cover 3 worst closes at the new size, got 370.0
+  ok   loss_abort -240.0 must land inside main()'s own [-480.0, -180.0] band, or the run halts on its first trade
+  ok   a rail must NEVER move while a position is open
+  pintake rails raised: HARD_MAX 25 -> 48; MAX_TAKE_COUNT 10 -> 32; LOSS_ABORT $-2.00 -> $-128.00; MAX_RUN_STAKE $60.00 -> $202.00  (auto-size 20 -> 32: bank $192.15)
+  ok   with AUTO_SIZE_STEP_UP=None the bot goes STRAIGHT to the size the bank supports (32), got 32.0
+  ok   a second adjustment inside AUTO_SIZE_EVERY_S must be refused
+  pintake rails raised: MAX_TAKE_COUNT 32 -> 32; LOSS_ABORT $-128.00 -> $-128.00; MAX_RUN_STAKE $202.00 -> $202.00  (auto-size 20 -> 30: bank $192.15)
+  ok   with damping at 1.5 the first step is 20 -> 30, got 30.0
+  pintake rails raised: MAX_TAKE_COUNT 32 -> 32; LOSS_ABORT $-128.00 -> $-128.00; MAX_RUN_STAKE $202.00 -> $202.00  (auto-size 60 -> 5: bank $30.00)
+  ok   a FALL is immediate and undamped -- $30 supports 5, got 5.0
+  ok   an unreadable bank must leave SIZE exactly where it was
+  ok   --no-auto-size must pin SIZE to --size
+  pintake rails raised: HARD_MAX 48 -> 375; MAX_TAKE_COUNT 32 -> 250; LOSS_ABORT $-128.00 -> $-1000.00; MAX_RUN_STAKE $202.00 -> $1510.00  (auto-size 20 -> 250: bank $1000000.00)
+  ok   a PAPER arm auto-sizes exactly as live does, or its dollars cannot be compared with live's and the arm is worthless
+  ok   and --no-auto-size still pins it, in paper as in live
+  pintake rails raised: MAX_TAKE_COUNT 250 -> 250; LOSS_ABORT $-1000.00 -> $-1000.00; MAX_RUN_STAKE $1510.00 -> $1510.00  (auto-size 1 -> 120: loosen the rails first)
+  pintake rails raised: MAX_TAKE_COUNT 250 -> 250; LOSS_ABORT $-1000.00 -> $-1000.00; MAX_RUN_STAKE $1510.00 -> $1510.00  (auto-size 120 -> 10: bank $60.00)
+  ok   after the rails were loosened for size 120, a $60 bank must still shrink SIZE to 10, got 10.0
+  ok   and the brake must stay at its loosest high-water mark, not be tightened on the way down, got -1000.0
+  ok   the DECLARED default improve scope is 'close' -- A22 is reached only through --improve-scope (running now with 'market')
+  ok   a _DEFAULT_SIGMA_RULER exists to assert against, so its guard can never become a refusal to start
+  ok   and nothing asserts `SIGMA_RULER ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
+  ok   a _DEFAULT_IMPROVE_SCOPE exists to assert against, so its guard can never become a refusal to start
+  ok   and nothing asserts `IMPROVE_SCOPE ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
+  ok   a _DEFAULT_HONEST_CONF exists to assert against, so its guard can never become a refusal to start
+  ok   and nothing asserts `HONEST_CONF ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
+  ok   a _DEFAULT_PIN exists to assert against, so its guard can never become a refusal to start
+  ok   and nothing asserts `PIN ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
+  ok   a _DEFAULT_MAX_PER_MARKET exists to assert against, so its guard can never become a refusal to start
+  ok   and nothing asserts `MAX_PER_MARKET ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
+  ok   a _DEFAULT_IMPROVE_MAX exists to assert against, so its guard can never become a refusal to start
+  ok   and nothing asserts `IMPROVE_MAX ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
+  ok   a _DEFAULT_PICK exists to assert against, so its guard can never become a refusal to start
+  ok   and nothing asserts `PICK ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
+  ok   a _DEFAULT_MIN_FILL_FRAC exists to assert against, so its guard can never become a refusal to start
+  ok   and nothing asserts `MIN_FILL_FRAC ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
+  ok   the DECLARED default MAX_PER_MARKET is 1 (AMENDMENT 13), which is WHY the improve-by rule is obsolete: the same-market re-buy it was written to stop is already impossible by default (running now with 1)
+  ok   under scope 'close' a second coin at 0.977 IS refused after a fill at 0.980, because 0.977 is not below 0.975 -- this is the live 19:15Z refusal, reproduced from the constants
+  ok   the trade loop branches on IMPROVE_SCOPE, so scope 'market' really does skip the refusal rather than merely being accepted as a flag
+  ok   the close budget is CONTRACTS (94), so two coins at 47 is the same worst case as one coin at 94 -- A22 changes which markets are bought, never how much can be lost
+  ok   the DECLARED default IMPROVE_MAX is 1.0c (running now with 0.0100)
+  ok   the band has width: at most 0.010 cheaper is above at least 0.005 cheaper, so some second buy can qualify
+  ok   with nothing yet bought in the close there is no re-buy to judge
+  ok   a DIFFERENT market is not a re-buy -- AMENDMENT 22 governs that, and A23 must not quietly re-impose a cross-market bar
+  ok   0.2c cheaper is refused: AMENDMENT 3's floor still binds
+  ok   0.5c cheaper is allowed -- exactly IMPROVE_BY, the edge of the band, which is where an off-by-one would hide
+  ok   1.0c cheaper is allowed -- exactly IMPROVE_MAX, the other edge
+  ok   1.1c cheaper is REFUSED. THIS IS THE WHOLE AMENDMENT: measured over 398 markets that offered a second buy, 0.5-1c cheaper lost 0.70% and paid +3.08c/contract, while 5-10c cheaper lost 26.09% and cost -11.45c. Break-even is 3.58%.
+  ok   and a 66c collapse is refused rather than treated as a bargain
+  ok   holding 5 of the 50 we wanted, MORE AT THE SAME PRICE is taken. A3's improve rule was written against 'doubling the risk without lowering the average paid', which describes a FULL position, not one that is 10% filled -- this is finishing the order, not scaling in
+  ok   and a top-up at a slightly WORSE price is still taken, because every other gate -- ceiling, edge, expected value, dump guard -- has already passed on it at that price
+  ok   but once the full 50 are held, the same price is refused again -- the band is back in force the moment the position is complete
+  ok   and 'full' is measured against the size we are RUNNING, not a literal: those same 5 contracts ARE a complete position at size 5, so the band applies and the same price is refused
+  ok   the loop passes the RUNNING size, or every position looks unfinished and the band never applies at all
+  ok   and a fill adds its CONTRACTS to the per-market count, which is the only input that separates a top-up from a scale-in
+  ok   the band is measured against the cheapest price paid in THIS market (0.950), not against the close's overall best (0.940) -- the latter would compare a BTC re-buy to a price paid on ETH
+  ok   and the trade loop actually calls rebuy_ok, so the band is live logic rather than a function nothing reaches
+  ok   a fill records the price paid per market, which is the input the band needs -- without it rebuy_ok silently allows everything
+  ok   the DECLARED drawdown limit is a fifth of the high-water bank -- the operator's number, 2026-09-14 (running 0.200)
+  ok   a bank of $80 against a high of $100 is a 20%% drawdown
+  ok   and a bank ABOVE its previous high is not a drawdown at all
+  ok   a failed balance read or a missing high-water file reads as ZERO drawdown, never as a trip -- a brake that fires whenever the API hiccups would stop the bot on a network blip, and one that fires on a missing file would stop it on its very first run
+  ok   no file yet means no high-water mark
+  ok   the first bank sets the mark
+  ok   a new high raises it
+  ok   but a FALL NEVER LOWERS IT. This is the whole amendment: if the mark tracked the bank down, the drawdown would always read zero and the brake could never fire
+  ok   and it survives being re-read
+  ok   so $120 against a $150 high is exactly the 20%% limit
+  ok   a failed balance read does not disturb the mark
+  ok   risk_abort actually reads the drawdown, rather than it being computed and discarded
+  ok   and a settled LOSS clears the sizer's timer, so the bet shrinks on the next pass instead of up to five minutes later -- the operator's 'if we lose it should immediately recalculate'
+  ok   the dollar stop TIGHTENS as well as loosens. It used to ratchet one way, so a stop set when the bank was $310 stayed at -$208 even after the bank halved
+  ok   while the self-test runs, HWM_FILE points at a sandbox and NOT at results/pinrun-hwm.json -- currently 'C:\\Users\\Joe\\AppData\\Local\\Temp\\pinhwm-ojatyclu\\hwm.json'
+  ok   and not anywhere else in results/ either
+  ok   a test CAN move the sandboxed mark freely
+  ok   and the REAL file is untouched by that (625.01) -- if this ever fails, the live bot's next start will see a false drawdown and halt
+  ok   open contracts are summed across markets (20)
+  ok   and an empty ledger holds nothing
+  ok   a position that is NOT the dict shape contributes zero rather than a wrong number -- the first version indexed it positionally and would have summed zero for every real position, removing the rail instead of converting it
+  ok   three fills of 52 and eighteen of 8.7 are the SAME exposure (156 vs 156.6), so they now hit the cap together -- under the old position count the eighteen would have halted the bot after three
+  ok   and risk_abort uses it
+  ok   the DECLARED depth floor is half of SIZE (running 0.50)
+  ok   and the running floor is never ABOVE the declared default -- this flag exists to LOWER it; raising it cuts trading and needs a code change and a version entry, not a flag (running 0.500)
+  ok   and it is refused on --live: A6's measurement against a lower floor predates the contract budget (A17) and the scrap exemption (A12), so it has to be re-measured before it ships
+  ok   taking min(SIZE, offered) on a 7-contract book buys 7, not 50 -- a smaller fill can only LOWER exposure, never raise it, which is why lowering the floor cannot raise the loss rate
+  ok   the liveness test says THIS process is alive -- if it cannot see itself it can see nothing, and the guard is decorative
+  ok   and asking twice more does not kill it -- os.kill(pid, 0) on Windows TERMINATES rather than tests, which is why this function uses OpenProcess(SYNCHRONIZE) there and never os.kill
+  ok   and the Windows branch is taken BEFORE os.kill is ever reached
+  ok   and a nonsense pid is not alive
+  ok   a pid that is not running reads as dead (999999), so a stale pid file from a crashed run does not lock the bot out permanently
+  ok   a pid file belonging to ANOTHER process is never deleted -- deleting it would let a third bot start behind the second
+  ok   and our own is cleared on exit, so the next restart is not blocked by a file we left behind
+  ok   and main() actually refuses a second LIVE start rather than merely warning -- on 2026-09-14 two live bots traded the same account for 24 minutes because a shell script's process lookup came back empty and it started a second one anyway
+  ok   no CODE in this file reads a process command line to decide anything. Windows returns that field EMPTY to a caller which cannot open the process, and a guard that silently sees nothing is how two live bots ended up on one account
+  ok   the DECLARED per-market attempt cap is 3 (running 3)
+  ok   the per-CLOSE attempt cap is at least 24 -- twelve coins settle on the same second, so a cap of 8 could not try them all once and the bot could run out of attempts before reaching a market whose ask was still there (running 24)
+  ok   and the close cap leaves room for more than two markets to be tried to their own limit, or the per-market cap is decorative
+  ok   the 2026-09-08 runaway -- 160 orders into ONE market in one second -- now sends 3, not 160 and not 8. The per-market cap stops it at its actual source.
+  ok   and with every one of twelve coins offering something, all twelve are reached (12) -- under the old cap of 8 the last four could never be tried, which is exactly 'if that one is sold out keep checking the others'
+  ok   the scan loop contains no shallow `break`, so an order on one market is always followed by the next market in the pass -- and since AMENDMENT 24 sorted the pass, the next market is the next best one
+  ok   every _gate() call is followed by a `continue` within 12 lines, so a gate can only ever record a refusal it actually made ([])
+  ok   no gate name is used at two different places -- a duplicated name silently merges two unrelated refusals into one row ([])
+  ok   at least fifteen decision points are instrumented, got 19: ['attempts_cap', 'book_stale', 'book_suspect', 'both_sides', 'close_budget', 'confidence', 'depth_floor', 'dump_guard', 'edge_floor', 'ev_floor', 'improve_by', 'index_stale', 'market_attempts', 'max_per_close', 'max_per_market', 'no_offer', 'no_sigma', 'price_ceiling', 'rebuy_band']
+  ok   research/pinattrib.py names every instrumented gate, so none is silently missing from the report ([])
+  ok   a gate is recorded ONCE per (close, market) -- the loop runs at 20Hz over every watched market and one close produced 4,446 looks on 2026-09-13, so one line per look would swamp the log the settlement reader shares
+  ok   the DECLARED default scan order is 'first' -- A24 is a measured improvement that has not yet been through a what-if, so it must be opt-in (running now with 'first')
+  ok   the scan visits the biggest previous-pass edge first (B 4.0c, C 2.5c, A 1.0c), got ['B', 'C', 'A', 'D', 'E']
+  ok   and a market with NO edge yet (E) or an edge left over from ANOTHER close (D, whose 90c edge was measured on close 1800) sorts last rather than jumping the queue -- a stale edge from a settled close would otherwise dominate every pass
+  ok   the loop records each pass's edge, which is the only input the ordering has
+  ok   and it really re-orders the scan rather than accepting the flag and ignoring it
+  ok   the sort happens BEFORE the scan it orders
+  ok   the DECLARED default PIN is 0.995 (running now with 0.9950)
+  ok   and the running PIN is never ABOVE the declared default -- a tighter gate is the change that silently halves the trade count, so it needs a code change and a version entry, not a flag (running 0.9950)
+  ok   --pin moves the gate
+  ok   a decision at z=2.40 clears 0.990 (0.99180) ...
+  ok   ... and does NOT clear 0.995 (0.99180) -- the flag is the whole difference between a trade and no trade
+  ok   the DECLARED default ruler is 'live' -- AMENDMENT 20 is a model change and may only be reached through --sigma-ruler, against the bar in results/PREREG_ruler.md (running now with 'live')
+  ok   both rulers measure on the same series
+  ok   after a quiet patch the HOUR reads wider than the five minutes (11.7361 vs 0.0000) -- which is the whole finding
+  ok   'live' reproduces the 300s ruler exactly, bit for bit
+  ok   'max3600' is never shorter than either input (11.7361)
+  ok   '1800' reads wider than the live ruler here (11.1822)
+  ok   'maxdown' returns a positive ruler (42.4264)
+  ok   a series that only ever rises has NO down moves, so the downside estimator refuses rather than returning zero
+  ok   and sigma() falls back to the two-sided ruler there -- a None would skip the market silently, indistinguishable from a thin book
+  ok   and the ruler is put back to 'live'
+  ok   the DECLARED default for honest confidence is OFF -- AMENDMENT 19 is a threshold change and may only be reached through --honest, against the bar in results/PREREG_honest.md (running now with False)
+  ok   honest_tail reads a grid point exactly
+  ok   and interpolates between two (0.0350)
+  ok   and BEYOND the table it holds the last measured value rather than extrapolating to zero -- claiming a tail we never observed is the exact failure this amendment exists to fix
+  ok   and below the table it holds the first
+  ok   with --honest, conf_of reads the TABLE (0.95 at z=2)
+  ok   which is STRICTLY LESS SURE than the Gaussian (0.9500 < 0.9772) -- this amendment can only ever tighten
+  ok   and with it off, conf_of IS the Gaussian, bit for bit
+  ok   fair() returns conf_of(z), not ND.cdf(z)
+  ok   and in the working code ND.cdf appears ONLY inside conf_of -- no gate can read a different distribution from the one fair() uses (offenders: [])
+  ok   a missing table loads as None, so main() can refuse rather than silently running a Gaussian under an honest label
+  ok   the sweep limit is never BELOW the ask we saw (0.98 >= 0.952)
+  ok   and never above PRICE_CEILING (0.98 <= 0.98)
+  ok   at the limit the model edge still clears the floor (1.840c >= 0.300c)
+  ok   and the measured-flip EV still clears its floor (0.960c >= 0.300c)
+  ok   and it is the HIGHEST such price -- one tick more fails the ceiling, the edge floor or the EV floor
+  ok   with no headroom the limit IS the ask -- the sweep invents none
+  ok   the NO side sweeps on (1-fair), not fair (0.98)
+  ok   --no-sweep makes the limit exactly the ask we saw, which is the behaviour every live fill before 2026-09-13 had
+  ok   the live order path computes the sweep limit
+  ok   and computes it BEFORE the order is sent
+  ok   and pintake.take() is handed the LIMIT, never the ask we saw -- if this ever reverts, a lost race silently buys nothing again
+  ok   and both prices are logged, so PREREG_sweep.md's bar is scorable
+  ok   budget must be MAX_PER_CLOSE x SIZE = 136.0, got 136.0
+  ok   budget x ceiling must equal worst_close_cost -- if these ever disagree, the --loss-abort band, pintake's stake cap and pinbank are all sized against a different bet than the one being placed
+  ok   close_budget(size) must honour an explicit size
+  ok   the per-close cap must read CONTRACTS, not the fill count
+  ok   and `contracts` must come from the close's own record
+  ok   and the old fill-count cap must survive behind CLOSE_BUDGET so the rule can be reverted without an edit
+  ok   STRUCTURAL: take_n is trimmed to the remaining budget only AFTER the MIN_FILL_FRAC floor has been tested against the FULL size -- trimming first would relax the floor to the remainder
+  ok   and the remainder is measured against close_budget()
+  ok   the trim (line 902) must happen before the order is sent (line 1045), not after
+  ok   the signal record must carry the resting age of the level we hit
+  ok   and it must read the OPPOSITE side -- buying YES at p hits the NO bid at 1-p, and reading our own side would measure a level we are not trading against
+  ok   at the complementary price, not at the price we pay
+  ok   NOTHING may branch on the quote age yet ('if _lvl_age' found). The slices in RESULTS_select.md were chosen after seeing the tape and need a pre-registered live bar first; a filter deployed from them would be tuned on its own evidence.
+  ok   NOTHING may branch on the quote age yet ('_lvl_age <' found). The slices in RESULTS_select.md were chosen after seeing the tape and need a pre-registered live bar first; a filter deployed from them would be tuned on its own evidence.
+  ok   NOTHING may branch on the quote age yet ('_lvl_age >' found). The slices in RESULTS_select.md were chosen after seeing the tape and need a pre-registered live bar first; a filter deployed from them would be tuned on its own evidence.
+  ok   NOTHING may branch on the quote age yet ('_lvl_age is not None and' found). The slices in RESULTS_select.md were chosen after seeing the tape and need a pre-registered live bar first; a filter deployed from them would be tuned on its own evidence.
+  ok   livebook must expose level_age_ms
+  ok   autosize_tick must be called in the trade loop
+  ok   and it must come AFTER reconcile(), which is what drains open_pos of settled positions
+  ok   and BEFORE risk_abort, so the loss bound is evaluated against the size we are about to trade, not the previous one
+SELF-TEST PASSED
+  MODE PAPER   tau<=30s  pin 0.995  edge>=0.3c net  loss abort $-60.00  SIZE 20
+  log C:\kals-repo\results\pinrun-paper-20260918T183520Z.jsonl
+  index up: 11 ticks, 11 feeds
+  SIGNAL KXBTC15M-26SEP181445-45 tau=25s buy NO @0.9480 fair 0.0018 edge +4.67c size 1907.66 taking 20
+  close 18:45Z: 4181 looks, best was KXBTC15M-26SEP181445-4 NO @0.9480 edge +4.67c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP181445-45 no vs no -> +97.09c (run realised $+0.9709)
+  close 19:00Z: 4641 looks, best was KXBTC15M-26SEP181500-0 NO @0.9810 edge +1.63c (need +0.3c) -> no trade
+  close 19:15Z: 4599 looks, 4599 decided, 4599 decided-but-nothing-offered, 0 undecided
+  close 19:30Z: 4423 looks, best was KXBNB15M-26SEP181530-3 YES @0.9990 edge +0.09c (need +0.3c) -> no trade
+  close 19:45Z: 4367 looks, best was KXSOL15M-26SEP181545-4 YES @0.9870 edge +1.21c (need +0.3c) -> no trade
+  SIGNAL KXSOL15M-26SEP181600-00 tau=27s buy YES @0.9170 fair 0.9950 edge +7.27c size 18.00 taking 18
+  SIGNAL KXDOGE15M-26SEP181600-00 tau=5s buy YES @0.9790 fair 0.9985 edge +1.80c size 16.00 taking 16
+  close 20:00Z: 3859 looks, best was KXSOL15M-26SEP181600-0 YES @0.9170 edge +7.27c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP181600-00 yes vs yes -> +139.81c (run realised $+2.3690)
+  SETTLED KXDOGE15M-26SEP181600-00 yes vs yes -> +31.29c (run realised $+2.6819)
+  close 20:15Z: 4422 looks, best was KXDOGE15M-26SEP181615- NO @0.9950 edge +0.46c (need +0.3c) -> no trade
+  close 20:30Z: 4257 looks, best was KXDOGE15M-26SEP181630- NO @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 20:45Z: 4130 looks, 4130 decided, 4130 decided-but-nothing-offered, 0 undecided
+  close 21:00Z: 4256 looks, best was KXDOGE15M-26SEP181700- YES @0.9900 edge +0.46c (need +0.3c) -> no trade
+  close 21:15Z: 4247 looks, best was KXZEC15M-26SEP181715-1 NO @0.9990 edge +0.09c (need +0.3c) -> no trade
+  close 21:30Z: 4247 looks, best was KXBNB15M-26SEP181730-3 NO @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 21:45Z: 4104 looks, best was KXZEC15M-26SEP181745-4 YES @0.9930 edge +0.62c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP181800-00 tau=30s buy YES @0.9800 fair 0.9999 edge +1.85c size 179.44 taking 20
+  SIGNAL KXSOL15M-26SEP181800-00 tau=23s buy YES @0.9790 fair 0.9951 edge +1.47c size 17.14 taking 17.14
+  close 22:00Z: 3448 looks, best was KXBTC15M-26SEP181800-0 YES @0.9800 edge +1.85c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP181800-00 yes vs yes -> +37.25c (run realised $+3.0544)
+  SETTLED KXSOL15M-26SEP181800-00 yes vs yes -> +33.52c (run realised $+3.3896)
+  close 22:15Z: 4307 looks, best was KXBTC15M-26SEP181815-1 YES @0.9900 edge +0.91c (need +0.3c) -> no trade
+  close 22:30Z: 4234 looks, best was KXBTC15M-26SEP181830-3 YES @0.9820 edge +1.51c (need +0.3c) -> no trade
+  close 22:45Z: 4293 looks, best was KXDOGE15M-26SEP181845- NO @0.9970 edge +0.28c (need +0.3c) -> no trade
+  close 23:00Z: 4178 looks, best was KXBTC15M-26SEP181900-0 YES @0.9960 edge +0.37c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP181915-15 tau=28s buy NO @0.9800 fair 0.0035 edge +1.51c size 210.15 taking 20
+  close 23:15Z: 3632 looks, best was KXXRP15M-26SEP181915-1 NO @0.9800 edge +1.51c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP181915-15 no vs no -> +37.25c (run realised $+3.7621)
+  close 23:30Z: 3991 looks, best was KXHYPE15M-26SEP181930- YES @0.9900 edge +0.88c (need +0.3c) -> no trade
+  close 23:45Z: 3888 looks, best was KXXRP15M-26SEP181945-4 NO @0.9980 edge +0.19c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP182000-00 tau=27s buy NO @0.9770 fair 0.0034 edge +1.80c size 12.00 taking 12
+  close 00:00Z: 3597 looks, best was KXXRP15M-26SEP182000-0 NO @0.9770 edge +1.80c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP182000-00 no vs no -> +25.71c (run realised $+4.0192)
+  SIGNAL KXBNB15M-26SEP182015-15 tau=18s buy YES @0.9600 fair 0.9994 edge +3.67c size 10.00 taking 10
+  close 00:15Z: 3649 looks, best was KXBNB15M-26SEP182015-1 YES @0.9600 edge +3.67c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP182015-15 yes vs yes -> +37.31c (run realised $+4.3923)
+  SIGNAL KXBNB15M-26SEP182030-30 tau=29s buy YES @0.9500 fair 1.0000 edge +4.67c size 60.00 taking 20
+  close 00:30Z: 3431 looks, best was KXBNB15M-26SEP182030-3 YES @0.9500 edge +4.67c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP182030-30 yes vs yes -> +93.34c (run realised $+5.3257)
+  close 00:45Z: 3698 looks, best was KXNEAR15M-26SEP182045- NO @0.9970 edge +0.28c (need +0.3c) -> no trade
+  close 01:00Z: 3609 looks, best was KXBNB15M-26SEP182100-0 NO @0.9900 edge +0.92c (need +0.3c) -> no trade
+  close 01:15Z: 3097 looks, best was KXHYPE15M-26SEP182115- YES @0.9870 edge +0.93c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP182130-30 tau=30s buy NO @0.9780 fair 0.0000 edge +2.05c size 273.23 taking 20
+  close 01:30Z: 2982 looks, best was KXBTC15M-26SEP182130-3 NO @0.9780 edge +2.05c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP182130-30 no vs no -> +40.98c (run realised $+5.7355)
+  SIGNAL KXSOL15M-26SEP182145-45 tau=30s buy YES @0.9790 fair 0.9994 edge +1.90c size 290.93 taking 20
+  SIGNAL KXDOGE15M-26SEP182145-45 tau=15s buy NO @0.9780 fair 0.0036 edge +1.69c size 133.84 taking 20
+  close 01:45Z: 1727 looks, best was KXSOL15M-26SEP182145-4 YES @0.9790 edge +1.90c (need +0.3c) -> FIRED
+  SETTLED KXSOL15M-26SEP182145-45 yes vs yes -> +39.12c (run realised $+6.1267)
+  SETTLED KXDOGE15M-26SEP182145-45 no vs no -> +40.98c (run realised $+6.5365)
+  close 02:00Z: 3597 looks, best was KXSOL15M-26SEP182200-0 YES @0.9960 edge +0.36c (need +0.3c) -> no trade
+  close 02:15Z: 3672 looks, 3672 decided, 3672 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXXRP15M-26SEP182230-30 tau=11s buy YES @0.9790 fair 0.9972 edge +1.68c size 106.81 taking 20
+  close 02:30Z: 3011 looks, best was KXXRP15M-26SEP182230-3 YES @0.9790 edge +1.68c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP182230-30 yes vs yes -> +39.12c (run realised $+6.9277)
+  close 02:45Z: 3725 looks, best was KXBTC15M-26SEP182245-4 NO @0.9880 edge +1.12c (need +0.3c) -> no trade
+  close 03:00Z: 3289 looks, best was KXZEC15M-26SEP182300-0 NO @0.9880 edge +1.10c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP182315-15 tau=17s buy NO @0.9500 fair 0.0017 edge +4.50c size 355.00 taking 20
+  close 03:15Z: 3088 looks, best was KXBTC15M-26SEP182315-1 NO @0.9500 edge +4.50c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP182315-15 no vs no -> +93.34c (run realised $+7.8611)
+  close 03:30Z: 3326 looks, best was KXNEAR15M-26SEP182330- YES @0.9970 edge +0.21c (need +0.3c) -> no trade
+  SIGNAL KXBTC15M-26SEP182345-45 tau=30s buy YES @0.9740 fair 1.0000 edge +2.42c size 252.95 taking 20
+  SIGNAL KXETH15M-26SEP182345-45 tau=27s buy YES @0.9600 fair 0.9995 edge +3.68c size 377.28 taking 20
+  close 03:45Z: 219 looks, best was KXETH15M-26SEP182345-4 YES @0.9600 edge +3.68c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP182345-45 yes vs yes -> +48.45c (run realised $+8.3456)
+  SETTLED KXETH15M-26SEP182345-45 yes vs yes -> +74.62c (run realised $+9.0918)
+  close 04:00Z: 2877 looks, best was KXBNB15M-26SEP190000-0 NO @0.9850 edge +1.38c (need +0.3c) -> no trade
+  close 04:15Z: 2484 looks, best was KXSOL15M-26SEP190015-1 YES @0.9990 edge +0.09c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP190030-30 tau=16s buy YES @0.9800 fair 0.9999 edge +1.85c size 59.84 taking 20
+  close 04:30Z: 2521 looks, best was KXBNB15M-26SEP190030-3 YES @0.9800 edge +1.85c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP190030-30 yes vs yes -> +37.25c (run realised $+9.4643)
+  close 04:45Z: 2502 looks, best was KXXRP15M-26SEP190045-4 NO @0.9950 edge +0.46c (need +0.3c) -> no trade
+  SIGNAL KXZEC15M-26SEP190100-00 tau=25s buy NO @0.8600 fair 0.0000 edge +13.16c size 151.00 taking 20
+  SIGNAL KXSOL15M-26SEP190100-00 tau=21s buy NO @0.9490 fair 0.0001 edge +4.75c size 185.69 taking 20
+  close 05:00Z: 588 looks, best was KXZEC15M-26SEP190100-0 NO @0.8600 edge +13.16c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP190100-00 no vs no -> +263.14c (run realised $+12.0957)
+  SETTLED KXSOL15M-26SEP190100-00 no vs no -> +95.22c (run realised $+13.0479)
+  close 05:15Z: 2129 looks, best was KXZEC15M-26SEP190115-1 NO @0.9920 edge +0.74c (need +0.3c) -> no trade
+  close 05:30Z: 1818 looks, best was KXBTC15M-26SEP190130-3 YES @0.9910 edge +0.84c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP190145-45 tau=30s buy YES @0.9700 fair 0.9959 edge +2.39c size 15.00 taking 15
+  close 05:45Z: 1978 looks, best was KXBNB15M-26SEP190145-4 YES @0.9700 edge +2.39c (need +0.3c) -> FIRED
+  *** A LOSS. losing trades 1, losing CLOSES 1 (the brake counts closes) ***
+  SETTLED KXBNB15M-26SEP190145-45 yes vs no -> -1458.06c (run realised $-1.5327)
+  SIGNAL KXBTC15M-26SEP190200-00 tau=11s buy YES @0.9710 fair 0.9997 edge +2.67c size 2184.00 taking 20
+  close 06:00Z: 1892 looks, best was KXBTC15M-26SEP190200-0 YES @0.9710 edge +2.67c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP190200-00 yes vs yes -> +54.05c (run realised $-0.9922)
+  close 06:15Z: 2907 looks, best was KXSOL15M-26SEP190215-1 NO @0.9990 edge +0.09c (need +0.3c) -> no trade
+  close 06:30Z: 2690 looks, best was KXNEAR15M-26SEP190230- NO @0.9850 edge +1.05c (need +0.3c) -> no trade
+  close 06:45Z: 2937 looks, best was KXBTC15M-26SEP190245-4 YES @0.9990 edge +0.09c (need +0.3c) -> no trade
+  close 07:00Z: 2674 looks, best was KXSOL15M-26SEP190300-0 YES @0.9880 edge +1.05c (need +0.3c) -> no trade
+  close 07:15Z: 2822 looks, best was KXXRP15M-26SEP190315-1 NO @0.9960 edge +0.37c (need +0.3c) -> no trade
+  SIGNAL KXETH15M-26SEP190330-30 tau=30s buy NO @0.9720 fair 0.0001 edge +2.60c size 400.00 taking 20
+  close 07:30Z: 2305 looks, best was KXETH15M-26SEP190330-3 NO @0.9720 edge +2.60c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP190330-30 no vs no -> +52.18c (run realised $-0.4704)
+  close 07:45Z: 3086 looks, best was KXBTC15M-26SEP190345-4 NO @0.9960 edge +0.37c (need +0.3c) -> no trade
+  close 08:00Z: 2468 looks, best was KXBNB15M-26SEP190400-0 YES @0.9960 edge +0.34c (need +0.3c) -> no trade
+  SIGNAL KXNEAR15M-26SEP190415-15 tau=29s buy YES @0.9370 fair 0.9997 edge +5.85c size 100.00 taking 20
+  close 08:15Z: 2543 looks, best was KXNEAR15M-26SEP190415- YES @0.9370 edge +5.85c (need +0.3c) -> FIRED
+  SETTLED KXNEAR15M-26SEP190415-15 yes vs yes -> +117.73c (run realised $+0.7069)
+  SIGNAL KXHYPE15M-26SEP190430-30 tau=30s buy YES @0.9800 fair 0.9963 edge +1.49c size 325.60 taking 20
+  SIGNAL KXXRP15M-26SEP190430-30 tau=30s buy NO @0.9800 fair 0.0001 edge +1.85c size 20.54 taking 20
+  close 08:30Z: 12 looks, best was KXXRP15M-26SEP190430-3 NO @0.9800 edge +1.85c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP190430-30 yes vs yes -> +37.25c (run realised $+1.0794)
+  SETTLED KXXRP15M-26SEP190430-30 no vs no -> +37.25c (run realised $+1.4519)
+  close 08:45Z: 2520 looks, best was KXBTC15M-26SEP190445-4 YES @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 09:00Z: 2260 looks, best was KXBTC15M-26SEP190500-0 NO @0.9820 edge +1.68c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP190515-15 tau=25s buy NO @0.9790 fair 0.0029 edge +1.67c size 52.44 taking 20
+  SIGNAL KXSOL15M-26SEP190515-15 tau=19s buy YES @0.9750 fair 0.9963 edge +1.96c size 42.23 taking 20
+  close 09:15Z: 981 looks, best was KXSOL15M-26SEP190515-1 YES @0.9750 edge +1.96c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP190515-15 no vs no -> +39.12c (run realised $+1.8431)
+  SETTLED KXSOL15M-26SEP190515-15 yes vs yes -> +46.58c (run realised $+2.3089)
+  close 09:30Z: 2179 looks, best was KXBTC15M-26SEP190530-3 NO @0.9850 edge +1.40c (need +0.3c) -> no trade
+  close 09:45Z: 2339 looks, best was KXBNB15M-26SEP190545-4 YES @0.9960 edge +0.37c (need +0.3c) -> no trade
+  close 10:00Z: 2614 looks, best was KXSOL15M-26SEP190600-0 YES @0.9980 edge +0.19c (need +0.3c) -> no trade
+  SIGNAL KXXRP15M-26SEP190615-15 tau=30s buy YES @0.9800 fair 1.0000 edge +1.86c size 281.50 taking 20
+  SIGNAL KXHYPE15M-26SEP190615-15 tau=24s buy YES @0.9800 fair 0.9999 edge +1.86c size 294.21 taking 20
+  close 10:15Z: 464 looks, best was KXXRP15M-26SEP190615-1 YES @0.9800 edge +1.86c (need +0.3c) -> FIRED
+  SETTLED KXXRP15M-26SEP190615-15 yes vs yes -> +37.25c (run realised $+2.6814)
+  SETTLED KXHYPE15M-26SEP190615-15 yes vs yes -> +37.25c (run realised $+3.0539)
+  SIGNAL KXBTC15M-26SEP190630-30 tau=12s buy YES @0.9470 fair 0.9956 edge +4.51c size 120.37 taking 20
+  close 10:30Z: 1977 looks, best was KXBTC15M-26SEP190630-3 YES @0.9470 edge +4.51c (need +0.3c) -> FIRED
+  SETTLED KXBTC15M-26SEP190630-30 yes vs yes -> +98.97c (run realised $+4.0436)
+  close 10:45Z: 2860 looks, best was KXNEAR15M-26SEP190645- NO @0.9940 edge +0.56c (need +0.3c) -> no trade
+  close 11:00Z: 2089 looks, best was KXBTC15M-26SEP190700-0 NO @0.9910 edge +0.84c (need +0.3c) -> no trade
+  SIGNAL KXZEC15M-26SEP190715-15 tau=24s buy YES @0.9800 fair 0.9975 edge +1.61c size 252.47 taking 20
+  SIGNAL KXNEAR15M-26SEP190715-15 tau=8s buy YES @0.9770 fair 0.9980 edge +1.94c size 26.97 taking 20
+  close 11:15Z: 2042 looks, best was KXNEAR15M-26SEP190715- YES @0.9770 edge +1.94c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP190715-15 yes vs yes -> +37.25c (run realised $+4.4161)
+  SETTLED KXNEAR15M-26SEP190715-15 yes vs yes -> +42.85c (run realised $+4.8446)
+  SIGNAL KXZEC15M-26SEP190730-30 tau=30s buy YES @0.9710 fair 0.9951 edge +2.21c size 54.00 taking 20
+  close 11:30Z: 2642 looks, best was KXZEC15M-26SEP190730-3 YES @0.9710 edge +2.21c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP190730-30 yes vs yes -> +54.05c (run realised $+5.3851)
+  close 11:45Z: 3199 looks, best was KXSOL15M-26SEP190745-4 NO @0.9840 edge +1.26c (need +0.3c) -> no trade
+  SIGNAL KXETH15M-26SEP190800-00 tau=30s buy YES @0.9800 fair 0.9996 edge +1.82c size 610.24 taking 20
+  close 12:00Z: 2146 looks, best was KXETH15M-26SEP190800-0 YES @0.9800 edge +1.82c (need +0.3c) -> FIRED
+  SETTLED KXETH15M-26SEP190800-00 yes vs yes -> +37.25c (run realised $+5.7576)
+  SIGNAL KXBNB15M-26SEP190815-15 tau=27s buy NO @0.9780 fair 0.0038 edge +1.67c size 211.40 taking 20
+  close 12:15Z: 2068 looks, best was KXBNB15M-26SEP190815-1 NO @0.9780 edge +1.67c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP190815-15 no vs no -> +40.98c (run realised $+6.1674)
+  close 12:30Z: 4247 looks, best was KXETH15M-26SEP190830-3 NO @0.9970 edge +0.28c (need +0.3c) -> no trade
+  close 12:45Z: 4112 looks, best was KXDOGE15M-26SEP190845- YES @0.9870 edge +1.18c (need +0.3c) -> no trade
+  SIGNAL KXNEAR15M-26SEP190900-00 tau=21s buy NO @0.9650 fair 0.0014 edge +3.13c size 88.00 taking 20
+  SIGNAL KXZEC15M-26SEP190900-00 tau=6s buy YES @0.9770 fair 0.9998 edge +2.12c size 39.00 taking 20
+  close 13:00Z: 3001 looks, best was KXNEAR15M-26SEP190900- NO @0.9650 edge +3.13c (need +0.3c) -> FIRED
+  SETTLED KXNEAR15M-26SEP190900-00 no vs no -> +65.27c (run realised $+6.8201)
+  SETTLED KXZEC15M-26SEP190900-00 yes vs yes -> +42.85c (run realised $+7.2486)
+  close 13:15Z: 3830 looks, best was KXDOGE15M-26SEP190915- YES @0.9940 edge +0.53c (need +0.3c) -> no trade
+  SIGNAL KXZEC15M-26SEP190930-30 tau=30s buy YES @0.9780 fair 0.9995 edge +2.00c size 63.68 taking 20
+  SIGNAL KXBNB15M-26SEP190930-30 tau=20s buy YES @0.9390 fair 0.9975 edge +5.45c size 17.00 taking 17
+  SIGNAL KXHYPE15M-26SEP190930-30 tau=15s buy YES @0.9800 fair 0.9987 edge +1.73c size 127.20 taking 3
+  close 13:30Z: 1051 looks, best was KXBNB15M-26SEP190930-3 YES @0.9390 edge +5.45c (need +0.3c) -> FIRED
+  SETTLED KXZEC15M-26SEP190930-30 yes vs yes -> +40.98c (run realised $+7.6584)
+  SETTLED KXBNB15M-26SEP190930-30 yes vs yes -> +96.88c (run realised $+8.6272)
+  SETTLED KXHYPE15M-26SEP190930-30 yes vs yes -> +5.58c (run realised $+8.6830)
+  close 13:45Z: 3380 looks, best was KXDOGE15M-26SEP190945- YES @0.9850 edge +1.33c (need +0.3c) -> no trade
+  close 14:00Z: 2292 looks, best was KXZEC15M-26SEP191000-0 YES @0.9880 edge +0.87c (need +0.3c) -> no trade
+  SIGNAL KXDOGE15M-26SEP191015-15 tau=12s buy YES @0.9590 fair 1.0000 edge +3.82c size 356.00 taking 20
+  close 14:15Z: 2375 looks, best was KXDOGE15M-26SEP191015- YES @0.9590 edge +3.82c (need +0.3c) -> FIRED
+  SETTLED KXDOGE15M-26SEP191015-15 yes vs yes -> +76.49c (run realised $+9.4479)
+  close 14:30Z: 2380 looks, best was KXZEC15M-26SEP191030-3 YES @0.9990 edge +0.09c (need +0.3c) -> no trade
+  close 14:45Z: 1885 looks, best was KXBTC15M-26SEP191045-4 NO @0.9900 edge +0.93c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP191100-00 tau=22s buy NO @0.9070 fair 0.0033 edge +8.38c size 20.00 taking 20
+  SIGNAL KXETH15M-26SEP191100-00 tau=7s buy NO @0.9800 fair 0.0045 edge +1.42c size 55.37 taking 20
+  close 15:00Z: 1478 looks, best was KXBNB15M-26SEP191100-0 NO @0.9070 edge +8.38c (need +0.3c) -> FIRED
+  SETTLED KXBNB15M-26SEP191100-00 no vs no -> +174.19c (run realised $+11.1898)
+  SETTLED KXETH15M-26SEP191100-00 no vs no -> +37.25c (run realised $+11.5623)
+  close 15:15Z: 1771 looks, best was KXBNB15M-26SEP191115-1 NO @0.9950 edge +0.29c (need +0.3c) -> no trade
+  close 15:30Z: 2142 looks, best was KXZEC15M-26SEP191130-3 NO @0.9980 edge +0.19c (need +0.3c) -> no trade
+  close 15:45Z: 2301 looks, 2301 decided, 2301 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXHYPE15M-26SEP191200-00 tau=12s buy YES @0.8800 fair 0.9977 edge +11.03c size 184.53 taking 20
+  close 16:00Z: 2400 looks, best was KXHYPE15M-26SEP191200- YES @0.8800 edge +11.03c (need +0.3c) -> FIRED
+  SETTLED KXHYPE15M-26SEP191200-00 yes vs yes -> +225.21c (run realised $+13.8144)
+  close 16:15Z: 2404 looks, best was KXHYPE15M-26SEP191215- YES @0.9970 edge +0.28c (need +0.3c) -> no trade
+  SIGNAL KXBNB15M-26SEP191230-30 tau=23s buy YES @0.9010 fair 0.9986 edge +9.14c size 55.00 taking 20
+  close 16:30Z: 2180 looks, best was KXBNB15M-26SEP191230-3 YES @0.9010 edge +9.14c (need +0.3c) -> FIRED
+  *** A LOSS. losing trades 2, losing CLOSES 2 (the brake counts closes) ***
+  SETTLED KXBNB15M-26SEP191230-30 yes vs no -> -1814.49c (run realised $-4.3305)
+  *** HALT: loss COUNT brake: 2 losing trades this run >= 2; stop and re-measure the flip rate
+
+  45 signals, 258734 evaluations
+  ledger {'committed': 0.0, 'filled_contracts': 0.0, 'filled_dollars': 0.0, 'fees': 0.0, 'realised': -4.330459999999981, 'losses': 2, 'sends': 0, 'unknown': 0, 'rested': 0, 'anomalies': [], 'halt': None, 'positions': {}, 'takes': [{'kind': 'pnl', 'delta': 0.970900000000001, 'note': 'KXBTC15M-26SEP181445-45 no vs no', 't': 1789757120.133157}, {'kind': 'pnl', 'delta': 1.3980999999999992, 'note': 'KXSOL15M-26SEP181600-00 yes vs yes', 't': 1789761620.1284113}, {'kind': 'pnl', 'delta': 0.3129000000000003, 'note': 'KXDOGE15M-26SEP181600-00 yes vs yes', 't': 1789761620.2145123}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBTC15M-26SEP181800-00 yes vs yes', 't': 1789768820.1336882}, {'kind': 'pnl', 'delta': 0.3352400000000003, 'note': 'KXSOL15M-26SEP181800-00 yes vs yes', 't': 1789768820.2170432}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXXRP15M-26SEP181915-15 no vs no', 't': 1789773320.115913}, {'kind': 'pnl', 'delta': 0.2571000000000002, 'note': 'KXXRP15M-26SEP182000-00 no vs no', 't': 1789776020.1006668}, {'kind': 'pnl', 'delta': 0.3731000000000004, 'note': 'KXBNB15M-26SEP182015-15 yes vs yes', 't': 1789776920.158798}, {'kind': 'pnl', 'delta': 0.9334000000000009, 'note': 'KXBNB15M-26SEP182030-30 yes vs yes', 't': 1789777820.1368008}, {'kind': 'pnl', 'delta': 0.4098000000000004, 'note': 'KXBTC15M-26SEP182130-30 no vs no', 't': 1789781420.0983758}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXSOL15M-26SEP182145-45 yes vs yes', 't': 1789782320.1040754}, {'kind': 'pnl', 'delta': 0.4098000000000004, 'note': 'KXDOGE15M-26SEP182145-45 no vs no', 't': 1789782320.1836843}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXXRP15M-26SEP182230-30 yes vs yes', 't': 1789785020.0869224}, {'kind': 'pnl', 'delta': 0.9334000000000009, 'note': 'KXBTC15M-26SEP182315-15 no vs no', 't': 1789787720.1212132}, {'kind': 'pnl', 'delta': 0.4845000000000005, 'note': 'KXBTC15M-26SEP182345-45 yes vs yes', 't': 1789789520.1353898}, {'kind': 'pnl', 'delta': 0.7462000000000008, 'note': 'KXETH15M-26SEP182345-45 yes vs yes', 't': 1789789520.2200968}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXBNB15M-26SEP190030-30 yes vs yes', 't': 1789792220.1065748}, {'kind': 'pnl', 'delta': 2.6314, 'note': 'KXZEC15M-26SEP190100-00 no vs no', 't': 1789794020.1485107}, {'kind': 'pnl', 'delta': 0.9522000000000009, 'note': 'KXSOL15M-26SEP190100-00 no vs no', 't': 1789794020.2303886}, {'kind': 'pnl', 'delta': -14.580599999999999, 'note': 'KXBNB15M-26SEP190145-45 yes vs no', 't': 1789796720.1466818}, {'kind': 'pnl', 'delta': 0.5405000000000005, 'note': 'KXBTC15M-26SEP190200-00 yes vs yes', 't': 1789797620.1085665}, {'kind': 'pnl', 'delta': 0.5218000000000005, 'note': 'KXETH15M-26SEP190330-30 no vs no', 't': 1789803020.0929587}, {'kind': 'pnl', 'delta': 1.177299999999999, 'note': 'KXNEAR15M-26SEP190415-15 yes vs yes', 't': 1789805720.1182528}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXHYPE15M-26SEP190430-30 yes vs yes', 't': 1789806620.0964475}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXXRP15M-26SEP190430-30 no vs no', 't': 1789806620.17885}, {'kind': 'pnl', 'delta': 0.3912000000000004, 'note': 'KXXRP15M-26SEP190515-15 no vs no', 't': 1789809320.1266756}, {'kind': 'pnl', 'delta': 0.46580000000000044, 'note': 'KXSOL15M-26SEP190515-15 yes vs yes', 't': 1789809320.2105806}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXXRP15M-26SEP190615-15 yes vs yes', 't': 1789812920.1013846}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXHYPE15M-26SEP190615-15 yes vs yes', 't': 1789812920.1941397}, {'kind': 'pnl', 'delta': 0.9897000000000009, 'note': 'KXBTC15M-26SEP190630-30 yes vs yes', 't': 1789813820.0847003}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXZEC15M-26SEP190715-15 yes vs yes', 't': 1789816520.1103976}, {'kind': 'pnl', 'delta': 0.42850000000000044, 'note': 'KXNEAR15M-26SEP190715-15 yes vs yes', 't': 1789816520.1916924}, {'kind': 'pnl', 'delta': 0.5405000000000005, 'note': 'KXZEC15M-26SEP190730-30 yes vs yes', 't': 1789817420.1980448}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXETH15M-26SEP190800-00 yes vs yes', 't': 1789819220.1269014}, {'kind': 'pnl', 'delta': 0.4098000000000004, 'note': 'KXBNB15M-26SEP190815-15 no vs no', 't': 1789820120.1090484}, {'kind': 'pnl', 'delta': 0.6527000000000006, 'note': 'KXNEAR15M-26SEP190900-00 no vs no', 't': 1789822820.1454518}, {'kind': 'pnl', 'delta': 0.42850000000000044, 'note': 'KXZEC15M-26SEP190900-00 yes vs yes', 't': 1789822820.2381797}, {'kind': 'pnl', 'delta': 0.4098000000000004, 'note': 'KXZEC15M-26SEP190930-30 yes vs yes', 't': 1789824620.1296785}, {'kind': 'pnl', 'delta': 0.9688000000000008, 'note': 'KXBNB15M-26SEP190930-30 yes vs yes', 't': 1789824620.2208173}, {'kind': 'pnl', 'delta': 0.05580000000000005, 'note': 'KXHYPE15M-26SEP190930-30 yes vs yes', 't': 1789824620.3021333}, {'kind': 'pnl', 'delta': 0.7649000000000007, 'note': 'KXDOGE15M-26SEP191015-15 yes vs yes', 't': 1789827320.1017163}, {'kind': 'pnl', 'delta': 1.7418999999999993, 'note': 'KXBNB15M-26SEP191100-00 no vs no', 't': 1789830020.0873537}, {'kind': 'pnl', 'delta': 0.37250000000000033, 'note': 'KXETH15M-26SEP191100-00 no vs no', 't': 1789830020.1783533}, {'kind': 'pnl', 'delta': 2.2521, 'note': 'KXHYPE15M-26SEP191200-00 yes vs yes', 't': 1789833620.4509404}, {'kind': 'pnl', 'delta': -18.1449, 'note': 'KXBNB15M-26SEP191230-30 yes vs no', 't': 1789835420.1190205}]}
+  log C:\kals-repo\results\pinrun-paper-20260918T183520Z.jsonl
