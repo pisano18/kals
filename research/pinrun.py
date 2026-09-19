@@ -9765,6 +9765,21 @@ def trade_loop(a, rec, book, idx, series_index):
                     _lat_ms = round(1000.0 * (time.time() - _t0), 1)
                     _xp = out.get("exec_price")
                     rec("order", ticker=tk, latency_ms=_lat_ms,
+                        # AMENDMENT 72: WHICH SIDE. The order record carried
+                        # `ask_seen` (the price of the side we wanted) and
+                        # `exec_price` (what we paid) and NOT the side, so the
+                        # two could not be safely compared -- a NO buy can log
+                        # an exec_price on the other side of the dollar and
+                        # the pair reads as a 86c bargain. That is hard rule 5
+                        # (never infer a price's meaning from its magnitude)
+                        # arriving through the back door.
+                        #
+                        # It matters because the difference between these two
+                        # is the only picked-off signal we have: the 01:45 BNB
+                        # close saw 85c and paid 74.98c because the side was
+                        # collapsing as we bought it. Pure instrumentation --
+                        # nothing branches on this.
+                        want=want,
                         leg=_leg46, early_held=_held46,
                         book_age_ms=b.get("age_ms"),
                         index_age_s=round(iage, 2), tau_at_send=tau,
