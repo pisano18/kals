@@ -872,6 +872,46 @@ EXPERIMENTS = [
         "watch": "Early fills under 94c: count, price, settled result.",
     },
     {
+        "name": "Volatility x0.4 -- the model RECKLESS",
+        "status": RUNNING, "match": "--sigma-stress 0.4", "since": "2026-09-19",
+        "select": {"sigma_stress": lambda v, _w=0.4: v is not None and abs(float(v) - _w) < 1e-9},
+        "what": "The live bot with the volatility estimate multiplied by 0.4 "
+                "-- it believes the coin can move less than half as far as "
+                "measured, so it clears the 99.5% confidence gate on markets "
+                "the live bot refuses outright, and pays more for them. "
+                "Paper only; pinrun refuses anything under 1.0 on --live.",
+        "why": "Operator, 2026-09-19: 'Add another paper for sigma .6 and .4.' "
+               "0.8 was not bold enough to separate from 1.0 -- on the BNB "
+               "close that cost $57.98 it refused at 45 s on confidence just "
+               "as 1.0 did, so it dodged the loss by accident rather than by "
+               "being bolder. Going further is the only way to see where the "
+               "bold end actually breaks.",
+        "good": "It finds real trades 1.0 refuses AND its loss rate stays "
+                "under 1 minus its average price. Then our sigma is too big "
+                "and we are leaving money on the table.",
+        "bad": "It buys the collapses. A bolder model prints 99.5% on a "
+               "market that is about to go the other way, which is exactly "
+               "what a collapse looks like from the inside. Expect this.",
+        "watch": "Losing closes FIRST, then volume. This is the arm most "
+                 "likely to blow up, and that is the point of running it in "
+                 "paper.",
+    },
+    {
+        "name": "Volatility x0.6 -- the model much BOLDER",
+        "status": RUNNING, "match": "--sigma-stress 0.6", "since": "2026-09-19",
+        "select": {"sigma_stress": lambda v, _w=0.6: v is not None and abs(float(v) - _w) < 1e-9},
+        "what": "As x0.4 but half as far: the volatility estimate is "
+                "multiplied by 0.6 everywhere the model runs. Paper only.",
+        "why": "The midpoint between 0.4 and 0.8, so the bold end has three "
+               "points on it rather than one and the shape of the curve is "
+               "readable instead of a single dot.",
+        "good": "Same bar as x0.4: more trades AND a loss rate under 1 minus "
+                "its average price.",
+        "bad": "Same failure: extra volume bought at the top of collapses.",
+        "watch": "Where between 0.6 and 1.0 the loss rate crosses its "
+                 "break-even. That crossing point is the number worth having.",
+    },
+    {
         "name": "Volatility x0.8 -- the model BOLDER",
         "status": RUNNING, "match": "--sigma-stress 0.8", "since": "2026-09-18",
         "select": {"sigma_stress": lambda v, _w=0.8: v is not None and abs(float(v) - _w) < 1e-9},
@@ -1385,7 +1425,12 @@ def arm_series(path):
                     ts = calendar.timegm(_t.strptime(t[:19], "%Y-%m-%dT%H:%M:%S"))
                 except (TypeError, ValueError):
                     continue
-                pts.append((ts, v))
+                # THE TICKER IS PART OF THE POINT, not decoration. Without it
+                # `whatif` cannot tell "this arm earns more per contract" from
+                # "this arm was never in the close that lost the money", and on
+                # 2026-09-19 it reported an arm at +201% that was $58 BEHIND
+                # live on every market the two actually shared.
+                pts.append((ts, v, r.get("ticker")))
     pts.sort()
     return pts, contracts
 
@@ -1400,22 +1445,47 @@ def whatif(arm_pts, arm_contracts, live_pts, live_contracts):
     live bot's actual contract volume: what it earned PER CONTRACT, applied to
     the contracts we really traded.
 
+    THE POPULATION PROBLEM, and why the scaled number is not the whole story.
+    Scaling assumes the arm WOULD have traded what we traded. It would not --
+    every arm has its own gates and refuses closes live took. So the scaled
+    comparison silently rewards an arm for a loss it never had the chance to
+    take. `h2h` is the correction: the two sides' money on the markets BOTH
+    actually settled, unscaled, which is the only place the DECISION is the
+    only thing that differs. Read `h2h['diff']` before `diff`.
+
+    Points are (t, pnl) or (t, pnl, ticker); `h2h` is None without tickers.
+
     Returns {'live': [(t, cum)], 'arm': [(t, cum)], 'live_net', 'arm_net',
-    'diff', 'from'} or None when there is not enough to compare.
+    'diff', 'h2h', 'from'} or None when there is not enough to compare.
     """
     if not arm_pts or not live_pts or arm_contracts <= 0 or live_contracts <= 0:
         return None
+
+    # Points may be (t, pnl) or (t, pnl, ticker). Normalise to three, because
+    # the head-to-head below needs the ticker and every older caller and
+    # fixture passes two.
+    def _norm(pts):
+        out = []
+        for p in pts:
+            if len(p) >= 3:
+                out.append((p[0], p[1], p[2]))
+            else:
+                out.append((p[0], p[1], None))
+        return out
+
+    arm_pts = _norm(arm_pts)
+    live_pts = _norm(live_pts)
     t0 = arm_pts[0][0]
-    live = [(t, v) for t, v in live_pts if t >= t0]
+    live = [(t, v, tk) for t, v, tk in live_pts if t >= t0]
     if not live:
         return None
     scale = live_contracts / arm_contracts
     cum, lcurve = 0.0, []
-    for t, v in live:
+    for t, v, _tk in live:
         cum += v
         lcurve.append((t, cum))
     cum, acurve = 0.0, []
-    for t, v in arm_pts:
+    for t, v, _tk in arm_pts:
         cum += v * scale
         acurve.append((t, cum))
     # VOLATILITY, so "better" is not judged on the total alone. A strategy that
@@ -1428,12 +1498,44 @@ def whatif(arm_pts, arm_contracts, live_pts, live_contracts):
         mu = sum(vals) / len(vals)
         return (sum((v - mu) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5
 
-    live_vals = [v for _, v in live]
-    arm_vals = [v * scale for _, v in arm_pts]
+    live_vals = [v for _, v, _tk in live]
+    arm_vals = [v * scale for _, v, _tk in arm_pts]
     lsd, asd = _sd(live_vals), _sd(arm_vals)
     lworst = min(live_vals) if live_vals else 0.0
     aworst = min(arm_vals) if arm_vals else 0.0
-    return {"live": lcurve, "arm": acurve,
+
+    # HEAD TO HEAD -- the only honest comparison, and the one this function
+    # did not make until 2026-09-19. The scaled curves above answer "what if
+    # this arm had traded our whole volume", which quietly assumes the arm
+    # WOULD have traded the markets we traded. It does not: an arm's own gates
+    # refuse closes live took. So an arm that happened to sit out the one
+    # close that lost $57.98 was reported at +201% while being $58 BEHIND live
+    # on all 54 markets they actually shared.
+    #
+    # `h2h_diff` is the arm's money minus live's money on the markets BOTH
+    # settled, at the arm's own stake -- no scaling, because on a shared
+    # market the only difference left is the decision. `missed_loss` is what
+    # live lost on markets the arm was never in, which is exactly the money
+    # the scaled comparison was handing it for free.
+    a_by = {}
+    for _t_, v, tk in arm_pts:
+        if tk:
+            a_by[tk] = a_by.get(tk, 0.0) + v
+    l_by = {}
+    for _t_, v, tk in live:
+        if tk:
+            l_by[tk] = l_by.get(tk, 0.0) + v
+    both = sorted(set(a_by) & set(l_by))
+    h2h = None
+    if both:
+        a_b = sum(a_by[k] for k in both)
+        l_b = sum(l_by[k] for k in both)
+        h2h = {"n": len(both), "arm": a_b, "live": l_b, "diff": a_b - l_b,
+               "arm_only": len(set(a_by) - set(l_by)),
+               "live_only": len(set(l_by) - set(a_by)),
+               "missed_loss": sum(v for k, v in l_by.items()
+                                  if k not in a_by and v < 0)}
+    return {"live": lcurve, "arm": acurve, "h2h": h2h,
             "live_net": lcurve[-1][1], "arm_net": acurve[-1][1],
             "diff": acurve[-1][1] - lcurve[-1][1], "from": t0,
             "scale": scale,
@@ -1721,8 +1823,11 @@ def selftest():
        "...and their money is summed ($1.00 then -$0.50), so a restarted arm "
        "keeps its history with a gap instead of starting from zero")
     pts, ctr = arm_series(kept)
-    ck([v for _, v in pts] == [1.0, -0.5] and abs(ctr - 40.0) < 1e-9,
+    ck([p[1] for p in pts] == [1.0, -0.5] and abs(ctr - 40.0) < 1e-9,
        "...the series runs oldest first across the join, and contracts add")
+    ck(all(len(p) == 3 for p in pts),
+       "...and every point carries its TICKER, without which the head-to-head "
+       "below cannot tell a better arm from an absent one")
     kept2, dropped2 = join_logs([ja, jb, jc])
     ck(kept2 == [ja, jc] and dropped2 == [jb],
        "a log that starts BEFORE the previous one ended is a second process "
@@ -1792,6 +1897,34 @@ def selftest():
     ck(whatif([], 0, lp_, lc) is None and whatif(ap_, 0.0, lp_, lc) is None,
        "NULL: no arm data, or no contracts to scale by, produces NO comparison "
        "rather than a divide-by-zero or a fake zero")
+
+    # HEAD TO HEAD -- the 2026-09-19 bug, planted. The arm and live share two
+    # markets on which the arm is WORSE; live also lost a fortune on a third
+    # market the arm was never in. The scaled headline loves the arm; the
+    # head-to-head must not.
+    ap2 = [(100, 1.0, "A"), (200, 1.0, "B")]
+    lp2 = [(100, 3.0, "A"), (200, 3.0, "B"), (300, -50.0, "C")]
+    w2 = whatif(ap2, 20.0, lp2, 20.0)
+    ck(w2["diff"] > 0,
+       "the SCALED headline says the arm beat live by $46 -- and it is wrong, "
+       "because $50 of that is a market the arm never traded")
+    ck(w2["h2h"] is not None and w2["h2h"]["n"] == 2,
+       "so a head-to-head is computed over the markets BOTH settled, and here "
+       "that is two of the three")
+    ck(abs(w2["h2h"]["diff"] + 4.0) < 1e-9,
+       "...on which the arm made $2 against live's $6 -- it is $4 BEHIND, the "
+       "opposite sign to the headline. This is the check that would have "
+       "stopped an arm being reported at +201% while losing head to head")
+    ck(abs(w2["h2h"]["missed_loss"] + 50.0) < 1e-9 and w2["h2h"]["live_only"] == 1,
+       "...and the $50 loss the arm was never in is named as exactly that, so "
+       "nobody has to guess where the headline came from")
+    ck(whatif([(100, 1.0, "A")], 10.0,
+              [(100, 1.0, "Z")], 10.0)["h2h"] is None,
+       "NULL: no SHARED market gives no head-to-head rather than a zero that "
+       "reads as 'the two performed identically'")
+    ck(whatif(ap_, ac, lp_, lc)["h2h"] is None,
+       "NULL: two-element points carry no ticker, so the head-to-head is "
+       "absent rather than matching every market to every other")
     print("pinlab selftest: OK (%d entries: %s)"
           % (len(EXPERIMENTS), ", ".join("%s %d" % (k, v) for k, v in sorted(counts().items()))))
 

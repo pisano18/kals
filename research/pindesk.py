@@ -1853,13 +1853,23 @@ def run_gui():
             return
         b0 = (lab_cache.get("b0") or {}).get(log)
         base = b0 if b0 else 0.0
+        # The chart header LEADS with the head-to-head when there is one. The
+        # scaled percentage beside it is the "what if it had our volume"
+        # number, and the two can disagree in sign -- on 2026-09-19 one arm
+        # read +201% scaled while being $58 behind on every shared market.
+        _h = w.get("h2h")
+        _lead = (("head to head %s on %d shared"
+                  % (money(_h["diff"]), _h["n"])) if _h
+                 else "no shared market yet")
         lab_pickhead.configure(
-            text="%s   %s" % (
-                ("%+.1f%% on the money" % w["pct"]) if w.get("pct") is not None
+            text="%s   |   %s scaled   %s" % (
+                _lead,
+                ("%+.1f%%" % w["pct"]) if w.get("pct") is not None
                 else money(w["diff"]),
                 ("%+.0f%% swing" % w["sd_pct"]) if w.get("sd_pct") is not None
                 else "swing not comparable"),
-            fg=C["gain"] if w["diff"] > 0 else C["loss"])
+            fg=C["gain"] if (_h["diff"] if _h else w["diff"]) > 0
+            else C["loss"])
         lv = [(t, base + v) for t, v in w["live"]]
         av = [(t, base + v) for t, v in w["arm"]]
         W = max(lab_chart.winfo_width(), 300)
@@ -1940,7 +1950,14 @@ def run_gui():
             prog = {}
         wf, names, b0s = {}, {}, {}
         bymatch = {e.get("match"): e.get("name") for e in pinlab.EXPERIMENTS}
-        live_pts = sorted((s["t"], s["pnl"]) for s in ledger.settled if s.get("t"))
+        # (t, pnl, TICKER). The ticker is what lets pinlab.whatif compare the
+        # markets the arm and live BOTH traded; without it the chart credits an
+        # arm for every close it was never in.
+        # (t, pnl, TICKER) -- the ledger spells it `tk`, pinrun's logs spell it
+        # `ticker`, and `s.get("ticker")` here quietly handed every point a
+        # None and turned the head-to-head off for every arm.
+        live_pts = sorted((s["t"], s["pnl"], s.get("tk"))
+                          for s in ledger.settled if s.get("t"))
         for match, info in prog.items():
             # EVERY log the arm owns, oldest first. `logs` is present when the
             # arm was restarted; `log` alone is the single-log case. Feeding
@@ -2023,6 +2040,35 @@ def run_gui():
                         % (money(w["arm_net"]), money(w["live_net"]),
                            money(w["arm_worst"]), money(w["live_worst"]),
                            w["n_arm"], w["n_live"]), "prog")
+                    # HEAD TO HEAD, and it goes UNDER the scaled line on
+                    # purpose: when the two disagree, this one is right. The
+                    # line above assumes the arm would have traded our
+                    # markets; this one only counts the markets it DID.
+                    h = w.get("h2h")
+                    if h:
+                        lab_body.insert(
+                            "end",
+                            "   HEAD TO HEAD on the %d markets we BOTH traded:  "
+                            "it made %s, we made %s  ->  %s\n"
+                            % (h["n"], money(h["arm"]), money(h["live"]),
+                               ("%s BETTER" % money(h["diff"])) if h["diff"] > 0
+                               else ("%s WORSE" % money(abs(h["diff"])))),
+                            "whatif_good" if h["diff"] > 0 else "whatif_bad")
+                        if h["missed_loss"] < 0 or h["live_only"]:
+                            lab_body.insert(
+                                "end",
+                                "      It sat out %d of our markets (we lost %s on "
+                                "those) and took %d we never did. The line above "
+                                "hands it that money for free; this one does not.\n"
+                                % (h["live_only"], money(h["missed_loss"]),
+                                   h["arm_only"]), "prog")
+                    else:
+                        lab_body.insert(
+                            "end",
+                            "      No market settled on BOTH sides yet, so the "
+                            "line above is the only comparison there is -- and "
+                            "it assumes this arm would have traded what we "
+                            "traded. Treat it as a guess.\n", "prog")
             elif e["status"] == pinlab.RUNNING:
                 lab_body.insert("end", "   SO FAR: %s\n"
                                 % ("running, nothing settled yet" if p.get("running")
@@ -2922,7 +2968,19 @@ def selftest():
        "when the LAST forced refresh in flight finishes")
     ck('asof.configure(text="data as of "' in _src,
        "an `as of` clock says when what is on screen was last read")
-    _apply = _src[_src.index("        def apply():"):_src.index("        threading.Thread(target=worker")]
+    # SEARCH FOR THE END **AFTER** THE START. `"        threading.Thread("`
+    # is a substring of a MORE deeply indented line 1300 lines earlier, so an
+    # unanchored index() found that one, produced an empty slice, and this
+    # whole self-test raised ValueError from the day it was written -- which
+    # means not one of the Refresh-button checks above had ever run. Found
+    # 2026-09-19 while adding the head-to-head, by a test that failed for a
+    # reason that had nothing to do with the change.
+    _a0 = _src.index("        def apply():")
+    _apply = _src[_a0:_src.index("        threading.Thread(target=worker", _a0)]
+    ck(len(_apply) > 200 and "def apply" in _apply,
+       "the slice this test reads actually contains apply() -- an empty slice "
+       "made every check below it raise instead of fail, and a raising "
+       "self-test is one nobody reads the output of")
     ck(_apply.index('asof.configure') > _apply.index("render(pending"),
        "...and it is stamped AFTER the render, outside its try, so a render "
        "that throws still updates the clock -- a stale clock beside fresh "
