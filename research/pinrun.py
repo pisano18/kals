@@ -4970,14 +4970,19 @@ def _selftest_body():
         # trap that has now cost this project five separate debugging runs.
         for _call71 in ("\n            report_closes(int(time.time()) - 5)\n",
                         "\n            reconcile()\n"):
+            # .strip() BOTH times. These anchors carry leading and trailing
+            # newlines, and a raw %s prints a message that spans three lines
+            # and reads like a traceback in the startup output -- which is
+            # where somebody looks when the bot will not boot.
+            _nm71 = _call71.strip()
             ck(_pre71.count(_call71) == 1,
-               "exactly one real call site for %s" % _call71.strip())
+               "exactly one real call site for %s" % _nm71)
             _c71 = _pre71.index(_call71)
             _before = _pre71[:_c71]
             ck(_before.rstrip().endswith("try:"),
                "A71: `%s` runs above the hedge pass, so it is wrapped in "
                "try: -- an exception there ends the process while a position "
-               "is open, and nothing would say why" % _call71)
+               "is open, and nothing would say why" % _nm71)
         ck(_pre71.count("except Exception as _e71:") == 2,
            "...both of them, and only them")
         # THE GUARD MUST NOT SWALLOW FOR EVER. reconcile() drives record_pnl,
