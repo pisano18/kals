@@ -4338,6 +4338,30 @@ def _selftest_body():
         finally:
             globals()["SIZE"] = _sv66
             pintake.LOSS_ABORT = _svla
+        # ---- AMENDMENT 69: a PAUSE must never stop a HEDGE ----------------
+        _lp69 = _src63x[_src63x.rindex(chr(10) + "def trade_loop("):]
+        _hedge_at = _lp69.index("# ---------------- AMENDMENT 15: the hedge pass")
+        _stop_at = _lp69.index("stop = risk_abort(state, a)")
+        ck(_hedge_at < _stop_at,
+           "A69: THE HEDGE PASS RUNS BEFORE THE RISK CHECK. The transient "
+           "pause ends in `continue`, which skips every line below it -- so "
+           "while the check sat above the hedge, a paused bot could not "
+           "protect a position it already held. Live 2026-09-19 15:59:15 the "
+           "loss bound paused one instant after a 110-contract fill and the "
+           "close went to zero unhedged: -$107.95, the largest loss this "
+           "account has taken")
+        # ...and nothing ABOVE the hedge pass may skip the iteration by any
+        # other route. A `continue` at the loop's own indentation (8 spaces)
+        # between `while True:` and the hedge pass would make the hedge
+        # unreachable exactly as the pause did. The hedge pass's own
+        # `continue`s are deeper and skip one POSITION, not the iteration.
+        _top = _lp69[_lp69.index("while time.time() < end:"):_hedge_at]
+        ck(chr(10) + "        continue" not in _top,
+           "...and nothing above the hedge pass skips the whole iteration by "
+           "another route -- that is how the pause did it")
+        ck(_lp69.index("now = time.time()") < _hedge_at,
+           "...and the clock is read before the hedge pass, which needs it")
+
         # ---- AMENDMENT 68: the bounded bet on the side that is now winning
         ck(_DEFAULT_REBUY_MAX_MULT == 1.0,
            "A68 ships at ONE times the losing position. The bet is good -- 6 "
@@ -4786,14 +4810,33 @@ def _selftest_body():
     finally:
         pintake.LOSS_ABORT = _saved_la
 
-    # --- STRUCTURAL: the abort must precede every branch in the loop ---
+    # --- STRUCTURAL: the abort must precede every branch that SPENDS -------
+    #
+    # THIS CHECK USED TO READ "risk_abort() runs before the first `continue`
+    # in the loop", and it was WRONG in a way that cost $107.95 on
+    # 2026-09-19. It forced the risk check to the very top of the loop --
+    # above the hedge pass -- and the check's own transient-pause branch ends
+    # in `continue`. So a paused bot skipped the hedge entirely and watched a
+    # 110-contract position go to zero without one attempt to escape it.
+    #
+    # THE REAL REQUIREMENT was never "before every branch". It is "before
+    # anything that puts NEW money at risk". A hedge buys the other side of a
+    # position that is already open: it lowers the worst case of the close
+    # and cannot raise total exposure, so no risk bound has any business
+    # gating it. The rule now says exactly that, and the A69 checks above
+    # assert the hedge pass sits FIRST.
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
     body = src[src.index(chr(10) + "def trade_loop("):]
     body = body[body.index("    while "):]
     i_abort = body.find("risk_abort(")
-    i_cont = body.find("continue")
-    ck(i_abort != -1 and (i_cont == -1 or i_abort < i_cont),
-       "risk_abort() runs before the first `continue` in the loop")
+    i_hedge = body.find("# ---------------- AMENDMENT 15: the hedge pass")
+    i_scan = body.find("# ---- AMENDMENT 24 (2026-09-13): SCAN ORDER")
+    ck(i_abort != -1 and i_scan != -1 and i_abort < i_scan,
+       "risk_abort() runs before the SIGNAL SCAN -- before any new money "
+       "goes out, which is the thing a risk bound exists to stop")
+    ck(i_hedge != -1 and i_hedge < i_abort,
+       "...and AFTER the hedge pass, because a hedge reduces risk and the "
+       "pause's `continue` would otherwise skip it (the $107.95 close)")
 
     # --- STRUCTURAL: no send except through pintake.take ---
     # build the needles at runtime so this test does not match itself
@@ -7711,29 +7754,39 @@ def trade_loop(a, rec, book, idx, series_index):
         _asz = autosize_tick(state, a, open_pos, rec=rec)
         if _asz:
             print(f"  --- AUTO-SIZE: {_asz}")
-        stop = risk_abort(state, a)
-        if stop and halt_is_transient(stop):
-            # AMENDMENT 14: wait it out. reconcile() runs at the top of every
-            # iteration, so the open positions this is waiting on are released
-            # here and the condition clears on its own. state["halted"] is NOT
-            # set, because setting it would make risk_abort return "already
-            # halted" for ever -- a terminal answer to a temporary question.
-            if stop != state.get("paused_on"):
-                state["paused_on"] = stop
-                state["pauses"] = state.get("pauses", 0) + 1
-                rec("pause", why=stop, pauses=state["pauses"])
-                print(f"  --- PAUSE (will resume): {stop}")
-            time.sleep(1.0)
-            continue
-        if state.get("paused_on"):
-            rec("resume", after=state.pop("paused_on"))
-            print("  --- RESUMED")
-        if stop:
-            state["halted"] = True
-            rec("halt", why=stop)
-            print(f"  *** HALT: {stop}")
-            break
-
+        # AMENDMENT 69 (2026-09-19): THE PAUSE MUST NOT STOP A HEDGE.
+        #
+        # `now`/`now_s` and the risk check USED TO SIT HERE, above the hedge
+        # pass, and the transient-pause branch ends in `continue` -- which
+        # skips every line below it, the hedge pass included. So a paused bot
+        # could not protect the position it already held.
+        #
+        # LIVE, KXBTC15M-26SEP191600-00, 2026-09-19 15:59:15 ET, -$107.95, the
+        # largest single loss this account has taken. 110 contracts at 98c
+        # filled at 15:59:15; the NEXT line in the log is
+        #
+        #   pause: "loss bound: realised $+6.74 with $107.80 still open; one
+        #           more contract could take this run past $-200.00"
+        #
+        # and then nothing at all for forty-five seconds until it settled at
+        # zero. No alarm, no hedge, no refusal -- the hedge pass never ran.
+        #
+        # AND `--loss-cap 200` IS WHAT MADE IT ROUTINE. The bound is
+        # `realised - open - one more bet < abort`. At the derived abort of
+        # -$440 that is -$208.86 against -$440 and never trips; at the $200
+        # cap the same close trips it instantly. So the cap I added turned a
+        # rare pause into one that fires whenever we hold a full position --
+        # exactly when a hedge matters most.
+        #
+        # A HEDGE CAN NEVER BREACH A LOSS BOUND. It BUYS THE OTHER SIDE of a
+        # position already open: it reduces the worst case of this close and
+        # cannot increase total exposure. There is no version of "we are too
+        # far down to be allowed to reduce risk" that makes sense, and the
+        # operator has said it in plainer words than that: "NOTHING SHOULD BE
+        # BLOCKING A HEDGE."
+        #
+        # So the clock and the hedge pass run FIRST, and the risk check moved
+        # below them. A pause now stops new bets, which is all it ever meant.
         now = time.time()
         now_s = int(now)
 
@@ -7959,6 +8012,35 @@ def trade_loop(a, rec, book, idx, series_index):
                         # NEVER in open_pos[_hid] -- see the note above this loop.
                         hedge_remain[_hid] = float(_hn) - _hfilled
         # ---------------- end AMENDMENT 15 ----------------
+
+        # A69: THE RISK CHECK, NOW BELOW THE HEDGE PASS. It used to sit above
+        # it, and its transient-pause branch ends in `continue` -- so a paused
+        # bot skipped the hedge and sat watching a position go to zero. See
+        # the A69 block at the top of the loop for the $107.95 that cost.
+        # A pause stops NEW bets; it has never been able to stop a hedge from
+        # reducing risk, and now it cannot.
+        stop = risk_abort(state, a)
+        if stop and halt_is_transient(stop):
+            # AMENDMENT 14: wait it out. reconcile() runs at the top of every
+            # iteration, so the open positions this is waiting on are released
+            # here and the condition clears on its own. state["halted"] is NOT
+            # set, because setting it would make risk_abort return "already
+            # halted" for ever -- a terminal answer to a temporary question.
+            if stop != state.get("paused_on"):
+                state["paused_on"] = stop
+                state["pauses"] = state.get("pauses", 0) + 1
+                rec("pause", why=stop, pauses=state["pauses"])
+                print(f"  --- PAUSE (will resume): {stop}")
+            time.sleep(1.0)
+            continue
+        if state.get("paused_on"):
+            rec("resume", after=state.pop("paused_on"))
+            print("  --- RESUMED")
+        if stop:
+            state["halted"] = True
+            rec("halt", why=stop)
+            print(f"  *** HALT: {stop}")
+            break
 
         if now - uni_at > 20:
             uni_at = now
