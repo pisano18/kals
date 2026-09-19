@@ -1,3 +1,57 @@
+# 2026-09-19 ~09:1xZ -- EVERY REAL-MONEY LOSS WE HAVE EVER TAKEN
+
+Live fills only (never the tape -- rule 5). 572 settled markets with a real
+fill, **17 losses (3.0%)**, net **+$570.58**.
+
+## Why a 3% loss rate at a 97c price is still profitable
+
+The naive break-even (`1 - price` = 3.0%) assumes a TOTAL loss. Ours are not:
+
+| | |
+|---|---|
+| winners | **+3.84c** per contract on 22,658 contracts |
+| losers | **-47.3c** per contract on 631 contracts |
+| a total loss would be | -95.7c |
+| loss rate BY CONTRACT | **2.71%**, not 3.0% by market |
+
+**Our losses cost half what a total loss would.** That gap is the whole
+margin. Do not quote "3.0% against a 3.0% break-even" as break-even -- it is
+not the same denominator and it is not the same loss.
+
+## Hedging is worth 43c per contract
+
+| | markets | per contract |
+|---|---|---|
+| losses WITH a hedge attempt | 10 | **-35.1c** |
+| losses with NO hedge attempt | 7 | **-78.6c** |
+
+**Not causal** -- a slow collapse allows a hedge AND is smaller; an instant
+one allows neither. And 6 of the 7 unhedged losses pre-date 09-13, so this is
+partly before-and-after. But it is the strongest live evidence we have for
+the operator's most-repeated instruction.
+
+## The addressable half
+
+Split on `fair` at the LAST look before settlement:
+
+| | markets | money | per contract |
+|---|---|---|---|
+| model NEVER saw it (fair still >50%) | 6 | -$127.72 | -55.6c |
+| model SAW the flip, we could not escape | 11 | **-$170.88** | -42.6c |
+
+**64% of every dollar we have lost is in the second group** -- markets where
+our own model had already flipped and we were still holding. That is exactly
+what A62 (panic hedge, live) and A63 (`--rebuy-hedged`, built, OFF) target.
+The first group is a model problem, not an escape problem, and is what the
+sigma arms are for.
+
+Reproduce: the script is gone with the scratchpad; it reads every
+`results/pinrun-live-*.jsonl`, folds `settled` rows per ticker (a hedged
+market writes TWO -- summing, not overwriting, matters), counts contracts
+from `order.filled`, and splits on the last `signal.fair`.
+
+---
+
 # 2026-09-19 ~08:1xZ -- THE LAB WAS SCORING ARMS ON MARKETS THEY NEVER TRADED
 
 **Read this before quoting any arm's number, including one you wrote down
