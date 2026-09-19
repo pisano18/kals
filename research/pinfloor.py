@@ -32,6 +32,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -83,16 +84,45 @@ def et_day_of(iso):
     return pindesk.et_day(t)
 
 
-def scan(paths=None):
-    """Per Eastern day: the offer funnel, the bet size, and the money."""
-    paths = paths or sorted(glob.glob(os.path.join(
-        RESULTS, "pinrun-live-*.jsonl")))
+# EVERY LOG THAT SPENDS REAL MONEY. The desktop app has read both of these
+# since 09-17; this file read only the first, and on 2026-09-18 that made it
+# report the day as $79.44 (crypto alone, mid-day) when the account had made
+# $57.39 -- crypto $84.67 less oil's $27.28. The operator caught it: "No
+# today closed around 57 with one loss."
+#
+# A DAY TOTAL THAT NAMES ONE BOT IS NOT A DAY TOTAL. The rule this file now
+# enforces: every source is scanned, each is reported on its own line, and
+# the total is their sum. Adding a new real-money bot means adding its glob
+# here, and the self-test fails if this list stops covering what exists.
+MONEY_LOGS = (("crypto", "pinrun-live-*.jsonl"),
+              ("oil", "cmdlive-*.jsonl"))
+
+
+def scan(paths=None, sources=None):
+    """Per Eastern day: the offer funnel, the bet size, and the money.
+
+    `sources` is [(name, glob)]; the default is every real-money log. Money
+    is accumulated per source AND in total, so a caller cannot accidentally
+    print one bot's share under a heading that says "money".
+    """
+    if paths is not None:
+        sources = [("given", None)]
+    lookup = {}
+    if paths is None:
+        paths = []
+        for name, pat in (sources or MONEY_LOGS):
+            found = sorted(glob.glob(os.path.join(RESULTS, pat)))
+            for f in found:
+                lookup[f] = name
+            paths += found
+        paths = sorted(paths)
     days = collections.defaultdict(lambda: {
         "closes": 0, "looks": 0, "tradeable": 0, "fired": 0,
         "offers": 0, "at10": 0, "at39": 0, "atfloor": 0,
         "depth_floor": 0, "sizes": [], "pnl": 0.0, "fills": 0,
         "costs": [], "wins": 0, "losses": 0, "run_end": {},
-        "contracts": 0.0, "staked": 0.0})
+        "contracts": 0.0, "staked": 0.0,
+        "by_src": collections.defaultdict(float)})
     for p in paths:
         for line in io.open(p, encoding="utf-8", errors="replace"):
             if '"kind"' not in line:
@@ -134,7 +164,9 @@ def scan(paths=None):
                 # up 47, we're only up $22", and it is the reason this file
                 # cross-checks the two below rather than trusting either.
                 d["fills"] += 1
-                d["pnl"] += float(r.get("pnl_c") or 0.0) / 100.0
+                _money = float(r.get("pnl_c") or 0.0) / 100.0
+                d["pnl"] += _money
+                d["by_src"][lookup.get(p, "given")] += _money
                 _won = r.get("result") == r.get("want")
                 _n = contracts_of(r.get("pnl_c") or 0.0, r.get("cost") or 0.0,
                                   _won)
@@ -263,6 +295,37 @@ def selftest():
        and contracts_of(100.0, 0.0, False) is None,
        "NULL: a fill at 100c or 0c cannot yield a count, and returns nothing "
        "rather than a number that would silently enter the denominator")
+    # THE DAY TOTAL IS THE ACCOUNT, NOT ONE BOT'S SHARE.
+    ck(dict(MONEY_LOGS).keys() >= {"crypto", "oil"},
+       "every real-money log is scanned -- crypto AND oil. Reading one and "
+       "calling it the day is the error the operator caught on 09-18")
+    src = open(os.path.join(HERE, "pindesk.py"), encoding="utf-8",
+               errors="replace").read()
+    for _n, _pat in MONEY_LOGS:
+        ck(_pat in src,
+           "...and the desktop app reads the same source (%s), so the two "
+           "cannot disagree about what a day made" % _pat)
+    td2 = tempfile.mkdtemp(prefix="pinfloor-")
+    a1 = os.path.join(td2, "pinrun-live-20260918T120000Z.jsonl")
+    b1 = os.path.join(td2, "cmdlive-20260918T120000Z.jsonl")
+    for path, pnl in ((a1, 8467.0), (b1, -2728.0)):
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"kind": "settled", "t": "2026-09-18T18:00:00Z",
+                                 "ticker": "T", "want": "yes", "result": "yes",
+                                 "cost": 0.97, "pnl_c": pnl}) + chr(10))
+    _saved, globals()["RESULTS"] = RESULTS, td2
+    try:
+        got2 = scan()["2026-09-18"]
+    finally:
+        globals()["RESULTS"] = _saved
+    ck(abs(got2["pnl"] - 57.39) < 1e-9,
+       "crypto +$84.67 and oil -$27.28 give an ACCOUNT day of $57.39 -- the "
+       "number the operator read off his balance, not the $84.67 this file "
+       "used to print")
+    ck(abs(got2["by_src"]["crypto"] - 84.67) < 1e-9
+       and abs(got2["by_src"]["oil"] + 27.28) < 1e-9,
+       "...and each bot's share is kept separately, so the oil that ate the "
+       "day is visible rather than buried in a net")
     print("pinfloor selftest: OK")
 
 
@@ -305,9 +368,10 @@ def main():
     print()
     print("  THE NUMBER THAT MATTERS -- what each dollar we put at risk earned")
     print()
-    print("  %-11s %6s %6s %7s %9s %11s %9s %8s"
-          % ("ET day", "fills", "bet", "avg paid", "contracts", "staked",
-             "money", "return"))
+    srcs = [n for n, _ in MONEY_LOGS]
+    print("  %-11s %6s %6s %7s %11s %9s %9s %9s"
+          % ("ET day", "fills", "bet", "avg paid", "staked",
+             " ".join("%8s" % n for n in srcs).strip(), "ACCOUNT", "return"))
     for day in sorted(days):
         d = days[day]
         if not d["fills"]:
@@ -315,12 +379,19 @@ def main():
         cost = _med(d["costs"])
         ret = (100.0 * d["pnl"] / d["staked"]) if d["staked"] > 0 else None
         size = _med(d["sizes"])
-        print("  %-11s %6d %6s %7s %9.0f %11s %9s %8s"
+        print("  %-11s %6d %6s %7s %11s %9s %9s %9s"
               % (day, d["fills"], ("%.0f" % size) if size else "-",
                  ("%.1fc" % (cost * 100)) if cost else "-",
-                 d["contracts"], "$%.0f" % d["staked"],
-                 "$%.2f" % d["pnl"],
+                 "$%.0f" % d["staked"],
+                 " ".join("%8s" % ("$%+.2f" % d["by_src"].get(n, 0.0))
+                          for n in srcs).strip(),
+                 "$%+.2f" % d["pnl"],
                  ("%.2f%%" % ret) if ret is not None else "-"))
+    print()
+    print("  ACCOUNT is the sum of every real-money bot, which is what the "
+          "bank moves by.")
+    print("  Quoting one column as 'the day' is how 2026-09-18 was reported "
+          "as $79.44 when it was $57.39.")
     return 0
 
 
