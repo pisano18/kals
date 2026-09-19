@@ -633,8 +633,19 @@ EXPERIMENTS = [
     {
         "name": "v-bands baseline, in paper (the control for the band arms)",
         "status": RUNNING, "match": "arm-b-control", "since": "2026-09-18",
-        "select": {"skip_bands": lambda v: v == [], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
-                   "early_min_price": 0.9, "early_max_edge": 3.0},
+        # EVERY FIELD THAT SEPARATES IT, because this arm is the BASE that
+        # six others are layered on. With only the bands named it matched the
+        # 60-second arms, the sigma arms and the edge-cap arm as well; they
+        # all run at once, so join_logs saw seven overlapping logs, dropped
+        # six and reported the control with ZERO settled markets. Fourth time
+        # this trap has been sprung.
+        "select": {"skip_bands": lambda v: v == [],
+                   "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
+                   "early_min_price": 0.9, "early_max_edge": 3.0,
+                   "early_tau_max": 45,                 # not the 60 s arms
+                   "sigma_stress": lambda v: v is None or abs(float(v) - 1.0) < 1e-9,
+                   "late_mult": lambda v: v is None or abs(float(v) - 1.0) < 1e-9,
+                   "flip_mult": lambda v: v is None or abs(float(v) - 1.0) < 1e-9},
         "what": "Exactly the live flag set after v-bands: hedge only when the "
                 "market agrees (0.60), 1.5x at 90-94c that switches itself "
                 "off after one boosted loss, the 45 s leg at 90c+ with the 3c "
