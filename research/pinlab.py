@@ -992,6 +992,58 @@ EXPERIMENTS = [
                  "faster than the volume does.",
     },
     {
+        "name": "Top up the close budget inside the last 10 s (A59)",
+        "status": RUNNING, "match": "arm-lateextra", "since": "2026-09-19",
+        "select": {"late_extra": lambda v: v is not None and float(v) > 0,
+                   "early_max_edge": 3.0},
+        "what": "Everything the live bot does, plus one thing: inside the "
+                "last 10 seconds a close may spend ONE EXTRA BET beyond its "
+                "budget, on a coin it already holds or a new one.",
+        "why": "Operator: 'Can't the boost take a purchase from 11-45 "
+               "seconds and then buy extra once it's at 10? I thought that "
+               "was the strategy.' It was, and it has NEVER happened -- of "
+               "547 markets we have filled, ZERO were bought outside 10 s "
+               "and again inside it. Our own fills say that window is where "
+               "the money is: 94.8c median against 97.8c at 31-45 s, 5.4c a "
+               "contract against 2.2c, and no losing close in 68 fills. And "
+               "`close_budget` refused 126 markets inside it -- we spend the "
+               "budget early at the dear price and have nothing left when "
+               "the cheap one arrives.",
+        "good": "It makes the second buy often, at a materially better price "
+                "than the first, and the loss rate does not move.",
+        "bad": "The late fills it adds are no cheaper than the early ones -- "
+               "which would mean the 94.8c median is SELECTION (the markets "
+               "still cheap at 6 s are the ones about to go wrong) rather "
+               "than opportunity. That is the real risk and only this arm "
+               "can separate them.",
+        "watch": "For every market it buys twice: the two prices and the two "
+                 "seconds, and how the close settled. If the second is not "
+                 "cheaper than the first, the idea is dead.",
+    },
+    {
+        "name": "Late top-up AND the 3c early cap off (A59 + A50 off)",
+        "status": RUNNING, "match": "arm-nocap-late", "since": "2026-09-19",
+        "select": {"late_extra": lambda v: v is not None and float(v) > 0,
+                   "early_max_edge": UNSET},
+        "what": "The late top-up, plus A50's 3c edge cap removed from the "
+                "31-45 s leg.",
+        "why": "THE CAP IS A PRICE FLOOR IN DISGUISE. With our model at ~100%, "
+               "edge is (1 - price) - fee, so a 3c cap forbids ANY early buy "
+               "under about 96.5c -- the 90c floor never even binds. That is "
+               "why every recent fill is 97-98c. It has refused 18 live "
+               "trades, the cheapest at 90.0c with 8.88c of edge. This arm "
+               "asks what those were worth.",
+        "good": "Cheap early fills that settle like the dear ones. Then the "
+                "cap is costing us the whole cheap end of the book.",
+        "bad": "Losses at the cheap end. The cap exists because wide edges "
+               "at 31-45 s lost 3 of 11 ON THE TAPE, and the one live loss "
+               "in the uncapped arm was exactly this shape: 93c, 6.43c edge, "
+               "-$18.69. Rule 5 says the tape cannot price our losses, which "
+               "is why this is an arm and not a deploy.",
+        "watch": "Early fills under 96c: count, price, and settled result, "
+                 "against the capped arm on the same markets.",
+    },
+    {
         "name": "Crypto.com prediction markets (FIX API)",
         "status": IDEA, "since": "2026-09-17", "match": None,
         "what": "A second venue. They run 5- and 15-minute crypto markets on more "
