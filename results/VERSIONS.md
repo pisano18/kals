@@ -1,3 +1,60 @@
+# v-taper -- 2026-09-19 ~13:2xZ -- LIVE: buy LESS as the price gets worse (A67), and a bounded bet on the side that is now winning (A68)
+
+Both came out of `KXBNB15M-26SEP191230-30`, which cost **$61.75**.
+
+## A67 `--no-taper` (the taper is ON)
+
+The bot signalled that close at **91.5c** and the 82.8 contracts it got cost
+an average of **97.27c**. A35 sized the order from `buyable()` -- every
+contract under the 98c sweep limit -- and 11,937 were. Only **23** of them
+were at 91.5c.
+
+A35's own comment says why it thought that was safe: *"every extra contract
+is already gate-approved."* True and not sufficient. 91.5c clears the gate by
+7.8c; 98c clears it by 1.7c. Buying the same quantity of each treats a fifth
+of the edge as the whole of it.
+
+Now each price level is weighted by how much of the touch's edge survives
+there -- full size at the best price, `size x (edge here / edge at touch)`
+above it, nothing once the edge is gone. **On that exact book it asks for 47
+instead of 114.**
+
+`--taper-floor FRAC` additionally refuses any level worth less than FRAC of
+the touch's edge (default 0.0 = take them, in proportion).
+
+## A68 `--rebuy-mult` (ships at 1.0)
+
+Operator: *"at 15% confidence if our confidence is accurate shouldn't we have
+known it's 100% flipping ... even extra than the hedge."*
+
+**Measured, live fills only: every market whose belief fell under the 40%
+panic line went on to lose. 6 of 6.** The model is CONSERVATIVE down there --
+at 0-5% belief it implies ~98% should lose and 100% did. Above 60% belief 0
+of 4 lost, so a mild wobble does recover and this must not fire on one.
+
+So while belief is at or under the panic line, more of the side we hedged
+INTO is an ordinary bet at 85c-or-better odds, **capped at 1.0x the contracts
+held on the losing side**.
+
+**THE TAIL, STATED IN ADVANCE.** On the BNB close: +$19 expected, and **-$51
+worse than the hedge alone** in the ~15% case where it comes back. That is
+the trade. A63 was refused for having no cap at all (it would have bought 138
+more and taken the worst case from +$3 to -$134); the bet was never the
+problem, the size was. n = 6 closes, so the multiple ships at 1.0 and the
+caution goes into the size rather than into refusing.
+
+## Evidence and revert
+
+Startup path run with the launcher's exact flag list, paper, `--minutes
+0.35`: SELF-TEST PASSED, clean stderr. New checks assert the taper against
+the real BNB book and the cap against the real contract counts.
+
+- taper off: add `"--no-taper"` to `restart_bot.ps1`.
+- the extra bet off: add `"--rebuy-mult", "0"`.
+- both are code-default ON, so reverting the commit reverts them.
+
+---
+
 # v-mirror -- 2026-09-19 12:26:03Z -- LIVE: the bot publishes its contract size so paper arms trade proportionally
 
 SHA: see `git log --oneline -1` at deploy (A66 commit "A66: paper arms trade

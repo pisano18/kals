@@ -479,6 +479,36 @@ class LiveBook:
                     tot += float(sz)
             return tot
 
+    def rungs(self, tk, want, limit):
+        """[(price, contracts)] we could BUY of `want`, CHEAPEST FIRST.
+
+        AMENDMENT 67. `buyable()` above answers "how many contracts exist at
+        any price up to the limit" and that single number is what sized the
+        order. It cannot distinguish 100 contracts at the touch from 100
+        contracts one tick under the ceiling, and those are not the same
+        trade: on 2026-09-19 the 12:30 BNB close showed 23 contracts at 91.5c
+        (7.8c of edge) and the rest up to a 98c limit (1.7c of edge), the
+        order was sized to all of it, and the 82.8 contracts we got cost an
+        average of 97.27c -- a price the 91.5c signal never justified.
+
+        Same side convention as buyable(): buying `want` means hitting the
+        OTHER side's bids, and a YES ask at p IS a NO bid at 1-p.
+        """
+        other = "no" if want == "yes" else "yes"
+        with self.lock:
+            b = self.books.get(tk)
+            if b is None:
+                return []
+            out = []
+            for bid, sz in b[other].items():
+                if bid is None or sz is None:
+                    continue
+                ask = 1.0 - float(bid)
+                if ask <= float(limit) + 1e-9 and float(sz) > 0:
+                    out.append((ask, float(sz)))
+        out.sort(key=lambda r: r[0])
+        return out
+
     def median_latency_ms(self):
         with self.lock:
             return statistics.median(self.latency_ms) if self.latency_ms else None

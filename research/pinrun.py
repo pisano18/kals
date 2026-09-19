@@ -2682,6 +2682,74 @@ DEPTH_LADDER = False
 _DEFAULT_DEPTH_LADDER = False
 
 
+# AMENDMENT 67 (2026-09-19): BUY LESS AS THE PRICE GETS WORSE.
+#
+# The operator, after the 12:30 BNB close cost $61.75: "When we don't get as
+# many fills as we expect it's your job to taper to buy the right amount at
+# the other prices."
+#
+# WHAT A35 GOT WRONG, in its own words: "EVERY EXTRA CONTRACT IS ALREADY
+# GATE-APPROVED ... anything filled at or under [the sweep limit] is a trade
+# we had already decided to make." True and not sufficient. A contract at
+# 91.5c clears the gate by 7.8c; one at 98c clears it by 1.7c. Buying the
+# same quantity of each treats a fifth of the edge as if it were the whole of
+# it -- and because the deep levels hold far more than the touch, the AVERAGE
+# fill lands near the ceiling rather than near the signal.
+#
+# LIVE, KXBNB15M-26SEP191230-30: touch 23 contracts at 91.5c, ladder 11,937
+# up to a 98c limit, order sized to 114 (then 171 after the band boost),
+# filled 82.8 at an average of 97.27c. The trade was justified by a 7.8c edge
+# that existed for 23 contracts. At 97.27c a contract can win 2.7c and lose
+# 97.27c, and that is the bet we actually placed 60 times over.
+#
+# THE RULE. Weight each price level by how much of the touch's edge survives
+# there. Full size at the best price, proportionally less as the edge decays,
+# nothing once it is gone. On the BNB book that asks for ~47 instead of 114.
+TAPER = True             # --no-taper restores A35's flat sizing
+_DEFAULT_TAPER = True
+TAPER_FLOOR = 0.0        # ignore rungs whose edge has fallen below this
+                         # FRACTION of the touch's edge. 0 = take them, just
+                         # in proportion.
+
+
+def taper_take(rungs, size, edge_of, floor=None):
+    """Contracts to ask for, weighted by the edge at each price level.
+
+    `rungs` is [(price, contracts)] cheapest first (livebook.rungs).
+    `edge_of(price)` returns the edge in dollars at that price.
+
+    Returns 0.0 when the touch itself has no edge -- if the best price on the
+    book is not worth taking, no quantity of worse ones is.
+    """
+    if not rungs:
+        return 0.0
+    size = float(size)
+    if size <= 0:
+        return 0.0
+    frac = TAPER_FLOOR if floor is None else float(floor)
+    try:
+        best = float(edge_of(rungs[0][0]))
+    except (TypeError, ValueError):
+        return 0.0
+    if best <= 0:
+        return 0.0
+    total = 0.0
+    for price, depth in rungs:
+        try:
+            e = float(edge_of(price))
+        except (TypeError, ValueError):
+            break
+        if e <= 0:
+            break                       # past here the gate itself refuses
+        w = e / best                    # 1.0 at the touch, decaying upward
+        if w < frac:
+            break
+        total += min(float(depth), size * w)
+        if total >= size:
+            return size
+    return min(total, size)
+
+
 def sweep_limit(f, price, want, ceiling=None, edge_floor=None, ev_floor=None):
     """Highest price we may pay and still pass the SAME gate. Never below
     `price`, never above the ceiling, and never a price the gate refuses.
@@ -4270,6 +4338,95 @@ def _selftest_body():
         finally:
             globals()["SIZE"] = _sv66
             pintake.LOSS_ABORT = _svla
+        # ---- AMENDMENT 68: the bounded bet on the side that is now winning
+        ck(_DEFAULT_REBUY_MAX_MULT == 1.0,
+           "A68 ships at ONE times the losing position. The bet is good -- 6 "
+           "of 6 live markets under 40% belief went on to lose -- but n is 6, "
+           "so the SIZE is where the caution goes")
+        ck(rebuy_room(82.8, 0.0) == 82.8,
+           "A68: holding 82.8 on the losing side, we may buy 82.8 more of the "
+           "side we hedged into")
+        ck(rebuy_room(82.8, 82.8) == 0.0 and rebuy_room(82.8, 90.0) == 0.0,
+           "...and once that is spent the room is ZERO, never negative -- the "
+           "cap is what separates this from A63, which had none and would "
+           "have taken the BNB worst case from +$3 to -$134")
+        ck(rebuy_room(82.8, 0.0, mult=0) == 0.0,
+           "A68 NULL: --rebuy-mult 0 disables it completely")
+        ck(rebuy_room(0.0, 0.0) == 0.0 and rebuy_room(None, 0.0) == 0.0,
+           "A68 NULL: nothing held on the losing side, or an unreadable "
+           "count, buys nothing")
+        _pv68 = {"sides": {"T": "yes"}}
+        ck(_both_sides_block(_pv68, "T", "no", "no", None) is True,
+           "A68 NULL: room of None BLOCKS. Every path that has not worked out "
+           "an allowance must not be read as having one")
+        ck(_both_sides_block(_pv68, "T", "no", "no", 0.0) is True,
+           "...and room of zero blocks too")
+        ck(_both_sides_block(_pv68, "T", "no", "no", 40.0) is False,
+           "...while real room lets more of the hedged-into side through")
+        ck(_both_sides_block(_pv68, "T", "no", "yes", 40.0) is True,
+           "...and room NEVER unblocks the side the model has given up on -- "
+           "that is averaging into a loser, which is the opposite trade")
+        _lp68 = _src63x[_src63x.rindex(chr(10) + "def trade_loop("):]
+        ck("take_n = min(take_n, float(_room68))" in _lp68,
+           "A68: the cap is applied to take_n, or the close budget alone "
+           "decides the size and the bound is decorative")
+        _after = _lp68.index("take_n = min(take_n, float(_room68))")
+        for _w in ("_widen45(take_n)", "_late48(take_n)", "_band53(take_n)",
+                   "_stage46(take_n)"):
+            ck(_lp68.index(_w) < _after,
+               "...and it runs AFTER %s, so no widener can undo it" % _w)
+        ck("hedge_panic(last_belief.get(tk))" in _lp68,
+           "A68: the rebuy is allowed only while the NEWEST belief is still "
+           "collapsed -- a belief that recovers closes the door on the next "
+           "tick rather than leaving it open for the whole close")
+
+        # ---- AMENDMENT 67: buy LESS as the price gets worse ---------------
+        ck(_DEFAULT_TAPER is True,
+           "A67 ships ON. A35's flat sizing asked for every contract under "
+           "the sweep limit whatever the edge there, which is how a 91.5c "
+           "signal became an average fill of 97.27c")
+        # a flat 8c of edge everywhere: the taper must not shrink anything
+        _flat_edge = lambda _p: 0.08
+        ck(taper_take([(0.90, 50.0), (0.92, 50.0), (0.94, 50.0)], 100.0,
+                      _flat_edge) == 100.0,
+           "A67 NULL: when the edge does NOT decay, the taper asks for the "
+           "full size -- it is a response to a worsening price, not a haircut")
+        # the real BNB book, 2026-09-19 12:29:37Z
+        _bnb = [(0.915, 23.0), (0.98, 11914.1)]
+        _bnb_edge = lambda _p: {0.915: 0.078, 0.98: 0.017}.get(round(_p, 3), 0.0)
+        _flat_bnb = sum(d for _p, d in _bnb)
+        _tap = taper_take(_bnb, 110.0, _bnb_edge)
+        ck(_flat_bnb > 11000 and _tap < 50.0,
+           "A67: the real BNB book offered 11,937 contracts under the 98c "
+           "limit and A35 sized the order to all of it; the taper asks for "
+           "%.0f, because only 23 of them carried the 7.8c edge the trade "
+           "was justified by" % _tap)
+        ck(abs(_tap - (23.0 + 110.0 * (0.017 / 0.078))) < 0.5,
+           "...and the number is not a fudge: full depth at the touch, then "
+           "size x (edge here / edge at the touch) at each worse level")
+        ck(taper_take([(0.99, 5000.0)], 110.0, lambda _p: -0.01) == 0.0,
+           "A67 NULL: if the BEST price on the book has no edge, no quantity "
+           "of worse ones does either -- ask for nothing rather than for the "
+           "ladder")
+        ck(taper_take([], 110.0, _flat_edge) == 0.0
+           and taper_take([(0.9, 10.0)], 0.0, _flat_edge) == 0.0,
+           "A67 NULL: an empty book, or a zero size, asks for nothing")
+        ck(taper_take([(0.90, 10.0), (0.97, 9999.0)], 100.0, _bnb_edge
+                      if False else lambda _p: 0.08 if _p < 0.95 else 0.02)
+           <= 100.0,
+           "A67: the total can never exceed SIZE, whatever the book holds")
+        _stop = taper_take([(0.90, 10.0), (0.95, 9999.0)], 100.0,
+                           lambda _p: 0.08 if _p < 0.92 else 0.004,
+                           floor=0.5)
+        ck(abs(_stop - 10.0) < 1e-9,
+           "A67: --taper-floor STOPS at the first level worth less than the "
+           "given fraction of the touch's edge, so a thin good price is not "
+           "used to justify a deep bad one")
+        _lp67 = _src63x[_src63x.rindex(chr(10) + "def taper_take("):]
+        ck("min(float(depth), size * w)" in _lp67[:1400],
+           "...and each level is capped by its OWN depth, or the taper would "
+           "ask for contracts that are not there")
+
         # --arm-name: a label, and it must STAY a label. The parser is built
         # inside main(), so this is asserted against the source.
         _mn_an = _src63x[_src63x.rindex(chr(10) + "def main("):]
@@ -4301,7 +4458,10 @@ def _selftest_body():
         ck("hedged_side[_htk] = _opp" in _lp63 and "hedged_side = {}" in _lp63,
            "the loop remembers which side each hedge went INTO -- without it "
            "the rule cannot tell the side we escaped to from the one we fled")
-        ck("hedged_side.get(tk))" in _lp63,
+        # NOT "hedged_side.get(tk))" -- A68 added a fifth argument after it,
+        # so the closing paren is no longer adjacent. The claim is that the
+        # gate is PASSED the value, not how the call is punctuated.
+        ck("hedged_side.get(tk)" in _lp63,
            "...and the gate is asked with it")
 
         ck(_both_sides_block(_pv, "T", "no"),
@@ -4325,9 +4485,9 @@ def _selftest_body():
         ck(_call in _lp8 and _lp8.index("want = price = size = None") < _lp8.index(_call),
            "and the trade loop calls it AFTER `want` is assigned -- the entire "
            "bug was that this test ran 143 lines too early")
-        ck("hedged_side.get(tk))" in _lp8[_lp8.index(_call):_lp8.index(_call) + 120],
-           "...and it is passed the side we hedged INTO (A63), or more of the "
-           "side the model now prefers stays refused")
+        ck("hedged_side.get(tk)" in _lp8[_lp8.index(_call):_lp8.index(_call) + 140],
+           "...and it is passed the side we hedged INTO (A63) -- and A68's "
+           "room -- or more of the side the model now prefers stays refused")
         ck(hedge_price_ok(0.60, threshold=0.50)
            and not hedge_price_ok(0.40, threshold=0.50),
            "A47: we buy the opposite side at 60c, so OUR side is at 40c and the "
@@ -5763,10 +5923,21 @@ def _selftest_body():
         ck(_tl45.index("take_n, _leg46 = staged_take(") < _tl45.index('rec("signal", live=live, **sig)'),
            "A46: the leg is sized BEFORE the signal record, so the record shows "
            "what will be asked for and which leg it is")
+        # ANCHORED ON THE SEND, not on the line that happened to follow
+        # _stage46. A68 inserted its cap between the two and this read as a
+        # missing substring rather than as an ordering failure -- the check
+        # should describe the ORDER it cares about, not the file's layout.
+        # ...within the LIVE block. Both the paper and the live paths contain
+        # every one of these strings, so an unqualified index() compares a
+        # line in one path against a line in the other.
+        _lv45 = _tl45[_tl45.index("# ---- AMENDMENT 45 / 46, live path"):]
+        _send45 = _lv45.index("out = pintake.take(CREDS[")
         ck(_tl45.index("take_n = min(float(SIZE), _deep, max(0.0, _room))")
-           < _tl45.index("take_n = _stage46(take_n)\n                    _t0 = time.time()"),
-           "A46: the live path re-applies the leg cap AFTER A35/A45 widening, "
-           "so an early leg can never be widened back to a full bet")
+           < _tl45.index("# ---- AMENDMENT 45 / 46, live path")
+           and _lv45.index("take_n = _stage46(take_n)") < _send45,
+           "A46: the live path re-applies the leg cap AFTER A35/A45 widening "
+           "and BEFORE the order is sent, so an early leg can never be "
+           "widened back to a full bet")
         ck('"early_tk": ({tk: _n} if _leg46 == "early" else {})' in _tl45
            and "d46[tk] = d46.get(tk, 0.0) + _n" in _tl45,
            "A46: fills book what the market holds from an early leg")
@@ -6742,6 +6913,59 @@ def one_coin_cap(size, bank, hwm, mult=None):
 REBUY_HEDGED = False     # --rebuy-hedged; shipped OFF, and see above
 _DEFAULT_REBUY_HEDGED = False
 
+# AMENDMENT 68 (2026-09-19): AT A COLLAPSED BELIEF THE OTHER SIDE IS A BET,
+# NOT ONLY INSURANCE -- BUT A BOUNDED ONE.
+#
+# The operator: "at 15% confidence if our confidence is accurate shouldn't we
+# have known it's 100% flipping and I've been saying before but even extra
+# than the hedge."
+#
+# HE IS RIGHT, AND IT IS MEASURED. Every live market whose belief fell below
+# the 40% panic line went on to lose: 6 of 6. The model is CONSERVATIVE down
+# there -- at 0-5% belief it implies ~98% should lose and 100% did; at 15-30%
+# it implies ~78% and 100% did. Above 60% belief 0 of 4 lost, so a mild wobble
+# really does recover and this must not fire on one.
+#
+# So at belief b the other side is worth (1 - b), and any price under that is
+# a positive-expectation bet. On the 12:30 BNB close, at 15.45% belief:
+#
+#     44c ask -> +41c a contract      62c -> +23c      77c -> +8c
+#
+# WHY A63 WAS STILL REFUSED AND THIS IS NOT. A63 had no cap: with the close
+# budget free it would have bought 138 more contracts and taken the worst
+# case from +$3 to -$134. The bet is good; the SIZE was the problem. Here the
+# extra is capped at REBUY_MAX_MULT x the contracts we hold on the losing
+# side, so the tail is bounded and quotable BEFORE it happens:
+#
+#     hold 82.8 YES @0.9727, hedge 82.8 NO @~0.62, then 82.8 MORE NO @0.62
+#       NO lands (measured 6 of 6):  +$19 expected
+#       YES lands:                   -$51 more than the hedge alone
+#
+# A 15% tail of -$51 against +$19 expected. That is the trade, stated in
+# advance rather than discovered afterwards. n = 6 closes, which is thin, so
+# the multiple ships at 1.0 and not higher.
+REBUY_MAX_MULT = 1.0     # --rebuy-mult; extra contracts as a multiple of the
+                         # losing side's position. 0 disables A68 entirely.
+_DEFAULT_REBUY_MAX_MULT = 1.0
+
+
+def rebuy_room(held_losing, already_extra, mult=None):
+    """Extra contracts of the HEDGED-INTO side we may still buy.
+
+    `held_losing` is what we hold on the side the model has given up on;
+    `already_extra` is what this amendment has already bought beyond the
+    hedge. Never negative, and zero whenever the multiple is off.
+    """
+    m = REBUY_MAX_MULT if mult is None else mult
+    try:
+        m = float(m)
+        cap = m * float(held_losing)
+    except (TypeError, ValueError):
+        return 0.0
+    if m <= 0 or cap <= 0:
+        return 0.0
+    return max(0.0, cap - max(0.0, float(already_extra or 0.0)))
+
 
 def worst_close_both_sides(y_n, y_px, n_n, n_px):
     """Dollars at risk on a close where we hold BOTH sides.
@@ -6754,7 +6978,7 @@ def worst_close_both_sides(y_n, y_px, n_n, n_px):
                                           + float(n_n) * float(n_px))
 
 
-def _both_sides_block(prev, ticker, want, hedged_side=None):
+def _both_sides_block(prev, ticker, want, hedged_side=None, room=None):
     """True when we already hold the OPPOSITE side of this market.
 
     AMENDMENT 8. Holding both sides of one binary cannot win: the two legs pay
@@ -6774,6 +6998,13 @@ def _both_sides_block(prev, ticker, want, hedged_side=None):
     if held is None or held == want:
         return False
     if REBUY_HEDGED and hedged_side is not None and want == hedged_side:
+        return False
+    # A68: more of the side we HEDGED INTO, while the model has given up on
+    # the other one, and only while there is room under the cap. `room` is
+    # None on every path that has not worked it out, and None must block --
+    # an unknown allowance is not an allowance.
+    if (hedged_side is not None and want == hedged_side
+            and room is not None and float(room) > 0):
         return False
     return True
 
@@ -7191,6 +7422,13 @@ def trade_loop(a, rec, book, idx, series_index):
     hedge_price_said = set()      # A47: one 'waiting on price' line per position # A15: oid -> wall-clock second of the last try (pacing)
     hedge_normal_said = set()     # A51: one 'waiting for a normal bet' line per position
     hedge_panic_said = set()      # A62: one 'every filter bypassed' line per position
+    rebuy_extra = {}              # A68: ticker -> contracts bought BEYOND the
+                                  # hedge, so the cap is against a real count
+    last_belief = {}              # A68: ticker -> the newest belief measured
+                                  # while holding. The rebuy is allowed only
+                                  # while THIS is at or under the panic line;
+                                  # a belief that has recovered must close the
+                                  # door again, and a missing one keeps it shut
     hedged_side = {}              # A63: ticker -> the side we hedged INTO, so
                                   # more of it is an ordinary bet and not a
                                   # second hedge
@@ -7542,6 +7780,11 @@ def trade_loop(a, rec, book, idx, series_index):
                 if _hf is None:
                     continue
                 _belief = _hf if _hwant == "yes" else 1.0 - _hf
+                # A68: the NEWEST belief for this market, recorded every tick
+                # and not only when the alarm fires. The rebuy is allowed only
+                # while this is at or under the panic line, so a belief that
+                # RECOVERS closes the door again on the very next tick.
+                last_belief[_htk] = float(_belief)
                 # A52: two reasons to fire, recorded separately. The jump is
                 # asked FIRST because it is the earlier signal -- belief only
                 # falls after the price has already moved.
@@ -7567,6 +7810,7 @@ def trade_loop(a, rec, book, idx, series_index):
                 _tries = hedge_tries.get(_hid, 0)
                 if _tries == 0:
                     state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
+                    last_belief[_htk] = float(_belief)   # A68
                     rec("hedge_alarm", ticker=_htk, want=_hwant, entry=_hcost,
                         n=_hn, belief=round(_belief, 5), tau=_htau,
                         threshold=HEDGE_BELIEF,
@@ -8050,8 +8294,19 @@ def trade_loop(a, rec, book, idx, series_index):
             # more than the $1 it pays and locks in the difference. `want` is
             # assigned immediately above, so this is the first line in the loop
             # where the comparison is even meaningful.
+            # A68: how much MORE of the hedged-into side we may buy. Only
+            # while the model has given up (belief at or under the panic
+            # line), and capped at a multiple of what we hold on the losing
+            # side so the tail is bounded before it happens rather than
+            # discovered afterwards.
+            _lose_n = ((prev.get("n_tk") or {}).get(tk, 0.0)
+                       if prev else 0.0)
+            _room68 = None
+            if (hedged_side.get(tk) is not None and want == hedged_side.get(tk)
+                    and hedge_panic(last_belief.get(tk))):
+                _room68 = rebuy_room(_lose_n, rebuy_extra.get(tk, 0.0))
             if want is not None and _both_sides_block(
-                    prev, tk, want, hedged_side.get(tk)):
+                    prev, tk, want, hedged_side.get(tk), _room68):
                 nb0 = near.setdefault(close_s, _fresh_near())
                 nb0["both_sides_blocked"] = nb0.get("both_sides_blocked", 0) + 1
                 # `want`, `fair`, `tau`, `spot` and `strike` are RECORDED
@@ -8501,6 +8756,11 @@ def trade_loop(a, rec, book, idx, series_index):
                     d29 = pv.setdefault("n_tk", {})
                     d29[tk] = d29.get(tk, 0.0) + _n
                     pv["contracts"] = pv.get("contracts", 0.0) + _n
+                    # A68: contracts bought on the side we HEDGED INTO are
+                    # the extra bet, not the original position, and the cap
+                    # is measured against them.
+                    if hedged_side.get(tk) is not None and want == hedged_side.get(tk):
+                        rebuy_extra[tk] = rebuy_extra.get(tk, 0.0) + _n
 
             def _note_scrap(px, nfilled):
                 """AMENDMENT 12 (2026-09-11): A SCRAP FILL IS NOT A SLOT.
@@ -8770,6 +9030,29 @@ def trade_loop(a, rec, book, idx, series_index):
                             _deep = float(book.buyable(tk, want, _limit))
                         except Exception:              # noqa: BLE001
                             _deep = 0.0
+                        # A67: the same depth, WEIGHTED by the edge at each
+                        # level. `_deep` counts a 98c contract exactly like a
+                        # 91.5c one; this does not. Falls back to `_deep`
+                        # whenever the rungs cannot be read, so a book that
+                        # does not answer behaves exactly as it did before.
+                        _rungs = []
+                        if TAPER:
+                            try:
+                                _rungs = book.rungs(tk, want, _limit)
+                            except Exception:          # noqa: BLE001
+                                _rungs = []
+                        if _rungs:
+                            _flat = _deep
+                            _deep = taper_take(
+                                _rungs, float(SIZE),
+                                lambda _p, _f=f, _w=want: net_edge(_f, _p, _w))
+                            if _deep < _flat:
+                                rec("taper", ticker=tk, want=want, tau=tau,
+                                    touch=round(float(_rungs[0][0]), 4),
+                                    rungs=len(_rungs),
+                                    flat=round(_flat, 2),
+                                    tapered=round(_deep, 2),
+                                    limit=round(_limit, 4))
                         if _deep > take_n:
                             _room = (close_budget_for(prev, tk, tau=tau)
                                      - (prev.get("contracts", 0.0)
@@ -8790,6 +9073,12 @@ def trade_loop(a, rec, book, idx, series_index):
                     take_n = _late48(take_n)   # live
                     take_n = _band53(take_n)   # live
                     take_n = _stage46(take_n)
+                    # A68: LAST, so no later widener can undo the cap. This is
+                    # the line that makes the bounded rebuy bounded; without
+                    # it the close budget alone allows it and the tail is the
+                    # -$134 case A63 was refused for.
+                    if _room68 is not None:
+                        take_n = min(take_n, float(_room68))
                     _t0 = time.time()
                     out = pintake.take(CREDS["base"], CREDS["pk"],
                                        CREDS["key_id"], tk, want, _limit,
@@ -9086,6 +9375,31 @@ def main():
                          "MULT x SIZE, through A45's drawdown headroom, the "
                          "book and the close budget. MULT in (1, "
                          "MAX_PER_CLOSE]. Repeatable. Shipped off.")
+    ap.add_argument("--rebuy-mult", type=float, default=None, metavar="X",
+                    # NO LITERAL PER-CENT SIGN. argparse formats help strings
+                    # itself, so a `%%` written here survives my own % and
+                    # reaches argparse as a live format spec: "unsupported
+                    # format character ' '". Spell the word instead.
+                    help="AMENDMENT 68: while belief is at or under the panic "
+                         "line, buy up to X times the losing position as MORE "
+                         "of the side we hedged into -- an ordinary bet on a "
+                         "side the model now gives 85 percent or better. "
+                         "Default %.1f. Set 0 to disable. Measured: every "
+                         "live market that fell under the 40 percent line "
+                         "went on to lose, 6 of 6."
+                         % _DEFAULT_REBUY_MAX_MULT)
+    ap.add_argument("--no-taper", action="store_true",
+                    help="AMENDMENT 67: restore A35's flat sizing, which asks "
+                         "for every contract under the sweep limit whatever "
+                         "the edge at that price. Shipped OFF -- the taper is "
+                         "ON -- after the 12:30 BNB close was signalled at "
+                         "91.5c and filled at an average of 97.27c.")
+    ap.add_argument("--taper-floor", type=float, default=None, metavar="FRAC",
+                    help="AMENDMENT 67: ignore price levels holding less than "
+                         "this FRACTION of the touch's edge. Default %.2f "
+                         "(take them, just in proportion). 0.5 would refuse "
+                         "any level worth under half the best price's edge."
+                         % TAPER_FLOOR)
     ap.add_argument("--arm-name", default=None, metavar="NAME",
                     help="A LABEL, read by nothing. It exists so the arm is "
                          "identifiable in its own command line: eleven band "
@@ -9450,6 +9764,18 @@ def main():
                                  "got %r" % (float(MAX_PER_CLOSE), _m))
             _bm53.append((float(_lo), float(_hi), float(_m)))
         globals()["BAND_MULTS"] = tuple(_bm53)
+    if a.rebuy_mult is not None:
+        if not (0.0 <= a.rebuy_mult <= 3.0):
+            raise SystemExit("--rebuy-mult must sit in [0, 3], got %r"
+                             % (a.rebuy_mult,))
+        globals()["REBUY_MAX_MULT"] = float(a.rebuy_mult)
+    if a.no_taper:
+        globals()["TAPER"] = False
+    if a.taper_floor is not None:
+        if not (0.0 <= a.taper_floor < 1.0):
+            raise SystemExit("--taper-floor must sit in [0, 1), got %r"
+                             % (a.taper_floor,))
+        globals()["TAPER_FLOOR"] = float(a.taper_floor)
     if a.arm_name is not None and a.live:
         # A label is harmless, but a LIVE command line that carries one is a
         # paper arm's flag list that got --live added to it by hand. Refuse
