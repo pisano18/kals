@@ -1,3 +1,48 @@
+# v-mirror -- 2026-09-19 12:26:03Z -- LIVE: the bot publishes its contract size so paper arms trade proportionally
+
+SHA: see `git log --oneline -1` at deploy (A66 commit "A66: paper arms trade
+the size LIVE trades, and the self-test can no longer forge it").
+
+## What the bot now does differently
+
+On every autosize it writes `results/pinrun-live-size.json`. **Nothing about
+its own trading changes** -- no gate, no price, no size, no rail. The file is
+write-only from live's point of view; only paper arms read it.
+
+## Why
+
+Paper arms were pinned at 20 contracts while live ran 109. Zero autosize
+records across all 43 arms since 2026-09-14, because `read_bank()` needs a
+key a paper arm does not have and must never be given. So every arm's dollar
+figure was measured at a stake that never faced live's depth.
+
+## Evidence
+
+Measured, not modelled: 0 autosize records in 43 arm logs before; 62 records
+reading "mirroring live size 110" after `restart_arms.ps1`. Live's own first
+autosize on this version wrote the file at 12:26:04Z with size 110, bank
+$970.58.
+
+## The bug this shipped with, caught in paper within two minutes
+
+The startup self-test drives `autosize_tick` with a fake $60 bank and
+published `{"size": 7.0}` into the real mirror; 36 arms then sized themselves
+to SEVEN. Same shape as the 2026-09-14 high-water-mark outage. `SIZE_MIRROR`
+is now sandboxed for the whole self-test, with a check that a pathless
+`publish_size()` leaves the real file byte-identical. **No real money was
+involved at any point** -- live neither reads the file nor changes behaviour
+because of it.
+
+## Revert
+
+`restart_bot.ps1` needs no change -- there is no flag. To stop arms copying
+live, add `"--no-size-mirror"` to the arm launchers (`start_sigma.ps1`,
+`start_bands.ps1`, `boot_all.ps1`), or delete
+`results/pinrun-live-size.json` and arms fall back to `--size` within the
+hour. To revert the code: `git revert 277be1f`.
+
+---
+
 # v-cap200 -- 2026-09-19 ~03:1xZ -- LIVE: a hard $200 loss cap; the bet size is UNCHANGED
 
 Operator, immediately after depositing: *"Cap losses at 200, keep bet size."*
