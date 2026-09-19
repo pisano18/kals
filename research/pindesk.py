@@ -150,9 +150,17 @@ def pct(x, sign=True):
 
 
 def sort_key(v):
-    """Numbers sort as numbers whatever they are dressed in ($, +, c, %, x)."""
+    """Numbers sort as numbers whatever they are dressed in ($, +, c, %, x).
+
+    THE DOLLAR SIGN AND THE PLUS USED TO BE MUTUALLY EXCLUSIVE. `[\\$+]?`
+    is a character class: it eats ONE of the two, so `money()`'s own output
+    -- `$+12.34` -- matched nothing and every money column in this app sorted
+    as TEXT. Text-sorting money puts $+9.00 above $+15.00, which is the wrong
+    way round on exactly the column the operator clicks to find the worst
+    day. Found 2026-09-19 while making the Lab's columns sortable.
+    """
     s = str(v).strip()
-    m = re.match(r"^[\$+]?\s*(-?[\d,]*\.?\d+)\s*(c|%|x|GB|s|h|min)?$", s)
+    m = re.match(r"^\$?\s*([+-]?[\d,]*\.?\d+)\s*(c|%|x|GB|s|h|min)?$", s)
     if m:
         try:
             return (0, float(m.group(1).replace(",", "")))
@@ -1136,6 +1144,564 @@ def do_stop(log):
 
 
 # ===========================================================================
+# THE LAB'S ARMS -- identity, timing, rows, and the three per-arm buttons
+#
+# THE OPERATOR, 2026-09-19: "Include an option to delete papers from the lab
+# or pause their run and play. The first two stop and close it entirely
+# (delete removes it from everywhere but first a log about its results is
+# written to GitHub) the play starts. Also make the ui better ... previews of
+# titles, paused or playing, brief description and their charts and show a few
+# stats and allow to filter by stats, and you click one to open up more
+# information ... click a stat column like best what if return to sort."
+#
+# EVERYTHING DOWN TO `git_commit_file` IS A PURE FUNCTION OF ITS ARGUMENTS.
+# No Tk, no process table, no clock -- `now` is handed in. That is the only
+# way the kill predicate and the row builder can be tested on a box with no
+# display, and the kill predicate is the one thing here that can do damage.
+# ===========================================================================
+LAB_CONTROL = os.path.join(RESULTS, "lab_control.json")
+
+# Scripts the Play button may launch, and the only ones the Pause button may
+# stop. cmdlive.py is deliberately ABSENT: it spends real money, and hard
+# rule 1 says money needs per-instance sign-off -- a button in a desktop app
+# is not that. pinrun.py is here because pinrun WITHOUT --live is paper, and
+# the --live check below is what makes that sentence true.
+PAPER_SCRIPTS = ("pinrun.py", "pinracearm.py", "cmdarm.py", "pinrun913.py")
+PAPER_PREFIXES = ("pinvin_",)
+MONEY_WORDS = ("--live", "cmdlive", "--size-dollars", "ordercli")
+
+LAB_PLAYING, LAB_PAUSED, LAB_STOPPED = "PLAYING", "PAUSED", "STOPPED"
+LAB_GLYPH = {LAB_PLAYING: "▶", LAB_PAUSED: "⏸", LAB_STOPPED: "■"}
+# The order the table opens in. `pinlab.PAUSED` is the SAME STRING as
+# LAB_PAUSED -- an arm the board calls PAUSED and an arm you paused here both
+# read "PAUSED", which is true and wanted -- so it must not appear twice in
+# this dict or the later entry silently wins and paused arms sort below ideas.
+LAB_ORDER = {LAB_PLAYING: 0, LAB_PAUSED: 1, LAB_STOPPED: 2,
+             pinlab.RUNNING: 3, pinlab.SHIPPED: 4, pinlab.IDEA: 5,
+             pinlab.KILLED: 7}
+DASH = "—"                     # shown wherever a number is NOT KNOWN
+
+
+def arm_slug(s):
+    """A filename-safe name for an arm, from its `match` or its title."""
+    out = re.sub(r"[^A-Za-z0-9]+", "-", str(s or "arm")).strip("-").lower()
+    return out or "arm"
+
+
+def stamp_epoch(name):
+    """Epoch from a log filename's own start stamp, or None.
+
+    `pinrun-paper-20260918T041353Z.jsonl` -> the second that run began. The
+    filename is a better clock than the first record: an arm that has been
+    restarted owns several logs, and the OLDEST filename is when the arm
+    started while the NEWEST is when the run now in flight started. Those are
+    two different questions (time running, time left) and they need the two
+    different answers.
+    """
+    m = re.search(r"(\d{8})T(\d{6})Z", os.path.basename(str(name or "")))
+    if not m:
+        return None
+    try:
+        return calendar.timegm(time.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S"))
+    except ValueError:
+        return None
+
+
+def log_start_record(path):
+    """The `start` record at the top of a paper log, or None.
+
+    Read here rather than through pinlab so the Lab's clock does not depend
+    on a private helper in another file. Only the first line is read: these
+    logs run to tens of megabytes.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            line = fh.readline()
+    except OSError:
+        return None
+    try:
+        r = json.loads(line)
+    except ValueError:
+        return None
+    return r if isinstance(r, dict) and r.get("kind") == "start" else None
+
+
+def running_hours(started, now):
+    """Hours an arm has been alive, or None when the start is unknown."""
+    if started is None or now is None or now < started:
+        return None
+    return (now - started) / 3600.0
+
+
+def remaining_minutes(started, minutes, now):
+    """Minutes left of a `--minutes N` run. None when anything is unknown.
+
+    An arm whose start record does not carry `minutes` has no deadline we
+    know of, and a countdown invented next to a run that will not stop is
+    worse than an em dash. Hard rule 3, applied to a clock.
+    """
+    if started is None or minutes is None or now is None:
+        return None
+    try:
+        m = float(minutes)
+    except (TypeError, ValueError):
+        return None
+    if m <= 0:
+        return None
+    return max(0.0, (started + m * 60.0 - now) / 60.0)
+
+
+def hours_cell(h):
+    """Hours, one decimal, ONE UNIT FOR THE WHOLE COLUMN.
+
+    Mixing `45min` and `1.5h` in one sortable column is how a column starts
+    lying: sort_key reads the number and ignores the unit, so 45min would
+    sort above 1.5h. Everything is hours here, and unknown is an em dash.
+    """
+    return DASH if h is None else "%.1fh" % h
+
+
+def split_cmdline(cl):
+    """Windows' own argv split, so a path with a space survives a round trip.
+
+    Used once, at PAUSE, to record exactly what an arm was running -- which
+    is the only thing Play is ever allowed to replay.
+    """
+    s = str(cl or "").strip()
+    if not s:
+        return []
+    try:
+        n = ctypes.c_int(0)
+        fn = ctypes.windll.shell32.CommandLineToArgvW
+        fn.restype = ctypes.POINTER(ctypes.c_wchar_p)
+        p = fn(ctypes.c_wchar_p(s), ctypes.byref(n))
+        if not p:
+            return s.split()
+        try:
+            return [p[i] for i in range(n.value)]
+        finally:
+            ctypes.windll.kernel32.LocalFree(p)
+    except (AttributeError, OSError, ValueError):         # not Windows, or refused
+        return s.split()
+
+
+def arm_kill_ok(cmdline, match):
+    """May the app stop THIS process as THIS arm? Refuses unless it can prove it.
+
+    Modelled on terminate_live_bot: a pid alone is never enough. Three things
+    must hold, and all three are about the command line, because that is the
+    only evidence Windows hands us.
+
+      1. It is one of our paper scripts.
+      2. `--live` is NOT in it. The live bot has its own three buttons and its
+         own pid file; nothing in the Lab may ever touch it. This is the check
+         that matters -- the 2026-09-14 double-bot incident began with a
+         process being identified by something weaker than its command line.
+      3. The arm's own `match` is in it, so the click stops the arm that was
+         clicked and not its neighbour on the same flag.
+
+    An arm whose `match` is a REDIRECT FILENAME (`arm-b-control`) fails (3)
+    for ever -- Windows does not report a redirect -- and the app says so
+    rather than killing the closest-looking process.
+    """
+    cl = str(cmdline or "")
+    m = str(match or "")
+    if not m or not cl:
+        return False
+    if "--live" in cl:
+        return False
+    if not (any(s in cl for s in PAPER_SCRIPTS)
+            or any(p in cl for p in PAPER_PREFIXES)):
+        return False
+    return m in cl
+
+
+def arm_launch_ok(argv):
+    """May the app START this command line? Paper only, and one script only.
+
+    Play replays an argv THIS APP recorded when it paused a paper arm, so a
+    money-spending command can never get in here by accident. This is the
+    second lock on the same door, because the cost of being wrong is an order.
+    """
+    if not argv or not all(isinstance(x, str) for x in argv):
+        return False
+    joined = " ".join(argv)
+    if any(w in joined for w in MONEY_WORDS):
+        return False
+    scripts = [a for a in argv if a.lower().endswith(".py")]
+    if len(scripts) != 1:
+        return False
+    b = os.path.basename(scripts[0])
+    return b in PAPER_SCRIPTS or any(b.startswith(p) for p in PAPER_PREFIXES)
+
+
+def load_control(path=None):
+    """What the operator has paused or deleted, from results/lab_control.json.
+
+    A SEPARATE FILE ON PURPOSE. The board itself lives in research/pinlab.py,
+    which is code and is reviewed; a button press must not rewrite code. This
+    file is an overlay: delete an entry here and the arm comes back.
+    """
+    try:
+        with open(path or LAB_CONTROL, encoding="utf-8") as fh:
+            d = json.load(fh)
+        if not isinstance(d, dict):
+            d = {}
+    except (OSError, ValueError):
+        d = {}
+    d.setdefault("paused", {})
+    d.setdefault("deleted", {})
+    return d
+
+
+def save_control(state, path=None):
+    p = path or LAB_CONTROL
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=1, sort_keys=True)
+    os.replace(tmp, p)
+    return p
+
+
+def arm_state(entry, info, control):
+    """What the first column says: what this arm is DOING right now.
+
+    The board's own status (RUNNING/SHIPPED/KILLED/IDEA) is what the arm IS.
+    They are different questions, and the old text view answered the second
+    in a parenthesis at the end of a line -- an arm marked RUNNING whose
+    process had died read "(not running now)" three lines down.
+    """
+    m = entry.get("match")
+    if not m:
+        return entry.get("status") or LAB_STOPPED
+    if m in ((control or {}).get("paused") or {}):
+        return LAB_PAUSED
+    if (info or {}).get("running"):
+        return LAB_PLAYING
+    if entry.get("status") in (pinlab.SHIPPED, pinlab.KILLED, pinlab.IDEA,
+                               pinlab.PAUSED):
+        return entry["status"]
+    return LAB_STOPPED
+
+
+def arm_stats(entry, info, whatif, control, meta, now):
+    """Everything known about one arm, in one dict. No formatting."""
+    m = entry.get("match")
+    info = info or {}
+    w = whatif or None
+    h = (w or {}).get("h2h") or {}
+    md = meta or {}
+    paused = ((control or {}).get("paused") or {}).get(m or "") or {}
+    started = md.get("started")
+    run_started = md.get("run_started")
+    return {
+        "match": m,
+        "name": entry.get("name") or m or "?",
+        "entry": entry,
+        "state": arm_state(entry, info, control),
+        "board": entry.get("status"),
+        "cpc": h.get("cpc_diff"),
+        "stake": h.get("at_our_stake"),
+        "shared": h.get("n") or 0,
+        "arm_cpc": h.get("arm_cpc"), "live_cpc": h.get("live_cpc"),
+        "arm_only": h.get("arm_only"), "live_only": h.get("live_only"),
+        "missed_loss": h.get("missed_loss"),
+        "settled": info.get("settled") or 0,
+        "won": info.get("won") or 0,
+        "lost": info.get("lost") or 0,
+        "net": info.get("net"),
+        "scaled": (w or {}).get("pct"),
+        "sd_pct": (w or {}).get("sd_pct"),
+        "arm_worst": (w or {}).get("arm_worst"),
+        "live_worst": (w or {}).get("live_worst"),
+        "arm_net": (w or {}).get("arm_net"),
+        "live_net": (w or {}).get("live_net"),
+        "running": bool(info.get("running")),
+        "overlap_dropped": info.get("overlap_dropped") or [],
+        "logs": info.get("logs") or ([info["log"]] if info.get("log") else []),
+        "started": started, "run_started": run_started,
+        "minutes": md.get("minutes"),
+        "run_h": running_hours(started, now),
+        "left_min": remaining_minutes(run_started, md.get("minutes"), now),
+        "pid": md.get("pid"), "cmdline": md.get("cmdline"),
+        "paused_at": paused.get("at"),
+        "can_pause": md.get("pid") is not None,
+        "can_play": bool(paused.get("argv")) and arm_launch_ok(paused.get("argv") or []),
+    }
+
+
+def arm_keep(st, want="ALL", min_shared=0, beating_only=False):
+    """The filter, so a table row and a count can never disagree about it."""
+    if want and want != "ALL" and st["state"] != want and st["board"] != want:
+        return False
+    if min_shared and (st["shared"] or 0) < min_shared:
+        return False
+    if beating_only and not (st["cpc"] is not None and st["cpc"] > 0):
+        return False
+    return True
+
+
+def arm_row(st):
+    """One (values, tag, stats) row for `fill()`. Numbers formatted so that
+    sort_key reads them as numbers -- see the unit note on hours_cell."""
+    cpc, stake, net, scaled = st["cpc"], st["stake"], st["net"], st["scaled"]
+    tag = "muted"
+    if st["state"] == LAB_PAUSED:
+        tag = "watch"
+    elif cpc is not None:
+        tag = "gain" if cpc > 0 else "loss"
+    vals = (
+        ("%s %s" % (LAB_GLYPH.get(st["state"], " "), st["state"])).strip(),
+        st["name"],
+        ("%+.2fc" % cpc) if cpc is not None else DASH,
+        ("%+.2f" % stake) if stake is not None else DASH,
+        "%d" % (st["shared"] or 0),
+        "%d" % (st["settled"] or 0),
+        "%d-%d" % (st["won"], st["lost"]),
+        ("%+.2f" % net) if net is not None else DASH,
+        ("%+.1f%%" % scaled) if scaled is not None else DASH,
+        hours_cell(st["run_h"]),
+        hours_cell(None if st["left_min"] is None else st["left_min"] / 60.0),
+        st["entry"].get("since") or DASH,
+    )
+    return (vals, tag, st)
+
+
+def arm_rows(experiments, prog, whatif, control, meta, now,
+             want="ALL", min_shared=0, beating_only=False):
+    """The whole Lab table, built off the interface thread and off any clock.
+
+    Deleted arms are gone from here -- that is what "removes it from
+    everywhere" means, and it is why the delete report is written first.
+    """
+    control = control or {}
+    deleted = control.get("deleted") or {}
+    out = []
+    for e in experiments or []:
+        m = e.get("match")
+        if m and m in deleted:
+            continue
+        if not m and (e.get("name") in deleted):
+            continue
+        st = arm_stats(e, (prog or {}).get(m or "") or {},
+                       (whatif or {}).get(m or ""), control,
+                       (meta or {}).get(m or "") or {}, now)
+        if not arm_keep(st, want, min_shared, beating_only):
+            continue
+        out.append(arm_row(st))
+    # Opens on what is alive and winning. Every column is click-sortable from
+    # there, so this is only the first answer, not the only one.
+    out.sort(key=lambda r: (LAB_ORDER.get(r[2]["state"], 9),
+                            -(r[2]["cpc"] if r[2]["cpc"] is not None else -1e9),
+                            r[2]["name"].lower()))
+    return out
+
+
+def arm_story(st):
+    """The detail view, in words. Pure: it is also the double-click popup."""
+    e = st["entry"]
+    L = ["%s  --  %s" % (st["name"], st["state"]), ""]
+    if st["board"]:
+        L.append("On the board as: %s%s" % (st["board"],
+                                            ("   since %s" % e["since"]) if e.get("since") else ""))
+    if st["match"]:
+        L.append("Found by: %s" % st["match"])
+    L.append("Running for: %s     Time left on this run: %s"
+             % (hours_cell(st["run_h"]),
+                hours_cell(None if st["left_min"] is None else st["left_min"] / 60.0)))
+    if st["started"]:
+        L.append("Started %s ET%s"
+                 % (et_str(st["started"], "%a %b %d %I:%M %p"),
+                    ("   (restarted %d times)" % (len(st["logs"]) - 1)) if len(st["logs"]) > 1 else ""))
+    if st["paused_at"]:
+        L.append("PAUSED by you at %s ET. Press Play to start it again with the "
+                 "same settings." % et_str(st["paused_at"], "%a %b %d %I:%M %p"))
+    if st["pid"]:
+        L.append("Process: pid %s" % st["pid"])
+    elif st["running"]:
+        L.append("Its log is still being written, but this app cannot prove WHICH "
+                 "process is this arm (its name is only in the output filename, "
+                 "which Windows does not report), so it will not stop it.")
+    L.append("")
+    if st["settled"]:
+        L.append("SO FAR: %d settled, %d won, %d lost, %s"
+                 % (st["settled"], st["won"], st["lost"], money(st["net"] or 0)))
+    else:
+        L.append("SO FAR: nothing settled yet.")
+    if st["overlap_dropped"]:
+        L.append("NOTE: %d duplicate run(s) ignored -- two processes overlapped "
+                 "on this setting: %s" % (len(st["overlap_dropped"]),
+                                          ", ".join(st["overlap_dropped"])))
+    if st["shared"] and st["cpc"] is not None:
+        L += ["",
+              "HEAD TO HEAD on the %d markets we BOTH traded: it earned %.2fc a "
+              "contract, we earned %.2fc -> %+.2fc, worth %s at our stake."
+              % (st["shared"], st["arm_cpc"] or 0, st["live_cpc"] or 0,
+                 st["cpc"], money(st["stake"] or 0)),
+              "This is the honest one: same markets, same moment, only the "
+              "decision differs."]
+        if st["live_only"] or (st["missed_loss"] or 0) < 0:
+            L.append("It sat out %d of our markets (we lost %s on those) and took "
+                     "%d we never did."
+                     % (st["live_only"] or 0, money(st["missed_loss"] or 0),
+                        st["arm_only"] or 0))
+    elif st["settled"]:
+        L += ["", "No market has settled on BOTH sides yet, so there is no "
+                  "head-to-head -- only the scaled guess below."]
+    if st["scaled"] is not None:
+        L.append("If it had been live since it started: %+.1f%% on the money%s. "
+                 "Worst single market %s against our %s."
+                 % (st["scaled"],
+                    ("   (%+.0f%% swing)" % st["sd_pct"]) if st["sd_pct"] is not None else "",
+                    money(st["arm_worst"] or 0), money(st["live_worst"] or 0)))
+        L.append("That line assumes it would have traded what we traded. It would "
+                 "not: every arm has its own gates. Read the head-to-head first.")
+    for label, k in (("WHAT IT DOES", "what"), ("WHY", "why"),
+                     ("GOOD LOOKS LIKE", "good"), ("BAD LOOKS LIKE", "bad"),
+                     ("WHAT TO WATCH", "watch"), ("WHAT HAPPENED", "outcome"),
+                     ("WHAT IT WAS WORTH", "attribution"),
+                     ("STOOD DOWN", "until"), ("WHERE IT IS", "where")):
+        if e.get(k):
+            L += ["", "%s: %s" % (label, e[k])]
+    return "\n".join(L)
+
+
+def arm_report(st, why, now):
+    """The markdown left behind when an arm is deleted.
+
+    Written BEFORE anything is removed. Everything the board held about the
+    arm plus everything it measured, because after the delete this file is
+    the only place either one exists.
+    """
+    e = st["entry"]
+    L = ["# %s" % st["name"], "",
+         "Deleted from the Lab board on %s UTC."
+         % time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+         "", "**Why deleted:** %s" % (why or "(no reason given)"), "",
+         "## What it was testing", ""]
+    for label, k in (("What it does", "what"), ("Why", "why"),
+                     ("Good looks like", "good"), ("Bad looks like", "bad"),
+                     ("What to watch", "watch"), ("What happened", "outcome"),
+                     ("What it was worth", "attribution"),
+                     ("Stood down", "until"), ("Where it is", "where")):
+        if e.get(k):
+            L.append("- **%s:** %s" % (label, e[k]))
+    L += ["", "## Its final numbers", "",
+          "| | |", "|---|---|",
+          "| board status | %s |" % (st["board"] or "?"),
+          "| declared since | %s |" % (e.get("since") or "?"),
+          "| found by | `%s` |" % (st["match"] or "(no match string)"),
+          "| state when deleted | %s |" % st["state"],
+          "| logs | %s |" % (", ".join(st["logs"]) or "none"),
+          "| started | %s |" % (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(st["started"]))
+                                if st["started"] else "unknown"),
+          "| hours run | %s |" % hours_cell(st["run_h"]),
+          "| settled markets | %d |" % (st["settled"] or 0),
+          "| won / lost | %d / %d |" % (st["won"], st["lost"]),
+          "| its own net | %s |" % (money(st["net"]) if st["net"] is not None else "?"),
+          "| shared markets with live | %d |" % (st["shared"] or 0),
+          "| head to head, cents per contract | %s |"
+          % (("%+.2fc" % st["cpc"]) if st["cpc"] is not None else "not comparable"),
+          "| head to head, at our stake | %s |"
+          % (money(st["stake"]) if st["stake"] is not None else "not comparable"),
+          "| scaled what-if | %s |"
+          % (("%+.1f%%" % st["scaled"]) if st["scaled"] is not None else "not comparable"),
+          "| its worst single market | %s |"
+          % (money(st["arm_worst"]) if st["arm_worst"] is not None else "?"),
+          "| ours over the same window | %s |"
+          % (money(st["live_worst"]) if st["live_worst"] is not None else "?"),
+          "",
+          "The head-to-head is the number to believe: it counts only markets the "
+          "arm and the live bot both settled, so the stake cancels and the "
+          "decision is the only thing left. The scaled what-if assumes the arm "
+          "would have traded our markets, which no arm does.", ""]
+    if st["overlap_dropped"]:
+        L += ["Duplicate runs ignored while this arm was scored (two processes "
+              "overlapped on one setting): %s" % ", ".join(st["overlap_dropped"]), ""]
+    L += ["## How to bring it back", "",
+          "Delete its entry from `results/lab_control.json` under `deleted`. The "
+          "board itself (`research/pinlab.py`) was never edited, and the arm's "
+          "paper logs in `results/` were not touched.", ""]
+    return "\n".join(L)
+
+
+def delete_arm(st, why, now, control, results=RESULTS, commit=None):
+    """Write the arm's report, commit it, THEN take it off the board.
+
+    THE ORDER IS THE POINT. The operator asked for "a log about its results
+    written to GitHub" first and the removal second, because a delete that
+    loses the result is the one thing this board exists to prevent. If the
+    write throws, nothing is removed and the arm is still there to try again.
+    """
+    path = os.path.join(results, "ARM_%s.md"
+                        % arm_slug(st.get("match") or st.get("name")))
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(arm_report(st, why, now))
+    if commit:
+        commit(path)
+    key = st.get("match") or st.get("name")
+    control.setdefault("deleted", {})[key] = {
+        "at": now, "name": st.get("name"), "report": os.path.basename(path),
+        "why": why}
+    (control.get("paused") or {}).pop(key, None)
+    return path
+
+
+def git_commit_file(path, message):
+    """Commit ONE file. COMMIT ONLY -- this never pushes.
+
+    Only the named path is staged, so a delete cannot sweep up whatever else
+    is dirty in the tree (and results/ is always dirty: the bot is writing to
+    it while this runs).
+    """
+    try:
+        subprocess.run(["git", "-C", REPO, "add", "--", path],
+                       capture_output=True, text=True, timeout=120,
+                       creationflags=CREATE_NO_WINDOW)
+        r = subprocess.run(["git", "-C", REPO, "commit", "-m", message, "--", path],
+                           capture_output=True, text=True, timeout=120,
+                           creationflags=CREATE_NO_WINDOW)
+        return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()[:300]
+    except (OSError, subprocess.SubprocessError) as e:                # noqa: BLE001
+        return 1, str(e)[:300]
+
+
+def terminate_arm(pid, cmdline, match, log):
+    """Stop ONE paper arm, and only after proving that pid IS that arm."""
+    if not arm_kill_ok(cmdline, match):
+        log("REFUSING to stop pid %s as %r: its command line reads %r. The app "
+            "only stops a paper arm it can prove, and never anything with "
+            "--live in it." % (pid, match, str(cmdline)[:90]))
+        return False
+    r = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True,
+                       text=True, creationflags=CREATE_NO_WINDOW)
+    time.sleep(2)
+    if pinflat.pid_alive(pid):
+        log("taskkill did not stop pid %s: %s"
+            % (pid, (r.stdout + r.stderr).strip()[:120]))
+        return False
+    log("stopped paper arm %r, pid %s" % (match, pid))
+    return True
+
+
+def launch_arm(argv, slug, log):
+    """Start a paper arm from the argv recorded when it was paused."""
+    if not arm_launch_ok(argv):
+        log("REFUSING to start %r: %s -- that is not a paper arm this app may "
+            "launch." % (slug, " ".join(argv)[:140]))
+        return None
+    out = os.path.join(RESULTS, "lab-%s.out" % slug)
+    err = os.path.join(RESULTS, "lab-%s.err" % slug)
+    with open(out, "a", encoding="utf-8") as o, open(err, "a", encoding="utf-8") as e:
+        p = subprocess.Popen([PY, "-u"] + [a for a in argv if a != "-u"],
+                             cwd=REPO, stdout=o, stderr=e, stdin=subprocess.DEVNULL,
+                             creationflags=CREATE_NO_WINDOW | 0x00000200)
+    log("started %r as pid %d; its console goes to results\\lab-%s.out"
+        % (slug, p.pid, slug))
+    return p.pid
+
+
+# ===========================================================================
 # help text -- plain words, one entry per panel and per column
 # ===========================================================================
 HELP = [
@@ -1251,6 +1817,46 @@ CRYPTO.COM RECORDER  tapes Crypto.com's prediction markets every few seconds, in
                      becomes a second venue.
 PAPER ARMS           copies of the bot with one setting changed each, pretending to trade,
                      so a change can be judged before it touches money."""),
+    ("lab", "THE LAB", """\
+Every idea we are trying, have shipped, or have killed. An "arm" is a copy of the bot with ONE
+setting changed, pretending to trade with no money, so a change can be judged before it touches
+the account. The dead ones are kept on purpose -- half of what we know came from ideas that
+looked good and were not.
+
+THE COLUMNS. Click any heading to sort by it; click again to flip it.
+  State          PLAYING = its process is alive.  PAUSED = you stopped it here and can start it
+                 again.  STOPPED = it is not running.  SHIPPED / KILLED / IDEA = what the board
+                 says it is, for arms that were never a process.
+  Head to head   THE NUMBER TO BELIEVE. Cents per contract, this arm minus the real bot, counting
+                 ONLY the markets both of them actually traded. Same markets, same moment, so the
+                 stake cancels and the only difference left is the decision. Positive = the arm
+                 would have done better.
+  At our stake   the same thing in dollars, at the size WE really bet. A paper arm bets 20
+                 contracts where the bot bets 100, so its raw dollars are small for making the
+                 same call; this puts that back.
+  Shared         how many markets both traded. Under about 20 this is noise, not a result.
+  Settled        markets the arm has settled.  W-L  won and lost.  Net $  its own paper money.
+  Scaled %       what it would have made if it had traded OUR markets. It would not have -- every
+                 arm has its own rules and skips closes we took -- so this flatters an arm that
+                 sat out our worst days. Read head to head first; when the two disagree, head to
+                 head is right.
+  Running / Left hours the arm has been alive, and hours left of its `--minutes` run. An em dash
+                 means we do not know, not zero.
+
+THE FILTERS. The buttons pick a state. "shared at least" hides arms with too few common markets
+to say anything. "only beating live" keeps the ones ahead on head to head.
+
+THE THREE BUTTONS, on the arm you have selected:
+  PLAY    starts a paused arm again with exactly the settings it had. It can only start a PAPER
+          arm -- nothing that can send an order.
+  PAUSE   stops its process and keeps everything: its logs, its numbers, its place on the board.
+  DELETE  asks you first, writes results/ARM_<name>.md with every final number and commits it,
+          and only then takes it off the board. Nothing is lost and the logs stay on disk. To
+          undo, remove its line from results/lab_control.json.
+
+If an arm says the app cannot stop it, that is on purpose: Windows does not report the output
+filename some arms are named after, so the app cannot prove which process is that arm, and it
+refuses to kill the closest-looking one."""),
     ("log", "LOG", """\
 Top: what this app did (start/pause/stop and their results).
 Bottom: the bot's own console and the watchdog's log, newest at the end."""),
@@ -1752,48 +2358,90 @@ def run_gui():
     sys_foot.pack(fill="x", pady=(0, 6))
 
     # LAB tab -- the drawing board. Content lives in research/pinlab.py.
+    #
+    # LAYOUT IS GRID HERE, NOT PACK, and that is deliberate. Two areas have to
+    # be flexible now -- the arm table and the detail pane underneath it --
+    # and pack hands the leftover height to whichever expanding child it meets
+    # first, which is exactly what used to push the chart off the bottom of
+    # the screen. Rows: 0 head, 1 filters, 2 the table, 3 the selected arm's
+    # buttons, 4 the chart (fixed 200px, so draw_lab_chart may keep reading
+    # the `height` OPTION), 5 the detail pane.
     lab_tab = ttk.Frame(nb)
     nb.add(lab_tab, text="  Lab  ")
+    lab_tab.grid_columnconfigure(0, weight=1)
+    lab_tab.grid_rowconfigure(2, weight=3)
+    lab_tab.grid_rowconfigure(5, weight=2)
     lab_head = tk.Frame(lab_tab, bg=C["panel"], padx=14, pady=10)
-    lab_head.pack(fill="x", pady=(8, 4))
+    lab_head.grid(row=0, column=0, sticky="ew", pady=(8, 4))
     lab_count = tk.Label(lab_head, text="", bg=C["panel"], fg=C["text"],
                          font=("Segoe UI", 16, "bold"))
     lab_count.pack(side="left")
     lab_note = tk.Label(lab_head, bg=C["panel"], fg=C["muted"], font=("Segoe UI", 10),
                         justify="left", anchor="w",
-                        text="Everything we are trying, everything we shipped, and everything "
-                             "that died. The dead ones are kept on purpose --\nhalf of what we "
-                             "know came from ideas that looked good and were not.")
+                        text="Every idea we are trying, shipped, or killed. Click a row to open "
+                             "it. Click a heading to sort by it.\nHead to head is the number to "
+                             "believe: same markets, same moment, so only the decision differs.")
     lab_note.pack(side="left", padx=16)
     register(lab_head, "lab", "The drawing board")
+
+    # ---- filters --------------------------------------------------------
     lab_filter = tk.Frame(lab_tab, bg=C["bg"])
-    lab_filter.pack(fill="x", padx=2)
+    lab_filter.grid(row=1, column=0, sticky="ew", padx=2)
     lab_which = tk.StringVar(value="ALL")
+    lab_minshared = tk.StringVar(value="0")
+    lab_beating = tk.IntVar(value=0)
     lab_body = tk.Text(lab_tab, bg=C["panel"], fg=C["text"], font=("Segoe UI", 10),
                        relief="flat", wrap="word", padx=14, pady=10)
-    # PACKED LATER, below the overlay chart -- tk stacks in pack() order, and
-    # an expanding body packed first pushes the chart off the bottom.
-    for _w, _v in (("All", "ALL"), ("Running", pinlab.RUNNING), ("Shipped", pinlab.SHIPPED),
+    for _w, _v in (("All", "ALL"), ("Playing", LAB_PLAYING), ("Paused", LAB_PAUSED),
+                   ("Stopped", LAB_STOPPED), ("Shipped", pinlab.SHIPPED),
                    ("Killed", pinlab.KILLED), ("Ideas", pinlab.IDEA)):
         tk.Radiobutton(lab_filter, text=_w, variable=lab_which, value=_v,
                        command=lambda: draw_lab(), bg=C["bg"], fg=C["text"],
                        selectcolor=C["panel2"], activebackground=C["bg"],
                        activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+    tk.Label(lab_filter, text="   shared markets at least", bg=C["bg"], fg=C["muted"],
+             font=("Segoe UI", 9)).pack(side="left")
+    lab_minbox = tk.Entry(lab_filter, textvariable=lab_minshared, width=5, bg=C["panel2"],
+                          fg=C["text"], insertbackground=C["text"], relief="flat",
+                          font=("Segoe UI", 9), justify="center")
+    lab_minbox.pack(side="left", padx=(6, 0))
+    lab_minbox.bind("<Return>", lambda _e: draw_lab())
+    tk.Checkbutton(lab_filter, text="only arms beating the real bot", variable=lab_beating,
+                   command=lambda: draw_lab(), bg=C["bg"], fg=C["text"],
+                   selectcolor=C["panel2"], activebackground=C["bg"],
+                   activeforeground=C["text"], font=("Segoe UI", 9)).pack(side="left", padx=(12, 0))
+    small_button(lab_filter, "Apply", lambda: draw_lab()).pack(side="left", padx=(8, 0))
+    lab_found = tk.Label(lab_filter, text="", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9))
+    lab_found.pack(side="left", padx=(12, 0))
+    register(lab_filter, "lab", "The Lab filters")
 
-    lab_cache = {"prog": {}, "whatif": {}, "names": {}, "b0": {}}
+    lab_cache = {"prog": {}, "whatif": {}, "names": {}, "b0": {}, "meta": {},
+                 "control": load_control(), "stats": {}}
+    # The SELECTION KEY is `match or name`: some board entries are pure
+    # write-ups with no process and no match, and keying on match alone
+    # made every one of them the same row.
+    lab_sel = {"key": None}
 
-    def lab_whatif(match):
-        """Cached, keyed by the ARM (its `match`), not by a log filename.
+    # ---- the arm table --------------------------------------------------
+    # `table()` is the widget the rest of the app already uses: it wires the
+    # scrollbar, click-to-sort on every heading with the ▼/▲ marks, the tag
+    # colours, and double-click-for-the-story. The Lab was the only tab that
+    # did not use it, which is why it was the only tab you could not sort.
+    f_arms, tv_arms = table(
+        lab_tab,
+        ("State", "Arm", "Head to head", "At our stake $", "Shared", "Settled",
+         "W-L", "Net $", "Scaled %", "Running", "Left", "Since"),
+        (110, 330, 110, 115, 70, 70, 70, 80, 85, 80, 70, 95),
+        height=11, title="THE ARMS", key="lab", story=arm_story)
+    f_arms.grid(row=2, column=0, sticky="nsew", padx=2)
 
-        THE OPERATOR, 2026-09-18: "Make sure all the arms are on the app lab
-        section with the chart ... some charts cut off because we stopped."
-        Keying by filename had two faults. An arm that had been restarted
-        owns SEVERAL logs and this saw only the newest, so its chart began at
-        the restart and the earlier hours vanished. And when two arms matched
-        the same log, the second was skipped entirely (`if log in wf:
-        continue`) and never got a chart at all.
-        """
-        return (lab_cache.get("whatif") or {}).get(match)
+    # EVERYTHING IS KEYED BY THE ARM (its `match`), never by a log filename.
+    # THE OPERATOR, 2026-09-18: "Make sure all the arms are on the app lab
+    # section with the chart ... some charts cut off because we stopped."
+    # Keying by filename had two faults. An arm that had been restarted owns
+    # SEVERAL logs and the cache saw only the newest, so its chart began at
+    # the restart and the earlier hours vanished. And when two arms matched
+    # the same log, the second was skipped entirely and never got a chart.
 
     # ---- the what-if overlay -------------------------------------------
     # The operator, 2026-09-18: *"I don't see anywhere showing what effect it
@@ -1808,46 +2456,51 @@ def run_gui():
     # only way the comparison is fair: a bank curve drawn from real readings
     # for one line and from arithmetic for the other would differ by every
     # deposit and every open position, and would read as strategy.
+    #
+    # THE PICKER IS GONE. It was a dropdown of names you had to match by eye
+    # against the list above it; the chart now follows the row you clicked,
+    # which is what "you click one to open up more information on them" asks
+    # for. The bar it lived on now carries the three per-arm buttons.
     lab_pickbar = tk.Frame(lab_tab, bg=C["bg"])
-    lab_pickbar.pack(fill="x", padx=2, pady=(6, 0))
-    tk.Label(lab_pickbar, text="WHAT IF THIS HAD BEEN LIVE:", bg=C["bg"], fg=C["muted"],
-             font=("Segoe UI", 8, "bold")).pack(side="left", padx=(8, 8))
-    lab_pick = tk.StringVar(value="")
-    lab_pickmenu = tk.OptionMenu(lab_pickbar, lab_pick, "")
-    lab_pickmenu.configure(bg=C["panel"], fg=C["text"], font=("Segoe UI", 9),
-                           relief="flat", highlightthickness=0,
-                           activebackground=C["panel2"], activeforeground=C["text"])
-    lab_pickmenu["menu"].configure(bg=C["panel"], fg=C["text"], font=("Segoe UI", 9))
-    lab_pickmenu.pack(side="left")
+    lab_pickbar.grid(row=3, column=0, sticky="ew", padx=2, pady=(6, 0))
+    tk.Label(lab_pickbar, text="SELECTED:", bg=C["bg"], fg=C["muted"],
+             font=("Segoe UI", 8, "bold")).pack(side="left", padx=(8, 6))
+    lab_selname = tk.Label(lab_pickbar, text="(click an arm above)", bg=C["bg"],
+                           fg=C["text"], font=("Segoe UI", 10, "bold"))
+    lab_selname.pack(side="left", padx=(0, 10))
+
+    def arm_button(txt, colour, cmd, tip):
+        b = tk.Button(lab_pickbar, text=txt, command=cmd, bg=colour, fg="white",
+                      activebackground=colour, activeforeground="white",
+                      font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2",
+                      bd=0, padx=12, state="disabled")
+        b.pack(side="left", padx=(0, 6))
+        Tip(b, tip)
+        return b
+
+    b_arm_play = arm_button("▶ Play", C["gain"], lambda: on_arm_play(),
+                            "Starts a PAUSED arm again with exactly the settings it had. "
+                            "Paper only -- it cannot start anything that sends an order.")
+    b_arm_pause = arm_button("⏸ Pause", C["watch"], lambda: on_arm_pause(),
+                             "Stops this arm's process and keeps everything else: its logs, "
+                             "its numbers, and its place on the board. Play brings it back.")
+    b_arm_del = arm_button("■ Delete", C["loss"], lambda: on_arm_delete(),
+                           "Asks first. Writes results\\ARM_<name>.md with every final "
+                           "number and commits it, then takes the arm off the board. The "
+                           "logs stay on disk.")
     lab_pickhead = tk.Label(lab_pickbar, text="", bg=C["bg"], fg=C["muted"],
                             font=("Segoe UI", 10, "bold"))
     lab_pickhead.pack(side="left", padx=12)
     lab_chart = tk.Canvas(lab_tab, bg=C["panel"], height=200, highlightthickness=0)
-    lab_chart.pack(fill="x", padx=2, pady=(4, 0))
-
-    def lab_menu_refresh():
-        """Repopulate the arm picker from whatever the worker just computed."""
-        wf = lab_cache.get("whatif") or {}
-        names = lab_cache.get("names") or {}
-        opts = sorted(names.get(k, k) for k in wf if wf.get(k))
-        menu = lab_pickmenu["menu"]
-        menu.delete(0, "end")
-        for o in opts:
-            menu.add_command(label=o, command=lambda v=o: (lab_pick.set(v), draw_lab_chart()))
-        if lab_pick.get() not in opts:
-            lab_pick.set(opts[0] if opts else "")
+    lab_chart.grid(row=4, column=0, sticky="ew", padx=2, pady=(4, 0))
+    register(lab_chart, "lab", "What if this arm had been live")
 
     def draw_lab_chart(*_a):
-        """Draw only. Every number here came off the worker thread."""
+        """Draw only, for the SELECTED arm. Every number came off the worker."""
         lab_chart.delete("all")
         wf = lab_cache.get("whatif") or {}
-        names = lab_cache.get("names") or {}
-        want = lab_pick.get()
-        log = None
-        for k, v in names.items():
-            if v == want and wf.get(k):
-                log = k
-                break
+        _st = selected_stats()
+        log = (_st or {}).get("match")
         w = wf.get(log) if log else None
         if not w or len(w.get("live") or []) < 2 or len(w.get("arm") or []) < 2:
             lab_pickhead.configure(text="")
@@ -1937,8 +2590,191 @@ def run_gui():
                               text="both start at the real balance")
 
     lab_chart.bind("<Configure>", draw_lab_chart)
-    lab_body.pack(fill="both", expand=True, padx=2, pady=(4, 6))
+    lab_body.grid(row=5, column=0, sticky="nsew", padx=2, pady=(4, 6))
+    register(lab_body, "lab", "The selected arm, in full")
 
+    # ---- selection: one click opens the arm ------------------------------
+    def selected_stats():
+        return (lab_cache.get("stats") or {}).get(lab_sel["key"])
+
+    def draw_lab_detail():
+        """The detail pane shows ONE arm -- the one you clicked.
+
+        It used to print all fifty, which meant the arm you cared about was
+        somewhere in a wall of text and its chart was about a different arm.
+        """
+        st = selected_stats()
+        lab_body.configure(state="normal")
+        lab_body.delete("1.0", "end")
+        if st is None:
+            lab_body.insert("end", "Click an arm above to read what it is testing, "
+                                   "what it has done so far, and what would make it "
+                                   "a good or a bad idea.\n", "prog")
+        else:
+            txt = arm_story(st)
+            head, _, rest = txt.partition("\n")
+            lab_body.insert("end", head + "\n", "name")
+            for para in rest.split("\n"):
+                label, sep, body = para.partition(": ")
+                if sep and label.isupper() and len(label) < 30:
+                    lab_body.insert("end", label + ": ", "label")
+                    lab_body.insert("end", body + "\n")
+                elif para.startswith(("HEAD TO HEAD", "SO FAR", "NOTE:")):
+                    lab_body.insert("end", para + "\n", "prog")
+                else:
+                    lab_body.insert("end", para + "\n")
+        lab_body.configure(state="disabled")
+
+    def lab_buttons_refresh():
+        st = selected_stats()
+        lab_selname.configure(text=(st["name"] if st else "(click an arm above)"))
+        b_arm_play.configure(state=("normal" if (st and st["can_play"]) else "disabled"))
+        b_arm_pause.configure(state=("normal" if (st and st["can_pause"]) else "disabled"))
+        b_arm_del.configure(state=("normal" if st else "disabled"))
+
+    def on_arm_select(_e=None):
+        sel = tv_arms.selection()
+        if not sel:
+            return
+        obj = tv_arms._objs.get(sel[0])
+        if obj is None:
+            return
+        lab_sel["key"] = obj.get("match") or obj.get("name")
+        lab_cache.setdefault("stats", {})[lab_sel["key"]] = obj
+        lab_buttons_refresh()
+        draw_lab_detail()
+        draw_lab_chart()
+
+    tv_arms.bind("<<TreeviewSelect>>", on_arm_select)
+
+    # ---- the three per-arm buttons --------------------------------------
+    # NOT routed through `guarded`. That sets ONE global busy flag and
+    # disables START/PAUSE/STOP, so a paper experiment would grey out the
+    # money buttons and two arms could not be worked on at once.
+    arm_busy = set()
+
+    def arm_guarded(match, fn):
+        if match in arm_busy:
+            console_log("still working on %s" % match)
+            return
+        arm_busy.add(match)
+
+        def worker():
+            try:
+                fn()
+            except Exception as e:                       # noqa: BLE001
+                console_log("LAB ERROR on %s: %s" % (match, e))
+                with open(ERR_FILE, "a", encoding="utf-8") as fh:
+                    fh.write(traceback.format_exc())
+            finally:
+                arm_busy.discard(match)
+                # A BUTTON PRESS MUST REDRAW. draw_lab() only runs when the
+                # worker produced something new, so without this the table
+                # would keep saying PLAYING for up to 45 seconds after the
+                # process was stopped.
+                root.after(0, lambda: tick(force=True))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_arm_pause():
+        st = selected_stats()
+        if not st or not st["can_pause"]:
+            return
+        if not messagebox.askyesno(
+                "Pause this arm?",
+                "Stop %s?\n\nIts process is stopped. Its logs, its numbers and its "
+                "place on the board all stay, and Play starts it again with the "
+                "same settings.\n\nNothing about the real bot changes."
+                % st["name"]):
+            return
+        pid, cl, match = st["pid"], st["cmdline"], st["match"]
+        argv = split_cmdline(cl)[1:]
+        ctrl = lab_cache.get("control") or load_control()
+
+        def work():
+            if not terminate_arm(pid, cl, match, console_log):
+                return
+            # RECORD WHAT IT WAS RUNNING, and record it only now: this argv is
+            # the ONLY thing Play will ever replay, and it came off a command
+            # line that arm_kill_ok already proved has no --live in it.
+            ctrl.setdefault("paused", {})[match] = {
+                "at": time.time(), "name": st["name"], "argv": argv,
+                "log": (st["logs"] or [None])[-1]}
+            save_control(ctrl)
+            lab_cache["control"] = ctrl
+            console_log("paused %s; %d settings recorded so Play can restart it"
+                        % (st["name"], len(argv)))
+        arm_guarded(st["match"], work)
+
+    def on_arm_play():
+        st = selected_stats()
+        if not st or not st["can_play"]:
+            return
+        ctrl = lab_cache.get("control") or load_control()
+        rec = (ctrl.get("paused") or {}).get(st["match"]) or {}
+        argv = rec.get("argv") or []
+        if not arm_launch_ok(argv):
+            messagebox.showerror("Cannot start this arm",
+                                 "The settings recorded for %s are not a paper arm this "
+                                 "app may launch, so it will not start it." % st["name"])
+            return
+
+        def work():
+            pid = launch_arm(argv, arm_slug(st["match"]), console_log)
+            if pid is None:
+                return
+            (ctrl.get("paused") or {}).pop(st["match"], None)
+            save_control(ctrl)
+            lab_cache["control"] = ctrl
+        arm_guarded(st["match"], work)
+
+    def on_arm_delete():
+        st = selected_stats()
+        if not st:
+            return
+        n = st["settled"] or 0
+        if not messagebox.askyesno(
+                "Delete this arm?",
+                "Delete %s from the board?\n\n"
+                "First: results\\ARM_%s.md is written with every final number "
+                "(%d settled markets, %s) and committed to git.\n"
+                "Then: its process is stopped if the app can prove which one it "
+                "is, and the arm disappears from this list.\n\n"
+                "Its paper logs stay on disk and nothing about the real bot "
+                "changes. To undo, remove its line from "
+                "results\\lab_control.json."
+                % (st["name"], arm_slug(st["match"] or st["name"]), n,
+                   money(st["net"]) if st["net"] is not None else "no money yet")):
+            return
+        ctrl = lab_cache.get("control") or load_control()
+        match, pid, cl = st["match"], st["pid"], st["cmdline"]
+
+        def commit(p):
+            # COMMIT ONLY, never push. The branch is pushed by the operator's
+            # own runner; a desktop button that pushed would race it.
+            code, out = git_commit_file(
+                p, "lab: retire %s -- its final numbers, written before it was "
+                   "deleted from the board" % st["name"])
+            console_log("git commit %s: %s"
+                        % (os.path.basename(p),
+                           "done" if code == 0 else ("FAILED -- the file is still "
+                                                     "on disk: %s" % out)))
+
+        def work():
+            # THE REPORT IS WRITTEN AND COMMITTED FIRST, before anything is
+            # stopped or removed. A delete that loses the result is the one
+            # thing this board exists to prevent.
+            path = delete_arm(st, "deleted from the desktop app by the operator",
+                              time.time(), ctrl, results=RESULTS, commit=commit)
+            console_log("wrote %s" % os.path.basename(path))
+            save_control(ctrl)
+            lab_cache["control"] = ctrl
+            if pid:
+                terminate_arm(pid, cl, match, console_log)
+            else:
+                console_log("%s removed from the board; no process could be proved "
+                            "to be it, so nothing was stopped" % st["name"])
+            lab_sel["key"] = None
+        arm_guarded(st["match"] or st["name"], work)
 
     def lab_compute():
         """Everything the Lab tab needs, computed OFF the interface thread.
@@ -1947,21 +2783,34 @@ def run_gui():
         shelling out to PowerShell takes seconds, and doing that where the app
         draws is what made it freeze on every click.
         """
-        cmds = []
+        # THE PID COMES BACK WITH THE COMMAND LINE NOW. It was being thrown
+        # away, and it is free here: one PowerShell call on the worker thread
+        # is what lets the Pause button prove which process an arm is instead
+        # of guessing, and guessing is how the 2026-09-14 double-bot happened.
+        cmds, procs = [], []
         try:
             out = subprocess.run(
                 ["powershell", "-NoProfile", "-Command",
                  "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-                 "ForEach-Object { $_.CommandLine }"],
+                 "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }"],
                 capture_output=True, text=True, timeout=8,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            cmds = [l for l in (out.stdout or "").splitlines() if l.strip()]
+            for line in (out.stdout or "").splitlines():
+                pid, _tab, cl = line.partition("\t")
+                if not cl.strip():
+                    continue
+                cmds.append(cl)
+                try:
+                    procs.append((int(pid.strip()), cl))
+                except ValueError:
+                    pass
         except Exception:                                         # noqa: BLE001
-            cmds = []
+            cmds, procs = [], []
         try:
             prog = pinlab.live_progress(cmdlines=cmds)
         except Exception:                                         # noqa: BLE001
             prog = {}
+        meta = {}
         wf, names, b0s = {}, {}, {}
         bymatch = {e.get("match"): e.get("name") for e in pinlab.EXPERIMENTS}
         # (t, pnl, TICKER). The ticker is what lets pinlab.whatif compare the
@@ -1980,6 +2829,24 @@ def run_gui():
             # arm was restarted; `log` alone is the single-log case. Feeding
             # only the newest is what cut the charts off at the last restart.
             logs = info.get("logs") or ([info["log"]] if info.get("log") else [])
+            # THE CLOCKS, and the pid. Time RUNNING is measured from the
+            # oldest log the arm owns; time LEFT from the newest, because a
+            # restarted arm's `--minutes` counts from the restart. Both are
+            # None when the filename carries no stamp, and the table prints an
+            # em dash for that rather than a zero.
+            md = {"logs": len(logs)}
+            if logs:
+                md["started"] = stamp_epoch(logs[0])
+                md["run_started"] = stamp_epoch(logs[-1])
+                rec0 = log_start_record(os.path.join(ledger.results, logs[-1]))
+                if rec0:
+                    md["minutes"] = rec0.get("minutes")
+                    md["run_started"] = parse_t(rec0.get("t")) or md["run_started"]
+            for _pid, _cl in procs:
+                if arm_kill_ok(_cl, match):
+                    md["pid"], md["cmdline"] = _pid, _cl
+                    break
+            meta[match] = md
             if not logs:
                 continue
             try:
@@ -2000,138 +2867,71 @@ def run_gui():
                 continue
         lab_cache["prog"], lab_cache["whatif"] = prog, wf
         lab_cache["names"], lab_cache["b0"] = names, b0s
+        lab_cache["meta"] = meta
+        lab_cache["control"] = load_control()
 
     def draw_lab():
-        lab_body.configure(state="normal")
-        lab_body.delete("1.0", "end")
-        # NO I/O HERE. This runs on the interface thread, and the first version
-        # called PowerShell with an 8 second timeout and then read every paper
-        # arm's log -- so the whole app froze on every click and on every
-        # refresh. The worker thread fills lab_cache; this only draws it.
-        prog = lab_cache.get("prog") or {}
+        """Draw the arm table, the counts, the buttons and the detail pane.
+
+        NO I/O HERE. This runs on the interface thread, and the first version
+        called PowerShell with an 8 second timeout and then read every paper
+        arm's log -- so the whole app froze on every click and on every
+        refresh. The worker thread fills lab_cache; this only draws it.
+        """
+        ctrl = lab_cache.get("control") or {}
         c = pinlab.counts()
-        lab_count.configure(text="%d running   %d shipped   %d killed   %d ideas"
-                            % (c[pinlab.RUNNING], c[pinlab.SHIPPED],
-                               c[pinlab.KILLED], c[pinlab.IDEA]))
-        want = lab_which.get()
-        order = {pinlab.RUNNING: 0, pinlab.IDEA: 1, pinlab.SHIPPED: 2,
-                 pinlab.KILLED: 3, pinlab.PAUSED: 4}
-        for e in sorted(pinlab.EXPERIMENTS, key=lambda x: order.get(x["status"], 9)):
-            if want != "ALL" and e["status"] != want:
-                continue
-            lab_body.insert("end", "%s   " % e["name"], "name")
-            lab_body.insert("end", "%s\n" % e["status"], e["status"])
-            p = prog.get(e.get("match") or "", {})
-            if p.get("settled"):
-                _nlogs = len(p.get("logs") or [])
-                lab_body.insert("end", "   SO FAR: %d settled, %d won, %d lost, %s%s%s\n"
-                                % (p["settled"], p["won"], p["lost"], money(p["net"]),
-                                   "   (across %d runs)" % _nlogs if _nlogs > 1 else "",
-                                   "" if p.get("running") else "   (not running now)"), "prog")
-                if p.get("overlap_dropped"):
-                    # TWO PROCESSES ON ONE SETTING IS NOT ONE ARM. Said out
-                    # loud rather than summed, because summing them would
-                    # double every market they shared.
-                    lab_body.insert(
-                        "end", "   NOTE: %d duplicate run(s) ignored (two "
-                        "processes overlapped): %s\n"
-                        % (len(p["overlap_dropped"]),
-                           ", ".join(p["overlap_dropped"])), "whatif_bad")
-                w = lab_whatif(e.get("match"))
-                if w:
-                    pct = ("%+.1f%% on the money" % w["pct"]) if w.get("pct") is not None \
-                        else ("%s" % money(w["diff"]))
-                    sd = ("%+.0f%% swing" % w["sd_pct"]) if w.get("sd_pct") is not None \
-                        else "swing not comparable yet"
-                    lab_body.insert(
-                        "end",
-                        "   IF IT HAD BEEN LIVE since it started:  %s   %s\n"
-                        % (pct, sd),
-                        "whatif_good" if w["diff"] > 0 else "whatif_bad")
-                    lab_body.insert(
-                        "end",
-                        "      it would have made %s where we actually made %s. "
-                        "Worst single market %s against our %s.\n"
-                        "      Scaled to the contracts we really traded, so this compares "
-                        "the STRATEGY and not the stake (%d of its markets, %d of ours).\n"
-                        % (money(w["arm_net"]), money(w["live_net"]),
-                           money(w["arm_worst"]), money(w["live_worst"]),
-                           w["n_arm"], w["n_live"]), "prog")
-                    # HEAD TO HEAD, and it goes UNDER the scaled line on
-                    # purpose: when the two disagree, this one is right. The
-                    # line above assumes the arm would have traded our
-                    # markets; this one only counts the markets it DID.
-                    h = w.get("h2h")
-                    if h and h.get("cpc_diff") is not None:
-                        # PER CONTRACT. In raw dollars a 20-contract arm is
-                        # always behind a 105-contract bot on a market they
-                        # both won, which says nothing about the decision.
-                        d = h["cpc_diff"]
-                        lab_body.insert(
-                            "end",
-                            "   HEAD TO HEAD on the %d markets we BOTH traded:  "
-                            "it earned %.2fc a contract, we earned %.2fc  ->  "
-                            "%+.2fc, worth %s at our stake\n"
-                            % (h["n"], h["arm_cpc"], h["live_cpc"], d,
-                               money(h["at_our_stake"])),
-                            "whatif_good" if d > 0 else "whatif_bad")
-                        lab_body.insert(
-                            "end",
-                            "      (in raw dollars %s against %s -- but it bet "
-                            "%.0f contracts to our %.0f, so that gap is stake, "
-                            "not skill.)\n"
-                            % (money(h["arm"]), money(h["live"]),
-                               h["arm_ct"], h["live_ct"]), "prog")
-                    elif h:
-                        lab_body.insert(
-                            "end",
-                            "   HEAD TO HEAD on the %d markets we BOTH traded:  "
-                            "it made %s, we made %s -- but the contract counts "
-                            "are missing, so this is stake as much as skill.\n"
-                            % (h["n"], money(h["arm"]), money(h["live"])),
-                            "prog")
-                    if h:
-                        if h["missed_loss"] < 0 or h["live_only"]:
-                            lab_body.insert(
-                                "end",
-                                "      It sat out %d of our markets (we lost %s on "
-                                "those) and took %d we never did. The line above "
-                                "hands it that money for free; this one does not.\n"
-                                % (h["live_only"], money(h["missed_loss"]),
-                                   h["arm_only"]), "prog")
-                    else:
-                        lab_body.insert(
-                            "end",
-                            "      No market settled on BOTH sides yet, so the "
-                            "line above is the only comparison there is -- and "
-                            "it assumes this arm would have traded what we "
-                            "traded. Treat it as a guess.\n", "prog")
-            elif e["status"] == pinlab.RUNNING:
-                lab_body.insert("end", "   SO FAR: %s\n"
-                                % ("running, nothing settled yet" if p.get("running")
-                                   else "NOT RUNNING"), "prog")
-            for label, k in (("WHAT IT DOES", "what"), ("WHY", "why"),
-                             ("GOOD LOOKS LIKE", "good"), ("BAD LOOKS LIKE", "bad"),
-                             ("WHAT TO WATCH", "watch"), ("WHAT HAPPENED", "outcome"),
-                             ("WHAT IT WAS WORTH", "attribution"), ("WHERE IT IS", "where")):
-                if e.get(k):
-                    lab_body.insert("end", "   %s: " % label, "label")
-                    lab_body.insert("end", "%s\n" % e[k])
-            if e.get("since"):
-                lab_body.insert("end", "   since %s\n" % e["since"], "prog")
-            lab_body.insert("end", "\n")
-        lab_body.tag_configure("name", font=("Segoe UI", 11, "bold"), foreground=C["text"])
+        ndel = len(ctrl.get("deleted") or {})
+        npaused = len(ctrl.get("paused") or {})
+        lab_count.configure(
+            text="%d running   %d shipped   %d killed   %d ideas%s%s"
+                 % (c[pinlab.RUNNING], c[pinlab.SHIPPED], c[pinlab.KILLED],
+                    c[pinlab.IDEA],
+                    "   %d paused by you" % npaused if npaused else "",
+                    "   %d deleted" % ndel if ndel else ""))
+        try:
+            min_shared = max(0, int(float(lab_minshared.get() or 0)))
+        except ValueError:
+            min_shared = 0
+        now = time.time()
+        rows = arm_rows(pinlab.EXPERIMENTS, lab_cache.get("prog"),
+                        lab_cache.get("whatif"), ctrl, lab_cache.get("meta"), now,
+                        want=lab_which.get(), min_shared=min_shared,
+                        beating_only=bool(lab_beating.get()))
+        total = len(arm_rows(pinlab.EXPERIMENTS, lab_cache.get("prog"),
+                             lab_cache.get("whatif"), ctrl, lab_cache.get("meta"),
+                             now))
+        # ONE filter function builds both numbers, so the count under the
+        # buttons can never disagree with the rows above it.
+        lab_found.configure(
+            text="showing %d of %d arms" % (len(rows), total)
+                 + ("   (filtered)" if len(rows) != total else ""))
+        lab_cache["stats"] = {r[2]["match"] or r[2]["name"]: r[2] for r in rows}
+        fill(tv_arms, rows or [(("", "nothing matches these filters", "", "", "",
+                                 "", "", "", "", "", "", ""), "muted")])
+        # KEEP THE SELECTION ACROSS A REDRAW. The table is rebuilt every time
+        # the worker finishes, and a selection that jumped back to row one
+        # every 45 seconds would take the chart and the detail pane with it.
+        want_item = None
+        for item, obj in tv_arms._objs.items():
+            if (obj.get("match") or obj.get("name")) == lab_sel["key"]:
+                want_item = item
+                break
+        if want_item is None and tv_arms._objs:
+            want_item = sorted(tv_arms._objs)[0]
+            _o = tv_arms._objs[want_item]
+            lab_sel["key"] = _o.get("match") or _o.get("name")
+        if want_item is not None:
+            tv_arms.selection_set(want_item)
+            tv_arms.see(want_item)
+        else:
+            lab_sel["key"] = None
+        lab_body.tag_configure("name", font=("Segoe UI", 12, "bold"), foreground=C["text"])
         lab_body.tag_configure("label", font=("Segoe UI", 9, "bold"), foreground=C["muted"])
         lab_body.tag_configure("prog", foreground=C["watch"], font=("Segoe UI", 9))
         lab_body.tag_configure("whatif_good", foreground=C["gain"], font=("Segoe UI", 10, "bold"))
         lab_body.tag_configure("whatif_bad", foreground=C["loss"], font=("Segoe UI", 10, "bold"))
-        lab_body.tag_configure(pinlab.RUNNING, foreground=C["gain"], font=("Segoe UI", 9, "bold"))
-        lab_body.tag_configure(pinlab.SHIPPED, foreground=C["gain"], font=("Segoe UI", 9, "bold"))
-        lab_body.tag_configure(pinlab.KILLED, foreground=C["loss"], font=("Segoe UI", 9, "bold"))
-        lab_body.tag_configure(pinlab.IDEA, foreground=C["watch"], font=("Segoe UI", 9, "bold"))
-        lab_body.tag_configure(pinlab.PAUSED, foreground=C["muted"], font=("Segoe UI", 9, "bold"))
-        lab_body.configure(state="disabled")
-        lab_menu_refresh()
+        lab_buttons_refresh()
+        draw_lab_detail()
         draw_lab_chart()
 
     # LOG tab
@@ -2568,12 +3368,20 @@ def run_gui():
         fill(tv_days, rows)
         draw_chart()
         # redraw the Lab only when the worker has produced something new
+        #
+        # THIS `except` USED TO BE A BARE `pass`, and it swallowed every
+        # mistake the Lab could make -- a tab that silently drew nothing and
+        # gave nobody a traceback to read. It writes to results\pindesk.err
+        # now. Leave it that way: the Lab is where new code lands, and a
+        # feature that fails invisibly is one nobody reports.
         try:
             if lab_cache.get("at", 0) != lab_cache.get("drawn", -1):
                 lab_cache["drawn"] = lab_cache.get("at", 0)
                 draw_lab()
         except Exception:                                         # noqa: BLE001
-            pass
+            with open(ERR_FILE, "a", encoding="utf-8") as fh:
+                fh.write("%s draw_lab:\n%s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                                 traceback.format_exc()))
 
         # losses
         rows = []
@@ -2740,6 +3548,10 @@ def selftest():
     ck(sort_key("$+1.75") < sort_key("$+15.04") and sort_key("98.0c") < sort_key("100.0c") and sort_key("-3.5%") < sort_key("2%"),
        "column sort reads numbers through $, +, c and %")
     ck(sort_key("BNB") > sort_key("$5") and sort_key("abc") < sort_key("xyz"), "text sorts after numbers, alphabetically")
+    ck(sort_key(money(9.0)) < sort_key(money(15.0)) and sort_key(money(-40.0)) < sort_key(money(-9.0)),
+       "MONEY COLUMNS SORT AS MONEY. `money()` writes $+9.00, the old pattern "
+       "ate the $ OR the + but never both, so every dollar column in this app "
+       "sorted as text and put $+9.00 above $+15.00")
     ck(pct(0.1234) == "+12.34%" and pct(None) == "-" and pct(0.5, False) == "50.00%", "percent formatting")
 
     with tempfile.TemporaryDirectory() as td:
@@ -2984,7 +3796,203 @@ def selftest():
            "the banner carries its evidence: the process was opened, the log age, the flag on disk")
         ck("is NOT running" in status_of(dict(base, alive=False))[2] and "flag absent" in status_of(dict(base, alive=False))[2],
            "...and says NOT running when the pid could not be opened")
+    # =======================================================================
+    # THE LAB'S ARMS. Every check below runs with no display and no process
+    # table: the row builder, the clocks and -- above all -- the kill-safety
+    # predicate are pure functions of their arguments precisely so that the
+    # one thing here that can do damage is testable.
+    # =======================================================================
+    ck(stamp_epoch("pinrun-paper-20260918T041353Z.jsonl")
+       == calendar.timegm((2026, 9, 18, 4, 13, 53)),
+       "a paper log's filename is a clock: its stamp is when that run began")
+    ck(stamp_epoch("pinrun-paper.jsonl") is None and stamp_epoch(None) is None,
+       "NULL: a log with no stamp gives no start time, rather than 1970")
+    _NOW = calendar.timegm((2026, 9, 19, 12, 0, 0))
+    ck(remaining_minutes(_NOW - 3600, 120, _NOW) == 60.0,
+       "a 120-minute run started an hour ago has 60 minutes left")
+    ck(remaining_minutes(_NOW - 99999, 120, _NOW) == 0.0,
+       "a run past its deadline reads 0 left, never a negative countdown")
+    ck(remaining_minutes(_NOW - 3600, None, _NOW) is None
+       and remaining_minutes(None, 120, _NOW) is None
+       and remaining_minutes(_NOW, "junk", _NOW) is None,
+       "NULL: no --minutes in the start record means the time left is UNKNOWN. "
+       "An invented countdown beside a run that will not stop is a lie, and "
+       "the column shows an em dash instead")
+    ck(hours_cell(None) == DASH and hours_cell(1.5) == "1.5h",
+       "unknown hours read as an em dash; known ones as one decimal")
+    ck(sort_key(hours_cell(0.75)) < sort_key(hours_cell(1.5)),
+       "ONE UNIT PER COLUMN: hours sort as hours. '45min' and '1.5h' in the "
+       "same column would sort the 45 above the 1.5, because sort_key reads "
+       "the number and ignores the unit")
+
+    # ---- the kill predicate. This is the dangerous one. -------------------
+    _LIVE_CL = r'C:\Python314\python.exe -u C:\kals-repo\research\pinrun.py --live --size 95 --hedge-price 0.60'
+    _ARM_CL = r'C:\Python314\python.exe -u C:\kals-repo\research\pinrun.py --size 20 --hedge-price 0.60 --late-mult 1.5'
+    ck(arm_kill_ok(_ARM_CL, "--late-mult") is True,
+       "a paper arm whose own flag is on its command line can be stopped")
+    ck(arm_kill_ok(_LIVE_CL, "--hedge-price") is False,
+       "THE MONEY BOT IS NEVER TOUCHED BY THE LAB. Its command line carries "
+       "--live and that alone refuses the kill, even though --hedge-price is "
+       "really in it -- this is the check that stands between a paper button "
+       "and the account")
+    ck(arm_kill_ok(_ARM_CL, "--early-tau") is False,
+       "a flag the command line does not carry refuses: the click stops the "
+       "arm that was clicked, never its neighbour on the next flag")
+    ck(arm_kill_ok(_ARM_CL, "arm-b-control") is False,
+       "an arm named after its OUTPUT FILE cannot be proved -- Windows does "
+       "not report a redirect -- so the app refuses rather than killing the "
+       "closest-looking process")
+    ck(arm_kill_ok("", "--late-mult") is False and arm_kill_ok(_ARM_CL, None) is False
+       and arm_kill_ok(_ARM_CL, "") is False,
+       "NULL: an empty command line (Windows returns one for a process we "
+       "cannot open) and an empty match both refuse")
+    ck(arm_kill_ok(r"python.exe C:\kals\kalshi_collector.py --late-mult", "--late-mult") is False,
+       "THE COLLECTORS ARE NOT ARMS. Only our paper scripts are killable, so "
+       "the tape cannot be stopped by a Lab button")
+
+    # ---- the launch predicate --------------------------------------------
+    _OK_ARGV = ["-u", r"C:\kals-repo\research\pinrun.py", "--size", "20", "--late-mult", "1.5"]
+    ck(arm_launch_ok(_OK_ARGV) is True, "a paper pinrun may be started again")
+    ck(arm_launch_ok(_OK_ARGV + ["--live"]) is False,
+       "PLAY CAN NEVER SEND AN ORDER. --live anywhere in the settings refuses "
+       "the launch outright")
+    ck(arm_launch_ok(["-u", r"C:\kals-repo\research\cmdlive.py", "--size-dollars", "10"]) is False,
+       "and neither can the commodities LIVE arm, which spends real money -- "
+       "it is not on the paper allowlist and its flag is on the deny list")
+    ck(arm_launch_ok([]) is False and arm_launch_ok(["-u"]) is False
+       and arm_launch_ok(["-u", "a.py", "b.py"]) is False,
+       "NULL: nothing to run, no script, or two scripts -- all refused")
+
+    # ---- state, rows, filters --------------------------------------------
+    _E = [
+        {"name": "Arm A, alive and ahead", "status": pinlab.RUNNING, "match": "--arm-a",
+         "since": "2026-09-18", "what": "a thing", "why": "a reason"},
+        {"name": "Arm B, paused by the operator", "status": pinlab.RUNNING,
+         "match": "--arm-b", "since": "2026-09-18"},
+        {"name": "Arm C, nothing measured yet", "status": pinlab.RUNNING,
+         "match": "--arm-c", "since": "2026-09-19"},
+        {"name": "An idea nobody has run", "status": pinlab.IDEA, "match": None,
+         "since": "2026-09-17"},
+    ]
+    _P = {"--arm-a": {"running": True, "settled": 30, "won": 29, "lost": 1, "net": 12.5,
+                      "log": "pinrun-paper-20260918T041353Z.jsonl"},
+          "--arm-b": {"running": False, "settled": 4, "won": 4, "lost": 0, "net": 1.0},
+          "--arm-c": {}}
+    _W = {"--arm-a": {"pct": 12.0, "sd_pct": -3.0, "arm_worst": -2.0, "live_worst": -9.0,
+                      "arm_net": 3.0, "live_net": 1.0, "diff": 2.0,
+                      "h2h": {"n": 22, "cpc_diff": 1.25, "at_our_stake": 18.40,
+                              "arm_cpc": 3.20, "live_cpc": 1.95, "arm_only": 2,
+                              "live_only": 3, "missed_loss": -5.0}},
+          "--arm-b": {"pct": -4.0, "h2h": {"n": 5, "cpc_diff": -0.75, "at_our_stake": -2.0,
+                                           "arm_cpc": 1.00, "live_cpc": 1.75,
+                                           "arm_only": 0, "live_only": 1,
+                                           "missed_loss": 0.0}}}
+    _CTRL = {"paused": {"--arm-b": {"at": _NOW - 600, "argv": list(_OK_ARGV)}},
+             "deleted": {}}
+    _M = {"--arm-a": {"started": _NOW - 7200, "run_started": _NOW - 3600,
+                      "minutes": 120, "logs": 1, "pid": 4242, "cmdline": _ARM_CL}}
+    _rows = arm_rows(_E, _P, _W, _CTRL, _M, _NOW)
+    ck(len(_rows) == 4, "every board entry gets a row, measured or not")
+    _by = {r[2]["name"]: r for r in _rows}
+    ck(_by["Arm C, nothing measured yet"][0][2] == DASH
+       and _by["Arm C, nothing measured yet"][0][9] == DASH
+       and _by["Arm C, nothing measured yet"][1] == "muted",
+       "AN ARM WITH NO DATA RENDERS. Every unknown is an em dash and the row "
+       "is greyed -- it does not crash the tab and it does not read as a zero")
+    ck(_by["Arm A, alive and ahead"][2]["state"] == LAB_PLAYING
+       and _by["Arm B, paused by the operator"][2]["state"] == LAB_PAUSED
+       and _by["Arm C, nothing measured yet"][2]["state"] == LAB_STOPPED,
+       "PLAYING, PAUSED and STOPPED are three different states: alive; stopped "
+       "by you and restartable; not running. The board's own RUNNING label "
+       "says none of that")
+    ck(_by["An idea nobody has run"][2]["state"] == pinlab.IDEA,
+       "a write-up with no process keeps the board's word for it")
+    ck(LAB_ORDER[LAB_PAUSED] == 1 and len(LAB_ORDER) == 7,
+       "PAUSED APPEARS ONCE IN THE SORT ORDER. pinlab.PAUSED is the same "
+       "string as LAB_PAUSED, so listing both made the later one win and sank "
+       "every paused arm below the ideas")
+    ck(_rows[0][2]["name"] == "Arm A, alive and ahead",
+       "the table opens on what is alive and winning")
+    ck(_by["Arm A, alive and ahead"][0][10] == "1.0h",
+       "time left: a 120-minute run restarted an hour ago has an hour to go")
+    ck(_by["Arm B, paused by the operator"][0][9] == DASH,
+       "and an arm whose logs carry no stamp says so rather than reading 0.0h")
+    ck(_by["Arm B, paused by the operator"][2]["can_play"] is True
+       and _by["Arm B, paused by the operator"][2]["can_pause"] is False,
+       "a paused arm can be played (its settings were recorded) and cannot be "
+       "paused again")
+    ck(_by["Arm A, alive and ahead"][2]["can_pause"] is True,
+       "...and a playing arm whose process was PROVED can be paused")
+    _cpc = [r[0][2] for r in _rows]
+    _num = sorted([c for c in _cpc if c != DASH], key=sort_key)
+    ck(_num == ["-0.75c", "+1.25c"],
+       "THE STAT COLUMNS SORT AS NUMBERS. Alphabetically '+1.25c' comes before "
+       "'-0.75c', which would put the losing arm at the top of a column the "
+       "operator clicks to find the best one")
+    _stake = sorted([r[0][3] for r in _rows if r[0][3] != DASH], key=sort_key)
+    ck(_stake == ["-2.00", "+18.40"],
+       "...and so does the dollars-at-our-stake column")
+    ck(len(arm_rows(_E, _P, _W, _CTRL, _M, _NOW, min_shared=20)) == 1,
+       "the shared-markets filter keeps only arms with enough common markets "
+       "to say anything")
+    _beat = arm_rows(_E, _P, _W, _CTRL, _M, _NOW, beating_only=True)
+    ck(len(_beat) == 1 and _beat[0][2]["name"] == "Arm A, alive and ahead",
+       "'only arms beating the real bot' reads the head-to-head, not the "
+       "scaled guess")
+    ck(len(arm_rows(_E, _P, _W, _CTRL, _M, _NOW, want=LAB_PAUSED)) == 1
+       and len(arm_rows(_E, _P, _W, _CTRL, _M, _NOW, want=pinlab.IDEA)) == 1,
+       "the state buttons filter on what an arm is DOING and on what the board "
+       "calls it, both")
+    _story = arm_story(_by["Arm A, alive and ahead"][2])
+    ck("HEAD TO HEAD" in _story and "+1.25c" in _story and "WHAT IT DOES" in _story,
+       "clicking an arm opens its head-to-head and its write-up in one place")
+    ck("1.0h" in arm_story(_by["Arm A, alive and ahead"][2])
+       and DASH in arm_story(_by["Arm C, nothing measured yet"][2]),
+       "...and the detail view carries the same clocks as the table")
+
+    # ---- delete: the report is written BEFORE anything is removed ---------
+    with tempfile.TemporaryDirectory() as _td:
+        _st = _by["Arm B, paused by the operator"][2]
+        _seen = {}
+
+        def _commit(p):
+            # what the world looks like AT THE MOMENT the report is committed
+            _seen["file_exists"] = os.path.exists(p)
+            _seen["already_removed"] = "--arm-b" in (_CTRL.get("deleted") or {})
+        _path = delete_arm(_st, "it lost on every shared market", _NOW, _CTRL,
+                           results=_td, commit=_commit)
+        ck(_seen.get("file_exists") is True and _seen.get("already_removed") is False,
+           "DELETE WRITES ITS REPORT FIRST. The file is on disk and committed "
+           "before the arm is taken off the board -- a delete that loses the "
+           "result is the one thing this board exists to prevent")
+        _txt = open(_path, encoding="utf-8").read()
+        ck("-0.75c" in _txt and "it lost on every shared market" in _txt
+           and "Arm B, paused by the operator" in _txt and "5" in _txt,
+           "and the report carries the final numbers, the reason, and the name")
+        ck("lab_control.json" in _txt,
+           "...and says how to bring the arm back, because nothing was deleted "
+           "from the board file itself")
+        ck("--arm-b" in _CTRL["deleted"] and "--arm-b" not in _CTRL["paused"],
+           "only THEN is it removed, and its paused entry goes with it")
+        _after = arm_rows(_E, _P, _W, _CTRL, _M, _NOW)
+        ck(len(_after) == 3 and all(r[2]["match"] != "--arm-b" for r in _after),
+           "a deleted arm is gone from the table -- that is what 'removes it "
+           "from everywhere' means")
+        _cp = os.path.join(_td, "lab_control.json")
+        save_control(_CTRL, _cp)
+        ck(load_control(_cp)["deleted"].get("--arm-b", {}).get("report")
+           == os.path.basename(_path),
+           "the deletion survives a restart of the app: it is a file, not a "
+           "variable")
+        ck(load_control(os.path.join(_td, "nothing-here.json"))
+           == {"paused": {}, "deleted": {}},
+           "NULL: no control file yet reads as nothing paused and nothing "
+           "deleted, not as a crash on the first ever run")
     ck(all(k for k, _t, _b in HELP) and len({k for k, _t, _b in HELP}) == len(HELP), "help sections have unique keys")
+    ck("lab" in {k for k, _t, _b in HELP},
+       "the Lab has a help entry -- `register(lab_head, \"lab\", ...)` pointed "
+       "at a key that did not exist, so 'What's this' on the whole tab showed "
+       "'No help written for this yet'")
         # THE REFRESH BUTTON MUST ACTUALLY REFRESH. It existed and called
     # tick(force=True), but `force` was never read, so the Lab sat behind its
     # own 45-second cache and the operator had no way to know whether the
@@ -3027,7 +4035,57 @@ def selftest():
            "every touch of %s is guarded against TclError: the worker thread "
            "can land after the window has closed, and an unguarded widget "
            "call there kills the thread silently" % _n)
-print("pindesk selftest: OK")
+    # ---- the Lab tab's own source invariants -----------------------------
+    _lb = _src.index("    # LAB tab -- the drawing board")
+    _le = _src.index("    # LOG tab", _lb)
+    _lab_src = _src[_lb:_le]
+    ck(len(_lab_src) > 4000, "the slice this test reads really is the Lab tab")
+    ck('fh.write("%s draw_lab:\\n%s\\n"' in _src,
+       "a Lab that throws writes its traceback to results\\pindesk.err. That "
+       "`except` was a bare `pass` and swallowed every mistake the tab could "
+       "make, which is the worst place in the app for silence")
+    ck("lab_tab.grid_rowconfigure(2, weight=3)" in _lab_src
+       and "lab_tab.grid_rowconfigure(5, weight=2)" in _lab_src
+       and not [w for w in ("lab_head", "lab_filter", "f_arms", "lab_pickbar",
+                            "lab_chart", "lab_body") if w + ".pack(" in _lab_src],
+       "THE LAB LAYS OUT WITH GRID, not pack, and NOT ONE of its six direct "
+       "children is packed. Two areas are flexible now (the table and the "
+       "detail pane), pack gives the leftover height to whichever expanding "
+       "child it meets first -- which is exactly what pushed the chart off the "
+       "bottom of the screen -- and mixing the two managers in one container "
+       "hangs the window outright")
+    for _w in ("lab_head.grid(", "lab_filter.grid(", "f_arms.grid(",
+               "lab_pickbar.grid(", "lab_chart.grid(", "lab_body.grid("):
+        ck(_w in _lab_src,
+           "%s is placed with grid -- ONE geometry manager per container, or "
+           "tk hangs the whole window" % _w.split(".grid")[0])
+    ck("lab_chart = tk.Canvas(lab_tab, bg=C[\"panel\"], height=200" in _lab_src
+       and 'H = max(int(lab_chart["height"]), 120)' in _lab_src,
+       "the chart stays a FIXED height, so draw_lab_chart may keep measuring "
+       "it by its `height` option; make it flexible and that line reads the "
+       "configured number while the canvas is a different size")
+    ck('root.after(0, lambda: tick(force=True))' in _lab_src,
+       "every arm button forces a refresh when it finishes -- draw_lab only "
+       "runs when the worker produced something new, so without this the "
+       "table would say PLAYING for 45 seconds after the process was stopped")
+    ck("arm_busy = set()" in _lab_src and "def arm_guarded(match, fn):" in _lab_src
+       and "guarded(on_start)" not in _lab_src,
+       "the per-arm buttons have their OWN busy flag. `guarded` sets one "
+       "global and disables START/PAUSE/STOP, so a paper experiment would "
+       "grey out the money buttons")
+    ck("messagebox.askyesno" in _lab_src.split("def on_arm_delete")[1],
+       "DELETE ASKS FIRST. It is the one button here that removes something")
+    # the needle is BUILT, not written out, or this line would find itself
+    ck("git_commit_file" in _lab_src
+       and (chr(34) + "pu" + "sh" + chr(34)) not in _src,
+       "the delete report is COMMITTED, never pushed -- the operator's own "
+       "runner pushes the branch and a desktop button that pushed would race "
+       "it")
+    # THIS LINE WAS AT COLUMN 0 -- outside selftest() entirely -- so "pindesk
+    # selftest: OK" printed at IMPORT time, before a single check had run, and
+    # it printed it just as loudly on the runs that then failed. Found
+    # 2026-09-19. A pass message that cannot fail is not a pass message.
+    print("pindesk selftest: OK")
 
 
 def main():
