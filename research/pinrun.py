@@ -304,6 +304,45 @@ _DEFAULT_LATE_EXTRA = 0.0
 LATE_EXTRA_TAU = None
 _DEFAULT_LATE_EXTRA_TAU = None
 
+# AMENDMENT 65 (2026-09-19): A HARD DOLLAR CAP ON WHAT A RUN MAY LOSE.
+#
+# The operator, after depositing: "Cap losses at 200, keep bet size."
+#
+# The loss abort has always been DERIVED: `-2 x SIZE x MAX_PER_CLOSE`, a band
+# that survives two worst closes. It therefore GROWS with the bank -- at 105
+# contracts it had already reached -$420 -- and nothing let him say "whatever
+# the arithmetic thinks, stop at two hundred dollars".
+#
+# LOSS_CAP is that number, in positive dollars. The abort becomes the TIGHTER
+# of the derived band and the cap, so the cap can only ever reduce what a run
+# may lose. It is re-applied on every autosize, because the derived value is
+# recomputed there and a cap that only ran once would be silently undone the
+# next time the bank moved -- which is exactly how the old one-way ratchet
+# let the stop follow the bank up and never come back down.
+LOSS_CAP = None                 # positive dollars, or None for no cap
+_DEFAULT_LOSS_CAP = None
+_LC_UNSET = object()            # "cap not supplied" -- distinct from None,
+                                # which is a REAL value meaning "no cap". The
+                                # same trap as _HP_UNSET and _EW_UNSET, and
+                                # _HP_UNSET itself is declared further down
+                                # this file than this function.
+
+
+def abort_for(size, cap=_LC_UNSET, per_close=None):
+    """The dollar loss at which a run stops: the TIGHTER of band and cap.
+
+    Returned NEGATIVE, as `--loss-abort` is. `cap` is positive dollars.
+    """
+    cap = LOSS_CAP if cap is _LC_UNSET else cap
+    per = MAX_PER_CLOSE if per_close is None else per_close
+    band = -2.0 * 1.00 * float(size) * float(per)
+    if cap is None:
+        return band
+    try:
+        return max(band, -abs(float(cap)))     # max() of two negatives = tighter
+    except (TypeError, ValueError):
+        return band
+
 
 def late_extra_tau():
     """Seconds-to-close inside which the extra BUDGET applies."""
@@ -2711,7 +2750,8 @@ _FLAG_GLOBALS = ("LATE_EXTRA_TAU", "LATE_EXTRA", "LATE_TAU", "LATE_MULT",
                  "SKIP_BANDS", "HEDGE_PRICE", "HEDGE_PANIC", "HEDGE_BELIEF",
                  "EARLY_MAX_EDGE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
                  "EARLY_FRAC", "BANK_BRAKE", "SIGMA_STRESS", "FLIP_MULT",
-                 "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC")
+                 "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC",
+                 "LOSS_CAP")
 
 
 def _selftest_body():
@@ -3986,6 +4026,30 @@ def _selftest_body():
             (_g59["SIZE"], _g59["LATE_EXTRA"], _g59["LATE_TAU"],
              _g59["EXTRA_COIN"]) = _sv61
 
+        # ---- AMENDMENT 65: a hard dollar cap on what a run may lose.
+        ck(_DEFAULT_LOSS_CAP is None, "A65 ships with no cap")
+        ck(abort_for(105.0, cap=None, per_close=2) == -420.0,
+           "with no cap the abort is the derived band, -2 x SIZE x "
+           "MAX_PER_CLOSE -- at 105 contracts that is -$420, which is what "
+           "the live bot had reached after the deposit")
+        ck(abort_for(105.0, cap=200.0, per_close=2) == -200.0,
+           "a $200 cap binds there, because the cap is TIGHTER")
+        ck(abort_for(20.0, cap=200.0, per_close=2) == -80.0,
+           "and at a small size the BAND binds instead -- the cap can only "
+           "ever reduce what a run may lose, never raise it")
+        ck(abort_for(105.0, cap=-200.0, per_close=2) == -200.0,
+           "the sign of the cap is ignored: it is a magnitude, and a stray "
+           "minus must not turn a cap into a licence")
+        ck(abort_for(105.0, cap="junk", per_close=2) == -420.0,
+           "NULL: an unreadable cap falls back to the derived band rather "
+           "than to no limit at all")
+        _src65 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        ck("want_abort = abort" + "_for(new_size)" in _src65,
+           "the autosize path uses it, so the cap is re-applied EVERY time "
+           "the bank moves -- a cap applied once at start-up is undone by the "
+           "next autosize, which is exactly how the old one-way ratchet let "
+           "the stop follow the bank up and never come back down")
+
         # ---- AMENDMENT 57: one volatility multiplier for the WHOLE model.
         _src57 = open(os.path.abspath(__file__), encoding="utf-8").read()
         for _where in ("sg * SIGMA_STRESS", "_hsg * SIGMA_STRESS"):
@@ -4786,9 +4850,15 @@ def _selftest_body():
             ck(abs(float(SIZE) - float(size_for_bank(60.0))) < 1e-9,
                f"after the rails were loosened for size 120, a $60 bank must "
                f"still shrink SIZE to {size_for_bank(60.0)}, got {SIZE}")
-            ck(pintake.LOSS_ABORT <= -240.0,
+            # A65: --loss-cap is a HARD ceiling on the magnitude, so with a
+            # cap in force the loosest the brake may ever be IS the cap. This
+            # asserted a bare -240 and failed the moment the operator set
+            # --loss-cap 200, which is the flag doing exactly its job.
+            _want_loose = -240.0 if LOSS_CAP is None else -min(240.0, abs(LOSS_CAP))
+            ck(pintake.LOSS_ABORT <= _want_loose + 1e-9,
                f"and the brake must stay at its loosest high-water mark, not "
-               f"be tightened on the way down, got {pintake.LOSS_ABORT}")
+               f"be tightened on the way down -- loosest allowed here is "
+               f"{_want_loose} (cap {LOSS_CAP}), got {pintake.LOSS_ABORT}")
         finally:
             globals()["SIZE"] = _sz0
             pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE = _mtc0, _mrs0
@@ -6583,7 +6653,10 @@ def apply_size(new_size, a, why, rec=None):
     old = float(SIZE)
     globals()["SIZE"] = new_size
     wc = 1.00 * new_size * float(MAX_PER_CLOSE)   # the loss-abort band's unit
-    want_abort = -2.0 * wc                        # mid-band: survives 2 closes
+    # A65: the derived band, then clamped by --loss-cap if one is set. Done
+    # HERE and not once at start-up, because this line is what recomputes the
+    # abort every time the bank moves.
+    want_abort = abort_for(new_size)              # mid-band, or the cap
     # AMENDMENT 30: THIS NOW TIGHTENS AS WELL AS LOOSENS, and the one-way
     # ratchet it replaces was the weakest rail in the bot. It read
     # `if want_abort < a.loss_abort`, so the dollar stop followed the bank UP
@@ -8647,6 +8720,13 @@ def main():
                     help="AMENDMENT 48: the multiple of SIZE one order may "
                          "reach inside --late-tau. Still capped by the drawdown "
                          "headroom, the close budget and the book.")
+    ap.add_argument("--loss-cap", type=float, default=None,
+                    help="AMENDMENT 65: a HARD dollar cap on what one run may "
+                         "lose, in positive dollars. The abort is normally "
+                         "derived (-2 x SIZE x MAX_PER_CLOSE) and grows with "
+                         "the bank; this is the tighter of the two and is "
+                         "re-applied on every autosize. It can only ever "
+                         "REDUCE what a run may lose.")
     ap.add_argument("--late-extra-tau", type=int, default=None,
                     help="AMENDMENT 64: seconds-to-close inside which the "
                          "extra BUDGET applies. Defaults to --late-tau. They "
@@ -8956,6 +9036,14 @@ def main():
                              "(%.1f) -- the close budget bounds it anyway, got %r"
                              % (float(MAX_PER_CLOSE), a.late_mult))
         globals()["LATE_MULT"] = float(a.late_mult)
+    if a.loss_cap is not None:
+        if not (10.0 <= a.loss_cap <= 100000.0):
+            raise SystemExit("--loss-cap is in positive dollars and must sit "
+                             "in [10, 100000], got %r" % (a.loss_cap,))
+        globals()["LOSS_CAP"] = abs(float(a.loss_cap))
+        # apply it to the starting value too, not only to later autosizes
+        if abs(float(a.loss_abort)) > abs(float(a.loss_cap)):
+            a.loss_abort = -abs(float(a.loss_cap))
     if a.late_extra_tau is not None:
         if not (TAU_MIN <= a.late_extra_tau <= max(TAU_MAX, EARLY_TAU_MAX)):
             raise SystemExit("--late-extra-tau must sit in [%d, %d], got %r"
@@ -9269,6 +9357,7 @@ def main():
         late_tau=LATE_TAU, late_mult=LATE_MULT,
         late_pin=LATE_PIN, late_jump=LATE_JUMP_SD, extra_coin=EXTRA_COIN,
         late_extra=LATE_EXTRA, late_extra_tau=late_extra_tau(),
+        loss_cap=LOSS_CAP,
         # A53: lists, so the Lab can select an arm by its exact bands
         skip_bands=[list(b) for b in SKIP_BANDS],
         band_mults=[list(b) for b in BAND_MULTS],

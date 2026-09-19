@@ -1,3 +1,49 @@
+# v-cap200 -- 2026-09-19 ~03:1xZ -- LIVE: a hard $200 loss cap, and the bet size held at ~77 through the deposit
+
+Operator, immediately after depositing: *"Cap losses at 200, keep bet size."*
+Bank went $674 -> **$927.62**.
+
+## 1. `--bank-brake` 3.00 -> 4.08 : the deposit does NOT grow the bet
+
+At a $928 bank the old brake would have auto-sized to **105 contracts** with
+a **$309** worst close. 4.08 holds the bet at about **77** -- the size it has
+traded all night -- and the bank covers a bad close **4.1x** instead of 3.0x.
+
+The deposit still buys the thing that actually earns: the **close budget**
+rises with the bank at any brake, and that is what `close_budget` was
+refusing 423 markets for. Our own record says a bigger BET does not earn
+more (size 47 -> 98 over six days, correlation with daily money **-0.05**).
+
+## 2. AMENDMENT 65: `--loss-cap 200`
+
+The loss abort has always been DERIVED -- `-2 x SIZE x MAX_PER_CLOSE`, a band
+that survives two worst closes -- so it **grew with the bank**. It had already
+reached **-$420** at 105 contracts, and nothing let the operator say "whatever
+the arithmetic thinks, stop at two hundred dollars".
+
+`abort_for()` now returns the TIGHTER of the band and the cap:
+
+| SIZE | derived band | with a $200 cap |
+|---|---|---|
+| 105 | -$420 | **-$200** |
+| 77 | -$308 | **-$200** |
+| 20 | -$80 | -$80 (the band is tighter; a cap never RAISES the limit) |
+
+**It is re-applied on every autosize**, not once at start-up. A cap applied
+once is undone the next time the bank moves -- which is precisely how the old
+one-way ratchet let the stop follow the bank up and never come back down.
+
+A stray minus sign on the flag is ignored: the cap is a magnitude, so
+`--loss-cap -200` and `--loss-cap 200` mean the same thing and neither can
+turn a cap into a licence.
+
+## Revert
+
+`restart_bot.ps1`: delete `"--loss-cap", "200"` for the derived band, and set
+`"--bank-brake", "3.00"` to let the bet scale with the bank again.
+
+---
+
 # v-late15 -- 2026-09-19 ~02:5xZ -- LIVE: the extra BUDGET reaches 15 s while the 1.5x boost stays at 10
 
 Operator, on being shown that 423 markets were refused for `close_budget`:
