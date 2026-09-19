@@ -659,6 +659,34 @@ EXPERIMENTS = [
                  "the control's single fill on the same market.",
     },
     {
+        "name": "When an early bet flips, buy DOUBLE the other side (A54)",
+        "status": RUNNING, "match": "arm-e60-flip2", "since": "2026-09-18",
+        "select": {"flip_mult": lambda v: v is not None and float(v) > 1.0,
+                   "early_tau_max": 60, "early_frac": 0.333},
+        "what": "Identical to the 'third at 46-60 s' arm in every setting "
+                "except one: when a bet opened out at 46-60 s turns against "
+                "us INSIDE 30 seconds, it buys twice the position on the "
+                "other side instead of an equal hedge, so the position ends "
+                "up net long the side the later look prefers.",
+        "why": "Operator: 'Make sure the paper arms from 30-60 seconds buy "
+               "more of the other side if at 30 seconds or less it flips.' "
+               "The reasoning is the settlement window: a bet placed at 60 s "
+               "is made with NONE of the sixty prints recorded, and by 30 s "
+               "HALF are. The later look is strictly better informed, so its "
+               "disagreement is information rather than noise.",
+        "good": "It beats its control (arm-e60-third) on money AND on the "
+                "worst single close. That means the 30-second read really "
+                "does overturn the 60-second one often enough to bet on.",
+        "bad": "It loses more than its control. Doubling is NOT a hedge -- "
+               "1 YES at 97c against 2 NO at 60c loses 17c if NO lands and "
+               "117c if YES lands, where an equal hedge loses 57c either "
+               "way. It needs the flip to be right about 7 times in 10 just "
+               "to break even against hedging.",
+        "watch": "Every flip: the entry price and second, the flip price and "
+                 "second, and which side actually settled. The pair's net "
+                 "against what an equal hedge would have locked.",
+    },
+    {
         "name": "The whole bet at 46-60 s (control for the increments)",
         "status": RUNNING, "match": "arm-e60-full", "since": "2026-09-18",
         "select": {"early_tau_max": 60, "early_frac": 1.0,

@@ -1021,11 +1021,66 @@ _EW_UNSET = object()      # "cap not supplied" -- distinct from None, which is
 #                            use, capped by the book and the close budget.
 # Operator, 2026-09-18: "We can remove 94-96 ... If it's safe then yea you
 # figure out a way to buy more beneath 94."
+# AMENDMENT 54 (2026-09-18): WHEN AN EARLY BET FLIPS, BUY MORE OF THE SIDE
+# THAT IS NOW WINNING -- do not merely insure the one that is now losing.
+#
+# The operator: "Make sure the paper arms from 30-60 seconds buy more of the
+# other side if at 30 seconds or less it flips."
+#
+# The reasoning is the settlement window itself. A bet placed at 46-60 s is
+# made when NONE of the sixty one-second prints is recorded; by 30 s HALF of
+# them are. So the second look is strictly better informed than the first,
+# and if it disagrees, the disagreement is information rather than noise.
+# The ordinary hedge buys `n` of the other side and locks the loss. This buys
+# `FLIP_MULT * n`, so the position is net LONG the side the better-informed
+# look prefers.
+#
+# THE ARITHMETIC, and it is not free. Holding n YES at p and m NO at q, the
+# pair pays out n if YES lands and m if NO lands, against a cost of np + mq:
+#
+#     n=1 at 97c, m=1 at 60c  ->  -57c whichever way it lands (a true hedge)
+#     n=1 at 97c, m=2 at 60c  ->  -17c if NO lands, -117c if YES lands
+#
+# So doubling is a BET on the second look, not a hedge: it cuts the loss when
+# the flip is right and roughly doubles it when the flip is wrong. It pays
+# only if the 30-second read beats the 60-second read better than about 7
+# times in 10, and nothing measures that yet. Paper only, shipped OFF.
+FLIP_MULT = 1.0
+_DEFAULT_FLIP_MULT = 1.0
+
 SKIP_BANDS = ()                 # ((lo, hi), ...)        asks refused
 _DEFAULT_SKIP_BANDS = ()
 BAND_MULTS = ()                 # ((lo, hi, mult), ...)  size multiples
 _DEFAULT_BAND_MULTS = ()
 _PB_UNSET = object()            # "not supplied" -- the _HP_UNSET / _EW_UNSET trap
+
+
+def flip_size(n, entry_tau, now_tau, mult=None, tau_max=None):
+    """Contracts to buy on the OTHER side when a position has flipped.
+
+    Returns `n` unchanged -- an ordinary hedge -- unless ALL of:
+      * the flag is on (mult > 1), and
+      * the position was opened OUTSIDE the main window (entry_tau > tau_max),
+        i.e. on the early leg, where the model is weakest, and
+      * we are now INSIDE it (now_tau <= tau_max), where it is strongest.
+    Anything bought inside the window was already made on the better
+    information, so a later disagreement is not a second opinion and gets the
+    ordinary hedge.
+    """
+    mult = FLIP_MULT if mult is None else float(mult)
+    tau_max = TAU_MAX if tau_max is None else float(tau_max)
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return 0.0
+    if mult <= 1.0 or entry_tau is None or now_tau is None:
+        return n
+    try:
+        if float(entry_tau) > tau_max >= float(now_tau):
+            return n * mult
+    except (TypeError, ValueError):
+        return n
+    return n
 
 
 def band_blocked(price, bands=_PB_UNSET):
@@ -3364,7 +3419,9 @@ def _selftest_body():
         ck(_lp53.index('_gate("early_wide"') < _lp53.index('_gate("price_band"'),
            "and after the early-leg gates, so a cheap early ask is refused for "
            "being cheap rather than for its band")
-        _nd53 = "LATE_MULT, max_band" + "_mult())"     # built, so this line is not counted
+        # built, so this line is not counted. A54 appended FLIP_MULT to the
+        # same max(), so the needle stops at the band multiple.
+        _nd53 = "LATE_MULT, max_band" + "_mult(), FLIP_MULT)"
         ck(_src53.count(_nd53) == 2,
            "pintake's per-order count cap admits the band multiple AND the late "
            "multiple, at live start and at every autosize -- the live path "
@@ -3373,6 +3430,47 @@ def _selftest_body():
            and "band_mults=[list(b) for b in BAND_MULTS]" in _src53,
            "the start record carries both band lists, so the Lab can tell one "
            "band arm from another (the A47/A48/A49 blank-tab lesson)")
+        # ---- AMENDMENT 54: flip into the side the later look prefers. OFF.
+        ck(_DEFAULT_FLIP_MULT == 1.0,
+           "A54 ships OFF -- the DECLARED default, so an arm that sets the "
+           "flag does not fail its own gate")
+        ck(flip_size(40.0, 50, 20, mult=2.0, tau_max=30) == 80.0,
+           "a bet opened at 50 s that flips at 20 s buys DOUBLE the other "
+           "side -- the 20-second look has half the settlement window on disk "
+           "and the 50-second look had none of it")
+        ck(flip_size(40.0, 20, 10, mult=2.0, tau_max=30) == 40.0,
+           "a bet opened INSIDE the window gets the ordinary equal hedge, "
+           "however far it later falls: it was already made on the better "
+           "information, so a later disagreement is not a second opinion")
+        ck(flip_size(40.0, 50, 40, mult=2.0, tau_max=30) == 40.0,
+           "and a flip that happens while still OUTSIDE the window is also "
+           "an ordinary hedge -- the rule is early-then-late, not early-then-"
+           "anything")
+        ck(flip_size(40.0, 50, 20, mult=1.0, tau_max=30) == 40.0,
+           "NULL: with the flag off the size is untouched on every path")
+        ck(flip_size(40.0, None, 20, mult=2.0, tau_max=30) == 40.0
+           and flip_size(40.0, 50, None, mult=2.0, tau_max=30) == 40.0,
+           "NULL: an unknown entry or current second falls back to the equal "
+           "hedge rather than guessing a multiple")
+        ck(flip_size(None, 50, 20, mult=2.0, tau_max=30) == 0.0,
+           "NULL: an unreadable position size is zero, never a multiple of "
+           "nothing")
+        _src54 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp54 = _src54[_src54.rindex(chr(10) + "def " + "trade_loop("):]
+        ck("_hn_want = flip" + "_size(_hn, _entry_tau, _htau)" in _lp54,
+           "the hedge block sizes through flip_size, so the flag reaches the "
+           "only place it can act")
+        ck(_lp54.index("_hn_want = flip" + "_size") < _lp54.index("_hn_take = min(float(_hn_want)"),
+           "...before the ask-size cap, so the book still bounds what we ask")
+        _nd54 = "max_band_mult(), FLIP" + "_MULT)"
+        ck(_src54.count(_nd54) == 2,
+           "pintake's per-order count cap admits the flip multiple at live "
+           "start and at every autosize -- otherwise the wider hedge is "
+           "refused on the wire while paper books it")
+        ck('"--flip-mult is PAPER ONLY' in _src54,
+           "and a LIVE run refuses the flag outright: this is a bet on the "
+           "later look, and no measurement supports it yet")
+
         # THE OFF-SWITCH: a boosted loss ends the boost for the run.
         _off53 = 'globals()["BAND_MULTS"] = ()'
         ck(_off53 in _lp53 and 'rec("band_boost_off"' in _lp53,
@@ -5755,7 +5853,7 @@ def apply_size(new_size, a, why, rec=None):
             # live path refuses the wider order while the paper path books it
             max_take_count=max(pintake.MAX_TAKE_COUNT,
                                new_size * max(ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0,
-                                              LATE_MULT, max_band_mult())),
+                                              LATE_MULT, max_band_mult(), FLIP_MULT)),
             why=f"auto-size {old:g} -> {new_size:g}: {why}")
     except Exception as e:                        # a refused loosening must
         globals()["SIZE"] = old                   # not leave SIZE ahead of
@@ -6383,7 +6481,12 @@ def trade_loop(a, rec, book, idx, series_index):
                         entry=_hcost, ask=_ask, tau=_htau,
                         edge_c=hedge_edge_c(_belief, _ask))
                     continue
-                _hn_take = min(float(_hn), float(_asz))
+                # A54: if this position was opened on the EARLY leg and the
+                # flip is happening inside the main window, buy MORE of the
+                # side the better-informed look prefers.
+                _entry_tau = (_hcs - entry_at[_hid]) if _hid in entry_at else None
+                _hn_want = flip_size(_hn, _entry_tau, _htau)
+                _hn_take = min(float(_hn_want), float(_asz))
                 if HEDGE_PILOT_CONTRACTS:
                     _hn_take = min(_hn_take, float(HEDGE_PILOT_CONTRACTS))
                 attempts[_hcs] = attempts.get(_hcs, 0) + 1
@@ -6393,6 +6496,10 @@ def trade_loop(a, rec, book, idx, series_index):
                     hedged.add(_hid)
                     rec("hedge", ticker=_htk, side=_opp, price=float(_ask),
                         ask=float(_ask), ask_size=float(_asz),
+                        # A54: what we ASKED for and why, so a flip is never
+                        # mistaken for an ordinary hedge in the attribution
+                        flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
+                        entry_tau=_entry_tau,
                         n=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
                         locked_loss_c=round(100 * hedge_locked_loss(_hcost, _ask), 2),
                         edge_c=hedge_edge_c(_belief, _ask), live=False)
@@ -6416,6 +6523,8 @@ def trade_loop(a, rec, book, idx, series_index):
                 _hpx = _hout.get("exec_price")
                 _hcost2 = float(_hpx) if _hpx is not None else float(_ask)
                 rec("hedge", ticker=_htk, side=_opp, price=_hcost2, n=_hfilled,
+                    flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
+                    entry_tau=_entry_tau,
                     ask=float(_ask), ask_size=float(_asz),      # criterion (b): fill vs the ask we hit
                     asked=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
                     locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hcost2), 2),
@@ -7659,6 +7768,13 @@ def main():
                     help="AMENDMENT 48: the multiple of SIZE one order may "
                          "reach inside --late-tau. Still capped by the drawdown "
                          "headroom, the close budget and the book.")
+    ap.add_argument("--flip-mult", type=float, default=None,
+                    help="AMENDMENT 54: when a bet opened OUTSIDE the main "
+                         "window flips inside it, buy this multiple of the "
+                         "position on the other side instead of an equal "
+                         "hedge. >1 is a BET on the later look, not a hedge: "
+                         "it cuts the loss when the flip is right and roughly "
+                         "doubles it when wrong. Paper only, off by default.")
     ap.add_argument("--skip-band", type=float, nargs=2, action="append",
                     default=None, metavar=("LO", "HI"),
                     help="AMENDMENT 53: refuse any ask in [LO, HI) on every "
@@ -7906,6 +8022,18 @@ def main():
                              "(%.1f) -- the close budget bounds it anyway, got %r"
                              % (float(MAX_PER_CLOSE), a.late_mult))
         globals()["LATE_MULT"] = float(a.late_mult)
+    if a.flip_mult is not None:
+        if not (1.0 <= a.flip_mult <= MAX_PER_CLOSE):
+            raise SystemExit("--flip-mult must sit in [1, MAX_PER_CLOSE=%g] -- "
+                             "the close's own worst case bounds it, got %r"
+                             % (float(MAX_PER_CLOSE), a.flip_mult))
+        if a.live and a.flip_mult > 1.0:
+            raise SystemExit(
+                "--flip-mult is PAPER ONLY. Buying more of the other side is a "
+                "bet on the 30-second read beating the 60-second read, and "
+                "nothing has measured that yet. It roughly doubles the loss "
+                "when the flip is wrong.")
+        globals()["FLIP_MULT"] = float(a.flip_mult)
     if a.skip_band:
         _sb53 = []
         for _lo, _hi in a.skip_band:
@@ -8140,6 +8268,7 @@ def main():
         # A53: lists, so the Lab can select an arm by its exact bands
         skip_bands=[list(b) for b in SKIP_BANDS],
         band_mults=[list(b) for b in BAND_MULTS],
+        flip_mult=FLIP_MULT,
         early_min_price=EARLY_MIN_PRICE, early_max_edge=EARLY_MAX_EDGE,
         # THE RISK SETTING ITSELF, in the record. Bet size is derived from it,
         # so a log that shows the size but not the brake cannot say whether a
@@ -8167,7 +8296,7 @@ def main():
                               3.0 * _worst_close + 10.0),
             max_take_count=max(pintake.MAX_TAKE_COUNT,
                                float(a.size) * max(ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0,
-                                                   LATE_MULT, max_band_mult())),
+                                                   LATE_MULT, max_band_mult(), FLIP_MULT)),
             why=f"size {a.size:g}, worst close ${_worst_close:.2f}")
         arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}"
             + (f" (+A46 early leg {EARLY_FRAC:g}xSIZE to tau<={EARLY_TAU_MAX}, "

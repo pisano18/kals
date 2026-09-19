@@ -52,7 +52,16 @@ $arms = @(
                                 "--early-min-price", "0.90", "--early-max-edge", "3.0") },
   # increments AND the bands that earn: no 3c edge cap, floor at 80c
   @{ n = "arm-e60-open";  x = @("--early-tau", "60", "--early-frac", "0.333",
-                                "--early-min-price", "0.80") }
+                                "--early-min-price", "0.80") },
+  # A54: the SAME arm as arm-e60-third, plus one thing -- when a bet opened
+  # at 46-60 s flips inside 30 s, buy DOUBLE the position on the side the
+  # later look prefers instead of an equal hedge. arm-e60-third is its
+  # control; the two differ only in --flip-mult, so the pair measures the
+  # flip and nothing else. The operator: "have one that does that and one
+  # that doesnt."
+  @{ n = "arm-e60-flip2"; x = @("--early-tau", "60", "--early-frac", "0.333",
+                                "--early-min-price", "0.90", "--early-max-edge", "3.0",
+                                "--flip-mult", "2.0") }
 )
 
 foreach ($a in $arms) {
