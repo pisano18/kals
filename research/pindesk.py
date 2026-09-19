@@ -1386,7 +1386,14 @@ def run_gui():
         return b
 
     small_button(btns, "Open Deck (web view)", lambda: os.startfile(os.path.join(REPO, "open_deck.cmd"))).pack(side="left", padx=(20, 6))
-    small_button(btns, "Refresh", lambda: tick(force=True)).pack(side="left")
+    b_refresh = small_button(btns, "Refresh", lambda: tick(force=True))
+    b_refresh.pack(side="left")
+    Tip(b_refresh, "Re-reads everything NOW -- the money, the health strip and "
+                   "the whole Lab -- instead of waiting for the next automatic "
+                   "pass. The clock beside it says when the numbers on screen "
+                   "were last read.")
+    asof = tk.Label(btns, text="", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9))
+    asof.pack(side="left", padx=(8, 0))
     b_what = tk.Button(btns, text="?  What's this", command=lambda: start_explain(), bg=C["blue"], fg="white",
                        font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", bd=0, padx=10)
     b_what.pack(side="left", padx=(6, 0))
@@ -2555,13 +2562,34 @@ def run_gui():
         tails.configure(state="disabled")
 
     pending = {"h": None}
+    refreshing = {"n": 0}      # forced refreshes in flight, so two clicks do
+                               # not leave the button stuck on "refreshing..."
 
     def tick(force=False):
+        """One refresh. `force` skips the Lab's 45-second cache.
+
+        THE REFRESH BUTTON USED TO DO NOTHING FOR THE LAB. It called
+        tick(force=True) and `force` was never read, so the Lab still waited
+        out its 45-second cache and the operator could not tell whether what
+        he was looking at was current. His words: "Add a refresh button to
+        the tool so the lab and everything else doesn't need to be closed and
+        I know I have the latest data."
+        """
+        if force:
+            refreshing["n"] += 1
+            try:
+                b_refresh.configure(text="refreshing...", state="disabled")
+            except tk.TclError:
+                pass
+
         def worker():
             try:
                 ledger.refresh()
                 pending["h"] = health(ledger)
-                if time.time() - lab_cache.get("at", 0) > 45:
+                # `force` bypasses the cache; otherwise the Lab is expensive
+                # (a dozen paper logs and a PowerShell call) and is left to
+                # its own cadence
+                if force or time.time() - lab_cache.get("at", 0) > 45:
                     lab_cache["at"] = time.time()
                     lab_compute()
             except Exception:                            # noqa: BLE001
@@ -2576,6 +2604,20 @@ def run_gui():
                 except Exception:                        # noqa: BLE001
                     with open(ERR_FILE, "a", encoding="utf-8") as fh:
                         fh.write(traceback.format_exc())
+            # ALWAYS stamp it, even if render threw: a stale clock next to
+            # fresh numbers is worse than no clock, and the operator asked
+            # for this precisely so he could TRUST what is on screen.
+            try:
+                asof.configure(text="data as of " + time.strftime("%H:%M:%S"))
+            except tk.TclError:
+                pass
+            if force:
+                refreshing["n"] = max(0, refreshing["n"] - 1)
+                if not refreshing["n"]:
+                    try:
+                        b_refresh.configure(text="Refresh", state="normal")
+                    except tk.TclError:
+                        pass
         threading.Thread(target=worker, daemon=True).start()
 
     def loop():
@@ -2860,7 +2902,37 @@ def selftest():
         ck("is NOT running" in status_of(dict(base, alive=False))[2] and "flag absent" in status_of(dict(base, alive=False))[2],
            "...and says NOT running when the pid could not be opened")
     ck(all(k for k, _t, _b in HELP) and len({k for k, _t, _b in HELP}) == len(HELP), "help sections have unique keys")
-    print("pindesk selftest: OK")
+        # THE REFRESH BUTTON MUST ACTUALLY REFRESH. It existed and called
+    # tick(force=True), but `force` was never read, so the Lab sat behind its
+    # own 45-second cache and the operator had no way to know whether the
+    # numbers were current. He asked for exactly this: "so the lab and
+    # everything else doesn't need to be closed and I know I have the latest
+    # data."
+    _src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    ck("if force or time.time() - lab_cache.get(" in _src,
+       "a forced refresh BYPASSES the Lab's 45-second cache -- without this "
+       "the button re-read the money and left the Lab stale")
+    ck('b_refresh = small_button(btns, "Refresh"' in _src
+       and 'b_refresh.configure(text="refreshing...", state="disabled")' in _src,
+       "the button says `refreshing...` and disables itself while the work "
+       "runs, so a click that takes seconds does not look like a no-op")
+    ck('refreshing["n"] = max(0, refreshing["n"] - 1)' in _src
+       and 'if not refreshing["n"]:' in _src,
+       "...and two clicks cannot leave it stuck: the label is restored only "
+       "when the LAST forced refresh in flight finishes")
+    ck('asof.configure(text="data as of "' in _src,
+       "an `as of` clock says when what is on screen was last read")
+    _apply = _src[_src.index("        def apply():"):_src.index("        threading.Thread(target=worker")]
+    ck(_apply.index('asof.configure') > _apply.index("render(pending"),
+       "...and it is stamped AFTER the render, outside its try, so a render "
+       "that throws still updates the clock -- a stale clock beside fresh "
+       "numbers is worse than no clock")
+    for _n in ("b_refresh", "asof"):
+        ck(_src.count("except tk.TclError:") >= 3,
+           "every touch of %s is guarded against TclError: the worker thread "
+           "can land after the window has closed, and an unguarded widget "
+           "call there kills the thread silently" % _n)
+print("pindesk selftest: OK")
 
 
 def main():

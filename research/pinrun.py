@@ -2706,7 +2706,18 @@ def selftest():
             pass
 
 
+_FLAG_GLOBALS = ("LATE_EXTRA_TAU", "LATE_EXTRA", "LATE_TAU", "LATE_MULT",
+                 "LATE_PIN", "LATE_JUMP_SD", "EXTRA_COIN", "BAND_MULTS",
+                 "SKIP_BANDS", "HEDGE_PRICE", "HEDGE_PANIC", "HEDGE_BELIEF",
+                 "EARLY_MAX_EDGE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
+                 "EARLY_FRAC", "BANK_BRAKE", "SIGMA_STRESS", "FLIP_MULT",
+                 "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC")
+
+
 def _selftest_body():
+    # every live setting as the process actually started, so the guard at the
+    # end can prove the test gave them all back
+    _flags_before = {n: globals()[n] for n in _FLAG_GLOBALS}
     print("SELF-TEST -- pinrun")
     fails = []
 
@@ -3885,8 +3896,15 @@ def _selftest_body():
         ck(_DEFAULT_LATE_EXTRA == 0.0,
            "A59 ships OFF -- the DECLARED default")
         _g59 = globals()
+        # LATE_EXTRA_TAU IS SAVED HERE BECAUSE THE CHECKS BELOW WRITE IT.
+        # The startup self-test runs AFTER the flags are applied, so a test
+        # that leaves a global changed silently overrides the operator's own
+        # setting. This block used to end with `LATE_EXTRA_TAU = None`, which
+        # wiped `--late-extra-tau 15` on every live start -- the bot recorded
+        # 10 while its command line said 15. Same shape as the self-test that
+        # once wrote a $1,000,000 bank into the real high-water file.
         _sv59 = (_g59["SIZE"], _g59["LATE_EXTRA"], _g59["LATE_TAU"],
-                 _g59["EXTRA_COIN"])
+                 _g59["EXTRA_COIN"], _g59["LATE_EXTRA_TAU"])
         try:
             _g59["SIZE"], _g59["LATE_EXTRA"], _g59["LATE_TAU"] = 80.0, 1.0, 10
             _g59["EXTRA_COIN"] = 0.0
@@ -3924,7 +3942,7 @@ def _selftest_body():
                "brake, the loss abort and the stake cap all read it")
         finally:
             (_g59["SIZE"], _g59["LATE_EXTRA"], _g59["LATE_TAU"],
-             _g59["EXTRA_COIN"]) = _sv59
+             _g59["EXTRA_COIN"], _g59["LATE_EXTRA_TAU"]) = _sv59
         _src59 = open(os.path.abspath(__file__), encoding="utf-8").read()
         ck('"--late-extra is PAPER ONLY' in _src59,
            "a LIVE run refuses it outright -- third size increase in a day")
@@ -6258,6 +6276,18 @@ def _selftest_body():
     finally:
         globals()["SIZE"] = _sz0
 
+    # THE SELF-TEST MUST LEAVE NO LIVE SETTING CHANGED. It runs at startup
+    # with the operator's flags ALREADY applied, so any global it forgets to
+    # restore silently overrides what he asked for -- on every start, with
+    # nothing in the log to say so. --late-extra-tau 15 was wiped to None
+    # this way and the bot ran at 10 while its own command line said 15.
+    for _nm, _before in sorted(_flags_before.items()):
+        if globals()[_nm] != _before:
+            fails.append("the self-test left %s as %r when the process "
+                         "started with %r -- a test that writes a live "
+                         "setting overrides the operator's own flag"
+                         % (_nm, globals()[_nm], _before))
+            print("  FAIL " + fails[-1])
     print("SELF-TEST " + ("PASSED" if not fails else "*** FAILED ***"))
     for m in fails:
         print("   - " + m)
