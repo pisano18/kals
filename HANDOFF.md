@@ -1,3 +1,70 @@
+# 2026-09-19 ~13:0xZ -- THE LAB IS A BROWSER NOW
+
+One sortable table, one row per arm: **State · Arm · Head to head · At our
+stake $ · Shared · Settled · W-L · Net $ · Scaled % · Running · Left ·
+Since**. Every heading clicks to sort. Opens on what is alive and ahead.
+Unknowns print an em dash, never a zero.
+
+**State is what the arm is DOING (▶ PLAYING / ⏸ PAUSED / ■ STOPPED), not what
+the board calls it** -- a "RUNNING" entry whose process died now says STOPPED
+in the first column. Head to head leads every view, in **cents per contract**.
+
+Filters: state, "shared markets at least N", "only arms beating the real bot"
+(reads h2h, never the scaled guess). Click a row and both the chart and the
+detail pane follow it.
+
+**Play / Pause / Delete** act on the selection, each confirmed, each on a
+per-arm busy flag (NOT `guarded`, which is global and would have greyed out
+the live bot's own buttons). Delete writes `results/ARM_<slug>.md` with every
+final number and how to undo, `git add`+`commit`s that one file -- **commit
+only, never push** -- then removes the arm. Pauses and deletions live in
+`results/lab_control.json` as an overlay, so `pinlab.py` is never rewritten
+by a button.
+
+**Nothing is killed on a pid.** The predicate must prove the process: paper
+script present, `--live` ABSENT, and the arm's own `match` present. The live
+bot is refused even though its command line really does contain
+`--hedge-price`. The collectors are refused. An empty command line -- what
+Windows returns for a process it will not open, the shape of the 2026-09-14
+double-bot failure -- is refused. Play can only replay an argv the app itself
+recorded, against an allowlist and a deny list; `cmdlive.py` cannot be
+started from the app at all.
+
+## Two older bugs it turned up
+
+1. **EVERY money column in the whole app sorted alphabetically.**
+   `sort_key`'s `[\$+]?` is a character class -- it eats the `$` OR the `+`,
+   never both -- so `money()`'s own `$+12.34` fell to the text branch and
+   `$+9.00` sorted above `$+15.00`, on exactly the column you click to find
+   the worst day. Verified after the fix.
+2. **`print("pindesk selftest: OK")` sat at column 0, outside `selftest()`**
+   -- it printed OK at import time, before a check ran, and printed it just
+   as loudly on runs that then failed.
+
+133 checks pass, 47 new.
+
+## `--arm-name`, and what is still not controllable
+
+Eleven band arms could not be paused because their `match` was the redirect
+FILENAME `boot_all.ps1` gave them, Windows does not report a redirect in a
+command line, and they share every flag that matters -- so no predicate could
+prove which process was which and a heuristic would have killed the wrong
+one.
+
+`--arm-name` is now a LABEL flag on `pinrun`: it puts the name in the command
+line, is read by nothing, and is **refused outright on a `--live` command
+line** (verified: `--arm-name is a PAPER label; it has no business on a
+--live command line`). `boot_all.ps1`, `start_bands.ps1`, `start_early60.ps1`
+and `start_sigma.ps1` all pass it.
+
+**The 40 arms running right now predate the flag and do not carry it.**
+`restart_arms.ps1` replays their existing command lines, so it will not add
+one; they get names at their next launch from a launcher. Until then the
+eleven band arms stay uncontrollable from the Lab and their buttons grey out
+with the reason shown.
+
+---
+
 # 2026-09-19 ~12:3xZ -- THE TWO BIG LOSSES, A63 REFUSED, AND PAPER ARMS MADE PROPORTIONAL
 
 ## Today's two losses, and what the current code does about them
