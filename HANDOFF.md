@@ -1,3 +1,79 @@
+# 2026-09-19 ~12:3xZ -- THE TWO BIG LOSSES, A63 REFUSED, AND PAPER ARMS MADE PROPORTIONAL
+
+## Today's two losses, and what the current code does about them
+
+From KALSHI'S settlements, not the bot's log -- the bot crashed at 01:59:30
+holding one of them, so it has no `settled` line for it and the log alone
+under-reports the day by $66.
+
+| close | ET | money | held | what happened |
+|---|---|---|---|---|
+| `KXBTC15M-26SEP190200-00` | 02:00 | **-$66.34** | 70 NO | bought at tau 35, then the process DIED. No hedge loop ever ran. |
+| `KXBNB15M-26SEP190145-45` | 01:45 | **-$57.76** | 76 YES / 1 NO | hedge alarm fired at 22.7% belief; `--hedge-price 0.60` held it back at a **21c** ask; by the time it cleared, 51c / 70c / 76c and five tries ran out |
+
+**BNB under today's code: roughly break-even.** A62 (live since 02:58) fires
+the panic bypass at 22.7% belief and takes the 21c ask at tau 23. Worked:
+76 YES @0.7498 + 76 NO @0.21 = **+$3.06 locked** against -$57.76. Even the
+96-deep 70c ask gives -$34.18. The one caveat is depth -- the log records the
+ask, not the size behind it, so treat +$3 as a ceiling.
+
+**BTC: no number can be claimed.** The bot was dead, so it never computed a
+belief and there is nothing to replay. What IS fixed is the cause -- the
+`close_budget` gate logged `want`/`price`/`fair` that were assigned 100 lines
+later, and `round(None)` killed the loop. A live bot would at least have been
+watching; whether it would have hedged is unknowable.
+
+## A63 (`--rebuy-hedged`) WAS REFUSED. Its safety claim was false.
+
+The operator asked for the hedge work live. A62 already was. Auditing A63
+before pushing found its justifying comment wrong in both halves:
+
+1. **Hedge contracts do NOT consume the close budget** -- the hedge path
+   never calls `_note_fill`. After hedging 76 the whole budget is still free.
+2. **Both sides only cap the loss while BALANCED.** A close pays
+   `min(yes_n, no_n)`; every contract past the other side's count is naked.
+
+On the real BNB close: naked **-$56.98**; balanced hedge **+$3.06**; A63
+spending the remaining 138 of budget **-$134.67** against a best case of
+**+$3.33**. $138 more at risk to win 27 cents.
+
+A safe variant (cap the re-buy at the other side's count, so it can only
+COMPLETE a partial hedge) is worth **40 cents** on that close, because by tau
+8 the escape was priced at 99.8c. The money was in hedging at 21c twenty
+seconds earlier. That is A62. **Flag stays OFF**, with the arithmetic in
+`worst_close_both_sides()` and four self-test checks so nobody re-derives the
+wrong half.
+
+## A66: paper arms now trade the size LIVE trades (v-mirror)
+
+**Every arm was pinned at 20 contracts while live ran 109 -- 0 autosize
+records across 43 arms since 2026-09-14.** `read_bank()` needs a key a paper
+arm has not got and must never be given. So live now writes
+`results/pinrun-live-size.json` and arms read it; live's own behaviour is
+completely unchanged. `--no-size-mirror` opts an arm out.
+
+`restart_arms.ps1` (new) relaunches every arm on current code -- validates
+every command line BEFORE killing anything, refuses on a parse-count
+mismatch, refuses to touch `--live`, `-WhatIf` dry-runs it. Restarting is
+safe: `join_logs` keeps an arm's whole history across restarts.
+
+**This does NOT retro-fix recorded dollars.** Cents-per-contract already
+does that (stake-free). What it fixes is FILL REALISM: a 110-contract order
+eats further into the book than a 20-contract one, and no amount of
+normalising recovers that. Every arm-hour before 12:2xZ was measured at a
+stake that never faced live's depth.
+
+### And the bug it shipped with, caught in paper in two minutes
+
+The startup self-test drives `autosize_tick` with a fake $60 bank; that
+published `{"size": 7.0}` into the REAL mirror and 36 arms sized themselves
+to SEVEN. Identical shape to the 2026-09-14 high-water-mark outage, new file.
+`SIZE_MIRROR` is now sandboxed for the whole self-test like `HWM_FILE`, plus
+a check that a pathless `publish_size()` leaves the real file byte-identical.
+No real money touched it -- live never reads the file.
+
+---
+
 # 2026-09-19 ~09:1xZ -- EVERY REAL-MONEY LOSS WE HAVE EVER TAKEN
 
 Live fills only (never the tape -- rule 5). 572 settled markets with a real
