@@ -1,8 +1,34 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
 Written so a session that has just been `/clear`ed can pick up without
-re-deriving anything. **Updated 2026-09-19 ~01:5x ET.** If the date above is
+re-deriving anything. **Updated 2026-09-19 ~16:5x ET.** If the date above is
 more than a day old, verify the live numbers before quoting them.
+
+---
+
+# STOP. READ THIS PARAGRAPH BEFORE YOU CHANGE ANYTHING.
+
+**2026-09-19 was the FIRST LOSING DAY since this bot went live: -$106.73,
+against +$64.59 the day before. Three of the four big losses were caused by
+code shipped in the previous 24 hours -- new gates and brakes that blocked
+things they were never meant to block. Not the market. Not the model.**
+
+- a hedge filter refused insurance at a **21c** ask while belief was 22.7%:
+  **-$57.76**
+- a gate logged variables assigned 100 lines later, `round(None)` killed the
+  trade loop while holding a position: **-$66.34**
+- the `--loss-cap 200` brake paused the bot one instant after a fill, and the
+  pause skipped the **hedge pass**: **-$107.95**, the largest loss ever taken
+
+**THE RULE, and it now outranks your instinct to add a safety feature: before
+shipping any gate or brake, write down what it BLOCKS -- not what it allows
+-- and prove in a self-test that it cannot block a hedge.** A hedge buys the
+other side of a position already open; it lowers that close's worst case and
+cannot raise exposure. Nothing may ever gate it.
+
+All four were re-run through the current code and three of them no longer
+happen (A69 + A62 + A67). The full test, including how the beliefs were
+rebuilt from the raw index feed, is the newest section of `HANDOFF.md`.
 
 `CLAUDE.md` = the rules. `results/VERSIONS.md` = every live change, newest
 first, each with its evidence and a copy-pasteable revert.
@@ -26,11 +52,21 @@ at the cheap end. Raising the bet size alone does nothing -- measured, see
 
 | | |
 |---|---|
-| restarted | 2026-09-19 **01:08 ET**, pid at the time 1107380 |
-| bank | **$674.20** (00:0xZ read) |
-| SIZE | **auto** from the bank -- about **76 contracts**. `--size 20` is only a starting value |
-| worst close | 3 bets x SIZE x 0.98 = about **$212**; the bank covers it 3.0x |
+| restarted | 2026-09-19 **16:22 ET**, pid at the time **1294432** |
+| bank | **$865.00** (20:22Z read; it was $970 before the 16:00 loss) |
+| SIZE | **auto** from the bank -- **98 contracts** at that read. `--size 20` is only a starting value |
+| worst close | 3 bets x SIZE x 0.98 = about **$288**; the bank covers it 3.0x |
+| loss abort | **-$200**, held there by `--loss-cap 200` on every autosize |
 | launcher | `restart_bot.ps1` -- **the ONLY script that may start the live bot** |
+
+**THE FIRST DECISION WAITING FOR YOU.** `--loss-cap 200` is what the operator
+asked for ("Cap losses at 200, keep bet size"), and it is what paused the bot
+into the -$107.95 loss. A69 has made the pause safe -- the hedge now runs
+regardless -- but at ~98 contracts the bound
+(`realised - open - one more bet < -200`) still trips after most full-size
+buys, which blocks NEW trades for the rest of that close. Raising it to ~$400
+stops that; leaving it costs trades on busy closes. **Ask him; do not decide
+it silently.**
 
 Full flag list (also in the launcher, each with its reasoning):
 

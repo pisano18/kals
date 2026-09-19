@@ -1,3 +1,89 @@
+# 2026-09-19 ~20:4xZ -- READ THIS BEFORE YOU TOUCH ANYTHING
+
+**2026-09-19 is the first losing day since the bot went live: -$106.73,
+against +$64.59 the day before. THE MARKET DID NOT CAUSE IT. Three of the
+four big losses were caused by code shipped in the previous 24 hours, and two
+of those were shipped by the session that is handing over to you.**
+
+The operator, and he is right: *"Today's losses were caused by you including
+things that don't even allow it to work. You're the only version who's lost
+me money."*
+
+## The four losses, and what shipped them
+
+| close | ET | cost | cause |
+|---|---|---|---|
+| `KXBNB15M-26SEP190145-45` | 01:45 | **-$57.76** | `--hedge-price 0.60` (v-bands, shipped 09-18 22:3xZ) refused the hedge at a **21c** ask because our own side was still quoted at 79c. Belief was 22.7%. |
+| `KXBTC15M-26SEP190200-00` | 02:00 | **-$66.34** | The `close_budget` gate logged `want`/`price`/`fair`, names assigned ~100 lines LATER. `round(None)` killed the trade loop at 01:59:30 while holding. |
+| `KXBNB15M-26SEP191230-30` | 12:30 | **-$61.75** | Signalled at 91.5c where only **23** contracts existed; `buyable()` sized the order off 11,937 contracts under the 98c limit; the band boost multiplied it; 82.8 filled at an average of **97.27c**. |
+| `KXBTC15M-26SEP191600-00` | 16:00 | **-$107.95** | `--loss-cap 200` paused the bot one instant after the fill, and **the pause branch's `continue` skipped the hedge pass**. Forty-five seconds, no alarm, no attempt. Largest single loss in the project's history. |
+
+**THE PATTERN, AND IT IS THE WHOLE LESSON. Every one of these is a GATE OR A
+BRAKE blocking something it was never meant to block.** Not a model error.
+Not the market changing. A safety feature that was never tested against the
+thing it would refuse.
+
+- A47 was meant to stop us buying insurance we did not need. It stopped
+  insurance we desperately needed.
+- The close-budget gate was meant to record why it refused. It recorded
+  variables that did not exist yet.
+- The loss cap was meant to stop new bets past $200. It stopped the hedge.
+
+**THE RULE THAT WOULD HAVE CAUGHT ALL THREE: before shipping any gate or
+brake, write down what it BLOCKS, not what it allows -- and prove in a
+self-test that it cannot block a hedge.** A hedge buys the other side of a
+position already open: it lowers the worst case of that close and cannot
+raise exposure. Nothing may ever gate it. The operator has said this in
+capitals more than once.
+
+## What has been fixed, and it is TESTED not asserted
+
+`research/pinrun.py` now carries A69: the clock and the hedge pass run FIRST,
+the risk check moved below them. A pause stops new bets, which is all it ever
+meant. The old self-test **enforced the bug** -- it asserted "risk_abort()
+runs before the first `continue` in the loop", which is exactly what pinned
+the brake above the hedge. Replaced with the real requirement.
+
+**All four losses were re-run through the current code, driving it with the
+real recorded inputs, and for the two where the bot never got far enough to
+record a belief, rebuilding the belief from the raw CF Benchmarks index on
+disk** (`C:\kals\kalshi_data\cfbenchmarks_value`, BTC's index id is **`BRTI`**,
+not `BTCUSD_RTI`; the current hour's file is a truncated gzip, use
+`research/gzsalvage.iter_lines`):
+
+| loss | current code |
+|---|---|
+| BNB 01:45 | `hedge_panic(0.227)` = True, every filter bypassed, takes the 21c ask. Worst close **+$3.06**. |
+| BTC 02:00 | Crashing fields confirmed gone. Rebuilt belief: alarm at **tau 28**, 1.6% belief, 28 seconds to act. |
+| BNB 12:30 | Taper asks **46.9** contracts, not 171. Loss shrinks, does not vanish. |
+| BTC 16:00 | Rebuilt belief: BTC jumped **+$25 in two seconds**; alarm at **tau 43**, 43 seconds to act. |
+
+**What that test proves and does not.** It proves the DECISION changes -- the
+real inputs were run through the real functions. It does NOT prove the FILLS;
+whether 76 contracts were available at 21c is not in the log, which records
+the ask and not always its depth. Treat dollars as best case, decisions as
+certain.
+
+## THE TRAP THAT BIT THIS SESSION FOUR TIMES
+
+**A source-text self-test that searches this file finds ITS OWN copy of the
+string first.** It happened with `index("HEDGE(paper)")`, with
+`index("        threading.Thread(target=worker")` in pindesk (that one had
+been silently raising for days, so none of the Refresh-button checks had ever
+run), with `_gate("close_budget"` while auditing this very handover, and with
+the `apply()` slice. **Use `rindex`, or anchor after a known offset, and say
+in the comment why.**
+
+## AND THE OTHER ONE: a self-test must not be able to write production state
+
+The startup self-test drives `autosize_tick` with a fake $60 bank. On this
+session that published `{"size": 7.0}` into the real size mirror and 36 paper
+arms obediently sized themselves to SEVEN contracts. Identical shape to the
+2026-09-14 high-water-mark outage. `HWM_FILE` and `SIZE_MIRROR` are now both
+redirected to a sandbox for the WHOLE self-test, never per call.
+
+---
+
 # 2026-09-19 ~13:0xZ -- THE LAB IS A BROWSER NOW
 
 One sortable table, one row per arm: **State · Arm · Head to head · At our

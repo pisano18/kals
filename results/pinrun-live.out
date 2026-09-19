@@ -792,3 +792,8 @@ SELF-TEST PASSED
   index up: 11 ticks, 11 feeds
   pintake rails raised: MAX_TAKE_COUNT 163.5 -> 163.5; LOSS_ABORT $-60.00 -> $-200.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 20 -> 98: bank $865.00)
   --- AUTO-SIZE: size 20 -> 98 (bank $865.00); abort $-200.00, stake cap $664.00, take count 163.5
+  SIGNAL KXHYPE15M-26SEP191630-30 tau=45s buy NO @0.9780 fair 0.0000 edge +2.05c size 27.45 taking 27.45 [early]
+    ORDER -> status executed filled 98.0 @ 0.9797 fee 0.0013
+  close 20:30Z: 6855 looks, best was KXHYPE15M-26SEP191630- NO @0.9780 edge +2.05c (need +0.3c) x27.45 on offer -> FIRED
+  SETTLED KXHYPE15M-26SEP191630-30 no vs no -> +185.29c (run realised $+1.8529)
+  close 20:45Z: 6426 looks, best was KXBTC15M-26SEP191645-4 YES @0.8400 edge +14.76c (need +0.3c) x1979 on offer -> no trade
