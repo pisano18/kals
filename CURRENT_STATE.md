@@ -1,465 +1,210 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
 Written so a session that has just been `/clear`ed can pick up without
-re-deriving anything. **Updated 2026-09-17 12:2x ET** (v-staged live at 1/3 size;
-the grid re-cut BY MARKETS; the COMMODITY PENNY TEST armed -- see below). If the date above
-is more than a day old, verify the live numbers before quoting them.
+re-deriving anything. **Updated 2026-09-19 ~01:5x ET.** If the date above is
+more than a day old, verify the live numbers before quoting them.
 
-**2026-09-17: READ `HANDOFF_2026-09-17.md` FIRST.** It is the complete handoff
-from the 2026-09-16 session, written for a context clear: what is running (pid
-by pid), the next task (the tau-45 paper arm and the decision rule to
-pre-register before reading it), everything killed and why, ideas not yet
-raised with the operator, the four venues checked, and ten mistakes with the
-fix for each. Read it before anything else.
-
-`CLAUDE.md` = the rules. `PROJECT_HISTORY.md` = why things were killed.
-`HANDOFF.md` = the long running log, 288 KB -- **do not read it whole; grep it
-for a specific past result.** `HANDOFF_2026-09-14.md` is the previous handoff.
+`CLAUDE.md` = the rules. `results/VERSIONS.md` = every live change, newest
+first, each with its evidence and a copy-pasteable revert.
+`research/pinlab.py` = every experiment, live and dead, with what good and
+bad look like. `PROJECT_HISTORY.md` = why things were killed. `HANDOFF.md` =
+the long running log, 300 KB -- **do not read it whole; grep it.**
 **This file = what is true right now.**
+
+---
+
+## THE ONE THING TO UNDERSTAND FIRST
+
+Money per day is `contracts x profit per contract`, and **profit per
+contract is set almost entirely by the PRICE we pay**. At 97.8c a contract
+returns about 2.2c; at 94.8c about 5.4c; at 88c about 13c. Every change
+worth making either buys the same contracts cheaper, or buys more contracts
+at the cheap end. Raising the bet size alone does nothing -- measured, see
+"what was learned" below.
 
 ## The bot, as deployed
 
 | | |
 |---|---|
-| process | `research/pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.60` |
-| launched | `C:\Python314\python.exe -u`, cwd `C:\kals-repo`, detached, via `restart_bot.ps1` |
-| bank | **$529.98** at 2026-09-16 21:30Z (read live from `/portfolio/balance`) |
-| SIZE | **auto**, from the bank -- currently **90 contracts**. `--size` is only a starting value |
-| BANK_BRAKE | 3.0 -> size = bank / (3.0 x 2 x 0.98) = bank / 5.88 |
-| close cap | CONTRACTS, not fills (A17): `MAX_PER_CLOSE x SIZE`, MAX_PER_CLOSE = 2 |
-| hedge | on, fires at belief < **0.60** (was 0.80; lowered 2026-09-16 13:57Z -- the log's `start` records say 13:57Z on the 16th, not the 15th as this table used to claim) |
-| gate | PIN 0.995, ceiling 0.98, tau 3-30s, edge >= 0.3c, EV >= 0.3c |
-| per market | **2 fills** (A23 + A29, live since 2026-09-14) |
-| scan order | BEST first (A24) |
-| depth floor | **MIN_FILL_FRAC 0** -- a thin book is taken rather than skipped (A28) |
-| sweep | on. Swept fills are 62 contracts at the median against 20 unswept, at the SAME 2.4c per contract and a LOWER loss rate |
+| restarted | 2026-09-19 **01:08 ET**, pid at the time 1107380 |
+| bank | **$674.20** (00:0xZ read) |
+| SIZE | **auto** from the bank -- about **76 contracts**. `--size 20` is only a starting value |
+| worst close | 3 bets x SIZE x 0.98 = about **$212**; the bank covers it 3.0x |
+| launcher | `restart_bot.ps1` -- **the ONLY script that may start the live bot** |
 
-## COMMODITIES, as of 2026-09-17 ~21:4xZ -- ONE CELL LIVE
-
-**Live: `research/cmdlive.py`, WTI only, the last 15 seconds, $10 a trade.**
-Stops at $25 net down or 4 losses; $300 account floor; one position per market.
-Not in `boot_all.ps1` and never will be without a decision -- a money process
-should not return from a reboot on its own. To stop it: write
-`results/cmdlive.stop`. To start it: delete that file and launch by hand.
-
-**Everything else is paper** (`research/cmdarm.py`, all five series, every
-window, including `anti-silver-mid` which exists to lose).
-
-**The day's record, and the lesson.** 32 settled, 29 won, 3 lost, **-$57.84**.
-All three losses came from far or boundary windows (180 s, 180 s, and exactly
-60 s). Two separate defects were found and fixed along the way: one bet per
-WINDOW instead of per MARKET (which turned one adverse market into two losses,
--$58.84), and a committed-stake ledger that never released and silently jammed
-the wire.
-
-**THE REAL LESSON, and it outranks any window:** every commodity window is
-backed by tape plus six to seventeen live bets. **A sample that small cannot
-distinguish a good window from a bad one.** On 2026-09-17 I recommended the
-close band on three live losses, then twenty minutes later produced paper data
-showing the close band was the worst performer, and both readings were noise.
-The operator's call -- shrink to the single best-evidenced cell and paper-trade
-the rest -- is the correct response to that, and the next session should resist
-re-tuning the live window on anything under ~60 clean fills.
-
-## WHAT CHANGED 2026-09-17 (newest first)
-
-- **The commodity penny test is LIVE-CAPABLE**, `research/cmdlive.py`, on the
-  operator's sign-off ("I'm ready for commodity penny testing"). ONE contract,
-  $10 total, 60 orders, **2 losses then it stops itself**, a $300 account
-  floor, 90-99c, never inside 2 s. It honours the desktop app's stop file.
-  Bar fixed first in `results/PREREG_commodity_live.md`. It is deliberately
-  NOT in `boot_all.ps1`: a money process should not come back from a reboot
-  without a human. `cmdarm.py` keeps running as the paper control on the same
-  windows BY IMPORT.
-- **AMENDMENT 47 (`--hedge-price`, OFF in live, paper arm running).** A hedge
-  fires only if our side's MARKET price has also fallen below 50c, not just
-  the model's belief. Of the 7 live hedges that would fire under today's 0.60
-  gate, 6 were needed and the 1 wasted one bought insurance while our side
-  still traded at 85c, costing $13.83. The wobble table (1,717 markets) is the
-  real evidence: 48 of 48 dips that stopped above 50c recovered.
-  `results/PREREG_hedgeprice.md`. Arm: `results/arm-hedgeprice.out`.
-- **Hedging has MADE money, not lost it**: 12 filled live hedges, 6 needed
-  (+$56.01), 6 wasted (-$41.72), net **+$14.30**. An earlier note in this
-  session said "5 of 9 wasted" -- that read the wrong field and ignored that
-  the 0.80 and 0.90 gates no longer exist. Under today's 0.60 gate only 7 of
-  the 14 would have fired, and 6 of those 7 were needed.
-- **Day totals now come from `research/pinday.py` and nowhere else.** A UTC
-  date filter reported +$47 for a day that was +$23. Never write another
-  ad-hoc day total.
-- **The grid was re-cut BY MARKETS (rule 4) and by ET session**
-  (`results/RESULTS_actions.md` s7, `RESULTS_grid.md`): gold's "0.1% inside
-  15 s" was 53 markets / 1 lost, and its loss lives in the COMEX session
-  (08-14 ET 32/2, outside it 117/0); gold at 98-99c with 91-180 s left is
-  129 markets / 0 lost, the safest cell found; WTI 95-99c to 60 s is 153/3;
-  silver loses 5.4% even at 0-5 s and is now the NEGATIVE control.
-- **The wobble**: a favourite (>=90c at 60 s) that dips but stays above 50c
-  inside the last 30 s recovered 48 times out of 48; one that crosses BELOW
-  50c lost 76% of 158 markets. The live hedge fires on model belief < 0.60
-  and 5 of 9 live hedges were wasted; the market price is the better trigger.
-  Not built yet.
-- **Crypto beyond 60 s is dead** on the market's own record (61-90 s: 5-10%
-  of near-certainties flip). "Use the full 15 minutes" is closed. 46-60 s
-  sits AT model-less break-even; the `--early-tau 60` paper arm is the judge.
-
-## Live record, all time
-
-451 closes, 430 won, **21 lost (4.66%)**, net **+$374.92**. Wins grow with size
-($26 -> $175 a day gross); losses are lumpy ($0 to $118 a day) and are what
-actually decides a day. Sep 13 looked like a great day because it lost only
-$13, not because it won more -- Sep 14 won MORE and finished at half the money.
-
-## THE ONE NUMBER TO WATCH: what fraction of our size the book fills
-
-`python research/pinfill.py`. The bot asks for `size` contracts and the book
-hands back what it has. That ratio is the leading indicator of the whole
-compounding projection, because size grows with the bank but the offers do not.
-
-    ET day   size   contracts per fill   % of size we got
-    Sep 13     47          44.8                95%
-    Sep 14     58          54.4                94%
-    Sep 15     74          69.8                94%
-    Sep 16     84          67.3                80%   <-- first slip
-
-Measured over 446 signals, the offer waiting for us is p25 23 contracts, p50
-67, p75 202. Half of all opportunities cannot fill an order of 67, and we are
-already asking for 90. Replaying those signals at bigger caps: 2.2x the size
-buys 1.68x the volume, 5.6x buys 2.44x. Volume grows like a SQUARE ROOT of
-size, which is why `research/pinproject.py` exists and why the older linear
-projection (\$3,476 by day 12, \$570/day) is roughly double the truth.
-
-If that percentage keeps falling as the bank grows, the cautious column of
-pinproject is the one to plan on. If it holds near 90%, the expected column is.
-
-## What is settled and must not be re-litigated
-
-- **The book is NOT the constraint.** Median fill is 100% of what the bot asked
-  for on every single day. The BANK is the lever, with ~4x headroom before our
-  share of book starts to bind. (`research/pinfill.py`)
-- **Opportunities are NOT falling.** 2.0-5.7 signals per hour up, no trend.
-  (`research/pinwhy.py`)
-- **Extreme confidence was being picked off at the cheap end** -- big-edge
-  trades lost 8.8% before 2026-09-12 and 1.4% after. The dump guard and jump
-  gate fixed it. No change needed. (`research/pinadverse.py`)
-- **Crypto.com / CDNA: FIX is the only order-entry route**, and an
-  exchange.crypto.com API key is NOT valid on /dcm or /fcm (escalated support
-  answer, matches our 40101s). Onboarding is opened through the in-app support
-  chat. Blocking question: the per-contract fee -- the strategy there dies above
-  about 4c. (`results/RESULTS_fcm_b2c.md`)
-- **Dead ends, with evidence, in HANDOFF.md:** raising EDGE_FLOOR, a depth gate,
-  hourly markets, more Kalshi series, Polymarket on-chain venues.
-
-**2026-09-17: IT RESTARTS ITSELF, AND THE OPERATOR HAS BUTTONS.** See
-`results/VERSIONS.md` v-selfheal. `watch_bot.ps1` relaunches the bot for ever
-(4 quick tries, then every 3 min); the scheduled task `KalsBoot` restarts the
-watchdogs at logon and every 10 min; `restart_bot.ps1` no longer deadlocks on a
-bot that died holding a bet (`research/pinflat.py`). The desktop shortcut
-**Pin Bot** (`research/pindesk.py`) has START / PAUSE / STOP. A file
-`results/pinrun-live.stop` means the operator said stand down: the watchdog
-will NOT relaunch while it exists, and START removes it. **If the bot is down
-and that file exists, that is why.** The one hole left: a reboot with nobody
-signed in (no auto sign-in, no admin for a boot task). `research/pinphone.py`
-is the phone link (Telegram; needs `C:\kals\telegram.json`; same flag, same
-controls). `results/DEPOSITED.txt` = $160, the operator's own figure.
-
-**To restart it by hand -- USE THE SCRIPT, AND ONLY THE SCRIPT:**
+Full flag list (also in the launcher, each with its reasoning):
 
 ```
-powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
+--live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3
+--max-losses 2 --improve-scope market --pick best --max-per-market 2
+--improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder
+--jump-gate --hedge-belief 0.60 --early-tau 45 --early-frac 1.0
+--early-min-price 0.90 --early-max-edge 10.0 --hedge-price 0.60
+--band-mult 0.90 0.94 1.5 --late-tau 10 --late-mult 1.5 --late-pin 0.9975
+--late-jump 2.0 --extra-coin 1 --late-extra 1 --bank-brake 3.00
 ```
 
-That form works from bash, cmd or PowerShell. `.\restart_bot.ps1` typed into a
-bash prompt silently does nothing, which wasted two attempts on 2026-09-13.
-The script refuses if the bot is holding a position, proves the old one is gone
-**by pid** before starting a new one, aborts rather than starting a second if
-it cannot, and writes `results/restart_bot.last.log` either way.
+### What each of the newer ones does
 
-**THE HAND-ROLLED RECIPE THAT USED TO LIVE HERE IS DELETED, NOT MOVED.** It
-matched processes on `CommandLine`, which Windows returns EMPTY to a caller
-that cannot open the process. That is exactly how two live bots ended up
-trading the same account on 2026-09-14 -- see the incident section below. It
-also killed every `pinrun`, paper what-ifs included. Do not reconstruct it.
-
-If the script ever refuses because of a stale `results/pinrun-live.pid`, check
-the pid is really dead and delete the file; the bot itself also refuses to
-start a second live copy while that pid is alive.
-
-`kauth` lives at `C:\Users\Joe\AppData\Local\Temp\kals-work` and `pinrun.py`
-line ~103 puts it on `sys.path` itself, so a plain restart works.
-
-## The numbers that matter
-
-**Live, current version** (hedge 0.80, from 2026-09-12 2:06 PM ET) --
-`python research/pinver.py` regenerates all of this:
-
-- **35 closes, 34W 1L, net +$65.06. Close-loss rate 2.86%, CI [0.07, 14.92].**
-- 48 markets, 47W 1L. Fill ratio 71.8% (we lose ~28% of races).
-- Mean entry 95.6c, mean edge at signal +3.9c.
-
-**BREAK-EVEN IS NOT 3.58%. CORRECTED 2026-09-14.** That figure assumed a win
-pays 3.7c and a loss costs 96c PER CONTRACT -- no hedge, every loss total. The
-belief-collapse hedge (A15) and the sweep (A18) changed both sides, and the
-right way to compute it is from our own settled closes:
-
-| window | avg winning close | avg losing close | break-even loss rate | we lose |
-|---|---|---|---|---|
-| all time (232 closes) | +$1.36 | -$14.55 | **8.55%** | **4.31%** |
-| second half | +$1.79 | -$9.77 | 15.45% | 4.31% |
-| last 100 closes | +$1.87 | -$7.92 | **19.11%** | **4.00%** |
-
-**Our 95% range on the loss rate is [2.09%, 7.78%]** (10 losing of 232, exact
-Clopper-Pearson). Even the WORST end of that range, 7.78%, sits under the
-most conservative break-even, 8.55%. **So the strategy is profitable at 95%
-confidence** -- which the stale 3.58% figure said it was not.
-
-**What is still uncertain is the SIZE of a loss, not the rate.** The average
-losing close rests on TEN events and the distribution is fat-tailed (the worst
-was -$52.60). A few bad closes would move the 8.55% number a long way, and it
-is the number the whole conclusion hangs on. Watch it, not the loss rate.
-
-*The superseded claim, kept so the change is visible: "BREAK-EVEN IS A 3.58%
-CLOSE-LOSS RATE ... All live history is 12 losing of 248 closes = 4.84%; the
-current version is 2.86%. The two straddle break-even and neither has the
-sample to settle it. This is the single most important open number in the
-project."*
-
-## Settled recently -- do not re-litigate
-
-| question | answer | where |
+| flag | what it does | live since |
 |---|---|---|
-| Is the 10x loss-rate gap calibration or selection? | **SELECTION.** Where nobody offered, the model is nearly right (off 0.028pp); where someone did, off 0.725pp -- 26x. The counterparty is informed. | `results/RESULTS_select.md` |
-| Can we sell winners before settlement? | **NO.** By 15s out a loser's bid is already 23c, 6c at 10s. Every exit cell loses money. Dead on mechanism. | `results/RESULTS_exit.md` |
-| Should the depth floor be lowered/removed? | **NO.** Removing it costs 30% of the money: +15% fills, -35% mean size, -25% contracts. | `results/RESULTS_levels.md` |
-| Are some coins safer? | **NO.** Spread appears 53% of the time by chance; rank correlation between halves +0.35; out of sample the rule fails non-monotonically. | `results/PREREG_coinrank.md` |
-| Does buying the SAME coin twice add risk? | **YES IF THE PRICE DROPPED A LOT, NO IF IT DROPPED A LITTLE -- and that is a dose-response, not a yes/no.** A second fill is the SAME bet, so the question is which closes offer a cheaper second price. Of 862 markets where none ever appeared, **0 lost**; of 398 where one did, 25 lost (6.28%), +6.28pp with a 95% CI of [+3.46, +9.82] bootstrapped over CLOSES. By size of the discount: **0.5-1c -> 0.70% lost, second leg +3.08c/contract; 1-2c -> 5.67%, -0.09c; 2-5c -> 11.49%, -4.92c; 5-10c -> 26.09%, -11.45c.** Break-even is 3.58%. Ordering survives a 60/40 holdout on close time (last 40% never fitted: 1.79 / 6.06 / 21.21 / 44.44%). AMENDMENT 23 is that band, in a paper what-if, NOT live. | `research/pinpick.py`, `results/RESULTS_pick.md` |
-| "If it's really going to flip the confidence should be dropping" -- is it? | **TRUE, AND TOO SLOW TO USE.** 18,653 closes rebuilt from the index with nothing filtered (the candidate file is CENSORED -- its minimum confidence is 0.995002 because a row is only written once the model is certain, so it cannot answer this). Confidence falls below the gate on **31 of 31** closes the model gets wrong and only **0.4%** of the ones it gets right -- but late: 11 of 18 by tau 25, 12 of 19 by tau 20. On our own money later still: SOL 2026-09-12 23:00 was bought three times at tau 30/29/28 while confidence ROSE 0.9994 -> 0.9997 -> 0.9998; the flip showed around tau 12. Conditional on the gate still passing, loss odds are 0.37x at tau 20 -- real, but the PRICE is the fast signal and the confidence is not. | `research/pinwarn.py`, `results/RESULTS_warn.md` |
-| Take the FIRST passing market or scan for the BEST? | **BEST, and it costs no time.** 2+ different markets pass in the same scan second on 6.3% of passes; when they do, the first seen is the best-edge one only 56.3% of the time, giving up a mean 2.10c (p90 7.43c) and paying 2.21c more. Replayed one contract per close: **+2.07c -> +2.76c per contract on IDENTICAL loss counts (10 and 10)**; holdout last 40%, never fitted, +1.63c -> +2.43c on 6 and 6. Highest-confidence reaches only +2.19c, so the gain is price, not risk appetite. The old order was dict insertion order -- the one gate in the bot that was not an EV comparison. **AMENDMENT 24 WENT LIVE 2026-09-13 8:35 PM ET**, with a paper twin running `--pick first` alongside it as the control arm. | `research/pinpick.py`, `results/RESULTS_pick.md` |
-| Are there hourly series worth trading? | **15 of 71 settle on an AVERAGE** -- KXBTC/KXBTCD, KXETH/KXETHD, KXSOL*, KXXRP*, KXDOGE*, KXBNB*, KXHYPE*, KXDJI. Same mechanism as our 15-minute markets, and 4 (gold, silver, WTI, palladium hourly) are single-price and dead to us. 40 never ran a market. **2026-09-14: the books ARE quoted through the close** -- 68-94% of reads carry an ask, against 56-94% on our own markets. An earlier 'zero of 612 reads had any ask' was a bug in the probe's own strike selection (it sampled only 99c strikes, which cannot have an ask) and is withdrawn. Still untested is whether anyone sells the WINNING side at a price we would pay. **Best untested lead in the project.** | this file |
-| Are there OTHER markets we could trade? | **28 fifteen-minute series exist; we trade 12.** Of the other 16: platinum, palladium, EURUSD, GBPUSD, USDJPY, S&P and Nasdaq have **never run a market**. Gold, silver, WTI, natgas and copper HAVE (200+ settled each) -- and **settle on the close of a 1-MINUTE CANDLE, not a 60-second average**, so the pin edge does not exist there. At tau=5 our uncertainty is 0.12 sigma; theirs is 2.24 -- **18x worse**, and 28x at tau=3. Source is Pyth, not CF Benchmarks. Also 71 hourly series, untested. | this file |
-| Do S&P/Nasdaq 15-min series exist? | They exist, `fifteen_min`, `quadratic` -- and have **NEVER run a market**. Contradiction 3 closed, IDEAS.md B3 struck. | this file |
-| Does "did anyone else take this offer" recover the population rule 5 says the tape cannot see? | **NO as a trading rule, PARTLY as a population filter.** The forward split is contaminated by outcome leakage (gap grows 3.2 -> 88.6 pp as the window widens 250 ms -> 60 s); the clean backward version has NO POWER (+1.27 pp, [-1.62, +4.57], MDE 4.05). | `results/RESULTS_contest.md` |
-| Can we win more races by bidding above the ask? | **Probably, and it is nearly free** -- a crossing IOC fills at the RESTING price (283/283 live fills at or better than signalled, zero worse). 43% of lost races have a next level that still clears the SAME gate, median +0.20c. NOT DEPLOYED: needs the live bar. | `results/PREREG_sweep.md` |
-| Is losing 28% of races a latency problem? | **NO.** Filled and zero-filled orders have identical latency (median 96 ms both). The competing take lands at a median 67 ms. We cannot out-run them; we can only cross a level. | this file |
-| Is there anything in the 11 GB of `feed_data`? | **NO, on all three things worth trying.** (1) Our own index reconstruction does NOT lead the published one -- it LAGS (peak r 0.249 at lag -1 against 0.025 at +1; gap-regression slope -0.004, t=-6.9). (2) Exchange disagreement does not predict blow-ups (best 1.48x against an MDE of 2.58x, 3 of 4 features flip in the holdout). (3) The ORDER BOOK does not either -- 55.7M snapshots, all five features between 0.87x and 1.36x against an MDE of 2.53x, including the one I bet on (withdrawal, 0.95x). | `RESULTS_feed_BTC.md`, `RESULTS_disagree.md`, `RESULTS_book.md` |
-| Trade more carefully after a loss? | **NO.** 0 of 18 closes following a loss lost (vs 2.62% baseline). Mean $ after a loss is HIGHER. A 1-close cooldown costs 6% of profit and saves nothing measurable. | this file |
+| `--hedge-price 0.60` | hedge only when the MARKET also puts our side under 60c | 09-18 22:46Z |
+| `--band-mult 0.90 0.94 1.5` | 1.5x the bet at 90-94c; one boosted loss switches it off for the run | 09-18 22:46Z |
+| `--late-tau 10 --late-mult 1.5` | 1.5x the bet inside the last 10 s | 09-19 00:03Z |
+| `--late-pin 0.9975` | the EXTRA contracts need 99.75% confidence (ordinary bet needs 99.5%) | 09-19 00:03Z |
+| `--late-jump 2.0` | skip the boost if a 2-sigma move went against us (must be TIGHTER than `--jump-gate` 3.0) | 09-19 00:03Z |
+| `--extra-coin 1` | one extra bet of close budget for a coin we do NOT already hold | 09-19 00:03Z |
+| `--early-max-edge 10.0` | was 3.0, which was a **96.5c price floor in disguise** | 09-19 01:08Z |
+| `--late-extra 1` | one extra bet of budget inside the last 10 s; **SHARES** the `--extra-coin` allowance | 09-19 01:08Z |
 
-## Per-function attribution — what is and is not knowable
+## Money, by Eastern day, ACCOUNT not one bot
 
-Set up 2026-09-13 on the operator's request to see "each individual
-implementation and function and algorithm and decision of the bot and see how
-it alone affected what happens". Three layers, and they are not equally good:
+`research/pinfloor.py` prints this. **The ACCOUNT column is the one that
+matters** -- it is what the bank moves by, and it includes oil.
 
-1. **Refusals — solid.** AMENDMENT 25 instruments 18 decision points; every one
-   records, once per (close, market), that it stopped a trade and what was on
-   the table. `research/pinattrib.py` reads it. Gives: how often it came into
-   play, over how many closes, whether it merely DELAYED a trade we made anyway
-   or genuinely BLOCKED one, and whether the blocked ones would have won.
-   **Binding-by-construction**: the loop stops at the first objection, so a
-   recorded refusal IS the deciding one — but only in the order the gates run.
-2. **Money on a refusal — an UPPER BOUND, never P&L.** A price showing is not a
-   fill; rule 5. Always labelled `if filled`.
-3. **True marginal value of a change — only a PAPER TWIN gives it.** Gates share
-   one contract budget, so the columns never add to total P&L. The general
-   pattern, and the one to reuse for any future change: run a paper bot
-   identical to live except for that one flag, and difference them. That is what
-   the `--pick` and `--max-per-market` what-ifs are.
+| day | crypto | oil | account | return on staked |
+|---|---|---|---|---|
+| 09-13 (Sat) | +$114.77 | - | **+$114.77** | 5.54% |
+| 09-14 | +$81.14 | - | +$81.14 | 2.52% |
+| 09-15 | +$76.32 | - | +$76.32 | 3.25% |
+| 09-16 | +$85.10 | - | +$85.10 | 2.92% |
+| 09-17 | +$115.68 | **-$51.94** | +$63.74 | 1.89% |
+| 09-18 | +$91.87 | **-$27.28** | +$64.59 | 1.80% |
 
-**What is NOT covered:** anything that shapes a trade we DID make (the sweep's
-limit, the auto-sizer, the hedge threshold) leaves no refusal record. Those need
-a paper twin, layer 3.
+Bank: $198.70 on 09-12 -> **$674.20** now.
 
-## Open, and worth work
+---
 
-1. **The sweep (race harder).** `results/PREREG_sweep.md` is written and the
-   bar is set; the code is not. Order **+17% more fills at the same gate**,
-   ~+$4-6/day at today's size, and the one risk the tape cannot measure is
-   whether swept fills are adversely selected. **Operator decision, not mine.**
-2. **Quote age.** `pinselect` found every bad fill sat on a price under 0.25s
-   old; prices resting 30s+ had 0 failures in 302. Now LOGGED live as
-   `level_age_ms` / `level_age_exact` on every signal, and **deliberately not
-   gated on** -- four self-tests assert nothing branches on it. Needs a
-   pre-registered bar once there is live data. **Best lead open.**
-3. **The loss rate itself.** Everything hinges on it. Keep counting.
-4. `results/PREREG_hedge.md` -- n=30 live bar, 3 events so far.
-5. `results/PREREG_coinrank.md` -- 147 forward clean fills for one coin.
-6. `results/PREREG_coin.md` -- 30 SOL closes.
+## WHAT IS BEING WATCHED, AND THE BAR FOR EACH
 
-## Hedge, measured 2026-09-13
+Every one of these has its full reasoning in `results/VERSIONS.md`.
 
-Recovers about **one third of a loss**, and it degrades with size:
+| what | bar | where to look |
+|---|---|---|
+| **`--band-mult` 1.5x at 90-94c** | revert at the FIRST loss on a boosted fill in the first 20 boosted closes; at 20 clean, raise to 2.0 | `band_boost` / `band_boost_off` records |
+| **`--late-mult` 1.5x inside 10 s** | same -- first boosted loss switches it off itself (`late_boost_off`) | every `settled` record carries a `boost` sentence |
+| **`--early-max-edge 10.0`** | revert to 3.0 at TWO losing closes on early fills under 96c in the first 40 such fills | `early_wide` refusals, and fills with `leg=early` under 96c |
+| **`--hedge-price 0.60`** | after 20 `hedge_wait_price` records, score them: if the blocked hedges would have helped more than the fired ones cost, loosen to 0.70 | `hedge_wait_price` records |
+| **`--extra-coin` / `--late-extra`** | nothing yet -- both went live on a measurement, neither has a paper arm of its own | `close_budget` refusals (now scorable: they carry want/price/fair/tau/size) |
+| **oil** | STOOD DOWN. `results/cmdlive.stop` present, `boot_all.ps1` has it behind `if ($false ...)`. Needs a strategy from the tape and a paper arm before any restart | `cmdlive-*.jsonl` |
 
-| size | recovered |
-|---|---|
-| 20 | 34.9% |
-| 39 (now) | 33.2% |
-| 68 | 33.2% |
-| 125 | 31.0% |
-| 250 | 22.3% |
+### Also open
 
-Holds to ~125, then the opposite side's depth runs out. **The hedge IS a sale**
--- buying NO at 80c is identical to selling YES at 20c, because the pair always
-pays $1. Over the full 18.6-day window the hedge COSTS ~$1.29/day at size 20
-and SAVES money in bad stretches. It is insurance, not edge.
+- **The 45-second leg earns 2.20c a contract against the main window's
+  3.59c.** Positive (+$86.43 over 81 closes, 1 loss) but the weaker half.
+  Worth asking whether its budget would do better waiting for 30 s.
+- **The Kalshi profile's own return number** (-$116 when we were +$401) has
+  never been reconciled. Offered to pull the endpoint; never done.
+- **A second venue.** The cheap tail really did thin Thursday-to-Thursday
+  (markets offering a sub-90c winning side 10.5% -> 6.6%). When the pool
+  itself shrinks the answer is another product, not a better bot.
+  Crypto.com and Polymarket are in `pinlab.py` as IDEAs.
 
-## The tape got worse in the last third -- not our loss rate, the environment
+---
 
-`pincontest`, live-gate candidate population, split on close time: the
-**first 70% of closes fail on 1.87% of rows, the last 30% on 4.61%** (11 losing
-closes of 501, then 10 of 215). This is a TAPE population and is not our loss
-rate (rule 5). It is the environment the bot trades in, it is getting harder,
-and it is consistent with `RESULTS_levels`' note that the second half of the
-window was 3x worse. Any threshold fitted on the whole window is fitted on a
-gentler market than the current one.
+## WHAT WAS LEARNED (do not re-derive these)
 
-**WHAT CHANGED -- AND MY FIRST TWO ANSWERS WERE BOTH WRONG. Read this whole
-block before quoting anything about the deterioration.**
+1. **A bigger bet does not earn more.** Bet size went 47 -> 98 contracts
+   over six days and daily money did not move: correlation **-0.05**. The
+   price paid rose at the same time (+0.84 with size) -- but the paper
+   arms, which NEVER autosize and stayed at 20 contracts, saw the identical
+   rise (96.30c -> 97.70c). **So the price rise is the market, not our
+   size.** Extra size was worth about +$65/day and the market took it back.
+2. **The book only serves 42-50% of a big ask at the touch** -- and ~95% of
+   our volume comes from walking the ladder (the sweep), at a median
+   premium of 0.28c. Swept fills: 113 fills, 0 losses, +3.02c a contract.
+   Taking only the touch price would roughly halve our volume to save 7% of
+   the edge. **The exchange already fills cheapest-first** and charges the
+   weighted average -- 66% of the headroom we offer is never spent.
+3. **The last ten seconds is our best window**, by a lot:
 
-Answer 1, WITHDRAWN: "the model got more wrong." Answer 2, WITHDRAWN: "and it
-got worse in the quantiles we trade." Both rested on `pincalib`'s first
-version, which counted `abs(z)` -- the two-sided tail -- against a ONE-SIDED
-promise, and so doubled every overconfidence figure and reversed the sign of
-the early/late comparison. Corrected 2026-09-13 and re-run.
+   | seconds left | fills | median price | per contract | losing closes |
+   |---|---|---|---|---|
+   | 0-5 | 23 | 94.3c | 5.354c | 0 |
+   | 6-10 | 45 | 94.8c | 5.461c | 0 |
+   | 16-30 | 344 | 97.2c | 2.103c | 11 |
+   | 31-45 | 81 | 97.8c | 2.197c | 1 |
 
-**What is TRUE, on the corrected numbers (`results/RESULTS_calib.md`, the
-index feed alone, 109,122 z-scores over 1,672 closes):**
+4. **By price band** (566 live fills, clustered by close, break-even is
+   `1 - price`): 80-90c +13.6% (29 closes, 1 loss) · 90-94c **+8.0% (64
+   closes, ZERO losses)** · 94-96c +0.8% · 96-97.5c +1.2% · 97.5c+ +1.8%.
+   Only 90-94c clears the strict bar (95% upper bound under break-even).
+5. **Insurance loses.** Hedges bought under 40c, while the market still
+   gave our side 73-90%, hurt 5 times out of 5 (-$41.72). Hedges bought
+   over 40c helped 4 of 4 (+$62.28). Hence `--hedge-price 0.60`.
+6. **2026-09-13 was a SATURDAY** and Saturday carries about twice a
+   weekday's cheap supply. Any weekday compared against it looks like
+   decay. **All 28 of its cheap fills would be allowed by today's rules** --
+   they were all at 30 s or less, where there is no floor and no cap.
+7. **`realised` in a settled record is a RUNNING TOTAL that resets on
+   restart.** The per-fill number is `pnl_c`, in cents. Summing `realised`
+   reported 09-18 as $768 against a true $60.
 
-- The model is **8.0x overconfident** at the confidence the gate operates at:
-  it promises to be wrong 0.15% of the time and is wrong 1.21%. At 99.99% it
-  is 69.6x out. sd(z) is 1.151 -- the body is nearly right -- and kurtosis is
-  **132 against a normal's 3**. The index jumps in ways a Gaussian says cannot
-  happen, and every jump lands in the only region this strategy trades.
-- **That has NOT changed over the window.** Early closes 1.22% realised
-  failure at the 99.85% level, late closes 1.17%. Flat, if anything better.
-- **The counterparty has not changed either** (contest 88.6% -> 86.8%, speed
-  66 -> 70 ms, depth UP) -- though the nightly `collide` robot is right that
-  this claim has never had its power stated, so treat it as unsettled.
+---
 
-**So WHY the candidate population's bad rate roughly doubled (1.87% -> 4.61%)
-is OPEN. It is not model drift and it is not coin mix (8 of 9 coins worsened
-individually). That question is now the top open item.**
+## THE TRAPS THAT HAVE ACTUALLY COST TIME
 
-**The obvious fix is dead -- do not re-try it.** Multiplying the volatility
-estimate by k keeps 44% of candidates at 3.09% bad (k=1.25), 26% at 3.41%
-(k=1.5), 14% at 4.62% (k=2.0), against 2.90% at k=1.0. The corrected
-calibration says exactly why: the error is SHAPE, not WIDTH. sd(z) is 15% off;
-kurtosis is 44x off. Scaling sigma stretches the body, where the model is
-nearly right, and barely touches the tail, which is the whole problem.
+- **A self-test that asserts a RUNNING value refuses to start the bot.**
+  `pinrun` runs its own self-test at startup WITH the flags applied, so a
+  check written against the live global fails the moment its flag is used.
+  This has stopped the bot **five times**. Assert `_DEFAULT_*` constants.
+  `--selftest` alone runs with defaults and CANNOT see it -- always run the
+  launcher's own flag list through the startup path in paper first.
+- **`restart_bot.ps1` stops the money process before starting another**, so
+  anything that can make the START fail must be checked while the old bot
+  still runs. A bare `,` on its own line in a PowerShell array nests it and
+  `Start-Process` refuses; that took the bot down on 09-19 at 00:02Z. The
+  launcher now builds `$botArgs` at the top and validates it first.
+- **`_gate()` records a refusal ONCE per market per reason.** A sparse list
+  of "seconds we looked at" is the logbook deduplicating, not the bot
+  sleeping. The bot looks every second from 45 down to **TAU_MIN = 3** and
+  has filled at every second from 15 to 3.
+- **An arm matched by a NAME** (`arm-b-control`) has that name nowhere in
+  its command line. `pinlab` now also calls an arm running if its log was
+  written in the last 25 minutes.
+- **A selector that names only some settings steals another arm's log.**
+  Sprung four times. Name EVERY field that separates an arm from the ones
+  layered on it.
+- **The settlement file goes stale.** `pinattrib.load_outcomes` reads every
+  `fulltape_*` dir for this reason; markets from the last few hours are
+  often missing and a refresh is needed before scoring them.
 
-**AMENDMENT 19 exists and is OFF.** `pinrun --honest` maps confidence through
-the measured table instead of a Gaussian. At PIN 0.995 it demands **z >= 4.33**
-where today's gate demands 2.58 -- a much stricter bar. Bar and kill criterion
-in `results/PREREG_honest.md`; the trade-count impact is deliberately NOT
-estimated from the replay.
+---
 
-**From live fills only** (270 entry fills, 9 losses, net +$81.42): below 96c,
-106 fills, 6 losses, +$58.14. At 96c and above, 164 fills, 3 losses, +$23.27.
-Both halves make money, so there is no support for simply lowering the price
-ceiling. The one negative bucket is 94-96c (49 fills, 3 losses, -$18.32) and
-it has no power.
+## Paper arms: 33 running
 
-## 2026-09-14: TWO LIVE BOTS RAN AT ONCE FOR 24 MINUTES
+`research/pinlab.py` is the register -- 54 entries with what each tests,
+why, and what good and bad look like. The desktop app's Lab tab shows every
+one with a chart and a what-if against the live bot.
 
-Read this before touching `restart_bot.ps1` or starting the bot by hand.
+- **8 band arms** (`start_bands.ps1`) -- skip bands, 2x sizing, early-leg
+  variants
+- **3 sixty-second arms** + **1 flip arm** (`start_early60.ps1`) -- buying
+  at 46-60 s in increments, and buying DOUBLE the other side when an early
+  bet flips inside 30 s
+- **4 sigma arms** (`start_sigma.ps1`) -- the whole model at 0.8/1.25/1.5/2.0
+  x the volatility estimate. **The most valuable open question**: if our
+  sigma is too small, every confidence we print is too high
+- **5 confidence arms** -- `--pin` 0.97 to 0.99
+- **5 vintage bots** (`pinvin_*.py`, see `research/pinvin_README.md`) -- the
+  bot exactly as it was on 09-12 and 09-13, running on today's markets
+- **2 late-budget arms** -- `--late-extra` with and without the early cap
+- **1 `pinrun913.py`** -- the 09-13 bot
+- the rest are older arms still accumulating
 
-`restart_bot.ps1` found the running bot by matching `Win32_Process`
-**CommandLine**. Run from the operator's own shell that field came back
-**EMPTY** -- Windows hides it from a caller that cannot open the process -- so
-the kill loop matched nothing, said nothing, and the script started a SECOND
-live bot. pid 1277276 (old code) and pid 1340892 (`--pick best`) both traded
-the live account 20:35-20:59 ET.
+**Arm maturity matters more than the percentages.** Anything under ~20 hours
+and ~40 markets is noise. Use the "needs" calculation: an arm is readable
+when its money gap clears two standard errors AND it has enough closes to
+put its loss rate under break-even (about 120 clean closes).
 
-**Nothing actually traded in the overlap** (zero orders, zero settlements from
-either) and both were flat when found, so no money was doubled. The risk was
-real anyway: every rail in `pinrun` is per-process and counts only its own
-fills -- loss abort, loss bound, stake cap, position cap, losing-trade brake --
-so two processes double all of them, while both size off the same bank.
+---
 
-**AMENDMENT 27 fixes it in the BOT, not the script**, because the failure was
-the script being unable to see. `pinrun --live` writes
-`results/pinrun-live.pid` and refuses to start while that pid is alive.
-`_pid_alive()` reads no command line and answers **YES when it cannot tell** --
-a false "already running" costs one command to clear, a false "nothing
-running" costs a second bot on the account. `restart_bot.ps1` now reads the
-pid file first, proves the target is gone by pid, and **aborts rather than
-falling through to a start**.
+## Resources and rules of engagement
 
-**The same fault also produced a FALSE ALARM: "collector processes alive: 0".**
-Both recorders had been running since Sep 9. That check is now by file -- and
-it had to learn that the two recorders write differently: `kalshi_collector`
-flushes continuously, `crypto_feeds` gzips a whole hour in memory and writes
-at the rotation, so its in-progress file sits at **0 bytes for up to 59
-minutes**. A naive freshness test alarms on a healthy feed recorder almost
-permanently. Six consecutive hours verified at 280-690 KB per feed.
-
-## REVISIT WHEN POPULATED -- the pickoff tracker (set 2026-09-17)
-
-**`python research/pinpickoff.py`** (cache `results/pinpickoff_cache.json`,
-report `results/RESULTS_pickoff.md`). The operator asked for it: *"Track the
-things we'd buy and when they're getting picked off ... possibly act on it
-with strategy. Add a note to revisit that once populated with data."*
-
-It counts, per Eastern day, every taker buying the WINNING side at 90-98c
-within 60 s of a close -- the pool we compete for -- and splits it into ours
-and theirs. TAPE population: what the market did, never our loss rate (rule 5).
-
-**Backfilled over the whole tape on 2026-09-17. REVISIT AFTER ~2 MORE WEEKS**,
-and act on whichever of the three moves:
-
-1. **median tau falling** -> competitors are moving earlier. Widen our own
-   early window (AMENDMENT 46 sits at 45 s) or take a thinner edge sooner.
-2. **our share falling while bargains per close holds** -> we are losing
-   RACES, not opportunities. The answer is latency and the sweep, not the gates.
-3. **bargains per close falling** -> the pool itself is drying up. That is the
-   one that argues for a second product rather than a better bot.
-
-Background for why it exists: `results/RESULTS_decay.md`.
-
-## Hard-won gotchas that will bite again
-
-- **THE CLOCK INSIDE A TICKER IS EASTERN, NOT UTC.** `KXXRP15M-26SEP170000-00`
-  settles at 04:00Z: "26SEP17 0000" is midnight ET. Read it as UTC and every
-  close lands four hours early (five in winter). `research/pinflat.close_epoch`
-  is the one correct parser; use it. Found 2026-09-17 when the app's day
-  totals missed the operator's by a 4-hour slice.
-
-- **DOWNTIME IS NOT A WEAK DAY.** Operator, 2026-09-15: "We lost 7 hours of
-  trade time today. Make sure that's known for any future calculations so it
-  doesn't make our daily calculations look worse." The live bot could not trade
-  **7.57 h on 2026-09-15 (ET)**: 13:29Z-20:24Z (Windows Update restart -> Kalshi
-  TRADING_BLOCKED pending ID verification -> API key deleted, new key 5163259c)
-  plus two crashes 04:29-04:49Z and 04:59-05:19Z. Every $/day, trades/day or
-  growth figure divides by hours UP, from `results/DOWNTIME.json` via
-  `research/downtime.py`; pinhealth prints the per-hour-up table. **Add a window
-  the moment an outage happens.** Hours up count ONLY time that has passed (24 - lost overstated it on a partial day and read $3.49/h; the operator caught it). 2026-09-15 as of 16:48 ET: +$58.83 in 9.24 h up = $6.37/h, ~$153 on a 24h basis.
-
-- **A self-test must match a whole LINE at its real indentation**, never a
-  substring. `out = pintake.take(` is a substring of `_hout = pintake.take(`;
-  that alone broke a check today, and three more on 2026-09-11.
-- **Every size-derived rail must move with SIZE** -- `MAX_TAKE_COUNT`,
-  `MAX_RUN_STAKE`, `--loss-abort`. Four size-1 literals once refused 160
-  orders silently, because `take()` RETURNS its refusal instead of raising.
-- **`pintake.set_limits` refuses to TIGHTEN.** Never hand it a tightening or
-  the caller rolls back.
-- **Never infer a unit from magnitude.** `/portfolio/balance` gives cents AND
-  `balance_dollars`; `read_bank()` requires both to agree.
-- **Cluster by close TIME, not series+time.** Twelve series settle on one
-  second at rho ~ 0.8. Getting this wrong inflated n from 25 to 36 today.
-- **`pinlevels_rows.jsonl` holds candidates the live bot REFUSES.** 2,699 of
-  the 16,683 rows are `verdict: refuse`, fired by the dump guard -- offers at
-  2c on a side the model calls certain, which lose 77% of the time. Any
-  re-score must filter (`pincontest.gate(rows, "live")` does). Including them
-  manufactured a 10 pp gap out of a population the bot never trades, in the
-  first run of `pincontest` today.
-- **`pinlevels` caches candidates** in `results/pinlevels_rows.jsonl` (422
-  book hours, 16,683 rows). Re-scoring is seconds; re-walking the tape is
-  hours. Almost every question below is a re-score.
-
-## Cheap commands
-
-```bash
-python research/versioncheck.py                  # live flags vs VERSIONS.md
-python research/pinver.py                    # how is the current version doing
-python research/pinbank.py --bank 234        # what size does the bank support
-python research/pinlevels.py --minfill 39:1.0,0.5,0.25   # re-score, no tape walk
-python research/pincontest.py --rescore --gate live      # contest split, 3 s
-python research/<file>.py --selftest         # always before trusting a file
-```
+- Disk **25.0 GB** free (guard is 6 GB; below 5 GB the collectors STOP).
+  RAM **3.8 GB** free. Both collectors alive.
+- **Never kill `python.exe` broadly** -- filter on `*research*`.
+- The operator restarts the live bot himself: desktop app **Pause -> Start**,
+  or `! powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
+  The auto-mode classifier refuses to let a session run it.
+- `python research/versioncheck.py` in any session that touches the launcher.

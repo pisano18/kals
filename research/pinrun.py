@@ -988,7 +988,44 @@ HEDGE_PILOT_CONTRACTS = None  # FULL SIZE. I set this to 1 for ~30 minutes on
                               # all 20." The planted test is --hedge-plant below;
                               # this constant stays as machinery for it and is
                               # None in production. Dated in PREREG_hedge.md.
-HEDGE_MAX_TRIES = 5      # seconds we keep trying once the alarm has fired.
+# AMENDMENT 62 (2026-09-19): NO GATE MAY BLOCK A HEDGE ON A COLLAPSED BET.
+#
+# The operator, after KXBNB15M-26SEP190145-45 lost $57.98: "NOTHING SHOULD
+# BE BLOCKING A HEDGE ON A LIVE BET WITH A 22% CONFIDENCE RATING ... I HAVE
+# SAID OVER AND OVER HOW CRITICAL HEDGING IS."
+#
+# WHAT HAPPENED. Belief fell to 0.227 one second after the fill. The other
+# side was 21c. `--hedge-price 0.60` (A47) held the hedge back because OUR
+# side was still quoted at 79c -- the market had not agreed yet. Two seconds
+# later the other side was 51c, then 70c, then 76c, and the five tries ran
+# out. Hedging at 21c would have made the close +$3.06 instead of -$57.98.
+#
+# THE RULE NOW. Below HEDGE_PANIC belief, every discretionary hedge filter is
+# bypassed: the market-agreement test (A47), the normal-bet test (A51), and
+# the attempt cap. The only checks left are the ones that are arithmetic
+# rather than opinion -- the leg must cost under $1 (`hedge_ask_ok`), and
+# there must be an ask to hit at all. A filter exists to avoid paying for
+# insurance we do not need; at 22% belief we need it, and what the market
+# thinks is not evidence against our own model, it is a two-second lag we
+# have now measured.
+#
+# AND THE OPERATOR'S STANDING ANSWER TO THE OBJECTION, said many times: a
+# hedge that turns out wrong is not a trap. "ONCE CONFIDENCE REBUILDS ON
+# EITHER SIDE YOU CAN JUST BUY MORE OF THAT SIDE." Being on both sides is
+# recoverable; being naked in a collapse is not.
+HEDGE_PANIC = 0.35       # belief at or under which NO filter may block a hedge
+_DEFAULT_HEDGE_PANIC = 0.35
+
+HEDGE_MAX_TRIES = 30     # seconds we keep trying once the alarm has fired.
+                         # 5 -> 30 on 2026-09-19 (A62b). On the BNB close
+                         # that lost $57.98 the hedge tried at 21s, 20s and
+                         # 19s -- filling 0, 0 and ONE contract as the other
+                         # side went 51c, 70c, 76c -- and then gave up at
+                         # 18s with eighteen seconds still on the clock and
+                         # the position entirely naked. A give-up is only
+                         # ever right if the hedge cannot help, and
+                         # hedge_ask_ok already refuses a leg at or over $1,
+                         # which is the only case where that is true.
                          # Separate from MAX_ATTEMPTS_PER_CLOSE, which also
                          # applies. A collapse leaves ~15s; five is generous.
 
@@ -1034,6 +1071,27 @@ _HP_UNSET = object()      # "argument not supplied" -- distinct from None, which
                           # version used None for both, so passing the shipped
                           # default explicitly fell back to the running global
                           # and the self-test failed on any arm that set the flag.
+
+
+def hedge_panic(belief, threshold=_HP_UNSET):
+    """True when belief has collapsed far enough that NOTHING may block us.
+
+    `belief` is the model's probability of OUR side. At or under the
+    threshold this is not a wobble -- it is the model saying the bet is
+    lost -- and every discretionary filter is bypassed.
+
+    A MISSING BELIEF IS NOT A PANIC. `None` means we could not measure, and
+    an unmeasurable reading must not trigger the path that ignores every
+    other safeguard; the ordinary filters still apply and the position is
+    still hedged when they pass.
+    """
+    thr = HEDGE_PANIC if threshold is _HP_UNSET else threshold
+    if belief is None or thr is None:
+        return False
+    try:
+        return float(belief) <= float(thr)
+    except (TypeError, ValueError):
+        return False
 
 
 def hedge_price_ok(hedge_ask, threshold=_HP_UNSET):
@@ -3985,10 +4043,15 @@ def _selftest_body():
         ck(_lp.count(_needle) == 1
            and _lp.index(_needle) < _lp.index("_hout = " + "pintake.take"),
            "A47 is checked in the trade loop BEFORE the hedge reaches the wire")
-        ck("hedged.add(_hid)" not in _lp[_lp.index("if not " + _needle):
+        # A62 put `not _panic and ` in front of this test, so the needle is
+        # the call itself rather than the whole `if not ...` line.
+        ck("hedged.add(_hid)" not in _lp[_lp.index(_needle):
                                         _lp.index("if not hedge_ask_ok(" + "_ask)")],
            "a price-wait does NOT retire the position: the price can still fall "
            "inside this close, and then we hedge")
+        ck("not _panic and not " + _needle in _lp,
+           "and A62 sits in front of it: below HEDGE_PANIC belief the "
+           "market-agreement test is bypassed entirely")
         ck(_DEFAULT_HEDGE_PRICE is None,
            "the SHIPPED value of HEDGE_PRICE is None -- A47 is opt-in")
         # 2026-09-18: A47 IS LIVE at 0.60 (v-hedge-market). Until today this
@@ -4006,6 +4069,42 @@ def _selftest_body():
         ck(("--hedge-price" not in _rb47) or ("--hedge-price" in _vs47),
            "if restart_bot.ps1 passes --hedge-price, VERSIONS.md names it -- "
            "a live flag with no entry is the lapse versioncheck exists for")
+        # ---- AMENDMENT 62: nothing may block a hedge on a collapsed bet.
+        ck(HEDGE_MAX_TRIES >= 30,
+           "the hedge keeps trying for at least 30 seconds. At five it gave "
+           "up on the BNB close with eighteen seconds left and the position "
+           "naked; hedge_ask_ok already refuses a leg that cannot help")
+        ck(_DEFAULT_HEDGE_PANIC == 0.35,
+           "the DECLARED panic threshold is 35% belief -- asserted against "
+           "the default so an arm that moves it does not fail its own gate")
+        ck(hedge_panic(0.227) is True and hedge_panic(0.35) is True,
+           "at 22.7% belief -- the BNB close that lost $57.98 on 2026-09-19 "
+           "-- every filter is bypassed, and the threshold itself panics")
+        ck(hedge_panic(0.36) is False and hedge_panic(0.60) is False,
+           "a shallower dip does NOT panic: the market-agreement rule still "
+           "applies there, which is where its 5-of-5 evidence came from")
+        ck(hedge_panic(None) is False,
+           "NULL: an unmeasurable belief is NOT a panic -- it must not "
+           "trigger the one path that ignores every other safeguard")
+        ck(hedge_panic(0.1, threshold=None) is False,
+           "NULL: with the bypass disabled nothing panics, whatever belief is")
+        ck(hedge_panic("x") is False, "NULL: garbage does not panic")
+        _src62 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp62 = _src62[_src62.rindex(chr(10) + "def " + "trade_loop("):]
+        for _f in ("if not _panic and not hedge_price_ok(_ask):",
+                   "if not _panic and not hedge_normal_ok(_belief, _ask):",
+                   "if _tries + 1 > HEDGE_MAX_TRIES and not hedge_panic(_belief):"):
+            ck(_f in _lp62,
+               "in a panic the loop bypasses this filter: %s" % _f.strip())
+        ck("and not hedge_panic(_belief)):" in _lp62,
+           "...and the per-close attempt cap too -- it stranded the BNB "
+           "position after five seconds while the other side went 21c to 76c")
+        ck('rec("hedge_panic"' in _lp62,
+           "and a panic says so in the log, with what it bypassed")
+        ck(_lp62.index('_panic = hedge_panic(_belief)')
+           < _lp62.index("if not _panic and not hedge_price_ok(_ask):"),
+           "the panic is decided BEFORE the first filter that could block it")
+
         ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
            f"belief below the {HEDGE_BELIEF:.2f} gate fires the hedge")
         ck(not hedge_should_fire(HEDGE_BELIEF) and not hedge_should_fire(0.999),
@@ -4110,9 +4209,18 @@ def _selftest_body():
         ck(any("if hedge_last_try.get(_hid) == now_s:" in ln for ln in _hblk),
            "retries are paced to ONE PER SECOND -- the first live alarm burned "
            "all five in ~250 ms and gave up inside the alarm second")
-        ck(HEDGE_MAX_TRIES >= 3 and HEDGE_MAX_TRIES <= 10,
-           f"retries are bounded ({HEDGE_MAX_TRIES}) -- a runaway on the hedge "
-           "path would be the 160-order incident again")
+        # A62b: 5 -> 30. The runaway this bounds is ORDERS PER SECOND, and
+        # that is prevented by the one-per-second pacing checked immediately
+        # above, not by the total. Capping the total at ten only guaranteed
+        # that a position whose hedge could not fill for ten seconds spent
+        # the rest of the close naked -- which is exactly what happened on
+        # the BNB close that lost $57.98, with eighteen seconds left.
+        # 45 is the whole tradeable window, so 30 cannot outlive a close.
+        ck(3 <= HEDGE_MAX_TRIES <= 45,
+           f"retries are bounded ({HEDGE_MAX_TRIES}) and cannot outlive a "
+           "close -- a runaway on the hedge path would be the 160-order "
+           "incident again, and the one-per-second pacing above is what "
+           "actually prevents it")
         # the FORWARD bound: realised only moves after settlement, so the
         # advertised -$2.00 has to be checked against what is still open.
         pintake.LEDGER.update({"realised": 0.0, "committed": 0.0,
@@ -6530,6 +6638,7 @@ def trade_loop(a, rec, book, idx, series_index):
     hedge_last_try = {}
     hedge_price_said = set()      # A47: one 'waiting on price' line per position # A15: oid -> wall-clock second of the last try (pacing)
     hedge_normal_said = set()     # A51: one 'waiting for a normal bet' line per position
+    hedge_panic_said = set()      # A62: one 'every filter bypassed' line per position
     hedge_remain = {}   # A15 BUGFIX 2026-09-13: oid -> contracts STILL needing a
                         # hedge fill. open_pos[_hid] must NEVER be shrunk here; it
                         # is what reconcile() reads to settle the ORIGINAL position
@@ -6915,11 +7024,12 @@ def trade_loop(a, rec, book, idx, series_index):
                     print(f"  !!! HEDGE ALARM {_htk} {_hwant} belief {_belief:.3f} "
                           f"tau {_htau}s")
                 hedge_tries[_hid] = _tries + 1
-                if _tries + 1 > HEDGE_MAX_TRIES:
+                if _tries + 1 > HEDGE_MAX_TRIES and not hedge_panic(_belief):
                     hedged.add(_hid)
                     rec("hedge_gave_up", ticker=_htk, tries=_tries, tau=_htau)
                     continue
-                if attempts.get(_hcs, 0) >= MAX_ATTEMPTS_PER_CLOSE:
+                if (attempts.get(_hcs, 0) >= MAX_ATTEMPTS_PER_CLOSE
+                        and not hedge_panic(_belief)):
                     hedged.add(_hid)
                     rec("hedge_refused", ticker=_htk, why="attempt_cap", tau=_htau)
                     continue
@@ -6935,7 +7045,17 @@ def trade_loop(a, rec, book, idx, series_index):
                     rec("hedge_no_ask", ticker=_htk, side=_opp, tau=_htau,
                         belief=round(_belief, 5))
                     continue
-                if not hedge_price_ok(_ask):
+                # A62: below HEDGE_PANIC belief, no filter may block this.
+                _panic = hedge_panic(_belief)
+                if _panic and _hid not in hedge_panic_said:
+                    hedge_panic_said.add(_hid)
+                    rec("hedge_panic", ticker=_htk, belief=round(_belief, 5),
+                        threshold=HEDGE_PANIC, tau=_htau, ask=float(_ask),
+                        entry=_hcost, n=_hn,
+                        bypassed=["hedge_price", "hedge_normal", "attempt_cap"])
+                    print(f"  !!! HEDGE PANIC {_htk} belief {_belief:.3f} -- "
+                          f"every filter bypassed, taking {_ask:.2f}")
+                if not _panic and not hedge_price_ok(_ask):
                     # NOT added to `hedged`: the price can still fall inside
                     # this close, and if it does we hedge then. That is the
                     # whole point -- wait for the market to agree. Recorded
@@ -6949,7 +7069,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         print(f"  hedge WAITING on price {_htk}: our side "
                               f"{1.0 - float(_ask):.2f} is above {HEDGE_PRICE:.2f}")
                     continue
-                if not hedge_normal_ok(_belief, _ask):
+                if not _panic and not hedge_normal_ok(_belief, _ask):
                     # A51: NOT added to `hedged` -- the model can get surer and
                     # the price can still fall inside this close, and if both
                     # happen we insure then. Same reasoning as the A47 wait.
@@ -8383,6 +8503,13 @@ def main():
                          "MULT x SIZE, through A45's drawdown headroom, the "
                          "book and the close budget. MULT in (1, "
                          "MAX_PER_CLOSE]. Repeatable. Shipped off.")
+    ap.add_argument("--hedge-panic", type=float, default=None,
+                    help="AMENDMENT 62: belief at or under which NO filter "
+                         "may block a hedge -- not the market-agreement "
+                         "test, not the normal-bet test, not the attempt "
+                         "cap. Default %.2f. Set 0 to disable the bypass, "
+                         "which is what cost $57.98 on 2026-09-19."
+                         % _DEFAULT_HEDGE_PANIC)
     ap.add_argument("--hedge-price", type=float, default=None,
                     help="AMENDMENT 47: only hedge when OUR side's market "
                          "price has also fallen below this (e.g. 0.50). The "
@@ -8703,6 +8830,11 @@ def main():
                                  "got %r" % (float(MAX_PER_CLOSE), _m))
             _bm53.append((float(_lo), float(_hi), float(_m)))
         globals()["BAND_MULTS"] = tuple(_bm53)
+    if a.hedge_panic is not None:
+        if not (0.0 <= a.hedge_panic < 1.0):
+            raise SystemExit("--hedge-panic must sit in [0, 1), got %r"
+                             % (a.hedge_panic,))
+        globals()["HEDGE_PANIC"] = float(a.hedge_panic) or None
     if a.hedge_price is not None:
         if not (0.0 < a.hedge_price < 1.0):
             raise SystemExit("--hedge-price must be between 0 and 1, got %r"
@@ -8912,7 +9044,7 @@ def main():
         # that distinguish it, found nothing to distinguish, and showed the
         # Lab tab a blank where two live experiments should be. An arm whose
         # own log cannot say what it is testing is not measurable.
-        hedge_price=HEDGE_PRICE,
+        hedge_price=HEDGE_PRICE, hedge_panic=HEDGE_PANIC,
         late_tau=LATE_TAU, late_mult=LATE_MULT,
         late_pin=LATE_PIN, late_jump=LATE_JUMP_SD, extra_coin=EXTRA_COIN,
         late_extra=LATE_EXTRA,

@@ -1,3 +1,86 @@
+# v-nohedgeblock -- 2026-09-19 ~02:1xZ -- LIVE: NO filter may block a hedge on a collapsed bet, and it keeps trying for 30 s
+
+**This entry exists because a rule I deployed four hours earlier cost
+$57.98.** The operator: *"NOTHING SHOULD BE BLOCKING A HEDGE ON A LIVE BET
+WITH A 22% CONFIDENCE RATING ... I HAVE SAID OVER AND OVER HOW CRITICAL
+HEDGING IS."* He is right and this should never have shipped.
+
+## What happened -- KXBNB15M-26SEP190145-45
+
+| seconds left | event |
+|---|---|
+| 30 | signalled YES at 97c, order filled NOTHING |
+| 25 | dump guard refused an 82c offer as too-good-to-be-true |
+| 24 | signalled at 85c -- **filled 76 contracts at 74.98c**, the book collapsed inside the round trip |
+| 23 | hedge alarm, belief **0.227** |
+| **23** | **hedge BLOCKED by `--hedge-price 0.60`** -- the other side was 21c, but OUR side still quoted 79c |
+| 21 | tried at 51c, filled 0 |
+| 20 | tried at 70c, filled 0 |
+| 19 | tried at 76c, filled **1 contract** |
+| 18 | **gave up** (HEDGE_MAX_TRIES was 5), eighteen seconds still on the clock |
+| settle | **-$57.98** |
+
+| hedge at | cost | the close nets |
+|---|---|---|
+| **23 s at 21c** | $15.96 | **+$3.06** |
+| 21 s at 51c | $38.76 | -$19.74 |
+| 19 s at 76c | $57.76 | -$38.74 |
+
+**A $61 swing, lost to a filter.**
+
+## A62: below 35% belief, nothing may block a hedge
+
+`hedge_panic(belief)` is true at or under **0.35**. In a panic the loop
+bypasses **every discretionary filter**:
+
+- the market-agreement test (A47, `--hedge-price`)
+- the normal-bet test (A51, `--hedge-normal`)
+- the per-close attempt cap
+- the try cap
+
+What still applies is arithmetic rather than opinion: the leg must cost
+under $1 (`hedge_ask_ok` -- a leg at or over $1 cannot beat holding), and
+there must be an ask to hit. **A missing belief is NOT a panic**: it must
+not trigger the one path that ignores every other safeguard.
+
+**Why the market-agreement rule was wrong here.** Its evidence was 5 of 5
+cheap hedges hurting -- but those were FALSE ALARMS, positions that
+recovered. This was a real collapse: our model knew in one second and the
+market took two more. What the market thinks is not evidence against our
+own model; it is a two-second lag we have now measured and paid for.
+
+**And the operator's standing answer to the objection**, said many times
+before tonight: a hedge that turns out wrong is not a trap. *"ONCE
+CONFIDENCE REBUILDS ON EITHER SIDE YOU CAN JUST BUY MORE OF THAT SIDE."*
+Being on both sides is recoverable; being naked in a collapse is not.
+
+Above 35% belief the market-agreement rule still applies, which is where
+its evidence actually came from.
+
+## A62b: HEDGE_MAX_TRIES 5 -> 30
+
+Five tries gave up at 18 s with the position naked. The runaway that cap
+was written for is ORDERS PER SECOND, and the one-per-second pacing is what
+prevents that -- not the total. 30 cannot outlive a close (the window is
+45 s).
+
+## What is NOT fixed, and is the next thing to look at
+
+**The entry.** The dump guard refused 82c as a crazy deal (over 15c under
+fair), the next signal came at 85c -- 14.9c under, squeaking below the bar
+by a tenth of a cent -- and the IOC then swept down to **74.98c, 25c under
+fair**. The guard checks the price we SEE; it cannot check the price we
+GET. Someone sold us 76 contracts at 75c because they knew where BNB was
+going. A fill far below the ask we saw is a picked-off signal and nothing
+currently reacts to it.
+
+## Revert
+
+`--hedge-panic 0` disables the bypass entirely (that is the behaviour that
+cost $57.98). A62b is code: set `HEDGE_MAX_TRIES` back to 5.
+
+---
+
 # v-latebudget -- 2026-09-19 ~01:3xZ -- LIVE: the extra-bet allowance actually works now, and it reaches the last ten seconds
 
 Operator: *"Fix the one that refused 126 markets too that's really bad."*
@@ -54,7 +137,8 @@ happened. At a $640 bank and a 3.00 brake:
 
 ## Revert
 
-`restart_bot.ps1`, then `.estart_bot.ps1`:
+`restart_bot.ps1`, then `.
+estart_bot.ps1`:
 
 - **the late allowance only:** delete `"--late-extra", "1",`.
 - **both allowances:** delete that and `"--extra-coin", "1",`, and set
