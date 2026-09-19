@@ -4141,6 +4141,33 @@ def _selftest_body():
         _pv = {"sides": {"T": "yes"}}
         # ---- AMENDMENT 63: more of the side we HEDGED INTO is an ordinary bet
         ck(_DEFAULT_REBUY_HEDGED is False, "A63 ships OFF")
+        # WHY IT SHIPS OFF, in arithmetic rather than in prose. The comment
+        # above REBUY_HEDGED used to claim the flag could not raise the worst
+        # close. These are the real BNB numbers from 2026-09-19 01:45.
+        ck(abs(worst_close_both_sides(76, 0.7498, 0, 0) + 56.98) < 0.02,
+           "A63: naked, the BNB close risked $56.98")
+        ck(abs(worst_close_both_sides(76, 0.7498, 76, 0.21) - 3.06) < 0.02,
+           "...a BALANCED hedge at 21c turns that into a LOCKED +$3.06, which "
+           "is A62's whole job and why A62 is live")
+        _w63 = worst_close_both_sides(76, 0.7498, 76 + 138, (76 * 0.21 + 138 * 0.998) / 214)
+        ck(_w63 < -134.0,
+           "...but buying the remaining 138 of budget as MORE NO takes the "
+           "worst case to %.2f. Past the other side's count `min(y,n)` stops "
+           "rising, so every extra contract is naked. THE WITHDRAWN COMMENT "
+           "SAID THIS COULD NOT HAPPEN" % _w63)
+        ck(76 + 138 - (76 * 0.7498 + 76 * 0.21 + 138 * 0.998) < 3.4,
+           "...and the best case only improves to +$3.33 -- $138 more at risk "
+           "to win 27 cents, which is the opposite of the trade")
+        _src63x = open(os.path.abspath(__file__), encoding="utf-8").read()
+        # rindex, NOT index: the FIRST "HEDGE(paper)" in this file is the
+        # string literal on this very line, so index() had the self-test
+        # reading itself and failing on its own text.
+        _h0 = _src63x.rindex('HEDGE(paper)')
+        _hb = _src63x[_h0 - 3000:_h0 + 3000]
+        ck("_note_fill" not in _hb and 'pv["contracts"]' not in _hb,
+           "...and the OTHER half of the withdrawn claim is false too: the "
+           "hedge path never calls _note_fill, so hedge contracts do NOT "
+           "consume the close budget and the whole budget is still free")
         _g63 = globals()
         _sv63 = _g63["REBUY_HEDGED"]
         try:
@@ -6542,13 +6569,58 @@ def one_coin_cap(size, bank, hwm, mult=None):
 # model put NO at 99.865% and this gate refused to buy it, because the YES we
 # were trying to escape was still on the books.
 #
-# AND IT CANNOT RAISE THE WORST CLOSE. Every contract of either side counts
-# against the same close budget, and holding both sides LOWERS the worst case
-# for a given contract count, because one side always pays $1. So this only
-# ever converts budget we were already allowed to spend into a bet on the
-# side our model now prefers.
-REBUY_HEDGED = False     # --rebuy-hedged; shipped OFF
+# THE PARAGRAPH THAT USED TO SIT HERE WAS WRONG, AND IT IS THE REASON THIS
+# FLAG MUST STAY OFF. It read:
+#
+#     "AND IT CANNOT RAISE THE WORST CLOSE. Every contract of either side
+#      counts against the same close budget, and holding both sides LOWERS
+#      the worst case for a given contract count, because one side always
+#      pays $1."
+#
+# BOTH HALVES ARE FALSE, checked 2026-09-19 when the operator asked for this
+# to go live:
+#
+# 1. HEDGE CONTRACTS DO NOT COUNT AGAINST THE CLOSE BUDGET. The hedge path
+#    never calls `_note_fill` and never touches `pv["contracts"]`. So after
+#    hedging 76 we still have the WHOLE budget free, not none of it.
+#
+# 2. HOLDING BOTH SIDES ONLY CAPS THE LOSS WHILE THE SIDES ARE BALANCED. With
+#    Y on one side and N on the other the close pays `min(Y, N)`, so every
+#    contract bought BEYOND the other side's count is a naked directional bet
+#    and `min` stops rising. Worked on the real BNB close of 2026-09-19:
+#
+#      76 YES @0.7498, naked                                worst  -$56.98
+#      + 76 NO @0.21 (the hedge A62 now takes)              worst   +$3.06
+#      + A63 spending the remaining 138 of budget @0.998    worst -$134.67
+#                                                            best   +$3.33
+#
+#    It risks $138 more to win 27 cents. That is the opposite of the trade.
+#
+# A SAFE VERSION EXISTS and is NOT worth building: cap the re-buy at the
+# other side's count, i.e. only ever COMPLETE a partial hedge. On the BNB
+# close that is 75 more NO at 0.998 and moves the loss from -$56.98 to
+# -$56.59 -- forty cents, because by the time the gate refused us at tau 8
+# the escape was already priced at 99.8c. The money was in hedging at 21c
+# twenty seconds earlier, which is A62, and A62 is live.
+#
+# So the operator's principle -- "once confidence rebuilds on either side you
+# can just buy more of that side" -- is right about a FRESH close and wrong
+# about a close we are already hedged in, where the hedge is the only thing
+# holding the loss down. Left OFF, with the arithmetic recorded so nobody
+# re-derives the wrong half of it.
+REBUY_HEDGED = False     # --rebuy-hedged; shipped OFF, and see above
 _DEFAULT_REBUY_HEDGED = False
+
+
+def worst_close_both_sides(y_n, y_px, n_n, n_px):
+    """Dollars at risk on a close where we hold BOTH sides.
+
+    The close pays $1 on exactly one side, so the payout is `min(y_n, n_n)`
+    and every contract past that is naked. This is the arithmetic A63's
+    withdrawn comment got wrong; it exists so the self-test can assert it.
+    """
+    return min(float(y_n), float(n_n)) - (float(y_n) * float(y_px)
+                                          + float(n_n) * float(n_px))
 
 
 def _both_sides_block(prev, ticker, want, hedged_side=None):
