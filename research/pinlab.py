@@ -663,6 +663,7 @@ EXPERIMENTS = [
         "name": "The 45 s leg opened to the bands that earn (no edge cap, 80c floor)",
         "status": RUNNING, "match": "arm-b-early-open", "since": "2026-09-18",
         "select": {"early_min_price": 0.8, "early_max_edge": UNSET,
+                   "early_tau_max": 45,              # not the 60 s open arm
                    "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == []},
         "what": "The 31-45 s leg may buy from 80c up, with A50's 3c edge cap "
                 "off. Today it refuses anything under 90c and anything with "
@@ -783,8 +784,11 @@ EXPERIMENTS = [
     {
         "name": "A third at 46-60 s, topped up inside 30 s (the increments)",
         "status": RUNNING, "match": "arm-e60-third", "since": "2026-09-18",
+        # the flip arm is this arm plus --flip-mult, so it must be excluded
+        # by name or the A/B pair reads each other's markets
         "select": {"early_tau_max": 60, "early_frac": 0.333,
-                   "early_min_price": 0.9, "early_max_edge": 3.0},
+                   "early_min_price": 0.9, "early_max_edge": 3.0,
+                   "flip_mult": lambda v: v is None or abs(float(v) - 1.0) < 1e-9},
         "what": "Buys a THIRD of a bet as soon as a market qualifies between "
                 "46 and 60 seconds out, then completes it to a full bet once "
                 "inside 30 seconds -- two bites, at two different levels of "
