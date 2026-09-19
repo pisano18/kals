@@ -277,13 +277,15 @@ $botArgs = @(
     # worst close $157 -> $212 (the bank covers it 3.0x instead of 4.1x).
     # To keep 80-contract bets instead, set 2.72; to keep tonight's risk
     # exactly, set 4.08 and accept 53.
-    # 3.00 -> 4.08, 2026-09-19 ~03:1xZ, operator after depositing: "Cap
-    # losses at 200, keep bet size." At a $928 bank 3.00 would have sized the
-    # bet to 105 contracts and a worst close to $309; 4.08 holds it at about
-    # 77, the size it has been trading all night, and the bank covers a bad
-    # close 4.1x instead of 3.0x. The deposit still buys the thing that
-    # matters -- close BUDGET rises with the bank at any brake.
-    "--bank-brake", "4.08",
+    # 3.00 -> 4.08 -> 3.00 AGAIN, 2026-09-19 ~03:3xZ. "Cap losses at 200, keep
+    # bet size" was read as "hold the bet at 77 while the bank grows"; it meant
+    # the opposite. The operator, one close later: "Wait why that seemed
+    # perfectly fine I want the same size ratio just after $200 in losses
+    # brake." THE RATIO IS THE BRAKE, so the brake does not move. At the $928
+    # bank this is 105 contracts and a $309 worst close, covered 3.0x. Only
+    # --loss-cap below is new. 4.08 was live for one close (03:30:58Z, size 77,
+    # no fills) and is reverted.
+    "--bank-brake", "3.00",
     # AMENDMENT 65, same instruction. The loss abort has always been DERIVED
     # (-2 x SIZE x MAX_PER_CLOSE) and therefore GREW with the bank -- it had
     # already reached -$420 at 105 contracts. This is a hard dollar cap: the

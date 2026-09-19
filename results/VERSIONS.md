@@ -1,18 +1,24 @@
-# v-cap200 -- 2026-09-19 ~03:1xZ -- LIVE: a hard $200 loss cap, and the bet size held at ~77 through the deposit
+# v-cap200 -- 2026-09-19 ~03:1xZ -- LIVE: a hard $200 loss cap; the bet size is UNCHANGED
 
 Operator, immediately after depositing: *"Cap losses at 200, keep bet size."*
 Bank went $674 -> **$927.62**.
 
-## 1. `--bank-brake` 3.00 -> 4.08 : the deposit does NOT grow the bet
+## 1. `--bank-brake` STAYS AT 3.00 -- the size ratio does not move
 
-At a $928 bank the old brake would have auto-sized to **105 contracts** with
-a **$309** worst close. 4.08 holds the bet at about **77** -- the size it has
-traded all night -- and the bank covers a bad close **4.1x** instead of 3.0x.
+**CORRECTED 2026-09-19 03:3xZ, in the operator's own words:** *"Wait why that
+seemed perfectly fine I want the same size ratio just after $200 in losses
+brake."*
 
-The deposit still buys the thing that actually earns: the **close budget**
-rises with the bank at any brake, and that is what `close_budget` was
-refusing 423 markets for. Our own record says a bigger BET does not earn
-more (size 47 -> 98 over six days, correlation with daily money **-0.05**).
+This entry first shipped `--bank-brake` 3.00 -> 4.08, which cut the bet from
+**105 contracts to 77** at the $928 bank. That was a size change he did not
+ask for -- "keep bet size" meant keep the RATIO, and the ratio is the brake.
+It was live for one close (03:30:58Z -> 03:3xZ, size 77, no fills) and is
+reverted. The bet is 105 contracts again and the bank covers a bad close
+**3.0x**.
+
+What the deposit buys is unchanged either way: the **close budget** rises with
+the bank at any brake, and that is what `close_budget` was refusing 423
+markets for.
 
 ## 2. AMENDMENT 65: `--loss-cap 200`
 
@@ -37,10 +43,18 @@ A stray minus sign on the flag is ignored: the cap is a magnitude, so
 `--loss-cap -200` and `--loss-cap 200` mean the same thing and neither can
 turn a cap into a licence.
 
+## What the cap can and cannot do
+
+`LOSS_ABORT` is a **running-total** stop: once the run's settled P&L reaches
+-$200 every further buy is refused. It is not a per-close stop and cannot be
+one -- at 105 contracts a close holding all three legs has $309 at stake, so
+one catastrophic close can pass straight through $200. `--max-losses 2` is the
+brake that actually bounds that, and it is unchanged.
+
 ## Revert
 
-`restart_bot.ps1`: delete `"--loss-cap", "200"` for the derived band, and set
-`"--bank-brake", "3.00"` to let the bet scale with the bank again.
+`restart_bot.ps1`: delete `"--loss-cap", "200"` for the derived band
+(-$630 at 105 contracts).
 
 ---
 
