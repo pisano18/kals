@@ -10663,6 +10663,15 @@ def main():
         hedge_enabled=HEDGE_ENABLED, hedge_belief=HEDGE_BELIEF,
         hedge_max_ask=HEDGE_MAX_ASK, hedge_max_tries=HEDGE_MAX_TRIES,
         hedge_pilot_contracts=HEDGE_PILOT_CONTRACTS,
+        # A70/A71: the run's own statement of what its HEDGE is allowed to do.
+        # The first v-hedgefill deploy (pid 1305604, 21:58:25Z) recorded
+        # hedge_panic, hedge_price and hedge_max_tries but NOT these, so the
+        # log could not say whether the slip was on -- only the command line
+        # could, and Windows returns an empty command line for a process it
+        # will not open. That is how the 2026-09-14 double-bot failure hid.
+        hedge_slip=HEDGE_SLIP,
+        max_hedge_attempts_per_close=MAX_HEDGE_ATTEMPTS_PER_CLOSE,
+        reconcile_fail_halt=RECONCILE_FAIL_HALT,
         improve_by=IMPROVE_BY, improve_scope=IMPROVE_SCOPE,
         # A23/A24/A25: the running values, so a reader does not have to guess
         # them from module defaults. research/pindash.py shows what is ACTUALLY
