@@ -232,6 +232,10 @@ class Ledger:
                 "result": s.get("market_result"),
                 "close": pinflat.close_epoch(tk),
                 "file": "kalshi",
+                # CONTRACTS, so the Lab's head-to-head can divide by them.
+                # Both legs count: a hedged market's cost is both sides.
+                "n": (pinledger.money(s, "yes_count_fp")
+                      + pinledger.money(s, "no_count_fp")),
                 "hedged": (pinledger.money(s, "yes_count_fp") > 0
                            and pinledger.money(s, "no_count_fp") > 0),
                 "book": "oil" if tk.split("-")[0] in (
@@ -1858,9 +1862,19 @@ def run_gui():
         # number, and the two can disagree in sign -- on 2026-09-19 one arm
         # read +201% scaled while being $58 behind on every shared market.
         _h = w.get("h2h")
-        _lead = (("head to head %s on %d shared"
-                  % (money(_h["diff"]), _h["n"])) if _h
-                 else "no shared market yet")
+        # PER CONTRACT, not raw dollars: a paper arm bets 20 where we bet 105,
+        # so on a market both won its dollar total is smaller for making the
+        # same decision. cpc_diff is stake-free; at_our_stake turns it back
+        # into the money it would really have been worth.
+        _sign = None
+        if _h and _h.get("cpc_diff") is not None:
+            _lead = ("head to head %+.2fc a contract (%s at our stake) on %d shared"
+                     % (_h["cpc_diff"], money(_h["at_our_stake"]), _h["n"]))
+            _sign = _h["cpc_diff"]
+        elif _h:
+            _lead = "head to head on %d shared, contracts unknown" % _h["n"]
+        else:
+            _lead = "no shared market yet"
         lab_pickhead.configure(
             text="%s   |   %s scaled   %s" % (
                 _lead,
@@ -1868,7 +1882,7 @@ def run_gui():
                 else money(w["diff"]),
                 ("%+.0f%% swing" % w["sd_pct"]) if w.get("sd_pct") is not None
                 else "swing not comparable"),
-            fg=C["gain"] if (_h["diff"] if _h else w["diff"]) > 0
+            fg=C["gain"] if (_sign if _sign is not None else w["diff"]) > 0
             else C["loss"])
         lv = [(t, base + v) for t, v in w["live"]]
         av = [(t, base + v) for t, v in w["arm"]]
@@ -1953,10 +1967,13 @@ def run_gui():
         # (t, pnl, TICKER). The ticker is what lets pinlab.whatif compare the
         # markets the arm and live BOTH traded; without it the chart credits an
         # arm for every close it was never in.
-        # (t, pnl, TICKER) -- the ledger spells it `tk`, pinrun's logs spell it
-        # `ticker`, and `s.get("ticker")` here quietly handed every point a
-        # None and turned the head-to-head off for every arm.
-        live_pts = sorted((s["t"], s["pnl"], s.get("tk"))
+        # (t, pnl, TICKER, CONTRACTS) -- the ledger spells the ticker `tk`,
+        # pinrun's logs spell it `ticker`, and `s.get("ticker")` here quietly
+        # handed every point a None and turned the head-to-head off for every
+        # arm. The contract count is what keeps the head-to-head per contract:
+        # without it a 20-contract arm reads as worse than a 105-contract bot
+        # for making the same decision.
+        live_pts = sorted((s["t"], s["pnl"], s.get("tk"), s.get("n"))
                           for s in ledger.settled if s.get("t"))
         for match, info in prog.items():
             # EVERY log the arm owns, oldest first. `logs` is present when the
@@ -2045,15 +2062,35 @@ def run_gui():
                     # line above assumes the arm would have traded our
                     # markets; this one only counts the markets it DID.
                     h = w.get("h2h")
-                    if h:
+                    if h and h.get("cpc_diff") is not None:
+                        # PER CONTRACT. In raw dollars a 20-contract arm is
+                        # always behind a 105-contract bot on a market they
+                        # both won, which says nothing about the decision.
+                        d = h["cpc_diff"]
                         lab_body.insert(
                             "end",
                             "   HEAD TO HEAD on the %d markets we BOTH traded:  "
-                            "it made %s, we made %s  ->  %s\n"
-                            % (h["n"], money(h["arm"]), money(h["live"]),
-                               ("%s BETTER" % money(h["diff"])) if h["diff"] > 0
-                               else ("%s WORSE" % money(abs(h["diff"])))),
-                            "whatif_good" if h["diff"] > 0 else "whatif_bad")
+                            "it earned %.2fc a contract, we earned %.2fc  ->  "
+                            "%+.2fc, worth %s at our stake\n"
+                            % (h["n"], h["arm_cpc"], h["live_cpc"], d,
+                               money(h["at_our_stake"])),
+                            "whatif_good" if d > 0 else "whatif_bad")
+                        lab_body.insert(
+                            "end",
+                            "      (in raw dollars %s against %s -- but it bet "
+                            "%.0f contracts to our %.0f, so that gap is stake, "
+                            "not skill.)\n"
+                            % (money(h["arm"]), money(h["live"]),
+                               h["arm_ct"], h["live_ct"]), "prog")
+                    elif h:
+                        lab_body.insert(
+                            "end",
+                            "   HEAD TO HEAD on the %d markets we BOTH traded:  "
+                            "it made %s, we made %s -- but the contract counts "
+                            "are missing, so this is stake as much as skill.\n"
+                            % (h["n"], money(h["arm"]), money(h["live"])),
+                            "prog")
+                    if h:
                         if h["missed_loss"] < 0 or h["live_only"]:
                             lab_body.insert(
                                 "end",

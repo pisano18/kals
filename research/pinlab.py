@@ -1379,8 +1379,16 @@ def summarise_log(path):
 
 
 def arm_series(path):
-    """[(epoch, pnl)] and total contracts for one paper arm, oldest first.
-    `path` may be a list of logs (join_logs), read in order and merged."""
+    """[(epoch, pnl, ticker, contracts)] and total contracts, oldest first.
+
+    `path` may be a list of logs (join_logs), read in order and merged.
+
+    THE CONTRACT COUNT IS ON EVERY POINT, not just the total, because the
+    head-to-head in `whatif` compares a 20-contract paper arm against a
+    105-contract live bot and a RAW dollar difference on a shared market is
+    then mostly stake. Contracts are booked per TICKER as the log is read and
+    attached to that ticker's settled point.
+    """
     import calendar
     import time as _t
     if isinstance(path, (list, tuple)):
@@ -1391,7 +1399,7 @@ def arm_series(path):
             contracts += b
         pts.sort()
         return pts, contracts
-    pts, contracts = [], 0.0
+    pts, contracts, by_tk = [], 0.0, {}
     try:
         fh = open(path, encoding="utf-8", errors="replace")
     except OSError:
@@ -1408,6 +1416,9 @@ def arm_series(path):
             k = r.get("kind")
             if k == "order":
                 contracts += float(r.get("filled") or 0)
+                if r.get("ticker"):
+                    by_tk[r["ticker"]] = (by_tk.get(r["ticker"], 0.0)
+                                          + float(r.get("filled") or 0))
             elif k == "signal" and not r.get("live"):
                 # A PAPER ARM WRITES NO ORDER RECORDS -- there is no wire call
                 # to record. Its contracts live on the signal as `take_n`, and
@@ -1416,6 +1427,9 @@ def arm_series(path):
                 # empty. Live rows are excluded here because the live path DOES
                 # write orders and would double-count.
                 contracts += float(r.get("take_n") or 0)
+                if r.get("ticker"):
+                    by_tk[r["ticker"]] = (by_tk.get(r["ticker"], 0.0)
+                                          + float(r.get("take_n") or 0))
             elif k == "settled":
                 v = _settled_pnl(r)
                 if v is _NOPOS:
@@ -1431,6 +1445,10 @@ def arm_series(path):
                 # 2026-09-19 it reported an arm at +201% that was $58 BEHIND
                 # live on every market the two actually shared.
                 pts.append((ts, v, r.get("ticker")))
+    # Contracts are attached AFTER the whole log is read: a market can be
+    # topped up after it has been seen, and a count taken at the settled line
+    # would miss every buy that followed the first one.
+    pts = [(ts, v, tk, by_tk.get(tk, 0.0)) for ts, v, tk in pts]
     pts.sort()
     return pts, contracts
 
@@ -1467,25 +1485,24 @@ def whatif(arm_pts, arm_contracts, live_pts, live_contracts):
     def _norm(pts):
         out = []
         for p in pts:
-            if len(p) >= 3:
-                out.append((p[0], p[1], p[2]))
-            else:
-                out.append((p[0], p[1], None))
+            out.append((p[0], p[1],
+                        p[2] if len(p) >= 3 else None,
+                        p[3] if len(p) >= 4 else None))
         return out
 
     arm_pts = _norm(arm_pts)
     live_pts = _norm(live_pts)
     t0 = arm_pts[0][0]
-    live = [(t, v, tk) for t, v, tk in live_pts if t >= t0]
+    live = [(t, v, tk, n) for t, v, tk, n in live_pts if t >= t0]
     if not live:
         return None
     scale = live_contracts / arm_contracts
     cum, lcurve = 0.0, []
-    for t, v, _tk in live:
+    for t, v, _tk, _n in live:
         cum += v
         lcurve.append((t, cum))
     cum, acurve = 0.0, []
-    for t, v, _tk in arm_pts:
+    for t, v, _tk, _n in arm_pts:
         cum += v * scale
         acurve.append((t, cum))
     # VOLATILITY, so "better" is not judged on the total alone. A strategy that
@@ -1498,8 +1515,8 @@ def whatif(arm_pts, arm_contracts, live_pts, live_contracts):
         mu = sum(vals) / len(vals)
         return (sum((v - mu) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5
 
-    live_vals = [v for _, v, _tk in live]
-    arm_vals = [v * scale for _, v, _tk in arm_pts]
+    live_vals = [v for _, v, _tk, _n in live]
+    arm_vals = [v * scale for _, v, _tk, _n in arm_pts]
     lsd, asd = _sd(live_vals), _sd(arm_vals)
     lworst = min(live_vals) if live_vals else 0.0
     aworst = min(arm_vals) if arm_vals else 0.0
@@ -1512,25 +1529,48 @@ def whatif(arm_pts, arm_contracts, live_pts, live_contracts):
     # close that lost $57.98 was reported at +201% while being $58 BEHIND live
     # on all 54 markets they actually shared.
     #
-    # `h2h_diff` is the arm's money minus live's money on the markets BOTH
-    # settled, at the arm's own stake -- no scaling, because on a shared
-    # market the only difference left is the decision. `missed_loss` is what
-    # live lost on markets the arm was never in, which is exactly the money
-    # the scaled comparison was handing it for free.
-    a_by = {}
-    for _t_, v, tk in arm_pts:
+    # AND IT IS MEASURED PER CONTRACT, NOT IN RAW DOLLARS. A paper arm is
+    # fixed at 20 contracts and the live bot is at 105, so on any market the
+    # two BOTH won, live makes five times the money for making the identical
+    # decision. A raw dollar difference is therefore mostly stake -- the exact
+    # mistake the scaled headline was already making, re-made one level down.
+    # Shipped that way at 06:0xZ on 2026-09-19 and caught at 08:3xZ when every
+    # mature arm read negative and every young one read positive.
+    #
+    # `cpc_diff` is cents per contract, arm minus live, on the shared markets
+    # -- stake-free, so it is the decision and nothing else. `at_our_stake`
+    # puts that back into dollars at OUR contract count, which is what the
+    # difference would actually have been worth. `missed_loss` is what live
+    # lost on markets the arm was never in, i.e. the money the scaled
+    # comparison was handing it for free.
+    a_by, a_ct = {}, {}
+    for _t_, v, tk, n in arm_pts:
         if tk:
             a_by[tk] = a_by.get(tk, 0.0) + v
-    l_by = {}
-    for _t_, v, tk in live:
+            if n:
+                a_ct[tk] = float(n)
+    l_by, l_ct = {}, {}
+    for _t_, v, tk, n in live:
         if tk:
             l_by[tk] = l_by.get(tk, 0.0) + v
+            if n:
+                l_ct[tk] = float(n)
     both = sorted(set(a_by) & set(l_by))
     h2h = None
     if both:
         a_b = sum(a_by[k] for k in both)
         l_b = sum(l_by[k] for k in both)
+        a_n = sum(a_ct.get(k, 0.0) for k in both)
+        l_n = sum(l_ct.get(k, 0.0) for k in both)
+        a_cpc = (100.0 * a_b / a_n) if a_n > 0 else None
+        l_cpc = (100.0 * l_b / l_n) if l_n > 0 else None
+        cpc_d = (a_cpc - l_cpc) if (a_cpc is not None and l_cpc is not None) \
+            else None
         h2h = {"n": len(both), "arm": a_b, "live": l_b, "diff": a_b - l_b,
+               "arm_ct": a_n, "live_ct": l_n,
+               "arm_cpc": a_cpc, "live_cpc": l_cpc, "cpc_diff": cpc_d,
+               "at_our_stake": (cpc_d * l_n / 100.0) if cpc_d is not None
+               else None,
                "arm_only": len(set(a_by) - set(l_by)),
                "live_only": len(set(l_by) - set(a_by)),
                "missed_loss": sum(v for k, v in l_by.items()
@@ -1825,9 +1865,10 @@ def selftest():
     pts, ctr = arm_series(kept)
     ck([p[1] for p in pts] == [1.0, -0.5] and abs(ctr - 40.0) < 1e-9,
        "...the series runs oldest first across the join, and contracts add")
-    ck(all(len(p) == 3 for p in pts),
-       "...and every point carries its TICKER, without which the head-to-head "
-       "below cannot tell a better arm from an absent one")
+    ck(all(len(p) == 4 for p in pts),
+       "...and every point carries its TICKER and its CONTRACT COUNT, without "
+       "which the head-to-head below cannot tell a better arm from an absent "
+       "one, or a better arm from a bigger one")
     kept2, dropped2 = join_logs([ja, jb, jc])
     ck(kept2 == [ja, jc] and dropped2 == [jb],
        "a log that starts BEFORE the previous one ended is a second process "
@@ -1925,6 +1966,36 @@ def selftest():
     ck(whatif(ap_, ac, lp_, lc)["h2h"] is None,
        "NULL: two-element points carry no ticker, so the head-to-head is "
        "absent rather than matching every market to every other")
+
+    # STAKE IS NOT SKILL. The arm and live make the IDENTICAL decision on two
+    # shared markets -- same sign, same cents per contract -- but the arm bets
+    # 20 contracts where live bets 100. In raw dollars the arm looks $16
+    # worse. It is not worse at all, and a headline that says so would have
+    # condemned every mature arm on the board (shipped 06:0xZ 2026-09-19,
+    # caught 08:3xZ).
+    ap3 = [(100, 1.0, "A", 20.0), (200, 1.0, "B", 20.0)]
+    lp3 = [(100, 5.0, "A", 100.0), (200, 5.0, "B", 100.0)]
+    w3 = whatif(ap3, 40.0, lp3, 200.0)["h2h"]
+    ck(abs(w3["diff"] + 8.0) < 1e-9,
+       "raw dollars say the arm is $8 behind on the two shared markets -- and "
+       "that is ENTIRELY stake, because it bet a fifth as much")
+    ck(abs(w3["arm_cpc"] - 5.0) < 1e-9 and abs(w3["live_cpc"] - 5.0) < 1e-9,
+       "...per contract both earned 5.00c, which is the same decision")
+    ck(abs(w3["cpc_diff"]) < 1e-9 and abs(w3["at_our_stake"]) < 1e-9,
+       "...so the honest headline is LEVEL, not $8 worse -- this is the check "
+       "that stops a 20-contract arm being read as worse than a 105-contract "
+       "bot for agreeing with it")
+    ap4 = [(100, 2.0, "A", 20.0)]
+    lp4 = [(100, 5.0, "A", 100.0)]
+    w4 = whatif(ap4, 20.0, lp4, 100.0)["h2h"]
+    ck(abs(w4["cpc_diff"] - 5.0) < 1e-9 and abs(w4["at_our_stake"] - 5.0) < 1e-9,
+       "an arm that really is better (10.00c against 5.00c a contract) still "
+       "reads better, and is worth $5 at OUR stake -- the correction must not "
+       "flatten a real difference into zero")
+    ck(whatif([(100, 1.0, "A")], 10.0,
+              [(100, 1.0, "A")], 10.0)["h2h"]["cpc_diff"] is None,
+       "NULL: three-element points carry no contract count, so cents per "
+       "contract is absent rather than a divide-by-zero or a fake 0.00c")
     print("pinlab selftest: OK (%d entries: %s)"
           % (len(EXPERIMENTS), ", ".join("%s %d" % (k, v) for k, v in sorted(counts().items()))))
 
