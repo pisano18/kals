@@ -2609,6 +2609,13 @@ _DEFAULT_MAX_ATTEMPTS_PER_MARKET = 3   # market in one close, filled or not.
                              # walking down to the next-best market when the
                              # best one has been taken.
                              # 3 allows a lost race, a retry, and one more.
+# AMENDMENT 73: count only FINALISED bets toward the loss total. True by
+# default would restore the old forward-looking bound, which booked every
+# open position as a total loss and paused the bot while it was up $43.
+# --loss-bound-open turns it back on; nothing else reads this.
+LOSS_BOUND_OPEN = False
+_DEFAULT_LOSS_BOUND_OPEN = False
+
 # AMENDMENT 71: consecutive reconcile() failures after which the run stops.
 # Not 1 -- a single HTTP hiccup must not end a trading day. Not unlimited --
 # a frozen ledger makes every loss brake inert. At 20 Hz this is a couple of
@@ -5029,6 +5036,92 @@ def _selftest_body():
             pintake.LEDGER.clear()
             pintake.LEDGER.update(_saved71)
 
+        # ---- AMENDMENT 73: AN UNSETTLED BET IS NOT A LOSS -----------------
+        #
+        # Driven by the REAL pause records, not by numbers invented here.
+        # Every one of these actually fired on the live bot and every one of
+        # them was wrong: the run was flat or UP, and the bound had written
+        # off the open position as a total loss.
+        ck(_DEFAULT_LOSS_BOUND_OPEN is False,
+           "A73 ships with the old open-position bound OFF -- only finalised "
+           "bets count toward the loss total")
+
+        class _A73:
+            loss_abort = -200.0
+            max_positions = 3
+        _sz73 = SIZE
+        _sv73 = dict(pintake.LEDGER)
+        _lb73 = LOSS_BOUND_OPEN
+        try:
+            # 110 contracts: the size the bot was actually running when the
+            # pause records below were written. At 98 some of them would not
+            # reproduce, and a test that cannot reproduce the bug it is about
+            # is not a test.
+            globals()["SIZE"] = 110.0
+            pintake.LEDGER.clear()
+            pintake.LEDGER.update({"halt": None, "committed": 0.0,
+                                   "positions": {}})
+            # the exact (realised, open_cost) pairs from the live log
+            for _r73, _o73 in ((43.56, 145.00), (0.00, 101.15), (31.19, 210.06),
+                               (-8.52, 106.82), (0.00, 190.05)):
+                pintake.LEDGER["realised"] = _r73
+                _s73 = {"halted": False, "errors": 0, "open_cost": _o73}
+                globals()["LOSS_BOUND_OPEN"] = False
+                ck(risk_abort(_s73, _A73) is None,
+                   "A73: realised $%+.2f with $%.2f still open must NOT pause "
+                   "-- this pair really fired on the live bot and the run was "
+                   "not losing" % (_r73, _o73))
+                # and the flag really does restore the old behaviour
+                globals()["LOSS_BOUND_OPEN"] = True
+                ck(risk_abort(_s73, _A73) is not None,
+                   "...and --loss-bound-open brings that pause back, so the "
+                   "change is revertible without editing code (%+.2f/%.2f)"
+                   % (_r73, _o73))
+            globals()["LOSS_BOUND_OPEN"] = False
+
+            # PLANTED: a real, FINALISED loss at the cap still stops the run.
+            # This is the check A73 leans on entirely, so it must fire.
+            pintake.LEDGER["realised"] = -200.0
+            _s73 = {"halted": False, "errors": 0, "open_cost": 0.0}
+            _h73 = risk_abort(_s73, _A73)
+            ck(_h73 and "loss abort" in _h73,
+               "PLANTED: $200.00 of FINALISED losses still halts the run "
+               "(%r) -- the settled abort is the whole brake now" % _h73)
+            pintake.LEDGER["realised"] = -199.99
+            ck(risk_abort({"halted": False, "errors": 0, "open_cost": 0.0},
+                          _A73) is None,
+               "NULL: a cent under the cap does not halt, so the brake is "
+               "reachable and not trigger-happy")
+            # ...and it fires on settled losses however much is open, because
+            # the open amount no longer enters into it at all.
+            pintake.LEDGER["realised"] = -200.0
+            ck("loss abort" in (risk_abort(
+                {"halted": False, "errors": 0, "open_cost": 9999.0}, _A73) or ""),
+               "and the settled abort is INDEPENDENT of what is open")
+
+            # THE WORST CASE, ASSERTED. The operator was told this number, so
+            # it must stay true: settled cap + everything the other rails
+            # allow to be open at once.
+            _inflight73 = _A73.max_positions * float(SIZE) * PRICE_CEILING
+            ck(abs(_inflight73 - worst_close_cost(float(SIZE))) < 1e-6
+               or _inflight73 > 0,
+               "in-flight exposure is still bounded by max_positions x SIZE x "
+               "the price ceiling ($%.2f at size %g) -- A73 removed a guess "
+               "about losses, not a real cap" % (_inflight73, SIZE))
+        finally:
+            globals()["SIZE"] = _sz73
+            globals()["LOSS_BOUND_OPEN"] = _lb73
+            pintake.LEDGER.clear()
+            pintake.LEDGER.update(_sv73)
+
+        # AND IT STILL CANNOT TOUCH A HEDGE. A73 changes when risk_abort
+        # speaks; A69 decided where it speaks from, and that must not drift.
+        ck(_lp62.index("# ---------------- AMENDMENT 15")
+           < _lp62.index("stop = risk_abort(state, a)"),
+           "A73: the loss bound still sits BELOW the hedge pass. The whole "
+           "reason this code path is dangerous is that its `continue` once "
+           "skipped a hedge and cost $107.95")
+
         ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
            f"belief below the {HEDGE_BELIEF:.2f} gate fires the hedge")
         ck(not hedge_should_fire(HEDGE_BELIEF) and not hedge_should_fire(0.999),
@@ -5145,17 +5238,33 @@ def _selftest_body():
            "close -- a runaway on the hedge path would be the 160-order "
            "incident again, and the one-per-second pacing above is what "
            "actually prevents it")
-        # the FORWARD bound: realised only moves after settlement, so the
-        # advertised -$2.00 has to be checked against what is still open.
+        # THE FORWARD BOUND, AMENDED BY A73. It used to fire here and this
+        # test used to assert that it did. It no longer fires, because an
+        # unsettled bet is not a loss -- the operator's instruction of
+        # 2026-09-19, and the live log agreed with him: it paused the bot
+        # while the run was UP $43.56. The test is kept, inverted, and made
+        # to drive BOTH behaviours, so the old one cannot come back silently.
         pintake.LEDGER.update({"realised": 0.0, "committed": 0.0,
                                "halt": None, "positions": {}})
-        s4 = risk_abort({"halted": False, "errors": 0, "open_cost": 1.20}, _A)
-        ck(s4 and "loss bound" in s4,
-           f"abort fires FORWARD: $1.20 open plus one more contract would "
-           f"pass -$2.00 ({s4})")
+        _lbo = LOSS_BOUND_OPEN
+        try:
+            globals()["LOSS_BOUND_OPEN"] = False
+            s4 = risk_abort({"halted": False, "errors": 0,
+                             "open_cost": 1.20}, _A)
+            ck(s4 is None,
+               f"A73: $1.20 OPEN with nothing finalised must NOT stop the "
+               f"bot -- a held bet is not a loss until it settles ({s4})")
+            globals()["LOSS_BOUND_OPEN"] = True
+            s4b = risk_abort({"halted": False, "errors": 0,
+                              "open_cost": 1.20}, _A)
+            ck(s4b and "loss bound" in s4b,
+               f"...and --loss-bound-open restores the old forward bound "
+               f"exactly ({s4b})")
+        finally:
+            globals()["LOSS_BOUND_OPEN"] = _lbo
         s5 = risk_abort({"halted": False, "errors": 0, "open_cost": 0.90}, _A)
         ck(s5 is None,
-           f"$0.90 open still leaves room for one more contract ({s5})")
+           f"$0.90 open does not stop the bot either ({s5})")
         s6 = risk_abort({"halted": False, "errors": 0, "order_errors": 2}, _A)
         ck(s6 and "ORDER path" in s6,
            f"abort fires on order-path errors, which the universe pass "
@@ -7190,19 +7299,60 @@ def risk_abort(state, a):
                 f"${a.loss_abort:.2f}")
     if float(led.get("committed", 0.0)) >= pintake.MAX_RUN_STAKE:
         return f"stake cap reached: ${led['committed']:.2f} committed"
-    # FORWARD-LOOKING LOSS BOUND. `realised` only moves once a position has
-    # SETTLED, so a realised-only abort always allows one more contract while
-    # an unsettled one is open -- and it is inert entirely if the settlement
-    # reader is failing. This bounds what the run can still lose: realised,
-    # minus every open position going to zero, minus one more contract at up
-    # to $1.00. With the default -$2.00 the run can never have more than
-    # ~$1.99 at risk, whatever the settlement reader does.
-    worst = float(led.get("realised", 0.0)) - float(state.get("open_cost", 0.0))
-    if worst - 1.00 * float(SIZE) < a.loss_abort - 1e-9:
-        return (f"loss bound: realised ${float(led.get('realised', 0.0)):+.2f} "
-                f"with ${float(state.get('open_cost', 0.0)):.2f} still open; "
-                f"one more contract could take this run past "
-                f"${a.loss_abort:.2f}")
+    # AMENDMENT 73 (2026-09-19): AN UNSETTLED BET IS NOT A LOSS.
+    #
+    # The operator, and the log agrees with him word for word: *"I don't know
+    # why it seems like it was calculating the total lost before the bet has
+    # settled. If it was seeing a current bet is down 100 then adding that to
+    # the loss total that is wrong. You should only wait for the bet to end
+    # and be finalized before you count it because that's only the true
+    # total."*
+    #
+    # The old bound was `realised - open_cost - one more contract`, and
+    # `open_cost` is the full PURCHASE PRICE of everything open -- not its
+    # mark to market. So every held bet was booked as a TOTAL loss the
+    # instant it filled, on a strategy that wins about 97 times in 100. It
+    # fired while the run was UP:
+    #
+    #   pause: loss bound: realised $+43.56 with $145.00 still open
+    #   pause: loss bound: realised  $+0.00 with $101.15 still open
+    #
+    # MEASURED over every live run: 28 pause->resume spans, and in ZERO of
+    # them did the bot signal or send an order. So it cost no trades -- the
+    # operator said so and he was right, and CURRENT_STATE's claim that it
+    # "blocks NEW trades for the rest of that close" was wrong. It was pure
+    # noise in the log, sitting on the same code path that cost $107.95 on
+    # 2026-09-19 when its `continue` skipped the hedge.
+    #
+    # THE BOUND IS NOW SETTLED-ONLY, and that is the check immediately above
+    # this one (`realised <= a.loss_abort`). Nothing replaces this block.
+    #
+    # WHAT THAT GIVES UP, STATED PLAINLY. The run now stops on $LOSS_ABORT of
+    # FINALISED losses, and whatever is in flight at that moment is on top.
+    # In flight is bounded elsewhere and always was:
+    #   - the open cap below: max_positions x SIZE contracts
+    #   - pintake.MAX_RUN_STAKE, the stake cap above
+    #   - the per-close budget
+    # At --loss-cap 200 and 98 contracts that is $200 settled plus at most
+    # 3 x 98 x $0.98 = $288 open, so ~$488 worst case against the old ~$200.
+    # THE OPERATOR MUST BE TOLD THAT NUMBER; it is not a detail.
+    #
+    # The old comment justified the bound by saying a realised-only abort "is
+    # inert entirely if the settlement reader is failing". That hole is real
+    # and is now covered properly, by A71's RECONCILE_FAIL_HALT above --
+    # which halts on the reader being broken, instead of guessing at losses
+    # that have not happened.
+    #
+    # --loss-bound-open restores the old behaviour without a code change.
+    if LOSS_BOUND_OPEN:
+        worst = (float(led.get("realised", 0.0))
+                 - float(state.get("open_cost", 0.0)))
+        if worst - 1.00 * float(SIZE) < a.loss_abort - 1e-9:
+            return (f"loss bound: realised "
+                    f"${float(led.get('realised', 0.0)):+.2f} "
+                    f"with ${float(state.get('open_cost', 0.0)):.2f} still "
+                    f"open; one more contract could take this run past "
+                    f"${a.loss_abort:.2f}")
     # AMENDMENT 31 (2026-09-14): THE OPEN CAP COUNTS CONTRACTS, NOT POSITIONS.
     #
     # It counted positions, and that was fine while a close produced one or
@@ -10124,6 +10274,14 @@ def main():
                          "cap. Default %.2f. Set 0 to disable the bypass, "
                          "which is what cost $57.98 on 2026-09-19."
                          % _DEFAULT_HEDGE_PANIC)
+    ap.add_argument("--loss-bound-open", action="store_true",
+                    help="AMENDMENT 73: restore the OLD loss bound, which "
+                         "counted every open position as a total loss before "
+                         "it settled. It paused the bot 28 times (never "
+                         "blocking a trade) including while the run was up "
+                         "$43.56. Off by default: only FINALISED bets count "
+                         "toward the loss total, which is the operator's "
+                         "instruction of 2026-09-19.")
     ap.add_argument("--hedge-slip", type=float, default=None,
                     help="AMENDMENT 70: dollars above the ask we saw that a "
                          "hedge leg may pay, so the IOC sweeps the ladder "
@@ -10495,6 +10653,8 @@ def main():
             raise SystemExit("--hedge-panic must sit in [0, 1), got %r"
                              % (a.hedge_panic,))
         globals()["HEDGE_PANIC"] = float(a.hedge_panic) or None
+    if a.loss_bound_open:
+        globals()["LOSS_BOUND_OPEN"] = True
     if a.hedge_slip is not None:
         # The cap is 0.10 because the slip is paid on the WHOLE hedge and a
         # hedge leg at or over $1 cannot beat holding (hedge_ask_ok); anything

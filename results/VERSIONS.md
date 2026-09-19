@@ -1,3 +1,85 @@
+# v-settledonly -- 2026-09-19 -- LIVE: an unsettled bet is no longer counted as a loss
+
+**The operator, and the log agreed with him word for word:** *"I don't know
+why it seems like it was calculating the total lost before the bet has
+settled. If it was seeing a current bet is down 100 then adding that to the
+loss total that is wrong. You should only wait for the bet to end and be
+finalized before you count it because that's only the true total."*
+
+## What was wrong
+
+`risk_abort`'s forward-looking bound was
+`realised - open_cost - one more contract`, and **`open_cost` is the full
+PURCHASE PRICE of everything open, not its mark to market.** So every held
+bet was written off as a TOTAL loss the instant it filled -- on a strategy
+that wins about 97 times in 100. Real pause records:
+
+```
+pause: loss bound: realised $+43.56 with $145.00 still open
+pause: loss bound: realised  $+0.00 with $101.15 still open
+pause: loss bound: realised $+31.19 with $210.06 still open
+```
+
+**It paused the bot while the run was UP $43.56.**
+
+## And it cost no trades -- CURRENT_STATE was wrong about that
+
+Measured across every live run: **28 pause->resume spans, and in ZERO of
+them did the bot signal or send an order.** The operator said the cap had not
+cost us bets and he was right. `CURRENT_STATE.md` claimed it "blocks NEW
+trades for the rest of that close"; that claim was never measured and is
+withdrawn.
+
+What it really was: noise in the log, sitting on the same code path whose
+`continue` skipped a hedge and cost **$107.95** earlier the same day.
+
+## What it is now
+
+The loss brake is the SETTLED check that already sat one line above it:
+`realised <= loss_abort`. Nothing replaced the forward bound.
+
+**WHAT THAT GIVES UP, AND THE OPERATOR HAS BEEN TOLD THE NUMBER.** The run
+stops on $200 of FINALISED losses, and whatever is in flight at that moment
+is on top. In flight is bounded elsewhere and always was -- the open cap
+(`max_positions x SIZE` contracts), the stake cap, and the per-close budget.
+At 98 contracts that is **$200 settled plus at most 3 x 98 x $0.98 = $288
+open, so about $488 worst case against the old ~$200.**
+
+The old comment defended the bound by saying a settled-only abort "is inert
+entirely if the settlement reader is failing". That hole is real and is now
+covered properly by A71's `RECONCILE_FAIL_HALT`, which halts on the reader
+being broken rather than guessing at losses that have not happened.
+
+## Evidence
+
+- **849 self-test checks pass.** The A73 checks are driven by the FIVE REAL
+  (realised, open) pairs from the live log, at the size the bot was actually
+  running; each must now be a no-op, and each must come back under the flag.
+- `PLANTED: $200.00 of FINALISED losses still halts the run` -- the brake
+  that now carries the whole job is asserted to fire, and asserted not to
+  fire a cent under.
+- The loss bound is asserted to still sit BELOW the hedge pass (A69).
+- Startup path run with the exact deploy flag list, paper: SELF-TEST PASSED,
+  exit 0.
+
+## Revert, copy-pasteable
+
+Add the flag to `restart_bot.ps1` -- no code change needed:
+
+```
+"--loss-bound-open",
+```
+
+or revert the commit:
+
+```powershell
+cd C:\kals-repo
+git revert --no-edit <SHA>
+powershell -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1
+```
+
+---
+
 # v-hedgefill -- 2026-09-19 -- LIVE: the hedge could not fill, and paper could not hedge at all
 
 **Deployed by this session on the operator's instruction: *"I'm not
