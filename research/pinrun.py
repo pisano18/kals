@@ -216,6 +216,25 @@ _DEFAULT_LADDER_LEVELS = 150   # The tick is 0.1c above 90c, so the 88-98c band
 # BANK_BRAKE is what caps SIZE, not the market. So this raises the PER-ORDER cap
 # inside the late window only; the drawdown headroom, the close budget and the
 # book all still apply unchanged.
+# AMENDMENT 55 (2026-09-18): THE THREE CONDITIONS THE OPERATOR PUT ON A48.
+# His words, approving it live: "make sure it's got good confidence when
+# buying in the last 10 seconds ... If it looks like it's going to a loss
+# don't buy the extra ... cut at first loss."
+#
+#   LATE_PIN     the boost needs MORE confidence than an ordinary bet. The
+#                ordinary gate is PIN (0.995). Inside the last seconds the
+#                extra contracts are the ones with the least time to be
+#                rescued, so they are held to a higher bar.
+#   LATE_JUMP_SD a one-second move AGAINST us bigger than this, since entry
+#                or in the last few seconds, means "it looks like it's going
+#                to a loss": take the ordinary size, not the extra.
+# Both are checked in _late48 and BOTH default to off, so A48 without them
+# behaves exactly as the paper arm that earned the deployment.
+LATE_PIN = None                 # None = no extra confidence bar
+_DEFAULT_LATE_PIN = None
+LATE_JUMP_SD = None             # None = do not read the jump before boosting
+_DEFAULT_LATE_JUMP_SD = None
+
 _DEFAULT_LATE_TAU, _DEFAULT_LATE_MULT = 0, 1.0    # the SHIPPED values: OFF
 LATE_TAU = 0             # --late-tau: seconds-to-close at or under which...
 LATE_MULT = 1.0          # --late-mult: ...one order may reach this x SIZE
@@ -1053,6 +1072,42 @@ _DEFAULT_SKIP_BANDS = ()
 BAND_MULTS = ()                 # ((lo, hi, mult), ...)  size multiples
 _DEFAULT_BAND_MULTS = ()
 _PB_UNSET = object()            # "not supplied" -- the _HP_UNSET / _EW_UNSET trap
+
+
+def late_boost_ok(fair_ours, jump_sd, pin=_HP_UNSET, jump_max=_HP_UNSET):
+    """May the last-seconds boost buy the EXTRA contracts?
+
+    `fair_ours` is the model's probability for the side we are buying, and
+    `jump_sd` the largest recent one-second move AGAINST that side in sd
+    units (`jump_against`), or None when it cannot be measured.
+
+    Returns True when BOTH conditions the operator set are satisfied. The
+    ordinary bet is never affected -- this decides only whether the order is
+    widened beyond SIZE.
+
+    A MISSING JUMP READING DOES NOT BLOCK THE BOOST when the bar is off, but
+    DOES block it when a bar is set: if we have been told to check for a move
+    against us and cannot, the honest answer is not to take the extra risk.
+    That asymmetry is deliberate -- an unmeasurable guard must fail closed,
+    which is the opposite of what the first jump gate did.
+    """
+    pin = LATE_PIN if pin is _HP_UNSET else pin
+    jump_max = LATE_JUMP_SD if jump_max is _HP_UNSET else jump_max
+    if pin is not None:
+        try:
+            if float(fair_ours) < float(pin):
+                return False
+        except (TypeError, ValueError):
+            return False
+    if jump_max is not None:
+        if jump_sd is None:
+            return False
+        try:
+            if float(jump_sd) >= float(jump_max):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
 
 
 def flip_size(n, entry_tau, now_tau, mult=None, tau_max=None):
@@ -3430,6 +3485,73 @@ def _selftest_body():
            and "band_mults=[list(b) for b in BAND_MULTS]" in _src53,
            "the start record carries both band lists, so the Lab can tell one "
            "band arm from another (the A47/A48/A49 blank-tab lesson)")
+        # ---- AMENDMENT 55: the operator's conditions on the A48 boost.
+        ck(_DEFAULT_LATE_PIN is None and _DEFAULT_LATE_JUMP_SD is None,
+           "A55 ships with BOTH conditions off -- the DECLARED defaults, so "
+           "A48 without them behaves exactly as the paper arm that earned "
+           "the deployment")
+        ck(late_boost_ok(0.9990, None, pin=0.999, jump_max=None) is True
+           and late_boost_ok(0.9980, None, pin=0.999, jump_max=None) is False,
+           "the extra contracts need MORE confidence than an ordinary bet: "
+           "99.90% passes a 99.9% bar and 99.80% does not, while the ordinary "
+           "bet at 99.5% is untouched either way")
+        ck(late_boost_ok(0.9999, 2.0, pin=None, jump_max=4.0) is True
+           and late_boost_ok(0.9999, 4.0, pin=None, jump_max=4.0) is False,
+           "a 4-sigma one-second move AGAINST us blocks the extra contracts "
+           "at a 4-sigma bar -- 'if it looks like it is going to a loss do "
+           "not buy the extra' -- and a 2-sigma wobble does not")
+        ck(late_boost_ok(0.9999, None, pin=None, jump_max=4.0) is False,
+           "NULL: a jump we CANNOT measure blocks the boost once a bar is "
+           "set. An unmeasurable guard must fail closed; the ordinary bet "
+           "still goes through at its own gate")
+        ck(late_boost_ok(0.9999, None, pin=None, jump_max=None) is True,
+           "NULL: with no bars set nothing is blocked, which is A48 as it was "
+           "measured")
+        ck(late_boost_ok(None, None, pin=0.999, jump_max=None) is False,
+           "NULL: an unreadable confidence blocks the extra contracts")
+        ck("cannot fire: --jump-gate already refuses" in _src_pinrun
+           and "is not ABOVE the ordinary confidence gate" in _src_pinrun,
+           "BOTH bars refuse to start unless they are TIGHTER than the gate "
+           "that already let the trade through -- a --late-jump of 4 against "
+           "a 3-sigma jump gate, or a --late-pin at the ordinary 0.995, "
+           "could never refuse anything and would read as a safeguard while "
+           "doing nothing")
+        _src55 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp55 = _src55[_src55.rindex(chr(10) + "def " + "trade_loop("):]
+        ck("late_boost" + "_ok(_ours48, _jmp48)" in _lp55
+           and '_gate' not in _lp55[_lp55.index("late_boost" + "_ok(_ours48"):
+                                    _lp55.index("late_boost" + "_ok(_ours48") + 200],
+           "the boost is gated through late_boost_ok and its refusal is "
+           "recorded as `late_refused`, NOT as a gate -- the trade still "
+           "happens at the ordinary size, so counting it as a refusal would "
+           "overstate what the condition costs")
+        ck('rec("late_refused"' in _lp55, "...and that record exists")
+        ck("_ours48 = f if want == " + '"yes"' + " else 1.0 - f" in _lp55,
+           "confidence is read for the side we are BUYING -- f for YES and "
+           "1-f for NO. The mirror error here would hold the safest NO bets "
+           "to the bar meant for the riskiest")
+        _off55 = 'globals()["LATE_MULT"] = 1.0'
+        ck(_off55 in _lp55 and 'rec("late_boost_off"' in _lp55,
+           "one late-boosted loss switches --late-mult off for the rest of "
+           "the run, so 'cut at first loss' is enforced by the bot")
+        # NOT a source-ORDER check: reconcile() is defined ABOVE _late48, so
+        # the off-switch legitimately appears before the line that marks the
+        # pair. The same wrong assumption broke the A53 check an hour ago.
+        # What matters is that the switch sits in the LOSS branch and reads a
+        # set the widening writes.
+        ck("_boosted48.add((close_s, tk))" in _lp55
+           and "_boosted48 = set()" in _lp55,
+           "...the pair is marked where the order is widened, from a set the "
+           "loop declares")
+        ck(_lp55.rindex("if not won:", 0, _lp55.index(_off55))
+           > _lp55.rindex("state[" + '"settled"' + "]", 0, _lp55.index(_off55)),
+           "...and the switch sits INSIDE the loss branch of settlement, so a "
+           "win can never trip it")
+        _nd55 = "LATE_MULT, max_band" + "_mult(), FLIP_MULT)"
+        ck(_src55.count(_nd55) == 2,
+           "the order path still admits the late multiple at live start and "
+           "at every autosize")
+
         # ---- AMENDMENT 54: flip into the side the later look prefers. OFF.
         ck(_DEFAULT_FLIP_MULT == 1.0,
            "A54 ships OFF -- the DECLARED default, so an arm that sets the "
@@ -6046,6 +6168,7 @@ def trade_loop(a, rec, book, idx, series_index):
     open_pos = {}
     boosted = set()          # A53: (close_s, ticker) pairs an order was widened
                              # for, so a boosted LOSS can switch the boost off
+    _boosted48 = set()       # A55: the same, for the last-seconds boost
     entry_at = {}            # A52: oid -> wall-clock second we ENTERED, so the
                              # jump trigger measures moves since entry and not
                              # since the last three seconds
@@ -6244,6 +6367,16 @@ def trade_loop(a, rec, book, idx, series_index):
                         was=[list(b) for b in _DEFAULT_BAND_MULTS] or None)
                     print(f"  *** A BOOSTED LOSS on {tk}: --band-mult is OFF "
                           f"for the rest of this run ***")
+                # A55: "cut at first loss", enforced by the bot rather than by
+                # somebody reading a log. The extra cost of the last-seconds
+                # boost is then bounded by ONE trade's extra size.
+                if LATE_MULT > 1.0 and (close_s, tk) in _boosted48:
+                    globals()["LATE_MULT"] = 1.0
+                    rec("late_boost_off", ticker=tk, close_s=close_s,
+                        cost=round(cost, 4), pnl_c=round(100 * pnl, 2),
+                        was=float(_DEFAULT_LATE_MULT))
+                    print(f"  *** A LATE-BOOSTED LOSS on {tk}: --late-mult is "
+                          f"OFF for the rest of this run ***")
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
                 pnl_c=round(100 * pnl, 2),
                 realised=round(pintake.LEDGER["realised"], 4))
@@ -7400,6 +7533,23 @@ def trade_loop(a, rec, book, idx, series_index):
                 """
                 if LATE_MULT <= 1.0 or tau > LATE_TAU:
                     return take_n
+                # A55: the operator's two conditions on the EXTRA contracts.
+                # `f` is the model's probability of YES, so our side's
+                # confidence is f for a YES bet and 1-f for a NO bet.
+                _ours48 = f if want == "yes" else 1.0 - f
+                _jmp48 = None
+                if LATE_JUMP_SD is not None:
+                    try:
+                        _jmp48 = jump_against(
+                            idx.recent_moves(iid, JUMP_LOOKBACK), sg, want)
+                    except Exception:              # noqa: BLE001
+                        _jmp48 = None
+                if not late_boost_ok(_ours48, _jmp48):
+                    rec("late_refused", ticker=tk, want=want, tau=tau,
+                        fair_ours=round(float(_ours48), 5), jump_sd=_jmp48,
+                        need_pin=LATE_PIN, max_jump=LATE_JUMP_SD,
+                        size=float(SIZE))
+                    return take_n
                 _cap48 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"),
                                       mult=LATE_MULT)
                 _avail48 = float(size)
@@ -7415,7 +7565,9 @@ def trade_loop(a, rec, book, idx, series_index):
                 _was48 = take_n
                 take_n = max(take_n, min(_cap48, _avail48, max(0.0, _room48)))
                 if take_n > _was48 + 1e-9:
+                    _boosted48.add((close_s, tk))
                     rec("late_boost", ticker=tk, want=want, tau=tau,
+                        fair_ours=round(float(_ours48), 5), jump_sd=_jmp48,
                         was=round(_was48, 2), now=round(take_n, 2),
                         cap=round(_cap48, 2), avail=round(_avail48, 2),
                         room=round(_room48, 2), mult=LATE_MULT, late_tau=LATE_TAU,
@@ -7768,6 +7920,17 @@ def main():
                     help="AMENDMENT 48: the multiple of SIZE one order may "
                          "reach inside --late-tau. Still capped by the drawdown "
                          "headroom, the close budget and the book.")
+    ap.add_argument("--late-pin", type=float, default=None,
+                    help="AMENDMENT 55: the EXTRA contracts of the "
+                         "last-seconds boost need at least this much "
+                         "confidence in our side, above the ordinary gate. "
+                         "The ordinary bet is untouched.")
+    ap.add_argument("--late-jump", type=float, default=None,
+                    help="AMENDMENT 55: skip the last-seconds boost when a "
+                         "one-second move of this many sd has gone AGAINST "
+                         "our side -- 'if it looks like it is going to a "
+                         "loss do not buy the extra'. With this set, a jump "
+                         "that cannot be measured also blocks the boost.")
     ap.add_argument("--flip-mult", type=float, default=None,
                     help="AMENDMENT 54: when a bet opened OUTSIDE the main "
                          "window flips inside it, buy this multiple of the "
@@ -8022,6 +8185,36 @@ def main():
                              "(%.1f) -- the close budget bounds it anyway, got %r"
                              % (float(MAX_PER_CLOSE), a.late_mult))
         globals()["LATE_MULT"] = float(a.late_mult)
+    if a.late_pin is not None:
+        if not (0.5 <= a.late_pin < 1.0):
+            raise SystemExit("--late-pin must sit in [0.5, 1), got %r"
+                             % (a.late_pin,))
+        if a.late_pin <= PIN:
+            raise SystemExit(
+                "--late-pin %.4f is not ABOVE the ordinary confidence gate "
+                "%.4f, so it could never refuse anything the ordinary gate "
+                "allows -- a flag that cannot fire reads as a guard and is "
+                "not one. This flag exists to hold the EXTRA contracts to a "
+                "HIGHER bar." % (a.late_pin, PIN))
+        globals()["LATE_PIN"] = float(a.late_pin)
+    if a.late_jump is not None:
+        if not (0.5 <= a.late_jump <= 50.0):
+            raise SystemExit("--late-jump is in SIGMA and must sit in "
+                             "[0.5, 50], got %r" % (a.late_jump,))
+        # AND IT MUST BE TIGHTER THAN THE GATE THAT ALREADY REFUSED THE TRADE.
+        # --jump-gate refuses any signal at JUMP_SIGMA or more, so every
+        # candidate reaching the boost has ALREADY passed that bar. A
+        # --late-jump at or above it can never fire: it would sit in the
+        # start record, in VERSIONS.md and in this reply looking like a
+        # safeguard while doing nothing at all. Caught before deploying it
+        # at 4.0 against a 3.0 gate.
+        if JUMP_ENABLED and a.late_jump >= JUMP_SIGMA:
+            raise SystemExit(
+                "--late-jump %.2f cannot fire: --jump-gate already refuses "
+                "the whole trade at %.2f sigma, so every candidate reaching "
+                "the boost is under it. Use a value BELOW %.2f, or the flag "
+                "is decoration." % (a.late_jump, JUMP_SIGMA, JUMP_SIGMA))
+        globals()["LATE_JUMP_SD"] = float(a.late_jump)
     if a.flip_mult is not None:
         if not (1.0 <= a.flip_mult <= MAX_PER_CLOSE):
             raise SystemExit("--flip-mult must sit in [1, MAX_PER_CLOSE=%g] -- "
@@ -8265,6 +8458,7 @@ def main():
         # own log cannot say what it is testing is not measurable.
         hedge_price=HEDGE_PRICE,
         late_tau=LATE_TAU, late_mult=LATE_MULT,
+        late_pin=LATE_PIN, late_jump=LATE_JUMP_SD,
         # A53: lists, so the Lab can select an arm by its exact bands
         skip_bands=[list(b) for b in SKIP_BANDS],
         band_mults=[list(b) for b in BAND_MULTS],

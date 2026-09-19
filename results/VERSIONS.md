@@ -1,3 +1,73 @@
+# v-late10 -- 2026-09-18 ~23:5xZ -- LIVE: 1.5x the bet inside the last 10 seconds, on three conditions the operator set
+
+Operator: *"Yes a48 live, make sure it's got good confidence when buying in
+the last 10 seconds, have it run at the full normal rate immediately, cut at
+first loss. If it looks like it's going to a loss don't buy the extra, and
+obviously if it's losing hedge if possible in those last seconds."*
+
+## What the bot does differently
+
+Inside the last 10 seconds one order may reach **1.5 x SIZE** (about 120
+contracts at tonight's 80), through the same three rails A45 and A53 use:
+the drawdown headroom `(bank - 0.8 x high-water) / ceiling`, what the book
+holds at or under the sweep limit, and the close budget.
+
+## Evidence
+
+**The paper arm, 49 markets over 29 hours, ZERO losses, +15.1% against the
+live bot on the same markets** (scaled to our own contract volume, so it
+compares the strategy and not the stake). It is the only arm old enough to
+read that beats live and was not already deployed. Independently, our own
+live fills say the window itself is where the money is:
+
+| seconds left | contracts | per contract | losing closes |
+|---|---|---|---|
+| 0-5 | 1,028 | 5.35c | 0 |
+| 6-15 | 4,125 | 3.80c | - |
+| 16-30 | 11,363 | 1.90c | - |
+
+**What is NOT proven:** that a 1.5x order fills at the same price as a 1x
+one. Paper cannot see a seller choosing to hit us. Rule 5.
+
+## The three conditions, each in code
+
+**1. "good confidence" -- `--late-pin 0.9975`.** The EXTRA contracts need
+99.75% confidence in our side where an ordinary bet needs 99.5%. Measured on
+all 109 live signals inside 10 seconds: the bar allows 71% of them, and the
+ONE that ever lost sat at **99.612%** -- under the bar, so it would have
+been refused the extra. The ordinary bet is untouched at every confidence.
+
+**2. "don't buy the extra if it looks like a loss" -- `--late-jump 2.0`.**
+A one-second move of 2 sigma against our side skips the boost.
+**It must be TIGHTER than `--jump-gate`'s 3.0**, which already refuses the
+whole trade: every candidate reaching the boost has passed that bar, so a
+`--late-jump` at or above 3.0 could never fire. This was going to ship at
+4.0 -- decoration in the start record and in this file. `pinrun` now refuses
+to start on such a value, and the same guard refuses a `--late-pin` that is
+not above the ordinary gate. Honest limit: jumps are rare (27 refusals in
+eleven days), so this is a safety valve, not a volume lever. Condition 1 is
+the one doing the work.
+
+**3. "cut at first loss" -- no flag, the bot does it.** One late-boosted
+loss sets `LATE_MULT` back to 1.0 for the rest of the run and writes
+`late_boost_off`. The extra cost of the boost is therefore bounded by ONE
+trade's extra size, about $37 at tonight's bet.
+
+**And hedging is unchanged** -- it fires on belief at any tau including
+inside the last seconds, now with the v-bands rule that the market must
+agree.
+
+## Revert
+
+`restart_bot.ps1`, then `.estart_bot.ps1`:
+
+- **boost only:** delete `"--late-tau", "10", "--late-mult", "1.5",`
+- **its conditions only:** delete the `--late-pin` and `--late-jump` lines
+  (this returns A48 to exactly the arm that was measured)
+- **all of it:** delete all four.
+
+---
+
 # v-bands -- 2026-09-18 ~22:3xZ -- LIVE: hedge only when the market agrees, and 1.5x at 90-94c that switches itself off after one boosted loss (`c015709`, off-switch and the skip's withdrawal in the commit after)
 
 Two flags in `restart_bot.ps1` (a third was staged and withdrawn before it ran -- section 2), one entry, each with its own revert line.

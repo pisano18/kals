@@ -259,7 +259,34 @@ Start-Process -FilePath $py -RedirectStandardError $errLog -RedirectStandardOutp
     # headroom, the book and the close budget. BAR: revert at the first
     # loss on a boosted fill in the first 20 boosted closes; at 20 clean,
     # 2.0. Fill quality at the larger size is the unproven part (rule 5).
-    "--band-mult", "0.90", "0.94", "1.5"
+    "--band-mult", "0.90", "0.94", "1.5",
+    # AMENDMENT 48 + 55, 2026-09-18 ~23:5xZ. The operator: "Yes a48 live,
+    # make sure it's got good confidence when buying in the last 10 seconds,
+    # have it run at the full normal rate immediately, cut at first loss. If
+    # it looks like it's going to a loss don't buy the extra, and obviously
+    # if it's losing hedge if possible in those last seconds."
+    #
+    # A48 (--late-tau/--late-mult): inside the last 10 seconds one order may
+    # reach 1.5x SIZE. Paper record, 49 markets over 29 hours, ZERO losses,
+    # +15.1% against the live bot on the same markets. Our own live fills
+    # say that window earns 5.35c a contract against 1.90c at 16-30 s.
+    "--late-tau", "10", "--late-mult", "1.5",
+    # A55, his three conditions, each enforced in code:
+    #  * "good confidence": the EXTRA contracts need 99.75% where an
+    #    ordinary bet needs 99.5%. Measured on 109 live signals inside 10 s:
+    #    this allows 71% of them, and the ONE that lost sat at 99.612% --
+    #    below the bar, so it would have been refused the extra.
+    "--late-pin", "0.9975",
+    #  * "if it looks like it's going to a loss don't buy the extra": a
+    #    one-second move of 2 sigma against us skips the boost. It must be
+    #    TIGHTER than --jump-gate's 3.0, which already refused the trade
+    #    outright; at 4.0 it could never have fired and the bot now refuses
+    #    to start on such a value.
+    "--late-jump", "2.0"
+    #  * "cut at first loss": one late-boosted loss sets LATE_MULT back to
+    #    1.0 for the rest of the run (record `late_boost_off`). No flag; the
+    #    bot enforces it. Hedging is unchanged and still fires at any tau,
+    #    including inside the last seconds.
     # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
     # built as safely as you described, deploy now"), first at half, then at a
     # THIRD, and from ~19:5xZ the same day at a FULL bet on his instruction:
