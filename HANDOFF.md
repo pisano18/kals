@@ -1,3 +1,82 @@
+# 2026-09-19 ~08:1xZ -- THE LAB WAS SCORING ARMS ON MARKETS THEY NEVER TRADED
+
+**Read this before quoting any arm's number, including one you wrote down
+yesterday.** Every "IF IT HAD BEEN LIVE" figure produced before this section
+is suspect.
+
+## The bug
+
+`pinlab.whatif` scaled an arm's earnings-per-contract onto the live bot's
+whole contract volume. That answers "what if this arm had our stake" only if
+the arm would have traded our markets. **It would not** -- every arm has its
+own gates and refuses closes live took. So an arm that sat out a bad close
+was credited with avoiding it.
+
+The operator found it from the other end: *"So basically the tracking chart
+isn't working? Because a51 doesn't show a loss at that time."*
+
+| arm | shared mkts | its $ | our $ | chart said | truth |
+|---|---|---|---|---|---|
+| A51 `--hedge-normal` | 54 | 10.79 | 69.13 | **+201%** | **-$58.35** |
+| A48 `--late-mult` | 34 | -0.78 | 28.50 | -17% | -$29.28 |
+| sigma 0.8 | 5 | 1.64 | 13.81 | **+153%** | -$12.17 |
+
+A51's entire +201% was ONE market -- `KXBNB15M-26SEP190145-45`, the close
+that cost $57.98 -- which it never entered, refused on `market_attempts`, a
+gate with nothing to do with the flag being tested.
+
+**The fix:** `whatif()` returns `h2h` -- both sides' money on the markets
+BOTH settled, unscaled, where the decision is the only thing that differs.
+The Lab leads with it and names what the arm sat out. `arm_series` carries
+the ticker on every point. A planted self-test fails if a scaled headline
+and a head-to-head ever disagree in sign again.
+
+**Per contract, A51 and live were IDENTICAL: 2.21c each on the 54 shared
+markets.** It "made less" only because a paper arm is fixed at 20 contracts
+and live is at 105.
+
+## And A51 has never hedged. Not once.
+
+0 hedges in 75 markets; live hedged 21 times over the same stretch. The flag
+the arm exists to test has never been reached, so its 75-0 record is not
+evidence about A51 at all. **Check that an arm has EXERCISED its flag before
+reading its record.** This is a second bug class and nothing checks for it
+yet.
+
+## pindesk's self-test had been RAISING since the Refresh button went in
+
+`_src.index("        threading.Thread(target=worker")` matched a more deeply
+indented line 1300 lines earlier, so the slice was empty and every check
+after it died on `ValueError`. None of the Refresh-button checks had ever
+run. Anchored with a start offset, plus a check that the slice is non-empty.
+
+## The 09-12/09-13 versions, scored against today
+
+All five walked into the same BNB close. Per contract on shared markets they
+ALL did worse than the current bot (-13.08c to -19.21c against -11.17c); the
+dollar figures flatter them only because they bet 20 contracts to our 76-105.
+**The $58 loss is not a regression introduced this week.** n = 4-5 shared
+markets over one quiet overnight stretch, so this is a null, not a result.
+
+## Live now
+
+`--bank-brake 3.00` (105 contracts at a $928 bank) and `--loss-cap 200`.
+The brake briefly went to 4.08 on a misreading of *"Cap losses at 200, keep
+bet size"* -- that meant keep the RATIO. Reverted after one close.
+`--loss-cap` is a RUNNING-TOTAL stop; it cannot stop mid-close, and at 105
+contracts a close has $309 at stake. `--max-losses 2` still does that job.
+
+Six sigma arms now (0.4, 0.6, 0.8, 1.25, 1.5, 2.0). The three humbler ones
+refused BNB at 45 s and bought the winning side at 4-7 s instead; sigma 0.8
+refused it on `confidence` exactly as live did and dodged it by accident.
+One close each -- watch, do not deploy.
+
+**Open, operator's call:** `--rebuy-hedged` (A63) is built, self-tested and
+shipped OFF. The BNB record is the case for it: at 8 s our model put NO at
+99.87% and `both_sides` refused to buy it.
+
+---
+
 # 2026-09-19 ~02:2xZ -- THE PRICE IS EVERYTHING: six live changes, a $58 lesson, and 33 arms
 
 **READ `CURRENT_STATE.md` FIRST** -- it was rewritten from scratch tonight
