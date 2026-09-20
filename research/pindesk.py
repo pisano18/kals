@@ -47,6 +47,7 @@ goes to results\pindesk.err instead.
     pythonw research/pindesk.py            # what the desktop shortcut runs
 """
 import calendar
+import collections
 import ctypes
 import glob
 import json
@@ -3211,12 +3212,25 @@ def run_gui():
         c = pinlab.counts()
         ndel = len(ctrl.get("deleted") or {})
         npaused = len(ctrl.get("paused") or {})
+        # COUNT BY WHAT THEY ARE DOING, not by what the board calls them.
+        # The operator, 2026-09-20: "I don't think there's a spot to see
+        # separate the current running ones who aren't live, they're mixed
+        # together." The board's RUNNING label says an arm is MEANT to run;
+        # this says whether its process is actually alive. Those two
+        # disagreed for 21 arms this morning.
+        _nowrows = arm_rows(pinlab.EXPERIMENTS, lab_cache.get("prog"),
+                            lab_cache.get("whatif"), ctrl,
+                            lab_cache.get("meta"), time.time())
+        _st = collections.Counter(r[2]["state"] for r in _nowrows)
         lab_count.configure(
-            text="%d running   %d shipped   %d killed   %d ideas%s%s"
-                 % (c[pinlab.RUNNING], c[pinlab.SHIPPED], c[pinlab.KILLED],
+            text="%s %d PLAYING   %s %d paused   %s %d stopped      "
+                 "(board: %d running, %d shipped, %d killed, %d ideas%s)"
+                 % (LAB_GLYPH[LAB_PLAYING], _st.get(LAB_PLAYING, 0),
+                    LAB_GLYPH[LAB_PAUSED], _st.get(LAB_PAUSED, 0),
+                    LAB_GLYPH[LAB_STOPPED], _st.get(LAB_STOPPED, 0),
+                    c[pinlab.RUNNING], c[pinlab.SHIPPED], c[pinlab.KILLED],
                     c[pinlab.IDEA],
-                    "   %d paused by you" % npaused if npaused else "",
-                    "   %d deleted" % ndel if ndel else ""))
+                    ", %d deleted" % ndel if ndel else ""))
         try:
             min_shared = max(0, int(float(lab_minshared.get() or 0)))
         except ValueError:
