@@ -11471,6 +11471,11 @@ def main():
         # could, and Windows returns an empty command line for a process it
         # will not open. That is how the 2026-09-14 double-bot failure hid.
         hedge_slip=HEDGE_SLIP,
+        # A78/A79: the log must be able to say what the bot is running. The
+        # 09-19 hedge_slip deploy could not, and only the command line knew --
+        # which Windows returns empty for a process it will not open.
+        early_max_price=EARLY_MAX_PRICE,
+        day_loss_at_start=day_loss(),
         hedge_prop=HEDGE_PROP, hedge_prop_full=HEDGE_PROP_FULL,
         hedge_prop_half=HEDGE_PROP_HALF,
         max_hedge_attempts_per_close=MAX_HEDGE_ATTEMPTS_PER_CLOSE,
