@@ -1353,6 +1353,106 @@ def hedge_vwap(rungs, n, fallback):
     return fallback          # the ladder did not hold n; do not invent a price
 
 
+# ---------------------------------------------------------------------------
+# AMENDMENT 76 (2026-09-20): HEDGE IN PROPORTION TO CONVICTION.
+#
+# The operator: *"Sure on proportion but make sure if it starts at half then
+# drops below 20 you buy the rest of the hedge."*
+#
+# WHY. Every alarm the bot has ever raised was rebuilt from the raw index.
+# Nothing visible at the alarm second separates a real collapse from a false
+# alarm -- crossing depth, market-wide or not, belief, seconds left, all
+# overlap. The information arrives 1-10 s later, and on a real collapse the
+# other side is at 99c by then. So a hedge cannot be made RARER without
+# making it useless; it can be made SMALLER where the model is least sure.
+#
+# Under the current rules the hedge is 9 saves to 2 false alarms, and both
+# false alarms were one close (09-19 23:45) hedged in FULL at beliefs of 27%
+# and 50% -- a coin flip locked in at 46c, on the largest positions ever
+# held. Full hedges under 20% belief have been right every time.
+#
+# THE RULE. The share of the position that should carry a hedge leg:
+#     belief <= HEDGE_PROP_FULL (0.20)   -> all of it
+#     belief <= HEDGE_PROP_HALF (0.40)   -> half
+#     above                              -> none  (a coin flip is not a collapse)
+#
+# THE TOP-UP, which is the operator's condition. The hedge tracks a TARGET
+# against what is already covered, so a position half-hedged at 30% whose
+# belief then falls to 15% buys the other half. And a position whose belief
+# recovers is never SOLD down -- the target can fall to zero, the leg stays.
+#
+# WHAT THIS BLOCKS, written down as today's rule requires: it removes the
+# hedge entirely between 40% and 60% belief, and halves it between 20% and
+# 40%. On tonight's two: XRP 104 -> 52 contracts, HYPE 104 -> 0. On the nine
+# real losses, three at 52-56% belief would have gone unhedged (about $32 of
+# saves) and two at 21-24% would have been halved (about $16). Fifteen
+# clusters; below the 30 floor; the operator chose it knowing that.
+#
+# WHAT IT CANNOT DO. hedge_want() can never return more than the contracts
+# still unhedged, so no position is ever hedged past its own size, and with
+# --no-hedge-prop it returns exactly today's number.
+
+HEDGE_PROP = True
+_DEFAULT_HEDGE_PROP = True
+HEDGE_PROP_FULL = 0.20         # belief at or under which the whole position is hedged
+HEDGE_PROP_HALF = 0.40         # ...at or under which half is; above it, none
+HEDGE_PROP_HALF_FRAC = 0.5
+_DEFAULT_HEDGE_PROP_FULL = 0.20
+_DEFAULT_HEDGE_PROP_HALF = 0.40
+
+
+def hedge_fraction(belief, full=None, half=None, half_frac=None):
+    """Share of the position that SHOULD carry a hedge leg at this belief.
+
+    A missing or unreadable belief is 0.0 -- an unmeasurable reading must
+    not buy insurance any more than it may trigger the panic bypass.
+    """
+    full = HEDGE_PROP_FULL if full is None else full
+    half = HEDGE_PROP_HALF if half is None else half
+    half_frac = HEDGE_PROP_HALF_FRAC if half_frac is None else half_frac
+    try:
+        b = float(belief)
+    except (TypeError, ValueError):
+        return 0.0
+    if b != b:                                   # NaN
+        return 0.0
+    if b <= float(full):
+        return 1.0
+    if b <= float(half):
+        return float(half_frac)
+    return 0.0
+
+
+def hedge_target(orig_n, belief):
+    """Contracts of an `orig_n`-contract position that should be hedged."""
+    try:
+        return max(0.0, float(orig_n)) * hedge_fraction(belief)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def hedge_want(orig_n, unhedged, belief):
+    """Contracts to hedge NOW: the target for this belief, less what is
+    already covered, and never more than what remains uncovered.
+
+    This single function is the top-up rule AND the no-sell rule:
+      - target rises (belief fell)  -> buy the difference
+      - target falls (belief rose)  -> 0, never negative, the leg stays
+    With HEDGE_PROP off it is exactly the pre-A76 number: everything left.
+    """
+    try:
+        left = max(0.0, float(unhedged))
+    except (TypeError, ValueError):
+        return 0.0
+    if not HEDGE_PROP:
+        return left
+    try:
+        have = max(0.0, float(orig_n) - left)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(left, hedge_target(orig_n, belief) - have))
+
+
 _EW_UNSET = object()      # "cap not supplied" -- distinct from None, which is
                           # a REAL value meaning "A50 is off". Passing None to
                           # mean "no cap" fell back to the running global and
@@ -4984,6 +5084,89 @@ def _selftest_body():
            "the ladder is only READ when the slip is on, so with the flag off "
            "the hedge path does not even touch the book differently")
 
+        # ---- AMENDMENT 76: HEDGE IN PROPORTION TO CONVICTION ---------------
+        #
+        # The operator's exact condition: "if it starts at half then drops
+        # below 20 you buy the rest of the hedge." Driven through the pure
+        # helper the loop calls, with tonight's real numbers.
+        ck(_DEFAULT_HEDGE_PROP is True,
+           "A76 ships ON -- the operator chose it, knowing it is 15 clusters")
+        ck(abs(hedge_fraction(0.15, 0.20, 0.40, 0.5) - 1.0) < 1e-9
+           and abs(hedge_fraction(0.30, 0.20, 0.40, 0.5) - 0.5) < 1e-9
+           and hedge_fraction(0.50, 0.20, 0.40, 0.5) == 0.0,
+           "PLANTED: 15% -> all, 30% -> half, 50% -> none")
+        ck(abs(hedge_fraction(0.20, 0.20, 0.40, 0.5) - 1.0) < 1e-9
+           and abs(hedge_fraction(0.40, 0.20, 0.40, 0.5) - 0.5) < 1e-9
+           and hedge_fraction(0.4001, 0.20, 0.40, 0.5) == 0.0,
+           "the bands are AT-OR-UNDER: exactly 20% is a full hedge, exactly "
+           "40% is a half, a hair above 40% is nothing")
+        for _bad76 in (None, "x", float("nan")):
+            ck(hedge_fraction(_bad76, 0.20, 0.40, 0.5) == 0.0,
+               "NULL: an unmeasurable belief (%r) buys NO insurance -- the "
+               "same rule as the panic bypass" % (_bad76,))
+        # TONIGHT'S TWO, verbatim from the live log
+        _hp0 = HEDGE_PROP
+        try:
+            globals()["HEDGE_PROP"] = True
+            ck(abs(hedge_want(104.0, 104.0, 0.27326) - 52.0) < 1e-9,
+               "XRP 23:45: 104 held at 27.3% belief -> hedge 52, not 104 "
+               "(that hedge cost $67.22 and the bet won)")
+            ck(hedge_want(104.0, 104.0, 0.50066) == 0.0,
+               "HYPE 23:45: 104 held at 50.1% belief -> hedge NOTHING. A coin "
+               "flip is not a collapse; that hedge cost $49.65 and the bet won")
+            # THE TOP-UP -- the operator's condition, step by step
+            _w1 = hedge_want(104.0, 104.0, 0.30)
+            ck(abs(_w1 - 52.0) < 1e-9, "top-up step 1: at 30%% belief buy 52 of 104 (%g)" % _w1)
+            _w2 = hedge_want(104.0, 104.0 - _w1, 0.15)
+            ck(abs(_w2 - 52.0) < 1e-9,
+               "top-up step 2: belief falls to 15%%, the target is now the whole "
+               "104 and 52 are covered -> BUY THE OTHER 52 (%g)" % _w2)
+            _w3 = hedge_want(104.0, 104.0 - _w1 - _w2, 0.05)
+            ck(_w3 == 0.0, "top-up step 3: everything covered -> nothing more (%g)" % _w3)
+            # NO-SELL: a recovery never un-hedges
+            _w4 = hedge_want(104.0, 52.0, 0.55)
+            ck(_w4 == 0.0,
+               "belief RECOVERS after a half hedge -> want is 0, never negative: "
+               "the leg stays, we do not sell insurance back (%g)" % _w4)
+            # ...and a later fall after that recovery still tops up
+            ck(abs(hedge_want(104.0, 52.0, 0.10) - 52.0) < 1e-9,
+               "and if it then collapses for real, the top-up still fires")
+            # EXPOSURE: never more than what is uncovered
+            for _o, _u, _b in ((104.0, 104.0, 0.0), (104.0, 30.0, 0.0),
+                               (104.0, 0.0, 0.0), (5.0, 5.0, 0.19), (0.0, 0.0, 0.0)):
+                ck(hedge_want(_o, _u, _b) <= _u + 1e-9,
+                   "EXPOSURE: hedge_want(%g, %g, %g) never exceeds the "
+                   "uncovered %g" % (_o, _u, _b, _u))
+            ck(hedge_want("x", 10.0, 0.1) == 0.0 and hedge_want(10.0, "x", 0.1) == 0.0,
+               "NULL: garbage sizes hedge nothing rather than raising inside "
+               "the hedge pass, which has no try/except around it")
+            globals()["HEDGE_PROP"] = False
+            ck(hedge_want(104.0, 104.0, 0.50066) == 104.0
+               and hedge_want(104.0, 30.0, 0.9) == 30.0,
+               "--no-hedge-prop: exactly today's behaviour, everything "
+               "uncovered, whatever the belief")
+        finally:
+            globals()["HEDGE_PROP"] = _hp0
+        # STRUCTURAL: the loop must use it, an idle second must not burn a
+        # try, and a half fill must not mark the position done.
+        ck("_hn = hedge_want(_hn_orig, _unhedged, _belief)" in _lp62,
+           "the hedge pass sizes from hedge_want()")
+        _iw = _lp62.index("_hn = hedge_want(_hn_orig, _unhedged, _belief)")
+        _it = _lp62.index("hedge_tries[_hid] = _tries + 1")
+        ck(_iw < _it and "if _hn <= 1e-9:" in _lp62[_iw:_it],
+           "a second with nothing to buy `continue`s BEFORE the try is "
+           "counted -- otherwise 30 idle seconds in the no-hedge band would "
+           "give up on the position and the top-up could never happen")
+        ck("if _hid not in hedge_alarmed:" in _lp62,
+           "and the alarm is keyed on its own set, so idle seconds do not "
+           "re-fire it at 20 Hz")
+        ck("_left76 = float(_unhedged) - _hfilled" in _lp62
+           and "_left76p = float(_unhedged) - float(_hn_take)" in _lp62,
+           "live AND paper judge 'done' against the UNCOVERED count, not the "
+           "proportional ask -- a half hedge that fills in full stays open")
+        ck('rec("hedge_prop"' in _lp62,
+           "and every change of band is logged, so the rule can be scored")
+
         # ---- AMENDMENT 71: NO ENTRY RAIL MAY SPEND THE HEDGE'S BUDGET -----
         #
         # The hedge's per-close cap used to read `attempts`, the counter the
@@ -8157,6 +8340,9 @@ def trade_loop(a, rec, book, idx, series_index):
     hedge_meta = {}     # A15: oid -> (strike, digits, iid) so belief can be recomputed
     hedged = set()      # A15: oids already hedged (or given up on)
     hedge_tries = {}    # A15: oid -> attempts since the alarm fired
+    hedge_alarmed = set()         # A76: positions whose alarm has been logged
+    hedge_prop_said = {}          # A76: oid -> last fraction reported, so a
+                                  # change of band is logged once, not 20 Hz
     hedge_last_try = {}
     _hq71 = set()                 # A71: (position, reason) already reported as
                                   # a silent hedge skip -- see _hquiet below
@@ -8627,7 +8813,13 @@ def trade_loop(a, rec, book, idx, series_index):
                     continue
                 hedge_last_try[_hid] = now_s
                 _tries = hedge_tries.get(_hid, 0)
-                if _tries == 0:
+                # A76: the alarm is keyed on its own set, not on _tries == 0.
+                # Under proportional hedging a position can sit for many
+                # seconds with nothing to buy (belief in the no-hedge band),
+                # and those seconds must neither re-fire the alarm nor burn
+                # a try.
+                if _hid not in hedge_alarmed:
+                    hedge_alarmed.add(_hid)
                     state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
                     last_belief[_htk] = float(_belief)   # A68
                     rec("hedge_alarm", ticker=_htk, want=_hwant, entry=_hcost,
@@ -8641,6 +8833,23 @@ def trade_loop(a, rec, book, idx, series_index):
                         jump_threshold=HEDGE_JUMP_SIGMA)
                     print(f"  !!! HEDGE ALARM {_htk} {_hwant} belief {_belief:.3f} "
                           f"tau {_htau}s")
+                # A76: HOW MUCH OF THE POSITION SHOULD BE HEDGED AT THIS
+                # BELIEF, less what already is. `_unhedged` keeps the true
+                # uncovered count for the fill bookkeeping below; `_hn`
+                # becomes what we buy NOW. A second with nothing to buy is
+                # NOT a try and does NOT mark the position hedged -- the
+                # belief can fall further and the top-up must still happen.
+                _unhedged = float(_hn)
+                _hn = hedge_want(_hn_orig, _unhedged, _belief)
+                _hfrac = hedge_fraction(_belief)
+                if hedge_prop_said.get(_hid) != _hfrac:
+                    hedge_prop_said[_hid] = _hfrac
+                    rec("hedge_prop", ticker=_htk, belief=round(_belief, 5),
+                        fraction=_hfrac, target=round(hedge_target(_hn_orig, _belief), 2),
+                        covered=round(float(_hn_orig) - _unhedged, 2),
+                        buy_now=round(_hn, 2), tau=_htau)
+                if _hn <= 1e-9:
+                    continue
                 hedge_tries[_hid] = _tries + 1
                 if _tries + 1 > HEDGE_MAX_TRIES and not hedge_panic(_belief):
                     hedged.add(_hid)
@@ -8775,7 +8984,15 @@ def trade_loop(a, rec, book, idx, series_index):
                     _hpaper = float(hedge_vwap(_hrungs, _hn_take, float(_ask)))
                     _hoid = f"hedge-paper-{_htk}-{now_s}"
                     open_pos[_hoid] = (_hcs, _opp, _hpaper, _hn_take, _htk)
-                    hedged.add(_hid)
+                    # A76: paper books the same way live does -- the position
+                    # is done only when the WHOLE of it is covered, so a
+                    # proportional half-hedge stays open for its top-up.
+                    _left76p = float(_unhedged) - float(_hn_take)
+                    if _left76p <= 1e-9:
+                        hedged.add(_hid)
+                        hedge_remain.pop(_hid, None)
+                    else:
+                        hedge_remain[_hid] = _left76p
                     hedged_side[_htk] = _opp
                     rec("hedge", ticker=_htk, side=_opp, price=_hpaper,
                         ask=float(_ask), ask_size=float(_asz),
@@ -8835,7 +9052,12 @@ def trade_loop(a, rec, book, idx, series_index):
                     _hoid = f"hedge-{_hout.get('order_id') or now_s}"
                     open_pos[_hoid] = (_hcs, _opp, _hcost2, _hfilled, _htk)
                     state["hedges"] = state.get("hedges", 0) + 1
-                    if HEDGE_PILOT_CONTRACTS or _hfilled >= float(_hn) - 1e-9:
+                    # A76: "done" means the WHOLE position is covered
+                    # (_unhedged, not _hn). A proportional half-hedge that
+                    # filled in full must leave the position open to a
+                    # top-up when the belief falls further.
+                    _left76 = float(_unhedged) - _hfilled
+                    if HEDGE_PILOT_CONTRACTS or _left76 <= 1e-9:
                         # under the pilot ANY fill completes the hedge for this
                         # position -- otherwise 1 contract/second for 5 seconds
                         hedged.add(_hid)
@@ -8843,7 +9065,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     else:
                         # PARTIAL: track what is still unhedged in hedge_remain,
                         # NEVER in open_pos[_hid] -- see the note above this loop.
-                        hedge_remain[_hid] = float(_hn) - _hfilled
+                        hedge_remain[_hid] = _left76
         # ---------------- end AMENDMENT 15 ----------------
 
         # A69: THE RISK CHECK, NOW BELOW THE HEDGE PASS. It used to sit above
@@ -10440,6 +10662,22 @@ def main():
                          "$43.56. Off by default: only FINALISED bets count "
                          "toward the loss total, which is the operator's "
                          "instruction of 2026-09-19.")
+    ap.add_argument("--no-hedge-prop", action="store_true",
+                    help="AMENDMENT 76: turn OFF proportional hedging and go "
+                         "back to hedging the whole position the moment "
+                         "belief crosses --hedge-belief. Proportional is the "
+                         "default: all of it at or under %.2f belief, half at "
+                         "or under %.2f, none above -- and a half-hedge tops "
+                         "up to full if belief falls further."
+                         % (_DEFAULT_HEDGE_PROP_FULL, _DEFAULT_HEDGE_PROP_HALF))
+    ap.add_argument("--hedge-prop-full", type=float, default=None,
+                    help="AMENDMENT 76: belief at or under which the WHOLE "
+                         "position is hedged (default %.2f)."
+                         % _DEFAULT_HEDGE_PROP_FULL)
+    ap.add_argument("--hedge-prop-half", type=float, default=None,
+                    help="AMENDMENT 76: belief at or under which HALF is "
+                         "hedged (default %.2f); above it nothing is."
+                         % _DEFAULT_HEDGE_PROP_HALF)
     ap.add_argument("--hedge-slip", type=float, default=None,
                     help="AMENDMENT 70: dollars above the ask we saw that a "
                          "hedge leg may pay, so the IOC sweeps the ladder "
@@ -10813,6 +11051,18 @@ def main():
         globals()["HEDGE_PANIC"] = float(a.hedge_panic) or None
     if a.loss_bound_open:
         globals()["LOSS_BOUND_OPEN"] = True
+    if a.no_hedge_prop:
+        globals()["HEDGE_PROP"] = False
+    if a.hedge_prop_full is not None or a.hedge_prop_half is not None:
+        _f = (_DEFAULT_HEDGE_PROP_FULL if a.hedge_prop_full is None
+              else float(a.hedge_prop_full))
+        _h = (_DEFAULT_HEDGE_PROP_HALF if a.hedge_prop_half is None
+              else float(a.hedge_prop_half))
+        if not (0.0 < _f <= _h < 1.0):
+            raise SystemExit("--hedge-prop-full/--hedge-prop-half must satisfy "
+                             "0 < full <= half < 1, got %r / %r" % (_f, _h))
+        globals()["HEDGE_PROP_FULL"] = _f
+        globals()["HEDGE_PROP_HALF"] = _h
     if a.hedge_slip is not None:
         # The cap is 0.10 because the slip is paid on the WHOLE hedge and a
         # hedge leg at or over $1 cannot beat holding (hedge_ask_ok); anything
@@ -10988,6 +11238,8 @@ def main():
         # could, and Windows returns an empty command line for a process it
         # will not open. That is how the 2026-09-14 double-bot failure hid.
         hedge_slip=HEDGE_SLIP,
+        hedge_prop=HEDGE_PROP, hedge_prop_full=HEDGE_PROP_FULL,
+        hedge_prop_half=HEDGE_PROP_HALF,
         max_hedge_attempts_per_close=MAX_HEDGE_ATTEMPTS_PER_CLOSE,
         reconcile_fail_halt=RECONCILE_FAIL_HALT,
         improve_by=IMPROVE_BY, improve_scope=IMPROVE_SCOPE,

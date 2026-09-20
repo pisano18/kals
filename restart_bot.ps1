@@ -312,7 +312,15 @@ $botArgs = @(
     # bank this is 105 contracts and a $309 worst close, covered 3.0x. Only
     # --loss-cap below is new. 4.08 was live for one close (03:30:58Z, size 77,
     # no fills) and is reverted.
-    "--bank-brake", "3.00",
+    # 3.00 -> 4.00, 2026-09-20 ~05:3xZ, v-proportion. The operator: "Make the
+    # bet size only a quarter smaller not half." At the 09-19 23:45 close the
+    # bot held 104 contracts on two markets -- the most ever -- and a
+    # full-size hedge on each cost $117 when both bets went on to win. Size
+    # has not been earning more (measured: no correlation between size and
+    # daily money; the price paid rose with it), and the cheap end of the
+    # book has halved. 4.00 is three quarters of 3.00's bet: ~69 contracts at
+    # the $821 bank instead of ~93. The ratio stays the brake.
+    "--bank-brake", "4.00",
     # AMENDMENT 65, same instruction. The loss abort has always been DERIVED
     # (-2 x SIZE x MAX_PER_CLOSE) and therefore GREW with the bank -- it had
     # already reached -$420 at 105 contracts. This is a hard dollar cap: the

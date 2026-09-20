@@ -1,3 +1,91 @@
+# v-proportion -- 2026-09-20 -- LIVE: hedge in proportion to conviction, and a quarter off the bet
+
+**Deployed by this session on the operator's word.** On the hedge: *"Sure on
+proportion but make sure if it starts at half then drops below 20 you buy the
+rest of the hedge."* On size: *"Make the bet size only a quarter smaller not
+half then as proportional."*
+
+## Why
+
+Every alarm the bot has ever raised (18) was rebuilt second-by-second from
+the raw CF Benchmarks index. **Nothing visible at the alarm second separates
+a real collapse from a false alarm** -- crossing depth, market-wide or not,
+belief level, seconds left: every one overlaps. The information arrives
+1-10 s later, and on a real collapse the other side is at 99c by then
+(trade tape: 58c -> 99c in 5 s on BTC 09-14; 51c -> 87c on HYPE 09-14).
+So a confirmation delay is +$37 across everything and **-$79 with the
+09-19 23:45 close removed** -- its whole benefit is one close. A hedge
+cannot be made rarer without making it useless. It can be made SMALLER
+where the model is least sure.
+
+Under the current rules (`--hedge-price 0.60` since 09-18) the hedge is **9
+saves (+$112.86) to 2 false alarms (-$116.87)**. Both false alarms were one
+close, hedged in FULL at 27% and 50% belief -- a coin flip locked in at
+46c -- on 104-contract positions, the largest ever held. Full hedges under
+20% belief have been right every time.
+
+Two corrections to earlier reporting, same day: `KXBTC15M-26SEP172115-15`
+was a REAL loss (the bot restarted holding it and never wrote a settlement),
+not a false alarm; and five of the seven lifetime false alarms fired under
+the old 0.80 threshold and are already blocked by `--hedge-price 0.60`.
+
+## A76 -- the rule
+
+Share of the position that should carry a hedge leg:
+
+| belief in our side | hedged |
+|---|---|
+| at or under **20%** | all of it |
+| at or under **40%** | half |
+| above 40% | none -- a coin flip is not a collapse |
+
+**The top-up (the operator's condition):** the hedge tracks a TARGET against
+what is already covered. A position half-hedged at 30% whose belief falls to
+15% buys the other half. A position whose belief recovers is never sold
+down.
+
+On tonight's two: XRP 104 -> 52 contracts, HYPE 104 -> 0. On the nine real
+losses: three at 52-56% belief would have gone unhedged (~$32 of saves) and
+two at 21-24% would have been halved (~$16). Net about +$40 better than the
+current rule on the same 15 clusters that produced it. **Below the
+30-cluster floor; the operator chose it knowing that.**
+
+What it blocks, per the 09-19 rule: the hedge entirely between 40% and 60%
+belief, and half of it between 20% and 40%. `hedge_want()` can never return
+more than the contracts still uncovered. `--no-hedge-prop` restores today's
+all-or-nothing; `--hedge-prop-full` / `--hedge-prop-half` move the bands.
+
+## The bet: `--bank-brake 3.00 -> 4.00`
+
+Three quarters of the bet: ~69 contracts at the $821 bank instead of ~93.
+Size has not been earning more (no correlation between size and daily money
+-- the price paid rose with it) and the cheap end of the book has halved,
+so a big order walks further up the ladder for less. The ratio stays the
+brake.
+
+## Evidence
+
+- Self-test: A76 driven by tonight's real numbers (104 @ 0.27326 -> 52; 104
+  @ 0.50066 -> 0), the top-up step by step (30% -> 52, then 15% -> the other
+  52, then nothing), the no-sell rule (recovery -> 0, never negative), the
+  exposure bound (never more than uncovered), garbage in -> 0 not raise (the
+  hedge pass has no try/except), and `--no-hedge-prop` = today exactly.
+  Structural: an idle second `continue`s BEFORE a try is counted; the alarm
+  is keyed on its own set; live AND paper judge "done" against the uncovered
+  count so a half hedge stays open for its top-up.
+- Startup path run with the exact deploy flag list, paper.
+
+## Revert
+
+```powershell
+# hedge back to all-or-nothing, bet back to 3.00: edit restart_bot.ps1
+#   add   "--no-hedge-prop",
+#   set   "--bank-brake", "3.00",
+powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
+```
+
+---
+
 # v-settledonly -- 2026-09-19 -- LIVE: an unsettled bet is no longer counted as a loss
 
 **The operator, and the log agreed with him word for word:** *"I don't know
@@ -75,7 +163,7 @@ or revert the commit:
 ```powershell
 cd C:\kals-repo
 git revert --no-edit <SHA>
-powershell -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1
+powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
 ```
 
 ---
