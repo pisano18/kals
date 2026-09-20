@@ -177,6 +177,20 @@ $botArgs = @(
     # and 74c helped: +$8.80. Same threshold as the belief, so the rule is
     # "model AND market both say under 60%".
     "--hedge-price", "0.60",
+    # --early-max-price 0.975 (A78), v-earlycap, 2026-09-20, on the operator's
+    # word: "Sure cut to 97.5 I like that. The whole point is better pricing."
+    #
+    # The 31-45 s leg earns 1.14c a contract over 133 markets; the last ten
+    # seconds earn 5.63c with zero losing closes in 71. Above 97.5c the early
+    # leg is risking 98c to make 1.8c, fifteen seconds before the information
+    # the whole strategy rests on arrives. That is exactly the
+    # KXBTC15M-26SEP191600-00 fill: NO at 98c at tau 45, while the same model
+    # sixteen seconds later said YES at 99.79% with YES offered at 92.6c.
+    # -$107.95.
+    #
+    # It cannot touch the main window (that leg is "full"), and it cannot
+    # touch a hedge. Remove the line to lift the ceiling.
+    "--early-max-price", "0.975",
     # --hedge-slip 0.03 (A70), v-hedgefill, 2026-09-19, on the operator's
     # word: "Yes Turn the thing you want to change on."
     #

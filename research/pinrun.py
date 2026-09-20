@@ -427,6 +427,14 @@ EARLY_FRAC = 0.5
 # back to a third rather than a full bet.
 EARLY_MIN_PRICE = 0.90
 _DEFAULT_EARLY_MIN_PRICE = 0.90
+
+# AMENDMENT 78: the ceiling on the EARLY leg only. 1.0 = no ceiling, which is
+# the shipped default; --early-max-price sets it. The live bot runs 0.975 from
+# 2026-09-20 on the operator's word. See the gate in trade_loop for the
+# evidence: 31-45 s earns 1.14c a contract against 5.63c at 6-10 s, and above
+# 97.5c it is risking 98c to make 1.8c.
+EARLY_MAX_PRICE = 1.0
+_DEFAULT_EARLY_MAX_PRICE = 1.0
 # AMENDMENT 50 (2026-09-18): on the EARLY leg, a BIG edge is a WARNING, not a
 # prize -- and the sign flips at 30 seconds.
 #
@@ -1858,6 +1866,71 @@ _DEFAULT_PICK = "first"  # take the first market that clears every gate, which
 MAX_DRAWDOWN = 0.20      # 1/5 of the high-water bank. Operator, 2026-09-14.
 _DEFAULT_MAX_DRAWDOWN = 0.20
 HWM_FILE = os.path.join(RESULTS, "pinrun-hwm.json")
+
+
+DAYLOSS_FILE = os.path.join(RESULTS, "pinrun-dayloss.json")
+
+
+def et_day_key(now=None):
+    """The ET calendar day, as 'YYYY-MM-DD'. ET because that is how the
+    operator reads a day and how every report in this repo splits one."""
+    t = time.time() if now is None else float(now)
+    return time.strftime("%Y-%m-%d", time.gmtime(t - 4 * 3600))
+
+
+def day_loss(path=None, now=None):
+    """Dollars realised so far on the CURRENT ET day, or None.
+
+    Negative is a loss. Returns None when there is nothing on file for today
+    -- which is not zero: "we have not recorded anything" and "today is flat"
+    are different answers, and only the second should ever be compared
+    against a cap.
+    """
+    try:
+        with open(path or DAYLOSS_FILE, encoding="utf-8") as fh:
+            d = json.load(fh) or {}
+    except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict) or d.get("day") != et_day_key(now):
+        return None                      # a new day starts clean
+    try:
+        v = float(d.get("realised"))
+    except (TypeError, ValueError):
+        return None
+    # a poisoned file reads as "unknown", never as a number to compare
+    return None if (v != v or v in (float("inf"), float("-inf"))) else v
+
+
+def add_day_loss(delta, path=None, now=None):
+    """Add a settled market's money to today's running total, and return it.
+
+    Called on every settlement, so it must never raise into the trade loop
+    and must never lose the file to a half-written one -- hence the temp file
+    and the replace, the same shape write_hwm uses.
+    """
+    try:
+        delta = float(delta)
+    except (TypeError, ValueError):
+        return day_loss(path, now)
+    # NaN AND INFINITY ARE REFUSED, not just unparseable text. `float("nan")`
+    # converts happily, and a NaN written to the file would make every
+    # comparison in risk_abort False FOR EVER -- a cap that silently stops
+    # being a cap is worse than no cap. Caught by the self-test.
+    if delta != delta or delta in (float("inf"), float("-inf")):
+        return day_loss(path, now)
+    key = et_day_key(now)
+    cur = day_loss(path, now)
+    new = (cur or 0.0) + delta
+    p = path or DAYLOSS_FILE
+    try:
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"day": key, "realised": round(new, 4),
+                       "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, fh)
+        os.replace(tmp, p)
+    except OSError:
+        return new                       # in memory is better than nothing
+    return new
 
 
 def read_hwm(path=None):
@@ -5084,6 +5157,88 @@ def _selftest_body():
            "the ladder is only READ when the slip is on, so with the flag off "
            "the hedge path does not even touch the book differently")
 
+        # ---- AMENDMENT 78: A CEILING ON THE EARLY LEG ----------------------
+        ck(_DEFAULT_EARLY_MAX_PRICE == 1.0,
+           "A78 ships with NO ceiling -- 1.0 blocks nothing, so the flag is "
+           "what turns it on and no arm inherits it by accident")
+        _lp78 = _src62[_src62.rindex(chr(10) + "def " + "trade_loop("):]
+        ck('_gate("early_dear"' in _lp78
+           and 'price > EARLY_MAX_PRICE + 1e-9' in _lp78,
+           "the early leg refuses a price above the ceiling, and records why")
+        ck('_leg46 in ("early", "early_once")' in
+           _lp78[_lp78.index('_gate("early_dear"') - 300:
+                 _lp78.index('_gate("early_dear"')],
+           "A78 BLOCKS ONLY THE EARLY LEG. The main window is leg 'full', so "
+           "this gate cannot touch the 6-10 s fills that earn 5.63c a "
+           "contract -- the whole point is to move budget TOWARD them")
+        ck(_lp78.index('_gate("early_dear"') > _lp78.index('_gate("early_cheap"'),
+           "...and it sits beside the 90c floor, so the early leg's price "
+           "band is stated in one place")
+        # the real fill this exists for: 98c at tau 45 on the BTC 16:00 close
+        for _px, _ceil, _want in ((0.98, 0.975, True), (0.975, 0.975, False),
+                                  (0.97, 0.975, False), (0.9751, 0.975, True)):
+            _blocked = _px > _ceil + 1e-9
+            ck(_blocked is _want,
+               "at a %.4f ceiling a %.4f early ask is %s -- the 98c BTC fill "
+               "that cost $107.95 is refused, and 97.5c exactly is allowed"
+               % (_ceil, _px, "REFUSED" if _want else "allowed"))
+
+        # ---- AMENDMENT 79: THE LOSS CAP IS A DAY, NOT A RUN ----------------
+        #
+        # The operator asked for $200 and got $200 PER RUN. 2026-09-19 had
+        # THIRTEEN runs and reached -$223.46, each restart handing the bot a
+        # fresh $200 of permission.
+        import tempfile as _tf79
+        with _tf79.TemporaryDirectory() as _td79:
+            _p79 = os.path.join(_td79, "day.json")
+            _t79 = calendar.timegm((2026, 9, 19, 18, 0, 0))   # 14:00 ET
+            ck(day_loss(_p79, _t79) is None,
+               "NULL: nothing on file is None, NOT 0.0 -- 'we have not "
+               "recorded today' and 'today is flat' are different answers and "
+               "only the second may be compared against a cap")
+            add_day_loss(-50.0, _p79, _t79)
+            add_day_loss(-30.0, _p79, _t79)
+            ck(abs(day_loss(_p79, _t79) + 80.0) < 1e-9,
+               "PLANTED: two losses on one ET day add up (-80.00)")
+            # THE WHOLE POINT: a restart does not clear it. Nothing is held in
+            # memory -- a fresh read of the same file gives the same number.
+            ck(abs(day_loss(_p79, _t79) + 80.0) < 1e-9,
+               "and a SECOND process reading the same file sees the same "
+               "-80.00 -- this is what makes it survive a restart")
+            add_day_loss(120.0, _p79, _t79)
+            ck(abs(day_loss(_p79, _t79) - 40.0) < 1e-9,
+               "wins count too: the day is a NET, so a profitable day can "
+               "never halt on this")
+            # A NEW ET DAY STARTS CLEAN, and 04:00Z is the boundary.
+            _next = calendar.timegm((2026, 9, 20, 5, 0, 0))   # 01:00 ET, 09-20
+            ck(day_loss(_p79, _next) is None,
+               "a new ET day starts clean -- yesterday's cap does not stop "
+               "today's trading")
+            ck(et_day_key(calendar.timegm((2026, 9, 20, 3, 59, 0))) == "2026-09-19"
+               and et_day_key(calendar.timegm((2026, 9, 20, 4, 1, 0))) == "2026-09-20",
+               "and the boundary is 04:00Z = midnight ET, not midnight UTC -- "
+               "a UTC day would move a whole evening onto the wrong date")
+            for _bad79 in (None, "x", float("nan")):
+                _before = day_loss(_p79, _t79)
+                add_day_loss(_bad79, _p79, _t79)
+                ck(day_loss(_p79, _t79) == _before,
+                   "NULL: garbage (%r) does not move the day total and does "
+                   "not raise -- this is called from the settlement path"
+                   % (_bad79,))
+        ck("_day79 = add_day_loss(pnl) if live else None" in _lp78,
+           "A79: every LIVE settlement adds to the day file; a paper arm must "
+           "never touch the file the live bot's cap reads")
+        ck(_lp78.index("_day79 = add_day_loss(pnl)")
+           < _lp78.index('rec("settled", ticker=tk'),
+           "...and it is written BEFORE the log line, so a crash between the "
+           "two loses the record and not the money")
+        _ab79 = _src62[_src62.rindex(chr(10) + "def " + "risk_abort(state, a):"):]
+        ck("_dl = day_loss()" in _ab79 and "DAY loss cap" in _ab79,
+           "and risk_abort compares the DAY, not just this run")
+        ck(_ab79.index("_dl = day_loss()") < _ab79.index('"loss abort: realised'),
+           "the day cap is checked BEFORE the per-run abort, so the message "
+           "names the real reason")
+
         # ---- AMENDMENT 76: HEDGE IN PROPORTION TO CONVICTION ---------------
         #
         # The operator's exact condition: "if it starts at half then drops
@@ -6203,7 +6358,21 @@ def _selftest_body():
         ck('sig["ladder_under"]' in _tl45 and "PRICE_CEILING + 1e-9" in _tl45,
            "and records ladder_under -- what we could actually BUY at or under "
            "the ceiling, which is the number every capacity question wants")
-        ck(_tl45.index("book.depth(tk,") > _tl45.index('rec("signal"') - 4000,
+        # A78 REPLACED A CHARACTER BUDGET WITH THE PROPERTY IT STOOD FOR.
+        # This was `index("book.depth") > index('rec("signal"') - 4000` -- a
+        # proxy for "these two are close together", which broke the moment a
+        # gate was added BETWEEN them even though the gate sits AFTER the read
+        # and so cannot make it run more often. The real requirement is that
+        # the depth read happens only for a market that has already survived
+        # the filters that refuse most of them, and before the signal record.
+        ck(_tl45.index("book.depth(tk,") > _tl45.index('_gate("confidence"'),
+           "the depth read runs only AFTER the confidence gate has refused "
+           "everything it is going to -- that gate is what keeps this off the "
+           "20 Hz path, not the number of characters above it")
+        ck(_tl45.index("book.depth(tk,") > _tl45.index('_gate("no_offer"'),
+           "...and after the no-offer gate, so a market nobody is quoting is "
+           "never read for depth")
+        ck(_tl45.index("book.depth(tk,") < _tl45.index('rec("signal"'),
            "the read sits on the SIGNAL path, which fires a few dozen times a "
            "day, not in the 20 Hz scan loop")
         # the arithmetic of ladder_under, on a planted ladder
@@ -7558,6 +7727,23 @@ def risk_abort(state, a):
     led = pintake.LEDGER
     if led.get("halt"):
         return f"pintake halted: {led['halt']}"
+    # AMENDMENT 79 (2026-09-20): THE CAP IS A DAY, NOT A RUN.
+    #
+    # The operator asked for "$200" and got $200 PER RUN. 2026-09-19 had
+    # THIRTEEN runs, each starting with a fresh $200 of permission, and the
+    # day reached -$223.46. A cap that resets every time the watchdog
+    # restarts the bot is not a cap on anything.
+    #
+    # `day_loss()` reads the ET day's realised total off disk, so it survives
+    # a restart, a crash and the watchdog. It is only ever compared when it is
+    # a LOSS -- a profitable day never halts -- and it uses the same
+    # `a.loss_abort` number, so nothing about the size of the cap changed.
+    _dl = day_loss()
+    if _dl is not None and _dl <= a.loss_abort:
+        return (f"DAY loss cap: ${_dl:.2f} lost today (ET) <= "
+                f"${a.loss_abort:.2f}. This survives restarts -- 2026-09-19 "
+                f"reached -$223.46 through thirteen runs each with a fresh "
+                f"$200 of permission")
     if float(led.get("realised", 0.0)) <= a.loss_abort:
         return (f"loss abort: realised ${led['realised']:.2f} <= "
                 f"${a.loss_abort:.2f}")
@@ -8561,8 +8747,14 @@ def trade_loop(a, rec, book, idx, series_index):
                         was=float(_DEFAULT_LATE_MULT))
                     print(f"  *** A LATE-BOOSTED LOSS on {tk}: --late-mult is "
                           f"OFF for the rest of this run ***")
+            # A79: the ET day's running total, on disk, BEFORE the record is
+            # written -- so a crash between the two loses the log line and not
+            # the money. `live` only: a paper arm must never touch the file
+            # the live bot's day cap reads.
+            _day79 = add_day_loss(pnl) if live else None
             rec("settled", ticker=tk, want=want, result=res, cost=round(cost, 4),
                 pnl_c=round(100 * pnl, 2),
+                day_realised=(round(_day79, 4) if _day79 is not None else None),
                 # A58, the operator: "Start recording the end of each trade
                 # we make and why or why didn't the boost fire so I can ask".
                 # One plain sentence per settled trade, so the question never
@@ -9858,6 +10050,30 @@ def trade_loop(a, rec, book, idx, series_index):
                           fair=round(f, 5),
                           want=want, size=float(take_n or SIZE))
                     continue
+                # AMENDMENT 78 (2026-09-20): AND TOO DEAR, ON THE EARLY LEG.
+                #
+                # The operator: *"Sure cut to 97.5 I like that. The whole
+                # point is better pricing so that's good."*
+                #
+                # Measured, live fills: the 31-45 s leg earns 1.14c a contract
+                # against 5.63c at 6-10 s. Above 97.5c it is risking 98c to
+                # make 1.8c, fifteen seconds before the information the whole
+                # strategy rests on arrives -- and that is exactly the fill
+                # that cost $107.95 on KXBTC15M-26SEP191600-00: bought NO at
+                # 98c at tau 45 while the same model, sixteen seconds later,
+                # said YES at 99.79% and the market offered YES at 92.6c.
+                #
+                # WHAT IT BLOCKS, stated as the standing rule requires: early
+                # fills at or above the ceiling. It cannot block the MAIN
+                # window (`_leg46` is "full" there), it cannot block a hedge,
+                # and with the ceiling at 1.0 it blocks nothing at all.
+                if (_leg46 in ("early", "early_once")
+                        and price > EARLY_MAX_PRICE + 1e-9):
+                    _gate("early_dear", close_s, tk, leg=_leg46, tau=tau,
+                          price=round(price, 4), ceiling=EARLY_MAX_PRICE,
+                          fair=round(f, 5),
+                          want=want, size=float(take_n or SIZE))
+                    continue
                 # A50: too GOOD to be true, on the early leg only.
                 if early_wide_block(_leg46, e):
                     _gate("early_wide", close_s, tk, leg=_leg46, tau=tau,
@@ -10662,6 +10878,14 @@ def main():
                          "$43.56. Off by default: only FINALISED bets count "
                          "toward the loss total, which is the operator's "
                          "instruction of 2026-09-19.")
+    ap.add_argument("--early-max-price", type=float, default=None,
+                    help="AMENDMENT 78: the EARLY leg (31-45 s) refuses a "
+                         "price above this. Default %.3f = no ceiling. The "
+                         "live bot runs 0.975: that leg earns 1.14c a "
+                         "contract against 5.63c at 6-10 s, and above 97.5c "
+                         "it risks 98c to make 1.8c fifteen seconds before "
+                         "the information arrives."
+                         % _DEFAULT_EARLY_MAX_PRICE)
     ap.add_argument("--no-hedge-prop", action="store_true",
                     help="AMENDMENT 76: turn OFF proportional hedging and go "
                          "back to hedging the whole position the moment "
@@ -11051,6 +11275,15 @@ def main():
         globals()["HEDGE_PANIC"] = float(a.hedge_panic) or None
     if a.loss_bound_open:
         globals()["LOSS_BOUND_OPEN"] = True
+    if a.early_max_price is not None:
+        if not (0.5 <= a.early_max_price <= 1.0):
+            raise SystemExit("--early-max-price must sit in [0.5, 1.0], got %r"
+                             % (a.early_max_price,))
+        if a.early_min_price is not None and a.early_max_price < a.early_min_price:
+            raise SystemExit("--early-max-price %.3f is BELOW --early-min-price "
+                             "%.3f, which would refuse every early fill"
+                             % (a.early_max_price, a.early_min_price))
+        globals()["EARLY_MAX_PRICE"] = float(a.early_max_price)
     if a.no_hedge_prop:
         globals()["HEDGE_PROP"] = False
     if a.hedge_prop_full is not None or a.hedge_prop_half is not None:

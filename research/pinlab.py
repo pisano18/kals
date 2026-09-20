@@ -1566,6 +1566,44 @@ def whatif(arm_pts, arm_contracts, live_pts, live_contracts):
         l_cpc = (100.0 * l_b / l_n) if l_n > 0 else None
         cpc_d = (a_cpc - l_cpc) if (a_cpc is not None and l_cpc is not None) \
             else None
+        # ---- DID IT CAUSE LOSSES, OR AVOID THEM? -------------------------
+        #
+        # The operator, 2026-09-20: *"add a +1 loss or +3 loss or whatever to
+        # an arm's description or info section if it CAUSED any extra losses
+        # and a plus x wins if it won something the live bot lost. And ensure
+        # to include its total against how many closes it's seen so we know
+        # its loss ratio."*
+        #
+        # On the markets BOTH traded, only four things can happen, and the two
+        # that matter are the DISAGREEMENTS:
+        #
+        #   extra_losses  the arm lost a market live WON   -> it cost money
+        #   extra_wins    the arm won a market live LOST   -> it saved money
+        #
+        # `extra_loss_$` / `extra_win_$` are what those disagreements were
+        # worth PER CONTRACT at our stake, not at the arm's -- an arm bets 20
+        # where we bet 70, so its raw dollars understate the decision by the
+        # ratio of the stakes and nothing else.
+        #
+        # `arm_losses` / `arm_closes` is the arm's own loss ratio over
+        # everything it settled, shared or not: the number that says whether
+        # the arm is safe, independent of how live did.
+        x_loss, x_win, x_loss_d, x_win_d = 0, 0, 0.0, 0.0
+        for k in both:
+            a_v, l_v = a_by[k], l_by[k]
+            if a_v < 0 <= l_v:
+                x_loss += 1
+                # per-contract gap on this market, valued at OUR contracts
+                if a_ct.get(k) and l_ct.get(k):
+                    x_loss_d += (100.0 * a_v / a_ct[k]
+                                 - 100.0 * l_v / l_ct[k]) * l_ct[k] / 100.0
+            elif l_v < 0 <= a_v:
+                x_win += 1
+                if a_ct.get(k) and l_ct.get(k):
+                    x_win_d += (100.0 * a_v / a_ct[k]
+                                - 100.0 * l_v / l_ct[k]) * l_ct[k] / 100.0
+        arm_closes = len(a_by)
+        arm_losses = sum(1 for v in a_by.values() if v < 0)
         h2h = {"n": len(both), "arm": a_b, "live": l_b, "diff": a_b - l_b,
                "arm_ct": a_n, "live_ct": l_n,
                "arm_cpc": a_cpc, "live_cpc": l_cpc, "cpc_diff": cpc_d,
@@ -1573,6 +1611,11 @@ def whatif(arm_pts, arm_contracts, live_pts, live_contracts):
                else None,
                "arm_only": len(set(a_by) - set(l_by)),
                "live_only": len(set(l_by) - set(a_by)),
+               "extra_losses": x_loss, "extra_wins": x_win,
+               "extra_loss_dollars": x_loss_d, "extra_win_dollars": x_win_d,
+               "arm_closes": arm_closes, "arm_losses": arm_losses,
+               "arm_loss_rate": (arm_losses / arm_closes) if arm_closes else None,
+               "live_losses_shared": sum(1 for k in both if l_by[k] < 0),
                "missed_loss": sum(v for k, v in l_by.items()
                                   if k not in a_by and v < 0)}
     return {"live": lcurve, "arm": acurve, "h2h": h2h,
@@ -1996,6 +2039,45 @@ def selftest():
               [(100, 1.0, "A")], 10.0)["h2h"]["cpc_diff"] is None,
        "NULL: three-element points carry no contract count, so cents per "
        "contract is absent rather than a divide-by-zero or a fake 0.00c")
+
+    # ---- A77: DID THE ARM CAUSE LOSSES, OR AVOID THEM? -------------------
+    #
+    # The operator: "add a +1 loss or +3 loss ... if it CAUSED any extra
+    # losses and a plus x wins if it won something the live bot lost."
+    # Planted: four shared markets, one of each possible outcome pair.
+    #   A  arm WON  live WON   -> neither
+    #   B  arm LOST live WON   -> the arm caused a loss
+    #   C  arm WON  live LOST  -> the arm avoided one
+    #   D  arm LOST live LOST  -> neither; both were wrong
+    ap5 = [(1, 1.0, "A", 20.0), (2, -19.0, "B", 20.0),
+           (3, 1.0, "C", 20.0), (4, -19.0, "D", 20.0)]
+    lp5 = [(1, 5.0, "A", 100.0), (2, 5.0, "B", 100.0),
+           (3, -95.0, "C", 100.0), (4, -95.0, "D", 100.0)]
+    w5 = whatif(ap5, 80.0, lp5, 400.0)["h2h"]
+    ck(w5["extra_losses"] == 1 and w5["extra_wins"] == 1,
+       "PLANTED: one market the arm lost and live won (+1 loss), one the arm "
+       "won and live lost (+1 win). The two markets they agreed on count for "
+       "neither")
+    ck(w5["extra_loss_dollars"] < 0 and w5["extra_win_dollars"] > 0,
+       "...and each is valued at OUR contract count: the loss it caused is "
+       "negative dollars (%.2f), the loss it avoided positive (%.2f)"
+       % (w5["extra_loss_dollars"], w5["extra_win_dollars"]))
+    ck(w5["arm_closes"] == 4 and w5["arm_losses"] == 2
+       and abs(w5["arm_loss_rate"] - 0.5) < 1e-9,
+       "and its OWN record is 2 losses in 4 closes = 50%% -- the loss ratio, "
+       "which stands whatever live did")
+    # NULL: an arm that matches live exactly caused nothing and avoided
+    # nothing. Reporting a number here would invent a difference.
+    w6 = whatif([(1, 1.0, "A", 20.0)], 20.0, [(1, 5.0, "A", 100.0)], 100.0)["h2h"]
+    ck(w6["extra_losses"] == 0 and w6["extra_wins"] == 0
+       and w6["extra_loss_dollars"] == 0.0,
+       "NULL: identical outcomes report 0 and 0 -- any gap there is PRICE, "
+       "not a different decision")
+    # NULL: a break-even market (exactly 0.0) is NOT a loss on either side.
+    w7 = whatif([(1, 0.0, "A", 20.0)], 20.0, [(1, 0.0, "A", 100.0)], 100.0)["h2h"]
+    ck(w7["extra_losses"] == 0 and w7["extra_wins"] == 0 and w7["arm_losses"] == 0,
+       "NULL: a market that settled at exactly zero is not a loss for either "
+       "side -- the test is v < 0, not v <= 0")
     print("pinlab selftest: OK (%d entries: %s)"
           % (len(EXPERIMENTS), ", ".join("%s %d" % (k, v) for k, v in sorted(counts().items()))))
 

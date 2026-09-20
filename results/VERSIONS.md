@@ -1,3 +1,63 @@
+# v-earlycap -- 2026-09-20 -- LIVE: a 97.5c ceiling on the 45-second leg, and the loss cap is a DAY not a run
+
+Two changes, both on the operator's word: *"Sure cut to 97.5 I like that. The
+whole point is better pricing so that's good"* and *"Yes loss cap change"*.
+
+## A78 -- `--early-max-price 0.975`
+
+The 31-45 s early leg refuses an ask above 97.5c. Measured, live fills:
+
+| window | c/contract | losing closes |
+|---|---|---|
+| 31-45 s (the early leg) | **1.14c** | 2 of 99 |
+| 16-30 s | 1.22c | |
+| 6-10 s | **5.63c** | **0 of 71** |
+
+Above 97.5c the early leg risks 98c to make 1.8c, fifteen seconds before the
+information the strategy rests on arrives. That is exactly the fill that cost
+**-$107.95**: `KXBTC15M-26SEP191600-00`, NO at 98c at tau 45, while the same
+model sixteen seconds later said **YES at 99.79%** with YES offered at 92.6c.
+
+**What it blocks:** early fills above 97.5c. It cannot touch the main window
+(that leg is `full`), it cannot touch a hedge, and at the shipped default of
+1.0 it blocks nothing -- the flag is what turns it on. Refusals log as
+`early_dear`, registered in `pinattrib.py` so the gate report can score it.
+
+## A79 -- the loss cap survives restarts
+
+`--loss-cap 200` was **$200 PER RUN**. 2026-09-19 had **thirteen runs**, each
+starting with a fresh $200 of permission, and the day reached **-$223.46**. A
+cap that resets whenever the watchdog restarts the bot is not a cap.
+
+`results/pinrun-dayloss.json` now holds the ET day's realised total, written
+on every LIVE settlement before the log line. `risk_abort` compares the DAY
+first and names it. Seeded at deploy from Kalshi's own books: 2026-09-20 was
++$26.88 over 10 markets, so the full $200 of room was intact.
+
+Paper arms never touch the file. A new ET day (04:00Z) starts clean. Wins
+count, so a profitable day can never halt on it. A NaN or infinity is refused
+on the way in AND on the way out -- a poisoned total would have made every
+comparison False for ever, which is a cap that silently stops being one.
+
+## Also in this deploy
+
+- The self-test check `index("book.depth") > index('rec("signal"') - 4000` was
+  a character budget standing in for "the depth read is not on the 20 Hz
+  path". Adding the A78 gate broke it even though the gate sits AFTER the
+  read and cannot make it run more often. Replaced with the real property:
+  the read must come after the `confidence` and `no_offer` gates and before
+  the signal record.
+
+## Revert
+
+```powershell
+# drop the ceiling: remove "--early-max-price", "0.975", from restart_bot.ps1
+# drop the day cap: git revert the A79 commit (it has no flag)
+powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
+```
+
+---
+
 # v-noboost -- 2026-09-20 -- LIVE: the 90-94c 1.5x boost is removed, on its own pre-registered bar
 
 `--band-mult 0.90 0.94 1.5` (A53, v-bands, live since 09-18 22:46Z) shipped

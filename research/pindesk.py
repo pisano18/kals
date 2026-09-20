@@ -1531,6 +1531,12 @@ def arm_stats(entry, info, whatif, control, meta, now):
         "arm_cpc": h.get("arm_cpc"), "live_cpc": h.get("live_cpc"),
         "arm_only": h.get("arm_only"), "live_only": h.get("live_only"),
         "missed_loss": h.get("missed_loss"),
+        # A77: did this arm CAUSE losses or AVOID them, and its own loss ratio
+        "extra_losses": h.get("extra_losses"), "extra_wins": h.get("extra_wins"),
+        "extra_loss_dollars": h.get("extra_loss_dollars"),
+        "extra_win_dollars": h.get("extra_win_dollars"),
+        "arm_closes": h.get("arm_closes"), "arm_losses": h.get("arm_losses"),
+        "arm_loss_rate": h.get("arm_loss_rate"),
         "settled": info.get("settled") or 0,
         "won": info.get("won") or 0,
         "lost": info.get("lost") or 0,
@@ -1591,9 +1597,44 @@ def arm_row(st):
         hours_cell(st["run_h"]),
         hours_cell(None if st["left_min"] is None else st["left_min"] / 60.0),
         st["entry"].get("since") or DASH,
+        verdict_cell(st),               # A77
+        loss_cell(st),                  # A77
         st.get("spark") or DASH,        # the mini chart, LAST so no index moves
     )
     return (vals, tag, st)
+
+
+def verdict_cell(st):
+    """"+2 wins / -1 loss" -- what this arm did DIFFERENTLY, in outcomes.
+
+    The operator asked for exactly this: a "+1 loss or +3 loss" when the arm
+    caused losses live did not take, and a "+x wins" when it won something
+    live lost. Both, when both happened -- an arm can do each on different
+    markets and reporting only the net would hide it.
+    """
+    w, l = st.get("extra_wins"), st.get("extra_losses")
+    if w is None or l is None:
+        return DASH
+    if not w and not l:
+        return "same as live"
+    bits = []
+    if w:
+        bits.append("+%d win%s" % (w, "" if w == 1 else "s"))
+    if l:
+        bits.append("+%d loss%s" % (l, "" if l == 1 else "es"))
+    return " / ".join(bits)
+
+
+def loss_cell(st):
+    """"2/47 = 4.3%" -- the arm's own losses over every close it has seen.
+
+    Its own record, not a comparison: the number that says whether the arm is
+    SAFE regardless of how live happened to do.
+    """
+    n, l = st.get("arm_closes"), st.get("arm_losses")
+    if not n:
+        return DASH
+    return "%d/%d = %.1f%%" % (l or 0, n, 100.0 * (l or 0) / n)
 
 
 SPARK = "▁▂▃▄▅▆▇█"
@@ -1702,6 +1743,27 @@ def arm_story(st):
                      "%d we never did."
                      % (st["live_only"] or 0, money(st["missed_loss"] or 0),
                         st["arm_only"] or 0))
+        # A77: the two numbers the operator asked to see on every arm
+        _w, _l = st.get("extra_wins") or 0, st.get("extra_losses") or 0
+        if _w or _l:
+            _b = []
+            if _l:
+                _b.append("CAUSED %d loss%s we did not take (%s at our stake)"
+                          % (_l, "" if _l == 1 else "es",
+                             money(st.get("extra_loss_dollars") or 0)))
+            if _w:
+                _b.append("AVOIDED %d loss%s we did take (%s at our stake)"
+                          % (_w, "" if _w == 1 else "es",
+                             money(st.get("extra_win_dollars") or 0)))
+            L.append("DIFFERENT OUTCOMES: it " + ", and ".join(_b) + ".")
+        elif st.get("extra_wins") is not None:
+            L.append("DIFFERENT OUTCOMES: none -- it won and lost exactly the "
+                     "markets we did. Any gap above is PRICE, not outcome.")
+    if st.get("arm_closes"):
+        L.append("ITS OWN LOSS RATE: %d losing closes in %d settled = %.1f%%. "
+                 "Break-even at a 97c price is about 3%%."
+                 % (st.get("arm_losses") or 0, st["arm_closes"],
+                    100.0 * (st.get("arm_losses") or 0) / st["arm_closes"]))
     elif st["settled"]:
         L += ["", "No market has settled on BOTH sides yet, so there is no "
                   "head-to-head -- only the scaled guess below."]
@@ -2592,8 +2654,10 @@ def run_gui():
     f_arms, tv_arms = table(
         lab_tab,
         ("State", "Arm", "Head to head", "At our stake $", "Shared", "Settled",
-         "W-L", "Net $", "Scaled %", "Running", "Left", "Since", "Trend"),
-        (110, 300, 110, 115, 70, 70, 70, 80, 85, 80, 70, 95, 230),
+         "W-L", "Net $", "Scaled %", "Running", "Left", "Since",
+         "Caused", "Its loss rate", "Trend"),
+        (110, 280, 105, 110, 65, 65, 65, 75, 80, 70, 60, 85,
+         150, 110, 200),
         height=22, title="THE ARMS", key="lab", story=arm_story)
     f_arms.grid(row=2, column=0, sticky="nsew", padx=2)
     # THE WHEEL SCROLLS THREE ROWS. With the wheel bound to nothing, Windows
@@ -3165,7 +3229,8 @@ def run_gui():
                  + ("   (filtered)" if len(rows) != total else ""))
         lab_cache["stats"] = {r[2]["match"] or r[2]["name"]: r[2] for r in rows}
         fill(tv_arms, rows or [(("", "nothing matches these filters", "", "", "",
-                                 "", "", "", "", "", "", "", ""), "muted")])
+                                 "", "", "", "", "", "", "", "", "",
+                                 ""), "muted")])
         # KEEP THE SELECTION ACROSS A REDRAW. The table is rebuilt every time
         # the worker finishes, and a selection that jumped back to row one
         # every 45 seconds would take the chart and the detail pane with it.
