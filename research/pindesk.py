@@ -191,6 +191,8 @@ class Ledger:
         self.signals = []
         self.hedges = []
         self.autosize = []
+        self.external = []       # A75: deposits and withdrawals, so money the
+                                 # operator PUT IN is never shown as profit
         self.halts = []
         self.starts = []
         self.closes = []           # close_summary records, trimmed
@@ -351,6 +353,13 @@ class Ledger:
         elif k == "autosize":
             self.autosize.append({"t": t, "size": r.get("new"), "bank": _bank_from_why(r.get("why")),
                                   "file": f})
+        elif k == "external":
+            # MONEY THAT WALKED IN OR OUT. pinrun's classify_bank_move()
+            # already spots these; nothing here read them, so a deposit was
+            # counted as profit. On 2026-09-19 the operator put in $370.44 and
+            # the app showed a return over 100% off the back of it.
+            self.external.append({"t": t, "move": r.get("move"),
+                                  "amount": r.get("amount"), "file": f})
         elif k in ("halt", "end"):
             self.halts.append({"t": t, "kind": k, "why": r.get("why"), "file": f})
         elif k == "start":
@@ -441,23 +450,75 @@ class Ledger:
                 return a
         return None
 
+    # A75: transfers smaller than this are settlement-timing noise, not money
+    # moving. pinrun's own EXTERNAL_MIN is far lower, which is right for the
+    # drawdown brake and wrong here: the 09-17 log has a dozen "deposits" of
+    # $1-$4.54 that are just positions settling between two bank reads.
+    TRANSFER_MIN = 25.0
+
+    def transfers_since_baseline(self):
+        """Net dollars the operator moved IN after the DEPOSITED.txt figure.
+
+        pinrun's classify_bank_move() already spots these and logs them as
+        `external`; nothing read them until now.
+        """
+        base_t = self.deposited_at()
+        net = 0.0
+        for e in self.external:
+            try:
+                amt = float(e.get("amount") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if abs(amt) < self.TRANSFER_MIN:
+                continue                      # settlement noise, not a transfer
+            if base_t and e["t"] and e["t"] <= base_t:
+                continue                      # already inside the baseline
+            net += amt
+        return net
+
+    def deposited_at(self):
+        """Epoch the DEPOSITED.txt figure was true as of. The operator gave
+        '$160 I put in total' on 2026-09-17, so transfers after that date are
+        additional and must be counted on top."""
+        try:
+            with open(os.path.join(self.results, "DEPOSITED.txt"), encoding="utf-8") as fh:
+                m = re.search(r"(\d{4}-\d{2}-\d{2})", fh.read())
+                if m:
+                    return calendar.timegm(time.strptime(m.group(1), "%Y-%m-%d"))
+        except (OSError, ValueError):
+            pass
+        return None
+
     def deposited(self):
-        """What the account started with. If results\\DEPOSITED.txt holds a
-        number, that is the operator's own figure and wins. Otherwise: the
-        first real bank reading minus the profit made before it (the bot only
-        began reading the balance on 2026-09-13), which is a reconstruction."""
+        """EVERY dollar the operator has put in, not just the first ones.
+
+        THE BUG THIS FIXES (2026-09-19). This returned a single figure -- the
+        DEPOSITED.txt number, $160 -- and the bank chip showed
+        `(bank - deposited) / deposited`. The operator then deposited $370.44
+        at 03:13 ET on 09-19, the bank jumped, and the app reported a return
+        of over 100% that was mostly his own money handed back to him. His
+        words: "the desktop tool I don't think accounted for the deposit, it
+        says my total return is over 100%".
+
+        A return figure that counts a deposit as profit is worse than no
+        figure at all, because it says the strategy is working when it may
+        not be.
+        """
+        base = None
         try:
             with open(os.path.join(self.results, "DEPOSITED.txt"), encoding="utf-8") as fh:
                 v = float(re.sub(r"[^0-9.]", "", fh.read().split("\n")[0]))
                 if v > 0:
-                    return v
+                    base = v
         except (OSError, ValueError):
             pass
-        fb = self.first_bank()
-        if not fb:
-            return None
-        before = sum(s["pnl"] for s in self.settled if s["t"] and s["t"] < fb["t"])
-        return fb["bank"] - before
+        if base is None:
+            fb = self.first_bank()
+            if not fb:
+                return None
+            before = sum(s["pnl"] for s in self.settled if s["t"] and s["t"] < fb["t"])
+            base = fb["bank"] - before
+        return base + self.transfers_since_baseline()
 
     def bank_at(self, epoch):
         """The bank at an instant: the last real reading at or before it, plus
@@ -3187,7 +3248,15 @@ def run_gui():
         v, s_ = chips["bank"]
         v.configure(text=("$%.2f" % b["bank"]) if b else "?")
         if b and dep:
-            s_.configure(text="%s on $%.2f put in (%.2fx)" % (pct((b["bank"] - dep) / dep), dep, b["bank"] / dep))
+            # A75: the return is MONEY MADE over money put in -- never
+            # (bank - deposited)/deposited, which counts a fresh deposit as
+            # profit and told the operator he was up over 100% on 2026-09-19
+            # when $370.44 of that was his own money. `made` is the sum of
+            # every settled market, measured from our own fills, and it does
+            # not move when he transfers anything.
+            made = sum(s["pnl"] for s in ledger.settled)
+            s_.configure(text="%s made on $%.2f put in (%s)"
+                         % (money(made, True), dep, pct(made / dep)))
         v, s_ = chips["size"]
         v.configure(text=("%g contracts" % b["size"]) if b and b.get("size") else "?")
         s_.configure(text=("about $%.0f a bet" % (b["size"] * 0.97)) if b and b.get("size") else "")
@@ -3698,6 +3767,49 @@ def selftest():
         with open(os.path.join(td, "DEPOSITED.txt"), "w") as fh:
             fh.write("$450.00  (what I actually put in)\n")
         ck(L.deposited() == 450.0, "results\\DEPOSITED.txt overrides the reconstruction with the operator's own figure")
+
+        # ---- A75: A DEPOSIT IS NOT PROFIT -------------------------------
+        #
+        # THE REAL FAILURE, 2026-09-19. deposited() returned the one number
+        # in DEPOSITED.txt ($160) and the bank chip showed
+        # (bank - deposited)/deposited. The operator then put in $370.44 at
+        # 03:13 ET, the bank jumped, and the app told him his total return
+        # was over 100% -- mostly his own money handed back. His words: "the
+        # desktop tool I don't think accounted for the deposit, it says my
+        # total return is over 100%".
+        _kx = L.external
+        try:
+            L.external = [
+                # the real record pinrun wrote, verbatim
+                {"t": calendar.timegm((2026, 9, 19, 7, 13, 0)),
+                 "move": "deposit", "amount": 370.44},
+                # ...and the settlement-timing noise that must NOT count.
+                # The 09-17 log has a dozen of these.
+                {"t": calendar.timegm((2026, 9, 19, 8, 0, 0)),
+                 "move": "deposit", "amount": 2.0},
+                {"t": calendar.timegm((2026, 9, 19, 8, 5, 0)),
+                 "move": "withdrawal", "amount": -1.86},
+            ]
+            ck(abs(L.deposited() - (450.0 + 370.44)) < 1e-9,
+               "A75: a LATER deposit is added to what was put in "
+               "(%.2f) -- counting it as profit is what reported a >100%% "
+               "return on the operator's own money" % L.deposited())
+            L.external = [{"t": calendar.timegm((2026, 9, 19, 8, 0, 0)),
+                           "move": "deposit", "amount": 2.0}]
+            ck(L.deposited() == 450.0,
+               "NULL: a $2.00 move is settlement timing, not a transfer, and "
+               "must not move the baseline -- the 09-17 log has a dozen")
+            L.external = []
+            ck(L.deposited() == 450.0,
+               "NULL: no transfers at all leaves the operator's own figure "
+               "exactly as it was")
+            L.external = [{"t": None, "move": "deposit", "amount": None},
+                          {"t": 1, "move": "deposit", "amount": "junk"}]
+            ck(L.deposited() == 450.0,
+               "NULL: garbage transfer records are skipped, never counted "
+               "as zero-dollar deposits or crashed on")
+        finally:
+            L.external = _kx
         os.remove(os.path.join(td, "DEPOSITED.txt"))
         # bank_at walks the bank reading forward through settlements. Give it
         # two of its own, since the money no longer arrives from the log.
