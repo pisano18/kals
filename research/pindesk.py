@@ -486,10 +486,6 @@ class Ledger:
                 total += -amt
         return total
 
-    def withdrawn(self):
-        """Dollars the operator has taken back OUT since the baseline."""
-        return self.transfers_since_baseline(sign=-1)
-
     def deposited_at(self):
         """Epoch the DEPOSITED.txt figure was true as of. The operator gave
         '$160 I put in total' on 2026-09-17, so transfers after that date are
@@ -504,7 +500,51 @@ class Ledger:
         return None
 
     def deposited(self):
-        """EVERY dollar the operator has put in, not just the first ones.
+        """EVERY dollar the operator has put in -- FROM KALSHI'S OWN RECORDS.
+
+        A75c. The two versions before this one both guessed and both were
+        wrong. The first divided by a hand-typed $160 and called a $378
+        deposit profit. The second added transfers that `pinrun` had INFERRED
+        from balance movements -- and that inference invented a $58.37
+        withdrawal on an account Kalshi says has never had one, because
+        `realised` resets on restart and any P&L straddling a restart looks
+        like money moving.
+
+        `research/pinxfer.py` reads /portfolio/deposits and
+        /portfolio/withdrawals. No guessing. If the cache is missing we fall
+        back to the old path and the reconciliation line will show a gap,
+        which is the point -- a visible gap beats a confident wrong number.
+        """
+        d = self._xfers()
+        if d.get("deposits") or d.get("withdrawals"):
+            import pinxfer
+            din = pinxfer.totals(d["deposits"], d["withdrawals"])[0]
+            if din > 0:
+                return din
+        return self._deposited_legacy()
+
+    def _xfers(self):
+        """The transfer cache. PASS THE PATH -- `self.xfer_cache` lets the
+        self-test point at a sandbox. Without it the test read the REAL
+        account's deposits while believing it was isolated, which is the
+        identical failure pinledger.py documents."""
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import pinxfer
+            return pinxfer.load_cache(getattr(self, "xfer_cache", None))
+        except Exception:                          # noqa: BLE001
+            return {"deposits": [], "withdrawals": []}
+
+    def withdrawn(self):
+        """Dollars taken back OUT, from Kalshi's own records."""
+        d = self._xfers()
+        if d.get("deposits") or d.get("withdrawals"):
+            import pinxfer
+            return pinxfer.totals(d["deposits"], d["withdrawals"])[1]
+        return self.transfers_since_baseline(sign=-1)
+
+    def _deposited_legacy(self):
+        """The old reconstruction, kept only as a fallback.
 
         THE BUG THIS FIXES (2026-09-19). This returned a single figure -- the
         DEPOSITED.txt number, $160 -- and the bank chip showed
@@ -3788,6 +3828,10 @@ def selftest():
         ck(fs["orders"] == 5 and fs["fills"] == 4 and fs["zero"] == 1 and fs["contracts"] == 225.0 and fs["asked"] == 315.0
            and abs(fs["share"] - 225.0 / 315.0) < 1e-9, "fill stats: fills, lost races, contracts asked vs got")
         ck(L.bank()["bank"] == 500.0 and L.bank()["size"] == 85, "bank and size from the last autosize")
+        # ISOLATE THE TRANSFER CACHE FIRST. Without this the checks below
+        # read the REAL account's deposits and "planted $500" becomes
+        # $584.46 -- the same isolation failure pinledger.py documents.
+        L.xfer_cache = os.path.join(td, "no_transfers.json")
         ck(L.deposited() == 500.0, "nothing settled before the first reading, so deposited = first reading")
         with open(os.path.join(td, "DEPOSITED.txt"), "w") as fh:
             fh.write("$450.00  (what I actually put in)\n")
@@ -3852,6 +3896,39 @@ def selftest():
                "as zero-dollar deposits or crashed on")
         finally:
             L.external = _kx
+
+        # ---- A75c: KALSHI'S OWN RECORDS OUTRANK EVERY GUESS -------------
+        #
+        # pinrun INFERS transfers from balance movements, and `realised`
+        # resets on restart, so P&L straddling a restart reads as money
+        # moving. That invented a $58.37 WITHDRAWAL on an account Kalshi says
+        # has never had one. The operator: "I never took out 58.37."
+        _xc = os.path.join(td, "xfers.json")
+        with open(_xc, "w", encoding="utf-8") as fh:
+            json.dump({"deposits": [
+                {"amount_cents": 37800, "fee_cents": 756, "status": "applied",
+                 "created_ts": 1789801739, "finalized_ts": 1789801739},
+                {"amount_cents": 11000, "fee_cents": 0, "status": "applied",
+                 "created_ts": 1788906048, "finalized_ts": 1788906048}],
+                "withdrawals": []}, fh)
+        L.xfer_cache = _xc
+        # the INFERRED records say a $58.37 withdrawal happened. It did not.
+        L.external = [{"t": calendar.timegm((2026, 9, 17, 20, 16, 58)),
+                       "move": "withdrawal", "amount": -58.37}]
+        ck(abs(L.deposited() - (370.44 + 110.00)) < 1e-9,
+           "A75c: money put in comes from KALSHI (%.2f), not from the "
+           "DEPOSITED.txt guess and not from balance-move inference"
+           % L.deposited())
+        ck(L.withdrawn() == 0.0,
+           "A75c: and Kalshi says ZERO withdrawals, so the $58.37 pinrun "
+           "INFERRED is gone. It never happened, and it was inflating the "
+           "drawdown brake's high-water mark that halted the live bot")
+        L.xfer_cache = os.path.join(td, "gone.json")
+        ck(L.deposited() == 450.0,
+           "NULL: with no Kalshi cache it falls back to the operator's own "
+           "figure rather than reporting zero put in, which would make the "
+           "return infinite")
+        L.external = _kx
         os.remove(os.path.join(td, "DEPOSITED.txt"))
         # bank_at walks the bank reading forward through settlements. Give it
         # two of its own, since the money no longer arrives from the log.
