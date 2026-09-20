@@ -1507,9 +1507,19 @@ def arm_stats(entry, info, whatif, control, meta, now):
     h = (w or {}).get("h2h") or {}
     md = meta or {}
     paused = ((control or {}).get("paused") or {}).get(m or "") or {}
+    # PLAY WORKS ON ANY ARM THE APP HAS EVER SEEN RUNNING, not only on one it
+    # paused itself. `known` is the argv recorded off a PROVED command line
+    # the last time the arm had a process (lab_compute records it), so a
+    # STOPPED arm -- one that died in a memory squeeze, say -- restarts with
+    # exactly what it ran. Before this, Play was disabled for every arm on
+    # the board because results/lab_control.json had never been written.
+    known = ((control or {}).get("known") or {}).get(m or "") or {}
+    play_argv = paused.get("argv") or known.get("argv") or []
     started = md.get("started")
     run_started = md.get("run_started")
     return {
+        "spark": sparkline((w or {}).get("arm")),
+        "play_argv": play_argv,
         "match": m,
         "name": entry.get("name") or m or "?",
         "entry": entry,
@@ -1541,7 +1551,9 @@ def arm_stats(entry, info, whatif, control, meta, now):
         "pid": md.get("pid"), "cmdline": md.get("cmdline"),
         "paused_at": paused.get("at"),
         "can_pause": md.get("pid") is not None,
-        "can_play": bool(paused.get("argv")) and arm_launch_ok(paused.get("argv") or []),
+        # not running, and settings on file that the app may launch
+        "can_play": (md.get("pid") is None and not info.get("running")
+                     and bool(play_argv) and arm_launch_ok(play_argv)),
     }
 
 
@@ -1560,11 +1572,12 @@ def arm_row(st):
     """One (values, tag, stats) row for `fill()`. Numbers formatted so that
     sort_key reads them as numbers -- see the unit note on hours_cell."""
     cpc, stake, net, scaled = st["cpc"], st["stake"], st["net"], st["scaled"]
-    tag = "muted"
-    if st["state"] == LAB_PAUSED:
-        tag = "watch"
-    elif cpc is not None:
-        tag = "gain" if cpc > 0 else "loss"
+    # THE ROW'S COLOUR IS ITS STATE, nothing else. It used to be the SIGN of
+    # the head-to-head, so a STOPPED arm with a good record sat there in
+    # green and the operator read it as running: "some paused ones are
+    # green". Green = PLAYING, amber = PAUSED, grey = not running. The sign
+    # is already in the text of the cell (+1.25c / -0.75c).
+    tag = {LAB_PLAYING: "gain", LAB_PAUSED: "watch"}.get(st["state"], "muted")
     vals = (
         ("%s %s" % (LAB_GLYPH.get(st["state"], " "), st["state"])).strip(),
         st["name"],
@@ -1578,8 +1591,37 @@ def arm_row(st):
         hours_cell(st["run_h"]),
         hours_cell(None if st["left_min"] is None else st["left_min"] / 60.0),
         st["entry"].get("since") or DASH,
+        st.get("spark") or DASH,        # the mini chart, LAST so no index moves
     )
     return (vals, tag, st)
+
+
+SPARK = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(points, n=28):
+    """The arm's what-if curve as a row of blocks -- a mini chart in the row.
+
+    `points` are (t, value) pairs, oldest first. The last `n` are drawn,
+    scaled between their own low and high. Fewer than two points is a dash,
+    never a flat line pretending to be data. A NaN or a bad point is skipped.
+    """
+    vals = []
+    for p in (points or ())[-n:]:
+        try:
+            v = float(p[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if v != v:
+            continue
+        vals.append(v)
+    if len(vals) < 2:
+        return DASH
+    lo, hi = min(vals), max(vals)
+    if hi - lo < 1e-9:
+        return SPARK[3] * len(vals)
+    return "".join(SPARK[int(round((v - lo) / (hi - lo) * (len(SPARK) - 1)))]
+                   for v in vals)
 
 
 def arm_rows(experiments, prog, whatif, control, meta, now,
@@ -2484,8 +2526,13 @@ def run_gui():
     lab_tab = ttk.Frame(nb)
     nb.add(lab_tab, text="  Lab  ")
     lab_tab.grid_columnconfigure(0, weight=1)
-    lab_tab.grid_rowconfigure(2, weight=3)
-    lab_tab.grid_rowconfigure(5, weight=2)
+    # THE TABLE GETS THE ROOM. The operator, 2026-09-20: "the arm selector is
+    # basically impossible to choose from it's only one row at a time and
+    # it's a tiny box". The table now takes most of the tab; the story pane
+    # below it is short, because the full story and the big chart open in
+    # their own window from the Open button.
+    lab_tab.grid_rowconfigure(2, weight=6)
+    lab_tab.grid_rowconfigure(5, weight=1)
     lab_head = tk.Frame(lab_tab, bg=C["panel"], padx=14, pady=10)
     lab_head.grid(row=0, column=0, sticky="ew", pady=(8, 4))
     lab_count = tk.Label(lab_head, text="", bg=C["panel"], fg=C["text"],
@@ -2545,10 +2592,16 @@ def run_gui():
     f_arms, tv_arms = table(
         lab_tab,
         ("State", "Arm", "Head to head", "At our stake $", "Shared", "Settled",
-         "W-L", "Net $", "Scaled %", "Running", "Left", "Since"),
-        (110, 330, 110, 115, 70, 70, 70, 80, 85, 80, 70, 95),
-        height=11, title="THE ARMS", key="lab", story=arm_story)
+         "W-L", "Net $", "Scaled %", "Running", "Left", "Since", "Trend"),
+        (110, 300, 110, 115, 70, 70, 70, 80, 85, 80, 70, 95, 230),
+        height=22, title="THE ARMS", key="lab", story=arm_story)
     f_arms.grid(row=2, column=0, sticky="nsew", padx=2)
+    # THE WHEEL SCROLLS THREE ROWS. With the wheel bound to nothing, Windows
+    # delivered one row per notch to a Treeview this tall -- "only scrolls
+    # one at a time".
+    tv_arms.bind("<MouseWheel>",
+                 lambda e: (tv_arms.yview_scroll(-3 if e.delta > 0 else 3, "units"),
+                            "break")[1])
 
     # EVERYTHING IS KEYED BY THE ARM (its `match`), never by a log filename.
     # THE OPERATOR, 2026-09-18: "Make sure all the arms are on the app lab
@@ -2610,18 +2663,26 @@ def run_gui():
     lab_chart.grid(row=4, column=0, sticky="ew", padx=2, pady=(4, 0))
     register(lab_chart, "lab", "What if this arm had been live")
 
-    def draw_lab_chart(*_a):
-        """Draw only, for the SELECTED arm. Every number came off the worker."""
-        lab_chart.delete("all")
+    def draw_lab_chart(*_a, canvas=None):
+        """Draw only, for the SELECTED arm. Every number came off the worker.
+
+        `canvas` lets the pop-out dashboard draw the same picture bigger; the
+        inline chart passes nothing. Every plotted point is kept on the
+        canvas as `_pts` so the hover can name it.
+        """
+        cv = canvas or lab_chart
+        cv.delete("all")
+        cv._pts = []
         wf = lab_cache.get("whatif") or {}
         _st = selected_stats()
         log = (_st or {}).get("match")
         w = wf.get(log) if log else None
         if not w or len(w.get("live") or []) < 2 or len(w.get("arm") or []) < 2:
-            lab_pickhead.configure(text="")
-            lab_chart.create_text(16, 18, anchor="w", fill=C["muted"], font=("Segoe UI", 9),
-                                  text="no settled markets on both sides yet, so there is "
-                                       "nothing honest to compare")
+            if cv is lab_chart:
+                lab_pickhead.configure(text="")
+            cv.create_text(16, 18, anchor="w", fill=C["muted"], font=("Segoe UI", 9),
+                           text="no settled markets on both sides yet, so there is "
+                                "nothing honest to compare")
             return
         b0 = (lab_cache.get("b0") or {}).get(log)
         base = b0 if b0 else 0.0
@@ -2643,19 +2704,23 @@ def run_gui():
             _lead = "head to head on %d shared, contracts unknown" % _h["n"]
         else:
             _lead = "no shared market yet"
-        lab_pickhead.configure(
-            text="%s   |   %s scaled   %s" % (
-                _lead,
-                ("%+.1f%%" % w["pct"]) if w.get("pct") is not None
-                else money(w["diff"]),
-                ("%+.0f%% swing" % w["sd_pct"]) if w.get("sd_pct") is not None
-                else "swing not comparable"),
-            fg=C["gain"] if (_sign if _sign is not None else w["diff"]) > 0
-            else C["loss"])
+        _headtxt = "%s   |   %s scaled   %s" % (
+            _lead,
+            ("%+.1f%%" % w["pct"]) if w.get("pct") is not None
+            else money(w["diff"]),
+            ("%+.0f%% swing" % w["sd_pct"]) if w.get("sd_pct") is not None
+            else "swing not comparable")
+        _headfg = (C["gain"] if (_sign if _sign is not None else w["diff"]) > 0
+                   else C["loss"])
+        if cv is lab_chart:
+            lab_pickhead.configure(text=_headtxt, fg=_headfg)
+        else:
+            cv.create_text(16, 12, anchor="w", fill=_headfg, text=_headtxt,
+                           font=("Segoe UI", 10, "bold"))
         lv = [(t, base + v) for t, v in w["live"]]
         av = [(t, base + v) for t, v in w["arm"]]
-        W = max(lab_chart.winfo_width(), 300)
-        H = max(int(lab_chart["height"]), 120)
+        W = max(cv.winfo_width(), 300)
+        H = max(int(cv["height"]), 120)
         m = {"l": 60, "r": 132, "t": 14, "b": 22}
         allv = [v for _, v in lv] + [v for _, v in av]
         lo, hi = min(allv), max(allv)
@@ -2673,38 +2738,97 @@ def run_gui():
             return m["t"] + (hi - v) / (hi - lo) * (H - m["t"] - m["b"])
 
         if lo <= base <= hi:
-            lab_chart.create_line(m["l"], Y(base), W - m["r"], Y(base),
-                                  fill=C["grey"], dash=(3, 3))
-            lab_chart.create_text(m["l"] - 6, Y(base), text="$%.0f" % base,
-                                  fill=C["muted"], anchor="e", font=("Segoe UI", 8))
+            cv.create_line(m["l"], Y(base), W - m["r"], Y(base),
+                           fill=C["grey"], dash=(3, 3))
+            cv.create_text(m["l"] - 6, Y(base), text="$%.0f" % base,
+                           fill=C["muted"], anchor="e", font=("Segoe UI", 8))
         for v in (lo, hi):
-            lab_chart.create_text(m["l"] - 6, Y(v), text="$%.0f" % v, fill=C["muted"],
-                                  anchor="e", font=("Segoe UI", 8))
+            cv.create_text(m["l"] - 6, Y(v), text="$%.0f" % v, fill=C["muted"],
+                           anchor="e", font=("Segoe UI", 8))
         last = None
         for t, _v in lv:
             d = et_day(t)
             if d != last:
-                lab_chart.create_line(X(t), m["t"], X(t), H - m["b"], fill=C["panel2"])
-                lab_chart.create_text(X(t) + 2, H - m["b"] + 9, text=d[5:], fill=C["muted"],
-                                      anchor="w", font=("Segoe UI", 8))
+                cv.create_line(X(t), m["t"], X(t), H - m["b"], fill=C["panel2"])
+                cv.create_text(X(t) + 2, H - m["b"] + 9, text=d[5:], fill=C["muted"],
+                               anchor="w", font=("Segoe UI", 8))
                 last = d
-        for pts, col, wid in ((lv, C["blue"], 2),
-                              (av, C["gain"] if w["diff"] > 0 else C["loss"], 2)):
+        for pts, col, wid, lab in ((lv, C["blue"], 2, "REAL"),
+                                   (av, C["gain"] if w["diff"] > 0 else C["loss"], 2, "WHAT IF")):
             co = []
             for t, v in pts:
-                co += [X(t), Y(v)]
-            lab_chart.create_line(*co, fill=col, width=wid)
+                x, y = X(t), Y(v)
+                co += [x, y]
+                # kept for the hover: pixel, time, value, which line
+                cv._pts.append((x, y, t, v, lab, col))
+            cv.create_line(*co, fill=col, width=wid)
         for pts, col, txt in (
                 (lv, C["blue"], "REAL  $%.0f" % lv[-1][1]),
                 (av, C["gain"] if w["diff"] > 0 else C["loss"],
                  "WHAT IF  $%.0f" % av[-1][1])):
-            lab_chart.create_text(W - m["r"] + 8, Y(pts[-1][1]), text=txt, fill=col,
-                                  anchor="w", font=("Segoe UI", 9, "bold"))
-        lab_chart.create_text(W - m["r"] + 8, H - m["b"] + 9, anchor="w", fill=C["muted"],
-                              font=("Segoe UI", 8),
-                              text="both start at the real balance")
+            cv.create_text(W - m["r"] + 8, Y(pts[-1][1]), text=txt, fill=col,
+                           anchor="w", font=("Segoe UI", 9, "bold"))
+        cv.create_text(W - m["r"] + 8, H - m["b"] + 9, anchor="w", fill=C["muted"],
+                       font=("Segoe UI", 8),
+                       text="both start at the real balance   (hover a line for the "
+                            "market at that moment)")
+
+    def chart_hover(e):
+        """Name the nearest plotted point under the mouse. The operator,
+        2026-09-20: "can't hover and see info over the lab charts"."""
+        cv = e.widget
+        pts = getattr(cv, "_pts", None) or []
+        cv.delete("tip")
+        if not pts:
+            return
+        best, bd = None, 1e9
+        for p in pts:
+            d = (p[0] - e.x) ** 2 + (p[1] - e.y) ** 2
+            if d < bd:
+                best, bd = p, d
+        if best is None or bd > 18 ** 2:
+            return
+        x, y, t, v, lab, col = best
+        txt = "%s   %s ET   $%.2f" % (lab, et_str(t, "%a %b %d %I:%M %p"), v)
+        W = max(cv.winfo_width(), 300)
+        tx = min(x + 12, W - 250)
+        ty = max(y - 24, 6)
+        cv.create_rectangle(tx - 4, ty - 2, tx + 246, ty + 18, fill=C["panel2"],
+                            outline=col, tags="tip")
+        cv.create_text(tx, ty + 8, anchor="w", text=txt, fill=C["text"],
+                       font=("Segoe UI", 9), tags="tip")
+        cv.create_oval(x - 4, y - 4, x + 4, y + 4, outline=col, width=2, tags="tip")
 
     lab_chart.bind("<Configure>", draw_lab_chart)
+    lab_chart.bind("<Motion>", chart_hover)
+    lab_chart.bind("<Leave>", lambda e: lab_chart.delete("tip"))
+
+    def open_dashboard():
+        """One arm, full size: the big what-if chart with hover, and its whole
+        story. The operator, 2026-09-20: "you click one on the selector or
+        menu to open a full dashboard on it with the bigger chart and all
+        that"."""
+        st = selected_stats()
+        if not st:
+            messagebox.showinfo("Open an arm", "Click an arm in the table first.")
+            return
+        top = tk.Toplevel(root)
+        top.title("%s  --  %s" % (st["name"], st["state"]))
+        top.configure(bg=C["bg"])
+        top.geometry("1180x760")
+        big = tk.Canvas(top, bg=C["panel"], height=420, highlightthickness=0)
+        big.pack(fill="x", padx=8, pady=(8, 4))
+        body = tk.Text(top, bg=C["panel"], fg=C["text"], font=("Segoe UI", 10),
+                       relief="flat", wrap="word", padx=14, pady=10)
+        body.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        body.insert("end", arm_story(st))
+        body.configure(state="disabled")
+        big.bind("<Configure>", lambda e: draw_lab_chart(canvas=big))
+        big.bind("<Motion>", chart_hover)
+        big.bind("<Leave>", lambda e: big.delete("tip"))
+        top.after(50, lambda: draw_lab_chart(canvas=big))
+
+    small_button(lab_pickbar, "⤢ Open", open_dashboard).pack(side="left", padx=(10, 0))
     lab_body.grid(row=5, column=0, sticky="nsew", padx=2, pady=(4, 6))
     register(lab_body, "lab", "The selected arm, in full")
 
@@ -2825,8 +2949,8 @@ def run_gui():
         if not st or not st["can_play"]:
             return
         ctrl = lab_cache.get("control") or load_control()
-        rec = (ctrl.get("paused") or {}).get(st["match"]) or {}
-        argv = rec.get("argv") or []
+        # the argv it was PAUSED with, else the one it was last SEEN running
+        argv = list(st.get("play_argv") or [])
         if not arm_launch_ok(argv):
             messagebox.showerror("Cannot start this arm",
                                  "The settings recorded for %s are not a paper arm this "
@@ -2928,6 +3052,8 @@ def run_gui():
         meta = {}
         wf, names, b0s = {}, {}, {}
         bymatch = {e.get("match"): e.get("name") for e in pinlab.EXPERIMENTS}
+        _known = load_control()          # the overlay; `known` is filled below
+        _known_before = json.dumps(_known.get("known") or {}, sort_keys=True)
         # (t, pnl, TICKER). The ticker is what lets pinlab.whatif compare the
         # markets the arm and live BOTH traded; without it the chart credits an
         # arm for every close it was never in.
@@ -2960,6 +3086,16 @@ def run_gui():
             for _pid, _cl in procs:
                 if arm_kill_ok(_cl, match):
                     md["pid"], md["cmdline"] = _pid, _cl
+                    # REMEMBER WHAT IT RUNS, so Play can bring it back after
+                    # it dies. Recorded only off a command line arm_kill_ok
+                    # has PROVED is this arm and has no --live in it, and
+                    # only if arm_launch_ok would accept it back -- the same
+                    # two locks Pause uses.
+                    _argv = split_cmdline(_cl)[1:]
+                    if arm_launch_ok(_argv):
+                        _known.setdefault("known", {})[match] = {
+                            "argv": _argv, "at": time.time(),
+                            "name": bymatch.get(match) or match}
                     break
             meta[match] = md
             if not logs:
@@ -2983,6 +3119,13 @@ def run_gui():
         lab_cache["prog"], lab_cache["whatif"] = prog, wf
         lab_cache["names"], lab_cache["b0"] = names, b0s
         lab_cache["meta"] = meta
+        # write the overlay only when a recorded argv actually changed, so a
+        # 45-second refresh does not rewrite the file for nothing
+        if json.dumps(_known.get("known") or {}, sort_keys=True) != _known_before:
+            try:
+                save_control(_known)
+            except OSError:
+                pass
         lab_cache["control"] = load_control()
 
     def draw_lab():
@@ -3022,7 +3165,7 @@ def run_gui():
                  + ("   (filtered)" if len(rows) != total else ""))
         lab_cache["stats"] = {r[2]["match"] or r[2]["name"]: r[2] for r in rows}
         fill(tv_arms, rows or [(("", "nothing matches these filters", "", "", "",
-                                 "", "", "", "", "", "", ""), "muted")])
+                                 "", "", "", "", "", "", "", ""), "muted")])
         # KEEP THE SELECTION ACROSS A REDRAW. The table is rebuilt every time
         # the worker finishes, and a selection that jumped back to row one
         # every 45 seconds would take the chart and the detail pane with it.
@@ -4154,6 +4297,45 @@ def selftest():
        "paused again")
     ck(_by["Arm A, alive and ahead"][2]["can_pause"] is True,
        "...and a playing arm whose process was PROVED can be paused")
+    # ---- the row colour is the STATE, not the sign of the number ---------
+    ck(_by["Arm A, alive and ahead"][1] == "gain"
+       and _by["Arm B, paused by the operator"][1] == "watch"
+       and _by["Arm C, nothing measured yet"][1] == "muted",
+       "ROW COLOUR = STATE: playing green, paused amber, stopped grey. It used "
+       "to be the sign of the head-to-head, so a STOPPED arm with a good record "
+       "sat in green and read as running -- 'some paused ones are green'")
+    # ---- Play works on a STOPPED arm the app has SEEN running -------------
+    _CTRL2 = {"paused": {}, "deleted": {},
+              "known": {"--arm-c": {"argv": list(_OK_ARGV), "at": _NOW - 100}}}
+    _rows2 = arm_rows(_E, _P, _W, _CTRL2, _M, _NOW)
+    _by2 = {r[2]["name"]: r for r in _rows2}
+    ck(_by2["Arm C, nothing measured yet"][2]["can_play"] is True,
+       "A STOPPED arm whose argv was recorded off a proved process can be "
+       "Played. Before this only a Pause recorded an argv, no Pause had ever "
+       "succeeded, and Play was greyed for every arm on the board")
+    ck(_by2["Arm A, alive and ahead"][2]["can_play"] is False,
+       "NULL: a RUNNING arm cannot be Played -- that would start a second copy")
+    _CTRL3 = {"paused": {}, "deleted": {},
+              "known": {"--arm-c": {"argv": ["--live", "x.py"], "at": _NOW}}}
+    ck(arm_rows(_E, _P, _W, _CTRL3, _M, _NOW)[0][2]["can_play"] is False
+       or all(not r[2]["can_play"] for r in arm_rows(_E, _P, _W, _CTRL3, _M, _NOW)),
+       "NULL: a recorded argv with --live in it is never playable, whatever "
+       "wrote it")
+    # ---- the mini chart ---------------------------------------------------
+    ck(sparkline([(1, 0.0), (2, 1.0), (3, 2.0), (4, 3.0)]) == "▁▃▆█",
+       "a rising curve draws rising blocks")
+    ck(sparkline([(1, 5.0), (2, 5.0), (3, 5.0)]) == "▄▄▄",
+       "a flat curve is a flat line, mid-height, not a crash on a zero range")
+    ck(sparkline([]) == DASH and sparkline([(1, 1.0)]) == DASH
+       and sparkline(None) == DASH,
+       "NULL: fewer than two points is a dash -- never a line that looks like "
+       "data")
+    ck(sparkline([(1, 0.0), (2, float("nan")), (3, "x"), (4, 2.0)]) == "▁█",
+       "NULL: a NaN or a garbage point is skipped, not drawn as zero")
+    ck(len(sparkline([(i, float(i)) for i in range(100)])) == 28,
+       "and only the last 28 points are drawn, so the column has a fixed width")
+    ck(_by["Arm A, alive and ahead"][0][12] != "" ,
+       "the Trend column is the LAST column, so no earlier index moved")
     _cpc = [r[0][2] for r in _rows]
     _num = sorted([c for c in _cpc if c != DASH], key=sort_key)
     ck(_num == ["-0.75c", "+1.25c"],
@@ -4275,8 +4457,8 @@ def selftest():
        "a Lab that throws writes its traceback to results\\pindesk.err. That "
        "`except` was a bare `pass` and swallowed every mistake the tab could "
        "make, which is the worst place in the app for silence")
-    ck("lab_tab.grid_rowconfigure(2, weight=3)" in _lab_src
-       and "lab_tab.grid_rowconfigure(5, weight=2)" in _lab_src
+    ck("lab_tab.grid_rowconfigure(2, weight=6)" in _lab_src
+       and "lab_tab.grid_rowconfigure(5, weight=1)" in _lab_src
        and not [w for w in ("lab_head", "lab_filter", "f_arms", "lab_pickbar",
                             "lab_chart", "lab_body") if w + ".pack(" in _lab_src],
        "THE LAB LAYS OUT WITH GRID, not pack, and NOT ONE of its six direct "
@@ -4291,7 +4473,7 @@ def selftest():
            "%s is placed with grid -- ONE geometry manager per container, or "
            "tk hangs the whole window" % _w.split(".grid")[0])
     ck("lab_chart = tk.Canvas(lab_tab, bg=C[\"panel\"], height=200" in _lab_src
-       and 'H = max(int(lab_chart["height"]), 120)' in _lab_src,
+       and 'H = max(int(cv["height"]), 120)' in _lab_src,
        "the chart stays a FIXED height, so draw_lab_chart may keep measuring "
        "it by its `height` option; make it flexible and that line reads the "
        "configured number while the canvas is a different size")
