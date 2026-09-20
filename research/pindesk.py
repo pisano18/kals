@@ -456,14 +456,21 @@ class Ledger:
     # $1-$4.54 that are just positions settling between two bank reads.
     TRANSFER_MIN = 25.0
 
-    def transfers_since_baseline(self):
-        """Net dollars the operator moved IN after the DEPOSITED.txt figure.
+    def transfers_since_baseline(self, sign=1):
+        """Dollars moved after the DEPOSITED.txt figure. `sign` 1 for deposits
+        IN, -1 for withdrawals OUT. Always returns a positive magnitude.
+
+        DEPOSITS ONLY, NOT NET -- this was wrong in the first version of the
+        fix and the operator caught it. "Money put in" is what he handed the
+        account; taking some back out later does not un-deposit it. Netting
+        the $58.37 withdrawal against the $370.44 deposit made the divisor
+        $472.07 instead of $530.44 and the return read high again.
 
         pinrun's classify_bank_move() already spots these and logs them as
         `external`; nothing read them until now.
         """
         base_t = self.deposited_at()
-        net = 0.0
+        total = 0.0
         for e in self.external:
             try:
                 amt = float(e.get("amount") or 0.0)
@@ -473,8 +480,15 @@ class Ledger:
                 continue                      # settlement noise, not a transfer
             if base_t and e["t"] and e["t"] <= base_t:
                 continue                      # already inside the baseline
-            net += amt
-        return net
+            if sign > 0 and amt > 0:
+                total += amt
+            elif sign < 0 and amt < 0:
+                total += -amt
+        return total
+
+    def withdrawn(self):
+        """Dollars the operator has taken back OUT since the baseline."""
+        return self.transfers_since_baseline(sign=-1)
 
     def deposited_at(self):
         """Epoch the DEPOSITED.txt figure was true as of. The operator gave
@@ -518,7 +532,7 @@ class Ledger:
                 return None
             before = sum(s["pnl"] for s in self.settled if s["t"] and s["t"] < fb["t"])
             base = fb["bank"] - before
-        return base + self.transfers_since_baseline()
+        return base + self.transfers_since_baseline(sign=1)
 
     def bank_at(self, epoch):
         """The bank at an instant: the last real reading at or before it, plus
@@ -3255,8 +3269,19 @@ def run_gui():
             # every settled market, measured from our own fills, and it does
             # not move when he transfers anything.
             made = sum(s["pnl"] for s in ledger.settled)
-            s_.configure(text="%s made on $%.2f put in (%s)"
-                         % (money(made, True), dep, pct(made / dep)))
+            out = ledger.withdrawn()
+            # A75b: SAY SO WHEN IT DOES NOT ADD UP. put in - taken out + made
+            # should equal the bank. On 2026-09-19 it was $106 short, and a
+            # return figure quoted next to an unexplained $106 is a figure
+            # nobody should act on. Most likely the DEPOSITED.txt baseline
+            # understates what was actually put in.
+            short = b["bank"] - (dep - out + made)
+            txt = "%s made on $%.2f put in (%s)" % (money(made, True), dep,
+                                                    pct(made / dep))
+            if abs(short) >= 20.0:
+                txt += "  --  $%.2f UNACCOUNTED, check DEPOSITED.txt" % short
+            s_.configure(text=txt,
+                         fg=C["loss"] if abs(short) >= 20.0 else C["muted"])
         v, s_ = chips["size"]
         v.configure(text=("%g contracts" % b["size"]) if b and b.get("size") else "?")
         s_.configure(text=("about $%.0f a bet" % (b["size"] * 0.97)) if b and b.get("size") else "")
@@ -3794,6 +3819,23 @@ def selftest():
                "A75: a LATER deposit is added to what was put in "
                "(%.2f) -- counting it as profit is what reported a >100%% "
                "return on the operator's own money" % L.deposited())
+            # A WITHDRAWAL MUST NOT REDUCE "PUT IN". The first version of this
+            # fix netted them and the operator caught it: the $58.37 he took
+            # out made the divisor $472.07 instead of $530.44, and the return
+            # read high again. Taking money back out does not un-deposit it.
+            L.external = [
+                {"t": calendar.timegm((2026, 9, 19, 7, 13, 0)),
+                 "move": "deposit", "amount": 370.44},
+                {"t": calendar.timegm((2026, 9, 19, 9, 0, 0)),
+                 "move": "withdrawal", "amount": -58.37},
+            ]
+            ck(abs(L.deposited() - (450.0 + 370.44)) < 1e-9,
+               "A75: a WITHDRAWAL does not reduce money put in (%.2f) -- "
+               "netting it shrinks the divisor and inflates the return"
+               % L.deposited())
+            ck(abs(L.withdrawn() - 58.37) < 1e-9,
+               "...it is tracked separately as money taken out (%.2f)"
+               % L.withdrawn())
             L.external = [{"t": calendar.timegm((2026, 9, 19, 8, 0, 0)),
                            "move": "deposit", "amount": 2.0}]
             ck(L.deposited() == 450.0,
