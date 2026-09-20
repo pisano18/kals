@@ -227,6 +227,15 @@ foreach ($p in $procs) {
     foreach ($k in $keep) { if ($cl -like "*--arm-name $k*") { $isKeeper = $true; break } }
     if (-not $isKeeper) { $stale += $p }
 }
+# -Only NARROWS THE PLAN, SO IT MUST DISABLE THE SWEEP. Run with -Only and
+# the plan holds one arm; every other arm then looks "not in the plan" and the
+# sweep retires the whole fleet. That is exactly what happened on the first
+# run of this script -- 21 synced arms killed by a filter meant to start one.
+# A partial run may never decide what is stale.
+if ($Only -and $stale.Count) {
+    "-Only is set, so the stale sweep is SKIPPED ($($stale.Count) arm(s) left alone)"
+    $stale = @()
+}
 if ($stale.Count) {
     "retiring $($stale.Count) stale arm(s) running pre-sync flag lists:"
     foreach ($s in $stale) {
