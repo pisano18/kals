@@ -218,7 +218,16 @@ $botArgs = @(
     # headroom, the book and the close budget. BAR: revert at the first
     # loss on a boosted fill in the first 20 boosted closes; at 20 clean,
     # 2.0. Fill quality at the larger size is the unproven part (rule 5).
-    "--band-mult", "0.90", "0.94", "1.5",
+    # --band-mult 0.90 0.94 1.5 REMOVED 2026-09-20 ~08:0xZ (v-noboost). Its
+    # own pre-registered bar, written into VERSIONS.md at deploy: "revert at
+    # the FIRST loss on a boosted fill in the first 20 boosted closes." The
+    # first boosted loss came on the THIRD boosted close -- KXBNB15M-
+    # 26SEP191230-30, -$61.75, the fill the 1.5x multiplied into 83 contracts
+    # where 23 existed -- and `band_boost_off` fired at 16:30:20Z on 09-19.
+    # But that switch lives in memory and every restart re-armed it; the bot
+    # has been restarted eight times since. Lifetime: 3 boosts, 92 boosted
+    # contracts, +$5.28. The bar is met; the flag goes. Restore by putting the
+    # line back:   "--band-mult", "0.90", "0.94", "1.5",
     # AMENDMENT 48 + 55, 2026-09-18 ~23:5xZ. The operator: "Yes a48 live,
     # make sure it's got good confidence when buying in the last 10 seconds,
     # have it run at the full normal rate immediately, cut at first loss. If

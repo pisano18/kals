@@ -1,3 +1,33 @@
+# v-noboost -- 2026-09-20 -- LIVE: the 90-94c 1.5x boost is removed, on its own pre-registered bar
+
+`--band-mult 0.90 0.94 1.5` (A53, v-bands, live since 09-18 22:46Z) shipped
+with this bar written at deploy: **"revert at the FIRST loss on a boosted fill
+in the first 20 boosted closes; at 20 clean, raise to 2.0."**
+
+The first boosted loss came on the **third** boosted close:
+`KXBNB15M-26SEP191230-30`, -$61.75, where the 1.5x multiplied the order into
+83 contracts on a level that held 23. `band_boost_off` fired at
+2026-09-19T16:30:20Z, as designed -- **but the switch lives in process memory
+and every restart re-armed it.** The bot has restarted eight times since.
+
+Lifetime, live fills: **3 boosts, 92 boosted contracts, +$5.28, 1 losing
+close.** The bar is met. The flag goes. This is not a judgement about the
+90-94c band -- it is the best band we have (70 closes, 1 loss, 6.4c a
+contract) -- it is the bot keeping a promise it wrote down before the data
+came in.
+
+Restore: put `"--band-mult", "0.90", "0.94", "1.5",` back in `restart_bot.ps1`
+and restart. A persistent off-switch would be the right way to bring it back.
+
+## Also corrected here
+
+v-hedgefill's DEPLOY block says `--hedge-slip` went live at 21:58:25Z. The
+21:58 restart shipped the A70 CODE with the flag at its 0.0 default; the flag
+itself first appears in a `start` record at **2026-09-19T22:50:22Z**. So
+`--hedge-slip 0.03` has been live since 22:50Z, not 21:58Z.
+
+---
+
 # v-proportion -- 2026-09-20 -- LIVE: hedge in proportion to conviction, and a quarter off the bet
 
 **DEPLOYED 2026-09-20 05:46:57Z (01:46 ET), pid 1412748, SHA `0061111`.** First autosize: 20 -> 70 contracts at the $825.04 bank (was 93 at brake 3.00). Start record: hedge_prop True, full 0.20, half 0.40. One live process, no halt.

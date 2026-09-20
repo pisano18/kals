@@ -321,7 +321,7 @@ unused in every `order` record (`ask_seen` vs `exec_price`).
 
 ---
 
-## Paper arms: 33 running
+## Paper arms: 34 running (19 relaunched 2026-09-20 07:4xZ by `start_missing.ps1`)
 
 `research/pinlab.py` is the register -- 54 entries with what each tests,
 why, and what good and bad look like. The desktop app's Lab tab shows every
@@ -351,8 +351,14 @@ put its loss rate under break-even (about 120 clean closes).
 
 ## Resources and rules of engagement
 
-- Disk **25.0 GB** free (guard is 6 GB; below 5 GB the collectors STOP).
-  RAM **3.8 GB** free. Both collectors alive.
+- Disk **18.7 GB** free at 2026-09-20 08:0xZ, **falling ~3 GB a day**
+  (`kalshi_data` is 68 GB and writes ~130 MB an hour). The 6 GB guard is a
+  HARD COLLECTION STOP and at this rate it is about **four days away
+  (~09-24)**. Archiving the tape is the next infrastructure job; nothing
+  else in this file matters if the tape stops.
+  RAM **3.3 GB** of 15.8 free with 34 arms + live + collectors + the app;
+  each arm is ~40 MB, so RAM is NOT what limits the arm count. Both
+  collectors alive.
 - **Never kill `python.exe` broadly** -- filter on `*research*`.
 - The operator restarts the live bot himself: desktop app **Pause -> Start**,
   or `! powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
