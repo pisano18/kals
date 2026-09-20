@@ -266,9 +266,20 @@ unused in every `order` record (`ask_seen` vs `exec_price`).
 5. **Insurance loses.** Hedges bought under 40c, while the market still
    gave our side 73-90%, hurt 5 times out of 5 (-$41.72). Hedges bought
    over 40c helped 4 of 4 (+$62.28). Hence `--hedge-price 0.60`.
-6. **2026-09-13 was a SATURDAY** and Saturday carries about twice a
-   weekday's cheap supply. Any weekday compared against it looks like
-   decay. **All 28 of its cheap fills would be allowed by today's rules** --
+6. **2026-09-13 was a SUNDAY. This file, `HANDOFF.md` and the memory notes
+   all called it a Saturday and they were all wrong** (corrected
+   2026-09-19; `date.fromisoformat('2026-09-13').strftime('%A')` = Sunday).
+   The Saturdays are **09-12** and **09-19**.
+
+   The WEEKEND effect is real and survives the correction -- 09-13 (Sun) has
+   the richest cheap supply in the whole sample, 45.5% of contracts bought
+   under 95c against 31.2% on 09-12 (Sat) and 6-30% on weekdays. What is
+   withdrawn is the LABEL: "Saturday carries twice a weekday's supply" was
+   measured on a Sunday, so any weekday-vs-Saturday comparison built on it
+   is attached to the wrong day. Compare like-for-like day of week, and
+   check the day of week with the calendar, never from memory.
+
+   **All 28 of its cheap fills would be allowed by today's rules** --
    they were all at 30 s or less, where there is no floor and no cap.
 7. **`realised` in a settled record is a RUNNING TOTAL that resets on
    restart.** The per-fill number is `pnl_c`, in cents. Summing `realised`
