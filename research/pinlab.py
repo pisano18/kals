@@ -1378,10 +1378,36 @@ def summarise_log(path):
     return {"settled": n, "won": won, "lost": lost, "net": net}
 
 
-def arm_series(path):
+# AMENDMENT 80 (2026-09-20): DATA FROM BEFORE THIS INSTANT IS NOT COMPARABLE.
+#
+# The operator: *"For the bots that missed features or didn't accurately
+# represent their performance against live for whatever reason, either fill
+# it or rerun it or whatever to fill the wrong or missing data in, otherwise
+# if it's wrong just delete that portion of the data. Nothing is better than
+# wrong."*
+#
+# He is right and it cannot be filled. Until A71 (2026-09-19 ~21:45Z) a paper
+# arm could not hedge AT ALL -- `hedge_meta` was written at two live-only
+# sites, so a paper position never had a strike and its alarm never fired.
+# The live bot hedged over that whole period. So on any LOSING close the arm
+# and the bot were running different strategies, and no amount of re-reading
+# the logs recovers what the arm would have done: the hedge decision needs
+# the second-by-second belief, which was never computed.
+#
+# Re-running is impossible too -- a paper arm trades the live market as it
+# happens; there is no way to replay 09-13..09-19 through it.
+#
+# So the bad window is DROPPED. Every arm was relaunched onto current code on
+# 2026-09-20, and from that point the comparison is honest. Points before the
+# cutoff are excluded from the head-to-head rather than quietly averaged in.
+COMPARABLE_SINCE = 1789853100.0      # 2026-09-19T21:45:00Z, the A71 commit
+
+
+def arm_series(path, since=None):
     """[(epoch, pnl, ticker, contracts)] and total contracts, oldest first.
 
     `path` may be a list of logs (join_logs), read in order and merged.
+    `since` (epoch) drops everything older -- see COMPARABLE_SINCE.
 
     THE CONTRACT COUNT IS ON EVERY POINT, not just the total, because the
     head-to-head in `whatif` compares a 20-contract paper arm against a
@@ -1394,7 +1420,7 @@ def arm_series(path):
     if isinstance(path, (list, tuple)):
         pts, contracts = [], 0.0
         for p in path:
-            a, b = arm_series(p)
+            a, b = arm_series(p, since)
             pts.extend(a)
             contracts += b
         pts.sort()
@@ -1444,6 +1470,14 @@ def arm_series(path):
                 # "this arm was never in the close that lost the money", and on
                 # 2026-09-19 it reported an arm at +201% that was $58 BEHIND
                 # live on every market the two actually shared.
+                #
+                # A80: and a point older than `since` is DROPPED, not averaged
+                # in. Before A71 a paper arm could not hedge while the live bot
+                # could, so on a losing close the two were running different
+                # strategies and the comparison is not wrong by a little -- it
+                # is measuring the hedge instead of the flag.
+                if since is not None and ts < float(since):
+                    continue
                 pts.append((ts, v, r.get("ticker")))
     # Contracts are attached AFTER the whole log is read: a market can be
     # topped up after it has been seen, and a count taken at the settled line
@@ -2078,6 +2112,47 @@ def selftest():
     ck(w7["extra_losses"] == 0 and w7["extra_wins"] == 0 and w7["arm_losses"] == 0,
        "NULL: a market that settled at exactly zero is not a loss for either "
        "side -- the test is v < 0, not v <= 0")
+
+    # ---- A80: DATA FROM BEFORE THE ARMS COULD HEDGE IS DROPPED -----------
+    #
+    # "Nothing is better than wrong." Until A71 a paper arm could not hedge
+    # while the live bot could, so every losing close before that compares
+    # two different strategies. It cannot be filled (the hedge decision needs
+    # a belief that was never computed) or re-run (an arm trades the live
+    # market as it happens), so `since` drops it.
+    import tempfile as _tf80
+    with _tf80.TemporaryDirectory() as _td80:
+        _p80 = os.path.join(_td80, "a.jsonl")
+        with open(_p80, "w", encoding="utf-8") as fh:
+            for _t80, _v in (("2026-09-18T12:00:00Z", 5.0),     # before A71
+                             ("2026-09-19T12:00:00Z", -9.0),    # before A71
+                             ("2026-09-20T01:00:00Z", 3.0)):    # after
+                fh.write(json.dumps({"kind": "settled", "ticker": "T",
+                                     "want": "yes", "result": "yes",
+                                     "pnl_c": _v * 100, "t": _t80}) + "\n")
+            fh.write(json.dumps({"kind": "signal", "ticker": "T",
+                                 "take_n": 20.0,
+                                 "t": "2026-09-20T01:00:00Z"}) + "\n")
+        _all80, _ = arm_series(_p80)
+        _cut80, _ = arm_series(_p80, since=COMPARABLE_SINCE)
+        ck(len(_all80) == 3 and len(_cut80) == 1,
+           "PLANTED: three settled points, two of them before the A71 cutoff "
+           "-- `since` keeps only the one that is comparable (%d of %d)"
+           % (len(_cut80), len(_all80)))
+        ck(_cut80 and abs(_cut80[0][1] - 3.0) < 1e-9,
+           "...and it is the RIGHT one: the post-cutoff point, not the first "
+           "point shifted")
+        ck(len(arm_series(_p80, since=0)[0]) == 3,
+           "NULL: since=0 keeps everything, so the floor is opt-in and an "
+           "arm scored without it is unchanged")
+        ck(len(arm_series(_p80, since=4e9)[0]) == 0,
+           "NULL: a cutoff in the future keeps nothing rather than raising -- "
+           "an arm with no comparable data must report none, not stale data")
+    import calendar as _cal80
+    ck(COMPARABLE_SINCE > _cal80.timegm((2026, 9, 19, 12, 0, 0))
+       and COMPARABLE_SINCE < _cal80.timegm((2026, 9, 20, 0, 0, 0)),
+       "the cutoff sits on 2026-09-19 evening UTC, when A71 landed -- if this "
+       "ever drifts, every arm comparison silently changes window")
     print("pinlab selftest: OK (%d entries: %s)"
           % (len(EXPERIMENTS), ", ".join("%s %d" % (k, v) for k, v in sorted(counts().items()))))
 

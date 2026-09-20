@@ -3165,8 +3165,15 @@ def run_gui():
             if not logs:
                 continue
             try:
+                # A80: score from COMPARABLE_SINCE only. Before A71 no paper
+                # arm could hedge while the live bot could, so every losing
+                # close in that window compares two different strategies. It
+                # cannot be filled in (the hedge decision needs a belief that
+                # was never computed) and it cannot be re-run (an arm trades
+                # the live market as it happens), so it is dropped.
                 arm_pts, arm_ct = pinlab.arm_series(
-                    [os.path.join(ledger.results, l) for l in logs])
+                    [os.path.join(ledger.results, l) for l in logs],
+                    since=pinlab.COMPARABLE_SINCE)
                 if not arm_pts:
                     continue
                 t0 = arm_pts[0][0]

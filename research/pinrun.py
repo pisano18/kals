@@ -5174,6 +5174,29 @@ def _selftest_body():
         ck(_lp78.index('_gate("early_dear"') > _lp78.index('_gate("early_cheap"'),
            "...and it sits beside the 90c floor, so the early leg's price "
            "band is stated in one place")
+        # A78b: the ceiling binds the SWEEP too, or it is only half a rule.
+        ck("_limit = min(_limit, EARLY_MAX_PRICE)" in _lp78,
+           "A78b: the sweep LIMIT is capped at the ceiling on the early leg. "
+           "Caught live within the hour of deploy: the 05:00 DOGE close "
+           "signalled at 97.3c (correctly allowed) and the sweep filled at "
+           "97.92c. A gate checks the price we SEE; only the limit decides "
+           "what we GET")
+        # ANCHOR ON THE WHOLE LINE at its real indentation. "out = pintake.
+        # take(" is a SUBSTRING of the hedge path's "_hout = pintake.take(",
+        # which sits EARLIER in trade_loop -- the trap this file documents in
+        # four other places, and it caught this check on its first run.
+        _send78 = next(i for i, ln in enumerate(_lp78.split("\n"))
+                       if ln.strip().startswith("out = pintake.take("))
+        _cap78 = next(i for i, ln in enumerate(_lp78.split("\n"))
+                      if ln.strip() == "_limit = min(_limit, EARLY_MAX_PRICE)")
+        ck(_cap78 < _send78,
+           "...and the cap is applied BEFORE the order is sent (line %d vs %d)"
+           % (_cap78, _send78))
+        ck('_leg46 in ("early", "early_once")' in
+           _lp78[_lp78.index("_limit = min(_limit, EARLY_MAX_PRICE)") - 200:
+                 _lp78.index("_limit = min(_limit, EARLY_MAX_PRICE)")],
+           "...on the EARLY leg only -- it must never narrow the main "
+           "window's sweep, which is where 5.63c a contract comes from")
         # the real fill this exists for: 98c at tau 45 on the BTC 16:00 close
         for _px, _ceil, _want in ((0.98, 0.975, True), (0.975, 0.975, False),
                                   (0.97, 0.975, False), (0.9751, 0.975, True)):
@@ -10430,6 +10453,18 @@ def trade_loop(a, rec, book, idx, series_index):
                     # nothing. `ask_seen` and `limit_sent` are both logged so
                     # PREREG_sweep.md's bar can be scored.
                     _limit = sweep_limit(f, price, want)
+                    # A78b: THE CEILING MUST BIND THE SWEEP, NOT JUST THE
+                    # SIGNAL. Caught live within the hour: the 05:00 DOGE
+                    # close signalled at 97.3c -- under the 97.5c ceiling, so
+                    # the gate correctly let it through -- and the sweep then
+                    # walked the ladder to an average of 97.92c. The gate
+                    # checks the price we SEE; only the limit decides what we
+                    # GET. This is the same shape as the dump guard's known
+                    # hole, and shipping half a ceiling is worse than none:
+                    # the rule becomes unpredictable rather than merely loose.
+                    if (_leg46 in ("early", "early_once")
+                            and EARLY_MAX_PRICE < 1.0):
+                        _limit = min(_limit, EARLY_MAX_PRICE)
                     # ---- AMENDMENT 35: ASK FOR WHAT THE LADDER HOLDS -------
                     # THE SWEEP WAS HALF-BUILT. AMENDMENT 18 raised the PRICE
                     # we are willing to pay to _limit, so a lost race takes
