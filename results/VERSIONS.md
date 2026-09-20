@@ -1,3 +1,57 @@
+# v-nocap -- 2026-09-20 -- LIVE: the 97.5c early-leg ceiling is REMOVED, hours after it shipped
+
+The operator: *"I actually really want to keep the 45 normal"* and *"If you
+think dropping sweep cap makes more do it. I just want the most money."*
+
+## The measurement that killed it
+
+The 45-second leg is not the risky leg. It is the LOW-MARGIN leg, and its
+loss rate is BETTER than the main window's:
+
+| leg | markets | contracts | avg paid | money | c/contract | **loss rate** |
+|---|---|---|---|---|---|---|
+| 45s early | 136 | 8,671 | 96.87c | +$110.67 | 1.28c | **1.5%** |
+| main window | 515 | 21,431 | 95.45c | +$441.53 | 2.06c | 2.5% |
+
+Two losing markets in 136, and the hedge turned one of them into **+$4.36**.
+
+The ceiling would have touched **51% of its fills**. The case for it was that
+the blocked budget would flow into the 5.6c-a-contract last-ten-seconds
+window. **That thesis is now measured and it is FALSE:**
+
+| window | fills | avg filled | avg our bet | we get |
+|---|---|---|---|---|
+| last 10s | 50 | 62.6 | 65.8 | 95% |
+| 11-30s | 225 | 62.4 | 75.8 | 82% |
+| 31-45s | 140 | 64.4 | 93.4 | **69%** |
+
+In every window we already fill less than we ask for, and the shortfall grows
+with our bet. **There is nowhere for the budget to go** -- the book in the
+good window is thinner than we have grown. Blocking the early leg would not
+have moved money to a better window; it would simply have been less trading.
+
+`--early-max-price` stays in the code for a paper arm to test properly.
+
+## The bigger thing this turned up
+
+Our bet has outgrown the window that pays best. At 31-45s we fill 69% of what
+we ask for; the last ten seconds -- 5.6c a contract, zero losing closes in 71
+-- is the hardest place to put size. This is the same finding as "a bigger
+bet does not earn more" (correlation -0.05 over six days) arriving from a
+different direction, and it is an argument for a SMALLER bet, not a bigger
+one. Not acted on; raised for the operator.
+
+## Also confirmed, no change needed
+
+**`depth_floor` is not costing us anything.** It fired 886 times, which
+looked like the biggest gate in the bot. Of the 774 that fired under the
+live `--min-fill-frac 0`, **every single one had under ONE contract on
+offer** (median 0.29). The floor is already 1 contract and the bot already
+takes whatever is there. The operator asked "we should be buying 20 if
+that's all that's available" -- we already do.
+
+---
+
 # v-earlycap -- 2026-09-20 -- LIVE: a 97.5c ceiling on the 45-second leg, and the loss cap is a DAY not a run
 
 Two changes, both on the operator's word: *"Sure cut to 97.5 I like that. The

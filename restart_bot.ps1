@@ -177,20 +177,24 @@ $botArgs = @(
     # and 74c helped: +$8.80. Same threshold as the belief, so the rule is
     # "model AND market both say under 60%".
     "--hedge-price", "0.60",
-    # --early-max-price 0.975 (A78), v-earlycap, 2026-09-20, on the operator's
-    # word: "Sure cut to 97.5 I like that. The whole point is better pricing."
+    # --early-max-price REMOVED 2026-09-20 ~09:5xZ (v-nocap), on the
+    # operator's word: "I actually really want to keep the 45 normal" and
+    # "If you think dropping sweep cap makes more do it. I just want the
+    # most money."
     #
-    # The 31-45 s leg earns 1.14c a contract over 133 markets; the last ten
-    # seconds earn 5.63c with zero losing closes in 71. Above 97.5c the early
-    # leg is risking 98c to make 1.8c, fifteen seconds before the information
-    # the whole strategy rests on arrives. That is exactly the
-    # KXBTC15M-26SEP191600-00 fill: NO at 98c at tau 45, while the same model
-    # sixteen seconds later said YES at 99.79% with YES offered at 92.6c.
-    # -$107.95.
+    # THE MEASUREMENT THAT DECIDED IT. The 45-second leg is not the risky
+    # leg -- it has a LOWER loss rate than the main window:
+    #     45s leg : 136 markets, 8,671 contracts, +$110.67, 1.5% losing
+    #     main    : 515 markets, 21,431 contracts, +$441.53, 2.5% losing
+    # It is lower MARGIN (1.28c a contract against 2.06c), not more
+    # dangerous, and a 97.5c ceiling would have touched 51% of its fills.
+    # The case for the ceiling was that the blocked budget would flow to the
+    # 5.6c last-ten-seconds window. That is a THESIS and it is now measured
+    # FALSE: in the last ten seconds we already fill only a fraction of our
+    # bet because the book there is thinner than we have grown, so there is
+    # nowhere for the budget to go.
     #
-    # It cannot touch the main window (that leg is "full"), and it cannot
-    # touch a hedge. Remove the line to lift the ceiling.
-    "--early-max-price", "0.975",
+    # The flag still exists (--early-max-price) for a paper arm to test.
     # --hedge-slip 0.03 (A70), v-hedgefill, 2026-09-19, on the operator's
     # word: "Yes Turn the thing you want to change on."
     #
