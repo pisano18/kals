@@ -1,15 +1,18 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
 Written so a session that has just been `/clear`ed can pick up without
-re-deriving anything. **Updated 2026-09-19 ~16:5x ET.** If the date above is
+re-deriving anything. **Updated 2026-09-20 ~01:5x ET.** If the date above is
 more than a day old, verify the live numbers before quoting them.
 
 ---
 
 # STOP. READ THIS PARAGRAPH BEFORE YOU CHANGE ANYTHING.
 
-**2026-09-19 was the FIRST LOSING DAY since this bot went live: -$106.73,
-against +$64.59 the day before. Three of the four big losses were caused by
+**2026-09-19 was the FIRST LOSING DAY since this bot went live: -$223.46 by
+Kalshi's own books (the -$106.73 first written here was a leg sum from the
+bot's log and is wrong), against +$64.57 the day before. Its last -$108.87
+was the 23:45 ET close, where BOTH bets won and the full-size hedge lost.**
+**The earlier three:** Three of the four big losses were caused by
 code shipped in the previous 24 hours -- new gates and brakes that blocked
 things they were never meant to block. Not the market. Not the model.**
 
@@ -55,9 +58,9 @@ at the cheap end. Raising the bet size alone does nothing -- measured, see
 | restarted | 2026-09-20 **01:46 ET**, pid **1412748** -- v-proportion (A76) on top of v-hedgefill, v-settledonly, A74 |
 | **hedge rule** | **proportional (A76):** all of the position at or under 20% belief, half at or under 40%, none above; a half-hedge TOPS UP to full if belief falls under 20%; a recovery never sells the leg back. `--no-hedge-prop` restores all-or-nothing |
 | **bet** | `--bank-brake 4.00` -- three quarters of the old bet: **70 contracts** at the $825 bank (was 93) |
-| bank | **$865.00** (20:22Z read; it was $970 before the 16:00 loss) |
-| SIZE | **auto** from the bank -- **98 contracts** at that read. `--size 20` is only a starting value |
-| worst close | 3 bets x SIZE x 0.98 = about **$288**; the bank covers it 3.0x |
+| bank | **$825.04** at 05:46Z. Money put in, from Kalshi: **$584.46** (7 deposits, net of $8.14 fees); withdrawals **none, ever**. Made all time **+$226** (+38.7%) |
+| SIZE | **auto** from the bank -- **70 contracts** at that read. `--size 20` is only a starting value |
+| worst close | 3 bets x SIZE x 0.98 = about **$206**; the bank covers it 4.0x |
 | loss abort | **-$200**, held there by `--loss-cap 200` on every autosize |
 | launcher | `restart_bot.ps1` -- **the ONLY script that may start the live bot** |
 
