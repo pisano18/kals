@@ -3695,13 +3695,94 @@ def _selftest_body():
                f"HALT (needs a human): {_w[:46]}")
         ck(not halt_is_transient(None) and not halt_is_transient(""),
            "no halt at all is not a transient halt")
-        # the two real ones from tonight, verbatim from the live log
+
+        # ---- AMENDMENT 74: DRIVE THIS FROM risk_abort's REAL OUTPUT -------
+        #
+        # The list above is RETYPED LITERALS, and that is exactly how the open
+        # cap went terminal for five days. A31 renamed "position cap:" to
+        # "open cap:" on 2026-09-14; TRANSIENT_HALTS was not updated and
+        # neither was this test, so the test kept passing against a phrase the
+        # code no longer produced. The bot then really did exit holding 297
+        # contracts at 2026-09-18T01:14:26Z.
+        #
+        # So: make risk_abort ACTUALLY RETURN the open-cap string and classify
+        # THAT, rather than a string a human typed here.
+        _sv74 = dict(pintake.LEDGER)
+        _sz74 = SIZE
+        try:
+            globals()["SIZE"] = 10.0
+
+            class _A74:
+                loss_abort = -1e9
+                max_positions = 3
+            pintake.LEDGER.clear()
+            pintake.LEDGER.update({
+                "halt": None, "realised": 0.0, "committed": 0.0,
+                # 3 x SIZE contracts held == the cap exactly
+                "positions": {"M1": {"contracts": 10.0},
+                              "M2": {"contracts": 10.0},
+                              "M3": {"contracts": 10.0}}})
+            _real74 = risk_abort({"halted": False, "errors": 0,
+                                  "open_cost": 0.0}, _A74)
+            ck(_real74 and _real74.startswith("open cap:"),
+               "risk_abort really does return an 'open cap:' string (%r) -- "
+               "if this ever changes wording again, the next check catches it"
+               % _real74)
+            ck(halt_is_transient(_real74),
+               "A74: and THAT EXACT STRING is transient. It was not, from "
+               "2026-09-14 until tonight, and the bot exited holding 297 "
+               "contracts at 2026-09-18T01:14:26Z because of it (%r)"
+               % _real74)
+        finally:
+            globals()["SIZE"] = _sz74
+            pintake.LEDGER.clear()
+            pintake.LEDGER.update(_sv74)
+
+        # the real log line, verbatim, as a belt-and-braces regression
+        ck(halt_is_transient("open cap: 297 contracts held >= 297 "
+                             "(3 x size 99)"),
+           "A74: the 2026-09-17 21:14 ET halt that killed the bot holding "
+           "297 contracts would now be a PAUSE")
         ck(halt_is_transient("position cap: 3 open >= 3"),
-           "the 02:00 halt that cost 23 minutes would now PAUSE")
-        ck(halt_is_transient("loss bound: realised $+0.78 with $40.89 still "
-                             "open; one more contract could take this run "
-                             "past $-60.00"),
-           "and so would the 03:29 one")
+           "the older wording still classifies, so an old log reads the same")
+
+        # ---- A74: A TERMINAL HALT MAY NOT EXIT WHILE CONTRACTS ARE OPEN ---
+        #
+        # "In no circumstance should the bot ever cut off mid bet." Asserted
+        # structurally, because there is no way to drive a process exit from
+        # a self-test. The shape that matters: the drain branch must sit
+        # BEFORE state["halted"] is set and before the break, and its
+        # `continue` must be reachable.
+        _src74 = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _lp74 = _src74[_src74.rindex(chr(10) + "def " + "trade_loop("):]
+        _h74 = _lp74.index('rec("halt", why=stop')
+        _pre74 = _lp74[:_h74]
+        ck("if _openn74 and DRAIN_ON_HALT:" in _pre74,
+           "A74: the drain is checked BEFORE the halt is recorded")
+        ck(_pre74.rindex("if _openn74 and DRAIN_ON_HALT:")
+           < _pre74.rindex('state["halted"] = True'),
+           "...and before state['halted'] is set, which would make "
+           "risk_abort answer 'already halted' and lose the real reason")
+        ck('rec("halt_pending"' in _pre74,
+           "...and a drain says so in the log, with how much is open")
+        # THE HEDGE MUST STILL RUN WHILE DRAINING. It does because the hedge
+        # pass is above risk_abort (A69) and the drain ends in `continue`.
+        ck(_lp74.index("# ---------------- AMENDMENT 15")
+           < _lp74.index("stop = risk_abort(state, a)"),
+           "A74: draining keeps looping, and the hedge pass is ABOVE the risk "
+           "check, so a draining bot still hedges -- that is the whole point")
+        ck(DRAIN_ON_HALT is True,
+           "the drain ships ON: exiting mid-bet is what it exists to stop")
+        # ...BUT IT MUST NOT HANG FOR EVER. watch_bot.ps1 restarts a process
+        # that is GONE or SILENT; one stuck draining is neither.
+        ck('rec("drain_timeout"' in _pre74,
+           "a drain that never finishes gives up loudly rather than hanging")
+        ck(60.0 <= DRAIN_MAX_S <= 1800.0,
+           "and the give-up is bounded (%.0fs) -- longer than any close, "
+           "shorter than a night nobody is watching" % DRAIN_MAX_S)
+        ck(DRAIN_MAX_S > 45.0,
+           "and longer than the whole tradeable window, so an ordinary "
+           "position always gets to settle before the drain gives up")
         # the loop must not mark state halted on a pause, or risk_abort
         # answers "already halted" for ever afterwards
         # ANCHOR ON WHOLE LINES. Searching for the bare text finds this
@@ -7419,7 +7500,38 @@ def risk_abort(state, a):
 # transient means trading on through the thing that was meant to stop us.
 # The three below are exactly the conditions that read `open_cost`,
 # `committed` or `positions` -- all of which reconcile() reduces.
-TRANSIENT_HALTS = ("position cap:", "loss bound:", "stake cap reached:")
+# AMENDMENT 74: "open cap:" WAS MISSING AND THAT MADE IT TERMINAL.
+#
+# A31 renamed this halt from "position cap:" to "open cap:" on 2026-09-14
+# when it started counting CONTRACTS instead of positions. This tuple was not
+# updated, so from that day the open cap stopped being a pause and became a
+# reason to END THE RUN -- holding whatever was open, with no hedge.
+#
+# It fired for real at 2026-09-18T01:14:26Z (21:14 ET on 09-17):
+#   halt  open cap: 297 contracts held >= 297 (3 x size 99)
+#
+# Nobody saw it because the self-test asserted the OLD string, so it passed
+# while testing a phrase the code no longer produced -- "a check that reads a
+# missing key is not a check", the same failure risk_abort's own docstring
+# warns about. The test below now drives this list from risk_abort's REAL
+# output instead of retyped literals.
+#
+# It hid for another reason too: until A73 the "loss bound:" pause fired
+# whenever anything at all was open, so it reached this branch first and
+# turned every terminal halt into a harmless wait. Removing that guess about
+# unsettled losses is correct, and it exposed this.
+#
+# "position cap:" is kept only so an old log still classifies the same way.
+TRANSIENT_HALTS = ("open cap:", "position cap:", "loss bound:",
+                   "stake cap reached:")
+
+# AMENDMENT 74: a terminal halt stops NEW bets immediately but the process
+# does not exit while contracts are open -- the hedge pass must keep running.
+# The operator: "In no circumstance should the bot ever cut off mid bet."
+DRAIN_ON_HALT = True
+DRAIN_MAX_S = 600.0      # ...but never hang forever: watch_bot.ps1 only
+                         # restarts a process that is GONE or silent, so a bot
+                         # stuck draining is a bot nothing is watching.
 
 
 def halt_is_transient(why):
@@ -8758,8 +8870,54 @@ def trade_loop(a, rec, book, idx, series_index):
             rec("resume", after=state.pop("paused_on"))
             print("  --- RESUMED")
         if stop:
+            # AMENDMENT 74 (2026-09-19): THE BOT MAY NOT EXIT HOLDING A BET.
+            #
+            # The operator, and it is an absolute: *"In no circumstance should
+            # the bot ever cut off mid bet."*
+            #
+            # Every terminal halt used to `break` immediately. The process
+            # ends, the position stays open, and NOTHING hedges it for the
+            # rest of the close -- the same outcome as the A69 pause bug that
+            # cost $107.95, reached through a different door. It has already
+            # happened for real:
+            #
+            #   2026-09-18T01:14:26Z  halt  open cap: 297 contracts held
+            #                               >= 297 (3 x size 99)
+            #
+            # That is 21:14 ET on 09-17 and the bot died holding 297
+            # contracts, seconds after a hedge had filled.
+            #
+            # DRAINING. A terminal halt now stops NEW bets at once and lets
+            # the loop keep running so the hedge pass above still fires, and
+            # the process exits when it is FLAT. `state["halted"]` is
+            # deliberately NOT set while draining: risk_abort returns
+            # "already halted" once it is, which would re-enter this branch
+            # with the real reason lost.
+            #
+            # It is bounded. If positions never clear -- a broken settlement
+            # reader, which A71's RECONCILE_FAIL_HALT covers separately -- the
+            # drain gives up after DRAIN_MAX_S and exits loudly, because a bot
+            # that hangs forever is invisible to watch_bot.ps1, which only
+            # restarts a process that is GONE or silent.
+            _openn74 = open_contracts(pintake.LEDGER) or len(open_pos)
+            if _openn74 and DRAIN_ON_HALT:
+                if not state.get("draining"):
+                    state["draining"] = stop
+                    state["draining_since"] = now
+                    rec("halt_pending", why=stop, open_contracts=_openn74,
+                        open_positions=len(open_pos))
+                    print(f"  *** STOPPING, but {_openn74:g} contracts are "
+                          f"still open -- no new bets, hedge still armed: "
+                          f"{stop}")
+                if now - float(state.get("draining_since", now)) < DRAIN_MAX_S:
+                    time.sleep(0.5)
+                    continue          # hedge pass is ABOVE; it keeps running
+                rec("drain_timeout", why=stop, open_contracts=_openn74,
+                    waited_s=round(now - float(state["draining_since"]), 1))
+                print(f"  *** DRAIN TIMED OUT after {DRAIN_MAX_S}s with "
+                      f"{_openn74:g} contracts still open -- exiting anyway")
             state["halted"] = True
-            rec("halt", why=stop)
+            rec("halt", why=stop, drained=bool(state.get("draining")))
             print(f"  *** HALT: {stop}")
             break
 
