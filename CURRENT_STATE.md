@@ -52,7 +52,9 @@ at the cheap end. Raising the bet size alone does nothing -- measured, see
 
 | | |
 |---|---|
-| restarted | 2026-09-19 **17:58 ET**, pid **1305604** -- v-hedgefill (A70+A71) |
+| restarted | 2026-09-20 **01:46 ET**, pid **1412748** -- v-proportion (A76) on top of v-hedgefill, v-settledonly, A74 |
+| **hedge rule** | **proportional (A76):** all of the position at or under 20% belief, half at or under 40%, none above; a half-hedge TOPS UP to full if belief falls under 20%; a recovery never sells the leg back. `--no-hedge-prop` restores all-or-nothing |
+| **bet** | `--bank-brake 4.00` -- three quarters of the old bet: **70 contracts** at the $825 bank (was 93) |
 | bank | **$865.00** (20:22Z read; it was $970 before the 16:00 loss) |
 | SIZE | **auto** from the bank -- **98 contracts** at that read. `--size 20` is only a starting value |
 | worst close | 3 bets x SIZE x 0.98 = about **$288**; the bank covers it 3.0x |
@@ -89,7 +91,7 @@ Full flag list (also in the launcher, each with its reasoning):
 --hedge-slip 0.03
 --band-mult 0.90 0.94 1.5 --late-tau 10 --late-mult 1.5 --late-pin 0.9975
 --late-jump 2.0 --extra-coin 1 --late-extra 1 --late-extra-tau 15
---bank-brake 3.00 --loss-cap 200
+--bank-brake 4.00 --loss-cap 200
 ```
 
 ### What each of the newer ones does

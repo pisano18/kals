@@ -1,6 +1,8 @@
 # v-proportion -- 2026-09-20 -- LIVE: hedge in proportion to conviction, and a quarter off the bet
 
-**Deployed by this session on the operator's word.** On the hedge: *"Sure on
+**DEPLOYED 2026-09-20 05:46:57Z (01:46 ET), pid 1412748, SHA `0061111`.** First autosize: 20 -> 70 contracts at the $825.04 bank (was 93 at brake 3.00). Start record: hedge_prop True, full 0.20, half 0.40. One live process, no halt.
+
+**On the operator's word.** On the hedge: *"Sure on
 proportion but make sure if it starts at half then drops below 20 you buy the
 rest of the hedge."* On size: *"Make the bet size only a quarter smaller not
 half then as proportional."*
