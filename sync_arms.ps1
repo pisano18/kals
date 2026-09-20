@@ -113,6 +113,48 @@ $arms = @(
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 
+# ---- 2b. FROZEN BASELINES: NOT synced, on purpose -----------------------
+# The operator, 2026-09-20: *"Can there be two versions of the ones that are
+# doing good? If they're working they're working, why break them"* and
+# *"reverting to something like Friday that did good in the week"*.
+#
+# He is right that syncing everything throws away the one thing a long-lived
+# arm is good for: a STABLE reference. So the board now holds both kinds.
+#
+#   SYNCED   = live + one change. Answers "is this flag better?" Must move
+#              with live or the comparison means nothing.
+#   FROZEN   = a whole configuration, pinned for ever. Answers "was the bot
+#              better on <date>?" Must NOT move, for the same reason.
+#
+# pinvin_0912*/0913* are already frozen this way, as separate script files.
+# These are frozen by flag list instead, which is enough for a config that
+# today's code can still express.
+#
+# FRIDAY (2026-09-18) is the first, at the operator's request: +$64.57 on the
+# account and ZERO losing crypto closes, the best loss record of the week.
+# Its exact settings are read off that day's own `start` record, not from
+# memory: early_max_edge 3.0, band-mult 1.5, bank_brake 4.08, late boost OFF,
+# and none of --hedge-slip / --extra-coin / --late-extra / --loss-cap, which
+# did not exist yet. --no-hedge-prop restores its all-or-nothing hedge.
+#
+# It runs on TODAY'S code, so it keeps the crash fixes (A69/A71/A74) that are
+# not flags. That is deliberate: this tests Friday's TRADING RULES, not
+# Friday's bugs.
+$frozen = @(
+  @{ n="arm-friday"; x=@(
+      "--loss-abort","-60.00","--max-positions","3","--max-losses","2",
+      "--improve-scope","market","--pick","best","--max-per-market","2",
+      "--improve-max","0.010","--min-fill-frac","0","--sweep-depth",
+      "--depth-ladder","--jump-gate","--hedge-belief","0.60",
+      "--early-tau","45","--early-frac","1.0","--early-min-price","0.90",
+      "--early-max-edge","3.0","--hedge-price","0.60",
+      "--band-mult","0.90","0.94","1.5","--bank-brake","4.08",
+      "--no-hedge-prop") },
+  # and today's live rules, pinned, so there is always a stable reference for
+  # "what the bot was doing when this question was asked"
+  @{ n="arm-live-frozen"; x=@() }
+)
+
 # ---- 3. BUILD AND VALIDATE EVERYTHING BEFORE STOPPING ANYTHING ----------
 $plan = @()
 foreach ($a in $arms) {
@@ -125,6 +167,27 @@ foreach ($a in $arms) {
     }
     if ($flat.Count -lt 8) { throw "REFUSING: $($a.n) built only $($flat.Count) args" }
     $plan += [pscustomobject]@{ Name = $a.n; Argv = $flat }
+}
+# the frozen ones: a whole config, NOT rebuilt from live. arm-live-frozen is
+# the exception -- it is seeded from live ONCE and then left alone, which is
+# what "frozen as of today" means.
+foreach ($fz in $frozen) {
+    $body = if ($fz.x.Count) { $fz.x } else { (BaseWithout @() | ForEach-Object { $_ }) }
+    $full = @("-u", "$repo\research\pinrun.py", "--size", "20", "--minutes", "4320") +
+            $body + @("--arm-name", $fz.n)
+    $flat = @($full | ForEach-Object { $_ })
+    foreach ($t in $flat) {
+        if ($t -isnot [string]) { throw "REFUSING: non-string token in $($fz.n)" }
+        if ($t -eq "--live")    { throw "REFUSING: --live in frozen arm $($fz.n)" }
+    }
+    # A FROZEN ARM IS NEVER RESTARTED BY THIS SCRIPT once it is up. Restarting
+    # it would re-seed arm-live-frozen from a changed live bot and silently
+    # turn the baseline into a moving target -- the exact rot this file
+    # exists to stop.
+    $already = @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+                 Where-Object { $_.CommandLine -like "*--arm-name $($fz.n)*" })
+    if ($already.Count) { "  frozen $($fz.n) already running (left alone)"; continue }
+    $plan += [pscustomobject]@{ Name = $fz.n; Argv = $flat }
 }
 "built $($plan.Count) arm command lines from the LIVE bot's own settings"
 "live base: $(($groups | ForEach-Object { $_[0] }) -join ' ')"
@@ -158,6 +221,8 @@ foreach ($p in $procs) {
     if (-not $cl) { continue }
     if ($cl -notlike '*pinrun.py*') { continue }
     if ($cl -like '*--live*' -or $cl -like '*pinvin_*') { continue }
+    # a FROZEN arm is never stale -- not moving is its job
+    if ($cl -like '*--arm-name arm-friday*' -or $cl -like '*--arm-name arm-live-frozen*') { continue }
     $isKeeper = $false
     foreach ($k in $keep) { if ($cl -like "*--arm-name $k*") { $isKeeper = $true; break } }
     if (-not $isKeeper) { $stale += $p }
