@@ -321,33 +321,43 @@ unused in every `order` record (`ask_seen` vs `exec_price`).
 
 ---
 
-## Paper arms: 34 running (19 relaunched 2026-09-20 07:4xZ by `start_missing.ps1`)
+## THE ARMS: SYNCED vs FROZEN (2026-09-20, and this is the important one)
 
-`research/pinlab.py` is the register -- 54 entries with what each tests,
-why, and what good and bad look like. The desktop app's Lab tab shows every
-one with a chart and a what-if against the live bot.
+**Every paper arm used to run a flag list frozen at whenever it was
+launched. Measured 2026-09-20: `arm-pin0.97` differed from the live bot in
+SIXTEEN settings** -- no 45-second leg at all, no `--hedge-price`, no
+`--hedge-slip`, no late boost, no extra coin, a different bank brake. It was
+never measuring confidence; it was a bot from five days earlier that also had
+a different `--pin`. **Every head-to-head built on an arm like that is
+uninterpretable, including any confidence or sigma answer recorded before
+this date.**
 
-- **8 band arms** (`start_bands.ps1`) -- skip bands, 2x sizing, early-leg
-  variants
-- **3 sixty-second arms** + **1 flip arm** (`start_early60.ps1`) -- buying
-  at 46-60 s in increments, and buying DOUBLE the other side when an early
-  bet flips inside 30 s
-- **4 sigma arms** (`start_sigma.ps1`) -- the whole model at 0.8/1.25/1.5/2.0
-  x the volatility estimate. **The most valuable open question**: if our
-  sigma is too small, every confidence we print is too high
-- **5 confidence arms** -- `--pin` 0.97 to 0.99
-- **5 vintage bots** (`pinvin_*.py`, see `research/pinvin_README.md`) -- the
-  bot exactly as it was on 09-12 and 09-13, running on today's markets
-- **2 late-budget arms** -- `--late-extra` with and without the early cap
-- **1 `pinrun913.py`** -- the 09-13 bot
-- the rest are older arms still accumulating
+The operator: *"The paper bots should be taking other settings as they change
+as long as it's not what we're testing... otherwise their data isn't
+meaningful."*
 
-**Arm maturity matters more than the percentages.** Anything under ~20 hours
-and ~40 markets is noise. Use the "needs" calculation: an arm is readable
-when its money gap clears two standard errors AND it has enough closes to
-put its loss rate under break-even (about 120 clean closes).
+The fleet is now two kinds, and the distinction matters:
 
----
+| | what it is | must it move? |
+|---|---|---|
+| **SYNCED** (21) | live's settings + ONE change | **YES** -- or the comparison means nothing |
+| **FROZEN** (2 + 5 vintage) | a whole configuration, pinned | **NO** -- not moving is its job |
+
+`sync_arms.ps1` reads the LIVE BOT'S OWN COMMAND LINE, strips `--live` and
+whatever the arm tests, and gives each arm that base plus its override.
+**Change live, re-run that one script, the whole fleet moves.** It validates
+every argv before stopping anything, refuses `--live` twice, and retires arms
+on pre-sync flag lists.
+
+Frozen: **`arm-friday`** (2026-09-18's exact settings, read off that day's own
+`start` record -- the operator asked to test reverting to it), **`arm-live-frozen`**
+(today's rules pinned), and the five `pinvin_*` script snapshots.
+**Frozen arms are never restarted by the sync** -- re-seeding them would turn
+a baseline into a moving target.
+
+**`-Only` DISABLES the stale sweep.** Running with it once retired all 21
+synced arms, because a narrowed plan made every other arm look stale. A
+partial run may never decide what is stale.
 
 ## Resources and rules of engagement
 
