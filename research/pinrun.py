@@ -5564,10 +5564,22 @@ def _selftest_body():
            "reason this code path is dangerous is that its `continue` once "
            "skipped a hedge and cost $107.95")
 
-        ck(hedge_should_fire(0.05) and hedge_should_fire(HEDGE_BELIEF - 1e-6),
-           f"belief below the {HEDGE_BELIEF:.2f} gate fires the hedge")
-        ck(not hedge_should_fire(HEDGE_BELIEF) and not hedge_should_fire(0.999),
-           "belief at or above the gate does not")
+        # THE THRESHOLD IS PASSED IN, NEVER READ FROM THE RUNNING GLOBAL.
+        # `hedge_should_fire(0.05)` against the LIVE value refused to start
+        # the bot the moment an arm set --hedge-belief 0.01, because 0.05 is
+        # above that arm's gate and the assertion was written as though 0.60
+        # were the only possible setting. That is the trap this file has
+        # documented five times: a self-test that asserts a RUNNING value
+        # fails for every configuration except the one it was written on.
+        # The BEHAVIOUR being tested -- "below the gate fires, at or above it
+        # does not" -- is what matters, and it is true at any threshold.
+        for _hb in (0.01, 0.10, _DEFAULT_HEDGE_BELIEF, 0.95):
+            ck(hedge_should_fire(_hb - 1e-6, threshold=_hb)
+               and hedge_should_fire(_hb / 2.0, threshold=_hb),
+               "at a %.2f gate, a belief below it fires the hedge" % _hb)
+            ck(not hedge_should_fire(_hb, threshold=_hb)
+               and not hedge_should_fire(0.999, threshold=_hb),
+               "...and at or above it does not")
         ck(not hedge_should_fire(None), "no belief at all never fires -- a "
            "missing number is not a collapse")
         ck(hedge_should_fire(0.5, threshold=0.7) and
