@@ -101,7 +101,7 @@ WINDOW = M.WINDOW
 # in this repo.
 _DEFAULT_LIVE_MAX_CONTRACTS = 1      # "pennies": about $1 a leg at 97c
 _DEFAULT_LIVE_MAX_STAKE = 20.00      # dollars this process may ever commit
-_DEFAULT_LIVE_TAU_MAX = 40           # measured 09-21: the edge dies at 41 s
+_DEFAULT_LIVE_TAU_MAX = 20           # NARROWED from 40 -- see THE 09-21 LOSS
 _DEFAULT_LIVE_MIN_PRICE = 0.80       # measured 09-21, see below
 _DEFAULT_LIVE_MAX_LEGS = 5           # one YES plus a NO on every other coin
 _DEFAULT_LIVE_STOP_ON_LOSS = True
@@ -151,6 +151,46 @@ LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
 # $36.50 a day at 85c); legs three, four and five add $0.64 between them,
 # because most races simply do not offer a third leg above the floor. The cap
 # is 5 so nothing is left on the table, not because 5 is expected.
+#
+# ----------------------------------------------------------------------
+# THE 09-21 LOSS, and why tau_max went 40 -> 20.
+#
+# The penny test's first loss: KXCRYPTOLEAD15M-26SEP210930, bought SOL NO at
+# tau 40, SOL won, -$0.86 on one contract. Rebuilt from the index, HYPE and
+# SOL ran neck and neck the whole way and the lead FLIPPED at tau ~32:
+#
+#     tau 60  HYPE 64%   tau 40  HYPE 95%  <- we fired here
+#     tau 50  HYPE 72%   tau 35  HYPE 71%
+#     tau 45  HYPE 78%   tau 30  SOL  64%  <- flipped
+#                        tau 20  SOL 100%
+#
+# The 95% at tau 40 is an outlier against every neighbouring second, which
+# all read 64-78%. We fired into a one-second spike in the model's own
+# confidence. Four families of fix were measured on 25 days and NONE pays for
+# itself -- each cuts good trades at least as fast as bad ones:
+#
+#     require the belief to have held N s earlier   bad rate flat, -$20-37/day
+#     use the median of the last N reads            bad rate WORSE, -$21-32/day
+#     refuse a belief that swung > X in 10 s        -1 bad race, -$0.52/day
+#     refuse a belief spiking above its own median  -1 bad race, -$3.33/day
+#
+# What DOES work is not a gate at all -- it is WHEN we fire. Same rule, same
+# floor, same legs, only the earliest second allowed:
+#
+#     tau <= 40   710 races   14 losing   1.97%   +4.21c   $52.20/day
+#     tau <= 30   528 races   11 losing   2.08%   +2.36c   $21.42/day
+#     tau <= 20   386 races    3 losing   0.78%   +5.24c   $31.20/day   <- this
+#     tau <= 15   319 races    1 losing   0.31%   +5.44c   $21.65/day
+#
+# Waiting for tau 20 cuts losing races 4.5x, IMPROVES cents per contract, and
+# keeps 60% of the money. In the race above, tau 20 read SOL 100% -- by then
+# it was simply right. The operator's standing preference is variance
+# reduction over expected value at the margin, and this is that trade twice
+# over: fewer losses AND more per contract.
+#
+# THE EDGE BAR STAYS AT ZERO. Raising it makes the loss rate WORSE, not
+# better (0c 1.97%, 1c 2.26%, 2c 5.36%, 3c 6.10%) -- the same cheap-leg cliff
+# this product shows everywhere. A bigger apparent bargain is a warning.
 _DEFAULT_LIVE_STOP_ON_LOSS = True
 
 # `races` maps event -> [(coin, side), ...] already held, so consistency can
@@ -648,7 +688,7 @@ def selftest():
     ck(_DEFAULT_LIVE_MAX_CONTRACTS <= pintake.MAX_TAKE_COUNT,
        "the default penny size (%g) is inside pintake's own per-order rail "
        "(%g)" % (_DEFAULT_LIVE_MAX_CONTRACTS, pintake.MAX_TAKE_COUNT))
-    ck(_DEFAULT_LIVE_TAU_MAX <= 40 and _DEFAULT_LIVE_MIN_PRICE >= 0.80,
+    ck(_DEFAULT_LIVE_TAU_MAX <= 20 and _DEFAULT_LIVE_MIN_PRICE >= 0.80,
        "the defaults are the measured rule: inside %ds, at %.0fc or dearer"
        % (_DEFAULT_LIVE_TAU_MAX, 100 * _DEFAULT_LIVE_MIN_PRICE))
     ck(_DEFAULT_LIVE_STOP_ON_LOSS is True,
@@ -674,7 +714,7 @@ def selftest():
     ck(inconsistent([("XRP", "no"), ("SOL", "no")], "BTC", "yes") is None,
        "one YES may still be added on top of NOs on other coins")
 
-    off = {"on": False, "max_contracts": 1, "max_stake": 20.0, "tau_max": 40,
+    off = {"on": False, "max_contracts": 1, "max_stake": 20.0, "tau_max": 20,
            "min_price": 0.90, "max_legs": 2, "stop_on_loss": True,
            "races": {}, "staked": 0.0, "halted": None, "sends": 0}
     never = lambda _p: False                                  # noqa: E731
@@ -702,8 +742,8 @@ def selftest():
     ck(live_refusals(20, 0.95, 1, "R1", state=on2, exists=never),
        "a leg with no coin named is refused once the race holds anything -- "
        "consistency cannot be checked blind")
-    ck(live_refusals(41, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
-       "41 s out is refused -- measured 09-21, the edge dies at 41")
+    ck(live_refusals(21, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
+       "21 s out is refused -- the 09-21 loss fired at 40 into a one-second confidence spike; tau<=20 cuts losing races 4.5x")
     ck(live_refusals(1, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
        "and 1 s out is refused: no time to fill")
     ck(live_refusals(20, 0.79, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
