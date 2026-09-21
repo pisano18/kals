@@ -100,3 +100,15 @@
 {"note": "Decompose the 12.5x->28.2x overconfidence drift into a shift in the fresh/stale ask mix versus a within-age-bucket change; tau is the confound.", "pair": ["F-M05", "F-O06"], "t": "2026-09-20T08:50:13Z", "verdict": "lead"}
 {"note": "NO POWER, not no effect: 12 losing closes across 5 sigma fifths (expected 2.4 each) cannot separate 5.19% from 1.38%. The F-M08 x F-P04 lead is the powered version.", "pair": ["F-M08", "F-P02"], "t": "2026-09-20T08:50:13Z", "verdict": "nothing"}
 {"note": "F-O07 checked contest, speed and depth but never ask AGE, so 'the counterparty did not change' is untested in the one dimension F-O06 names. Same measurement as F-M05 x F-O06 -- one job, not two.", "pair": ["F-O06", "F-O07"], "t": "2026-09-20T08:50:13Z", "verdict": "lead"}
+{"pair": ["F-B01", "F-C01"], "t": "20260921T0848Z", "verdict": "drawn"}
+{"pair": ["F-B06", "F-I05"], "t": "20260921T0848Z", "verdict": "drawn"}
+{"pair": ["F-B03", "F-I09"], "t": "20260921T0848Z", "verdict": "drawn"}
+{"pair": ["F-I05", "F-P11"], "t": "20260921T0848Z", "verdict": "drawn"}
+{"pair": ["F-M02", "F-X03"], "t": "20260921T0848Z", "verdict": "drawn"}
+{"pair": ["F-P01", "F-P04"], "t": "20260921T0848Z", "verdict": "drawn"}
+{"note": "300s size re-read divides the 900s window exactly and is blocked while in position -- measure whether we ever entered a close sized on a pre-settlement bank", "pair": ["F-B01", "F-C01"], "t": "2026-09-21T08:50:43Z", "verdict": "lead"}
+{"note": "no causal path (the live bot reads its own index socket, not the recorded tape) and the joint test is 12 losses against restart hours -- no power, and volatility confounds both", "pair": ["F-B06", "F-I05"], "t": "2026-09-21T08:50:45Z", "verdict": "nothing"}
+{"note": "replacing a hard bound with an empirical concurrency is the exact mistake F-B03 is worded to prevent; and the candidate rows are the tape population, which cannot say how many would have been offered to US (F-R05, 31x)", "pair": ["F-B03", "F-I09"], "t": "2026-09-21T08:50:47Z", "verdict": "nothing"}
+{"note": "one file per channel per HOUR covers all 12 series, so a truncated file is common-mode across coins and cannot manufacture a coin ranking; the only residual is reduced n, already the stated cause", "pair": ["F-I05", "F-P11"], "t": "2026-09-21T08:50:48Z", "verdict": "nothing"}
+{"note": "76 of 283 live fills came in strictly BETTER than signalled -- measure whether price improvement is a stale quoter (a gift) or an informed one (adverse selection), by signed index markout in sd units", "pair": ["F-M02", "F-X03"], "t": "2026-09-21T08:50:51Z", "verdict": "lead"}
+{"note": "a zero-fill costs nothing but one loss undoes 27 wins, so if the 28.2%% that fill nothing are enriched in losers the miss rate is PROTECTIVE and raising it destroys money", "pair": ["F-P01", "F-P04"], "t": "2026-09-21T08:50:53Z", "verdict": "lead"}
