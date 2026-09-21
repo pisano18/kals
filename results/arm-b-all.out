@@ -122,8 +122,18 @@ SELF-TEST -- pinrun
   ok   HALT (needs a human): 2 errors on the ORDER path
   ok   HALT (needs a human): 5 consecutive errors
   ok   no halt at all is not a transient halt
-  ok   the 02:00 halt that cost 23 minutes would now PAUSE
-  ok   and so would the 03:29 one
+  ok   risk_abort really does return an 'open cap:' string ('open cap: 30 contracts held >= 30 (3 x size 10)') -- if this ever changes wording again, the next check catches it
+  ok   A74: and THAT EXACT STRING is transient. It was not, from 2026-09-14 until tonight, and the bot exited holding 297 contracts at 2026-09-18T01:14:26Z because of it ('open cap: 30 contracts held >= 30 (3 x size 10)')
+  ok   A74: the 2026-09-17 21:14 ET halt that killed the bot holding 297 contracts would now be a PAUSE
+  ok   the older wording still classifies, so an old log reads the same
+  ok   A74: the drain is checked BEFORE the halt is recorded
+  ok   ...and before state['halted'] is set, which would make risk_abort answer 'already halted' and lose the real reason
+  ok   ...and a drain says so in the log, with how much is open
+  ok   A74: draining keeps looping, and the hedge pass is ABOVE the risk check, so a draining bot still hedges -- that is the whole point
+  ok   the drain ships ON: exiting mid-bet is what it exists to stop
+  ok   a drain that never finishes gives up loudly rather than hanging
+  ok   and the give-up is bounded (600s) -- longer than any close, shorter than a night nobody is watching
+  ok   and longer than the whole tradeable window, so an ordinary position always gets to settle before the drain gives up
   ok   the pause branch never sets state['halted'] -- that would be a terminal answer to a temporary question
   ok   and it continues the loop, so reconcile() keeps releasing the positions it is waiting on
   ok   before any hedge fill, the amount to hedge is the full original size, read from open_pos
@@ -150,11 +160,17 @@ SELF-TEST -- pinrun
   ok   NULL: no moves, or no sigma, is None -- never a fabricated zero that reads as 'calm'
   ok   the loop asks the JUMP before the belief, because the jump is the earlier signal -- belief only falls after the price has moved
   ok   and every alarm records WHICH reason fired and the jump size, so the two triggers can be scored against each other on the same alarms
-  ok   every ENTRY position records when it was entered beside the position itself (open_pos[_poid] =) -- without it the trigger would measure the last three seconds, not the time since entry
-  ok   every ENTRY position records when it was entered beside the position itself (open_pos[f"paper-{tk}-{now_s}"] =) -- without it the trigger would measure the last three seconds, not the time since entry
-  ok   every ENTRY position records when it was entered beside the position itself (open_pos[_oid_new] =) -- without it the trigger would measure the last three seconds, not the time since entry
+  ok   the entry site open_pos[_poid] = still exists
+  ok   every ENTRY position records when it was entered under the SAME key (_poid) -- without it the jump trigger would measure the last three seconds, not the time since entry
+  ok   and every ENTRY position is registered for HEDGING under the same key (_poid). The hedge pass skips any position missing from hedge_meta, for ever -- that is a gate on a hedge, which nothing is allowed to be. This check did not exist, and that is why every paper arm ran a bot that could not insure a losing bet
+  ok   the entry site open_pos[_poid46] = still exists
+  ok   every ENTRY position records when it was entered under the SAME key (_poid46) -- without it the jump trigger would measure the last three seconds, not the time since entry
+  ok   and every ENTRY position is registered for HEDGING under the same key (_poid46). The hedge pass skips any position missing from hedge_meta, for ever -- that is a gate on a hedge, which nothing is allowed to be. This check did not exist, and that is why every paper arm ran a bot that could not insure a losing bet
+  ok   the entry site open_pos[_oid_new] = still exists
+  ok   every ENTRY position records when it was entered under the SAME key (_oid_new) -- without it the jump trigger would measure the last three seconds, not the time since entry
+  ok   and every ENTRY position is registered for HEDGING under the same key (_oid_new). The hedge pass skips any position missing from hedge_meta, for ever -- that is a gate on a hedge, which nothing is allowed to be. This check did not exist, and that is why every paper arm ran a bot that could not insure a losing bet
   ok   and the lookback is capped at a minute, so a position held from 45 s cannot ask the feed for more than it holds
-  ok   one bet is the bank divided by about 8 (got 7.997) -- set 2026-09-18 on the operator's word 'Sure divide by 8'; the tolerance admits the ceiling moving 0.98 -> 0.99, which makes it 8.08
+  ok   the SHIPPED bet is the bank divided by about 8 (got 7.997) -- set 2026-09-18 on the operator's word 'Sure divide by 8'. The RUNNING divisor moves with --bank-brake and --extra-coin and is reported in the start record; only the shipped default is asserted here
   ok   the DECLARED ceiling is still 98c; the live 99c comes from the --price-ceiling flag and is asserted in VERSIONS.md, not here
   ok   so an $800 bank asks for 100 contracts -- derived from the running brake and ceiling, not a literal, against the 136 the old setting asked for
   ok   A50 ships OFF, so adding it changed nothing about the live bot -- asserted against the DECLARED default, not the running value, so an arm that sets the flag does not fail its own self-test
@@ -187,20 +203,150 @@ SELF-TEST -- pinrun
   ok   A53 runs on BOTH the paper and the live path (the A45 bug)
   ok   ...after A48 and before the A46 re-cap, on the live path
   ok   ...and the same order on the paper path
-  ok   the A46 re-cap reads the band multiple, or it undoes the boost
+  ok   the A46 re-cap reads the band multiple AND the late multiple, or it undoes the boost -- a top-up entered outside the late window could never be boosted inside it, which is exactly the trade the operator asked about
+  ok   holding 60 of an 80-contract bet, a top-up at 8 s could add only 20 more; with the late multiple counted it may add 60. That gap is why no market has EVER been bought outside 10 s and again inside it in 547 fills
   ok   a skipped band is refused under its own gate name BEFORE the signal is recorded, so the cost of the skip is scorable and a refusal never reads as a lost race
   ok   and after the early-leg gates, so a cheap early ask is refused for being cheap rather than for its band
   ok   pintake's per-order count cap admits the band multiple AND the late multiple, at live start and at every autosize -- the live path would otherwise refuse the wider order the paper path books
   ok   the start record carries both band lists, so the Lab can tell one band arm from another (the A47/A48/A49 blank-tab lesson)
+  ok   A55 ships with BOTH conditions off -- the DECLARED defaults, so A48 without them behaves exactly as the paper arm that earned the deployment
+  ok   the extra contracts need MORE confidence than an ordinary bet: 99.90% passes a 99.9% bar and 99.80% does not, while the ordinary bet at 99.5% is untouched either way
+  ok   a 4-sigma one-second move AGAINST us blocks the extra contracts at a 4-sigma bar -- 'if it looks like it is going to a loss do not buy the extra' -- and a 2-sigma wobble does not
+  ok   NULL: a jump we CANNOT measure blocks the boost once a bar is set. An unmeasurable guard must fail closed; the ordinary bet still goes through at its own gate
+  ok   NULL: with no bars set nothing is blocked, which is A48 as it was measured
+  ok   NULL: an unreadable confidence blocks the extra contracts
+  ok   BOTH bars refuse to start unless they are TIGHTER than the gate that already let the trade through -- a --late-jump of 4 against a 3-sigma jump gate, or a --late-pin at the ordinary 0.995, could never refuse anything and would read as a safeguard while doing nothing
+  ok   the boost is gated through late_boost_ok and its refusal is recorded as `late_refused`, NOT as a gate -- the trade still happens at the ordinary size, so counting it as a refusal would overstate what the condition costs
+  ok   ...and that record exists
+  ok   confidence is read for the side we are BUYING -- f for YES and 1-f for NO. The mirror error here would hold the safest NO bets to the bar meant for the riskiest
+  ok   one late-boosted loss switches --late-mult off for the rest of the run, so 'cut at first loss' is enforced by the bot
+  ok   ...the pair is marked where the order is widened, from a set the loop declares
+  ok   ...and the switch sits INSIDE the loss branch of settlement, so a win can never trip it
+  ok   the order path still admits the late multiple at live start and at every autosize
+  ok   A56 ships OFF -- the DECLARED default, so an arm that sets the flag does not fail its own gate
+  ok   a ticker's COIN is the part before 15M -- the extra allowance is per coin, and two closes of the same coin are not two coins
+  ok   with two coins already held, a THIRD coin gets one extra bet of budget -- which is the operator's rule exactly: 'allow extra total size if it comes in the way of an extra coin after two have been maxed out'
+  ok   ...but a coin we ALREADY hold gets nothing extra. The whole argument is that two COINS have never lost together; topping up the first coin adds a second bet on it, not a second coin
+  ok   A61: a NEW coin gets the allowance even when only ONE coin is held. A close spends its budget in CONTRACTS -- one market taking two bets exhausts it -- and 282 of our 417 closes hold exactly one coin, so the old coin-count test disabled the allowance in 68% of closes and blocked 97 of the 126 markets refused inside the last ten seconds
+  ok   NULL: an empty close gets the base budget
+  ok   and the worst close GROWS by exactly one bet when the flag is on. Every rail reads worst_close_cost -- the bank brake, the loss abort, the stake cap -- so the extra coin is paid for in the size, not discovered in a drawdown
+  ok   ...and the sizer still answers with the flag off
+  ok   NULL: extra=0 is the shipped behaviour on every path
+  ok   A59 ships OFF -- the DECLARED default
+  ok   inside the last 10 s a close may spend one extra bet EVEN ON A COIN IT ALREADY HOLDS -- that is the whole point: we buy at 97.8c out at 40 s and the 94.8c price arrives at 6 s with the budget already spent
+  ok   ...and outside the window nothing is added
+  ok   the extra BUDGET may reach 15 s while the 1.5x BOOST stays at 10 -- one is permission to spend money the close already had, the other is extra risk, and sharing one number left the 11-15 s band out (38% of all close_budget refusals)
+  ok   so a market at 13 s now gets the extra bet
+  ok   and one at 16 s still does not
+  ok   NULL: unset means the boost window, which is the shipped behaviour
+  ok   NULL: an unknown second adds nothing -- a path that does not know the time must not buy itself an allowance
+  ok   and the worst close grows by exactly one bet, so the bank brake, the loss abort and the stake cap all read it
+  ok   a LIVE run refuses it outright -- third size increase in a day
+  ok   and it refuses without a late window, rather than sitting in the start record doing nothing
+  ok   the close_budget gate records tau=tau
+  ok   the close_budget gate records size=float(SIZE)
+  ok   and it does NOT record want=want: this gate fires BEFORE the book is read, so those names hold a STALE value from an earlier market or None. Logging them killed the live bot on 2026-09-19 at 01:59Z with a TypeError on round(None)
+  ok   and it does NOT record price=round(price: this gate fires BEFORE the book is read, so those names hold a STALE value from an earlier market or None. Logging them killed the live bot on 2026-09-19 at 01:59Z with a TypeError on round(None)
+  ok   and it does NOT record fair=round(f: this gate fires BEFORE the book is read, so those names hold a STALE value from an earlier market or None. Logging them killed the live bot on 2026-09-19 at 01:59Z with a TypeError on round(None)
+  ok   with BOTH allowances on, a held coin in the last seconds gets ONE extra bet
+  ok   ...and a NEW coin in the last seconds gets ONE extra bet, not two. Summing them would put the worst close at four bets and cut the bet size a quarter to pay for a case that has never happened
+  ok   and the worst close is THREE bets, not four -- the rails take the max of the two allowances, exactly as the budget does
+  ok   A65 ships with no cap
+  ok   with no cap the abort is the derived band, -2 x SIZE x MAX_PER_CLOSE -- at 105 contracts that is -$420, which is what the live bot had reached after the deposit
+  ok   a $200 cap binds there, because the cap is TIGHTER
+  ok   and at a small size the BAND binds instead -- the cap can only ever reduce what a run may lose, never raise it
+  ok   the sign of the cap is ignored: it is a magnitude, and a stray minus must not turn a cap into a licence
+  ok   NULL: an unreadable cap falls back to the derived band rather than to no limit at all
+  ok   the autosize path uses it, so the cap is re-applied EVERY time the bank moves -- a cap applied once at start-up is undone by the next autosize, which is exactly how the old one-way ratchet let the stop follow the bank up and never come back down
+  ok   --sigma-stress multiplies sigma at sg, so the flag moves the WHOLE model and not one corner of it
+  ok   --sigma-stress multiplies sigma at _hsg, so the flag moves the WHOLE model and not one corner of it
+  ok   and a LIVE run refuses a value under 1.0: every live number we have was measured at 1.0, and a bolder model is not a safer one
+  ok   every settled record carries ONE PLAIN SENTENCE saying whether the last-seconds boost fired and why -- the operator asked to be able to ask that of any trade without a log dive
+  ok   ...and the reason distinguishes 'off: --late-mult' from the others -- a single 'no' would not answer the question
+  ok   ...and the reason distinguishes 'no: bought at' from the others -- a single 'no' would not answer the question
+  ok   ...and the reason distinguishes 'no: confidence' from the others -- a single 'no' would not answer the question
+  ok   ...and the reason distinguishes 'sigma move against us' from the others -- a single 'no' would not answer the question
+  ok   ...and the reason distinguishes 'no: allowed, but nothing to add' from the others -- a single 'no' would not answer the question
+  ok   ...and the reason distinguishes 'FIRED:' from the others -- a single 'no' would not answer the question
+  ok   NULL: a trade that never reached the check says so, rather than borrowing another trade's reason or reading as a refusal
+  ok   A54 ships OFF -- the DECLARED default, so an arm that sets the flag does not fail its own gate
+  ok   a bet opened at 50 s that flips at 20 s buys DOUBLE the other side -- the 20-second look has half the settlement window on disk and the 50-second look had none of it
+  ok   a bet opened INSIDE the window gets the ordinary equal hedge, however far it later falls: it was already made on the better information, so a later disagreement is not a second opinion
+  ok   and a flip that happens while still OUTSIDE the window is also an ordinary hedge -- the rule is early-then-late, not early-then-anything
+  ok   NULL: with the flag off the size is untouched on every path
+  ok   NULL: an unknown entry or current second falls back to the equal hedge rather than guessing a multiple
+  ok   NULL: an unreadable position size is zero, never a multiple of nothing
+  ok   the hedge block sizes through flip_size, so the flag reaches the only place it can act
+  ok   ...before the ask-size cap, so the book still bounds what we ask
+  ok   pintake's per-order count cap admits the flip multiple at live start and at every autosize -- otherwise the wider hedge is refused on the wire while paper books it
+  ok   and a LIVE run refuses the flag outright: this is a bet on the later look, and no measurement supports it yet
   ok   a boosted loss switches --band-mult OFF for the rest of the run and says so in the log -- the bar enforces itself
   ok   ...the pair is marked where the order is widened, and the switch sits inside the LOSS branch of settlement -- the nearest `if not won:` above it is closer than any earlier settled record, so a win can never trip it
   ok   ...and before the settled record is written, so the record that carries the loss is preceded by the record that says what it did
   ok   and the set is declared before the switch reads it
+  ok   A63 ships OFF
+  ok   A63: naked, the BNB close risked $56.98
+  ok   ...a BALANCED hedge at 21c turns that into a LOCKED +$3.06, which is A62's whole job and why A62 is live
+  ok   ...but buying the remaining 138 of budget as MORE NO takes the worst case to -134.67. Past the other side's count `min(y,n)` stops rising, so every extra contract is naked. THE WITHDRAWN COMMENT SAID THIS COULD NOT HAPPEN
+  ok   ...and the best case only improves to +$3.33 -- $138 more at risk to win 27 cents, which is the opposite of the trade
+  ok   ...and the OTHER half of the withdrawn claim is false too: the hedge path never calls _note_fill, so hedge contracts do NOT consume the close budget and the whole budget is still free
+  ok   holding YES and having HEDGED into NO, more NO is allowed: on the margin one more NO pays (1-price) if NO lands and costs `price` if it does not, which is EXACTLY a fresh bet on NO. Live 2026-09-19 01:44:52 this gate refused NO at 99.865% confidence on the close that lost $57.98
+  ok   ...but if we hedged into YES, more NO is still refused -- that is averaging into the side the model has given up on
+  ok   NULL: a market we never hedged is unchanged. A8 exists to stop us opening both sides BY ACCIDENT, and that still holds
+  ok   and with the flag OFF nothing changes at all
+  ok   A66: the self-test writes to a SANDBOX, not to the real mirror every paper arm reads
+  ok   A66 NULL: no mirror file means no size change -- an arm keeps its --size, which is exactly the behaviour that shipped before, so a missing file can never produce a wild bet
+  ok   A66: live publishes its size and an arm reads it back
+  ok   A66 NULL: a STALE mirror is ignored -- if the live bot has been down an hour its last size must not keep pinning 43 arms
+  ok   A66 NULL: unreadable file -> None
+  ok   A66 NULL: a malformed mirror ({'size': 0, 'epoch': 1789890130.10) reads as None, never as a size
+  ok   A66 NULL: a malformed mirror ({'size': -5, 'epoch': 1789890130.1) reads as None, never as a size
+  ok   A66 NULL: a malformed mirror ({'size': 'x', 'epoch': 1789890130.) reads as None, never as a size
+  ok   A66 NULL: a malformed mirror ({'size': 20}) reads as None, never as a size
+  ok   A66 NULL: a malformed mirror ([1, 2, 3]) reads as None, never as a size
+  pintake rails raised: HARD_MAX 25 -> 327; MAX_TAKE_COUNT 10 -> 218; LOSS_ABORT $-2.00 -> $-436.00; MAX_RUN_STAKE $60.00 -> $664.00  (auto-size 1 -> 109: mirroring live size 109)
+  ok   A66: a PAPER arm moved 20 -> 109 to match live, through the same call the trade loop makes (no injected bank reader). Every arm has been pinned at 20 since 2026-09-14 because read_bank() needs a key paper has not got
+  ok   ...and it says so in the autosize message
+  ok   ...and when the file goes away the arm HOLDS its size and counts the miss, rather than falling back to a bank read it cannot do
+  ok   A69: THE HEDGE PASS RUNS BEFORE THE RISK CHECK. The transient pause ends in `continue`, which skips every line below it -- so while the check sat above the hedge, a paused bot could not protect a position it already held. Live 2026-09-19 15:59:15 the loss bound paused one instant after a 110-contract fill and the close went to zero unhedged: -$107.95, the largest loss this account has taken
+  ok   ...and nothing above the hedge pass skips the whole iteration by another route -- that is how the pause did it
+  ok   ...and the clock is read before the hedge pass, which needs it
+  ok   A68 ships at ONE times the losing position. The bet is good -- 6 of 6 live markets under 40% belief went on to lose -- but n is 6, so the SIZE is where the caution goes
+  ok   A68: holding 82.8 on the losing side, we may buy 82.8 more of the side we hedged into
+  ok   ...and once that is spent the room is ZERO, never negative -- the cap is what separates this from A63, which had none and would have taken the BNB worst case from +$3 to -$134
+  ok   A68 NULL: --rebuy-mult 0 disables it completely
+  ok   A68 NULL: nothing held on the losing side, or an unreadable count, buys nothing
+  ok   A68 NULL: room of None BLOCKS. Every path that has not worked out an allowance must not be read as having one
+  ok   ...and room of zero blocks too
+  ok   ...while real room lets more of the hedged-into side through
+  ok   ...and room NEVER unblocks the side the model has given up on -- that is averaging into a loser, which is the opposite trade
+  ok   A68: the cap is applied to take_n, or the close budget alone decides the size and the bound is decorative
+  ok   ...and it runs AFTER _widen45(take_n), so no widener can undo it
+  ok   ...and it runs AFTER _late48(take_n), so no widener can undo it
+  ok   ...and it runs AFTER _band53(take_n), so no widener can undo it
+  ok   ...and it runs AFTER _stage46(take_n), so no widener can undo it
+  ok   A68: the rebuy is allowed only while the NEWEST belief is still collapsed -- a belief that recovers closes the door on the next tick rather than leaving it open for the whole close
+  ok   A67 ships ON. A35's flat sizing asked for every contract under the sweep limit whatever the edge there, which is how a 91.5c signal became an average fill of 97.27c
+  ok   A67 NULL: when the edge does NOT decay, the taper asks for the full size -- it is a response to a worsening price, not a haircut
+  ok   A67: the real BNB book offered 11,937 contracts under the 98c limit and A35 sized the order to all of it; the taper asks for 47, because only 23 of them carried the 7.8c edge the trade was justified by
+  ok   ...and the number is not a fudge: full depth at the touch, then size x (edge here / edge at the touch) at each worse level
+  ok   A67 NULL: if the BEST price on the book has no edge, no quantity of worse ones does either -- ask for nothing rather than for the ladder
+  ok   A67 NULL: an empty book, or a zero size, asks for nothing
+  ok   A67: the total can never exceed SIZE, whatever the book holds
+  ok   A67: --taper-floor STOPS at the first level worth less than the given fraction of the touch's edge, so a thin good price is not used to justify a deep bad one
+  ok   ...and each level is capped by its OWN depth, or the taper would ask for contracts that are not there
+  ok   --arm-name carries the arm's name into its own command line, so the desktop app can prove which process is which. Eleven band arms were known only by a redirect FILENAME, which Windows does not report in a command line, so none could be paused or stopped
+  ok   ...and the ONLY thing that reads it is the guard refusing it on a --live command line. A label that changed a decision would make every arm carrying one a different bot from the one it claims to be, which is the whole failure this flag exists to prevent
+  ok   A66 ships ON: the whole point is that an arm is proportional unless it is deliberately testing a size
+  ok   ...and the mirror is read BEFORE the bank, because the bank read is the line that has been silently returning None in every arm
+  ok   the loop remembers which side each hedge went INTO -- without it the rule cannot tell the side we escaped to from the one we fled
+  ok   ...and the gate is asked with it
   ok   A8: holding YES and now wanting NO on the SAME market is blocked -- the two legs pay $1 between them and cost more than that
   ok   ...but wanting the SAME side is a TOP-UP and must pass. The old misplaced test blocked ~94% of these by comparing against whatever the previous market in the scan happened to want
   ok   NULL: a different market is not blocked by this one's position
   ok   NULL: no previous state, no sides map, or no side wanted -> no block
   ok   and the trade loop calls it AFTER `want` is assigned -- the entire bug was that this test ran 143 lines too early
+  ok   ...and it is passed the side we hedged INTO (A63) -- and A68's room -- or more of the side the model now prefers stays refused
   ok   A47: we buy the opposite side at 60c, so OUR side is at 40c and the hedge fires; at an opposite ask of 40c our side is 60c and it waits
   ok   exactly 50c on our side does NOT fire -- the wobble table's own boundary is 'below 50c', and 48 of 48 dips at or above it recovered
   ok   the one WASTED live hedge under today's gate bought at 15c with our side still at 85c, and cost $13.83; A47 would have waited
@@ -209,8 +355,119 @@ SELF-TEST -- pinrun
   ok   NULL: an unparseable ask does not hedge on a guess
   ok   A47 is checked in the trade loop BEFORE the hedge reaches the wire
   ok   a price-wait does NOT retire the position: the price can still fall inside this close, and then we hedge
+  ok   and A62 sits in front of it: below HEDGE_PANIC belief the market-agreement test is bypassed entirely
   ok   the SHIPPED value of HEDGE_PRICE is None -- A47 is opt-in
   ok   if restart_bot.ps1 passes --hedge-price, VERSIONS.md names it -- a live flag with no entry is the lapse versioncheck exists for
+  ok   the hedge keeps trying for at least 30 seconds. At five it gave up on the BNB close with eighteen seconds left and the position naked; hedge_ask_ok already refuses a leg that cannot help
+  ok   the DECLARED panic threshold is 40% belief -- asserted against the default so an arm that moves it does not fail its own gate
+  ok   at 22.7% belief -- the BNB close that lost $57.98 on 2026-09-19 -- every filter is bypassed, and the threshold itself panics
+  ok   and so do the 24.3% and 21.4% hedges, the two biggest helpers we have on record (+$8.29 and +$24.18)
+  ok   the ONE hedge that ever hurt sat at 48.5% belief and was bought at 15c -- above the panic line, where --hedge-price still refuses it. That is the whole reason the line is not simply the trigger
+  ok   and a shallow dip does not panic
+  ok   NULL: an unmeasurable belief is NOT a panic -- it must not trigger the one path that ignores every other safeguard
+  ok   NULL: with the bypass disabled nothing panics, whatever belief is
+  ok   NULL: garbage does not panic
+  ok   in a panic the loop bypasses this filter: if not _panic and not hedge_price_ok(_ask):
+  ok   in a panic the loop bypasses this filter: if not _panic and not hedge_normal_ok(_belief, _ask):
+  ok   in a panic the loop bypasses this filter: if _tries + 1 > HEDGE_MAX_TRIES and not hedge_panic(_belief):
+  ok   ...and the per-close attempt cap too -- it stranded the BNB position after five seconds while the other side went 21c to 76c
+  ok   and a panic says so in the log, with what it bypassed
+  ok   the panic is decided BEFORE the first filter that could block it
+  ok   A70 ships OFF -- with no flag the hedge prices and sizes itself exactly as it did before, so this cannot change live behaviour until somebody passes --hedge-slip
+  ok   NULL: slip 0 sends the ask we saw, which IS the old behaviour
+  ok   NULL: no rungs (slip off, so they are never read) leaves the size at the touch -- the old behaviour again
+  ok   with 3c of slip the limit clears the 0.71 rung the touch could not reach
+  ok   and the size comes from the LADDER (305 available) capped at the 76 contracts still unhedged -- not the 5 at the touch
+  ok   EXPOSURE: a bottomless ladder still stops at the unhedged count. A close pays min(yes_n, no_n), so every contract past the other side's count is NAKED -- that is what A63 was refused for
+  ok   EXPOSURE: hedge_depth never exceeds max(touch, unhedged) (touch 5, unhedged 76)
+  ok   EXPOSURE: hedge_depth never exceeds max(touch, unhedged) (touch 500, unhedged 76)
+  ok   EXPOSURE: hedge_depth never exceeds max(touch, unhedged) (touch 5, unhedged 0)
+  ok   EXPOSURE: hedge_depth never exceeds max(touch, unhedged) (touch 0, unhedged 0)
+  ok   BLOCKS NOTHING: when the touch is already deeper than the ladder cap, the touch wins -- a hedge that fills today cannot fill less
+  ok   BLOCKS NOTHING: garbage rungs (None) fall back to the touch and the hedge still goes
+  ok   BLOCKS NOTHING: garbage rungs (()) fall back to the touch and the hedge still goes
+  ok   BLOCKS NOTHING: garbage rungs ([(None, None)]) fall back to the touch and the hedge still goes
+  ok   BLOCKS NOTHING: garbage rungs ([('x', 'y')]) fall back to the touch and the hedge still goes
+  ok   BLOCKS NOTHING: garbage rungs ('junk') fall back to the touch and the hedge still goes
+  ok   BLOCKS NOTHING: a garbage slip is treated as no slip, never as a refusal to hedge
+  ok   an unusable ask returns None -- the caller falls back to _ask, which hedge_ask_ok has already passed
+  ok   slip can never carry the limit to $1.00, where the leg costs more than the pair pays (ask 0.960)
+  ok   slip can never carry the limit to $1.00, where the leg costs more than the pair pays (ask 0.980)
+  ok   slip can never carry the limit to $1.00, where the leg costs more than the pair pays (ask 0.999)
+  ok   and the limit is never BELOW the ask -- that would cross less of the book than today
+  ok   hedge_vwap charges each rung its own price (0.70934)
+  ok   ...so a paper arm running the slip pays MORE than the touch, and cannot report an edge the exchange would not have given it
+  ok   NULL: a ladder that does not hold n, no ladder, or no contracts all fall back rather than invent a price
+  ok   the hedge send was found in trade_loop, not in this test
+  ok   A70: the hedge is handed the LIMIT, never the ask it saw. Sending the ask is why ten of twenty-nine live hedge attempts filled 0 or 1 contract against a book that displayed everything we asked for
+  ok   ...and the size is capped at _hn, the contracts still unhedged
+  ok   the depth is computed before the size that uses it
+  ok   the ladder is only READ when the slip is on, so with the flag off the hedge path does not even touch the book differently
+  ok   A76 ships ON -- the operator chose it, knowing it is 15 clusters
+  ok   PLANTED: 15% -> all, 30% -> half, 50% -> none
+  ok   the bands are AT-OR-UNDER: exactly 20% is a full hedge, exactly 40% is a half, a hair above 40% is nothing
+  ok   NULL: an unmeasurable belief (None) buys NO insurance -- the same rule as the panic bypass
+  ok   NULL: an unmeasurable belief ('x') buys NO insurance -- the same rule as the panic bypass
+  ok   NULL: an unmeasurable belief (nan) buys NO insurance -- the same rule as the panic bypass
+  ok   XRP 23:45: 104 held at 27.3% belief -> hedge 52, not 104 (that hedge cost $67.22 and the bet won)
+  ok   HYPE 23:45: 104 held at 50.1% belief -> hedge NOTHING. A coin flip is not a collapse; that hedge cost $49.65 and the bet won
+  ok   top-up step 1: at 30% belief buy 52 of 104 (52)
+  ok   top-up step 2: belief falls to 15%, the target is now the whole 104 and 52 are covered -> BUY THE OTHER 52 (52)
+  ok   top-up step 3: everything covered -> nothing more (0)
+  ok   belief RECOVERS after a half hedge -> want is 0, never negative: the leg stays, we do not sell insurance back (0)
+  ok   and if it then collapses for real, the top-up still fires
+  ok   EXPOSURE: hedge_want(104, 104, 0) never exceeds the uncovered 104
+  ok   EXPOSURE: hedge_want(104, 30, 0) never exceeds the uncovered 30
+  ok   EXPOSURE: hedge_want(104, 0, 0) never exceeds the uncovered 0
+  ok   EXPOSURE: hedge_want(5, 5, 0.19) never exceeds the uncovered 5
+  ok   EXPOSURE: hedge_want(0, 0, 0) never exceeds the uncovered 0
+  ok   NULL: garbage sizes hedge nothing rather than raising inside the hedge pass, which has no try/except around it
+  ok   --no-hedge-prop: exactly today's behaviour, everything uncovered, whatever the belief
+  ok   the hedge pass sizes from hedge_want()
+  ok   a second with nothing to buy `continue`s BEFORE the try is counted -- otherwise 30 idle seconds in the no-hedge band would give up on the position and the top-up could never happen
+  ok   and the alarm is keyed on its own set, so idle seconds do not re-fire it at 20 Hz
+  ok   live AND paper judge 'done' against the UNCOVERED count, not the proportional ask -- a half hedge that fills in full stays open
+  ok   and every change of band is logged, so the rule can be scored
+  ok   A71: the hedge must NOT read the entry path's attempt counter -- an entry rail that can permanently disable a hedge is exactly what the standing rule forbids
+  ok   ...it reads its OWN counter instead
+  ok   ...which only the hedge path increments
+  ok   and exactly one site increments it, so no entry path can reach it
+  ok   the hedge's own cap (120) sits at or above everything ordinary hedging can send in a close (2 positions x 30 tries = 60), so it is a runaway backstop and never the reason a hedge does not fire
+  ok   but it is still a bound -- the 160-order runaway of 2026-09-08 is why any cap exists at all
+  ok   A71: the hedge skip `if _meta is None:` records 'no_hedge_meta' instead of failing silently
+  ok   A71: the hedge skip `if _hsg is None:` records 'no_sigma' instead of failing silently
+  ok   A71: the hedge skip `if _hf is None:` records 'no_fair' instead of failing silently
+  ok   ...and they all land in one record kind, so a feed outage during a collapse is greppable
+  ok   deduped per (position, reason) -- this sits in a 20 Hz loop and an unrecovered feed would otherwise write tens of thousands of lines; per REASON, so a new failure still speaks
+  ok   NULL: the dedupe key carries the REASON as well as the position
+  ok   exactly one real call site for report_closes(int(time.time()) - 5)
+  ok   A71: `report_closes(int(time.time()) - 5)` runs above the hedge pass, so it is wrapped in try: -- an exception there ends the process while a position is open, and nothing would say why
+  ok   exactly one real call site for reconcile()
+  ok   A71: `reconcile()` runs above the hedge pass, so it is wrapped in try: -- an exception there ends the process while a position is open, and nothing would say why
+  ok   ...both of them, and only them
+  ok   a reconcile that works CLEARS the streak
+  ok   and a reconcile that keeps failing halts the run -- a frozen ledger makes the loss abort, the stake cap and the loss-count brake all inert, and the bot would trade on blind to its losses
+  ok   the streak is not 1 -- one HTTP hiccup must not end a day (running 40)
+  ok   the reconcile halt lands in risk_abort, which sits BELOW the hedge pass -- so it stops NEW bets and never a hedge. A halt at the top of the loop would be the A69 bug again
+  ok   PLANTED: a 40-failure streak really does halt ('reconcile has failed 40 times in a row: the loss brakes are reading a frozen ledger')
+  ok   NULL: one short of the streak does NOT halt -- the brake has to be reachable and not trigger-happy
+  ok   NULL: a state that never set the key at all does not halt
+  ok   A73 ships with the old open-position bound OFF -- only finalised bets count toward the loss total
+  ok   A73: realised $+43.56 with $145.00 still open must NOT pause -- this pair really fired on the live bot and the run was not losing
+  ok   ...and --loss-bound-open brings that pause back, so the change is revertible without editing code (+43.56/145.00)
+  ok   A73: realised $+0.00 with $101.15 still open must NOT pause -- this pair really fired on the live bot and the run was not losing
+  ok   ...and --loss-bound-open brings that pause back, so the change is revertible without editing code (+0.00/101.15)
+  ok   A73: realised $+31.19 with $210.06 still open must NOT pause -- this pair really fired on the live bot and the run was not losing
+  ok   ...and --loss-bound-open brings that pause back, so the change is revertible without editing code (+31.19/210.06)
+  ok   A73: realised $-8.52 with $106.82 still open must NOT pause -- this pair really fired on the live bot and the run was not losing
+  ok   ...and --loss-bound-open brings that pause back, so the change is revertible without editing code (-8.52/106.82)
+  ok   A73: realised $+0.00 with $190.05 still open must NOT pause -- this pair really fired on the live bot and the run was not losing
+  ok   ...and --loss-bound-open brings that pause back, so the change is revertible without editing code (+0.00/190.05)
+  ok   PLANTED: $200.00 of FINALISED losses still halts the run ('loss abort: realised $-200.00 <= $-200.00') -- the settled abort is the whole brake now
+  ok   NULL: a cent under the cap does not halt, so the brake is reachable and not trigger-happy
+  ok   and the settled abort is INDEPENDENT of what is open
+  ok   in-flight exposure is still bounded by max_positions x SIZE x the price ceiling ($323.40 at size 110) -- A73 removed a guess about losses, not a real cap
+  ok   A73: the loss bound still sits BELOW the hedge pass. The whole reason this code path is dangerous is that its `continue` once skipped a hedge and cost $107.95
   ok   belief below the 0.60 gate fires the hedge
   ok   belief at or above the gate does not
   ok   no belief at all never fires -- a missing number is not a collapse
@@ -238,9 +495,10 @@ SELF-TEST -- pinrun
   ok   and places the hedge through the same take() path as every fill
   ok   every alarm, missing ask and refusal is recorded -- silence is not an outcome
   ok   retries are paced to ONE PER SECOND -- the first live alarm burned all five in ~250 ms and gave up inside the alarm second
-  ok   retries are bounded (5) -- a runaway on the hedge path would be the 160-order incident again
-  ok   abort fires FORWARD: $1.20 open plus one more contract would pass -$2.00 (loss bound: realised $+0.00 with $1.20 still open; one more contract could take this run past $-2.00)
-  ok   $0.90 open still leaves room for one more contract (None)
+  ok   retries are bounded (30) and cannot outlive a close -- a runaway on the hedge path would be the 160-order incident again, and the one-per-second pacing above is what actually prevents it
+  ok   A73: $1.20 OPEN with nothing finalised must NOT stop the bot -- a held bet is not a loss until it settles (None)
+  ok   ...and --loss-bound-open restores the old forward bound exactly (loss bound: realised $+0.00 with $1.20 still open; one more contract could take this run past $-2.00)
+  ok   $0.90 open does not stop the bot either (None)
   ok   abort fires on order-path errors, which the universe pass cannot reset (2 errors on the ORDER path)
   ok   a settled position releases its FULL stake at size 1 (committed 0.0000, was 0.9750)
   ok   a settled position releases its FULL stake at size 5 (committed 0.0000, was 4.8750)
@@ -255,7 +513,8 @@ SELF-TEST -- pinrun
   pintake rails raised: LOSS_ABORT $-2.00 -> $-30.00  (selftest)
   ok   set_limits LOOSENS the order-path brake to match the run's own
   ok   and it REFUSES to tighten -- a hidden brake tighter than the operator's is not a brake, it is an outage
-  ok   risk_abort() runs before the first `continue` in the loop
+  ok   risk_abort() runs before the SIGNAL SCAN -- before any new money goes out, which is the thing a risk bound exists to stop
+  ok   ...and AFTER the hedge pass, because a hedge reduces risk and the pause's `continue` would otherwise skip it (the $107.95 close)
   ok   no direct send path in this file (found [])
   ok   take() is called with the market's exchange_index, not the default 0
   ok   exchange_index is read from the market record in the universe pass
@@ -283,10 +542,10 @@ SELF-TEST -- pinrun
   ok   every refusal writes ONE `dumped` record per (close, market) with side, price, fair and tau, so the would-be P&L can be resolved later
   ok   and the record is written before the enable check, whether or not the trade is refused
   ok   and the count happens BEFORE the enable check, so the class is recorded whether or not it is refused
-  ok   worst_close_cost(20) must be MAX_PER_CLOSE*20*PRICE_CEILING = 39.2, got 39.2
+  ok   worst_close_cost(20) must be (MAX_PER_CLOSE + EXTRA_COIN + LATE_EXTRA) x 20 x PRICE_CEILING = 39.2, got 39.2. A56 added a third coin's worth of exposure and every rail reads this number, so leaving EXTRA_COIN out here would size the brake against a bet nobody places
   ok   and the DECLARED ceiling is 98c -- asserted separately, so a flag that moves the running value cannot silently move the bar too
   ok   worst_close_cost must be EXACTLY linear in size -- that is the whole reason it replaced a sampled maximum, which was not
-  ok   $192.15 / $8.00 (BANK_BRAKE 4.08 x MAX_PER_CLOSE 2 x ceiling 0.98) = 24, got 24
+  ok   $192.15 / $8.00 (BANK_BRAKE 4.08 x (MAX_PER_CLOSE 2 + EXTRA_COIN 0.0 + LATE_EXTRA 0.0) x ceiling 0.98) = 24, got 24
   ok   an empty or unreadable bank must fall to the floor, never to 0
   ok   the cap must bind, got 250
   ok   size_for_bank fell from -1 to 1 at bank $10 -- more money can never permit less
@@ -302,28 +561,28 @@ SELF-TEST -- pinrun
   ok   cents and dollars DISAGREEING must be refused; this is the 19215-read-as-dollars failure, which asks for size 6535
   ok   a non-200 must read as unknown
   ok   no credentials (paper mode) must read as unknown, never 0
-  pintake rails raised: HARD_MAX 25 -> 180; MAX_TAKE_COUNT 10 -> 120; LOSS_ABORT $-2.00 -> $-240.00; MAX_RUN_STAKE $60.00 -> $370.00  (auto-size 1 -> 60: selftest)
-  ok   apply_size must set SIZE, got 60.0 (size 1 -> 60 (selftest); abort $-240.00, stake cap $370.00, take count 120)
-  ok   MAX_TAKE_COUNT must reach the new size or every order is refused in silence, got 120.0
-  ok   MAX_RUN_STAKE must cover 3 worst closes at the new size, got 370.0
+  pintake rails raised: MAX_TAKE_COUNT 218 -> 218; LOSS_ABORT $-2.00 -> $-240.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 1 -> 60: selftest)
+  ok   apply_size must set SIZE, got 60.0 (size 1 -> 60 (selftest); abort $-240.00, stake cap $664.00, take count 218)
+  ok   MAX_TAKE_COUNT must reach the new size or every order is refused in silence, got 218.0
+  ok   MAX_RUN_STAKE must cover 3 worst closes at the new size, got 664.0
   ok   loss_abort -240.0 must land inside main()'s own [-480.0, -180.0] band, or the run halts on its first trade
   ok   a rail must NEVER move while a position is open
-  pintake rails raised: HARD_MAX 25 -> 72; MAX_TAKE_COUNT 10 -> 48; LOSS_ABORT $-2.00 -> $-96.00; MAX_RUN_STAKE $60.00 -> $154.00  (auto-size 20 -> 24: bank $192.15)
+  pintake rails raised: MAX_TAKE_COUNT 218 -> 218; LOSS_ABORT $-2.00 -> $-96.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 20 -> 24: bank $192.15)
   ok   with AUTO_SIZE_STEP_UP=None the bot goes STRAIGHT to the size the bank supports (24), got 24.0
   ok   a second adjustment inside AUTO_SIZE_EVERY_S must be refused
-  pintake rails raised: MAX_TAKE_COUNT 48 -> 60; LOSS_ABORT $-96.00 -> $-120.00; MAX_RUN_STAKE $154.00 -> $190.00  (auto-size 20 -> 30: bank $719.71)
+  pintake rails raised: MAX_TAKE_COUNT 218 -> 218; LOSS_ABORT $-96.00 -> $-120.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 20 -> 30: bank $719.71)
   ok   with damping at 1.5 the first step is 20 -> 30 however big the bank is, got 30.0
-  pintake rails raised: MAX_TAKE_COUNT 60 -> 60; LOSS_ABORT $-120.00 -> $-120.00; MAX_RUN_STAKE $190.00 -> $190.00  (auto-size 60 -> 3: bank $30.00)
+  pintake rails raised: MAX_TAKE_COUNT 218 -> 218; LOSS_ABORT $-120.00 -> $-120.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 60 -> 3: bank $30.00)
   ok   a FALL is immediate and undamped -- $30 supports 3, got 3.0
   ok   an unreadable bank must leave SIZE exactly where it was
   ok   --no-auto-size must pin SIZE to --size
-  pintake rails raised: HARD_MAX 72 -> 750; MAX_TAKE_COUNT 60 -> 500; LOSS_ABORT $-120.00 -> $-1000.00; MAX_RUN_STAKE $190.00 -> $1510.00  (auto-size 20 -> 250: bank $1000000.00)
+  pintake rails raised: HARD_MAX 327 -> 750; MAX_TAKE_COUNT 218 -> 500; LOSS_ABORT $-120.00 -> $-1000.00; MAX_RUN_STAKE $664.00 -> $1510.00  (auto-size 20 -> 250: bank $1000000.00)
   ok   a PAPER arm auto-sizes exactly as live does, or its dollars cannot be compared with live's and the arm is worthless
   ok   and --no-auto-size still pins it, in paper as in live
   pintake rails raised: MAX_TAKE_COUNT 500 -> 500; LOSS_ABORT $-1000.00 -> $-1000.00; MAX_RUN_STAKE $1510.00 -> $1510.00  (auto-size 1 -> 120: loosen the rails first)
   pintake rails raised: MAX_TAKE_COUNT 500 -> 500; LOSS_ABORT $-1000.00 -> $-1000.00; MAX_RUN_STAKE $1510.00 -> $1510.00  (auto-size 120 -> 7: bank $60.00)
   ok   after the rails were loosened for size 120, a $60 bank must still shrink SIZE to 7, got 7.0
-  ok   and the brake must stay at its loosest high-water mark, not be tightened on the way down, got -1000.0
+  ok   and the brake must stay at its loosest high-water mark, not be tightened on the way down -- loosest allowed here is -240.0 (cap None), got -1000.0
   ok   the DECLARED default improve scope is 'close' -- A22 is reached only through --improve-scope (running now with 'market')
   ok   a _DEFAULT_SIGMA_RULER exists to assert against, so its guard can never become a refusal to start
   ok   and nothing asserts `SIGMA_RULER ==` against a LITERAL -- that shape has stopped this bot from starting four times today, once per flag added ([])
@@ -414,7 +673,7 @@ SELF-TEST -- pinrun
   ok   a bank of $1000 against the shifted mark is ZERO drawdown -- the brake does not fire. Before A43 this was a 33% drawdown and halted the bot
   ok   the mark never goes negative
   ok   a missing mark is left missing, never invented
-  pintake rails raised: HARD_MAX 25 -> 561; MAX_TAKE_COUNT 10 -> 374; LOSS_ABORT $-2.00 -> $-748.00; MAX_RUN_STAKE $60.00 -> $1132.00  (auto-size 1 -> 187: bank $1500.00)
+  pintake rails raised: HARD_MAX 327 -> 561; MAX_TAKE_COUNT 218 -> 374; LOSS_ABORT $-2.00 -> $-748.00; MAX_RUN_STAKE $664.00 -> $1132.00  (auto-size 1 -> 187: bank $1500.00)
   *** WITHDRAWAL of $500.00 detected -- not a trading loss. High-water mark moved to $1000.00; the drawdown brake keeps measuring trading only. ***
   pintake rails raised: MAX_TAKE_COUNT 374 -> 374; LOSS_ABORT $-748.00 -> $-748.00; MAX_RUN_STAKE $1132.00 -> $1132.00  (auto-size 187 -> 125: bank $1000.00)
   ok   autosize_tick END TO END: $500 vanishing with no realised loss logs ONE external record saying withdrawal, -500
@@ -508,7 +767,7 @@ SELF-TEST -- pinrun
   ok   A46: the tau gate opens to the early window only when it is set
   ok   A46: a second early look is refused before any signal is recorded
   ok   A46: the leg is sized BEFORE the signal record, so the record shows what will be asked for and which leg it is
-  ok   A46: the live path re-applies the leg cap AFTER A35/A45 widening, so an early leg can never be widened back to a full bet
+  ok   A46: the live path re-applies the leg cap AFTER A35/A45 widening and BEFORE the order is sent, so an early leg can never be widened back to a full bet
   ok   A46: fills book what the market holds from an early leg
   ok   A46: the only place the window opens sits behind the live refusal
   ok   A45: bank $556.02 under a $574.79 high leaves $96.19 before the 20% brake, = 98.15 contracts at the 98c ceiling -- the cap
@@ -537,10 +796,12 @@ SELF-TEST -- pinrun
   ok   risk_abort actually reads the drawdown, rather than it being computed and discarded
   ok   and a settled LOSS clears the sizer's timer, so the bet shrinks on the next pass instead of up to five minutes later -- the operator's 'if we lose it should immediately recalculate'
   ok   the dollar stop TIGHTENS as well as loosens. It used to ratchet one way, so a stop set when the bank was $310 stayed at -$208 even after the bank halved
-  ok   while the self-test runs, HWM_FILE points at a sandbox and NOT at results/pinrun-hwm.json -- currently 'C:\\Users\\Joe\\AppData\\Local\\Temp\\pinhwm-t6ydzg_8\\hwm.json'
+  ok   THE SELF-TEST MUST NOT BE ABLE TO WRITE THE SIZE MIRROR every paper arm reads. It did on 2026-09-19 and sized 36 arms to 7 contracts; SIZE_MIRROR is now redirected for the whole test, not per call, because a per-call path is one forgotten argument away from repeating it
+  ok   ...and a publish_size() with NO path argument -- the shape that did the damage -- leaves the real mirror byte-identical
+  ok   while the self-test runs, HWM_FILE points at a sandbox and NOT at results/pinrun-hwm.json -- currently 'C:\\Users\\Joe\\AppData\\Local\\Temp\\pinhwm-4sbkyr9o\\hwm.json'
   ok   and not anywhere else in results/ either
   ok   a test CAN move the sandboxed mark freely
-  ok   and the REAL file is untouched by that (636.13) -- if this ever fails, the live bot's next start will see a false drawdown and halt
+  ok   and the REAL file is untouched by that (834.19) -- if this ever fails, the live bot's next start will see a false drawdown and halt
   ok   open contracts are summed across markets (20)
   ok   and an empty ledger holds nothing
   ok   a position that is NOT the dict shape contributes zero rather than a wrong number -- the first version indexed it positionally and would have summed zero for every real position, removing the rail instead of converting it
@@ -614,16 +875,16 @@ SELF-TEST -- pinrun
   ok   and computes it BEFORE the order is sent
   ok   and pintake.take() is handed the LIMIT, never the ask we saw -- if this ever reverts, a lost race silently buys nothing again
   ok   and both prices are logged, so PREREG_sweep.md's bar is scorable
-  ok   budget must be MAX_PER_CLOSE x SIZE = 136.0, got 136.0
+  ok   the BASE budget is MAX_PER_CLOSE x SIZE = 136.0, got 136.0
   ok   budget x ceiling must equal worst_close_cost -- if these ever disagree, the --loss-abort band, pintake's stake cap and pinbank are all sized against a different bet than the one being placed
   ok   close_budget(size) must honour an explicit size
-  ok   the per-close cap must read CONTRACTS, not the fill count
+  ok   the per-close cap must read CONTRACTS, not the fill count -- and since A56 it reads the budget for THIS CANDIDATE, which is the base plus the extra-coin allowance when the candidate is a coin this close does not already hold
   ok   and `contracts` must come from the close's own record
   ok   and the old fill-count cap must survive behind CLOSE_BUDGET so the rule can be reverted without an edit
   ok   STRUCTURAL: take_n is trimmed to the remaining budget only AFTER the MIN_FILL_FRAC floor has been tested against the FULL size -- trimming first would relax the floor to the remainder
   ok   and the floor is still measured against FULL SIZE, never the remainder -- the operator's own condition (A17)
   ok   and the remainder is measured against close_budget()
-  ok   the trim (line 1093) must happen before the order is sent (line 1506), not after
+  ok   the trim (line 1455) must happen before the order is sent (line 1989), not after
   ok   the signal record must carry the resting age of the level we hit
   ok   and it must read the OPPOSITE side -- buying YES at p hits the NO bid at 1-p, and reading our own side would measure a level we are not trading against
   ok   at the complementary price, not at the price we pay
@@ -637,148 +898,85 @@ SELF-TEST -- pinrun
   ok   and BEFORE risk_abort, so the loss bound is evaluated against the size we are about to trade, not the previous one
 SELF-TEST PASSED
   MODE PAPER   tau<=30s  pin 0.995  edge>=0.3c net  loss abort $-60.00  SIZE 20
-  log C:\kals-repo\results\pinrun-paper-20260918T221034Z.jsonl
+  log C:\kals-repo\results\pinrun-paper-20260920T074210Z.jsonl
   index up: 11 ticks, 11 feeds
-  close 22:15Z: 6801 looks, best was KXXRP15M-26SEP181815-1 YES @0.9820 edge +1.58c (need +0.3c) -> no trade
-  SIGNAL KXDOGE15M-26SEP181830-30 tau=44s buy NO @0.9790 fair 0.0043 edge +1.53c size 30.00 taking 20 [early]
-  SIGNAL KXBNB15M-26SEP181830-30 tau=42s buy YES @0.9800 fair 0.9982 edge +1.68c size 60.00 taking 20 [early]
-  close 22:30Z: 354 looks, best was KXBNB15M-26SEP181830-3 YES @0.9800 edge +1.68c (need +0.3c) -> FIRED
-  SETTLED KXDOGE15M-26SEP181830-30 no vs no -> +39.12c (run realised $+0.3912)
-  SETTLED KXBNB15M-26SEP181830-30 yes vs yes -> +37.25c (run realised $+0.7637)
-  close 22:45Z: 6801 looks, best was KXDOGE15M-26SEP181845- NO @0.9950 edge +0.46c (need +0.3c) -> no trade
-  SIGNAL KXBTC15M-26SEP181900-00 tau=45s buy YES @0.9800 fair 0.9994 edge +1.81c size 113.28 taking 20 [early]
-  close 23:00Z: 6530 looks, best was KXBTC15M-26SEP181900-0 YES @0.9800 edge +1.81c (need +0.3c) -> FIRED
-  SETTLED KXBTC15M-26SEP181900-00 yes vs yes -> +37.25c (run realised $+1.1362)
-  SIGNAL KXXRP15M-26SEP181915-15 tau=28s buy NO @0.9800 fair 0.0035 edge +1.51c size 210.15 taking 20
-  close 23:15Z: 6463 looks, best was KXXRP15M-26SEP181915-1 NO @0.9790 edge +1.83c (need +0.3c) -> FIRED
-  SETTLED KXXRP15M-26SEP181915-15 no vs no -> +37.25c (run realised $+1.5087)
-  close 23:30Z: 6321 looks, best was KXHYPE15M-26SEP181930- YES @0.9900 edge +0.91c (need +0.3c) -> no trade
-  close 23:45Z: 6182 looks, best was KXZEC15M-26SEP181945-4 NO @0.9890 edge +0.99c (need +0.3c) -> no trade
-  close 00:00Z: 5293 looks, best was KXXRP15M-26SEP182000-0 NO @0.9630 edge +3.11c (need +0.3c) -> no trade
-  SIGNAL KXETH15M-26SEP182015-15 tau=38s buy NO @0.8700 fair 0.0004 edge +12.17c size 400.00 taking 20 [early]
-  close 00:15Z: 5593 looks, best was KXETH15M-26SEP182015-1 NO @0.8700 edge +12.17c (need +0.3c) -> FIRED
-  SETTLED KXETH15M-26SEP182015-15 no vs no -> +244.16c (run realised $+3.9503)
-  close 00:30Z: 5398 looks, best was KXBNB15M-26SEP182030-3 YES @0.9560 edge +4.02c (need +0.3c) -> no trade
-  close 00:45Z: 5888 looks, best was KXNEAR15M-26SEP182045- NO @0.9910 edge +0.84c (need +0.3c) -> no trade
-  close 01:00Z: 5881 looks, best was KXBNB15M-26SEP182100-0 NO @0.9900 edge +0.92c (need +0.3c) -> no trade
-  close 01:15Z: 5381 looks, best was KXZEC15M-26SEP182115-1 NO @0.9890 edge +1.01c (need +0.3c) -> no trade
-  SIGNAL KXSOL15M-26SEP182130-30 tau=43s buy NO @0.9760 fair 0.0044 edge +1.80c size 10.14 taking 10.14 [early]
-  SIGNAL KXETH15M-26SEP182130-30 tau=41s buy NO @0.9800 fair 0.0001 edge +1.85c size 3.00 taking 3 [early]
-  close 01:30Z: 4712 looks, best was KXBTC15M-26SEP182130-3 NO @0.9650 edge +2.76c (need +0.3c) -> FIRED
-  SETTLED KXSOL15M-26SEP182130-30 no vs no -> +22.67c (run realised $+4.1770)
-  SETTLED KXETH15M-26SEP182130-30 no vs no -> +5.58c (run realised $+4.2328)
-  SIGNAL KXSOL15M-26SEP182145-45 tau=33s buy YES @0.9780 fair 0.9984 edge +1.89c size 21.00 taking 20 [early]
-  SIGNAL KXDOGE15M-26SEP182145-45 tau=15s buy NO @0.9780 fair 0.0036 edge +1.69c size 126.83 taking 20
-  close 01:45Z: 3794 looks, best was KXETH15M-26SEP182145-4 NO @0.9670 edge +3.06c (need +0.3c) -> FIRED
-  SETTLED KXSOL15M-26SEP182145-45 yes vs yes -> +40.98c (run realised $+4.6426)
-  SETTLED KXDOGE15M-26SEP182145-45 no vs no -> +40.98c (run realised $+5.0524)
-  close 02:00Z: 5894 looks, best was KXSOL15M-26SEP182200-0 YES @0.9960 edge +0.36c (need +0.3c) -> no trade
-  close 02:15Z: 5921 looks, best was KXSOL15M-26SEP182215-1 YES @0.9970 edge +0.28c (need +0.3c) -> no trade
-  close 02:30Z: 5052 looks, best was KXXRP15M-26SEP182230-3 YES @0.9720 edge +2.33c (need +0.3c) -> no trade
-  SIGNAL KXNEAR15M-26SEP182245-45 tau=36s buy NO @0.9750 fair 0.0045 edge +1.88c size 25.00 taking 20 [early]
-  SIGNAL KXBTC15M-26SEP182245-45 tau=36s buy NO @0.9780 fair 0.0017 edge +1.88c size 504.13 taking 20 [early]
-  close 02:45Z: 1194 looks, best was KXBTC15M-26SEP182245-4 NO @0.9720 edge +2.44c (need +0.3c) -> FIRED
-  SETTLED KXNEAR15M-26SEP182245-45 no vs no -> +46.58c (run realised $+5.5182)
-  SETTLED KXBTC15M-26SEP182245-45 no vs no -> +40.98c (run realised $+5.9280)
-  SIGNAL KXZEC15M-26SEP182300-00 tau=42s buy NO @0.9760 fair 0.0034 edge +1.89c size 31.01 taking 20 [early]
-  close 03:00Z: 4990 looks, best was KXZEC15M-26SEP182300-0 NO @0.9700 edge +2.45c (need +0.3c) -> FIRED
-  SETTLED KXZEC15M-26SEP182300-00 no vs no -> +44.72c (run realised $+6.3752)
-  SIGNAL KXSOL15M-26SEP182315-15 tau=45s buy YES @0.9770 fair 0.9965 edge +1.79c size 3.00 taking 3 [early]
-  SIGNAL KXBNB15M-26SEP182315-15 tau=45s buy YES @0.8800 fair 0.9951 edge +10.77c size 49.00 taking 20 [early]
-  SIGNAL KXDOGE15M-26SEP182315-15 tau=43s buy NO @0.9800 fair 0.0000 edge +1.86c size 151.00 taking 17 [early]
-  close 03:15Z: 298 looks, best was KXBNB15M-26SEP182315-1 YES @0.8800 edge +10.77c (need +0.3c) -> FIRED
-  SETTLED KXSOL15M-26SEP182315-15 yes vs yes -> +6.42c (run realised $+6.4394)
-  SETTLED KXBNB15M-26SEP182315-15 yes vs yes -> +225.21c (run realised $+8.6915)
-  SETTLED KXDOGE15M-26SEP182315-15 no vs no -> +31.66c (run realised $+9.0081)
-  close 03:30Z: 5346 looks, best was KXNEAR15M-26SEP182330- YES @0.9960 edge +0.23c (need +0.3c) -> no trade
-  SIGNAL KXBTC15M-26SEP182345-45 tau=45s buy YES @0.9750 fair 0.9975 edge +2.08c size 17.00 taking 17 [early]
-  SIGNAL KXBTC15M-26SEP182345-45 tau=30s buy YES @0.9750 fair 1.0000 edge +2.33c size 181.86 taking 3 [topup]
-  SIGNAL KXZEC15M-26SEP182345-45 tau=18s buy YES @0.9770 fair 0.9970 edge +1.85c size 176.29 taking 20
-  close 03:45Z: 2576 looks, best was KXETH15M-26SEP182345-4 YES @0.9580 edge +3.87c (need +0.3c) -> FIRED
-  SETTLED KXBTC15M-26SEP182345-45 yes vs yes -> +39.59c (run realised $+9.4040)
-  SETTLED KXZEC15M-26SEP182345-45 yes vs yes -> +42.85c (run realised $+9.8325)
-  SETTLED KXBTC15M-26SEP182345-45 yes vs yes -> +6.98c (run realised $+9.9023)
-  SIGNAL KXBNB15M-26SEP190000-00 tau=20s buy NO @0.9800 fair 0.0001 edge +1.85c size 5.00 taking 5
-  close 04:00Z: 4740 looks, best was KXBNB15M-26SEP190000-0 NO @0.9800 edge +1.85c (need +0.3c) -> FIRED
-  SETTLED KXBNB15M-26SEP190000-00 no vs no -> +9.31c (run realised $+9.9954)
-  close 04:15Z: 4513 looks, best was KXNEAR15M-26SEP190015- NO @0.9280 edge +6.73c (need +0.3c) -> no trade
-  SIGNAL KXBNB15M-26SEP190030-30 tau=16s buy YES @0.9780 fair 0.9999 edge +2.04c size 68.94 taking 20
-  close 04:30Z: 4351 looks, best was KXBNB15M-26SEP190030-3 YES @0.9780 edge +2.04c (need +0.3c) -> FIRED
-  SETTLED KXBNB15M-26SEP190030-30 yes vs yes -> +40.98c (run realised $+10.4052)
-  close 04:45Z: 4427 looks, best was KXXRP15M-26SEP190045-4 NO @0.9840 edge +1.34c (need +0.3c) -> no trade
-  SIGNAL KXDOGE15M-26SEP190100-00 tau=36s buy YES @0.9760 fair 0.9981 edge +2.04c size 3.00 taking 3 [early]
-  SIGNAL KXZEC15M-26SEP190100-00 tau=25s buy NO @0.8600 fair 0.0000 edge +13.16c size 100.00 taking 20
-  SIGNAL KXZEC15M-26SEP190100-00 tau=25s buy NO @0.8500 fair 0.0000 edge +14.11c size 100.00 taking 17
-  close 05:00Z: 1938 looks, best was KXZEC15M-26SEP190100-0 NO @0.8500 edge +14.11c (need +0.3c) -> FIRED
-  SETTLED KXDOGE15M-26SEP190100-00 yes vs yes -> +6.70c (run realised $+10.4722)
-  SETTLED KXZEC15M-26SEP190100-00 no vs no -> +239.82c (run realised $+12.8704)
-  SIGNAL KXZEC15M-26SEP190115-15 tau=32s buy NO @0.9750 fair 0.0044 edge +1.89c size 61.88 taking 20 [early]
-  close 05:15Z: 4167 looks, best was KXZEC15M-26SEP190115-1 NO @0.9740 edge +1.98c (need +0.3c) -> FIRED
-  SETTLED KXZEC15M-26SEP190115-15 no vs no -> +46.58c (run realised $+13.3362)
-  close 05:30Z: 3873 looks, best was KXNEAR15M-26SEP190130- NO @0.9740 edge +2.29c (need +0.3c) -> no trade
-  SIGNAL KXBNB15M-26SEP190145-45 tau=24s buy YES @0.8500 fair 0.9993 edge +14.03c size 60.00 taking 20
-  close 05:45Z: 3934 looks, best was KXBNB15M-26SEP190145-4 YES @0.7400 edge +24.58c (need +0.3c) -> FIRED
+  close 07:45Z: 7253 looks, best was KXSOL15M-26SEP200345-4 NO @0.9940 edge +0.56c (need +0.3c) x8 on offer -> no trade
+  pintake rails raised: MAX_TAKE_COUNT 218 -> 218; LOSS_ABORT $-2.00 -> $-280.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 20 -> 70: mirroring live size 70)
+  --- AUTO-SIZE: size 20 -> 70 (mirroring live size 70); abort $-280.00, stake cap $664.00, take count 218
+  close 08:00Z: 6999 looks, best was KXBTC15M-26SEP200400-0 NO @0.9940 edge +0.56c (need +0.3c) x793.2 on offer -> no trade
+  close 08:15Z: 6753 looks, best was KXZEC15M-26SEP200415-1 YES @0.9870 edge +1.04c (need +0.3c) x26 on offer -> no trade
+  close 08:30Z: 5618 looks, best was KXBNB15M-26SEP200430-3 YES @0.9470 edge +4.47c (need +0.3c) x3 on offer -> no trade
+  pintake rails raised: MAX_TAKE_COUNT 218 -> 218; LOSS_ABORT $-280.00 -> $-284.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 70 -> 71: mirroring live size 71)
+  --- AUTO-SIZE: size 70 -> 71 (mirroring live size 71); abort $-284.00, stake cap $664.00, take count 218
+  close 08:45Z: 5989 looks, best was KXBNB15M-26SEP200445-4 NO @0.9910 edge +0.84c (need +0.3c) x12 on offer -> no trade
+  SIGNAL KXDOGE15M-26SEP200500-00 tau=44s buy YES @0.9750 fair 0.9998 edge +2.31c size 4.00 taking 4 [early]
+  SIGNAL KXBTC15M-26SEP200500-00 tau=23s buy YES @0.9800 fair 0.9982 edge +1.69c size 130.02 taking 71
+  close 09:00Z: 4201 looks, best was KXDOGE15M-26SEP200500- YES @0.9730 edge +2.49c (need +0.3c) x3 on offer -> FIRED
+  SETTLED KXDOGE15M-26SEP200500-00 yes vs yes -> +9.31c (run realised $+0.0931)
+  SETTLED KXBTC15M-26SEP200500-00 yes vs yes -> +132.25c (run realised $+1.4156)
+  close 09:15Z: 4811 looks, best was KXBTC15M-26SEP200515-1 YES @0.9700 edge +2.33c (need +0.3c) x676.9 on offer -> no trade
+  SIGNAL KXZEC15M-26SEP200530-30 tau=37s buy YES @0.9200 fair 0.9999 edge +7.48c size 2.22 taking 2.22 [early]
+  close 09:30Z: 5211 looks, best was KXZEC15M-26SEP200530-3 YES @0.9200 edge +7.48c (need +0.3c) x2.22 on offer -> FIRED
+  SETTLED KXZEC15M-26SEP200530-30 yes vs yes -> +16.61c (run realised $+1.5817)
+  close 09:45Z: 5679 looks, best was KXBTC15M-26SEP200545-4 YES @0.9990 edge +0.09c (need +0.3c) x1.328e+05 on offer -> no trade
+  close 10:00Z: 5470 looks, best was KXBTC15M-26SEP200600-0 NO @0.9990 edge +0.09c (need +0.3c) x7.815e+04 on offer -> no trade
+  SIGNAL KXZEC15M-26SEP200615-15 tau=20s buy NO @0.9110 fair 0.0001 edge +8.32c size 100.00 taking 71
+  !!! HEDGE ALARM KXZEC15M-26SEP200615-15 no belief 0.556 tau 19s
+  !!! HEDGE PANIC KXZEC15M-26SEP200615-15 belief 0.009 -- every filter bypassed, taking 0.86
+  HEDGE(paper) KXZEC15M-26SEP200615-15 buy YES 26.06 @ 0.860 -> locked +77.1c
+  HEDGE(paper) KXZEC15M-26SEP200615-15 buy YES 30.68 @ 0.910 -> locked +82.1c
+  HEDGE(paper) KXZEC15M-26SEP200615-15 buy YES 14.26 @ 0.950 -> locked +86.1c
+  close 10:15Z: 4609 looks, best was KXZEC15M-26SEP200615-1 NO @0.2300 edge +75.75c (need +0.3c) x101 on offer -> FIRED
   *** A LOSS. losing trades 1, losing CLOSES 1 (the brake counts closes) ***
-  SETTLED KXBNB15M-26SEP190145-45 yes vs no -> -1717.86c (run realised $-3.8424)
-  SIGNAL KXETH15M-26SEP190200-00 tau=39s buy YES @0.8900 fair 1.0000 edge +10.31c size 400.00 taking 20 [early]
-  close 06:00Z: 3378 looks, best was KXETH15M-26SEP190200-0 YES @0.8900 edge +10.31c (need +0.3c) -> FIRED
-  SETTLED KXETH15M-26SEP190200-00 yes vs yes -> +206.29c (run realised $-1.7795)
-  close 06:15Z: 4741 looks, best was KXSOL15M-26SEP190215-1 NO @0.9950 edge +0.47c (need +0.3c) -> no trade
-  close 06:30Z: 4716 looks, best was KXNEAR15M-26SEP190230- NO @0.9850 edge +1.05c (need +0.3c) -> no trade
-  close 06:45Z: 5073 looks, best was KXBTC15M-26SEP190245-4 YES @0.9990 edge +0.09c (need +0.3c) -> no trade
-  SIGNAL KXSOL15M-26SEP190300-00 tau=43s buy YES @0.9800 fair 0.9985 edge +1.71c size 453.51 taking 20 [early]
-  close 07:00Z: 4141 looks, best was KXSOL15M-26SEP190300-0 YES @0.9800 edge +1.71c (need +0.3c) -> FIRED
-  SETTLED KXSOL15M-26SEP190300-00 yes vs yes -> +37.25c (run realised $-1.4070)
-  close 07:15Z: 4690 looks, best was KXXRP15M-26SEP190315-1 NO @0.9890 edge +1.02c (need +0.3c) -> no trade
-  SIGNAL KXETH15M-26SEP190330-30 tau=38s buy NO @0.9800 fair 0.0041 edge +1.45c size 23.58 taking 20 [early]
-  close 07:30Z: 4167 looks, best was KXETH15M-26SEP190330-3 NO @0.8500 edge +14.10c (need +0.3c) -> FIRED
-  SETTLED KXETH15M-26SEP190330-30 no vs no -> +37.25c (run realised $-1.0345)
-  SIGNAL KXHYPE15M-26SEP190345-45 tau=45s buy YES @0.9800 fair 1.0000 edge +1.86c size 3.00 taking 3 [early]
-  close 07:45Z: 4673 looks, best was KXHYPE15M-26SEP190345- YES @0.9800 edge +1.86c (need +0.3c) -> FIRED
-  SETTLED KXHYPE15M-26SEP190345-45 yes vs yes -> +5.58c (run realised $-0.9787)
-  close 08:00Z: 4238 looks, best was KXXRP15M-26SEP190400-0 NO @0.9890 edge +0.88c (need +0.3c) -> no trade
-  close 08:15Z: 4407 looks, best was KXNEAR15M-26SEP190415- YES @0.9520 edge +4.10c (need +0.3c) -> no trade
-  SIGNAL KXHYPE15M-26SEP190430-30 tau=40s buy YES @0.9760 fair 0.9994 edge +2.18c size 37.20 taking 20 [early]
-  close 08:30Z: 4980 looks, best was KXZEC15M-26SEP190430-3 NO @0.9550 edge +4.04c (need +0.3c) -> FIRED
-  SETTLED KXHYPE15M-26SEP190430-30 yes vs yes -> +44.72c (run realised $-0.5315)
-  close 08:45Z: 4463 looks, best was KXXRP15M-26SEP190445-4 YES @0.9960 edge +0.37c (need +0.3c) -> no trade
-  SIGNAL KXSOL15M-26SEP190500-00 tau=43s buy NO @0.9800 fair 0.0004 edge +1.82c size 22.00 taking 20 [early]
-  close 09:00Z: 3488 looks, best was KXSOL15M-26SEP190500-0 NO @0.9800 edge +1.82c (need +0.3c) -> FIRED
-  SETTLED KXSOL15M-26SEP190500-00 no vs no -> +37.25c (run realised $-0.1590)
-  SIGNAL KXXRP15M-26SEP190515-15 tau=25s buy NO @0.9790 fair 0.0029 edge +1.67c size 52.44 taking 20
-  SIGNAL KXSOL15M-26SEP190515-15 tau=19s buy YES @0.9800 fair 0.9963 edge +1.50c size 24.85 taking 20
-  close 09:15Z: 2962 looks, best was KXXRP15M-26SEP190515-1 NO @0.9710 edge +2.41c (need +0.3c) -> FIRED
-  SETTLED KXXRP15M-26SEP190515-15 no vs no -> +39.12c (run realised $+0.2322)
-  SETTLED KXSOL15M-26SEP190515-15 yes vs yes -> +37.25c (run realised $+0.6047)
-  SIGNAL KXBTC15M-26SEP190530-30 tau=45s buy NO @0.9770 fair 0.0020 edge +1.94c size 318.79 taking 20 [early]
-  close 09:30Z: 3950 looks, best was KXBTC15M-26SEP190530-3 NO @0.9770 edge +1.94c (need +0.3c) -> FIRED
-  SETTLED KXBTC15M-26SEP190530-30 no vs no -> +42.85c (run realised $+1.0332)
-  close 09:45Z: 4433 looks, best was KXBNB15M-26SEP190545-4 YES @0.9820 edge +1.19c (need +0.3c) -> no trade
-  close 10:00Z: 4689 looks, best was KXSOL15M-26SEP190600-0 YES @0.9930 edge +0.64c (need +0.3c) -> no trade
-  SIGNAL KXHYPE15M-26SEP190615-15 tau=24s buy YES @0.9800 fair 0.9999 edge +1.86c size 346.21 taking 20
-  close 10:15Z: 4548 looks, best was KXETH15M-26SEP190615-1 NO @0.9490 edge +4.70c (need +0.3c) -> FIRED
-  SETTLED KXHYPE15M-26SEP190615-15 yes vs yes -> +37.25c (run realised $+1.4057)
-  SIGNAL KXBNB15M-26SEP190630-30 tau=45s buy NO @0.9800 fair 0.0022 edge +1.64c size 70.50 taking 20 [early]
-  close 10:30Z: 3602 looks, best was KXBTC15M-26SEP190630-3 YES @0.9470 edge +4.51c (need +0.3c) -> FIRED
-  SETTLED KXBNB15M-26SEP190630-30 no vs no -> +37.25c (run realised $+1.7782)
-  SIGNAL KXNEAR15M-26SEP190645-45 tau=42s buy NO @0.9770 fair 0.0015 edge +1.99c size 138.56 taking 20 [early]
-  close 10:45Z: 4661 looks, best was KXNEAR15M-26SEP190645- NO @0.9770 edge +1.99c (need +0.3c) -> FIRED
-  SETTLED KXNEAR15M-26SEP190645-45 no vs no -> +42.85c (run realised $+2.2067)
-  close 11:00Z: 3935 looks, best was KXBTC15M-26SEP190700-0 NO @0.9860 edge +1.20c (need +0.3c) -> no trade
-  SIGNAL KXZEC15M-26SEP190715-15 tau=24s buy YES @0.9800 fair 0.9975 edge +1.61c size 252.47 taking 20
-  SIGNAL KXNEAR15M-26SEP190715-15 tau=8s buy YES @0.9770 fair 0.9980 edge +1.94c size 26.97 taking 20
-  close 11:15Z: 3838 looks, best was KXZEC15M-26SEP190715-1 YES @0.9360 edge +5.73c (need +0.3c) -> FIRED
-  SETTLED KXZEC15M-26SEP190715-15 yes vs yes -> +37.25c (run realised $+2.5792)
-  SETTLED KXNEAR15M-26SEP190715-15 yes vs yes -> +42.85c (run realised $+3.0077)
-  SIGNAL KXZEC15M-26SEP190730-30 tau=29s buy YES @0.9750 fair 0.9987 edge +2.20c size 7.10 taking 7.1
-  close 11:30Z: 4621 looks, best was KXZEC15M-26SEP190730-3 YES @0.9710 edge +2.21c (need +0.3c) -> FIRED
-  SETTLED KXZEC15M-26SEP190730-30 yes vs yes -> +16.53c (run realised $+3.1730)
-  SIGNAL KXETH15M-26SEP190745-45 tau=44s buy YES @0.9760 fair 0.9957 edge +1.80c size 48.00 taking 20 [early]
-  close 11:45Z: 4246 looks, best was KXBTC15M-26SEP190745-4 YES @0.9710 edge +2.23c (need +0.3c) -> FIRED
-  SETTLED KXETH15M-26SEP190745-45 yes vs yes -> +44.72c (run realised $+3.6202)
-  SIGNAL KXETH15M-26SEP190800-00 tau=36s buy YES @0.9800 fair 0.9971 edge +1.57c size 817.14 taking 20 [early]
-  close 12:00Z: 4170 looks, best was KXETH15M-26SEP190800-0 YES @0.9800 edge +1.85c (need +0.3c) -> FIRED
-  SETTLED KXETH15M-26SEP190800-00 yes vs yes -> +37.25c (run realised $+3.9927)
-  SIGNAL KXBNB15M-26SEP190815-15 tau=27s buy NO @0.9780 fair 0.0038 edge +1.67c size 211.40 taking 20
-  close 12:15Z: 3934 looks, best was KXBNB15M-26SEP190815-1 NO @0.9780 edge +1.67c (need +0.3c) -> FIRED
-  SETTLED KXBNB15M-26SEP190815-15 no vs no -> +40.98c (run realised $+4.4025)
+  SETTLED KXZEC15M-26SEP200615-15 no vs yes -> -6508.40c (run realised $-63.5023)
+  SETTLED KXZEC15M-26SEP200615-15 yes vs yes -> +342.87c (run realised $-60.0736)
+  SETTLED KXZEC15M-26SEP200615-15 yes vs yes -> +258.53c (run realised $-57.4883)
+  SETTLED KXZEC15M-26SEP200615-15 yes vs yes -> +66.55c (run realised $-56.8228)
+  pintake rails raised: MAX_TAKE_COUNT 218 -> 218; LOSS_ABORT $-284.00 -> $-288.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 71 -> 72: mirroring live size 72)
+  --- AUTO-SIZE: size 71 -> 72 (mirroring live size 72); abort $-288.00, stake cap $664.00, take count 218
+  close 10:30Z: 4343 looks, best was KXBTC15M-26SEP200630-3 YES @0.9850 edge +1.38c (need +0.3c) x31.56 on offer -> no trade
+  SIGNAL KXZEC15M-26SEP200645-45 tau=45s buy NO @0.9790 fair 0.0020 edge +1.75c size 140.00 taking 72 [early]
+  SIGNAL KXBTC15M-26SEP200645-45 tau=11s buy NO @0.9800 fair 0.0000 edge +1.86c size 4489.16 taking 72
+  close 10:45Z: 3164 looks, best was KXBTC15M-26SEP200645-4 NO @0.9800 edge +1.86c (need +0.3c) x4489 on offer -> FIRED
+  SETTLED KXZEC15M-26SEP200645-45 no vs no -> +140.83c (run realised $-55.4145)
+  SETTLED KXBTC15M-26SEP200645-45 no vs no -> +134.12c (run realised $-54.0733)
+  SIGNAL KXBNB15M-26SEP200700-00 tau=32s buy NO @0.9790 fair 0.0041 edge +1.55c size 2.00 taking 2 [early]
+  SIGNAL KXBNB15M-26SEP200700-00 tau=27s buy NO @0.9800 fair 0.0018 edge +1.69c size 7.83 taking 7.83 [topup]
+  SIGNAL KXSOL15M-26SEP200700-00 tau=11s buy NO @0.9800 fair 0.0015 edge +1.71c size 122.42 taking 72
+  close 11:00Z: 4090 looks, best was KXSOL15M-26SEP200700-0 NO @0.9780 edge +1.90c (need +0.3c) x3 on offer -> FIRED
+  SETTLED KXBNB15M-26SEP200700-00 no vs no -> +3.91c (run realised $-54.0342)
+  SETTLED KXSOL15M-26SEP200700-00 no vs no -> +134.12c (run realised $-52.6930)
+  SETTLED KXBNB15M-26SEP200700-00 no vs no -> +14.58c (run realised $-52.5472)
+  SIGNAL KXHYPE15M-26SEP200715-15 tau=44s buy YES @0.9800 fair 0.9969 edge +1.56c size 365.50 taking 72 [early]
+  SIGNAL KXSOL15M-26SEP200715-15 tau=37s buy NO @0.9790 fair 0.0021 edge +1.74c size 72.00 taking 72 [early]
+  close 11:15Z: 893 looks, best was KXXRP15M-26SEP200715-1 NO @0.9710 edge +2.34c (need +0.3c) x92 on offer -> FIRED
+  SETTLED KXHYPE15M-26SEP200715-15 yes vs yes -> +134.12c (run realised $-51.2060)
+  SETTLED KXSOL15M-26SEP200715-15 no vs no -> +140.83c (run realised $-49.7977)
+  SIGNAL KXETH15M-26SEP200730-30 tau=45s buy YES @0.9800 fair 0.9969 edge +1.55c size 132.52 taking 72 [early]
+  SIGNAL KXHYPE15M-26SEP200730-30 tau=45s buy NO @0.9800 fair 0.0000 edge +1.86c size 50.97 taking 50.97 [early]
+  SIGNAL KXXRP15M-26SEP200730-30 tau=45s buy YES @0.9800 fair 0.9994 edge +1.80c size 30.99 taking 21.03 [early]
+  close 11:30Z: 45 looks, best was KXHYPE15M-26SEP200730- NO @0.9800 edge +1.86c (need +0.3c) x50.97 on offer -> FIRED
+  SETTLED KXETH15M-26SEP200730-30 yes vs yes -> +134.12c (run realised $-48.4565)
+  SETTLED KXHYPE15M-26SEP200730-30 no vs no -> +94.94c (run realised $-47.5071)
+  SETTLED KXXRP15M-26SEP200730-30 yes vs yes -> +39.17c (run realised $-47.1154)
+  pintake rails raised: MAX_TAKE_COUNT 218 -> 218; LOSS_ABORT $-288.00 -> $-292.00; MAX_RUN_STAKE $664.00 -> $664.00  (auto-size 72 -> 73: mirroring live size 73)
+  --- AUTO-SIZE: size 72 -> 73 (mirroring live size 73); abort $-292.00, stake cap $664.00, take count 218
+  SIGNAL KXBNB15M-26SEP200745-45 tau=32s buy YES @0.9780 fair 0.9955 edge +1.60c size 86.00 taking 73 [early]
+  close 11:45Z: 5371 looks, best was KXBNB15M-26SEP200745-4 YES @0.9750 edge +2.18c (need +0.3c) x32 on offer -> FIRED
+  SETTLED KXBNB15M-26SEP200745-45 yes vs yes -> +149.60c (run realised $-45.6194)
+  close 12:00Z: 5337 looks, best was KXZEC15M-26SEP200800-0 YES @0.9970 edge +0.28c (need +0.3c) x2.4 on offer -> no trade
+  close 12:15Z: 4781 looks, best was KXXRP15M-26SEP200815-1 YES @0.9940 edge +0.56c (need +0.3c) x50 on offer -> no trade
+  close 12:30Z: 5463 looks, best was KXBTC15M-26SEP200830-3 NO @0.9990 edge +0.09c (need +0.3c) x3.888e+04 on offer -> no trade
+  SIGNAL KXSOL15M-26SEP200845-45 tau=39s buy YES @0.9770 fair 0.9955 edge +1.69c size 9.00 taking 9 [early]
+  SIGNAL KXBTC15M-26SEP200845-45 tau=34s buy NO @0.9800 fair 0.0023 edge +1.64c size 399.84 taking 73 [early]
+  close 12:45Z: 3352 looks, best was KXHYPE15M-26SEP200845- NO @0.9690 edge +2.82c (need +0.3c) x45 on offer -> FIRED
+  SETTLED KXSOL15M-26SEP200845-45 yes vs yes -> +19.28c (run realised $-45.4266)
+  SETTLED KXBTC15M-26SEP200845-45 no vs no -> +135.98c (run realised $-44.0668)
+  close 13:00Z: 5202 looks, best was KXBNB15M-26SEP200900-0 YES @0.9890 edge +1.00c (need +0.3c) x12 on offer -> no trade
+  SIGNAL KXZEC15M-26SEP200915-15 tau=34s buy NO @0.8900 fair 0.0049 edge +9.82c size 100.00 taking 73 [early]
+  close 13:15Z: 4486 looks, best was KXZEC15M-26SEP200915-1 NO @0.8900 edge +9.82c (need +0.3c) x100 on offer -> FIRED
+  SETTLED KXZEC15M-26SEP200915-15 no vs no -> +752.97c (run realised $-36.5371)
+  close 13:30Z: 5008 looks, best was KXETH15M-26SEP200930-3 NO @0.9710 edge +2.36c (need +0.3c) x21 on offer -> no trade
+  close 13:45Z: 4874 looks, best was KXBTC15M-26SEP200945-4 YES @0.9820 edge +1.43c (need +0.3c) x324.4 on offer -> no trade
+  close 14:00Z: 5336 looks, best was KXXRP15M-26SEP201000-0 YES @0.9930 edge +0.65c (need +0.3c) x28 on offer -> no trade
+  close 14:15Z: 4981 looks, best was KXSOL15M-26SEP201015-1 NO @0.9830 edge +1.55c (need +0.3c) x3 on offer -> no trade

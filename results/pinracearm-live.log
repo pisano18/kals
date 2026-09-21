@@ -66,3 +66,13 @@ SELF-TEST PASSED
   SETTLED KXCRYPTOLEAD15M-26SEP190715  XRP   1/1 won  $+3.99
   PAPER  -26SEP191245                   XRP  NO  10 @ 97c  tau 30  gap   -4.02bp  worth 0.9940  edge +2.19c
   SETTLED KXCRYPTOLEAD15M-26SEP191245  HYPE  1/1 won  $+0.28
+  PAPER  -26SEP192145                   SOL  NO  250 @ 96c  tau 30  gap   -8.72bp  worth 0.9961  edge +3.34c
+  PAPER  -26SEP192145                   SOL  NO  250 @ 96c  tau 29  gap   -8.72bp  worth 0.9961  edge +3.34c
+  SETTLED KXCRYPTOLEAD15M-26SEP192145  XRP   2/2 won  $+18.65
+  PAPER  -26SEP192345                   BTC  NO  9 @ 97c  tau 30  gap   -4.35bp  worth 0.9940  edge +2.19c
+  SETTLED KXCRYPTOLEAD15M-26SEP192345  HYPE  1/1 won  $+0.25
+  PAPER  -26SEP200015                   BTC  NO  12 @ 96c  tau 30  gap   -4.59bp  worth 0.9940  edge +3.13c
+  PAPER  -26SEP200015                   BTC  NO  1 @ 96c  tau 25  gap   -4.42bp  worth 0.9939  edge +3.12c
+  SETTLED KXCRYPTOLEAD15M-26SEP200015  XRP   2/2 won  $+0.48
+  PAPER  -26SEP200900                   HYPE NO  15 @ 97c  tau 30  gap   -5.41bp  worth 0.9940  edge +2.19c
+  SETTLED KXCRYPTOLEAD15M-26SEP200900  XRP   1/1 won  $+0.42

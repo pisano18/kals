@@ -49,3 +49,15 @@
 2026-09-19T02:00:27  restart_bot: REFUSING: the bot is holding a position (see pinflat above).
 2026-09-19T02:00:27  restart_bot: Wait for the close to settle, then run this again.
 2026-09-19T02:00:27  restart_bot exit code 1
+2026-09-20T00:30:25  stand-down flag cleared
+2026-09-20T00:30:31  boot_all: 2026-09-20T00:30:31-04:00  all up; nothing to do
+2026-09-20T00:30:31  starting the bot through restart_bot.ps1 ...
+2026-09-20T00:31:01  restart_bot: restart_bot.ps1 starting 2026-09-20T00:30:32.8051623-04:00
+2026-09-20T00:31:01  restart_bot: argument list ok: 62 flat strings
+2026-09-20T00:31:01  restart_bot: pinflat: FLAT -- every fill has settled (pid None, pinrun-live-20260920T041637Z.jsonl)
+2026-09-20T00:31:01  restart_bot: no live pinrun found to stop (pid file: False)
+2026-09-20T00:31:01  restart_bot: FAILED: pinrun did not come back. Check results\pinrun-live-*.jsonl
+2026-09-20T00:31:01  restart_bot exit code 1
+2026-09-20T03:18:46  Pin Bot opened
+2026-09-20T03:38:23  Pin Bot opened
+2026-09-20T20:17:29  Pin Bot opened

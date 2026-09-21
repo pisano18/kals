@@ -1,10 +1,5 @@
-restart_bot.ps1 starting 2026-09-19T02:06:00.1733632-04:00
-argument list ok: 56 flat strings
-pinflat: FLAT -- bot is dead; 2 fill(s) never logged a settlement but their markets closed over 180s ago -- settled on the exchange, nothing to double (pid None, pinrun-live-20260919T050821Z.jsonl)
+restart_bot.ps1 starting 2026-09-20T00:16:28.9676435-04:00
+argument list ok: 62 flat strings
+pinflat: FLAT -- every fill has settled (pid None, pinrun-live-20260920T040054Z.jsonl)
 no live pinrun found to stop (pid file: False)
-pinrun running: pid 1118596
-kalshi_data -- last full hour 130299592 bytes across 8 channels; 8 open now
-feed_data -- last full hour 10703430 bytes across 5 channels; 5 open now
-both recorders are writing
-flags now live: "C:\Python314\python.exe" -u C:\kals-repo\research\pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.60 --early-tau 45 --early-frac 1.0 --early-min-price 0.90 --early-max-edge 10.0 --hedge-price 0.60 --band-mult 0.90 0.94 1.5 --late-tau 10 --late-mult 1.5 --late-pin 0.9975 --late-jump 2.0 --extra-coin 1 --late-extra 1 --bank-brake 3.00 
-restart_bot.ps1 done 2026-09-19T02:06:27.9174847-04:00
+FAILED: pinrun did not come back. Check results\pinrun-live-*.jsonl

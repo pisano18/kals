@@ -867,3 +867,132 @@ SELF-TEST PASSED
   SETTLED KXZEC15M-26SEP191615-15 no vs no -> +0.45c (run realised $+54.4878)
   pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 97 -> 98: mirroring live size 98)
   --- AUTO-SIZE: size 97 -> 98 (mirroring live size 98); abort $-392.00, stake cap $694.00, take count 114
+  close 20:30Z: 4294 looks, best was KXETH15M-26SEP191630-3 YES @0.9900 edge +0.57c (need +0.3c) x207.8 on offer -> no trade
+  SIGNAL KXBTC15M-26SEP191645-45 tau=30s buy YES @0.8700 fair 0.9967 edge +11.88c size 248.33 taking 98
+  close 20:45Z: 4162 looks, best was KXBTC15M-26SEP191645-4 YES @0.8700 edge +11.88c (need +0.3c) x248.3 on offer -> FIRED
+  SETTLED KXBTC15M-26SEP191645-45 yes vs yes -> +1196.41c (run realised $+66.4519)
+  close 21:00Z: 3933 looks, best was KXBNB15M-26SEP191700-0 NO @0.9970 edge +0.28c (need +0.3c) x7 on offer -> no trade
+  close 21:15Z: 4033 looks, best was KXNEAR15M-26SEP191715- YES @0.9960 edge +0.19c (need +0.3c) x10 on offer -> no trade
+  close 21:30Z: 3994 looks, best was KXXRP15M-26SEP191730-3 NO @0.9940 edge +0.56c (need +0.3c) x134 on offer -> no trade
+  close 21:45Z: 4140 looks, best was KXZEC15M-26SEP191745-4 NO @0.9990 edge +0.09c (need +0.3c) x565.5 on offer -> no trade
+  close 22:00Z: 4060 looks, best was KXNEAR15M-26SEP191800- YES @0.9980 edge +0.19c (need +0.3c) x202 on offer -> no trade
+  close 22:15Z: 4045 looks, best was KXNEAR15M-26SEP191815- YES @0.9970 edge +0.21c (need +0.3c) x10.5 on offer -> no trade
+  close 22:30Z: 4104 looks, best was KXDOGE15M-26SEP191830- YES @0.9840 edge +1.23c (need +0.3c) x19 on offer -> no trade
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 98 -> 99: mirroring live size 99)
+  --- AUTO-SIZE: size 98 -> 99 (mirroring live size 99); abort $-396.00, stake cap $694.00, take count 114
+  close 22:45Z: 4172 looks, best was KXZEC15M-26SEP191845-4 YES @0.9970 edge +0.28c (need +0.3c) x9 on offer -> no trade
+  close 23:00Z: 4168 looks, best was KXBTC15M-26SEP191900-0 YES @0.9950 edge +0.47c (need +0.3c) x2342 on offer -> no trade
+  close 23:15Z: 4203 looks, best was KXBTC15M-26SEP191915-1 YES @0.9980 edge +0.19c (need +0.3c) x4.903e+04 on offer -> no trade
+  SIGNAL KXBNB15M-26SEP191930-30 tau=30s buy YES @0.9780 fair 0.9983 edge +1.88c size 2.00 taking 2
+  close 23:30Z: 4098 looks, best was KXBNB15M-26SEP191930-3 YES @0.9780 edge +1.88c (need +0.3c) x2 on offer -> FIRED
+  SETTLED KXBNB15M-26SEP191930-30 yes vs yes -> +4.09c (run realised $+66.4928)
+  close 23:45Z: 4190 looks, best was KXBTC15M-26SEP191945-4 NO @0.9870 edge +1.21c (need +0.3c) x166 on offer -> no trade
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 99 -> 100: mirroring live size 100)
+  --- AUTO-SIZE: size 99 -> 100 (mirroring live size 100); abort $-400.00, stake cap $694.00, take count 114
+  close 00:00Z: 4110 looks, best was KXXRP15M-26SEP192000-0 NO @0.9940 edge +0.56c (need +0.3c) x46.48 on offer -> no trade
+  SIGNAL KXZEC15M-26SEP192015-15 tau=22s buy YES @0.9800 fair 0.9962 edge +1.49c size 3.00 taking 3
+  SIGNAL KXZEC15M-26SEP192015-15 tau=22s buy YES @0.9750 fair 0.9962 edge +1.95c size 0.50 taking 0.5
+  close 00:15Z: 3851 looks, best was KXZEC15M-26SEP192015-1 YES @0.9750 edge +1.95c (need +0.3c) x0.5 on offer -> FIRED
+  SETTLED KXZEC15M-26SEP192015-15 yes vs yes -> +1.16c (run realised $+66.5044)
+  SIGNAL KXETH15M-26SEP192030-30 tau=3s buy NO @0.9600 fair 0.0000 edge +3.73c size 516.24 taking 100
+  close 00:30Z: 3947 looks, best was KXETH15M-26SEP192030-3 NO @0.9600 edge +3.73c (need +0.3c) x516.2 on offer -> FIRED
+  SETTLED KXETH15M-26SEP192030-30 no vs no -> +373.11c (run realised $+70.2355)
+  SIGNAL KXBTC15M-26SEP192045-45 tau=30s buy YES @0.9790 fair 0.9972 edge +1.68c size 65.68 taking 65.68
+  SIGNAL KXBTC15M-26SEP192045-45 tau=29s buy YES @0.9800 fair 0.9972 edge +1.59c size 39.88 taking 39.88
+  close 00:45Z: 3750 looks, best was KXBTC15M-26SEP192045-4 YES @0.9790 edge +1.68c (need +0.3c) x65.68 on offer -> FIRED
+  SETTLED KXBTC15M-26SEP192045-45 yes vs yes -> +128.47c (run realised $+71.5202)
+  SETTLED KXBTC15M-26SEP192045-45 yes vs yes -> +74.28c (run realised $+72.2630)
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 100 -> 101: mirroring live size 101)
+  --- AUTO-SIZE: size 100 -> 101 (mirroring live size 101); abort $-404.00, stake cap $694.00, take count 114
+  SIGNAL KXNEAR15M-26SEP192100-00 tau=27s buy NO @0.9800 fair 0.0047 edge +1.39c size 42.00 taking 42
+  SIGNAL KXNEAR15M-26SEP192100-00 tau=27s buy NO @0.9770 fair 0.0047 edge +1.67c size 36.00 taking 36
+  SIGNAL KXBNB15M-26SEP192100-00 tau=16s buy YES @0.9500 fair 0.9971 edge +4.38c size 14.40 taking 14.4
+  SIGNAL KXBNB15M-26SEP192100-00 tau=16s buy YES @0.9500 fair 0.9971 edge +4.38c size 14.40 taking 14.4
+  close 01:00Z: 3491 looks, best was KXBNB15M-26SEP192100-0 YES @0.9500 edge +4.38c (need +0.3c) x14.4 on offer -> FIRED
+  SETTLED KXNEAR15M-26SEP192100-00 no vs no -> +77.13c (run realised $+73.0343)
+  SETTLED KXBNB15M-26SEP192100-00 yes vs yes -> +67.21c (run realised $+73.7064)
+  close 01:15Z: 4185 looks, best was KXBTC15M-26SEP192115-1 NO @0.9990 edge +0.09c (need +0.3c) x87.01 on offer -> no trade
+  SIGNAL KXBTC15M-26SEP192130-30 tau=30s buy NO @0.9390 fair 0.0001 edge +5.69c size 331.20 taking 101
+  SIGNAL KXXRP15M-26SEP192130-30 tau=14s buy NO @0.9800 fair 0.0000 edge +1.86c size 3.00 taking 3
+  close 01:30Z: 4064 looks, best was KXBTC15M-26SEP192130-3 NO @0.9370 edge +5.88c (need +0.3c) x342.9 on offer -> FIRED
+  SETTLED KXBTC15M-26SEP192130-30 no vs no -> +575.60c (run realised $+79.4624)
+  SETTLED KXXRP15M-26SEP192130-30 no vs no -> +5.58c (run realised $+79.5182)
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 101 -> 102: mirroring live size 102)
+  --- AUTO-SIZE: size 101 -> 102 (mirroring live size 102); abort $-408.00, stake cap $694.00, take count 114
+  close 01:45Z: 4158 looks, best was KXXRP15M-26SEP192145-4 NO @0.9960 edge +0.37c (need +0.3c) x145 on offer -> no trade
+  SIGNAL KXETH15M-26SEP192200-00 tau=14s buy YES @0.9750 fair 1.0000 edge +2.33c size 151.89 taking 102
+  SIGNAL KXETH15M-26SEP192200-00 tau=9s buy YES @0.9680 fair 1.0000 edge +2.98c size 30.00 taking 30
+  close 02:00Z: 3911 looks, best was KXETH15M-26SEP192200-0 YES @0.9550 edge +4.19c (need +0.3c) x365 on offer -> FIRED
+  SETTLED KXETH15M-26SEP192200-00 yes vs yes -> +237.59c (run realised $+81.8941)
+  SETTLED KXETH15M-26SEP192200-00 yes vs yes -> +89.49c (run realised $+82.7890)
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 102 -> 103: mirroring live size 103)
+  --- AUTO-SIZE: size 102 -> 103 (mirroring live size 103); abort $-412.00, stake cap $694.00, take count 114
+  close 02:15Z: 4135 looks, best was KXHYPE15M-26SEP192215- YES @0.9980 edge +0.18c (need +0.3c) x593.4 on offer -> no trade
+  close 02:30Z: 4167 looks, 4167 decided, 4167 decided-but-nothing-offered, 0 undecided
+  close 02:45Z: 4167 looks, 4167 decided, 4167 decided-but-nothing-offered, 0 undecided
+  close 03:00Z: 4230 looks, 4230 decided, 4230 decided-but-nothing-offered, 0 undecided
+  SIGNAL KXDOGE15M-26SEP192315-15 tau=28s buy YES @0.9800 fair 0.9987 edge +1.73c size 130.00 taking 103
+  SIGNAL KXDOGE15M-26SEP192315-15 tau=22s buy YES @0.9700 fair 1.0000 edge +2.79c size 24.00 taking 24
+  SIGNAL KXHYPE15M-26SEP192315-15 tau=20s buy NO @0.9500 fair 0.0029 edge +4.38c size 999.00 taking 79
+  close 03:15Z: 1266 looks, best was KXHYPE15M-26SEP192315- NO @0.9500 edge +4.38c (need +0.3c) x999 on offer -> FIRED
+  SETTLED KXDOGE15M-26SEP192315-15 yes vs yes -> +191.86c (run realised $+84.7076)
+  SETTLED KXHYPE15M-26SEP192315-15 no vs no -> +368.73c (run realised $+88.3949)
+  SETTLED KXDOGE15M-26SEP192315-15 yes vs yes -> +67.11c (run realised $+89.0660)
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 103 -> 104: mirroring live size 104)
+  --- AUTO-SIZE: size 103 -> 104 (mirroring live size 104); abort $-416.00, stake cap $694.00, take count 114
+  close 03:30Z: 4298 looks, best was KXZEC15M-26SEP192330-3 NO @0.9990 edge +0.09c (need +0.3c) x552 on offer -> no trade
+  SIGNAL KXBTC15M-26SEP192345-45 tau=23s buy NO @0.9800 fair 0.0000 edge +1.86c size 2000.00 taking 104
+  SIGNAL KXHYPE15M-26SEP192345-45 tau=9s buy NO @0.9630 fair 0.0037 edge +3.08c size 150.40 taking 104
+  close 03:45Z: 3163 looks, best was KXHYPE15M-26SEP192345- NO @0.9630 edge +3.08c (need +0.3c) x150.4 on offer -> FIRED
+  SETTLED KXBTC15M-26SEP192345-45 no vs no -> +193.73c (run realised $+91.0033)
+  SETTLED KXHYPE15M-26SEP192345-45 no vs no -> +358.86c (run realised $+94.5919)
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 104 -> 91: mirroring live size 91)
+  --- AUTO-SIZE: size 104 -> 91 (mirroring live size 91); abort $-364.00, stake cap $694.00, take count 114
+  close 04:00Z: 4338 looks, 4338 decided, 4338 decided-but-nothing-offered, 0 undecided
+  close 04:15Z: 4307 looks, best was KXXRP15M-26SEP200015-1 NO @0.9950 edge +0.47c (need +0.3c) x384 on offer -> no trade
+  SIGNAL KXBTC15M-26SEP200030-30 tau=30s buy YES @0.9630 fair 0.9962 edge +3.07c size 298.93 taking 91
+  SIGNAL KXBTC15M-26SEP200030-30 tau=30s buy YES @0.9550 fair 0.9977 edge +3.97c size 1924.98 taking 91
+  close 04:30Z: 73 looks, best was KXBTC15M-26SEP200030-3 YES @0.9550 edge +3.97c (need +0.3c) x1925 on offer -> FIRED
+  SETTLED KXBTC15M-26SEP200030-30 yes vs yes -> +382.12c (run realised $+98.4131)
+  SIGNAL KXZEC15M-26SEP200045-45 tau=15s buy YES @0.9790 fair 0.9978 edge +1.74c size 15.00 taking 15
+  SIGNAL KXZEC15M-26SEP200045-45 tau=15s buy YES @0.9790 fair 0.9978 edge +1.74c size 34.00 taking 34
+  SIGNAL KXBNB15M-26SEP200045-45 tau=12s buy NO @0.9630 fair 0.0000 edge +3.45c size 2.00 taking 2
+  SIGNAL KXBNB15M-26SEP200045-45 tau=12s buy NO @0.9710 fair 0.0000 edge +2.70c size 2.00 taking 2
+  SIGNAL KXXRP15M-26SEP200045-45 tau=5s buy NO @0.9800 fair 0.0000 edge +1.86c size 88.20 taking 88.2
+  close 04:45Z: 3881 looks, best was KXBNB15M-26SEP200045-4 NO @0.9630 edge +3.45c (need +0.3c) x2 on offer -> FIRED
+  SETTLED KXZEC15M-26SEP200045-45 yes vs yes -> +66.50c (run realised $+99.0781)
+  SETTLED KXBNB15M-26SEP200045-45 no vs no -> +5.40c (run realised $+99.1321)
+  SETTLED KXXRP15M-26SEP200045-45 no vs no -> +164.29c (run realised $+100.7750)
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 91 -> 92: mirroring live size 92)
+  --- AUTO-SIZE: size 91 -> 92 (mirroring live size 92); abort $-368.00, stake cap $694.00, take count 114
+  close 05:00Z: 4275 looks, best was KXXRP15M-26SEP200100-0 NO @0.9870 edge +1.21c (need +0.3c) x63 on offer -> no trade
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 92 -> 93: mirroring live size 93)
+  --- AUTO-SIZE: size 92 -> 93 (mirroring live size 93); abort $-372.00, stake cap $694.00, take count 114
+  SIGNAL KXNEAR15M-26SEP200115-15 tau=16s buy NO @0.9770 fair 0.0028 edge +1.86c size 0.50 taking 0.5
+  SIGNAL KXNEAR15M-26SEP200115-15 tau=16s buy NO @0.9770 fair 0.0028 edge +1.86c size 0.50 taking 0.5
+  close 05:15Z: 3969 looks, best was KXNEAR15M-26SEP200115- NO @0.9770 edge +1.86c (need +0.3c) x0.5 on offer -> FIRED
+  SETTLED KXNEAR15M-26SEP200115-15 no vs no -> +1.07c (run realised $+100.7857)
+  close 05:30Z: 4258 looks, best was KXBNB15M-26SEP200130-3 NO @0.9980 edge +0.19c (need +0.3c) x75.83 on offer -> no trade
+  close 05:45Z: 3957 looks, best was KXBTC15M-26SEP200145-4 NO @0.9870 edge +1.18c (need +0.3c) x25.02 on offer -> no trade
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 93 -> 70: mirroring live size 70)
+  --- AUTO-SIZE: size 93 -> 70 (mirroring live size 70); abort $-280.00, stake cap $694.00, take count 114
+  SIGNAL KXHYPE15M-26SEP200200-00 tau=14s buy NO @0.9800 fair 0.0000 edge +1.86c size 102.02 taking 70
+  close 06:00Z: 4151 looks, best was KXHYPE15M-26SEP200200- NO @0.9800 edge +1.86c (need +0.3c) x5.02 on offer -> FIRED
+  SETTLED KXHYPE15M-26SEP200200-00 no vs no -> +130.39c (run realised $+102.0896)
+  SIGNAL KXBTC15M-26SEP200215-15 tau=14s buy YES @0.9800 fair 0.9980 edge +1.66c size 70.02 taking 70
+  SIGNAL KXBNB15M-26SEP200215-15 tau=8s buy YES @0.9000 fair 0.9953 edge +8.90c size 4.00 taking 4
+  SIGNAL KXBNB15M-26SEP200215-15 tau=8s buy YES @0.9000 fair 0.9953 edge +8.90c size 2.80 taking 2.8
+  close 06:15Z: 3714 looks, best was KXBNB15M-26SEP200215-1 YES @0.9000 edge +8.90c (need +0.3c) x4 on offer -> FIRED
+  SETTLED KXBTC15M-26SEP200215-15 yes vs yes -> +130.39c (run realised $+103.3935)
+  SETTLED KXBNB15M-26SEP200215-15 yes vs yes -> +26.23c (run realised $+103.6558)
+  close 06:30Z: 4046 looks, best was KXXRP15M-26SEP200230-3 NO @0.9880 edge +1.12c (need +0.3c) x5 on offer -> no trade
+  close 06:45Z: 4158 looks, best was KXBTC15M-26SEP200245-4 NO @0.9990 edge +0.09c (need +0.3c) x6123 on offer -> no trade
+  close 07:00Z: 4017 looks, best was KXBTC15M-26SEP200300-0 NO @0.9930 edge +0.65c (need +0.3c) x7.02 on offer -> no trade
+  close 07:15Z: 4135 looks, best was KXBTC15M-26SEP200315-1 YES @0.9980 edge +0.19c (need +0.3c) x3.088e+04 on offer -> no trade
+  close 07:30Z: 4149 looks, best was KXXRP15M-26SEP200330-3 YES @0.9810 edge +1.55c (need +0.3c) x2 on offer -> no trade
+  close 07:45Z: 4021 looks, best was KXSOL15M-26SEP200345-4 NO @0.9970 edge +0.28c (need +0.3c) x49 on offer -> no trade
+  close 08:00Z: 3951 looks, best was KXBTC15M-26SEP200400-0 NO @0.9970 edge +0.28c (need +0.3c) x204.8 on offer -> no trade
+  close 08:15Z: 3696 looks, best was KXZEC15M-26SEP200415-1 YES @0.9870 edge +1.04c (need +0.3c) x26 on offer -> no trade
+  close 08:30Z: 3295 looks, best was KXNEAR15M-26SEP200430- NO @0.9890 edge +0.97c (need +0.3c) x9.28 on offer -> no trade
+  pintake rails raised: MAX_TAKE_COUNT 114 -> 114; LOSS_ABORT $-456.00 -> $-456.00; MAX_RUN_STAKE $694.00 -> $694.00  (auto-size 70 -> 71: mirroring live size 71)
+  --- AUTO-SIZE: size 70 -> 71 (mirroring live size 71); abort $-284.00, stake cap $694.00, take count 114

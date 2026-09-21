@@ -1,29 +1,12 @@
 ﻿**********************
 Windows PowerShell transcript start
-Start time: 20260919162236
+Start time: 20260920054830
 Username: LAPTOP-2L9Q5JAM\Joe
 RunAs User: LAPTOP-2L9Q5JAM\Joe
 Configuration Name: 
 Machine: LAPTOP-2L9Q5JAM (Microsoft Windows NT 10.0.26200.0)
-Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command try { $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8' } catch {}; if ($ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') { try { $OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}; if ($null -ne $PSStyle) { try { $PSStyle.OutputRendering = 'PlainText' } catch {} } }; cd C:\kals-repo
-$repo="C:\kals-repo"; $py="C:\Python314\python.exe"
-$t = Get-Content "$repo\restart_bot.ps1" -Raw
-$i = $t.IndexOf('$botArgs = @('); $j = $t.IndexOf('$__bad = @(', $i)
-Invoke-Expression $t.Substring($i, $j-$i)
-$a = @($botArgs | Where-Object { $_ -ne '--live' })
-for ($k=0;$k -lt $a.Count;$k++){ if ($a[$k] -eq '--minutes'){$a[$k+1]='0.35'} }
-$o="$repo\results\a69.out"; $e="$repo\results\a69.err"
-Start-Process -FilePath $py -ArgumentList $a -WorkingDirectory $repo -WindowStyle Hidden -Wait -RedirectStandardOutput $o -RedirectStandardError $e
-"stderr: '" + (((Get-Content $e -Raw -EA SilentlyContinue) -replace "`r`n"," ")) + "'"
-Select-String -Path $o -Pattern "SELF-TEST P|SELF-TEST \*" | ForEach-Object { $_.Line }
-git add research/pinrun.py 2>&1 | Out-Null
-git commit -q -m "A69: a PAUSE was stopping the HEDGE -- the largest loss this account has taken" 2>&1 | Select-Object -Last 2
-git log --oneline -1
-.\restart_bot.ps1 2>&1 | Select-Object -Last 4
-; $_ec = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } elseif ($?) { 0 } else { 1 }
-; (Get-Location).Path | Out-File -FilePath 'C:\Users\Joe\AppData\Local\Temp\claude\claude-pwd-ps-d853' -Encoding utf8 -NoNewline
-; if ($ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') { $host.SetShouldExit($_ec) } else { exit $_ec }
-Process ID: 1293548
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
+Process ID: 802200
 PSVersion: 5.1.26100.9444
 PSEdition: Desktop
 PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.9444
@@ -33,17 +16,17 @@ WSManStackVersion: 3.0
 PSRemotingProtocolVersion: 2.3
 SerializationVersion: 1.1.0.1
 **********************
-restart_bot.ps1 starting 2026-09-19T16:22:36.2000006-04:00
-argument list ok: 60 flat strings
-pinflat: FLAT -- every fill has settled (pid 1264724, pinrun-live-20260919T180145Z.jsonl)
-stopping live pinrun pid 1264724
-pinrun running: pid 1294432
-kalshi_data -- last full hour 124184997 bytes across 8 channels; 9 open now
-feed_data -- last full hour 9233482 bytes across 5 channels; 5 open now
+restart_bot.ps1 starting 2026-09-20T05:48:30.2987374-04:00
+argument list ok: 58 flat strings
+pinflat: FLAT -- every fill has settled (pid 1447368, pinrun-live-20260920T091129Z.jsonl)
+stopping live pinrun pid 1447368
+pinrun running: pid 658060
+kalshi_data -- last full hour 118313848 bytes across 8 channels; 8 open now
+feed_data -- last full hour 8404354 bytes across 5 channels; 5 open now
 both recorders are writing
-flags now live: "C:\Python314\python.exe" -u C:\kals-repo\research\pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.60 --early-tau 45 --early-frac 1.0 --early-min-price 0.90 --early-max-edge 10.0 --hedge-price 0.60 --band-mult 0.90 0.94 1.5 --late-tau 10 --late-mult 1.5 --late-pin 0.9975 --late-jump 2.0 --extra-coin 1 --late-extra 1 --late-extra-tau 15 --bank-brake 3.00 --loss-cap 200
-restart_bot.ps1 done 2026-09-19T16:23:03.9716274-04:00
+flags now live: "C:\Python314\python.exe" -u C:\kals-repo\research\pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.60 --early-tau 45 --early-frac 1.0 --early-min-price 0.90 --early-max-edge 10.0 --hedge-price 0.60 --hedge-slip 0.03 --late-tau 10 --late-mult 1.5 --late-pin 0.9975 --late-jump 2.0 --extra-coin 1 --late-extra 1 --late-extra-tau 15 --bank-brake 4.00 --loss-cap 200
+restart_bot.ps1 done 2026-09-20T05:48:56.2786246-04:00
 **********************
 Windows PowerShell transcript end
-End time: 20260919162303
+End time: 20260920054856
 **********************

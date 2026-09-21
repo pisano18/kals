@@ -232,3 +232,20 @@
 2026-09-19T02:06:28-04:00    restart_bot: flags now live: "C:\Python314\python.exe" -u C:\kals-repo\research\pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.60 --early-tau 45 --early-frac 1.0 --early-min-price 0.90 --early-max-edge 10.0 --hedge-price 0.60 --band-mult 0.90 0.94 1.5 --late-tau 10 --late-mult 1.5 --late-pin 0.9975 --late-jump 2.0 --extra-coin 1 --late-extra 1 --bank-brake 3.00
 2026-09-19T02:06:28-04:00    restart_bot: restart_bot.ps1 done 2026-09-19T02:06:27.9174847-04:00
 2026-09-19T02:06:43-04:00  back up, pid 1118596
+2026-09-19T23:45:49-04:00  MONEY BRAKE halted the bot: DRAWDOWN brake: bank $810.59 is 22.5% below its high of $1046.43, limit 20%. Size has been reduced to 91. STOP AND LOOK. (A WITHDRAWAL from the account looks identical to a trading loss here -- check the balance before assuming the worst.) -- waiting 15 min before restarting
+2026-09-20T00:00:45-04:00  LIVE BOT IS DOWN after money brake (cooldown over): DRAWDOWN brake: bank $810.59 is 22.5% below its high of $1046.43, limit 20%. Size has been reduced to 91. STOP AND LOOK. (A WITHDRAWAL from the account looks identical to a trading loss here -- check the balance before assuming the worst.)
+2026-09-20T00:00:45-04:00  restarting (quick 1 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 1xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-20T00:01:13-04:00    restart_bot: restart_bot.ps1 starting 2026-09-20T00:00:46.0772413-04:00
+2026-09-20T00:01:13-04:00    restart_bot: argument list ok: 62 flat strings
+2026-09-20T00:01:13-04:00    restart_bot: pinflat: FLAT -- every fill has settled (pid None, pinrun-live-20260920T023207Z.jsonl)
+2026-09-20T00:01:13-04:00    restart_bot: no live pinrun found to stop (pid file: False)
+2026-09-20T00:01:13-04:00    restart_bot: FAILED: pinrun did not come back. Check results\pinrun-live-*.jsonl
+2026-09-20T00:01:32-04:00  STILL DOWN after restart_bot.ps1 -- will retry
+2026-09-20T00:16:27-04:00  LIVE BOT IS DOWN after money brake (cooldown over): DRAWDOWN brake: bank $810.59 is 22.5% below its high of $1046.43, limit 20%. Size has been reduced to 91. STOP AND LOOK. (A WITHDRAWAL from the account looks identical to a trading loss here -- check the balance before assuming the worst.)
+2026-09-20T00:16:28-04:00  restarting (quick 1 of 4) -- last stderr:   *** PRODUCTION ARMED: pinrun --live, size 20, frozen rule tau<=30 (+A46 early leg 1xSIZE to tau<=45, PREREG_staged.md), PREREG_pin_live.md ***
+2026-09-20T00:16:56-04:00    restart_bot: restart_bot.ps1 starting 2026-09-20T00:16:28.9676435-04:00
+2026-09-20T00:16:56-04:00    restart_bot: argument list ok: 62 flat strings
+2026-09-20T00:16:56-04:00    restart_bot: pinflat: FLAT -- every fill has settled (pid None, pinrun-live-20260920T040054Z.jsonl)
+2026-09-20T00:16:56-04:00    restart_bot: no live pinrun found to stop (pid file: False)
+2026-09-20T00:16:56-04:00    restart_bot: FAILED: pinrun did not come back. Check results\pinrun-live-*.jsonl
+2026-09-20T00:17:15-04:00  STILL DOWN after restart_bot.ps1 -- will retry
