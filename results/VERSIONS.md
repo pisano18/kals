@@ -1,3 +1,69 @@
+# v-hedgefull -- 2026-09-21 ~17:0xZ -- LIVE: A76 PROPORTIONAL HEDGING IS OFF
+
+Flag added: `--no-hedge-prop`.
+
+**REVERT, copy-pasteable:** delete the `"--no-hedge-prop",` line from
+`restart_bot.ps1`, then run
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+## What the bot now does differently
+
+It hedges the WHOLE position the moment belief crosses `--hedge-belief` 0.60,
+instead of buying nothing above 40% belief, half at 40%, and topping up later.
+
+## Why -- every real-money alarm we have, replayed against the book
+
+A76 fired for the first time today on `KXNEAR15M-26SEP211245-45` and cost
+$59.09. All 18 lifetime alarms with a settlement were replayed against the
+**order book at the alarm second**, read from the ticker tape, with every
+hedge sized by what was actually offered at that second:
+
+| policy | total over 18 alarms |
+|---|---|
+| never hedge at all | -$324.46 |
+| hedge the whole position at the alarm, no price gate | -$345.31 |
+| ...and skip insurance over 60c | -$271.42 |
+| ...and skip insurance over 70c | **-$269.10** |
+| cover the whole money at risk | -$319.24 |
+| **A76 proportional, as deployed** | **-$382.74** |
+
+**A76 is the worst of every policy tested** -- $58 worse than never hedging
+and $113 worse than hedging in full at the alarm. The mechanism is not
+subtle: the price of insurance tracks the belief, so waiting for belief to
+fall guarantees paying up. Today the NO was **39c with 44 contracts offered**
+at the alarm second. A76 bought nothing, then paid **70c** eleven seconds
+later and **90.5c** three seconds after that, to protect contracts bought at
+91.1c. That last leg could never have paid for itself.
+
+`--hedge-price 0.60` is unchanged and still gates the normal path, which is
+what the 60c row above measures.
+
+## What was tested and REJECTED, so it is not re-proposed
+
+**Sizing the hedge to cover the whole loss** -- the operator has asked for
+this repeatedly and it is right in principle. Two walls, both measured:
+
+* **Depth.** Covering the money needs `risk/(1-price)` contracts: 121 today
+  against 44 offered, and short of depth on **9 of 18** alarms, once needing
+  1,151 against 3 offered.
+* **False alarms.** Where the depth did exist and the bet then WON, full
+  cover turned +$5.73 into -$45.66. Across all 18 it is -$319.24, no better
+  than 1x.
+
+**Oversizing** reads spectacularly in-sample (6x the position = -$84.80) and
+is fitted: chosen on the first nine alarms it **loses $84** on the last nine.
+The reverse split chooses 1x at 0.70 and gains $52. Only the 1x rule survives
+both directions.
+
+## The bar
+
+Below 40% belief the bet lost **6 times in 7**, so waiting is not information,
+it is paying more for the same insurance. If the next 10 alarms under
+full-at-alarm hedging are still net negative against never hedging, then
+hedging itself goes, not the sizing. `arm-nohedge` answers that without risk.
+
+---
+
 # v-nocap -- 2026-09-20 -- LIVE: the 97.5c early-leg ceiling is REMOVED, hours after it shipped
 
 The operator: *"I actually really want to keep the 45 normal"* and *"If you

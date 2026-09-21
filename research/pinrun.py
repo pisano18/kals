@@ -3826,6 +3826,21 @@ def _selftest_body():
         loss_abort = -2.00
         max_positions = 2
     saved = dict(pintake.LEDGER)
+    # THE DAY-LOSS CONTAMINATION, found 2026-09-21 and it had the bot one
+    # crash away from not coming back. abort_for() reads the REAL ET day loss
+    # off disk. These fixtures use a $2.00 cap, so on any day the bot has
+    # actually lost more than $2 the day cap fires FIRST, every assertion
+    # below reads back the day-cap string instead of the reason it planted,
+    # six of them fail, and main() then refuses to start the bot. Today's
+    # -$27.64 did exactly that. The self-test must not consult live state;
+    # `day_loss` is stubbed for the duration and restored in the finally, and
+    # the structural check that abort_for still CALLS day_loss is untouched.
+    # Point the DEFAULT day-loss file at one that does not exist, so a bare
+    # day_loss() reads None ("nothing recorded"), which no cap may compare
+    # against. day_loss() itself is untouched, so the tests below that hand it
+    # an explicit path still exercise the real function.
+    _saved_dayloss_file = globals()["DAYLOSS_FILE"]
+    globals()["DAYLOSS_FILE"] = _saved_dayloss_file + ".selftest-absent"
     try:
         pintake.LEDGER.update(_fresh := {"halt": None, "realised": -3.0,
                                          "committed": 0.0, "positions": {}})
@@ -5726,6 +5741,7 @@ def _selftest_body():
     finally:
         pintake.LEDGER.clear()
         pintake.LEDGER.update(saved)
+        globals()["DAYLOSS_FILE"] = _saved_dayloss_file
 
     # --- the stake cap must measure CONCURRENT risk, not lifetime turnover ---
     # THIS TEST SWEEPS SIZE. The version it replaces asserted at committed

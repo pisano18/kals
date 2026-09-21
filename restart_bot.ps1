@@ -177,6 +177,39 @@ $botArgs = @(
     # and 74c helped: +$8.80. Same threshold as the belief, so the rule is
     # "model AND market both say under 60%".
     "--hedge-price", "0.60",
+    # --no-hedge-prop, v-hedgefull, 2026-09-21 ~17:0xZ. A76 PROPORTIONAL
+    # HEDGING IS OFF. It fired for the first time today on
+    # KXNEAR15M-26SEP211245-45 and it was the worst policy we could have run.
+    #
+    # Every real-money alarm we have ever had (18 with a settlement) was
+    # replayed against the ORDER BOOK AT THE ALARM SECOND, from the ticker
+    # tape, sizing every hedge by what was actually offered:
+    #
+    #     never hedge at all                 -$324.46
+    #     hedge the whole position at alarm  -$345.31   (no price gate)
+    #     ...and skip insurance over 60c     -$271.42
+    #     ...and skip insurance over 70c     -$269.10   <- best that survives
+    #     A76 proportional, AS DEPLOYED      -$382.74   <- WORST OF ALL
+    #
+    # A76 is $58 worse than never hedging and $113 worse than hedging in full
+    # at the alarm. The mechanism is not subtle: it waits for belief to fall
+    # under 0.40 before buying anything, and the price of insurance tracks the
+    # belief, so waiting guarantees paying up. Today the NO was 39c WITH 44
+    # CONTRACTS OFFERED at the alarm second; A76 bought nothing, then took 70c
+    # eleven seconds later and 90.5c three seconds after that, to protect a
+    # position bought at 91.1c. The second leg could never have paid.
+    #
+    # WHY NOT SIZE THE HEDGE TO COVER THE WHOLE LOSS, which the operator has
+    # asked for repeatedly. Measured, and it is two separate walls. First the
+    # book: covering the money needs risk/(1-price) contracts -- 121 today
+    # against the 44 offered -- and it was short of depth on 9 of 18 alarms,
+    # once needing 1,151 against 3. Second the false alarms: on the ones where
+    # the depth DID exist and the bet then WON, full cover turned +$5.73 into
+    # -$45.66. Across all 18 it comes to -$319.24, no better than 1x.
+    # Oversizing looks spectacular in-sample (6x reads -$84.80) and is fitted:
+    # chosen on the first nine alarms it LOSES $84 on the last nine. The 1x
+    # rule is the one that survives both halves of the split.
+    "--no-hedge-prop",
     # --early-max-price REMOVED 2026-09-20 ~09:5xZ (v-nocap), on the
     # operator's word: "I actually really want to keep the 45 normal" and
     # "If you think dropping sweep cap makes more do it. I just want the
