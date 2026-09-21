@@ -1,3 +1,66 @@
+# v-hedge25 -- 2026-09-21 ~19:0xZ -- LIVE: the hedge trigger moves 60% -> 25%
+
+The operator set the objective: *"It's not cutting losses that matters it's
+losing the least amount of money."* And the task: *"tune it to catch the most
+it can while having enough certainty to offset as much total losses as
+possible."*
+
+**REVERT:** set `"--hedge-belief", "0.60",` in `restart_bot.ps1` and run
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+## The instrument -- `research/hedgetune.py`, new
+
+Every earlier answer scored a trigger at the price available **at the alarm
+second**. That is only right for an alarm already under the trigger when it
+fired. Any lower trigger has to WAIT, and insurance gets dearer as confidence
+falls -- which is precisely what A76 cost us today. Pricing a wait at the
+pre-wait price flatters it by that whole amount.
+
+So this rebuilds, for all 16 alarms with an entry signal: our **confidence
+second by second** from the 1/sec index (`settlewin.partial` plus pinrun's own
+`eff_strike`, `var_factor`, `conf_of` -- only the two live reads replaced),
+and the **hedge price and depth second by second** from the ticker tape. Then
+it buys at the first second confidence falls under the trigger, at the price
+quoted then, capped by what was offered.
+
+## The dial
+
+| trigger | fires | real | right | the losses | false alarms | TOTAL |
+|---|---|---|---|---|---|---|
+| **<60% (what we ran)** | 14 | 8 | 57% | -$235.91 | -$134.13 | **-$370.05** |
+| <40% | 11 | 8 | 73% | -$242.57 | -$79.02 | -$321.58 |
+| **<25% (now live)** | 10 | 8 | 80% | -$276.86 | +$3.71 | **-$273.15** |
+| <20% | 8 | 8 | 100% | -$276.94 | +$22.38 | -$254.56 |
+| never hedge | 0 | - | - | -$346.78 | +$22.38 | -$324.40 |
+
+**The 0.60 trigger was the worst of every option, including not hedging at
+all.** It fires on 14 alarms of which 8 were real; the six false ones cost
+$156. At 0.25 it still catches **all 8 real losses** -- not one is missed --
+and pays for only two false alarms.
+
+## Why 0.25 and not lower
+
+0.20 and below have never once hedged a bet that went on to win (8 for 8) and
+read better still. The **leave-one-out** decides it:
+
+| trigger | worst drop-one, against never hedging |
+|---|---|
+| <60% | **-$79.30** |
+| <30% | -$43.01 |
+| **<25%** | **+$23.50** |
+
+0.25 is the loosest trigger where dropping the single most influential alarm
+STILL leaves hedging ahead. That is the most coverage the evidence supports,
+which is exactly what was asked for.
+
+## Left on the table, deliberately
+
+Sizing to cover the money at risk instead of matching the position reads
+**-$220.42** at this trigger, another $53, worst drop-one **+$47.79**. It
+needs a new flag and does not go in the same change as this one.
+
+---
+
 # v-hedgelastweek -- 2026-09-21 ~17:5xZ -- LIVE: the hedge is last week's, exactly
 
 The operator: *"make sure that my hedge right now is functioning just like it

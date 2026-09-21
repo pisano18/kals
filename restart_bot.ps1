@@ -81,7 +81,43 @@ $botArgs = @(
     "--improve-scope", "market", "--pick", "best",
     "--max-per-market", "2", "--improve-max", "0.010",
     "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate",
-    "--hedge-belief", "0.60",
+    # --hedge-belief 0.60 -> 0.25, v-hedge25, 2026-09-21 ~19:0xZ, on the
+    # operator's instruction: "tune it to catch the most it can while having
+    # enough certainty to offset as much total losses as possible", and his
+    # correction of the objective: "It's not cutting losses that matters it's
+    # losing the least amount of money."
+    #
+    # `research/hedgetune.py` rebuilds, for all 16 real-money alarms with an
+    # entry signal, our CONFIDENCE second by second from the 1/sec index and
+    # the HEDGE PRICE AND DEPTH second by second from the ticker tape, then
+    # buys at the first second confidence falls under the trigger AT THE PRICE
+    # QUOTED THEN. Every earlier answer priced the wait at the pre-wait price,
+    # which flatters a low trigger by exactly the amount A76 lost today.
+    #
+    #  trigger  fires  real  right%  the losses  false alarms     TOTAL
+    #   <60%      14     8     57%      -235.91      -134.13    -370.05  <- was
+    #   <40%      11     8     73%      -242.57       -79.02    -321.58
+    #   <25%      10     8     80%      -276.86        +3.71    -273.15  <- now
+    #   <20%       8     8    100%      -276.94       +22.38    -254.56
+    #   never      0     -      -       -346.78       +22.38    -324.40
+    #
+    # THE 0.60 TRIGGER WAS THE WORST OF EVERY OPTION, INCLUDING NOT HEDGING.
+    # It fires on 14 alarms of which only 8 were real, and the six false ones
+    # cost $156. At 0.25 it still catches all 8 real losses -- none of them is
+    # missed -- and pays for only two false alarms.
+    #
+    # WHY NOT LOWER. 0.20 and below have never hedged a bet that went on to
+    # win (8 for 8) and read better still, but the leave-one-out is what
+    # decides it: at 0.25 dropping the single most influential alarm still
+    # leaves hedging $23.50 AHEAD of never hedging, and at 0.60 it leaves it
+    # $79.30 BEHIND. 0.25 is the loosest trigger whose every drop-one is
+    # positive, so it is the most coverage the evidence actually supports.
+    #
+    # STILL ON THE TABLE, not done: sizing the hedge to cover the money at
+    # risk instead of matching the position reads -$220.42 at this trigger,
+    # another $53, with a worst drop-one of +$47.79. It needs a new flag and
+    # it is not going in the same change as this one.
+    "--hedge-belief", "0.25",
     # AMENDMENT 46 REOPENED 2026-09-18 ~02:2xZ, at a THIRD and with a PRICE
     # FLOOR. The operator: "Can you re open 45 seconds with a cap at 90c, or
     # whatever number you like?"
