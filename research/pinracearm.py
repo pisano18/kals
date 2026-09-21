@@ -877,6 +877,13 @@ def selftest():
     # OUTSIDE the paper-only branch, which is what indentation says.
     ck(body.count('if paper_done and not LIVE["on"]:') == 1,
        "the once-per-band gate EXEMPTS the live path")
+    ck(body.count('if not LIVE["on"]:' + chr(10)) >= 1
+       and 'buyable=have, held=taken[(evt, tkr, side)])' in body,
+       "and so does the book-already-ours gate, which the paper fill trips "
+       "from the second second onward")
+    ck('want_n = min(float(have or asz or 0),' in body,
+       "the live size comes from what is OFFERED, never from the paper arm's "
+       "notional take -- that is zero once the paper fill has booked the offer")
     lines = body.split(chr(10))
     ip = next(i for i, x in enumerate(lines) if x.strip() == "if not paper_done:")
     il = next(i for i, x in enumerate(lines) if x.strip() == 'if LIVE["on"]:')
@@ -1340,7 +1347,16 @@ def main():
                             rec("no_trade", event=evt, coin=coin, ticker=tkr,
                                 tau=tau, side=side, why="book_already_ours",
                                 buyable=have, held=taken[(evt, tkr, side)])
-                        continue
+                        # THE SECOND STARVATION, 2026-09-21. The paper fill
+                        # books the WHOLE offer into `taken`, so from the next
+                        # second on take_size returns 0 and this used to
+                        # `continue` -- starving the live path exactly the way
+                        # the band gate did. The penny test buys ONE contract;
+                        # what the paper arm notionally consumed is none of its
+                        # business. Its own size comes from `have` below.
+                        if not LIVE["on"]:
+                            continue
+                        paper_done = True
                     try:
                         lad = book.depth(tkr, "no" if side == "yes" else "yes", 60)
                         ladder = [[round(1.0 - float(p), 4), float(s)]
@@ -1373,7 +1389,11 @@ def main():
                     # first of its band, because the confirmation has to be
                     # served second by second.
                     if LIVE["on"]:
-                        want_n = min(float(take), float(LIVE["max_contracts"]))
+                        # sized from what is OFFERED, never from the paper
+                        # arm's notional `take` -- which is zero once the
+                        # paper fill has booked the whole offer
+                        want_n = min(float(have or asz or 0),
+                                     float(LIVE["max_contracts"]))
                         first_tau = arm_leg(LIVE["armed"], evt, coin, side,
                                             tau)
                         why = live_refusals(tau, float(ask), want_n, evt,
