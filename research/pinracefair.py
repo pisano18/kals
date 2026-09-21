@@ -73,7 +73,15 @@ N_AVG, WINDOW = M.N_AVG, M.WINDOW
 DRAWS = 1000
 TAUS = [5, 10, 15, 20, 25, 30, 45, 60]
 WINDOWS = ("300", "3600", "max")
-KAPPAS = (1.0, 1.25, 1.5, 2.0, 2.5)
+# WIDENED 2026-09-21. The first grid started at 1.0 and the fit half chose
+# 1.0 -- the smallest value offered. An optimum on the boundary of its own
+# search is not an optimum, it is a truncation, and the reliability table said
+# the same thing from the other direction: every bin was further from 50% than
+# the model claimed (it said 65%, it was right 75%; it said 11.5%, it was right
+# 6.9%). A model that is too timid prices a beaten leg at 5% when it is 2%, and
+# a rule that will not sell above 2% then stands aside on most of the field.
+# So the grid now runs below 1.0 and the fit half is allowed to say so.
+KAPPAS = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.25, 1.5, 2.0, 2.5)
 DATA = r"C:\kals\kalshi_data"
 
 
