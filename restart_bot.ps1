@@ -176,7 +176,42 @@ $botArgs = @(
     # market still 73-90% on us) hurt: 5 of 5, -$41.72. Both bought at 47c
     # and 74c helped: +$8.80. Same threshold as the belief, so the rule is
     # "model AND market both say under 60%".
-    "--hedge-price", "0.60",
+    # --hedge-price REMOVED 2026-09-21 ~17:5xZ (v-hedgelastweek), on the
+    # operator's word: "make sure that my hedge right now is functioning just
+    # like it did last week. The time were it was cutting them in half and
+    # even caused a profit. I want that exact code as my hedge."
+    #
+    # He is right about last week and the start records prove it. The hedges
+    # he remembers -- BTC and HYPE on 09-14 (41% and 49% cut), BNB on 09-16
+    # (52%), DOGE on 09-18 04:15Z (a LOSS turned into +$4.36) -- all ran with
+    # `hedge_price: None`. The flag was not added until the 09-18 22:46Z run,
+    # AFTER every one of them. So "last week's hedge" is: full position at the
+    # alarm, no price gate. `--no-hedge-prop` above restores the first half;
+    # dropping this line restores the second.
+    #
+    # All 18 real-money alarms, replayed against the book at the alarm second:
+    #
+    #                                  the 10 losses  8 false alarms    total
+    #   never hedge                         -346.84        +22.38     -324.46
+    #   LAST WEEK (no price gate)           -235.93       -109.38     -345.31
+    #   with the 0.60 gate (what we ran)    -280.70        -55.76     -336.46
+    #   A76 proportional                    -246.54       -136.20     -382.74
+    #
+    # THE TRADE-OFF, STATED PLAINLY SO NOBODY IS SURPRISED LATER: last week's
+    # rule cuts the LOSSES by 32% against this gate's 19%, and would have made
+    # today's NEAR -$48.16 instead of -$74.25. It costs $53 more on the false
+    # alarms, and on the 18-alarm total it is $9 worse. The operator has
+    # chosen the loss cut with the numbers in front of him; the total is
+    # dominated by two false alarms on 09-19 and is not what he is optimising.
+    #
+    # WHAT THIS GATE WAS FOR, kept so it is not re-added blindly: it refuses a
+    # hedge when insurance is CHEAP, i.e. the market has not yet agreed with
+    # our model. Of the nine hedges it blocks across all 18 alarms, six were
+    # false alarms and it saved us on those. It also blocked today's, by ONE
+    # CENT -- the NO was 39c against a 40c line.
+    #
+    # The replacement is not a price line, it is telling a false alarm from a
+    # real one. That is being tested now and nothing goes back in until it is.
     # --no-hedge-prop, v-hedgefull, 2026-09-21 ~17:0xZ. A76 PROPORTIONAL
     # HEDGING IS OFF. It fired for the first time today on
     # KXNEAR15M-26SEP211245-45 and it was the worst policy we could have run.

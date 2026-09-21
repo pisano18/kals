@@ -1,3 +1,68 @@
+# v-hedgelastweek -- 2026-09-21 ~17:5xZ -- LIVE: the hedge is last week's, exactly
+
+The operator: *"make sure that my hedge right now is functioning just like it
+did last week. The time were it was cutting them in half and even caused a
+profit. I want that exact code as my hedge. The other stuff we changed that's
+good stays, but for the hedge I want that one."*
+
+**REVERT, copy-pasteable:** put `"--hedge-price", "0.60",` back into
+`restart_bot.ps1`, then run
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+## What changed
+
+`--hedge-price 0.60` is REMOVED. With `--no-hedge-prop` from earlier today,
+the hedge is now exactly what it was during the week he is describing: the
+WHOLE position, at the alarm, with no price gate.
+
+## He is right, and the start records prove it
+
+Every hedge he remembers ran with `hedge_price: None`:
+
+| hedge | unhedged | hedged | cut |
+|---|---|---|---|
+| BTC 09-14 | -$58.43 | -$34.26 | 41% |
+| HYPE 09-14 | -$59.20 | -$29.90 | 49% |
+| BNB 09-16 | -$0.98 | -$0.47 | 52% |
+| DOGE 09-18 04:15Z | -$3.93 | **+$4.36** | a loss turned into a profit |
+
+The flag was not added until the **2026-09-18 22:46Z** run, after all four.
+
+## Every real-money alarm, replayed against the book at the alarm second
+
+| policy | the 10 losses | 8 false alarms | total |
+|---|---|---|---|
+| never hedge | -$346.84 | +$22.38 | -$324.46 |
+| **LAST WEEK (no price gate)** | **-$235.93** | -$109.38 | -$345.31 |
+| with the 0.60 gate | -$280.70 | -$55.76 | -$336.46 |
+| A76 proportional | -$246.54 | -$136.20 | -$382.74 |
+
+**The trade-off, stated plainly so nobody is surprised later.** Last week's
+rule cuts the LOSSES by **32%** against the gate's 19%, and would have made
+today's NEAR **-$48.16 instead of -$74.25**. It costs $53 more on the false
+alarms and is $9 worse on the 18-alarm total. The operator has chosen the
+loss cut with those numbers in front of him. The total is dominated by two
+false alarms on 09-19 and is not what he is optimising.
+
+## What the gate was for, so it is not re-added blindly
+
+It refuses a hedge when insurance is CHEAP -- when the market has not yet
+agreed with our model. Of the nine hedges it blocks across the 18 alarms,
+**six were false alarms** and it saved us on those. It also blocked today's,
+**by one cent**: the NO was 39c against a 40c line.
+
+The replacement is not a price line, it is telling a false alarm from a real
+one. The false alarms cluster at 14, 18, 37 and 37c while the big real losses
+sat at 44, 52 and 65c. That is being tested now and nothing goes back in
+until it is.
+
+## Kept from this week, because it is execution and not a gate
+
+`--hedge-slip 0.03`, `--hedge-max-tries 30` and the 120-attempt cap stay. They
+make the hedge order actually cross; last week's 5 tries left hedges unfilled.
+
+---
+
 # v-hedgefull -- 2026-09-21 ~17:0xZ -- LIVE: A76 PROPORTIONAL HEDGING IS OFF
 
 Flag added: `--no-hedge-prop`.
