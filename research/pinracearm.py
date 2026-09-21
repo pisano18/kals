@@ -101,7 +101,9 @@ WINDOW = M.WINDOW
 # in this repo.
 _DEFAULT_LIVE_MAX_CONTRACTS = 1      # "pennies": about $1 a leg at 97c
 _DEFAULT_LIVE_MAX_STAKE = 20.00      # dollars this process may ever commit
-_DEFAULT_LIVE_TAU_MAX = 20           # NARROWED from 40 -- see THE 09-21 LOSS
+_DEFAULT_LIVE_TAU_MAX = 60           # the EARLIEST we may look (see CONFIRM)
+_DEFAULT_LIVE_CONFIRM = 5            # seconds the same leg must keep qualifying
+_DEFAULT_LIVE_CLOCK_TAU = 20         # fire anyway once the clock runs down
 _DEFAULT_LIVE_MIN_PRICE = 0.80       # measured 09-21, see below
 _DEFAULT_LIVE_MAX_LEGS = 5           # one YES plus a NO on every other coin
 _DEFAULT_LIVE_STOP_ON_LOSS = True
@@ -191,6 +193,31 @@ LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
 # THE EDGE BAR STAYS AT ZERO. Raising it makes the loss rate WORSE, not
 # better (0c 1.97%, 1c 2.26%, 2c 5.36%, 3c 6.10%) -- the same cheap-leg cliff
 # this product shows everywhere. A bigger apparent bargain is a warning.
+#
+# ----------------------------------------------------------------------
+# CONFIRM-OR-CLOCK, the operator's idea, 2026-09-21: "once a confidence peaks
+# you either watch for an additional amount of time to see if it's a quick
+# spike or if it's really ascending, or you look at the time... and whichever
+# comes first you use for your decision."
+#
+# It beats both of the fixed rules it replaces. Arm when a basket first
+# qualifies; fire when the SAME anchor leg still qualifies `confirm` seconds
+# later, or the moment tau reaches `clock_tau`, whichever comes first.
+#
+#     rule                      races  losing   rate    c/ct    $/day
+#     tau <= 40 (the old one)     710      14   1.97%  +4.21c   52.20
+#     tau <= 20 (the safe one)    386       3   0.78%  +5.24c   31.20
+#     confirm 5s, clock 20        773       3   0.39%  +5.16c   48.28   <- this
+#
+# MORE races than either, the same three losses as the cautious rule spread
+# over twice the races, and nearly all of the bold rule's money. The spike
+# that cost us on 09-21 could not have fired: it held 95% for one second.
+#
+# 560 of the 773 fire on confirmation and 213 on the clock, so both halves
+# earn their place. Swept: confirm 3s 0.59% / 4s 0.49% / 5s 0.39% / 6s 0.42%
+# / 8s 0.47% / 10s 0.53%; clock floor 15 $34.38 / 20 $48.28 / 25 $44.51 (and
+# 0.76% losing) / 30 $32.42 (1.34%). Both interior optima, neither on a
+# boundary. Only 2 of 26 days end negative.
 _DEFAULT_LIVE_STOP_ON_LOSS = True
 
 # `races` maps event -> [(coin, side), ...] already held, so consistency can
@@ -200,8 +227,40 @@ LIVE = {"on": False, "max_contracts": _DEFAULT_LIVE_MAX_CONTRACTS,
         "tau_max": _DEFAULT_LIVE_TAU_MAX,
         "min_price": _DEFAULT_LIVE_MIN_PRICE,
         "max_legs": _DEFAULT_LIVE_MAX_LEGS,
+        "confirm": _DEFAULT_LIVE_CONFIRM,
+        "clock_tau": _DEFAULT_LIVE_CLOCK_TAU,
         "stop_on_loss": _DEFAULT_LIVE_STOP_ON_LOSS,
-        "races": {}, "staked": 0.0, "halted": None, "sends": 0}
+        "races": {}, "armed": {}, "staked": 0.0, "halted": None, "sends": 0}
+
+
+def arm_leg(armed, race, coin, side, tau):
+    """Note that (coin, side) is qualifying in `race` at `tau`, and return the
+    tau it FIRST qualified at.
+
+    Arming is per leg, not per race: a race whose anchor flips from HYPE to
+    SOL has not been holding a signal for five seconds, it has had two
+    signals, and the clock must start again. That flip is exactly what cost
+    the 09-21 race."""
+    seen = armed.setdefault(race, {})
+    if (coin, side) not in seen:
+        seen[(coin, side)] = tau
+    return seen[(coin, side)]
+
+
+def confirm_refusal(first_tau, tau, state=None):
+    """None if this leg may fire now, else why not.
+
+    Fire when the leg has kept qualifying for `confirm` seconds, OR when the
+    clock has run down to `clock_tau` -- whichever comes first."""
+    st = LIVE if state is None else state
+    if tau is None or first_tau is None:
+        return "no arming record"
+    if first_tau - tau >= st["confirm"]:
+        return None
+    if tau <= st["clock_tau"]:
+        return None
+    return ("held %ds of the %ds confirmation and the clock is still at %ds"
+            % (first_tau - tau, st["confirm"], tau))
 
 
 def inconsistent(held, coin, side):
@@ -688,7 +747,8 @@ def selftest():
     ck(_DEFAULT_LIVE_MAX_CONTRACTS <= pintake.MAX_TAKE_COUNT,
        "the default penny size (%g) is inside pintake's own per-order rail "
        "(%g)" % (_DEFAULT_LIVE_MAX_CONTRACTS, pintake.MAX_TAKE_COUNT))
-    ck(_DEFAULT_LIVE_TAU_MAX <= 20 and _DEFAULT_LIVE_MIN_PRICE >= 0.80,
+    ck(_DEFAULT_LIVE_TAU_MAX <= 60 and _DEFAULT_LIVE_CLOCK_TAU <= 20 and
+       _DEFAULT_LIVE_CONFIRM >= 3 and _DEFAULT_LIVE_MIN_PRICE >= 0.80,
        "the defaults are the measured rule: inside %ds, at %.0fc or dearer"
        % (_DEFAULT_LIVE_TAU_MAX, 100 * _DEFAULT_LIVE_MIN_PRICE))
     ck(_DEFAULT_LIVE_STOP_ON_LOSS is True,
@@ -742,6 +802,32 @@ def selftest():
     ck(live_refusals(20, 0.95, 1, "R1", state=on2, exists=never),
        "a leg with no coin named is refused once the race holds anything -- "
        "consistency cannot be checked blind")
+    # ---- CONFIRM-OR-CLOCK ----------------------------------------------
+    cs = {"confirm": 5, "clock_tau": 20}
+    ck(confirm_refusal(45, 45, cs) is not None,
+       "a leg seen for the first time at tau 45 does NOT fire immediately")
+    ck(confirm_refusal(45, 41, cs) is not None,
+       "nor after 4 of its 5 seconds")
+    ck(confirm_refusal(45, 40, cs) is None,
+       "and it fires once it has held the full 5 seconds")
+    ck(confirm_refusal(25, 20, cs) is None,
+       "the clock alone fires it at tau 20 even with 5s exactly served")
+    ck(confirm_refusal(22, 19, cs) is None,
+       "and inside tau 20 the clock fires it however briefly it has held")
+    ck(confirm_refusal(None, 30, cs) and confirm_refusal(30, None, cs),
+       "a missing arming record refuses rather than fires")
+    am = {}
+    ck(arm_leg(am, "R", "BTC", "yes", 50) == 50,
+       "the first sighting records its own tau")
+    ck(arm_leg(am, "R", "BTC", "yes", 47) == 50,
+       "and a later sighting of the SAME leg keeps the first tau")
+    ck(arm_leg(am, "R", "SOL", "no", 47) == 47,
+       "while a DIFFERENT leg in the same race starts its own clock -- an "
+       "anchor that flips has not been holding a signal, it has had two")
+    ck(confirm_refusal(arm_leg(am, "R", "SOL", "no", 44), 44, cs) is not None,
+       "so the flipped anchor cannot inherit the old leg's served time, which "
+       "is exactly the 09-21 loss")
+
     ck(live_refusals(21, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
        "21 s out is refused -- the 09-21 loss fired at 40 into a one-second confidence spike; tau<=20 cuts losing races 4.5x")
     ck(live_refusals(1, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
@@ -852,6 +938,14 @@ def main():
                     default=_DEFAULT_LIVE_MIN_PRICE,
                     help="live: never buy cheaper than this (default %.2f)"
                          % _DEFAULT_LIVE_MIN_PRICE)
+    ap.add_argument("--live-confirm", type=int, default=_DEFAULT_LIVE_CONFIRM,
+                    help="live: seconds the same leg must keep qualifying "
+                         "before it fires (default %d)" % _DEFAULT_LIVE_CONFIRM)
+    ap.add_argument("--live-clock-tau", type=int,
+                    default=_DEFAULT_LIVE_CLOCK_TAU,
+                    help="live: fire anyway once the clock reaches this, "
+                         "confirmed or not (default %d)"
+                         % _DEFAULT_LIVE_CLOCK_TAU)
     ap.add_argument("--live-max-legs", type=int, default=_DEFAULT_LIVE_MAX_LEGS,
                     help="live: AGREEING legs per race -- one YES at most, "
                          "NOs on other coins, never a coin twice (default %d)"
@@ -879,7 +973,9 @@ def main():
                     max_stake=float(a.max_stake),
                     tau_max=int(a.live_tau_max),
                     min_price=float(a.live_min_price),
-                    max_legs=max(1, int(a.live_max_legs)))
+                    max_legs=max(1, int(a.live_max_legs)),
+                    confirm=max(0, int(a.live_confirm)),
+                    clock_tau=max(1, int(a.live_clock_tau)))
         if os.path.exists(LIVE_STOP_FILE):
             print("  REFUSING TO ARM -- stop file present: %s" % LIVE_STOP_FILE)
             return 1
@@ -910,6 +1006,10 @@ def main():
         print("  (one YES at most, NOs only on other coins, never a coin twice),")
         print("  only inside %d s, only at %.0fc or dearer, at most $%.2f"
               % (LIVE["tau_max"], 100 * LIVE["min_price"], LIVE["max_stake"]))
+        print("  and a leg must keep qualifying for %d s before it fires, or"
+              % LIVE["confirm"])
+        print("  the clock must have run down to %d s -- whichever comes first,"
+              % LIVE["clock_tau"])
         print("  committed in total, and it STOPS DEAD on the first losing")
         print("  race. Halt it any time with:  type nul > %s" % LIVE_STOP_FILE)
 
@@ -1242,8 +1342,13 @@ def main():
                     # which is the entire point of the test.
                     if LIVE["on"]:
                         want_n = min(float(take), float(LIVE["max_contracts"]))
+                        first_tau = arm_leg(LIVE["armed"], evt, coin, side,
+                                            tau)
                         why = live_refusals(tau, float(ask), want_n, evt,
                                             coin=coin, side=side)
+                        cw = confirm_refusal(first_tau, tau)
+                        if cw:
+                            why = list(why) + [cw]
                         if why:
                             rec("live_refused", event=evt, ticker=tkr,
                                 side=side, tau=tau, price=float(ask),
