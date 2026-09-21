@@ -77,13 +77,80 @@ sys.path.insert(0, HERE)
 os.environ.setdefault("KALS_SELFTESTED", "1")
 import livebook                                              # noqa: E402
 import pinrun                                                # noqa: E402
+import pintake                                               # noqa: E402
 import pinracemodel as M                                     # noqa: E402
 import pinracefair as F                                      # noqa: E402
 
 SERIES = "KXCRYPTOLEAD15M"
+# Coin Race markets sit on exchange_index 2 ("Crypto"), the same shard as the
+# 15-minute families. An order sent with the default 0 is rejected outright.
+RACE_EXCHANGE_INDEX = 2
+# Filled in by arm() only when --live is given, so a take() call cannot even
+# be constructed without an explicit arming step.
+CREDS = {"base": None, "pk": None, "key_id": None}
 COINS = M.COINS
 N_AVG = M.N_AVG
 WINDOW = M.WINDOW
+
+# ---- the PENNY TEST rails (REAL MONEY) ------------------------------------
+# Operator sign-off 2026-09-21: "Sure start the penny test", "just spend
+# pennies and see if they win. You have permission to do that."
+#
+# These are DEFAULTS. A self-test must assert these names, never the running
+# LIVE dict -- asserting a running value has refused to start a bot six times
+# in this repo.
+_DEFAULT_LIVE_MAX_CONTRACTS = 1      # "pennies": about $1 a race at 97c
+_DEFAULT_LIVE_MAX_STAKE = 20.00      # dollars this process may ever commit
+_DEFAULT_LIVE_TAU_MAX = 40           # measured 09-21: the edge dies at 41 s
+_DEFAULT_LIVE_MIN_PRICE = 0.90       # measured 09-21: the floor IS the strategy
+_DEFAULT_LIVE_STOP_ON_LOSS = True
+LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
+
+# `races` is the hard ONE-POSITION-PER-RACE ledger. In live mode it overrides
+# the band logic entirely: 2026-09-15 cost $1,306 by holding two sides of one
+# race, and at most one leg of a race can ever win, so a second position is
+# not diversification, it is a guaranteed loser.
+LIVE = {"on": False, "max_contracts": _DEFAULT_LIVE_MAX_CONTRACTS,
+        "max_stake": _DEFAULT_LIVE_MAX_STAKE,
+        "tau_max": _DEFAULT_LIVE_TAU_MAX,
+        "min_price": _DEFAULT_LIVE_MIN_PRICE,
+        "stop_on_loss": _DEFAULT_LIVE_STOP_ON_LOSS,
+        "races": set(), "staked": 0.0, "halted": None, "sends": 0}
+
+
+def live_refusals(tau, price, count, race, state=None, exists=os.path.exists):
+    """Every reason this race may NOT be bought with real money.
+
+    Pure and side-effect free, so the self-test can plant each refusal one at
+    a time. These sit ON TOP of pintake's own rails, never instead of them."""
+    st = LIVE if state is None else state
+    bad = []
+    if not st["on"]:
+        bad.append("not armed -- --live was not given")
+    if st["halted"]:
+        bad.append("halted: %s" % st["halted"])
+    if race in st["races"]:
+        bad.append("one position per race -- this race already has one")
+    if tau is None or tau > st["tau_max"]:
+        bad.append("tau %s is past the %ds bar" % (tau, st["tau_max"]))
+    elif tau < 2:
+        bad.append("tau %s is inside the last 2 s -- no time to fill" % tau)
+    if price is None or not (0.0 < price < 1.0):
+        bad.append("price %s is not a probability" % price)
+    elif price < st["min_price"]:
+        bad.append("price %s is under the %.2f floor" % (price, st["min_price"]))
+    if count is None or count < 1:
+        bad.append("count %s is under one contract" % count)
+    elif count > st["max_contracts"]:
+        bad.append("count %s is over the %g cap" % (count, st["max_contracts"]))
+    if price is not None and count is not None and 0.0 < price < 1.0:
+        if st["staked"] + price * count > st["max_stake"] + 1e-9:
+            bad.append("stake $%.2f + $%.2f would pass the $%.2f cap"
+                       % (st["staked"], price * count, st["max_stake"]))
+    if exists(LIVE_STOP_FILE):
+        bad.append("stop file present: %s" % LIVE_STOP_FILE)
+    return bad
+
 
 # ---- the rails ------------------------------------------------------------
 SIZE = 250                # contracts we would ask for per fill
@@ -276,22 +343,36 @@ def selftest():
         if not c:
             f.append(m)
 
-    # ---- THIS FILE MUST NEVER BE ABLE TO SEND AN ORDER -----------------
+    # ---- THIS BAR WAS MOVED 2026-09-21, AND IT IS MOVED LOUDLY ----------
+    #
+    # Until today this block asserted that the strings "pintake", "--live"
+    # and the order endpoint appeared NOWHERE in this file, so that nothing
+    # here could reach the exchange. That guarantee is GONE BY DESIGN: the
+    # operator signed off the coin race penny test on 2026-09-21 ("just spend
+    # pennies and see if they win. You have permission to do that") and this
+    # file now sends real orders at one contract under --live.
+    #
+    # The old text is kept above in this comment rather than deleted, per the
+    # standing rule that a bar is never moved quietly. What replaces it is
+    # narrower and stronger: the order path may appear EXACTLY ONCE, it must
+    # sit behind the --live guard, the rails must be checked before it, and
+    # the endpoint and the maker field must still appear nowhere -- this file
+    # takes liquidity through pintake or not at all, and never rests a quote.
+    #
     # THE SELF-INSPECTION TRAP. Every needle below is BUILT, never written,
     # because spelling a module name out in this test would let the test find
-    # its own comment, and
-    # the check would fail on itself -- which is exactly how four earlier
-    # structural tests in this project passed or failed for the wrong reason.
+    # its own comment and pass or fail for the wrong reason -- which is how
+    # four earlier structural tests in this project went wrong.
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
-    needles = [("pin" + "take", "the module that can actually send an order"),
-               ("pinrun." + "arm(", "the call that disarms the live bot's guard"),
-               ("--" + "live", "a flag that could be passed by accident"),
-               ("post_" + "only", "a maker order field"),
-               ("/portfolio/" + "orders", "the order endpoint itself")]
-    for needle, what in needles:
+    for needle, what in (("post_" + "only", "a maker order field"),
+                         ("/portfolio/" + "orders", "the order endpoint itself")):
         ck(src.count(needle) == 0,
-           "%s (%s) appears NOWHERE in this file -- nothing here can reach "
-           "the exchange with an order" % (needle, what))
+           "%s (%s) appears NOWHERE in this file -- it can only ever take "
+           "liquidity, through pintake's rails, and never rest a quote"
+           % (needle, what))
+    ck(src.count("pin" + "run." + "arm(") == 0,
+       "it never calls the LIVE BOT's arming function -- the money bot's "
+       "credentials and rails stay its own")
 
     # ---- the rails -----------------------------------------------------
     ck(PRICE_CEILING <= 0.98,
@@ -487,6 +568,75 @@ def selftest():
        % (100 * M.upper95(0, 120)))
     ck(M.p_lose({}, 10, 50.0) is None and M.p_win({}, 10, 50.0) is None,
        "and an empty table stands aside both ways rather than guessing")
+
+    # ---- THE PENNY TEST RAILS. Real money, so every one is planted. -------
+    # Every assertion is on a _DEFAULT_ name, never on the running LIVE dict:
+    # asserting a running value has refused to start a bot six times here.
+    ck(_DEFAULT_LIVE_MAX_CONTRACTS <= pintake.MAX_TAKE_COUNT,
+       "the default penny size (%g) is inside pintake's own per-order rail "
+       "(%g)" % (_DEFAULT_LIVE_MAX_CONTRACTS, pintake.MAX_TAKE_COUNT))
+    ck(_DEFAULT_LIVE_TAU_MAX <= 40 and _DEFAULT_LIVE_MIN_PRICE >= 0.90,
+       "the defaults are the measured rule: inside %ds, at %.0fc or dearer"
+       % (_DEFAULT_LIVE_TAU_MAX, 100 * _DEFAULT_LIVE_MIN_PRICE))
+    ck(_DEFAULT_LIVE_STOP_ON_LOSS is True,
+       "and it stops dead on the first real loss by default")
+
+    off = {"on": False, "max_contracts": 1, "max_stake": 20.0, "tau_max": 40,
+           "min_price": 0.90, "stop_on_loss": True, "races": set(),
+           "staked": 0.0, "halted": None, "sends": 0}
+    never = lambda _p: False                                  # noqa: E731
+    ck(live_refusals(20, 0.95, 1, "R1", state=off, exists=never),
+       "DISARMED: a perfect order is still refused when --live was not given")
+    on = dict(off, on=True, races=set())
+    ck(live_refusals(20, 0.95, 1, "R1", state=on, exists=never) == [],
+       "ARMED: a 95c buy of one contract 20 s out is allowed")
+    on2 = dict(on, races={"R1"})
+    ck(live_refusals(20, 0.95, 1, "R1", state=on2, exists=never),
+       "ONE POSITION PER RACE: the same race is refused a second time")
+    ck(live_refusals(20, 0.95, 1, "R2", state=on2, exists=never) == [],
+       "but a DIFFERENT race is still allowed")
+    ck(live_refusals(41, 0.95, 1, "R3", state=on, exists=never),
+       "41 s out is refused -- measured 09-21, the edge dies at 41")
+    ck(live_refusals(1, 0.95, 1, "R3", state=on, exists=never),
+       "and 1 s out is refused: no time to fill")
+    ck(live_refusals(20, 0.89, 1, "R3", state=on, exists=never),
+       "89c is refused -- the 90c floor IS the strategy")
+    ck(live_refusals(20, 0.95, 2, "R3", state=on, exists=never),
+       "two contracts is refused when the cap is one")
+    ck(live_refusals(20, 0.95, 0, "R3", state=on, exists=never),
+       "and zero contracts is refused rather than sent")
+    ck(live_refusals(20, 0.95, 1, "R3", state=dict(on, staked=19.9),
+                     exists=never),
+       "a buy that would pass the total stake cap is refused")
+    ck(live_refusals(20, 0.95, 1, "R3", state=dict(on, halted="lost one"),
+                     exists=never),
+       "nothing is sent once it has halted")
+    ck(live_refusals(20, 0.95, 1, "R3", state=on, exists=lambda _p: True),
+       "and the stop file refuses everything while it exists")
+    ck(live_refusals(None, None, None, "R3", state=on, exists=never),
+       "missing inputs refuse rather than crash")
+    ck(LIVE["on"] is False and LIVE["halted"] is None,
+       "the module's own live state is DISARMED at import")
+
+    # the send must be guarded, and the race must be claimed BEFORE the send
+    # so a crash mid-order cannot re-enter the same race. Anchored with
+    # rindex, because a self-test that searches this file finds ITS OWN copy
+    # of any string it looks for.
+    src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    body = src[src.rindex(chr(10) + "def main("):]
+    ck(body.count("pintake.take(") == 1,
+       "there is exactly ONE call to the order path in the whole file")
+    i_guard = body.rindex('if LIVE["on"]:')
+    i_claim = body.rindex('LIVE["races"].add(evt)')
+    i_send = body.rindex("pintake.take(")
+    ck(i_guard < i_claim < i_send,
+       "the send is inside the --live guard AND the race is claimed before "
+       "the order leaves, so a crash cannot re-enter the same race")
+    ck(body.rindex("live_refusals(tau") < i_send,
+       "and the rails are checked before the order leaves")
+    ck("arm_prod" in body and body.index("arm_prod") > body.index("if a.live:"),
+       "production is armed only under --live")
+
     print("SELF-TEST", "PASSED" if not f else "FAILED (%d)" % len(f))
     return not f
 
@@ -536,6 +686,25 @@ def main():
     ap.add_argument("--one-per-race-band", action="store_true",
                     help="ARM3: at most one bet per race per time band -- "
                          "'BTC wins' and 'ETH won't win' are one bet twice")
+    ap.add_argument("--live", action="store_true",
+                    help="THE PENNY TEST: send REAL orders at minimum size "
+                         "alongside the paper record, to measure our own fill "
+                         "rate and our own loss rate. Operator sign-off "
+                         "2026-09-21.")
+    ap.add_argument("--max-contracts", type=float,
+                    default=_DEFAULT_LIVE_MAX_CONTRACTS,
+                    help="live: contracts per race (default %g)"
+                         % _DEFAULT_LIVE_MAX_CONTRACTS)
+    ap.add_argument("--max-stake", type=float, default=_DEFAULT_LIVE_MAX_STAKE,
+                    help="live: total dollars this process may ever commit "
+                         "(default %.2f)" % _DEFAULT_LIVE_MAX_STAKE)
+    ap.add_argument("--live-tau-max", type=int, default=_DEFAULT_LIVE_TAU_MAX,
+                    help="live: never buy further out than this (default %d)"
+                         % _DEFAULT_LIVE_TAU_MAX)
+    ap.add_argument("--live-min-price", type=float,
+                    default=_DEFAULT_LIVE_MIN_PRICE,
+                    help="live: never buy cheaper than this (default %.2f)"
+                         % _DEFAULT_LIVE_MIN_PRICE)
     a = ap.parse_args()
     if not selftest():
         return 1
@@ -550,6 +719,47 @@ def main():
     tstat = os.stat(M.TABLE)
     cells = sum(len(v) for v in table.values())
 
+    live_pos = []
+    if a.live:
+        # ARM REAL MONEY. Every rail is set from the command line here and
+        # nowhere else, and the refusal list is printed before a single
+        # market is watched so the operator can read what is bounded.
+        LIVE.update(on=True, max_contracts=float(a.max_contracts),
+                    max_stake=float(a.max_stake),
+                    tau_max=int(a.live_tau_max),
+                    min_price=float(a.live_min_price))
+        if os.path.exists(LIVE_STOP_FILE):
+            print("  REFUSING TO ARM -- stop file present: %s" % LIVE_STOP_FILE)
+            return 1
+        if LIVE["max_contracts"] > pintake.MAX_TAKE_COUNT:
+            print("  REFUSING TO ARM -- %g contracts is over pintake's own "
+                  "per-order rail of %g" % (LIVE["max_contracts"],
+                                            pintake.MAX_TAKE_COUNT))
+            return 1
+        # pintake's rails are a RATCHET -- set_limits refuses to lower them,
+        # deliberately, so that a caller can never quietly loosen or tighten
+        # the money path. We do not touch them. Our cap is checked first in
+        # live_refusals() and must be the stricter of the two, or it is not a
+        # cap at all.
+        if LIVE["max_stake"] > pintake.MAX_RUN_STAKE:
+            print("  REFUSING TO ARM -- $%.2f is looser than pintake's own "
+                  "run-stake rail of $%.2f" % (LIVE["max_stake"],
+                                               pintake.MAX_RUN_STAKE))
+            return 1
+        import kauth
+        import ordercli
+        CREDS["base"] = pintake.PROD_ELECTIONS
+        CREDS["key_id"] = kauth.KEY_ID
+        CREDS["pk"] = ordercli.load_key(pintake.PROD_KEY_FILE)
+        pintake.arm_prod("coin race penny test, operator sign-off 2026-09-21")
+        print("\n  *** REAL MONEY ARMED -- THE PENNY TEST ***")
+        print("  at most %g contract(s) a race, ONE position per race,"
+              % LIVE["max_contracts"])
+        print("  only inside %d s, only at %.0fc or dearer, at most $%.2f"
+              % (LIVE["tau_max"], 100 * LIVE["min_price"], LIVE["max_stake"]))
+        print("  committed in total, and it STOPS DEAD on the first losing")
+        print("  race. Halt it any time with:  type nul > %s" % LIVE_STOP_FILE)
+
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     logpath = a.log or os.path.join(REPO, "results",
                                     "pinracearm-%s.jsonl" % stamp)
@@ -561,7 +771,9 @@ def main():
         logf.write(json.dumps(kw) + "\n")
         logf.flush()
 
-    print("\n  COIN RACE PAPER ARM -- nothing is ever sent")
+    print("\n  COIN RACE %s" % ("PENNY TEST -- REAL ORDERS, see the rails above"
+                                if a.live else
+                                "PAPER ARM -- nothing is ever sent"))
     print("  size %d, <= %.0fc, edge floor %.1fc, tau %d-%d, one fill per "
           "leg per band %s" % (a.size, 100 * PRICE_CEILING, 100 * a.min_edge,
                                 TAU_LO, TAU_HI, [band_of(lo) for lo, _ in BANDS]))
@@ -644,6 +856,42 @@ def main():
                     print("  SETTLED %-28s %-4s  %d/%d won  $%+.2f"
                           % (evt, won, sum(1 for p in mine if p["win"]),
                              len(mine), sum(p["pnl"] for p in mine)))
+
+                # ---- score the REAL positions, and stop on the first loss --
+                real = [p for p in live_pos if p["event"] == evt
+                        and "win" not in p]
+                for p in real:
+                    p["win"] = ((p["coin"] == won) if p["side"] == "yes"
+                                else (p["coin"] != won))
+                    p["pnl"] = round(p["size"] * ((1.0 - p["price"])
+                                                  if p["win"] else -p["price"])
+                                     - p["size"] * fee(p["price"]), 4)
+                if real:
+                    lost = [p for p in real if not p["win"]]
+                    rec("live_settled", event=evt, close_s=cs, winner=won,
+                        positions=len(real),
+                        won=sum(1 for p in real if p["win"]),
+                        pnl=round(sum(p["pnl"] for p in real), 4),
+                        legs=[{k: p[k] for k in
+                               ("ticker", "side", "price", "size", "tau",
+                                "ask_seen", "win", "pnl")} for p in real])
+                    print("  ** LIVE SETTLED %-24s %-4s  %d/%d won  $%+.2f"
+                          % (evt, won, sum(1 for p in real if p["win"]),
+                             len(real), sum(p["pnl"] for p in real)))
+                    if lost and LIVE["stop_on_loss"] and not LIVE["halted"]:
+                        # STOP DEAD. The whole point of the penny test is to
+                        # find out whether we lose more often than the tape
+                        # says; the first real loss is the answer arriving,
+                        # not a reason to keep going and find out how much.
+                        LIVE["halted"] = ("first real loss: %s %s at %.0fc"
+                                          % (evt, lost[0]["side"],
+                                             100 * lost[0]["price"]))
+                        rec("live_halt", why=LIVE["halted"],
+                            staked=round(LIVE["staked"], 4),
+                            sends=LIVE["sends"])
+                        print("\n  *** PENNY TEST HALTED: %s" % LIVE["halted"])
+                        print("  No further real order will be sent by this "
+                              "process. The paper arm keeps running.\n")
 
             # ---- PRICE the open races ----------------------------------
             for evt, e in sorted(events.items()):
@@ -834,6 +1082,52 @@ def main():
                           "gap %+7.2fbp  worth %.4f  edge %+.2fc"
                           % (evt[-12:], coin, side.upper(), take, 100 * ask,
                              tau, gap * 1e4, worth, 100 * pos["edge"]))
+
+                    # ---- THE PENNY TEST. Real money, one race at a time. ----
+                    # The paper record above is written either way, so the
+                    # assumed fill and the real one can be compared later --
+                    # which is the entire point of the test.
+                    if LIVE["on"]:
+                        want_n = min(float(take), float(LIVE["max_contracts"]))
+                        why = live_refusals(tau, float(ask), want_n, evt)
+                        if why:
+                            rec("live_refused", event=evt, ticker=tkr,
+                                side=side, tau=tau, price=float(ask),
+                                count=want_n, why=why)
+                        else:
+                            LIVE["races"].add(evt)      # BEFORE the send, so a
+                            LIVE["sends"] += 1          # crash cannot re-enter
+                            out = pintake.take(
+                                CREDS["base"], CREDS["pk"], CREDS["key_id"],
+                                tkr, side, float(ask), want_n, float(cs),
+                                exchange_index=RACE_EXCHANGE_INDEX,
+                                max_tau=LIVE["tau_max"])
+                            got = float(out.get("filled") or 0.0)
+                            px = float(out.get("exec_price") or ask)
+                            if got > 0:
+                                LIVE["staked"] += px * got
+                                live_pos.append(
+                                    {"event": evt, "coin": coin,
+                                     "ticker": tkr, "side": side,
+                                     "price": px, "size": got, "tau": tau,
+                                     "worth": round(worth, 6),
+                                     "ask_seen": float(ask)})
+                            rec("live_order", event=evt, ticker=tkr,
+                                side=side, tau=tau, ask_seen=float(ask),
+                                count_asked=want_n, filled=got,
+                                exec_price=(px if got > 0 else None),
+                                status=out.get("status"),
+                                status_code=out.get("status_code"),
+                                refused=out.get("refused"),
+                                fee=out.get("fee_total"),
+                                staked=round(LIVE["staked"], 4),
+                                order_id=out.get("order_id"),
+                                client_order_id=out.get("client_order_id"))
+                            print("  ** LIVE %-24s %-4s %-3s asked %g got %g "
+                                  "@ %.0fc  (staked $%.2f of $%.2f)"
+                                  % (evt[-12:], coin, side.upper(), want_n,
+                                     got, 100 * px, LIVE["staked"],
+                                     LIVE["max_stake"]))
             time.sleep(0.25)
     finally:
         done = [p for p in fills if "win" in p]
