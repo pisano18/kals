@@ -867,6 +867,24 @@ def selftest():
        "the order leaves, so a crash cannot re-enter the same race")
     ck(body.rindex("live_refusals(tau") < i_send,
        "and the rails are checked before the order leaves")
+
+    # THE 2026-09-21 15:0xZ BUG. The paper arm fills a leg once per time band
+    # and used to `continue` past everything below on later seconds. The live
+    # confirmation has to be SERVED second by second, so that gave every leg
+    # exactly one look -- its first -- which the confirmation refuses by
+    # construction, and no live order could ever fire. Both halves are
+    # asserted: the band gate must exempt live, and the live block must sit
+    # OUTSIDE the paper-only branch, which is what indentation says.
+    ck(body.count('if paper_done and not LIVE["on"]:') == 1,
+       "the once-per-band gate EXEMPTS the live path")
+    lines = body.split(chr(10))
+    ip = next(i for i, x in enumerate(lines) if x.strip() == "if not paper_done:")
+    il = next(i for i, x in enumerate(lines) if x.strip() == 'if LIVE["on"]:')
+    ck(il > ip, "the live block comes after the paper-only branch")
+    ck(len(lines[il]) - len(lines[il].lstrip())
+       == len(lines[ip]) - len(lines[ip].lstrip()),
+       "and sits at the SAME indentation, so it is NOT nested inside it -- "
+       "the live path runs every second the leg qualifies")
     ck("arm_prod" in body and body.index("arm_prod") > body.index("if a.live:"),
        "production is armed only under --live")
 
@@ -1227,9 +1245,21 @@ def main():
                     else:
                         side, worth = fside, fair_worth(fprobs, coin, fside)
                     band = band_of(tau)
-                    if band is None or (evt, tkr, side, band) in done_band:
+                    if band is None:
                         continue
-                    if a.one_per_race_band and (evt, band) in race_band_done:
+                    # ONE PAPER FILL PER LEG PER BAND -- but the LIVE path must
+                    # still be looked at every second. CONFIRM-OR-CLOCK needs a
+                    # leg re-examined second after second to serve its
+                    # confirmation; gating the whole branch on done_band gave
+                    # each leg exactly ONE look per band, always its first,
+                    # which the confirmation refuses by construction. That is
+                    # why no live order fired between 2026-09-21 14:25Z and
+                    # 15:0xZ: the rule was right and the loop never asked it
+                    # twice.
+                    paper_done = ((evt, tkr, side, band) in done_band
+                                  or (a.one_per_race_band
+                                      and (evt, band) in race_band_done))
+                    if paper_done and not LIVE["on"]:
                         continue
                     g3 = gate_arm3(tau, gap * 1e4, None, a.tau_max,
                                    a.min_gap_bp, a.min_price)
@@ -1323,23 +1353,25 @@ def main():
                            "gap_bp": round(gap * 1e4, 4),
                            "edge": round(edge, 6), "band": band,
                            "model": a.model, "ruler": ruler}
-                    fills.append(pos)
-                    done_band.add((evt, tkr, side, band))
-                    race_band_done.add((evt, band))
-                    taken[(evt, tkr, side)] += take
-                    rec("fill", assumed=True, ask_size=float(asz),
-                        buyable=float(have or 0), ladder=ladder,
-                        returns={k: round(v, 8) for k, v in rets.items()},
-                        **pos)
-                    print("  PAPER  %-30s %-4s %-3s %d @ %.0fc  tau %2d  "
-                          "gap %+7.2fbp  worth %.4f  edge %+.2fc"
-                          % (evt[-12:], coin, side.upper(), take, 100 * ask,
-                             tau, gap * 1e4, worth, 100 * pos["edge"]))
+                    if not paper_done:
+                        fills.append(pos)
+                        done_band.add((evt, tkr, side, band))
+                        race_band_done.add((evt, band))
+                        taken[(evt, tkr, side)] += take
+                        rec("fill", assumed=True, ask_size=float(asz),
+                            buyable=float(have or 0), ladder=ladder,
+                            returns={k: round(v, 8) for k, v in rets.items()},
+                            **pos)
+                        print("  PAPER  %-30s %-4s %-3s %d @ %.0fc  tau %2d  "
+                              "gap %+7.2fbp  worth %.4f  edge %+.2fc"
+                              % (evt[-12:], coin, side.upper(), take,
+                                 100 * ask, tau, gap * 1e4, worth,
+                                 100 * pos["edge"]))
 
                     # ---- THE PENNY TEST. Real money, one race at a time. ----
-                    # The paper record above is written either way, so the
-                    # assumed fill and the real one can be compared later --
-                    # which is the entire point of the test.
+                    # Reached EVERY second the leg qualifies, not only the
+                    # first of its band, because the confirmation has to be
+                    # served second by second.
                     if LIVE["on"]:
                         want_n = min(float(take), float(LIVE["max_contracts"]))
                         first_tau = arm_leg(LIVE["armed"], evt, coin, side,
