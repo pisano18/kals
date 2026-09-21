@@ -244,3 +244,5 @@
 {"ticker": "KXWTI15M-26SEP210130-30", "series": "KXWTI15M", "looks": 72, "fresh": 72, "winner_side_ask": [0.997, 90.0, 30], "side": "no", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-21T05:29:58Z"}
 {"added": ["KXWTI15M-26SEP210145-45"], "n": 1, "kind": "watch", "t": "2026-09-21T05:30:45Z"}
 {"added": ["KXWTI15M-26SEP210145-45"], "n": 1, "kind": "watch", "t": "2026-09-21T05:35:16Z"}
+{"ticker": "KXWTI15M-26SEP210145-45", "series": "KXWTI15M", "looks": 58, "fresh": 51, "winner_side_ask": [0.998, 2250.0, 30], "side": "yes", "nobody_selling": false, "bet": false, "kind": "look", "t": "2026-09-21T05:44:58Z"}
+{"added": ["KXWTI15M-26SEP210200-00"], "n": 1, "kind": "watch", "t": "2026-09-21T05:45:51Z"}

@@ -50,7 +50,7 @@
     "--arm-name",
     "arm-friday"
    ],
-   "at": 1789969405.8506799,
+   "at": 1789970224.108976,
    "name": "45 seconds at FULL size, but only when the market agrees (A50)"
   },
   "--early-tau": {
@@ -102,7 +102,7 @@
     "--arm-name",
     "arm-friday"
    ],
-   "at": 1789969405.862485,
+   "at": 1789970224.1268604,
    "name": "The 45-second early leg (A46 + A49)"
   },
   "--hedge-price": {
@@ -154,7 +154,7 @@
     "--arm-name",
     "arm-friday"
    ],
-   "at": 1789969405.8238733,
+   "at": 1789970224.0689342,
    "name": "Hedge on the market price, not the model (A47)"
   },
   "--late-mult": {
@@ -219,7 +219,7 @@
     "--arm-name",
     "arm-live-frozen"
    ],
-   "at": 1789969405.8333433,
+   "at": 1789970224.0838292,
    "name": "Buy bigger in the last seconds (A48)"
   },
   "--pin 0.97": {
@@ -286,7 +286,7 @@
     "--arm-name",
     "arm-pin0.97"
    ],
-   "at": 1789969405.7562048,
+   "at": 1789970223.9962692,
    "name": "Lower confidence to 97.0%"
   },
   "--pin 0.975": {
@@ -353,7 +353,7 @@
     "--arm-name",
     "arm-pin0.975"
    ],
-   "at": 1789969405.7708008,
+   "at": 1789970224.0091715,
    "name": "Lower confidence to 97.5%"
   },
   "--pin 0.98": {
@@ -420,7 +420,7 @@
     "--arm-name",
     "arm-pin0.98"
    ],
-   "at": 1789969405.7845645,
+   "at": 1789970224.0234067,
    "name": "Lower confidence to 98.0%"
   },
   "--pin 0.985": {
@@ -487,7 +487,7 @@
     "--arm-name",
     "arm-pin0.985"
    ],
-   "at": 1789969405.7973514,
+   "at": 1789970224.0383203,
    "name": "Lower confidence to 98.5%"
   },
   "--pin 0.99": {
@@ -554,7 +554,7 @@
     "--arm-name",
     "arm-pin0.99"
    ],
-   "at": 1789969405.8093357,
+   "at": 1789970224.0527818,
    "name": "Lower confidence to 99.0%"
   },
   "--sigma-stress 0.4": {
@@ -621,7 +621,7 @@
     "--arm-name",
     "arm-sigma0.40"
    ],
-   "at": 1789969406.0785499,
+   "at": 1789970224.336777,
    "name": "Volatility x0.4 -- the model RECKLESS"
   },
   "--sigma-stress 0.6": {
@@ -688,7 +688,7 @@
     "--arm-name",
     "arm-sigma0.60"
    ],
-   "at": 1789969406.0951984,
+   "at": 1789970224.35199,
    "name": "Volatility x0.6 -- the model much BOLDER"
   },
   "--sigma-stress 0.8": {
@@ -755,7 +755,7 @@
     "--arm-name",
     "arm-sigma0.80"
    ],
-   "at": 1789969406.1110482,
+   "at": 1789970224.3827937,
    "name": "Volatility x0.8 -- the model BOLDER"
   },
   "--sigma-stress 1.25": {
@@ -822,7 +822,7 @@
     "--arm-name",
     "arm-sigma1.25"
    ],
-   "at": 1789969406.1386034,
+   "at": 1789970224.42687,
    "name": "Volatility x1.25 -- the model a quarter humbler"
   },
   "--sigma-stress 1.5": {
@@ -889,7 +889,7 @@
     "--arm-name",
     "arm-sigma1.50"
    ],
-   "at": 1789969406.1786451,
+   "at": 1789970224.4741156,
    "name": "Volatility x1.5 -- the model half again humbler"
   },
   "--sigma-stress 2.0": {
@@ -956,7 +956,7 @@
     "--arm-name",
     "arm-sigma2.00"
    ],
-   "at": 1789969406.2612736,
+   "at": 1789970224.7376902,
    "name": "Volatility x2.0 -- the model twice as humble"
   },
   "cmdarm.py": {
@@ -966,7 +966,7 @@
     "--minutes",
     "4320"
    ],
-   "at": 1789969405.8693237,
+   "at": 1789970224.1349351,
    "name": "Commodities, paper (all five, every window)"
   },
   "pinracearm.py": {
@@ -983,7 +983,7 @@
     "0.90",
     "--one-per-race-band"
    ],
-   "at": 1789969405.8880267,
+   "at": 1789970224.1521335,
    "name": "Coin Race (KXCRYPTOLEAD15M), paper"
   },
   "pinvin_0912a.py": {
@@ -997,7 +997,7 @@
     "--loss-abort",
     "-60.00"
    ],
-   "at": 1789969405.9131665,
+   "at": 1789970224.1721509,
    "name": "AMENDMENT 15 -- the belief-collapse hedge, built and NOT yet deployed (09-12 00:11 ET)"
   },
   "pinvin_0912b.py": {
@@ -1011,7 +1011,7 @@
     "--loss-abort",
     "-60.00"
    ],
-   "at": 1789969405.9173603,
+   "at": 1789970224.1764274,
    "name": "AMENDMENT 16 -- SIZE follows the bank automatically (09-12 19:13 ET)"
   },
   "pinvin_0913a.py": {
@@ -1025,7 +1025,7 @@
     "--loss-abort",
     "-60.00"
    ],
-   "at": 1789969405.9216104,
+   "at": 1789970224.1814363,
    "name": "AMENDMENT 17 -- a close is capped on CONTRACTS, coins unlimited (09-12 21:49 ET)"
   },
   "pinvin_0913b.py": {
@@ -1039,7 +1039,7 @@
     "--loss-abort",
     "-60.00"
    ],
-   "at": 1789969405.9270558,
+   "at": 1789970224.1865926,
    "name": "v-a21 -- the confidence gate 0.995 -> 0.990 (09-13 09:52 ET)"
   },
   "pinvin_0913c.py": {
@@ -1053,7 +1053,7 @@
     "--loss-abort",
     "-60.00"
    ],
-   "at": 1789969405.9323077,
+   "at": 1789970224.192398,
    "name": "AMENDMENTS 28 and 29 -- spend the budget we already allow ourselves (09-13 18:33 ET)"
   }
  },

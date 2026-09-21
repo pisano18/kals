@@ -1185,3 +1185,10 @@ SELF-TEST PASSED
   SETTLED KXSOL15M-26SEP210100-00 no vs no -> +32.59c (run realised $+82.4956)
   close 05:15Z: 5840 looks, best was KXXRP15M-26SEP210115-1 NO @0.9970 edge +0.28c (need +0.3c) x478.4 on offer -> no trade
   close 05:30Z: 5346 looks, best was KXNEAR15M-26SEP210130- YES @0.9970 edge +0.28c (need +0.3c) x135 on offer -> no trade
+  SIGNAL KXSOL15M-26SEP210145-45 tau=45s buy NO @0.9770 fair 0.0011 edge +2.03c size 3.00 taking 3 [early]
+    ORDER -> status executed filled 6.0 @ 0.9775 fee 0.0015
+  SIGNAL KXDOGE15M-26SEP210145-45 tau=36s buy NO @0.9800 fair 0.0048 edge +1.39c size 89.55 taking 78 [early]
+    ORDER -> status executed filled 78.0 @ 0.98 fee 0.0013
+  close 05:45Z: 4394 looks, best was KXSOL15M-26SEP210145-4 NO @0.9770 edge +2.03c (need +0.3c) x3 on offer -> FIRED
+  SETTLED KXSOL15M-26SEP210145-45 no vs no -> +12.57c (run realised $+82.6213)
+  SETTLED KXDOGE15M-26SEP210145-45 no vs no -> +145.29c (run realised $+84.0742)
