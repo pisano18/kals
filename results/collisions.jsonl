@@ -88,3 +88,15 @@
 {"note": "killed on power before it costs a day: splitting the 0.697pp offer/no-offer gap by tau band leaves ~140 effective rows per cell after the 31-46x design effect, on a 1-3% base -- MDE roughly 10x the effect. Subsumed by the F-M07 x F-R01 lead, which computes that interval once at the margin", "pair": ["F-M02", "F-M07"], "t": "2026-09-19T08:49:45Z", "verdict": "nothing"}
 {"note": "the worst-close bound is a LOSS bound, but F-X04 makes the hedge a second PURCHASE, not a sale -- so cash committed on one close can reach entry+hedge while the sizer and MAX_RUN_STAKE were both derived from entry alone; measure whether our own stake rail can refuse the hedge at the worst moment", "pair": ["F-B03", "F-X04"], "t": "2026-09-19T08:50:13Z", "verdict": "lead"}
 {"note": "the 26x offer/no-offer selection gap (0.697pp absolute) has never had a close-time-clustered interval or an MDE printed; at a 31-46x design effect the effective failure count is single digits, so a load-bearing settled conclusion may rest on an unstated null", "pair": ["F-M07", "F-R01"], "t": "2026-09-19T08:50:13Z", "verdict": "lead"}
+{"pair": ["F-M08", "F-P04"], "t": "20260920T0848Z", "verdict": "drawn"}
+{"pair": ["F-C01", "F-I04"], "t": "20260920T0848Z", "verdict": "drawn"}
+{"pair": ["F-I03", "F-O04"], "t": "20260920T0848Z", "verdict": "drawn"}
+{"pair": ["F-M05", "F-O06"], "t": "20260920T0848Z", "verdict": "drawn"}
+{"pair": ["F-M08", "F-P02"], "t": "20260920T0848Z", "verdict": "drawn"}
+{"pair": ["F-O06", "F-O07"], "t": "20260920T0848Z", "verdict": "drawn"}
+{"note": "Does the market OFFER us our side more readily in the within-coin low-sigma fifth, where the model is 43.7x overconfident? F-P04 rules out latency, so a gap is the counterparty's choice.", "pair": ["F-M08", "F-P04"], "t": "2026-09-20T08:50:13Z", "verdict": "lead"}
+{"note": "Forced. Any hour-of-day question here runs on the model output and the outcome alone; taker_outcome_side contributes nothing to it, and the hour-of-day test exists independently of this pair.", "pair": ["F-C01", "F-I04"], "t": "2026-09-20T08:50:13Z", "verdict": "nothing"}
+{"note": "Last-minute trade rate is BELOW uniform (5% vs 6.7%), so the last-minute book may be the earlier book: measure the age of resting asks at tau 60->3.", "pair": ["F-I03", "F-O04"], "t": "2026-09-20T08:50:13Z", "verdict": "lead"}
+{"note": "Decompose the 12.5x->28.2x overconfidence drift into a shift in the fresh/stale ask mix versus a within-age-bucket change; tau is the confound.", "pair": ["F-M05", "F-O06"], "t": "2026-09-20T08:50:13Z", "verdict": "lead"}
+{"note": "NO POWER, not no effect: 12 losing closes across 5 sigma fifths (expected 2.4 each) cannot separate 5.19% from 1.38%. The F-M08 x F-P04 lead is the powered version.", "pair": ["F-M08", "F-P02"], "t": "2026-09-20T08:50:13Z", "verdict": "nothing"}
+{"note": "F-O07 checked contest, speed and depth but never ask AGE, so 'the counterparty did not change' is untested in the one dimension F-O06 names. Same measurement as F-M05 x F-O06 -- one job, not two.", "pair": ["F-O06", "F-O07"], "t": "2026-09-20T08:50:13Z", "verdict": "lead"}
