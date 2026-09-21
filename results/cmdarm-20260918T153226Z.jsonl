@@ -1598,3 +1598,6 @@
 {"ticker": "KXSILVER15M-26SEP210130-30", "result": 0.0, "won": false, "pnl_c": -36.24, "kind": "settled", "t": "2026-09-21T05:31:31Z"}
 {"ticker": "KXWTI15M-26SEP210130-30", "result": 0.0, "won": true, "pnl_c": 373.12, "kind": "settled", "t": "2026-09-21T05:31:31Z"}
 {"ticker": "KXWTI15M-26SEP210130-30", "result": 0.0, "won": true, "pnl_c": 397.18, "kind": "settled", "t": "2026-09-21T05:31:31Z"}
+{"ticker": "KXWTI15M-26SEP210145-45", "series": "KXWTI15M", "want": "yes", "price": 0.901, "n": 12.0, "tau": 146, "offer": 12.0, "band": 3, "window": [121, 180, 0.9, 0.99], "age_ms": 6, "kind": "bet", "t": "2026-09-21T05:42:33Z"}
+{"ticker": "KXNATGAS15M-26SEP210145-45", "series": "KXNATGAS15M", "want": "no", "price": 0.98, "n": 100.0, "tau": 120, "offer": 105.86, "band": 0, "window": [91, 120, 0.95, 0.98], "age_ms": 534, "kind": "bet", "t": "2026-09-21T05:42:59Z"}
+{"ticker": "KXGOLD15M-26SEP210145-45", "series": "KXGOLD15M", "want": "no", "price": 0.95, "n": 50.0, "tau": 109, "offer": 50.0, "band": 1, "window": [91, 180, 0.95, 0.99], "age_ms": 48, "kind": "bet", "t": "2026-09-21T05:43:10Z"}
