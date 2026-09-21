@@ -99,27 +99,72 @@ WINDOW = M.WINDOW
 # These are DEFAULTS. A self-test must assert these names, never the running
 # LIVE dict -- asserting a running value has refused to start a bot six times
 # in this repo.
-_DEFAULT_LIVE_MAX_CONTRACTS = 1      # "pennies": about $1 a race at 97c
+_DEFAULT_LIVE_MAX_CONTRACTS = 1      # "pennies": about $1 a leg at 97c
 _DEFAULT_LIVE_MAX_STAKE = 20.00      # dollars this process may ever commit
 _DEFAULT_LIVE_TAU_MAX = 40           # measured 09-21: the edge dies at 41 s
-_DEFAULT_LIVE_MIN_PRICE = 0.90       # measured 09-21: the floor IS the strategy
+_DEFAULT_LIVE_MIN_PRICE = 0.85       # measured 09-21, see below
+_DEFAULT_LIVE_MAX_LEGS = 2           # measured 09-21: 2 legs pay ~30% more
 _DEFAULT_LIVE_STOP_ON_LOSS = True
 LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
 
-# `races` is the hard ONE-POSITION-PER-RACE ledger. In live mode it overrides
-# the band logic entirely: 2026-09-15 cost $1,306 by holding two sides of one
-# race, and at most one leg of a race can ever win, so a second position is
-# not diversification, it is a guaranteed loser.
+# WHY MORE THAN ONE LEG, WHEN 2026-09-15 COST $1,306 BY HOLDING TWO.
+#
+# The 09-15 arm held positions that CONTRADICTED each other -- YES and NO on
+# the same ticker, and two YES legs in one race. At most one leg of a race can
+# win, so those are not diversification, they are a guaranteed loser, and at
+# 90c+ a contradictory pair costs more than the dollar it can ever pay.
+#
+# "BTC wins" and "XRP does not win" do not contradict. They are both true
+# whenever BTC wins, and the second is true whenever ETH, SOL or HYPE wins
+# too. So the rule is CONSISTENCY, not a count of one:
+#
+#     at most ONE yes leg, NO legs only on OTHER coins, never a coin twice.
+#
+# Measured on 25 days of resting book with the forecast staled two seconds,
+# tau <= 40, cap 100: one leg $25.97/day, two legs $29.53/day at the 90c
+# floor; at the 85c floor one leg $31.12/day and two legs $40.01/day. Losing
+# legs go 4-in-977 to 6-in-1294, because the NO legs almost never lose.
+#
+# The 85c floor is measured better than 90c ($31.12 vs $25.97 a day, 0.9% of
+# races losing against 0.4%) AND it survives the staleness control far better
+# than anything cheaper: at 75c the edge falls 41% when the forecast is staled
+# two seconds (+4.66c to +2.77c), at 85c it falls 17%, at 90c not at all.
+# Below 85c is timing we will not have; 85c is the point where that stops.
+_DEFAULT_LIVE_STOP_ON_LOSS = True
+
+# `races` maps event -> [(coin, side), ...] already held, so consistency can
+# be checked against what is actually on the book, not against a count.
 LIVE = {"on": False, "max_contracts": _DEFAULT_LIVE_MAX_CONTRACTS,
         "max_stake": _DEFAULT_LIVE_MAX_STAKE,
         "tau_max": _DEFAULT_LIVE_TAU_MAX,
         "min_price": _DEFAULT_LIVE_MIN_PRICE,
+        "max_legs": _DEFAULT_LIVE_MAX_LEGS,
         "stop_on_loss": _DEFAULT_LIVE_STOP_ON_LOSS,
-        "races": set(), "staked": 0.0, "halted": None, "sends": 0}
+        "races": {}, "staked": 0.0, "halted": None, "sends": 0}
 
 
-def live_refusals(tau, price, count, race, state=None, exists=os.path.exists):
-    """Every reason this race may NOT be bought with real money.
+def inconsistent(held, coin, side):
+    """Why (coin, side) must not be added to `held`, or None if it is safe.
+
+    `held` is [(coin, side), ...] already on the book for ONE race. The only
+    safe basket is: at most one YES leg, NO legs on other coins, never the
+    same coin twice. Everything else can contradict itself, and a
+    contradiction at 85c+ loses money before the race is even run."""
+    for c, s in held:
+        if c == coin:
+            return ("already holding %s on %s -- a coin twice is a bet "
+                    "against itself" % (s.upper(), coin))
+    if side == "yes":
+        for c, s in held:
+            if s == "yes":
+                return ("already holding YES on %s -- only one coin can win, "
+                        "so a second YES is a guaranteed loser" % c)
+    return None
+
+
+def live_refusals(tau, price, count, race, coin=None, side=None, state=None,
+                  exists=os.path.exists):
+    """Every reason this leg may NOT be bought with real money.
 
     Pure and side-effect free, so the self-test can plant each refusal one at
     a time. These sit ON TOP of pintake's own rails, never instead of them."""
@@ -129,8 +174,15 @@ def live_refusals(tau, price, count, race, state=None, exists=os.path.exists):
         bad.append("not armed -- --live was not given")
     if st["halted"]:
         bad.append("halted: %s" % st["halted"])
-    if race in st["races"]:
-        bad.append("one position per race -- this race already has one")
+    held = st["races"].get(race, [])
+    if len(held) >= st["max_legs"]:
+        bad.append("race already has %d legs, the cap" % len(held))
+    if coin is not None and side is not None:
+        why = inconsistent(held, coin, side)
+        if why:
+            bad.append(why)
+    elif held:
+        bad.append("cannot check consistency without a coin and side")
     if tau is None or tau > st["tau_max"]:
         bad.append("tau %s is past the %ds bar" % (tau, st["tau_max"]))
     elif tau < 2:
@@ -575,45 +627,79 @@ def selftest():
     ck(_DEFAULT_LIVE_MAX_CONTRACTS <= pintake.MAX_TAKE_COUNT,
        "the default penny size (%g) is inside pintake's own per-order rail "
        "(%g)" % (_DEFAULT_LIVE_MAX_CONTRACTS, pintake.MAX_TAKE_COUNT))
-    ck(_DEFAULT_LIVE_TAU_MAX <= 40 and _DEFAULT_LIVE_MIN_PRICE >= 0.90,
+    ck(_DEFAULT_LIVE_TAU_MAX <= 40 and _DEFAULT_LIVE_MIN_PRICE >= 0.85,
        "the defaults are the measured rule: inside %ds, at %.0fc or dearer"
        % (_DEFAULT_LIVE_TAU_MAX, 100 * _DEFAULT_LIVE_MIN_PRICE))
     ck(_DEFAULT_LIVE_STOP_ON_LOSS is True,
        "and it stops dead on the first real loss by default")
 
+    # the consistency rule, on its own
+    ck(inconsistent([], "BTC", "yes") is None,
+       "an empty book takes any leg")
+    ck(inconsistent([("BTC", "yes")], "XRP", "no") is None,
+       "'BTC wins' and 'XRP does not win' AGREE -- both true when BTC wins, "
+       "and the second is also true when ETH, SOL or HYPE wins")
+    ck(inconsistent([("BTC", "yes"), ("XRP", "no")], "SOL", "no") is None,
+       "and a third NO on another coin still agrees")
+    ck(inconsistent([("BTC", "yes")], "ETH", "yes"),
+       "TWO YES LEGS ARE REFUSED -- only one coin can win, so the second is "
+       "a guaranteed loser. This is what 2026-09-15 did.")
+    ck(inconsistent([("BTC", "yes")], "BTC", "no"),
+       "YES and NO on the SAME coin are refused -- the exact $1,306 mistake")
+    ck(inconsistent([("BTC", "no")], "BTC", "yes"),
+       "and refused in the other order too")
+    ck(inconsistent([("BTC", "no")], "BTC", "no"),
+       "and the same coin twice on the same side is refused")
+    ck(inconsistent([("XRP", "no"), ("SOL", "no")], "BTC", "yes") is None,
+       "one YES may still be added on top of NOs on other coins")
+
     off = {"on": False, "max_contracts": 1, "max_stake": 20.0, "tau_max": 40,
-           "min_price": 0.90, "stop_on_loss": True, "races": set(),
-           "staked": 0.0, "halted": None, "sends": 0}
+           "min_price": 0.90, "max_legs": 2, "stop_on_loss": True,
+           "races": {}, "staked": 0.0, "halted": None, "sends": 0}
     never = lambda _p: False                                  # noqa: E731
-    ck(live_refusals(20, 0.95, 1, "R1", state=off, exists=never),
+    ck(live_refusals(20, 0.95, 1, "R1", coin="BTC", side="yes", state=off,
+                     exists=never),
        "DISARMED: a perfect order is still refused when --live was not given")
-    on = dict(off, on=True, races=set())
-    ck(live_refusals(20, 0.95, 1, "R1", state=on, exists=never) == [],
+    on = dict(off, on=True, races={})
+    ck(live_refusals(20, 0.95, 1, "R1", coin="BTC", side="yes", state=on,
+                     exists=never) == [],
        "ARMED: a 95c buy of one contract 20 s out is allowed")
-    on2 = dict(on, races={"R1"})
+    on2 = dict(on, races={"R1": [("BTC", "yes")]})
+    ck(live_refusals(20, 0.95, 1, "R1", coin="XRP", side="no", state=on2,
+                     exists=never) == [],
+       "a SECOND leg that agrees with the first is allowed in the same race")
+    ck(live_refusals(20, 0.95, 1, "R1", coin="ETH", side="yes", state=on2,
+                     exists=never),
+       "but a second leg that contradicts it is refused")
+    on3 = dict(on, races={"R1": [("BTC", "yes"), ("XRP", "no")]})
+    ck(live_refusals(20, 0.95, 1, "R1", coin="SOL", side="no", state=on3,
+                     exists=never),
+       "and a THIRD agreeing leg is refused by the leg cap of 2")
+    ck(live_refusals(20, 0.95, 1, "R2", coin="BTC", side="yes", state=on3,
+                     exists=never) == [],
+       "while a DIFFERENT race is still allowed")
     ck(live_refusals(20, 0.95, 1, "R1", state=on2, exists=never),
-       "ONE POSITION PER RACE: the same race is refused a second time")
-    ck(live_refusals(20, 0.95, 1, "R2", state=on2, exists=never) == [],
-       "but a DIFFERENT race is still allowed")
-    ck(live_refusals(41, 0.95, 1, "R3", state=on, exists=never),
+       "a leg with no coin named is refused once the race holds anything -- "
+       "consistency cannot be checked blind")
+    ck(live_refusals(41, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
        "41 s out is refused -- measured 09-21, the edge dies at 41")
-    ck(live_refusals(1, 0.95, 1, "R3", state=on, exists=never),
+    ck(live_refusals(1, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
        "and 1 s out is refused: no time to fill")
-    ck(live_refusals(20, 0.89, 1, "R3", state=on, exists=never),
-       "89c is refused -- the 90c floor IS the strategy")
-    ck(live_refusals(20, 0.95, 2, "R3", state=on, exists=never),
+    ck(live_refusals(20, 0.84, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
+       "84c is refused -- below 85c the edge is timing we will not have")
+    ck(live_refusals(20, 0.95, 2, "R3", coin="BTC", side="yes", state=on, exists=never),
        "two contracts is refused when the cap is one")
-    ck(live_refusals(20, 0.95, 0, "R3", state=on, exists=never),
+    ck(live_refusals(20, 0.95, 0, "R3", coin="BTC", side="yes", state=on, exists=never),
        "and zero contracts is refused rather than sent")
-    ck(live_refusals(20, 0.95, 1, "R3", state=dict(on, staked=19.9),
-                     exists=never),
+    ck(live_refusals(20, 0.95, 1, "R3", coin="BTC", side="yes",
+                     state=dict(on, staked=19.9), exists=never),
        "a buy that would pass the total stake cap is refused")
-    ck(live_refusals(20, 0.95, 1, "R3", state=dict(on, halted="lost one"),
-                     exists=never),
+    ck(live_refusals(20, 0.95, 1, "R3", coin="BTC", side="yes",
+                     state=dict(on, halted="lost one"), exists=never),
        "nothing is sent once it has halted")
-    ck(live_refusals(20, 0.95, 1, "R3", state=on, exists=lambda _p: True),
+    ck(live_refusals(20, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=lambda _p: True),
        "and the stop file refuses everything while it exists")
-    ck(live_refusals(None, None, None, "R3", state=on, exists=never),
+    ck(live_refusals(None, None, None, "R3", coin="BTC", side="yes", state=on, exists=never),
        "missing inputs refuse rather than crash")
     ck(LIVE["on"] is False and LIVE["halted"] is None,
        "the module's own live state is DISARMED at import")
@@ -627,7 +713,7 @@ def selftest():
     ck(body.count("pintake.take(") == 1,
        "there is exactly ONE call to the order path in the whole file")
     i_guard = body.rindex('if LIVE["on"]:')
-    i_claim = body.rindex('LIVE["races"].add(evt)')
+    i_claim = body.rindex('LIVE["races"].setdefault(')
     i_send = body.rindex("pintake.take(")
     ck(i_guard < i_claim < i_send,
        "the send is inside the --live guard AND the race is claimed before "
@@ -705,6 +791,10 @@ def main():
                     default=_DEFAULT_LIVE_MIN_PRICE,
                     help="live: never buy cheaper than this (default %.2f)"
                          % _DEFAULT_LIVE_MIN_PRICE)
+    ap.add_argument("--live-max-legs", type=int, default=_DEFAULT_LIVE_MAX_LEGS,
+                    help="live: AGREEING legs per race -- one YES at most, "
+                         "NOs on other coins, never a coin twice (default %d)"
+                         % _DEFAULT_LIVE_MAX_LEGS)
     a = ap.parse_args()
     if not selftest():
         return 1
@@ -727,7 +817,8 @@ def main():
         LIVE.update(on=True, max_contracts=float(a.max_contracts),
                     max_stake=float(a.max_stake),
                     tau_max=int(a.live_tau_max),
-                    min_price=float(a.live_min_price))
+                    min_price=float(a.live_min_price),
+                    max_legs=max(1, int(a.live_max_legs)))
         if os.path.exists(LIVE_STOP_FILE):
             print("  REFUSING TO ARM -- stop file present: %s" % LIVE_STOP_FILE)
             return 1
@@ -753,8 +844,9 @@ def main():
         CREDS["pk"] = ordercli.load_key(pintake.PROD_KEY_FILE)
         pintake.arm_prod("coin race penny test, operator sign-off 2026-09-21")
         print("\n  *** REAL MONEY ARMED -- THE PENNY TEST ***")
-        print("  at most %g contract(s) a race, ONE position per race,"
-              % LIVE["max_contracts"])
+        print("  at most %g contract(s) a leg and %d AGREEING legs a race"
+              % (LIVE["max_contracts"], LIVE["max_legs"]))
+        print("  (one YES at most, NOs only on other coins, never a coin twice),")
         print("  only inside %d s, only at %.0fc or dearer, at most $%.2f"
               % (LIVE["tau_max"], 100 * LIVE["min_price"], LIVE["max_stake"]))
         print("  committed in total, and it STOPS DEAD on the first losing")
@@ -1089,14 +1181,18 @@ def main():
                     # which is the entire point of the test.
                     if LIVE["on"]:
                         want_n = min(float(take), float(LIVE["max_contracts"]))
-                        why = live_refusals(tau, float(ask), want_n, evt)
+                        why = live_refusals(tau, float(ask), want_n, evt,
+                                            coin=coin, side=side)
                         if why:
                             rec("live_refused", event=evt, ticker=tkr,
                                 side=side, tau=tau, price=float(ask),
                                 count=want_n, why=why)
                         else:
-                            LIVE["races"].add(evt)      # BEFORE the send, so a
-                            LIVE["sends"] += 1          # crash cannot re-enter
+                            # claimed BEFORE the send, so a crash cannot
+                            # re-enter and break the consistency rule
+                            LIVE["races"].setdefault(evt, []).append(
+                                (coin, side))
+                            LIVE["sends"] += 1
                             out = pintake.take(
                                 CREDS["base"], CREDS["pk"], CREDS["key_id"],
                                 tkr, side, float(ask), want_n, float(cs),
