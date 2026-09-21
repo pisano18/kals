@@ -1,0 +1,136 @@
+  ok: equicorr puts sigma^2 on the diagonal
+  ok: and rho*sigma_i*sigma_j off it, symmetrically
+  ok: and reading the correlation back out returns 0.5
+  ok: a degenerate matrix returns None rather than a fake correlation
+  ok: P(leader) RISES with correlation: [0.245, 0.259, 0.302, 0.398] -- coins that move as one cannot overturn a lead
+  ok: PLANTED rho 0.20 prices the leader at 0.252 and inverts back to 0.159
+  ok: PLANTED rho 0.55 prices the leader at 0.293 and inverts back to 0.541
+  ok: PLANTED rho 0.85 prices the leader at 0.363 and inverts back to 0.849
+  ok: a leader probability above what rho=1 gives is REFUSED, not clamped -- that is the book disagreeing with our volatilities, not our correlation
+  ok: and so is one below what the lowest correlation gives
+  ok: NULL: five coins level on points are each 1-in-5 at ANY correlation (0.203 vs 0.202) -- with no lead there is nothing to imply
+  ok: de-vigging five quotes returns probabilities summing to one
+  ok: and nothing quoted returns None
+  ok: two equal quotes de-vig to a half each
+  ok: a two-sided leg mids correctly (0.5*(0.90+0.94) is 0.91999... in binary, so this is compared with a tolerance and never with ==)
+  ok: an empty book (bid 0 size 0, ask 1 size 0) has no mid, not 0.5
+  ok: a one-sided leg uses the side that exists
+  ok: and a leg with no quote at all has no mid
+  ok: fee at 50c is 0.07*0.25 = 1.75c, rounded up to 2c
+  ok: fee scales with contracts and rounds up once per order
+  ok: no contracts, no fee
+  ok: the fee is symmetric: buying a 1c leg costs what buying its 99c NO does
+  ok: buy basket at 98c, 10 contracts: 20c gross less 0.15 fees = +0.05
+  ok: and it is still positive after fees
+  ok: a basket that sums to exactly $1.00 LOSES the fees -- never free
+  ok: a basket summing to $1.07 loses 70c on 10 -- the common case
+  ok: bids summing to $1.08: selling all five nets +0.65
+  ok: bids summing to 98c: selling all five LOSES, correctly
+  ok: hand-reconciled: 25 baskets at 97c = $0.75 gross, fees $0.20, net $0.55
+  ok: a ticker line parses to exactly its fields
+  ok: and parses identically with whitespace after every colon
+  ok: A LINE COPIED VERBATIM OFF THE TAPE parses to its true values -- the only test here that fails if the wire format moves
+  ok: a non-race ticker is skipped, not mangled
+  ok: an unknown leg is skipped
+  ok: a line missing the price fields is refused
+  ok: 26SEP210100 is 05:00 UTC -- the stamp is Eastern
+  ok: an unparseable stamp returns None
+  ok: ask 1.0000 with size 0 is NO OFFER -- the empty-book print
+  ok: a price with zero size is not an offer
+  ok: a price with size is
+  ok: bid 0.0000 size 0 is no bid
+  ok: PLANTED: exactly the three seconds with a 98c basket are found (3)
+  ok: and they are taus 38, 39, 40 -- the seconds it was actually there
+  ok: size is the thinnest leg, 20
+  ok: three consecutive seconds count as ONE opportunity lasting 3 s, not three
+  ok: NULL: a world with no mispricing yields no opportunities
+  ok: bids summing to $1.09 are found as SELL baskets (120 seconds)
+  ok: a leg that stops printing kills the basket ~10 s later (earliest tau 50, cap 10 s)
+  ok: and a loose age cap counts those stale seconds -- which is why the real scan is run at several caps
+  ok: a 3-contract basket is found at min_size 1 and refused at 10
+  ok: quotes stamped at or after the close are outside the band and ignored
+  ok: the reader pulls 600 race rows out of a file that also holds up/down tickers (600)
+  ok: and the cache round-trips to exactly the same rows
+racebook selftest: OK
+racerho selftest: OK
+
+400 ticker files; parser check 12586/12586
+  ... 150/400 files read
+  ... 300/400 files read
+  1560 races with all five legs quoting
+  ... 100/1560 races
+  ... 200/1560 races
+  ... 300/1560 races
+  ... 400/1560 races
+  ... 500/1560 races
+  ... 600/1560 races
+  ... 700/1560 races
+  ... 800/1560 races
+  ... 900/1560 races
+  ... 1000/1560 races
+  ... 1100/1560 races
+  ... 1200/1560 races
+  ... 1300/1560 races
+  ... 1400/1560 races
+  ... 1500/1560 races
+
+1895 race-moments across 934 races, 17.0 days. Refused: {'no_book': 10253, 'outside_any_rho': 1782, 'no_cov': 28, 'no_index': 1}
+
+## 1. WHAT THE BOOK IMPLIES, AGAINST WHAT HAPPENED
+'trailing' is the correlation our model used to price. 'forward' is
+the correlation that actually turned up over the seconds still to
+come -- the one the contract was really about.
+    tau       n  implied trailing  forward  imp-fwd    imp p05    imp p95
+     30      60    0.349    0.532    0.387   +0.030     -0.207      0.922
+     45     112    0.456    0.530    0.421   -0.004     -0.211      0.892
+     60     154    0.514    0.512    0.371   +0.058     -0.151      0.921
+     90     285    0.537    0.513    0.413   +0.061     -0.081      0.900
+    120     290    0.567    0.515    0.435   +0.067     -0.048      0.885
+    180     313    0.619    0.505    0.454   +0.104     -0.046      0.901
+    300     607    0.662    0.512    0.466   +0.137      0.059      0.911
+
+## 2. IS THE BOOK'S CORRELATION BIASED, OR JUST NOISY?
+A persistent gap is a stable edge. A gap that averages to nothing
+but swings wildly is race-by-race noise and not worth trading.
+    tau       n   mean gap  sd of gap     t-stat share > 0
+     30      60     +0.030      0.413       0.56       53%
+     45     112     -0.004      0.389      -0.11       52%
+     60     154     +0.058      0.371       1.92       60%
+     90     285     +0.061      0.335       3.08       58%
+    120     290     +0.067      0.311       3.65       61%
+    180     313     +0.104      0.294       6.26       69%
+    300     607     +0.137      0.272      12.41       74%
+  (t is clustered by close, so n is races, not moments -- twelve
+   crypto markets on one quarter hour are ~1.22 independent bets.)
+
+## 3. DOES THE GAP PREDICT THE LEADER'S OUTCOME?
+If the book implies MORE correlation than turns up, it has priced
+the lead as safer than it was, so the leader should win LESS often
+than its own price claimed. This is the tradeable form.
+  implied minus trailing      n    races    claimed     actual        gap
+  book much LOWER           559      446      72.3%      80.3%      +8.0%
+  book lower                157      149      69.0%      65.0%      -4.0%
+  about right                78       74      64.9%      64.1%      -0.8%
+  book higher               212      190      65.5%      72.6%      +7.1%
+  book much HIGHER          889      540      64.6%      66.6%      +2.0%
+  'claimed' is the book's own de-vigged probability for the leader.
+  A negative gap means the leader won less often than the book said.
+
+## 4. THE SAME, SPLIT BY TIME TO CLOSE
+  tau band / bucket           n    races   claimed    actual
+  tau 10-30 book lower       74       69     84.2%     94.6%
+  tau 10-30 book higher      57       52     84.7%     93.0%
+  tau 45-90 book lower      271      240     76.4%     84.1%
+  tau 45-90 book higher     258      210     72.6%     81.8%
+  tau 120-300 book lower    371      333     65.5%     68.2%
+  tau 120-300 about right     53       50     62.1%     58.5%
+  tau 120-300 book higher    786      546     60.8%     61.3%
+
+## 5. HOW OFTEN IS THE BOOK OUTSIDE ANY CORRELATION AT ALL?
+  1782 of 13959 moments (12.8%) priced the leader outside what ANY
+  correlation can produce. That is the book disagreeing with our
+  VOLATILITIES rather than our correlation, and it is a check on us
+  as much as on it.
+
+Every price here is a quote that existed. Nothing in this file is
+a fill, a fill rate, or our loss rate.
