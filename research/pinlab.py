@@ -44,6 +44,213 @@ UNSET = "<unset>"      # the field is absent or null (the flag was NOT passed)
 # match: a substring of the arm's command line, used to find its paper log and
 #        to tell whether it is running right now.
 EXPERIMENTS = [
+    {
+        "name": 'Confidence 0.97 (live runs 0.995)',
+        "status": RUNNING, "match": 'arm-pin0.97', "since": "2026-09-20",
+        "what": "Live in every respect but the confidence bar: it bets when the model is 0.97 sure instead of 99.5 per cent. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The operator believed a looser bar would have avoided our losses. Measured on the OLD dirty arms it did the opposite -- the same losing market, bought earlier at a worse price -- but it added winners with no extra losses. That was on a bot differing in sixteen ways, so the question is being re-asked properly here.',
+        "good": 'More markets traded at the same or better cents per contract, and NO extra losing closes. That is money the live bar is refusing.',
+        "bad": 'It takes markets live refuses and loses them, or buys the same ones earlier and pays more for them.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Confidence 0.975 (live runs 0.995)',
+        "status": RUNNING, "match": 'arm-pin0.975', "since": "2026-09-20",
+        "what": "Live in every respect but the confidence bar: it bets when the model is 0.975 sure instead of 99.5 per cent. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The operator believed a looser bar would have avoided our losses. Measured on the OLD dirty arms it did the opposite -- the same losing market, bought earlier at a worse price -- but it added winners with no extra losses. That was on a bot differing in sixteen ways, so the question is being re-asked properly here.',
+        "good": 'More markets traded at the same or better cents per contract, and NO extra losing closes. That is money the live bar is refusing.',
+        "bad": 'It takes markets live refuses and loses them, or buys the same ones earlier and pays more for them.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Confidence 0.98 (live runs 0.995)',
+        "status": RUNNING, "match": 'arm-pin0.98', "since": "2026-09-20",
+        "what": "Live in every respect but the confidence bar: it bets when the model is 0.98 sure instead of 99.5 per cent. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The operator believed a looser bar would have avoided our losses. Measured on the OLD dirty arms it did the opposite -- the same losing market, bought earlier at a worse price -- but it added winners with no extra losses. That was on a bot differing in sixteen ways, so the question is being re-asked properly here.',
+        "good": 'More markets traded at the same or better cents per contract, and NO extra losing closes. That is money the live bar is refusing.',
+        "bad": 'It takes markets live refuses and loses them, or buys the same ones earlier and pays more for them.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Confidence 0.985 (live runs 0.995)',
+        "status": RUNNING, "match": 'arm-pin0.985', "since": "2026-09-20",
+        "what": "Live in every respect but the confidence bar: it bets when the model is 0.985 sure instead of 99.5 per cent. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The operator believed a looser bar would have avoided our losses. Measured on the OLD dirty arms it did the opposite -- the same losing market, bought earlier at a worse price -- but it added winners with no extra losses. That was on a bot differing in sixteen ways, so the question is being re-asked properly here.',
+        "good": 'More markets traded at the same or better cents per contract, and NO extra losing closes. That is money the live bar is refusing.',
+        "bad": 'It takes markets live refuses and loses them, or buys the same ones earlier and pays more for them.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Confidence 0.99 (live runs 0.995)',
+        "status": RUNNING, "match": 'arm-pin0.99', "since": "2026-09-20",
+        "what": "Live in every respect but the confidence bar: it bets when the model is 0.99 sure instead of 99.5 per cent. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The operator believed a looser bar would have avoided our losses. Measured on the OLD dirty arms it did the opposite -- the same losing market, bought earlier at a worse price -- but it added winners with no extra losses. That was on a bot differing in sixteen ways, so the question is being re-asked properly here.',
+        "good": 'More markets traded at the same or better cents per contract, and NO extra losing closes. That is money the live bar is refusing.',
+        "bad": 'It takes markets live refuses and loses them, or buys the same ones earlier and pays more for them.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Volatility x0.40 -- the model BOLDER',
+        "status": RUNNING, "match": 'arm-sigma0.40', "since": "2026-09-20",
+        "what": "The volatility estimate is multiplied by 0.40 before any decision, so the model believes the coin is calmer than measured and clears the confidence gate on markets live refuses. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'If our sigma is too LARGE the bot is needlessly timid and every confidence it prints is understated. On the pre-sync arms the two boldest were the two best performers -- the strongest hint we have that the ruler itself is wrong.',
+        "good": "It trades more AND keeps the loss rate near live's. That says the model is too cautious and the live sigma should come down.",
+        "bad": 'The loss rate rises with the extra volume. Then the caution is earned and the bold arms were only being paid for taking risk.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Volatility x0.60 -- the model BOLDER',
+        "status": RUNNING, "match": 'arm-sigma0.60', "since": "2026-09-20",
+        "what": "The volatility estimate is multiplied by 0.60 before any decision, so the model believes the coin is calmer than measured and clears the confidence gate on markets live refuses. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'If our sigma is too LARGE the bot is needlessly timid and every confidence it prints is understated. On the pre-sync arms the two boldest were the two best performers -- the strongest hint we have that the ruler itself is wrong.',
+        "good": "It trades more AND keeps the loss rate near live's. That says the model is too cautious and the live sigma should come down.",
+        "bad": 'The loss rate rises with the extra volume. Then the caution is earned and the bold arms were only being paid for taking risk.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Volatility x0.80 -- the model BOLDER',
+        "status": RUNNING, "match": 'arm-sigma0.80', "since": "2026-09-20",
+        "what": "The volatility estimate is multiplied by 0.80 before any decision, so the model believes the coin is calmer than measured and clears the confidence gate on markets live refuses. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'If our sigma is too LARGE the bot is needlessly timid and every confidence it prints is understated. On the pre-sync arms the two boldest were the two best performers -- the strongest hint we have that the ruler itself is wrong.',
+        "good": "It trades more AND keeps the loss rate near live's. That says the model is too cautious and the live sigma should come down.",
+        "bad": 'The loss rate rises with the extra volume. Then the caution is earned and the bold arms were only being paid for taking risk.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Volatility x1.25 -- the model HUMBLER',
+        "status": RUNNING, "match": 'arm-sigma1.25', "since": "2026-09-20",
+        "what": "The volatility estimate is multiplied by 1.25, so the model is less sure and refuses markets live takes. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The other side of the same question. If the humbler arms lose less WITHOUT trading much less, our sigma is too small and the live bot is overconfident.',
+        "good": 'Materially fewer losing closes at a similar trade count.',
+        "bad": 'It simply trades less for the same loss rate -- trading less always loses less and proves nothing.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Volatility x1.50 -- the model HUMBLER',
+        "status": RUNNING, "match": 'arm-sigma1.50', "since": "2026-09-20",
+        "what": "The volatility estimate is multiplied by 1.50, so the model is less sure and refuses markets live takes. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The other side of the same question. If the humbler arms lose less WITHOUT trading much less, our sigma is too small and the live bot is overconfident.',
+        "good": 'Materially fewer losing closes at a similar trade count.',
+        "bad": 'It simply trades less for the same loss rate -- trading less always loses less and proves nothing.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Volatility x2.00 -- the model HUMBLER',
+        "status": RUNNING, "match": 'arm-sigma2.00', "since": "2026-09-20",
+        "what": "The volatility estimate is multiplied by 2.00, so the model is less sure and refuses markets live takes. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The other side of the same question. If the humbler arms lose less WITHOUT trading much less, our sigma is too small and the live bot is overconfident.',
+        "good": 'Materially fewer losing closes at a similar trade count.',
+        "bad": 'It simply trades less for the same loss rate -- trading less always loses less and proves nothing.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'No hedging at all',
+        "status": RUNNING, "match": 'arm-nohedge', "since": "2026-09-20",
+        "what": "Live in every respect except it never buys insurance: --hedge-belief 0.01 means the alarm effectively cannot fire. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'Hedging is measured NEGATIVE over its whole life -- 8 saves worth +$111 against 7 false alarms costing -$159. The operator asked directly whether not hedging is simply better. This answers it without risking money.',
+        "good": 'It beats live over 30+ closes INCLUDING at least one close where live hedged. Then insurance costs more than it saves and we turn it off.',
+        "bad": 'One close goes fully against it and costs the whole position. A naked loss averages 86c a contract against a hedged 57c.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'All-or-nothing hedging (the pre-A76 rule)',
+        "status": RUNNING, "match": 'arm-hedgeprop-off', "since": "2026-09-20",
+        "what": "Live but with --no-hedge-prop: it hedges the WHOLE position the moment belief drops under 60 per cent, instead of full below 20, half below 40, none above. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'Proportional hedging is deployed on live and has never fired. This is its control: the exact behaviour that cost $117 on the 09-19 23:45 close, where both bets won and both full-size hedges lost.',
+        "good": 'It does no worse than live. Then proportional hedging is not earning its complexity.',
+        "bad": "It loses on a close where live's proportional rule hedged less or not at all. That is the new rule paying for itself.",
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Hedge without the market-agreement test',
+        "status": RUNNING, "match": 'arm-hedge-noprice', "since": "2026-09-20",
+        "what": "Live but with --hedge-price removed, so it insures on the model's belief alone without waiting for the market to agree. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'That filter blocked the hedge that cost $57.76 on the 01:45 BNB close. It has also correctly blocked cheap insurance we did not need. Net over its life: -$56.',
+        "good": 'It avoids a loss live took, by hedging earlier and cheaper.',
+        "bad": 'It buys insurance on wobbles that recover -- the exact false alarms the filter exists to stop.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Hedge without paying up to fill',
+        "status": RUNNING, "match": 'arm-hedge-slip0', "since": "2026-09-20",
+        "what": "Live but with --hedge-slip 0, so the hedge cannot sweep the ladder and must take the touch price only. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'Ten of twenty-nine live hedge attempts filled 0 or 1 contract against a book showing everything we asked for. The slip fixed that, and its two fills so far were both false alarms, so it has cost money.',
+        "good": 'It does better than live -- meaning the hedges that FAIL to fill are the ones we were better off not making.',
+        "bad": "It reproduces the only escape failure in the project's history: a hedge that needed to fill and did not.",
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'No 45-second leg',
+        "status": RUNNING, "match": 'arm-early-off', "since": "2026-09-20",
+        "what": "Live but with the early leg removed entirely -- it trades only the last 30 seconds. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": "The 45s leg is 29 per cent of our contracts and 20 per cent of the money: 1.28c a contract against the main window's 2.06c, but a LOWER loss rate, 1.5 per cent against 2.5. The operator wanted it kept. This measures what it is actually worth.",
+        "good": "It matches live's money on fewer contracts. Then the early leg is diluting us and its budget is better left unspent.",
+        "bad": 'It makes materially less. Then the early leg is real money and stays.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": '45-second leg capped at 97.5c',
+        "status": RUNNING, "match": 'arm-early-cap975', "since": "2026-09-20",
+        "what": "Live plus --early-max-price 0.975: the early leg refuses an ask above 97.5c and its sweep cannot walk past it. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'Deployed live for a few hours on 2026-09-20 and REMOVED, because the case for it -- that blocked budget would flow to the 5.6c last-ten-seconds window -- was measured false: we already fill less than we ask for in every window. Kept as an arm rather than argued about.',
+        "good": 'It beats live. Then the ceiling was right and the money did redeploy.',
+        "bad": 'It trades noticeably less for the same money, confirming the removal.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'The early leg opened to 60 seconds',
+        "status": RUNNING, "match": 'arm-early60', "since": "2026-09-20",
+        "what": "Live but the early leg starts at 60 seconds instead of 45. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The cheap offers are taken a median of 41 s before the close while our window starts at 45. Out at 60 s far less of the settlement average is locked, so the model leans harder on the volatility estimate.',
+        "good": 'More cheap fills with no extra losses.',
+        "bad": 'Losses out at 46-60 s, where the model is weakest -- the population that produced the 53c Bitcoin fill.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Bigger bet (bank brake 3.00)',
+        "status": RUNNING, "match": 'arm-brake3', "since": "2026-09-20",
+        "what": "Live but sized off a 3.00 bank brake instead of 4.00 -- roughly a third more contracts per bet. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'Bet size grew 47 to 98 contracts over six days and daily money did not move, correlation -0.05. This re-asks it cleanly now that everything else is held constant.',
+        "good": 'It makes proportionally more money, not merely more contracts.',
+        "bad": 'Same money on more contracts -- confirming the pool, not our size, is the constraint, and a bigger bet only walks further up the ladder.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'Smaller bet (bank brake 6.00)',
+        "status": RUNNING, "match": 'arm-brake6', "since": "2026-09-20",
+        "what": "Live but sized off a 6.00 bank brake -- roughly a third fewer contracts. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": 'The other side of the sizing question, and the one that matters if the cheap pool keeps thinning: a smaller order fills a higher fraction of what it asks for.',
+        "good": 'Similar money on fewer contracts, at a better price per contract.',
+        "bad": 'Proportionally less money. Then size is not what is holding us back.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": '1.5x the bet at 90-94c',
+        "status": RUNNING, "match": 'arm-band15', "since": "2026-09-20",
+        "what": "Live plus --band-mult 0.90 0.94 1.5. Since 2026-09-20 this arm is built by sync_arms.ps1 from the LIVE BOT'S OWN command line, so it differs from live in exactly one thing. Before that date every arm carried a frozen flag list -- arm-pin0.97 differed from live in SIXTEEN settings -- and no comparison from before then means anything.",
+        "why": '90-94c is our best band: 70 closes, 1 loss, 6.4c a contract. The boost was live and was REMOVED on 2026-09-20 when its own pre-registered bar fired -- the first boosted loss came on the third boosted close, -$61.75.',
+        "good": '20 boosted closes with no boosted loss. Then the bar was unlucky rather than right, and the boost can come back.',
+        "bad": 'Another boosted loss. The bar was correct and the flag stays off.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": 'FROZEN: the 2026-09-18 bot (Friday)',
+        "status": RUNNING, "match": 'arm-friday', "since": "2026-09-20",
+        "what": "Friday's EXACT settings, read off that day's own start record: early-max-edge 3.0, band-mult 1.5, bank-brake 4.08, late boost off, all-or-nothing hedging, and none of --hedge-slip, --extra-coin, --late-extra or --loss-cap. It runs on TODAY'S code, so it keeps the crash fixes -- this tests Friday's TRADING RULES, not Friday's bugs. DELIBERATELY NOT SYNCED: a frozen baseline must not move.",
+        "why": 'The operator asked about reverting to something like Friday, which did well in the week. Friday was +$64.57 on the account with ZERO losing crypto closes, the best loss record of the week. Rather than argue about whether that was the settings or a quiet day, run it head to head.',
+        "good": 'It beats live over 30+ shared closes. Then we revert, and I say so.',
+        "bad": 'It matches or trails live. Then Friday was variance, not configuration -- and note 09-15 also had zero losing closes on a different config.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
+    {
+        "name": "FROZEN: today's live rules, pinned",
+        "status": RUNNING, "match": 'arm-live-frozen', "since": "2026-09-20",
+        "what": "The live bot's settings as of 2026-09-20, pinned for ever. DELIBERATELY NOT SYNCED.",
+        "why": "Every other arm moves with live, which means there is no stable answer to 'what was the bot doing when this question was asked'. This is that reference point, and it is what arm-friday is really measured against.",
+        "good": 'Nothing -- it is a ruler, not a candidate.',
+        "bad": 'Nothing. If it drifts from live, sync_arms.ps1 has a bug.',
+        "watch": 'Cents per contract head to head, its OWN loss rate, and whether it CAUSED a loss live avoided. 30 shared closes before any of it counts.',
+    },
     # ---------------------------------------------------------------- RUNNING
     {
         "name": "Hedge on the market price, not the model (A47)",
@@ -74,7 +281,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Buy bigger in the last seconds (A48)",
-        "status": RUNNING, "match": "--late-mult", "since": "2026-09-17",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--late-mult", "since": "2026-09-17",
         # late_mult SHIPS AT 1.0, so `SET` would match every log ever written.
         "select": {"late_mult": lambda v: v is not None and float(v) > 1.0, 
                    "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
@@ -95,7 +302,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Insurance only when the other side is a normal bet (A51)",
-        "status": RUNNING, "match": "--hedge-normal", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--hedge-normal", "since": "2026-09-18",
         "select": {"hedge_normal": True, 
                    "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "what": "Only buys insurance when the OTHER side would pass the same "
@@ -119,7 +326,7 @@ EXPERIMENTS = [
     },
     {
         "name": "45 seconds at FULL size, but only when the market agrees (A50)",
-        "status": RUNNING, "match": "--early-max-edge", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--early-max-edge", "since": "2026-09-18",
         # A51 ALSO CARRIES `--early-max-edge`, because it is built on top of
         # this one. Selecting on that flag alone matched both logs and took
         # the newer, so A50 displayed A51's markets -- the same
@@ -158,7 +365,7 @@ EXPERIMENTS = [
     },
     {
         "name": "The 45-second early leg (A46 + A49)",
-        "status": RUNNING, "match": "--early-tau", "since": "2026-09-17",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--early-tau", "since": "2026-09-17",
         "select": {"early_tau_max": 45, "pin": 0.995, "early_max_edge": UNSET,
                    # the staged arm (a third, then topped up) shares every
                    # other setting; a FULL early bet is early_frac 1.0
@@ -407,7 +614,7 @@ EXPERIMENTS = [
     # ------------------------------------------------------------------ IDEAS
     {
         "name": "Price cap 98c -> 99c (7-day arm)",
-        "status": RUNNING, "match": "--price-ceiling", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--price-ceiling", "since": "2026-09-18",
         "select": {"price_ceiling": lambda v: v is not None and float(v) > 0.985, 
                    "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "what": "Buys asks up to 99c instead of stopping at 98c. Everything "
@@ -565,7 +772,7 @@ EXPERIMENTS = [
     },
     {
         "name": "The 2026-09-13 bot, re-run beside today's",
-        "status": RUNNING, "match": "pinrun913.py", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "pinrun913.py", "since": "2026-09-18",
         # code_sha is the hash of pinrun913.py itself and cannot collide with
         # any other arm. Selecting on max_per_market=1 would also match nine
         # historical logs from before the flag changed.
@@ -595,7 +802,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Hedge on the JUMP, not on the belief (A52)",
-        "status": RUNNING, "match": "--hedge-jump", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--hedge-jump", "since": "2026-09-18",
         "select": {"hedge_jump": SET, 
                    "band_mults": lambda v: not v, "hedge_price": lambda v: v is None},
         "what": "Buy insurance the instant the index makes a one-second move of "
@@ -632,7 +839,7 @@ EXPERIMENTS = [
     # has now been sprung three times.
     {
         "name": "v-bands baseline, in paper (the control for the band arms)",
-        "status": RUNNING, "match": "arm-b-control", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-b-control", "since": "2026-09-18",
         # EVERY FIELD THAT SEPARATES IT, because this arm is the BASE that
         # six others are layered on. With only the bands named it matched the
         # 60-second arms, the sigma arms and the edge-cap arm as well; they
@@ -661,7 +868,7 @@ EXPERIMENTS = [
     },
     {
         "name": "The 45 s leg opened to the bands that earn (no edge cap, 80c floor)",
-        "status": RUNNING, "match": "arm-b-early-open", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-b-early-open", "since": "2026-09-18",
         "select": {"early_min_price": 0.8, "early_max_edge": UNSET,
                    "early_tau_max": 45,              # not the 60 s open arm
                    "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == []},
@@ -684,7 +891,7 @@ EXPERIMENTS = [
     },
     {
         "name": "The 45 s leg with the edge cap off, floor kept at 90c",
-        "status": RUNNING, "match": "arm-b-early-nocap", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-b-early-nocap", "since": "2026-09-18",
         "select": {"early_min_price": 0.9, "early_max_edge": UNSET,
                    "band_mults": lambda v: v == [[0.9, 0.94, 1.5]], "skip_bands": lambda v: v == []},
         "what": "Same as the control but A50's 3c cap is off: the early leg "
@@ -698,7 +905,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Skip 94-96c (withdrawn from live; tested here instead)",
-        "status": RUNNING, "match": "arm-b-skip9496", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-b-skip9496", "since": "2026-09-18",
         "select": {"skip_bands": lambda v: v == [[0.94, 0.96]], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
                    "early_max_edge": 3.0},
         "what": "The control with one change: any ask at 94.0-95.9c is refused.",
@@ -715,7 +922,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Skip 94-97.5c",
-        "status": RUNNING, "match": "arm-b-skip975", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-b-skip975", "since": "2026-09-18",
         "select": {"skip_bands": lambda v: v == [[0.94, 0.975]], "band_mults": lambda v: v == [[0.9, 0.94, 1.5]],
                    "early_max_edge": 3.0},
         "what": "The refused band widens to take in 96-97.5c as well.",
@@ -731,7 +938,7 @@ EXPERIMENTS = [
     },
     {
         "name": "2x at 90-94c (the next sizing step, run ahead in paper)",
-        "status": RUNNING, "match": "arm-b-mult2", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-b-mult2", "since": "2026-09-18",
         "select": {"band_mults": lambda v: v == [[0.9, 0.94, 2.0]], "skip_bands": lambda v: v == []},
         "what": "Inside 90-94c one order may reach 2 x SIZE instead of 1.5x.",
         "why": "The live step is 1.5x with a bar (v-bands). This arm shows how "
@@ -745,7 +952,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Go harder: 2x across 80-94c, skip 94-97.5c",
-        "status": RUNNING, "match": "arm-b-harder", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-b-harder", "since": "2026-09-18",
         "select": {"band_mults": lambda v: v == [[0.8, 0.9, 2.0], [0.9, 0.94, 2.0]], "early_max_edge": 3.0},
         "what": "Two boosted bands (80-90c and 90-94c, both 2x) and the wider "
                 "skip, with the 45 s leg as live.",
@@ -762,7 +969,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Everything at once: early open + go harder",
-        "status": RUNNING, "match": "arm-b-all", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-b-all", "since": "2026-09-18",
         "select": {"band_mults": lambda v: v == [[0.8, 0.9, 2.0], [0.9, 0.94, 2.0]], "early_max_edge": UNSET,
                    "early_min_price": 0.8},
         "what": "The early leg opened to 80c+ with no cap, 2x across 80-94c, "
@@ -783,7 +990,7 @@ EXPERIMENTS = [
     # leg, so the selectors name early_tau_max 60 plus what separates them.
     {
         "name": "A third at 46-60 s, topped up inside 30 s (the increments)",
-        "status": RUNNING, "match": "arm-e60-third", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-e60-third", "since": "2026-09-18",
         # the flip arm is this arm plus --flip-mult, so it must be excluded
         # by name or the A/B pair reads each other's markets
         "select": {"early_tau_max": 60, "early_frac": 0.333,
@@ -810,7 +1017,7 @@ EXPERIMENTS = [
     },
     {
         "name": "When an early bet flips, buy DOUBLE the other side (A54)",
-        "status": RUNNING, "match": "arm-e60-flip2", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-e60-flip2", "since": "2026-09-18",
         "select": {"flip_mult": lambda v: v is not None and float(v) > 1.0,
                    "early_tau_max": 60, "early_frac": 0.333},
         "what": "Identical to the 'third at 46-60 s' arm in every setting "
@@ -838,7 +1045,7 @@ EXPERIMENTS = [
     },
     {
         "name": "The whole bet at 46-60 s (control for the increments)",
-        "status": RUNNING, "match": "arm-e60-full", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-e60-full", "since": "2026-09-18",
         "select": {"early_tau_max": 60, "early_frac": 1.0,
                    "early_min_price": 0.9, "early_max_edge": 3.0},
         "what": "Same 46-60 s window, but the whole bet goes in at once.",
@@ -855,7 +1062,7 @@ EXPERIMENTS = [
     },
     {
         "name": "60 s increments into the bands that earn (no edge cap, 80c floor)",
-        "status": RUNNING, "match": "arm-e60-open", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-e60-open", "since": "2026-09-18",
         "select": {"early_tau_max": 60, "early_frac": 0.333,
                    "early_min_price": 0.8, "early_max_edge": UNSET},
         "what": "A third at 46-60 s, with the 90c floor lowered to 80c and "
@@ -873,7 +1080,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Volatility x0.4 -- the model RECKLESS",
-        "status": RUNNING, "match": "--sigma-stress 0.4", "since": "2026-09-19",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--sigma-stress 0.4", "since": "2026-09-19",
         "select": {"sigma_stress": lambda v, _w=0.4: v is not None and abs(float(v) - _w) < 1e-9},
         "what": "The live bot with the volatility estimate multiplied by 0.4 "
                 "-- it believes the coin can move less than half as far as "
@@ -898,7 +1105,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Volatility x0.6 -- the model much BOLDER",
-        "status": RUNNING, "match": "--sigma-stress 0.6", "since": "2026-09-19",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--sigma-stress 0.6", "since": "2026-09-19",
         "select": {"sigma_stress": lambda v, _w=0.6: v is not None and abs(float(v) - _w) < 1e-9},
         "what": "As x0.4 but half as far: the volatility estimate is "
                 "multiplied by 0.6 everywhere the model runs. Paper only.",
@@ -913,7 +1120,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Volatility x0.8 -- the model BOLDER",
-        "status": RUNNING, "match": "--sigma-stress 0.8", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--sigma-stress 0.8", "since": "2026-09-18",
         "select": {"sigma_stress": lambda v, _w=0.8: v is not None and abs(float(v) - _w) < 1e-9},
         "what": "The live bot in every respect but one: the volatility "
                 "estimate is multiplied by 0.8 before ANY decision -- the fair "
@@ -943,7 +1150,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Volatility x1.25 -- the model a quarter humbler",
-        "status": RUNNING, "match": "--sigma-stress 1.25", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--sigma-stress 1.25", "since": "2026-09-18",
         "select": {"sigma_stress": lambda v, _w=1.25: v is not None and abs(float(v) - _w) < 1e-9},
         "what": "The live bot in every respect but one: the volatility "
                 "estimate is multiplied by 1.25 before ANY decision -- the fair "
@@ -973,7 +1180,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Volatility x1.5 -- the model half again humbler",
-        "status": RUNNING, "match": "--sigma-stress 1.5", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--sigma-stress 1.5", "since": "2026-09-18",
         "select": {"sigma_stress": lambda v, _w=1.5: v is not None and abs(float(v) - _w) < 1e-9},
         "what": "The live bot in every respect but one: the volatility "
                 "estimate is multiplied by 1.5 before ANY decision -- the fair "
@@ -1003,7 +1210,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Volatility x2.0 -- the model twice as humble",
-        "status": RUNNING, "match": "--sigma-stress 2.0", "since": "2026-09-18",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "--sigma-stress 2.0", "since": "2026-09-18",
         "select": {"sigma_stress": lambda v, _w=2.0: v is not None and abs(float(v) - _w) < 1e-9},
         "what": "The live bot in every respect but one: the volatility "
                 "estimate is multiplied by 2.0 before ANY decision -- the fair "
@@ -1033,7 +1240,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Top up the close budget inside the last 10 s (A59)",
-        "status": RUNNING, "match": "arm-lateextra", "since": "2026-09-19",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-lateextra", "since": "2026-09-19",
         "select": {"late_extra": lambda v: v is not None and float(v) > 0,
                    "early_max_edge": 3.0},
         "what": "Everything the live bot does, plus one thing: inside the "
@@ -1062,7 +1269,7 @@ EXPERIMENTS = [
     },
     {
         "name": "Late top-up AND the 3c early cap off (A59 + A50 off)",
-        "status": RUNNING, "match": "arm-nocap-late", "since": "2026-09-19",
+        "outcome": "Retired 2026-09-20 when sync_arms.ps1 rebuilt the fleet. This arm ran a flag list frozen at whenever it was launched, so it differed from the live bot in up to SIXTEEN settings and its numbers could never be attributed to the one thing it was meant to test. Its question, where it still matters, is now asked by a synced arm that differs from live in exactly one way.", "status": KILLED, "match": "arm-nocap-late", "since": "2026-09-19",
         "select": {"late_extra": lambda v: v is not None and float(v) > 0,
                    "early_max_edge": UNSET},
         "what": "The late top-up, plus A50's 3c edge cap removed from the "
