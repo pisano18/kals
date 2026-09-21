@@ -121,7 +121,8 @@ def simulate(races, M, idx, tau_lo, tau_hi, max_price, cap, min_lead_bp=0.0):
 
 
 def simulate_fair(races, M, F, idx, tau_lo, tau_hi, cap, min_edge,
-                  ruler="3600", kappa=1.0, max_price=0.99, lag=0):
+                  ruler="3600", kappa=1.0, max_price=0.99, lag=0,
+                  no_side=True):
     """THE WHOLE STRATEGY, with the forecast as the only gate.
 
     No price floor, no tau band inside the window, no "leader" rule. At each
@@ -171,23 +172,35 @@ def simulate_fair(races, M, F, idx, tau_lo, tau_hi, cap, min_edge,
                 q = fresh.get(coin)
                 if q is None:
                     continue
-                ask, asz = q[1], q[3]
-                if not (0.0 < ask <= max_price) or asz < 1:
-                    continue
-                edge = p[coin] - ask - racebook.order_fee(1, ask)
-                if best is None or edge > best[0]:
-                    best = (edge, coin, ask, asz)
+                bid, ask, bsz, asz = q
+                # BUY YES at the ask: pays $1 if this coin wins.
+                if 0.0 < ask <= max_price and asz >= 1:
+                    edge = p[coin] - ask - racebook.order_fee(1, ask)
+                    if best is None or edge > best[0]:
+                        best = (edge, coin, "yes", ask, asz)
+                # BUY NO: pays $1 if this coin does NOT win, and FOUR OF THE
+                # FIVE LEGS DO NOT. That is four times the population of the
+                # YES trade and it is most of what the live arm already does.
+                # On Kalshi a NO buy matches a resting YES bid, so its price
+                # is 1 - yes_bid and its size is the yes-bid size.
+                if no_side and bsz >= 1 and 0.0 < bid < 1.0:
+                    nprice = round(1.0 - bid, 4)
+                    if nprice <= max_price:
+                        edge = (1.0 - p[coin]) - nprice \
+                            - racebook.order_fee(1, nprice)
+                        if best is None or edge > best[0]:
+                            best = (edge, coin, "no", nprice, bsz)
             if best is None or best[0] < min_edge:
                 continue
-            _edge, coin, ask, asz = best
-            n = min(asz, cap)
+            _edge, coin, side, price, avail = best
+            n = min(avail, cap)
             if n < 1:
                 continue
-            won = (coin == winner)
-            pnl = n * ((1.0 - ask) if won else -ask) \
-                - racebook.order_fee(n, ask)
-            out.append((close, stamp, tau, coin, ask, n, won, pnl,
-                        100.0 * _edge))
+            won = (coin == winner) if side == "yes" else (coin != winner)
+            pnl = n * ((1.0 - price) if won else -price) \
+                - racebook.order_fee(n, price)
+            out.append((close, stamp, tau, coin + "/" + side, price, n, won,
+                        pnl, 100.0 * _edge))
             break                       # ONE POSITION PER RACE. Never relax.
     return out
 
@@ -312,16 +325,52 @@ def selftest():
     ck(len(bets3) == 1,
        "ONE POSITION PER RACE: 60 qualifying seconds x 5 legs produce exactly "
        "one bet (%d)" % len(bets3))
-    ck(bets3 and bets3[0][3] == "BTC" and bets3[0][6],
-       "and it is the leg the forecast likes, and it wins")
+    ck(bets3 and bets3[0][3] == "BTC/yes" and bets3[0][6],
+       "and it is the leg the forecast likes, and it wins (%s)"
+       % (bets3[0][3] if bets3 else "nothing"))
     ck(simulate_fair(r3, M, F, idx3, 1, 60, 100, 0.99) == [],
        "NULL: demand 99c of edge and nothing is ever bought")
     ck(simulate_fair(r3, M, F, idx3, 1, 60, 100, 0.0, max_price=0.02) == [],
        "a price ceiling below every offer buys nothing")
     dear = [(r[0], r[1], r[2], r[3], 0.999, r[5], r[6]) for r in rows3]
-    ck(simulate_fair([(close2, stamp, dear)], M, F, idx3, 1, 60, 100, 0.0) == [],
+    ck(simulate_fair([(close2, stamp, dear)], M, F, idx3, 1, 60, 100, 0.0,
+                     no_side=False) == [],
        "with every leg offered at 99.9c there is no edge anywhere and it "
        "stands aside rather than buying the least-bad")
+
+    # ---- the NO side: four legs lose, so the population is four times bigger
+    rows4 = []
+    for sec in range(close2 - 90, close2):
+        for c in COINS:
+            if c == "BTC":
+                b, a, bs, as_ = 0.95, 0.999, 5.0, 5.0    # leader: nothing to buy
+            elif c == "ETH":
+                b, a, bs, as_ = 0.05, 0.30, 50.0, 50.0   # a 5c bid on a dead leg
+            else:
+                b, a, bs, as_ = 0.00, 0.30, 0.0, 50.0
+            rows4.append((sec * 1000, stamp, c, b, a, bs, as_))
+    b4 = simulate_fair([(close2, stamp, rows4)], M, F, idx3, 1, 60, 100, 0.01)
+    ck(len(b4) == 1 and b4[0][3] == "ETH/no" and b4[0][6],
+       "a 5c YES bid on a beaten leg is bought as NO at 95c and it wins (%s)"
+       % (b4[0][3] if b4 else "nothing"))
+    ck(b4 and abs(b4[0][4] - 0.95) < 1e-9 and b4[0][5] == 50,
+       "at 1 - the yes bid, for the yes-bid size: %.2fc x %.0f"
+       % (100 * b4[0][4], b4[0][5]))
+    ck(simulate_fair([(close2, stamp, rows4)], M, F, idx3, 1, 60, 100, 0.01,
+                     no_side=False) == [],
+       "and with the NO side switched off that race is not traded at all -- "
+       "the leader's own offer at 99.9c is never worth taking")
+    # a NO that LOSES: buy NO on the coin that actually wins
+    rows5 = []
+    for sec in range(close2 - 90, close2):
+        for c in COINS:
+            b, a, bs, as_ = ((0.05, 0.999, 50.0, 5.0) if c == "BTC"
+                             else (0.00, 0.999, 0.0, 5.0))
+            rows5.append((sec * 1000, stamp, c, b, a, bs, as_))
+    b5 = simulate_fair([(close2, stamp, rows5)], M, F, idx3, 1, 60, 100, -9.0)
+    ck(len(b5) == 1 and b5[0][3] == "BTC/no" and not b5[0][6] and b5[0][7] < 0,
+       "buying NO on the coin that goes on to WIN is scored as a loss ($%.2f)"
+       % (b5[0][7] if b5 else 0))
 
     if not racebook.selftest():
         ck(False, "racebook (the shared reader) self-test")

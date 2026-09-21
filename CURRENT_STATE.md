@@ -164,10 +164,24 @@ partial run may never decide what is stale.
    the most valuable open question in the project.
 7. **Add `arm_name` to the `start` record** so log analysis need not identify
    arms by their settings.
-8. **The coin race: DO NOT PENNY-TEST IT.** 90 traded events, 85 won, 5 lost,
-   **-$807.58 all time** -- five losses on ONE day (09-15) worth **-$2,305**,
-   one of them **-$988 holding 12 positions and winning 4**. No per-race
-   position cap, no hedge. Fix the cap and explain 09-15 first.
+8. **The coin race: 09-15 IS NOW EXPLAINED, and the -$807.58 was one dead
+   config.** All of it is `arm2` (no price floor, no tau cap, no per-race
+   cap): it bought YES and NO on the SAME TICKER as the lead flipped, at
+   prices summing over $1.00 -- **$1,306 of guaranteed loss locked in before
+   those races ran**, 84% of the deficit. Impossible under `--min-price 0.90`.
+   The current arm is 78 of 78 events, 110 legs, **zero losing legs**.
+   Measured 09-21 on 25 days of book (`results/RESULTS_coinrace_2026-09-21.md`):
+   the rule `tau <= 40, price >= 90c, one position per race, cap 50-100` is
+   **$16-26/day with 4 losing races in 977 (0.4%)**, break-even loss rate
+   1.77% against 0.39% observed. **THE FLOOR IS THE STRATEGY** -- removing it
+   looked like 4x the money and was entirely sub-second look-ahead (+$102/day
+   at lag 0, **-$102/day at lag 2**). Basket arbitrage: dead ($1.72/day
+   ceiling, 2-second windows). Market-making it: **the makers lose $2,850 a
+   day**, never quote this book.
+   **STILL DO NOT PENNY-TEST IT until there is a TRUE one-position-per-race
+   cap** -- `--one-per-race-band` allows one bet per BAND, and the live fair
+   arm took 2 positions in 13 of 39 races. Paper arms `racectl`, `racetau40`,
+   `raceedge0` started 09-21, one setting apart each.
 9. **The last-10s boost has fired ONCE** -- the book there is thinner than our
    bet, so 1.5x has nothing to bite on. Not a bug; a ceiling.
 

@@ -1,0 +1,161 @@
+  ok: one position per race, two races, two bets (2)
+  ok: each taken at the EARLIEST qualifying second, tau 30
+  ok: the race BTC wins is scored a win and the race ETH wins is scored a loss
+  ok: 40 contracts at 93c on a winner = $2.61 after fee
+  ok: and the loser costs the full 93c plus the fee, never netted
+  ok: NULL-ISH: one win and one loss at 93c is NET NEGATIVE ($-34.78) -- a 93c bet needs far better than 50%
+  ok: a 95c price floor refuses a 93c offer
+  ok: a 90c ceiling refuses it too
+  ok: NULL: demand 50c of edge and nothing anywhere qualifies
+  ok: a narrower tau band still fires, at the earliest second in THAT band
+  ok: a band the grid does not cover fires nothing
+  ok: the position cap binds at 10 contracts
+  ok: a 4c bid on a beaten leg is bought as NO at 96c and wins
+  ok: at 1 - the yes bid, for the yes-bid size
+  ok: and with the NO side switched off that race is not traded at all
+  ok: buying NO on the coin that WINS is scored a loss
+  ok: at lag 0 the fresh forecast (99%) clears a 4c bar at 93c
+  ok: and a 15 s stale forecast (10%) does not -- the lag control bites
+  ok: the grid round-trips through disk to identical decisions
+racegrid selftest: OK
+
+600 ticker files; parser check 14898/14898
+  ... 150/600 files read
+  ... 300/600 files read
+  ... 450/600 files read
+  ... 600/600 files read
+  2332 races with all five legs quoting
+  ... 100/2332 races priced
+  ... 200/2332 races priced
+  ... 300/2332 races priced
+  ... 400/2332 races priced
+  ... 500/2332 races priced
+  ... 600/2332 races priced
+  ... 700/2332 races priced
+  ... 800/2332 races priced
+  ... 900/2332 races priced
+  ... 1000/2332 races priced
+  ... 1100/2332 races priced
+  ... 1200/2332 races priced
+  ... 1300/2332 races priced
+  ... 1400/2332 races priced
+  ... 1500/2332 races priced
+  ... 1600/2332 races priced
+  ... 1700/2332 races priced
+  ... 1800/2332 races priced
+  ... 1900/2332 races priced
+  ... 2000/2332 races priced
+  ... 2100/2332 races priced
+  ... 2200/2332 races priced
+  ... 2300/2332 races priced
+  grid saved: C:\kals-repo\flow_cache\racegrid\grid_3600_1.00_600.jsonl.gz
+  2191 priced races, 25.2 days, 08-27 .. 09-21
+
+## THE PRICE FLOOR IS THE STRATEGY  (forecast staled 2s, uncapped)
+Same forecast, same book, same one-position-per-race rule. The only
+difference is how cheap a leg it is allowed to buy.
+  rule                                races    bad   bad %    contr    paid c/contract    total $     $/day
+  price >= 0c, edge >= 0c              1460    638   43.7%   174868    50.7c    -1.47c  -2569.44  -101.89
+  price >= 0c, edge >= 2c               967    628   64.9%   120645    32.2c    -2.45c  -2954.13  -117.14
+  --------------------------------------------------------------------------------------------------------
+  price >= 50c, edge >= 0c             1348    114    8.5%   133062    88.6c    +0.50c   +666.06   +26.41
+  price >= 50c, edge >= 2c              610    117   19.2%    71475    75.7c    +3.25c  +2324.02   +92.15
+  --------------------------------------------------------------------------------------------------------
+  price >= 80c, edge >= 0c             1328     26    2.0%   124683    95.5c    +2.09c  +2603.78  +103.25
+  price >= 80c, edge >= 2c              453     26    5.7%    51996    89.9c    +3.56c  +1849.04   +73.32
+  --------------------------------------------------------------------------------------------------------
+  price >= 90c, edge >= 0c             1310     12    0.9%   122253    97.1c    +1.47c  +1795.54   +71.20
+  price >= 90c, edge >= 2c              339      7    2.1%    39426    93.8c    +2.86c  +1128.41   +44.75
+  --------------------------------------------------------------------------------------------------------
+  price >= 95c, edge >= 0c             1291      8    0.6%   116076    98.0c    +1.32c  +1531.97   +60.75
+  price >= 95c, edge >= 2c              224      3    1.3%    25447    95.8c    +2.51c   +638.28   +25.31
+  --------------------------------------------------------------------------------------------------------
+
+## AND THE SAME AT LAG 0 -- the contaminated version, for contrast
+  rule                                races    bad   bad %    contr    paid c/contract    total $     $/day
+  price >= 0c, edge >= 0c              1486    572   38.5%   173512    53.2c    +1.48c  +2570.22  +101.92
+  price >= 0c, edge >= 2c               967    573   59.3%   120282    35.9c    +0.86c  +1031.36   +40.90
+  price >= 90c, edge >= 0c             1366     12    0.9%   134895    97.2c    +1.76c  +2369.13   +93.94
+  price >= 90c, edge >= 2c              390      6    1.5%    42109    93.8c    +3.31c  +1394.58   +55.30
+  A floor-free rule that gains at lag 0 and loses at lag 2 was never
+  a rule. A rule whose two columns agree is reading settled facts.
+
+## TIME BAND, at the 90c floor (lag 2, uncapped)
+  rule                                races    bad   bad %    contr    paid c/contract    total $     $/day
+  tau 1-15                              495      0    0.0%    96462    98.4c    +1.47c  +1418.28   +56.24
+  tau 1-20                              587      1    0.2%    89515    98.2c    +1.66c  +1485.08   +58.89
+  tau 1-30                              778      3    0.4%   108898    97.9c    +1.77c  +1923.14   +76.26
+  tau 1-45                             1074      7    0.7%   119535    97.6c    +1.37c  +1641.96   +65.11
+  tau 1-60                             1310     12    0.9%   122253    97.1c    +1.47c  +1795.54   +71.20
+  tau 16-30                             637      3    0.5%    91019    97.8c    +1.81c  +1645.20   +65.24
+  tau 31-60                            1089     12    1.1%   101798    97.1c    +1.24c  +1264.67   +50.15
+
+## WHICH SIDE  (tau 1-60, 90c floor, lag 2, uncapped)
+  rule                                races    bad   bad %    contr    paid c/contract    total $     $/day
+  buy YES on the leader only           1075     11    1.0%   140263    97.7c    +1.47c  +2062.16   +81.77
+  buy NO on a beaten leg only          1095      9    0.8%    92013    97.1c    +1.28c  +1177.16   +46.68
+  whichever is better                  1310     12    0.9%   122253    97.1c    +1.47c  +1795.54   +71.20
+
+## AT A SIZE THE BOOK CAN ABSORB  (tau 1-60, 90c floor, lag 2)
+  rule                                races    bad   bad %    contr    paid c/contract    total $     $/day
+  cap 10 contracts                     1310     12    0.9%     8305    97.0c    +1.57c   +129.99    +5.15
+  cap 20 contracts                     1310     12    0.9%    13850    96.9c    +1.54c   +213.17    +8.45
+  cap 50 contracts                     1310     12    0.9%    25787    96.6c    +1.40c   +362.08   +14.36
+  cap 100 contracts                    1310     12    0.9%    40406    96.3c    +1.19c   +481.50   +19.09
+  cap 250 contracts                    1310     12    0.9%    58793    96.5c    +1.20c   +706.49   +28.01
+  cap none contracts                   1310     12    0.9%   122253    97.1c    +1.47c  +1795.54   +71.20
+
+## WHAT IT BUYS  (tau 1-60, 90c floor, cap 50, lag 2)
+  price paid       races     bad contracts          $
+  90-93c             102       6      4182     +63.35
+  93-95c              55       0      1593     +94.58
+  95-97c              91       2      2970     +29.53
+  97-99c             622       4      6597     +79.81
+  99-101c            440       0     10444     +94.82
+
+## BY DAY  (tau 1-60, 90c floor, cap 50, lag 2)
+  UTC day        races     bad          $
+  2026-08-27        32       1      -4.84
+  2026-08-28        28       1      -8.47
+  2026-08-29        40       0     +66.93
+  2026-08-30        37       0     +32.97
+  2026-08-31        39       0     +45.88
+  2026-09-01        36       0     +57.82
+  2026-09-02        37       0     +13.00
+  2026-09-03        32       2     -44.18
+  2026-09-04        60       2     -19.22
+  2026-09-05        59       1     -15.66
+  2026-09-06        52       1     -26.62
+  2026-09-07        56       0     +20.51
+  2026-09-08        59       0     +15.12
+  2026-09-09        38       0     +16.28
+  2026-09-10        63       1     -30.90
+  2026-09-11        63       0     +18.69
+  2026-09-12        65       1     +23.50
+  2026-09-13        67       0     +29.76
+  2026-09-14        53       0     +35.97
+  2026-09-15        52       0     +17.48
+  2026-09-16        64       1      +7.48
+  2026-09-17        59       0     +38.40
+  2026-09-18        61       0     +37.00
+  2026-09-19        72       0     +36.02
+  2026-09-20        70       0     +41.26
+  2026-09-21        16       1     -42.13
+
+## EVERY LOSS  (tau 1-60, 90c floor, cap 50, lag 2): 12 of 1310 races
+    09-10 20:15Z tau 50  HYPE no at 98c x 50  edge +0.5c  $-49.07
+    09-05 01:30Z tau 57  XRP no at 95c x 50  edge +2.8c  $-47.67
+    09-06 21:30Z tau 54  SOL no at 95c x 50  edge +0.5c  $-47.67
+    08-27 13:45Z tau 49  BTC no at 92c x 50  edge +1.6c  $-46.26
+    09-03 15:15Z tau 48  XRP yes at 91c x 50  edge +0.5c  $-45.79
+    09-04 18:45Z tau 42  HYPE no at 91c x 50  edge +4.9c  $-45.79
+    08-28 22:00Z tau 43  BTC no at 90c x 50  edge +8.3c  $-45.32
+    09-16 22:00Z tau 55  XRP yes at 90c x 50  edge +0.5c  $-45.32
+    09-21 03:30Z tau 51  SOL yes at 90c x 50  edge +1.9c  $-45.32
+    09-03 20:00Z tau 52  XRP yes at 98c x 1  edge +0.5c  $-0.99
+    09-04 12:30Z tau 47  SOL no at 98c x 1  edge +0.6c  $-0.99
+    09-12 19:15Z tau 57  XRP no at 98c x 1  edge +0.6c  $-0.99
+
+CEILING, NOT A FILL RATE. Every purchase lifts an offer that was
+resting. Whether it would be ours, and whether the ones we win are
+the bad ones, only our own fills can say.

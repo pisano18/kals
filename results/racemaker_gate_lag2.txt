@@ -1,0 +1,201 @@
+  ok: a taker buys a 4c leg that loses: the maker keeps the whole 4c
+  ok: and if that 4c leg WINS the maker is down 96c -- 24 sales to make it back
+  ok: a taker buys the 4c NO side (96c yes) on a winner: maker keeps 4c
+  ok: and loses 96c when it does not win
+  ok: an unknown taker side is refused
+  ok: maker P&L is exactly antisymmetric in the taker's side at 0.01/True
+  ok: ZERO SUM: maker and taker P&L cancel on every trade, before fees
+  ok: A TRADE LINE COPIED OFF THE TAPE parses to its true values, fractional size and all
+  ok: an up/down trade is skipped
+  ok: a zero-size print is refused rather than counted as a trade
+  ok: 11 race trades read out of a file holding 12 (11)
+  ok: PLANTED: maker sells 100 dead contracts at 5c (+$5.00) and 10 winning ones at 90c (-$1.00) -> +4.00
+  ok: and the whole loss is on the one leg that won
+  ok: NULL CHECK: had the 5c leg won, the same flow loses $96.00 -- the estimator is not blind to the tail
+  ok: fee at 50c is 0.07*0.25 = 1.75c, rounded up to 2c
+  ok: fee scales with contracts and rounds up once per order
+  ok: no contracts, no fee
+  ok: the fee is symmetric: buying a 1c leg costs what buying its 99c NO does
+  ok: buy basket at 98c, 10 contracts: 20c gross less 0.15 fees = +0.05
+  ok: and it is still positive after fees
+  ok: a basket that sums to exactly $1.00 LOSES the fees -- never free
+  ok: a basket summing to $1.07 loses 70c on 10 -- the common case
+  ok: bids summing to $1.08: selling all five nets +0.65
+  ok: bids summing to 98c: selling all five LOSES, correctly
+  ok: hand-reconciled: 25 baskets at 97c = $0.75 gross, fees $0.20, net $0.55
+  ok: a ticker line parses to exactly its fields
+  ok: and parses identically with whitespace after every colon
+  ok: A LINE COPIED VERBATIM OFF THE TAPE parses to its true values -- the only test here that fails if the wire format moves
+  ok: a non-race ticker is skipped, not mangled
+  ok: an unknown leg is skipped
+  ok: a line missing the price fields is refused
+  ok: 26SEP210100 is 05:00 UTC -- the stamp is Eastern
+  ok: an unparseable stamp returns None
+  ok: ask 1.0000 with size 0 is NO OFFER -- the empty-book print
+  ok: a price with zero size is not an offer
+  ok: a price with size is
+  ok: bid 0.0000 size 0 is no bid
+  ok: PLANTED: exactly the three seconds with a 98c basket are found (3)
+  ok: and they are taus 38, 39, 40 -- the seconds it was actually there
+  ok: size is the thinnest leg, 20
+  ok: three consecutive seconds count as ONE opportunity lasting 3 s, not three
+  ok: NULL: a world with no mispricing yields no opportunities
+  ok: bids summing to $1.09 are found as SELL baskets (120 seconds)
+  ok: a leg that stops printing kills the basket ~10 s later (earliest tau 50, cap 10 s)
+  ok: and a loose age cap counts those stale seconds -- which is why the real scan is run at several caps
+  ok: a 3-contract basket is found at min_size 1 and refused at 10
+  ok: quotes stamped at or after the close are outside the band and ignored
+  ok: the reader pulls 600 race rows out of a file that also holds up/down tickers (600)
+  ok: and the cache round-trips to exactly the same rows
+racebook selftest: OK
+racemaker selftest: OK
+
+reading 168 hourly trade files (20260914T05.jsonl.gz .. 20260921T06.jsonl.gz)
+  60960 candidate race lines, 60960 parsed (100.0%)
+  60960 trades across 664 races
+  658 of 664 races have a winner recomputable from the index
+  index vs Kalshi's own settled result: 127 of 127 agree
+
+## WHAT THE PASSIVE SIDE OF THIS BOOK EARNED
+7.1 days, 658 races with trades. Makers pay no fee, so this is net.
+                              trades           contracts   dollars     per contract
+  EVERY trade                  60395 trades    1559334 contracts  $-20101.58   -1.29c/contract
+     = $-2850.45 per day, $-30.55 per race
+
+## BY TIME TO CLOSE -- where in the window the money is
+  tau 1-15s                     1684 trades      33425 contracts  $    16.72   +0.05c/contract
+  tau 16-30s                    2409 trades      45964 contracts  $  2474.91   +5.38c/contract
+  tau 31-60s                    5542 trades      90647 contracts  $ -1046.97   -1.15c/contract
+  tau 61-180s                  14281 trades     296797 contracts  $ -5161.36   -1.74c/contract
+  tau 181-900s                 36479 trades    1092501 contracts  $-16384.89   -1.50c/contract
+
+## BY WHAT THE TAKER DID  (the maker is the mirror)
+  taker BOUGHT yes  (maker sold)   23987 trades     760062 contracts  $ -6365.15   -0.84c/contract
+  taker BOUGHT no   (maker bought yes)   36408 trades     799272 contracts  $-13736.43   -1.72c/contract
+
+## SELLING YES, BY THE PRICE THE MAKER SOLD AT   (tau <= 60s)
+This is the lottery-ticket business: someone pays a few cents for a
+leg that is already beaten. Sold at Xc, it is worth 0 unless it wins.
+  price sold                  trades  contracts      dollars      won
+  0-2c                            64       1330        13.30       0 (0.00%)
+  2-5c                            86       2468        94.59       0 (0.00%)
+  5-10c                          131       3218        -2.87     216 (6.71%)
+  10-25c                         270       7728       443.29     855 (11.07%)
+  25-50c                         450      11165       609.16    3544 (31.74%)
+  50-75c                         485      12507      -141.25    7897 (63.14%)
+  75-90c                         375      11356        79.30    9292 (81.83%)
+  90-100c                       2800      41832       398.60   40666 (97.21%)
+  A sale at Xc breaks even if the leg wins X%% of the time. Compare
+  the last column to the price bucket: that is the whole trade.
+
+## BUYING YES, BY THE PRICE THE MAKER PAID   (tau <= 60s)
+  price paid                  trades  contracts      dollars      won
+  0-2c                          2240      20817       -82.73     125 (0.60%)
+  2-5c                           871       6228      -153.53       3 (0.05%)
+  5-10c                           75       1575       -86.44      25 (1.58%)
+  10-25c                         202       5722      -378.09     555 (9.70%)
+  25-50c                         375       9312      -525.76    2938 (31.55%)
+  50-75c                         524      18201       259.87   11276 (61.96%)
+  75-90c                         294       9051       608.58    8133 (89.86%)
+  90-100c                        393       7526       308.62    7426 (98.67%)
+
+## THE TRADE WE ACTUALLY DO, ON SEVEN DAYS OF TAPE
+The live race arm crosses the spread to BUY the leader's YES inside
+tau 30 at 90c or better. Here is what every taker who did that got,
+with no model gate at all -- the floor our forecast has to beat.
+Taker gross is the mirror of the maker; the taker also pays
+0.07*p*(1-p), which is charged here and never left out.
+  tau            price        trades  contracts      won     gross       fee       NET
+  1-15s          85-90c           11        277   100.0%   +13.82c     0.86c   +12.96c
+  1-15s          90-93c            3          5   100.0%    +8.69c     1.01c    +7.68c
+  1-15s          93-95c            4         31   100.0%    +6.00c     0.45c    +5.55c
+  1-15s          95-97c           12        582   100.0%    +4.07c     0.28c    +3.79c
+  1-15s          97-99c          209       1214   100.0%    +2.24c     0.28c    +1.96c
+  1-15s          90-98c           62        912   100.0%    +3.82c     0.30c    +3.52c
+  ------------------------------------------------------------------------------------
+  16-30s         85-90c           40       1537    85.7%    -0.86c     0.83c    -1.68c
+  16-30s         90-93c           21        523    77.0%   -13.81c     0.61c   -14.42c
+  16-30s         93-95c           16        335    64.2%   -29.21c     0.46c   -29.67c
+  16-30s         95-97c           19        734    83.7%   -11.73c     0.32c   -12.05c
+  16-30s         97-99c          199       1495    94.3%    -3.37c     0.25c    -3.62c
+  16-30s         90-98c           96       2071    80.9%   -13.36c     0.40c   -13.76c
+  ------------------------------------------------------------------------------------
+  31-60s         85-90c           96       2763    76.2%   -10.87c     0.80c   -11.68c
+  31-60s         90-93c           50        955    87.2%    -3.98c     0.59c    -4.57c
+  31-60s         93-95c           35       1210   100.0%    +6.74c     0.46c    +6.28c
+  31-60s         95-97c           49        631   100.0%    +4.56c     0.35c    +4.21c
+  31-60s         97-99c          421       2972    99.9%    +2.21c     0.27c    +1.95c
+  31-60s         90-98c          222       3822    96.8%    +2.69c     0.42c    +2.28c
+  ------------------------------------------------------------------------------------
+  1-30s          85-90c           51       1814    87.9%    +1.39c     0.83c    +0.55c
+  1-30s          90-93c           24        528    77.3%   -13.60c     0.61c   -14.21c
+  1-30s          93-95c           20        366    67.2%   -26.20c     0.46c   -26.66c
+  1-30s          95-97c           31       1316    90.9%    -4.74c     0.30c    -5.05c
+  1-30s          97-99c          408       2708    96.9%    -0.85c     0.27c    -1.12c
+  1-30s          90-98c          158       2983    86.8%    -8.11c     0.37c    -8.48c
+  ------------------------------------------------------------------------------------
+  1-60s          85-90c          147       4577    80.8%    -6.01c     0.81c    -6.83c
+  1-60s          90-93c           74       1483    83.7%    -7.40c     0.60c    -8.00c
+  1-60s          93-95c           55       1576    92.4%    -0.92c     0.46c    -1.37c
+  1-60s          95-97c           80       1947    93.8%    -1.73c     0.32c    -2.05c
+  1-60s          97-99c          829       5680    98.4%    +0.75c     0.27c    +0.48c
+  1-60s          90-98c          380       6805    92.4%    -2.04c     0.40c    -2.44c
+  ------------------------------------------------------------------------------------
+
+## PER DAY -- is it steady or is it one day?
+  UTC day          trades    contracts      maker $
+  2026-09-14         7961       148772       303.15
+  2026-09-15         6213       138722     -1949.73
+  2026-09-16         9197       234122      -334.83
+  2026-09-17         8083       289444     -7137.26
+  2026-09-18         7294       216954     -4124.32
+  2026-09-19        10173       285771     -5796.28
+  2026-09-20         9226       191798       122.45
+  2026-09-21         2248        53751     -1184.76
+
+EVERY FIGURE IS WHAT THE MARKET DID. It is the size of the prize,
+not our fill rate and not our loss rate. We would be one maker in a
+queue, and only our own fills can say what we would actually get.
+
+## DOES THE FORECAST SEPARATE THE GOOD TAKES FROM THE BAD?
+Same trades as above, scored as a taker with fees, split by what our
+model believed at that second. Ruler 3600, fat-tail 1.00, forecast staled by 2 s.
+  4661 taker YES buys inside tau 60 to score
+
+  population                         trades races   bad    contr     won  NET c/ct      NET $
+  tau<=30, price>=90c  ALL takers      1446   255     2    27090   96.3%    -2.32c   -627.97
+  tau<=30, price>=90c  model edge >= 0c   1133   230     0    15763  100.0%    +1.23c   +193.28
+  tau<=30, price>=90c  model edge >= 1c    295   134     0     2818  100.0%    +2.69c    +75.84
+  tau<=30, price>=90c  model edge >= 2c     78    41     0     1417  100.0%    +3.55c    +50.36
+  tau<=30, price>=90c  model edge >= 4c     11    10     0      158  100.0%    +5.03c     +7.95
+  tau<=30, price>=90c  model says OVERPAID    212    58     2     8078   87.6%   -10.54c   -851.14
+  ------------------------------------------------------------------------------------
+  tau<=60, price>=90c  ALL takers      2775   435     7    41555   97.2%    -1.14c   -472.18
+  tau<=60, price>=90c  model edge >= 0c   1992   386     0    23298  100.0%    +1.48c   +344.16
+  tau<=60, price>=90c  model edge >= 1c    559   254     0     5187  100.0%    +3.39c   +175.62
+  tau<=60, price>=90c  model edge >= 2c    174    92     0     3009  100.0%    +4.41c   +132.65
+  tau<=60, price>=90c  model edge >= 4c     33    21     0     1049  100.0%    +6.40c    +67.16
+  tau<=60, price>=90c  model says OVERPAID    538   145     7    13462   91.3%    -6.41c   -863.58
+  ------------------------------------------------------------------------------------
+  tau<=30, price>=0c  ALL takers       2119   286   111    47226   70.9%    -4.83c  -2283.26
+  tau<=30, price>=0c  model edge >= 0c   1339   246    34    21193   83.7%    -0.01c     -2.15
+  tau<=30, price>=0c  model edge >= 1c    492   159    33     7929   58.9%    -0.67c    -53.28
+  tau<=30, price>=0c  model edge >= 2c    270    78    31     6479   50.3%    -1.23c    -79.59
+  tau<=30, price>=0c  model edge >= 4c    181    52    31     4307   36.3%    -2.46c   -105.76
+  tau<=30, price>=0c  model says OVERPAID    663   138   104    22080   53.3%   -11.48c  -2535.39
+  ------------------------------------------------------------------------------------
+
+  BY DAY, the rule the live arm runs (tau<=30, price>=90c, edge>=2c)
+  UTC day        trades  contracts       won      NET $
+  2026-09-14          4        111    100.0%     +4.91
+  2026-09-15          5         33    100.0%     +0.97
+  2026-09-16          5         27    100.0%     +0.73
+  2026-09-17         14        848    100.0%    +28.95
+  2026-09-18          9         86    100.0%     +4.18
+  2026-09-19         22        204    100.0%     +6.79
+  2026-09-20         12         65    100.0%     +2.18
+  2026-09-21          7         43    100.0%     +1.64
+
+  These are OTHER PEOPLE'S fills at prices that existed. They are
+  what the rule would have been worth on the trades that happened,
+  not our fill rate and not our loss rate.

@@ -1,3 +1,108 @@
+# 2026-09-21 ~07:4xZ -- THE COIN RACE, RE-MEASURED FROM THE BOOK
+
+**Nothing live changed. `pinrun --live` is untouched: no flag, no threshold,
+no version entry.** Full detail with every table:
+`results/RESULTS_coinrace_2026-09-21.md`. New stages `research/racebook.py`,
+`racemaker.py`, `raceclose.py`, `racegrid.py`, each self-tested with a planted
+answer AND a planted nothing, and each parsing a line copied verbatim off the
+tape so a wire-format change cannot pass silently.
+
+## The headline
+
+**The -$807.58 was one dead configuration, not the strategy.** All of it is
+`arm2` (2026-09-15): no price floor, no tau cap, no per-race cap. Its
+mechanism was not bad forecasting -- every leg had a positive stated edge --
+it bought YES on a coin and later NO on the SAME TICKER as the lead flipped,
+at prices summing over $1.00. **$1,306.03 of guaranteed loss locked in before
+those races were decided, 84% of its deficit**, across 12 markets in 7 races.
+Under `--min-price 0.90` it is arithmetically impossible. The current arm is
+**78 of 78 events, 110 legs, zero losing legs, +$752.14**.
+
+## Two ideas measured and killed, cheaply
+
+1. **The basket arbitrage.** Five legs, exactly one wins, so all five bought
+   together are worth exactly $1.00 -- riskless if the asks ever sum under a
+   dollar. Three days: **zero buy-side occurrences**, sell side $1.30-1.86/day
+   of ceiling, median chance lives **2 seconds**. Dead.
+2. **Market making it.** Every trade's maker is the taker's exact mirror and
+   the outcome is settled, so the passive side's P&L is arithmetic. Seven days,
+   1,559,334 contracts: **the makers lost $20,101.58, -1.29c a contract,
+   $2,850 a day**, negative on six of seven days. Makers pay no fee here, so
+   that is net. **DO NOT QUOTE THIS BOOK.** It also kills "sell lottery tickets
+   on the beaten legs": near the close all five legs have a bid on only 127
+   seconds in three days.
+
+## THE TRAP -- and it nearly changed the bot
+
+Removing `--min-price 0.90` looked like **four times the money**. Re-run with
+the forecast **staled two seconds**, the whole gain inverted:
+
+| rule (25 days, one position per race, uncapped) | lag 0 | lag 2 |
+|---|---|---|
+| no price floor, edge >= 0c | +$101.92/day | **-$101.89/day** |
+| price >= 90c, edge >= 0c | +$93.94/day | **+$71.20/day** |
+
+A perfect sign flip on one and a 24% haircut on the other. A 40c leg's value is
+decided by the next second or two; a 97c leg is already decided. **So the
+price floor IS the strategy, and on this product MORE EDGE IS A DANGER SIGNAL
+-- demanding edge >= 2c with no floor takes the loss rate to 64.9% of races.**
+
+## The rule, and the one number that decides it
+
+25 days of resting book, 2,191 priced races, 90c floor, one position per race,
+forecast staled 2s:
+
+| tau <= | cap | races | bad | bad % | c/contract | $/day |
+|---|---|---|---|---|---|---|
+| 30 | 50 | 778 | 3 | 0.4% | +1.87c | +$11.07 |
+| **40** | **50** | 977 | 4 | 0.4% | **+2.20c** | **+$16.13** |
+| **40** | **100** | 977 | 4 | 0.4% | **+2.29c** | **+$25.77** |
+| 60 | 100 | 1,310 | 12 | 0.9% | +1.19c | +$19.09 |
+
+**tau <= 40 is the peak** -- more than 30 at the same loss rate, and 45 and 60
+are both worse. **All twelve losses in the tau<=60 run were at tau 42-57; not
+one inside tau 42.** Last 14 days: zero losing races, every day positive.
+
+**Break-even loss rate 1.77%, observed 0.39% -- 4.5x headroom. AND THAT IS THE
+WHOLE RISK.** The one time this project compared tape to its own fills, at the
+pin gate, tape said 0.11% and live said 3.4% -- **+3.3 percentage points**.
+The same absolute shift here makes 0.39% into 3.7%, double break-even, and the
+rule loses. No further tape analysis can settle it. Only our own fills can.
+
+## Capacity is the other constraint
+
+Inside 15 seconds only **26% of races have any offer on the model's leader**
+and the median one is **10 contracts** (p90 120). At 60s it is 64% and 24.
+That is what caps this at tens of dollars a day, not hundreds.
+
+## Started (PAPER ONLY -- pinracearm cannot send an order)
+
+Three arms, each differing from the control in exactly one setting:
+`racectl` (fair, tau 30, >=90c, edge 2c, one-per-band), `racetau40`
+(`--tau-max 40`), `raceedge0` (`--min-edge 0.00`). Logs
+`results/pinracearm-race{ctl,tau40,edge0}.jsonl`.
+
+**The two older live race arms have NO per-race position cap** -- the
+`--model fair` arm took 2 positions in 13 of its 39 races. It has still not
+lost a race (39 of 39, +$351.01; YES 32 legs +$168.06, NO 24 legs +$182.95),
+but `--one-per-race-band` still allows one bet per BAND, so up to four a race.
+A true one-per-race cap must exist before any real money.
+
+## pinracefair: the fat-tail grid was truncated
+
+It started at 1.0 and the fit half chose 1.0 -- the smallest value offered.
+Widened to 0.5; the fit half now picks **0.60**, an interior optimum, fit log
+loss 8.8% better. **NOT DEPLOYED**: out of sample it is better on photo
+finishes and Brier and WORSE on the confident legs, which is where we trade.
+`pinracearm` calls `win_probs` with a literal 1.0, so no running arm changed.
+
+## Resources at the end of this session
+
+Disk **16.5 GB** free, both collectors alive (`kalshi_collector` pid 105304,
+`crypto_feeds` pid 105352). RAM 3.5 GB free of 15.8.
+
+---
+
 # 2026-09-21 ~05:0xZ -- THE DAY AFTER THE FIRST LOSING DAY: WHAT WAS FIXED, WHAT WAS WRONG, AND WHAT IS STILL OPEN
 
 **Read `CURRENT_STATE.md` first. This is the long version.** Written

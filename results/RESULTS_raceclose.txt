@@ -1,0 +1,189 @@
+  ok: a 95c offer of 40 under a 98c cap and a 100 cap lifts 40 at 95c
+  ok: and the position cap binds when it is the smaller
+  ok: an offer above the price cap is refused
+  ok: ask 1.0000 with size 0 -- the empty book -- is not an offer
+  ok: a sub-contract offer is refused rather than rounded up
+  ok: a leg with no quote at all is refused
+  ok: PLANTED: the one coin that rose is named the leader at tau 10 (BTC, 48.3bp)
+  ok: one buy per race, taken at the EARLIEST second in the band (tau 15), and it wins
+  ok: 30 contracts at 95c on a winner pays 30*5c less fee = $1.40
+  ok: NULL: with the leader offered at 99.5c and a 98c cap, nothing is bought
+  ok: a leader that is overtaken after the purchase is scored as a LOSS ($-28.60) -- the estimator can lose
+  ok: and the loss is the full price plus the fee, never netted
+  ok: fee at 50c is 0.07*0.25 = 1.75c, rounded up to 2c
+  ok: fee scales with contracts and rounds up once per order
+  ok: no contracts, no fee
+  ok: the fee is symmetric: buying a 1c leg costs what buying its 99c NO does
+  ok: buy basket at 98c, 10 contracts: 20c gross less 0.15 fees = +0.05
+  ok: and it is still positive after fees
+  ok: a basket that sums to exactly $1.00 LOSES the fees -- never free
+  ok: a basket summing to $1.07 loses 70c on 10 -- the common case
+  ok: bids summing to $1.08: selling all five nets +0.65
+  ok: bids summing to 98c: selling all five LOSES, correctly
+  ok: hand-reconciled: 25 baskets at 97c = $0.75 gross, fees $0.20, net $0.55
+  ok: a ticker line parses to exactly its fields
+  ok: and parses identically with whitespace after every colon
+  ok: A LINE COPIED VERBATIM OFF THE TAPE parses to its true values -- the only test here that fails if the wire format moves
+  ok: a non-race ticker is skipped, not mangled
+  ok: an unknown leg is skipped
+  ok: a line missing the price fields is refused
+  ok: 26SEP210100 is 05:00 UTC -- the stamp is Eastern
+  ok: an unparseable stamp returns None
+  ok: ask 1.0000 with size 0 is NO OFFER -- the empty-book print
+  ok: a price with zero size is not an offer
+  ok: a price with size is
+  ok: bid 0.0000 size 0 is no bid
+  ok: PLANTED: exactly the three seconds with a 98c basket are found (3)
+  ok: and they are taus 38, 39, 40 -- the seconds it was actually there
+  ok: size is the thinnest leg, 20
+  ok: three consecutive seconds count as ONE opportunity lasting 3 s, not three
+  ok: NULL: a world with no mispricing yields no opportunities
+  ok: bids summing to $1.09 are found as SELL baskets (120 seconds)
+  ok: a leg that stops printing kills the basket ~10 s later (earliest tau 50, cap 10 s)
+  ok: and a loose age cap counts those stale seconds -- which is why the real scan is run at several caps
+  ok: a 3-contract basket is found at min_size 1 and refused at 10
+  ok: quotes stamped at or after the close are outside the band and ignored
+  ok: the reader pulls 600 race rows out of a file that also holds up/down tickers (600)
+  ok: and the cache round-trips to exactly the same rows
+racebook selftest: OK
+raceclose selftest: OK
+
+600 ticker files; parser check 17357/17357 (100.0%)
+  ... 100/600 files
+  ... 200/600 files
+  ... 300/600 files
+  ... 400/600 files
+  ... 500/600 files
+  ... 600/600 files
+  2254 races with all five legs quoting AND index coverage, 25.2 days
+
+## WHAT IS RESTING ON THE LEADER, BY SECOND
+The model's leader at that second (no look-ahead), and the offer
+sitting on it. 'offered' counts races where an ask existed at all.
+    tau    races   offered   med ask  med size  p90 size   ask<98c
+      1     2254        9%     99.0c        28       897        3%
+      2     2254       10%     99.0c        33       992        4%
+      3     2254       11%     99.0c        28      1019        4%
+      5     2254       12%     99.0c        23       992        5%
+      8     2254       14%     98.0c        19       909        8%
+     10     2254       15%     98.0c        21       511        8%
+     12     2254       17%     98.0c        17       511       10%
+     15     2254       19%     98.0c        18       372       12%
+     20     2254       24%     98.0c        18       291       15%
+     25     2253       29%     98.0c        23       253       19%
+     30     2253       33%     98.0c        28       251       23%
+     45     2254       47%     98.0c        42       157       35%
+     60     2254       60%     96.0c        93       196       48%
+
+## BUYING THE LEADER, ONE PER RACE, SCORED ON THE REAL WINNER
+  rule                            races   contr  losses avg paid c/contract    total $     $/day
+  tau 1-15, ask <= 97c              141   15168       9    82.8c   +10.80c  +1638.02   +64.87
+  tau 1-15, ask <= 98c              280   36264      10    92.2c    +5.33c  +1931.71   +76.50
+  ------------------------------------------------------------------------------------------------
+  tau 1-20, ask <= 97c              196   20649      13    83.2c   +10.60c  +2187.89   +86.65
+  tau 1-20, ask <= 98c              367   43822      13    91.6c    +5.68c  +2488.20   +98.54
+  ------------------------------------------------------------------------------------------------
+  tau 1-10, ask <= 97c               86    9362       9    82.4c    +8.71c   +815.34   +32.29
+  tau 1-10, ask <= 98c              199   24472       9    92.3c    +4.23c  +1035.60   +41.01
+  ------------------------------------------------------------------------------------------------
+  tau 16-30, ask <= 97c             340   40363      54    80.8c    +1.62c   +653.17   +25.87
+  tau 16-30, ask <= 98c             552   63205      54    87.3c    +1.71c  +1083.30   +42.90
+  ------------------------------------------------------------------------------------------------
+  tau 1-30, ask <= 97c              342   40603      54    80.8c    +1.66c   +675.71   +26.76
+  tau 1-30, ask <= 98c              553   63325      54    87.4c    +1.72c  +1087.77   +43.08
+  ------------------------------------------------------------------------------------------------
+
+## THE MINIMUM LEAD FILTER -- the one thing every loss had in common
+A lead of 0.2 basis points at tau 15 is a photo finish, not a lead.
+Stand aside unless the model's leader is ahead by at least:
+  rule                            races   contr  losses avg paid c/contract    total $     $/day
+  tau 1-15, lead >= 0.0bp           280   36264      10    92.2c    +5.33c  +1931.71   +76.50
+  tau 1-15, lead >= 0.5bp           207   30489       2    96.2c    +3.47c  +1059.31   +41.95
+  tau 1-15, lead >= 1.0bp           127   26073       2    97.6c    +2.12c   +552.42   +21.88
+  tau 1-15, lead >= 2.0bp            50   14806       0    97.5c    +2.30c   +339.96   +13.46
+  tau 1-15, lead >= 4.0bp            15   11184       0    98.0c    +1.87c   +208.92    +8.27
+  ------------------------------------------------------------------------------------------------
+  tau 1-20, lead >= 0.0bp           367   43822      13    91.6c    +5.68c  +2488.20   +98.54
+  tau 1-20, lead >= 0.5bp           299   37619       3    94.1c    +4.87c  +1833.61   +72.62
+  tau 1-20, lead >= 1.0bp           211   31332       2    96.5c    +2.85c   +893.34   +35.38
+  tau 1-20, lead >= 2.0bp            96   22502       0    97.5c    +2.29c   +514.94   +20.39
+  tau 1-20, lead >= 4.0bp            35   12765       0    97.9c    +1.91c   +244.15    +9.67
+  ------------------------------------------------------------------------------------------------
+  tau 1-30, lead >= 0.0bp           553   63325      54    87.4c    +1.72c  +1087.77   +43.08
+  tau 1-30, lead >= 0.5bp           516   56346      27    91.1c    +3.55c  +2001.00   +79.25
+  tau 1-30, lead >= 1.0bp           420   52205      14    93.9c    +3.10c  +1619.52   +64.14
+  tau 1-30, lead >= 2.0bp           231   30915       3    96.8c    +2.52c   +779.50   +30.87
+  tau 1-30, lead >= 4.0bp            91   17760       1    97.7c    +1.99c   +353.78   +14.01
+  ------------------------------------------------------------------------------------------------
+
+## AND AT A SIZE THE BOOK CAN ACTUALLY ABSORB  (lead >= 1bp)
+  rule                            races   contr  losses avg paid c/contract    total $     $/day
+  tau 1-15, cap 20                  127     929       2    96.7c    +0.74c     +6.84    +0.27
+  tau 1-15, cap 50                  127    1512       2    96.3c    +2.02c    +30.48    +1.21
+  tau 1-15, cap 100                 127    2333       2    96.3c    +2.50c    +58.26    +2.31
+  ------------------------------------------------------------------------------------------------
+  tau 1-20, cap 20                  211    1833       2    94.3c    +3.13c    +57.35    +2.27
+  tau 1-20, cap 50                  211    3185       2    93.2c    +4.18c   +133.25    +5.28
+  tau 1-20, cap 100                 211    5131       2    92.5c    +4.68c   +240.23    +9.51
+  ------------------------------------------------------------------------------------------------
+  tau 1-30, cap 20                  420    4327      14    92.0c    +1.82c    +78.67    +3.12
+  tau 1-30, cap 50                  420    8332      14    90.7c    +2.22c   +185.22    +7.34
+  tau 1-30, cap 100                 420   14208      14    90.0c    +2.09c   +297.51   +11.78
+  ------------------------------------------------------------------------------------------------
+
+## THE SAME RULE AT A REAL POSITION SIZE  (tau 1-15, ask <= 98c)
+  cap per race                    races   contr  losses avg paid c/contract    total $     $/day
+  10 contracts                      280    1874      10    88.3c    +6.83c   +127.98    +5.07
+  20 contracts                      280    3092      10    86.7c    +7.77c   +240.33    +9.52
+  50 contracts                      280    5965      10    84.3c    +9.46c   +564.39   +22.35
+  100 contracts                     280    9934      10    83.0c    +9.91c   +984.63   +39.00
+  200 contracts                     280   12737      10    83.6c    +9.72c  +1238.11   +49.03
+
+## THE LOSSES, EVERY ONE  (tau 1-20, ask <= 98c, uncapped, no lead filter)
+  13 losing races of 367
+    09-16 11:00Z  tau 20  ETH at 95c x 120  lead 0.23bp  $-114.40
+    09-14 11:30Z  tau 20  XRP at 87c x 120  lead 0.07bp  $-105.36
+    09-12 01:15Z  tau 20  HYPE at 81c x 120  lead 0.46bp  $-98.50
+    09-06 17:00Z  tau 20  ETH at 80c x 120  lead 0.66bp  $-97.35
+    08-31 18:00Z  tau 20  SOL at 73c x 120  lead 0.17bp  $-89.26
+    09-15 19:30Z  tau 20  BTC at 62c x 120  lead 0.37bp  $-76.38
+    09-16 02:45Z  tau 20  HYPE at 61c x 120  lead 0.14bp  $-75.20
+    09-08 12:00Z  tau 20  BTC at 50c x 120  lead 0.15bp  $-62.10
+    09-04 12:30Z  tau 20  HYPE at 98c x 20  lead 1.82bp  $-19.63
+    09-12 00:45Z  tau 20  XRP at 97c x 9  lead 0.17bp  $-9.23
+    09-19 22:15Z  tau 20  HYPE at 54c x 12  lead 0.17bp  $-6.69
+    09-12 19:00Z  tau 20  BTC at 81c x 2  lead 0.37bp  $-1.65
+    08-28 06:15Z  tau 20  ETH at 20c x 1  lead 0.08bp  $-0.22
+
+## BY DAY  (tau 1-15, ask <= 98c, cap 50)
+  UTC day         races   losses          $
+  2026-08-27          9        0     +43.65
+  2026-08-28          9        0     +82.25
+  2026-08-29          7        0     +68.21
+  2026-08-30          7        0     +33.43
+  2026-08-31          5        0     +25.27
+  2026-09-01          9        0     +51.42
+  2026-09-02          4        0      +1.87
+  2026-09-03          3        0      +0.95
+  2026-09-04          9        1     -17.41
+  2026-09-05         10        0     +49.09
+  2026-09-06         10        1      +7.03
+  2026-09-07          6        0     +15.23
+  2026-09-08         12        0     +50.27
+  2026-09-09          5        0     +18.43
+  2026-09-10         11        0     +55.11
+  2026-09-11         17        0     +25.46
+  2026-09-12         15        2      -5.60
+  2026-09-13         12        0     +72.27
+  2026-09-14         14        3     -47.22
+  2026-09-15         20        1     -15.87
+  2026-09-16         20        1      +7.28
+  2026-09-17         13        1     -27.96
+  2026-09-18         15        0      +3.06
+  2026-09-19         19        0     +59.00
+  2026-09-20         15        0      +8.81
+  2026-09-21          4        0      +0.38
+
+CEILING, NOT A FILL RATE. Every purchase here lifts an offer that
+was resting; whether it would be ours, and whether the ones we win
+are the bad ones, only our own fills can say.
