@@ -11223,8 +11223,12 @@ def main():
                              "got %r" % (float(MAX_PER_CLOSE), a.extra_coin))
         globals()["EXTRA_COIN"] = float(a.extra_coin)
     if a.sigma_stress is not None:
-        if not (0.25 <= a.sigma_stress <= 5.0):
-            raise SystemExit("--sigma-stress must sit in [0.25, 5], got %r"
+        # FLOOR LOWERED 0.25 -> 0.20 on 2026-09-21, PAPER REACH ONLY. The
+        # operator asked for a 0.20 arm to see whether the bold ladder keeps
+        # going down. The LIVE refusal below is untouched, so this widens what
+        # a paper arm may explore and changes nothing a live run may do.
+        if not (0.20 <= a.sigma_stress <= 5.0):
+            raise SystemExit("--sigma-stress must sit in [0.20, 5], got %r"
                              % (a.sigma_stress,))
         if a.live and a.sigma_stress < 1.0:
             raise SystemExit(

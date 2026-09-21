@@ -90,6 +90,7 @@ $arms = @(
   @{ n="arm-pin0.985";      drop=@();                    add=@("--pin","0.985") },
   @{ n="arm-pin0.99";       drop=@();                    add=@("--pin","0.99") },
   # --- how humble the volatility model is ---
+  @{ n="arm-sigma0.20";     drop=@();                    add=@("--sigma-stress","0.20") },
   @{ n="arm-sigma0.40";     drop=@();                    add=@("--sigma-stress","0.40") },
   @{ n="arm-sigma0.60";     drop=@();                    add=@("--sigma-stress","0.60") },
   @{ n="arm-sigma0.80";     drop=@();                    add=@("--sigma-stress","0.80") },

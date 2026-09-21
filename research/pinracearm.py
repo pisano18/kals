@@ -102,8 +102,8 @@ WINDOW = M.WINDOW
 _DEFAULT_LIVE_MAX_CONTRACTS = 1      # "pennies": about $1 a leg at 97c
 _DEFAULT_LIVE_MAX_STAKE = 20.00      # dollars this process may ever commit
 _DEFAULT_LIVE_TAU_MAX = 40           # measured 09-21: the edge dies at 41 s
-_DEFAULT_LIVE_MIN_PRICE = 0.85       # measured 09-21, see below
-_DEFAULT_LIVE_MAX_LEGS = 2           # measured 09-21: 2 legs pay ~30% more
+_DEFAULT_LIVE_MIN_PRICE = 0.80       # measured 09-21, see below
+_DEFAULT_LIVE_MAX_LEGS = 5           # one YES plus a NO on every other coin
 _DEFAULT_LIVE_STOP_ON_LOSS = True
 LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
 
@@ -120,16 +120,37 @@ LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
 #
 #     at most ONE yes leg, NO legs only on OTHER coins, never a coin twice.
 #
-# Measured on 25 days of resting book with the forecast staled two seconds,
-# tau <= 40, cap 100: one leg $25.97/day, two legs $29.53/day at the 90c
-# floor; at the 85c floor one leg $31.12/day and two legs $40.01/day. Losing
-# legs go 4-in-977 to 6-in-1294, because the NO legs almost never lose.
+# THE ORDER OF PREFERENCE is the operator's, 2026-09-21: "if you have a
+# confident yes, then get that then try to get your cheapest nos on every
+# single other coin you can. If you have a confident no but not a confident
+# yes, then get all the confident nos you can get."
 #
-# The 85c floor is measured better than 90c ($31.12 vs $25.97 a day, 0.9% of
-# races losing against 0.4%) AND it survives the staleness control far better
-# than anything cheaper: at 75c the edge falls 41% when the forecast is staled
-# two seconds (+4.66c to +2.77c), at 85c it falls 17%, at 90c not at all.
-# Below 85c is timing we will not have; 85c is the point where that stops.
+# Measured on 25 days of resting book, tau <= 40, cap 100, forecast staled two
+# seconds, taking the YES first and then the cheapest NOs on other coins:
+#
+#     floor    $/day    losing legs     c/contract
+#      75c     41.58        2.1%          +2.16c
+#      80c     45.11        1.4%          +2.47c     <- the peak, both columns
+#      85c     37.14        1.0%          +2.16c
+#      90c     26.06        0.5%          +1.71c
+#
+# WHY 80c AND NOT LOWER. Run the same rule against a FRESH forecast instead of
+# one staled two seconds and the difference is how much of the edge is
+# split-second timing we will not have in time:
+#
+#     75c   $101.32 -> $41.58   loses 59%
+#     80c    $74.85 -> $45.11   loses 40%
+#     85c    $58.67 -> $37.14   loses 37%
+#     90c    $33.34 -> $26.06   loses 22%
+#
+# 80c gives up no more of itself than 85c does and pays a fifth more. At 75c
+# the contamination jumps to 59% and the losing-leg rate doubles. So 80c is
+# the lowest floor the measurement actually supports.
+#
+# HOW MANY LEGS. Going from one leg to two is the whole gain ($28.95 ->
+# $36.50 a day at 85c); legs three, four and five add $0.64 between them,
+# because most races simply do not offer a third leg above the floor. The cap
+# is 5 so nothing is left on the table, not because 5 is expected.
 _DEFAULT_LIVE_STOP_ON_LOSS = True
 
 # `races` maps event -> [(coin, side), ...] already held, so consistency can
@@ -627,7 +648,7 @@ def selftest():
     ck(_DEFAULT_LIVE_MAX_CONTRACTS <= pintake.MAX_TAKE_COUNT,
        "the default penny size (%g) is inside pintake's own per-order rail "
        "(%g)" % (_DEFAULT_LIVE_MAX_CONTRACTS, pintake.MAX_TAKE_COUNT))
-    ck(_DEFAULT_LIVE_TAU_MAX <= 40 and _DEFAULT_LIVE_MIN_PRICE >= 0.85,
+    ck(_DEFAULT_LIVE_TAU_MAX <= 40 and _DEFAULT_LIVE_MIN_PRICE >= 0.80,
        "the defaults are the measured rule: inside %ds, at %.0fc or dearer"
        % (_DEFAULT_LIVE_TAU_MAX, 100 * _DEFAULT_LIVE_MIN_PRICE))
     ck(_DEFAULT_LIVE_STOP_ON_LOSS is True,
@@ -685,8 +706,8 @@ def selftest():
        "41 s out is refused -- measured 09-21, the edge dies at 41")
     ck(live_refusals(1, 0.95, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
        "and 1 s out is refused: no time to fill")
-    ck(live_refusals(20, 0.84, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
-       "84c is refused -- below 85c the edge is timing we will not have")
+    ck(live_refusals(20, 0.79, 1, "R3", coin="BTC", side="yes", state=on, exists=never),
+       "79c is refused -- below 80c the edge is timing we will not have")
     ck(live_refusals(20, 0.95, 2, "R3", coin="BTC", side="yes", state=on, exists=never),
        "two contracts is refused when the cap is one")
     ck(live_refusals(20, 0.95, 0, "R3", coin="BTC", side="yes", state=on, exists=never),
