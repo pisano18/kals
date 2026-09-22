@@ -8307,6 +8307,46 @@ def _selftest_body():
        "K3 NULL: a stale, suspect, one-sided, crossed or missing book gives "
        "NO market belief -- the fallback never fires on a guess")
 
+    # ===================================================================
+    # (4) 2026-09-22: A PAPER ARM MUST NOT STOP ON THE LIVE BOT'S DAY.
+    #
+    # risk_abort compared day_loss() -- the LIVE account's ET-day total on
+    # disk -- for every run. 24 of 25 paper arms inherit --loss-cap 200 from
+    # live, and the DAY cap is terminal, so one bad live day would halt the
+    # whole measurement fleet at once, on the day its comparison matters
+    # most. Only the WRITE was live-only (add_day_loss in reconcile).
+    # ===================================================================
+    import tempfile as _tf4
+    _d4 = _tf4.mkdtemp(prefix="pinday4-")
+    _sv4f = globals()["DAYLOSS_FILE"]
+    _sv4l = __import__("copy").deepcopy(pintake.LEDGER)
+    try:
+        globals()["DAYLOSS_FILE"] = os.path.join(_d4, "dayloss.json")
+        add_day_loss(-250.0)                     # the live file: -$250 today
+        pintake.reset_ledger()
+
+        class _L4:
+            live, loss_abort, max_positions, max_losses = True, -200.0, 3, 0
+
+        class _P4:
+            live, loss_abort, max_positions, max_losses = False, -200.0, 3, 0
+        _w4l = risk_abort({"halted": False, "errors": 0}, _L4)
+        _w4p = risk_abort({"halted": False, "errors": 0}, _P4)
+    finally:
+        globals()["DAYLOSS_FILE"] = _sv4f
+        pintake.LEDGER.clear()
+        pintake.LEDGER.update(_sv4l)
+        for _f4 in os.listdir(_d4):
+            os.remove(os.path.join(_d4, _f4))
+        os.rmdir(_d4)
+    ck(_w4l is not None and "DAY loss cap" in _w4l,
+       "(4) a LIVE run with the day file at -$250 and a $200 cap halts on "
+       "the DAY cap (%s)" % _w4l)
+    ck(_w4p is None,
+       "(4) a PAPER run reading the SAME file is not halted -- arms keep "
+       "their own per-run total and never stop on the live bot's day (%s)"
+       % _w4p)
+
     # THE SELF-TEST MUST LEAVE NO LIVE SETTING CHANGED. It runs at startup
     # with the operator's flags ALREADY applied, so any global it forgets to
     # restore silently overrides what he asked for -- on every start, with
@@ -8367,7 +8407,13 @@ def risk_abort(state, a):
     # a restart, a crash and the watchdog. It is only ever compared when it is
     # a LOSS -- a profitable day never halts -- and it uses the same
     # `a.loss_abort` number, so nothing about the size of the cap changed.
-    _dl = day_loss()
+    #
+    # LIVE ONLY (2026-09-22). The file is the LIVE account's day, and only a
+    # live run ever writes it. Read by a paper arm, a bad live day halted the
+    # whole fleet at once -- 24 of 25 arms inherit --loss-cap 200, the cap is
+    # terminal, and arms are never restarted -- on exactly the day their
+    # comparison matters most. An arm keeps its own per-run check below.
+    _dl = day_loss() if getattr(a, "live", False) else None
     if _dl is not None and _dl <= a.loss_abort:
         return (f"DAY loss cap: ${_dl:.2f} lost today (ET) <= "
                 f"${a.loss_abort:.2f}. This survives restarts -- 2026-09-19 "
