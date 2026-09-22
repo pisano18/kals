@@ -32,7 +32,7 @@ HOW AN EARLY ENTRY IS RESIZED
 
 * Contracts. Scaling DOWN: min(actual fill, frac x SIZE x band multiple).
   Scaling UP: min(frac x SIZE x band multiple, depth, close budget left),
-  never below what actually filled. Depth is the larger of the touch size in
+  never below what actually filled unless the budget forces it. Depth is the larger of the touch size in
   the `signal` record and the tapered sweep depth in the `sweep_depth` record
   (`ladder`) -- exactly the two numbers the bot sizes an order from
   (pinrun: take_n = min(SIZE, touch, left); swept to min(SIZE, _deep, room)).
@@ -52,28 +52,54 @@ HOW AN EARLY ENTRY IS RESIZED
   payout - cost - fee from the ledger. The share attributable to the early
   position is (early contracts held at the first hedge fill) / (all entry
   contracts held then). Under a policy the hedge is resized in proportion to
-  the policy's position at that second, capped (when scaling up) at the
-  largest hedge-side depth the hedge records logged.
-* Close budget. Early legs are resized in time order inside each close, and
-  each one is capped by what the policy has left of the close budget
-  (MAX_PER_CLOSE x SIZE, plus the extra-coin allowance for a coin not yet
-  held). A FULL early leg can therefore SHRINK a later early leg in the same
-  close, exactly as the bot would.
+  the policy's position at that second. Scaling UP is capped only where the
+  depth is actually known: pinrun.hedge_depth logs ladder_n = max(touch,
+  min(ladder, unhedged)), so an attempt whose ladder_n came in UNDER what it
+  asked shows the real depth (cap = sum of ladder_n - filled over attempts);
+  at or over it, nothing past `asked` was ever read and FULL's hedge is
+  uncapped and flagged as an UPPER bound. Extra hedge contracts are priced
+  at the market's average hedge price (a deeper hedge would pay more).
+* Close budget. Every leg in a close is replayed in time order. A leg's room
+  is the `budget_left` the bot logged at that signal (v-safety1 onward) less
+  whatever the policy has already spent beyond the actual; before
+  v-safety1 it is pinrun.close_budget_for rebuilt from the start record
+  (MAX_PER_CLOSE x SIZE, the extra-coin and last-seconds allowances). So a
+  FULL early leg SHRINKS a later leg of the same or another market exactly
+  as the bot would (`later_leg_squeezed`, modelled).
+* Side. Order records before ~09-21 carry no `want`; the body's Kalshi book
+  side is read instead ('bid' = buy YES, 'ask' = buy NO). A first run
+  without this read every older order as side None and booked THIRD
+  +$3,482 / OFF +$6,578 on 205 closes; the ledger-vs-logs line (section E)
+  is what caught it, and the self-test now pins the old shape.
+* A market a policy removes entirely is exactly $0 (nothing bought, nothing
+  hedged); the logs-vs-ledger fee rounding dropped with it is reported. A
+  losing close is one under -$0.005.
+* Moved fills. An early fill that landed >= 2c off the price it was decided
+  on (critic C6: the book moved in the ~100 ms before the order hit) is
+  resized like any other, and each policy's difference on those markets is
+  reported apart: for FULL it rests on landing depth nobody logged.
 
 WHAT IT DOES NOT MODEL (and counts, so the reader can see how often it bites)
 
-* Later full-window legs of OTHER markets in a close are not squeezed by a
-  bigger early leg's budget use. The report counts the closes where FULL's
-  contracts would have exceeded the budget and how many close_budget
-  refusals the bot actually logged.
+* A SMALLER early leg freeing budget: the close_budget gate refused markets
+  the bot never even priced (it fires before the book is read). Counted:
+  refusals in early-leg closes where the early contracts exceeded the
+  shortfall (budget - spent, or budget_left). Likewise later legs the
+  budget bound as run (`room_bound_as_run`).
 * OFF does not hand a market to the <=30 s window. The critic measured that
   163 of 203 early-leg markets were never offered at 90-98c later (tape), so
   OFF mostly loses them; where a top-up exists OFF keeps only the top-up,
   which is a lower bound for OFF on those markets (counted).
 * THIRD in the calibration era cannot add top-ups the full-size bot never
-  sent; it is a lower bound where the later window had depth (counted).
-* max-per-market / max-per-close COUNT caps, hedge timing changes, and any
-  change in which market a scan picks.
+  sent; it is a lower bound where the later window had depth.
+* max_per_market: FULL buys in one fill where live used two, freeing a slot
+  a late boost could use (counted). Hedge timing, the loss-cap/brake state,
+  and any change in which market a scan picks.
+
+STATUS. COLLECTING until >= 30 closes since v-early-third hold an early-leg
+market (CLAUDE.md's cluster floor) AND a policy sits further from LIVE than
+the MDE with bootstrap P outside [0.05, 0.95]. The page also prints how many
+closes a $0.50 / $1.00 per-close gap needs at the calibration era's spread.
 
 SOURCES AND LABELS. Ledger (money) > live order records (sizes, prices, the
 logged book) > paper arms. FULL's extra contracts are a counterfactual priced
@@ -110,6 +136,8 @@ CAL_FROM = "2026-09-17T13:05:02Z"        # first live run with the 45 s leg
 FIXES_FROM = "2026-09-20T04:00:00Z"      # 09-20 00:00 ET, PROJECT_MAP "since the fixes"
 THIRD, FULL = 0.333, 1.0
 FEE_RATE = 0.07
+MOVED = 0.02            # a fill >= 2c from the price decided on (critic C6)
+LOSS = -0.005           # a losing close: under minus half a cent (rounding is not a loss)
 Z80 = 1.959964 + 0.841621                # two-sided 5 %, 80 % power
 B_BOOT = 10000
 
@@ -296,7 +324,12 @@ def extract(runs):
                     refusals.append({
                         "gate": r.get("gate"), "ticker": r.get("ticker"),
                         "close": int(ce), "t": iso_ep(r.get("t")),
-                        "tau": fnum(r.get("tau")), "bleft": fnum(r.get("budget_left")),
+                        "tau": fnum(r.get("tau")),
+                        "bleft": (fnum(r.get("budget_left")) if r.get("budget_left")
+                                  is not None else
+                                  (fnum(r.get("budget")) - fnum(r.get("spent"))
+                                   if fnum(r.get("budget")) is not None
+                                   and fnum(r.get("spent")) is not None else None)),
                         "size": fnum(r.get("size_now"), size)})
                 continue
             if k == "hedge":
@@ -339,6 +372,7 @@ def extract(runs):
             if not leg:            # pre-A46 records carry no leg: infer it
                 leg = "early" if (ef and tau is not None and tau > tmax) else "full"
             body = r.get("body") or {}
+            want = side_of_order(r, sig)
             count = fnum(body.get("count"), filled)
             px = fnum(r.get("exec_price"))
             if px is None:
@@ -354,7 +388,7 @@ def extract(runs):
                                 and float(a) <= (limit or 1.0) + 1e-9 and float(b) > 0)
             fills.append({
                 "ticker": tk, "close": close_ep_of_ticker(tk), "t": t,
-                "leg": leg, "want": r.get("want"),
+                "leg": leg, "want": want,
                 "filled": filled, "count": count, "px": px, "fee_total": fee_total,
                 "limit": limit, "tau": tau,
                 "sig_price": fnum((sig or {}).get("price"), px),
@@ -405,6 +439,21 @@ def cost_curve(fill, fee_rate=FEE_RATE):
         return lambda n: per * n
     shift = (actual - walk(n_act)) / n_act
     return lambda n: walk(n) + shift * n
+
+
+def side_of_order(r, sig=None):
+    """'yes' or 'no' for an entry order. Newer records say `want`; older ones
+    (every order before ~09-21) do not, and the body's `side` is Kalshi's
+    book side: 'bid' buys YES at `price`, 'ask' sells YES at `price` = buys
+    NO at 1 - price. A 2026-09-22 run without this read every older order as
+    side None and booked THIRD +$3,482 / OFF +$6,578 on 205 closes."""
+    w = r.get("want") or (sig or {}).get("want")
+    if w in ("yes", "no"):
+        return w
+    bs = str((r.get("body") or {}).get("side") or "").lower()
+    if bs in ("yes", "no"):
+        return bs
+    return {"bid": "yes", "ask": "no"}.get(bs)
 
 
 def win_of(side, result):
@@ -597,6 +646,12 @@ def score(ledger, fills, hedges, lo_ep, hi_ep, policies, fee_rate=FEE_RATE):
                     break
             if not hk:
                 h_extra = None
+            # an early fill that LANDED >= 2c from the price it was decided on
+            # (critic C6): the book moved in the ~100 ms before the order hit,
+            # so the depth at landing is unknown. Resized like any other, and
+            # its share of each policy's delta is reported separately.
+            moved = any(f["leg"] == "early" and f["sig_price"] is not None
+                        and abs(f["px"] - f["sig_price"]) >= MOVED - 1e-9 for _, f in mf)
             for name in policies:
                 delta = 0.0
                 for i, f in mf:
@@ -628,7 +683,17 @@ def score(ledger, fills, hedges, lo_ep, hi_ep, policies, fee_rate=FEE_RATE):
                                 stats[name]["hedge_depth_cap"] += 1
                         stats[name]["hedges_resized"] += 1
                         delta += hpnl_pc * (nh_new - nh)
-                pol[name] += row["pnl"] + delta
+                val = row["pnl"] + delta
+                if all(sizes[name][i] <= 1e-12 for i, _ in mf):
+                    # nothing bought -> nothing hedged -> exactly $0. What is
+                    # left is the logs' fee/price rounding against the ledger.
+                    stats[name]["removed_markets"] += 1
+                    stats[name]["removed_residue_abs"] += abs(val)
+                    val = 0.0
+                if moved and abs(val - row["pnl"]) > 1e-12:
+                    stats[name]["moved_markets"] += 1
+                    stats[name]["moved_delta"] += val - row["pnl"]
+                pol[name] += val
         rows.append({"close": ce, "day": et_day(ce), "live": live, "pol": pol,
                      "early_markets": n_early, "markets": len(by_close_mk[ce])})
     # log fills whose market has no ledger row (unsettled / not refreshed)
@@ -758,7 +823,7 @@ def table(rows, cols, base, names, label_fn, B):
         vals = {c: [label_fn(r, c) for r in rs] for c in cols}
         tot = {c: sum(vals[c]) for c in cols}
         pc = "/".join("%+.2f" % (tot[c] / n) if n else "-" for c in cols)
-        lose = "/".join("%d" % sum(1 for v in vals[c] if v < -1e-9) for c in cols)
+        lose = "/".join("%d" % sum(1 for v in vals[c] if v < LOSS) for c in cols)
         pb, _ = boot(vals, base, names, B=(B if label == "ALL" else min(B, 3000)), seed=11)
         ps = " ".join(("%8.2f" % pb[k]) if pb[k] is not None else "       -" for k in names)
         out.append("  %-10s %6d " % (label, n) + " ".join("%10s" % money(tot[c]) for c in cols)
@@ -767,7 +832,7 @@ def table(rows, cols, base, names, label_fn, B):
 
 
 def section_policy(title, rows, cols, base, names, B, note_lines=()):
-    out = ["", title, "-" * len(title)]
+    out = ["", title, "-" * min(len(title), 80)]
     out.extend(note_lines)
     if not rows:
         out.append("  no settled pin closes in this window yet (n = 0): nothing to compare.")
@@ -815,6 +880,10 @@ STAT_KEYS = [
     ("hedges_scaled_up", "hedges scaled up"),
     ("hedge_depth_cap", "hedge scale-up capped by logged depth"),
     ("hedge_depth_unread", "hedge scale-up with depth past `asked` never read -> UPPER bound"),
+    ("removed_markets", "markets removed entirely (set to exactly $0)"),
+    ("removed_residue_abs", "  |logs-vs-ledger rounding| dropped with them, $"),
+    ("moved_markets", "markets whose early fill landed >= 2c off the price decided on"),
+    ("moved_delta", "  this policy's $ difference from LIVE on those (depth at landing unknown)"),
 ]
 
 
@@ -898,19 +967,42 @@ def not_modelled(lab, rows, fills, refusals, lo, hi):
     mpm = {(x["close"], x["ticker"]) for x in refusals
            if x["gate"] == "max_per_market" and lo < x["close"] <= hi}
     mpm_early = {k for k in mpm if k[1] in early_mk}
-    out.append("  %s: %d closes, %d with an early-leg market. close_budget refused %d markets "
-               "(%d distinct close/market pairs in closes that also traded; %d in early-leg "
-               "closes)." % (lab, len(closes), len(early_c), len(cb_mk),
-                             len({k for k in cb_mk if k[0] in closes}), len(cb_early)))
-    out.append("     of those in early-leg closes, OFF/THIRD would have had >= 1 contract of "
-               "room for %d (budget_left + the early contracts held); %d refusals carry no "
-               "budget_left (before v-safety1) -- this upside for a SMALLER early leg is NOT "
-               "modelled." % (len(freed), len(unread)))
-    out.append("     max_per_market refused %d market-closes, %d of them early-leg markets "
+    out.append("  %s: %d closes, %d with an early-leg market. close_budget refusals: %d "
+               "(%d in early-leg closes)." % (lab, len(closes), len(early_c),
+                                              len(cb_mk), len(cb_early)))
+    out.append("     In %d of those the early leg already held more than the shortfall, so a "
+               "smaller early leg (THIRD/OFF) would have let the bot at least look at the "
+               "market; the gate fires before the book is read, so whether it was tradeable "
+               "is unknown. NOT modelled (upside for the smaller leg). %d refusals carry no "
+               "budget at all." % (len(freed), len(unread)))
+    out.append("     max_per_market refusals: %d, %d of them on early-leg markets "
                "(FULL buys in one fill, freeing a slot a late boost could use: NOT modelled)."
                % (len(mpm), len(mpm_early)))
     return out, {"close_budget": len(cb_mk), "cb_early": len(cb_early), "freed": len(freed),
                  "unread": len(unread), "mpm": len(mpm), "mpm_early": len(mpm_early)}
+
+
+def eras(runs, lo, hi):
+    """'third 13:05Z-19:30Z 09-17, full ...' from each run's start record,
+    consecutive runs with the same early fraction merged."""
+    segs = []
+    for run in runs:
+        st = next((r for r in run["recs"] if r.get("kind") == "start"), None)
+        ts = [t for t in (iso_ep(r.get("t")) for r in run["recs"] if r.get("t")) if t]
+        if st is None or not ts or max(ts) <= lo or min(ts) >= hi:
+            continue
+        on = (fnum(st.get("early_tau_max"), 30) or 30) > (fnum(st.get("tau_max"), 30) or 30)
+        ef = fnum(st.get("early_frac"), 0.0) if on else 0.0
+        name = "off" if not ef else ("third" if abs(ef - THIRD) < 0.01 else
+                                     "full" if ef >= 0.999 else "%.2f" % ef)
+        a, b = max(min(ts), lo), min(max(ts), hi)
+        if segs and segs[-1][0] == name:
+            segs[-1][2] = b
+        else:
+            segs.append([name, a, b])
+    return "; ".join("%s %s..%s" % (n, time.strftime("%m-%d %H:%MZ", time.gmtime(a)),
+                                    time.strftime("%m-%d %H:%MZ", time.gmtime(b)))
+                     for n, a, b in segs)
 
 
 def build_report(results_dir, now_ep, B=B_BOOT):
@@ -1001,9 +1093,10 @@ def build_report(results_dir, now_ep, B=B_BOOT):
             if ran and (c in by or c in live_close):
                 shared.append(c)
             c += 900
-        lines.append("  arm-%s: %s (early_frac %s, early window to %s s, SIZE %s); started %s"
+        off = (fnum(info["early_tau_max"], 45) or 45) <= 30
+        lines.append("  arm-%s: %s (early_frac %s, early window to %s s%s, SIZE %s); started %s"
                      % (arm, ", ".join(os.path.basename(p) for p in ps), info["early_frac"],
-                        info["early_tau_max"], info["size"],
+                        info["early_tau_max"], " = leg OFF" if off else "", info["size"],
                         ep_iso(info["start"]) if info["start"] else "?"))
         lines.append("    flag exercised: %d early-leg signals of %d, %d at the full size cap"
                      % (info["early_signals"], info["signals"], info["early_full_size"]))
@@ -1017,21 +1110,22 @@ def build_report(results_dir, now_ep, B=B_BOOT):
         live_only = sum(len(live_mk.get(c, set()) - tkc.get(c, set())) for c in shared)
         sd, m1, mt = mde([a - b for a, b in zip(a_v, l_v)])
         pb, _ = boot({"ARM": a_v, "LIVE": l_v}, "LIVE", ["ARM"], B=B, seed=17)
-        lines.append("    MDE on %d shared closes (either traded): %s"
-                     % (len(shared), "$%.2f total" % mt if mt is not None else "n < 2, none"))
+        lines.append("    %sMDE on %d shared closes (either traded): %s"
+                     % ("COLLECTING (< %d closes). " % FLOOR if len(shared) < FLOOR else "",
+                        len(shared), "$%.2f total" % mt if mt is not None else "n < 2, none"))
         lines.append("    arm %s vs live %s ($/close %+.2f vs %+.2f); losing closes %d vs %d; "
                      "P(arm > live) %s"
                      % (money(sum(a_v)), money(sum(l_v)), sum(a_v) / len(shared),
                         sum(l_v) / len(shared),
-                        sum(1 for v in a_v if v < -1e-9), sum(1 for v in l_v if v < -1e-9),
+                        sum(1 for v in a_v if v < LOSS), sum(1 for v in l_v if v < LOSS),
                         "%.2f" % pb["ARM"] if pb["ARM"] is not None else "-"))
         lines.append("    markets traded by both: %d; arm only: %d; live only: %d "
                      "(different markets = not like-for-like)" % (same, arm_only, live_only))
 
     # ---- C: calibration
     lines += section_policy(
-        "C. CALIBRATION -- %s .. %s (mostly full size; a third on 09-17 13:05-19:35Z and "
-        "09-18 03:02-16:31Z; off 09-18 01:48-03:00Z)" % (CAL_FROM, DEPLOY),
+        "C. CALIBRATION -- %s .. %s; the early leg as run: %s" % (
+            CAL_FROM, DEPLOY, eras(runs, cal, dep)),
         rows_c, ["LIVE", "THIRD", "FULL", "OFF"], "LIVE", ["THIRD", "FULL", "OFF"], B,
         ["  calibration, not the test. LIVE = what actually ran. THIRD/FULL/OFF = every "
          "early entry resized to that policy (hours already at that size are unchanged)."])
@@ -1058,6 +1152,18 @@ def build_report(results_dir, now_ep, B=B_BOOT):
                  "more)." % (st_a["FULL"]["uncapped"], st_c["FULL"]["uncapped"],
                              st_a["FULL"]["hedge_depth_unread"],
                              st_c["FULL"]["hedge_depth_unread"]))
+    for lab, st_, pols in (("A", st_a, pa), ("C", st_c, pc)):
+        for k in st_:
+            if not st_[k]["moved_markets"]:
+                continue
+            up = pols[k] >= FULL - 1e-9
+            lines.append("  %s %s: %d markets had an early fill land >= 2c off the price decided "
+                         "on (critic C6); %s's difference from LIVE on them is $%+.2f. %s" % (
+                             lab, k, st_[k]["moved_markets"], k, st_[k]["moved_delta"],
+                             "Its extra contracts assume the landing book had depth nobody "
+                             "logged: treat as unknown sign." if up else
+                             "Those contracts really filled; only the price split of a "
+                             "partial cut is approximate."))
     topup = collections.Counter()
     for f in fills:
         if f["leg"] == "topup" and f["close"]:
@@ -1125,9 +1231,11 @@ def _world(spec, cfg):
             t = ep_iso(m["close"] - f["tau"])
             px, n = f["px"], f["n"]
             ft = n * fee_pc(px, fr)
+            old = f.get("old_format")
             if f.get("sig", True):
                 ev.append((m["close"] - f["tau"], {
-                    "kind": "signal", "t": t, "ticker": tk, "want": f["want"], "price": px,
+                    "kind": "signal", "t": t, "ticker": tk,
+                    "want": None if old else f["want"], "price": f.get("sig_px", px),
                     "size": f.get("touch", 500.0), "take_n": f.get("count", n),
                     "tau": f["tau"], "leg": f["leg"], "budget_left": f.get("bleft"),
                     "ladder": f.get("ladder", [[px, 500.0]])}))
@@ -1135,11 +1243,17 @@ def _world(spec, cfg):
                 ev.append((m["close"] - f["tau"], {
                     "kind": "sweep_depth", "t": t, "ticker": tk, "want": f["want"],
                     "ladder": f["sd"], "now": min(cfg["SIZE"], f["sd"]), "was": f.get("count", n)}))
-            ev.append((m["close"] - f["tau"] + 0.1, {
+            orec = {
                 "kind": "order", "t": t, "ticker": tk, "want": f["want"], "leg": f["leg"],
                 "filled": n, "exec_price": px, "fee_total": ft, "limit_sent": f.get("limit", 0.98),
                 "tau_at_send": f["tau"], "order_id": "o%d" % oid,
-                "body": {"count": "%.2f" % f.get("count", n)}}))
+                "body": {"count": "%.2f" % f.get("count", n)}}
+            if old:        # pre-09-21 shape: no want, Kalshi book side in the body
+                del orec["want"]
+                lim = f.get("limit", 0.98)
+                orec["body"].update(side=("bid" if f["want"] == "yes" else "ask"),
+                                    price="%.4f" % (lim if f["want"] == "yes" else 1 - lim))
+            ev.append((m["close"] - f["tau"] + 0.1, orec))
             side_n[f["want"]] += n
             side_c[f["want"]] += n * px
             fee += ft
@@ -1156,6 +1270,7 @@ def _world(spec, cfg):
             ev.append((m["close"] - x["tau"], {
                 "kind": "refused", "gate": x["gate"], "ticker": _tk(x["series"], m["close"]),
                 "close_s": m["close"], "tau": x["tau"], "budget_left": x.get("bleft"),
+                "budget": x.get("budget"), "spent": x.get("spent"),
                 "size_now": cfg["SIZE"], "t": ep_iso(m["close"] - x["tau"])}))
         # a bogus `realised`: if anything read the logs' money it would show
         ev.append((m["close"] + 20, {"kind": "settled", "t": ep_iso(m["close"] + 20),
@@ -1166,7 +1281,8 @@ def _world(spec, cfg):
                 "yes_count_fp": "%.10f" % side_n["yes"], "no_count_fp": "%.10f" % side_n["no"],
                 "yes_total_cost_dollars": "%.10f" % side_c["yes"],
                 "no_total_cost_dollars": "%.10f" % side_c["no"],
-                "fee_cost": "%.10f" % fee, "settled_time": ep_iso(m["close"] + 5)}
+                "fee_cost": "%.10f" % (fee + m.get("fee_bump", 0.0)),
+                "settled_time": ep_iso(m["close"] + 5)}
     for extra in cfg.get("extra_ledger", []):
         ledger["%s|x" % extra["ticker"]] = extra
     ev.sort(key=lambda x: x[0])
@@ -1436,6 +1552,113 @@ def selftest():
     rows, st, dg = _run_world(specs, {"SIZE": 90.0, "ef": THIRD}, pol, lo, hi, fee_rate=0.0)
     w2, why2 = verdict(rows, "LIVE", ["FULL"])
     ck(w2 == "COLLECTING", "VERDICT: 40-close random-sign null stays COLLECTING (%s)" % why2)
+
+    # 7b. PAPER ARM JOIN: the .out names two logs (a restart); both are read,
+    #     a paper hedge's own settled record counts, and nothing else is read
+    import tempfile
+    tdir = tempfile.mkdtemp(prefix="earlyhindsight_")
+    try:
+        tk1, tk2 = _tk("KXBTC15M", base), _tk("KXETH15M", base + 900)
+        logs = {"pinrun-paper-20260923T100000Z.jsonl": [
+                    {"kind": "start", "t": ep_iso(base - 600), "early_frac": 1.0,
+                     "early_tau_max": 45, "size": 20.0},
+                    {"kind": "signal", "t": ep_iso(base - 40), "ticker": tk1, "leg": "early",
+                     "size": 500.0, "take_n": 20.0},
+                    {"kind": "settled", "t": ep_iso(base + 20), "ticker": tk1, "want": "yes",
+                     "pnl_c": -1900.0},
+                    {"kind": "settled", "t": ep_iso(base + 35), "ticker": tk1, "want": "no",
+                     "pnl_c": 1400.0}],
+                "pinrun-paper-20260923T110000Z.jsonl": [
+                    {"kind": "start", "t": ep_iso(base + 300), "early_frac": 1.0,
+                     "early_tau_max": 45, "size": 20.0},
+                    {"kind": "settled", "t": ep_iso(base + 920), "ticker": tk2, "want": "yes",
+                     "pnl_c": 100.0}],
+                "pinrun-paper-20260923T120000Z.jsonl": [    # another arm's log
+                    {"kind": "settled", "t": ep_iso(base + 20), "ticker": tk1, "want": "yes",
+                     "pnl_c": 99900.0}]}
+        for name, recs in logs.items():
+            with open(os.path.join(tdir, name), "w", encoding="utf-8") as fh:
+                fh.write("\n".join(json.dumps(r) for r in recs) + "\n")
+        with open(os.path.join(tdir, "arm-early-full.out"), "w", encoding="utf-8") as fh:
+            fh.write("SELF-TEST -- pinrun\n  ok   x\n  log C:\\x\\pinrun-paper-"
+                     "20260923T100000Z.jsonl\nrestart\n  log C:\\x\\pinrun-paper-"
+                     "20260923T110000Z.jsonl\n")
+        ps = arm_logs(tdir, "early-full")
+        by, info, tkc = paper_by_close(ps)
+        ck([os.path.basename(x) for x in ps] == ["pinrun-paper-20260923T100000Z.jsonl",
+                                                  "pinrun-paper-20260923T110000Z.jsonl"]
+           and abs(by.get(base, 0) - (-5.0)) < 1e-9 and abs(by.get(base + 900, 0) - 1.0) < 1e-9
+           and info["early_signals"] == 1 and info["early_full_size"] == 1,
+           "PAPER: both logs the .out names are read, the hedge's settled record nets "
+           "(-19 + 14 = -5), another arm's log is not (%s)" % by)
+        ck(arm_logs(tdir, "early-off") == [], "PAPER: an arm with no .out scores nothing")
+    finally:
+        for fn in os.listdir(tdir):
+            os.remove(os.path.join(tdir, fn))
+        os.rmdir(tdir)
+
+    # 7c. OLD RECORD SHAPE: no `want` on order or signal; a NO buy is body side
+    #     'ask'. Must score exactly like the new shape (it once read side None
+    #     for every order before 09-21 and every policy went wild).
+    for shape in (False, True):
+        spo = [{"series": "KXHYPE15M", "close": base, "result": "no",
+                "fills": [{"leg": "early", "want": "yes", "tau": 40, "px": 0.95, "n": third_n,
+                           "count": third_n, "touch": 500.0, "old_format": shape}],
+                "hedge": {"side": "no", "n": third_n, "px": hp, "tau": 35, "depth": 500.0}},
+               {"series": "KXBTC15M", "close": base + 900, "result": "no",
+                "fills": [{"leg": "early", "want": "no", "tau": 40, "px": 0.95, "n": third_n,
+                           "count": third_n, "touch": 500.0, "old_format": shape}]}]
+        rows, st, dg = _run_world(spo, {"SIZE": 90.0, "ef": THIRD}, pol, lo, hi)
+        got = [round(r["pol"][k] - r["live"], 9) for r in rows for k in ("FULL", "OFF")]
+        if not shape:
+            new_shape = got
+    want_o = [round(want_full, 9), round(-live1, 9), round((90.0 - third_n) * per, 9),
+              round(-third_n * per, 9)]
+    ck(got == new_shape and all(abs(a - b) < 1e-6 for a, b in zip(got, want_o))
+       and dg["hedged_markets"] == 1 and dg["entry_count_mismatch"] == 0,
+       "OLD SHAPE: body side 'bid'/'ask' with no want scores exactly like want=yes/no "
+       "(%s vs %s)" % (got, new_shape))
+
+    # 7d. ROUNDING: the ledger's fee is a cent over the logs'. OFF removes the
+    #     market -> exactly $0, not -$0.01, and not a losing close.
+    specf = [{"series": "KXBTC15M", "close": base, "result": "yes", "fee_bump": 0.01,
+              "fills": [{"leg": "early", "want": "yes", "tau": 40, "px": 0.95, "n": third_n,
+                         "count": third_n, "touch": 500.0}]}]
+    rows, st, dg = _run_world(specf, {"SIZE": 90.0, "ef": THIRD}, pol, lo, hi)
+    ck(rows[0]["pol"]["OFF"] == 0.0 and st["OFF"]["removed_markets"] == 1
+       and abs(st["OFF"]["removed_residue_abs"] - 0.01) < 1e-9
+       and abs(rows[0]["live"] - (third_n * per - 0.01)) < 1e-9,
+       "ROUNDING: a removed market is exactly $0 and the cent of fee rounding is reported, "
+       "not booked as a loss")
+
+    # 7e. MOVED FILL: decided at 97.6c, landed at 11c (09-18 04:15 DOGE shape),
+    #     hedged at 74c. FULL's whole difference is flagged as resting on
+    #     unlogged landing depth.
+    specm = [{"series": "KXDOGE15M", "close": base, "result": "no",
+              "fills": [{"leg": "early", "want": "yes", "tau": 32, "px": 0.11, "sig_px": 0.976,
+                         "n": third_n, "count": third_n, "touch": 34.0, "sd": 2301.0,
+                         "ladder": [[0.976, 34.0], [0.977, 434.0]]}],
+              "hedge": {"side": "no", "n": third_n, "px": 0.74, "tau": 31, "depth": 398.0}}]
+    rows, st, dg = _run_world(specm, {"SIZE": 90.0, "ef": THIRD}, pol, lo, hi)
+    dfull = rows[0]["pol"]["FULL"] - rows[0]["live"]
+    ck(st["FULL"]["moved_markets"] == 1 and abs(st["FULL"]["moved_delta"] - dfull) < 1e-9
+       and st["OFF"]["moved_markets"] == 1 and st["THIRD"]["moved_markets"] == 0,
+       "MOVED: an early fill landing 86c off its decided price is flagged; FULL's $%+.2f "
+       "there is reported apart" % dfull)
+    rows, st, dg = _run_world(spec[:1], {"SIZE": 90.0, "ef": THIRD}, pol, lo, hi)
+    ck(st["FULL"]["moved_markets"] == 0, "MOVED: a fill at the decided price is not flagged")
+
+    # 7f. REFUSALS before v-safety1 carry budget and spent, not budget_left
+    specr2 = [{"series": "KXBTC15M", "close": base, "result": "yes",
+               "fills": [{"leg": "early", "want": "yes", "tau": 40, "px": 0.95, "n": third_n,
+                          "count": third_n, "touch": 500.0}],
+               "refusals": [{"gate": "close_budget", "series": "KXETH15M", "tau": 20,
+                             "budget": 180.0, "spent": 180.0}]}]
+    kp = {}
+    rows, st, dg = _run_world(specr2, {"SIZE": 90.0, "ef": THIRD}, pol, lo, hi, keep=kp)
+    _l, nm = not_modelled("T", rows, kp["fills"], kp["refusals"], lo, hi)
+    ck(nm["freed"] == 1 and nm["unread"] == 0 and kp["refusals"][0]["bleft"] == 0.0,
+       "REFUSALS: an old record's budget - spent (0) is read as budget_left (%s)" % nm)
 
     # 8. LEDGER AUTHORITY: a market the logs never saw; a coin-race row; bogus realised
     spec8 = [{"series": "KXBTC15M", "close": base, "result": "yes",
