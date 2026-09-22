@@ -1809,6 +1809,16 @@ def selftest(bars_path=BARS_PATH):
               ({"gate": "depth_floor", "want": "no", "price": 0.96, "offered": 0.02, "wanted": 78.0,
                 "size": 78.0}, (0.02, 0.02)),
               ({"gate": "close_budget", "spent": 156.0, "budget": 156.0, "size": 78.0}, (0.0, 78.0)),
+              # R4 (2026-09-22): the base-budget skip. It refuses AFTER the book is read, so
+              # it is a PRICED gate and must carry `size` -- the first version wrote only
+              # `take_n`, which refusal_price() does not read, so every such row landed in
+              # _b5_view's "no size" bucket and B5 still could not see the refusal the record
+              # was added to show it. (78, 78), not (0, 0).
+              ({"gate": "close_budget_base", "want": "no", "price": 0.95, "size": 78.0,
+                "take_n": 78.0, "base": 156.0, "spent": 156.0, "fair": 0.999}, (78.0, 78.0)),
+              # ...and the same record WITHOUT `size` is the defect: dropped, both bounds 0.
+              ({"gate": "close_budget_base", "want": "no", "price": 0.95,
+                "take_n": 78.0, "base": 156.0, "spent": 156.0}, (0.0, 0.0)),
               ({"gate": "book_stale", "age_ms": 2029}, (0.0, 78.0)),
               ({"gate": "max_per_market", "fills": 2}, (0.0, 0.0)),
               ({"gate": "confidence", "fair": 0.02}, (0.0, 0.0))]
@@ -1824,7 +1834,8 @@ def selftest(bars_path=BARS_PATH):
     ck(all(got), "B5 reads every refusal shape pinrun writes, as (low, high): no_offer not offered "
        "(0, 0) / offered 30 (30, 30); price_ceiling at 99.1c dropped; edge_floor 124 offered -> "
        "our 78; depth_floor 0.02; close_budget and book_stale refused before the book was read -> "
-       "(0, 78); max_per_market and confidence dropped (%s)" % got)
+       "(0, 78); close_budget_base WITH size (78, 78) and the same record without it dropped, "
+       "which is why pinrun must write it; max_per_market and confidence dropped (%s)" % got)
     x = eval_b5(b5, b5_world(320, [("edge_floor", 4.5), ("jump_gate", 4.5), ("depth_floor", 4.5),
                                    ("rebuy_band", 4.5)]))
     ck(x["status"] == "FAIL", "B5 FAIL world: four causes at 25% each, 300 closes -> no single answer")
