@@ -2,9 +2,9 @@
 
 ```
 EARLY HINDSIGHT -- the 31-45 s leg at a third (live) vs full size vs off
-generated 2026-09-22T14:31:06Z; ledger newest settlement 2026-09-22T14:30:08Z; 42 live run logs read (read-only); scorer code_sha256 dba91925d175b6f6
+generated 2026-09-22T14:51:41Z; ledger newest settlement 2026-09-22T14:30:08Z; 42 live run logs read (read-only); scorer code_sha256 9977dc5a262d3081
 
-STATUS: REPORT ONLY -- this page never names a winner. The decision is FREEZE bar B1 (research/barcheck.py): its registered rule is in results/FREEZE_bars.json. So far 12 closes since the change as B1 counts them (watched or settled), 4 with a pin ledger row, 2 with an early-leg market.
+STATUS: REPORT ONLY -- this page never names a winner. The decision is FREEZE bar B1 (research/barcheck.py): its registered rule is in results/FREEZE_bars.json. So far 13 closes since the change as B1 counts them (watched or settled), 4 with a pin ledger row, 2 with an early-leg market.
   to see a $0.50 gap a WATCHED close FULL vs THIRD at 80% power needs ~297 watched closes (B1's unit; spread $3.07 a watched close, since the fixes, 216 watched closes)
   to see a $1.00 gap a WATCHED close FULL vs THIRD at 80% power needs ~75 watched closes (B1's unit; spread $3.07 a watched close, since the fixes, 216 watched closes)
   to see a $0.50 gap a WATCHED close FULL-lo vs THIRD at 80% power needs ~297 watched closes (B1's unit; spread $3.07 a watched close, since the fixes, 216 watched closes)
@@ -116,10 +116,10 @@ D. WHAT IS NOT MODELLED, AND HOW OFTEN IT COULD MATTER
      A smaller early leg would have left room for >= 1 contract in 169 of them at a third (3512 contracts of room over 34 closes), 178 with the leg off (5300 over 35 closes). The gate fires before the book is read, so whether those markets were tradeable is unknown. NOT modelled: upside for the smaller leg. 0 refusals carry no budget at all.
      max_per_market refusals: 17, 6 of them on early-leg markets (FULL buys in one fill, freeing a slot a late boost could use: NOT modelled).
   FULL's budget: A 0 early scale-ups cut by the close budget, 0 later legs of other markets squeezed (both MODELLED); C 0 and 1.
-  A FULL: 0 price-through early fills (landed >= 2c under what the logged book said) held at the count that filled -> $+0.00; their extra contracts at the landing price would be $+0.00, at the decision-time book $+0.00. 0 markets landed >= 2c dearer. FULL-lo: 0 markets rest on something unlogged (moved fill, no depth, past the ladder, hedge scaled up at its average price); FULL there $+0.00, FULL-lo $+0.00.
-  C FULL: 1 price-through early fills (landed >= 2c under what the logged book said) held at the count that filled -> $+0.00; their extra contracts at the landing price would be $+8.68, at the decision-time book $-49.32. 1 markets landed >= 2c dearer. FULL-lo: 2 markets rest on something unlogged (moved fill, no depth, past the ladder, hedge scaled up at its average price); FULL there $+0.56, FULL-lo $-49.32.
-  C THIRD: 9 markets with a moved early fill cut down; THIRD's difference from LIVE there $+64.48 (those contracts really filled; only a partial cut's price split is approximate).
-  C OFF: 11 markets with a moved early fill cut down; OFF's difference from LIVE there $+91.00 (those contracts really filled; only a partial cut's price split is approximate).
+  A FULL: 0 price-through early fills (landed >= 2c under what the logged book said) held at the count that filled -> $+0.00; their extra contracts at the landing price would be $+0.00, at the decision-time book $+0.00. Early fills landed >= 2c dearer: 0. Markets resting on something unlogged (moved fill, no depth, past the ladder, hedge scaled up at its average price): 0; FULL there $+0.00, FULL-lo $+0.00.
+  C FULL: 1 price-through early fills (landed >= 2c under what the logged book said) held at the count that filled -> $+0.00; their extra contracts at the landing price would be $+8.68, at the decision-time book $-49.32. Early fills landed >= 2c dearer: 1. Markets resting on something unlogged (moved fill, no depth, past the ladder, hedge scaled up at its average price): 2; FULL there $+0.56, FULL-lo $-49.32.
+  C THIRD: markets with a moved early fill cut down: 9; THIRD's difference from LIVE there $+64.48 (those contracts really filled; only a partial cut's price split is approximate).
+  C OFF: markets with a moved early fill cut down: 11; OFF's difference from LIVE there $+91.00 (those contracts really filled; only a partial cut's price split is approximate).
   FULL upper bounds: early entries with no logged depth A 0 / C 0; hedge scale-ups whose depth past `asked` was never read A 0 / C 0.
   OFF keeps top-ups as they ran and never hands a market to the <=30 s window (critic G2: 163 of 203 early markets were never offered at 90-98c later, tape): top-up fills A 1, C 6 -- OFF is a lower bound there.
   THIRD in C cannot add top-ups a full-size bot never sent (lower bound). Not modelled anywhere: a different early size changing which market a scan picks, hedge timing, or the loss-cap/brake state.

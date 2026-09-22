@@ -1477,16 +1477,16 @@ def build_report(results_dir, now_ep, B=B_BOOT):
         lines.append("  %s FULL: %d price-through early fills (landed >= 2c under what the logged "
                      "book said) held at the count that filled -> $%+.2f; their extra contracts "
                      "at the landing price would be $%+.2f, at the decision-time book $%+.2f. "
-                     "%d markets landed >= 2c dearer. FULL-lo: %d markets rest on something "
+                     "Early fills landed >= 2c dearer: %d. Markets resting on something "
                      "unlogged (moved fill, no depth, past the ladder, hedge scaled up at its "
-                     "average price); FULL there $%+.2f, FULL-lo $%+.2f."
+                     "average price): %d; FULL there $%+.2f, FULL-lo $%+.2f."
                      % (lab, f_["through_markets"], f_["through_at_fill"],
                         f_["through_at_landing"], f_["through_at_decision"],
                         f_["dearer_markets"], f_["flagged_markets"], f_["flagged_delta"],
                         f_["flagged_delta"] + f_["lo_minus_main"]))
         for k in st_:
             if k != "FULL" and st_[k]["moved_down_markets"]:
-                lines.append("  %s %s: %d markets with a moved early fill cut down; %s's "
+                lines.append("  %s %s: markets with a moved early fill cut down: %d; %s's "
                              "difference from LIVE there $%+.2f (those contracts really filled; "
                              "only a partial cut's price split is approximate)."
                              % (lab, k, st_[k]["moved_down_markets"], k,
@@ -2125,6 +2125,20 @@ def selftest():
         ck(abs(fr2["rows"][0]["live"] - (r0["live"] - 2.0)) < 1e-9,
            "freeze_rows: the caller's ledger snapshot is the one scored (a $1 fee on each of "
            "2 markets moves LIVE by exactly -$2)")
+        # the whole page, end to end on these files: it runs, it names no winner,
+        # and none of its prose trips go.py's 'loaded nothing' markers
+        lines_r, _err = build_report(tdir, base + 60, B=200)
+        txt_r = "\n".join(lines_r or [])
+        try:
+            from go import EMPTY_MARKERS as _em
+        except Exception:                                    # noqa: BLE001
+            _em = (r"(?<![\d,.])0 markets\b", r"\bno quotes\b", r"\bnothing to analyse\b",
+                   r"\bno settled markets\b")
+        hits = [p for p in _em if re.search(p, txt_r, re.I)]
+        ck(lines_r is not None and "STATUS: REPORT ONLY" in txt_r and not hits
+           and "CALLED" not in txt_r,
+           "REPORT: the page builds end to end from files, says REPORT ONLY, and trips none of "
+           "go.py's empty markers (%s)" % hits)
         with open(os.path.join(tdir, "lf.py"), "wb") as fh:
             fh.write(b"a = 1\nb = 2\n")
         with open(os.path.join(tdir, "crlf.py"), "wb") as fh:
