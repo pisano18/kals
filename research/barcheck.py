@@ -5,14 +5,20 @@ WHAT IT MEASURES. Every bar in results/FREEZE_bars.json (written before any
 post-freeze outcome was read; the prose is results/FREEZE_2026-09-22.md):
 
   B1  the 45 s leg at a third (live) vs full vs off, from earlyhindsight.py's
-      per-close counterfactual, reconciled to the ledger;
+      per-close counterfactual (freeze_rows(), code pinned by sha256), fed
+      barcheck's own ledger snapshot and reconciled to it; INVALID if the
+      scorer's ledger-vs-logs check fails on a sample close; a FULL pass must
+      also pass on FULL-lo (every market resting on unlogged depth at its
+      worst reading and 0);
   B2  the fresh-offer rule (map C5) out of sample, on 45 s-leg fills;
   B3  the post-fill collapse (map C6) as a HEDGE trigger, priced from the
       per-second hedge_quote log;
   B4  the 0.25 hedge trigger against PREREG_hedge.md's restored bar, plus its
       four n=30 safety rules;
   B5  why the <=30 s window's volume fell 65% (tau/budget_left on refusals)
-      -- a diagnostic;
+      -- a diagnostic, answering only where the low bound (refusals whose
+      book was read) and the high bound (plus every refusal made before the
+      book was read, at our size) agree;
   B6  paper arms vs live on shared closes -- report only.
 
 For each: units so far, the statistic, PASS / FAIL / COLLECTING (or PENDING
@@ -29,7 +35,8 @@ cannot fish for a PASS. If a setting a bar measures changes on the live bot
 (a later live `start` record differs on the bar's `config_keys`), the bar's
 window restarts at that change; samples are never pooled across settings.
 Across bars, only B1-B3 are discovery tests; their null false-PASS rates at
-the registered n sum to <= 0.08 (FREEZE_bars.json `multiple_looks`).
+the registered n sum under the 0.10 budget (FREEZE_bars.json `multiple_looks`).
+Post-registration changes are listed, dated, in FREEZE_bars.json `amendments`.
 
 RULES IT KEEPS. Money is Kalshi's ledger (pinledger.pnl, one row per market,
 hedged markets included); the logs' `realised` is never summed. n is closes.
@@ -40,6 +47,7 @@ import argparse
 import calendar
 import collections
 import glob
+import hashlib
 import importlib
 import json
 import math
@@ -58,13 +66,33 @@ from pinflat import close_epoch                                   # noqa: E402
 from downtime import et_offset                                    # noqa: E402
 
 REPO_RESULTS = os.path.join(os.path.dirname(HERE), "results")
+# The live logs and the ledger are READ from the live results folder, even
+# when this runs from a worktree: a worktree's results/ holds git-tracked
+# snapshots of the live logs, and a run there without --data once scored
+# stale copies. The status file is still written next to this script.
+LIVE_RESULTS = r"C:\kals-repo\results"
+DATA_DEFAULT = LIVE_RESULTS if os.path.isdir(LIVE_RESULTS) else REPO_RESULTS
 BARS_PATH = os.path.join(REPO_RESULTS, "FREEZE_bars.json")
 STATUS_PATH = os.path.join(REPO_RESULTS, "FREEZE_status.md")
-# An up/down 15-minute pin market. The Coin Race (KXCRYPTOLEAD15M-...-XRP)
-# ends in letters and is a different bot; commodities are not 15M.
-PIN = re.compile(r"^KX(?!CRYPTO)[A-Z]+15M-\d{2}[A-Z]{3}\d{6}-\d{2}$")
+# The pin bot's up/down 15-minute series (pinrun.SERIES_TO_INDEX; the same list
+# as earlyhindsight.PIN_SERIES). The Coin Race (KXCRYPTOLEAD15M) and the
+# commodity bots (KXWTI15M, KXGOLD15M, KXNATGAS15M, KXCOPPER15M -- ALSO 15M)
+# share the ledger and are NOT this strategy.
+PIN_SERIES = frozenset([
+    "KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M", "KXDOGE15M", "KXBNB15M",
+    "KXBCH15M", "KXZEC15M", "KXHYPE15M", "KXNEAR15M", "KXADA15M"])
+PIN_SHAPE = re.compile(r"^KX[A-Z0-9]+15M-\d{2}[A-Z]{3}\d{6}-\d{2}$")
 LOG_RX = re.compile(r"pinrun-paper-\d{8}T\d{6}Z\.jsonl")
 SIG_PAIR_S = 3          # an order is paired with its ticker's signal <= 3 s before it
+
+
+def series_of(tk):
+    return str(tk or "").split("-")[0]
+
+
+def is_pin(tk):
+    """A pin-bot market: one of PIN_SERIES, in the up/down ticker shape."""
+    return series_of(tk) in PIN_SERIES and bool(PIN_SHAPE.match(tk))
 
 
 # ------------------------------------------------------------------ basics
@@ -178,7 +206,7 @@ def ledger_view(rows):
     out = {}
     for s in rows.values():
         tk = str(s.get("ticker") or "")
-        if not PIN.match(tk):
+        if not is_pin(tk):
             continue
         v = out.setdefault(tk, {"pnl": 0.0, "result": None, "close": close_epoch(tk),
                                 "yes_n": 0.0, "no_n": 0.0})
@@ -400,54 +428,47 @@ def _import_scorer(name, extra_dir):
     return importlib.import_module(name)
 
 
-def scorer_rows(mod, sc, since_s, now_s, data_dir):
-    """B1's per-close rows from earlyhindsight. A function named in the bar's
-    `scorer.functions` wins; else its own pipeline (load_ledger ->
-    load_live_runs -> extract -> score with full and off)."""
-    for fn in sc.get("functions", []):
-        f = getattr(mod, fn, None)
-        if not callable(f):
-            continue
-        for call in (lambda: f(since_s=since_s, data_dir=data_dir),
-                     lambda: f(data_dir, since_s, now_s), lambda: f(since_s)):
-            try:
-                return call(), "earlyhindsight.%s" % fn
-            except TypeError:
-                continue
-    need = ("load_ledger", "load_live_runs", "extract", "score")
-    if all(callable(getattr(mod, n, None)) for n in need):
-        ledger = mod.load_ledger(os.path.join(data_dir, "kalshi_ledger.json"))
-        runs = mod.load_live_runs(data_dir, iso(since_s))
-        ex = mod.extract(runs)
-        fills, hedges = ex[0], ex[1]
-        full = fnum(getattr(mod, "FULL", 1.0)) or 1.0
-        out = mod.score(ledger, fills, hedges, since_s, now_s + 3600, {"full": full, "off": 0.0})
-        return (out[0] if isinstance(out, tuple) else out), "earlyhindsight.score"
-    raise AttributeError("earlyhindsight has none of %s and not the %s pipeline"
-                         % (", ".join(sc.get("functions", [])), "/".join(need)))
+def file_sha256(path):
+    """sha256 of a source file with CRLF read as LF (earlyhindsight.code_sha256's
+    rule), so a Windows checkout and git's blob hash the same. None if unreadable."""
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read().replace(b"\r\n", b"\n")).hexdigest()
+    except (OSError, TypeError):
+        return None
 
 
-def load_scorer(bar, since_s, now_s, data_dir, extra_dir=None):
-    """(rows, source) or (None, why). Never raises."""
+def scorer_rows(mod, sc, since_s, now_s, data_dir, ledger_rows=None):
+    """B1's rows from the scorer's registered entry point (FREEZE_bars.json
+    `scorer.function`, earlyhindsight.freeze_rows): {rows, diag, stats, ...}.
+    `ledger_rows` = the raw settlements barcheck itself read, so the scorer's
+    LIVE and barcheck's ledger are one snapshot (pinledgerd rewrites the file
+    every few minutes)."""
+    fn = sc.get("function", "freeze_rows")
+    f = getattr(mod, fn, None)
+    if not callable(f):
+        raise AttributeError("earlyhindsight has no %s()" % fn)
+    out = f(since_s=since_s, data_dir=data_dir, now_s=now_s, ledger_rows=ledger_rows)
+    if not isinstance(out, dict) or "rows" not in out:
+        raise TypeError("%s() did not return {rows, ...}" % fn)
+    return out, "earlyhindsight.%s" % fn
+
+
+def load_scorer(bar, since_s, now_s, data_dir, extra_dir=None, ledger_rows=None):
+    """(result dict, source, code sha256) or (None, why, None). Never raises.
+    The hash is computed HERE from the module's file, not taken from the
+    module's own report."""
     sc = bar.get("scorer", {})
     try:
         mod = _import_scorer(sc.get("module", "earlyhindsight"), extra_dir)
     except Exception as e:                                   # noqa: BLE001
-        mod, why = None, "research/earlyhindsight.py not importable (%s)" % type(e).__name__
-    if mod is not None:
-        try:
-            return scorer_rows(mod, sc, since_s, now_s, data_dir)
-        except Exception as e:                               # noqa: BLE001
-            why = "earlyhindsight failed: %s: %s" % (type(e).__name__, e)
-    for name in sc.get("json_fallback", []):
-        p = os.path.join(data_dir, name)
-        if os.path.exists(p):
-            try:
-                with open(p, encoding="utf-8") as fh:
-                    return json.load(fh), p
-            except (OSError, ValueError) as e:
-                return None, "%s unreadable (%s)" % (p, e)
-    return None, why
+        return None, "research/earlyhindsight.py not importable (%s)" % type(e).__name__, None
+    code = file_sha256(getattr(mod, "__file__", None))
+    try:
+        out, src = scorer_rows(mod, sc, since_s, now_s, data_dir, ledger_rows)
+        return out, src, code
+    except Exception as e:                                   # noqa: BLE001
+        return None, "earlyhindsight failed: %s: %s" % (type(e).__name__, e), code
 
 
 def load_world(bars, data_dir, now=None, hindsight_dir=None):
@@ -458,6 +479,7 @@ def load_world(bars, data_dir, now=None, hindsight_dir=None):
     W = load_live(data_dir, since)
     W["now"] = now if now is not None else int(time.time())
     rows = pinledger.load_cache(os.path.join(data_dir, "kalshi_ledger.json"))
+    W["ledger_raw"] = rows
     W["ledger"] = ledger_view(rows)
     W["ledger_rows"] = len(rows)
     try:
@@ -468,8 +490,12 @@ def load_world(bars, data_dir, now=None, hindsight_dir=None):
     b6 = bmap.get("B6")
     W["arms"] = load_arms(data_dir, ep(b6["window_start_utc"]), W["starts"], b6["rules"]) if b6 else {}
     b1 = bmap.get("B1")
-    W["hind_rows"], W["hind_src"] = (load_scorer(b1, ep(b1["window_start_utc"]), W["now"], data_dir,
-                                                 hindsight_dir) if b1 else (None, "no B1"))
+    if b1:
+        W["hind_rows"], W["hind_src"], W["hind_code"] = load_scorer(
+            b1, ep(b1["window_start_utc"]), W["now"], data_dir, hindsight_dir,
+            ledger_rows=W.get("ledger_raw"))
+    else:
+        W["hind_rows"], W["hind_src"], W["hind_code"] = None, "no B1", None
     b5 = bmap.get("B5")
     W["b5_base"] = {}
     if b5:
@@ -566,8 +592,9 @@ def eval_freeze(cfg, W):
 
 
 def _rows(raw):
-    """Normalise the scorer's output to {close: {live, full, off, tickers}}.
-    Accepts flat rows (live/full/off) and earlyhindsight's nested `pol`."""
+    """Normalise the scorer's output to {close: {live, full, off, full_lo,
+    tickers, mismatch, not_in_ledger, flagged}}. Accepts {rows: [...]}, flat
+    rows (live/full/off) and earlyhindsight's nested `pol`."""
     if isinstance(raw, tuple) and raw:
         raw = raw[0]
     if isinstance(raw, dict) and "rows" in raw:
@@ -587,10 +614,26 @@ def _rows(raw):
         flat = {str(k).lower(): v for k, v in x.items() if not isinstance(v, dict)}
         for k, v in (x.get("pol") or {}).items():
             flat[str(k).lower()] = v
+        for k, v in (x.get("lo") or {}).items():
+            flat["%s_lo" % str(k).lower()] = v
         out[int(c)] = {"live": fnum(flat.get("live", flat.get("third"))),
                        "full": fnum(flat.get("full")), "off": fnum(flat.get("off")),
-                       "tickers": x.get("tickers")}
+                       "full_lo": fnum(flat.get("full_lo")),
+                       "tickers": x.get("tickers"),
+                       "mismatch": int(fnum(flat.get("mismatch")) or 0),
+                       "not_in_ledger": int(fnum(flat.get("not_in_ledger")) or 0),
+                       "flagged": int(fnum(flat.get("flagged")) or 0)}
     return out
+
+
+def _b1_policy(ds, pr, r, ready):
+    """(stat, passes) for one column of per-close differences."""
+    mean = sum(ds) / len(ds) if ds else 0.0
+    bp = boot_p(ds, r["boot_draws"], r["seed"]) if ds else None
+    sh = top_share(ds)
+    ok = (ready and mean >= pr["min_gain_per_close"] and bp is not None
+          and bp >= r["min_boot_p"] and sh is not None and sh <= r["max_single_close_share"])
+    return {"mean": mean, "total": sum(ds), "boot_p": bp, "top_share": sh}, ok
 
 
 def eval_b1(bar, W):
@@ -610,7 +653,7 @@ def eval_b1(bar, W):
     lbc = ledger_by_close(W)
     early_closes = {f["close"] for f in W["fills"] if f["leg"] == "early"}
     s_live = l_live = 0.0
-    missing = 0
+    missing = mism = nil = flagged = 0
     for c in settled:
         row = rows.get(c)
         if row is None or row["live"] is None:
@@ -618,20 +661,47 @@ def eval_b1(bar, W):
                 missing += 1
             continue
         s_live += row["live"]
+        mism += row["mismatch"]
+        nil += row["not_in_ledger"]
+        flagged += row["flagged"]
         tks = row.get("tickers")
         if isinstance(tks, list):
             l_live += sum(W["ledger"][tk]["pnl"] for tk in tks if tk in W["ledger"])
         else:
             l_live += lbc.get(c, 0.0)
     tol = max(r["reconcile_tol_abs"], r["reconcile_tol_frac"] * abs(l_live))
-    ok = abs(s_live - l_live) <= tol and missing == 0
-    det = pre + ["scorer: %s; its live column %s vs Kalshi %s on the same closes (%s); closes with "
-                 "a 45 s-leg fill but no scorer row: %d"
-                 % (W.get("hind_src"), usd(s_live), usd(l_live), "reconciled" if ok else "NOT reconciled",
-                    missing)]
+    reg = (bar.get("scorer") or {}).get("code_sha256")
+    code = W.get("hind_code")
+    code_ok = None if reg is None and code is None else (reg is not None and code == reg)
+    bad, short = [], []
+    if abs(s_live - l_live) > tol:
+        bad.append("its live column %s is not Kalshi's %s" % (usd(s_live), usd(l_live)))
+        short.append("its money is not Kalshi's")
+    if missing:
+        bad.append("%d closes with a 45 s-leg fill have no scorer row" % missing)
+        short.append("closes missing")
+    if mism or nil:
+        # the scorer's own ledger-vs-logs check: a close whose ledger entry-side
+        # count differs from the logged fills (the check that caught the 09-22
+        # side bug) or whose log fills have no ledger row cannot be scored
+        bad.append("%d market(s) whose ledger count differs from the logged fills, %d log "
+                   "fill(s) with no ledger row" % (mism, nil))
+        short.append("its ledger count differs from the logged fills")
+    if code_ok is False:
+        bad.append("the scorer's code (%s) is not the registered one (%s): an edit after "
+                   "registration needs a dated amendment in FREEZE_bars.json"
+                   % ((code or "?")[:12], (reg or "none")[:12]))
+        short.append("its code is not the registered one")
+    det = pre + ["scorer: %s, code %s (registered %s); its live column %s vs Kalshi %s on the "
+                 "same closes; mismatched markets %d, log fills with no ledger row %d, closes "
+                 "with a 45 s-leg fill but no scorer row %d -> %s"
+                 % (W.get("hind_src"), (code or "?")[:12], (reg or "none")[:12], usd(s_live),
+                    usd(l_live), mism, nil, missing, "; ".join(bad) if bad else "reconciled")]
     live_tot = sum(lbc.get(c, 0.0) for c in settled)
     stat, passing = {}, []
-    for p, pr in r["policies"].items():
+    cols = {"full": "full", "off": "off", "full_lo": "full_lo"}
+    ds_by = {}
+    for p in cols:
         ds = []
         for c in settled:
             row = rows.get(c)
@@ -639,25 +709,35 @@ def eval_b1(bar, W):
                 ds.append(0.0)
             else:
                 ds.append(row[p] - row["live"])
-        mean = sum(ds) / len(ds) if ds else 0.0
-        bp = boot_p(ds, r["boot_draws"], r["seed"]) if ds else None
-        sh = top_share(ds)
-        stat[p] = {"mean": mean, "total": sum(ds), "boot_p": bp, "top_share": sh}
+        ds_by[p] = ds
+    lo_st, lo_ok = _b1_policy(ds_by["full_lo"], r["policies"]["full"], r, ready)
+    for p, pr in r["policies"].items():
+        st_, ok = _b1_policy(ds_by[p], pr, r, ready)
+        stat[p] = st_
         det.append("%s minus the third: %s/close (%s total), resampled P(ahead) %s, biggest close %s "
                    "of it; bar >= %s/close with P >= %.3f"
-                   % (p, usd(mean), usd(sum(ds)), "-" if bp is None else "%.3f" % bp,
-                      pct(sh), usd(pr["min_gain_per_close"]), r["min_boot_p"]))
-        if (ready and mean >= pr["min_gain_per_close"] and bp is not None
-                and bp >= r["min_boot_p"] and sh is not None and sh <= r["max_single_close_share"]):
-            passing.append((mean, p))
-    rank = sorted([("third", live_tot)] + [(p, live_tot + stat[p]["total"]) for p in stat],
+                   % (p, usd(st_["mean"]), usd(st_["total"]),
+                      "-" if st_["boot_p"] is None else "%.3f" % st_["boot_p"],
+                      pct(st_["top_share"]), usd(pr["min_gain_per_close"]), r["min_boot_p"]))
+        ok_lo = (p != "full" or lo_ok)
+        if ok and ok_lo:
+            passing.append((st_["mean"], p))
+    stat["full_lo"] = lo_st
+    det.append("full on its conservative bound (FULL-lo: %d market(s) resting on something the "
+               "logs never held, each at its worst reading and 0): %s/close (%s total), resampled "
+               "P %s, biggest close %s -- a FULL pass needs this to pass too"
+               % (flagged, usd(lo_st["mean"]), usd(lo_st["total"]),
+                  "-" if lo_st["boot_p"] is None else "%.3f" % lo_st["boot_p"],
+                  pct(lo_st["top_share"])))
+    rank = sorted([("third", live_tot)] + [(p, live_tot + stat[p]["total"])
+                                            for p in ("full", "full_lo", "off")],
                   key=lambda x: -x[1])
     so_far = ", ".join("%s %s" % (p, usd(v)) for p, v in rank)
     det.append("hindsight money on these %d closes (Kalshi + the scorer's change): %s" % (n, so_far))
-    if not ok:
-        st, what = "INVALID", "the scorer does not match Kalshi"
+    if bad:
+        st, what = "INVALID", "Scorer check failed: " + "; ".join(short)
     elif not ready:
-        st, what = "COLLECTING", "waiting" + (" (settling)" if len(sample) >= N else "")
+        st, what = "COLLECTING", "Waiting" + (" (settling)" if len(sample) >= N else "")
     elif passing:
         st, what = "PASS", "switch to %s -- your call" % max(passing)[1]
     else:
@@ -806,9 +886,23 @@ def eval_b3(bar, W):
             unpriced += 1
             continue
         mine = sum(leg_pnl(k, p, opp, lv["result"]) for k, p in buys)
-        actual = sum(leg_pnl(h["n"], h["price"], h["side"], lv["result"])
-                     for h in W["hedges"] if h["ticker"] == tk and h["t"] >= f["t"]
-                     and h["price"] is not None)
+        # subtract ONLY the real hedge contracts that covered the insured
+        # contracts: each later hedge counts in proportion (held at the flagged
+        # fill / position held when it fired) -- a top-up bought after the fill
+        # was never insured -- and in total no more than the insurance bought.
+        # The belief hedge still runs on whatever the insurance did not cover,
+        # so that part is identical in both worlds and cancels.
+        left = sum(k for k, _p in buys)
+        actual = 0.0
+        for h in sorted((h for h in W["hedges"] if h["ticker"] == tk and h["t"] >= f["t"]
+                         and h["price"] is not None), key=lambda h: h["t"]):
+            pos = sum(x["n"] for x in ents if x["ticker"] == tk and x["t"] <= h["t"])
+            share = min(1.0, held / pos) if pos > 0 else 1.0
+            k = min(h["n"] * share, left)
+            if k <= 1e-9:
+                continue
+            actual += leg_pnl(k, h["price"], h["side"], lv["result"])
+            left -= k
         pc["V"] += mine - actual
         pc["priced"] = True
     # the decision sample: settled closes in time order until n priced flagged closes
@@ -907,7 +1001,7 @@ def eval_b4(bar, W):
     # ---- (b) the move bar, restored: 0.25 must beat 0.30 and 0.60 on the first 10 events
     qf = W.get("quote_from")
     thr = [r["live_threshold"]] + list(r["alternatives"])
-    tot, ev, per_ev = {}, 0, []
+    tot, ev, per_ev, shown = {}, 0, [], []
     if qf is None:
         mst = "PENDING"
         det.append("move bar: PENDING until the per-second insurance price log (with belief) is live")
@@ -925,24 +1019,31 @@ def eval_b4(bar, W):
                         and q["belief"] < r["event_belief"]), None)
             if dip is not None:
                 cands.append((dip, tk, fs, qs))
-        cands.sort(key=lambda x: x[0])
+        # an EVENT is a CLOSE (CLAUDE.md rule 4): every dipping market of one
+        # close -- e.g. XRP + HYPE at 09-19 23:45 ET -- is one event, summed
+        by_close = collections.OrderedDict()
+        for dip, tk, fs, qs in sorted(cands, key=lambda x: x[0]):
+            key = fs[0]["close"]
+            by_close.setdefault(key, []).append((dip, tk, fs, qs))
         blocked = False
-        for dip, tk, fs, qs in cands[:r["min_events"]]:
-            lv = W["ledger"].get(tk)
-            if lv is None or lv["result"] is None:
-                blocked = True
+        for key in list(by_close)[:r["min_events"]]:
+            vals = {th: 0.0 for th in thr}
+            for dip, tk, fs, qs in by_close[key]:
+                lv = W["ledger"].get(tk)
+                if lv is None or lv["result"] is None:
+                    blocked = True
+                    break
+                first = min(f["t"] for f in fs)
+                opp = "no" if fs[0]["want"] == "yes" else "yes"
+                for th in thr:
+                    _b, fire = walk_hedge(qs, first, 0.0, r["hedge_tries_s"], belief_below=th)
+                    if fire is None:
+                        continue
+                    n_held = sum(f["n"] for f in fs if f["t"] <= fire)
+                    buys, _ = walk_hedge(qs, first, n_held, r["hedge_tries_s"], belief_below=th)
+                    vals[th] += sum(leg_pnl(k, p, opp, lv["result"]) for k, p in buys)
+            if blocked:
                 break
-            first = min(f["t"] for f in fs)
-            opp = "no" if fs[0]["want"] == "yes" else "yes"
-            vals = {}
-            for th in thr:
-                _b, fire = walk_hedge(qs, first, 0.0, r["hedge_tries_s"], belief_below=th)
-                if fire is None:
-                    vals[th] = 0.0
-                    continue
-                n_held = sum(f["n"] for f in fs if f["t"] <= fire)
-                buys, _ = walk_hedge(qs, first, n_held, r["hedge_tries_s"], belief_below=th)
-                vals[th] = sum(leg_pnl(k, p, opp, lv["result"]) for k, p in buys)
             per_ev.append(vals)
         ev = len(per_ev)
         tot = {th: sum(v[th] for v in per_ev) for th in thr}
@@ -952,41 +1053,66 @@ def eval_b4(bar, W):
             sh = top_share(ds)
             ok = sum(ds) > 1e-9 and sh is not None and sh <= r["max_single_event_share"]
             ok_all = ok_all and ok
+            # the other direction, under the SAME guard: is the alternative
+            # itself shown ahead of 0.25? Only that is evidence for a change.
+            back = [-x for x in ds]
+            bsh = top_share(back)
+            if sum(back) > 1e-9 and bsh is not None and bsh <= r["max_single_event_share"]:
+                shown.append(alt)
             lines.append("0.25 minus %.2f: %s (biggest event %s of it)" % (alt, usd(sum(ds)), pct(sh)))
         if ev < r["min_events"]:
             mst = "COLLECTING"
         else:
             mst = "PASS" if ok_all else "FAIL"
-        det.append("move bar: %s -- %d of %d dips below %.0f%% (%d more waiting to settle); insurance "
-                   "money per trigger: %s; %s"
+        det.append("move bar: %s -- %d of %d closes with a dip below %.0f%% (%d more waiting to "
+                   "settle); insurance money per trigger: %s; %s"
                    % (mst, ev, r["min_events"], 100 * r["event_belief"], int(blocked),
                       ", ".join("%.2f %s" % (th, usd(tot[th])) for th in thr), "; ".join(lines)))
     st = "FAIL" if "FAIL" in (sst, mst) else mst
     leader = ""
     if mst == "FAIL" and tot:
-        best = max(r["alternatives"], key=lambda th: (tot[th], th == r["alternatives"][0]))
-        leader = " Leader %.2f." % (best if tot[best] > tot[r["live_threshold"]] + 1e-9
-                                    else r["alternatives"][0])
+        if shown:
+            best = max(shown, key=lambda th: tot[th])
+            leader = " Leader %.2f, shown ahead of 0.25 under the same guard." % best
+        else:
+            leader = (" Nothing shown ahead of 0.25 either -- weak evidence (see the bar's mde); "
+                      "no change proposed on the move bar alone.")
     line = ("B4 hedge at 25%%: %s. %d of %d test dips; real alarms %d of %d (%d caught, %d false); "
             "safety %s.%s" % (st, ev, r["min_events"], na, s["n_alarms"], caught, fa,
                               "FAIL" if sst == "FAIL" else "ok", leader))
     return res(st, "B4", ev, max(0, r["min_events"] - ev), line, det,
                {"safety": sst, "move": mst, "events": ev, "totals": tot, "alarms": na,
-                "false": fa, "caught": caught})
+                "false": fa, "caught": caught, "shown_ahead": shown})
 
 
 def _b5_view(r, W, closes):
-    """Per-close <=30 s volume and refused volume by cause on `closes`."""
+    """Per-close <=30 s volume and refused volume, as TWO bounds.
+
+    LOW  = refusals where the book was read (priced): min(offered, our size)
+           with our side at 90-98c -- measured.
+    HIGH = LOW + every refusal from a gate that fires BEFORE the book is read
+           (capacity gates, and stale-data gates) at our full size -- an upper
+           bound; its true volume is anywhere from 0 to our size.
+    max_per_market is dropped: it fires only after the market already has its
+    buys (the 09-22 09:00 ET BTC refusal held 79 = SIZE), so its contracts
+    were never missing.
+    Returns (bought/close, low/close, high/close, low by cause, high by cause,
+    the filter's own tally of what it read and dropped)."""
     cs = set(closes)
     late = sum(f["n"] for f in W["fills"]
                if f["close"] in cs and f["leg"] != "early" and (f["tau"] is None or f["tau"] <= r["tau_max"]))
-    cls = collections.Counter()
+    lo_cls = collections.Counter()
+    hi_cls = collections.Counter()
     drop = collections.Counter()              # the filter's own null: what it throws away
     cap = set(r.get("unpriced_gates", []))
+    stale = set(r.get("stale_gates", []))
     for x in W["refused"]:
         if x["close"] not in cs:
             continue
         drop["read"] += 1
+        if x["gate"] in r.get("dropped_gates", []):
+            drop["%s (the market already held its buys)" % x["gate"]] += 1
+            continue
         if x["tau"] is None or not (r["tau_min"] <= x["tau"] <= r["tau_max"]):
             drop["not 3-30 s left"] += 1
             continue
@@ -996,34 +1122,49 @@ def _b5_view(r, W, closes):
                 drop["our side not offered at 90-98c"] += 1
                 continue
             k = min(x["ask_size"] or 0.0, x["size_now"] or 0.0)
+            lo_k = k
             name = "budget used up" if used_up else x["gate"]
             drop["kept, priced"] += 1
-        elif x["gate"] in cap:
-            k = x["size_now"] or 0.0              # an UPPER bound: the book was never read
-            name = "budget used up" if used_up else "%s (unpriced)" % x["gate"]
-            drop["kept, unpriced (upper bound)"] += 1
+        elif x["gate"] in cap or x["gate"] in stale:
+            k = x["size_now"] or 0.0              # the HIGH bound: our whole size
+            lo_k = 0.0                          # the book was never read
+            name = "%s (unpriced)" % x["gate"]
+            drop["kept, unpriced (%s)" % ("stale data" if x["gate"] in stale else "capacity")] += 1
         else:
-            drop["no price, not a capacity gate"] += 1
+            drop["no price, not a capacity or stale-data gate"] += 1
             continue
         if k <= 0:
             drop["no size"] += 1
             continue
         drop["kept"] += 1
-        cls[name] += k
+        if lo_k:
+            lo_cls[name] += lo_k
+        hi_cls[name] += k
     n = len(closes)
-    return (late / n if n else 0.0), (sum(cls.values()) / n if n else 0.0), cls, drop
+    if not n:
+        return 0.0, 0.0, 0.0, lo_cls, hi_cls, drop
+    return (late / n, sum(lo_cls.values()) / n, sum(hi_cls.values()) / n, lo_cls, hi_cls, drop)
 
 
-def _b5_cause(r, per_close, refused_pc, cls, ref):
+def _b5_cause(r, per_close, lo_pc, hi_pc, lo_cls, hi_cls, ref):
+    """An answer only where BOTH bounds agree (amended 2026-09-22 after review).
+    (a) bought >= 80% of the reference;
+    (b) even the HIGH bound of refused volume is < 50% of the gap -> the
+        offers were not there;
+    (c) the LOW bound alone covers >= 80% of the gap AND one PRICED gate holds
+        >= 50% of the HIGH bound's volume -> that gate. A gate that refuses
+        before reading the book can never be named: its volume is unknown."""
     gap = ref - per_close
-    tot = float(sum(cls.values()))
-    top = cls.most_common(1)
     if per_close >= r["recovered_frac"] * ref:
         return "buying came back once the 45 s leg shrank (it was using the budget)"
-    if gap > 0 and refused_pc < r["not_ours_frac"] * gap:
+    if gap > 0 and hi_pc < r["not_ours_frac"] * gap:
         return "not our gates: the offers at our price were not there when we looked"
-    if gap > 0 and tot and top[0][1] / tot >= r["top_share"] and refused_pc >= r["coverage"] * gap:
-        return "gate '%s' (%.0f%% of the refused volume)" % (top[0][0], 100 * top[0][1] / tot)
+    hi_tot = float(sum(hi_cls.values()))
+    priced_by = lo_cls
+    if gap > 0 and hi_tot and lo_pc >= r["coverage"] * gap:
+        name, v = hi_cls.most_common(1)[0]
+        if name in priced_by and v / hi_tot >= r["top_share"]:
+            return "gate '%s' (%.0f%% of refused volume on both bounds)" % (name, 100 * v / hi_tot)
     return None
 
 
@@ -1036,9 +1177,9 @@ def eval_b5(bar, W):
     bf = W.get("budget_from")
     every, uns = closes_all(W, start)
     allset = [c for c in every if c not in uns]
-    pc_all, _rf, _cl, _d = _b5_view(r, W, allset)
+    pc_all = _b5_view(r, W, allset)[0]
     base_line = ("reference before the fall: %.1f contracts a close (map 11, 2,654/day) and %s by "
-                 "this file's own count on era B; the stricter (%.1f) is used; post-fix %s"
+                 "this file's own count on era B; the higher (%.1f) is used; post-fix %s"
                  % (r["era_b_per_close"], "-" if own_b is None else "%.1f" % own_b, ref,
                     "-" if not base_own.get("post_fix") or base_own["post_fix"][0] is None
                     else "%.1f" % base_own["post_fix"][0]))
@@ -1055,28 +1196,30 @@ def eval_b5(bar, W):
         used = settled
         if not ready:
             break
-        per_close, refused_pc, cls, _d = _b5_view(r, W, settled)
-        cause = _b5_cause(r, per_close, refused_pc, cls, ref)
+        per_close, lo_pc, hi_pc, lo_cls, hi_cls, _d = _b5_view(r, W, settled)
+        cause = _b5_cause(r, per_close, lo_pc, hi_pc, lo_cls, hi_cls, ref)
         stage = N
         if cause:
             break
-    per_close, refused_pc, cls, drop = _b5_view(r, W, used)
+    per_close, lo_pc, hi_pc, lo_cls, hi_cls, drop = _b5_view(r, W, used)
     n = len(used)
-    tot = float(sum(cls.values()))
-    shares = [(g, v / tot) for g, v in cls.most_common(3)] if tot else []
+    tot = float(sum(hi_cls.values()))
+    shares = [(g, v / tot) for g, v in hi_cls.most_common(3)] if tot else []
     det = ([note] if note else []) + [
         base_line,
         "<=30 s contracts bought: %.1f a close over %d closes (~%.0f a day); gap to the reference "
         "%.1f a close" % (per_close, n, per_close * r["closes_per_day"], ref - per_close),
-        "refused with %d-%d s left: %.1f contracts a close (our side offered at %.0f-%.0fc: what was "
-        "offered, capped at our size; capacity gates that refuse before reading the book: our size, an "
-        "upper bound; first refusal per market and gate only)"
-        % (r["tau_min"], r["tau_max"], refused_pc, 100 * r["price_lo"], 100 * r["price_hi"]),
-        "top causes: " + (", ".join("%s %.0f%%" % (g, 100 * sh) for g, sh in shares) or "none"),
-        "refusal records read %d, kept %d (priced %d, unpriced %d); dropped: %s" % (
-            drop["read"], drop["kept"], drop["kept, priced"], drop["kept, unpriced (upper bound)"],
+        "refused with %d-%d s left: %.1f to %.1f contracts a close (LOW: book read, our side offered "
+        "at %.0f-%.0fc, what was offered capped at our size; HIGH adds every refusal the book was "
+        "never read for -- capacity and stale-data gates -- at our full size; first refusal per "
+        "market and gate only, so both undercount repeats)"
+        % (r["tau_min"], r["tau_max"], lo_pc, hi_pc, 100 * r["price_lo"], 100 * r["price_hi"]),
+        "top causes on the HIGH bound: " + (", ".join("%s %.0f%%" % (g, 100 * sh) for g, sh in shares)
+                                           or "none"),
+        "refusal records read %d, kept %d; dropped: %s" % (
+            drop["read"], drop["kept"],
             ", ".join("%s %d" % (k, v) for k, v in sorted(drop.items())
-                      if not k.startswith("kept") and k != "read") or "none")]
+                      if k != "read" and not k.startswith("kept")) or "none")]
     if cause:
         st, target = "PASS", stage
     elif stage == r["final_closes"]:
@@ -1088,8 +1231,9 @@ def eval_b5(bar, W):
     line = ("B5 why fewer late buys: %s, %d of %d closes. Buying ~%.0f a day vs ~%.0f before%s."
             % (st, n, target, per_close * r["closes_per_day"], ref * r["closes_per_day"],
                ("; answer: " + cause) if cause else ""))
-    return res(st, "B5", n, need, line, det, {"per_close": per_close, "refused_pc": refused_pc,
-                                              "shares": shares, "cause": cause})
+    return res(st, "B5", n, need, line, det, {"per_close": per_close, "refused_lo": lo_pc,
+                                              "refused_hi": hi_pc, "shares": shares,
+                                              "cause": cause})
 
 
 def eval_b6(bar, W):
@@ -1216,15 +1360,28 @@ def selftest(bars_path=BARS_PATH):
        "under the budget (%.3f <= %.2f)" % (sum(fam.values()), ml.get("budget", 0)))
     ck(all("never a hedge" in b["blocks"].lower() or b["blocks"].lower().startswith("nothing")
            for b in bars["bars"]), "every bar says it blocks nothing, or never a hedge")
+    REG = (bm["B1"].get("scorer") or {}).get("code_sha256")
+    ck(isinstance(REG, str) and len(REG) == 64 and bm["B1"]["scorer"].get("function") == "freeze_rows",
+       "B1 pins its scorer: earlyhindsight.freeze_rows, code sha256 %s..." % str(REG)[:12])
+    ck(all(a.get("utc") and a.get("what") and a.get("seen_before") for a in bars.get("amendments", [])),
+       "every amendment after registration is dated and says what post-freeze data was seen first")
     T0 = ep(bars["freeze"]["start_utc"])
     C0 = (T0 // 900 + 1) * 900                     # first quarter hour after T0
     ck(C0 - T0 >= 60, "the first counted close is at least 60 s after the freeze began")
     ck(et(ep("2026-09-22T11:42:12Z")) == "9/22 07:42 ET" and et(ep("2026-12-01T17:00:00Z")) == "12/1 12:00 ET",
        "Eastern for the operator: EDT in September, EST in December")
+    ck(is_pin("KXBTC15M-26SEP220900-00") and not is_pin("KXWTI15M-26SEP220900-00")
+       and not is_pin("KXGOLD15M-26SEP220900-00") and not is_pin("KXCRYPTOLEAD15M-26SEP220730-XRP"),
+       "pin markets are the pin bot's series only: not the commodity 15M bots, not the Coin Race")
+    s_in = {"t": iso(T0)}
+    ck(in_force([{"t": iso(T0 - 60), "v": 1}, dict(s_in, v=2)], T0)["v"] == 2
+       and in_force([s_in], T0 - 1) is None,
+       "the start record in force at t includes one written AT t, and none before it")
 
     def world():
         W = empty_live()
-        W.update({"ledger": {}, "arms": {}, "hind_rows": None, "hind_src": "planted",
+        W.update({"ledger": {}, "ledger_raw": {}, "arms": {}, "hind_rows": None,
+                  "hind_src": "planted", "hind_code": REG,
                   "now": T0 + 30 * 86400, "ledger_written": T0, "b5_base": {}})
         return W
 
@@ -1276,18 +1433,21 @@ def selftest(bars_path=BARS_PATH):
     b1 = bm["B1"]
     N1 = b1["rules"]["min_closes"]
 
-    def b1_world(nc, pattern, nested=False):
+    def b1_world(nc, pattern, nested=False, lo_of=None):
         W = world()
         rows = []
         for i in range(nc):
             c = C0 + 900 * i
             W["armed"].add(c)
             live, full, off = pattern(i)
+            full_lo = full if lo_of is None else lo_of(i, live, full)
             mkt(W, "B1-%d" % i, c, "yes", "yes" if live >= 0 else "no", live)
             fill(W, "B1-%d" % i, c, c - 40, "early", "yes")
-            rows.append({"close": c, "live": live, "pol": {"FULL": full, "OFF": off}} if nested
-                        else {"close": c, "live": live, "full": full, "off": off})
-        W["hind_rows"] = rows
+            rows.append({"close": c, "live": live, "pol": {"FULL": full, "OFF": off},
+                         "lo": {"FULL": full_lo}} if nested
+                        else {"close": c, "live": live, "full": full, "off": off,
+                              "full_lo": full_lo, "mismatch": 0, "not_in_ledger": 0})
+        W["hind_rows"] = {"rows": rows}
         return W
 
     def early_bleeds(i):                      # a third-size leg losing $10 on every 10th close
@@ -1296,6 +1456,9 @@ def selftest(bars_path=BARS_PATH):
         if i % 10 < 4:
             return (0.2, 0.6, 0.0)
         return (0.0, 0.0, 0.0)
+
+    def early_pays(i):                        # a third-size leg earning $1 on 4 closes in 10
+        return (1.0, 3.0, 0.0) if i % 10 < 4 else (0.0, 0.0, 0.0)
     rng = random.Random(7)
 
     def null_noise(i):
@@ -1306,7 +1469,14 @@ def selftest(bars_path=BARS_PATH):
        "B1 PASS world: a third-size leg that bleeds -> switch to OFF (%s)" % x["line"])
     x = eval_b1(b1, b1_world(N1 + 20, early_bleeds, nested=True))
     ck(x["status"] == "PASS" and "off" in x["line"],
-       "B1 reads earlyhindsight's own row shape too (live + pol{FULL, OFF})")
+       "B1 reads earlyhindsight's own row shape too (live + pol{FULL, OFF} + lo{FULL})")
+    x = eval_b1(b1, b1_world(N1 + 20, early_pays))
+    ck(x["status"] == "PASS" and "full" in x["line"],
+       "B1 PASS world: a leg that pays 4 closes in 10 -> switch to FULL (%s)" % x["line"])
+    x = eval_b1(b1, b1_world(N1 + 20, early_pays, lo_of=lambda i, live, full: live))
+    ck(x["status"] == "FAIL" and x["stat"]["full"]["boot_p"] == 1.0,
+       "B1: the same FULL gain resting entirely on unlogged depth (FULL-lo == the third) cannot "
+       "pass -- FULL must also pass on FULL-lo (%s)" % x["line"])
     x = eval_b1(b1, b1_world(N1 + 20, null_noise))
     ck(x["status"] == "FAIL", "B1 null world: noise around zero -> FAIL, keep the third (%s)" % x["line"])
     x = eval_b1(b1, b1_world(100, early_bleeds))
@@ -1318,6 +1488,7 @@ def selftest(bars_path=BARS_PATH):
     x = eval_b1(b1, b1_world(N1 + 20, one_close))
     ck(x["status"] == "FAIL" and x["stat"]["off"]["boot_p"] == 1.0 and x["stat"]["off"]["mean"] > 0.25,
        "B1: a lead that is ONE close cannot pass, even at resampled P 1.00 (single-close guard)")
+
     def noisy(i):                             # mean +$0.30 a close above the $0.25 floor, sd $5
         return (0.0, 0.0, 5.3 if i % 2 == 0 else -4.7)
     x = eval_b1(b1, b1_world(N1 + 20, noisy))
@@ -1325,13 +1496,29 @@ def selftest(bars_path=BARS_PATH):
        "B1: a mean over the floor that is mostly noise (resampled P %.2f < 0.975) does not pass"
        % x["stat"]["off"]["boot_p"])
     W = b1_world(N1 + 20, early_bleeds)
-    for r_ in W["hind_rows"]:
+    for r_ in W["hind_rows"]["rows"]:
         r_["live"] += 5.0                                     # scorer disagrees with Kalshi
     ck(eval_b1(b1, W)["status"] == "INVALID", "B1: a scorer whose live column does not match the ledger "
        "is INVALID")
     W = b1_world(N1 + 20, early_bleeds)
-    W["hind_rows"] = W["hind_rows"][:50] + W["hind_rows"][60:]
+    W["hind_rows"]["rows"] = W["hind_rows"]["rows"][:50] + W["hind_rows"]["rows"][60:]
     ck(eval_b1(b1, W)["status"] == "INVALID", "B1: closes with a 45 s fill but no scorer row -> INVALID")
+    W = b1_world(N1 + 20, early_bleeds)
+    W["hind_rows"]["rows"][7]["mismatch"] = 1
+    x = eval_b1(b1, W)
+    ck(x["status"] == "INVALID" and "differs from the logged fills" in x["line"],
+       "B1: ONE sample close where the scorer's ledger count differs from the logged fills (the "
+       "check that caught the 09-22 side bug; LIVE stays exact) -> INVALID, though every live "
+       "column reconciles (%s)" % x["line"])
+    W = b1_world(N1 + 20, early_bleeds)
+    W["hind_rows"]["rows"][9]["not_in_ledger"] = 2
+    ck(eval_b1(b1, W)["status"] == "INVALID", "B1: log fills with no ledger row on a sample close -> INVALID")
+    W = b1_world(N1 + 20, early_bleeds)
+    W["hind_code"] = "0" * 64
+    x = eval_b1(b1, W)
+    ck(x["status"] == "INVALID" and "not the registered one" in x["line"],
+       "B1: a scorer edited after registration (code hash differs) -> INVALID until the edit is "
+       "registered as a dated amendment")
     W = b1_world(N1 + 20, early_bleeds)
     W["hind_rows"], W["hind_src"] = None, "not importable"
     ck(eval_b1(b1, W)["status"] == "PENDING", "B1 without the scorer is PENDING, never a guess")
@@ -1352,30 +1539,22 @@ def selftest(bars_path=BARS_PATH):
        "B1: early_frac changing mid-freeze restarts the window at the change; a code-only change "
        "does not (%d closes after it)" % x["n"])
 
-    # ---------------- B1 scorer pipeline (earlyhindsight's API, planted module)
+    # ---------------- B1 scorer entry point (planted module)
     class FakeEH(object):
-        FULL = 1.0
+        got = {}
 
         @staticmethod
-        def load_ledger(path):
-            return {"x": 1}
-
-        @staticmethod
-        def load_live_runs(d, since_iso):
-            return [since_iso]
-
-        @staticmethod
-        def extract(runs):
-            return (["f"], ["h"], {})
-
-        @staticmethod
-        def score(ledger, fills, hedges, lo, hi, policies):
-            assert set(policies) == {"full", "off"} and policies["off"] == 0.0
-            return ([{"close": C0, "live": 1.0, "pol": {"full": 2.0, "off": 0.5}}], {}, {})
-    rows, src = scorer_rows(FakeEH, {"functions": ["per_close"]}, T0, T0 + 86400, "/nowhere")
-    ck(src == "earlyhindsight.score" and _rows(rows)[C0] == {"live": 1.0, "full": 2.0, "off": 0.5,
-                                                             "tickers": None},
-       "B1 calls earlyhindsight's own pipeline (ledger -> runs -> extract -> score full/off)")
+        def freeze_rows(since_s, data_dir, now_s=None, ledger_rows=None):
+            FakeEH.got = {"since": since_s, "snap": ledger_rows}
+            return {"rows": [{"close": C0, "live": 1.0, "full": 2.0, "off": 0.5, "full_lo": 1.5,
+                              "mismatch": 0, "not_in_ledger": 0, "flagged": 1}], "diag": {}}
+    out, src = scorer_rows(FakeEH, {"function": "freeze_rows"}, T0, T0 + 86400, "/nowhere",
+                           ledger_rows={"k": 1})
+    ck(src == "earlyhindsight.freeze_rows" and FakeEH.got["snap"] == {"k": 1}
+       and _rows(out)[C0] == {"live": 1.0, "full": 2.0, "off": 0.5, "full_lo": 1.5, "tickers": None,
+                              "mismatch": 0, "not_in_ledger": 0, "flagged": 1},
+       "B1 calls earlyhindsight.freeze_rows with barcheck's OWN ledger snapshot and reads its "
+       "full / off / full_lo / mismatch / not_in_ledger columns")
 
     # ---------------- B2
     b2 = bm["B2"]
@@ -1402,6 +1581,13 @@ def selftest(bars_path=BARS_PATH):
     x = eval_b2(b2, b2_world(NF + 10, 9, NF + 10, 0))
     ck(x["status"] == "PASS", "B2 PASS world: fresh 9/%d lost vs older 0/%d, fresh net negative (%s)"
        % (NF, NF, x["line"]))
+    W = b2_world(NF + 10, 9, NF + 10, 0)
+    cu = C0 + 900 * 5 + 450                                   # an unsettled fresh close, early on
+    fill(W, "B2u", cu, cu - 40, "early", "yes", age=60.0)
+    x = eval_b2(b2, W)
+    ck(x["status"] == "COLLECTING" and "stopped at an unsettled close" in x["detail"][-1],
+       "B2 stops at the first UNSETTLED close: the same PASS world with one unsettled close early "
+       "on waits for it, rather than skipping ahead to later closes (%s)" % x["line"])
     x = eval_b2(b2, b2_world(NF + 10, 2, NF + 10, 2, pre=100))
     ck(x["status"] == "FAIL",
        "B2 null world: 2 vs 2 losses -> FAIL, and 100 planted pre-freeze fresh losers are ignored")
@@ -1467,6 +1653,23 @@ def selftest(bars_path=BARS_PATH):
     x = eval_b3(b3, b3_world(NB3 + 4, 8, 300, 6, quotes=False))
     ck(x["status"] == "PENDING" and x["stat"]["flag"] == [8, NB3 + 4],
        "B3 with no quote log is PENDING but still counts the flagged closes")
+    # matched hedge: 50 flagged + a 50 top-up AFTER the fill; the belief hedge then
+    # hedged all 100 at 60c. Insuring the 50 at 8c replaces only HALF of that hedge.
+    W = world()
+    W["quote_from"] = T0 + 30
+    c = C3
+    W["armed"].add(c)
+    mkt(W, "M3", c, "yes", "no", -40.0, n_=100.0)
+    fill(W, "M3", c, c - 30, "full", "yes", n_=50.0, ex=0.93, ask=0.96)
+    fill(W, "M3", c, c - 25, "full", "yes", n_=50.0, ex=0.96, ask=0.96)
+    W["hedges"].append({"ticker": "M3", "t": c - 20, "side": "no", "price": 0.60, "n": 100.0})
+    W["quotes"]["M3"] = [{"t": c - 30 + k, "ask": 0.08, "size": 500.0, "belief": 0.9, "side": "no"}
+                         for k in range(5)]
+    x = eval_b3(b3, W)
+    want_v = leg_pnl(50.0, 0.08, "no", "no") - leg_pnl(50.0, 0.60, "no", "no")
+    ck(abs(x["stat"]["value"] - want_v) < 1e-9,
+       "B3 subtracts only the real hedge contracts that covered the INSURED 50 (half of the 100 "
+       "hedged), not the top-up's: %s (got %s)" % (usd(want_v), usd(x["stat"]["value"])))
 
     # ---------------- B4
     b4 = bm["B4"]
@@ -1480,11 +1683,11 @@ def selftest(bars_path=BARS_PATH):
     B = [(0.9, 0.05), (0.5, 0.40), (0.27, 0.65), (0.8, 0.10), (0.95, 0.03)]     # deeper dip, won
     C = [(0.9, 0.05), (0.5, 0.45), (0.28, 0.70), (0.2, 0.78), (0.05, 0.95)]     # collapse, lost
 
-    def b4_world(kinds):
+    def b4_world(kinds, per_close=1):
         W = world()
         W["quote_from"] = s4 + 60
         for j, kd in enumerate(kinds):
-            c = C0 + 900 * j
+            c = C0 + 900 * (j // per_close)
             W["armed"].add(c)
             tk = "B4-%d" % j
             lost = kd is C
@@ -1496,10 +1699,18 @@ def selftest(bars_path=BARS_PATH):
     ck(x["stat"]["move"] == "PASS" and x["status"] == "PASS",
        "B4 PASS world: shallow dips that recover -> 0.25 beats 0.30 and 0.60 (%s)" % x["line"])
     x = eval_b4(b4, b4_world([A] * 2 + [C] * 10))
-    ck(x["stat"]["move"] == "FAIL" and "0.60" in x["line"],
-       "B4 FAIL world: real collapses dominate -> 0.60 leads, 0.25 fails (%s)" % x["line"])
+    ck(x["stat"]["move"] == "FAIL" and "Leader 0.60" in x["line"],
+       "B4 FAIL world: real collapses dominate -> 0.60 is shown ahead under the same guard (%s)"
+       % x["line"])
+    x = eval_b4(b4, b4_world([A] * 5 + [C] * 1 + [A] * 4))
+    ck(x["stat"]["move"] == "FAIL" and "no change proposed" in x["line"],
+       "B4: 0.25 trails 0.30 only through ONE collapse -> FAIL, but 0.30's lead fails the same "
+       "single-event guard: weak evidence, no change proposed (%s)" % x["line"])
     x = eval_b4(b4, b4_world([A] * 3 + [C] * 2))
     ck(x["stat"]["move"] == "COLLECTING", "B4 not-enough world: 5 events decide nothing")
+    x = eval_b4(b4, b4_world([A] * 12 + [B] * 8, per_close=2))
+    ck(x["stat"]["events"] == 10 and x["stat"]["move"] == "PASS",
+       "B4 counts EVENTS BY CLOSE: 20 dipping markets in 10 closes are 10 events, not 20")
     x = eval_b4(b4, b4_world([A] * 6 + [B] * 4 + [C] * 30))
     ck(x["stat"]["move"] == "PASS" and x["stat"]["events"] == 10,
        "B4 move bar decides on its FIRST 10 dips; 30 later collapses do not reopen it")
@@ -1553,7 +1764,7 @@ def selftest(bars_path=BARS_PATH):
     C5 = (ep(b5["window_start_utc"]) // 900 + 1) * 900       # B5 opens with the budget field
     ref5 = r5["era_b_per_close"]
 
-    def b5_world(nc, gates, late_n=10.0, field=True):
+    def b5_world(nc, gates, late_n=10.0, field=True, unpriced=()):
         W = world()
         W["budget_from"] = T0 + 30 if field else None
         W["b5_base"] = {"era_b": (ref5 - 2.0, 600), "post_fix": (9.7, 200)}
@@ -1565,46 +1776,57 @@ def selftest(bars_path=BARS_PATH):
             fill(W, tk, c, c - 10, "full", "yes", n_=late_n, tau=10)
             for g, k in gates:
                 W["refused"].append({"close": c, "ticker": tk + g, "t": c - 12, "gate": g, "tau": 12.0,
-                                     "budget_left": 0.0 if g == "close_budget" else 30.0,
+                                     "budget_left": 30.0, "priced": True,
                                      "ask": 0.95, "ask_size": k, "size_now": 80.0})
+            for g, k in unpriced:
+                W["refused"].append({"close": c, "ticker": tk + g, "t": c - 12, "gate": g, "tau": 12.0,
+                                     "budget_left": 0.0 if g == "close_budget" else 30.0,
+                                     "priced": False, "ask": None, "ask_size": None, "size_now": k})
         return W
     W = b5_world(120, [("edge_floor", 14.0), ("jump_gate", 3.0)])
     W["refused"].append({"close": C5, "ticker": "far", "t": C5 - 40, "gate": "edge_floor", "tau": 40.0,
                          "budget_left": 30.0, "ask": 0.95, "ask_size": 500.0, "size_now": 80.0})
     W["refused"].append({"close": C5, "ticker": "dear", "t": C5 - 10, "gate": "edge_floor", "tau": 10.0,
                          "budget_left": 30.0, "ask": 0.99, "ask_size": 500.0, "size_now": 80.0})
+    W["refused"].append({"close": C5, "ticker": "B5-0", "t": C5 - 23, "gate": "max_per_market",
+                         "tau": 23.0, "budget_left": 79.0, "priced": False, "ask": None,
+                         "ask_size": None, "size_now": 79.0})
     x = eval_b5(b5, W)
-    ck(any("read 202, kept 200 (priced 200, unpriced 0); dropped: not 3-30 s left 1, our side not "
-           "offered at 90-98c 1" in d for d in x["detail"]),
-       "B5's filter prints its own null: 202 refusals read on its 100 closes, the 45 s one and the 99c one dropped")
+    ck(any("read 203, kept 200; dropped: max_per_market (the market already held its buys) 1, "
+           "not 3-30 s left 1, our side not offered at 90-98c 1" in d for d in x["detail"]),
+       "B5's filter prints its own null: 203 refusals read on its 100 closes; the 45 s one, the "
+       "99c one and the max_per_market one (that market already held SIZE) dropped")
     ck(x["status"] == "PASS" and "edge_floor" in x["line"],
-       "B5 PASS world: one gate refuses 80%% of the offered volume and covers the gap -> named (%s)"
+       "B5 PASS world: one PRICED gate refuses 80%% of the volume and covers the gap -> named (%s)"
        % x["line"])
     # the refusal shapes pinrun really writes (2026-09-22 live log): a reader that only knew
     # no_offer's wanted_side/<side>_ask kept 0 of 134 real refusals
     shapes = [({"gate": "no_offer", "wanted_side": "no", "yes_ask": 0.001, "no_ask": None,
-                "yes_ask_size": 1034.6, "no_ask_size": None}, None),
-              ({"gate": "no_offer", "wanted_side": "no", "no_ask": 0.95, "no_ask_size": 30.0}, 30.0),
-              ({"gate": "price_ceiling", "want": "no", "price": 0.991, "size": 7.17}, None),
-              ({"gate": "edge_floor", "want": "no", "price": 0.95, "size": 124.0}, 78.0),
+                "yes_ask_size": 1034.6, "no_ask_size": None}, (0.0, 0.0)),
+              ({"gate": "no_offer", "wanted_side": "no", "no_ask": 0.95, "no_ask_size": 30.0}, (30.0, 30.0)),
+              ({"gate": "price_ceiling", "want": "no", "price": 0.991, "size": 7.17}, (0.0, 0.0)),
+              ({"gate": "edge_floor", "want": "no", "price": 0.95, "size": 124.0}, (78.0, 78.0)),
               ({"gate": "depth_floor", "want": "no", "price": 0.96, "offered": 0.02, "wanted": 78.0,
-                "size": 78.0}, 0.02),
-              ({"gate": "close_budget", "spent": 156.0, "budget": 156.0, "size": 78.0}, 78.0),
-              ({"gate": "confidence", "fair": 0.02}, None)]
+                "size": 78.0}, (0.02, 0.02)),
+              ({"gate": "close_budget", "spent": 156.0, "budget": 156.0, "size": 78.0}, (0.0, 78.0)),
+              ({"gate": "book_stale", "age_ms": 2029}, (0.0, 78.0)),
+              ({"gate": "max_per_market", "fills": 2}, (0.0, 0.0)),
+              ({"gate": "confidence", "fair": 0.02}, (0.0, 0.0))]
     got = []
-    for rec_, want_k in shapes:
+    for rec_, (want_lo, want_hi) in shapes:
         rp = refusal_price(dict(rec_, tau=12, budget_left=40.0, size_now=78.0))
         Wx = world()
         Wx["armed"].add(C5)
         Wx["refused"].append(dict(rp, close=C5, ticker="S", t=C5 - 12, gate=rec_["gate"], tau=12.0,
                                   budget_left=40.0, size_now=78.0))
-        _pc, rpc, _c, _d = _b5_view(r5, Wx, [C5])
-        got.append(abs(rpc - (want_k or 0.0)) < 1e-9)
-    ck(all(got), "B5 reads every refusal shape pinrun writes: no_offer (not offered / offered 30), "
-       "price_ceiling at 99.1c dropped, edge_floor 124 offered -> our 78, depth_floor 0.02 offered, "
-       "close_budget unpriced -> 78 upper bound, confidence dropped (%s)" % got)
+        _pc, rlo, rhi, _l, _h, _d = _b5_view(r5, Wx, [C5])
+        got.append(abs(rlo - want_lo) < 1e-9 and abs(rhi - want_hi) < 1e-9)
+    ck(all(got), "B5 reads every refusal shape pinrun writes, as (low, high): no_offer not offered "
+       "(0, 0) / offered 30 (30, 30); price_ceiling at 99.1c dropped; edge_floor 124 offered -> "
+       "our 78; depth_floor 0.02; close_budget and book_stale refused before the book was read -> "
+       "(0, 78); max_per_market and confidence dropped (%s)" % got)
     x = eval_b5(b5, b5_world(320, [("edge_floor", 4.5), ("jump_gate", 4.5), ("depth_floor", 4.5),
-                                   ("close_budget", 4.5)]))
+                                   ("rebuy_band", 4.5)]))
     ck(x["status"] == "FAIL", "B5 FAIL world: four causes at 25% each, 300 closes -> no single answer")
     x = eval_b5(b5, b5_world(50, [("edge_floor", 40.0)]))
     ck(x["status"] == "COLLECTING", "B5 not-enough world: 50 closes decides nothing")
@@ -1612,14 +1834,27 @@ def selftest(bars_path=BARS_PATH):
     ck(x["status"] == "PENDING", "B5 without the budget field is PENDING")
     x = eval_b5(b5, b5_world(120, [], late_n=ref5 * 0.85))
     ck(x["status"] == "PASS" and "came back" in x["line"],
-       "B5: buying back at 85% of the stricter reference -> 'the leg was using the budget'")
+       "B5: buying back at 85% of the higher reference -> 'the leg was using the budget'")
     x = eval_b5(b5, b5_world(120, [("edge_floor", 1.0)]))
     ck(x["status"] == "PASS" and "not our gates" in x["line"],
-       "B5: refusals far below the gap -> 'the offers were not there' (a real answer too)")
+       "B5: refusals far below the gap on BOTH bounds -> 'the offers were not there'")
+    x = eval_b5(b5, b5_world(120, [("edge_floor", 1.0)], unpriced=[("book_stale", 80.0)]))
+    ck(x["status"] == "COLLECTING" and "not our gates" not in x["line"] and "book_stale" not in x["line"],
+       "B5: few PRICED refusals but many stale-book refusals (volume unknown, up to our size) -> "
+       "no answer: 'the offers were not there' needs the HIGH bound under half the gap, and a "
+       "stale-data gate is never named (%s)" % x["line"])
+    x = eval_b5(b5, b5_world(120, [("edge_floor", 16.0)], unpriced=[("close_budget", 80.0)]))
+    ck(x["status"] == "COLLECTING" and "close_budget" not in x["line"],
+       "B5: an UNPRICED capacity gate holding most of the high bound is never named -- its volume "
+       "is unknown (%s)" % x["line"])
+    x = eval_b5(b5, b5_world(120, [("edge_floor", 10.0)], unpriced=[("close_budget", 8.0)]))
+    ck(x["status"] == "COLLECTING" and "edge_floor" not in x["line"],
+       "B5: a priced gate that dominates but whose measured volume does not cover 80%% of the gap "
+       "on its own is not named (the unpriced 8 cannot make up the coverage) (%s)" % x["line"])
     W = b5_world(120, [], late_n=ref5 * 0.85)
     W["b5_base"] = {"era_b": (ref5 * 1.2, 600)}
     ck("came back" not in eval_b5(b5, W)["line"],
-       "B5 uses the STRICTER of the two references: 85% of map 11's is not 'came back' when this "
+       "B5 uses the HIGHER of the two references: 85% of map 11's is not 'came back' when this "
        "file's own era-B count is 20% higher")
 
     # ---------------- B6
@@ -1653,14 +1888,18 @@ def selftest(bars_path=BARS_PATH):
        "B6 null: an arm that traded exactly what live traded is flagged as measuring nothing")
 
     # ---------------- files on disk -> the same world; then a missing-file world
+    import copy
     import tempfile
     tmp = tempfile.mkdtemp(prefix="barcheck-")
     try:
         c1 = C0
+        S_MIN = min(ep(b_["window_start_utc"]) for b_ in bars["bars"])   # load_live's since
         tk = "KXBTC15M-%s" % time.strftime("%y%b%d%H%M", time.gmtime(c1 + et_offset(c1))).upper() + "-00"
         ck(close_epoch(tk) == c1, "ticker clock is Eastern: %s closes at %s" % (tk, et(c1)))
         live = [{"kind": "start", "mode": "live", "pin": 0.995, "early_frac": 0.333,
                  "code_sha": "abc", "t": iso(T0 - 20)},
+                {"kind": "order", "ticker": tk, "want": "no", "leg": "full", "filled": 7.0,
+                 "exec_price": 0.96, "ask_seen": 0.96, "tau_at_send": 20, "t": iso(S_MIN - 100)},
                 {"kind": "signal", "ticker": tk, "want": "no", "price": 0.97, "level_age_ms": 80,
                  "t": iso(c1 - 41)},
                 {"kind": "order", "ticker": tk, "want": "no", "leg": "early", "filled": 30.0,
@@ -1679,13 +1918,16 @@ def selftest(bars_path=BARS_PATH):
                 {"kind": "close_summary", "close": c1, "t": iso(c1 + 5)}]
         with open(os.path.join(tmp, "pinrun-live-X.jsonl"), "w", encoding="utf-8") as fh:
             fh.write("\n".join(json.dumps(r) for r in live) + "\nnot json\n")
+        wti = "KXWTI15M-%s" % tk.split("-", 1)[1]
         sett = {"%s|x" % tk: {"ticker": tk, "market_result": "no", "no_count_fp": "40.00",
                               "no_total_cost_dollars": "38.700000", "yes_count_fp": "10.00",
                               "yes_total_cost_dollars": "0.500000", "fee_cost": "0.050000",
                               "revenue": 0, "settled_time": iso(c1 + 20)},
                 "KXCRYPTOLEAD15M-X-XRP|y": {"ticker": "KXCRYPTOLEAD15M-26SEP220730-XRP",
                                             "market_result": "yes", "yes_count_fp": "1.00",
-                                            "yes_total_cost_dollars": "0.5", "fee_cost": "0"}}
+                                            "yes_total_cost_dollars": "0.5", "fee_cost": "0"},
+                "%s|z" % wti: {"ticker": wti, "market_result": "yes", "yes_count_fp": "9.00",
+                               "yes_total_cost_dollars": "8.1", "fee_cost": "0"}}
         with open(os.path.join(tmp, "kalshi_ledger.json"), "w", encoding="utf-8") as fh:
             json.dump({"settlements": sett, "written": iso(c1 + 30)}, fh)
         pl = "pinrun-paper-%s.jsonl" % time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(T0 - 10))
@@ -1699,17 +1941,40 @@ def selftest(bars_path=BARS_PATH):
             fh.write("\n".join(json.dumps(r) for r in paper) + "\n")
         with open(os.path.join(tmp, "arm-pinx.out"), "w", encoding="utf-8") as fh:
             fh.write("  log C:\\x\\%s\n" % pl)
-        Wd = load_world(bars, tmp, now=T0 + 86400)
+        # a planted scorer module on disk: B1 must import it, hash its FILE, and
+        # hand it barcheck's own ledger snapshot
+        fake_mod = "eh_fake_selftest_%d" % os.getpid()
+        with open(os.path.join(tmp, fake_mod + ".py"), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("SEEN = {}\n"
+                     "def freeze_rows(since_s, data_dir, now_s=None, ledger_rows=None):\n"
+                     "    SEEN['snap'] = ledger_rows\n"
+                     "    return {'rows': [{'close': %d, 'live': 0.75, 'full': 0.75, 'off': 0.75,\n"
+                     "                      'full_lo': 0.75, 'tickers': ['%s']}], 'diag': {}}\n"
+                     % (c1, tk))
+        bars_x = copy.deepcopy(bars)
+        for b_ in bars_x["bars"]:
+            if b_["id"] == "B1":
+                b_["scorer"]["module"] = fake_mod
+        Wd = load_world(bars_x, tmp, now=T0 + 86400, hindsight_dir=tmp)
         fl = Wd["fills"]
         ck(len(fl) == 3 and fl[0]["age_ms"] == 80 and fl[0]["leg"] == "early" and fl[1]["age_ms"] == 5
            and fl[2]["age_ms"] is None
            and Wd["armed"] == {c1} and len(Wd["quotes"].get(tk, [])) == 1
            and Wd["budget_from"] is not None and len(Wd["refused"]) == 1,
            "loader: each order paired with ITS signal (80 ms, 5 ms; none within 3 s -> no age), close, "
-           "quote, refusal")
+           "quote, refusal; an order written before the earliest bar window is not read")
         ck(set(Wd["ledger"]) == {tk} and abs(Wd["ledger"][tk]["pnl"] - (40 - 38.7 - 0.5 - 0.05)) < 1e-9,
-           "ledger: pin market only (the Coin Race row is not the pin bot); a HEDGED market pays $40 "
-           "though Kalshi's revenue field says 0 (P&L = payout - both sides - fee)")
+           "ledger: pin market only (not the Coin Race row, not the KXWTI15M commodity row); a "
+           "HEDGED market pays $40 though Kalshi's revenue field says 0 (P&L = payout - both sides - fee)")
+        fmod = sys.modules.get(fake_mod)
+        ck(Wd["hind_rows"] is not None and fmod is not None and fmod.SEEN.get("snap") == sett
+           and Wd["hind_code"] == file_sha256(os.path.join(tmp, fake_mod + ".py"))
+           and len(Wd["hind_code"] or "") == 64,
+           "B1's scorer is imported from disk, handed the SAME ledger snapshot barcheck read, and "
+           "its code hash is computed from its file by barcheck")
+        x = eval_b1(bm["B1"], Wd)
+        ck(x["status"] == "INVALID" and "not the registered one" in x["line"],
+           "B1: that planted scorer is not the registered code -> INVALID (%s)" % x["line"][:80])
         runs = Wd["arms"].get("arm-pinx", {}).get("runs", [])
         ck(len(runs) == 1 and abs(runs[0]["pnl"][tk] - 0.55) < 1e-9 and runs[0]["code"] == "abc"
            and Wd["arms"]["arm-pinx"]["sig"] == ("pin=0.97",),
@@ -1719,6 +1984,19 @@ def selftest(bars_path=BARS_PATH):
         ck(len(brief(rs)) <= 8 and all(len(x) < 200 for x in brief(rs)),
            "--brief is <= 8 lines, each short enough for a phone")
         ck(status_md(rs, bars, Wd, tmp).count("## ") == 7, "status file has the freeze plus six bars")
+        # the B5 baseline counts <=30 s buys OUTSIDE the 45 s leg, per watched close
+        lp = [{"kind": "close_summary", "close": c1, "t": iso(c1 + 5)},
+              {"kind": "order", "ticker": tk, "leg": "early", "filled": 50.0, "tau_at_send": 30,
+               "t": iso(c1 - 30)},
+              {"kind": "order", "ticker": tk, "leg": "full", "filled": 20.0, "tau_at_send": 10,
+               "t": iso(c1 - 10)}]
+        with open(os.path.join(tmp, "pinrun-live-Y.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join(json.dumps(r) for r in lp) + "\n")
+        os.remove(os.path.join(tmp, "pinrun-live-X.jsonl"))
+        pc_, na_ = late_per_close(tmp, c1 - 3600, c1 + 60)
+        ck(na_ == 1 and abs(pc_ - 20.0) < 1e-9,
+           "B5's own baseline: a 45 s-leg order sent at 30 s left is not a <=30 s buy (20 a close, "
+           "not 70)")
         # missing files: no ledger, no logs, no arms -> zeros and waiting, never a crash
         for f in glob.glob(os.path.join(tmp, "*")):
             os.remove(f)
@@ -1731,8 +2009,15 @@ def selftest(bars_path=BARS_PATH):
         Wn = load_world(bars, os.path.join(tmp, "does-not-exist"), now=T0 + 86400)
         ck(all(x["n"] == 0 for x in evaluate(bars, Wn)), "a folder that does not exist is also just empty")
     finally:
+        sys.modules.pop("eh_fake_selftest_%d" % os.getpid(), None)
+        if tmp in sys.path:
+            sys.path.remove(tmp)
         for f in glob.glob(os.path.join(tmp, "*")):
-            os.remove(f)
+            if os.path.isdir(f):
+                import shutil
+                shutil.rmtree(f, ignore_errors=True)
+            else:
+                os.remove(f)
         os.rmdir(tmp)
     print("barcheck self-test: %d checks passed" % n[0])
     return 0
@@ -1743,8 +2028,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--brief", action="store_true", help="<= 8 plain lines")
-    ap.add_argument("--data", default=REPO_RESULTS,
-                    help="where the live/paper logs, arm .out files and kalshi_ledger.json are")
+    ap.add_argument("--data", default=DATA_DEFAULT,
+                    help="where the live/paper logs, arm .out files and kalshi_ledger.json are "
+                         "(default: the LIVE results folder, even from a worktree)")
     ap.add_argument("--bars", default=BARS_PATH)
     ap.add_argument("--status", default=STATUS_PATH, help="status file to write ('-' = none)")
     ap.add_argument("--hindsight-dir", default=None,
