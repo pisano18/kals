@@ -2902,6 +2902,27 @@ MAX_ATTEMPTS_PER_CLOSE = 24  # AMENDMENT 26: 8 -> 24. Twelve coins settle on
                              # stopped a no-fill from consuming a slot. Fills
                              # and attempts need separate budgets. 8 allows the
                              # 3 fills plus a generous margin of lost races.
+
+# ---- R2 (2026-09-22): HOW LONG A LOOP PASS TOOK. RECORDS ONLY. --------
+# The universe refresh at the top of the loop does one synchronous
+# GET /markets per series -- eleven fresh TCP+TLS connections, no
+# condition on time to close. Our own authenticated POSTs to the same host
+# on a fresh connection run a median 94 ms over 980 orders, so eleven back
+# to back is ~1.0 s in which nothing is bought AND NO HEDGE FIRES, because
+# the hedge pass shares the thread. `hedge_quote` gaps cannot see it: a
+# blackout under 1.000 s can never cover a whole second, so there is no
+# instrument at all today. These two constants build one.
+#
+# NOTHING IS DEFERRED, MOVED OR GATED ON THESE. They time what already
+# happens and write it down; the hedge pass gains no condition.
+LOOP_SLOW_MS = 200.0     # a pass slower than this writes one `loop` record
+LOOP_REC_MAX = 20        # ...at most this many per close, so a box that is
+                         # thrashing cannot fill the disk. The per-close
+                         # MAXIMUM gap and the COUNT of slow passes are in
+                         # close_summary whatever this cap does, so the
+                         # measurement survives the cap. Disk is the real
+                         # deadline here: 5 GB free is a hard collection
+                         # stop, not a slowdown.
 _DEFAULT_MIN_FILL_FRAC = 0.50  # --min-fill-frac is measured against this
 #
 # AMENDMENT 28 (2026-09-14) -- RE-OPENED, AND THE REASON BELOW IS OBSOLETE.
@@ -3299,7 +3320,8 @@ _OFFLINE_PINNED_FLAGS = (
 
 def _offline_trade_loop(markets, live=False, take=None, reply=None,
                         freeze_at=None, rec_fault=None, run_s=12.0,
-                        size=5.0, tau0=30, plant=False):
+                        size=5.0, tau0=30, plant=False,
+                        flags=None, get_delay=0.0, stall=None):
     """Run the REAL trade_loop for `run_s` fake seconds on one close.
     (`plant` sets --hedge-plant, the one-contract planted hedge test.)
 
@@ -3317,6 +3339,15 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
 
     Every flag in _OFFLINE_PINNED_FLAGS runs at its _DEFAULT_ value, never
     the value the process was started with, and is restored afterwards.
+
+    flags      {NAME: value} applied AFTER that pinning and handed back
+               afterwards -- the only way a world can ask for a setting the
+               shipped defaults do not have (e.g. EXTRA_COIN, without which
+               the base-budget skip is unreachable).
+    get_delay  seconds the fake clock jumps on every GET /markets, i.e. a
+               PLANTED SLOW UNIVERSE REFRESH.
+    stall      (after_s, dt) -- the first book read at or after `after_s`
+               jumps the clock by `dt`, i.e. a PLANTED SLOW LOOP PASS.
 
     Returns {"recs", "posts", "raised", "ran_s", "state"}. A record's `t` is
     fake wall time since the start, in seconds.
@@ -3362,8 +3393,17 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
                                 "__round__ method")
             return None, None, None
 
+    _stalled = {"done": False}
+
     class _Book:
         def best(self, tk):
+            # R2: a PLANTED SLOW PASS. The stall happens inside the scan,
+            # exactly where a slow book read or a slow send would put it,
+            # so the pass that contains it is the one that must be timed.
+            if (stall is not None and not _stalled["done"]
+                    and clock.t - t0 >= float(stall[0])):
+                _stalled["done"] = True
+                clock.t += float(stall[1])
             for m in markets:
                 if m["tk"] == tk:
                     return m["book"](clock.t - t0)
@@ -3392,6 +3432,10 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
 
     def _get(path, params=None, **kw):
         if path == "/markets":
+            # R2: a PLANTED SLOW REFRESH -- one GET, one clock jump, which
+            # is what a fresh TCP+TLS connection per series actually costs.
+            if get_delay:
+                clock.t += float(get_delay)
             s = (params or {}).get("series_ticker")
             return 200, {"markets": [
                 {"ticker": m["tk"], "close_time": iso,
@@ -3431,6 +3475,9 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
     saved = {k: g[k] for k in ("time", "get", "fair", "SIZE", "DAYLOSS_FILE",
                                "read_bank", "publish_size")}
     pinned = {k: g[k] for k in _OFFLINE_PINNED_FLAGS}
+    # captured BEFORE the pinning, so the hand-back is the value the process
+    # started with whether or not the key is also a pinned flag
+    extra_was = {k: g[k] for k in (flags or {})}
     loop_state = None
     saved_creds = dict(CREDS)
     saved_pt = (pintake.time, pintake.take, pintake._get,
@@ -3443,6 +3490,8 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
     try:
         for k in _OFFLINE_PINNED_FLAGS:
             g[k] = g["_DEFAULT_" + k]
+        for k, v in (flags or {}).items():
+            g[k] = v
         g["time"] = clock
         g["get"] = _get
         g["fair"] = _fair
@@ -3473,6 +3522,8 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         for k, v in saved.items():
             g[k] = v
         for k, v in pinned.items():
+            g[k] = v
+        for k, v in extra_was.items():
             g[k] = v
         CREDS.clear()
         CREDS.update(saved_creds)
@@ -8727,6 +8778,154 @@ def _selftest_body():
        and not [r for r in _kinds(_r5f, "error") if r.get("where") == "scan"],
        "(5) a quote record that raises cannot crash the loop, delay the "
        "hedge or count as a scan error (hedged %g)" % _hedged(_r5f, _kA))
+    # ===================================================================
+    # R4 / R2 / R1 (2026-09-22). Two records-only changes and one flag
+    # that defaults to today's behaviour. Every world below drives the
+    # REAL trade_loop through _offline_trade_loop; none of them retypes a
+    # decision, and each was run against a build with its own change
+    # reverted to prove the check can fail.
+    # ===================================================================
+
+    def _gate_counts(res):
+        """The UNDEDUPED per-gate look counts the close_summary records
+        carry -- the same numbers the R4 bar adds up."""
+        out = {}
+        for r in _kinds(res, "close_summary"):
+            for k, v in (r.get("gates") or {}).items():
+                out[k] = out.get(k, 0) + int(v)
+        return out
+
+    def _refusals(res, gate):
+        return [r for r in _kinds(res, "refused") if r.get("gate") == gate]
+
+    # ---- R4: the silent base-budget skip now leaves a record ----------
+    # THE FLAG IS LOAD-BEARING: at the shipped EXTRA_COIN of 0.0 the skip
+    # is UNREACHABLE, because close_budget_for() == close_budget() and the
+    # gate 600 lines earlier refuses first. The live bot runs
+    # --extra-coin 1, which grants a third bet for a coin the close does
+    # not already hold -- and that is the world in which 97 looks vanished
+    # unlogged on run 20260920T023207Z. The asks step DOWN so that A3's
+    # improve bar (scope "close", the shipped default) is not what refuses
+    # the later coins; each is genuinely cheaper than the last.
+    def _r4_mkt(n, no_bid):
+        m = _k1_B(n)
+        m["book"] = (lambda t, _nb=no_bid: _ob(round(0.98 - _nb, 4), _nb))
+        return m
+    _r4_world = [_k1_A(collapse_at=None), _r4_mkt(1, 0.07),
+                 _r4_mkt(2, 0.09), _r4_mkt(3, 0.11)]
+    _r4 = _offline_trade_loop(_r4_world, run_s=40.0,
+                              flags={"EXTRA_COIN": 1.0})
+    _r4g = _gate_counts(_r4)
+    _r4b = _refusals(_r4, "close_budget_base")
+    _r4sig = _kinds(_r4, "signal")
+    _r4n = int((_r4["state"] or {}).get("signals") or 0)
+    _r4burn = sum(_r4g.get(k, 0) for k in
+                  ("close_budget_base", "early_cheap", "early_dear",
+                   "early_wide", "staged_none", "price_band"))
+    ck(_r4["raised"] is None and _kinds(_r4, "close_summary")
+       and _r4n > 0 and _r4n == len(_r4sig) + _r4burn,
+       "R4: the bar's identity CLOSES -- state.signals (what rec('end') "
+       "writes) equals signal records plus the undeduped close_summary "
+       "counts of close_budget_base / early_cheap / early_dear / "
+       "early_wide / staged_none / price_band (%d == %d + %d)"
+       % (_r4n, len(_r4sig), _r4burn))
+    ck(len(_r4b) >= 2 and len(_r4b) == len({r.get("ticker") for r in _r4b})
+       and _r4g.get("close_budget_base", 0) > 4 * len(_r4b),
+       "R4: ...written ONCE per market per close (%d records over %d "
+       "markets) while the undeduped counter still sees every look (%d) "
+       "-- a 20 Hz loop must not write twenty lines a second"
+       % (len(_r4b), len({r.get("ticker") for r in _r4b}),
+          _r4g.get("close_budget_base", 0)))
+    ck(_r4b and all(float(r.get("base")) == float(MAX_PER_CLOSE) * 5.0
+           and abs(float(r.get("spent")) - float(MAX_PER_CLOSE) * 5.0) < 1e-9
+           and float(r.get("budget_left")) > 0.0
+           and r.get("want") in ("yes", "no")
+           and isinstance(r.get("price"), float)
+           and r.get("take_n") is not None
+           and isinstance(r.get("tau"), int)
+           and float(r.get("size_now")) == 5.0 for r in _r4b),
+       "R4: ...and each record carries want, price, take_n, base, spent, "
+       "tau -- with budget_left ABOVE zero while the BASE is spent, which "
+       "is the signature that tells 'the close ran out' apart from 'the "
+       "third bet was dropped' (%s)"
+       % [(r.get("ticker"), r.get("base"), r.get("spent"),
+           r.get("budget_left")) for r in _r4b][:2])
+    _r4null = _offline_trade_loop(_r4_world, run_s=40.0)
+    _r4gn = _gate_counts(_r4null)
+    _r4nn = int((_r4null["state"] or {}).get("signals") or 0)
+    ck(_r4null["raised"] is None and not _refusals(_r4null, "close_budget_base")
+       and _refusals(_r4null, "close_budget")
+       and _r4nn == len(_kinds(_r4null, "signal"))
+       + sum(_r4gn.get(k, 0) for k in
+             ("close_budget_base", "early_cheap", "early_dear",
+              "early_wide", "staged_none", "price_band")),
+       "R4 NULL: the SAME world at the shipped --extra-coin 0 never "
+       "reaches the skip at all -- the earlier close_budget gate refuses "
+       "first and logs -- and the identity still closes (%d signals)"
+       % _r4nn)
+
+    # ---- R2: the universe refresh and the loop pass, TIMED ------------
+    # Timing only. Nothing is deferred, moved or gated on these numbers,
+    # and the hedge pass gains no condition -- the point is precisely that
+    # the hedge shares this thread, so the refresh's duration IS the
+    # hedge's blackout and until now nothing could see it.
+    _r2slow = _offline_trade_loop([_k1_A(collapse_at=None)], run_s=40.0,
+                                  get_delay=0.6)
+    _r2u = _kinds(_r2slow, "universe")
+    ck(_r2slow["raised"] is None and len(_r2u) >= 2
+       and all(abs(float(r["ms"]) - 600.0) < 2.0 for r in _r2u)
+       and all(int(r["n"]) == 1 and int(r["series"]) == 1 for r in _r2u),
+       "R2: a PLANTED 600 ms universe refresh is recorded at its real "
+       "duration on EVERY refresh, with the markets it kept (%d records, "
+       "ms %s)" % (len(_r2u), [r["ms"] for r in _r2u]))
+    _r2fast = _offline_trade_loop([_k1_A(collapse_at=None)], run_s=40.0)
+    _r2uf = _kinds(_r2fast, "universe")
+    ck(_r2fast["raised"] is None and len(_r2uf) >= 2
+       and all(float(r["ms"]) < 50.0 for r in _r2uf)
+       and not _kinds(_r2fast, "loop"),
+       "R2 NULL: the same world with nothing planted records the refresh "
+       "at ~0 ms and writes NO loop record at all -- a fast loop is "
+       "silent, so a `loop` line always means a real stall (ms %s)"
+       % [r["ms"] for r in _r2uf][:3])
+    _r2stall = _offline_trade_loop([_k1_A(collapse_at=None)], run_s=40.0,
+                                   stall=(6.0, 0.25))
+    _r2l = _kinds(_r2stall, "loop")
+    _r2cs = _kinds(_r2stall, "close_summary")
+    ck(_r2stall["raised"] is None and len(_r2l) == 1
+       and 250.0 <= float(_r2l[0]["ms"]) <= 320.0
+       and isinstance(_r2l[0].get("tau"), int)
+       and 22 <= int(_r2l[0]["tau"]) <= 25,
+       "R2: a PLANTED 250 ms stall inside one pass writes exactly ONE "
+       "loop record, at the tau the stalled pass STARTED at (%s)"
+       % [(r["ms"], r["tau"]) for r in _r2l])
+    ck(len(_r2cs) == 1 and len(_r2l) == 1
+       and float(_r2cs[0]["pass_gap_ms"] or 0.0) == float(_r2l[0]["ms"])
+       and _r2cs[0]["pass_gap_tau"] == _r2l[0]["tau"]
+       and int(_r2cs[0]["slow_passes"] or 0) == 1,
+       "R2: ...and the close's own summary carries the WORST pass it saw, "
+       "that pass's tau, and how many passes were slow (%s)"
+       % [(r.get("pass_gap_ms"), r.get("pass_gap_tau"), r.get("slow_passes"))
+          for r in _r2cs])
+    ck(_r2fast["raised"] is None
+       and all(float(r.get("pass_gap_ms") or 0.0) <= LOOP_SLOW_MS
+               and int(r.get("slow_passes") or 0) == 0
+               for r in _kinds(_r2fast, "close_summary")),
+       "R2 NULL: with nothing planted the close summary's worst pass is "
+       "under the %g ms bar and no pass is counted slow (%s)"
+       % (LOOP_SLOW_MS, [(r.get("pass_gap_ms"), r.get("slow_passes"))
+                         for r in _kinds(_r2fast, "close_summary")]))
+
+    def _r2_fault(kind, kw):
+        if kind in ("universe", "loop"):
+            raise TypeError("planted: a timing record that cannot be written")
+    _r2f = _offline_trade_loop([_k1_A()], get_delay=0.6, stall=(6.0, 0.25),
+                               rec_fault=_r2_fault)
+    ck(_r2f["raised"] is None and abs(_hedged(_r2f, _kA) - 5.0) < 1e-9
+       and not [r for r in _kinds(_r2f, "error") if r.get("where") == "scan"],
+       "R2: a timing record that RAISES cannot crash the loop, delay the "
+       "hedge or count as a scan error -- these records can only ever be "
+       "dropped (hedged %g)" % _hedged(_r2f, _kA))
+
     _pin_moved = [_n for _n in _OFFLINE_PINNED_FLAGS
                   if globals()[_n] != _pin_before[_n]]
     ck(not _pin_moved,
@@ -9629,6 +9828,12 @@ def trade_loop(a, rec, book, idx, series_index):
     # told apart from a blind one.
     near = {}                # close_s -> dict of the best look at that close
     dumped_seen = set()      # (close_s, ticker) already written as `dumped`
+    # R2: how long the loop's passes took, attributed to the close that was
+    # nearest when each pass STARTED. Records only -- nothing reads these to
+    # decide anything, and report_closes() hands them back per close.
+    pass_gap = {}            # close_s (or None) -> (worst pass ms, its tau)
+    pass_slow = {}           # close_s (or None) -> passes over LOOP_SLOW_MS
+    _prev_pass = None        # (when the last pass started, its close, its tau)
 
     # ===================================================================
     # AMENDMENT 25 (2026-09-13): EVERY GATE SAYS WHY, ONCE, ON THE RECORD.
@@ -9874,12 +10079,20 @@ def trade_loop(a, rec, book, idx, series_index):
             reported.add(cs)
             nb = near[cs]
             b = nb.get("best")
+            # R2: the worst pass this close ever saw, the tau it started at,
+            # and how many passes were over LOOP_SLOW_MS. Popped so neither
+            # dict can grow with the run. Never raises -- it only reports.
+            _pg = pass_gap.pop(cs, None)
+            _ps = pass_slow.pop(cs, 0)
             if b is None:
                 rec("close_summary", close=cs, looks=nb["n"],
                     decided=nb["decided"], undecided=nb["undecided"],
                     no_offer=nb["no_offer"], dust=nb["dust"],
                     fired=(cs in fired), best=None,
                     gates=nb.get("gates", {}),      # AMENDMENT 25
+                    pass_gap_ms=(_pg[0] if _pg else None),
+                    pass_gap_tau=(_pg[1] if _pg else None),
+                    slow_passes=_ps,
                     depth=_depth_report(nb.get("depths")),
                     ladder=_depth_report(nb.get("ladders")),
                     why=("decided but NOBODY OFFERED the winning side"
@@ -9898,6 +10111,9 @@ def trade_loop(a, rec, book, idx, series_index):
                     over_ceiling=nb.get("over_ceiling", 0),
                     neg_ev=nb.get("neg_ev", 0),
                     gates=nb.get("gates", {}),      # AMENDMENT 25
+                    pass_gap_ms=(_pg[0] if _pg else None),   # R2
+                    pass_gap_tau=(_pg[1] if _pg else None),
+                    slow_passes=_ps,
                     depth=_depth_report(nb.get("depths")),
                     ladder=_depth_report(nb.get("ladders")),
                     shallow_skips=nb.get("shallow", {}),
@@ -10091,6 +10307,47 @@ def trade_loop(a, rec, book, idx, series_index):
         # below them. A pause now stops new bets, which is all it ever meant.
         now = time.time()
         now_s = int(now)
+
+        # ---- R2 (2026-09-22): HOW LONG THE LAST PASS TOOK. -------------
+        # RECORDS ONLY, AND IT SITS ABOVE THE HEDGE PASS ON PURPOSE: the
+        # whole point is to time a stall that delays the hedge, so the
+        # measurement has to be the first thing after the clock read and
+        # the last thing before the hedge. It adds no condition to the
+        # hedge and can defer nothing -- the only way it could hurt is by
+        # raising, so the entire block is swallowed.
+        #
+        # The gap is attributed to the close that was NEAREST WHEN THE
+        # PASS STARTED, with that pass's tau, because "a pass that began
+        # at 12 s left took 1.0 s" is the sentence B5 and R2's bar need.
+        # A pass with nothing watched is keyed under None.
+        try:
+            _nc2 = min((c for c in watching.values() if c >= now_s),
+                       default=None)
+            if _prev_pass is not None:
+                _gms2 = round(1000.0 * (now - _prev_pass[0]), 1)
+                _pcs2, _ptau2 = _prev_pass[1], _prev_pass[2]
+                _cur2 = pass_gap.get(_pcs2)
+                if _cur2 is None or _gms2 > _cur2[0]:
+                    pass_gap[_pcs2] = (_gms2, _ptau2)
+                if _gms2 > LOOP_SLOW_MS:
+                    _ns2 = pass_slow.get(_pcs2, 0) + 1
+                    pass_slow[_pcs2] = _ns2
+                    if _ns2 <= LOOP_REC_MAX:
+                        rec("loop", ms=_gms2, tau=_ptau2, close_s=_pcs2,
+                            n_slow=_ns2, watching=len(watching))
+            _prev_pass = (now, _nc2,
+                          (int(_nc2 - now_s) if _nc2 is not None else None))
+            # report_closes() pops each close's entry as it summarises it, so
+            # these stay small. A close we watched but never summarised (the
+            # bot was blind or halted through it) would leak one tuple, so
+            # they are pruned once they are long past. Bounded, not tidy.
+            if len(pass_gap) > 200:
+                for _dk2 in [k for k in pass_gap
+                             if k is not None and k < now_s - 900]:
+                    pass_gap.pop(_dk2, None)
+                    pass_slow.pop(_dk2, None)
+        except Exception:                                # noqa: BLE001
+            pass
 
         # ---------------- AMENDMENT 15: the hedge pass ----------------
         # Runs BEFORE the signal scan so a collapsing position is dealt with
@@ -10703,6 +10960,7 @@ def trade_loop(a, rec, book, idx, series_index):
 
         if now - uni_at > 20:
             uni_at = now
+            _uni_t0 = time.time()               # R2: timing only
             try:
                 fresh = {}
                 for series, iid in series_index.items():
@@ -10767,6 +11025,20 @@ def trade_loop(a, rec, book, idx, series_index):
             except Exception as e:                       # noqa: BLE001
                 state["errors"] += 1
                 rec("error", where="universe", err=str(e)[:200])
+            # R2: WHAT THE REFRESH COST, EVERY TIME. One synchronous
+            # GET /markets per series on a fresh connection, with no
+            # condition on time to close -- and the hedge pass is in this
+            # same thread, so this duration is also the hedge's blackout.
+            # It is a DURATION, not a decision: nothing is deferred, moved
+            # or skipped, the refresh runs exactly where and when it did,
+            # and a record that cannot be written is dropped rather than
+            # allowed to reach the loop.
+            try:
+                rec("universe", ms=round(1000.0 * (time.time() - _uni_t0), 1),
+                    n=len(seen_markets), watching=len(watching),
+                    series=len(series_index))
+            except Exception:                            # noqa: BLE001
+                pass
 
         # ---- AMENDMENT 24 (2026-09-13): SCAN ORDER IS THE BEST FIRST ------
         # THE OPERATOR, 2026-09-13: "I'm not certain if it should take the
@@ -11319,6 +11591,38 @@ def trade_loop(a, rec, book, idx, series_index):
                     _left = close_budget() - (
                         _pvb.get("contracts", 0.0) if _pvb else 0.0)
                     if _left <= 0:
+                        # ---- R4 (2026-09-22): THE SILENT REFUSAL. ------
+                        # This `continue` was the ONLY exit between the
+                        # signals counter and the order send with no
+                        # record of any kind. The gate 600 lines above
+                        # refuses on `close_budget_for` -- base PLUS ONE
+                        # BET for a new coin or inside the last seconds --
+                        # and logs; worst_close_cost() and the bank brake
+                        # both PRICE three bets. So the third bet is
+                        # granted, priced, sized for, and then dropped
+                        # here with no refusal record and no close_summary
+                        # count. Run 20260920T023207Z ended with
+                        # state.signals = 102 against 5 signal records and
+                        # zero looks at any of the five gates below: all
+                        # 97 exited on this line.
+                        #
+                        # LOGGING ONLY. The `continue` is unchanged, the
+                        # arithmetic above it is unchanged, and `_gate`
+                        # already dedupes per (close, market, gate) -- so
+                        # this is one record a market a close, not twenty
+                        # a second. `budget_left` (which _gate computes
+                        # from close_budget_for) will read > 0 here while
+                        # the BASE is spent, and that is exactly what
+                        # tells "the close's budget ran out" apart from
+                        # "the third bet was dropped".
+                        # `spent` is derived from the SAME expression the
+                        # refusal used (base - left), so the record can
+                        # never drift from the arithmetic that refused.
+                        _gate("close_budget_base", close_s, tk, want=want,
+                              price=round(price, 4), take_n=float(take_n),
+                              base=float(close_budget()),
+                              spent=round(float(close_budget()) - float(_left), 4),
+                              tau=tau)
                         continue
                     take_n = min(take_n, _left)
 
