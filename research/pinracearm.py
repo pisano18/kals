@@ -125,13 +125,16 @@ LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
 # wrong with it." Both losses were near-tied races (gap 3.7 and 5.6 bp) at
 # tau 40-41, where the market was right and the model was not.
 #
-# The FIRST loss would have passed a 90c floor on its own: the bot SAW 93c
-# and FILLED at 85c. MAX_BOOK_AGE_MS lets a race book sit five minutes
-# unchanged, so the price we decide on can be old; a buy fills at anything
-# at or under its limit, so a collapsing price is not refused, it is BOUGHT.
-# Only a fresh read can see it. So every real send first GETs the book over
-# REST, and refuses if the ask there is under the floor or more than
-# _DEFAULT_LIVE_MAX_DROP under the ask we decided on. A failed read refuses.
+# CORRECTED THE SAME NIGHT (map investigator 08, from the tape to the
+# millisecond): the first loss was NOT a stale book. Our price list matched
+# the exchange's book 0.16 s before the send; the 93c was a ~150 ms spike
+# (the prior 10 s ranged 66-90c), and a faster maker moved its quote between
+# our send and our fill -- we were picked off. The REST re-read below cannot
+# stop that: on its first live order (09-22 06:29Z) it read 97c, passed, and
+# the fill came at 91c. It stays as a cheap guard against a genuinely stale
+# book and it LOGS `fresh_ask`, but the protection is WHEN we bet: every race
+# loss since 09-21, real and paper, came 40-60 s out, and 0 of 88 paper races
+# with a 90c+ bet inside 30 s lost. Hence --live-tau-max 30 (v-race30).
 
 # WHY MORE THAN ONE LEG, WHEN 2026-09-15 COST $1,306 BY HOLDING TWO.
 #

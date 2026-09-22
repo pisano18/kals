@@ -35,6 +35,13 @@ Steam game. RAM 2.2 GB free.
    --live-tau-max 60 --live-min-price 0.90 --live-max-legs 5 --live-confirm 5
    --live-clock-tau 20 --minutes 1440 --log results\pinracepenny-live.jsonl
    --model fair --tau-max 60 --min-price 0.80 --min-edge 0.00`
+3b. **v-race90's diagnosis was partly WRONG** (map investigator 08, tape to the
+   millisecond): the first loss was a ~150 ms price spike and a faster maker
+   picking our order off, not a stale book; the REST re-read passed on its
+   first live order (97c) and the fill came at 91c. **v-race30** (~07:0xZ,
+   pid relaunched): real race bets only inside 30 s -- every race loss since
+   09-21, real and paper, was 40-60 s out; 0 of 88 paper races lost inside
+   30 s. Same argv as above with `--live-tau-max 30`.
 4. **The paper fleet was mostly DEAD.** 17 of 24 arms had hit the inherited
    `--max-losses 2` brake -- live restarts after a halt, a paper arm never
    does. None had been re-synced after the three 09-21 hedge changes, and two

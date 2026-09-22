@@ -1,3 +1,22 @@
+# v-race30 -- 2026-09-22 ~07:0xZ -- LIVE (coin race penny test): real bets only inside 30 s
+
+**What it does differently:** `--live-tau-max 60 -> 30`. Nothing else.
+
+**v-race90 below was partly WRONG and is corrected here.** Investigator 08
+rebuilt the first loss from the tape to the millisecond: the book was not
+stale -- the 93c was a ~150 ms spike and a faster maker picked our order off.
+The REST re-read cannot stop that (its first live order: read 97c, filled
+91c). And the 90c floor applies to the price we DECIDE on, not the fill, so
+"never buys under 90c" was false. What the evidence does support: every race
+loss since 09-21, real (2) and paper (2), came 40-60 s out; 0 of 88 paper
+races with a 90c+ bet inside 30 s lost. Both real losses were at 40-41 s.
+Paper matched real on win/loss 16 of 16, not on price.
+
+**REVERT:** relaunch `pinracearm.py --live` with `--live-tau-max 60` (argv in
+HANDOFF.md, 2026-09-22 section).
+
+---
+
 # v-race90 -- 2026-09-22 ~06:07Z -- LIVE (coin race penny test): 90c floor, and every send re-reads the book
 
 Not the pin bot -- `pinrun --live` is untouched. This is `pinracearm.py --live`,
