@@ -1,3 +1,33 @@
+# v-safety1 -- 2026-09-22 ~11:5xZ -- LIVE: the hedge can no longer be silenced by a crash, a halt or a frozen index
+
+**Freeze-compliant:** bug/safety fixes and logging only. No flag added; no
+ENTRY decision changes on a healthy loop. Built in a worktree, three
+adversarial reviews, every fix with a self-test proven to fail when reverted
+(12 reverted builds); 969 checks green plain AND under the live argv and all
+26 arm argvs. Verified defects: results/map_2026-09-22/verify/K1-K3.
+
+**What the bot now does differently:**
+- **K1** an exception in the entry scan, the hedge body or risk_abort is
+  recorded (`error`) and the loop continues; fills are registered for hedging
+  and the close budget BEFORE any record formats them. A hedge-step error, or
+  5 scan errors, stops new entries, drains (hedging still runs, 0.05 s loop),
+  exits when flat, and watch_bot restarts it. Before: the process died holding
+  (09-19 02:00 ET, -$66.34).
+- **K2** `pintake.take(..., hedge=True)`: a pintake halt refuses entries but
+  never a hedge. A hedge POST that provably never left the box is resent; an
+  ambiguous one is counted covered (no double hedge).
+- **K3** held market's index older than 2 s -> `hedge_blind(index_stale)` and
+  belief = min(model, our side's best ASK); fresh index -> byte-identical.
+- Paper arms no longer read the live day-loss file.
+- Logging: `tau` + `budget_left` on every refusal/signal, `t_ms_decide` /
+  `t_ms_send` on orders and hedges, one `hedge_quote` per held market per
+  second (insurance ask, size, belief) -- the data FREEZE bars B3/B5 need.
+
+**REVERT:** `git checkout b939501 -- research/pinrun.py research/pintake.py`
+then `powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+---
+
 # v-early-third -- 2026-09-22 11:42:12Z (07:42 ET restart, pid 2070976, SHA 1c89619) -- LIVE: the 45 s leg back to a third (--early-frac 1.0 -> 0.333)
 
 The operator, after the project map: *"Cut it to a third but measure which
