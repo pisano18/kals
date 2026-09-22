@@ -66,6 +66,7 @@ import argparse
 import calendar
 import collections
 import inspect
+import io
 import json
 import math
 import os
@@ -109,6 +110,11 @@ _DEFAULT_LIVE_MIN_PRICE = 0.90       # 80c on the tape; REAL fills said 90c, see
 _DEFAULT_LIVE_MAX_LEGS = 5           # one YES plus a NO on every other coin
 _DEFAULT_LIVE_STOP_ON_LOSS = True
 _DEFAULT_LIVE_MAX_DROP = 0.02        # fresh ask this far under the one seen = refused
+# THE RACE-LEVEL z FLOOR (2026-09-22). OFF by default, so the running live
+# argv decides exactly what it decides today. See z_refusal() for the rule and
+# race_zscores() for the number.
+_DEFAULT_MIN_Z = 0.0                 # 0 = off. 3.0 is the arm's value.
+_DEFAULT_MIN_Z_TAU = 30              # the floor applies only PAST this tau
 LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
 
 # 2026-09-22: THE FLOOR GOES BACK TO 90c, AND EVERY SEND RE-READS THE BOOK.
@@ -249,7 +255,8 @@ _DEFAULT_LIVE_STOP_ON_LOSS = True
 
 # `races` maps event -> [(coin, side), ...] already held, so consistency can
 # be checked against what is actually on the book, not against a count.
-LIVE = {"on": False, "max_contracts": _DEFAULT_LIVE_MAX_CONTRACTS,
+LIVE = {"on": False, "paper": False,
+        "max_contracts": _DEFAULT_LIVE_MAX_CONTRACTS,
         "max_stake": _DEFAULT_LIVE_MAX_STAKE,
         "tau_max": _DEFAULT_LIVE_TAU_MAX,
         "min_price": _DEFAULT_LIVE_MIN_PRICE,
@@ -259,6 +266,11 @@ LIVE = {"on": False, "max_contracts": _DEFAULT_LIVE_MAX_CONTRACTS,
         "stop_on_loss": _DEFAULT_LIVE_STOP_ON_LOSS,
         "max_drop": _DEFAULT_LIVE_MAX_DROP, "rolling": False,
         "races": {}, "armed": {}, "staked": 0.0, "halted": None, "sends": 0}
+
+# --paper-live's own stake book. The rolling-stake release gives committed
+# dollars back to a ledger; in paper mode it gives them back to THIS one, so
+# pintake's ledger is never written to by a process that never sends.
+PAPER_LEDGER = {"committed": 0.0}
 
 
 def release_settled(state, ledger, legs):
@@ -332,6 +344,22 @@ def arm_leg(armed, race, coin, side, tau):
     if (coin, side) not in seen:
         seen[(coin, side)] = tau
     return seen[(coin, side)]
+
+
+def disarm(armed, race, coin, side):
+    """Forget that (coin, side) was ever qualifying in `race`, and hand back
+    the tau it had been holding since. Its confirmation clock starts again
+    from the next second it qualifies.
+
+    ONE CALLER: the z refusal. `arm_leg` records the tau a leg FIRST qualified
+    at and never clears it, so without this a leg that drops under the floor
+    for a second and comes back still fires on its ORIGINAL clock. On the tape
+    that single line is 1 loss in 554 early races against 0 in 366 -- the same
+    lesson as the 09-21 spike: a confidence that holds for one second is not a
+    signal. It is confined to the z gate on purpose; making every gate disarm
+    would change how the other live rails behave, which is not what was
+    measured."""
+    return armed.get(race, {}).pop((coin, side), None)
 
 
 def confirm_refusal(first_tau, tau, state=None):
@@ -477,8 +505,105 @@ def fair_worth(probs, coin, side):
     return p if side == "yes" else 1.0 - p
 
 
+def _finite(x):
+    """True only for a real, finite number. None, NaN and +-inf are not."""
+    try:
+        return x is not None and math.isfinite(float(x))
+    except (TypeError, ValueError):
+        return False
+
+
+def race_zscores(rnow, cov, k, coins=None):
+    """(zmin, {coin: z}) -- how far clear the leader is of EVERY other coin,
+    measured in the sd of that PAIR's spread over the seconds still to run.
+
+        z_j  = (r[L] - r[j]) / sqrt(k * (C[L][L] + C[j][j] - 2*C[L][j]))
+        zmin = min over j != L,   L = argmax(r)
+
+    THIS IS THE LIVE MODEL'S OWN NUMBER, asked a different question. It is the
+    same covariance `win_probs` is handed one line later, the same variance
+    collapse `var_factor` gives it, and the same projected returns -- no new
+    model and no second ruler. It is computed ANALYTICALLY and is never read
+    off `win_probs`: that is 1,000 random draws and cannot resolve a tenth of
+    a percent, which is the whole region this number exists for.
+
+    RACE-LEVEL. One number for the race, not one per leg: it is the same
+    statement whichever leg we are pricing, which is the point (see
+    z_refusal).
+
+    NULL DISCIPLINE, the rule `worth` already follows: a denominator that is
+    zero, negative or not finite makes zmin None, and None FAILS the floor. It
+    is never a number, so it can never clear one. The per-coin dict still
+    carries whatever pairs WERE computable, for the log."""
+    names = list(F.COINS) if coins is None else list(coins)
+    n = len(rnow) if rnow is not None else 0
+    if n < 2 or len(names) != n or cov is None or len(cov) != n:
+        return None, {}
+    if not all(_finite(v) for v in rnow):
+        return None, {c: None for c in names}
+    if not _finite(k) or float(k) <= 0.0:
+        # tau 0 (or worse) leaves nothing to come: every lead is infinitely
+        # clear, which is exactly the sort of number that must never pass a
+        # floor. None, not infinity.
+        return None, {c: None for c in names}
+    lead = max(range(n), key=lambda i: rnow[i])
+    zs = {names[lead]: None}
+    bad = False
+    for j in range(n):
+        if j == lead:
+            continue
+        try:
+            var = float(k) * (float(cov[lead][lead]) + float(cov[j][j])
+                              - 2.0 * float(cov[lead][j]))
+        except (TypeError, ValueError, IndexError):
+            zs[names[j]] = None
+            bad = True
+            continue
+        if not _finite(var) or var <= 0.0:
+            zs[names[j]] = None
+            bad = True
+            continue
+        z = (rnow[lead] - rnow[j]) / math.sqrt(var)
+        if not _finite(z):
+            zs[names[j]] = None
+            bad = True
+            continue
+        zs[names[j]] = z
+    vals = [v for v in zs.values() if v is not None]
+    return (None if (bad or not vals) else min(vals)), zs
+
+
+def z_refusal(zmin, tau, min_z, min_z_tau):
+    """None if the race-level z floor allows this leg, else the refusal label.
+
+    RACE-LEVEL AND SIDE-INDEPENDENT, deliberately: the same number blocks the
+    leader's YES and a trailing coin's NO. The paper loss 26SEP211830 was a NO
+    leg whose OWN confidence was 98.6%, inside a three-way tie whose race zmin
+    was 0.09. A leg-level confidence gate does not stop that. A race-level one
+    does.
+
+    IT APPLIES ONLY PAST `min_z_tau`. Inside 30 s the settlement variance has
+    collapsed, so a fifth of a basis point reads as "3.6 sd": three of the six
+    inside-30 losers on the tape survive a z >= 3 floor on leads of 0.19, 1.48
+    and 4.64 bp, while the floor throws away 10 of our own 15 inside-30 races
+    to remove losses we have never had. z is the wrong ruler at small tau.
+
+    `min_z` of 0 is OFF -- the default, and what the live penny test runs, so
+    its decisions are byte-for-byte what they are today."""
+    if min_z is None or not (min_z > 0):
+        return None
+    if tau is None:
+        return "zmin_under_floor"       # cannot tell which side of the band
+    if tau <= min_z_tau:
+        return None
+    if zmin is None or not (zmin >= min_z):     # None and NaN both FAIL
+        return "zmin_under_floor"
+    return None
+
+
 def live_fair(ticks_by_iid, close, tau, rets):
-    """({coin: P(win)}, ruler) from the arm's own live ticks, or (None, why).
+    """({coin: P(win)}, ruler, zmin, {coin: z}) from the arm's own live ticks,
+    or (None, why, None, {}).
 
     The same maths pinracefair scored on 398 unseen races: variance collapse
     times the five-coin covariance of 1-second returns. The 3600 s ruler won on
@@ -491,9 +616,11 @@ def live_fair(ticks_by_iid, close, tau, rets):
         c = F.pick_cov(ser, now, which)
         if c is not None:
             rnow = [math.log(rets[k]) for k in F.COINS]
-            pr = F.win_probs(rnow, c, F.var_factor(tau))[1.0]
-            return dict(zip(F.COINS, pr)), which
-    return None, "no_cov_history"
+            k = F.var_factor(tau)
+            pr = F.win_probs(rnow, c, k)[1.0]
+            zmin, zs = race_zscores(rnow, c, k)
+            return dict(zip(F.COINS, pr)), which, zmin, zs
+    return None, "no_cov_history", None, {}
 
 
 def price_leg(table, tau, gap_bp):
@@ -689,16 +816,200 @@ def selftest():
             d4[s] = lvl
         snap4[iid] = d4
     rets4 = {c: 1.0 + 0.0004 * i for i, c in enumerate(F.COINS)}
-    p4, ruler4 = live_fair(snap4, close4, 20, rets4)
+    p4, ruler4, z4, zs4 = live_fair(snap4, close4, 20, rets4)
     ck(p4 is not None and ruler4 == "300",
        "a fresh arm with only ~33 minutes of ticks gets a forecast on the 300 s "
        "ruler (got %s), not a refusal and not a pretend hour" % ruler4)
     ck(p4 is not None and max(p4, key=p4.get) == "HYPE" and p4["HYPE"] > 0.99,
        "and a 4bp lead with 20 s left on calm independent coins is ~certain "
        "(%.3f)" % (p4 or {}).get("HYPE", 0))
-    p5, why5 = live_fair({iid: {} for iid in F.IIDS}, close4, 20, rets4)
-    ck(p5 is None and why5 == "no_cov_history",
-       "NULL: with no tick history at all it refuses rather than guessing")
+    ck(z4 is not None and z4 > 3.0 and zs4.get("HYPE") is None
+       and sorted(k for k, v in zs4.items() if v is not None)
+       == sorted(c for c in F.COINS if c != "HYPE"),
+       "and the SAME call returns the race's zmin (%.2f) with one z per "
+       "challenger and None for the leader itself" % (z4 or 0))
+    ck(z4 is not None and abs(z4 - min(v for v in zs4.values()
+                                       if v is not None)) < 1e-12,
+       "zmin is the SMALLEST of those, never the mean and never the leader's")
+    p5, why5, z5, zs5 = live_fair({iid: {} for iid in F.IIDS}, close4, 20, rets4)
+    ck(p5 is None and why5 == "no_cov_history" and z5 is None and zs5 == {},
+       "NULL: with no tick history at all it refuses rather than guessing, and "
+       "the z it cannot compute comes back None -- never a number")
+
+    # ---- zmin, against arithmetic done by hand -------------------------
+    # TWO COINS. sd(spread) = sqrt(k * (s1^2 + s2^2 - 2*rho*s1*s2)).
+    _s1, _s2, _rho, _k = 1e-4, 2e-4, 0.5, 400.0
+    _cov2 = [[_s1 * _s1, _rho * _s1 * _s2], [_rho * _s1 * _s2, _s2 * _s2]]
+    _sd2 = math.sqrt(_k * (_s1 * _s1 + _s2 * _s2 - 2 * _rho * _s1 * _s2))
+    _lead = 2.5 * _sd2
+    _z2, _zz2 = race_zscores([_lead, 0.0], _cov2, _k, coins=["A", "B"])
+    ck(abs(_z2 - 2.5) < 1e-12 and _zz2 == {"A": None, "B": _z2},
+       "HAND-COMPUTED, 2 coins: a lead of 2.5 spread-sd reads back as exactly "
+       "2.5 (got %.12f), and the leader has no z against itself" % _z2)
+    _z2b, _ = race_zscores([0.0, _lead], _cov2, _k, coins=["A", "B"])
+    ck(abs(_z2b - _lead / math.sqrt(_k * (_s2 * _s2 + _s1 * _s1
+                                          - 2 * _rho * _s1 * _s2))) < 1e-12,
+       "and it finds the leader wherever it sits, not at index 0")
+    # THREE COINS, one close challenger and one far one: zmin is the CLOSE one.
+    _c3 = [[1e-8, 0.0, 0.0], [0.0, 1e-8, 0.0], [0.0, 0.0, 4e-8]]
+    _k3 = 100.0
+    _sdAB = math.sqrt(_k3 * (1e-8 + 1e-8 - 0.0))
+    _sdAC = math.sqrt(_k3 * (1e-8 + 4e-8 - 0.0))
+    _r3 = [3.0 * _sdAB, 0.0, 3.0 * _sdAB - 6.0 * _sdAC]
+    _z3, _zz3 = race_zscores(_r3, _c3, _k3, coins=["A", "B", "C"])
+    ck(abs(_zz3["B"] - 3.0) < 1e-12 and abs(_zz3["C"] - 6.0) < 1e-12
+       and abs(_z3 - 3.0) < 1e-12,
+       "HAND-COMPUTED, 3 coins: B is 3.0 sd back and C is 6.0 sd back, so the "
+       "race is 3.0 sd clear -- the NEAREST challenger sets it (got %.12f)"
+       % _z3)
+    # THE COLLAPSE. The same lead and the same covariance read 9.03x bigger at
+    # tau 10 than at tau 45, because var_factor(45)/var_factor(10) = 81.546.
+    _zA, _ = race_zscores([1e-5, 0.0], _cov2, F.var_factor(45), coins=["A", "B"])
+    _zB, _ = race_zscores([1e-5, 0.0], _cov2, F.var_factor(10), coins=["A", "B"])
+    _ratio = math.sqrt(F.var_factor(45) / F.var_factor(10))
+    ck(abs(_zB / _zA - _ratio) < 1e-9 and abs(_ratio - 9.0303) < 1e-3,
+       "THE COLLAPSE: the identical lead reads %.2f sd at tau 10 and %.2f at "
+       "tau 45 -- %.4fx, exactly sqrt(var_factor(45)/var_factor(10)). This is "
+       "why the floor must not apply at small tau" % (_zB, _zA, _zB / _zA))
+
+    # NULL: every degenerate denominator FAILS, none of them passes.
+    _same = [[1e-8, 1e-8], [1e-8, 1e-8]]            # identical coins: var 0
+    _zn, _zzn = race_zscores([1e-7, 0.0], _same, 100.0, coins=["A", "B"])
+    ck(_zn is None and _zzn == {"A": None, "B": None},
+       "NULL: two coins that move IDENTICALLY have a ZERO spread sd, so the "
+       "lead is not 'infinitely clear' -- it is unknown, and unknown is None")
+    _neg = [[1e-8, 3e-8], [3e-8, 1e-8]]             # not PSD: var < 0
+    ck(race_zscores([1e-7, 0.0], _neg, 100.0, coins=["A", "B"])[0] is None,
+       "NULL: a NEGATIVE variance (a covariance that is not positive "
+       "semi-definite) is refused, never square-rooted")
+    ck(race_zscores([1e-7, 0.0], _cov2, 0.0, coins=["A", "B"])[0] is None
+       and race_zscores([1e-7, 0.0], _cov2, F.var_factor(0),
+                        coins=["A", "B"])[0] is None
+       and race_zscores([1e-7, 0.0], _cov2, -5.0, coins=["A", "B"])[0] is None,
+       "NULL: nothing left to come (tau 0, k = 0) and a negative k are both "
+       "None -- not a division, not an infinity")
+    _inf = float("inf")
+    _nan = _inf - _inf
+    ck(race_zscores([1e-7, 0.0], [[_nan, 0.0], [0.0, 1e-8]], 100.0,
+                    coins=["A", "B"])[0] is None
+       and race_zscores([1e-7, 0.0], [[_inf, 0.0], [0.0, 1e-8]], 100.0,
+                        coins=["A", "B"])[0] is None
+       and race_zscores([_nan, 0.0], _cov2, _k, coins=["A", "B"])[0] is None,
+       "NULL: a non-finite covariance, variance or projected return is None")
+    ck(race_zscores(None, _cov2, _k)[0] is None
+       and race_zscores([1e-7], _cov2, _k, coins=["A"])[0] is None
+       and race_zscores([1e-7, 0.0], None, _k, coins=["A", "B"])[0] is None,
+       "NULL: no returns, one coin, or no covariance at all is None")
+    # a PARTLY computable race is still None overall, but logs what it had
+    _part = [[1e-8, 0.0, 0.0], [0.0, 1e-8, 0.0], [0.0, 0.0, _nan]]
+    _zp, _zzp = race_zscores([2e-6, 0.0, -1e-6], _part, 100.0,
+                             coins=["A", "B", "C"])
+    ck(_zp is None and _zzp["B"] is not None and _zzp["C"] is None,
+       "NULL: one unreadable pair makes the RACE unknown even though the "
+       "other pair computed -- the log keeps the pair it had")
+
+    # ---- the floor itself ----------------------------------------------
+    ck(_DEFAULT_MIN_Z == 0.0,
+       "the z floor is OFF by default, so the live penny test's argv decides "
+       "exactly what it decides today")
+    ck(_DEFAULT_MIN_Z_TAU == 30,
+       "and when it is switched on it starts past 30 s, where B_verify "
+       "measured it (inside 30 s, z is the wrong ruler)")
+    ck(z_refusal(3.5, 45, 3.0, 30) is None,
+       "at 45 s a race 3.5 sd clear passes a 3-sd floor")
+    ck(z_refusal(2.5, 45, 3.0, 30) == "zmin_under_floor",
+       "at 45 s a race only 2.5 sd clear is refused")
+    ck(z_refusal(3.0, 45, 3.0, 30) is None,
+       "the floor is INCLUSIVE: exactly 3.0 passes")
+    ck(z_refusal(2.5, 25, 3.0, 30) is None and z_refusal(0.09, 2, 3.0, 30) is None,
+       "and NOTHING inside 30 s is touched: the same 2.5-sd race passes at 25 s")
+    ck(z_refusal(2.5, 30, 3.0, 30) is None,
+       "tau 30 itself is inside -- the bar is 'past min-z-tau', not 'at' it")
+    ck(z_refusal(2.5, 31, 3.0, 30) == "zmin_under_floor",
+       "and 31 s is the first second it bites")
+    ck(z_refusal(None, 60, 3.0, 30) == "zmin_under_floor"
+       and z_refusal(_nan, 60, 3.0, 30) == "zmin_under_floor"
+       and z_refusal(0.0, 60, 3.0, 30) == "zmin_under_floor"
+       and z_refusal(-4.0, 60, 3.0, 30) == "zmin_under_floor",
+       "NULL: an unknown, NaN, zero or NEGATIVE lead all FAIL the floor -- "
+       "never a number, so never able to clear one")
+    ck(z_refusal(None, None, 3.0, 30) == "zmin_under_floor",
+       "and a race with no tau at all is refused rather than assumed early")
+    _off = [z_refusal(z, t, 0.0, 30)
+            for t in range(TAU_LO, TAU_HI + 1)
+            for z in (None, _nan, -9.0, 0.0, 0.09, 2.5, 3.0, 99.0)]
+    ck(all(r is None for r in _off) and len(_off) == 8 * (TAU_HI - TAU_LO + 1),
+       "THE OFF SWITCH IS THE REVERT: with --min-z 0 (the live default) all "
+       "%d combinations of tau and zmin are allowed, including the ones the "
+       "floor exists to block" % len(_off))
+    ck(all(z_refusal(z, t, None, 30) is None
+           for t in (2, 30, 31, 60, 150) for z in (None, 0.0, 99.0)),
+       "and a missing --min-z is off too, never a floor of None")
+
+    # RACE-LEVEL, NOT LEG-LEVEL: the 26SEP211830 shape, built and measured
+    # rather than asserted. Three coins in a near-tie, two far behind. The
+    # trailing coin's own NO is worth ~99%, so every leg-level test in this
+    # file passes it; the race is 0.09 sd clear, and the race-level floor
+    # refuses all ten of its legs.
+    _tk = F.var_factor(60)
+    _tcov = [[(1e-9 if i == j else 0.0) for j in range(5)] for i in range(5)]
+    _tsd = math.sqrt(_tk * 2e-9)                # sd of any pair's spread
+    #       BTC       ETH             SOL             XRP        HYPE
+    _tr = [0.09 * _tsd, 0.0, -0.02 * _tsd, -2.0 * _tsd, -14.0 * _tsd]
+    _tz, _tzs = race_zscores(_tr, _tcov, _tk, coins=F.COINS)
+    ck(abs(_tz - 0.09) < 1e-9 and abs(_tzs["HYPE"] - 14.09) < 1e-9,
+       "the race is %.2f sd clear -- the NEAREST challenger, not the 14.09 sd "
+       "gap to a coin that is out of it" % _tz)
+    _tp = dict(zip(F.COINS, F.win_probs(_tr, _tcov, _tk)[1.0]))
+    _no_worth = fair_worth(_tp, "XRP", "no")
+    ck(_no_worth > 0.98 and net_edge(_no_worth, 0.98) > -0.005,
+       "and the trailing coin's NO is worth %.4f -- a leg-level confidence "
+       "gate lets that straight through at 98c" % _no_worth)
+    ck(all(z_refusal(_tz, 60, 3.0, 30) == "zmin_under_floor"
+           for _c in F.COINS for _s in ("yes", "no")),
+       "but the RACE-LEVEL floor refuses ALL TEN legs of it -- the leader's "
+       "YES and every trailer's NO alike. That is the 26SEP211830 loss, and "
+       "a leg-level gate cannot see it.")
+    ck(tuple(inspect.signature(z_refusal).parameters)
+       == ("zmin", "tau", "min_z", "min_z_tau"),
+       "the floor is never told which coin or which side, so it cannot "
+       "quietly become a leg-level gate")
+    ck(z_refusal(_tz, 25, 3.0, 30) is None,
+       "and the same race inside 30 s is still taken -- the arm can only ADD "
+       "to what runs live today, never subtract")
+
+    # THE RE-ARM. A z refusal restarts the leg's confirmation clock, so a
+    # confidence that dips under the floor and comes back has to serve the
+    # five seconds again. That single line is 1 loss in 554 vs 0 in 366.
+    cs4 = {"confirm": _DEFAULT_LIVE_CONFIRM, "clock_tau": 5}
+    _am = {}
+    for _t in (50, 49, 48, 47):
+        _ft = arm_leg(_am, "R", "BTC", "yes", _t)
+    ck(_ft == 50 and confirm_refusal(_ft, 47, cs4) is not None,
+       "a leg qualifying since tau 50 has served 3 of its 5 seconds at 47")
+    ck(confirm_refusal(arm_leg(_am, "R", "BTC", "yes", 45), 45, cs4) is None,
+       "WITHOUT the re-arm it would fire the moment it came back at 45, on a "
+       "clock that started before the refusal -- the bug the re-arm closes")
+    _am = {}
+    for _t in (50, 49, 48, 47):
+        arm_leg(_am, "R", "BTC", "yes", _t)
+    ck(disarm(_am, "R", "BTC", "yes") == 50
+       and ("BTC", "yes") not in _am.get("R", {}),
+       "a z refusal at 46 DISARMS the leg: its 50 s arming record is handed "
+       "back and gone")
+    ck(arm_leg(_am, "R", "BTC", "yes", 45) == 45,
+       "so when it qualifies again at 45 the clock starts AT 45, not at 50")
+    ck(disarm(_am, "R", "SOL", "no") is None and disarm({}, "R", "B", "yes") is None
+       and disarm(_am, "NOSUCH", "BTC", "yes") is None,
+       "NULL: disarming a leg, a race or a book that was never armed is a "
+       "no-op that returns nothing, never a crash")
+    ck(confirm_refusal(45, 45, cs4) is not None
+       and confirm_refusal(45, 41, cs4) is not None,
+       "it cannot fire at 45, and it still cannot at 41 -- 4 of 5 seconds")
+    ck(confirm_refusal(45, 40, cs4) is None,
+       "it fires at 40, a full five seconds after it came back")
+    ck(arm_leg(_am, "R", "SOL", "no", 44) == 44,
+       "and disarming one leg left every OTHER leg's clock alone")
 
     # ---- ARM3 gate -------------------------------------------------------
     ck(gate_arm3(29, 1.26, 0.78, 30, 4.0, 0.90) == "small_gap",
@@ -860,10 +1171,25 @@ def selftest():
        "rolling is OFF unless --live-rolling-stake is given (the approved "
        "rail is lifetime stake)")
     _msrc = inspect.getsource(main)
-    _i_rel = _msrc.find("release_settled(LIVE, pintake.LEDGER, real)")
+    _i_rel = _msrc.find("release_settled(LIVE, stake_book, real)")
     ck(_i_rel > 0 and _msrc.find('LIVE.get("rolling")', _i_rel, _i_rel + 160) > 0,
        "main() releases stake only when rolling is on, at the real-leg "
        "settlement")
+    ck('stake_book = PAPER_LEDGER if LIVE["paper"] else pintake.LEDGER' in _msrc,
+       "and in --paper-live it releases into its OWN book -- a process that "
+       "never sends never writes to pintake's ledger")
+    _pl = dict(PAPER_LEDGER)
+    _lc = float(pintake.LEDGER.get("committed", 0.0))
+    _pst = {"staked": 5.0}
+    PAPER_LEDGER["committed"] = 3.0
+    release_settled(_pst, PAPER_LEDGER, [{"price": 0.97, "size": 1.0}])
+    ck(abs(PAPER_LEDGER["committed"] - 2.03) < 1e-9
+       and float(pintake.LEDGER.get("committed", 0.0)) == _lc,
+       "PROVEN BY RUNNING IT: releasing a paper leg moves the paper book "
+       "(3.00 -> %.2f) and leaves pintake's ledger at %.2f, untouched"
+       % (PAPER_LEDGER["committed"], _lc))
+    PAPER_LEDGER.clear()
+    PAPER_LEDGER.update(_pl)
 
     # THE FRESH LOOK. A REST book copied verbatim off the wire 2026-09-22,
     # when /markets quoted that market at yes ask 0.20, no ask 0.90.
@@ -898,9 +1224,17 @@ def selftest():
        "a failed or empty read REFUSES -- it never falls back to the old ask")
     try:
         msrc = inspect.getsource(main)
-        i_fr, i_tk = msrc.find("fresh_refusal("), msrc.find("pintake.take(")
+        i_fr, i_tk = msrc.find("fresh_refusal("), msrc.find("do_order(")
         ck(0 <= i_fr < i_tk,
-           "main() checks the fresh book BEFORE it can reach pintake.take")
+           "main() checks the fresh book BEFORE it can reach the order path")
+        ck(msrc.count("do_order(") == 1
+           and 'do_order(LIVE["paper"], CREDS,' in msrc,
+           "and it reaches that path exactly once, handing it the paper flag "
+           "as the first thing it is told")
+        ck(msrc.find('if not why and not LIVE["paper"]:') > 0,
+           "the REST last look is skipped in --paper-live (fresh_ask stays "
+           "null) -- it has refused 0 of 54 real sends, so the population is "
+           "unchanged and a paper arm sends no authenticated request")
     except (OSError, TypeError) as e:
         ck(False, "could not read main()'s source to prove the order: %s" % e)
 
@@ -1018,6 +1352,164 @@ def selftest():
     ck(body.rindex("live_refusals(tau") < i_send,
        "and the rails are checked before the order leaves")
 
+    # ---- --paper-live CANNOT REACH THE ORDER PATH ----------------------
+    # Read the ONE function that can send, then RUN it both ways with the
+    # order path replaced by something that explodes. The source half alone
+    # has been wrong before; the run is what makes it a proof.
+    dsrc = inspect.getsource(do_order)
+    ck(dsrc.count("pintake" + ".take(") == 1,
+       "do_order is the only function that names the order path, once")
+    _i_if, _i_ret = dsrc.find("if paper:"), dsrc.find("return {")
+    ck(0 <= _i_if < _i_ret < dsrc.find("pintake" + ".take("),
+       "and the paper arm RETURNS before the file ever mentions it "
+       "(if/return/take at %d/%d/%d)"
+       % (_i_if, _i_ret, dsrc.find("pintake" + ".take(")))
+
+    class _Boom(Exception):
+        pass
+
+    def _explode(*_a, **_kw):
+        raise _Boom("the order path was reached")
+
+    _real_take = pintake.take
+
+    def _paper(*ar):
+        """do_order in paper mode; {} if it reached the exploding order path."""
+        try:
+            return do_order(True, *ar)
+        except _Boom:
+            return {}
+
+    try:
+        pintake.take = _explode
+        _po = _paper({"base": None, "pk": None, "key_id": None},
+                     "KXCRYPTOLEAD15M-X-BTC", "yes", 0.97, 1.0,
+                     time.time() + 40, 5.0, 30)
+        ck(_po.get("filled") == 1.0 and _po.get("exec_price") == 0.97
+           and _po.get("paper") is True and _po.get("status") == "paper_live",
+           "PROVEN BY RUNNING IT: with the order path replaced by a function "
+           "that raises, --paper-live asks for 1 of the 5 offered and books "
+           "1 at the 97c it saw, WITHOUT reaching it (got %s)" % (_po or _po,))
+        _po2 = _paper({"base": None, "pk": None, "key_id": None},
+                      "T", "no", 0.95, 4.0, time.time() + 40, 2.0, 30)
+        ck(_po2.get("filled") == 2.0,
+           "would_fill is min(what we asked, what was offered): 2 of the 4 "
+           "asked for, because the book showed 2")
+        _po3 = _paper({}, "T", "no", 0.95, 1.0, time.time() + 40, 0.0, 30)
+        ck(_po3.get("filled") == 0.0,
+           "NULL: an empty book fills nothing, never a negative size")
+        _raised = False
+        try:
+            do_order(False, {"base": None, "pk": None, "key_id": None},
+                     "KXCRYPTOLEAD15M-X-BTC", "yes", 0.97, 1.0,
+                     time.time() + 40, 5.0, 30)
+        except _Boom:
+            _raised = True
+        ck(_raised,
+           "and the SAME call with paper=False DOES reach it and explodes -- "
+           "so the paper proof above is not vacuous")
+        _seen = {}
+
+        def _record(*ar, **kw):
+            _seen["args"], _seen["kw"] = ar, kw
+            return {"filled": 0.0}
+        pintake.take = _record
+        do_order(False, {"base": "B", "pk": "PK", "key_id": "KID"},
+                 "TKR", "no", 0.96, 1.0, 1234.0, 9.0, 30)
+        ck(_seen["args"] == ("B", "PK", "KID", "TKR", "no", 0.96, 1.0, 1234.0)
+           and _seen["kw"] == {"exchange_index": RACE_EXCHANGE_INDEX,
+                               "max_tau": 30},
+           "and the live arm forwards exactly what it was given, in order -- "
+           "base, key, ticker, SIDE, price, count, close -- so moving the "
+           "call into a function cannot have silently reordered the money "
+           "path (got %s)" % (_seen["args"],))
+    finally:
+        pintake.take = _real_take
+
+    # --live and --paper-live are the same switch twice
+    _ap = build_parser()
+    _err = io.StringIO()
+    _old_err, _code = sys.stderr, None
+    try:
+        sys.stderr = _err
+        try:
+            _ap.parse_args(["--live", "--paper-live"])
+        except SystemExit as e:
+            _code = e.code
+    finally:
+        sys.stderr = _old_err
+    ck(_code not in (None, 0),
+       "--live and --paper-live TOGETHER exit non-zero (%s) before anything "
+       "is armed -- they are one switch in two positions" % (_code,))
+    ck(_ap.parse_args(["--paper-live"]).paper_live is True
+       and _ap.parse_args(["--paper-live"]).live is False
+       and _ap.parse_args([]).paper_live is False
+       and _ap.parse_args([]).live is False,
+       "each alone parses, and NEITHER is on by default")
+    ck(_ap.parse_args([]).min_z == _DEFAULT_MIN_Z
+       and _ap.parse_args([]).min_z_tau == _DEFAULT_MIN_Z_TAU
+       and _ap.parse_args(["--min-z", "3", "--min-z-tau", "30"]).min_z == 3.0,
+       "and --min-z defaults to %g (off), --min-z-tau to %d"
+       % (_DEFAULT_MIN_Z, _DEFAULT_MIN_Z_TAU))
+
+    # PRODUCTION IS ARMED ONLY IN THE --live ARM, never in --paper-live
+    _i_al = body.find("if a.live:" + chr(10))
+    _i_pl = body.find("elif a.paper_live:")
+    ck(0 <= _i_al < body.find("arm_prod") < _i_pl
+       and _i_al < body.find('CREDS["base"] = ') < _i_pl,
+       "arm_prod and the credentials sit INSIDE the --live arm and before the "
+       "--paper-live one, so a paper run loads no key and arms no production")
+    ck(0 <= body.find("if a.live or a.paper_live:") < _i_al,
+       "while the RAILS are set for both, from one block, so the paper arm "
+       "runs the same rule and not a looser one")
+    ck('stop_on_loss=(False if a.paper_live' in body,
+       "and --paper-live forces stop_on_loss FALSE: the live test stops dead "
+       "on its first loss on purpose, and an arm that halts can never reach "
+       "the races its bar needs")
+    ck('stop_on_loss=bool(LIVE["stop_on_loss"])' in body
+       and 'min_z=float(a.min_z), min_z_tau=int(a.min_z_tau)' in body,
+       "the start record says so, and carries the floor it is running, so a "
+       "window can be checked instead of assumed")
+
+    # THE RE-ARM IS CONFINED TO THE z GATE
+    _i_pop = body.find('disarm(LIVE["armed"], evt, coin, side)')
+    ck(body.count('disarm(LIVE["armed"], evt, coin, side)') == 1
+       and 0 <= body.find('if bad == "zmin_under_floor":') < _i_pop
+       < body.find("key = (evt, coin, bad)", max(_i_pop, 0)),
+       "the disarm happens ONLY when the z gate is the reason, and before "
+       "the continue -- every other rail's arming behaviour is untouched")
+    _i_z = body.find('bad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)')
+    ck(body.count('bad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)') == 1
+       and 0 <= body.find('bad = "thin_edge"') < _i_z,
+       "and the floor sits in the same refusal chain as thin_edge, after the "
+       "edge test -- one place, not two")
+    # POSITION IS NOT REACHABILITY. `elif False:` leaves every ordering check
+    # above green while the gate never runs, so read the branch itself: the z
+    # floor must be the `else` of the edge test, with nothing between them.
+    _ml = inspect.getsource(main).split(chr(10))
+    _izl = [i for i, x in enumerate(_ml) if x.strip().startswith("bad = z_ref")]
+    _prev = ([x.strip() for x in _ml[max(0, _izl[0] - 8):_izl[0]]
+              if x.strip() and not x.strip().startswith("#")] if _izl else [])
+    ck(len(_izl) == 1 and _prev[-1:] == ["else:"]
+       and 'bad = "thin_edge"' in _prev,
+       "and it is the `else` of the edge test itself -- not an `elif False:` "
+       "or any other branch that can never be taken (the line above it is %r)"
+       % (_prev[-1:] or None))
+    ck(0 <= _i_z < _i_pop < body.rfind("if not paper_done:") < i_guard,
+       "and that chain's `continue` is before BOTH the paper fill and the "
+       "live block, so a refused race buys nothing on either side -- one "
+       "race-level gate, not a live-only one")
+    ck(body.count("zmin=(None if zmin is None") == 7
+       and body.count("z=zj") == 7
+       and body.count('"zmin": (None if zmin is None') == 2,
+       "zmin and the four pairwise z's are written on every race record that "
+       "already existed -- all four no_trade reasons, the live refusal, the "
+       "paper order and the real order, plus the paper fill and the settled "
+       "leg through their position dicts -- so the threshold can be re-chosen "
+       "from the arm's own decisions instead of another rebuild of the tape")
+    ck('"ask_seen", "zmin", "win", "pnl"' in body,
+       "and it survives to the settlement record, where a loss is scored")
+
     # THE 2026-09-21 15:0xZ BUG. The paper arm fills a leg once per time band
     # and used to `continue` past everything below on later seconds. The live
     # confirmation has to be SERVED second by second, so that gave every leg
@@ -1028,7 +1520,7 @@ def selftest():
     ck(body.count('if paper_done and not LIVE["on"]:') == 1,
        "the once-per-band gate EXEMPTS the live path")
     ck(body.count('if not LIVE["on"]:' + chr(10)) >= 1
-       and 'buyable=have, held=taken[(evt, tkr, side)])' in body,
+       and 'buyable=have, held=taken[(evt, tkr, side)],' in body,
        "and so does the book-already-ours gate, which the paper fill trips "
        "from the second second onward")
     ck('want_n = min(float(have or asz or 0),' in body,
@@ -1074,7 +1566,9 @@ def discover():
     return {k: v for k, v in out.items() if len(v["legs"]) == 5}
 
 
-def main():
+def build_parser():
+    """The command line, built where a self-test can reach it -- so that
+    "--live and --paper-live together are refused" is a test, not a claim."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--minutes", type=float, default=600.0)
@@ -1094,11 +1588,20 @@ def main():
     ap.add_argument("--one-per-race-band", action="store_true",
                     help="ARM3: at most one bet per race per time band -- "
                          "'BTC wins' and 'ETH won't win' are one bet twice")
-    ap.add_argument("--live", action="store_true",
+    mx = ap.add_mutually_exclusive_group()
+    mx.add_argument("--live", action="store_true",
                     help="THE PENNY TEST: send REAL orders at minimum size "
                          "alongside the paper record, to measure our own fill "
                          "rate and our own loss rate. Operator sign-off "
                          "2026-09-21.")
+    mx.add_argument("--paper-live", action="store_true",
+                    help="run the ENTIRE live decision path -- arming, the "
+                         "confirmation, the per-race consistency rule and "
+                         "every --live-* rail -- and send NOTHING. Writes "
+                         "`live_paper` records with the fill it would have "
+                         "got at the ask it saw, scores them through "
+                         "live_settled, never halts on a loss, and never "
+                         "touches the order path. Refused with --live.")
     ap.add_argument("--max-contracts", type=float,
                     default=_DEFAULT_LIVE_MAX_CONTRACTS,
                     help="live: contracts per race (default %g)"
@@ -1129,7 +1632,26 @@ def main():
                     help="live: AGREEING legs per race -- one YES at most, "
                          "NOs on other coins, never a coin twice (default %d)"
                          % _DEFAULT_LIVE_MAX_LEGS)
-    a = ap.parse_args()
+    ap.add_argument("--min-z", type=float, default=_DEFAULT_MIN_Z,
+                    help="RACE-LEVEL floor: refuse EVERY leg of a race whose "
+                         "leader is under this many standard deviations clear "
+                         "of every other coin. 0 = off (default %.1f)"
+                         % _DEFAULT_MIN_Z)
+    ap.add_argument("--min-z-tau", type=int, default=_DEFAULT_MIN_Z_TAU,
+                    help="--min-z applies only PAST this many seconds out; at "
+                         "or inside it nothing changes (default %d)"
+                         % _DEFAULT_MIN_Z_TAU)
+    return ap
+
+
+def main():
+    a = build_parser().parse_args()
+    if a.live and a.paper_live:
+        # argparse refuses this before we get here; this is the belt to that
+        # pair of braces, for a caller that builds the namespace itself.
+        print("  REFUSED -- --live and --paper-live are the same switch in "
+              "two positions; give exactly one")
+        return 2
     if not selftest():
         return 1
     if a.selftest:
@@ -1144,18 +1666,27 @@ def main():
     cells = sum(len(v) for v in table.values())
 
     live_pos = []
-    if a.live:
-        # ARM REAL MONEY. Every rail is set from the command line here and
-        # nowhere else, and the refusal list is printed before a single
-        # market is watched so the operator can read what is bounded.
-        LIVE.update(on=True, max_contracts=float(a.max_contracts),
+    if a.live or a.paper_live:
+        # ARM THE LIVE DECISION PATH. Every rail is set from the command line
+        # here and nowhere else, and the refusal list is printed before a
+        # single market is watched so the operator can read what is bounded.
+        # --paper-live takes this identical path and sends nothing.
+        LIVE.update(on=True, paper=bool(a.paper_live),
+                    max_contracts=float(a.max_contracts),
                     max_stake=float(a.max_stake),
                     tau_max=int(a.live_tau_max),
                     min_price=float(a.live_min_price),
                     max_legs=max(1, int(a.live_max_legs)),
                     confirm=max(0, int(a.live_confirm)),
                     clock_tau=max(1, int(a.live_clock_tau)),
-                    rolling=bool(a.live_rolling_stake))
+                    rolling=bool(a.live_rolling_stake),
+                    # PAPER-LIVE NEVER HALTS. The live test stops dead on its
+                    # first loss on purpose -- the first real loss is the
+                    # answer arriving. An arm that halts can never reach the
+                    # 125 early races its bar needs, and it is risking
+                    # nothing by carrying on.
+                    stop_on_loss=(False if a.paper_live
+                                  else _DEFAULT_LIVE_STOP_ON_LOSS))
         if os.path.exists(LIVE_STOP_FILE):
             print("  REFUSING TO ARM -- stop file present: %s" % LIVE_STOP_FILE)
             return 1
@@ -1174,6 +1705,7 @@ def main():
                   "run-stake rail of $%.2f" % (LIVE["max_stake"],
                                                pintake.MAX_RUN_STAKE))
             return 1
+    if a.live:
         import kauth
         import ordercli
         CREDS["base"] = pintake.PROD_ELECTIONS
@@ -1194,6 +1726,21 @@ def main():
               % ("OPEN at any moment (rolling: settled bets give their stake "
                  "back)" if LIVE["rolling"] else "committed in total"))
         print("  race. Halt it any time with:  type nul > %s" % LIVE_STOP_FILE)
+    elif a.paper_live:
+        print("\n  *** PAPER-LIVE -- THE LIVE DECISION PATH, NOTHING SENT ***")
+        print("  No credentials are loaded, production is never armed, and the")
+        print("  order path is never reached. Every other rail is the live one:")
+        print("  at most %g contract(s) a leg and %d AGREEING legs a race,"
+              % (LIVE["max_contracts"], LIVE["max_legs"]))
+        print("  only inside %d s, only at %.0fc or dearer, at most $%.2f %s,"
+              % (LIVE["tau_max"], 100 * LIVE["min_price"], LIVE["max_stake"],
+                 "open at any moment" if LIVE["rolling"] else "in total"))
+        print("  %d s of confirmation or the clock at %d s, whichever first."
+              % (LIVE["confirm"], LIVE["clock_tau"]))
+        print("  It does NOT stop on a loss (stop_on_loss=%s) -- an arm that"
+              % LIVE["stop_on_loss"])
+        print("  halts can never reach the races its bar needs, and it risks")
+        print("  nothing. The REST last look is skipped (fresh_ask is null).")
 
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     logpath = a.log or os.path.join(REPO, "results",
@@ -1208,6 +1755,8 @@ def main():
 
     print("\n  COIN RACE %s" % ("PENNY TEST -- REAL ORDERS, see the rails above"
                                 if a.live else
+                                "PAPER-LIVE -- the live rule, nothing sent"
+                                if a.paper_live else
                                 "PAPER ARM -- nothing is ever sent"))
     print("  size %d, <= %.0fc, edge floor %.1fc, tau %d-%d, one fill per "
           "leg per band %s" % (a.size, 100 * PRICE_CEILING, 100 * a.min_edge,
@@ -1222,7 +1771,18 @@ def main():
         table_cells=cells, table_mtime=int(tstat.st_mtime),
         table_size=tstat.st_size, version="2026-09-15-arm3",
         tau_max=a.tau_max, min_gap_bp=a.min_gap_bp, min_price=a.min_price,
-        one_per_race_band=bool(a.one_per_race_band), model=a.model)
+        one_per_race_band=bool(a.one_per_race_band), model=a.model,
+        # THE ARM'S OWN IDENTITY, so a window can be checked rather than
+        # assumed: the bar in C_plan section 4 runs only while the argv is
+        # byte-identical, and its first validity gate reads min_z here.
+        min_z=float(a.min_z), min_z_tau=int(a.min_z_tau),
+        live=bool(a.live), paper_live=bool(a.paper_live),
+        stop_on_loss=bool(LIVE["stop_on_loss"]),
+        argv=list(sys.argv[1:]),
+        live_rails=({k: LIVE[k] for k in
+                     ("max_contracts", "max_stake", "tau_max", "min_price",
+                      "max_legs", "confirm", "clock_tau", "rolling",
+                      "stop_on_loss", "paper")} if LIVE["on"] else None))
 
     idx = pinrun.IndexWS(sorted(set(COINS.values()))).start()
     book = livebook.LiveBook()
@@ -1303,9 +1863,13 @@ def main():
                                      - p["size"] * fee(p["price"]), 4)
                 if real:
                     lost = [p for p in real if not p["win"]]
-                    released = (release_settled(LIVE, pintake.LEDGER, real)
+                    # --paper-live releases into ITS OWN book. A process that
+                    # never sends must never write to pintake's ledger.
+                    stake_book = PAPER_LEDGER if LIVE["paper"] else pintake.LEDGER
+                    released = (release_settled(LIVE, stake_book, real)
                                 if LIVE.get("rolling") else 0.0)
                     rec("live_settled", event=evt, close_s=cs, winner=won,
+                        paper=LIVE["paper"],
                         released=round(released, 4),
                         staked_open=round(LIVE["staked"], 4),
                         positions=len(real),
@@ -1313,9 +1877,11 @@ def main():
                         pnl=round(sum(p["pnl"] for p in real), 4),
                         legs=[{k: p[k] for k in
                                ("ticker", "side", "price", "size", "tau",
-                                "ask_seen", "win", "pnl")} for p in real])
-                    print("  ** LIVE SETTLED %-24s %-4s  %d/%d won  $%+.2f"
-                          % (evt, won, sum(1 for p in real if p["win"]),
+                                "ask_seen", "zmin", "win", "pnl")}
+                              for p in real])
+                    print("  ** %s SETTLED %-24s %-4s  %d/%d won  $%+.2f"
+                          % ("PAPR" if LIVE["paper"] else "LIVE", evt, won,
+                             sum(1 for p in real if p["win"]),
                              len(real), sum(p["pnl"] for p in real)))
                     if lost and LIVE["stop_on_loss"] and not LIVE["halted"]:
                         # STOP DEAD. The whole point of the penny test is to
@@ -1381,6 +1947,10 @@ def main():
 
                 g = M.gaps(rets)
                 fprobs, ruler = None, None
+                # THE RACE-LEVEL z, computed once per (race, second) with the
+                # probabilities and cached with them. None outside --model
+                # fair, and None FAILS the floor (z_refusal).
+                zmin, zj = None, None
                 if a.model == "fair":
                     if tau > a.tau_max:
                         continue
@@ -1391,7 +1961,9 @@ def main():
                             snap = {iid: dict(idx.ticks.get(iid) or {})
                                     for iid in F.IIDS}
                         fair_cache[fk] = live_fair(snap, cs, tau, rets)
-                    fprobs, ruler = fair_cache[fk]
+                    fprobs, ruler, zmin, zj = fair_cache[fk]
+                    zj = ({k: (None if v is None else round(v, 4))
+                           for k, v in (zj or {}).items()} or None)
                     if fprobs is None:
                         key = (evt, "no_fair_value")
                         if key not in seen_why:
@@ -1438,7 +2010,9 @@ def main():
                                 seen_why.add(key)
                                 rec("no_trade", event=evt, coin=coin,
                                     ticker=tkr, tau=tau, side=side, why=g3,
-                                    gap_bp=round(gap * 1e4, 4))
+                                    gap_bp=round(gap * 1e4, 4),
+                                    zmin=(None if zmin is None
+                                          else round(zmin, 4)), z=zj)
                         continue
                     b = book.best(tkr)
                     bad = None
@@ -1456,7 +2030,9 @@ def main():
                             seen_why.add(key)
                             rec("no_trade", event=evt, coin=coin, ticker=tkr,
                                 tau=tau, side=side, why=bad,
-                                gap_bp=round(gap * 1e4, 4))
+                                gap_bp=round(gap * 1e4, 4),
+                                zmin=(None if zmin is None
+                                      else round(zmin, 4)), z=zj)
                         continue
                     ask = b.get("yes_ask") if side == "yes" else b.get("no_ask")
                     asz = (b.get("yes_ask_size") if side == "yes"
@@ -1479,7 +2055,24 @@ def main():
                         edge = net_edge(worth, float(ask))
                         if edge < a.min_edge:
                             bad = "thin_edge"
+                        else:
+                            # THE RACE-LEVEL z FLOOR, last in the chain and in
+                            # the same chain as thin_edge. Off at --min-z 0,
+                            # and silent at or inside --min-z-tau.
+                            bad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)
                     if bad:
+                        if bad == "zmin_under_floor":
+                            # RE-ARM. arm_leg records the tau a leg FIRST
+                            # qualified at and never clears it, so without this
+                            # a leg that drops under the floor for one second
+                            # and comes back fires on its ORIGINAL clock. On
+                            # the tape that single line is the difference
+                            # between 1 loss in 554 early races and 0 in 366:
+                            # a confidence that holds for one second is not a
+                            # signal. CONFINED TO THE z GATE -- making every
+                            # gate disarm would change how the other live rails
+                            # behave, which is not what was measured.
+                            disarm(LIVE["armed"], evt, coin, side)
                         key = (evt, coin, bad)
                         if key not in seen_why:
                             seen_why.add(key)
@@ -1491,7 +2084,9 @@ def main():
                                 ask=(float(ask) if ask else None),
                                 ask_size=(float(asz) if asz else None),
                                 edge=(None if edge is None
-                                      else round(edge, 6)))
+                                      else round(edge, 6)),
+                                zmin=(None if zmin is None
+                                      else round(zmin, 4)), z=zj)
                         continue
                     # SUPPLY, not arithmetic, caps the size. buyable() walks
                     # the ladder to our limit; the touch alone once cost the
@@ -1507,7 +2102,9 @@ def main():
                             seen_why.add(key)
                             rec("no_trade", event=evt, coin=coin, ticker=tkr,
                                 tau=tau, side=side, why="book_already_ours",
-                                buyable=have, held=taken[(evt, tkr, side)])
+                                buyable=have, held=taken[(evt, tkr, side)],
+                                zmin=(None if zmin is None
+                                      else round(zmin, 4)), z=zj)
                         # THE SECOND STARVATION, 2026-09-21. The paper fill
                         # books the WHOLE offer into `taken`, so from the next
                         # second on take_size returns 0 and this used to
@@ -1529,7 +2126,9 @@ def main():
                            "tau": tau, "worth": round(worth, 6),
                            "gap_bp": round(gap * 1e4, 4),
                            "edge": round(edge, 6), "band": band,
-                           "model": a.model, "ruler": ruler}
+                           "model": a.model, "ruler": ruler,
+                           "zmin": (None if zmin is None else round(zmin, 4)),
+                           "z": zj}
                     if not paper_done:
                         fills.append(pos)
                         done_band.add((evt, tkr, side, band))
@@ -1563,10 +2162,18 @@ def main():
                         if cw:
                             why = list(why) + [cw]
                         fresh = None
-                        if not why:
+                        if not why and not LIVE["paper"]:
                             # LAST LOOK, over REST, after every other rail
                             # has passed -- so it costs a request only when
-                            # we were about to send
+                            # we were about to send.
+                            #
+                            # SKIPPED IN --paper-live, and `fresh_ask` stays
+                            # null. Measured 2026-09-22 across 54 real sends
+                            # and all 3,548 `live_refused` records: the fresh
+                            # read has refused ZERO sends, so skipping it does
+                            # not change the population -- and an arm that
+                            # cannot send has no business making an
+                            # authenticated request per would-send.
                             fst, fob = pintake._get(
                                 CREDS["base"], CREDS["pk"], CREDS["key_id"],
                                 "/markets/%s/orderbook" % tkr)
@@ -1577,18 +2184,24 @@ def main():
                         if why:
                             rec("live_refused", event=evt, ticker=tkr,
                                 side=side, tau=tau, price=float(ask),
-                                count=want_n, why=why, fresh_ask=fresh)
+                                count=want_n, why=why, fresh_ask=fresh,
+                                paper=LIVE["paper"],
+                                zmin=(None if zmin is None
+                                      else round(zmin, 4)), z=zj)
                         else:
                             # claimed BEFORE the send, so a crash cannot
                             # re-enter and break the consistency rule
                             LIVE["races"].setdefault(evt, []).append(
                                 (coin, side))
                             LIVE["sends"] += 1
-                            out = pintake.take(
-                                CREDS["base"], CREDS["pk"], CREDS["key_id"],
-                                tkr, side, float(ask), want_n, float(cs),
-                                exchange_index=RACE_EXCHANGE_INDEX,
-                                max_tau=LIVE["tau_max"])
+                            # the SAME quantity want_n was sized from, so the
+                            # paper fill is min(want_n, what was offered) and
+                            # never 0 on a book the live path would have sent
+                            # into
+                            supply = float(have or asz or 0)
+                            out = do_order(LIVE["paper"], CREDS, tkr, side,
+                                           float(ask), want_n, float(cs),
+                                           supply, LIVE["tau_max"])
                             got = float(out.get("filled") or 0.0)
                             px = float(out.get("exec_price") or ask)
                             if got > 0:
@@ -1598,24 +2211,52 @@ def main():
                                      "ticker": tkr, "side": side,
                                      "price": px, "size": got, "tau": tau,
                                      "worth": round(worth, 6),
+                                     "zmin": (None if zmin is None
+                                              else round(zmin, 4)),
                                      "ask_seen": float(ask)})
-                            rec("live_order", event=evt, ticker=tkr,
-                                side=side, tau=tau, ask_seen=float(ask),
-                                fresh_ask=fresh,
-                                count_asked=want_n, filled=got,
-                                exec_price=(px if got > 0 else None),
-                                status=out.get("status"),
-                                status_code=out.get("status_code"),
-                                refused=out.get("refused"),
-                                fee=out.get("fee_total"),
-                                staked=round(LIVE["staked"], 4),
-                                order_id=out.get("order_id"),
-                                client_order_id=out.get("client_order_id"))
-                            print("  ** LIVE %-24s %-4s %-3s asked %g got %g "
-                                  "@ %.0fc  (staked $%.2f of $%.2f)"
-                                  % (evt[-12:], coin, side.upper(), want_n,
-                                     got, 100 * px, LIVE["staked"],
-                                     LIVE["max_stake"]))
+                            if LIVE["paper"]:
+                                # A WOULD-BE ORDER. Its own record kind, so no
+                                # reader can ever count it as a real send, and
+                                # `would_fill` rather than `filled` for the
+                                # same reason. It still appends to live_pos,
+                                # so live_settled scores it exactly as today.
+                                rec("live_paper", event=evt, ticker=tkr,
+                                    side=side, tau=tau, ask_seen=float(ask),
+                                    fresh_ask=fresh, count_asked=want_n,
+                                    would_fill=got, price=px,
+                                    ask_size=float(asz or 0),
+                                    buyable=supply, status="paper_live",
+                                    staked=round(LIVE["staked"], 4),
+                                    worth=round(worth, 6),
+                                    gap_bp=round(gap * 1e4, 4),
+                                    edge=round(edge, 6), ruler=ruler,
+                                    zmin=(None if zmin is None
+                                          else round(zmin, 4)), z=zj)
+                                print("  ** PAPR %-24s %-4s %-3s would fill %g"
+                                      " @ %.0fc  (staked $%.2f of $%.2f)"
+                                      % (evt[-12:], coin, side.upper(), got,
+                                         100 * px, LIVE["staked"],
+                                         LIVE["max_stake"]))
+                            else:
+                                rec("live_order", event=evt, ticker=tkr,
+                                    side=side, tau=tau, ask_seen=float(ask),
+                                    fresh_ask=fresh,
+                                    count_asked=want_n, filled=got,
+                                    exec_price=(px if got > 0 else None),
+                                    status=out.get("status"),
+                                    status_code=out.get("status_code"),
+                                    refused=out.get("refused"),
+                                    fee=out.get("fee_total"),
+                                    staked=round(LIVE["staked"], 4),
+                                    order_id=out.get("order_id"),
+                                    client_order_id=out.get("client_order_id"),
+                                    zmin=(None if zmin is None
+                                          else round(zmin, 4)), z=zj)
+                                print("  ** LIVE %-24s %-4s %-3s asked %g got "
+                                      "%g @ %.0fc  (staked $%.2f of $%.2f)"
+                                      % (evt[-12:], coin, side.upper(), want_n,
+                                         got, 100 * px, LIVE["staked"],
+                                         LIVE["max_stake"]))
             time.sleep(0.25)
     finally:
         done = [p for p in fills if "win" in p]
@@ -1636,6 +2277,32 @@ def main():
           "the fill is assumed and no paper arm can test it.")
     print("  log %s" % os.path.abspath(logpath))
     return 0
+
+
+def do_order(paper, creds, ticker, side, ask, count, close_s, supply, tau_max):
+    """THE ONLY PLACE AN ORDER CAN LEAVE THIS FILE.
+
+    `paper` is --paper-live. It returns the fill we WOULD have got -- the
+    smaller of what we asked for and what the book was offering, at the ask we
+    saw -- and never touches the order path. Two things prove that and both
+    are in the self-test: this function's own source (the return is above the
+    call, and the call appears exactly once), and a run with `pintake.take`
+    replaced by something that raises, where the paper arm returns normally
+    and the live arm raises. The second half is what makes the first
+    non-vacuous.
+
+    It is one function rather than two branches inline so that the proof can
+    be a RUN and not only a reading. `creds` is untouched in paper mode -- in
+    --paper-live it is never even loaded, so a bug that reached the wire would
+    find base=None and be refused by pintake anyway."""
+    if paper:
+        return {"paper": True, "status": "paper_live", "status_code": None,
+                "filled": max(0.0, min(float(count), float(supply))),
+                "exec_price": float(ask), "refused": None, "fee_total": None,
+                "order_id": None, "client_order_id": None}
+    return pintake.take(creds["base"], creds["pk"], creds["key_id"],
+                        ticker, side, float(ask), count, float(close_s),
+                        exchange_index=RACE_EXCHANGE_INDEX, max_tau=tau_max)
 
 
 if __name__ == "__main__":
