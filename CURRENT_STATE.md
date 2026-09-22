@@ -7,6 +7,15 @@ them. The long version of everything below is the newest section of
 
 ---
 
+# 2026-09-22 ~06:25Z -- READ THE TOP OF HANDOFF.md FIRST
+
+A 4 h 47 min Kalshi CONNECTION outage (20:50-01:38 ET) lost that tape and
+idled the bot while the app said TRADING. Fixed: app/phone BLIND + recorder
+SILENT alerts, a stuck-recorder check in boot_all, coin race v-race90 (90c
+floor + fresh book read), and a rebuilt paper fleet (17 of 24 arms had died
+on an inherited brake). Disk 34.7 GB free (operator deleted a Steam game).
+**Arm vs live comparisons are valid only from 2026-09-22 06:21Z.**
+
 # STOP. THREE THINGS BEFORE YOU CHANGE ANYTHING.
 
 **1. THE DISK IS THE ONLY DEADLINE THAT MATTERS.** ~19.8 GB free, falling

@@ -73,6 +73,12 @@ function BaseWithout([string[]]$drop) {
         $f = $g[0]
         if ($f -eq "--live") { continue }
         if ($f -in @("--size", "--minutes", "--arm-name")) { continue }
+        # 2026-09-22: --max-losses is NOT inherited. Live halts after 2
+        # losing trades and watch_bot restarts it ~15 min later; a paper arm
+        # has no watchdog, so the same brake ended it FOR GOOD. By 09-22 it
+        # had stopped 17 of 24 arms -- every bold one the operator asked to
+        # watch -- after exactly the two losses the comparison needs to see.
+        if ($f -eq "--max-losses") { continue }
         if ($drop -contains $f) { continue }
         $out += $g
     }
@@ -99,8 +105,13 @@ $arms = @(
   @{ n="arm-sigma2.00";     drop=@();                    add=@("--sigma-stress","2.00") },
   # --- the hedge, which is where the money has been going ---
   @{ n="arm-nohedge";       drop=@("--hedge-belief");    add=@("--hedge-belief","0.01") },
-  @{ n="arm-hedgeprop-off"; drop=@();                    add=@("--no-hedge-prop") },
-  @{ n="arm-hedge-noprice"; drop=@("--hedge-price");     add=@() },
+  # 2026-09-22: live itself went to --no-hedge-prop (v-hedgefull) and dropped
+  # --hedge-price (v-hedgelastweek) on 09-21, which turned arm-hedgeprop-off
+  # and arm-hedge-noprice into exact copies of live measuring nothing. Each
+  # now tests the setting live LEFT, and hedge60 tests v-hedge25 itself.
+  @{ n="arm-hedgeprop-on";  drop=@("--no-hedge-prop");   add=@() },
+  @{ n="arm-hedgeprice60";  drop=@("--hedge-price");     add=@("--hedge-price","0.60") },
+  @{ n="arm-hedge60";       drop=@("--hedge-belief");    add=@("--hedge-belief","0.60") },
   @{ n="arm-hedge-slip0";   drop=@("--hedge-slip");      add=@() },
   # --- the 45-second leg ---
   @{ n="arm-early-off";     drop=@("--early-tau","--early-frac","--early-min-price",
@@ -143,7 +154,7 @@ if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 # Friday's bugs.
 $frozen = @(
   @{ n="arm-friday"; x=@(
-      "--loss-abort","-60.00","--max-positions","3","--max-losses","2",
+      "--loss-abort","-60.00","--max-positions","3",
       "--improve-scope","market","--pick","best","--max-per-market","2",
       "--improve-max","0.010","--min-fill-frac","0","--sweep-depth",
       "--depth-ladder","--jump-gate","--hedge-belief","0.60",
@@ -151,9 +162,23 @@ $frozen = @(
       "--early-max-edge","3.0","--hedge-price","0.60",
       "--band-mult","0.90","0.94","1.5","--bank-brake","4.08",
       "--no-hedge-prop") },
-  # and today's live rules, pinned, so there is always a stable reference for
-  # "what the bot was doing when this question was asked"
-  @{ n="arm-live-frozen"; x=@() }
+  # and the live rules of the 2026-09-20 sync, PINNED. This used to be x=@()
+  # -- "seed from live once, then leave it alone" -- but "once" meant "every
+  # time it is not running", so an arm halted by a brake came back as TODAY'S
+  # live bot and silently stopped being frozen. The list is restart_bot.ps1
+  # at 6ff3cce (live at the 09-20 sync), minus --live/--size/--minutes and
+  # the --max-losses brake above: hedge at 0.60 with the 0.60 price gate and
+  # A76 proportional hedging on (the code default then and now).
+  @{ n="arm-live-frozen"; x=@(
+      "--loss-abort","-60.00","--max-positions","3",
+      "--improve-scope","market","--pick","best","--max-per-market","2",
+      "--improve-max","0.010","--min-fill-frac","0","--sweep-depth",
+      "--depth-ladder","--jump-gate","--hedge-belief","0.60",
+      "--early-tau","45","--early-frac","1.0","--early-min-price","0.90",
+      "--early-max-edge","10.0","--hedge-price","0.60","--hedge-slip","0.03",
+      "--late-tau","10","--late-mult","1.5","--late-pin","0.9975",
+      "--late-jump","2.0","--extra-coin","1","--late-extra","1",
+      "--late-extra-tau","15","--bank-brake","4.00","--loss-cap","200") }
 )
 
 # ---- 3. BUILD AND VALIDATE EVERYTHING BEFORE STOPPING ANYTHING ----------
@@ -165,6 +190,12 @@ foreach ($a in $arms) {
     foreach ($t in $flat) {
         if ($t -isnot [string]) { throw "REFUSING: non-string token in $($a.n)" }
         if ($t -eq "--live")    { throw "REFUSING: --live survived stripping for $($a.n)" }
+    }
+    if ($flat -contains "--max-losses") { throw "REFUSING: --max-losses survived stripping for $($a.n)" }
+    $baseLine = ((BaseWithout @()) | ForEach-Object { $_ }) -join ' '
+    $armLine  = (@((BaseWithout $a.drop | ForEach-Object { $_ }) + $a.add) | ForEach-Object { $_ }) -join ' '
+    if ($armLine -eq $baseLine -or ($a.add.Count -and ($baseLine -like "*$($a.add -join ' ')*") -and ($a.drop.Count -eq 0))) {
+        "  WARNING: $($a.n) is IDENTICAL to live -- live adopted what it tests; it measures nothing until it is flipped"
     }
     if ($flat.Count -lt 8) { throw "REFUSING: $($a.n) built only $($flat.Count) args" }
     $plan += [pscustomobject]@{ Name = $a.n; Argv = $flat }
@@ -181,6 +212,7 @@ foreach ($fz in $frozen) {
         if ($t -isnot [string]) { throw "REFUSING: non-string token in $($fz.n)" }
         if ($t -eq "--live")    { throw "REFUSING: --live in frozen arm $($fz.n)" }
     }
+    if ($flat -contains "--max-losses") { throw "REFUSING: --max-losses in $($fz.n) -- a paper arm has no watchdog, the brake ends it for good" }
     # A FROZEN ARM IS NEVER RESTARTED BY THIS SCRIPT once it is up. Restarting
     # it would re-seed arm-live-frozen from a changed live bot and silently
     # turn the baseline into a moving target -- the exact rot this file

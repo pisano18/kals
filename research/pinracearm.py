@@ -65,6 +65,7 @@ WHAT IT STILL CANNOT TELL US, stated here rather than in a footnote:
 import argparse
 import calendar
 import collections
+import inspect
 import json
 import math
 import os
@@ -104,10 +105,33 @@ _DEFAULT_LIVE_MAX_STAKE = 20.00      # dollars this process may ever commit
 _DEFAULT_LIVE_TAU_MAX = 60           # the EARLIEST we may look (see CONFIRM)
 _DEFAULT_LIVE_CONFIRM = 5            # seconds the same leg must keep qualifying
 _DEFAULT_LIVE_CLOCK_TAU = 20         # fire anyway once the clock runs down
-_DEFAULT_LIVE_MIN_PRICE = 0.80       # measured 09-21, see below
+_DEFAULT_LIVE_MIN_PRICE = 0.90       # 80c on the tape; REAL fills said 90c, see below
 _DEFAULT_LIVE_MAX_LEGS = 5           # one YES plus a NO on every other coin
 _DEFAULT_LIVE_STOP_ON_LOSS = True
+_DEFAULT_LIVE_MAX_DROP = 0.02        # fresh ask this far under the one seen = refused
 LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
+
+# 2026-09-22: THE FLOOR GOES BACK TO 90c, AND EVERY SEND RE-READS THE BOOK.
+#
+# Real fills, 2026-09-21, one contract each, 15 races:
+#
+#     filled at 94-98c    24 legs    24 won
+#     filled at 85-86c     2 legs     0 won    -$0.86, -$0.87
+#
+# The tape table below rated sub-90c legs at 1.0-1.4% losing. Our own fills
+# lost both. It is the pin gate's tape-vs-live gap again (tape 0.11%, live
+# 3.4%): the tape's population is "an offer was there", ours is "someone
+# sold it to us". The operator: "2 losses in 15 is not too few, something is
+# wrong with it." Both losses were near-tied races (gap 3.7 and 5.6 bp) at
+# tau 40-41, where the market was right and the model was not.
+#
+# The FIRST loss would have passed a 90c floor on its own: the bot SAW 93c
+# and FILLED at 85c. MAX_BOOK_AGE_MS lets a race book sit five minutes
+# unchanged, so the price we decide on can be old; a buy fills at anything
+# at or under its limit, so a collapsing price is not refused, it is BOUGHT.
+# Only a fresh read can see it. So every real send first GETs the book over
+# REST, and refuses if the ask there is under the floor or more than
+# _DEFAULT_LIVE_MAX_DROP under the ask we decided on. A failed read refuses.
 
 # WHY MORE THAN ONE LEG, WHEN 2026-09-15 COST $1,306 BY HOLDING TWO.
 #
@@ -230,7 +254,52 @@ LIVE = {"on": False, "max_contracts": _DEFAULT_LIVE_MAX_CONTRACTS,
         "confirm": _DEFAULT_LIVE_CONFIRM,
         "clock_tau": _DEFAULT_LIVE_CLOCK_TAU,
         "stop_on_loss": _DEFAULT_LIVE_STOP_ON_LOSS,
+        "max_drop": _DEFAULT_LIVE_MAX_DROP,
         "races": {}, "armed": {}, "staked": 0.0, "halted": None, "sends": 0}
+
+
+def book_ask(resp, side):
+    """Best ask for buying `side`, from a REST /markets/{t}/orderbook body.
+
+    Kalshi's REST book lists BIDS only, in dollars, ascending:
+    {"orderbook_fp": {"yes_dollars": [["0.0700","2.00"],["0.1000","120.00"]],
+                      "no_dollars":  [["0.7600","475.00"],["0.8000","120.00"]]}}
+    A NO ask is 1 - the best YES bid, and a YES ask is 1 - the best NO bid.
+    Checked against /markets on 2026-09-22: that body is yes ask 0.20, no ask
+    0.90, exactly what the market quoted. None when nothing is offered."""
+    if not isinstance(resp, dict):
+        return None
+    ob = resp.get("orderbook_fp")
+    if not isinstance(ob, dict):
+        return None
+    other = ob.get("no_dollars" if side == "yes" else "yes_dollars") or []
+    bids = []
+    for lvl in other:
+        try:
+            px, sz = float(lvl[0]), float(lvl[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if sz > 0 and 0.0 < px < 1.0:
+            bids.append(px)
+    return round(1.0 - max(bids), 4) if bids else None
+
+
+def fresh_refusal(fresh, seen, state=None):
+    """None if the fresh REST ask agrees with the one we decided on, else why
+    the send is refused. A buy fills at anything at or under its limit, so a
+    price that collapsed under us would be BOUGHT -- this is the only place
+    that can see it."""
+    st = LIVE if state is None else state
+    if fresh is None:
+        return "fresh book unreadable or empty -- refused rather than guess"
+    if fresh < st["min_price"] - 1e-9:
+        return ("fresh ask %.0fc is under the %.0fc floor (saw %.0fc)"
+                % (100 * fresh, 100 * st["min_price"], 100 * seen))
+    if fresh < seen - st["max_drop"] - 1e-9:
+        return ("fresh ask %.0fc is %.0fc under the %.0fc we decided on -- "
+                "the market moved against us"
+                % (100 * fresh, 100 * (seen - fresh), 100 * seen))
+    return None
 
 
 def arm_leg(armed, race, coin, side, tau):
@@ -748,11 +817,50 @@ def selftest():
        "the default penny size (%g) is inside pintake's own per-order rail "
        "(%g)" % (_DEFAULT_LIVE_MAX_CONTRACTS, pintake.MAX_TAKE_COUNT))
     ck(_DEFAULT_LIVE_TAU_MAX <= 60 and _DEFAULT_LIVE_CLOCK_TAU <= 20 and
-       _DEFAULT_LIVE_CONFIRM >= 3 and _DEFAULT_LIVE_MIN_PRICE >= 0.80,
+       _DEFAULT_LIVE_CONFIRM >= 3 and _DEFAULT_LIVE_MIN_PRICE >= 0.90,
        "the defaults are the measured rule: inside %ds, at %.0fc or dearer"
        % (_DEFAULT_LIVE_TAU_MAX, 100 * _DEFAULT_LIVE_MIN_PRICE))
     ck(_DEFAULT_LIVE_STOP_ON_LOSS is True,
        "and it stops dead on the first real loss by default")
+
+    # THE FRESH LOOK. A REST book copied verbatim off the wire 2026-09-22,
+    # when /markets quoted that market at yes ask 0.20, no ask 0.90.
+    wire = {"orderbook_fp": {"no_dollars": [["0.7600", "475.00"],
+                                            ["0.8000", "120.00"]],
+                             "yes_dollars": [["0.0700", "2.00"],
+                                             ["0.1000", "120.00"]]}}
+    ck(book_ask(wire, "no") == 0.90 and book_ask(wire, "yes") == 0.20,
+       "the wire book reads back as the asks /markets quoted: NO 0.90 is "
+       "1 - the best YES bid, YES 0.20 is 1 - the best NO bid (got %s, %s)"
+       % (book_ask(wire, "no"), book_ask(wire, "yes")))
+    ck(book_ask({"orderbook_fp": {"no_dollars": [], "yes_dollars": []}},
+                "no") is None and book_ask("timed out", "yes") is None
+       and book_ask({"orderbook_fp": {"yes_dollars": [["0.1000", "0.00"]]}},
+                    "no") is None,
+       "NULL: an empty side, an error body and a zero-size level all read as "
+       "NOTHING OFFERED, never as a price")
+    fst = {"min_price": _DEFAULT_LIVE_MIN_PRICE,
+           "max_drop": _DEFAULT_LIVE_MAX_DROP}
+    ck(fresh_refusal(0.85, 0.93, fst) is not None,
+       "THE 09-21 SOL LOSS IS REFUSED: seen 93c, the book was really 85c")
+    ck(fresh_refusal(0.86, 0.86, fst) is not None,
+       "THE 09-21 XRP LOSS IS REFUSED: 86c is under the 90c floor")
+    ck(fresh_refusal(0.98, 0.98, fst) is None
+       and fresh_refusal(0.97, 0.98, fst) is None
+       and fresh_refusal(0.99, 0.98, fst) is None,
+       "NULL: an unchanged book, a 1c improvement and a dearer book all "
+       "pass -- the 24 real 94-98c fills of 09-21 would all still be sent")
+    ck(fresh_refusal(0.93, 0.96, fst) is not None,
+       "a 3c drop above the floor is refused too: the price fell under us")
+    ck(fresh_refusal(None, 0.97, fst) is not None,
+       "a failed or empty read REFUSES -- it never falls back to the old ask")
+    try:
+        msrc = inspect.getsource(main)
+        i_fr, i_tk = msrc.find("fresh_refusal("), msrc.find("pintake.take(")
+        ck(0 <= i_fr < i_tk,
+           "main() checks the fresh book BEFORE it can reach pintake.take")
+    except (OSError, TypeError) as e:
+        ck(False, "could not read main()'s source to prove the order: %s" % e)
 
     # the consistency rule, on its own
     ck(inconsistent([], "BTC", "yes") is None,
@@ -1401,10 +1509,22 @@ def main():
                         cw = confirm_refusal(first_tau, tau)
                         if cw:
                             why = list(why) + [cw]
+                        fresh = None
+                        if not why:
+                            # LAST LOOK, over REST, after every other rail
+                            # has passed -- so it costs a request only when
+                            # we were about to send
+                            fst, fob = pintake._get(
+                                CREDS["base"], CREDS["pk"], CREDS["key_id"],
+                                "/markets/%s/orderbook" % tkr)
+                            fresh = book_ask(fob, side) if fst == 200 else None
+                            fw = fresh_refusal(fresh, float(ask))
+                            if fw:
+                                why = [fw + " (http %s)" % fst]
                         if why:
                             rec("live_refused", event=evt, ticker=tkr,
                                 side=side, tau=tau, price=float(ask),
-                                count=want_n, why=why)
+                                count=want_n, why=why, fresh_ask=fresh)
                         else:
                             # claimed BEFORE the send, so a crash cannot
                             # re-enter and break the consistency rule
@@ -1428,6 +1548,7 @@ def main():
                                      "ask_seen": float(ask)})
                             rec("live_order", event=evt, ticker=tkr,
                                 side=side, tau=tau, ask_seen=float(ask),
+                                fresh_ask=fresh,
                                 count_asked=want_n, filled=got,
                                 exec_price=(px if got > 0 else None),
                                 status=out.get("status"),

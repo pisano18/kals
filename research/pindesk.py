@@ -983,15 +983,26 @@ def _ram_free_gb():
         return None
 
 
-def recorder_ok(root):
-    """Same proof of life restart_bot.ps1 uses: the previous UTC hour landed
-    with bytes, and a file is open for the hour in progress."""
-    now = time.time()
+REC_FRESH_S = 300   # a busy channel writes every second; 5 min silent = deaf
+
+
+def recorder_ok(root, now=None):
+    """(ok, previous-hour bytes, channels open this hour, their names, seconds
+    since the NEWEST write). OK means a file is open for the hour in progress
+    AND something was written in the last REC_FRESH_S seconds.
+
+    2026-09-22: this used to be "the previous hour landed with bytes and a
+    file is open for this one". On 09-21 the Kalshi recorder stayed alive but
+    received NOTHING from 20:50 to 01:38 ET -- 37 failed reconnects -- and the
+    hourly test kept saying WRITING for the first hour of it, then said CHECK
+    for an hour AFTER it had recovered. Freshness is the only honest test."""
+    now = time.time() if now is None else now
     prev = time.strftime("%Y%m%dT%H", time.gmtime(now - 3600)) + ".jsonl.gz"
     cur = time.strftime("%Y%m%dT%H", time.gmtime(now)) + ".jsonl.gz"
     pb = 0
     cn = 0
     chans = []
+    newest = None
     try:
         for name in os.listdir(root):
             d = os.path.join(root, name)
@@ -1007,9 +1018,110 @@ def recorder_ok(root):
             if os.path.exists(c):
                 cn += 1
                 chans.append(name)
+                try:
+                    m = os.path.getmtime(c)
+                    newest = m if newest is None else max(newest, m)
+                except OSError:
+                    pass
     except OSError:
         pass
-    return pb > 0 and cn > 0, pb, cn, chans
+    age = None if newest is None else max(0.0, now - newest)
+    return (cn > 0 and age is not None and age < REC_FRESH_S), pb, cn, chans, age
+
+
+# THE BOT CAN BE ALIVE AND BLIND. 2026-09-21 20:50 ET to 01:43 ET the live bot
+# was running and writing its log every few seconds -- so the banner said
+# TRADING -- while every line it wrote was "could not reach Kalshi"
+# (universe_http_-1) or "prices too old" (book_stale). It could not have
+# bought anything, and the operator paused and restarted it believing it was
+# fine. BLIND is: in the last BLIND_WIN_S, at least BLIND_MIN_BAD such lines
+# and not ONE normal evaluation. Replayed over every live log from 09-08 to
+# 09-22 (17,282 evaluation lines) it flags exactly one stretch, that night,
+# from 20:55 ET -- five minutes in -- and nothing else.
+BLIND_WIN_S = 600
+BLIND_MIN_BAD = 5
+_BLIND_GATES = ("book_stale", "index_stale", "book_suspect")
+_SEEING_KINDS = ("signal", "order", "settled", "hedge", "hedge_panic",
+                 "hedge_prop", "early_order", "late_order")
+
+
+def _blind_class(d):
+    k = d.get("kind")
+    if k == "skip" and str(d.get("why", "")).startswith("universe_http_"):
+        return "bad"
+    if k == "refused" and d.get("gate") in _BLIND_GATES:
+        return "bad"
+    if k == "refused" or k in _SEEING_KINDS:
+        return "good"
+    return None
+
+
+def _ago(sec):
+    if sec is None:
+        return "never (no file this hour)"
+    return "%ds ago" % sec if sec < 120 else "%d min ago" % (sec // 60)
+
+
+def blind_of(rows, now):
+    """None if the bot can see, else {"since", "bad", "why"}. `rows` are the
+    newest live log's records (dicts with an ISO `t`)."""
+    bad = good = 0
+    net = stale = 0
+    last_good = None
+    bad_ts = []
+    for d in rows:
+        c = _blind_class(d)
+        if c is None:
+            continue
+        t = parse_t(d.get("t") or "")
+        if t is None or t > now + 60:
+            continue
+        if c == "good":
+            last_good = t if last_good is None else max(last_good, t)
+        else:
+            bad_ts.append(t)
+        if t < now - BLIND_WIN_S:
+            continue
+        if c == "good":
+            good += 1
+        else:
+            bad += 1
+            if d.get("kind") == "skip":
+                net += 1
+            else:
+                stale += 1
+    if good or bad < BLIND_MIN_BAD:
+        return None
+    # blind SINCE the first failure after the last normal look -- so the
+    # banner counts the whole outage, not just the window
+    after = [t for t in bad_ts if last_good is None or t > last_good]
+    first_bad = min(after) if after else None
+    why = ("it cannot reach Kalshi" if net >= stale
+           else "the prices it gets are too old to trade on")
+    return {"since": first_bad, "bad": bad, "why": why}
+
+
+def tail_rows(path, nbytes=262144):
+    """The last `nbytes` of a JSONL file as dicts; a torn first line is
+    dropped, never guessed at."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - nbytes))
+            chunk = fh.read()
+    except OSError:
+        return []
+    lines = chunk.split(b"\n")
+    if size > nbytes:
+        lines = lines[1:]
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln.decode("utf-8", "replace")))
+        except ValueError:
+            continue
+    return out
 
 
 def newest_mtime_age(root):
@@ -1061,8 +1173,11 @@ def health(ledger):
             h["run_all"] = pinflat.pid_alive(int(fh.read().strip()))
     except (OSError, ValueError):
         h["run_all"] = None
-    h["kalshi_ok"], h["kalshi_prev"], h["kalshi_open"], h["kalshi_chans"] = recorder_ok(os.path.join(KALS, "kalshi_data"))
-    h["feeds_ok"], h["feeds_prev"], h["feeds_open"], h["feeds_chans"] = recorder_ok(os.path.join(KALS, "feed_data"))
+    h["kalshi_ok"], h["kalshi_prev"], h["kalshi_open"], h["kalshi_chans"], h["kalshi_age"] = recorder_ok(os.path.join(KALS, "kalshi_data"))
+    h["feeds_ok"], h["feeds_prev"], h["feeds_open"], h["feeds_chans"], h["feeds_age"] = recorder_ok(os.path.join(KALS, "feed_data"))
+    lives = glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
+    h["blind"] = (blind_of(tail_rows(max(lives, key=os.path.getmtime)), time.time())
+                  if lives and h["alive"] else None)
     h["cdc_age"] = newest_mtime_age(os.path.join(KALS, "cdc_data"))
     now = time.time()
     h["paper_arms"] = sum(1 for p in glob.glob(os.path.join(RESULTS, "pinrun-paper-*.jsonl"))
@@ -1142,6 +1257,15 @@ def _status_of(h, now=None):
         if q is not None and q > STALE_MIN * 60:
             return ("STALE", "RUNNING BUT QUIET for %d min" % int(q / 60),
                     "Nothing written to its log. The watchdog restarts it after %d min of silence." % 25, C["watch"])
+        b = h.get("blind")
+        if b:
+            mins = int(max(0, now - b["since"]) / 60) if b.get("since") else 0
+            return ("BLIND", "RUNNING BUT NOT TRADING -- %s (%d min)" % (b["why"], mins),
+                    "The bot is up but cannot buy anything: %d of its checks in the last %d min "
+                    "failed and none succeeded. Restarting will not help if Kalshi itself is "
+                    "unreachable -- check the Kalshi recorder on the System tab: if it is "
+                    "also silent, the problem is the connection, not the bot."
+                    % (b["bad"], BLIND_WIN_S // 60), C["loss"])
         return ("TRADING", "TRADING  (pid %s)" % h["pid"],
                 "%d open bet%s" % (n_open, "" if n_open == 1 else "s") if n_open else "No open bets right now.", C["gain"])
     if h.get("flag"):
@@ -3767,17 +3891,19 @@ def run_gui():
         ls = ledger.last_start() or {}
         rows = [
             (("Live bot", "The one that spends money: research\\pinrun.py --live. Buys the winning side in the last 30 s, hedges at belief < %s." % ls.get("hedge", "?"),
-              "RUNNING" if h["alive"] else "DOWN", ("pid %s, wrote %ds ago" % (h["pid"], q)) if h["alive"] and q is not None else (h.get("flag") or "not running")),
-             "gain" if h["alive"] else "loss"),
+              ("BLIND" if h.get("blind") else "RUNNING") if h["alive"] else "DOWN",
+              ("%s -- pid %s" % (h["blind"]["why"], h["pid"])) if h["alive"] and h.get("blind")
+              else ("pid %s, wrote %ds ago" % (h["pid"], q)) if h["alive"] and q is not None else (h.get("flag") or "not running")),
+             "gain" if h["alive"] and not h.get("blind") else "loss"),
             (("Bot watchdog", "Relaunches the bot when it dies: 4 quick tries, then every 3 min for ever. Honours your PAUSE/STOP. watch_bot.ps1",
               "RUNNING" if ok else "DOWN", ("checked %ds ago" % wd) if wd is not None else "no heartbeat"), "gain" if ok else "loss"),
             (("Boot task", "Windows task KalsBoot: at sign-in and every 10 min, starts anything missing. boot_all.ps1",
               "installed", h.get("boot_last", "")[-70:]), "text"),
             (("Kalshi recorder", "Tapes Kalshi's feed: prices, trades, full order books, and the settlement index (1 print/s). One file per channel per hour. kalshi_collector.py",
-              "WRITING" if h["kalshi_ok"] else "CHECK", "last full hour %.1f MB, %d channels open" % (h["kalshi_prev"] / 1e6, h["kalshi_open"])),
+              "WRITING" if h["kalshi_ok"] else "SILENT", "last write %s, last full hour %.1f MB, %d channels open" % (_ago(h.get("kalshi_age")), h["kalshi_prev"] / 1e6, h["kalshi_open"])),
              "gain" if h["kalshi_ok"] else "loss"),
             (("Exchange recorder", "Tapes the order books of Coinbase, Kraken, Bitstamp and Gemini -- the exchanges behind the settlement index. crypto_feeds.py",
-              "WRITING" if h["feeds_ok"] else "CHECK", "last full hour %.1f MB, %d feeds open" % (h["feeds_prev"] / 1e6, h["feeds_open"])),
+              "WRITING" if h["feeds_ok"] else "SILENT", "last write %s, last full hour %.1f MB, %d feeds open" % (_ago(h.get("feeds_age")), h["feeds_prev"] / 1e6, h["feeds_open"])),
              "gain" if h["feeds_ok"] else "loss"),
             (("Recorders' watchdog", "Restarts the two recorders if they die. run_all.ps1",
               "RUNNING" if h.get("run_all") else ("unknown" if h.get("run_all") is None else "DOWN"),
@@ -4242,6 +4368,44 @@ def selftest():
         base = {"pid": 1, "alive": True, "flag": None, "quiet_s": 30, "watchdog_s": 10, "open": {}, "halt": None}
         ck(status_of(dict(base))[0] == "TRADING", "alive, quiet 30 s, no flag -> TRADING")
         ck(status_of(dict(base, quiet_s=30 * 60))[0] == "STALE", "alive but silent 30 min -> STALE")
+        # BLIND, from lines copied off the 2026-09-22 outage log verbatim
+        # (trimmed to the fields read) and a healthy stretch of 09-21.
+        t0 = calendar.timegm((2026, 9, 22, 5, 30, 0))
+        iso = lambda s: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0 - s))
+        outage = ([{"why": "universe_http_-1", "series": "KXBNB15M", "t": iso(30 * i + 5), "kind": "skip"} for i in range(8)]
+                  + [{"gate": "book_stale", "ticker": "KXETH15M-26SEP220130-30", "t": iso(40 + i), "kind": "refused"} for i in range(4)]
+                  + [{"ticker": "KXBTC15M-26SEP220130-30", "t": iso(100), "kind": "watch"}])
+        healthy = [{"gate": "no_offer", "ticker": "KXBTC15M-26SEP212345-45", "t": iso(200), "kind": "refused"},
+                   {"gate": "edge_floor", "ticker": "KXETH15M-26SEP212345-45", "t": iso(190), "kind": "refused"}]
+        b = blind_of(outage, t0)
+        ck(b is not None and b["bad"] == 12 and "reach Kalshi" in b["why"],
+           "THE 09-21 NIGHT: 8 universe_http_-1 and 4 book_stale, nothing else -> BLIND, cannot reach Kalshi (got %s)" % b)
+        ck(blind_of(outage + healthy, t0) is None,
+           "NULL: one normal evaluation in the window means it CAN see, however many errors")
+        ck(blind_of(healthy, t0) is None and blind_of([], t0) is None,
+           "NULL: a healthy stretch, and an empty log, are not blind")
+        ck(blind_of(outage[:4], t0) is None,
+           "NULL: four transient errors are under the %d-line bar" % BLIND_MIN_BAD)
+        ck(blind_of(outage, t0 + BLIND_WIN_S + 400) is None,
+           "errors older than the %d-min window no longer count" % (BLIND_WIN_S // 60))
+        st_b = status_of(dict(base, blind=b), now=t0)
+        ck(st_b[0] == "BLIND" and "NOT TRADING" in st_b[1],
+           "alive, writing its log, but blind -> BLIND, never TRADING (got %s)" % st_b[0])
+        ck(status_of(dict(base, blind=b, flag="operator PAUSE at x", open={}))[0] == "PAUSING",
+           "a pause still reads PAUSING while blind")
+        rd = tempfile.mkdtemp()
+        cur = time.strftime("%Y%m%dT%H", time.gmtime(t0)) + ".jsonl.gz"
+        os.makedirs(os.path.join(rd, "cfbenchmarks_value"))
+        fp = os.path.join(rd, "cfbenchmarks_value", cur)
+        open(fp, "wb").close()
+        os.utime(fp, (t0 - 20, t0 - 20))
+        ck(recorder_ok(rd, now=t0)[0] is True and abs(recorder_ok(rd, now=t0)[4] - 20) < 1,
+           "a channel written 20 s ago is WRITING")
+        os.utime(fp, (t0 - REC_FRESH_S - 60, t0 - REC_FRESH_S - 60))
+        ck(recorder_ok(rd, now=t0)[0] is False,
+           "THE 09-21 FAILURE: a file open for this hour but silent %d s is NOT writing -- the old hourly test said it was" % (REC_FRESH_S + 60))
+        ck(recorder_ok(os.path.join(rd, "nothing-here"), now=t0)[0] is False,
+           "NULL: a missing tape folder is not writing")
         ck(status_of(dict(base, flag="operator PAUSE", open={c3: 1}))[0] == "PAUSING", "alive + flag + open bet -> PAUSING")
         ck(status_of(dict(base, alive=False, flag="operator PAUSE at x"))[0] == "PAUSED", "dead + pause flag -> PAUSED")
         ck(status_of(dict(base, alive=False, flag="operator STOP at x"))[0] == "STOPPED", "dead + stop flag -> STOPPED")

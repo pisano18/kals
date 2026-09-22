@@ -1,3 +1,30 @@
+# v-race90 -- 2026-09-22 ~06:07Z -- LIVE (coin race penny test): 90c floor, and every send re-reads the book
+
+Not the pin bot -- `pinrun --live` is untouched. This is `pinracearm.py --live`,
+the one-contract coin race test, real money.
+
+**What it does differently:** (1) it never buys under 90c (was 80c); (2) just
+before every real order it GETs the market's book over REST and refuses if
+the ask there is under 90c or more than 2c under the ask it decided on, or
+if the read fails.
+
+**Evidence -- our own fills, 2026-09-21, 15 races:** 24 legs filled at
+94-98c, all 24 won; 2 legs filled at 85-86c, both lost (-$0.86, -$0.87).
+The tape had rated sub-90c legs at 1.0-1.4% losing. The first loss was
+DECIDED at 93c and FILLED at 85c: the race book may sit five minutes
+unchanged (MAX_BOOK_AGE_MS) and a buy fills at anything at or under its
+limit, so a collapsing price is bought, not refused -- a 90c floor alone
+would not have stopped it; the fresh read does. Self-test replays both
+losses (refused) and the 24 winners' prices (sent). Two losses is not a
+loss RATE; the test still halts on its first loss.
+
+**REVERT, copy-pasteable:**
+`git checkout 02ffd18 -- research/pinracearm.py`, then stop the
+`pinracearm.py --live` process and relaunch it with `--live-min-price 0.80`
+(full argv in HANDOFF.md, 2026-09-22 section).
+
+---
+
 # v-hedge25 -- 2026-09-21 ~19:0xZ -- LIVE: the hedge trigger moves 60% -> 25%
 
 The operator set the objective: *"It's not cutting losses that matters it's

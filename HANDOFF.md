@@ -1,3 +1,64 @@
+# 2026-09-22 ~05:4xZ -- KALSHI CONNECTION OUTAGE: ~4h47m of tape LOST, bot idle, nothing left open
+
+Connections TO KALSHI (not the whole internet -- Google stayed 6/6 clean,
+the collector sat alive-but-deaf on WS handshake timeouts, the bot refused
+every market on `book_stale` at 2,024 ms vs its 2,000 ms limit) failed from ~00:50Z (live bot's first `universe_http_-1`) and
+came back ~05:37Z. `cfbenchmarks_value` has no file for 20260922T02-T04 and a
+6 KB T01; T00 is short (1.33 MB vs ~1.6 MB). **That tape is gone for good.**
+No sleep/resume event in the System log; collectors kept their 09-15 PIDs.
+Live bot: last settlement 00:30Z, every order before the drop settled (11
+settled rows for 10 markets, HYPE 18:15 ET hedged = 2 rows), so nothing was
+stranded. A fresh live run started 05:30Z and was evaluating the 05:45Z close
+normally by 05:44Z. Free disk **34.7 GB**, up from ~10 GB -- the operator deleted a
+Steam game. RAM 2.2 GB free.
+
+## FIXED THIS SESSION (2026-09-22 ~06:00-06:25Z)
+
+1. **Desktop app + phone now show BLIND.** `pindesk.blind_of`: in the last
+   10 min >= 5 "cannot reach Kalshi"/"prices too old" lines and not one
+   normal evaluation -> banner "RUNNING BUT NOT TRADING", phone alert
+   "TRADING -> BLIND". Replayed on every live log 09-08..09-22: flags only
+   that night, from 20:55 ET. Recorder rows are now FRESHNESS-based (5 min),
+   not hourly, and the phone alerts "RECORDER SILENT" / "WRITING AGAIN".
+   Both apps restarted on the new code.
+2. **Recorder alive-but-deaf check** in `boot_all.ps1` (runs every 10 min).
+   Kills a recorder ONLY when stuck (tape silent 15 min and its log hung, or
+   no reconnect attempt in its log); a RETRYING recorder -- 09-21's case,
+   37 failed handshakes -- is left alone, since a restart does nothing a
+   retry doesn't. Max one kill/hour. `boot_all.ps1 -DeafTest` (7 cases) and
+   `-DeafDryRun`. Operator sign-off: "Yes also do build that check."
+3. **Coin race penny test: v-race90** (see VERSIONS.md). 24/24 real fills at
+   94-98c won, 2/2 at 85-86c lost. Floor 80c -> 90c and a REST re-read of the
+   book before every send (first loss was seen 93c, filled 85c; the race
+   book may be 5 min old). Relaunched pid 2001776, 02:07 ET. Argv:
+   `-u research\pinracearm.py --live --max-contracts 1 --max-stake 20
+   --live-tau-max 60 --live-min-price 0.90 --live-max-legs 5 --live-confirm 5
+   --live-clock-tau 20 --minutes 1440 --log results\pinracepenny-live.jsonl
+   --model fair --tau-max 60 --min-price 0.80 --min-edge 0.00`
+4. **The paper fleet was mostly DEAD.** 17 of 24 arms had hit the inherited
+   `--max-losses 2` brake -- live restarts after a halt, a paper arm never
+   does. None had been re-synced after the three 09-21 hedge changes, and two
+   (`hedgeprop-off`, `hedge-noprice`) had become exact copies of live. Fixed
+   in `sync_arms.ps1`: --max-losses never inherited (refused if present);
+   `arm-live-frozen` PINNED to the 09-20 list (it used to re-seed from today's
+   live whenever it was not running); the two dead arms flipped to
+   `arm-hedgeprop-on` / `arm-hedgeprice60`; new `arm-hedge60` tests v-hedge25
+   directly. Full resync 06:19Z: 25 arms, all self-tests passed. **ARM
+   NUMBERS ARE COMPARABLE TO LIVE ONLY FROM 2026-09-22 06:21Z.**
+5. `pinphone --selftest` had been failing on the operator's real deposits
+   (fixture read pinxfer's $584.46, expected $500). Fixture now pins them.
+
+Still open from this: paper arms READ the live bot's day-loss file
+(`pinrun.day_loss()` has no live check), so a -$200 live day halts them too.
+
+Two chats died in the outage. Both runs of the "where are we bleeding" project
+map (wf_8b59d5d4, wf_0e5816d3) finished ZERO investigators -- no
+PROJECT_MAP report exists. The "collector alive but deaf" watchdog check was
+proposed and NOT built. Penny test (coin race, real, 1 contract): 15 races,
+13 won, 2 lost, net -$1.20 -- 2/15 against the tape's 0.4%.
+
+---
+
 # 2026-09-21 ~07:4xZ -- THE COIN RACE, RE-MEASURED FROM THE BOOK
 
 **Nothing live changed. `pinrun --live` is untouched: no flag, no threshold,

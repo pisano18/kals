@@ -27,7 +27,7 @@
 #     powershell -ExecutionPolicy Bypass -File C:\kals-repo\boot_all.ps1
 #     powershell -ExecutionPolicy Bypass -File C:\kals-repo\boot_all.ps1 -Install
 #
-param([switch]$Install, [switch]$NoArms)
+param([switch]$Install, [switch]$NoArms, [switch]$DeafTest, [switch]$DeafDryRun)
 
 $repo = "C:\kals-repo"
 $res = "$repo\results"
@@ -67,6 +67,108 @@ if ($Install) {
     exit 0
 }
 
+# --- A RECORDER ALIVE BUT DEAF. Operator sign-off 2026-09-22: "Yes also do
+# build that check."
+#
+# run_all.ps1 restarts a recorder only when its process EXITS. On 2026-09-21
+# from 20:50 to 01:38 ET the Kalshi collector stayed alive and wrote nothing,
+# and nothing noticed for 4 h 47 min. That tape is gone for good.
+#
+# Two kinds of deaf, and only one is ours to fix:
+#   RETRYING  its own log shows reconnect attempts in the last ~15 min. It is
+#             already doing exactly what a restart would do. 09-21 was this:
+#             37 failed handshakes, and it reconnected by itself within a
+#             minute of the live bot doing the same -- the CONNECTION was
+#             down, not the program. Killing it would only cost the buffered
+#             hour. Alert (the phone does, on the tape going silent); no kill.
+#   STUCK     tape silent 15+ min AND either its log has stopped too (hung),
+#             or its log runs but shows no reconnect attempt (connected and
+#             deaf -- nothing inside it will ever retry). Kill it; run_all.ps1
+#             starts a fresh one within 5 minutes.
+# At most one kill per recorder per hour, so a long outage cannot churn it.
+function DeafVerdict($tapeRoot, $logPath, [datetime]$nowUtc, [double]$silentMin = 15) {
+    $cur  = $nowUtc.ToString("yyyyMMdd'T'HH") + ".jsonl.gz"
+    $prev = $nowUtc.AddHours(-1).ToString("yyyyMMdd'T'HH") + ".jsonl.gz"
+    $newest = $null
+    foreach ($d in @(Get-ChildItem -Path $tapeRoot -Directory -ErrorAction SilentlyContinue)) {
+        foreach ($f in @($cur, $prev)) {
+            $p = Join-Path $d.FullName $f
+            if (Test-Path $p) {
+                $m = (Get-Item $p).LastWriteTimeUtc
+                if ((-not $newest) -or ($m -gt $newest)) { $newest = $m }
+            }
+        }
+    }
+    $tapeMin = if ($newest) { ($nowUtc - $newest).TotalMinutes } else { 9999 }
+    if ($tapeMin -lt $silentMin) { return @{ state = "ok"; tape_min = $tapeMin; why = "" } }
+    if (-not (Test-Path $logPath)) {
+        return @{ state = "stuck"; tape_min = $tapeMin; why = ("tape silent {0:N0} min and no log at {1}" -f $tapeMin, $logPath) }
+    }
+    $logMin = ($nowUtc - (Get-Item $logPath).LastWriteTimeUtc).TotalMinutes
+    if ($logMin -ge $silentMin) {
+        return @{ state = "stuck"; tape_min = $tapeMin; why = ("tape silent {0:N0} min and its own log silent {1:N0} min -- hung" -f $tapeMin, $logMin) }
+    }
+    # the log has no dates; its [stat] line comes every 5 min, so the third
+    # from last marks ~15 min ago. Any reconnect line after it = retrying.
+    $tail = @(Get-Content $logPath -Tail 150 -ErrorAction SilentlyContinue)
+    $stats = @(for ($i = 0; $i -lt $tail.Count; $i++) { if ($tail[$i] -match '^\[stat\]') { $i } })
+    $from = if ($stats.Count -ge 3) { $stats[$stats.Count - 3] } else { 0 }
+    $recon = @($tail[$from..($tail.Count - 1)] | Where-Object { $_ -match 'retry|connected|handshake' })
+    if ($recon.Count -gt 0) {
+        return @{ state = "retrying"; tape_min = $tapeMin; why = ("tape silent {0:N0} min, {1} reconnect line(s) in its log -- the connection is down, not the program" -f $tapeMin, $recon.Count) }
+    }
+    return @{ state = "stuck"; tape_min = $tapeMin; why = ("tape silent {0:N0} min, its log runs but shows no reconnect attempt -- connected and deaf" -f $tapeMin) }
+}
+
+if ($DeafTest) {
+    # Plants each case in a temp folder and fails loudly on any miss.
+    $fail = 0
+    function DT($cond, $msg) { if ($cond) { Write-Output "  ok   $msg" } else { Write-Output "  FAIL $msg"; $script:fail++ } }
+    $t = Join-Path $env:TEMP ("deaftest_" + [guid]::NewGuid().ToString("N"))
+    $now = [datetime]::SpecifyKind([datetime]"2026-09-22T03:10:00", "Utc")
+    New-Item -ItemType Directory -Force -Path "$t\tape\cfbenchmarks_value" | Out-Null
+    $fp = "$t\tape\cfbenchmarks_value\20260922T03.jsonl.gz"
+    Set-Content -Path $fp -Value "x"
+    $lg = "$t\collector.out.log"
+    # 1. healthy
+    (Get-Item $fp).LastWriteTimeUtc = $now.AddSeconds(-5)
+    Set-Content -Path $lg -Value @("[stat] 03:00 tracking=301 {'trade': 5}", "[stat] 03:05 tracking=301 {'trade': 5}", "[stat] 03:10 tracking=301 {'trade': 5}")
+    (Get-Item $lg).LastWriteTimeUtc = $now.AddSeconds(-30)
+    DT ((DeafVerdict "$t\tape" $lg $now).state -eq "ok") "a tape written 5 s ago is ok"
+    # 2. THE 09-21 NIGHT, lines verbatim from C:\kals\logs\collector.out.log
+    (Get-Item $fp).LastWriteTimeUtc = $now.AddMinutes(-40)
+    Set-Content -Path $lg -Value @("[stat] 02:52 tracking=301 {}", "[ws] TimeoutError: timed out during opening handshake -- retry in 60s", "[stat] 02:57 tracking=301 {}", "[stat] 03:02 tracking=301 {}", "[ws] TimeoutError: timed out during opening handshake -- retry in 60s", "[stat] 03:07 tracking=301 {}")
+    (Get-Item $lg).LastWriteTimeUtc = $now.AddSeconds(-60)
+    $v = DeafVerdict "$t\tape" $lg $now
+    DT ($v.state -eq "retrying") "THE 09-21 NIGHT: silent 40 min but retrying every minute -> retrying, NOT killed (got $($v.state))"
+    # 3. connected and deaf: stats say nothing arrives, no reconnect attempt
+    Set-Content -Path $lg -Value @("[ws] connected", "[stat] 02:52 tracking=301 {}", "[stat] 02:57 tracking=301 {}", "[stat] 03:02 tracking=301 {}", "[stat] 03:07 tracking=301 {}")
+    (Get-Item $lg).LastWriteTimeUtc = $now.AddSeconds(-60)
+    $v = DeafVerdict "$t\tape" $lg $now
+    DT ($v.state -eq "stuck") "connected-and-deaf (an old '[ws] connected', then 15 min of empty stats) -> stuck (got $($v.state))"
+    # 4. hung: tape and log both silent
+    (Get-Item $lg).LastWriteTimeUtc = $now.AddMinutes(-30)
+    DT ((DeafVerdict "$t\tape" $lg $now).state -eq "stuck") "tape AND log silent 30 min -> stuck (hung)"
+    # 5. NULL: silent under the bar
+    (Get-Item $fp).LastWriteTimeUtc = $now.AddMinutes(-10)
+    DT ((DeafVerdict "$t\tape" $lg $now).state -eq "ok") "NULL: 10 min silent is under the 15-min bar -> ok"
+    # 6. the top of the hour: last hour's file is fresh, this hour's not yet made
+    Remove-Item $fp
+    $pp = "$t\tape\cfbenchmarks_value\20260922T02.jsonl.gz"
+    Set-Content -Path $pp -Value "x"
+    (Get-Item $pp).LastWriteTimeUtc = $now.AddSeconds(-20)
+    DT ((DeafVerdict "$t\tape" $lg $now).state -eq "ok") "NULL: the previous hour's file written 20 s ago counts (top of the hour)"
+    # 7. exchange-feed reconnect wording, verbatim from feeds.out.log
+    (Get-Item $pp).LastWriteTimeUtc = $now.AddMinutes(-40)
+    Set-Content -Path $lg -Value @("[stat] 02:55 top-of-book live: {}", "[kraken] ConnectionClosedError: no close frame received or sent -- retry 60s", "[stat] 03:00 top-of-book live: {}", "[stat] 03:05 top-of-book live: {}")
+    (Get-Item $lg).LastWriteTimeUtc = $now.AddSeconds(-60)
+    DT ((DeafVerdict "$t\tape" $lg $now).state -eq "retrying") "the exchange recorder's '-- retry 60s' reads as retrying"
+    Remove-Item -Recurse -Force $t
+    if ($fail -gt 0) { Write-Output "boot_all deaf self-test: FAILED ($fail)"; exit 1 }
+    Write-Output "boot_all deaf self-test: OK"
+    exit 0
+}
+
 function PidFileAlive($path) {
     if (-not (Test-Path $path)) { return $false }
     $w = (Get-Content $path -Raw -ErrorAction SilentlyContinue)
@@ -98,6 +200,32 @@ if ((PidFileAlive "$kals\logs\run_all.pid") -or (Running '*run_all.ps1*')) {
         -WorkingDirectory $kals -WindowStyle Hidden -RedirectStandardOutput "$kals\logs\run_all.console.log" -RedirectStandardError "$kals\logs\run_all.console.err"
     $started++
 }
+
+# --- 1b. a recorder ALIVE BUT DEAF (see DeafVerdict above). Only while
+# run_all.ps1 is up to start the replacement, and never when any python
+# process hides its command line -- a kill must name exactly one process.
+$runAllUp = (PidFileAlive "$kals\logs\run_all.pid") -or (Running '*run_all.ps1*')
+foreach ($r in @(
+    @{ name = "Kalshi recorder"; like = '*kalshi_collector.py*'; tape = "$kals\kalshi_data"; log = "$kals\logs\collector.out.log"; last = "$res\deaf_kill_collector.last" },
+    @{ name = "Exchange recorder"; like = '*crypto_feeds.py*'; tape = "$kals\feed_data"; log = "$kals\logs\feeds.out.log"; last = "$res\deaf_kill_feeds.last" }
+)) {
+    $v = DeafVerdict $r.tape $r.log ([datetime]::UtcNow)
+    if ($v.state -eq "ok") { continue }
+    if ($v.state -eq "retrying") { Say "$($r.name) DEAF but retrying: $($v.why). Not killing it."; continue }
+    $hits = @($procs | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like $r.like })
+    if ($hits.Count -ne 1) { Say "$($r.name) STUCK ($($v.why)) but $($hits.Count) matching process(es) -- not killing blind"; continue }
+    if ($blind -gt 0) { Say "$($r.name) STUCK ($($v.why)) but $blind python process(es) hide their command line -- not killing"; continue }
+    if (-not $runAllUp) { Say "$($r.name) STUCK ($($v.why)) but run_all.ps1 is not up to restart it -- not killing"; continue }
+    if (Test-Path $r.last) {
+        $ago = ((Get-Date) - (Get-Item $r.last).LastWriteTime).TotalMinutes
+        if ($ago -lt 60) { Say ("$($r.name) STUCK ($($v.why)); killed one {0:N0} min ago -- waiting out the hour" -f $ago); continue }
+    }
+    if ($DeafDryRun) { Say "DRY RUN: would kill $($r.name) pid $($hits[0].ProcessId): $($v.why)"; continue }
+    Say "$($r.name) STUCK: $($v.why). Killing pid $($hits[0].ProcessId); run_all.ps1 starts a fresh one within 5 min."
+    Stop-Process -Id $hits[0].ProcessId -Force -ErrorAction SilentlyContinue
+    Set-Content -Path $r.last -Value (Get-Date -Format o)
+}
+if ($DeafDryRun) { exit 0 }
 
 # --- 2. the live bot's watchdog. It starts the bot itself, through restart_bot.ps1.
 #

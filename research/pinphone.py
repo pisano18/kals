@@ -147,6 +147,7 @@ class Phone:
         self.offset = None
         self.muted = False
         self.last_state = None
+        self.last_rec = None
         self.seen_losses = None
         self.last_daily = None
         self.busy = False
@@ -462,6 +463,24 @@ class Phone:
             self.say(msg)
             sent.append(msg)
         self.last_state = state
+        # THE RECORDERS. 2026-09-21 the Kalshi recorder was alive and deaf for
+        # 4 h 47 min and nothing told the operator; the tape from those hours
+        # is gone for good. Same rule as the bot: send only on a CHANGE.
+        silent = [n for n, k in (("Kalshi recorder", "kalshi_ok"),
+                                 ("Exchange recorder", "feeds_ok"))
+                  if h.get(k) is False]
+        rec = ("SILENT: " + ", ".join(silent)) if silent else "writing"
+        if self.last_rec is not None and rec != self.last_rec and not self.muted:
+            if silent:
+                msg = ("RECORDER %s -- nothing written for %d+ min. That tape "
+                       "cannot be recreated later. If the bot is also BLIND, "
+                       "the problem is the connection to Kalshi, not our "
+                       "programs." % (rec, pindesk.REC_FRESH_S // 60))
+            else:
+                msg = "RECORDERS WRITING AGAIN (was %s)" % self.last_rec
+            self.say(msg)
+            sent.append(msg)
+        self.last_rec = rec
         losses = self.ledger.losing_closes()
         keys = {k for k, _n, _l in losses}
         if self.seen_losses is None:
@@ -545,6 +564,11 @@ def selftest():
                 fh.write(json.dumps(r) + "\n")
         L = Ledger(results=td)
         L.refresh()
+        # PIN THE DEPOSITS. deposited() reads the REAL account's deposit
+        # records (pinxfer), so this fixture's "+0.33% of $500" read +0.28%
+        # the day real deposits reached $584.46 -- the self-test was failing
+        # on the operator's money, not on the code.
+        L.deposited = lambda: 500.0
         state = {"h": {"pid": 4242, "alive": True, "flag": None, "quiet_s": 12, "watchdog_s": 5, "open": {},
                        "halt": None, "kalshi_ok": True, "feeds_ok": True, "disk_gb": 30.0}}
         now = {"t": calendar.timegm((2026, 9, 16, 15, 0, 0))}           # 11 AM ET Sep 16
@@ -661,6 +685,19 @@ def selftest():
         ck(ph.alerts_tick() == [], "...and not a second one while it stays down")
         state["h"] = dict(state["h"], alive=True)
         ck("DOWN -> TRADING" in ph.alerts_tick()[0], "coming back sends one too")
+        state["h"] = dict(state["h"], blind={"since": None, "bad": 12, "why": "it cannot reach Kalshi"})
+        sent = ph.alerts_tick()
+        ck(len(sent) == 1 and "TRADING -> BLIND" in sent[0] and "NOT TRADING" in sent[0],
+           "THE 09-21 NIGHT: alive but blind sends an alert -- it used to stay TRADING")
+        state["h"] = dict(state["h"], blind=None)
+        ck("BLIND -> TRADING" in ph.alerts_tick()[0], "and seeing again sends one")
+        state["h"] = dict(state["h"], kalshi_ok=False)
+        sent = ph.alerts_tick()
+        ck(len(sent) == 1 and "RECORDER SILENT: Kalshi recorder" in sent[0],
+           "a silent Kalshi recorder sends one alert")
+        ck(ph.alerts_tick() == [], "...and not a second while it stays silent")
+        state["h"] = dict(state["h"], kalshi_ok=True)
+        ck("WRITING AGAIN" in ph.alerts_tick()[0], "and writing again sends one")
         # a new losing close
         with open(p, "a", encoding="utf-8") as fh:
             fh.write(json.dumps({"kind": "order", "t": "2026-09-16T14:14:31Z", "ticker": c2, "filled": 40.0, "exec_price": 0.97, "status": "executed", "body": {"count": "40.00"}}) + "\n")
