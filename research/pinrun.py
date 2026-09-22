@@ -2853,6 +2853,25 @@ MEASURED_FLIP = 0.0090   # 3 flips in 333 dear trades, corrected OOS run. The
                          # seller may know something.
                          # See results/PREREG_pin_live_AMENDMENT_2.md.
 EV_FLOOR = 0.003         # dollars per contract required IN EXPECTATION
+# ---- R1 (2026-09-22): WHEN IS AN "ATTEMPT" COUNTED? --------------------
+# MAX_ATTEMPTS_PER_MARKET's own comment below says it counts orders SENT.
+# The counter is incremented at the SIGNAL point, ~100 lines before the
+# send, and five gates that refuse WITHOUT sending sit in between
+# (early_cheap, early_dear, early_wide, staged_none, price_band). At ~20
+# looks a second three refused passes -- 150 ms -- reach the cap and lock
+# the market out for the REST OF THE CLOSE, the last 30 seconds included.
+# 42 lockouts lifetime, 32 of them preceded by one of those five refusals
+# in the same market and close; every record reads tried = 3.
+#
+# --attempts-on-send moves ONLY the per-market counter to the send site.
+# DEFAULT OFF, so an unflagged process -- the live bot -- behaves exactly
+# as it does today, byte for byte. `attempts[close_s]`, the per-CLOSE
+# runaway rail, does NOT move under either setting: it is deliberately
+# incremented outside the entry path (by the hedge under `_hcs`, and by
+# the plant), and loosening it would buy nothing, because every lockout in
+# this window is per-market.
+_DEFAULT_ATTEMPTS_ON_SEND = False
+ATTEMPTS_ON_SEND = False
 MAX_ATTEMPTS_PER_MARKET = 3  # AMENDMENT 26 (2026-09-14): orders SENT into ONE
 _DEFAULT_MAX_ATTEMPTS_PER_MARKET = 3   # market in one close, filled or not.
                              # THIS is what the 160-order runaway actually
@@ -3304,6 +3323,7 @@ def _fill_all(body, n):
 # self-test compares this tuple against main()'s source, so a new flag that
 # is not listed here fails the plain --selftest, not a live start.
 _OFFLINE_PINNED_FLAGS = (
+    "ATTEMPTS_ON_SEND",
     "BAND_MULTS", "BANK_BRAKE", "DEPTH_LADDER", "DUMP_ENABLED", "EARLY_FRAC",
     "EARLY_MAX_EDGE", "EARLY_MAX_PRICE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
     "EXTERNAL_DETECT", "EXTRA_COIN", "FLIP_MULT", "HEDGE_BELIEF",
@@ -8926,6 +8946,97 @@ def _selftest_body():
        "hedge or count as a scan error -- these records can only ever be "
        "dropped (hedged %g)" % _hedged(_r2f, _kA))
 
+    # ---- R1: --attempts-on-send, and it ships OFF ---------------------
+    ck(_DEFAULT_ATTEMPTS_ON_SEND is False,
+       "R1 ships OFF -- asserted against the DECLARED default, never the "
+       "running value, so the paper arm that sets the flag does not fail "
+       "its own gate and the live argv's decisions are unchanged")
+    # `find`, never `index`: a missing literal must read as a clean FAIL,
+    # not as an exception that takes the rest of the suite with it.
+    _lp_r1 = _src_k1[_src_k1.rindex(chr(10) + "def trade_loop("):]
+    _i_sig_r1 = _lp_r1.find("if not ATTEMPTS_ON_SEND:")
+    _i_snd_r1 = _lp_r1.find("if ATTEMPTS_ON_SEND:" + chr(10))
+    # the ENTRY send is the LAST pintake.take() in the loop; the two above
+    # it are the unrest sweep and the hedge, and the hedge was cut free of
+    # this counter by A71 -- it must stay that way.
+    _i_take_r1 = _lp_r1.rfind("out = pintake.take(")
+    ck(min(_i_sig_r1, _i_snd_r1, _i_take_r1) > 0
+       and _i_sig_r1 < _lp_r1.find('_gate("early_cheap"')
+       and _i_snd_r1 > _lp_r1.find('_gate("price_band"')
+       and _i_snd_r1 < _i_take_r1
+       and -1 < _lp_r1.find("attempts[close_s] = attempts.get(close_s, 0) + 1")
+       < _i_sig_r1
+       and "_gate(" not in _lp_r1[_i_snd_r1:_i_take_r1],
+       "R1 STRUCTURAL: the flag-OFF increment is where it has always "
+       "been (before the five burner gates), the flag-ON one is after the "
+       "last of them and BEFORE the send with NO gate in between, and the "
+       "per-CLOSE counter moved nowhere")
+    _r1burn = {"SKIP_BANDS": ((0.90, 0.96),)}     # A's 95c ask sits inside
+    _r1off = _offline_trade_loop([_k1_A(collapse_at=None)], run_s=40.0,
+                                 flags=dict(_r1burn))
+    _r1off_ma = _refusals(_r1off, "market_attempts")
+    _r1off_pb = _refusals(_r1off, "price_band")
+    ck(_r1off["raised"] is None and len(_r1off_ma) == 1
+       and int(_r1off_ma[0]["tried"]) == 3 and len(_r1off_pb) == 1
+       and _gate_counts(_r1off).get("price_band") == 3
+       and float(_r1off_ma[0]["t"]) - float(_r1off_pb[0]["t"]) < 1.0,
+       "R1 CONTROL (flag OFF = today): three looks refused WITHOUT an "
+       "order burn the counter and lock the market out for the rest of "
+       "the close -- the defect, reproduced, and it takes %.2f s"
+       % (float(_r1off_ma[0]["t"]) - float(_r1off_pb[0]["t"])
+          if _r1off_ma and _r1off_pb else -1.0))
+    _r1on = _offline_trade_loop([_k1_A(collapse_at=None)], run_s=40.0,
+                                flags=dict(_r1burn, ATTEMPTS_ON_SEND=True))
+    ck(_r1on["raised"] is None and not _refusals(_r1on, "market_attempts")
+       and _gate_counts(_r1on).get("price_band", 0) > 20,
+       "R1: with the flag ON those same three pre-send refusals do NOT "
+       "lock the market out -- it is still being looked at on every pass "
+       "to the close (%d looks, %d market_attempts refusals)"
+       % (_gate_counts(_r1on).get("price_band", 0),
+          len(_refusals(_r1on, "market_attempts"))))
+    _r1on_ac = _refusals(_r1on, "attempts_cap")
+    ck(_r1on_ac and int(_r1on_ac[0]["tried"]) >= MAX_ATTEMPTS_PER_CLOSE,
+       "R1 HONEST LIMIT, said here so nobody reads the flag as more than "
+       "it is: refusals are NOT free under it. attempts[close_s] still "
+       "burns on every look -- deliberately, because the hedge and the "
+       "plant write it too -- so a ONE-market close still stops at "
+       "MAX_ATTEMPTS_PER_CLOSE (%d looks, not unlimited). What the flag "
+       "buys is that ONE market is no longer locked out by %d refusals "
+       "while eleven other coins still have room (tried %s)"
+       % (MAX_ATTEMPTS_PER_CLOSE, MAX_ATTEMPTS_PER_MARKET,
+          _r1on_ac[0].get("tried")))
+    ck(_kinds(_r1off, "order") == [] and _kinds(_r1on, "order") == []
+       and not _r1off["posts"] and not _r1on["posts"],
+       "R1: ...and NEITHER world sent an order, so the only thing the "
+       "flag changed is whether a refusal counts as an attempt")
+    _r1sent = []
+
+    def _r1_nofill(base, pk, key_id, ticker, want, price, count, mce,
+                   exchange_index=0, **kw):
+        """A LOST RACE: the order is sent and fills nothing. A no-fill
+        books no slot (A6), so the market is looked at again -- which is
+        how three real SENDS reach the rail."""
+        body = pintake.build_take(ticker, want, price, count, exchange_index)
+        out = pintake.normalise(201, {"order": {
+            "order_id": "r1-%d" % len(_r1sent), "status": "canceled",
+            "fill_count": 0, "remaining_count": count}}, body, base)
+        out["refused"] = []
+        _r1sent.append((ticker, want, float(count)))
+        return out
+    _r1rail = _offline_trade_loop([_k1_A(collapse_at=None)], live=True,
+                                  take=_r1_nofill,
+                                  flags={"ATTEMPTS_ON_SEND": True})
+    _r1rail_ma = _refusals(_r1rail, "market_attempts")
+    ck(_r1rail["raised"] is None and len(_r1sent) == MAX_ATTEMPTS_PER_MARKET
+       and len(_kinds(_r1rail, "order")) == MAX_ATTEMPTS_PER_MARKET
+       and len(_r1rail_ma) == 1
+       and int(_r1rail_ma[0]["tried"]) == MAX_ATTEMPTS_PER_MARKET,
+       "R1: the RAIL ITSELF IS UNCHANGED -- with the flag ON, three "
+       "orders that really are SENT still reach MAX_ATTEMPTS_PER_MARKET "
+       "(%d) and the fourth look is refused, so the 160-order runaway of "
+       "2026-09-08 stays impossible (%d sent)"
+       % (MAX_ATTEMPTS_PER_MARKET, len(_r1sent)))
+
     _pin_moved = [_n for _n in _OFFLINE_PINNED_FLAGS
                   if globals()[_n] != _pin_before[_n]]
     ck(not _pin_moved,
@@ -11660,7 +11771,22 @@ def trade_loop(a, rec, book, idx, series_index):
                            cond_own=(round(cown_, 4)
                                      if cown_ is not None else None))
                 attempts[close_s] = attempts.get(close_s, 0) + 1
-                attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 0) + 1
+                # ---- R1 (2026-09-22): --attempts-on-send ------------------------
+                # WITH THE FLAG OFF -- the default, and what the live bot runs --
+                # this line is exactly where it has always been and the counter
+                # behaves byte for byte as it does today. With it ON, the
+                # per-market counter moves to the send site below, so a look that
+                # is refused WITHOUT AN ORDER (early_cheap, early_dear,
+                # early_wide, staged_none, price_band -- all five sit between
+                # here and the send) no longer burns one of the three tries that
+                # lock the market out for the rest of the close.
+                #
+                # `attempts[close_s]` above does NOT move under either setting.
+                # It is the per-CLOSE runaway rail, it is incremented from
+                # outside this path (the hedge, under `_hcs`, and the plant),
+                # and every lockout in the measured window was per-market.
+                if not ATTEMPTS_ON_SEND:
+                    attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 0) + 1
                 # ---- AMENDMENT 36: STORE THE BOOK WITH THE TRADE ---------------
                 # The operator, 2026-09-14: "Are you able to see the order book
                 # yourself for that trade? If not can we start storing that with
@@ -12057,6 +12183,18 @@ def trade_loop(a, rec, book, idx, series_index):
                                                        float(SIZE) * _mult46,
                                                        _held46)[0])
                     return take_n
+
+                # ---- R1: THE SEND SITE. With --attempts-on-send the
+                # per-market attempt is counted HERE -- after every gate,
+                # before the order goes out on either path -- so it counts
+                # orders SENT, which is what MAX_ATTEMPTS_PER_MARKET's own
+                # comment has always said it counts. BEFORE the send and
+                # not after, so a send that never returns still consumes
+                # one and the runaway of 2026-09-08 stays impossible.
+                # Nothing between here and the send can refuse: the only
+                # code in between defines helpers.
+                if ATTEMPTS_ON_SEND:
+                    attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 0) + 1
 
                 if not live:
                     take_n = _widen45(take_n)  # paper
@@ -12512,6 +12650,19 @@ def main():
                          "2.2c at 31-45 s with no losing close in 68 fills, "
                          "and close_budget refused 126 markets in that "
                          "window. PAPER ONLY for now.")
+    ap.add_argument("--attempts-on-send", action="store_true",
+                    help="R1: count a per-market attempt only when an ORDER "
+                         "IS SENT, not at the signal. DEFAULT OFF -- with the "
+                         "flag absent the bot behaves exactly as it does "
+                         "today. Today three looks refused WITHOUT an order "
+                         "(early_cheap, early_dear, early_wide, staged_none, "
+                         "price_band) reach MAX_ATTEMPTS_PER_MARKET in about "
+                         "150 ms at 20 Hz and lock the market out for the "
+                         "rest of the close, the last 30 s included: 42 "
+                         "lockouts lifetime, 32 preceded by one of those "
+                         "refusals in the same market and close. The "
+                         "per-CLOSE rail is untouched either way, and the cap "
+                         "itself still bounds real orders at 3.")
     ap.add_argument("--extra-coin", type=float, default=None,
                     help="AMENDMENT 56: extra SIZE a close may spend, for a "
                          "coin it is NOT already holding, once the base "
@@ -12912,6 +13063,8 @@ def main():
                 "is no 'inside the last seconds' for it to apply to, and the "
                 "flag would sit in the start record doing nothing.")
         globals()["LATE_EXTRA"] = float(a.late_extra)
+    if a.attempts_on_send:
+        globals()["ATTEMPTS_ON_SEND"] = True
     if a.extra_coin is not None:
         if not (0.0 <= a.extra_coin <= float(MAX_PER_CLOSE)):
             raise SystemExit("--extra-coin must sit in [0, MAX_PER_CLOSE=%g], "
@@ -13282,6 +13435,9 @@ def main():
         late_pin=LATE_PIN, late_jump=LATE_JUMP_SD, extra_coin=EXTRA_COIN,
         late_extra=LATE_EXTRA, late_extra_tau=late_extra_tau(),
         loss_cap=LOSS_CAP,
+        # R1: the arm's bar reads this field to admit a shared close, and an
+        # arm whose own log cannot say what it is testing is not measurable.
+        attempts_on_send=ATTEMPTS_ON_SEND,
         # A53: lists, so the Lab can select an arm by its exact bands
         skip_bands=[list(b) for b in SKIP_BANDS],
         band_mults=[list(b) for b in BAND_MULTS],
