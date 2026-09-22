@@ -1127,6 +1127,40 @@ def hedge_should_fire(belief, threshold=None):
     return belief is not None and belief < thr
 
 
+def index_age(idx, iid):
+    """Seconds since the newest index print held, or None if unknowable.
+    K3: the hedge pass reads this; a read that fails counts as not fresh."""
+    try:
+        age = idx.spot(iid)[2]
+        return None if age is None else float(age)
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
+def market_belief(bk, want, max_age_ms=None):
+    """K3 (2026-09-22): the MARKET's probability of our side -- the mid of our
+    side's best bid and best ask -- or None when the book cannot say.
+
+    Used only by the hedge pass, only while the settlement index is stale.
+    None, never a guess, for: no book, a suspect book, a book older than
+    MAX_BOOK_AGE_MS, either side missing, a price outside (0, 1), or a
+    crossed book. Prices are dollars, as livebook.best() returns them."""
+    if not bk or bk.get("suspect"):
+        return None
+    lim = MAX_BOOK_AGE_MS if max_age_ms is None else max_age_ms
+    age = bk.get("age_ms")
+    if age is None or age > lim:
+        return None
+    try:
+        bid = float(bk.get(f"{want}_bid"))
+        ask = float(bk.get(f"{want}_ask"))
+    except (TypeError, ValueError):
+        return None
+    if not (0.0 < bid <= ask < 1.0):
+        return None
+    return (bid + ask) / 2.0
+
+
 # AMENDMENT 47 -- THE MARKET MUST AGREE BEFORE WE PAY FOR INSURANCE.
 # `--hedge-price P` (default None = off, the shipped behaviour is unchanged).
 # When set, a hedge fires only if the model's belief has collapsed AND our
@@ -8171,6 +8205,108 @@ def _selftest_body():
        "K2: ...and the OTHER held position is still hedged when it collapses "
        "two seconds later, halt or no halt (hedged %g)" % _hedged(_k2u, _kD))
 
+    # ===================================================================
+    # K3 (2026-09-22): A FROZEN INDEX MUST NOT HIDE A COLLAPSE.
+    #
+    # The premise first, on the REAL IndexWS and fair(): when the feed stops,
+    # partial() ends the settlement window at the newest print held, so the
+    # belief is frozen EXACTLY -- confident, quiet, no alarm and no record --
+    # while spot() reports the age that the hedge pass never read.
+    # ===================================================================
+    _k3clk = _OfflineClock(0.0)
+    _k3saved = globals()["time"]
+    try:
+        globals()["time"] = _k3clk
+        _k3i = IndexWS(["K3"])
+        _k3C = 1_800_000_900
+        _k3r = __import__("random").Random(3)
+        _k3v = 100000.0
+        for _s in range(_k3C - 3700, _k3C - 28):       # prints stop at tau 29
+            _k3v += _k3r.gauss(0.0, 4.0)
+            _k3i.on_frame({"type": "cfbenchmarks_value", "msg": {
+                "index_id": "K3", "data": {"time": _s * 1000,
+                                           "value": str(round(_k3v, 2))}}},
+                          rx_ms=_s * 1000)
+        _k3sg = _k3i.sigma("K3")
+        _k3K = round(_k3v - 20.0, 2)                   # ~99.8% sure
+        _k3clk.t = _k3C - 27.5
+        _k3f1 = fair(_k3i, "K3", _k3C, _k3C - 28, _k3K, _k3sg, 2)
+        _k3a1 = _k3i.spot("K3")[2]
+        _k3clk.t = _k3C - 15.5
+        _k3f2 = fair(_k3i, "K3", _k3C, _k3C - 16, _k3K, _k3sg, 2)
+        _k3a2 = _k3i.spot("K3")[2]
+    finally:
+        globals()["time"] = _k3saved
+    ck(_k3f1 is not None and _k3f1 == _k3f2 and 0.99 < _k3f1 < 1.0
+       and _k3a1 <= MAX_INDEX_AGE_S < _k3a2,
+       "K3 PREMISE (real IndexWS + fair): a feed that stops holds the belief "
+       "EXACTLY (%.6f then %.6f twelve seconds later) while spot() ages "
+       "%.1f s -> %.1f s -- the only sign it is blind"
+       % (_k3f1 or -1, _k3f2 or -1, _k3a1, _k3a2))
+
+    # Now the loop. A is bought on a fresh index at 30 s to go; the index
+    # stops printing at +2 s, so the model stays 99.9% sure however the
+    # world moves. The MARKET is the other witness: our side's own mid.
+    def _k3_A(book_collapse_at=None, model_collapse_at=None):
+        m = _k1_A(collapse_at=model_collapse_at)
+        m["book"] = (lambda t: _ob(0.06, 0.90)
+                     if (book_collapse_at is not None
+                         and t >= book_collapse_at) else _ob(0.94, 0.05))
+        return m
+
+    def _k3_blind(res):
+        return [r for r in _kinds(res, "hedge_blind", _kA)
+                if r.get("why") == "index_stale"]
+
+    _k3a = _offline_trade_loop([_k3_A(book_collapse_at=4,
+                                      model_collapse_at=4)], freeze_at=2)
+    ck(_k3a["raised"] is None and abs(_hedged(_k3a, _kA) - 5.0) < 1e-9,
+       "K3: frozen index + the MARKET collapses (our side's mid 8c) -> the "
+       "position is hedged in full anyway (hedged %g)" % _hedged(_k3a, _kA))
+    ck(len(_k3_blind(_k3a)) == 1,
+       "K3: ...and the stale index is on the record ONCE per position, as "
+       "hedge_blind why=index_stale (%d records)" % len(_k3_blind(_k3a)))
+    ck([r for r in _kinds(_k3a, "hedge_alarm", _kA)
+        if r.get("trigger") == "market_index_stale"
+        and r.get("model_belief", 0) > 0.99
+        and r.get("market_belief", 1) < HEDGE_BELIEF],
+       "K3: ...and the alarm says WHY: trigger market_index_stale, with the "
+       "frozen model's 99.9% beside the market's 8c")
+    _k3b = _offline_trade_loop([_k3_A()], freeze_at=2)
+    ck(_k3b["raised"] is None and not _kinds(_k3b, "hedge")
+       and len(_k3_blind(_k3b)) == 1
+       and (_k3_blind(_k3b)[0].get("age_s") or 0) > MAX_INDEX_AGE_S,
+       "K3 NULL: frozen index + a STEADY market (our side's mid 94.5c) -> "
+       "no hedge, but the blindness is recorded with its age")
+    _k3c = _offline_trade_loop([_k3_A(book_collapse_at=4)])
+    ck(_k3c["raised"] is None and not _kinds(_k3c, "hedge")
+       and not _k3_blind(_k3c),
+       "K3 NULL: FRESH index, the market alone collapses, the model is sure "
+       "-> exactly today's behaviour: no hedge, no stale record. The market "
+       "is consulted only while the index is blind")
+    _k3d = _offline_trade_loop([_k3_A(model_collapse_at=4)])
+    ck(_k3d["raised"] is None and abs(_hedged(_k3d, _kA) - 5.0) < 1e-9
+       and not _k3_blind(_k3d)
+       and _kinds(_k3d, "hedge_alarm", _kA)
+       and all(r.get("trigger") == "belief" and "market_belief" not in r
+               for r in _kinds(_k3d, "hedge_alarm", _kA)),
+       "K3 CONTROL: FRESH index, the model collapses -> hedged on the "
+       "ordinary belief trigger, and the alarm record is today's")
+    # market_belief(): None, never a guess
+    ck(abs(market_belief(_ob(0.94, 0.05), "yes") - 0.945) < 1e-9
+       and abs(market_belief(_ob(0.94, 0.05), "no") - 0.055) < 1e-9,
+       "K3: our side's market belief is the mid of OUR side's bid and ask "
+       "(YES 94c/95c -> 0.945; the NO holder's 5c/6c -> 0.055)")
+    ck(market_belief(_ob(0.94, 0.05, age_ms=MAX_BOOK_AGE_MS + 1), "yes")
+       is None
+       and market_belief(dict(_ob(0.94, 0.05), suspect=True), "yes") is None
+       and market_belief(_ob(None, 0.05), "yes") is None
+       and market_belief(_ob(0.94, None), "yes") is None
+       and market_belief(dict(_ob(0.94, 0.05), yes_ask=0.90), "yes") is None
+       and market_belief(None, "yes") is None,
+       "K3 NULL: a stale, suspect, one-sided, crossed or missing book gives "
+       "NO market belief -- the fallback never fires on a guess")
+
     # THE SELF-TEST MUST LEAVE NO LIVE SETTING CHANGED. It runs at startup
     # with the operator's flags ALREADY applied, so any global it forgets to
     # restore silently overrides what he asked for -- on every start, with
@@ -9532,35 +9668,87 @@ def trade_loop(a, rec, book, idx, series_index):
                     _htau = _hcs - now_s
                     if _htau < 1:
                         continue                    # the close has passed; not blind
+                    # K3 (2026-09-22): IS THE INDEX STILL PRINTING?
+                    #
+                    # Entry refuses an index older than MAX_INDEX_AGE_S; this
+                    # pass never looked. fair() ignores the age spot() hands
+                    # it and partial() ends the window at the newest print
+                    # HELD, so a feed that stops mid-hold returns the same
+                    # confident belief every second: no alarm, no record, no
+                    # hedge while the market collapses. A socket only
+                    # reconnects after 30 s of silence on EVERY index, so one
+                    # frozen index behind live ones stays frozen to the close.
+                    #
+                    # So while the held market's index is stale, the market
+                    # itself is the second witness: our side's own mid (best
+                    # bid and ask for our side, from the book already held).
+                    # The belief used below is the LOWER of the model's and
+                    # the market's, so the market can only ADD a trigger --
+                    # never remove one -- and everything after this point,
+                    # every filter, size and send, is the ordinary path.
+                    # With a fresh index none of this runs: behaviour is
+                    # exactly what it was.
+                    _hage = index_age(idx, _hiid)
+                    _hmkt = None
+                    if _hage is None or _hage > MAX_INDEX_AGE_S:
+                        try:
+                            _hbk3 = book.best(_htk)
+                        except Exception:                # noqa: BLE001
+                            _hbk3 = None
+                        _hmkt = market_belief(_hbk3, _hwant)
+                        _hquiet("index_stale", iid=_hiid,
+                                age_s=(round(_hage, 2) if _hage is not None
+                                       else None),
+                                market_belief=(round(_hmkt, 4)
+                                               if _hmkt is not None else None),
+                                bid=(_hbk3 or {}).get(f"{_hwant}_bid"),
+                                ask=(_hbk3 or {}).get(f"{_hwant}_ask"),
+                                book_age_ms=(_hbk3 or {}).get("age_ms"))
                     _hsg = idx.sigma(_hiid)
                     if _hsg is None:
                         _hquiet("no_sigma", iid=_hiid)
-                        continue
-                    _hf = fair(idx, _hiid, _hcs, now_s, _hstrike,
-                               _hsg * SIGMA_STRESS
-                               * widen_factor(idx, _hiid, _hsg, _hwant),
-                               round_digits=_hdig)                  # AMENDMENT 41
-                    if _hf is None:
-                        _hquiet("no_fair", iid=_hiid, sigma=round(float(_hsg), 6))
-                        continue
-                    _belief = _hf if _hwant == "yes" else 1.0 - _hf
+                        if _hmkt is None:
+                            continue
+                        _hf = None
+                    else:
+                        _hf = fair(idx, _hiid, _hcs, now_s, _hstrike,
+                                   _hsg * SIGMA_STRESS
+                                   * widen_factor(idx, _hiid, _hsg, _hwant),
+                                   round_digits=_hdig)                  # AMENDMENT 41
+                        if _hf is None:
+                            _hquiet("no_fair", iid=_hiid, sigma=round(float(_hsg), 6))
+                            if _hmkt is None:
+                                continue
+                    # the MODEL's belief in our side (None when it cannot say)
+                    _hmodel = (None if _hf is None
+                               else (_hf if _hwant == "yes" else 1.0 - _hf))
+                    _belief = _hmodel
+                    if _hmkt is not None:                # K3: index stale
+                        _belief = (_hmkt if _hmodel is None
+                                   else min(_hmodel, _hmkt))
                     # A68: the NEWEST belief for this market, recorded every tick
                     # and not only when the alarm fires. The rebuy is allowed only
                     # while this is at or under the panic line, so a belief that
                     # RECOVERS closes the door again on the very next tick.
-                    last_belief[_htk] = float(_belief)
+                    # K3: the MODEL's belief only. The rebuy is an ENTRY, and
+                    # the market fallback must never move an entry decision.
+                    if _hmodel is not None:
+                        last_belief[_htk] = float(_hmodel)
                     # A52: two reasons to fire, recorded separately. The jump is
                     # asked FIRST because it is the earlier signal -- belief only
                     # falls after the price has already moved.
                     _htrig = "belief"
                     _hjmp = None
-                    if HEDGE_JUMP_SIGMA is not None:
+                    if HEDGE_JUMP_SIGMA is not None and _hsg is not None:
                         _since = int(now_s - entry_at.get(_hid, now_s))
                         _hjmp = jump_against(
                             idx.recent_moves(_hiid, max(1, min(HEDGE_JUMP_LOOKBACK_MAX, _since))),
                             _hsg, _hwant)
                         if _hjmp is not None and _hjmp >= HEDGE_JUMP_SIGMA:
                             _htrig = "jump"
+                    if (_htrig != "jump" and _hmkt is not None
+                            and (_hmodel is None or _hmkt < _hmodel)):
+                        _htrig = "market_index_stale"    # K3: said, not hidden
                     if _htrig != "jump" and not hedge_should_fire(_belief):
                         continue
                     # ONE TRY PER SECOND. The loop runs ~20x/second; the first live
@@ -9580,7 +9768,8 @@ def trade_loop(a, rec, book, idx, series_index):
                     if _hid not in hedge_alarmed:
                         hedge_alarmed.add(_hid)
                         state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
-                        last_belief[_htk] = float(_belief)   # A68
+                        if _hmodel is not None:
+                            last_belief[_htk] = float(_hmodel)   # A68 (K3: model)
                         rec("hedge_alarm", ticker=_htk, want=_hwant, entry=_hcost,
                             n=_hn, belief=round(_belief, 5), tau=_htau,
                             threshold=HEDGE_BELIEF,
@@ -9589,7 +9778,15 @@ def trade_loop(a, rec, book, idx, series_index):
                             # other on the same alarms
                             trigger=_htrig,
                             jump_sd=(round(_hjmp, 2) if _hjmp is not None else None),
-                            jump_threshold=HEDGE_JUMP_SIGMA)
+                            jump_threshold=HEDGE_JUMP_SIGMA,
+                            # K3: only while the index is stale -- the frozen
+                            # model's number and the market's, side by side
+                            **({"index_age_s": (round(_hage, 2)
+                                                if _hage is not None else None),
+                                "model_belief": (round(_hmodel, 5)
+                                                 if _hmodel is not None else None),
+                                "market_belief": round(_hmkt, 5)}
+                               if _hmkt is not None else {}))
                         print(f"  !!! HEDGE ALARM {_htk} {_hwant} belief {_belief:.3f} "
                               f"tau {_htau}s")
                     # A76: HOW MUCH OF THE POSITION SHOULD BE HEDGED AT THIS
