@@ -79,6 +79,14 @@ GATE_ORDER = [
     "confidence", "no_offer", "depth_floor", "edge_floor", "against_thin",
     "jump_against", "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
+    # R4 (2026-09-22): this one sits AFTER the signals counter, which is why
+    # it was invisible for so long -- it is the only refusal that used to
+    # happen with no record at all. It is NOT the same gate as
+    # "close_budget" above: that one refuses on close_budget_for (base PLUS
+    # one bet for a new coin or inside the last seconds), this one on the
+    # BASE alone, so a row here means the third bet was granted and priced
+    # and then dropped. Its `budget_left` reads > 0 while the base is spent.
+    "close_budget_base",
     "early_once", "staged_none", "early_cheap", "early_dear", "early_wide",
     "price_band",
     # NOT hedge_wait_normal, and not any other insurance decision. They are
@@ -96,6 +104,13 @@ GATE_ORDER = [
 
 WHAT = {
     "close_budget": "the close has already bought its contract budget",
+    "close_budget_base": ("the close had spent its BASE budget (two bets), so "
+                          "the third bet -- which the budget gate above had "
+                          "already allowed, and which the bank brake and the "
+                          "worst-close rail had already been sized for -- was "
+                          "dropped. Until 2026-09-22 this happened with no "
+                          "record at all: one run counted 102 signals against "
+                          "5 orders and nothing said where the other 97 went"),
     "max_per_close": "the close has already had its allowed number of fills",
     "max_per_market": "we already own this market in this close",
     "both_sides": "we hold the other side of this market already",
