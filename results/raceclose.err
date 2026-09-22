@@ -1,0 +1,4 @@
+C:\kals-repo\research\raceclose.py:367: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+  for r in racebook.cached_hour(fp):
+C:\kals-repo\research\raceclose.py:373: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+  c = racebook.close_of(stamp)

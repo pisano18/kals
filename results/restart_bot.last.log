@@ -1,12 +1,12 @@
 ﻿**********************
 Windows PowerShell transcript start
-Start time: 20260920054830
+Start time: 20260922075228
 Username: LAPTOP-2L9Q5JAM\Joe
 RunAs User: LAPTOP-2L9Q5JAM\Joe
 Configuration Name: 
 Machine: LAPTOP-2L9Q5JAM (Microsoft Windows NT 10.0.26200.0)
-Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1
-Process ID: 802200
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/kals-repo/restart_bot.ps1
+Process ID: 2074308
 PSVersion: 5.1.26100.9444
 PSEdition: Desktop
 PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.9444
@@ -16,17 +16,17 @@ WSManStackVersion: 3.0
 PSRemotingProtocolVersion: 2.3
 SerializationVersion: 1.1.0.1
 **********************
-restart_bot.ps1 starting 2026-09-20T05:48:30.2987374-04:00
-argument list ok: 58 flat strings
-pinflat: FLAT -- every fill has settled (pid 1447368, pinrun-live-20260920T091129Z.jsonl)
-stopping live pinrun pid 1447368
-pinrun running: pid 658060
-kalshi_data -- last full hour 118313848 bytes across 8 channels; 8 open now
-feed_data -- last full hour 8404354 bytes across 5 channels; 5 open now
+restart_bot.ps1 starting 2026-09-22T07:52:28.9732142-04:00
+argument list ok: 57 flat strings
+pinflat: FLAT -- every fill has settled (pid 2070976, pinrun-live-20260922T114149Z.jsonl)
+stopping live pinrun pid 2070976
+pinrun running: pid 2071684
+kalshi_data -- last full hour 191569596 bytes across 8 channels; 8 open now
+feed_data -- last full hour 13258874 bytes across 5 channels; 5 open now
 both recorders are writing
-flags now live: "C:\Python314\python.exe" -u C:\kals-repo\research\pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.60 --early-tau 45 --early-frac 1.0 --early-min-price 0.90 --early-max-edge 10.0 --hedge-price 0.60 --hedge-slip 0.03 --late-tau 10 --late-mult 1.5 --late-pin 0.9975 --late-jump 2.0 --extra-coin 1 --late-extra 1 --late-extra-tau 15 --bank-brake 4.00 --loss-cap 200
-restart_bot.ps1 done 2026-09-20T05:48:56.2786246-04:00
+flags now live: "C:\Python314\python.exe" -u C:\kals-repo\research\pinrun.py --live --size 20 --minutes 4320 --loss-abort -60.00 --max-positions 3 --max-losses 2 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.25 --early-tau 45 --early-frac 0.333 --early-min-price 0.90 --early-max-edge 10.0 --no-hedge-prop --hedge-slip 0.03 --late-tau 10 --late-mult 1.5 --late-pin 0.9975 --late-jump 2.0 --extra-coin 1 --late-extra 1 --late-extra-tau 15 --bank-brake 4.00 --loss-cap 200
+restart_bot.ps1 done 2026-09-22T07:53:08.2620726-04:00
 **********************
 Windows PowerShell transcript end
-End time: 20260920054856
+End time: 20260922075308
 **********************

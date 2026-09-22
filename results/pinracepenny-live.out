@@ -1,0 +1,149 @@
+SELF-TEST -- pinracearm
+  ok   post_only (a maker order field) appears NOWHERE in this file -- it can only ever take liquidity, through pintake's rails, and never rest a quote
+  ok   /portfolio/orders (the order endpoint itself) appears NOWHERE in this file -- it can only ever take liquidity, through pintake's rails, and never rest a quote
+  ok   it never calls the LIVE BOT's arming function -- the money bot's credentials and rails stay its own
+  ok   the price ceiling is at most 98c -- 99c leaves a cent of upside against a whole dollar of downside
+  ok   the edge floor is at least 2c, the bottom of the +2.5c..+4.8c bands RESULTS_coinrace actually measured, not whatever the table allows
+  ok   every tau from 2 to 150 lands in exactly one band, and nothing outside
+  ok   and all four bands are reachable from the scanned range
+  ok   the first look at ETH's 1,081 NO contracts takes 250
+  ok   a later look takes only what the book holds BEYOND what we already bought -- 81 once 1,000 are ours, not another 250
+  ok   and nothing at all once we hold the whole book, or the book shrank below what we hold -- the arm1 double-count, closed
+  ok   NULL: an unreadable book takes nothing
+  ok   we never price a race after it has closed
+  ok   the scorer walks `known`, not `events` -- `events` is what Kalshi calls OPEN, a race stops being open at its close, and arm1 therefore never scored a single race
+  ok   and every discovered race is added to `known` before it can drop out
+  ok   fair value: BTC's YES is worth its 93%, ETH's NO is worth 1 - 5%
+  ok   NULL: no forecast, or a coin not in the race, is worth nothing known
+  ok   and a 93% leader offered at 95c is refused on edge -- the market's price beat the table on the 3:30 PM race exactly like this
+  ok   a fresh arm with only ~33 minutes of ticks gets a forecast on the 300 s ruler (got 300), not a refusal and not a pretend hour
+  ok   and a 4bp lead with 20 s left on calm independent coins is ~certain (1.000)
+  ok   NULL: with no tick history at all it refuses rather than guessing
+  ok   the 3:30 PM race bet -- BTC ahead by 1.26bp at 29 s, bought at 78c, lost when ETH passed -- is refused for its tiny lead
+  ok   the 4:15 PM race bet -- HYPE 10bp behind with 90 s left, 95c, lost when HYPE came back -- is refused for being too early
+  ok   a clear lead offered at only 87c is refused -- a cheap price on a 'clear' lead means the market knows something
+  ok   a coin 8bp behind with 12 s left, its NO at 95c, is allowed
+  ok   and the pre-book check (no price yet) passes a clear late lead
+  ok   with the defaults every arm2 bet is still allowed, so old logs stay reproducible
+  ok   95c costs 0.34c to take (0.07*0.95*0.05, rounded up) -- the same function the live bot reconciled against the account
+  ok   and the fee SHRINKS toward the ends, which is why the expensive legs are cheaper to trade than they look
+  ok   it is largest at a coin flip
+  ok   at second 1130 the forecast is 100.0 and NOT pulled toward the 999s sitting at seconds 1150-1159 -- a future print can never enter the sum
+  ok   and once those seconds ARRIVE they count: the forecast moves to 249.8
+  ok   a fully locked window forecasts itself exactly
+  ok   NULL: no spot and no prints forecasts nothing, never a zero
+  ok   a complete opening minute averages
+  ok   and ONE missing print refuses the whole race rather than averaging 59 -- the denominator is half the settlement rule
+  ok   a coin 15bp BEHIND is a NO worth 0.9850 -- not 1.0, because 0 wins in 200 races bounds at 1.50%, not at zero
+  ok   a coin 15bp AHEAD is a YES worth 0.9850, bounded the same way
+  ok   NULL: with no table at all a leg is worth NOTHING KNOWN, and None is not a number that can clear an edge floor
+  ok   so a 21c longshot the table has never seen produces no edge at all -- the case that was worth 50c, and therefore a 29c edge, before this
+  ok   and the same at 97c, where the old 0.5 happened to refuse by accident
+  ok   something worth 99c bought at 95c earns 4c less the 0.34c fee
+  ok   a half-cent of gross edge does NOT clear the 2c floor
+  ok   and paying exactly what it is worth LOSES the fee -- the fee is never forgotten by being small
+  ok   the arithmetic has no side preference: it is the same subtraction for a 3c longshot that is worth 50c and one that is worth 2c
+  ok   the scorer picks the coin with the biggest return out of five
+  ok   and every coin rose, which changed nothing -- a common move cannot decide a race
+  ok   NULL: one missing print in one coin refuses to score the race at all, rather than scoring it on four legs
+  ok   if we hold NO on all four trailers and the leader IS overtaken, three of the four still win -- only the coin that took the lead pays out
+  ok   and if the leader HOLDS, all four NOs win -- so the NO side's bad case is 3-of-4 where the YES side's is 0-of-1, a quarter the damage
+  ok   the forecast module reads a 0-of-120 cell as 2.5% risk, not zero -- if that ever becomes 0 this arm sizes as though it cannot lose
+  ok   and an empty table stands aside both ways rather than guessing
+  ok   the default penny size (1) is inside pintake's own per-order rail (10)
+  ok   the defaults are the measured rule: inside 60s, at 90c or dearer
+  ok   and it stops dead on the first real loss by default
+  ok   ROLLING: two settled 1-contract legs at 98c and 97c release $1.95 from BOTH caps (19.36 -> 17.41 / 17.41)
+  ok   NULL: releasing more than is held floors at zero, never negative
+  ok   rolling is OFF unless --live-rolling-stake is given (the approved rail is lifetime stake)
+  ok   main() releases stake only when rolling is on, at the real-leg settlement
+  ok   the wire book reads back as the asks /markets quoted: NO 0.90 is 1 - the best YES bid, YES 0.20 is 1 - the best NO bid (got 0.9, 0.2)
+  ok   NULL: an empty side, an error body and a zero-size level all read as NOTHING OFFERED, never as a price
+  ok   THE 09-21 SOL LOSS IS REFUSED: seen 93c, the book was really 85c
+  ok   THE 09-21 XRP LOSS IS REFUSED: 86c is under the 90c floor
+  ok   NULL: an unchanged book, a 1c improvement and a dearer book all pass -- the 24 real 94-98c fills of 09-21 would all still be sent
+  ok   a 3c drop above the floor is refused too: the price fell under us
+  ok   a failed or empty read REFUSES -- it never falls back to the old ask
+  ok   main() checks the fresh book BEFORE it can reach pintake.take
+  ok   an empty book takes any leg
+  ok   'BTC wins' and 'XRP does not win' AGREE -- both true when BTC wins, and the second is also true when ETH, SOL or HYPE wins
+  ok   and a third NO on another coin still agrees
+  ok   TWO YES LEGS ARE REFUSED -- only one coin can win, so the second is a guaranteed loser. This is what 2026-09-15 did.
+  ok   YES and NO on the SAME coin are refused -- the exact $1,306 mistake
+  ok   and refused in the other order too
+  ok   and the same coin twice on the same side is refused
+  ok   one YES may still be added on top of NOs on other coins
+  ok   DISARMED: a perfect order is still refused when --live was not given
+  ok   ARMED: a 95c buy of one contract 20 s out is allowed
+  ok   a SECOND leg that agrees with the first is allowed in the same race
+  ok   but a second leg that contradicts it is refused
+  ok   and a THIRD agreeing leg is refused by the leg cap of 2
+  ok   while a DIFFERENT race is still allowed
+  ok   a leg with no coin named is refused once the race holds anything -- consistency cannot be checked blind
+  ok   a leg seen for the first time at tau 45 does NOT fire immediately
+  ok   nor after 4 of its 5 seconds
+  ok   and it fires once it has held the full 5 seconds
+  ok   the clock alone fires it at tau 20 even with 5s exactly served
+  ok   and inside tau 20 the clock fires it however briefly it has held
+  ok   a missing arming record refuses rather than fires
+  ok   the first sighting records its own tau
+  ok   and a later sighting of the SAME leg keeps the first tau
+  ok   while a DIFFERENT leg in the same race starts its own clock -- an anchor that flips has not been holding a signal, it has had two
+  ok   so the flipped anchor cannot inherit the old leg's served time, which is exactly the 09-21 loss
+  ok   21 s out is refused -- the 09-21 loss fired at 40 into a one-second confidence spike; tau<=20 cuts losing races 4.5x
+  ok   and 1 s out is refused: no time to fill
+  ok   79c is refused -- below 80c the edge is timing we will not have
+  ok   two contracts is refused when the cap is one
+  ok   and zero contracts is refused rather than sent
+  ok   a buy that would pass the total stake cap is refused
+  ok   nothing is sent once it has halted
+  ok   and the stop file refuses everything while it exists
+  ok   missing inputs refuse rather than crash
+  ok   the module's own live state is DISARMED at import
+  ok   there is exactly ONE call to the order path in the whole file
+  ok   the send is inside the --live guard AND the race is claimed before the order leaves, so a crash cannot re-enter the same race
+  ok   and the rails are checked before the order leaves
+  ok   the once-per-band gate EXEMPTS the live path
+  ok   and so does the book-already-ours gate, which the paper fill trips from the second second onward
+  ok   the live size comes from what is OFFERED, never from the paper arm's notional take -- that is zero once the paper fill has booked the offer
+  ok   the live block comes after the paper-only branch
+  ok   and sits at the SAME indentation, so it is NOT nested inside it -- the live path runs every second the leg qualifies
+  ok   production is armed only under --live
+SELF-TEST PASSED
+
+  *** REAL MONEY ARMED -- THE PENNY TEST ***
+  at most 1 contract(s) a leg and 5 AGREEING legs a race
+  (one YES at most, NOs only on other coins, never a coin twice),
+  only inside 30 s, only at 90c or dearer, at most $20.00
+  and a leg must keep qualifying for 5 s before it fires, or
+  the clock must have run down to 20 s -- whichever comes first,
+  OPEN at any moment (rolling: settled bets give their stake back), and it STOPS DEAD on the first losing
+  race. Halt it any time with:  type nul > C:\kals-repo\results\pinracepenny.stop
+
+  COIN RACE PENNY TEST -- REAL ORDERS, see the rails above
+  size 250, <= 98c, edge floor 0.0c, tau 2-150, one fill per leg per band ['61-151', '30-61', '15-30', '2-15']
+  forecast: race_gaptable.json, 198 cells, built 2026-09-15 13:05Z
+  log: C:\kals-repo\results\pinracepenny-live.jsonl
+
+  index up: 10 ticks, 5 feeds
+  PAPER  -26SEP221345                   ETH  YES 11 @ 98c  tau 60  gap  +10.16bp  worth 0.9990  edge +1.76c
+  SETTLED KXCRYPTOLEAD15M-26SEP221345  ETH   1/1 won  $+0.20
+  PAPER  -26SEP221400                   HYPE YES 2 @ 98c  tau 59  gap  +16.26bp  worth 0.9960  edge +1.46c
+  SETTLED KXCRYPTOLEAD15M-26SEP221400  HYPE  1/1 won  $+0.04
+  PAPER  -26SEP221415                   XRP  NO  23 @ 98c  tau 45  gap   -6.71bp  worth 0.9830  edge +0.16c
+  PAPER  -26SEP221415                   SOL  YES 1 @ 98c  tau 44  gap   +6.04bp  worth 0.9910  edge +0.96c
+  SETTLED KXCRYPTOLEAD15M-26SEP221415  SOL   2/2 won  $+0.45
+  PAPER  -26SEP221430                   SOL  NO  4 @ 97c  tau 60  gap  -11.88bp  worth 0.9940  edge +2.19c
+  SETTLED KXCRYPTOLEAD15M-26SEP221430  XRP   1/1 won  $+0.11
+  PAPER  -26SEP221500                   XRP  NO  2 @ 98c  tau 60  gap  -10.33bp  worth 0.9830  edge +0.16c
+  PAPER  -26SEP221500                   ETH  NO  3 @ 95c  tau 43  gap   -4.19bp  worth 0.9650  edge +1.16c
+  PAPER  -26SEP221500                   HYPE YES 1 @ 98c  tau 40  gap   +4.65bp  worth 0.9950  edge +1.36c
+  SETTLED KXCRYPTOLEAD15M-26SEP221500  HYPE  3/3 won  $+0.20
+  PAPER  -26SEP221515                   XRP  YES 1 @ 98c  tau 60  gap  +19.67bp  worth 1.0000  edge +1.86c
+  PAPER  -26SEP221515                   ETH  NO  1 @ 98c  tau 60  gap  -19.67bp  worth 1.0000  edge +1.86c
+  SETTLED KXCRYPTOLEAD15M-26SEP221515  XRP   2/2 won  $+0.04
+  PAPER  -26SEP221600                   XRP  NO  243 @ 89c  tau 60  gap  -11.23bp  worth 0.9660  edge +6.91c
+  PAPER  -26SEP221600                   XRP  YES 250 @ 81c  tau 59  gap   +9.57bp  worth 0.9100  edge +8.92c
+  PAPER  -26SEP221600                   ETH  NO  250 @ 82c  tau 59  gap   -9.57bp  worth 0.9420  edge +11.16c
+  PAPER  -26SEP221600                   SOL  NO  1 @ 98c  tau 58  gap  -18.23bp  worth 0.9990  edge +1.76c
+  SETTLED KXCRYPTOLEAD15M-26SEP221600  XRP   3/4 won  $-130.73

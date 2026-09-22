@@ -155,3 +155,24 @@ SELF-TEST PASSED
   SETTLED KXCRYPTOLEAD15M-26SEP202330  XRP   1/1 won  $+0.20
   PAPER  -26SEP210000                   XRP  YES 7 @ 97c  tau 30  gap   +5.79bp  worth 1.0000  edge +2.79c
   SETTLED KXCRYPTOLEAD15M-26SEP210000  XRP   1/1 won  $+0.20
+  PAPER  -26SEP210330                   XRP  NO  28 @ 97c  tau 15  gap   -1.48bp  worth 0.9960  edge +2.39c
+  PAPER  -26SEP210330                   HYPE YES 250 @ 91c  tau 11  gap   +2.18bp  worth 1.0000  edge +8.42c
+  PAPER  -26SEP210330                   XRP  NO  215 @ 92c  tau 10  gap   -2.33bp  worth 1.0000  edge +7.48c
+  SETTLED KXCRYPTOLEAD15M-26SEP210330  HYPE  3/3 won  $+37.91
+  PAPER  -26SEP210530                   BTC  NO  250 @ 95c  tau 19  gap   -2.26bp  worth 0.9860  edge +3.26c
+  PAPER  -26SEP210530                   BTC  NO  250 @ 97c  tau 14  gap   -2.56bp  worth 1.0000  edge +2.79c
+  SETTLED KXCRYPTOLEAD15M-26SEP210530  ETH   2/2 won  $+18.62
+  PAPER  -26SEP210930                   SOL  YES 250 @ 90c  tau 22  gap   +2.41bp  worth 0.9520  edge +4.57c
+  PAPER  -26SEP210930                   HYPE NO  242 @ 91c  tau 22  gap   -2.41bp  worth 0.9520  edge +3.62c
+  SETTLED KXCRYPTOLEAD15M-26SEP210930  SOL   2/2 won  $+43.80
+  PAPER  -26SEP211545                   BTC  NO  50 @ 97c  tau 18  gap  -10.04bp  worth 1.0000  edge +2.79c
+  SETTLED KXCRYPTOLEAD15M-26SEP211545  HYPE  1/1 won  $+1.40
+  PAPER  -26SEP211615                   XRP  YES 250 @ 91c  tau  9  gap   +0.47bp  worth 0.9750  edge +5.92c
+  PAPER  -26SEP211615                   ETH  NO  250 @ 93c  tau  8  gap   -0.43bp  worth 0.9820  edge +4.74c
+  SETTLED KXCRYPTOLEAD15M-26SEP211615  XRP   2/2 won  $+37.40
+  PAPER  -26SEP211730                   SOL  YES 246 @ 97c  tau  9  gap   +1.14bp  worth 0.9980  edge +2.59c
+  SETTLED KXCRYPTOLEAD15M-26SEP211730  SOL   1/1 won  $+6.86
+
+  67 paper positions, 67 settled, 67 won, $+497.12
+  Every price above was an offer we SAW, not one we got. Winning the fill is assumed and no paper arm can test it.
+  log C:\kals-repo\results\pinracearm-20260918T222009Z.jsonl

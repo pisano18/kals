@@ -249,3 +249,12 @@
 2026-09-20T00:16:56-04:00    restart_bot: no live pinrun found to stop (pid file: False)
 2026-09-20T00:16:56-04:00    restart_bot: FAILED: pinrun did not come back. Check results\pinrun-live-*.jsonl
 2026-09-20T00:17:15-04:00  STILL DOWN after restart_bot.ps1 -- will retry
+2026-09-22T01:30:21-04:00  LIVE BOT IS DOWN
+2026-09-22T01:30:21-04:00  restarting (quick 1 of 4) -- last stderr: TimeoutError: timed out during opening handshake -- retry in 8s | TimeoutError: timed out during opening handshake -- retry in 16s | TimeoutError: timed out during opening handshake -- retry in 30s
+2026-09-22T01:30:23-04:00    restart_bot ERR: Start-Transcript : Transcription cannot be started.
+2026-09-22T01:30:23-04:00    restart_bot ERR: At C:\kals-repo\restart_bot.ps1:59 char:1
+2026-09-22T01:30:23-04:00    restart_bot ERR: + Start-Transcript -Path $transcript -Force | Out-Null
+2026-09-22T01:30:23-04:00    restart_bot ERR: + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-09-22T01:30:23-04:00    restart_bot ERR: + CategoryInfo          : InvalidOperation: (:) [Start-Transcript], PSInvalidOperationException
+2026-09-22T01:30:23-04:00    restart_bot ERR: + FullyQualifiedErrorId : CannotStartTranscription,Microsoft.PowerShell.Commands.StartTranscriptCommand
+2026-09-22T01:30:38-04:00  back up, pid 1985112

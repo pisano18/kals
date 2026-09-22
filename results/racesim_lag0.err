@@ -1,0 +1,4 @@
+C:\kals-repo\research\raceclose.py:533: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+  % (dt.datetime.utcfromtimestamp(b[0]).strftime("%m-%d %H:%MZ"),
+C:\kals-repo\research\raceclose.py:539: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+  d = dt.datetime.utcfromtimestamp(b[0]).strftime("%Y-%m-%d")

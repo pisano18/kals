@@ -61,3 +61,10 @@
 2026-09-20T03:18:46  Pin Bot opened
 2026-09-20T03:38:23  Pin Bot opened
 2026-09-20T20:17:29  Pin Bot opened
+2026-09-21T16:59:05  Pin Bot opened
+2026-09-22T01:29:55  stand-down flag written; watchdog will not relaunch
+2026-09-22T01:30:09  stopped live bot pid 1877440
+2026-09-22T01:30:10  stand-down flag cleared
+2026-09-22T01:30:17  boot_all: 2026-09-22T01:30:17-04:00  all up; nothing to do
+2026-09-22T01:30:17  starting the bot through restart_bot.ps1 ...
+2026-09-22T02:13:06  Pin Bot opened

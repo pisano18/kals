@@ -1,0 +1,7 @@
+Start-Transcript : Transcription cannot be started.
+At C:\kals-repo\restart_bot.ps1:59 char:1
++ Start-Transcript -Path $transcript -Force | Out-Null
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Start-Transcript], PSInvalidOperationException
+    + FullyQualifiedErrorId : CannotStartTranscription,Microsoft.PowerShell.Commands.StartTranscriptCommand
+ 

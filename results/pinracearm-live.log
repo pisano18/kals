@@ -76,3 +76,9 @@ SELF-TEST PASSED
   SETTLED KXCRYPTOLEAD15M-26SEP200015  XRP   2/2 won  $+0.48
   PAPER  -26SEP200900                   HYPE NO  15 @ 97c  tau 30  gap   -5.41bp  worth 0.9940  edge +2.19c
   SETTLED KXCRYPTOLEAD15M-26SEP200900  XRP   1/1 won  $+0.42
+  PAPER  -26SEP211545                   BTC  NO  50 @ 97c  tau 18  gap  -10.04bp  worth 0.9961  edge +2.40c
+  SETTLED KXCRYPTOLEAD15M-26SEP211545  HYPE  1/1 won  $+1.40
+
+  10 paper positions, 10 settled, 10 won, $+25.55
+  Every price above was an offer we SAW, not one we got. Winning the fill is assumed and no paper arm can test it.
+  log C:\kals-repo\results\pinracearm-20260918T222007Z.jsonl

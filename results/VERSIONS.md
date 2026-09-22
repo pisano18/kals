@@ -1,3 +1,45 @@
+# v-instr1 -- 2026-09-22 ~20:1xZ -- LIVE: the two invisible things get records (logging only)
+
+**Freeze-legal: records only, no entry decision changes.** Proven, not
+asserted: the offline loop harness run on old and new code over three worlds
+(burner lockout, four coins spending the base budget, the live order path with
+a collapse and a hedge) produces an IDENTICAL decision trail -- 15 decision
+rows, same POST count, same state.signals. The only new record kinds are
+`universe`, `loop` and the `close_budget_base` refusal.
+
+1. **The silent refusal now writes one.** After every gate passed, a base-
+   budget check dropped the third bet of a close with NO record of any kind:
+   run 20260920T023207Z ended with `state.signals` 102 against 5 logged
+   signals. It now writes `_gate("close_budget_base", ...)` with want, price,
+   size, take_n, base, spent, tau (deduped per close+market+gate). Its bar:
+   on the first run with an `end` record, signals == signal records + the
+   undeduped close_summary counts of close_budget_base/early_cheap/early_dear/
+   early_wide/staged_none/price_band. That identity fails by 97 on the old
+   code, so the test can fail.
+2. **The universe refresh is timed.** 11 sequential GETs (~1 s) run in the
+   trading thread every 20 s with no condition on time-to-close: ~4.3% of
+   every close's last 30 s buys nothing AND cannot hedge. Now `universe`
+   (ms, n, got, watching, close_s, tau) per refresh, and a `loop` record
+   whenever a pass exceeds 200 ms (budget 300 per close inside tau 60, 20
+   outside; `close_summary` keeps the per-close maxima and counts, which no
+   cap can eat). Bar: median universe.ms >= 500 AND >= 20 of 100 closes with
+   a pass gap > 500 ms at tau <= 45 -> the stall is worth fixing (after the
+   freeze, operator's call). Nothing is deferred and the hedge pass gained no
+   condition; the `loop` write sits BELOW the hedge pass.
+
+Also: `--attempts-on-send` exists but is OFF and is NOT in the live argv --
+`arm-attempt-send` is the only bot running it. Two reviewer BLOCKERS were
+fixed first: the record budget spent itself ~500 s before the window it
+measures, and the flag as first built escalated a one-market lockout to the
+whole close (reproduced, then fixed so both counters move together).
+
+986 self-test checks green plain, under the live argv, and under the arm's.
+
+**REVERT:** `git checkout 8bd1e51 -- research/pinrun.py research/pinattrib.py`
+then `powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+---
+
 # v-race-rolling -- 2026-09-22 ~16:1xZ -- LIVE (coin race penny test): the $20 cap bounds OPEN bets, and it runs a week
 
 Not the pin bot. `pinracearm.py --live` relaunched with `--live-rolling-stake`

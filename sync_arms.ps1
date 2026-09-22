@@ -135,6 +135,12 @@ $arms = @(
   # --- sizing ---
   @{ n="arm-brake3";        drop=@("--bank-brake");      add=@("--bank-brake","3.00") },
   @{ n="arm-brake6";        drop=@("--bank-brake");      add=@("--bank-brake","6.00") },
+  # 2026-09-22 (missed-deals D_plan R1): count a per-market attempt only when
+  # an ORDER IS SENT. MAX_ATTEMPTS_PER_MARKET=3 is counted at the SIGNAL point
+  # today, so three refusals inside 150 ms lock a market out of the whole
+  # close (13 post-fix lockouts in 12 closes, 11 still had a standing offer at
+  # >= 99.5%). Live is unflagged; this is the only bot with it on.
+  @{ n="arm-attempt-send";  drop=@();                    add=@("--attempts-on-send") },
   @{ n="arm-band15";        drop=@();                    add=@("--band-mult","0.90","0.94","1.5") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
