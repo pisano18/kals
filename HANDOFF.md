@@ -1293,7 +1293,7 @@ instruction; arm `results/arm-early45.out`.
 **THE DATA GAP, and it matters.** RESULTS_pickoff stops at 09-12, which is
 immediately BEFORE the drop the operator is asking about. The settlement file
 has now been refreshed through 09-17 (`kalshi_fulltape.pull_markets_only(
-SERIES, 700, r"C:\kalsulltape_recent")`), but the tracker's cache marks
+SERIES, 700, r"C:\kals\fulltape_recent")`), but the tracker's cache marks
 09-13..09-17 as already walked (they were walked when settlements did not
 cover them, so they scored nothing). **`pinpickoff.py --rebuild` is the fix and
 it was MEMORY-KILLED TWICE** at ~1.6 GB free with 22 python processes. Do it
@@ -1674,7 +1674,7 @@ desktop app."*
   6,509, NATGAS 4,049 (BTC 23,996). Sellers exist. Whether those buyers WIN
   needs those series' settlements, which we never pulled:
   `kalshi_fulltape.py --series KXGOLD15M KXSILVER15M KXCOPPER15M KXWTI15M
-  KXNATGAS15M --out C:\kalsulltape_candle --markets-only` is running
+  KXNATGAS15M --out C:\kals\fulltape_candle --markets-only` is running
   (slow; log `results/fulltape_candle.log`). Next: score the late 90-98c
   buys against the settled result by tau band -- a TAPE population, rule 5,
   but enough to kill or to justify a Pyth feed + paper arm. Pyth benchmarks
@@ -1846,7 +1846,7 @@ WARRANTED; the guards are worth more than we had measured.
    (`research/pinwhy.py`). Sep 8's 13.7/hr is not comparable: 25 bot restarts that day
    on an experimental config accepting prices to 99.2c.
 4. **"The 403 on /fcm/v1 proves we are unentitled"** -- an unsigned request with no
-   credentials gets the same 403. Gateway rule, says nothing. (`C:\kalscm_probe.py`)
+   credentials gets the same 403. Gateway rule, says nothing. (`C:\kals\fcm_probe.py`)
 5. **"0 of 39 wapi routes exist"** -- probed with GET; three of four routes taken from
    the vendor's own source also came back missing because wapi scopes routes by
    method. (`C:\kals\cdc_routes.py`, which now carries its control inline)
@@ -1858,7 +1858,7 @@ WARRANTED; the guards are worth more than we had measured.
   is REST+WebSocket with `private/create-order`, and **FIX is not required**.
 - Sandbox is live at `uat-api.3ona.co/fcm/v1` with 990 binaries.
 - Signing verified against the published spec, including the FCM-only rule that every
-  number must be a quoted string. `C:\kalscm_auth.py` implements it.
+  number must be a quoted string. `C:\kals\fcm_auth.py` implements it.
 - **CORRECTED 2026-09-16 ~23:xxZ.** A first-line agent said there is no separate FCM
   key and that the exchange.crypto.com key works once FCM status is approved. A
   SECOND agent, after escalating, said the opposite and the second one matches our

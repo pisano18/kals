@@ -145,7 +145,16 @@ $botArgs = @(
     # early legs got NO top-up because by 30 s nothing was left to buy -- at a
     # third that forgoes two thirds of the position on three markets in four.
     # Post-fix early legs at a third: 31 markets, 31 won, +$33.59.
-    "--early-tau", "45", "--early-frac", "1.0", "--early-min-price", "0.90",
+    # FULL -> A THIRD AGAIN, 2026-09-22 (v-early-third), on the operator's word
+    # after the project map: "Cut it to a third but measure which would have
+    # been the best idea in hindsight." Kalshi's ledger since 09-17 13:05Z:
+    # the leg ADDS markets (80% were never offered at 90-98c later), earns
+    # +0.71c/contract post-fix against +3.92c inside 30 s, and held 6 of the 8
+    # losing markets since 09-19. Not proven negative (bootstrap P(>=0) 0.39);
+    # a third keeps the markets and cuts its tail. arm-early-full and
+    # arm-early-off measure the alternatives; research/earlyhindsight.py
+    # scores all three from live fills. results/PROJECT_MAP_2026-09-22.md.
+    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.90",
     # AMENDMENT 50, 2026-09-18. The operator asked what to do with the
     # 45-second leg in the meantime: "It's earning good it'd be a shame to
     # shut it off, but also a shame to lose money... It might mean smaller

@@ -1,3 +1,28 @@
+# v-early-third -- 2026-09-22 ~11:4xZ -- LIVE: the 45 s leg back to a third (--early-frac 1.0 -> 0.333)
+
+The operator, after the project map: *"Cut it to a third but measure which
+would have been the best idea in hindsight."* Nothing else changed.
+
+**Evidence (Kalshi's ledger, results/PROJECT_MAP_2026-09-22.md, verified):**
+since 09-17 13:05Z the 31-45 s leg's markets net -$57 to -$70, but the deficit
+is one day (09-19) and mostly hedge failures/bugs on early positions; early
+entries alone are ~break-even. Post-fix it earns +0.71c/contract (+$32 on 70
+markets) vs +3.92c (+$82 on 36) for <=30 s buys, and it held 6 of the 8
+losing markets since 09-19. It mostly ADDS markets (163 of 203 were never
+offered at 90-98c later), so OFF would lose them; a third keeps them and cuts
+the tail. Sign NOT established (bootstrap P(>=0) = 0.39). No pre-registered bar
+existed for going back; this is the operator's call on a risk trade-off.
+
+**Measuring the alternatives, as asked:** `arm-early-full` (--early-frac 1.0)
+and `arm-early-off` run synced to live from this deploy; research/
+earlyhindsight.py scores live-third vs full vs off from live fills. Compare
+only on closes after this deploy.
+
+**REVERT:** set `"--early-frac", "1.0",` in restart_bot.ps1 and run
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+---
+
 # v-race30 -- 2026-09-22 ~07:0xZ -- LIVE (coin race penny test): real bets only inside 30 s
 
 **What it does differently:** `--live-tau-max 60 -> 30`. Nothing else.
