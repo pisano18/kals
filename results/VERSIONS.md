@@ -1,4 +1,4 @@
-# v-early-third -- 2026-09-22 ~11:4xZ -- LIVE: the 45 s leg back to a third (--early-frac 1.0 -> 0.333)
+# v-early-third -- 2026-09-22 11:42:12Z (07:42 ET restart, pid 2070976, SHA 1c89619) -- LIVE: the 45 s leg back to a third (--early-frac 1.0 -> 0.333)
 
 The operator, after the project map: *"Cut it to a third but measure which
 would have been the best idea in hindsight."* Nothing else changed.

@@ -45,10 +45,20 @@ $repo = "C:\kals-repo"
 $res  = "$repo\results"
 
 # ---- 1. the live bot's own settings, read from the running process --------
-$liveCl = (Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-           Where-Object { $_.CommandLine -like '*--live*' } |
-           Select-Object -First 1).CommandLine
-if (-not $liveCl) { throw "the live bot is not running -- nothing to sync arms TO" }
+# 2026-09-22: match pinrun.py EXACTLY. This used to take the first python
+# process with '--live' in it -- and since 09-21 the coin race penny test
+# (pinracearm.py --live) is one too. Which one came first depended on the
+# process table's order: a -WhatIf on 09-22 11:4xZ built all 24 arms from the
+# PENNY TEST's flags, which would have launched 24 dead pinruns.
+$liveHits = @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+              Where-Object { $_.CommandLine -like '*research\pinrun.py*' -and
+                             $_.CommandLine -like '* --live*' })
+if ($liveHits.Count -eq 0) { throw "the live bot (pinrun.py --live) is not running -- nothing to sync arms TO" }
+if ($liveHits.Count -gt 1) { throw "REFUSING: $($liveHits.Count) pinrun.py --live processes -- which one is live? pids $(($liveHits | ForEach-Object { $_.ProcessId }) -join ', ')" }
+$liveCl = $liveHits[0].CommandLine
+foreach ($must in @('--hedge-belief', '--loss-cap', '--bank-brake')) {
+    if ($liveCl -notlike "*$must*") { throw "REFUSING: the 'live' command line has no $must -- is it really pinrun? $liveCl" }
+}
 
 # argv, minus the exe and -u. Quoted tokens kept whole.
 $argv = @()
@@ -116,6 +126,10 @@ $arms = @(
   # --- the 45-second leg ---
   @{ n="arm-early-off";     drop=@("--early-tau","--early-frac","--early-min-price",
                                    "--early-max-edge"); add=@() },
+  # 2026-09-22 v-early-third: live runs the leg at a third; the operator asked
+  # to "measure which would have been the best idea in hindsight" -- full size
+  # here, off in arm-early-off, live is the third.
+  @{ n="arm-early-full";    drop=@("--early-frac");      add=@("--early-frac","1.0") },
   @{ n="arm-early-cap975";  drop=@();                    add=@("--early-max-price","0.975") },
   @{ n="arm-early60";       drop=@("--early-tau");       add=@("--early-tau","60") },
   # --- sizing ---
