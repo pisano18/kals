@@ -65,6 +65,7 @@ WHAT IT STILL CANNOT TELL US, stated here rather than in a footnote:
 import argparse
 import calendar
 import collections
+import fnmatch
 import inspect
 import io
 import json
@@ -116,6 +117,15 @@ _DEFAULT_LIVE_MAX_DROP = 0.02        # fresh ask this far under the one seen = r
 _DEFAULT_MIN_Z = 0.0                 # 0 = off. 3.0 is the arm's value.
 _DEFAULT_MIN_Z_TAU = 30              # the floor applies only PAST this tau
 LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
+
+# pinday.RACE_PAT -- the glob the operator's DAY TOTAL reads. `load_race()`
+# turns every `live_settled` leg's `pnl` under this pattern into real money.
+# --paper-live writes `live_settled` records too (that is how its races get
+# scored), so a paper log NAMED like a money log would put invented dollars
+# into the money report. pinday also skips records flagged `paper` now, but
+# this rail does not depend on that other file staying fixed: a name the glob
+# cannot pick up is a rail, a field somebody has to keep reading is a promise.
+PINDAY_RACE_PAT = "pinrace*-live*.jsonl"
 
 # 2026-09-22: THE FLOOR GOES BACK TO 90c, AND EVERY SEND RE-READS THE BOOK.
 #
@@ -358,7 +368,16 @@ def disarm(armed, race, coin, side):
     lesson as the 09-21 spike: a confidence that holds for one second is not a
     signal. It is confined to the z gate on purpose; making every gate disarm
     would change how the other live rails behave, which is not what was
-    measured."""
+    measured.
+
+    It fires on EVERY second the floor refuses, including seconds where some
+    earlier rail (`above_ceiling`, `no_book`, `thin_edge`) answered first --
+    `zmin` is race-level and index-only, so those rails say nothing about it.
+    Serving the floor only on the seconds that reached the edge test would
+    let a leg keep its original clock through the seconds its race was under
+    the floor, and A_find F4 says a 99c ask during the qualifying seconds is
+    the common case in this band. That is still ONE gate doing the
+    disarming."""
     return armed.get(race, {}).pop((coin, side), None)
 
 
@@ -396,6 +415,22 @@ def inconsistent(held, coin, side):
                         "so a second YES is a guaranteed loser" % c)
     return None
 
+
+def paper_log_refusal(logpath, paper):
+    """Why --paper-live must not write to `logpath`, or None if it may.
+
+    NULL: it says nothing about a --live log (that one is SUPPOSED to match),
+    nothing about a missing path, and nothing about a paper name the day
+    total cannot see."""
+    if not paper or not logpath:
+        return None
+    if not fnmatch.fnmatch(os.path.basename(logpath), PINDAY_RACE_PAT):
+        return None
+    return ("--paper-live may not write to %r: pinday's day total globs %r "
+            "and reads every `live_settled` leg's pnl as REAL money. Name it "
+            "something the money report cannot pick up -- e.g. "
+            "results/pinracearm-z3.jsonl."
+            % (os.path.basename(logpath), PINDAY_RACE_PAT))
 
 def live_refusals(tau, price, count, race, coin=None, side=None, state=None,
                   exists=os.path.exists):
@@ -1339,13 +1374,32 @@ def selftest():
     # so a crash mid-order cannot re-enter the same race. Anchored with
     # rindex, because a self-test that searches this file finds ITS OWN copy
     # of any string it looks for.
+    #
+    # THE ANCHOR IS THE CALL TO do_order, NOT THE ORDER PATH ITSELF. The one
+    # order call now lives inside do_order, and while do_order sat BELOW
+    # main() the old rindex of it resolved to the last two lines of the FILE
+    # -- past every line of main, so `i_guard < i_claim < i_send` and the
+    # rails check could not fail for any arrangement of main(). Proven by
+    # running it: with the race claimed AFTER the send this file passed and
+    # the pre-do_order version failed. do_order is therefore defined ABOVE
+    # main, the slice below is asserted not to reach it, and the literal is
+    # SPLIT below so this comment and that assertion cannot count themselves.
+    _TAKE = "pintake" + ".take("            # split: see the comment above
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
-    body = src[src.rindex(chr(10) + "def main("):]
-    ck(body.count("pintake.take(") == 1,
+    ck(src.count(_TAKE) == 1,
        "there is exactly ONE call to the order path in the whole file")
+    i_main = src.rindex(chr(10) + "def main(")
+    ck(src.rindex(chr(10) + "def do_order(") < src.rindex(_TAKE) < i_main,
+       "the only send sits inside do_order, and do_order is defined ABOVE "
+       "main -- so the main-body slice below cannot anchor on it by accident")
+    body = src[i_main:]
+    ck(_TAKE not in body,
+       "main() itself never names the order path; it goes through do_order")
+    ck(body.count("do_order(") == 1,
+       "and main reaches do_order exactly once, so rindex below IS the call")
     i_guard = body.rindex('if LIVE["on"]:')
     i_claim = body.rindex('LIVE["races"].setdefault(')
-    i_send = body.rindex("pintake.take(")
+    i_send = body.rindex("do_order(")
     ck(i_guard < i_claim < i_send,
        "the send is inside the --live guard AND the race is claimed before "
        "the order leaves, so a crash cannot re-enter the same race")
@@ -1471,31 +1525,101 @@ def selftest():
        "the start record says so, and carries the floor it is running, so a "
        "window can be checked instead of assumed")
 
-    # THE RE-ARM IS CONFINED TO THE z GATE
+    # A FLOOR THAT CAN ONLY REFUSE IS NOT A FLOOR
+    ck('if a.min_z > 0 and a.model != "fair":' in body
+       and body.find('if a.min_z > 0 and a.model != "fair":')
+       < body.find("if not selftest():"),
+       "--min-z outside --model fair is REFUSED at startup, before anything "
+       "runs: no other model builds zmin, an unknown fails the floor, and "
+       "the combination would have refused every leg past --min-z-tau for a "
+       "week while logging like a threshold that never passed")
+
+    # PAPER DOLLARS MUST NOT REACH THE MONEY REPORT
+    # --paper-live writes `live_settled` records with a real-looking per-leg
+    # `pnl`; pinday.load_race globs pinday.RACE_PAT and reads every one of
+    # them as money. So the NAME is a rail, checked here, and pinday skips
+    # `paper` records as the second one.
+    ck(PINDAY_RACE_PAT == "pinrace*-live*.jsonl",
+       "the pattern this rail guards is the one pinday actually globs "
+       "(pinday.RACE_PAT) -- if that moves, this check is what notices")
+    ck(paper_log_refusal("results/pinracearm-paper-live.jsonl", True)
+       and paper_log_refusal(r"C:\x\results\pinracearm-z3-live.jsonl", True)
+       and paper_log_refusal("pinracepenny-live.jsonl", True),
+       "THE TWO NAMES A PAPER ARM WOULD NATURALLY BE GIVEN ARE REFUSED: "
+       "`pinracearm-paper-live.jsonl` and `pinracearm-z3-live.jsonl` both "
+       "match the day total's glob, and would have put invented dollars into "
+       "the operator's real-money report with nothing failing")
+    ck(paper_log_refusal("results/pinracearm-z3.jsonl", True) is None
+       and paper_log_refusal("results/pinracearm-20260922T000000Z.jsonl",
+                             True) is None,
+       "NULL: the recommended name and the default name are both allowed -- "
+       "neither matches the glob, so the rail is not just refusing everything")
+    ck(paper_log_refusal("results/pinracepenny-live.jsonl", False) is None
+       and paper_log_refusal(None, True) is None,
+       "NULL: it says nothing about a --live log, which is SUPPOSED to be "
+       "read as money, and nothing about a path that was never given")
+    _i_lw = body.find("_logwhy = paper_log_refusal(logpath")
+    ck(0 <= _i_lw < body.find('logf = open(logpath'),
+       "and main checks the name BEFORE it opens the file, so a refused arm "
+       "does not leave a half-written log behind")
+
+    # THE RE-ARM IS CONFINED TO THE z GATE -- and SERVED ON EVERY SECOND
     _i_pop = body.find('disarm(LIVE["armed"], evt, coin, side)')
+    _i_zb = body.find("zbad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)")
     ck(body.count('disarm(LIVE["armed"], evt, coin, side)') == 1
-       and 0 <= body.find('if bad == "zmin_under_floor":') < _i_pop
-       < body.find("key = (evt, coin, bad)", max(_i_pop, 0)),
-       "the disarm happens ONLY when the z gate is the reason, and before "
-       "the continue -- every other rail's arming behaviour is untouched")
-    _i_z = body.find('bad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)')
-    ck(body.count('bad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)') == 1
+       and body.count("zbad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)") == 1
+       and 0 <= _i_zb < _i_pop < body.find('bad = "no_book"'),
+       "the floor is evaluated -- and the clock restarted -- BEFORE the book "
+       "and price chain, so a race that drops under it while the ask happens "
+       "to be 99c still loses its clock (A_find F4: that is the common ask "
+       "in this band, so serving the floor only after `above_ceiling` would "
+       "let a leg fire on a ten-second-old clock)")
+    _i_z = body.find("bad = zbad")
+    ck(body.count("bad = zbad") == 1
        and 0 <= body.find('bad = "thin_edge"') < _i_z,
-       "and the floor sits in the same refusal chain as thin_edge, after the "
-       "edge test -- one place, not two")
+       "and the REASON it reports still sits in the same refusal chain as "
+       "thin_edge, after the edge test -- one place, not two")
     # POSITION IS NOT REACHABILITY. `elif False:` leaves every ordering check
     # above green while the gate never runs, so read the branch itself: the z
     # floor must be the `else` of the edge test, with nothing between them.
     _ml = inspect.getsource(main).split(chr(10))
-    _izl = [i for i, x in enumerate(_ml) if x.strip().startswith("bad = z_ref")]
-    _prev = ([x.strip() for x in _ml[max(0, _izl[0] - 8):_izl[0]]
+    _izl = [i for i, x in enumerate(_ml) if x.strip() == "bad = zbad"]
+    _prev = ([x.strip() for x in _ml[max(0, _izl[0] - 9):_izl[0]]
               if x.strip() and not x.strip().startswith("#")] if _izl else [])
     ck(len(_izl) == 1 and _prev[-1:] == ["else:"]
        and 'bad = "thin_edge"' in _prev,
        "and it is the `else` of the edge test itself -- not an `elif False:` "
        "or any other branch that can never be taken (the line above it is %r)"
        % (_prev[-1:] or None))
-    ck(0 <= _i_z < _i_pop < body.rfind("if not paper_done:") < i_guard,
+    # ...and the disarm must not have been quietly put back inside `if bad:`,
+    # which position alone cannot tell. Read the tree: the only `disarm` call
+    # in main() is guarded by `if zbad:` and by nothing else.
+    import ast as _ast
+    import textwrap as _tw
+
+    def _guards(node, chain, out):
+        """Every `if` a disarm() call sits under, innermost last."""
+        if (isinstance(node, _ast.Call)
+                and getattr(node.func, "id", None) == "disarm"):
+            out.append(tuple(chain))
+        if isinstance(node, _ast.If):
+            t = _ast.unparse(node.test)
+            _guards(node.test, chain, out)
+            for s in node.body:
+                _guards(s, chain + [t], out)
+            for s in node.orelse:
+                _guards(s, chain + ["not (%s)" % t], out)
+            return
+        for ch in _ast.iter_child_nodes(node):
+            _guards(ch, chain, out)
+    _names = []
+    _guards(_ast.parse(_tw.dedent(inspect.getsource(main))), [], _names)
+    ck(_names == [("zbad",)],
+       "the ONE disarm in main() is guarded by `if zbad:` and by nothing "
+       "else -- not nested inside `if bad:`, which is what confined it to "
+       "the seconds no earlier rail had already answered (guards: %r)"
+       % (_names,))
+    ck(0 <= _i_z < body.rfind("if not paper_done:") < i_guard,
        "and that chain's `continue` is before BOTH the paper fill and the "
        "live block, so a refused race buys nothing on either side -- one "
        "race-level gate, not a live-only one")
@@ -1635,13 +1759,43 @@ def build_parser():
     ap.add_argument("--min-z", type=float, default=_DEFAULT_MIN_Z,
                     help="RACE-LEVEL floor: refuse EVERY leg of a race whose "
                          "leader is under this many standard deviations clear "
-                         "of every other coin. 0 = off (default %.1f)"
+                         "of every other coin. NEEDS --model fair, which is "
+                         "the only model that builds the number; under any "
+                         "other model it is unknown and an unknown FAILS the "
+                         "floor, so a non-zero value there refuses every leg "
+                         "past --min-z-tau. 0 = off (default %.1f)"
                          % _DEFAULT_MIN_Z)
     ap.add_argument("--min-z-tau", type=int, default=_DEFAULT_MIN_Z_TAU,
                     help="--min-z applies only PAST this many seconds out; at "
                          "or inside it nothing changes (default %d)"
                          % _DEFAULT_MIN_Z_TAU)
     return ap
+
+
+def do_order(paper, creds, ticker, side, ask, count, close_s, supply, tau_max):
+    """THE ONLY PLACE AN ORDER CAN LEAVE THIS FILE.
+
+    `paper` is --paper-live. It returns the fill we WOULD have got -- the
+    smaller of what we asked for and what the book was offering, at the ask we
+    saw -- and never touches the order path. Two things prove that and both
+    are in the self-test: this function's own source (the return is above the
+    call, and the call appears exactly once), and a run with `pintake.take`
+    replaced by something that raises, where the paper arm returns normally
+    and the live arm raises. The second half is what makes the first
+    non-vacuous.
+
+    It is one function rather than two branches inline so that the proof can
+    be a RUN and not only a reading. `creds` is untouched in paper mode -- in
+    --paper-live it is never even loaded, so a bug that reached the wire would
+    find base=None and be refused by pintake anyway."""
+    if paper:
+        return {"paper": True, "status": "paper_live", "status_code": None,
+                "filled": max(0.0, min(float(count), float(supply))),
+                "exec_price": float(ask), "refused": None, "fee_total": None,
+                "order_id": None, "client_order_id": None}
+    return pintake.take(creds["base"], creds["pk"], creds["key_id"],
+                        ticker, side, float(ask), count, float(close_s),
+                        exchange_index=RACE_EXCHANGE_INDEX, max_tau=tau_max)
 
 
 def main():
@@ -1651,6 +1805,17 @@ def main():
         # pair of braces, for a caller that builds the namespace itself.
         print("  REFUSED -- --live and --paper-live are the same switch in "
               "two positions; give exactly one")
+        return 2
+    if a.min_z > 0 and a.model != "fair":
+        # `zmin` is built in live_fair(), which only --model fair calls. Under
+        # any other model it is None, and None FAILS the floor by design -- so
+        # this combination would refuse EVERY leg past --min-z-tau while
+        # reading, in the log, like a threshold that simply never passed. Say
+        # it at startup instead of discovering it from an empty week.
+        print("  REFUSED -- --min-z %.2f needs --model fair. %r never builds "
+              "the number, and an unknown fails the floor, so every leg past "
+              "%ds would be refused `zmin_under_floor` with zmin null."
+              % (a.min_z, a.model, a.min_z_tau))
         return 2
     if not selftest():
         return 1
@@ -1741,10 +1906,22 @@ def main():
               % LIVE["stop_on_loss"])
         print("  halts can never reach the races its bar needs, and it risks")
         print("  nothing. The REST last look is skipped (fresh_ask is null).")
+        print("  ITS FILL RATE IS NOT EVIDENCE: `would_fill` is the smaller")
+        print("  of what we asked for and what the book was OFFERING, and the")
+        print("  size we ask for is built from that same number -- so it is")
+        print("  always 100%. Whether the offer would have been OURS is the")
+        print("  one thing no paper arm can test, and both real race losses")
+        print("  filled at prices a once-a-second tape never showed.")
+        print("  It is also stood down by %s, the MONEY test's switch."
+              % os.path.basename(LIVE_STOP_FILE))
 
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     logpath = a.log or os.path.join(REPO, "results",
                                     "pinracearm-%s.jsonl" % stamp)
+    _logwhy = paper_log_refusal(logpath, LIVE["paper"])
+    if _logwhy:
+        print("  REFUSED -- %s" % _logwhy)
+        return 2
     logf = open(logpath, "a", encoding="utf-8")
 
     def rec(kind, **kw):
@@ -1987,6 +2164,26 @@ def main():
                     band = band_of(tau)
                     if band is None:
                         continue
+                    # THE RACE-LEVEL FLOOR IS SERVED ON EVERY SECOND, not
+                    # only on the seconds that survive the book-and-price
+                    # chain below. `zmin` is built from the INDEX alone -- it
+                    # does not depend on the ask, the edge or the side -- and
+                    # A_find F4 measured that a 99c ask during the qualifying
+                    # seconds is the COMMON case in this band (in 4 of 5, the
+                    # market never offered the leader at 90-98c while it
+                    # qualified). Evaluating the floor only where
+                    # `above_ceiling`, `no_book` or `thin_edge` did not fire
+                    # first would leave a leg armed on its ORIGINAL clock
+                    # through seconds its race was under the floor, so it
+                    # would fire on a stale one -- the exact thing the re-arm
+                    # exists to stop. So the floor is COMPUTED here, for the
+                    # re-arm, and REPORTED below as the `else` of the edge
+                    # test, which is where C_plan 2e puts the refusal reason.
+                    # `--min-z 0` makes z_refusal return None at every tau, so
+                    # the live penny argv decides exactly what it does today.
+                    zbad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)
+                    if zbad:
+                        disarm(LIVE["armed"], evt, coin, side)
                     # ONE PAPER FILL PER LEG PER BAND -- but the LIVE path must
                     # still be looked at every second. CONFIRM-OR-CLOCK needs a
                     # leg re-examined second after second to serve its
@@ -2057,22 +2254,14 @@ def main():
                             bad = "thin_edge"
                         else:
                             # THE RACE-LEVEL z FLOOR, last in the chain and in
-                            # the same chain as thin_edge. Off at --min-z 0,
-                            # and silent at or inside --min-z-tau.
-                            bad = z_refusal(zmin, tau, a.min_z, a.min_z_tau)
+                            # the same chain as thin_edge, exactly where
+                            # C_plan 2e puts it. Off at --min-z 0, and silent
+                            # at or inside --min-z-tau. The re-arm that goes
+                            # with it already happened above, because it must
+                            # also happen on the seconds an earlier rail
+                            # answered first.
+                            bad = zbad
                     if bad:
-                        if bad == "zmin_under_floor":
-                            # RE-ARM. arm_leg records the tau a leg FIRST
-                            # qualified at and never clears it, so without this
-                            # a leg that drops under the floor for one second
-                            # and comes back fires on its ORIGINAL clock. On
-                            # the tape that single line is the difference
-                            # between 1 loss in 554 early races and 0 in 366:
-                            # a confidence that holds for one second is not a
-                            # signal. CONFINED TO THE z GATE -- making every
-                            # gate disarm would change how the other live rails
-                            # behave, which is not what was measured.
-                            disarm(LIVE["armed"], evt, coin, side)
                         key = (evt, coin, bad)
                         if key not in seen_why:
                             seen_why.add(key)
@@ -2277,32 +2466,6 @@ def main():
           "the fill is assumed and no paper arm can test it.")
     print("  log %s" % os.path.abspath(logpath))
     return 0
-
-
-def do_order(paper, creds, ticker, side, ask, count, close_s, supply, tau_max):
-    """THE ONLY PLACE AN ORDER CAN LEAVE THIS FILE.
-
-    `paper` is --paper-live. It returns the fill we WOULD have got -- the
-    smaller of what we asked for and what the book was offering, at the ask we
-    saw -- and never touches the order path. Two things prove that and both
-    are in the self-test: this function's own source (the return is above the
-    call, and the call appears exactly once), and a run with `pintake.take`
-    replaced by something that raises, where the paper arm returns normally
-    and the live arm raises. The second half is what makes the first
-    non-vacuous.
-
-    It is one function rather than two branches inline so that the proof can
-    be a RUN and not only a reading. `creds` is untouched in paper mode -- in
-    --paper-live it is never even loaded, so a bug that reached the wire would
-    find base=None and be refused by pintake anyway."""
-    if paper:
-        return {"paper": True, "status": "paper_live", "status_code": None,
-                "filled": max(0.0, min(float(count), float(supply))),
-                "exec_price": float(ask), "refused": None, "fee_total": None,
-                "order_id": None, "client_order_id": None}
-    return pintake.take(creds["base"], creds["pk"], creds["key_id"],
-                        ticker, side, float(ask), count, float(close_s),
-                        exchange_index=RACE_EXCHANGE_INDEX, max_tau=tau_max)
 
 
 if __name__ == "__main__":

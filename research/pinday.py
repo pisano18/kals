@@ -206,6 +206,16 @@ def load_race(paths):
     price, less the fee -- decided from the writer, not from the magnitude).
     Its `settled` lines score PAPER positions and are ignored here.
     Returned records carry `pnl_c` in cents so every log source is one shape.
+
+    A record (or a leg) carrying `paper` is SKIPPED. `pinracearm.py
+    --paper-live` runs the whole live decision path with the order call
+    replaced, and writes the same `live_settled` shape with the same
+    real-looking per-leg dollars -- the `paper` flag is the only thing that
+    tells them apart, and this is the only place that has to read it. Without
+    this, one paper arm logged as `pinracearm-*-live.jsonl` would put
+    invented dollars straight into the operator's DAY TOTAL. pinracearm
+    refuses such a name as well; two rails, because this number is what the
+    bank balance is reconciled against.
     """
     seen, out = set(), []
     for p in paths:
@@ -226,9 +236,13 @@ def load_race(paths):
                     continue
                 if not isinstance(r, dict) or r.get("kind") != "live_settled":
                     continue
+                if r.get("paper"):
+                    continue          # --paper-live: same shape, no money
                 seen.add(k)
                 for lg in r.get("legs") or []:
                     if not isinstance(lg, dict) or not lg.get("ticker"):
+                        continue
+                    if lg.get("paper"):
                         continue
                     try:
                         pc = float(lg.get("pnl") or 0.0) * 100.0
@@ -756,7 +770,13 @@ def selftest_ledger(ck):
                           "t": "2026-09-19T09:01:15Z", "pnl": 0.0279,
                           "legs": [{"ticker": RC, "pnl": 0.0279}]},
                          {"event": "KXCRYPTOLEAD15M-26SEP190500", "kind": "settled",
-                          "t": "2026-09-19T09:01:15Z", "pnl": 55.0, "positions": 3}])
+                          "t": "2026-09-19T09:01:15Z", "pnl": 55.0, "positions": 3},
+                         # --paper-live: the SAME shape, the same real-looking
+                         # dollars, flagged `paper`. It must not be money.
+                         {"event": "KXCRYPTOLEAD15M-26SEP190500",
+                          "kind": "live_settled", "paper": True,
+                          "t": "2026-09-19T09:01:15Z", "pnl": -9.99,
+                          "legs": [{"ticker": RC, "pnl": -9.99}]}])
         roots.append(r5)
         f = report(r5, days=7, now=NOW, out=lambda s: None)
         t5 = f["table"]
@@ -768,6 +788,15 @@ def selftest_ledger(ck):
            and not f["missing"],
            "the coin race cross-check reads the REAL bet (live_settled), not the "
            "paper `settled` line's 55.00 in the same file")
+        ck([x["pnl_c"] for x in load_race(
+               sorted(glob.glob(os.path.join(r5, RACE_PAT))))] == [2.79]
+           and load_race([]) == [],
+           "and NOT the --paper-live line's -9.99 in that same file: the same "
+           "`live_settled` shape with the same real-looking dollars and only "
+           "a `paper` flag to tell it apart. It is dropped at the source, not "
+           "netted out later, so a paper arm logged under the money glob "
+           "cannot land in the operator's DAY TOTAL (and nothing in, nothing "
+           "out)")
         ck(any("DAY TOTAL" in s and "-28.97" in s for s in f["lines"]),
            "and a DAY TOTAL row sums the three books (1.00 - 30.00 + 0.03)")
 
