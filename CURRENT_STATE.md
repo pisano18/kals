@@ -16,6 +16,26 @@ floor + fresh book read), and a rebuilt paper fleet (17 of 24 arms had died
 on an inherited brake). Disk 34.7 GB free (operator deleted a Steam game).
 **Arm vs live comparisons are valid only from 2026-09-22 06:21Z.**
 
+## LIVE CHANGES 2026-09-22 (all in results/VERSIONS.md with revert commands)
+
+- **v-early-third** 11:42Z: `--early-frac 1.0 -> 0.333`, the operator's call
+  ("cut it to a third but measure which would have been the best idea in
+  hindsight"). `arm-early-full` / `arm-early-off` run beside it;
+  `research/earlyhindsight.py` scores third vs full vs off from live fills.
+- **v-safety1** 11:52:44Z (pid 2071684, code_sha 428d70ace217): a crash, a
+  pintake halt or a frozen index can no longer silence a hedge (K1-K3); paper
+  arms off the live day-loss file; new log fields (`tau`, `budget_left` on
+  refusals/signals, `t_ms_*` on orders, `hedge_quote` per held second).
+- **FREEZE from 11:42Z for ~300 closes**: only bug/safety fixes and logging.
+  The operator may overturn it. Bars: `results/FREEZE_2026-09-22.md`,
+  checker `research/barcheck.py` (being finished).
+- `research/pinday.py` now takes money from Kalshi's ledger and prints every
+  market the logs missed. `sync_arms.ps1` matches `pinrun.py --live` exactly
+  (it could have built the fleet from the coin race penny test).
+- Coin race penny test: v-race30 (real bets only inside 30 s).
+- Operator still to do, when home: KalsBoot "run whether logged on" (or
+  auto-logon) -- after a reboot nothing restarts until he logs in.
+
 ## PROJECT MAP 2026-09-22 -- READ `results/PROJECT_MAP_2026-09-22.md`
 
 Verified answer to "tweaks made it lose": since 09-17 13:05Z the pin bot made
