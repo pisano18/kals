@@ -8109,6 +8109,68 @@ def _selftest_body():
        "K1 NULL: FOUR scan errors do not stop entries -- the same clean "
        "market IS bought, so the stop above is the fifth error's doing")
 
+    # ===================================================================
+    # K2 (2026-09-22): A PINTAKE HALT NEVER REFUSES A HEDGE -- through the
+    # REAL pintake.take, on a fake wire (DEMO base, nothing leaves the box).
+    # One order whose outcome is unknown (-1: a timeout, the 09-21/22 outage
+    # returned 388 of them) sets pintake's halt, pinrun never clears it, and
+    # every hedge the A74 drain then sent was refused by the same take().
+    # ===================================================================
+    _kB1 = _k1_B(1)["tk"]
+
+    def _k2_posts(res, tk, side):
+        return [p for p in res["posts"]
+                if p.get("ticker") == tk and p.get("side") == side]
+
+    _k2l = _offline_trade_loop(
+        [_k1_A(), _k1_B(1)], live=True,
+        reply=lambda body, n: ((-1, "timed out")
+                               if body.get("ticker") == _kB1
+                               else _fill_all(body, n)))
+    _k2l_bids = [p for p in _k2l["posts"] if p.get("side") == "bid"]
+    ck(_k2l["raised"] is None and len(_k2l_bids) == 2
+       and _k2l_bids[-1].get("ticker") == _kB1,
+       "K2 fixture: A fills, then B's entry POST times out (-1) and halts "
+       "pintake; no entry reaches the wire after it (%d entry POSTs)"
+       % len(_k2l_bids))
+    ck(len(_k2_posts(_k2l, _kA, "ask")) >= 1
+       and abs(_hedged(_k2l, _kA) - 5.0) < 1e-9,
+       "K2: with pintake HALTED, A's collapse still sends its hedge to the "
+       "wire and it fills in full (%d hedge POSTs, hedged %g)"
+       % (len(_k2_posts(_k2l, _kA, "ask")), _hedged(_k2l, _kA)))
+    ck(any(r.get("past_halt") for r in _kinds(_k2l, "hedge", _kA)),
+       "K2: ...and the hedge record says it went out past a halt")
+
+    # A hedge whose OWN outcome is unknown must not be sent again: it may
+    # have filled, and a resend would double the hedge. It is counted as
+    # covered, which is exactly what the halt used to do by refusing
+    # everything -- but a SECOND held position is still hedged.
+    def _k1_D(collapse_at=6):
+        m = _k1_B(4)
+        m.update({"tk": "KXDDD15M-K2", "series": "KXDDD15M", "iid": "K2D",
+                  "fair": (lambda t: 0.10 if t >= collapse_at else 0.999)})
+        return m
+    _kD = _k1_D()["tk"]
+    _k2u_state = {"failed": 0}
+
+    def _k2u_reply(body, n):
+        if (body.get("ticker") == _kA and body.get("side") == "ask"
+                and not _k2u_state["failed"]):
+            _k2u_state["failed"] += 1
+            return -1, "timed out"
+        return _fill_all(body, n)
+    _k2u = _offline_trade_loop([_k1_A(), _k1_D()], live=True,
+                               reply=_k2u_reply)
+    ck(_k2u["raised"] is None and len(_k2_posts(_k2u, _kA, "ask")) == 1,
+       "K2: a hedge whose own POST timed out is NOT sent again -- it may "
+       "have filled (%d hedge POSTs on A)" % len(_k2_posts(_k2u, _kA, "ask")))
+    ck(_kinds(_k2u, "hedge_unknown", _kA),
+       "K2: ...it is recorded as covered-but-unknown, not silently")
+    ck(len(_k2_posts(_k2u, _kD, "ask")) >= 1
+       and abs(_hedged(_k2u, _kD) - 5.0) < 1e-9,
+       "K2: ...and the OTHER held position is still hedged when it collapses "
+       "two seconds later, halt or no halt (hedged %g)" % _hedged(_k2u, _kD))
+
     # THE SELF-TEST MUST LEAVE NO LIVE SETTING CHANGED. It runs at startup
     # with the operator's flags ALREADY applied, so any global it forgets to
     # restore silently overrides what he asked for -- on every start, with
@@ -9709,9 +9771,16 @@ def trade_loop(a, rec, book, idx, series_index):
                     try:
                         # A70: the LIMIT, never the ask we saw -- same rule the
                         # entry path has followed since A35.
+                        # K2 (2026-09-22): hedge=True. pintake's halt refuses
+                        # NEW exposure until someone reconciles; this order
+                        # REDUCES exposure on a position already held, so it
+                        # skips that one rail and no other. Before this, one
+                        # timed-out POST (an entry's or a hedge's own) made
+                        # every later hedge in the run die inside take().
                         _hout = pintake.take(CREDS["base"], CREDS["pk"], CREDS["key_id"],
                                              _htk, _opp, float(_hlimit), _hn_take,
-                                             float(_hcs), exchange_index=2)
+                                             float(_hcs), exchange_index=2,
+                                             hedge=True)
                     except Exception as _e:                      # noqa: BLE001
                         state["order_errors"] = state.get("order_errors", 0) + 1
                         rec("error", where="hedge_take", ticker=_htk, err=str(_e)[:300])
@@ -9748,6 +9817,34 @@ def trade_loop(a, rec, book, idx, series_index):
                             # PARTIAL: track what is still unhedged in hedge_remain,
                             # NEVER in open_pos[_hid] -- see the note above this loop.
                             hedge_remain[_hid] = _left76
+                    # K2: A HEDGE WHOSE OWN OUTCOME IS UNKNOWN IS NOT RESENT.
+                    # -1 / 3xx / 5xx / an unreadable 2xx, or an IOC that rested
+                    # and could not be reconciled: it may have filled. With
+                    # the halt no longer refusing hedges, booking it as 0 would
+                    # send the same hedge again next second and, if the first
+                    # did fill, DOUBLE it -- a naked bet the other way. So the
+                    # contracts it asked for are counted as covered. That is
+                    # exactly what the halt used to do by refusing every later
+                    # hedge, only now limited to THIS position: others still
+                    # hedge. It errs toward under-hedging, never over.
+                    _hsc = _hout.get("status_code")
+                    _hunr = _hout.get("unrest")
+                    _hunknown = (not (isinstance(_hsc, int) and 400 <= _hsc < 500)
+                                 and (not pintake._readable(_hout)
+                                      or (_hunr is not None
+                                          and not _hunr.get("reconciled"))))
+                    if _hunknown:
+                        _leftk2 = float(_unhedged) - max(_hfilled, float(_hn_take))
+                        if HEDGE_PILOT_CONTRACTS or _leftk2 <= 1e-9:
+                            hedged.add(_hid)
+                            hedge_remain.pop(_hid, None)
+                        else:
+                            hedge_remain[_hid] = min(
+                                hedge_remain.get(_hid, _leftk2), _leftk2)
+                        rec("hedge_unknown", ticker=_htk, side=_opp,
+                            asked=_hn_take, filled_seen=_hfilled,
+                            status_code=_hsc, counted_covered=True,
+                            still_unhedged=max(0.0, _leftk2), tau=_htau)
                     rec("hedge", ticker=_htk, side=_opp, price=_hcost2, n=_hfilled,
                         flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
                         entry_tau=_entry_tau,
@@ -9764,7 +9861,9 @@ def trade_loop(a, rec, book, idx, series_index):
                         asked=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
                         locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hcost2), 2),
                         order_id=_hout.get("order_id"), status=_hout.get("status"),
-                        edge_c=hedge_edge_c(_belief, _hcost2), live=True)
+                        edge_c=hedge_edge_c(_belief, _hcost2), live=True,
+                        # K2: sent while pintake was halted (None if it was not)
+                        past_halt=_hout.get("past_halt"))
                     print(f"  HEDGE {_htk} buy {_opp.upper()} {_hfilled:g}/{_hn_take:g} @ "
                           f"{_hcost2:.3f} -> locked {100*hedge_locked_loss(_hcost,_hcost2):+.1f}c")
                 except Exception as _ek1:                  # noqa: BLE001
