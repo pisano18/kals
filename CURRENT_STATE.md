@@ -16,6 +16,23 @@ floor + fresh book read), and a rebuilt paper fleet (17 of 24 arms had died
 on an inherited brake). Disk 34.7 GB free (operator deleted a Steam game).
 **Arm vs live comparisons are valid only from 2026-09-22 06:21Z.**
 
+## PROJECT MAP 2026-09-22 -- READ `results/PROJECT_MAP_2026-09-22.md`
+
+Verified answer to "tweaks made it lose": since 09-17 13:05Z the pin bot made
++$60.95 on Kalshi's ledger vs +$520 at the steady rate; 80% of the $459
+shortfall is a few losses that got BIGGER (mostly 09-19 bugs, now fixed, plus
+one open cause: false-alarm hedges on winning bets). Since the fixes: +$114 on
+75 closes. The steady week was also an unusually calm market.
+
+**CORRECTIONS to this file's older sections (they are WRONG where they
+disagree):** money made is **+$333.49** (bank $917.92 - $584.46 deposits,
+matches the ledger to 3c), not $386.94 or $307. Hedging lifetime is
+**-$9.35** (10 saves +$149.26, 7 false alarms -$158.60), not "+$111/-$159" or
+"-$47". **A76 proportional hedging FIRED once (NEAR 09-21, +$15.15) and is
+REMOVED**: live runs `--no-hedge-prop --hedge-belief 0.25`, no `--hedge-price`.
+The bot's own logs/pinday miss markets held when a run died -- 09-19 is
+**-$223.46**, not -$161.14. Use the LEDGER for every money number.
+
 # STOP. THREE THINGS BEFORE YOU CHANGE ANYTHING.
 
 **1. THE DISK IS THE ONLY DEADLINE THAT MATTERS.** ~19.8 GB free, falling
