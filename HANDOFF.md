@@ -1,3 +1,46 @@
+# 2026-09-22 ~18:5xZ -- COIN RACE: THE LEAD IN SIGMAS, AND THE z3 PAPER ARM
+
+**Nothing live changed; size untouched (operator: "for now don't change the
+size").** New paper arm `pinracearm --paper-live --min-z 3.0 --min-z-tau 30
+--live-tau-max 60`, log `results/pinracearm-z3.jsonl`, pid 2157996, started
+18:49Z, 7 days.
+
+**The idea:** ask the race model how far the leader is ahead IN STANDARD
+DEVIATIONS of what the gap can still move before the close (`zmin`, computed
+analytically from the same covariance and variance collapse win_probs uses --
+never read off the 1,000 draws). Above 30 s, enter only when zmin >= 3.
+
+**Evidence (results/map_2026-09-22/race_earlier/):** the floor keeps ~51% of
+races and removes ALL 9 losers in the book data, P=0.0016; survives lag 0-2,
+book-age and confirm variants (24 combinations) and leave-one-day-out (27
+days). Our own fills agree at n=2: both real losing races above 30 s were at
+zmin 1.09 and 1.58; our 4 real races above 30 s at zmin >= 3 all won.
+**The verifier WEAKENED it:** "0 of 321" alone is a coin flip (a random
+discard of the same size shows zero 46% of the time); the honest planning
+loss rate is the index's 0.29% against a 2.42% break-even; and it is worth
+about +$0.22/day at 1 contract, not +$0.36. Past 60 s no floor works (fat
+tails grow with time left). Inside 30 s z is the WRONG ruler (a fifth of a
+basis point reads as 3.6 sd), hence `--min-z-tau 30`.
+
+**Pre-registered bar (written before the arm ran):** PASS at 125 races with
+0 losses, or 250 with at most 1; KILL at 2 losses in the first 50. ~9-12 days.
+A PASS only earns a real-money test at 1 contract -- the operator's call.
+
+**Build notes:** `--paper-live` runs the whole live decision path (arm_leg,
+live_refusals, confirm_refusal, consistency, rails, rolling stake) and cannot
+reach `pintake.take`; it releases into its own book, forces `stop_on_loss`
+False, skips the REST last look, and REFUSES a `--log` named like the money
+test's. `pinday` now ignores records flagged `paper`. Two reviewers found a
+BLOCKER: moving the order path below `main()` made two money-rail source
+proofs vacuous (the repo's own "a self-test that searches this file finds
+itself" trap) -- fixed, and 27 of 27 deliberate reverts now fail.
+
+**Known, not fixed:** the desktop app cannot Pause/Stop this arm (its filter
+rejects any command line containing `--live`, and `--paper-live` contains it);
+it is stood down by `results/pinracepenny.stop`, the money test's switch.
+
+---
+
 # 2026-09-22 ~05:4xZ -- KALSHI CONNECTION OUTAGE: ~4h47m of tape LOST, bot idle, nothing left open
 
 Connections TO KALSHI (not the whole internet -- Google stayed 6/6 clean,
