@@ -8347,6 +8347,55 @@ def _selftest_body():
        "their own per-run total and never stop on the live bot's day (%s)"
        % _w4p)
 
+    # ===================================================================
+    # (5) 2026-09-22: IDENTIFY BETTER -- fields the records were missing.
+    # Read off the offline loop's own records, live order path: every
+    # refusal and signal says how long was left and how much of the close's
+    # contract budget was unspent; every order says when it was decided and
+    # when it was sent (ms epoch); and while a position is held, once a
+    # second, what the hedge would cost right now (the opposite side's best
+    # ask and its size). Nothing branches on any of it.
+    # ===================================================================
+    _kt5, _kc5 = _k1_take(False)
+    _r5 = _offline_trade_loop([_k1_A(), _k1_B(1)], live=True, take=_kt5)
+    _ref5 = _kinds(_r5, "refused")
+    _sig5 = _kinds(_r5, "signal")
+    _ord5 = _kinds(_r5, "order") + _kinds(_r5, "hedge")   # a hedge is an order
+    _q5 = _kinds(_r5, "hedge_quote", _kA)
+    ck(_r5["raised"] is None and _ref5 and _sig5
+       and all("tau" in r and isinstance(r.get("budget_left"), float)
+               for r in _ref5 + _sig5),
+       "(5) every refused and signal record carries tau and budget_left "
+       "(%d refused, %d signals)" % (len(_ref5), len(_sig5)))
+    ck(_ord5 and all(isinstance(r.get("t_ms_decide"), int)
+                     and isinstance(r.get("t_ms_send"), int)
+                     and r["t_ms_send"] >= r["t_ms_decide"]
+                     > 1_700_000_000_000 for r in _ord5),
+       "(5) every order record -- entries and live hedges -- carries "
+       "t_ms_decide and t_ms_send, ms epoch, send not before decide (%d)"
+       % len(_ord5))
+    _q5s = [r.get("tau") for r in _q5]       # one wall-clock second each
+    ck(len(_q5) >= 10 and len(_q5s) == len(set(_q5s))
+       and all(r.get("side") == "no" and r.get("ask") == 0.06
+               and r.get("size") == 50.0 for r in _q5),
+       "(5) while A is held, ONE hedge_quote a second: the NO ask and size "
+       "the hedge would hit (%d quotes over %d distinct seconds)"
+       % (len(_q5), len(set(_q5s))))
+    _r5n = _offline_trade_loop([_k1_B(1, decided_at=99)], run_s=4.0)
+    ck(_r5n["raised"] is None and not _kinds(_r5n, "signal")
+       and not _kinds(_r5n, "hedge_quote"),
+       "(5) NULL: nothing held, no quotes -- the record is about positions, "
+       "not every market on the screen")
+
+    def _q5_fault(kind, kw):
+        if kind == "hedge_quote":
+            raise TypeError("planted: a quote record that cannot be written")
+    _r5f = _offline_trade_loop([_k1_A()], rec_fault=_q5_fault)
+    ck(_r5f["raised"] is None and abs(_hedged(_r5f, _kA) - 5.0) < 1e-9
+       and not [r for r in _kinds(_r5f, "error") if r.get("where") == "scan"],
+       "(5) a quote record that raises cannot crash the loop, delay the "
+       "hedge or count as a scan error (hedged %g)" % _hedged(_r5f, _kA))
+
     # THE SELF-TEST MUST LEAVE NO LIVE SETTING CHANGED. It runs at startup
     # with the operator's flags ALREADY applied, so any global it forgets to
     # restore silently overrides what he asked for -- on every start, with
@@ -9218,6 +9267,7 @@ def trade_loop(a, rec, book, idx, series_index):
     hedge_price_said = set()      # A47: one 'waiting on price' line per position # A15: oid -> wall-clock second of the last try (pacing)
     hedge_normal_said = set()     # A51: one 'waiting for a normal bet' line per position
     hedge_panic_said = set()      # A62: one 'every filter bypassed' line per position
+    hedge_quote_at = {}           # (5): ticker -> second of its last hedge_quote
     rebuy_extra = {}              # A68: ticker -> contracts bought BEYOND the
                                   # hedge, so the cap is against a real count
     last_belief = {}              # A68: ticker -> the newest belief measured
@@ -9274,6 +9324,20 @@ def trade_loop(a, rec, book, idx, series_index):
     # ===================================================================
     gate_seen = set()        # (close_s, ticker, gate) already recorded
 
+    def _budget_left(close_s_, tk_, tau_):
+        """(5) Contracts this close may still buy for THIS candidate -- the
+        same budget the close_budget gate reads -- or None. Never raises:
+        it only feeds records."""
+        try:
+            if not CLOSE_BUDGET:
+                return None
+            pv = fired.get(close_s_)
+            spent = float(pv.get("contracts", 0.0)) if pv else 0.0
+            return round(float(close_budget_for(pv, tk_, tau=tau_)) - spent,
+                         4)
+        except Exception:                                # noqa: BLE001
+            return None
+
     def _gate(name, close_s_, tk_, **detail):
         """Record that `name` refused this market, once per close."""
         nbg = near.setdefault(close_s_, _fresh_near())
@@ -9283,6 +9347,19 @@ def trade_loop(a, rec, book, idx, series_index):
         if key in gate_seen:
             return
         gate_seen.add(key)
+        # (5) 2026-09-22: EVERY refusal says how long was left and how much
+        # of this close's contract budget this candidate still had -- about
+        # half the gates recorded tau and none the budget, so "refused with
+        # 40 contracts of room at 12 s" and "refused with none at 29 s" read
+        # the same. Computed so it cannot raise; a gate's own values win.
+        if "tau" not in detail:
+            try:
+                detail["tau"] = int(close_s_ - now_s)
+            except Exception:                            # noqa: BLE001
+                detail["tau"] = None
+        if "budget_left" not in detail:
+            detail["budget_left"] = _budget_left(close_s_, tk_,
+                                                 detail.get("tau"))
         # SIZE travels with every record. Without it the reader cannot say how
         # many contracts the refusal was worth, and SIZE moves with the bank
         # (AMENDMENT 16) -- it was 20 at 17:51Z and 50 by 21:18Z the same day,
@@ -9805,6 +9882,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     if hedge_last_try.get(_hid) == now_s:
                         continue
                     hedge_last_try[_hid] = now_s
+                    _ht_decide_ms = int(round(time.time() * 1000.0))   # (5)
                     _tries = hedge_tries.get(_hid, 0)
                     # A76: the alarm is keyed on its own set, not on _tries == 0.
                     # Under proportional hedging a position can sit for many
@@ -10011,6 +10089,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         print(f"  HEDGE(paper) {_htk} buy {_opp.upper()} {_hn_take:g} @ "
                               f"{_hpaper:.3f} -> locked {100*hedge_locked_loss(_hcost,_hpaper):+.1f}c")
                         continue
+                    _ht_send_ms = int(round(time.time() * 1000.0))     # (5)
                     try:
                         # A70: the LIMIT, never the ask we saw -- same rule the
                         # entry path has followed since A35.
@@ -10106,7 +10185,9 @@ def trade_loop(a, rec, book, idx, series_index):
                         order_id=_hout.get("order_id"), status=_hout.get("status"),
                         edge_c=hedge_edge_c(_belief, _hcost2), live=True,
                         # K2: sent while pintake was halted (None if it was not)
-                        past_halt=_hout.get("past_halt"))
+                        past_halt=_hout.get("past_halt"),
+                        # (5) ms epoch: this try decided / sent
+                        t_ms_decide=_ht_decide_ms, t_ms_send=_ht_send_ms)
                     print(f"  HEDGE {_htk} buy {_opp.upper()} {_hfilled:g}/{_hn_take:g} @ "
                           f"{_hcost2:.3f} -> locked {100*hedge_locked_loss(_hcost,_hcost2):+.1f}c")
                 except Exception as _ek1:                  # noqa: BLE001
@@ -10116,6 +10197,35 @@ def trade_loop(a, rec, book, idx, series_index):
                     _k1_error("hedge", _hcs, _htk, _ek1)
                     continue
         # ---------------- end AMENDMENT 15 ----------------
+
+        # (5) 2026-09-22: WHAT THE HEDGE WOULD COST, EVERY SECOND WE HOLD.
+        # A hedge record prices only the second the alarm fired, so every
+        # question about a DIFFERENT trigger -- earlier, later, on price --
+        # has had to be answered off the tape, which is not our population.
+        # One compact line per held market per second: the opposite side's
+        # best ask and size, the seconds left and the model's newest belief.
+        # Below the hedge pass, so it cannot delay one; guarded, so it
+        # cannot raise; it decides nothing.
+        try:
+            _hq_held = {}
+            for _qid, (_qcs, _qwant, _qc, _qn, _qtk) in open_pos.items():
+                if not _qid.startswith("hedge-") and _qcs - now_s >= 1:
+                    _hq_held.setdefault(_qtk, (_qcs, _qwant))
+            for _qtk, (_qcs, _qwant) in _hq_held.items():
+                if hedge_quote_at.get(_qtk) == now_s:
+                    continue
+                hedge_quote_at[_qtk] = now_s
+                _qopp = "no" if _qwant == "yes" else "yes"
+                try:
+                    _qb = book.best(_qtk) or {}
+                except Exception:                        # noqa: BLE001
+                    _qb = {}
+                rec("hedge_quote", ticker=_qtk, side=_qopp,
+                    ask=_qb.get(f"{_qopp}_ask"),
+                    size=_qb.get(f"{_qopp}_ask_size"),
+                    tau=_qcs - now_s, belief=last_belief.get(_qtk))
+        except Exception:                                # noqa: BLE001
+            pass
 
         # A69: THE RISK CHECK, NOW BELOW THE HEDGE PASS. It used to sit above
         # it, and its transient-pause branch ends in `continue` -- so a paused
@@ -10966,6 +11076,10 @@ def trade_loop(a, rec, book, idx, series_index):
                     continue
                 sig["leg"] = _leg46
                 sig["early_held"] = _held46
+                # (5) the budget this candidate still had, and the moment
+                # every gate had passed -- the order record's t_ms_decide
+                sig["budget_left"] = _budget_left(close_s, tk, tau)
+                _t_decide_ms = int(round(time.time() * 1000.0))
                 rec("signal", live=live, **sig)
                 print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
                       f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
@@ -11460,6 +11574,9 @@ def trade_loop(a, rec, book, idx, series_index):
                                 sweep_headroom_c=round(100.0 * (_limit - price), 3),
                                 swept=bool(_xp is not None
                                            and float(_xp) > float(price) + 1e-9),
+                                # (5) ms epoch: every gate passed / order sent
+                                t_ms_decide=_t_decide_ms,
+                                t_ms_send=int(round(_t0 * 1000.0)),
                                 **{k: v for k, v in out.items() if k != "raw"})
                         except Exception as _ek1o:           # noqa: BLE001
                             # The ORDER did not fail; its record did. Not an
@@ -11469,6 +11586,8 @@ def trade_loop(a, rec, book, idx, series_index):
                             try:
                                 rec("order", ticker=tk, want=want, log_error=True,
                                     latency_ms=_lat_ms, tau_at_send=tau,
+                                    t_ms_decide=_t_decide_ms,
+                                    t_ms_send=int(round(_t0 * 1000.0)),
                                     status_code=out.get("status_code"),
                                     status=out.get("status"),
                                     order_id=out.get("order_id"),
