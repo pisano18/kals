@@ -257,8 +257,23 @@ LIVE = {"on": False, "max_contracts": _DEFAULT_LIVE_MAX_CONTRACTS,
         "confirm": _DEFAULT_LIVE_CONFIRM,
         "clock_tau": _DEFAULT_LIVE_CLOCK_TAU,
         "stop_on_loss": _DEFAULT_LIVE_STOP_ON_LOSS,
-        "max_drop": _DEFAULT_LIVE_MAX_DROP,
+        "max_drop": _DEFAULT_LIVE_MAX_DROP, "rolling": False,
         "races": {}, "armed": {}, "staked": 0.0, "halted": None, "sends": 0}
+
+
+def release_settled(state, ledger, legs):
+    """ROLLING STAKE (--live-rolling-stake): give back what settled legs
+    committed, in BOTH our cap (state["staked"]) and pintake's run cap
+    (ledger["committed"]), the same `price * size` each fill added -- the
+    release pinrun has done since its own leak (committed_for). Without it
+    the $20 cap counts every bet the process has EVER placed: on 09-22 the
+    penny test stopped itself at 11:59 ET after ~20 one-contract bets with
+    nothing open. With it, the cap bounds what is OPEN at any moment, and the
+    stop-on-first-loss rail still bounds the total. Returns dollars released."""
+    amt = sum(float(p["price"]) * float(p["size"]) for p in legs)
+    state["staked"] = max(0.0, float(state["staked"]) - amt)
+    ledger["committed"] = max(0.0, float(ledger.get("committed", 0.0)) - amt)
+    return amt
 
 
 def book_ask(resp, side):
@@ -826,6 +841,30 @@ def selftest():
     ck(_DEFAULT_LIVE_STOP_ON_LOSS is True,
        "and it stops dead on the first real loss by default")
 
+    # ROLLING STAKE: settled legs give back exactly what they committed, in
+    # our cap AND pintake's, and never below zero.
+    _st = {"staked": 19.36}
+    _lg = {"committed": 19.36}
+    _rel = release_settled(_st, _lg, [{"price": 0.98, "size": 1.0},
+                                      {"price": 0.97, "size": 1.0}])
+    ck(abs(_rel - 1.95) < 1e-9 and abs(_st["staked"] - 17.41) < 1e-9
+       and abs(_lg["committed"] - 17.41) < 1e-9,
+       "ROLLING: two settled 1-contract legs at 98c and 97c release $1.95 "
+       "from BOTH caps (19.36 -> %.2f / %.2f)" % (_st["staked"], _lg["committed"]))
+    _st = {"staked": 0.50}
+    _lg = {"committed": 0.20}
+    release_settled(_st, _lg, [{"price": 0.98, "size": 1.0}])
+    ck(_st["staked"] == 0.0 and _lg["committed"] == 0.0,
+       "NULL: releasing more than is held floors at zero, never negative")
+    ck(LIVE["rolling"] is False,
+       "rolling is OFF unless --live-rolling-stake is given (the approved "
+       "rail is lifetime stake)")
+    _msrc = inspect.getsource(main)
+    _i_rel = _msrc.find("release_settled(LIVE, pintake.LEDGER, real)")
+    ck(_i_rel > 0 and _msrc.find('LIVE.get("rolling")', _i_rel, _i_rel + 160) > 0,
+       "main() releases stake only when rolling is on, at the real-leg "
+       "settlement")
+
     # THE FRESH LOOK. A REST book copied verbatim off the wire 2026-09-22,
     # when /markets quoted that market at yes ask 0.20, no ask 0.90.
     wire = {"orderbook_fp": {"no_dollars": [["0.7600", "475.00"],
@@ -1082,6 +1121,10 @@ def main():
                     help="live: fire anyway once the clock reaches this, "
                          "confirmed or not (default %d)"
                          % _DEFAULT_LIVE_CLOCK_TAU)
+    ap.add_argument("--live-rolling-stake", action="store_true",
+                    help="live: --max-stake bounds what is OPEN, not every "
+                         "bet ever placed -- settled legs give their stake back "
+                         "(the first-loss halt still bounds the total)")
     ap.add_argument("--live-max-legs", type=int, default=_DEFAULT_LIVE_MAX_LEGS,
                     help="live: AGREEING legs per race -- one YES at most, "
                          "NOs on other coins, never a coin twice (default %d)"
@@ -1111,7 +1154,8 @@ def main():
                     min_price=float(a.live_min_price),
                     max_legs=max(1, int(a.live_max_legs)),
                     confirm=max(0, int(a.live_confirm)),
-                    clock_tau=max(1, int(a.live_clock_tau)))
+                    clock_tau=max(1, int(a.live_clock_tau)),
+                    rolling=bool(a.live_rolling_stake))
         if os.path.exists(LIVE_STOP_FILE):
             print("  REFUSING TO ARM -- stop file present: %s" % LIVE_STOP_FILE)
             return 1
@@ -1146,7 +1190,9 @@ def main():
               % LIVE["confirm"])
         print("  the clock must have run down to %d s -- whichever comes first,"
               % LIVE["clock_tau"])
-        print("  committed in total, and it STOPS DEAD on the first losing")
+        print("  %s, and it STOPS DEAD on the first losing"
+              % ("OPEN at any moment (rolling: settled bets give their stake "
+                 "back)" if LIVE["rolling"] else "committed in total"))
         print("  race. Halt it any time with:  type nul > %s" % LIVE_STOP_FILE)
 
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
@@ -1257,7 +1303,11 @@ def main():
                                      - p["size"] * fee(p["price"]), 4)
                 if real:
                     lost = [p for p in real if not p["win"]]
+                    released = (release_settled(LIVE, pintake.LEDGER, real)
+                                if LIVE.get("rolling") else 0.0)
                     rec("live_settled", event=evt, close_s=cs, winner=won,
+                        released=round(released, 4),
+                        staked_open=round(LIVE["staked"], 4),
                         positions=len(real),
                         won=sum(1 for p in real if p["win"]),
                         pnl=round(sum(p["pnl"] for p in real), 4),

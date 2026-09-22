@@ -1,3 +1,24 @@
+# v-race-rolling -- 2026-09-22 ~16:1xZ -- LIVE (coin race penny test): the $20 cap bounds OPEN bets, and it runs a week
+
+Not the pin bot. `pinracearm.py --live` relaunched with `--live-rolling-stake`
+and `--minutes 10080` (was 1440); everything else as v-race30 (1 contract a
+leg, inside 30 s, >= 90c, confirm-or-clock, STOPS DEAD on the first loss).
+
+**Why:** the operator asked whether the coin race is tuned enough to raise the
+bet. It is not known yet: since v-race30, 11 real races, 19 of 19 legs won,
++$0.58 -- and at ~98c one loss erases ~50 wins, so telling a winner from a
+break-even needs ~160 loss-free races inside 30 s (map report 08). The test
+could not get there: its $20 cap counted every bet it had EVER placed, so it
+stopped itself at 11:59 ET with nothing open. Settled legs now give their
+stake back to both caps (ours and pintake's MAX_RUN_STAKE), the release
+pinrun already does (committed_for). Open exposure stays <= $20; the
+first-loss halt still bounds total loss to one race.
+
+**REVERT:** relaunch without `--live-rolling-stake` (argv in HANDOFF.md,
+2026-09-22 section; add `--live-tau-max 30 --minutes 1440`).
+
+---
+
 # v-safety1 -- 2026-09-22 ~11:5xZ -- LIVE: the hedge can no longer be silenced by a crash, a halt or a frozen index
 
 **Freeze-compliant:** bug/safety fixes and logging only. No flag added; no
