@@ -1,3 +1,48 @@
+# 2026-09-22 ~19:1xZ -- MISSED DEALS: THE $50-60/DAY WAS A CEILING. IT IS $3-10/DAY, AND THE SUPPLY ITSELF HALVED
+
+Full: `results/map_2026-09-22/missed/` (A supply gap, B lost races, C gates,
+D plan, three verifier files). Read-only; nothing live changed.
+
+**THE CORRECTION.** The critic's "<=30 s volume fell 65% while tape supply was
+flat -> up to $50-60/day" was an ARITHMETIC BOUND on a flat-supply premise
+that is FALSE for the supply we can use. Markets per watched close offered at
+90-98c on the model's side while the model is >= 99.5% sure:
+**0.514 (09-13..09-17) -> 0.237 (post-fix), -54%**; we bought 0.504 -> 0.192,
+so our TAKE RATE is unchanged. Model confidence per close is unchanged
+(239-247 sure market-seconds). The decline starts **09-16, a day BEFORE the
+45 s leg**. (09 F3's "supply flat" counted all takers' 90-98c volume, not
+offers at our confidence.) Only 29 of 236 closes had any confirmed standing
+offer we did not take.
+
+**The whole missed pile, at our own realised margins:** <=30 s gap 925
+contracts (+$21.56) and 31-45 s gap 600 (+$3.80) over 236 closes -- about
+$10/day gross, and the candidates below share one pool worth **$3-5/day**.
+
+**What is actually grabbable (D_plan ranking):**
+- **R1 attempts lockout, $2-3/day.** `MAX_ATTEMPTS_PER_MARKET`=3 is counted at
+  the SIGNAL point, so three refusals inside 150 ms lock a market out of the
+  whole close (13 post-fix lockouts in 12 closes; 11 still had a standing
+  offer at >= 99.5%). Needs a flag + paper arm.
+- **R2 the universe refresh, $1.2-1.4/day + unpriced hedge lateness, no risk.**
+  11 sequential GETs (~1.0 s) run in the trading thread with no condition on
+  tau: ~4.3% of every close's last 30 s buys nothing AND cannot hedge.
+  Logging first, and the logging IS the test.
+- **R4 the SILENT refusal, $0 direct.** After every gate passes, a base-budget
+  check drops the third bet with NO record: run 20260920T023207Z ended with
+  `state.signals`=102 against 5 signal records. B5 cannot see it. Logging.
+- **R3** `staged_none` reads the TOUCH though `depth_floor` passed on the
+  ladder -- contested, arm only.
+- **R5 do NOT build speed** to win races: chasing gives back ~$164.
+- **Uptime beats every gate change here:** 364 contracts (+$28.35) were
+  offered while the bot was down or blind in the same window.
+
+**Price rule that sizes all of it (our own fills, ledger):** <=30 s at
+90-95c is 5 of 107 closes losing (4.67%, ON its break-even) but **+5.45c a
+contract realised**; 96-98c is 2.92% and +0.80c. Chase cheap on the realised
+margin, not on a loss-rate claim.
+
+---
+
 # 2026-09-22 ~18:5xZ -- COIN RACE: THE LEAD IN SIGMAS, AND THE z3 PAPER ARM
 
 **Nothing live changed; size untouched (operator: "for now don't change the
