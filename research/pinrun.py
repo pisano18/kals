@@ -397,6 +397,7 @@ _DEFAULT_DUMP_ENABLED = True   # --take-dumps clears it, PAPER ONLY
 ONE_COIN_DEPTH = False
 _DEFAULT_ONE_COIN_DEPTH = False
 ONE_COIN_MAX = 2.0             # multiple of SIZE; may not exceed MAX_PER_CLOSE
+_DEFAULT_ONE_COIN_MAX = 2.0   # the offline-loop self-test pins the flag to this
 # AMENDMENT 46 (2026-09-17): STAGED EARLY ENTRY. THE OPERATOR: "implement tau
 # 45 in a safe way. Maybe not buying full coins and topping up what's
 # available once we hit the normal purchase point? Perhaps that normal
@@ -416,6 +417,7 @@ ONE_COIN_MAX = 2.0             # multiple of SIZE; may not exceed MAX_PER_CLOSE
 EARLY_TAU_MAX = 30             # == TAU_MAX means OFF
 _DEFAULT_EARLY_TAU_MAX = 30
 EARLY_FRAC = 0.5
+_DEFAULT_EARLY_FRAC = 0.5   # the offline-loop self-test pins the flag to this
 # AMENDMENT 49 (2026-09-18): the EARLY leg also needs a price FLOOR.
 # The operator: "Can you re open 45 seconds with a cap at 90c". Out at 31-45 s
 # less of the settlement average is locked, so `fair` leans harder on the sigma
@@ -1138,8 +1140,16 @@ def index_age(idx, iid):
 
 
 def market_belief(bk, want, max_age_ms=None):
-    """K3 (2026-09-22): the MARKET's probability of our side -- the mid of our
-    side's best bid and best ask -- or None when the book cannot say.
+    """K3 (2026-09-22): the MARKET's probability of our side -- our side's
+    best ASK -- or None when the book cannot say.
+
+    THE ASK, NOT THE MID. The ask is the cheapest anyone will SELL us more of
+    our side, so an ask under the hedge line means nobody in the book values
+    our side above it. The mid could be dragged down by one thin lowball bid:
+    after our own entry sweeps the other side, a healthy book can read bid
+    15c / ask 99c, a mid of 57c -- under a 0.60 or 0.80 hedge line on a
+    position that is winning. The ask is at or above the mid, so it can only
+    remove triggers the mid would have fired, never add one.
 
     Used only by the hedge pass, only while the settlement index is stale.
     None, never a guess, for: no book, a suspect book, a book older than
@@ -1158,7 +1168,43 @@ def market_belief(bk, want, max_age_ms=None):
         return None
     if not (0.0 < bid <= ask < 1.0):
         return None
-    return (bid + ask) / 2.0
+    return ask
+
+
+# K2 follow-up (2026-09-22): the -1 failures that PROVE a hedge never left
+# the box. ordercli.send returns -1 and str(exception) for EVERY failure, and
+# K2 counts a hedge whose outcome is unknown as covered, because a resend
+# could double it. But urllib reports a failure inside the request call as
+# "<urlopen error ...>", and of those a refused connection, a failed DNS
+# lookup, an unreachable host or network, and a TLS handshake timeout all
+# happen before one byte of the order is written -- nothing can have been
+# placed. Counting THOSE as covered left a position naked for the rest of
+# the close over a one-second network blip. They are sent again next second.
+# Everything else -- a timeout or reset once connected ("[WinError 10054]
+# ... forcibly closed" is in our own logs), a 5xx, an unreadable 2xx -- stays
+# UNKNOWN and counted covered, exactly as before.
+_NEVER_SENT_MARKERS = (
+    "[WinError 10061]", "Connection refused",               # refused
+    "[WinError 10051]", "Network is unreachable",           # no network
+    "[WinError 10065]", "No route to host",                 # no host
+    "getaddrinfo failed", "Name or service not known",      # DNS
+    "Temporary failure in name resolution",
+    "nodename nor servname provided",
+    "The handshake operation timed out")                    # TLS, pre-send
+
+
+def hedge_never_sent(out):
+    """True only when a -1 result's own error text proves the order was never
+    written to the wire. Never raises; anything unclear is False (UNKNOWN)."""
+    try:
+        if out.get("status_code") != -1:
+            return False
+        raw = out.get("raw")
+        if not isinstance(raw, str) or not raw.startswith("<urlopen error"):
+            return False
+        return any(m in raw for m in _NEVER_SENT_MARKERS)
+    except Exception:                                    # noqa: BLE001
+        return False
 
 
 # AMENDMENT 47 -- THE MARKET MUST AGREE BEFORE WE PAY FOR INSURANCE.
@@ -2221,6 +2267,7 @@ SIGMA_WIN = 300
 # research/pintail.py over 9,159 settled markets and 1,019 closes.
 COND_FAST, COND_SLOW, COND_ROUGH = 30, 3600, 2.0
 SIGMA_STRESS = 1.0     # multiply sigma by this before deciding (>1 = humbler)
+_DEFAULT_SIGMA_STRESS = 1.0   # the offline-loop self-test pins the flag to this
 
 # Filled in by arm() only when --live is given. Empty in paper mode, so a
 # take() call cannot even be constructed without an explicit arming step.
@@ -3028,6 +3075,7 @@ def net_edge(f, price, want):
 # Pre-registered bar, written before the code: results/PREREG_sweep.md.
 # ===========================================================================
 SWEEP_ENABLED = True     # --no-sweep disables; the limit then IS the ask seen
+_DEFAULT_SWEEP_ENABLED = True   # the offline-loop self-test pins the flag to this
 SWEEP_DEPTH = False      # AMENDMENT 35: also size the ORDER from the ladder,
 _DEFAULT_SWEEP_DEPTH = False   # not just from the touch. --sweep-depth turns
                          # it on. OFF by default because it buys MORE per
@@ -3084,6 +3132,7 @@ _DEFAULT_TAPER = True
 TAPER_FLOOR = 0.0        # ignore rungs whose edge has fallen below this
                          # FRACTION of the touch's edge. 0 = take them, just
                          # in proportion.
+_DEFAULT_TAPER_FLOOR = 0.0   # the offline-loop self-test pins the flag to this
 
 
 def taper_take(rungs, size, edge_of, floor=None):
@@ -3224,6 +3273,30 @@ def _fill_all(body, n):
                  "average_fee_paid": "0.0020"}
 
 
+# Every flag-controlled global main() sets BEFORE the startup self-test. The
+# offline loop runs each of them at its _DEFAULT_ twin and gives the running
+# value back afterwards. It has to: the loop self-tests run at every START
+# with the operator's flags already applied, and a world run under the
+# RUNNING flags refused to start arm-nohedge (--hedge-belief 0.01, 15 FAIL),
+# every --skip-band arm that covers the 95c fixture (20 FAIL) and -- had live
+# ever been set to --hedge-belief 0.10 or lower -- the live bot itself. The
+# self-test compares this tuple against main()'s source, so a new flag that
+# is not listed here fails the plain --selftest, not a live start.
+_OFFLINE_PINNED_FLAGS = (
+    "BAND_MULTS", "BANK_BRAKE", "DEPTH_LADDER", "DUMP_ENABLED", "EARLY_FRAC",
+    "EARLY_MAX_EDGE", "EARLY_MAX_PRICE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
+    "EXTERNAL_DETECT", "EXTRA_COIN", "FLIP_MULT", "HEDGE_BELIEF",
+    "HEDGE_JUMP_SIGMA", "HEDGE_NORMAL", "HEDGE_PANIC", "HEDGE_PRICE",
+    "HEDGE_PROP", "HEDGE_PROP_FULL", "HEDGE_PROP_HALF", "HEDGE_SLIP",
+    "HONEST_CONF", "IMPROVE_MAX", "IMPROVE_SCOPE", "JUMP_ENABLED",
+    "LATE_EXTRA", "LATE_EXTRA_TAU", "LATE_JUMP_SD", "LATE_MULT", "LATE_PIN",
+    "LATE_TAU", "LOSS_BOUND_OPEN", "LOSS_CAP", "MAX_PER_MARKET",
+    "MIN_FILL_FRAC", "ONE_COIN_DEPTH", "ONE_COIN_MAX", "PICK", "PIN",
+    "PRICE_CEILING", "REBUY_HEDGED", "REBUY_MAX_MULT", "SIGMA_RULER",
+    "SIGMA_STRESS", "SIZE_MIRROR_ON", "SKIP_BANDS", "SWEEP_DEPTH",
+    "SWEEP_ENABLED", "TAPER", "TAPER_FLOOR", "WIDEN_ENABLED")
+
+
 def _offline_trade_loop(markets, live=False, take=None, reply=None,
                         freeze_at=None, rec_fault=None, run_s=12.0,
                         size=5.0, tau0=30, plant=False):
@@ -3242,8 +3315,11 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
     freeze_at  wall time after which the index stops printing.
     rec_fault  called as rec_fault(kind, kw) before each record; may raise.
 
-    Returns {"recs", "posts", "raised", "ran_s"}. A record's `t` is fake
-    wall time since the start, in seconds.
+    Every flag in _OFFLINE_PINNED_FLAGS runs at its _DEFAULT_ value, never
+    the value the process was started with, and is restored afterwards.
+
+    Returns {"recs", "posts", "raised", "ran_s", "state"}. A record's `t` is
+    fake wall time since the start, in seconds.
     """
     import argparse as _ap
     import contextlib as _cl
@@ -3354,6 +3430,8 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
     g = globals()
     saved = {k: g[k] for k in ("time", "get", "fair", "SIZE", "DAYLOSS_FILE",
                                "read_bank", "publish_size")}
+    pinned = {k: g[k] for k in _OFFLINE_PINNED_FLAGS}
+    loop_state = None
     saved_creds = dict(CREDS)
     saved_pt = (pintake.time, pintake.take, pintake._get,
                 pintake.ordercli.send, pintake.ordercli.cancel)
@@ -3363,6 +3441,8 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
     tmp = _tf.mkdtemp(prefix="pinloop-")
     raised = None
     try:
+        for k in _OFFLINE_PINNED_FLAGS:
+            g[k] = g["_DEFAULT_" + k]
         g["time"] = clock
         g["get"] = _get
         g["fair"] = _fair
@@ -3384,12 +3464,15 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
                            size=float(size), hedge_plant=bool(plant))
         with _cl.redirect_stdout(_io.StringIO()):
             try:
-                trade_loop(a_, _rec, _Book(), _Idx(),
-                           {m["series"]: m["iid"] for m in markets})
+                loop_state = trade_loop(a_, _rec, _Book(), _Idx(),
+                                        {m["series"]: m["iid"]
+                                         for m in markets})[0]
             except Exception as e:              # noqa: BLE001
                 raised = "%s: %s" % (type(e).__name__, e)
     finally:
         for k, v in saved.items():
+            g[k] = v
+        for k, v in pinned.items():
             g[k] = v
         CREDS.clear()
         CREDS.update(saved_creds)
@@ -3402,7 +3485,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         pintake.LEDGER.update(saved_ledger)
         _sh.rmtree(tmp, ignore_errors=True)
     return {"recs": recs, "posts": posts, "raised": raised,
-            "ran_s": round(clock.t - t0, 3)}
+            "ran_s": round(clock.t - t0, 3), "state": loop_state}
 
 
 # ===========================================================================
@@ -8056,7 +8139,55 @@ def _selftest_body():
         return sum(float(r.get("n") or 0.0) for r in _kinds(res, "hedge", tk))
 
     _kA = _k1_A()["tk"]
+
+    # THE OFFLINE WORLDS RUN UNDER THE SHIPPED FLAGS, NEVER THE RUNNING ONES.
+    # This self-test runs at every START with the operator's flags applied;
+    # worlds that read them refused to start arm-nohedge (--hedge-belief
+    # 0.01, 15 FAIL) and every --skip-band arm over 95c (20 FAIL), and would
+    # have refused live at --hedge-belief 0.10. First: every flag main()
+    # applies before the self-test is pinned, and each has a _DEFAULT_ twin.
+    _re_k1 = __import__("re")
+    _src_k1 = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _mn_k1 = _src_k1[_src_k1.rindex(chr(10) + "def main("):]
+    _mn_k1 = _mn_k1[:_mn_k1.index(chr(10) + "    if a.selftest:")]
+    _set_k1 = set(_re_k1.findall(r'globals\(\)\["([A-Z][A-Z_0-9]*)"\]\s*=',
+                                 _mn_k1))
+    ck(len(_set_k1) >= 40 and _set_k1 <= set(_OFFLINE_PINNED_FLAGS)
+       and all(("_DEFAULT_" + _n) in globals()
+               for _n in _OFFLINE_PINNED_FLAGS),
+       "K1 harness: all %d flags main() applies before the self-test are "
+       "pinned to their _DEFAULT_ twins inside the offline loop (unpinned: "
+       "%s; no twin: %s)"
+       % (len(_set_k1), sorted(_set_k1 - set(_OFFLINE_PINNED_FLAGS)),
+          [_n for _n in _OFFLINE_PINNED_FLAGS
+           if ("_DEFAULT_" + _n) not in globals()]))
+    _pin_before = {_n: globals()[_n] for _n in _OFFLINE_PINNED_FLAGS}
+
+    def _k1_trace(res):
+        return [(r["kind"], r.get("ticker"), r["t"], r.get("n"))
+                for r in res["recs"]]
+
+    # Then the proof: one world, run while the PROCESS holds flags under
+    # which it could neither buy the 95c fixture nor hedge at 0.10.
+    _hostile = {"HEDGE_BELIEF": 0.01, "SKIP_BANDS": ((0.90, 0.99),),
+                "PRICE_CEILING": 0.91, "PIN": 0.9999, "HEDGE_PROP": False,
+                "HEDGE_PANIC": None, "EARLY_MIN_PRICE": 0.99,
+                "SIGMA_STRESS": 3.0}
+    _hostile_was = {_n: globals()[_n] for _n in _hostile}
+    try:
+        globals().update(_hostile)
+        _ph = _offline_trade_loop([_k1_A(), _k1_B(1)])
+        _ph_back = all(globals()[_n] == _v for _n, _v in _hostile.items())
+    finally:
+        globals().update(_hostile_was)
     _p0 = _offline_trade_loop([_k1_A(), _k1_B(1)])
+    ck(_ph["raised"] is None and _ph_back
+       and _k1_trace(_ph) == _k1_trace(_p0),
+       "K1 harness: the same world run while the process holds hostile "
+       "flags (--hedge-belief 0.01, --skip-band 0.90 0.99, --price-ceiling "
+       "0.91, --pin 0.9999 ...) produces the IDENTICAL record trail, and "
+       "the hostile values are handed back (%d vs %d records, hedged %g)"
+       % (len(_ph["recs"]), len(_p0["recs"]), _hedged(_ph, _kA)))
     ck(_p0["raised"] is None and abs(_hedged(_p0, _kA) - 5.0) < 1e-9
        and _kinds(_p0, "signal", "KXB115M-K1"),
        "K1 CONTROL, paper: the real loop buys A, buys B at +2 s, and hedges "
@@ -8132,10 +8263,30 @@ def _selftest_body():
        "K1: after FIVE scan errors the run stops NEW entries -- a clean "
        "market that decides at +6 s is not bought (raised %s)"
        % _s5["raised"])
-    ck(abs(_hedged(_s5, _kA) - 5.0) < 1e-9 and _s5["ran_s"] >= 11.9,
-       "K1: ...but it never exits and never skips the hedge: A collapses at "
-       "+8 s and is hedged in full (hedged %g, ran %.2f s)"
-       % (_hedged(_s5, _kA), _s5["ran_s"]))
+    ck(abs(_hedged(_s5, _kA) - 5.0) < 1e-9 and _s5["ran_s"] >= 11.9
+       and _kinds(_s5, "halt_pending") and not _kinds(_s5, "halt"),
+       "K1: ...but while A is held it does not exit and never skips the "
+       "hedge: it DRAINS, and A, collapsing at +8 s, is hedged in full "
+       "(hedged %g, ran %.2f s)" % (_hedged(_s5, _kA), _s5["ran_s"]))
+    # ...and with NOTHING held the stop ends the run, so watch_bot restarts
+    # it -- the old loop's crash did the same. Before, a stopped run stayed
+    # alive and idle for the rest of --minutes, writing records, so the
+    # watchdog's silence check never fired.
+    _sx = _offline_trade_loop([_k1_B(i, raise_from=2) for i in range(1, 6)]
+                              + [_k1_B(9, decided_at=6)])
+    _sxh = _kinds(_sx, "halt")
+    _sxw = str(_sxh[0].get("why")) if _sxh else ""
+    ck(_sx["raised"] is None and len(_sxh) == 1
+       and _sxw.startswith("entries stopped") and _sx["ran_s"] < 6.0
+       and not _kinds(_sx, "signal", "KXB915M-K1"),
+       "K1: stopped entries with NOTHING held end the run (halt at %.2f s: "
+       "%r) instead of idling for up to --minutes" % (_sx["ran_s"], _sxw))
+    ck(_sxh and not halt_is_transient(_sxw)
+       and not _re_k1.search("loss COUNT brake|loss abort|DRAWDOWN brake",
+                             _sxw),
+       "K1: ...and its reason is neither a transient pause nor one of "
+       "watch_bot's money brakes (15 min cooldown), so the watchdog restarts "
+       "the bot at once")
     _s4 = _offline_trade_loop(
         [_k1_A(collapse_at=8)] + [_k1_B(i, raise_from=2) for i in range(1, 5)]
         + [_k1_B(9, decided_at=6)])
@@ -8143,6 +8294,13 @@ def _selftest_body():
        and _kinds(_s4, "signal", "KXB915M-K1"),
        "K1 NULL: FOUR scan errors do not stop entries -- the same clean "
        "market IS bought, so the stop above is the fifth error's doing")
+
+    def _hedge_t(res):
+        return [r["t"] for r in _kinds(res, "hedge", _kA)][:1]
+    ck(_hedge_t(_s5) and _hedge_t(_s5) == _hedge_t(_s4),
+       "K1: ...and DRAINING does not slow the hedge: A's collapse at +8 s is "
+       "hedged at the same instant with entries stopped (%s) as with them "
+       "running (%s)" % (_hedge_t(_s5), _hedge_t(_s4)))
     # ...and the --hedge-plant fill (one contract of the side about to lose,
     # live only, off in the live flags) is registered before its record too
     _kt6, _kc6 = _k1_take(False)
@@ -8159,6 +8317,86 @@ def _selftest_body():
        "K1: the planted one-contract fill is hedged even when its record "
        "raises (%d plant buys, hedged %g)" % (len(_pl_buys),
                                                _hedged(_pl, _kA)))
+
+    # THE HEDGE BODY'S OWN GUARD. A hedge record that raises AFTER the hedge
+    # filled: the loop must survive it (the guard) and must not buy the same
+    # hedge again next second (the fill is registered BEFORE the record).
+    # Moved back below the record, this bought 9 hedges -- 45 contracts
+    # against a 5-contract position, a naked bet the other way.
+    _kt7, _kc7 = _k1_take(False)
+
+    def _hedge_rec_fault(kind, kw):
+        if kind == "hedge":
+            raise TypeError("planted: the hedge record cannot be written")
+    _hr = _offline_trade_loop([_k1_A()], live=True, take=_kt7,
+                              rec_fault=_hedge_rec_fault)
+    _hr_h = [c for c in _kc7 if c[0] == _kA and c[1] == "no"]
+    _hr_e = [r for r in _kinds(_hr, "error") if r.get("where") == "hedge"]
+    ck(_hr["raised"] is None and len(_hr_h) == 1
+       and abs(_hr_h[0][2] - 5.0) < 1e-9 and len(_hr_e) == 1,
+       "K1: a hedge record that raises after the fill neither ends the loop "
+       "nor buys the hedge twice (raised %s, %d hedge orders, %g contracts, "
+       "%d error records)" % (_hr["raised"], len(_hr_h),
+                              sum(c[2] for c in _hr_h), len(_hr_e)))
+
+    # A hedge step that THROWS must not leave the bot BUYING. The old loop
+    # died there, which stopped its buying too; the first K1 kept it alive
+    # and buying, so a broken hedge helper bought market after market it
+    # could not insure. Planted: the sizing helper raises every second.
+    def _hw_raise(*a_, **k_):
+        raise TypeError("planted: the hedge sizing helper is broken")
+    _hfc = _offline_trade_loop([_k1_A(collapse_at=1),
+                                _k1_B(1, decided_at=3)])
+    _hw_real = globals()["hedge_want"]
+    globals()["hedge_want"] = _hw_raise
+    try:
+        _hf = _offline_trade_loop([_k1_A(collapse_at=1),
+                                   _k1_B(1, decided_at=3)])
+    finally:
+        globals()["hedge_want"] = _hw_real
+    ck(_hfc["raised"] is None and _kinds(_hfc, "signal", "KXB115M-K1")
+       and abs(_hedged(_hfc, _kA) - 5.0) < 1e-9,
+       "K1 CONTROL: A collapses at +1 s and is hedged; B decides at +3 s and "
+       "IS bought")
+    _hfe = [r for r in _kinds(_hf, "error") if r.get("where") == "hedge"]
+    _hfs = _kinds(_hf, "entries_stopped")
+    ck(_hf["raised"] is None and len(_hfe) == 1
+       and _hfe[0].get("ticker") == _kA,
+       "K1: a hedge step that throws every second does not end the loop and "
+       "is recorded once (raised %s, %d records)"
+       % (_hf["raised"], len(_hfe)))
+    ck(_hfs and "hedge step error" in str(_hfs[0].get("why"))
+       and not _kinds(_hf, "signal", "KXB115M-K1"),
+       "K1: ...and it STOPS NEW ENTRIES at once: B, which the control buys "
+       "at +3 s, is not bought")
+    ck(_hf["ran_s"] >= 11.9 and _kinds(_hf, "halt_pending")
+       and not _kinds(_hf, "halt"),
+       "K1: ...and, still holding A, the run drains instead of exiting -- "
+       "the hedge pass keeps trying (ran %.2f s)" % _hf["ran_s"])
+
+    # THE RISK CHECK'S GUARD. risk_abort raising on every pass after the
+    # first (A is bought on the first): no new bets, but the loop and the
+    # hedge pass above it go on.
+    _ra_real = globals()["risk_abort"]
+    _ra_n = {"calls": 0}
+
+    def _ra_raise(state_, a_):
+        _ra_n["calls"] += 1
+        if _ra_n["calls"] > 1:
+            raise TypeError("planted: the risk check is broken")
+        return _ra_real(state_, a_)
+    globals()["risk_abort"] = _ra_raise
+    try:
+        _rk = _offline_trade_loop([_k1_A()])
+    finally:
+        globals()["risk_abort"] = _ra_real
+    _rke = [r for r in _kinds(_rk, "error") if r.get("where") == "risk_abort"]
+    ck(_rk["raised"] is None and abs(_hedged(_rk, _kA) - 5.0) < 1e-9
+       and len(_rke) == 1 and _rk["ran_s"] >= 11.9,
+       "K1: a risk check that RAISES ends nothing: A is still hedged in full "
+       "when it collapses, the fault is recorded once, and the loop runs to "
+       "its end (raised %s, hedged %g, %d records, ran %.2f s)"
+       % (_rk["raised"], _hedged(_rk, _kA), len(_rke), _rk["ran_s"]))
 
     # ===================================================================
     # K2 (2026-09-22): A PINTAKE HALT NEVER REFUSES A HEDGE -- through the
@@ -8222,6 +8460,56 @@ def _selftest_body():
        "K2: ...and the OTHER held position is still hedged when it collapses "
        "two seconds later, halt or no halt (hedged %g)" % _hedged(_k2u, _kD))
 
+    # ...EXCEPT a -1 whose own error proves the order never left the box: a
+    # refused connection cannot have placed anything. Counting it covered
+    # left the position naked for the rest of the close over a one-second
+    # blip; it is sent again next second. A reset once connected, which our
+    # own logs show, stays UNKNOWN and is not resent.
+    def _k2n_reply(msg):
+        _st = {"n": 0}
+
+        def _r(body, n):
+            if (body.get("ticker") == _kA and body.get("side") == "ask"
+                    and not _st["n"]):
+                _st["n"] += 1
+                return -1, msg
+            return _fill_all(body, n)
+        return _r
+    _k2n = _offline_trade_loop([_k1_A()], live=True, reply=_k2n_reply(
+        "<urlopen error [WinError 10061] No connection could be made because "
+        "the target machine actively refused it>"))
+    ck(_k2n["raised"] is None and len(_k2_posts(_k2n, _kA, "ask")) == 2
+       and abs(_hedged(_k2n, _kA) - 5.0) < 1e-9
+       and _kinds(_k2n, "hedge_not_sent", _kA)
+       and not _kinds(_k2n, "hedge_unknown", _kA),
+       "K2: a hedge REFUSED at connect (it never left the box) is sent again "
+       "next second and fills in full (%d hedge POSTs, hedged %g)"
+       % (len(_k2_posts(_k2n, _kA, "ask")), _hedged(_k2n, _kA)))
+    _k2r = _offline_trade_loop([_k1_A()], live=True, reply=_k2n_reply(
+        "<urlopen error [WinError 10054] An existing connection was forcibly "
+        "closed by the remote host>"))
+    ck(_k2r["raised"] is None and len(_k2_posts(_k2r, _kA, "ask")) == 1
+       and _kinds(_k2r, "hedge_unknown", _kA)
+       and not _kinds(_k2r, "hedge_not_sent", _kA),
+       "K2 NULL: a connection RESET (the order may have gone out) is still "
+       "counted covered and NOT resent (%d hedge POSTs)"
+       % len(_k2_posts(_k2r, _kA, "ask")))
+    ck(hedge_never_sent({"status_code": -1, "raw":
+                         "<urlopen error [Errno 11001] getaddrinfo failed>"})
+       and hedge_never_sent({"status_code": -1, "raw":
+                             "<urlopen error _ssl.c:1064: The handshake "
+                             "operation timed out>"})
+       and not hedge_never_sent({"status_code": -1, "raw": "timed out"})
+       and not hedge_never_sent({"status_code": -1,
+                                 "raw": "<urlopen error timed out>"})
+       and not hedge_never_sent({"status_code": 503, "raw":
+                                 "<urlopen error [WinError 10061] x>"})
+       and not hedge_never_sent({"status_code": -1, "raw": None})
+       and not hedge_never_sent(None),
+       "K2: hedge_never_sent is True only for a -1 whose own error proves no "
+       "byte was written (refused, DNS, TLS handshake); a timeout, a 5xx, no "
+       "text or no result at all is UNKNOWN")
+
     # ===================================================================
     # K3 (2026-09-22): A FROZEN INDEX MUST NOT HIDE A COLLAPSE.
     #
@@ -8263,7 +8551,7 @@ def _selftest_body():
 
     # Now the loop. A is bought on a fresh index at 30 s to go; the index
     # stops printing at +2 s, so the model stays 99.9% sure however the
-    # world moves. The MARKET is the other witness: our side's own mid.
+    # world moves. The MARKET is the other witness: our side's own ask.
     def _k3_A(book_collapse_at=None, model_collapse_at=None):
         m = _k1_A(collapse_at=model_collapse_at)
         m["book"] = (lambda t: _ob(0.06, 0.90)
@@ -8278,7 +8566,7 @@ def _selftest_body():
     _k3a = _offline_trade_loop([_k3_A(book_collapse_at=4,
                                       model_collapse_at=4)], freeze_at=2)
     ck(_k3a["raised"] is None and abs(_hedged(_k3a, _kA) - 5.0) < 1e-9,
-       "K3: frozen index + the MARKET collapses (our side's mid 8c) -> the "
+       "K3: frozen index + the MARKET collapses (our side's ask 10c) -> the "
        "position is hedged in full anyway (hedged %g)" % _hedged(_k3a, _kA))
     ck(len(_k3_blind(_k3a)) == 1,
        "K3: ...and the stale index is on the record ONCE per position, as "
@@ -8286,15 +8574,40 @@ def _selftest_body():
     ck([r for r in _kinds(_k3a, "hedge_alarm", _kA)
         if r.get("trigger") == "market_index_stale"
         and r.get("model_belief", 0) > 0.99
-        and r.get("market_belief", 1) < HEDGE_BELIEF],
+        and r.get("market_belief", 1) < _DEFAULT_HEDGE_BELIEF],
        "K3: ...and the alarm says WHY: trigger market_index_stale, with the "
-       "frozen model's 99.9% beside the market's 8c")
+       "frozen model's 99.9% beside the market's 10c")
     _k3b = _offline_trade_loop([_k3_A()], freeze_at=2)
     ck(_k3b["raised"] is None and not _kinds(_k3b, "hedge")
        and len(_k3_blind(_k3b)) == 1
        and (_k3_blind(_k3b)[0].get("age_s") or 0) > MAX_INDEX_AGE_S,
-       "K3 NULL: frozen index + a STEADY market (our side's mid 94.5c) -> "
+       "K3 NULL: frozen index + a STEADY market (our side's ask 95c) -> "
        "no hedge, but the blindness is recorded with its age")
+    # last_belief feeds the A68 rebuy, an ENTRY: it must hold the MODEL's
+    # number even while the market's lower one is in use. Read off the
+    # hedge_quote records, which print it: the model says 99.9%, the market
+    # 95c, and every quote must say 99.9%.
+    _k3bq = [r for r in _kinds(_k3b, "hedge_quote", _kA) if r["t"] >= 5.0]
+    ck(_k3bq and all((r.get("belief") or 0) > 0.99 for r in _k3bq),
+       "K3: ...and while the index is stale the belief the rebuy reads is "
+       "still the MODEL's, never the market's (%d quotes, lowest %s)"
+       % (len(_k3bq), min([r.get("belief") for r in _k3bq] or [None],
+                          key=lambda v: 9 if v is None else v)))
+    # A healthy but WIDE book must not fire it. After our own entry sweeps
+    # the other side, bid 15c / ask 99c is an ordinary book on a winner; its
+    # MID is 57c, under the shipped 0.80 line, and hedged a winning position
+    # in full when the market belief was the mid. The ask says 99c.
+    _k3w = dict(_k1_A(collapse_at=None))
+    _k3w["book"] = (lambda t: _ob(0.15, 0.01) if t >= 3 else _ob(0.94, 0.05))
+    _k3wr = _offline_trade_loop([_k3w], freeze_at=2)
+    _k3wb = _k3_blind(_k3wr)
+    ck(_k3wr["raised"] is None and _kinds(_k3wr, "signal", _kA)
+       and not _kinds(_k3wr, "hedge") and not _kinds(_k3wr, "hedge_alarm")
+       and _k3wb and all(r.get("market_belief") in (None, 0.95, 0.99)
+                         for r in _k3wb),
+       "K3 NULL: frozen index + a WIDE healthy book (bid 15c / ask 99c on our "
+       "side) -> no alarm and no hedge: the market belief is our ASK, which "
+       "a thin lowball bid cannot drag under the line")
     _k3c = _offline_trade_loop([_k3_A(book_collapse_at=4)])
     ck(_k3c["raised"] is None and not _kinds(_k3c, "hedge")
        and not _k3_blind(_k3c),
@@ -8310,10 +8623,12 @@ def _selftest_body():
        "K3 CONTROL: FRESH index, the model collapses -> hedged on the "
        "ordinary belief trigger, and the alarm record is today's")
     # market_belief(): None, never a guess
-    ck(abs(market_belief(_ob(0.94, 0.05), "yes") - 0.945) < 1e-9
-       and abs(market_belief(_ob(0.94, 0.05), "no") - 0.055) < 1e-9,
-       "K3: our side's market belief is the mid of OUR side's bid and ask "
-       "(YES 94c/95c -> 0.945; the NO holder's 5c/6c -> 0.055)")
+    ck(abs(market_belief(_ob(0.94, 0.05), "yes") - 0.95) < 1e-9
+       and abs(market_belief(_ob(0.94, 0.05), "no") - 0.06) < 1e-9
+       and abs(market_belief(_ob(0.15, 0.01), "yes") - 0.99) < 1e-9,
+       "K3: our side's market belief is OUR side's best ask (YES 94c/95c -> "
+       "0.95; the NO holder's 5c/6c -> 0.06; a wide 15c/99c -> 0.99, not "
+       "the 0.57 mid)")
     ck(market_belief(_ob(0.94, 0.05, age_ms=MAX_BOOK_AGE_MS + 1), "yes")
        is None
        and market_belief(dict(_ob(0.94, 0.05), suspect=True), "yes") is None
@@ -8412,6 +8727,12 @@ def _selftest_body():
        and not [r for r in _kinds(_r5f, "error") if r.get("where") == "scan"],
        "(5) a quote record that raises cannot crash the loop, delay the "
        "hedge or count as a scan error (hedged %g)" % _hedged(_r5f, _kA))
+    _pin_moved = [_n for _n in _OFFLINE_PINNED_FLAGS
+                  if globals()[_n] != _pin_before[_n]]
+    ck(not _pin_moved,
+       "K1 harness: after every offline world, all %d pinned flags hold the "
+       "value the process started with again (moved: %s)"
+       % (len(_OFFLINE_PINNED_FLAGS), _pin_moved))
 
     # THE SELF-TEST MUST LEAVE NO LIVE SETTING CHANGED. It runs at startup
     # with the operator's flags ALREADY applied, so any global it forgets to
@@ -8644,8 +8965,9 @@ DRAIN_MAX_S = 600.0      # ...but never hang forever: watch_bot.ps1 only
                          # stuck draining is a bot nothing is watching.
 
 # K1 (2026-09-22): distinct entry-scan faults -- (close, market, error type)
-# -- after which a run stops NEW entries. It never exits on them and never
-# skips the hedge pass; see _k1_error in trade_loop.
+# -- after which a run stops NEW entries. A hedge-step fault stops them at
+# once. Either way the hedge pass keeps running, and the run drains and
+# exits when flat so watch_bot restarts it; see _k1_error in trade_loop.
 SCAN_ERRORS_STOP_ENTRIES = 5
 
 
@@ -9017,6 +9339,7 @@ def apply_size(new_size, a, why, rec=None):
 SIZE_MIRROR = os.path.join(RESULTS, "pinrun-live-size.json")
 SIZE_MIRROR_MAX_AGE_S = 3600.0   # a stale file must not pin an arm forever
 SIZE_MIRROR_ON = True            # --no-size-mirror for an arm testing a size
+_DEFAULT_SIZE_MIRROR_ON = True   # the offline-loop self-test pins the flag to this
 
 
 def publish_size(size, bank=None, path=None):
@@ -9614,12 +9937,22 @@ def trade_loop(a, rec, book, idx, series_index):
     # line it came from, and the loop moves on to the next market or
     # position. It never exits and never skips the hedge pass.
     #
-    # AFTER SCAN_ERRORS_STOP_ENTRIES DISTINCT scan errors the run stops NEW
-    # entries for the rest of its life: a scan that keeps throwing is code
-    # that is broken in a way nobody has looked at, and it should not be
-    # buying. Hedging, reconciling and the drain are untouched by that stop.
-    # WHAT IT BLOCKS: new bets only, after five distinct faults. It cannot
-    # block a hedge -- the hedge pass runs above the scan and never reads it.
+    # NEW ENTRIES STOP after SCAN_ERRORS_STOP_ENTRIES DISTINCT scan errors,
+    # or after the FIRST error in the hedge step: a scan that keeps throwing
+    # is code broken in a way nobody has looked at, and a bot whose hedge
+    # step throws must not open positions it may not be able to insure. The
+    # old loop died at that point, which stopped its buying too.
+    #
+    # THE STOP IS NOT FOR EVER. It is handed to the risk check below as a
+    # terminal halt, so it takes A74's drain: no new bets, the hedge pass
+    # keeps running on everything held, and the process EXITS once flat.
+    # watch_bot.ps1 then restarts it at once ("DOWN after halt"), exactly as
+    # it restarted the old loop after a crash -- but only after every held
+    # position has been hedged or settled. Before this, the stop lasted the
+    # rest of the run (up to --minutes 4320) while the process stayed alive
+    # and wrote records, so watch_bot's silence check never fired.
+    # WHAT IT BLOCKS: new bets only. It cannot block a hedge -- the hedge
+    # pass runs above the scan and the drain, and never reads it.
     # ===================================================================
     _k1_seen = set()
 
@@ -9650,21 +9983,31 @@ def trade_loop(a, rec, book, idx, series_index):
             pass
         return True
 
+    def _k1_stop_entries(why, close_s_, tk_):
+        """Stop NEW entries (once). The risk check turns it into a drain,
+        and the run exits when flat. Never raises."""
+        if state.get("entries_stopped"):
+            return
+        state["entries_stopped"] = why
+        try:
+            rec("entries_stopped", why=why,
+                errors=state.get("scan_errors", 0), ticker=tk_,
+                close_s=close_s_, hedging="still armed",
+                then="exit when flat; watch_bot restarts")
+        except Exception:                                # noqa: BLE001
+            pass
+        try:
+            print(f"  *** NEW ENTRIES STOPPED: {why}. Hedging continues; "
+                  f"the run exits when flat.")
+        except Exception:                                # noqa: BLE001
+            pass
+
     def _k1_scan_error(close_s_, tk_):
         """Count a NEW scan fault; at the limit, stop new entries (once)."""
         state["scan_errors"] = state.get("scan_errors", 0) + 1
-        if (state["scan_errors"] >= SCAN_ERRORS_STOP_ENTRIES
-                and not state.get("entries_stopped")):
-            state["entries_stopped"] = (
-                f"{state['scan_errors']} distinct entry-scan errors")
-            try:
-                rec("entries_stopped", why=state["entries_stopped"],
-                    errors=state["scan_errors"], ticker=tk_,
-                    close_s=close_s_, hedging="still armed")
-            except Exception:                            # noqa: BLE001
-                pass
-            print(f"  *** NEW ENTRIES STOPPED for the rest of this run: "
-                  f"{state['entries_stopped']}. Hedging continues.")
+        if state["scan_errors"] >= SCAN_ERRORS_STOP_ENTRIES:
+            _k1_stop_entries(f"{state['scan_errors']} distinct entry-scan "
+                             f"errors", close_s_, tk_)
 
     while time.time() < end:
         # AMENDMENT 71: EVERYTHING ABOVE THE HEDGE PASS IS NOW GUARDED.
@@ -9820,8 +10163,8 @@ def trade_loop(a, rec, book, idx, series_index):
                     # frozen index behind live ones stays frozen to the close.
                     #
                     # So while the held market's index is stale, the market
-                    # itself is the second witness: our side's own mid (best
-                    # bid and ask for our side, from the book already held).
+                    # itself is the second witness: our side's own best ASK
+                    # (market_belief: the cheapest anyone will sell it to us).
                     # The belief used below is the LOWER of the model's and
                     # the market's, so the market can only ADD a trigger --
                     # never remove one -- and everything after this point,
@@ -10172,6 +10515,16 @@ def trade_loop(a, rec, book, idx, series_index):
                                  and (not pintake._readable(_hout)
                                       or (_hunr is not None
                                           and not _hunr.get("reconciled"))))
+                    if _hunknown and hedge_never_sent(_hout):
+                        # ...unless its own error proves it never left the
+                        # box: then nothing is covered and next second's try
+                        # sends it again (see hedge_never_sent).
+                        _hunknown = False
+                        rec("hedge_not_sent", ticker=_htk, side=_opp,
+                            asked=_hn_take, status_code=_hsc,
+                            err=str(_hout.get("raw"))[:200],
+                            counted_covered=False,
+                            still_unhedged=float(_unhedged), tau=_htau)
                     if _hunknown:
                         _leftk2 = float(_unhedged) - max(_hfilled, float(_hn_take))
                         if HEDGE_PILOT_CONTRACTS or _leftk2 <= 1e-9:
@@ -10211,7 +10564,16 @@ def trade_loop(a, rec, book, idx, series_index):
                     # K1: a bug in ONE position's hedge step must not end
                     # the run -- every other open position still needs
                     # this pass, and so does this one next second.
+                    # But nothing NEW is bought while the hedge step is
+                    # broken: the first such error stops entries, and the
+                    # run exits once flat (see _k1_stop_entries).
                     _k1_error("hedge", _hcs, _htk, _ek1)
+                    try:
+                        _k1_stop_entries(
+                            f"hedge step error on {_htk}: "
+                            f"{type(_ek1).__name__}", _hcs, _htk)
+                    except Exception:                    # noqa: BLE001
+                        pass
                     continue
         # ---------------- end AMENDMENT 15 ----------------
 
@@ -10251,13 +10613,21 @@ def trade_loop(a, rec, book, idx, series_index):
         # A pause stops NEW bets; it has never been able to stop a hedge from
         # reducing risk, and now it cannot.
         # K1: a risk check that RAISES is not a pass. No new bets this
-        # iteration, and the loop -- with the hedge pass above -- goes on.
+        # iteration, and the loop -- with the hedge pass above -- goes on,
+        # at the ordinary pass rate so no hedge try waits on it.
         try:
             stop = risk_abort(state, a)
         except Exception as _ek1:                        # noqa: BLE001
             _k1_error("risk_abort", None, None, _ek1)
-            time.sleep(0.5)
+            time.sleep(0.05)
             continue
+        # K1: stopped entries are a TERMINAL halt, so they take the drain
+        # below -- hedge still armed, exit when flat -- instead of leaving a
+        # live process that buys nothing for the rest of --minutes. The
+        # reason starts "entries stopped", which is neither transient nor a
+        # money brake, so watch_bot restarts the bot as soon as it exits.
+        if not stop and state.get("entries_stopped"):
+            stop = f"entries stopped: {state['entries_stopped']}"
         if stop and halt_is_transient(stop):
             # AMENDMENT 14: wait it out. reconcile() runs at the top of every
             # iteration, so the open positions this is waiting on are released
@@ -10315,7 +10685,12 @@ def trade_loop(a, rec, book, idx, series_index):
                           f"still open -- no new bets, hedge still armed: "
                           f"{stop}")
                 if now - float(state.get("draining_since", now)) < DRAIN_MAX_S:
-                    time.sleep(0.5)
+                    # The ordinary pass rate, not 0.5 s: a drain ends in an
+                    # exit, never in a new bet, so the only thing a slower
+                    # loop here could change is how late a hedge fires --
+                    # up to 0.45 s late at 0.5. K1 now drains on stopped
+                    # entries too, where a held position is the norm.
+                    time.sleep(0.05)
                     continue          # hedge pass is ABOVE; it keeps running
                 rec("drain_timeout", why=stop, open_contracts=_openn74,
                     waited_s=round(now - float(state["draining_since"]), 1))
@@ -10429,7 +10804,8 @@ def trade_loop(a, rec, book, idx, series_index):
                 return -got[1]
             _mk.sort(key=_rank)
         if state.get("entries_stopped"):
-            _mk = []        # K1: no NEW entries; the hedge pass above still ran
+            _mk = []        # K1: no NEW entries (belt and braces: the drain
+                            # above already skips the scan while it holds)
         for tk, (iid, close_s, strike, digits, exi) in _mk:
             try:
                 tau = close_s - now_s
