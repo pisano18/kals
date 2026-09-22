@@ -346,8 +346,13 @@ def expected_fee(price, count=1):
 
 # ---------- rails -------------------------------------------------------------
 def check_take(body, market_close_epoch, now_epoch, base=None, ledger=None,
-               max_tau=None):
-    """Every reason NOT to send. Empty list == ok. Runs before signing."""
+               max_tau=None, hedge=False):
+    """Every reason NOT to send. Empty list == ok. Runs before signing.
+
+    `hedge=True` (K2, 2026-09-22) skips exactly ONE rail: the ledger halt.
+    Every other rail -- count, HARD_MAX, price, IOC, post_only, side, tau,
+    the stake cap, the loss abort, the environment -- applies to a hedge as
+    to anything else. See the note at the halt check below."""
     bad = []
     L = LEDGER if ledger is None else ledger
 
@@ -434,7 +439,22 @@ def check_take(body, market_close_epoch, now_epoch, base=None, ledger=None,
     if L["realised"] <= LOSS_ABORT:
         bad.append(f"LOSS ABORT: realised P&L ${L['realised']:+.2f} <= "
                    f"${LOSS_ABORT:.2f}; no further takes this process")
-    if L.get("halt"):
+    # K2 (2026-09-22): A HALT NEVER REFUSES A HEDGE.
+    #
+    # The halt is set by an order whose outcome we could not read (-1, 3xx,
+    # 5xx, an unreadable 2xx, an IOC that rested) and nothing in pinrun ever
+    # clears it. Until this, it refused EVERYTHING -- including the order that
+    # buys the other side of a position we already hold. So one timed-out
+    # POST during a 4-hour REST outage (09-21/22: 388 failed calls) would
+    # have stranded every open position for the rest of its close: the drain
+    # keeps the hedge pass running, and every hedge it sent died here.
+    #
+    # A hedge reduces exposure on a position already held; the halt exists
+    # to stop NEW exposure until someone reconciles. So a caller that says
+    # hedge=True skips this one rail and nothing else, and an entry is
+    # refused exactly as before. Callers that do not pass it (pinracearm,
+    # cmdlive, pinracetest) are unchanged.
+    if L.get("halt") and not hedge:
         bad.append(f"ledger HALTED: {L['halt']}")
 
     if base is not None:
@@ -677,17 +697,23 @@ def _book(out, body, stk):
 
 # ---------- the one path to the wire ----------------------------------------
 def take(base, pk, key_id, ticker, want, price, count, market_close_epoch,
-         exchange_index=0, client_id=None, now_epoch=None, max_tau=None):
+         exchange_index=0, client_id=None, now_epoch=None, max_tau=None,
+         hedge=False):
     """Build, CHECK, then -- only with an empty violation list -- POST.
 
     Returns the normalised dict from normalise(), plus "refused": [...] and
     status_code None when the rails said no. The self-test reads this
     function's source and fails if the wire call appears before the check.
+
+    hedge=True: this order buys the other side of a position already held.
+    It is checked by every rail except the ledger halt (see check_take), and
+    when it goes out PAST a halt that is written to the ledger and flagged
+    on the result as out["past_halt"].
     """
     now = time.time() if now_epoch is None else float(now_epoch)
     body = build_take(ticker, want, price, count, exchange_index, client_id)
     violations = check_take(body, market_close_epoch, now, base=base,
-                            max_tau=max_tau)
+                            max_tau=max_tau, hedge=hedge)
     if base is None:
         violations.append("base is None -- no environment named; refused")
     if now_epoch is not None and base != DEMO:
@@ -701,11 +727,19 @@ def take(base, pk, key_id, ticker, want, price, count, market_close_epoch,
                                 "t": now})
         return out
     stk = stake(body)
+    # K2: a hedge going out while the ledger is halted is said, never silent
+    past_halt = LEDGER.get("halt") if hedge else None
+    if past_halt:
+        LEDGER["takes"].append({"kind": "hedge_past_halt", "halt": past_halt,
+                                "client_order_id": body["client_order_id"],
+                                "t": now})
     LEDGER["committed"] += stk          # intent, in flight; _book() resets it from fills
     LEDGER["sends"] += 1
     status_code, resp = ordercli.send(base, pk, key_id, "POST", ENDPOINT, body)
     out = normalise(status_code, resp, body, base)
     out["refused"] = []
+    if past_halt:
+        out["past_halt"] = str(past_halt)[:200]
     if _is_live(out):
         # An IOC that left contracts in the book. Cancel, verify, re-read.
         out["unrest"] = _unrest(base, pk, key_id, out, body)
@@ -1095,6 +1129,126 @@ def selftest():
     clear_halt("test")
     if check_take(y, close_ok, now):
         fails.append("clear_halt did not lift the halt")
+    reset_ledger()
+
+    # --- K2 (2026-09-22): a halt refuses ENTRIES, never a HEDGE ---------------
+    # The halt above is right for new exposure. It was also refusing the order
+    # that buys the other side of a position already held, and nothing in
+    # pinrun ever clears it -- so one timed-out POST stranded every open
+    # position for the rest of its close. hedge=True skips that ONE rail.
+    print("\n  K2: after a -1 halt the next ENTRY is refused and the next HEDGE "
+          "is sent:")
+
+    def _ct(body, close, **kw):
+        """check_take, or a refusal naming the missing hedge path."""
+        try:
+            return check_take(body, close, now, **kw)
+        except TypeError as e:              # the pre-K2 signature
+            return ["check_take has no hedge path: %s" % e]
+
+    k2_posts = []
+    k2_replies = [(-1, "timed out")]
+
+    def k2_send(base, pk, key_id, method, path, body=None, query=None):
+        k2_posts.append((method, (body or {}).get("ticker"),
+                         (body or {}).get("side")))
+        if method != "POST":
+            return -1, "no %s expected" % method
+        if k2_replies:
+            return k2_replies.pop(0)
+        return 201, {"client_order_id": (body or {}).get("client_order_id"),
+                     "fill_count": (body or {}).get("count"),
+                     "remaining_count": "0.00",
+                     "average_fill_price": (body or {}).get("price"),
+                     "average_fee_paid": "0.0020", "order_id": "k2-fill"}
+
+    k2_real_get = globals()["_get"]
+    ordercli.send = k2_send
+    globals()["_get"] = lambda *a_, **k_: (-1, "no record expected")
+    try:
+        reset_ledger()
+        take(DEMO, None, "k", "KXBTC15M-K2-01", "yes", 0.97, 1, close_ok,
+             now_epoch=now)                                  # -1: UNKNOWN
+        k2_halted = bool(LEDGER["halt"])
+        n0 = len(k2_posts)
+        k2_entry = take(DEMO, None, "k", "KXETH15M-K2-01", "yes", 0.97, 1,
+                        close_ok, now_epoch=now)
+        n1 = len(k2_posts)
+        try:
+            k2_hedge = take(DEMO, None, "k", "KXBTC15M-K2-01", "no", 0.40, 1,
+                            close_ok, now_epoch=now, hedge=True)
+        except TypeError as e:              # the pre-K2 signature
+            k2_hedge = {"refused": ["take() has no hedge path: %s" % e],
+                        "filled": 0.0}
+        n2 = len(k2_posts)
+        k2_noted = [t for t in LEDGER["takes"]
+                    if t.get("kind") == "hedge_past_halt"]
+        k2_still = bool(LEDGER["halt"])
+    finally:
+        ordercli.send = real_send
+        globals()["_get"] = k2_real_get
+    print(f"    -1 -> halt={k2_halted}; next entry "
+          f"{'REFUSED' if k2_entry.get('refused') else '*** SENT ***'} "
+          f"(wire {n1 - n0}); next hedge "
+          f"{'SENT' if n2 == n1 + 1 else '*** NOT SENT ***'} "
+          f"filled {k2_hedge.get('filled')} refused {k2_hedge.get('refused')}")
+    if not k2_halted:
+        fails.append("K2 fixture: a -1 did not halt the ledger")
+    if (not any("HALTED" in s for s in (k2_entry.get("refused") or []))
+            or n1 != n0):
+        fails.append("K2: an ENTRY was not refused while halted: %s"
+                     % k2_entry.get("refused"))
+    if (k2_hedge.get("refused") or n2 != n1 + 1
+            or float(k2_hedge.get("filled") or 0) != 1.0):
+        fails.append("K2: a HEDGE was refused while halted -- it must reach "
+                     "the wire: %s" % k2_hedge.get("refused"))
+    if not k2_noted or not k2_hedge.get("past_halt"):
+        fails.append("K2: a hedge sent past a halt must be on the ledger and "
+                     "the result, not silent")
+    if not k2_still:
+        fails.append("K2: the hedge must not CLEAR the halt -- entries stay "
+                     "refused until someone reconciles")
+
+    # every OTHER rail still binds a hedge while halted
+    k2_led = dict(_fresh_ledger(), halt="test halt")
+    k2_far = now + MAX_TAU + 60.0
+    k2_bad = (
+        ("count over MAX_TAKE_COUNT",
+         build_take("T", "no", 0.40, MAX_TAKE_COUNT + 1, 0, "c"), close_ok, {}),
+        ("good_till_canceled", dict(y, time_in_force="good_till_canceled"),
+         close_ok, {}),
+        ("post_only True", dict(y, post_only=True), close_ok, {}),
+        ("price outside (0,1)", dict(y, price="1.2000"), close_ok, {}),
+        ("tau beyond MAX_TAU", y, k2_far, {}),
+        ("market already closed", y, now - 1.0, {}),
+        ("stake cap", y, close_ok,
+         {"ledger": dict(k2_led, committed=MAX_RUN_STAKE)}),
+        ("loss abort", y, close_ok,
+         {"ledger": dict(k2_led, realised=LOSS_ABORT - 1.0)}),
+        ("production not armed", y, close_ok, {"base": PROD}),
+    )
+    for desc, body, close, kw in k2_bad:
+        kw = dict({"ledger": k2_led}, **kw)
+        v_h = _ct(body, close, hedge=True, **kw)
+        if not v_h or any("HALTED" in s for s in v_h) or any(
+                "no hedge path" in s for s in v_h):
+            fails.append("K2: hedge=True while halted must still be refused "
+                         "for %s, by that rail and not the halt: %s"
+                         % (desc, v_h))
+    if _ct(y, close_ok, hedge=True, ledger=k2_led):
+        fails.append("K2: a LEGAL hedge while halted must pass every rail: %s"
+                     % _ct(y, close_ok, hedge=True, ledger=k2_led))
+    # NULL: with no halt, hedge=True changes NOTHING about any decision
+    k2_clean = _fresh_ledger()
+    for desc, body, close, kw in (("legal", y, close_ok, {}),) + k2_bad:
+        kw = dict({"ledger": k2_clean}, **kw)
+        if kw["ledger"].get("halt"):
+            kw["ledger"] = dict(kw["ledger"], halt=None)
+        if _ct(body, close, hedge=True, **kw) != _ct(body, close, **kw):
+            fails.append("K2 NULL: with no halt, hedge=True must give exactly "
+                         "the same answer as an entry (%s)" % desc)
+    print(f"    {len(k2_bad)} other rails still refuse a hedge while halted; "
+          f"with no halt a hedge and an entry are judged identically")
     reset_ledger()
 
     # --- outcomes that must NEVER release the stake ---------------------------
