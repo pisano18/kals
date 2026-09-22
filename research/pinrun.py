@@ -3226,8 +3226,9 @@ def _fill_all(body, n):
 
 def _offline_trade_loop(markets, live=False, take=None, reply=None,
                         freeze_at=None, rec_fault=None, run_s=12.0,
-                        size=5.0, tau0=30):
+                        size=5.0, tau0=30, plant=False):
     """Run the REAL trade_loop for `run_s` fake seconds on one close.
+    (`plant` sets --hedge-plant, the one-contract planted hedge test.)
 
     markets    dicts: tk, series, iid, strike, fair(t) -> P(YES) at index
                time t, book(t) -> top of book at wall time t (seconds from
@@ -3380,7 +3381,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         a_ = _ap.Namespace(live=bool(live), minutes=run_s / 60.0,
                            auto_size=False, loss_abort=-1e9,
                            max_positions=99, max_losses=0,
-                           size=float(size), hedge_plant=False)
+                           size=float(size), hedge_plant=bool(plant))
         with _cl.redirect_stdout(_io.StringIO()):
             try:
                 trade_loop(a_, _rec, _Book(), _Idx(),
@@ -8142,6 +8143,22 @@ def _selftest_body():
        and _kinds(_s4, "signal", "KXB915M-K1"),
        "K1 NULL: FOUR scan errors do not stop entries -- the same clean "
        "market IS bought, so the stop above is the fifth error's doing")
+    # ...and the --hedge-plant fill (one contract of the side about to lose,
+    # live only, off in the live flags) is registered before its record too
+    _kt6, _kc6 = _k1_take(False)
+
+    def _plant_fault(kind, kw):
+        if kind == "plant":
+            raise TypeError("planted: the plant record cannot be written")
+    _pl = _offline_trade_loop(
+        [dict(_k1_A(collapse_at=None), fair=(lambda t: 0.95))], live=True,
+        take=_kt6, plant=True, tau0=25, rec_fault=_plant_fault)
+    _pl_buys = [c for c in _kc6 if c[0] == _kA and c[1] == "no"]
+    ck(_pl["raised"] is None and len(_pl_buys) == 1
+       and abs(_hedged(_pl, _kA) - 1.0) < 1e-9,
+       "K1: the planted one-contract fill is hedged even when its record "
+       "raises (%d plant buys, hedged %g)" % (len(_pl_buys),
+                                               _hedged(_pl, _kA)))
 
     # ===================================================================
     # K2 (2026-09-22): A PINTAKE HALT NEVER REFUSES A HEDGE -- through the
@@ -10618,16 +10635,19 @@ def trade_loop(a, rec, book, idx, series_index):
                             _po = {}
                         _pf = float(_po.get("filled") or 0)
                         _pp = _po.get("exec_price")
-                        rec("plant", ticker=tk, side=_lose, filled=_pf,
-                            price=(float(_pp) if _pp is not None else _la),
-                            refused=_po.get("refused"), status=_po.get("status"),
-                            order_id=_po.get("order_id"))
+                        # K1: registered for the hedge BEFORE it is written
+                        # down, like every other fill.
                         if _pf > 0:
                             _poid = f"plant-{_po.get('order_id') or now_s}"
                             _pc = float(_pp) if _pp is not None else float(_la)
                             open_pos[_poid] = (close_s, _lose, _pc, _pf, tk)
                             entry_at[_poid] = now_s
                             hedge_meta[_poid] = (strike, digits, iid)
+                        rec("plant", ticker=tk, side=_lose, filled=_pf,
+                            price=(float(_pp) if _pp is not None else _la),
+                            refused=_po.get("refused"), status=_po.get("status"),
+                            order_id=_po.get("order_id"))
+                        if _pf > 0:
                             print(f"  PLANT filled {_pf:g} @ {_pc:.3f}; the hedge "
                                   f"pass should fire on it within a second")
                         continue
