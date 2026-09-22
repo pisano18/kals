@@ -3122,6 +3122,255 @@ def sweep_limit(f, price, want, ceiling=None, edge_floor=None, ev_floor=None):
 
 
 # ===========================================================================
+# THE OFFLINE LOOP (2026-09-22, findings K1/K2/K3 of the project map).
+#
+# Every loop-level protection in this file -- A69, A71, A74 -- was proved by
+# SEARCHING trade_loop's source. Nothing in the self-test ever RAN the loop,
+# and all three in-loop crashes on record (09-15 04:29Z, 09-15 04:59Z, 09-19
+# 05:59Z) were new code going off the first second its branch executed. The
+# 09-19 one was holding: -$66.34.
+#
+# This drives the REAL trade_loop with a fake clock, a fake book, a fake
+# index and a fake market list, so a check can plant a fault and watch what
+# the loop actually DOES. Nothing here can reach the network or a live file:
+# the market/settlement GET, the wire, the cancel, the order-record read, the
+# bank read and the size mirror are all replaced before the loop starts and
+# restored after; orders go to pintake's DEMO base; the day-loss file points
+# into a temp directory. The clock only moves when the loop sleeps, so a
+# twelve-second close runs in a fraction of a second of real time.
+# ===========================================================================
+_REAL_TIME = time
+
+
+class _OfflineClock:
+    """Stands in for the `time` module: sleep() moves the clock instead of
+    waiting. Everything else (strftime, gmtime, strptime) is the real one.
+
+    A loop that never sleeps would never move this clock and would spin for
+    ever, so after 20,000 reads with no sleep the clock moves on its own."""
+
+    def __init__(self, t0):
+        self.t = float(t0)
+        self._reads = 0
+
+    def time(self):
+        self._reads += 1
+        if self._reads > 20000:
+            self._reads = 0
+            self.t += 0.05
+        return self.t
+
+    def sleep(self, dt):
+        self._reads = 0
+        self.t += max(0.001, float(dt))
+
+    def __getattr__(self, name):
+        return getattr(_REAL_TIME, name)
+
+
+def _ob(yes_bid, no_bid, size=50.0, age_ms=5):
+    """A fake top of book, built the way livebook builds it: Kalshi books hold
+    BIDS, so yes_ask = 1 - no_bid and no_ask = 1 - yes_bid."""
+    return {"yes_bid": yes_bid, "no_bid": no_bid,
+            "yes_bid_size": size if yes_bid is not None else None,
+            "no_bid_size": size if no_bid is not None else None,
+            "yes_ask": round(1.0 - no_bid, 4) if no_bid is not None else None,
+            "yes_ask_size": size if no_bid is not None else None,
+            "no_ask": round(1.0 - yes_bid, 4) if yes_bid is not None else None,
+            "no_ask_size": size if yes_bid is not None else None,
+            "age_ms": age_ms, "suspect": False}
+
+
+def _fill_all(body, n):
+    """A fake wire's answer: the whole order fills at its own limit."""
+    return 201, {"order_id": "off-%d" % n,
+                 "client_order_id": body.get("client_order_id"),
+                 "fill_count": body.get("count"), "remaining_count": "0.00",
+                 "average_fill_price": body.get("price"),
+                 "average_fee_paid": "0.0020"}
+
+
+def _offline_trade_loop(markets, live=False, take=None, reply=None,
+                        freeze_at=None, rec_fault=None, run_s=12.0,
+                        size=5.0, tau0=30):
+    """Run the REAL trade_loop for `run_s` fake seconds on one close.
+
+    markets    dicts: tk, series, iid, strike, fair(t) -> P(YES) at index
+               time t, book(t) -> top of book at wall time t (seconds from
+               the start), and optionally cond_raise(t) -> True to make
+               idx.conditions() raise. conditions() is called on every
+               SIGNAL, outside every guarded sub-block, which is exactly
+               where the 09-19 crash came from.
+    live       drive the live order path. `take` replaces pintake.take
+               outright; with take=None the REAL pintake.take runs against a
+               fake wire whose answer is reply(body, n) -> (status, response).
+    freeze_at  wall time after which the index stops printing.
+    rec_fault  called as rec_fault(kind, kw) before each record; may raise.
+
+    Returns {"recs", "posts", "raised", "ran_s"}. A record's `t` is fake
+    wall time since the start, in seconds.
+    """
+    import argparse as _ap
+    import contextlib as _cl
+    import copy as _cp
+    import io as _io
+    import shutil as _sh
+    import tempfile as _tf
+    close = 1_800_000_000                       # a real quarter hour
+    t0 = close - tau0 + 0.1
+    clock = _OfflineClock(t0)
+    by_iid = {m["iid"]: m for m in markets}
+    iso = _REAL_TIME.strftime("%Y-%m-%dT%H:%M:%SZ", _REAL_TIME.gmtime(close))
+
+    def _last_print(iid):
+        last = int(clock.t) - 1
+        if freeze_at is not None:
+            last = min(last, int(t0 + freeze_at) - 1)
+        return last
+
+    def _itime(iid):
+        """Index time: whole seconds since the start, as of the newest print
+        held. Frozen when the feed is, which is what fair() sees live."""
+        return _last_print(iid) + 1 - int(t0)
+
+    class _Idx:
+        def spot(self, iid):
+            s = _last_print(iid)
+            return s, 100.5, clock.t - s
+
+        def sigma(self, iid):
+            return 0.0005
+
+        def recent_moves(self, iid, n=3):
+            return []
+
+        def conditions(self, iid):
+            f = (by_iid.get(iid) or {}).get("cond_raise")
+            if f is not None and f(_itime(iid)):
+                raise TypeError("planted: type NoneType doesn't define "
+                                "__round__ method")
+            return None, None, None
+
+    class _Book:
+        def best(self, tk):
+            for m in markets:
+                if m["tk"] == tk:
+                    return m["book"](clock.t - t0)
+            return None
+
+        def subscribe(self, tks):
+            pass
+
+        def drop(self, tks):
+            pass
+
+        def buyable(self, tk, want, lim):
+            return 0.0
+
+        def rungs(self, tk, side, lim):
+            return []
+
+        def level_age_ms(self, tk, side, px):
+            return None, False
+
+        def depth(self, tk, side, n=3):
+            return []
+
+    def _fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
+        return by_iid[iid]["fair"](_itime(iid))
+
+    def _get(path, params=None, **kw):
+        if path == "/markets":
+            s = (params or {}).get("series_ticker")
+            return 200, {"markets": [
+                {"ticker": m["tk"], "close_time": iso,
+                 "floor_strike": m["strike"],
+                 "custom_strike": {"floor_strike": m["strike"],
+                                   "round_digits": 2},
+                 "exchange_index": 2}
+                for m in markets if m["series"] == s]}
+        return 200, {"market": {"status": "active"}}   # never finalised
+
+    posts = []
+
+    def _send(base, pk, key_id, method, path, body=None, query=None):
+        if method != "POST" or base != pintake.DEMO:
+            raise RuntimeError("offline loop: unexpected %s to %s"
+                               % (method, base))
+        posts.append(dict(body or {}, _t=round(clock.t - t0, 3)))
+        return (reply or _fill_all)(body, len(posts))
+
+    def _no_net(*a_, **k_):
+        raise RuntimeError("offline loop: a network call was attempted")
+
+    recs = []
+
+    def _rec(kind, **kw):
+        if rec_fault is not None:
+            rec_fault(kind, kw)
+        kw["kind"] = kind
+        kw["t"] = round(clock.t - t0, 3)
+        try:
+            json.dumps(kw, default=str)         # what main()'s rec writes
+        except Exception:                       # noqa: BLE001
+            pass                                # ...and main() swallows this
+        recs.append(kw)
+
+    g = globals()
+    saved = {k: g[k] for k in ("time", "get", "fair", "SIZE", "DAYLOSS_FILE",
+                               "read_bank", "publish_size")}
+    saved_creds = dict(CREDS)
+    saved_pt = (pintake.time, pintake.take, pintake._get,
+                pintake.ordercli.send, pintake.ordercli.cancel)
+    saved_rails = (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX,
+                   pintake.MAX_RUN_STAKE, pintake.LOSS_ABORT)
+    saved_ledger = _cp.deepcopy(pintake.LEDGER)
+    tmp = _tf.mkdtemp(prefix="pinloop-")
+    raised = None
+    try:
+        g["time"] = clock
+        g["get"] = _get
+        g["fair"] = _fair
+        g["SIZE"] = float(size)
+        g["DAYLOSS_FILE"] = os.path.join(tmp, "dayloss.json")
+        g["read_bank"] = _no_net
+        g["publish_size"] = _no_net
+        CREDS.update({"base": pintake.DEMO, "pk": None, "key_id": None})
+        pintake.time = clock
+        pintake._get = _no_net
+        setattr(pintake.ordercli, "send", _send)
+        setattr(pintake.ordercli, "cancel", _no_net)
+        if take is not None:
+            pintake.take = take
+        pintake.reset_ledger()
+        a_ = _ap.Namespace(live=bool(live), minutes=run_s / 60.0,
+                           auto_size=False, loss_abort=-1e9,
+                           max_positions=99, max_losses=0,
+                           size=float(size), hedge_plant=False)
+        with _cl.redirect_stdout(_io.StringIO()):
+            try:
+                trade_loop(a_, _rec, _Book(), _Idx(),
+                           {m["series"]: m["iid"] for m in markets})
+            except Exception as e:              # noqa: BLE001
+                raised = "%s: %s" % (type(e).__name__, e)
+    finally:
+        for k, v in saved.items():
+            g[k] = v
+        CREDS.clear()
+        CREDS.update(saved_creds)
+        pintake.time, pintake.take, pintake._get = saved_pt[:3]
+        setattr(pintake.ordercli, "send", saved_pt[3])
+        setattr(pintake.ordercli, "cancel", saved_pt[4])
+        (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX, pintake.MAX_RUN_STAKE,
+         pintake.LOSS_ABORT) = saved_rails
+        pintake.LEDGER.clear()
+        pintake.LEDGER.update(saved_ledger)
+        _sh.rmtree(tmp, ignore_errors=True)
+    return {"recs": recs, "posts": posts, "raised": raised,
+            "ran_s": round(clock.t - t0, 3)}
+
+
+# ===========================================================================
 def selftest():
     """
     THE HIGH-WATER FILE IS REDIRECTED FOR THE WHOLE OF THIS FUNCTION, and the
@@ -7029,9 +7278,11 @@ def _selftest_body():
         # ANCHOR ON THE WHOLE LINE: "out = pintake.take(" is a substring of the
         # hedge path's "_hout = pintake.take(", which sits EARLIER in
         # trade_loop. Fourth time this trap has bitten in this file.
+        # (K1, 2026-09-22: the scan body moved 4 spaces right inside its
+        # try:, so every whole-line anchor on it did too.)
         ck(_tl45.index("take_n = min(float(SIZE), _deep, max(0.0, _room))")
            < _tl45.index("take_n = _widen45(take_n)  # live")
-           < _tl45.index("\n                    out = pintake.take("),
+           < _tl45.index("\n                        out = pintake.take("),
            "A45: on the live path the widening runs AFTER A35 has sized the "
            "order and BEFORE the order is sent")
         ck("take_n = _widen45(take_n)  # paper" in _tl45
@@ -7647,16 +7898,18 @@ def _selftest_body():
 
         _lb3 = src[src.index(chr(10) + "def trade_loop("):]
         _ln3 = _lb3.splitlines()
-        ck("                if _spent >= _bud56 - 1e-9:" in _ln3
-           and "                _bud56 = close_budget_for(prev, tk, tau=tau)" in _ln3,
+        # K1 (2026-09-22): the scan body sits 4 spaces deeper, inside its
+        # try:, so these whole-line anchors moved with it.
+        ck("                    if _spent >= _bud56 - 1e-9:" in _ln3
+           and "                    _bud56 = close_budget_for(prev, tk, tau=tau)" in _ln3,
            "the per-close cap must read CONTRACTS, not the fill count -- and "
            "since A56 it reads the budget for THIS CANDIDATE, which is the "
            "base plus the extra-coin allowance when the candidate is a coin "
            "this close does not already hold")
-        ck('                _spent = prev.get("contracts", 0.0) if prev else 0.0'
+        ck('                    _spent = prev.get("contracts", 0.0) if prev else 0.0'
            in _ln3,
            "and `contracts` must come from the close's own record")
-        ck("            elif prev is not None and prev[\"n\"] >= MAX_PER_CLOSE:"
+        ck("                elif prev is not None and prev[\"n\"] >= MAX_PER_CLOSE:"
            in _ln3,
            "and the old fill-count cap must survive behind CLOSE_BUDGET so "
            "the rule can be reverted without an edit")
@@ -7695,7 +7948,7 @@ def _selftest_body():
 
         # ---- quote age: LOGGED, NEVER GATED ON -------------------------
         _lb2 = src[src.index(chr(10) + "def trade_loop("):]
-        ck("                       level_age_ms=_lvl_age, "
+        ck("                           level_age_ms=_lvl_age, "
            "level_age_exact=_lvl_exact," in _lb2.splitlines(),
            "the signal record must carry the resting age of the level we hit")
         ck("_lvl_side = \"no\" if want == \"yes\" else \"yes\"" in _lb2,
@@ -7728,6 +7981,133 @@ def _selftest_body():
            "the size we are about to trade, not the previous one")
     finally:
         globals()["SIZE"] = _sz0
+
+    # ===================================================================
+    # K1 (2026-09-22): THE LOOP CANNOT DIE WHILE HOLDING -- RUN, NOT READ.
+    #
+    # Every loop check above reads trade_loop's SOURCE. These RUN it
+    # (_offline_trade_loop: the real loop, a fake clock, book, index and
+    # market list, no network). One close, first look at 30 s to go:
+    #   A  bought at 95c on the first look. Its model belief falls to 0.10 at
+    #      +4 s -- under every trigger in use (0.25 live, 0.80 as shipped).
+    #   B  undecided until +2 s, then a 93c buy. In the FAULT worlds the
+    #      conditions read on B's SIGNAL raises: the same TypeError, from the
+    #      same unguarded place, as the crash that left 70 BTC unhedged on
+    #      2026-09-19 (-$66.34).
+    # The first version of this block was run against the unfixed loop: the
+    # fault worlds raised out of trade_loop at +2 s with A still open, and
+    # the live path sent TWO orders and hedged neither.
+    # ===================================================================
+    def _k1_A(collapse_at=4):
+        return {"tk": "KXAAA15M-K1", "series": "KXAAA15M", "iid": "K1A",
+                "strike": 100.0,
+                "fair": (lambda t: 0.10 if (collapse_at is not None
+                                            and t >= collapse_at) else 0.999),
+                "book": (lambda t: _ob(0.94, 0.05))}
+
+    def _k1_B(n, decided_at=2, raise_from=None):
+        return {"tk": "KXB%d15M-K1" % n, "series": "KXB%d15M" % n,
+                "iid": "K1B%d" % n, "strike": 100.0,
+                "fair": (lambda t: 0.999 if t >= decided_at else 0.5),
+                "book": (lambda t: _ob(0.92, 0.07)),
+                "cond_raise": (None if raise_from is None
+                               else (lambda t: t >= raise_from))}
+
+    def _kinds(res, kind, tk=None):
+        return [r for r in res["recs"] if r["kind"] == kind
+                and (tk is None or r.get("ticker") == tk)]
+
+    def _hedged(res, tk):
+        return sum(float(r.get("n") or 0.0) for r in _kinds(res, "hedge", tk))
+
+    _kA = _k1_A()["tk"]
+    _p0 = _offline_trade_loop([_k1_A(), _k1_B(1)])
+    ck(_p0["raised"] is None and abs(_hedged(_p0, _kA) - 5.0) < 1e-9
+       and _kinds(_p0, "signal", "KXB115M-K1"),
+       "K1 CONTROL, paper: the real loop buys A, buys B at +2 s, and hedges "
+       "all 5 of A when its belief collapses (raised %s, hedged %g)"
+       % (_p0["raised"], _hedged(_p0, _kA)))
+    _p1 = _offline_trade_loop([_k1_A(), _k1_B(1, raise_from=2)])
+    _p1e = [r for r in _kinds(_p1, "error") if r.get("where") == "scan"]
+    ck(_p1["raised"] is None,
+       "K1: an exception in the ENTRY SCAN does not end the loop while a "
+       "position is held (trade_loop raised: %s)" % _p1["raised"])
+    ck(abs(_hedged(_p1, _kA) - 5.0) < 1e-9,
+       "K1: ...and the position already held is still hedged when it "
+       "collapses (hedged %g of 5)" % _hedged(_p1, _kA))
+    ck(len(_p1e) == 1 and _p1e[0].get("ticker") == "KXB115M-K1"
+       and "TypeError" in str(_p1e[0].get("err")),
+       "K1: ...and the fault is RECORDED, once per (close, market, error "
+       "type), not twenty times a second (%d error records)" % len(_p1e))
+    ck(_p1["ran_s"] >= 11.9,
+       "K1: ...and the loop ran to its end (%.2f of 12 s)" % _p1["ran_s"])
+    _pn = _offline_trade_loop([_k1_A(collapse_at=None),
+                               _k1_B(1, raise_from=2)])
+    ck(_pn["raised"] is None and not _kinds(_pn, "hedge"),
+       "K1 NULL: the same fault with NO collapse hedges nothing -- the hedge "
+       "above is caused by the collapse, not by the fault")
+
+    def _k1_take(collide):
+        calls = []
+
+        def _t(base, pk, key_id, ticker, want, price, count, mce,
+               exchange_index=0, **kw):
+            body = pintake.build_take(ticker, want, price, count,
+                                      exchange_index)
+            out = pintake.normalise(201, {"order": {
+                "order_id": "k1-%d" % len(calls), "status": "executed",
+                "fill_count": count, "remaining_count": 0,
+                "average_fill_price": (price if want == "yes"
+                                       else 1.0 - price)}}, body, base)
+            out["refused"] = []
+            calls.append((ticker, want, float(count)))
+            if collide and want == "yes":
+                # a key the order record ALSO passes by name: rec("order")
+                # then raises "got multiple values for keyword argument"
+                out["want"] = want
+            return out
+        return _t, calls
+
+    _kt0, _kc0 = _k1_take(False)
+    _l0 = _offline_trade_loop([_k1_A()], live=True, take=_kt0)
+    _l0e = [c for c in _kc0 if c[0] == _kA and c[1] == "yes"]
+    ck(_l0["raised"] is None and len(_l0e) == 1
+       and abs(_hedged(_l0, _kA) - _l0e[0][2]) < 1e-9,
+       "K1 CONTROL, live order path: ONE order, and the hedge covers all "
+       "of it (%d orders, hedged %g)" % (len(_l0e), _hedged(_l0, _kA)))
+    _kt1, _kc1 = _k1_take(True)
+    _l1 = _offline_trade_loop([_k1_A()], live=True, take=_kt1)
+    _l1e = [c for c in _kc1 if c[0] == _kA and c[1] == "yes"]
+    ck(len(_l1e) == 1,
+       "K1: a log call that raises AFTER a fill does not lose the fill -- "
+       "the close budget still sees it, so the market is bought ONCE, not "
+       "again 50 ms later (%d orders sent)" % len(_l1e))
+    ck(_l1e and abs(_hedged(_l1, _kA) - sum(c[2] for c in _l1e)) < 1e-9,
+       "K1: ...and the fill is registered for hedging BEFORE anything "
+       "formats it, so the collapse hedges all of it (hedged %g of %g)"
+       % (_hedged(_l1, _kA), sum(c[2] for c in _l1e)))
+    ck([r for r in _kinds(_l1, "error") if r.get("where") == "order_log"],
+       "K1: ...and the failed log call is itself on the record")
+
+    _s5 = _offline_trade_loop(
+        [_k1_A(collapse_at=8)] + [_k1_B(i, raise_from=2) for i in range(1, 6)]
+        + [_k1_B(9, decided_at=6)])
+    ck(_s5["raised"] is None and _kinds(_s5, "entries_stopped")
+       and not _kinds(_s5, "signal", "KXB915M-K1"),
+       "K1: after FIVE scan errors the run stops NEW entries -- a clean "
+       "market that decides at +6 s is not bought (raised %s)"
+       % _s5["raised"])
+    ck(abs(_hedged(_s5, _kA) - 5.0) < 1e-9 and _s5["ran_s"] >= 11.9,
+       "K1: ...but it never exits and never skips the hedge: A collapses at "
+       "+8 s and is hedged in full (hedged %g, ran %.2f s)"
+       % (_hedged(_s5, _kA), _s5["ran_s"]))
+    _s4 = _offline_trade_loop(
+        [_k1_A(collapse_at=8)] + [_k1_B(i, raise_from=2) for i in range(1, 5)]
+        + [_k1_B(9, decided_at=6)])
+    ck(_s4["raised"] is None and not _kinds(_s4, "entries_stopped")
+       and _kinds(_s4, "signal", "KXB915M-K1"),
+       "K1 NULL: FOUR scan errors do not stop entries -- the same clean "
+       "market IS bought, so the stop above is the fifth error's doing")
 
     # THE SELF-TEST MUST LEAVE NO LIVE SETTING CHANGED. It runs at startup
     # with the operator's flags ALREADY applied, so any global it forgets to
@@ -7952,6 +8332,11 @@ DRAIN_ON_HALT = True
 DRAIN_MAX_S = 600.0      # ...but never hang forever: watch_bot.ps1 only
                          # restarts a process that is GONE or silent, so a bot
                          # stuck draining is a bot nothing is watching.
+
+# K1 (2026-09-22): distinct entry-scan faults -- (close, market, error type)
+# -- after which a run stops NEW entries. It never exits on them and never
+# skips the hedge pass; see _k1_error in trade_loop.
+SCAN_ERRORS_STOP_ENTRIES = 5
 
 
 def halt_is_transient(why):
@@ -8875,6 +9260,74 @@ def trade_loop(a, rec, book, idx, series_index):
                       f"x{b['size']:.4g} on offer -> {v}")
             near.pop(cs, None)
 
+    # ===================================================================
+    # K1 (2026-09-22): THE LOOP CANNOT DIE WHILE HOLDING.
+    #
+    # The per-market entry scan (~1,200 lines) and the per-position hedge
+    # step had no outer `try`, and main() wraps the loop in try/finally only,
+    # so ANY exception in either ended the process -- with whatever it held
+    # left unhedged until settlement. It has happened three times, all at
+    # exactly 30 s to go, the first second the entry path runs its rarer
+    # branches: 09-15 04:29:30Z, 09-15 04:59:30Z, and 09-19 05:59:30Z, which
+    # was holding 70 BTC NO and lost $66.34 with no hedge.
+    #
+    # Both bodies are now wrapped. A caught exception is recorded ONCE per
+    # (where, close, market, error type) -- this is a 20 Hz loop -- with the
+    # line it came from, and the loop moves on to the next market or
+    # position. It never exits and never skips the hedge pass.
+    #
+    # AFTER SCAN_ERRORS_STOP_ENTRIES DISTINCT scan errors the run stops NEW
+    # entries for the rest of its life: a scan that keeps throwing is code
+    # that is broken in a way nobody has looked at, and it should not be
+    # buying. Hedging, reconciling and the drain are untouched by that stop.
+    # WHAT IT BLOCKS: new bets only, after five distinct faults. It cannot
+    # block a hedge -- the hedge pass runs above the scan and never reads it.
+    # ===================================================================
+    _k1_seen = set()
+
+    def _k1_error(where, close_s_, tk_, exc):
+        """Record a caught exception once per (where, close, market, type).
+        Returns True the first time. Never raises."""
+        key = (where, close_s_, tk_, type(exc).__name__)
+        if key in _k1_seen:
+            return False
+        _k1_seen.add(key)
+        _line = None
+        try:
+            _tb = exc.__traceback__
+            while _tb is not None and _tb.tb_next is not None:
+                _tb = _tb.tb_next
+            _line = _tb.tb_lineno if _tb is not None else None
+        except Exception:                                # noqa: BLE001
+            pass
+        try:
+            rec("error", where=where, ticker=tk_, close_s=close_s_,
+                err=(type(exc).__name__ + ": " + str(exc))[:300], line=_line)
+        except Exception:                                # noqa: BLE001
+            pass
+        try:
+            print(f"  *** {where} error on {tk_} (line {_line}), stepping "
+                  f"over it: {type(exc).__name__}: {exc}")
+        except Exception:                                # noqa: BLE001
+            pass
+        return True
+
+    def _k1_scan_error(close_s_, tk_):
+        """Count a NEW scan fault; at the limit, stop new entries (once)."""
+        state["scan_errors"] = state.get("scan_errors", 0) + 1
+        if (state["scan_errors"] >= SCAN_ERRORS_STOP_ENTRIES
+                and not state.get("entries_stopped")):
+            state["entries_stopped"] = (
+                f"{state['scan_errors']} distinct entry-scan errors")
+            try:
+                rec("entries_stopped", why=state["entries_stopped"],
+                    errors=state["scan_errors"], ticker=tk_,
+                    close_s=close_s_, hedging="still armed")
+            except Exception:                            # noqa: BLE001
+                pass
+            print(f"  *** NEW ENTRIES STOPPED for the rest of this run: "
+                  f"{state['entries_stopped']}. Hedging continues.")
+
     while time.time() < end:
         # AMENDMENT 71: EVERYTHING ABOVE THE HEDGE PASS IS NOW GUARDED.
         #
@@ -8964,351 +9417,362 @@ def trade_loop(a, rec, book, idx, series_index):
         # position per second; the alarm and every refusal are recorded.
         if HEDGE_ENABLED:
             for _hid, (_hcs, _hwant, _hcost, _hn_orig, _htk) in list(open_pos.items()):
-                # BUG FOUND LIVE 2026-09-13 (ZEC 26SEP122000-00, real money,
-                # ~$0.96 hidden). The line this replaces read `_hn` straight
-                # out of open_pos and, on a partial hedge fill, wrote a
-                # SMALLER size back into open_pos[_hid] to remember "how much
-                # is still unhedged". open_pos[_hid] is not scratch space --
-                # it is exactly the tuple reconcile() unpacks to settle the
-                # ORIGINAL position and to call pintake.record_pnl(), which
-                # risk_abort()'s loss-abort and loss-count brakes read.
-                # Shrinking it here silently shrank the original position
-                # too: an 11-contract loss settled and fed the risk ledger
-                # as if it were 10, because the first hedge attempt had
-                # filled 1 of the 11 needed. The exchange's own books were
-                # never wrong -- only our record of what we lost and what
-                # the brake believes it is guarding against.
-                # FIX: open_pos[_hid] is read-only in this loop from here on.
-                # `hedge_remain` tracks "contracts still needing a hedge
-                # fill" separately, seeded from the ORIGINAL size on first sight.
-                _hn = hedge_remain.get(_hid, _hn_orig)
-                if _hid in hedged or _hid.startswith("hedge-"):
-                    continue
-                # AMENDMENT 71: THESE THREE SKIPS USED TO BE SILENT.
-                #
-                # A missing strike, an unmeasurable sigma or an unmeasurable
-                # fair value all skipped the hedge for that second and wrote
-                # NOTHING -- no record, no print. If the index feed stutters
-                # during a collapse, the log shows a position going to zero
-                # with no alarm and no refusal, which is indistinguishable
-                # from the A69 pause bug we spent today finding. A hedge that
-                # does not happen must always say why.
-                #
-                # Recorded ONCE per position per reason (_hq71), because this
-                # sits in a 20 Hz loop and an unrecovered feed would otherwise
-                # write tens of thousands of lines. The dedupe is per REASON,
-                # so a feed that fails in a new way still speaks up.
-                def _hquiet(_why, **_kw):
-                    _k = (_hid, _why)
-                    if _k in _hq71:
-                        return
-                    _hq71.add(_k)
-                    rec("hedge_blind", ticker=_htk, why=_why, tau=_hcs - now_s,
-                        **_kw)
-                    print(f"  hedge BLIND {_htk}: {_why}")
-
-                _meta = hedge_meta.get(_hid)
-                if _meta is None:
-                    # Before A71 this was every PAPER position, for ever.
-                    _hquiet("no_hedge_meta")
-                    continue
-                _hstrike, _hdig, _hiid = _meta
-                _htau = _hcs - now_s
-                if _htau < 1:
-                    continue                    # the close has passed; not blind
-                _hsg = idx.sigma(_hiid)
-                if _hsg is None:
-                    _hquiet("no_sigma", iid=_hiid)
-                    continue
-                _hf = fair(idx, _hiid, _hcs, now_s, _hstrike,
-                           _hsg * SIGMA_STRESS
-                           * widen_factor(idx, _hiid, _hsg, _hwant),
-                           round_digits=_hdig)                  # AMENDMENT 41
-                if _hf is None:
-                    _hquiet("no_fair", iid=_hiid, sigma=round(float(_hsg), 6))
-                    continue
-                _belief = _hf if _hwant == "yes" else 1.0 - _hf
-                # A68: the NEWEST belief for this market, recorded every tick
-                # and not only when the alarm fires. The rebuy is allowed only
-                # while this is at or under the panic line, so a belief that
-                # RECOVERS closes the door again on the very next tick.
-                last_belief[_htk] = float(_belief)
-                # A52: two reasons to fire, recorded separately. The jump is
-                # asked FIRST because it is the earlier signal -- belief only
-                # falls after the price has already moved.
-                _htrig = "belief"
-                _hjmp = None
-                if HEDGE_JUMP_SIGMA is not None:
-                    _since = int(now_s - entry_at.get(_hid, now_s))
-                    _hjmp = jump_against(
-                        idx.recent_moves(_hiid, max(1, min(HEDGE_JUMP_LOOKBACK_MAX, _since))),
-                        _hsg, _hwant)
-                    if _hjmp is not None and _hjmp >= HEDGE_JUMP_SIGMA:
-                        _htrig = "jump"
-                if _htrig != "jump" and not hedge_should_fire(_belief):
-                    continue
-                # ONE TRY PER SECOND. The loop runs ~20x/second; the first live
-                # alarm (planted, 2026-09-12 09:44:35Z) burned all five tries in
-                # ~250 ms and gave up inside the same second the alarm fired.
-                # HEDGE_MAX_TRIES means seconds, as its comment says, so a try
-                # is only counted when the wall-clock second has advanced.
-                if hedge_last_try.get(_hid) == now_s:
-                    continue
-                hedge_last_try[_hid] = now_s
-                _tries = hedge_tries.get(_hid, 0)
-                # A76: the alarm is keyed on its own set, not on _tries == 0.
-                # Under proportional hedging a position can sit for many
-                # seconds with nothing to buy (belief in the no-hedge band),
-                # and those seconds must neither re-fire the alarm nor burn
-                # a try.
-                if _hid not in hedge_alarmed:
-                    hedge_alarmed.add(_hid)
-                    state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
-                    last_belief[_htk] = float(_belief)   # A68
-                    rec("hedge_alarm", ticker=_htk, want=_hwant, entry=_hcost,
-                        n=_hn, belief=round(_belief, 5), tau=_htau,
-                        threshold=HEDGE_BELIEF,
-                        # A52: WHICH reason fired, and the jump size either
-                        # way, so the two triggers can be scored against each
-                        # other on the same alarms
-                        trigger=_htrig,
-                        jump_sd=(round(_hjmp, 2) if _hjmp is not None else None),
-                        jump_threshold=HEDGE_JUMP_SIGMA)
-                    print(f"  !!! HEDGE ALARM {_htk} {_hwant} belief {_belief:.3f} "
-                          f"tau {_htau}s")
-                # A76: HOW MUCH OF THE POSITION SHOULD BE HEDGED AT THIS
-                # BELIEF, less what already is. `_unhedged` keeps the true
-                # uncovered count for the fill bookkeeping below; `_hn`
-                # becomes what we buy NOW. A second with nothing to buy is
-                # NOT a try and does NOT mark the position hedged -- the
-                # belief can fall further and the top-up must still happen.
-                _unhedged = float(_hn)
-                _hn = hedge_want(_hn_orig, _unhedged, _belief)
-                _hfrac = hedge_fraction(_belief)
-                if hedge_prop_said.get(_hid) != _hfrac:
-                    hedge_prop_said[_hid] = _hfrac
-                    rec("hedge_prop", ticker=_htk, belief=round(_belief, 5),
-                        fraction=_hfrac, target=round(hedge_target(_hn_orig, _belief), 2),
-                        covered=round(float(_hn_orig) - _unhedged, 2),
-                        buy_now=round(_hn, 2), tau=_htau)
-                if _hn <= 1e-9:
-                    continue
-                hedge_tries[_hid] = _tries + 1
-                if _tries + 1 > HEDGE_MAX_TRIES and not hedge_panic(_belief):
-                    hedged.add(_hid)
-                    rec("hedge_gave_up", ticker=_htk, tries=_tries, tau=_htau)
-                    continue
-                # AMENDMENT 71: THIS USED TO READ THE ENTRY PATH'S COUNTER --
-                # the `attempts` dict, against MAX_ATTEMPTS_PER_CLOSE. The old
-                # line is NOT reproduced here: the self-test below asserts it
-                # is gone by searching this function's source, and a comment
-                # quoting it verbatim makes that search find the comment. That
-                # exact trap has now bitten this project five times.
-                #
-                # `attempts[close]` is incremented by every ENTRY order (two
-                # sites in the scan loop) as well as by hedge orders, and
-                # MAX_ATTEMPTS_PER_CLOSE is 24. So on a busy close -- twelve
-                # coins settling on the same quarter hour, which is the normal
-                # case, not the rare one -- the bot's own buying could spend
-                # the budget and then PERMANENTLY disable the hedge on a
-                # position it was already holding. `hedged.add(_hid)` is never
-                # cleared.
-                #
-                # A rail written to stop a 160-order runaway was gating
-                # insurance. That is the exact shape of all three losses on
-                # 2026-09-19 and it is what the standing rule forbids.
-                #
-                # The hedge now counts only its OWN sends, against its own
-                # cap, which no entry can touch. The real bound on hedging was
-                # never this: `hedge_last_try` allows one try per position per
-                # WALL-CLOCK SECOND and HEDGE_MAX_TRIES stops at 30, so at
-                # most 3 positions x 30 = 90 hedge orders can exist in a
-                # close, spread over at least thirty seconds. This cap sits
-                # above that and is a runaway backstop only -- ordinary
-                # hedging cannot reach it.
-                if (hedge_attempts.get(_hcs, 0) >= MAX_HEDGE_ATTEMPTS_PER_CLOSE
-                        and not hedge_panic(_belief)):
-                    hedged.add(_hid)
-                    rec("hedge_refused", ticker=_htk, why="hedge_attempt_cap",
-                        tried=hedge_attempts.get(_hcs, 0),
-                        cap=MAX_HEDGE_ATTEMPTS_PER_CLOSE, tau=_htau)
-                    continue
-                _opp = "no" if _hwant == "yes" else "yes"
                 try:
-                    _hb = book.best(_htk)
-                except Exception as _e:                      # noqa: BLE001
-                    rec("error", where="hedge_book", ticker=_htk, err=str(_e)[:200])
-                    continue
-                _ask = (_hb or {}).get(f"{_opp}_ask")
-                _asz = (_hb or {}).get(f"{_opp}_ask_size")
-                if not _hb or not _ask or not _asz or _ask >= 1.0:
-                    rec("hedge_no_ask", ticker=_htk, side=_opp, tau=_htau,
-                        belief=round(_belief, 5))
-                    continue
-                # A62: below HEDGE_PANIC belief, no filter may block this.
-                _panic = hedge_panic(_belief)
-                if _panic and _hid not in hedge_panic_said:
-                    hedge_panic_said.add(_hid)
-                    rec("hedge_panic", ticker=_htk, belief=round(_belief, 5),
-                        threshold=HEDGE_PANIC, tau=_htau, ask=float(_ask),
-                        entry=_hcost, n=_hn,
-                        bypassed=["hedge_price", "hedge_normal", "attempt_cap"])
-                    print(f"  !!! HEDGE PANIC {_htk} belief {_belief:.3f} -- "
-                          f"every filter bypassed, taking {_ask:.2f}")
-                if not _panic and not hedge_price_ok(_ask):
-                    # NOT added to `hedged`: the price can still fall inside
-                    # this close, and if it does we hedge then. That is the
-                    # whole point -- wait for the market to agree. Recorded
-                    # once per position so a 20 Hz loop cannot flood the log.
-                    if _hid not in hedge_price_said:
-                        hedge_price_said.add(_hid)
-                        rec("hedge_wait_price", ticker=_htk, ask=float(_ask),
-                            our_price=round(1.0 - float(_ask), 4),
-                            threshold=HEDGE_PRICE, belief=round(_belief, 5),
-                            tau=_htau)
-                        print(f"  hedge WAITING on price {_htk}: our side "
-                              f"{1.0 - float(_ask):.2f} is above {HEDGE_PRICE:.2f}")
-                    continue
-                if not _panic and not hedge_normal_ok(_belief, _ask):
-                    # A51: NOT added to `hedged` -- the model can get surer and
-                    # the price can still fall inside this close, and if both
-                    # happen we insure then. Same reasoning as the A47 wait.
-                    if _hid not in hedge_normal_said:
-                        hedge_normal_said.add(_hid)
-                        rec("hedge_wait_normal", ticker=_htk, ask=float(_ask),
-                            other_side_belief=round(1.0 - _belief, 5),
-                            need_belief=PIN, need_price=PRICE_CEILING,
-                            belief=round(_belief, 5), tau=_htau)
-                        print(f"  hedge WAITING for a normal bet {_htk}: other "
-                              f"side {1.0 - _belief:.4f} sure @ {_ask:.3f}")
-                    continue
-                if not hedge_ask_ok(_ask):
-                    # RULE 4 OF THE PRE-REGISTRATION (corrected 2026-09-12): a
-                    # hedge leg at $1.00 or more cannot beat holding. Counted,
-                    # then give up on it.
-                    hedged.add(_hid)
-                    state["hedge_ask_refused"] = state.get("hedge_ask_refused", 0) + 1
-                    rec("hedge_refused", ticker=_htk, why="ask_at_or_over_dollar",
-                        entry=_hcost, ask=_ask, tau=_htau,
-                        edge_c=hedge_edge_c(_belief, _ask))
-                    continue
-                # A54: if this position was opened on the EARLY leg and the
-                # flip is happening inside the main window, buy MORE of the
-                # side the better-informed look prefers.
-                _entry_tau = (_hcs - entry_at[_hid]) if _hid in entry_at else None
-                _hn_want = flip_size(_hn, _entry_tau, _htau)
-                # A70: the limit we SEND, and the depth we may size from. With
-                # --hedge-slip 0 (the default) _hlimit == _ask and _hdepth ==
-                # _asz, which is exactly the pre-A70 pair of numbers.
-                _hlimit = hedge_limit(_ask)
-                if _hlimit is None:
-                    _hlimit = float(_ask)
-                _hrungs = []
-                if HEDGE_SLIP:
-                    try:
-                        _hrungs = book.rungs(_htk, _opp, _hlimit)
-                    except Exception:                    # noqa: BLE001
-                        # A ladder read must NEVER stop a hedge. Fall back to
-                        # the touch and insure anyway.
-                        _hrungs = []
-                _hdepth = hedge_depth(_asz, _hrungs, _hn)
-                _hn_take = min(float(_hn_want), float(_hdepth))
-                if HEDGE_PILOT_CONTRACTS:
-                    _hn_take = min(_hn_take, float(HEDGE_PILOT_CONTRACTS))
-                # A hedge order still spends the ENTRY budget -- an order is an
-                # order and a hedge outranks a new bet -- but the entry budget
-                # no longer spends the HEDGE's.
-                attempts[_hcs] = attempts.get(_hcs, 0) + 1
-                hedge_attempts[_hcs] = hedge_attempts.get(_hcs, 0) + 1
-                if not live:
-                    # A70: pay the LADDER average, not the touch, for whatever
-                    # the slip let us reach. With slip 0 there are no rungs and
-                    # this is float(_ask) -- the pre-A70 number exactly.
-                    _hpaper = float(hedge_vwap(_hrungs, _hn_take, float(_ask)))
-                    _hoid = f"hedge-paper-{_htk}-{now_s}"
-                    open_pos[_hoid] = (_hcs, _opp, _hpaper, _hn_take, _htk)
-                    # A76: paper books the same way live does -- the position
-                    # is done only when the WHOLE of it is covered, so a
-                    # proportional half-hedge stays open for its top-up.
-                    _left76p = float(_unhedged) - float(_hn_take)
-                    if _left76p <= 1e-9:
+                    # BUG FOUND LIVE 2026-09-13 (ZEC 26SEP122000-00, real money,
+                    # ~$0.96 hidden). The line this replaces read `_hn` straight
+                    # out of open_pos and, on a partial hedge fill, wrote a
+                    # SMALLER size back into open_pos[_hid] to remember "how much
+                    # is still unhedged". open_pos[_hid] is not scratch space --
+                    # it is exactly the tuple reconcile() unpacks to settle the
+                    # ORIGINAL position and to call pintake.record_pnl(), which
+                    # risk_abort()'s loss-abort and loss-count brakes read.
+                    # Shrinking it here silently shrank the original position
+                    # too: an 11-contract loss settled and fed the risk ledger
+                    # as if it were 10, because the first hedge attempt had
+                    # filled 1 of the 11 needed. The exchange's own books were
+                    # never wrong -- only our record of what we lost and what
+                    # the brake believes it is guarding against.
+                    # FIX: open_pos[_hid] is read-only in this loop from here on.
+                    # `hedge_remain` tracks "contracts still needing a hedge
+                    # fill" separately, seeded from the ORIGINAL size on first sight.
+                    _hn = hedge_remain.get(_hid, _hn_orig)
+                    if _hid in hedged or _hid.startswith("hedge-"):
+                        continue
+                    # AMENDMENT 71: THESE THREE SKIPS USED TO BE SILENT.
+                    #
+                    # A missing strike, an unmeasurable sigma or an unmeasurable
+                    # fair value all skipped the hedge for that second and wrote
+                    # NOTHING -- no record, no print. If the index feed stutters
+                    # during a collapse, the log shows a position going to zero
+                    # with no alarm and no refusal, which is indistinguishable
+                    # from the A69 pause bug we spent today finding. A hedge that
+                    # does not happen must always say why.
+                    #
+                    # Recorded ONCE per position per reason (_hq71), because this
+                    # sits in a 20 Hz loop and an unrecovered feed would otherwise
+                    # write tens of thousands of lines. The dedupe is per REASON,
+                    # so a feed that fails in a new way still speaks up.
+                    def _hquiet(_why, **_kw):
+                        _k = (_hid, _why)
+                        if _k in _hq71:
+                            return
+                        _hq71.add(_k)
+                        rec("hedge_blind", ticker=_htk, why=_why, tau=_hcs - now_s,
+                            **_kw)
+                        print(f"  hedge BLIND {_htk}: {_why}")
+
+                    _meta = hedge_meta.get(_hid)
+                    if _meta is None:
+                        # Before A71 this was every PAPER position, for ever.
+                        _hquiet("no_hedge_meta")
+                        continue
+                    _hstrike, _hdig, _hiid = _meta
+                    _htau = _hcs - now_s
+                    if _htau < 1:
+                        continue                    # the close has passed; not blind
+                    _hsg = idx.sigma(_hiid)
+                    if _hsg is None:
+                        _hquiet("no_sigma", iid=_hiid)
+                        continue
+                    _hf = fair(idx, _hiid, _hcs, now_s, _hstrike,
+                               _hsg * SIGMA_STRESS
+                               * widen_factor(idx, _hiid, _hsg, _hwant),
+                               round_digits=_hdig)                  # AMENDMENT 41
+                    if _hf is None:
+                        _hquiet("no_fair", iid=_hiid, sigma=round(float(_hsg), 6))
+                        continue
+                    _belief = _hf if _hwant == "yes" else 1.0 - _hf
+                    # A68: the NEWEST belief for this market, recorded every tick
+                    # and not only when the alarm fires. The rebuy is allowed only
+                    # while this is at or under the panic line, so a belief that
+                    # RECOVERS closes the door again on the very next tick.
+                    last_belief[_htk] = float(_belief)
+                    # A52: two reasons to fire, recorded separately. The jump is
+                    # asked FIRST because it is the earlier signal -- belief only
+                    # falls after the price has already moved.
+                    _htrig = "belief"
+                    _hjmp = None
+                    if HEDGE_JUMP_SIGMA is not None:
+                        _since = int(now_s - entry_at.get(_hid, now_s))
+                        _hjmp = jump_against(
+                            idx.recent_moves(_hiid, max(1, min(HEDGE_JUMP_LOOKBACK_MAX, _since))),
+                            _hsg, _hwant)
+                        if _hjmp is not None and _hjmp >= HEDGE_JUMP_SIGMA:
+                            _htrig = "jump"
+                    if _htrig != "jump" and not hedge_should_fire(_belief):
+                        continue
+                    # ONE TRY PER SECOND. The loop runs ~20x/second; the first live
+                    # alarm (planted, 2026-09-12 09:44:35Z) burned all five tries in
+                    # ~250 ms and gave up inside the same second the alarm fired.
+                    # HEDGE_MAX_TRIES means seconds, as its comment says, so a try
+                    # is only counted when the wall-clock second has advanced.
+                    if hedge_last_try.get(_hid) == now_s:
+                        continue
+                    hedge_last_try[_hid] = now_s
+                    _tries = hedge_tries.get(_hid, 0)
+                    # A76: the alarm is keyed on its own set, not on _tries == 0.
+                    # Under proportional hedging a position can sit for many
+                    # seconds with nothing to buy (belief in the no-hedge band),
+                    # and those seconds must neither re-fire the alarm nor burn
+                    # a try.
+                    if _hid not in hedge_alarmed:
+                        hedge_alarmed.add(_hid)
+                        state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
+                        last_belief[_htk] = float(_belief)   # A68
+                        rec("hedge_alarm", ticker=_htk, want=_hwant, entry=_hcost,
+                            n=_hn, belief=round(_belief, 5), tau=_htau,
+                            threshold=HEDGE_BELIEF,
+                            # A52: WHICH reason fired, and the jump size either
+                            # way, so the two triggers can be scored against each
+                            # other on the same alarms
+                            trigger=_htrig,
+                            jump_sd=(round(_hjmp, 2) if _hjmp is not None else None),
+                            jump_threshold=HEDGE_JUMP_SIGMA)
+                        print(f"  !!! HEDGE ALARM {_htk} {_hwant} belief {_belief:.3f} "
+                              f"tau {_htau}s")
+                    # A76: HOW MUCH OF THE POSITION SHOULD BE HEDGED AT THIS
+                    # BELIEF, less what already is. `_unhedged` keeps the true
+                    # uncovered count for the fill bookkeeping below; `_hn`
+                    # becomes what we buy NOW. A second with nothing to buy is
+                    # NOT a try and does NOT mark the position hedged -- the
+                    # belief can fall further and the top-up must still happen.
+                    _unhedged = float(_hn)
+                    _hn = hedge_want(_hn_orig, _unhedged, _belief)
+                    _hfrac = hedge_fraction(_belief)
+                    if hedge_prop_said.get(_hid) != _hfrac:
+                        hedge_prop_said[_hid] = _hfrac
+                        rec("hedge_prop", ticker=_htk, belief=round(_belief, 5),
+                            fraction=_hfrac, target=round(hedge_target(_hn_orig, _belief), 2),
+                            covered=round(float(_hn_orig) - _unhedged, 2),
+                            buy_now=round(_hn, 2), tau=_htau)
+                    if _hn <= 1e-9:
+                        continue
+                    hedge_tries[_hid] = _tries + 1
+                    if _tries + 1 > HEDGE_MAX_TRIES and not hedge_panic(_belief):
                         hedged.add(_hid)
-                        hedge_remain.pop(_hid, None)
-                    else:
-                        hedge_remain[_hid] = _left76p
-                    hedged_side[_htk] = _opp
-                    rec("hedge", ticker=_htk, side=_opp, price=_hpaper,
-                        ask=float(_ask), ask_size=float(_asz),
+                        rec("hedge_gave_up", ticker=_htk, tries=_tries, tau=_htau)
+                        continue
+                    # AMENDMENT 71: THIS USED TO READ THE ENTRY PATH'S COUNTER --
+                    # the `attempts` dict, against MAX_ATTEMPTS_PER_CLOSE. The old
+                    # line is NOT reproduced here: the self-test below asserts it
+                    # is gone by searching this function's source, and a comment
+                    # quoting it verbatim makes that search find the comment. That
+                    # exact trap has now bitten this project five times.
+                    #
+                    # `attempts[close]` is incremented by every ENTRY order (two
+                    # sites in the scan loop) as well as by hedge orders, and
+                    # MAX_ATTEMPTS_PER_CLOSE is 24. So on a busy close -- twelve
+                    # coins settling on the same quarter hour, which is the normal
+                    # case, not the rare one -- the bot's own buying could spend
+                    # the budget and then PERMANENTLY disable the hedge on a
+                    # position it was already holding. `hedged.add(_hid)` is never
+                    # cleared.
+                    #
+                    # A rail written to stop a 160-order runaway was gating
+                    # insurance. That is the exact shape of all three losses on
+                    # 2026-09-19 and it is what the standing rule forbids.
+                    #
+                    # The hedge now counts only its OWN sends, against its own
+                    # cap, which no entry can touch. The real bound on hedging was
+                    # never this: `hedge_last_try` allows one try per position per
+                    # WALL-CLOCK SECOND and HEDGE_MAX_TRIES stops at 30, so at
+                    # most 3 positions x 30 = 90 hedge orders can exist in a
+                    # close, spread over at least thirty seconds. This cap sits
+                    # above that and is a runaway backstop only -- ordinary
+                    # hedging cannot reach it.
+                    if (hedge_attempts.get(_hcs, 0) >= MAX_HEDGE_ATTEMPTS_PER_CLOSE
+                            and not hedge_panic(_belief)):
+                        hedged.add(_hid)
+                        rec("hedge_refused", ticker=_htk, why="hedge_attempt_cap",
+                            tried=hedge_attempts.get(_hcs, 0),
+                            cap=MAX_HEDGE_ATTEMPTS_PER_CLOSE, tau=_htau)
+                        continue
+                    _opp = "no" if _hwant == "yes" else "yes"
+                    try:
+                        _hb = book.best(_htk)
+                    except Exception as _e:                      # noqa: BLE001
+                        rec("error", where="hedge_book", ticker=_htk, err=str(_e)[:200])
+                        continue
+                    _ask = (_hb or {}).get(f"{_opp}_ask")
+                    _asz = (_hb or {}).get(f"{_opp}_ask_size")
+                    if not _hb or not _ask or not _asz or _ask >= 1.0:
+                        rec("hedge_no_ask", ticker=_htk, side=_opp, tau=_htau,
+                            belief=round(_belief, 5))
+                        continue
+                    # A62: below HEDGE_PANIC belief, no filter may block this.
+                    _panic = hedge_panic(_belief)
+                    if _panic and _hid not in hedge_panic_said:
+                        hedge_panic_said.add(_hid)
+                        rec("hedge_panic", ticker=_htk, belief=round(_belief, 5),
+                            threshold=HEDGE_PANIC, tau=_htau, ask=float(_ask),
+                            entry=_hcost, n=_hn,
+                            bypassed=["hedge_price", "hedge_normal", "attempt_cap"])
+                        print(f"  !!! HEDGE PANIC {_htk} belief {_belief:.3f} -- "
+                              f"every filter bypassed, taking {_ask:.2f}")
+                    if not _panic and not hedge_price_ok(_ask):
+                        # NOT added to `hedged`: the price can still fall inside
+                        # this close, and if it does we hedge then. That is the
+                        # whole point -- wait for the market to agree. Recorded
+                        # once per position so a 20 Hz loop cannot flood the log.
+                        if _hid not in hedge_price_said:
+                            hedge_price_said.add(_hid)
+                            rec("hedge_wait_price", ticker=_htk, ask=float(_ask),
+                                our_price=round(1.0 - float(_ask), 4),
+                                threshold=HEDGE_PRICE, belief=round(_belief, 5),
+                                tau=_htau)
+                            print(f"  hedge WAITING on price {_htk}: our side "
+                                  f"{1.0 - float(_ask):.2f} is above {HEDGE_PRICE:.2f}")
+                        continue
+                    if not _panic and not hedge_normal_ok(_belief, _ask):
+                        # A51: NOT added to `hedged` -- the model can get surer and
+                        # the price can still fall inside this close, and if both
+                        # happen we insure then. Same reasoning as the A47 wait.
+                        if _hid not in hedge_normal_said:
+                            hedge_normal_said.add(_hid)
+                            rec("hedge_wait_normal", ticker=_htk, ask=float(_ask),
+                                other_side_belief=round(1.0 - _belief, 5),
+                                need_belief=PIN, need_price=PRICE_CEILING,
+                                belief=round(_belief, 5), tau=_htau)
+                            print(f"  hedge WAITING for a normal bet {_htk}: other "
+                                  f"side {1.0 - _belief:.4f} sure @ {_ask:.3f}")
+                        continue
+                    if not hedge_ask_ok(_ask):
+                        # RULE 4 OF THE PRE-REGISTRATION (corrected 2026-09-12): a
+                        # hedge leg at $1.00 or more cannot beat holding. Counted,
+                        # then give up on it.
+                        hedged.add(_hid)
+                        state["hedge_ask_refused"] = state.get("hedge_ask_refused", 0) + 1
+                        rec("hedge_refused", ticker=_htk, why="ask_at_or_over_dollar",
+                            entry=_hcost, ask=_ask, tau=_htau,
+                            edge_c=hedge_edge_c(_belief, _ask))
+                        continue
+                    # A54: if this position was opened on the EARLY leg and the
+                    # flip is happening inside the main window, buy MORE of the
+                    # side the better-informed look prefers.
+                    _entry_tau = (_hcs - entry_at[_hid]) if _hid in entry_at else None
+                    _hn_want = flip_size(_hn, _entry_tau, _htau)
+                    # A70: the limit we SEND, and the depth we may size from. With
+                    # --hedge-slip 0 (the default) _hlimit == _ask and _hdepth ==
+                    # _asz, which is exactly the pre-A70 pair of numbers.
+                    _hlimit = hedge_limit(_ask)
+                    if _hlimit is None:
+                        _hlimit = float(_ask)
+                    _hrungs = []
+                    if HEDGE_SLIP:
+                        try:
+                            _hrungs = book.rungs(_htk, _opp, _hlimit)
+                        except Exception:                    # noqa: BLE001
+                            # A ladder read must NEVER stop a hedge. Fall back to
+                            # the touch and insure anyway.
+                            _hrungs = []
+                    _hdepth = hedge_depth(_asz, _hrungs, _hn)
+                    _hn_take = min(float(_hn_want), float(_hdepth))
+                    if HEDGE_PILOT_CONTRACTS:
+                        _hn_take = min(_hn_take, float(HEDGE_PILOT_CONTRACTS))
+                    # A hedge order still spends the ENTRY budget -- an order is an
+                    # order and a hedge outranks a new bet -- but the entry budget
+                    # no longer spends the HEDGE's.
+                    attempts[_hcs] = attempts.get(_hcs, 0) + 1
+                    hedge_attempts[_hcs] = hedge_attempts.get(_hcs, 0) + 1
+                    if not live:
+                        # A70: pay the LADDER average, not the touch, for whatever
+                        # the slip let us reach. With slip 0 there are no rungs and
+                        # this is float(_ask) -- the pre-A70 number exactly.
+                        _hpaper = float(hedge_vwap(_hrungs, _hn_take, float(_ask)))
+                        _hoid = f"hedge-paper-{_htk}-{now_s}"
+                        open_pos[_hoid] = (_hcs, _opp, _hpaper, _hn_take, _htk)
+                        # A76: paper books the same way live does -- the position
+                        # is done only when the WHOLE of it is covered, so a
+                        # proportional half-hedge stays open for its top-up.
+                        _left76p = float(_unhedged) - float(_hn_take)
+                        if _left76p <= 1e-9:
+                            hedged.add(_hid)
+                            hedge_remain.pop(_hid, None)
+                        else:
+                            hedge_remain[_hid] = _left76p
+                        hedged_side[_htk] = _opp
+                        rec("hedge", ticker=_htk, side=_opp, price=_hpaper,
+                            ask=float(_ask), ask_size=float(_asz),
+                            limit_sent=round(float(_hlimit), 4),
+                            slip_c=round(100.0 * (float(_hlimit) - float(_ask)), 3),
+                            ladder_n=round(float(_hdepth), 2),
+                            # A54: what we ASKED for and why, so a flip is never
+                            # mistaken for an ordinary hedge in the attribution
+                            flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
+                            entry_tau=_entry_tau,
+                            n=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
+                            locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hpaper), 2),
+                            edge_c=hedge_edge_c(_belief, _hpaper), live=False)
+                        print(f"  HEDGE(paper) {_htk} buy {_opp.upper()} {_hn_take:g} @ "
+                              f"{_hpaper:.3f} -> locked {100*hedge_locked_loss(_hcost,_hpaper):+.1f}c")
+                        continue
+                    try:
+                        # A70: the LIMIT, never the ask we saw -- same rule the
+                        # entry path has followed since A35.
+                        _hout = pintake.take(CREDS["base"], CREDS["pk"], CREDS["key_id"],
+                                             _htk, _opp, float(_hlimit), _hn_take,
+                                             float(_hcs), exchange_index=2)
+                    except Exception as _e:                      # noqa: BLE001
+                        state["order_errors"] = state.get("order_errors", 0) + 1
+                        rec("error", where="hedge_take", ticker=_htk, err=str(_e)[:300])
+                        continue
+                    _href = _hout.get("refused") or []
+                    if _href or _hout.get("status_code") is None:
+                        rec("hedge_refused", ticker=_htk, why="take_refused",
+                            err=str(_href)[:300], tau=_htau)
+                        continue
+                    _hfilled = float(_hout.get("filled") or 0)
+                    _hpx = _hout.get("exec_price")
+                    _hcost2 = float(_hpx) if _hpx is not None else float(_ask)
+                    # K1: THE FILL IS REGISTERED BEFORE ANYTHING FORMATS IT.
+                    # This block used to sit below the record and the print.
+                    # Once this body is guarded (K1), a record that raised
+                    # there would leave a filled hedge unbooked -- and the
+                    # next second would buy the SAME hedge again.
+                    if _hfilled > 0:
+                        hedged_side[_htk] = _opp
+                        _hoid = f"hedge-{_hout.get('order_id') or now_s}"
+                        open_pos[_hoid] = (_hcs, _opp, _hcost2, _hfilled, _htk)
+                        state["hedges"] = state.get("hedges", 0) + 1
+                        # A76: "done" means the WHOLE position is covered
+                        # (_unhedged, not _hn). A proportional half-hedge that
+                        # filled in full must leave the position open to a
+                        # top-up when the belief falls further.
+                        _left76 = float(_unhedged) - _hfilled
+                        if HEDGE_PILOT_CONTRACTS or _left76 <= 1e-9:
+                            # under the pilot ANY fill completes the hedge for this
+                            # position -- otherwise 1 contract/second for 5 seconds
+                            hedged.add(_hid)
+                            hedge_remain.pop(_hid, None)
+                        else:
+                            # PARTIAL: track what is still unhedged in hedge_remain,
+                            # NEVER in open_pos[_hid] -- see the note above this loop.
+                            hedge_remain[_hid] = _left76
+                    rec("hedge", ticker=_htk, side=_opp, price=_hcost2, n=_hfilled,
+                        flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
+                        entry_tau=_entry_tau,
+                        # A70: what we were willing to pay over the ask, how much
+                        # ladder that reached, and whether it actually cost more.
+                        # This is how --hedge-slip gets scored: slip paid in cents
+                        # against contracts that would otherwise have filled 0.
                         limit_sent=round(float(_hlimit), 4),
                         slip_c=round(100.0 * (float(_hlimit) - float(_ask)), 3),
                         ladder_n=round(float(_hdepth), 2),
-                        # A54: what we ASKED for and why, so a flip is never
-                        # mistaken for an ordinary hedge in the attribution
-                        flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
-                        entry_tau=_entry_tau,
-                        n=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
-                        locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hpaper), 2),
-                        edge_c=hedge_edge_c(_belief, _hpaper), live=False)
-                    print(f"  HEDGE(paper) {_htk} buy {_opp.upper()} {_hn_take:g} @ "
-                          f"{_hpaper:.3f} -> locked {100*hedge_locked_loss(_hcost,_hpaper):+.1f}c")
+                        swept=bool(_hpx is not None
+                                   and float(_hpx) > float(_ask) + 1e-9),
+                        ask=float(_ask), ask_size=float(_asz),      # criterion (b): fill vs the ask we hit
+                        asked=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
+                        locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hcost2), 2),
+                        order_id=_hout.get("order_id"), status=_hout.get("status"),
+                        edge_c=hedge_edge_c(_belief, _hcost2), live=True)
+                    print(f"  HEDGE {_htk} buy {_opp.upper()} {_hfilled:g}/{_hn_take:g} @ "
+                          f"{_hcost2:.3f} -> locked {100*hedge_locked_loss(_hcost,_hcost2):+.1f}c")
+                except Exception as _ek1:                  # noqa: BLE001
+                    # K1: a bug in ONE position's hedge step must not end
+                    # the run -- every other open position still needs
+                    # this pass, and so does this one next second.
+                    _k1_error("hedge", _hcs, _htk, _ek1)
                     continue
-                try:
-                    # A70: the LIMIT, never the ask we saw -- same rule the
-                    # entry path has followed since A35.
-                    _hout = pintake.take(CREDS["base"], CREDS["pk"], CREDS["key_id"],
-                                         _htk, _opp, float(_hlimit), _hn_take,
-                                         float(_hcs), exchange_index=2)
-                except Exception as _e:                      # noqa: BLE001
-                    state["order_errors"] = state.get("order_errors", 0) + 1
-                    rec("error", where="hedge_take", ticker=_htk, err=str(_e)[:300])
-                    continue
-                _href = _hout.get("refused") or []
-                if _href or _hout.get("status_code") is None:
-                    rec("hedge_refused", ticker=_htk, why="take_refused",
-                        err=str(_href)[:300], tau=_htau)
-                    continue
-                _hfilled = float(_hout.get("filled") or 0)
-                _hpx = _hout.get("exec_price")
-                _hcost2 = float(_hpx) if _hpx is not None else float(_ask)
-                if _hfilled > 0:
-                    hedged_side[_htk] = _opp
-                rec("hedge", ticker=_htk, side=_opp, price=_hcost2, n=_hfilled,
-                    flip_mult=round(_hn_want / float(_hn), 3) if _hn else 1.0,
-                    entry_tau=_entry_tau,
-                    # A70: what we were willing to pay over the ask, how much
-                    # ladder that reached, and whether it actually cost more.
-                    # This is how --hedge-slip gets scored: slip paid in cents
-                    # against contracts that would otherwise have filled 0.
-                    limit_sent=round(float(_hlimit), 4),
-                    slip_c=round(100.0 * (float(_hlimit) - float(_ask)), 3),
-                    ladder_n=round(float(_hdepth), 2),
-                    swept=bool(_hpx is not None
-                               and float(_hpx) > float(_ask) + 1e-9),
-                    ask=float(_ask), ask_size=float(_asz),      # criterion (b): fill vs the ask we hit
-                    asked=_hn_take, entry=_hcost, tau=_htau, belief=round(_belief, 5),
-                    locked_loss_c=round(100 * hedge_locked_loss(_hcost, _hcost2), 2),
-                    order_id=_hout.get("order_id"), status=_hout.get("status"),
-                    edge_c=hedge_edge_c(_belief, _hcost2), live=True)
-                print(f"  HEDGE {_htk} buy {_opp.upper()} {_hfilled:g}/{_hn_take:g} @ "
-                      f"{_hcost2:.3f} -> locked {100*hedge_locked_loss(_hcost,_hcost2):+.1f}c")
-                if _hfilled > 0:
-                    _hoid = f"hedge-{_hout.get('order_id') or now_s}"
-                    open_pos[_hoid] = (_hcs, _opp, _hcost2, _hfilled, _htk)
-                    state["hedges"] = state.get("hedges", 0) + 1
-                    # A76: "done" means the WHOLE position is covered
-                    # (_unhedged, not _hn). A proportional half-hedge that
-                    # filled in full must leave the position open to a
-                    # top-up when the belief falls further.
-                    _left76 = float(_unhedged) - _hfilled
-                    if HEDGE_PILOT_CONTRACTS or _left76 <= 1e-9:
-                        # under the pilot ANY fill completes the hedge for this
-                        # position -- otherwise 1 contract/second for 5 seconds
-                        hedged.add(_hid)
-                        hedge_remain.pop(_hid, None)
-                    else:
-                        # PARTIAL: track what is still unhedged in hedge_remain,
-                        # NEVER in open_pos[_hid] -- see the note above this loop.
-                        hedge_remain[_hid] = _left76
         # ---------------- end AMENDMENT 15 ----------------
 
         # A69: THE RISK CHECK, NOW BELOW THE HEDGE PASS. It used to sit above
@@ -9317,7 +9781,14 @@ def trade_loop(a, rec, book, idx, series_index):
         # the A69 block at the top of the loop for the $107.95 that cost.
         # A pause stops NEW bets; it has never been able to stop a hedge from
         # reducing risk, and now it cannot.
-        stop = risk_abort(state, a)
+        # K1: a risk check that RAISES is not a pass. No new bets this
+        # iteration, and the loop -- with the hedge pass above -- goes on.
+        try:
+            stop = risk_abort(state, a)
+        except Exception as _ek1:                        # noqa: BLE001
+            _k1_error("risk_abort", None, None, _ek1)
+            time.sleep(0.5)
+            continue
         if stop and halt_is_transient(stop):
             # AMENDMENT 14: wait it out. reconcile() runs at the top of every
             # iteration, so the open positions this is waiting on are released
@@ -9488,1177 +9959,1224 @@ def trade_loop(a, rec, book, idx, series_index):
                     return 0.0
                 return -got[1]
             _mk.sort(key=_rank)
+        if state.get("entries_stopped"):
+            _mk = []        # K1: no NEW entries; the hedge pass above still ran
         for tk, (iid, close_s, strike, digits, exi) in _mk:
-            tau = close_s - now_s
-            if not (TAU_MIN <= tau <= max(TAU_MAX, EARLY_TAU_MAX)):
-                continue                 # not a refusal: outside the window
-            # AMENDMENT 3: scale in as the price IMPROVES, up to MAX_PER_CLOSE.
-            # One shot at the first safe price leaves money on the table:
-            # measured over 70 closes, adding only on improvement raised profit
-            # per opportunity from 4.18c to 8.87c AND lowered the average price
-            # paid from 95.53c to 94.28c. Waiting for a better price instead is
-            # strictly worse -- skipping just one tick missed 7 of 70 closes
-            # outright. In this bet a lower price wins more AND loses less, so
-            # averaging down improves both sides.
-            prev = fired.get(close_s)
-            # ---- AMENDMENT 46: staged early entry -- what this market holds
-            # from an early leg, and whether this look is itself early. One
-            # early leg per market; a second early look is refused here,
-            # before any signal is recorded.
-            _held46 = float((prev.get("early_tk", {}) if prev else {}).get(tk, 0.0))
-            _early46 = EARLY_TAU_MAX > TAU_MAX and tau > TAU_MAX
-            if _early46 and _held46 > 0:
-                _gate("early_once", close_s, tk, held=_held46, tau=tau)
-                continue
-            if CLOSE_BUDGET:
-                # AMENDMENT 17: contracts, not fills. Coins are unlimited;
-                # the close is done when its contract budget is spent.
-                _spent = prev.get("contracts", 0.0) if prev else 0.0
-                _bud56 = close_budget_for(prev, tk, tau=tau)
-                if _spent >= _bud56 - 1e-9:
-                    # THIS GATE CANNOT RECORD want/price/fair AND MUST NOT
-                    # TRY. It fires here, BEFORE the book is read: `f` is
-                    # assigned further down and `want, price, size` further
-                    # down still. On 2026-09-19 01:59Z an attempt to log them
-                    # read a STALE `price` left as None by an earlier market
-                    # and killed the live bot with
-                    #   TypeError: type NoneType doesn't define __round__
-                    # after an hour of trading, with two positions open.
-                    #
-                    # Making this gate scorable means moving the budget check
-                    # to AFTER the book read -- a change to WHEN we refuse,
-                    # not just to what we log, and not one to make on a
-                    # crashed bot at 2am. Until then `close_budget` refusals
-                    # are counted, not valued.
-                    _gate("close_budget", close_s, tk, spent=_spent,
-                          budget=_bud56, base=close_budget(),
-                          extra_coin=float(EXTRA_COIN), tau=tau,
+            try:
+                tau = close_s - now_s
+                if not (TAU_MIN <= tau <= max(TAU_MAX, EARLY_TAU_MAX)):
+                    continue                 # not a refusal: outside the window
+                # AMENDMENT 3: scale in as the price IMPROVES, up to MAX_PER_CLOSE.
+                # One shot at the first safe price leaves money on the table:
+                # measured over 70 closes, adding only on improvement raised profit
+                # per opportunity from 4.18c to 8.87c AND lowered the average price
+                # paid from 95.53c to 94.28c. Waiting for a better price instead is
+                # strictly worse -- skipping just one tick missed 7 of 70 closes
+                # outright. In this bet a lower price wins more AND loses less, so
+                # averaging down improves both sides.
+                prev = fired.get(close_s)
+                # ---- AMENDMENT 46: staged early entry -- what this market holds
+                # from an early leg, and whether this look is itself early. One
+                # early leg per market; a second early look is refused here,
+                # before any signal is recorded.
+                _held46 = float((prev.get("early_tk", {}) if prev else {}).get(tk, 0.0))
+                _early46 = EARLY_TAU_MAX > TAU_MAX and tau > TAU_MAX
+                if _early46 and _held46 > 0:
+                    _gate("early_once", close_s, tk, held=_held46, tau=tau)
+                    continue
+                if CLOSE_BUDGET:
+                    # AMENDMENT 17: contracts, not fills. Coins are unlimited;
+                    # the close is done when its contract budget is spent.
+                    _spent = prev.get("contracts", 0.0) if prev else 0.0
+                    _bud56 = close_budget_for(prev, tk, tau=tau)
+                    if _spent >= _bud56 - 1e-9:
+                        # THIS GATE CANNOT RECORD want/price/fair AND MUST NOT
+                        # TRY. It fires here, BEFORE the book is read: `f` is
+                        # assigned further down and `want, price, size` further
+                        # down still. On 2026-09-19 01:59Z an attempt to log them
+                        # read a STALE `price` left as None by an earlier market
+                        # and killed the live bot with
+                        #   TypeError: type NoneType doesn't define __round__
+                        # after an hour of trading, with two positions open.
+                        #
+                        # Making this gate scorable means moving the budget check
+                        # to AFTER the book read -- a change to WHEN we refuse,
+                        # not just to what we log, and not one to make on a
+                        # crashed bot at 2am. Until then `close_budget` refusals
+                        # are counted, not valued.
+                        _gate("close_budget", close_s, tk, spent=_spent,
+                              budget=_bud56, base=close_budget(),
+                              extra_coin=float(EXTRA_COIN), tau=tau,
+                              size=float(SIZE))
+                        continue
+                elif prev is not None and prev["n"] >= MAX_PER_CLOSE:
+                    _gate("max_per_close", close_s, tk, n=prev["n"])
+                    continue
+                # AMENDMENT 13: ONE FILL PER MARKET. See MAX_PER_MARKET.
+                if prev is not None and                     prev.get("per_tk", {}).get(tk, 0) >= MAX_PER_MARKET:
+                    nb13 = near.setdefault(close_s, _fresh_near())
+                    nb13["market_capped"] = nb13.get("market_capped", 0) + 1
+                    _gate("max_per_market", close_s, tk,
+                          fills=prev.get("per_tk", {}).get(tk, 0))
+                    continue
+                # AMENDMENT 8(A): NEVER HOLD BOTH SIDES OF ONE MARKET.
+                # `fired` was keyed by close alone, so the improve bar was compared
+                # across markets AND across sides. Every price we can pay is above
+                # 50c, so buying YES then NO on the same market pays >100c for a
+                # guaranteed $1.00 -- a CERTAIN loss on one of the two orders,
+                # carrying no directional risk at all. Worse, pinrun counts the
+                # loss brake per settled losing ORDER, so it spends a third of the
+                # budget with certainty. Measured: 3 pairs over 2 closes in the
+                # wide sample, ZERO in 82 live-window closes, so this costs ~$4 of
+                # EV out of $230 and nothing at all where we actually trade.
+                # MOVED 2026-09-17: this test USED TO LIVE HERE and read `want` --
+                # which is not assigned until ~140 lines below, inside this same
+                # scan loop. So it compared the side we hold in THIS market against
+                # the side we happened to want in the PREVIOUS market of the scan,
+                # or None on the first pass. It therefore blocked roughly 94% of
+                # re-looks at a market we already hold, including legitimate
+                # same-side top-ups, and let a genuine opposite-side buy through
+                # whenever the previous market happened to want the same side.
+                # Found by the 2026-09-17 fresh-eyes review and confirmed by three
+                # independent readers. The test now runs where `want` exists; see
+                # `_both_sides_block` below.
+                # AND A SEPARATE CAP ON ATTEMPTS. AMENDMENT 6 stopped a no-fill
+                # from burning a FILL slot, which is right -- an unfilled order
+                # creates no exposure. But it left NOTHING bounding how many times
+                # we may try, so a persistently refused order retried at 20 Hz
+                # forever. Fills and attempts need separate budgets.
+                # ---- AMENDMENT 26 (2026-09-14): DON'T STOP WALKING THE LADDER ---
+                # THE OPERATOR: "make sure that if it goes through all, and goes
+                # back to buy the best, if that's sold out it keeps checking to see
+                # if the next best or any others are still available and gets
+                # those."
+                #
+                # THE LOOP ALREADY DOES THAT -- there is no `break` after an order,
+                # so a market that fails to fill is followed by the next market in
+                # the pass, and since AMENDMENT 24 sorted the pass by edge, the
+                # next market IS the next best. What could stop it was this cap.
+                #
+                # MAX_ATTEMPTS_PER_CLOSE was 8, written on 2026-09-08 against a
+                # runaway that sent 160 orders into ONE market in ONE second. But
+                # 8 is also fewer than the twelve coins that settle on the same
+                # second, so a close where the first few asks vanished could run
+                # out of attempts before ever reaching a market that was still
+                # there -- the exact thing he is asking for, blocked by a cap
+                # aimed at something else.
+                #
+                # THE RUNAWAY IS NOW STOPPED AT ITS ACTUAL SOURCE. It was one
+                # market retried, not many markets tried, so the per-MARKET cap
+                # below makes 160-into-one impossible however high the close cap
+                # goes. That lets the close cap rise to cover every coin twice.
+                if attempts_tk.get((close_s, tk), 0) >= MAX_ATTEMPTS_PER_MARKET:
+                    _gate("market_attempts", close_s, tk,
+                          tried=attempts_tk.get((close_s, tk), 0))
+                    continue
+                if attempts.get(close_s, 0) >= MAX_ATTEMPTS_PER_CLOSE:
+                    _gate("attempts_cap", close_s, tk,
+                          tried=attempts.get(close_s, 0))
+                    continue
+                try:
+                    b = book.best(tk)
+                except Exception as e:                       # noqa: BLE001
+                    state["errors"] += 1
+                    rec("error", where="book", ticker=tk, err=str(e)[:200])
+                    continue
+                if not b or b.get("suspect"):
+                    _gate("book_suspect", close_s, tk)
+                    continue
+                if b.get("age_ms") is None or b["age_ms"] > MAX_BOOK_AGE_MS:
+                    _gate("book_stale", close_s, tk, age_ms=b.get("age_ms"))
+                    continue
+                sec, spot, iage = idx.spot(iid)
+                if spot is None or iage is None or iage > MAX_INDEX_AGE_S:
+                    _gate("index_stale", close_s, tk, age_s=iage)
+                    continue
+                sg = idx.sigma(iid)
+                if sg is None:
+                    _gate("no_sigma", close_s, tk)
+                    continue
+                # AMENDMENT 41/42. THE SIDE IS NOT KNOWN YET -- `want` is chosen
+                # from the ask side further down, and the first version of this
+                # line passed it anyway. Python evaluates arguments before the
+                # call, so it raised UnboundLocalError on the first market that
+                # ever reached here, whatever the flag said. It killed the live
+                # bot at 2026-09-15 04:59:30Z, ten minutes after a restart --
+                # ten minutes because nothing reaches this line until a market
+                # clears the book, index and sigma gates.
+                #
+                # So: price it UNWIDENED first, take the lean from that, then
+                # widen and price it again. Widening sigma moves confidence
+                # toward 0.5 and can never flip which side the model leans to, so
+                # the lean read off the unwidened number is the same lean.
+                # Two fair() calls, and only when the flag is on.
+                f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS,
+                         round_digits=digits)
+                if f is None:
+                    continue
+                _wf = 1.0
+                if WIDEN_ENABLED:
+                    _lean = "yes" if f >= 0.5 else "no"
+                    _wf = widen_factor(idx, iid, sg, _lean)
+                    if _wf != 1.0:
+                        f = fair(idx, iid, close_s, now_s, strike,
+                                 sg * SIGMA_STRESS * _wf, round_digits=digits)
+                        if f is None:
+                            continue
+                state["considered"] += 1
+
+                # ---- --hedge-plant: the planted one-contract hedge test -------
+                # Operator, 2026-09-12: "buy 1 of a losing coin, then test the
+                # hedge with 1." At the first DECIDED market (belief >= PIN one
+                # way) with tau <= 25, buy ONE contract of the side about to LOSE
+                # at its ask, book it exactly like a real fill (open_pos +
+                # hedge_meta), and let the hedge pass -- which sees belief ~0 on
+                # it within a second -- fire the hedge. Fires at most once per
+                # run; costs a few cents (a ~3c leg plus a ~97c leg pay $1).
+                # Everything after the buy is the ordinary, unmodified hedge path,
+                # which is the point: it is the live path being tested.
+                if getattr(a, "hedge_plant", False) and not state.get("plant_done") \
+                        and tau <= 25 and (0.90 <= f <= 0.99 or 0.01 <= f <= 0.10):
+                    # FIRST PLANT, 09:44:35Z: it chose a FULLY decided market (fair
+                    # 0.0000), bought 1 YES at 0.3c, the alarm fired, and there was
+                    # no NO ask to hedge with -- in a decided market the dead side's
+                    # book is empty (33,427 of 33,431 moments), so the winner has
+                    # no ask. Real structure, not a bug; but it exercised only the
+                    # refusal path. Settled -0.33c. Now plant only when the market
+                    # is NEARLY decided (winner 90-99%), so the losing side costs
+                    # 1-10c and the winner's ask exists at 90-99c: the hedge can
+                    # then FILL and both legs settle, which is the test wanted.
+                    _lose = "no" if f >= 0.5 else "yes"          # the side about to lose
+                    _la = b.get(f"{_lose}_ask")
+                    _ls = b.get(f"{_lose}_ask_size")
+                    if _la and _ls and 0.0 < _la < 0.50 and live:
+                        state["plant_done"] = True
+                        attempts[close_s] = attempts.get(close_s, 0) + 1
+                        rec("plant_attempt", ticker=tk, side=_lose, ask=_la,
+                            fair=round(f, 5), tau=tau)
+                        print(f"  PLANT: buying 1 {_lose.upper()} {tk} @ {_la:.3f} "
+                              f"(fair {f:.4f}) to test the hedge on it")
+                        try:
+                            _po = pintake.take(CREDS["base"], CREDS["pk"],
+                                               CREDS["key_id"], tk, _lose,
+                                               float(_la), 1.0, float(close_s),
+                                               exchange_index=2)
+                        except Exception as _e:                  # noqa: BLE001
+                            rec("error", where="plant_take", ticker=tk, err=str(_e)[:300])
+                            _po = {}
+                        _pf = float(_po.get("filled") or 0)
+                        _pp = _po.get("exec_price")
+                        rec("plant", ticker=tk, side=_lose, filled=_pf,
+                            price=(float(_pp) if _pp is not None else _la),
+                            refused=_po.get("refused"), status=_po.get("status"),
+                            order_id=_po.get("order_id"))
+                        if _pf > 0:
+                            _poid = f"plant-{_po.get('order_id') or now_s}"
+                            _pc = float(_pp) if _pp is not None else float(_la)
+                            open_pos[_poid] = (close_s, _lose, _pc, _pf, tk)
+                            entry_at[_poid] = now_s
+                            hedge_meta[_poid] = (strike, digits, iid)
+                            print(f"  PLANT filled {_pf:g} @ {_pc:.3f}; the hedge "
+                                  f"pass should fire on it within a second")
+                        continue
+
+                want = price = size = None
+                if f >= PIN:
+                    ya, ys = b.get("yes_ask"), b.get("yes_ask_size")
+                    if ya and ys and ya < 1.0:
+                        want, price, size = "yes", ya, ys
+                elif f <= 1.0 - PIN:
+                    na, ns = b.get("no_ask"), b.get("no_ask_size")
+                    if na and ns and na < 1.0:
+                        want, price, size = "no", na, ns
+                # AMENDMENT 8, NOW READ AT THE RIGHT MOMENT. Never hold both sides
+                # of one market: the two legs cannot both win, so the pair costs
+                # more than the $1 it pays and locks in the difference. `want` is
+                # assigned immediately above, so this is the first line in the loop
+                # where the comparison is even meaningful.
+                # A68: how much MORE of the hedged-into side we may buy. Only
+                # while the model has given up (belief at or under the panic
+                # line), and capped at a multiple of what we hold on the losing
+                # side so the tail is bounded before it happens rather than
+                # discovered afterwards.
+                _lose_n = ((prev.get("n_tk") or {}).get(tk, 0.0)
+                           if prev else 0.0)
+                _room68 = None
+                if (hedged_side.get(tk) is not None and want == hedged_side.get(tk)
+                        and hedge_panic(last_belief.get(tk))):
+                    _room68 = rebuy_room(_lose_n, rebuy_extra.get(tk, 0.0))
+                if want is not None and _both_sides_block(
+                        prev, tk, want, hedged_side.get(tk), _room68):
+                    nb0 = near.setdefault(close_s, _fresh_near())
+                    nb0["both_sides_blocked"] = nb0.get("both_sides_blocked", 0) + 1
+                    # `want`, `fair`, `tau`, `spot` and `strike` are RECORDED
+                    # HERE because on 2026-09-18 this gate fired after every
+                    # early leg on twenty straight live markets, and with only
+                    # `held` in the record nobody could tell whether the model had
+                    # genuinely reversed or the fair value was being computed for
+                    # the wrong thing. A refusal that cannot say why it refused
+                    # is one nobody can argue with.
+                    _gate("both_sides", close_s, tk, held=prev["sides"][tk],
+                          want=want, fair=round(f, 5), tau=tau,
+                          spot=spot, strike=strike,
+                          # A63: so a reader can tell "we never hedged this" from
+                          # "we hedged the other way and the flag is off"
+                          hedged_into=hedged_side.get(tk),
+                          rebuy_hedged=bool(REBUY_HEDGED),
+                          wanted=want)
+                    continue
+                if want is None:
+                    # WHY did this not produce a candidate? The two cases are very
+                    # different and conflating them hides the real constraint:
+                    #   undecided  -- fair never reached the gate; no edge existed
+                    #   no_offer   -- fair DID reach the gate but nobody was
+                    #                 offering the winning side. When an outcome
+                    #                 becomes obvious the losing side's bids
+                    #                 vanish, so there is nothing to buy. That is
+                    #                 a CAPACITY limit, not a signal limit.
+                    nb = near.setdefault(close_s, _fresh_near())
+                    nb["n"] += 1
+                    if f >= PIN or f <= 1.0 - PIN:
+                        nb["decided"] += 1
+                        nb["no_offer"] += 1
+                        # RECORD WHAT WAS ACTUALLY ON THE SCREEN. "no_offer" does
+                        # NOT mean nobody was selling -- it means no ask BELOW
+                        # 100c, and an ask at exactly 100c (worthless to us, but a
+                        # real seller) lands here too. Without these fields the
+                        # log cannot tell the two apart, and on 2026-09-14 I told
+                        # the operator "nobody was selling" when I could not know
+                        # that. The distinction matters: no seller at all is a
+                        # hard ceiling on the strategy, while a seller at 100c is
+                        # a pricing problem.
+                        _gate("no_offer", close_s, tk, fair=round(f, 5), tau=tau,
+                              yes_ask=b.get("yes_ask"), no_ask=b.get("no_ask"),
+                              yes_ask_size=b.get("yes_ask_size"),
+                              no_ask_size=b.get("no_ask_size"),
+                              wanted_side=("yes" if f >= PIN else "no"))
+                    else:
+                        nb["undecided"] += 1
+                        _gate("confidence", close_s, tk, fair=round(f, 5),
+                              tau=tau)
+                    continue
+                # AMENDMENT 6: buy what is THERE, down to MIN_FILL_FRAC of what
+                # we wanted. Below that, skip -- a scrap fill burns a scale-in
+                # slot and raises the improve bar for the better price still to
+                # come, which measured WORSE than not trading at all.
+                take_n = min(float(SIZE), float(size))
+                # THE FLOOR IS MEASURED AGAINST FULL SIZE, NEVER THE REMAINDER --
+                # the operator's own condition (A17). Trimming take_n first would
+                # let the tail of a budget buy a moment the floor exists to
+                # refuse, so the trim happens strictly AFTER this test.
+                _floor = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))
+                # AMENDMENT 37: how many can we actually BUY, not how many sit at
+                # the touch. take_n is deliberately NOT reassigned here -- every
+                # downstream user of it keeps the touch number, and the order path's
+                # own A35 block does the widening. This decides ONLY whether to
+                # refuse. Computed inside the thin branch so it costs nothing on
+                # the 96% of looks that are not shallow.
+                _reach = take_n
+                if DEPTH_LADDER and SWEEP_DEPTH and take_n < _floor:
+                    _dlim = sweep_limit(f, price, want)
+                    if _dlim > price + 1e-9:
+                        try:
+                            _reach = min(float(SIZE),
+                                         max(take_n,
+                                             float(book.buyable(tk, want, _dlim))))
+                        except Exception:              # noqa: BLE001
+                            _reach = take_n
+                if _reach < _floor:
+                    # RECORD IT ANYWAY. A moment we skip for being too shallow is
+                    # still a moment the market offered something, and it is the
+                    # number that decides how far we can scale.
+                    _nb = near.setdefault(close_s, _fresh_near())
+                    _nb["depths"].append(float(size))
+                    _nb["shallow"][str(int(SIZE))] =                     _nb["shallow"].get(str(int(SIZE)), 0) + 1
+                    _gate("depth_floor", close_s, tk, want=want,
+                          price=round(price, 4), offered=float(size),
+                          reach=round(float(_reach), 2),
+                          depth_ladder=bool(DEPTH_LADDER and SWEEP_DEPTH),
+                          # `size` is what makes a refusal SCORABLE: pinattrib
+                          # values a blocked trade at min(size_now, size), so 545
+                          # of this gate's refusals were discarded over a missing
+                          # key while the report blamed a missing price.
+                          wanted=float(SIZE), fair=round(f, 5), tau=tau,
                           size=float(SIZE))
                     continue
-            elif prev is not None and prev["n"] >= MAX_PER_CLOSE:
-                _gate("max_per_close", close_s, tk, n=prev["n"])
-                continue
-            # AMENDMENT 13: ONE FILL PER MARKET. See MAX_PER_MARKET.
-            if prev is not None and                     prev.get("per_tk", {}).get(tk, 0) >= MAX_PER_MARKET:
-                nb13 = near.setdefault(close_s, _fresh_near())
-                nb13["market_capped"] = nb13.get("market_capped", 0) + 1
-                _gate("max_per_market", close_s, tk,
-                      fills=prev.get("per_tk", {}).get(tk, 0))
-                continue
-            # AMENDMENT 8(A): NEVER HOLD BOTH SIDES OF ONE MARKET.
-            # `fired` was keyed by close alone, so the improve bar was compared
-            # across markets AND across sides. Every price we can pay is above
-            # 50c, so buying YES then NO on the same market pays >100c for a
-            # guaranteed $1.00 -- a CERTAIN loss on one of the two orders,
-            # carrying no directional risk at all. Worse, pinrun counts the
-            # loss brake per settled losing ORDER, so it spends a third of the
-            # budget with certainty. Measured: 3 pairs over 2 closes in the
-            # wide sample, ZERO in 82 live-window closes, so this costs ~$4 of
-            # EV out of $230 and nothing at all where we actually trade.
-            # MOVED 2026-09-17: this test USED TO LIVE HERE and read `want` --
-            # which is not assigned until ~140 lines below, inside this same
-            # scan loop. So it compared the side we hold in THIS market against
-            # the side we happened to want in the PREVIOUS market of the scan,
-            # or None on the first pass. It therefore blocked roughly 94% of
-            # re-looks at a market we already hold, including legitimate
-            # same-side top-ups, and let a genuine opposite-side buy through
-            # whenever the previous market happened to want the same side.
-            # Found by the 2026-09-17 fresh-eyes review and confirmed by three
-            # independent readers. The test now runs where `want` exists; see
-            # `_both_sides_block` below.
-            # AND A SEPARATE CAP ON ATTEMPTS. AMENDMENT 6 stopped a no-fill
-            # from burning a FILL slot, which is right -- an unfilled order
-            # creates no exposure. But it left NOTHING bounding how many times
-            # we may try, so a persistently refused order retried at 20 Hz
-            # forever. Fills and attempts need separate budgets.
-            # ---- AMENDMENT 26 (2026-09-14): DON'T STOP WALKING THE LADDER ---
-            # THE OPERATOR: "make sure that if it goes through all, and goes
-            # back to buy the best, if that's sold out it keeps checking to see
-            # if the next best or any others are still available and gets
-            # those."
-            #
-            # THE LOOP ALREADY DOES THAT -- there is no `break` after an order,
-            # so a market that fails to fill is followed by the next market in
-            # the pass, and since AMENDMENT 24 sorted the pass by edge, the
-            # next market IS the next best. What could stop it was this cap.
-            #
-            # MAX_ATTEMPTS_PER_CLOSE was 8, written on 2026-09-08 against a
-            # runaway that sent 160 orders into ONE market in ONE second. But
-            # 8 is also fewer than the twelve coins that settle on the same
-            # second, so a close where the first few asks vanished could run
-            # out of attempts before ever reaching a market that was still
-            # there -- the exact thing he is asking for, blocked by a cap
-            # aimed at something else.
-            #
-            # THE RUNAWAY IS NOW STOPPED AT ITS ACTUAL SOURCE. It was one
-            # market retried, not many markets tried, so the per-MARKET cap
-            # below makes 160-into-one impossible however high the close cap
-            # goes. That lets the close cap rise to cover every coin twice.
-            if attempts_tk.get((close_s, tk), 0) >= MAX_ATTEMPTS_PER_MARKET:
-                _gate("market_attempts", close_s, tk,
-                      tried=attempts_tk.get((close_s, tk), 0))
-                continue
-            if attempts.get(close_s, 0) >= MAX_ATTEMPTS_PER_CLOSE:
-                _gate("attempts_cap", close_s, tk,
-                      tried=attempts.get(close_s, 0))
-                continue
-            try:
-                b = book.best(tk)
-            except Exception as e:                       # noqa: BLE001
-                state["errors"] += 1
-                rec("error", where="book", ticker=tk, err=str(e)[:200])
-                continue
-            if not b or b.get("suspect"):
-                _gate("book_suspect", close_s, tk)
-                continue
-            if b.get("age_ms") is None or b["age_ms"] > MAX_BOOK_AGE_MS:
-                _gate("book_stale", close_s, tk, age_ms=b.get("age_ms"))
-                continue
-            sec, spot, iage = idx.spot(iid)
-            if spot is None or iage is None or iage > MAX_INDEX_AGE_S:
-                _gate("index_stale", close_s, tk, age_s=iage)
-                continue
-            sg = idx.sigma(iid)
-            if sg is None:
-                _gate("no_sigma", close_s, tk)
-                continue
-            # AMENDMENT 41/42. THE SIDE IS NOT KNOWN YET -- `want` is chosen
-            # from the ask side further down, and the first version of this
-            # line passed it anyway. Python evaluates arguments before the
-            # call, so it raised UnboundLocalError on the first market that
-            # ever reached here, whatever the flag said. It killed the live
-            # bot at 2026-09-15 04:59:30Z, ten minutes after a restart --
-            # ten minutes because nothing reaches this line until a market
-            # clears the book, index and sigma gates.
-            #
-            # So: price it UNWIDENED first, take the lean from that, then
-            # widen and price it again. Widening sigma moves confidence
-            # toward 0.5 and can never flip which side the model leans to, so
-            # the lean read off the unwidened number is the same lean.
-            # Two fair() calls, and only when the flag is on.
-            f = fair(idx, iid, close_s, now_s, strike, sg * SIGMA_STRESS,
-                     round_digits=digits)
-            if f is None:
-                continue
-            _wf = 1.0
-            if WIDEN_ENABLED:
-                _lean = "yes" if f >= 0.5 else "no"
-                _wf = widen_factor(idx, iid, sg, _lean)
-                if _wf != 1.0:
-                    f = fair(idx, iid, close_s, now_s, strike,
-                             sg * SIGMA_STRESS * _wf, round_digits=digits)
-                    if f is None:
-                        continue
-            state["considered"] += 1
-
-            # ---- --hedge-plant: the planted one-contract hedge test -------
-            # Operator, 2026-09-12: "buy 1 of a losing coin, then test the
-            # hedge with 1." At the first DECIDED market (belief >= PIN one
-            # way) with tau <= 25, buy ONE contract of the side about to LOSE
-            # at its ask, book it exactly like a real fill (open_pos +
-            # hedge_meta), and let the hedge pass -- which sees belief ~0 on
-            # it within a second -- fire the hedge. Fires at most once per
-            # run; costs a few cents (a ~3c leg plus a ~97c leg pay $1).
-            # Everything after the buy is the ordinary, unmodified hedge path,
-            # which is the point: it is the live path being tested.
-            if getattr(a, "hedge_plant", False) and not state.get("plant_done") \
-                    and tau <= 25 and (0.90 <= f <= 0.99 or 0.01 <= f <= 0.10):
-                # FIRST PLANT, 09:44:35Z: it chose a FULLY decided market (fair
-                # 0.0000), bought 1 YES at 0.3c, the alarm fired, and there was
-                # no NO ask to hedge with -- in a decided market the dead side's
-                # book is empty (33,427 of 33,431 moments), so the winner has
-                # no ask. Real structure, not a bug; but it exercised only the
-                # refusal path. Settled -0.33c. Now plant only when the market
-                # is NEARLY decided (winner 90-99%), so the losing side costs
-                # 1-10c and the winner's ask exists at 90-99c: the hedge can
-                # then FILL and both legs settle, which is the test wanted.
-                _lose = "no" if f >= 0.5 else "yes"          # the side about to lose
-                _la = b.get(f"{_lose}_ask")
-                _ls = b.get(f"{_lose}_ask_size")
-                if _la and _ls and 0.0 < _la < 0.50 and live:
-                    state["plant_done"] = True
-                    attempts[close_s] = attempts.get(close_s, 0) + 1
-                    rec("plant_attempt", ticker=tk, side=_lose, ask=_la,
-                        fair=round(f, 5), tau=tau)
-                    print(f"  PLANT: buying 1 {_lose.upper()} {tk} @ {_la:.3f} "
-                          f"(fair {f:.4f}) to test the hedge on it")
-                    try:
-                        _po = pintake.take(CREDS["base"], CREDS["pk"],
-                                           CREDS["key_id"], tk, _lose,
-                                           float(_la), 1.0, float(close_s),
-                                           exchange_index=2)
-                    except Exception as _e:                  # noqa: BLE001
-                        rec("error", where="plant_take", ticker=tk, err=str(_e)[:300])
-                        _po = {}
-                    _pf = float(_po.get("filled") or 0)
-                    _pp = _po.get("exec_price")
-                    rec("plant", ticker=tk, side=_lose, filled=_pf,
-                        price=(float(_pp) if _pp is not None else _la),
-                        refused=_po.get("refused"), status=_po.get("status"),
-                        order_id=_po.get("order_id"))
-                    if _pf > 0:
-                        _poid = f"plant-{_po.get('order_id') or now_s}"
-                        _pc = float(_pp) if _pp is not None else float(_la)
-                        open_pos[_poid] = (close_s, _lose, _pc, _pf, tk)
-                        entry_at[_poid] = now_s
-                        hedge_meta[_poid] = (strike, digits, iid)
-                        print(f"  PLANT filled {_pf:g} @ {_pc:.3f}; the hedge "
-                              f"pass should fire on it within a second")
-                    continue
-
-            want = price = size = None
-            if f >= PIN:
-                ya, ys = b.get("yes_ask"), b.get("yes_ask_size")
-                if ya and ys and ya < 1.0:
-                    want, price, size = "yes", ya, ys
-            elif f <= 1.0 - PIN:
-                na, ns = b.get("no_ask"), b.get("no_ask_size")
-                if na and ns and na < 1.0:
-                    want, price, size = "no", na, ns
-            # AMENDMENT 8, NOW READ AT THE RIGHT MOMENT. Never hold both sides
-            # of one market: the two legs cannot both win, so the pair costs
-            # more than the $1 it pays and locks in the difference. `want` is
-            # assigned immediately above, so this is the first line in the loop
-            # where the comparison is even meaningful.
-            # A68: how much MORE of the hedged-into side we may buy. Only
-            # while the model has given up (belief at or under the panic
-            # line), and capped at a multiple of what we hold on the losing
-            # side so the tail is bounded before it happens rather than
-            # discovered afterwards.
-            _lose_n = ((prev.get("n_tk") or {}).get(tk, 0.0)
-                       if prev else 0.0)
-            _room68 = None
-            if (hedged_side.get(tk) is not None and want == hedged_side.get(tk)
-                    and hedge_panic(last_belief.get(tk))):
-                _room68 = rebuy_room(_lose_n, rebuy_extra.get(tk, 0.0))
-            if want is not None and _both_sides_block(
-                    prev, tk, want, hedged_side.get(tk), _room68):
-                nb0 = near.setdefault(close_s, _fresh_near())
-                nb0["both_sides_blocked"] = nb0.get("both_sides_blocked", 0) + 1
-                # `want`, `fair`, `tau`, `spot` and `strike` are RECORDED
-                # HERE because on 2026-09-18 this gate fired after every
-                # early leg on twenty straight live markets, and with only
-                # `held` in the record nobody could tell whether the model had
-                # genuinely reversed or the fair value was being computed for
-                # the wrong thing. A refusal that cannot say why it refused
-                # is one nobody can argue with.
-                _gate("both_sides", close_s, tk, held=prev["sides"][tk],
-                      want=want, fair=round(f, 5), tau=tau,
-                      spot=spot, strike=strike,
-                      # A63: so a reader can tell "we never hedged this" from
-                      # "we hedged the other way and the flag is off"
-                      hedged_into=hedged_side.get(tk),
-                      rebuy_hedged=bool(REBUY_HEDGED),
-                      wanted=want)
-                continue
-            if want is None:
-                # WHY did this not produce a candidate? The two cases are very
-                # different and conflating them hides the real constraint:
-                #   undecided  -- fair never reached the gate; no edge existed
-                #   no_offer   -- fair DID reach the gate but nobody was
-                #                 offering the winning side. When an outcome
-                #                 becomes obvious the losing side's bids
-                #                 vanish, so there is nothing to buy. That is
-                #                 a CAPACITY limit, not a signal limit.
+                e = net_edge(f, price, want)
+                # AMENDMENT 24: remember it so the NEXT pass can visit the best
+                # market first. Keyed with the close, because a ticker's edge from
+                # a settled close must never order the following one.
+                last_edge[tk] = (close_s, e)
                 nb = near.setdefault(close_s, _fresh_near())
                 nb["n"] += 1
-                if f >= PIN or f <= 1.0 - PIN:
-                    nb["decided"] += 1
-                    nb["no_offer"] += 1
-                    # RECORD WHAT WAS ACTUALLY ON THE SCREEN. "no_offer" does
-                    # NOT mean nobody was selling -- it means no ask BELOW
-                    # 100c, and an ask at exactly 100c (worthless to us, but a
-                    # real seller) lands here too. Without these fields the
-                    # log cannot tell the two apart, and on 2026-09-14 I told
-                    # the operator "nobody was selling" when I could not know
-                    # that. The distinction matters: no seller at all is a
-                    # hard ceiling on the strategy, while a seller at 100c is
-                    # a pricing problem.
-                    _gate("no_offer", close_s, tk, fair=round(f, 5), tau=tau,
-                          yes_ask=b.get("yes_ask"), no_ask=b.get("no_ask"),
-                          yes_ask_size=b.get("yes_ask_size"),
-                          no_ask_size=b.get("no_ask_size"),
-                          wanted_side=("yes" if f >= PIN else "no"))
-                else:
-                    nb["undecided"] += 1
-                    _gate("confidence", close_s, tk, fair=round(f, 5),
-                          tau=tau)
-                continue
-            # AMENDMENT 6: buy what is THERE, down to MIN_FILL_FRAC of what
-            # we wanted. Below that, skip -- a scrap fill burns a scale-in
-            # slot and raises the improve bar for the better price still to
-            # come, which measured WORSE than not trading at all.
-            take_n = min(float(SIZE), float(size))
-            # THE FLOOR IS MEASURED AGAINST FULL SIZE, NEVER THE REMAINDER --
-            # the operator's own condition (A17). Trimming take_n first would
-            # let the tail of a budget buy a moment the floor exists to
-            # refuse, so the trim happens strictly AFTER this test.
-            _floor = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))
-            # AMENDMENT 37: how many can we actually BUY, not how many sit at
-            # the touch. take_n is deliberately NOT reassigned here -- every
-            # downstream user of it keeps the touch number, and the order path's
-            # own A35 block does the widening. This decides ONLY whether to
-            # refuse. Computed inside the thin branch so it costs nothing on
-            # the 96% of looks that are not shallow.
-            _reach = take_n
-            if DEPTH_LADDER and SWEEP_DEPTH and take_n < _floor:
-                _dlim = sweep_limit(f, price, want)
-                if _dlim > price + 1e-9:
+                nb["decided"] += 1
+                nb["tradeable"] += 1
+                nb["depths"].append(float(size))
+                # AMENDMENT 44: how deep is the BOOK here, not just the touch?
+                # Once per market per close. Never raises into the trade loop.
+                if tk not in nb["ladder_seen"]:
+                    nb["ladder_seen"].add(tk)
                     try:
-                        _reach = min(float(SIZE),
-                                     max(take_n,
-                                         float(book.buyable(tk, want, _dlim))))
+                        nb["ladders"].append(
+                            float(book.buyable(tk, want, PRICE_CEILING)))
                     except Exception:              # noqa: BLE001
-                        _reach = take_n
-            if _reach < _floor:
-                # RECORD IT ANYWAY. A moment we skip for being too shallow is
-                # still a moment the market offered something, and it is the
-                # number that decides how far we can scale.
-                _nb = near.setdefault(close_s, _fresh_near())
-                _nb["depths"].append(float(size))
-                _nb["shallow"][str(int(SIZE))] =                     _nb["shallow"].get(str(int(SIZE)), 0) + 1
-                _gate("depth_floor", close_s, tk, want=want,
-                      price=round(price, 4), offered=float(size),
-                      reach=round(float(_reach), 2),
-                      depth_ladder=bool(DEPTH_LADDER and SWEEP_DEPTH),
-                      # `size` is what makes a refusal SCORABLE: pinattrib
-                      # values a blocked trade at min(size_now, size), so 545
-                      # of this gate's refusals were discarded over a missing
-                      # key while the report blamed a missing price.
-                      wanted=float(SIZE), fair=round(f, 5), tau=tau,
-                      size=float(SIZE))
-                continue
-            e = net_edge(f, price, want)
-            # AMENDMENT 24: remember it so the NEXT pass can visit the best
-            # market first. Keyed with the close, because a ticker's edge from
-            # a settled close must never order the following one.
-            last_edge[tk] = (close_s, e)
-            nb = near.setdefault(close_s, _fresh_near())
-            nb["n"] += 1
-            nb["decided"] += 1
-            nb["tradeable"] += 1
-            nb["depths"].append(float(size))
-            # AMENDMENT 44: how deep is the BOOK here, not just the touch?
-            # Once per market per close. Never raises into the trade loop.
-            if tk not in nb["ladder_seen"]:
-                nb["ladder_seen"].add(tk)
+                        pass
+                if take_n < float(SIZE):
+                    nb["dust"] += 1        # a PARTIAL, not a refusal, since A6
+                if nb["best"] is None or e > nb["best"]["edge"]:
+                    nb["best"] = {"ticker": tk, "want": want, "edge": e,
+                                  "price": price, "fair": f, "tau": tau,
+                                  "size": size}
+                if e < EDGE_FLOOR:
+                    _gate("edge_floor", close_s, tk, want=want,
+                          price=round(price, 4), edge_c=round(100 * e, 3),
+                          need_c=round(100 * EDGE_FLOOR, 3), fair=round(f, 5),
+                          tau=tau, size=float(size))
+                    continue
+                # AMENDMENT 38: a thin edge while the LIVE price is already past
+                # the strike against us. Placed immediately after the edge floor
+                # because it is the same question asked with one more fact, and
+                # before the dump guard so the two refusals stay distinguishable
+                # in the audit.
+                _agn = against_us(strike, spot, sg, want)
+                if against_block(strike, spot, sg, want, e):
+                    _gate("against_thin", close_s, tk, want=want,
+                          price=round(price, 4), edge_c=round(100 * e, 3),
+                          against_sigma=round(float(_agn), 3),
+                          strike=strike, spot=spot, sigma=round(sg, 6),
+                          need_edge_c=round(100 * AGAINST_EDGE, 3),
+                          fair=round(f, 5), tau=tau, size=float(size))
+                    continue
+                # AMENDMENT 40: the index just jumped against us. After the A38
+                # test and before the dump guard, so the three refusals stay
+                # separable in the audit. Reads the model's own sigma.
+                if JUMP_ENABLED:
+                    _mv = idx.recent_moves(iid, JUMP_LOOKBACK)
+                    _jmp = jump_against(_mv, sg, want)
+                    if jump_block(_mv, sg, want):
+                        _gate("jump_against", close_s, tk, want=want,
+                              price=round(price, 4), edge_c=round(100 * e, 3),
+                              jump_sd=round(float(_jmp), 2),
+                              moves=[round(float(m), 6) for m in _mv],
+                              sigma=round(sg, 6), need_sd=JUMP_SIGMA,
+                              fair=round(f, 5), tau=tau, size=float(size))
+                        continue
+                # AMENDMENT 10: a certainty at a discount is someone else's
+                # information, not our edge. See DUMP_CONF / DUMP_DISCOUNT.
+                _conf = f if want == "yes" else (1.0 - f)
+                _disc = (f - price) if want == "yes" else ((1.0 - f) - price)
+                if _disc > DUMP_DISCOUNT:
+                    nb["dumped"] = nb.get("dumped", 0) + 1
+                    if nb["best"] is not None and nb["best"]["ticker"] == tk:
+                        nb["best"]["dumped"] = round(100 * _disc, 2)
+                    # ONE record per (close, market), not one per 20 Hz tick, so
+                    # the would-be outcome is resolvable later and the log stays
+                    # readable. Written whether or not the guard is enabled.
+                    if (close_s, tk) not in dumped_seen:
+                        dumped_seen.add((close_s, tk))
+                        rec("dumped", ticker=tk, want=want, price=round(price, 4),
+                            fair=round(f, 5), tau=tau, disc_c=round(100 * _disc, 2),
+                            size=size, take_n=take_n, close_s=close_s,
+                            refused=bool(DUMP_ENABLED))
+                    if DUMP_ENABLED:
+                        _gate("dump_guard", close_s, tk, want=want,
+                              price=round(price, 4), disc_c=round(100 * _disc, 2),
+                              fair=round(f, 5), tau=tau, size=float(size))
+                        continue
+                # THE EXPECTED-VALUE GATE (AMENDMENT 2). The model edge above uses
+                # the model's own confidence, which implies ~0.06% error at the
+                # prices we pay. The MEASURED rate on trades we actually take is
+                # 0.90%. At high prices that gap flips the sign of the trade:
+                # breakeven price is exactly 1 - flip = 99.1c, and five of the
+                # seven live trades on 2026-09-08 were above it and negative EV.
+                # AMENDMENT 3: a SECOND buy on the same close is only allowed at a
+                # genuinely better price. Re-buying at the same level would double
+                # the risk without lowering the average paid, which is the whole
+                # mechanism -- a lower price wins more AND loses less.
+                # AMENDMENT 22: with MAX_PER_MARKET = 1 the same-market case can
+                # never arise, so under scope "market" this rule is a no-op and a
+                # second COIN is allowed at its own merits. Under "close" it keeps
+                # the old behaviour exactly.
+                if (IMPROVE_SCOPE == "close" and prev is not None
+                        and price >= prev["best"] - IMPROVE_BY):
+                    _gate("improve_by", close_s, tk, want=want,
+                          price=round(price, 4), best=prev["best"],
+                          fair=round(f, 5), tau=tau, size=float(size))
+                    continue
+                # ---- AMENDMENT 23 (2026-09-13): THE RE-BUY BAND ----------------
+                # A SECOND BUY IN THE SAME MARKET MUST BE A LITTLE CHEAPER, NOT A
+                # LOT CHEAPER. Only reachable when MAX_PER_MARKET > 1, which is
+                # still a paper-only setting, so this changes nothing live today.
+                #
+                # THE OPERATOR'S PREMISE, 2026-09-13: "if it's really going to
+                # flip then the confidence should be dropping." MEASURED, and it
+                # is half right. research/pinwarn.py, 18,653 closes reconstructed
+                # from the index with NOTHING filtered: confidence does fall below
+                # the gate on 31 of 31 closes the model got wrong -- but LATE. At
+                # tau 25 it had caught only 11 of 18, at tau 20 only 12 of 19. On
+                # our own money it was later still: SOL 2026-09-12 23:00 was
+                # bought three times at tau 30/29/28 while confidence ROSE
+                # 0.9994 -> 0.9997 -> 0.9998, and the flip only showed at tau~12.
+                # So confidence is a true warning and a useless one at the moment
+                # a second buy happens.
+                #
+                # WHAT IS FAST ENOUGH IS THE PRICE. research/pinpick.py, 1,260
+                # gate-passing markets over 738 closes: of the 862 markets where
+                # no cheaper second ever appeared, ZERO lost. Of the 398 where one
+                # did, 25 lost -- 6.28%, difference +6.28pp with a 95% interval of
+                # [+3.46, +9.82] bootstrapped over CLOSES rather than markets.
+                # And it is a dose-response, which is the part that is hard to get
+                # by accident:
+                #     0.5-1c cheaper   142 markets   0.70% lost   2nd leg +3.08c
+                #     1-2c             141           5.67%                -0.09c
+                #     2-5c              87          11.49%                -4.92c
+                #     5-10c             23          26.09%               -11.45c
+                # Break-even is 3.58%. A small improvement is liquidity and pays;
+                # a large one is someone selling into us and costs more than the
+                # whole edge. The ordering survives a 60/40 split on close time,
+                # and the last 40% were never fitted: 1.79 / 6.06 / 21.21 / 44.44.
+                #
+                # CAVEAT, STATED RATHER THAN BURIED: those loss rates come from the
+                # tape, whose population is "an offer was sitting there" and not
+                # ours. Rule 5 forbids reading OUR loss rate off it. What is used
+                # here is the ORDERING and the fact that the groups differ, both of
+                # which are statements about what the market did.
+                if not rebuy_ok(prev, tk, price, SIZE):
+                    nb23 = near.setdefault(close_s, _fresh_near())
+                    nb23["rebuy_band"] = nb23.get("rebuy_band", 0) + 1
+                    _gate("rebuy_band", close_s, tk, want=want,
+                          price=round(price, 4),
+                          paid=(prev.get("px_tk", {}) or {}).get(tk),
+                          fair=round(f, 5), tau=tau, size=float(size))
+                    continue
+                if price > PRICE_CEILING:
+                    nb["over_ceiling"] = nb.get("over_ceiling", 0) + 1
+                    _gate("price_ceiling", close_s, tk, want=want,
+                          price=round(price, 4), ceiling=PRICE_CEILING,
+                          fair=round(f, 5), tau=tau, size=float(size))
+                    continue
+                ev = expected_value(price)
+                if ev < EV_FLOOR:
+                    nb["neg_ev"] = nb.get("neg_ev", 0) + 1
+                    if nb["best"] is not None and nb["best"]["ticker"] == tk:
+                        nb["best"]["ev_c"] = round(100 * ev, 3)
+                    _gate("ev_floor", close_s, tk, want=want,
+                          price=round(price, 4), ev_c=round(100 * ev, 3),
+                          fair=round(f, 5), tau=tau, size=float(size))
+                    continue
+
+                state["signals"] += 1
+                if CLOSE_BUDGET:
+                    _pvb = fired.get(close_s)
+                    _left = close_budget() - (
+                        _pvb.get("contracts", 0.0) if _pvb else 0.0)
+                    if _left <= 0:
+                        continue
+                    take_n = min(take_n, _left)
+
+                # THE CONDITIONS AT THE MOMENT WE DECIDED. Logged, never gated on
+                # -- see IndexWS.conditions(). Without this the live losses carry
+                # no record of the state they happened in, and the tape has
+                # already been shown unable to explain them: the backtest's
+                # tradeable population flips 0.79% [0.10, 2.82] while live has
+                # flipped 8.8% [2.9, 19.3], intervals that do not overlap.
+                cx_, cn_, cown_ = idx.conditions(iid)
+                # HOW LONG THE PRICE WE ARE ABOUT TO HIT HAS BEEN RESTING.
+                # LOGGED, NEVER GATED ON -- results/RESULTS_select.md found the
+                # model's excess loss concentrated entirely in the population
+                # where somebody chose to sell to us, with every failure sitting
+                # on a level under 0.25 s old and zero failures on levels resting
+                # 30 s+. Those slices were picked after seeing the tape, so this
+                # builds the LIVE record a pre-registered filter would need.
+                # THE LEVEL WE CONSUME IS THE OPPOSITE SIDE'S BID: buying YES at
+                # p means hitting the NO bid at 1-p (livebook's book holds bids).
                 try:
-                    nb["ladders"].append(
-                        float(book.buyable(tk, want, PRICE_CEILING)))
-                except Exception:              # noqa: BLE001
-                    pass
-            if take_n < float(SIZE):
-                nb["dust"] += 1        # a PARTIAL, not a refusal, since A6
-            if nb["best"] is None or e > nb["best"]["edge"]:
-                nb["best"] = {"ticker": tk, "want": want, "edge": e,
-                              "price": price, "fair": f, "tau": tau,
-                              "size": size}
-            if e < EDGE_FLOOR:
-                _gate("edge_floor", close_s, tk, want=want,
-                      price=round(price, 4), edge_c=round(100 * e, 3),
-                      need_c=round(100 * EDGE_FLOOR, 3), fair=round(f, 5),
-                      tau=tau, size=float(size))
-                continue
-            # AMENDMENT 38: a thin edge while the LIVE price is already past
-            # the strike against us. Placed immediately after the edge floor
-            # because it is the same question asked with one more fact, and
-            # before the dump guard so the two refusals stay distinguishable
-            # in the audit.
-            _agn = against_us(strike, spot, sg, want)
-            if against_block(strike, spot, sg, want, e):
-                _gate("against_thin", close_s, tk, want=want,
-                      price=round(price, 4), edge_c=round(100 * e, 3),
-                      against_sigma=round(float(_agn), 3),
-                      strike=strike, spot=spot, sigma=round(sg, 6),
-                      need_edge_c=round(100 * AGAINST_EDGE, 3),
-                      fair=round(f, 5), tau=tau, size=float(size))
-                continue
-            # AMENDMENT 40: the index just jumped against us. After the A38
-            # test and before the dump guard, so the three refusals stay
-            # separable in the audit. Reads the model's own sigma.
-            if JUMP_ENABLED:
-                _mv = idx.recent_moves(iid, JUMP_LOOKBACK)
-                _jmp = jump_against(_mv, sg, want)
-                if jump_block(_mv, sg, want):
-                    _gate("jump_against", close_s, tk, want=want,
-                          price=round(price, 4), edge_c=round(100 * e, 3),
-                          jump_sd=round(float(_jmp), 2),
-                          moves=[round(float(m), 6) for m in _mv],
-                          sigma=round(sg, 6), need_sd=JUMP_SIGMA,
-                          fair=round(f, 5), tau=tau, size=float(size))
+                    _lvl_side = "no" if want == "yes" else "yes"
+                    _lvl_age, _lvl_exact = book.level_age_ms(
+                        tk, _lvl_side, round(1.0 - price, 4))
+                except Exception:
+                    _lvl_age, _lvl_exact = None, False
+                sig = dict(ticker=tk, want=want, price=round(price, 4),
+                           level_age_ms=_lvl_age, level_age_exact=_lvl_exact,
+                           fair=round(f, 5), tau=tau, edge_c=round(100 * e, 3),
+                           size=size, take_n=take_n, strike=strike, digits=digits,
+                           spot=spot, sigma=round(sg, 6), book_age_ms=b["age_ms"],
+                           index_age_s=round(iage, 2), exchange_index=exi,
+                           widened=bool(_wf > 1.0),
+                           cond_x=(round(cx_, 4) if cx_ is not None else None),
+                           cond_n=cn_,
+                           cond_own=(round(cown_, 4)
+                                     if cown_ is not None else None))
+                attempts[close_s] = attempts.get(close_s, 0) + 1
+                attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 0) + 1
+                # ---- AMENDMENT 36: STORE THE BOOK WITH THE TRADE ---------------
+                # The operator, 2026-09-14: "Are you able to see the order book
+                # yourself for that trade? If not can we start storing that with
+                # our transaction data."
+                #
+                # We could not. The signal recorded the touch price and the touch
+                # SIZE and nothing else, so when he found the bot buying 6
+                # contracts with 500 more one cent away, the log could not show
+                # what had been on screen -- I had to take his word from a
+                # screenshot. Every trade now carries the ladder it was looking
+                # at, so that question is answerable from the log alone.
+                #
+                # The BUY side is the OTHER side's bids: a YES ask at p IS a NO
+                # bid at 1-p. Stored as asks, cheapest first, the way we read it.
+                # AMENDMENT 45 -- THE WHOLE LADDER, NOT EIGHT LEVELS.
+                #
+                # The operator, 2026-09-15: "for each price in the range of what we
+                # actually purchase track the full amount available at the time of
+                # our purchase."
+                #
+                # A36 stored 8 levels, which sounded like plenty and is not. On the
+                # BTC 05:30 loss those 8 levels covered 2,136 contracts while
+                # 10,610 sat under our own 98c limit -- so the log showed a fifth
+                # of what was actually buyable and the rest was invisible. The tick
+                # is tapered (0.1c above 90c), so the band we trade, roughly 88c to
+                # 98c, is about a hundred levels. LADDER_LEVELS is set past that.
+                #
+                # Cost: one book read on a SIGNAL, which happens a few dozen times
+                # a day, not in the scan loop. `ladder_under` is what we could
+                # actually buy at or under the ceiling, which is the number every
+                # capacity question wants and none of the earlier fields held.
+                try:
+                    _raw = book.depth(tk, "no" if want == "yes" else "yes",
+                                      LADDER_LEVELS)
+                    sig["ladder"] = [[round(1.0 - float(_p), 4), float(_sz)]
+                                     for _p, _sz in (_raw or [])]
+                    sig["ladder_total"] = round(sum(x[1] for x in sig["ladder"]), 2)
+                    sig["ladder_under"] = round(
+                        sum(x[1] for x in sig["ladder"]
+                            if x[0] <= PRICE_CEILING + 1e-9), 2)
+                    sig["ladder_levels"] = len(sig["ladder"])
+                except Exception:                            # noqa: BLE001
+                    sig["ladder"] = None
+                # ---- AMENDMENT 46: size the leg BEFORE the signal is recorded, so
+                # the record carries what will actually be asked for and which
+                # leg it is (full / early / topup).
+                _leg46 = "full"
+                if EARLY_TAU_MAX > TAU_MAX:
+                    take_n, _leg46 = staged_take(tau, take_n, float(SIZE), _held46)
+                    sig["take_n"] = take_n
+                    # AMENDMENT 49: an EARLY leg needs the price to be high as well
+                    # as the model to be confident. The operator, 2026-09-18:
+                    # "Can you re open 45 seconds with a cap at 90c".
+                    #
+                    # At 31-45 s the model leans harder on the sigma estimate than
+                    # it does at 30 s, because less of the settlement average is
+                    # locked. A cheap ask out there is not a bargain -- it is the
+                    # market disagreeing with us at the moment we can least afford
+                    # to be wrong, and it is the population that produced the
+                    # 53c Bitcoin fill. Inside 30 s the full leg is unaffected.
+                    if _leg46 in ("early", "early_once") and price < EARLY_MIN_PRICE:
+                        _gate("early_cheap", close_s, tk, leg=_leg46, tau=tau,
+                              price=round(price, 4), floor=EARLY_MIN_PRICE,
+                              fair=round(f, 5),
+                              want=want, size=float(take_n or SIZE))
+                        continue
+                    # AMENDMENT 78 (2026-09-20): AND TOO DEAR, ON THE EARLY LEG.
+                    #
+                    # The operator: *"Sure cut to 97.5 I like that. The whole
+                    # point is better pricing so that's good."*
+                    #
+                    # Measured, live fills: the 31-45 s leg earns 1.14c a contract
+                    # against 5.63c at 6-10 s. Above 97.5c it is risking 98c to
+                    # make 1.8c, fifteen seconds before the information the whole
+                    # strategy rests on arrives -- and that is exactly the fill
+                    # that cost $107.95 on KXBTC15M-26SEP191600-00: bought NO at
+                    # 98c at tau 45 while the same model, sixteen seconds later,
+                    # said YES at 99.79% and the market offered YES at 92.6c.
+                    #
+                    # WHAT IT BLOCKS, stated as the standing rule requires: early
+                    # fills at or above the ceiling. It cannot block the MAIN
+                    # window (`_leg46` is "full" there), it cannot block a hedge,
+                    # and with the ceiling at 1.0 it blocks nothing at all.
+                    if (_leg46 in ("early", "early_once")
+                            and price > EARLY_MAX_PRICE + 1e-9):
+                        _gate("early_dear", close_s, tk, leg=_leg46, tau=tau,
+                              price=round(price, 4), ceiling=EARLY_MAX_PRICE,
+                              fair=round(f, 5),
+                              want=want, size=float(take_n or SIZE))
+                        continue
+                    # A50: too GOOD to be true, on the early leg only.
+                    if early_wide_block(_leg46, e):
+                        _gate("early_wide", close_s, tk, leg=_leg46, tau=tau,
+                              price=round(price, 4), edge_c=round(100 * e, 3),
+                              cap_c=float(EARLY_MAX_EDGE), fair=round(f, 5),
+                              # without want AND size this gate cannot be scored
+                              want=want, size=float(take_n or SIZE))
+                        continue
+                    if take_n < MIN_LEVEL:
+                        _gate("staged_none", close_s, tk, leg=_leg46, held=_held46,
+                              tau=tau, price=round(price, 4),
+                              want=want, size=float(take_n or SIZE))
+                        continue
+                # A53: a skipped price band refuses on EVERY leg. After the early
+                # gates, so a cheap early ask is refused for being cheap (A49)
+                # rather than for its band; before the signal is recorded, so a
+                # refusal can never read as a lost race.
+                if band_blocked(price):
+                    _gate("price_band", close_s, tk, leg=_leg46, tau=tau,
+                          price=round(price, 4), fair=round(f, 5),
+                          bands=[list(b) for b in SKIP_BANDS],
+                          want=want, size=float(take_n or SIZE))
                     continue
-            # AMENDMENT 10: a certainty at a discount is someone else's
-            # information, not our edge. See DUMP_CONF / DUMP_DISCOUNT.
-            _conf = f if want == "yes" else (1.0 - f)
-            _disc = (f - price) if want == "yes" else ((1.0 - f) - price)
-            if _disc > DUMP_DISCOUNT:
-                nb["dumped"] = nb.get("dumped", 0) + 1
-                if nb["best"] is not None and nb["best"]["ticker"] == tk:
-                    nb["best"]["dumped"] = round(100 * _disc, 2)
-                # ONE record per (close, market), not one per 20 Hz tick, so
-                # the would-be outcome is resolvable later and the log stays
-                # readable. Written whether or not the guard is enabled.
-                if (close_s, tk) not in dumped_seen:
-                    dumped_seen.add((close_s, tk))
-                    rec("dumped", ticker=tk, want=want, price=round(price, 4),
-                        fair=round(f, 5), tau=tau, disc_c=round(100 * _disc, 2),
-                        size=size, take_n=take_n, close_s=close_s,
-                        refused=bool(DUMP_ENABLED))
-                if DUMP_ENABLED:
-                    _gate("dump_guard", close_s, tk, want=want,
-                          price=round(price, 4), disc_c=round(100 * _disc, 2),
-                          fair=round(f, 5), tau=tau, size=float(size))
-                    continue
-            # THE EXPECTED-VALUE GATE (AMENDMENT 2). The model edge above uses
-            # the model's own confidence, which implies ~0.06% error at the
-            # prices we pay. The MEASURED rate on trades we actually take is
-            # 0.90%. At high prices that gap flips the sign of the trade:
-            # breakeven price is exactly 1 - flip = 99.1c, and five of the
-            # seven live trades on 2026-09-08 were above it and negative EV.
-            # AMENDMENT 3: a SECOND buy on the same close is only allowed at a
-            # genuinely better price. Re-buying at the same level would double
-            # the risk without lowering the average paid, which is the whole
-            # mechanism -- a lower price wins more AND loses less.
-            # AMENDMENT 22: with MAX_PER_MARKET = 1 the same-market case can
-            # never arise, so under scope "market" this rule is a no-op and a
-            # second COIN is allowed at its own merits. Under "close" it keeps
-            # the old behaviour exactly.
-            if (IMPROVE_SCOPE == "close" and prev is not None
-                    and price >= prev["best"] - IMPROVE_BY):
-                _gate("improve_by", close_s, tk, want=want,
-                      price=round(price, 4), best=prev["best"],
-                      fair=round(f, 5), tau=tau, size=float(size))
-                continue
-            # ---- AMENDMENT 23 (2026-09-13): THE RE-BUY BAND ----------------
-            # A SECOND BUY IN THE SAME MARKET MUST BE A LITTLE CHEAPER, NOT A
-            # LOT CHEAPER. Only reachable when MAX_PER_MARKET > 1, which is
-            # still a paper-only setting, so this changes nothing live today.
-            #
-            # THE OPERATOR'S PREMISE, 2026-09-13: "if it's really going to
-            # flip then the confidence should be dropping." MEASURED, and it
-            # is half right. research/pinwarn.py, 18,653 closes reconstructed
-            # from the index with NOTHING filtered: confidence does fall below
-            # the gate on 31 of 31 closes the model got wrong -- but LATE. At
-            # tau 25 it had caught only 11 of 18, at tau 20 only 12 of 19. On
-            # our own money it was later still: SOL 2026-09-12 23:00 was
-            # bought three times at tau 30/29/28 while confidence ROSE
-            # 0.9994 -> 0.9997 -> 0.9998, and the flip only showed at tau~12.
-            # So confidence is a true warning and a useless one at the moment
-            # a second buy happens.
-            #
-            # WHAT IS FAST ENOUGH IS THE PRICE. research/pinpick.py, 1,260
-            # gate-passing markets over 738 closes: of the 862 markets where
-            # no cheaper second ever appeared, ZERO lost. Of the 398 where one
-            # did, 25 lost -- 6.28%, difference +6.28pp with a 95% interval of
-            # [+3.46, +9.82] bootstrapped over CLOSES rather than markets.
-            # And it is a dose-response, which is the part that is hard to get
-            # by accident:
-            #     0.5-1c cheaper   142 markets   0.70% lost   2nd leg +3.08c
-            #     1-2c             141           5.67%                -0.09c
-            #     2-5c              87          11.49%                -4.92c
-            #     5-10c             23          26.09%               -11.45c
-            # Break-even is 3.58%. A small improvement is liquidity and pays;
-            # a large one is someone selling into us and costs more than the
-            # whole edge. The ordering survives a 60/40 split on close time,
-            # and the last 40% were never fitted: 1.79 / 6.06 / 21.21 / 44.44.
-            #
-            # CAVEAT, STATED RATHER THAN BURIED: those loss rates come from the
-            # tape, whose population is "an offer was sitting there" and not
-            # ours. Rule 5 forbids reading OUR loss rate off it. What is used
-            # here is the ORDERING and the fact that the groups differ, both of
-            # which are statements about what the market did.
-            if not rebuy_ok(prev, tk, price, SIZE):
-                nb23 = near.setdefault(close_s, _fresh_near())
-                nb23["rebuy_band"] = nb23.get("rebuy_band", 0) + 1
-                _gate("rebuy_band", close_s, tk, want=want,
-                      price=round(price, 4),
-                      paid=(prev.get("px_tk", {}) or {}).get(tk),
-                      fair=round(f, 5), tau=tau, size=float(size))
-                continue
-            if price > PRICE_CEILING:
-                nb["over_ceiling"] = nb.get("over_ceiling", 0) + 1
-                _gate("price_ceiling", close_s, tk, want=want,
-                      price=round(price, 4), ceiling=PRICE_CEILING,
-                      fair=round(f, 5), tau=tau, size=float(size))
-                continue
-            ev = expected_value(price)
-            if ev < EV_FLOOR:
-                nb["neg_ev"] = nb.get("neg_ev", 0) + 1
-                if nb["best"] is not None and nb["best"]["ticker"] == tk:
-                    nb["best"]["ev_c"] = round(100 * ev, 3)
-                _gate("ev_floor", close_s, tk, want=want,
-                      price=round(price, 4), ev_c=round(100 * ev, 3),
-                      fair=round(f, 5), tau=tau, size=float(size))
-                continue
+                sig["leg"] = _leg46
+                sig["early_held"] = _held46
+                rec("signal", live=live, **sig)
+                print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
+                      f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
+                      f"taking {take_n:g}" + (f" [{_leg46}]" if _leg46 != "full" else ""))
 
-            state["signals"] += 1
-            if CLOSE_BUDGET:
-                _pvb = fired.get(close_s)
-                _left = close_budget() - (
-                    _pvb.get("contracts", 0.0) if _pvb else 0.0)
-                if _left <= 0:
-                    continue
-                take_n = min(take_n, _left)
+                def _book_slot(px, n=None, raise_bar=True):
+                    """AMENDMENT 6: a scale-in slot is consumed by a FILL, never by
+                    an attempt. Until 2026-09-08 this ran BEFORE the order, so an
+                    order that filled ZERO contracts still burned one of
+                    MAX_PER_CLOSE and still raised the improve bar by IMPROVE_BY.
+                    Five of our first nineteen live orders filled nothing, and the
+                    misses had 562, 107, 93, 10 and 5 contracts on offer -- they
+                    were lost races, not thin books, so they will keep happening.
+                    An unfilled order creates NO exposure and must not consume an
+                    exposure budget. Measured at the observed 26% miss rate over
+                    1,196 moments on 83 closes: 87 buys -> 119 buys and expected
+                    P&L $40.29 -> $53.72, +33.3%. MAX EXPOSURE IS UNCHANGED,
+                    because the cap always meant two FILLS; the bug made it two
+                    ATTEMPTS."""
+                    _n = float(take_n if n is None else n)
+                    pv = fired.get(close_s)
+                    if pv is None:
+                        fired[close_s] = {"n": 1, "best": px, "tk": tk,
+                                          "sides": {tk: want},
+                                          "tickers": {tk},
+                                          "per_tk": {tk: 1},
+                                          "px_tk": {tk: px},
+                                          "n_tk": {tk: _n},
+                                          # A46: what this market holds from an
+                                          # EARLY leg, so the top-up knows how much
+                                          # is left and a second early is refused
+                                          "early_tk": ({tk: _n} if _leg46 == "early" else {}),
+                                          "contracts": _n}
+                    else:
+                        if _leg46 == "early":
+                            d46 = pv.setdefault("early_tk", {})
+                            d46[tk] = d46.get(tk, 0.0) + _n
+                        pv["n"] += 1
+                        if raise_bar:
+                            pv["best"] = min(pv["best"], px)
+                        pv.setdefault("sides", {})[tk] = want
+                        pv.setdefault("tickers", set()).add(tk)
+                        d13 = pv.setdefault("per_tk", {})
+                        d13[tk] = d13.get(tk, 0) + 1
+                        # AMENDMENT 23: the CHEAPEST price paid in THIS market, so
+                        # the re-buy band is measured per market. pv["best"] is
+                        # the cheapest across the whole close and would compare a
+                        # BTC re-buy against a price paid on ETH.
+                        d23 = pv.setdefault("px_tk", {})
+                        d23[tk] = min(d23.get(tk, px), px)
+                        # AMENDMENT 29: contracts held in THIS market, which is
+                        # what separates "topping up an unfinished position" from
+                        # "scaling into a full one".
+                        d29 = pv.setdefault("n_tk", {})
+                        d29[tk] = d29.get(tk, 0.0) + _n
+                        pv["contracts"] = pv.get("contracts", 0.0) + _n
+                        # A68: contracts bought on the side we HEDGED INTO are
+                        # the extra bet, not the original position, and the cap
+                        # is measured against them.
+                        if hedged_side.get(tk) is not None and want == hedged_side.get(tk):
+                            rebuy_extra[tk] = rebuy_extra.get(tk, 0.0) + _n
 
-            # THE CONDITIONS AT THE MOMENT WE DECIDED. Logged, never gated on
-            # -- see IndexWS.conditions(). Without this the live losses carry
-            # no record of the state they happened in, and the tape has
-            # already been shown unable to explain them: the backtest's
-            # tradeable population flips 0.79% [0.10, 2.82] while live has
-            # flipped 8.8% [2.9, 19.3], intervals that do not overlap.
-            cx_, cn_, cown_ = idx.conditions(iid)
-            # HOW LONG THE PRICE WE ARE ABOUT TO HIT HAS BEEN RESTING.
-            # LOGGED, NEVER GATED ON -- results/RESULTS_select.md found the
-            # model's excess loss concentrated entirely in the population
-            # where somebody chose to sell to us, with every failure sitting
-            # on a level under 0.25 s old and zero failures on levels resting
-            # 30 s+. Those slices were picked after seeing the tape, so this
-            # builds the LIVE record a pre-registered filter would need.
-            # THE LEVEL WE CONSUME IS THE OPPOSITE SIDE'S BID: buying YES at
-            # p means hitting the NO bid at 1-p (livebook's book holds bids).
-            try:
-                _lvl_side = "no" if want == "yes" else "yes"
-                _lvl_age, _lvl_exact = book.level_age_ms(
-                    tk, _lvl_side, round(1.0 - price, 4))
-            except Exception:
-                _lvl_age, _lvl_exact = None, False
-            sig = dict(ticker=tk, want=want, price=round(price, 4),
-                       level_age_ms=_lvl_age, level_age_exact=_lvl_exact,
-                       fair=round(f, 5), tau=tau, edge_c=round(100 * e, 3),
-                       size=size, take_n=take_n, strike=strike, digits=digits,
-                       spot=spot, sigma=round(sg, 6), book_age_ms=b["age_ms"],
-                       index_age_s=round(iage, 2), exchange_index=exi,
-                       widened=bool(_wf > 1.0),
-                       cond_x=(round(cx_, 4) if cx_ is not None else None),
-                       cond_n=cn_,
-                       cond_own=(round(cown_, 4)
-                                 if cown_ is not None else None))
-            attempts[close_s] = attempts.get(close_s, 0) + 1
-            attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 0) + 1
-            # ---- AMENDMENT 36: STORE THE BOOK WITH THE TRADE ---------------
-            # The operator, 2026-09-14: "Are you able to see the order book
-            # yourself for that trade? If not can we start storing that with
-            # our transaction data."
-            #
-            # We could not. The signal recorded the touch price and the touch
-            # SIZE and nothing else, so when he found the bot buying 6
-            # contracts with 500 more one cent away, the log could not show
-            # what had been on screen -- I had to take his word from a
-            # screenshot. Every trade now carries the ladder it was looking
-            # at, so that question is answerable from the log alone.
-            #
-            # The BUY side is the OTHER side's bids: a YES ask at p IS a NO
-            # bid at 1-p. Stored as asks, cheapest first, the way we read it.
-            # AMENDMENT 45 -- THE WHOLE LADDER, NOT EIGHT LEVELS.
-            #
-            # The operator, 2026-09-15: "for each price in the range of what we
-            # actually purchase track the full amount available at the time of
-            # our purchase."
-            #
-            # A36 stored 8 levels, which sounded like plenty and is not. On the
-            # BTC 05:30 loss those 8 levels covered 2,136 contracts while
-            # 10,610 sat under our own 98c limit -- so the log showed a fifth
-            # of what was actually buyable and the rest was invisible. The tick
-            # is tapered (0.1c above 90c), so the band we trade, roughly 88c to
-            # 98c, is about a hundred levels. LADDER_LEVELS is set past that.
-            #
-            # Cost: one book read on a SIGNAL, which happens a few dozen times
-            # a day, not in the scan loop. `ladder_under` is what we could
-            # actually buy at or under the ceiling, which is the number every
-            # capacity question wants and none of the earlier fields held.
-            try:
-                _raw = book.depth(tk, "no" if want == "yes" else "yes",
-                                  LADDER_LEVELS)
-                sig["ladder"] = [[round(1.0 - float(_p), 4), float(_sz)]
-                                 for _p, _sz in (_raw or [])]
-                sig["ladder_total"] = round(sum(x[1] for x in sig["ladder"]), 2)
-                sig["ladder_under"] = round(
-                    sum(x[1] for x in sig["ladder"]
-                        if x[0] <= PRICE_CEILING + 1e-9), 2)
-                sig["ladder_levels"] = len(sig["ladder"])
-            except Exception:                            # noqa: BLE001
-                sig["ladder"] = None
-            # ---- AMENDMENT 46: size the leg BEFORE the signal is recorded, so
-            # the record carries what will actually be asked for and which
-            # leg it is (full / early / topup).
-            _leg46 = "full"
-            if EARLY_TAU_MAX > TAU_MAX:
-                take_n, _leg46 = staged_take(tau, take_n, float(SIZE), _held46)
-                sig["take_n"] = take_n
-                # AMENDMENT 49: an EARLY leg needs the price to be high as well
-                # as the model to be confident. The operator, 2026-09-18:
-                # "Can you re open 45 seconds with a cap at 90c".
-                #
-                # At 31-45 s the model leans harder on the sigma estimate than
-                # it does at 30 s, because less of the settlement average is
-                # locked. A cheap ask out there is not a bargain -- it is the
-                # market disagreeing with us at the moment we can least afford
-                # to be wrong, and it is the population that produced the
-                # 53c Bitcoin fill. Inside 30 s the full leg is unaffected.
-                if _leg46 in ("early", "early_once") and price < EARLY_MIN_PRICE:
-                    _gate("early_cheap", close_s, tk, leg=_leg46, tau=tau,
-                          price=round(price, 4), floor=EARLY_MIN_PRICE,
-                          fair=round(f, 5),
-                          want=want, size=float(take_n or SIZE))
-                    continue
-                # AMENDMENT 78 (2026-09-20): AND TOO DEAR, ON THE EARLY LEG.
-                #
-                # The operator: *"Sure cut to 97.5 I like that. The whole
-                # point is better pricing so that's good."*
-                #
-                # Measured, live fills: the 31-45 s leg earns 1.14c a contract
-                # against 5.63c at 6-10 s. Above 97.5c it is risking 98c to
-                # make 1.8c, fifteen seconds before the information the whole
-                # strategy rests on arrives -- and that is exactly the fill
-                # that cost $107.95 on KXBTC15M-26SEP191600-00: bought NO at
-                # 98c at tau 45 while the same model, sixteen seconds later,
-                # said YES at 99.79% and the market offered YES at 92.6c.
-                #
-                # WHAT IT BLOCKS, stated as the standing rule requires: early
-                # fills at or above the ceiling. It cannot block the MAIN
-                # window (`_leg46` is "full" there), it cannot block a hedge,
-                # and with the ceiling at 1.0 it blocks nothing at all.
-                if (_leg46 in ("early", "early_once")
-                        and price > EARLY_MAX_PRICE + 1e-9):
-                    _gate("early_dear", close_s, tk, leg=_leg46, tau=tau,
-                          price=round(price, 4), ceiling=EARLY_MAX_PRICE,
-                          fair=round(f, 5),
-                          want=want, size=float(take_n or SIZE))
-                    continue
-                # A50: too GOOD to be true, on the early leg only.
-                if early_wide_block(_leg46, e):
-                    _gate("early_wide", close_s, tk, leg=_leg46, tau=tau,
-                          price=round(price, 4), edge_c=round(100 * e, 3),
-                          cap_c=float(EARLY_MAX_EDGE), fair=round(f, 5),
-                          # without want AND size this gate cannot be scored
-                          want=want, size=float(take_n or SIZE))
-                    continue
-                if take_n < MIN_LEVEL:
-                    _gate("staged_none", close_s, tk, leg=_leg46, held=_held46,
-                          tau=tau, price=round(price, 4),
-                          want=want, size=float(take_n or SIZE))
-                    continue
-            # A53: a skipped price band refuses on EVERY leg. After the early
-            # gates, so a cheap early ask is refused for being cheap (A49)
-            # rather than for its band; before the signal is recorded, so a
-            # refusal can never read as a lost race.
-            if band_blocked(price):
-                _gate("price_band", close_s, tk, leg=_leg46, tau=tau,
-                      price=round(price, 4), fair=round(f, 5),
-                      bands=[list(b) for b in SKIP_BANDS],
-                      want=want, size=float(take_n or SIZE))
-                continue
-            sig["leg"] = _leg46
-            sig["early_held"] = _held46
-            rec("signal", live=live, **sig)
-            print(f"  SIGNAL {tk} tau={tau}s buy {want.upper()} @{price:.4f} "
-                  f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
-                  f"taking {take_n:g}" + (f" [{_leg46}]" if _leg46 != "full" else ""))
+                def _note_scrap(px, nfilled):
+                    """AMENDMENT 12 (2026-09-11): A SCRAP FILL IS NOT A SLOT.
+                    MIN_FILL_FRAC gates what we ASK for; nothing gated what we
+                    GOT. 2026-09-11 07:00 ET: asked 20, filled 2.0 (BNB) and
+                    0.02 (BTC) -- the offer was gone by the time the order landed
+                    -- and each scrap consumed one of the two buys for its close
+                    and raised the improve bar, blocking a real fill behind it.
+                    A fill under half our size books the POSITION (it exists and
+                    must settle and release) but not the slot and not the bar. It
+                    does record the side, so the both-sides guard still holds.
 
-            def _book_slot(px, n=None, raise_bar=True):
-                """AMENDMENT 6: a scale-in slot is consumed by a FILL, never by
-                an attempt. Until 2026-09-08 this ran BEFORE the order, so an
-                order that filled ZERO contracts still burned one of
-                MAX_PER_CLOSE and still raised the improve bar by IMPROVE_BY.
-                Five of our first nineteen live orders filled nothing, and the
-                misses had 562, 107, 93, 10 and 5 contracts on offer -- they
-                were lost races, not thin books, so they will keep happening.
-                An unfilled order creates NO exposure and must not consume an
-                exposure budget. Measured at the observed 26% miss rate over
-                1,196 moments on 83 closes: 87 buys -> 119 buys and expected
-                P&L $40.29 -> $53.72, +33.3%. MAX EXPOSURE IS UNCHANGED,
-                because the cap always meant two FILLS; the bug made it two
-                ATTEMPTS."""
-                _n = float(take_n if n is None else n)
-                pv = fired.get(close_s)
-                if pv is None:
-                    fired[close_s] = {"n": 1, "best": px, "tk": tk,
-                                      "sides": {tk: want},
-                                      "tickers": {tk},
-                                      "per_tk": {tk: 1},
-                                      "px_tk": {tk: px},
-                                      "n_tk": {tk: _n},
-                                      # A46: what this market holds from an
-                                      # EARLY leg, so the top-up knows how much
-                                      # is left and a second early is refused
-                                      "early_tk": ({tk: _n} if _leg46 == "early" else {}),
-                                      "contracts": _n}
-                else:
-                    if _leg46 == "early":
-                        d46 = pv.setdefault("early_tk", {})
-                        d46[tk] = d46.get(tk, 0.0) + _n
-                    pv["n"] += 1
-                    if raise_bar:
-                        pv["best"] = min(pv["best"], px)
+                    AMENDMENT 12a, same day, found by auditing 12 rather than
+                    admiring it: "no slot" with nothing else changed DOUBLES the
+                    worst case. MAX_ATTEMPTS_PER_CLOSE is 8, so eight scraps of
+                    9.99 contracts would each keep a position and none would
+                    spend a slot -- 79.9 contracts, $78.32, against an intended
+                    $39.20, with only the run-wide stake cap as a backstop. So
+                    SCRAPS ACCUMULATE: once they add up to a real fill they spend
+                    a slot exactly as one would. Exposure is bounded again, and
+                    the thing 12 was for -- one 0.02-contract crumb must not
+                    block a real buy -- still holds."""
+                    pv = fired.get(close_s)
+                    if pv is None:
+                        pv = fired[close_s] = {"n": 0, "best": 1.0, "tk": tk,
+                                               "sides": {}, "tickers": set(),
+                                               "scrap_n": 0.0}
                     pv.setdefault("sides", {})[tk] = want
                     pv.setdefault("tickers", set()).add(tk)
-                    d13 = pv.setdefault("per_tk", {})
-                    d13[tk] = d13.get(tk, 0) + 1
-                    # AMENDMENT 23: the CHEAPEST price paid in THIS market, so
-                    # the re-buy band is measured per market. pv["best"] is
-                    # the cheapest across the whole close and would compare a
-                    # BTC re-buy against a price paid on ETH.
-                    d23 = pv.setdefault("px_tk", {})
-                    d23[tk] = min(d23.get(tk, px), px)
-                    # AMENDMENT 29: contracts held in THIS market, which is
-                    # what separates "topping up an unfinished position" from
-                    # "scaling into a full one".
-                    d29 = pv.setdefault("n_tk", {})
-                    d29[tk] = d29.get(tk, 0.0) + _n
-                    pv["contracts"] = pv.get("contracts", 0.0) + _n
-                    # A68: contracts bought on the side we HEDGED INTO are
-                    # the extra bet, not the original position, and the cap
-                    # is measured against them.
-                    if hedged_side.get(tk) is not None and want == hedged_side.get(tk):
-                        rebuy_extra[tk] = rebuy_extra.get(tk, 0.0) + _n
+                    pv["scrap_n"] = pv.get("scrap_n", 0.0) + float(nfilled)
+                    if pv["scrap_n"] >= max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE)):
+                        pv["n"] += 1
+                        pv["scrap_n"] = 0.0
+                        pv["best"] = min(pv["best"], px)
 
-            def _note_scrap(px, nfilled):
-                """AMENDMENT 12 (2026-09-11): A SCRAP FILL IS NOT A SLOT.
-                MIN_FILL_FRAC gates what we ASK for; nothing gated what we
-                GOT. 2026-09-11 07:00 ET: asked 20, filled 2.0 (BNB) and
-                0.02 (BTC) -- the offer was gone by the time the order landed
-                -- and each scrap consumed one of the two buys for its close
-                and raised the improve bar, blocking a real fill behind it.
-                A fill under half our size books the POSITION (it exists and
-                must settle and release) but not the slot and not the bar. It
-                does record the side, so the both-sides guard still holds.
-
-                AMENDMENT 12a, same day, found by auditing 12 rather than
-                admiring it: "no slot" with nothing else changed DOUBLES the
-                worst case. MAX_ATTEMPTS_PER_CLOSE is 8, so eight scraps of
-                9.99 contracts would each keep a position and none would
-                spend a slot -- 79.9 contracts, $78.32, against an intended
-                $39.20, with only the run-wide stake cap as a backstop. So
-                SCRAPS ACCUMULATE: once they add up to a real fill they spend
-                a slot exactly as one would. Exposure is bounded again, and
-                the thing 12 was for -- one 0.02-contract crumb must not
-                block a real buy -- still holds."""
-                pv = fired.get(close_s)
-                if pv is None:
-                    pv = fired[close_s] = {"n": 0, "best": 1.0, "tk": tk,
-                                           "sides": {}, "tickers": set(),
-                                           "scrap_n": 0.0}
-                pv.setdefault("sides", {})[tk] = want
-                pv.setdefault("tickers", set()).add(tk)
-                pv["scrap_n"] = pv.get("scrap_n", 0.0) + float(nfilled)
-                if pv["scrap_n"] >= max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE)):
-                    pv["n"] += 1
-                    pv["scrap_n"] = 0.0
-                    pv["best"] = min(pv["best"], px)
-
-            def _widen45(take_n):
-                """AMENDMENT 45 one-coin depth, for BOTH paths. The paper path
-                books the order right here; the live path calls this after
-                A35 has sized the order (A35 reassigns take_n to at most SIZE,
-                so it must run first). Widens toward what the offer holds at
-                or under the sweep limit, capped by one_coin_cap() and by what
-                is left of the close budget. Price, gate and per-close worst
-                case unchanged."""
-                if not ONE_COIN_DEPTH:
-                    return take_n
-                _cap45 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"))
-                _avail45 = float(size)
-                _limit45 = sweep_limit(f, price, want)
-                if SWEEP_DEPTH and _limit45 > price + 1e-9:
-                    try:
-                        _avail45 = max(_avail45, float(book.buyable(tk, want, _limit45)))
-                    except Exception:              # noqa: BLE001
-                        pass
-                _room45 = (close_budget_for(prev, tk, tau=tau)
-                           - (prev.get("contracts", 0.0)
-                              if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
-                _was45 = take_n
-                take_n = max(take_n, min(_cap45, _avail45, max(0.0, _room45)))
-                if take_n > _was45 + 1e-9:
-                    rec("one_coin_depth", ticker=tk, want=want,
-                        was=round(_was45, 2), now=round(take_n, 2),
-                        cap=round(_cap45, 2), avail=round(_avail45, 2),
-                        room=round(_room45, 2), size=float(SIZE),
-                        bank=state.get("bank"), hwm=state.get("hwm"))
-                return take_n
-
-            def _late48(take_n):
-                """AMENDMENT 48: BUY BIGGER IN THE LAST FEW SECONDS.
-
-                The operator, 2026-09-17: "What if we increase to above our size
-                level when buying near close with a high enough confidence
-                level?" Our OWN LIVE FILLS say the last seconds are where the
-                money is, and by a wide margin:
-
-                    0-5 s    1,028 contracts   5.35c each   0 losing closes
-                    6-15 s   4,125 contracts   3.80c each
-                    16-30 s 11,363 contracts   1.90c each
-
-                2.8x the per-contract return of our main window, on 6% of our
-                volume. And the book is not what stops us going bigger: of 102
-                live sweep events only 8 were capped by the ladder, the median
-                contracts buyable at our own sweep limit is 433 against a SIZE
-                of 95. BANK_BRAKE is the binding constraint, not the market.
-
-                Every existing ceiling still applies -- the same drawdown
-                headroom A45 uses, the close budget, and the book. This only
-                raises the per-order cap inside the window.
-                """
-                if LATE_MULT <= 1.0:
-                    boost_why[(close_s, tk)] = (
-                        "off: --late-mult is 1.0"
-                        if _DEFAULT_LATE_MULT >= LATE_MULT else
-                        "off: switched off by an earlier boosted loss")
-                    return take_n
-                if tau > LATE_TAU:
-                    boost_why[(close_s, tk)] = (
-                        "no: bought at %ds, outside the last %ds"
-                        % (tau, LATE_TAU))
-                    return take_n
-                # A55: the operator's two conditions on the EXTRA contracts.
-                # `f` is the model's probability of YES, so our side's
-                # confidence is f for a YES bet and 1-f for a NO bet.
-                _ours48 = f if want == "yes" else 1.0 - f
-                _jmp48 = None
-                if LATE_JUMP_SD is not None:
-                    try:
-                        _jmp48 = jump_against(
-                            idx.recent_moves(iid, JUMP_LOOKBACK), sg, want)
-                    except Exception:              # noqa: BLE001
-                        _jmp48 = None
-                if not late_boost_ok(_ours48, _jmp48):
-                    boost_why[(close_s, tk)] = (
-                        "no: confidence %.4f%% under the %.4g%% bar"
-                        % (100 * _ours48, 100 * LATE_PIN)
-                        if (LATE_PIN is not None and _ours48 < LATE_PIN)
-                        else "no: %s sigma move against us (bar %.4g)"
-                        % (("%.1f" % _jmp48) if _jmp48 is not None
-                           else "unmeasurable", LATE_JUMP_SD or 0))
-                    rec("late_refused", ticker=tk, want=want, tau=tau,
-                        fair_ours=round(float(_ours48), 5), jump_sd=_jmp48,
-                        need_pin=LATE_PIN, max_jump=LATE_JUMP_SD,
-                        size=float(SIZE))
-                    return take_n
-                _cap48 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"),
-                                      mult=LATE_MULT)
-                _avail48 = float(size)
-                _lim48 = sweep_limit(f, price, want)
-                if SWEEP_DEPTH and _lim48 > price + 1e-9:
-                    try:
-                        _avail48 = max(_avail48, float(book.buyable(tk, want, _lim48)))
-                    except Exception:              # noqa: BLE001
-                        pass
-                _room48 = (close_budget_for(prev, tk, tau=tau)
-                           - (prev.get("contracts", 0.0)
-                              if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
-                _was48 = take_n
-                take_n = max(take_n, min(_cap48, _avail48, max(0.0, _room48)))
-                if take_n <= _was48 + 1e-9:
-                    boost_why[(close_s, tk)] = (
-                        "no: allowed, but nothing to add (book %.0f, "
-                        "headroom %.0f, close budget %.0f left)"
-                        % (_avail48, _cap48, max(0.0, _room48)))
-                if take_n > _was48 + 1e-9:
-                    boost_why[(close_s, tk)] = (
-                        "FIRED: %.0f -> %.0f contracts at %ds, confidence "
-                        "%.4f%%" % (_was48, take_n, tau, 100 * _ours48))
-                    _boosted48.add((close_s, tk))
-                    rec("late_boost", ticker=tk, want=want, tau=tau,
-                        fair_ours=round(float(_ours48), 5), jump_sd=_jmp48,
-                        was=round(_was48, 2), now=round(take_n, 2),
-                        cap=round(_cap48, 2), avail=round(_avail48, 2),
-                        room=round(_room48, 2), mult=LATE_MULT, late_tau=LATE_TAU,
-                        size=float(SIZE))
-                return take_n
-
-            def _band53(take_n):
-                """AMENDMENT 53: bet bigger inside a price band that has earned
-                it. Same shape as A48: the per-order cap rises to MULT x SIZE
-                through A45's drawdown headroom, and the book and the close
-                budget still bind. Records `band_boost` when it widens, with
-                every number that decided the width."""
-                _m53 = band_mult(price)
-                if _m53 <= 1.0:
-                    return take_n
-                _cap53 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"),
-                                      mult=_m53)
-                _avail53 = float(size)
-                _lim53 = sweep_limit(f, price, want)
-                if SWEEP_DEPTH and _lim53 > price + 1e-9:
-                    try:
-                        _avail53 = max(_avail53, float(book.buyable(tk, want, _lim53)))
-                    except Exception:              # noqa: BLE001
-                        pass
-                _room53 = (close_budget_for(prev, tk, tau=tau)
-                           - (prev.get("contracts", 0.0)
-                              if prev else 0.0)) if CLOSE_BUDGET else float(SIZE) * _m53
-                _was53 = take_n
-                take_n = max(take_n, min(_cap53, _avail53, max(0.0, _room53)))
-                if take_n > _was53 + 1e-9:
-                    boosted.add((close_s, tk))
-                    rec("band_boost", ticker=tk, want=want, tau=tau,
-                        price=round(price, 4), mult=_m53,
-                        was=round(_was53, 2), now=round(take_n, 2),
-                        cap=round(_cap53, 2), avail=round(_avail53, 2),
-                        room=round(_room53, 2), size=float(SIZE),
-                        bank=state.get("bank"), hwm=state.get("hwm"))
-                return take_n
-
-            def _stage46(take_n):
-                """AMENDMENT 46: an early or top-up leg keeps its cap however
-                much A35/A45 widened the order. A full leg is untouched.
-                A53: a band multiple scales the WHOLE position for this
-                market, so the early cap is EARLY_FRAC x SIZE x mult and a
-                top-up completes to SIZE x mult -- otherwise the re-cap here
-                would silently undo the boost on every early leg.
-
-                A60 (2026-09-19): AND THE LATE BOOST COUNTS THE SAME WAY.
-                The operator: "Even the bnb at 16 seconds it should've
-                boosted once time got lower." It could not. A48 widens the
-                order inside LATE_TAU, and then this line put it straight
-                back: a top-up was capped at SIZE - early_held whatever the
-                boost had asked for, so a market entered outside the window
-                could never be boosted inside it. That is the exact trade he
-                described, and the cap here was the reason.
-
-                The boost's own conditions still decide whether the extra
-                contracts are bought at all -- `_late48` returns `take_n`
-                untouched when the confidence or jump bar fails, and a
-                larger cap cannot raise a number that was never widened."""
-                if EARLY_TAU_MAX > TAU_MAX and _leg46 != "full":
-                    _mult46 = max(band_mult(price),
-                                  LATE_MULT if tau <= LATE_TAU else 1.0)
-                    return min(take_n, staged_take(tau, take_n,
-                                                   float(SIZE) * _mult46,
-                                                   _held46)[0])
-                return take_n
-
-            if not live:
-                take_n = _widen45(take_n)  # paper
-                take_n = _late48(take_n)   # paper
-                take_n = _band53(take_n)   # paper
-                take_n = _stage46(take_n)
-                _book_slot(price, take_n)
-                _poid46 = f"paper-{tk}-{now_s}"
-                entry_at[_poid46] = now_s
-                open_pos[_poid46] = (close_s, want, price, take_n, tk)
-                # AMENDMENT 71 (2026-09-19): THE PAPER HEDGE PATH WAS DEAD
-                # CODE, AND EVERY PAPER ARM HAS BEEN AN UNHEDGED BOT.
-                #
-                # The hedge pass gives up on any position with no hedge_meta
-                # ("if _meta is None: continue"), and hedge_meta was written at
-                # exactly two places, BOTH live-only: the plant path and the
-                # live fill. A paper position therefore never had a strike, so
-                # its belief was never computed, so the alarm never fired.
-                #
-                # MEASURED, not argued: the five paper arms running today
-                # logged 151 signals between them and ZERO hedge_alarm and
-                # ZERO hedge records. The live bot on the same markets logged
-                # 2 alarms, 8 hedges and 2 panics.
-                #
-                # WHAT THAT INVALIDATES. A hedge that fills turns a -73c to
-                # -96c loss into -26.9c (the 17-loss table in HANDOFF.md). So
-                # every head-to-head between an arm and the live bot has been
-                # comparing a bot that eats its losses whole against one that
-                # insures them -- and the arm was flattered on every winning
-                # close and punished on every losing one. Arm numbers on
-                # losing closes are not comparable before this line existed.
-                #
-                # It also means NO hedge change has ever been testable without
-                # real money. A62, A69 and A70 all had to go straight to live
-                # because paper could not exercise them.
-                hedge_meta[_poid46] = (strike, digits, iid)
-            if live:
-                try:
-                    # LATENCY INSTRUMENTATION, added 2026-09-08. 26% of our
-                    # orders fill NOTHING and depth is not the cause -- the
-                    # misses had 562, 107, 93, 10 and 5 contracts on offer.
-                    # We are losing a race and have never measured our own
-                    # part of it. Three numbers matter and none were recorded:
-                    # how stale the book was when we decided, how long the
-                    # round trip took, and whether misses differ from fills on
-                    # either. Pure instrumentation -- it changes no decision.
-                    # AMENDMENT 18: the LIMIT is the highest price that
-                    # still passes the same gate, not the ask we saw. When we
-                    # win the race we still fill at the resting price (283 of
-                    # 283 live fills at or better than signalled, zero worse);
-                    # when we lose it we take the next level instead of
-                    # nothing. `ask_seen` and `limit_sent` are both logged so
-                    # PREREG_sweep.md's bar can be scored.
-                    _limit = sweep_limit(f, price, want)
-                    # A78b: THE CEILING MUST BIND THE SWEEP, NOT JUST THE
-                    # SIGNAL. Caught live within the hour: the 05:00 DOGE
-                    # close signalled at 97.3c -- under the 97.5c ceiling, so
-                    # the gate correctly let it through -- and the sweep then
-                    # walked the ladder to an average of 97.92c. The gate
-                    # checks the price we SEE; only the limit decides what we
-                    # GET. This is the same shape as the dump guard's known
-                    # hole, and shipping half a ceiling is worse than none:
-                    # the rule becomes unpredictable rather than merely loose.
-                    if (_leg46 in ("early", "early_once")
-                            and EARLY_MAX_PRICE < 1.0):
-                        _limit = min(_limit, EARLY_MAX_PRICE)
-                    # ---- AMENDMENT 35: ASK FOR WHAT THE LADDER HOLDS -------
-                    # THE SWEEP WAS HALF-BUILT. AMENDMENT 18 raised the PRICE
-                    # we are willing to pay to _limit, so a lost race takes
-                    # the next level instead of nothing -- but the QUANTITY
-                    # was still min(SIZE, touch size). So the bot would offer
-                    # up to 98c and then ask for only the handful sitting at
-                    # the best price.
-                    #
-                    # LIVE, 2026-09-14, the 02:00 SOL close: ask 96.3c with
-                    # SIX contracts on it, limit sent 98c, order placed for 6,
-                    # filled 6, profit $0.21 -- while 211 contracts sat at 88c
-                    # and 306 at 89c. The operator caught it from his phone:
-                    # "We only bought $6 worth. THERE WAS SO MUCH AVAILABLE."
-                    #
-                    # EVERY EXTRA CONTRACT IS ALREADY GATE-APPROVED. sweep_
-                    # limit() returns the HIGHEST price that still passes the
-                    # same confidence, edge, ceiling and EV tests, so anything
-                    # filled at or under it is a trade we had already decided
-                    # to make. The close's contract budget still binds, and
-                    # SIZE still caps it.
-                    if SWEEP_DEPTH and _limit > price + 1e-9:
+                def _widen45(take_n):
+                    """AMENDMENT 45 one-coin depth, for BOTH paths. The paper path
+                    books the order right here; the live path calls this after
+                    A35 has sized the order (A35 reassigns take_n to at most SIZE,
+                    so it must run first). Widens toward what the offer holds at
+                    or under the sweep limit, capped by one_coin_cap() and by what
+                    is left of the close budget. Price, gate and per-close worst
+                    case unchanged."""
+                    if not ONE_COIN_DEPTH:
+                        return take_n
+                    _cap45 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"))
+                    _avail45 = float(size)
+                    _limit45 = sweep_limit(f, price, want)
+                    if SWEEP_DEPTH and _limit45 > price + 1e-9:
                         try:
-                            _deep = float(book.buyable(tk, want, _limit))
+                            _avail45 = max(_avail45, float(book.buyable(tk, want, _limit45)))
                         except Exception:              # noqa: BLE001
-                            _deep = 0.0
-                        # A67: the same depth, WEIGHTED by the edge at each
-                        # level. `_deep` counts a 98c contract exactly like a
-                        # 91.5c one; this does not. Falls back to `_deep`
-                        # whenever the rungs cannot be read, so a book that
-                        # does not answer behaves exactly as it did before.
-                        _rungs = []
-                        if TAPER:
-                            try:
-                                _rungs = book.rungs(tk, want, _limit)
-                            except Exception:          # noqa: BLE001
-                                _rungs = []
-                        if _rungs:
-                            _flat = _deep
-                            _deep = taper_take(
-                                _rungs, float(SIZE),
-                                lambda _p, _f=f, _w=want: net_edge(_f, _p, _w))
-                            if _deep < _flat:
-                                rec("taper", ticker=tk, want=want, tau=tau,
-                                    touch=round(float(_rungs[0][0]), 4),
-                                    rungs=len(_rungs),
-                                    flat=round(_flat, 2),
-                                    tapered=round(_deep, 2),
-                                    limit=round(_limit, 4))
-                        if _deep > take_n:
-                            _room = (close_budget_for(prev, tk, tau=tau)
-                                     - (prev.get("contracts", 0.0)
-                                        if prev else 0.0)) if CLOSE_BUDGET                                 else float(SIZE)
-                            _was = take_n
-                            take_n = min(float(SIZE), _deep, max(0.0, _room))
-                            if take_n > _was:
-                                rec("sweep_depth", ticker=tk, want=want,
-                                    touch=round(float(size), 2),
-                                    ladder=round(_deep, 2),
-                                    was=round(_was, 2), now=round(take_n, 2),
-                                    limit=round(_limit, 4))
-                    # ---- AMENDMENT 45 / 46, live path: after A35 has sized
-                    # the order, widen for one-coin depth (if on), then
-                    # re-apply the staged-entry cap (if on). Same helpers the
-                    # paper path uses above, so both paths book the same size.
-                    take_n = _widen45(take_n)  # live
-                    take_n = _late48(take_n)   # live
-                    take_n = _band53(take_n)   # live
+                            pass
+                    _room45 = (close_budget_for(prev, tk, tau=tau)
+                               - (prev.get("contracts", 0.0)
+                                  if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
+                    _was45 = take_n
+                    take_n = max(take_n, min(_cap45, _avail45, max(0.0, _room45)))
+                    if take_n > _was45 + 1e-9:
+                        rec("one_coin_depth", ticker=tk, want=want,
+                            was=round(_was45, 2), now=round(take_n, 2),
+                            cap=round(_cap45, 2), avail=round(_avail45, 2),
+                            room=round(_room45, 2), size=float(SIZE),
+                            bank=state.get("bank"), hwm=state.get("hwm"))
+                    return take_n
+
+                def _late48(take_n):
+                    """AMENDMENT 48: BUY BIGGER IN THE LAST FEW SECONDS.
+
+                    The operator, 2026-09-17: "What if we increase to above our size
+                    level when buying near close with a high enough confidence
+                    level?" Our OWN LIVE FILLS say the last seconds are where the
+                    money is, and by a wide margin:
+
+                        0-5 s    1,028 contracts   5.35c each   0 losing closes
+                        6-15 s   4,125 contracts   3.80c each
+                        16-30 s 11,363 contracts   1.90c each
+
+                    2.8x the per-contract return of our main window, on 6% of our
+                    volume. And the book is not what stops us going bigger: of 102
+                    live sweep events only 8 were capped by the ladder, the median
+                    contracts buyable at our own sweep limit is 433 against a SIZE
+                    of 95. BANK_BRAKE is the binding constraint, not the market.
+
+                    Every existing ceiling still applies -- the same drawdown
+                    headroom A45 uses, the close budget, and the book. This only
+                    raises the per-order cap inside the window.
+                    """
+                    if LATE_MULT <= 1.0:
+                        boost_why[(close_s, tk)] = (
+                            "off: --late-mult is 1.0"
+                            if _DEFAULT_LATE_MULT >= LATE_MULT else
+                            "off: switched off by an earlier boosted loss")
+                        return take_n
+                    if tau > LATE_TAU:
+                        boost_why[(close_s, tk)] = (
+                            "no: bought at %ds, outside the last %ds"
+                            % (tau, LATE_TAU))
+                        return take_n
+                    # A55: the operator's two conditions on the EXTRA contracts.
+                    # `f` is the model's probability of YES, so our side's
+                    # confidence is f for a YES bet and 1-f for a NO bet.
+                    _ours48 = f if want == "yes" else 1.0 - f
+                    _jmp48 = None
+                    if LATE_JUMP_SD is not None:
+                        try:
+                            _jmp48 = jump_against(
+                                idx.recent_moves(iid, JUMP_LOOKBACK), sg, want)
+                        except Exception:              # noqa: BLE001
+                            _jmp48 = None
+                    if not late_boost_ok(_ours48, _jmp48):
+                        boost_why[(close_s, tk)] = (
+                            "no: confidence %.4f%% under the %.4g%% bar"
+                            % (100 * _ours48, 100 * LATE_PIN)
+                            if (LATE_PIN is not None and _ours48 < LATE_PIN)
+                            else "no: %s sigma move against us (bar %.4g)"
+                            % (("%.1f" % _jmp48) if _jmp48 is not None
+                               else "unmeasurable", LATE_JUMP_SD or 0))
+                        rec("late_refused", ticker=tk, want=want, tau=tau,
+                            fair_ours=round(float(_ours48), 5), jump_sd=_jmp48,
+                            need_pin=LATE_PIN, max_jump=LATE_JUMP_SD,
+                            size=float(SIZE))
+                        return take_n
+                    _cap48 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"),
+                                          mult=LATE_MULT)
+                    _avail48 = float(size)
+                    _lim48 = sweep_limit(f, price, want)
+                    if SWEEP_DEPTH and _lim48 > price + 1e-9:
+                        try:
+                            _avail48 = max(_avail48, float(book.buyable(tk, want, _lim48)))
+                        except Exception:              # noqa: BLE001
+                            pass
+                    _room48 = (close_budget_for(prev, tk, tau=tau)
+                               - (prev.get("contracts", 0.0)
+                                  if prev else 0.0)) if CLOSE_BUDGET else float(SIZE)
+                    _was48 = take_n
+                    take_n = max(take_n, min(_cap48, _avail48, max(0.0, _room48)))
+                    if take_n <= _was48 + 1e-9:
+                        boost_why[(close_s, tk)] = (
+                            "no: allowed, but nothing to add (book %.0f, "
+                            "headroom %.0f, close budget %.0f left)"
+                            % (_avail48, _cap48, max(0.0, _room48)))
+                    if take_n > _was48 + 1e-9:
+                        boost_why[(close_s, tk)] = (
+                            "FIRED: %.0f -> %.0f contracts at %ds, confidence "
+                            "%.4f%%" % (_was48, take_n, tau, 100 * _ours48))
+                        _boosted48.add((close_s, tk))
+                        rec("late_boost", ticker=tk, want=want, tau=tau,
+                            fair_ours=round(float(_ours48), 5), jump_sd=_jmp48,
+                            was=round(_was48, 2), now=round(take_n, 2),
+                            cap=round(_cap48, 2), avail=round(_avail48, 2),
+                            room=round(_room48, 2), mult=LATE_MULT, late_tau=LATE_TAU,
+                            size=float(SIZE))
+                    return take_n
+
+                def _band53(take_n):
+                    """AMENDMENT 53: bet bigger inside a price band that has earned
+                    it. Same shape as A48: the per-order cap rises to MULT x SIZE
+                    through A45's drawdown headroom, and the book and the close
+                    budget still bind. Records `band_boost` when it widens, with
+                    every number that decided the width."""
+                    _m53 = band_mult(price)
+                    if _m53 <= 1.0:
+                        return take_n
+                    _cap53 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"),
+                                          mult=_m53)
+                    _avail53 = float(size)
+                    _lim53 = sweep_limit(f, price, want)
+                    if SWEEP_DEPTH and _lim53 > price + 1e-9:
+                        try:
+                            _avail53 = max(_avail53, float(book.buyable(tk, want, _lim53)))
+                        except Exception:              # noqa: BLE001
+                            pass
+                    _room53 = (close_budget_for(prev, tk, tau=tau)
+                               - (prev.get("contracts", 0.0)
+                                  if prev else 0.0)) if CLOSE_BUDGET else float(SIZE) * _m53
+                    _was53 = take_n
+                    take_n = max(take_n, min(_cap53, _avail53, max(0.0, _room53)))
+                    if take_n > _was53 + 1e-9:
+                        boosted.add((close_s, tk))
+                        rec("band_boost", ticker=tk, want=want, tau=tau,
+                            price=round(price, 4), mult=_m53,
+                            was=round(_was53, 2), now=round(take_n, 2),
+                            cap=round(_cap53, 2), avail=round(_avail53, 2),
+                            room=round(_room53, 2), size=float(SIZE),
+                            bank=state.get("bank"), hwm=state.get("hwm"))
+                    return take_n
+
+                def _stage46(take_n):
+                    """AMENDMENT 46: an early or top-up leg keeps its cap however
+                    much A35/A45 widened the order. A full leg is untouched.
+                    A53: a band multiple scales the WHOLE position for this
+                    market, so the early cap is EARLY_FRAC x SIZE x mult and a
+                    top-up completes to SIZE x mult -- otherwise the re-cap here
+                    would silently undo the boost on every early leg.
+
+                    A60 (2026-09-19): AND THE LATE BOOST COUNTS THE SAME WAY.
+                    The operator: "Even the bnb at 16 seconds it should've
+                    boosted once time got lower." It could not. A48 widens the
+                    order inside LATE_TAU, and then this line put it straight
+                    back: a top-up was capped at SIZE - early_held whatever the
+                    boost had asked for, so a market entered outside the window
+                    could never be boosted inside it. That is the exact trade he
+                    described, and the cap here was the reason.
+
+                    The boost's own conditions still decide whether the extra
+                    contracts are bought at all -- `_late48` returns `take_n`
+                    untouched when the confidence or jump bar fails, and a
+                    larger cap cannot raise a number that was never widened."""
+                    if EARLY_TAU_MAX > TAU_MAX and _leg46 != "full":
+                        _mult46 = max(band_mult(price),
+                                      LATE_MULT if tau <= LATE_TAU else 1.0)
+                        return min(take_n, staged_take(tau, take_n,
+                                                       float(SIZE) * _mult46,
+                                                       _held46)[0])
+                    return take_n
+
+                if not live:
+                    take_n = _widen45(take_n)  # paper
+                    take_n = _late48(take_n)   # paper
+                    take_n = _band53(take_n)   # paper
                     take_n = _stage46(take_n)
-                    # A68: LAST, so no later widener can undo the cap. This is
-                    # the line that makes the bounded rebuy bounded; without
-                    # it the close budget alone allows it and the tail is the
-                    # -$134 case A63 was refused for.
-                    if _room68 is not None:
-                        take_n = min(take_n, float(_room68))
-                    _t0 = time.time()
-                    out = pintake.take(CREDS["base"], CREDS["pk"],
-                                       CREDS["key_id"], tk, want, _limit,
-                                       take_n, close_s, exchange_index=exi)
-                    _lat_ms = round(1000.0 * (time.time() - _t0), 1)
-                    _xp = out.get("exec_price")
-                    rec("order", ticker=tk, latency_ms=_lat_ms,
-                        # AMENDMENT 72: WHICH SIDE. The order record carried
-                        # `ask_seen` (the price of the side we wanted) and
-                        # `exec_price` (what we paid) and NOT the side, so the
-                        # two could not be safely compared -- a NO buy can log
-                        # an exec_price on the other side of the dollar and
-                        # the pair reads as a 86c bargain. That is hard rule 5
-                        # (never infer a price's meaning from its magnitude)
-                        # arriving through the back door.
+                    _book_slot(price, take_n)
+                    _poid46 = f"paper-{tk}-{now_s}"
+                    entry_at[_poid46] = now_s
+                    open_pos[_poid46] = (close_s, want, price, take_n, tk)
+                    # AMENDMENT 71 (2026-09-19): THE PAPER HEDGE PATH WAS DEAD
+                    # CODE, AND EVERY PAPER ARM HAS BEEN AN UNHEDGED BOT.
+                    #
+                    # The hedge pass gives up on any position with no hedge_meta
+                    # ("if _meta is None: continue"), and hedge_meta was written at
+                    # exactly two places, BOTH live-only: the plant path and the
+                    # live fill. A paper position therefore never had a strike, so
+                    # its belief was never computed, so the alarm never fired.
+                    #
+                    # MEASURED, not argued: the five paper arms running today
+                    # logged 151 signals between them and ZERO hedge_alarm and
+                    # ZERO hedge records. The live bot on the same markets logged
+                    # 2 alarms, 8 hedges and 2 panics.
+                    #
+                    # WHAT THAT INVALIDATES. A hedge that fills turns a -73c to
+                    # -96c loss into -26.9c (the 17-loss table in HANDOFF.md). So
+                    # every head-to-head between an arm and the live bot has been
+                    # comparing a bot that eats its losses whole against one that
+                    # insures them -- and the arm was flattered on every winning
+                    # close and punished on every losing one. Arm numbers on
+                    # losing closes are not comparable before this line existed.
+                    #
+                    # It also means NO hedge change has ever been testable without
+                    # real money. A62, A69 and A70 all had to go straight to live
+                    # because paper could not exercise them.
+                    hedge_meta[_poid46] = (strike, digits, iid)
+                if live:
+                    try:
+                        # LATENCY INSTRUMENTATION, added 2026-09-08. 26% of our
+                        # orders fill NOTHING and depth is not the cause -- the
+                        # misses had 562, 107, 93, 10 and 5 contracts on offer.
+                        # We are losing a race and have never measured our own
+                        # part of it. Three numbers matter and none were recorded:
+                        # how stale the book was when we decided, how long the
+                        # round trip took, and whether misses differ from fills on
+                        # either. Pure instrumentation -- it changes no decision.
+                        # AMENDMENT 18: the LIMIT is the highest price that
+                        # still passes the same gate, not the ask we saw. When we
+                        # win the race we still fill at the resting price (283 of
+                        # 283 live fills at or better than signalled, zero worse);
+                        # when we lose it we take the next level instead of
+                        # nothing. `ask_seen` and `limit_sent` are both logged so
+                        # PREREG_sweep.md's bar can be scored.
+                        _limit = sweep_limit(f, price, want)
+                        # A78b: THE CEILING MUST BIND THE SWEEP, NOT JUST THE
+                        # SIGNAL. Caught live within the hour: the 05:00 DOGE
+                        # close signalled at 97.3c -- under the 97.5c ceiling, so
+                        # the gate correctly let it through -- and the sweep then
+                        # walked the ladder to an average of 97.92c. The gate
+                        # checks the price we SEE; only the limit decides what we
+                        # GET. This is the same shape as the dump guard's known
+                        # hole, and shipping half a ceiling is worse than none:
+                        # the rule becomes unpredictable rather than merely loose.
+                        if (_leg46 in ("early", "early_once")
+                                and EARLY_MAX_PRICE < 1.0):
+                            _limit = min(_limit, EARLY_MAX_PRICE)
+                        # ---- AMENDMENT 35: ASK FOR WHAT THE LADDER HOLDS -------
+                        # THE SWEEP WAS HALF-BUILT. AMENDMENT 18 raised the PRICE
+                        # we are willing to pay to _limit, so a lost race takes
+                        # the next level instead of nothing -- but the QUANTITY
+                        # was still min(SIZE, touch size). So the bot would offer
+                        # up to 98c and then ask for only the handful sitting at
+                        # the best price.
                         #
-                        # It matters because the difference between these two
-                        # is the only picked-off signal we have: the 01:45 BNB
-                        # close saw 85c and paid 74.98c because the side was
-                        # collapsing as we bought it. Pure instrumentation --
-                        # nothing branches on this.
-                        want=want,
-                        leg=_leg46, early_held=_held46,
-                        book_age_ms=b.get("age_ms"),
-                        index_age_s=round(iage, 2), tau_at_send=tau,
-                        ask_seen=round(float(price), 4),
-                        limit_sent=round(float(_limit), 4),
-                        sweep_headroom_c=round(100.0 * (_limit - price), 3),
-                        swept=bool(_xp is not None
-                                   and float(_xp) > float(price) + 1e-9),
-                        **{k: v for k, v in out.items() if k != "raw"})
-                    # A RETURNED REFUSAL IS AN ERROR AND MUST BE COUNTED.
-                    # take() returns its violations rather than raising, so
-                    # nothing here noticed. Combined with AMENDMENT 6 (a slot
-                    # is consumed by a FILL, not an attempt) that produced a
-                    # RUNAWAY: 160 identical orders in one close, 20 Hz, all
-                    # refused, none filled, no error logged. Two of my own
-                    # changes interacting. Neither was wrong alone.
-                    _ref = out.get("refused") or []
-                    if _ref or out.get("status_code") is None:
-                        state["order_errors"] = state.get("order_errors", 0) + 1
-                        rec("error", where="take_refused", ticker=tk,
-                            err=str(_ref)[:300])
-                        print(f"    ORDER REFUSED {_ref}")
-                    filled = float(out.get("filled") or 0)
-                    if filled > 0:
-                        px = out.get("exec_price")
-                        cost = float(px) if px is not None else float(price)
-                        _oid_new = (out.get("client_order_id")
-                                    or out.get("order_id")
-                                    or f"{tk}-{time.time():.6f}")
-                        open_pos[_oid_new] = (close_s, want, cost, filled, tk)
-                        entry_at[_oid_new] = now_s
-                        hedge_meta[_oid_new] = (strike, digits, iid)   # A15
-                        state["fills"] = state.get("fills", 0) + 1
-                        # AMENDMENT 12: a scrap (under half our size) keeps
-                        # its position but does not spend a scale-in slot
-                        _real = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))
-                        if filled >= _real:
-                            _book_slot(cost, filled)
-                        elif CLOSE_BUDGET:
-                            # A17 + A12: contracts are exposure however small,
-                            # so a scrap spends budget. It still must not raise
-                            # the improve bar -- that exemption is what A12 was
-                            # actually protecting, not the exposure count.
-                            _book_slot(cost, filled, raise_bar=False)
-                            state["scraps"] = state.get("scraps", 0) + 1
+                        # LIVE, 2026-09-14, the 02:00 SOL close: ask 96.3c with
+                        # SIX contracts on it, limit sent 98c, order placed for 6,
+                        # filled 6, profit $0.21 -- while 211 contracts sat at 88c
+                        # and 306 at 89c. The operator caught it from his phone:
+                        # "We only bought $6 worth. THERE WAS SO MUCH AVAILABLE."
+                        #
+                        # EVERY EXTRA CONTRACT IS ALREADY GATE-APPROVED. sweep_
+                        # limit() returns the HIGHEST price that still passes the
+                        # same confidence, edge, ceiling and EV tests, so anything
+                        # filled at or under it is a trade we had already decided
+                        # to make. The close's contract budget still binds, and
+                        # SIZE still caps it.
+                        if SWEEP_DEPTH and _limit > price + 1e-9:
+                            try:
+                                _deep = float(book.buyable(tk, want, _limit))
+                            except Exception:              # noqa: BLE001
+                                _deep = 0.0
+                            # A67: the same depth, WEIGHTED by the edge at each
+                            # level. `_deep` counts a 98c contract exactly like a
+                            # 91.5c one; this does not. Falls back to `_deep`
+                            # whenever the rungs cannot be read, so a book that
+                            # does not answer behaves exactly as it did before.
+                            _rungs = []
+                            if TAPER:
+                                try:
+                                    _rungs = book.rungs(tk, want, _limit)
+                                except Exception:          # noqa: BLE001
+                                    _rungs = []
+                            if _rungs:
+                                _flat = _deep
+                                _deep = taper_take(
+                                    _rungs, float(SIZE),
+                                    lambda _p, _f=f, _w=want: net_edge(_f, _p, _w))
+                                if _deep < _flat:
+                                    rec("taper", ticker=tk, want=want, tau=tau,
+                                        touch=round(float(_rungs[0][0]), 4),
+                                        rungs=len(_rungs),
+                                        flat=round(_flat, 2),
+                                        tapered=round(_deep, 2),
+                                        limit=round(_limit, 4))
+                            if _deep > take_n:
+                                _room = (close_budget_for(prev, tk, tau=tau)
+                                         - (prev.get("contracts", 0.0)
+                                            if prev else 0.0)) if CLOSE_BUDGET                                 else float(SIZE)
+                                _was = take_n
+                                take_n = min(float(SIZE), _deep, max(0.0, _room))
+                                if take_n > _was:
+                                    rec("sweep_depth", ticker=tk, want=want,
+                                        touch=round(float(size), 2),
+                                        ladder=round(_deep, 2),
+                                        was=round(_was, 2), now=round(take_n, 2),
+                                        limit=round(_limit, 4))
+                        # ---- AMENDMENT 45 / 46, live path: after A35 has sized
+                        # the order, widen for one-coin depth (if on), then
+                        # re-apply the staged-entry cap (if on). Same helpers the
+                        # paper path uses above, so both paths book the same size.
+                        take_n = _widen45(take_n)  # live
+                        take_n = _late48(take_n)   # live
+                        take_n = _band53(take_n)   # live
+                        take_n = _stage46(take_n)
+                        # A68: LAST, so no later widener can undo the cap. This is
+                        # the line that makes the bounded rebuy bounded; without
+                        # it the close budget alone allows it and the tail is the
+                        # -$134 case A63 was refused for.
+                        if _room68 is not None:
+                            take_n = min(take_n, float(_room68))
+                        _t0 = time.time()
+                        out = pintake.take(CREDS["base"], CREDS["pk"],
+                                           CREDS["key_id"], tk, want, _limit,
+                                           take_n, close_s, exchange_index=exi)
+                        _lat_ms = round(1000.0 * (time.time() - _t0), 1)
+                        # K1 (2026-09-22): THE FILL IS REGISTERED -- for the
+                        # hedge, for reconcile() and against the close budget
+                        # -- BEFORE ANYTHING FORMATS IT. The order record used
+                        # to come first, and its round() and **out arguments
+                        # sat between take() returning a fill and open_pos
+                        # hearing of it. A record that raised there was
+                        # swallowed by the except below: a real position,
+                        # never hedged, never booked, and the close budget
+                        # let the SAME market be bought again 50 ms later.
+                        # Reproduced offline by the K1 verifier; now a
+                        # self-test runs it.
+                        filled = float(out.get("filled") or 0)
+                        _scrap12 = None
+                        if filled > 0:
+                            px = out.get("exec_price")
+                            cost = float(px) if px is not None else float(price)
+                            _oid_new = (out.get("client_order_id")
+                                        or out.get("order_id")
+                                        or f"{tk}-{time.time():.6f}")
+                            open_pos[_oid_new] = (close_s, want, cost, filled, tk)
+                            entry_at[_oid_new] = now_s
+                            hedge_meta[_oid_new] = (strike, digits, iid)   # A15
+                            state["fills"] = state.get("fills", 0) + 1
+                            # AMENDMENT 12: a scrap (under half our size) keeps
+                            # its position but does not spend a scale-in slot
+                            _real = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))
+                            if filled >= _real:
+                                _book_slot(cost, filled)
+                            elif CLOSE_BUDGET:
+                                # A17 + A12: contracts are exposure however small,
+                                # so a scrap spends budget. It still must not raise
+                                # the improve bar -- that exemption is what A12 was
+                                # actually protecting, not the exposure count.
+                                _book_slot(cost, filled, raise_bar=False)
+                                state["scraps"] = state.get("scraps", 0) + 1
+                                _scrap12 = "budget"
+                            else:
+                                _note_scrap(cost, filled)
+                                state["scraps"] = state.get("scraps", 0) + 1
+                                _scrap12 = "slot"
+                        else:
+                            state["nofill"] = state.get("nofill", 0) + 1
+                        state["sent"] = state.get("sent", 0) + 1
+                        # ...and only now is it written down. A record that
+                        # fails is itself recorded, with a minimal order line
+                        # so the log still carries the fill.
+                        _xp = out.get("exec_price")
+                        try:
+                            rec("order", ticker=tk, latency_ms=_lat_ms,
+                                # AMENDMENT 72: WHICH SIDE. The order record carried
+                                # `ask_seen` (the price of the side we wanted) and
+                                # `exec_price` (what we paid) and NOT the side, so the
+                                # two could not be safely compared -- a NO buy can log
+                                # an exec_price on the other side of the dollar and
+                                # the pair reads as a 86c bargain. That is hard rule 5
+                                # (never infer a price's meaning from its magnitude)
+                                # arriving through the back door.
+                                #
+                                # It matters because the difference between these two
+                                # is the only picked-off signal we have: the 01:45 BNB
+                                # close saw 85c and paid 74.98c because the side was
+                                # collapsing as we bought it. Pure instrumentation --
+                                # nothing branches on this.
+                                want=want,
+                                leg=_leg46, early_held=_held46,
+                                book_age_ms=b.get("age_ms"),
+                                index_age_s=round(iage, 2), tau_at_send=tau,
+                                ask_seen=round(float(price), 4),
+                                limit_sent=round(float(_limit), 4),
+                                sweep_headroom_c=round(100.0 * (_limit - price), 3),
+                                swept=bool(_xp is not None
+                                           and float(_xp) > float(price) + 1e-9),
+                                **{k: v for k, v in out.items() if k != "raw"})
+                        except Exception as _ek1o:           # noqa: BLE001
+                            # The ORDER did not fail; its record did. Not an
+                            # order error (it would count toward the two that
+                            # halt the run), but on the record, once.
+                            _k1_error("order_log", close_s, tk, _ek1o)
+                            try:
+                                rec("order", ticker=tk, want=want, log_error=True,
+                                    latency_ms=_lat_ms, tau_at_send=tau,
+                                    status_code=out.get("status_code"),
+                                    status=out.get("status"),
+                                    order_id=out.get("order_id"),
+                                    client_order_id=out.get("client_order_id"),
+                                    filled=filled, exec_price=out.get("exec_price"),
+                                    fee=out.get("fee"),
+                                    refused=out.get("refused"))
+                            except Exception:                # noqa: BLE001
+                                pass
+                        # A RETURNED REFUSAL IS AN ERROR AND MUST BE COUNTED.
+                        # take() returns its violations rather than raising, so
+                        # nothing here noticed. Combined with AMENDMENT 6 (a slot
+                        # is consumed by a FILL, not an attempt) that produced a
+                        # RUNAWAY: 160 identical orders in one close, 20 Hz, all
+                        # refused, none filled, no error logged. Two of my own
+                        # changes interacting. Neither was wrong alone.
+                        _ref = out.get("refused") or []
+                        if _ref or out.get("status_code") is None:
+                            state["order_errors"] = state.get("order_errors", 0) + 1
+                            rec("error", where="take_refused", ticker=tk,
+                                err=str(_ref)[:300])
+                            print(f"    ORDER REFUSED {_ref}")
+                        if _scrap12 == "budget":
                             rec("scrap", ticker=tk, want=want, filled=filled,
                                 asked=take_n, price=cost, real_min=_real,
                                 budget_spent=True)
                             print(f"    SCRAP {filled:g} of {take_n:g} -- "
                                   f"budget spent, improve bar NOT raised")
-                        else:
-                            _note_scrap(cost, filled)
-                            state["scraps"] = state.get("scraps", 0) + 1
+                        elif _scrap12 == "slot":
                             rec("scrap", ticker=tk, want=want, filled=filled,
                                 asked=take_n, price=cost, real_min=_real)
                             print(f"    SCRAP {filled:g} of {take_n:g} -- "
                                   f"position kept, slot NOT spent")
-                    else:
-                        state["nofill"] = state.get("nofill", 0) + 1
-                    state["sent"] = state.get("sent", 0) + 1
-                    print(f"    ORDER -> status {out.get('status')} "
-                          f"filled {out.get('filled')} "
-                          f"@ {out.get('exec_price')} fee {out.get('fee')}")
-                except Exception as ex:                  # noqa: BLE001
-                    # NOT state["errors"]: the universe block resets that to 0
-                    # every 20 s, so an order path that threw on every fire
-                    # could never reach the consecutive-errors abort.
-                    state["order_errors"] = state.get("order_errors", 0) + 1
-                    rec("error", where="take", ticker=tk, err=str(ex)[:300])
-                    print(f"    ORDER FAILED: {ex}")
+                        print(f"    ORDER -> status {out.get('status')} "
+                              f"filled {out.get('filled')} "
+                              f"@ {out.get('exec_price')} fee {out.get('fee')}")
+                    except Exception as ex:                  # noqa: BLE001
+                        # NOT state["errors"]: the universe block resets that to 0
+                        # every 20 s, so an order path that threw on every fire
+                        # could never reach the consecutive-errors abort.
+                        state["order_errors"] = state.get("order_errors", 0) + 1
+                        rec("error", where="take", ticker=tk, err=str(ex)[:300])
+                        print(f"    ORDER FAILED: {ex}")
+            except Exception as _ek1:                      # noqa: BLE001
+                # K1: one market's scan must not end the run while a
+                # position is held -- see _k1_error. Counted, recorded
+                # once, and stepped over; the next market is looked at.
+                if _k1_error("scan", close_s, tk, _ek1):
+                    _k1_scan_error(close_s, tk)
+                continue
 
         time.sleep(0.05)
 
