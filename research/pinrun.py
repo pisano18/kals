@@ -8859,13 +8859,18 @@ def _selftest_body():
     # second. The question is asked in the hedge_quote block instead: below
     # the pass, already once per held market per second, already guarded.
     # ===================================================================
-    def _kb_A(freeze=None, collapse=None, book_collapse=None):
+    def _kb_A(freeze=None, collapse=None, book_collapse=None, rebuy=False):
         m = _k1_A(collapse_at=collapse)
         if freeze is not None:
             m["freeze_at"] = freeze          # THIS index only; B keeps flowing
+        # `rebuy`: a cent cheaper from +1 s (yes_ask 0.95 -> 0.94), which is
+        # what A3's improve-by and A23's band allow a SECOND fill on the same
+        # market to be. With MAX_PER_MARKET 2 and IMPROVE_SCOPE "market" --
+        # live's own settings -- that is two entry positions on one ticker.
         m["book"] = (lambda t: _ob(0.06, 0.90)
                      if (book_collapse is not None and t >= book_collapse)
-                     else _ob(0.94, 0.05))
+                     else (_ob(0.94, 0.06) if (rebuy and t >= 1)
+                           else _ob(0.94, 0.05)))
         return m
 
     def _kb_blind(res, tk=None):
@@ -8883,7 +8888,8 @@ def _selftest_body():
             out.append(json.dumps(
                 {k: v for k, v in r.items()
                  if not (r["kind"] == "hedge_quote"
-                         and k in ("iid", "index_age_s", "belief_age_s"))},
+                         and k in ("iid", "index_age_s", "belief_calc_age_s",
+                                   "n", "naked"))},
                 sort_keys=True, default=str))
         return out
 
@@ -8931,6 +8937,19 @@ def _selftest_body():
        "anyway -- once, by the watcher below the pass, saying the position "
        "is already covered and how big it is (%s)"
        % (_kb2b[0] if _kb2b else None))
+    # REVIEW FIX 2026-09-23: the record must carry the MARKET, not one leg --
+    # every contract held, how many are insured, how many are not, and from
+    # the booked insurance legs rather than the `hedged` flag (whose set means
+    # "hedged OR given up on"). Here: 5 held, 5 insured, none naked, 1 leg.
+    ck(_kb2b and _kb2b[0].get("n_tk") == 5.0
+       and _kb2b[0].get("insured_tk") == 5.0
+       and _kb2b[0].get("naked_tk") == 0.0 and _kb2b[0].get("pos") == 1
+       and _kb2b[0].get("remain") is None,
+       "K3b: ...and it says how much of the MARKET is uninsured from the "
+       "insurance legs actually booked, not from the hedged flag (%s)"
+       % ({_k: _kb2b[0].get(_k) for _k in
+           ("n", "remain", "n_tk", "insured_tk", "naked_tk", "pos")}
+          if _kb2b else None))
     ck(len(_kb2h) == 1 and abs(_hedged(_kb2, _kA) - 5.0) < 1e-9,
        "K3b: ...and NOTHING is bought for it: one hedge, 5 contracts, not "
        "one per second for the rest of the close (%d sends, %g contracts)"
@@ -8940,12 +8959,18 @@ def _selftest_body():
     _kb2q = [r for r in _kinds(_kb2, "hedge_quote", _kA)
              if r.get("index_age_s") is not None]
     _kb2qi = max([r["index_age_s"] for r in _kb2q] or [-1])
-    _kb2qb = max([r.get("belief_age_s") or 0 for r in _kb2q] or [-1])
+    _kb2qb = max([r.get("belief_calc_age_s") or 0 for r in _kb2q] or [-1])
     ck(_kb2q and _kb2qi > MAX_INDEX_AGE_S and _kb2qb >= 3,
        "K3b: ...and every held second now carries the age of that market's "
        "own index print AND of the belief beside it (index to %s s, belief "
        "to %s s) -- the nine DOGE seconds would have been one glance"
        % (_kb2qi, _kb2qb))
+    ck(_kb2q and all(r.get("n") == 5.0 for r in _kb2q)
+       and _kb2q[0].get("naked") == 5.0 and _kb2q[-1].get("naked") == 0.0,
+       "K3b: ...and how much money is riding on it THAT second -- 5 held "
+       "throughout, 5 uninsured before the hedge and 0 after it, counted "
+       "from the legs booked (%s)"
+       % sorted({(r.get("n"), r.get("naked")) for r in _kb2q}))
 
     # C: THE REVERT CATCHER. The same world with a HEALTHY index. Before
     # K3b these two record trails were identical, field for field.
@@ -9027,6 +9052,200 @@ def _selftest_body():
        "ABOVE K3's index read, and the new witness is BELOW the end of the "
        "hedge pass and AFTER the quote record it must never cost (%s)"
        % (_i_kb,))
+
+    # ===================================================================
+    # K3b REVIEW FIXES (2026-09-23). Five defects in the witness above,
+    # every one of them in the case it was written for, plus one found while
+    # building the world that catches the first.
+    #
+    # G/H  THE RECORD REPORTED ONE LEG AND CALLED IT THE MARKET. The held
+    #      positions were collected with setdefault(ticker, ...), so a
+    #      market with two entry fills kept the FIRST leg and dropped the
+    #      rest: one record, that leg's size, that leg's hedge state, and
+    #      the dedupe key burned on it. Live runs --max-per-market 2 and
+    #      open_pos gets an id per FILL; 24 of 704 (run, ticker) pairs in
+    #      the live log have two, and the DOGE close that motivated the
+    #      whole fix is one of them -- 2 contracts then 11, so the record
+    #      would have read n: 2 for 13 held. The old harness could not
+    #      build the world at all: _offline_trade_loop pins MAX_PER_MARKET
+    #      to its _DEFAULT_ of 1, which is why twelve new checks missed it.
+    #      These worlds pass MAX_PER_MARKET/IMPROVE_SCOPE through `flags`,
+    #      i.e. what live actually runs.
+    # I    belief_calc_age_s SAYS WHAT IT MEANS. While an OPEN position's
+    #      index is frozen the pass recomputes the same belief off the same
+    #      frozen ring every second, so the field reads 0 s on a provably
+    #      stale belief. It is the age of the CALCULATION; index_age_s is
+    #      the one that climbs, and the old name `belief_age_s` invited the
+    #      opposite reading. Asserted in BOTH directions now.
+    # J    THE KEY IS BURNED AFTER THE WRITE. It was added before, so a
+    #      rec() that raised -- it opens, appends and closes the file every
+    #      call -- lost the only witness a covered position has for the
+    #      whole run, in silence. J2 is the null beside it.
+    # L    AND IT IS THE WATCHER'S OWN KEY. It used to burn the hedge
+    #      pass's, which could have silenced the pass's richer record for
+    #      the rest of a run.
+    # K    A RAISE IN THE NEW ARITHMETIC CANNOT COST THE OLD RECORD. The
+    #      ages were computed above rec("hedge_quote") under the block's
+    #      blanket except; now they are in their own guard.
+    # ---  AND THE ONE THE TWO-LEG WORLD FOUND: the PAPER insurance leg was
+    #      keyed `hedge-paper-{ticker}-{second}` and two legs on one market
+    #      hedge in the same second, so one overwrote the other in open_pos
+    #      and never settled. Every paper arm's loss on a two-fill market
+    #      was overstated by a whole hedge leg. B10, for the second time.
+    # ===================================================================
+    # G: TWO ENTRY FILLS ON ONE MARKET (the second a cent cheaper, which is
+    # what --improve-scope market + the A23 band allow), both covered, and
+    # THEN that index freezes.
+    _kb5 = _offline_trade_loop(
+        [_kb_A(freeze=6, collapse=4, rebuy=True)],
+        flags={"MAX_PER_MARKET": 2, "IMPROVE_SCOPE": "market"})
+    _kb5b = _kb_blind(_kb5, _kA)
+    _kb5h = _kinds(_kb5, "hedge", _kA)
+    ck(_kb5["raised"] is None and len(_kb5h) == 2
+       and abs(_hedged(_kb5, _kA) - 10.0) < 1e-9,
+       "K3b: the two-leg world is real -- two entry fills on ONE market, "
+       "two hedges, 10 contracts (%d sends, %g contracts). Without this the "
+       "check below proves nothing" % (len(_kb5h), _hedged(_kb5, _kA)))
+    ck(len(_kb5b) == 2
+       and sorted(float(r.get("n") or 0) for r in _kb5b) == [5.0, 5.0]
+       and all(r.get("n_tk") == 10.0 and r.get("pos") == 2
+               and r.get("insured_tk") == 10.0 and r.get("naked_tk") == 0.0
+               and r.get("where") == "hedge_quote" for r in _kb5b),
+       "K3b: ...and BOTH legs are reported, each with its own size and the "
+       "market's 10 contracts beside it -- never one leg's 5 standing in "
+       "for the market (%d records, sizes %s, n_tk %s)"
+       % (len(_kb5b), [r.get("n") for r in _kb5b],
+          [r.get("n_tk") for r in _kb5b]))
+    # FOUND BUILDING THAT WORLD, AND IT IS B10 AGAIN: the PAPER hedge leg was
+    # keyed `hedge-paper-{ticker}-{second}`, and two positions on one market
+    # hedge in the SAME second because the same belief fires both alarms. So
+    # the second leg overwrote the first in open_pos, reconcile settles per
+    # entry, and the arm booked one 5-contract recovery instead of two --
+    # every arm's loss on a two-fill market overstated by a whole hedge leg.
+    # `insured_tk == 10` above is the running proof; this is the source.
+    ck("hedge-paper-{_htk}" not in _tl_kb
+       and "hedge-paper-{_hid}" in _tl_kb and "hedge-{_hid}-" in _tl_kb,
+       "K3b: an insurance leg is keyed on the PARENT POSITION, never on the "
+       "ticker and the second -- two legs bought for one market in one "
+       "second are two legs in open_pos, and both settle")
+    # H: the healthy twin of G -- two legs, nothing stale, nothing reported.
+    _kb5n = _offline_trade_loop(
+        [_kb_A(collapse=4, rebuy=True)],
+        flags={"MAX_PER_MARKET": 2, "IMPROVE_SCOPE": "market"})
+    ck(_kb5n["raised"] is None and not _kb_blind(_kb5n)
+       and len(_kinds(_kb5n, "hedge", _kA)) == 2
+       and all(r.get("n") == 10.0 for r in _kinds(_kb5n, "hedge_quote", _kA)
+               if r.get("t", 0) > 2),
+       "K3b NULL: two legs on a HEALTHY index are never reported blind, and "
+       "the quote says 10 contracts held once both are on (%s)"
+       % sorted({r.get("n") for r in _kinds(_kb5n, "hedge_quote", _kA)}))
+
+    # I: THE OPEN, FROZEN, WINNING position. The pass recomputes its belief
+    # off the frozen ring every second, so the CALCULATION is always 0 s old
+    # while the index behind it climbs past the bar. Both are asserted, in
+    # the direction each actually goes, so neither field can be read as the
+    # other.
+    _kb6 = _offline_trade_loop([_kb_A(freeze=2)])
+    _kb6q = _kinds(_kb6, "hedge_quote", _kA)
+    _kb6b = _kb_blind(_kb6, _kA)
+    _kb6i = max([r.get("index_age_s") or 0 for r in _kb6q] or [-1])
+    ck(_kb6["raised"] is None and _kb6q and _kb6i > MAX_INDEX_AGE_S
+       and {r.get("belief_calc_age_s") for r in _kb6q} == {0}
+       and not _kinds(_kb6, "hedge", _kA)
+       and len(_kb6b) == 1 and _kb6b[0].get("where") == "hedge_pass",
+       "K3b: on an OPEN position with a frozen index the belief is "
+       "RECOMPUTED every second, so belief_calc_age_s is 0 s while "
+       "index_age_s reaches %.2f s -- the field is the age of the sum, not "
+       "of the information, and only index_age_s can say the feed stopped "
+       "(%d quotes, belief ages %s)"
+       % (_kb6i, len(_kb6q),
+          sorted({r.get("belief_calc_age_s") for r in _kb6q})))
+
+    # J: THE RECORD'S OWN WRITE FAILS ONCE. The key must survive it (the
+    # next second writes it), the hedge must not care, and the OTHER held
+    # market must still get that second's quote.
+    _kb7n = {"i": 0}
+
+    def _kb7_fault(kind, kw):
+        if kind == "hedge_blind" and kw.get("where") == "hedge_quote":
+            _kb7n["i"] += 1
+            if _kb7n["i"] == 1:
+                raise TypeError("planted: the blind record cannot be written")
+    _kb7 = _offline_trade_loop([_kb_A(freeze=6, collapse=4), _k1_B(1)],
+                               rec_fault=_kb7_fault)
+    _kb7b = _kb_blind(_kb7, _kA)
+    ck(_kb7["raised"] is None and _kb7n["i"] == 2 and len(_kb7b) == 1
+       and abs(_hedged(_kb7, _kA) - 5.0) < 1e-9
+       and (len(_kinds(_kb7, "hedge_quote", "KXB115M-K1"))
+            == len(_kinds(_kb2, "hedge_quote", "KXB115M-K1"))),
+       "K3b: a blind record whose write RAISES is retried next second and "
+       "still lands exactly once (%d attempts, %d records), the hedge is "
+       "untouched, and the other held market loses no quote (%d vs %d)"
+       % (_kb7n["i"], len(_kb7b),
+          len(_kinds(_kb7, "hedge_quote", "KXB115M-K1")),
+          len(_kinds(_kb2, "hedge_quote", "KXB115M-K1"))))
+
+    # J2: THE SAME WRITE FAILING FOR EVER. One record may cost itself; it may
+    # not cost another market's trail. NULL, and it holds for TWO reasons that
+    # have to be said apart: the per-market guard added today, and the fact
+    # that `hedge_quote_at` is stamped per ticker, so the next pass of the
+    # same second writes whatever a raise skipped. The second reason alone is
+    # enough -- this check is green with the new guard patched out -- so the
+    # guard is belt and braces and this check is not its proof. What it does
+    # prove is the property that matters: no market loses a second's quote
+    # because another market's record cannot be written.
+    def _kb9_fault(kind, kw):
+        if kind == "hedge_blind" and kw.get("where") == "hedge_quote":
+            raise TypeError("planted: the blind record can NEVER be written")
+    _kb9 = _offline_trade_loop([_kb_A(freeze=6, collapse=4), _k1_B(1)],
+                               rec_fault=_kb9_fault)
+    _kb9a, _kb9b2 = (len(_kinds(_kb9, "hedge_quote", _kA)),
+                     len(_kinds(_kb9, "hedge_quote", "KXB115M-K1")))
+    _kb2a, _kb2b2 = (len(_kinds(_kb2, "hedge_quote", _kA)),
+                     len(_kinds(_kb2, "hedge_quote", "KXB115M-K1")))
+    ck(_kb9["raised"] is None and not _kb_blind(_kb9)
+       and _kb9a == _kb2a and _kb9b2 == _kb2b2
+       and abs(_hedged(_kb9, _kA) - 5.0) < 1e-9,
+       "K3b: a blind record that can NEVER be written costs itself and "
+       "nothing else -- the frozen market keeps every quote and so does the "
+       "other held market (%d and %d, against %d and %d unfaulted)"
+       % (_kb9a, _kb9b2, _kb2a, _kb2b2))
+
+    # L: THE WITNESS MUST NOT BE ABLE TO SILENCE THE PASS. Both witnesses
+    # dedupe through _hq71, and the pass's record is the richer one (it
+    # carries the fallback context and fires at the second it decides). So
+    # the watcher READS the pass's key -- one record per position per run
+    # whichever saw it first -- and WRITES only its own. Burning the pass's
+    # key here would mean that if the pass ever raised ahead of its index
+    # read, its record could never be written for the rest of the run. Read
+    # off the source: this needs the pass to raise inside itself, which no
+    # offline world can plant.
+    ck('(_pid, "index_stale") in _hq71' in _tl_kb
+       and '_hq71.add((_pid, "index_stale_q"))' in _tl_kb
+       and '_hq71.add((_pid, "index_stale"))' not in _tl_kb,
+       "K3b: the watcher below the pass READS the pass's dedupe key and "
+       "writes only its own, so it can never suppress the pass's richer "
+       "record")
+
+    # K: index_age() RAISES. The new fields go missing; the pre-existing
+    # per-second quote record -- the one barcheck reads -- does not.
+    def _kb8_raise(_i8, _d8):
+        raise TypeError("planted: index_age cannot answer")
+    _kb_ia1 = globals()["index_age"]
+    try:
+        globals()["index_age"] = _kb8_raise
+        _kb8 = _offline_trade_loop([_kb_A(collapse=4)])
+    finally:
+        globals()["index_age"] = _kb_ia1
+    _kb8q = _kinds(_kb8, "hedge_quote", _kA)
+    ck(globals()["index_age"] is _kb_ia1 and _kb8["raised"] is None
+       and len(_kb8q) >= 8
+       and all(r.get("index_age_s") is None and r.get("ask") == 0.06
+               and r.get("n") == 5.0 for r in _kb8q),
+       "K3b: with index_age() raising, every held second still writes its "
+       "hedge_quote -- ask, size, belief, size held -- and only the ages "
+       "are missing (%d quotes, ages %s)"
+       % (len(_kb8q), sorted({r.get("index_age_s") for r in _kb8q})))
 
     # ===================================================================
     # (4) 2026-09-22: A PAPER ARM MUST NOT STOP ON THE LIVE BOT'S DAY.
@@ -11491,7 +11710,21 @@ def trade_loop(a, rec, book, idx, series_index):
                         # the slip let us reach. With slip 0 there are no rungs and
                         # this is float(_ask) -- the pre-A70 number exactly.
                         _hpaper = float(hedge_vwap(_hrungs, _hn_take, float(_ask)))
-                        _hoid = f"hedge-paper-{_htk}-{now_s}"
+                        # FOUND 2026-09-23 BUILDING THE TWO-LEG WORLD: THIS WAS
+                        # KEYED BY TICKER AND SECOND, WHICH IS THE B10 BUG
+                        # AGAIN. Two entry positions on one market both hedge
+                        # in the SAME second (the alarm fires on the same
+                        # belief), so the second leg overwrote the first in
+                        # open_pos: reconcile settles per entry, so one paper
+                        # hedge leg was never booked and the arm's loss on
+                        # that market was overstated by the whole recovery.
+                        # Measured offline: two 5-contract legs, one booked.
+                        # Live is unaffected (its id is the exchange order
+                        # id). Keyed on the PARENT position now, which is
+                        # unique, and one try per position per second makes
+                        # the pair unique. The prefix is unchanged -- every
+                        # reader tests startswith("hedge-").
+                        _hoid = f"hedge-paper-{_hid}-{now_s}"
                         open_pos[_hoid] = (_hcs, _opp, _hpaper, _hn_take, _htk)
                         # A76: paper books the same way live does -- the position
                         # is done only when the WHOLE of it is covered, so a
@@ -11551,7 +11784,13 @@ def trade_loop(a, rec, book, idx, series_index):
                     # next second would buy the SAME hedge again.
                     if _hfilled > 0:
                         hedged_side[_htk] = _opp
-                        _hoid = f"hedge-{_hout.get('order_id') or now_s}"
+                        # ...and the same hardening live: `or now_s` alone is a
+                        # ticker-and-second key the moment a filled response
+                        # carries no order_id, and two positions hedge in the
+                        # same second. The parent id makes it unique either
+                        # way; with an order_id present nothing changes.
+                        _hoid = (f"hedge-{_hid}-"
+                                 f"{_hout.get('order_id') or now_s}")
                         open_pos[_hoid] = (_hcs, _opp, _hcost2, _hfilled, _htk)
                         state["hedges"] = state.get("hedges", 0) + 1
                         # A76: "done" means the WHOLE position is covered
@@ -11669,75 +11908,210 @@ def trade_loop(a, rec, book, idx, series_index):
         try:
             _hq_held = {}
             for _qid, (_qcs, _qwant, _qc, _qn, _qtk) in open_pos.items():
-                if not _qid.startswith("hedge-") and _qcs - now_s >= 1:
-                    _hq_held.setdefault(_qtk, (_qcs, _qwant, _qid, _qn))
-            for _qtk, (_qcs, _qwant, _qid, _qn) in _hq_held.items():
+                if _qcs - now_s < 1:
+                    continue
+                # REVIEW FIX 2026-09-23: EVERY POSITION ON THE MARKET, NOT THE
+                # FIRST ONE. This was `setdefault(_qtk, (one position))`, which
+                # kept whichever leg open_pos happened to hold first and threw
+                # the rest away. Live runs --max-per-market 2 and open_pos gets
+                # a new id per FILL, so a market with two entry fills -- 24 of
+                # 704 (run, ticker) pairs in the live log, 3.4% -- had the
+                # blind record below carrying ONE leg's size and ONE leg's
+                # hedge state as if they were the market's, and the second leg
+                # got no record at all. On the close that motivated all of
+                # this, KXDOGE15M-26SEP222245-45, that is `n: 2` while 13
+                # contracts were held. The record's whole job is to say how
+                # much money went blind, so understating it is the defect.
+                #
+                # The hedge legs are collected too, in the second list: their
+                # contracts are how much of the market is actually INSURED,
+                # which the `hedged` set cannot say (its own declaration reads
+                # "already hedged (or given up on)", and hedge_gave_up and
+                # hedge_refused both put a position in it with contracts still
+                # naked).
+                _hq_held.setdefault(_qtk, ([], []))[
+                    1 if _qid.startswith("hedge-") else 0].append(
+                        (_qcs, _qwant, _qid, float(_qn or 0.0)))
+            for _qtk, (_qpos, _qlegs) in _hq_held.items():
+                if not _qpos:
+                    continue          # an insurance leg whose parent is gone
                 if hedge_quote_at.get(_qtk) == now_s:
                     continue
                 hedge_quote_at[_qtk] = now_s
-                _qopp = "no" if _qwant == "yes" else "yes"
+                # REVIEW FIX 2026-09-23: ONE MARKET'S FAILURE IS KEPT TO ITS
+                # OWN MARKET. The outer guard stays as well, but it wraps the
+                # whole `for`, so anything raising on the first held market
+                # skipped every later market in that PASS.
+                #
+                # HOW MUCH THAT WAS WORTH, HONESTLY: bounded to one pass. The
+                # `hedge_quote_at` stamp above is per TICKER, so the next pass
+                # ~50 ms later skips the market that already has its record
+                # and reaches the ones that were dropped. No offline world can
+                # tell the two builds apart (proved: the suite is green with
+                # this guard patched out), and the check below is the null
+                # that shows nothing is lost either way. It stays because it
+                # costs nothing and the bound depends on a stamp two lines up
+                # continuing to be per market.
                 try:
-                    _qb = book.best(_qtk) or {}
-                except Exception:                        # noqa: BLE001
-                    _qb = {}
-                # K3b (2026-09-23): THE ONLY WITNESS A COVERED POSITION HAS.
-                #
-                # K3 asks "is this market's index still printing?" inside the
-                # hedge pass -- and the pass exits at the `hedged` skip for a
-                # position that is already covered, ABOVE both that question
-                # and the write of last_belief. So from the second a hedge
-                # completes, a held market has no index witness at all: the
-                # quote below reprints a belief nobody is updating, and a
-                # feed that freezes there is FIELD-FOR-FIELD identical to a
-                # healthy one. Proved on the DOGE 02:45Z close of 2026-09-23
-                # and offline (worlds W2/W3 of results/map_2026-09-22/
-                # doge2245/D_frozen_index.md).
-                #
-                # The skip STAYS WHERE IT IS: moving it below the pass makes
-                # hedge_remain.pop fall back to the full original size and
-                # re-buys the whole hedge every second (22 sends for 13
-                # contracts, measured). So the question is asked HERE, below
-                # the hedge pass, in a block that already runs once per held
-                # market per second and is already guarded -- it cannot
-                # block, delay or change a hedge, and the fallback that CAN
-                # send one is untouched in the pass above, for positions
-                # that still need it.
-                #
-                # Deduped through the pass's own _hq71 set, so the pair is one
-                # record per position per run whichever witness sees it first,
-                # and `where` says which did.
-                _qmeta = hedge_meta.get(_qid)
-                _qiid = _qmeta[2] if _qmeta else None
-                _qage = None if _qiid is None else index_age(idx, _qiid)
-                _qbt = last_belief_t.get(_qtk)
-                rec("hedge_quote", ticker=_qtk, side=_qopp,
-                    ask=_qb.get(f"{_qopp}_ask"),
-                    size=_qb.get(f"{_qopp}_ask_size"),
-                    tau=_qcs - now_s, belief=last_belief.get(_qtk),
-                    # K3b: how old the index print behind that belief is, and
-                    # how old the belief itself is, EVERY held second
-                    iid=_qiid,
-                    index_age_s=(None if _qage is None else round(_qage, 2)),
-                    belief_age_s=(None if _qbt is None else now_s - _qbt))
-                if _qiid is not None and (_qage is None
-                                          or _qage > MAX_INDEX_AGE_S):
-                    _qk = (_qid, "index_stale")
-                    if _qk not in _hq71:
-                        _hq71.add(_qk)
-                        _qmkt = market_belief(_qb, _qwant)
+                    _qcs, _qwant, _qid, _qn = _qpos[0]
+                    _qopp = "no" if _qwant == "yes" else "yes"
+                    # BY SIDE, not by list. Everything held on OUR side is the
+                    # bet; everything held on the other side offsets it,
+                    # whether it was bought as insurance or -- A68, after a
+                    # panic hedge -- as a bet of its own. Summing the entry
+                    # list alone would count an A68 re-buy of the hedged side
+                    # as more exposure and report the market naked when it is
+                    # the flattest it has been. NOT RUN-TESTED: no offline
+                    # world at the shipped filters can hold both sides (the
+                    # A68 re-buy needs a cheap-side price the pin gate
+                    # refuses), so this is right by construction and
+                    # identical, check for check, on every world that is
+                    # reachable.
+                    _qmine = _qcov = 0.0
+                    for _p in _qpos + _qlegs:
+                        if _p[1] == _qwant:
+                            _qmine += _p[3]
+                        else:
+                            _qcov += _p[3]
+                    _qn_tk = round(_qmine, 2)
+                    _qcov = round(_qcov, 2)
+                    _qnaked = round(max(0.0, _qmine - _qcov), 2)
+                    try:
+                        _qb = book.best(_qtk) or {}
+                    except Exception:                    # noqa: BLE001
+                        _qb = {}
+                    # K3b (2026-09-23): THE ONLY WITNESS A COVERED POSITION
+                    # HAS.
+                    #
+                    # K3 asks "is this market's index still printing?" inside
+                    # the hedge pass -- and the pass exits at the `hedged`
+                    # skip for a position that is already covered, ABOVE both
+                    # that question and the write of last_belief. So from the
+                    # second a hedge completes, a held market has no index
+                    # witness at all: the quote below reprints a belief nobody
+                    # is updating, and a feed that freezes there is
+                    # FIELD-FOR-FIELD identical to a healthy one. Proved on
+                    # the DOGE 02:45Z close of 2026-09-23 and offline (worlds
+                    # W2/W3 of results/map_2026-09-22/doge2245/
+                    # D_frozen_index.md).
+                    #
+                    # The skip STAYS WHERE IT IS: moving it below the pass
+                    # makes hedge_remain.pop fall back to the full original
+                    # size and re-buys the whole hedge every second (22 sends
+                    # for 13 contracts, measured). So the question is asked
+                    # HERE, below the hedge pass, in a block that already runs
+                    # once per held market per second and is already guarded
+                    # -- it cannot block, delay or change a hedge, and the
+                    # fallback that CAN send one is untouched in the pass
+                    # above, for positions that still need it.
+                    #
+                    # REVIEW FIX 2026-09-23: THE AGES ARE READ IN THEIR OWN
+                    # GUARD, BELOW NOTHING AND ABOVE ONLY THEMSELVES. They
+                    # used to be computed above rec("hedge_quote") under the
+                    # block's blanket `except`, so anything raising here --
+                    # index_age swallows its own errors today, hedge_meta's
+                    # tuple arity does not -- silently dropped the
+                    # PRE-EXISTING per-second quote record, which is what
+                    # barcheck reads and what (5) added so hedge-trigger
+                    # questions come from our own fills instead of the tape.
+                    # A new field may cost itself; it may not cost an old
+                    # record.
+                    _qiid = _qage = _qbt = None
+                    try:
+                        for _p in _qpos:
+                            _pm = hedge_meta.get(_p[2])
+                            if _pm:
+                                _qiid = _pm[2]
+                                break
+                        _qage = (None if _qiid is None
+                                 else index_age(idx, _qiid))
+                        _qbt = last_belief_t.get(_qtk)
+                    except Exception:                    # noqa: BLE001
+                        pass
+                    rec("hedge_quote", ticker=_qtk, side=_qopp,
+                        ask=_qb.get(f"{_qopp}_ask"),
+                        size=_qb.get(f"{_qopp}_ask_size"),
+                        tau=_qcs - now_s, belief=last_belief.get(_qtk),
+                        # K3b: how old the index print behind that belief is,
+                        # and how long since the belief was last RECOMPUTED,
+                        # EVERY held second.
+                        #
+                        # REVIEW FIX: `belief_calc_age_s`, not
+                        # `belief_age_s`. It is the age of the CALCULATION,
+                        # not of the information: while an OPEN position's
+                        # index is frozen the pass recomputes the same number
+                        # off the same frozen tick ring every second, so this
+                        # reads 0 with a provably stale belief. Read it beside
+                        # index_age_s, which is the one that climbs. The old
+                        # name invited exactly the opposite reading.
+                        iid=_qiid,
+                        index_age_s=(None if _qage is None
+                                     else round(_qage, 2)),
+                        belief_calc_age_s=(None if _qbt is None
+                                           else now_s - _qbt),
+                        # REVIEW FIX: and HOW MUCH is riding on it. Every
+                        # entry contract held on this market, and the part of
+                        # it no insurance leg covers -- from the booked legs
+                        # themselves, so hedge_gave_up and hedge_refused
+                        # cannot make it read covered.
+                        n=_qn_tk, naked=_qnaked)
+                    if _qiid is None or (_qage is not None
+                                         and _qage <= MAX_INDEX_AGE_S):
+                        continue
+                    for _pcs, _pwant, _pid, _pn in _qpos:
+                        # REVIEW FIX: ONE RECORD PER POSITION. The dedupe was
+                        # keyed on the first leg, so a two-fill market burned
+                        # one key and reported one leg.
+                        #
+                        # Deduped so the pair is one record per position per
+                        # run whichever witness sees it first, and `where`
+                        # says which did -- but in the pass's key space it is
+                        # READ, never WRITTEN. Burning (pos, "index_stale")
+                        # here could suppress the pass's own richer record
+                        # (the one carrying market_belief and the fallback
+                        # context) for the rest of the run, if the pass ever
+                        # raised ahead of its index read.
+                        if ((_pid, "index_stale") in _hq71
+                                or (_pid, "index_stale_q") in _hq71):
+                            continue
+                        _qmkt = market_belief(_qb, _pwant)
                         rec("hedge_blind", ticker=_qtk, why="index_stale",
-                            where="hedge_quote", tau=_qcs - now_s, iid=_qiid,
+                            where="hedge_quote", tau=_pcs - now_s, iid=_qiid,
                             age_s=(round(_qage, 2) if _qage is not None
                                    else None),
                             market_belief=(round(_qmkt, 4)
                                            if _qmkt is not None else None),
-                            bid=_qb.get(f"{_qwant}_bid"),
-                            ask=_qb.get(f"{_qwant}_ask"),
-                            ask_size=_qb.get(f"{_qwant}_ask_size"),
+                            bid=_qb.get(f"{_pwant}_bid"),
+                            ask=_qb.get(f"{_pwant}_ask"),
+                            ask_size=_qb.get(f"{_pwant}_ask_size"),
                             book_age_ms=_qb.get("age_ms"),
-                            n=_qn, hedged=(_qid in hedged))
-                        print(f"  hedge BLIND {_qtk}: index_stale, held "
-                              f"{'and covered' if _qid in hedged else 'OPEN'}")
+                            # THIS leg: its size, what the hedge still owes on
+                            # it (hedge_remain, which is what the pass acts
+                            # on -- open_pos is the ORIGINAL size and reading
+                            # it as the exposure was the 09-13 ZEC bug), and
+                            # the flag, whose set means "hedged OR given up".
+                            n=_pn, remain=hedge_remain.get(_pid),
+                            hedged=(_pid in hedged),
+                            # THE MARKET: what the whole position is and how
+                            # much of it is uninsured. This is the number the
+                            # record is read for.
+                            n_tk=_qn_tk, insured_tk=_qcov, naked_tk=_qnaked,
+                            pos=len(_qpos))
+                        # REVIEW FIX: the key is burned AFTER the record is
+                        # written, never before. rec() opens, appends and
+                        # closes the log on every call; burning first meant a
+                        # write that raised lost the only witness a covered
+                        # position has, for the whole run, in silence.
+                        _hq71.add((_pid, "index_stale_q"))
+                        print("  hedge BLIND %s: index_stale, %g held / %g "
+                              "insured%s (this leg %g, %s)"
+                              % (_qtk, _qn_tk, _qcov,
+                                 "" if _qnaked <= 1e-9
+                                 else ", %g NAKED" % _qnaked,
+                                 _pn,
+                                 "hedged" if _pid in hedged else "OPEN"))
+                except Exception:                        # noqa: BLE001
+                    pass
         except Exception:                                # noqa: BLE001
             pass
 
