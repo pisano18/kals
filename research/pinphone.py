@@ -165,13 +165,20 @@ class Phone:
             log("could not save config: %s" % e)
 
     def say(self, text, chat_id=None):
+        """Send, and LOG WHAT WAS SENT. 2026-09-23: the operator got a
+        RECORDER SILENT alert and the log held no trace of it -- only
+        failures were logged -- so there was no way to audit whether an
+        alert had fired, which is the whole point of having alerts."""
         cid = chat_id or self.chat_id
+        flat = " | ".join(str(text).splitlines())
         if cid is None:
+            log("NOT SENT (no paired chat): %s" % flat[:200])
             return
         try:
             self.tg.send(cid, text)
+            log("SENT: %s" % flat[:300])
         except Exception as e:                            # noqa: BLE001
-            log("send failed: %s" % e)
+            log("send failed: %s -- text was: %s" % (e, flat[:200]))
 
     def summary_line(self, rows, day=None, label=""):
         s = Ledger.summary(rows)
