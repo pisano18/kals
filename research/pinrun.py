@@ -3454,7 +3454,11 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
     live       drive the live order path. `take` replaces pintake.take
                outright; with take=None the REAL pintake.take runs against a
                fake wire whose answer is reply(body, n) -> (status, response).
-    freeze_at  wall time after which the index stops printing.
+    freeze_at  wall time after which EVERY index stops printing (a socket
+               outage). K3b: a market's own optional `freeze_at` key stops
+               that ONE index while the others keep arriving, which is what
+               a single stalled CF Benchmarks stream looks like and is the
+               case the 30 s socket timeout can never see.
     rec_fault  called as rec_fault(kind, kw) before each record; may raise.
 
     Every flag in _OFFLINE_PINNED_FLAGS runs at its _DEFAULT_ value, never
@@ -3498,6 +3502,15 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         last = int(clock.t) - 1
         if freeze_at is not None:
             last = min(last, int(t0 + freeze_at) - 1)
+        # K3b (2026-09-23): a PER-INDEX freeze. `freeze_at` stops every feed
+        # at once, which is a socket outage -- and the socket's own 30 s
+        # read timeout eventually reconnects that. One index frozen behind
+        # eleven live ones never trips it, is what actually happens when a
+        # single CF Benchmarks stream stalls, and is the case the old
+        # harness could not build.
+        _f1 = (by_iid.get(iid) or {}).get("freeze_at")
+        if _f1 is not None:
+            last = min(last, int(t0 + _f1) - 1)
         return last
 
     def _itime(iid):
@@ -8824,6 +8837,190 @@ def _selftest_body():
        "NO market belief -- the fallback never fires on a guess")
 
     # ===================================================================
+    # K3b (2026-09-23): K3's OWN BLIND SPOT -- A COVERED POSITION IS NOT
+    # WATCHED AT ALL.
+    #
+    # K3 asks "is this market's index still printing?" inside the hedge
+    # pass. The pass exits at the `hedged` skip for a position that is
+    # already covered -- ABOVE that question and above the write of
+    # last_belief -- so from the second a hedge completes the market has no
+    # index witness, and hedge_quote reprints a belief nobody is updating.
+    # On KXDOGE15M-26SEP222245-45 (close 2026-09-23T02:45:00Z, 13 NO
+    # contracts held) that belief was byte-identical for nine seconds while
+    # the book moved every second, and NOTHING in the log said whether the
+    # index had stopped or only the log had. It was only the log: largest
+    # index age in the whole run 1.1 s against a 2 s bar. But a real freeze
+    # there would have been FIELD-FOR-FIELD identical -- see
+    # results/map_2026-09-22/doge2245/D_frozen_index.md, worlds W2 and W3.
+    #
+    # The skip is NOT moved. Below the pass, hedge_remain.pop makes the
+    # size fall back to the full original, and the measured result is 22
+    # hedge sends for 13 contracts -- re-buying the whole hedge every
+    # second. The question is asked in the hedge_quote block instead: below
+    # the pass, already once per held market per second, already guarded.
+    # ===================================================================
+    def _kb_A(freeze=None, collapse=None, book_collapse=None):
+        m = _k1_A(collapse_at=collapse)
+        if freeze is not None:
+            m["freeze_at"] = freeze          # THIS index only; B keeps flowing
+        m["book"] = (lambda t: _ob(0.06, 0.90)
+                     if (book_collapse is not None and t >= book_collapse)
+                     else _ob(0.94, 0.05))
+        return m
+
+    def _kb_blind(res, tk=None):
+        return [r for r in _kinds(res, "hedge_blind", tk)
+                if r.get("why") == "index_stale"]
+
+    def _kb_old(res):
+        """Every record the code BEFORE K3b would have written, carrying only
+        the fields it would have carried. Two runs equal here differ in
+        nothing but the new information."""
+        out = []
+        for r in res["recs"]:
+            if r["kind"] == "hedge_blind":
+                continue                             # K3b's own record
+            out.append(json.dumps(
+                {k: v for k, v in r.items()
+                 if not (r["kind"] == "hedge_quote"
+                         and k in ("iid", "index_age_s", "belief_age_s"))},
+                sort_keys=True, default=str))
+        return out
+
+    def _kb_all(res):
+        return [json.dumps(r, sort_keys=True, default=str)
+                for r in res["recs"]]
+
+    # A: ONE index frozen at +2 s while B's keeps arriving, the position
+    # still OPEN, and the market says 10c by the time the age crosses the
+    # bar (the record is deduped to the FIRST stale second, so the world has
+    # to have collapsed by then for the record to carry the collapse).
+    # Today's behaviour, plus the depth at that ask -- whether the fallback
+    # could have been filled is not answerable from a price alone.
+    _kb1 = _offline_trade_loop([_kb_A(freeze=2, book_collapse=2), _k1_B(1)])
+    _kb1b = _kb_blind(_kb1, _kA)
+    ck(_kb1["raised"] is None and abs(_hedged(_kb1, _kA) - 5.0) < 1e-9
+       and [r for r in _kinds(_kb1, "hedge_alarm", _kA)
+            if r.get("trigger") == "market_index_stale"],
+       "K3b: ONE index frozen behind a live one, position OPEN -> the "
+       "market-price fallback still hedges all 5 on market_index_stale "
+       "(hedged %g)" % _hedged(_kb1, _kA))
+    ck(len(_kb1b) == 1 and _kb1b[0].get("where") == "hedge_pass"
+       and _kb1b[0].get("iid") == "K1A"
+       and (_kb1b[0].get("age_s") or 0) > MAX_INDEX_AGE_S
+       and _kb1b[0].get("market_belief") == 0.1
+       and _kb1b[0].get("ask") == 0.1 and _kb1b[0].get("ask_size") == 50.0,
+       "K3b: ...recorded ONCE, by the hedge pass, with the index, its age, "
+       "the market's 10c, our side's ask AND THE SIZE behind it (%s)"
+       % (_kb1b[0] if _kb1b else None))
+    ck(not _kb_blind(_kb1, "KXB115M-K1"),
+       "K3b NULL: the market whose index kept arriving is not reported "
+       "blind -- the age is per index, not per socket")
+
+    # B: THE DOGE SHAPE. The model collapses at +4 s, the hedge covers the
+    # position in full, and THEN that one index freezes at +6 s.
+    _kb2 = _offline_trade_loop([_kb_A(freeze=6, collapse=4), _k1_B(1)])
+    _kb2b = _kb_blind(_kb2, _kA)
+    _kb2h = _kinds(_kb2, "hedge", _kA)
+    ck(len(_kb2b) == 1 and _kb2b[0].get("where") == "hedge_quote"
+       and _kb2b[0].get("hedged") is True and _kb2b[0].get("n") == 5.0
+       and (_kb2b[0].get("age_s") or 0) > MAX_INDEX_AGE_S
+       and _kb2b[0].get("iid") == "K1A"
+       and _kb2b[0].get("ask") == 0.95 and _kb2b[0].get("ask_size") == 50.0,
+       "K3b: an index that freezes AFTER the hedge completed is recorded "
+       "anyway -- once, by the watcher below the pass, saying the position "
+       "is already covered and how big it is (%s)"
+       % (_kb2b[0] if _kb2b else None))
+    ck(len(_kb2h) == 1 and abs(_hedged(_kb2, _kA) - 5.0) < 1e-9,
+       "K3b: ...and NOTHING is bought for it: one hedge, 5 contracts, not "
+       "one per second for the rest of the close (%d sends, %g contracts)"
+       % (len(_kb2h), _hedged(_kb2, _kA)))
+    _kb2q = [r for r in _kinds(_kb2, "hedge_quote", _kA)
+             if r.get("index_age_s") is not None]
+    ck(_kb2q and max(r["index_age_s"] for r in _kb2q) > MAX_INDEX_AGE_S
+       and max((r.get("belief_age_s") or 0) for r in _kb2q) >= 3,
+       "K3b: ...and every held second now carries the age of that market's "
+       "own index print AND of the belief beside it (index to %.2f s, "
+       "belief to %s s) -- the nine DOGE seconds would have been one glance"
+       % (max(r["index_age_s"] for r in _kb2q),
+          max((r.get("belief_age_s") or 0) for r in _kb2q)))
+
+    # C: THE REVERT CATCHER. The same world with a HEALTHY index. Before
+    # K3b these two record trails were identical, field for field.
+    _kb3 = _offline_trade_loop([_kb_A(collapse=4), _k1_B(1)])
+    _kb3q = _kinds(_kb3, "hedge_quote", _kA)
+    ck(_kb3["raised"] is None and not _kb_blind(_kb3)
+       and _kb3q and all(r.get("index_age_s") is not None
+                         and r["index_age_s"] <= MAX_INDEX_AGE_S
+                         for r in _kb3q),
+       "K3b NULL: a HEALTHY index through the same hedge is never reported "
+       "blind, and every quote's index age stays under the bar (%d quotes, "
+       "worst %.2f s)" % (len(_kb3q),
+                          max([r.get("index_age_s") or 0 for r in _kb3q]
+                              or [-1])))
+    ck(_kb_all(_kb2) != _kb_all(_kb3),
+       "K3b CATCHER: the frozen world and the healthy world no longer "
+       "produce the same records. Reverting K3b makes these two IDENTICAL, "
+       "which is the whole defect (%d vs %d records)"
+       % (len(_kb2["recs"]), len(_kb3["recs"])))
+
+    # D: NO BEHAVIOUR CHANGE, proved in the world where the fix FIRES. The
+    # same run with index_age() forced to 0 is the old code's decision path
+    # -- nothing is ever stale, so neither witness speaks -- and every
+    # pre-existing record and field must be identical to it.
+    _kb_ia0 = globals()["index_age"]
+    try:
+        globals()["index_age"] = lambda _i, _d: 0.0
+        _kb2f = _offline_trade_loop([_kb_A(freeze=6, collapse=4), _k1_B(1)])
+        _kb1f = _offline_trade_loop([_kb_A(freeze=2, book_collapse=2),
+                                     _k1_B(1)])
+    finally:
+        globals()["index_age"] = _kb_ia0
+    ck(globals()["index_age"] is _kb_ia0 and _kb2f["raised"] is None
+       and not _kb_blind(_kb2f) and _kb_old(_kb2) == _kb_old(_kb2f),
+       "K3b: every pre-existing record and every pre-existing field is "
+       "IDENTICAL with the freeze seen and with it invisible -- the fix adds "
+       "records, and changes no decision, no alarm, no send and no refusal "
+       "(%d records either way)" % len(_kb_old(_kb2)))
+    ck(not _kinds(_kb1f, "hedge", _kA) and _kb_old(_kb1) != _kb_old(_kb1f),
+       "K3b CONTROL: the same neutraliser DOES change the OPEN position's "
+       "world -- with the staleness invisible the frozen model never hedges "
+       "at all, so the comparison above is not vacuous")
+
+    # E: THE WHOLE SOCKET SILENT from +6 s, A covered and B still open:
+    # both are recorded, each by the witness that can see it.
+    _kb4 = _offline_trade_loop([_kb_A(collapse=4), _k1_B(1)], freeze_at=6)
+    _kb4a = _kb_blind(_kb4, _kA)
+    _kb4b = _kb_blind(_kb4, "KXB115M-K1")
+    ck(_kb4["raised"] is None and len(_kb4a) == 1 and len(_kb4b) == 1
+       and _kb4a[0].get("where") == "hedge_quote"
+       and _kb4b[0].get("where") == "hedge_pass"
+       and not [r for r in _kinds(_kb4, "hedge") if r.get("ticker")
+                == "KXB115M-K1"],
+       "K3b: a SILENT SOCKET is recorded for every held market -- the "
+       "covered one by the watcher, the open one by the pass -- and the open "
+       "one, whose market still says 93c, is not hedged on a guess")
+
+    # F: THE ORDERING THAT KEEPS THIS SAFE, read off trade_loop's source.
+    # The `hedged` skip must stay ABOVE K3's index read (below it, the size
+    # falls back to the original and the hedge is re-bought every second),
+    # and the new witness must stay BELOW the whole pass and AFTER the
+    # pre-existing quote record, so neither a new record nor a new failure
+    # can sit in front of a hedge or cost an old record.
+    _src_kb = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _tl_kb = _src_kb[_src_kb.rindex(chr(10) + "def trade_loop("):]
+    _i_kb = (_tl_kb.index("if _hid in hedged or _hid.startswith("),
+             _tl_kb.index("_hage = index_age(idx, _hiid)"),
+             _tl_kb.index("# ---------------- end AMENDMENT 15"),
+             _tl_kb.index('rec("hedge_quote", ticker=_qtk'),
+             _tl_kb.index('rec("hedge_blind", ticker=_qtk'))
+    ck(list(_i_kb) == sorted(_i_kb),
+       "K3b: in trade_loop's own source the covered-position skip is still "
+       "ABOVE K3's index read, and the new witness is BELOW the end of the "
+       "hedge pass and AFTER the quote record it must never cost (%s)"
+       % (list(_i_kb) == sorted(_i_kb)))
+
+    # ===================================================================
     # (4) 2026-09-22: A PAPER ARM MUST NOT STOP ON THE LIVE BOT'S DAY.
     #
     # risk_abort compared day_loss() -- the LIVE account's ET-day total on
@@ -10325,6 +10522,15 @@ def trade_loop(a, rec, book, idx, series_index):
                                   # while THIS is at or under the panic line;
                                   # a belief that has recovered must close the
                                   # door again, and a missing one keeps it shut
+    last_belief_t = {}            # K3b (2026-09-23): ticker -> the wall-clock
+                                  # second last_belief was last WRITTEN. A
+                                  # covered position leaves the hedge pass
+                                  # above that write, so the `belief` printed
+                                  # in hedge_quote can be nine seconds old and
+                                  # read exactly like a live one. It did, on
+                                  # KXDOGE15M-26SEP222245-45: byte-identical
+                                  # at tau 9..1 while the book moved every
+                                  # second, and no field in the log said so.
     hedged_side = {}              # A63: ticker -> the side we hedged INTO, so
                                   # more of it is an ordinary bet and not a
                                   # second hedge
@@ -10986,7 +11192,7 @@ def trade_loop(a, rec, book, idx, series_index):
                             return
                         _hq71.add(_k)
                         rec("hedge_blind", ticker=_htk, why=_why, tau=_hcs - now_s,
-                            **_kw)
+                            where="hedge_pass", **_kw)
                         print(f"  hedge BLIND {_htk}: {_why}")
 
                     _meta = hedge_meta.get(_hid)
@@ -11033,6 +11239,12 @@ def trade_loop(a, rec, book, idx, series_index):
                                                if _hmkt is not None else None),
                                 bid=(_hbk3 or {}).get(f"{_hwant}_bid"),
                                 ask=(_hbk3 or {}).get(f"{_hwant}_ask"),
+                                # K3b: the DEPTH at that ask. Whether the
+                                # fallback could actually have been filled is
+                                # not answerable from a price alone, and this
+                                # record is the only place the question is
+                                # ever asked.
+                                ask_size=(_hbk3 or {}).get(f"{_hwant}_ask_size"),
                                 book_age_ms=(_hbk3 or {}).get("age_ms"))
                     _hsg = idx.sigma(_hiid)
                     if _hsg is None:
@@ -11064,6 +11276,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     # the market fallback must never move an entry decision.
                     if _hmodel is not None:
                         last_belief[_htk] = float(_hmodel)
+                        last_belief_t[_htk] = now_s          # K3b: and WHEN
                     # A52: two reasons to fire, recorded separately. The jump is
                     # asked FIRST because it is the earlier signal -- belief only
                     # falls after the price has already moved.
@@ -11101,6 +11314,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         state["hedge_alarms"] = state.get("hedge_alarms", 0) + 1
                         if _hmodel is not None:
                             last_belief[_htk] = float(_hmodel)   # A68 (K3: model)
+                            last_belief_t[_htk] = now_s          # K3b: and WHEN
                         rec("hedge_alarm", ticker=_htk, want=_hwant, entry=_hcost,
                             n=_hn, belief=round(_belief, 5), tau=_htau,
                             threshold=HEDGE_BELIEF,
@@ -11448,8 +11662,8 @@ def trade_loop(a, rec, book, idx, series_index):
             _hq_held = {}
             for _qid, (_qcs, _qwant, _qc, _qn, _qtk) in open_pos.items():
                 if not _qid.startswith("hedge-") and _qcs - now_s >= 1:
-                    _hq_held.setdefault(_qtk, (_qcs, _qwant))
-            for _qtk, (_qcs, _qwant) in _hq_held.items():
+                    _hq_held.setdefault(_qtk, (_qcs, _qwant, _qid, _qn))
+            for _qtk, (_qcs, _qwant, _qid, _qn) in _hq_held.items():
                 if hedge_quote_at.get(_qtk) == now_s:
                     continue
                 hedge_quote_at[_qtk] = now_s
@@ -11458,10 +11672,64 @@ def trade_loop(a, rec, book, idx, series_index):
                     _qb = book.best(_qtk) or {}
                 except Exception:                        # noqa: BLE001
                     _qb = {}
+                # K3b (2026-09-23): THE ONLY WITNESS A COVERED POSITION HAS.
+                #
+                # K3 asks "is this market's index still printing?" inside the
+                # hedge pass -- and the pass exits at the `hedged` skip for a
+                # position that is already covered, ABOVE both that question
+                # and the write of last_belief. So from the second a hedge
+                # completes, a held market has no index witness at all: the
+                # quote below reprints a belief nobody is updating, and a
+                # feed that freezes there is FIELD-FOR-FIELD identical to a
+                # healthy one. Proved on the DOGE 02:45Z close of 2026-09-23
+                # and offline (worlds W2/W3 of results/map_2026-09-22/
+                # doge2245/D_frozen_index.md).
+                #
+                # The skip STAYS WHERE IT IS: moving it below the pass makes
+                # hedge_remain.pop fall back to the full original size and
+                # re-buys the whole hedge every second (22 sends for 13
+                # contracts, measured). So the question is asked HERE, below
+                # the hedge pass, in a block that already runs once per held
+                # market per second and is already guarded -- it cannot
+                # block, delay or change a hedge, and the fallback that CAN
+                # send one is untouched in the pass above, for positions
+                # that still need it.
+                #
+                # Deduped through the pass's own _hq71 set, so the pair is one
+                # record per position per run whichever witness sees it first,
+                # and `where` says which did.
+                _qmeta = hedge_meta.get(_qid)
+                _qiid = _qmeta[2] if _qmeta else None
+                _qage = None if _qiid is None else index_age(idx, _qiid)
+                _qbt = last_belief_t.get(_qtk)
                 rec("hedge_quote", ticker=_qtk, side=_qopp,
                     ask=_qb.get(f"{_qopp}_ask"),
                     size=_qb.get(f"{_qopp}_ask_size"),
-                    tau=_qcs - now_s, belief=last_belief.get(_qtk))
+                    tau=_qcs - now_s, belief=last_belief.get(_qtk),
+                    # K3b: how old the index print behind that belief is, and
+                    # how old the belief itself is, EVERY held second
+                    iid=_qiid,
+                    index_age_s=(None if _qage is None else round(_qage, 2)),
+                    belief_age_s=(None if _qbt is None else now_s - _qbt))
+                if _qiid is not None and (_qage is None
+                                          or _qage > MAX_INDEX_AGE_S):
+                    _qk = (_qid, "index_stale")
+                    if _qk not in _hq71:
+                        _hq71.add(_qk)
+                        _qmkt = market_belief(_qb, _qwant)
+                        rec("hedge_blind", ticker=_qtk, why="index_stale",
+                            where="hedge_quote", tau=_qcs - now_s, iid=_qiid,
+                            age_s=(round(_qage, 2) if _qage is not None
+                                   else None),
+                            market_belief=(round(_qmkt, 4)
+                                           if _qmkt is not None else None),
+                            bid=_qb.get(f"{_qwant}_bid"),
+                            ask=_qb.get(f"{_qwant}_ask"),
+                            ask_size=_qb.get(f"{_qwant}_ask_size"),
+                            book_age_ms=_qb.get("age_ms"),
+                            n=_qn, hedged=(_qid in hedged))
+                        print(f"  hedge BLIND {_qtk}: index_stale, held "
+                              f"{'and covered' if _qid in hedged else 'OPEN'}")
         except Exception:                                # noqa: BLE001
             pass
 
