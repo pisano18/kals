@@ -83,10 +83,28 @@ def payout(s):
     contracts of each side we held.
     """
     res = str(s.get("market_result") or "").strip().lower()
+    # 2026-09-23: A TIE PAYS HALF, AND THIS FUNCTION BOOKED IT AS ZERO.
+    # KXCRYPTOLEAD15M-26SEP230715 settled `market_result: "scalar"` with
+    # `value: 50` -- two coins tied for the lead, so every contract paid 50c.
+    # We held 1 XRP YES at 97c and 1 HYPE NO at 98c: a real loss of ~48c each,
+    # which this reported as -$1.95, the whole stake. `value` is the settlement
+    # in cents and Kalshi sets it on EVERY row (100 on yes, 0 on no, 50 here;
+    # checked across all 960 settlements), so it covers all three cases and the
+    # yes/no arithmetic below is unchanged by construction.
+    val = s.get("value")
+    if val is not None:
+        try:
+            v = float(val) / 100.0
+        except (TypeError, ValueError):
+            v = None
+        if v is not None and 0.0 <= v <= 1.0:
+            return money(s, "yes_count_fp") * v + money(s, "no_count_fp") * (1.0 - v)
     if res == "yes":
         return money(s, "yes_count_fp")
     if res == "no":
         return money(s, "no_count_fp")
+    # A result we do not understand and no usable `value`: pay nothing and be
+    # visible about it rather than guessing a payout.
     return 0.0
 
 
@@ -225,6 +243,33 @@ def selftest():
        "so the hedged Bitcoin market is -$27.87, the number the operator saw. "
        "Trusting `revenue` made it -$126.87 and the all-time total -$122 on an "
        "account that is up $422")
+    # A TIE. Both rows copied from the API: KXCRYPTOLEAD15M-26SEP230715
+    # settled `scalar` with `value: 50` -- two coins tied for the lead at
+    # 09-23 13:55:38Z, and every contract paid 50c.
+    tie_y = {"ticker": "KXCRYPTOLEAD15M-26SEP230715-XRP", "market_result": "scalar",
+             "value": 50, "revenue": 50, "yes_count_fp": "1.00",
+             "yes_total_cost_dollars": "0.970000", "no_count_fp": "0.00",
+             "no_total_cost_dollars": "0.000000", "fee_cost": "0.002100"}
+    tie_n = {"ticker": "KXCRYPTOLEAD15M-26SEP230715-HYPE", "market_result": "scalar",
+             "value": 50, "revenue": 50, "no_count_fp": "1.00",
+             "no_total_cost_dollars": "0.980000", "yes_count_fp": "0.00",
+             "yes_total_cost_dollars": "0.000000", "fee_cost": "0.001400"}
+    ck(abs(payout(tie_y) - 0.50) < 1e-9 and abs(payout(tie_n) - 0.50) < 1e-9,
+       "A TIE PAYS HALF TO BOTH SIDES: one YES and one NO each collect 50c")
+    ck(abs(pnl(tie_y) + 0.4721) < 1e-4 and abs(pnl(tie_n) + 0.4814) < 1e-4,
+       "so the real 09-23 tie cost 47c and 48c -- not the 97c and 98c whole "
+       "stake this function booked before (it paid 0 on any non-yes/no result)")
+    ck(abs(payout(dict(s, value=0)) - payout(s)) < 1e-9
+       and abs(payout(dict(both, value=0)) - payout(both)) < 1e-9,
+       "NULL: `value` on an ordinary NO market gives exactly the old answer, "
+       "so nothing that already settled moves")
+    ck(abs(payout({"market_result": "yes", "value": 100, "yes_count_fp": "7",
+                   "no_count_fp": "3"}) - 7.0) < 1e-9,
+       "and `value: 100` on a YES market pays its YES contracts only")
+    ck(payout(dict(tie_y, value="junk")) == 0.0
+       and abs(payout(dict(tie_y, value=140)) - 0.0) < 1e-9,
+       "NULL: an unreadable or impossible `value` falls through to the result "
+       "and a `scalar` result pays nothing rather than inventing a payout")
     ck(pnl({}) == 0.0 and payout({}) == 0.0,
        "NULL: an empty settlement is worth nothing, not a crash")
     ck(payout(dict(s, market_result="")) == 0.0
