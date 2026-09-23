@@ -1,3 +1,35 @@
+# v-unidefer -- 2026-09-23 ~00:3xZ -- LIVE (SAFETY, during the freeze): the market-list refresh waits while a close is near
+
+**Why now, mid-freeze: Kalshi degraded at 2026-09-23 00:2xZ and the loop was
+freezing inside closes while holding.** v-instr1's own records, same run:
+universe refresh median **3,227 ms**, worst **10,639 ms** (healthy median was
+878 ms), **54 slow passes inside 45 s** of a close -- 6,344 ms at tau 21,
+4,936 ms at tau 2 -- and a >500 ms stall inside 60 s on **17 of 17** closes.
+The 11 GETs run in the trading thread, so those seconds are seconds in which
+the bot can neither buy nor HEDGE. The freeze allows safety fixes; the
+pre-registered R2 bar (20 of 100 closes with a >500 ms stall inside 45 s) was
+already met 17/17 before this change.
+
+**What it does differently:** `defer_universe()` -- while any watched market
+is inside `UNI_NEAR_TAU_S = 60` s of its close, the refresh WAITS; it resumes
+the moment the close passes, with `UNI_HARD_S = 300` s as a backstop so it can
+never defer for ever. One `universe_deferred` record per wait (not per 20 Hz
+pass), and the next `universe` record carries `deferred_s`.
+
+**It blocks nothing and cannot delay a hedge.** The refresh already discards
+markets closing more than 900 s out, so while one close is inside 60 s the
+next close's markets (960 s away) were excluded anyway. The hedge pass gained
+no condition; a self-test drives the REAL loop holding a position through a
+deferral and it still hedges.
+
+1,005 self-test checks green plain and under the live argv; disabling the
+deferral fails 5 of them. versioncheck clean.
+
+**REVERT:** `git checkout 5182c3f -- research/pinrun.py` then
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+---
+
 # v-instr1 -- 2026-09-22 ~20:1xZ -- LIVE: the two invisible things get records (logging only)
 
 **Freeze-legal: records only, no entry decision changes.** Proven, not

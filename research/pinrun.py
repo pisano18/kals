@@ -2989,6 +2989,43 @@ LOOP_REC_MAX = 20        # ...at most this many per close FAR FROM THE CLOSE,
 # So the budget is TAU-AWARE and the summary carries a SECOND maximum
 # restricted to the window the bar reads. Nothing about the loop changed;
 # this is still only which records get written.
+# R2 (2026-09-23): DO NOT REFRESH THE UNIVERSE WHILE A CLOSE IS NEAR.
+#
+# The refresh is 11 sequential GETs in the trading thread, every 20 s, with no
+# condition on time-to-close. Measured by v-instr1's own records: a median
+# 878 ms on a healthy API -- and when Kalshi degraded at 2026-09-23 00:2xZ,
+# a median 3,227 ms and a worst 10,639 ms, with 54 stalls INSIDE 45 s of a
+# close (6,344 ms at tau 21, 4,936 ms at tau 2) and a >500 ms stall inside
+# 60 s on 17 of 17 closes. For those seconds the bot cannot buy AND CANNOT
+# HEDGE, because the hedge pass is the same thread. That is the safety half.
+#
+# Deferring costs nothing: the refresh already discards any market closing
+# more than 900 s out, so while one close is inside 60 s the next close's
+# markets (960 s away) would be excluded anyway. The skip ends at the close,
+# and UNI_HARD_S is a backstop so it can never defer for ever.
+UNI_NEAR_TAU_S = 60          # skip while any watched market is this close
+UNI_HARD_S = 300             # ... but never skip longer than this
+_DEFAULT_UNI_NEAR_TAU_S = 60
+_DEFAULT_UNI_HARD_S = 300
+
+
+def defer_universe(now, uni_at, taus, near=None, hard=None):
+    """True when the universe refresh should WAIT: a watched market is inside
+    `near` seconds of its close and the last refresh is younger than `hard`.
+    Pure, so the self-test can plant each case."""
+    near = UNI_NEAR_TAU_S if near is None else near
+    hard = UNI_HARD_S if hard is None else hard
+    if now - uni_at >= hard:
+        return False
+    for t in taus:
+        try:
+            if 0 <= float(t) <= near:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 LOOP_NEAR_TAU_S = 60     # "near the close": a pass that STARTED with this
                          # many seconds or fewer left. 60, not 45, so the
                          # bar's own 45 s cut is made from data, not from
@@ -8977,6 +9014,55 @@ def _selftest_body():
        "first and logs -- and the identity still closes (%d signals)"
        % _r4nn)
 
+    # ---- R2b (2026-09-23): the refresh WAITS while a close is near ----
+    # Kalshi degraded at 00:2xZ: refresh median 3,227 ms, worst 10,639 ms,
+    # 54 stalls inside 45 s of a close, one of 6,344 ms at tau 21. The loop
+    # cannot hedge while it waits on those GETs, so the refresh now defers.
+    _now0 = 1_790_000_000.0
+    ck(defer_universe(_now0, _now0 - 25, [300.0, 59.0]) is True
+       and defer_universe(_now0, _now0 - 25, [300.0, 61.0]) is False
+       and defer_universe(_now0, _now0 - 25, [0.5]) is True
+       and defer_universe(_now0, _now0 - 25, [-5.0]) is False,
+       "R2b: a watched market inside %ds defers the refresh; 61 s out, or a "
+       "close already past, does not" % UNI_NEAR_TAU_S)
+    ck(defer_universe(_now0, _now0 - UNI_HARD_S, [10.0]) is False
+       and defer_universe(_now0, _now0 - (UNI_HARD_S - 1), [10.0]) is True,
+       "R2b: UNI_HARD_S=%ds is the backstop -- it can never defer for ever"
+       % UNI_HARD_S)
+    ck(defer_universe(_now0, _now0 - 25, []) is False
+       and defer_universe(_now0, _now0 - 25, [None, "x"]) is False,
+       "R2b NULL: nothing watched, or an unreadable close, never defers "
+       "(a refresh is how the bot FINDS markets)")
+    ck(_DEFAULT_UNI_NEAR_TAU_S == 60 and _DEFAULT_UNI_HARD_S == 300,
+       "R2b: the DECLARED defaults are 60 s and 300 s (never the running "
+       "globals -- a self-test that asserts those has blocked startup)")
+    _r2d = _offline_trade_loop([_k1_A(collapse_at=None)], run_s=190.0,
+                               tau0=120, get_delay=0.6)
+    _r2du = _kinds(_r2d, "universe")
+    _r2dd = _kinds(_r2d, "universe_deferred")
+    # The boundary second is allowed: once tau reaches 0 the close is over,
+    # nothing can be bought or hedged in it, and the deferral must end there
+    # or the bot would stop discovering markets.
+    _near = [r for r in _r2du if r.get("tau") is not None
+             and 0 < float(r["tau"]) <= UNI_NEAR_TAU_S]
+    ck(_r2d["raised"] is None and len(_r2du) >= 2 and not _near,
+       "R2b: driving the REAL loop from tau 120 with a 600 ms refresh, NOT "
+       "ONE refresh lands in the tradeable part of %ds before the close "
+       "(%d refreshes, taus %s)"
+       % (UNI_NEAR_TAU_S, len(_r2du), [r.get("tau") for r in _r2du][:6]))
+    ck(len(_r2dd) >= 1 and len(_r2dd) <= 3
+       and all(float(r["tau"]) <= UNI_NEAR_TAU_S for r in _r2dd),
+       "R2b: ONE record per wait, not one per 20 Hz pass (%d records)"
+       % len(_r2dd))
+    ck(any(float(r.get("deferred_s") or 0) > 0 for r in _r2du),
+       "R2b: the refresh that follows a wait reports how long it waited")
+    _r2dh = _offline_trade_loop([_k1_A()], run_s=40.0, tau0=30,
+                                get_delay=0.3)
+    ck(_r2dh["raised"] is None and abs(_hedged(_r2dh, _kA) - 5.0) < 1e-9,
+       "R2b: a position held THROUGH a deferral is still hedged (%g) -- the "
+       "wait is on the refresh, never on the hedge pass"
+       % _hedged(_r2dh, _kA))
+
     # ---- R2: the universe refresh and the loop pass, TIMED ------------
     # Timing only. Nothing is deferred, moved or gated on these numbers,
     # and the hedge pass gains no condition -- the point is precisely that
@@ -9085,7 +9171,11 @@ def _selftest_body():
     # still written.
     _r2b = _offline_trade_loop([_k1_A(collapse_at=None)], run_s=215.0,
                                tau0=200, get_delay=0.6, stall=(150.0, 0.5),
-                               flags={"LOOP_REC_MAX": 2})
+                               # R2b defers the refresh inside 60 s, so this
+                               # world -- which exists to test the RECORD
+                               # BUDGET near a close -- switches the deferral
+                               # off to keep producing near-close stalls.
+                               flags={"LOOP_REC_MAX": 2, "UNI_NEAR_TAU_S": 0})
     _r2bl = _kinds(_r2b, "loop")
     # far records attributed to THE CLOSE. A pass with nothing watched yet
     # keys under its own rolling bucket (close_s None) and spends its own
@@ -11479,7 +11569,17 @@ def trade_loop(a, rec, book, idx, series_index):
             print(f"  *** HALT: {stop}")
             break
 
-        if now - uni_at > 20:
+        _uni_taus = [float(c) - now for c in watching.values()]
+        if now - uni_at > 20 and defer_universe(now, uni_at, _uni_taus):
+            # ONE record per wait, not one per pass: the loop runs at 20 Hz.
+            if state.get("uni_defer_at") is None:
+                state["uni_defer_at"] = now
+                rec("universe_deferred", tau=round(min(_uni_taus), 1),
+                    waited_s=round(now - uni_at, 1), watching=len(watching))
+        elif now - uni_at > 20:
+            _uni_waited = (round(now - float(state["uni_defer_at"]), 1)
+                           if state.get("uni_defer_at") is not None else 0.0)
+            state["uni_defer_at"] = None
             uni_at = now
             _uni_t0 = time.time()               # R2: timing only
             _uni_n = None                       # R2: markets THIS refresh built
@@ -11575,6 +11675,7 @@ def trade_loop(a, rec, book, idx, series_index):
                            default=None)
                 rec("universe", ms=round(1000.0 * (time.time() - _uni_t0), 1),
                     n=len(seen_markets), got=_uni_n, watching=len(watching),
+                    deferred_s=_uni_waited,
                     series=len(series_index), close_s=_unc,
                     tau=(int(_unc - now_s) if _unc is not None else None))
             except Exception:                            # noqa: BLE001
