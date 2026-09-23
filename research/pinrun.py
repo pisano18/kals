@@ -1603,6 +1603,89 @@ _EW_UNSET = object()      # "cap not supplied" -- distinct from None, which is
 FLIP_MULT = 1.0
 _DEFAULT_FLIP_MULT = 1.0
 
+# ===========================================================================
+# R1 (2026-09-23): SIZE UP WHEN THE MODEL DOUBTED OUR SIDE EARLIER.
+# `results/map_2026-09-22/signature/D_plan.md` section 1, rebuilt three times
+# independently and agreeing to the cent per market.
+#
+# THE FEATURE. `traj_min_conf_ge5s` -- the LOWEST confidence the model put on
+# the side we eventually bought, at any evaluation at least DOUBT_LAG_S
+# seconds earlier in the SAME close. Below DOUBT_UNDER it is our best
+# population on the live record:
+#
+#     every market with a fill Kalshi settled   784 mkts  577 closes  26 losers  +$0.70/mkt
+#     doubt < 0.50                               66        62          0         +$2.95/mkt
+#     doubt 0.50-0.97                           173       150          5         +$1.07/mkt
+#     already >= 0.97 the whole time              50        50          5         -$0.70/mkt
+#     no reading >= 5 s earlier                 481       378         16         +$0.41/mkt
+#
+# Late-arriving confidence is a QUALITY signal, not a warning: the offers we
+# get in those markets are cheap because the market had not made its mind up
+# either, not because somebody is ahead of us. The money is stable -- no
+# leave-one-day-out drops it below +$2.72 a market -- and the SIGNIFICANCE is
+# not (p = 0.00015 against a corrected bar of 1.13e-4, a marginal fail). That
+# is exactly why this ships as a flag at 1.0 and a paper arm at 1.5, with a
+# pre-registered bar in D_plan section 1, and not as a live change.
+#
+# SHIPPED OFF: DOUBT_MULT = 1.0 is arithmetically the identity, so the live
+# argv is unchanged and the live bot's behaviour is byte for byte today's.
+#
+# WHAT IT CAN AND CANNOT DO, stated the way the standing rule requires.
+# It can only RAISE the size of an entry we were already about to make. It
+# cannot refuse, delay, reprice or shrink anything; it is not consulted on
+# any hedge path; and every existing ceiling still binds after it -- A45's
+# drawdown headroom through one_coin_cap(), the close contract budget, the
+# book, MAX_PER_MARKET, pintake's own count rails, and the A46 staged cap.
+# What it RISKS is that a doubt-flagged market that loses now loses 1.5x, and
+# 0 losers in 66 markets puts the 95% upper bound on the true rate at 5.28%
+# against a 2.44% base -- the zero is NOT established. So the A53/A55 rail
+# applies: ONE doubt-boosted loss switches it off for the rest of the run.
+#
+# WHY THE HISTORY IS THE R4 TRAJECTORY AND NOT A LOG FILE. It must be the
+# bot's own in-memory reading, taken before the decision, in the same
+# process -- reading a log would be both slow and a different population.
+# The trajectory sampler below feeds it. NOTE HONESTLY: the sampled minimum
+# (1 Hz inside DOUBT_HIST_TAU_S) is a DIFFERENT statistic from the historical
+# one, which was the minimum over whichever gate firings happened to be
+# logged (see the R4 block). The arm is what reconciles them.
+#
+# AND THE WINDOW IS THE RULE, NOT AN ACCIDENT OF THE SAMPLER'S GRID. The
+# first version of this appended EVERY sampled second to `traj_hist`,
+# including the coarse grid out to TRAJ_TAU_MAX = 300 -- so the minimum was
+# taken over readings up to five minutes before the close, where partial()
+# returns (0.0, 60), nothing is locked and `fair` is a near coin-flip. That
+# is not the statistic the +$2.95 was measured on and it is not close to it:
+#   - every `refused` record in the last 8 live runs that carries a tau is in
+#     [3, 45] -- 2,405 of 2,619, none above 45 -- because `_gate()` is
+#     unreachable outside the scan window, so the historical
+#     `traj_min_conf_ge5s` was a minimum over tau 3-45 readings ONLY;
+#   - rebuilt off the raw 1/sec index for 12 h and 11 coins (374 close x coin
+#     cells, 345 at or above PIN at tau 30), the doubt flag fires on 2.3% of
+#     them with readings restricted to tau 35-60 and on 20.9% with tau
+#     35-300. NINE TIMES the population, against a historical 8.4%.
+# D_plan section 1's PASS/FAIL is scored on "flagged >= +$2.00/market"; a
+# FAIL on a nine-times-diluted population would read as killing R1 when
+# nobody had measured the rule. So the history is fed ONLY from inside this
+# window, and a self-test plants a doubt outside it and demands no boost.
+DOUBT_HIST_TAU_S = 60    # only readings at tau <= this reach `traj_hist`,
+                         # and therefore `_doubt`. 60 and not 45 for the same
+                         # reason TRAJ_NEAR_TAU_S is: a market entered at the
+                         # first allowed second (tau 45, the A46 early leg)
+                         # still needs a reading DOUBT_LAG_S earlier. Must be
+                         # <= TRAJ_NEAR_TAU_S, so every reading the rule can
+                         # see is on the 1 Hz grid and never the coarse one;
+                         # a self-test asserts that.
+_DEFAULT_DOUBT_HIST_TAU_S = 60
+DOUBT_MULT = 1.0         # --doubt-mult: 1.0 is OFF and is what live runs
+_DEFAULT_DOUBT_MULT = 1.0
+DOUBT_UNDER = 0.50       # --doubt-under: "the model doubted our side"
+_DEFAULT_DOUBT_UNDER = 0.50
+DOUBT_LAG_S = 5          # ...at an evaluation at least this many seconds
+                         # earlier. NOT a flag: 5 s is the definition the
+                         # +$2.95 was measured under, and a flag on it would
+                         # be a second free parameter on a marginal p-value.
+_DEFAULT_DOUBT_LAG_S = 5
+
 SKIP_BANDS = ()                 # ((lo, hi), ...)        asks refused
 _DEFAULT_SKIP_BANDS = ()
 BAND_MULTS = ()                 # ((lo, hi, mult), ...)  size multiples
@@ -3041,6 +3124,236 @@ LOOP_REC_MAX_NEAR = 300  # a SEPARATE budget for near passes, which far
                          # a 60 s window); 300 is the pathological ceiling,
                          # and even at it the cost is ~4 MB a day against
                          # 25 GB free.
+# ===========================================================================
+# R4 (2026-09-23): THE TRAJECTORY. LOGGING ONLY, AND IT IS WHY EVERY "WAS
+# THERE AN EARLIER SIGN?" QUESTION IN results/map_2026-09-22 CAME BACK
+# UNDERPOWERED.
+#
+# `_gate()` de-duplicates on (close_s, ticker, gate), so a market the bot
+# evaluated ~5,500 times (median `close_summary.looks`) leaves a MEDIAN OF ONE
+# refusal record, carrying the values from the FIRST firing of each distinct
+# gate. Measured over the last 12 live runs: refusal records per
+# (close, ticker) median 1, p90 4, max 10; distinct gates median 1. So the
+# entire visible pre-entry history of a market is 1-4 numbers, and WHICH ones
+# exist depends on which gates happened to fire -- a selection effect nobody
+# has bounded. Every overlay in that map was run against that.
+#
+# THIS FIXES THE INSTRUMENT, NOT THE STRATEGY. Nothing here reads a gate,
+# changes a gate, writes a refusal, or touches a decision. It is one compact
+# record per watched market per sampled second, on an EXOGENOUS grid (fixed
+# times to close, never trade arrivals -- CLAUDE.md, "Writing new analysis"),
+# so the next reader gets a trajectory instead of a first firing.
+#
+# THE GRID. D_plan's R4 fixes 1 Hz inside 60 s; the coarse grid outside it is
+# the wider ask ("every 5 s from first watch to the close") and costs little
+# because a market is only watched from 900 s out:
+#
+#     tau <= TRAJ_NEAR_TAU_S      every second      61 samples a market a close
+#     tau >  TRAJ_NEAR_TAU_S      every TRAJ_EVERY_S s, on tau % TRAJ_EVERY_S
+#                                                   48 samples to TRAJ_TAU_MAX
+#
+# 109 samples a market a close, ~11 markets a close -> ~1,200 records a close.
+# MEASURED IN THE OFFLINE HARNESS, not estimated: see the R4 self-test, which
+# prints the record volume per close it actually produced.
+#
+# TRAJ_TAU_MAX IS 300 AND NOT 900, AND THAT IS A DISK DECISION, SAID OUT LOUD.
+# "From first watch" is 900 s, which is 229 samples a market -- 2.1x the
+# volume for the stretch where the model has NO locked settlement prints at
+# all (partial() returns (0.0, 60) out there, so `fair` is just spot against
+# the strike at ~30 sigma and the book is usually empty). Free disk is 20 GB
+# falling ~3 GB a day against a 5 GB HARD COLLECTION STOP, and the tape is
+# unreproducible while an analysis result is not. Raising this to 900 is one
+# constant if a later map wants it.
+#
+# AND THE FILE IS WRITTEN BY THE LIVE BOT ALONE. THE FIRST VERSION OF THIS
+# BLOCK COSTED THE DISK PER PROCESS AND THERE ARE 28 OF THEM. sync_arms.ps1
+# launches 27 paper arms from THIS SAME FILE, so `tag = live/paper` plus a
+# per-run id gave every arm its own pintraj-paper-<runid>.jsonl the moment it
+# restarted onto this SHA: ~57 MB a day each, ~1.6 GB a day for the box,
+# against 44 MB a day for the whole existing bot family -- a 36x increase,
+# and it would have taken the 6 GB collection stop from ~4.7 days away to
+# ~3.1, i.e. burned ~1.6 days of unreproducible tape to write 27 near-copies
+# of one trajectory. (They ARE near-copies: the trajectory is a function of
+# the index, the book and the model, and those are identical across arms
+# apart from the --sigma-stress ones and the held/paused/gate columns.)
+# So `traj_writer()` opens a file only when --live is set, or when the
+# operator explicitly passes --traj-log to a paper run; sync_arms passes
+# neither. `traj_hist` -- the only thing any DECISION reads -- is in memory
+# and is unaffected, so every arm still measures exactly what it measured.
+#
+# IT GOES IN ITS OWN FILE, AND ON ONE HELD HANDLE. `rec()` opens, appends and
+# closes the log on every call, and the settlement readers, pinledger,
+# pinattrib, pinlab and barcheck all parse `results/pinrun-<tag>-*.jsonl`.
+# Tens of MB a day of trajectory in there would slow every one of them, so
+# trade_loop takes a SECOND writer (`trec`) and main() points it at
+# `results/pintraj-<tag>-<runid>.jsonl`. That writer holds ONE handle open and
+# flushes once a second, because the open-append-close pattern is not free at
+# this rate: measured on this box, 200 repeats, a real 539-byte record, the
+# eleven appends of one sampled second cost 2.46 ms median / 3.07 p90 / 5.64
+# max through open-append-close and 0.012 ms median / 0.12 max through a held
+# handle -- two orders of magnitude, and 15.8 ms at the tail of a 1,000-record
+# burst in the review that found this. The
+# pass sleep is a flat time.sleep(0.05), not a deadline, so every one of those
+# milliseconds is added period before the NEXT hedge pass. At most one second
+# of records can be lost to a kill, and they are an instrument, not a ledger.
+# The offline loop passes no writer, so the records land in the trail the
+# self-tests read -- which is how the harness can count them. traj_writer()
+# itself is module-level so a self-test can drive the REAL file writer.
+#
+# WHY IT CANNOT DELAY A HEDGE -- AND THE NARROW REASON, NOT A COMFORTABLE ONE.
+# The block sits BELOW the hedge pass and ABOVE the risk check, the universe
+# refresh and the entry scan. It is above the risk check on purpose: that
+# check's transient-pause branch ends in `continue`, and a sampler below it
+# would write nothing for a paused close -- which is precisely the blindness
+# that cost $107.95 on 2026-09-19. So the reason no hedge is delayed is NOT
+# "there is nothing below it": it is that the hedge pass for this iteration
+# has already run, and no protective ACTION exists below this block today.
+# ANYONE WHO ADDS ONE -- the `dumped` path in the scan is the nearest
+# candidate -- MUST MOVE THIS BLOCK BELOW IT OR RE-ARGUE THIS PARAGRAPH. A
+# self-test asserts the source order (hedge pass, sampler, risk check, scan),
+# so moving any of them fails the suite rather than quietly invalidating this.
+# It is wrapped whole and per market, so a fault in it is dropped, not raised
+# -- and both wrappers write a deduped `traj_blind` record, because a blind
+# instrument that says nothing is the failure this instrument exists to fix.
+# And the work is bounded: at most one book read + one index read + one
+# fair() per market per SAMPLED SECOND, against the 20 Hz scan's twenty of
+# each for the same market.
+TRAJ_EVERY_S = 5         # the coarse grid, in seconds of tau
+TRAJ_NEAR_TAU_S = 60     # ...inside this, every second (D_plan R4's 1 Hz).
+                         # 60 and not 45, so a market entered at the first
+                         # allowed second (tau 45, the A46 early leg) still
+                         # has readings DOUBT_LAG_S earlier -- which is the
+                         # whole defect A_table's `conf_t45` ran into.
+TRAJ_TAU_MAX = 300       # how far out sampling starts. `watching` admits a
+                         # market at 900 s, so this is not "first watch" --
+                         # see the disk paragraph above for why.
+TRAJ_MAX = 800           # the per-close budget for FAR samples, so a box
+                         # that is thrashing cannot fill the disk. Disk is
+                         # the real deadline: 5 GB free is a HARD COLLECTION
+                         # STOP. Ceiling at 11 series x 48 far samples = 528,
+                         # so it cannot bind on a healthy universe; at 14
+                         # series it is 672, still under.
+TRAJ_MAX_NEAR = 900      # a SEPARATE budget for the near seconds, which far
+                         # samples can NEVER spend. v-instr1 learned this the
+                         # hard way: its first per-close record budget was
+                         # first-come, so ~45 far-from-close refreshes spent
+                         # all 20 at about tau 500 and the near-close passes
+                         # the bar actually read were dropped -- a FAIL by
+                         # construction, on an artefact of the budget. Set so
+                         # it CANNOT BIND AT ALL, which is the only honest
+                         # answer to that: at one sample a market a second the
+                         # ceiling is n_markets x (TRAJ_NEAR_TAU_S + 1) = 671
+                         # at 11 series and 854 at 14.
+TRAJ_HIST_MAX = 400      # readings kept in memory per (close, market) for
+                         # R1. 109 is the grid's own ceiling; this bounds it
+                         # even if the clock jumps.
+# ---------------------------------------------------------------------------
+# THE SECOND HALF OF D_plan SECTION 5, WHICH THE 1 Hz GRID CANNOT SEE.
+# The DOGE close that cost $107.95 moved 98.0c -> 93.4c on OUR OWN SIDE across
+# three looks 244 ms apart (tau 12, 12, 11) while net_edge grew 41x. At one
+# record a market a second all three collapse into one row, so the population
+# that question needs would still not exist after a month of trajectory --
+# "still n = 2" a month from now. D_plan asked for R4's trace PLUS "a rec() on
+# any look whose own-side price fell >= 3c since this bot's previous look at
+# the same market, log-only, no gate", and this is that. It is in the scan
+# because that is the only place that looks 20 times a second; it is a dict
+# read and a float compare on a path that has already read the book, it writes
+# only when the drop fires, and it is capped per (close, market) so a flapping
+# book cannot turn it into a firehose. It decides NOTHING.
+LOOK_DROP_C = 0.03       # our own side got this much cheaper since the
+                         # previous look at this market, in dollars (3c)
+LOOK_DROP_MAX = 20       # ...records per (close, market). Bounded before it
+                         # happens rather than discovered afterwards.
+_DEFAULT_TRAJ_EVERY_S = 5
+_DEFAULT_TRAJ_NEAR_TAU_S = 60
+_DEFAULT_TRAJ_TAU_MAX = 300
+_DEFAULT_TRAJ_MAX = 800
+_DEFAULT_TRAJ_MAX_NEAR = 900
+_DEFAULT_TRAJ_HIST_MAX = 400
+_DEFAULT_LOOK_DROP_C = 0.03
+_DEFAULT_LOOK_DROP_MAX = 20
+
+
+def traj_due(tau, every=None, near=None, tau_max=None):
+    """Is `tau` on the sampling grid? Pure, so the self-test can plant every
+    case and so the grid is a statement rather than an inline condition."""
+    every = TRAJ_EVERY_S if every is None else int(every)
+    near = TRAJ_NEAR_TAU_S if near is None else int(near)
+    tau_max = TRAJ_TAU_MAX if tau_max is None else int(tau_max)
+    try:
+        tau = int(tau)
+    except (TypeError, ValueError):
+        return False
+    if tau < 0 or tau > tau_max:
+        return False
+    if tau <= near:
+        return True
+    return every > 0 and tau % every == 0
+
+
+def traj_writer(live, traj_log, results_dir, tag, runid, _open=open,
+                _now=None):
+    """The trajectory writer. Returns (path_or_None, writer).
+
+    TWO DEFECTS OF THE FIRST VERSION ARE FIXED HERE, AND BOTH WERE ABOUT
+    COST RATHER THAN CORRECTNESS -- see the TRAJ_* block for the numbers.
+
+    1. A FILE ONLY FOR THE BOT THAT IS BETTING. 28 pinrun processes run on
+       this box; 27 of them are paper arms launched from this same file by
+       sync_arms.ps1, and a per-run file for each was ~1.6 GB a day of
+       near-duplicate data against a 6 GB hard collection stop. So: --live,
+       or the operator explicitly asking with --traj-log, or nothing is
+       opened at all. The writer still returns cleanly in that case, and the
+       in-memory `traj_hist` every decision reads is untouched either way.
+    2. ONE HELD HANDLE, FLUSHED ONCE A SECOND. open-append-close per record
+       costs 2.46 ms median (5.64 max, and 15.8 ms at the tail of a
+       1,000-record burst) for the eleven markets of one sampled second; a
+       held handle plus one flush is 0.012 ms median, 0.12 max. The loop's pass is a
+       flat time.sleep(0.05), so that difference is added period ahead of the
+       NEXT hedge pass. A flush a second bounds what a kill can lose to one
+       second of an instrument. Anything that is not a plain `traj` record --
+       a close summary, a blind second -- flushes immediately, because those
+       are the rare ones a reader goes looking for.
+
+    The handle is dropped and reopened on any write error, so a full disk or
+    a deleted file costs records and never the loop.
+    """
+    _clk = _now or (lambda: time.time())
+    if not (live or traj_log):
+        _n = [0]
+
+        def _drop(kind, **kw):
+            """No file. Counted so `traj_off` can say how many were dropped."""
+            _n[0] += 1
+        _drop.dropped = _n
+        _drop.path = None
+        return None, _drop
+    path = os.path.join(results_dir, "pintraj-%s-%s.jsonl" % (tag, runid))
+    _fh, _sec = [None], [None]
+
+    def _trec(kind, **kw):
+        kw["t"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        kw["kind"] = kind
+        try:
+            if _fh[0] is None:
+                _fh[0] = _open(path, "a", encoding="utf-8", newline="\n")
+            _fh[0].write(json.dumps(kw, default=str) + "\n")
+            _s = int(_clk())
+            if _sec[0] != _s or kind != "traj":
+                _sec[0] = _s
+                _fh[0].flush()
+        except Exception:                                # noqa: BLE001
+            try:
+                if _fh[0] is not None:
+                    _fh[0].close()
+            except Exception:                            # noqa: BLE001
+                pass
+            _fh[0] = None
+    _trec.path = path
+    _trec.handle = _fh
+    return path, _trec
+
+
 _DEFAULT_MIN_FILL_FRAC = 0.50  # --min-fill-frac is measured against this
 #
 # AMENDMENT 28 (2026-09-14) -- RE-OPENED, AND THE REASON BELOW IS OBSOLETE.
@@ -3423,6 +3736,7 @@ def _fill_all(body, n):
 # is not listed here fails the plain --selftest, not a live start.
 _OFFLINE_PINNED_FLAGS = (
     "ATTEMPTS_ON_SEND",
+    "DOUBT_MULT", "DOUBT_UNDER",
     "BAND_MULTS", "BANK_BRAKE", "DEPTH_LADDER", "DUMP_ENABLED", "EARLY_FRAC",
     "EARLY_MAX_EDGE", "EARLY_MAX_PRICE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
     "EXTERNAL_DETECT", "EXTRA_COIN", "FLIP_MULT", "HEDGE_BELIEF",
@@ -3441,7 +3755,8 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
                         freeze_at=None, rec_fault=None, run_s=12.0,
                         size=5.0, tau0=30, plant=False,
                         flags=None, get_delay=0.0, stall=None,
-                        get_fail_after=None, max_positions=99):
+                        get_fail_after=None, max_positions=99, bank=None,
+                        trec_split=False):
     """Run the REAL trade_loop for `run_s` fake seconds on one close.
     (`plant` sets --hedge-plant, the one-contract planted hedge test.)
 
@@ -3482,6 +3797,18 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
                effectively no cap; a small value makes risk_abort return a
                TRANSIENT "open cap:" halt after the first fill, which is the
                only way to reach the loop's 1 s PAUSE branch offline.
+    bank       dollars the fake balance reads, which turns the AUTO-SIZER ON
+               (`a.auto_size`) and is the ONLY way to reach any of the three
+               size WIDENERS offline. one_coin_cap() returns SIZE unchanged
+               when the bank or the high-water mark is unknown -- "a failed
+               balance read cannot size us up" -- so before this, A45, A48,
+               A53 and R1 could not be driven at all, only unit-tested.
+               `write_hwm` never lowers the mark, so HWM_FILE is redirected
+               into this world's own temp dir: a leftover mark from an
+               earlier world would silently shrink the headroom and the
+               failure would look like the widener not working.
+               A PAPER world also needs SIZE_MIRROR_ON False, or
+               autosize_tick takes the mirror path and never reads a bank.
 
     Returns {"recs", "posts", "raised", "ran_s", "state"}. A record's `t` is
     fake wall time since the start, in seconds.
@@ -3518,13 +3845,40 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         held. Frozen when the feed is, which is what fair() sees live."""
         return _last_print(iid) + 1 - int(t0)
 
+    # R4: HOW MUCH WORK THE LOOP ASKED FOR, counted. The trajectory sampler
+    # must be bounded at one book read, one index read, one sigma and one
+    # fair() per market per SAMPLED SECOND, and "bounded" is a claim that has
+    # to be measured rather than asserted -- so every call the loop makes into
+    # the fake book and the fake index is counted and handed back.
+    calls = {}
+
+    def _count(k):
+        calls[k] = calls.get(k, 0) + 1
+
     class _Idx:
         def spot(self, iid):
+            _count("spot")
             s = _last_print(iid)
             return s, 100.5, clock.t - s
 
         def sigma(self, iid):
+            _count("sigma")
             return 0.0005
+
+        # R4: the trajectory record carries mu, the sd of the REMAINING
+        # settlement window and the cushion in those sd, all of which come
+        # from partial(). Without it here the harness could only prove the
+        # fields are absent. The arithmetic is the real one -- the window is
+        # [close-60, close-1], `hi < lo` means nothing is locked yet -- with a
+        # flat index at the same 100.5 `spot` returns.
+        def partial(self, iid, close_s, now_s):
+            _count("partial")
+            lo = close_s - N_AVG
+            hi = min(now_s, close_s - 1)
+            if hi < lo:
+                return 0.0, N_AVG
+            want = hi - lo + 1
+            return 100.5 * want, N_AVG - want
 
         def recent_moves(self, iid, n=3):
             return []
@@ -3540,6 +3894,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
 
     class _Book:
         def best(self, tk):
+            _count("best")
             # R2: a PLANTED SLOW PASS. The stall happens inside the scan,
             # exactly where a slow book read or a slow send would put it,
             # so the pass that contains it is the one that must be timed.
@@ -3571,6 +3926,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
             return []
 
     def _fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
+        _count("fair")
         return by_iid[iid]["fair"](_itime(iid))
 
     def _get(path, params=None, **kw):
@@ -3605,6 +3961,21 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         raise RuntimeError("offline loop: a network call was attempted")
 
     recs = []
+    # R4: `trec_split` gives the trajectory writer its OWN list, the way
+    # main() gives it its own FILE. Without it every trajectory record lands
+    # in the same trail as the decisions and a test cannot tell the two
+    # writers apart -- so an instrument that quietly wrote into
+    # `pinrun-<tag>-*.jsonl`, the log pinledger, pinattrib, pinlab, barcheck
+    # and earlyhindsight all parse, would pass every check in the suite.
+    # Default OFF, so every existing world still reads one trail.
+    trecs = []
+
+    def _trec_split(kind, **kw):
+        if rec_fault is not None:
+            rec_fault(kind, kw)
+        kw["kind"] = kind
+        kw["t"] = round(clock.t - t0, 3)
+        trecs.append(kw)
 
     def _rec(kind, **kw):
         if rec_fault is not None:
@@ -3619,7 +3990,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
 
     g = globals()
     saved = {k: g[k] for k in ("time", "get", "fair", "SIZE", "DAYLOSS_FILE",
-                               "read_bank", "publish_size")}
+                               "read_bank", "publish_size", "HWM_FILE")}
     pinned = {k: g[k] for k in _OFFLINE_PINNED_FLAGS}
     # captured BEFORE the pinning, so the hand-back is the value the process
     # started with whether or not the key is also a pinned flag
@@ -3643,7 +4014,9 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         g["fair"] = _fair
         g["SIZE"] = float(size)
         g["DAYLOSS_FILE"] = os.path.join(tmp, "dayloss.json")
-        g["read_bank"] = _no_net
+        g["HWM_FILE"] = os.path.join(tmp, "hwm.json")
+        g["read_bank"] = (_no_net if bank is None
+                          else (lambda *_a, **_k: float(bank)))
         g["publish_size"] = _no_net
         CREDS.update({"base": pintake.DEMO, "pk": None, "key_id": None})
         pintake.time = clock
@@ -3654,14 +4027,15 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
             pintake.take = take
         pintake.reset_ledger()
         a_ = _ap.Namespace(live=bool(live), minutes=run_s / 60.0,
-                           auto_size=False, loss_abort=-1e9,
+                           auto_size=bank is not None, loss_abort=-1e9,
                            max_positions=int(max_positions), max_losses=0,
                            size=float(size), hedge_plant=bool(plant))
         with _cl.redirect_stdout(_io.StringIO()):
             try:
-                loop_state = trade_loop(a_, _rec, _Book(), _Idx(),
-                                        {m["series"]: m["iid"]
-                                         for m in markets})[0]
+                loop_state = trade_loop(
+                    a_, _rec, _Book(), _Idx(),
+                    {m["series"]: m["iid"] for m in markets},
+                    trec=(_trec_split if trec_split else None))[0]
             except Exception as e:              # noqa: BLE001
                 raised = "%s: %s" % (type(e).__name__, e)
     finally:
@@ -3681,8 +4055,9 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         pintake.LEDGER.clear()
         pintake.LEDGER.update(saved_ledger)
         _sh.rmtree(tmp, ignore_errors=True)
-    return {"recs": recs, "posts": posts, "raised": raised,
-            "ran_s": round(clock.t - t0, 3), "state": loop_state}
+    return {"recs": recs, "trecs": trecs, "posts": posts, "raised": raised,
+            "ran_s": round(clock.t - t0, 3), "state": loop_state,
+            "calls": calls}
 
 
 # ===========================================================================
@@ -3733,7 +4108,7 @@ _FLAG_GLOBALS = ("LATE_EXTRA_TAU", "LATE_EXTRA", "LATE_TAU", "LATE_MULT",
                  "EARLY_MAX_EDGE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
                  "EARLY_FRAC", "BANK_BRAKE", "SIGMA_STRESS", "FLIP_MULT",
                  "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC",
-                 "LOSS_CAP")
+                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER")
 
 
 def _selftest_body():
@@ -9861,6 +10236,971 @@ def _selftest_body():
        % (len(_r1sent), len(set(t for t, _w, _n in _r1sent)),
           _r1cap_ac[0].get("tried") if _r1cap_ac else None))
 
+    # ===================================================================
+    # R4 (2026-09-23): THE TRAJECTORY. See the TRAJ_* block for the defect.
+    #
+    # WHAT MUST BE TRUE, and each of these fails when its line is reverted
+    # (the revert-proof table is in the session report):
+    #   1. records land on the sampled grid, one a market a second, and carry
+    #      every field the analysis needed and could not get;
+    #   2. the per-close budgets bind, they are SEPARATE, and far samples can
+    #      never starve the near-close seconds (v-instr1's own failure);
+    #   3. the gate on a record is the gate that REALLY refused it, and no
+    #      extra refusal is written;
+    #   4. a record that RAISES cannot end the loop or stop a hedge;
+    #   5. at the shipped settings the old record trail and every decision
+    #      are IDENTICAL -- proven by running the same world twice, not
+    #      asserted.
+    # ===================================================================
+    ck(_DEFAULT_TRAJ_EVERY_S == 5 and _DEFAULT_TRAJ_NEAR_TAU_S == 60
+       and _DEFAULT_TRAJ_TAU_MAX == 300
+       and _DEFAULT_TRAJ_MAX == 800 and _DEFAULT_TRAJ_MAX_NEAR == 900,
+       "R4: the DECLARED grid is every 5 s out to 300 s and every second "
+       "inside 60 s, budgets 800 far / 900 near -- asserted against the "
+       "_DEFAULT_ twins, never the running globals, because this test runs "
+       "at STARTUP with the operator's flags already applied")
+    # THE GRID IS A PURE FUNCTION, so every case can be planted.
+    ck(traj_due(300) and traj_due(295) and not traj_due(294)
+       and not traj_due(301) and traj_due(61) is False
+       and traj_due(60) and traj_due(59) and traj_due(1) and traj_due(0)
+       and not traj_due(-1) and not traj_due(None),
+       "R4: the grid admits tau 300/295 and not 294 (off the 5 s grid) or "
+       "301 (past the window), admits EVERY second at 60 and below, and "
+       "refuses a negative or unreadable tau")
+    ck(traj_due(64, every=5, near=60) is False
+       and traj_due(64, every=1, near=60) is True,
+       "R4 NULL: the coarse cadence is the flag-free constant it says it is "
+       "-- at every=1 the same tau is admitted, so the refusal above is the "
+       "GRID and not an accident of the window")
+
+    # ---- 1/2/3: one market, from tau 70 through its close --------------
+    def _r4t_mkt(n, fair_of, ask_no=0.05, yes_bid=0.94):
+        return {"tk": "KXT%d15M-R4T" % n, "series": "KXT%d15M" % n,
+                "iid": "R4T%d" % n, "strike": 100.0, "fair": fair_of,
+                "book": (lambda t: _ob(yes_bid, ask_no))}
+
+    _r4t_w = [_r4t_mkt(1, lambda t: 0.999)]
+    _r4t = _offline_trade_loop(_r4t_w, run_s=80.0, tau0=70)
+    _r4t_j = _kinds(_r4t, "traj")
+    _r4t_taus = [int(r["tau"]) for r in _r4t_j]
+    _r4t_want = ([70, 65] + list(range(60, -1, -1)))
+    ck(_r4t["raised"] is None and _r4t_taus == _r4t_want,
+       "R4: the records land on the grid and NOWHERE else -- tau 70 and 65 "
+       "on the coarse grid, then every second from 60 to 0, %d records for "
+       "one market and one close, no second twice (%s)"
+       % (len(_r4t_taus),
+          "ok" if _r4t_taus == _r4t_want
+          else "got %s" % _r4t_taus[:8]))
+    _r4t_keys = {"ticker", "close_s", "tau", "want", "held", "fair", "conf",
+                 "spot", "strike", "eff_strike", "mu", "sd", "cushion_sd",
+                 "remaining", "sigma", "ask", "ask_size", "opp_ask",
+                 "opp_size", "book_age_ms", "index_age_s", "gate",
+                 "gate_pass_ago", "near", "entries_stopped", "paused",
+                 "kind", "t"}
+    _r4t_bad = [set(r) ^ _r4t_keys for r in _r4t_j if set(r) != _r4t_keys]
+    _r4t_one = _r4t_j[0] if _r4t_j else {}
+    _r4t_null = [k for k in ("tau", "fair", "conf", "spot", "strike", "sd",
+                             "cushion_sd", "ask", "ask_size", "opp_ask",
+                             "opp_size", "book_age_ms", "index_age_s")
+                 if _r4t_one.get(k) is None]
+    ck(not _r4t_bad and not _r4t_null,
+       "R4: EVERY record carries EVERY field with the same schema -- our "
+       "side's confidence AND the other side's ask (what insurance would "
+       "have cost), the sd of the remaining window and the cushion in those "
+       "sd, both book and index age (schema drift: %s; null on a healthy "
+       "feed: %s)" % (_r4t_bad[:1], _r4t_null))
+    # THE ARITHMETIC, RECONCILED BY HAND against the model's own fair():
+    # sd is sigma x sqrt(var_factor(remaining)) and the cushion is
+    # (mu - effective strike) / sd, signed toward OUR side.
+    _r4t_n60 = [r for r in _r4t_j if int(r["tau"]) == 30]
+    if _r4t_n60:
+        _rr = _r4t_n60[0]
+        _sd_want = _rr["sigma"] * math.sqrt(var_factor(int(_rr["remaining"]),
+                                                       [1.0]))
+        _cu_want = (_rr["mu"] - _rr["eff_strike"]) / _sd_want
+        ck(abs(_rr["sd"] - _sd_want) < 1e-6
+           and abs(_rr["cushion_sd"] - _cu_want) < 0.01
+           and _rr["remaining"] == N_AVG - (N_AVG - int(_rr["tau"])) - 1,
+           "R4: at tau 30 the sd is the model's OWN "
+           "sigma x sqrt(var_factor(%s)) = %.6f and the cushion is %.1f of "
+           "them on our side -- the same arithmetic fair() uses, so the "
+           "record cannot drift from the decision"
+           % (_rr["remaining"], _sd_want, _cu_want))
+    else:
+        ck(False, "R4: no record at tau 30 to reconcile the arithmetic on")
+    # ...and the gate is the REAL one. This market is decided all the way, so
+    # inside the window the scan refuses it on no_offer only if the ask
+    # vanishes; here it TRADES, so the far records say outside_window and the
+    # near ones carry whatever actually fired.
+    _r4t_far = [r for r in _r4t_j if int(r["tau"]) > _DEFAULT_EARLY_TAU_MAX]
+    ck(all(r["gate"] == "outside_window" and r["gate_pass_ago"] == 0
+           for r in _r4t_far) and len(_r4t_far) >= 3,
+       "R4: a market the scan has not reached yet is marked outside_window "
+       "and NOT as a refusal -- the scan skips those before any gate, and "
+       "calling it a refusal would corrupt every gate rate in pinattrib "
+       "(%d far records)" % len(_r4t_far))
+
+    # ---- the gate field against a gate that really fires ---------------
+    _r4g = _offline_trade_loop([_r4t_mkt(2, lambda t: 0.50)], run_s=40.0,
+                              tau0=32)
+    # tau TAU_MAX itself is the FIRST second the scan may look, and the sample
+    # is taken above the scan -- so that one record has no stamp yet and says
+    # so (gate None), which is honest and not a miss. Everything strictly
+    # inside the window must carry the real gate.
+    _r4g_j = [r for r in _kinds(_r4g, "traj")
+              if TAU_MIN <= int(r["tau"]) <= _DEFAULT_EARLY_TAU_MAX - 1]
+    _r4g_out = [r for r in _kinds(_r4g, "traj")
+                if r["gate"] not in ("confidence", "outside_window", None)]
+    _r4g_ref = _refusals(_r4g, "confidence")
+    _r4g_cnt = _gate_counts(_r4g).get("confidence", 0)
+    ck(_r4g["raised"] is None and len(_r4g_j) >= 20 and not _r4g_out
+       and all(r["gate"] == "confidence" and r["gate_pass_ago"] == 1
+               for r in _r4g_j)
+       and len(_r4g_ref) == 1 and _r4g_cnt > len(_r4g_j),
+       "R4: inside the window the record names the gate that ACTUALLY "
+       "refused the market on the previous pass (confidence, 50 ms old) -- "
+       "and writes NO refusal of its own: still ONE `refused` record for "
+       "the close (%d) against %d gate firings and %d samples, so the "
+       "dedupe and every rate built on it are untouched"
+       % (len(_r4g_ref), _r4g_cnt, len(_r4g_j)))
+
+    # ---- 2: the budgets, and the near seconds are never starved --------
+    # TRAJ_MAX at 2 with the near budget untouched: the far grid is cut off
+    # after two samples and EVERY near second still arrives. This is the
+    # v-instr1 failure, reproduced -- its first budget was first-come, so
+    # ~45 far-from-close refreshes spent all 20 records at about tau 500 and
+    # the near-close passes its own bar read were dropped.
+    _r4b = _offline_trade_loop(_r4t_w, run_s=320.0, tau0=300,
+                               flags={"TRAJ_MAX": 2})
+    _r4b_j = _kinds(_r4b, "traj")
+    _r4b_far = [r for r in _r4b_j if not r["near"]]
+    _r4b_near = [r for r in _r4b_j if r["near"]]
+    _r4b_cl = _kinds(_r4b, "traj_close")
+    ck(_r4b["raised"] is None and len(_r4b_far) == 2
+       and len(_r4b_near) == 61 and _r4b_cl
+       and int(_r4b_cl[0]["far"]) == 2 and int(_r4b_cl[0]["near"]) == 61
+       and int(_r4b_cl[0]["dropped"]) == 46,
+       "R4: the FAR budget binds at 2 of 48 samples -- AND ALL 61 "
+       "NEAR-CLOSE SECONDS STILL ARRIVE. The near budget is a separate purse "
+       "far samples cannot reach, which is the whole lesson of "
+       "LOOP_REC_MAX_NEAR: v-instr1's first budget was first-come, so ~45 "
+       "far-from-close refreshes spent all 20 records at about tau 500 and "
+       "the near passes its own bar read were dropped -- a FAIL by "
+       "construction. The 46 refused samples are COUNTED, so a budget that "
+       "bites is on the record (%d far, %d near, %s dropped)"
+       % (len(_r4b_far), len(_r4b_near),
+          _r4b_cl[0].get("dropped") if _r4b_cl else None))
+    _r4b3 = _offline_trade_loop(_r4t_w, run_s=80.0, tau0=70,
+                                flags={"TRAJ_MAX_NEAR": 3})
+    _r4b3_j = [r for r in _kinds(_r4b3, "traj") if r["near"]]
+    ck(_r4b3["raised"] is None and len(_r4b3_j) == 3,
+       "R4: and the NEAR budget binds too, at 3 -- neither purse is "
+       "unbounded, so a thrashing box cannot fill the disk (got %d)"
+       % len(_r4b3_j))
+    ck(TRAJ_MAX_NEAR >= 14 * (TRAJ_NEAR_TAU_S + 1)
+       and TRAJ_MAX >= 14 * ((TRAJ_TAU_MAX - TRAJ_NEAR_TAU_S)
+                             // TRAJ_EVERY_S + 1),
+       "R4: at the SHIPPED values neither budget can bind on a healthy "
+       "universe -- 14 series is above the 11 that exist and both ceilings "
+       "(%d near, %d far) sit under the budgets (%d, %d). A budget that "
+       "quietly decides the data is how v-instr1's first instrument failed "
+       "its own bar by construction"
+       % (14 * (TRAJ_NEAR_TAU_S + 1),
+          14 * ((TRAJ_TAU_MAX - TRAJ_NEAR_TAU_S) // TRAJ_EVERY_S + 1),
+          TRAJ_MAX_NEAR, TRAJ_MAX))
+    # THE MEMORY IS BOUNDED TOO, and by the same close-keyed prune: a world
+    # that runs past several closes must not leave the history growing.
+    ck(_r4b["state"] is not None,
+       "R4: the world that ran through a close returned a state (the loop "
+       "did not die), which is what makes the prune assertions below about "
+       "a LIVED-IN loop rather than an empty one")
+    # ---- THE WORK IS BOUNDED, AND THE BOUND IS COUNTED ------------------
+    # Eleven markets all OUTSIDE the entry window, so the scan does nothing
+    # and every call into the book and the index is the sampler's. At one
+    # sample a market a second the bound is exactly one of each per record,
+    # and a sampler that quietly ran per PASS would show twenty times this.
+    _r4c_w = [_r4t_mkt(20 + i, (lambda t: 0.999)) for i in range(11)]
+    _r4c = _offline_trade_loop(_r4c_w, run_s=40.0, tau0=200)
+    _r4c_n = len(_kinds(_r4c, "traj"))
+    _r4c_c = _r4c["calls"]
+    _r4c_pass = int(round(40.0 / 0.05))
+    ck(_r4c["raised"] is None
+       and 11 * (40 // TRAJ_EVERY_S) <= _r4c_n <= 11 * (40 // TRAJ_EVERY_S + 1)
+       and _r4c_c.get("best") == _r4c_n
+       and _r4c_c.get("sigma") == _r4c_n
+       and _r4c_c.get("partial") == _r4c_n
+       and _r4c_c.get("fair") == _r4c_n
+       and _r4c_c.get("best", 0) < _r4c_pass,
+       "R4 BOUNDED, COUNTED NOT CLAIMED: eleven markets outside the entry "
+       "window for 40 fake seconds -- the scan does nothing, so every call "
+       "is the sampler's. %d records and EXACTLY %s book reads, %s sigmas, "
+       "%s partials and %s fair() calls: one of each per record, none per "
+       "pass. The loop ran ~%d passes in that time, so a sampler that woke "
+       "on every pass would show twenty times these numbers"
+       % (_r4c_n, _r4c_c.get("best"), _r4c_c.get("sigma"),
+          _r4c_c.get("partial"), _r4c_c.get("fair"), _r4c_pass))
+
+    # ---- the volume, MEASURED, because disk is the real deadline -------
+    _r4v = _offline_trade_loop(_r4t_w, run_s=320.0, tau0=300)
+    _r4v_j = _kinds(_r4v, "traj")
+    _r4v_by = max(1, int(sum(len(json.dumps(r)) for r in _r4v_j)
+                         / max(1, len(_r4v_j))))
+    print("  ..   R4 VOLUME, measured in the harness: %d records for ONE "
+          "market and ONE close at %d bytes each = %.0f KB. Eleven series is "
+          "~%.1f MB a close and ~%.0f MB a day at 96 closes."
+          % (len(_r4v_j), _r4v_by, len(_r4v_j) * _r4v_by / 1024.0,
+             11 * len(_r4v_j) * _r4v_by / 1048576.0,
+             96 * 11 * len(_r4v_j) * _r4v_by / 1048576.0))
+    ck(len(_r4v_j) == ((300 - 60) // 5) + 61,
+       "R4: one market leaves %d records in a whole close -- 48 on the "
+       "coarse grid and 61 inside a minute -- so the day's volume above is "
+       "arithmetic on a measured record size, not a guess (got %d)"
+       % (((300 - 60) // 5) + 61, len(_r4v_j)))
+
+    # ---- THE VOLUME IS PER PROCESS AND THERE ARE 28 OF THEM ------------
+    # The number printed above was costed per process. sync_arms.ps1 launches
+    # 27 paper arms FROM THIS SAME FILE, so the first version of this gave
+    # every arm its own pintraj-paper-<runid>.jsonl the moment it restarted
+    # onto this SHA: ~1.6 GB a day of near-duplicate trajectory against a
+    # 6 GB hard collection stop, i.e. ~1.6 days of unreproducible tape spent
+    # writing 27 copies of one curve. traj_writer() is where that is decided,
+    # and it is module-level SO THIS TEST CAN DRIVE THE REAL WRITER -- the
+    # offline harness passes no `trec`, so every other bound in this section
+    # is proven against an in-memory list append and not the shipped one.
+    import shutil as _shr4
+    import tempfile as _tfr4
+    _r4w_dir = _tfr4.mkdtemp(prefix="pintraj-selftest-")
+    try:
+        _r4w_p0, _r4w_w0 = traj_writer(False, False, _r4w_dir, "paper", "AAA")
+        for _i in range(30):
+            _r4w_w0("traj", ticker="X", tau=_i)
+        _r4w_left = sorted(os.listdir(_r4w_dir))
+        ck(_r4w_p0 is None and not _r4w_left
+           and _r4w_w0.dropped[0] == 30,
+           "R4 DISK: a PAPER run opens no trajectory file at all -- 30 "
+           "records in and the directory is still empty (%s), the 30 are "
+           "counted rather than silently lost, and the run does not raise. "
+           "27 paper arms run from this file on this box; a file each was "
+           "~1.6 GB a day, 36x the whole existing bot family's log volume, "
+           "against the 6 GB that stops the tape collector outright"
+           % (_r4w_left or "empty"))
+        _r4w_p1, _r4w_w1 = traj_writer(False, True, _r4w_dir, "paper", "BBB")
+        _r4w_w1("traj", ticker="X", tau=1)
+        _r4w_w1("traj_close", close_s=1)             # forces the flush
+        ck(_r4w_p1 and os.path.exists(_r4w_p1)
+           and len(open(_r4w_p1, encoding="utf-8").read().splitlines()) == 2,
+           "R4 DISK: ...and --traj-log turns it back on for a paper run the "
+           "operator explicitly wants it from, so the decision is his and "
+           "not a constant. sync_arms.ps1 passes neither flag")
+        # ...and main() really passes his flag through. The check above drives
+        # traj_writer() directly, so a main() that hard-coded False would
+        # leave it green. Sliced from `def main(` so the needle cannot match
+        # its own copy here.
+        _r4w_src = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _r4w_mn = _r4w_src[_r4w_src.rindex(chr(10) + "def " + "main("):]
+        ck("traj_writer(a.live, a.traj" + "_log, RESULTS, tag, runid)"
+           in _r4w_mn,
+           "R4 DISK: ...and main() hands traj_writer BOTH the live flag and "
+           "the operator's --traj-log, not a constant")
+        # ONE HANDLE, NOT ONE OPEN PER RECORD. Counted through an injected
+        # opener, because a wall-clock assertion would be flaky and a source
+        # search for `open(` would match its own copy.
+        class _FakeFH:
+            def __init__(self):
+                self.writes, self.flushes, self.closed = 0, 0, False
+
+            def write(self, s):
+                self.writes += 1
+
+            def flush(self):
+                self.flushes += 1
+
+            def close(self):
+                self.closed = True
+        _r4w_fh, _r4w_opens = _FakeFH(), [0]
+
+        def _r4w_open(*_a, **_k):
+            _r4w_opens[0] += 1
+            return _r4w_fh
+        _r4w_clk = [1000]
+        _r4w_p2, _r4w_w2 = traj_writer(True, False, _r4w_dir, "live", "CCC",
+                                       _open=_r4w_open,
+                                       _now=lambda: _r4w_clk[0])
+        for _i in range(109):                    # one market, one whole close
+            _r4w_w2("traj", ticker="X", tau=_i)
+        _r4w_f1 = _r4w_fh.flushes
+        _r4w_clk[0] = 1001
+        _r4w_w2("traj", ticker="X", tau=0)       # a new second flushes
+        _r4w_f2 = _r4w_fh.flushes
+        _r4w_w2("traj_blind", ticker="X")        # ...and so does a rare kind
+        ck(_r4w_opens[0] == 1 and _r4w_fh.writes == 111
+           and _r4w_f1 == 1 and _r4w_f2 == 2 and _r4w_fh.flushes == 3,
+           "R4 LOOP COST: the whole close's 109 records go through ONE "
+           "open() and ONE flush a second -- not 109 opens. Measured on this "
+           "box, 200 repeats, a real 539-byte record: the eleven appends of "
+           "one sampled second cost 2.46 ms median and 5.64 ms max through "
+           "open-append-close against 0.012 ms median and 0.12 ms max held. "
+           "The pass ends in a flat time.sleep(0.05), not a deadline, so every "
+           "one of those milliseconds is added period before the NEXT hedge "
+           "pass, in the last minute of a close where the price-through race "
+           "is ~107 ms. A rare kind still flushes at once (%d opens, %d "
+           "writes, %d flushes)"
+           % (_r4w_opens[0], _r4w_fh.writes, _r4w_fh.flushes))
+        # A WRITE THAT RAISES COSTS THE RECORD AND NEVER THE LOOP, and the
+        # handle is dropped so the next record reopens rather than writing
+        # into a file that is gone.
+        class _BadFH(_FakeFH):
+            def write(self, s):
+                raise OSError("planted: no space left on device")
+        _r4w_bad, _r4w_bopen = _BadFH(), [0]
+
+        def _r4w_open2(*_a, **_k):
+            _r4w_bopen[0] += 1
+            return _r4w_bad
+        _r4w_p3, _r4w_w3 = traj_writer(True, False, _r4w_dir, "live", "DDD",
+                                       _open=_r4w_open2)
+        _r4w_w3("traj", ticker="X")
+        _r4w_w3("traj", ticker="X")
+        ck(_r4w_bad.closed and _r4w_bopen[0] == 2,
+           "R4: a full disk raises nothing into the loop -- the handle is "
+           "closed and dropped, and the next record reopens (%d opens)"
+           % _r4w_bopen[0])
+    finally:
+        _shr4.rmtree(_r4w_dir, ignore_errors=True)
+
+    # ---- WHERE THE BLOCK SITS, ASSERTED AGAINST THE SOURCE -------------
+    # The constants block's hedge-safety paragraph is the thing anyone will
+    # quote, and its first version was factually wrong about the layout: it
+    # said the sampler was below the risk check and below the entry scan,
+    # when it is ABOVE both. In this file the placement comment IS the safety
+    # argument -- A69 exists because a `continue` above the hedge pass cost
+    # $107.95 -- so a wrong one is a trap for whoever next puts a protective
+    # action in the scan. Assert the real order, so moving any of the four
+    # fails the suite instead of quietly invalidating the paragraph.
+    _r4p_src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _r4p_lp = _r4p_src[_r4p_src.rindex(chr(10) + "def " + "trade_loop("):]
+    _r4p_i = (_r4p_lp.index("AMENDMENT 15: the hedge" + " pass"),
+              _r4p_lp.index("R4 (2026-09-23): THE TRAJECTORY. See the TRAJ_*"),
+              _r4p_lp.index("A69: THE RISK CHECK, NOW BELOW THE HEDGE PASS"),
+              _r4p_lp.index('_gate("book' + '_suspect"'))
+    ck(list(_r4p_i) == sorted(_r4p_i),
+       "R4 PLACEMENT: in the source the order really is hedge pass, sampler, "
+       "risk check, entry scan (%s). The sampler is ABOVE the risk check on "
+       "purpose -- that check's transient-pause branch ends in `continue`, "
+       "so a sampler below it writes NOTHING for a paused close, which is "
+       "the $107.95 blindness of 2026-09-19. Nothing is delayed because the "
+       "hedge pass has already run and no protective ACTION exists below it; "
+       "that is a narrow, layout-dependent reason and it is written down as "
+       "one" % (list(_r4p_i),))
+    # ...and the constants block must not claim otherwise. Sliced so the
+    # needle cannot match this test's own copy of it.
+    _r4p_a = _r4p_src.index("# R4 (2026-09-23): THE TRAJECTORY. LOGGING ONLY")
+    _r4p_blk = _r4p_src[_r4p_a:_r4p_src.index("TRAJ_EVERY_S" + " = 5",
+                                              _r4p_a)]
+    ck("ABOVE the risk check" in _r4p_blk
+       and "below the risk check" not in _r4p_blk
+       and "below the entry scan" not in _r4p_blk
+       and "MOVE THIS BLOCK BELOW IT" in _r4p_blk,
+       "R4 PLACEMENT: and the authoritative comment agrees with the code it "
+       "describes, and tells the next person to move the block if they add a "
+       "protective action below it -- the `dumped` path in the scan is the "
+       "nearest candidate")
+    # ---- A BLIND BLOCK SAYS SO TOO -------------------------------------
+    # The per-market guard is driven above. The OUTER handler covers the
+    # `for` unpacking, which no world can reach from outside, so it is
+    # asserted against the source: it was a bare `pass`, and a change to the
+    # 5-tuple `seen_markets` holds would have killed ALL sampling on EVERY
+    # pass with nothing written -- indistinguishable from "nobody deployed
+    # it", which is the exact ambiguity the per-market guard was added to
+    # remove one level down.
+    _r4z = _r4p_lp[_r4p_lp.index("R4 (2026-09-23): THE TRAJECTORY. See the "
+                                 "TRAJ_*"):]
+    _r4z = _r4z[:_r4z.index("A69: THE RISK CHECK, NOW BELOW THE HEDGE PASS")]
+    _r4z_h = _r4z.rindex(chr(10) + "        except Exception")
+    ck("traj_blind_blk" in _r4z[_r4z_h:]
+       and _r4z[_r4z_h:].count("_trec(" + '"traj_blind"') == 1
+       and _r4z.count("_trec(" + '"traj_blind"') == 2,
+       "R4: the BLOCK-level handler writes a deduped `traj_blind` of its own "
+       "instead of the bare `pass` it shipped as -- two blind writers, one "
+       "per market and one for the block, because an instrument that goes "
+       "blind silently is the failure this instrument exists to fix")
+    _r4z_tau = _r4z.index("_jtau = _jcs - now_s")
+    _r4z_try = _r4z.index(chr(10) + "                try:",
+                          _r4z.index("for _jtk, ("))
+    ck(_r4z_tau < _r4z_try,
+       "R4: `_jtau` is computed ABOVE the per-market try, not as its first "
+       "statement -- assigned inside, a market that raises before reaching "
+       "it stamps the PREVIOUS market's tau on its own blind record, and a "
+       "wrong number in a diagnostic is worse than a null one")
+
+    # ---- D_plan SECTION 5: THE SUB-SECOND DROP THE 1 Hz GRID CANNOT SEE -
+    # The DOGE close moved 98.0c -> 93.4c on our own side across three looks
+    # 244 ms apart; at one record a market a second all three are one row.
+    # Driven: the own-side ask (1 - no_bid) falls 4c part-way through.
+    # The market is TOO DEAR at first (99c, above the 98c ceiling, so it is
+    # refused and keeps being looked at) and then 4c cheaper -- which is the
+    # DOGE shape: a price that falls while we are still deciding.
+    def _r4d_mkt(n, dear=0.01, cheap=0.05, drop_at=0.2, osc=None):
+        def _bk(t):
+            if osc is not None:
+                _nb = cheap if int(t / osc) % 2 else dear
+            else:
+                _nb = cheap if t >= drop_at else dear
+            return _ob(0.94, round(_nb, 4))
+        return {"tk": "KXP%d15M-R4P" % n, "series": "KXP%d15M" % n,
+                "iid": "R4P%d" % n, "strike": 100.0,
+                "fair": (lambda t: 0.9995), "book": _bk}
+
+    _r4d = _offline_trade_loop([_r4d_mkt(1)], run_s=8.0, tau0=28)
+    _r4d_j = _kinds(_r4d, "price_drop")
+    ck(_r4d["raised"] is None and len(_r4d_j) == 1
+       and abs(float(_r4d_j[0]["drop_c"]) - 4.0) < 1e-6
+       and 0 < int(_r4d_j[0]["gap_ms"]) <= 150
+       and _r4d_j[0]["want"] == "yes"
+       and abs(float(_r4d_j[0]["was"]) - 0.99) < 1e-9
+       and abs(float(_r4d_j[0]["now"]) - 0.95) < 1e-9,
+       "D_plan 5: our own side getting %sc cheaper between two looks %s ms "
+       "apart is RECORDED, with both prices and the gap -- and the gap is the "
+       "REAL one, 50 ms, because the reference is kept in `now` and not "
+       "`now_s`. Stored as int seconds the same two looks read 350 ms apart, "
+       "and the whole point of this record is a gap smaller than a second"
+       % (_r4d_j[0].get("drop_c") if _r4d_j else None,
+          _r4d_j[0].get("gap_ms") if _r4d_j else None))
+    # ---- AND EVERY INSTRUMENT RECORD GOES TO THE INSTRUMENT'S WRITER ----
+    # The decision log is parsed by pinledger, pinattrib, pinlab, barcheck,
+    # earlyhindsight and the settlement readers, all globbing
+    # `pinrun-<tag>-*.jsonl`. A trajectory or price-drop record written with
+    # `rec` instead of `_trec` lands in THAT file and slows every one of them,
+    # and nothing in this suite could see it while both writers were the same
+    # list -- so the harness now splits them, like main() splits the files.
+    _r4s = _offline_trade_loop([_r4d_mkt(4)], run_s=8.0, tau0=28,
+                               trec_split=True)
+    _r4s_k = {r["kind"] for r in _r4s["recs"]}
+    _r4s_t = {r["kind"] for r in _r4s["trecs"]}
+    ck(_r4s["raised"] is None
+       and {"price_drop", "traj"} <= _r4s_t
+       and not ({"price_drop", "traj", "traj_close", "traj_blind"} & _r4s_k)
+       and "signal" in _r4s_k,
+       "R4/D_plan 5: with the two writers SPLIT the way main() splits the "
+       "files, every instrument record is on the trajectory writer (%s) and "
+       "the decision trail holds none of them -- while the decisions "
+       "themselves are all still there. Before the split an instrument "
+       "writing into the shared log passed the whole suite"
+       % sorted(_r4s_t))
+    # NULL: the same market, looked at just as often, with a book that never
+    # moves -- so the record is the DROP and not the look. Without this a
+    # 20 Hz scan would write ~1,200 rows a market a close.
+    _r4d0 = _offline_trade_loop([_r4d_mkt(2, cheap=0.01)], run_s=8.0, tau0=28)
+    ck(_r4d0["raised"] is None and not _kinds(_r4d0, "price_drop")
+       and _refusals(_r4d0, "price_ceiling"),
+       "D_plan 5 NULL: a book that does not move writes NOTHING across the "
+       "same 160 looks (the market is refused every pass, so it really is "
+       "looked at every pass)")
+    _r4dc = _offline_trade_loop([_r4d_mkt(3, osc=0.5)], run_s=8.0, tau0=28,
+                                flags={"PRICE_CEILING": 0.10,
+                                       "LOOK_DROP_MAX": 2})
+    _r4dc_j = _kinds(_r4dc, "price_drop")
+    ck(_r4dc["raised"] is None and len(_r4dc_j) == 2
+       and all(int(r["cap"]) == 2 for r in _r4dc_j)
+       and [int(r["n"]) for r in _r4dc_j] == [1, 2],
+       "D_plan 5 BOUNDED: a book that flaps 4c every half second for eight "
+       "seconds writes exactly the cap and then stops -- %d records at a cap "
+       "of 2, numbered, so this can never become a firehose on a 20 Hz path"
+       % len(_r4dc_j))
+
+    # ---- 4: A RECORD THAT RAISES MAY NOT END THE LOOP OR STOP A HEDGE --
+    # The trajectory writer is driven through the REAL loop with a planted
+    # fault on its own kind only. The hedge must still fire, and every other
+    # record must still be written.
+    def _r4_fault(kind, kw):
+        if kind in ("traj", "traj_close", "traj_blind"):
+            raise TypeError("planted: type NoneType doesn't define __round__")
+
+    _r4f_w = [_k1_A(), _k1_B(1)]
+    _r4f0 = _offline_trade_loop(_r4f_w)
+    _r4f1 = _offline_trade_loop(_r4f_w, rec_fault=_r4_fault)
+    _r4f_h0 = _hedged(_r4f0, _kA)
+    _r4f_h1 = _hedged(_r4f1, _kA)
+    _r4f_t0 = [(r["kind"], r.get("ticker"), r["t"]) for r in _r4f0["recs"]
+               if r["kind"] not in ("traj", "traj_close", "traj_blind")]
+    _r4f_t1 = [(r["kind"], r.get("ticker"), r["t"]) for r in _r4f1["recs"]]
+    ck(_r4f1["raised"] is None and _r4f_h1 > 0 and _r4f_h1 == _r4f_h0
+       and _r4f_t1 == _r4f_t0 and not _kinds(_r4f1, "traj"),
+       "R4: with EVERY trajectory record planted to raise, the loop does "
+       "not die, the hedge still fills the same %g contracts at the same "
+       "second, and the whole rest of the trail is byte for byte what it is "
+       "without the fault -- the write is swallowed, never the hedge"
+       % _r4f_h0)
+    # ...and a BOOK that raises inside the sampler is the same story.
+    _r4br = dict(_r4t_mkt(3, lambda t: 0.999))
+    _r4br["book"] = (lambda t: (_ob(0.94, 0.05) if t < 3
+                                else (_ for _ in ()).throw(
+                                    RuntimeError("planted book fault"))))
+    _r4bx = _offline_trade_loop([_r4br], run_s=20.0, tau0=70)
+    _r4bx_j = _kinds(_r4bx, "traj")
+    ck(_r4bx["raised"] is None and len(_r4bx_j) >= 4
+       and any(r["ask"] is None for r in _r4bx_j)
+       and any(r["fair"] is not None for r in _r4bx_j
+               if r["ask"] is None),
+       "R4: a book read that RAISES inside the sampler leaves the price "
+       "columns null and the model columns intact, and the loop runs on -- "
+       "a blind second is recorded as blind, never skipped (%d records)"
+       % len(_r4bx_j))
+    # ...and ONE bad market must not silence the other ten. K1's lesson: the
+    # per-market guard is what makes a gap mean "the market was quiet" rather
+    # than "something threw two markets ago".
+    _r4mx = dict(_r4t_mkt(4, lambda t: 0.999))
+    _r4mx["fair"] = (lambda t: (_ for _ in ()).throw(
+        TypeError("planted: NoneType has no __round__")))
+    _r4mw = [_r4mx] + [_r4t_mkt(30 + i, (lambda t: 0.999)) for i in range(3)]
+    _r4m = _offline_trade_loop(_r4mw, run_s=30.0, tau0=200)
+    _r4m_j = _kinds(_r4m, "traj")
+    _r4m_tk = {r["ticker"] for r in _r4m_j}
+    _r4m_b = _kinds(_r4m, "traj_blind")
+    ck(_r4m["raised"] is None and len(_r4m_tk) == 3
+       and _r4mx["tk"] not in _r4m_tk and len(_r4m_j) >= 9
+       and len(_r4m_b) == 1 and _r4m_b[0]["ticker"] == _r4mx["tk"]
+       and _r4m_b[0]["err"] == "TypeError",
+       "R4: a market whose MODEL raises drops its own sample, says so ONCE "
+       "as `traj_blind` (%s), and nothing else -- the other three are all "
+       "still sampled (%d records over %d markets). A silently missing "
+       "second is indistinguishable from a quiet market, which is the exact "
+       "failure this instrument exists to fix"
+       % (_r4m_b[0].get("err") if _r4m_b else "NOTHING RECORDED",
+          len(_r4m_j), len(_r4m_tk)))
+
+    # ---- 5: AT THE SHIPPED SETTINGS, NOTHING CHANGED. PROVEN. ----------
+    # Three worlds, each run twice: once with the sampler made inert
+    # (TRAJ_TAU_MAX = -1, so `traj_due` refuses every tau and the block
+    # does nothing at all) and once at the shipped defaults. With
+    # DOUBT_MULT at its shipped 1.0 as well, the inert run IS today's code
+    # path -- so equality of the two trails is the proof that neither new
+    # thing touches a decision or an existing record.
+    # A BANK IS THE ONLY WAY TO REACH ANY WIDENER OFFLINE: one_coin_cap()
+    # returns SIZE when the balance or the high-water mark is unknown. This
+    # one auto-sizes 5 -> 6 at the top of the loop, which also puts the
+    # `autosize` record (and with it pintake's count rail) on the trail.
+    _r4i_bank = ((MAX_PER_CLOSE + max(_DEFAULT_EXTRA_COIN, _DEFAULT_LATE_EXTRA))
+                 * _DEFAULT_PRICE_CEILING * _DEFAULT_BANK_BRAKE * 6.0)
+
+    def _r4_scrub(recs):
+        """The trail with only the fields that CANNOT be reproduced removed.
+        `client_order_id` carries a fresh random suffix per order, so two
+        identical runs differ there and nowhere else; dropping it is the only
+        way the comparison can be an equality rather than a similarity."""
+        out = []
+        for r in recs:
+            d = {}
+            for k, v in r.items():
+                if k == "client_order_id":
+                    continue
+                d[k] = ({kk: vv for kk, vv in v.items()
+                         if kk != "client_order_id"}
+                        if isinstance(v, dict) else v)
+            out.append(d)
+        return out
+
+    def _r4_doubt_mkt(n=9):
+        # confidence in YES starts at 0.30 -- the model DOUBTS the side it
+        # will later buy -- and only crosses the gate at t >= 6.
+        return {"tk": "KXD%d15M-R1D" % n, "series": "KXD%d15M" % n,
+                "iid": "R1D%d" % n, "strike": 100.0,
+                "fair": (lambda t: 0.9995 if t >= 6 else 0.30),
+                "book": (lambda t: _ob(0.94, 0.05))}
+
+    _r4id_take, _r4id_calls = _k1_take(False)
+    _r4_worlds = (
+        ("collapse+hedge, paper", dict(markets=[_k1_A(), _k1_B(1)])),
+        ("the live order path",
+         dict(markets=[_k1_A()], live=True, take=_r4id_take)),
+        # THIS ONE RUNS PAST ITS CLOSE ON PURPOSE. Without it the compared
+        # trail holds no `close_summary` at all -- and the sampler shares the
+        # `near` dict that record is built from, so an injected write into
+        # `near` (one extra `looks`) passed the identity check unnoticed when
+        # every world stopped short of its close. Found by the revert-proof
+        # run, which is what that run is for.
+        ("a doubt world with a bank, through its close and summary",
+         dict(markets=[_r4_doubt_mkt()], run_s=55.0, tau0=40,
+              bank=_r4i_bank, flags={"SIZE_MIRROR_ON": False})),
+    )
+    _r4_ident, _r4_why, _r4_seen_cs = True, [], False
+    for _wn, _wk in _r4_worlds:
+        _kw = dict(_wk)
+        _mk = _kw.pop("markets")
+        _off_flags = dict(_kw.pop("flags", {}) or {})
+        _off_flags["TRAJ_TAU_MAX"] = -1
+        _r4id_calls[:] = []
+        _off = _offline_trade_loop(_mk, flags=_off_flags, **_kw)
+        _off_calls = list(_r4id_calls)
+        _r4id_calls[:] = []
+        _on = _offline_trade_loop(_mk, **dict(_kw, flags=dict(_wk.get("flags")
+                                                             or {})))
+        _on_calls = list(_r4id_calls)
+        _off_tr = _r4_scrub([r for r in _off["recs"]
+                             if r["kind"] not in ("traj", "traj_close", "traj_blind")])
+        _on_tr = _r4_scrub([r for r in _on["recs"]
+                            if r["kind"] not in ("traj", "traj_close", "traj_blind")])
+        _same = (_off_tr == _on_tr
+                 and _r4_scrub(_off["posts"]) == _r4_scrub(_on["posts"])
+                 and _off_calls == _on_calls
+                 and _off["raised"] == _on["raised"]
+                 and _off["ran_s"] == _on["ran_s"]
+                 and not [r for r in _on["recs"]
+                          if str(r["kind"]).startswith("doubt")]
+                 and [r for r in _off["recs"] if r["kind"] == "traj"] == []
+                 and [r for r in _on["recs"] if r["kind"] == "traj"] != [])
+        _r4_seen_cs = _r4_seen_cs or any(r["kind"] == "close_summary"
+                                         for r in _on_tr)
+        if not _same:
+            _r4_ident = False
+            _d = [(a_, b_) for a_, b_ in zip(_off_tr, _on_tr) if a_ != b_]
+            _r4_why.append("%s: %d vs %d records, first diff %s"
+                           % (_wn, len(_off_tr), len(_on_tr), _d[:1]))
+    ck(_r4_ident and _r4_seen_cs,
+       "R4/R1 IDENTITY, PROVEN NOT ASSERTED: on three worlds -- a collapse "
+       "that hedges, the live order path, and a doubt world with a bank -- "
+       "the trail with the sampler inert and the trail with it live are the "
+       "SAME records in the same order at the same fake second, the same "
+       "orders on the wire, the same take() calls and the same run length. "
+       "One of the three runs PAST its close, so `close_summary` -- built "
+       "from the same `near` dict the sampler can see -- is inside the "
+       "comparison. At --doubt-mult 1.0 not one doubt record is written. So "
+       "the live argv, which passes neither flag, does exactly what it does "
+       "today (%s%s)"
+       % ("; ".join(_r4_why) if _r4_why else "identical",
+          "" if _r4_seen_cs else "; NO close_summary reached the trail, so "
+          "the comparison is blind to `near`"))
+
+    # ===================================================================
+    # R1 (2026-09-23): --doubt-mult. See the DOUBT_* block for the money.
+    # ===================================================================
+    ck(_DEFAULT_DOUBT_MULT == 1.0 and _DEFAULT_DOUBT_UNDER == 0.50
+       and _DEFAULT_DOUBT_LAG_S == 5,
+       "R1 ships OFF: the DECLARED default multiple is 1.0, which is the "
+       "arithmetic identity, so an arm that sets the flag does not fail its "
+       "own gate and the live argv is unchanged (running now with %.3g)"
+       % DOUBT_MULT)
+    _src_d1 = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _lp_d1 = _src_d1[_src_d1.rindex(chr(10) + "def " + "trade_loop("):]
+    _cd1p, _cd1l = "_doubt(take_n)    # paper", "_doubt(take_n)    # live"
+    ck(_cd1p in _lp_d1 and _cd1l in _lp_d1,
+       "R1 runs on BOTH the paper and the live path, or the arm books a "
+       "size the live path refuses -- the A45 bug, twice repeated since")
+    ck(_lp_d1.index("_band53(take_n)   # live") < _lp_d1.index(_cd1l)
+       < _lp_d1.index("take_n = _stage46(take_n)", _lp_d1.index(_cd1l))
+       and _lp_d1.index("_band53(take_n)   # paper") < _lp_d1.index(_cd1p)
+       < _lp_d1.index("take_n = _stage46(take_n)"),
+       "...after A53 and before the A46 re-cap, on both paths")
+    ck(_lp_d1.index(_cd1p) < _lp_d1.index("take_n = min(take_n, "
+                                          "float(_room68))")
+       and _lp_d1.index(_cd1l) < _lp_d1.index("take_n = min(take_n, "
+                                              "float(_room68))"),
+       "...and BEFORE A68's cap, so no widener can undo the bounded rebuy")
+    ck("_mult46 = max(band" + "_mult(price), _doubt_on[0]," in _lp_d1,
+       "the A46 re-cap reads the doubt multiple as well as the band and the "
+       "late one. A60's lesson: without it the staged cap silently undoes "
+       "the boost on every 45-second leg, and the arm measures nothing")
+    ck("_ours48 = f if want == " + '"yes"' + " else 1.0 - f" in _lp_d1
+       and "_c = _fy if want == " + '"yes"' + " else 1.0 - _fy" in _lp_d1,
+       "confidence is read for the side we are BUYING -- f for YES and 1-f "
+       "for NO. `traj_hist` holds P(YES), because the side is not known "
+       "when the reading is taken, so this conversion is mandatory and "
+       "getting it backwards inverts the entire rule")
+    # A NEEDLE THAT CANNOT MATCH ITS OWN COPY. The escapes make this pattern
+    # unable to match the literal source text of this line -- the bug that bit
+    # four times in one session and once silently for days.
+    _re_d1 = __import__("re")
+    _nd_d1 = _re_d1.findall(
+        r"max\(ONE_COIN_MAX if ONE_COIN_DEPTH else 1\.0,\s*DOUBT_MULT,"
+        r"\s*LATE_MULT, max_band_mult\(\), FLIP_MULT\)", _src_d1)
+    ck(len(_nd_d1) == 2,
+       "pintake's per-order count cap admits the doubt multiple at live "
+       "start AND at every autosize -- miss either and the live path "
+       "refuses the wider order while the paper path books it, which is "
+       "what the self-test at A53 exists for")
+    # THE CONDITION, NOT ONLY THE MESSAGE. A54's equivalent check asserts the
+    # "PAPER ONLY" sentence and nothing else, so gutting the `if` would leave
+    # it green -- which the revert-proof run caught. The needle is split so it
+    # cannot match its own copy in this file.
+    ck(_src_d1.count("if a.live and a.doubt" + "_mult > 1.0:") == 1
+       and '"--doubt-mult above 1.0 is PAPER ONLY' in _src_d1,
+       "and a LIVE run refuses the flag outright -- the CONDITION is on "
+       "`a.live`, not merely the sentence explaining it: the money is stable "
+       "but the p-value fails the corrected bar, and 0 losers in 66 markets "
+       "does not exclude the 2.44 percent base rate")
+    _offd1 = 'globals()["DOUBT_MULT"] = 1.0'
+    ck(_offd1 in _lp_d1 and 'rec("doubt_boost_off"' in _lp_d1
+       and "_boosted_dbt.add((close_s, tk))" in _lp_d1
+       and "_boosted_dbt = set()" in _lp_d1,
+       "one doubt-boosted LOSS switches --doubt-mult off for the rest of "
+       "the run, from a set the widening writes -- 'we aren't just going to "
+       "boost a trade above our normal level then just lose a bunch of "
+       "money', enforced by the bot and not by somebody reading a log")
+    ck(_lp_d1.rindex("if not won:", 0, _lp_d1.index(_offd1))
+       > _lp_d1.rindex("state[" + '"settled"' + "]", 0, _lp_d1.index(_offd1)),
+       "...and the switch sits INSIDE the loss branch of settlement, so a "
+       "win can never trip it")
+    ck("traj_hist" in _lp_d1 and "open(" not in _lp_d1.split(
+        "def _doubt(take_n):")[1].split("def _stage46")[0],
+       "R1 reads the bot's OWN in-memory trajectory and opens no file: a "
+       "log read in the 20 Hz loop would be both slow and a different "
+       "population from the one the decision is made on")
+
+    # ---- driven: 1.5x fires, and ONLY on a doubted side ----------------
+    _d1w = [_r4_doubt_mkt()]
+    _d1_kw = dict(run_s=40.0, tau0=40, bank=_r4i_bank,
+                  flags={"SIZE_MIRROR_ON": False})
+
+    def _d1_run(mult, world=None, **over):
+        _fl = dict(_d1_kw["flags"])
+        _fl["DOUBT_MULT"] = mult
+        _kw = dict(_d1_kw, flags=_fl)
+        _kw.update(over)
+        return _offline_trade_loop(world or _d1w, **_kw)
+
+    _d1a = _d1_run(1.5)
+    _d1a_b = _kinds(_d1a, "doubt_boost")
+    _d1a_sig = _kinds(_d1a, "signal")
+    _d1a_slot = _kinds(_d1a, "autosize")
+    ck(_d1a["raised"] is None and len(_d1a_b) == 1
+       and abs(float(_d1a_b[0]["now"]) - 1.5 * float(_d1a_b[0]["was"])) < 1e-6
+       and float(_d1a_b[0]["low"]) < _DEFAULT_DOUBT_UNDER
+       and int(_d1a_b[0]["low_at_tau"]) - int(_d1a_b[0]["tau"])
+           >= _DEFAULT_DOUBT_LAG_S,
+       "R1 DRIVEN: the model put %.2f on this side %ds before the entry, "
+       "under the 0.50 bar, and the order goes out at %s contracts instead "
+       "of %s -- exactly 1.5x, and the reading it used really is at least "
+       "5 s older than the decision"
+       % (float(_d1a_b[0]["low"]) if _d1a_b else -1,
+          (int(_d1a_b[0]["low_at_tau"]) - int(_d1a_b[0]["tau"]))
+          if _d1a_b else -1,
+          _d1a_b[0].get("now") if _d1a_b else None,
+          _d1a_b[0].get("was") if _d1a_b else None))
+    ck(_d1a_slot and float(_d1a_slot[0]["max_take_count"])
+       >= 1.5 * float(_d1a_slot[0]["new"]) - 1e-9,
+       "R1 DRIVEN: and the autosize that ran in that world left pintake's "
+       "per-order count rail at or above 1.5 x size (%s against %s needed) "
+       "-- the rail that silently refused 160 orders in a row on "
+       "2026-09-08. The needle test above is what proves the DOUBT_MULT term "
+       "is in the expression at both sites; this proves the value that came "
+       "out of it covers the boost"
+       % (_d1a_slot[0].get("max_take_count") if _d1a_slot else None,
+          1.5 * float(_d1a_slot[0]["new"]) if _d1a_slot else None))
+    # ...and the LIVE ORDER PATH really books the boosted size. A45's bug was
+    # a widener that ran on paper and not live, so the arm's numbers described
+    # a bot that did not exist. Driven through the real live branch with the
+    # bank one that does NOT move SIZE, so the boost is the only change.
+    _d1L_bank = ((MAX_PER_CLOSE + max(_DEFAULT_EXTRA_COIN, _DEFAULT_LATE_EXTRA))
+                 * _DEFAULT_PRICE_CEILING * _DEFAULT_BANK_BRAKE * 5.0)
+    _d1L_take, _d1L_calls = _k1_take(False)
+    _d1L = _offline_trade_loop(
+        _d1w, run_s=40.0, tau0=40, bank=_d1L_bank, live=True,
+        take=_d1L_take, flags={"SIZE_MIRROR_ON": False, "DOUBT_MULT": 1.5})
+    _d1L0_take, _d1L0_calls = _k1_take(False)
+    _d1L0 = _offline_trade_loop(
+        _d1w, run_s=40.0, tau0=40, bank=_d1L_bank, live=True,
+        take=_d1L0_take, flags={"SIZE_MIRROR_ON": False})
+    ck(_d1L["raised"] is None and _d1L0["raised"] is None
+       and _d1L_calls and _d1L0_calls
+       and abs(_d1L_calls[0][2] - 1.5 * _d1L0_calls[0][2]) < 1e-6,
+       "R1 DRIVEN, LIVE PATH: the order that actually goes to take() asks "
+       "for %s contracts with the flag on against %s with it off -- exactly "
+       "1.5x on the LIVE branch, not only on paper. A widener that runs on "
+       "one path and not the other is the A45 bug, and it makes an arm "
+       "describe a bot that does not exist"
+       % (_d1L_calls[0][2] if _d1L_calls else None,
+          _d1L0_calls[0][2] if _d1L0_calls else None))
+    # ---- and the close budget still clips it -----------------------------
+    # TWO doubted markets in ONE close. The first takes 7.5 of the close's
+    # 10 contracts; the second must get the 2.5 that are left and NOT 7.5.
+    _d1cb_w = [_r4_doubt_mkt(6), _r4_doubt_mkt(7)]
+    _d1cb_take, _d1cb_calls = _k1_take(False)
+    _d1cb = _offline_trade_loop(
+        _d1cb_w, run_s=40.0, tau0=40, bank=_d1L_bank, live=True,
+        take=_d1cb_take, flags={"SIZE_MIRROR_ON": False, "DOUBT_MULT": 1.5})
+    _d1cb_sum = sum(c[2] for c in _d1cb_calls)
+    ck(_d1cb["raised"] is None and len(_d1cb_calls) >= 2
+       and abs(_d1cb_calls[0][2] - 7.5) < 1e-6
+       and abs(_d1cb_sum - MAX_PER_CLOSE * 5.0) < 1e-6,
+       "R1: the boost NEVER escapes the close's contract budget -- the first "
+       "doubted market takes 7.5 of the 10 contracts the close may buy and "
+       "the second is clipped to the 2.5 that are left, not boosted to 7.5 "
+       "again (asked %s, total %.2f against a budget of %.0f)"
+       % ([c[2] for c in _d1cb_calls], _d1cb_sum, MAX_PER_CLOSE * 5.0))
+    # ---- and the A46 staged cap does NOT undo it (the A60 lesson) --------
+    _d1e_take, _d1e_calls = _k1_take(False)
+    _d1e_fl = {"SIZE_MIRROR_ON": False, "DOUBT_MULT": 1.5,
+               "EARLY_TAU_MAX": 45, "EARLY_FRAC": 0.5}
+    _d1e = _offline_trade_loop(_d1w, run_s=20.0, tau0=40, bank=_d1L_bank,
+                               live=True, take=_d1e_take, flags=_d1e_fl)
+    _d1e0_take, _d1e0_calls = _k1_take(False)
+    _d1e0 = _offline_trade_loop(_d1w, run_s=20.0, tau0=40, bank=_d1L_bank,
+                                live=True, take=_d1e0_take,
+                                flags=dict(_d1e_fl, DOUBT_MULT=1.0))
+    ck(_d1e["raised"] is None and _d1e0["raised"] is None
+       and _d1e_calls and _d1e0_calls
+       and _d1e_calls[0][2] > _d1e0_calls[0][2] + 1e-9
+       and abs(_d1e_calls[0][2] - 1.5 * _d1e0_calls[0][2]) < 1e-6,
+       "R1: on a 45-second EARLY leg the staged cap keeps the boost -- %s "
+       "contracts against %s unboosted. Without the doubt multiple in "
+       "`_mult46` the A46 re-cap would put it straight back to the "
+       "unboosted number, which is A60's exact bug and would make the arm "
+       "measure nothing on the leg the live bot actually runs"
+       % (_d1e_calls[0][2] if _d1e_calls else None,
+          _d1e0_calls[0][2] if _d1e0_calls else None))
+    # NULL 1: the model never doubted this side -> no boost, and it SAYS so.
+    _d1n = _d1_run(1.5, world=[dict(_r4_doubt_mkt(8),
+                                    fair=(lambda t: 0.9995))])
+    _d1n_b = _kinds(_d1n, "doubt_boost")
+    _d1n_s = _kinds(_d1n, "doubt_skip")
+    ck(_d1n["raised"] is None and not _d1n_b and _d1n_s
+       and "never doubted" in str(_d1n_s[0]["why"])
+       and float(_d1n_s[0]["low"]) >= _DEFAULT_DOUBT_UNDER,
+       "R1 NULL: a market the model was sure of the whole time is bought at "
+       "the ordinary size and the log says which reading refused the boost "
+       "(%s)" % (_d1n_s[0].get("why") if _d1n_s else "no record at all"))
+    # NULL 2: UNKNOWN history is 1.0x, not a boost. The sampler is turned
+    # off, so the bot has no earlier reading of its own at all -- which is
+    # also every market entered at the first second it is allowed.
+    _d1u = _d1_run(1.5, **{"flags": dict(_d1_kw["flags"],
+                                         DOUBT_MULT=1.5, TRAJ_TAU_MAX=-1)})
+    _d1u_b = _kinds(_d1u, "doubt_boost")
+    _d1u_s = _kinds(_d1u, "doubt_skip")
+    ck(_d1u["raised"] is None and not _d1u_b and _d1u_s
+       and "unknown" in str(_d1u_s[0]["why"])
+       and int(_d1u_s[0]["readings"]) == 0,
+       "R1 NULL: no earlier reading is UNKNOWN and buys the ordinary size "
+       "-- an unknown is not a doubt, and a rule that read it as one would "
+       "boost the 481 markets of our record that have no earlier reading, "
+       "the WORST bucket at +$0.41 a market (%s)"
+       % (_d1u_s[0].get("why") if _d1u_s else "no record at all"))
+    # NULL 4: A DOUBT THAT IS TOO RECENT DOES NOT COUNT. The model is sure of
+    # our side until 4 seconds before the entry, doubts it for three seconds,
+    # and is sure again at the moment we buy. `traj_min_conf_ge5s` -- the
+    # feature the +$2.95 was measured on -- reads only readings at least 5 s
+    # older than the decision, so this must NOT boost. Without the lag it
+    # would, and the rule would be a different statistic from the one
+    # D_plan's table is about.
+    _d1g = _d1_run(1.5, world=[dict(
+        _r4_doubt_mkt(5),
+        fair=(lambda t: 0.30 if 6 <= t < 9 else 0.9995))])
+    _d1g_b = _kinds(_d1g, "doubt_boost")
+    _d1g_s = _kinds(_d1g, "doubt_skip")
+    ck(_d1g["raised"] is None and not _d1g_b and _d1g_s
+       and "never doubted" in str(_d1g_s[0]["why"])
+       and float(_d1g_s[0]["low"]) >= _DEFAULT_DOUBT_UNDER,
+       "R1 NULL: a doubt 2-4 seconds before the entry is IGNORED -- the "
+       "lowest reading the rule may read is %s, from the seconds at least 5 "
+       "s back, and the 0.30 it saw in between is out of bounds. Reading it "
+       "would make this a different statistic from the one the money was "
+       "measured on" % (_d1g_s[0].get("low") if _d1g_s else None))
+    # ---- THE WINDOW THE READINGS COME FROM. THIS DECIDES THE POPULATION. -
+    # THE DEFECT THIS PAIR EXISTS FOR. The first version appended EVERY
+    # sampled second to `traj_hist`, including the coarse grid out to
+    # TRAJ_TAU_MAX = 300, so `_doubt` minimised over readings up to five
+    # minutes before the close -- where partial() returns (0.0, 60), nothing
+    # is locked and `fair` is a near coin-flip. That is not the statistic the
+    # +$2.95 was measured on: every `refused` record in our last 8 live runs
+    # that carries a tau is in [3, 45] (2,405 of 2,619, none above 45),
+    # because `_gate()` is unreachable outside the scan window, so the
+    # historical minimum was over tau 3-45 readings ONLY. Rebuilt off the raw
+    # 1/sec index for 12 h and 11 coins, the flag fires on 2.3% of decided
+    # cells with readings restricted to tau 35-60 and 20.9% with tau 35-300 --
+    # NINE TIMES the population, against a historical 8.4%. D_plan section 1
+    # scores PASS/FAIL on "flagged >= +$2.00/market", so a FAIL on a
+    # nine-times-diluted rule would have read as killing R1.
+    #
+    # TWO WORLDS, IDENTICAL BUT FOR THE TAU OF THE DOUBT. Both start at tau 90
+    # and both buy at tau 30 (EARLY_TAU_MAX == TAU_MAX == 30 offline, so the
+    # first allowed second is 30).
+    ck(_DEFAULT_DOUBT_HIST_TAU_S == 60
+       and _DEFAULT_DOUBT_HIST_TAU_S <= _DEFAULT_TRAJ_NEAR_TAU_S
+       and _DEFAULT_DOUBT_HIST_TAU_S > _DEFAULT_EARLY_TAU_MAX
+                                       + _DEFAULT_DOUBT_LAG_S,
+       "R1: the DECLARED history window is 60 s -- inside the 1 Hz grid, so "
+       "every reading the rule can see is a sampled second and never a "
+       "5-second-grid one, and wide enough that a market entered at the "
+       "first allowed second (%d) still has readings %d s earlier"
+       % (_DEFAULT_EARLY_TAU_MAX, _DEFAULT_DOUBT_LAG_S))
+
+    def _r1h_mkt(n, lo, hi):
+        """0.30 on YES while tau is in [lo, hi], 0.9995 otherwise. tau0 = 90,
+        so t = 90 - tau."""
+        return {"tk": "KXH%d15M-R1H" % n, "series": "KXH%d15M" % n,
+                "iid": "R1H%d" % n, "strike": 100.0,
+                "fair": (lambda t: 0.30 if lo <= 90 - t <= hi else 0.9995),
+                "book": (lambda t: _ob(0.94, 0.05))}
+    _r1h_kw = dict(run_s=65.0, tau0=90, bank=_r4i_bank,
+                   flags={"SIZE_MIRROR_ON": False, "DOUBT_MULT": 1.5})
+    _r1h_out = _offline_trade_loop([_r1h_mkt(1, 65, 90)], **_r1h_kw)
+    _r1h_in = _offline_trade_loop([_r1h_mkt(2, 50, 60)], **_r1h_kw)
+    _r1h_ob = _kinds(_r1h_out, "doubt_boost")
+    _r1h_os = _kinds(_r1h_out, "doubt_skip")
+    _r1h_ib = _kinds(_r1h_in, "doubt_boost")
+    # the doubt really WAS sampled and recorded out there -- so this null is
+    # the window and not a world with nothing in it
+    _r1h_far = [r for r in _kinds(_r1h_out, "traj")
+                if int(r["tau"]) > _DEFAULT_DOUBT_HIST_TAU_S
+                and r["fair"] is not None
+                and float(r["fair"]) < _DEFAULT_DOUBT_UNDER]
+    ck(_r1h_out["raised"] is None and not _r1h_ob and _r1h_os
+       and len(_r1h_far) >= 5
+       and float(_r1h_os[0]["low"]) >= _DEFAULT_DOUBT_UNDER,
+       "R1 WINDOW: a doubt at tau 65-90 does NOT boost, and it is the WINDOW "
+       "that refused it and not an empty world -- %d trajectory records "
+       "outside 60 s carry a confidence under the bar (0.30), every one of "
+       "them written to the log, and the rule still reads a lowest of %s. "
+       "The trajectory is the wide thing; the RULE is the narrow one"
+       % (len(_r1h_far), _r1h_os[0].get("low") if _r1h_os else None))
+    ck(_r1h_in["raised"] is None and len(_r1h_ib) == 1
+       and abs(float(_r1h_ib[0]["now"]) - 1.5 * float(_r1h_ib[0]["was"])) < 1e-6
+       and float(_r1h_ib[0]["low"]) < _DEFAULT_DOUBT_UNDER
+       and 50 <= int(_r1h_ib[0]["low_at_tau"]) <= 60,
+       "R1 WINDOW, THE OTHER HALF: the SAME world with the doubt moved inside "
+       "60 s DOES boost, off a reading at tau %s -- so the null above is a "
+       "boundary and not a broken estimator. Without this pair the suite "
+       "could not tell D_plan's rule from a nine-times wider one, and "
+       "changing the one line that decides it left all 20 reverts green"
+       % (_r1h_ib[0].get("low_at_tau") if _r1h_ib else None))
+    # ...AND A DISK BUDGET MAY NOT DELETE A READING. TRAJ_MAX_NEAR used to
+    # `continue` above the history append, so a bite did not merely drop a log
+    # line -- the sample never happened for the RULE. It cannot bite today
+    # (14 series x 61 = 854 <= 900) but it binds at 15 series, and D_plan's
+    # pre-registered next step is 1.25x LIVE, at which point a disk constant
+    # would be an input to live entry sizing.
+    _r1hb = _offline_trade_loop([_r1h_mkt(3, 50, 60)],
+                                **dict(_r1h_kw,
+                                       flags=dict(_r1h_kw["flags"],
+                                                  TRAJ_MAX_NEAR=2)))
+    _r1hb_b = _kinds(_r1hb, "doubt_boost")
+    _r1hb_near = [r for r in _kinds(_r1hb, "traj") if r["near"]]
+    _r1hb_cl = _kinds(_r1hb, "traj_close")
+    ck(_r1hb["raised"] is None and len(_r1hb_b) == 1
+       and len(_r1hb_near) == 2
+       and int(_r1hb_b[0]["readings"]) > len(_r1hb_near)
+       and float(_r1hb_b[0]["low"]) < _DEFAULT_DOUBT_UNDER,
+       "R1: with the near RECORD budget cut to 2 the boost still fires off "
+       "%s readings -- the budget is disk protection and drops log lines, "
+       "never a decision input. It used to skip the reading itself, so a "
+       "constant chosen to protect the disk silently decided how big a live "
+       "bet was (%d near records written, %s)"
+       % (_r1hb_b[0].get("readings") if _r1hb_b else None, len(_r1hb_near),
+          ("%s dropped" % _r1hb_cl[0].get("dropped")) if _r1hb_cl
+          else "the close had not passed yet, so no traj_close"))
+
+    # NULL 3: no bank, no boost. one_coin_cap returns SIZE when the balance
+    # is unknown, so a failed balance read can never size us up.
+    _d1nb = _offline_trade_loop(_d1w, run_s=40.0, tau0=40,
+                                flags={"DOUBT_MULT": 1.5})
+    _d1nb_b = _kinds(_d1nb, "doubt_boost")
+    _d1nb_s = _kinds(_d1nb, "doubt_skip")
+    ck(_d1nb["raised"] is None and not _d1nb_b and _d1nb_s
+       and "nothing to add" in str(_d1nb_s[0]["why"]),
+       "R1 NULL: with the balance unreadable the boost is ALLOWED and adds "
+       "nothing -- A45's drawdown headroom is the cap, and an unknown bank "
+       "means the cap is SIZE. A failed balance read cannot size us up "
+       "(%s)" % (_d1nb_s[0].get("why") if _d1nb_s else "no record"))
+
     _pin_moved = [_n for _n in _OFFLINE_PINNED_FLAGS
                   if globals()[_n] != _pin_before[_n]]
     ck(not _pin_moved,
@@ -10428,6 +11768,7 @@ def apply_size(new_size, a, why, rec=None):
             # live path refuses the wider order while the paper path books it
             max_take_count=max(pintake.MAX_TAKE_COUNT,
                                new_size * max(ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0,
+                                              DOUBT_MULT,
                                               LATE_MULT, max_band_mult(), FLIP_MULT)),
             why=f"auto-size {old:g} -> {new_size:g}: {why}")
     except Exception as e:                        # a refused loosening must
@@ -10690,8 +12031,14 @@ def _depth_report(depths):
     }
 
 
-def trade_loop(a, rec, book, idx, series_index):
+def trade_loop(a, rec, book, idx, series_index, trec=None):
     live = a.live
+    # R4: the SECOND writer, for the trajectory only. main() points it at its
+    # own file so tens of MB a day of samples never reach the log the
+    # settlement readers share; the offline loop passes nothing, so the
+    # samples land in the trail the self-tests read. `rec` is the fallback and
+    # not a silent one: every trajectory record carries kind "traj".
+    _trec = rec if trec is None else trec
     fired = {}                 # close_s -> ticker we already fired on
     attempts = {}              # close_s -> orders SENT, filled or not
     last_edge = {}             # AMENDMENT 24: ticker -> (close_s, net edge)
@@ -10720,6 +12067,9 @@ def trade_loop(a, rec, book, idx, series_index):
     boosted = set()          # A53: (close_s, ticker) pairs an order was widened
                              # for, so a boosted LOSS can switch the boost off
     _boosted48 = set()       # A55: the same, for the last-seconds boost
+    _boosted_dbt = set()     # R1: the same, for the doubt boost -- one
+                             # doubt-boosted LOSS switches --doubt-mult off
+                             # for the rest of the run (the A53/A55 rail)
     boost_why = {}           # A58: (close_s, ticker) -> why the last-seconds
                              # boost did or did not fire, carried into the
                              # settled record so every trade can be asked
@@ -10772,6 +12122,44 @@ def trade_loop(a, rec, book, idx, series_index):
     # told apart from a blind one.
     near = {}                # close_s -> dict of the best look at that close
     dumped_seen = set()      # (close_s, ticker) already written as `dumped`
+    # ---- R4: THE TRAJECTORY. Records and in-memory history only. ----------
+    # Every one of these is keyed by close and popped in report_closes() AND
+    # in the 900 s backstop below the sampler, so none can grow with a
+    # 4,320-minute run. The one exception is named as one: `traj_blind_blk`
+    # has no close to key on, and is bounded by the number of distinct
+    # exception type names instead. (An earlier version of this comment said
+    # "every one of these" while `traj_blind` was popped by nothing -- a
+    # stated bound that was false for the only member that broke it.)
+    traj_hist = {}           # (close_s, ticker) -> [(now_s, fair)], the bot's
+                             # OWN pre-decision readings. R1's `_doubt` reads
+                             # this and nothing else; capped at TRAJ_HIST_MAX.
+    traj_at = {}             # (close_s, ticker) -> the last SAMPLED second,
+                             # so one market can leave at most one record a
+                             # second however fast the loop runs
+    traj_n = {}              # close_s -> FAR samples written (TRAJ_MAX)
+    traj_n_near = {}         # close_s -> NEAR samples written (TRAJ_MAX_NEAR),
+                             # a separate budget far samples can never spend
+    traj_drop = {}           # close_s -> samples the budgets refused, so a
+                             # bound that bites is visible instead of silent
+    traj_blind = set()       # (close_s, ticker, exception) already reported:
+                             # a sample that could not be taken says why ONCE
+    traj_blind_blk = set()   # ...and the same for a failure of the whole
+                             # block, keyed by exception name alone
+    look_at = {}             # (close_s, ticker) -> (t, want, price) at the
+                             # PREVIOUS look, for the sub-second price drop
+                             # the 1 Hz grid cannot see (D_plan section 5)
+    look_drop_n = {}         # (close_s, ticker) -> drops recorded, capped at
+                             # LOOK_DROP_MAX so a flapping book is bounded
+    traj_gate = {}           # (close_s, ticker) -> (pass number, gate name):
+                             # THE REAL GATE THAT REALLY REFUSED IT, written
+                             # by _gate() itself. Not a second copy of the
+                             # gate ladder -- a mirror would drift from the
+                             # ladder it mirrors, and this cannot.
+    _traj_pruned = [0]       # the second the backstop prune last ran, so it
+                             # runs once a second and not twenty times
+    _passn = 0               # loop passes so far, so a gate name can be tied
+                             # to the pass that produced it and a sample never
+                             # reports a refusal from an earlier pass
     # R2: how long the loop's passes took, attributed to the close that was
     # nearest when each pass STARTED. Records only -- nothing reads these to
     # decide anything, and report_closes() hands them back per close.
@@ -10842,6 +12230,14 @@ def trade_loop(a, rec, book, idx, series_index):
         nbg = near.setdefault(close_s_, _fresh_near())
         g = nbg.setdefault("gates", {})
         g[name] = g.get(name, 0) + 1
+        # R4: WHICH GATE REFUSED THIS MARKET ON THIS PASS. One dict write,
+        # ABOVE the dedupe return so it happens on every refusal and not only
+        # the first. The scan `continue`s at the first gate that fires, so the
+        # value left here by a pass IS that pass's first gate -- which is why
+        # the trajectory does not need a second copy of the gate ladder and
+        # therefore cannot drift from it. Decides nothing; keyed by close, so
+        # report_closes() pops it.
+        traj_gate[(close_s_, tk_)] = (_passn, name)
         key = (close_s_, tk_, name)
         if key in gate_seen:
             return
@@ -11003,6 +12399,21 @@ def trade_loop(a, rec, book, idx, series_index):
                         was=float(_DEFAULT_LATE_MULT))
                     print(f"  *** A LATE-BOOSTED LOSS on {tk}: --late-mult is "
                           f"OFF for the rest of this run ***")
+                # R1: the same rail for the doubt boost, and it is the
+                # operator's own condition -- "we aren't just going to boost a
+                # trade above our normal level then just lose a bunch of
+                # money". 0 losers in 66 doubt-flagged markets still leaves a
+                # 95% upper bound of 5.28% against a 2.44% base, so the zero
+                # is NOT established; this bounds the extra cost of being
+                # wrong about it at ONE trade's extra size.
+                if DOUBT_MULT > 1.0 and (close_s, tk) in _boosted_dbt:
+                    _dbt_was = float(DOUBT_MULT)
+                    globals()["DOUBT_MULT"] = 1.0
+                    rec("doubt_boost_off", ticker=tk, close_s=close_s,
+                        cost=round(cost, 4), pnl_c=round(100 * pnl, 2),
+                        was=_dbt_was, default=float(_DEFAULT_DOUBT_MULT))
+                    print(f"  *** A DOUBT-BOOSTED LOSS on {tk}: --doubt-mult "
+                          f"is OFF for the rest of this run ***")
             # A79: the ET day's running total, on disk, BEFORE the record is
             # written -- so a crash between the two loses the log line and not
             # the money. `live` only: a paper arm must never touch the file
@@ -11048,6 +12459,42 @@ def trade_loop(a, rec, book, idx, series_index):
             _ps = pass_slow.pop(cs, 0)
             _pgn = pass_gap_near.pop(cs, None)
             _psn = pass_slow_near.pop(cs, 0)
+            # ---- R4: the trajectory's own per-close line, and the prune ----
+            # It goes to the TRAJECTORY writer, never into `close_summary`:
+            # that record is read by pinattrib, pinlab, barcheck and the
+            # settlement readers, and adding a field to it would change a log
+            # every one of them already parses. This says how many samples
+            # each budget spent and how many it refused, so a bound that bites
+            # is on the record instead of silent -- which is the one thing
+            # v-instr1's first budget could not say about itself.
+            #
+            # THE PRUNE IS THE POINT OF DOING IT HERE. Four dicts keyed by
+            # close and two keyed by (close, ticker) all lose this close's
+            # entries now, so none of them can grow with a 4,320-minute run.
+            try:
+                _tjf = traj_n.pop(cs, 0)
+                _tjn = traj_n_near.pop(cs, 0)
+                _tjd = traj_drop.pop(cs, 0)
+                _tjk = [k for k in traj_hist if k[0] == cs]
+                _tjm = len(_tjk)
+                for _k in _tjk:
+                    traj_hist.pop(_k, None)
+                    traj_at.pop(_k, None)
+                for _k in [k for k in traj_gate if k[0] == cs]:
+                    traj_gate.pop(_k, None)
+                for _k in [k for k in look_at if k[0] == cs]:
+                    look_at.pop(_k, None)
+                    look_drop_n.pop(_k, None)
+                for _k in [k for k in traj_blind if k[0] == cs]:
+                    traj_blind.discard(_k)
+                if _tjf or _tjn or _tjd:
+                    _trec("traj_close", close_s=cs, far=_tjf, near=_tjn,
+                          dropped=_tjd, markets=_tjm,
+                          far_max=TRAJ_MAX, near_max=TRAJ_MAX_NEAR,
+                          every_s=TRAJ_EVERY_S, near_tau_s=TRAJ_NEAR_TAU_S,
+                          tau_max=TRAJ_TAU_MAX, unsummarised=False)
+            except Exception:                            # noqa: BLE001
+                pass
             if b is None:
                 rec("close_summary", close=cs, looks=nb["n"],
                     decided=nb["decided"], undecided=nb["undecided"],
@@ -11202,6 +12649,9 @@ def trade_loop(a, rec, book, idx, series_index):
                              f"errors", close_s_, tk_)
 
     while time.time() < end:
+        # R4: one integer add, so a recorded gate name can be tied to the pass
+        # that produced it. Nothing reads it to decide anything.
+        _passn += 1
         # AMENDMENT 71: EVERYTHING ABOVE THE HEDGE PASS IS NOW GUARDED.
         #
         # A69 moved the hedge above the risk check because a `continue` there
@@ -12115,6 +13565,286 @@ def trade_loop(a, rec, book, idx, series_index):
         except Exception:                                # noqa: BLE001
             pass
 
+        # ===================================================================
+        # R4 (2026-09-23): THE TRAJECTORY. See the TRAJ_* block at the top of
+        # the file for what defect this fixes and what the grid is.
+        #
+        # WHERE IT SITS AND WHY. Below the hedge pass, like `hedge_quote`
+        # above it, and ABOVE the risk check on purpose: the risk check's
+        # transient-pause branch ends in `continue`, so a block below it
+        # writes NOTHING for a paused close -- and a paused close is exactly
+        # the blindness that cost $107.95 on 2026-09-19 and the one a
+        # trajectory most needs to show. Nothing here can delay a hedge: the
+        # hedge pass for this iteration is already done, and the work is at
+        # most one book read, one index read and one fair() per market per
+        # SAMPLED SECOND, against the 20 Hz scan's twenty of each.
+        #
+        # IT DECIDES NOTHING. It reads `book`, `idx` and `fired`; it writes
+        # only its own dicts and its own records, through the trajectory
+        # writer. No gate is called, no refusal is recorded, `near` is not
+        # touched, and `traj_hist` is read by exactly one thing -- R1's
+        # `_doubt`, which can only ever RAISE a size.
+        #
+        # THE GATE FIELD IS THE REAL GATE. `_gate()` stamps
+        # traj_gate[(close, ticker)] = (pass, name) on every refusal, so the
+        # name here is the gate that ACTUALLY refused this market, not a
+        # second copy of the ladder that could drift from it. The scan has not
+        # run yet this pass, so the freshest possible stamp is the previous
+        # pass -- 50 ms at 20 Hz -- and `gate_pass_ago` says which, so a stale
+        # one can never be read as current.
+        try:
+            _tj_win = max(TAU_MAX, EARLY_TAU_MAX)
+            for _jtk, (_jiid, _jcs, _jk, _jd, _jxi) in seen_markets.items():
+                # K1's lesson, applied here: ONE market's sample must not silence
+                # the other ten. Without this a single bad market ends the whole
+                # pass's sampling and the gap looks like a quiet universe.
+                #
+                # `_jtau` IS SET BEFORE THE TRY, not as its first statement:
+                # assigned inside, a market that raises before reaching it
+                # writes the PREVIOUS market's tau into its own blind record,
+                # and a wrong number in a diagnostic is worse than a null.
+                _jtau = _jcs - now_s if isinstance(_jcs, (int, float)) else None
+                try:
+                    if not traj_due(_jtau):
+                        continue
+                    _jkey = (_jcs, _jtk)
+                    if traj_at.get(_jkey) == now_s:
+                        continue                 # one record a market a second
+                    # THE SECOND IS CONSUMED HERE, BEFORE THE BUDGETS, and that is
+                    # not a detail: with the budget first, a REFUSED second is
+                    # retried on all twenty passes of that second, so `dropped`
+                    # counted attempts (920) instead of seconds (46) and the one
+                    # number that says "a bound bit" would have been twenty times
+                    # the truth.
+                    traj_at[_jkey] = now_s
+                    _jnear = _jtau <= TRAJ_NEAR_TAU_S
+                    # R1'S INPUT WINDOW, AND IT IS NOT THE SAMPLER'S GRID.
+                    # min() so a far sample can never feed the history whatever
+                    # the two constants are set to -- see the DOUBT_HIST_TAU_S
+                    # comment for the nine-times-diluted population that cost.
+                    _jhist = _jtau <= min(DOUBT_HIST_TAU_S, TRAJ_NEAR_TAU_S)
+                    # THE BUDGETS ARE SEPARATE AND THE NEAR ONE CANNOT BE SPENT
+                    # BY FAR SAMPLES -- v-instr1's lesson, in the TRAJ_MAX_NEAR
+                    # comment. A refused sample is COUNTED, so a budget that
+                    # bites shows up in `traj_close` instead of looking like a
+                    # quiet market.
+                    #
+                    # AND A DISK BUDGET MAY NOT DECIDE ANYTHING. The near
+                    # budget used to `continue` HERE, above the `traj_hist`
+                    # append -- so a TRAJ_MAX_NEAR bite did not merely drop a
+                    # log line, it deleted a reading from the feature `_doubt`
+                    # minimises over: the sample never happened for the RULE.
+                    # It cannot bite today (14 series x 61 = 854 <= 900) but it
+                    # binds at 15 series, and D_plan's pre-registered next step
+                    # is 1.25x LIVE, at which point a disk constant would be an
+                    # input to live entry sizing. So a near sample always takes
+                    # its reading and always feeds the history; the budget
+                    # drops the RECORD, below. Far samples feed nothing, so
+                    # there the budget still skips the work outright.
+                    _jdrop = False
+                    if _jnear:
+                        _jdrop = traj_n_near.get(_jcs, 0) >= TRAJ_MAX_NEAR
+                    elif traj_n.get(_jcs, 0) >= TRAJ_MAX:
+                        traj_drop[_jcs] = traj_drop.get(_jcs, 0) + 1
+                        continue
+                    try:
+                        _jb = book.best(_jtk) or {}
+                    except Exception:                        # noqa: BLE001
+                        _jb = {}
+                    _jsec, _jspot, _jage = idx.spot(_jiid)
+                    _jsg = idx.sigma(_jiid)
+                    _jf = _jmu = _jsd = _jcush = _jr = None
+                    _jsig = None
+                    if _jsg is not None:
+                        _jsig = _jsg * SIGMA_STRESS
+                        _jf = fair(idx, _jiid, _jcs, now_s, _jk, _jsig,
+                                   round_digits=_jd)
+                        # THE SAME TWO-STEP THE SCAN USES: price it unwidened,
+                        # take the lean from that, then widen and price it again.
+                        # Widening moves confidence toward 0.5 and can never flip
+                        # the lean, so the lean off the unwidened number is the
+                        # lean -- and this way the trajectory's `fair` is the
+                        # number the gate would have seen, not a different model.
+                        if _jf is not None and WIDEN_ENABLED:
+                            _jwf = widen_factor(idx, _jiid, _jsg,
+                                                "yes" if _jf >= 0.5 else "no")
+                            if _jwf != 1.0:
+                                _jsig = _jsg * SIGMA_STRESS * _jwf
+                                _jf = fair(idx, _jiid, _jcs, now_s, _jk, _jsig,
+                                           round_digits=_jd)
+                    # mu, sd and the cushion come from the SAME arithmetic fair()
+                    # uses, so the record cannot drift from the model: sd is the
+                    # sd of the REMAINING window in price units, and the cushion
+                    # is how many of those sd our side is ahead by.
+                    _jK = eff_strike(_jk, _jd)
+                    _jwant = None if _jf is None else ("yes" if _jf >= 0.5 else "no")
+                    try:
+                        _jpart = idx.partial(_jiid, _jcs, now_s)
+                    except Exception:                        # noqa: BLE001
+                        _jpart = None
+                    if _jpart is not None and _jspot is not None:
+                        _jlk, _jr = _jpart
+                        _jmu = (_jlk + _jr * _jspot) / N_AVG
+                        if _jsig is not None and _jr > 0:
+                            _jsd = _jsig * math.sqrt(var_factor(int(_jr), [1.0]))
+                            if _jsd > 0:
+                                _jcush = (_jmu - _jK) / _jsd
+                                if _jwant == "no":
+                                    _jcush = -_jcush
+                    _jconf = (None if _jf is None
+                              else (_jf if _jwant == "yes" else 1.0 - _jf))
+                    # R1's history: the raw P(YES), never a side-converted number.
+                    # `_doubt` does the side conversion at the decision, because
+                    # the side we end up buying is not known here.
+                    #
+                    # ONLY INSIDE DOUBT_HIST_TAU_S. This one condition decides
+                    # R1's whole population: without it the minimum is taken
+                    # over readings up to five minutes out, where nothing is
+                    # locked and `fair` is a near coin-flip, and the flag fires
+                    # on 9x as many markets as the rule the +$2.95 was measured
+                    # on. The record below is still written for every sampled
+                    # second -- the trajectory is the wide thing; the RULE is
+                    # the narrow one.
+                    if _jf is not None and _jhist:
+                        _jh = traj_hist.setdefault(_jkey, [])
+                        _jh.append((now_s, float(_jf)))
+                        if len(_jh) > TRAJ_HIST_MAX:
+                            del _jh[:len(_jh) - TRAJ_HIST_MAX]
+                    if _jdrop:
+                        # the near budget bit -- AFTER the reading reached the
+                        # history, so the disk protection costs a log line and
+                        # never a decision input
+                        traj_drop[_jcs] = traj_drop.get(_jcs, 0) + 1
+                        continue
+                    # which side we already hold in this market, if any -- so a
+                    # reader can tell a pre-entry reading from a post-entry one
+                    _jhold = None
+                    _jpv = fired.get(_jcs)
+                    if _jpv:
+                        _jhold = (_jpv.get("sides") or {}).get(_jtk)
+                    _jg = traj_gate.get(_jkey)
+                    _jgate = _jgn = None
+                    if _jg is not None and _passn - int(_jg[0]) <= 1:
+                        _jgate, _jgn = _jg[1], _passn - int(_jg[0])
+                    elif not (TAU_MIN <= _jtau <= _tj_win):
+                        # NOT a refusal and never counted as one: the scan skips
+                        # these before any gate, and `_gate`'s own comment says
+                        # so. Named so the reader is not left guessing.
+                        _jgate, _jgn = "outside_window", 0
+                    _jopp = "no" if _jwant == "yes" else "yes"
+                    if _jnear:
+                        traj_n_near[_jcs] = traj_n_near.get(_jcs, 0) + 1
+                    else:
+                        traj_n[_jcs] = traj_n.get(_jcs, 0) + 1
+                    _trec(
+                        "traj", ticker=_jtk, close_s=_jcs, tau=_jtau,
+                        want=_jwant, held=_jhold,
+                        fair=(None if _jf is None else round(_jf, 5)),
+                        conf=(None if _jconf is None else round(_jconf, 5)),
+                        spot=_jspot, strike=_jk, eff_strike=_jK,
+                        mu=(None if _jmu is None else round(_jmu, 6)),
+                        sd=(None if _jsd is None else round(_jsd, 6)),
+                        cushion_sd=(None if _jcush is None else round(_jcush, 3)),
+                        remaining=_jr,
+                        sigma=(None if _jsig is None else round(_jsig, 6)),
+                        # our side's ask, and the OTHER side's ask -- which is
+                        # what insurance would have cost at this instant. Every
+                        # hedge-timing question in results/map_2026-09-22 had to
+                        # be answered off the tape for want of this column.
+                        ask=(None if _jwant is None else _jb.get(f"{_jwant}_ask")),
+                        ask_size=(None if _jwant is None
+                                  else _jb.get(f"{_jwant}_ask_size")),
+                        opp_ask=(None if _jwant is None
+                                 else _jb.get(f"{_jopp}_ask")),
+                        opp_size=(None if _jwant is None
+                                  else _jb.get(f"{_jopp}_ask_size")),
+                        book_age_ms=_jb.get("age_ms"),
+                        index_age_s=(None if _jage is None else round(_jage, 2)),
+                        gate=_jgate, gate_pass_ago=_jgn,
+                        near=bool(_jnear),
+                        entries_stopped=bool(state.get("entries_stopped")),
+                        paused=bool(state.get("paused_on")))
+                except Exception as _je:             # noqa: BLE001
+                    # A SAMPLE THAT DOES NOT HAPPEN SAYS WHY, ONCE. A71's
+                    # lesson on the hedge, applied to the instrument: a
+                    # silently missing second is indistinguishable from a
+                    # quiet market, which is the whole failure R4 exists to
+                    # fix. Deduped per (close, market, exception) because
+                    # this is a 20 Hz loop, and itself guarded.
+                    try:
+                        _jbk = (_jcs, _jtk, type(_je).__name__)
+                        if _jbk not in traj_blind:
+                            traj_blind.add(_jbk)
+                            _trec("traj_blind", ticker=_jtk, close_s=_jcs,
+                                  tau=_jtau, err=type(_je).__name__,
+                                  detail=str(_je)[:200], scope="market")
+                    except Exception:                # noqa: BLE001
+                        pass
+                    continue
+            # BOUNDED, NOT TIDY, AND THE BOUND IS PROVEN BY A SELF-TEST.
+            # report_closes() pops each close's entries as it summarises it,
+            # but it only summarises closes that reached `near` -- and a market
+            # watched at tau 300 with the scan window at 45 never touches
+            # `near` at all. So anything a quarter hour past its close is
+            # dropped here, or these five dicts would grow for the life of a
+            # 4,320-minute run. Once a second, not 20 times: the scan is over
+            # keys, and it decides nothing.
+            if _traj_pruned[0] != now_s:
+                _traj_pruned[0] = now_s
+                for _dk in [k for k in traj_at if k[0] < now_s - 900]:
+                    traj_at.pop(_dk, None)
+                    traj_hist.pop(_dk, None)
+                    traj_gate.pop(_dk, None)
+                for _dk in [k for k in look_at if k[0] < now_s - 900]:
+                    look_at.pop(_dk, None)
+                    look_drop_n.pop(_dk, None)
+                # traj_blind TOO. It was the one member of this family nothing
+                # ever popped, while the comment above the declarations claimed
+                # every one of them was -- a false statement about the only one
+                # that broke the bound. Keyed (close, ticker, exception), so
+                # the same close filter works.
+                for _dk in [k for k in traj_blind if k[0] < now_s - 900]:
+                    traj_blind.discard(_dk)
+                for _dk in [k for k in traj_n if k < now_s - 900] \
+                        + [k for k in traj_n_near if k < now_s - 900] \
+                        + [k for k in traj_drop if k < now_s - 900]:
+                    # A close report_closes() never summarised still gets its
+                    # volume line: it pops these counters, so a close that WAS
+                    # summarised leaves nothing here and cannot be counted
+                    # twice.
+                    _tf, _tn = traj_n.pop(_dk, 0), traj_n_near.pop(_dk, 0)
+                    _td = traj_drop.pop(_dk, 0)
+                    if _tf or _tn or _td:
+                        _trec("traj_close", close_s=_dk, far=_tf, near=_tn,
+                              dropped=_td, markets=None,
+                              far_max=TRAJ_MAX, near_max=TRAJ_MAX_NEAR,
+                              every_s=TRAJ_EVERY_S,
+                              near_tau_s=TRAJ_NEAR_TAU_S,
+                              tau_max=TRAJ_TAU_MAX, unsummarised=True)
+        except Exception as _jbe:                        # noqa: BLE001
+            # A BLOCK-LEVEL FAILURE SAYS SO TOO, and this handler used to be a
+            # bare `pass`. The per-market guard below covers a market; this one
+            # covers the `for` unpacking above it, the prune, and anything else
+            # outside that inner try -- so a change to the 5-tuple
+            # `seen_markets` holds would kill ALL sampling on EVERY pass with
+            # nothing written at all, indistinguishable from "nobody deployed
+            # it" or "a quiet night". That ambiguity is the exact failure R4
+            # exists to remove, and commit 2 of this change already removed it
+            # one level down. Deduped by exception type, and itself guarded.
+            # Its own set, NOT traj_blind: that one is pruned by close, and a
+            # block failure has no close, so a pruned key would be re-added and
+            # re-reported every second. This set is keyed by exception name
+            # alone -- bounded by the number of distinct exception types this
+            # process can raise, which is a handful, so it needs no prune.
+            try:
+                if type(_jbe).__name__ not in traj_blind_blk:
+                    traj_blind_blk.add(type(_jbe).__name__)
+                    _trec("traj_blind", ticker=None, close_s=None, tau=None,
+                          err=type(_jbe).__name__, detail=str(_jbe)[:200],
+                          scope="block")
+            except Exception:                            # noqa: BLE001
+                pass
+
         # A69: THE RISK CHECK, NOW BELOW THE HEDGE PASS. It used to sit above
         # it, and its transient-pause branch ends in `continue` -- so a paused
         # bot skipped the hedge and sat watching a position go to zero. See
@@ -12600,6 +14330,60 @@ def trade_loop(a, rec, book, idx, series_index):
                     na, ns = b.get("no_ask"), b.get("no_ask_size")
                     if na and ns and na < 1.0:
                         want, price, size = "no", na, ns
+                # ---- D_plan SECTION 5, THE HALF THE 1 Hz GRID CANNOT SEE ----
+                # "a rec() on any look whose own-side price fell >= LOOK_DROP_C
+                # since this bot's previous look at the same market, log-only,
+                # no gate". The DOGE close that cost $107.95 moved 98.0c ->
+                # 93.4c on our own side across three looks 244 ms apart (tau
+                # 12, 12, 11); the trajectory sampler takes ONE record a market
+                # a second, so all three collapse into one row and the
+                # population that question needs would never exist. This is the
+                # only place in the process that looks 20 times a second.
+                #
+                # IT DECIDES NOTHING AND IT CANNOT DELAY ANYTHING. Two dict
+                # operations on a path that has already read the book and
+                # already priced the market; a record only when the drop
+                # fires, which is rare; capped at LOOK_DROP_MAX per (close,
+                # market) so a flapping book cannot become a firehose; wrapped,
+                # so a fault here cannot cost the scan its market. It writes
+                # through the TRAJECTORY writer, so it never enters the log
+                # every settlement reader parses.
+                #
+                # A look with no side of its own is not a comparison: `want` is
+                # None when the model is undecided or nobody is offering, and
+                # "our side got cheaper" has no meaning then. Those looks do
+                # not update the reference either, so the next real look is
+                # compared against the last real one.
+                if want is not None and price is not None:
+                    try:
+                        _ldk = (close_s, tk)
+                        _ldp = look_at.get(_ldk)
+                        # `now`, NOT `now_s`: the whole point is a gap smaller
+                        # than a second. now_s is int(now), so three looks
+                        # 244 ms apart would all read a gap of zero -- the
+                        # exact collapse this record exists to escape.
+                        look_at[_ldk] = (now, want, float(price))
+                        _ldd = (float(_ldp[2]) - float(price)
+                                if _ldp is not None and _ldp[1] == want
+                                else 0.0)
+                        if (_ldd >= LOOK_DROP_C
+                                and look_drop_n.get(_ldk, 0) < LOOK_DROP_MAX):
+                            look_drop_n[_ldk] = look_drop_n.get(_ldk, 0) + 1
+                            _trec("price_drop", ticker=tk, close_s=close_s,
+                                  tau=tau, want=want,
+                                  was=round(float(_ldp[2]), 4),
+                                  now=round(float(price), 4),
+                                  drop_c=round(100.0 * _ldd, 2),
+                                  gap_ms=int(round(1000.0 * (now - _ldp[0]))),
+                                  fair=round(f, 5), ask_size=size,
+                                  opp_ask=b.get("no_ask" if want == "yes"
+                                                else "yes_ask"),
+                                  book_age_ms=b.get("age_ms"),
+                                  held=((prev.get("sides") or {}).get(tk)
+                                        if prev else None),
+                                  n=look_drop_n[_ldk], cap=LOOK_DROP_MAX)
+                    except Exception:                    # noqa: BLE001
+                        pass
                 # AMENDMENT 8, NOW READ AT THE RIGHT MOMENT. Never hold both sides
                 # of one market: the two legs cannot both win, so the pair costs
                 # more than the $1 it pays and locks in the difference. `want` is
@@ -13371,6 +15155,103 @@ def trade_loop(a, rec, book, idx, series_index):
                             bank=state.get("bank"), hwm=state.get("hwm"))
                     return take_n
 
+                # R1: 1.0 unless the doubt rule actually widened THIS order.
+                # `_stage46` reads it for the same reason A60 taught it to read
+                # LATE_MULT: without that, the early/top-up re-cap silently
+                # undoes the boost on every staged leg and the arm measures
+                # nothing -- which is the A51 failure, exactly.
+                _doubt_on = [1.0]
+
+                def _doubt(take_n):
+                    """R1 (2026-09-23): BUY MORE WHERE THE MODEL DOUBTED OUR
+                    SIDE EARLIER IN THIS CLOSE.
+
+                    The rule, from D_plan section 1: take the LOWEST
+                    confidence the model put on the side we are about to buy,
+                    at any reading at least DOUBT_LAG_S seconds earlier in
+                    THIS close. Under DOUBT_UNDER, multiply the entry size by
+                    DOUBT_MULT. No such reading -- unknown -- is 1.0x, never
+                    a boost: an unknown is not a doubt.
+
+                    THE HISTORY IS THE BOT'S OWN, IN MEMORY. `traj_hist` is
+                    written by the R4 sampler in this same loop, from this
+                    process's own fair() calls. Never a log file: a log read
+                    would be slow, and it would be a different population.
+
+                    `traj_hist` holds P(YES), because the side we buy is not
+                    known when the reading is taken. The conversion happens
+                    HERE -- f for a YES bet, 1-f for a NO bet -- and getting
+                    it backwards inverts the whole rule.
+
+                    IT ONLY EVER RAISES. Same shape as A48/A53: the cap is
+                    A45's drawdown headroom through one_coin_cap(), and the
+                    book and the close contract budget still bind, so it can
+                    never reach past a ceiling that already exists. It cannot
+                    refuse, delay or reprice anything, and it is not consulted
+                    on any hedge path.
+                    """
+                    _doubt_on[0] = 1.0
+                    if DOUBT_MULT <= 1.0:
+                        return take_n                    # OFF, and live is OFF
+                    _hist = traj_hist.get((close_s, tk)) or ()
+                    _lo = _at = None
+                    for _s, _fy in _hist:
+                        if now_s - _s < DOUBT_LAG_S:
+                            continue                     # not early enough
+                        _c = _fy if want == "yes" else 1.0 - _fy
+                        if _lo is None or _c < _lo:
+                            _lo, _at = _c, _s
+                    if _lo is None:
+                        rec("doubt_skip", ticker=tk, want=want, tau=tau,
+                            why="unknown: no reading %ds or more earlier"
+                                % DOUBT_LAG_S, readings=len(_hist),
+                            mult=DOUBT_MULT, under=DOUBT_UNDER,
+                            size=float(SIZE))
+                        return take_n
+                    if _lo >= DOUBT_UNDER:
+                        rec("doubt_skip", ticker=tk, want=want, tau=tau,
+                            why="no: the model never doubted our side "
+                                "(lowest %.5f, bar %.4g)" % (_lo, DOUBT_UNDER),
+                            low=round(float(_lo), 5), low_at_tau=close_s - _at,
+                            readings=len(_hist), mult=DOUBT_MULT,
+                            under=DOUBT_UNDER, size=float(SIZE))
+                        return take_n
+                    _capd = one_coin_cap(SIZE, state.get("bank"),
+                                         state.get("hwm"), mult=DOUBT_MULT)
+                    _availd = float(size)
+                    _limd = sweep_limit(f, price, want)
+                    if SWEEP_DEPTH and _limd > price + 1e-9:
+                        try:
+                            _availd = max(_availd,
+                                          float(book.buyable(tk, want, _limd)))
+                        except Exception:              # noqa: BLE001
+                            pass
+                    _roomd = (close_budget_for(prev, tk, tau=tau)
+                              - (prev.get("contracts", 0.0)
+                                 if prev else 0.0)) if CLOSE_BUDGET                               else float(SIZE) * DOUBT_MULT
+                    _wasd = take_n
+                    take_n = max(take_n, min(_capd, _availd, max(0.0, _roomd)))
+                    if take_n > _wasd + 1e-9:
+                        _doubt_on[0] = float(DOUBT_MULT)
+                        _boosted_dbt.add((close_s, tk))
+                        rec("doubt_boost", ticker=tk, want=want, tau=tau,
+                            low=round(float(_lo), 5), low_at_tau=close_s - _at,
+                            readings=len(_hist), under=DOUBT_UNDER,
+                            mult=DOUBT_MULT, was=round(_wasd, 2),
+                            now=round(take_n, 2), cap=round(_capd, 2),
+                            avail=round(_availd, 2), room=round(_roomd, 2),
+                            size=float(SIZE), bank=state.get("bank"),
+                            hwm=state.get("hwm"))
+                    else:
+                        rec("doubt_skip", ticker=tk, want=want, tau=tau,
+                            why="allowed, but nothing to add (book %.0f, "
+                                "headroom %.0f, close budget %.0f left)"
+                                % (_availd, _capd, max(0.0, _roomd)),
+                            low=round(float(_lo), 5), low_at_tau=close_s - _at,
+                            readings=len(_hist), mult=DOUBT_MULT,
+                            under=DOUBT_UNDER, size=float(SIZE))
+                    return take_n
+
                 def _stage46(take_n):
                     """AMENDMENT 46: an early or top-up leg keeps its cap however
                     much A35/A45 widened the order. A full leg is untouched.
@@ -13393,7 +15274,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     untouched when the confidence or jump bar fails, and a
                     larger cap cannot raise a number that was never widened."""
                     if EARLY_TAU_MAX > TAU_MAX and _leg46 != "full":
-                        _mult46 = max(band_mult(price),
+                        _mult46 = max(band_mult(price), _doubt_on[0],
                                       LATE_MULT if tau <= LATE_TAU else 1.0)
                         return min(take_n, staged_take(tau, take_n,
                                                        float(SIZE) * _mult46,
@@ -13428,6 +15309,7 @@ def trade_loop(a, rec, book, idx, series_index):
                     take_n = _widen45(take_n)  # paper
                     take_n = _late48(take_n)   # paper
                     take_n = _band53(take_n)   # paper
+                    take_n = _doubt(take_n)    # paper
                     take_n = _stage46(take_n)
                     _book_slot(price, take_n)
                     _poid46 = f"paper-{tk}-{now_s}"
@@ -13556,6 +15438,7 @@ def trade_loop(a, rec, book, idx, series_index):
                         take_n = _widen45(take_n)  # live
                         take_n = _late48(take_n)   # live
                         take_n = _band53(take_n)   # live
+                        take_n = _doubt(take_n)    # live
                         take_n = _stage46(take_n)
                         # A68: LAST, so no later widener can undo the cap. This is
                         # the line that makes the bounded rebuy bounded; without
@@ -13936,6 +15819,32 @@ def main():
                          "MULT x SIZE, through A45's drawdown headroom, the "
                          "book and the close budget. MULT in (1, "
                          "MAX_PER_CLOSE]. Repeatable. Shipped off.")
+    ap.add_argument("--doubt-mult", type=float, default=None, metavar="X",
+                    help="R1: when the model's own confidence in the side we "
+                         "are about to buy was BELOW --doubt-under at some "
+                         "reading at least 5 seconds earlier in this close, "
+                         "buy X times the size. Raises size only -- it can "
+                         "refuse nothing and it never touches a hedge, and "
+                         "the drawdown headroom, the close budget and the "
+                         "book all still bind. Our live record: 66 markets, "
+                         "62 closes, ZERO money-losers, +2.95 dollars a "
+                         "market against +0.70 book-wide. Paper only; "
+                         "shipped at 1.0, which is OFF.")
+    ap.add_argument("--traj-log", action="store_true",
+                    help="R4: keep the per-second trajectory file on a PAPER "
+                         "run too. Off by default and deliberately: 27 paper "
+                         "arms run from this file on the same box, a file each "
+                         "is about 1.6 gigabytes a day of near-duplicate "
+                         "data, and 5 gigabytes free stops the tape collector "
+                         "outright. The live bot always writes it. Nothing "
+                         "about a decision changes either way -- the history "
+                         "the size rule reads is in memory.")
+    ap.add_argument("--doubt-under", type=float, default=None, metavar="F",
+                    help="R1: the confidence below which an earlier reading "
+                         "counts as the model doubting our side. Default "
+                         "%.2f, the level the plus-2.95 was measured at. Does "
+                         "nothing without --doubt-mult above 1."
+                         % _DEFAULT_DOUBT_UNDER)
     ap.add_argument("--rebuy-mult", type=float, default=None, metavar="X",
                     # NO LITERAL PER-CENT SIGN. argparse formats help strings
                     # itself, so a `%%` written here survives my own % and
@@ -14353,6 +16262,36 @@ def main():
                 "nothing has measured that yet. It roughly doubles the loss "
                 "when the flip is wrong.")
         globals()["FLIP_MULT"] = float(a.flip_mult)
+    # ---- R1: --doubt-under, then --doubt-mult (order matters for the error) --
+    if a.doubt_under is not None:
+        if not (0.0 < a.doubt_under < 1.0):
+            raise SystemExit("--doubt-under is a confidence in (0, 1), got %r"
+                             % (a.doubt_under,))
+        globals()["DOUBT_UNDER"] = float(a.doubt_under)
+    if a.doubt_mult is not None:
+        if not (1.0 <= a.doubt_mult <= MAX_PER_CLOSE):
+            raise SystemExit("--doubt-mult must sit in [1, MAX_PER_CLOSE=%g] "
+                             "-- the close's own worst case bounds it, got %r"
+                             % (float(MAX_PER_CLOSE), a.doubt_mult))
+        # PAPER ONLY, until the pre-registered bar in
+        # results/map_2026-09-22/signature/D_plan.md section 1 is crossed.
+        # The money is stable (+$2.72 a market on every leave-one-day-out) and
+        # the SIGNIFICANCE is not: p = 0.00015 against a corrected bar of
+        # 1.13e-4 is a marginal FAIL, and 0 losers in 66 markets leaves a 95%
+        # upper bound of 5.28% on the true loss rate against a 2.44% base. A
+        # flag that raises risk on a marginal p-value is an arm, not a deploy.
+        if a.live and a.doubt_mult > 1.0:
+            raise SystemExit(
+                "--doubt-mult above 1.0 is PAPER ONLY. It buys MORE on a "
+                "population with zero losses in 66 markets -- which does not "
+                "exclude the 2.44% base rate (95% upper bound 5.28%) -- on a "
+                "p-value that fails the corrected bar. It ships live only "
+                "after the D_plan section 1 bar: the flag firing on 60+ "
+                "closes, 2 or fewer money-losers among them, at or above "
+                "+$2.00 a market and above the unflagged markets, with the "
+                "arm's realised entry price within 0.20c of live's on the "
+                "same markets.")
+        globals()["DOUBT_MULT"] = float(a.doubt_mult)
     if a.skip_band:
         _sb53 = []
         for _lo, _hi in a.skip_band:
@@ -14535,6 +16474,20 @@ def main():
         except Exception:
             pass
 
+    # R4: THE TRAJECTORY GOES IN ITS OWN FILE, and that is not tidiness. The
+    # decision log above is parsed by pinledger, pinattrib, pinlab, barcheck,
+    # earlyhindsight and the settlement readers, every one of them globbing
+    # `pinrun-<tag>-*.jsonl`; tens of MB a day of 1 Hz samples in there would
+    # slow all of them and change nothing about what they are looking for.
+    # `pintraj-` does not match that glob, and research/archive_runs.ps1 only
+    # git-adds `pinrun-live-*` / `pinrun-paper-*`, so these stay out of the
+    # repo as well (and .gitignore says so explicitly).
+    #
+    # AND ONLY THE LIVE BOT OPENS IT. 27 paper arms run from this same file;
+    # a file each was ~1.6 GB a day. traj_writer() is where that is decided
+    # and where the numbers are written down.
+    trajpath, trec = traj_writer(a.live, a.traj_log, RESULTS, tag, runid)
+
     # ===================================================================
     # AMENDMENT 27 (2026-09-14): ONE LIVE BOT. EVER.
     #
@@ -14580,6 +16533,7 @@ def main():
           f"tau<={TAU_MAX}s  pin {PIN}  edge>={100 * EDGE_FLOOR:.1f}c net  "
           f"loss abort ${a.loss_abort:.2f}  SIZE {a.size:g}")
     print(f"  log {logpath}")
+    print(f"  trajectory {trajpath or 'OFF (paper run; --traj-log to keep it)'}")
     # EVERY parameter that can change a trade decision goes in the log, so a
     # post-mortem can tell exactly which version produced a given result
     # without guessing from the timestamp. results/VERSIONS.md maps these to
@@ -14670,6 +16624,18 @@ def main():
         skip_bands=[list(b) for b in SKIP_BANDS],
         band_mults=[list(b) for b in BAND_MULTS],
         flip_mult=FLIP_MULT,
+        # R1: the Lab matches an arm to its log by the settings that
+        # distinguish it, so a doubt arm whose start record looked identical to
+        # the control's would show a blank tab -- the A47/A48/A49 lesson.
+        doubt_mult=DOUBT_MULT, doubt_under=DOUBT_UNDER,
+        doubt_lag_s=DOUBT_LAG_S, doubt_hist_tau_s=DOUBT_HIST_TAU_S,
+        # R4: the trajectory's grid, so a reader of `pintraj-*.jsonl` never has
+        # to guess which cadence produced it -- and WHETHER a file was opened
+        # at all, because a paper arm writes none and a reader who does not
+        # know that would read its absence as a bot that never sampled.
+        traj_every_s=TRAJ_EVERY_S, traj_near_tau_s=TRAJ_NEAR_TAU_S,
+        traj_tau_max=TRAJ_TAU_MAX, traj_file=trajpath,
+        look_drop_c=LOOK_DROP_C,
         early_min_price=EARLY_MIN_PRICE, early_max_edge=EARLY_MAX_EDGE,
         # THE RISK SETTING ITSELF, in the record. Bet size is derived from it,
         # so a log that shows the size but not the brake cannot say whether a
@@ -14697,6 +16663,7 @@ def main():
                               3.0 * _worst_close + 10.0),
             max_take_count=max(pintake.MAX_TAKE_COUNT,
                                float(a.size) * max(ONE_COIN_MAX if ONE_COIN_DEPTH else 1.0,
+                                                   DOUBT_MULT,
                                                    LATE_MULT, max_band_mult(), FLIP_MULT)),
             why=f"size {a.size:g}, worst close ${_worst_close:.2f}")
         arm(f"pinrun --live, size {a.size:g}, frozen rule tau<={TAU_MAX}"
@@ -14721,7 +16688,8 @@ def main():
 
     state = {}
     try:
-        state, fired = trade_loop(a, rec, book, idx, SERIES_TO_INDEX)
+        state, fired = trade_loop(a, rec, book, idx, SERIES_TO_INDEX,
+                                  trec=trec)
     finally:
         rec("end", state=dict(state), ledger=dict(pintake.LEDGER),
             index_stats=dict(idx.stats))
