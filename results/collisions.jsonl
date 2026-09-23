@@ -124,3 +124,15 @@
 {"note": "The tempting move -- use the 1/sec index to settle whether 248 closes are above break-even -- is illegal: our loss rate is not computable from the index, only the model-wrong rate is (F-R05). And that index-only rate is already pincalib's 2.90% (F-M04). Subsumed by the F-B06 x F-M07 lead, which uses the same population.", "pair": ["F-I01", "F-P02"], "t": "2026-09-22T08:50:56Z", "verdict": "nothing"}
 {"note": "F-B06's back-to-back arithmetic assumes closes are independent; F-M07 names a sub-population where the model fails 26x. Measure lag-1 persistence of model error from the index alone -- but strike(N+1)==settle(N) means adjacent closes share data by construction.", "pair": ["F-B06", "F-M07"], "t": "2026-09-22T08:50:56Z", "verdict": "lead"}
 {"note": "A zero-fill close carries no position, so at a 28.2% zero-fill rate F-P08's 18-close denominator is nearer 13. Recompute it on closes that actually held contracts.", "pair": ["F-P03", "F-P08"], "t": "2026-09-22T08:50:56Z", "verdict": "lead"}
+{"pair": ["F-P06", "F-X03"], "t": "20260923T0848Z", "verdict": "drawn"}
+{"pair": ["F-B05", "F-I03"], "t": "20260923T0848Z", "verdict": "drawn"}
+{"pair": ["F-B03", "F-P02"], "t": "20260923T0848Z", "verdict": "drawn"}
+{"pair": ["F-M02", "F-P07"], "t": "20260923T0848Z", "verdict": "drawn"}
+{"pair": ["F-B01", "F-P05"], "t": "20260923T0848Z", "verdict": "drawn"}
+{"pair": ["F-P02", "F-P05"], "t": "20260923T0848Z", "verdict": "drawn"}
+{"note": "hedge fill price has never been checked against the quote it was sent into; F-X03's fill-quality evidence is all entry orders", "pair": ["F-P06", "F-X03"], "t": "2026-09-23T08:50:35Z", "verdict": "lead"}
+{"note": "", "pair": ["F-B05", "F-I03"], "t": "2026-09-23T08:50:35Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-B03", "F-P02"], "t": "2026-09-23T08:50:35Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-M02", "F-P07"], "t": "2026-09-23T08:50:35Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-B01", "F-P05"], "t": "2026-09-23T08:50:35Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-P02", "F-P05"], "t": "2026-09-23T08:50:35Z", "verdict": "nothing"}
