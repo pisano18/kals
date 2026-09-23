@@ -8935,15 +8935,17 @@ def _selftest_body():
        "K3b: ...and NOTHING is bought for it: one hedge, 5 contracts, not "
        "one per second for the rest of the close (%d sends, %g contracts)"
        % (len(_kb2h), _hedged(_kb2, _kA)))
+    # `or [-1]`: a REVERTED build writes no such field, and a self-test whose
+    # own message raises is a crash, not a reported failure
     _kb2q = [r for r in _kinds(_kb2, "hedge_quote", _kA)
              if r.get("index_age_s") is not None]
-    ck(_kb2q and max(r["index_age_s"] for r in _kb2q) > MAX_INDEX_AGE_S
-       and max((r.get("belief_age_s") or 0) for r in _kb2q) >= 3,
+    _kb2qi = max([r["index_age_s"] for r in _kb2q] or [-1])
+    _kb2qb = max([r.get("belief_age_s") or 0 for r in _kb2q] or [-1])
+    ck(_kb2q and _kb2qi > MAX_INDEX_AGE_S and _kb2qb >= 3,
        "K3b: ...and every held second now carries the age of that market's "
-       "own index print AND of the belief beside it (index to %.2f s, "
-       "belief to %s s) -- the nine DOGE seconds would have been one glance"
-       % (max(r["index_age_s"] for r in _kb2q),
-          max((r.get("belief_age_s") or 0) for r in _kb2q)))
+       "own index print AND of the belief beside it (index to %s s, belief "
+       "to %s s) -- the nine DOGE seconds would have been one glance"
+       % (_kb2qi, _kb2qb))
 
     # C: THE REVERT CATCHER. The same world with a HEALTHY index. Before
     # K3b these two record trails were identical, field for field.
@@ -8972,16 +8974,19 @@ def _selftest_body():
     try:
         globals()["index_age"] = lambda _i, _d: 0.0
         _kb2f = _offline_trade_loop([_kb_A(freeze=6, collapse=4), _k1_B(1)])
+        _kb3f = _offline_trade_loop([_kb_A(collapse=4), _k1_B(1)])
         _kb1f = _offline_trade_loop([_kb_A(freeze=2, book_collapse=2),
                                      _k1_B(1)])
     finally:
         globals()["index_age"] = _kb_ia0
     ck(globals()["index_age"] is _kb_ia0 and _kb2f["raised"] is None
-       and not _kb_blind(_kb2f) and _kb_old(_kb2) == _kb_old(_kb2f),
+       and not _kb_blind(_kb2f) and _kb_old(_kb2) == _kb_old(_kb2f)
+       and _kb_old(_kb3) == _kb_old(_kb3f),
        "K3b: every pre-existing record and every pre-existing field is "
-       "IDENTICAL with the freeze seen and with it invisible -- the fix adds "
-       "records, and changes no decision, no alarm, no send and no refusal "
-       "(%d records either way)" % len(_kb_old(_kb2)))
+       "IDENTICAL with the freeze seen and with it invisible, and on a "
+       "HEALTHY feed too -- the fix adds records, and changes no decision, "
+       "no alarm, no send and no refusal (%d and %d records either way)"
+       % (len(_kb_old(_kb2)), len(_kb_old(_kb3))))
     ck(not _kinds(_kb1f, "hedge", _kA) and _kb_old(_kb1) != _kb_old(_kb1f),
        "K3b CONTROL: the same neutraliser DOES change the OPEN position's "
        "world -- with the staleness invisible the frozen model never hedges "
@@ -9009,16 +9014,19 @@ def _selftest_body():
     # can sit in front of a hedge or cost an old record.
     _src_kb = open(os.path.abspath(__file__), encoding="utf-8").read()
     _tl_kb = _src_kb[_src_kb.rindex(chr(10) + "def trade_loop("):]
-    _i_kb = (_tl_kb.index("if _hid in hedged or _hid.startswith("),
-             _tl_kb.index("_hage = index_age(idx, _hiid)"),
-             _tl_kb.index("# ---------------- end AMENDMENT 15"),
-             _tl_kb.index('rec("hedge_quote", ticker=_qtk'),
-             _tl_kb.index('rec("hedge_blind", ticker=_qtk'))
-    ck(list(_i_kb) == sorted(_i_kb),
+    # find(), never index(): a line that has been REMOVED must fail this
+    # check, not raise out of the self-test before it is reported.
+    _i_kb = tuple(_tl_kb.find(_s) for _s in (
+        "if _hid in hedged or _hid.startswith(",
+        "_hage = index_age(idx, _hiid)",
+        "# ---------------- end AMENDMENT 15",
+        'rec("hedge_quote", ticker=_qtk',
+        'rec("hedge_blind", ticker=_qtk'))
+    ck(min(_i_kb) > 0 and list(_i_kb) == sorted(_i_kb),
        "K3b: in trade_loop's own source the covered-position skip is still "
        "ABOVE K3's index read, and the new witness is BELOW the end of the "
        "hedge pass and AFTER the quote record it must never cost (%s)"
-       % (list(_i_kb) == sorted(_i_kb)))
+       % (_i_kb,))
 
     # ===================================================================
     # (4) 2026-09-22: A PAPER ARM MUST NOT STOP ON THE LIVE BOT'S DAY.
