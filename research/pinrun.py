@@ -9873,7 +9873,7 @@ def _selftest_body():
     # fault on its own kind only. The hedge must still fire, and every other
     # record must still be written.
     def _r4_fault(kind, kw):
-        if kind in ("traj", "traj_close"):
+        if kind in ("traj", "traj_close", "traj_blind"):
             raise TypeError("planted: type NoneType doesn't define __round__")
 
     _r4f_w = [_k1_A(), _k1_B(1)]
@@ -9882,7 +9882,7 @@ def _selftest_body():
     _r4f_h0 = _hedged(_r4f0, _kA)
     _r4f_h1 = _hedged(_r4f1, _kA)
     _r4f_t0 = [(r["kind"], r.get("ticker"), r["t"]) for r in _r4f0["recs"]
-               if r["kind"] not in ("traj", "traj_close")]
+               if r["kind"] not in ("traj", "traj_close", "traj_blind")]
     _r4f_t1 = [(r["kind"], r.get("ticker"), r["t"]) for r in _r4f1["recs"]]
     ck(_r4f1["raised"] is None and _r4f_h1 > 0 and _r4f_h1 == _r4f_h0
        and _r4f_t1 == _r4f_t0 and not _kinds(_r4f1, "traj"),
@@ -9906,6 +9906,28 @@ def _selftest_body():
        "columns null and the model columns intact, and the loop runs on -- "
        "a blind second is recorded as blind, never skipped (%d records)"
        % len(_r4bx_j))
+    # ...and ONE bad market must not silence the other ten. K1's lesson: the
+    # per-market guard is what makes a gap mean "the market was quiet" rather
+    # than "something threw two markets ago".
+    _r4mx = dict(_r4t_mkt(4, lambda t: 0.999))
+    _r4mx["fair"] = (lambda t: (_ for _ in ()).throw(
+        TypeError("planted: NoneType has no __round__")))
+    _r4mw = [_r4mx] + [_r4t_mkt(30 + i, (lambda t: 0.999)) for i in range(3)]
+    _r4m = _offline_trade_loop(_r4mw, run_s=30.0, tau0=200)
+    _r4m_j = _kinds(_r4m, "traj")
+    _r4m_tk = {r["ticker"] for r in _r4m_j}
+    _r4m_b = _kinds(_r4m, "traj_blind")
+    ck(_r4m["raised"] is None and len(_r4m_tk) == 3
+       and _r4mx["tk"] not in _r4m_tk and len(_r4m_j) >= 9
+       and len(_r4m_b) == 1 and _r4m_b[0]["ticker"] == _r4mx["tk"]
+       and _r4m_b[0]["err"] == "TypeError",
+       "R4: a market whose MODEL raises drops its own sample, says so ONCE "
+       "as `traj_blind` (%s), and nothing else -- the other three are all "
+       "still sampled (%d records over %d markets). A silently missing "
+       "second is indistinguishable from a quiet market, which is the exact "
+       "failure this instrument exists to fix"
+       % (_r4m_b[0].get("err") if _r4m_b else "NOTHING RECORDED",
+          len(_r4m_j), len(_r4m_tk)))
 
     # ---- 5: AT THE SHIPPED SETTINGS, NOTHING CHANGED. PROVEN. ----------
     # Three worlds, each run twice: once with the sampler made inert
@@ -9975,9 +9997,9 @@ def _selftest_body():
                                                              or {})))
         _on_calls = list(_r4id_calls)
         _off_tr = _r4_scrub([r for r in _off["recs"]
-                             if r["kind"] not in ("traj", "traj_close")])
+                             if r["kind"] not in ("traj", "traj_close", "traj_blind")])
         _on_tr = _r4_scrub([r for r in _on["recs"]
-                            if r["kind"] not in ("traj", "traj_close")])
+                            if r["kind"] not in ("traj", "traj_close", "traj_blind")])
         _same = (_off_tr == _on_tr
                  and _r4_scrub(_off["posts"]) == _r4_scrub(_on["posts"])
                  and _off_calls == _on_calls
@@ -11171,6 +11193,8 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                              # a separate budget far samples can never spend
     traj_drop = {}           # close_s -> samples the budgets refused, so a
                              # bound that bites is visible instead of silent
+    traj_blind = set()       # (close_s, ticker, exception) already reported:
+                             # a sample that could not be taken says why ONCE
     traj_gate = {}           # (close_s, ticker) -> (pass number, gate name):
                              # THE REAL GATE THAT REALLY REFUSED IT, written
                              # by _gate() itself. Not a second copy of the
@@ -12394,134 +12418,155 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
         try:
             _tj_win = max(TAU_MAX, EARLY_TAU_MAX)
             for _jtk, (_jiid, _jcs, _jk, _jd, _jxi) in seen_markets.items():
-                _jtau = _jcs - now_s
-                if not traj_due(_jtau):
-                    continue
-                _jkey = (_jcs, _jtk)
-                if traj_at.get(_jkey) == now_s:
-                    continue                 # one record a market a second
-                # THE SECOND IS CONSUMED HERE, BEFORE THE BUDGETS, and that is
-                # not a detail: with the budget first, a REFUSED second is
-                # retried on all twenty passes of that second, so `dropped`
-                # counted attempts (920) instead of seconds (46) and the one
-                # number that says "a bound bit" would have been twenty times
-                # the truth.
-                traj_at[_jkey] = now_s
-                _jnear = _jtau <= TRAJ_NEAR_TAU_S
-                # THE BUDGETS ARE SEPARATE AND THE NEAR ONE CANNOT BE SPENT
-                # BY FAR SAMPLES -- v-instr1's lesson, in the TRAJ_MAX_NEAR
-                # comment. A refused sample is COUNTED, so a budget that
-                # bites shows up in `traj_close` instead of looking like a
-                # quiet market.
-                if _jnear:
-                    if traj_n_near.get(_jcs, 0) >= TRAJ_MAX_NEAR:
+                # K1's lesson, applied here: ONE market's sample must not silence
+                # the other ten. Without this a single bad market ends the whole
+                # pass's sampling and the gap looks like a quiet universe.
+                try:
+                    _jtau = _jcs - now_s
+                    if not traj_due(_jtau):
+                        continue
+                    _jkey = (_jcs, _jtk)
+                    if traj_at.get(_jkey) == now_s:
+                        continue                 # one record a market a second
+                    # THE SECOND IS CONSUMED HERE, BEFORE THE BUDGETS, and that is
+                    # not a detail: with the budget first, a REFUSED second is
+                    # retried on all twenty passes of that second, so `dropped`
+                    # counted attempts (920) instead of seconds (46) and the one
+                    # number that says "a bound bit" would have been twenty times
+                    # the truth.
+                    traj_at[_jkey] = now_s
+                    _jnear = _jtau <= TRAJ_NEAR_TAU_S
+                    # THE BUDGETS ARE SEPARATE AND THE NEAR ONE CANNOT BE SPENT
+                    # BY FAR SAMPLES -- v-instr1's lesson, in the TRAJ_MAX_NEAR
+                    # comment. A refused sample is COUNTED, so a budget that
+                    # bites shows up in `traj_close` instead of looking like a
+                    # quiet market.
+                    if _jnear:
+                        if traj_n_near.get(_jcs, 0) >= TRAJ_MAX_NEAR:
+                            traj_drop[_jcs] = traj_drop.get(_jcs, 0) + 1
+                            continue
+                    elif traj_n.get(_jcs, 0) >= TRAJ_MAX:
                         traj_drop[_jcs] = traj_drop.get(_jcs, 0) + 1
                         continue
-                elif traj_n.get(_jcs, 0) >= TRAJ_MAX:
-                    traj_drop[_jcs] = traj_drop.get(_jcs, 0) + 1
+                    try:
+                        _jb = book.best(_jtk) or {}
+                    except Exception:                        # noqa: BLE001
+                        _jb = {}
+                    _jsec, _jspot, _jage = idx.spot(_jiid)
+                    _jsg = idx.sigma(_jiid)
+                    _jf = _jmu = _jsd = _jcush = _jr = None
+                    _jsig = None
+                    if _jsg is not None:
+                        _jsig = _jsg * SIGMA_STRESS
+                        _jf = fair(idx, _jiid, _jcs, now_s, _jk, _jsig,
+                                   round_digits=_jd)
+                        # THE SAME TWO-STEP THE SCAN USES: price it unwidened,
+                        # take the lean from that, then widen and price it again.
+                        # Widening moves confidence toward 0.5 and can never flip
+                        # the lean, so the lean off the unwidened number is the
+                        # lean -- and this way the trajectory's `fair` is the
+                        # number the gate would have seen, not a different model.
+                        if _jf is not None and WIDEN_ENABLED:
+                            _jwf = widen_factor(idx, _jiid, _jsg,
+                                                "yes" if _jf >= 0.5 else "no")
+                            if _jwf != 1.0:
+                                _jsig = _jsg * SIGMA_STRESS * _jwf
+                                _jf = fair(idx, _jiid, _jcs, now_s, _jk, _jsig,
+                                           round_digits=_jd)
+                    # mu, sd and the cushion come from the SAME arithmetic fair()
+                    # uses, so the record cannot drift from the model: sd is the
+                    # sd of the REMAINING window in price units, and the cushion
+                    # is how many of those sd our side is ahead by.
+                    _jK = eff_strike(_jk, _jd)
+                    _jwant = None if _jf is None else ("yes" if _jf >= 0.5 else "no")
+                    try:
+                        _jpart = idx.partial(_jiid, _jcs, now_s)
+                    except Exception:                        # noqa: BLE001
+                        _jpart = None
+                    if _jpart is not None and _jspot is not None:
+                        _jlk, _jr = _jpart
+                        _jmu = (_jlk + _jr * _jspot) / N_AVG
+                        if _jsig is not None and _jr > 0:
+                            _jsd = _jsig * math.sqrt(var_factor(int(_jr), [1.0]))
+                            if _jsd > 0:
+                                _jcush = (_jmu - _jK) / _jsd
+                                if _jwant == "no":
+                                    _jcush = -_jcush
+                    _jconf = (None if _jf is None
+                              else (_jf if _jwant == "yes" else 1.0 - _jf))
+                    # R1's history: the raw P(YES), never a side-converted number.
+                    # `_doubt` does the side conversion at the decision, because
+                    # the side we end up buying is not known here.
+                    if _jf is not None:
+                        _jh = traj_hist.setdefault(_jkey, [])
+                        _jh.append((now_s, float(_jf)))
+                        if len(_jh) > TRAJ_HIST_MAX:
+                            del _jh[:len(_jh) - TRAJ_HIST_MAX]
+                    # which side we already hold in this market, if any -- so a
+                    # reader can tell a pre-entry reading from a post-entry one
+                    _jhold = None
+                    _jpv = fired.get(_jcs)
+                    if _jpv:
+                        _jhold = (_jpv.get("sides") or {}).get(_jtk)
+                    _jg = traj_gate.get(_jkey)
+                    _jgate = _jgn = None
+                    if _jg is not None and _passn - int(_jg[0]) <= 1:
+                        _jgate, _jgn = _jg[1], _passn - int(_jg[0])
+                    elif not (TAU_MIN <= _jtau <= _tj_win):
+                        # NOT a refusal and never counted as one: the scan skips
+                        # these before any gate, and `_gate`'s own comment says
+                        # so. Named so the reader is not left guessing.
+                        _jgate, _jgn = "outside_window", 0
+                    _jopp = "no" if _jwant == "yes" else "yes"
+                    if _jnear:
+                        traj_n_near[_jcs] = traj_n_near.get(_jcs, 0) + 1
+                    else:
+                        traj_n[_jcs] = traj_n.get(_jcs, 0) + 1
+                    _trec(
+                        "traj", ticker=_jtk, close_s=_jcs, tau=_jtau,
+                        want=_jwant, held=_jhold,
+                        fair=(None if _jf is None else round(_jf, 5)),
+                        conf=(None if _jconf is None else round(_jconf, 5)),
+                        spot=_jspot, strike=_jk, eff_strike=_jK,
+                        mu=(None if _jmu is None else round(_jmu, 6)),
+                        sd=(None if _jsd is None else round(_jsd, 6)),
+                        cushion_sd=(None if _jcush is None else round(_jcush, 3)),
+                        remaining=_jr,
+                        sigma=(None if _jsig is None else round(_jsig, 6)),
+                        # our side's ask, and the OTHER side's ask -- which is
+                        # what insurance would have cost at this instant. Every
+                        # hedge-timing question in results/map_2026-09-22 had to
+                        # be answered off the tape for want of this column.
+                        ask=(None if _jwant is None else _jb.get(f"{_jwant}_ask")),
+                        ask_size=(None if _jwant is None
+                                  else _jb.get(f"{_jwant}_ask_size")),
+                        opp_ask=(None if _jwant is None
+                                 else _jb.get(f"{_jopp}_ask")),
+                        opp_size=(None if _jwant is None
+                                  else _jb.get(f"{_jopp}_ask_size")),
+                        book_age_ms=_jb.get("age_ms"),
+                        index_age_s=(None if _jage is None else round(_jage, 2)),
+                        gate=_jgate, gate_pass_ago=_jgn,
+                        near=bool(_jnear),
+                        entries_stopped=bool(state.get("entries_stopped")),
+                        paused=bool(state.get("paused_on")))
+                except Exception as _je:             # noqa: BLE001
+                    # A SAMPLE THAT DOES NOT HAPPEN SAYS WHY, ONCE. A71's
+                    # lesson on the hedge, applied to the instrument: a
+                    # silently missing second is indistinguishable from a
+                    # quiet market, which is the whole failure R4 exists to
+                    # fix. Deduped per (close, market, exception) because
+                    # this is a 20 Hz loop, and itself guarded.
+                    try:
+                        _jbk = (_jcs, _jtk, type(_je).__name__)
+                        if _jbk not in traj_blind:
+                            traj_blind.add(_jbk)
+                            _trec("traj_blind", ticker=_jtk, close_s=_jcs,
+                                  tau=_jtau, err=type(_je).__name__,
+                                  detail=str(_je)[:200])
+                    except Exception:                # noqa: BLE001
+                        pass
                     continue
-                try:
-                    _jb = book.best(_jtk) or {}
-                except Exception:                        # noqa: BLE001
-                    _jb = {}
-                _jsec, _jspot, _jage = idx.spot(_jiid)
-                _jsg = idx.sigma(_jiid)
-                _jf = _jmu = _jsd = _jcush = _jr = None
-                _jsig = None
-                if _jsg is not None:
-                    _jsig = _jsg * SIGMA_STRESS
-                    _jf = fair(idx, _jiid, _jcs, now_s, _jk, _jsig,
-                               round_digits=_jd)
-                    # THE SAME TWO-STEP THE SCAN USES: price it unwidened,
-                    # take the lean from that, then widen and price it again.
-                    # Widening moves confidence toward 0.5 and can never flip
-                    # the lean, so the lean off the unwidened number is the
-                    # lean -- and this way the trajectory's `fair` is the
-                    # number the gate would have seen, not a different model.
-                    if _jf is not None and WIDEN_ENABLED:
-                        _jwf = widen_factor(idx, _jiid, _jsg,
-                                            "yes" if _jf >= 0.5 else "no")
-                        if _jwf != 1.0:
-                            _jsig = _jsg * SIGMA_STRESS * _jwf
-                            _jf = fair(idx, _jiid, _jcs, now_s, _jk, _jsig,
-                                       round_digits=_jd)
-                # mu, sd and the cushion come from the SAME arithmetic fair()
-                # uses, so the record cannot drift from the model: sd is the
-                # sd of the REMAINING window in price units, and the cushion
-                # is how many of those sd our side is ahead by.
-                _jK = eff_strike(_jk, _jd)
-                _jwant = None if _jf is None else ("yes" if _jf >= 0.5 else "no")
-                try:
-                    _jpart = idx.partial(_jiid, _jcs, now_s)
-                except Exception:                        # noqa: BLE001
-                    _jpart = None
-                if _jpart is not None and _jspot is not None:
-                    _jlk, _jr = _jpart
-                    _jmu = (_jlk + _jr * _jspot) / N_AVG
-                    if _jsig is not None and _jr > 0:
-                        _jsd = _jsig * math.sqrt(var_factor(int(_jr), [1.0]))
-                        if _jsd > 0:
-                            _jcush = (_jmu - _jK) / _jsd
-                            if _jwant == "no":
-                                _jcush = -_jcush
-                _jconf = (None if _jf is None
-                          else (_jf if _jwant == "yes" else 1.0 - _jf))
-                # R1's history: the raw P(YES), never a side-converted number.
-                # `_doubt` does the side conversion at the decision, because
-                # the side we end up buying is not known here.
-                if _jf is not None:
-                    _jh = traj_hist.setdefault(_jkey, [])
-                    _jh.append((now_s, float(_jf)))
-                    if len(_jh) > TRAJ_HIST_MAX:
-                        del _jh[:len(_jh) - TRAJ_HIST_MAX]
-                # which side we already hold in this market, if any -- so a
-                # reader can tell a pre-entry reading from a post-entry one
-                _jhold = None
-                _jpv = fired.get(_jcs)
-                if _jpv:
-                    _jhold = (_jpv.get("sides") or {}).get(_jtk)
-                _jg = traj_gate.get(_jkey)
-                _jgate = _jgn = None
-                if _jg is not None and _passn - int(_jg[0]) <= 1:
-                    _jgate, _jgn = _jg[1], _passn - int(_jg[0])
-                elif not (TAU_MIN <= _jtau <= _tj_win):
-                    # NOT a refusal and never counted as one: the scan skips
-                    # these before any gate, and `_gate`'s own comment says
-                    # so. Named so the reader is not left guessing.
-                    _jgate, _jgn = "outside_window", 0
-                _jopp = "no" if _jwant == "yes" else "yes"
-                if _jnear:
-                    traj_n_near[_jcs] = traj_n_near.get(_jcs, 0) + 1
-                else:
-                    traj_n[_jcs] = traj_n.get(_jcs, 0) + 1
-                _trec(
-                    "traj", ticker=_jtk, close_s=_jcs, tau=_jtau,
-                    want=_jwant, held=_jhold,
-                    fair=(None if _jf is None else round(_jf, 5)),
-                    conf=(None if _jconf is None else round(_jconf, 5)),
-                    spot=_jspot, strike=_jk, eff_strike=_jK,
-                    mu=(None if _jmu is None else round(_jmu, 6)),
-                    sd=(None if _jsd is None else round(_jsd, 6)),
-                    cushion_sd=(None if _jcush is None else round(_jcush, 3)),
-                    remaining=_jr,
-                    sigma=(None if _jsig is None else round(_jsig, 6)),
-                    # our side's ask, and the OTHER side's ask -- which is
-                    # what insurance would have cost at this instant. Every
-                    # hedge-timing question in results/map_2026-09-22 had to
-                    # be answered off the tape for want of this column.
-                    ask=(None if _jwant is None else _jb.get(f"{_jwant}_ask")),
-                    ask_size=(None if _jwant is None
-                              else _jb.get(f"{_jwant}_ask_size")),
-                    opp_ask=(None if _jwant is None
-                             else _jb.get(f"{_jopp}_ask")),
-                    opp_size=(None if _jwant is None
-                              else _jb.get(f"{_jopp}_ask_size")),
-                    book_age_ms=_jb.get("age_ms"),
-                    index_age_s=(None if _jage is None else round(_jage, 2)),
-                    gate=_jgate, gate_pass_ago=_jgn,
-                    near=bool(_jnear),
-                    entries_stopped=bool(state.get("entries_stopped")),
-                    paused=bool(state.get("paused_on")))
             # BOUNDED, NOT TIDY, AND THE BOUND IS PROVEN BY A SELF-TEST.
             # report_closes() pops each close's entries as it summarises it,
             # but it only summarises closes that reached `near` -- and a market
