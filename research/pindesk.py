@@ -230,6 +230,16 @@ class Ledger:
         # disagree, which is how the self-test read the real account's books
         # while believing it had been isolated.
         rows = pinledger.load_cache(pinledger.LEDGER)
+        # which side the bot BOUGHT, from its own records, so a hedged market
+        # whose two legs tie on count can still be labelled. Entry orders only
+        # (a hedge is the other side by definition).
+        _log_side = {}
+        for o in self.orders:
+            if o.get("tk") and o.get("want") in ("yes", "no") and not o.get("hedge"):
+                _log_side.setdefault(o["tk"], o["want"])
+        for sg in self.signals:
+            if sg.get("tk") and sg.get("want") in ("yes", "no"):
+                _log_side.setdefault(sg["tk"], sg["want"])
         out = []
         for s in rows.values():
             tk = s.get("ticker") or ""
@@ -238,8 +248,17 @@ class Ledger:
                 "t": parse_t(st[:19] + "Z" if len(st) > 19 else st),
                 "tk": tk,
                 "pnl": pinledger.pnl(s),
-                "cost": None,
-                "want": s.get("market_result"),
+                # PAID and SIDE, from Kalshi's own cost and count fields.
+                # 2026-09-23, the operator: "the paid column on last settled
+                # bets isn't working". When money moved to the ledger these
+                # were left as None and market_result, so every settled row
+                # showed Paid "?" and a Side that was the market's OUTCOME,
+                # not the side we bought. `_side_cost` reads the per-side
+                # count and cost: one side only -> that is ours; both sides
+                # (a hedged market) -> the ENTRY side is the bigger count,
+                # and on a tie the log's own fill decides.
+                "cost": _side_cost(s, _log_side.get(tk))[1],
+                "want": _side_cost(s, _log_side.get(tk))[0],
                 "result": s.get("market_result"),
                 "close": pinflat.close_epoch(tk),
                 "file": "kalshi",
@@ -984,6 +1003,35 @@ def _ram_free_gb():
 
 
 REC_FRESH_S = 300   # a busy channel writes every second; 5 min silent = deaf
+
+
+def _side_cost(s, log_side=None):
+    """(side we bought, dollars per contract) from a Kalshi settlement row.
+
+    Kalshi gives yes_count_fp / yes_total_cost_dollars and the no pair. An
+    unhedged market has one side only. A hedged market has both: the entry is
+    the bigger count (the hedge can only match or under-cover; A76 half-hedges
+    and give-ups are smaller), and on an exact tie `log_side` breaks it -- the
+    bot's own record of what it wanted. Returns (None, None) when the row
+    carries no counts, never a guess."""
+    import pinledger          # imported here, as _load_kalshi does: pinledger
+    yc = pinledger.money(s, "yes_count_fp")
+    nc = pinledger.money(s, "no_count_fp")
+    yd = pinledger.money(s, "yes_total_cost_dollars")
+    nd = pinledger.money(s, "no_total_cost_dollars")
+    if yc <= 0 and nc <= 0:
+        return (None, None)
+    if yc > 0 and nc <= 0:
+        return ("yes", yd / yc)
+    if nc > 0 and yc <= 0:
+        return ("no", nd / nc)
+    if abs(yc - nc) > 1e-9:
+        side = "yes" if yc > nc else "no"
+    elif log_side in ("yes", "no"):
+        side = log_side
+    else:
+        return (None, None)      # a tie with nothing to break it: say so
+    return (side, (yd / yc) if side == "yes" else (nd / nc))
 
 
 def recorder_ok(root, now=None):
@@ -4032,6 +4080,27 @@ def selftest():
     ck(close_et("KXBNB15M-26SEP161000-00") == "10:00 AM", "the ticker clock is ET: 26SEP161000 closes 10:00 AM ET")
     ck(et_day(pinflat.close_epoch("KXXRP15M-26SEP170000-00")) == "2026-09-17",
        "THE OPERATOR'S CHECK: the midnight-ET XRP close belongs to the 17th, not the 16th")
+    # PAID and SIDE from Kalshi's own row (the operator, 2026-09-23: "the paid
+    # column on last settled bets isn't working" -- it was None for every row
+    # since money moved to the ledger, and Side showed the market's RESULT).
+    ck(_side_cost({"no_count_fp": "13.00", "no_total_cost_dollars": "2.649",
+                   "yes_count_fp": "0", "yes_total_cost_dollars": "0"})
+       == ("no", 2.649 / 13.0),
+       "unhedged: the only side with contracts is ours, at its own average price")
+    _hedged = {"no_count_fp": "13.00", "no_total_cost_dollars": "2.649000",
+               "yes_count_fp": "13.00", "yes_total_cost_dollars": "12.741130"}
+    ck(_side_cost(_hedged, "no")[0] == "no"
+       and abs(_side_cost(_hedged, "no")[1] - 2.649 / 13.0) < 1e-9,
+       "THE REAL DOGE 10:45 PM ROW: 13 bought and 13 insured tie on count, so "
+       "the bot's own record breaks the tie -- NO at 20.4c, not the 98.0c "
+       "insurance leg")
+    ck(_side_cost(_hedged) == (None, None),
+       "NULL: a tie with nothing to break it says 'unknown', never a guess")
+    ck(_side_cost({"yes_count_fp": "80", "yes_total_cost_dollars": "78.4",
+                   "no_count_fp": "40", "no_total_cost_dollars": "18.0"})[0] == "yes",
+       "a half-hedged market: the ENTRY is the bigger count")
+    ck(_side_cost({"yes_count_fp": "0", "no_count_fp": "0"}) == (None, None),
+       "NULL: a row with no contracts at all is unknown, not zero")
     ck(_bank_from_why("bank $500.67") == 500.67 and _bank_from_why("bank $1,234.50") == 1234.5, "bank parses from the autosize reason")
     ck(_bank_from_why("size cap") is None, "NULL: no bank in the reason")
     ck(sort_key("$+1.75") < sort_key("$+15.04") and sort_key("98.0c") < sort_key("100.0c") and sort_key("-3.5%") < sort_key("2%"),
