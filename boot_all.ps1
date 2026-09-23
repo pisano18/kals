@@ -178,6 +178,16 @@ function PidFileAlive($path) {
 
 $procs = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'python.exe', 'powershell.exe', 'pwsh.exe' })
 $blind = @($procs | Where-Object { $_.Name -eq 'python.exe' -and -not $_.CommandLine }).Count
+# 2026-09-23: SAY THIS EVERY RUN, not only when refusing. This script ran as a
+# LIMITED token while the session that launched the fleet was elevated, so
+# Windows returned an empty command line for 31 python processes and boot_all
+# refused to start or kill anything for 21 hours -- logging only "all up;
+# nothing to do". The whole recovery layer, including the stuck-recorder kill,
+# was a no-op and nothing said so. KalsBoot now runs RunLevel=Highest; this
+# line is the evidence that it still can see.
+$pyAll = @($procs | Where-Object { $_.Name -eq 'python.exe' }).Count
+Say ("visible: {0} python process(es), {1} blind (no command line){2}" -f `
+     $pyAll, $blind, $(if ($blind -gt 0) { " -- RECOVERY IS DEGRADED: this script cannot identify them, so it will refuse to start or kill anything. Check that KalsBoot runs with highest privileges and that nothing was started from an elevated shell." } else { "" }))
 function Running($like) { return [bool]($procs | Where-Object { $_.CommandLine -like $like -and $_.ProcessId -ne $PID }) }
 # python scripts are matched on python.exe ONLY: a PowerShell whose command
 # text merely mentions 'pinphone.py' (an operator typing a check, or this very
