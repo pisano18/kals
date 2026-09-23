@@ -1,0 +1,107 @@
+pinrun read from: C:\kals-repo\.claude\worktrees\wf_a51a5354-b5e-1\research\pinrun.py
+C1 control: fresh index all through, never hedged, collapse
+   index fresh all through; hedge fills at tau None; skip top; YES LOSES
+   hedge sends: 22 at tau [22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] filling [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+   hedge_blind records: 0 []
+   hedge_alarm: 1 first tau 22 trigger belief
+   hedge_quote at tau<=9: 9 rows, 2 distinct belief value(s) [0.0, 3.4647133154748987e-221]
+
+C2 null: index freezes at tau 28, never hedged, NO collapse, calm book
+   index freezes at tau 28; hedge fills at tau None; skip top; YES wins
+   hedge sends: 0 at tau [] filling []
+   hedge_blind records: 1 ['index_stale'] first at tau 28
+   hedge_alarm: 0
+   hedge_quote at tau<=9: 9 rows, 1 distinct belief value(s) [0.991821596235797]
+
+W1 index freezes at tau 28, NEVER hedged, collapse (K3 as designed)
+   index freezes at tau 28; hedge fills at tau None; skip top; YES LOSES
+   hedge sends: 28 at tau [28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] filling [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+   hedge_blind records: 1 ['index_stale'] first at tau 28
+   hedge_alarm: 1 first tau 28 trigger market_index_stale
+   hedge_quote at tau<=9: 9 rows, 1 distinct belief value(s) [0.991821596235797]
+
+W2 THE DOGE SHAPE: fresh until the hedge fills at tau 10, index freezes at tau 9
+   index freezes at tau 9; hedge fills at tau 10; skip top; YES LOSES
+   hedge sends: 13 at tau [22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10] filling [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 13.0]
+   hedge_blind records: 0 []
+   hedge_alarm: 1 first tau 22 trigger belief
+   hedge_quote at tau<=9: 9 rows, 1 distinct belief value(s) [2.1267845338678517e-156]
+
+W3 the SAME but the index stays perfectly healthy
+   index fresh all through; hedge fills at tau 10; skip top; YES LOSES
+   hedge sends: 13 at tau [22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10] filling [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 13.0]
+   hedge_blind records: 0 []
+   hedge_alarm: 1 first tau 22 trigger belief
+   hedge_quote at tau<=9: 9 rows, 1 distinct belief value(s) [2.1267845338678517e-156]
+
+F2 = W2 with the fix
+   index freezes at tau 9; hedge fills at tau 10; skip top; YES LOSES
+   hedge sends: 13 at tau [22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10] filling [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 13.0]
+   hedge_blind records: 0 []
+   hedge_alarm: 1 first tau 22 trigger belief
+   hedge_quote at tau<=9: 9 rows, 1 distinct belief value(s) [2.1267845338678517e-156]
+   FIX fields at tau<=9: index_age_s 2.05..10.05 s, belief_age_s 1..9 s
+
+F3 = W3 with the fix
+   index fresh all through; hedge fills at tau 10; skip top; YES LOSES
+   hedge sends: 13 at tau [22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10] filling [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 13.0]
+   hedge_blind records: 0 []
+   hedge_alarm: 1 first tau 22 trigger belief
+   hedge_quote at tau<=9: 9 rows, 1 distinct belief value(s) [2.1267845338678517e-156]
+   FIX fields at tau<=9: index_age_s 1.05..1.05 s, belief_age_s 1..9 s
+
+X1 = W2 with the skip moved BELOW the K3 record
+   index freezes at tau 9; hedge fills at tau 10; skip after_k3; YES LOSES
+   hedge sends: 13 at tau [22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10] filling [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 13.0]
+   hedge_blind records: 1 ['index_stale'] first at tau 9
+   hedge_alarm: 1 first tau 22 trigger belief
+   hedge_quote at tau<=9: 9 rows, 1 distinct belief value(s) [2.1267845338678517e-156]
+
+X2 = W2 with the skip REMOVED (the obvious 'let it check')
+   index freezes at tau 9; hedge fills at tau 10; skip never; YES LOSES
+   hedge sends: 22 at tau [22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] filling [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 13.0, 13.0, 13.0, 13.0, 13.0, 13.0, 13.0, 13.0, 13.0, 13.0]
+   hedge_blind records: 1 ['index_stale'] first at tau 9
+   hedge_alarm: 1 first tau 22 trigger belief
+   hedge_quote at tau<=9: 9 rows, 1 distinct belief value(s) [2.1267845338678517e-156]
+
+PASS C1: a fresh feed through a collapse DOES alarm (the harness can see one)
+PASS C1/W*: the planted collapse really loses the bet
+PASS C2 NULL (catches the sign): a frozen index on a CALM book is recorded but buys NOTHING -- no alarm, no hedge
+PASS W1: K3 WORKS -- an unhedged hold on a frozen index writes hedge_blind index_stale
+PASS W2 THE BUG: the same freeze on an ALREADY-HEDGED hold writes NO hedge_blind at all
+PASS W2: hedge_quote's belief is byte-identical for every second after the hedge
+PASS W3: a FULLY HEALTHY index gives the byte-identical belief too
+PASS W2 vs W3: today's log from tau 9 down is IDENTICAL for a frozen and a healthy index -- the symptom is not evidence of a freeze
+PASS FIX: with the two fields, a frozen index and a healthy one no longer produce the same log
+PASS FIX: F2's last hedge_quote names an index age over the 2 s bar
+PASS FIX NULL: F3 (healthy index) never reports an age over the bar
+PASS FIX: every field that existed before is UNCHANGED -- no decision, alarm, hedge or refusal moved
+PASS FIX: the hedge sends are identical, same seconds, same sizes
+PASS X1: the skip moved below the K3 record DOES write the record and sends nothing extra -- correct, but it runs inside the hedge pass
+PASS X2 THE LANDMINE: removing the skip re-buys the hedge it already owns (hedge_remain was popped, so hedge_want returns the FULL size)
+
+--- W4: the REAL DOGE index, close 2026-09-23T02:45:00Z ---
+   DOGEUSD_RTI prints loaded 1979, settlement window 60/60, settle 0.10171337 vs strike 0.1017036
+   newest print held | its value | model belief in NO (repr) | live hedge_quote that matches
+   1790131486 (tau 14) | 0.101698 | 0.992364742172938 | -
+   1790131487 (tau 13) | 0.101709 | 0.9869440639160239 | -
+   1790131488 (tau 12) | 0.101707 | 0.9955949944046358 | tau 11,12
+   1790131489 (tau 11) | 0.101707 | 0.9986709079754776 | tau 10
+   1790131490 (tau 10) | 0.101805 | 0.0514329175139725 | tau 1,2,3,4,5,6,7,8,9
+   1790131491 (tau  9) | 0.101852 | 1.1184922847684575e-05 | -
+   1790131492 (tau  8) | 0.101823 | 0.00020980722214614111 | -
+   1790131493 (tau  7) | 0.10182 | 1.3202094460318392e-05 | -
+   1790131494 (tau  6) | 0.101844 | 2.6771918015811025e-12 | -
+   1790131495 (tau  5) | 0.101835 | 0.0 | -
+   1790131496 (tau  4) | 0.101835 | 0.0 | -
+   1790131497 (tau  3) | 0.101835 | 0.0 | -
+   1790131498 (tau  2) | 0.101836 | 0.0 | -
+   1790131499 (tau  1) | 0.101816 | 0.0 | -
+PASS W4: the live tau-12 AND tau-11 belief is what the bot computes from the print for second close-12 -- one print, two passes
+PASS W4: the live tau-10 belief is the NEXT print, so a print DID arrive between tau 11 and tau 10
+PASS W4: the live tau-9 belief is the print for second close-10 -- a healthy feed one print behind, not a dead feed
+PASS W4: had the next print been in hand the belief WOULD have changed, so a repeated value means 'no new print in that pass'
+PASS W4: the index kept MOVING through tau 8..1 (the bot's own fair() gives a different answer each second) while the live log repeated one number -- the log stopped, not the model
+
+peak working set 34 MB
+ALL PASS
