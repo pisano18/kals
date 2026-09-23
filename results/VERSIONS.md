@@ -1,3 +1,47 @@
+# v-traj1 -- 2026-09-23 ~06:2xZ -- LIVE: the bot records HOW a market looked on the way to a decision (logging only)
+
+**Freeze-legal: logging and a paper-only flag. No live entry decision changes.**
+Proven with the offline loop harness on old and new code across several worlds:
+identical decision trail, identical POSTs, identical state.signals; the only
+new record kinds are `traj`, `traj_blind` and the frozen-index witness.
+
+1. **The trajectory (R4).** `_gate()` de-duplicates per (close, ticker, gate),
+   so a market the bot evaluated ~5,500 times left a MEDIAN OF ONE refusal
+   record -- which is why every "was there an earlier warning?" question in
+   the 09-22 map came back underpowered. The bot now samples each watched
+   market every 5 s out to tau 300 and EVERY SECOND inside 60 s, writing what
+   it saw: fair, confidence, spot, strike, the cushion in remaining-window sd,
+   our side's ask and size, the OTHER side's ask and size (what insurance
+   would cost), book age, index age, and the gate that would have refused it
+   -- the real gate, stamped by `_gate()` itself, not a mirror. Its own file
+   `results/pintraj-live-<runid>.jsonl`, LIVE ONLY: a reviewer caught that 28
+   pinrun processes would have written 1.6 GB/day, so paper arms count drops
+   instead of writing (they still decide identically). Measured cost: ~0.6 MB
+   per close, 4.4 ms per second for 11 markets, one held file handle flushed
+   once a second (per-record open/close was 2.46 ms -- rejected).
+2. **The frozen-index witness (K3b).** Tonight's DOGE close exposed that once
+   a position is fully insured the hedge pass skips it BEFORE refreshing the
+   belief, so the per-second record reprints a stale number and a genuinely
+   frozen index would look identical to a healthy feed. Every held position
+   now reports its own index age, insured or not, per leg, with the market's
+   held/insured/naked counts. Removing the skip instead -- the obvious fix --
+   re-buys the insurance every second (22 sends instead of 13); that was
+   proven offline before anything was changed.
+3. **`--doubt-mult` (R1), OFF in live and REFUSED with `--live`.** Size x1.5
+   when the model's own confidence in the side we are buying was under 0.50 at
+   a reading at least 5 s earlier in the same close (66 markets, 62 closes, 0
+   money-losers, +$2.95/market against +$0.70 book-wide). `arm-doubt15` and
+   `arm-doubt125` test it on paper; the bar is results/map_2026-09-22/
+   signature/D_plan.md section 1. One boosted loss switches it off.
+
+1,083 self-test checks green plain, under the live argv and under the arm's;
+20 of 20 deliberate reverts fail; versioncheck, shadow, markers clean.
+
+**REVERT:** `git checkout b366dbf -- research/pinrun.py` then
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+---
+
 # v-unidefer -- 2026-09-23 ~00:3xZ -- LIVE (SAFETY, during the freeze): the market-list refresh waits while a close is near
 
 **Why now, mid-freeze: Kalshi degraded at 2026-09-23 00:2xZ and the loop was
