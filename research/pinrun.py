@@ -152,6 +152,21 @@ SERIES_TO_INDEX = {
 # close_s, strike, digits, exchange_index) entry once it is in the universe.
 LADDER_SERIES = {"KXBTCD": "BRTI"}       # series -> settlement index id
 LADDER_COIN = {"KXBTCD": "KXBTC"}        # the COIN a ladder ticker belongs to
+# v-btcd1 (2026-09-24): SIZE for a LADDER series only. The hourly BTC market
+# runs the identical strategy, but at a size we choose independently of the
+# bank-driven SIZE, so a live test of a new family cannot put the main
+# strategy's money at risk. --series is REFUSED live without it.
+#
+# WHY NO SEPARATE CLOSE BUDGET, measured before deciding (live logs 09-20..24,
+# 425 closes): the budget gates fired on 25 closes (6%), and only 2 closes in
+# five days lost a market that would actually have traded (priced <= 98c with
+# the model >= 99.5% sure). A 15-minute market has been worth $0.51 on average
+# over the last four days, so the most a 1-contract hourly bet can crowd out
+# is about $0.05-0.20 a day -- and the close budget counts CONTRACTS (2 x SIZE
+# = 156 today), so one hourly contract spends 1 of 156. Re-keying the budget
+# across the live money bot to protect 20 cents a day is the wrong trade.
+SERIES_SIZE = None             # --series-size; None = off (the shipped value)
+_DEFAULT_SERIES_SIZE = None
 LADDER_KEEP = 3                          # rungs kept, nearest the index
 LADDER_PAGE_MAX = 3                      # GET /markets pages per fetch
 LADDER_HORIZON_S = 900                   # the 15M refresh's own window
@@ -3552,6 +3567,26 @@ def defer_universe(now, uni_at, taus, near=None, hard=None):
     return False
 
 
+def series_size_for(ticker, size=None):
+    """Contracts a LADDER-series ticker may take, or None for the ordinary
+    SIZE path. A ticker whose head is not a ladder series always returns
+    None, so nothing about the 15-minute markets can change here."""
+    size = SERIES_SIZE if size is None else size
+    if size is None:
+        return None
+    try:
+        head = str(ticker).split("-", 1)[0]
+    except Exception:                                    # noqa: BLE001
+        return None
+    if head not in LADDER_SERIES:
+        return None
+    try:
+        v = float(size)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
 def ladder_series_index(series):
     """The series -> index map trade_loop scans.
 
@@ -4319,7 +4354,7 @@ _OFFLINE_PINNED_FLAGS = (
     "LATE_EXTRA", "LATE_EXTRA_TAU", "LATE_JUMP_SD", "LATE_MULT", "LATE_PIN",
     "LATE_TAU", "LOSS_BOUND_OPEN", "LOSS_CAP", "MAX_PER_MARKET",
     "MIN_FILL_FRAC", "ONE_COIN_DEPTH", "ONE_COIN_MAX", "PICK", "PIN",
-    "PRICE_CEILING", "REBUY_HEDGED", "REBUY_LATE_FRAC", "REBUY_LATE_TAU", "REBUY_MAX_MULT", "SIGMA_RULER",
+    "PRICE_CEILING", "REBUY_HEDGED", "REBUY_LATE_FRAC", "REBUY_LATE_TAU", "REBUY_MAX_MULT", "SERIES_SIZE", "SIGMA_RULER",
     "SIGMA_STRESS", "SIZE_MIRROR_ON", "SKIP_BANDS", "SWEEP_DEPTH",
     "SWEEP_ENABLED", "TAPER", "TAPER_FLOOR", "WIDEN_ENABLED")
 
@@ -10818,6 +10853,73 @@ def _selftest_body():
        and all(r.get("leg") != "late_add" for r in _kinds(_bd, "signal")),
        "v-lateadd NULL: outside the window nothing is relabelled late_add "
        "(legs %s)" % [r.get("leg") for r in _kinds(_bd, "signal")])
+    # ---- v-btcd1 (2026-09-24): a ladder series takes its OWN size ---------
+    ck(_DEFAULT_SERIES_SIZE is None,
+       "v-btcd1: the DECLARED default is OFF (no series size)")
+    ck(series_size_for("KXBTCD-26SEP2417-T95249.99", size=1) == 1.0
+       and series_size_for("KXBTC15M-26SEP241700-00", size=1) is None
+       and series_size_for("KXSOL15M-26SEP241700-00", size=1) is None
+       and series_size_for(None, size=1) is None
+       and series_size_for("KXBTCD-26SEP2417-T95249.99", size=0) is None
+       and series_size_for("KXBTCD-26SEP2417-T95249.99", size="x") is None,
+       "v-btcd1 pure: only a LADDER ticker takes the series size; a 15M "
+       "ticker, a 0/garbage size and a None ticker all take the ordinary SIZE "
+       "path. (`size=None` means NOT SUPPLIED and reads the running global -- "
+       "the _HP_UNSET convention -- so the OFF case is proved by the declared "
+       "default above and by the NULL DRIVEN world below, never by passing "
+       "None here.)")
+    # DRIVEN, through the real loop: the same world at SIZE 5 and at series
+    # size 1, and the ladder order must be 1 while a 15M order stays 5.
+    def _ss_mkt(tk, series, n):
+        m = dict(_spk_mkt(n, lambda t: 0.999))
+        m["tk"], m["series"] = tk, series
+        return m
+    _ss = _offline_trade_loop(
+        [_ss_mkt("KXBTCD-26SEP2417-T99.99", "KXBTCD", 20),
+         _ss_mkt("KXSS1515M-SS", "KXSS1515M", 21)],
+        run_s=8.0, tau0=20, size=5.0,
+        # IMPROVE_SCOPE "market" (what live runs): with the shipped "close"
+        # the SECOND market of the close is refused for not being cheaper
+        # than the first, and this test needs both to fire.
+        flags={"SERIES_SIZE": 1.0, "IMPROVE_SCOPE": "market"})
+    _ss_sig = {r["ticker"]: r for r in _kinds(_ss, "signal")}
+    _ss_lad = _ss_sig.get("KXBTCD-26SEP2417-T99.99")
+    _ss_15 = _ss_sig.get("KXSS1515M-SS")
+    ck(_ss["raised"] is None and _ss_lad is not None and _ss_15 is not None
+       and float(_ss_lad["take_n"]) == 1.0 and float(_ss_lad["series_size"]) == 1.0
+       and float(_ss_15["take_n"]) == 5.0 and _ss_15.get("series_size") is None,
+       "v-btcd1 DRIVEN: in ONE run the hourly rung takes 1 contract and the "
+       "15-minute market takes the full 5 (raised %r | ladder %s | 15M %s)"
+       % (_ss["raised"],
+          {k: (_ss_lad or {}).get(k) for k in ("take_n", "series_size", "leg")},
+          {k: (_ss_15 or {}).get(k) for k in ("take_n", "series_size", "leg")}))
+    _ss_off = _offline_trade_loop(
+        [_ss_mkt("KXBTCD-26SEP2417-T99.99", "KXBTCD", 22)],
+        run_s=8.0, tau0=20, size=5.0)
+    _ss_off_sig = _kinds(_ss_off, "signal")
+    ck(_ss_off["raised"] is None and _ss_off_sig
+       and float(_ss_off_sig[0]["take_n"]) == 5.0,
+       "v-btcd1 NULL DRIVEN: with no series size the same rung takes the full "
+       "SIZE -- the cap is the flag, not the ticker")
+    # the late boost may not widen it back
+    _ss_lb = _offline_trade_loop(
+        [_ss_mkt("KXBTCD-26SEP2417-T99.99", "KXBTCD", 23)], run_s=6.0, tau0=8,
+        size=5.0, flags={"SERIES_SIZE": 1.0, "LATE_TAU": 10, "LATE_MULT": 1.5,
+                         "LATE_PIN": 0.9975})
+    _ss_lb_o = _kinds(_ss_lb, "order") or _kinds(_ss_lb, "signal")
+    ck(_ss_lb["raised"] is None and _ss_lb_o
+       and all(float(r.get("take_n") or r.get("n") or 0) <= 1.0 for r in _ss_lb_o),
+       "v-btcd1: the 1.5x late boost cannot widen a ladder order past its "
+       "series size (%s)"
+       % [(r.get("kind"), r.get("take_n") or r.get("n")) for r in _ss_lb_o])
+    _ss_src = inspect.getsource(trade_loop)
+    ck(_ss_src.count("if _ssz is not None:") == 3
+       and _ss_src.index("take_n = _stage46(take_n)") < _ss_src.rindex("if _ssz is not None:")
+       and _ss_src.index('_gate("staged_none"') < _ss_src.index("_ssz = series_size_for(tk)"),
+       "the cap is set AFTER the early-leg gates (an insert above them makes "
+       "them the body of this `if`) and re-applied on BOTH send paths after "
+       "every widener")
+
     # ---- v-fresh (2026-09-24): PREREG_fresh.md ----------------------------
     ck(_DEFAULT_FRESH_MIN_AGE_MS == 0 and _DEFAULT_FRESH_TAU_MIN == 20,
        "v-fresh: the DECLARED default is OFF, standing down at 20 s")
@@ -12291,10 +12393,11 @@ def _selftest_body():
     _ld_main = _ld_src[_ld_src.rindex(chr(10) + "def main("):]
     ck("_series_index = ladder_series_index(a.series)" in _ld_main
        and "trade_loop(a, rec, book, idx, _series_index," in _ld_main
-       and "if a.series and a.live:" in _ld_main
+       and "if a.series and a.live and a.series_size is None:" in _ld_main
        and "IndexWS(sorted(set(SERIES_TO_INDEX.values())))" in _ld_main,
        "LADDER: main() hands trade_loop ladder_series_index(a.series), refuses "
-       "--series with --live, and the index subscription is untouched")
+       "--series live WITHOUT an explicit --series-size, and the index "
+       "subscription is untouched")
     ck(coin_of("KXBTC15M-26SEP240045-45") == "KXBTC"
        and coin_of("KXNEAR15M-26SEP240045-45") == "KXNEAR"
        and coin_of("KXAAA15M-K1") == "KXAAA"
@@ -16216,6 +16319,17 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                               tau=tau, price=round(price, 4),
                               want=want, size=float(take_n or SIZE))
                         continue
+                # v-btcd1: a LADDER series takes its own size, never the
+                # bank-driven SIZE. Here and not above the early gates: an
+                # insert between `sig["take_n"]` and them re-parents them (the
+                # 2026-09-24 04:4xZ regression, repeated at 16:5xZ and caught
+                # by the driven early-floor check). Re-applied after every
+                # widener on both send paths below.
+                _ssz = series_size_for(tk)
+                if _ssz is not None:
+                    take_n = min(float(take_n), _ssz)
+                    sig["take_n"] = take_n
+                    sig["series_size"] = _ssz
                 # v-lateadd: a position already at SIZE that rebuy_ok let
                 # through inside REBUY_LATE_TAU is an ADD, capped so the market
                 # never holds more than (1 + REBUY_LATE_FRAC) x SIZE. staged_take
@@ -16688,6 +16802,8 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     take_n = _band53(take_n)   # paper
                     take_n = _doubt(take_n)    # paper
                     take_n = _stage46(take_n)
+                    if _ssz is not None:       # v-btcd1, after every widener
+                        take_n = min(float(take_n), _ssz)
                     _book_slot(price, take_n)
                     _poid46 = f"paper-{tk}-{now_s}"
                     entry_at[_poid46] = now_s
@@ -16817,6 +16933,8 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         take_n = _band53(take_n)   # live
                         take_n = _doubt(take_n)    # live
                         take_n = _stage46(take_n)
+                        if _ssz is not None:       # v-btcd1, after every widener
+                            take_n = min(float(take_n), _ssz)
                         # A68: LAST, so no later widener can undo the cap. This is
                         # the line that makes the bounded rebuy bounded; without
                         # it the close budget alone allows it and the tail is the
@@ -17230,6 +17348,10 @@ def main():
                          "%.2f, the level the plus-2.95 was measured at. Does "
                          "nothing without --doubt-mult above 1."
                          % _DEFAULT_DOUBT_UNDER)
+    ap.add_argument("--series-size", type=float, default=None, metavar="N",
+                    help="v-btcd1: contracts a --series (ladder) market may "
+                         "take, independent of the bank-driven SIZE. REQUIRED "
+                         "to run --series live. 1 = the penny test.")
     ap.add_argument("--fresh-min-age-ms", type=int, default=None, metavar="MS",
                     help="v-fresh: with more than --fresh-tau-min s left, refuse "
                          "a level known to be younger than MS ms (default 0 = "
@@ -17760,10 +17882,23 @@ def main():
         # the whole start rather than trade a paper configuration for money.
         raise SystemExit("--arm-name is a PAPER label; it has no business on "
                          "a --live command line. Got %r." % (a.arm_name,))
-    if a.series and a.live:
-        raise SystemExit("--series is a PAPER-ONLY ladder test (IDEAS_2026-09-24 "
-                         "item 2); it has no business on a --live command "
-                         "line until its bar holds. Got %r." % (a.series,))
+    if a.series and a.live and a.series_size is None:
+        # v-btcd1 (2026-09-24), on the operator's instruction: "run hourly BTC
+        # exactly how we would to make real money but at 1 contract instead."
+        # A ladder series may go live, but ONLY at a size stated out loud on
+        # the command line -- never at the bank-driven SIZE, which is 78-88
+        # contracts and would put the main strategy's money on an untested
+        # family. The refusal that used to sit here was absolute.
+        raise SystemExit("--series LIVE requires --series-size (contracts per "
+                         "ladder market, e.g. --series-size 1). Refusing to "
+                         "trade %r at the bank-driven SIZE." % (a.series,))
+    if a.series_size is not None:
+        if not a.series:
+            raise SystemExit("--series-size does nothing without --series")
+        if not (0 < float(a.series_size) <= float(MAX_PER_CLOSE) * 10.0):
+            raise SystemExit("--series-size must be in (0, %g]; got %r"
+                             % (float(MAX_PER_CLOSE) * 10.0, a.series_size))
+        globals()["SERIES_SIZE"] = float(a.series_size)
     if a.no_size_mirror:
         globals()["SIZE_MIRROR_ON"] = False
     if a.rebuy_hedged:

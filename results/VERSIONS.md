@@ -1,3 +1,58 @@
+# v-btcd1 -- 2026-09-24 ~17:0xZ -- LIVE: the HOURLY BTC ladder (KXBTCD) trades for real money at ONE contract a market, alongside the 15-minute markets
+
+Operator: *"Just run hourly btc full on exactly how we would to make real
+money but at 1 contract instead."* Flags added to restart_bot.ps1:
+`--series KXBTCD --series-size 1`.
+
+**What it is.** Kalshi's hourly BTC market settles on the same rule as our
+15-minute one (the mean of 60 one-second BRTI prints). It is a LADDER -- one
+event per hour, ~188 strikes -- so the universe takes the 3 rungs nearest the
+index inside 900 s of the hour (v-btcd paper work, 2026-09-24 08Z). Every
+gate, the hedge, the loss cap, the drawdown brake and the close budget are
+the same code. Only the size differs.
+
+**Why size 1 and not SIZE.** SIZE is bank-driven (78-88 contracts today). An
+untested family at that size risks the main strategy's money on a fill rate
+nobody has measured. `series_size_for()` caps a ladder ticker at
+SERIES_SIZE, applied at the signal point AND again after every widener on
+both send paths, so the 1.5x late boost cannot undo it. `--series` LIVE is
+REFUSED without `--series-size` (proved by running it).
+
+**Why it is worth real money rather than more paper.** Paper cannot say
+whether we get filled, and that is the whole question: the hourly books hold
+a median 838 contracts at the price we buy against 28 on the 15-minute
+markets (arm-btcd, first 7.5 h), and 3,486 under the 98c ceiling against 168.
+If the fills are real, the hourly family is where more bank actually deploys
+-- on the 15-minute markets the book runs out past ~3x today's size.
+
+**Why NOT a separate close budget, measured first** (live logs 09-20..24, 425
+closes): a budget gate fired on 25 closes (6%), and only 2 closes in five days
+lost a market that would really have traded (<= 98c, model >= 99.5% sure). At
+$0.51 of average value per market that is $0.05-0.20 a day of crowd-out, and
+the budget counts CONTRACTS (2 x SIZE = 156 today), so one hourly contract
+spends 1 of 156. Re-keying the budget in the money bot to protect 20 cents a
+day is the wrong trade.
+
+**Exposure added:** at most 2 contracts per hourly market (--max-per-market),
+24 closes a day, ~97c each -- under $50 a day at risk, every existing rail
+unchanged.
+
+Self-test 1,168 checks green plain AND under the deployed argv with the new
+flags; pinattrib 55; versioncheck clean. A driven check runs one world with
+the flag in force and shows the hourly rung taking 1 contract while a
+15-minute market takes the full 5.
+
+**Caught while building, worth recording:** the first draft inserted the cap
+between `sig["take_n"]` and the early-leg gates, which re-parented them --
+the identical block-nesting regression as 2026-09-24 04:4xZ. The DRIVEN
+early-floor check written after that incident caught it in one run.
+
+**REVERT:** delete the `"--series", "KXBTCD", "--series-size", "1",` line
+from restart_bot.ps1 and run
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
+
+---
+
 # v-race5 -- 2026-09-24 ~15:2xZ -- LIVE (coin race penny test): 1 contract -> 5 contracts a leg, stake cap $20 -> $60
 
 Operator, 2026-09-24: "If you're ready to size coin race up and feel confident

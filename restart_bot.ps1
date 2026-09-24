@@ -62,7 +62,9 @@ try { Stop-Transcript | Out-Null } catch {}
 # exists to prevent. A transcript is a nicety; the restart is the job.
 try { Start-Transcript -Path $transcript -Force | Out-Null }
 catch {
-    try { Start-Transcript -Path "$repoesultsestart_bot.$(Get-Date -Format yyyyMMddTHHmmss).log" -Force | Out-Null }
+    try { Start-Transcript -Path "$repo
+esults
+estart_bot.$(Get-Date -Format yyyyMMddTHHmmss).log" -Force | Out-Null }
     catch { Write-Host "restart_bot: no transcript ($_) -- continuing" }
 }
 Write-Host "restart_bot.ps1 starting $(Get-Date -Format o)"
@@ -175,6 +177,14 @@ $botArgs = @(
     # rebuild of 820 held markets: +$95/16 d, ONE losing add (-$3.23), +$66 at
     # 70% fills, both weeks positive. Operator: "whatever makes the most money".
     "--rebuy-late-tau", "15", "--rebuy-late-frac", "0.5",
+    # v-btcd1 (2026-09-24), operator: "Just run hourly btc full on exactly how
+    # we would to make real money but at 1 contract instead." KXBTCD is the
+    # HOURLY BTC strike ladder -- the same 60-second settlement rule, the same
+    # gates, the same hedge, at ONE contract a market instead of the bank-
+    # driven 78-88. Its books hold a median 838 contracts where we buy against
+    # 28 on the 15-minute markets, which is why it is worth knowing whether we
+    # actually get filled. --series is REFUSED live without --series-size.
+    "--series", "KXBTCD", "--series-size", "1",
     # AMENDMENT 50, 2026-09-18. The operator asked what to do with the
     # 45-second leg in the meantime: "It's earning good it'd be a shame to
     # shut it off, but also a shame to lose money... It might mean smaller
