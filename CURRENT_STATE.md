@@ -1,5 +1,10 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
+**OPEN_WORK.md is the operator's index to everything in flight** (added
+2026-09-24). He says "read OPEN_WORK.md" or names a topic from it ("the fresh
+offer test", "hourly BTC", "photo finishes", "the disk", "the VM"). Keep it
+updated the moment a test's state changes.
+
 **Updated 2026-09-21 ~05:1xZ, immediately before a context wipe.** If the
 date above is more than a day old, verify the live numbers before quoting
 them. The long version of everything below is the newest section of
