@@ -95,6 +95,20 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**v-btcd1 (16:48Z, pid 2727204): the HOURLY BTC ladder trades live at ONE
+contract** (`--series KXBTCD --series-size 1`). Operator: "run hourly btc full
+on exactly how we would to make real money but at 1 contract instead." No
+separate close budget -- measured first: budget gates fired on 6% of 425
+closes and only 2 closes in five days lost a market that would really have
+traded ($0.05-0.20/day), and the budget counts contracts (1 of 156). The cap
+is applied at the signal point AND after every widener on both send paths;
+--series live is refused without --series-size. 1,168 checks green plain and
+under the deployed argv. NOTE: the first draft re-parented the early-leg
+gates by inserting the cap above them -- the identical 04:4xZ regression --
+and the DRIVEN early-floor check caught it in one run. Any insert between
+`sig["take_n"] = take_n` and the early gates does this; put new code after
+the `staged_none` continue.
+
 **v-race5 (15:16Z): the coin race penny test is now 5 contracts a leg**
 (`--max-contracts 5 --max-stake 60`, pid 2707284; everything else unchanged).
 Operator gave the boost; 5 and not more because the break-even margin is

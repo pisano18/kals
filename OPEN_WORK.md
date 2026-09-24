@@ -35,12 +35,17 @@ own per-close spending limit, not the market's supply.
 - **Why it matters:** on the 15-minute markets more bank buys nothing past
   ~3× today's size (the book runs out). On the hourly ones it buys
   proportionally more. This is the scaling path.
-- **Status:** paper arm since 2026-09-24 07:58Z. 4 signals, 3 settled, all won.
-- **Open decision:** switch from paper to a 1-contract REAL test for accurate
-  fill data (needs a per-series size cap so hourly bets can never touch the
-  main strategy's budget, plus the operator's go-ahead — real money).
-- **Decides:** bar in `results/IDEAS_2026-09-24.md` item 2 — 7 days, ≥ 30 fired
-  closes, 0 paper losses inside 30 s, ≥ 660 captured contracts.
+- **Status: LIVE FOR REAL MONEY at 1 contract a market since 2026-09-24
+  16:48Z** (`v-btcd1`, flags `--series KXBTCD --series-size 1` in
+  restart_bot.ps1). The same gates, the same hedge, the same rails as the
+  15-minute markets — only the size differs, and it cannot be widened (the cap
+  is re-applied after every sizing step). At most 2 contracts per hourly
+  market, 24 closes a day: under $50/day at risk. The paper arm `arm-btcd`
+  keeps running beside it as the comparison.
+- **Decides:** ~30 fired closes (about a week). Watching: do we actually get
+  filled, and at what price. If fills are real, the next step is a bigger
+  per-close allowance for the hourly family — that is the only place more bank
+  buys more contracts.
 
 ### A3. 2-cent edge floor — `arm-edge2c`
 **Say: "the edge floor test."**
