@@ -2419,7 +2419,43 @@ def _clear_pidfile(path, mypid):
         pass
 
 
-def rebuy_ok(prev, tk, price, size=None):
+# v-lateadd (2026-09-24, PAPER FIRST, ships OFF): a FULL position may ADD
+# inside the last REBUY_LATE_TAU seconds when the ask is at or ABOVE what we
+# paid -- the market moving OUR way -- up to REBUY_LATE_FRAC x SIZE more.
+# Today rebuy_ok refuses every not-cheaper re-buy on a full position (A3's
+# band), which is right at 21-45 s (a big discount is adverse) and wrong in
+# the last 15 s, where the money is: per-second rebuild of all 820 entered
+# markets (results/cf_2026-09-24/), a 0.5 x SIZE add at <=15 s whenever the
+# gates pass and the ask >= paid - 0.5c: +$95 over 16 days, 141 fires, ONE
+# losing add (-$3.23); at <=20 s +$115 with 4 losing adds; at <=10 s +$62
+# with none. Both weeks positive. Upper bound: the engine did not model the
+# close budget or MAX_PER_MARKET (both still apply here) and live fills are
+# ~70%. A cheaper ask stays the band's business; a dearer one is the case.
+REBUY_LATE_TAU = 0          # --rebuy-late-tau: seconds-left at or under which
+                            # a full position may add. 0 = off (the shipped value)
+_DEFAULT_REBUY_LATE_TAU = 0
+REBUY_LATE_FRAC = 0.5       # --rebuy-late-frac: the add, as a fraction of SIZE
+_DEFAULT_REBUY_LATE_FRAC = 0.5
+
+
+def late_add_ok(tau, have, size, drop, late_tau=None, frac=None):
+    """True when a FULL position may add: inside `late_tau` s, the ask not
+    cheaper than paid by more than IMPROVE_BY, and the position still under
+    (1 + frac) x size. `drop` = paid - price in dollars (positive = cheaper).
+    Off (False) when late_tau is 0/None, and on any unreadable input."""
+    late_tau = REBUY_LATE_TAU if late_tau is None else late_tau
+    frac = REBUY_LATE_FRAC if frac is None else frac
+    try:
+        if not late_tau or tau is None or float(tau) > float(late_tau):
+            return False
+        if float(drop) > IMPROVE_BY + 1e-12:
+            return False
+        return float(have) < float(size) * (1.0 + float(frac)) - 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
+def rebuy_ok(prev, tk, price, size=None, tau=None):
     """May we buy market `tk` AGAIN at `price` in this close?
 
     Only the SAME market is governed here. A different market is a different
@@ -2458,6 +2494,8 @@ def rebuy_ok(prev, tk, price, size=None):
     if paid is None:
         return True                      # no price on record; A3 still applies
     drop = paid - price
+    if late_add_ok(tau, have, want, drop):
+        return True                      # v-lateadd: the last seconds, our way
     return IMPROVE_BY - 1e-12 <= drop <= IMPROVE_MAX + 1e-12
 
 
@@ -3879,7 +3917,7 @@ _OFFLINE_PINNED_FLAGS = (
     "LATE_EXTRA", "LATE_EXTRA_TAU", "LATE_JUMP_SD", "LATE_MULT", "LATE_PIN",
     "LATE_TAU", "LOSS_BOUND_OPEN", "LOSS_CAP", "MAX_PER_MARKET",
     "MIN_FILL_FRAC", "ONE_COIN_DEPTH", "ONE_COIN_MAX", "PICK", "PIN",
-    "PRICE_CEILING", "REBUY_HEDGED", "REBUY_MAX_MULT", "SIGMA_RULER",
+    "PRICE_CEILING", "REBUY_HEDGED", "REBUY_LATE_FRAC", "REBUY_LATE_TAU", "REBUY_MAX_MULT", "SIGMA_RULER",
     "SIGMA_STRESS", "SIZE_MIRROR_ON", "SKIP_BANDS", "SWEEP_DEPTH",
     "SWEEP_ENABLED", "TAPER", "TAPER_FLOOR", "WIDEN_ENABLED")
 
@@ -9996,6 +10034,41 @@ def _selftest_body():
        "v-cap20: an UNKNOWN clock is early (refused); cap_tau None or 0 is "
        "the every-tau cap of v-nospike; cap_tau 30 exempts 20 s")
 
+    # ---- v-lateadd (2026-09-24): a FULL position may add in the last seconds
+    ck(_DEFAULT_REBUY_LATE_TAU == 0 and _DEFAULT_REBUY_LATE_FRAC == 0.5,
+       "v-lateadd: the DECLARED default is OFF (0 s) at half size")
+    ck(late_add_ok(12, 80.0, 80.0, -0.01, late_tau=15, frac=0.5) is True
+       and late_add_ok(12, 80.0, 80.0, 0.0, late_tau=15, frac=0.5) is True
+       and late_add_ok(12, 80.0, 80.0, 0.004, late_tau=15, frac=0.5) is True
+       and late_add_ok(12, 80.0, 80.0, 0.006, late_tau=15, frac=0.5) is False
+       and late_add_ok(16, 80.0, 80.0, -0.01, late_tau=15, frac=0.5) is False
+       and late_add_ok(12, 119.9, 80.0, -0.01, late_tau=15, frac=0.5) is True
+       and late_add_ok(12, 120.0, 80.0, -0.01, late_tau=15, frac=0.5) is False
+       and late_add_ok(12, 80.0, 80.0, -0.01, late_tau=0, frac=0.5) is False
+       and late_add_ok(None, 80.0, 80.0, -0.01, late_tau=15, frac=0.5) is False
+       and late_add_ok(12, 80.0, 80.0, None, late_tau=15, frac=0.5) is False,
+       "v-lateadd pure: inside 15 s a full position adds at a dearer, equal "
+       "or up-to-0.5c-cheaper ask; a 0.6c discount is the band's case; 16 s "
+       "is outside; the cap is (1+frac) x size; off at 0; None inputs never add")
+    _pla = {"per_tk": {"A": 1}, "px_tk": {"A": 0.960}, "n_tk": {"A": 80.0}}
+    _sv_la = (REBUY_LATE_TAU, REBUY_LATE_FRAC)
+    try:
+        globals()["REBUY_LATE_TAU"], globals()["REBUY_LATE_FRAC"] = 15, 0.5
+        ck(rebuy_ok(_pla, "A", 0.970, 80.0, tau=12) is True
+           and rebuy_ok(_pla, "A", 0.970, 80.0, tau=20) is False
+           and rebuy_ok(_pla, "A", 0.955, 80.0, tau=12) is True
+           and rebuy_ok(_pla, "A", 0.940, 80.0, tau=12) is False
+           and rebuy_ok(_pla, "A", 0.970, 80.0) is False,
+           "v-lateadd rebuy_ok: a FULL position at 96c adds at 97c inside 15 s, "
+           "not at 20 s; 95.5c still passes (the band); 94c is refused (a 2c "
+           "discount is adverse); no clock = no add")
+        globals()["REBUY_LATE_TAU"] = 0
+        ck(rebuy_ok(_pla, "A", 0.970, 80.0, tau=12) is False,
+           "v-lateadd NULL: with the flag OFF the same dearer add is refused, "
+           "exactly the pre-09-24 band")
+    finally:
+        globals()["REBUY_LATE_TAU"], globals()["REBUY_LATE_FRAC"] = _sv_la
+
     # DRIVEN, through the real loop. The spike world is the BTC shape.
     def _spk_mkt(n, fair_of, yes_bid=0.94, no_bid=0.05):
         return {"tk": "KXS%d15M-SPK" % n, "series": "KXS%d15M" % n,
@@ -10067,6 +10140,35 @@ def _selftest_body():
        "...and with EDGE_CAP_TAU None it is refused at 20 s -- the "
        "v-nospike every-tau cap is one flag away (gates %s)"
        % _gate_counts(_ew5))
+    # DRIVEN: a market bought in full at 18 s and still offered at the same
+    # ask. Flag ON: a second signal inside 15 s, leg late_add, at most half
+    # the first. Flag OFF: one signal and a rebuy_band refusal.
+    _la_on = _offline_trade_loop([_spk_mkt(9, lambda t: 0.999)], run_s=8.0,
+                                 tau0=18, flags={"REBUY_LATE_TAU": 15,
+                                                 "REBUY_LATE_FRAC": 0.5,
+                                                 "MAX_PER_MARKET": 2,
+                                                 "IMPROVE_SCOPE": "market"})
+    _la_sig = _kinds(_la_on, "signal")
+    ck(_la_on["raised"] is None and len(_la_sig) == 2
+       and _la_sig[1].get("leg") == "late_add"
+       and int(_la_sig[1].get("tau", 99)) <= 15
+       and 0 < float(_la_sig[1].get("take_n") or 0)
+           <= 0.5 * float(_la_sig[0].get("take_n") or 0) + 1e-9,
+       "v-lateadd DRIVEN: bought in full at 18 s, the SAME ask inside 15 s "
+       "is added once as leg late_add at <= half the first (signals %d: %s)"
+       % (len(_la_sig), [(r.get("tau"), r.get("leg"), r.get("take_n")) for r in _la_sig]))
+    _la_off = _offline_trade_loop([_spk_mkt(9, lambda t: 0.999)], run_s=8.0,
+                                  tau0=18, flags={"MAX_PER_MARKET": 2,
+                                                  "IMPROVE_SCOPE": "market"})
+    ck(_la_off["raised"] is None and len(_kinds(_la_off, "signal")) == 1
+       and len(_refusals(_la_off, "rebuy_band")) >= 1,
+       "v-lateadd NULL DRIVEN: with the flag OFF the same world buys once and "
+       "refuses the not-cheaper re-buy as rebuy_band (signals %d, band %d)"
+       % (len(_kinds(_la_off, "signal")), len(_refusals(_la_off, "rebuy_band"))))
+    _la_hg = _offline_trade_loop([_k1_A()], flags={"REBUY_LATE_TAU": 15})
+    ck(_la_hg["raised"] is None and abs(_hedged(_la_hg, _kA) - 5.0) < 1e-9,
+       "v-lateadd: with the flag ON a collapsing position is still hedged "
+       "(%g) -- the add lives in the entry scan" % _hedged(_la_hg, _kA))
     # NEITHER GATE CAN TOUCH A HEDGE: the K1 collapse world, both gates on
     _hg = _offline_trade_loop([_k1_A()])
     ck(_hg["raised"] is None and abs(_hedged(_hg, _kA) - 5.0) < 1e-9,
@@ -14922,7 +15024,7 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                 # ours. Rule 5 forbids reading OUR loss rate off it. What is used
                 # here is the ORDERING and the fact that the groups differ, both of
                 # which are statements about what the market did.
-                if not rebuy_ok(prev, tk, price, SIZE):
+                if not rebuy_ok(prev, tk, price, SIZE, tau=tau):
                     nb23 = near.setdefault(close_s, _fresh_near())
                     nb23["rebuy_band"] = nb23.get("rebuy_band", 0) + 1
                     _gate("rebuy_band", close_s, tk, want=want,
@@ -15122,6 +15224,22 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                 _leg46 = "full"
                 if EARLY_TAU_MAX > TAU_MAX:
                     take_n, _leg46 = staged_take(tau, take_n, float(SIZE), _held46)
+                    sig["take_n"] = take_n
+                # v-lateadd: a position already at SIZE that rebuy_ok let
+                # through inside REBUY_LATE_TAU is an ADD, capped so the market
+                # never holds more than (1 + REBUY_LATE_FRAC) x SIZE. staged_take
+                # cannot see n_tk, so a topped-up early leg would otherwise be
+                # offered the whole top-up again.
+                _have_la = 0.0
+                try:
+                    _have_la = float(((prev or {}).get("n_tk") or {}).get(tk, 0.0))
+                except (TypeError, ValueError, AttributeError):
+                    _have_la = 0.0
+                if (REBUY_LATE_TAU and _leg46 in ("full", "topup")
+                        and _have_la >= float(SIZE) - 1e-9):
+                    take_n = min(float(take_n), max(
+                        0.0, float(SIZE) * (1.0 + float(REBUY_LATE_FRAC)) - _have_la))
+                    _leg46 = "late_add"
                     sig["take_n"] = take_n
                     # AMENDMENT 49: an EARLY leg needs the price to be high as well
                     # as the model to be confident. The operator, 2026-09-18:
@@ -16142,6 +16260,14 @@ def main():
                          "%.2f, the level the plus-2.95 was measured at. Does "
                          "nothing without --doubt-mult above 1."
                          % _DEFAULT_DOUBT_UNDER)
+    ap.add_argument("--rebuy-late-tau", type=int, default=None, metavar="S",
+                    help="v-lateadd: a FULL position may add inside the last S "
+                         "seconds when the ask is at or above what we paid "
+                         "(-0.5c), up to --rebuy-late-frac x SIZE more. Default "
+                         "0 = off. Measured +$95/16 d at 15 s with one losing "
+                         "add (results/cf_2026-09-24/); PAPER FIRST.")
+    ap.add_argument("--rebuy-late-frac", type=float, default=None, metavar="F",
+                    help="v-lateadd: the add as a fraction of SIZE (default 0.5)")
     ap.add_argument("--rebuy-mult", type=float, default=None, metavar="X",
                     # NO LITERAL PER-CENT SIGN. argparse formats help strings
                     # itself, so a `%%` written here survives my own % and
@@ -16609,6 +16735,16 @@ def main():
                                  "got %r" % (float(MAX_PER_CLOSE), _m))
             _bm53.append((float(_lo), float(_hi), float(_m)))
         globals()["BAND_MULTS"] = tuple(_bm53)
+    if a.rebuy_late_tau is not None:
+        if not (0 <= int(a.rebuy_late_tau) <= TAU_MAX):
+            raise SystemExit("--rebuy-late-tau must be between 0 and TAU_MAX (%d), got %r"
+                             % (TAU_MAX, a.rebuy_late_tau))
+        globals()["REBUY_LATE_TAU"] = int(a.rebuy_late_tau)
+    if a.rebuy_late_frac is not None:
+        if not (0.0 < float(a.rebuy_late_frac) <= 1.0):
+            raise SystemExit("--rebuy-late-frac must be in (0, 1], got %r"
+                             % (a.rebuy_late_frac,))
+        globals()["REBUY_LATE_FRAC"] = float(a.rebuy_late_frac)
     if a.rebuy_mult is not None:
         if not (0.0 <= a.rebuy_mult <= 3.0):
             raise SystemExit("--rebuy-mult must sit in [0, 3], got %r"

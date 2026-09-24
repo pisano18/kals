@@ -141,6 +141,18 @@ $arms = @(
   # close (13 post-fix lockouts in 12 closes, 11 still had a standing offer at
   # >= 99.5%). Live is unflagged; this is the only bot with it on.
   @{ n="arm-attempt-send";  drop=@();                    add=@("--attempts-on-send") },
+  # 2026-09-23 (signature D_plan R1): size up when the model's own confidence
+  # in the side we buy was under 0.50 at a reading 5 s+ earlier in the same
+  # close. 66 markets, 62 closes, 0 money-losers, +$2.95/mkt against +$0.70
+  # book-wide; money stable on every leave-one-day-out, significance marginal
+  # -- hence paper. --doubt-mult is REFUSED with --live, and sync strips
+  # --live, so these two are the only bots running it.
+  @{ n="arm-doubt15";       drop=@();                    add=@("--doubt-mult","1.5") },
+  @{ n="arm-doubt125";      drop=@();                    add=@("--doubt-mult","1.25") },
+  # v-lateadd (2026-09-24): a FULL position may add 0.5 x SIZE inside the last
+  # 15 s when the ask is at or above what we paid. Measured +$95/16 d with one
+  # losing add on the per-second rebuild (results/cf_2026-09-24/); PAPER FIRST.
+  @{ n="arm-lateadd15";     drop=@();                    add=@("--rebuy-late-tau","15","--rebuy-late-frac","0.5") },
   @{ n="arm-band15";        drop=@();                    add=@("--band-mult","0.90","0.94","1.5") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }

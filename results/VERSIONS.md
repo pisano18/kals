@@ -1,3 +1,36 @@
+# v-lateadd -- 2026-09-24 ~03:3xZ -- CODE IN THE REPO, SHIPS OFF; PAPER ARM `arm-lateadd15` ONLY. The live bot (pid 2543296) is unchanged until its next restart, and the flag defaults to off even then.
+
+**What it is.** `--rebuy-late-tau S --rebuy-late-frac F`: a position already
+at SIZE may ADD F x SIZE inside the last S seconds when the ask is at or above
+what we paid (-0.5c) and every entry gate passes (confidence, edge, ceiling,
+spike, close budget, MAX_PER_MARKET). Today `rebuy_ok`'s band refuses every
+not-cheaper re-buy on a full position -- right at 21-45 s (a discount is
+adverse, A23's dose-response), wrong in the last 15 s where the money is.
+
+**Evidence (results/cf_2026-09-24/cf_sim.py-style engine, 820 markets we
+held, Kalshi's result, the tape's ask; upper bound -- fills ~70%):** add
+0.5 x SIZE at <=15 s: +$95 over 16 days, 141 fires, ONE losing add (-$3.23),
++$66 at 70% fills; at <=20 s +$115 (4 losing adds, -$25); at <=10 s +$62 (0
+losing adds); both weeks positive (+$59, +$56 at <=20 s). The engine did not
+model the close budget or MAX_PER_MARKET (both apply live), so the arm's
+job is to show how many adds actually clear them and at what price.
+
+**Bar before live (pre-registered here, before any arm number is read):**
+`arm-lateadd15` runs >= 48 h beside live; it must show >= 20 late_add legs,
+NO late_add leg on a market that lost, and arm-minus-live on the SAME
+markets >= +$10 (armh2h2.py, closes both were up). Any late_add on a loser
+that live did not also lose -> off.
+
+Self-test 1,111 checks green plain and under the live argv + the flags;
+the driven check buys in full at 18 s and adds once at 15 s as leg
+`late_add` at half size, the null refuses it as `rebuy_band` with the flag
+off, and a collapsing position still hedges with the flag on.
+
+**REVERT (code):** `git checkout 3b75f48 -- research/pinrun.py sync_arms.ps1`
+(nothing live to restart; the live bot never ran it).
+
+---
+
 # v-cap20 -- 2026-09-24 02:22Z (pid 2543296) -- LIVE: the 10c edge cap applies only with MORE than 20 s left; early-leg price floor 0.90 -> 0.95
 
 **Why.** Per-second rebuild of every market the bot has entered (820 with a
