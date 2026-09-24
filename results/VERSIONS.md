@@ -1,3 +1,37 @@
+# v-race5 -- 2026-09-24 ~15:2xZ -- LIVE (coin race penny test): 1 contract -> 5 contracts a leg, stake cap $20 -> $60
+
+Operator, 2026-09-24: "If you're ready to size coin race up and feel confident
+we can give it a small boost." This supersedes the standing "size stays 1
+contract" rule of 2026-09-22.
+
+**Why 5 and not more.** Since v-race30 (09-22 07:03Z): 60 races, 59 won, 1
+TIE, 0 lost, +$1.17 on Kalshi's books; 95 legs at 97.5c average. Break-even
+at those prices is 97.7 legs paying in 100; we are at 98.9 -- a margin of
+1.2 points, which on 95 legs cannot be told apart from zero with confidence
+(roughly +/- 2 points). So this is a size that makes the daily number
+VISIBLE (about +$1.50/day if the edge is real) without a single bad race
+costing a week: one losing leg at 5 contracts is about -$4.90, a two-leg
+race about -$10.
+
+**What makes it safe now and did not before.** v-race-tie1 (06:0xZ today):
+a tie is read from Kalshi's own result, pays 50c to both tied coins, and
+counts as a LOSS for the stop-on-first-loss rail. On 09-23 a real tie cost
+-$0.95, was booked +$0.05, and the rail did not fire -- at 5 contracts that
+same race would be -$4.77 and the rail WOULD now stop the test.
+
+Unchanged: inside 30 s only, 90c or better, at most 5 legs, rolling stake
+(settled races give their stake back), stop on the first loss.
+
+**Watch next:** `arm-gap075` (refuse races whose top two coins are within
+0.75 basis points -- 15 in 100 of the races we enter are that close against
+7 in 100 of all races). If it shows those races are the loss class, the
+filter goes in BEFORE any further size.
+
+**REVERT:** stop the penny bot and relaunch with `--max-contracts 1
+--max-stake 20` (the argv is in HANDOFF.md).
+
+---
+
 # v-paper-flags -- 2026-09-24 ~09:0xZ -- CODE IN THE REPO, BOTH SHIP OFF; the live bot is unchanged (its next restart runs the same defaults): `--series KXBTCD` (paper arm arm-btcd) and `--fresh-min-age-ms 500 --fresh-tau-min 20` (paper arm arm-fresh500)
 
 - `--series KXBTCD` (refused with --live): the hourly BTC strike ladder in the

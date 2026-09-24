@@ -95,6 +95,27 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**v-race5 (15:16Z): the coin race penny test is now 5 contracts a leg**
+(`--max-contracts 5 --max-stake 60`, pid 2707284; everything else unchanged).
+Operator gave the boost; 5 and not more because the break-even margin is
++1.2 points on 95 legs, which cannot be told from zero. Safe only because
+v-race-tie1 makes a tie a LOSS for the stop rail. Revert argv in VERSIONS.
+
+**HOURLY BTC IS THE SCALING PATH (arm-btcd, first 7.5 h):** the hourly
+ladder's books are ~30x deeper at OUR price -- median 838 contracts resting
+where we buy, against 28 on the 15-minute markets; under the 98c ceiling
+3,486/3,449 vs a median 168. 4 signals, 3 settled, all won. So the $14/day
+ceiling in IDEAS item 2 is OUR close budget, not the market: on the
+15-minute markets more bank buys nothing past ~3x, on the hourly ones it
+buys proportionally. Next: the 7-day bar, then a per-series close budget.
+
+**TEMPERATURE: the prediction is perfect and the supply is not there.**
+wxwatch after 7.5 h: settlement == the index at the close minute 240 of 240;
+with a >= 1 F margin the index ended on the other side 0 times in 3,072
+polls at EVERY lead (<=7 min, 7-10 min, >10 min). But only 8 polls in 7.5 h
+had a real offer at 50-97c on the index side -- 3 markets, ~$13/day ceiling,
+NYC and LA zero all day. Let it finish the 3 days, expect nothing.
+
 **results/LEADS_20260924.md (the scheduled collide job, no data) -- both leads
 are answered by tonight's live-fill work, do not build them as proposed:**
 lead 1 ("informed counterparty vs sigma") = the fresh-level and toxicity
