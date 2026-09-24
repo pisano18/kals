@@ -192,14 +192,6 @@ if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 # not flags. That is deliberate: this tests Friday's TRADING RULES, not
 # Friday's bugs.
 $frozen = @(
-      "--loss-abort","-60.00","--max-positions","3",
-      "--improve-scope","market","--pick","best","--max-per-market","2",
-      "--improve-max","0.010","--min-fill-frac","0","--sweep-depth",
-      "--depth-ladder","--jump-gate","--hedge-belief","0.60",
-      "--early-tau","45","--early-frac","1.0","--early-min-price","0.90",
-      "--early-max-edge","3.0","--hedge-price","0.60",
-      "--band-mult","0.90","0.94","1.5","--bank-brake","4.08",
-      "--no-hedge-prop") },
   # and the live rules of the 2026-09-20 sync, PINNED. This used to be x=@()
   # -- "seed from live once, then leave it alone" -- but "once" meant "every
   # time it is not running", so an arm halted by a brake came back as TODAY'S
