@@ -95,6 +95,17 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**results/LEADS_20260924.md (the scheduled collide job, no data) -- both leads
+are answered by tonight's live-fill work, do not build them as proposed:**
+lead 1 ("informed counterparty vs sigma") = the fresh-level and toxicity
+findings (PREREG_fresh.md: 6 of 7 surviving early losers on a level 19-229 ms
+old, resting levels 0 of 155; toxicity.md: taker selling of our side in the
+last 3 s) -- our own fills, no tape study needed; lead 2 ("capacity ceiling
+in bank dollars") = the 09-23 scale table in this session's report: resting
+depth under 98c at our fills median 325 contracts vs size 78 (ratio ~4x at
+signal time, ~0.77 of it realised), so the ceiling binds around 3-4x today's
+size, i.e. a $2.5-3k bank.
+
 **09:2xZ: second low-memory shell kill** (the harness's own shell; bot,
 recorders and arms untouched; free RAM 3.5 GB, commit 21/27.8). Retired
 arm-friday and arm-hedge-slip0. arm-btcd's 15M universe matched live's on
