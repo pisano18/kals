@@ -61,6 +61,18 @@ or not. Late entries are also cheaper (94c vs 96c average).
   at 0-3 s), resting bids on the winner (99.5-99.9c with ~6,900 queued),
   yes_ask+no_ask<1 (no buyable population), new coins.
 
+**CONTROL ARMS (operator: "keep something running to compare the version we
+had running this afternoon to the version we just created"):** `arm-afternoon`
+= the 09-23 afternoon CODE (commit 9aa5f13, copied to
+`research/pinrun_afternoon.py`; no spike gate, no edge cap, no late add) with
+the afternoon's live flags (hedge-belief 0.25, early floor 0.90, slip 0.03),
+paper, launched by hand 2026-09-24 03:51Z (pid 2564788), stdout in
+`results/arm-afternoon.out`. It is NOT in sync_arms.ps1 and NOT restarted by
+boot_all -- relaunch by hand after a reboot (the command is in this session's
+scratchpad / the arm's .out header). `arm-lateadd-off` = tonight's code and
+flags minus the late add (in sync_arms). Compare with
+`results/cf_2026-09-24/armh2h2.py`.
+
 **Open, measured positive, not yet live:**
 - LATE SAME-MARKET ADD. On a FULL position, at <=15 s, when the ask is at or
   above what we paid (-0.5c) and every entry gate passes, add 0.5 x size:
