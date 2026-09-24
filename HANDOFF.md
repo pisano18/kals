@@ -95,6 +95,24 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**SHADOW WATCHERS RUNNING (07:54Z): `research/wxwatch.py` (hourly temperature
+pin: Kalshi's public minute index for Miami/NYC/LA/Chicago vs the hourly
+markets' thresholds, index age, the index-side book, would-buy decisions,
+settlement == index check; bar in its docstring: 3-5 days, age p90 < 7 min,
+>= 50 offered contracts/day/city at <= 97c with >= 1 F margin, zero >= 1 F
+crossings) and `research/quakewatch.py` (USGS vs KXBIGGESTQUAKE locks).
+Logs: results/wxwatch-<start>.jsonl, quakewatch-<start>.jsonl; report:
+`python research/wxwatch.py --report`. Read-only, no orders. Not restarted by
+boot_all -- relaunch by hand (commands in the agents' reports / .out headers).
+
+**VM PLAN (results/VM_PLAN_2026-09-24.md):** Kalshi's exchange is AWS
+us-east-2 (Ohio) -- FIX hosts in Amazon's Ohio ranges, Glassnode agrees; the
+bot's API host is a CloudFront relay (Ashburn edge from here). Recommended:
+Lightsail Ohio, Windows Server 16 GB, $124/mo, move as-is (~1 day); Linux
+$84/mo but 7-10 days of porting. Tape to S3 Glacier IR / Backblaze B2 (~$3-8
+per month) -- upload the 98 GB tape first (3 h at 9 MB/s), which also ends
+the laptop disk deadline. Laptop clock is 13 ms off NIST (checked 08:49Z).
+
 **THE NEW-EDGES HUNT (07:xxZ, 54 agents): results/IDEAS_2026-09-24.md** -- 46
 ideas, 1 promising (hourly TEMPERATURE pin on Kalshi's own public minute
 index, published 5-6 min late; tape ~$175/day Miami, realistic $20-80/day;
