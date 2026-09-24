@@ -1528,8 +1528,15 @@ def selftest():
         ck("THE DAY --" in _br or "Could not build" in _br,
            "/brief answers with the daily briefing, or says plainly that it "
            "could not build one")
-        ck(ph.handle(111, "/summary") == _br,
-           "/summary is the same command under its other name")
+        # the briefing reads the live clock and live files, so two calls a
+        # second apart can differ; assert the ROUTING, not the wording
+        _sv_tb = ph.text_brief
+        try:
+            ph.text_brief = lambda: "BRIEF-STUB"
+            ck(ph.handle(111, "/summary") == "BRIEF-STUB" == ph.handle(111, "/brief"),
+               "/summary is the same command under its other name")
+        finally:
+            ph.text_brief = _sv_tb
         ck("THE DAY --" not in (ph.handle(111, "/today") or ""),
            "and /today is UNTOUCHED -- it already existed and gives the plain "
            "money for the day; taking its name would have quietly replaced "
