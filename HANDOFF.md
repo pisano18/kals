@@ -95,6 +95,16 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**v-hwm-reset (06:5xZ, operator: "yes to drawdown halt"):** after a DRAWDOWN
+halt the watchdog HOLDS (no 15-min restart loop); START on the app writes
+`results/pinrun-hwm.reset`; at the bot's next start the 20% mark is re-based
+to the balance (`hwm_rebased` record + a dated line in VERSIONS.md). Deployed:
+watchdog replaced (pid 2593104), app relaunched (it runs as ~5 pindesk.py
+processes -- main + workers; do not count them as duplicates); the live bot
+picks it up at its next start; the phone bot after its restart. Also fixed:
+the app had never shown SAFETY BRAKE for a real halt (`last_halt` read the
+`end` record).
+
 **v-race-tie1 (06:0xZ): the coin-race scorer reads Kalshi's own result** --
 a tie pays 50c to both tied coins and is a LOSS for the penny test's stop
 rail; unscorable races stay pending with the stake held (results/VERSIONS.md).
