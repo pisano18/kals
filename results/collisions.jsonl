@@ -136,3 +136,15 @@
 {"note": "", "pair": ["F-M02", "F-P07"], "t": "2026-09-23T08:50:35Z", "verdict": "nothing"}
 {"note": "", "pair": ["F-B01", "F-P05"], "t": "2026-09-23T08:50:35Z", "verdict": "nothing"}
 {"note": "", "pair": ["F-P02", "F-P05"], "t": "2026-09-23T08:50:35Z", "verdict": "nothing"}
+{"pair": ["F-C01", "F-R05"], "t": "20260924T0847Z", "verdict": "drawn"}
+{"pair": ["F-M08", "F-O03"], "t": "20260924T0847Z", "verdict": "drawn"}
+{"pair": ["F-C10", "F-P10"], "t": "20260924T0847Z", "verdict": "drawn"}
+{"pair": ["F-I09", "F-P11"], "t": "20260924T0847Z", "verdict": "drawn"}
+{"pair": ["F-B01", "F-O03"], "t": "20260924T0847Z", "verdict": "drawn"}
+{"pair": ["F-R05", "F-R06"], "t": "20260924T0847Z", "verdict": "drawn"}
+{"note": "the only bridge is 'does the adverse-selection gap vary by hour of day', and the gap is a loss rate for US: live fills only, ~248 closes split 24 ways is under 1.2 independent obs per bucket. No power at any n we will hold this year, and the underpowered version is exactly the one that gets run from the tape and breaks rule 5.", "pair": ["F-C01", "F-R05"], "t": "2026-09-24T08:49:16Z", "verdict": "nothing"}
+{"note": "four series with zero settled markets have no book, no fills and no tape; there is no number to compute. The real open question about F-C10 (listed-but-unrecorded vs never listed) is an F-I07 question and does not use F-P10 at all.", "pair": ["F-C10", "F-P10"], "t": "2026-09-24T08:49:18Z", "verdict": "nothing"}
+{"note": "the only measurement using both is dump-guard refusal rate by coin over the 16,683 rows. It is cheap, but it could only explain a NULL and P11 is a non-replication, which noise explains better; and the downstream question (is any coin safer for US) needs our loss rate, i.e. live fills, i.e. 248 closes over 12 coins. The table changes nothing.", "pair": ["F-I09", "F-P11"], "t": "2026-09-24T08:49:21Z", "verdict": "nothing"}
+{"note": "same finding twice: R06 IS the attempt to bridge R05 and it was killed. Tempting because MDE 4.05pp sits just above the 3.3pp gap, so more tape looks like the fix -- it is not. MDE scales 1/sqrt(n) so 1.5x tape gives 3.3pp, i.e. 50% power, and more importantly the binding constraint is observability not power: the 82c XRP fill does not exist anywhere in the replayed book. More of an invisible thing is still invisible. Do not resurrect.", "pair": ["F-R05", "F-R06"], "t": "2026-09-24T08:49:24Z", "verdict": "nothing"}
+{"note": "does the counterparty behave differently in the worst (lowest) volatility fifth -- full-level consumption rate at MATCHED resting depth, plus a stale-index control. Separates 'our sigma estimator breaks at low vol' from 'low vol attracts informed takers', which is the whole fix.", "pair": ["F-M08", "F-O03"], "t": "2026-09-24T08:49:27Z", "verdict": "lead"}
+{"note": "our size is set by the bank with no reference to depth, and the supply we face is one level taken whole. Measure available depth at the signal millisecond divided by our order size, over the bank's growth, to put a number on the capacity ceiling CURRENT_STATE #9 already identified.", "pair": ["F-B01", "F-O03"], "t": "2026-09-24T08:49:29Z", "verdict": "lead"}
