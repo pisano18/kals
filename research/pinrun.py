@@ -115,6 +115,47 @@ SERIES_TO_INDEX = {
     "KXNEAR15M": "NEARUSD_RTI", "KXADA15M": "ADAUSD_RTI",
 }
 
+# ---- THE HOURLY STRIKE LADDER, PAPER-ONLY (2026-09-24) ---------------------
+# IDEAS_2026-09-24.md section 1 item 2. KXBTCD settles on the SAME rule as
+# KXBTC15M -- "the simple average of the sixty seconds of CF Benchmarks'
+# Bitcoin Real-Time Index (BRTI) before 5 PM EDT is above 95249.99"
+# (rules_primary, read live 2026-09-24) -- so fair() needs nothing new. What
+# differs is the UNIVERSE, read live the same day:
+#   * one EVENT per Eastern hour, KXBTCD-26SEP2417 = 5 PM EDT = 21:00Z; no
+#     event at 02:00-05:00 ET; 188 strikes $100 apart (the 5 PM event: 80 at
+#     $250, open a day ahead); markets are status "initialized" until
+#     open_time = close - 3600 s, then "active";
+#   * custom_strike is NULL, floor_strike exact at 2 decimals, strike_type
+#     "greater", exchange_index 2, settlement_ts ~2.5 min after the close.
+# The limit-4 refresh in trade_loop would fetch the four HIGHEST strikes of
+# the ladder (checked live: T95249.99, T94999.99, ...) and never the rung near
+# the money, so a ladder series takes its own branch, ladder_universe(): page
+# the EVENT, keep the LADDER_KEEP strikes nearest the live index.
+#
+# OFF BY DEFAULT, AND THE DEFAULT PATH IS THE OLD ONE. Nothing here runs
+# unless --series names a ladder series; ladder_series_index() returns
+# SERIES_TO_INDEX ITSELF (identity) when it does not, and no default series is
+# a ladder key, so the branch in the refresh is unreachable. Both are
+# self-tested, as is "the default world makes exactly the GETs it always
+# made". --series is REFUSED with --live: this is a paper test with a
+# pre-registered bar (IDEAS_2026-09-24.md item 2: >= 30 fired closes, 0 paper
+# losses at <= 30 s, >= 660 captured contracts, offers at <= 98c on >= 15 of
+# the cheap closes), then a 1-contract penny test with per-order sign-off.
+#
+# WHAT IT SHARES WITH THE 15M BOT, deliberately: the hourly close is the :00
+# quarter, so close_s is the SAME key the per-close budget uses -- the ladder
+# leg counts against the budget of the twelve coincident 15M closes (rule 4:
+# one correlated outcome). coin_of() maps a KXBTCD ticker to KXBTC, so the
+# extra-coin budget never reads a second BTC bet as a second coin. The entry
+# window (TAU_MAX / EARLY_TAU_MAX), the gates, the hedge pass and the settle
+# reader are untouched: a ladder market is just another (ticker -> iid,
+# close_s, strike, digits, exchange_index) entry once it is in the universe.
+LADDER_SERIES = {"KXBTCD": "BRTI"}       # series -> settlement index id
+LADDER_COIN = {"KXBTCD": "KXBTC"}        # the COIN a ladder ticker belongs to
+LADDER_KEEP = 3                          # rungs kept, nearest the index
+LADDER_PAGE_MAX = 3                      # GET /markets pages per fetch
+LADDER_HORIZON_S = 900                   # the 15M refresh's own window
+
 # ---- the frozen rule -------------------------------------------------------
 # AMENDMENT 9 (2026-09-10 08:35Z): PIN 0.98 -> 0.995. THE BAR MOVED, AND THIS
 # IS THE LOUD, DATED NOTICE. Evidence (research/pinfirst.py, 10,796 markets
@@ -1702,6 +1743,14 @@ def coin_of(ticker):
                                     # become a coin named None and matched
                                     # every other unreadable ticker
     try:
+        _head = str(ticker).split("-", 1)[0]
+        if _head in LADDER_COIN:
+            # KXBTCD-26SEP2417-T95249.99 -> KXBTC. Without this the split on
+            # "15M" below returns the WHOLE ticker, so every rung of the
+            # hourly BTC ladder would be its own "coin" and the extra-coin
+            # budget would top up a BTC bet with more BTC. No 15M ticker has
+            # a head in LADDER_COIN, so their answer is the one below.
+            return LADDER_COIN[_head]
         return str(ticker).split("15M", 1)[0] or None
     except Exception:                                    # noqa: BLE001
         return None
@@ -3473,6 +3522,136 @@ def defer_universe(now, uni_at, taus, near=None, hard=None):
     return False
 
 
+def ladder_series_index(series):
+    """The series -> index map trade_loop scans.
+
+    With no --series it is SERIES_TO_INDEX ITSELF -- identity, not a copy --
+    so the default universe cannot differ from what shipped before the ladder
+    existed. With one, a copy plus the ladder entries."""
+    if not series:
+        return SERIES_TO_INDEX
+    out = dict(SERIES_TO_INDEX)
+    for s_ in series:
+        if s_ not in LADDER_SERIES:
+            raise ValueError("unknown ladder series %r (known: %s)"
+                             % (s_, sorted(LADDER_SERIES)))
+        out[s_] = LADDER_SERIES[s_]
+    return out
+
+
+def ladder_event_ticker(series, close_s):
+    """KXBTCD-26SEP2417 for the event closing 2026-09-24T21:00:00Z: the date
+    and HOUR are the Eastern wall clock of the close, the same convention
+    pinflat.close_epoch reads back. Read off GET /events live 2026-09-24:
+    KXBTCD-26SEP1610 is titled '10am EDT' and closes 14:00Z."""
+    try:
+        from downtime import et_offset
+        off = et_offset(close_s)
+    except Exception:                                   # noqa: BLE001
+        off = -4 * 3600
+    et = _REAL_TIME.gmtime(int(close_s) + int(off))
+    return "%s-%02d%s%02d%02d" % (series, et.tm_year % 100,
+                                   calendar.month_abbr[et.tm_mon].upper(),
+                                   et.tm_mday, et.tm_hour)
+
+
+def _ladder_page(get_fn, params, rows):
+    """Follow `cursor` for up to LADDER_PAGE_MAX pages. Returns (gets, why)."""
+    gets, why, cursor = 0, None, None
+    for _ in range(LADDER_PAGE_MAX):
+        p = dict(params)
+        if cursor:
+            p["cursor"] = cursor
+        st, b = get_fn("/markets", p)
+        gets += 1
+        if st != 200 or not isinstance(b, dict):
+            why = "http_%s" % st
+            break
+        rows.extend(b.get("markets") or [])
+        cursor = b.get("cursor")
+        if not cursor:
+            break
+    return gets, why
+
+
+def ladder_universe(series, iid, spot, now_s, get_fn=None, memo=None,
+                    keep=None):
+    """The ladder's slice of the universe: {ticker: (iid, close_s, strike,
+    digits, exchange_index)} for the `keep` strikes nearest `spot` on the
+    event closing within LADDER_HORIZON_S, and a dict for the `ladder` log
+    record (None when nothing was even attempted).
+
+    ONE GET when the next top of the hour is inside the horizon, none
+    otherwise -- the refresh runs in the trading thread and every GET is a
+    hedge blackout (R2). The event is named from the close; if that name
+    returns no market (an hour Kalshi does not list -- 02:00-05:00 ET has
+    none -- a naming mistake, a DST edge), the SERIES is paged once per close
+    as a fallback and filtered on close_time, so a wrong name costs a few
+    GETs and never admits a wrong-close market. `spot` None (index feed
+    down) keeps NOTHING: the nearest rung cannot be chosen from a price we do
+    not have, and a stale choice would be a bet on where the index was.
+    """
+    get_fn = get if get_fn is None else get_fn
+    keep = LADDER_KEEP if keep is None else int(keep)
+    nc = (int(now_s) // 3600 + 1) * 3600
+    if nc - now_s > LADDER_HORIZON_S:
+        return {}, None                 # far from the hour: no GET, no record
+    ev = ladder_event_ticker(series, nc)
+    info = {"close_s": nc, "tau": int(nc - now_s), "event": ev}
+    rows = []
+    gets, why = _ladder_page(get_fn, {"event_ticker": ev, "status": "open",
+                                      "limit": "200"}, rows)
+    if not rows and memo is not None and memo.get("ladder_fallback_close") != nc:
+        memo["ladder_fallback_close"] = nc          # ONCE per close
+        g2, w2 = _ladder_page(get_fn, {"series_ticker": series,
+                                       "status": "open", "limit": "200"}, rows)
+        gets += g2
+        if w2:
+            why = ((why + "|") if why else "") + "fallback_" + w2
+        info["fallback"] = True
+    cands = []
+    for m in rows:
+        ct, sk = m.get("close_time"), m.get("floor_strike")
+        if not ct or sk is None or not m.get("ticker"):
+            continue
+        try:
+            cs = calendar.timegm(_REAL_TIME.strptime(ct, "%Y-%m-%dT%H:%M:%SZ"))
+        except (TypeError, ValueError):
+            continue
+        if cs - now_s > LADDER_HORIZON_S or cs < now_s:
+            continue
+        # the same two reads the 15M refresh makes: custom_strike.floor_strike
+        # is exact where the exchange gives it (null on KXBTCD, where the
+        # top-level value is already exact at 2 decimals), round_digits is
+        # the settlement precision (None here: eff_strike is the strike)
+        cs_ = m.get("custom_strike") or {}
+        d = cs_.get("round_digits")
+        if cs_.get("floor_strike") is not None:
+            try:
+                sk = float(cs_["floor_strike"])
+            except (TypeError, ValueError):
+                pass
+        try:
+            sk = float(sk)
+        except (TypeError, ValueError):
+            continue
+        cands.append((str(m["ticker"]), cs, sk,
+                      int(d) if d is not None else None,
+                      int(m.get("exchange_index") or 0)))
+    info.update(gets=gets, n_event=len(rows), n_close=len(cands), why=why)
+    if spot is None:
+        info["why"] = ((why + "|") if why else "") + "no_spot"
+        info["kept"] = []
+        return {}, info
+    cands.sort(key=lambda c: (abs(c[2] - float(spot)), c[2]))
+    fresh = {}
+    for tk, cs, sk, d, exi in cands[:keep]:
+        fresh[tk] = (iid, cs, sk, d, exi)
+    info["spot"] = float(spot)
+    info["kept"] = sorted(fresh)
+    return fresh, info
+
+
 LOOP_NEAR_TAU_S = 60     # "near the close": a pass that STARTED with this
                          # many seconds or fewer left. 60, not 45, so the
                          # bar's own 45 s cut is made from data, not from
@@ -4215,6 +4394,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
     # to be measured rather than asserted -- so every call the loop makes into
     # the fake book and the fake index is counted and handed back.
     calls = {}
+    gets = []           # LADDER: every (path, params) the loop asked for
 
     def _count(k):
         calls[k] = calls.get(k, 0) + 1
@@ -4223,7 +4403,9 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         def spot(self, iid):
             _count("spot")
             s = _last_print(iid)
-            return s, 100.5, clock.t - s
+            # LADDER: a market may plant the index level its rung selection
+            # sees; every existing world reads the 100.5 it always did
+            return s, (by_iid.get(iid) or {}).get("spot", 100.5), clock.t - s
 
         def sigma(self, iid):
             _count("sigma")
@@ -4295,6 +4477,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
 
     def _get(path, params=None, **kw):
         if path == "/markets":
+            gets.append((path, dict(params or {})))
             # R2: a PLANTED SLOW REFRESH -- one GET, one clock jump, which
             # is what a fresh TCP+TLS connection per series actually costs.
             if get_delay:
@@ -4302,6 +4485,15 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
             if (get_fail_after is not None
                     and clock.t - t0 >= float(get_fail_after)):
                 return 500, {}          # a PLANTED FAILED REFRESH
+            ev = (params or {}).get("event_ticker")
+            if ev is not None:
+                # LADDER: an event query answers with the event's rungs, as
+                # Kalshi does -- custom_strike null, floor_strike exact
+                return 200, {"markets": [
+                    {"ticker": m["tk"], "close_time": iso,
+                     "floor_strike": m["strike"], "custom_strike": None,
+                     "exchange_index": 2}
+                    for m in markets if str(m["tk"]).startswith(ev + "-")]}
             s = (params or {}).get("series_ticker")
             return 200, {"markets": [
                 {"ticker": m["tk"], "close_time": iso,
@@ -4421,7 +4613,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         _sh.rmtree(tmp, ignore_errors=True)
     return {"recs": recs, "trecs": trecs, "posts": posts, "raised": raised,
             "ran_s": round(clock.t - t0, 3), "state": loop_state,
-            "calls": calls}
+            "calls": calls, "gets": gets}
 
 
 # ===========================================================================
@@ -11998,6 +12190,230 @@ def _selftest_body():
        "means the cap is SIZE. A failed balance read cannot size us up "
        "(%s)" % (_d1nb_s[0].get("why") if _d1nb_s else "no record"))
 
+    # ---- LADDER (2026-09-24): the hourly strike ladder, PAPER-ONLY --------
+    # THE OFF PATH FIRST: with no --series the universe is the object that
+    # shipped, the branch is unreachable, and a default world makes exactly
+    # the GETs it always made.
+    ck(ladder_series_index(None) is SERIES_TO_INDEX
+       and ladder_series_index([]) is SERIES_TO_INDEX,
+       "LADDER off: with no --series trade_loop scans SERIES_TO_INDEX ITSELF "
+       "(identity), not a copy")
+    ck(not (set(LADDER_SERIES) & set(SERIES_TO_INDEX))
+       and set(LADDER_SERIES.values()) <= set(SERIES_TO_INDEX.values()),
+       "LADDER off: no default series is a ladder key, so the ladder branch "
+       "of the refresh is unreachable without the flag -- and every ladder "
+       "index is one the IndexWS already subscribes")
+    _ld_src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _ld_main = _ld_src[_ld_src.rindex(chr(10) + "def main("):]
+    ck("_series_index = ladder_series_index(a.series)" in _ld_main
+       and "trade_loop(a, rec, book, idx, _series_index," in _ld_main
+       and "if a.series and a.live:" in _ld_main
+       and "IndexWS(sorted(set(SERIES_TO_INDEX.values())))" in _ld_main,
+       "LADDER: main() hands trade_loop ladder_series_index(a.series), refuses "
+       "--series with --live, and the index subscription is untouched")
+    ck(coin_of("KXBTC15M-26SEP240045-45") == "KXBTC"
+       and coin_of("KXNEAR15M-26SEP240045-45") == "KXNEAR"
+       and coin_of("KXAAA15M-K1") == "KXAAA"
+       and coin_of(None) is None and coin_of("") is None
+       and coin_of("garbage") == "garbage"
+       and coin_of("KXBTCD-26SEP2417-T95249.99") == "KXBTC",
+       "LADDER: coin_of is unchanged for every 15M ticker and maps the hourly "
+       "BTC ladder to KXBTC -- the extra-coin budget must never read a second "
+       "BTC bet as a second coin")
+
+    def _ld_quiet(tk, series, iid, spot=None, strike=100.0):
+        # `strike` is what the stub exchange serves as floor_strike -- a rung
+        # must carry its own, or every rung ties and the sort proves nothing
+        d = {"tk": tk, "series": series, "iid": iid, "strike": float(strike),
+             "fair": (lambda t: 0.5), "book": (lambda t: _ob(0.50, 0.49))}
+        if spot is not None:
+            d["spot"] = spot
+        return d
+
+    _ld_off = _offline_trade_loop([_ld_quiet("KXAAA15M-K1", "KXAAA15M", "K1A"),
+                                   _ld_quiet("KXB115M-K1", "KXB115M", "K1B1")],
+                                  run_s=25.0, tau0=200)
+    _ld_off_g = _ld_off["gets"]
+    ck(_ld_off["raised"] is None and _ld_off_g
+       and all(g[0] == "/markets"
+               and set(g[1]) == {"series_ticker", "status", "limit"}
+               and g[1]["limit"] == "4" and g[1]["status"] == "open"
+               for g in _ld_off_g)
+       and {g[1]["series_ticker"] for g in _ld_off_g} == {"KXAAA15M", "KXB115M"}
+       and not _kinds(_ld_off, "ladder"),
+       "LADDER off: a default world's refresh is the old one -- %d GETs, every "
+       "one series_ticker/status=open/limit=4, no event_ticker, no ladder "
+       "record" % len(_ld_off_g))
+    _ld_off_w = _kinds(_ld_off, "watch")
+    ck(_ld_off_w and set(_ld_off_w[0]["added"]) == {"KXAAA15M-K1", "KXB115M-K1"},
+       "LADDER off: and it watches exactly the planted 15M markets")
+
+    # THE EVENT NAME is the Eastern close hour (GET /events live 2026-09-24)
+    ck(ladder_event_ticker("KXBTCD", calendar.timegm((2026, 9, 24, 21, 0, 0))) == "KXBTCD-26SEP2417"
+       and ladder_event_ticker("KXBTCD", calendar.timegm((2026, 9, 25, 4, 0, 0))) == "KXBTCD-26SEP2500"
+       and ladder_event_ticker("KXBTCD", calendar.timegm((2026, 9, 16, 14, 0, 0))) == "KXBTCD-26SEP1610"
+       and ladder_event_ticker("KXBTCD", calendar.timegm((2026, 1, 15, 17, 0, 0))) == "KXBTCD-26JAN1512",
+       "LADDER: the event is named by its Eastern close hour (live: ...SEP1610 "
+       "= '10am EDT' closes 14:00Z; ...SEP2500 = midnight EDT = 04:00Z; five "
+       "hours in January)")
+    import pinflat as _ld_pf
+    ck(_ld_pf.close_epoch("KXBTCD-26SEP2417-T95249.99") == calendar.timegm((2026, 9, 24, 21, 0, 0))
+       and _ld_pf.close_epoch("KXBTC15M-26SEP240045-45") == calendar.timegm((2026, 9, 24, 4, 45, 0)),
+       "LADDER: pinflat.close_epoch reads the ladder ticker back to the same "
+       "close (so barcheck/cmdarm/cmdlive can date the arm's fills) and still "
+       "reads a 15M ticker as before")
+
+    # THE SELECTION, driven directly with a stub exchange
+    _lu_close = 1_800_000_000                # 1.8e9 / 3600 is whole: a top of hour
+    _lu_ev = ladder_event_ticker("KXBTCD", _lu_close)
+    _lu_iso = _REAL_TIME.strftime("%Y-%m-%dT%H:%M:%SZ", _REAL_TIME.gmtime(_lu_close))
+    _lu_iso_next = _REAL_TIME.strftime("%Y-%m-%dT%H:%M:%SZ", _REAL_TIME.gmtime(_lu_close + 3600))
+    _lu_strikes = [76199.99 + 100.0 * i for i in range(9)]      # 76199.99 .. 76999.99
+    _lu_calls = []
+
+    def _lu_row(sk, tk=None, iso=None, custom=None):
+        return {"ticker": tk or "%s-T%.2f" % (_lu_ev, sk), "close_time": iso or _lu_iso,
+                "floor_strike": sk, "custom_strike": custom, "exchange_index": 2}
+
+    def _lu_get(rows_by_key, fail_event=False, page=0):
+        def _g(path, params=None, **kw):
+            p = dict(params or {})
+            _lu_calls.append((path, p))
+            key = p.get("event_ticker") if "event_ticker" in p else p.get("series_ticker")
+            if "event_ticker" in p and fail_event:
+                return 500, {}
+            rows = list(rows_by_key.get(key, []))
+            if page and len(rows) > page:
+                if p.get("cursor") == "c1":
+                    return 200, {"markets": rows[page:]}
+                return 200, {"markets": rows[:page], "cursor": "c1"}
+            return 200, {"markets": rows}
+        return _g
+
+    _lu_rows = {_lu_ev: [_lu_row(sk) for sk in _lu_strikes]}
+    _lu_want = {"%s-T%.2f" % (_lu_ev, sk) for sk in (76599.99, 76699.99, 76799.99)}
+    _lu_calls.clear()
+    _lu_f, _lu_i = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 2000,
+                                   get_fn=_lu_get(_lu_rows), memo={})
+    ck(_lu_f == {} and _lu_i is None and not _lu_calls,
+       "LADDER: 2,000 s before the hour nothing is fetched -- outside the "
+       "15-minute window the ladder costs the trading thread no GET")
+    _lu_calls.clear()
+    _lu_f, _lu_i = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 500,
+                                   get_fn=_lu_get(_lu_rows), memo={})
+    ck(set(_lu_f) == _lu_want and len(_lu_calls) == 1
+       and _lu_calls[0][1] == {"event_ticker": _lu_ev, "status": "open", "limit": "200"},
+       "LADDER: with BRTI at 76,650 the three rungs kept are 76,599.99 / "
+       "76,699.99 / 76,799.99 (|K-spot| 50.01, 49.99, 149.99; 76,499.99 at "
+       "150.01 is out), from ONE GET on the event, never limit=4 (%s)"
+       % sorted(_lu_f))
+    ck(all(v[0] == "BRTI" and v[1] == _lu_close and v[3] is None and v[4] == 2
+           for v in _lu_f.values())
+       and sorted(v[2] for v in _lu_f.values()) == [76599.99, 76699.99, 76799.99]
+       and all(eff_strike(v[2], v[3]) == v[2] for v in _lu_f.values()),
+       "LADDER: the strike is read PER MARKET from its own floor_strike (three "
+       "different dollar values), digits None because custom_strike is null on "
+       "KXBTCD so eff_strike is the strike itself; iid BRTI, exchange_index 2")
+    ck(_lu_i["kept"] == sorted(_lu_want) and _lu_i["n_event"] == 9
+       and _lu_i["n_close"] == 9 and _lu_i["gets"] == 1
+       and _lu_i["spot"] == 76650.0 and _lu_i["event"] == _lu_ev
+       and _lu_i["tau"] == 500 and _lu_i["why"] is None,
+       "LADDER: the ladder record says what was fetched and kept (%s)" % _lu_i)
+    _lu_rows_c = {_lu_ev: [_lu_row(sk, custom={"floor_strike": "%.4f" % (sk + 0.5),
+                                               "round_digits": 4})
+                           for sk in _lu_strikes]}
+    _lu_f, _lu_i = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 500,
+                                   get_fn=_lu_get(_lu_rows_c), memo={})
+    ck(len(_lu_f) == 3 and all(v[3] == 4 for v in _lu_f.values())
+       and sorted(v[2] for v in _lu_f.values()) == [76500.49, 76600.49, 76700.49],
+       "LADDER: where the exchange DOES give custom_strike it wins, exact value "
+       "and round_digits, the same read the 15M refresh makes (the DOGE lesson)")
+    _lu_f, _lu_i = ladder_universe("KXBTCD", "BRTI", None, _lu_close - 500,
+                                   get_fn=_lu_get(_lu_rows), memo={})
+    ck(_lu_f == {} and _lu_i["why"] == "no_spot" and _lu_i["kept"] == []
+       and _lu_i["n_close"] == 9,
+       "LADDER NULL: with the index feed down no rung is kept -- the nearest "
+       "strike cannot be chosen from a price we do not have")
+    _lu_rows_x = {_lu_ev: [_lu_row(sk) for sk in _lu_strikes]
+                  + [_lu_row(76650.99, tk=_lu_ev + "-T76650.99", iso=_lu_iso_next)]}
+    _lu_f, _lu_i = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 500,
+                                   get_fn=_lu_get(_lu_rows_x), memo={})
+    ck(set(_lu_f) == _lu_want and _lu_i["n_event"] == 10 and _lu_i["n_close"] == 9,
+       "LADDER: a rung of ANOTHER close is filtered on close_time even when it "
+       "is the nearest of all -- the name of the event is never trusted over "
+       "the close the exchange states")
+    _lu_calls.clear()
+    _lu_f, _lu_i = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 500,
+                                   get_fn=_lu_get(_lu_rows, page=5), memo={})
+    ck(set(_lu_f) == _lu_want and len(_lu_calls) == 2
+       and _lu_calls[1][1].get("cursor") == "c1" and _lu_i["gets"] == 2
+       and _lu_i["n_event"] == 9,
+       "LADDER: a cursor is followed, and the nearest rungs are chosen across "
+       "pages (the 188-strike event is one page at limit 200; the series is "
+       "three)")
+    _lu_memo = {}
+    _lu_rows_s = {"KXBTCD": [_lu_row(sk) for sk in _lu_strikes]
+                  + [_lu_row(76650.99, tk=_lu_ev + "-T76650.99", iso=_lu_iso_next)]}
+    _lu_calls.clear()
+    _lu_f, _lu_i = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 500,
+                                   get_fn=_lu_get(_lu_rows_s, fail_event=True),
+                                   memo=_lu_memo)
+    ck(set(_lu_f) == _lu_want and _lu_i.get("fallback") is True
+       and _lu_i["why"] == "http_500" and _lu_i["gets"] == 2
+       and [c[1].get("series_ticker") for c in _lu_calls] == [None, "KXBTCD"]
+       and _lu_memo.get("ladder_fallback_close") == _lu_close,
+       "LADDER: when the event query fails the SERIES is paged and filtered on "
+       "close_time -- the same three rungs, the other close's rung excluded, "
+       "and the failure is on the record (%s)" % _lu_i.get("why"))
+    _lu_calls.clear()
+    _lu_f2, _lu_i2 = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 480,
+                                     get_fn=_lu_get(_lu_rows_s, fail_event=True),
+                                     memo=_lu_memo)
+    ck(_lu_f2 == {} and len(_lu_calls) == 1 and not _lu_i2.get("fallback")
+       and _lu_i2["why"] == "http_500",
+       "LADDER: the fallback pages the series ONCE per close -- the next refresh "
+       "of a still-failing event costs one GET, not four (an hour with no event "
+       "listed, 02:00-05:00 ET, must not turn every refresh into a crawl)")
+    _lu_f, _lu_i = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 500,
+                                   get_fn=_lu_get({}), memo={})
+    ck(_lu_f == {} and _lu_i is not None and _lu_i["n_event"] == 0
+       and _lu_i["kept"] == [] and _lu_i["why"] is None,
+       "LADDER NULL: an event with no open market keeps nothing and says so")
+
+    # WIRED THROUGH THE REAL trade_loop: a ladder entry in series_index
+    # fetches the event, keeps the rungs nearest the planted index, and
+    # subscribes exactly those; the GET it makes is never the limit-4 one.
+    _lw = _offline_trade_loop([_ld_quiet("%s-T%.2f" % (_lu_ev, sk), "KXBTCD",
+                                         "BRTI", spot=76650.0, strike=sk)
+                               for sk in _lu_strikes], run_s=25.0, tau0=200)
+    _lw_w = _kinds(_lw, "watch")
+    _lw_l = _kinds(_lw, "ladder")
+    ck(_lw["raised"] is None and _lw_w and set(_lw_w[0]["added"]) == _lu_want
+       and _lw_l and _lw_l[0]["kept"] == sorted(_lu_want)
+       and _lw_l[0]["spot"] == 76650.0
+       and _lw["gets"] and all(g[1].get("event_ticker") == _lu_ev
+                               and "series_ticker" not in g[1]
+                               for g in _lw["gets"]),
+       "LADDER wired: through the REAL trade_loop a KXBTCD entry fetches the "
+       "event (%d GETs, none limit=4), keeps the 3 rungs nearest the planted "
+       "BRTI and subscribes exactly those (%s)"
+       % (len(_lw["gets"]), sorted(_lw_w[0]["added"]) if _lw_w else None))
+    # ...and beside 15M markets on the same close, the 15M refresh is
+    # unchanged and both families share one `watch`
+    _lm = _offline_trade_loop([_ld_quiet("KXAAA15M-K1", "KXAAA15M", "K1A")]
+                              + [_ld_quiet("%s-T%.2f" % (_lu_ev, sk), "KXBTCD",
+                                           "BRTI", spot=76650.0, strike=sk)
+                                 for sk in _lu_strikes], run_s=25.0, tau0=200)
+    _lm_w = _kinds(_lm, "watch")
+    _lm_g15 = [g for g in _lm["gets"] if "series_ticker" in g[1]]
+    ck(_lm["raised"] is None and _lm_w
+       and set(_lm_w[0]["added"]) == _lu_want | {"KXAAA15M-K1"}
+       and _lm_g15 and all(g[1] == {"series_ticker": "KXAAA15M", "status": "open",
+                                    "limit": "4"} for g in _lm_g15),
+       "LADDER wired: beside a 15M series the 15M GET is byte-for-byte the old "
+       "one (series_ticker/status/limit=4) and the universe holds both "
+       "families on the one close")
+
     _pin_moved = [_n for _n in _OFFLINE_PINNED_FLAGS
                   if globals()[_n] != _pin_before[_n]]
     ck(not _pin_moved,
@@ -14763,6 +15179,17 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
             try:
                 fresh = {}
                 for series, iid in series_index.items():
+                    if series in LADDER_SERIES:
+                        # 2026-09-24, paper-only: the hourly strike ladder.
+                        # Unreachable without --series (no default series is
+                        # a ladder key; self-tested), so the limit-4 path
+                        # below is what every other series still runs.
+                        _lfresh, _linfo = ladder_universe(
+                            series, iid, idx.spot(iid)[1], now_s, memo=state)
+                        if _linfo is not None:
+                            rec("ladder", series=series, **_linfo)
+                        fresh.update(_lfresh)
+                        continue
                     st, b = get("/markets", {"series_ticker": series,
                                              "status": "open", "limit": "4"})
                     if st != 200 or not isinstance(b, dict):
@@ -16459,6 +16886,14 @@ def main():
     ap.add_argument("--minutes", type=float, default=60.0)
     ap.add_argument("--loss-abort", type=float, default=-2.00)
     ap.add_argument("--tau-max", type=int, default=TAU_MAX)
+    ap.add_argument("--series", nargs="+", default=None, metavar="SERIES",
+                    choices=sorted(LADDER_SERIES),
+                    help="PAPER ONLY (2026-09-24): also scan these hourly "
+                         "strike-ladder series (KXBTCD), keeping the %d "
+                         "rungs nearest the live index on the event closing "
+                         "within 15 minutes. Refused with --live until the "
+                         "pre-registered bar in IDEAS_2026-09-24.md item 2 "
+                         "holds." % LADDER_KEEP)
     ap.add_argument("--size", type=float, default=1.0,
                     help="contracts per take; 0.01 is about one cent, for "
                          "proving order/fill/settle/payout end to end")
@@ -17216,6 +17651,10 @@ def main():
         # the whole start rather than trade a paper configuration for money.
         raise SystemExit("--arm-name is a PAPER label; it has no business on "
                          "a --live command line. Got %r." % (a.arm_name,))
+    if a.series and a.live:
+        raise SystemExit("--series is a PAPER-ONLY ladder test (IDEAS_2026-09-24 "
+                         "item 2); it has no business on a --live command "
+                         "line until its bar holds. Got %r." % (a.series,))
     if a.no_size_mirror:
         globals()["SIZE_MIRROR_ON"] = False
     if a.rebuy_hedged:
@@ -17420,6 +17859,15 @@ def main():
           f"loss abort ${a.loss_abort:.2f}  SIZE {a.size:g}")
     print(f"  log {logpath}")
     print(f"  trajectory {trajpath or 'OFF (paper run; --traj-log to keep it)'}")
+    _series_index = ladder_series_index(a.series)
+    if a.series:
+        for _ls in a.series:
+            if LADDER_SERIES[_ls] not in set(SERIES_TO_INDEX.values()):
+                raise SystemExit("ladder series %s needs index %s, which the "
+                                 "IndexWS does not subscribe" % (_ls, LADDER_SERIES[_ls]))
+        print(f"  LADDER (paper-only): {' '.join(a.series)} -> keep "
+              f"{LADDER_KEEP} rungs nearest the index, event within "
+              f"{LADDER_HORIZON_S}s of the hour")
     # EVERY parameter that can change a trade decision goes in the log, so a
     # post-mortem can tell exactly which version produced a given result
     # without guessing from the timestamp. results/VERSIONS.md maps these to
@@ -17529,6 +17977,10 @@ def main():
         hedge_normal=HEDGE_NORMAL, hedge_jump=HEDGE_JUMP_SIGMA,
         bank_brake=BANK_BRAKE,
         bank_divisor=round(BANK_BRAKE * MAX_PER_CLOSE * PRICE_CEILING, 4),
+        # 2026-09-24: the arm's own log must say it scans the ladder (the
+        # A47/A48/A49 lesson: an arm whose start record cannot say what it
+        # is testing is not measurable)
+        ladder_series=sorted(a.series or []), ladder_keep=LADDER_KEEP,
         code_sha=_source_fingerprint())
 
     if a.live:
@@ -17579,7 +18031,7 @@ def main():
 
     state = {}
     try:
-        state, fired = trade_loop(a, rec, book, idx, SERIES_TO_INDEX,
+        state, fired = trade_loop(a, rec, book, idx, _series_index,
                                   trec=trec)
     finally:
         rec("end", state=dict(state), ledger=dict(pintake.LEDGER),

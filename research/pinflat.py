@@ -45,6 +45,12 @@ GRACE_S = 180
 
 _MON = {m.upper(): i for i, m in enumerate(calendar.month_abbr) if m}
 _TK = re.compile(r"^[A-Z0-9]+-(\d{2})([A-Z]{3})(\d{2})(\d{2})(\d{2})(?:-|$)")
+# 2026-09-24: the HOURLY strike ladder (KXBTCD-26SEP2417-T95249.99). Its
+# date field is yyMONddHH -- four digits after the month, not six -- and the
+# close is the top of that Eastern hour. The strike follows as -T<price>.
+# Tried ONLY when _TK fails: a 15M ticker has six digits there and the fifth
+# and sixth are never "-T", so every answer _TK gave before is unchanged.
+_TKH = re.compile(r"^[A-Z0-9]+-(\d{2})([A-Z]{3})(\d{2})(\d{2})-T")
 
 
 def _et_offset(epoch):
@@ -69,9 +75,14 @@ def close_epoch(ticker):
     day totals not matching the app's on 2026-09-17.
     """
     m = _TK.match(str(ticker or ""))
-    if not m:
-        return None
-    yy, mon, dd, hh, mm = m.groups()
+    if m:
+        yy, mon, dd, hh, mm = m.groups()
+    else:
+        m = _TKH.match(str(ticker or ""))
+        if not m:
+            return None
+        yy, mon, dd, hh = m.groups()
+        mm = "00"                       # an hourly ladder closes on the hour
     mon_i = _MON.get(mon)
     if not mon_i:
         return None
@@ -236,6 +247,21 @@ def selftest():
        "and in January the offset is five hours")
     ck(close_epoch("garbage") is None and close_epoch(None) is None,
        "NULL: a non-ticker has no close")
+    # 2026-09-24: the hourly ladder. GET /markets read KXBTCD-26SEP2417's
+    # close_time as 2026-09-24T21:00:00Z (5 PM EDT) and KXBTCD-26SEP2500's
+    # as 2026-09-25T04:00:00Z (midnight EDT).
+    ck(close_epoch("KXBTCD-26SEP2417-T95249.99") == calendar.timegm((2026, 9, 24, 21, 0, 0)),
+       "hourly ladder: KXBTCD-26SEP2417-T95249.99 closes 17:00 ET = 21:00Z")
+    ck(close_epoch("KXBTCD-26SEP2500-T80099.99") == calendar.timegm((2026, 9, 25, 4, 0, 0)),
+       "hourly ladder: ...26SEP2500 is midnight ET = 04:00Z the same UTC day")
+    ck(close_epoch("KXBTCD-26JAN1512-T80099.99") == calendar.timegm((2026, 1, 15, 17, 0, 0)),
+       "hourly ladder in January: five hours, not four")
+    ck(_TKH.match("KXBTC15M-26SEP240045-45") is None
+       and _TKH.match("KXBNB15M-26SEP161000-00") is None,
+       "the hourly pattern never matches a 15M ticker, so every 15M answer is "
+       "the one _TK gave before")
+    ck(close_epoch("KXBTCD-26SEP2417") is None and close_epoch("KXBTCD-26SEP24-T1") is None,
+       "NULL: an hourly EVENT ticker (no -T strike) and a short date are not markets")
 
     def order(tk, filled, kind="order"):
         return {"kind": kind, "ticker": tk, "filled": filled, "status": "executed"}
