@@ -86,7 +86,30 @@ if ($Install) {
 #             deaf -- nothing inside it will ever retry). Kill it; run_all.ps1
 #             starts a fresh one within 5 minutes.
 # At most one kill per recorder per hour, so a long outage cannot churn it.
-function DeafVerdict($tapeRoot, $logPath, [datetime]$nowUtc, [double]$silentMin = 15) {
+# 2026-09-24: RETRYING IS NOT INNOCENT WHEN A NEIGHBOUR IS CONNECTED. The
+# Kalshi recorder retried a failing handshake every minute for SIX HOURS
+# (15:00-20:5x ET 09-23) while the live bot, on the same host to the same
+# endpoint, had a fresh index every second. This rule read "retrying" and
+# left it alone; a manual kill produced a fresh process that connected at
+# once. So: retrying for longer than $retryGraceMin while a peer socket is
+# demonstrably healthy is STUCK, and the collector outranks the rule.
+function PeerKalshiFresh([datetime]$nowUtc, [string]$resDir = "C:\kals-repo\results") {
+    # the live bot writes index_age_s on its refused/signal records; a value
+    # under 2 s within the last 3 minutes means ITS Kalshi socket is alive
+    $log = Get-ChildItem "$resDir\pinrun-live-*.jsonl" -ErrorAction SilentlyContinue |
+           Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $log) { return $false }
+    if (($nowUtc - $log.LastWriteTimeUtc).TotalMinutes -gt 3) { return $false }
+    $tail = @(Get-Content $log.FullName -Tail 400 -ErrorAction SilentlyContinue)
+    foreach ($line in $tail) {
+        if ($line -match '"index_age_s": ([0-9.]+)') {
+            if ([double]$matches[1] -lt 2.0) { return $true }
+        }
+    }
+    return $false
+}
+
+function DeafVerdict($tapeRoot, $logPath, [datetime]$nowUtc, [double]$silentMin = 15, [bool]$peerFresh = $false, [double]$retryGraceMin = 30) {
     $cur  = $nowUtc.ToString("yyyyMMdd'T'HH") + ".jsonl.gz"
     $prev = $nowUtc.AddHours(-1).ToString("yyyyMMdd'T'HH") + ".jsonl.gz"
     $newest = $null
@@ -115,6 +138,9 @@ function DeafVerdict($tapeRoot, $logPath, [datetime]$nowUtc, [double]$silentMin 
     $from = if ($stats.Count -ge 3) { $stats[$stats.Count - 3] } else { 0 }
     $recon = @($tail[$from..($tail.Count - 1)] | Where-Object { $_ -match 'retry|connected|handshake' })
     if ($recon.Count -gt 0) {
+        if ($peerFresh -and $tapeMin -ge $retryGraceMin) {
+            return @{ state = "stuck"; tape_min = $tapeMin; why = ("tape silent {0:N0} min and still retrying, while the live bot's own Kalshi socket is fresh -- a new process will connect (the 09-23 six-hour case)" -f $tapeMin) }
+        }
         return @{ state = "retrying"; tape_min = $tapeMin; why = ("tape silent {0:N0} min, {1} reconnect line(s) in its log -- the connection is down, not the program" -f $tapeMin, $recon.Count) }
     }
     return @{ state = "stuck"; tape_min = $tapeMin; why = ("tape silent {0:N0} min, its log runs but shows no reconnect attempt -- connected and deaf" -f $tapeMin) }
@@ -158,6 +184,19 @@ if ($DeafTest) {
     Set-Content -Path $pp -Value "x"
     (Get-Item $pp).LastWriteTimeUtc = $now.AddSeconds(-20)
     DT ((DeafVerdict "$t\tape" $lg $now).state -eq "ok") "NULL: the previous hour's file written 20 s ago counts (top of the hour)"
+    # 6b. THE 09-23 SIX-HOUR CASE: retrying for 40 min while the live bot's
+    # socket is fresh -> stuck; the same at 10 min -> still retrying (grace)
+    (Get-Item $pp).LastWriteTimeUtc = $now.AddMinutes(-40)
+    Set-Content -Path $lg -Value @("[stat] 02:52 tracking=56 {}", "[ws] TimeoutError: timed out during opening handshake -- retry in 60s", "[stat] 02:57 tracking=56 {}", "[stat] 03:02 tracking=56 {}", "[ws] TimeoutError: timed out during opening handshake -- retry in 60s", "[stat] 03:07 tracking=56 {}")
+    (Get-Item $lg).LastWriteTimeUtc = $now.AddSeconds(-60)
+    $v = DeafVerdict "$t\tape" $lg $now 15 $true
+    DT ($v.state -eq "stuck") "retrying 40 min WHILE the live bot's Kalshi socket is fresh -> stuck, a fresh process will connect (got $($v.state))"
+    (Get-Item $pp).LastWriteTimeUtc = $now.AddMinutes(-20)
+    $v = DeafVerdict "$t\tape" $lg $now 15 $true
+    DT ($v.state -eq "retrying") "NULL: the same at 20 min is inside the 30-min grace -> retrying (got $($v.state))"
+    (Get-Item $pp).LastWriteTimeUtc = $now.AddMinutes(-40)
+    $v = DeafVerdict "$t\tape" $lg $now 15 $false
+    DT ($v.state -eq "retrying") "NULL: 40 min retrying with NO healthy peer stays retrying -- the connection really is down (got $($v.state))"
     # 7. exchange-feed reconnect wording, verbatim from feeds.out.log
     (Get-Item $pp).LastWriteTimeUtc = $now.AddMinutes(-40)
     Set-Content -Path $lg -Value @("[stat] 02:55 top-of-book live: {}", "[kraken] ConnectionClosedError: no close frame received or sent -- retry 60s", "[stat] 03:00 top-of-book live: {}", "[stat] 03:05 top-of-book live: {}")
@@ -219,7 +258,8 @@ foreach ($r in @(
     @{ name = "Kalshi recorder"; like = '*kalshi_collector.py*'; tape = "$kals\kalshi_data"; log = "$kals\logs\collector.out.log"; last = "$res\deaf_kill_collector.last" },
     @{ name = "Exchange recorder"; like = '*crypto_feeds.py*'; tape = "$kals\feed_data"; log = "$kals\logs\feeds.out.log"; last = "$res\deaf_kill_feeds.last" }
 )) {
-    $v = DeafVerdict $r.tape $r.log ([datetime]::UtcNow)
+    $peer = if ($r.name -eq "Kalshi recorder") { PeerKalshiFresh ([datetime]::UtcNow) } else { $false }
+    $v = DeafVerdict $r.tape $r.log ([datetime]::UtcNow) 15 $peer
     if ($v.state -eq "ok") { continue }
     if ($v.state -eq "retrying") { Say "$($r.name) DEAF but retrying: $($v.why). Not killing it."; continue }
     $hits = @($procs | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like $r.like })
