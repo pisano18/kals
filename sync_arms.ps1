@@ -150,7 +150,7 @@ $arms = @(
   # break-even trades. A 2c floor on the engine: same money (+$5..+$26 / 16 d),
   # half the loss dollars, 40% fewer entries, but MIXED by week (+$39 / -$34).
   # (A 97.5c ceiling was tried first and is worse: -$114..-$143; not the same thing.)
-  @{ n="arm-edge2c";        drop=@();                    add=@("--edge-floor","2.0") },
+  @{ n="arm-edge2c";        drop=@();                    add=@("--edge-floor","2.0") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 
