@@ -100,21 +100,14 @@ function BaseWithout([string[]]$drop) {
 # instead. Everything else comes from live, automatically, for ever.
 $arms = @(
   # --- confidence: the question with the most money on it ---
-  @{ n="arm-pin0.97";       drop=@();                    add=@("--pin","0.97") },
-  @{ n="arm-pin0.975";      drop=@();                    add=@("--pin","0.975") },
-  @{ n="arm-pin0.98";       drop=@();                    add=@("--pin","0.98") },
   @{ n="arm-pin0.985";      drop=@();                    add=@("--pin","0.985") },
   @{ n="arm-pin0.99";       drop=@();                    add=@("--pin","0.99") },
   # --- how humble the volatility model is ---
   # --- the hedge, which is where the money has been going ---
-  @{ n="arm-nohedge";       drop=@("--hedge-belief");    add=@("--hedge-belief","0.01") },
   # 2026-09-22: live itself went to --no-hedge-prop (v-hedgefull) and dropped
   # --hedge-price (v-hedgelastweek) on 09-21, which turned arm-hedgeprop-off
   # and arm-hedge-noprice into exact copies of live measuring nothing. Each
   # now tests the setting live LEFT, and hedge60 tests v-hedge25 itself.
-  @{ n="arm-hedgeprop-on";  drop=@("--no-hedge-prop");   add=@() },
-  @{ n="arm-hedgeprice60";  drop=@("--hedge-price");     add=@("--hedge-price","0.60") },
-  @{ n="arm-hedge60";       drop=@("--hedge-belief");    add=@("--hedge-belief","0.60") },
   @{ n="arm-hedge-slip0";   drop=@("--hedge-slip");      add=@() },
   # --- the 45-second leg ---
   @{ n="arm-early-off";     drop=@("--early-tau","--early-frac","--early-min-price",
@@ -124,10 +117,8 @@ $arms = @(
   # here, off in arm-early-off, live is the third.
   @{ n="arm-early-full";    drop=@("--early-frac");      add=@("--early-frac","1.0") },
   @{ n="arm-early-cap975";  drop=@();                    add=@("--early-max-price","0.975") },
-  @{ n="arm-early60";       drop=@("--early-tau");       add=@("--early-tau","60") },
   # --- sizing ---
   @{ n="arm-brake3";        drop=@("--bank-brake");      add=@("--bank-brake","3.00") },
-  @{ n="arm-brake6";        drop=@("--bank-brake");      add=@("--bank-brake","6.00") },
   # 2026-09-22 (missed-deals D_plan R1): count a per-market attempt only when
   # an ORDER IS SENT. MAX_ATTEMPTS_PER_MARKET=3 is counted at the SIGNAL point
   # today, so three refusals inside 150 ms lock a market out of the whole
@@ -149,6 +140,10 @@ $arms = @(
   # at 21-45 s was refuted with numbers tonight, the loosening ones add the loss class,
   # and RAM commit stood at 23.4 of 27.8 GB with 34 arms (a full commit charge can
   # fail an allocation in the MONEY bot). Rows kept in git history.
+  # 2026-09-24 04:35Z: ten more arms RETIRED for memory (commit 22.5 of 27.8 GB, 40 python
+  # processes; the harness killed a shell for low memory) -- the hedge family (settled
+  # by the 820-position replay: 0.40 all-at-once is best), pin 0.97/0.975/0.98 (the bar
+  # is not moving; 0.985/0.99 stay), band15 (-$63 h2h), early60, brake6. Rows in git.
   @{ n="arm-lateadd-off";   drop=@("--rebuy-late-tau","--rebuy-late-frac"); add=@() },
   # 2026-09-24 04:2xZ: entries with under 2c of edge after fee were 314 of the 763
   # markets that survive tonight's rules, 9 of their 19 losers, net +$15 --
@@ -156,7 +151,6 @@ $arms = @(
   # half the loss dollars, 40% fewer entries, but MIXED by week (+$39 / -$34).
   # (A 97.5c ceiling was tried first and is worse: -$114..-$143; not the same thing.)
   @{ n="arm-edge2c";        drop=@();                    add=@("--edge-floor","2.0") },
-  @{ n="arm-band15";        drop=@();                    add=@("--band-mult","0.90","0.94","1.5") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 

@@ -95,6 +95,16 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**PAPER FLEET TRIMMED 04:3xZ for memory** (the harness killed a shell for low
+memory; commit was 22.5 of 27.8 GB with 40 python processes): retired the 7
+sigma arms, the hedge family (nohedge, hedge60, hedgeprice60, hedgeprop-on;
+the 820-position replay settled the trigger), pin 0.97/0.975/0.98, band15,
+early60, brake6. Rows are in git. 14 arms remain: afternoon (manual),
+lateadd-off, edge2c, live-frozen, friday, early-full, early-off,
+early-cap975, doubt15, doubt125, attempt-send, hedge-slip0, brake3,
+pin0.985, pin0.99. RAM 15.8 GB, commit limit 27.8 GB (page file
+system-managed) -- keep the fleet under ~15.
+
 **CONTROL ARMS (operator: "keep something running to compare the version we
 had running this afternoon to the version we just created"):** `arm-afternoon`
 = the 09-23 afternoon CODE (commit 9aa5f13, copied to
