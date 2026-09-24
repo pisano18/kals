@@ -1,0 +1,20 @@
+markets: 825
+  truncated: 20260909T13.jsonl.gz EOFError
+  truncated: 20260915T13.jsonl.gz EOFError
+  truncated: 20260915T20.jsonl.gz error
+  truncated: 20260923T19.jsonl.gz EOFError
+index hours read: 328 in 68s
+  ticker hours 0/328 0s
+  truncated: 20260909T13.jsonl.gz EOFError
+  ticker hours 50/328 6s
+  ticker hours 100/328 12s
+  ticker hours 150/328 17s
+  truncated: 20260915T13.jsonl.gz EOFError
+  truncated: 20260915T20.jsonl.gz error
+  ticker hours 200/328 24s
+  ticker hours 250/328 31s
+  ticker hours 300/328 39s
+  truncated: 20260923T19.jsonl.gz EOFError
+ticker hours read: 328 in 40s
+belief from index: 798, from the bot's own log: 22, none: 5
+wrote C:\Users\Joe\AppData\Local\Temp\claude\C--kals-repo\47b37ac1-655c-4d72-a81b-a48e9625d5bd\scratchpad\cf_dataset.jsonl

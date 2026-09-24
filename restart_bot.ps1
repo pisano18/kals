@@ -161,7 +161,7 @@ $botArgs = @(
     # a third keeps the markets and cuts its tail. arm-early-full and
     # arm-early-off measure the alternatives; research/earlyhindsight.py
     # scores all three from live fills. results/PROJECT_MAP_2026-09-22.md.
-    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.90",
+    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.95",
     # AMENDMENT 50, 2026-09-18. The operator asked what to do with the
     # 45-second leg in the meantime: "It's earning good it'd be a shame to
     # shut it off, but also a shame to lose money... It might mean smaller

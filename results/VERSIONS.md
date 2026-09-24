@@ -1,3 +1,52 @@
+# v-cap20 -- 2026-09-24 02:22Z (pid 2543296) -- LIVE: the 10c edge cap applies only with MORE than 20 s left; early-leg price floor 0.90 -> 0.95
+
+**Why.** Per-second rebuild of every market the bot has entered (820 with a
+full picture: our-side belief from the index tape with pinrun's own maths,
+the market's best ask from the ticker tape, Kalshi's ledger for the money;
+scratchpad `cf_build.py` / `cf_sim.py`, copied to `results/cf_2026-09-24/`).
+Re-implemented decision, NOT the certified backtest; rows are compared to
+each other on one engine, never to Kalshi's number directly.
+
+1. **The cap was refusing the pin edge.** A model-minus-market gap over 10c
+   with 20 s or less left: 19 markets, 1 loser (-$2.12, a 10c NO), winners
+   +$102 -- the market lagging a nearly-locked average, which is the whole
+   strategy. With MORE than 20 s left the same gap lost 3 of 19 (BTC 09-23
+   -$130.41, BNB 09-19 -$57.76, SOL 09-11 -$12.16): the market disagreeing
+   about the future, and right. Same engine, whole record: cap at every tau
+   +$500.70; cap only above 20 s +$633.37; both weeks improve (+$96, +$36).
+   The v-nospike write-up counted a refusal as a lost MARKET; the bot in
+   fact re-looks every second and buys once the gap closes, so the true
+   give-up of the cap is small -- and the late-window part of it was pure
+   give-up.
+2. **Early floor 0.95.** First entries at 31-45 s priced under 95c: 19
+   markets, 4 losers (-$197); at 95-98c: 226 markets, 3 losers, +$96 net.
+   Same engine: +$664.97 with the 95c floor against +$633.37 -- it removes
+   BTC 09-17 -$9.29, BTC 09-19 02:00 -$22.11, NEAR 09-21 -$19.72 and gives up
+   ~$19 of small winners. Three events; the mechanism is the one above
+   (cheap early = the market disagrees), and the leg is at 1/3 size.
+
+**Measured and NOT changed:** (a) halving size at 21-30 s with a top-up at
+<=20 s (the operator's idea) -- with the cap in place it is -$41 on the same
+engine (-$21 and -$20 by week) and does not lower the worst loss further;
+paper only. (b) Hedge trigger: on 820 positions, belief < 0.40 with the
+current sizing is the best of {0.40..0.90} x {proportional, all-at-once} x
+{drop-from-peak 0.1..0.5}; the +$190 the simulation shows over what actually
+happened is the 09-19 bug day (blocked/false hedges, since fixed) -- no
+change. (c) The spike gate adds only ~$5 on this engine but is the direct
+defence for the BTC shape when the gap is under 10c; kept.
+
+Self-test 1104 checks green plain and under the live argv; the new pure and
+driven checks assert the 13c gap is refused at 26/21 s and bought at 20/8 s,
+an UNKNOWN clock counts as early, and `EDGE_CAP_TAU None` restores the
+v-nospike every-tau cap. Entry only; the hedge pass is above both gates
+(source-order check unchanged).
+
+**REVERT:** `git checkout f4b8f6d -- research/pinrun.py`, set
+`"--early-min-price", "0.90",` in restart_bot.ps1, then
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+---
+
 # v-nospike -- 2026-09-24 ~02:0xZ -- LIVE: no spike entries, a 10c edge cap on every leg, hedge trigger 0.25 -> 0.40
 
 **Built from the BTC 8:30 PM ET loss, KXBTC15M-26SEP232030-30, -$130.41 on

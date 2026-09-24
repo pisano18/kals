@@ -1930,6 +1930,16 @@ _DEFAULT_SPIKE_TAU_MIN = 5
 SPIKE_LOOKBACK_S = 2.5         # the "previous print" must be at least ~1 s old and at most this old
 MAX_EDGE_C = 10.0              # refuse a model-minus-market gap wider than this, every leg
 _DEFAULT_MAX_EDGE_C = 10.0
+# v-cap20 (2026-09-24): the cap applies only with MORE than this many seconds
+# left. Per-second rebuild of all 820 entered markets against the ticker
+# tape: a >10c gap with <=20 s left was 19 markets, 1 loser (-$2.12, a 10c
+# NO), +$102 of winners -- that is the pin edge itself, the market lagging
+# a nearly-locked average. With >20 s left the same gap lost 3 of 19
+# (-$200: BTC 09-23, BNB 09-19, SOL 09-11) -- the market disagreeing about
+# the FUTURE, and right. Same engine, whole record: cap at every tau +$501,
+# cap only above 20 s +$633. None = the cap at every tau (the v-nospike bot).
+EDGE_CAP_TAU = 20
+_DEFAULT_EDGE_CAP_TAU = 20
 
 
 def spike_block(hist, now_s, want, tau, min_conf=None, tau_min=None,
@@ -1991,14 +2001,20 @@ def spike_block(hist, now_s, want, tau, min_conf=None, tau_min=None,
 _EC_UNSET = object()
 
 
-def edge_cap_block(edge, cap_c=_EC_UNSET):
-    """True when the model beats the market by MORE than `cap_c` cents.
-    `edge` is in DOLLARS (as net_edge returns). A cap of None = off, and
-    "not supplied" means the running MAX_EDGE_C (the _EW_UNSET trap)."""
+def edge_cap_block(edge, cap_c=_EC_UNSET, tau=None, cap_tau=_EC_UNSET):
+    """True when the model beats the market by MORE than `cap_c` cents AND
+    more than `cap_tau` seconds remain. `edge` is in DOLLARS (as net_edge
+    returns). A cap of None = off; a cap_tau of None = every tau; "not
+    supplied" means the running globals (the _EW_UNSET trap). A tau of None
+    (unknown) is treated as EARLY: an unknown clock does not earn the
+    late-window exemption."""
     cap_c = MAX_EDGE_C if cap_c is _EC_UNSET else cap_c
+    cap_tau = EDGE_CAP_TAU if cap_tau is _EC_UNSET else cap_tau
     if cap_c is None:
         return False
     try:
+        if cap_tau is not None and tau is not None and float(tau) <= float(cap_tau):
+            return False
         return 100.0 * float(edge) > float(cap_c)
     except (TypeError, ValueError):
         return False
@@ -9932,9 +9948,9 @@ def _selftest_body():
 
     # ---- v-nospike (2026-09-24): the two gates from the BTC 8:30 PM loss --
     ck(_DEFAULT_SPIKE_MIN_CONF == 0.90 and _DEFAULT_SPIKE_TAU_MIN == 5
-       and _DEFAULT_MAX_EDGE_C == 10.0,
-       "v-nospike: the DECLARED defaults are 0.90 / 5 s / 10c (never the "
-       "running globals)")
+       and _DEFAULT_MAX_EDGE_C == 10.0 and _DEFAULT_EDGE_CAP_TAU == 20,
+       "v-nospike/v-cap20: the DECLARED defaults are 0.90 / 5 s / 10c / "
+       "20 s (never the running globals)")
     # the real BTC history, as the bot's own trajectory recorded it
     _bt = 1_790_209_775.0
     _bh = [(_bt - 2, 0.19605), (_bt - 1, 0.36862), (_bt, 0.99896)]
@@ -9964,6 +9980,21 @@ def _selftest_body():
        and edge_cap_block(0.30, cap_c=None) is False,
        "edge cap: the BTC 13.05c gap is refused, 10.0c and under passes, "
        "None edge or None cap never blocks")
+    # v-cap20: the clock. BTC's 13c gap at 26 s is refused; the same gap
+    # with 20 s or less left is the pin edge and is bought.
+    ck(edge_cap_block(0.1305, tau=26) is True
+       and edge_cap_block(0.1305, tau=21) is True
+       and edge_cap_block(0.1305, tau=20) is False
+       and edge_cap_block(0.1305, tau=8) is False
+       and edge_cap_block(0.45, tau=11) is False,
+       "v-cap20: a 13c gap is refused at 26 s and 21 s, bought at 20 s and "
+       "8 s; the DOGE 45c gap at 11 s is bought")
+    ck(edge_cap_block(0.1305, tau=None) is True
+       and edge_cap_block(0.1305, tau=8, cap_tau=None) is True
+       and edge_cap_block(0.1305, tau=8, cap_tau=0) is True
+       and edge_cap_block(0.1305, tau=20, cap_tau=30) is False,
+       "v-cap20: an UNKNOWN clock is early (refused); cap_tau None or 0 is "
+       "the every-tau cap of v-nospike; cap_tau 30 exempts 20 s")
 
     # DRIVEN, through the real loop. The spike world is the BTC shape.
     def _spk_mkt(n, fair_of, yes_bid=0.94, no_bid=0.05):
@@ -9998,27 +10029,44 @@ def _selftest_body():
        and not _refusals(_iw, "spike"),
        "DRIVEN: the same spike inside %d s IS bought -- the cushion there is "
        "locked prints, and a real print is real" % SPIKE_TAU_MIN)
-    # the edge cap: a 19c gap is refused, a 5c gap is not, and None cap buys
+    # the edge cap: an 11c gap at 26 s is refused, a 5c gap is not, None cap
+    # buys, and (v-cap20) the same 11c gap at 20 s or less is bought
     _ew = _offline_trade_loop([_spk_mkt(4, lambda t: 0.999, no_bid=0.12)],
-                              run_s=6.0, tau0=20)
+                              run_s=5.0, tau0=26)
     _ew_ref = _refusals(_ew, "edge_cap")
     ck(_ew["raised"] is None and not _kinds(_ew, "signal") and len(_ew_ref) >= 1
-       and float(_ew_ref[0]["edge_c"]) > 10.0 and _ew_ref[0]["cap_c"] == 10.0,
-       "DRIVEN: fair 0.999 against an 88c ask (edge ~%sc, inside the dump "
-       "guard's 15c) is refused by the edge cap on the FULL leg -- A50 only "
-       "ever capped the 45 s leg (gates %s)"
+       and float(_ew_ref[0]["edge_c"]) > 10.0 and _ew_ref[0]["cap_c"] == 10.0
+       and _ew_ref[0]["cap_tau"] == 20 and int(_ew_ref[0]["tau"]) > 20,
+       "DRIVEN: fair 0.999 against an 88c ask at 26 s (edge ~%sc, inside "
+       "the dump guard's 15c) is refused by the edge cap on the FULL leg -- "
+       "A50 only ever capped the 45 s leg (gates %s)"
        % (_ew_ref[0]["edge_c"] if _ew_ref else "?", _gate_counts(_ew)))
     _ew2 = _offline_trade_loop([_spk_mkt(5, lambda t: 0.999, no_bid=0.05)],
-                               run_s=6.0, tau0=20)
+                               run_s=5.0, tau0=26)
     ck(_ew2["raised"] is None and len(_kinds(_ew2, "signal")) >= 1
        and not _refusals(_ew2, "edge_cap"),
-       "NULL DRIVEN: a 5c gap is bought as before (signals %d, gates %s)"
-       % (len(_kinds(_ew2, "signal")), _gate_counts(_ew2)))
+       "NULL DRIVEN: a 5c gap at 26 s is bought as before (signals %d, "
+       "gates %s)" % (len(_kinds(_ew2, "signal")), _gate_counts(_ew2)))
     _ew3 = _offline_trade_loop([_spk_mkt(6, lambda t: 0.999, no_bid=0.12)],
-                               run_s=6.0, tau0=20, flags={"MAX_EDGE_C": None})
+                               run_s=5.0, tau0=26, flags={"MAX_EDGE_C": None})
     ck(_ew3["raised"] is None and len(_kinds(_ew3, "signal")) >= 1
        and not _refusals(_ew3, "edge_cap"),
-       "...and with the cap OFF the 11c gap is bought (the pre-09-24 bot)")
+       "...and with the cap OFF the 11c gap at 26 s is bought (the "
+       "pre-09-24 bot)")
+    _ew4 = _offline_trade_loop([_spk_mkt(7, lambda t: 0.999, no_bid=0.12)],
+                               run_s=5.0, tau0=20)
+    ck(_ew4["raised"] is None and len(_kinds(_ew4, "signal")) >= 1
+       and not _refusals(_ew4, "edge_cap"),
+       "v-cap20 DRIVEN: the SAME 11c gap with 20 s left is BOUGHT -- the "
+       "cap stands down inside 20 s (signals %d, gates %s)"
+       % (len(_kinds(_ew4, "signal")), _gate_counts(_ew4)))
+    _ew5 = _offline_trade_loop([_spk_mkt(8, lambda t: 0.999, no_bid=0.12)],
+                               run_s=5.0, tau0=20, flags={"EDGE_CAP_TAU": None})
+    ck(_ew5["raised"] is None and not _kinds(_ew5, "signal")
+       and len(_refusals(_ew5, "edge_cap")) >= 1,
+       "...and with EDGE_CAP_TAU None it is refused at 20 s -- the "
+       "v-nospike every-tau cap is one flag away (gates %s)"
+       % _gate_counts(_ew5))
     # NEITHER GATE CAN TOUCH A HEDGE: the K1 collapse world, both gates on
     _hg = _offline_trade_loop([_k1_A()])
     ck(_hg["raised"] is None and abs(_hedged(_hg, _kA) - 5.0) < 1e-9,
@@ -15132,11 +15180,12 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                 # 45 s leg at --early-max-edge and left the main window open
                 # because wide late edges had paid; the record above 10c says
                 # otherwise (39 markets, 12.8% lose, -$150). Entry only.
-                if edge_cap_block(e):
+                if edge_cap_block(e, tau=tau):
                     _gate("edge_cap", close_s, tk, leg=_leg46, tau=tau,
                           price=round(price, 4), edge_c=round(100 * e, 3),
-                          cap_c=float(MAX_EDGE_C), fair=round(f, 5),
-                          want=want, size=float(take_n or SIZE))
+                          cap_c=float(MAX_EDGE_C), cap_tau=EDGE_CAP_TAU,
+                          fair=round(f, 5), want=want,
+                          size=float(take_n or SIZE))
                     continue
                 # A53: a skipped price band refuses on EVERY leg. After the early
                 # gates, so a cheap early ask is refused for being cheap (A49)
