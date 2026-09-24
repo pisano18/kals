@@ -1,3 +1,26 @@
+# v-paper-flags -- 2026-09-24 ~09:0xZ -- CODE IN THE REPO, BOTH SHIP OFF; the live bot is unchanged (its next restart runs the same defaults): `--series KXBTCD` (paper arm arm-btcd) and `--fresh-min-age-ms 500 --fresh-tau-min 20` (paper arm arm-fresh500)
+
+- `--series KXBTCD` (refused with --live): the hourly BTC strike ladder in the
+  universe, 3 rungs nearest BRTI, strike per market. Default path proven
+  byte-identical (identity index map; byte-identical GETs in a driven default
+  world). Bar: results/IDEAS_2026-09-24.md item 2 (7 days, >= 30 fired closes,
+  0 paper losses at <= 30 s, >= 660 captured contracts).
+- `--fresh-min-age-ms 500 --fresh-tau-min 20`: with more than 20 s left,
+  refuse a level known to have been posted under 500 ms ago (gate
+  `fresh_level`, entry only, below the hedge pass). results/PREREG_fresh.md:
+  6 of the 7 early losers that survive the live rules hit a level 19-229 ms
+  old; resting levels 0 of 155; money a wash on the record. Live = the arm +
+  the fresh entries, so the refused set's real outcomes are live's own fills.
+  The old "nothing may branch on the quote age" self-test now asserts that
+  the only branch is this one, that the flag ships off, and that the bar
+  file exists.
+
+Self-test 1,134 -> 1,162 checks; pinattrib 55; versioncheck clean.
+
+**REVERT (code only):** `git checkout 3c82dcd -- research/pinrun.py research/pinattrib.py sync_arms.ps1` (nothing live to restart).
+
+---
+
 # v-hwm-reset -- 2026-09-24 ~06:5xZ -- watchdog + app now; the bot at its next start: after a DRAWDOWN halt the watchdog no longer restarts the bot, and START on the app re-bases the 20% mark to the balance
 
 Operator: "Yes to drawdown halt." Today: mark $1,037.33, halt line $829.86,

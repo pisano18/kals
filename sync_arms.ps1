@@ -150,7 +150,15 @@ $arms = @(
   # break-even trades. A 2c floor on the engine: same money (+$5..+$26 / 16 d),
   # half the loss dollars, 40% fewer entries, but MIXED by week (+$39 / -$34).
   # (A 97.5c ceiling was tried first and is worse: -$114..-$143; not the same thing.)
-  @{ n="arm-edge2c";        drop=@();                    add=@("--edge-floor","2.0") }
+  @{ n="arm-edge2c";        drop=@();                    add=@("--edge-floor","2.0") },
+  # 2026-09-24 08:xxZ (IDEAS item 2): the hourly BTC strike ladder, paper only
+  # (--series is refused with --live). Bar: 7 days, >= 30 fired closes, 0 paper
+  # losses at <= 30 s, >= 660 captured contracts, offers on >= 15 cheap closes.
+  @{ n="arm-btcd";          drop=@();                    add=@("--series","KXBTCD") },
+  # 2026-09-24 08:xxZ (results/PREREG_fresh.md): with more than 20 s left, refuse a
+  # level posted under 500 ms ago. Live = this arm + the fresh entries, so the
+  # refused set's real outcomes are live's own fills. Bar: 7 days, then armh2h2.
+  @{ n="arm-fresh500";      drop=@();                    add=@("--fresh-min-age-ms","500","--fresh-tau-min","20") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 

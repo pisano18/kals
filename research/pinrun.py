@@ -1980,6 +1980,19 @@ _DEFAULT_SPIKE_TAU_MIN = 5
 SPIKE_LOOKBACK_S = 2.5         # the "previous print" must be at least ~1 s old and at most this old
 MAX_EDGE_C = 10.0              # refuse a model-minus-market gap wider than this, every leg
 _DEFAULT_MAX_EDGE_C = 10.0
+# v-fresh (2026-09-24, PAPER ARM arm-fresh500, ships OFF): with more than
+# FRESH_TAU_MIN seconds left, refuse a level that has been resting on the book
+# for under FRESH_MIN_AGE_MS (only when the age is EXACT -- we saw the level
+# appear). results/PREREG_fresh.md: on our own fills since 09-13, of the 7
+# early losers that survive the live rules 6 hit a level 19-229 ms old
+# (6 of 187 fresh fills, 3.2 in 100) while levels resting before we looked
+# were 0 of 155; inside 20 s the age does not matter. Money is a wash on the
+# record (-$11.84 / 11 days) so it is a lose-less candidate, measured live by
+# the arm, never deployed from this number. Entry only, below the hedge pass.
+FRESH_MIN_AGE_MS = 0           # --fresh-min-age-ms; 0 = off (the shipped value)
+_DEFAULT_FRESH_MIN_AGE_MS = 0
+FRESH_TAU_MIN = 20             # --fresh-tau-min; the gate stands down at or under this
+_DEFAULT_FRESH_TAU_MIN = 20
 # v-cap20 (2026-09-24): the cap applies only with MORE than this many seconds
 # left. Per-second rebuild of all 820 entered markets against the ticker
 # tape: a >10c gap with <=20 s left was 19 markets, 1 loser (-$2.12, a 10c
@@ -2049,6 +2062,23 @@ def spike_block(hist, now_s, want, tau, min_conf=None, tau_min=None,
 
 
 _EC_UNSET = object()
+
+
+def fresh_level_block(age_ms, exact, tau, min_age_ms=None, tau_min=None):
+    """True when the level we are about to hit is EXACTLY known to be younger
+    than `min_age_ms` and more than `tau_min` seconds remain. Off at 0/None.
+    An unknown or lower-bound age never blocks (the level predates our
+    watch: that is the resting population). PREREG_fresh.md holds the bar."""
+    min_age_ms = FRESH_MIN_AGE_MS if min_age_ms is None else min_age_ms
+    tau_min = FRESH_TAU_MIN if tau_min is None else tau_min
+    try:
+        if not min_age_ms or not exact or age_ms is None or tau is None:
+            return False
+        if float(tau) <= float(tau_min):
+            return False
+        return float(age_ms) < float(min_age_ms)
+    except (TypeError, ValueError):
+        return False
 
 
 def edge_cap_block(edge, cap_c=_EC_UNSET, tau=None, cap_tau=_EC_UNSET):
@@ -4280,7 +4310,7 @@ def _fill_all(body, n):
 _OFFLINE_PINNED_FLAGS = (
     "ATTEMPTS_ON_SEND",
     "DOUBT_MULT", "DOUBT_UNDER",
-    "BAND_MULTS", "BANK_BRAKE", "DEPTH_LADDER", "DUMP_ENABLED", "EARLY_FRAC", "EDGE_FLOOR",
+    "BAND_MULTS", "BANK_BRAKE", "DEPTH_LADDER", "DUMP_ENABLED", "EARLY_FRAC", "EDGE_FLOOR", "FRESH_MIN_AGE_MS", "FRESH_TAU_MIN",
     "EARLY_MAX_EDGE", "EARLY_MAX_PRICE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
     "EXTERNAL_DETECT", "EXTRA_COIN", "FLIP_MULT", "HEDGE_BELIEF",
     "HEDGE_JUMP_SIGMA", "HEDGE_NORMAL", "HEDGE_PANIC", "HEDGE_PRICE",
@@ -4466,6 +4496,9 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
             return []
 
         def level_age_ms(self, tk, side, px):
+            for m in markets:
+                if m["tk"] == tk and "level_age" in m:
+                    return tuple(m["level_age"])
             return None, False
 
         def depth(self, tk, side, n=3):
@@ -9365,6 +9398,15 @@ def _selftest_body():
            "are not trading against")
         ck("book.level_age_ms(" in _lb2 and "round(1.0 - price, 4)" in _lb2,
            "at the complementary price, not at the price we pay")
+        # v-fresh (2026-09-24): the ONE permitted branch is fresh_level_block,
+        # behind a flag that ships off, and its bar was written first.
+        ck("fresh_level_block(_lvl_age, _lvl_exact, tau)" in _lb2
+           and _DEFAULT_FRESH_MIN_AGE_MS == 0
+           and os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                           "..", "results", "PREREG_fresh.md")),
+           "the quote age is branched on ONLY through fresh_level_block, the "
+           "flag ships OFF, and results/PREREG_fresh.md (the pre-registered "
+           "bar) exists")
         for _bad in ("if _lvl_age", "_lvl_age <", "_lvl_age >",
                      "_lvl_age is not None and"):
             ck(_bad not in _lb2,
@@ -10776,6 +10818,48 @@ def _selftest_body():
        and all(r.get("leg") != "late_add" for r in _kinds(_bd, "signal")),
        "v-lateadd NULL: outside the window nothing is relabelled late_add "
        "(legs %s)" % [r.get("leg") for r in _kinds(_bd, "signal")])
+    # ---- v-fresh (2026-09-24): PREREG_fresh.md ----------------------------
+    ck(_DEFAULT_FRESH_MIN_AGE_MS == 0 and _DEFAULT_FRESH_TAU_MIN == 20,
+       "v-fresh: the DECLARED default is OFF, standing down at 20 s")
+    ck(fresh_level_block(100, True, 26, min_age_ms=500, tau_min=20) is True
+       and fresh_level_block(600, True, 26, min_age_ms=500, tau_min=20) is False
+       and fresh_level_block(100, True, 20, min_age_ms=500, tau_min=20) is False
+       and fresh_level_block(100, True, 8, min_age_ms=500, tau_min=20) is False
+       and fresh_level_block(100, False, 26, min_age_ms=500, tau_min=20) is False
+       and fresh_level_block(None, True, 26, min_age_ms=500, tau_min=20) is False
+       and fresh_level_block(100, True, 26, min_age_ms=0, tau_min=20) is False
+       and fresh_level_block(100, True, None, min_age_ms=500, tau_min=20) is False,
+       "v-fresh pure: a 100 ms exact level at 26 s is refused under a 500 ms "
+       "bar; 600 ms passes; 20 s and 8 s left pass; a LOWER-BOUND age never "
+       "blocks; None inputs never block; 0 = off")
+    _fr_on = _offline_trade_loop([dict(_spk_mkt(14, lambda t: 0.999), level_age=(120, True))],
+                                 run_s=4.0, tau0=27, flags={"FRESH_MIN_AGE_MS": 500})
+    _fr_ref = _refusals(_fr_on, "fresh_level")
+    ck(_fr_on["raised"] is None and not _kinds(_fr_on, "signal")
+       and len(_fr_ref) >= 1 and _fr_ref[0].get("level_age_ms") == 120
+       and _fr_ref[0].get("min_age_ms") == 500,
+       "v-fresh DRIVEN: a 120 ms level at 27 s is refused as fresh_level "
+       "naming the age (refusals %d, signals %d)"
+       % (len(_fr_ref), len(_kinds(_fr_on, "signal"))))
+    _fr_old = _offline_trade_loop([dict(_spk_mkt(14, lambda t: 0.999), level_age=(3000, True))],
+                                  run_s=4.0, tau0=27, flags={"FRESH_MIN_AGE_MS": 500})
+    _fr_late = _offline_trade_loop([dict(_spk_mkt(14, lambda t: 0.999), level_age=(120, True))],
+                                   run_s=4.0, tau0=18, flags={"FRESH_MIN_AGE_MS": 500})
+    _fr_off = _offline_trade_loop([dict(_spk_mkt(14, lambda t: 0.999), level_age=(120, True))],
+                                  run_s=4.0, tau0=27)
+    ck(all(w["raised"] is None and len(_kinds(w, "signal")) >= 1
+           and not _refusals(w, "fresh_level") for w in (_fr_old, _fr_late, _fr_off)),
+       "v-fresh NULL DRIVEN: a 3 s level at 27 s is bought; the 120 ms level "
+       "at 18 s is bought; with the flag OFF the 120 ms level at 27 s is "
+       "bought (the shipped bot)")
+    _fr_hg = _offline_trade_loop([_k1_A()], flags={"FRESH_MIN_AGE_MS": 500})
+    ck(_fr_hg["raised"] is None and abs(_hedged(_fr_hg, _kA) - 5.0) < 1e-9,
+       "v-fresh: with the gate ON a collapsing position is still hedged (%g)"
+       % _hedged(_fr_hg, _kA))
+    _fsrc = inspect.getsource(trade_loop)
+    ck(0 < _fsrc.find("hedge_quote") < _fsrc.find('_gate("fresh_level"')
+       and "fresh_level_block(" not in _fsrc[:_fsrc.find("hedge_quote")],
+       "and by source: no fresh_level call exists above the hedge pass")
     _la_hg = _offline_trade_loop([_k1_A()], flags={"REBUY_LATE_TAU": 15})
     ck(_la_hg["raised"] is None and abs(_hedged(_la_hg, _kA) - 5.0) < 1e-9,
        "v-lateadd: with the flag ON a collapsing position is still hedged "
@@ -15970,6 +16054,14 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         tk, _lvl_side, round(1.0 - price, 4))
                 except Exception:
                     _lvl_age, _lvl_exact = None, False
+                # v-fresh: the one branch on the quote age, behind a flag that
+                # ships OFF, with its bar written first (results/PREREG_fresh.md).
+                if fresh_level_block(_lvl_age, _lvl_exact, tau):
+                    _gate("fresh_level", close_s, tk, want=want,
+                          price=round(price, 4), fair=round(f, 5), tau=tau,
+                          level_age_ms=_lvl_age, min_age_ms=FRESH_MIN_AGE_MS,
+                          tau_min=FRESH_TAU_MIN, size=float(take_n or SIZE))
+                    continue
                 sig = dict(ticker=tk, want=want, price=round(price, 4),
                            level_age_ms=_lvl_age, level_age_exact=_lvl_exact,
                            fair=round(f, 5), tau=tau, edge_c=round(100 * e, 3),
@@ -17138,6 +17230,13 @@ def main():
                          "%.2f, the level the plus-2.95 was measured at. Does "
                          "nothing without --doubt-mult above 1."
                          % _DEFAULT_DOUBT_UNDER)
+    ap.add_argument("--fresh-min-age-ms", type=int, default=None, metavar="MS",
+                    help="v-fresh: with more than --fresh-tau-min s left, refuse "
+                         "a level known to be younger than MS ms (default 0 = "
+                         "off). PREREG_fresh.md; paper arm arm-fresh500.")
+    ap.add_argument("--fresh-tau-min", type=int, default=None, metavar="S",
+                    help="v-fresh: the gate stands down at or under S seconds "
+                         "left (default 20)")
     ap.add_argument("--edge-floor", type=float, default=None, metavar="C",
                     help="minimum model-minus-market edge AFTER fee, in CENTS "
                          "(default 0.3). 2026-09-24 record: entries under 2c "
@@ -17618,6 +17717,16 @@ def main():
                                  "got %r" % (float(MAX_PER_CLOSE), _m))
             _bm53.append((float(_lo), float(_hi), float(_m)))
         globals()["BAND_MULTS"] = tuple(_bm53)
+    if a.fresh_min_age_ms is not None:
+        if not (0 <= int(a.fresh_min_age_ms) <= 5000):
+            raise SystemExit("--fresh-min-age-ms must be in [0, 5000], got %r"
+                             % (a.fresh_min_age_ms,))
+        globals()["FRESH_MIN_AGE_MS"] = int(a.fresh_min_age_ms)
+    if a.fresh_tau_min is not None:
+        if not (0 <= int(a.fresh_tau_min) <= 60):
+            raise SystemExit("--fresh-tau-min must be in [0, 60], got %r"
+                             % (a.fresh_tau_min,))
+        globals()["FRESH_TAU_MIN"] = int(a.fresh_tau_min)
     if a.edge_floor is not None:
         if not (0.0 <= float(a.edge_floor) <= 10.0):
             raise SystemExit("--edge-floor is in CENTS and must be in [0, 10], got %r"
