@@ -100,8 +100,6 @@ function BaseWithout([string[]]$drop) {
 # instead. Everything else comes from live, automatically, for ever.
 $arms = @(
   # --- confidence: the question with the most money on it ---
-  @{ n="arm-pin0.985";      drop=@();                    add=@("--pin","0.985") },
-  @{ n="arm-pin0.99";       drop=@();                    add=@("--pin","0.99") },
   # --- how humble the volatility model is ---
   # --- the hedge, which is where the money has been going ---
   # 2026-09-22: live itself went to --no-hedge-prop (v-hedgefull) and dropped
@@ -114,8 +112,6 @@ $arms = @(
   # 2026-09-22 v-early-third: live runs the leg at a third; the operator asked
   # to "measure which would have been the best idea in hindsight" -- full size
   # here, off in arm-early-off, live is the third.
-  @{ n="arm-early-full";    drop=@("--early-frac");      add=@("--early-frac","1.0") },
-  @{ n="arm-early-cap975";  drop=@();                    add=@("--early-max-price","0.975") },
   # --- sizing ---
   @{ n="arm-brake3";        drop=@("--bank-brake");      add=@("--bank-brake","3.00") },
   # 2026-09-22 (missed-deals D_plan R1): count a per-market attempt only when
@@ -123,15 +119,12 @@ $arms = @(
   # today, so three refusals inside 150 ms lock a market out of the whole
   # close (13 post-fix lockouts in 12 closes, 11 still had a standing offer at
   # >= 99.5%). Live is unflagged; this is the only bot with it on.
-  @{ n="arm-attempt-send";  drop=@();                    add=@("--attempts-on-send") },
   # 2026-09-23 (signature D_plan R1): size up when the model's own confidence
   # in the side we buy was under 0.50 at a reading 5 s+ earlier in the same
   # close. 66 markets, 62 closes, 0 money-losers, +$2.95/mkt against +$0.70
   # book-wide; money stable on every leave-one-day-out, significance marginal
   # -- hence paper. --doubt-mult is REFUSED with --live, and sync strips
   # --live, so these two are the only bots running it.
-  @{ n="arm-doubt15";       drop=@();                    add=@("--doubt-mult","1.5") },
-  @{ n="arm-doubt125";      drop=@();                    add=@("--doubt-mult","1.25") },
   # v-lateadd (2026-09-24): a FULL position may add 0.5 x SIZE inside the last
   # 15 s when the ask is at or above what we paid. Measured +$95/16 d with one
   # losing add on the per-second rebuild (results/cf_2026-09-24/); PAPER FIRST.
@@ -146,6 +139,10 @@ $arms = @(
   # 2026-09-24 09:2xZ: arm-friday (a 09-19 flag set; arm-afternoon and arm-live-frozen are
   # the controls now) and arm-hedge-slip0 (the slip question is settled: live runs 0.10)
   # retired -- a second low-memory shell kill; keep the fleet under ~15.
+  # 2026-09-24 17:0xZ: seven more arms retired after a THIRD low-memory shell kill
+  # (pin0.985/0.99, early-full, early-cap975, doubt15/125, attempt-send). Their
+  # questions are settled or marginal; the money bot shares this memory pool.
+  # Eight remain: the three controls, the four live tests, brake3. Rows in git.
   @{ n="arm-lateadd-off";   drop=@("--rebuy-late-tau","--rebuy-late-frac"); add=@() },
   # 2026-09-24 04:2xZ: entries with under 2c of edge after fee were 314 of the 763
   # markets that survive tonight's rules, 9 of their 19 losers, net +$15 --

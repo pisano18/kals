@@ -56,6 +56,9 @@ about the same money but cuts 40% of trades, and it was mixed by week
 (+$39 one week, −$34 the other). Paper only.
 
 ### A4. Control arms — `arm-lateadd-off`, `arm-afternoon`, `arm-live-frozen`
+*(The paper fleet is 8 arms: these three, the four tests above, and `arm-brake3`
+for sizing. It was 34 — the rest were retired on 2026-09-24 because their
+questions were settled and the money bot shares the machine's memory.)*
 **Say: "the control arms."**
 Copies of the bot with one thing changed, so we can prove a change helped.
 - `arm-lateadd-off` = today's live bot WITHOUT the late add (which is live).
