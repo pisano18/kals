@@ -1,3 +1,38 @@
+# v-lateadd-live -- 2026-09-24 ~04:0xZ -- LIVE: `--rebuy-late-tau 15 --rebuy-late-frac 0.5` on; `--hedge-slip 0.03 -> 0.10`
+
+Operator, 2026-09-24: "Late-add: whatever makes the most money (accounting for
+losses as well)... Hedge slips: again whatever makes the most."
+
+**Late add (code: v-lateadd entry below).** Per-second rebuild of the 820
+markets we held: a 0.5 x SIZE add at <=15 s when the ask is at or above
+what we paid and every gate passes: +$95 over 16 days (141 fires), ONE
+losing add (-$3.23), +$66 at 70% fills, +$59/+$56 by week at <=20 s. Does
+it cause more or bigger losses? It cannot open a new losing market; it
+enlarges a loss only when a position that qualifies at <=15 s then
+reverses -- once in 141 on the record, bounded at 0.5 x SIZE x price
+(~$40 at size 88). The close budget and MAX_PER_MARKET still apply (a
+market built from two fills cannot add). Expected: +$3..6 per day.
+`arm-lateadd-off` (live minus the flag) is the control.
+
+**Hedge slip 0.10.** A taker IOC pays the resting ladder's prices, so the
+limit only matters when the touch is gone: BTC 09-23 first try 21 of 88
+filled at the 80c limit while 946 were shown at 77c, the rest a second
+later at 87c; NEAR 09-21 40 of 81 at a 74c limit, the rest 3 s later at
+90.5c. `arm-hedge-slip0` is -$32 vs live on the same markets over 76 h
+(less slip = worse). Since the K1-K3 fix every live alarm (4 of 4) was a
+real loss. Worst case on a false alarm: about 0.07 x size more than the
+touch (~$6). Expected: +$5..10 per 16 days.
+
+Self-test 1,111 checks green under this exact argv. versioncheck clean.
+
+**REVERT:** in restart_bot.ps1 delete the `"--rebuy-late-tau", "15",
+"--rebuy-late-frac", "0.5",` line and set `"--hedge-slip", "0.03",`, then
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+(the code path stays; the default is off). Set `arm-lateadd-off` back to
+`arm-lateadd15` in sync_arms.ps1 if the arm should keep measuring it.
+
+---
+
 # v-lateadd -- 2026-09-24 ~03:3xZ -- CODE IN THE REPO, SHIPS OFF; PAPER ARM `arm-lateadd15` ONLY. The live bot (pid 2543296) is unchanged until its next restart, and the flag defaults to off even then.
 
 **What it is.** `--rebuy-late-tau S --rebuy-late-frac F`: a position already

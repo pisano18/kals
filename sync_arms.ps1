@@ -152,7 +152,7 @@ $arms = @(
   # v-lateadd (2026-09-24): a FULL position may add 0.5 x SIZE inside the last
   # 15 s when the ask is at or above what we paid. Measured +$95/16 d with one
   # losing add on the per-second rebuild (results/cf_2026-09-24/); PAPER FIRST.
-  @{ n="arm-lateadd15";     drop=@();                    add=@("--rebuy-late-tau","15","--rebuy-late-frac","0.5") },
+  @{ n="arm-lateadd-off";   drop=@("--rebuy-late-tau","--rebuy-late-frac"); add=@() },
   @{ n="arm-band15";        drop=@();                    add=@("--band-mult","0.90","0.94","1.5") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }

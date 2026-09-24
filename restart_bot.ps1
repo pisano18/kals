@@ -162,6 +162,11 @@ $botArgs = @(
     # arm-early-off measure the alternatives; research/earlyhindsight.py
     # scores all three from live fills. results/PROJECT_MAP_2026-09-22.md.
     "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.95",
+    # v-lateadd-live (2026-09-24): a FULL position may add 0.5 x SIZE inside the
+    # last 15 s when the ask is at or above what we paid (-0.5c). Per-second
+    # rebuild of 820 held markets: +$95/16 d, ONE losing add (-$3.23), +$66 at
+    # 70% fills, both weeks positive. Operator: "whatever makes the most money".
+    "--rebuy-late-tau", "15", "--rebuy-late-frac", "0.5",
     # AMENDMENT 50, 2026-09-18. The operator asked what to do with the
     # 45-second leg in the meantime: "It's earning good it'd be a shame to
     # shut it off, but also a shame to lose money... It might mean smaller
@@ -341,7 +346,7 @@ $botArgs = @(
     # returns less than the touch. It cannot reach $1, where a hedge leg
     # stops beating holding. And if the ladder read raises, it falls back to
     # the touch and hedges anyway.
-    "--hedge-slip", "0.03",
+    "--hedge-slip", "0.10",
     # --skip-band 0.94 0.96 was staged here for about an hour on 2026-09-18
     # and REMOVED BEFORE IT RAN. The "+0.8% on 83 closes" figure was three
     # losses from the first-week bot (09-09, 09-10, 09-12); on the modern
