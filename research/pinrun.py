@@ -7036,9 +7036,12 @@ def _selftest_body():
        "and the signal record actually carries the conditions columns")
 
     # --- AMENDMENT 10: never buy a certainty at a discount ------------------
-    ck(DUMP_DISCOUNT > 10 * EDGE_FLOOR,
-       f"a {100*DUMP_DISCOUNT:.0f}c discount is >10x the {100*EDGE_FLOOR:.1f}c "
-       f"edge floor, so the honest edge can never trip it")
+    ck(DUMP_DISCOUNT > 10 * _DEFAULT_EDGE_FLOOR and DUMP_DISCOUNT > EDGE_FLOOR,
+       f"a {100*DUMP_DISCOUNT:.0f}c discount is >10x the declared "
+       f"{100*_DEFAULT_EDGE_FLOOR:.1f}c edge floor and above the running "
+       f"{100*EDGE_FLOOR:.1f}c one, so the honest edge can never trip it "
+       f"(the running value is a flag since 2026-09-24; asserting 10x against "
+       f"it refused arm-edge2c at startup)")
     # the live losses this exists for, and the live wins it must not touch,
     # replayed through the same arithmetic the loop uses
     def _dump(f_, price_, want_):
