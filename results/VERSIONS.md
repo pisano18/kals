@@ -1,3 +1,41 @@
+# v-race-tie1 -- 2026-09-24 ~06:0xZ -- COIN RACE, LIVE penny test + every race arm: real legs are scored from Kalshi's own result; a tie pays 50c to both tied coins and counts as a LOSS for the stop rail; an unscorable race stays pending
+
+**Why.** `winner_from` was a bare argmax. On the 2026-09-23 07:15 tie (XRP
+-0.150% vs HYPE -0.151% on Kalshi's 3-decimal numbers, 0.09 bp on our index)
+Kalshi paid 50c to both sides: the real legs lost -$0.9535, the bot booked
++$0.0465, released the rolling stake as a win, and the stop-on-first-loss
+rail -- the safety of the money test -- did not fire. Paper arms booked
++$7.50 on the same race where the ledger says -$118 at their size. Also, a
+race the index could not score was dropped forever (real legs never scored,
+stake never released): one real leg (09-22 07:59Z, XRP YES 98c) is still
+unscored in the penny log.
+
+**What it does now (research/pinracearm.py, VERSION 2026-09-24-tie1):**
+- `winner_from(scores, tie_bp)` -> (winner, is_tie, gap_bp); tie = top two
+  equal after `round(pct, 3)`, Kalshi's rule. `leg_value` pays 1/k to YES on
+  each of k tied coins, NO gets the complement.
+- Real legs are scored the moment every real ticker has a row in
+  `results/kalshi_ledger.json` (pinledgerd refreshes every 60 s): `value`
+  100/0/50. Until then the race is PENDING (stake held). After 15 min with
+  rows missing: index fallback if the top-two gap >= 0.75 bp, otherwise
+  `unscored_tie_suspect` -- pending for the life of the process, stake held.
+- A tie on a real leg is a loss: `tie` record with its dollars, and the halt
+  message says TIE. Rolling stake is released only on a scored result.
+- Entry rules, sizes, prices, timing untouched.
+
+Self-test 181 -> 213 checks, green plain and under the penny bot's exact
+argv (and the z3 / gap075 / raceedge0 argvs); six mutation reverts each fail
+the suite (tie-as-win 7 FAILs, no-wait 8, drop-unscorable 2, scored-before-
+pass 1, release-while-pending 5, exact-draw-only 1). The 09-23 race is
+replayed from planted numbers and the ledger's verbatim rows: -$0.9535, two
+`tie` records, halt fires, stake released once. Live smoke on the real feed
+through the `unscored` path clean.
+
+**REVERT:** `git checkout f632e12 -- research/pinracearm.py`, then restart
+the penny bot with the argv in HANDOFF.md (the one in the process table).
+
+---
+
 # v-lateadd-fix -- 2026-09-24 04:21Z (pid 2554960, code_sha 11ec840dce4f) -- LIVE: the early-leg gates are back; a late add can no longer be widened; the add only relabels inside its window
 
 **A REGRESSION, LIVE FOR 73 MINUTES (03:31Z-04:21Z), FOUND BY THE AUDIT.**

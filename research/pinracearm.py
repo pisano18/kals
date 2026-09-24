@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# VERSION: 2026-09-15-arm4
+# VERSION: 2026-09-24-tie1
 """pinracearm.py -- THE COIN RACE PAPER ARM. Nothing is ever sent.
 
 THE OPERATOR, 2026-09-15: "you can absolutely start on a coin race paper arm.
@@ -42,8 +42,12 @@ WHAT MAKES IT ACCURATE, item by item, because that was the instruction:
   FEES ARE REAL      0.07*p*(1-p), rounded up to the cent-hundredth, the same
                      function the live bot reconciled against the account.
   SELF-SCORING       at close+75s it recomputes the winner from our own index
-                     and marks every paper position won or lost. No settlement
-                     pull, no waiting, no chance of scoring the wrong race.
+                     and marks every paper position won, lost, or TIED (a
+                     two-way tie pays 50c to both coins; the index's 3-decimal
+                     rule names one). REAL legs are scored from Kalshi's own
+                     result on results/kalshi_ledger.json first, and wait for
+                     it: the index cannot tell a tie from a win inside 0.75 bp
+                     (see settle_race). No chance of scoring the wrong race.
   SILENCE IS LOGGED  every reason we did NOT buy is recorded once per leg per
                      reason. `pinracetest` learned this the hard way: a race
                      that logged nothing was indistinguishable from a race with
@@ -81,6 +85,7 @@ os.environ.setdefault("KALS_SELFTESTED", "1")
 import livebook                                              # noqa: E402
 import pinrun                                                # noqa: E402
 import pintake                                               # noqa: E402
+import pinledger                                             # noqa: E402
 import pinracemodel as M                                     # noqa: E402
 import pinracefair as F                                      # noqa: E402
 
@@ -737,22 +742,368 @@ def net_edge(worth, price):
     return worth - price - fee(price)
 
 
-def winner_from(ticks_by_coin, close_s):
-    """The winner of a finished race, recomputed from our own index.
+# ---- SCORING: ties, Kalshi's own result, and the retry book ----------------
+#
+# THE 2026-09-23 BUG. `winner_from` was a bare argmax of the five returns
+# with no notion of a tie. KXCRYPTOLEAD15M-26SEP230715 (07:15 ET) closed with
+# XRP 0.09 bp ahead of HYPE on our index; Kalshi called it a TIE and settled
+# BOTH markets at 50c a contract (`market_result: scalar`, `value: 50`). We
+# held XRP YES at 97c and HYPE NO at 98c: a real loss of -$0.9535 on the
+# ledger, booked here as +$0.0465 -- two wins. The stop-on-first-loss rail
+# never fired and the rolling stake was released as if won. The paper arms
+# booked the same race +$7.50 where the truth at their size was about -$118.
+# A_measure (results/map_2026-09-22/race_ties): 22 ties in 2,927 races, every
+# one two-way, every one under 0.58 bp at the close, none determined inside
+# 5.6 minutes, and NO arithmetic on the index reproduces which photo finishes
+# Kalshi calls ties. So a REAL leg is scored from Kalshi's own result first,
+# and never from the index inside the tie zone.
+LEDGER_WAIT_S = 15 * 60   # a real leg waits this long for Kalshi's own row
+TIE_SUSPECT_BP = 0.75     # under this top-two gap the index cannot call it:
+                          # 13 of 13 ties inside, 0 of 2,363 races outside
+LEDGER_POLL_S = 10        # re-read the ledger file at most this often
 
-    This is the function `pinracemodel` validated at 761 of 761 against
-    Kalshi's own settled `result`, which is why this arm does not need a
-    settlement pull to score itself."""
+
+def race_returns(ticks_by_coin, close_s):
+    """Every coin's settlement return (closing TWAP over opening TWAP) from
+    our own index, or {} if ANY coin is missing a print in either window --
+    never a partial race. This is the arithmetic `pinracemodel` validated at
+    761 of 761 against Kalshi's own settled winner."""
     rets = {}
     for coin, ticks in ticks_by_coin.items():
         den = open_twap(ticks, close_s - WINDOW)
         num = [ticks[s] for s in range(close_s - N_AVG, close_s) if s in ticks]
         if not den or len(num) < N_AVG:
-            return None, {}
+            return {}
         rets[coin] = (sum(num) / float(N_AVG)) / den
-    if len(rets) < 2:
-        return None, {}
-    return max(rets.items(), key=lambda kv: kv[1])[0], rets
+    return rets if len(rets) >= 2 else {}
+
+
+def pct_move(ret):
+    """A settlement return as the % change Kalshi publishes (1.0015 -> 0.15)."""
+    return (ret - 1.0) * 100.0
+
+
+def winner_from(scores, tie_bp=None):
+    """(winner, is_tie, gap_bp) of a finished race, from its returns.
+
+    winner  the coin with the largest return -- the INDEX leader -- or None
+            when there is nothing to rank. On a tie it is STILL the argmax,
+            so a caller must read is_tie; leaders_of() is the safe form.
+    is_tie  True when the top two coins' % moves are equal after rounding to
+            3 decimals -- the precision Kalshi publishes, 0.001% = 0.1 bp --
+            or when the gap is under `tie_bp`, if one is given.
+    gap_bp  the top-two gap in basis points of return; None when unscorable.
+    """
+    if not scores or len(scores) < 2:
+        return None, False, None
+    order = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+    (top, r1), (_, r2) = order[0], order[1]
+    gap_bp = (r1 - r2) * 1e4
+    tie = round(pct_move(r1), 3) == round(pct_move(r2), 3)
+    if tie_bp is not None and gap_bp < tie_bp:
+        tie = True
+    return top, tie, gap_bp
+
+
+def leaders_of(scores):
+    """The coins that share the lead: [winner] on an ordinary race, every
+    coin whose 3-decimal % move equals the leader's on a tie, [] when the
+    race cannot be scored."""
+    won, tie, _ = winner_from(scores)
+    if won is None:
+        return []
+    if not tie:
+        return [won]
+    top = round(pct_move(scores[won]), 3)
+    return sorted(c for c, r in scores.items() if round(pct_move(r), 3) == top)
+
+
+def leg_value(side, coin, leaders):
+    """Dollars a contract collects at settlement: $1 to YES on the sole
+    winner, 1/k to YES on each of k tied leaders (Kalshi's `value: 50` on a
+    two-way tie), nothing to YES on any other coin; a NO collects the rest."""
+    v = (1.0 / len(leaders)) if coin in leaders else 0.0
+    return v if side == "yes" else 1.0 - v
+
+
+def score_legs(legs, leaders=None, values=None):
+    """Mark every scorable leg in place with value / win / tie / pnl and
+    return the ones marked.
+
+    `values` -- {ticker: what YES collected, 0..1} from Kalshi's own ledger
+    -- outrank `leaders`, the index's view: a leg whose ticker has a ledger
+    value is scored from it, every other leg from `leaders`. A leg with
+    neither is left untouched (no "win" key), never guessed.
+
+    pnl is size x (value - price) less the fee. With value 1 or 0 that is the
+    identical arithmetic to the old win/lose branches (1 - price on a win,
+    -price on a loss); 0.5 in between is the whole change. A leg that
+    collected less than the full dollar did NOT win, and one that collected a
+    fraction is a TIE -- a tie is a loss, and the halt rail reads `win`."""
+    out = []
+    for p in legs:
+        v = None
+        if values and p.get("ticker") in values:
+            vy = float(values[p["ticker"]])
+            v = vy if p["side"] == "yes" else 1.0 - vy
+        elif leaders:
+            v = leg_value(p["side"], p["coin"], leaders)
+        if v is None:
+            continue
+        p["value"] = round(v, 6)
+        p["tie"] = 0.0 < v < 1.0
+        p["win"] = v >= 1.0 - 1e-9
+        p["pnl"] = round(p["size"] * (v - p["price"])
+                         - p["size"] * fee(p["price"]), 4)
+        out.append(p)
+    return out
+
+
+def ledger_value(row):
+    """What YES collected on one settled ledger row, 0..1, or None if the
+    row cannot say. `value` is cents and Kalshi sets it on every row (100 on
+    yes, 0 on no, 50 on a tie -- checked across 960 settlements, pinledger);
+    market_result yes/no is the fallback. A `scalar` without a usable value,
+    a void, or junk is None: unknown, never guessed."""
+    val = row.get("value")
+    if val is not None:
+        try:
+            v = float(val) / 100.0
+        except (TypeError, ValueError):
+            v = None
+        if v is not None and 0.0 <= v <= 1.0:
+            return v
+    res = str(row.get("market_result") or "").strip().lower()
+    if res == "yes":
+        return 1.0
+    if res == "no":
+        return 0.0
+    return None
+
+
+def ledger_values(rows, tickers):
+    """{ticker: YES value} for every ticker in `tickers` that Kalshi has
+    settled in the ledger cache (pinledger's rows, keyed ticker|settled_time).
+    A ticker with no usable row is ABSENT, never defaulted; the latest
+    settlement wins if a ticker somehow has two."""
+    want = set(tickers)
+    best = {}
+    for row in (rows or {}).values():
+        if not isinstance(row, dict) or row.get("ticker") not in want:
+            continue
+        v = ledger_value(row)
+        if v is None:
+            continue
+        tk, at = row["ticker"], str(row.get("settled_time") or "")
+        if tk not in best or at >= best[tk][1]:
+            best[tk] = (v, at)
+    return {k: v for k, (v, _) in best.items()}
+
+
+def settle_race(evt, cs, now, rets, real, pending, ledger_rows, paper=False):
+    """HOW a closed race is scored -- or why it must wait. Touches only
+    `pending` (the once-per-race log book) and returns a verdict dict with
+    "status" scored | pending | unscored, plus winner / tie / gap_bp /
+    leaders / values / source / waited, and "log" (a record kind to write
+    once) when something is worth saying.
+
+    RULES, in order:
+      * no real legs: the index scores the paper legs now, tie by the
+        3-decimal rule; an index hole is `unscored`, exactly as before.
+      * real legs: Kalshi's own result from the ledger scores them the moment
+        EVERY real ticker has a row (median determination 39 s; pinledgerd
+        refreshes every 60 s). Until then the race is PENDING -- not scored,
+        not dropped, stake HELD.
+      * past LEDGER_WAIT_S with rows still missing: a race whose index gap
+        is at least TIE_SUSPECT_BP is scored from the index (`index_fallback`).
+        Under the bar, or with no index at all, it is a TIE SUSPECT: logged
+        once as `unscored_tie_suspect`, kept pending with its stake held, and
+        re-checked against the ledger for as long as the process runs. A tie
+        has never been determined inside 5.6 minutes and the index cannot
+        tell one from a win, so a real leg is never scored from it there.
+      * --paper-live (paper=True) commits no money: same ledger-first path,
+        but a tie suspect the index CAN rank is scored from it at the
+        deadline, flagged tie_suspect, rather than held -- so a paper arm's
+        rolling cap cannot silt up on races nobody will ever settle for it.
+    """
+    won, tie, gap_bp = winner_from(rets)
+    leaders = leaders_of(rets)
+    base = {"winner": won, "tie": tie, "gap_bp": gap_bp, "leaders": leaders,
+            "values": {}, "waited": max(0.0, now - (cs + SCORE_DELAY)),
+            "log": None}
+    if not real:
+        if not leaders:
+            return dict(base, status="unscored",
+                        why="index incomplete at close+%ds" % SCORE_DELAY)
+        return dict(base, status="scored", source="index")
+    ent = pending.setdefault(evt, {"logged": set()})
+
+    def once(kind):
+        if kind in ent["logged"]:
+            return None
+        ent["logged"].add(kind)
+        return kind
+
+    tickers = [p["ticker"] for p in real]
+    vals = ledger_values(ledger_rows, tickers)
+    base["values"] = vals
+    if all(t in vals for t in tickers):
+        coin_of = {p["ticker"]: p["coin"] for p in real}
+        tied = sorted({coin_of[t] for t, x in vals.items() if 0.0 < x < 1.0})
+        won_k = sorted({coin_of[t] for t, x in vals.items() if x >= 1.0})
+        if tied:
+            # Kalshi tied it. Every tie on record is two-way and names the
+            # index's top two (8 of 8, A_measure), so when we held only one
+            # tied coin the other is the index's runner-up.
+            if len(tied) < 2 and rets:
+                top2 = [c for c, _ in sorted(rets.items(),
+                                             key=lambda kv: -kv[1])[:2]]
+                tied = sorted(set(tied) | set(top2))
+            return dict(base, status="scored", source="ledger", tie=True,
+                        winner=None, leaders=tied)
+        if won_k:
+            return dict(base, status="scored", source="ledger", tie=False,
+                        winner=won_k[0], leaders=won_k[:1])
+        # every real ticker lost (NOs on trailers, say): Kalshi has named no
+        # winner to us, so the index's view stands for the paper legs
+        return dict(base, status="scored", source="ledger")
+    if base["waited"] < LEDGER_WAIT_S:
+        return dict(base, status="pending", log=once("awaiting_ledger"),
+                    why="awaiting Kalshi's result: %d of %d rows on the ledger"
+                        % (len(vals), len(tickers)))
+    suspect = (not leaders) or gap_bp is None or gap_bp < TIE_SUSPECT_BP
+    if suspect and (not paper or not leaders):
+        if leaders:
+            why = ("index gap %.3f bp is under the %.2f bp tie bar and Kalshi's "
+                   "result is not on the ledger after %d min: a tie suspect -- "
+                   "stake held, still waiting for the row"
+                   % (gap_bp, TIE_SUSPECT_BP, LEDGER_WAIT_S // 60))
+            kind = "unscored_tie_suspect"
+        else:
+            why = ("index incomplete and no Kalshi row after %d min -- stake "
+                   "held, still waiting for the row" % (LEDGER_WAIT_S // 60))
+            kind = "race_pending"
+        return dict(base, status="pending", why=why, log=once(kind))
+    return dict(base, status="scored", source="index_fallback",
+                tie_suspect=bool(suspect),
+                log=once("index_fallback"),
+                why="no Kalshi row after %d min; index gap %.3f bp -- scored "
+                    "from the index" % (LEDGER_WAIT_S // 60, gap_bp))
+
+
+def loss_halt(evt, lost):
+    """The stop-on-first-loss message for the first losing real leg. A TIE is
+    named as a tie, with the dollars it cost: money was lost, so the rail
+    fires, and the operator reads WHY it fired. None when nothing lost."""
+    if not lost:
+        return None
+    p = lost[0]
+    if p.get("tie"):
+        return ("first real loss: TIE -- %s settled at %.0fc a contract on "
+                "both tied coins; %s %s at %.0fc lost $%.2f"
+                % (evt, 100 * float(p.get("value", 0.5)), p.get("coin"),
+                   p["side"], 100 * p["price"], -p["pnl"]))
+    return "first real loss: %s %s at %.0fc" % (evt, p["side"], 100 * p["price"])
+
+
+def settle_pass(evt, cs, now, rets, fills, live_pos, pending, ledger_rows,
+                rec, state, stake_book):
+    """One closed race, one pass of the scorer. Scores the paper legs in
+    `fills` and the real legs in `live_pos` for `evt`, releases the rolling
+    stake ONLY on a scored result, writes the records through `rec`, and
+    halts `state` on the first real loss -- a tie included. Returns True
+    when the race is DONE (scored, or given up) and False when it must be
+    looked at again: a False race stays in `known`, out of `scored`, its
+    stake held. `state` is the LIVE dict in main and a planted one in the
+    self-test."""
+    mine = [p for p in fills if p["event"] == evt and "win" not in p]
+    real = [p for p in live_pos if p["event"] == evt and "win" not in p]
+    v = settle_race(evt, cs, now, rets, real, pending, ledger_rows,
+                    paper=bool(state.get("paper")))
+    gap = None if v.get("gap_bp") is None else round(v["gap_bp"], 4)
+    if v.get("log"):
+        rec(v["log"], event=evt, close_s=cs, why=v.get("why"), gap_bp=gap,
+            waited=round(v.get("waited", 0.0)),
+            tickers=[p["ticker"] for p in real],
+            ledger_rows=len(v.get("values") or {}),
+            staked_open=round(float(state.get("staked", 0.0)), 4))
+    if v["status"] == "pending":
+        return False                # NOT scored, NOT dropped, stake HELD
+    pending.pop(evt, None)
+    if v["status"] == "unscored":
+        rec("unscored", event=evt, close_s=cs, why=v["why"])
+        return True
+    won, leaders, is_tie = v["winner"], v["leaders"], bool(v["tie"])
+    done = score_legs(mine, leaders)
+    if mine and not done:
+        rec("unscored", event=evt, close_s=cs, positions=len(mine),
+            why="paper legs: index incomplete, and Kalshi's rows cover only "
+                "the real legs")
+    rec("settled", event=evt, close_s=cs, winner=won, tie=is_tie,
+        tied=(leaders if is_tie else None), gap_bp=gap, source=v["source"],
+        returns={k: round(x, 8) for k, x in rets.items()},
+        positions=len(done),
+        won=sum(1 for p in done if p["win"]),
+        ties=sum(1 for p in done if p.get("tie")),
+        pnl=round(sum(p["pnl"] for p in done), 4))
+    if done:
+        print("  SETTLED %-28s %-4s  %d/%d won  $%+.2f%s"
+              % (evt, won or ("TIE" if is_tie else "?"),
+                 sum(1 for p in done if p["win"]),
+                 len(done), sum(p["pnl"] for p in done),
+                 "  (TIE: %s paid %.0fc)" % ("/".join(leaders),
+                                             100.0 / len(leaders))
+                 if is_tie else ""))
+
+    # ---- the REAL positions, and stop on the first loss ----------------
+    real = score_legs(real, leaders, v.get("values"))
+    if real:
+        lost = [p for p in real if not p["win"]]
+        ties = [p for p in real if p.get("tie")]
+        # --paper-live releases into ITS OWN book. A process that never
+        # sends must never write to pintake's ledger.
+        released = (release_settled(state, stake_book, real)
+                    if state.get("rolling") else 0.0)
+        for p in ties:
+            # A TIE IS A LOSS, logged by name with the dollars it cost.
+            rec("tie", event=evt, close_s=cs, ticker=p["ticker"],
+                coin=p.get("coin"), side=p["side"], price=p["price"],
+                size=p["size"], value=p["value"], pnl=p["pnl"],
+                paper=state.get("paper"), source=v["source"])
+        rec("live_settled", event=evt, close_s=cs, winner=won, tie=is_tie,
+            tied=(leaders if is_tie else None), gap_bp=gap,
+            source=v["source"], waited=round(v.get("waited", 0.0)),
+            tie_suspect=bool(v.get("tie_suspect")),
+            paper=state.get("paper"),
+            released=round(released, 4),
+            staked_open=round(float(state.get("staked", 0.0)), 4),
+            positions=len(real),
+            won=sum(1 for p in real if p["win"]),
+            ties=len(ties),
+            pnl=round(sum(p["pnl"] for p in real), 4),
+            legs=[{k: p.get(k) for k in
+                   ("ticker", "side", "price", "size", "tau",
+                    "ask_seen", "zmin", "win", "pnl", "tie", "value")}
+                  for p in real])
+        print("  ** %s SETTLED %-24s %-4s  %d/%d won  $%+.2f%s"
+              % ("PAPR" if state.get("paper") else "LIVE", evt,
+                 won or ("TIE" if is_tie else "?"),
+                 sum(1 for p in real if p["win"]),
+                 len(real), sum(p["pnl"] for p in real),
+                 "  TIE -- %d leg(s) paid 50c" % len(ties) if ties else ""))
+        if lost and state.get("stop_on_loss") and not state.get("halted"):
+            # STOP DEAD. The whole point of the penny test is to find out
+            # whether we lose more often than the tape says; the first real
+            # loss is the answer arriving, not a reason to keep going and
+            # find out how much. A tie lost money, so a tie is a loss.
+            state["halted"] = loss_halt(evt, lost)
+            rec("live_halt", why=state["halted"],
+                staked=round(float(state.get("staked", 0.0)), 4),
+                sends=state.get("sends"))
+            print("\n  *** PENNY TEST HALTED: %s" % state["halted"])
+            print("  No further real order will be sent by this "
+                  "process. The paper arm keeps running.\n")
+    return True
 
 
 def selftest():
@@ -1141,17 +1492,359 @@ def selftest():
         for s in range(cs - N_AVG, cs):
             d[s] = base * (1.02 if coin == "SOL" else 1.01)
         t[coin] = d
-    won, rets = winner_from(t, 10_000)
-    ck(won == "SOL",
-       "the scorer picks the coin with the biggest return out of five")
+    rets = race_returns(t, 10_000)
+    won, _tie, _gap = winner_from(rets)
+    ck(won == "SOL" and _tie is False and leaders_of(rets) == ["SOL"],
+       "the scorer picks the coin with the biggest return out of five, and a "
+       "1% lead is no tie")
     ck(len(rets) == 5 and all(r > 1.0 for r in rets.values()),
        "and every coin rose, which changed nothing -- a common move cannot "
        "decide a race")
     hole = {c: dict(d) for c, d in t.items()}
     hole["BTC"].pop(10_000 - 30)
-    ck(winner_from(hole, 10_000)[0] is None,
+    ck(race_returns(hole, 10_000) == {}
+       and winner_from(race_returns(hole, 10_000)) == (None, False, None)
+       and leaders_of({}) == [],
        "NULL: one missing print in one coin refuses to score the race at all, "
        "rather than scoring it on four legs")
+
+    # ---- TIES (2026-09-24). Kalshi settles a photo finish at 50c to BOTH ---
+    # coins' markets. Until today nothing here knew that a race could end
+    # without a winner, and the real 09-23 tie (-$0.9535 on the ledger) was
+    # booked +$0.0465 -- two wins -- so the first-loss rail never fired.
+    # (a) the rule: equal after rounding each % move to 3 decimals
+    _sc = {"BTC": 1.0015, "ETH": 1.0015, "SOL": 1.0001, "XRP": 0.999,
+           "HYPE": 0.998}
+    _w, _t, _g = winner_from(_sc)
+    ck(_t is True and abs(_g) < 1e-12 and leaders_of(_sc) == ["BTC", "ETH"]
+       and _w == "BTC",
+       "(a) two coins at exactly +0.150% are a TIE: is_tie, gap 0 bp, both "
+       "named as leaders (the argmax is still returned, so a caller that "
+       "ignores is_tie is wrong by construction -- leaders_of is the safe form)")
+    _sc2 = dict(_sc, ETH=1.00149)
+    _w2, _t2, _g2 = winner_from(_sc2)
+    ck(_w2 == "BTC" and _t2 is False and abs(_g2 - 0.1) < 1e-6
+       and leaders_of(_sc2) == ["BTC"],
+       "(a) +0.150%% against +0.149%% -- a 0.001%% gap, 0.1 bp -- is NOT a "
+       "tie (gap %.4f bp)" % _g2)
+    _sc3 = dict(_sc, BTC=1.001504, ETH=1.001496)
+    ck(winner_from(_sc3)[1] is True and leaders_of(_sc3) == ["BTC", "ETH"],
+       "(a) and +0.1504% vs +0.1496% IS one: equal after rounding, not "
+       "identical -- the rule is Kalshi's 3 decimals, not an exact draw")
+    ck(winner_from(_sc2, tie_bp=0.75) == ("BTC", True, _g2),
+       "(a) under a 0.75 bp bar the 0.1 bp race reads as a tie SUSPECT -- "
+       "that bar is the deadline rule for real legs, never the scorer's")
+    ck(abs(leg_value("yes", "BTC", ["BTC", "ETH", "SOL"]) - 1.0 / 3) < 1e-12
+       and abs(leg_value("no", "BTC", ["BTC", "ETH", "SOL"]) - 2.0 / 3) < 1e-12,
+       "(a) a three-way tie pays a third: the arithmetic is 1/k, not a "
+       "hard-coded 50c (no three-way tie has ever happened; A_measure)")
+
+    # (b) a REAL YES at 97c on a tied race: 50c back on 97c plus the fee
+    _yes = [{"event": "E", "coin": "BTC", "ticker": "E-BTC", "side": "yes",
+             "price": 0.97, "size": 1.0}]
+    score_legs(_yes, ["BTC", "ETH"])
+    ck(_yes[0]["tie"] is True and _yes[0]["win"] is False
+       and abs(_yes[0]["pnl"] + 0.4721) < 1e-9 and _yes[0]["value"] == 0.5,
+       "(b) a YES at 97c on a tied coin books -$0.4721 a contract (50c back, "
+       "97c paid, 0.21c fee) -- the ledger's exact number for the XRP leg -- "
+       "is a TIE and is NOT a win")
+    _hm = loss_halt("E", [p for p in _yes if not p["win"]])
+    ck(_hm is not None and "TIE" in _hm and "$0.47" in _hm and "50c" in _hm,
+       "(b) and the stop-on-first-loss rail FIRES on it, naming the tie and "
+       "the dollars: %r" % _hm)
+    # (c) a NO at 98c on the OTHER tied coin loses too; a NO on a coin that
+    # did not tie still collects the full dollar
+    _no = [{"event": "E", "coin": "ETH", "ticker": "E-ETH", "side": "no",
+            "price": 0.98, "size": 1.0},
+           {"event": "E", "coin": "SOL", "ticker": "E-SOL", "side": "no",
+            "price": 0.98, "size": 1.0}]
+    score_legs(_no, ["BTC", "ETH"])
+    ck(_no[0]["tie"] is True and not _no[0]["win"]
+       and abs(_no[0]["pnl"] + 0.4814) < 1e-9,
+       "(c) a NO at 98c on the other tied coin books -$0.4814 (the ledger's "
+       "HYPE number): in a tie BOTH tied coins' markets pay 50c, so the "
+       "leader's YES and the rival's NO lose TOGETHER -- not a hedge")
+    ck(_no[1]["win"] is True and not _no[1]["tie"]
+       and abs(_no[1]["pnl"] - 0.0186) < 1e-9,
+       "(c) while a NO on a coin that did not tie collects its full dollar, "
+       "+$0.0186 -- the tie touches only the tied coins")
+
+    # (d) THE 09-23 RACE, replayed from planted numbers. On our index XRP
+    # beat HYPE by 0.09 bp: -0.1497% vs -0.1506%, which Kalshi's 3 decimals
+    # print as -0.150 vs -0.151 -- NOT a tie by the index. Kalshi tied it.
+    _evt = "KXCRYPTOLEAD15M-26SEP230715"
+    _cs = 1790162100
+    _r923 = {"XRP": 0.998503, "HYPE": 0.998494, "ETH": 0.998207,
+             "BTC": 0.998103, "SOL": 0.997127}
+    _w9, _t9, _g9 = winner_from(_r923)
+    ck(_w9 == "XRP" and _t9 is False and abs(_g9 - 0.09) < 1e-6
+       and round(pct_move(_r923["XRP"]), 3) == -0.15
+       and round(pct_move(_r923["HYPE"]), 3) == -0.151,
+       "(d) the index alone calls 09-23 for XRP by %.3f bp (-0.150 vs "
+       "-0.151 at 3 decimals): no arithmetic on the index reproduces the "
+       "tie, which is WHY a real leg is scored from Kalshi's row" % _g9)
+    # the two ledger rows, copied verbatim from the API (as pinledger's own
+    # self-test carries them)
+    _rows = {"KXCRYPTOLEAD15M-26SEP230715-XRP|2026-09-23T13:55:38.204233Z": {
+                 "ticker": "KXCRYPTOLEAD15M-26SEP230715-XRP",
+                 "market_result": "scalar", "value": 50, "revenue": 50,
+                 "yes_count_fp": "1.00", "yes_total_cost_dollars": "0.970000",
+                 "no_count_fp": "0.00", "fee_cost": "0.002100",
+                 "settled_time": "2026-09-23T13:55:38.204233Z"},
+             "KXCRYPTOLEAD15M-26SEP230715-HYPE|2026-09-23T13:55:38.204233Z": {
+                 "ticker": "KXCRYPTOLEAD15M-26SEP230715-HYPE",
+                 "market_result": "scalar", "value": 50, "revenue": 50,
+                 "no_count_fp": "1.00", "no_total_cost_dollars": "0.980000",
+                 "yes_count_fp": "0.00", "fee_cost": "0.001400",
+                 "settled_time": "2026-09-23T13:55:38.204233Z"}}
+    ck(ledger_values(_rows, ["KXCRYPTOLEAD15M-26SEP230715-XRP",
+                             "KXCRYPTOLEAD15M-26SEP230715-HYPE", "nope"])
+       == {"KXCRYPTOLEAD15M-26SEP230715-XRP": 0.5,
+           "KXCRYPTOLEAD15M-26SEP230715-HYPE": 0.5},
+       "(d) the ledger reads `scalar, value 50` as 50c to YES on both "
+       "tickers, and a ticker with no row is ABSENT, not defaulted")
+    ck(ledger_value({"market_result": "yes", "value": 100}) == 1.0
+       and ledger_value({"market_result": "no", "value": 0}) == 0.0
+       and ledger_value({"market_result": "yes"}) == 1.0
+       and ledger_value({"market_result": "scalar"}) is None
+       and ledger_value({"market_result": "scalar", "value": "junk"}) is None
+       and ledger_value({"market_result": "void", "value": 140}) is None,
+       "NULL: yes/no rows read 1/0 with or without `value`; a scalar with no "
+       "usable value, a void, or junk is UNKNOWN -- never a guessed payout")
+
+    def _real923():
+        return [{"event": _evt, "coin": "XRP",
+                 "ticker": "KXCRYPTOLEAD15M-26SEP230715-XRP", "side": "yes",
+                 "price": 0.97, "size": 1.0, "tau": 2, "ask_seen": 0.97,
+                 "zmin": None},
+                {"event": _evt, "coin": "HYPE",
+                 "ticker": "KXCRYPTOLEAD15M-26SEP230715-HYPE", "side": "no",
+                 "price": 0.98, "size": 1.0, "tau": 2, "ask_seen": 0.98,
+                 "zmin": None}]
+
+    def _drive(recs):
+        def _rec(kind, **kw):
+            recs.append(dict(kw, kind=kind))
+        return _rec
+
+    import contextlib as _cl
+
+    def _sp(*args, **kw):
+        # settle_pass, quietly: the records are what is asserted, and its
+        # console lines (a "PENNY TEST HALTED" banner among them) must not
+        # appear in a startup log where a banner has to mean a halt
+        with _cl.redirect_stdout(io.StringIO()):
+            return settle_pass(*args, **kw)
+
+    _recs, _st9, _bk9, _pd9 = [], {"paper": False, "rolling": True,
+                                   "staked": 1.95, "stop_on_loss": True,
+                                   "halted": None, "sends": 2}, \
+        {"committed": 1.95}, {}
+    _lp9 = _real923()
+    _done = _sp(_evt, _cs, _cs + SCORE_DELAY, _r923, [], _lp9, _pd9,
+                        _rows, _drive(_recs), _st9, _bk9)
+    _ls = [r for r in _recs if r["kind"] == "live_settled"]
+    ck(_done is True and len(_ls) == 1 and _ls[0]["source"] == "ledger"
+       and _ls[0]["tie"] is True and _ls[0]["tied"] == ["HYPE", "XRP"]
+       and _ls[0]["winner"] is None and abs(_ls[0]["pnl"] + 0.9535) < 1e-9
+       and _ls[0]["won"] == 0 and _ls[0]["ties"] == 2,
+       "(d) REPLAYED: with Kalshi's rows on the ledger the race is scored "
+       "from them as a TIE -- $%+.4f, the ledger's own -$0.9535, where the "
+       "old scorer booked +$0.0465 and two wins" % _ls[0]["pnl"])
+    ck(abs(_lp9[0]["pnl"] + 0.4721) < 1e-9 and abs(_lp9[1]["pnl"] + 0.4814) < 1e-9
+       and not _lp9[0]["win"] and not _lp9[1]["win"],
+       "(d) leg by leg: XRP YES -$0.4721, HYPE NO -$0.4814, neither a win")
+    ck(sum(1 for r in _recs if r["kind"] == "tie") == 2
+       and all(abs(r["pnl"]) > 0.47 for r in _recs if r["kind"] == "tie"),
+       "(d) each tied leg is logged as `tie` with its dollar loss")
+    ck(_st9["halted"] is not None and "TIE" in _st9["halted"]
+       and any(r["kind"] == "live_halt" for r in _recs),
+       "(d) and the penny test HALTS on it: %r" % _st9["halted"])
+    ck(abs(_st9["staked"]) < 1e-9 and abs(_bk9["committed"]) < 1e-9
+       and abs(_ls[0]["released"] - 1.95) < 1e-9,
+       "(d) the rolling stake is released on the scored result, once, in "
+       "both books ($1.95)")
+
+    # (d, continued) THE SAME RACE WITH NO LEDGER ROW YET: pending, held,
+    # tie-suspect at the deadline, scored the moment the rows land
+    _recs, _st9, _bk9, _pd9 = [], {"paper": False, "rolling": True,
+                                   "staked": 1.95, "stop_on_loss": True,
+                                   "halted": None, "sends": 2}, \
+        {"committed": 1.95}, {}
+    _lp9 = _real923()
+    _d1 = _sp(_evt, _cs, _cs + SCORE_DELAY, _r923, [], _lp9, _pd9,
+                      {}, _drive(_recs), _st9, _bk9)
+    ck(_d1 is False and "win" not in _lp9[0] and _st9["staked"] == 1.95
+       and _bk9["committed"] == 1.95 and _st9["halted"] is None
+       and [r["kind"] for r in _recs] == ["awaiting_ledger"],
+       "(d) with NO row on the ledger yet the race is PENDING at close+75s: "
+       "not scored from the index, stake held, one `awaiting_ledger` record")
+    _d2 = _sp(_evt, _cs, _cs + SCORE_DELAY + 300, _r923, [], _lp9,
+                      _pd9, {}, _drive(_recs), _st9, _bk9)
+    ck(_d2 is False and len(_recs) == 1,
+       "(d) five minutes later, still nothing: still pending, nothing new "
+       "logged (a tie's median determination is 67 min)")
+    _d3 = _sp(_evt, _cs, _cs + SCORE_DELAY + LEDGER_WAIT_S, _r923, [],
+                      _lp9, _pd9, {}, _drive(_recs), _st9, _bk9)
+    ck(_d3 is False and "win" not in _lp9[0] and _st9["staked"] == 1.95
+       and [r["kind"] for r in _recs] == ["awaiting_ledger",
+                                          "unscored_tie_suspect"]
+       and abs(_recs[1]["gap_bp"] - 0.09) < 1e-6,
+       "(d) at the %d-minute deadline a 0.09 bp gap is a TIE SUSPECT (bar "
+       "%.2f bp): `unscored_tie_suspect`, NOT scored from the index, stake "
+       "still held" % (LEDGER_WAIT_S // 60, TIE_SUSPECT_BP))
+    _d4 = _sp(_evt, _cs, _cs + SCORE_DELAY + LEDGER_WAIT_S + 600,
+                      _r923, [], _lp9, _pd9, {}, _drive(_recs), _st9, _bk9)
+    ck(_d4 is False and len(_recs) == 2,
+       "(d) and it keeps waiting without repeating itself")
+    _d5 = _sp(_evt, _cs, _cs + SCORE_DELAY + 3 * 3600, _r923, [],
+                      _lp9, _pd9, _rows, _drive(_recs), _st9, _bk9)
+    _ls = [r for r in _recs if r["kind"] == "live_settled"]
+    ck(_d5 is True and len(_ls) == 1 and _ls[0]["tie"] is True
+       and abs(_ls[0]["pnl"] + 0.9535) < 1e-9 and abs(_st9["staked"]) < 1e-9
+       and abs(_bk9["committed"]) < 1e-9 and "TIE" in (_st9["halted"] or ""),
+       "(d) three hours on, Kalshi's rows land: scored as the tie it was, "
+       "stake released exactly once, rail fired")
+    # the OLD behaviour, as a proof the trap is closed: the index winner on
+    # this race would have paid both legs
+    _old = _real923()
+    score_legs(_old, leaders_of(_r923))
+    ck(abs(sum(p["pnl"] for p in _old) - 0.0465) < 1e-9,
+       "(d) NULL: scored from the index alone the same two legs come to "
+       "+$0.0465 -- exactly the wrong number the log holds -- so the ledger "
+       "path is what changed the answer, not the arithmetic")
+
+    # the deadline for a --paper-live arm: no money held, so a tie suspect the
+    # index can rank is scored from it and FLAGGED, not held for ever
+    _recs, _stp, _bkp, _pdp = [], {"paper": True, "rolling": True,
+                                   "staked": 1.95, "stop_on_loss": False,
+                                   "halted": None, "sends": 0}, \
+        {"committed": 1.95}, {}
+    _lpp = _real923()
+    _e1 = _sp(_evt, _cs, _cs + SCORE_DELAY, _r923, [], _lpp, _pdp, {},
+                      _drive(_recs), _stp, _bkp)
+    _e2 = _sp(_evt, _cs, _cs + SCORE_DELAY + LEDGER_WAIT_S, _r923, [],
+                      _lpp, _pdp, {}, _drive(_recs), _stp, _bkp)
+    _ls = [r for r in _recs if r["kind"] == "live_settled"]
+    ck(_e1 is False and _e2 is True and len(_ls) == 1
+       and _ls[0]["source"] == "index_fallback" and _ls[0]["tie_suspect"] is True
+       and _ls[0]["paper"] is True and abs(_stp["staked"]) < 1e-9
+       and _stp["halted"] is None,
+       "(d) a --paper-live arm waits the same %d min, then scores the suspect "
+       "from the index FLAGGED tie_suspect and releases its paper stake -- "
+       "it never halts, and its cap cannot silt up" % (LEDGER_WAIT_S // 60))
+
+    # (e) AN UNSCORABLE RACE (index hole) with a real leg: kept pending, scored
+    # when the row appears, stake released exactly once. Until today this was
+    # dropped on the first pass -- KXCRYPTOLEAD15M-26SEP220400's XRP YES at
+    # 98c is in the penny log as `unscored` and was never scored.
+    _ev5 = "KXCRYPTOLEAD15M-26SEP220400"
+    _cs5 = 1790056800
+    _recs, _st5, _bk5, _pd5 = [], {"paper": False, "rolling": True,
+                                   "staked": 0.98, "stop_on_loss": True,
+                                   "halted": None, "sends": 1}, \
+        {"committed": 0.98}, {}
+    _lp5 = [{"event": _ev5, "coin": "XRP", "ticker": _ev5 + "-XRP",
+             "side": "yes", "price": 0.98, "size": 1.0, "tau": 3,
+             "ask_seen": 0.98, "zmin": None}]
+    _f1 = _sp(_ev5, _cs5, _cs5 + SCORE_DELAY, {}, [], _lp5, _pd5, {},
+                      _drive(_recs), _st5, _bk5)
+    ck(_f1 is False and "win" not in _lp5[0] and _st5["staked"] == 0.98
+       and [r["kind"] for r in _recs] == ["awaiting_ledger"],
+       "(e) an index hole with a real leg is PENDING, not `unscored`: the leg "
+       "keeps its place and the stake is held")
+    _f2 = _sp(_ev5, _cs5, _cs5 + SCORE_DELAY + LEDGER_WAIT_S, {}, [],
+                      _lp5, _pd5, {}, _drive(_recs), _st5, _bk5)
+    ck(_f2 is False and _st5["staked"] == 0.98
+       and [r["kind"] for r in _recs] == ["awaiting_ledger", "race_pending"],
+       "(e) with no index and no row at the deadline it says so once and "
+       "keeps waiting -- there is nothing to fall back on")
+    _row5 = {_ev5 + "-XRP|2026-09-22T08:15:38Z": {
+        "ticker": _ev5 + "-XRP", "market_result": "yes", "value": 100,
+        "yes_count_fp": "1.00", "settled_time": "2026-09-22T08:15:38Z"}}
+    _f3 = _sp(_ev5, _cs5, _cs5 + SCORE_DELAY + LEDGER_WAIT_S + 60, {},
+                      [], _lp5, _pd5, _row5, _drive(_recs), _st5, _bk5)
+    _ls = [r for r in _recs if r["kind"] == "live_settled"]
+    ck(_f3 is True and _lp5[0]["win"] is True and not _lp5[0]["tie"]
+       and abs(_lp5[0]["pnl"] - 0.0186) < 1e-9 and len(_ls) == 1
+       and _ls[0]["source"] == "ledger" and _ls[0]["winner"] == "XRP"
+       and abs(_ls[0]["released"] - 0.98) < 1e-9
+       and abs(_st5["staked"]) < 1e-9 and abs(_bk5["committed"]) < 1e-9
+       and _st5["halted"] is None,
+       "(e) the row lands (yes, 100): scored from the ledger as a win of "
+       "+$0.0186, ONE live_settled, the $0.98 stake released exactly once "
+       "from both books, no halt")
+    _recs = []
+    ck(_sp("X", 100, 100 + SCORE_DELAY, {}, [], [], {}, {},
+                   _drive(_recs), {"paper": False}, {}) is True
+       and [r["kind"] for r in _recs] == ["unscored"],
+       "NULL: a race with NO real legs and no index is `unscored` on the "
+       "first pass, exactly as before -- the retry book is for money only")
+
+    # (f) NULL: an ordinary win and an ordinary loss book to the cent as
+    # before, through the same function and through settle_pass
+    _fl = [{"event": "E", "coin": "SOL", "ticker": "E-SOL", "side": "yes",
+            "price": 0.97, "size": 1.0},
+           {"event": "E", "coin": "BTC", "ticker": "E-BTC", "side": "no",
+            "price": 0.98, "size": 1.0},
+           {"event": "E", "coin": "BTC", "ticker": "E-BTC", "side": "yes",
+            "price": 0.97, "size": 3.0},
+           {"event": "E", "coin": "SOL", "ticker": "E-SOL", "side": "no",
+            "price": 0.98, "size": 2.0}]
+    score_legs(_fl, ["SOL"])
+
+    def _old_pnl(p, win):
+        return round(p["size"] * ((1.0 - p["price"]) if win else -p["price"])
+                     - p["size"] * fee(p["price"]), 4)
+    ck([p["win"] for p in _fl] == [True, True, False, False]
+       and all(not p["tie"] for p in _fl)
+       and [p["pnl"] for p in _fl] == [_old_pnl(_fl[0], True),
+                                       _old_pnl(_fl[1], True),
+                                       _old_pnl(_fl[2], False),
+                                       _old_pnl(_fl[3], False)]
+       and [p["pnl"] for p in _fl] == [0.0279, 0.0186, -2.9163, -1.9628],
+       "(f) NULL: an ordinary win (+$0.0279 / +$0.0186) and an ordinary loss "
+       "(-$2.9163 / -$1.9628) are booked to the cent as the old branches "
+       "did -- the tie changed nothing about a race with a winner")
+    _recs, _stf, _bkf = [], {"paper": False, "rolling": True, "staked": 0.97,
+                             "stop_on_loss": True, "halted": None, "sends": 1}, \
+        {"committed": 0.97}
+    _pf = [{"event": "E", "coin": "SOL", "ticker": "E-SOL", "side": "yes",
+            "price": 0.95, "size": 10, "tau": 5}]
+    _lf = [{"event": "E", "coin": "BTC", "ticker": "E-BTC", "side": "yes",
+            "price": 0.97, "size": 1.0, "tau": 3, "ask_seen": 0.97,
+            "zmin": None}]
+    _rowf = {"E-BTC|t": {"ticker": "E-BTC", "market_result": "no", "value": 0,
+                         "settled_time": "t"}}
+    ck(_sp("E", 10_000, 10_000 + SCORE_DELAY, rets, _pf, _lf, {},
+                   _rowf, _drive(_recs), _stf, _bkf) is True
+       and [r["kind"] for r in _recs] == ["settled", "live_settled", "live_halt"]
+       and _recs[0]["winner"] == "SOL" and _recs[0]["tie"] is False
+       and _recs[0]["won"] == 1 and abs(_recs[0]["pnl"] - 10 * (0.05 - fee(0.95))) < 1e-9
+       and _recs[1]["won"] == 0 and _recs[1]["ties"] == 0
+       and abs(_recs[1]["pnl"] + 0.9721) < 1e-9
+       and _stf["halted"] == "first real loss: E yes at 97c"
+       and abs(_stf["staked"]) < 1e-9,
+       "(f) NULL, end to end: an ordinary race scores the paper leg from the "
+       "index (+$%.4f), the real leg from Kalshi's row as the plain loss it "
+       "was (-$0.9721), releases the stake and halts with the OLD message, "
+       "word for word" % _recs[0]["pnl"])
+
+    # the wiring: main() drops a race only when settle_pass says so, and reads
+    # Kalshi's rows from the file pinledgerd keeps
+    _mw = inspect.getsource(main)
+    _i_sp = _mw.find("if not settle_pass(")
+    _i_sa = _mw.find("scored.add(evt)")
+    ck(0 <= _i_sp < _i_sa and _i_sp < _mw.find("continue", _i_sp) < _i_sa
+       and _mw.count("scored.add(evt)") == 1
+       and _mw.find("known.pop(evt, None)") > _i_sa,
+       "main() adds a race to `scored` and pops it from `known` only AFTER "
+       "settle_pass returns True -- a pending race is looked at again, "
+       "which is the whole fix for the dropped real legs")
+    ck("pinledger.load_cache(pinledger.LEDGER)" in _mw
+       and "now - ledger_at >= LEDGER_POLL_S" in _mw,
+       "and Kalshi's rows come from pinledger's cache (results/"
+       "kalshi_ledger.json), re-read at most every %ds" % LEDGER_POLL_S)
 
     # THE STRUCTURAL CLAIM: when the leader is overtaken, three of four NOs
     # still win. This is arithmetic, not a measurement, and it is why the NO
@@ -1206,10 +1899,15 @@ def selftest():
        "rolling is OFF unless --live-rolling-stake is given (the approved "
        "rail is lifetime stake)")
     _msrc = inspect.getsource(main)
-    _i_rel = _msrc.find("release_settled(LIVE, stake_book, real)")
-    ck(_i_rel > 0 and _msrc.find('LIVE.get("rolling")', _i_rel, _i_rel + 160) > 0,
-       "main() releases stake only when rolling is on, at the real-leg "
-       "settlement")
+    _ssrc = inspect.getsource(settle_pass)
+    _i_rel = _ssrc.find("release_settled(state, stake_book, real)")
+    ck(_i_rel > 0 and _ssrc.find('state.get("rolling")', _i_rel, _i_rel + 160) > 0
+       and _ssrc.count("release_settled(") == 1
+       and _i_rel > _ssrc.find('if v["status"] == "pending":')
+       and _i_rel > _ssrc.find("return False"),
+       "settle_pass releases stake only when rolling is on, at the real-leg "
+       "settlement, and only AFTER the pending exit -- a race still waiting "
+       "on Kalshi's row releases nothing")
     ck('stake_book = PAPER_LEDGER if LIVE["paper"] else pintake.LEDGER' in _msrc,
        "and in --paper-live it releases into its OWN book -- a process that "
        "never sends never writes to pintake's ledger")
@@ -1631,8 +2329,10 @@ def selftest():
        "paper order and the real order, plus the paper fill and the settled "
        "leg through their position dicts -- so the threshold can be re-chosen "
        "from the arm's own decisions instead of another rebuild of the tape")
-    ck('"ask_seen", "zmin", "win", "pnl"' in body,
-       "and it survives to the settlement record, where a loss is scored")
+    ck('"ask_seen", "zmin", "win", "pnl", "tie", "value"'
+       in inspect.getsource(settle_pass),
+       "and it survives to the settlement record, where a loss -- or a tie, "
+       "with what the contract collected -- is scored")
 
     # THE 2026-09-21 15:0xZ BUG. The paper arm fills a leg once per time band
     # and used to `continue` past everything below on later seconds. The live
@@ -1946,7 +2646,7 @@ def main():
         tau=[TAU_LO, TAU_HI], bands=[list(b) for b in BANDS],
         table=os.path.basename(M.TABLE),
         table_cells=cells, table_mtime=int(tstat.st_mtime),
-        table_size=tstat.st_size, version="2026-09-15-arm3",
+        table_size=tstat.st_size, version="2026-09-24-tie1",
         tau_max=a.tau_max, min_gap_bp=a.min_gap_bp, min_price=a.min_price,
         one_per_race_band=bool(a.one_per_race_band), model=a.model,
         # THE ARM'S OWN IDENTITY, so a window can be checked rather than
@@ -1985,6 +2685,9 @@ def main():
     fair_cache = {}                         # (event, tau) -> (probs, ruler)
     taken = collections.defaultdict(float)  # (event, ticker, side) -> held
     scored = set()
+    pending = {}                            # event -> once-logged kinds
+    ledger_rows = {}                        # Kalshi's settlements, cached
+    ledger_at = 0.0
     last_disc = 0.0
     try:
         while time.time() - t0 < a.minutes * 60:
@@ -1998,6 +2701,12 @@ def main():
                     rec("error", where="discover", err=str(e)[:200])
 
             # ---- SCORE anything that has closed and settled ------------
+            # A race leaves `known` and enters `scored` ONLY when settle_pass
+            # says it is done. A race with real legs and no Kalshi row yet is
+            # PENDING: looked at again next pass, its stake held. Until
+            # 2026-09-24 an unscorable race was added to `scored` and popped
+            # from `known` BEFORE the unscored check, so its real legs were
+            # never scored and the rolling stake never released.
             for evt, e in sorted(known.items()):
                 cs = int(e["close"])
                 if evt in scored or now < cs + SCORE_DELAY:
@@ -2005,75 +2714,22 @@ def main():
                 with idx.lock:
                     tb = {c: dict(idx.ticks.get(iid) or {})
                           for c, iid in COINS.items()}
-                won, rets = winner_from(tb, cs)
+                rets = race_returns(tb, cs)
+                if (any(p["event"] == evt and "win" not in p for p in live_pos)
+                        and now - ledger_at >= LEDGER_POLL_S):
+                    # KALSHI'S OWN RESULT, from the file pinledgerd refreshes
+                    # every 60 s -- read here at most every LEDGER_POLL_S, and
+                    # only while a race with real legs is waiting on it.
+                    ledger_rows = pinledger.load_cache(pinledger.LEDGER)
+                    ledger_at = now
+                # --paper-live releases into ITS OWN book. A process that
+                # never sends must never write to pintake's ledger.
+                stake_book = PAPER_LEDGER if LIVE["paper"] else pintake.LEDGER
+                if not settle_pass(evt, cs, now, rets, fills, live_pos,
+                                   pending, ledger_rows, rec, LIVE, stake_book):
+                    continue                     # pending: NOT scored, NOT dropped
                 scored.add(evt)
                 known.pop(evt, None)
-                if won is None:
-                    rec("unscored", event=evt, close_s=cs,
-                        why="index incomplete at close+%ds" % SCORE_DELAY)
-                    continue
-                mine = [p for p in fills if p["event"] == evt and "win" not in p]
-                for p in mine:
-                    p["win"] = ((p["coin"] == won) if p["side"] == "yes"
-                                else (p["coin"] != won))
-                    p["pnl"] = round(p["size"] * ((1.0 - p["price"])
-                                                  if p["win"] else -p["price"])
-                                     - p["size"] * fee(p["price"]), 4)
-                rec("settled", event=evt, close_s=cs, winner=won,
-                    returns={k: round(v, 8) for k, v in rets.items()},
-                    positions=len(mine),
-                    won=sum(1 for p in mine if p["win"]),
-                    pnl=round(sum(p["pnl"] for p in mine), 4))
-                if mine:
-                    print("  SETTLED %-28s %-4s  %d/%d won  $%+.2f"
-                          % (evt, won, sum(1 for p in mine if p["win"]),
-                             len(mine), sum(p["pnl"] for p in mine)))
-
-                # ---- score the REAL positions, and stop on the first loss --
-                real = [p for p in live_pos if p["event"] == evt
-                        and "win" not in p]
-                for p in real:
-                    p["win"] = ((p["coin"] == won) if p["side"] == "yes"
-                                else (p["coin"] != won))
-                    p["pnl"] = round(p["size"] * ((1.0 - p["price"])
-                                                  if p["win"] else -p["price"])
-                                     - p["size"] * fee(p["price"]), 4)
-                if real:
-                    lost = [p for p in real if not p["win"]]
-                    # --paper-live releases into ITS OWN book. A process that
-                    # never sends must never write to pintake's ledger.
-                    stake_book = PAPER_LEDGER if LIVE["paper"] else pintake.LEDGER
-                    released = (release_settled(LIVE, stake_book, real)
-                                if LIVE.get("rolling") else 0.0)
-                    rec("live_settled", event=evt, close_s=cs, winner=won,
-                        paper=LIVE["paper"],
-                        released=round(released, 4),
-                        staked_open=round(LIVE["staked"], 4),
-                        positions=len(real),
-                        won=sum(1 for p in real if p["win"]),
-                        pnl=round(sum(p["pnl"] for p in real), 4),
-                        legs=[{k: p[k] for k in
-                               ("ticker", "side", "price", "size", "tau",
-                                "ask_seen", "zmin", "win", "pnl")}
-                              for p in real])
-                    print("  ** %s SETTLED %-24s %-4s  %d/%d won  $%+.2f"
-                          % ("PAPR" if LIVE["paper"] else "LIVE", evt, won,
-                             sum(1 for p in real if p["win"]),
-                             len(real), sum(p["pnl"] for p in real)))
-                    if lost and LIVE["stop_on_loss"] and not LIVE["halted"]:
-                        # STOP DEAD. The whole point of the penny test is to
-                        # find out whether we lose more often than the tape
-                        # says; the first real loss is the answer arriving,
-                        # not a reason to keep going and find out how much.
-                        LIVE["halted"] = ("first real loss: %s %s at %.0fc"
-                                          % (evt, lost[0]["side"],
-                                             100 * lost[0]["price"]))
-                        rec("live_halt", why=LIVE["halted"],
-                            staked=round(LIVE["staked"], 4),
-                            sends=LIVE["sends"])
-                        print("\n  *** PENNY TEST HALTED: %s" % LIVE["halted"])
-                        print("  No further real order will be sent by this "
-                              "process. The paper arm keeps running.\n")
 
             # ---- PRICE the open races ----------------------------------
             for evt, e in sorted(events.items()):
