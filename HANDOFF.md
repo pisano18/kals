@@ -95,6 +95,17 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**TWO MORE PAPER ARMS (08:xxZ-09:0xZ, both flags SHIP OFF, live unchanged):**
+`arm-btcd` (`--series KXBTCD`, the hourly BTC strike ladder, 3 rungs nearest
+BRTI; first real rungs at 09:45Z; bar in IDEAS item 2) and `arm-fresh500`
+(`--fresh-min-age-ms 500 --fresh-tau-min 20`: with >20 s left refuse a level
+posted under 500 ms ago; results/PREREG_fresh.md -- on OUR fills since 09-13,
+6 of the 7 early losers that survive the live rules hit a level 19-229 ms old,
+resting levels 0 of 155, money a wash; read the bar after 7 days with
+armh2h2.py: live = arm + the fresh entries). The tape hypothesis behind it is
+results/RESULTS_select.md; the live record was built for exactly this since
+09-13. Self-test 1,162 checks green plain and under the live argv.
+
 **SHADOW WATCHERS RUNNING (07:54Z): `research/wxwatch.py` (hourly temperature
 pin: Kalshi's public minute index for Miami/NYC/LA/Chicago vs the hourly
 markets' thresholds, index age, the index-side book, would-buy decisions,
