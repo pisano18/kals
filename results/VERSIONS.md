@@ -1,4 +1,4 @@
-# v-lateadd-live -- 2026-09-24 ~04:0xZ -- LIVE: `--rebuy-late-tau 15 --rebuy-late-frac 0.5` on; `--hedge-slip 0.03 -> 0.10`
+# v-lateadd-live -- 2026-09-24 03:31Z (pid 2560960, code_sha 04f8a96e34c7) -- LIVE: `--rebuy-late-tau 15 --rebuy-late-frac 0.5` on; `--hedge-slip 0.03 -> 0.10`
 
 Operator, 2026-09-24: "Late-add: whatever makes the most money (accounting for
 losses as well)... Hedge slips: again whatever makes the most."
