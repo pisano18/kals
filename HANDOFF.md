@@ -95,6 +95,18 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**THE NEW-EDGES HUNT (07:xxZ, 54 agents): results/IDEAS_2026-09-24.md** -- 46
+ideas, 1 promising (hourly TEMPERATURE pin on Kalshi's own public minute
+index, published 5-6 min late; tape ~$175/day Miami, realistic $20-80/day;
+3-5 day read-only shadow first), 6 testable-now (hourly BTC strike ladder
+KXBTCD as a paper arm; two-sided 1-contract maker quotes -- sim only, needs
+>2 GB RAM we do not have with the fleet up; USGS quake lock watch; fresh-
+level entry skip at >20 s; explicit size cap; deep resting race bids), 7
+needs-data, 32 killed with reasons (perp hedge, Polymarket US, Gemini pin,
+daily highs, sell-the-winner, lottery tickets, ...). Every tape dollar is a
+TAPE figure, never our loss rate; the same metric reads -$5/day on
+KXBTC15M where we really lost -$469 since 09-17.
+
 **Telegram (06:45Z restart, pid 2597696): `/stats`, `/race`, `/racestats`**
 (research/pinphone.py, self-test 50 -> 104). Money from the ledger only;
 log-only items labelled. First real /stats: lifetime +$421 on $41,122
