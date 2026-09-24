@@ -16,6 +16,18 @@ floor + fresh book read), and a rebuilt paper fleet (17 of 24 arms had died
 on an inherited brake). Disk 34.7 GB free (operator deleted a Steam game).
 **Arm vs live comparisons are valid only from 2026-09-22 06:21Z.**
 
+## 2026-09-24 02:22Z -- v-cap20 (pid 2543296): edge cap only above 20 s; early floor 0.95
+
+Per-second rebuild of all 820 entered markets (results/cf_2026-09-24/): the
+10c cap inside 20 s was refusing the pin edge (19 markets, 1 loser -$2,
++$102) and above 20 s it catches the market-was-right losses (3 of 19,
+-$200). Same engine: +$501 (9:13 PM rules) -> +$633 (cap >20 s) -> +$665
+(+95c early floor). Measured and NOT changed: half-size-then-top-up ladder
+(-$41), any hedge trigger other than 0.40 (all worse), 90c floor at 21-30 s
+(-$10). Open and positive: late same-market add at <=15 s (+$95/16 d, one
+losing add) -- needs a flag, the double-send fix and a paper arm first;
+hedge slip 0.03 -> 0.10. Full list and every killed idea: top of HANDOFF.md.
+
 ## 2026-09-24 02:0xZ -- v-nospike, after the BTC 8:30 PM ET loss (-$130.41)
 
 The bot bought 176 contracts within 100 ms of ONE index print that put fair at

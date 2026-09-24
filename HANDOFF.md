@@ -1,3 +1,92 @@
+# 2026-09-24 02:22Z -- v-cap20 LIVE; the whole rule set re-priced on a per-second rebuild; what was measured and NOT changed
+
+Operator's brief tonight: "make the final profit number bigger... don't change
+things for the sake of changing... make no errors." Everything below is on
+Kalshi's ledger money, per-second belief rebuilt from the index tape with
+pinrun's own maths, and the market's best ask from the ticker tape, for all
+820 markets we ever entered (`results/cf_2026-09-24/`: cf_build.py builds
+`cf_dataset.jsonl.gz`, cf_sim.py prices rules). It is a re-implemented
+decision, NOT the certified backtest: rows are compared to each other on one
+engine, never to Kalshi's number directly. Top-up / add fills at the tape ask
+are an upper bound (live fills ~70%); a 70% column is always printed.
+
+**LIVE NOW (pid 2543296, code_sha 3f37c9c0d7b6): v-cap20.** The 10c edge
+cap applies only with MORE than 20 s left (`EDGE_CAP_TAU = 20`; `None` is
+the v-nospike every-tau cap), and the early-leg floor is 0.95 (was 0.90).
+Same engine: rules as of 9:13 PM +$500.70 -> cap only above 20 s +$633.37
+-> plus the 95c floor +$664.97; both weeks improve. A >10c gap with <=20 s
+left is the pin edge (19 markets, 1 loser -$2.12, +$102); with >20 s left
+it lost 3 of 19 (-$200). NOTE the v-nospike write-up counted a refusal as a
+lost MARKET ($213 of winners given up); the bot re-looks every second and
+buys once the gap closes, so the real give-up is ~$15. Kalshi's ledger,
+ET 09-23: 48 markets -$49.68; under these rules 47 markets +$80.73.
+
+**Where the money is (825 first entries):** <=20 s left: 233 markets, 6
+losses -$71, net +$435; 21-45 s: 592 markets, 21 losses -$824, net +$39.
+A loser entered at <=10 s costs 4c per $1 risked; at 21-45 s, 71c, hedged
+or not. Late entries are also cheaper (94c vs 96c average).
+
+**Measured and NOT changed (do not re-propose without new data):**
+- Half size at 21-30 s with a top-up at <=20 s (operator's idea; the code
+  already does it via `staged_take`, flags `--tau-max 20 --early-frac 0.5`):
+  -$41 vs the cap alone, -$21/-$20 by week, worst loss unchanged (-$65).
+  "No entries before 20 s": +$507 vs +$633, fewer losses AND fewer wins,
+  hostage to late fills. Sizing ladders A-F all within +-$60 of each other.
+- Hedge trigger: on 820 positions, 0.40 all-at-once (live) is the best of
+  {0.40..0.90} x {proportional, all} x {drop-from-peak 0.1..0.5} x
+  {seconds-left-aware 0.40/0.60, 0.40/0.80, 0.30/0.40, 0.25/0.50, 0.50/0.40}.
+  The simulation is +$190 over what actually happened; +$145 of it is the
+  09-19 bug day (blocked/false hedges, fixed by v-safety1). No change.
+- Spike gate: adds ~$5 on the engine (refusals re-enter a second later) but
+  is the direct defence when the BTC shape has a gap under 10c; kept.
+- 90c floor at 21-30 s: -$10 (refused markets re-enter at <=20 s and lose
+  anyway). Fee rounding: Kalshi bills the formula (-1%), no per-order leak.
+  Our locked-sum arithmetic vs Kalshi's own `avg_60s_data`: median 0.08 bp,
+  1 of 64 markets over 1 bp (SOL 09-11, 1.56 bp) -- not a loss source.
+- Same-second double fills on one market at >20 s (the BTC 176 = 88 + 88,
+  318 ms apart; DOGE 09-23 11:15Z proves the second pass does not see the
+  first fill yet, so the improve band is bypassed): 6 pairs on record, 5
+  small winners +$5.7, BTC's second leg -$75.79. A correctness fix (a pass
+  cannot re-send on a market whose fill from the last ~1 s is unbooked) is
+  pending; not a money rule on n=6.
+- From the 22-agent review (results/cf_2026-09-24/ + task output): killed
+  with numbers -- confidence tightening at 21-45 s (z-floors 3.0/3.5/4.0,
+  honest table, sigma x1.25/1.5: all -$91..-$194 per 16 days), late boost
+  2.0x (binding rail miscounted, no money at this bank), momentum term (beta
+  0.03-0.11, no signal), jump gate 2 sd (no flag exists; no money), spot
+  cushion floor (its avoided losses are already the cap's), 3rd/4th coin
+  budget (premise false: close_budget fires before the signal gates),
+  98-99c ceiling inside 20 s (fills at exactly 98.0c are the sweep cap,
+  not a population), TAU_MIN 3->1 (winner-side ask absent 98.9% of ticks
+  at 0-3 s), resting bids on the winner (99.5-99.9c with ~6,900 queued),
+  yes_ask+no_ask<1 (no buyable population), new coins.
+
+**Open, measured positive, not yet live:**
+- LATE SAME-MARKET ADD. On a FULL position, at <=15 s, when the ask is at or
+  above what we paid (-0.5c) and every entry gate passes, add 0.5 x size:
+  +$95 over 16 days (141 fires, ONE losing add -$3.23), +$66 at 70% fills;
+  at <=20 s +$115 (4 losing adds -$25); at <=10 s +$62 (0 losing adds);
+  both weeks positive. Today `rebuy_ok` refuses every not-cheaper re-buy on
+  a full position (60 `rebuy_band` refusals in one close). Needs: a flag
+  (`--rebuy-late-tau 15 --rebuy-late-frac 0.5`, default off), the
+  double-send fix first, a PREREG bar, a paper arm; close budget and
+  max-per-market still apply (the engine did not model them -> upper bound).
+- Hedge slip 0.03 -> 0.10: live hedges paid ~$60 over the first-try ask
+  because the touch was thin (BTC tonight: 946 shown at 77c, 21 filled at
+  the 80c limit); a taker IOC pays the ladder's prices, so a wider limit
+  only sweeps deeper when the touch is gone. `arm-hedge-slip0` is -$32 vs
+  live on the same markets. Small (+$5-10 on this record), flag only.
+- Paper arms since 09-20 (own-log money, same markets, closes both were up;
+  paper fills): pin 0.97-0.99 / sigma 0.2-0.4 show +$60..220 over 2-3 days
+  but every dollar is extra trades in the early/low-confidence class that
+  produced every big loss, at fills we would not all get -- not evidence
+  against the bar. `brake3` +$32 on 138 identical markets (the size step),
+  `early-cap975` +$49 on 100 identical markets: worth a closer look.
+  Tool: scratchpad armh2h2.py (copied to results/cf_2026-09-24/).
+- Trade-tape toxicity (taker selling of our side in the 3-30 s before our
+  entry, the Stanford adverse-selection paper): agent running, report to
+  results/cf_2026-09-24/toxicity.md.
+
 # 2026-09-22 ~19:1xZ -- MISSED DEALS: THE $50-60/DAY WAS A CEILING. IT IS $3-10/DAY, AND THE SUPPLY ITSELF HALVED
 
 Full: `results/map_2026-09-22/missed/` (A supply gap, B lost races, C gates,
