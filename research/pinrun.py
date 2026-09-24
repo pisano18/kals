@@ -10182,6 +10182,54 @@ def _selftest_body():
        "and refused as edge_floor at 2c (signals %d / %d, floor refusals %d)"
        % (len(_kinds(_ef_on, "signal")), len(_kinds(_ef_off, "signal")),
           len(_refusals(_ef_off, "edge_floor"))))
+    # THE EARLY FLOOR, DRIVEN (2026-09-24 regression): an early ask under the
+    # floor is refused as early_cheap; one above it is bought as leg early.
+    _ef_flags = {"EARLY_TAU_MAX": 45, "EARLY_FRAC": 0.333, "EARLY_MIN_PRICE": 0.95}
+    _ec_lo = _offline_trade_loop([_spk_mkt(11, lambda t: 0.999, no_bid=0.08)],
+                                 run_s=4.0, tau0=40, flags=_ef_flags)
+    _ec_hi = _offline_trade_loop([_spk_mkt(11, lambda t: 0.999, no_bid=0.04)],
+                                 run_s=4.0, tau0=40, flags=_ef_flags)
+    _ec_hi_sig = _kinds(_ec_hi, "signal")
+    ck(_ec_lo["raised"] is None and not _kinds(_ec_lo, "signal")
+       and len(_refusals(_ec_lo, "early_cheap")) >= 1
+       and _ec_hi["raised"] is None and len(_ec_hi_sig) >= 1
+       and _ec_hi_sig[0].get("leg") == "early",
+       "EARLY FLOOR DRIVEN: a 92c ask at 40 s is refused as early_cheap under "
+       "a 95c floor and a 96c ask is bought as leg early -- through the real "
+       "loop, not a source-text check (refusals %d, signals %d/%d)"
+       % (len(_refusals(_ec_lo, "early_cheap")), len(_kinds(_ec_lo, "signal")),
+          len(_ec_hi_sig)))
+    # the same with the late add ON: the early gates must still be reachable
+    _ec_lo2 = _offline_trade_loop([_spk_mkt(11, lambda t: 0.999, no_bid=0.08)],
+                                  run_s=4.0, tau0=40,
+                                  flags=dict(_ef_flags, REBUY_LATE_TAU=15))
+    ck(_ec_lo2["raised"] is None and not _kinds(_ec_lo2, "signal")
+       and len(_refusals(_ec_lo2, "early_cheap")) >= 1,
+       "...and with --rebuy-late-tau ON the early floor still refuses it "
+       "(the 04:4xZ regression: the late-add block had swallowed the gates)")
+    # the add inside the LATE BOOST window stays at half size
+    _lb = _offline_trade_loop([_spk_mkt(12, lambda t: 0.999)], run_s=6.0, tau0=12,
+                              flags={"REBUY_LATE_TAU": 15, "REBUY_LATE_FRAC": 0.5,
+                                     "MAX_PER_MARKET": 2, "IMPROVE_SCOPE": "market",
+                                     "LATE_TAU": 10, "LATE_MULT": 1.5,
+                                     "LATE_PIN": 0.9975})
+    _lb_sig = _kinds(_lb, "signal")
+    _lb_add = [r for r in _lb_sig if r.get("leg") == "late_add"]
+    ck(_lb["raised"] is None and len(_lb_sig) >= 2 and len(_lb_add) == 1
+       and float(_lb_add[0].get("take_n") or 0)
+           <= 0.5 * float(_lb_sig[0].get("take_n") or 0) + 1e-9,
+       "v-lateadd: an add inside the A48 late-boost window is NOT widened -- "
+       "it stays at half the first leg (signals %s)"
+       % [(r.get("tau"), r.get("leg"), r.get("take_n")) for r in _lb_sig])
+    # a 25 s re-buy on a full position that passes A23's band keeps leg full
+    _bd = _offline_trade_loop([_spk_mkt(13, lambda t: 0.999, no_bid=0.05)],
+                              run_s=3.0, tau0=27,
+                              flags={"REBUY_LATE_TAU": 15, "MAX_PER_MARKET": 2,
+                                     "IMPROVE_SCOPE": "market"})
+    ck(_bd["raised"] is None
+       and all(r.get("leg") != "late_add" for r in _kinds(_bd, "signal")),
+       "v-lateadd NULL: outside the window nothing is relabelled late_add "
+       "(legs %s)" % [r.get("leg") for r in _kinds(_bd, "signal")])
     _la_hg = _offline_trade_loop([_k1_A()], flags={"REBUY_LATE_TAU": 15})
     ck(_la_hg["raised"] is None and abs(_hedged(_la_hg, _kA) - 5.0) < 1e-9,
        "v-lateadd: with the flag ON a collapsing position is still hedged "
@@ -15242,22 +15290,6 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                 if EARLY_TAU_MAX > TAU_MAX:
                     take_n, _leg46 = staged_take(tau, take_n, float(SIZE), _held46)
                     sig["take_n"] = take_n
-                # v-lateadd: a position already at SIZE that rebuy_ok let
-                # through inside REBUY_LATE_TAU is an ADD, capped so the market
-                # never holds more than (1 + REBUY_LATE_FRAC) x SIZE. staged_take
-                # cannot see n_tk, so a topped-up early leg would otherwise be
-                # offered the whole top-up again.
-                _have_la = 0.0
-                try:
-                    _have_la = float(((prev or {}).get("n_tk") or {}).get(tk, 0.0))
-                except (TypeError, ValueError, AttributeError):
-                    _have_la = 0.0
-                if (REBUY_LATE_TAU and _leg46 in ("full", "topup")
-                        and _have_la >= float(SIZE) - 1e-9):
-                    take_n = min(float(take_n), max(
-                        0.0, float(SIZE) * (1.0 + float(REBUY_LATE_FRAC)) - _have_la))
-                    _leg46 = "late_add"
-                    sig["take_n"] = take_n
                     # AMENDMENT 49: an EARLY leg needs the price to be high as well
                     # as the model to be confident. The operator, 2026-09-18:
                     # "Can you re open 45 seconds with a cap at 90c".
@@ -15311,6 +15343,32 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                               tau=tau, price=round(price, 4),
                               want=want, size=float(take_n or SIZE))
                         continue
+                # v-lateadd: a position already at SIZE that rebuy_ok let
+                # through inside REBUY_LATE_TAU is an ADD, capped so the market
+                # never holds more than (1 + REBUY_LATE_FRAC) x SIZE. staged_take
+                # cannot see n_tk, so a topped-up early leg would otherwise be
+                # offered the whole top-up again. AFTER the early-leg gates
+                # (2026-09-24 04:4xZ: the first version of this block sat
+                # between `sig["take_n"]` and those gates and its `if` body
+                # swallowed them -- early_cheap/early_dear/early_wide/staged_none
+                # were unreachable for 73 minutes live; the driven checks below
+                # now buy and refuse an early ask through the real loop). Only
+                # INSIDE the window: a 21-30 s re-buy that passes A23's band is
+                # the measured scale-in and keeps its leg and size.
+                _have_la = 0.0
+                try:
+                    _have_la = float(((prev or {}).get("n_tk") or {}).get(tk, 0.0))
+                except (TypeError, ValueError, AttributeError):
+                    _have_la = 0.0
+                if (REBUY_LATE_TAU and tau <= REBUY_LATE_TAU
+                        and _leg46 in ("full", "topup")
+                        and _have_la >= float(SIZE) - 1e-9):
+                    take_n = min(float(take_n), float(REBUY_LATE_FRAC) * float(SIZE),
+                                 max(0.0, float(SIZE) * (1.0 + float(REBUY_LATE_FRAC))
+                                     - _have_la))
+                    _leg46 = "late_add"
+                    _have_la_cap = _have_la
+                    sig["take_n"] = take_n
                 # v-nospike: too good to be true, on EVERY leg. A50 capped the
                 # 45 s leg at --early-max-edge and left the main window open
                 # because wide late edges had paid; the record above 10c says
@@ -15705,6 +15763,20 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     contracts are bought at all -- `_late48` returns `take_n`
                     untouched when the confidence or jump bar fails, and a
                     larger cap cannot raise a number that was never widened."""
+                    if _leg46 == "late_add":
+                        # v-lateadd: the add is REBUY_LATE_FRAC x SIZE and no
+                        # widener (A35 depth, A45, the A48 late boost, a band or
+                        # doubt multiple) may raise it: it was measured at half
+                        # size and the (1 + frac) x SIZE market cap is the promise
+                        # in VERSIONS.md.
+                        _have_sa = 0.0
+                        try:
+                            _have_sa = float(((prev or {}).get("n_tk") or {}).get(tk, 0.0))
+                        except (TypeError, ValueError, AttributeError):
+                            _have_sa = 0.0
+                        return min(take_n, float(REBUY_LATE_FRAC) * float(SIZE),
+                                   max(0.0, float(SIZE) * (1.0 + float(REBUY_LATE_FRAC))
+                                       - _have_sa))
                     if EARLY_TAU_MAX > TAU_MAX and _leg46 != "full":
                         _mult46 = max(band_mult(price), _doubt_on[0],
                                       LATE_MULT if tau <= LATE_TAU else 1.0)

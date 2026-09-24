@@ -106,13 +106,6 @@ $arms = @(
   @{ n="arm-pin0.985";      drop=@();                    add=@("--pin","0.985") },
   @{ n="arm-pin0.99";       drop=@();                    add=@("--pin","0.99") },
   # --- how humble the volatility model is ---
-  @{ n="arm-sigma0.20";     drop=@();                    add=@("--sigma-stress","0.20") },
-  @{ n="arm-sigma0.40";     drop=@();                    add=@("--sigma-stress","0.40") },
-  @{ n="arm-sigma0.60";     drop=@();                    add=@("--sigma-stress","0.60") },
-  @{ n="arm-sigma0.80";     drop=@();                    add=@("--sigma-stress","0.80") },
-  @{ n="arm-sigma1.25";     drop=@();                    add=@("--sigma-stress","1.25") },
-  @{ n="arm-sigma1.50";     drop=@();                    add=@("--sigma-stress","1.50") },
-  @{ n="arm-sigma2.00";     drop=@();                    add=@("--sigma-stress","2.00") },
   # --- the hedge, which is where the money has been going ---
   @{ n="arm-nohedge";       drop=@("--hedge-belief");    add=@("--hedge-belief","0.01") },
   # 2026-09-22: live itself went to --no-hedge-prop (v-hedgefull) and dropped
@@ -152,6 +145,10 @@ $arms = @(
   # v-lateadd (2026-09-24): a FULL position may add 0.5 x SIZE inside the last
   # 15 s when the ask is at or above what we paid. Measured +$95/16 d with one
   # losing add on the per-second rebuild (results/cf_2026-09-24/); PAPER FIRST.
+  # 2026-09-24 04:4xZ: the seven sigma_stress arms were RETIRED: confidence tightening
+  # at 21-45 s was refuted with numbers tonight, the loosening ones add the loss class,
+  # and RAM commit stood at 23.4 of 27.8 GB with 34 arms (a full commit charge can
+  # fail an allocation in the MONEY bot). Rows kept in git history.
   @{ n="arm-lateadd-off";   drop=@("--rebuy-late-tau","--rebuy-late-frac"); add=@() },
   # 2026-09-24 04:2xZ: entries with under 2c of edge after fee were 314 of the 763
   # markets that survive tonight's rules, 9 of their 19 losers, net +$15 --

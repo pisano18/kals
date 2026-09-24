@@ -61,6 +61,40 @@ or not. Late entries are also cheaper (94c vs 96c average).
   at 0-3 s), resting bids on the winner (99.5-99.9c with ~6,900 queued),
   yes_ask+no_ask<1 (no buyable population), new coins.
 
+**THE 04:0xZ AUDIT (16 agents: code diff, failure modes, coin race; full
+output in the session task file, findings verified adversarially):**
+- FOUND AND FIXED (v-lateadd-fix, 04:21Z): the early-leg gates were dead for
+  73 min under v-lateadd-live (block nesting); a late add could be widened
+  by the late boost to 1.5 x SIZE; a 21-30 s band re-buy was relabelled and
+  halved. All three now have DRIVEN checks. Lesson: a source-text self-test
+  cannot see a nesting change -- every gate needs a world that refuses.
+- OPEN, ranked by the audit's expected cost: (a) same-second double sends
+  build 2.0-2.67 x SIZE positions (SOL 09-23 04:59Z 218.69 contracts at
+  size 82; DOGE 85+85; BTC 88+88 = -$75.79 of the -$130.41); `--one-coin-max`
+  exists (1.0..MAX_PER_CLOSE) and is NOT in the live argv -- measure it on
+  the record before using it; (b) the drawdown brake line is $829.86 against
+  a $925.66 bank: one more -$96 day trips a HALT LOOP that needs a human to
+  edit pinrun-hwm.json (09-20 precedent) -- decide whether the loss cap
+  should re-base daily; (c) disk 21.2 GB at 3.93 GB/day reaches run_all's
+  5 GB stop about 2026-09-28 03Z -- a full disk takes the MONEY bot down,
+  not just the tape; (d) RAM commit 22.6 of 27.8 GB after retiring the
+  sigma arms -- consider a bigger page file; (e) the Thursday 07Z Kalshi
+  gap: bot refuses on no_offer/book_stale, recorders stay up, only a 07:00Z
+  position hedged against a frozen book is exposed (~$2), the phone will say
+  BLIND ~03:05 ET -- expected, not a fault.
+- COIN RACE (ledger, races = closes): the live penny test since v-race30
+  (09-22 07:03Z) is 58 races, 57 won, 0 lost, 1 TIE (+$1.13); the tie
+  (26SEP230715) cost -$0.95 and the bot booked it +$0.05 and did not halt.
+  Paper arms scored tie-aware, 1 contract a leg: racectl 19/19 +$1.33;
+  raceedge0 76 races 75W 1T +$2.32; racetau40 28 races 26W 1L 1T (loss at
+  tau 40); z3 50 races 49W 1T, of which its EARLY (>30 s) races 21/21 +$0.56.
+  Own-log money is WRONG on ties (raceedge0/racetau40 book +$7.50 where the
+  ledger says -$118 at their paper size). Photo finishes under 0.75 bp are
+  14.7% of penny races vs 7.2% of all races, and 3 of them were resolved
+  outright and won: no gap threshold separates ties from results. NEXT:
+  tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
+  bar (21/21 so far; the bar is 125 races 0 losses).
+
 **CONTROL ARMS (operator: "keep something running to compare the version we
 had running this afternoon to the version we just created"):** `arm-afternoon`
 = the 09-23 afternoon CODE (commit 9aa5f13, copied to

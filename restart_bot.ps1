@@ -56,7 +56,15 @@ $py = "C:\Python314\python.exe"
 # fails silently is worse than one that fails loudly.
 $transcript = "$repo\results\restart_bot.last.log"
 try { Stop-Transcript | Out-Null } catch {}
-Start-Transcript -Path $transcript -Force | Out-Null
+# 2026-09-24: Start-Transcript THREW on a file collision in 6 of 27 watchdog
+# restarts (audit), and the throw killed this script BEFORE it started the bot
+# -- a restart that fails silently, which is the very thing the transcript
+# exists to prevent. A transcript is a nicety; the restart is the job.
+try { Start-Transcript -Path $transcript -Force | Out-Null }
+catch {
+    try { Start-Transcript -Path "$repoesultsestart_bot.$(Get-Date -Format yyyyMMddTHHmmss).log" -Force | Out-Null }
+    catch { Write-Host "restart_bot: no transcript ($_) -- continuing" }
+}
 Write-Host "restart_bot.ps1 starting $(Get-Date -Format o)"
 
 # --- 0b. BUILD AND CHECK THE ARGUMENT LIST *BEFORE* KILLING ANYTHING.

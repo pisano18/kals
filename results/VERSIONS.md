@@ -1,3 +1,44 @@
+# v-lateadd-fix -- 2026-09-24 04:21Z (pid 2554960, code_sha 11ec840dce4f) -- LIVE: the early-leg gates are back; a late add can no longer be widened; the add only relabels inside its window
+
+**A REGRESSION, LIVE FOR 73 MINUTES (03:31Z-04:21Z), FOUND BY THE AUDIT.**
+v-lateadd's cap block was inserted between `sig["take_n"]` and the early-leg
+gates, and its `if` body swallowed them: `early_cheap` (the 95c floor),
+`early_dear` (97.5c), `early_wide` (10c early cap) and `staged_none` were
+unreachable on the live bot and every synced arm, flag on or off. The suite
+stayed green because those gates only had source-text checks. Money effect:
+none observed (no early fill under 95c or over 97.5c in that window: 3 orders
+since 03:31Z, all leg=full), but the 45 s leg ran without its floor.
+
+**Fixes (all driven through the real loop now):**
+1. The late-add block sits AFTER the early gates. A driven check buys a 96c
+   early ask and refuses a 92c one as `early_cheap`, with the late add on
+   and off.
+2. `_stage46` clamps a `late_add` leg at REBUY_LATE_FRAC x SIZE and
+   (1 + frac) x SIZE per market, so A35 depth sizing and the A48 late boost
+   cannot widen it (the audit drove a 38.5 add to 115.5 contracts; a driven
+   check now holds the add at half the first leg inside the boost window).
+3. The relabel happens only inside REBUY_LATE_TAU: a 21-30 s re-buy on a
+   full position that passes A23's band keeps leg `full` and its size (a
+   driven null).
+
+Also: `restart_bot.ps1` no longer dies when `Start-Transcript` collides
+(6 of 27 watchdog restarts had aborted BEFORE starting the bot); the seven
+`sigma_stress` paper arms are retired (RAM commit was 23.4 of 27.8 GB with 34
+arms; the money bot shares that pool).
+
+Known, accepted: a late add can fire in the SAME second as the entry at an
+unchanged ask (a 1.5 x SIZE position at <=15 s, inside the MAX_PER_MARKET 2
+and close-budget bounds). Self-test 1,117 checks green plain and under the
+live argv.
+
+**REVERT:** `git checkout 32cbd73 -- research/pinrun.py` reverts to
+v-lateadd-live's code (WITH the regression -- do not); the real revert is to
+drop the late add entirely: delete the `"--rebuy-late-tau", "15",
+"--rebuy-late-frac", "0.5",` line in restart_bot.ps1 and run
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
+
+---
+
 # v-lateadd-live -- 2026-09-24 03:31Z (pid 2560960, code_sha 04f8a96e34c7) -- LIVE: `--rebuy-late-tau 15 --rebuy-late-frac 0.5` on; `--hedge-slip 0.03 -> 0.10`
 
 Operator, 2026-09-24: "Late-add: whatever makes the most money (accounting for
