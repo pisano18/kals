@@ -1,3 +1,37 @@
+# v-hwm-reset -- 2026-09-24 ~06:5xZ -- watchdog + app now; the bot at its next start: after a DRAWDOWN halt the watchdog no longer restarts the bot, and START on the app re-bases the 20% mark to the balance
+
+Operator: "Yes to drawdown halt." Today: mark $1,037.33, halt line $829.86,
+bank ~$926 -- one more -$96 day trips a halt that until now needed a human
+to edit results/pinrun-hwm.json while the watchdog restarted the bot every
+15 min into the same halt.
+
+**Protocol.** `results/pinrun-hwm.reset` is written ONLY by the app's START
+(`pindesk.do_start -> arm_hwm_reset`) and only when the status is a
+DRAWDOWN halt. At the bot's next start `apply_hwm_reset()` checks that the
+newest live log's last halt was a DRAWDOWN brake, sets the mark to the
+balance read then, deletes the flag, writes `hwm_rebased` {old, new} to the
+log and a dated `v-hwm-rebase` line at the top of this file. Any other last
+halt: flag deleted, `hwm_reset_ignored`, mark untouched. Balance unreadable:
+`hwm_reset_failed`, flag kept. The 20% brake itself is unchanged and trips
+again 20% under the NEW mark. watch_bot.ps1: a DRAWDOWN halt with no flag
+is HELD (logged once, no restart); with the flag it restarts at once; every
+other halt/crash restarts exactly as before. The app says: "HALTED: 20%
+drawdown from the $X high mark (bank $Y). Press START to re-base the mark
+and resume. It will NOT auto-restart."
+
+Also found and fixed: `pindesk.Ledger.last_halt()` returned the run's `end`
+record, so the app had NEVER shown SAFETY BRAKE for a real halt.
+
+Self-tests: pinrun 1,117 -> 1,134 (green under the deployed argv), pindesk
+167 -> 178, watch_bot.ps1 -SelfTest 13 (new), versioncheck clean. No
+trading rule changed.
+
+**REVERT:** `git checkout 749c607 -- research/pinrun.py research/pindesk.py
+watch_bot.ps1`, then replace the watchdog (stop watch_bot, run
+`boot_all.ps1 -NoArms`) and relaunch the app.
+
+---
+
 # v-race-tie1 -- 2026-09-24 ~06:0xZ -- COIN RACE, LIVE penny test + every race arm: real legs are scored from Kalshi's own result; a tie pays 50c to both tied coins and counts as a LOSS for the stop rail; an unscorable race stays pending
 
 **Why.** `winner_from` was a bare argmax. On the 2026-09-23 07:15 tie (XRP

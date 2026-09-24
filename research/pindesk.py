@@ -72,6 +72,10 @@ RESULTS = os.path.join(REPO, "results")
 KALS = r"C:\kals"
 PY = r"C:\Python314\python.exe"
 STOP_FLAG = os.path.join(RESULTS, "pinrun-live.stop")
+# v-hwm-reset (2026-09-24): START on a DRAWDOWN halt writes this one-shot
+# flag; pinrun.apply_hwm_reset() consumes it at the next live start and sets
+# the brake's high-water mark to the balance. See pinrun.py, HWM_RESET_FLAG.
+RESET_FLAG = os.path.join(RESULTS, "pinrun-hwm.reset")
 HEARTBEAT = os.path.join(RESULTS, "watch_bot.heartbeat")
 ERR_FILE = os.path.join(RESULTS, "pindesk.err")
 REFRESH_MS = 5000
@@ -627,7 +631,22 @@ class Ledger:
         return sum(o["filled"] for o in self.orders if o["tk"] == ticker)
 
     def last_halt(self):
-        return self.halts[-1] if self.halts else None
+        """The newest halt, or the newest `end` when the run did not halt.
+
+        A run that halts writes `halt` and then `end` (pinrun's main() records
+        `end` in a finally), so the LAST row here is nearly always the `end`
+        of a halted run -- and the banner, which reads `why` off a `halt`
+        row, never showed SAFETY BRAKE for a real halt. Found 2026-09-24
+        while wiring the drawdown state; every real halted log on disk ends
+        halt -> end."""
+        if not self.halts:
+            return None
+        last = self.halts[-1]
+        if last["kind"] == "end" and len(self.halts) > 1:
+            prev = self.halts[-2]
+            if prev["kind"] == "halt" and prev.get("file") == last.get("file"):
+                return prev
+        return last
 
     def last_start(self):
         return self.starts[-1] if self.starts else None
@@ -1323,6 +1342,16 @@ def _status_of(h, now=None):
     halt = h.get("halt")
     if halt and halt.get("kind") == "halt" and halt.get("why") and \
             re.search(r"loss COUNT brake|loss abort|DRAWDOWN brake", halt["why"]):
+        dd = drawdown_halt_of(halt)
+        if dd:
+            # v-hwm-reset: the watchdog holds this one for the operator; the
+            # numbers are the ones the brake actually compared.
+            hwm, bank, lim = dd
+            return ("BRAKE",
+                    "HALTED: %d%% drawdown from the $%.2f high mark (bank $%.2f)." % (lim, hwm, bank),
+                    "Press START to re-base the mark and resume. It will NOT auto-restart: the "
+                    "watchdog waits for your START, which sets the high mark to the balance right now.",
+                    C["loss"])
         age = (now - halt["t"]) / 60 if halt.get("t") else None
         left = max(0, 15 - age) if age is not None else None
         return ("BRAKE", "STOPPED BY A SAFETY BRAKE",
@@ -1386,7 +1415,80 @@ def clear_flag():
         pass
 
 
-def do_start(log):
+# ---------------------------------------------------------------------------
+# v-hwm-reset (2026-09-24): START after a DRAWDOWN halt re-bases the mark.
+#
+# The brake's mark lives on disk, so a drawdown-halted bot halted again on
+# every restart (09-20: two hours idle, fixed by hand-editing the file), and
+# the watchdog kept restarting it. Now the watchdog holds that state, and
+# START -- in that state and ONLY that state -- writes the one-shot flag that
+# pinrun consumes at startup. The decision is derived from the same evidence
+# as the banner (status_of), never from a stored label.
+# ---------------------------------------------------------------------------
+_DD_RE = re.compile(r"DRAWDOWN brake: bank \$([0-9][0-9,]*\.?[0-9]*) is [0-9.]+% below its high "
+                    r"of \$([0-9][0-9,]*\.?[0-9]*)(?:, limit ([0-9]+)%)?")
+
+
+def drawdown_halt_of(halt):
+    """(high mark, bank, limit %) named by a DRAWDOWN halt record, read off
+    pinrun's own message so the banner shows what the brake compared; None
+    for any other halt."""
+    if not halt or halt.get("kind") != "halt" or not halt.get("why"):
+        return None
+    m = _DD_RE.search(str(halt["why"]))
+    if not m:
+        return None
+    try:
+        return (float(m.group(2).replace(",", "")), float(m.group(1).replace(",", "")),
+                int(m.group(3) or 20))
+    except ValueError:
+        return None
+
+
+def start_rebases(h, now=None):
+    """Does START, pressed now, re-base the high-water mark? Only when the
+    banner reads the drawdown halt: the bot is dead, no stand-down flag, and
+    the last halt on record is the DRAWDOWN brake."""
+    return _status_of(h, now)[0] == "BRAKE" and drawdown_halt_of(h.get("halt")) is not None
+
+
+def arm_hwm_reset(h, log, path=None):
+    """Write results\\pinrun-hwm.reset if START is being pressed on a
+    DRAWDOWN halt. Returns True when written. The bot, at its next live
+    start, sets its mark to the balance, deletes the flag, and records
+    `hwm_rebased` in its log and a dated line in VERSIONS.md."""
+    if not start_rebases(h):
+        return False
+    hwm, bank, lim = drawdown_halt_of(h["halt"])
+    with open(path or RESET_FLAG, "w", encoding="utf-8") as fh:
+        fh.write("operator START at %s after: %s\n" % (et_now_str(), str(h["halt"]["why"])[:160]))
+    log("DRAWDOWN halt (%d%% under the $%.2f mark, bank $%.2f): re-base flag written -- "
+        "the bot sets its high mark to the balance when it starts" % (lim, hwm, bank))
+    return True
+
+
+def quick_health():
+    """Enough of health() for do_start to know what START is being pressed
+    on: the process, the stand-down flag, the watchdog, and the last halt in
+    the newest live log. health() needs the Ledger, which the phone does not
+    carry; the app passes its own health(ledger) instead."""
+    pid = pinflat.live_pid()
+    h = {"pid": pid, "alive": bool(pid) and pinflat.pid_alive(pid), "flag": read_flag(),
+         "quiet_s": None, "watchdog_s": _file_age_s(HEARTBEAT), "open": {}, "halt": None,
+         "blind": None}
+    lives = glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
+    if lives:
+        for r in tail_rows(max(lives, key=os.path.getmtime)):
+            if r.get("kind") == "halt":
+                h["halt"] = {"t": parse_t(r.get("t")), "kind": "halt", "why": r.get("why")}
+    return h
+
+
+def do_start(log, h=None):
+    # v-hwm-reset: decide on the re-base BEFORE the stand-down flag goes,
+    # because a stand-down present means the banner read STOPPED, not the
+    # drawdown halt, and START must then only start.
+    arm_hwm_reset(h if h is not None else quick_health(), log)
     clear_flag()
     log("stand-down flag cleared")
     code, out = _ps(os.path.join(REPO, "boot_all.ps1"), "-NoArms")
@@ -2115,8 +2217,12 @@ TRADING (green)   the bot is running and writing its log.
 PAUSED / STOPPED (grey)   you pressed PAUSE or STOP. Nothing restarts it until you press START.
 NOT RUNNING (red)   it is down and the watchdog is bringing it back (or the watchdog is down too).
 SAFETY BRAKE (red)   the bot stopped itself: two losing bets in one run, or the run lost more than
-                    its limit, or the bank fell 20% from its high. The watchdog relaunches it
-                    15 minutes later. Press START to relaunch sooner.
+                    its limit. The watchdog relaunches it 15 minutes later. Press START to
+                    relaunch sooner.
+HALTED: 20% drawdown (red)   the bank fell 20% from its high mark. This one is NOT relaunched by
+                    the watchdog. Press START: it sets the high mark to the balance right now
+                    (the next 20% line is measured from there), writes that change into
+                    VERSIONS.md, and starts the bot.
 RUNNING BUT QUIET (yellow)   alive, but nothing logged for 20+ minutes. Watchdog restarts at 25.
 
 START   clears your stand-down, makes sure the watchdogs are up, starts the bot if it is down.
@@ -2357,7 +2463,7 @@ def run_gui():
         return run
 
     def on_start():
-        do_start(console_log)
+        do_start(console_log, health(ledger))
 
     def on_pause():
         do_pause(console_log, lambda s: root.after(0, lambda: sub.configure(text=s)))
@@ -2378,7 +2484,8 @@ def run_gui():
     b_start = big_button("▶  START", C["gain"], guarded(on_start))
     b_pause = big_button("⏸  PAUSE", C["watch"], guarded(on_pause))
     b_stop = big_button("■  STOP", C["loss"], guarded(on_stop))
-    Tip(b_start, "Clears your stand-down, makes sure the watchdogs are running, starts the bot if it is down.")
+    Tip(b_start, "Clears your stand-down, makes sure the watchdogs are running, starts the bot if it is down. "
+                 "After a 20% drawdown halt it also re-bases the high mark to the balance.")
     Tip(b_pause, "No new bets. Waits for open bets to settle, then stops. Press START to resume.")
     Tip(b_stop, "Stops right now. Asks first if a bet is open.")
 
@@ -4480,6 +4587,54 @@ def selftest():
         ck(status_of(dict(base, alive=False, flag="operator STOP at x"))[0] == "STOPPED", "dead + stop flag -> STOPPED")
         h = dict(base, alive=False, halt={"kind": "halt", "t": time.time() - 60, "why": rows[-1]["why"]})
         ck(status_of(h)[0] == "BRAKE" and "restarts in" in status_of(h)[2], "dead after a money brake -> BRAKE, with the countdown")
+        # v-hwm-reset: the drawdown halt, verbatim from pinrun-live-20260920T041637Z.jsonl
+        dd_why = ("DRAWDOWN brake: bank $810.59 is 22.5% below its high of $1046.43, limit 20%. Size has "
+                  "been reduced to 91. STOP AND LOOK. (A WITHDRAWAL from the account looks identical to a "
+                  "trading loss here -- check the balance before assuming the worst.)")
+        h_dd = dict(base, alive=False, halt={"kind": "halt", "t": time.time() - 60, "why": dd_why})
+        ck(drawdown_halt_of(h_dd["halt"]) == (1046.43, 810.59, 20) and drawdown_halt_of(h["halt"]) is None
+           and drawdown_halt_of(None) is None and drawdown_halt_of({"kind": "end", "why": None}) is None,
+           "the drawdown halt's own message gives the mark, the bank and the limit; any other halt gives None")
+        st_dd = status_of(h_dd)
+        ck(st_dd[0] == "BRAKE" and st_dd[1] == "HALTED: 20% drawdown from the $1046.43 high mark (bank $810.59)."
+           and "Press START to re-base the mark and resume" in st_dd[2] and "NOT auto-restart" in st_dd[2]
+           and "restarts in" not in st_dd[2],
+           "dead after the DRAWDOWN brake -> the plain sentence, no countdown, says it will NOT auto-restart (got %r)" % (st_dd[1],))
+        rf = os.path.join(td, "pinrun-hwm.reset")
+        said = []
+        ck(arm_hwm_reset(h_dd, said.append, path=rf) is True and os.path.exists(rf)
+           and "DRAWDOWN brake" in open(rf, encoding="utf-8").read() and said and "re-base flag written" in said[0],
+           "START on the drawdown halt writes the re-base flag, with the halt in it, and says so")
+        os.remove(rf)
+        for name, hh in (("a loss COUNT brake halt", h),
+                         ("the bot ALIVE with a drawdown halt in its log", dict(h_dd, alive=True)),
+                         ("a stand-down flag present (the banner reads STOPPED)", dict(h_dd, flag="operator STOP at x")),
+                         ("no halt at all", dict(base, alive=False)),
+                         ("the drawdown halt's own `end` row", dict(h_dd, halt={"kind": "end", "t": 1, "why": None}))):
+            ck(arm_hwm_reset(hh, said.append, path=rf) is False and not os.path.exists(rf),
+               "NULL: START with %s writes NO flag" % name)
+        # the Ledger reads the halt past the `end` that follows it
+        p2 = os.path.join(td, "pinrun-live-20260920T041637Z.jsonl")
+        with open(p2, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"kind": "start", "t": "2026-09-20T04:16:37Z"}) + "\n")
+            fh.write(json.dumps({"kind": "halt", "t": "2026-09-20T04:16:38Z", "why": dd_why}) + "\n")
+            fh.write(json.dumps({"kind": "end", "t": "2026-09-20T04:16:38Z", "state": {"halted": True}}) + "\n")
+        _pl.LEDGER = os.path.join(td, "no-such-ledger.json")     # never the real account's books
+        L2 = Ledger(results=td)
+        L2.refresh()
+        lh = L2.last_halt()
+        ck(lh is not None and lh["kind"] == "halt" and lh["why"] == dd_why and lh["file"] == os.path.basename(p2),
+           "THE 09-20 LOG SHAPE, halt then end: last_halt() is the halt (the banner never saw a real halt before)")
+        ck(status_of(dict(base, alive=False, halt=lh))[0] == "BRAKE",
+           "...so a real drained halt reads BRAKE on the banner")
+        with open(p2, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"kind": "start", "t": "2026-09-20T04:30:40Z"}) + "\n")
+            fh.write(json.dumps({"kind": "end", "t": "2026-09-20T05:00:00Z", "state": {}}) + "\n")
+        L2.refresh()
+        ck(L2.last_halt()["kind"] == "end",
+           "NULL: an `end` with no halt before it in the same run stays an end (a crash or a --minutes expiry is not a brake)")
+        _pl.LEDGER = _sv
+        os.remove(p2)
         ck(status_of(dict(base, alive=False))[0] == "DOWN" and "bringing it back" in status_of(dict(base, alive=False))[1],
            "dead, watchdog alive -> DOWN, watchdog restarting")
         ck("watchdog is not running" in status_of(dict(base, alive=False, watchdog_s=None))[1],

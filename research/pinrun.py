@@ -2164,6 +2164,36 @@ MAX_DRAWDOWN = 0.20      # 1/5 of the high-water bank. Operator, 2026-09-14.
 _DEFAULT_MAX_DRAWDOWN = 0.20
 HWM_FILE = os.path.join(RESULTS, "pinrun-hwm.json")
 
+# ===========================================================================
+# v-hwm-reset (2026-09-24): THE OPERATOR'S ONE-SHOT RE-BASE.
+#
+# THE HALT LOOP. The drawdown brake is TERMINAL (it is not in
+# TRANSIENT_HALTS) and its mark lives on disk, so a restarted bot reads the
+# same mark, computes the same drawdown and halts again on its first sizing
+# tick -- and watch_bot.ps1 restarted it every 15 minutes regardless. On
+# 2026-09-20 the only way out was a human editing results/pinrun-hwm.json,
+# and the bot sat idle for two hours because a halted bot cannot earn the
+# mark back.
+#
+# NOW: START on the desktop app (research/pindesk.py) writes
+# results/pinrun-hwm.reset. At the next LIVE start, IF the last halt on
+# record (the newest live log before this run's) was the DRAWDOWN brake,
+# the mark is set to the balance read right then, the flag is deleted, an
+# `hwm_rebased` {old, new, t} record goes in the log and a dated line goes
+# to the top of results/VERSIONS.md -- moving the safety line is a version,
+# never a quiet edit. A flag found after ANY other halt, or with no halt on
+# record, is deleted and logged as `hwm_reset_ignored`: a stray file must
+# not re-base a healthy bank. watch_bot.ps1 does not restart a
+# drawdown-halted bot until this flag exists.
+#
+# WHAT IT DOES NOT DO. The brake itself is untouched (20% of the mark), a
+# paper arm never re-bases (the call sits in main()'s live block, after
+# arm() because read_bank needs the key), and a failed balance read moves
+# nothing and KEEPS the flag for the next start.
+# ===========================================================================
+HWM_RESET_FLAG = os.path.join(RESULTS, "pinrun-hwm.reset")
+VERSIONS_FILE = os.path.join(RESULTS, "VERSIONS.md")
+
 
 DAYLOSS_FILE = os.path.join(RESULTS, "pinrun-dayloss.json")
 
@@ -2333,6 +2363,168 @@ def shift_hwm(amount, path=None):
     except OSError:
         return cur
     return new
+
+
+def rebase_hwm(bank, path=None, old=None):
+    """SET the high-water mark to `bank` -- the one deliberate way DOWN.
+
+    write_hwm() refuses to lower the mark and that refusal is the brake's
+    whole mechanism, so this is a separate function with a separate name,
+    called only by apply_hwm_reset() after the operator's flag AND a
+    DRAWDOWN halt on record. Returns the mark as it stands afterwards.
+    """
+    try:
+        bank = float(bank)
+    except (TypeError, ValueError):
+        return read_hwm(path)
+    if not (bank > 0):
+        return read_hwm(path)
+    p = path or HWM_FILE
+    try:
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"hwm": round(bank, 2),
+                       "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                       "rebased_from": old}, fh)
+        os.replace(tmp, p)
+    except OSError:
+        return read_hwm(path)
+    return bank
+
+
+def last_live_halt(results_dir=None, exclude=None, nbytes=65536):
+    """The `why` of the last `halt` record in the newest LIVE log, or None.
+
+    `exclude` is the log of the run asking: at startup it already holds a
+    `start` record and is therefore the newest file, and the question is
+    what the run BEFORE it died of. Newest is by NAME -- the run id in the
+    filename is UTC and zero-padded, so it sorts by start time whatever the
+    file's mtime says. Only the tail is read: a halt is the last thing a run
+    writes before `end`, and a live log runs to megabytes.
+    """
+    d = results_dir or RESULTS
+    try:
+        names = [n for n in os.listdir(d)
+                 if n.startswith("pinrun-live-") and n.endswith(".jsonl")]
+    except OSError:
+        return None
+    if exclude:
+        _ex = os.path.normcase(os.path.basename(exclude))
+        names = [n for n in names if os.path.normcase(n) != _ex]
+    if not names:
+        return None
+    try:
+        with open(os.path.join(d, max(names)), "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - nbytes))
+            chunk = fh.read()
+    except OSError:
+        return None
+    why = None
+    for line in chunk.split(b"\n"):
+        if b'"halt"' not in line:
+            continue
+        try:
+            r = json.loads(line.decode("utf-8", "replace"))
+        except ValueError:
+            continue                     # a torn first line, never guessed at
+        if isinstance(r, dict) and r.get("kind") == "halt":
+            why = str(r.get("why") or "")
+    return why or None
+
+
+def note_version(line, path=None):
+    """Put a dated one-line entry at the TOP of results/VERSIONS.md -- the
+    file is newest-first. Bytes in, bytes out, so its CRLF endings survive.
+    Returns True when written; a failure is reported by the caller, never
+    raised, because a note must not be able to stop a live start."""
+    p = path or VERSIONS_FILE
+    try:
+        try:
+            with open(p, "rb") as fh:
+                body = fh.read()
+        except FileNotFoundError:
+            body = b""
+        nl = b"\r\n" if b"\r\n" in body[:4096] else b"\n"
+        tmp = p + ".tmp"
+        with open(tmp, "wb") as fh:
+            fh.write(line.rstrip("\r\n").encode("utf-8") + nl + nl + b"---"
+                     + nl + nl + body)
+        os.replace(tmp, p)
+    except OSError:
+        return False
+    return True
+
+
+def apply_hwm_reset(bank_reader=None, flag_path=None, hwm_path=None,
+                    results_dir=None, exclude_log=None, rec=None,
+                    versions_path=None):
+    """Honour results/pinrun-hwm.reset at a live start (the block above
+    HWM_RESET_FLAG says why). Returns None when there is no flag, "ignored"
+    when the flag was dropped unused, "failed" when it was kept, or
+    (old, new) when the mark moved. Never raises: the brake is still there
+    whatever happens here, and a broken re-base must not stop the bot."""
+    flag = flag_path or HWM_RESET_FLAG
+    if not os.path.exists(flag):
+        return None
+
+    def _drop():
+        try:
+            os.remove(flag)
+        except OSError:
+            pass
+
+    why = last_live_halt(results_dir, exclude=exclude_log)
+    if not (why and why.startswith("DRAWDOWN brake")):
+        _drop()
+        if rec:
+            rec("hwm_reset_ignored", last_halt=why, hwm=read_hwm(hwm_path))
+        print(f"  *** {os.path.basename(flag)} IGNORED and removed: the last "
+              f"halt on record is {(why or 'none')[:60]!r}, not the DRAWDOWN "
+              f"brake. The mark stays at ${read_hwm(hwm_path) or 0.0:.2f}. ***")
+        return "ignored"
+    bank = (bank_reader or read_bank)()
+    try:
+        bank = float(bank) if bank is not None else None
+    except (TypeError, ValueError):
+        bank = None
+    if bank is None or not (bank > 0):
+        if rec:
+            rec("hwm_reset_failed", why="balance read failed",
+                last_halt=why[:120])
+        print("  *** re-base asked for but the balance could not be read -- "
+              "the mark is unchanged and the flag is kept for the next start ***")
+        return "failed"
+    old = read_hwm(hwm_path)
+    new = rebase_hwm(bank, hwm_path, old=old)
+    if new is None or abs(float(new) - bank) > 1e-9:
+        if rec:
+            rec("hwm_reset_failed", why="hwm write failed", old=old, bank=bank)
+        print("  *** re-base asked for but the mark could not be written -- "
+              "unchanged; the flag is kept for the next start ***")
+        return "failed"
+    _drop()
+    if rec:
+        rec("hwm_rebased", old=old, new=new, last_halt=why[:120])
+    line = ("# v-hwm-rebase -- %s -- LIVE: the drawdown brake's high-water mark "
+            "was re-based $%.2f -> $%.2f (the %d%% line is now $%.2f) by the "
+            "operator's START after this halt: %s. Written by "
+            "pinrun.apply_hwm_reset(); revert by putting %.2f back in "
+            "results/pinrun-hwm.json."
+            % (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+               old or 0.0, new, round(100.0 * MAX_DRAWDOWN),
+               (1.0 - MAX_DRAWDOWN) * new, why.split(". ")[0][:120],
+               old or 0.0))
+    if not note_version(line, versions_path):
+        if rec:
+            rec("error", where="note_version", err="VERSIONS.md not written")
+        print("  *** VERSIONS.md could NOT be written -- add the re-base "
+              "line by hand ***")
+    print(f"  *** HIGH-WATER MARK RE-BASED on the operator's START: "
+          f"${old or 0.0:.2f} -> ${new:.2f}; the {100.0 * MAX_DRAWDOWN:.0f}% "
+          f"line is now ${(1.0 - MAX_DRAWDOWN) * new:.2f} ***")
+    return (old, new)
 
 
 def open_contracts(led):
@@ -8213,6 +8405,165 @@ def _selftest_body():
            "the dollar stop TIGHTENS as well as loosens. It used to ratchet "
            "one way, so a stop set when the bank was $310 stayed at -$208 "
            "even after the bank halved")
+
+        # ---- v-hwm-reset: the operator's one-shot re-base ----------------
+        # Every path here runs against a temp folder: its own hwm file, its
+        # own flag, its own VERSIONS.md and its own live logs. The halt text
+        # is the 2026-09-20 04:16Z one, verbatim.
+        import tempfile as _tfhr
+        _dhr = _tfhr.mkdtemp(prefix="pinhwmreset-")
+        try:
+            _hr_hwm = os.path.join(_dhr, "hwm.json")
+            _hr_flag = os.path.join(_dhr, "pinrun-hwm.reset")
+            _hr_ver = os.path.join(_dhr, "VERSIONS.md")
+            _hr_prev = "pinrun-live-20260920T040054Z.jsonl"
+            _hr_me = os.path.join(_dhr, "pinrun-live-20260920T043040Z.jsonl")
+            _hr_recs = []
+            _hr_reads = []
+
+            def _hr_rec(kind, **kw):
+                kw["kind"] = kind
+                _hr_recs.append(kw)
+
+            def _hr_log(name, rows):
+                with open(os.path.join(_dhr, name), "w", encoding="utf-8") as fh:
+                    for r in rows:
+                        fh.write(json.dumps(r) + "\n")
+
+            def _hr_bank(v):
+                def _r():
+                    _hr_reads.append(v)
+                    return v
+                return _r
+
+            def _hr_go(bank):
+                return apply_hwm_reset(bank_reader=_hr_bank(bank),
+                                       flag_path=_hr_flag, hwm_path=_hr_hwm,
+                                       results_dir=_dhr, exclude_log=_hr_me,
+                                       rec=_hr_rec, versions_path=_hr_ver)
+
+            _hr_dd = ("DRAWDOWN brake: bank $810.59 is 22.5% below its high of "
+                      "$1046.43, limit 20%. Size has been reduced to 91. STOP "
+                      "AND LOOK. (A WITHDRAWAL from the account looks identical "
+                      "to a trading loss here -- check the balance before "
+                      "assuming the worst.)")
+            _hr_lc = "loss COUNT brake: 2 losing trades this run >= 2"
+            _hr_halted = lambda why: [
+                {"kind": "start", "t": "2026-09-20T04:00:54Z"},
+                {"kind": "halt", "why": why, "drained": False, "t": "2026-09-20T04:16:37Z"},
+                {"kind": "end", "state": {"halted": True}, "t": "2026-09-20T04:16:38Z"}]
+            _hr_log(_hr_prev, _hr_halted(_hr_dd))
+            # the run now starting has already written its own start record,
+            # so ITS log is the newest file in the folder
+            _hr_log(os.path.basename(_hr_me), [{"kind": "start", "t": "2026-09-20T04:30:40Z"}])
+            write_hwm(1046.43, _hr_hwm)
+            with open(_hr_ver, "wb") as fh:
+                fh.write(b"# v-old -- the entry that was here\r\n\r\n---\r\n")
+            # (c) NULL: no flag
+            ck(_hr_go(810.59) is None and read_hwm(_hr_hwm) == 1046.43
+               and not _hr_recs and not _hr_reads,
+               "NULL: no flag -> the mark is untouched, nothing recorded, the "
+               "balance not even read")
+            ck(last_live_halt(_dhr, exclude=_hr_me) == _hr_dd,
+               "the last halt on record is read from the PREVIOUS run's log, "
+               "past its `end` record, and never from the log of the run asking")
+            # (a) THE 09-20 CASE with the operator's START flag present
+            with open(_hr_flag, "w", encoding="utf-8") as fh:
+                fh.write("operator START on the desktop app\n")
+            _hr_out = _hr_go(810.59)
+            ck(_hr_out == (1046.43, 810.59),
+               "a DRAWDOWN halt on record + the flag -> the mark is re-based "
+               "from the old high to the balance read NOW (got %r)" % (_hr_out,))
+            ck(abs(read_hwm(_hr_hwm) - 810.59) < 1e-9
+               and abs(drawdown(810.59, read_hwm(_hr_hwm))) < 1e-12,
+               "the file holds the new mark, so the drawdown the next tick "
+               "computes is ZERO and the brake lets the run trade")
+            ck(not os.path.exists(_hr_flag), "the flag is consumed -- one shot")
+            _hr_rb = [r for r in _hr_recs if r["kind"] == "hwm_rebased"]
+            ck(len(_hr_rb) == 1 and _hr_rb[0]["old"] == 1046.43
+               and abs(_hr_rb[0]["new"] - 810.59) < 1e-9,
+               "an `hwm_rebased` record carries old and new (rec adds t)")
+            _hr_vt = open(_hr_ver, "rb").read()
+            ck(_hr_vt.startswith(b"# v-hwm-rebase -- 20")
+               and b"$1046.43 -> $810.59" in _hr_vt
+               and b"line is now $648.47" in _hr_vt
+               and _hr_vt.endswith(b"# v-old -- the entry that was here\r\n\r\n---\r\n")
+               and b"\r\n\r\n---\r\n\r\n# v-old" in _hr_vt,
+               "VERSIONS.md gets a dated line at the TOP (the file is "
+               "newest-first), the old text is intact and its CRLF endings "
+               "are kept -- the safety line never moves silently")
+            # (d) the brake is unchanged: 20% under the NEW mark trips it again
+            ck(abs(drawdown(648.47, read_hwm(_hr_hwm)) - MAX_DRAWDOWN) < 1e-3
+               and drawdown(700.0, read_hwm(_hr_hwm)) < MAX_DRAWDOWN,
+               "the brake itself did not move: $648.47 against the new $810.59 "
+               "mark is the 20%% line again, $700 is not")
+            ck(write_hwm(900.0, _hr_hwm) == 900.0 and write_hwm(850.0, _hr_hwm) == 900.0,
+               "and after a re-base write_hwm still only ever RAISES the mark")
+            # (b) NULL: the flag after a loss COUNT halt is dropped and logged
+            _hr_recs.clear()
+            _hr_reads.clear()
+            _hr_log(_hr_prev, _hr_halted(_hr_lc))
+            with open(_hr_flag, "w", encoding="utf-8") as fh:
+                fh.write("stray\n")
+            ck(_hr_go(500.0) == "ignored" and read_hwm(_hr_hwm) == 900.0
+               and not os.path.exists(_hr_flag) and not _hr_reads
+               and [r for r in _hr_recs if r["kind"] == "hwm_reset_ignored"
+                    and r.get("last_halt") == _hr_lc]
+               and not [r for r in _hr_recs if r["kind"] == "hwm_rebased"],
+               "NULL: a flag after a loss COUNT brake halt is IGNORED, REMOVED "
+               "and recorded as `hwm_reset_ignored`; the mark does not move "
+               "and the balance is not read")
+            _hr_recs.clear()
+            _hr_log(_hr_prev, [{"kind": "start", "t": "2026-09-20T04:00:54Z"}])
+            with open(_hr_flag, "w", encoding="utf-8") as fh:
+                fh.write("stray\n")
+            ck(_hr_go(500.0) == "ignored" and read_hwm(_hr_hwm) == 900.0
+               and not os.path.exists(_hr_flag)
+               and [r for r in _hr_recs if r["kind"] == "hwm_reset_ignored"
+                    and r.get("last_halt") is None],
+               "NULL: a flag with NO halt on record (the last run crashed) is "
+               "ignored and removed -- a stray file cannot re-base a healthy bank")
+            # a DRAWDOWN halt two runs back does not count: only the last run
+            _hr_log("pinrun-live-20260920T023207Z.jsonl", _hr_halted(_hr_dd))
+            _hr_log(_hr_prev, _hr_halted(_hr_lc))
+            with open(_hr_flag, "w", encoding="utf-8") as fh:
+                fh.write("stray\n")
+            ck(_hr_go(500.0) == "ignored" and read_hwm(_hr_hwm) == 900.0,
+               "NULL: a DRAWDOWN halt in an OLDER run, with a different halt "
+               "since, does not count -- only the newest run's last halt does")
+            # the balance read fails: nothing moves and the flag is KEPT
+            _hr_recs.clear()
+            _hr_log(_hr_prev, _hr_halted(_hr_dd))
+            with open(_hr_flag, "w", encoding="utf-8") as fh:
+                fh.write("operator START\n")
+            ck(_hr_go(None) == "failed" and os.path.exists(_hr_flag)
+               and read_hwm(_hr_hwm) == 900.0
+               and [r for r in _hr_recs if r["kind"] == "hwm_reset_failed"],
+               "a failed balance read re-bases NOTHING and keeps the flag for "
+               "the next start (recorded as `hwm_reset_failed`)")
+            ck(_hr_go(0.0) == "failed" and os.path.exists(_hr_flag)
+               and read_hwm(_hr_hwm) == 900.0,
+               "NULL: a zero balance is a failed read, never a $0 mark")
+            ck(rebase_hwm("junk", _hr_hwm) == 900.0 and rebase_hwm(-5.0, _hr_hwm) == 900.0,
+               "rebase_hwm refuses junk and negatives and leaves the mark alone")
+            # main() calls it in the right place, and ONLY there
+            _src_hr = open(os.path.abspath(__file__), encoding="utf-8").read()
+            _mn_hr = _src_hr[_src_hr.rindex(chr(10) + "def main("):]
+            _hr_call = "        apply_hwm_reset(rec=rec, exclude_log=logpath)" + chr(10)
+            ck(_mn_hr.count(_hr_call) == 1
+               and _mn_hr.index('rec("armed", base=CREDS["base"]')
+               < _mn_hr.index(_hr_call)
+               < _mn_hr.index("    idx = IndexWS(sorted("),
+               "main() honours the flag AFTER arm() (the balance needs the "
+               "key) and BEFORE the index starts, inside the live block -- so "
+               "it runs before the first autosize tick and never on a paper arm")
+            ck(_src_hr[:_src_hr.index("def " + "selftest")].count("rebase_hwm(") == 2,
+               "rebase_hwm -- the only way DOWN for the mark -- is called from "
+               "apply_hwm_reset and nowhere else in the working code")
+        finally:
+            for _f in os.listdir(_dhr):
+                os.remove(os.path.join(_dhr, _f))
+            os.rmdir(_dhr)
 
         # THE SELF-TEST MUST NOT BE ABLE TO WRITE PRODUCTION STATE.
         # This is the check for the 2026-09-14 outage: a test wrote a fake
@@ -17208,6 +17559,11 @@ def main():
         print(f"  ARMED: {CREDS['base']}  key {CREDS['key_id'][:8]}...  "
               f"stake cap ${pintake.MAX_RUN_STAKE:.2f}")
         rec("armed", base=CREDS["base"], stake_cap=pintake.MAX_RUN_STAKE)
+        # v-hwm-reset: the operator's one-shot re-base, honoured only after
+        # a DRAWDOWN halt on record. AFTER arm() (read_bank needs the key),
+        # BEFORE the first autosize_tick, which is what would halt this run
+        # on the old mark. Live only: a paper arm has no bank to re-base.
+        apply_hwm_reset(rec=rec, exclude_log=logpath)
 
     idx = IndexWS(sorted(set(SERIES_TO_INDEX.values()))).start()
     book = livebook.LiveBook()
