@@ -711,6 +711,7 @@ def against_block(strike, spot, sigma, want, edge):
 
 
 EDGE_FLOOR = 0.003     # AFTER fee. 0.5c -> 0.3c per
+_DEFAULT_EDGE_FLOOR = 0.003   # --edge-floor (2026-09-24, paper arm arm-edge2c) is measured against this
                        # results/PREREG_pin_live_AMENDMENT_1.md, written
                        # 2026-09-08 08:20Z BEFORE the change went live.
                        # Out of sample the 0.3c floor gave 389 closes,
@@ -3908,7 +3909,7 @@ def _fill_all(body, n):
 _OFFLINE_PINNED_FLAGS = (
     "ATTEMPTS_ON_SEND",
     "DOUBT_MULT", "DOUBT_UNDER",
-    "BAND_MULTS", "BANK_BRAKE", "DEPTH_LADDER", "DUMP_ENABLED", "EARLY_FRAC",
+    "BAND_MULTS", "BANK_BRAKE", "DEPTH_LADDER", "DUMP_ENABLED", "EARLY_FRAC", "EDGE_FLOOR",
     "EARLY_MAX_EDGE", "EARLY_MAX_PRICE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
     "EXTERNAL_DETECT", "EXTRA_COIN", "FLIP_MULT", "HEDGE_BELIEF",
     "HEDGE_JUMP_SIGMA", "HEDGE_NORMAL", "HEDGE_PANIC", "HEDGE_PRICE",
@@ -10034,6 +10035,9 @@ def _selftest_body():
        "v-cap20: an UNKNOWN clock is early (refused); cap_tau None or 0 is "
        "the every-tau cap of v-nospike; cap_tau 30 exempts 20 s")
 
+    # ---- --edge-floor (2026-09-24): the floor is a flag, read at decision time
+    ck(_DEFAULT_EDGE_FLOOR == 0.003,
+       "--edge-floor: the DECLARED default is 0.3c after fee")
     # ---- v-lateadd (2026-09-24): a FULL position may add in the last seconds
     ck(_DEFAULT_REBUY_LATE_TAU == 0 and _DEFAULT_REBUY_LATE_FRAC == 0.5,
        "v-lateadd: the DECLARED default is OFF (0 s) at half size")
@@ -10165,6 +10169,19 @@ def _selftest_body():
        "v-lateadd NULL DRIVEN: with the flag OFF the same world buys once and "
        "refuses the not-cheaper re-buy as rebuy_band (signals %d, band %d)"
        % (len(_kinds(_la_off, "signal")), len(_refusals(_la_off, "rebuy_band"))))
+    # --edge-floor DRIVEN: fair 0.999 against a 97.9c ask is a ~1.9c edge after
+    # fee: bought at the shipped 0.3c floor, refused as edge_floor at 2c
+    _ef_on = _offline_trade_loop([_spk_mkt(10, lambda t: 0.999, no_bid=0.021)],
+                                 run_s=5.0, tau0=18)
+    _ef_off = _offline_trade_loop([_spk_mkt(10, lambda t: 0.999, no_bid=0.021)],
+                                  run_s=5.0, tau0=18, flags={"EDGE_FLOOR": 0.02})
+    ck(_ef_on["raised"] is None and len(_kinds(_ef_on, "signal")) >= 1
+       and _ef_off["raised"] is None and not _kinds(_ef_off, "signal")
+       and len(_refusals(_ef_off, "edge_floor")) >= 1,
+       "--edge-floor DRIVEN: a ~1.9c edge is bought at the shipped 0.3c floor "
+       "and refused as edge_floor at 2c (signals %d / %d, floor refusals %d)"
+       % (len(_kinds(_ef_on, "signal")), len(_kinds(_ef_off, "signal")),
+          len(_refusals(_ef_off, "edge_floor"))))
     _la_hg = _offline_trade_loop([_k1_A()], flags={"REBUY_LATE_TAU": 15})
     ck(_la_hg["raised"] is None and abs(_hedged(_la_hg, _kA) - 5.0) < 1e-9,
        "v-lateadd: with the flag ON a collapsing position is still hedged "
@@ -16260,6 +16277,11 @@ def main():
                          "%.2f, the level the plus-2.95 was measured at. Does "
                          "nothing without --doubt-mult above 1."
                          % _DEFAULT_DOUBT_UNDER)
+    ap.add_argument("--edge-floor", type=float, default=None, metavar="C",
+                    help="minimum model-minus-market edge AFTER fee, in CENTS "
+                         "(default 0.3). 2026-09-24 record: entries under 2c "
+                         "were 314 markets, 9 of 19 remaining losers, net "
+                         "+$15 -- break-even trades. Paper arm arm-edge2c.")
     ap.add_argument("--rebuy-late-tau", type=int, default=None, metavar="S",
                     help="v-lateadd: a FULL position may add inside the last S "
                          "seconds when the ask is at or above what we paid "
@@ -16735,6 +16757,11 @@ def main():
                                  "got %r" % (float(MAX_PER_CLOSE), _m))
             _bm53.append((float(_lo), float(_hi), float(_m)))
         globals()["BAND_MULTS"] = tuple(_bm53)
+    if a.edge_floor is not None:
+        if not (0.0 <= float(a.edge_floor) <= 10.0):
+            raise SystemExit("--edge-floor is in CENTS and must be in [0, 10], got %r"
+                             % (a.edge_floor,))
+        globals()["EDGE_FLOOR"] = float(a.edge_floor) / 100.0
     if a.rebuy_late_tau is not None:
         if not (0 <= int(a.rebuy_late_tau) <= TAU_MAX):
             raise SystemExit("--rebuy-late-tau must be between 0 and TAU_MAX (%d), got %r"

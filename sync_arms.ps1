@@ -153,6 +153,12 @@ $arms = @(
   # 15 s when the ask is at or above what we paid. Measured +$95/16 d with one
   # losing add on the per-second rebuild (results/cf_2026-09-24/); PAPER FIRST.
   @{ n="arm-lateadd-off";   drop=@("--rebuy-late-tau","--rebuy-late-frac"); add=@() },
+  # 2026-09-24 04:2xZ: entries with under 2c of edge after fee were 314 of the 763
+  # markets that survive tonight's rules, 9 of their 19 losers, net +$15 --
+  # break-even trades. A 2c floor on the engine: same money (+$5..+$26 / 16 d),
+  # half the loss dollars, 40% fewer entries, but MIXED by week (+$39 / -$34).
+  # (A 97.5c ceiling was tried first and is worse: -$114..-$143; not the same thing.)
+  @{ n="arm-edge2c";        drop=@();                    add=@("--edge-floor","2.0") },
   @{ n="arm-band15";        drop=@();                    add=@("--band-mult","0.90","0.94","1.5") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
