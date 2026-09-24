@@ -95,6 +95,17 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**Telegram (06:45Z restart, pid 2597696): `/stats`, `/race`, `/racestats`**
+(research/pinphone.py, self-test 50 -> 104). Money from the ledger only;
+log-only items labelled. First real /stats: lifetime +$421 on $41,122
+risked, 1,020 markets, break-even 95.2 of 100 contracts vs 96.1 paid (+1.0
+pt); LAST 7 DAYS -$26.75 and UNDER break-even (96.0 paid vs 96.1 needed),
+the 21-45 s first buys carrying -$168.90 on 281 markets while <=20 s buys
+made +$169.32 on 59. Coin race since v-race30: 60 races, 59 won, 1 tie, 0
+lost, +$1.17. GOTCHA: a `-like '*pinphone.py*'` / `'*pindesk.py*'` process
+query matches the querying shell's own command line -- count only python
+processes, or you will "find" and kill your own bash (02:2xZ: exit 255).
+
 **v-hwm-reset (06:5xZ, operator: "yes to drawdown halt"):** after a DRAWDOWN
 halt the watchdog HOLDS (no 15-min restart loop); START on the app writes
 `results/pinrun-hwm.reset`; at the bot's next start the 20% mark is re-based
