@@ -83,9 +83,30 @@ or not. Late entries are also cheaper (94c vs 96c average).
   against the bar. `brake3` +$32 on 138 identical markets (the size step),
   `early-cap975` +$49 on 100 identical markets: worth a closer look.
   Tool: scratchpad armh2h2.py (copied to results/cf_2026-09-24/).
-- Trade-tape toxicity (taker selling of our side in the 3-30 s before our
-  entry, the Stanford adverse-selection paper): agent running, report to
-  results/cf_2026-09-24/toxicity.md.
+- TRADE-TAPE TOXICITY -- THE BEST "IDENTIFY BETTER" LEAD OF THE NIGHT
+  (results/cf_2026-09-24/toxicity.md, 793 of 825 entries covered; the BTC
+  09-23 loss is in the recorder's dead hours). In the 3 s before our order,
+  takers had SOLD more of our side than they bought on 17 of 25 losers
+  (68%) vs 245 of 746 winners (33%): loss rate 6.5% flagged vs 1.5%
+  unflagged, rank-sum p = 0.0004 (clears the 24-look bar), survives
+  leave-one-out, close-level and by-day splits; it is direction, not
+  activity; gone at 10-30 s. Lives at 21-45 s (14 of 20 losers flagged,
+  p = 0.0008, +$216 in-sample if skipped); inside 20 s a skip COSTS money
+  (-$126). Of the flagged 21-45 s losers, v-cap20's rules already refuse
+  ~6; the rest (BTC 09-19 16:00 -$108, XRP 09-19 -$65, BNB 09-19 12:30
+  -$62, HYPE 09-21 -$31, SOL 09-11 23:00 -$20, BNB 09-10 -$18, XRP 09-10
+  -$17) are exactly the "nothing at entry separates them" class. FRAGILE
+  on money (two losers are $174 of it) and the flag marks losers more than
+  it forecasts them (93.5% of flagged entries still win). NOT a live skip.
+  NEXT: (1) pinrun subscribes to orderbook_delta only -- add the `trade`
+  channel, keep a 3 s rolling taker-flow per watched market, write
+  `sell_share_3s` on every signal/order/refused record, NO behaviour
+  change, with the bar pre-registered ("sell share > 0.5 in the last 3 s,
+  entries with > 20 s left": 400 more entries ~8 days confirm 6.5% vs 1.5%);
+  (2) then a paper arm that DELAYS a flagged >20 s entry 3-5 s and
+  re-evaluates (losers move -8 sigma in those 5 s, winners barely move),
+  flag `--tox-delay`, default off. Not built tonight: a new socket
+  subscription on the live bot after two restarts is not "careful".
 
 # 2026-09-22 ~19:1xZ -- MISSED DEALS: THE $50-60/DAY WAS A CEILING. IT IS $3-10/DAY, AND THE SUPPLY ITSELF HALVED
 
