@@ -16,6 +16,19 @@ floor + fresh book read), and a rebuilt paper fleet (17 of 24 arms had died
 on an inherited brake). Disk 34.7 GB free (operator deleted a Steam game).
 **Arm vs live comparisons are valid only from 2026-09-22 06:21Z.**
 
+## 2026-09-24 02:0xZ -- v-nospike, after the BTC 8:30 PM ET loss (-$130.41)
+
+The bot bought 176 contracts within 100 ms of ONE index print that put fair at
+0.999 after 90 s of coin-flip readings; the print reversed a second later. Now
+live: a spike gate (our-side confidence under 0.90 at the previous print ->
+refuse, entry only, stands down inside 5 s), a 10c edge cap on EVERY leg (38
+markets above 10c on our record: 4 losers -$202, 34 winners +$183), and the
+hedge trigger back to 0.40 (0.25 fired 5 s late here, $41 of the loss). The
+09-22 FREEZE is overridden by the operator for this. Details: VERSIONS.md.
+The Kalshi recorder was deaf 15:00-20:5x ET (6 h); a fresh process connected
+at once, so boot_all's "leave a retrying recorder alone" rule is WRONG when
+the live bot's own socket is healthy -- fix pending.
+
 ## LIVE CHANGES 2026-09-22 (all in results/VERSIONS.md with revert commands)
 
 - **v-early-third** 11:42Z: `--early-frac 1.0 -> 0.333`, the operator's call

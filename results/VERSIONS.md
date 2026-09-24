@@ -1,3 +1,58 @@
+# v-nospike -- 2026-09-24 ~02:0xZ -- LIVE: no spike entries, a 10c edge cap on every leg, hedge trigger 0.25 -> 0.40
+
+**Built from the BTC 8:30 PM ET loss, KXBTC15M-26SEP232030-30, -$130.41 on
+Kalshi's ledger -- the largest single loss in the bot's history.** The operator:
+"Do everything you can to identify and anything you need to do to make this not
+happen again." This overrides the 09-22 freeze (his words: "any rule can be
+changed if you think another way is better").
+
+**What happened (the bot's own per-second trajectory, v-traj1):** for 90 s the
+market sat ON the strike (fair 0.2-0.6, a coin flip). tau 27: fair 0.196.
+tau 26: 0.369. Then ONE index print landed $33 above the strike, fair read
+0.99896, and within 100 ms the bot bought 88 at 87c and 88 more at 86c -- 176
+contracts, $152 -- against a market that priced YES at 86c: a 13c
+disagreement, the widest we take. One second later the print reversed (0.853),
+two seconds later 0.374, and it settled NO. Belief fell under 0.40 at tau 22
+with insurance at 64c and 1,344 on offer; the 0.25 trigger did not fire until
+tau 17, when it cost 77-87c. The hedge covered 176 of 176, late: net -$130.41
+against -$152 naked.
+
+**Three changes, each measured on OUR OWN fills:**
+
+1. **Spike gate.** Refuse an entry whose our-side confidence was under 0.90 at
+   the previous index print (inside 5 s the cushion is locked prints, so the
+   gate stands down). Today's trajectory log: 36 markets, 2 spike entries -- a
+   DOGE win worth +$0.76 and this loss. Since the per-second belief log began
+   (09-22 12Z): 72 entries, 2 spikes (+$1.17, -$130.41), 70 others +$112.07
+   with one loser. A "hold 2 s at >= pin" rule would have refused 29 of 36 --
+   the wrong fix; this refuses the JUMP, not the climb.
+2. **Edge cap, every leg: refuse when the model beats the market by more than
+   10c.** Whole live record, 824 markets: above 10c, 38 markets, 4 losers
+   (-$202.45: DOGE -2.12, SOL -12.16, BNB -57.76, BTC -130.41), 34 winners
+   (+$183.20) -- net +$19.24 to block, and a 10.5% loss rate against 2.5%.
+   A50 capped the 45 s leg at 10c and left the main window open; the main
+   window took this trade. Below 10c the gap is the edge and is untouched.
+3. **--hedge-belief 0.25 -> 0.40.** On this market a 0.40 trigger fires at
+   tau 22 at 64c: net about -$89 instead of -$130. The 0.25 came from
+   hedgetune, which the 09-22 map showed priced on the recorder's receive
+   time and bypassed PREREG_hedge's "not below 0.30"; its corrected table
+   had 0.40 and 0.25 tied lifetime (+$46.87 vs +$44.79). Today breaks the tie.
+
+**What they block:** ENTRIES only. No spike/edge-cap call exists above the
+hedge pass (asserted by source position), and a driven test holds a collapsing
+position with both gates on and still hedges. Nothing here can delay a hedge.
+
+1,100 self-test checks green plain and under the new live argv; removing
+either gate, or comparing the spike to the clock instead of the newest print,
+each fails the suite. pinattrib (gate registry), versioncheck, shadow,
+markers, barcheck clean.
+
+**REVERT:** `git checkout 9aa5f13 -- research/pinrun.py research/pinattrib.py`,
+set `"--hedge-belief", "0.25",` in restart_bot.ps1, then
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+
+---
+
 # v-traj1 -- 2026-09-23 ~06:2xZ -- LIVE: the bot records HOW a market looked on the way to a decision (logging only)
 
 **Freeze-legal: logging and a paper-only flag. No live entry decision changes.**

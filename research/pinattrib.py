@@ -76,7 +76,12 @@ GATE_ORDER = [
     "close_budget", "max_per_close", "max_per_market", "both_sides",
     "market_attempts", "attempts_cap", "book_suspect", "book_stale",
     "index_stale", "no_sigma",
-    "confidence", "no_offer", "depth_floor", "edge_floor", "against_thin",
+    "confidence",
+    # v-nospike (2026-09-24): the model may not go from unsure to certain in
+    # ONE index print and be bought on that print. Sits right after
+    # confidence, because that is where it runs.
+    "spike",
+    "no_offer", "depth_floor", "edge_floor", "against_thin",
     "jump_against", "dump_guard",
     "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
     # R4 (2026-09-22): this one sits AFTER the signals counter, which is why
@@ -88,6 +93,9 @@ GATE_ORDER = [
     # and then dropped. Its `budget_left` reads > 0 while the base is spent.
     "close_budget_base",
     "early_once", "staged_none", "early_cheap", "early_dear", "early_wide",
+    # v-nospike: A50's cap, on EVERY leg -- above 10c the market knows
+    # something the index has not printed (39 markets, 12.8% lose, -$150).
+    "edge_cap",
     "price_band",
     # NOT hedge_wait_normal, and not any other insurance decision. They are
     # written with rec(), so their `kind` is their own name and NOT "refused"
@@ -136,6 +144,8 @@ WHAT = {
     "staged_none": "A46: the staged leg came to nothing (market already at full size, or under the minimum)",
     "hedge_wait_normal": "A51: insurance held off because the OTHER side was not yet a bet we would make on its own -- our model was not PIN sure of it, or it cost more than the price ceiling. The old rule fired on the model alone and 11 of 12 insured closes still ended negative, five of them paying 10-18c while the market still liked our side",
     "price_band": "A53: the ask sat inside a skipped price band (--skip-band). Live record for 94-96c, 83 closes: +$25 on $2,970, a loss rate level with its break-even; the band held a position slot and earned nothing measurable",
+    "spike": "v-nospike (2026-09-24): our-side confidence was under 0.90 one print earlier and jumped over the bar on a single index print. The BTC 8:30 PM ET loss (-$130.41): fair 0.196 -> 0.369 -> 0.999 -> 0.853 -> 0.374 across four seconds, bought 176 contracts on the middle one. Refuses the jump, not the climb: 2 of 36 markets today, 2 of 72 since the per-second log began. Entry only",
+    "edge_cap": "v-nospike (2026-09-24): the model beat the market by more than 10c on any leg. Our own fills above a 10c gap: 39 markets, 12.8% lose, -$150 (the BTC 8:30 PM loss was a 13c gap). Below 10c the gap IS the edge (+$490 over 463 markets), above it the market knows something the 1-second index has not printed. Entry only",
     "early_wide": "A50: the 31-45 s early leg found our model MORE than the cap above the market price. Late, that disagreement is the whole edge (6c or more made 1.44 $/bet inside 30 s); early, three quarters of the settlement window has not happened yet and the same band lost 3.01 $/bet, so out there a big edge means our volatility guess is wrong rather than the market",
     "early_dear": "A78: the 31-45 s early leg wanted an ask ABOVE the 97.5c ceiling. That leg earns 1.14c a contract against 5.63c at 6-10 s, and above 97.5c it is risking 98c to make 1.8c fifteen seconds before the information the strategy rests on arrives -- the shape of the KXBTC15M-26SEP191600-00 fill that cost $107.95",
     "early_cheap": "A49: the 31-45 s early leg wanted an ask under the 90c floor. Out that far less of the settlement average is locked, so a cheap ask is the market disagreeing with us where the model is weakest",

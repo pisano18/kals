@@ -85,6 +85,7 @@ import argparse
 import asyncio
 import bisect
 import calendar
+import inspect
 import json
 import math
 import os
@@ -1885,6 +1886,122 @@ def max_band_mult(bands=_PB_UNSET):
     """
     bands = BAND_MULTS if bands is _PB_UNSET else bands
     return max([1.0] + [float(b[2]) for b in (bands or ())])
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-24 (v-nospike): THE TWO GATES BUILT FROM THE BTC 8:30 PM ET LOSS.
+#
+# KXBTC15M-26SEP232030-30, -$130.41 on Kalshi's ledger, the largest single
+# loss in the bot's history. The per-second trajectory it wrote (v-traj1) shows
+# exactly what it saw: for 90 seconds the market sat ON the strike (fair 0.2 to
+# 0.6, a coin flip); at tau 27 fair was 0.196; at tau 26, 0.369; then ONE index
+# print landed $33 above the strike and fair read 0.99896 -- and within 100 ms
+# the bot bought 176 contracts at 86-87c. One second later the print reversed
+# (fair 0.853), two seconds later 0.374, and the market settled NO. The market
+# had priced YES at 86c against the model's 99.9%: a 13c "edge", the largest
+# disagreement we ever take.
+#
+# Two things were knowable at the decision, and both are measured on OUR OWN
+# fills, never the tape:
+#
+#   SPIKE. The model was UNSURE (under 0.90) one second before it said 99.9%.
+#   Today's trajectory log: 36 markets, exactly 2 spike entries -- a DOGE win
+#   worth +$0.76 and this loss. Since the per-second belief log began (09-22
+#   12Z): 72 entries, 2 spikes (+$1.17, -$130.41), 70 others (+$112.07, one
+#   loser). A "hold 2 s at >= pin" rule would instead have refused 29 of the
+#   36 -- the WRONG fix; this one refuses the jump, not the climb.
+#
+#   EDGE CAP. Model minus market at entry, Kalshi money, whole live record:
+#     < 2c 322 markets, 3.1% lose, +$3.77 | 2-3c 217, 0.9%, +$182 |
+#     3-5c 152, 3.3%, +$142 | 5-10c 94, 6.4%, +$164 |
+#     >= 10c 39 markets, 12.8% lose, -$150 (-$19 before this loss).
+#   Above 10c the market knows something the 1-second index has not printed.
+#   The coin race learned "a bigger apparent bargain is a warning" on 09-21;
+#   the pin bot had a 10c cap on the 45 s leg only (--early-max-edge) and NONE
+#   on the leg that took this trade.
+#
+# WHAT THEY BLOCK, as the standing rule requires: ENTRIES ONLY. Neither is
+# consulted anywhere in the hedge pass; a self-test drives the real loop
+# holding a collapsing position with both gates on and it still hedges.
+SPIKE_MIN_CONF = 0.90          # our-side confidence one print earlier must be >= this
+_DEFAULT_SPIKE_MIN_CONF = 0.90
+SPIKE_TAU_MIN = 5              # inside this many seconds the cushion is locked prints, not a spike
+_DEFAULT_SPIKE_TAU_MIN = 5
+SPIKE_LOOKBACK_S = 2.5         # the "previous print" must be at least ~1 s old and at most this old
+MAX_EDGE_C = 10.0              # refuse a model-minus-market gap wider than this, every leg
+_DEFAULT_MAX_EDGE_C = 10.0
+
+
+def spike_block(hist, now_s, want, tau, min_conf=None, tau_min=None,
+                lookback=None):
+    """(blocked, prev_conf, prev_age_s). Refuse an entry whose our-side
+    confidence was under `min_conf` at the previous sampled second.
+
+    `hist` is the bot's own in-memory trajectory for this market: a list of
+    (now_s, P(YES)) appended once per second inside 60 s. The newest entry is
+    THIS second's reading (the sampler runs above the scan), so "previous" is
+    the latest reading at least ~1 s old; nothing within `lookback` seconds
+    means no opinion -> not blocked (a fresh watch is not a spike).
+    Inside `tau_min` seconds the settlement is mostly locked prints and a
+    jump there is real, so the gate stands down."""
+    min_conf = SPIKE_MIN_CONF if min_conf is None else min_conf
+    tau_min = SPIKE_TAU_MIN if tau_min is None else tau_min
+    lookback = SPIKE_LOOKBACK_S if lookback is None else lookback
+    if not min_conf or min_conf <= 0:
+        return (False, None, None)
+    try:
+        if tau is not None and int(tau) <= int(tau_min):
+            return (False, None, None)
+    except (TypeError, ValueError):
+        pass
+    if not hist or want not in ("yes", "no"):
+        return (False, None, None)
+    # "Previous" is relative to the NEWEST reading, not to the clock: the
+    # index prints once a second and the loop passes 20 times a second, so
+    # 950 ms after a spike print the spike itself would otherwise count as
+    # the previous print and the gate would open in the same second it fired.
+    try:
+        t_new = float(hist[-1][0])
+        if float(now_s) - t_new > lookback:
+            return (False, None, None)       # history is stale; no opinion
+    except (TypeError, ValueError, IndexError):
+        return (False, None, None)
+    prev = None
+    for t, f in reversed(hist):
+        try:
+            age = t_new - float(t)
+        except (TypeError, ValueError):
+            continue
+        if age < 0.9:
+            continue
+        if age > lookback:
+            break
+        prev = (age, f)
+        break
+    if prev is None or prev[1] is None:
+        return (False, None, None)
+    try:
+        f = float(prev[1])
+    except (TypeError, ValueError):
+        return (False, None, None)
+    conf = f if want == "yes" else 1.0 - f
+    return (conf < float(min_conf), round(conf, 5), round(prev[0], 2))
+
+
+_EC_UNSET = object()
+
+
+def edge_cap_block(edge, cap_c=_EC_UNSET):
+    """True when the model beats the market by MORE than `cap_c` cents.
+    `edge` is in DOLLARS (as net_edge returns). A cap of None = off, and
+    "not supplied" means the running MAX_EDGE_C (the _EW_UNSET trap)."""
+    cap_c = MAX_EDGE_C if cap_c is _EC_UNSET else cap_c
+    if cap_c is None:
+        return False
+    try:
+        return 100.0 * float(edge) > float(cap_c)
+    except (TypeError, ValueError):
+        return False
 
 
 def early_wide_block(leg, edge, cap=_EW_UNSET):
@@ -9813,6 +9930,110 @@ def _selftest_body():
        "first and logs -- and the identity still closes (%d signals)"
        % _r4nn)
 
+    # ---- v-nospike (2026-09-24): the two gates from the BTC 8:30 PM loss --
+    ck(_DEFAULT_SPIKE_MIN_CONF == 0.90 and _DEFAULT_SPIKE_TAU_MIN == 5
+       and _DEFAULT_MAX_EDGE_C == 10.0,
+       "v-nospike: the DECLARED defaults are 0.90 / 5 s / 10c (never the "
+       "running globals)")
+    # the real BTC history, as the bot's own trajectory recorded it
+    _bt = 1_790_209_775.0
+    _bh = [(_bt - 2, 0.19605), (_bt - 1, 0.36862), (_bt, 0.99896)]
+    _bs = spike_block(_bh, _bt, "yes", 26)
+    ck(_bs[0] is True and abs(_bs[1] - 0.36862) < 1e-6 and _bs[2] == 1.0,
+       "THE BTC 8:30 PM ENTRY IS REFUSED: fair 0.369 one print earlier, "
+       "0.999 now (got %s)" % (_bs,))
+    ck(spike_block([(_bt - 1, 0.95), (_bt, 0.999)], _bt, "yes", 26)[0] is False,
+       "NULL: a climb from 0.95 to 0.999 is not a spike")
+    ck(spike_block(_bh, _bt, "yes", 5)[0] is False
+       and spike_block(_bh, _bt, "yes", 3)[0] is False,
+       "inside %d s the settlement is locked prints, so the gate stands down"
+       % SPIKE_TAU_MIN)
+    ck(spike_block([(_bt - 1, 0.63138), (_bt, 0.00104)], _bt, "no", 26)[0] is True,
+       "and it reads OUR side: a NO entry whose NO-confidence was 0.37 a "
+       "second earlier is a spike too")
+    ck(spike_block([], _bt, "yes", 26)[0] is False
+       and spike_block(None, _bt, "yes", 26)[0] is False
+       and spike_block([(_bt - 9, 0.2), (_bt, 0.999)], _bt, "yes", 26)[0] is False
+       and spike_block([(_bt, 0.999)], _bt, "yes", 26)[0] is False,
+       "NULL: no history, or none inside the lookback, is not a spike -- a "
+       "fresh watch is bought on its merits")
+    ck(spike_block(_bh, _bt, "yes", 26, min_conf=0.0)[0] is False,
+       "NULL: min_conf 0 switches the gate off")
+    ck(edge_cap_block(0.1305) is True and edge_cap_block(0.10) is False
+       and edge_cap_block(0.049) is False and edge_cap_block(None) is False
+       and edge_cap_block(0.30, cap_c=None) is False,
+       "edge cap: the BTC 13.05c gap is refused, 10.0c and under passes, "
+       "None edge or None cap never blocks")
+
+    # DRIVEN, through the real loop. The spike world is the BTC shape.
+    def _spk_mkt(n, fair_of, yes_bid=0.94, no_bid=0.05):
+        return {"tk": "KXS%d15M-SPK" % n, "series": "KXS%d15M" % n,
+                "iid": "SPK%d" % n, "strike": 100.0, "fair": fair_of,
+                "book": (lambda t: _ob(yes_bid, no_bid))}
+    _spike_fair = lambda t: 0.999 if 3.0 <= t < 4.0 else 0.30
+    _sw = _offline_trade_loop([_spk_mkt(1, _spike_fair)], run_s=10.0, tau0=30)
+    _sw_ref = _refusals(_sw, "spike")
+    ck(_sw["raised"] is None and not _kinds(_sw, "signal")
+       and len(_sw_ref) >= 1 and float(_sw_ref[0]["prev_conf"]) < 0.5
+       and _sw_ref[0].get("want") == "yes",
+       "DRIVEN: a one-second 0.30 -> 0.999 -> 0.30 spike at tau ~27 sends "
+       "NO order and writes a `spike` refusal naming the 0.30 it saw a second "
+       "earlier (refusals %d, signals %d)"
+       % (len(_sw_ref), len(_kinds(_sw, "signal"))))
+    _sw_off = _offline_trade_loop([_spk_mkt(1, _spike_fair)], run_s=10.0,
+                                  tau0=30, flags={"SPIKE_MIN_CONF": 0.0})
+    ck(_sw_off["raised"] is None and len(_kinds(_sw_off, "signal")) >= 1
+       and not _refusals(_sw_off, "spike"),
+       "...and with the gate OFF the same world is BOUGHT on the spike -- "
+       "which is what the live bot did at 8:29:34 PM (signals %d, gates %s)"
+       % (len(_kinds(_sw_off, "signal")), _gate_counts(_sw_off)))
+    _cw = _offline_trade_loop([_spk_mkt(2, lambda t: 0.999 if t >= 3.0 else 0.95)],
+                              run_s=10.0, tau0=30)
+    ck(_cw["raised"] is None and len(_kinds(_cw, "signal")) >= 1
+       and not _refusals(_cw, "spike"),
+       "NULL DRIVEN: a climb from 0.95 to 0.999 is bought, no spike refusal "
+       "(signals %d, gates %s)" % (len(_kinds(_cw, "signal")), _gate_counts(_cw)))
+    _iw = _offline_trade_loop([_spk_mkt(3, _spike_fair)], run_s=6.0, tau0=6)
+    ck(_iw["raised"] is None and len(_kinds(_iw, "signal")) >= 1
+       and not _refusals(_iw, "spike"),
+       "DRIVEN: the same spike inside %d s IS bought -- the cushion there is "
+       "locked prints, and a real print is real" % SPIKE_TAU_MIN)
+    # the edge cap: a 19c gap is refused, a 5c gap is not, and None cap buys
+    _ew = _offline_trade_loop([_spk_mkt(4, lambda t: 0.999, no_bid=0.12)],
+                              run_s=6.0, tau0=20)
+    _ew_ref = _refusals(_ew, "edge_cap")
+    ck(_ew["raised"] is None and not _kinds(_ew, "signal") and len(_ew_ref) >= 1
+       and float(_ew_ref[0]["edge_c"]) > 10.0 and _ew_ref[0]["cap_c"] == 10.0,
+       "DRIVEN: fair 0.999 against an 88c ask (edge ~%sc, inside the dump "
+       "guard's 15c) is refused by the edge cap on the FULL leg -- A50 only "
+       "ever capped the 45 s leg (gates %s)"
+       % (_ew_ref[0]["edge_c"] if _ew_ref else "?", _gate_counts(_ew)))
+    _ew2 = _offline_trade_loop([_spk_mkt(5, lambda t: 0.999, no_bid=0.05)],
+                               run_s=6.0, tau0=20)
+    ck(_ew2["raised"] is None and len(_kinds(_ew2, "signal")) >= 1
+       and not _refusals(_ew2, "edge_cap"),
+       "NULL DRIVEN: a 5c gap is bought as before (signals %d, gates %s)"
+       % (len(_kinds(_ew2, "signal")), _gate_counts(_ew2)))
+    _ew3 = _offline_trade_loop([_spk_mkt(6, lambda t: 0.999, no_bid=0.12)],
+                               run_s=6.0, tau0=20, flags={"MAX_EDGE_C": None})
+    ck(_ew3["raised"] is None and len(_kinds(_ew3, "signal")) >= 1
+       and not _refusals(_ew3, "edge_cap"),
+       "...and with the cap OFF the 11c gap is bought (the pre-09-24 bot)")
+    # NEITHER GATE CAN TOUCH A HEDGE: the K1 collapse world, both gates on
+    _hg = _offline_trade_loop([_k1_A()])
+    ck(_hg["raised"] is None and abs(_hedged(_hg, _kA) - 5.0) < 1e-9,
+       "with both gates ON a held position that collapses is still hedged "
+       "(%g) -- the gates live in the entry scan, below the hedge pass"
+       % _hedged(_hg, _kA))
+    _hsrc = inspect.getsource(trade_loop)
+    _i_hp = _hsrc.find("hedge_quote")
+    _i_sp = _hsrc.find('_gate("spike"')
+    _i_ec = _hsrc.find('_gate("edge_cap"')
+    ck(0 < _i_hp < _i_sp and _i_sp < _i_ec
+       and "spike_block(" not in _hsrc[:_i_hp]
+       and "edge_cap_block(" not in _hsrc[:_i_hp],
+       "and by source: no spike/edge-cap call exists above the hedge pass")
+
     # ---- R2b (2026-09-23): the refresh WAITS while a close is near ----
     # Kalshi degraded at 00:2xZ: refresh median 3,227 ms, worst 10,639 ms,
     # 54 stalls inside 45 s of a close, one of 6,344 ms at tau 21. The loop
@@ -10829,12 +11050,19 @@ def _selftest_body():
         _mk = _kw.pop("markets")
         _off_flags = dict(_kw.pop("flags", {}) or {})
         _off_flags["TRAJ_TAU_MAX"] = -1
+        # v-nospike (2026-09-24): the spike gate READS the sampled history,
+        # and a run with the sampler inert has none -- so with the gate on
+        # the two trails differ by construction (the K1 worlds go 0.5 ->
+        # 0.999 in one print, which is a spike). This comparison exists to
+        # prove the SAMPLER changes nothing; the gate has its own tests.
+        _off_flags["SPIKE_MIN_CONF"] = 0.0
+        _on_flags = dict(_wk.get("flags") or {})
+        _on_flags["SPIKE_MIN_CONF"] = 0.0
         _r4id_calls[:] = []
         _off = _offline_trade_loop(_mk, flags=_off_flags, **_kw)
         _off_calls = list(_r4id_calls)
         _r4id_calls[:] = []
-        _on = _offline_trade_loop(_mk, **dict(_kw, flags=dict(_wk.get("flags")
-                                                             or {})))
+        _on = _offline_trade_loop(_mk, **dict(_kw, flags=_on_flags))
         _on_calls = list(_r4id_calls)
         _off_tr = _r4_scrub([r for r in _off["recs"]
                              if r["kind"] not in ("traj", "traj_close", "traj_blind")])
@@ -14453,6 +14681,16 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         _gate("confidence", close_s, tk, fair=round(f, 5),
                               tau=tau)
                     continue
+                # v-nospike: the model may not go from UNSURE to certain in one
+                # print and be bought on that print. Entry only; the hedge pass
+                # never reaches this line.
+                _spk = spike_block(traj_hist.get((close_s, tk)), now, want, tau)
+                if _spk[0]:
+                    _gate("spike", close_s, tk, fair=round(f, 5), tau=tau,
+                          want=want, prev_conf=_spk[1], prev_age_s=_spk[2],
+                          min_conf=float(SPIKE_MIN_CONF), price=round(price, 4),
+                          size=float(SIZE))
+                    continue
                 # AMENDMENT 6: buy what is THERE, down to MIN_FILL_FRAC of what
                 # we wanted. Below that, skip -- a scrap fill burns a scale-in
                 # slot and raises the improve bar for the better price still to
@@ -14890,6 +15128,16 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                               tau=tau, price=round(price, 4),
                               want=want, size=float(take_n or SIZE))
                         continue
+                # v-nospike: too good to be true, on EVERY leg. A50 capped the
+                # 45 s leg at --early-max-edge and left the main window open
+                # because wide late edges had paid; the record above 10c says
+                # otherwise (39 markets, 12.8% lose, -$150). Entry only.
+                if edge_cap_block(e):
+                    _gate("edge_cap", close_s, tk, leg=_leg46, tau=tau,
+                          price=round(price, 4), edge_c=round(100 * e, 3),
+                          cap_c=float(MAX_EDGE_C), fair=round(f, 5),
+                          want=want, size=float(take_n or SIZE))
+                    continue
                 # A53: a skipped price band refuses on EVERY leg. After the early
                 # gates, so a cheap early ask is refused for being cheap (A49)
                 # rather than for its band; before the signal is recorded, so a

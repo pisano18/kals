@@ -117,7 +117,14 @@ $botArgs = @(
     # risk instead of matching the position reads -$220.42 at this trigger,
     # another $53, with a worst drop-one of +$47.79. It needs a new flag and
     # it is not going in the same change as this one.
-    "--hedge-belief", "0.25",
+    # 0.25 -> 0.40, v-nospike, 2026-09-24. The BTC 8:30 PM ET loss: belief
+    # fell under 0.40 at tau 22 with insurance at 64c and 1,344 on offer; the
+    # 0.25 trigger did not fire until tau 17, by which time it cost 77-87c.
+    # That difference was $41 of the $130.41. The 0.25 came from hedgetune,
+    # which the 09-22 map showed priced on the recorder's receive time and
+    # bypassed PREREG_hedge's "not below 0.30"; its corrected table had 0.40
+    # tied with 0.25 lifetime (+$46.87 vs +$44.79). Today decides the tie.
+    "--hedge-belief", "0.40",
     # AMENDMENT 46 REOPENED 2026-09-18 ~02:2xZ, at a THIRD and with a PRICE
     # FLOOR. The operator: "Can you re open 45 seconds with a cap at 90c, or
     # whatever number you like?"
