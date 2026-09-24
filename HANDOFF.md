@@ -95,6 +95,11 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**09:2xZ: second low-memory shell kill** (the harness's own shell; bot,
+recorders and arms untouched; free RAM 3.5 GB, commit 21/27.8). Retired
+arm-friday and arm-hedge-slip0. arm-btcd's 15M universe matched live's on
+real data at 09:15Z (9 of 9 tickers).
+
 **TWO MORE PAPER ARMS (08:xxZ-09:0xZ, both flags SHIP OFF, live unchanged):**
 `arm-btcd` (`--series KXBTCD`, the hourly BTC strike ladder, 3 rungs nearest
 BRTI; first real rungs at 09:45Z; bar in IDEAS item 2) and `arm-fresh500`

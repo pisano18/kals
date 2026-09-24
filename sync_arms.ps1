@@ -108,7 +108,6 @@ $arms = @(
   # --hedge-price (v-hedgelastweek) on 09-21, which turned arm-hedgeprop-off
   # and arm-hedge-noprice into exact copies of live measuring nothing. Each
   # now tests the setting live LEFT, and hedge60 tests v-hedge25 itself.
-  @{ n="arm-hedge-slip0";   drop=@("--hedge-slip");      add=@() },
   # --- the 45-second leg ---
   @{ n="arm-early-off";     drop=@("--early-tau","--early-frac","--early-min-price",
                                    "--early-max-edge"); add=@() },
@@ -144,6 +143,9 @@ $arms = @(
   # processes; the harness killed a shell for low memory) -- the hedge family (settled
   # by the 820-position replay: 0.40 all-at-once is best), pin 0.97/0.975/0.98 (the bar
   # is not moving; 0.985/0.99 stay), band15 (-$63 h2h), early60, brake6. Rows in git.
+  # 2026-09-24 09:2xZ: arm-friday (a 09-19 flag set; arm-afternoon and arm-live-frozen are
+  # the controls now) and arm-hedge-slip0 (the slip question is settled: live runs 0.10)
+  # retired -- a second low-memory shell kill; keep the fleet under ~15.
   @{ n="arm-lateadd-off";   drop=@("--rebuy-late-tau","--rebuy-late-frac"); add=@() },
   # 2026-09-24 04:2xZ: entries with under 2c of edge after fee were 314 of the 763
   # markets that survive tonight's rules, 9 of their 19 losers, net +$15 --
@@ -190,7 +192,6 @@ if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 # not flags. That is deliberate: this tests Friday's TRADING RULES, not
 # Friday's bugs.
 $frozen = @(
-  @{ n="arm-friday"; x=@(
       "--loss-abort","-60.00","--max-positions","3",
       "--improve-scope","market","--pick","best","--max-per-market","2",
       "--improve-max","0.010","--min-fill-frac","0","--sweep-depth",
