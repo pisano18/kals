@@ -95,6 +95,14 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**v-race-tie1 (06:0xZ): the coin-race scorer reads Kalshi's own result** --
+a tie pays 50c to both tied coins and is a LOSS for the penny test's stop
+rail; unscorable races stay pending with the stake held (results/VERSIONS.md).
+The penny bot and every race arm (z3, gap075, racectl, raceedge0, racetau40)
+were restarted on it at ~05:57Z; the penny bot's argv is the `--live` one in
+the process table (also in VERSIONS/v-race-tie1). One old real leg (09-22
+07:59Z XRP YES 98c) stays unscored in the log; the ledger has it.
+
 **PAPER FLEET TRIMMED 04:3xZ for memory** (the harness killed a shell for low
 memory; commit was 22.5 of 27.8 GB with 40 python processes): retired the 7
 sigma arms, the hedge family (nohedge, hedge60, hedgeprice60, hedgeprop-on;
