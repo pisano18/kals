@@ -24,7 +24,7 @@ books fill us the way BTC's do? Read via armh2h2 after >= 7 days.
 **REVERT (code):** `git checkout 5a83ffe -- research/pinrun.py research/pinflat.py sync_arms.ps1`
 (no restart needed: the live bot is not running this code until the next
 restart; if it has been restarted since, follow with
-`powershell -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1`).
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`).
 
 ---
 
