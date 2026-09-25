@@ -1,4 +1,4 @@
-# v-scalein-caps -- 2026-09-25 __TIME__ (pid __PID__, code_sha __SHA__) -- LIVE: a same-market scale-in needs a genuinely cheaper ASK (not a sweep-inflated average) and buys only the cheaper contracts; pintake's rails are back to their designed sizes and a hedge covering a held position is never refused on dollars. No flag changed. Operator, 09-25: "do what makes the most money, use the risk in the calculating... Same with order caps."
+# v-scalein-caps -- 2026-09-25 12:23:53Z (pid 2951024, code_sha f9548c5571ff) -- LIVE: a same-market scale-in needs a genuinely cheaper ASK (not a sweep-inflated average) and buys only the cheaper contracts; pintake's rails are back to their designed sizes and a hedge covering a held position is never refused on dollars. No flag changed. Operator, 09-25: "do what makes the most money, use the risk in the calculating... Same with order caps."
 
 (A) rebuy_ok: A23's 0.5-1c band is also measured against the cheapest ASK taken
 in the market (new per-market `ask_tk`), not only the average paid. Strictly
