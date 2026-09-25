@@ -1,4 +1,0 @@
-C:\kals-repo\research\raceclose.py:484: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
-  print("  %-30s %6s %7s %7s %8s %9s %10s %9s"
-C:\kals-repo\research\raceclose.py:490: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
-  report(bets, "tau %d-%d, ask <= %.0fc" % (tau_lo, tau_hi, 100 * mp),

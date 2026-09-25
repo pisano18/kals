@@ -1,7 +1,0 @@
-{"series": ["KXGOLD15M", "KXSILVER15M", "KXWTI15M"], "bands": {"KXGOLD15M": [2, 15], "KXWTI15M": [2, 30], "KXSILVER15M": [2, 5]}, "price_lo": 0.9, "price_hi": 0.98, "size": 100.0, "mode": "paper", "kind": "start", "t": "2026-09-17T14:39:42Z"}
-{"added": ["KXGOLD15M-26SEP171045-45", "KXSILVER15M-26SEP171045-45", "KXWTI15M-26SEP171045-45"], "n": 3, "kind": "watch", "t": "2026-09-17T14:39:43Z"}
-{"ticker": "KXWTI15M-26SEP171045-45", "series": "KXWTI15M", "want": "no", "price": 0.918, "n": 18.0, "tau": 14, "offer": 18.0, "age_ms": 14, "kind": "bet", "t": "2026-09-17T14:44:45Z"}
-{"ticker": "KXGOLD15M-26SEP171045-45", "series": "KXGOLD15M", "looks": 35, "fresh": 35, "yes_ask": [0.001, 707.8, 15], "no_ask": null, "bet": false, "kind": "look", "t": "2026-09-17T14:44:58Z"}
-{"ticker": "KXSILVER15M-26SEP171045-45", "series": "KXSILVER15M", "looks": 10, "fresh": 10, "yes_ask": [0.003, 396.0, 5], "no_ask": [0.999, 173.0, 5], "bet": false, "kind": "look", "t": "2026-09-17T14:44:58Z"}
-{"ticker": "KXWTI15M-26SEP171045-45", "series": "KXWTI15M", "looks": 72, "fresh": 72, "yes_ask": [0.002, 1.0, 3], "no_ask": [0.17, 2150.0, 26], "bet": true, "kind": "look", "t": "2026-09-17T14:44:58Z"}
-{"added": ["KXGOLD15M-26SEP171100-00", "KXSILVER15M-26SEP171100-00", "KXWTI15M-26SEP171100-00"], "n": 3, "kind": "watch", "t": "2026-09-17T14:45:46Z"}

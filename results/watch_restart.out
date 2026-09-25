@@ -1,5 +1,0 @@
-restart_bot.ps1 starting 2026-09-20T00:16:28.9676435-04:00
-argument list ok: 62 flat strings
-pinflat: FLAT -- every fill has settled (pid None, pinrun-live-20260920T040054Z.jsonl)
-no live pinrun found to stop (pid file: False)
-FAILED: pinrun did not come back. Check results\pinrun-live-*.jsonl

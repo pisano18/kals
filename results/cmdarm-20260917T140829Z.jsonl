@@ -1,8 +1,0 @@
-{"series": ["KXGOLD15M", "KXSILVER15M", "KXWTI15M"], "bands": {"KXGOLD15M": [2, 15], "KXWTI15M": [2, 30], "KXSILVER15M": [2, 5]}, "price_lo": 0.9, "price_hi": 0.98, "size": 100.0, "mode": "paper", "kind": "start", "t": "2026-09-17T14:08:29Z"}
-{"added": ["KXGOLD15M-26SEP171015-15", "KXSILVER15M-26SEP171015-15", "KXWTI15M-26SEP171015-15"], "n": 3, "kind": "watch", "t": "2026-09-17T14:08:29Z"}
-{"ticker": "KXWTI15M-26SEP171015-15", "series": "KXWTI15M", "want": "no", "price": 0.979, "n": 100.0, "tau": 30, "offer": 176.0, "age_ms": 17, "kind": "bet", "t": "2026-09-17T14:14:29Z"}
-{"added": ["KXSILVER15M-26SEP171030-30", "KXWTI15M-26SEP171030-30"], "n": 2, "kind": "watch", "t": "2026-09-17T14:15:33Z"}
-{"added": ["KXGOLD15M-26SEP171030-30"], "n": 3, "kind": "watch", "t": "2026-09-17T14:16:03Z"}
-{"ticker": "KXWTI15M-26SEP171015-15", "result": 0.0, "won": true, "pnl_c": 195.61, "kind": "settled", "t": "2026-09-17T14:16:33Z"}
-{"added": ["KXWTI15M-26SEP171045-45"], "n": 1, "kind": "watch", "t": "2026-09-17T14:30:10Z"}
-{"added": ["KXGOLD15M-26SEP171045-45", "KXSILVER15M-26SEP171045-45"], "n": 3, "kind": "watch", "t": "2026-09-17T14:30:40Z"}

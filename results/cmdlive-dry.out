@@ -1,2 +1,0 @@
-  *** PRODUCTION ARMED: cmdlive commodity penny test, operator sign-off 2026-09-17 ***
-cmdlive DRY RUN -- KXGOLD15M, KXSILVER15M, KXWTI15M | size 1 | caps: $10.00 spend, 60 orders, 2 losses, balance floor $300 | balance now $579.44 | log cmdlive-20260917T160222Z.jsonl

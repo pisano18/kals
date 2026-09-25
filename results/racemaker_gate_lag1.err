@@ -1,4 +1,0 @@
-C:\kals-repo\research\racemaker.py:440: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
-  d = dt.datetime.utcfromtimestamp(r[7]).strftime("%Y-%m-%d")
-C:\kals-repo\research\racemaker.py:555: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
-  d = dt.datetime.utcfromtimestamp(c).strftime("%Y-%m-%d")

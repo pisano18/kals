@@ -1,8 +1,0 @@
-C:\kals-repo\research\racegrid.py:339: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
-  dt.datetime.utcfromtimestamp(grid[0][0]).strftime("%m-%d"),
-C:\kals-repo\research\racegrid.py:340: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
-  dt.datetime.utcfromtimestamp(grid[-1][0]).strftime("%m-%d")))
-C:\kals-repo\research\racegrid.py:400: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
-  d = dt.datetime.utcfromtimestamp(b[0]).strftime("%Y-%m-%d")
-C:\kals-repo\research\racegrid.py:414: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
-  % (dt.datetime.utcfromtimestamp(b[0]).strftime("%m-%d %H:%MZ"),
