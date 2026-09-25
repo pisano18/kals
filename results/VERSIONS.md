@@ -1,3 +1,43 @@
+# v-zerotake -- 2026-09-25 ~06:5xZ -- LIVE at the restart below: the bot never sends (or books) an order for ZERO contracts. A late add on a position already at the (1 + frac) x SIZE cap is refused as `late_add_full`; any other path that reaches the send with 0 is skipped and logged `zero_take`. No trading rule changed.
+
+**Why -- a halt, measured.** 2026-09-25 06:14:55Z (2:14 AM ET),
+KXHYPE15M-26SEP250215-15: the late boost filled the position to 1.5 x SIZE
+(88 -> 132) at 5 s; a 0.5-1c cheaper ask then passed A23's scale-in band in
+rebuy_ok, the v-lateadd relabel capped the add at (1 + 0.5) x SIZE - have =
+0, and the order went out for 0 contracts. pintake refused it ("count 0.0 is
+not positive") twice -- the two order-path errors that halt the run. The
+market won (+$5.77); watch_bot restarted the bot in ~1 min (06:15:32Z ->
+pid 2885852). No money lost; each repeat would have cost a minute of trading
+and a quick-restart slot.
+
+**What changed:** (1) in the v-lateadd relabel block, after the early-leg
+gates and before the signal point, `if take_n <= 0: _gate("late_add_full")`
++ continue -- burns no attempt, logged once per market per close; (2) a
+backstop right before `pintake.take` on the live path and before
+`_book_slot` on the paper path: `take_n <= 0` -> `rec("zero_take")` +
+continue (the attempt stays consumed). Entry path only; the hedge pass is
+above and untouched. pinattrib knows `late_add_full`.
+
+**Proof:** a driven world through the REAL loop on the LIVE path, with a
+fake wire that refuses count <= 0 exactly as pintake did: full 5 at 14 s,
+late add 2.5 (= the 7.5 cap), then a 0.6c cheaper ask. OLD code (replayed
+by the session): a third order for 0.0 contracts and an `error` record --
+tonight's incident reproduced. NEW code: orders [5.0, 2.5], 0 errors, one
+`late_add_full`, no halt. Source checks: the gate sits after `staged_none`
+and before the signal; `zero_take` appears twice, the live one right
+before the live `out = pintake.take(`. 1,228 -> 1,230 checks green plain
+and under the deployed argv on the real file; pinattrib 55; versioncheck
+clean.
+
+Paper arms are NOT restarted: their paper path never called pintake, so a
+zero take booked a zero slot and raised nothing; restarting them would
+reset the 7-day windows of fresh500 / toxic / btcd / edge2c.
+
+**REVERT:** `git checkout 46d1f70 -- research/pinrun.py research/pinattrib.py`,
+then `powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
+
+---
+
 # v-farrung -- 2026-09-25 04:0xZ -- CODE ON DISK, EVERY FLAG OFF: the bot can buy the FAR rungs of the hourly BTC ladder at 99c (results/FAR_RUNG_2026-09-25.md), but only when seven new flags are passed. The live command line is unchanged, so the live bot does nothing new; the next restart merely runs this code. A 1-contract live test needs the operator's sign-off and its own entry (`v-farrung1`).
 
 **The idea (plain).** With 45 s left, a rung $150 or more from where the

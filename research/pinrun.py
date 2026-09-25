@@ -11077,6 +11077,56 @@ def _selftest_body():
        "v-lateadd NULL DRIVEN: with the flag OFF the same world buys once and "
        "refuses the not-cheaper re-buy as rebuy_band (signals %d, band %d)"
        % (len(_kinds(_la_off, "signal")), len(_refusals(_la_off, "rebuy_band"))))
+    # v-zerotake DRIVEN (2026-09-25 06:14Z HYPE): full buy, a half-size late
+    # add, then a 0.6c CHEAPER ask inside 15 s -- A23's band lets it through
+    # rebuy_ok and the late-add cap leaves 0. LIVE path, fake wire that
+    # refuses a count <= 0 exactly as pintake did. Before the fix: an order
+    # for 0 went out and was refused (an order-path error).
+    _zt_calls = []
+
+    def _zt_take(base, pk, key_id, ticker, want, price, count, mce,
+                 exchange_index=0, **kw):
+        _zt_calls.append((ticker, want, float(count)))
+        if float(count) <= 0:
+            return {"refused": ["count %s is not positive" % float(count)],
+                    "status_code": None, "status": None, "filled": 0.0}
+        body = pintake.build_take(ticker, want, price, count, exchange_index)
+        out = pintake.normalise(201, {"order": {
+            "order_id": "zt-%d" % len(_zt_calls), "status": "executed",
+            "fill_count": count, "remaining_count": 0,
+            "average_fill_price": (0.95 if want == "yes" else 0.05)}},
+            body, base)
+        out["refused"] = []
+        return out
+    # fills at the 95c ask, not the limit (a limit fill would make every later
+    # ask look 3c cheaper and A23's band, not this cap, would refuse it)
+    _zt_book = lambda t: _ob(0.94, 0.05 if t < 3.0 else 0.056)
+    _zt = _offline_trade_loop(
+        [{"tk": "KXZT15M-ZT", "series": "KXZT15M", "iid": "ZT", "strike": 100.0,
+          "fair": (lambda t: 0.999), "book": _zt_book}],
+        live=True, take=_zt_take, run_s=7.0, tau0=14,
+        flags={"REBUY_LATE_TAU": 15, "REBUY_LATE_FRAC": 0.5,
+               "MAX_PER_MARKET": 3, "IMPROVE_SCOPE": "market",
+               "IMPROVE_MAX": 0.01})
+    _zt_err = [r for r in _zt["recs"] if r.get("kind") == "error"]
+    _zt_full = _refusals(_zt, "late_add_full")
+    _zt_n = [c[2] for c in _zt_calls if c[0] == "KXZT15M-ZT"]
+    ck(_zt["raised"] is None and not _zt_err and all(n > 0 for n in _zt_n)
+       and len(_zt_n) >= 2 and abs(sum(_zt_n) - 7.5) < 1e-6
+       and len(_zt_full) == 1 and abs(float(_zt_full[0]["have"]) - 7.5) < 1e-6
+       and not [r for r in _zt["recs"] if r.get("kind") == "halt"],
+       "v-zerotake DRIVEN (live path): full 5 + late add 2.5 = the 7.5 cap; "
+       "the cheaper ask that follows is refused `late_add_full` -- NO order "
+       "for 0 contracts, no order error, no halt (orders %s, errors %d, "
+       "late_add_full %d)" % (_zt_n, len(_zt_err), len(_zt_full)))
+    _zt_src = inspect.getsource(trade_loop)
+    ck(_zt_src.count('rec("zero_take"') == 2
+       and _zt_src.index('_gate("late_add_full"') < _zt_src.index('rec("signal", live=live, **sig)')
+       and _zt_src.index('_gate("staged_none"') < _zt_src.index('_gate("late_add_full"')
+       and _zt_src.rindex('rec("zero_take"') < _zt_src.index("\n                        out = pintake.take("),
+       "v-zerotake by source: the late_add_full gate sits after the early-leg "
+       "gates and before the signal point; the zero_take backstop guards the "
+       "paper booking and sits right before pintake.take on the live path")
     # --edge-floor DRIVEN: fair 0.999 against a 97.9c ask is a ~1.9c edge after
     # fee: bought at the shipped 0.3c floor, refused as edge_floor at 2c
     _ef_on = _offline_trade_loop([_spk_mkt(10, lambda t: 0.999, no_bid=0.021)],
@@ -17513,6 +17563,18 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     _leg46 = "late_add"
                     _have_la_cap = _have_la
                     sig["take_n"] = take_n
+                    # v-zerotake (2026-09-25): the position already holds the
+                    # (1 + frac) x SIZE cap -- the late boost can fill it to
+                    # 1.5 x SIZE before any add -- so the add is ZERO. Refuse
+                    # it here, before the signal point (burns no attempt).
+                    # 06:14:55Z HYPE sent it for 0 contracts twice and the two
+                    # refusals halted the run. Entry only; never a hedge.
+                    if float(take_n) <= 1e-9:
+                        _gate("late_add_full", close_s, tk, want=want, tau=tau,
+                              price=round(price, 4), have=round(_have_la, 4),
+                              cap=round(float(SIZE) * (1.0 + float(REBUY_LATE_FRAC)), 4),
+                              size=float(SIZE))
+                        continue
                 # v-toxic (2026-09-24, results/PREREG_toxic.md): a level posted
                 # under TOXIC_MIN_AGE_MS ago WHILE takers net-sold our side in
                 # the last 3 s, with more than TOXIC_TAU_MIN s left. Entry
@@ -17984,7 +18046,9 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                 # send and not after, so a send that never returns still
                 # consumes one and the runaway of 2026-09-08 stays
                 # impossible. Nothing between here and the send can
-                # refuse: the only code in between defines helpers.
+                # refuse: the only code in between defines helpers --
+                # except the v-zerotake backstop, which skips an order for
+                # zero contracts (the attempt stays consumed).
                 #
                 # The per-CLOSE counter is here too, and the comment at
                 # the signal site says why: moving only the per-market one
@@ -18008,6 +18072,10 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     take_n = _stage46(take_n)
                     if _ssz is not None:       # v-btcd1, after every widener
                         take_n = min(float(take_n), _ssz)
+                    if float(take_n) <= 1e-9:  # v-zerotake backstop (paper)
+                        rec("zero_take", ticker=tk, want=want, leg=_leg46,
+                            tau=tau, price=round(float(price), 4))
+                        continue
                     _book_slot(price, take_n)
                     _poid46 = f"paper-{tk}-{now_s}"
                     entry_at[_poid46] = now_s
@@ -18145,6 +18213,16 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         # -$134 case A63 was refused for.
                         if _room68 is not None:
                             take_n = min(take_n, float(_room68))
+                        # v-zerotake backstop (live): whatever cap produced it,
+                        # an order for zero contracts is never sent. pintake
+                        # refuses it, and two refusals halt the whole run
+                        # (2026-09-25 06:15Z). Recorded, not counted as an
+                        # order error; the attempt it consumed stays consumed.
+                        if float(take_n) <= 1e-9:
+                            rec("zero_take", ticker=tk, want=want, leg=_leg46,
+                                tau=tau, price=round(float(price), 4),
+                                room68=_room68)
+                            continue
                         _t0 = time.time()
                         out = pintake.take(CREDS["base"], CREDS["pk"],
                                            CREDS["key_id"], tk, want, _limit,
