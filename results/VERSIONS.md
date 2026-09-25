@@ -1,3 +1,33 @@
+# v-ladder7 -- 2026-09-25 03:2xZ -- CODE ON DISK, PAPER ONLY: the ladder table knows all seven hourly series Kalshi lists on an index the bot already follows (KXBTCD + KXETHD KXSOLD KXXRPD KXDOGED KXBNBD KXHYPED). The live command line is unchanged (`--series KXBTCD --series-size 1`), so the live bot does nothing new; the next restart merely runs this code.
+
+**What changed in code:** `LADDER_SERIES` / `LADDER_COIN` / `LADDER_STEP`
+gain six rows; `ladder_universe` reads a rung's strike from
+`custom_strike.floor_strike` when the top-level `floor_strike` is null
+(KXDOGED's shape, 55 of 55 rungs); the offline harness can plant that shape.
+Nothing else: `series_size_for`, `coin_of`, the live gate in main(), the
+trade_loop branch and every 15M path are untouched.
+
+**Proof the live path is the same:** self-test checks that `--series KXBTCD`
+alone yields exactly SERIES_TO_INDEX + {KXBTCD: BRTI}; with no `--series` the
+universe object IS SERIES_TO_INDEX; the KXBTCD stub fetch is the same one GET
+with the same params and the same three rungs; coin_of / series_size_for
+answer as before for KXBTCD and KXBTC15M tickers. 1,188 -> 1,208 checks green
+plain, under the deployed argv (`pinrun.py --selftest <live argv minus
+--live>`, re-run by the session at 03:2xZ: 1,208 ok, SELF-TEST PASSED) and
+under the arm's argv. pinflat 23, pinattrib 55, versioncheck clean.
+
+**The paper arm:** `arm-hourly-all` (sync_arms row, pid 2853628, log
+`results/pinrun-paper-20260925T030630Z.jsonl`), live's argv with the
+`--series` group swapped for all seven. Question: do the other coins' hourly
+books fill us the way BTC's do? Read via armh2h2 after >= 7 days.
+
+**REVERT (code):** `git checkout 5a83ffe -- research/pinrun.py research/pinflat.py sync_arms.ps1`
+(no restart needed: the live bot is not running this code until the next
+restart; if it has been restarted since, follow with
+`powershell -ExecutionPolicy Bypass -File C:\kals-repoestart_bot.ps1`).
+
+---
+
 # v-tradefeed -- 2026-09-24 ~22:3xZ -- LIVE at the next restart: the bot subscribes to Kalshi's `trade` channel and LOGS `sell_share_3s` on every signal, order and priced refusal. The `toxic_fresh` gate ships OFF (paper arm `arm-toxic`). No trading rule changed.
 
 **Why.** results/PREREG_toxic.md: on our own early entries, a level posted

@@ -163,7 +163,12 @@ $arms = @(
   # (sell share > 0.5). The AND cell was 8 of 12 early losers on our own fills.
   # Live = this arm + the refused set; the share is logged on live either way.
   # Bar: 7 days of live logging sell_share_3s, then armh2h2 on the same closes.
-  @{ n="arm-toxic";         drop=@();                    add=@("--toxic-fresh") }
+  @{ n="arm-toxic";         drop=@();                    add=@("--toxic-fresh") },
+  # 2026-09-25 03:06Z: every hourly ladder Kalshi lists on an index the bot already
+  # follows (ETH SOL XRP DOGE BNB HYPE beside BTC), paper only, 1 contract a rung.
+  # Live keeps `--series KXBTCD` only; this arm swaps that group for all seven.
+  # Question: do the other coins' hourly books fill us the way BTC's do?
+  @{ n="arm-hourly-all";    drop=@("--series");          add=@("--series","KXBTCD","KXETHD","KXSOLD","KXXRPD","KXDOGED","KXBNBD","KXHYPED") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 

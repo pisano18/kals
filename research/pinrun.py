@@ -150,8 +150,43 @@ SERIES_TO_INDEX = {
 # window (TAU_MAX / EARLY_TAU_MAX), the gates, the hedge pass and the settle
 # reader are untouched: a ladder market is just another (ticker -> iid,
 # close_s, strike, digits, exchange_index) entry once it is in the universe.
-LADDER_SERIES = {"KXBTCD": "BRTI"}       # series -> settlement index id
-LADDER_COIN = {"KXBTCD": "KXBTC"}        # the COIN a ladder ticker belongs to
+# 2026-09-25 (lad3, PAPER arm `arm-hourly-all`): THE OTHER HOURLY LADDERS.
+# Read live 2026-09-25 02:5xZ from GET /series, /markets and /events (scratch
+# lad3_discover.json / lad3_events*.json); nothing here is from the replay.
+#   series   index        rungs  step    strike text   custom_strike
+#   KXBTCD   BRTI          188   $100    T94799.99     null
+#   KXETHD   ETHUSD_RTI    300   $5      T3444.99      null   (2 pages @200)
+#   KXSOLD   SOLUSD_RTI    300   $0.25   T99.9999      null   (2 pages @200)
+#   KXXRPD   XRPUSD_RTI     75   $0.02   T2.2399       null
+#   KXDOGED  DOGEUSD_RTI    55   $0.005  T0.2749999    {floor_strike:'0.2749999'}
+#                                                      and TOP-LEVEL floor_strike NULL
+#   KXBNBD   BNBUSD_RTI     75   $5      T969.99       null
+#   KXHYPED  HYPEUSD_RTI   300   $0.25   T99.9999      null
+# Every one settles on KXBTCD's rule, quoted from rules_primary: "the simple
+# average of the sixty seconds of CF Benchmarks' <index> before 11 PM EDT is
+# above <strike>" (ETH names the index "Ethereum Real-Time Index (ERTI)",
+# XRP "Ripple-Dollar Real Time Index (XRPUSD_RTI)"; DOGE's text reads "If
+# there is a 60 second average of CF Benchmarks' Dogecoin Real-Time Index
+# (DOGEUSD_RTI) before 11 PM EDT is above 0.2749999"). One event per Eastern
+# hour named <series>-yyMONddHH, markets "initialized" until open_time =
+# close - 3600 s then "active", exchange_index 2, strike_type "greater",
+# no round_digits on any ladder (eff_strike is the strike, as on KXBTCD).
+# NOT here: KXNEARD / KXTOND / KXZECD say "hourly" but list no event;
+# KXSHIBAD is daily on an index the IndexWS does not carry; LTC, BCH, LINK,
+# AVAX, DOT, XLM, RIPPLE *D are daily with nothing open.
+# SELECTION IS BY DISTANCE from the live index (the `keep` nearest rungs),
+# never by step, so the $0.02 and the $100 ladder take one path; LADDER_STEP
+# is documentation and what the self-test plants.
+LADDER_SERIES = {"KXBTCD": "BRTI",       # series -> settlement index id
+                 "KXETHD": "ETHUSD_RTI", "KXSOLD": "SOLUSD_RTI",
+                 "KXXRPD": "XRPUSD_RTI", "KXDOGED": "DOGEUSD_RTI",
+                 "KXBNBD": "BNBUSD_RTI", "KXHYPED": "HYPEUSD_RTI"}
+LADDER_COIN = {"KXBTCD": "KXBTC",        # the COIN a ladder ticker belongs to
+               "KXETHD": "KXETH", "KXSOLD": "KXSOL", "KXXRPD": "KXXRP",
+               "KXDOGED": "KXDOGE", "KXBNBD": "KXBNB", "KXHYPED": "KXHYPE"}
+LADDER_STEP = {"KXBTCD": 100.0, "KXETHD": 5.0, "KXSOLD": 0.25,
+               "KXXRPD": 0.02, "KXDOGED": 0.005, "KXBNBD": 5.0,
+               "KXHYPED": 0.25}          # dollars between rungs, read live
 # v-btcd1 (2026-09-24): SIZE for a LADDER series only. The hourly BTC market
 # runs the identical strategy, but at a size we choose independently of the
 # bank-driven SIZE, so a live test of a new family cannot put the main
@@ -3742,6 +3777,15 @@ def ladder_universe(series, iid, spot, now_s, get_fn=None, memo=None,
     cands = []
     for m in rows:
         ct, sk = m.get("close_time"), m.get("floor_strike")
+        if sk is None:
+            # KXDOGED (read live 2026-09-25 02:5xZ, 55 of 55 rungs): the
+            # top-level floor_strike is NULL and the strike lives only in
+            # custom_strike.floor_strike ('0.0949999'). KXBTCD and the other
+            # five ladders carry the top-level value, so for them this never
+            # runs; a rung with a strike NOWHERE is still dropped below.
+            _csk = (m.get("custom_strike") or {}).get("floor_strike")
+            if _csk not in (None, ""):
+                sk = _csk
         if not ct or sk is None or not m.get("ticker"):
             continue
         try:
@@ -4637,7 +4681,11 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
                 # Kalshi does -- custom_strike null, floor_strike exact
                 return 200, {"markets": [
                     {"ticker": m["tk"], "close_time": iso,
-                     "floor_strike": m["strike"], "custom_strike": None,
+                     # lad3: a market may plant KXDOGED's shape (top-level
+                     # floor_strike NULL, the strike only in custom_strike);
+                     # unplanted, every existing world reads what it did
+                     "floor_strike": None if "custom" in m else m["strike"],
+                     "custom_strike": m.get("custom"),
                      "exchange_index": 2}
                     for m in markets if str(m["tk"]).startswith(ev + "-")]}
             s = (params or {}).get("series_ticker")
@@ -12884,6 +12932,188 @@ def _selftest_body():
        "one (series_ticker/status/limit=4) and the universe holds both "
        "families on the one close")
 
+    # ---- LADDER x7 (2026-09-25, lad3): the other hourly ladders, PAPER ----
+    # THE LIVE BOT RUNS `--series KXBTCD --series-size 1` (v-btcd1). Six new
+    # rows in the tables must leave that configuration's universe, coin_of
+    # and series_size_for exactly as they were, and the no-series default
+    # the identity it always was. Those proofs come FIRST.
+    _l7_new = {"KXETHD": "ETHUSD_RTI", "KXSOLD": "SOLUSD_RTI",
+               "KXXRPD": "XRPUSD_RTI", "KXDOGED": "DOGEUSD_RTI",
+               "KXBNBD": "BNBUSD_RTI", "KXHYPED": "HYPEUSD_RTI"}
+    _l7_btc = ladder_series_index(["KXBTCD"])
+    ck(_l7_btc == dict(SERIES_TO_INDEX, KXBTCD="BRTI")
+       and _l7_btc is not SERIES_TO_INDEX and "KXBTCD" not in SERIES_TO_INDEX,
+       "LADDER x7 / v-btcd1 UNCHANGED: `--series KXBTCD` alone scans exactly "
+       "the %d default series plus KXBTCD -> BRTI; no new ladder leaks into "
+       "the live bot's universe (extra keys: %s)"
+       % (len(SERIES_TO_INDEX), sorted(set(_l7_btc) - set(SERIES_TO_INDEX))))
+    ck(ladder_series_index(None) is SERIES_TO_INDEX
+       and ladder_series_index([]) is SERIES_TO_INDEX
+       and not (set(LADDER_SERIES) & set(SERIES_TO_INDEX)),
+       "LADDER x7 / default path: with no --series the universe is still "
+       "SERIES_TO_INDEX ITSELF, and none of the seven ladder keys is a default "
+       "series, so the ladder branch stays unreachable")
+    ck(coin_of("KXBTCD-26SEP2417-T95249.99") == "KXBTC"
+       and coin_of("KXBTC15M-26SEP241700-00") == "KXBTC"
+       and series_size_for("KXBTCD-26SEP2417-T95249.99", size=1) == 1.0
+       and series_size_for("KXBTC15M-26SEP241700-00", size=1) is None,
+       "LADDER x7 / v-btcd1 UNCHANGED: coin_of and series_size_for answer for "
+       "KXBTCD and KXBTC15M tickers exactly as before (1 contract for the "
+       "rung, the SIZE path for the 15M market)")
+    _lu_calls.clear()
+    _l7_f, _l7_i = ladder_universe("KXBTCD", "BRTI", 76650.0, _lu_close - 500,
+                                   get_fn=_lu_get(_lu_rows), memo={})
+    ck(set(_l7_f) == _lu_want
+       and _lu_calls == [("/markets", {"event_ticker": _lu_ev, "status": "open",
+                                       "limit": "200"})]
+       and set(_l7_i) == {"close_s", "tau", "event", "gets", "n_event",
+                          "n_close", "why", "spot", "kept"}
+       and all(v[3] is None and v[4] == 2 for v in _l7_f.values()),
+       "LADDER x7 / v-btcd1 UNCHANGED: the KXBTCD fetch is the same ONE GET "
+       "with the same params, keeps the same three rungs (digits None), and "
+       "its ladder record carries exactly the keys it had (%s)" % sorted(_l7_i))
+    ck(LADDER_SERIES == dict(_l7_new, KXBTCD="BRTI")
+       and LADDER_COIN == {"KXBTCD": "KXBTC", "KXETHD": "KXETH",
+                           "KXSOLD": "KXSOL", "KXXRPD": "KXXRP",
+                           "KXDOGED": "KXDOGE", "KXBNBD": "KXBNB",
+                           "KXHYPED": "KXHYPE"}
+       and set(LADDER_STEP) == set(LADDER_SERIES)
+       and all(SERIES_TO_INDEX.get(LADDER_COIN[s] + "15M") == i
+               for s, i in LADDER_SERIES.items()),
+       "LADDER x7: seven hourly ladders (read live 2026-09-25 02:5xZ), each on "
+       "the index its coin's 15M series settles on -- one the IndexWS already "
+       "subscribes, so main()'s subscription check accepts every one")
+    _l7_all = ladder_series_index(sorted(LADDER_SERIES))
+    ck(_l7_all == dict(SERIES_TO_INDEX, **LADDER_SERIES)
+       and len(_l7_all) == len(SERIES_TO_INDEX) + 7
+       and all(_l7_all[k] == v for k, v in SERIES_TO_INDEX.items()),
+       "LADDER x7: --series with all seven adds exactly seven entries and "
+       "changes no 15M entry")
+    for _s7 in sorted(_l7_new):
+        _c7 = LADDER_COIN[_s7]
+        ck(coin_of(_s7 + "-26SEP2423-T1.5") == _c7
+           and coin_of(_c7 + "15M-26SEP242300-00") == _c7
+           and series_size_for(_s7 + "-26SEP2423-T1.5", size=1) == 1.0
+           and series_size_for(_c7 + "15M-26SEP242300-00", size=1) is None
+           and ladder_event_ticker(_s7, calendar.timegm((2026, 9, 25, 3, 0, 0)))
+               == _s7 + "-26SEP2423",
+           "LADDER x7 %s: coin %s (ONE coin with %s15M for the extra-coin "
+           "budget), the series size caps its rung and never the 15M market, "
+           "and its 03:00Z Sep 25 event is %s-26SEP2423 (11 PM EDT, read live)"
+           % (_s7, _c7, _c7, _s7))
+
+    # THE SELECTION PER SERIES, each with its REAL step and strike text, a
+    # planted index, and the three nearest rungs worked BY HAND -- never by
+    # re-running the sort under test.
+    def _l7_rows(series, fmt, strikes, custom=False):
+        ev_ = ladder_event_ticker(series, _lu_close)
+        out = []
+        for sk in strikes:
+            s_ = fmt % sk
+            if custom:              # KXDOGED's shape, 55 of 55 rungs live
+                out.append({"ticker": "%s-T%s" % (ev_, s_), "close_time": _lu_iso,
+                            "floor_strike": None, "exchange_index": 2,
+                            "custom_strike": {"cap_strike": "", "floor_strike": s_,
+                                              "strike_type": "greater"}})
+            else:
+                out.append({"ticker": "%s-T%s" % (ev_, s_), "close_time": _lu_iso,
+                            "floor_strike": float(s_), "custom_strike": None,
+                            "exchange_index": 2})
+        return ev_, out
+
+    _l7_cases = [
+        # series, strike text, first rung, rungs, planted index, kept (by hand)
+        ("KXETHD", "%.2f", 1949.99, 300, 2712.0, [2704.99, 2709.99, 2714.99]),
+        ("KXSOLD", "%.4f", 116.7499, 6, 117.30, [116.9999, 117.2499, 117.4999]),
+        ("KXXRPD", "%.4f", 1.4999, 6, 1.5332, [1.5199, 1.5399, 1.5599]),
+        ("KXBNBD", "%.2f", 799.99, 6, 812.0, [804.99, 809.99, 814.99]),
+        ("KXHYPED", "%.4f", 99.4999, 6, 100.10, [99.7499, 99.9999, 100.2499]),
+        ("KXDOGED", "%.7f", 0.0849999, 6, 0.0956, [0.0899999, 0.0949999, 0.0999999]),
+    ]
+    for _s7, _fmt, _base, _n, _spot, _want in _l7_cases:
+        _step = LADDER_STEP[_s7]
+        _ev7, _rows7 = _l7_rows(_s7, _fmt, [_base + _step * i for i in range(_n)],
+                                custom=(_s7 == "KXDOGED"))
+        _lu_calls.clear()
+        _f7, _i7 = ladder_universe(_s7, LADDER_SERIES[_s7], _spot, _lu_close - 500,
+                                   get_fn=_lu_get({_ev7: _rows7},
+                                                  page=200 if _n > 200 else 0),
+                                   memo={})
+        ck(sorted(v[2] for v in _f7.values()) == _want and len(_f7) == 3
+           and set(_f7) == {"%s-T%s" % (_ev7, _fmt % sk) for sk in _want}
+           and all(v[0] == LADDER_SERIES[_s7] and v[1] == _lu_close
+                   and v[3] is None and v[4] == 2 for v in _f7.values())
+           and _i7["n_event"] == _n and _i7["n_close"] == _n
+           and _i7["gets"] == (2 if _n > 200 else 1) and _i7["why"] is None
+           and _i7["kept"] == sorted(_f7)
+           and all(c[1].get("event_ticker") == _ev7 and "series_ticker" not in c[1]
+                   for c in _lu_calls),
+           "LADDER x7 %s: %d rungs %s apart, index at %s -> keeps %s (%d GET%s, "
+           "digits None, strike read from %s, kept %s)"
+           % (_s7, _n, _fmt % _step, _spot, _want, _i7["gets"],
+              "s" if _i7["gets"] > 1 else "",
+              "custom_strike" if _s7 == "KXDOGED" else "floor_strike",
+              _i7["kept"]))
+    _evd, _rowsd = _l7_rows("KXDOGED", "%.7f", [0.0899999, 0.0949999, 0.0999999],
+                            custom=True)
+    _rowsd.append({"ticker": _evd + "-Tnone", "close_time": _lu_iso,
+                   "floor_strike": None, "exchange_index": 2,
+                   "custom_strike": {"cap_strike": "", "floor_strike": "",
+                                     "strike_type": "greater"}})
+    _rowsd.append({"ticker": _evd + "-Tnull", "close_time": _lu_iso,
+                   "floor_strike": None, "custom_strike": None, "exchange_index": 2})
+    _fd, _id = ladder_universe("KXDOGED", "DOGEUSD_RTI", 0.0956, _lu_close - 500,
+                               get_fn=_lu_get({_evd: _rowsd}), memo={})
+    ck(len(_fd) == 3 and _id["n_event"] == 5 and _id["n_close"] == 3
+       and not any(t.endswith(("-Tnone", "-Tnull")) for t in _fd),
+       "LADDER x7 NULL: a rung with a strike NOWHERE (custom floor_strike '' "
+       "or custom_strike null beside a null top-level) is dropped, never kept "
+       "at strike 0 (n_close %d of %d)" % (_id["n_close"], _id["n_event"]))
+
+    # WIRED THROUGH THE REAL trade_loop: four ladders beside a 15M market,
+    # each with its OWN index level, DOGE in its custom-strike shape.
+    _l7_ev = {s: ladder_event_ticker(s, _lu_close)
+              for s in ("KXBTCD", "KXETHD", "KXSOLD", "KXDOGED")}
+    _l7_mk = [_ld_quiet("KXAAA15M-K1", "KXAAA15M", "K1A")]
+    _l7_mk += [_ld_quiet("%s-T%.2f" % (_l7_ev["KXBTCD"], sk), "KXBTCD", "BRTI",
+                         spot=76650.0, strike=sk) for sk in _lu_strikes]
+    _l7_mk += [_ld_quiet("%s-T%.2f" % (_l7_ev["KXETHD"], sk), "KXETHD",
+                         "ETHUSD_RTI", spot=2712.0, strike=sk)
+               for sk in [float("%.2f" % (2699.99 + 5.0 * i)) for i in range(6)]]
+    _l7_mk += [_ld_quiet("%s-T%.4f" % (_l7_ev["KXSOLD"], sk), "KXSOLD",
+                         "SOLUSD_RTI", spot=117.30, strike=sk)
+               for sk in [float("%.4f" % (116.7499 + 0.25 * i)) for i in range(6)]]
+    for sk in [float("%.7f" % (0.0849999 + 0.005 * i)) for i in range(6)]:
+        _md = _ld_quiet("%s-T%.7f" % (_l7_ev["KXDOGED"], sk), "KXDOGED",
+                        "DOGEUSD_RTI", spot=0.0956, strike=sk)
+        _md["custom"] = {"cap_strike": "", "floor_strike": "%.7f" % sk,
+                         "strike_type": "greater"}
+        _l7_mk.append(_md)
+    _l7w = _offline_trade_loop(_l7_mk, run_s=25.0, tau0=200)
+    _l7w_w = _kinds(_l7w, "watch")
+    _l7w_l = {r["series"]: r for r in _kinds(_l7w, "ladder")}
+    _l7_exp = ({"KXAAA15M-K1"} | _lu_want
+               | {"%s-T%.2f" % (_l7_ev["KXETHD"], s) for s in (2704.99, 2709.99, 2714.99)}
+               | {"%s-T%.4f" % (_l7_ev["KXSOLD"], s) for s in (116.9999, 117.2499, 117.4999)}
+               | {"%s-T%.7f" % (_l7_ev["KXDOGED"], s) for s in (0.0899999, 0.0949999, 0.0999999)})
+    _l7_g15 = [g for g in _l7w["gets"] if "series_ticker" in g[1]]
+    _l7_gev = [g for g in _l7w["gets"] if "event_ticker" in g[1]]
+    ck(_l7w["raised"] is None and _l7w_w and set(_l7w_w[0]["added"]) == _l7_exp
+       and set(_l7w_l) == set(_l7_ev)
+       and all(len(r["kept"]) == 3 and r["why"] is None for r in _l7w_l.values())
+       and _l7w_l["KXBTCD"]["spot"] == 76650.0 and _l7w_l["KXETHD"]["spot"] == 2712.0
+       and _l7w_l["KXSOLD"]["spot"] == 117.30 and _l7w_l["KXDOGED"]["spot"] == 0.0956
+       and _l7_g15 and all(g[1] == {"series_ticker": "KXAAA15M", "status": "open",
+                                     "limit": "4"} for g in _l7_g15)
+       and {g[1]["event_ticker"] for g in _l7_gev} == set(_l7_ev.values())
+       and not [r for r in _l7w["recs"] if r.get("kind") == "error"],
+       "LADDER x7 wired: through the REAL trade_loop four ladders beside a 15M "
+       "market each fetch their OWN event, read their OWN index (BTC 76,650 / "
+       "ETH 2,712 / SOL 117.30 / DOGE 0.0956), keep 3 rungs each (DOGE from "
+       "custom_strike), share one watch with the 15M market, and the 15M GET "
+       "is byte-for-byte the old one (raised %r, added %s)"
+       % (_l7w["raised"], sorted(_l7w_w[0]["added"]) if _l7w_w else None))
+
     _pin_moved = [_n for _n in _OFFLINE_PINNED_FLAGS
                   if globals()[_n] != _pin_before[_n]]
     ck(not _pin_moved,
@@ -17436,12 +17666,12 @@ def main():
     ap.add_argument("--tau-max", type=int, default=TAU_MAX)
     ap.add_argument("--series", nargs="+", default=None, metavar="SERIES",
                     choices=sorted(LADDER_SERIES),
-                    help="PAPER ONLY (2026-09-24): also scan these hourly "
-                         "strike-ladder series (KXBTCD), keeping the %d "
-                         "rungs nearest the live index on the event closing "
-                         "within 15 minutes. Refused with --live until the "
-                         "pre-registered bar in IDEAS_2026-09-24.md item 2 "
-                         "holds." % LADDER_KEEP)
+                    help="also scan these hourly strike-ladder series "
+                         "(%s), keeping the %d rungs nearest the live index "
+                         "on the event closing within 15 minutes. Live only "
+                         "with --series-size (v-btcd1: KXBTCD at 1); the "
+                         "other six are PAPER (arm-hourly-all, 2026-09-25)."
+                         % (", ".join(sorted(LADDER_SERIES)), LADDER_KEEP))
     ap.add_argument("--size", type=float, default=1.0,
                     help="contracts per take; 0.01 is about one cent, for "
                          "proving order/fill/settle/payout end to end")

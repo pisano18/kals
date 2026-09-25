@@ -256,6 +256,14 @@ def selftest():
        "hourly ladder: ...26SEP2500 is midnight ET = 04:00Z the same UTC day")
     ck(close_epoch("KXBTCD-26JAN1512-T80099.99") == calendar.timegm((2026, 1, 15, 17, 0, 0)),
        "hourly ladder in January: five hours, not four")
+    ck(close_epoch("KXETHD-26SEP2423-T3444.99") == calendar.timegm((2026, 9, 25, 3, 0, 0))
+       and close_epoch("KXSOLD-26SEP2423-T99.9999") == calendar.timegm((2026, 9, 25, 3, 0, 0))
+       and close_epoch("KXDOGED-26SEP2423-T0.2749999") == calendar.timegm((2026, 9, 25, 3, 0, 0))
+       and close_epoch("KXXRPD-26SEP2500-T2.2399") == calendar.timegm((2026, 9, 25, 4, 0, 0))
+       and close_epoch("KXBNBD-26SEP2423-T969.99") == calendar.timegm((2026, 9, 25, 3, 0, 0))
+       and close_epoch("KXHYPED-26SEP2423-T99.9999") == calendar.timegm((2026, 9, 25, 3, 0, 0)),
+       "the other hourly ladders (lad3, read live 2026-09-25): same yyMONddHH "
+       "date, 2-, 4- and 7-decimal strikes, 11 PM EDT = 03:00Z next UTC day")
     ck(_TKH.match("KXBTC15M-26SEP240045-45") is None
        and _TKH.match("KXBNB15M-26SEP161000-00") is None,
        "the hourly pattern never matches a 15M ticker, so every 15M answer is "
