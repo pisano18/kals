@@ -205,6 +205,52 @@ _DEFAULT_SERIES_SIZE = None
 LADDER_KEEP = 3                          # rungs kept, nearest the index
 LADDER_PAGE_MAX = 3                      # GET /markets pages per fetch
 LADDER_HORIZON_S = 900                   # the 15M refresh's own window
+# v-farrung (2026-09-25, results/FAR_RUNG_2026-09-25.md section 4): BUYING THE
+# FAR RUNGS OF THE HOURLY LADDER AT 99c. Seven flags, every one None (OFF)
+# when shipped, and every branch that reads one is ALSO gated on the ticker's
+# head being a LADDER_SERIES key (ladder_head), so with the flags absent the
+# 15-minute path and the v-btcd1 nearest-3 path are the code that ran before
+# this block existed. All seven are in _OFFLINE_PINNED_FLAGS.
+#   --ladder-cushion-min / --ladder-cushion-max   dollars from the PROJECTION
+#       (fair()'s own mu). Universe: keep every rung whose |K - mu| sits in
+#       [min, max], BOTH sides, instead of the LADDER_KEEP nearest. Gate
+#       `cushion`: refuse a rung whose |mu - K| < min at the moment of the look
+#       (the projection moves inside the settlement window; the universe was
+#       chosen up to 900 s earlier). The two go together.
+#   --series-ceiling      the price ceiling a ladder rung is judged by
+#                         (PRICE_CEILING for every 15M market, untouched)
+#   --series-flip         the flip rate expected_value() uses for a ladder rung
+#                         (MEASURED_FLIP for every 15M market, untouched)
+#   --series-ev-floor     the EV floor for a ladder rung (EV_FLOOR untouched)
+#   --series-max-per-side at most N ladder rungs per SIDE per SERIES per close
+#                         (YES rungs below the projection, NO rungs above),
+#                         the rung nearest the projection looked at first --
+#                         the one most likely to fill at the cushion. Gate
+#                         `series_side`.
+#   --series-max-per-close a per-close budget of the ladder's OWN: with it set
+#                         a ladder leg neither spends nor is refused by the
+#                         shared MAX_PER_CLOSE x SIZE budget (the hourly close
+#                         IS the :00 quarter close, so nine rungs would
+#                         otherwise fight twelve coins for two slots). Gate
+#                         `series_close`. Without it, today's shared budget.
+# WHAT THE THREE GATES BLOCK (the 2026-09-19 rule): ENTRIES on ladder rungs,
+# nothing else. All three sit below the hedge pass on the entry path and
+# above the signal point, so a refusal burns no attempt; a hedge never
+# reaches them (source order and a driven hedge are both self-tested).
+LADDER_CUSHION_MIN = None      # --ladder-cushion-min (dollars); None = off
+_DEFAULT_LADDER_CUSHION_MIN = None
+LADDER_CUSHION_MAX = None      # --ladder-cushion-max (dollars); None = off
+_DEFAULT_LADDER_CUSHION_MAX = None
+SERIES_CEILING = None          # --series-ceiling; None = PRICE_CEILING
+_DEFAULT_SERIES_CEILING = None
+SERIES_FLIP = None             # --series-flip; None = MEASURED_FLIP
+_DEFAULT_SERIES_FLIP = None
+SERIES_EV_FLOOR = None         # --series-ev-floor (dollars); None = EV_FLOOR
+_DEFAULT_SERIES_EV_FLOOR = None
+SERIES_MAX_PER_SIDE = None     # --series-max-per-side; None = no side cap
+_DEFAULT_SERIES_MAX_PER_SIDE = None
+SERIES_MAX_PER_CLOSE = None    # --series-max-per-close; None = shared budget
+_DEFAULT_SERIES_MAX_PER_CLOSE = None
 
 # ---- the frozen rule -------------------------------------------------------
 # AMENDMENT 9 (2026-09-10 08:35Z): PIN 0.98 -> 0.995. THE BAR MOVED, AND THIS
@@ -3442,8 +3488,14 @@ def conf_of(z):
     return ND.cdf(float(z))
 
 
-def fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
-    """P(settle >= effective strike) with the locked prints already counted."""
+def projection(idx, iid, close_s, now_s):
+    """(mu, r, spot): the settlement PROJECTION fair() is built on -- the
+    locked prints already on disk plus `r` copies of the current print, over
+    N_AVG -- or None when the window or the spot cannot be read.
+
+    v-farrung (2026-09-25): exposed so the cushion gate reads the SAME mu the
+    fair value is computed from. fair() calls this; the arithmetic below is
+    the line that used to live inside it, moved and not changed."""
     part = idx.partial(iid, close_s, now_s)
     if part is None:
         return None
@@ -3451,8 +3503,16 @@ def fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
     _, spot, _ = idx.spot(iid)
     if spot is None:
         return None
+    return (locked + r * spot) / N_AVG, r, spot
+
+
+def fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
+    """P(settle >= effective strike) with the locked prints already counted."""
+    proj = projection(idx, iid, close_s, now_s)
+    if proj is None:
+        return None
+    mu, r, _ = proj
     K = eff_strike(strike, round_digits)
-    mu = (locked + r * spot) / N_AVG
     if r <= 0:
         return 1.0 if mu >= K else 0.0
     sd = sigma * math.sqrt(var_factor(int(r), [1.0]))
@@ -3687,6 +3747,57 @@ def series_size_for(ticker, size=None):
     return v if v > 0 else None
 
 
+def ladder_head(ticker):
+    """The LADDER_SERIES key a ticker belongs to ('KXBTCD' for
+    KXBTCD-26SEP2417-T95249.99), or None for every other ticker. A pure
+    string test that consults no flag: every v-farrung branch is gated on
+    this AND on its own flag, so a 15-minute ticker can never reach one."""
+    try:
+        head = str(ticker).split("-", 1)[0]
+    except Exception:                                    # noqa: BLE001
+        return None
+    return head if head in LADDER_SERIES else None
+
+
+def ladder_cushion(cmin=_HP_UNSET, cmax=_HP_UNSET):
+    """(min, max) dollars when BOTH cushion flags are set and sane, else
+    None -- which is the nearest-LADDER_KEEP universe and no cushion gate."""
+    cmin = LADDER_CUSHION_MIN if cmin is _HP_UNSET else cmin
+    cmax = LADDER_CUSHION_MAX if cmax is _HP_UNSET else cmax
+    if cmin is None or cmax is None:
+        return None
+    try:
+        lo, hi = float(cmin), float(cmax)
+    except (TypeError, ValueError):
+        return None
+    if not (0.0 <= lo <= hi):
+        return None
+    return lo, hi
+
+
+def ladder_side_count(prev, head, want):
+    """Rungs of ladder series `head` already BOOKED on side `want` in this
+    close -- positions, the way MAX_PER_MARKET counts them, read off the
+    close record's per-market `sides`. 0 for a 15M ticker (head None)."""
+    if not prev or head is None or want is None:
+        return 0
+    n = 0
+    for tk_, side_ in (prev.get("sides") or {}).items():
+        if side_ == want and ladder_head(tk_) == head:
+            n += 1
+    return n
+
+
+def ladder_fills(prev):
+    """Ladder legs booked in this close under the ladder's own budget."""
+    if not prev:
+        return 0
+    try:
+        return int(prev.get("ladder_n") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def ladder_series_index(series):
     """The series -> index map trade_loop scans.
 
@@ -3740,7 +3851,7 @@ def _ladder_page(get_fn, params, rows):
 
 
 def ladder_universe(series, iid, spot, now_s, get_fn=None, memo=None,
-                    keep=None):
+                    keep=None, cushion=None, idx=None):
     """The ladder's slice of the universe: {ticker: (iid, close_s, strike,
     digits, exchange_index)} for the `keep` strikes nearest `spot` on the
     event closing within LADDER_HORIZON_S, and a dict for the `ladder` log
@@ -3817,6 +3928,32 @@ def ladder_universe(series, iid, spot, now_s, get_fn=None, memo=None,
         info["why"] = ((why + "|") if why else "") + "no_spot"
         info["kept"] = []
         return {}, info
+    if cushion is not None:
+        # v-farrung: the rungs `lo`..`hi` dollars from the PROJECTION, on
+        # BOTH sides, instead of the `keep` nearest. The centre is fair()'s
+        # own mu when `idx` can give one (inside the settlement window it
+        # differs from the spot; outside it they are the same number), else
+        # the spot. Nearest first, so the scan looks at the rung most likely
+        # to fill at the cushion before the farther ones.
+        lo, hi = float(cushion[0]), float(cushion[1])
+        centre = float(spot)
+        if idx is not None:
+            try:
+                _pj = projection(idx, iid, nc, now_s)
+                if _pj is not None:
+                    centre = float(_pj[0])
+            except Exception:                            # noqa: BLE001
+                centre = float(spot)
+        cands.sort(key=lambda c: (abs(c[2] - centre), c[2]))
+        fresh = {}
+        for tk, cs, sk, d, exi in cands:
+            if lo - 1e-9 <= abs(sk - centre) <= hi + 1e-9:
+                fresh[tk] = (iid, cs, sk, d, exi)
+        info["spot"] = float(spot)
+        info["centre"] = round(centre, 6)
+        info["cushion"] = [lo, hi]
+        info["kept"] = sorted(fresh)
+        return fresh, info
     cands.sort(key=lambda c: (abs(c[2] - float(spot)), c[2]))
     fresh = {}
     for tk, cs, sk, d, exi in cands[:keep]:
@@ -4460,10 +4597,13 @@ _OFFLINE_PINNED_FLAGS = (
     "HEDGE_JUMP_SIGMA", "HEDGE_NORMAL", "HEDGE_PANIC", "HEDGE_PRICE",
     "HEDGE_PROP", "HEDGE_PROP_FULL", "HEDGE_PROP_HALF", "HEDGE_SLIP",
     "HONEST_CONF", "IMPROVE_MAX", "IMPROVE_SCOPE", "JUMP_ENABLED",
+    "LADDER_CUSHION_MAX", "LADDER_CUSHION_MIN",
     "LATE_EXTRA", "LATE_EXTRA_TAU", "LATE_JUMP_SD", "LATE_MULT", "LATE_PIN",
     "LATE_TAU", "LOSS_BOUND_OPEN", "LOSS_CAP", "MAX_PER_MARKET",
     "MIN_FILL_FRAC", "ONE_COIN_DEPTH", "ONE_COIN_MAX", "PICK", "PIN",
     "PRICE_CEILING", "REBUY_HEDGED", "REBUY_LATE_FRAC", "REBUY_LATE_TAU", "REBUY_MAX_MULT", "SERIES_SIZE", "SIGMA_RULER",
+    "SERIES_CEILING", "SERIES_EV_FLOOR", "SERIES_FLIP", "SERIES_MAX_PER_CLOSE",
+    "SERIES_MAX_PER_SIDE",
     "SIGMA_STRESS", "SIZE_MIRROR_ON", "SKIP_BANDS", "SWEEP_DEPTH",
     "SWEEP_ENABLED", "TAPER", "TAPER_FLOOR",
     "TOXIC_FRESH", "TOXIC_MIN_AGE_MS", "TOXIC_MIN_SHARE", "TOXIC_TAU_MIN",
@@ -4581,7 +4721,10 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
             s = _last_print(iid)
             # LADDER: a market may plant the index level its rung selection
             # sees; every existing world reads the 100.5 it always did
-            return s, (by_iid.get(iid) or {}).get("spot", 100.5), clock.t - s
+            _sp = (by_iid.get(iid) or {}).get("spot", 100.5)
+            if callable(_sp):    # v-farrung: a world may plant a MOVING index
+                _sp = _sp(clock.t - t0)
+            return s, _sp, clock.t - s
 
         def sigma(self, iid):
             _count("sigma")
@@ -4600,7 +4743,10 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
             if hi < lo:
                 return 0.0, N_AVG
             want = hi - lo + 1
-            return 100.5 * want, N_AVG - want
+            # v-farrung: a world may plant the LEVEL of the locked prints;
+            # unplanted, every existing world reads the flat 100.5 it did
+            _lvl = (by_iid.get(iid) or {}).get("level", 100.5)
+            return float(_lvl) * want, N_AVG - want
 
         def recent_moves(self, iid, n=3):
             return []
@@ -4663,7 +4809,10 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
 
     def _fair(idx, iid, close_s, now_s, strike, sigma, round_digits=None):
         _count("fair")
-        return by_iid[iid]["fair"](_itime(iid))
+        _mf = by_iid[iid]
+        if "fair_k" in _mf:   # v-farrung: a LADDER world plants one belief per RUNG
+            return _mf["fair_k"](_itime(iid), strike)
+        return _mf["fair"](_itime(iid))
 
     def _get(path, params=None, **kw):
         if path == "/markets":
@@ -13114,6 +13263,363 @@ def _selftest_body():
        "is byte-for-byte the old one (raised %r, added %s)"
        % (_l7w["raised"], sorted(_l7w_w[0]["added"]) if _l7w_w else None))
 
+    # ---- v-farrung (2026-09-25): the FAR rungs of the hourly ladder at 99c --
+    # results/FAR_RUNG_2026-09-25.md section 4. Seven flags, all None when
+    # shipped; every branch is gated on ladder_head(tk) AND its own flag, so
+    # the 15-minute path and the v-btcd1 nearest-3 path are unchanged with
+    # the flags absent. The DECLARED defaults are asserted, never the running
+    # values (an arm starting under the flags must pass its own gate).
+    ck(all(v is None for v in (
+           _DEFAULT_LADDER_CUSHION_MIN, _DEFAULT_LADDER_CUSHION_MAX,
+           _DEFAULT_SERIES_CEILING, _DEFAULT_SERIES_FLIP,
+           _DEFAULT_SERIES_EV_FLOOR, _DEFAULT_SERIES_MAX_PER_SIDE,
+           _DEFAULT_SERIES_MAX_PER_CLOSE)),
+       "v-farrung: the DECLARED default of all seven far-rung flags is OFF (None)")
+    ck(all(_n in _OFFLINE_PINNED_FLAGS for _n in (
+           "LADDER_CUSHION_MIN", "LADDER_CUSHION_MAX", "SERIES_CEILING",
+           "SERIES_FLIP", "SERIES_EV_FLOOR", "SERIES_MAX_PER_SIDE",
+           "SERIES_MAX_PER_CLOSE")),
+       "v-farrung: all seven are K1-pinned, so every offline world runs them "
+       "OFF unless it asks for them")
+    ck(ladder_head("KXBTCD-26SEP2417-T95249.99") == "KXBTCD"
+       and ladder_head("KXDOGED-26SEP2423-T0.0949999") == "KXDOGED"
+       and ladder_head("KXBTC15M-26SEP241700-00") is None
+       and ladder_head("KXSOL15M-26SEP241700-00") is None
+       and ladder_head(None) is None and ladder_head("") is None,
+       "v-farrung pure: ladder_head names a rung's ladder series and None for "
+       "a 15M ticker, a None and an empty ticker")
+    ck(ladder_cushion(150, 600) == (150.0, 600.0)
+       and ladder_cushion(0, 0) == (0.0, 0.0)
+       and ladder_cushion(None, 600) is None and ladder_cushion(150, None) is None
+       and ladder_cushion(700, 600) is None and ladder_cushion("x", 600) is None
+       and ladder_cushion(-1, 600) is None,
+       "v-farrung pure: the cushion band needs BOTH ends with 0 <= min <= max; "
+       "anything else is OFF")
+    _prev_fr = {"sides": {"KXBTCD-26SEP2417-T84800.00": "yes",
+                          "KXBTCD-26SEP2417-T85200.00": "no",
+                          "KXETHD-26SEP2417-T2700.00": "yes",
+                          "KXBTC15M-26SEP241700-00": "yes"}, "ladder_n": 2}
+    ck(ladder_side_count(_prev_fr, "KXBTCD", "yes") == 1
+       and ladder_side_count(_prev_fr, "KXBTCD", "no") == 1
+       and ladder_side_count(_prev_fr, "KXETHD", "no") == 0
+       and ladder_side_count(_prev_fr, "KXETHD", "yes") == 1
+       and ladder_side_count(_prev_fr, None, "yes") == 0
+       and ladder_side_count(None, "KXBTCD", "yes") == 0
+       and ladder_fills(_prev_fr) == 2 and ladder_fills(None) == 0
+       and ladder_fills({"n": 3}) == 0,
+       "v-farrung pure: rungs per side are counted per SERIES from the close "
+       "record's sides (a 15M BTC position is not a BTC rung), and the ladder "
+       "count reads ladder_n only")
+
+    # the projection the gate reads IS the one fair() is built on
+    class _PJ:
+        def partial(self, iid, close_s, now_s):
+            return 85000.0 * 40, 20
+
+        def spot(self, iid):
+            return 0, 84760.0, 0.0
+
+    class _PJnone:
+        def partial(self, iid, close_s, now_s):
+            return None
+
+        def spot(self, iid):
+            return 0, 84760.0, 0.0
+    _pj = projection(_PJ(), "X", C, C - 20)
+    _mu_pj = (85000.0 * 40 + 20 * 84760.0) / N_AVG
+    ck(_pj is not None and abs(_pj[0] - _mu_pj) < 1e-9 and _pj[1] == 20
+       and _pj[2] == 84760.0 and projection(_PJnone(), "X", C, C - 20) is None
+       and fair(_PJnone(), "X", C, C - 20, 84000.0, 1.0) is None,
+       "v-farrung: projection() is (locked + r x spot) / 60 = %.2f with r and "
+       "the spot beside it, and None when the window cannot be read (fair() "
+       "is None there too)" % _mu_pj)
+    ck(fair(_PJ(), "X", C, C - 20, _mu_pj - 0.01, 1e-9) == 1.0
+       and fair(_PJ(), "X", C, C - 20, _mu_pj + 0.01, 1e-9) == 0.0
+       and abs(fair(_PJ(), "X", C, C - 20, _mu_pj, 1.0) - 0.5) < 1e-9,
+       "...and fair() pivots on EXACTLY that mu: a strike a cent under it is "
+       "1.0, a cent over it 0.0, at it 0.5 -- the gate and the fair value "
+       "read one number")
+    ck(expected_value(0.99, flip=0.0014) >= 0.005
+       and abs(expected_value(0.99, flip=0.0014) - 0.0079) < 2e-4
+       and expected_value(0.99) < EV_FLOOR,
+       "v-farrung pure: a 99c contract at the tape's worst flip rate (0.14%%) "
+       "is worth %+.2fc against the 0.5c series floor, and at the 15-minute "
+       "flip rate %+.2fc -- under the 0.3c floor (the ev_floor that would "
+       "have killed the five live 99c looks)"
+       % (100 * expected_value(0.99, flip=0.0014), 100 * expected_value(0.99)))
+
+    # DRIVEN, through the real loop. One BRTI index planted at 85,000 (the
+    # locked prints AND the spot, so the projection is 85,000.00 exactly);
+    # rungs are named with the real event ticker so the event GET serves
+    # them; every rung shares the one index, so one belief-per-rung function
+    # (`fair_k`) stands in for the model.
+    _FR_ON = {"SERIES_SIZE": 1.0, "IMPROVE_SCOPE": "market",
+              "LADDER_CUSHION_MIN": 150.0, "LADDER_CUSHION_MAX": 600.0,
+              "SERIES_CEILING": 0.99, "SERIES_FLIP": 0.0014,
+              "SERIES_EV_FLOOR": 0.005, "SERIES_MAX_PER_SIDE": 1,
+              "SERIES_MAX_PER_CLOSE": 2}
+    _fr_ev = ladder_event_ticker("KXBTCD", _lu_close)
+
+    def _fr_tk(strike):
+        return "%s-T%.2f" % (_fr_ev, strike)
+
+    def _fr_rung(strike, side, ask=0.99, spot=85000.0, level=85000.0,
+                 book_from=0.0, fair_k=None):
+        """One rung of the BTC ladder. A YES rung sits BELOW the index
+        (belief 0.999), a NO rung above (0.001); `ask` is on our side.
+        `spot` may be a function of wall time (a MOVING index)."""
+        def _bk(t):
+            if t < book_from:
+                return _ob(None, None)
+            if side == "yes":
+                return _ob(0.94, round(1.0 - ask, 4))
+            return _ob(round(1.0 - ask, 4), 0.05)
+        _fk = fair_k or (lambda t, k: 0.999 if k < 85000.0 else 0.001)
+        return {"tk": _fr_tk(strike), "series": "KXBTCD", "iid": "BRTI",
+                "strike": float(strike),
+                "fair": (lambda t: _fk(t, float(strike))), "fair_k": _fk,
+                "book": _bk, "spot": spot, "level": level}
+
+    _fr1 = _offline_trade_loop([_fr_rung(84800.0, "yes"), _fr_rung(85200.0, "no")],
+                               run_s=6.0, tau0=20, size=5.0, flags=dict(_FR_ON))
+    _fr1_sig = {r["ticker"]: r for r in _kinds(_fr1, "signal")}
+    _fr1_y, _fr1_n = _fr1_sig.get(_fr_tk(84800.0)), _fr1_sig.get(_fr_tk(85200.0))
+    _fr1_lad = _kinds(_fr1, "ladder")
+    ck(_fr1["raised"] is None and _fr1_y is not None and _fr1_n is not None
+       and _fr1_y["want"] == "yes" and _fr1_n["want"] == "no"
+       and float(_fr1_y["take_n"]) == 1.0 and float(_fr1_n["take_n"]) == 1.0
+       and float(_fr1_y["price"]) == 0.99 and float(_fr1_n["price"]) == 0.99
+       and float(_fr1_y["mu"]) == 85000.0 and float(_fr1_y["K"]) == 84800.0
+       and float(_fr1_y["cushion"]) == 200.0
+       and float(_fr1_y["cushion_min"]) == 150.0
+       and float(_fr1_n["cushion"]) == 200.0 and float(_fr1_n["K"]) == 85200.0
+       and _fr1_y.get("series_size") == 1.0 and _fr1_y.get("tau") is not None
+       and _fr1_lad and _fr1_lad[0].get("cushion") == [150.0, 600.0]
+       and _fr1_lad[0].get("centre") == 85000.0
+       and sorted(_fr1_lad[0]["kept"]) == sorted([_fr_tk(84800.0), _fr_tk(85200.0)])
+       and not _refusals(_fr1, "cushion") and not _refusals(_fr1, "price_ceiling")
+       and not _refusals(_fr1, "ev_floor") and not _refusals(_fr1, "series_side"),
+       "v-farrung DRIVEN (1): with the flags on, a 99c YES rung $200 under the "
+       "projection and a 99c NO rung $200 over it are both taken at size 1, "
+       "each signal carrying mu 85,000 / K / tau / cushion 200 / cushion_min "
+       "150; the ladder record names the band and the centre (raised %r, YES "
+       "%s, NO %s, ladder %s)"
+       % (_fr1["raised"],
+          {k: (_fr1_y or {}).get(k) for k in ("take_n", "price", "mu", "K", "cushion")},
+          {k: (_fr1_n or {}).get(k) for k in ("take_n", "price", "mu", "K", "cushion")},
+          {k: (_fr1_lad[0] if _fr1_lad else {}).get(k) for k in ("cushion", "centre", "kept")}))
+
+    # (2) the SAME rung, chosen $150 from the index at tau 75 (outside the
+    # settlement window the projection IS the spot), after the index settles
+    # $60 lower: every locked print and the spot read 84,940, the projection
+    # is 84,940, the rung $90 from it -- and the spot is still $90 on the
+    # rung's side, so no other gate sees anything wrong. The universe is not
+    # re-chosen (v-unidefer holds the refresh inside 60 s of a close).
+    _fr2 = _offline_trade_loop(
+        [_fr_rung(84850.0, "yes", level=84940.0,
+                  spot=(lambda t: 85000.0 if t < 1.0 else 84940.0),
+                  book_from=1.0)],
+        run_s=55.0, tau0=75, size=5.0, flags=dict(_FR_ON))
+    _fr2_ref = _refusals(_fr2, "cushion")
+    _fr2_lad = _kinds(_fr2, "ladder")
+    ck(_fr2["raised"] is None and not _kinds(_fr2, "signal")
+       and _fr2_lad and _fr2_lad[0]["kept"] == [_fr_tk(84850.0)]
+       and len(_fr2_ref) == 1 and _fr2_ref[0]["ticker"] == _fr_tk(84850.0)
+       and abs(float(_fr2_ref[0]["mu"]) - 84940.0) < 1e-6
+       and float(_fr2_ref[0]["K"]) == 84850.0
+       and abs(float(_fr2_ref[0]["cushion"]) - 90.0) < 1e-6
+       and float(_fr2_ref[0]["cushion_min"]) == 150.0
+       and _fr2_ref[0].get("want") == "yes"
+       and float(_fr2_ref[0]["price"]) == 0.99
+       and _fr2_ref[0].get("tau") is not None,
+       "v-farrung DRIVEN (2): the rung $150 under the index when the universe "
+       "was chosen (tau 75) is kept; the index then settles at 84,940 and in "
+       "the entry window the projection is 84,940 -- the SAME rung is now $90 "
+       "from it and its 99c ask is refused `cushion` (mu, K, tau, cushion on "
+       "the record), no order (signals %d, refusal %s)"
+       % (len(_kinds(_fr2, "signal")),
+          {k: (_fr2_ref[0] if _fr2_ref else {}).get(k)
+           for k in ("mu", "K", "cushion", "tau")}))
+
+    # (3) a 15-MINUTE market at 99c beside the rung, every flag on
+    _fr3 = _offline_trade_loop(
+        [_spk_mkt(41, lambda t: 0.999, yes_bid=0.94, no_bid=0.01),
+         _fr_rung(84800.0, "yes")],
+        run_s=4.0, tau0=20, size=5.0, flags=dict(_FR_ON))
+    _fr3_pc = _refusals(_fr3, "price_ceiling")
+    _fr3_sig = {r["ticker"]: r for r in _kinds(_fr3, "signal")}
+    ck(_fr3["raised"] is None and len(_fr3_pc) == 1
+       and _fr3_pc[0]["ticker"] == "KXS4115M-SPK"
+       and float(_fr3_pc[0]["price"]) == 0.99
+       and float(_fr3_pc[0]["ceiling"]) == _DEFAULT_PRICE_CEILING
+       and "mu" not in _fr3_pc[0]
+       and set(_fr3_sig) == {_fr_tk(84800.0)}
+       and float(_fr3_sig[_fr_tk(84800.0)]["take_n"]) == 1.0,
+       "v-farrung DRIVEN (3): beside the taken rung, a 15-MINUTE market at 99c "
+       "is still refused `price_ceiling` at the %.0fc ceiling with every "
+       "far-rung flag on -- the series ceiling reaches only ladder rungs "
+       "(refusals %s)" % (100 * _DEFAULT_PRICE_CEILING,
+                          [(r["ticker"], r.get("ceiling")) for r in _fr3_pc]))
+    _fr3b = _offline_trade_loop([_fr_rung(84800.0, "yes")], run_s=4.0, tau0=20,
+                                size=5.0, flags=dict(_FR_ON, SERIES_FLIP=None,
+                                                     SERIES_EV_FLOOR=None))
+    _fr3b_ev = _refusals(_fr3b, "ev_floor")
+    ck(_fr3b["raised"] is None and not _kinds(_fr3b, "signal")
+       and len(_fr3b_ev) == 1 and float(_fr3b_ev[0]["price"]) == 0.99
+       and float(_fr3b_ev[0]["ev_c"]) < 100 * EV_FLOOR
+       and not _refusals(_fr3b, "price_ceiling"),
+       "v-farrung DRIVEN (3b): the same 99c rung with the series ceiling but "
+       "the 15-MINUTE flip rate passes the ceiling and dies at `ev_floor` "
+       "(%s c) -- what section 4 says a bare ceiling change would do"
+       % ((_fr3b_ev[0] if _fr3b_ev else {}).get("ev_c")))
+
+    # (4) NULL: the flags ABSENT -- v-btcd1's world, today's code
+    _fr4 = _offline_trade_loop([_fr_rung(84800.0, "yes"), _fr_rung(85200.0, "no")],
+                               run_s=4.0, tau0=20, size=5.0,
+                               flags={"SERIES_SIZE": 1.0, "IMPROVE_SCOPE": "market"})
+    _fr4_lad = _kinds(_fr4, "ladder")
+    _fr4_pc = _refusals(_fr4, "price_ceiling")
+    ck(_fr4["raised"] is None and not _kinds(_fr4, "signal")
+       and _fr4_lad
+       and set(_fr4_lad[0]) == {"close_s", "tau", "event", "gets", "n_event",
+                                "n_close", "why", "spot", "kept", "series",
+                                "kind", "t"}
+       and sorted(_fr4_lad[0]["kept"]) == sorted([_fr_tk(84800.0), _fr_tk(85200.0)])
+       and len(_fr4_pc) == 2
+       and all(float(r["ceiling"]) == _DEFAULT_PRICE_CEILING for r in _fr4_pc)
+       and not any(_refusals(_fr4, g) for g in ("cushion", "series_side",
+                                                 "series_close"))
+       and not any(("mu" in r or "cushion" in r or "centre" in r)
+                   for r in _fr4["recs"]
+                   if r["kind"] in ("signal", "refused", "order", "ladder")),
+       "v-farrung NULL DRIVEN (4): the same two 99c rungs with the flags ABSENT "
+       "(v-btcd1's `--series KXBTCD --series-size 1` alone): the ladder record "
+       "has exactly v-ladder7's keys (nearest-3, no band), both rungs are "
+       "refused at the %.0fc ceiling, no cushion/series gate fires and no "
+       "signal, refusal, order or ladder record carries mu, cushion or "
+       "centre -- the live path is the code that ran before (refusals %s)"
+       % (100 * _DEFAULT_PRICE_CEILING,
+          sorted({r.get("gate") for r in _kinds(_fr4, "refused")})))
+
+    # (5) two rungs per side, max-per-side 1: the NEARER one each side
+    _fr5 = _offline_trade_loop(
+        [_fr_rung(84700.0, "yes"), _fr_rung(85300.0, "no"),
+         _fr_rung(84800.0, "yes"), _fr_rung(85200.0, "no")],
+        run_s=6.0, tau0=20, size=5.0, flags=dict(_FR_ON, SERIES_MAX_PER_CLOSE=4))
+    _fr5_sig = sorted({r["ticker"] for r in _kinds(_fr5, "signal")})
+    _fr5_side = _refusals(_fr5, "series_side")
+    ck(_fr5["raised"] is None
+       and _fr5_sig == sorted([_fr_tk(84800.0), _fr_tk(85200.0)])
+       and len(_kinds(_fr5, "signal")) == 2
+       and sorted(r["ticker"] for r in _fr5_side)
+           == sorted([_fr_tk(84700.0), _fr_tk(85300.0)])
+       and all(int(r["held"]) == 1 and int(r["max_per_side"]) == 1
+               for r in _fr5_side),
+       "v-farrung DRIVEN (5): two 99c rungs offered on EACH side ($200 and $300 "
+       "from the projection, the farther listed first) with max-per-side 1: "
+       "exactly one order per side, the NEARER rung each time, the farther "
+       "refused `series_side` (orders %s, refused %s)"
+       % (_fr5_sig, sorted(r["ticker"] for r in _fr5_side)))
+
+    # (5b) the ladder's OWN budget: the 15M markets spend the shared one
+    _fr6_15 = [_spk_mkt(42, lambda t: 0.999), _spk_mkt(43, lambda t: 0.999)]
+    _fr6 = _offline_trade_loop(_fr6_15 + [_fr_rung(84800.0, "yes"),
+                                          _fr_rung(85200.0, "no")],
+                               run_s=6.0, tau0=20, size=5.0, flags=dict(_FR_ON))
+    _fr6_sig = {r["ticker"]: r for r in _kinds(_fr6, "signal")}
+    ck(_fr6["raised"] is None
+       and set(_fr6_sig) == {"KXS4215M-SPK", "KXS4315M-SPK",
+                             _fr_tk(84800.0), _fr_tk(85200.0)}
+       and float(_fr6_sig["KXS4215M-SPK"]["take_n"]) == 5.0
+       and float(_fr6_sig["KXS4315M-SPK"]["take_n"]) == 5.0
+       and float(_fr6_sig[_fr_tk(84800.0)]["take_n"]) == 1.0
+       and float(_fr6_sig[_fr_tk(85200.0)]["take_n"]) == 1.0
+       and not [r for r in _refusals(_fr6, "close_budget")
+                if ladder_head(r["ticker"])]
+       and not [r for r in _refusals(_fr6, "close_budget_base")
+                if ladder_head(r["ticker"])]
+       # the ladder budget (2) is spent once both rungs are booked, so a
+       # LATER pass may refuse them series_close -- never an earlier one
+       and all(float(r["t"]) >= max(float(v["t"]) for v in _fr6_sig.values())
+               for r in _refusals(_fr6, "series_close")),
+       "v-farrung DRIVEN (5b): two 15M markets spend the whole shared budget "
+       "(2 x SIZE 5 = 10 contracts) and BOTH rungs are still taken at 1 under "
+       "the ladder's own budget of 2 -- neither family refuses the other "
+       "(signals %s)" % {k: v.get("take_n") for k, v in _fr6_sig.items()})
+    _fr6n = _offline_trade_loop(_fr6_15 + [_fr_rung(84800.0, "yes"),
+                                           _fr_rung(85200.0, "no")],
+                                run_s=6.0, tau0=20, size=5.0,
+                                flags=dict(_FR_ON, SERIES_MAX_PER_CLOSE=None))
+    _fr6n_sig = {r["ticker"]: r for r in _kinds(_fr6n, "signal")}
+    _fr6n_cb = _refusals(_fr6n, "close_budget")
+    ck(_fr6n["raised"] is None
+       and set(_fr6n_sig) == {"KXS4215M-SPK", "KXS4315M-SPK"}
+       and sorted({r["ticker"] for r in _fr6n_cb if ladder_head(r["ticker"])})
+           == sorted([_fr_tk(84800.0), _fr_tk(85200.0)]),
+       "v-farrung NULL DRIVEN (5b): without --series-max-per-close the same "
+       "world is today's: the shared budget is spent by the 15M markets and "
+       "both rungs are refused `close_budget` (signals %s, refused %s)"
+       % (sorted(_fr6n_sig),
+          sorted({r["ticker"] for r in _fr6n_cb if ladder_head(r["ticker"])})))
+    _fr7 = _offline_trade_loop([_fr_rung(84800.0, "yes"), _fr_rung(85200.0, "no")],
+                               run_s=6.0, tau0=20, size=5.0,
+                               flags=dict(_FR_ON, SERIES_MAX_PER_CLOSE=1))
+    _fr7_sig = sorted({r["ticker"] for r in _kinds(_fr7, "signal")})
+    _fr7_sc = _refusals(_fr7, "series_close")
+    _fr7_sc2 = [r for r in _fr7_sc if r["ticker"] == _fr_tk(85200.0)]
+    ck(_fr7["raised"] is None and _fr7_sig == [_fr_tk(84800.0)]
+       and len(_fr7_sc2) == 1
+       and int(_fr7_sc2[0]["ladder_n"]) == 1 and int(_fr7_sc2[0]["budget"]) == 1,
+       "v-farrung DRIVEN (5c): with the ladder budget at 1 the first rung is "
+       "taken and the second refused `series_close` (ladder_n 1 of 1) "
+       "(orders %s, refused %s)" % (_fr7_sig, [r["ticker"] for r in _fr7_sc]))
+
+    # (6) the hedge still fires on a ladder position when its belief falls
+    _fr8 = _offline_trade_loop(
+        [_fr_rung(84800.0, "yes",
+                  fair_k=(lambda t, k: 0.10 if t >= 4.0 else 0.999))],
+        run_s=12.0, tau0=20, size=5.0, flags=dict(_FR_ON))
+    _fr8_tk = _fr_tk(84800.0)
+    _fr8_sig = _kinds(_fr8, "signal", _fr8_tk)
+    _fr8_h = _kinds(_fr8, "hedge", _fr8_tk)
+    ck(_fr8["raised"] is None and len(_fr8_sig) >= 1
+       and float(_fr8_sig[0]["take_n"]) == 1.0
+       and float(_fr8_sig[0]["cushion"]) == 200.0
+       and abs(_hedged(_fr8, _fr8_tk) - 1.0) < 1e-9
+       and _fr8_h and all(r["t"] > float(_fr8_sig[0]["t"]) + 1.0 for r in _fr8_h),
+       "v-farrung DRIVEN (6): a 99c rung taken at 1 under the cushion flags is "
+       "HEDGED in full when its belief collapses at t=4 -- the cushion gate, "
+       "the side cap and the ladder budget sit on the entry path only "
+       "(hedged %g, hedge records %s)"
+       % (_hedged(_fr8, _fr8_tk), [(r["t"], r.get("n")) for r in _fr8_h]))
+    _frsrc = inspect.getsource(trade_loop)
+    _fr_hp = _frsrc.find("# ---------------- AMENDMENT 15: the hedge pass")
+    _fr_hq = _frsrc.find("hedge_quote", _fr_hp)
+    ck(0 < _fr_hp < _fr_hq
+       < _frsrc.find('_gate("series_close"') < _frsrc.find('_gate("cushion"')
+       < _frsrc.find('_gate("series_side"') < _frsrc.find('_gate("price_ceiling"')
+       < _frsrc.find('_gate("ev_floor"') < _frsrc.find('state["signals"] += 1')
+       < _frsrc.find('rec("signal", live=live, **sig)')
+       and all(_s not in _frsrc[:_fr_hq] for _s in (
+           "ladder_cushion(", "ladder_side_count(", "ladder_fills(",
+           "_book_ladder(", "SERIES_MAX_PER_SIDE", "SERIES_CEILING"))
+       and _frsrc.count('_gate("cushion"') == 1
+       and _frsrc.count('_gate("series_side"') == 1
+       and _frsrc.count('_gate("series_close"') == 1,
+       "v-farrung by source: the three gates sit BELOW the hedge pass and "
+       "ABOVE the signal point (series_close where close_budget is asked; "
+       "cushion and series_side right before the ceiling, so a refusal burns "
+       "no attempt), each exactly once, and nothing above the hedge pass "
+       "reads a far-rung flag")
+    ck(_frsrc.find('_gate("staged_none"') < _frsrc.find("if _fr_ctx is not None:")
+       and _frsrc.find("_ssz = series_size_for(tk)")
+           < _frsrc.find("if _fr_ctx is not None:")
+       < _frsrc.find("_have_la = 0.0")
+       and _frsrc.count("if _ssz is not None:") == 3,
+       "v-farrung by source: the cushion facts join the signal AFTER the "
+       "early-leg gates, beside the v-btcd1 cap (never between sig[take_n] "
+       "and those gates), and the three _ssz caps are still three")
+
     _pin_moved = [_n for _n in _OFFLINE_PINNED_FLAGS
                   if globals()[_n] != _pin_before[_n]]
     ck(not _pin_moved,
@@ -15912,7 +16418,10 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         # a ladder key; self-tested), so the limit-4 path
                         # below is what every other series still runs.
                         _lfresh, _linfo = ladder_universe(
-                            series, iid, idx.spot(iid)[1], now_s, memo=state)
+                            series, iid, idx.spot(iid)[1], now_s, memo=state,
+                            # v-farrung: None (the nearest-3 path) unless
+                            # both cushion flags are set
+                            cushion=ladder_cushion(), idx=idx)
                         if _linfo is not None:
                             rec("ladder", series=series, **_linfo)
                         fresh.update(_lfresh)
@@ -16047,6 +16556,31 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     return 0.0
                 return -got[1]
             _mk.sort(key=_rank)
+        if SERIES_MAX_PER_SIDE is not None:
+            # v-farrung: with a per-side cap the ladder rungs are looked at
+            # NEAREST THE PROJECTION FIRST -- the rung most likely to hold an
+            # offer at the cushion -- after the 15M markets, whose own order
+            # is untouched (the sort is stable and gives every 15M ticker the
+            # same key). One projection per ladder close per pass, cached.
+            _ctr_fr = {}
+
+            def _rank_fr(kv):
+                if ladder_head(kv[0]) is None:
+                    return (0, 0.0)
+                _i, _c, _k = kv[1][0], kv[1][1], kv[1][2]
+                if (_i, _c) not in _ctr_fr:
+                    _ctr_fr[(_i, _c)] = None
+                    try:
+                        _pj = projection(idx, _i, _c, now_s)
+                        _ctr_fr[(_i, _c)] = (float(_pj[0]) if _pj is not None
+                                             else idx.spot(_i)[1])
+                    except Exception:                    # noqa: BLE001
+                        _ctr_fr[(_i, _c)] = None
+                _ctr = _ctr_fr[(_i, _c)]
+                if _ctr is None:
+                    return (1, float("inf"))
+                return (1, abs(float(_k) - float(_ctr)))
+            _mk.sort(key=_rank_fr)
         if state.get("entries_stopped"):
             _mk = []        # K1: no NEW entries (belt and braces: the drain
                             # above already skips the scan while it holds)
@@ -16055,6 +16589,15 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                 tau = close_s - now_s
                 if not (TAU_MIN <= tau <= max(TAU_MAX, EARLY_TAU_MAX)):
                     continue                 # not a refusal: outside the window
+                # v-farrung: which LADDER series this ticker belongs to (None
+                # on every 15M ticker), the ladder's own per-close budget when
+                # --series-max-per-close is set, and the cushion facts the
+                # signal and order records carry once the gate has passed.
+                _lad = ladder_head(tk)
+                _lbud = (int(SERIES_MAX_PER_CLOSE)
+                         if (_lad is not None and SERIES_MAX_PER_CLOSE is not None)
+                         else None)
+                _fr_ctx = None
                 # AMENDMENT 3: scale in as the price IMPROVES, up to MAX_PER_CLOSE.
                 # One shot at the first safe price leaves money on the table:
                 # measured over 70 closes, adding only on improvement raised profit
@@ -16073,7 +16616,19 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                 if _early46 and _held46 > 0:
                     _gate("early_once", close_s, tk, held=_held46, tau=tau)
                     continue
-                if CLOSE_BUDGET:
+                if _lbud is not None:
+                    # v-farrung: a ladder leg has its OWN per-close budget and
+                    # neither spends nor is refused by the shared one below.
+                    # WHAT IT BLOCKS: ladder ENTRIES past --series-max-per-close
+                    # legs in this close. Entry path only; the hedge pass is
+                    # above. Fires before the book is read, so it records no
+                    # price (the 2026-09-19 01:59Z lesson, two branches down).
+                    _ln_fr = ladder_fills(prev)
+                    if _ln_fr >= _lbud:
+                        _gate("series_close", close_s, tk, ladder_n=_ln_fr,
+                              budget=_lbud, tau=tau)
+                        continue
+                elif CLOSE_BUDGET:
                     # AMENDMENT 17: contracts, not fills. Coins are unlimited;
                     # the close is done when its contract budget is spent.
                     _spent = prev.get("contracts", 0.0) if prev else 0.0
@@ -16605,14 +17160,63 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                           paid=(prev.get("px_tk", {}) or {}).get(tk),
                           fair=round(f, 5), tau=tau, size=float(size))
                     continue
-                if price > PRICE_CEILING:
+                # ---- v-farrung: the CUSHION gate and the per-side cap, LADDER
+                # rungs only, before the ceiling so a refusal here burns no
+                # attempt (the counters sit at the signal point below).
+                # WHAT THEY BLOCK: entries on ladder rungs (a) closer to the
+                # projection than --ladder-cushion-min at the moment of the
+                # look, (b) on a side of this series that already holds
+                # --series-max-per-side rungs this close. Entry path only --
+                # the hedge pass is above and never reaches this line.
+                # mu is projection(): the SAME number fair() was built on.
+                if _lad is not None and ladder_cushion() is not None:
+                    _pj_fr = projection(idx, iid, close_s, now_s)
+                    _mu_fr = None if _pj_fr is None else float(_pj_fr[0])
+                    _K_fr = eff_strike(strike, digits)
+                    _cush_fr = None if _mu_fr is None else abs(_mu_fr - _K_fr)
+                    _cmin_fr = float(ladder_cushion()[0])
+                    if _cush_fr is None or _cush_fr < _cmin_fr - 1e-9:
+                        _gate("cushion", close_s, tk, want=want,
+                              price=round(price, 4), fair=round(f, 5), tau=tau,
+                              mu=(None if _mu_fr is None else round(_mu_fr, 6)),
+                              K=_K_fr,
+                              cushion=(None if _cush_fr is None
+                                       else round(_cush_fr, 6)),
+                              cushion_min=_cmin_fr, size=float(size))
+                        continue
+                    _fr_ctx = {"mu": round(_mu_fr, 6), "K": _K_fr,
+                               "cushion": round(_cush_fr, 6),
+                               "cushion_min": _cmin_fr}
+                if _lad is not None and SERIES_MAX_PER_SIDE is not None:
+                    _nside_fr = ladder_side_count(prev, _lad, want)
+                    if _nside_fr >= int(SERIES_MAX_PER_SIDE):
+                        _gate("series_side", close_s, tk, want=want,
+                              price=round(price, 4), fair=round(f, 5), tau=tau,
+                              held=_nside_fr,
+                              max_per_side=int(SERIES_MAX_PER_SIDE),
+                              size=float(size))
+                        continue
+                # v-farrung: a ladder rung is judged by --series-ceiling,
+                # --series-flip and --series-ev-floor when set; every 15M
+                # market (and a rung without the flag) by the constants,
+                # through the same calls as before.
+                _ceil_fr = (float(SERIES_CEILING)
+                            if (_lad is not None and SERIES_CEILING is not None)
+                            else PRICE_CEILING)
+                if price > _ceil_fr:
                     nb["over_ceiling"] = nb.get("over_ceiling", 0) + 1
                     _gate("price_ceiling", close_s, tk, want=want,
-                          price=round(price, 4), ceiling=PRICE_CEILING,
+                          price=round(price, 4), ceiling=_ceil_fr,
                           fair=round(f, 5), tau=tau, size=float(size))
                     continue
-                ev = expected_value(price)
-                if ev < EV_FLOOR:
+                if _lad is not None and SERIES_FLIP is not None:
+                    ev = expected_value(price, flip=float(SERIES_FLIP))
+                else:
+                    ev = expected_value(price)
+                _evf_fr = (float(SERIES_EV_FLOOR)
+                           if (_lad is not None and SERIES_EV_FLOOR is not None)
+                           else EV_FLOOR)
+                if ev < _evf_fr:
                     nb["neg_ev"] = nb.get("neg_ev", 0) + 1
                     if nb["best"] is not None and nb["best"]["ticker"] == tk:
                         nb["best"]["ev_c"] = round(100 * ev, 3)
@@ -16622,7 +17226,7 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     continue
 
                 state["signals"] += 1
-                if CLOSE_BUDGET:
+                if CLOSE_BUDGET and _lbud is None:   # v-farrung: own budget above
                     _pvb = fired.get(close_s)
                     _left = close_budget() - (
                         _pvb.get("contracts", 0.0) if _pvb else 0.0)
@@ -16877,6 +17481,12 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     take_n = min(float(take_n), _ssz)
                     sig["take_n"] = take_n
                     sig["series_size"] = _ssz
+                if _fr_ctx is not None:
+                    # v-farrung: mu, K and the cushion on the signal (and on
+                    # the order record), so a fill can be read against the
+                    # projection it was bought on. Same spot as the v-btcd1
+                    # cap, for the same nesting reason.
+                    sig.update(_fr_ctx)
                 # v-lateadd: a position already at SIZE that rebuy_ok let
                 # through inside REBUY_LATE_TAU is an ADD, capped so the market
                 # never holds more than (1 + REBUY_LATE_FRAC) x SIZE. staged_take
@@ -16951,6 +17561,34 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                       f"fair {f:.4f} edge {100 * e:+.2f}c size {size:.2f} "
                       f"taking {take_n:g}" + (f" [{_leg46}]" if _leg46 != "full" else ""))
 
+                def _book_ladder(px, _n):
+                    """v-farrung: book a ladder leg under the ladder's OWN
+                    per-close budget. Writes the per-MARKET facts every rule
+                    reads (side, fills, price paid, contracts held, the early
+                    leg, the hedged-side extra) and the ladder's own count;
+                    leaves the shared budget -- n, contracts, best, the coin
+                    set -- exactly as it was."""
+                    pv = fired.get(close_s)
+                    if pv is None:
+                        pv = fired[close_s] = {"n": 0, "best": 1.0, "tk": tk,
+                                               "sides": {}, "tickers": set(),
+                                               "per_tk": {}, "px_tk": {},
+                                               "n_tk": {}, "early_tk": {},
+                                               "contracts": 0.0}
+                    pv["ladder_n"] = int(pv.get("ladder_n") or 0) + 1
+                    pv.setdefault("sides", {})[tk] = want
+                    _d13 = pv.setdefault("per_tk", {})
+                    _d13[tk] = _d13.get(tk, 0) + 1
+                    _d23 = pv.setdefault("px_tk", {})
+                    _d23[tk] = min(_d23.get(tk, px), px)
+                    _d29 = pv.setdefault("n_tk", {})
+                    _d29[tk] = _d29.get(tk, 0.0) + _n
+                    if _leg46 == "early":
+                        _d46 = pv.setdefault("early_tk", {})
+                        _d46[tk] = _d46.get(tk, 0.0) + _n
+                    if hedged_side.get(tk) is not None and want == hedged_side.get(tk):
+                        rebuy_extra[tk] = rebuy_extra.get(tk, 0.0) + _n
+
                 def _book_slot(px, n=None, raise_bar=True):
                     """AMENDMENT 6: a scale-in slot is consumed by a FILL, never by
                     an attempt. Until 2026-09-08 this ran BEFORE the order, so an
@@ -16966,6 +17604,9 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     because the cap always meant two FILLS; the bug made it two
                     ATTEMPTS."""
                     _n = float(take_n if n is None else n)
+                    if _lbud is not None:
+                        _book_ladder(px, _n)      # v-farrung: own budget
+                        return
                     pv = fired.get(close_s)
                     if pv is None:
                         fired[close_s] = {"n": 1, "best": px, "tk": tk,
@@ -17587,6 +18228,9 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                                 # v-toxic: the taker flow the decision saw
                                 sell_share_3s=_ss3, taker_n_3s=_tn3,
                                 trade_age_s=_ta3,
+                                # v-farrung: mu, K, cushion (ladder rungs
+                                # under the cushion flags; {} otherwise)
+                                **(_fr_ctx or {}),
                                 **{k: v for k, v in out.items() if k != "raw"})
                         except Exception as _ek1o:           # noqa: BLE001
                             # The ORDER did not fail; its record did. Not an
@@ -17920,6 +18564,33 @@ def main():
                     help="v-btcd1: contracts a --series (ladder) market may "
                          "take, independent of the bank-driven SIZE. REQUIRED "
                          "to run --series live. 1 = the penny test.")
+    ap.add_argument("--ladder-cushion-min", type=float, default=None, metavar="USD",
+                    help="v-farrung: keep the ladder rungs at least USD from "
+                         "the projection (both sides) instead of the 3 "
+                         "nearest, and refuse a rung closer than USD at the "
+                         "look (gate `cushion`). Needs --ladder-cushion-max. "
+                         "results/FAR_RUNG_2026-09-25.md.")
+    ap.add_argument("--ladder-cushion-max", type=float, default=None, metavar="USD",
+                    help="v-farrung: ...and at most USD from the projection")
+    ap.add_argument("--series-ceiling", type=float, default=None, metavar="P",
+                    help="v-farrung: the price ceiling for a ladder rung (e.g. "
+                         "0.99); the 15M ceiling is untouched")
+    ap.add_argument("--series-flip", type=float, default=None, metavar="F",
+                    help="v-farrung: the flip rate expected_value() uses for a "
+                         "ladder rung (e.g. 0.0014); MEASURED_FLIP untouched")
+    ap.add_argument("--series-ev-floor", type=float, default=None, metavar="USD",
+                    help="v-farrung: the EV floor per contract for a ladder "
+                         "rung (e.g. 0.005); EV_FLOOR untouched")
+    ap.add_argument("--series-max-per-side", type=int, default=None, metavar="N",
+                    help="v-farrung: at most N ladder rungs per side per "
+                         "series per close (YES below / NO above the "
+                         "projection), nearest the projection first (gate "
+                         "`series_side`)")
+    ap.add_argument("--series-max-per-close", type=int, default=None, metavar="N",
+                    help="v-farrung: a per-close budget of N ladder legs of the "
+                         "ladder's own; ladder legs then neither spend nor are "
+                         "refused by the shared MAX_PER_CLOSE budget (gate "
+                         "`series_close`). Without it, today's shared budget.")
     ap.add_argument("--fresh-min-age-ms", type=int, default=None, metavar="MS",
                     help="v-fresh: with more than --fresh-tau-min s left, refuse "
                          "a level known to be younger than MS ms (default 0 = "
@@ -18500,6 +19171,54 @@ def main():
             raise SystemExit("--series-size must be in (0, %g]; got %r"
                              % (float(MAX_PER_CLOSE) * 10.0, a.series_size))
         globals()["SERIES_SIZE"] = float(a.series_size)
+    # v-farrung (2026-09-25): every flag needs --series (they read nothing
+    # else), the cushion pair go together, and each is range-checked here so
+    # a typo dies at the prompt and not in the loop.
+    _fr_named = [("--ladder-cushion-min", a.ladder_cushion_min),
+                 ("--ladder-cushion-max", a.ladder_cushion_max),
+                 ("--series-ceiling", a.series_ceiling),
+                 ("--series-flip", a.series_flip),
+                 ("--series-ev-floor", a.series_ev_floor),
+                 ("--series-max-per-side", a.series_max_per_side),
+                 ("--series-max-per-close", a.series_max_per_close)]
+    _fr_set = [n_ for n_, v_ in _fr_named if v_ is not None]
+    if _fr_set and not a.series:
+        raise SystemExit("%s does nothing without --series" % ", ".join(_fr_set))
+    if (a.ladder_cushion_min is None) != (a.ladder_cushion_max is None):
+        raise SystemExit("--ladder-cushion-min and --ladder-cushion-max go "
+                         "together (the band needs both ends)")
+    if a.ladder_cushion_min is not None:
+        if not (0.0 <= float(a.ladder_cushion_min) <= float(a.ladder_cushion_max)):
+            raise SystemExit("--ladder-cushion-min must sit in [0, "
+                             "--ladder-cushion-max]; got %r and %r"
+                             % (a.ladder_cushion_min, a.ladder_cushion_max))
+        globals()["LADDER_CUSHION_MIN"] = float(a.ladder_cushion_min)
+        globals()["LADDER_CUSHION_MAX"] = float(a.ladder_cushion_max)
+    if a.series_ceiling is not None:
+        if not (0.5 <= float(a.series_ceiling) <= 1.0):
+            raise SystemExit("--series-ceiling must sit in [0.5, 1.0], got %r"
+                             % (a.series_ceiling,))
+        globals()["SERIES_CEILING"] = float(a.series_ceiling)
+    if a.series_flip is not None:
+        if not (0.0 <= float(a.series_flip) < 0.5):
+            raise SystemExit("--series-flip must sit in [0, 0.5), got %r"
+                             % (a.series_flip,))
+        globals()["SERIES_FLIP"] = float(a.series_flip)
+    if a.series_ev_floor is not None:
+        if not (0.0 <= float(a.series_ev_floor) <= 0.5):
+            raise SystemExit("--series-ev-floor is in DOLLARS per contract and "
+                             "must sit in [0, 0.5], got %r" % (a.series_ev_floor,))
+        globals()["SERIES_EV_FLOOR"] = float(a.series_ev_floor)
+    if a.series_max_per_side is not None:
+        if not (1 <= int(a.series_max_per_side) <= 50):
+            raise SystemExit("--series-max-per-side must sit in [1, 50], got %r"
+                             % (a.series_max_per_side,))
+        globals()["SERIES_MAX_PER_SIDE"] = int(a.series_max_per_side)
+    if a.series_max_per_close is not None:
+        if not (1 <= int(a.series_max_per_close) <= 100):
+            raise SystemExit("--series-max-per-close must sit in [1, 100], got %r"
+                             % (a.series_max_per_close,))
+        globals()["SERIES_MAX_PER_CLOSE"] = int(a.series_max_per_close)
     if a.no_size_mirror:
         globals()["SIZE_MIRROR_ON"] = False
     if a.rebuy_hedged:
@@ -18713,6 +19432,11 @@ def main():
         print(f"  LADDER (paper-only): {' '.join(a.series)} -> keep "
               f"{LADDER_KEEP} rungs nearest the index, event within "
               f"{LADDER_HORIZON_S}s of the hour")
+        if ladder_cushion() is not None or SERIES_CEILING is not None:
+            print(f"  FAR RUNG (v-farrung): cushion {ladder_cushion()} USD, "
+                  f"ceiling {SERIES_CEILING}, flip {SERIES_FLIP}, "
+                  f"ev floor {SERIES_EV_FLOOR}, max/side {SERIES_MAX_PER_SIDE}, "
+                  f"max/close {SERIES_MAX_PER_CLOSE}")
     # EVERY parameter that can change a trade decision goes in the log, so a
     # post-mortem can tell exactly which version produced a given result
     # without guessing from the timestamp. results/VERSIONS.md maps these to
@@ -18826,6 +19550,12 @@ def main():
         # A47/A48/A49 lesson: an arm whose start record cannot say what it
         # is testing is not measurable)
         ladder_series=sorted(a.series or []), ladder_keep=LADDER_KEEP,
+        # v-farrung: the far-rung flags, None when off
+        ladder_cushion=(list(ladder_cushion()) if ladder_cushion() else None),
+        series_ceiling=SERIES_CEILING, series_flip=SERIES_FLIP,
+        series_ev_floor=SERIES_EV_FLOOR,
+        series_max_per_side=SERIES_MAX_PER_SIDE,
+        series_max_per_close=SERIES_MAX_PER_CLOSE,
         code_sha=_source_fingerprint())
 
     if a.live:

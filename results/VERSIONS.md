@@ -1,3 +1,59 @@
+# v-farrung -- 2026-09-25 04:0xZ -- CODE ON DISK, EVERY FLAG OFF: the bot can buy the FAR rungs of the hourly BTC ladder at 99c (results/FAR_RUNG_2026-09-25.md), but only when seven new flags are passed. The live command line is unchanged, so the live bot does nothing new; the next restart merely runs this code. A 1-contract live test needs the operator's sign-off and its own entry (`v-farrung1`).
+
+**The idea (plain).** With 45 s left, a rung $150 or more from where the
+settlement is heading has never finished on the wrong side (0 of 2,136
+closes since 09-01, worst miss $136). Those rungs sit at 99c with hundreds
+to thousands of contracts resting, and the live bot's 98c ceiling turned
+five of them away on 09-24 (one with 7,619 contracts). A winner nets 0.93c
+a contract after fee; a loser costs 99.07c; break-even is 0.93 crossings
+per 100 contracts. Bank-limited: about $68-85/day at today's bank if the
+fills are real, which is what the 1-contract test measures.
+
+**What changed in code (all default None/off, `_DEFAULT_*` twins, pinned in
+K1; every branch gated on the ticker being a ladder rung AND its flag):**
+- `--ladder-cushion-min/--ladder-cushion-max` (dollars, together): the
+  ladder universe keeps every rung whose distance from the projection is
+  inside the band, both sides, instead of the nearest 3.
+- `--series-ceiling` (e.g. 0.99), `--series-flip`, `--series-ev-floor`: a
+  rung is judged by these; every 15-minute market by the old constants
+  through the same calls.
+- `--series-max-per-side`, `--series-max-per-close`: at most N rungs a side
+  per close, nearest the cushion first; and a separate per-close budget so
+  ladder legs neither spend nor are refused by the 15-minute budget.
+- Gates `cushion` and `series_side` (right before the ceiling gate, so a
+  refusal burns no attempt) and `series_close` (where close_budget is
+  asked). All three sit BELOW the hedge pass on the entry path only; a
+  driven check hedges a ladder position in full on belief collapse.
+- `projection()` now holds the arithmetic `fair()` used inline (moved, not
+  changed; a check proves fair pivots exactly on it). `mu`, `K`, `cushion`
+  are written on ladder signals/orders/refusals. pinattrib knows the gates.
+- Known limits: `early_dear` (97.5c early-leg ceiling) is untouched, so a
+  99c rung trades at 30 s or less, never 31-45 s ($150 also uncrossed at
+  30 s, worst $101). The cushion is in index dollars (BTC scale). A rung
+  may still take a top-up to 2 contracts (MAX_PER_MARKET).
+
+**Proof the live path is the same:** with the flags absent a KXBTCD world
+produces exactly v-ladder7's ladder record keys, both 99c rungs are refused
+`price_ceiling` at 98c, no new gate fires, no decision record carries mu or
+cushion; the stub fetch is byte-identical; `count("if _ssz is not None:")
+== 3` and the staged_none/_stage46 orderings hold. 1,208 -> 1,228 checks
+green plain, under the deployed argv, and under the deployed argv plus the
+seven flags (the startup path of the test), re-run by the session on the
+real file. pinattrib 55, pinflat green, versioncheck clean.
+
+**The paper arm:** `arm-farrung` = live's argv plus
+`--ladder-cushion-min 150 --ladder-cushion-max 600 --series-ceiling 0.99
+--series-flip 0.0014 --series-ev-floor 0.005 --series-max-per-side 1
+--series-max-per-close 2` (sync_arms row). It exercises the decision path;
+paper fills at 99c prove nothing about supply, the live test does.
+
+**REVERT (code):** `git checkout 53f07b3 -- research/pinrun.py research/pinattrib.py sync_arms.ps1`
+(the live bot is not running this code until the next restart; if it has
+been restarted since, follow with
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`).
+
+---
+
 # v-ladder7 -- 2026-09-25 03:2xZ -- CODE ON DISK, PAPER ONLY: the ladder table knows all seven hourly series Kalshi lists on an index the bot already follows (KXBTCD + KXETHD KXSOLD KXXRPD KXDOGED KXBNBD KXHYPED). The live command line is unchanged (`--series KXBTCD --series-size 1`), so the live bot does nothing new; the next restart merely runs this code.
 
 **What changed in code:** `LADDER_SERIES` / `LADDER_COIN` / `LADDER_STEP`

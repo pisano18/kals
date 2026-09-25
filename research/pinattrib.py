@@ -73,6 +73,9 @@ import pinrun                                                  # noqa: E402
 # The order the trade loop actually asks them, which is the only way to read
 # the "came into play" column honestly.
 GATE_ORDER = [
+    # v-farrung (2026-09-25, ships off): a ladder leg under its OWN per-close
+    # budget (--series-max-per-close). Asked where close_budget is asked.
+    "series_close",
     "close_budget", "max_per_close", "max_per_market", "both_sides",
     "market_attempts", "attempts_cap", "book_suspect", "book_stale",
     "index_stale", "no_sigma",
@@ -83,7 +86,11 @@ GATE_ORDER = [
     "spike",
     "no_offer", "depth_floor", "edge_floor", "against_thin",
     "jump_against", "dump_guard",
-    "improve_by", "rebuy_band", "price_ceiling", "ev_floor",
+    "improve_by", "rebuy_band",
+    # v-farrung (2026-09-25, ships off): the cushion gate and the per-side
+    # cap on the hourly ladder rungs, asked right before the ceiling.
+    "cushion", "series_side",
+    "price_ceiling", "ev_floor",
     # R4 (2026-09-22): this one sits AFTER the signals counter, which is why
     # it was invisible for so long -- it is the only refusal that used to
     # happen with no record at all. It is NOT the same gate as
@@ -150,6 +157,9 @@ WHAT = {
     "improve_by": "a second buy that was not cheaper than the first",
     "rebuy_band": "a same-coin re-buy outside the 0.5-1c band",
     "price_ceiling": "priced above the 98c ceiling",
+    "cushion": "v-farrung (2026-09-25, ships off): a rung of the hourly ladder sat closer to the projected settlement than the cushion asks (--ladder-cushion-min dollars, 150 in the live test): the 60-second average is 15 or more prints in, and a rung this close can still be crossed; the record carries mu (the projection), K (the rung) and the distance. Ladder rungs only, entry only, before the ceiling",
+    "series_side": "v-farrung (2026-09-25, ships off): this ladder series already holds --series-max-per-side rungs on this side of the projection in this close (YES rungs below it, NO rungs above); the nearer rung was looked at first. Ladder rungs only, entry only",
+    "series_close": "v-farrung (2026-09-25, ships off): the ladder's own per-close budget (--series-max-per-close legs) is spent, so no further rung this close; with the flag set a ladder leg neither spends nor is refused by the shared 15-minute budget. Ladder rungs only, entry only, before the book is read",
     "early_once": "A46: this market already holds an early leg (31-45 s); only one per market",
     "staged_none": "A46: the staged leg came to nothing (market already at full size, or under the minimum)",
     "hedge_wait_normal": "A51: insurance held off because the OTHER side was not yet a bet we would make on its own -- our model was not PIN sure of it, or it cost more than the price ceiling. The old rule fired on the model alone and 11 of 12 insured closes still ended negative, five of them paying 10-18c while the market still liked our side",
