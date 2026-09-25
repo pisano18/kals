@@ -11,6 +11,23 @@ moment a state changes; it is the operator's index to the work.
 
 ## A. Running tests — nothing here changes the bot until its bar is met
 
+### A0. The money-idea sweep — many agents hunting for new ways to make money
+**Say: "the money sweep" (results) or "run the money sweep" (a new run).**
+On 2026-09-25 about 100 agents went through every kind of bet on Kalshi and
+Polymarket US (and anything else legal), cross-bred ideas, checked each one
+with real data and had a second agent try to disprove it. Result:
+`results/IDEA_SWEEP_2026-09-25.md`. Every idea ever checked, dead or alive,
+is one line in `results/IDEA_LEDGER.md`, so nothing is re-proposed. How to
+run it again: `research/sweep/README.md`.
+
+### A12. Zero-size order fix — `v-zerotake` (live since 2026-09-25 2:25 AM ET)
+**Say: "the zero order fix."**
+At 2:14 AM ET the bot tried to add to a HYPE position that was already at
+its maximum and sent an order for 0 contracts. Kalshi's side refused it
+twice and two refused orders stop the bot; the watchdog restarted it in a
+minute and nothing was lost (that market won $5.77). Now the bot refuses
+the add itself. Nothing else changed.
+
 ### A1. "fresh offer" test — `arm-fresh500`
 **Say: "the fresh offer test."**
 When we buy, we take an offer someone left sitting. If that offer appeared
@@ -138,7 +155,9 @@ Copies of the bot with one thing changed, so we can prove a change helped.
 - `arm-lateadd-off` = today's live bot WITHOUT the late add (which is live).
 - `arm-afternoon` = the exact code from the afternoon of 2026-09-23, before
   the night's changes. **Manual process — relaunch by hand after a reboot.**
-- `arm-live-frozen` = the settings from 2026-09-20, pinned.
+- `arm-live-frozen` = the settings from 2026-09-20, pinned. Its 3-day run ended
+  2026-09-25 06:21Z (+$309 on paper, 1 loss); relaunched for 7 days at 06:30Z.
+- `arm-afternoon` ends ~2026-09-27 03:51Z (11:51 PM ET Sep 26).
 
 ### A5. Weather markets — `research/wxwatch.py`
 **Say: "the weather idea."**

@@ -1,5 +1,12 @@
 # CURRENT_STATE.md -- read this FIRST, before anything else
 
+**2026-09-25 ~06:4xZ, before a /clear: the complete current state is the TOP
+SECTION OF `HANDOFF.md`** (live pid 2894452 on v-zerotake, every arm and
+watcher with its end and read date, the idea sweep in flight, pending
+operator actions). Then `OPEN_WORK.md` (the operator's topic index) and
+`results/IDEA_LEDGER.md` (every money idea ever checked). Everything below
+this paragraph is older and kept for history.
+
 **OPEN_WORK.md is the operator's index to everything in flight** (added
 2026-09-24). He says "read OPEN_WORK.md" or names a topic from it ("the fresh
 offer test", "hourly BTC", "photo finishes", "the disk", "the VM"). Keep it

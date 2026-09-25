@@ -168,12 +168,9 @@ $arms = @(
   # follows (ETH SOL XRP DOGE BNB HYPE beside BTC), paper only, 1 contract a rung.
   # Live keeps `--series KXBTCD` only; this arm swaps that group for all seven.
   # Question: do the other coins' hourly books fill us the way BTC's do?
-  @{ n="arm-hourly-all";    drop=@("--series");          add=@("--series","KXBTCD","KXETHD","KXSOLD","KXXRPD","KXDOGED","KXBNBD","KXHYPED") },
-  # 2026-09-25 04:0xZ (results/FAR_RUNG_2026-09-25.md, v-farrung): buy the FAR rungs of
-  # the hourly BTC ladder at 99c -- rungs $150-600 from the projection, one a side per
-  # close, under their own per-close budget. Live keeps every one of these OFF. Paper
-  # fills at 99c prove nothing about supply; this arm exercises the decision path.
-  @{ n="arm-farrung";       drop=@();                    add=@("--ladder-cushion-min","150","--ladder-cushion-max","600","--series-ceiling","0.99","--series-flip","0.0014","--series-ev-floor","0.005","--series-max-per-side","1","--series-max-per-close","2") }
+  @{ n="arm-hourly-all";    drop=@("--series");          add=@("--series","KXBTCD","KXETHD","KXSOLD","KXXRPD","KXDOGED","KXBNBD","KXHYPED") }
+  # arm-farrung (v-farrung flags) RETIRED 2026-09-25 06:3xZ: the far-rung idea is dead
+  # (FAR_RUNG_2026-09-25 verdict: 0 safe-side supply at $150+ in 68 closes).
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 

@@ -1,3 +1,116 @@
+# 2026-09-25 ~06:4xZ -- BEFORE THE /clear: everything running, every read date, every open item
+
+The operator is clearing context after this. **A new session: read this
+section, then `OPEN_WORK.md` (his topic index, "Say:" handles), then
+`results/IDEA_LEDGER.md` (every money idea ever checked).** All times below
+are UTC; say them to him in ET (EDT = UTC-4).
+
+## Live money right now
+
+- **pinrun --live** pid 2894452 since 06:25:05Z, code_sha 52b3e5fb28f8
+  (`v-zerotake` on top of the v-ladder7 / v-farrung code, whose flags are all
+  OFF). Argv = `restart_bot.ps1` (includes `--series KXBTCD --series-size 1`:
+  hourly BTC at 1 contract). Bank $1,043, auto-size 88. `--minutes 4320`, so
+  it exits ~09-28 06:25Z and watch_bot restarts it. Watchdog pid 2839244
+  (watch_bot.ps1), app pindesk pid 2842980, phone pinphone pid 2844724.
+- **v-zerotake (new, 06:25Z):** at 06:14:55Z a late add on a HYPE position the
+  late boost had already filled to 1.5 x SIZE went out for ZERO contracts;
+  pintake refused it twice and two order errors halt the run (watchdog
+  restarted it in a minute, no money lost; the market won +$5.77). Fixed: a
+  `late_add_full` gate plus a `zero_take` backstop. **Watch for either record
+  in the live log** -- each one is a halt that did not happen.
+- **Coin race live** pid 2707284 since 09-24 15:16Z, 5 contracts a leg,
+  `--minutes 10080` -> ends ~10-01 15:16Z (relaunch by hand, v-race5 argv in
+  VERSIONS.md).
+- Money today (ET 09-25) at 05:49Z: +$13.46, 0 losses. Lifetime on Kalshi's
+  ledger +$437.82 over 1,101 markets.
+
+## Paper arms (read with `python research/bars.py` or /bars on the phone)
+
+| arm | pid | started | ends | question | read |
+|---|---|---|---|---|---|
+| arm-fresh500, arm-toxic, arm-btcd, arm-edge2c, arm-lateadd-off, arm-early-off, arm-brake3 | 2615520, 2845916, 2846712, 2845952, 2845588, 2836048, 2846328 | 09-25 02:27Z | ~10-02 02:27Z | PREREG_fresh / PREREG_toxic bars; hourly BTC; 2c floor; controls | ~10-01 |
+| arm-hourly-all | 2853628 | 09-25 03:06Z | ~10-02 03:06Z | do the six other coins' hourly ladders fill us? (v-ladder7) | ~10-02 |
+| arm-live-frozen | 2896212 (relaunched 06:30:07Z by sync_arms -Only live-frozen) | 09-25 06:30Z | ~10-02 06:30Z | the 09-20 settings, pinned baseline. Its 3-day run ended 06:21Z at +$309 paper, 1 loss | any time |
+| arm-afternoon | 2564788 (manual, pinrun_afternoon.py) | 09-24 03:51Z | ~09-27 03:51Z | code of the afternoon of 09-23 | relaunch by hand if still wanted |
+| coin race z3, gap075 | 2574672, 2577788 | 09-24 05:56Z | ~10-01 | earlier entry; photo-finish filter (OPEN_WORK B2/B3) | ~10-01 |
+| coin race racectl, raceedge0, racetau40 | 2592448, 2589516, 2591752 | 09-24 05:56Z | ~09-27 05:56Z | older race controls | lapse is fine |
+| cmdarm x2 (commodities) | 2695900, 2703040 | 09-24 15:40Z | ~09-27 15:40Z | commodity 15-min paper | lapse is fine |
+
+The live code hash moved twice tonight (v-ladder7/v-farrung, then v-zerotake).
+The arms were NOT re-synced on purpose: their paper path is unaffected and a
+restart would reset the 7-day windows. `arm-farrung` was stopped and its row
+retired (idea dead).
+
+## Watchers and recorders
+
+- `kalshi_collector.py` 2532788 and `crypto_feeds.py` 105352 (run_all.ps1
+  101860). **Disk 14.5 GB free at 06:10Z, falling ~1 GB/day; the collector
+  STOPS for good at 5 GB (~09-29/30).** The operator is buying a 2 TB drive.
+- `research/wxwatch.py` 2617292 (hourly temperature, to ~09-28) and
+  `research/quakewatch.py` 2616700 (to ~10-08): `--report` on each.
+- `research/rungwatch.py` 2855812: far-rung book depth; runs until
+  `results/rungwatch.stop` exists. **Create that file after the 09-25
+  ~23:00Z close** (the idea is dead; the daytime reads are the last check).
+- **Polymarket US real-time recorder** pid 2855732 (`scan_poly_ws.py
+  259200`, read key), started 06:11Z, ends ~09-28 06:11Z, writes
+  `C:\Users\Joe\AppData\Local\Temp\claude\C--kals-repo\47b37ac1-655c-4d72-a81b-a48e9625d5bd\scratchpad\scan_poly_ws.jsonl.gz`
+  (~70 MB/day). Read it with `python scan_poly_ws_report.py` in that folder
+  (copies in `research/poly/`). That decides IDEA_LEDGER U1 / OPEN_WORK A11.
+- Scratch scans from the Kalshi-wide scan agent (scan_ladder, scan_poly,
+  scan_poly2, scan_poly_book) end by themselves within hours; nothing reads
+  them further.
+- `C:\kals\cdc_record.py` pid 345648 (Crypto.com recorder from 09-16) and
+  `research/pinledgerd.py` 802568 are older daemons; leave them.
+
+## The money-idea sweep (running at the /clear)
+
+Workflow run `wf_a10c880e-f3b` (Scout -> Combine -> Merge -> Check -> Refute ->
+Critic -> Write), read-only, ~7 agents at a time. Its writer produces
+`results/IDEA_SWEEP_2026-09-25.md` + `results/idea_sweep_2026-09-25.json`.
+**This run's writer does not know the ledger** (the ledger was built while it
+ran): after it lands, merge its rows into `results/IDEA_LEDGER.md` by hand,
+commit, and add any survivor to OPEN_WORK with a "Say:" handle. To run it
+again later: `research/sweep/README.md` ("run the money sweep").
+
+## Decided tonight (do not re-open without new data)
+
+- **Far rungs at 99c: dead** -- 0 safe-side buys at >=97c on rungs $150+ from
+  the settlement in 68 hourly closes (`research/rungtrades.py`); the live
+  bot's 99c offers were the rung next to the settlement.
+- **Market making on 15-min crypto: dead** -- 61 hours, 968 markets, 12
+  variants, every one negative every day (MAKER_SIM section 9).
+- **Polymarket US** offers the operator ONLY BTC 15-min and 1-hour; he is
+  funded (~$60) and eligible.
+
+## Look out for
+
+- The seven-coin arm adds ~1.4 s to each universe refresh (10 more GETs) --
+  a hedge blackout if ever taken live; fix before any live use.
+- `research/bars.py` counts KXBTCD only (`BTCD_SERIES`), not the six new
+  ladders.
+- `early_dear` (97.5c early-leg ceiling) keeps any 99c ladder entry to <= 30 s
+  (moot while far rungs are dead).
+- The live hourly BTC leg sent ZERO orders in its first 10 hours (70
+  refusals: no_offer 33, book_stale 26, confidence 6, price_ceiling 5).
+- Harness habits that cost time tonight: Bash heredocs halve backslashes
+  (write scripts with the Write tool); `"out = pintake.take("` is a substring
+  of the hedge's `"_hout = pintake.take("` (anchor on the whole line); the
+  harness kills its own background shells when free RAM falls near 1 GB
+  (detach anything that must survive with Start-Process); the maker sim's
+  "hours" progress was a file count (2 per hour); subagents can die on the
+  model's usage limit -- re-check their files.
+- Old memory items still open: re-walk the pickoff tracker; reconcile the
+  day total against the balance ($16 gap).
+
+## Operator actions pending
+
+1. Buy the 2 TB drive (the deadline is the disk, ~4-5 days).
+2. Enable Windows automatic sign-in (KalsBoot is an interactive-logon task).
+3. AWS Lightsail Ohio ($124/mo) after a good weekend (`results/VM_PLAN_2026-09-24.md`).
+
+---
+
 # 2026-09-25 04:0xZ -- SECOND INCOME hunt: far rungs of the hourly BTC ladder at 99c (built, OFF, needs sign-off); Polymarket US lists our exact contract; seven-coin hourly paper arm; scan of everything else
 
 Operator's brief: "seriously find a second income source... anything on
