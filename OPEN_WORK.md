@@ -47,7 +47,7 @@ own per-close spending limit, not the market's supply.
   per-close allowance for the hourly family — that is the only place more bank
   buys more contracts.
 
-### A7. "fresh offer while they're selling" — `arm-toxic` (being built)
+### A7. "fresh offer while they're selling" — `arm-toxic` (built, running)
 **Say: "the toxic offer test."**
 The two "someone is selling to us" signals crossed on our own early entries:
 - offer resting, nobody selling: 146 markets, 1 loss (+$204)
@@ -59,9 +59,21 @@ and the only cell that loses money. Refusing only that cell would have been
 +$285 over 11 days (about +$7/day after discounting the 09-19 hedge-bug
 losses to what they'd be now), while refusing either signal alone gives up
 far more winners. Needs the bot to listen to Kalshi's trade feed (the
-recorder already does); being built with the flag OFF, logging first, then a
-paper arm. Bar in `results/PREREG_toxic.md`, 7 days from when live starts
-logging. Both thresholds were fixed before the cross.
+recorder already does). **Built and deployed 2026-09-24 22:20Z:** the live
+bot now listens to the trade feed and logs the number on every trade (gate
+OFF); `arm-toxic` runs with the gate ON. Bar in `results/PREREG_toxic.md`,
+7 days from 22:20Z (read ~2026-10-01). Both thresholds were fixed before the
+cross. `/bars` on the phone reads it.
+
+### A8. `/bars` on the phone — the one command that reads every test
+**Say: "/bars" (or "read the bars").**
+Prints each running test against the bar that was written before its data,
+the numbers so far, days into the window, and PASS / KILL / EXTEND / TOO EARLY.
+Also `python research/bars.py`. Early reads on 2026-09-24 10:20 PM ET: the
+fresh-offer arm is $35 behind live on 42 shared markets (it refuses the first
+look and re-enters smaller later) with 21 fresh fills all won — too early; the
+hourly BTC arm fires rarely (2 closes in 18 h), so its 30-close bar may need
+more than 7 days; photo finishes so far: 10 of 10 refused races were won.
 
 ### A3. 2-cent edge floor — `arm-edge2c`
 **Say: "the edge floor test."**
@@ -170,6 +182,13 @@ matters.
   $160–550/day, but it is a replay (our standing rule: replays are not
   evidence), and testing it needs 2+ GB of memory the money bot cannot spare.
   Right place: the cloud server. `results/IDEAS_2026-09-24.md` item 3.
+- **Exchange-feed "move against us" gate — killed on our own fills
+  (2026-09-25).** The recorded exchange books DO explain 70–79% of the next
+  index print 0–300 ms early (`results/FEED_LEAD_2026-09-24.md`) — but at our
+  651 entries the move in the 200–3,000 ms before the order did not separate
+  losers from winners (medians 0 basis points both; p = 0.13–0.8; only 8 losers
+  with feed coverage, 49% power). The print-prediction itself is kept as a
+  possible latency use later; no gate.
 - **32 other ideas killed with reasons** — including hedging with a crypto
   futures position, Polymarket US, daily high/low temperature markets, selling
   the winning side into the queue, selling lottery tickets, new coins, buying

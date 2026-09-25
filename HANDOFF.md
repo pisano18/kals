@@ -95,6 +95,24 @@ output in the session task file, findings verified adversarially):**
   tie-aware `winner_from` + halt on Kalshi money, then the z3 early rule's
   bar (21/21 so far; the bar is 125 races 0 losses).
 
+**v-tradefeed (22:20Z, pid 2836976, code_sha ab19f2baf0a0): the live bot
+subscribes to Kalshi's `trade` channel and logs `sell_share_3s` /
+`taker_n_3s` / `trade_age_s` on every signal, order and priced refusal; the
+`toxic_fresh` gate ships OFF and `arm-toxic` runs it ON.** results/PREREG_toxic.md
+(the AND of PREREG_fresh's 500 ms and toxicity.md's sell share > 0.5: 87
+markets, 8 of 12 early losers, -$285; every other cell positive; read
+~2026-10-01). A trade-channel error can never mark a book suspect or resync.
+Also 22:26Z: `/bars` on the phone (research/bars.py) reads every test against
+its bar; DISK alerts under 8 / 6 GB; arms now run 7 days (sync_arms --minutes
+10080; a 3-day arm would have died on day 3 of a 7-day bar). 22:13Z:
+v-daycap-brake (watchdog 2839244, app 2842980). FEED LEAD (results/
+FEED_LEAD_2026-09-24.md): books explain 70-79% of the next print, but the
+"moved against us before the send" gate does NOT separate our losers (Q3,
+651 entries, p 0.13-0.8) -- killed as a gate. GUARDIAN.md + SCALING_PLAN:
+next size step = a $1,500 bank (size 127) after a clean weekend, ~30 hourly
+fills and the disk; KalsBoot is LogonType Interactive -- Joe must enable
+automatic sign-in before leaving.
+
 **v-btcd1 (16:48Z, pid 2727204): the HOURLY BTC ladder trades live at ONE
 contract** (`--series KXBTCD --series-size 1`). Operator: "run hourly btc full
 on exactly how we would to make real money but at 1 contract instead." No
