@@ -1,4 +1,4 @@
-# v-zerotake -- 2026-09-25 ~06:5xZ -- LIVE at the restart below: the bot never sends (or books) an order for ZERO contracts. A late add on a position already at the (1 + frac) x SIZE cap is refused as `late_add_full`; any other path that reaches the send with 0 is skipped and logged `zero_take`. No trading rule changed.
+# v-zerotake -- 2026-09-25 06:25:05Z (pid 2894452, code_sha 52b3e5fb28f8) -- LIVE: the bot never sends (or books) an order for ZERO contracts. A late add on a position already at the (1 + frac) x SIZE cap is refused as `late_add_full`; any other path that reaches the send with 0 is skipped and logged `zero_take`. No trading rule changed.
 
 **Why -- a halt, measured.** 2026-09-25 06:14:55Z (2:14 AM ET),
 KXHYPE15M-26SEP250215-15: the late boost filled the position to 1.5 x SIZE
