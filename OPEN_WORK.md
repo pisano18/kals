@@ -77,6 +77,9 @@ Since Sep 22 Polymarket US lists our exact BTC 15-minute contract (same
 index, same strike to the cent). Its book is a tenth to a fiftieth of
 Kalshi's; makers there are paid a rebate. Cross-venue "free money" showed
 on a cached feed and vanished on the real one. Realistic $0-15 a day.
+**Operator, 2026-09-25: Polymarket US offers him ONLY Bitcoin 15-minute and 1-hour
+up/down -- no other coins or time frames. His account is funded (~$60) and he has
+placed a bet there, so he is eligible for those contracts.**
 A read-only recorder runs 3 days (to ~Sep 28); bar in
 `results/SECOND_INCOME_SCAN_2026-09-25.md` section 1.
 
