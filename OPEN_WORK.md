@@ -47,6 +47,16 @@ own per-close spending limit, not the market's supply.
   per-close allowance for the hourly family — that is the only place more bank
   buys more contracts.
 
+### A9. Hourly markets on the other coins -- `arm-hourly-all` (paper, since 2026-09-25 03:06Z)
+**Say: "the other hourly coins."**
+Kalshi runs the same hourly ladder for ETH, SOL, XRP, DOGE, BNB and HYPE that
+it runs for BTC, all settling on an index the bot already follows. A paper
+copy of the live bot now trades all seven at 1 contract a rung beside the
+live bot (which trades only BTC). Question: do the other coins' hourly books
+fill us the way BTC's do, and at what price? Nothing goes live on them
+without a sign-off. Code proven not to change the live BTC path
+(`v-ladder7` in `results/VERSIONS.md`). Read after ~7 days (2026-10-02).
+
 ### A7. "fresh offer while they're selling" — `arm-toxic` (built, running)
 **Say: "the toxic offer test."**
 The two "someone is selling to us" signals crossed on our own early entries:
