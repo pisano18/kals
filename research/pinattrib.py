@@ -102,6 +102,11 @@ GATE_ORDER = [
     # --fresh-tau-min s left. Runs last, at the signal point, where the age is
     # read. results/PREREG_fresh.md.
     "fresh_level",
+    # v-toxic (2026-09-24, paper arm arm-toxic, ships off): the SAME fresh
+    # level, crossed with the 3 s taker flow -- takers were net-selling our
+    # side as the level was posted. After the early-leg gates, before
+    # edge_cap. results/PREREG_toxic.md.
+    "toxic_fresh",
     # NOT hedge_wait_normal, and not any other insurance decision. They are
     # written with rec(), so their `kind` is their own name and NOT "refused"
     # -- load_log() collects only refusals, so a row for one could never hold
@@ -151,6 +156,7 @@ WHAT = {
     "price_band": "A53: the ask sat inside a skipped price band (--skip-band). Live record for 94-96c, 83 closes: +$25 on $2,970, a loss rate level with its break-even; the band held a position slot and earned nothing measurable",
     "spike": "v-nospike (2026-09-24): our-side confidence was under 0.90 one print earlier and jumped over the bar on a single index print. The BTC 8:30 PM ET loss (-$130.41): fair 0.196 -> 0.369 -> 0.999 -> 0.853 -> 0.374 across four seconds, bought 176 contracts on the middle one. Refuses the jump, not the climb: 2 of 36 markets today, 2 of 72 since the per-second log began. Entry only",
     "fresh_level": "v-fresh (2026-09-24, paper arm arm-fresh500, ships off): with more than 20 s left, the level we were about to hit had been on the book for under 500 ms (age exact). Our own fills since 09-13: 6 of the 7 remaining early losers hit a level 19-229 ms old; levels resting before we looked, 0 of 155. Money a wash on the record; the arm measures it live (PREREG_fresh.md). Entry only",
+    "toxic_fresh": "v-toxic (2026-09-24, paper arm arm-toxic, ships off): with more than 20 s left, the level we were about to hit had been on the book under 500 ms (age exact) WHILE takers had net-sold our side in the 3 s before (sold share of taker volume over 0.5). Our own fills 09-13..09-24 with both reads, 392 markets: this cell was 87 markets, 8 of the 12 early losers, -$461.81 lost, -$285.15 net -- the only cell that loses; fresh without sellers 3 of 108, resting with sellers 0 of 51. Both bars were fixed before the cross (PREREG_fresh.md, toxicity.md); PREREG_toxic.md holds the live bar. Entry only; a missing or stale trade feed reads None and the gate stands down",
     "edge_cap": "v-nospike (2026-09-24): the model beat the market by more than 10c on any leg. Our own fills above a 10c gap: 39 markets, 12.8% lose, -$150 (the BTC 8:30 PM loss was a 13c gap). Below 10c the gap IS the edge (+$490 over 463 markets), above it the market knows something the 1-second index has not printed. Entry only",
     "early_wide": "A50: the 31-45 s early leg found our model MORE than the cap above the market price. Late, that disagreement is the whole edge (6c or more made 1.44 $/bet inside 30 s); early, three quarters of the settlement window has not happened yet and the same band lost 3.01 $/bet, so out there a big edge means our volatility guess is wrong rather than the market",
     "early_dear": "A78: the 31-45 s early leg wanted an ask ABOVE the 97.5c ceiling. That leg earns 1.14c a contract against 5.63c at 6-10 s, and above 97.5c it is risking 98c to make 1.8c fifteen seconds before the information the strategy rests on arrives -- the shape of the KXBTC15M-26SEP191600-00 fill that cost $107.95",

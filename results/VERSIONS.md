@@ -1,3 +1,41 @@
+# v-tradefeed -- 2026-09-24 ~22:3xZ -- LIVE at the next restart: the bot subscribes to Kalshi's `trade` channel and LOGS `sell_share_3s` on every signal, order and priced refusal. The `toxic_fresh` gate ships OFF (paper arm `arm-toxic`). No trading rule changed.
+
+**Why.** results/PREREG_toxic.md: on our own early entries, a level posted
+under 500 ms ago WHILE takers were net-selling our side in the prior 3 s is
+where the losses live (87 markets, 8 of the 12 early losers, -$285; every
+other cell positive). The gate needs the trade feed; the bar needs the live
+bot to LOG the number first (7 days), so the feed goes live now, logging
+only.
+
+**What is always on once the bot runs this code:** livebook subscribes to
+`trade` for the watched tickers on its own subscription id, keeps 12 s of
+prints per ticker, and answers `taker_flow(tk, side, 3.0)` -> (bought, sold,
+age) or None when the newest print for that market is older than 5 s. A
+trade-channel error never marks a book suspect and never resyncs (it is
+counted and re-subscribed once per connection). Every read in pinrun is
+inside try/except that yields None. Records: `trade_feed` on connect and
+reconnect; `sell_share_3s`, `taker_n_3s`, `trade_age_s` on signals, orders
+and priced refusals. Live smoke (read-only, 3 markets, 14 s): 847 prints,
+0 gaps, 0 malformed, books never suspect, ~5% more frames than the book
+deltas. Message shape confirmed against the recorder's copy (`count_fp`,
+`yes_price_dollars`), not the docs.
+
+**The gate (off):** `--toxic-fresh` with `--toxic-min-age-ms 500
+--toxic-min-share 0.5 --toxic-tau-min 20`: refuse an entry with more than
+20 s left when the level age is exact and under 500 ms AND sell_share_3s >
+0.5. Stands down on None. Entry only, below the hedge pass, after the
+early-leg gates (source-order check). `arm-toxic` = live's argv plus the
+flag.
+
+Self-test 1,168 -> 1,188 checks green plain, under the deployed argv and
+under the arm's argv; livebook and pinattrib green; versioncheck clean.
+
+**REVERT:** `git checkout 8624461 -- research/pinrun.py research/livebook.py
+research/pinattrib.py sync_arms.ps1`, then
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
+
+---
+
 # v-daycap-brake -- 2026-09-24 ~18:1xZ -- watchdog + app: the DAY loss cap halt is now recognised as a money brake (15-min cooldown, BRAKE status); no trading rule changed
 
 Found by the 2026-09-24 guardian review: pinrun's -$200 day cap halts with

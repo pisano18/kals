@@ -51,11 +51,27 @@ import statistics
 import sys
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 WS_URL = "wss://api.elections.kalshi.com/trade-api/ws/v2"
 WS_PATH = "/trade-api/ws/v2"
 CHANNEL = "orderbook_delta"
+# v-toxic (2026-09-24, results/PREREG_toxic.md): the `trade` channel rides on
+# the SAME connection as the book, for taker flow -- what takers did to OUR
+# side in the seconds before a decision. It is ISOLATED from the book: its
+# own sid, its own lock, its own seq counter, its own stats. A gap on its
+# sid is counted and never resyncs; a refused subscribe is counted and never
+# retried blindly; a frame that cannot be parsed is counted and dropped;
+# every read returns None on any failure, and None is "no opinion".
+# Frame shape, from the recorder's own copy (kalshi_data/trade, 2026-09-24):
+#   {"type":"trade","sid":S,"seq":q,"msg":{"market_ticker","yes_price_dollars",
+#    "no_price_dollars","count_fp","taker_side":"yes"|"no","taker_outcome_side",
+#    "taker_book_side","is_block_trade","ts","ts_ms"}}
+# `taker_side` is the outcome the taker BOUGHT (toxicity.md checked it against
+# 770 of our own fills): a taker on NO is selling YES.
+TRADE_CHANNEL = "trade"
+TRADE_KEEP_S = 12.0        # seconds of taker prints kept per ticker
+TRADE_STALE_S = 5.0        # newest print older than this -> no opinion (None)
 
 log = logging.getLogger("livebook")
 
@@ -146,6 +162,16 @@ class LiveBook:
         self._resync = False
         self._watch = {}             # ticker -> [(rx_ms, top3 yes, top3 no)]
         self.connected = threading.Event()
+        # ---- v-toxic: the trade feed (see TRADE_CHANNEL above) ----------
+        self.trade_sid = None        # sid of our `trade` subscription
+        self._trade_seq = None       # last seq seen on that sid
+        self._tlock = threading.Lock()
+        self._trades = {}            # ticker -> deque of (ts_ms, taker_side, contracts)
+        self._trade_pending = []     # tickers queued for a trade subscribe
+        self._trade_prefer_update = prefer_update_subscription
+        self._trade_resub = False    # one re-subscribe per connection after a sid error
+        self._trade_events = []      # connect / refuse / error events, drained by the owner
+        self.trade_rx_ms = None      # rx_ms of the newest trade frame, any ticker
 
     def watch(self, tk, on=True, n=3):
         """Record the top-n trajectory of a ticker on every applied delta
@@ -230,6 +256,13 @@ class LiveBook:
         self.sid_seq.clear()
         self._pending_cmds.clear()
         self._resync = False
+        # v-toxic: the trade sid is per connection too; the connect subscribe
+        # below covers every wanted ticker, so nothing stays queued
+        self.trade_sid = None
+        self._trade_seq = None
+        self._trade_resub = False
+        with self._tlock:
+            self._trade_pending.clear()
         with self.lock:
             self.subscribed.clear()
             self._pending.clear()
@@ -341,6 +374,15 @@ class LiveBook:
         """Per-sid gap check over EVERY frame that carries sid+seq."""
         if sid is None or seq is None:
             return
+        if sid == self.trade_sid:
+            # v-toxic: THE TRADE SID. A gap here is a lost print -- a smaller
+            # taker count -- and nothing else: no book is marked suspect and
+            # no resync is requested. Counted so the log can say it happened.
+            prev = self._trade_seq
+            if prev is not None and seq != prev + 1:
+                self.stats["trade_seq_gaps"] += 1
+            self._trade_seq = seq
+            return
         prev = self.sid_seq.get(sid)
         if prev is not None and seq != prev + 1:
             self.stats["seq_gaps"] += 1
@@ -373,9 +415,19 @@ class LiveBook:
             self.apply_snapshot(msg, sid, seq, rx_ms)
         elif t == "orderbook_delta":
             self.apply_delta(msg, sid, seq, rx_ms)
+        elif t == "trade":
+            # v-toxic: guarded on its own -- a bad print can never reach the
+            # book's handlers or the reader thread
+            try:
+                self._on_trade(msg, rx_ms)
+            except Exception:                            # noqa: BLE001
+                self.stats["trade_exceptions"] += 1
         elif t == "subscribed":
-            if msg.get("channel") == CHANNEL:
+            ch = msg.get("channel")
+            if ch == CHANNEL:
                 self.sid = msg.get("sid")
+            elif ch == TRADE_CHANNEL:
+                self._trade_up(msg.get("sid"), rx_ms)
             self._ack(m.get("id"))
             self._keep(m, rx_ms)
         elif t == "ok":
@@ -393,16 +445,48 @@ class LiveBook:
                 self._queue_send_subscribe(tks)
             elif kind == "subscribe":
                 self.stats["subscribe_refused"] += 1
+            elif kind == "trade_update":
+                # v-toxic: update_subscription refused on the TRADE sid ->
+                # plain subscribe, as the book does for its own; the book's
+                # preference is not touched
+                self.stats["trade_update_refused"] += 1
+                self._trade_prefer_update = False
+                self._queue_trade_subscribe(tks)
+            elif kind == "trade":
+                # v-toxic: counted, not retried blindly (mirrors the book).
+                # The feed is simply absent: taker_flow() reads None.
+                self.stats["trade_subscribe_refused"] += 1
+                self._trade_event("refused", tickers=len(tks or []),
+                                  msg=str(msg)[:200])
             elif sid is not None and sid == self.sid:
                 # e.g. code 25 "Subscription buffer overflow" -- the server
                 # dropped our stream; reconnect for fresh snapshots.
                 self._resync = True
                 self._poke()
+            elif sid is not None and sid == self.trade_sid:
+                # v-toxic: the server dropped our TRADE stream. The book is
+                # not involved: NO resync. One plain re-subscribe per
+                # connection; if that fails too the feed stays quiet,
+                # taker_flow() reads stale and returns None, and the gate
+                # stands down.
+                self.stats["trade_sid_error"] += 1
+                self._trade_event("error", sid=sid, msg=str(msg)[:200])
+                if not self._trade_resub:
+                    self._trade_resub = True
+                    self._trade_prefer_update = False
+                    with self.lock:
+                        want = sorted(self.wanted)
+                    self._queue_trade_subscribe(want)
         else:
             self._keep(m, rx_ms)
 
     def _ack(self, cid):
         kind, tks = self._pending_cmds.pop(cid, (None, None))
+        if kind in ("trade", "trade_update"):
+            # v-toxic: a trade-channel ack is counted and is NOT a book
+            # subscription -- `subscribed` stays the book's own set
+            self.stats[f"ack_{kind}"] += 1
+            return
         if tks:
             with self.lock:
                 self.subscribed |= set(tks)
@@ -513,6 +597,116 @@ class LiveBook:
         with self.lock:
             return statistics.median(self.latency_ms) if self.latency_ms else None
 
+    # ---------------- v-toxic: the trade feed ----------------
+    def _on_trade(self, msg, rx_ms):
+        """One taker print. Kept per ticker for TRADE_KEEP_S seconds as
+        (ts_ms, taker_side, contracts). Never touches the book."""
+        tk = msg.get("market_ticker")
+        side = msg.get("taker_side")
+        if not tk or side not in ("yes", "no"):
+            self.stats["trade_malformed"] += 1
+            return
+        try:
+            n = msg.get("count_fp")
+            n = float(msg.get("count") if n is None else n)
+        except (TypeError, ValueError):
+            self.stats["trade_malformed"] += 1
+            return
+        if not (n > 0):
+            self.stats["trade_empty"] += 1
+            return
+        ts = None
+        try:
+            if msg.get("ts_ms") is not None:
+                ts = int(msg["ts_ms"])
+            elif msg.get("ts") is not None:
+                ts = int(float(msg["ts"]) * 1000)
+        except (TypeError, ValueError):
+            ts = None
+        if ts is None:
+            ts = int(rx_ms)
+        with self._tlock:
+            dq = self._trades.get(tk)
+            if dq is None:
+                dq = self._trades[tk] = deque()
+            dq.append((ts, side, n))
+            cutoff = ts - int(TRADE_KEEP_S * 1000)
+            while dq and dq[0][0] < cutoff:
+                dq.popleft()
+            self.trade_rx_ms = rx_ms
+            if len(self._trades) > 200:
+                # markets the owner never dropped: forget the ones that have
+                # been silent for two minutes, so this cannot grow unbounded
+                old = [k for k, d in self._trades.items()
+                       if not d or d[-1][0] < ts - 120_000]
+                for k in old:
+                    self._trades.pop(k, None)
+        self.stats["trades_applied"] += 1
+
+    def _trade_up(self, sid, rx_ms):
+        """The server acked our `trade` subscription (connect or reconnect)."""
+        self.trade_sid = sid
+        self._trade_seq = None
+        self.stats["trade_subscribed"] += 1
+        self._trade_event("subscribed", sid=sid, rx_ms=rx_ms)
+
+    def _trade_event(self, event, **kw):
+        ev = dict(kw, event=event,
+                  connects=int(self.stats.get("connects", 0)))
+        with self._tlock:
+            self._trade_events.append(ev)
+            del self._trade_events[:-50]
+
+    def pop_trade_events(self):
+        """Connect / refuse / error events since the last call, oldest
+        first, each handed over exactly once. The owner logs them."""
+        with self._tlock:
+            out = list(self._trade_events)
+            self._trade_events.clear()
+        return out
+
+    def taker_flow(self, tk, side, window_s=3.0, now=None):
+        """(bought, sold, age_s): contracts of `side` that takers BOUGHT and
+        SOLD over the last `window_s` seconds, and the age of the newest
+        print for this ticker. "Sold our side" means a taker bought the
+        OTHER side -- buying NO sells YES.
+
+        None -- no opinion -- when the feed is missing, no print for this
+        ticker falls inside the window, or the newest print is older than
+        TRADE_STALE_S (a dead stream must not read as "nobody is selling").
+        Cannot raise: any failure is None."""
+        try:
+            if side not in ("yes", "no"):
+                return None
+            now = now_ms() if now is None else now
+            now = float(now)
+            lo = now - float(window_s) * 1000.0
+            with self._tlock:
+                dq = self._trades.get(tk)
+                if not dq:
+                    return None
+                newest = max(r[0] for r in dq)
+                age_s = (now - newest) / 1000.0
+                if age_s > TRADE_STALE_S:
+                    return None
+                bought = sold = 0.0
+                for ts, ts_side, n in dq:
+                    if ts < lo:
+                        continue
+                    if ts_side == side:
+                        bought += n
+                    else:
+                        sold += n
+            if bought + sold <= 0:
+                return None
+            return (round(bought, 2), round(sold, 2), round(age_s, 3))
+        except Exception:                                # noqa: BLE001
+            try:
+                self.stats["taker_flow_errors"] += 1
+            except Exception:                            # noqa: BLE001
+                pass
+            return None
+
     # ---------------- subscription control (thread-safe) ----------------
     def start(self, tickers=()):
         with self.lock:
@@ -534,6 +728,8 @@ class LiveBook:
         with self.lock:
             self.wanted |= set(new)
             self._pending.extend(new)
+        with self._tlock:
+            self._trade_pending.extend(new)      # v-toxic: the same tickers
         self._poke()
 
     def drop(self, tickers):
@@ -548,6 +744,9 @@ class LiveBook:
                 self.books.pop(tk, None)
                 self.meta.pop(tk, None)
                 self._watch.pop(tk, None)
+        with self._tlock:
+            for tk in tickers:
+                self._trades.pop(tk, None)       # v-toxic
 
     def resync(self):
         """Force a reconnect (fresh snapshots for every wanted ticker)."""
@@ -616,6 +815,42 @@ class LiveBook:
         else:
             await self._send_subscribe(ws, tks)
 
+    # ---- v-toxic: the trade channel's own commands, mirrors of the above --
+    def _queue_trade_subscribe(self, tks):
+        with self._tlock:
+            self._trade_pending.extend(tks or [])
+        self._poke()
+
+    async def _send_trade_subscribe(self, ws, tks):
+        cid = self._next_id()
+        cmd = {"id": cid, "cmd": "subscribe",
+               "params": {"channels": [TRADE_CHANNEL],
+                          "market_tickers": sorted(tks)}}
+        self._pending_cmds[cid] = ("trade", list(tks))
+        await ws.send(json.dumps(cmd))
+        self.stats["sent_trade_subscribe"] += 1
+        return cmd
+
+    async def _send_trade_update(self, ws, tks):
+        cid = self._next_id()
+        cmd = {"id": cid, "cmd": "update_subscription",
+               "params": {"sids": [self.trade_sid],
+                          "market_tickers": sorted(tks),
+                          "action": "add_markets"}}
+        self._pending_cmds[cid] = ("trade_update", list(tks))
+        await ws.send(json.dumps(cmd))
+        self.stats["sent_trade_update"] += 1
+        return cmd
+
+    async def _add_trades(self, ws, tks):
+        tks = [t for t in tks if t]
+        if not tks:
+            return
+        if self.trade_sid is not None and self._trade_prefer_update:
+            await self._send_trade_update(ws, tks)
+        else:
+            await self._send_trade_subscribe(ws, tks)
+
     async def _run(self):
         self._loop = asyncio.get_running_loop()
         self._wake = asyncio.Event()
@@ -643,6 +878,13 @@ class LiveBook:
                     want = self._on_connect()
                     if want:
                         await self._send_subscribe(ws, want)
+                        # v-toxic: the trade feed, its own command, AFTER
+                        # the book's has gone out; a failure here is counted
+                        # and the book is already subscribed
+                        try:
+                            await self._send_trade_subscribe(ws, want)
+                        except Exception:                # noqa: BLE001
+                            self.stats["trade_send_errors"] += 1
                     self.connected.set()
                     reader = asyncio.create_task(self._reader(ws))
                     try:
@@ -657,6 +899,15 @@ class LiveBook:
                                 self._pending.clear()
                             if pend:
                                 await self._add(ws, pend)
+                            # v-toxic: the trade feed's queue, guarded
+                            with self._tlock:
+                                tpend = list(dict.fromkeys(self._trade_pending))
+                                self._trade_pending.clear()
+                            if tpend:
+                                try:
+                                    await self._add_trades(ws, tpend)
+                                except Exception:        # noqa: BLE001
+                                    self.stats["trade_send_errors"] += 1
                             if self._resync:
                                 log.warning("resync requested -- reconnecting "
                                             "for fresh snapshots")
@@ -967,6 +1218,46 @@ def selftest():
         "NOPE", "yes", 0.5) == (None, False), \
         "an unknown ticker is (None, False) -- unknown, never 0"
     print("  age: an unseen ticker reads unknown, not zero  ok")
+
+    # ---- v-toxic: the trade channel, isolated from the book -------------
+    TT = "KXTOX15M-00"
+    lb3 = LiveBook(key_id="x", key_file="x")
+    lb3.on_frame(f({"type": "subscribed", "id": 1,
+                    "msg": {"channel": "orderbook_delta", "sid": 1}}), 1000)
+    lb3.on_frame(f({"type": "orderbook_snapshot", "sid": 1, "seq": 1,
+                    "msg": {"market_ticker": TT,
+                            "yes_dollars_fp": [["0.9000", "10.00"]],
+                            "no_dollars_fp": []}}), 1001)
+    lb3.on_frame(f({"type": "subscribed", "id": 2,
+                    "msg": {"channel": "trade", "sid": 2}}), 1002)
+    assert lb3.trade_sid == 2 and lb3.sid == 1 and TT in lb3.subscribed
+
+    def tr(seq, ts, side, n):
+        return f({"type": "trade", "sid": 2, "seq": seq,
+                  "msg": {"market_ticker": TT, "yes_price_dollars": "0.9000",
+                          "no_price_dollars": "0.1000", "count_fp": "%.2f" % n,
+                          "taker_side": side, "ts": ts // 1000, "ts_ms": ts}})
+    lb3.on_frame(tr(1, 10_000, "yes", 5.0), 10_010)
+    lb3.on_frame(tr(2, 11_000, "no", 3.0), 11_010)
+    lb3.on_frame(tr(5, 12_500, "yes", 2.0), 12_510)          # seq 3, 4 lost
+    assert lb3.taker_flow(TT, "yes", 3.0, now=12_600) == (7.0, 3.0, 0.1)
+    assert lb3.taker_flow(TT, "no", 3.0, now=12_600) == (3.0, 7.0, 0.1)
+    assert lb3.taker_flow(TT, "yes", 7.0, now=17_400) == (2.0, 3.0, 4.9)
+    assert lb3.taker_flow(TT, "yes", 7.0, now=17_600) is None, "stale (5.1 s)"
+    assert lb3.taker_flow(TT, "yes", 3.0, now=16_000) is None, "empty window"
+    assert lb3.taker_flow("KXNOPE", "yes", 3.0, now=12_600) is None
+    assert lb3.stats["trade_seq_gaps"] == 1 and lb3._resync is False
+    assert lb3.best(TT)["suspect"] is False and lb3.best(TT)["yes_bid"] == 0.90
+    lb3.on_frame(f({"type": "error", "sid": 2, "seq": 6,
+                    "msg": {"code": 25, "msg": "overflow"}}), 12_700)
+    assert lb3._resync is False and lb3.stats["trade_sid_error"] == 1
+    ev = lb3.pop_trade_events()
+    assert [e["event"] for e in ev] == ["subscribed", "error"], ev
+    assert lb3.pop_trade_events() == []
+    lb3.drop([TT])
+    assert lb3.taker_flow(TT, "yes", 3.0, now=12_600) is None
+    print("  trade: taker flow by side over a window, stale/empty read None; "
+          "a seq gap or an error on the trade sid never touches the book  ok")
 
     print("SELF-TEST PASSED")
     return 0

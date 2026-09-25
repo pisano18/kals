@@ -157,7 +157,13 @@ $arms = @(
   # 2026-09-24 08:xxZ (results/PREREG_fresh.md): with more than 20 s left, refuse a
   # level posted under 500 ms ago. Live = this arm + the fresh entries, so the
   # refused set's real outcomes are live's own fills. Bar: 7 days, then armh2h2.
-  @{ n="arm-fresh500";      drop=@();                    add=@("--fresh-min-age-ms","500","--fresh-tau-min","20") }
+  @{ n="arm-fresh500";      drop=@();                    add=@("--fresh-min-age-ms","500","--fresh-tau-min","20") },
+  # 2026-09-24 17:xxZ (results/PREREG_toxic.md): with more than 20 s left, refuse a
+  # level posted under 500 ms ago WHILE takers net-sold our side in the last 3 s
+  # (sell share > 0.5). The AND cell was 8 of 12 early losers on our own fills.
+  # Live = this arm + the refused set; the share is logged on live either way.
+  # Bar: 7 days of live logging sell_share_3s, then armh2h2 on the same closes.
+  @{ n="arm-toxic";         drop=@();                    add=@("--toxic-fresh") }
 )
 if ($Only) { $arms = @($arms | Where-Object { $_.n -like "*$Only*" }) }
 

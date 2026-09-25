@@ -2008,6 +2008,29 @@ FRESH_MIN_AGE_MS = 0           # --fresh-min-age-ms; 0 = off (the shipped value)
 _DEFAULT_FRESH_MIN_AGE_MS = 0
 FRESH_TAU_MIN = 20             # --fresh-tau-min; the gate stands down at or under this
 _DEFAULT_FRESH_TAU_MIN = 20
+# v-toxic (2026-09-24, PAPER ARM arm-toxic, ships OFF): FRESH *and* SELLING.
+# results/PREREG_toxic.md: on our own fills 09-13..09-24 with more than 20 s
+# left (392 markets with both reads), a level under 500 ms old hit WHILE
+# takers had net-sold our side in the previous 3 s (sell share > 0.5) was
+# 87 markets, 8 of the 12 early losers, -$461.81 lost, -$285.15 net -- the
+# only cell that loses money. Fresh without sellers 3 of 108; a resting
+# offer with sellers around it 0 of 51; neither 1 of 146. Both thresholds
+# were fixed separately BEFORE the cross (500 ms in PREREG_fresh.md, 0.5 in
+# toxicity.md). Entry only, below the hedge pass, never inside 20 s, never
+# on a lower-bound age, never on a None share (no trade feed, no prints, or
+# a feed older than livebook.TRADE_STALE_S): the gate stands down.
+# The share itself -- sell_share_3s -- is LOGGED on every signal, order and
+# priced refusal whether or not the flag is on; that is the record the bar
+# is read from.
+TOXIC_FRESH = False            # --toxic-fresh; the shipped value is OFF
+_DEFAULT_TOXIC_FRESH = False
+TOXIC_MIN_AGE_MS = 500         # --toxic-min-age-ms; an EXACT level age under this
+_DEFAULT_TOXIC_MIN_AGE_MS = 500
+TOXIC_MIN_SHARE = 0.5          # --toxic-min-share; sold share of our side ABOVE this
+_DEFAULT_TOXIC_MIN_SHARE = 0.5
+TOXIC_TAU_MIN = 20             # --toxic-tau-min; the gate stands down at or under this
+_DEFAULT_TOXIC_TAU_MIN = 20
+TAKER_WINDOW_S = 3.0           # the logged taker-flow window (sell_share_3s); not a flag
 # v-cap20 (2026-09-24): the cap applies only with MORE than this many seconds
 # left. Per-second rebuild of all 820 entered markets against the ticker
 # tape: a >10c gap with <=20 s left was 19 markets, 1 loser (-$2.12, a 10c
@@ -2092,6 +2115,48 @@ def fresh_level_block(age_ms, exact, tau, min_age_ms=None, tau_min=None):
         if float(tau) <= float(tau_min):
             return False
         return float(age_ms) < float(min_age_ms)
+    except (TypeError, ValueError):
+        return False
+
+
+def taker_share(flow):
+    """(sell_share, taker_n, age_s) from a LiveBook.taker_flow() triple
+    (bought, sold, age_s) of OUR side, or (None, None, None). The share is
+    sold / (bought + sold) -- the measure in results/cf_2026-09-24/
+    toxicity.md; None when nothing traded. Cannot raise."""
+    try:
+        if flow is None:
+            return None, None, None
+        bought, sold, age = flow
+        bought, sold = float(bought), float(sold)
+        tot = bought + sold
+        age = None if age is None else round(float(age), 3)
+        if tot <= 0:
+            return None, round(tot, 2), age
+        return round(sold / tot, 4), round(tot, 2), age
+    except (TypeError, ValueError):
+        return None, None, None
+
+
+def toxic_fresh_block(age_ms, exact, sell_share, tau, min_age_ms=None,
+                      min_share=None, tau_min=None, on=None):
+    """True only when ALL of: the flag is on; the level's age is EXACT and
+    under `min_age_ms`; `sell_share` is known and ABOVE `min_share`; MORE
+    than `tau_min` seconds remain. A None share (no trade feed, no prints,
+    or a stale feed), a lower-bound age, a None input or garbage never
+    blocks. results/PREREG_toxic.md holds the bar."""
+    on = TOXIC_FRESH if on is None else on
+    min_age_ms = TOXIC_MIN_AGE_MS if min_age_ms is None else min_age_ms
+    min_share = TOXIC_MIN_SHARE if min_share is None else min_share
+    tau_min = TOXIC_TAU_MIN if tau_min is None else tau_min
+    try:
+        if (not on or not exact or age_ms is None or sell_share is None
+                or tau is None):
+            return False
+        if float(tau) <= float(tau_min):
+            return False
+        return (float(age_ms) < float(min_age_ms)
+                and float(sell_share) > float(min_share))
     except (TypeError, ValueError):
         return False
 
@@ -4356,7 +4421,9 @@ _OFFLINE_PINNED_FLAGS = (
     "MIN_FILL_FRAC", "ONE_COIN_DEPTH", "ONE_COIN_MAX", "PICK", "PIN",
     "PRICE_CEILING", "REBUY_HEDGED", "REBUY_LATE_FRAC", "REBUY_LATE_TAU", "REBUY_MAX_MULT", "SERIES_SIZE", "SIGMA_RULER",
     "SIGMA_STRESS", "SIZE_MIRROR_ON", "SKIP_BANDS", "SWEEP_DEPTH",
-    "SWEEP_ENABLED", "TAPER", "TAPER_FLOOR", "WIDEN_ENABLED")
+    "SWEEP_ENABLED", "TAPER", "TAPER_FLOOR",
+    "TOXIC_FRESH", "TOXIC_MIN_AGE_MS", "TOXIC_MIN_SHARE", "TOXIC_TAU_MIN",
+    "WIDEN_ENABLED")
 
 
 def _offline_trade_loop(markets, live=False, take=None, reply=None,
@@ -4535,6 +4602,17 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
                 if m["tk"] == tk and "level_age" in m:
                     return tuple(m["level_age"])
             return None, False
+
+        def taker_flow(self, tk, side, window_s=3.0):
+            # v-toxic: a market may plant (bought, sold, age_s) of OUR side;
+            # unplanted reads None, which is "no opinion" live as well
+            for m in markets:
+                if m["tk"] == tk and "taker_flow" in m:
+                    return tuple(m["taker_flow"])
+            return None
+
+        def pop_trade_events(self):
+            return []
 
         def depth(self, tk, side, n=3):
             return []
@@ -9435,13 +9513,23 @@ def _selftest_body():
            "at the complementary price, not at the price we pay")
         # v-fresh (2026-09-24): the ONE permitted branch is fresh_level_block,
         # behind a flag that ships off, and its bar was written first.
+        # v-toxic (2026-09-24): the SECOND, toxic_fresh_block -- the same age
+        # crossed with the 3 s taker flow -- behind its own flag that ships
+        # off, with its own bar written first (results/PREREG_toxic.md).
         ck("fresh_level_block(_lvl_age, _lvl_exact, tau)" in _lb2
            and _DEFAULT_FRESH_MIN_AGE_MS == 0
            and os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                            "..", "results", "PREREG_fresh.md")),
-           "the quote age is branched on ONLY through fresh_level_block, the "
-           "flag ships OFF, and results/PREREG_fresh.md (the pre-registered "
-           "bar) exists")
+           "the quote age is branched on ONLY through fresh_level_block and "
+           "toxic_fresh_block, the fresh flag ships OFF, and "
+           "results/PREREG_fresh.md (the pre-registered bar) exists")
+        ck("toxic_fresh_block(_lvl_age, _lvl_exact, _ss3, tau)" in _lb2
+           and _lb2.count("toxic_fresh_block(") == 1
+           and _DEFAULT_TOXIC_FRESH is False
+           and os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                           "..", "results", "PREREG_toxic.md")),
+           "...and the toxic branch is the ONE other place, its flag ships "
+           "OFF, and results/PREREG_toxic.md (its pre-registered bar) exists")
         for _bad in ("if _lvl_age", "_lvl_age <", "_lvl_age >",
                      "_lvl_age is not None and"):
             ck(_bad not in _lb2,
@@ -10962,6 +11050,201 @@ def _selftest_body():
     ck(0 < _fsrc.find("hedge_quote") < _fsrc.find('_gate("fresh_level"')
        and "fresh_level_block(" not in _fsrc[:_fsrc.find("hedge_quote")],
        "and by source: no fresh_level call exists above the hedge pass")
+
+    # ---- v-toxic (2026-09-24): PREREG_toxic.md -- FRESH *and* SELLING -----
+    ck(_DEFAULT_TOXIC_FRESH is False and _DEFAULT_TOXIC_MIN_AGE_MS == 500
+       and abs(_DEFAULT_TOXIC_MIN_SHARE - 0.5) < 1e-12
+       and _DEFAULT_TOXIC_TAU_MIN == 20 and TAKER_WINDOW_S == 3.0,
+       "v-toxic: the DECLARED default is OFF; 500 ms, share 0.5, standing "
+       "down at 20 s; the logged window is 3 s")
+
+    def _tx(*a_, **k_):
+        return toxic_fresh_block(*a_, min_age_ms=500, min_share=0.5,
+                                 tau_min=20, **k_)
+    ck(_tx(120, True, 0.8, 27, on=True) is True
+       and _tx(499, True, 0.51, 21, on=True) is True
+       and _tx(600, True, 0.8, 27, on=True) is False       # resting
+       and _tx(500, True, 0.8, 27, on=True) is False       # age AT the bar
+       and _tx(120, True, 0.5, 27, on=True) is False       # share AT the bar
+       and _tx(120, True, 0.2, 27, on=True) is False       # buyers
+       and _tx(120, True, 0.8, 20, on=True) is False       # 20 s: stands down
+       and _tx(120, True, 0.8, 8, on=True) is False
+       and _tx(120, False, 0.8, 27, on=True) is False      # lower-bound age
+       and _tx(120, True, None, 27, on=True) is False      # no opinion
+       and _tx(None, True, 0.8, 27, on=True) is False
+       and _tx(120, True, 0.8, None, on=True) is False
+       and _tx("x", True, 0.8, 27, on=True) is False
+       and _tx(120, True, 0.8, 27, on=False) is False,     # flag OFF
+       "v-toxic pure: refuses ONLY fresh (exact, under 500 ms) AND sold "
+       "(share over 0.5) AND more than 20 s left; a lower-bound age, a None "
+       "share, None inputs, garbage, a value AT either bar and the flag OFF "
+       "never block")
+    ck(taker_share((2.0, 8.0, 0.4)) == (0.8, 10.0, 0.4)
+       and taker_share((8.0, 2.0, 0.4)) == (0.2, 10.0, 0.4)
+       and taker_share(None) == (None, None, None)
+       and taker_share((0.0, 0.0, 0.1)) == (None, 0.0, 0.1)
+       and taker_share(("x", 1, 1)) == (None, None, None),
+       "v-toxic pure: sell share = sold / (bought + sold) of OUR side, the "
+       "toxicity.md measure; nothing traded or garbage reads None")
+
+    # taker_flow: a PLANTED trade list through livebook's real frame handler
+    _tlb = livebook.LiveBook(key_id="x", key_file="x")
+    _T = "KXTOX15M-T1"
+    _jf = json.dumps
+    _tlb.on_frame(_jf({"type": "subscribed", "id": 1,
+                       "msg": {"channel": "orderbook_delta", "sid": 7}}), 1000)
+    _tlb.on_frame(_jf({"type": "orderbook_snapshot", "sid": 7, "seq": 1,
+                       "msg": {"market_ticker": _T,
+                               "yes_dollars_fp": [["0.9400", "50.00"]],
+                               "no_dollars_fp": [["0.0500", "50.00"]]}}), 1001)
+    _tlb.on_frame(_jf({"type": "subscribed", "id": 2,
+                       "msg": {"channel": "trade", "sid": 9}}), 1002)
+    ck(_tlb.trade_sid == 9 and _tlb.sid == 7 and _T in _tlb.subscribed
+       and _tlb.best(_T)["yes_bid"] == 0.94,
+       "taker_flow: the trade ack lands on its OWN sid (9) and leaves the "
+       "book's sid (7), its subscriptions and its levels untouched")
+
+    def _tr(seq, ts, side, n, tk=_T):
+        return _jf({"type": "trade", "sid": 9, "seq": seq,
+                    "msg": {"market_ticker": tk, "yes_price_dollars": "0.9400",
+                            "no_price_dollars": "0.0600",
+                            "count_fp": "%.2f" % n, "taker_side": side,
+                            "ts": ts // 1000, "ts_ms": ts}})
+    _tlb.on_frame(_tr(1, 8_000, "no", 100.0), 8_010)     # outside the 3 s windows
+    _tlb.on_frame(_tr(2, 10_000, "yes", 5.0), 10_010)
+    _tlb.on_frame(_tr(3, 11_000, "no", 3.0), 11_010)
+    _tlb.on_frame(_tr(4, 12_500, "yes", 2.0), 12_510)
+    ck(_tlb.taker_flow(_T, "yes", 3.0, now=12_600) == (7.0, 3.0, 0.1)
+       and _tlb.taker_flow(_T, "no", 3.0, now=12_600) == (3.0, 7.0, 0.1),
+       "taker_flow: over the last 3 s takers BOUGHT 7 YES (two prints) and "
+       "SOLD 3 (one NO print -- buying NO sells YES); the NO side reads the "
+       "mirror; the newest print is 0.1 s old")
+    ck(_tlb.taker_flow(_T, "yes", 3.0, now=13_000) == (7.0, 3.0, 0.5)
+       and _tlb.taker_flow(_T, "yes", 3.0, now=13_001) == (2.0, 3.0, 0.501),
+       "taker_flow: the window edge is inclusive -- the 10.000 s print is in "
+       "at now=13.000 and out at 13.001")
+    ck(_tlb.taker_flow(_T, "yes", 7.0, now=17_400) == (2.0, 3.0, 4.9)
+       and _tlb.taker_flow(_T, "yes", 7.0, now=17_600) is None,
+       "taker_flow: a newest print 4.9 s old still answers; 5.1 s old is a "
+       "STALE feed and reads None even with prints inside the window")
+    ck(_tlb.taker_flow(_T, "yes", 3.0, now=16_000) is None
+       and _tlb.taker_flow("KXNOPE", "yes", 3.0, now=12_600) is None
+       and _tlb.taker_flow(_T, "bogus", 3.0, now=12_600) is None
+       and _tlb.taker_flow(_T, "yes", 3.0, now="x") is None,
+       "taker_flow: an EMPTY window, an unseen ticker, a bad side and a bad "
+       "clock all read None -- never a share")
+    _tlb.on_frame(_tr(5, 12_800, "yes", 1.0).replace('"taker_side": "yes"',
+                                                      '"taker_side": "up"'), 12_810)
+    _tlb.on_frame(_jf({"type": "trade", "sid": 9, "seq": 6,
+                       "msg": {"market_ticker": _T, "taker_side": "yes",
+                               "count_fp": "abc", "ts_ms": 12_900}}), 12_910)
+    _tlb.on_frame(_tr(9, 12_950, "no", 1.0), 12_960)     # seq 7 and 8 lost
+    ck(_tlb.stats["trade_malformed"] == 2 and _tlb.stats["trade_seq_gaps"] == 1
+       and _tlb._resync is False and _tlb.best(_T)["suspect"] is False
+       and _tlb.taker_flow(_T, "yes", 3.0, now=13_000) == (7.0, 4.0, 0.05),
+       "taker_flow: a bad side and a bad count are counted and dropped; a "
+       "SEQ GAP on the trade sid is counted and does NOT resync or suspect "
+       "the book")
+    _tlb.on_frame(_jf({"type": "error", "sid": 9, "seq": 10,
+                       "msg": {"code": 25, "msg": "Subscription buffer overflow"}}),
+                  13_000)
+    ck(_tlb._resync is False and _tlb.stats["trade_sid_error"] == 1
+       and _tlb.trade_sid == 9 and _tlb.best(_T)["suspect"] is False,
+       "taker_flow: an ERROR frame on the trade sid never resyncs the book")
+    _tev = _tlb.pop_trade_events()
+    ck(len(_tev) == 2 and _tev[0]["event"] == "subscribed" and _tev[0]["sid"] == 9
+       and _tev[1]["event"] == "error" and _tlb.pop_trade_events() == [],
+       "taker_flow: the connect ack and the error are handed to the owner "
+       "ONCE each as trade_feed events, then the queue is empty")
+    _tlb.drop([_T])
+    ck(_tlb.taker_flow(_T, "yes", 3.0, now=13_000) is None,
+       "taker_flow: drop() forgets the market's prints")
+
+    # DRIVEN, through the real loop: the harness book plants the level age
+    # AND the taker flow of our side
+    def _tx_m(**kw):
+        return dict(_spk_mkt(15, lambda t: 0.999), **kw)
+    _tx_on = _offline_trade_loop([_tx_m(level_age=(120, True),
+                                        taker_flow=(2.0, 8.0, 0.4))],
+                                 run_s=4.0, tau0=27, flags={"TOXIC_FRESH": True})
+    _tx_ref = _refusals(_tx_on, "toxic_fresh")
+    ck(_tx_on["raised"] is None and not _kinds(_tx_on, "signal")
+       and len(_tx_ref) >= 1 and _tx_ref[0].get("level_age_ms") == 120
+       and _tx_ref[0].get("sell_share_3s") == 0.8
+       and _tx_ref[0].get("taker_n_3s") == 10.0
+       and _tx_ref[0].get("trade_age_s") == 0.4
+       and _tx_ref[0].get("min_age_ms") == 500
+       and _tx_ref[0].get("min_share") == 0.5 and _tx_ref[0].get("tau_min") == 20
+       and _tx_ref[0].get("want") == "yes" and _tx_ref[0].get("price") is not None
+       and _tx_ref[0].get("fair") is not None and _tx_ref[0].get("size") is not None
+       and _tx_ref[0].get("tau") is not None,
+       "v-toxic DRIVEN: a 120 ms level at 27 s with sell share 0.8 is refused "
+       "as toxic_fresh naming the age, the share, the count, the bars, price, "
+       "fair, want and size (refusals %d, signals %d)"
+       % (len(_tx_ref), len(_kinds(_tx_on, "signal"))))
+    _tx_buy = _offline_trade_loop([_tx_m(level_age=(120, True),
+                                         taker_flow=(8.0, 2.0, 0.4))],
+                                  run_s=4.0, tau0=27, flags={"TOXIC_FRESH": True})
+    _tx_old = _offline_trade_loop([_tx_m(level_age=(3000, True),
+                                         taker_flow=(2.0, 8.0, 0.4))],
+                                  run_s=4.0, tau0=27, flags={"TOXIC_FRESH": True})
+    _tx_late = _offline_trade_loop([_tx_m(level_age=(120, True),
+                                          taker_flow=(2.0, 8.0, 0.4))],
+                                   run_s=4.0, tau0=18, flags={"TOXIC_FRESH": True})
+    _tx_none = _offline_trade_loop([_tx_m(level_age=(120, True))],
+                                   run_s=4.0, tau0=27, flags={"TOXIC_FRESH": True})
+    _tx_lb = _offline_trade_loop([_tx_m(level_age=(120, False),
+                                        taker_flow=(2.0, 8.0, 0.4))],
+                                 run_s=4.0, tau0=27, flags={"TOXIC_FRESH": True})
+    _tx_off = _offline_trade_loop([_tx_m(level_age=(120, True),
+                                         taker_flow=(2.0, 8.0, 0.4))],
+                                  run_s=4.0, tau0=27)
+    ck(all(w["raised"] is None and len(_kinds(w, "signal")) >= 1
+           and not _refusals(w, "toxic_fresh")
+           for w in (_tx_buy, _tx_old, _tx_late, _tx_none, _tx_lb, _tx_off)),
+       "v-toxic NULL DRIVEN: bought when the share is 0.2; when the level is "
+       "3 s old; at 18 s left; with NO trade feed (None); on a lower-bound "
+       "age; and with the flag OFF (the shipped bot)")
+    ck(_kinds(_tx_buy, "signal")[0].get("sell_share_3s") == 0.2
+       and _kinds(_tx_buy, "signal")[0].get("taker_n_3s") == 10.0
+       and _kinds(_tx_buy, "signal")[0].get("trade_age_s") == 0.4
+       and _kinds(_tx_off, "signal")[0].get("sell_share_3s") == 0.8
+       and "sell_share_3s" in _kinds(_tx_none, "signal")[0]
+       and _kinds(_tx_none, "signal")[0].get("sell_share_3s") is None,
+       "v-toxic LOGGING: every signal carries sell_share_3s / taker_n_3s / "
+       "trade_age_s -- 0.2 when bought, 0.8 with the flag OFF, None with no "
+       "feed")
+    ck("sell_share_3s" in _fr_ref[0] and _fr_ref[0].get("sell_share_3s") is None
+       and "taker_n_3s" in _fr_ref[0],
+       "v-toxic LOGGING: a refusal that names a price (fresh_level here) "
+       "carries sell_share_3s too, None when the feed has no opinion")
+    _tx_live = _offline_trade_loop([_tx_m(level_age=(120, True),
+                                          taker_flow=(8.0, 2.0, 0.4))],
+                                   live=True, run_s=4.0, tau0=27,
+                                   flags={"TOXIC_FRESH": True})
+    ck(_tx_live["raised"] is None and len(_kinds(_tx_live, "order")) >= 1
+       and _kinds(_tx_live, "order")[0].get("sell_share_3s") == 0.2
+       and _kinds(_tx_live, "order")[0].get("taker_n_3s") == 10.0
+       and _kinds(_tx_live, "order")[0].get("trade_age_s") == 0.4,
+       "v-toxic LOGGING: the ORDER record carries the same three fields "
+       "(orders %d)" % len(_kinds(_tx_live, "order")))
+    _tx_hg = _offline_trade_loop([dict(_k1_A(), level_age=(3000, True),
+                                       taker_flow=(0.0, 50.0, 0.1))],
+                                 flags={"TOXIC_FRESH": True})
+    ck(_tx_hg["raised"] is None and abs(_hedged(_tx_hg, _kA) - 5.0) < 1e-9,
+       "v-toxic: with the gate ON and everyone selling our side, a "
+       "collapsing position is still hedged (%g) -- the gate lives in the "
+       "entry scan" % _hedged(_tx_hg, _kA))
+    _txsrc = inspect.getsource(trade_loop)
+    ck("toxic_fresh_block(" not in _txsrc[:_txsrc.find("hedge_quote")]
+       and 0 < _txsrc.find("hedge_quote") < _txsrc.find('_gate("toxic_fresh"')
+       and _txsrc.find('_gate("staged_none"') < _txsrc.find('_gate("toxic_fresh"')
+       and _txsrc.find('_gate("toxic_fresh"') < _txsrc.find('_gate("edge_cap"')
+       and _txsrc.find('_gate("toxic_fresh"') < _txsrc.find('rec("signal", live=live, **sig)')
+       and _txsrc.count("toxic_fresh_block(") == 1,
+       "and by source: the ONE toxic_fresh call sits below the hedge pass, "
+       "AFTER the staged_none gate (an insert above the early gates "
+       "re-parents them) and before edge_cap and the signal record")
     _la_hg = _offline_trade_loop([_k1_A()], flags={"REBUY_LATE_TAU": 15})
     ck(_la_hg["raised"] is None and abs(_hedged(_la_hg, _kA) - 5.0) < 1e-9,
        "v-lateadd: with the flag ON a collapsing position is still hedged "
@@ -13625,6 +13908,17 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
         except Exception:                                # noqa: BLE001
             return None
 
+    def _flow_of(tk_, want_):
+        """v-toxic: (sell_share_3s, taker_n_3s, trade_age_s) for OUR side
+        from the trade feed -- what takers did to it in the last 3 s. Feeds
+        the records and the one gate; on ANY failure (no feed, no method,
+        no prints, a stale feed) it is (None, None, None), on which the gate
+        stands down. Cannot raise."""
+        try:
+            return taker_share(book.taker_flow(tk_, want_, TAKER_WINDOW_S))
+        except Exception:                                # noqa: BLE001
+            return None, None, None
+
     def _gate(name, close_s_, tk_, **detail):
         """Record that `name` refused this market, once per close."""
         nbg = near.setdefault(close_s_, _fresh_near())
@@ -13655,6 +13949,14 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
         if "budget_left" not in detail:
             detail["budget_left"] = _budget_left(close_s_, tk_,
                                                  detail.get("tau"))
+        # v-toxic: a refusal that names a price also says what takers were
+        # doing to our side in the 3 s before it. Logging only; a gate's
+        # own values win. Computed after the dedupe, so once per record.
+        if "price" in detail and "sell_share_3s" not in detail:
+            _ss_g, _tn_g, _ta_g = _flow_of(tk_, detail.get("want"))
+            detail["sell_share_3s"] = _ss_g
+            detail["taker_n_3s"] = _tn_g
+            detail["trade_age_s"] = _ta_g
         # SIZE travels with every record. Without it the reader cannot say how
         # many contracts the refusal was worth, and SIZE moves with the bank
         # (AMENDMENT 16) -- it was 20 at 17:51Z and 50 by 21:18Z the same day,
@@ -14081,6 +14383,14 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
             if state["report_errors"] <= 3:
                 rec("error", where="report_closes", err=str(_e71)[:300])
                 print(f"  report_closes failed (stepping over it): {_e71}")
+        # v-toxic: the trade feed's connect / refuse / error events, one
+        # `trade_feed` record each (once at connect and on every reconnect).
+        # Read-only, guarded, no `continue`, decides nothing.
+        try:
+            for _tev in (book.pop_trade_events() or []):
+                rec("trade_feed", **_tev)
+        except Exception:                                # noqa: BLE001
+            pass
         try:
             reconcile()
             state["reconcile_fail_streak"] = 0
@@ -16157,6 +16467,12 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         tk, _lvl_side, round(1.0 - price, 4))
                 except Exception:
                     _lvl_age, _lvl_exact = None, False
+                # v-toxic: what takers did to OUR side in the 3 s before this
+                # decision (the trade channel). Logged on every signal, order
+                # and priced refusal; branched on ONLY through
+                # toxic_fresh_block below, behind a flag that ships OFF
+                # (results/PREREG_toxic.md). (None, None, None) on any failure.
+                _ss3, _tn3, _ta3 = _flow_of(tk, want)
                 # v-fresh: the one branch on the quote age, behind a flag that
                 # ships OFF, with its bar written first (results/PREREG_fresh.md).
                 if fresh_level_block(_lvl_age, _lvl_exact, tau):
@@ -16167,6 +16483,7 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     continue
                 sig = dict(ticker=tk, want=want, price=round(price, 4),
                            level_age_ms=_lvl_age, level_age_exact=_lvl_exact,
+                           sell_share_3s=_ss3, taker_n_3s=_tn3, trade_age_s=_ta3,
                            fair=round(f, 5), tau=tau, edge_c=round(100 * e, 3),
                            size=size, take_n=take_n, strike=strike, digits=digits,
                            spot=spot, sigma=round(sg, 6), book_age_ms=b["age_ms"],
@@ -16356,6 +16673,22 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     _leg46 = "late_add"
                     _have_la_cap = _have_la
                     sig["take_n"] = take_n
+                # v-toxic (2026-09-24, results/PREREG_toxic.md): a level posted
+                # under TOXIC_MIN_AGE_MS ago WHILE takers net-sold our side in
+                # the last 3 s, with more than TOXIC_TAU_MIN s left. Entry
+                # only, below the hedge pass. HERE and not above the early-leg
+                # gates: an insert between `sig["take_n"]` and them re-parents
+                # them (2026-09-24, twice), which the driven early-floor check
+                # catches. A None share never blocks; the flag ships OFF.
+                if toxic_fresh_block(_lvl_age, _lvl_exact, _ss3, tau):
+                    _gate("toxic_fresh", close_s, tk, leg=_leg46, tau=tau,
+                          price=round(price, 4), fair=round(f, 5), want=want,
+                          level_age_ms=_lvl_age, sell_share_3s=_ss3,
+                          taker_n_3s=_tn3, trade_age_s=_ta3,
+                          min_age_ms=TOXIC_MIN_AGE_MS,
+                          min_share=TOXIC_MIN_SHARE, tau_min=TOXIC_TAU_MIN,
+                          size=float(take_n or SIZE))
+                    continue
                 # v-nospike: too good to be true, on EVERY leg. A50 capped the
                 # 45 s leg at --early-max-edge and left the main window open
                 # because wide late edges had paid; the record above 10c says
@@ -17021,6 +17354,9 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                                 # (5) ms epoch: every gate passed / order sent
                                 t_ms_decide=_t_decide_ms,
                                 t_ms_send=int(round(_t0 * 1000.0)),
+                                # v-toxic: the taker flow the decision saw
+                                sell_share_3s=_ss3, taker_n_3s=_tn3,
+                                trade_age_s=_ta3,
                                 **{k: v for k, v in out.items() if k != "raw"})
                         except Exception as _ek1o:           # noqa: BLE001
                             # The ORDER did not fail; its record did. Not an
@@ -17038,7 +17374,9 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                                     client_order_id=out.get("client_order_id"),
                                     filled=filled, exec_price=out.get("exec_price"),
                                     fee=out.get("fee"),
-                                    refused=out.get("refused"))
+                                    refused=out.get("refused"),
+                                    sell_share_3s=_ss3, taker_n_3s=_tn3,
+                                    trade_age_s=_ta3)
                             except Exception:                # noqa: BLE001
                                 pass
                         # A RETURNED REFUSAL IS AN ERROR AND MUST BE COUNTED.
@@ -17359,6 +17697,22 @@ def main():
     ap.add_argument("--fresh-tau-min", type=int, default=None, metavar="S",
                     help="v-fresh: the gate stands down at or under S seconds "
                          "left (default 20)")
+    ap.add_argument("--toxic-fresh", action="store_true", default=False,
+                    help="v-toxic: with more than --toxic-tau-min s left, refuse "
+                         "a level known to be younger than --toxic-min-age-ms "
+                         "WHILE takers net-sold our side in the last 3 s (sell "
+                         "share above --toxic-min-share). Default OFF; the share "
+                         "is logged either way. PREREG_toxic.md; paper arm "
+                         "arm-toxic.")
+    ap.add_argument("--toxic-min-age-ms", type=int, default=None, metavar="MS",
+                    help="v-toxic: the level age (exact) under which the gate "
+                         "may fire (default %d)" % _DEFAULT_TOXIC_MIN_AGE_MS)
+    ap.add_argument("--toxic-min-share", type=float, default=None, metavar="F",
+                    help="v-toxic: the 3 s sold share of our side ABOVE which "
+                         "the gate may fire (default %.2f)" % _DEFAULT_TOXIC_MIN_SHARE)
+    ap.add_argument("--toxic-tau-min", type=int, default=None, metavar="S",
+                    help="v-toxic: the gate stands down at or under S seconds "
+                         "left (default %d)" % _DEFAULT_TOXIC_TAU_MIN)
     ap.add_argument("--edge-floor", type=float, default=None, metavar="C",
                     help="minimum model-minus-market edge AFTER fee, in CENTS "
                          "(default 0.3). 2026-09-24 record: entries under 2c "
@@ -17849,6 +18203,23 @@ def main():
             raise SystemExit("--fresh-tau-min must be in [0, 60], got %r"
                              % (a.fresh_tau_min,))
         globals()["FRESH_TAU_MIN"] = int(a.fresh_tau_min)
+    if a.toxic_fresh:
+        globals()["TOXIC_FRESH"] = True
+    if a.toxic_min_age_ms is not None:
+        if not (1 <= int(a.toxic_min_age_ms) <= 5000):
+            raise SystemExit("--toxic-min-age-ms must be in [1, 5000], got %r"
+                             % (a.toxic_min_age_ms,))
+        globals()["TOXIC_MIN_AGE_MS"] = int(a.toxic_min_age_ms)
+    if a.toxic_min_share is not None:
+        if not (0.0 <= float(a.toxic_min_share) < 1.0):
+            raise SystemExit("--toxic-min-share must be in [0, 1), got %r"
+                             % (a.toxic_min_share,))
+        globals()["TOXIC_MIN_SHARE"] = float(a.toxic_min_share)
+    if a.toxic_tau_min is not None:
+        if not (0 <= int(a.toxic_tau_min) <= 60):
+            raise SystemExit("--toxic-tau-min must be in [0, 60], got %r"
+                             % (a.toxic_tau_min,))
+        globals()["TOXIC_TAU_MIN"] = int(a.toxic_tau_min)
     if a.edge_floor is not None:
         if not (0.0 <= float(a.edge_floor) <= 10.0):
             raise SystemExit("--edge-floor is in CENTS and must be in [0, 10], got %r"
