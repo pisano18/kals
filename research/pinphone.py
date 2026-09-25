@@ -27,14 +27,18 @@ COMMANDS
   /stats      the whole record by window: money, win rate vs break-even, losses, timing
   /race       the coin race penny bot now, and its last 10 races
   /racestats  the coin race record, and the paper arms on the same races
+  /bars       every running test against its pre-registered bar: the numbers
+              so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
   /pause      no new bets, wait for open ones, stop     /start    trade again
   /stop yes   stop right now (the word 'yes' is required)
   /mute  /unmute   alerts off / on          /help
 
 ALERTS it sends by itself: every change of state (TRADING -> NOT RUNNING,
-SAFETY BRAKE, PAUSED...), every LOSING close with its story, and one summary
-of yesterday at 8:00 AM ET. Routine wins are never sent (the operator asked
-not to be cluttered with settlements).
+SAFETY BRAKE, PAUSED...), every LOSING close with its story, LOW DISK (once
+under 8 GB free, again under 6 GB -- run_all.ps1 stops both recorders for good
+at 5 GB and that tape cannot be recreated; re-armed once it climbs back over
+9 GB), and one summary of yesterday at 8:00 AM ET. Routine wins are never
+sent (the operator asked not to be cluttered with settlements).
 
 The controls are the same functions the desktop app uses (research\pindesk.py):
 PAUSE waits for open bets, STOP asks for 'yes', the kill checks the pid's
@@ -68,6 +72,25 @@ LOG = os.path.join(RESULTS, "pinphone.log")
 MAX_LEN = 3900
 
 
+def split_text(s, limit=MAX_LEN):
+    """Chunks of at most `limit` chars for Telegram, cut at a blank line when
+    one sits in the second half of the chunk, else at a line, else hard --
+    so a /bars block is not sliced mid-sentence."""
+    s = str(s)
+    out = []
+    while len(s) > limit:
+        cut = s.rfind("\n\n", 0, limit)
+        if cut < limit // 2:
+            cut = s.rfind("\n", 0, limit)
+        if cut < limit // 2:
+            cut = limit
+        out.append(s[:cut].rstrip("\n"))
+        s = s[cut:].lstrip("\n")
+    if s or not out:
+        out.append(s)
+    return out
+
+
 def log(msg):
     line = "%s  %s" % (time.strftime("%Y-%m-%dT%H:%M:%S"), msg)
     print(line, flush=True)
@@ -97,8 +120,8 @@ class Telegram:
         return d.get("result", []) if d.get("ok") else []
 
     def send(self, chat_id, text):
-        for i in range(0, max(1, len(text)), MAX_LEN):
-            self._call("sendMessage", {"chat_id": chat_id, "text": text[i:i + MAX_LEN]})
+        for chunk in split_text(text, MAX_LEN):
+            self._call("sendMessage", {"chat_id": chat_id, "text": chunk})
 
 
 class FakeTelegram:
@@ -135,11 +158,12 @@ HELP_TEXT = """Commands:
 /stats - the whole record by window: money, win rate vs break-even, losses, timing
 /race - the coin race penny bot right now, and its last 10 races
 /racestats - the coin race record, and the paper arms on the same races
+/bars - every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
 /pause - no new bets, wait for open ones, then stop
 /start - trade again
 /stop yes - stop right now
 /mute /unmute - alerts off / on
-Alerts come by themselves: state changes, every losing close, and yesterday's summary at 8 AM ET."""
+Alerts come by themselves: state changes, every losing close, low disk (under 8 GB, again under 6 GB), and yesterday's summary at 8 AM ET."""
 
 
 # ===========================================================================
@@ -769,6 +793,38 @@ def z3_progress(results, races_all):
     return {"races": len(rows), "losses": sum(losses), "first50_losses": sum(losses[:Z3_KILL[1]])}
 
 
+# ---- the disk ---------------------------------------------------------------
+# run_all.ps1 line 41: `if ($free -lt 5) { Write-Host "LOW DISK - stopping" ; break }`
+# -- the watchdog leaves its loop and BOTH recorders stop being restarted. The
+# tape ends there and cannot be recreated. So: one alert under 8 GB, one more
+# under 6, re-armed only when free space climbs back over 9.
+DISK_WARN_GB, DISK_STOP_GB, DISK_REARM_GB = 8.0, 6.0, 9.0
+DISK_HARD_STOP_GB = 5.0
+DISK_GB_PER_DAY = 4.0                   # OPEN_WORK C1: the recorders write ~4 GB a day
+
+
+def disk_alert(level, disk_gb):
+    """(new level, message or None). `level` is the line already announced:
+    0 none, 8 the under-8 alert went, 6 the under-6 alert went. A reading over
+    9 GB re-arms both. An unreadable reading (None) changes nothing."""
+    if disk_gb is None:
+        return level, None
+    if disk_gb > DISK_REARM_GB:
+        return 0, None
+    if disk_gb < DISK_STOP_GB and level != 6:
+        return 6, ("DISK %.1f GB FREE -- %.1f GB from the %.0f GB line where the recorders STOP FOR GOOD "
+                   "and the tape ends. Free space or plug in the new drive NOW. (Sent again only if it "
+                   "climbs over %.0f GB and falls back.)"
+                   % (disk_gb, disk_gb - DISK_HARD_STOP_GB, DISK_HARD_STOP_GB, DISK_REARM_GB))
+    if disk_gb < DISK_WARN_GB and level == 0:
+        return 8, ("DISK %.1f GB free, under %.0f GB. The recorders stop themselves for good at %.0f GB and "
+                   "that tape cannot be recreated; at about %.0f GB a day that is roughly %.1f days. "
+                   "Next warning under %.0f GB."
+                   % (disk_gb, DISK_WARN_GB, DISK_HARD_STOP_GB, DISK_GB_PER_DAY,
+                      max(0.0, disk_gb - DISK_HARD_STOP_GB) / DISK_GB_PER_DAY, DISK_STOP_GB))
+    return level, None
+
+
 class Phone:
     def __init__(self, cfg, transport, ledger=None, health_fn=None, cfg_path=CONFIG, now_fn=None,
                  procs_fn=None, versions_path=None, race30_epoch=None):
@@ -784,6 +840,8 @@ class Phone:
         self.last_rec = None
         self.seen_losses = None
         self.last_daily = None
+        self.disk_level = 0                     # disk_alert(): 0 armed, 8 / 6 = that line already sent
+        self.bars_fn = None                     # the self-test plants /bars' text
         self.busy = False
         # /stats, /race, /racestats read the process table, VERSIONS.md and
         # the v-race30 clock; the self-test plants all three.
@@ -1234,6 +1292,21 @@ class Phone:
                          Z3_PASS[0], Z3_PASS[1], Z3_PASS_ALT[0], Z3_PASS_ALT[1], Z3_KILL[0], Z3_KILL[1], verdict))
         return "\n".join(L)
 
+    # ---- /bars ----
+    def text_bars(self):
+        """Every running test against its pre-registered bar: research/bars.py's
+        text, unchanged. NOT rebuilt here (the /brief rule): one place decides
+        PASS / KILL / EXTEND / TOO EARLY, and the phone quotes it."""
+        if self.bars_fn is not None:
+            return self.bars_fn()
+        try:
+            import bars
+            return bars.text(results=self.ledger.results, now=self.now())
+        except Exception as e:                                  # noqa: BLE001
+            log(traceback.format_exc())
+            return ("Could not build /bars: %s\nEverything else still works -- /stats and /racestats "
+                    "carry the raw numbers." % str(e)[:200])
+
     # ---- controls ----
     def control(self, which):
         if self.busy:
@@ -1305,6 +1378,8 @@ class Phone:
             return self.text_race()
         if cmd == "/racestats":
             return self.text_racestats()
+        if cmd == "/bars":
+            return self.text_bars()
         if cmd == "/pause":
             return self.control("pause")
         if cmd == "/start":
@@ -1363,6 +1438,11 @@ class Phone:
             self.say(msg)
             sent.append(msg)
         self.last_rec = rec
+        # THE DISK. Tracked even when muted, so an unmute does not replay it.
+        self.disk_level, dmsg = disk_alert(self.disk_level, h.get("disk_gb"))
+        if dmsg and not self.muted:
+            self.say(dmsg)
+            sent.append(dmsg)
         losses = self.ledger.losing_closes()
         keys = {k for k, _n, _l in losses}
         if self.seen_losses is None:
@@ -1854,7 +1934,16 @@ def selftest():
             ck("z3 bar: 3 races so far, 2 losses (first 50: 2). Pass = 125 races with 0 losses, or 250 "
                "with at most 1. Kill = 2 losses in the first 50 -- AT THE KILL LINE." in q,
                "the z3 bar counts EVERY race the arm entered, a tie as a loss, and names the kill line")
-            ck(all("/%s" % c in HELP_TEXT for c in ("stats", "race", "racestats")), "the three are in /help")
+            ck(all("/%s" % c in HELP_TEXT for c in ("stats", "race", "racestats", "bars")), "the four are in /help")
+            # /bars -- the operator's one-word verdicts. The text is bars.py's,
+            # never rebuilt here; the phone only routes it.
+            ph.bars_fn = lambda: "BARS-STUB"
+            ck(ph.handle(111, "/bars") == "BARS-STUB", "/bars returns bars.py's text unchanged")
+            ph.bars_fn = None
+            _bt = ph.handle(111, "/bars")
+            ck(_bt.startswith("BARS  ") and "VERDICT:" in _bt and "FRESH OFFER TEST" in _bt,
+               "...and the real module answers on this world with its header and a verdict")
+            ck(all(len(c) <= MAX_LEN for c in split_text(_bt)), "...in chunks under Telegram's limit")
         finally:
             L.orders, L.hedges = _sv_o, _sv_g
             with open(_pl.LEDGER, "w", encoding="utf-8") as _fh:
@@ -1890,6 +1979,41 @@ def selftest():
         ck(ph.alerts_tick() == [], "...and not a second while it stays silent")
         state["h"] = dict(state["h"], kalshi_ok=True)
         ck("WRITING AGAIN" in ph.alerts_tick()[0], "and writing again sends one")
+        # THE DISK. The pure function first, exact words; then the tick.
+        ck(disk_alert(0, 30.0) == (0, None) and disk_alert(0, 9.01) == (0, None), "disk: plenty free, nothing")
+        ck(disk_alert(0, 7.5) == (8, "DISK 7.5 GB free, under 8 GB. The recorders stop themselves for good at 5 GB and "
+           "that tape cannot be recreated; at about 4 GB a day that is roughly 0.6 days. Next warning under 6 GB."),
+           "disk: under 8 GB sends the first warning, with the days left to the hard stop")
+        ck(disk_alert(8, 7.2) == (8, None), "...not again while it stays under 8")
+        ck(disk_alert(8, 5.9) == (6, "DISK 5.9 GB FREE -- 0.9 GB from the 5 GB line where the recorders STOP FOR GOOD "
+           "and the tape ends. Free space or plug in the new drive NOW. (Sent again only if it climbs over 9 GB and "
+           "falls back.)"), "disk: under 6 GB sends the second, louder one")
+        ck(disk_alert(0, 5.9)[0] == 6, "...straight to the under-6 alert if the first was never sent")
+        ck(disk_alert(6, 5.5) == (6, None) and disk_alert(6, 7.5) == (6, None) and disk_alert(6, 8.5) == (6, None),
+           "...and nothing more between 5 and 9 GB")
+        ck(disk_alert(6, 9.5) == (0, None) and disk_alert(8, 9.5) == (0, None), "over 9 GB re-arms, silently")
+        ck(disk_alert(8, None) == (8, None) and disk_alert(0, None) == (0, None), "NULL: an unreadable disk changes nothing")
+        state["h"] = dict(state["h"], disk_gb=7.5)
+        sent = ph.alerts_tick()
+        ck(len(sent) == 1 and sent[0].startswith("DISK 7.5 GB free, under 8 GB") and ph.disk_level == 8,
+           "the tick sends the under-8 alert once")
+        state["h"] = dict(state["h"], disk_gb=7.1)
+        ck(ph.alerts_tick() == [], "...and not again at 7.1")
+        state["h"] = dict(state["h"], disk_gb=5.9)
+        sent = ph.alerts_tick()
+        ck(len(sent) == 1 and sent[0].startswith("DISK 5.9 GB FREE") and ph.disk_level == 6, "under 6 sends the second")
+        state["h"] = dict(state["h"], disk_gb=8.5)
+        ck(ph.alerts_tick() == [] and ph.disk_level == 6, "8.5 GB: nothing, still armed at 6")
+        state["h"] = dict(state["h"], disk_gb=9.5)
+        ck(ph.alerts_tick() == [] and ph.disk_level == 0, "9.5 GB: re-armed, nothing sent")
+        state["h"] = dict(state["h"], disk_gb=7.9)
+        ck(len(ph.alerts_tick()) == 1, "...so the next dip under 8 is announced again")
+        ph.muted = True
+        state["h"] = dict(state["h"], disk_gb=5.0)
+        ck(ph.alerts_tick() == [] and ph.disk_level == 6, "muted: the disk line is tracked but not sent")
+        ph.muted = False
+        state["h"] = dict(state["h"], disk_gb=30.0)
+        ck(ph.alerts_tick() == [] and ph.disk_level == 0, "back to 30 GB: re-armed")
         # a new losing close
         with open(p, "a", encoding="utf-8") as fh:
             fh.write(json.dumps({"kind": "order", "t": "2026-09-16T14:14:31Z", "ticker": c2, "filled": 40.0, "exec_price": 0.97, "status": "executed", "body": {"count": "40.00"}}) + "\n")
@@ -1923,8 +2047,16 @@ def selftest():
         ck(all(cid == 111 for cid, _t in tg.sent), "every alert went to the paired chat")
         # long messages are split by the real transport's rule
         big = "x" * (MAX_LEN * 2 + 5)
-        chunks = [big[i:i + MAX_LEN] for i in range(0, len(big), MAX_LEN)]
+        chunks = split_text(big)
         ck(len(chunks) == 3 and sum(len(c) for c in chunks) == len(big), "a long reply is split under Telegram's limit")
+        ck(split_text("a\n\nb\n\nc", 3) == ["a", "b", "c"] and split_text("ab\ncd\nef", 5) == ["ab", "cd\nef"]
+           and split_text("", 5) == [""], "...at a blank line when one is there, else a line, else hard")
+        _calls = []
+        _real = Telegram("tok")
+        _real._call = lambda method, params, http_timeout=45: _calls.append(params["text"])
+        _real.send(111, "A" * 2500 + "\n\n" + "B" * 2500)
+        ck(_calls == ["A" * 2500, "B" * 2500],
+           "the real transport sends a long /bars in whole paragraphs, never mid-sentence")
         # poll_once routes replies to the sender and advances the offset
         tg.push(111, "/help")
         tg.push(333, "/status")

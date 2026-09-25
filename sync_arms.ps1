@@ -214,10 +214,13 @@ $frozen = @(
       "--late-extra-tau","15","--bank-brake","4.00","--loss-cap","200") }
 )
 
+# 2026-09-25: arms run 10080 min (7 days), not 4320 (3 days) -- arm-fresh500 and
+# arm-toxic carry 7-day pre-registered bars and a 3-day arm would die on day 3
+# with the bar unread (bars.py caught it). A restart mid-window keeps the logs.
 # ---- 3. BUILD AND VALIDATE EVERYTHING BEFORE STOPPING ANYTHING ----------
 $plan = @()
 foreach ($a in $arms) {
-    $full = @("-u", "$repo\research\pinrun.py", "--size", "20", "--minutes", "4320") +
+    $full = @("-u", "$repo\research\pinrun.py", "--size", "20", "--minutes", "10080") +
             (BaseWithout $a.drop | ForEach-Object { $_ }) + $a.add + @("--arm-name", $a.n)
     $flat = @($full | ForEach-Object { $_ })
     foreach ($t in $flat) {
@@ -238,7 +241,7 @@ foreach ($a in $arms) {
 # what "frozen as of today" means.
 foreach ($fz in $frozen) {
     $body = if ($fz.x.Count) { $fz.x } else { (BaseWithout @() | ForEach-Object { $_ }) }
-    $full = @("-u", "$repo\research\pinrun.py", "--size", "20", "--minutes", "4320") +
+    $full = @("-u", "$repo\research\pinrun.py", "--size", "20", "--minutes", "10080") +
             $body + @("--arm-name", $fz.n)
     $flat = @($full | ForEach-Object { $_ })
     foreach ($t in $flat) {
