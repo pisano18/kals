@@ -1,0 +1,142 @@
+SELFTEST PASS
+live-log tickers with hedge records: 188; ledger settlements: 1132; tape rebuild markets: 825
+
+=== A. EVERY MARKET WE ACTUALLY HEDGED since ET 2026-09-13: 16 markets, 15 closes ===
+hedge fills in our log vs Kalshi's hedge-side count: 16 of 16 agree
+market (ET close)      want res b@alarm   thr  tau      N hedged q_first  q_avg q_worst   actual no hedge hedge leg
+BNB 9/13 12:30 PM      no   no    0.643   0.8    4   32.0   32.0   0.100  0.100   0.100    -1.10    +2.31     -3.40
+BTC 9/14 5:30 AM       no   yes   0.214   0.8   11   60.0   60.0   0.580  0.580   0.580   -34.26   -58.43    +24.18
+HYPE 9/14 4:00 PM      no   yes   0.559   0.8   19   62.0   62.0   0.510  0.510   0.510   -29.90   -59.20    +29.30
+NEAR 9/16 4:30 AM      yes  yes   0.766   0.8   18   84.0   84.0   0.180  0.180   0.180    -9.22    +6.77    -15.99
+DOGE 9/16 9:00 AM      no   no    0.485   0.8   12   87.0   87.0   0.150  0.150   0.150   -12.14    +1.68    -13.83
+BNB 9/16 12:30 PM      no   yes   0.533   0.6   20    1.0    1.0   0.470  0.470   0.470    -0.47    -0.98     +0.51
+BTC 9/17 9:15 PM       yes  no    0.214   0.6   36   99.0   99.0   0.720  0.720   0.720   -27.87   -54.20    +26.32
+DOGE 9/18 12:15 AM     yes  no    0.243   0.6   31   33.6   33.6   0.740  0.740   0.740    +4.36    -3.93     +8.29
+BNB 9/19 1:45 AM       yes  no    0.227   0.6   23   76.0    1.0   0.760  0.760   0.760   -57.76   -57.99     +0.23
+BNB 9/19 12:30 PM      yes  no    0.154   0.6   11   84.5   84.5   0.440  0.743   0.800   -61.75   -82.37    +20.61
+HYPE 9/19 11:45 PM     no   no    0.437   0.6   31  104.0  104.0   0.460  0.460   0.460   -43.92    +5.73    -49.65
+XRP 9/19 11:45 PM      no   no    0.273   0.6   30  104.0  104.0   0.630  0.630   0.630   -64.95    +2.27    -67.22
+NEAR 9/21 12:45 PM     yes  no    0.569   0.6   42   81.0   81.0   0.700  0.802   0.905   -59.09   -74.25    +15.16
+HYPE 9/21 6:15 PM      yes  no    0.230  0.25   34   55.0   55.0   0.570  0.570   0.570   -31.27   -53.98    +22.71
+DOGE 9/22 10:45 PM     no   yes   0.051  0.25   10   13.0   13.0   0.948  0.980   0.986    -2.47    -2.71     +0.24
+BTC 9/23 8:30 PM       yes  no    0.111  0.25   17  176.0  176.0   0.795  0.859   0.870  -130.41  -153.79    +23.39
+TOTAL actual -562.21 | no hedge -583.06 | hedging made +20.85  (saves 11: +170.93; false alarms 5: -150.08)
+
+--- variants, all hedged markets: 16 markets, 15 closes ---
+variant                              total $   vs live 95% CI of vs-live (closes) worst mkt unfilled
+no hedge (k=0)                       -583.06    -20.85        [ -229.68,  +277.30]  -153.79       0
+half hedge (k=0.5)                   -565.23     -3.02        [ -106.00,  +143.55]  -141.15      37
+live hedge (k=1)                     -562.21     +0.00        [   +0.00,    +0.00]  -130.41      75
+hedge + extra 0.25x @worst+0c        -560.70     +1.51        [  -71.77,   +53.00]  -125.04      94
+hedge + extra 0.25x @worst+5c        -573.78    -11.57        [  -88.41,   +40.97]  -127.12      94
+hedge + extra 0.50x @worst+0c        -559.19     +3.02        [ -143.55,  +106.00]  -119.67     113
+hedge + extra 0.50x @worst+5c        -585.35    -23.13        [ -176.81,   +81.94]  -123.82     113
+hedge + extra 1.00x @worst+0c        -556.17     +6.04        [ -287.09,  +211.99]  -132.16     151
+hedge + extra 1.00x @worst+5c        -608.48    -46.27        [ -353.63,  +163.89]  -137.25     151
+
+--- variants, hedges fired with belief UNDER 0.40 (the rule running today): 10 markets, 10 closes ---
+variant                              total $   vs live 95% CI of vs-live (closes) worst mkt unfilled
+no hedge (k=0)                       -539.37    -73.90        [ -201.01,  +111.91]  -153.79       0
+half hedge (k=0.5)                   -495.02    -29.55        [  -92.46,   +61.80]  -141.15      37
+live hedge (k=1)                     -465.47     +0.00        [   +0.00,    +0.00]  -130.41      75
+hedge + extra 0.25x @worst+0c        -450.70    +14.77        [  -30.90,   +46.23]  -125.04      94
+hedge + extra 0.25x @worst+5c        -459.03     +6.44        [  -39.21,   +36.75]  -127.12      94
+hedge + extra 0.50x @worst+0c        -435.92    +29.55        [  -61.80,   +92.46]  -119.67     113
+hedge + extra 0.50x @worst+5c        -452.60    +12.87        [  -78.43,   +73.50]  -123.82     113
+hedge + extra 1.00x @worst+0c        -406.37    +59.10        [ -123.60,  +184.92]  -132.16     151
+hedge + extra 1.00x @worst+5c        -439.73    +25.74        [ -156.85,  +147.01]  -137.25     151
+
+--- variants, hedges fired at belief 0.40 or above (old 0.60-0.90 triggers): 6 markets, 6 closes ---
+variant                              total $   vs live 95% CI of vs-live (closes) worst mkt unfilled
+no hedge (k=0)                        -43.69    +53.06        [  -58.58,  +167.82]   -59.20       0
+half hedge (k=0.5)                    -70.21    +26.53        [  -29.29,   +83.91]   -44.55       0
+live hedge (k=1)                      -96.74     +0.00        [   +0.00,    +0.00]   -43.92       0
+hedge + extra 0.25x @worst+0c        -110.01    -13.26        [  -41.96,   +14.65]   -56.33       0
+hedge + extra 0.25x @worst+5c        -114.74    -18.00        [  -47.39,   +10.59]   -57.63       0
+hedge + extra 0.50x @worst+0c        -123.27    -26.53        [  -83.91,   +29.29]   -68.74       0
+hedge + extra 0.50x @worst+5c        -132.75    -36.00        [  -94.78,   +21.17]   -71.35       0
+hedge + extra 1.00x @worst+0c        -149.80    -53.06        [ -167.82,   +58.58]   -93.56       0
+hedge + extra 1.00x @worst+5c        -168.75    -72.01        [ -189.56,   +42.35]   -98.78       0
+
+--- the extra leg alone (x=1, at the worst price the hedge paid), per market ---
+  BNB 9/13 12:30 PM      b=0.643  REVERSED (our side won)  extra  32.0 @ 0.100 -> -3.40
+  BTC 9/14 5:30 AM       b=0.214  continued            extra  60.0 @ 0.580 -> +24.18
+  HYPE 9/14 4:00 PM      b=0.559  continued            extra  62.0 @ 0.510 -> +29.30
+  NEAR 9/16 4:30 AM      b=0.766  REVERSED (our side won)  extra  84.0 @ 0.180 -> -15.99
+  DOGE 9/16 9:00 AM      b=0.485  REVERSED (our side won)  extra  87.0 @ 0.150 -> -13.83
+  BNB 9/16 12:30 PM      b=0.533  continued            extra   1.0 @ 0.470 -> +0.51
+  BTC 9/17 9:15 PM       b=0.214  continued            extra  99.0 @ 0.720 -> +26.32
+  DOGE 9/18 12:15 AM     b=0.243  continued            extra  33.6 @ 0.740 -> +8.29
+  BNB 9/19 1:45 AM       b=0.268  continued            extra   0.0 @ 0.760 -> +0.00  (hedge could not fill; no extra priced)
+  BNB 9/19 12:30 PM      b=0.154  continued            extra  84.5 @ 0.800 -> +15.95
+  HYPE 9/19 11:45 PM     b=0.501  REVERSED (our side won)  extra 104.0 @ 0.460 -> -49.65
+  XRP 9/19 11:45 PM      b=0.273  REVERSED (our side won)  extra 104.0 @ 0.630 -> -67.22
+  NEAR 9/21 12:45 PM     b=0.392  continued            extra  81.0 @ 0.905 -> +7.21
+  HYPE 9/21 6:15 PM      b=0.230  continued            extra  55.0 @ 0.570 -> +22.71
+  DOGE 9/22 10:45 PM     b=0.051  continued            extra  13.0 @ 0.986 -> +0.17
+  BTC 9/23 8:30 PM       b=0.111  continued            extra 176.0 @ 0.870 -> +21.49
+
+=== Q3. AT THE HEDGE: model's chance for the other side vs its price vs what happened ===
+  all hedged         n=16  model says other side wins 10.4 times (avg 0.65); price says 8.8 (avg 0.55); it won 11  | P(>= 11 wins | price fair)=0.158  P(>= 11 | model right)=0.476
+                     price below the model's chance in 12 of 16 markets; avg gap (model - price) +10.1c
+  belief under 0.40  n=10  model says other side wins 7.8 times (avg 0.78); price says 6.9 (avg 0.69); it won 9  | P(>= 9 wins | price fair)=0.120  P(>= 9 | model right)=0.324
+                     price below the model's chance in 8 of 10 markets; avg gap (model - price) +9.6c
+  smallest edge the under-0.40 set could detect (x=1): $301 total, 43c a contract over 9 markets
+
+=== Q4. RISK: worst day, the $200 day cap, the 20% drawdown brake ===
+  -- applied to all 16 real hedges --
+  live hedge  worst ET day 2026-09-19 -223.46 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $235.84 (22.5% of the bank at its high), bottom 09-19 23:45 ET
+  no hedge    worst ET day 2026-09-19 -127.44 | days at/below -$200: 0 [] | max drawdown $204.41 (20.6% of the bank at its high), bottom 09-19 16:00 ET
+  half        worst ET day 2026-09-19 -173.01 | days at/below -$200: 0 [] | max drawdown $191.55 (19.1% of the bank at its high), bottom 09-19 16:00 ET
+  x=0.25      worst ET day 2026-09-19 -248.69 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $261.07 (24.6% of the bank at its high), bottom 09-19 23:45 ET
+  x=0.5       worst ET day 2026-09-19 -273.92 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $286.29 (26.7% of the bank at its high), bottom 09-19 23:45 ET
+  x=1         worst ET day 2026-09-19 -324.38 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $336.75 (30.6% of the bank at its high), bottom 09-19 23:45 ET
+  x=1 +5c     worst ET day 2026-09-19 -338.71 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $351.08 (32.5% of the bank at its high), bottom 09-19 23:45 ET
+  -- applied only to the hedges under 0.40 (today's trigger) --
+  live hedge  worst ET day 2026-09-19 -223.46 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $235.84 (22.5% of the bank at its high), bottom 09-19 23:45 ET
+  no hedge    worst ET day 2026-09-19 -177.09 | days at/below -$200: 0 [] | max drawdown $204.41 (20.7% of the bank at its high), bottom 09-19 16:00 ET
+  half        worst ET day 2026-09-19 -197.83 | days at/below -$200: 0 [] | max drawdown $210.21 (20.7% of the bank at its high), bottom 09-19 23:45 ET
+  x=0.25      worst ET day 2026-09-19 -236.28 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $248.65 (23.4% of the bank at its high), bottom 09-19 23:45 ET
+  x=0.5       worst ET day 2026-09-19 -249.10 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $261.47 (24.3% of the bank at its high), bottom 09-19 23:45 ET
+  x=1         worst ET day 2026-09-19 -274.73 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $287.10 (26.0% of the bank at its high), bottom 09-19 23:45 ET
+  x=1 +5c     worst ET day 2026-09-19 -283.85 | days at/below -$200: 1 ['2026-09-19'] | max drawdown $296.22 (27.0% of the bank at its high), bottom 09-19 23:45 ET
+
+=== B. EVERY POSITION WE HELD since ET 2026-09-13, per-second rule sweep: 662 markets ===
+  belief source: bot-logged seconds 5369, index-rebuild seconds 23720; price source: bot 5356, tape 22980
+  no hedge at all: +552.92
+  belief<0.40 k=1.00 delay 0s: fired 14 (reversed 1) price src {'bot': 7, 'tape': 7} | total +802.57 | vs 0.40 hedge +0.00 [+0.00, +0.00]
+  belief<0.40 k=0.50 delay 0s: fired 14 (reversed 1) price src {'bot': 7, 'tape': 7} | total +684.23 | vs 0.40 hedge -118.35 [-211.47, -5.76]
+  belief<0.40 k=1.25 delay 0s: fired 14 (reversed 1) price src {'bot': 7, 'tape': 7} | total +860.74 | vs 0.40 hedge +58.17 [+1.84, +104.69]
+  belief<0.40 k=1.50 delay 0s: fired 14 (reversed 1) price src {'bot': 7, 'tape': 7} | total +918.34 | vs 0.40 hedge +115.77 [+3.36, +208.75]
+  belief<0.40 k=2.00 delay 0s: fired 14 (reversed 1) price src {'bot': 7, 'tape': 7} | total +1035.77 | vs 0.40 hedge +233.19 [+7.86, +420.99]
+  belief<0.40 k=1.00 delay 1s: fired 14 (reversed 1) price src {'bot': 5, 'tape': 9} | total +766.38 | vs 0.40 hedge -36.19 [-112.56, +37.24]
+  belief<0.40 k=1.00 delay 2s: fired 14 (reversed 1) price src {'tape': 10, 'bot': 4} | total +727.94 | vs 0.40 hedge -74.63 [-162.18, +9.55]
+  belief<0.40 k=1.00 delay 3s: fired 13 (reversed 0) price src {'tape': 9, 'bot': 4} | total +732.34 | vs 0.40 hedge -70.23 [-219.92, +118.95]
+  belief<0.60 k=1.00 delay 0s: fired 18 (reversed 5) price src {'bot': 11, 'tape': 7} | total +724.70 | vs 0.40 hedge -77.88 [-172.01, +14.98]
+  belief<0.50 k=1.00 delay 0s: fired 17 (reversed 4) price src {'bot': 9, 'tape': 8} | total +726.87 | vs 0.40 hedge -75.71 [-136.18, -16.30]
+  belief<0.30 k=1.00 delay 0s: fired 14 (reversed 1) price src {'bot': 8, 'tape': 6} | total +712.73 | vs 0.40 hedge -89.85 [-157.10, -30.10]
+  belief<0.25 k=1.00 delay 0s: fired 14 (reversed 1) price src {'bot': 7, 'tape': 7} | total +724.88 | vs 0.40 hedge -77.69 [-167.52, +19.77]
+  belief<0.20 k=2.00 delay 0s: fired 13 (reversed 0) price src {'tape': 8, 'bot': 5} | total +913.54 | vs 0.40 hedge +110.97 [-25.15, +275.63]
+  belief<0.10 k=2.00 delay 0s: fired 13 (reversed 0) price src {'tape': 10, 'bot': 3} | total +787.84 | vs 0.40 hedge -14.74 [-178.80, +180.11]
+
+  the 0.40 crossings (who they were), and the x=1 extra leg priced there:
+    BTC 9/14 5:30 AM       want no  res yes tau 11 belief 0.214 (prev 0.914) other-side ask 0.43 [bot] N   60.0  extra leg +22.40 [bot]
+    HYPE 9/14 4:00 PM      want no  res yes tau 17 belief 0.077 (prev 0.429) other-side ask 0.79 [tape] N   62.0  extra leg +12.30 [tape]
+    BNB 9/16 12:30 PM      want no  res yes tau 19 belief 0.310 (prev 0.533) other-side ask 0.62 [tape] N    1.0  extra leg +0.36 [tape]
+    BTC 9/17 9:15 PM       want yes res no  tau 37 belief 0.381 (prev -) other-side ask 0.52 [tape] N   99.0  extra leg +45.79 [tape]
+    DOGE 9/18 12:15 AM     want yes res no  tau 31 belief 0.243 (prev -) other-side ask 0.74 [bot] N   33.6  extra leg +8.29 [bot]
+    BNB 9/19 1:45 AM       want yes res no  tau 23 belief 0.227 (prev -) other-side ask 0.29 [tape] N   76.0  extra leg +18.94 [tape]
+    BTC 9/19 2:00 AM       want no  res yes tau 28 belief 0.317 (prev 0.877) other-side ask 0.56 [tape] N   70.0  extra leg +29.59 [tape]
+    BNB 9/19 12:30 PM      want yes res no  tau 11 belief 0.154 (prev 0.624) other-side ask 0.44 [bot] N   84.5  extra leg +15.95 [bot]
+    BTC 9/19 4:00 PM       want no  res yes tau 43 belief 0.239 (prev 1.000) other-side ask 0.78 [tape] N  110.0  extra leg +22.88 [tape]
+    XRP 9/19 11:45 PM      want no  res no  tau 30 belief 0.273 (prev 0.710) other-side ask 0.63 [bot] N  104.0  extra leg -67.22 [bot]
+    NEAR 9/21 12:45 PM     want yes res no  tau 39 belief 0.384 (prev 0.536) other-side ask 0.52 [tape] N   81.0  extra leg +39.43 [tape]
+    HYPE 9/21 6:15 PM      want yes res no  tau 34 belief 0.230 (prev 0.926) other-side ask 0.55 [bot] N   55.0  extra leg +23.80 [bot]
+    DOGE 9/22 10:45 PM     want no  res yes tau  9 belief 0.051 (prev 0.999) other-side ask 0.987 [bot] N   13.0  extra leg +0.16 [bot]
+    BTC 9/23 8:30 PM       want yes res no  tau 22 belief 0.374 (prev 0.853) other-side ask 0.64 [bot] N  176.0  extra leg +60.52 [bot]
+  x=1 extra leg by price source: {'bot': 63.9, 'tape': 169.29}
+  came back 1 of 14; the model's own belief said 3.48; P(this few | model right) = 0.097
+
+=== PRICE SOURCE CHECK: tape vs the ask our bot logged at the same second ===
+  hedge seconds (fast)     36 seconds: tape equals our ask 9 (25%), within 2c 16 (44%)
+  quiet held seconds     1445 seconds: tape equals our ask 1080 (75%), within 2c 1194 (83%)

@@ -1,0 +1,58 @@
+  gaussian world: 145 crashes, came back 41, model said 43.6 (ratio 0.94)
+  momentum world: 215 crashes, came back 1, model said 60.0 (ratio 0.02)
+SELFTEST PASS
+  20260901T00.jsonl.gz closes=0 elig=0 crashes=0 0s
+  20260903T00.jsonl.gz closes=1386 elig=1387 crashes=4 19s
+  20260905T00.jsonl.gz closes=2871 elig=2873 crashes=6 39s
+  20260907T00.jsonl.gz closes=4599 elig=4611 crashes=22 62s
+  20260909T00.jsonl.gz closes=6327 elig=6341 crashes=26 87s
+  20260911T07.jsonl.gz closes=7974 elig=7992 crashes=35 109s
+  20260913T07.jsonl.gz closes=9666 elig=9699 crashes=56 133s
+  20260915T07.jsonl.gz closes=11394 elig=11429 crashes=64 157s
+  20260917T08.jsonl.gz closes=13077 elig=13114 crashes=72 180s
+  20260919T08.jsonl.gz closes=14805 elig=14846 crashes=78 202s
+  20260921T08.jsonl.gz closes=16533 elig=16575 crashes=84 227s
+  20260923T12.jsonl.gz closes=18099 elig=18143 crashes=89 249s
+stats {'no_prev': 144, 'closes': 19512, 'elig_sides': 19555, 'crashes': 90, 'no_settle': 990, 'unparsed': 608} salvage {'salvaged_files': 21} files 573 20260901T00.jsonl.gz 20260925T14.jsonl.gz
+
+sides that reached P>=0.995 in the last 45 s: 19555 over 2168 closes; crashed under 0.40 later: 90 (0.46%)
+
+=== did the side come back after the crash? (won = came back = a FALSE ALARM for a hedge) ===
+  all crashes under 0.40                   n=  90 closes=  72 | came back  23 =  25.6% [16.7, 35.5] | model said  16.7 =  18.6% | ratio 1.37 | P(this few)=0.971 P(this many)=0.052
+  belief at crash 0.00-0.10                n=  32 closes=  28 | came back   4 =  12.5% [ 2.9, 26.5] | model said   1.0 =   3.1% | ratio 4.02 | P(this few)=0.998 P(this many)=0.015
+  belief at crash 0.10-0.20                n=   9 closes=   8 | came back   1 =  11.1% [ 0.0, 37.5] | model said   1.2 =  13.4% | ratio 0.83 | P(this few)=0.657 P(this many)=0.726
+  belief at crash 0.20-0.30                n=  26 closes=  23 | came back   8 =  30.8% [14.8, 51.9] | model said   6.5 =  25.0% | ratio 1.23 | P(this few)=0.821 P(this many)=0.313
+  belief at crash 0.30-0.40                n=  23 closes=  23 | came back  10 =  43.5% [21.7, 65.2] | model said   8.1 =  35.1% | ratio 1.24 | P(this few)=0.857 P(this many)=0.260
+  seconds left 1-10                        n=  10 closes=   9 | came back   3 =  30.0% [ 0.0, 55.6] | model said   1.2 =  12.2% | ratio 2.45 | P(this few)=0.986 P(this many)=0.096
+  seconds left 11-20                       n=  26 closes=  25 | came back   5 =  19.2% [ 4.0, 36.0] | model said   3.1 =  12.1% | ratio 1.59 | P(this few)=0.928 P(this many)=0.187
+  seconds left 21-30                       n=  24 closes=  19 | came back   6 =  25.0% [ 8.3, 47.4] | model said   5.0 =  20.7% | ratio 1.21 | P(this few)=0.794 P(this many)=0.377
+  seconds left 31-44                       n=  30 closes=  22 | came back   9 =  30.0% [14.3, 50.0] | model said   7.4 =  24.7% | ratio 1.22 | P(this few)=0.825 P(this many)=0.306
+  one-print JUMP (prev >= 0.90)            n=  36 closes=  34 | came back   7 =  19.4% [ 8.1, 33.3] | model said   6.3 =  17.5% | ratio 1.11 | P(this few)=0.720 P(this many)=0.451
+  slide (prev < 0.90)                      n=  54 closes=  46 | came back  16 =  29.6% [17.5, 43.5] | model said  10.4 =  19.3% | ratio 1.53 | P(this few)=0.984 P(this many)=0.036
+  crash print moved >= 4 sd against        n=  57 closes=  45 | came back   8 =  14.0% [ 5.8, 25.0] | model said   8.1 =  14.3% | ratio 0.98 | P(this few)=0.572 P(this many)=0.590
+  crash print moved < 4 sd against         n=  33 closes=  32 | came back  15 =  45.5% [28.6, 62.5] | model said   8.6 =  26.1% | ratio 1.74 | P(this few)=0.996 P(this many)=0.011
+  JUMP straight to under 0.20              n=  17 closes=  17 | came back   1 =   5.9% [ 0.0, 17.6] | model said   0.7 =   3.8% | ratio 1.53 | P(this few)=0.866 P(this many)=0.493
+  still under 0.40 1 s later (belief then) n=  79 closes=  63 | came back  15 =  19.0% [10.8, 28.0] | model said  10.9 =  13.8% | ratio 1.37 | P(this few)=0.943 P(this many)=0.105
+  still under 0.40 2 s later (belief then) n=  71 closes=  58 | came back  11 =  15.5% [ 7.6, 24.6] | model said   7.8 =  10.9% | ratio 1.42 | P(this few)=0.933 P(this many)=0.131
+  still under 0.40 3 s later (belief then) n=  67 closes=  54 | came back   8 =  11.9% [ 4.7, 20.6] | model said   6.7 =  10.0% | ratio 1.20 | P(this few)=0.797 P(this many)=0.343
+
+  by coin:
+  BNBUSD_RTI                               n=  13 closes=  13 | came back   4 =  30.8% [ 7.7, 53.8] | model said   2.9 =  22.1% | ratio 1.39 | P(this few)=0.868 P(this many)=0.317
+  BRTI                                     n=  12 closes=  12 | came back   2 =  16.7% [ 0.0, 41.7] | model said   2.6 =  22.0% | ratio 0.76 | P(this few)=0.484 P(this many)=0.790
+  DOGEUSD_RTI                              n=  11 closes=  11 | came back   2 =  18.2% [ 0.0, 45.5] | model said   1.9 =  17.3% | ratio 1.05 | P(this few)=0.710 P(this many)=0.609
+  ETHUSD_RTI                               n=   9 closes=   9 | came back   3 =  33.3% [11.1, 66.7] | model said   1.7 =  18.9% | ratio 1.76 | P(this few)=0.943 P(this many)=0.224
+  HYPEUSD_RTI                              n=   9 closes=   9 | came back   3 =  33.3% [11.1, 66.7] | model said   1.4 =  15.8% | ratio 2.11 | P(this few)=0.972 P(this many)=0.145
+  NEARUSD_RTI                              n=   6 closes=   6 | came back   2 =  33.3% [ 0.0, 66.7] | model said   1.3 =  21.8% | ratio 1.53 | P(this few)=0.891 P(this many)=0.393
+  SOLUSD_RTI                               n=  10 closes=   9 | came back   1 =  10.0% [ 0.0, 25.0] | model said   1.7 =  17.1% | ratio 0.58 | P(this few)=0.450 P(this many)=0.871
+  XRPUSD_RTI                               n=  12 closes=  12 | came back   4 =  33.3% [ 8.3, 58.3] | model said   2.3 =  19.2% | ratio 1.74 | P(this few)=0.952 P(this many)=0.170
+  ZECUSD_RTI                               n=   8 closes=   8 | came back   2 =  25.0% [ 0.0, 62.5] | model said   0.9 =  11.1% | ratio 2.25 | P(this few)=0.968 P(this many)=0.210
+
+=== a trigger at X: how often the side it fired on came back ===
+  trigger 0.6   fired on  104 sides (  84 closes), came back  37 =  35.6% [26.0, 45.9]
+  trigger 0.5   fired on   97 sides (  78 closes), came back  30 =  30.9% [21.8, 41.5]
+  trigger 0.4   fired on   90 sides (  72 closes), came back  23 =  25.6% [16.7, 35.5]
+  trigger 0.3   fired on   85 sides (  67 closes), came back  18 =  21.2% [12.7, 30.8]
+  trigger 0.25  fired on   82 sides (  64 closes), came back  15 =  18.3% [10.5, 27.3]
+  trigger 0.2   fired on   76 sides (  60 closes), came back   9 =  11.8% [ 5.3, 19.7]
+
+  flip break-even: the other side pays if it costs less than 0.744 (1 - came-back rate) minus the fee
