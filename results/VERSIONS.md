@@ -1,4 +1,4 @@
-# v-safety2 -- 2026-09-25 __TIME__ (pid __PID__, code_sha __SHA__) -- LIVE: three safety fixes (1, 3, 5); no trading rule changed. Operator's go-ahead 09-25 (~08:5xZ): "it's just doing what it already does but more safely... then do that". Fix 4 (restoring the designed pintake caps) is HELD for the operator: it would tighten a cap pintake also applies to hedges.
+# v-safety2 -- 2026-09-25 09:36:44Z (pid 2934836, code_sha 28f5e66b2169) -- LIVE: three safety fixes (1, 3, 5); no trading rule changed. Operator's go-ahead 09-25 (~08:5xZ): "it's just doing what it already does but more safely... then do that". Fix 4 (restoring the designed pintake caps) is HELD for the operator: it would tighten a cap pintake also applies to hedges.
 
 (1) The bot now asks Kalshi what it holds: at startup (GET /portfolio/positions,
 adopting only a position in our series, in an open market, seen in two reads
