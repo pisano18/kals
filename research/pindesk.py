@@ -1341,7 +1341,7 @@ def _status_of(h, now=None):
         return (word, "%s by you" % word, "Press START to trade again. (%s)" % why, C["grey"])
     halt = h.get("halt")
     if halt and halt.get("kind") == "halt" and halt.get("why") and \
-            re.search(r"loss COUNT brake|loss abort|DRAWDOWN brake", halt["why"]):
+            re.search(r"loss COUNT brake|loss abort|DRAWDOWN brake|DAY loss cap", halt["why"]):
         dd = drawdown_halt_of(halt)
         if dd:
             # v-hwm-reset: the watchdog holds this one for the operator; the
@@ -4587,6 +4587,12 @@ def selftest():
         ck(status_of(dict(base, alive=False, flag="operator STOP at x"))[0] == "STOPPED", "dead + stop flag -> STOPPED")
         h = dict(base, alive=False, halt={"kind": "halt", "t": time.time() - 60, "why": rows[-1]["why"]})
         ck(status_of(h)[0] == "BRAKE" and "restarts in" in status_of(h)[2], "dead after a money brake -> BRAKE, with the countdown")
+        # 2026-09-24: the DAY loss cap (pinrun's own text) is a money brake too;
+        # it was missing from the pattern and would have read NOT RUNNING
+        h_dc = dict(base, alive=False, halt={"kind": "halt", "t": time.time() - 60,
+                    "why": "DAY loss cap: $-201.50 lost today (ET) <= $-200.00. This survives restarts"})
+        ck(status_of(h_dc)[0] == "BRAKE" and "DAY loss cap" in status_of(h_dc)[2],
+           "dead after the DAY loss cap -> BRAKE, naming the cap (got %r)" % (status_of(h_dc)[0],))
         # v-hwm-reset: the drawdown halt, verbatim from pinrun-live-20260920T041637Z.jsonl
         dd_why = ("DRAWDOWN brake: bank $810.59 is 22.5% below its high of $1046.43, limit 20%. Size has "
                   "been reduced to 91. STOP AND LOOK. (A WITHDRAWAL from the account looks identical to a "

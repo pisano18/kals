@@ -137,7 +137,12 @@ function LastHalt {
 }
 
 function IsMoneyBrake($why) {
-    return ($why -match 'loss COUNT brake|loss abort|DRAWDOWN brake')
+    # 2026-09-24: 'DAY loss cap' added. The -$200 day cap (pinrun day_loss(),
+    # persists across restarts until midnight ET) was not in this list, so a
+    # cap halt would have been restarted at once and re-halted every ~3 min
+    # until midnight while the app said NOT RUNNING. It is a money brake and
+    # takes the same 15-min cooldown. Found by the 2026-09-24 guardian review.
+    return ($why -match 'loss COUNT brake|loss abort|DRAWDOWN brake|DAY loss cap')
 }
 
 function IsDrawdown($why) {
@@ -246,6 +251,13 @@ if ($SelfTest) {
     ST ($v.act -eq "restart" -and $v.need -match 're-base flag present') "DRAWDOWN halt WITH the operator's flag -> restart at once, no cooldown (got $($v.act))"
     $v = HaltVerdict $lc $false $now 15
     ST ($v.act -eq "wait" -and $v.say -match 'waiting 15 min') "loss COUNT brake 2 min old -> WAIT out the cooldown, as before (got $($v.act))"
+    # 2026-09-24: the DAY loss cap, verbatim from pinrun's halt text
+    $dcLine = '{"why": "DAY loss cap: $-201.50 lost today (ET) <= $-200.00. This survives restarts -- 2026-09-19 reached -$223.46 through thirteen runs each with a fresh $200 of permission", "drained": false, "t": "2026-09-20T04:16:38Z", "kind": "halt"}'
+    $dc = ParseHalt @($dcLine, $endLine) $fb
+    $v = HaltVerdict $dc $false $now 15
+    ST ($v.act -eq "wait" -and $v.say -match 'waiting 15 min') "DAY loss cap 2 min old -> WAIT out the cooldown like any money brake, not an instant restart loop (got $($v.act))"
+    $v = HaltVerdict $dc $false $now.AddMinutes(14) 15
+    ST ($v.act -eq "restart") "...and after the cooldown it restarts (the cap re-halts it until midnight ET; that is expected)"
     $v = HaltVerdict $lc $true $now 15
     ST ($v.act -eq "wait") "NULL: the re-base flag changes nothing for a loss COUNT brake"
     $v = HaltVerdict $lc $false $now.AddMinutes(14) 15

@@ -1,3 +1,22 @@
+# v-daycap-brake -- 2026-09-24 ~18:1xZ -- watchdog + app: the DAY loss cap halt is now recognised as a money brake (15-min cooldown, BRAKE status); no trading rule changed
+
+Found by the 2026-09-24 guardian review: pinrun's -$200 day cap halts with
+the text "DAY loss cap: ...", which was in neither watch_bot.ps1's money-
+brake pattern nor the app's. It has never fired live. When it did, the
+watchdog would have restarted the bot at once and it would have re-halted
+every ~3 min until midnight ET (the cap persists across restarts by design)
+while the app said NOT RUNNING and the phone flipped DOWN/TRADING. Now:
+watch_bot waits the 15-min cooldown between attempts (self-test case with
+the halt's verbatim text), and the app shows STOPPED BY A SAFETY BRAKE
+naming the cap. Deployed by replacing the watchdog and relaunching the app;
+the bot itself is untouched.
+
+**REVERT:** `git checkout 997cbc9 -- watch_bot.ps1 research/pindesk.py`, then
+replace the watchdog (stop watch_bot, run `boot_all.ps1 -NoArms`) and relaunch
+the app.
+
+---
+
 # v-btcd1 -- 2026-09-24 ~17:0xZ -- LIVE: the HOURLY BTC ladder (KXBTCD) trades for real money at ONE contract a market, alongside the 15-minute markets
 
 Operator: *"Just run hourly btc full on exactly how we would to make real
