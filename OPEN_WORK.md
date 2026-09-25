@@ -47,6 +47,22 @@ own per-close spending limit, not the market's supply.
   per-close allowance for the hourly family — that is the only place more bank
   buys more contracts.
 
+### A7. "fresh offer while they're selling" — `arm-toxic` (being built)
+**Say: "the toxic offer test."**
+The two "someone is selling to us" signals crossed on our own early entries:
+- offer resting, nobody selling: 146 markets, 1 loss (+$204)
+- offer resting, sellers around: 51 markets, 0 losses (+$109)
+- fresh offer, nobody selling: 108 markets, 3 losses (+$126)
+- **fresh offer AND sellers dumping our side: 87 markets, 8 losses, −$285**
+Eight of our twelve early losses sit in that last cell — 22% of the entries
+and the only cell that loses money. Refusing only that cell would have been
++$285 over 11 days (about +$7/day after discounting the 09-19 hedge-bug
+losses to what they'd be now), while refusing either signal alone gives up
+far more winners. Needs the bot to listen to Kalshi's trade feed (the
+recorder already does); being built with the flag OFF, logging first, then a
+paper arm. Bar in `results/PREREG_toxic.md`, 7 days from when live starts
+logging. Both thresholds were fixed before the cross.
+
 ### A3. 2-cent edge floor — `arm-edge2c`
 **Say: "the edge floor test."**
 Only buy when the model beats the market by at least 2 cents after fees.
@@ -146,11 +162,10 @@ matters.
 
 ## D. Decided and closed (do not re-open without new data)
 
-- **Selling-pressure feed — NOT being built.** In the 3 seconds before our
-  order, other traders were net selling our side on 68 of 100 losers vs 33 of
-  100 winners (6.5 losses per 100 vs 1.5). It is the same population as A1,
-  and A1 uses data we already record while this needs a new live data feed.
-  One test, not two. Evidence: `results/cf_2026-09-24/toxicity.md`.
+- **Selling-pressure feed — REVERSED, now being built (see A7).** I first
+  said it was the same population as A1 and not worth a second test. Crossing
+  the two on our own entries proved otherwise — see A7. Old evidence:
+  `results/cf_2026-09-24/toxicity.md`; the cross: `results/PREREG_toxic.md`.
 - **Market making (resting our own offers) — parked.** A simulation says
   $160–550/day, but it is a replay (our standing rule: replays are not
   evidence), and testing it needs 2+ GB of memory the money bot cannot spare.
