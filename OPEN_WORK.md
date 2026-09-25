@@ -47,6 +47,30 @@ own per-close spending limit, not the market's supply.
   per-close allowance for the hourly family — that is the only place more bank
   buys more contracts.
 
+### A10. Far rungs of the hourly BTC ladder at 99c -- `arm-farrung` (paper) -- WAITING ON SIGN-OFF
+**Say: "the far rung idea."**
+With 45 seconds left, a rung $150 or more from where the settlement is
+heading has never finished on the wrong side (0 of 2,136 closes since
+Sep 1; worst miss $136). Those rungs sit at 99c with hundreds to thousands
+of contracts resting, and the live bot's 98c ceiling turned five of them
+away on Sep 24. A winner makes 0.93c a contract; a loser costs 99c; it
+breaks even if fewer than 0.93 in 100 cross. Bank-limited: about $68-85 a
+day at today's bank, and one crossing costs about $225 at that size.
+- **Status:** the code is built and OFF (`v-farrung`). A paper copy runs.
+  The 1-contract live test needs the operator's yes; its bar is in
+  `results/FAR_RUNG_2026-09-25.md` section 0 (100+ fills over 30+ closes,
+  zero crossings, 0.8c+ a contract, fills on half of orders).
+- **Honest limit:** 24 days of tape with no flash crash in it.
+
+### A11. Polymarket US -- the same BTC contract, second book (recorder running)
+**Say: "Polymarket."**
+Since Sep 22 Polymarket US lists our exact BTC 15-minute contract (same
+index, same strike to the cent). Its book is a tenth to a fiftieth of
+Kalshi's; makers there are paid a rebate. Cross-venue "free money" showed
+on a cached feed and vanished on the real one. Realistic $0-15 a day.
+A read-only recorder runs 3 days (to ~Sep 28); bar in
+`results/SECOND_INCOME_SCAN_2026-09-25.md` section 1.
+
 ### A9. Hourly markets on the other coins -- `arm-hourly-all` (paper, since 2026-09-25 03:06Z)
 **Say: "the other hourly coins."**
 Kalshi runs the same hourly ladder for ETH, SOL, XRP, DOGE, BNB and HYPE that
@@ -199,6 +223,13 @@ matters.
   losers from winners (medians 0 basis points both; p = 0.13–0.8; only 8 losers
   with feed coverage, 49% power). The print-prediction itself is kept as a
   possible latency use later; no gate.
+- **Second-income scan 2026-09-25** (`results/SECOND_INCOME_SCAN_2026-09-25.md`):
+  crypto one-touch monthlies $2-10/day needs data; ladder both-sides
+  arbitrage 0 of 1,496 polls; sports final minute unmeasured (score feed
+  blocked here); S&P/Nasdaq close, Crypto.com, ForecastEx, Robinhood,
+  PrizePicks, Sporttrade, air quality, box office, app rankings, Google
+  Trends: killed with reasons. The Polymarket "no short-dated crypto" kill
+  is REVERSED (see A11).
 - **32 other ideas killed with reasons** — including hedging with a crypto
   futures position, Polymarket US, daily high/low temperature markets, selling
   the winning side into the queue, selling lottery tickets, new coins, buying

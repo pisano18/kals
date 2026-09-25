@@ -1,3 +1,59 @@
+# 2026-09-25 04:0xZ -- SECOND INCOME hunt: far rungs of the hourly BTC ladder at 99c (built, OFF, needs sign-off); Polymarket US lists our exact contract; seven-coin hourly paper arm; scan of everything else
+
+Operator's brief: "seriously find a second income source... anything on
+Kalshi or even Polymarket... search hard and wide and test vigorously."
+Three hunts ran in parallel; everything below is read-only measurement
+except code that ships OFF.
+
+**1. FAR RUNGS (results/FAR_RUNG_2026-09-25.md) -- the strongest candidate.**
+On the hourly BTC ladder a rung $150+ from the projection with 45 s left was
+crossed on 0 of 2,136 closes since 09-01 (index tape, 60-print mean
+reconciled to the exchange's own average 2,133/2,133; worst miss $136 at
+45 s, $101 at 30 s). Those rungs sit at 99c with 800-12,600 contracts
+resting; the live bot refused five of them `price_ceiling` on 09-24. Worth
+0.93c a contract, break-even 0.93 crossings per 100; bank-limited (25% of
+bank a side): ~$68-85/day at today's bank, -$225 per crossing at that size.
+Honest limit: 24 days of tape with no flash crash; the worst rate the tape
+allows (95%) is 0.14%, which still nets +0.79c. Pre-registered 1-contract
+bar in the file's section 0 (>=100 fills over >=30 closes, ZERO crossings,
+net >=0.8c, fill rate >=50%, depth >=500 at C). **Built as `v-farrung`
+(dfefa2a): seven flags, all OFF; paper arm `arm-farrung` running.** The
+live test is the same flags on restart_bot.ps1 with a `v-farrung1` entry --
+NOT done, it needs the operator's sign-off (new family, 99c). Known limit:
+`early_dear` keeps rungs to tau <= 30 s.
+
+**2. POLYMARKET US (results/SECOND_INCOME_SCAN_2026-09-25.md section 2).**
+Since 09-22 15:15Z polymarket.us lists BTC 15-minute and 1-hour up/down on
+the SAME BRTI 60-s average with the SAME strike to the cent (verified on
+the 03:15Z close). Taker fee 0.0695 p(1-p); makers PAID 0.0125 p(1-p).
+Book is 1/10-1/50 of Kalshi's (median 4,423 shares a window, 47% of
+windows zero). The cached public gateway showed "riskless" cross-venue
+packages at $0.89-0.99; every one vanished on the real-time feed (30-s
+cache). Realistic: $0-15/day incremental, unknown. The real-time recorder
+(`scratchpad/scan_poly_ws.py`, read key, GET/WS only) relaunches itself
+for 3 days; bar in the file. This reverses the 09-06/09-24 "no short-dated
+crypto there" kills, which were true when written.
+
+**3. SEVEN-COIN HOURLY LADDERS (`v-ladder7`, ad700c5, paper).** ETH SOL XRP
+DOGE BNB HYPE hourly ladders exist on indexes the bot already follows;
+`arm-hourly-all` trades all seven at 1 contract a rung on paper (log
+pinrun-paper-20260925T030630Z). First refresh: 7 ladder records, 3 rungs
+each, 0 errors; universe refresh 0.9 -> 2.3 s (10 more GETs; a hedge
+blackout concern before any live use). Live path proven byte-identical.
+
+**4. Everything else scanned (section 1 of the scan):** crypto one-touch
+monthlies $2-10/day needs-data (33 crosses Jul-Sep, $3,738 gross bought
+<=97c in the last 10 min, 3 events); ladder both-sides arbitrage 0 of
+1,496 polls; sports final minute unmeasured (ESPN 403 from this box);
+S&P/Nasdaq close, Crypto.com, ForecastEx, Robinhood/Rothera, PrizePicks,
+Sporttrade, air quality/box office/app rankings/Trends: killed with
+reasons. Market-making sim (six days) still running at 126/132 hours.
+
+**Harness lesson:** the Bash tool's heredoc halves backslashes (a VERSIONS
+revert path shipped with a CR in it); write scripts with the Write tool.
+
+---
+
 # 2026-09-24 02:22Z -- v-cap20 LIVE; the whole rule set re-priced on a per-second rebuild; what was measured and NOT changed
 
 Operator's brief tonight: "make the final profit number bigger... don't change
