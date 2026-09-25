@@ -345,6 +345,45 @@ def expected_fee(price, count=1):
 
 
 # ---------- rails -------------------------------------------------------------
+# v-scalein-caps (2026-09-25): A COVERING HEDGE IS NEVER REFUSED ON DOLLARS.
+#
+# The stake cap and the loss abort bound NEW exposure. A hedge buys the other
+# side of a position already held, for no more contracts than are held, so
+# the worst outcome can only get better: YES n + NO m with m <= n loses at
+# most n x p_yes either way. Until now both rails refused it anyway, so a run
+# with stake still committed from an unsettled close (or at its loss abort
+# while a position was open) could not insure that position -- the "a gate
+# must never block a hedge" class (power audit 09-25: 9 of 9 drain hedges
+# refused in the driven world). pinrun restores the DESIGNED, tighter caps
+# in the same version, which made this reachable in more states.
+#
+# The label alone is not trusted. The exemption needs all of: hedge=True, a
+# position on this ticker in the ledger, the order buying the OTHER side,
+# and a count no larger than the contracts that entry holds (+0.01 for the
+# two-decimal count). _book() adds hedge fills into the same entry, so this
+# is a loose upper bound; pinrun already caps every hedge at the unhedged
+# remainder. Anything else -- an entry, a same-side "hedge", a hedge on a
+# market we do not hold, one larger than the position -- is judged exactly as
+# before. pinracearm, cmdlive and pinracetest never pass hedge=True.
+def covers_held(body, ledger=None):
+    """True only when `body` buys the OTHER side of a position the ledger
+    holds, for no more contracts than it holds."""
+    L = LEDGER if ledger is None else ledger
+    try:
+        pos = (L.get("positions") or {}).get(body.get("ticker"))
+        if not pos:
+            return False
+        side = body.get("side")
+        want = "yes" if side == "bid" else ("no" if side == "ask" else None)
+        held = str(pos.get("want") or "").lower()
+        if want is None or held not in ("yes", "no") or held == want:
+            return False
+        c = float(body.get("count"))
+        return 0.0 < c <= float(pos.get("contracts") or 0.0) + 0.01
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
 def check_take(body, market_close_epoch, now_epoch, base=None, ledger=None,
                max_tau=None, hedge=False):
     """Every reason NOT to send. Empty list == ok. Runs before signing.
@@ -352,9 +391,14 @@ def check_take(body, market_close_epoch, now_epoch, base=None, ledger=None,
     `hedge=True` (K2, 2026-09-22) skips exactly ONE rail: the ledger halt.
     Every other rail -- count, HARD_MAX, price, IOC, post_only, side, tau,
     the stake cap, the loss abort, the environment -- applies to a hedge as
-    to anything else. See the note at the halt check below."""
+    to anything else. See the note at the halt check below.
+
+    v-scalein-caps (2026-09-25): a hedge that COVERS a held position (see
+    covers_held) also skips the two DOLLAR rails, the stake cap and the loss
+    abort. Every count, price, IOC, side, tau and environment rail stays."""
     bad = []
     L = LEDGER if ledger is None else ledger
+    _cover = bool(hedge) and covers_held(body, L)
 
     if MAX_TAKE_COUNT > HARD_MAX:
         bad.append(f"MAX_TAKE_COUNT {MAX_TAKE_COUNT} has been edited above "
@@ -432,11 +476,11 @@ def check_take(body, market_close_epoch, now_epoch, base=None, ledger=None,
             stk = None
         if stk is None:
             bad.append("could not compute the stake")
-        elif L["committed"] + stk > MAX_RUN_STAKE + 1e-9:
+        elif L["committed"] + stk > MAX_RUN_STAKE + 1e-9 and not _cover:
             bad.append(f"stake ${stk:.4f} + committed ${L['committed']:.4f} "
                        f"would exceed MAX_RUN_STAKE ${MAX_RUN_STAKE:.2f}")
 
-    if L["realised"] <= LOSS_ABORT:
+    if L["realised"] <= LOSS_ABORT and not _cover:
         bad.append(f"LOSS ABORT: realised P&L ${L['realised']:+.2f} <= "
                    f"${LOSS_ABORT:.2f}; no further takes this process")
     # K2 (2026-09-22): A HALT NEVER REFUSES A HEDGE.
@@ -708,7 +752,9 @@ def take(base, pk, key_id, ticker, want, price, count, market_close_epoch,
     hedge=True: this order buys the other side of a position already held.
     It is checked by every rail except the ledger halt (see check_take), and
     when it goes out PAST a halt that is written to the ledger and flagged
-    on the result as out["past_halt"].
+    on the result as out["past_halt"]. v-scalein-caps: when it COVERS a
+    position the ledger holds (covers_held) it also skips the stake cap and
+    the loss abort.
     """
     now = time.time() if now_epoch is None else float(now_epoch)
     body = build_take(ticker, want, price, count, exchange_index, client_id)
@@ -1249,6 +1295,111 @@ def selftest():
                          "the same answer as an entry (%s)" % desc)
     print(f"    {len(k2_bad)} other rails still refuse a hedge while halted; "
           f"with no halt a hedge and an entry are judged identically")
+    reset_ledger()
+
+    # --- v-scalein-caps: a COVERING hedge is never refused on dollars --------
+    print("\n  v-scalein-caps: a hedge covering a HELD position skips the stake "
+          "cap and the loss abort; nothing else does:")
+    sc_tk = "KXBTC15M-SC-01"
+    sc_held = {sc_tk: {"want": "yes", "contracts": 5.0, "cost": 4.85,
+                       "order_ids": ["sc"]}}
+    sc_h = build_take(sc_tk, "no", 0.40, 5, 0, "sc-h")      # covers 5 YES
+    sc_e = build_take(sc_tk, "yes", 0.97, 5, 0, "sc-e")     # more of the same
+    sc_n = 0
+    for desc, led in (
+            ("stake cap", dict(_fresh_ledger(), committed=MAX_RUN_STAKE,
+                               positions=sc_held)),
+            ("loss abort", dict(_fresh_ledger(), realised=LOSS_ABORT - 1.0,
+                                positions=sc_held)),
+            ("stake cap AND loss abort AND a halt",
+             dict(_fresh_ledger(), committed=MAX_RUN_STAKE,
+                  realised=LOSS_ABORT - 1.0, halt="test halt",
+                  positions=sc_held))):
+        v_cov = check_take(sc_h, close_ok, now, ledger=led, hedge=True)
+        v_ent = check_take(sc_e, close_ok, now, ledger=led)
+        v_unl = check_take(sc_h, close_ok, now, ledger=led)
+        if v_cov:
+            fails.append("v-scalein-caps: a covering hedge was refused at the "
+                         "%s: %s" % (desc, v_cov))
+        if not v_ent:
+            fails.append("v-scalein-caps: an ENTRY must still be refused at "
+                         "the %s" % desc)
+        if not v_unl:
+            fails.append("v-scalein-caps: the same order WITHOUT hedge=True "
+                         "must still be refused at the %s" % desc)
+        sc_n += 3
+    # the label alone is not trusted: each of these is refused at the cap
+    sc_cap = dict(_fresh_ledger(), committed=MAX_RUN_STAKE, positions=sc_held)
+    for desc, body, led in (
+            ("a same-side 'hedge'", build_take(sc_tk, "yes", 0.40, 5, 0, "s1"),
+             sc_cap),
+            ("a 'hedge' on a market we do not hold",
+             build_take("KXETH15M-SC-02", "no", 0.40, 5, 0, "s2"), sc_cap),
+            ("a 'hedge' larger than the position (5.02 > 5 + 0.01)",
+             build_take(sc_tk, "no", 0.40, 5.02, 0, "s3"), sc_cap),
+            ("a 'hedge' with no positions at all", sc_h,
+             dict(_fresh_ledger(), committed=MAX_RUN_STAKE))):
+        if not check_take(body, close_ok, now, ledger=led, hedge=True):
+            fails.append("v-scalein-caps: %s was let past the stake cap" % desc)
+        sc_n += 1
+    # every NON-dollar rail still refuses a covering hedge
+    sc_big = {sc_tk: dict(sc_held[sc_tk], contracts=MAX_TAKE_COUNT + 50.0)}
+    sc_led = dict(_fresh_ledger(), committed=MAX_RUN_STAKE, positions=sc_big)
+    for desc, body, close, kw in (
+            ("count over MAX_TAKE_COUNT",
+             build_take(sc_tk, "no", 0.40, MAX_TAKE_COUNT + 1, 0, "r1"),
+             close_ok, {}),
+            ("good_till_canceled", dict(sc_h, time_in_force="good_till_canceled"),
+             close_ok, {}),
+            ("post_only True", dict(sc_h, post_only=True), close_ok, {}),
+            ("price outside (0,1)", dict(sc_h, price="1.2000"), close_ok, {}),
+            ("tau beyond MAX_TAU", sc_h, now + MAX_TAU + 60.0, {}),
+            ("market already closed", sc_h, now - 1.0, {}),
+            ("production not armed", sc_h, close_ok, {"base": PROD})):
+        if not check_take(body, close, now, ledger=sc_led, hedge=True, **kw):
+            fails.append("v-scalein-caps: a covering hedge must still be "
+                         "refused for %s" % desc)
+        sc_n += 1
+    # NULL: under the caps, a covering hedge and an entry get the same answer
+    sc_room = dict(_fresh_ledger(), positions=sc_held)
+    if (check_take(sc_h, close_ok, now, ledger=sc_room, hedge=True)
+            != check_take(sc_h, close_ok, now, ledger=sc_room)):
+        fails.append("v-scalein-caps NULL: with room under every rail the "
+                     "exemption must change nothing")
+    sc_n += 1
+    # DRIVEN through take(): committed AT the cap, a real booked YES fill;
+    # the covering hedge reaches the wire, the entry does not.
+    sc_posts = []
+
+    def sc_send(base, pk, key_id, method, path, body=None, query=None):
+        sc_posts.append((body or {}).get("side"))
+        return 201, {"client_order_id": (body or {}).get("client_order_id"),
+                     "fill_count": (body or {}).get("count"),
+                     "remaining_count": "0.00",
+                     "average_fill_price": (body or {}).get("price"),
+                     "average_fee_paid": "0.0020", "order_id": "sc-fill"}
+    ordercli.send = sc_send
+    try:
+        reset_ledger()
+        take(DEMO, None, "k", sc_tk, "yes", 0.97, 5, close_ok, now_epoch=now)
+        LEDGER["committed"] = MAX_RUN_STAKE
+        sc_ent = take(DEMO, None, "k", sc_tk, "yes", 0.97, 5, close_ok,
+                      now_epoch=now)
+        sc_hed = take(DEMO, None, "k", sc_tk, "no", 0.40, 5, close_ok,
+                      now_epoch=now, hedge=True)
+    finally:
+        ordercli.send = real_send
+    if (sc_posts != ["bid", "ask"] or not sc_ent.get("refused")
+            or sc_hed.get("refused") or float(sc_hed.get("filled") or 0) != 5.0):
+        fails.append("v-scalein-caps DRIVEN: at the stake cap the entry must "
+                     "be refused and the covering hedge filled (wire %s, "
+                     "entry %s, hedge %s)" % (sc_posts, sc_ent.get("refused"),
+                                              sc_hed.get("refused")))
+    sc_n += 1
+    print(f"    {sc_n} checks: covering hedges pass the stake cap and the loss "
+          f"abort; entries, unlabelled, same-side, unheld and oversized orders "
+          f"do not; 7 other rails still bind; driven take() at the cap: wire "
+          f"{sc_posts}")
     reset_ledger()
 
     # --- outcomes that must NEVER release the stake ---------------------------

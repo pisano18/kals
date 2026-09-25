@@ -2929,7 +2929,55 @@ def rebuy_ok(prev, tk, price, size=None, tau=None):
     drop = paid - price
     if late_add_ok(tau, have, want, drop):
         return True                      # v-lateadd: the last seconds, our way
-    return IMPROVE_BY - 1e-12 <= drop <= IMPROVE_MAX + 1e-12
+    if not (IMPROVE_BY - 1e-12 <= drop <= IMPROVE_MAX + 1e-12):
+        return False
+    # v-scalein (A): THE BAND WAS MEASURED ON THE OFFER, NOT ON A SWEEP'S
+    # AVERAGE. pinpick's A23 table compares the second OFFER with the first
+    # OFFER; `paid` is the average fill, which --sweep-depth lifts above the
+    # ask we saw. So the SAME or a DEARER ask read as 0.5-1c cheaper and a
+    # second full size went out, ~0.3 s after the first: 6 of 8 live A23
+    # scale-ins, 5 won $14.00, BTC 09-23 lost $64.83 (ask 86c both times,
+    # paid 87c). Now the ask must ALSO sit in the band against the cheapest
+    # ask we took in this market. Strictly narrower: it can refuse a
+    # scale-in the old band allowed, never allow one it refused. A market
+    # with no ask on record (a v-safety2 adopted fill) keeps the old rule.
+    ask1 = (prev.get("ask_tk") or {}).get(tk)
+    if ask1 is None:
+        return True
+    drop1 = float(ask1) - float(price)
+    return IMPROVE_BY - 1e-12 <= drop1 <= IMPROVE_MAX + 1e-12
+
+
+def scalein_cap(prev, tk, price, size=None, tau=None):
+    """v-scalein (B): the highest price an A23 SCALE-IN may pay, or None
+    when this buy is not one (first buy, top-up, v-lateadd add).
+
+    A23 measured buying AT the cheaper offer. Live, the sweep then sizes the
+    order from the ladder up to the edge limit (98c), so a 3-contract cheaper
+    touch bought a whole size at DEARER levels: the second leg's average
+    was above the first leg's in 3 of the 5 live cases since 09-22. The cap
+    is the cheapest of (first ask, average paid) minus IMPROVE_BY, floored
+    to the tick, never under the ask that qualified -- so the scale-in buys
+    only the contracts that really are cheaper. Entry path only."""
+    if prev is None or prev.get("per_tk", {}).get(tk, 0) <= 0:
+        return None
+    have = float((prev.get("n_tk") or {}).get(tk, 0.0))
+    want = float(SIZE if size is None else size)
+    if have < want - 1e-9:
+        return None                      # a top-up: not a scale-in
+    paid = prev.get("px_tk", {}).get(tk)
+    if paid is None:
+        return None
+    if late_add_ok(tau, have, want, paid - price):
+        return None                      # v-lateadd owns it, unchanged
+    ref = float(paid)
+    ask1 = (prev.get("ask_tk") or {}).get(tk)
+    if ask1 is not None:
+        ref = min(ref, float(ask1))
+    cap = ref - IMPROVE_BY
+    t = tick_at(cap)
+    cap = round(math.floor(cap / t + 1e-9) * t, 4)
+    return max(cap, round(float(price), 4))
 
 
 MIN_LEVEL = 1.0        # the RESTING level must hold this much regardless of
@@ -5017,9 +5065,17 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
             pass
 
         def buyable(self, tk, want, lim):
+            # v-scalein: a market may plant the depth at or under a limit;
+            # unplanted, every existing world reads the 0.0 it always did
+            for m in markets:
+                if m["tk"] == tk and "buyable" in m:
+                    return float(m["buyable"](clock.t - t0, want, lim))
             return 0.0
 
         def rungs(self, tk, side, lim):
+            for m in markets:
+                if m["tk"] == tk and "rungs" in m:
+                    return list(m["rungs"](clock.t - t0, side, lim))
             return []
 
         def level_age_ms(self, tk, side, px):
@@ -5235,9 +5291,19 @@ def selftest():
     _hwm_dir = _tfhw.mkdtemp(prefix="pinhwm-")
     globals()["HWM_FILE"] = os.path.join(_hwm_dir, "hwm.json")
     globals()["SIZE_MIRROR"] = os.path.join(_hwm_dir, "size-mirror.json")
+    # v-scalein-caps (fix 4): pintake's RAILS are restored here too, for the
+    # same reason. The A66 check drives autosize_tick at a fake size 109, and
+    # set_limits() only ever raises, so every live run since 09-19 12:26Z
+    # traded under the test's 163.5 / 245.25 / $664 instead of the designed
+    # 1.5 x SIZE / 1.5 x that / 6 x SIZE + $10 (132 / 198 / $538 at 88).
+    # Restoring them in the finally holds whatever check leaks next.
+    _rails_real = (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX,
+                   pintake.MAX_RUN_STAKE, pintake.LOSS_ABORT)
     try:
         return _selftest_body()
     finally:
+        (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX, pintake.MAX_RUN_STAKE,
+         pintake.LOSS_ABORT) = _rails_real
         globals()["HWM_FILE"] = _hwm_real
         globals()["SIZE_MIRROR"] = _mir_real
         try:
@@ -11374,6 +11440,192 @@ def _selftest_body():
        "v-zerotake by source: the late_add_full gate sits after the early-leg "
        "gates and before the signal point; the zero_take backstop guards the "
        "paper booking and sits right before pintake.take on the live path")
+
+    # ---- v-scalein (A + B) and v-scalein-caps --------------------------
+    # fix 4: the body cannot see its own wrapper, so read the WRAPPER's
+    # source (getsource of selftest alone -- this literal is not in it)
+    _st_src = inspect.getsource(selftest)
+    ck("_rails_real = (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX," in _st_src
+       and "pintake.LOSS_ABORT) = _rails_real" in _st_src
+       and _st_src.index("_rails_real = (") < _st_src.index("return _selftest_body()")
+       < _st_src.index(") = _rails_real"),
+       "v-scalein-caps (fix 4): selftest() snapshots pintake's four rails "
+       "before the body and restores them in its finally, so no check can "
+       "leave the live run on a test's rails (09-19..09-25: 163.5 / 245.25 "
+       "/ $664 instead of 132 / 198 / $538 at size 88)")
+    # PURE, at the DECLARED band (a running --improve-max must not move it).
+    _sv_si = (IMPROVE_MAX, REBUY_LATE_TAU, REBUY_LATE_FRAC)
+    try:
+        globals()["IMPROVE_MAX"] = _DEFAULT_IMPROVE_MAX
+        globals()["REBUY_LATE_TAU"], globals()["REBUY_LATE_FRAC"] = 15, 0.5
+        # the BTC 09-23 numbers: ask 86c, the sweep paid 87c, ask 86c again
+        _si_btc = {"per_tk": {"A": 1}, "px_tk": {"A": 0.870},
+                   "ask_tk": {"A": 0.860}, "n_tk": {"A": 88.0}}
+        _si_old = {"per_tk": {"A": 1}, "px_tk": {"A": 0.870},
+                   "n_tk": {"A": 88.0}}
+        ck(rebuy_ok(_si_old, "A", 0.860, 88.0, tau=26) is True
+           and rebuy_ok(_si_btc, "A", 0.860, 88.0, tau=26) is False
+           and rebuy_ok(_si_btc, "A", 0.855, 88.0, tau=26) is False,
+           "v-scalein (A) pure: BTC 09-23 -- paid 87c by the sweep, ask 86c "
+           "both times: the OLD reading (paid only) allows a second full "
+           "size, the first ask refuses it; 85.5c is 1.5c under what was "
+           "paid, so still refused")
+        _si_gen = {"per_tk": {"A": 1}, "px_tk": {"A": 0.960},
+                   "ask_tk": {"A": 0.960}, "n_tk": {"A": 80.0}}
+        ck(rebuy_ok(_si_gen, "A", 0.955, 80.0, tau=22) is True
+           and rebuy_ok(_si_gen, "A", 0.950, 80.0, tau=22) is True
+           and rebuy_ok(_si_gen, "A", 0.956, 80.0, tau=22) is False
+           and rebuy_ok(_si_gen, "A", 0.949, 80.0, tau=22) is False,
+           "v-scalein (A) NULL: with no sweep (paid == first ask) the band is "
+           "exactly A23's: 0.5c and 1.0c cheaper pass, 0.4c and 1.1c do not")
+        ck(rebuy_ok(_si_btc, "A", 0.870, 88.0, tau=12) is True
+           and rebuy_ok(_si_btc, "A", 0.870, 88.0, tau=20) is False,
+           "v-scalein leaves v-lateadd alone: inside 15 s the same-as-paid "
+           "ask still adds (it is read against paid, as shipped)")
+        ck(rebuy_ok({"per_tk": {"A": 1}, "px_tk": {"A": 0.960},
+                     "ask_tk": {"A": 0.940}, "n_tk": {"A": 5.0}},
+                    "A", 0.980, 50.0) is True,
+           "a TOP-UP is untouched: an unfinished position buys again whatever "
+           "the first ask was")
+        _si_cap_p = {"per_tk": {"A": 1}, "px_tk": {"A": 0.960},
+                     "ask_tk": {"A": 0.960}, "n_tk": {"A": 80.0}}
+        ck(scalein_cap(_si_cap_p, "A", 0.954, 80.0, tau=22) == 0.955
+           and scalein_cap({"per_tk": {"A": 1}, "px_tk": {"A": 0.975},
+                            "ask_tk": {"A": 0.960}, "n_tk": {"A": 80.0}},
+                           "A", 0.954, 80.0, tau=22) == 0.955
+           and scalein_cap(_si_btc, "A", 0.850, 88.0, tau=26) == 0.85
+           and scalein_cap(_si_cap_p, "A", 0.954, 90.0, tau=22) is None
+           and scalein_cap(_si_cap_p, "A", 0.960, 80.0, tau=12) is None
+           and scalein_cap(None, "A", 0.954, 80.0) is None,
+           "v-scalein (B) pure: a scale-in may pay at most (cheapest of first "
+           "ask and paid) - 0.5c, floored to the tick (95.5c; 85c in the 1c "
+           "zone); a top-up, a v-lateadd add and a first buy get no cap")
+    finally:
+        (globals()["IMPROVE_MAX"], globals()["REBUY_LATE_TAU"],
+         globals()["REBUY_LATE_FRAC"]) = _sv_si
+
+    # DRIVEN, live path, through the REAL loop: a fake exchange with a
+    # ladder, a fake take that fills against it, and the book / buyable /
+    # rungs the loop reads all drawn from that same ladder.
+    def _si_world(levels_after, fill_px=None):
+        ex = {"lv": [(0.960, 50.0)], "calls": [], "first": True}
+
+        def _asks(lim=1.0):
+            return [(p, q) for p, q in ex["lv"] if p <= lim + 1e-9 and q > 0]
+
+        def _book(t):
+            lv = _asks()
+            return _ob(round(lv[0][0] - 0.02, 4), round(1.0 - lv[0][0], 4),
+                       size=lv[0][1])
+
+        def _take(base, pk, key_id, ticker, want, price, count, mce,
+                  exchange_index=0, **kw):
+            ex["calls"].append((float(price), float(count)))
+            left, cost = float(count), 0.0
+            for i, (p, q) in enumerate(list(ex["lv"])):
+                if p > float(price) + 1e-9 or left <= 1e-9:
+                    continue
+                k = min(q, left)
+                cost += k * p
+                left -= k
+                ex["lv"][i] = (p, q - k)
+            got = float(count) - left
+            avg = (fill_px(len(ex["calls"])) if fill_px
+                   else (cost / got if got > 0 else None))
+            if ex["first"]:
+                ex["first"] = False
+                ex["lv"] = list(levels_after)
+            body = pintake.build_take(ticker, want, price, count, exchange_index)
+            out = pintake.normalise(201, {"order": {
+                "order_id": "si-%d" % len(ex["calls"]), "status": "executed",
+                "fill_count": round(got, 2), "remaining_count": 0,
+                "average_fill_price": avg}}, body, base)
+            out["refused"] = []
+            return out
+        mkt = {"tk": "KXSI15M-SI", "series": "KXSI15M", "iid": "SI",
+               "strike": 100.0, "fair": (lambda t: 0.999), "book": _book,
+               "buyable": (lambda t, w, lim: sum(q for p, q in _asks(lim))),
+               "rungs": (lambda t, s, lim: _asks(lim))}
+        return mkt, _take, ex
+
+    _si_flags = {"MAX_PER_MARKET": 2, "IMPROVE_SCOPE": "market",
+                 "IMPROVE_MAX": 0.01, "MIN_FILL_FRAC": 0.0,
+                 "SWEEP_DEPTH": True, "REBUY_LATE_TAU": 15,
+                 "REBUY_LATE_FRAC": 0.5}
+    # (A) the BTC 09-23 shape: the offer stays at 86c, the first fill reads
+    # 87c (the sweep), the second would read 86.13c
+    _mA, _tA, _xA = _si_world([(0.860, 1000.0)],
+                              fill_px=lambda n: 0.87 if n == 1 else 0.8613)
+    _xA["lv"] = [(0.860, 1000.0)]
+    _rA = _offline_trade_loop([_mA], live=True, take=_tA, run_s=2.5, tau0=18,
+                              flags=_si_flags)
+    _bandA = _refusals(_rA, "rebuy_band")
+    ck(_rA["raised"] is None and len(_xA["calls"]) == 1 and _bandA
+       and abs(float(_bandA[0].get("first_ask") or 0) - 0.86) < 1e-9
+       and abs(float(_bandA[0].get("paid") or 0) - 0.87) < 1e-9,
+       "v-scalein (A) DRIVEN, BTC 09-23 reproduced: bought 5 at an 86c ask, "
+       "the sweep read 87c, the SAME 86c ask comes back -- ONE order, the "
+       "re-buy refused rebuy_band with first_ask 0.86 / paid 0.87 (orders "
+       "%s, refusals %d)" % (_xA["calls"], len(_bandA)))
+    # (B) a GENUINELY cheaper touch of 3 at 95.4c over 500 at 97c
+    _mB, _tB, _xB = _si_world([(0.954, 3.0), (0.970, 500.0)])
+    _rB = _offline_trade_loop([_mB], live=True, take=_tB, run_s=2.5, tau0=18,
+                              flags=_si_flags)
+    _capB = _kinds(_rB, "scalein_cap")
+    ck(_rB["raised"] is None and len(_xB["calls"]) == 2
+       and abs(_xB["calls"][1][0] - 0.955) < 1e-9
+       and abs(_xB["calls"][1][1] - 3.0) < 1e-9
+       and len(_capB) == 1 and abs(float(_capB[0]["limit"]) - 0.955) < 1e-9,
+       "v-scalein (B) DRIVEN: the genuinely cheaper 95.4c touch still "
+       "qualifies, and the scale-in is sent at a 95.5c limit for the 3 "
+       "cheaper contracts -- not 98c for a full size that averages UP "
+       "(orders %s)" % (_xB["calls"],))
+    # NULL: a first buy and a top-up see no cap and no new refusal
+    _mC, _tC, _xC = _si_world([(0.960, 500.0)])
+    _xC["lv"] = [(0.960, 2.0)]
+    _rC = _offline_trade_loop([_mC], live=True, take=_tC, run_s=2.5, tau0=18,
+                              flags=_si_flags)
+    ck(_rC["raised"] is None and len(_xC["calls"]) == 2
+       and all(abs(c[0] - _xC["calls"][0][0]) < 1e-9 for c in _xC["calls"])
+       and not _kinds(_rC, "scalein_cap"),
+       "v-scalein NULL DRIVEN: a 2-contract first fill is TOPPED UP at the "
+       "same price and the same limit -- no cap, no refusal (orders %s)"
+       % (_xC["calls"],))
+
+    # v-scalein-caps DRIVEN, live path with the REAL pintake.take against a
+    # fake wire: one YES position whose belief collapses at +4 s. Planted
+    # after the entry books: stake already committed up to the cap (an
+    # earlier close not yet released), or the run already at its loss abort.
+    def _hc_world(inject):
+        _done = {"x": False}
+
+        def _rf(kind, kw):
+            if kind == "order" and not _done["x"]:
+                inject(pintake.LEDGER)
+                _done["x"] = True
+        _m = {"tk": "KXHC15M-HC", "series": "KXHC15M", "iid": "HC",
+              "strike": 100.0,
+              "fair": (lambda t: 0.10 if t >= 4 else 0.999),
+              "book": (lambda t: _ob(0.94, 0.05))}
+        _r = _offline_trade_loop([_m], live=True, reply=_fill_all,
+                                 rec_fault=_rf)
+        _asks = [p for p in _r["posts"] if p.get("side") == "ask"]
+        _hr = [r for r in _r["recs"] if r.get("kind") == "hedge_refused"]
+        _hn = sum(float(r.get("n") or 0) for r in _r["recs"]
+                  if r.get("kind") == "hedge")
+        return _r, _asks, _hr, _hn
+    for _hc_lab, _hc_inj in (
+            ("stake already committed to the cap",
+             lambda L: L.__setitem__("committed", pintake.MAX_RUN_STAKE - 0.01)),
+            ("the run at its loss abort",
+             lambda L: L.__setitem__("realised", pintake.LOSS_ABORT - 1.0))):
+        _r_hc, _a_hc, _hr_hc, _hn_hc = _hc_world(_hc_inj)
+        ck(_r_hc["raised"] is None and len(_a_hc) >= 1 and not _hr_hc
+           and abs(_hn_hc - 5.0) < 1e-6,
+           "v-scalein-caps DRIVEN: with %s, the collapsing position is STILL "
+           "hedged in full -- pintake no longer refuses a covering hedge on "
+           "dollars (hedge POSTs %d, refused %d, hedged %g)"
+           % (_hc_lab, len(_a_hc), len(_hr_hc), _hn_hc))
     # --edge-floor DRIVEN: fair 0.999 against a 97.9c ask is a ~1.9c edge after
     # fee: bought at the shipped 0.3c floor, refused as edge_floor at 2c
     _ef_on = _offline_trade_loop([_spk_mkt(10, lambda t: 0.999, no_bid=0.021)],
@@ -18356,6 +18608,7 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     _gate("rebuy_band", close_s, tk, want=want,
                           price=round(price, 4),
                           paid=(prev.get("px_tk", {}) or {}).get(tk),
+                          first_ask=(prev.get("ask_tk", {}) or {}).get(tk),
                           fair=round(f, 5), tau=tau, size=float(size))
                     continue
                 # ---- v-farrung: the CUSHION gate and the per-side cap, LADDER
@@ -18794,6 +19047,8 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     _d13[tk] = _d13.get(tk, 0) + 1
                     _d23 = pv.setdefault("px_tk", {})
                     _d23[tk] = min(_d23.get(tk, px), px)
+                    _d23a = pv.setdefault("ask_tk", {})    # v-scalein: the ASK
+                    _d23a[tk] = min(_d23a.get(tk, float(price)), float(price))
                     _d29 = pv.setdefault("n_tk", {})
                     _d29[tk] = _d29.get(tk, 0.0) + _n
                     if _leg46 == "early":
@@ -18833,6 +19088,9 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                                           # is left and a second early is refused
                                           "early_tk": ({tk: _n} if _leg46 == "early" else {}),
                                           "contracts": _n}
+                        # v-scalein: the cheapest ASK taken in this market --
+                        # A23's band is measured against it, not the average
+                        fired[close_s]["ask_tk"] = {tk: float(price)}
                     else:
                         if _leg46 == "early":
                             d46 = pv.setdefault("early_tk", {})
@@ -18850,6 +19108,8 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         # BTC re-buy against a price paid on ETH.
                         d23 = pv.setdefault("px_tk", {})
                         d23[tk] = min(d23.get(tk, px), px)
+                        d23a = pv.setdefault("ask_tk", {})     # v-scalein
+                        d23a[tk] = min(d23a.get(tk, float(price)), float(price))
                         # AMENDMENT 29: contracts held in THIS market, which is
                         # what separates "topping up an unfinished position" from
                         # "scaling into a full one".
@@ -19291,6 +19551,18 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         if (_leg46 in ("early", "early_once")
                                 and EARLY_MAX_PRICE < 1.0):
                             _limit = min(_limit, EARLY_MAX_PRICE)
+                        # v-scalein (B): an A23 scale-in buys only the
+                        # contracts that really are cheaper (scalein_cap).
+                        # BEFORE the sweep, so A35 sizes from the depth under
+                        # the cap. Entry path only; it lowers a limit, never
+                        # refuses, and the hedge pass is above this line.
+                        _si_cap = scalein_cap(prev, tk, price, SIZE, tau=tau)
+                        if _si_cap is not None and _si_cap < _limit - 1e-12:
+                            rec("scalein_cap", ticker=tk, want=want, tau=tau,
+                                ask=round(float(price), 4),
+                                limit_was=round(float(_limit), 4),
+                                limit=_si_cap)
+                            _limit = _si_cap
                         # ---- AMENDMENT 35: ASK FOR WHAT THE LADDER HOLDS -------
                         # THE SWEEP WAS HALF-BUILT. AMENDMENT 18 raised the PRICE
                         # we are willing to pay to _limit, so a lost race takes

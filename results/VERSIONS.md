@@ -1,3 +1,41 @@
+# v-scalein-caps -- 2026-09-25 __TIME__ (pid __PID__, code_sha __SHA__) -- LIVE: a same-market scale-in needs a genuinely cheaper ASK (not a sweep-inflated average) and buys only the cheaper contracts; pintake's rails are back to their designed sizes and a hedge covering a held position is never refused on dollars. No flag changed. Operator, 09-25: "do what makes the most money, use the risk in the calculating... Same with order caps."
+
+(A) rebuy_ok: A23's 0.5-1c band is also measured against the cheapest ASK taken
+in the market (new per-market `ask_tk`), not only the average paid. Strictly
+narrower than before; v-lateadd unchanged.
+(B) scalein_cap: an A23 scale-in's limit is capped at min(first ask, paid) -
+0.5c, floored to the tick (record `scalein_cap`); the sweep sizes from the
+depth under it. Entry path only.
+(C) selftest() restores pintake's four rails in its finally: at size 88 the
+rails are 132 / 198 / $538 (were 163.5 / 245.25 / $664 since 09-19 12:26Z,
+leaked by the A66 test).
+(D) pintake.check_take: hedge=True AND the ledger holds this ticker on the
+other side AND count <= held + 0.01 -> the stake cap and loss abort are
+skipped. Every other rail unchanged; pinracearm / cmdlive / pinrun_afternoon
+never pass hedge=True (pinracearm self-test 213 identical on both pintakes).
+
+Evidence: live 09-18..09-25, 8 A23 scale-ins on full positions: 6 at a
+same/dearer ask than the first (sent ~0.3 s after the first fill) -- 5 won
+$14.00, BTC 09-23 lost $64.83 (second leg -$76.52 + its $11.69 hedge share),
+net -$50.83, -10.7c/contract vs +0.9c for first legs at the same seconds-left;
+2 genuinely cheaper +$11.46. Re-deciding all 11 live full-position re-buys:
+exactly the 6 change; of 131 re-buy refusals, 0 newly allowed. Resample
+(moneyproj rules, 4,000 paths, 60 d, not using the BTC outcome): keeping them
+is worth <= ~$0.7/day even if no worse than first legs; ~-$5/day and +5 pts
+halt probability at the record's loser rate. Designed caps: 0 of 1,467 live
+entries and 0 of 41 live hedges would have been refused; peak use 57% of
+$538. Driven before -> after: BTC double buy 2 orders -> 1; cheaper-touch
+scale-in 5 @ 96.04c avg -> 3 @ 95.4c; hedge at the stake cap / loss abort
+0 of 5 -> 5 of 5. Self-test 1252 -> 1263 plain and live argv on the real file;
+pintake +22 checks; pinracearm passes; pinattrib 55; versioncheck clean; each
+change reverted fails its own checks. Paper arms get it at the next sync.
+
+**REVERT:** `git checkout fe6a99d -- research/pinrun.py research/pintake.py`, then
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
+(pinracearm loaded pintake at its own start; nothing to do for it).
+
+---
+
 # v-safety2 -- 2026-09-25 09:36:44Z (pid 2934836, code_sha 28f5e66b2169) -- LIVE: three safety fixes (1, 3, 5); no trading rule changed. Operator's go-ahead 09-25 (~08:5xZ): "it's just doing what it already does but more safely... then do that". Fix 4 (restoring the designed pintake caps) is HELD for the operator: it would tighten a cap pintake also applies to hedges.
 
 (1) The bot now asks Kalshi what it holds: at startup (GET /portfolio/positions,
