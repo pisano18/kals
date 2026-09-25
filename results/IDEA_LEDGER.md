@@ -27,8 +27,9 @@ sweep (`results/IDEA_SWEEP_2026-09-25.md`) adds its rows below when it lands.
   place more bank buys more contracts (books ~30x deeper than 15-min).
 - **Sports** -- 66M contracts/day, 1,121 series, barely examined before this
   sweep; ESPN's API is blocked from this box, other league feeds are not.
-- **Parlay / combination markets** -- ~4.7M open markets, never priced against
-  their legs.
+- **Parlay / combination markets** -- crypto-combo pricing vs our legs
+  CHECKED 2026-09-25 (D27): no gain for our strategy; sports/other combos
+  still unexamined.
 - **Loss hedges for the live bot** -- the operator's #1 priority is lose less;
   every hedge idea so far died on cost (rows D08, D15).
 
@@ -85,3 +86,5 @@ sweep (`results/IDEA_SWEEP_2026-09-25.md`) adds its rows below when it lands.
 | D23 | Air quality / box office / app ranks / Trends / river levels | misc | dead (for now) | 0 | one-off or custom series, no repeatable close | SECOND_INCOME_SCAN s1 row 9 |
 | D24 | Truth Social weekly post count | politics | dead | <$1 | one close a week, thin | SECOND_INCOME_SCAN s1 row 6 |
 | D25 | Exchange-feed "move against us" gate | crypto 15M | dead (as a gate) | 0 | does not separate our losers | FEED_LEAD_2026-09-24 |
+| D26 | Cash out AND hedge (flip to a full reversal bet at the alarm) | hedging | dead | ~0, worse tail | the other side is fairly priced at the alarm; +$59 on 10 hedges but range -$124..+$185; 09-19 -$223 -> -$275 | results/HEDGE_FLIP_2026-09-25.md |
+| D27 | Buy our pin legs as a Kalshi combo | crypto 15M | dead | -$2.2..-2.6/day | combos priced 0.0-0.4c ABOVE what we paid at our moments (26 orders); same bet at equal size; needs simultaneous legs (ours are 11 s apart) and a 0.6-7 s RFQ | results/COMBOS_2026-09-25.md |
