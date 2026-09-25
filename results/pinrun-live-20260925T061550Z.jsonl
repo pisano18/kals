@@ -1,0 +1,55 @@
+{"mode": "live", "tau_min": 3, "tau_max": 30, "pin": 0.995, "edge_floor": 0.003, "ev_floor": 0.003, "measured_flip": 0.009, "max_per_close": 2, "max_per_market": 2, "hedge_enabled": true, "hedge_belief": 0.4, "hedge_max_ask": 1.0, "hedge_max_tries": 30, "hedge_pilot_contracts": null, "hedge_slip": 0.1, "early_max_price": 1.0, "day_loss_at_start": 19.1057, "hedge_prop": false, "hedge_prop_full": 0.2, "hedge_prop_half": 0.4, "max_hedge_attempts_per_close": 120, "reconcile_fail_halt": 40, "improve_by": 0.005, "improve_scope": "market", "improve_max": 0.01, "pick": "best", "gate_audit": true, "sweep_depth": true, "depth_ladder": true, "external_detect": true, "external_min": 1.0, "jump_gate": true, "jump_sigma": 3.0, "jump_lookback": 3, "jump_widen": false, "jump_widen_factor": 2.0, "jump_widen_favour": 1.5, "jump_widen_window": 5, "min_fill_frac_running": 0.0, "max_drawdown": 0.2, "max_per_market_run": 2, "min_level": 1.0, "sweep_enabled": true, "honest_conf": false, "one_coin_depth": false, "one_coin_max": 2.0, "early_tau_max": 45, "early_frac": 0.333, "sigma_ruler": "live", "max_book_age_ms": 2000, "max_index_age_s": 2, "sigma_stress": 1.0, "sigma_win": 300, "size": 20.0, "loss_abort": -60.0, "max_positions": 3, "minutes": 4320.0, "price_ceiling": 0.98, "ev_implied_ceiling": 0.988, "dump_discount": 0.15, "dump_enabled": true, "min_fill_frac": 0.0, "hedge_price": null, "hedge_panic": 0.4, "rebuy_hedged": false, "late_tau": 10, "late_mult": 1.5, "late_pin": 0.9975, "late_jump": 2.0, "extra_coin": 1.0, "late_extra": 1.0, "late_extra_tau": 15, "loss_cap": 200.0, "attempts_on_send": false, "skip_bands": [], "band_mults": [], "flip_mult": 1.0, "doubt_mult": 1.0, "doubt_under": 0.5, "doubt_lag_s": 5, "doubt_hist_tau_s": 60, "traj_every_s": 5, "traj_near_tau_s": 60, "traj_tau_max": 300, "traj_file": "C:\\kals-repo\\results\\pintraj-live-20260925T061550Z.jsonl", "look_drop_c": 0.03, "early_min_price": 0.95, "early_max_edge": 10.0, "hedge_normal": false, "hedge_jump": null, "bank_brake": 4.0, "bank_divisor": 7.84, "ladder_series": ["KXBTCD"], "ladder_keep": 3, "ladder_cushion": null, "series_ceiling": null, "series_flip": null, "series_ev_floor": null, "series_max_per_side": null, "series_max_per_close": null, "code_sha": "8bbf33e6e6ae", "t": "2026-09-25T06:15:50Z", "kind": "start"}
+{"base": "https://api.elections.kalshi.com/trade-api/v2", "stake_cap": 664.0, "t": "2026-09-25T06:15:50Z", "kind": "armed"}
+{"ticks": 11, "feeds": ["ADAUSD_RTI", "BCHUSD_RTI", "BNBUSD_RTI", "BRTI", "DOGEUSD_RTI", "ETHUSD_RTI", "HYPEUSD_RTI", "NEARUSD_RTI", "SOLUSD_RTI", "XRPUSD_RTI", "ZECUSD_RTI"], "t": "2026-09-25T06:15:52Z", "kind": "feeds"}
+{"old": 20.0, "new": 88.0, "why": "bank $1043.07", "loss_abort": -200.0, "max_run_stake": 664.0, "max_take_count": 163.5, "t": "2026-09-25T06:15:52Z", "kind": "autosize"}
+{"n": 9, "added": ["KXBNB15M-26SEP250230-30", "KXBTC15M-26SEP250230-30", "KXDOGE15M-26SEP250230-30", "KXETH15M-26SEP250230-30", "KXHYPE15M-26SEP250230-30", "KXNEAR15M-26SEP250230-30", "KXSOL15M-26SEP250230-30", "KXXRP15M-26SEP250230-30", "KXZEC15M-26SEP250230-30"], "t": "2026-09-25T06:15:53Z", "kind": "watch"}
+{"ms": 930.5, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 848, "t": "2026-09-25T06:15:53Z", "kind": "universe"}
+{"ms": 981.3, "tau": null, "close_s": null, "near": false, "why": null, "n_slow": 1, "watching": 9, "t": "2026-09-25T06:15:53Z", "kind": "loop"}
+{"sid": 2, "rx_ms": 1790316953561, "event": "subscribed", "connects": 1, "t": "2026-09-25T06:15:53Z", "kind": "trade_feed"}
+{"ms": 899.9, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 828, "t": "2026-09-25T06:16:13Z", "kind": "universe"}
+{"ms": 951.2, "tau": 828, "close_s": 1790317800, "near": false, "why": null, "n_slow": 1, "watching": 9, "t": "2026-09-25T06:16:13Z", "kind": "loop"}
+{"ms": 1094.0, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 808, "t": "2026-09-25T06:16:33Z", "kind": "universe"}
+{"ms": 1145.4, "tau": 808, "close_s": 1790317800, "near": false, "why": null, "n_slow": 2, "watching": 9, "t": "2026-09-25T06:16:33Z", "kind": "loop"}
+{"ms": 1048.6, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 788, "t": "2026-09-25T06:16:53Z", "kind": "universe"}
+{"ms": 1100.0, "tau": 788, "close_s": 1790317800, "near": false, "why": null, "n_slow": 3, "watching": 9, "t": "2026-09-25T06:16:53Z", "kind": "loop"}
+{"ms": 908.9, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 768, "t": "2026-09-25T06:17:13Z", "kind": "universe"}
+{"ms": 960.3, "tau": 768, "close_s": 1790317800, "near": false, "why": null, "n_slow": 4, "watching": 9, "t": "2026-09-25T06:17:13Z", "kind": "loop"}
+{"ms": 904.7, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 748, "t": "2026-09-25T06:17:33Z", "kind": "universe"}
+{"ms": 955.8, "tau": 748, "close_s": 1790317800, "near": false, "why": null, "n_slow": 5, "watching": 9, "t": "2026-09-25T06:17:33Z", "kind": "loop"}
+{"ms": 1010.8, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 728, "t": "2026-09-25T06:17:53Z", "kind": "universe"}
+{"ms": 1061.7, "tau": 728, "close_s": 1790317800, "near": false, "why": null, "n_slow": 6, "watching": 9, "t": "2026-09-25T06:17:53Z", "kind": "loop"}
+{"ms": 956.5, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 708, "t": "2026-09-25T06:18:13Z", "kind": "universe"}
+{"ms": 1007.5, "tau": 708, "close_s": 1790317800, "near": false, "why": null, "n_slow": 7, "watching": 9, "t": "2026-09-25T06:18:13Z", "kind": "loop"}
+{"ms": 866.5, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 688, "t": "2026-09-25T06:18:33Z", "kind": "universe"}
+{"ms": 917.9, "tau": 688, "close_s": 1790317800, "near": false, "why": null, "n_slow": 8, "watching": 9, "t": "2026-09-25T06:18:33Z", "kind": "loop"}
+{"ms": 943.2, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 668, "t": "2026-09-25T06:18:53Z", "kind": "universe"}
+{"ms": 994.3, "tau": 668, "close_s": 1790317800, "near": false, "why": null, "n_slow": 9, "watching": 9, "t": "2026-09-25T06:18:53Z", "kind": "loop"}
+{"ms": 878.4, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 648, "t": "2026-09-25T06:19:13Z", "kind": "universe"}
+{"ms": 929.6, "tau": 648, "close_s": 1790317800, "near": false, "why": null, "n_slow": 10, "watching": 9, "t": "2026-09-25T06:19:13Z", "kind": "loop"}
+{"ms": 891.4, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 628, "t": "2026-09-25T06:19:33Z", "kind": "universe"}
+{"ms": 942.6, "tau": 628, "close_s": 1790317800, "near": false, "why": null, "n_slow": 11, "watching": 9, "t": "2026-09-25T06:19:33Z", "kind": "loop"}
+{"ms": 978.6, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 608, "t": "2026-09-25T06:19:53Z", "kind": "universe"}
+{"ms": 1029.9, "tau": 608, "close_s": 1790317800, "near": false, "why": null, "n_slow": 12, "watching": 9, "t": "2026-09-25T06:19:53Z", "kind": "loop"}
+{"ms": 866.5, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 588, "t": "2026-09-25T06:20:13Z", "kind": "universe"}
+{"ms": 918.4, "tau": 588, "close_s": 1790317800, "near": false, "why": null, "n_slow": 13, "watching": 9, "t": "2026-09-25T06:20:13Z", "kind": "loop"}
+{"ms": 895.8, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 568, "t": "2026-09-25T06:20:33Z", "kind": "universe"}
+{"ms": 946.9, "tau": 568, "close_s": 1790317800, "near": false, "why": null, "n_slow": 14, "watching": 9, "t": "2026-09-25T06:20:33Z", "kind": "loop"}
+{"ms": 933.3, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 548, "t": "2026-09-25T06:20:53Z", "kind": "universe"}
+{"ms": 984.1, "tau": 548, "close_s": 1790317800, "near": false, "why": null, "n_slow": 15, "watching": 9, "t": "2026-09-25T06:20:53Z", "kind": "loop"}
+{"ms": 909.5, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 527, "t": "2026-09-25T06:21:13Z", "kind": "universe"}
+{"ms": 960.8, "tau": 527, "close_s": 1790317800, "near": false, "why": null, "n_slow": 16, "watching": 9, "t": "2026-09-25T06:21:13Z", "kind": "loop"}
+{"ms": 891.8, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 507, "t": "2026-09-25T06:21:33Z", "kind": "universe"}
+{"ms": 942.7, "tau": 507, "close_s": 1790317800, "near": false, "why": null, "n_slow": 17, "watching": 9, "t": "2026-09-25T06:21:33Z", "kind": "loop"}
+{"ms": 909.6, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 487, "t": "2026-09-25T06:21:53Z", "kind": "universe"}
+{"ms": 961.5, "tau": 487, "close_s": 1790317800, "near": false, "why": null, "n_slow": 18, "watching": 9, "t": "2026-09-25T06:21:54Z", "kind": "loop"}
+{"ms": 936.4, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 467, "t": "2026-09-25T06:22:14Z", "kind": "universe"}
+{"ms": 987.4, "tau": 467, "close_s": 1790317800, "near": false, "why": null, "n_slow": 19, "watching": 9, "t": "2026-09-25T06:22:14Z", "kind": "loop"}
+{"ms": 862.9, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 447, "t": "2026-09-25T06:22:33Z", "kind": "universe"}
+{"ms": 914.1, "tau": 447, "close_s": 1790317800, "near": false, "why": null, "n_slow": 20, "watching": 9, "t": "2026-09-25T06:22:34Z", "kind": "loop"}
+{"ms": 930.9, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 427, "t": "2026-09-25T06:22:54Z", "kind": "universe"}
+{"ms": 1018.5, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 407, "t": "2026-09-25T06:23:14Z", "kind": "universe"}
+{"ms": 922.7, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 387, "t": "2026-09-25T06:23:34Z", "kind": "universe"}
+{"ms": 894.4, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 367, "t": "2026-09-25T06:23:54Z", "kind": "universe"}
+{"ms": 927.2, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 347, "t": "2026-09-25T06:24:14Z", "kind": "universe"}
+{"ms": 890.1, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 327, "t": "2026-09-25T06:24:34Z", "kind": "universe"}
+{"ms": 1014.4, "n": 9, "got": 9, "watching": 9, "deferred_s": 0.0, "series": 12, "close_s": 1790317800, "tau": 307, "t": "2026-09-25T06:24:54Z", "kind": "universe"}
