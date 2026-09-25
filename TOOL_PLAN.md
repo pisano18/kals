@@ -1,5 +1,7 @@
 # THE TOOL — plan of record (2026-09-11). Read this first when resuming.
 
+> **HISTORICAL (banner added 2026-09-25).** The 2026-09-11 plan for the desktop tool. "Read this first" no longer applies: start at `CURRENT_STATE.md`.
+
 Operator's goal, verbatim: *"to be able to rip this strategy/algorithm/method
 apart without doing the math... extremely open and customizable in the way of
 all values, add values if that makes sense."* Plus: trackers he can set up

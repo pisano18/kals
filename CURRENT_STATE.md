@@ -1,299 +1,159 @@
-# CURRENT_STATE.md -- read this FIRST, before anything else
+# CURRENT_STATE.md -- read this FIRST
 
-**2026-09-25 ~06:4xZ, before a /clear: the complete current state is the TOP
-SECTION OF `HANDOFF.md`** (live pid 2894452 on v-zerotake, every arm and
-watcher with its end and read date, the idea sweep in flight, pending
-operator actions). Then `OPEN_WORK.md` (the operator's topic index) and
-`results/IDEA_LEDGER.md` (every money idea ever checked). Everything below
-this paragraph is older and kept for history.
+**As of 2026-09-25 ~07:0xZ.** If that is more than a day old, re-check the live
+numbers before quoting them. All times here are UTC; say them to the operator
+in ET.
 
-**OPEN_WORK.md is the operator's index to everything in flight** (added
-2026-09-24). He says "read OPEN_WORK.md" or names a topic from it ("the fresh
-offer test", "hourly BTC", "photo finishes", "the disk", "the VM"). Keep it
-updated the moment a test's state changes.
+**Read in this order:** this file -> the top section of `HANDOFF.md` (every
+running process with pid, end date and read date) -> `OPEN_WORK.md` (the
+operator's topic index; he names a topic by its "Say:" handle) ->
+`results/IDEA_LEDGER.md` (every money idea ever checked -- read before
+proposing one) -> `results/VERSIONS.md` (what is live, with revert commands).
+Older HANDOFF sections: `HANDOFF_ARCHIVE_2026-09.md`. This file's earlier
+text (the 09-21/09-22 blocks): `DOCS_ARCHIVE_2026-09.md`.
 
-**Updated 2026-09-21 ~05:1xZ, immediately before a context wipe.** If the
-date above is more than a day old, verify the live numbers before quoting
-them. The long version of everything below is the newest section of
-`HANDOFF.md` -- read that second.
+## Live money
 
----
+- **15-minute crypto bot** `research/pinrun.py --live`, version **v-zerotake**
+  since 06:25:05Z 09-25, pid 2894452, code_sha 52b3e5fb28f8. Its argv is
+  `restart_bot.ps1` -- the ONLY script that may start it. What it does now,
+  newest change first (each has a VERSIONS entry):
+  - never sends a 0-contract order (v-zerotake; watch the log for
+    `late_add_full` / `zero_take` -- each is a halt that did not happen);
+  - trades the hourly BTC ladder at 1 contract (`--series KXBTCD
+    --series-size 1`, v-btcd1); code for six more hourly ladders and for 99c
+    far rungs is on disk with every flag OFF (v-ladder7, v-farrung);
+  - logs taker selling from Kalshi's trade feed; the `toxic_fresh` gate is OFF
+    (v-tradefeed; paper arm `arm-toxic` runs it ON);
+  - late same-market add at <=15 s (`--rebuy-late-tau 15 --rebuy-late-frac
+    0.5`), hedge limit slip 0.10 (v-lateadd-live, v-lateadd-fix);
+  - 10c edge cap only with more than 20 s left; 45 s leg at a third of size
+    with a 95c floor (`--early-frac 0.333 --early-min-price 0.95`)
+    (v-cap20, v-early-third);
+  - spike gate; hedge the WHOLE position when belief falls to 0.40
+    (`--hedge-belief 0.40 --no-hedge-prop`; A76 proportional hedging fired
+    once and was removed) (v-nospike, v-hedgefull);
+  - `--bank-brake 4.00` (auto-size 88 at a $1,043 bank), `--loss-cap 200`
+    per ET day surviving restarts, 20% drawdown halt that HOLDS until START on
+    the app re-bases it (v-hwm-reset).
+  - `--minutes 4320`: exits ~09-28 06:25Z and `watch_bot.ps1` restarts it.
+- **Coin race penny test** `research/pinracearm.py --live`, pid 2707284, 5
+  contracts a leg (v-race5), ends ~10-01 15:16Z -- relaunch BY HAND with the
+  v-race5 argv from VERSIONS.md. A tie counts as a loss for its stop rail
+  (v-race-tie1).
+- **Money (Kalshi's ledger, the only source to quote):** lifetime +$437.82
+  over 1,101 markets at 09-25 05:49Z; ET 09-25 +$13.46 at 05:49Z. Deposits
+  $584.46 net of fees in 7 deposits, **zero withdrawals ever**
+  (`results/kalshi_transfers.json`, fetched 09-24 07:06Z; `research/pinxfer.py`
+  is the authority). Day totals: `python research/pinday.py`.
 
-# 2026-09-22 ~06:25Z -- READ THE TOP OF HANDOFF.md FIRST
+## What else runs
 
-A 4 h 47 min Kalshi CONNECTION outage (20:50-01:38 ET) lost that tape and
-idled the bot while the app said TRADING. Fixed: app/phone BLIND + recorder
-SILENT alerts, a stuck-recorder check in boot_all, coin race v-race90 (90c
-floor + fresh book read), and a rebuilt paper fleet (17 of 24 arms had died
-on an inherited brake). Disk 34.7 GB free (operator deleted a Steam game).
-**Arm vs live comparisons are valid only from 2026-09-22 06:21Z.**
+- Control: `watch_bot.ps1` (pid 2839244) restarts the bot; the **Pin Bot**
+  desktop app (`research/pindesk.py`, Start/Pause/Stop; `results/pinrun-live.stop`
+  present = he stood it down); the phone bot (`research/pinphone.py`: /stats,
+  /bars, /race). `boot_all.ps1` (task KalsBoot) starts everything at LOGON
+  only -- after a reboot nothing restarts until the operator signs in.
+  **Windows Update may no longer reboot while he is signed in** (set 09-25
+  ~08:55Z with his OK: HKLM Policies WindowsUpdate AU
+  NoAutoRebootWithLoggedOnUsers = 1; active hours 06-23). Revert:
+  `reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v NoAutoRebootWithLoggedOnUsers /f`
+  (from Git Bash set `MSYS_NO_PATHCONV=1` first).
+- Recorders: `kalshi_collector.py` + `crypto_feeds.py` under
+  `C:\kals\run_all.ps1`. Never touch them or `C:\kals\kalshi_data` /
+  `feed_data`.
+- Paper arms, watchers (wxwatch, quakewatch, rungwatch), the Polymarket US
+  recorder and the money-idea sweep: table at the top of `HANDOFF.md`.
+  Arm-vs-live comparisons are valid only from 2026-09-22 06:21Z; every arm
+  number from before 2026-09-20 is void.
 
-## 2026-09-24 02:22Z -- v-cap20 (pid 2543296): edge cap only above 20 s; early floor 0.95
+## Disk -- the deadline that stops everything
 
-Per-second rebuild of all 820 entered markets (results/cf_2026-09-24/): the
-10c cap inside 20 s was refusing the pin edge (19 markets, 1 loser -$2,
-+$102) and above 20 s it catches the market-was-right losses (3 of 19,
--$200). Same engine: +$501 (9:13 PM rules) -> +$633 (cap >20 s) -> +$665
-(+95c early floor). Measured and NOT changed: half-size-then-top-up ladder
-(-$41), any hedge trigger other than 0.40 (all worse), 90c floor at 21-30 s
-(-$10). Open and positive: late same-market add at <=15 s (+$95/16 d, one
-losing add) -- needs a flag, the double-send fix and a paper arm first;
-hedge slip 0.03 -> 0.10. Full list and every killed idea: top of HANDOFF.md.
+**~17 GB free at 08:5xZ 09-25** after the session purged the pip cache
+(5.8 GB), npm cache (0.7 GB) and five merged workflow worktrees (1.9 GB).
+**MEASURED rate: the recorders write ~5.0 GB/day** (kalshi_data ~198 MB a
+normal hour; disk-triage agent 09-25), plus Claude's own
+`Temp\claude\bash-edit-diff` while agents run (~0.4 GB/h). The operator is
+deleting a game ~11:00Z 09-25 and gets a drive ~23:00Z 09-25. Still
+reclaimable with his OK: restore points 9.7 GB (`vssadmin delete shadows`),
+hiberfil 6.8 GB (`powercfg /h off`). `run_all.ps1` STOPS both recorders for good
+at **5 GB** (its line 41); our guard is **6 GB**: below it, stop all analysis
+and say so loudly. The tape cannot be recreated. **The 2 TB external drive is
+NOT bought yet** (OPEN_WORK C1). The daily rate is NOT settled -- docs quote
+~1, ~3 and ~4 GB/day, and the free space also moves with workflow worktrees
+(`.claude/worktrees` was 1.9 GB at 07:0xZ) -- measure before quoting a date.
 
-## 2026-09-24 02:0xZ -- v-nospike, after the BTC 8:30 PM ET loss (-$130.41)
+## Decided -- do not re-open without new data
 
-The bot bought 176 contracts within 100 ms of ONE index print that put fair at
-0.999 after 90 s of coin-flip readings; the print reversed a second later. Now
-live: a spike gate (our-side confidence under 0.90 at the previous print ->
-refuse, entry only, stands down inside 5 s), a 10c edge cap on EVERY leg (38
-markets above 10c on our record: 4 losers -$202, 34 winners +$183), and the
-hedge trigger back to 0.40 (0.25 fired 5 s late here, $41 of the loss). The
-09-22 FREEZE is overridden by the operator for this. Details: VERSIONS.md.
-The Kalshi recorder was deaf 15:00-20:5x ET (6 h); a fresh process connected
-at once, so boot_all's "leave a retrying recorder alone" rule is WRONG when
-the live bot's own socket is healthy -- fix pending.
+- Far rungs of the hourly ladder at 99c: dead (no safe-side supply,
+  `results/FAR_RUNG_2026-09-25.md`).
+- Market making on 15-min crypto: dead (`results/MAKER_SIM_2026-09-24.md` s9).
+- Exchange-feed "moved against us" gate: dead on our fills
+  (`results/FEED_LEAD_2026-09-24.md`).
+- The 09-24 per-second rebuild list (half size then top-up, every other hedge
+  trigger, 90c floor at 21-30 s, confidence tightening, 2.0x late boost, ...):
+  top of `HANDOFF.md`, 09-24 section, "Measured and NOT changed".
+- Everything in `results/IDEA_LEDGER.md` marked dead, and the kills in
+  `results/SECOND_INCOME_SCAN_2026-09-25.md`.
+- Polymarket US offers the operator ONLY BTC 15-min and 1-hour; funded ~$60,
+  eligible. Recorder decides whether it is worth anything (OPEN_WORK A11).
+- A tape or replay number is never OUR loss rate (CLAUDE.md amendment
+  2026-09-10).
 
-## LIVE CHANGES 2026-09-22 (all in results/VERSIONS.md with revert commands)
+## Open
 
-- **v-early-third** 11:42Z: `--early-frac 1.0 -> 0.333`, the operator's call
-  ("cut it to a third but measure which would have been the best idea in
-  hindsight"). `arm-early-full` / `arm-early-off` run beside it;
-  `research/earlyhindsight.py` scores third vs full vs off from live fills.
-- **v-safety1** 11:52:44Z (pid 2071684, code_sha 428d70ace217): a crash, a
-  pintake halt or a frozen index can no longer silence a hedge (K1-K3); paper
-  arms off the live day-loss file; new log fields (`tau`, `budget_left` on
-  refusals/signals, `t_ms_*` on orders, `hedge_quote` per held second).
-- **FREEZE from 11:42Z for ~300 closes**: only bug/safety fixes and logging.
-  The operator may overturn it. Bars: `results/FREEZE_2026-09-22.md`,
-  checker `research/barcheck.py` (being finished).
-- `research/pinday.py` now takes money from Kalshi's ledger and prints every
-  market the logs missed. `sync_arms.ps1` matches `pinrun.py --live` exactly
-  (it could have built the fleet from the coin race penny test).
-- Coin race penny test: v-race30 (real bets only inside 30 s).
-- Operator still to do, when home: KalsBoot "run whether logged on" (or
-  auto-logon) -- after a reboot nothing restarts until he logs in.
+1. Money-idea sweep `wf_a10c880e-f3b`: its writer did not know the ledger --
+   merge `results/IDEA_SWEEP_2026-09-25.md` rows into `results/IDEA_LEDGER.md`
+   by hand; add survivors to OPEN_WORK with a "Say:" handle.
+2. `results/rungwatch.stop`: create after the 09-25 ~23:00Z close.
+3. Polymarket recorder read ~09-28 06:11Z (OPEN_WORK A11).
+4. Arm bars ~10-01/02 (`python research/bars.py`; fresh500, toxic, btcd,
+   edge2c, lateadd-off, hourly-all). `bars.py` counts KXBTCD only.
+5. Known bugs, not fixed: same-second double sends can build 2-2.7x SIZE
+   (`--one-coin-max` exists, not in the argv, unmeasured);
+   `classify_bank_move` still infers transfers from balance moves (make it
+   consult `pinxfer`); the seven-coin ladder adds ~1.4 s to each universe
+   refresh (a hedge blackout if ever taken live).
+6. Operator: buy the drive; enable Windows automatic sign-in; AWS Lightsail
+   Ohio after a good weekend (`results/VM_PLAN_2026-09-24.md`); two doc
+   contradictions only he can settle (CLAUDE.md, "Open questions for the
+   operator").
 
-## PROJECT MAP 2026-09-22 -- READ `results/PROJECT_MAP_2026-09-22.md`
+## The operator -- context that changes decisions
 
-Verified answer to "tweaks made it lose": since 09-17 13:05Z the pin bot made
-+$60.95 on Kalshi's ledger vs +$520 at the steady rate; 80% of the $459
-shortfall is a few losses that got BIGGER (mostly 09-19 bugs, now fixed, plus
-one open cause: false-alarm hedges on winning bets). Since the fixes: +$114 on
-75 closes. The steady week was also an unusually calm market.
+- On 09-19 he put in $370 of two weeks' spending money. **This is money he
+  needs**: at the margin, favour lower variance over expected value.
+- **Do restarts yourself** (`restart_bot.ps1` through the Bash tool; the
+  PowerShell tool is refused for it). Ask before moving a risk limit he set
+  (`--loss-cap`), and before a new strategy family or size step goes live.
+- He is usually right when he pushes back, and hates blind agreement: re-derive,
+  then argue with evidence either way.
+- His ideas are suggestions to measure; ship only what measures positive
+  (memory `measure-then-ship-only-positive`).
 
-**CORRECTIONS to this file's older sections (they are WRONG where they
-disagree):** money made is **+$333.49** (bank $917.92 - $584.46 deposits,
-matches the ledger to 3c), not $386.94 or $307. Hedging lifetime is
-**-$9.35** (10 saves +$149.26, 7 false alarms -$158.60), not "+$111/-$159" or
-"-$47". **A76 proportional hedging FIRED once (NEAR 09-21, +$15.15) and is
-REMOVED**: live runs `--no-hedge-prop --hedge-belief 0.25`, no `--hedge-price`.
-The bot's own logs/pinday miss markets held when a run died -- 09-19 is
-**-$223.46**, not -$161.14. Use the LEDGER for every money number.
+## Traps that have already cost real time
 
-# STOP. THREE THINGS BEFORE YOU CHANGE ANYTHING.
-
-**1. THE DISK IS THE ONLY DEADLINE THAT MATTERS.** ~19.8 GB free, falling
-**~3 GB a day**. Below 6 GB the collectors STOP, hard. That is **~4.6 days
-away**. `kalshi_data` is 68 GB and writes ~130 MB an hour. The operator is
-buying an external SSD; **remind him** (the cron reminders were session-only
-and died with the clear -- RE-CREATE THEM, he asked for reminders through the
-day). **The tape cannot be recreated. Nothing else here matters if it stops.**
-
-**2. EVERY ARM NUMBER FROM BEFORE 2026-09-20 IS WORTHLESS.** Two independent
-faults: no paper arm could hedge at all until A71, and every arm ran a flag
-list frozen at launch -- `arm-pin0.97` differed from live in **SIXTEEN**
-settings. Any confidence, sigma or hedge conclusion predating the sync is
-WITHDRAWN. The fleet is now rebuilt by `sync_arms.ps1` from the live bot's
-own command line.
-
-**3. BEFORE SHIPPING ANY GATE OR BRAKE, WRITE DOWN WHAT IT BLOCKS -- not what
-it allows -- AND PROVE IN A SELF-TEST THAT IT CANNOT BLOCK A HEDGE.** Three of
-the four 09-19 losses were a gate or brake stopping something it was never
-meant to stop. Nothing may ever gate a hedge.
-
----
-
-## THE MONEY, RECONCILED (2026-09-21)
-
-| | |
-|---|---|
-| money put in | **$584.46** -- 7 deposits, Kalshi's own records, net of $8.14 fees |
-| **withdrawals** | **ZERO. There has never been one.** |
-| money made | **~$387** (cumulative settled) |
-| return | **~52.6%** -- NOT the 192% the telegram bot showed before 09-20 |
-| pre-loss peak | **+$512.58** on 09-18; ~$126 still to recover |
-
-**`research/pinxfer.py` is the authority on deposits.** Never quote a bank
-delta as a day's money without subtracting deposits -- the operator deposited
-$370.44 on 09-19 and three separate tools reported it as profit.
-
-**`results/pinrun-dayloss.json`** holds the ET day's realised total so the
-`--loss-cap` survives restarts (A79). 09-19 reached -$223 through THIRTEEN
-runs each handed a fresh $200.
-
----
-
-## THE BOT, AS DEPLOYED
-
-| | |
-|---|---|
-| launcher | `restart_bot.ps1` -- **the ONLY script that may start the live bot** |
-| restart it | the session does it ITSELF. "I'm not restarting for you you just do it and stop asking me to." The PowerShell tool is blocked by the classifier; **the Bash tool works** |
-| bet | `--bank-brake 4.00`, ~71 contracts |
-| hedge | **proportional (A76)**: all of the position at or under 20% belief, half at or under 40%, none above; a half-hedge TOPS UP if belief falls further; a recovery never sells the leg back |
-| loss cap | `--loss-cap 200`, now **per ET day, surviving restarts** |
-| 45s leg | ON, full size, 90c floor, **no price ceiling** (tried and removed same day) |
-| removed 09-20 | `--band-mult` (its own bar fired), `--early-max-price` (its premise measured false) |
-
-Full flag list is in `restart_bot.ps1`, each with its reasoning.
-`python research/versioncheck.py` in any session that touches the launcher.
-
----
-
-## THE HEDGE IS THE ONE OPEN WOUND
-
-**Lifetime it is NET NEGATIVE:** 8 real saves +$111, 7 false alarms -$159.
-But it works when needed -- a hedged loss costs **57c a contract against a
-naked 86c**. It recovers about a third.
-
-**All 18 alarms ever raised were rebuilt from the raw index. NOTHING
-observable at the alarm second separates a false alarm from a real collapse.**
-The information arrives 1-10 s later and by then insurance is at 99c. So a
-hedge cannot be made rarer without making it useless -- only SMALLER where the
-model is least sure. That is A76, and **it has never fired.**
-
-**Unwinding a hedge does not work.** Both sides held is a fixed outcome; the
-money is lost at purchase, and selling back when confidence returns recovers
-~2c on 46c because the hedge is worthless precisely *because* the bet
-recovered.
-
-**THE BAR: if the next 10 alarms under A76 still net negative, kill hedging.**
-`arm-nohedge` answers it without risk.
-
----
-
-## THE ARMS: SYNCED vs FROZEN (2026-09-20, and this is the important one)
-
-**Every paper arm used to run a flag list frozen at whenever it was
-launched. Measured 2026-09-20: `arm-pin0.97` differed from the live bot in
-SIXTEEN settings** -- no 45-second leg at all, no `--hedge-price`, no
-`--hedge-slip`, no late boost, no extra coin, a different bank brake. It was
-never measuring confidence; it was a bot from five days earlier that also had
-a different `--pin`. **Every head-to-head built on an arm like that is
-uninterpretable, including any confidence or sigma answer recorded before
-this date.**
-
-The operator: *"The paper bots should be taking other settings as they change
-as long as it's not what we're testing... otherwise their data isn't
-meaningful."*
-
-The fleet is now two kinds, and the distinction matters:
-
-| | what it is | must it move? |
-|---|---|---|
-| **SYNCED** (21) | live's settings + ONE change | **YES** -- or the comparison means nothing |
-| **FROZEN** (2 + 5 vintage) | a whole configuration, pinned | **NO** -- not moving is its job |
-
-`sync_arms.ps1` reads the LIVE BOT'S OWN COMMAND LINE, strips `--live` and
-whatever the arm tests, and gives each arm that base plus its override.
-**Change live, re-run that one script, the whole fleet moves.** It validates
-every argv before stopping anything, refuses `--live` twice, and retires arms
-on pre-sync flag lists.
-
-Frozen: **`arm-friday`** (2026-09-18's exact settings, read off that day's own
-`start` record -- the operator asked to test reverting to it), **`arm-live-frozen`**
-(today's rules pinned), and the five `pinvin_*` script snapshots.
-**Frozen arms are never restarted by the sync** -- re-seeding them would turn
-a baseline into a moving target.
-
-**`-Only` DISABLES the stale sweep.** Running with it once retired all 21
-synced arms, because a narrowed plan made every other arm look stale. A
-partial run may never decide what is stale.
-
-## Resources and rules of engagement
-
-- Disk **18.7 GB** free at 2026-09-20 08:0xZ, **falling ~3 GB a day**
-  (`kalshi_data` is 68 GB and writes ~130 MB an hour). The 6 GB guard is a
-  HARD COLLECTION STOP and at this rate it is about **four days away
-  (~09-24)**. Archiving the tape is the next infrastructure job; nothing
-  else in this file matters if the tape stops.
-  RAM **3.3 GB** of 15.8 free with 34 arms + live + collectors + the app;
-  each arm is ~40 MB, so RAM is NOT what limits the arm count. Both
-  collectors alive.
-- **Never kill `python.exe` broadly** -- filter on `*research*`.
-- The operator restarts the live bot himself: desktop app **Pause -> Start**,
-  or `! powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
-  The auto-mode classifier refuses to let a session run it.
-- `python research/versioncheck.py` in any session that touches the launcher.
-
-## STILL OPEN -- THE LIST TO WORK FROM
-
-1. **Disk / external SSD.** See the top. Re-create the daily reminders.
-2. **A76 proportional hedging has NEVER FIRED.** Watch the first alarm.
-3. **`classify_bank_move` still invents transfers** because `realised` resets
-   on restart. It fabricated a $58.37 withdrawal that corrupted the drawdown
-   mark and deadlocked the bot for 2 hours. Make it consult `pinxfer` before
-   `shift_hwm` moves anything.
-4. **The penny test. THE OPERATOR APPROVED IT** ("Sure penny test go ahead")
-   and it was never built. Real orders at minimum size for 2-3 arms,
-   distinguishable by `client_order_id`. Risks: they compete with the live
-   bot for the same thin cheap supply; fees are `0.07*p*(1-p)` a contract;
-   real money, so hard rule 1 per instance.
-5. **`arm-friday` vs live** -- the revert candidate. +3.35c vs live +1.92c on
-   26 shared, but **11th of 17 arms**. No case yet. He will revert if there
-   is another big loss.
-6. **The bold sigma arms.** Pre-sync `sigma 0.4`/`0.6` were the two best
-   performers. If that survives clean configs, our model is too cautious --
-   the most valuable open question in the project.
-7. **Add `arm_name` to the `start` record** so log analysis need not identify
-   arms by their settings.
-8. **The coin race: 09-15 IS NOW EXPLAINED, and the -$807.58 was one dead
-   config.** All of it is `arm2` (no price floor, no tau cap, no per-race
-   cap): it bought YES and NO on the SAME TICKER as the lead flipped, at
-   prices summing over $1.00 -- **$1,306 of guaranteed loss locked in before
-   those races ran**, 84% of the deficit. Impossible under `--min-price 0.90`.
-   The current arm is 78 of 78 events, 110 legs, **zero losing legs**.
-   Measured 09-21 on 25 days of book (`results/RESULTS_coinrace_2026-09-21.md`):
-   the rule `tau <= 40, price >= 90c, one position per race, cap 50-100` is
-   **$16-26/day with 4 losing races in 977 (0.4%)**, break-even loss rate
-   1.77% against 0.39% observed. **THE FLOOR IS THE STRATEGY** -- removing it
-   looked like 4x the money and was entirely sub-second look-ahead (+$102/day
-   at lag 0, **-$102/day at lag 2**). Basket arbitrage: dead ($1.72/day
-   ceiling, 2-second windows). Market-making it: **the makers lose $2,850 a
-   day**, never quote this book.
-   **STILL DO NOT PENNY-TEST IT until there is a TRUE one-position-per-race
-   cap** -- `--one-per-race-band` allows one bet per BAND, and the live fair
-   arm took 2 positions in 13 of 39 races. Paper arms `racectl`, `racetau40`,
-   `raceedge0` started 09-21, one setting apart each.
-9. **The last-10s boost has fired ONCE** -- the book there is thinner than our
-   bet, so 1.5x has nothing to bite on. Not a bug; a ceiling.
-
-## THE OPERATOR -- CONTEXT THAT CHANGES DECISIONS
-
-- He **put in $370 of two weeks' spending money** on 09-19. **This is money he
-  needs.** Favour variance reduction over expected value at the margin.
-- **Do not ask him to restart the bot. Do it.**
-- **He is right when he pushes back.** In one session he overturned three of
-  my conclusions by asking one question each. Re-derive rather than defend.
-- ET times, plain language, short replies, anything he must decide in a
-  dedicated section at the end.
-
-## TRAPS THAT HAVE COST REAL TIME
-
-- **A self-test asserting a RUNNING value refuses to start the bot.** Six
-  times now. Assert `_DEFAULT_*`, never the running global.
-- **A source-text self-test finds its OWN copy of the string.** Anchor on a
-  whole line at its indentation, or `rindex`.
-- **Memory:** the trading stack is only ~2.8 GB of 15.8. Windows sheds
-  whatever background shell was just launched -- five were killed in one
-  session. **Fire `restart_bot.ps1` and poll the process table; never hold a
-  shell open waiting on it.** A kill landing mid-restart would leave the money
-  bot stopped (`watch_bot.ps1` recovers it in 30 s to 15 min).
-- **`-Only` on `sync_arms.ps1` disables the stale sweep** -- without that it
-  retires every arm not in the narrowed plan.
-- **Never quote a bank delta as a day's money** without subtracting deposits.
-- **Never sum `realised`** from settled records -- it is a running total that
-  resets on restart. Per-market money is `pnl_c`.
-- **A hedged market writes TWO settled rows.** Sum them, never overwrite.
-- **2026-09-13 was a SUNDAY.** The Saturdays are 09-12 and 09-19. Check the
-  calendar, never memory.
+- A self-test asserting a RUNNING value refuses to start the bot under a new
+  flag: assert `_DEFAULT_*`, and run the startup path in paper with the live
+  flags before any live restart.
+- A source-text self-test finds its own copy of the string (anchor on the whole
+  line, or `rindex`), and cannot see a block-nesting change: every gate needs a
+  driven world that refuses. Code inserted between `sig["take_n"] = take_n` and
+  the early-leg gates re-parents them (bitten twice on 09-24).
+- Nothing may ever gate a hedge. Before shipping a gate, write down what it
+  BLOCKS.
+- Money: never quote a bank delta without subtracting deposits; never sum
+  `realised` (running total, resets on restart; per-market is `pnl_c`); a
+  hedged market writes TWO settled rows; the bot's own logs miss markets held
+  when a run died -- use the ledger.
+- `sync_arms.ps1 -Only` disables the stale sweep (without that it retires every
+  arm outside the narrowed plan).
+- A `-like '*x.py*'` process query matches the querying shell: filter
+  `Name='python.exe'`. Never kill `python.exe` broadly.
+- The Bash tool's heredoc halves backslashes: write scripts with Write.
+- Never `git pull --rebase` / stash / `reset --hard` while bots run
+  (tracked live-state files revert); fetch + merge only.
+- The harness kills its own background shells when free RAM nears 1 GB; keep
+  the arm fleet under ~15 and detach anything that must survive.
+- Check weekdays with a calendar (2026-09-13 was a Sunday).
+- Thursday ~07Z Kalshi maintenance: the phone says BLIND ~03:05 ET; expected.

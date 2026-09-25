@@ -4,7 +4,14 @@
 facts that cost many round trips to establish. Re-deriving them wastes time;
 contradicting them without new measurement is an error.
 
-Working directory: `C:\kals`
+Working directory: `C:\kals` (the data; the repo is `C:\kals-repo`).
+
+**NOTE 2026-09-25 (docs housekeeping):** hard rule 1 below and PROJECT STATE were
+written before the operator narrowed the order rule (2026-09-06) and before
+real money went live (2026-09-08). Both are kept for history and are
+SUPERSEDED: the operative order rule is `CLAUDE.md`, "AMENDMENT 2026-09-06";
+what is live is `CURRENT_STATE.md`. The other rules and the CONFIRMED FACTS
+still stand.
 
 ---
 

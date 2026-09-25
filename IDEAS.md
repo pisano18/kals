@@ -1,5 +1,7 @@
 # The idea sweep — ranked, scored, and honest about what's already dead
 
+> **HISTORICAL (banner added 2026-09-25).** The 2026-09-03/04 idea sweep. Every money idea ever checked is now one line in `results/IDEA_LEDGER.md` (read that first); the 2026-09-24 hunt is `results/IDEAS_2026-09-24.md`.
+
 Every idea here is scored on four things, because an idea that cannot be
 tested with what we have is not yet an idea:
 

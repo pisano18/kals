@@ -3,7 +3,7 @@
 **How to use this: say to any new chat — "Read OPEN_WORK.md and tell me where
 everything stands." Or name one topic, e.g. "bring up the fresh offer test".**
 
-Written 2026-09-24. Every item says what it is, where it stands, what decides
+Written 2026-09-24, updated 2026-09-25. Every item says what it is, where it stands, what decides
 it, and when. Money numbers are Kalshi's books. Keep this file updated the
 moment a state changes; it is the operator's index to the work.
 
@@ -59,6 +59,8 @@ own per-close spending limit, not the market's supply.
   is re-applied after every sizing step). At most 2 contracts per hourly
   market, 24 closes a day: under $50/day at risk. The paper arm `arm-btcd`
   keeps running beside it as the comparison.
+- **First 10 hours live: ZERO orders sent** (70 refusals: nothing offered 33,
+  stale book 26, not confident enough 6, too expensive 5).
 - **Decides:** ~30 fired closes (about a week). Watching: do we actually get
   filled, and at what price. If fills are real, the next step is a bigger
   per-close allowance for the hourly family — that is the only place more bank
@@ -79,14 +81,17 @@ of contracts resting, and the live bot's 98c ceiling turned five of them
 away on Sep 24. A winner makes 0.93c a contract; a loser costs 99c; it
 breaks even if fewer than 0.93 in 100 cross. Bank-limited: about $68-85 a
 day at today's bank, and one crossing costs about $225 at that size.
-- **Status:** the code is built and OFF (`v-farrung`). A paper copy runs.
-  The 1-contract live test needs the operator's yes; its bar is in
+- **Status:** the code is built and OFF (`v-farrung`). Its paper copy
+  (`arm-farrung`) was stopped and retired 2026-09-25 when the idea died.
+  The 1-contract live test would have needed the operator's yes; its bar is in
   `results/FAR_RUNG_2026-09-25.md` section 0 (100+ fills over 30+ closes,
   zero crossings, 0.8c+ a contract, fills on half of orders).
 - **Honest limit:** 24 days of tape with no flash crash in it.
 - **Overnight (midnight and 1 AM ET, Sep 25): nobody offered the safe side
   of any far rung at any price.** The 99c offers seen on Sep 24 were all
-  1-7 PM ET. Daytime closes decide it; read after ~7 PM ET Sep 25.
+  1-7 PM ET. (Written before the kill above. The book watcher `rungwatch`
+  takes its last daytime reads on Sep 25; stop it after ~7 PM ET Sep 25 by
+  creating `results/rungwatch.stop`.)
 
 ### A11. Polymarket US -- the same BTC contract, second book (recorder running)
 **Say: "Polymarket."**
@@ -146,13 +151,18 @@ and made +$15 total — break-even trades. The floor halves the loss dollars for
 about the same money but cuts 40% of trades, and it was mixed by week
 (+$39 one week, −$34 the other). Paper only.
 
-### A4. Control arms — `arm-lateadd-off`, `arm-afternoon`, `arm-live-frozen`
-*(The paper fleet is 8 arms: these three, the four tests above, and `arm-brake3`
-for sizing. It was 34 — the rest were retired on 2026-09-24 because their
-questions were settled and the money bot shares the machine's memory.)*
+### A4. Control arms — `arm-lateadd-off`, `arm-early-off`, `arm-afternoon`, `arm-live-frozen`
+*(As of 2026-09-25 the paper fleet copying the 15-minute bot is 10 arms: these
+four, `arm-fresh500`, `arm-toxic`, `arm-btcd`, `arm-edge2c`, `arm-hourly-all`,
+and `arm-brake3` for sizing; plus five coin-race arms (B2, B3) and two
+commodity arms. It was 34 — most were retired on 2026-09-24 because their
+questions were settled and the money bot shares the machine's memory. Every
+pid and end date: top of `HANDOFF.md`.)*
 **Say: "the control arms."**
 Copies of the bot with one thing changed, so we can prove a change helped.
 - `arm-lateadd-off` = today's live bot WITHOUT the late add (which is live).
+- `arm-early-off` = today's live bot WITHOUT the 45-second early buy (live
+  runs it at a third of size since 2026-09-22).
 - `arm-afternoon` = the exact code from the afternoon of 2026-09-23, before
   the night's changes. **Manual process — relaunch by hand after a reboot.**
 - `arm-live-frozen` = the settings from 2026-09-20, pinned. Its 3-day run ended
@@ -214,9 +224,13 @@ counts as a loss. This is what made the size step safe.
 ### C1. Hard drive — buy one
 **Say: "the disk."**
 2 TB external hard drive ($105 Toshiba / $119 Seagate — an SSD buys nothing
-for an append-only recording). The machine has ~18 GB free and records ~4 GB a
-day; the recorder stops itself at 5 GB free, around 2026-09-28. Once the drive
-is plugged in I move the recording and the deadline goes away for ~1.5 years.
+for an append-only recording). **Not bought yet.** 11.9 GB free at 3:02 AM ET
+Sep 25 (it dipped to 5.9-7.9 GB on the evening of Sep 24 before space was
+freed). The recorder stops itself for good at 5 GB free. How fast it fills is
+not pinned down — notes say anywhere from 1 to 4 GB a day, and other jobs on
+the machine move it too — so the stop date could be anywhere from about Sep 27
+to early October. Once the drive is plugged in I move the recording and the
+deadline goes away for ~1.5 years.
 
 ### C2. Cloud server — deferred until after the weekend
 **Say: "the VM."**

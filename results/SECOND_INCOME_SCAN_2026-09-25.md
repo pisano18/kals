@@ -134,7 +134,7 @@ either venue. The 3-day recording decides it.
 
 ---
 
-## 3. Kalshi: every open series, by settlement mechanism (IN PROGRESS)
+## 3. Kalshi: every open series, by settlement mechanism (COMPLETE -- see 3b for the finished count)
 
 `SCR\scan_enum.py` pages `GET /markets?status=open&limit=1000`. At 03:33Z it
 had read **4,730,000 open markets in 881 series** (37 minutes) and was still
@@ -311,3 +311,46 @@ window), `SCR\scan_enum_series.json` (once the enumeration ends).
 - The ladder "0 violations": the batch quote is stale by tens of seconds, so a
   violation living under ~30 s could be missed between polls; the 5-s cadence
   in the last 2 minutes narrows that only there.
+
+---
+
+## 3b. Enumeration finished (03:40 UTC): 5,693,069 open markets in 4,196 series
+
+`scan_enum.py` ended after 5,694 pages (45 min). The count is dominated by
+multivariate parlay combinations, which were skipped in the per-series
+aggregation. The 236 MB raw file was deleted; the per-series summary is
+`SCR\scan_enum_series.json` (4.5 MB) and the classification output is
+`SCR\scan_classify.txt`. Classes by keyword over `settlement_sources` +
+`rules_primary`: sports score / league official **1,022 series**; formula on a
+public feed **498**; discrete public event **1,376**; news / council **245**;
+unclassified **1,055** (mostly elections, entertainment, e-sports, AI
+leaderboards).
+
+What the finished list changes in section 1:
+
+- **Sports is the biggest mechanically-settled pool on Kalshi by a factor of
+  ten and it is unmeasured here.** 24-hour volume: `KXNFLTD` (touchdown
+  scorer props) $7.45 M, `KXNCAAFGAME` $7.22 M, `KXMLBGAME` $6.64 M,
+  `KXNCAAFSPREAD` $3.08 M, `KXNCAAFTOTAL` $2.28 M, `KXMLBTOTAL` $1.81 M,
+  `KXNFLGAME` $1.03 M -- against `KXBTCD` $1.40 M and `KXBTC15M` $0.95 M.
+  All settle on a final score published by ESPN / the league. This is why
+  item #5 (final-minute pin on a live score feed) is the one unmeasured
+  family that could matter; it needs a score feed this box cannot reach
+  (ESPN 403) and a study of who is selling in the last minute.
+- **Among the crypto ladders only ETH has real volume besides BTC:** `KXETHD`
+  $109k/24 h, `KXBTC` brackets $11k, `KXSOLD` $10k, `KXXRPD` $5.8k, `KXHYPED`
+  $1.3k, `KXDOGED` $0.9k, `KXBNBD` $0.2k. Item #2 is therefore "add KXETHD",
+  not the whole set.
+- **Highest cadence on the exchange:** `KXNASDAQ100U` (2,800 open markets,
+  7 closes in the next 24 h) and `KXINXU` (420, 7 closes) -- the hourly
+  equity ladders, instant settlement, already killed; then `KXRAIN` (4 closes)
+  and the crypto ladders (2 each, 03:00Z and 04:00Z at the time of the read).
+- **New continuous-public-number families found, all small or slow:**
+  `KXRT` (Rotten Tomatoes score at a date; $766k/24 h across 223 markets, but
+  one close a week and the number only moves when reviews land),
+  `KXTRUMPAPPROVE` (RealClearPolitics average, $55k, 1 close/24 h),
+  `KXNETFLIXRANKSHOW/MOVIE` (weekly Netflix chart, $17k each), `KXHORMUZWEEKLY`
+  (IMF PortWatch ship count, $45k, weekly), AI-leaderboard shares
+  (`KXANTHSHARE`, `KXGOOGSHARE`, `KXANTHVSPEND` ..., OpenRouter / Vercel
+  dashboards, $25-44k, one-off dates). None has a sub-day close; none earns a
+  test before #1-#3.
