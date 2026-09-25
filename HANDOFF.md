@@ -5,7 +5,7 @@ Kalshi or even Polymarket... search hard and wide and test vigorously."
 Three hunts ran in parallel; everything below is read-only measurement
 except code that ships OFF.
 
-**1. FAR RUNGS -- KILLED 06:3xZ, no supply (FAR_RUNG verdict; rungtrades.py: 0 safe-side buys at >=97c at $150+ in 68 closes; the live bot's 99c offers were the rung next to the settlement). Original write-up below.**
+**1. FAR RUNGS -- KILLED 05:4xZ, no supply (FAR_RUNG verdict; rungtrades.py: 0 safe-side buys at >=97c at $150+ in 68 closes; the live bot's 99c offers were the rung next to the settlement). Original write-up below.**
 On the hourly BTC ladder a rung $150+ from the projection with 45 s left was
 crossed on 0 of 2,136 closes since 09-01 (index tape, 60-print mean
 reconciled to the exchange's own average 2,133/2,133; worst miss $136 at
@@ -2164,7 +2164,7 @@ liveness check in this project should be a freshness check on something the
 process WRITES, never on the process table. The collector checks were already
 by file for the same reason (2026-09-14).
 
-## 06:3xZ -- QUIET MARKETS: the operator's top priority, measured (`results/RESULTS_quiet.md`)
+## 05:4xZ -- QUIET MARKETS: the operator's top priority, measured (`results/RESULTS_quiet.md`)
 
 Quiet = US daytime (9 AM-4 PM ET): sellers on half as many looks, half the
 fills, a third of the money per hour. Of the current version's 64
