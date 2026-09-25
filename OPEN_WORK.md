@@ -61,6 +61,9 @@ day at today's bank, and one crossing costs about $225 at that size.
   `results/FAR_RUNG_2026-09-25.md` section 0 (100+ fills over 30+ closes,
   zero crossings, 0.8c+ a contract, fills on half of orders).
 - **Honest limit:** 24 days of tape with no flash crash in it.
+- **Overnight (midnight and 1 AM ET, Sep 25): nobody offered the safe side
+  of any far rung at any price.** The 99c offers seen on Sep 24 were all
+  1-7 PM ET. Daytime closes decide it; read after ~7 PM ET Sep 25.
 
 ### A11. Polymarket US -- the same BTC contract, second book (recorder running)
 **Say: "Polymarket."**
@@ -212,10 +215,12 @@ matters.
   said it was the same population as A1 and not worth a second test. Crossing
   the two on our own entries proved otherwise — see A7. Old evidence:
   `results/cf_2026-09-24/toxicity.md`; the cross: `results/PREREG_toxic.md`.
-- **Market making (resting our own offers) — parked.** A simulation says
-  $160–550/day, but it is a replay (our standing rule: replays are not
-  evidence), and testing it needs 2+ GB of memory the money bot cannot spare.
-  Right place: the cloud server. `results/IDEAS_2026-09-24.md` item 3.
+- **Market making (resting our own offers) — KILLED 2026-09-25.** Simulated
+  on 61 hours of recorded books (968 markets): it lost money in every one of
+  12 versions on every day, even assuming we are first in line and instant
+  (-0.15c a contract at best, -1.60c at a realistic 300 ms, worst day
+  -$3,409). Whoever trades against a resting quote here usually knows where
+  the index is going. `results/MAKER_SIM_2026-09-24.md` section 9.
 - **Exchange-feed "move against us" gate — killed on our own fills
   (2026-09-25).** The recorded exchange books DO explain 70–79% of the next
   index print 0–300 ms early (`results/FEED_LEAD_2026-09-24.md`) — but at our
