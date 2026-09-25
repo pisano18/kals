@@ -54,16 +54,18 @@ async def run():
                 hdrs = auth_headers()
                 async with websockets.connect(URL, additional_headers=hdrs, max_size=8_000_000, ping_interval=20) as ws:
                     log("connected")
-                    cur = None
+                    done = set()   # slugs this connection already subscribed
                     while time.time() < t_end and not os.path.exists(STOP):
-                        want = slugs(time.time())
-                        if want != cur:
+                        new = [s_ for s_ in slugs(time.time()) if s_ not in done]
+                        if new:
+                            # ONLY new slugs: a request that repeats one already
+                            # subscribed is rejected whole (2026-09-25 fix)
                             for i, styp in enumerate(("SUBSCRIPTION_TYPE_MARKET_DATA", "SUBSCRIPTION_TYPE_TRADE")):
                                 msg = {"subscribe": {"requestId": "sub-%d-%d" % (int(time.time()), i), "subscriptionType": styp,
-                                                     "marketSlugs": want, "responsesDebounced": False}}
+                                                     "marketSlugs": new, "responsesDebounced": False}}
                                 await ws.send(json.dumps(msg))
-                            log("subscribed %s" % want)
-                            cur = want
+                            log("subscribed %s" % new)
+                            done.update(new)
                         try:
                             frame = await asyncio.wait_for(ws.recv(), timeout=5)
                         except asyncio.TimeoutError:

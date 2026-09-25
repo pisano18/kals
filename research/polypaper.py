@@ -510,17 +510,19 @@ class Bot:
                 async with websockets.connect(WS_URL, additional_headers=hdrs, max_size=8_000_000,
                                               ping_interval=20) as ws:
                     self.rec(type="ws", ev="connected")
-                    cur = None
+                    done_subs = set()   # slugs this connection already subscribed
                     while not self.done and not os.path.exists(STOP) and time.time() < self.t_end:
                         st15 = int(time.time()) // 900 * 900
-                        want = [slug_for(st15), slug_for(st15 + 900)]
-                        if want != cur:
+                        want = [x for x in (slug_for(st15), slug_for(st15 + 900)) if x not in done_subs]
+                        if want:
+                            # ONLY new slugs: a request repeating one already
+                            # subscribed is rejected whole (2026-09-25 fix)
                             for i, styp in enumerate(("SUBSCRIPTION_TYPE_MARKET_DATA", "SUBSCRIPTION_TYPE_TRADE")):
                                 await ws.send(json.dumps({"subscribe": {
                                     "requestId": "pp-%d-%d" % (int(time.time()), i), "subscriptionType": styp,
                                     "marketSlugs": want, "responsesDebounced": False}}))
                             self.rec(type="ws", ev="subscribed", slugs=want)
-                            cur = want
+                            done_subs.update(want)
                         try:
                             frame = await asyncio.wait_for(ws.recv(), timeout=2)
                         except asyncio.TimeoutError:
