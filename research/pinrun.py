@@ -2973,6 +2973,232 @@ def arm(reason):
 
 
 # ===========================================================================
+# v-safety2 (2026-09-25): KALSHI IS THE TRUTH ABOUT WHAT WE HOLD.
+#
+# THE HOLE (results/RED_TEAM_2026-09-25.md, reds 1 and 2). Nothing in this
+# file ever asked Kalshi what the account holds. An order whose reply was
+# lost -- a timeout, a 5xx, no answer, an IOC that rested and could not be
+# reconciled -- may still have filled:
+#   * an ENTRY like that halted pintake, the drain found nothing held and
+#     the process exited. A real fill rode to settlement with no hedge and
+#     never reached the day-loss file or the loss count;
+#   * a HEDGE like that is counted as covered (K2, deliberately: resending
+#     one that did fill would double it) and was never checked, so one that
+#     did NOT fill left the position naked for the rest of the close;
+#   * a restarted bot started with empty books whatever the account held.
+#
+# WHAT THIS DOES, GET-only and LIVE only (a paper arm never calls it):
+#   (b)/(c) an order whose outcome is unknown is looked up by its OWN
+#   client_order_id in GET /portfolio/orders?ticker=<ticker>. Kalshi honours
+#   the ticker and min_ts filters (read live 2026-09-25), and ONLY an exact
+#   id match counts, so another bot's order on this account can never be
+#   read as ours. A fill found there is booked exactly as the live fill path
+#   would have booked it; an order absent from a complete listing taken at
+#   least KTRUTH_SETTLE_S after the send was never placed, and a hedge is
+#   then sent again; an unreadable listing concludes NOTHING (K2's
+#   "counted covered" stands) and is retried with backoff.
+#   (a) at startup, GET /portfolio/positions. A position in one of OUR
+#   series, in a market that has not closed, that our books do not hold, is
+#   adopted -- only when two reads at least KTRUTH_CONFIRM_S apart agree,
+#   only on a market we have not traded in the last KTRUTH_QUIET_S, and only
+#   the part that ADDS exposure. A shortfall (Kalshi shows LESS than our
+#   books) is recorded and never "adopted" as cover: reading a lagging
+#   endpoint as a hedge would leave a real position naked.
+#
+# WHAT IT BLOCKS: nothing. No gate, no refusal, no order of its own. It can
+# only (1) put a position into the books, which the hedge pass then
+# protects and reconcile() books, (2) re-open a hedge that provably did not
+# fill, and (3) keep a DRAINING bot alive while an unknown is unresolved
+# (bounded by the market's close plus KTRUTH_GRACE_S, and by DRAIN_MAX_S).
+# The pintake halt an unknown ENTRY sets is NOT cleared here: the run still
+# drains and exits when flat, exactly as before -- now with the fill held.
+# Reads sit BELOW the hedge pass, one GET a pass at most, at most one every
+# KTRUTH_MIN_GAP_S, each capped at KTRUTH_TIMEOUT_S (kauth's own is 20 s).
+# ===========================================================================
+KTRUTH_ON = True               # the whole block; live only in any case
+KTRUTH_TIMEOUT_S = 3.0         # one portfolio GET may hold the loop this long
+KTRUTH_MIN_GAP_S = 1.0         # ...and there is at most one a second
+KTRUTH_BACKOFF_MAX_S = 15.0    # a failing read is retried 1, 2, 4, 8, 15 s apart
+KTRUTH_SETTLE_S = 3.0          # "absent" counts only this long after the send
+KTRUTH_GRACE_S = 120.0         # an unknown is dropped this long after its close
+KTRUTH_CONFIRM_S = 2.0         # a startup position must be seen twice this far apart
+KTRUTH_QUIET_S = 5.0           # ...on a market we have not traded for this long
+KTRUTH_STARTUP_HOLD_S = 30.0   # a halted bot waits at most this long for the read
+KTRUTH_ROUNDS_MAX = 6          # startup confirm rounds before giving up (recorded)
+KTRUTH_LIST_LIMIT = 200
+_KAUTH_GET = get               # the real kauth.get; a test's fake wire replaces `get`
+
+
+def _ktf(x):
+    """A Kalshi fixed-point string (or number) as a float, or None."""
+    try:
+        if x is None or x == "":
+            return None
+        v = float(x)
+        return v if v == v else None
+    except (TypeError, ValueError):
+        return None
+
+
+def portfolio_get(path, params=None, timeout=None):
+    """kauth.get (GET only, the same signed read the universe refresh makes)
+    for the v-safety2 reads -- but the TRADING THREAD waits for it at most
+    KTRUTH_TIMEOUT_S.
+
+    kauth.get's own timeout is 20 s, and a read in the trading thread is a
+    hedge blackout for as long as it waits. So the call runs on a daemon
+    thread and the loop stops waiting after the short timeout: a late
+    answer is DISCARDED (the read counts as failed and is retried later
+    with backoff), never acted on out of turn. At most one such thread per
+    abandoned read, and each ends by kauth's own 20 s. No new network code:
+    this file still has no send path of its own.
+
+    When `get` is not the real kauth.get (the offline loop's fake wire),
+    it is called directly, so every world stays deterministic. Returns
+    (status, parsed-or-text), -1 when there was no usable answer; never
+    raises."""
+    _g = globals().get("get")
+    if _g is not _KAUTH_GET:
+        try:
+            return _g(path, params)
+        except Exception as e:                           # noqa: BLE001
+            return -1, "%s: %s" % (type(e).__name__, str(e)[:200])
+    try:
+        import threading as _thk
+        _box = {}
+
+        def _run():
+            try:
+                _box["r"] = _g(path, params)
+            except Exception as e:                       # noqa: BLE001
+                _box["r"] = (-1, "%s: %s" % (type(e).__name__, str(e)[:200]))
+
+        _th = _thk.Thread(target=_run, name="ktruth-get", daemon=True)
+        _th.start()
+        _th.join(float(timeout or KTRUTH_TIMEOUT_S))
+        if "r" not in _box:
+            return -1, ("no answer in %.1f s -- abandoned, retried later"
+                        % float(timeout or KTRUTH_TIMEOUT_S))
+        return _box["r"]
+    except Exception as e:                               # noqa: BLE001
+        return -1, "%s: %s" % (type(e).__name__, str(e)[:200])
+
+
+def ktruth_order_lookup(st, body, coid, ticker):
+    """Read ONE of our orders out of GET /portfolio/orders?ticker=<ticker>.
+
+    ("found", {filled, cost, fee, order_id, status, final}) -- the row whose
+        client_order_id is EXACTLY ours. `cost` is dollars per contract in
+        the terms of the side we bought (taker + maker fill cost / fills),
+        None when the row carries no cost. `final` is False while the order
+        is still resting: nothing is booked from a live order.
+    ("absent", {"rows": n}) -- a complete listing, every row on `ticker`,
+        and no row with our id.
+    ("unreadable", {"why": ...}) -- anything else. Nothing may be concluded
+        from it. Never raises."""
+    try:
+        if st != 200 or not isinstance(body, dict):
+            return "unreadable", {"why": "status %s" % (st,)}
+        rows = body.get("orders")
+        if not isinstance(rows, list):
+            return "unreadable", {"why": "no orders list"}
+        for o in rows:
+            if not isinstance(o, dict) or o.get("client_order_id") != coid:
+                continue
+            if o.get("ticker") not in (None, ticker):
+                return "unreadable", {"why": "our id on another ticker"}
+            n = _ktf(o.get("fill_count_fp"))
+            if n is None:
+                n = _ktf(o.get("fill_count"))
+            if n is None or n < 0:
+                return "unreadable", {"why": "no fill count"}
+            tc = _ktf(o.get("taker_fill_cost_dollars"))
+            mc = _ktf(o.get("maker_fill_cost_dollars"))
+            cost = None
+            if n > 0 and (tc is not None or mc is not None):
+                cost = ((tc or 0.0) + (mc or 0.0)) / n
+                if not (0.0 < cost < 1.0):
+                    cost = None
+            tf = _ktf(o.get("taker_fees_dollars"))
+            mf = _ktf(o.get("maker_fees_dollars"))
+            fee = (None if tf is None and mf is None
+                   else (tf or 0.0) + (mf or 0.0))
+            status = o.get("status")
+            return "found", {"filled": n, "cost": cost, "fee": fee,
+                             "order_id": o.get("order_id"), "status": status,
+                             "final": status in ("executed", "canceled")}
+        if any(isinstance(o, dict) and o.get("ticker") not in (None, ticker)
+               for o in rows):
+            return "unreadable", {"why": "listing not filtered to the ticker"}
+        if body.get("cursor") and len(rows) >= KTRUTH_LIST_LIMIT:
+            return "unreadable", {"why": "listing has more pages"}
+        return "absent", {"rows": len(rows)}
+    except Exception as e:                               # noqa: BLE001
+        return "unreadable", {"why": "%s: %s" % (type(e).__name__, e)}
+
+
+def ktruth_positions(st, body):
+    """GET /portfolio/positions -> {ticker: (net, exposure_dollars)}, or None
+    when the answer cannot be read. `net` > 0 is YES held, < 0 is NO held
+    (Kalshi nets a market's two sides into one signed position). A row that
+    cannot be read is skipped: the reader only ever ADDS from what it finds,
+    so a missing row can hide a position but never invent one."""
+    try:
+        if st != 200 or not isinstance(body, dict):
+            return None
+        rows = body.get("market_positions")
+        if not isinstance(rows, list):
+            return None
+        out = {}
+        for x in rows:
+            if not isinstance(x, dict):
+                continue
+            tk = x.get("ticker") or x.get("market_ticker")
+            n = _ktf(x.get("position_fp"))
+            if n is None:
+                n = _ktf(x.get("position"))
+            if not tk or n is None:
+                continue
+            ex = _ktf(x.get("market_exposure_dollars"))
+            if ex is None:
+                _c = _ktf(x.get("market_exposure"))
+                ex = None if _c is None else _c / 100.0
+            out[str(tk)] = (float(n), ex)
+        return out
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
+def ktruth_market_facts(st, body, series_index):
+    """GET /markets/<ticker> -> the (iid, close_s, strike, digits, exi) tuple
+    the universe refresh would have built for it, or None. The same reads
+    the refresh makes: custom_strike.floor_strike where the exchange gives
+    it, the top-level floor_strike otherwise (KXDOGED carries it only in
+    custom_strike), round_digits from custom_strike."""
+    try:
+        if st != 200 or not isinstance(body, dict):
+            return None
+        m = body.get("market")
+        if not isinstance(m, dict) or not m.get("ticker"):
+            return None
+        tk = str(m["ticker"])
+        iid = (series_index or {}).get(tk.split("-")[0])
+        ct = m.get("close_time")
+        cs_ = m.get("custom_strike") or {}
+        sk = m.get("floor_strike")
+        if cs_.get("floor_strike") not in (None, ""):
+            sk = cs_.get("floor_strike")
+        if iid is None or not ct or sk is None:
+            return None
+        cs = calendar.timegm(_REAL_TIME.strptime(ct, "%Y-%m-%dT%H:%M:%SZ"))
+        d = cs_.get("round_digits")
+        return (iid, int(cs), float(sk), int(d) if d is not None else None,
+                int(m.get("exchange_index") or 0))
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
+# ===========================================================================
 # THE INDEX, over WebSocket. Not the collector's file: re-reading a growing
 # gzip once a second cost more than a second by the end of an hour, which is
 # most of the "no_fair" skips in the old paper log.
@@ -4615,7 +4841,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
                         size=5.0, tau0=30, plant=False,
                         flags=None, get_delay=0.0, stall=None,
                         get_fail_after=None, max_positions=99, bank=None,
-                        trec_split=False):
+                        trec_split=False, portfolio=None, result=None):
     """Run the REAL trade_loop for `run_s` fake seconds on one close.
     (`plant` sets --hedge-plant, the one-contract planted hedge test.)
 
@@ -4668,6 +4894,15 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
                failure would look like the widener not working.
                A PAPER world also needs SIZE_MIRROR_ON False, or
                autosize_tick takes the mirror path and never reads a bank.
+
+    portfolio  v-safety2: portfolio(path, params, t) -> (status, body)
+               answers every GET /portfolio/... -- a planted Kalshi account.
+               None: positions read as an empty account and the order
+               listing FAILS, so an unknown order stays unknown and every
+               pre-existing world behaves exactly as it did.
+    result     v-safety2: {ticker: "yes"|"no"} -- GET /markets/<ticker>
+               answers finalized with that result, so reconcile() books the
+               settlement. None: never finalised, as before.
 
     Returns {"recs", "posts", "raised", "ran_s", "state"}. A record's `t` is
     fake wall time since the start, in seconds.
@@ -4815,6 +5050,18 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
         return _mf["fair"](_itime(iid))
 
     def _get(path, params=None, **kw):
+        if str(path).startswith("/portfolio/"):
+            if portfolio is not None:
+                return portfolio(path, dict(params or {}),
+                                 round(clock.t - t0, 3))
+            if path == "/portfolio/positions":
+                return 200, {"market_positions": [], "event_positions": [],
+                             "cursor": ""}
+            return -1, "offline loop: no order listing planted"
+        if (result is not None and str(path).startswith("/markets/")
+                and path[len("/markets/"):] in result):
+            return 200, {"market": {"status": "finalized",
+                                    "result": result[path[len("/markets/"):]]}}
         if path == "/markets":
             gets.append((path, dict(params or {})))
             # R2: a PLANTED SLOW REFRESH -- one GET, one clock jump, which
@@ -13677,6 +13924,387 @@ def _selftest_body():
        "value the process started with again (moved: %s)"
        % (len(_OFFLINE_PINNED_FLAGS), _pin_moved))
 
+    # ===================================================================
+    # v-safety2 (2026-09-25): DRIVEN, through the real loop on the live path
+    # (real pintake.take, a fake wire on DEMO), against a FAKE KALSHI that
+    # keeps what REALLY happened to each order apart from what the bot was
+    # told. Every world below was run against the pre-v-safety2 file first:
+    # the "before" in each message is what that file did.
+    # ===================================================================
+    class _KtEx:
+        """plan(body, n) -> (status, response, really_filled, cost). None
+        filled = the order never reached the book."""
+
+        def __init__(self, plan, pos0=None, fail=False, phantom=None):
+            self.plan, self.orders, self.gets = plan, [], []
+            self.pos0, self.fail, self.phantom = dict(pos0 or {}), fail, phantom
+
+        def reply(self, body, n):
+            st, resp, filled, cost = self.plan(body, n)
+            if filled is not None:
+                self.orders.append({
+                    "client_order_id": body.get("client_order_id"),
+                    "ticker": body.get("ticker"), "order_id": "ex-%d" % n,
+                    "status": ("executed" if filled >= float(body["count"]) - 1e-9
+                               else "canceled"),
+                    "fill_count_fp": "%.2f" % filled,
+                    "remaining_count_fp": "0.00",
+                    "taker_fill_cost_dollars": "%.6f" % (filled * cost),
+                    "taker_fees_dollars": "0.000000",
+                    "outcome_side": ("yes" if body.get("side") == "bid"
+                                     else "no")})
+            return st, resp
+
+        def portfolio(self, path, params, t):
+            self.gets.append((t, path))
+            if self.fail:
+                return -1, "planted outage"
+            if path == "/portfolio/orders":
+                return 200, {"orders": [o for o in self.orders
+                                        if o["ticker"] == params.get("ticker")],
+                             "cursor": ""}
+            if path == "/portfolio/positions":
+                net = {k: [v[0], v[1]] for k, v in self.pos0.items()}
+                if self.phantom and sum(1 for g in self.gets if g[1] == path) == 1:
+                    net.update({k: [v[0], v[1]] for k, v in self.phantom.items()})
+                for o in self.orders:
+                    _s = 1.0 if o["outcome_side"] == "yes" else -1.0
+                    _c = net.setdefault(o["ticker"], [0.0, 0.0])
+                    _c[0] += _s * float(o["fill_count_fp"])
+                    _c[1] += float(o["taker_fill_cost_dollars"])
+                return 200, {"market_positions": [
+                    {"ticker": k, "position_fp": "%.2f" % v[0],
+                     "market_exposure_dollars": "%.4f" % v[1]}
+                    for k, v in net.items() if abs(v[0]) > 1e-9],
+                    "event_positions": [], "cursor": ""}
+            return -1, "not modelled"
+
+        def really(self, tk, side):
+            return sum(float(o["fill_count_fp"]) for o in self.orders
+                       if o["ticker"] == tk and o["outcome_side"] == side)
+
+    def _kt_fill(body, n):
+        st, resp = _fill_all(body, n)
+        p = float(body["price"])
+        return (st, resp, float(body["count"]),
+                p if body.get("side") == "bid" else round(1.0 - p, 4))
+
+    _ktA = "KXKTA15M-KT"
+
+    def _kt_mkt(collapse_at=6, early=0.999):
+        return {"tk": _ktA, "series": "KXKTA15M", "iid": "KTA", "strike": 100.0,
+                "fair": (lambda t: 0.10 if (collapse_at is not None
+                                            and t >= collapse_at) else early),
+                "book": (lambda t: _ob(0.94, 0.05))}
+
+    def _kt_kinds(res, kind, what=None):
+        return [r for r in res["recs"] if r.get("kind") == kind
+                and (what is None or r.get("what") == what)]
+
+    def _kt_posts(res, side):
+        return [p for p in res["posts"] if p.get("ticker") == _ktA
+                and p.get("side") == side]
+
+    def _kt_settled(res):
+        return sorted((r.get("want"), r.get("cost"), r.get("pnl_c"))
+                      for r in res["recs"] if r.get("kind") == "settled")
+
+    def _kt_lost_entry(really):
+        def plan(body, n):
+            if body.get("side") == "bid" and body.get("ticker") == _ktA:
+                # the SAME fill the wire world gets (the whole order at its
+                # limit), only the reply is lost
+                return (-1, "timed out") + ((float(body["count"]),
+                                             float(body["price"])) if really
+                                            else (None, None))
+            return _kt_fill(body, n)
+        return plan
+
+    # (1b) an ENTRY whose reply is lost but which REALLY filled
+    _kx1 = _KtEx(_kt_lost_entry(True))
+    _kt1 = _offline_trade_loop([_kt_mkt(6)], live=True, reply=_kx1.reply,
+                               run_s=70.0, tau0=30, portfolio=_kx1.portfolio,
+                               result={_ktA: "no"})
+    _kt1r = _kt_kinds(_kt1, "ktruth", "resolved")
+    ck(_kt1["raised"] is None and len(_kt1r) == 1
+       and _kt1r[0].get("verdict") == "found"
+       and abs(float(_kt1r[0].get("booked") or 0) - 5.0) < 1e-9
+       and abs(_kx1.really(_ktA, "no") - 5.0) < 1e-9
+       and len(_kt_posts(_kt1, "bid")) == 1,
+       "v-safety2 (1b) DRIVEN: an entry whose reply is LOST (-1) but which "
+       "really filled 5 is found on Kalshi by its own id, booked, and HEDGED "
+       "in full when it collapses (booked %s, really hedged %g; before: the "
+       "run exited at 0.05 s with 5 naked, 0 hedged)"
+       % ([r.get("booked") for r in _kt1r], _kx1.really(_ktA, "no")))
+    _kt1s = _kt_settled(_kt1)
+    ck(len(_kt1s) == 2 and all(r.get("day_realised") is not None
+                               for r in _kt1["recs"] if r.get("kind") == "settled"),
+       "v-safety2 (1b): ...and its settlement is BOOKED, both legs, into the "
+       "day-loss total the $200/day cap reads (%s)" % (_kt1s,))
+    # EQUIVALENCE: exactly as if the fill had been seen
+    _kx0 = _KtEx(_kt_fill)
+    _kt0 = _offline_trade_loop([_kt_mkt(6)], live=True, reply=_kx0.reply,
+                               run_s=70.0, tau0=30, portfolio=_kx0.portfolio,
+                               result={_ktA: "no"})
+    ck(_kt_settled(_kt0) == _kt1s
+       and [(r.get("n"), r.get("price")) for r in _kt0["recs"]
+            if r.get("kind") == "hedge"]
+       == [(r.get("n"), r.get("price")) for r in _kt1["recs"]
+           if r.get("kind") == "hedge"],
+       "v-safety2 (1b) EQUIVALENCE: the adopted fill is hedged and settled "
+       "EXACTLY as the same fill seen on the wire (%s vs %s)"
+       % (_kt_settled(_kt0), _kt1s))
+    # NULL: lost reply, never placed -- nothing booked, nothing hedged, and
+    # the run exits once Kalshi has said so rather than at once
+    _kx2 = _KtEx(_kt_lost_entry(False))
+    _kt2 = _offline_trade_loop([_kt_mkt(6)], live=True, reply=_kx2.reply,
+                               run_s=70.0, tau0=30, portfolio=_kx2.portfolio,
+                               result={_ktA: "no"})
+    _kt2r = _kt_kinds(_kt2, "ktruth", "resolved")
+    _kt2h = [r for r in _kt2["recs"] if r.get("kind") == "halt"]
+    ck(_kt2["raised"] is None and len(_kt2r) == 1
+       and _kt2r[0].get("verdict") == "absent"
+       and not _kt_posts(_kt2, "ask") and not _kt_settled(_kt2)
+       and len(_kt2h) == 1 and float(_kt2h[0]["t"]) >= KTRUTH_SETTLE_S
+       and float(_kt2h[0]["t"]) < 10.0,
+       "v-safety2 (1b) NULL: a lost reply that was NEVER placed books "
+       "nothing, hedges nothing, and the halted run exits once Kalshi has "
+       "answered (halt at %s s; not before %.0f s)"
+       % ([r.get("t") for r in _kt2h], KTRUTH_SETTLE_S))
+
+    # (1c) a HEDGE whose outcome is unknown: 503 never placed / -1 filled 2
+    # of 5 / -1 filled all 5. Before: 1 POST each, counted covered.
+    def _kt_lost_hedge(first):
+        _n = {"n": 0}
+
+        def plan(body, n):
+            if body.get("side") == "ask" and not _n["n"]:
+                _n["n"] += 1
+                return first
+            return _kt_fill(body, n)
+        return plan
+    for _kcase, _kfirst, _kposts in (
+            ("503, never placed", (503, "Service Unavailable", None, None), 2),
+            ("-1, really filled 2 of 5", (-1, "timed out", 2.0, 0.06), 2),
+            ("-1, really filled 5 of 5", (-1, "timed out", 5.0, 0.06), 1)):
+        _kxh = _KtEx(_kt_lost_hedge(_kfirst))
+        _kth = _offline_trade_loop([_kt_mkt(4)], live=True, reply=_kxh.reply,
+                                   run_s=20.0, tau0=30,
+                                   portfolio=_kxh.portfolio)
+        _kthr = _kt_kinds(_kth, "ktruth", "resolved")
+        ck(_kth["raised"] is None and len(_kt_posts(_kth, "ask")) == _kposts
+           and abs(_kxh.really(_ktA, "no") - 5.0) < 1e-9
+           and len(_kthr) == 1 and _kthr[0].get("order_kind") == "hedge",
+           "v-safety2 (1c) DRIVEN: a hedge POST %s is looked up before it is "
+           "sent again -- %d hedge POST(s), %g of 5 REALLY covered (before: 1 "
+           "POST and %g covered)"
+           % (_kcase, len(_kt_posts(_kth, "ask")), _kxh.really(_ktA, "no"),
+              _kfirst[2] or 0.0))
+
+    # (1a) STARTUP: 5 YES on the account that the books do not hold
+    _kx6 = _KtEx(_kt_fill, pos0={_ktA: (5.0, 4.75)})
+    _kt6 = _offline_trade_loop([_kt_mkt(8, early=0.5)], live=True,
+                               reply=_kx6.reply, run_s=15.0, tau0=30,
+                               portfolio=_kx6.portfolio)
+    _kt6a = _kt_kinds(_kt6, "ktruth", "adopted")
+    ck(_kt6["raised"] is None and len(_kt6a) == 1
+       and abs(float(_kt6a[0].get("n") or 0) - 5.0) < 1e-9
+       and _kt6a[0].get("want") == "yes"
+       and abs(_kx6.really(_ktA, "no") - 5.0) < 1e-9
+       and not _kt_posts(_kt6, "bid"),
+       "v-safety2 (1a) DRIVEN: 5 YES on Kalshi that a fresh bot's books do "
+       "not hold is ADOPTED once two reads agree and hedged in full when it "
+       "collapses (adopted %s, hedged %g; before: never hedged)"
+       % ([r.get("n") for r in _kt6a], _kx6.really(_ktA, "no")))
+    for _kcase, _kkw in (("a position in a series we do not trade",
+                          {"pos0": {"KXCRYPTOLEAD15M-X": (5.0, 4.75)}}),
+                         ("a position seen in ONE read only (a lagging "
+                          "endpoint)", {"phantom": {_ktA: (5.0, 4.75)}}),
+                         ("an empty account", {})):
+        _kxn = _KtEx(_kt_fill, **_kkw)
+        _ktn = _offline_trade_loop([_kt_mkt(8, early=0.5)], live=True,
+                                   reply=_kxn.reply, run_s=15.0, tau0=30,
+                                   portfolio=_kxn.portfolio)
+        ck(_ktn["raised"] is None and not _kt_kinds(_ktn, "ktruth", "adopted")
+           and not _kt_posts(_ktn, "ask")
+           and len(_kt_kinds(_ktn, "ktruth", "startup")) == 1,
+           "v-safety2 (1a) NULL: %s is NOT adopted and nothing is hedged"
+           % _kcase)
+    # a bot HALTED at startup (here: pintake's halt, planted on the first
+    # record) must still read Kalshi and adopt BEFORE it can exit flat
+    _kpl = {"done": False}
+
+    def _kt_plant(kind, kw):
+        if not _kpl["done"]:
+            _kpl["done"] = True
+            pintake.LEDGER["halt"] = "planted: a terminal halt at startup"
+    _kx9 = _KtEx(_kt_fill, pos0={_ktA: (5.0, 4.75)})
+    _kt9 = _offline_trade_loop([_kt_mkt(8, early=0.5)], live=True,
+                               reply=_kx9.reply, run_s=70.0, tau0=30,
+                               portfolio=_kx9.portfolio, rec_fault=_kt_plant,
+                               result={_ktA: "no"})
+    _kt9h = [r for r in _kt9["recs"] if r.get("kind") == "halt"]
+    ck(_kt9["raised"] is None and len(_kt_kinds(_kt9, "ktruth", "adopted")) == 1
+       and abs(_kx9.really(_ktA, "no") - 5.0) < 1e-9
+       and len(_kt_settled(_kt9)) == 2 and len(_kt9h) == 1
+       and float(_kt9h[0]["t"]) > 50.0,
+       "v-safety2 (1a) DRIVEN: a bot HALTED on its first pass still reads "
+       "Kalshi, adopts the unknown 5 YES, hedges it, books both legs and only "
+       "then exits (halt at %s s; before: exited at 0.05 s, never hedged)"
+       % ([r.get("t") for r in _kt9h],))
+    # a SHORTFALL -- Kalshi shows less than the books -- is never read as cover
+    _kx7 = _KtEx(_kt_fill)
+    _kx7_pf = _kx7.portfolio
+
+    def _kt7_portfolio(path, params, t):
+        # the FIRST read fails, so the startup sweep reads again after our
+        # own fill -- and then reports an empty account against our 5
+        if path == "/portfolio/positions":
+            _kx7.gets.append((t, path))
+            if sum(1 for g in _kx7.gets if g[1] == path) == 1:
+                return -1, "planted: first read fails"
+            return 200, {"market_positions": [], "cursor": ""}
+        return _kx7_pf(path, params, t)
+    _kt7 = _offline_trade_loop([_kt_mkt(6)], live=True, reply=_kx7.reply,
+                               run_s=15.0, tau0=30, portfolio=_kt7_portfolio)
+    ck(_kt7["raised"] is None and not _kt_kinds(_kt7, "ktruth", "adopted")
+       and len(_kt_kinds(_kt7, "ktruth", "mismatch")) == 1
+       and abs(_kx7.really(_ktA, "no") - 5.0) < 1e-9,
+       "v-safety2 (1a) NULL: an endpoint that shows LESS than our books "
+       "(0 against our 5) adopts nothing and cannot stop the hedge (hedged %g)"
+       % _kx7.really(_ktA, "no"))
+
+    # EVERY READ FAILS: exactly K2's behaviour, on the record, <= 1 GET a second
+    _kx8 = _KtEx(_kt_lost_hedge((-1, "timed out", None, None)), fail=True)
+    _kt8 = _offline_trade_loop([_kt_mkt(4)], live=True, reply=_kx8.reply,
+                               run_s=40.0, tau0=30, portfolio=_kx8.portfolio)
+    _kt8g = [g[0] for g in _kx8.gets]
+    ck(_kt8["raised"] is None and len(_kt_posts(_kt8, "ask")) == 1
+       and _kt_kinds(_kt8, "hedge_unknown")
+       and _kt_kinds(_kt8, "ktruth", "read_failed")
+       and not [r for r in _kt8["recs"] if r.get("kind") == "halt"]
+       and len(_kt8g) >= 3
+       and min(b - a for a, b in zip(_kt8g, _kt8g[1:])) >= KTRUTH_MIN_GAP_S - 1e-6,
+       "v-safety2 (1) NULL: with EVERY portfolio read failing the bot does "
+       "exactly what it did before -- the unknown hedge stays counted "
+       "covered, one POST, no halt, no raise -- the failure is recorded, "
+       "and the reads are paced (%d GETs in 40 s, closest %.2f s apart)"
+       % (len(_kt8g), min(b - a for a, b in zip(_kt8g, _kt8g[1:]))
+          if len(_kt8g) > 1 else -1))
+    # the REAL-network path of portfolio_get: kauth.get on a daemon thread,
+    # and the trading thread waits KTRUTH_TIMEOUT_S at most. Driven with a
+    # stand-in for kauth.get that answers late / at once (no network).
+    _kg_saved = (globals()["get"], globals()["_KAUTH_GET"])
+    try:
+        def _kg_slow(path, params=None):
+            _REAL_TIME.sleep(0.5)
+            return 200, {"late": True}
+
+        def _kg_fast(path, params=None):
+            return 200, {"market_positions": []}
+        globals()["get"] = globals()["_KAUTH_GET"] = _kg_slow
+        _kg_t0 = _REAL_TIME.time()
+        _kg_a = portfolio_get("/portfolio/positions", None, timeout=0.1)
+        _kg_dt = _REAL_TIME.time() - _kg_t0
+        globals()["get"] = globals()["_KAUTH_GET"] = _kg_fast
+        _kg_b = portfolio_get("/portfolio/positions", None, timeout=0.5)
+    finally:
+        globals()["get"], globals()["_KAUTH_GET"] = _kg_saved
+    ck(_kg_a[0] == -1 and _kg_dt < 0.4 and _kg_b == (200, {"market_positions": []}),
+       "v-safety2 (1): a portfolio read that has not answered in its timeout "
+       "is ABANDONED -- the loop waited %.2f s, not the read's 0.5 s (kauth's "
+       "own is 20 s) -- and a prompt answer passes through unchanged" % _kg_dt)
+    # the parsers, by hand: an exact id only; a listing we cannot trust
+    # concludes nothing
+    _ko = {"orders": [{"client_order_id": "pin-x", "ticker": "T", "status":
+                       "executed", "fill_count_fp": "3.00",
+                       "taker_fill_cost_dollars": "2.850000",
+                       "order_id": "o1"}], "cursor": ""}
+    _kv = ktruth_order_lookup(200, _ko, "pin-x", "T")
+    ck(_kv[0] == "found" and abs(_kv[1]["filled"] - 3.0) < 1e-9
+       and abs(_kv[1]["cost"] - 0.95) < 1e-9 and _kv[1]["final"]
+       and ktruth_order_lookup(200, _ko, "pin-y", "T")[0] == "absent"
+       and ktruth_order_lookup(200, {"orders": [dict(_ko["orders"][0],
+                                                     ticker="U")]},
+                               "pin-y", "T")[0] == "unreadable"
+       and ktruth_order_lookup(-1, "timed out", "pin-x", "T")[0] == "unreadable"
+       and ktruth_order_lookup(200, {"markets": []}, "pin-x", "T")[0] == "unreadable"
+       and ktruth_order_lookup(200, {"orders": [dict(_ko["orders"][0],
+                                                     status="resting")]},
+                               "pin-x", "T")[1].get("final") is False,
+       "v-safety2 (1): the order lookup trusts only an EXACT client id, "
+       "reads cost from the fills, and a failed, foreign or unshaped "
+       "listing concludes NOTHING")
+    ck(ktruth_positions(200, {"market_positions": [
+            {"ticker": "T", "position_fp": "-4.00",
+             "market_exposure_dollars": "0.2400"}]}) == {"T": (-4.0, 0.24)}
+       and ktruth_positions(500, {}) is None
+       and ktruth_positions(200, {"x": 1}) is None,
+       "v-safety2 (1): positions read signed (NO held is negative) and an "
+       "unreadable answer is None, never an empty account")
+    _ksrc = inspect.getsource(trade_loop)
+    _ks_end = _ksrc.find("# ---------------- end AMENDMENT 15")
+    _ks_step = _ksrc.find("\n            _kt_step()\n")
+    _ks_risk = _ksrc.find("stop = risk_abort(state, a)")
+    ck(0 < _ks_end < _ks_step < _ks_risk
+       and _ksrc.count("_kt_note_unknown(\"") == 2
+       and "_kt_holding()" in _ksrc[_ks_risk:],
+       "v-safety2 (1) by source: the Kalshi read runs BELOW the hedge pass "
+       "and ABOVE the risk check; both unknown sites (entry, hedge) register; "
+       "the drain waits on it")
+
+    # (3) a count that goes out as "0.00" is zero -- REAL pintake.take
+    def _kt_zt_reply(body, n):
+        st, resp = _fill_all(body, n)
+        return st, dict(resp, average_fill_price=(
+            "0.9500" if body["side"] == "bid" else "0.0500"))
+    _kz = _offline_trade_loop(
+        [{"tk": "KXZT15M-ZT", "series": "KXZT15M", "iid": "ZT", "strike": 100.0,
+          "fair": (lambda t: 0.999),
+          "book": (lambda t: _ob(0.94, 0.05 if t < 3.0 else 0.056))}],
+        live=True, reply=_kt_zt_reply, run_s=7.0, tau0=14,
+        flags={"REBUY_LATE_TAU": 15, "REBUY_LATE_FRAC": 0.3328,
+               "MAX_PER_MARKET": 3, "IMPROVE_SCOPE": "market",
+               "IMPROVE_MAX": 0.01})
+    _kz_err = [r for r in _kz["recs"] if r.get("kind") == "error"]
+    ck(_kz["raised"] is None and not _kz_err
+       and [p.get("count") for p in _kz["posts"]] == ["5.00", "1.66"]
+       and len(_refusals(_kz, "late_add_full")) == 1,
+       "v-safety2 (3) DRIVEN: --rebuy-late-frac 0.3328 leaves a 0.004 add "
+       "that pintake would send as \"0.00\"; it is refused late_add_full, "
+       "no order error (orders %s, errors %d; before: 'count 0.0 is not "
+       "positive', an order error -- two halt the run)"
+       % ([p.get("count") for p in _kz["posts"]], len(_kz_err)))
+    ck(round(0.004, 2) <= 0 and not round(0.005, 2) <= 0
+       and float("%.2f" % 0.004) <= 0 and float("%.2f" % 0.005) > 0,
+       "v-safety2 (3): the backstop rounds exactly as pintake formats "
+       "the count (0.004 -> 0.00 is zero, 0.005 -> 0.01 is not)")
+
+    # (5) PAPER: two bookings on a thin touch in the SAME second both settle
+    _kp = _offline_trade_loop(
+        [{"tk": "KXPPP15M-PK", "series": "KXPPP15M", "iid": "PK", "strike": 100.0,
+          "fair": (lambda t: 0.10 if t >= 6 else 0.999),
+          "book": (lambda t: _ob(0.94, 0.05, size=2.0))}],
+        live=False, run_s=70.0, tau0=30, result={"KXPPP15M-PK": "no"},
+        flags={"MAX_PER_MARKET": 2, "IMPROVE_SCOPE": "market",
+               "MIN_FILL_FRAC": 0.0})
+    _kp_sig = [r for r in _kp["recs"] if r.get("kind") == "signal"]
+    _kp_hdg = [r for r in _kp["recs"] if r.get("kind") == "hedge"]
+    _kp_set = [r for r in _kp["recs"] if r.get("kind") == "settled"
+               and r.get("want") == "yes"]
+    ck(_kp["raised"] is None and len(_kp_sig) == 2
+       and int(_kp_sig[0]["t"]) == int(_kp_sig[1]["t"])
+       and len(_kp_hdg) == 2 and len(_kp_set) == 2,
+       "v-safety2 (5) DRIVEN (paper): two bookings in the SAME second are "
+       "both hedged and both settled (signals %d, hedges %d, settled %d; "
+       "before: the second overwrote the first -- 1 hedge, 1 settled)"
+       % (len(_kp_sig), len(_kp_hdg), len(_kp_set)))
+    _kp_src = inspect.getsource(trade_loop)
+    ck('_poid46 = f"paper-{tk}-{now_s}-{state[\'signals\']}"' in _kp_src
+       and "_oid_new = (out.get(\"client_order_id\")" in _kp_src,
+       "v-safety2 (5) by source: the paper key carries the signal count; "
+       "the live key is still the exchange's order id")
+
     # THE SELF-TEST MUST LEAVE NO LIVE SETTING CHANGED. It runs at startup
     # with the operator's flags ALREADY applied, so any global it forgets to
     # restore silently overrides what he asked for -- on every start, with
@@ -15136,6 +15764,505 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
             _k1_stop_entries(f"{state['scan_errors']} distinct entry-scan "
                              f"errors", close_s_, tk_)
 
+    # ===================================================================
+    # v-safety2 (1): KALSHI IS THE TRUTH ABOUT WHAT WE HOLD. The rules, and
+    # what this cannot do, are in the KTRUTH block above portfolio_get().
+    # Everything here is LIVE only and none of it can raise into the loop.
+    # ===================================================================
+    _kt = {"pending": {},      # client_order_id -> an order we could not read
+           "due": {},          # client_order_id -> earliest next lookup
+           "fails": {},        # key -> consecutive failed reads
+           "said": set(),      # keys whose failure streak is on the record
+           "last": -1e18,      # when the last portfolio GET went out
+           "gets": 0,
+           "sweep": ("due" if (live and KTRUTH_ON) else None),
+           "sweep_t0": None, "sweep_at": 0.0, "sweep_seen": {},
+           "rounds": 0, "adopted": 0, "facts": {}, "facts_due": {},
+           "mis_said": set()}
+
+    def _kt_rec(what, **kw):
+        try:
+            rec("ktruth", what=what, **kw)
+        except Exception:                                # noqa: BLE001
+            pass
+
+    def _kt_backoff(key, why, **kw):
+        """A failed read: retry later, say so ONCE per failure streak."""
+        n = _kt["fails"].get(key, 0) + 1
+        _kt["fails"][key] = n
+        if key not in _kt["said"]:
+            _kt["said"].add(key)
+            _kt_rec("read_failed", key=str(key)[:80], why=str(why)[:200],
+                    retry_s=min(KTRUTH_BACKOFF_MAX_S, 2.0 ** (n - 1)), **kw)
+        return time.time() + min(KTRUTH_BACKOFF_MAX_S, 2.0 ** (n - 1))
+
+    def _kt_ok(key):
+        if _kt["fails"].pop(key, None) is not None and key in _kt["said"]:
+            _kt["said"].discard(key)
+            _kt_rec("read_ok", key=str(key)[:80])
+
+    def _kt_known_net(tk_):
+        """What OUR books say this market holds, netted the way Kalshi nets
+        it: YES contracts minus NO contracts, entries and hedge legs."""
+        n = 0.0
+        for (_c9, _w9, _p9, _n9, _t9) in open_pos.values():
+            if _t9 == tk_:
+                n += float(_n9) if _w9 == "yes" else -float(_n9)
+        return n
+
+    def _kt_quiet(tk_, now_):
+        """True when we have neither entered nor tried a hedge on this market
+        in the last KTRUTH_QUIET_S -- so a positions endpoint that lags our
+        own fill cannot be read as a position we do not know about."""
+        for _o9, (_c9, _w9, _p9, _n9, _t9) in open_pos.items():
+            if _t9 != tk_:
+                continue
+            if now_ - float(entry_at.get(_o9, -1e18)) < KTRUTH_QUIET_S:
+                return False
+            if now_ - float(hedge_last_try.get(_o9, -1e18)) < KTRUTH_QUIET_S:
+                return False
+        return True
+
+    def _kt_fired(close_s_, tk_, want_, px, n_, leg_=None, slot=True):
+        """The close/market budget, exactly as the live fill path books a
+        fill of `n_` (a real fill: _book_slot; under the scrap line:
+        _book_slot without the bar, or _note_scrap without CLOSE_BUDGET;
+        a ladder series with its own budget: _book_ladder). `slot` False
+        adds contracts only -- the top-up of a fill already booked."""
+        n_ = float(n_)
+        px = float(px)
+        pv = fired.get(close_s_)
+        _lbk = (ladder_head(tk_) is not None
+                and SERIES_MAX_PER_CLOSE is not None)
+        if not slot:
+            if pv is None:
+                return
+            _d = pv.setdefault("n_tk", {})
+            _d[tk_] = _d.get(tk_, 0.0) + n_
+            if not _lbk:
+                pv["contracts"] = pv.get("contracts", 0.0) + n_
+            return
+        if _lbk:
+            if pv is None:
+                pv = fired[close_s_] = {"n": 0, "best": 1.0, "tk": tk_,
+                                        "sides": {}, "tickers": set(),
+                                        "per_tk": {}, "px_tk": {},
+                                        "n_tk": {}, "early_tk": {},
+                                        "contracts": 0.0}
+            pv["ladder_n"] = int(pv.get("ladder_n") or 0) + 1
+            pv.setdefault("sides", {})[tk_] = want_
+            _d = pv.setdefault("per_tk", {})
+            _d[tk_] = _d.get(tk_, 0) + 1
+            _d = pv.setdefault("px_tk", {})
+            _d[tk_] = min(_d.get(tk_, px), px)
+            _d = pv.setdefault("n_tk", {})
+            _d[tk_] = _d.get(tk_, 0.0) + n_
+            if leg_ == "early":
+                _d = pv.setdefault("early_tk", {})
+                _d[tk_] = _d.get(tk_, 0.0) + n_
+            if hedged_side.get(tk_) is not None and want_ == hedged_side.get(tk_):
+                rebuy_extra[tk_] = rebuy_extra.get(tk_, 0.0) + n_
+            return
+        _real9 = max(MIN_LEVEL, MIN_FILL_FRAC * float(SIZE))
+        _bar9 = n_ >= _real9
+        if not _bar9 and not CLOSE_BUDGET:
+            if pv is None:
+                pv = fired[close_s_] = {"n": 0, "best": 1.0, "tk": tk_,
+                                        "sides": {}, "tickers": set(),
+                                        "scrap_n": 0.0}
+            pv.setdefault("sides", {})[tk_] = want_
+            pv.setdefault("tickers", set()).add(tk_)
+            pv["scrap_n"] = pv.get("scrap_n", 0.0) + n_
+            if pv["scrap_n"] >= _real9:
+                pv["n"] += 1
+                pv["scrap_n"] = 0.0
+                pv["best"] = min(pv["best"], px)
+            state["scraps"] = state.get("scraps", 0) + 1
+            return
+        if not _bar9:
+            state["scraps"] = state.get("scraps", 0) + 1
+        if pv is None:
+            fired[close_s_] = {"n": 1, "best": px, "tk": tk_,
+                               "sides": {tk_: want_}, "tickers": {tk_},
+                               "per_tk": {tk_: 1}, "px_tk": {tk_: px},
+                               "n_tk": {tk_: n_},
+                               "early_tk": ({tk_: n_} if leg_ == "early"
+                                            else {}),
+                               "contracts": n_}
+            return
+        if leg_ == "early":
+            _d = pv.setdefault("early_tk", {})
+            _d[tk_] = _d.get(tk_, 0.0) + n_
+        pv["n"] += 1
+        if _bar9:
+            pv["best"] = min(pv["best"], px)
+        pv.setdefault("sides", {})[tk_] = want_
+        pv.setdefault("tickers", set()).add(tk_)
+        _d = pv.setdefault("per_tk", {})
+        _d[tk_] = _d.get(tk_, 0) + 1
+        _d = pv.setdefault("px_tk", {})
+        _d[tk_] = min(_d.get(tk_, px), px)
+        _d = pv.setdefault("n_tk", {})
+        _d[tk_] = _d.get(tk_, 0.0) + n_
+        pv["contracts"] = pv.get("contracts", 0.0) + n_
+        if hedged_side.get(tk_) is not None and want_ == hedged_side.get(tk_):
+            rebuy_extra[tk_] = rebuy_extra.get(tk_, 0.0) + n_
+
+    def _kt_ledger(tk_, want_, cost_, n_, order_id, fee_=None):
+        """pintake's own books, as its _book() writes them for a fill."""
+        L = pintake.LEDGER
+        pos = L["positions"].setdefault(
+            tk_, {"want": want_, "contracts": 0.0, "cost": 0.0,
+                  "order_ids": []})
+        pos["contracts"] += float(n_)
+        pos["cost"] += float(n_) * float(cost_)
+        pos.setdefault("order_ids", []).append(order_id)
+        L["filled_contracts"] = float(L.get("filled_contracts", 0.0)) + float(n_)
+        L["filled_dollars"] = (float(L.get("filled_dollars", 0.0))
+                               + float(n_) * float(cost_))
+        if fee_:
+            L["fees"] = float(L.get("fees", 0.0)) + float(fee_)
+
+    def _kt_note_unknown(kind, out, tk_, want_, close_s_, limit_, asked,
+                         filled_seen, facts=None, leg=None, parent=None,
+                         assumed=None):
+        """Put an order we could not read on the list to be looked up.
+        Only an outcome that is genuinely UNKNOWN qualifies -- refused
+        before sending, a 4xx, a readable answer, or a -1 whose own error
+        proves nothing left the box are all known. Never raises."""
+        try:
+            if not (live and KTRUTH_ON) or not isinstance(out, dict):
+                return False
+            _sc9 = out.get("status_code")
+            if out.get("refused") or _sc9 is None:
+                return False
+            if isinstance(_sc9, int) and 400 <= _sc9 < 500:
+                return False
+            _un9 = out.get("unrest")
+            _rd9 = pintake._readable(out)
+            if _rd9 and (_un9 is None or _un9.get("reconciled")):
+                return False
+            if hedge_never_sent(out):
+                return False
+            _b9 = out.get("body") or {}
+            coid = out.get("client_order_id") or _b9.get("client_order_id")
+            if not coid:
+                _kt_rec("no_id", order_kind=kind, ticker=tk_, status_code=_sc9)
+                return False
+            _kept9 = None
+            if not _rd9:
+                try:
+                    _kept9 = float(pintake.stake(_b9))
+                except Exception:                        # noqa: BLE001
+                    _kept9 = None
+            _t9 = time.time()
+            _kt["pending"][coid] = {
+                "kind": kind, "tk": tk_, "want": want_, "close_s": close_s_,
+                "limit": float(limit_), "asked": float(asked),
+                "seen": float(filled_seen or 0.0), "facts": facts,
+                "leg": leg, "parent": parent,
+                "assumed": (float(assumed) if assumed is not None else None),
+                "kept": _kept9, "sent": _t9, "sent_s": int(now_s)}
+            _kt["due"][coid] = _t9 + KTRUTH_SETTLE_S
+            _kt_rec("unknown", order_kind=kind, ticker=tk_, client_order_id=coid,
+                    status_code=_sc9, asked=float(asked),
+                    filled_seen=float(filled_seen or 0.0),
+                    tau=int(close_s_ - now_s),
+                    then="looked up on Kalshi by its own id")
+            print(f"  ? {kind} {tk_} outcome UNKNOWN (status {_sc9}) -- "
+                  f"looking it up on Kalshi")
+            return True
+        except Exception:                                # noqa: BLE001
+            return False
+
+    def _kt_resolve(coid, p, verdict, info):
+        """Book what Kalshi says happened to one unknown order."""
+        _x = float(info.get("filled") or 0.0) if verdict == "found" else 0.0
+        _cost = info.get("cost") if verdict == "found" else None
+        _src = "fills"
+        if _cost is None:
+            _cost, _src = float(p["limit"]), "limit"
+        _extra = _x - float(p["seen"])
+        L = pintake.LEDGER
+        if p.get("kept") is not None:
+            # pintake kept the whole intent committed for an unreadable
+            # answer; replace it with what actually filled
+            L["committed"] = max(0.0, float(L.get("committed", 0.0))
+                                 - float(p["kept"]) + _x * float(_cost))
+        tk_, cs_ = p["tk"], p["close_s"]
+        _fee = info.get("fee") if verdict == "found" else None
+        _booked = None
+        _reopen = 0.0
+        if p["kind"] == "entry":
+            if _extra > 0.004:
+                _booked = coid if coid not in open_pos else coid + "-kt"
+                open_pos[_booked] = (cs_, p["want"], float(_cost), _extra, tk_)
+                entry_at[_booked] = int(p["sent_s"])
+                if p.get("facts") is not None:
+                    _f9 = p["facts"]
+                    hedge_meta[_booked] = (_f9[2], _f9[3], _f9[0])
+                state["fills"] = state.get("fills", 0) + 1
+                _kt_fired(cs_, tk_, p["want"], float(_cost), _extra,
+                          leg_=p.get("leg"), slot=(p["seen"] <= 1e-9))
+                _kt_ledger(tk_, p["want"], _cost, _extra,
+                           info.get("order_id"), _fee)
+        else:
+            _par = p.get("parent")
+            if _extra > 0.004:
+                _booked = "hedge-%s-%s" % (_par, info.get("order_id") or coid)
+                if _booked in open_pos:
+                    _booked += "-kt"
+                open_pos[_booked] = (cs_, p["want"], float(_cost), _extra, tk_)
+                hedged_side[tk_] = p["want"]
+                state["hedges"] = state.get("hedges", 0) + 1
+                _kt_ledger(tk_, p["want"], _cost, _extra,
+                           info.get("order_id"), _fee)
+            # K2 counted `assumed` contracts as covered; the truth is _x
+            _short = float(p.get("assumed") or 0.0) - _x
+            if _short > 0.004 and _par in open_pos:
+                _orig = float(open_pos[_par][3])
+                if _par in hedged:
+                    hedged.discard(_par)
+                    _rem = _short
+                else:
+                    _rem = float(hedge_remain.get(_par, 0.0)) + _short
+                hedge_remain[_par] = min(_orig, _rem)
+                _reopen = hedge_remain[_par]
+        _kt_rec("resolved", order_kind=p["kind"], ticker=tk_, client_order_id=coid,
+                verdict=verdict, order_id=info.get("order_id"),
+                status=info.get("status"), filled=round(_x, 4),
+                seen=round(float(p["seen"]), 4),
+                booked=(round(_extra, 4) if _booked else 0.0), key=_booked,
+                cost=round(float(_cost), 4), cost_from=_src,
+                counted_covered=p.get("assumed"),
+                reopened=round(_reopen, 4), tau=int(cs_ - now_s),
+                halt_kept=bool(p["kind"] == "entry" and L.get("halt")))
+        print(f"  ? {p['kind']} {tk_}: Kalshi says {verdict}, filled "
+              f"{_x:g}" + (f" -- BOOKED {_extra:g} @ {float(_cost):.4f}"
+                           if _booked else "")
+              + (f" -- hedge RE-OPENED for {_reopen:g}" if _reopen else ""))
+
+    def _kt_adopt(tk_, want_, n_, ex_, net_, facts):
+        """A startup position our books do not hold: into the books, in
+        pieces no larger than one order may be, so every piece can be
+        hedged by an order pintake will accept."""
+        _cost = None
+        try:
+            if ex_ is not None and abs(float(net_)) > 1e-9:
+                _cost = float(ex_) / abs(float(net_))
+        except (TypeError, ValueError, ZeroDivisionError):
+            _cost = None
+        _src = "exposure"
+        if _cost is None or not (0.0 < _cost < 1.0):
+            _cost, _src = 0.99, "assumed"   # books a loss as nearly all of it
+        _cs, _left, _i = facts[1], float(n_), 0
+        _cap = max(1.0, float(pintake.MAX_TAKE_COUNT))
+        _keys = []
+        while _left > 0.004 and _i < 50:
+            _n9 = min(_left, _cap)
+            _k9 = "kt-%s-%d-%d" % (tk_, int(now_s), _i)
+            open_pos[_k9] = (_cs, want_, _cost, _n9, tk_)
+            entry_at[_k9] = int(now_s)
+            hedge_meta[_k9] = (facts[2], facts[3], facts[0])
+            _kt_ledger(tk_, want_, _cost, _n9, None)
+            pintake.LEDGER["committed"] = (float(pintake.LEDGER.get(
+                "committed", 0.0)) + _n9 * _cost)
+            _keys.append(_k9)
+            _left -= _n9
+            _i += 1
+        state["fills"] = state.get("fills", 0) + 1
+        _kt_fired(_cs, tk_, want_, _cost, float(n_))
+        _kt["adopted"] += 1
+        _kt_rec("adopted", ticker=tk_, want=want_, n=round(float(n_), 4),
+                kalshi_net=round(float(net_), 4), cost=round(_cost, 4),
+                cost_from=_src, keys=_keys, tau=int(_cs - now_s),
+                then="hedge pass protects it; reconcile books it")
+        print(f"  ! ADOPTED {float(n_):g} {want_.upper()} {tk_} from Kalshi "
+              f"(our books did not hold it) -- now hedged and booked")
+
+    def _kt_facts(tk_):
+        _f9 = seen_markets.get(tk_)
+        if _f9 is not None:
+            return _f9
+        return _kt["facts"].get(tk_) or None
+
+    def _kt_sweep(tnow):
+        """One read of our positions; adopt what two reads agree on."""
+        st9, b9 = portfolio_get("/portfolio/positions",
+                                {"count_filter": "position",
+                                 "settlement_status": "unsettled",
+                                 "limit": str(KTRUTH_LIST_LIMIT)})
+        _kt["last"] = time.time()
+        _kt["gets"] += 1
+        pos9 = ktruth_positions(st9, b9)
+        if pos9 is None:
+            _kt["sweep_at"] = _kt_backoff("positions", "status %s: %s"
+                                          % (st9, str(b9)[:120]))
+            return
+        _kt_ok("positions")
+        _kt["rounds"] += 1
+        _open, _foreign, _later = 0, 0, 0
+        # every market Kalshi says we hold, AND every market our books say
+        # we hold -- a market missing from the answer is a shortfall to
+        # report, never a position to invent
+        _books9 = {}
+        for (_c9, _w9, _p9, _n9, _t9) in open_pos.values():
+            _books9.setdefault(_t9, _c9)
+        _tks9 = set(t for t, v in pos9.items() if abs(v[0]) >= 0.005)
+        _tks9.update(_books9)
+        for tk9 in sorted(_tks9):
+            net9, ex9 = pos9.get(tk9, (0.0, None))
+            if tk9.split("-")[0] not in series_index:
+                _foreign += 1
+                continue
+            if any(q["tk"] == tk9 for q in _kt["pending"].values()):
+                _later += 1                    # the order lookup owns it
+                continue
+            f9 = _kt_facts(tk9)
+            _cl9 = (f9[1] if f9 is not None else _books9.get(tk9))
+            if _cl9 is None:
+                if tk9 not in _kt["facts"]:
+                    _kt["facts"][tk9] = None   # ask /markets on a later pass
+                _later += 1
+                continue
+            if float(_cl9) - tnow < 1.0:
+                continue                       # closed: nothing to protect
+            _open += 1
+            k9 = _kt_known_net(tk9)
+            if abs(net9 - k9) < 0.005:
+                _kt["sweep_seen"].pop(tk9, None)
+                continue                       # Kalshi agrees with our books
+            if not _kt_quiet(tk9, tnow):
+                _later += 1                    # our own fill may not show yet
+                continue
+            if k9 >= -0.005 and net9 > k9 + 0.005:
+                want9, n9 = "yes", net9 - k9
+            elif k9 <= 0.005 and net9 < k9 - 0.005:
+                want9, n9 = "no", k9 - net9
+            else:
+                _mk9 = (tk9, round(net9, 2), round(k9, 2))
+                if _mk9 not in _kt["mis_said"]:
+                    _kt["mis_said"].add(_mk9)
+                    _kt_rec("mismatch", ticker=tk9, kalshi_net=net9,
+                            books_net=k9, adopted=False,
+                            why="Kalshi does not show what our books hold; "
+                                "recorded, never read as cover")
+                    print(f"  ! Kalshi shows {net9:g} on {tk9}, our books "
+                          f"{k9:g} -- recorded, nothing adopted")
+                _kt["sweep_seen"].pop(tk9, None)
+                continue
+            if f9 is None:
+                if tk9 not in _kt["facts"]:
+                    _kt["facts"][tk9] = None   # strike etc. for the hedge
+                _later += 1
+                continue
+            _prev9 = _kt["sweep_seen"].get(tk9)
+            if (_prev9 is not None and abs(_prev9[0] - n9) < 0.005
+                    and tnow - _prev9[1] >= KTRUTH_CONFIRM_S - 1e-9):
+                _kt["sweep_seen"].pop(tk9, None)
+                _kt_adopt(tk9, want9, n9, ex9, net9, f9)
+                continue
+            if _prev9 is None or abs(_prev9[0] - n9) >= 0.005:
+                _kt["sweep_seen"][tk9] = (n9, tnow)
+            _later += 1
+        for tk9 in [t for t in _kt["sweep_seen"]
+                    if t not in pos9 or abs(pos9[t][0]) < 0.005]:
+            _kt["sweep_seen"].pop(tk9, None)
+        if _later and _kt["rounds"] < KTRUTH_ROUNDS_MAX:
+            _kt["sweep_at"] = time.time() + KTRUTH_CONFIRM_S
+            return
+        _kt["sweep"] = "done"
+        _kt_rec("startup", held_on_kalshi=len(pos9), ours_open=_open,
+                foreign=_foreign, unconfirmed=_later, rounds=_kt["rounds"],
+                adopted=_kt["adopted"],
+                waited_s=round(time.time() - float(_kt["sweep_t0"] or 0.0), 1))
+
+    def _kt_step():
+        """At most ONE portfolio GET a pass, at most one a second. Called
+        below the hedge pass and above the risk check. Never raises."""
+        if not (live and KTRUTH_ON):
+            return
+        tnow = time.time()
+        if _kt["sweep_t0"] is None:
+            _kt["sweep_t0"] = tnow
+        for c9 in list(_kt["pending"]):
+            p9 = _kt["pending"][c9]
+            if tnow > float(p9["close_s"]) + KTRUTH_GRACE_S:
+                _kt["pending"].pop(c9, None)
+                _kt["due"].pop(c9, None)
+                _kt_rec("unresolved", order_kind=p9["kind"], ticker=p9["tk"],
+                        client_order_id=c9,
+                        why="no readable answer by close + %ds"
+                            % int(KTRUTH_GRACE_S))
+        if tnow - _kt["last"] < KTRUTH_MIN_GAP_S:
+            return
+        _due = sorted((d9, c9) for c9, d9 in _kt["due"].items()
+                      if c9 in _kt["pending"] and d9 <= tnow)
+        if _due:
+            c9 = _due[0][1]
+            p9 = _kt["pending"][c9]
+            try:
+                st9, b9 = portfolio_get(
+                    "/portfolio/orders",
+                    {"ticker": p9["tk"], "min_ts": str(int(p9["sent"]) - 120),
+                     "limit": str(KTRUTH_LIST_LIMIT)})
+            finally:
+                _kt["last"] = time.time()
+                _kt["gets"] += 1
+            v9, i9 = ktruth_order_lookup(st9, b9, c9, p9["tk"])
+            _late = time.time() - float(p9["sent"]) >= KTRUTH_SETTLE_S - 1e-9
+            if (v9 == "unreadable" or (v9 == "absent" and not _late)
+                    or (v9 == "found" and not i9.get("final"))):
+                _kt["due"][c9] = _kt_backoff(
+                    c9, i9.get("why") or ("%s, not final" % v9),
+                    ticker=p9["tk"], order_kind=p9["kind"])
+                return
+            _kt_ok(c9)
+            _kt["pending"].pop(c9, None)
+            _kt["due"].pop(c9, None)
+            _kt_resolve(c9, p9, v9, i9)
+            return
+        # a startup position on a market the universe does not hold (a
+        # ladder rung outside the kept few): its strike and close from
+        # GET /markets/<ticker>, which is what the refresh reads
+        _need = sorted(t for t, f in _kt["facts"].items()
+                       if f is None and seen_markets.get(t) is None
+                       and _kt["facts_due"].get(t, 0.0) <= tnow)
+        if _need and _kt["sweep"] == "due":
+            t9 = _need[0]
+            try:
+                st9, b9 = portfolio_get("/markets/" + t9)
+            finally:
+                _kt["last"] = time.time()
+                _kt["gets"] += 1
+            f9 = ktruth_market_facts(st9, b9, series_index)
+            if f9 is None:
+                _kt["facts_due"][t9] = _kt_backoff(("facts", t9),
+                                                   "status %s" % (st9,),
+                                                   ticker=t9)
+            else:
+                _kt_ok(("facts", t9))
+                _kt["facts"][t9] = f9
+            return
+        if _kt["sweep"] == "due" and tnow >= _kt["sweep_at"]:
+            _kt_sweep(tnow)
+
+    def _kt_holding():
+        """How much a DRAINING bot is still waiting on Kalshi for: every
+        unknown order not yet resolved, and the startup read for its first
+        KTRUTH_STARTUP_HOLD_S. Never raises."""
+        try:
+            if not (live and KTRUTH_ON):
+                return 0
+            n = len(_kt["pending"])
+            if (_kt["sweep"] == "due"
+                    and time.time() - float(_kt["sweep_t0"] or time.time())
+                    < KTRUTH_STARTUP_HOLD_S):
+                n += 1
+            return n
+        except Exception:                                # noqa: BLE001
+            return 0
+
     while time.time() < end:
         # R4: one integer add, so a recorded gate name can be tied to the pass
         # that produced it. Nothing reads it to decide anything.
@@ -15787,6 +16914,13 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         else:
                             hedge_remain[_hid] = min(
                                 hedge_remain.get(_hid, _leftk2), _leftk2)
+                        # v-safety2 (1c): counted covered UNTIL Kalshi says
+                        # otherwise -- looked up by its own id; a hedge that
+                        # did not fill is re-opened and sent again.
+                        _kt_note_unknown("hedge", _hout, _htk, _opp, _hcs,
+                                         _hlimit, _hn_take, _hfilled,
+                                         parent=_hid,
+                                         assumed=max(_hfilled, float(_hn_take)))
                         rec("hedge_unknown", ticker=_htk, side=_opp,
                             asked=_hn_take, filled_seen=_hfilled,
                             status_code=_hsc, counted_covered=True,
@@ -15842,6 +16976,16 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                 rec("loop", **_loop_rec)
             except Exception:                            # noqa: BLE001
                 pass
+
+        # v-safety2 (1): Kalshi's own record of what we hold. BELOW the hedge
+        # pass (a read may hold the loop up to KTRUTH_TIMEOUT_S and must never
+        # sit in front of a hedge) and ABOVE the risk check, so a paused or
+        # draining bot still resolves an unknown order and adopts what it
+        # finds before it can exit. At most one GET a pass; cannot raise.
+        try:
+            _kt_step()
+        except Exception as _ekt:                        # noqa: BLE001
+            _k1_error("ktruth", None, None, _ekt)
 
         # (5) 2026-09-22: WHAT THE HEDGE WOULD COST, EVERY SECOND WE HOLD.
         # A hedge record prices only the second the alarm fired, so every
@@ -16417,7 +17561,11 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
             # drain gives up after DRAIN_MAX_S and exits loudly, because a bot
             # that hangs forever is invisible to watch_bot.ps1, which only
             # restarts a process that is GONE or silent.
-            _openn74 = open_contracts(pintake.LEDGER) or len(open_pos)
+            # v-safety2 (1): ...and for an unknown order not yet looked up,
+            # and the startup positions read (bounded): an exit before either
+            # answers leaves a real fill with no hedge and no booking.
+            _openn74 = (open_contracts(pintake.LEDGER) or len(open_pos)
+                        or _kt_holding())
             if _openn74 and DRAIN_ON_HALT:
                 if not state.get("draining"):
                     state["draining"] = stop
@@ -17569,7 +18717,10 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     # it here, before the signal point (burns no attempt).
                     # 06:14:55Z HYPE sent it for 0 contracts twice and the two
                     # refusals halted the run. Entry only; never a hedge.
-                    if float(take_n) <= 1e-9:
+                    # v-safety2 (3): "zero" is what pintake SENDS -- the
+                    # count goes out at 2 decimals, so 0.004 is "0.00" and
+                    # is refused like 0 (two refusals halt the run).
+                    if round(float(take_n), 2) <= 0:
                         _gate("late_add_full", close_s, tk, want=want, tau=tau,
                               price=round(price, 4), have=round(_have_la, 4),
                               cap=round(float(SIZE) * (1.0 + float(REBUY_LATE_FRAC)), 4),
@@ -18072,12 +19223,16 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     take_n = _stage46(take_n)
                     if _ssz is not None:       # v-btcd1, after every widener
                         take_n = min(float(take_n), _ssz)
-                    if float(take_n) <= 1e-9:  # v-zerotake backstop (paper)
+                    if round(float(take_n), 2) <= 0:  # v-zerotake backstop (paper); v-safety2 (3): 2 dp, as sent
                         rec("zero_take", ticker=tk, want=want, leg=_leg46,
                             tau=tau, price=round(float(price), 4))
                         continue
                     _book_slot(price, take_n)
-                    _poid46 = f"paper-{tk}-{now_s}"
+                    # v-safety2 (5): + the signal count. Keyed on ticker and
+                    # SECOND, a second paper booking on a thin touch 50 ms
+                    # later overwrote the first -- ~1 booking in 7 never
+                    # settled. Paper only; live keys on the order id.
+                    _poid46 = f"paper-{tk}-{now_s}-{state['signals']}"
                     entry_at[_poid46] = now_s
                     open_pos[_poid46] = (close_s, want, price, take_n, tk)
                     # AMENDMENT 71 (2026-09-19): THE PAPER HEDGE PATH WAS DEAD
@@ -18218,7 +19373,8 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         # refuses it, and two refusals halt the whole run
                         # (2026-09-25 06:15Z). Recorded, not counted as an
                         # order error; the attempt it consumed stays consumed.
-                        if float(take_n) <= 1e-9:
+                        # v-safety2 (3): at the 2 decimals pintake sends
+                        if round(float(take_n), 2) <= 0:
                             rec("zero_take", ticker=tk, want=want, leg=_leg46,
                                 tau=tau, price=round(float(price), 4),
                                 room68=_room68)
@@ -18271,6 +19427,14 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         else:
                             state["nofill"] = state.get("nofill", 0) + 1
                         state["sent"] = state.get("sent", 0) + 1
+                        # v-safety2 (1b): an outcome we could not read is
+                        # looked up on Kalshi by its own id (see _kt_step);
+                        # a fill found there is booked as this path would.
+                        _kt_note_unknown("entry", out, tk, want, close_s,
+                                         _limit, take_n, filled,
+                                         facts=(iid, close_s, strike,
+                                                digits, exi),
+                                         leg=_leg46)
                         # ...and only now is it written down. A record that
                         # fails is itself recorded, with a minimal order line
                         # so the log still carries the fill.

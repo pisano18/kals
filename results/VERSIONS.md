@@ -1,3 +1,40 @@
+# v-safety2 -- 2026-09-25 __TIME__ (pid __PID__, code_sha __SHA__) -- LIVE: three safety fixes (1, 3, 5); no trading rule changed. Operator's go-ahead 09-25 (~08:5xZ): "it's just doing what it already does but more safely... then do that". Fix 4 (restoring the designed pintake caps) is HELD for the operator: it would tighten a cap pintake also applies to hedges.
+
+(1) The bot now asks Kalshi what it holds: at startup (GET /portfolio/positions,
+adopting only a position in our series, in an open market, seen in two reads
+>= 2 s apart) and after any order whose reply was lost (GET
+/portfolio/orders?ticker=, exact client_order_id). A real fill it did not know
+about is booked, hedged and settled into the day-loss total exactly as a seen
+fill; a lost hedge that did not fill is sent again; a failed read changes
+nothing and is retried (max 1 GET/s, 3 s wait, below the hedge pass). New
+record kind `ktruth`. No continuous position polling (a lagging endpoint read
+as a hedge could leave a position naked).
+(3) An order that would go out as "0.00" contracts is treated as zero
+(late_add_full / zero_take use round(take_n, 2) <= 0), not sent and refused.
+(5) Paper arms no longer overwrite a second booking made in the same second
+(about 1 in 7 was lost); the live path is byte-identical for this item.
+
+Evidence: results/RED_TEAM_2026-09-25.md reds 1-2 and the verified power-hour
+audit findings; driven worlds through the real loop, before -> after: lost
+entry that really filled -> 0 hedged, exit at 0.05 s -> 5 hedged and settled;
+lost hedge never placed 0 -> 5 covered; 2-of-5 partial 2 -> 5; unknown startup
+position never hedged -> adopted and hedged; sub-cent add order error ->
+refused; paper 1 -> 2 bookings. When every read fails, behaviour is identical
+to v-zerotake. Mutation checks: each fix reverted inside the build fails its
+checks (14 / 1 / 2). Self-test 1230 -> 1252 green plain and under the live
+argv on the real file; pintake caps after startup unchanged (163.5 / 245.25 /
+$664 at size 88); pinattrib 55; versioncheck clean.
+
+Not in this version (operator decisions, see HANDOFF): fix 4 (rails restore)
+and the scale-in double buy (A23 compares the new ask with the AVERAGE PAID,
+which a sweep inflates, so a same-or-dearer ask reads as cheaper: 5 cases
+since 09-22, 4 won ~$9, BTC 09-23 lost $76.53 of its -$130.41).
+
+**REVERT:** `git checkout d9fd894 -- research/pinrun.py`, then
+`powershell -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`.
+
+---
+
 # v-zerotake -- 2026-09-25 06:25:05Z (pid 2894452, code_sha 52b3e5fb28f8) -- LIVE: the bot never sends (or books) an order for ZERO contracts. A late add on a position already at the (1 + frac) x SIZE cap is refused as `late_add_full`; any other path that reaches the send with 0 is skipped and logged `zero_take`. No trading rule changed.
 
 **Why -- a halt, measured.** 2026-09-25 06:14:55Z (2:14 AM ET),
