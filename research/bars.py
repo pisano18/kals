@@ -455,12 +455,13 @@ def fresh_verdict(net, losers, arm_extra_losers, days):
 
 
 def fresh_data(live, groups, markets, now):
+    # 2026-09-25 (audit, verified): the window starts at the PRE-REGISTERED
+    # time, never earlier. It used to widen to the oldest log in the arm's
+    # group -- and that group also holds every live-identical paper log back
+    # to 09-20, so /bars read the fresh test over the very losses that chose
+    # the rule and would have printed "PASS -- deploy" on 09-27, 4 days early.
     start_e = ep(FRESH_START_UTC)
     g = group_named(groups, FRESH_ARM)
-    if g:
-        st = min((x["lo"] for x in g["logs"] if x["lo"] is not None), default=None)
-        if st is not None:
-            start_e = min(start_e, st)
     end_e = start_e + FRESH_WINDOW_DAYS * DAY
     fills = fresh_fills(live, start_e, min(now, end_e), markets)
     fresh = [f for f in fills if f["fresh"]]
@@ -577,11 +578,7 @@ def btcd_data(live, groups, markets, now):
           and m["close"] is not None and m["close"] >= live_e]
     lost = [m for m in ms if not m["won"]]
     g = group_named(groups, BTCD_ARM)
-    paper_e = ep(BTCD_PAPER_UTC)
-    if g:
-        st = min((x["lo"] for x in g["logs"] if x["lo"] is not None), default=None)
-        if st is not None:
-            paper_e = min(paper_e, st)
+    paper_e = ep(BTCD_PAPER_UTC)   # the pre-registered start, never widened (see fresh_data)
     pp = btcd_paper(g["logs"], paper_e) if g else None
     pdays = days_in(now, paper_e)
     if pp:
