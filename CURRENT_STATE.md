@@ -14,10 +14,15 @@ text (the 09-21/09-22 blocks): `DOCS_ARCHIVE_2026-09.md`.
 
 ## Live money
 
-- **15-minute crypto bot** `research/pinrun.py --live`, version **v-zerotake**
-  since 06:25:05Z 09-25, pid 2894452, code_sha 52b3e5fb28f8. Its argv is
+- **15-minute crypto bot** `research/pinrun.py --live`, version **v-safety2**
+  since 09:36:44Z 09-25, pid 2934836, code_sha 28f5e66b2169. Its argv is
   `restart_bot.ps1` -- the ONLY script that may start it. What it does now,
   newest change first (each has a VERSIONS entry):
+  - asks Kalshi what it holds at startup and after any lost order reply, and
+    books/hedges a fill it did not see; re-sends a lost hedge that did not
+    fill; "0.00" orders count as zero (v-safety2; record kind `ktruth`).
+    HELD for the operator: tighter pintake caps (fix 4) and the scale-in
+    double buy (A23 compares against the sweep-inflated average paid);
   - never sends a 0-contract order (v-zerotake; watch the log for
     `late_add_full` / `zero_take` -- each is a halt that did not happen);
   - trades the hourly BTC ladder at 1 contract (`--series KXBTCD
