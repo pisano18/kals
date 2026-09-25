@@ -47,8 +47,14 @@ own per-close spending limit, not the market's supply.
   per-close allowance for the hourly family — that is the only place more bank
   buys more contracts.
 
-### A10. Far rungs of the hourly BTC ladder at 99c -- `arm-farrung` (paper) -- WAITING ON SIGN-OFF
+### A10. Far rungs of the hourly BTC ladder at 99c -- KILLED 2026-09-25 (no supply)
 **Say: "the far rung idea."**
+**KILLED: across 68 hourly closes (Sep 22-24), nobody sold the safe side of
+a rung $150+ away at 97c or better in the last 45 seconds -- not once. The
+99c offers the live bot saw on Sep 24 were all on the rung right next to the
+settlement, the risky one. Code stays in, switched off. Details:
+`results/FAR_RUNG_2026-09-25.md`, verdict at the top.** What follows is the
+original reasoning, kept so nobody re-proposes it.
 With 45 seconds left, a rung $150 or more from where the settlement is
 heading has never finished on the wrong side (0 of 2,136 closes since
 Sep 1; worst miss $136). Those rungs sit at 99c with hundreds to thousands

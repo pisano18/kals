@@ -1,0 +1,7077 @@
+{
+ "days": [
+  "2026-09-22",
+  "2026-09-23",
+  "2026-09-24"
+ ],
+ "window_s": 45,
+ "tally": {
+  "250-400": {
+   "rung_closes": 136,
+   "closes": 68,
+   "closes_with_take": 0,
+   "c97": 0.0,
+   "c98": 0.0,
+   "c99": 0.0
+  },
+  "400-700": {
+   "rung_closes": 396,
+   "closes": 68,
+   "closes_with_take": 0,
+   "c97": 0.0,
+   "c98": 0.0,
+   "c99": 0.0
+  },
+  "150-250": {
+   "rung_closes": 130,
+   "closes": 65,
+   "closes_with_take": 0,
+   "c97": 0.0,
+   "c98": 0.0,
+   "c99": 0.0
+  },
+  "700-up": {
+   "rung_closes": 130,
+   "closes": 65,
+   "closes_with_take": 0,
+   "c97": 0.0,
+   "c98": 0.0,
+   "c99": 0.0
+  },
+  "100-150": {
+   "rung_closes": 130,
+   "closes": 65,
+   "closes_with_take": 4,
+   "c97": 0.0,
+   "c98": 1829.99,
+   "c99": 8547.14
+  }
+ },
+ "misses": [
+  [
+   "KXBTCD-26SEP2402",
+   "no markets"
+  ],
+  [
+   "KXBTCD-26SEP2403",
+   "no markets"
+  ],
+  [
+   "KXBTCD-26SEP2404",
+   "no markets"
+  ],
+  [
+   "KXBTCD-26SEP2405",
+   "no markets"
+  ]
+ ],
+ "closes": [
+  {
+   "close_s": 1790053200,
+   "event": "KXBTCD-26SEP2201",
+   "ky": 85399.99,
+   "kn": 85499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2201-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T84899.99",
+     "k": 84899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T85699.99",
+     "k": 85699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T84799.99",
+     "k": 84799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T84999.99",
+     "k": 84999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T85799.99",
+     "k": 85799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T85899.99",
+     "k": 85899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T84699.99",
+     "k": 84699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2201-T85599.99",
+     "k": 85599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790056800,
+   "event": "KXBTCD-26SEP2202",
+   "ky": 85299.99,
+   "kn": 85399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2202-T85899.99",
+     "k": 85899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T85799.99",
+     "k": 85799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T85599.99",
+     "k": 85599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T85499.99",
+     "k": 85499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T84799.99",
+     "k": 84799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T84699.99",
+     "k": 84699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T84899.99",
+     "k": 84899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T84999.99",
+     "k": 84999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T84599.99",
+     "k": 84599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2202-T85699.99",
+     "k": 85699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790060400,
+   "event": "KXBTCD-26SEP2203",
+   "ky": 85299.99,
+   "kn": 85399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2203-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T85699.99",
+     "k": 85699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T84799.99",
+     "k": 84799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T85499.99",
+     "k": 85499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T84599.99",
+     "k": 84599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T84899.99",
+     "k": 84899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T85899.99",
+     "k": 85899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T85799.99",
+     "k": 85799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T85599.99",
+     "k": 85599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T84699.99",
+     "k": 84699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2203-T84999.99",
+     "k": 84999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790064000,
+   "event": "KXBTCD-26SEP2204",
+   "ky": 85299.99,
+   "kn": 85399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2204-T85599.99",
+     "k": 85599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T84999.99",
+     "k": 84999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T84799.99",
+     "k": 84799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T84899.99",
+     "k": 84899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T85799.99",
+     "k": 85799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T85899.99",
+     "k": 85899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T84699.99",
+     "k": 84699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T84599.99",
+     "k": 84599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T85699.99",
+     "k": 85699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T85499.99",
+     "k": 85499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2204-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790067600,
+   "event": "KXBTCD-26SEP2205",
+   "ky": 86099.99,
+   "kn": 86199.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2205-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2205-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790071200,
+   "event": "KXBTCD-26SEP2206",
+   "ky": 86199.99,
+   "kn": 86299.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2206-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2206-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790074800,
+   "event": "KXBTCD-26SEP2207",
+   "ky": 85799.99,
+   "kn": 85899.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2207-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2207-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {
+      "0.99": 3323.91
+     }
+    }
+   ]
+  },
+  {
+   "close_s": 1790078400,
+   "event": "KXBTCD-26SEP2208",
+   "ky": 85899.99,
+   "kn": 85999.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2208-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2208-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790082000,
+   "event": "KXBTCD-26SEP2209",
+   "ky": 85899.99,
+   "kn": 85999.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2209-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2209-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790085600,
+   "event": "KXBTCD-26SEP2210",
+   "ky": 86299.99,
+   "kn": 86399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2210-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2210-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790089200,
+   "event": "KXBTCD-26SEP2211",
+   "ky": 86199.99,
+   "kn": 86299.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2211-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2211-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790092800,
+   "event": "KXBTCD-26SEP2212",
+   "ky": 86399.99,
+   "kn": 86499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2212-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2212-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790096400,
+   "event": "KXBTCD-26SEP2213",
+   "ky": 86399.99,
+   "kn": 86499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2213-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2213-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790100000,
+   "event": "KXBTCD-26SEP2214",
+   "ky": 86599.99,
+   "kn": 86699.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2214-T86399.99",
+     "k": 86399.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T87299.99",
+     "k": 87299.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T87399.99",
+     "k": 87399.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T86499.99",
+     "k": 86499.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2214-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790103600,
+   "event": "KXBTCD-26SEP2215",
+   "ky": 86499.99,
+   "kn": 86599.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2215-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T86399.99",
+     "k": 86399.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T87299.99",
+     "k": 87299.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2215-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790107200,
+   "event": "KXBTCD-26SEP2216",
+   "ky": 86199.99,
+   "kn": 86299.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2216-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2216-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790110800,
+   "event": "KXBTCD-26SEP2217",
+   "ky": 85999.99,
+   "kn": 86249.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2217-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2217-T86749.99",
+     "k": 86749.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2217-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 250.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2217-T85749.99",
+     "k": 85749.99,
+     "side": "yes",
+     "cush": 250.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790114400,
+   "event": "KXBTCD-26SEP2218",
+   "ky": 86099.99,
+   "kn": 86199.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2218-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2218-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790118000,
+   "event": "KXBTCD-26SEP2219",
+   "ky": 86099.99,
+   "kn": 86199.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2219-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2219-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790121600,
+   "event": "KXBTCD-26SEP2220",
+   "ky": 86099.99,
+   "kn": 86199.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2220-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2220-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790125200,
+   "event": "KXBTCD-26SEP2221",
+   "ky": 86399.99,
+   "kn": 86499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2221-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2221-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790128800,
+   "event": "KXBTCD-26SEP2222",
+   "ky": 86299.99,
+   "kn": 86399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2222-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2222-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790132400,
+   "event": "KXBTCD-26SEP2223",
+   "ky": 86499.99,
+   "kn": 86599.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2223-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T87299.99",
+     "k": 87299.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T86399.99",
+     "k": 86399.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2223-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790136000,
+   "event": "KXBTCD-26SEP2300",
+   "ky": 86599.99,
+   "kn": 86699.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2300-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T87299.99",
+     "k": 87299.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T87399.99",
+     "k": 87399.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T86399.99",
+     "k": 86399.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T86499.99",
+     "k": 86499.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2300-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790139600,
+   "event": "KXBTCD-26SEP2301",
+   "ky": 87099.99,
+   "kn": 87199.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2301-T87899.99",
+     "k": 87899.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T86999.99",
+     "k": 86999.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T86799.99",
+     "k": 86799.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T87599.99",
+     "k": 87599.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T87799.99",
+     "k": 87799.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T87699.99",
+     "k": 87699.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T86499.99",
+     "k": 86499.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T87499.99",
+     "k": 87499.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T86599.99",
+     "k": 86599.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T86699.99",
+     "k": 86699.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T86899.99",
+     "k": 86899.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T87399.99",
+     "k": 87399.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T87299.99",
+     "k": 87299.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2301-T86399.99",
+     "k": 86399.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790143200,
+   "event": "KXBTCD-26SEP2302",
+   "ky": 86399.99,
+   "kn": 86499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2302-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {
+      "0.99": 208.0
+     }
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2302-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790146800,
+   "event": "KXBTCD-26SEP2303",
+   "ky": 86399.99,
+   "kn": 86499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2303-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T87099.99",
+     "k": 87099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T86299.99",
+     "k": 86299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T87199.99",
+     "k": 87199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T86199.99",
+     "k": 86199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T86999.99",
+     "k": 86999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T86099.99",
+     "k": 86099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2303-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790150400,
+   "event": "KXBTCD-26SEP2304",
+   "ky": 86099.99,
+   "kn": 86199.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2304-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T86899.99",
+     "k": 86899.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T86799.99",
+     "k": 86799.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T85999.99",
+     "k": 85999.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2304-T85899.99",
+     "k": 85899.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790154000,
+   "event": "KXBTCD-26SEP2305",
+   "ky": 85799.99,
+   "kn": 85899.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2305-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2305-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {
+      "0.99": 1563.6000000000001
+     }
+    }
+   ]
+  },
+  {
+   "close_s": 1790157600,
+   "event": "KXBTCD-26SEP2306",
+   "ky": 85799.99,
+   "kn": 85899.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2306-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2306-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790161200,
+   "event": "KXBTCD-26SEP2307",
+   "ky": 85899.99,
+   "kn": 85999.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2307-T85799.99",
+     "k": 85799.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T85699.99",
+     "k": 85699.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T86699.99",
+     "k": 86699.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2307-T86599.99",
+     "k": 86599.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790164800,
+   "event": "KXBTCD-26SEP2308",
+   "ky": 85599.99,
+   "kn": 85699.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2308-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T85899.99",
+     "k": 85899.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T85799.99",
+     "k": 85799.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T84899.99",
+     "k": 84899.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2308-T84999.99",
+     "k": 84999.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790168400,
+   "event": "KXBTCD-26SEP2309",
+   "ky": 85399.99,
+   "kn": 85499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2309-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T85799.99",
+     "k": 85799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T84999.99",
+     "k": 84999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T85699.99",
+     "k": 85699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T84699.99",
+     "k": 84699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T85899.99",
+     "k": 85899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T84799.99",
+     "k": 84799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T85599.99",
+     "k": 85599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2309-T84899.99",
+     "k": 84899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790172000,
+   "event": "KXBTCD-26SEP2310",
+   "ky": 85699.99,
+   "kn": 85799.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2310-T85099.99",
+     "k": 85099.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T84999.99",
+     "k": 84999.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T85199.99",
+     "k": 85199.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T85399.99",
+     "k": 85399.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T85899.99",
+     "k": 85899.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T86099.99",
+     "k": 86099.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T85499.99",
+     "k": 85499.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T85299.99",
+     "k": 85299.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T86199.99",
+     "k": 86199.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T85599.99",
+     "k": 85599.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T86499.99",
+     "k": 86499.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T86399.99",
+     "k": 86399.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T86299.99",
+     "k": 86299.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2310-T85999.99",
+     "k": 85999.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790175600,
+   "event": "KXBTCD-26SEP2311",
+   "ky": 84499.99,
+   "kn": 84599.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2311-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T84399.99",
+     "k": 84399.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T85299.99",
+     "k": 85299.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T85199.99",
+     "k": 85199.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T84299.99",
+     "k": 84299.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2311-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790179200,
+   "event": "KXBTCD-26SEP2312",
+   "ky": 83999.99,
+   "kn": 84099.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2312-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2312-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790182800,
+   "event": "KXBTCD-26SEP2313",
+   "ky": 83999.99,
+   "kn": 84099.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2313-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2313-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790186400,
+   "event": "KXBTCD-26SEP2314",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2314-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2314-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790190000,
+   "event": "KXBTCD-26SEP2315",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2315-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2315-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790193600,
+   "event": "KXBTCD-26SEP2316",
+   "ky": 84399.99,
+   "kn": 84499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2316-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T84299.99",
+     "k": 84299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T85199.99",
+     "k": 85199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2316-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790197200,
+   "event": "KXBTCD-26SEP2317",
+   "ky": 83999.99,
+   "kn": 84249.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2317-T83749.99",
+     "k": 83749.99,
+     "side": "yes",
+     "cush": 250.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2317-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 250.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2317-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2317-T84749.99",
+     "k": 84749.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790200800,
+   "event": "KXBTCD-26SEP2318",
+   "ky": 84399.99,
+   "kn": 84499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2318-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T84299.99",
+     "k": 84299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T85199.99",
+     "k": 85199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2318-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790204400,
+   "event": "KXBTCD-26SEP2319",
+   "ky": 84499.99,
+   "kn": 84599.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2319-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T85199.99",
+     "k": 85199.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T85299.99",
+     "k": 85299.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T84399.99",
+     "k": 84399.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T84299.99",
+     "k": 84299.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2319-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790208000,
+   "event": "KXBTCD-26SEP2320",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2320-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2320-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790211600,
+   "event": "KXBTCD-26SEP2321",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2321-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2321-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790215200,
+   "event": "KXBTCD-26SEP2322",
+   "ky": 84099.99,
+   "kn": 84199.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2322-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2322-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790218800,
+   "event": "KXBTCD-26SEP2323",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2323-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2323-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790222400,
+   "event": "KXBTCD-26SEP2400",
+   "ky": 83899.99,
+   "kn": 83999.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2400-T84099.99",
+     "k": 84099.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T83199.99",
+     "k": 83199.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2400-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790226000,
+   "event": "KXBTCD-26SEP2401",
+   "ky": 83999.99,
+   "kn": 84099.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2401-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2401-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790244000,
+   "event": "KXBTCD-26SEP2406",
+   "ky": 83199.99,
+   "kn": 83299.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2406-T83099.99",
+     "k": 83099.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T83599.99",
+     "k": 83599.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T82799.99",
+     "k": 82799.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T83799.99",
+     "k": 83799.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T83399.99",
+     "k": 83399.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T82499.99",
+     "k": 82499.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T83899.99",
+     "k": 83899.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T83999.99",
+     "k": 83999.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T82599.99",
+     "k": 82599.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T83699.99",
+     "k": 83699.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T82699.99",
+     "k": 82699.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T82899.99",
+     "k": 82899.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T82999.99",
+     "k": 82999.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2406-T83499.99",
+     "k": 83499.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790247600,
+   "event": "KXBTCD-26SEP2407",
+   "ky": 83399.99,
+   "kn": 83499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2407-T83599.99",
+     "k": 83599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T83799.99",
+     "k": 83799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T83899.99",
+     "k": 83899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T82699.99",
+     "k": 82699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T83099.99",
+     "k": 83099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T82899.99",
+     "k": 82899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T83199.99",
+     "k": 83199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T84099.99",
+     "k": 84099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T83699.99",
+     "k": 83699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T82799.99",
+     "k": 82799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T83999.99",
+     "k": 83999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2407-T82999.99",
+     "k": 82999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790251200,
+   "event": "KXBTCD-26SEP2408",
+   "ky": 83399.99,
+   "kn": 83499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2408-T83799.99",
+     "k": 83799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T82899.99",
+     "k": 82899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T83899.99",
+     "k": 83899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T83699.99",
+     "k": 83699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T83999.99",
+     "k": 83999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T84099.99",
+     "k": 84099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T82799.99",
+     "k": 82799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T82699.99",
+     "k": 82699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T83199.99",
+     "k": 83199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T83099.99",
+     "k": 83099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T83599.99",
+     "k": 83599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2408-T82999.99",
+     "k": 82999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790254800,
+   "event": "KXBTCD-26SEP2409",
+   "ky": 83499.99,
+   "kn": 83599.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2409-T83199.99",
+     "k": 83199.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T82799.99",
+     "k": 82799.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T84099.99",
+     "k": 84099.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T82999.99",
+     "k": 82999.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T83799.99",
+     "k": 83799.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T83899.99",
+     "k": 83899.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T83999.99",
+     "k": 83999.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T83699.99",
+     "k": 83699.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T83099.99",
+     "k": 83099.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T82899.99",
+     "k": 82899.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2409-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790258400,
+   "event": "KXBTCD-26SEP2410",
+   "ky": 84199.99,
+   "kn": 84299.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2410-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2410-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790262000,
+   "event": "KXBTCD-26SEP2411",
+   "ky": 83599.99,
+   "kn": 83699.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2411-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T83799.99",
+     "k": 83799.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T82999.99",
+     "k": 82999.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {
+      "0.99": 3451.63,
+      "0.98": 1829.99
+     }
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T84099.99",
+     "k": 84099.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T83899.99",
+     "k": 83899.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T82899.99",
+     "k": 82899.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T83099.99",
+     "k": 83099.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T83199.99",
+     "k": 83199.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2411-T83999.99",
+     "k": 83999.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790265600,
+   "event": "KXBTCD-26SEP2412",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2412-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2412-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790269200,
+   "event": "KXBTCD-26SEP2413",
+   "ky": 84399.99,
+   "kn": 84499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2413-T85199.99",
+     "k": 85199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T84299.99",
+     "k": 84299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2413-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790272800,
+   "event": "KXBTCD-26SEP2414",
+   "ky": 83999.99,
+   "kn": 84099.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2414-T84199.99",
+     "k": 84199.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T83299.99",
+     "k": 83299.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2414-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790276400,
+   "event": "KXBTCD-26SEP2415",
+   "ky": 84399.99,
+   "kn": 84499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2415-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T85199.99",
+     "k": 85199.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T84299.99",
+     "k": 84299.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2415-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790280000,
+   "event": "KXBTCD-26SEP2416",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2416-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2416-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790283600,
+   "event": "KXBTCD-26SEP2417",
+   "ky": 84249.99,
+   "kn": 84499.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2417-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2417-T84749.99",
+     "k": 84749.99,
+     "side": "no",
+     "cush": 250.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2417-T83749.99",
+     "k": 83749.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2417-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 250.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790287200,
+   "event": "KXBTCD-26SEP2418",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2418-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2418-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790290800,
+   "event": "KXBTCD-26SEP2419",
+   "ky": 84199.99,
+   "kn": 84299.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2419-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2419-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790294400,
+   "event": "KXBTCD-26SEP2420",
+   "ky": 84299.99,
+   "kn": 84399.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2420-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2420-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790298000,
+   "event": "KXBTCD-26SEP2421",
+   "ky": 84499.99,
+   "kn": 84599.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2421-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T85199.99",
+     "k": 85199.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T85299.99",
+     "k": 85299.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T84299.99",
+     "k": 84299.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T84399.99",
+     "k": 84399.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2421-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790301600,
+   "event": "KXBTCD-26SEP2422",
+   "ky": 84499.99,
+   "kn": 84599.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2422-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T85299.99",
+     "k": 85299.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T85099.99",
+     "k": 85099.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T84299.99",
+     "k": 84299.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T85199.99",
+     "k": 85199.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T84199.99",
+     "k": 84199.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T84399.99",
+     "k": 84399.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2422-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790305200,
+   "event": "KXBTCD-26SEP2423",
+   "ky": 84099.99,
+   "kn": 84199.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2423-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T83399.99",
+     "k": 83399.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T84299.99",
+     "k": 84299.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2423-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    }
+   ]
+  },
+  {
+   "close_s": 1790308800,
+   "event": "KXBTCD-26SEP2500",
+   "ky": 84199.99,
+   "kn": 84299.99,
+   "rungs": [
+    {
+     "tk": "KXBTCD-26SEP2500-T83999.99",
+     "k": 83999.99,
+     "side": "yes",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T84399.99",
+     "k": 84399.99,
+     "side": "no",
+     "cush": 100.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T83799.99",
+     "k": 83799.99,
+     "side": "yes",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T84799.99",
+     "k": 84799.99,
+     "side": "no",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T84899.99",
+     "k": 84899.99,
+     "side": "no",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T83899.99",
+     "k": 83899.99,
+     "side": "yes",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T84599.99",
+     "k": 84599.99,
+     "side": "no",
+     "cush": 300.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T84499.99",
+     "k": 84499.99,
+     "side": "no",
+     "cush": 200.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T83499.99",
+     "k": 83499.99,
+     "side": "yes",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T84699.99",
+     "k": 84699.99,
+     "side": "no",
+     "cush": 400.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T84999.99",
+     "k": 84999.99,
+     "side": "no",
+     "cush": 700.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T83599.99",
+     "k": 83599.99,
+     "side": "yes",
+     "cush": 600.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T83699.99",
+     "k": 83699.99,
+     "side": "yes",
+     "cush": 500.0,
+     "taken": {}
+    },
+    {
+     "tk": "KXBTCD-26SEP2500-T84099.99",
+     "k": 84099.99,
+     "side": "yes",
+     "cush": 100.0,
+     "taken": {}
+    }
+   ]
+  }
+ ]
+}
