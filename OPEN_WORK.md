@@ -105,6 +105,14 @@ placed a bet there, so he is eligible for those contracts.**
 A read-only recorder runs 3 days (to ~Sep 28); bar in
 `results/SECOND_INCOME_SCAN_2026-09-25.md` section 1.
 
+**Order path BUILT 2026-09-25 (`research/polyorder.py`, `results/POLYMARKET_ORDERS.md`),
+nothing sent.** Dry-run by default; a live send needs `--live` plus a one-time code
+bound to one market/side/price/size; buys only, takes what is there and cancels the
+rest, never above 98c; caps 5 contracts / $5 per order, $10 risked and $5 lost per
+day. Next: Step 1 wire test (buy 1 Up at 1c, should not fill, proves the key can
+trade) -- waits on the operator's yes. His $60.52 is $50 promo bonus + $10 pending
+deposit + $0.52 cash. The paper bot `research/polypaper.py` runs to ~09-28.
+
 ### A9. Hourly markets on the other coins -- `arm-hourly-all` (paper, since 2026-09-25 03:06Z)
 **Say: "the other hourly coins."**
 Kalshi runs the same hourly ladder for ETH, SOL, XRP, DOGE, BNB and HYPE that
