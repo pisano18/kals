@@ -57,6 +57,9 @@ def one_round():
     if st == 200:
         pools = {int(x["exchange_index"]): float(x["balance"])
                  for x in bal.get("balance_breakdown") or []}
+    # the API has no per-market filter: one read of every liquidity program
+    sp, ip = kauth.get("/incentive_programs",
+                       {"status": "all", "type": "liquidity", "limit": "10000"})
     rows = []
     for oid, r in placed().items():
         tk = r["ticker"]
@@ -94,12 +97,10 @@ def one_round():
                 our_px, our_left)
             progs.append({"id": p["id"], "usd_per_h": round(d, 4),
                           "share": round(sh, 4), "counted": q})
-        sp, ip = kauth.get("/incentive_programs",
-                           {"market_ticker": tk, "limit": "50"})
         paid = [{"id": p.get("id"), "paid_out": p.get("paid_out"),
                  "end": p.get("end_date")}
-                for p in ((ip or {}).get("incentive_programs") or [])] \
-            if sp == 200 else None
+                for p in ((ip or {}).get("incentive_programs") or [])
+                if p.get("market_ticker") == tk] if sp == 200 else None
         rows.append({"t": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                      "order_id": oid, "ticker": tk, "buy": lipscan_side,
                      "status": od.get("status"), "left": our_left,

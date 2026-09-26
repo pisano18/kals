@@ -612,8 +612,8 @@ def reward_main(a):
     mk = (m or {}).get("market") or {} if isinstance(m, dict) else {}
     exi = mk.get("exchange_index")
     st2, ip = send(base, pk, a.key_id, "GET", "/incentive_programs",
-                   query={"status": "active", "limit": "200",
-                          "market_ticker": a.ticker})
+                   query={"status": "active", "type": "liquidity",
+                          "limit": "10000"})   # no per-market filter exists
     progs = [p for p in ((ip or {}).get("incentive_programs") or [])
              if isinstance(ip, dict) and p.get("market_ticker") == a.ticker
              and p.get("incentive_type") == "liquidity"]
