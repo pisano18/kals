@@ -1,3 +1,27 @@
+# v-onepool -- 2026-09-26 07:38Z (ACCOUNT setting, no code in the bot changed) -- LIVE: Kalshi's automatic 15/85 cash split is OFF and all cash sits in pool 2 (Crypto & Commodities), so the account total pinrun sizes on is now exactly the cash its orders can spend. Operator 09-26 ~07:2xZ: "Yes combine all the cash."
+
+Before: pool 0 $139.1532, pool 2 $1,006.2552, target {0:15%, 2:85%} (it parked
+$139 of the 09-19 deposit where crypto orders cannot reach; pinrun read the
+$1,145.41 total, ~12% more than it could spend). After (read 5 s and ~90 s
+later): pool 0 $0, pool 2 $1,145.4084, allocations [], total unchanged to the
+cent. Sent by `python research/ordercli.py --pools-off --move-dollars all
+--from-pool 0 --to-pool 2 --live --signoff 6d4d528a415e73fc` (new pool mode,
+self-test 7 refusal cases); transfer_id 21feddb9-4897-4f7c-a34d-eb7de73adbb0.
+CONSEQUENCES: with the split off nothing moves cash automatically any more --
+a NEW DEPOSIT may land in pool 0 and sit there (move it with the same command);
+any non-crypto test (the reward test: politics markets are pool 0) must move
+its own cash to pool 0 first, which makes pinrun oversize by that amount again.
+Not checked: how the live bot's log recorded the move (the log read was blocked
+by the permission checker); the total never changed, so there is nothing for
+its deposit detector to see unless it read mid-transfer.
+
+**REVERT:** restore the old split (Kalshi then moves 15% back to pool 0 within
+~10 s): POST /portfolio/target_balance_allocation
+`{"allocations":[{"exchange_index":0,"percent":15},{"exchange_index":2,"percent":85}],"resting_margin_reservation":"sum"}`
+-- ordercli has no flag for it; it is a one-line addition to pools_main.
+
+---
+
 # v-scalein-caps -- 2026-09-25 12:23:53Z (pid 2951024, code_sha f9548c5571ff) -- LIVE: a same-market scale-in needs a genuinely cheaper ASK (not a sweep-inflated average) and buys only the cheaper contracts; pintake's rails are back to their designed sizes and a hedge covering a held position is never refused on dollars. No flag changed. Operator, 09-25: "do what makes the most money, use the risk in the calculating... Same with order caps."
 
 (A) rebuy_ok: A23's 0.5-1c band is also measured against the cheapest ASK taken

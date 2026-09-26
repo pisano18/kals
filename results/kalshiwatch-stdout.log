@@ -1,0 +1,809 @@
+kalshiwatch --selftest
+  [ok] ET in September is UTC-4
+  [ok] ET in December is UTC-5
+  [ok] the November switch lands at 06:00Z
+  [ok] rules: times, dates, strikes blanked (null)
+  [ok] rules: a new word is caught
+  [ok] shape: int and float are one type
+  [ok] shape: decimals only on fixed-point keys
+  [ok] shape: book price/size decimals
+  [ok] shape: parent/leaf
+  [ok] this file builds GET requests only and never names the order endpoint
+  [ok] tape: current hour is never read
+  [ok] every Kalshi call is a GET (24)
+  [ok] first snapshot: baseline, no alerts (got 0)
+  [ok] fee tape: MLB and '1215M' look-alike are not ours
+  [ok] tape: someone else's market leaves no shape, ours does
+  [ok] NULL WORLD: same world twice, no alerts (got [])
+  [ok] NULL WORLD: new market/date/strike, series with no market, empty book side, blocked PDF, version-only doc edit -> no alerts (got [])
+  [ok] blocked page keeps its old hash
+    planted world raised: [('changelog_new', 'ALERT'), ('changelog_new', 'INFO'), ('endpoint_gone', 'ALERT'), ('fee_change_scheduled', 'ALERT'), ('field_added', 'WARN'), ('field_removed', 'ALERT'), ('page_changed', 'ALERT'), ('rules_changed', 'ALERT'), ('tape_fee_override', 'ALERT'), ('type_changed', 'ALERT'), ('value_changed', 'ALERT')]
+  [ok] RENAME: floor_strike gone -> ALERT
+  [ok] RENAME on the live feed tape -> ALERT
+  [ok] a field the bot does not read waits a second snapshot
+  [ok] additive field -> WARN
+  [ok] orderbook price str -> number -> ALERT
+  [ok] fee_multiplier 1 -> 2 on one series -> ALERT
+  [ok] rules sentence changed -> ALERT
+  [ok] scheduled fee change on our series -> ALERT with an ET time; MLB ignored
+  [ok] fee override on our series in the tape -> ALERT
+  [ok] bot endpoint 404 -> ALERT
+  [ok] changelog entry naming our field -> ALERT
+  [ok] changelog entry touching nothing, or a Margin-only one naming our field -> INFO
+  [ok] fee schedule PDF changed -> ALERT
+  [ok] a docs page whose only edit is the spec version -> nothing
+  [ok] nothing unplanted fired: []
+  [ok] tape: the newest complete hour is read
+  [ok] a torn gzip is survived, not raised
+  [ok] second miss of an unread field -> WARN
+  [ok] a change is announced once, not every hour (got [('field_removed', 'WARN')])
+  [ok] hook: first call learns the file end, sends no backlog
+  [ok] hook: new ALERT only, half line left for later (['KALSHI CHANGED SOMETHING: fee up'])
+  [ok] hook: the half line arrives whole
+  [ok] hook: nothing new, nothing sent
+  [ok] nothing so far has imported kauth (the key loads lazily)
+  [ok] live ids: the fields the bot reads are found in its source
+  [ok] live ids: a field the bot never reads is not in the set
+  [ok] series list read from pinrun's own map
+SELFTEST PASSED (0 failures)
+kalshiwatch snapshot Sep 25 4:18 AM ET (2026-09-25T08:18:10Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T07.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T07.jsonl.gz 171 lines
+  tape ticker               20260925T07.jsonl.gz 3000 lines
+  tape trade                20260925T07.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T07.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T07.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T07.jsonl.gz 56 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+kalshiwatch WARN: the live feed's orderbook_delta messages has not had the field '_seq_gap' for two snapshots running. The bot does not read it.
+kalshiwatch snapshot Sep 25 5:18 AM ET (2026-09-25T09:18:36Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T08.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T08.jsonl.gz 203 lines
+  tape ticker               20260925T08.jsonl.gz 3000 lines
+  tape trade                20260925T08.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T08.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T08.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T08.jsonl.gz 89 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 6:19 AM ET (2026-09-25T10:19:01Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 52 answers/channels, 1470 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T09.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T09.jsonl.gz 179 lines
+  tape ticker               20260925T09.jsonl.gz 3000 lines
+  tape trade                20260925T09.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T09.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T09.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T09.jsonl.gz 477 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 7:19 AM ET (2026-09-25T11:19:26Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T10.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T10.jsonl.gz 210 lines
+  tape ticker               20260925T10.jsonl.gz 3000 lines
+  tape trade                20260925T10.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T10.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T10.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T10.jsonl.gz 87 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 8:19 AM ET (2026-09-25T12:19:51Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T11.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T11.jsonl.gz 213 lines
+  tape ticker               20260925T11.jsonl.gz 3000 lines
+  tape trade                20260925T11.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T11.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T11.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T11.jsonl.gz 56 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 9:20 AM ET (2026-09-25T13:20:17Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T12.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T12.jsonl.gz 205 lines
+  tape ticker               20260925T12.jsonl.gz 3000 lines
+  tape trade                20260925T12.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T12.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T12.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T12.jsonl.gz 55 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 10:20 AM ET (2026-09-25T14:20:43Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T13.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T13.jsonl.gz 214 lines
+  tape ticker               20260925T13.jsonl.gz 3000 lines
+  tape trade                20260925T13.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T13.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T13.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T13.jsonl.gz 87 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 11:21 AM ET (2026-09-25T15:21:09Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T14.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T14.jsonl.gz 212 lines
+  tape ticker               20260925T14.jsonl.gz 3000 lines
+  tape trade                20260925T14.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T14.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T14.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T14.jsonl.gz 192 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 12:21 PM ET (2026-09-25T16:21:35Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T15.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T15.jsonl.gz 207 lines
+  tape ticker               20260925T15.jsonl.gz 3000 lines
+  tape trade                20260925T15.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T15.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T15.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T15.jsonl.gz 102 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 157)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 1:22 PM ET (2026-09-25T17:22:01Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T16.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T16.jsonl.gz 207 lines
+  tape ticker               20260925T16.jsonl.gz 3000 lines
+  tape trade                20260925T16.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T16.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T16.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T16.jsonl.gz 185 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 158)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 2:22 PM ET (2026-09-25T18:22:26Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T17.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T17.jsonl.gz 209 lines
+  tape ticker               20260925T17.jsonl.gz 3000 lines
+  tape trade                20260925T17.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T17.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T17.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T17.jsonl.gz 193 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 158)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 3:22 PM ET (2026-09-25T19:22:52Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 329
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T18.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T18.jsonl.gz 212 lines
+  tape ticker               20260925T18.jsonl.gz 3000 lines
+  tape trade                20260925T18.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T18.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T18.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T18.jsonl.gz 72 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 158)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 4:23 PM ET (2026-09-25T20:23:18Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T19.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T19.jsonl.gz 209 lines
+  tape ticker               20260925T19.jsonl.gz 3000 lines
+  tape trade                20260925T19.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T19.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T19.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T19.jsonl.gz 191 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 159)
+kalshiwatch INFO: Kalshi's API changelog has a new entry dated October 1, 2026: "Reduce-only orders over FIX".
+kalshiwatch INFO: Kalshi's API changelog has a new entry dated October 1, 2026: "user_orders messages include last_update_reason".
+kalshiwatch WARN: Kalshi edited the documentation page 'Create Order (V2)' (https://docs.kalshi.com/api-reference/orders/create-order-v2.md).
+kalshiwatch snapshot Sep 25 5:23 PM ET (2026-09-25T21:23:44Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 52 answers/channels, 1471 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T20.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T20.jsonl.gz 219 lines
+  tape ticker               20260925T20.jsonl.gz 3000 lines
+  tape trade                20260925T20.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T20.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T20.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T20.jsonl.gz 1382 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 159)
+kalshiwatch WARN: Kalshi added a field 'custom_strike' to the live feed's market_lifecycle_v2/created messages. Usually harmless -- sometimes the first half of a rename.
+kalshiwatch WARN: Kalshi added a field 'Cryptocurrency' to the live feed's market_lifecycle_v2/created messages. Usually harmless -- sometimes the first half of a rename.
+kalshiwatch snapshot Sep 25 6:24 PM ET (2026-09-25T22:24:09Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T21.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T21.jsonl.gz 183 lines
+  tape ticker               20260925T21.jsonl.gz 3000 lines
+  tape trade                20260925T21.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T21.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T21.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T21.jsonl.gz 119 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 160)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 7:24 PM ET (2026-09-25T23:24:34Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1429 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T22.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T22.jsonl.gz 172 lines
+  tape ticker               20260925T22.jsonl.gz 3000 lines
+  tape trade                20260925T22.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T22.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T22.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T22.jsonl.gz 136 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 162)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 8:25 PM ET (2026-09-26T00:25:00Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260925T23.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260925T23.jsonl.gz 192 lines
+  tape ticker               20260925T23.jsonl.gz 3000 lines
+  tape trade                20260925T23.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260925T23.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260925T23.jsonl.gz 3000 lines
+  tape event_lifecycle      20260925T23.jsonl.gz 164 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 163)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 9:25 PM ET (2026-09-26T01:25:26Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260926T00.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260926T00.jsonl.gz 192 lines
+  tape ticker               20260926T00.jsonl.gz 3000 lines
+  tape trade                20260926T00.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260926T00.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260926T00.jsonl.gz 3000 lines
+  tape event_lifecycle      20260926T00.jsonl.gz 369 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 163)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 10:25 PM ET (2026-09-26T02:25:52Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260926T01.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260926T01.jsonl.gz 192 lines
+  tape ticker               20260926T01.jsonl.gz 3000 lines
+  tape trade                20260926T01.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260926T01.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260926T01.jsonl.gz 3000 lines
+  tape event_lifecycle      20260926T01.jsonl.gz 158 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 165)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 25 11:26 PM ET (2026-09-26T03:26:17Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260926T02.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260926T02.jsonl.gz 192 lines
+  tape ticker               20260926T02.jsonl.gz 3000 lines
+  tape trade                20260926T02.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260926T02.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260926T02.jsonl.gz 3000 lines
+  tape event_lifecycle      20260926T02.jsonl.gz 87 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 165)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 26 12:26 AM ET (2026-09-26T04:26:42Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1429 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260926T03.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260926T03.jsonl.gz 192 lines
+  tape ticker               20260926T03.jsonl.gz 3000 lines
+  tape trade                20260926T03.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260926T03.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260926T03.jsonl.gz 3000 lines
+  tape event_lifecycle      20260926T03.jsonl.gz 66 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 165)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 26 1:27 AM ET (2026-09-26T05:27:06Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1431 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260926T04.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260926T04.jsonl.gz 165 lines
+  tape ticker               20260926T04.jsonl.gz 3000 lines
+  tape trade                20260926T04.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260926T04.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260926T04.jsonl.gz 3000 lines
+  tape event_lifecycle      20260926T04.jsonl.gz 141 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 165)
+  no change against the previous snapshot
+kalshiwatch snapshot Sep 26 2:27 AM ET (2026-09-26T06:27:31Z)
+  Kalshi GETs: 42 ok of 42; shapes recorded for 50 answers/channels, 1429 field paths
+  per series (fee type x multiplier | settle timer s | price steps):
+    KXADA15M         quadratic x1 | - | - (no open market)
+    KXBCH15M         quadratic x1 | - | - (no open market)
+    KXBNB15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTC15M         quadratic x1 | 1 | tapered_deci_cent
+    KXBTCD           quadratic x1 | 60 | linear_cent
+    KXCRYPTOLEAD15M  quadratic x1 | 1 | linear_cent
+    KXDOGE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXETH15M         quadratic x1 | 1 | tapered_deci_cent
+    KXHYPE15M        quadratic x1 | 1 | tapered_deci_cent
+    KXNEAR15M        quadratic x1 | 1 | tapered_deci_cent
+    KXSOL15M         quadratic x1 | 1 | tapered_deci_cent
+    KXXRP15M         quadratic x1 | 1 | tapered_deci_cent
+    KXZEC15M         quadratic x1 | 1 | tapered_deci_cent
+  scheduled fee changes on our series: 0; maintenance windows: 0
+  public pages read: 24 of 24; changelog entries parsed: 331
+    ANNOUNCED October 1, 2026: Reduce-only orders over FIX
+    ANNOUNCED October 1, 2026: ClearingBusinessDate on Margin FIX trade execution reports
+    ANNOUNCED October 1, 2026: user_orders messages include last_update_reason
+    ANNOUNCED October 1, 2026: Filter communications RFQs to your own user
+    ANNOUNCED October 1, 2026: The deprecated liquidity_dollars field is removed from market responses
+    ANNOUNCED October 1, 2026: RFQ and quote creation timestamps over FIX
+    ANNOUNCED October 1, 2026: Ticker reference_price for Pyth-indexed perps
+  tape orderbook_delta      20260926T05.jsonl.gz 3000 lines
+  tape orderbook_snapshot   20260926T05.jsonl.gz 159 lines
+  tape ticker               20260926T05.jsonl.gz 3000 lines
+  tape trade                20260926T05.jsonl.gz 3000 lines
+  tape cfbenchmarks_value   20260926T05.jsonl.gz 3000 lines
+  tape market_lifecycle_v2  20260926T05.jsonl.gz 3000 lines
+  tape event_lifecycle      20260926T05.jsonl.gz 58 lines
+  fee overrides on our series in the recorder's fee tape: 0 (files scanned 165)
+  no change against the previous snapshot

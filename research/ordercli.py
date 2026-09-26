@@ -322,6 +322,134 @@ def cancel(base, pk, key_id, oid, exchange_index):
     return st, r, still
 
 
+# --- CASH POOLS (added 2026-09-26) -------------------------------------------
+# Kalshi keeps cash per exchange index ("pool"); an order draws only on its own
+# market's pool. These two calls move the operator's own cash between his own
+# pools: no market, no price, no fill -- the account total must not change.
+#   POST /portfolio/target_balance_allocation  {"allocations": []} = automatic
+#       rebalancing OFF (Kalshi docs: "Passing an empty allocations array
+#       disables automatic rebalancing.")
+#   POST /portfolio/intra_exchange_instance_transfer  amount in CENTICENTS
+#       (1/100 of a cent: $1 = 10,000). Cross-pool transfers run "in up to
+#       three non-atomic phases", so the total is re-read afterwards.
+POOLS = (0, 1, 2, 3)
+
+
+def build_allocation_off():
+    return {"allocations": [], "resting_margin_reservation": "sum"}
+
+
+def build_transfer(amount_dollars, from_pool, to_pool):
+    """Dollars in, centicents out -- rounded DOWN so we never ask for more
+    than the pool holds (139.1532 -> 1391532)."""
+    cc = int(round(float(amount_dollars) * 10000.0, 6) // 1)
+    return {"source": "event_contract", "destination": "event_contract",
+            "amount": cc,
+            "source_exchange_shard": int(from_pool),
+            "destination_exchange_shard": int(to_pool),
+            "source_subaccount": 0, "destination_subaccount": 0}
+
+
+def check_transfer(body, pool_balance_dollars):
+    """Refuse before signing. pool_balance_dollars = the SOURCE pool's cash as
+    read just now (None = could not read -> refuse)."""
+    bad = []
+    if body.get("source") != "event_contract" or \
+            body.get("destination") != "event_contract":
+        bad.append("only event_contract -> event_contract (never margined)")
+    if body.get("source_subaccount") != 0 or \
+            body.get("destination_subaccount") != 0:
+        bad.append("only the primary account (subaccount 0)")
+    s, d = body.get("source_exchange_shard"), body.get("destination_exchange_shard")
+    if s not in POOLS or d not in POOLS:
+        bad.append(f"pool {s}->{d} not in {POOLS}")
+    if s == d:
+        bad.append("source and destination pool are the same")
+    a = body.get("amount")
+    if not isinstance(a, int) or a <= 0:
+        bad.append(f"amount {a!r} is not a positive whole number of centicents")
+    if pool_balance_dollars is None:
+        bad.append("source pool balance unreadable -- refusing blind")
+    elif isinstance(a, int) and a > int(round(pool_balance_dollars * 10000)):
+        bad.append(f"amount ${a / 10000:.4f} exceeds the source pool's "
+                   f"${pool_balance_dollars:.4f}")
+    return bad
+
+
+def pool_balances(bal):
+    """{pool: dollars} from a /portfolio/balance body, or None."""
+    try:
+        return {int(x["exchange_index"]): float(x["balance"])
+                for x in bal["balance_breakdown"]}
+    except Exception:
+        return None
+
+
+def pools_main(a):
+    """--pools-off and/or --move-dollars. PRODUCTION only (it is the
+    operator's own cash; demo keys cannot see it). One token covers the
+    exact pair of calls printed."""
+    base = PROD
+    pk = load_key(a.key_file)
+    st, bal = send(base, pk, a.key_id, "GET", "/portfolio/balance")
+    pools = pool_balances(bal) if st == 200 else None
+    st2, alloc = send(base, pk, a.key_id, "GET",
+                      "/portfolio/target_balance_allocation")
+    print(f"  pools now   : {pools}   total "
+          f"${(bal or {}).get('balance_dollars') if isinstance(bal, dict) else '?'}")
+    print(f"  auto split  : {alloc if st2 == 200 else ('unreadable', st2)}")
+    steps = []
+    if a.pools_off:
+        steps.append(("POST", "/portfolio/target_balance_allocation",
+                      build_allocation_off()))
+    if a.move_dollars is not None:
+        amt = (pools or {}).get(a.from_pool) if a.move_dollars == "all" \
+            else float(a.move_dollars)
+        if amt is None:
+            raise SystemExit("  *** could not read the source pool. REFUSING. ***")
+        tb = build_transfer(amt, a.from_pool, a.to_pool)
+        bad = check_transfer(tb, (pools or {}).get(a.from_pool))
+        if bad:
+            print("\n  *** REFUSED BY THE RAILS ***")
+            for v in bad:
+                print("    - " + v)
+            raise SystemExit(1)
+        steps.append(("POST", "/portfolio/intra_exchange_instance_transfer", tb))
+    if not steps:
+        raise SystemExit("  nothing asked: pass --pools-off and/or --move-dollars")
+    tok = token_for({"pool_steps": steps}, base)
+    print("\n  STEPS, NOT YET SENT (production, the operator's own cash; "
+          "no market risk):")
+    for m, p, b in steps:
+        print(f"    {m} {p} {json.dumps(b)}")
+    print(f"\n  SIGN-OFF TOKEN: {tok}")
+    if not a.live:
+        print(f"  DRY RUN. To send: add --live --signoff {tok}")
+        return
+    if a.signoff != tok:
+        raise SystemExit(f"  *** sign-off token mismatch. Expected {tok}. "
+                         f"REFUSING. ***")
+    total0 = float(bal["balance_dollars"])
+    for m, p, b in steps:
+        st, r = send(base, pk, a.key_id, m, p, b)
+        print(f"  {m} {p} -> {st} {r}")
+        if st not in (200, 201):
+            raise SystemExit("  *** REJECTED; later steps NOT sent. ***")
+    time.sleep(5)
+    st, bal1 = send(base, pk, a.key_id, "GET", "/portfolio/balance")
+    st2, alloc1 = send(base, pk, a.key_id, "GET",
+                       "/portfolio/target_balance_allocation")
+    print(f"\n  AFTER pools : {pool_balances(bal1)}   total "
+          f"${(bal1 or {}).get('balance_dollars')}")
+    print(f"  AFTER split : {alloc1}")
+    try:
+        d = float(bal1["balance_dollars"]) - total0
+        print(f"  total moved by ${d:+.4f} "
+              f"({'OK: unchanged' if abs(d) < 0.01 else '*** CHECK: a bet settled or the transfer is mid-phase ***'})")
+    except Exception as e:
+        print(f"  could not compare totals: {e}")
+
+
 def selftest():
     set_env(True)
     print("=" * 78)
@@ -410,6 +538,33 @@ def selftest():
     if ok:
         fails.append("resting_orders reported ok=True on a failed listing")
 
+    print("\n  cash-pool transfer rails:")
+    tb = build_transfer(139.1532, 0, 2)
+    if tb["amount"] != 1391532:
+        fails.append(f"139.1532 dollars -> {tb['amount']} centicents, "
+                     f"expected 1391532")
+    if check_transfer(tb, 139.1532):
+        fails.append(f"a legal whole-pool move was refused: "
+                     f"{check_transfer(tb, 139.1532)}")
+    for desc, mut, pb in (
+            ("more than the pool holds", {"amount": 1391533}, 139.1532),
+            ("same pool", {"destination_exchange_shard": 0}, 139.1532),
+            ("to margined", {"destination": "margined"}, 139.1532),
+            ("a subaccount", {"destination_subaccount": 1}, 139.1532),
+            ("zero amount", {"amount": 0}, 139.1532),
+            ("unknown pool", {"destination_exchange_shard": 7}, 139.1532),
+            ("pool unreadable", {}, None)):
+        bb = dict(tb)
+        bb.update(mut)
+        v = check_transfer(bb, pb)
+        print(f"    {desc:<34} -> {'REFUSED' if v else '*** ALLOWED ***'}")
+        if not v:
+            fails.append(f"transfer: {desc} was NOT refused")
+    if build_allocation_off().get("allocations") != []:
+        fails.append("allocation-off body is not an empty list")
+    if token_for({"pool_steps": [1]}, PROD) == token_for({"pool_steps": [2]}, PROD):
+        fails.append("pool token does not change with the steps")
+
     print("\n  default environment:")
     print(f"    base defaults to DEMO: {DEMO}")
 
@@ -445,12 +600,22 @@ def main():
                     help="the token printed by the dry run of THIS order")
     ap.add_argument("--key-id", default=os.environ.get("KALSHI_KEY_ID", ""))
     ap.add_argument("--key-file", default=r"C:\kals\kalshi.pem")
+    ap.add_argument("--pools-off", action="store_true",
+                    help="turn Kalshi's automatic cash split OFF (prod)")
+    ap.add_argument("--move-dollars",
+                    help="move cash between pools (prod): dollars or 'all'")
+    ap.add_argument("--from-pool", type=int, default=0)
+    ap.add_argument("--to-pool", type=int, default=2)
     a = ap.parse_args()
+    if not a.key_id:
+        a.key_id = "5163259c-ecb0-4966-9053-0d2776cf061e"   # kauth.KEY_ID
 
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
     if not selftest():
         raise SystemExit("self-test failed; refusing to touch the API")
+    if a.pools_off or a.move_dollars is not None:
+        return pools_main(a)
     if not (a.ticker and a.price):
         raise SystemExit("\n--ticker and --price are required")
 

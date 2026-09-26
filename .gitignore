@@ -96,3 +96,6 @@ results/pintraj-*.jsonl
 /results/*_rows.json
 /results/**/*.pkl
 /results/pindata*/
+
+# tax ledger: rebuilt by research/taxledger.py, never committed (2026-09-26)
+results/tax/
