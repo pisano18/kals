@@ -450,6 +450,222 @@ def pools_main(a):
         print(f"  could not compare totals: {e}")
 
 
+# --- REWARD-REST MODE (added 2026-09-26) -------------------------------------
+# The reward test (HANDOFF P2, operator: "Run the reward test"): a few large
+# BUY orders at 1c or less, resting for days on quiet non-crypto markets that
+# carry a Kalshi liquidity program, to learn whether Kalshi pays THIS account.
+# A 1c buy can lose only what it cost, so the ceilings below ARE the maximum
+# loss. Unlike the test mode above, these orders are NOT cancelled on exit:
+# resting for days is the point. `--reward-cancel` takes them down.
+#   buy YES at p  -> side "bid", price p        (costs p a contract)
+#   buy NO  at p  -> side "ask", price 1 - p    (costs p a contract)
+REWARD_MAX_PRICE = 0.01         # never pay more than 1c a contract
+REWARD_MAX_COUNT = 1000.0
+REWARD_MAX_ORDER = 10.00        # $ per order (1,000 x 1c)
+REWARD_MAX_TOTAL = 60.00        # $ across every reward order AND fill
+REWARD_MAX_ORDERS = 4
+REWARD_PREFIX = "kals-lip-"
+REWARD_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                          "results", "lip_orders.jsonl")
+BOT_POOL = 2                    # crypto & commodities: the live bots' pool
+
+
+def build_reward_order(ticker, buy, price, count, exchange_index, day):
+    """buy is 'yes' or 'no'; price is what we PAY per contract (<= 1c).
+    The client id is derived from the order and the UTC day, so the dry run
+    and the live run build the identical body (same token), and the same
+    order cannot be placed twice in one day (Kalshi rejects a repeated id)."""
+    side = "bid" if buy == "yes" else "ask"
+    px = float(price) if buy == "yes" else round(1.0 - float(price), 4)
+    h = hashlib.sha256(f"{ticker}|{buy}|{price}|{count}|{day}".encode())
+    b = build_order(ticker, side, px, count,
+                    REWARD_PREFIX + h.hexdigest()[:12], exchange_index)
+    return b
+
+
+def reward_cost(body):
+    """What the order costs a contract, whatever side it is on."""
+    p = float(body["price"])
+    return p if body["side"] == "bid" else round(1.0 - p, 4)
+
+
+def check_reward(body, market_exi, has_program, open_orders, at_risk):
+    """Refuse before signing. open_orders = reward orders resting now;
+    at_risk = $ in resting reward orders plus reward-market positions
+    (None = unreadable -> refuse)."""
+    bad = []
+    c = float(body["count"])
+    cost = reward_cost(body)
+    if body.get("post_only") is not True:
+        bad.append("post_only is not True")
+    if body.get("time_in_force") != "good_till_canceled":
+        bad.append("time_in_force is not good_till_canceled")
+    if body.get("side") not in ("bid", "ask"):
+        bad.append("side is not bid/ask")
+    if not (0.0 < cost <= REWARD_MAX_PRICE + 1e-9):
+        bad.append(f"pays {cost * 100:.2f}c a contract; reward orders pay "
+                   f"at most {REWARD_MAX_PRICE * 100:.0f}c")
+    if not (0.0 < c <= REWARD_MAX_COUNT):
+        bad.append(f"count {c:g} outside (0, {REWARD_MAX_COUNT:g}]")
+    if c * cost > REWARD_MAX_ORDER + 1e-9:
+        bad.append(f"order costs ${c * cost:.2f} > ${REWARD_MAX_ORDER:.2f}")
+    if market_exi is None:
+        bad.append("market's pool unreadable -- refusing blind")
+    elif int(market_exi) == BOT_POOL:
+        bad.append("market is in pool 2 (the live bots' pool) -- refused")
+    if int(body.get("exchange_index", -1)) != (
+            -2 if market_exi is None else int(market_exi)):
+        bad.append("order's exchange_index differs from the market's")
+    if not has_program:
+        bad.append("no active liquidity program on this market")
+    if open_orders is None or at_risk is None:
+        bad.append("could not read our reward orders/positions -- refusing")
+    else:
+        if open_orders >= REWARD_MAX_ORDERS:
+            bad.append(f"{open_orders} reward orders already resting "
+                       f">= {REWARD_MAX_ORDERS}")
+        if at_risk + c * cost > REWARD_MAX_TOTAL + 1e-9:
+            bad.append(f"reward money at risk ${at_risk + c * cost:.2f} would "
+                       f"exceed ${REWARD_MAX_TOTAL:.2f}")
+    return bad
+
+
+def reward_log(rec):
+    rec = dict(rec, t=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    with open(REWARD_LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def reward_state(base, pk, key_id):
+    """(our resting reward orders, $ at risk, tickers) or (None, None, set())
+    when unreadable. $ at risk = resting reward-order cost + exposure in any
+    market we have ever sent a reward order to (from the log)."""
+    rest, ok = resting_orders(base, pk, key_id)
+    if not ok:
+        return None, None, set()
+    mine = [o for o in rest
+            if str(o.get("client_order_id") or "").startswith(REWARD_PREFIX)]
+    tks = set(o.get("ticker") for o in mine)
+    try:
+        with open(REWARD_LOG, encoding="utf-8") as f:
+            for ln in f:
+                r = json.loads(ln)
+                if r.get("ticker"):
+                    tks.add(r["ticker"])
+    except FileNotFoundError:
+        pass
+    risk = sum(order_collateral(o) for o in mine)
+    st, p = send(base, pk, key_id, "GET", "/portfolio/positions",
+                 query={"limit": "1000"})
+    if st != 200 or not isinstance(p, dict):
+        return None, None, tks
+    for x in p.get("market_positions", []):
+        if x.get("ticker") in tks:
+            try:
+                risk += abs(float(x.get("market_exposure_dollars") or 0))
+            except Exception:
+                pass
+    return mine, risk, tks
+
+
+def reward_main(a):
+    base = PROD
+    pk = load_key(a.key_file)
+    if a.reward_status or a.reward_cancel:
+        mine, risk, tks = reward_state(base, pk, a.key_id)
+        if mine is None:
+            raise SystemExit("  *** could not read orders/positions ***")
+        st, bal = send(base, pk, a.key_id, "GET", "/portfolio/balance")
+        print(f"  pools: {pool_balances(bal)}  total "
+              f"${(bal or {}).get('balance_dollars')}")
+        print(f"  reward orders resting: {len(mine)}; money at risk "
+              f"${risk:.2f}")
+        for o in mine:
+            print(f"    {o.get('order_id')} {o.get('ticker')} "
+                  f"{o.get('side')} {o.get('action')} "
+                  f"yes {o.get('yes_price_dollars')} "
+                  f"left {o.get('remaining_count_fp')} "
+                  f"filled {o.get('fill_count_fp')}")
+        st, pp = send(base, pk, a.key_id, "GET", "/portfolio/positions",
+                      query={"limit": "1000"})
+        for x in (pp or {}).get("market_positions", []) \
+                if isinstance(pp, dict) else []:
+            if x.get("ticker") in tks:
+                print(f"    position {x.get('ticker')} "
+                      f"{x.get('position_fp')} exposure "
+                      f"${x.get('market_exposure_dollars')}")
+        if a.reward_cancel:
+            for o in mine:
+                if a.reward_cancel not in ("all", o.get("order_id")):
+                    continue
+                s, r, still = cancel(base, pk, a.key_id, o.get("order_id"),
+                                     o.get("exchange_index") or 0)
+                print(f"  CANCEL {o.get('order_id')} -> {s}; still resting: "
+                      f"{still}")
+                reward_log({"kind": "cancel", "order_id": o.get("order_id"),
+                            "ticker": o.get("ticker"), "status": s,
+                            "still": still})
+        return
+    if not (a.ticker and a.buy):
+        raise SystemExit("  --reward needs --ticker and --buy yes|no")
+    st, m = send(base, pk, a.key_id, "GET", "/markets/" + a.ticker)
+    mk = (m or {}).get("market") or {} if isinstance(m, dict) else {}
+    exi = mk.get("exchange_index")
+    st2, ip = send(base, pk, a.key_id, "GET", "/incentive_programs",
+                   query={"status": "active", "limit": "200",
+                          "market_ticker": a.ticker})
+    progs = [p for p in ((ip or {}).get("incentive_programs") or [])
+             if isinstance(ip, dict) and p.get("market_ticker") == a.ticker
+             and p.get("incentive_type") == "liquidity"]
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    body = build_reward_order(a.ticker, a.buy, a.reward_price, a.count,
+                              exi if exi is not None else -2, day)
+    mine, risk, _ = reward_state(base, pk, a.key_id)
+    bad = check_reward(body, exi, bool(progs),
+                       None if mine is None else len(mine), risk)
+    tok = token_for(body, base)
+    print("\n  REWARD ORDER, NOT YET SENT (production, real money):")
+    print(f"    market  : {a.ticker}  pool {exi}  status {mk.get('status')}  "
+          f"closes {mk.get('close_time')}")
+    for p in progs:
+        print(f"    program : ${p['period_reward'] / 10000:.2f} "
+              f"{p['start_date']} -> {p['end_date']}  target "
+              f"{p['target_size_fp']}  discount {p['discount_factor_bps']}bps")
+    print(f"    body    : {json.dumps(body)}")
+    print(f"    buys {a.buy.upper()} at {reward_cost(body) * 100:.1f}c x "
+          f"{float(body['count']):g} = worst case "
+          f"${reward_cost(body) * float(body['count']):.2f}; reward money "
+          f"already at risk ${risk if risk is not None else float('nan'):.2f}")
+    if bad:
+        print("\n  *** REFUSED BY THE RAILS ***")
+        for v in bad:
+            print("    - " + v)
+        raise SystemExit(1)
+    print(f"\n  SIGN-OFF TOKEN: {tok}")
+    if not a.live:
+        print(f"  DRY RUN. To send: add --live --signoff {tok}")
+        return
+    if a.signoff != tok:
+        raise SystemExit(f"  *** sign-off token mismatch. Expected {tok}. "
+                         f"REFUSING. ***")
+    st, resp = send(base, pk, a.key_id, "POST", "/portfolio/events/orders",
+                    body)
+    oid = (((resp or {}).get("order") or resp or {}).get("order_id")
+           if isinstance(resp, dict) else None)
+    print(f"  POST /portfolio/events/orders -> {st} {str(resp)[:300]}")
+    reward_log({"kind": "place", "status": st, "order_id": oid,
+                "ticker": a.ticker, "buy": a.buy, "body": body,
+                "programs": [{k: p.get(k) for k in (
+                    "id", "period_reward", "start_date", "end_date",
+                    "target_size_fp", "discount_factor_bps")}
+                    for p in progs]})
+    if st not in (200, 201):
+        print("  *** REJECTED. Nothing rests. ***")
+        return
+    print(f"  RESTING. order_id {oid}. It is NOT cancelled on exit; "
+          f"take it down with --reward-cancel {oid} (or all).")
+
+
 def selftest():
     set_env(True)
     print("=" * 78)
@@ -565,6 +781,47 @@ def selftest():
     if token_for({"pool_steps": [1]}, PROD) == token_for({"pool_steps": [2]}, PROD):
         fails.append("pool token does not change with the steps")
 
+    print("\n  reward-rest rails:")
+    ry = build_reward_order("KXTEST-1", "yes", 0.01, 1000, 0, "2026-09-26")
+    rn = build_reward_order("KXTEST-1", "no", 0.01, 1000, 0, "2026-09-26")
+    if ry["side"] != "bid" or float(ry["price"]) != 0.01 or \
+            rn["side"] != "ask" or float(rn["price"]) != 0.99:
+        fails.append(f"reward sides wrong: yes {ry['side']}@{ry['price']} "
+                     f"no {rn['side']}@{rn['price']}")
+    if abs(reward_cost(rn) - 0.01) > 1e-9:
+        fails.append("a NO buy at 1c is not costed at 1c")
+    for b_ in (ry, rn):
+        if check_reward(b_, 0, True, 0, 0.0):
+            fails.append(f"legal reward order refused: "
+                         f"{check_reward(b_, 0, True, 0, 0.0)}")
+    if ry["client_order_id"] != build_reward_order(
+            "KXTEST-1", "yes", 0.01, 1000, 0, "2026-09-26")["client_order_id"]:
+        fails.append("reward client id is not reproducible (token would "
+                     "never match)")
+    for desc, b_, exi, prog, n_open, risk in (
+            ("pays 2c", build_reward_order("KXTEST-1", "yes", 0.02, 100, 0,
+                                           "d"), 0, True, 0, 0.0),
+            ("NO buy paying 2c", build_reward_order("KXTEST-1", "no", 0.02,
+                                                    100, 0, "d"), 0, True, 0,
+             0.0),
+            ("1,001 contracts", build_reward_order("KXTEST-1", "yes", 0.01,
+                                                   1001, 0, "d"), 0, True, 0,
+             0.0),
+            ("in the bots' pool 2", build_reward_order(
+                "KXTEST-1", "yes", 0.01, 1000, 2, "d"), 2, True, 0, 0.0),
+            ("pool unreadable", ry, None, True, 0, 0.0),
+            ("exchange_index mismatch", ry, 3, True, 0, 0.0),
+            ("no program", ry, 0, False, 0, 0.0),
+            ("4 already resting", ry, 0, True, 4, 0.0),
+            ("total over $60", ry, 0, True, 1, 55.0),
+            ("orders unreadable", ry, 0, True, None, None),
+            ("post_only stripped", dict(ry, post_only=False), 0, True, 0,
+             0.0)):
+        v = check_reward(b_, exi, prog, n_open, risk)
+        print(f"    {desc:<34} -> {'REFUSED' if v else '*** ALLOWED ***'}")
+        if not v:
+            fails.append(f"reward: {desc} was NOT refused")
+
     print("\n  default environment:")
     print(f"    base defaults to DEMO: {DEMO}")
 
@@ -606,6 +863,14 @@ def main():
                     help="move cash between pools (prod): dollars or 'all'")
     ap.add_argument("--from-pool", type=int, default=0)
     ap.add_argument("--to-pool", type=int, default=2)
+    ap.add_argument("--reward", action="store_true",
+                    help="place ONE reward-rest order (prod, <=1c, rests "
+                         "until --reward-cancel)")
+    ap.add_argument("--buy", choices=["yes", "no"])
+    ap.add_argument("--reward-price", type=float, default=0.01)
+    ap.add_argument("--reward-status", action="store_true")
+    ap.add_argument("--reward-cancel", default="",
+                    help="order id, or 'all' reward orders")
     a = ap.parse_args()
     if not a.key_id:
         a.key_id = "5163259c-ecb0-4966-9053-0d2776cf061e"   # kauth.KEY_ID
@@ -616,6 +881,8 @@ def main():
         raise SystemExit("self-test failed; refusing to touch the API")
     if a.pools_off or a.move_dollars is not None:
         return pools_main(a)
+    if a.reward or a.reward_status or a.reward_cancel:
+        return reward_main(a)
     if not (a.ticker and a.price):
         raise SystemExit("\n--ticker and --price are required")
 
