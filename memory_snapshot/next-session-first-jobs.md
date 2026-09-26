@@ -13,14 +13,14 @@ the top section of `C:\kals-repo\HANDOFF.md` ("PICK UP HERE") before anything
 else** -- it holds the operator's last message and jobs P0-P7 in order.
 
 Short version:
-- **P0:** real-money orders from the Bash tool are blocked by Claude Code's
+- **P0 DONE 09-26 07:25Z** (permission rule in place). Real-money orders from the Bash tool were blocked by Claude Code's
   auto-mode classifier. The operator was given a one-liner (in HANDOFF) that
   adds `Bash(python research/polyorder.py:*)` and `Bash(python research/ordercli.py:*)`
   to `.claude/settings.local.json`. Check it is there; run those tools with the
   command STARTING with `python research/...` (no `cd &&`, no env prefix).
   Never edit the permission file yourself.
 - **P1 combine the cash (approved)**, **P2 run the reward test (approved)**,
-  **P3 Polymarket wire test (approved: "do what you want on polymarket")**.
+  **P3 Polymarket wire test PASSED 09-26 07:26Z** (key can trade; next Step 2). P2 needs a reward-rest mode in ordercli first (its caps: 20 contracts, 20 s rest).
 - **P4** Polymarket paper read ~09-28; **P5** bars ~10-01/02; coin race: not yet
   ready to size up.
 - Live: v-scalein-caps on v-safety2 (pid 2951024 at the end of the session).

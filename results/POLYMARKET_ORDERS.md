@@ -308,3 +308,12 @@ python research/polyorder.py ... --live --signoff <code printed by the dry run> 
 python research/polyorder.py --resolve <intent id>  # read-only
 python research/polyorder.py --ledger
 ```
+
+## Step 1 result -- 2026-09-26 07:26Z: PASS
+
+Order CQNA55ZVAYCA: buy 1 Up at $0.01, IMMEDIATE_OR_CANCEL, on
+cpc-btc-updown-15m-2026-09-26-0715z, sent by the session after the operator
+added the permission rule. HTTP 200; state ORDER_STATE_EXPIRED; filled 0; fee 0;
+clock skew 0.6 s. Read-back: 0 open orders, no position, buying power $60.5244
+(unchanged; $50 bonus held, $10 deposit not yet available, $0.5244
+withdrawable). Every pass condition met; no kill condition hit. Next: Step 2.

@@ -25,7 +25,9 @@ first, anything he must do in a final `## What I need from you` section.
 
 ## 1. Pick-up jobs, in order ("Say:" phrases he can use)
 
-- **P0 -- permission rule (he runs it; never edit permissions yourself).** Claude
+- **P0 -- permission rule: DONE 2026-09-26 07:25Z** (he ran the one-liner; the
+  allow list now holds `Bash(python research/polyorder.py:*)` and
+  `Bash(python research/ordercli.py:*)`). Kept for reference: Claude
   Code's auto-mode classifier blocks real-money orders from the Bash tool
   ("Real-World Transactions") even with his chat "yes". He was given this
   one-liner to run in the terminal (it appends two allow rules to
@@ -52,7 +54,15 @@ first, anything he must do in a final `## What I need from you` section.
   Evidence: `results/IDEA_SWEEP_2026-09-25.md` "Found along the way" (N03/I49 in
   `results/idea_sweep_2026-09-25.json`). Afterwards pinrun sizes on real
   spendable cash; watch the autosize record.
-- **P2 -- "run the reward test" (APPROVED).** Kalshi's liquidity-incentive
+- **P2 -- "run the reward test" (APPROVED) -- BUILD FIRST:** `research/ordercli.py`
+  as it stands CANNOT run it: prod ceilings are MAX_COUNT 20, MAX_NOTIONAL $15,
+  MAX_OPEN_ORDERS 4, MAX_DEPLOYED $21, and it cancels every order after
+  `--rest-seconds` (default 20 s). The test needs 500-1,000 contracts resting
+  48-72 h. Build a separate reward-rest mode (or a new file whose command still
+  starts with `python research/ordercli.py` so the P0 rule covers it): price
+  <= 1c only, post_only, its own caps (e.g. <= 1,000 contracts and <= $10 per
+  order, <= $60 total, <= 4 orders), no auto-cancel, order ids logged, a
+  `--cancel` and a `--status` read; self-test; dry-run + token as today. Then: Kalshi's liquidity-incentive
   programs pay daily pots to resting orders; 7 sweep ideas (IDEA_SWEEP rows 1-4,
   I02/I05/I16/I19/I20/I21/I22) hinge on whether Kalshi pays THIS account. Test:
   2-4 resting 1c BUY orders of 500-1,000 contracts on quiet reward markets
@@ -70,7 +80,10 @@ first, anything he must do in a final `## What I need from you` section.
   resting order in a market the live bot also trades would be adopted/hedged by
   v-safety2 -- keep the reward test OUT of the bot's series (crypto 15M,
   KXBTCD, coin race) or use a subaccount.
-- **P3 -- "run the Polymarket wire test".** 1 Up contract at 1c on an OPEN
+- **P3 -- Polymarket wire test: PASSED 2026-09-26 07:26Z.** Order CQNA55ZVAYCA,
+  buy 1 Up at 1c IOC on cpc-btc-updown-15m-2026-09-26-0715z: HTTP 200, state
+  EXPIRED, 0 filled, 0 open orders after, no position, buying power $60.5244
+  unchanged. The key CAN trade. Next: Step 2 (below). Original notes: 1 Up contract at 1c on an OPEN
   window (should not fill, <= 1c at risk) proves his key can trade. Get a fresh
   code each time (a code binds one window):
   `python research/polyorder.py --slug cpc-btc-updown-15m-YYYY-MM-DD-HHMMz --side up --price 0.01 --qty 1`

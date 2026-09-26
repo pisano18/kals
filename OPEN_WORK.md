@@ -15,7 +15,7 @@ moment a state changes; it is the operator's index to the work.
 **Say: "pick up where we left off".** The top of `HANDOFF.md` ("PICK UP HERE",
 2026-09-26) has the last instructions and jobs P0-P7.
 
-### A13. The reward test -- APPROVED 2026-09-26, waiting on the permission rule
+### A13. The reward test -- APPROVED 2026-09-26; the order tool needs a reward mode first
 **Say: "run the reward test".** Kalshi pays daily reward pots to people whose
 orders sit in certain quiet markets. Seven ideas from the money sweep depend on
 whether Kalshi pays OUR account. Test: 2-4 resting 1-cent buy orders, at most
@@ -28,9 +28,9 @@ bot trades. Details: HANDOFF P2, `results/IDEA_SWEEP_2026-09-25.md` row 1.
 crypto bot cannot spend it, while the bot sizes its bets on the full balance
 (about 13% too big). The operator said combine it. API-only on Kalshi; HANDOFF P1.
 
-### A15. Polymarket wire test -- APPROVED, not yet run
-**Say: "run the Polymarket wire test".** Buy 1 Up at 1c on an open window
-(should not fill; at most 1 cent). Then Step 2 (20 windows at 1 contract) per
+### A15. Polymarket -- wire test PASSED 2026-09-26 3:26 AM ET; next is Step 2
+**Say: "Polymarket step 2".** The 1-cent test order was accepted, did not fill,
+left nothing open and cost nothing: the key can trade. Then Step 2 (20 windows at 1 contract) per
 `results/POLYMARKET_ORDERS.md`. The operator: "do what you want on polymarket".
 Paper results due ~09-28 ("read the Polymarket paper results").
 
