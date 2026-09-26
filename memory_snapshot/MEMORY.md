@@ -1,0 +1,30 @@
+- [Next session: first jobs](next-session-first-jobs.md) - RAISE FIRST: HANDOFF.md 'PICK UP HERE' 09-26; approved: combine cash, reward test, Polymarket test; P0 permission rule
+- [Operator context: Virginia, phone approvals](operator-context-virginia.md) - VA; had DK+FD; phone `!` lines don't run; order tools need his permission rule
+- [Continuity lives in the repo docs](handoff-is-the-only-continuity.md) - sessions don't carry over; CLAUDE.md table -> CURRENT_STATE -> HANDOFF top
+- [OPEN_WORK.md is the topic index](open-work-is-the-topic-index.md) - Joe names topics by "Say:" handle; update in the same commit
+- [Money sweep is a playbook](money-sweep-playbook.md) - "run the money sweep" = research/sweep/README.md; check IDEA_LEDGER.md first
+- [Money permission scope](money-permission-scope.md) - 09-07 blanket OK, never margin/loans/deposits; CONFLICTS with CLAUDE.md
+- [DO the restart, don't ask](do-the-restart-yourself.md) - run restart_bot.ps1 yourself via the Bash tool; ask only before moving a risk limit he set
+- [Operator pushback is usually right](operator-pushback-is-usually-right.md) - re-derive when challenged; he hates blind agreement
+- [Live interaction latency](live-interaction-latency.md) - when Joe is in a live chat/call, answer in one line first; tools after
+- [Measure, then ship only what is positive](measure-then-ship-only-positive.md) - his ideas are suggestions; price rules on the per-second rebuild
+- [Desktop app is the control surface](desktop-app-is-the-control-surface.md) - Pin Bot Start/Pause/Stop; results/pinrun-live.stop = he stood it down
+- [The disk is the real deadline](the-disk-is-the-real-deadline.md) - recorders stop for good at 5 GB (guard 6); 2 TB drive NOT bought; rate unsettled
+- [Never quote a bank delta as profit](never-quote-a-bank-delta-as-profit.md) - pinxfer owns deposits, the ledger owns money
+- [Paper-log money fields](paper-log-money-fields.md) - `settled.realised` is a running day total; per-market money is `pnl_c`/100; armh2h2.py
+- [Hedging is about break-even](hedging-is-net-negative-so-far.md) - -$9.35 lifetime; live hedges ALL at belief 0.40; A76 removed; no alarm predictor
+- [A gate must never block a hedge](a-gate-must-never-block-a-hedge.md) - 09-19: gates blocked hedges; write down what a gate BLOCKS
+- [Run the startup path with the new flag](run-the-startup-path-with-the-new-flag-before-restarting-live.md) - startup self-test runs WITH flags
+- [Validate before you kill](validate-before-you-kill.md) - restart_bot stops the bot first; check the argv (stray PowerShell comma) BEFORE the kill
+- [Arm data was measuring nothing](arm-data-was-measuring-nothing.md) - arm results before 09-20 void; valid from 09-22 06:21Z
+- [An arm must have exercised its flag](an-arm-must-have-exercised-its-flag.md) - check shared markets (`h2h`) and that the flag fired before quoting
+- [Coin race size and direction](coin-race-size-and-direction.md) - 5 contracts a leg since 09-24 (v-race5); next step waits on photo-finish arm
+- [Usable supply DID halve (09-22)](supply-exists-we-arrive-late.md) - offers at our confidence -54% from 09-16; missed deals $3-5/day, not $50-60
+- [Baseline error is our recurring bug](baseline-error-is-our-recurring-bug.md) - never compare against a peak; report the MEDIAN of earlier days too
+- [The weekend carries the cheap offers](saturday-carries-the-cheap-offers.md) - 09-13 was a SUNDAY; check weekdays with a calendar
+- [Compare against the real alternative](compare-against-the-real-alternative.md) - price a "defect" vs what was really possible
+- [Check log dates against the deploy first](check-the-log-dates-against-the-deploy-first.md) - histogram a log pattern vs VERSIONS.md
+- [Self-test finds its own string](a-selftest-that-searches-this-file-finds-itself.md) - `src.index(literal)` hits the test's copy; rindex/anchor
+- [Never rebase with live bots](never-rebase-with-live-bots.md) - pull --rebase/stash/reset reverts tracked live-state files; fetch + merge only
+- [Process query matches own shell](process-query-matches-own-shell.md) - `-like '*x.py*'` matches the querying shell; filter Name='python.exe'
+- [Bash heredoc halves backslashes](bash-heredoc-halves-backslashes.md) - write scripts with the Write tool and run by path

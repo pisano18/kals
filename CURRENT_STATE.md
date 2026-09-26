@@ -1,5 +1,12 @@
 # CURRENT_STATE.md -- read this FIRST
 
+> **PICK UP HERE (2026-09-26 ~07:30Z, end of the 09-24..26 session):** read the
+> top section of `HANDOFF.md` ("PICK UP HERE"). It lists the operator's last
+> instructions (combine the Kalshi cash pools; run the reward test; he is in
+> Virginia and has had DraftKings/FanDuel accounts), the permission rule he was
+> given (P0), and the jobs P1-P7 in order with their "Say:" phrases.
+
+
 **As of 2026-09-25 ~07:0xZ.** If that is more than a day old, re-check the live
 numbers before quoting them. All times here are UTC; say them to the operator
 in ET.

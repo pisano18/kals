@@ -11,6 +11,35 @@ moment a state changes; it is the operator's index to the work.
 
 ## A. Running tests — nothing here changes the bot until its bar is met
 
+### A00. PICK UP WHERE WE LEFT OFF
+**Say: "pick up where we left off".** The top of `HANDOFF.md` ("PICK UP HERE",
+2026-09-26) has the last instructions and jobs P0-P7.
+
+### A13. The reward test -- APPROVED 2026-09-26, waiting on the permission rule
+**Say: "run the reward test".** Kalshi pays daily reward pots to people whose
+orders sit in certain quiet markets. Seven ideas from the money sweep depend on
+whether Kalshi pays OUR account. Test: 2-4 resting 1-cent buy orders, at most
+about $60 at risk, answer in 2-3 days. Pass: paid at least half of what the
+rules predict on 2+ markets. Kill: $0 after 3 days. Kept out of the markets the
+bot trades. Details: HANDOFF P2, `results/IDEA_SWEEP_2026-09-25.md` row 1.
+
+### A14. Combine the Kalshi cash -- APPROVED 2026-09-26
+**Say: "combine the cash".** An automatic 85/15 split parks about $139 where the
+crypto bot cannot spend it, while the bot sizes its bets on the full balance
+(about 13% too big). The operator said combine it. API-only on Kalshi; HANDOFF P1.
+
+### A15. Polymarket wire test -- APPROVED, not yet run
+**Say: "run the Polymarket wire test".** Buy 1 Up at 1c on an open window
+(should not fill; at most 1 cent). Then Step 2 (20 windows at 1 contract) per
+`results/POLYMARKET_ORDERS.md`. The operator: "do what you want on polymarket".
+Paper results due ~09-28 ("read the Polymarket paper results").
+
+### A16. The money sweep results -- 2026-09-25
+**Say: "the money sweep".** 119 agents, nothing proven; top lead is the reward
+test (A13). `results/IDEA_SWEEP_2026-09-25.md`; every idea is a row in
+`results/IDEA_LEDGER.md`. Also: the 60-day money chart
+https://claude.ai/artifact/WeWnNH1dKZ2TZ5Z6MBgBh3 ("show the bank outlook").
+
 ### A0. The money-idea sweep — many agents hunting for new ways to make money
 **Say: "the money sweep" (results) or "run the money sweep" (a new run).**
 On 2026-09-25 about 100 agents went through every kind of bet on Kalshi and
@@ -198,6 +227,7 @@ Report: `python research/quakewatch.py --report`.
 ## B. Coin race
 
 ### B1. Size — now 5 contracts a leg (`v-race5`, 2026-09-24)
+**2026-09-26: NOT yet ready to size up.** 18 of 18 races won at 5 contracts (+$3.80); 84 won + 1 tie of 85 since 09-22. Waits on the photo-finish arm and ~100 races at 5 with 0 losses.
 **Say: "coin race size."**
 Was 1 contract. Record since 2026-09-22: 60 races, 59 won, 1 tie, 0 lost,
 +$1.17. Break-even needs 97.7 legs paying per 100; we are at 98.9 — a

@@ -1,3 +1,205 @@
+# PICK UP HERE -- 2026-09-26 ~07:30Z -- end of the 09-24..26 session (context gone after this)
+
+**A new session: read this whole section first.** Then `CURRENT_STATE.md`, then
+`OPEN_WORK.md` (the operator's topic index; he names topics by their "Say:"
+handle), then `results/IDEA_LEDGER.md` (every money idea ever checked -- read it
+before proposing one). All times below are UTC; say them to him in ET (EDT =
+UTC-4). His reporting rules are in CLAUDE.md: plain language, short, reason
+first, anything he must do in a final `## What I need from you` section.
+
+## 0. What the operator said in his LAST message (2026-09-26 ~07:2xZ) -- act on it
+
+1. **"Yes combine all the cash."** -> job P1 below.
+2. **"Run the reward test."** -> job P2 below (APPROVED by him; blocked only by
+   the permission rule, see P0).
+3. **State and sportsbook history:** "Virginia I think. I've had a DraftKings and
+   FanDuel account, maybe probably not BetMGM, and definitely no Caesars or
+   Fanatics." (Virginia has legal online sportsbooks, so the prediction-app
+   sign-up bonuses that need a no-sportsbook state do not apply; DK/FD new-user
+   bonuses are used. Kalshi sports orders were accepted from Virginia on 09-06.)
+4. **"Can coin race scale up yet"** -> answered: NOT YET (section 4, B1).
+5. He had NOT yet run the Polymarket 1-cent wire test (his first try named a
+   closed window; the rails refused it -- correct).
+6. **"give another [command] that'll be a permanent fix and I'll do it"** -- the
+   permission rule in P0. He said he would run it.
+
+## 1. Pick-up jobs, in order ("Say:" phrases he can use)
+
+- **P0 -- permission rule (he runs it; never edit permissions yourself).** Claude
+  Code's auto-mode classifier blocks real-money orders from the Bash tool
+  ("Real-World Transactions") even with his chat "yes". He was given this
+  one-liner to run in the terminal (it appends two allow rules to
+  `C:\kals-repo\.claude\settings.local.json` and keeps the existing ones; tested
+  on a copy):
+  `! python -c "import json;p='C:/kals-repo/.claude/settings.local.json';d=json.load(open(p));a=d['permissions'].setdefault('allow',[]);[a.append(r) for r in ('Bash(python research/polyorder.py:*)','Bash(python research/ordercli.py:*)') if r not in a];json.dump(d,open(p,'w'),indent=2);print(a)"`
+  Check first: `cat .claude/settings.local.json` shows both rules. **The rule only
+  matches a command that STARTS with `python research/polyorder.py` or
+  `python research/ordercli.py`** -- no `cd ... &&`, no `PYTHONIOENCODING=...`
+  prefix, no `timeout`. If it is not there, ask him to run the one-liner.
+- **P1 -- "combine the cash" (APPROVED).** Kalshi keeps cash in pools; crypto
+  orders draw only on the crypto pool. An automatic 85/15 split is on and parked
+  ~$139 of the 09-19 deposit outside pinrun's reach, while pinrun sizes on the
+  account total (~$1,086 vs ~$947 spendable, ~13% oversize; no harm seen yet).
+  He said yes to: switch the automatic split OFF and move the money into the
+  crypto pool (the sweep suggested keeping ~$60 aside for the reward test --
+  only if the reward test needs a different pool; check). Kalshi subaccounts are
+  API-only: read `GET /portfolio/subaccounts/balances` and the transfer history
+  (`/portfolio/intra_exchange_instance_transfers`), find the documented
+  endpoints for the allocation setting and a transfer, and build it on the
+  ordercli.py pattern (dry-run + token). It moves his own money between his own
+  pools (no market risk) but it is a write; the classifier may still block it
+  -- if so, tell him it is a Kalshi-app setting or needs a rule like P0.
+  Evidence: `results/IDEA_SWEEP_2026-09-25.md` "Found along the way" (N03/I49 in
+  `results/idea_sweep_2026-09-25.json`). Afterwards pinrun sizes on real
+  spendable cash; watch the autosize record.
+- **P2 -- "run the reward test" (APPROVED).** Kalshi's liquidity-incentive
+  programs pay daily pots to resting orders; 7 sweep ideas (IDEA_SWEEP rows 1-4,
+  I02/I05/I16/I19/I20/I21/I22) hinge on whether Kalshi pays THIS account. Test:
+  2-4 resting 1c BUY orders of 500-1,000 contracts on quiet reward markets
+  (weekly politics / Trump approval / Rotten Tomatoes, early in the week; NOT
+  Miami temperature -- stacks there get bought within minutes), each on the
+  empty side where the program's rules pay; max ~$60 at risk (a 1c order can
+  lose only its cost). Log the book every 5 min; read the balance 48-72 h later;
+  keep it apart from the ~$1.2 Kalshi interest credit due Oct 1-15.
+  **Pass:** credit >= 50% of the rules' prediction on >= 2 sides. **Kill:** $0
+  after 72 h where >= $3/side was predicted. Tool: `research/ordercli.py`
+  (always post_only, dry-run + token, `--live --signoff`). Read the program
+  rules first (`/incentive_programs` or the docs; the sweep's
+  `combine-wild-card/lip_status.py` in the old scratchpad read `paid_out`).
+  Note the risks the sweep named: Kalshi can revoke reward eligibility; a
+  resting order in a market the live bot also trades would be adopted/hedged by
+  v-safety2 -- keep the reward test OUT of the bot's series (crypto 15M,
+  KXBTCD, coin race) or use a subaccount.
+- **P3 -- "run the Polymarket wire test".** 1 Up contract at 1c on an OPEN
+  window (should not fill, <= 1c at risk) proves his key can trade. Get a fresh
+  code each time (a code binds one window):
+  `python research/polyorder.py --slug cpc-btc-updown-15m-YYYY-MM-DD-HHMMz --side up --price 0.01 --qty 1`
+  then the printed `... --live --signoff <code>` line (window start in UTC;
+  pick one with >= 4 min left). He also said "Yes do what you want on
+  polymarket": after the wire test passes, Step 2 in
+  `results/POLYMARKET_ORDERS.md` (20 windows x 1 contract, <= 98c; stop on 2
+  losses) needs the paper bot's decision wired to polyorder -- described in
+  that file, NOT built. Polymarket money: $50 promo bonus (held) + $10 Apple Pay
+  deposit (was pending) + $0.52 cash. If polyorder is refused 401/403: new key at
+  polymarket.us/developer -> `C:\kals\polymarket_trade_key.json`, `--creds`.
+- **P4 -- ~2026-09-28 ~06Z: "read the Polymarket paper results".** Recorder
+  `scan_poly_ws.py` (scratchpad, pid 3080604, ends ~09-28 06:11Z) and paper bot
+  `research/polypaper.py` (pid 3088064, `--report`) -- both restarted 09-25
+  22:26Z with the subscribe fix (before it, ~4 in 10 windows were missed).
+  Decides whether Polymarket gets a funded leg.
+- **P5 -- ~2026-10-01/02: "read the bars".** `python research/bars.py` (or /bars
+  on the phone). Fixed 09-25: bars read from their pre-registered start
+  (fresh test starts 09-24 08:08Z). Arms re-synced 09-25 12:25Z onto
+  v-scalein-caps.
+- **P6 -- "coin race size"**: not yet (section 4).
+- **P7 -- rungwatch**: create `results/rungwatch.stop` (the far-rung idea is dead;
+  the watcher is still running and can stop any time).
+
+## 2. Live money right now
+
+- **pinrun --live** pid 2951024 since 2026-09-25 12:23:53Z, code_sha
+  f9548c5571ff = **v-scalein-caps** on top of **v-safety2**, v-zerotake,
+  v-ladder7, v-farrung (all flags of the last two OFF). Argv = restart_bot.ps1
+  (`--series KXBTCD --series-size 1`: hourly BTC at 1 contract). `--minutes 4320`
+  -> exits ~09-28 12:23Z, watch_bot restarts it. Bank ~$1,086 (Kalshi total),
+  auto-size ~88-90. Caps now 133.5 contracts / $544 per run (designed values).
+- **Coin race live** pid 2707284 since 09-24 15:16Z, 5 contracts a leg, ends
+  ~10-01 15:16Z (relaunch by hand with the v-race5 argv in VERSIONS.md).
+- **Tonight's live changes (each has a VERSIONS.md entry with a revert):**
+  - v-ladder7 (03:2xZ 09-25, paper only): 7 hourly ladders known to the code.
+  - v-farrung (code, flags OFF): far-rung 99c code; the idea is DEAD.
+  - v-zerotake (06:25Z): never send a 0-contract order (a HYPE late add on a
+    1.5x-full position halted the bot at 06:15Z).
+  - v-safety2 (09:36Z): asks Kalshi what it holds at startup and after any lost
+    reply; books/hedges a fill it did not see; re-sends a lost hedge that did
+    not fill; "0.00" orders are zero; paper bookings no longer collide. Record
+    kind `ktruth`. Measured: no slowdown (near-close worst gap 994 -> 973 ms).
+  - v-scalein-caps (12:23Z): a same-market scale-in needs a genuinely cheaper
+    ASK (A23 used to compare against the sweep-inflated average paid: 6 such
+    buys since 09-18 netted -$50.83) and buys only the cheaper contracts;
+    pintake rails back at designed size with HEDGES exempt from the stake cap
+    and loss abort (0 of 1,467 entries / 41 hedges would have been refused).
+    pintake.py changed too; coin race is unaffected (never passes hedge=True).
+- Money: 09-24 ET +$93.68; Kalshi ledger lifetime +$460.26 over 1,115 markets
+  (to 09-25 07Z), fees $131.26; the account reconciles to 3 cents; the old
+  "$16 gap" is explained (09-17 21:15 ET close, two unlogged markets).
+
+## 3. Everything else running
+
+| what | pid | ends / read |
+|---|---|---|
+| kalshi_collector / crypto_feeds (run_all.ps1 101860) | 2532788 / 105352 | always; disk ~84 GB free after the operator deleted a game |
+| watch_bot.ps1 / pindesk (app) / pinphone (Telegram) | 2839244 / 2842980 / 2916264 | always |
+| paper arms (sync_arms.ps1 rows): brake3, btcd, early-off, edge2c, fresh500, lateadd-off, toxic, hourly-all | 2972504, 2967156, 2971452, 2929736, 2968932, 2966252, 2836048, 2972548 | started 09-25 12:25Z, 10080 min -> ~10-02 |
+| arm-live-frozen (09-20 settings, pinned) | 2896212 | ~10-02 06:30Z |
+| arm-afternoon (manual, pinrun_afternoon.py) | 2564788 | ~09-27 03:51Z; let it lapse |
+| coin race paper arms z3, gap075 | 2574672, 2577788 | ~10-01 |
+| race controls racectl/raceedge0/racetau40, cmdarm x2 | 2592448.. / 2695900, 2703040 | ended/ending ~09-27; let lapse |
+| kalshiwatch.py (hourly Kalshi change watcher; alerts -> results/kalshiwatch-alerts.jsonl) | 2917772 | stop: results/kalshiwatch.stop. First real test: Kalshi removes `liquidity_dollars` Oct 1 -- it must warn |
+| polypaper.py / scan_poly_ws.py | 3088064 / 3080604 | ~09-28 |
+| wxwatch / quakewatch / rungwatch | 2617292 / 2616700 / 2855812 | ~09-28 / ~10-08 / stop any time |
+| cdc_record.py, pinledgerd.py | 345648, 802568 | old daemons; leave |
+
+Windows: Update may NOT reboot while he is signed in (policy set 09-25; revert
+in CURRENT_STATE). After a reboot nothing restarts until he signs in (KalsBoot
+is interactive) -- automatic sign-in is still his to-do.
+
+## 4. Answers and decisions from this session (do not re-open without new data)
+
+- **Coin race scale-up: NOT YET.** Since v-race5 (5 contracts, 09-24 15:16Z): 18
+  races, 18 won, +$3.80. Since 09-22: 85 races, 84 won, 1 tie (a tie = loss for
+  the stop rail). The risk agent said hold at 5. Next step waits on the
+  photo-finish arm (gap075) and ~100 races at 5 contracts with 0 losses.
+- **Far rungs at 99c: dead** (results/FAR_RUNG_2026-09-25.md verdict).
+- **Market making on 15-min crypto: dead** (MAKER_SIM_2026-09-24 section 9).
+- **Hedge "cash out AND hedge" (flip): dead** (results/HEDGE_FLIP_2026-09-25.md).
+  Hedging at 0.40 beats earlier/later/half. Lead: slow slides revert 45/100 vs
+  14/100 for jumps -- check on our fills when there are more hedges.
+- **Combos: dead** for our strategy (results/COMBOS_2026-09-25.md).
+- **Model calibration:** fair() is 20-80x overconfident above P 0.999 on the
+  index tape, roughly right below 0.995; no index-side fix pays on our fills --
+  the loss signal is market-side (who sells to us), i.e. the toxic/fresh tests.
+- **Speed:** a nearby server is worth ~$1-2/day on speed alone; reusing ONE
+  HTTPS connection per order would recover ~40 ms for free (ordercli.send opens
+  a new one each time) -- a live change not yet built (results/LATENCY_2026-09-25.md).
+- **Time-of-week sizing:** nothing survives (results/TIME_EDGE_2026-09-25.md).
+- **Constituent-exchange predictor:** no gain without peeking (CONSTITUENT_PREDICT).
+- **Rival bots:** no new warning sign; "people selling our side" is the one
+  separator (results/COMPETITORS_2026-09-25.md).
+- **Red team:** reds 1-2 fixed by v-safety2; others in results/RED_TEAM_2026-09-25.md
+  (e.g. the ET day key hard-codes UTC-4 -> from 2026-11-02 04:00Z the $200 day
+  cap rolls at 23:00 ET: FIX BEFORE NOV 1; a --minutes end can exit mid-bet).
+- **Taxes:** Kalshi sends no form for event-contract trades; treatment is
+  unsettled ($460 to $1,529 of taxable income depending on the rule); he should
+  book a preparer before Jan 15 2027 (results/TAX_NOTES_2026-09-25.md;
+  research/taxledger.py rebuilds the CSV, kept out of git).
+- **60-day money projection:** results/PROJECTION_2026-09-25.md, research/moneyproj.py;
+  chart page (private artifact) https://claude.ai/artifact/WeWnNH1dKZ2TZ5Z6MBgBh3 .
+  Headline: middle $2,924 on day 60 from $1,045; the 20% stop fires in 97/100
+  paths on the headline week (one bug day), 19/100 without it.
+- **The money sweep** (119 agents): nothing proven; top lead = the reward test
+  (P2); all 63 checked ideas are rows in results/IDEA_LEDGER.md. Re-run:
+  research/sweep/README.md ("run the money sweep").
+- **Unverified open lead:** does pinrun's profit grow with bet size? If not,
+  ideas cut for "displacing pinrun's cash" come back (IDEA_SWEEP).
+
+## 5. Traps that cost time this session
+
+- Bash heredocs HALVE backslashes (a revert path shipped with a CR; a Python
+  string got split): write scripts with the Write tool and run by path.
+- `"out = pintake.take("` is a substring of the hedge's `"_hout = pintake.take("`.
+- The harness reaps its own background shells when free RAM nears 1 GB; detach
+  anything that must live with Start-Process (launchers then linger -- harmless).
+- Git Bash turns `/v` into a path: `MSYS_NO_PATHCONV=1` before `reg`.
+- A progress count of FILES is not a count of hours (maker sim).
+- Supply on the wrong market: "99c offers" were on the next-to-settle rung.
+- Polymarket rejects a WHOLE subscribe request that repeats an already
+  subscribed slug.
+- git: fetch + merge only (pindesk auto-commits LEADS/collide files).
+- `!` lines typed from the phone app do NOT run on the laptop.
+
+---
+
 # 2026-09-25 ~07:2xZ -- DOCS HOUSEKEEPING (no code, no process touched)
 
 HANDOFF.md keeps sections from 2026-09-23 on; everything older moved verbatim
