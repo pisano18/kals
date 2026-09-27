@@ -11,6 +11,23 @@ moment a state changes; it is the operator's index to the work.
 
 ## A. Running tests — nothing here changes the bot until its bar is met
 
+### A17. The "fix this" night, 2026-09-27 -- three live changes and the diagnosis
+**Say: "why no money"** (the diagnosis, `results/WHY_NO_MONEY_2026-09-27.md`),
+**"the seller gate"** (v-toxic-live, read 10-01), **"the 97.8c ceiling"**
+(v-ceiling978), **"one full bet"** (v-onefull, code), **"the insurance ruler"**
+(`results/PREREG_hedge_margin.md`, read after the next 5 hair-over alarms, not
+before 10-10), **"the full early leg"** (paper arm arm-early-full, pid 3507244,
+not in sync_arms.ps1). All four live changes have a one-line revert in
+`results/VERSIONS.md`. Open question to him: **"bet size: keep or freeze"**.
+- Diagnosis in one line: picking is unchanged (2.3 -> 2.0 losses per 100); a win
+  pays $1.69 -> $1.93 while a loss costs $25 -> $80 because the bet grew 4x into
+  ~60 cheap contracts a market and the two worst markets were same-second double
+  bets. Expect $10-55 a day; the changes shrink a bad night, not its frequency.
+- Dead this night (do not re-run): see HANDOFF top, section 2.
+- A13 (reward test): DEAD -- the order filled in 1 h 40 min; nothing measurable.
+- A14 (combine the cash): DONE 09-26 (v-onepool; new deposits may land in pool 0).
+- B1 (coin race size): 10 contracts a leg since 09-27 06:01Z (v-race10).
+
 ### A00. PICK UP WHERE WE LEFT OFF
 **Say: "pick up where we left off".** The top of `HANDOFF.md` ("PICK UP HERE",
 2026-09-26) has the last instructions and jobs P0-P7.

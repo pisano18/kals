@@ -1,3 +1,128 @@
+# PICK UP HERE -- 2026-09-27 ~08:3xZ -- the "fix this" night (three live changes, one code change; read before anything)
+
+**A new session: read this section, then `CURRENT_STATE.md`, `OPEN_WORK.md`,
+`results/WHY_NO_MONEY_2026-09-27.md` (the diagnosis the operator was given),
+`results/VERSIONS.md` (top four entries).** All times UTC; tell him ET (EDT = UTC-4).
+His rules (CLAUDE.md): plain words, short, reason first, decisions last. New this
+night, his words: "You run them and all the rest of the commands for the whole
+project, you have permission to do anything, run anything, and spend anything"
+and "run the command yourself from here out I said I don't want to have to do
+that" -- do restarts and orders yourself (memory `money-permission-scope`,
+`do-the-restart-yourself`). The restart command that is allow-listed:
+`powershell -NoProfile -ExecutionPolicy Bypass -File C:/kals-repo/restart_bot.ps1`
+(forward slashes, nothing in front). Order tools: `python research/ordercli.py ...`
+typed exactly with that prefix.
+
+## 0. What happened (ET Sunday 09-27, so far -$165 by 03:00 ET)
+
+- 00:00 ET BTC: -$131.98 after the hedge (would have been -$194). Two full legs
+  (99 @ 97.89c, 99 @ 97.0c) at 30 s on fresh asks (148 / 50 ms) while takers
+  sold 56-58% of our side; one Coinbase sweep took BTC -$22 in one second 6 s
+  later; the Kalshi book collapsed 99c -> 55c half a second BEFORE the index
+  printed it. Post-mortem: `results/POSTMORTEM_2026-09-27.md`.
+- 02:30 ET ETH: -$32.73 = a winning entry (+$13.70, YES @ 83.47c at 17 s) killed
+  by a false-alarm hedge (-$46.42, NO @ 51c at 10 s, belief 0.35); the settle
+  landed 2 cents our side. Same shape as 09-26 BNB (-$20.29, hedge at 5 s,
+  half a cent). Insurance lifetime: 9 false alarms -$263 / 13 real +$208.
+- The operator's demand ("this bot simply makes no money and for some reason it
+  used to ... SOLVE BY ANY MEANS") -> 23-agent study -> WHY_NO_MONEY. Diagnosis
+  in one line: the bot picks as well as ever (2.3 -> 2.0 losses per 100), but a
+  win pays $1.69 -> $1.93 while a loss costs $25 -> $80, because the bet grew 4x
+  into a market that sells ~60 cheap contracts whatever we ask (offers under
+  97.5c at fire time: 30-68/day on 09-14..16, zero on 9 of the last 10 days),
+  and the two worst markets were same-second DOUBLE bets on BTC.
+
+## 1. Live now (pinrun pid 3510420 since 08:11:15Z, `--minutes 4320` -> exits ~09-30 08:11Z, watch_bot restarts it with the same argv)
+
+Three changes, each with a VERSIONS entry and a one-line revert:
+1. **v-toxic-live 05:08Z** `--toxic-fresh`: >20 s left, refuse an entry on an
+   ask level < 500 ms old while takers sold > 50% of our side in 3 s. On the
+   record +$168..+$401 over 19 days, -$66..-$127 in the quiet first half
+   (idle cost ~$8-17/day). READ 10-01 per POSTMORTEM section 3 (replaces the
+   PREREG_toxic read): OFF if it caught nothing AND skipped > $75 of wins, or
+   refuses > 25 in 100 early entries. Inside 20 s the same pattern had 5 of 5
+   winners since 09-24 -- do NOT extend it.
+2. **v-ceiling978 07:05Z** `--price-ceiling 0.978`: no buys at 97.9-98c. The
+   98c band: 301 markets, 1.7 losses/100 vs 2.0 break-even, -$5 own-leg, a
+   third of all contracts for $0. Watch: contracts/day down ~a third, income
+   not down.
+3. **v-onefull 08:11Z** `--one-full-bet` (CODE: pinrun.py rebuy_ok refuses the
+   A23 scale-in past a full position; top-up and late add untouched; 7 new
+   self-test checks, 1,270 total): worst single market ~$95 not ~$193. Costs
+   ~$2/day of winning double bets. Watch `refused` gate rebuy_band on full
+   positions; never two full entry orders on one market in a close.
+- Coin race **v-race10 06:01:49Z pid 3483656**: 10 contracts a leg, stake cap
+  $60 (pintake's rail refuses more; 10 x 5 legs x 0.97 = $48.50 fits). "Go
+  10" was his call; 38/38 won at 5 before it. `--minutes 10080` -> ends
+  ~10-04 06:01Z, relaunch BY HAND (argv in VERSIONS v-race10).
+- v-onepool 07:38Z 09-26: Kalshi's auto 15/85 cash split OFF; all cash in pool
+  2; a NEW DEPOSIT may land in pool 0 -- move it with
+  `python research/ordercli.py --move-dollars all --from-pool 0 --to-pool 2`
+  (dry run prints the token; then `--live --signoff <token>`).
+- Day cap: ET Sunday sits at about -$165 of the -$200 `--loss-cap`; bank
+  $1,015 at 02:36 ET; drawdown halt at $922 (20% under the $1,153 high).
+
+## 2. Decided this night (do not re-open without new data)
+
+- Dead on our fills (WHY_NO_MONEY P4, RULESET, POSTMORTEM): coin-flip-a-minute-
+  earlier, index-just-crossed, wider volatility ruler, single-venue sweep,
+  10c edge cap inside 20 s, entry margin floors, no-hedge-inside-5-s (2 events,
+  gates a hedge), second-leg-off as a money claim (v-onefull is a worst-market
+  claim), big-wall cap, BTC-only rules, skip BTC, caps of 40/80, max 2 coins
+  per close, no extra coin, 45-second leg off, resting bids, book-confirmed
+  hedge, skipping jumpy coins. IDEA_LEDGER P01-P09, R01-R20, W00-W16.
+- Hedge rule unchanged (0.40, full). `results/PREREG_hedge_margin.md` is the
+  ONLY sanctioned next step: read after the next 5 hair-over alarms (projected
+  settle < 2 rounding steps against us), not before 10-10; no code until then.
+- The reward test is DEAD: the one order (Tencent, 1,000 @ 1c) filled 1 h 40 min
+  after placement -- a 1c bid on an empty side is where holders dump; the
+  time rested earns < $1 (< Kalshi's $1 minimum). $10 rides as a YES on
+  Tencent > 8.8% (market ~1 in 100). No more reward orders unless he asks.
+  lipwatch.py (pid 3220144) still logs every 5 min until ~09-30 04Z; harmless.
+- 98c question: answered by v-ceiling978. Coin race size: 10. "Pause or run":
+  he never answered; the day cap is the pause.
+
+## 3. Open for the operator (asked, unanswered)
+
+- Bet size while the reads run: keep SIZE = bank/12 (grows with the bank) or
+  freeze at today's ~98 contracts. His risk setting; asked 08:2xZ.
+
+## 4. Running (added this night)
+
+| what | pid | note |
+|---|---|---|
+| pinrun --live | 3510420 | v-onefull on v-ceiling978 on v-toxic-live; log pinrun-live-20260927T081049Z.jsonl |
+| coin race live | 3483656 | v-race10 |
+| arm-early-full (paper: live argv, `--early-frac 1.0`) | 3507244 | log pinrun-paper-20260927T080949Z.jsonl; 10080 min; NOT in sync_arms.ps1 -- a resync will not know it; read vs live on shared markets (WHY section 4 item 1) |
+| lipwatch.py | 3220144 | reward logger, ends ~09-30 |
+| everything else | unchanged | see the 09-26 section below and CURRENT_STATE |
+
+Session watcher: a Monitor on the live log, re-armed every 30 min, filter
+halt/pause/end/error/hedge_alarm/ktruth and settled pnl_c <= -$10, ending in a
+bash while-read loop (a `cut` at the end swallowed the ETH loss). The phone
+(pinphone) pushes LOSS on every losing close regardless.
+
+## 5. Traps this night
+
+- The tool permission checker refused: the restart (twice, different forms),
+  reward orders (until he restated permission), a log read, a memory read. His
+  chat permission does not clear it; exact allow-list strings do. Never
+  re-issue a refused command disguised; say so and stop.
+- `reward-status` and the 21:03Z pinday were hours apart -- do not stitch two
+  reads into one timeline without their clocks.
+- Kalshi's `/incentive_programs` has no per-market filter (limit 10000, then
+  filter by ticker).
+- pintake's $60 run-stake rail refuses a race `--max-stake 120` at startup.
+- bars.py shows arm-live-frozen as 1 market: a bars.py mapping bug; the arm
+  (pid 2896212, log pinrun-paper-20260925T063011Z.jsonl) is fine.
+- The 09-25 09:36Z live log had been deleted from disk; restored from git.
+- `results/tax/` is gitignored now (his commit had swept the tax CSV in).
+- Kalshi dropped custom_strike/floor_strike/strike_type/round_digits on BNB and
+  HYPE for an hour 09-26 12:30-13:30Z; the bot sat them out; kalshiwatch caught
+  it (its first real catch).
+
+---
+
 # PICK UP HERE -- 2026-09-26 ~07:30Z -- end of the 09-24..26 session (context gone after this)
 
 **A new session: read this whole section first.** Then `CURRENT_STATE.md`, then

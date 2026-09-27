@@ -1,10 +1,11 @@
 # CURRENT_STATE.md -- read this FIRST
 
-> **PICK UP HERE (2026-09-26 ~07:30Z, end of the 09-24..26 session):** read the
-> top section of `HANDOFF.md` ("PICK UP HERE"). It lists the operator's last
-> instructions (combine the Kalshi cash pools; run the reward test; he is in
-> Virginia and has had DraftKings/FanDuel accounts), the permission rule he was
-> given (P0), and the jobs P1-P7 in order with their "Say:" phrases.
+> **PICK UP HERE (2026-09-27 ~08:3xZ, the "fix this" night):** read the top
+> section of `HANDOFF.md`. Three live changes since 05:08Z (seller gate, 97.8c
+> ceiling, one full bet per market -- the last is a CODE change), coin race at
+> 10, the diagnosis in `results/WHY_NO_MONEY_2026-09-27.md`, and the operator's
+> restated permission: run every command yourself (allow-listed forms in memory
+> `do-the-restart-yourself`). One question open: freeze bet size or let it grow.
 
 
 **As of 2026-09-25 ~07:0xZ.** If that is more than a day old, re-check the live
@@ -21,8 +22,8 @@ text (the 09-21/09-22 blocks): `DOCS_ARCHIVE_2026-09.md`.
 
 ## Live money
 
-- **15-minute crypto bot** `research/pinrun.py --live`, version **v-scalein-caps** (on v-safety2)
-  since 12:23:53Z 09-25, pid 2951024, code_sha f9548c5571ff. Its argv is
+- **15-minute crypto bot** `research/pinrun.py --live`, version **v-onefull** (on v-ceiling978, v-toxic-live, v-scalein-caps, v-safety2)
+  since 08:11:15Z 09-27, pid 3510420 (see HANDOFF top for the three 09-27 changes). Its argv is
   `restart_bot.ps1` -- the ONLY script that may start it. What it does now,
   newest change first (each has a VERSIONS entry):
   - asks Kalshi what it holds at startup and after any lost order reply, and
@@ -50,8 +51,8 @@ text (the 09-21/09-22 blocks): `DOCS_ARCHIVE_2026-09.md`.
     per ET day surviving restarts, 20% drawdown halt that HOLDS until START on
     the app re-bases it (v-hwm-reset).
   - `--minutes 4320`: exits ~09-28 06:25Z and `watch_bot.ps1` restarts it.
-- **Coin race penny test** `research/pinracearm.py --live`, pid 2707284, 5
-  contracts a leg (v-race5), ends ~10-01 15:16Z -- relaunch BY HAND with the
+- **Coin race penny test** `research/pinracearm.py --live`, pid 3483656, 10
+  contracts a leg (v-race10, 09-27 06:01Z; stake cap stays $60), ends ~10-04 06:01Z -- relaunch BY HAND with the
   v-race5 argv from VERSIONS.md. A tie counts as a loss for its stop rail
   (v-race-tie1).
 - **Money (Kalshi's ledger, the only source to quote):** lifetime +$437.82
