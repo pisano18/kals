@@ -25,8 +25,7 @@ every live fill since 09-09 from the trade tape; if it comes back a wash,
 revert.
 
 **REVERT:** remove the line `    "--toxic-fresh",` from `restart_bot.ps1`,
-then `powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repo
-estart_bot.ps1`
+then `powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repo\restart_bot.ps1`
 (no code changes; the flag is the whole deploy).
 
 ---
