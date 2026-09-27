@@ -505,3 +505,56 @@ whose refused set contains no market that settled against us while it skips
 more than $75 of wins (PREREG_toxic's own KILL figure); or a loss of this
 size whose entry the gate passed (as it would have passed the 09-24 00:30Z
 -$130.40 loss: fresh offer, sellers only 34 in 100).
+
+## 12. Added 2026-09-27 after the "why no money" synthesis (results/WHY_NO_MONEY_2026-09-27.md)
+
+Four things changed in the model. Every number is our own fills, 09-09..09-27.
+
+1. **The edge is a thin per-contract margin, and it did not move; the bank did.**
+   Losing markets per 100 were 2.3 then 2.0. What changed is that a loss is
+   now 41 wins instead of 15: SIZE followed the bank ($190 -> $1,150) while the
+   market kept selling roughly the same 20-70 cheap contracts a market, so the
+   average win went $1.69 -> $1.93 and the average loss $25 -> $80. In bank
+   terms a win is 0.20% of the bank (was 0.60%) and a loss item 6.2% (was
+   5.5%): per $100 staked the bot keeps 2c where it kept 39c. Consequence for
+   section 2: profit is (price margin) x (contracts filled at that margin),
+   and the second factor is capped by supply, not by the bank. Doubling SIZE
+   past the cheap supply adds variance, not return. The per-CONTRACT loss
+   share rose 1.88 -> 2.93 per 100 because losers carry 1.5-2x the contracts
+   of winners in H2 (double same-second legs; early third-size legs on the
+   winners) -- a composition effect, not worse picking.
+
+2. **Two thirds of markets are now the 45-second leg.** 328 of 499 H2 markets
+   opened at 31-45 s with a third of SIZE at ~97c (31 of 471 in H1); only 28
+   ever topped up. It netted +$51 after its own hedges (-$72). The main leg
+   (first fill <= 30 s) still prices at 95.7c and, without the two double-leg
+   BTC markets, still earns 2.6c a contract -- H1's number. So "the strategy
+   stopped working" is false; "the strategy is now mostly a different, dearer,
+   smaller leg plus two double bets" is what the record says. The arm without
+   the early leg made less on the same hours (it adds markets), and the arm
+   with a FULL early leg made more on a no-loss window while 09-19's $403 fell
+   in the days it ran full: the early leg's SIZE is an open question, its
+   existence is not.
+
+3. **No loss identifier holds in both halves (sharpens section 3 and 11.1).**
+   The toxic cell, the >= 10x wall, the 45-s confidence cell, BTC, the 98c
+   band and the 0.998-0.9995 belief bin each hold most of H2's losses and none
+   or a costly handful of H1's. Each is 1-2 events written after the fact; a
+   5-vs-2-per-100 difference needs ~400 markets (60-160 days). The population
+   trap has a time axis too: a cell found on this month's losers is the tape
+   population of next month's. Rules are therefore ranked by what they do to
+   the SIZE of the worst market (1xSIZE cap: $193 -> $95, gates nothing, costs
+   ~$2/day) rather than by in-sample money, which every fitted stack can drive
+   to "no losing day on record" (critic s5: the proof it is fitted).
+
+4. **Hedge false alarms scale with the position.** The three H2 false alarms
+   were 88-104 contracts ($172); the same photo-finish alarms in H1 cost $8-20.
+   Any size cap therefore also shrinks the insurance leak; and the hedge rule
+   is priced about fair (-$29 lifetime, +$31 under the 0.40 rule), so changing
+   it is a variance decision until the pre-registered hair-over read lands.
+
+**What would falsify 12.1-12.3:** a week in which the main leg (<= 30 s) earns
+under 1c a contract with no double-leg loser in it (then the margin itself has
+gone, not the composition); or the early leg's top-up filling in most markets
+once the ceiling is 97.8c (then supply was not the cap on the win); or a loss
+identifier that holds at the base-rate bar in a half it was not built on.
