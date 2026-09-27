@@ -1,3 +1,47 @@
+# v-ceiling978 -- STAGED 2026-09-27 06:56Z, NOT YET RUNNING: `--price-ceiling 0.978` is in restart_bot.ps1 and takes effect at the NEXT restart (the session's restart at 06:57Z was refused by the tool permission checker; pid 3471704 still runs with the 98.0c ceiling). When live: the bot no longer buys at 97.9c or 98c. Operator 2026-09-27 03:2x ET: "Fix. This. ... SOLVE BY ANY MEANS"; his own earlier idea (09-26): "our lowest allowed bet earns 1.9%, does increasing to 2% add any new risk".
+
+Why (our own fills, Kalshi ledger + live logs, 09-09..09-27, 917 markets):
+- The 98c band (paid 97.85c-98.0c): 301 markets, 5 lost = 1.7 per 100 against
+  a break-even of 2.0 per 100; own-leg money -$5.38 over 19 days, -$76 with
+  the insurance bought on those markets. A third of all contracts (14,421 of
+  44,650) for $0 of income. Every other band is clearly positive: 97c +$81
+  (1.4 vs 2.5 per 100), 95-96c +$212 (1.2 vs 3.8), 90-94c +$346 (3.1 vs 7.1).
+- Structural, not a sample accident: at 98c a win pays 2.0c and a loss costs
+  98c, so the strategy needs fewer than 2.0 losses per 100 there; our all-band
+  rate is 2.4 per 100 and the model is 20-80x overconfident above 0.999
+  (calibration, index tape). The band is where the model is most wrong and
+  the price most unforgiving. Best case (1.7 per 100 holds) it earns +0.33c a
+  contract = about $2.50/day; base case it earns nothing.
+- Why the bot stopped compounding (09-09..09-17 +$478 vs 09-18..09-27 -$18
+  through 09-27 04:00Z... see WHY_NO_MONEY when it lands): gross win per
+  contract is the same in both halves (~3.2c) but the loss dollars per
+  contract went 0.5c -> 2.4c as size rose 20 -> 99-198 and the average price
+  rose 95.5c -> 96.5c. Expected money per contract = 0.976 x win - 0.024 x
+  price: 4.5c wins at 95.5c give +1.9c; 3.5c wins at 96.5c give +1.1c;
+  2.0c wins at 98c give +0.0c. Every cent of average price is worth about a
+  cent of expectancy per contract; dropping the 98c band lowers the average
+  price of what is left to ~95.6c.
+- Two of the three biggest losses were in the band: BTC 09-19 16:00Z (-$107.95
+  at 98c) and BTC 09-27 04:00Z first leg (-$97.05 at 97.89c).
+
+Interactions checked: the early leg's own floor/ceiling (--early-min-price
+0.95, A78b sweep cap) and the late boost are unchanged; worst_close_cost reads
+the running ceiling, so auto-size rises by 0.2% (bank / (4 x 3 x 0.978)) --
+immaterial. Startup path run in paper with the full live argv plus this flag:
+self-test 1,263 checks ok, start record price_ceiling 0.978. Not a gate on
+hedges (hedges pay up to HEDGE_MAX_ASK; the ceiling is an entry price).
+
+What to watch: contracts per day should fall about a third; income per day
+should not fall (record says $0 lost); if the bank grows the auto-size
+formula will try to spend the freed cash at <= 97.8c -- the depth under 97.8c
+is the new limit, which is the point.
+
+**REVERT:** delete the line `    "--price-ceiling", "0.978",` from
+`restart_bot.ps1`, then
+`powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\kals-repo\restart_bot.ps1'`
+
+---
+
 # v-race10 -- 2026-09-27 06:01:49Z (pid 3483656; git dc0ace5; no code change) -- LIVE: coin race penny bot at 10 contracts a leg (was 5, v-race5). Operator 2026-09-27: "Go 10. I have a feeling that may be the main bread winner after it's finished being developed."
 
 Argv = the v-race5 argv with `--max-contracts 10`; `--max-stake 60` UNCHANGED
