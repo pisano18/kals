@@ -51,7 +51,7 @@ sweep (`results/IDEA_SWEEP_2026-09-25.md`) adds its rows below when it lands.
 | U5 | Sports final minute | a working free score feed, then books in the last 2 min of 20 games | open |
 | U6 | Earthquake "biggest quake" markets | `python research/quakewatch.py --report` | ~2026-10-08 |
 | U7 | Hourly temperature markets | `python research/wxwatch.py --report` (supply ~0 so far) | ~2026-09-28 |
-| U8 | Fresh-offer gate / toxic-offer gate / 2c edge floor | `python research/bars.py` (or /bars on the phone) | ~2026-10-01 |
+| U8 | Fresh-offer gate / toxic-offer gate / 2c edge floor | `python research/bars.py` (or /bars on the phone). Toxic gate went LIVE 09-27 05:08Z before its read; its 10-01 read is now the refused set's market results (upper bound on cost), rule in POSTMORTEM_2026-09-27 s3 | ~2026-10-01 |
 
 ---
 
@@ -163,3 +163,19 @@ sweep (`results/IDEA_SWEEP_2026-09-25.md`) adds its rows below when it lands.
 | SN01 | Stale derived ladder: NFL wins-by-week priced exactly from game mon... | sports / derivative-v... | needs-data | $900 bank: about $0 per day. Each window is worth roughly -$8 to +$... | I could not refute it. The cheap quote is real, is still there, and I can explain why it exists. The strongest objection is money at the operator's... | IDEA_SWEEP_2026-09-25 (json id N01) |
 | SN02 | Two books, two thermometers: ForecastEx NO plus Kalshi YES on the s... | cross-venue / settlem... | dead | Guaranteed part: about $0-2/day at a $900 or $5k bank. We would sit... | Someone is already running this exact package with a fast bot, so the under-$1 flow the checker counted is either that bot's own fills or what it l... | IDEA_SWEEP_2026-09-25 (json id N02) |
 | SN03 | Use Kalshi's own cash pools as the second account (index 0 for ever... | capital efficiency / ... | dead | $0 directly, at both bank sizes, and no net gain on money that is a... | 1) The premise is wrong. The pools separate the bookkeeping, not the money. Cash moves between pools in about 4 seconds, so any dollar used for poo... | IDEA_SWEEP_2026-09-25 (json id N03) |
+
+## Rows from the 2026-09-27 post-mortem (P = post-mortem; results/POSTMORTEM_2026-09-27.md)
+
+All on our own live fills 09-09..09-27 (~880 markets, ~20 own-leg losses); $/day is whole-market money incl. hedges; H1 = 09-09..09-17, H2 = 09-18..09-27.
+
+| id | name | family | status | $/day | one-line reason | evidence |
+|---|---|---|---|---|---|---|
+| P01 | Fresh-offer-while-others-sell gate (`--toxic-fresh`: >20 s left, ask <500 ms old, sellers >50 in 100 of last 3 s) | crypto 15M gate | live as a LIVE TEST since 09-27 05:08Z (v-toxic-live); read 10-01 | +$22.65 in-sample (H1 -$7.73, H2 +$50.71); costs ~$8-17/day when no toxic loss arrives | the only rule that refuses the 09-27 loss and is not a clear loser; but 7 of its 9 losers are inside the window that chose it, 09-19 holds 4, holdout is 1 loser in 27, and it misses the 09-24 -$130.40 loss (fresh but not sold) | POSTMORTEM_2026-09-27 s2a; PREREG_toxic |
+| P02 | Refuse when our side was a coin flip (<60c) inside the last 60 s | crypto 15M gate | dead | -$45 (H1 -$53, H2 -$38); 80c/90c thresholds -$47/-$41 | 73 in 100 of our markets look like that; the 50c->97c last-minute move IS the trade; losers in the band 2.1 per 100 = base rate | pm\coinflip-before, 3 refuters agree |
+| P03 | Wait N s after the index crosses to our side (N = 10/20/30) | crypto 15M gate | dead | -$5 / -$18 / -$24 (corrected for a dropped -$130 loser; finder's -$12..-$31 was refuted on that omission) | 09-27 had been on our side 24 s; waiting does not separate losers and skips $330-$900 of wins | pm\index-freshness + refuters 0/1 |
+| P04 | Require a bigger locked cushion (1/2/4 wobbles per already-recorded print) | crypto 15M gate | dead | -$24 / -$24 / -$38, negative both halves | the thinnest-cushion band is the BEST band (1 loser in 138) | pm\index-freshness |
+| P05 | Wider volatility ruler at entry (hour's wobble, or 30-min downside) | crypto 15M gate | dead (as a gate) | -$17 (hour) / -$26 (downside), negative both halves | catches 09-27 (belief 96 / 88 in 100) and 10 other losers but refuses 465 of 853 markets; also fires more hedges (unmodelled) | pm\index-freshness |
+| P06 | Index moved >=3 wobbles AGAINST us in the last 10 s | crypto 15M gate | needs-data (hypothesis) | +$5 on 42 markets | a wider copy of the live `--jump-gate`; its 3 avoided losers predate that gate; H2 money is two hedge false alarms; would not catch 09-27 | pm\index-freshness + refuter 2 |
+| P07 | Exchange-feed lead (Coinbase/Kraken/Bitstamp/Gemini) as an entry gate or hedge trigger | feeds | dead as entry gate; hedge saving ~$5 per big hedge | ~$0 | the Kalshi book was dumped in the same 10-20 ms as Coinbase's sweep; 0 of 13 feed-coin losers were lone-exchange moves; nothing moved against the 09-27 entry before the sweep | pm\venue-sweep, 3 refuters agree; FEED_LEAD_2026-09-24 |
+| P08 | Index richer for our side than the exchanges at the send (>=1/2/3 wobbles) | feeds | dead / undetermined | -$0.5 / -$3 / -$5; one dropped -$130 market swings the >=1 cell +-$130 | 8 losers cannot see anything under a 4x separation; needs a venue-staleness rule tighter than 2 s before reuse | pm\venue-sweep venuedisp + refuter 1 |
+| P09 | Our side already above 95c 15 s BEFORE we bought | crypto 15M gate | needs-data (hypothesis) | 8 of 129 lost (6.2 per 100), net -$200; both halves negative | opposite of the coin-flip story; under what n can see and 1 of 25 cells; the money leaks where our side was already high, not at the flips | pm\coinflip-before, refuters 1/2 |

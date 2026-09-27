@@ -1,3 +1,24 @@
+# v-race10 -- 2026-09-27 06:01:49Z (pid 3483656; git dc0ace5; no code change) -- LIVE: coin race penny bot at 10 contracts a leg (was 5, v-race5). Operator 2026-09-27: "Go 10. I have a feeling that may be the main bread winner after it's finished being developed."
+
+Argv = the v-race5 argv with `--max-contracts 10`; `--max-stake 60` UNCHANGED
+(a first launch with `--max-stake 120` was refused by pintake's own $60
+run-stake rail and never armed; 10 contracts x 5 legs x 0.97 = $48.50 fits
+under $60 with the rolling stake). Everything else as v-race5: inside 30 s
+only, 90c or better, at most 5 legs, stop on the first loss (a tie counts as
+a loss). Record at the step: since v-race5 (09-24 15:16Z) 38 races, 38 won,
++$7.38; since 09-22 105 races, 104 won, 1 tie, +$9.44; 154 legs at 96.7c
+average, break-even 96.9 of 100 legs must pay, actual 99.7. A loss now costs
+about $9.70 a race (was $4.85); the expected gain of the step is about
++$3.50/day. The photo-finish arm (gap075) lost 2 paper races on 09-26 that
+live did not enter or entered on the winning leg; no filter for close
+finishes exists yet. Swap done at 06:01:35Z between races with no open
+position (new bot started and confirmed before the old was stopped).
+
+**REVERT:** stop pid 3483656, then from C:/kals-repo:
+`Start-Process C:/Python314/python.exe -ArgumentList '-u','research/pinracearm.py','--live','--max-contracts','5','--max-stake','60','--live-rolling-stake','--live-tau-max','30','--live-min-price','0.90','--live-max-legs','5','--live-confirm','5','--live-clock-tau','20','--minutes','10080','--log','C:/kals-repo/results/pinracepenny-live.jsonl','--model','fair','--tau-max','60','--min-price','0.80','--min-edge','0.00' -WorkingDirectory C:/kals-repo -WindowStyle Hidden`
+
+---
+
 # v-toxic-live -- 2026-09-27 05:08:48Z (pid 3471704; git a5d72e1; no code change) -- LIVE: `--toxic-fresh` ON. With more than 20 s left, refuse an ENTRY when the ask level we would hit is under 500 ms old (exact age) AND takers sold more than half of the last 3 s of volume on our side. Entry only; the one call sits below the hedge pass (self-test asserts it), so no hedge is ever gated. (Staged 04:48Z; the first two restart attempts failed -- path mangled, then refused by the tool permission checker; ran at 05:07Z on the operator's repeated instruction to run it myself.)
 
 Why now, five days before the pre-registered read (results/PREREG_toxic.md,

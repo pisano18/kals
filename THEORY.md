@@ -434,3 +434,74 @@ close (0 of 101). The operator has accepted "whichever comes first". If that
 The reason for all of this ceremony is in section 3: the cheap ways of
 evaluating an idea are measuring a different population than the one that takes
 our money.
+
+---
+
+## 11. Added 2026-09-27 after the $131.98 BTC loss (results/POSTMORTEM_2026-09-27.md)
+
+Four things the post-mortem changed or sharpened in the model above.
+
+1. **"Someone actively sold it to us" now has timestamps.** In the 04:00Z BTC
+   market the offer we hit was a 1,000-lot flashed at 97.9c and cancelled
+   within 3-15 ms, dozens of times a second, while takers had sold 56-58% of
+   the last 3 s of YES volume. A NO-taker burst hit YES at 99c 130-220 ms
+   before the Kalshi book collapsed 99c -> 55c, and that collapse is stamped
+   within 10-20 ms of Coinbase's first down-tick (inside clock error). The
+   seller on Kalshi did not react to the exchange move; the seller WAS the
+   move. Consequence for section 3: an exchange feed cannot see this class of
+   loss coming (0 of 13 feed-coin losers were lone-venue moves; nothing moved
+   against the entry in the 5 s before the sweep). The only decision-time
+   marks are on the Kalshi book itself: offer age and the taker sell share.
+
+2. **Model error is still not the problem, and neither is the ruler.** The
+   bot's 0.998 re-derives to nine digits from its inputs. The move that
+   settled it was -$22.12 in one second: 23 of the 5-minute ruler's wobbles
+   and still 14 of the hour's. A wider ruler (hour, or 30-min downside) would
+   have refused this entry and 10 other losers, but refuses 465 of 853 of our
+   markets and loses $17-26/day on the full record, in both halves. There is
+   no width at which a one-second $22 print is priced at 30 s to close
+   without giving up most of the trade. The defence against this loss class
+   is a gate on the SELLER (section 11.1), not on the volatility input.
+
+3. **Waiting is not protective.** "The index only just crossed to our side"
+   does not separate our losers (5 of 137 under 10 s vs 2.2 per 100 overall,
+   under what n can see) and every wait-N-seconds or bigger-cushion rule
+   loses money. The thinnest locked cushion was the best band. The 09-27
+   entry had been on our side 24 s. "It was a coin flip a minute earlier" is
+   the ordinary shape of 73 in 100 of our markets and the losers in that band
+   sit exactly at the base rate.
+
+4. **New measurement bug classes for section 8:**
+   - **The recorder's book is not the bot's book at millisecond resolution.**
+     Rebuilt from orderbook_delta, the best ask sat BELOW the price our IOC
+     actually paid in 52 of 144 legs (phantom levels) and ABOVE it in 36
+     (missing levels), and the recorder's Kalshi socket lagged 1.0-1.5 s
+     during the 09-27 burst. The fill proves the bot's book. For offer age and
+     sell share, the bot's own logged value is primary; a tape rebuild only
+     fills days the bot did not log, and under-detects fresh offers there.
+   - **A source log that silently lost 19 hours.** The on-disk
+     `pinrun-live-20260925T122357Z.jsonl` begins 09-26 07:31Z; the committed
+     copy holds 09-25 12:24Z onward. A finder counted 18 holdout markets where
+     there were 27. Before trusting a log, count its settled markets per day
+     against `kalshi_ledger.json`.
+   - **Dropping rows for a missing feed hour drops the losers with them.** The
+     index-freshness finder lost 31 markets to missing index hours, including
+     the second-largest loss in the set, and its "negative in both halves"
+     flipped in one half when it was put back. Print every dropped row's
+     money, not the first five.
+   - **A random-sign control must keep the flagged set the same size.** A
+     null that flags twice as many markets as the observed rule has a
+     narrower spread and manufactures P < 0.001 where the exact answer is
+     0.05-0.07.
+
+5. **Text correction to section 1a.** "Var(settle - strike) = 880 sigma^2 at
+   tau = 10" does not match `engine.var_factor`, which gives the sum of
+   k^2 for k = 1..10 = 385 over 60^2; the section's own "9.7x" ratio matches
+   385, not 880. Typo in the prose, not a code bug. (CLAUDE.md's settlement
+   paragraph repeats the 880.)
+
+**What would falsify 11.1-11.2:** a week of the live `--toxic-fresh` gate
+whose refused set contains no market that settled against us while it skips
+more than $75 of wins (PREREG_toxic's own KILL figure); or a loss of this
+size whose entry the gate passed (as it would have passed the 09-24 00:30Z
+-$130.40 loss: fresh offer, sellers only 34 in 100).
