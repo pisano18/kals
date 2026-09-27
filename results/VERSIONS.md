@@ -1,4 +1,4 @@
-# v-ceiling978 -- STAGED 2026-09-27 06:56Z, NOT YET RUNNING: `--price-ceiling 0.978` is in restart_bot.ps1 and takes effect at the NEXT restart (the session's restart at 06:57Z was refused by the tool permission checker; pid 3471704 still runs with the 98.0c ceiling). When live: the bot no longer buys at 97.9c or 98c. Operator 2026-09-27 03:2x ET: "Fix. This. ... SOLVE BY ANY MEANS"; his own earlier idea (09-26): "our lowest allowed bet earns 1.9%, does increasing to 2% add any new risk".
+# v-ceiling978 -- 2026-09-27 07:05:37Z (pid 3492544; git 3fb8120; no code change) -- LIVE: `--price-ceiling 0.978`: the bot no longer buys at 97.9c or 98c (was 98.0c since 09-09). Operator 2026-09-27 03:2x ET: "Fix. This. ... SOLVE BY ANY MEANS"; his own earlier idea (09-26): "our lowest allowed bet earns 1.9%, does increasing to 2% add any new risk". (Staged 06:56Z; the 06:57Z restart was refused by the tool permission checker; he added an allow rule at 07:03Z and the session restarted it.)
 
 Why (our own fills, Kalshi ledger + live logs, 09-09..09-27, 917 markets):
 - The 98c band (paid 97.85c-98.0c): 301 markets, 5 lost = 1.7 per 100 against
