@@ -111,6 +111,39 @@ Account data given as data only: scratchpad clean/data/account_fills.json,
 account_settlements.json. RAM guard: a background loop alerts the session if
 free RAM < 1.2 GB or a recorder/live bot disappears.
 
+**OUTCOME (14:2xZ, 3 h, 24 agents; `results/CLEANROOM_2026-09-27.md`,
+`results/CLEANROOM_VS_INCUMBENT_2026-09-27.md`):** four blind schools all
+re-derived OUR edge (last 30 s, locked average, near-certain side; nothing
+else pays) and matched us on settlement mechanics (25,803/25,803), the fee
+and "the seller knows". The taker design's big test money (+$1,643 pessimistic
+on 9 unseen days) was knocked down because 56-70 of 100 counted contracts
+vanish before an order lands -- the population trap, found from the other
+side. The one SURVIVOR is different from anything we run: a maker LADDER that
+rests bids at model-minus-2/5/15c in the last 30 s with a jump floor, only
+when the locked average has decided the side (test +$430 unkind fill / +$686
+kind over 9 days, 0 losses in 167 closes; one full-ladder loss ~$278;
+capacity 300-1,000 contracts a market). We killed resting twice, but AT the
+touch; this is deeper. Paper bot `research/cleanroom/locked_average_ladder_re_paper.py`
+pid 3575912, log `results/cleanroom-locked_average_ladder_re.jsonl`, 45 MB,
+no order code path (self-test scans for one). First 2 closes: 54 paper
+orders, 0 fills (the winning side already sat at 99.9c). READ AFTER 7 DAYS
+(~10-04 14Z), pre-registered in the report: PASS = net > 0 under the unkind
+fill, 0-1 losing markets, 870+ contracts/day, drawdown < $280 -> a live test
+at 20 contracts a level, one ladder per close, losses counted per FILLED
+market. FAIL -> stop. The second paper bot (favourite) was a duplicate of the
+ladder (builder error) and was stopped at 14:2xZ. Beliefs the fresh eyes found
+FALSE (tape): the settle compares the ROUNDED average to the strike (18
+markets flipped in 32 days; ~$20,500 of crowd money changed hands wrongly on
+them -- our bot rounds correctly, per the 09-27 critic: 981/981; whether we
+EXPLOIT those markets is untested = a lead); the market leads the index by
+1-2 s; 13 of 100 index prints arrive > 1 s late on this box (a receive-time
+gate is a $0 lead); losses cluster 2.4x by close; DOGE's float strike is
+truncated (we read the exact string in custom_strike -- checked 14:2xZ, no
+bug). Could not confirm: maker fee 0 on crypto up/down, edge stability (both
+sides earned 20-40% less on later days). Adoptable at $0 later: per-close
+dollar cap, receive-time print gate, exact-decimal rounding ties (95 of
+25,803), lag percentiles in the heartbeat.
+
 ## 4. Running (added this night)
 
 | what | pid | note |

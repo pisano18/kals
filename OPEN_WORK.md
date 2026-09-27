@@ -35,8 +35,14 @@ as possible"; strict train (to 09-17) / test (09-18..26) split; the best is
 built as a PAPER bot in `research/cleanroom/` (no order code). Reports:
 `results/CLEANROOM_2026-09-27.md` (blind) and
 `results/CLEANROOM_VS_INCUMBENT_2026-09-27.md` (which of our beliefs the fresh
-eyes did not confirm). Read the paper bot after 7 days; its fills are the tape
-population until proven otherwise.
+eyes did not confirm). DONE 09-27 14:2xZ: they re-derived our edge; the one
+new thing is a deep MAKER LADDER (rest bids 2/5/15c under model in the last
+30 s), paper bot pid 3575912, log `results/cleanroom-locked_average_ladder_re.jsonl`.
+**Say: "read the ladder"** after ~10-04 14Z: PASS = net > 0 under the unkind
+fill, 0-1 losing markets, 870+ contracts/day, drawdown < $280 -> live at 20
+contracts a level. Leads it left ($0 each): rounding-flip markets (18 in 32
+days, ~$20.5k crowd money), a receive-time gate on late index prints (13 in
+100 arrive > 1 s late), per-close dollar cap. Details: HANDOFF top, 3b.
 
 ### A00. PICK UP WHERE WE LEFT OFF
 **Say: "pick up where we left off".** The top of `HANDOFF.md` ("PICK UP HERE",
