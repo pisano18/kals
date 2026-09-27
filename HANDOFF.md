@@ -82,10 +82,34 @@ Three changes, each with a VERSIONS entry and a one-line revert:
 - 98c question: answered by v-ceiling978. Coin race size: 10. "Pause or run":
   he never answered; the day cap is the pause.
 
-## 3. Open for the operator (asked, unanswered)
+## 3. Bet size -- DECIDED BY THE SESSION 09-27 ~11:1xZ: left at bank/12
 
-- Bet size while the reads run: keep SIZE = bank/12 (grows with the bank) or
-  freeze at today's ~98 contracts. His risk setting; asked 08:2xZ.
+He went to sleep without answering and said "make any changes needed ... if it
+contributes to the goal of make overall more I allow it". The record for a
+smaller bet is weak (cap 80 = +$69 over 19 days, -$30 in week 1, +$99 in week
+2; cap 60 unmeasured; cap 40 -$88) and `--bank-brake 4.00` is a limit he set
+("Sure divide by 8"). With the 97.8c ceiling live the fill size is already
+capped by the cheap supply. So: no change. Revisit with the 10-01 reads.
+
+## 3b. THE CLEAN-ROOM REBUILD -- running since 09-27 11:1xZ (workflow wf_1df43aa6-940)
+
+His instruction: "re work absolutely everything without peeking at what we've
+already know/done ... using only the actual history of the markets ... give
+only the prompt of make as much profit as possible ... build a whole new
+[strategy] ... then see how it performs as paper." A 6-phase program: one
+digest agent (32 days of tape -> compact per-market data), five blind design
+schools (settlement forecaster, book/tape microstructure, betting theory,
+skeptic/adverse selection, mechanical inefficiencies), holdout on untouched
+09-18..09-26, two refuters each, a selector, up to two PAPER bots built into
+`research/cleanroom/` and launched (logs `results/cleanroom-<name>.jsonl`; no
+order code path), then `results/CLEANROOM_2026-09-27.md` (blind report) and
+`results/CLEANROOM_VS_INCUMBENT_2026-09-27.md` (a non-blind comparison: what
+we believe that the fresh eyes did not confirm). Leak to declare: CLAUDE.md is
+injected into every agent; they were told to treat its strategy/settlement
+statements as unverified claims and derive from data. Expect many hours.
+Account data given as data only: scratchpad clean/data/account_fills.json,
+account_settlements.json. RAM guard: a background loop alerts the session if
+free RAM < 1.2 GB or a recorder/live bot disappears.
 
 ## 4. Running (added this night)
 

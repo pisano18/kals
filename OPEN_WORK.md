@@ -28,6 +28,16 @@ not in sync_arms.ps1). All four live changes have a one-line revert in
 - A14 (combine the cash): DONE 09-26 (v-onepool; new deposits may land in pool 0).
 - B1 (coin race size): 10 contracts a leg since 09-27 06:01Z (v-race10).
 
+### A18. The clean-room rebuild -- running since 2026-09-27 11:1xZ
+**Say: "the clean room".** Fresh agents, blind to our strategy, rebuild from the
+raw tapes and Kalshi's public rules with the single goal "make as much profit
+as possible"; strict train (to 09-17) / test (09-18..26) split; the best is
+built as a PAPER bot in `research/cleanroom/` (no order code). Reports:
+`results/CLEANROOM_2026-09-27.md` (blind) and
+`results/CLEANROOM_VS_INCUMBENT_2026-09-27.md` (which of our beliefs the fresh
+eyes did not confirm). Read the paper bot after 7 days; its fills are the tape
+population until proven otherwise.
+
 ### A00. PICK UP WHERE WE LEFT OFF
 **Say: "pick up where we left off".** The top of `HANDOFF.md` ("PICK UP HERE",
 2026-09-26) has the last instructions and jobs P0-P7.
