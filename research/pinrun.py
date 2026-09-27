@@ -2331,6 +2331,17 @@ def hedge_locked_loss(entry_cost, hedge_cost, n=1.0):
 IMPROVE_MAX = 0.010    # AMENDMENT 23: and NO MORE than this much cheaper.
 _DEFAULT_IMPROVE_MAX = 0.010   # --improve-max is measured against this
 IMPROVE_BY = 0.005     # a second buy must be at least this much cheaper
+# v-onefull (2026-09-27): ONE FULL BET PER MARKET. With the flag on, rebuy_ok
+# refuses the A23 scale-in past a full position; the top-up of an unfinished
+# position and the v-lateadd add inside the last seconds are untouched. Why:
+# the two worst markets on record were same-second double bets (BTC 09-23,
+# 176 contracts, -$130; BTC 09-27, 198 contracts, -$132); on our own fills
+# refusing the second full leg is +$107 over 19 days (-$13 week 1, +$120
+# week 2) and caps the worst single market at one bet (~$95 at size 99)
+# instead of two (~$193). results/WHY_NO_MONEY_2026-09-27.md, P1. Shipped
+# OFF; the live argv turns it on (restart_bot.ps1, VERSIONS.md v-onefull).
+ONE_FULL_BET = False
+_DEFAULT_ONE_FULL_BET = False
 # AMENDMENT 22 (2026-09-13): THE IMPROVE-BY RULE IS OBSOLETE ACROSS MARKETS AND
 # WAS SILENTLY OVERRIDING AMENDMENT 17.
 #
@@ -2929,6 +2940,8 @@ def rebuy_ok(prev, tk, price, size=None, tau=None):
     drop = paid - price
     if late_add_ok(tau, have, want, drop):
         return True                      # v-lateadd: the last seconds, our way
+    if ONE_FULL_BET:
+        return False                     # v-onefull: one full bet per market
     if not (IMPROVE_BY - 1e-12 <= drop <= IMPROVE_MAX + 1e-12):
         return False
     # v-scalein (A): THE BAND WAS MEASURED ON THE OFFER, NOT ON A SWEEP'S
@@ -4874,7 +4887,7 @@ _OFFLINE_PINNED_FLAGS = (
     "LADDER_CUSHION_MAX", "LADDER_CUSHION_MIN",
     "LATE_EXTRA", "LATE_EXTRA_TAU", "LATE_JUMP_SD", "LATE_MULT", "LATE_PIN",
     "LATE_TAU", "LOSS_BOUND_OPEN", "LOSS_CAP", "MAX_PER_MARKET",
-    "MIN_FILL_FRAC", "ONE_COIN_DEPTH", "ONE_COIN_MAX", "PICK", "PIN",
+    "MIN_FILL_FRAC", "ONE_COIN_DEPTH", "ONE_COIN_MAX", "ONE_FULL_BET", "PICK", "PIN",
     "PRICE_CEILING", "REBUY_HEDGED", "REBUY_LATE_FRAC", "REBUY_LATE_TAU", "REBUY_MAX_MULT", "SERIES_SIZE", "SIGMA_RULER",
     "SERIES_CEILING", "SERIES_EV_FLOOR", "SERIES_FLIP", "SERIES_MAX_PER_CLOSE",
     "SERIES_MAX_PER_SIDE",
@@ -5320,7 +5333,7 @@ _FLAG_GLOBALS = ("LATE_EXTRA_TAU", "LATE_EXTRA", "LATE_TAU", "LATE_MULT",
                  "EARLY_MAX_EDGE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
                  "EARLY_FRAC", "BANK_BRAKE", "SIGMA_STRESS", "FLIP_MULT",
                  "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC",
-                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER")
+                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER", "ONE_FULL_BET")
 
 
 def _selftest_body():
@@ -8423,6 +8436,10 @@ def _selftest_body():
             globals()["SIZE"] = _sz22
 
         # ---- AMENDMENT 23: the re-buy band ------------------------------
+        # v-onefull is pinned OFF here: these checks describe the band, which
+        # the flag deliberately overrides; the flag has its own checks below.
+        _sv_of23 = ONE_FULL_BET
+        globals()["ONE_FULL_BET"] = False
         ck(abs(_DEFAULT_IMPROVE_MAX - 0.010) < 1e-12,
            "the DECLARED default IMPROVE_MAX is 1.0c (running now with "
            "%.4f)" % IMPROVE_MAX)
@@ -8502,6 +8519,29 @@ def _selftest_body():
         ck('"px_tk": {tk: px}' in _src23 and 'd23[tk] = min(' in _src23,
            "a fill records the price paid per market, which is the input the "
            "band needs -- without it rebuy_ok silently allows everything")
+
+        # ---- v-onefull (2026-09-27): ONE FULL BET PER MARKET ---------------
+        ck(_DEFAULT_ONE_FULL_BET is False,
+           "the DECLARED default is OFF; --one-full-bet turns it on (live argv)")
+        globals()["ONE_FULL_BET"] = True
+        ck(not rebuy_ok(_p23, "A", 0.955, 50.0)
+           and not rebuy_ok(_p23, "A", 0.950, 50.0),
+           "v-onefull: a FULL position never takes a second full bet, even at "
+           "the band's own 0.5-1c cheaper offer -- the two worst markets on "
+           "record (BTC 09-23, 176 contracts; BTC 09-27, 198) were this leg")
+        ck(rebuy_ok(_p29, "A", 0.960, 50.0) and rebuy_ok(_p29, "A", 0.970, 50.0),
+           "v-onefull leaves the TOP-UP alone: 5 of 50 held still finishes the "
+           "order, at the same or a slightly worse price")
+        ck(rebuy_ok(None, "A", 0.90, 50.0) and rebuy_ok(_p23, "B", 0.90, 50.0),
+           "v-onefull: a first buy and a DIFFERENT market are untouched")
+        globals()["ONE_FULL_BET"] = _sv_of23
+        _srcof = open(os.path.abspath(__file__), encoding="utf-8").read()
+        _iof = _srcof.index("    if ONE_FULL_BET:" + chr(10) + "        return False")
+        _ila = _srcof.index("    if late_add_ok(tau, have, want, drop):")
+        _ibd = _srcof.index("    if not (IMPROVE_BY - 1e-12 <= drop <= IMPROVE_MAX + 1e-12):")
+        ck(_ila < _iof < _ibd,
+           "v-onefull sits AFTER the late-add allowance and BEFORE the band in "
+           "rebuy_ok: the last-15-seconds add still passes, the scale-in does not")
 
         # ---- AMENDMENT 35: size from the LADDER, not the touch ---------
         ck(_DEFAULT_SWEEP_DEPTH is False,
@@ -11442,6 +11482,8 @@ def _selftest_body():
        "paper booking and sits right before pintake.take on the live path")
 
     # ---- v-scalein (A + B) and v-scalein-caps --------------------------
+    _sv_ofsi = ONE_FULL_BET            # v-onefull pinned OFF: these checks
+    globals()["ONE_FULL_BET"] = False   # describe the scale-in the flag removes
     # fix 4: the body cannot see its own wrapper, so read the WRAPPER's
     # source (getsource of selftest alone -- this literal is not in it)
     _st_src = inspect.getsource(selftest)
@@ -11687,6 +11729,26 @@ def _selftest_body():
        and all(r.get("leg") != "late_add" for r in _kinds(_bd, "signal")),
        "v-lateadd NULL: outside the window nothing is relabelled late_add "
        "(legs %s)" % [r.get("leg") for r in _kinds(_bd, "signal")])
+    globals()["ONE_FULL_BET"] = _sv_ofsi
+    # v-onefull DRIVEN: the same genuinely-cheaper world (B) with the flag ON
+    # sends ONE order and no scale-in; the top-up world (C) still tops up.
+    _mD, _tD, _xD = _si_world([(0.954, 3.0), (0.970, 500.0)])
+    _rD = _offline_trade_loop([_mD], live=True, take=_tD, run_s=2.5, tau0=18,
+                              flags=dict(_si_flags, ONE_FULL_BET=True))
+    ck(_rD["raised"] is None and len(_xD["calls"]) == 1
+       and not _kinds(_rD, "scalein_cap") and _refusals(_rD, "rebuy_band"),
+       "v-onefull DRIVEN: with the flag ON the genuinely cheaper touch is NOT "
+       "bought -- one order, no scalein_cap record, the re-buy refused "
+       "(orders %s)" % (_xD["calls"],))
+    _mE, _tE, _xE = _si_world([(0.960, 500.0)])
+    _xE["lv"] = [(0.960, 2.0)]
+    _rE = _offline_trade_loop([_mE], live=True, take=_tE, run_s=2.5, tau0=18,
+                              flags=dict(_si_flags, ONE_FULL_BET=True))
+    ck(_rE["raised"] is None and len(_xE["calls"]) == 2
+       and not _kinds(_rE, "scalein_cap"),
+       "v-onefull NULL DRIVEN: a 2-contract first fill is still TOPPED UP with "
+       "the flag ON (orders %s)" % (_xE["calls"],))
+
     # ---- v-btcd1 (2026-09-24): a ladder series takes its OWN size ---------
     ck(_DEFAULT_SERIES_SIZE is None,
        "v-btcd1: the DECLARED default is OFF (no series size)")
@@ -20112,6 +20174,10 @@ def main():
     ap.add_argument("--fresh-tau-min", type=int, default=None, metavar="S",
                     help="v-fresh: the gate stands down at or under S seconds "
                          "left (default 20)")
+    ap.add_argument("--one-full-bet", action="store_true", default=False,
+                    help="v-onefull: a market that already holds a full bet "
+                         "never takes a second one (the A23 scale-in); "
+                         "top-ups and the late add are untouched. Default OFF.")
     ap.add_argument("--toxic-fresh", action="store_true", default=False,
                     help="v-toxic: with more than --toxic-tau-min s left, refuse "
                          "a level known to be younger than --toxic-min-age-ms "
@@ -20618,6 +20684,8 @@ def main():
             raise SystemExit("--fresh-tau-min must be in [0, 60], got %r"
                              % (a.fresh_tau_min,))
         globals()["FRESH_TAU_MIN"] = int(a.fresh_tau_min)
+    if a.one_full_bet:
+        globals()["ONE_FULL_BET"] = True
     if a.toxic_fresh:
         globals()["TOXIC_FRESH"] = True
     if a.toxic_min_age_ms is not None:

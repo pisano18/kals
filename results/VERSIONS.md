@@ -1,3 +1,43 @@
+# v-onefull -- 2026-09-27 08:11:15Z (pid 3510420; git ee351cc + this commit; code change in research/pinrun.py) -- LIVE: `--one-full-bet`: a market that already holds a full bet never takes a second full bet (the A23 scale-in); the top-up of an unfinished position and the last-15-seconds add are untouched. Operator 2026-09-27 03:2x ET: "Fix. This. ... SOLVE BY ANY MEANS"; results/WHY_NO_MONEY_2026-09-27.md policy P1.
+
+Why: the bot picks as well as it ever did (2.3 -> 2.0 losses per 100 markets
+between the two weeks); what changed is the size of a loss against a win. A win
+paid $1.69 then and $1.93 now; a loss cost $25 then and $80 now, and the two
+worst markets on record were same-second DOUBLE bets on one coin: BTC 09-23
+(176 contracts, -$130) and BTC 09-27 (198 contracts, -$132). Refusing the
+second full leg on our own fills: +$107 over 19 days (week 1 -$13, week 2
++$120); winners given up: 7 double-bet winners worth $22 ($4-16 each); on top
+of the rules already live (toxic gate refuses 09-27's legs) about +$43-51,
+all of it 09-23. It is a size-of-the-worst-market rule more than a money
+claim: the worst single market becomes one bet (~$95 at size 99) instead of
+two (~$193), and the biggest insurance false alarm halves with it because the
+hedge is the same contracts. Downside if wrong: about $1.50-2 a day of winning
+double bets. Gates no hedge (rebuy_ok is the entry path; the hedge pass is
+separate), needs no new signal, fights no pre-registered bar; it confounds the
+97.8c-ceiling watch by about $2 a day.
+
+Code: research/pinrun.py -- globals ONE_FULL_BET / _DEFAULT_ONE_FULL_BET
+(default OFF), `rebuy_ok` returns False under the flag after the late-add
+allowance and before the band, `--one-full-bet` in main, the flag added to
+_OFFLINE_PINNED_FLAGS and _FLAG_GLOBALS; 7 new self-test checks (pure: full
+position refused at 0.5c and 1c cheaper, top-up allowed, first buy and other
+market untouched, source order late-add < flag < band; DRIVEN: the genuinely
+cheaper 95.4c world sends ONE order with no scalein_cap record and a
+rebuy_band refusal, the 2-contract top-up world still tops up). Self-test 1,263
+-> 1,270, plain and with the live argv; startup path run in paper with the
+full live argv plus the flag. Not the flag `--max-per-market 1`: that also
+kills the 45-second leg's top-up (+$56 over the record) and the late add.
+
+What to watch: `refused` records with gate rebuy_band on a market that already
+holds a full bet; no market should ever show two full-size entry orders in one
+close. Read with the 10-01 bars.
+
+**REVERT:** delete the line `    "--one-full-bet",` from `restart_bot.ps1`, then
+`powershell -NoProfile -ExecutionPolicy Bypass -File C:/kals-repo/restart_bot.ps1`
+(the code stays; the flag is the whole deploy).
+
+---
+
 # v-ceiling978 -- 2026-09-27 07:05:37Z (pid 3492544; git 3fb8120; no code change) -- LIVE: `--price-ceiling 0.978`: the bot no longer buys at 97.9c or 98c (was 98.0c since 09-09). Operator 2026-09-27 03:2x ET: "Fix. This. ... SOLVE BY ANY MEANS"; his own earlier idea (09-26): "our lowest allowed bet earns 1.9%, does increasing to 2% add any new risk". (Staged 06:56Z; the 06:57Z restart was refused by the tool permission checker; he added an allow rule at 07:03Z and the session restarted it.)
 
 Why (our own fills, Kalshi ledger + live logs, 09-09..09-27, 917 markets):
