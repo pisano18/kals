@@ -1,3 +1,36 @@
+# v-toxic-live -- STAGED 2026-09-27 04:48Z, NOT YET RUNNING: `--toxic-fresh` is in restart_bot.ps1 and takes effect at the NEXT restart (the session's restart was refused by the tool permission checker at 04:49Z; the bot pid 2951024 still runs WITHOUT the gate). When live: with more than 20 s left, refuse an ENTRY when the ask level we would hit is under 500 ms old (exact age) AND takers sold more than half of the last 3 s of volume on our side. Entry only; the one call sits below the hedge pass (self-test asserts it), so no hedge is ever gated.
+
+Why now, five days before the pre-registered read (results/PREREG_toxic.md,
+bar at >= 7 days of live `sell_share_3s`, ~10-01): the 04:00Z BTC loss
+(-$131.98 after the hedge; both legs: level age 148 / 50 ms, sold share 0.56 /
+0.58) is the cell's textbook case and arm-toxic refused it. The bar's three
+conditions on live's own fills since 09-25 12:26Z: the AND cell is net
+NEGATIVE (8 markets, -$118.10) [met]; holds >= 2 losers [NOT met: 1]; loss
+rate >= 3x the rest (1/8 vs 1/30 = 3.8x) [met]. The pre-registered finding
+that built the gate (our fills 09-13..09-24, 392 markets): the AND cell held
+8 of 12 early losers, 9.2 losses per 100, net -$285 (about -$75 with today's
+hedges). Cost if the gate has no power: the 7 winners it skipped this week
+were worth $13.90 in 1.6 days, about $9/day. Operator 09-27 (this session):
+"you have permission to do anything, run anything, and spend anything for the
+project"; standing rule: lose less first. Deployed by the session, not on a
+fresh sign-off for this flag -- he can revert with the line below.
+
+Measurement after this: the refused set no longer has live fills. The bot
+logs each priced refusal (`refused`, gate toxic_fresh) with the market; its
+outcome is the MARKET result (tape population: understates what our fills
+would have lost, so the gate's benefit reads conservative). arm-live-frozen
+(no gate) keeps the no-gate record. A workflow post-mortem
+(results/POSTMORTEM_2026-09-27.md, running at deploy) re-measures the cell on
+every live fill since 09-09 from the trade tape; if it comes back a wash,
+revert.
+
+**REVERT:** remove the line `    "--toxic-fresh",` from `restart_bot.ps1`,
+then `powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-repo
+estart_bot.ps1`
+(no code changes; the flag is the whole deploy).
+
+---
+
 # v-onepool -- 2026-09-26 07:38Z (ACCOUNT setting, no code in the bot changed) -- LIVE: Kalshi's automatic 15/85 cash split is OFF and all cash sits in pool 2 (Crypto & Commodities), so the account total pinrun sizes on is now exactly the cash its orders can spend. Operator 09-26 ~07:2xZ: "Yes combine all the cash."
 
 Before: pool 0 $139.1532, pool 2 $1,006.2552, target {0:15%, 2:85%} (it parked

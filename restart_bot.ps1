@@ -320,6 +320,7 @@ $botArgs = @(
     # chosen on the first nine alarms it LOSES $84 on the last nine. The 1x
     # rule is the one that survives both halves of the split.
     "--no-hedge-prop",
+    "--toxic-fresh",
     # --early-max-price REMOVED 2026-09-20 ~09:5xZ (v-nocap), on the
     # operator's word: "I actually really want to keep the 45 normal" and
     # "If you think dropping sweep cap makes more do it. I just want the
