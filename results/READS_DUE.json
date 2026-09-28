@@ -7,7 +7,8 @@
    "what": "The $10 Tencent YES (reward-test leftover, 1,000 @ 1c) settled: read its result from the ledger. (09-28 06:13Z: market closed 03:59Z but Kalshi has not posted a result yet; moved +24 h)",
    "how": "python research/pinday.py (or GET /portfolio/settlements)",
    "bar": "none -- report the $",
-   "status": "open"
+   "status": "read",
+   "read_note": "09-28: settled NO; -$10.00 (1,000 YES at 1c). Reported to the operator. No more reward orders."
   },
   {
    "id": "pinrun-exit",
