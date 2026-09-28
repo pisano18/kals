@@ -127,7 +127,8 @@
    "what": "z3 earlier-entry race arm (paper).",
    "how": "python research/bars.py",
    "bar": "250 races with at most 1 loss; KILL at 2 losses in the first 50",
-   "status": "open"
+   "status": "read",
+   "read_note": "09-28 16:2xZ: 163 races entered, 2 with a losing leg -> FAILS its bar (at most 1 loss in 250). Earlier entry is not a way to add coin-race volume."
   },
   {
    "id": "hedge-margin",
