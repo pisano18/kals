@@ -999,6 +999,11 @@ def main():
     ap.add_argument("--sub-fund", type=float, help="move $ from the primary account to --sub")
     ap.add_argument("--sub-return", type=float, help="move $ from --sub back to the primary account")
     ap.add_argument("--sub-status", type=int, help="balances, positions and resting orders of a subaccount")
+    ap.add_argument("--api-limits", action="store_true",
+                    help="read GET /account/limits (usage tier and grants)")
+    ap.add_argument("--api-upgrade", action="store_true",
+                    help="POST /account/api_usage_level/upgrade (free Advanced grant; "
+                         "no money moves). Dry run + token like every write.")
     a = ap.parse_args()
     if not a.key_id:
         a.key_id = "5163259c-ecb0-4966-9053-0d2776cf061e"   # kauth.KEY_ID
@@ -1011,6 +1016,30 @@ def main():
         return pools_main(a)
     if a.reward or a.reward_status or a.reward_cancel:
         return reward_main(a)
+    if a.api_limits or a.api_upgrade:
+        # 2026-09-28: subaccounts need Kalshi's Advanced API usage level
+        # (403 subaccount_creation_requires_advanced_api_usage_level). The
+        # upgrade is a free, permanent grant (docs: "Criteria: at least 1 of
+        # the user's last 100 Predictions orders was created via API").
+        pk = load_key(a.key_file)
+        for path in ("/account/limits", "/account/api_usage_level"):
+            st, r = send(PROD, pk, a.key_id, "GET", path)
+            print("  GET %s -> %s %s" % (path, st, json.dumps(r)[:700] if isinstance(r, dict) else str(r)[:300]))
+        if a.api_upgrade:
+            steps = [("POST", "/account/api_usage_level/upgrade", None)]
+            tok = token_for({"api_upgrade": steps, "day": time.strftime("%Y-%m-%d", time.gmtime())}, PROD)
+            print("\n  NOT YET SENT: POST /account/api_usage_level/upgrade (no body; no money moves)")
+            print("  SIGN-OFF TOKEN: %s" % tok)
+            if not a.live:
+                print("  DRY RUN. To send: add --live --signoff %s" % tok)
+                return
+            if a.signoff != tok:
+                raise SystemExit("  *** sign-off token mismatch. Expected %s. REFUSING. ***" % tok)
+            st, r = send(PROD, pk, a.key_id, "POST", "/account/api_usage_level/upgrade", {})
+            print("  POST /account/api_usage_level/upgrade -> %s %s" % (st, r))
+            st, r = send(PROD, pk, a.key_id, "GET", "/account/limits")
+            print("  GET /account/limits after -> %s %s" % (st, json.dumps(r)[:700] if isinstance(r, dict) else str(r)[:300]))
+        return
     if a.sub_create or a.sub_fund is not None or a.sub_return is not None \
             or a.sub_status is not None:
         if (a.sub_fund is not None or a.sub_return is not None) and a.sub is None:

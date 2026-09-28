@@ -171,9 +171,9 @@
   },
   {
    "id": "ladder-live-blocked",
-   "due": "2026-09-29T12:00Z",
-   "what": "Penny live ladder is BUILT (research/cleanroom/ladder_live.py, self-tested) but NOT running: Kalshi refused subaccount creation ('subaccount creation requires advanced api usage level'). Needs the operator's choice: apply for Kalshi Advanced API access, or allow a change to pinrun's position check so it ignores the ladder's markets.",
-   "how": "ask the operator",
+   "due": "2026-09-28T13:00Z",
+   "what": "Penny live ladder built but not running. 09-28 ~06:5xZ: POST /account/api_usage_level/upgrade -> 201, GET /account/limits now shows grants [event_contract: advanced] but usage_tier still \"basic\", and POST /portfolio/subaccounts (exchange_index 2) is STILL 403 subaccount_creation_requires_advanced_api_usage_level. Retry the create (python research/ordercli.py --sub-create, then --live --signoff <token>); if still refused, try exchange_index 0 to see whether the grant covers only the Predictions shard, then ask Kalshi support.",
+   "how": "python research/ordercli.py --api-limits; --sub-create",
    "bar": "a decision",
    "status": "open"
   },
