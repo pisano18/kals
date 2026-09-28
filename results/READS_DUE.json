@@ -175,7 +175,8 @@
    "what": "Penny live ladder built but not running. 09-28 ~06:5xZ: POST /account/api_usage_level/upgrade -> 201, GET /account/limits now shows grants [event_contract: advanced] but usage_tier still \"basic\", and POST /portfolio/subaccounts (exchange_index 2) is STILL 403 subaccount_creation_requires_advanced_api_usage_level. Retry the create (python research/ordercli.py --sub-create, then --live --signoff <token>); if still refused, try exchange_index 0 to see whether the grant covers only the Predictions shard, then ask Kalshi support.",
    "how": "python research/ordercli.py --api-limits; --sub-create",
    "bar": "a decision",
-   "status": "open"
+   "status": "read",
+   "read_note": "09-28 15:53Z tier advanced, subaccount 1 created, $15 funded, ladder live 16:01Z (v-ladder-penny)."
   },
   {
    "id": "topup-leak",
@@ -215,6 +216,14 @@
    "what": "Hourly BTC (KXBTCD) orders were all rejected under the 0.978 ceiling (not a whole-cent price there). At 0.98 the full leg should work again; the EARLY leg's 0.978 cap may still send invalid KXBTCD limits.",
    "how": "live logs: KXBTCD orders since the restart, status codes",
    "bar": "KXBTCD orders accepted; if early-leg KXBTCD orders are rejected, round KXBTCD limits to the cent in code (VERSIONS entry)",
+   "status": "open"
+  },
+  {
+   "id": "ladder-live",
+   "due": "2026-09-29T16:00Z",
+   "what": "Penny live ladder (pid 3904676, subaccount 1): orders placed, real fills vs the paper ladder's fills for the same quarter-hours, P&L, rail/day-stop events.",
+   "how": "results/ladder-live-orders.jsonl (placed / live_fill / live_settle), results/ladder-live.jsonl (paper decisions), python research/ordercli.py --sub-status 1",
+   "bar": "after 7 days: live fills per day and their loss rate vs the paper ladder; stop if the day stop fires twice or any fill loses on a market the paper bot had as 'locked'",
    "status": "open"
   }
  ]

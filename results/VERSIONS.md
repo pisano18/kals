@@ -1,3 +1,32 @@
+# v-ladder-penny -- 2026-09-28 16:01:26Z (pid 3904676; research/cleanroom/ladder_live.py; Kalshi SUBACCOUNT 1, funded $15) -- LIVE, NEW STRATEGY at penny size: the clean-room locked-average ladder mirrored as real post_only 1-contract bids (model-2c / -5c / -15c) in the last 30 s, at most 3 coins a quarter-hour. Operator 2026-09-28: "I'm giving you the go ahead for that live testing. Build the penny ladder" and "Keep trying the advanced api second account".
+
+Account steps: POST /account/api_usage_level/upgrade 06:5xZ (201; grant
+event_contract advanced); subaccount creation refused until the tier showed
+"advanced" (15:53Z: 201 subaccount_number 1); $15 moved 0 -> 1 on pool 2
+(ordercli --sub-fund, client_transfer_id 7ea20951-...). The live bot reads
+positions/balance for subaccount 0 only (Kalshi default), so it cannot adopt or
+hedge the ladder's fills; its GET /portfolio/orders (all subaccounts) matches
+only its own "pin-" client ids. Both bots use self_trade_prevention maker.
+EXCEPTION TO THE "ordercli is the only writer" RULE: ladder_live.py sends
+create/cancel order requests itself (exactly one POST in its working code,
+self-test asserts it); every body is checked for subaccount >= 1, post_only,
+1 contract, pool 2, "lad-" client id before sending.
+Rails in code: 10 contracts resting+held, $12 committed, -$6 realized per ET
+day stops it for the day, 3 coins per quarter-hour, 3 writes a second (shares
+the API key's rate limit with the live bot), refuses to start above $25 in the
+subaccount; stop file results/ladder-live.stop cancels everything and exits.
+Dry run 15:54-16:01Z: 3 coins, 9 would-place (98c/95c/85c), 9 would-cancel at
+close. Evidence for the strategy: results/CLEANROOM_2026-09-27.md (test days
++$430 unkind / +$686 kind, 0 losses in 167 closes, paper). The live test
+measures what paper cannot: real fill rate and whether fills are adversely
+selected. Read: READS_DUE 'ladder-live'.
+
+**REVERT:** create `results/ladder-live.stop` (it cancels and exits), then move
+the money back: `python research/ordercli.py --sub-return 15 --sub 1` (dry run,
+then `--live --signoff <token>`; use the balance shown by `--sub-status 1`).
+
+---
+
 # v-reopen98 + v-floor90 -- 2026-09-28 14:36:17Z (pid 3882400; no code change) -- LIVE: (1) `--price-ceiling 0.98` + `--early-max-price 0.978`: 97.9-98c buys are back on the 30-second bet ONLY; the 45-second bet stays capped at 97.8c. (2) `--early-min-price 0.90` (was 0.95): the 45-second bet may buy asks from 90c, still at a THIRD of a bet (--early-frac 0.333 unchanged). Operator 2026-09-28 ~06:4xZ: "what we can do to introduce more orders now that we have less risk" and "for the 90c floor just do whatever makes the most and do the math on it. Calculate for risk and check with real examples".
 
 Two changes on two different legs in one restart, separable in the logs by leg
