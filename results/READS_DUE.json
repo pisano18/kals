@@ -176,6 +176,14 @@
    "how": "ask the operator",
    "bar": "a decision",
    "status": "open"
+  },
+  {
+   "id": "topup-leak",
+   "due": "2026-09-30T12:00Z",
+   "what": "One-bet-per-coin leak: after a small first fill, a top-up is sized as a whole bet (take_n capped by SIZE, not SIZE minus held), so a coin can hold 1.2-1.6 bets (SOL 09-19 174 vs 107; BTC 09-26 113 vs 97; BNB 09-25 115 vs 88; all won). Fix: under --one-full-bet cap a same-market re-buy at SIZE - held, except the late add. Deliberately NOT shipped on 09-28 (six changes in one night was a cause of 09-19).",
+   "how": "patch pinrun trade_loop before the send, driven self-test (5-contract first fill -> top-up <= SIZE-5), startup path in paper, VERSIONS entry, restart",
+   "bar": "shipped with a driven self-test",
+   "status": "open"
   }
  ]
 }
