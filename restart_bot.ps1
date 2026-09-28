@@ -171,7 +171,7 @@ $botArgs = @(
     # a third keeps the markets and cuts its tail. arm-early-full and
     # arm-early-off measure the alternatives; research/earlyhindsight.py
     # scores all three from live fills. results/PROJECT_MAP_2026-09-22.md.
-    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.95",
+    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.90", "--early-max-price", "0.978",
     # v-lateadd-live (2026-09-24): a FULL position may add 0.5 x SIZE inside the
     # last 15 s when the ask is at or above what we paid (-0.5c). Per-second
     # rebuild of 820 held markets: +$95/16 d, ONE losing add (-$3.23), +$66 at
@@ -321,7 +321,7 @@ $botArgs = @(
     # rule is the one that survives both halves of the split.
     "--no-hedge-prop",
     "--toxic-fresh",
-    "--price-ceiling", "0.978",
+    "--price-ceiling", "0.98",
     "--one-full-bet",
     # --early-max-price REMOVED 2026-09-20 ~09:5xZ (v-nocap), on the
     # operator's word: "I actually really want to keep the 45 normal" and

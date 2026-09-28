@@ -1,3 +1,53 @@
+# v-reopen98 + v-floor90 -- 2026-09-28 14:36:17Z (pid 3882400; no code change) -- LIVE: (1) `--price-ceiling 0.98` + `--early-max-price 0.978`: 97.9-98c buys are back on the 30-second bet ONLY; the 45-second bet stays capped at 97.8c. (2) `--early-min-price 0.90` (was 0.95): the 45-second bet may buy asks from 90c, still at a THIRD of a bet (--early-frac 0.333 unchanged). Operator 2026-09-28 ~06:4xZ: "what we can do to introduce more orders now that we have less risk" and "for the 90c floor just do whatever makes the most and do the math on it. Calculate for risk and check with real examples".
+
+Two changes on two different legs in one restart, separable in the logs by leg
+and price (the 09-19 lesson was six changes and two bugs in 15 hours).
+
+(1) REOPEN 98c ON THE 30-SECOND BET (results/SAFE0928_reopen98.md, refuted:
+not refuted). The 98c band on our own fills since 09-09: 345 markets, 5 lost,
++$30. The live seller gate (v-toxic-live) would have refused ALL 5 losing buys
+(sold share 0.56-0.75, offer ages 9-148 ms, all > 20 s left); one-full-bet
+none. With both rules: 302 markets, 0 lost, +$275 (the rules also skip 38
+winners, $35). Honest limit: 3 of the 5 catches are inside the data the gate
+was designed on; out of sample 2 of 2 caught; 0 in 84 out-of-sample markets
+cannot tell 0 in 100 from 4.3 in 100 (break-even ~1.9). The 45-second part of
+the band held the two biggest band losses (BTC 9/19 -$108, HYPE 9/21 -$54),
+so it stays capped. Expected +$10-16/day if the rate stays near 0, ~$5-8 at
+1 in 100, $0 at 1.9, -$6..-10 at 3 in 100. Worst single loss ~$96 (98 x 98c),
+~$144 with the late add. Paper since 09-27: the 09-25 build's whole lead over
+today's settings (+$17 in 42 quarter-hours, 0 losses either side) was 9 small
+97.9-98c winners. **PRE-REGISTERED STOP:** back to 0.978 on the 2nd loss in the
+first 100 markets bought at 97.9-98c on the 30-second bet, on ANY such loss the
+seller gate could not judge (no sold-share reading or inexact offer age), or
+the moment --toxic-fresh is turned off (its protection is the whole case).
+
+(2) 90c FLOOR ON THE 45-SECOND BET (results/SAFE0928_floor90.md, not refuted).
+The floor checks the price SEEN. Only ONE 45-second loss ever came from a
+90-95c ask: BTC 9/19 2:00 AM, 70 contracts (full size then), -$66.34, offer 59
+ms old -- the seller gate now refuses it. (NEAR 9/21 was a 95.5c ask: today's
+floor already allows it.) Corrected sample: 1 loss in 17 of our own fills in
+the band. At a third of a bet: a win ~$1.85, a loss $16-29 (insured /
+uninsured), break-even ~9 in 100 insured. Expected +$2-4/day at 3 in 100, $0 at
+9, -$1..-2 at 12. The 14 offers the 95c floor refused since 09-23 all won
+(tape, upper bound). Lower floors add nothing: the 10c edge cap already refuses
+85-90c. Never with --early-frac 1.0. **PRE-REGISTERED STOP:** add up the money
+of every 45-second buy whose ask was under 95c since this switch, insurance
+included, from the Kalshi ledger; if it goes below $0, back to 0.95 at once
+(checked daily: READS_DUE 'floor90-guard').
+
+Startup path run in paper with the full new argv: self-test 1,270 checks,
+start record price_ceiling 0.98 / early_max_price 0.978 / early_min_price 0.9.
+Side effect worth knowing: the hourly BTC ladder (KXBTCD, whole-cent ticks)
+had every order rejected since 0.978 went live (a 0.978 limit is not a valid
+price there); at 0.98 the full leg's limit is a whole cent again.
+
+**REVERT (either or both):** in `restart_bot.ps1` set `"--price-ceiling", "0.978"`
+and delete `"--early-max-price", "0.978",` (reopen98); set
+`"--early-min-price", "0.95"` (floor90); then
+`powershell -NoProfile -ExecutionPolicy Bypass -File C:/kals-repo/restart_bot.ps1`
+
+---
+
 # v-race20 -- 2026-09-28 02:50Z (pid 3739628; code change in research/pinracearm.py) -- LIVE: coin race penny bot at 20 contracts a leg (was 10, v-race10). Operator 2026-09-28 ~02:4xZ: "Coin race hasn't lost in days. Up it."
 
 Record at the step: since 09-22 110 live races, all won, 0 ties by the log

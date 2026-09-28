@@ -184,6 +184,38 @@
    "how": "patch pinrun trade_loop before the send, driven self-test (5-contract first fill -> top-up <= SIZE-5), startup path in paper, VERSIONS entry, restart",
    "bar": "shipped with a driven self-test",
    "status": "open"
+  },
+  {
+   "id": "missed-daily",
+   "due": "2026-09-29T12:00Z",
+   "what": "daily missed-trades report",
+   "how": "python research/missed.py",
+   "bar": "report per gate; flag any gate refusing mostly winners",
+   "status": "open"
+  },
+  {
+   "id": "reopen98-guard",
+   "due": "2026-09-29T12:00Z",
+   "what": "v-reopen98 stop rule (daily until 100 such markets): 30-second buys at 97.9-98c since 09-28 14:36Z.",
+   "how": "live logs: orders leg full/topup/late_add with exec or ask 0.979-0.98, joined to the ledger; count losses and whether the seller gate had readings",
+   "bar": "back to 0.978 on the 2nd loss in the first 100, on any such loss the gate could not judge, or if --toxic-fresh is turned off",
+   "status": "open"
+  },
+  {
+   "id": "floor90-guard",
+   "due": "2026-09-29T12:00Z",
+   "what": "v-floor90 stop rule (daily): money of every 45-second buy whose ask was under 95c since 09-28 14:36Z, insurance included.",
+   "how": "live logs orders leg early with ask_seen < 0.95, joined to the Kalshi ledger per market",
+   "bar": "if the running total is below $0 -> --early-min-price back to 0.95 at once",
+   "status": "open"
+  },
+  {
+   "id": "kxbtcd-tick",
+   "due": "2026-09-29T12:00Z",
+   "what": "Hourly BTC (KXBTCD) orders were all rejected under the 0.978 ceiling (not a whole-cent price there). At 0.98 the full leg should work again; the EARLY leg's 0.978 cap may still send invalid KXBTCD limits.",
+   "how": "live logs: KXBTCD orders since the restart, status codes",
+   "bar": "KXBTCD orders accepted; if early-leg KXBTCD orders are rejected, round KXBTCD limits to the cent in code (VERSIONS entry)",
+   "status": "open"
   }
  ]
 }
