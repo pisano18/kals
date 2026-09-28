@@ -1,3 +1,74 @@
+# PICK UP HERE -- 2026-09-28 ~04:3xZ -- the operator's 09-28 batch (read this before the 09-27 section below)
+
+His message 09-28 ~02:4xZ (awake, frustrated: "This bot fucking sucks now"): run all
+recent versions as paper incl. less/no insurance; why not turn the ladder on / run
+it on pennies; add ladder bids on top of what we buy; test the other 3 clean-room
+designs; make more or find new strategies; why hasn't Polymarket traded; up the
+coin race; find every concluded test never read.
+
+DONE (all committed):
+- **v-race20 02:50Z**: coin race live at 20 contracts a leg, pid 3739628 (code:
+  pinracearm raises pintake's per-take rail via set_limits up to HARD_MAX 25;
+  stake cap stays $60). 110/110 races since 09-22 at the step.
+- **Five paper arms 02:47Z** (results/arms_0928_manifest.json): arm-0925 (the
+  09-25 build = today's argv minus toxic/ceiling/onefull), arm-0925-hedge20,
+  arm-0925-nohedge (--hedge-belief 0.01; the flag's floor is > 0, true off
+  needs code), arm-live-hedge20, arm-live-nohedge. ~110 MB each. NOT in
+  sync_arms.ps1 or bars.py -- read them by hand against arm-btcd (the
+  live-identical 09-25 twin) on shared markets, ~10-04.
+- **Three clean-room paper bots** (forecaster pid 3747612, bettor 3747208,
+  contrarian 3748320; research/cleanroom/*_paper.py; logs
+  results/cleanroom-<name>.jsonl; realistic 1-second fill rule logged beside the
+  optimistic one). Max prices 98.5c / 98c / 95c. The ladder paper bot (3575912)
+  keeps running to 10-04.
+- **TEST AUDIT** results/TEST_AUDIT_2026-09-28.md: 13 concluded-never-read
+  tests. STOPPED: cmdarm (-$654 paper) + cmdarm-wide230 (-$100) and removed from
+  boot_all.ps1; wxwatch (bars failed); arm-brake3 (void); arm-edge2c (-$68 vs
+  twin); arm-toxic (rule is live). boot_all.ps1's pinledgerd path had a CR/LF
+  in "esearch" (heredoc trap) -- repaired. The live log
+  results/pinrun-live-20260925T122357Z.jsonl had lost its first 9,972 lines on
+  disk (09-26 07:31Z, unknown cause, same event rewrote tracked paper logs):
+  RESTORED from git HEAD + disk; bars.py now sees live again (it had been blind
+  to 09-25 08:23..09-27 01:08 ET). bars.py still groups several arms together
+  because pinrun's start record lacks some flags and arm names -- fix is a
+  pinrun logging change (not done; needs a live restart).
+- **KEY UNREAD RESULT:** arm-live-frozen (09-20 settings: 45-s leg full size at a
+  90c floor, insurance at 0.60 with a 60c price cap, partial insurance, no
+  hourly ladder) is +$104 vs the live-identical twin over 2.6 days (+$40/day;
+  twin-vs-twin noise ~$40), mostly 16 extra markets (+$65) and skipping the
+  BNB 09-26 false alarm. Offered to him as "switch" vs "wait for 10-01".
+- **Few full-size orders** (results/PERCAP_AND_FULLSIZE_2026-09-28.md): full
+  orders fill 84% as before; the bot buys FEWER coins (22 vs 43-49 on 09-23/24)
+  mainly because the 97.8c ceiling removes 20-28 coins a day that used to fill
+  at 97.9-98c (worth ~$0 over 19 days). A per-close dollar cap adds nothing on
+  top of one-full-bet (one-full-bet alone: 2nd half $107 -> $225).
+- **Polymarket** (results/POLYMARKET_WHY_NO_TRADES_2026-09-28.md): the paper bot
+  had been BLIND since 09-26 06:00Z ("max subscriptions per connection
+  reached") -- its 173 no_offer windows were no data. FIXED (one connection per
+  window, reconnect on error/10 s silence, "blind" records), relaunched pid
+  3747644 03:47Z for 3 days; first two windows: prices every second, the sure
+  side simply not offered. Bar written before the result: STOP if offered at
+  <= 98c in < 10/100 windows or prices missing in > 5/100; GO to live Step 2
+  only if offered in >= 15/100 with >= 20 contracts typical. READ 10-01 03:47Z
+  (python research/polypaper.py --report results/polypaper-20260928T034725Z.jsonl).
+  Even when it could see (27 h), a buyable deal existed in ~18/100 windows,
+  <= ~$6/day at 10 contracts.
+
+NOT DONE -- needs the operator:
+- **Penny live ladder**: the permission checker refused a workflow that had helper
+  agents build/fund/launch a real-money bot ("Auto-Mode Bypass"). The plan (in
+  that refused script, wf operator-0928-batch v1): research/cleanroom/ladder_live.py,
+  1 contract per level, <= 3 markets a close, <= 10 contracts / $12 committed,
+  -$6/day stop, stop file, IN A KALSHI SUBACCOUNT so pinrun's v-safety2 ktruth
+  (GET /portfolio/positions -> adopt + hedge unknown positions in its series)
+  cannot adopt ladder fills; ordercli needs a subaccount mode. Build it
+  directly only if he replies "build the penny ladder".
+- **Switch live to the 09-20 settings?** asked; unanswered.
+- C:\kals\cdc_record.py (Crypto.com recorder, 339 MB, nothing reads it): his folder, his call.
+- The $10 Tencent YES (reward-test leftover) settles 09-28 ~04Z.
+
+---
+
 # PICK UP HERE -- 2026-09-27 ~08:3xZ -- the "fix this" night (three live changes, one code change; read before anything)
 
 **A new session: read this section, then `CURRENT_STATE.md`, `OPEN_WORK.md`,
