@@ -1,5 +1,23 @@
 # Why the Polymarket bot has not traded -- 2026-09-28
 
+## The 3-day bar (written before the result)
+
+Written 2026-09-28 before the fixed paper bot (research/polypaper.py, one connection per window, blind seconds logged as `blind`) saw a single window. Counted by `python research/polypaper.py --report <its log>` (the `BAR` line), over every 15-minute window it settled in the 3 days.
+
+- **Prices missing** in a window = any `blind` second between 45 and 3 seconds before the close.
+- **Offered** in a window = at least one seeing second between 45 and 3 seconds before the close where the model is at least 99.5% sure and that side's best ask is 98c or less.
+- **Contracts typically for sale** = the median, over the offered windows, of each window's median size at those seconds.
+
+| Outcome | Rule |
+|---|---|
+| **STOP Polymarket** | offered in fewer than 10 of 100 windows, OR prices missing in more than 5 of 100 windows |
+| **GO to the live 1-contract Step 2** (POLYMARKET_ORDERS.md) | offered in at least 15 of 100 windows AND at least 20 contracts typically for sale (and prices missing in 5 of 100 or fewer) |
+| Neither | no live step; put the numbers to the operator |
+
+If prices are missing in more than 5 of 100 windows, the bot's view failed and the offer count cannot be trusted either way: that is a STOP for the test as run, not evidence about Polymarket's sellers.
+
+**Launched** 2026-09-28 03:47:24Z (11:47 PM ET 09-27), pid 3747644, log `results/polypaper-20260928T034725Z.jsonl`, `--minutes 4320`. **Read date: 2026-10-01 03:47Z = 11:47 PM ET Wednesday 09-30** (the bot stops itself then).
+
 The Polymarket bot has made no trades for three reasons. (1) It is a paper bot: it has no code that places orders. The real order tool passed its 1-cent test on 09-26, but the step that lets it act on the bot's buy signals is not built. (2) The paper bot has been blind since 2:00 AM ET on 09-26, about 45 hours. Polymarket sent the error "max subscriptions per connection reached", and the bot did not notice. So its 173 "no_offer" windows mean it received no prices at all, not that nobody was selling. (3) When it could see prices, the kind of deal we buy existed in only about 18 of 100 fifteen-minute windows, and the most it could make is about $6/day at 10 contracts a buy.
 
 **Why it is blind (checked):** The price recorder and the paper bot use the same key. Each opens one connection and adds 2 new subscriptions per window, and never drops old ones. After 5 requests (about 75 minutes) Polymarket answers `{"error":"max subscriptions per connection reached"}`. From then on, new windows never get prices. Neither program reads that error. The recorder's last price update was at 2:00 AM ET on 09-26. The paper bot had no prices in any of the 7,830 seconds in its current log. The same thing blinded it earlier, 8-11 PM ET on 09-25. It only came back when the connection happened to drop and reconnect.

@@ -78,6 +78,21 @@ EARLY_MAX_EDGE_C = 10.0        # live --early-max-edge 10.0
 ROUND_DIGITS = 2               # both venues: average rounded to 2 dp, >= wins
 PAPER_SIZE = 10                # contracts per paper entry (~$60 funded)
 
+# Blindness guards (2026-09-28). From 09-26 06:00Z the exchange answered
+# {"error":"max subscriptions per connection reached"} because every window
+# added subscriptions to ONE connection and none was ever dropped; nothing
+# read that error, and 173 windows were logged as no_offer with no prices at
+# all. Now: one connection per 15-minute window (closing it at the window
+# boundary drops that window's subscriptions -- 2 requests per connection),
+# any error frame or SILENCE_S without a price update for the live window
+# reconnects, and a second with no fresh book is logged type "blind", never
+# as a refusal.
+SILENCE_S = 10.0               # no price update for the live window this long -> reconnect
+BLIND_AGE_S = 13.0             # book absent or older than this at a logged second -> "blind"
+                               # (reconnect at 10 s + ~3 s for the fresh snapshot; recorded
+                               # books were naturally quiet for up to 16.8 s in a last minute)
+RECV_TIMEOUT_S = 1.0
+
 
 # ------------------------------------------------------------------ fees / EV
 def poly_fee(p):
@@ -349,6 +364,9 @@ class Bot:
         self.get_fn = get_fn
         self.ws_frames = 0
         self.ws_errors = 0
+        self.ws_error_frames = 0
+        self.conn_n = 0
+        self.reconnects = {}             # why the connection ended -> count
         self.done = False
 
     def rec(self, **kw):
@@ -381,7 +399,11 @@ class Bot:
         st = self.state.get(close_s)
         if st is None:
             st = self.state[close_s] = {"slug": slug_for(close_s - 900), "ptb": None, "ptb_try": 0,
-                                        "entry": None, "k_entry": None, "secs": 0, "settled": False}
+                                        "entry": None, "k_entry": None, "secs": 0, "blind": 0,
+                                        "settled": False}
+            for cs in [c for c, s in self.state.items() if s["settled"] and c < close_s - 7200]:
+                self.books.pop(self.state[cs]["slug"], None)
+                del self.state[cs]
         if st["ptb"] is None and st["ptb_try"] < 5 and tau <= 880:
             st["ptb_try"] += 1
             try:
@@ -413,11 +435,17 @@ class Bot:
         _, spot, age = self.idx.spot(IID)
         moves = self.idx.recent_moves(IID, pinrun.JUMP_LOOKBACK)
         bk = self.books.get(slug)
-        bids, asks = (bk[1], bk[2]) if bk else ([], [])
+        book_age = None if not bk else now - bk[0]
+        blind = bk is None or book_age > BLIND_AGE_S
+        bids, asks = (bk[1], bk[2]) if (bk and not blind) else ([], [])
         want0 = "yes" if (f is not None and f >= 0.5) else "no"
         p_px, p_sz = side_ask(bids, asks, want0)
-        pw, pedge, pev, pref = decide(f, p_px, p_sz, tau, poly_fee(p_px) if p_px else 0.0,
-                                      strike, spot, sig, moves)
+        if blind:
+            # no prices is NOT "nobody offered": no Polymarket decision is made
+            pw, pedge, pev, pref = None, None, None, ["blind"]
+        else:
+            pw, pedge, pev, pref = decide(f, p_px, p_sz, tau, poly_fee(p_px) if p_px else 0.0,
+                                          strike, spot, sig, moves)
         kr = self.tape.kalshi_at(close_s, now)
         k_px = k_sz = k_tk = k_age = None
         if kr:
@@ -431,14 +459,15 @@ class Bot:
                                       strike, spot, sig, moves)
         p_buy = pw is not None and not pref
         k_buy = kw is not None and not kref
-        st["secs"] += 1
-        r = dict(type="sec", close=close_s, slug=slug, tau=tau, strike=strike, ptb=st["ptb"],
+        st["blind" if blind else "secs"] += 1
+        r = dict(type="blind" if blind else "sec", close=close_s, slug=slug, tau=tau, strike=strike, ptb=st["ptb"],
                  spot=spot, idx_age=None if age is None else round(age, 2),
                  sigma=None if sig is None else round(sig, 4), fair=None if f is None else round(f, 6),
                  side=pw or (want0 if f is not None else None),
                  p_ask=p_px, p_size=p_sz, p_fee=None if p_px is None else round(poly_fee(p_px), 5),
                  p_edge=None if pedge is None else round(pedge, 5), p_ev=None if pev is None else round(pev, 5),
-                 p_buy=p_buy, p_why=pref, p_book_age=None if not bk else round(now - bk[0], 2),
+                 p_buy=p_buy, p_why=pref, p_book_age=None if book_age is None else round(book_age, 2),
+                 blind_why=("no_book" if bk is None else "stale_book") if blind else None,
                  p_bid=bids[0][0] if bids else None, p_bid_sz=bids[0][1] if bids else None,
                  p_offer=asks[0][0] if asks else None, p_offer_sz=asks[0][1] if asks else None,
                  k_ticker=k_tk, k_ask=k_px, k_size=k_sz, k_age=k_age,
@@ -464,7 +493,8 @@ class Bot:
             return                                   # prints still arriving
         tape_settle = round(sum(got) / len(got), 2) if got else None
         poly_settle = None
-        if st["secs"] > 0:
+        watched = st["secs"] + st.get("blind", 0)
+        if watched > 0:
             if now < st.get("settle_next", 0):
                 return                               # one settlement GET per 5 s at most
             st["settle_next"] = now + 5.0
@@ -475,14 +505,15 @@ class Bot:
             if poly_settle is None and now < close_s + 90:
                 return                               # Polymarket publishes a little late
         st["settled"] = True
-        if st["secs"] == 0:
+        if watched == 0:
             return                                   # a window we never watched
         strike = st["ptb"] if st["ptb"] is not None else self.tape_strike(close_s)
         final = poly_settle if poly_settle is not None else tape_settle
         up = None if (final is None or strike is None) else (final >= strike)
         out = dict(type="settle", close=close_s, slug=st["slug"], strike=strike,
                    tape_strike=self.tape_strike(close_s), tape_settle=tape_settle,
-                   tape_prints=len(got), poly_settle=poly_settle, up=up, secs=st["secs"])
+                   tape_prints=len(got), poly_settle=poly_settle, up=up, secs=st["secs"],
+                   blind_secs=st.get("blind", 0))
         for key, venue, fee_fn in (("entry", "p", poly_fee_order),
                                    ("k_entry", "k", lambda p, n: round(n * kalshi_fee(p), 4))):
             e = st[key]
@@ -499,46 +530,96 @@ class Bot:
                 self.done = True
 
     # -- Polymarket WebSocket (read-only market data)
-    async def ws_loop(self):
+    def _running(self):
+        return not self.done and not os.path.exists(STOP) and time.time() < self.t_end
+
+    def _connect(self):
+        """A fresh authenticated market-data connection (signature is per connect)."""
         import websockets
         sys.path.insert(0, POLY_DIR)
         import poly_us
-        while not self.done and not os.path.exists(STOP) and time.time() < self.t_end:
+        c = json.load(open(poly_us.CREDS, encoding="utf-8-sig"))
+        hdrs = poly_us.headers(c["key_id"], poly_us.load_key(c["secret"]), "GET", WS_PATH)
+        return websockets.connect(WS_URL, additional_headers=hdrs, max_size=8_000_000, ping_interval=20)
+
+    async def ws_session(self, ws, clock=time.time):
+        """ONE connection serves ONE 15-minute window: it subscribes the live
+        and the next window (2 requests), and ends -- dropping every
+        subscription it holds -- when the live window closes, when the
+        exchange sends any error frame, or after SILENCE_S with no price update
+        for the live window. Returns why it ended."""
+        t0 = clock()
+        win = int(t0) // 900 * 900
+        cur = slug_for(win)
+        slugs = [cur, slug_for(win + 900)]
+        self.conn_n += 1
+        self.rec(type="ws", ev="connected", conn=self.conn_n)
+        for i, styp in enumerate(("SUBSCRIPTION_TYPE_MARKET_DATA", "SUBSCRIPTION_TYPE_TRADE")):
+            await ws.send(json.dumps({"subscribe": {
+                "requestId": "pp-%d-%d-%d" % (self.conn_n, int(t0), i), "subscriptionType": styp,
+                "marketSlugs": slugs, "responsesDebounced": False}}))
+        self.rec(type="ws", ev="subscribed", conn=self.conn_n, slugs=slugs, requests=2)
+        last = t0
+        self.got_price = False
+        while self._running():
+            now = clock()
+            if int(now) // 900 * 900 != win:
+                self.rec(type="ws", ev="unsubscribed", conn=self.conn_n, slugs=[cur], how="closed_connection",
+                         window_closed=win + 900)
+                return "window_closed"
+            bk = self.books.get(cur)
+            if bk and bk[0] > last:
+                last = bk[0]
+                self.got_price = True
+            if now - last >= SILENCE_S:
+                self.rec(type="ws", ev="silence", conn=self.conn_n, slug=cur, silent_s=round(now - last, 1),
+                         had_price=self.got_price)
+                return "silence"
             try:
-                c = json.load(open(poly_us.CREDS, encoding="utf-8-sig"))
-                hdrs = poly_us.headers(c["key_id"], poly_us.load_key(c["secret"]), "GET", WS_PATH)
-                async with websockets.connect(WS_URL, additional_headers=hdrs, max_size=8_000_000,
-                                              ping_interval=20) as ws:
-                    self.rec(type="ws", ev="connected")
-                    done_subs = set()   # slugs this connection already subscribed
-                    while not self.done and not os.path.exists(STOP) and time.time() < self.t_end:
-                        st15 = int(time.time()) // 900 * 900
-                        want = [x for x in (slug_for(st15), slug_for(st15 + 900)) if x not in done_subs]
-                        if want:
-                            # ONLY new slugs: a request repeating one already
-                            # subscribed is rejected whole (2026-09-25 fix)
-                            for i, styp in enumerate(("SUBSCRIPTION_TYPE_MARKET_DATA", "SUBSCRIPTION_TYPE_TRADE")):
-                                await ws.send(json.dumps({"subscribe": {
-                                    "requestId": "pp-%d-%d" % (int(time.time()), i), "subscriptionType": styp,
-                                    "marketSlugs": want, "responsesDebounced": False}}))
-                            self.rec(type="ws", ev="subscribed", slugs=want)
-                            done_subs.update(want)
-                        try:
-                            frame = await asyncio.wait_for(ws.recv(), timeout=2)
-                        except asyncio.TimeoutError:
-                            continue
-                        self.on_ws(frame, time.time())
+                frame = await asyncio.wait_for(ws.recv(), timeout=RECV_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                continue
+            if self.on_ws(frame, clock()) == "error":
+                self.rec(type="ws", ev="error_frame", conn=self.conn_n, frame=str(frame)[:300])
+                return "error_frame"
+        return "stopped"
+
+    async def ws_loop(self, connect=None, clock=time.time, sleep=asyncio.sleep):
+        connect = connect or self._connect
+        fails = 0                       # consecutive endings with no price for the live window
+        while self._running():
+            why = "exception"
+            self.got_price = False
+            try:
+                async with connect() as ws:
+                    why = await self.ws_session(ws, clock)
             except Exception as e:                           # noqa: BLE001
                 self.ws_errors += 1
                 self.rec(type="ws", ev="error", err=str(e)[:300])
-                await asyncio.sleep(3)
+            self.reconnects[why] = self.reconnects.get(why, 0) + 1
+            if why == "stopped":
+                break
+            if why == "window_closed" or self.got_price:
+                fails = 0
+            if why == "window_closed":
+                continue                                     # next window at once
+            fails += 1
+            wait = 0.5 if fails == 1 else min(2.0 * (fails - 1), 10.0)
+            self.rec(type="ws", ev="reconnect", why=why, wait_s=wait, fails=fails)
+            await sleep(wait)
 
     def on_ws(self, frame, rx):
+        """Returns "error" for an exchange error frame, else None."""
         try:
             fr = json.loads(frame)
         except (ValueError, TypeError):
-            return
+            return None
+        if not isinstance(fr, dict):
+            return None
         self.ws_frames += 1
+        if "error" in fr:
+            self.ws_error_frames += 1
+            return "error"
         md = fr.get("marketData")
         if md and md.get("marketSlug"):
             bids, asks = parse_book(md)
@@ -546,6 +627,7 @@ class Bot:
         tr = fr.get("trade")
         if tr and tr.get("marketSlug"):
             self.trades[tr["marketSlug"]] = self.trades.get(tr["marketSlug"], 0) + 1
+        return None
 
     async def tick_loop(self):
         while not self.done and not os.path.exists(STOP) and time.time() < self.t_end:
@@ -563,9 +645,11 @@ class Bot:
                  pin=pinrun.PIN, tau_min=pinrun.TAU_MIN, window_tau=WINDOW_TAU,
                  ceiling=pinrun.PRICE_CEILING, edge_floor=pinrun.EDGE_FLOOR, ev_floor=pinrun.EV_FLOOR,
                  flip=pinrun.MEASURED_FLIP, sigma_ruler=pinrun.SIGMA_RULER, poly_fee=POLY_TAKER,
+                 silence_s=SILENCE_S, blind_age_s=BLIND_AGE_S,
                  brti_prints=len(self.idx.ticks.get(IID) or {}))
         await asyncio.gather(self.ws_loop(), self.tick_loop())
         self.rec(type="end", ws_frames=self.ws_frames, ws_errors=self.ws_errors,
+                 ws_error_frames=self.ws_error_frames, connections=self.conn_n, reconnects=self.reconnects,
                  tape_errors=sum(t.errors for t in self.tape.tails.values()))
 
 
@@ -581,17 +665,34 @@ def report(paths=None, out=print):
                 except ValueError:
                     continue
                 if r.get("type") == "sec":
-                    w = wins.setdefault(r["close"], {"secs": [], "settle": None})
+                    w = wins.setdefault(r["close"], {"secs": [], "blind": [], "settle": None})
                     w["secs"].append(r)
+                elif r.get("type") == "blind":
+                    wins.setdefault(r["close"], {"secs": [], "blind": [], "settle": None})["blind"].append(r)
                 elif r.get("type") == "settle":
-                    wins.setdefault(r["close"], {"secs": [], "settle": None})["settle"] = r
+                    wins.setdefault(r["close"], {"secs": [], "blind": [], "settle": None})["settle"] = r
     tot_p = tot_k = 0.0
     n_p = n_k = 0
+    n_missing = n_offered = 0
+    offered_sizes = []
     lines = []
     for cs in sorted(wins):
         w = wins[cs]
         s = w["settle"] or {}
         secs = w["secs"]
+        # the 3-day bar's two counts (results/POLYMARKET_WHY_NO_TRADES_2026-09-28.md):
+        # "prices missing" = ANY blind second 45..3 s before close;
+        # "offered" = some seeing second 45..3 s before close where the model
+        # is >= PIN sure and that side's best ask is <= 98c
+        bl = [r for r in w["blind"] if pinrun.TAU_MIN <= r["tau"] <= WINDOW_TAU]
+        if bl:
+            n_missing += 1
+        cheap = [r for r in secs if pinrun.TAU_MIN <= r["tau"] <= WINDOW_TAU and r.get("fair") is not None
+                 and (r["fair"] >= pinrun.PIN or r["fair"] <= 1 - pinrun.PIN)
+                 and r.get("p_ask") is not None and r["p_ask"] <= 0.98 + 1e-9 and r.get("p_size")]
+        if cheap:
+            n_offered += 1
+            offered_sizes.append(statistics.median(r["p_size"] for r in cheap))
         pb = [r for r in secs if r.get("p_buy")]
         kb = [r for r in secs if r.get("k_buy")]
         conf = [r for r in secs if r.get("fair") is not None and (r["fair"] >= pinrun.PIN or r["fair"] <= 1 - pinrun.PIN)]
@@ -606,6 +707,12 @@ def report(paths=None, out=print):
             time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(cs)), et_str(cs), s.get("strike"),
             s.get("poly_settle"), s.get("tape_settle"),
             {True: "UP", False: "DOWN", None: "unsettled"}[s.get("up")]))
+        if w["blind"]:
+            lines.append("  BLIND (no Polymarket prices) %d seconds, %d of them 45..3 s before close"
+                         % (len(w["blind"]), len(bl)))
+        if cheap:
+            lines.append("  sure side offered at <= 98c in %d seconds (median %g contracts for sale)"
+                         % (len(cheap), offered_sizes[-1]))
         lines.append("  seconds logged %d | model sure enough (>= %.1f%%) %d | Poly would buy %d | Kalshi would buy %d"
                      % (len(secs), 100 * pinrun.PIN, len(conf), len(pb), len(kb)))
         if both:
@@ -626,6 +733,10 @@ def report(paths=None, out=print):
                     n_k += 1
     lines.append("TOTAL windows %d | Polymarket paper entries %d, P&L $%+.2f | Kalshi paper entries %d, P&L $%+.2f"
                  % (len(wins), n_p, tot_p, n_k, tot_k))
+    lines.append("BAR windows %d | prices missing in %d | sure side offered at <= 98c in %d | "
+                 "median contracts for sale in those %s"
+                 % (len(wins), n_missing, n_offered,
+                    "%g" % statistics.median(offered_sizes) if offered_sizes else "n/a"))
     for ln in lines:
         out(ln)
     return wins
@@ -821,6 +932,113 @@ def selftest():
     buf = []
     report([logp], out=buf.append)
     ck(any("P&L $+0.28" in x for x in buf), "--report reproduces the paper P&L")
+
+    # -- 7b. blindness guards, offline: a fake WebSocket on a fake clock. The
+    # bot steps once per second of fake time BEFORE each frame lands, so what a
+    # second sees is the book as it stood then.
+    cur, nxt = slug_for(start), slug_for(close)
+    clk = [close - 40.0]
+    logb = os.path.join(tmp, "blind.jsonl")
+    botb = Bot(logb, minutes=5, size=10, get_fn=fake_get)
+    botb.tape.tape = tmp
+    botb.tape.tails.clear()
+
+    def adv(dt):
+        new = clk[0] + dt
+        for s_ in range(math.ceil(clk[0] - 0.35), math.floor(new - 0.35) + 1):
+            if clk[0] < s_ + 0.35 <= new:
+                botb.step(s_ + 0.35)
+        clk[0] = new
+
+    def md_frame(slug):
+        return json.dumps({"requestId": "x", "subscriptionType": "SUBSCRIPTION_TYPE_MARKET_DATA",
+                           "marketData": {"marketSlug": slug,
+                                          "bids": [{"px": {"value": "0.9500"}, "qty": "40"}],
+                                          "offers": [{"px": {"value": "0.9700"}, "qty": "50"}]}})
+
+    class FakeWS:
+        def __init__(self, script):
+            self.script = list(script)       # (advance_s, frame or None=nothing arrives)
+            self.sent = []
+            self.closed = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            self.closed = True
+            return False
+
+        async def send(self, m):
+            self.sent.append(json.loads(m))
+
+        async def recv(self):
+            dt, fr = self.script.pop(0) if self.script else (1.0, None)
+            adv(dt)
+            if fr is None:
+                raise asyncio.TimeoutError
+            return fr
+
+    err_txt = '{"requestId":"pp-9-0", "error":"max subscriptions per connection reached"}'
+    fakes = [FakeWS([(0.2, md_frame(cur)), (0.2, err_txt)]),                   # error frame
+             FakeWS([(0.2, md_frame(cur)), (14.0, None)]),                     # 14 s of silence
+             FakeWS([(5.0, md_frame(cur))] * 5 + [(5.0, None)]),               # runs past the close
+             FakeWS([(0.2, md_frame(nxt)), (11.0, None)])]                     # next window
+    used = list(fakes)
+    waits = []
+
+    def fconnect():
+        return fakes.pop(0)
+
+    async def fsleep(w):
+        waits.append(w)
+        adv(w)
+        if not fakes:
+            botb.done = True
+    asyncio.run(botb.ws_loop(connect=fconnect, clock=lambda: clk[0], sleep=fsleep))
+    for _ in range(25):                                   # let the old window settle
+        adv(1.0)
+    rb = [json.loads(x) for x in open(logb, encoding="utf-8")]
+    evs = [(x.get("ev"), x.get("conn")) for x in rb if x["type"] == "ws"]
+    ck(("error_frame", 1) in evs and evs.index(("subscribed", 2)) > evs.index(("error_frame", 1))
+       and botb.reconnects.get("error_frame") == 1 and used[0].closed,
+       "planted error frame ('max subscriptions...') -> connection closed and a fresh one subscribed (%s)" % evs)
+    ck(("silence", 2) in evs and evs.index(("subscribed", 3)) > evs.index(("silence", 2))
+       and botb.reconnects.get("silence", 0) >= 1,
+       "planted 14 s of silence on the live window -> reconnect")
+    blind = [x for x in rb if x["type"] == "blind"]
+    secs_b = [x for x in rb if x["type"] == "sec"]
+    ck(sorted(x["tau"] for x in blind) == list(range(20, 27))
+       and all(x["blind_why"] == "stale_book" and x["p_why"] == ["blind"] and not x["p_buy"] for x in blind),
+       "the silent seconds (book older than %g s: tau 26..20) are logged 'blind' (%s)"
+       % (BLIND_AGE_S, sorted(x["tau"] for x in blind)))
+    ck(not any(20 <= x["tau"] <= 26 for x in secs_b)
+       and not any("no_offer" in (x.get("p_why") or []) for x in blind + secs_b),
+       "and never as a 'sec' or a no_offer refusal")
+    unsub = [x for x in rb if x["type"] == "ws" and x.get("ev") == "unsubscribed"]
+    ck(len(unsub) == 1 and unsub[0]["slugs"] == [cur] and used[2].closed,
+       "closed window -> its connection closed, its slug recorded unsubscribed (%s)" % unsub)
+    subs4 = [m["subscribe"]["marketSlugs"] for m in used[3].sent]
+    ck(subs4 == [[nxt, slug_for(close + 900)]] * 2 and cur not in sum(subs4, []),
+       "the next connection subscribes only the new window + the one after (%s)" % subs4)
+    ck(all(len(f_.sent) == 2 for f_ in used),
+       "every connection sends exactly 2 subscribe requests (never piles up to the limit)")
+    stb = [x for x in rb if x["type"] == "settle"]
+    ck(len(stb) == 1 and stb[0]["blind_secs"] == 7, "the settle record carries blind_secs 7 (%s)"
+       % (stb[0].get("blind_secs") if stb else None))
+    buf = []
+    report([logb], out=buf.append)
+    ck(any(x.startswith("BAR windows 1 | prices missing in 1 |") for x in buf),
+       "--report counts the window as 'prices missing' (%s)" % [x for x in buf if x.startswith("BAR")])
+    logn = os.path.join(tmp, "nobook.jsonl")
+    botn = Bot(logn, minutes=5, size=10, get_fn=fake_get)
+    botn.tape.tape = tmp
+    botn.tape.tails.clear()
+    botn.step(close - 30 + 0.35)
+    rn_ = [json.loads(x) for x in open(logn, encoding="utf-8")]
+    bn_ = [x for x in rn_ if x["type"] in ("sec", "blind")]
+    ck([x["type"] for x in bn_] == ["blind"] and bn_[0].get("blind_why") == "no_book",
+       "no book ever received -> 'blind' (no_book), not no_offer")
     for root, dirs, files in os.walk(tmp, topdown=False):
         for fn in files:
             os.remove(os.path.join(root, fn))
@@ -833,6 +1051,7 @@ def selftest():
     body = src[:src.rindex("\ndef selftest():")]
     ck(("PO" + "ST") not in body and ("create" + "-order") not in body and ("portfolio/" + "orders") not in body,
        "READ-ONLY: no order route and no writing verb in the working code")
+    ck(("poly" + "order") not in body, "PAPER: the order tool is not imported or named in the working code")
     ck(body.count('open(self.path, "rb")') == 1 and "kalshi_data" in body,
        "the tape is opened 'rb' only")
     print("polypaper selftest:", "OK" if ok else "FAILED")
