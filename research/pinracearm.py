@@ -2555,6 +2555,13 @@ def main():
         if os.path.exists(LIVE_STOP_FILE):
             print("  REFUSING TO ARM -- stop file present: %s" % LIVE_STOP_FILE)
             return 1
+        # v-race20 (2026-09-28): pintake's per-take rail ships at 10 for this
+        # process; a larger --max-contracts up to pintake.HARD_MAX (25) RAISES
+        # it through pintake's own one-way ratchet (printed, never silent).
+        # Above HARD_MAX the refusal below still fires.
+        if (pintake.MAX_TAKE_COUNT < LIVE["max_contracts"] <= pintake.HARD_MAX):
+            pintake.set_limits(max_take_count=LIVE["max_contracts"],
+                               why="--max-contracts (v-race20)")
         if LIVE["max_contracts"] > pintake.MAX_TAKE_COUNT:
             print("  REFUSING TO ARM -- %g contracts is over pintake's own "
                   "per-order rail of %g" % (LIVE["max_contracts"],

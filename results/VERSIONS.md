@@ -1,3 +1,21 @@
+# v-race20 -- 2026-09-28 02:50Z (pid 3739628; code change in research/pinracearm.py) -- LIVE: coin race penny bot at 20 contracts a leg (was 10, v-race10). Operator 2026-09-28 ~02:4xZ: "Coin race hasn't lost in days. Up it."
+
+Record at the step: since 09-22 110 live races, all won, 0 ties by the log
+(bars.py counts 104 won + 1 tie since 09-22 03:03 ET; the tie on 09-23 cost
+$0.48); since v-race10 3 races, all won. Legs per race since 09-22: 59 with 1,
+50 with 2, 1 with 3. Stake cap stays $60 (pintake's run-stake rail): 20 x 3
+legs x 0.97 = $58 fits, so the cap binds only on a 4th leg (never seen). A
+loss now costs about $19.40 a leg; the bot still stops on its first loss.
+Code: pintake's per-take rail ships at 10 for this process; pinracearm now
+raises it through pintake.set_limits (the one-way ratchet, printed) when
+--max-contracts is above 10 and at most pintake.HARD_MAX (25); above 25 the
+old refusal still fires. Self-test 213 checks pass.
+
+**REVERT:** stop pid 3739628, then relaunch with the v-race10 argv
+(`--max-contracts 10`, everything else identical; VERSIONS v-race10 has it).
+
+---
+
 # v-onefull -- 2026-09-27 08:11:15Z (pid 3510420; git ee351cc + this commit; code change in research/pinrun.py) -- LIVE: `--one-full-bet`: a market that already holds a full bet never takes a second full bet (the A23 scale-in); the top-up of an unfinished position and the last-15-seconds add are untouched. Operator 2026-09-27 03:2x ET: "Fix. This. ... SOLVE BY ANY MEANS"; results/WHY_NO_MONEY_2026-09-27.md policy P1.
 
 Why: the bot picks as well as it ever did (2.3 -> 2.0 losses per 100 markets
