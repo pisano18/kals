@@ -117,7 +117,7 @@
   {
    "id": "cleanroom-3-paper",
    "due": "2026-10-05T03:10Z",
-   "what": "Clean-room forecaster / bettor / contrarian paper bots (pids 3747612, 3747208, 3748320).",
+   "what": "Clean-room forecaster / bettor / contrarian, ALL THREE now read from ONE bot: research/cleanroom/bettor_paper.py (pid 3747208, results/cleanroom-bettor.jsonl; fields forecaster_real/_opt, bettor_real/_opt, contrarian_real/_opt). forecaster_paper.py and contrarian_paper.py were stopped 09-28: their realistic fill counted offers that appeared after the decision (reconciled, not refuted). First 58 quarter-hours: forecaster realistic +$144 (1 loss), fragile -- $0 with continuous checking on the tape; bettor +$9; contrarian 0 fills.",
    "how": "results/cleanroom-<name>.jsonl close_summary, realistic 1-second fill rule",
    "bar": "none written; compare with live over the same window",
    "status": "open"
