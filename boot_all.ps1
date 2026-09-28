@@ -407,15 +407,14 @@ if (-not $NoArms) {
         # settlements and writes a file.
         if (-not (RunningPy '*pinledgerd.py*')) {
             Say "pinledgerd.py is NOT running -- starting the Kalshi ledger refresher"
-            Start-Process -FilePath $py -ArgumentList @("-u", "$repo
-esearch\pinledgerd.py") `
+            Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\pinledgerd.py") `
                 -WorkingDirectory $repo -WindowStyle Hidden `
                 -RedirectStandardOutput "$res\pinledgerd.out" -RedirectStandardError "$res\pinledgerd.err"
             $started++
         }
         # the commodities paper arm (gold / silver / WTI). Paper only: its own
         # self-test asserts it cannot order. results/RESULTS_commodities.md.
-        if (-not (RunningPy '*cmdarm.py*')) {
+        if ($false -and -not (RunningPy '*cmdarm.py*')) {   # OFF 2026-09-28: FAILED (-$654 paper, 59 of 1,831 lost since 09-18; TEST_AUDIT_2026-09-28)
             Say "cmdarm.py is NOT running -- starting the commodities paper arm"
             Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\cmdarm.py", "--minutes", "4320") `
                 -WorkingDirectory $repo -WindowStyle Hidden `
@@ -447,7 +446,7 @@ esearch\pinledgerd.py") `
         # the 2-30 s oil PAPER arm the operator asked for alongside the live
         # 16-30 s rule. Its own process, because an overlapping band inside
         # cmdarm is refused by the one-per-market rule and never measured.
-        if (-not (RunningPy '*cmdarm-wide230*')) {
+        if ($false -and -not (RunningPy '*cmdarm-wide230*')) {   # OFF 2026-09-28: FAILED (-$100 paper, 13 of 220 lost)
             Say "2-30 s oil paper arm is NOT running -- starting it"
             Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\cmdarm.py", "--minutes", "4320", "--series", "KXWTI15M", "--only-window", "2:30:0.93:0.99", "--out", "$res\cmdarm-wide230.jsonl") `
                 -WorkingDirectory $repo -WindowStyle Hidden `
