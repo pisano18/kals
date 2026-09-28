@@ -666,6 +666,109 @@ def reward_main(a):
           f"take it down with --reward-cancel {oid} (or all).")
 
 
+# --- SUBACCOUNTS (added 2026-09-28 for the penny live ladder) ----------------
+# The live bot (pinrun) reads GET /portfolio/positions with no subaccount
+# parameter, which Kalshi documents as "Defaults to 0" (the primary account),
+# and its v-safety2 check ADOPTS AND HEDGES any position it did not book. A
+# second strategy on the same markets must therefore trade in a SUBACCOUNT.
+#   create : POST /portfolio/subaccounts {"exchange_index": 2}
+#   fund   : POST /portfolio/subaccounts/transfer {client_transfer_id (uuid),
+#            from_subaccount, to_subaccount, amount_cents, exchange_index}
+# Rails: a subaccount may hold at most SUB_MAX_BALANCE (penny tests only).
+SUB_MAX_BALANCE = 25.00
+SUB_POOL = 2                 # crypto & commodities
+
+
+def build_sub_transfer(dollars, from_sub, to_sub, day):
+    """The transfer body. client_transfer_id is a uuid5 of the transfer and
+    the UTC day, so the dry run and the live run build the SAME body (same
+    sign-off token) and Kalshi rejects an accidental repeat the same day."""
+    import uuid
+    cents = int(round(float(dollars) * 100))
+    cid = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                         "kals-sub|%d|%d|%d|%s" % (cents, from_sub, to_sub, day)))
+    return {"client_transfer_id": cid, "from_subaccount": int(from_sub),
+            "to_subaccount": int(to_sub), "amount_cents": cents,
+            "exchange_index": SUB_POOL}
+
+
+def check_sub_transfer(body, src_balance, dst_balance):
+    bad = []
+    if body["from_subaccount"] == body["to_subaccount"]:
+        bad.append("from and to subaccount are the same")
+    if not (0 <= body["from_subaccount"] <= 63 and 0 <= body["to_subaccount"] <= 63):
+        bad.append("subaccount outside 0..63")
+    if body["amount_cents"] <= 0:
+        bad.append("amount is not positive")
+    if src_balance is None or dst_balance is None:
+        bad.append("a balance is unreadable -- refusing blind")
+    else:
+        if body["amount_cents"] > int(round(src_balance * 100)):
+            bad.append("amount exceeds the source balance $%.2f" % src_balance)
+        if body["to_subaccount"] != 0 and \
+                dst_balance + body["amount_cents"] / 100.0 > SUB_MAX_BALANCE + 1e-9:
+            bad.append("a subaccount may hold at most $%.2f (would be $%.2f)"
+                       % (SUB_MAX_BALANCE, dst_balance + body["amount_cents"] / 100.0))
+    if body["exchange_index"] != SUB_POOL:
+        bad.append("exchange_index is not %d" % SUB_POOL)
+    return bad
+
+
+def sub_balance(pk, key_id, sub):
+    st, b = send(PROD, pk, key_id, "GET", "/portfolio/balance",
+                 query={"subaccount": int(sub), "exchange_index": SUB_POOL})
+    try:
+        return float(b["balance_dollars"]) if st == 200 else None
+    except Exception:
+        return None
+
+
+def sub_main(a):
+    pk = load_key(a.key_file)
+    if a.sub_status is not None:
+        s = int(a.sub_status)
+        for path, q in (("/portfolio/balance", {"subaccount": s, "exchange_index": SUB_POOL}),
+                        ("/portfolio/positions", {"subaccount": s, "count_filter": "position",
+                                                  "settlement_status": "unsettled"}),
+                        ("/portfolio/orders", {"subaccount": s, "status": "resting"})):
+            st, r = send(PROD, pk, a.key_id, "GET", path, query=q)
+            print("  %s -> %s %s" % (path, st, json.dumps(r)[:600] if isinstance(r, dict) else r))
+        st, r = send(PROD, pk, a.key_id, "GET", "/portfolio/subaccounts/balances")
+        print("  /portfolio/subaccounts/balances -> %s %s" % (st, json.dumps(r)[:600] if isinstance(r, dict) else r))
+        return
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    if a.sub_create:
+        body = {"exchange_index": SUB_POOL}
+        steps = [("POST", "/portfolio/subaccounts", body)]
+    else:
+        frm, to = (0, int(a.sub)) if a.sub_fund is not None else (int(a.sub), 0)
+        dollars = a.sub_fund if a.sub_fund is not None else a.sub_return
+        body = build_sub_transfer(dollars, frm, to, day)
+        bad = check_sub_transfer(body, sub_balance(pk, a.key_id, frm),
+                                 sub_balance(pk, a.key_id, to))
+        print("  transfer: %s" % json.dumps(body))
+        if bad:
+            print("\n  *** REFUSED BY THE RAILS ***")
+            for v in bad:
+                print("    - " + v)
+            raise SystemExit(1)
+        steps = [("POST", "/portfolio/subaccounts/transfer", body)]
+    tok = token_for({"sub_steps": steps, "day": day}, PROD)
+    for m, p, b in steps:
+        print("  NOT YET SENT: %s %s %s" % (m, p, json.dumps(b)))
+    print("\n  SIGN-OFF TOKEN: %s" % tok)
+    if not a.live:
+        print("  DRY RUN. To send: add --live --signoff %s" % tok)
+        return
+    if a.signoff != tok:
+        raise SystemExit("  *** sign-off token mismatch. Expected %s. REFUSING. ***" % tok)
+    for m, p, b in steps:
+        st, r = send(PROD, pk, a.key_id, m, p, b)
+        print("  %s %s -> %s %s" % (m, p, st, r))
+        if st not in (200, 201):
+            raise SystemExit("  *** REJECTED ***")
+
+
 def selftest():
     set_env(True)
     print("=" * 78)
@@ -822,6 +925,25 @@ def selftest():
         if not v:
             fails.append(f"reward: {desc} was NOT refused")
 
+    print("\n  subaccount transfer rails:")
+    sb = build_sub_transfer(15, 0, 1, "2026-09-28")
+    if sb != build_sub_transfer(15, 0, 1, "2026-09-28"):
+        fails.append("subaccount transfer body is not reproducible (token would never match)")
+    if sb["amount_cents"] != 1500 or sb["exchange_index"] != SUB_POOL:
+        fails.append("subaccount transfer body wrong: %s" % sb)
+    if check_sub_transfer(sb, 900.0, 0.0):
+        fails.append("a legal $15 funding was refused: %s" % check_sub_transfer(sb, 900.0, 0.0))
+    for desc, b_, src, dst in (
+            ("more than the source holds", build_sub_transfer(15, 0, 1, "d"), 10.0, 0.0),
+            ("subaccount over $25", build_sub_transfer(15, 0, 1, "d"), 900.0, 11.0),
+            ("same subaccount", build_sub_transfer(5, 1, 1, "d"), 900.0, 0.0),
+            ("balance unreadable", build_sub_transfer(5, 0, 1, "d"), None, 0.0),
+            ("zero amount", build_sub_transfer(0, 0, 1, "d"), 900.0, 0.0)):
+        v = check_sub_transfer(b_, src, dst)
+        print(f"    {desc:<34} -> {'REFUSED' if v else '*** ALLOWED ***'}")
+        if not v:
+            fails.append(f"subaccount: {desc} was NOT refused")
+
     print("\n  default environment:")
     print(f"    base defaults to DEMO: {DEMO}")
 
@@ -871,6 +993,12 @@ def main():
     ap.add_argument("--reward-status", action="store_true")
     ap.add_argument("--reward-cancel", default="",
                     help="order id, or 'all' reward orders")
+    ap.add_argument("--sub-create", action="store_true",
+                    help="create a subaccount on pool 2 (prod)")
+    ap.add_argument("--sub", type=int, help="subaccount number for --sub-fund/--sub-return")
+    ap.add_argument("--sub-fund", type=float, help="move $ from the primary account to --sub")
+    ap.add_argument("--sub-return", type=float, help="move $ from --sub back to the primary account")
+    ap.add_argument("--sub-status", type=int, help="balances, positions and resting orders of a subaccount")
     a = ap.parse_args()
     if not a.key_id:
         a.key_id = "5163259c-ecb0-4966-9053-0d2776cf061e"   # kauth.KEY_ID
@@ -883,6 +1011,11 @@ def main():
         return pools_main(a)
     if a.reward or a.reward_status or a.reward_cancel:
         return reward_main(a)
+    if a.sub_create or a.sub_fund is not None or a.sub_return is not None \
+            or a.sub_status is not None:
+        if (a.sub_fund is not None or a.sub_return is not None) and a.sub is None:
+            raise SystemExit("--sub-fund / --sub-return need --sub N")
+        return sub_main(a)
     if not (a.ticker and a.price):
         raise SystemExit("\n--ticker and --price are required")
 
