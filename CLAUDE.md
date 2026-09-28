@@ -20,6 +20,24 @@ is kept tight; its full wording before 2026-09-25 is preserved verbatim in
 | what a scheduled/unattended session may and may not do | `GUARDIAN.md` |
 | money numbers | `python research/pinday.py`, `results/kalshi_ledger.json`; deposits: `research/pinxfer.py` |
 
+## Reads due -- say it UNPROMPTED (2026-09-28, operator's standing order)
+
+*"For all changes like what we did today and you have a paper running to see
+if it was worth it, or any tests that take time make sure to add an alert
+somewhere ... so when it's finished you say something without me having to
+ask, and add somewhere that you should be doing that for everything for
+future ai assistants."* So, every session, no exceptions:
+- **At the start of every session and at every status check run
+  `python research/readsdue.py`.** Anything OVERDUE or due within the day is
+  read and reported to the operator in that same reply, with its bar and a
+  verdict -- he must never have to ask.
+- **Whenever you start a paper arm, a test, a watcher, or deploy a live change
+  with something to watch, add it to `results/READS_DUE.json` in the same
+  commit** (id, due in UTC, what, how to read it, the bar). When read, set
+  `status` to `read` and add a one-line `read_note`.
+- 13 finished tests went unread for days before this rule
+  (`results/TEST_AUDIT_2026-09-28.md`); that is what it prevents.
+
 ## What this is
 
 Quantitative research into, and live trading of, an edge in Kalshi's 15-minute
