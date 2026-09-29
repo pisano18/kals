@@ -1,3 +1,28 @@
+# v-forecaster-race -- 2026-09-29 04:21:01Z (pid 4036456; research/cleanroom/forecaster_live.py --variant race05_98; Kalshi SUBACCOUNT 2, $25) -- LIVE: the live forecaster now SKIPS a buy when the index has closed half or more of its gap to the strike in the last 5 s AND the model is under 98% on that side (fc_variants.VARIANTS['race05_98'] = {race_x 0.5, race_p 0.98}); everything else identical to v-forecaster-live (the VEngine with no gates reproduces the paper forecaster fill for fill, self-tested). Operator 2026-09-29 ~04:1xZ: "Definitely do the 1/3 less loss for 3% profit trade first."
+
+DEPLOYED ON THE OPERATOR'S DIRECTION BEFORE ITS FORWARD-PAPER BAR (READS_DUE
+'fcvar-paper', 10-02) WAS MET -- said loudly, per the no-quiet-bars rule.
+Evidence, REPLAY ONLY (tape population, results/FC_VARIANTS_2026-09-29.md, 33
+recorded days): net +$3,790 vs base +$3,822 (-$32, -0.8%); money lost in losing
+markets -$449 vs -$697 (-36%); 13 losing markets vs 18. TRAIN -$16 net / $148
+saved; TEST -$15 net / $101 saved. About 31 versions were tried, so this row is
+flattered by selection. Forward paper: race05_98 runs beside base in
+fc_variants_paper.py since 01:51Z.
+Before the switch, live base: 4 buys, 4 wins, +$2.02 (00:54-04:15Z); the $2.02
+was moved back to the main account (ordercli --sub-return 2.02 --sub 2) so the
+$25 start rail holds; the start rail now allows 5c of fee residue (25.0042).
+The startup path was dry-run WITH the flag 04:19:21-04:20:21Z (pid 4056788, 0
+would_place); that minute's paper records sit in forecaster-live.jsonl beside
+the live process's.
+
+**REVERT:** create `results/forecaster-live.stop`; once it has exited, delete the
+stop file and relaunch WITHOUT `--variant` (the RELAUNCH line of
+v-forecaster-live below).
+
+**RELAUNCH** (this version; PowerShell): `Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList "-u","research\cleanroom\forecaster_live.py","--subaccount","2","--live","--variant","race05_98","--minutes","10080" -WorkingDirectory "C:\kals-repo" -WindowStyle Hidden -RedirectStandardOutput "C:\kals-repo\results\forecaster-live-stdout.log" -RedirectStandardError "C:\kals-repo\results\forecaster-live-stderr.log"`
+
+---
+
 # v-forecaster-live -- 2026-09-29 00:54:20Z (pid 4014356; research/cleanroom/forecaster_live.py; Kalshi SUBACCOUNT 2, $25) -- LIVE, NEW STRATEGY at 1/20 of paper size: the clean-room FORECASTER on its realistic fill rule. Each paper 'real' fill (size still displayed at the same price 1.0 s after the decision) becomes one immediate-or-cancel buy at that price for round_half_up(paper contracts x 0.05) minus what was already asked on that side. Operator 2026-09-29 ~00:5xZ: "I want clean room forecaster realistic fills. Exactly how it worked to get the 15% return just scaled down". REPLACES v-bettor-penny (he had asked for the wrong one), which placed 0 orders and was stopped by its stop file at 00:50:01Z.
 
 Engine: bettor_paper.py unchanged, strats=("forecaster",): r <= 30 remaining

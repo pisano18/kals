@@ -252,6 +252,14 @@
    "how": "python research/cleanroom/fc_compare.py --paper results/fcvar-paper.jsonl --since 2026-09-29T01:51 ; replay companion: python research/cleanroom/fc_compare.py --replay <scratchpad>/clean/fcvar (33 recorded days, TRAIN/TEST). FIRST check that 'base' matches cleanroom-bettor.jsonl forecaster_real market for market. Final read 2026-10-06. Base cannot match the separate paper forecaster fill for fill (different process timing); check it is close in markets and money, and read variants against THIS base.",
    "bar": "PRE-REGISTERED 2026-09-29 ~01:45Z, before any forward result. A variant is a candidate for the LIVE forecaster only if BOTH on this forward paper and on the replay TEST half: net >= 95% of base's net AND money lost in losing markets <= 70% of base's. If 'base' here does not match the paper forecaster market for market, nothing is read until the plumbing is fixed. Replay-only wins are hypotheses (tape population).",
    "status": "open"
+  },
+  {
+   "id": "forecaster-race",
+   "due": "2026-10-02T01:30Z",
+   "what": "v-forecaster-race (live since 2026-09-29 04:21Z, pid 4036456): keep the race gate on the live forecaster or go back to base?",
+   "how": "python research/cleanroom/fc_compare.py --paper results/fcvar-paper.jsonl --since 2026-09-29T01:51 -> rows base vs race05_98 (same process, same book); live: results/forecaster-live-orders.jsonl since 04:21Z (live_fill / live_settle; refused why=... never shows the gate -- the gate acts inside the engine, so count paper 'real' fills that base took and race05_98 did not).",
+   "bar": "PRE-REGISTERED 2026-09-29 ~04:25Z, before any forward result for it. REVERT to base if the forward paper shows race05_98 below base by more than 10% of base's net with no money lost saved; KEEP otherwise. If the forward paper has no market where the gate fired, keep and read again at 10-06.",
+   "status": "open"
   }
  ]
 }

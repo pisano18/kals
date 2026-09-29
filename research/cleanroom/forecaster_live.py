@@ -44,6 +44,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 import bettor_paper as B                        # noqa: E402
+import fc_variants as FV                        # noqa: E402  (--variant: the loss-cutting gates)
 import pintake                                  # noqa: E402  (normalise / _readable / _is_live: pure parsers)
 
 LIVE_LOG = r"C:\kals-repo\results\forecaster-live.jsonl"
@@ -577,6 +578,23 @@ def selftest():
             clock[0] = 3 * C + rel + 0.2
             eng3.tick()
         ck(b11.q.empty(), "no book: nothing sent")
+        # the --variant path: a VEngine (race05_98) in the planted world sends the same single order as base
+        engV = FV.VEngine(B.Logger(None, esink), lambda: clock[0], B.Tables(), FV.VARIANTS["race05_98"], "race05_98")
+        clock[0] = 4 * C - 100
+        engV.add_market("V-T", "BTC", 4 * C, Decimal("100.00"), 2, "planted")
+        for s in range(4 * C - 240, 4 * C + 1):
+            engV.on_print("BRTI", s * 1000, ("101.00", "101.01")[s % 2], s + 0.1)
+        engV.on_snapshot("V-T", {"no_dollars_fp": [["0.2000", "50.00"], ["0.0100", "500.00"]],
+                                 "yes_dollars_fp": [["0.0100", "40.00"]]}, 1)
+        b12 = Broker(log, 2, False, fake_send, lambda: clock[0])
+        BROKER = b12
+        for rel in range(-60, -30):
+            clock[0] = 4 * C + rel + 0.2
+            engV.tick()
+        engV.on_delta("V-T", {"side": "no", "price_dollars": "0.2000", "delta_fp": "-30.00"}, 2)
+        clock[0] = 4 * C - 30 + 0.2
+        engV.tick()
+        ck(b12.q.qsize() == 1, "--variant race05_98: the 1-s survivor queues one live order, as base")
     finally:
         BROKER = None
     # the only write endpoints in this file: create order, and cancel of an IOC that rested
@@ -597,7 +615,10 @@ def main():
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--minutes", type=float, default=10080)
+    ap.add_argument("--variant", default="base", help="fc_variants.VARIANTS name; base = the paper forecaster exactly")
     a = ap.parse_args()
+    if a.variant not in FV.VARIANTS:
+        raise SystemExit("unknown --variant %s" % a.variant)
     B.selftest()                                   # raises on failure
     if not selftest():
         raise SystemExit("self-test failed; refusing to run")
@@ -617,7 +638,7 @@ def main():
         sub_bal = float(bal["balance_dollars"])
     except Exception:
         raise SystemExit("subaccount balance unreadable (%s %s); refusing" % (st, str(bal)[:200]))
-    if sub_bal > MAX_SUB_BALANCE:
+    if sub_bal > MAX_SUB_BALANCE + 0.05:              # fees leave sub-cent residue (25.0042 after a $2.02 sweep)
         raise SystemExit("subaccount holds $%.2f > $%.2f; refusing" % (sub_bal, MAX_SUB_BALANCE))
     if a.live and sub_bal < 5.0:
         raise SystemExit("subaccount holds $%.2f; fund it first (ordercli --sub-fund)" % sub_bal)
@@ -632,6 +653,7 @@ def main():
     olog = B.Logger(ORDER_LOG)
     br = Broker(olog, a.subaccount, a.dry_run, sender, time.time)
     olog.write("start", pid=os.getpid(), subaccount=a.subaccount, live=a.live, sub_balance=sub_bal,
+               variant=a.variant, variant_params=FV.VARIANTS[a.variant],
                rails={"scale": str(SCALE), "per_side": MAX_PER_SIDE, "per_close": MAX_PER_CLOSE, "per_order": MAX_ORDER,
                       "max_held": MAX_HELD, "max_commit": MAX_COMMIT, "px": [MIN_PX, MAX_PX], "day_stop": DAY_STOP,
                       "run_stop": RUN_STOP, "late_s": LATE_S, "stale_s": STALE_S, "writes_per_s": WRITES_PER_S})
@@ -647,7 +669,9 @@ def main():
             olog.write("exit", why="stop file")
             os._exit(0)
     B.Engine.tick = tick
-    B.Logger(LIVE_LOG).write("selftest", passed=True, checks=0)
+    params = FV.VARIANTS[a.variant]
+    B.Engine = lambda log, now_fn, tables, strats=None: FV.VEngine(log, now_fn, tables, params, a.variant)
+    B.Logger(LIVE_LOG).write("selftest", passed=True, checks=0, variant=a.variant)
     B.run_live(a.minutes)
     return 0
 

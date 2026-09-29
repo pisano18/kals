@@ -44,6 +44,23 @@ contracts a level. Leads it left ($0 each): rounding-flip markets (18 in 32
 days, ~$20.5k crowd money), a receive-time gate on late index prints (13 in
 100 arrive > 1 s late), per-close dollar cap. Details: HANDOFF top, 3b.
 
+### A19. The clean-room forecaster -- LIVE at 1/20 size since 2026-09-29 (8:54 PM ET 09-28)
+**Say: "the forecaster"** (live numbers and what is running), **"forecaster
+variants"** (the loss-cutting versions and their paper test), **"forecaster
+research"** (the deeper hunt for what separates losing buys).
+- Live: `research/cleanroom/forecaster_live.py`, Kalshi subaccount 2 ($25), buys
+  1/20 of what the paper forecaster buys, only offers still there 1 s later.
+  Versions: `v-forecaster-live` (00:54Z), `v-forecaster-race` (04:21Z: skips a buy
+  while the price races toward the line and the model is under 98%).
+  Numbers: `results/forecaster-live-orders.jsonl`; reads READS_DUE
+  `forecaster-live` (09-30), `forecaster-race` and `fcvar-paper` (10-02).
+- Variants: `results/FC_VARIANTS_2026-09-29.md` (33-day replay of ~31 versions);
+  side-by-side paper `research/cleanroom/fc_variants_paper.py` ->
+  `results/fcvar-paper.jsonl`; compare with `research/cleanroom/fc_compare.py`.
+- Replaced: `v-bettor-penny` (the wrong strategy; 0 orders, stopped 09-29 00:50Z).
+- Memory: `python research/pausepaper.py --pause` / `--resume` freezes the paper
+  bots (never the live ones or the recorders) when the operator needs RAM.
+
 ### A00. PICK UP WHERE WE LEFT OFF
 **Say: "pick up where we left off".** The top of `HANDOFF.md` ("PICK UP HERE",
 2026-09-26) has the last instructions and jobs P0-P7.
