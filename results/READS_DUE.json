@@ -244,6 +244,14 @@
    "how": "results/forecaster-live-orders.jsonl (placed / live_fill / live_settle / refused / dropped / halt; paper_k on each order), results/forecaster-live.jsonl (the engine's paper book in the same process), results/cleanroom-bettor.jsonl forecaster_real (paper bot), python research/ordercli.py --sub-status 2 and GET /portfolio/settlements?subaccount=2. Day-1 read 09-30 01:00Z; final 10-06 01:00Z.",
    "bar": "PRE-REGISTERED 2026-09-29 ~01:00Z, before any live fill. STOP if: the -$20 run stop fires, or the day stop fires twice, or after >= 40 filled markets live P&L is below zero. CONSIDER a bigger size only if by 10-06: >= 60 filled markets, live return on money staked >= +5%, live fills >= 60% of contracts asked, and no market lost to buying both sides more than once. Otherwise keep 1/20 and read again.",
    "status": "open"
+  },
+  {
+   "id": "fcvar-paper",
+   "due": "2026-10-02T01:30Z",
+   "what": "Side-by-side PAPER of the clean-room forecaster and 15 loss-cutting variants (pid 4020560, research/cleanroom/fc_variants_paper.py, since 2026-09-29 01:28Z): does any variant keep the earnings and cut the losses?",
+   "how": "python research/cleanroom/fc_compare.py --paper results/fcvar-paper.jsonl ; replay companion: python research/cleanroom/fc_compare.py --replay <scratchpad>/clean/fcvar (33 recorded days, TRAIN/TEST). FIRST check that 'base' matches cleanroom-bettor.jsonl forecaster_real market for market. Final read 2026-10-06.",
+   "bar": "PRE-REGISTERED 2026-09-29 ~01:45Z, before any forward result. A variant is a candidate for the LIVE forecaster only if BOTH on this forward paper and on the replay TEST half: net >= 95% of base's net AND money lost in losing markets <= 70% of base's. If 'base' here does not match the paper forecaster market for market, nothing is read until the plumbing is fixed. Replay-only wins are hypotheses (tape population).",
+   "status": "open"
   }
  ]
 }
