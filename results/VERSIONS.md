@@ -1,4 +1,44 @@
-# v-bettor-penny -- 2026-09-29 00:20:58Z (pid 3990228; research/cleanroom/bettor_live.py; Kalshi SUBACCOUNT 2, funded $10) -- LIVE, NEW STRATEGY at 1 contract a market: the clean-room BETTOR (bettor_paper.py's engine, bettor rule only, unchanged) mirrored as a real 1-contract immediate-or-cancel buy at the displayed ask each time its paper book takes an ask ('opt' rule). Operator 2026-09-29 ~00:0xZ: "I want to run clean room bettor but at a tiny size."
+# v-forecaster-live -- 2026-09-29 00:54:20Z (pid 4014356; research/cleanroom/forecaster_live.py; Kalshi SUBACCOUNT 2, $25) -- LIVE, NEW STRATEGY at 1/20 of paper size: the clean-room FORECASTER on its realistic fill rule. Each paper 'real' fill (size still displayed at the same price 1.0 s after the decision) becomes one immediate-or-cancel buy at that price for round_half_up(paper contracts x 0.05) minus what was already asked on that side. Operator 2026-09-29 ~00:5xZ: "I want clean room forecaster realistic fills. Exactly how it worked to get the 15% return just scaled down". REPLACES v-bettor-penny (he had asked for the wrong one), which placed 0 orders and was stopped by its stop file at 00:50:01Z.
+
+Engine: bettor_paper.py unchanged, strats=("forecaster",): r <= 30 remaining
+prints, 'blendvr' model with TRAIN z-scale and calibration map, either side at a
+displayed ask 75-98.5c with p_side - q - fee >= 2c, paper caps 100 per side per
+market / 400 per close. Live copies both sides of a market when the paper does.
+A live miss is not retried. Subaccount 2 topped up $10 -> $25 (ordercli
+--sub-fund 15 --sub 2, 200) at ~00:53Z.
+Rails in code: 5 per side per market, 20 per close, 5 per order, 20 held / $22
+held+in flight, 75-98.5c, never within 0.5 s of the close or on a trigger older
+than 1.5 s, -$12 realized per ET day halts to the next ET day, -$20 since start
+halts until restart, a resting IOC or an unreadable answer halts, refuses to
+start above $25; IOC, post_only False, self_trade_prevention taker_at_cross,
+"fc-" client ids; stop file results/forecaster-live.stop. Same "only writer"
+exception as ladder_live.py: one POST, one DELETE in the working code
+(self-test asserts it).
+Self-test: bodies and refusals, proportional increments (77 -> 4, +23 -> 1,
+cap 5, 3+6 -> 0, +1 -> 1), no retry after a miss, partial fill, per-close 20,
+held 20, late/stale drop, settle arithmetic incl. both sides bought (-2.80),
+day/run stops, rested/garbled/4xx, stop file, dry run, and a driven world where
+the paper's decision-instant fill sends NOTHING and its 1-s survivor sends one
+YES bid at 0.80. Planted bugs caught: 6 per side; 25 per close.
+Paper evidence (NOT live, paper population): forecaster 'real' 09-28 07:15Z ->
+09-29 00:45Z, 22 markets, 21 won, 1 lost (-$54.96, XRP 16:15Z, bought BOTH
+sides when its view flipped), +$208.62 on $1,560.73 staked (13.4%). The
+decision-instant rule on the same period: 46 markets, +$116.98 -- four of its
+losses (-$62 to -$70) came from offers that vanished within the second, which
+the 1-s rule never took. Whether a real order still gets the survivors is the
+first thing this measures.
+Pre-registered bar (written before any live fill): READS_DUE 'forecaster-live'.
+
+**REVERT:** create `results/forecaster-live.stop` (it halts and exits), then
+move the money back: `python research/ordercli.py --sub-return 25 --sub 2`
+(dry run, then `--live --signoff <token>`; use the balance shown by
+`--sub-status 2`).
+
+**RELAUNCH** (after a reboot; PowerShell, from anywhere): `Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList "-u","research\cleanroom\forecaster_live.py","--subaccount","2","--live","--minutes","10080" -WorkingDirectory "C:\kals-repo" -WindowStyle Hidden -RedirectStandardOutput "C:\kals-repo\results\forecaster-live-stdout.log" -RedirectStandardError "C:\kals-repo\results\forecaster-live-stderr.log"`
+
+---
+
+# [STOPPED 2026-09-29 00:50:01Z -- replaced by v-forecaster-live; 0 orders placed] v-bettor-penny -- 2026-09-29 00:20:58Z (pid 3990228; research/cleanroom/bettor_live.py; Kalshi SUBACCOUNT 2, funded $10) -- LIVE, NEW STRATEGY at 1 contract a market: the clean-room BETTOR (bettor_paper.py's engine, bettor rule only, unchanged) mirrored as a real 1-contract immediate-or-cancel buy at the displayed ask each time its paper book takes an ask ('opt' rule). Operator 2026-09-29 ~00:0xZ: "I want to run clean room bettor but at a tiny size."
 
 Account steps: subaccount 2 created 00:09Z (POST /portfolio/subaccounts 201
 subaccount_number 2); $10 moved 0 -> 2 on pool 2 (ordercli --sub-fund 10 --sub 2,

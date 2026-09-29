@@ -234,6 +234,15 @@
    "what": "Live clean-room bettor at 1 contract (pid 3990228, subaccount 2, $10): IOC sends, fill rate, P&L, and for every live fill whether paper 'real' (size still shown 1 s later) also filled that market -- the one question it exists to answer.",
    "how": "results/bettor-live-orders.jsonl (placed / live_fill / live_settle / refused / dropped / halt), results/bettor-live.jsonl (the engine's paper decisions and fills in the same process), results/cleanroom-bettor.jsonl (paper bot, same markets), python research/ordercli.py --sub-status 2. Day-1 read 09-30 00:30Z; final 10-06 00:30Z.",
    "bar": "PRE-REGISTERED 2026-09-29 00:25Z, before any live fill. STOP if: the -$8 run stop fires, or the day stop fires twice, or 2 live losses land on markets paper 'real' did NOT fill (the vanishing-offer losses are real for us). CONSIDER a bigger size only if by 10-06: >= 40 filled markets, <= 1 loss, live P&L > 0, and live fills track paper 'real' (not 'opt') market by market. Anything between: keep at 1 contract and read again.",
+   "status": "read",
+   "read_note": "2026-09-29 00:50Z: stopped before any order (operator had asked for the wrong clean-room strategy); replaced by forecaster-live. Paper bettor keeps running in bettor_paper.py."
+  },
+  {
+   "id": "forecaster-live",
+   "due": "2026-09-30T01:00Z",
+   "what": "Live clean-room forecaster, realistic-fill trigger, 1/20 size (pid 4014356, subaccount 2, $25): orders, live fill rate (contracts filled / asked), P&L and return on money staked, vs the paper forecaster 'real' x 0.05 on the SAME markets.",
+   "how": "results/forecaster-live-orders.jsonl (placed / live_fill / live_settle / refused / dropped / halt; paper_k on each order), results/forecaster-live.jsonl (the engine's paper book in the same process), results/cleanroom-bettor.jsonl forecaster_real (paper bot), python research/ordercli.py --sub-status 2 and GET /portfolio/settlements?subaccount=2. Day-1 read 09-30 01:00Z; final 10-06 01:00Z.",
+   "bar": "PRE-REGISTERED 2026-09-29 ~01:00Z, before any live fill. STOP if: the -$20 run stop fires, or the day stop fires twice, or after >= 40 filled markets live P&L is below zero. CONSIDER a bigger size only if by 10-06: >= 60 filled markets, live return on money staked >= +5%, live fills >= 60% of contracts asked, and no market lost to buying both sides more than once. Otherwise keep 1/20 and read again.",
    "status": "open"
   }
  ]
