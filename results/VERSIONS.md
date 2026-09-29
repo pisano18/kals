@@ -1,3 +1,18 @@
+# [CODE ONLY -- loads at the next live restart] v-cent -- committed 2026-09-29 ~12:1xZ (research/pinrun.py cent_limit): hourly ladder markets (KXBTCD and the other LADDER_COIN series) take WHOLE-CENT prices only; the entry limit and the hedge limit on those markets are now rounded DOWN to the cent (never under the ask seen). The 15-minute coins are untouched.
+
+Evidence: READS_DUE 'kxbtcd-tick' -- the one early-leg KXBTCD order since v-reopen98 (09-28 23:59 ET,
+KXBTCD-26SEP2900-T82999.99, limit 97.8c from --early-max-price 0.978) came back 400 invalid_price; a KXBTCD hedge
+capped at HEDGE_MAX_ASK-0.001 = 99.9c would be refused the same way (a gate must never block a hedge). Worth cents
+a day at --series-size 1, so NO unplanned restart: the running pid 3882400 keeps the old code until its --minutes
+4320 run ends (~10-01 14:36Z) and watch_bot restarts it with restart_bot.ps1's argv. Self-test PASSED (6 new
+checks: 97.8c -> 97c; 99.9c hedge -> 99c; whole cents and 15-minute ticks unchanged; both call sites exist; the
+rounding precedes the send). No flag, so versioncheck is unaffected. Read: READS_DUE 'vcent-deploy'.
+
+**REVERT:** `git revert <this commit>` (or restore research/pinrun.py from the commit before it), then restart per
+do-the-restart-yourself.
+
+---
+
 # [NOT LIVE -- PREPARED, RELAUNCH BLOCKED] v-forecaster-race1 -- prepared 2026-09-29 07:26Z: the live forecaster was STOPPED (stop file, 07:26:07Z, pid 4036456 exited cleanly) to relaunch with `--variant race1_98` (skip only when the gap to the strike 5 s ago was >= 2x the gap now, i.e. the index closed half the gap, and p < 0.98). The relaunch was DENIED by the auto-mode permission check ("Production Deploy"). THE LIVE FORECASTER IS NOT RUNNING until the operator relaunches it or allows the relaunch.
 
 Why race1_98 over race05_98 (replay, 33 days, full engine, results/FC_VARIANTS_2026-09-29.md): the same 5

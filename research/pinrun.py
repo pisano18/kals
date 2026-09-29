@@ -1510,6 +1510,31 @@ def hedge_limit(ask, slip=None):
     return min(a + s, HEDGE_MAX_ASK - 0.001)
 
 
+def cent_limit(ticker, limit, floor_price):
+    """v-cent (2026-09-29): the hourly ladders (KXBTCD and the other
+    LADDER_COIN series) quote WHOLE CENTS only. Live, 09-28 23:59 ET, the
+    early leg's --early-max-price 0.978 sent KXBTCD-26SEP2900-T82999.99 a
+    97.8c limit and Kalshi answered 400 invalid_price; a hedge's 99.9c cap
+    (HEDGE_MAX_ASK - 0.001) would be refused the same way, and a gate must
+    never block a hedge. So a ladder limit is rounded DOWN to the cent --
+    never under `floor_price` (the ask we saw, itself a whole cent there);
+    if it would be, the limit is returned unchanged. Every other market
+    (the 15-minute coins' tapered tick) is returned unchanged."""
+    if str(ticker).split("-")[0] not in LADDER_COIN:
+        return limit
+    try:
+        lim = float(limit)
+    except (TypeError, ValueError):
+        return limit
+    c = math.floor(lim * 100.0 + 1e-6) / 100.0
+    try:
+        if c < float(floor_price) - 1e-9:
+            return limit
+    except (TypeError, ValueError):
+        pass
+    return c
+
+
 def hedge_depth(touch_size, rungs, unhedged):
     """Contracts a hedge may take: the ladder up to the limit, but never more
     than the contracts still unhedged, and never LESS than the touch.
@@ -9958,6 +9983,23 @@ def _selftest_body():
         # four checks in this file already.
         _swsrc = open(os.path.abspath(__file__), encoding="utf-8").read()
         _swlines = _swsrc.split("\n")
+        # v-cent (2026-09-29): hourly ladders quote whole cents only
+        ck(cent_limit("KXBTCD-26SEP2900-T82999.99", 0.978, 0.97) == 0.97,
+           "v-cent: a KXBTCD 97.8c limit is sent as 97c (the live 400 invalid_price, 09-28)")
+        ck(cent_limit("KXBTCD-26SEP2900-T82999.99", 0.999, 0.95) == 0.99,
+           "v-cent: a KXBTCD hedge capped at 99.9c is sent at 99c, not refused")
+        ck(cent_limit("KXBTCD-26SEP2900-T82999.99", 0.98, 0.98) == 0.98
+           and cent_limit("KXBTCD-26SEP2900-T82999.99", 0.975, 0.978) == 0.975,
+           "v-cent: a whole-cent limit is unchanged; never rounded under the ask seen")
+        ck(cent_limit("KXBTC15M-26SEP290015-15", 0.978, 0.97) == 0.978
+           and cent_limit("KXETHD-26SEP2900-T2600", 0.955, 0.95) == 0.95,
+           "v-cent: the 15-minute tapered tick is untouched; every LADDER_COIN series is whole-cent")
+        ck(sum(1 for ln in _swlines if ln.strip() == "_limit = cent_limit(tk, _limit, price)") == 1
+           and sum(1 for ln in _swlines if ln.strip().startswith("_hlimit = cent_limit(_htk, _hlimit, _ask)")) == 1,
+           "v-cent: the entry limit and the hedge limit both pass through cent_limit")
+        _i_cl = next(i for i, ln in enumerate(_swlines) if ln.strip() == "_limit = cent_limit(tk, _limit, price)")
+        _i_tk2 = next(i for i, ln in enumerate(_swlines) if ln.strip().startswith("out = pintake.take("))
+        ck(_i_cl < _i_tk2, "v-cent: the entry rounding happens BEFORE the order is sent")
         ck(any(ln.strip() == "_limit = sweep_limit(f, price, want)"
                for ln in _swlines),
            "the live order path computes the sweep limit")
@@ -17075,6 +17117,7 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                     _hlimit = hedge_limit(_ask)
                     if _hlimit is None:
                         _hlimit = float(_ask)
+                    _hlimit = cent_limit(_htk, _hlimit, _ask)   # v-cent: ladders take whole cents
                     _hrungs = []
                     if HEDGE_SLIP:
                         try:
@@ -19625,6 +19668,8 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                                 limit_was=round(float(_limit), 4),
                                 limit=_si_cap)
                             _limit = _si_cap
+                        # v-cent: an hourly ladder takes whole cents only
+                        _limit = cent_limit(tk, _limit, price)
                         # ---- AMENDMENT 35: ASK FOR WHAT THE LADDER HOLDS -------
                         # THE SWEEP WAS HALF-BUILT. AMENDMENT 18 raised the PRICE
                         # we are willing to pay to _limit, so a lost race takes

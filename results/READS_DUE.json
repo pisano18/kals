@@ -190,27 +190,36 @@
   },
   {
    "id": "missed-daily",
-   "due": "2026-09-29T12:00Z",
+   "due": "2026-09-30T12:00Z",
    "what": "daily missed-trades report",
    "how": "python research/missed.py",
    "bar": "report per gate; flag any gate refusing mostly winners",
-   "status": "open"
+   "status": "open",
+   "history": [
+    "09-29 12Z: 24 h window: our 15-min coins 30 markets, 1 lost, +$23.70; hourly BTC 3 markets +$0.11; other 5 markets 1 lost -$6.64 (Tencent). Gates flagged 'mostly winners' (ceiling +$28, edge floor +$25, depth +$22, seller gate +$4 at most) each weighed against a $24-57 typical loss -- none actionable; confidence gate refused 16 losers in 124. Seller-gate share 25-26 in 100 = at its OFF line (read 10-01)."
+   ]
   },
   {
    "id": "reopen98-guard",
-   "due": "2026-09-29T12:00Z",
+   "due": "2026-09-30T12:00Z",
    "what": "v-reopen98 stop rule (daily until 100 such markets): 30-second buys at 97.9-98c since 09-28 14:36Z.",
    "how": "live logs: orders leg full/topup/late_add with exec or ask 0.979-0.98, joined to the ledger; count losses and whether the seller gate had readings",
    "bar": "back to 0.978 on the 2nd loss in the first 100, on any such loss the gate could not judge, or if --toxic-fresh is turned off",
-   "status": "open"
+   "status": "open",
+   "history": [
+    "09-29 12Z: 6 buys at 97.9-98c on the 30-s leg (6 markets), 0 of them lost (the BNB 09-28 8 PM market lost -$8.26 on its 97.5c 45-s YES buy; its 98c NO top-up WON). Bar (2nd loss in first 100) not reached: keep."
+   ]
   },
   {
    "id": "floor90-guard",
-   "due": "2026-09-29T12:00Z",
+   "due": "2026-09-30T12:00Z",
    "what": "v-floor90 stop rule (daily): money of every 45-second buy whose ask was under 95c since 09-28 14:36Z, insurance included.",
    "how": "live logs orders leg early with ask_seen < 0.95, joined to the Kalshi ledger per market",
    "bar": "if the running total is below $0 -> --early-min-price back to 0.95 at once",
-   "status": "open"
+   "status": "open",
+   "history": [
+    "09-29 12Z: 3 markets with a 45-s buy under 95c (asks 90c, 93.9c, 94c): +$1.51, +$1.57, +$3.41 = +$6.49 running total (>= $0): keep."
+   ]
   },
   {
    "id": "kxbtcd-tick",
@@ -218,7 +227,8 @@
    "what": "Hourly BTC (KXBTCD) orders were all rejected under the 0.978 ceiling (not a whole-cent price there). At 0.98 the full leg should work again; the EARLY leg's 0.978 cap may still send invalid KXBTCD limits.",
    "how": "live logs: KXBTCD orders since the restart, status codes",
    "bar": "KXBTCD orders accepted; if early-leg KXBTCD orders are rejected, round KXBTCD limits to the cent in code (VERSIONS entry)",
-   "status": "open"
+   "status": "read",
+   "read_note": "09-29 12Z: full-leg KXBTCD orders at 98c accepted (6 executed); the ONE early-leg KXBTCD order (09-28 23:59 ET, limit 97.8c) was rejected 400 invalid_price -> per the bar, coded v-cent (cent_limit: ladder limits rounded DOWN to the cent, entry AND hedge paths; self-test PASSED). Takes effect at the next live restart."
   },
   {
    "id": "ladder-live",
@@ -276,6 +286,14 @@
    "what": "Second side-by-side PAPER run (pid 4069964 since 2026-09-29 05:31:52Z, log results/fcvar-paper-quiet.jsonl): base, race05_98, quiet2x, race05_98_quiet2x. quiet2x doubles the per-side cap (100 -> 200 paper contracts) when the market has had no trade since close-45 s -- the research synthesis's 'quiet buys' pocket (replay: 0 losses in 236 such buys over 33 days). Replay: +$277 TRAIN / +$210 TEST vs base, money lost unchanged.",
    "how": "python research/cleanroom/fc_compare.py --paper results/fcvar-paper-quiet.jsonl --since 2026-09-29T05:31 (compare with THIS run's base, not the other run's).",
    "bar": "PRE-REGISTERED 2026-09-29 ~05:35Z, before any forward result. CANDIDATE for live only if on this forward paper quiet2x net >= base net AND money lost in losing markets <= base's + 10%. It is a SIZE STEP (2x in quiet markets): put it to the operator before any live change, per practice.",
+   "status": "open"
+  },
+  {
+   "id": "vcent-deploy",
+   "due": "2026-10-01T16:00Z",
+   "what": "v-cent (whole-cent limits on hourly ladders) is in research/pinrun.py but the running live bot (pid 3882400, --minutes 4320 from 09-28 14:36Z) has the old code; it loads at the next restart (watch_bot at the run's end ~10-01 14:36Z, or any earlier restart).",
+   "how": "after the next live start: KXBTCD orders' status codes in the new pinrun-live-*.jsonl (no 400 invalid_price; early-leg limits at whole cents)",
+   "bar": "any KXBTCD 400 invalid_price after the restart = the fix did not take; any 15-minute order with a changed limit = the fix leaked -> revert (VERSIONS v-cent)",
    "status": "open"
   }
  ]
