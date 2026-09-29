@@ -30,6 +30,8 @@ Pre-registered bar (written before any live fill): READS_DUE 'bettor-live'.
 money back: `python research/ordercli.py --sub-return 10 --sub 2` (dry run, then
 `--live --signoff <token>`; use the balance shown by `--sub-status 2`).
 
+**RELAUNCH** (after a reboot; PowerShell, from anywhere): `Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList "-u","research\cleanroom\bettor_live.py","--subaccount","2","--live","--minutes","10080" -WorkingDirectory "C:\kals-repo" -WindowStyle Hidden -RedirectStandardOutput "C:\kals-repo\results\bettor-live-stdout.log" -RedirectStandardError "C:\kals-repo\results\bettor-live-stderr.log"`
+
 ---
 
 # v-ladder-penny -- 2026-09-28 16:01:26Z (pid 3904676; research/cleanroom/ladder_live.py; Kalshi SUBACCOUNT 1, funded $15) -- LIVE, NEW STRATEGY at penny size: the clean-room locked-average ladder mirrored as real post_only 1-contract bids (model-2c / -5c / -15c) in the last 30 s, at most 3 coins a quarter-hour. Operator 2026-09-28: "I'm giving you the go ahead for that live testing. Build the penny ladder" and "Keep trying the advanced api second account".
@@ -58,6 +60,8 @@ selected. Read: READS_DUE 'ladder-live'.
 **REVERT:** create `results/ladder-live.stop` (it cancels and exits), then move
 the money back: `python research/ordercli.py --sub-return 15 --sub 1` (dry run,
 then `--live --signoff <token>`; use the balance shown by `--sub-status 1`).
+
+**RELAUNCH** (after a reboot; PowerShell, from anywhere): `Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList "-u","research\cleanroom\ladder_live.py","--subaccount","1","--live","--minutes","10080" -WorkingDirectory "C:\kals-repo" -WindowStyle Hidden -RedirectStandardOutput "C:\kals-repo\results\ladder-live-stdout.log" -RedirectStandardError "C:\kals-repo\results\ladder-live-stderr.log"`
 
 ---
 
