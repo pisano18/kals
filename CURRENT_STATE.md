@@ -22,6 +22,13 @@ text (the 09-21/09-22 blocks): `DOCS_ARCHIVE_2026-09.md`.
 
 ## Live money
 
+- **Penny clean-room strategies in Kalshi SUBACCOUNTS** (added 09-28/29; invisible
+  to pinrun, which reads subaccount 0): `v-ladder-penny`
+  (`research/cleanroom/ladder_live.py --subaccount 1`, $15, post_only bids) and
+  `v-bettor-penny` (`research/cleanroom/bettor_live.py --subaccount 2`, $10, 1-contract
+  IOC buys). Neither is in `boot_all.ps1`: after a reboot, restart both by hand
+  (commands in their VERSIONS entries). Stop either with its `.stop` file in
+  `results/`. Reads: READS_DUE `ladder-live`, `bettor-live`.
 - **15-minute crypto bot** `research/pinrun.py --live`, version **v-onefull** (on v-ceiling978, v-toxic-live, v-scalein-caps, v-safety2)
   since 08:11:15Z 09-27, pid 3510420 (see HANDOFF top for the three 09-27 changes). Its argv is
   `restart_bot.ps1` -- the ONLY script that may start it. What it does now,
