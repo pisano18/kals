@@ -260,6 +260,14 @@
    "how": "python research/cleanroom/fc_compare.py --paper results/fcvar-paper.jsonl --since 2026-09-29T01:51 -> rows base vs race05_98 (same process, same book); live: results/forecaster-live-orders.jsonl since 04:21Z (live_fill / live_settle; refused why=... never shows the gate -- the gate acts inside the engine, so count paper 'real' fills that base took and race05_98 did not).",
    "bar": "PRE-REGISTERED 2026-09-29 ~04:25Z, before any forward result for it. REVERT to base if the forward paper shows race05_98 below base by more than 10% of base's net with no money lost saved; KEEP otherwise. If the forward paper has no market where the gate fired, keep and read again at 10-06.",
    "status": "open"
+  },
+  {
+   "id": "fc-research",
+   "due": "2026-09-29T12:00Z",
+   "what": "Workflow wf_3deb4ed1-525 (7 quant lenses + adversarial verifiers + synthesis) hunting for signals that separate the forecaster's losing buys: meta-labeling, market-model pooling, microstructure toxicity, denoising/volatility, cross-asset, risk sizing, outlandish.",
+   "how": "Synthesis at <scratchpad>/clean/research/SYNTHESIS.md; per-lens folders beside it; dataset fc_dataset.jsonl (built by research/cleanroom/fc_features.py from the 33-day replay).",
+   "bar": "Only methods that SURVIVE their verifier go to the side-by-side paper, one at a time, each as a new fc_variants gate with its own pre-registered bar; nothing goes live from the replay alone.",
+   "status": "open"
   }
  ]
 }
