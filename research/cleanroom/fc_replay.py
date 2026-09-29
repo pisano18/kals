@@ -165,7 +165,7 @@ def main_run(a):
     for v in variants:
         if v not in FV.VARIANTS:
             raise SystemExit("unknown variant %s" % v)
-    feed_trades = {v for v in variants if v == "base" or FV.VARIANTS[v].get("flow_against") or FV.VARIANTS[v].get("quiet_s")}
+    feed_trades = {v for v in variants if v == "base" or FV.VARIANTS[v].get("flow_against") or FV.VARIANTS[v].get("quiet_s") or FV.VARIANTS[v].get("quiet_mult")}
     tables = B.Tables()
     ms = load_markets(a.digest)
     keep = None

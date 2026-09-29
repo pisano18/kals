@@ -107,3 +107,18 @@ TRAIN
 | stable3_race05_98_hedge40 | 467 | 2 | -75 | +2217 | 9.23% | +22 | 0 of 24 | -717 | +425 |
 | survive2 | 349 | 7 | -206 | +1637 | 10.48% | -29 | 2 of 24 | -1297 | +294 |
 
+
+## Added 2026-09-29 ~05:30Z: quiet buys at double size (replay)
+
+From the research synthesis (results/FC_RESEARCH_2026-09-29.md): buys with no trade in the market since close-45 s
+had 0 losses on TRAIN (157) and TEST (79). quiet2x doubles the per-side cap in those markets, specified before it
+was run (one configuration):
+
+| version | split | markets | losing | lost $ | net $ | net vs base $ |
+|---|---|---|---|---|---|---|
+| quiet2x | TRAIN | 604 | 14 | -499 | +3212 | +277 |
+| quiet2x | TEST | 155 | 4 | -198 | +1097 | +210 |
+| race05_98_quiet2x | TRAIN | 575 | 10 | -352 | +3196 | +261 |
+| race05_98_quiet2x | TEST | 141 | 3 | -97 | +1082 | +195 |
+
+Fewer markets than base because the per-close cap (400) fills sooner. Forward paper: READS_DUE 'quiet2x-paper'.

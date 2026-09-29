@@ -100,10 +100,10 @@ class Fanout:
             e.on_result(ticker, result, ev, now)
 
 
-def run_live(names, minutes):
+def run_live(names, minutes, log_path=LOG_PATH):
     sys.path.insert(0, r"C:\kals-repo\research")
     import kauth  # request-signing helpers only (GET + WebSocket auth)
-    fh = open(LOG_PATH, "a", encoding="utf-8")
+    fh = open(log_path, "a", encoding="utf-8")
     log = VLogger("_", fh=fh)
     q = queue.Queue()
     engines = make_engines(names, time.time, B.Tables(), fh=fh)
@@ -278,6 +278,7 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--variants", default=DEFAULT_VARIANTS)
     ap.add_argument("--minutes", type=float, default=10080)
+    ap.add_argument("--log", default=LOG_PATH, help="a second side-by-side run writes its own log")
     a = ap.parse_args()
     B.selftest()
     if not (FV.selftest() and selftest()):
@@ -287,7 +288,7 @@ def main():
     names = a.variants.split(",")
     if names[0] != "base" or any(n not in FV.VARIANTS for n in names):
         raise SystemExit("variants must start with base and be defined in fc_variants.VARIANTS")
-    run_live(names, a.minutes)
+    run_live(names, a.minutes, a.log)
     return 0
 
 

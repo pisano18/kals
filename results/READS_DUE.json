@@ -269,6 +269,14 @@
    "bar": "Only methods that SURVIVE their verifier go to the side-by-side paper, one at a time, each as a new fc_variants gate with its own pre-registered bar; nothing goes live from the replay alone.",
    "status": "read",
    "read_note": "2026-09-29 ~05:3xZ: NOTHING survived verification (~7,060 configurations across 7 lenses). Realistic replay losses match the model's own odds (19 vs 23.3 expected) -- filters cut winners in proportion. Denoising makes forecasts worse; the 1-s rule is already the toxic-offer filter. Next: exchange-feed lead (feed_data), live feature logging. results/FC_RESEARCH_2026-09-29.md"
+  },
+  {
+   "id": "quiet2x-paper",
+   "due": "2026-10-02T01:30Z",
+   "what": "Second side-by-side PAPER run (pid 4069964 since 2026-09-29 05:31:52Z, log results/fcvar-paper-quiet.jsonl): base, race05_98, quiet2x, race05_98_quiet2x. quiet2x doubles the per-side cap (100 -> 200 paper contracts) when the market has had no trade since close-45 s -- the research synthesis's 'quiet buys' pocket (replay: 0 losses in 236 such buys over 33 days). Replay: +$277 TRAIN / +$210 TEST vs base, money lost unchanged.",
+   "how": "python research/cleanroom/fc_compare.py --paper results/fcvar-paper-quiet.jsonl --since 2026-09-29T05:31 (compare with THIS run's base, not the other run's).",
+   "bar": "PRE-REGISTERED 2026-09-29 ~05:35Z, before any forward result. CANDIDATE for live only if on this forward paper quiet2x net >= base net AND money lost in losing markets <= base's + 10%. It is a SIZE STEP (2x in quiet markets): put it to the operator before any live change, per practice.",
+   "status": "open"
   }
  ]
 }

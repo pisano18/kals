@@ -34,7 +34,7 @@ import bettor_paper as B                        # noqa: E402
 DEFAULTS = {"r_max": B.F_R_MAX, "min_price": B.F_MIN_PRICE, "max_price": B.F_MAX_PRICE, "min_edge": B.F_MIN_EDGE,
             "min_p": 0.0, "one_side": False, "survive_s": B.SURVIVE_S, "max_age": None, "min_age": None,
             "stable_k": 0, "stable_p": 0.9, "no_toward": 0, "flow_against": False,
-            "quiet_s": None, "race_x": None, "race_p": 0.96, "hedge_p": None}
+            "quiet_s": None, "race_x": None, "race_p": 0.96, "hedge_p": None, "quiet_mult": None}
 
 VARIANTS = {
     "base": {},
@@ -69,6 +69,8 @@ VARIANTS = {
     "stable3_hedge40": {"stable_k": 3, "stable_p": 0.9, "hedge_p": 0.40},
     "stable3_race05_98_hedge40": {"stable_k": 3, "stable_p": 0.9, "race_x": 0.5, "race_p": 0.98, "hedge_p": 0.40},
     "stable2_race05_98_hedge40": {"stable_k": 2, "stable_p": 0.9, "race_x": 0.5, "race_p": 0.98, "hedge_p": 0.40},
+    "quiet2x": {"quiet_mult": 2.0},
+    "race05_98_quiet2x": {"race_x": 0.5, "race_p": 0.98, "quiet_mult": 2.0},
 }
 
 
@@ -260,7 +262,10 @@ class VEngine(B.Engine):
                         return 0
                     if P["min_age"] is not None and (age is None or age < P["min_age"]):
                         return 0
-                return min(B.F_MAX_SIDE - m.side_n.get(("forecaster", fm, side), 0.0),
+                cap = B.F_MAX_SIDE
+                if P["quiet_mult"] and not any(t >= m.close_s - 45 for t, _ in m.recent_trades):
+                    cap = B.F_MAX_SIDE * P["quiet_mult"]      # no trade in this market since close-45 s
+                return min(cap - m.side_n.get(("forecaster", fm, side), 0.0),
                            B.F_MAX_CLOSE - self.close_spent.get(("forecaster", fm, m.close_s), 0.0))
 
             best_p, disp = b.best_ask(side)
@@ -375,6 +380,13 @@ def selftest():
     no_n = sum(x[3] for x in fh1 if x[0] == "real" and x[1] == "no")
     ck(yes_n > 0 and no_n == yes_n and all(r.get("hedge") for r in sh1 if r["ev"] == "fill" and r["side"] == "no"),
        "hedge 0.40: buys NO equal to the YES held (%s vs %s)" % (no_n, yes_n))
+    # quiet_mult: no trade since close-45 s -> per-side cap 200; one trade at close-40 -> 100
+    bookq = {"no_dollars_fp": [["0.2000", "500.00"]], "yes_dollars_fp": [["0.0100", "40.00"]]}
+    fqq, _ = world(lambda lg, nf: VEngine(lg, nf, tb, {"quiet_mult": 2.0}), bookq, ())
+    ck(sum(x[3] for x in fqq if x[0] == "real") == 200, "quiet_mult 2: quiet market buys 200 (%s)" % fqq)
+    trn = [(-40, {"ts_ms": (C - 40) * 1000, "yes_price_dollars": "0.8000", "count_fp": "1.00", "taker_side": "yes", "trade_id": "n"})]
+    fqn, _ = world(lambda lg, nf: VEngine(lg, nf, tb, {"quiet_mult": 2.0}), bookq, (), trades=trn, rels=range(-60, 0))
+    ck(sum(x[3] for x in fqn if x[0] == "real") == 100, "quiet_mult 2: a trade at close-40 keeps the cap at 100 (%s)" % fqn)
     # empty world
     fe, _ = world(base, {"no_dollars_fp": [], "yes_dollars_fp": []}, ())
     ck(fe == [], "no book: nothing")
