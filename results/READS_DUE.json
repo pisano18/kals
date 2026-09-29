@@ -227,6 +227,14 @@
    "how": "results/ladder-live-orders.jsonl (placed / live_fill / live_settle), results/ladder-live.jsonl (paper decisions), python research/ordercli.py --sub-status 1",
    "bar": "after 7 days: live fills per day and their loss rate vs the paper ladder; stop if the day stop fires twice or any fill loses on a market the paper bot had as 'locked'",
    "status": "open"
+  },
+  {
+   "id": "bettor-live",
+   "due": "2026-09-30T00:30Z",
+   "what": "Live clean-room bettor at 1 contract (pid 3990228, subaccount 2, $10): IOC sends, fill rate, P&L, and for every live fill whether paper 'real' (size still shown 1 s later) also filled that market -- the one question it exists to answer.",
+   "how": "results/bettor-live-orders.jsonl (placed / live_fill / live_settle / refused / dropped / halt), results/bettor-live.jsonl (the engine's paper decisions and fills in the same process), results/cleanroom-bettor.jsonl (paper bot, same markets), python research/ordercli.py --sub-status 2. Day-1 read 09-30 00:30Z; final 10-06 00:30Z.",
+   "bar": "PRE-REGISTERED 2026-09-29 00:25Z, before any live fill. STOP if: the -$8 run stop fires, or the day stop fires twice, or 2 live losses land on markets paper 'real' did NOT fill (the vanishing-offer losses are real for us). CONSIDER a bigger size only if by 10-06: >= 40 filled markets, <= 1 loss, live P&L > 0, and live fills track paper 'real' (not 'opt') market by market. Anything between: keep at 1 contract and read again.",
+   "status": "open"
   }
  ]
 }

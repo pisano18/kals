@@ -1,3 +1,37 @@
+# v-bettor-penny -- 2026-09-29 00:20:58Z (pid 3990228; research/cleanroom/bettor_live.py; Kalshi SUBACCOUNT 2, funded $10) -- LIVE, NEW STRATEGY at 1 contract a market: the clean-room BETTOR (bettor_paper.py's engine, bettor rule only, unchanged) mirrored as a real 1-contract immediate-or-cancel buy at the displayed ask each time its paper book takes an ask ('opt' rule). Operator 2026-09-29 ~00:0xZ: "I want to run clean room bettor but at a tiny size."
+
+Account steps: subaccount 2 created 00:09Z (POST /portfolio/subaccounts 201
+subaccount_number 2); $10 moved 0 -> 2 on pool 2 (ordercli --sub-fund 10 --sub 2,
+200). Main pool-2 balance after: $1,063.27. Subaccount 2 is invisible to pinrun's
+v-safety2 (it reads subaccount 0), same as the ladder's subaccount 1.
+EXCEPTION TO THE "ordercli is the only writer" RULE, as ladder_live.py: exactly
+one POST (create order) and one DELETE (cancel an IOC that came back resting) in
+the working code; the self-test asserts it. Every body is checked: IOC,
+post_only False, self_trade_prevention taker_at_cross (a would-be self-trade
+cancels THIS order, never a resting one), 1 contract, subaccount >= 1, pool 2,
+"bet-" client id, price 85-98c for the side bought.
+Rails in code: 1 held per market, <= 3 sends per market (a miss may retry on a
+later paper take), <= 9 contracts / $10 held, never within 0.5 s of the close or
+on a decision older than 1.5 s, -$5 realized per ET day halts to the next ET day,
+-$8 since start halts until restart, an unreadable answer or a resting IOC halts,
+refuses to start above $25 in the subaccount; stop file results/bettor-live.stop.
+Self-test: 30+ checks incl. a driven world (paper take at 95c -> one YES bid at
+95c in subaccount 2 -> settle +$0.04), two empty worlds, and two planted rail
+bugs caught (2 per market; 12 held). Dry run 00:16-00:20Z: feed healthy (9
+indexes at 1/s, lag ~95 ms), no market in its last minute, so no decision seen
+before going live -- the first live decision is the first end-to-end one.
+Why at 1 contract: the paper bettor's two fill rules disagree on the same
+markets (09-28 07:15Z-23:45Z: decision-instant 'opt' 11 markets, 1 loss, -$54.02
+-- NEAR 22:30Z at ~85c; 'still shown 1 s later' 3 markets, 0 losses, +$9.30). A
+live IOC lands between them; whether it gets the losing offers is the question.
+Pre-registered bar (written before any live fill): READS_DUE 'bettor-live'.
+
+**REVERT:** create `results/bettor-live.stop` (it halts and exits), then move the
+money back: `python research/ordercli.py --sub-return 10 --sub 2` (dry run, then
+`--live --signoff <token>`; use the balance shown by `--sub-status 2`).
+
+---
+
 # v-ladder-penny -- 2026-09-28 16:01:26Z (pid 3904676; research/cleanroom/ladder_live.py; Kalshi SUBACCOUNT 1, funded $15) -- LIVE, NEW STRATEGY at penny size: the clean-room locked-average ladder mirrored as real post_only 1-contract bids (model-2c / -5c / -15c) in the last 30 s, at most 3 coins a quarter-hour. Operator 2026-09-28: "I'm giving you the go ahead for that live testing. Build the penny ladder" and "Keep trying the advanced api second account".
 
 Account steps: POST /account/api_usage_level/upgrade 06:5xZ (201; grant
