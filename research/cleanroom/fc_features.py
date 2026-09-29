@@ -175,6 +175,16 @@ def build(fills_path, out_path, digest=FR.DIGEST):
         else:
             real[key][0] += r["size"]
             real[key][1] += r["pnl"]
+            # a realistic fill whose decision second had NO decision-instant fill (that rule had already hit its
+            # per-side / per-close cap) is still a decision: 340 of 934 realistic fills were dropped before this
+            # (found by the 2026-09-29 research verifiers)
+            dec.setdefault(key, {"ticker": r["ticker"], "rel": r["rel"], "side": r["side"], "size": 0.0, "cost": 0.0,
+                                 "opt_pnl": 0.0, "row": r, "real_only": True})
+    for d in dec.values():
+        if d.get("real_only"):
+            d["size"], d["cost"] = real[(d["ticker"], d["rel"], d["side"])][0], 0.0
+            d["cost"] = sum(x["size"] * x["price"] for x in rows if x["fill"] == "real" and
+                            (x["ticker"], x["rel"], x["side"]) == (d["ticker"], d["rel"], d["side"]))
     by_day = defaultdict(list)
     for key, d in dec.items():
         by_day[ms[d["ticker"]]["day"]].append(d)
@@ -198,7 +208,8 @@ def build(fills_path, out_path, digest=FR.DIGEST):
             rec = {"ticker": d["ticker"], "coin": m["coin"], "day": day, "split": m["split"], "close_s": c,
                    "rel": d["rel"], "side": d["side"], "price": round(cand["price"], 4), "opt_size": d["size"],
                    "win": d["side"] == m["result"], "opt_pnl": round(d["opt_pnl"], 4),
-                   "survived": real[key][0] > 0, "real_size": real[key][0], "real_pnl": round(real[key][1], 4)}
+                   "survived": real[key][0] > 0, "real_size": real[key][0], "real_pnl": round(real[key][1], 4),
+                   "real_only": bool(d.get("real_only"))}
             rec.update({k: v for k, v in r0.items() if k.startswith("feat_")})
             rec.update({k: (round(v, 6) if isinstance(v, float) else v) for k, v in f.items()})
             out.write(json.dumps(rec, separators=(",", ":")) + "\n")

@@ -267,7 +267,8 @@
    "what": "Workflow wf_3deb4ed1-525 (7 quant lenses + adversarial verifiers + synthesis) hunting for signals that separate the forecaster's losing buys: meta-labeling, market-model pooling, microstructure toxicity, denoising/volatility, cross-asset, risk sizing, outlandish.",
    "how": "Synthesis at <scratchpad>/clean/research/SYNTHESIS.md; per-lens folders beside it; dataset fc_dataset.jsonl (built by research/cleanroom/fc_features.py from the 33-day replay).",
    "bar": "Only methods that SURVIVE their verifier go to the side-by-side paper, one at a time, each as a new fc_variants gate with its own pre-registered bar; nothing goes live from the replay alone.",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-09-29 ~05:3xZ: NOTHING survived verification (~7,060 configurations across 7 lenses). Realistic replay losses match the model's own odds (19 vs 23.3 expected) -- filters cut winners in proportion. Denoising makes forecasts worse; the 1-s rule is already the toxic-offer filter. Next: exchange-feed lead (feed_data), live feature logging. results/FC_RESEARCH_2026-09-29.md"
   }
  ]
 }
