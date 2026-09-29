@@ -59,7 +59,7 @@ research"** (the deeper hunt for what separates losing buys).
   `results/fcvar-paper.jsonl`; compare with `research/cleanroom/fc_compare.py`.
 - Replaced: `v-bettor-penny` (the wrong strategy; 0 orders, stopped 09-29 00:50Z).
 - **Try soon**: rows F01-F17 in `results/IDEA_LEDGER.md` (every lead from the 09-29 work, with status).
-- 09-29 07:26Z: live forecaster STOPPED for the race1_98 switch; relaunch was blocked by the permission check.
+- 09-29 15:35Z: forecaster back LIVE (race1_98); ladder v-ladder-top; both kept alive by boot_all.ps1 (v-keepalive-cleanroom).
 - Memory: `python research/pausepaper.py --pause` / `--resume` freezes the paper
   bots (never the live ones or the recorders) when the operator needs RAM.
 

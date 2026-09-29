@@ -298,6 +298,14 @@
    "how": "after the next live start: KXBTCD orders' status codes in the new pinrun-live-*.jsonl (no 400 invalid_price; early-leg limits at whole cents)",
    "bar": "any KXBTCD 400 invalid_price after the restart = the fix did not take; any 15-minute order with a changed limit = the fix leaked -> revert (VERSIONS v-cent)",
    "status": "open"
+  },
+  {
+   "id": "keepalive-check",
+   "due": "2026-09-30T16:00Z",
+   "what": "v-keepalive-cleanroom: did boot_all.ps1 keep the clean-room bots up without duplicates?",
+   "how": "results/boot_all.log lines 'is NOT running -- starting it' for the clean-room names; count python processes per pattern (exactly 1 each); forecaster-live-orders.jsonl / ladder-live-orders.jsonl 'start' records",
+   "bar": "any duplicate live process on one subaccount, or a start while a stop file existed -> revert section 3e at once",
+   "status": "open"
   }
  ]
 }

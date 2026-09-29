@@ -466,4 +466,44 @@ if (-not $NoArms) {
     }
 }
 
+# --- 3e. the clean-room bots (operator 2026-09-29: "Restart and turn everything back on obviously? Make it
+# so they automatically keep themselves in"). LIVE: the penny forecaster (subaccount 2) and penny ladder
+# (subaccount 1) -- each runs its own self-test, subaccount-balance rail and stop-file check before trading.
+# A results\<name>.stop file means STOOD DOWN: never started while it exists (the bots exit when they see it,
+# so a restart needs the file deleted). THE ARGV HERE IS THE DEPLOYED VERSION -- change it only with a
+# VERSIONS.md entry (v-forecaster-race1, v-ladder-top). PAPER: the clean-room paper bots and both
+# forecaster-variant side-by-side runs, so their tests survive a reboot.
+$cleanroom = @(
+    @{ n = "forecaster_live (LIVE, subaccount 2)"; like = "*forecaster_live.py*--live*"; unlike = ""; stop = "$res\forecaster-live.stop";
+       a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--minutes", "10080");
+       o = "$res\forecaster-live-stdout.log"; e = "$res\forecaster-live-stderr.log" },
+    @{ n = "ladder_live (LIVE, subaccount 1)"; like = "*ladder_live.py*--live*"; unlike = ""; stop = "$res\ladder-live.stop";
+       a = @("-u", "research\cleanroom\ladder_live.py", "--subaccount", "1", "--live", "--minutes", "10080");
+       o = "$res\ladder-live-stdout.log"; e = "$res\ladder-live-stderr.log" },
+    @{ n = "bettor_paper (paper)"; like = "*cleanroom*bettor_paper.py*"; unlike = ""; stop = "";
+       a = @("-u", "research\cleanroom\bettor_paper.py", "--minutes", "10080");
+       o = "$res\cleanroom-bettor-stdout.log"; e = "$res\cleanroom-bettor-stderr.log" },
+    @{ n = "ladder paper"; like = "*locked_average_ladder_re_paper.py*"; unlike = ""; stop = "";
+       a = @("-u", "research\cleanroom\locked_average_ladder_re_paper.py", "--minutes", "10080");
+       o = "$res\cleanroom-ladder-stdout.log"; e = "$res\cleanroom-ladder-stderr.log" },
+    @{ n = "forecaster variants paper"; like = "*fc_variants_paper.py*"; unlike = "*fcvar-paper-quiet*"; stop = "";
+       a = @("-u", "research\cleanroom\fc_variants_paper.py", "--minutes", "10080");
+       o = "$res\fcvar-paper-stdout.log"; e = "$res\fcvar-paper-stderr.log" },
+    @{ n = "forecaster variants paper (quiet run)"; like = "*fc_variants_paper.py*fcvar-paper-quiet*"; unlike = ""; stop = "";
+       a = @("-u", "research\cleanroom\fc_variants_paper.py", "--variants", "base,quiet2x,race05_98_quiet2x,race05_98", "--log", "$res\fcvar-paper-quiet.jsonl", "--minutes", "10080");
+       o = "$res\fcvar-paper-quiet-stdout.log"; e = "$res\fcvar-paper-quiet-stderr.log" }
+)
+foreach ($c in $cleanroom) {
+    $up = @($procs | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like $c.like -and
+                                    (-not $c.unlike -or $_.CommandLine -notlike $c.unlike) }).Count -gt 0
+    if ($up) { continue }
+    if ($c.stop -and (Test-Path $c.stop)) { Say "$($c.n) is stood down ($($c.stop) exists) -- not starting it"; continue }
+    if ($blind -gt 0) { Say "$($c.n) not visible and $blind python process(es) are blind -- not starting it"; continue }
+    Say "$($c.n) is NOT running -- starting it"
+    Start-Process -FilePath $py -ArgumentList $c.a -WorkingDirectory $repo -WindowStyle Hidden `
+        -RedirectStandardOutput $c.o -RedirectStandardError $c.e
+    $started++
+    Start-Sleep -Seconds 2
+}
+
 if ($started -eq 0) { Say "all up; nothing to do" } else { Say "started $started process(es)" }

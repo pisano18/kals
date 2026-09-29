@@ -1,4 +1,16 @@
-# [NOT LIVE -- PREPARED, needs the operator's go-ahead to restart] v-ladder-top -- prepared 2026-09-29 ~16:0xZ (research/cleanroom/ladder_live.py): the penny ladder mirrors only the TOP rung (model-2c, LIVE_LEVELS=(0,)) and in EVERY coin (MAX_LIVE_PER_CLOSE 3 -> 9). Rails unchanged (10 contracts / $12 committed / -$6 day, subaccount 1).
+# v-keepalive-cleanroom -- 2026-09-29 15:37Z (boot_all.ps1 section 3e; runs at logon and every 10 min via the KalsBoot scheduled task): the clean-room bots now restart themselves -- LIVE forecaster_live (subaccount 2, --variant race1_98) and ladder_live (subaccount 1), and PAPER bettor_paper, the ladder paper bot and both forecaster-variant side-by-side runs. Operator 2026-09-29: "Restart and turn everything back on obviously? Make it so they automatically keep themselves in".
+
+A live bot is never started while resultsorecaster-live.stop / results\ladder-live.stop exists (the bots exit on
+it; delete it to let them come back), nor while any python process is blind to this script. Each pattern was
+checked to match exactly one running process before the first run; the first run said "all up; nothing to do".
+THE ARGV IN boot_all.ps1 IS NOW THE DEPLOYED VERSION of both penny bots: a variant change means editing it (and a
+VERSIONS entry), or the next 10-minute run restarts the old argv after a stop.
+
+**REVERT:** restore boot_all.ps1 from the commit before this one (section 3e is self-contained).
+
+---
+
+# v-ladder-top -- LIVE 2026-09-29 15:35:39Z (pid 4196820; v-ladder-penny pid 3904676 stopped by its stop file 15:35:15Z, 0 fills ever) -- prepared 2026-09-29 ~15:2xZ (research/cleanroom/ladder_live.py): the penny ladder mirrors only the TOP rung (model-2c, LIVE_LEVELS=(0,)) and in EVERY coin (MAX_LIVE_PER_CLOSE 3 -> 9). Rails unchanged (10 contracts / $12 committed / -$6 day, subaccount 1).
 
 Why (READS_DUE 'ladder-live' day-1 read): v-ladder-penny placed and cancelled 829 orders in ~24 h and filled 0;
 the paper engine in the same process filled 20 orders in 13 markets -- and NONE of the 20 was an order the live side
@@ -28,7 +40,7 @@ do-the-restart-yourself.
 
 ---
 
-# [NOT LIVE -- PREPARED, RELAUNCH BLOCKED] v-forecaster-race1 -- prepared 2026-09-29 07:26Z: the live forecaster was STOPPED (stop file, 07:26:07Z, pid 4036456 exited cleanly) to relaunch with `--variant race1_98` (skip only when the gap to the strike 5 s ago was >= 2x the gap now, i.e. the index closed half the gap, and p < 0.98). The relaunch was DENIED by the auto-mode permission check ("Production Deploy"). THE LIVE FORECASTER IS NOT RUNNING until the operator relaunches it or allows the relaunch.
+# v-forecaster-race1 -- LIVE 2026-09-29 15:35:02Z (pid 4196192; relaunched on the operator's "Restart and turn everything back on"; was OFF 07:26:07-15:35:02Z) -- prepared 2026-09-29 07:26Z: the live forecaster was STOPPED (stop file, 07:26:07Z, pid 4036456 exited cleanly) to relaunch with `--variant race1_98` (skip only when the gap to the strike 5 s ago was >= 2x the gap now, i.e. the index closed half the gap, and p < 0.98). The relaunch was DENIED by the auto-mode permission check ("Production Deploy"). THE LIVE FORECASTER IS NOT RUNNING until the operator relaunches it or allows the relaunch.
 
 Why race1_98 over race05_98 (replay, 33 days, full engine, results/FC_VARIANTS_2026-09-29.md): the same 5
 losing markets and the same $249 of losses removed; $200 of wins cut instead of $280 -> net +$49 vs -$31 vs base
