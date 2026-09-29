@@ -84,6 +84,18 @@ class VEngine(B.Engine):
         self.best = {}                            # (ticker, side) -> (best ask price str, since t)
         self.flow = {}                            # ticker -> deque (ts_s, taker_side, count)
 
+    # --- memory: per-ticker state is dropped once a market's close group is finished (09-29: the side-by-side
+    # paper bot reached 592 MB because flow/phist/best were never pruned -- ~850 markets a day x 14 engines) ---
+    def finish_group(self, m):
+        super().finish_group(m)
+        live = set(self.markets)
+        for t in [t for t in self.flow if t not in live]:
+            del self.flow[t]
+        for t in [t for t in self.phist if t not in live]:
+            del self.phist[t]
+        for k in [k for k in self.best if k[0] not in live]:
+            self.best.pop(k, None)
+
     # --- offer age: when did the current best ask on each side become the best ---
     def _mark_best(self, ticker):
         b = self.books.get(ticker)
@@ -387,6 +399,24 @@ def selftest():
     trn = [(-40, {"ts_ms": (C - 40) * 1000, "yes_price_dollars": "0.8000", "count_fp": "1.00", "taker_side": "yes", "trade_id": "n"})]
     fqn, _ = world(lambda lg, nf: VEngine(lg, nf, tb, {"quiet_mult": 2.0}), bookq, (), trades=trn, rels=range(-60, 0))
     ck(sum(x[3] for x in fqn if x[0] == "real") == 100, "quiet_mult 2: a trade at close-40 keeps the cap at 100 (%s)" % fqn)
+    # memory: after the close settles, the engine keeps no per-ticker trade flow, p history or best-ask clock
+    clockM = [0.0]
+    engM = VEngine(B.Logger(None, []), lambda: clockM[0], tb, {"flow_against": True})
+    clockM[0] = C - 200
+    engM.add_market("BTC-T", "BTC", C, Decimal("100.00"), 2, "planted")
+    for s_ in range(C - 240, C + 1):
+        engM.on_print("BRTI", s_ * 1000, ("101.00", "101.01")[s_ % 2], s_ + 0.1)
+    engM.on_snapshot("BTC-T", book, 1)
+    engM.on_trade("BTC-T", {"ts_ms": (C - 40) * 1000, "yes_price_dollars": "0.8000", "count_fp": "1.00", "taker_side": "yes", "trade_id": "m"})
+    for rel in range(-60, 0):
+        clockM[0] = C + rel + 0.2
+        engM.tick()
+    ck(engM.flow and engM.phist and engM.best, "memory test world: state exists while the market is open")
+    clockM[0] = C + 5
+    engM.tick()
+    engM.on_result("BTC-T", "yes", "101.00", clockM[0])
+    ck(not engM.flow and not engM.phist and not engM.best and not engM.markets,
+       "memory: settled markets leave no flow / p history / best-ask entries behind")
     # empty world
     fe, _ = world(base, {"no_dollars_fp": [], "yes_dollars_fp": []}, ())
     ck(fe == [], "no book: nothing")
