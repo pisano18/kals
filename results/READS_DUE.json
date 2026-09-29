@@ -256,7 +256,7 @@
   {
    "id": "forecaster-race",
    "due": "2026-10-02T01:30Z",
-   "what": "v-forecaster-race (live since 2026-09-29 04:21Z, pid 4036456): keep the race gate on the live forecaster or go back to base?",
+   "what": "v-forecaster-race (live since 2026-09-29 04:21Z, pid 4036456): keep the race gate on the live forecaster or go back to base? UPDATE 07:26Z: stopped to switch to race1_98 (same losses cut, fewer wins cut); relaunch blocked, awaiting operator. The 10-02 read compares base, race05_98 and race1_98 in the side-by-side paper.",
    "how": "python research/cleanroom/fc_compare.py --paper results/fcvar-paper.jsonl --since 2026-09-29T01:51 -> rows base vs race05_98 (same process, same book); live: results/forecaster-live-orders.jsonl since 04:21Z (live_fill / live_settle; refused why=... never shows the gate -- the gate acts inside the engine, so count paper 'real' fills that base took and race05_98 did not).",
    "bar": "PRE-REGISTERED 2026-09-29 ~04:25Z, before any forward result for it. REVERT to base if the forward paper shows race05_98 below base by more than 10% of base's net with no money lost saved; KEEP otherwise. If the forward paper has no market where the gate fired, keep and read again at 10-06.",
    "status": "open"

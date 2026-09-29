@@ -230,3 +230,29 @@ Question: why the bot made +$545 in 09-09..17 and +$76 in 09-18..27. Our own fil
 | W14 | Why 300 of 328 early-leg markets never bought the other two thirds | measurement | needs-data ($0) | -- | ceiling, gate or supply? decides whether the win can grow at all | refute-loss-anatomy-0 |
 | W15 | Entry within 5 s of a spike-gate refusal (BTC 09-27 refused at 32 s, bought at 30 s) | measurement | needs-data ($0, one event) | -- | count such entries and their money before any rule | refute-when-money-1/2 |
 | W16 | Skip the 2-4 jumpiest coins by the prior 7 days; resting bids 1c under; book-confirmed hedge alarm | various | dead | -$47..-$225; resting bids fill 59 in 100 winners and 100 in 100 losers; book alarm +$24 with 21 extra false alarms | negative both halves or tape population only | why/different-angle ANGLE_JUMP/REST/BOOK |
+
+## Rows from the 2026-09-29 forecaster work (F = results/FC_VARIANTS_2026-09-29.md, results/FC_RESEARCH_2026-09-29.md)
+
+Replay numbers are the displayed-offer tape over 33 days at PAPER size (live is 1/20), full engine vs the plain
+forecaster (net +$3,822, won $4,519, lost $697 in 18 losing markets). They compare rules; they are not our loss rate.
+**TRY SOON** = the operator asked (2026-09-29) that every interesting lead be kept for trying soon.
+
+| id | name | family | status | $/day | one-line reason | evidence |
+|---|---|---|---|---|---|---|
+| F01 | race05_98: skip while the index closed 1/3 of its gap in 5 s and p < 0.98 | forecaster gate | live 04:21-07:26Z 09-29, replaced by F02 | ~-$1 paper | saves $249 of losses (13 vs 18 losing markets) for $280 of wins; the every-offer check disagrees (-$286 TEST) | FC_VARIANTS |
+| F02 | race1_98: same, only when the index closed HALF its gap | forecaster gate | TRY SOON -- prepared live, relaunch blocked 07:26Z | ~+$1.5 paper | same $249 saved, $200 of wins cut, net +$49 | FC_VARIANTS table 09-29 07Z |
+| F03 | quiet2x: double size when no trade in the market since close-45 s | forecaster sizing | TRY SOON -- testing (paper pid 4069964, read 10-02) | ~+$15 paper | quiet buys: 0 losses in 236 over 33 days; +$487 net, losses unchanged; a SIZE STEP -> operator first | FC_RESEARCH s5 |
+| F04 | race05_98 + quiet2x | forecaster | TRY SOON -- testing (same paper run) | ~+$14 paper | +$456 net, $249 of losses saved | FC_VARIANTS |
+| F05 | hedge40: buy the other side when the held side's belief < 40% | forecaster insurance | TRY SOON -- testing (paper) | ~+$2 paper | +$62 net, $60 of losses saved; research says insurance is dominated by buying less | FC_VARIANTS, FC_RESEARCH |
+| F06 | A = race05_98 + hedge40 | forecaster | TRY SOON -- testing (paper) | ~+$0.5 paper | $297 saved, $279 of wins cut (+$18) | FC_VARIANTS |
+| F07 | B = stable3 + hedge40: buy only after 3 straight seconds at >= 90% | forecaster gate | TRY SOON -- testing (paper); operator choice A vs B open | ~-$24 paper | cuts 89% of losses (2 losing markets) for 32% of wins (-$803) | FC_VARIANTS |
+| F08 | race_trend0: race rule narrowed by a trend-carried fair value | forecaster gate | TRY SOON (paper only, low priority) | ~+$2 paper | +$57 TRAIN / +$40 TEST vs race05_98 but chance-level; chosen after TEST | FC_RESEARCH s1 |
+| F09 | fresh-offer cut: cap to 25 when the offer is < 0.5 s old and p < 0.95 | forecaster sizing | needs-data (after 30 LIVE losing markets) | -- | 12 of 14 replay losing markets were fresh offers, but the cut costs 2-3x what it saves | FC_RESEARCH s1 |
+| F10 | tox_book / ask-crash / market-quote fusion vetoes | forecaster gate | needs-data (after 30 live losing markets) | -- | each rests on 1 replay loss; re-test on live losses only | FC_RESEARCH s3 |
+| F11 | market quote to ADD buys (fusion as a buy signal, not a veto) | forecaster | TRY SOON (untested) | -- | fusion was the biggest forecast gain (-5% log loss) but only tried as a veto | FC_RESEARCH s4 |
+| F12 | forecaster sigma change re-run through the engine replay | forecaster model | TRY SOON (untested) | -- | changing p changes which buys exist; only row-removal was tried | FC_RESEARCH s4 |
+| F13 | live feature snapshot at every decision and fill (offer age, race, p_trend, book 3/10 s back, last trade, quiet flag, depth, flow, other coins, mid) | measurement | TRY SOON (logging only; a live-code change -> VERSIONS) | $0 | live losses are the only valid loss population | FC_RESEARCH s4 |
+| F14 | study the MAIN bot's live losses on similar buys as the live loss set | measurement | TRY SOON | $0 | the forecaster at ~24 markets/day needs weeks for 30 losses | this note |
+| F15 | meta-label / pooling / microstructure / denoising / cross-asset / sizing / outlandish (7 lenses, ~7,060 configs) | forecaster | dead (replay) | -- | nothing survived adversarial checks; replay losses match the model's own odds | FC_RESEARCH |
+| F16 | one_side, edge3/4, floor80/85, p95/98, r15/20, survive2, age gates, quiet12, flow_ok | forecaster gates | dead (replay) | -- | each cuts more wins than losses | FC_VARIANTS |
+| F17 | Exchange-feed lead for the forecaster | forecaster gate | dead (= P07) | -- | already killed 09-24: losing moves happen after entry | FEED_LEAD_2026-09-24 |

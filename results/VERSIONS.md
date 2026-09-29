@@ -1,3 +1,18 @@
+# [NOT LIVE -- PREPARED, RELAUNCH BLOCKED] v-forecaster-race1 -- prepared 2026-09-29 07:26Z: the live forecaster was STOPPED (stop file, 07:26:07Z, pid 4036456 exited cleanly) to relaunch with `--variant race1_98` (skip only when the gap to the strike 5 s ago was >= 2x the gap now, i.e. the index closed half the gap, and p < 0.98). The relaunch was DENIED by the auto-mode permission check ("Production Deploy"). THE LIVE FORECASTER IS NOT RUNNING until the operator relaunches it or allows the relaunch.
+
+Why race1_98 over race05_98 (replay, 33 days, full engine, results/FC_VARIANTS_2026-09-29.md): the same 5
+losing markets and the same $249 of losses removed; $200 of wins cut instead of $280 -> net +$49 vs -$31 vs base
+(TRAIN +$49 / TEST $0 vs -$16 / -$15). Operator 2026-09-29 ~07:1xZ: "You do what makes most in the longrun."
+Chosen after both halves were seen (selection); both run side by side in fc_variants_paper.py for the 10-02 read.
+Also in this change: the start rail MAX_SUB_BALANCE 25 -> 35 (funded $25 + its own profit; the $22 committed /
+$12 day / $20 run limits are unchanged). Subaccount 2 held $25.4961 at 07:25Z.
+
+**RELAUNCH (race1_98)**: `Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList "-u","research\cleanroom\forecaster_live.py","--subaccount","2","--live","--variant","race1_98","--minutes","10080" -WorkingDirectory "C:\kals-repo" -WindowStyle Hidden -RedirectStandardOutput "C:\kals-repo\results\forecaster-live-stdout.log" -RedirectStandardError "C:\kals-repo\results\forecaster-live-stderr.log"`
+(for race05_98 or plain base, change or drop the --variant pair). Before any relaunch: results/forecaster-live.stop
+must not exist (it was deleted at 07:26Z).
+
+---
+
 # v-forecaster-race -- 2026-09-29 04:21:01Z (pid 4036456; research/cleanroom/forecaster_live.py --variant race05_98; Kalshi SUBACCOUNT 2, $25) -- LIVE: the live forecaster now SKIPS a buy when the index has closed half or more of its gap to the strike in the last 5 s AND the model is under 98% on that side (fc_variants.VARIANTS['race05_98'] = {race_x 0.5, race_p 0.98}); everything else identical to v-forecaster-live (the VEngine with no gates reproduces the paper forecaster fill for fill, self-tested). Operator 2026-09-29 ~04:1xZ: "Definitely do the 1/3 less loss for 3% profit trade first."
 
 DEPLOYED ON THE OPERATOR'S DIRECTION BEFORE ITS FORWARD-PAPER BAR (READS_DUE

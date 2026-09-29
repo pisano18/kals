@@ -28,6 +28,8 @@ text (the 09-21/09-22 blocks): `DOCS_ARCHIVE_2026-09.md`.
   `v-forecaster-live` (`research/cleanroom/forecaster_live.py --subaccount 2`, $25,
   1/20 of the paper forecaster's realistic fills; replaced `v-bettor-penny` 09-29 00:50Z;
   since 04:21Z with `--variant race05_98` = `v-forecaster-race`).
+  **STOPPED 2026-09-29 07:26:07Z** for a switch to `--variant race1_98`; the relaunch was denied
+  by the permission check -- relaunch per the `v-forecaster-race1` RELAUNCH line in VERSIONS.
   Neither is in `boot_all.ps1`: after a reboot, restart both by hand (RELAUNCH
   lines in their VERSIONS entries). Stop either with its `.stop` file in
   `results/`. Reads: READS_DUE `ladder-live`, `forecaster-live`.

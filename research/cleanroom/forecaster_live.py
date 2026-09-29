@@ -24,7 +24,7 @@ HARD RAILS (code, not flags; SCALE = 1/20 of the paper's size)
   side bought; <= 20 contracts / $22 held + in flight; never within 0.5 s of the close or on a trigger older than 1.5 s;
   realized <= -$12 in an ET day halts to the next ET day; <= -$20 since start halts until restarted; an IOC that comes
   back resting is cancelled and halts; an unreadable answer halts until the order record is read back; refuses to
-  start above $25 in the subaccount; stop file results/forecaster-live.stop; <= 3 order writes a second (shared key).
+  start above $35 in the subaccount (funded $25 + its profit); stop file results/forecaster-live.stop; <= 3 order writes a second (shared key).
 
     python research/cleanroom/forecaster_live.py --selftest
     python research/cleanroom/forecaster_live.py --subaccount 2 --dry-run --minutes 30
@@ -62,7 +62,7 @@ MAX_COMMIT = 22.00
 MIN_PX, MAX_PX = 0.75, 0.985                    # paper F_MIN_PRICE, F_MAX_PRICE
 DAY_STOP = -12.00
 RUN_STOP = -20.00
-MAX_SUB_BALANCE = 25.00
+MAX_SUB_BALANCE = 35.00                         # start rail: funded $25 + room for its own profit (was 25.00 to 09-29)
 LATE_S = 0.5
 STALE_S = 1.5
 WRITES_PER_S = 3.0
