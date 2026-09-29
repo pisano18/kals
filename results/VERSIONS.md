@@ -1,3 +1,18 @@
+# [NOT LIVE -- PREPARED, needs the operator's go-ahead to restart] v-ladder-top -- prepared 2026-09-29 ~16:0xZ (research/cleanroom/ladder_live.py): the penny ladder mirrors only the TOP rung (model-2c, LIVE_LEVELS=(0,)) and in EVERY coin (MAX_LIVE_PER_CLOSE 3 -> 9). Rails unchanged (10 contracts / $12 committed / -$6 day, subaccount 1).
+
+Why (READS_DUE 'ladder-live' day-1 read): v-ladder-penny placed and cancelled 829 orders in ~24 h and filled 0;
+the paper engine in the same process filled 20 orders in 13 markets -- and NONE of the 20 was an order the live side
+had placed: the 3 live slots per quarter-hour went to the first markets to lock, which never trade down to a bid,
+while the fills came in markets that locked later. 16 of the 20 paper fills were the top rung, 4 the second, 0 the
+third. Self-test updated and PASSED (every market goes live; top rung only; rails still refuse past 10 contracts).
+Running process pid 3904676 keeps v-ladder-penny until restarted.
+
+**RELAUNCH (after `results/ladder-live.stop` has stopped the old one and been deleted)**: the RELAUNCH line of
+v-ladder-penny below (same command; the code change is in the file).
+**REVERT:** `git revert` this commit, relaunch the same way.
+
+---
+
 # [CODE ONLY -- loads at the next live restart] v-cent -- committed 2026-09-29 ~12:1xZ (research/pinrun.py cent_limit): hourly ladder markets (KXBTCD and the other LADDER_COIN series) take WHOLE-CENT prices only; the entry limit and the hedge limit on those markets are now rounded DOWN to the cent (never under the ask seen). The 15-minute coins are untouched.
 
 Evidence: READS_DUE 'kxbtcd-tick' -- the one early-leg KXBTCD order since v-reopen98 (09-28 23:59 ET,

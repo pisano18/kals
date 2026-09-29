@@ -56,7 +56,9 @@ MAX_CONTRACTS = 10
 MAX_COMMIT = 12.00
 DAY_STOP = -6.00
 MAX_SUB_BALANCE = 25.00
-MAX_LIVE_PER_CLOSE = 3
+MAX_LIVE_PER_CLOSE = 9                           # v-ladder-top (09-29): every coin (was 3 -- the first 3 markets to lock
+                                                 # took the slots and never filled; all 20 paper fills were in later ones)
+LIVE_LEVELS = (0,)                               # v-ladder-top: mirror only the top rung (model-2c): 16 of 20 paper fills
 WRITES_PER_S = 3.0
 POOL = 2
 CID_PREFIX = "lad-"
@@ -127,7 +129,7 @@ class Broker:
             present = set()
             for m in list(eng.markets.values()):
                 present.add(m.ticker)
-                desired = {o.id: o for o in m.orders if o.live_to is None}
+                desired = {o.id: o for o in m.orders if o.live_to is None and getattr(o, "level", 0) in LIVE_LEVELS}
                 live_set = self.live_markets.setdefault(m.close_s, set())
                 if m.ticker not in live_set:
                     if desired and len(live_set) < MAX_LIVE_PER_CLOSE and not (self.halted or self.stopped):
@@ -278,8 +280,9 @@ class _M:
 
 
 class _O:
-    def __init__(self, i, side, price, live_to=None):
+    def __init__(self, i, side, price, live_to=None, level=0):
         self.id, self.side, self.price, self.live_to = i, side, Decimal(str(price)), live_to
+        self.level = level
 
 
 class _E:
@@ -315,13 +318,13 @@ def selftest():
     # sync places desired, caps 3 markets per close
     now = [1000.0]
     br = Broker(log, 3, False, fake_send, lambda: now[0])
-    ms = [_M("T%d" % i, 2000, [_O(10 * i + j, "yes", "0.95") for j in range(3)]) for i in range(5)]
+    ms = [_M("T%d" % i, 2000, [_O(10 * i + j, "yes", "0.95", level=j) for j in range(3)]) for i in range(5)]
     br.sync(_E(ms))
     while not br.q.empty():
         br.work_once(br.q.get())
     placed = [s for s in sent if s[0] == "POST"]
-    ck(len(br.live_markets[2000]) == 3, "at most 3 live markets per close (got %d)" % len(br.live_markets[2000]))
-    ck(len(placed) == 9, "3 markets x 3 levels placed (got %d)" % len(placed))
+    ck(len(br.live_markets[2000]) == 5, "v-ladder-top: every market with a top-rung order goes live (got %d)" % len(br.live_markets[2000]))
+    ck(len(placed) == 5, "v-ladder-top: only the top rung (level 0) is mirrored: 5 markets x 1 (got %d)" % len(placed))
     ck(all(body_ok(p[2], 3) for p in placed), "every sent body carries subaccount + post_only")
     # rails: a 4th close's orders would exceed 10 contracts
     ms2 = ms + [_M("U%d" % i, 2900, [_O(100 + 10 * i + j, "yes", "0.95") for j in range(3)]) for i in range(2)]
@@ -427,7 +430,8 @@ def main():
     br = Broker(olog, a.subaccount, a.dry_run, sender, time.time)
     olog.write("start", pid=os.getpid(), subaccount=a.subaccount, live=a.live, sub_balance=sub_bal,
                rails={"size": 1, "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
-                      "max_live_per_close": MAX_LIVE_PER_CLOSE, "writes_per_s": WRITES_PER_S})
+                      "max_live_per_close": MAX_LIVE_PER_CLOSE, "live_levels": list(LIVE_LEVELS),
+                      "writes_per_s": WRITES_PER_S})
     threading.Thread(target=br.run_writer, daemon=True).start()
     threading.Thread(target=br.run_poller, daemon=True).start()
     orig_tick, orig_res = P.Engine.tick, P.Engine.on_result

@@ -236,7 +236,10 @@
    "what": "Penny live ladder (pid 3904676, subaccount 1): orders placed, real fills vs the paper ladder's fills for the same quarter-hours, P&L, rail/day-stop events.",
    "how": "results/ladder-live-orders.jsonl (placed / live_fill / live_settle), results/ladder-live.jsonl (paper decisions), python research/ordercli.py --sub-status 1",
    "bar": "after 7 days: live fills per day and their loss rate vs the paper ladder; stop if the day stop fires twice or any fill loses on a market the paper bot had as 'locked'",
-   "status": "open"
+   "status": "open",
+   "history": [
+    "09-29 16Z day-1: 829 placed / 829 cancelled / 0 filled; paper engine filled 20 in 13 markets, none of them orders the live side placed (3-per-close slots taken by early-locking markets). Fix prepared: v-ladder-top (top rung, every coin). Needs a restart (operator go-ahead)."
+   ]
   },
   {
    "id": "bettor-live",
