@@ -31,8 +31,8 @@ import bettor_paper as B                        # noqa: E402
 import fc_variants as FV                        # noqa: E402
 
 LOG_PATH = r"C:\kals-repo\results\fcvar-paper.jsonl"
-DEFAULT_VARIANTS = ("base,one_side,edge3,floor80,p95,r20,survive2,age_min1,stable3,race2,race05_98,quiet12,"
-                    "quiet12_race2,hedge40,hedge20,flow_ok")
+DEFAULT_VARIANTS = ("base,race05_98,race1_98,race05_98_hedge40,hedge40,stable2,stable3,stable3_hedge40,"
+                    "stable2_race05_98_hedge40,stable3_race05_98_hedge40,p95,r20,flow_ok,survive2")
 DROP = {"decision", "market", "market_update", "ws_subscribe"}
 
 
@@ -122,6 +122,7 @@ def run_live(names, minutes):
     last_resync = 0
     seq_last = {}
     asked = set()
+    tick_max, drain_max = 0.0, 0
     while time.time() < t_end:
         drained = 0
         while drained < 5000:
@@ -179,10 +180,13 @@ def run_live(names, minutes):
             elif t == "error":
                 log.write("ws_error_msg", msg=obj.get("msg"))
         now = time.time()
+        t_tick = time.perf_counter()
         try:
             fan.tick()
         except Exception as e:
             log.write("tick_error", err=repr(e)[:300])
+        tick_max = max(tick_max, time.perf_counter() - t_tick)
+        drain_max = max(drain_max, drained)
         active = lead.active_tickers(now)
         if ws.connected and (active != last_active or (lead.resync_wanted and now - last_resync > 5)):
             lead.resync_wanted = False
@@ -197,7 +201,12 @@ def run_live(names, minutes):
         if now - last_health >= 60:
             log.write("health", ws=ws.connected, reconnects=max(ws.reconnects, 0), rss_mb=B.rss_mb(),
                       markets=len(lead.markets), books_synced=sum(1 for b in lead.books.values() if b.synced),
-                      queue=q.qsize(), cum={e.name: round(e.cum[("forecaster", "real")], 2) for e in engines})
+                      queue=q.qsize(), tick_max_ms=round(1000 * tick_max, 1), drain_max=drain_max,
+                      check_late_max_ms=round(1000 * max(getattr(e, "late_max", 0.0) for e in engines), 1),
+                      cum={e.name: round(e.cum[("forecaster", "real")], 2) for e in engines})
+            tick_max, drain_max = 0.0, 0
+            for e in engines:
+                e.late_max = 0.0
             last_health = now
         time.sleep(0.02)
     ws.stop = True

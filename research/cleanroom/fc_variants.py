@@ -60,6 +60,15 @@ VARIANTS = {
     "hedge40": {"hedge_p": 0.40},
     "hedge20": {"hedge_p": 0.20},
     "quiet12_race2": {"quiet_s": 1.2, "race_x": 2.0, "race_p": 0.96},
+    "race05_98_hedge40": {"race_x": 0.5, "race_p": 0.98, "hedge_p": 0.40},
+    "race1_98": {"race_x": 1.0, "race_p": 0.98},
+    "race05_99": {"race_x": 0.5, "race_p": 0.99},
+    "hedge50": {"hedge_p": 0.50},
+    "stable2": {"stable_k": 2, "stable_p": 0.9},
+    "stable3_p85": {"stable_k": 3, "stable_p": 0.85},
+    "stable3_hedge40": {"stable_k": 3, "stable_p": 0.9, "hedge_p": 0.40},
+    "stable3_race05_98_hedge40": {"stable_k": 3, "stable_p": 0.9, "race_x": 0.5, "race_p": 0.98, "hedge_p": 0.40},
+    "stable2_race05_98_hedge40": {"stable_k": 2, "stable_p": 0.9, "race_x": 0.5, "race_p": 0.98, "hedge_p": 0.40},
 }
 
 
@@ -80,7 +89,8 @@ class VEngine(B.Engine):
             return
         now = self.now()
         for side in ("yes", "no"):
-            p, _ = b.best_ask(side)
+            lad = b.no if side == "yes" else b.yes
+            p = (1 - max(lad)) if lad else None
             key = (ticker, side)
             ps = None if p is None else str(p)
             old = self.best.get(key)
@@ -131,6 +141,7 @@ class VEngine(B.Engine):
                 keep.append(p)
                 continue
             q = float(p["price"])
+            self.late_max = max(getattr(self, "late_max", 0.0), now - due)
             self.book_spend(m, p["strat"], "real", p["side"], q, -p["want"])
             b = self.books.get(m.ticker)
             why = None
@@ -205,6 +216,12 @@ class VEngine(B.Engine):
             ps = p if side == "yes" else 1.0 - p
             other = "no" if side == "yes" else "yes"
             if ps < P["min_p"]:
+                continue
+            lad0 = b.no if side == "yes" else b.yes
+            if not lad0:
+                continue
+            q0 = float(1 - max(lad0))
+            if q0 > P["max_price"] or (q0 >= P["min_price"] and ps - q0 - B.fee1(q0) < P["min_edge"]):
                 continue
             hist_side = [x if side == "yes" else 1.0 - x for x in h]
             if P["stable_k"] and (len(hist_side) < P["stable_k"]

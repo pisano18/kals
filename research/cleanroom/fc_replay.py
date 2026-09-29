@@ -63,7 +63,8 @@ def load_markets(digest):
     return out
 
 
-def load_day(digest, day, want_trades):
+def load_day(digest, day, want_trades, keep=None):
+    """keep: optional set of tickers -- only their books/trades are held in memory."""
     books, idx, trades = {}, {}, {}
     p = os.path.join(digest, "book", day + ".jsonl.gz")
     if not os.path.exists(p):
@@ -71,7 +72,8 @@ def load_day(digest, day, want_trades):
     with gzip.open(p, "rt", encoding="utf-8") as f:
         for line in f:
             r = json.loads(line)
-            books[r["ticker"]] = r["rows"]
+            if keep is None or r["ticker"] in keep:
+                books[r["ticker"]] = r["rows"]
     with gzip.open(os.path.join(digest, "index", day + ".jsonl.gz"), "rt", encoding="utf-8") as f:
         for line in f:
             r = json.loads(line)
@@ -82,6 +84,8 @@ def load_day(digest, day, want_trades):
             with gzip.open(tp, "rt", encoding="utf-8") as f:
                 for line in f:
                     r = json.loads(line)
+                    if keep is not None and r["ticker"] not in keep:
+                        continue
                     c = r["close_ts"]
                     trades[r["ticker"]] = [t for t in r["trades"] if t[0] >= (c + FIRST_ROW) * 1000]
     return books, idx, trades
@@ -164,12 +168,20 @@ def main_run(a):
     feed_trades = {v for v in variants if v == "base" or FV.VARIANTS[v].get("flow_against") or FV.VARIANTS[v].get("quiet_s")}
     tables = B.Tables()
     ms = load_markets(a.digest)
+    keep = None
+    if a.markets_from:
+        keep = set()
+        with open(a.markets_from, encoding="utf-8") as f:
+            for line in f:
+                keep.add(json.loads(line)["ticker"])
+        ms = [m for m in ms if m["ticker"] in keep]
+        print("markets restricted to %d where base had any fill (every variant trades a subset of them)" % len(ms), flush=True)
     days = sorted({m["day"] for m in ms}) if a.days == "all" else a.days.split(",")
     os.makedirs(a.out, exist_ok=True)
     fhs = {v: open(os.path.join(a.out, "%s_fills.jsonl" % v), "a", encoding="utf-8") for v in variants}
     t0 = time.time()
     for day in days:
-        d = load_day(a.digest, day, bool(feed_trades))
+        d = load_day(a.digest, day, bool(feed_trades), keep)
         if d is None:
             print(day, "no book file -- skipped", flush=True)
             continue
@@ -252,6 +264,7 @@ def main():
     ap.add_argument("--days", default="all")
     ap.add_argument("--digest", default=DIGEST)
     ap.add_argument("--out", default=os.path.join(os.path.dirname(DIGEST), "fcvar"))
+    ap.add_argument("--markets-from", help="a base _fills.jsonl: replay only the markets it traded in")
     a = ap.parse_args()
     if not (FV.selftest() and selftest()):
         raise SystemExit("self-test failed; refusing to run")
