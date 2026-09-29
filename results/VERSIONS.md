@@ -1,6 +1,6 @@
 # v-keepalive-cleanroom -- 2026-09-29 15:37Z (boot_all.ps1 section 3e; runs at logon and every 10 min via the KalsBoot scheduled task): the clean-room bots now restart themselves -- LIVE forecaster_live (subaccount 2, --variant race1_98) and ladder_live (subaccount 1), and PAPER bettor_paper, the ladder paper bot and both forecaster-variant side-by-side runs. Operator 2026-09-29: "Restart and turn everything back on obviously? Make it so they automatically keep themselves in".
 
-A live bot is never started while resultsorecaster-live.stop / results\ladder-live.stop exists (the bots exit on
+A live bot is never started while results\forecaster-live.stop / results\ladder-live.stop exists (the bots exit on
 it; delete it to let them come back), nor while any python process is blind to this script. Each pattern was
 checked to match exactly one running process before the first run; the first run said "all up; nothing to do".
 THE ARGV IN boot_all.ps1 IS NOW THE DEPLOYED VERSION of both penny bots: a variant change means editing it (and a
