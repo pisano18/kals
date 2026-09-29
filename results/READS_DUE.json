@@ -306,6 +306,14 @@
    "how": "results/boot_all.log lines 'is NOT running -- starting it' for the clean-room names; count python processes per pattern (exactly 1 each); forecaster-live-orders.jsonl / ladder-live-orders.jsonl 'start' records",
    "bar": "any duplicate live process on one subaccount, or a start while a stop file existed -> revert section 3e at once",
    "status": "open"
+  },
+  {
+   "id": "live-twin",
+   "due": "2026-10-02T19:00Z",
+   "what": "arm-live-twin (paper, pid 4228512 since 2026-09-29 18:59:18Z): the live pin argv exactly, minus --live, with no loss stops. The fair test for 'should pin revert': the 09-25 twin (arm-btcd) and 09-20 frozen vs THIS arm on the same markets.",
+   "how": "per-market paper money (settled pnl_c/100) of pinrun-paper-20260929T185918Z.jsonl vs pinrun-paper-20260925T122556Z.jsonl (09-25) and 20260925T063011Z (09-20), shared quarter-hours only; split each difference by the rule that refused (live refusal records). Method: results/REVERT_QUESTION_2026-09-29.md.",
+   "bar": "PRE-REGISTERED 2026-09-29 ~19:05Z: revert ONE rule (never the seller check) only if the 09-25 arm beats this twin by more than $10 a day for 3+ weekdays with no refused loser in that span; otherwise keep. A loss today's rules take that an old rule would have refused -> revisit that rule.",
+   "status": "open"
   }
  ]
 }

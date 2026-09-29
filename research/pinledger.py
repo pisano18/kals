@@ -48,6 +48,11 @@ import pinday                                                    # noqa: E402
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 LEDGER = os.path.join(RESULTS, "kalshi_ledger.json")
 PAGE = 200
+# 2026-09-29: the MAIN account only. /portfolio/settlements with NO subaccount returns every subaccount's rows
+# mixed together, with no subaccount field and the same (ticker, settled_time) key -- once the penny bots traded
+# in subaccounts 1 and 2, a 1-contract penny row could win the key over the main bot's 91-contract row (BNB and
+# ZEC 09-29 dropped $3.89 of main-bot money) and penny-only markets were counted as main-account money.
+SUBACCOUNT = "0"
 
 
 def money(s, *names):
@@ -193,7 +198,7 @@ def fetch(rows, creds, backfill=False, page=PAGE, getter=None):
             return pintake._get(creds["base"], creds["pk"], creds["key_id"], path, q)
     cursor, added, pages = None, 0, 0
     while True:
-        q = {"limit": page}
+        q = {"limit": page, "subaccount": SUBACCOUNT}
         if cursor:
             q["cursor"] = cursor
         st, d = get("/portfolio/settlements", q)
@@ -315,6 +320,14 @@ def selftest():
        "the normal run costs one request")
     def dead(path, q):                                           # noqa: E306
         return 401, {"error": "nope"}
+    asked = []
+    def spy(path, q):                                           # noqa: E306
+        asked.append(dict(q))
+        return 200, {"settlements": [], "cursor": None}
+    fetch({}, None, getter=spy)
+    ck(asked and all(x.get("subaccount") == "0" for x in asked),
+       "every request names the MAIN account (subaccount 0); with no subaccount Kalshi mixes the penny "
+       "bots' rows in under the same keys")
     r3 = {}
     ck(fetch(r3, None, getter=dead) == (0, 1) and r3 == {},
        "NULL: an auth failure adds nothing and does not wipe the cache")

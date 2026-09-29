@@ -1,67 +1,68 @@
-﻿[
-    {
-        "value":  [
-                      {
-                          "arm":  "arm-0925",
-                          "pid":  3739212,
-                          "started_utc":  "2026-09-28T02:47:13Z",
-                          "extra":  "--hedge-belief 0.40"
-                      },
-                      {
-                          "arm":  "arm-0925-hedge20",
-                          "pid":  3737472,
-                          "started_utc":  "2026-09-28T02:47:19Z",
-                          "extra":  "--hedge-belief 0.20"
-                      },
-                      {
-                          "arm":  "arm-0925-nohedge",
-                          "pid":  3739636,
-                          "started_utc":  "2026-09-28T02:47:25Z",
-                          "extra":  "--hedge-belief 0.01"
-                      },
-                      {
-                          "arm":  "arm-live-hedge20",
-                          "pid":  3741676,
-                          "started_utc":  "2026-09-28T02:47:31Z",
-                          "extra":  "--toxic-fresh --price-ceiling 0.978 --one-full-bet --hedge-belief 0.20"
-                      },
-                      {
-                          "arm":  "arm-live-nohedge",
-                          "pid":  3742896,
-                          "started_utc":  "2026-09-28T02:47:37Z",
-                          "extra":  "--toxic-fresh --price-ceiling 0.978 --one-full-bet --hedge-belief 0.01"
-                      }
-                  ],
-        "Count":  5
-    },
-    {
-        "arm":  "arm-floor90",
-        "pid":  3772756,
-        "started_utc":  "2026-09-28T05:21:11Z",
-        "extra":  "--early-frac 0.333 --early-min-price 0.90"
-    },
-    {
-        "arm":  "arm-floor85",
-        "pid":  3771352,
-        "started_utc":  "2026-09-28T05:21:17Z",
-        "extra":  "--early-frac 0.333 --early-min-price 0.85"
-    },
-    {
-        "arm":  "arm-floor80",
-        "pid":  3773000,
-        "started_utc":  "2026-09-28T05:21:23Z",
-        "extra":  "--early-frac 0.333 --early-min-price 0.80"
-    },
-    {
-        "arm":  "arm-floor70",
-        "pid":  3772508,
-        "started_utc":  "2026-09-28T05:21:29Z",
-        "extra":  "--early-frac 0.333 --early-min-price 0.70"
-    },
-    {
-        "arm":  "arm-floor90-full",
-        "pid":  3762588,
-        "started_utc":  "2026-09-28T05:21:35Z",
-        "extra":  "--early-frac 1.0 --early-min-price 0.90"
-    }
+[
+ {
+  "arm": "arm-0925",
+  "pid": 3739212,
+  "started_utc": "2026-09-28T02:47:13Z",
+  "extra": "--hedge-belief 0.40"
+ },
+ {
+  "arm": "arm-0925-hedge20",
+  "pid": 3737472,
+  "started_utc": "2026-09-28T02:47:19Z",
+  "extra": "--hedge-belief 0.20"
+ },
+ {
+  "arm": "arm-0925-nohedge",
+  "pid": 3739636,
+  "started_utc": "2026-09-28T02:47:25Z",
+  "extra": "--hedge-belief 0.01"
+ },
+ {
+  "arm": "arm-live-hedge20",
+  "pid": 3741676,
+  "started_utc": "2026-09-28T02:47:31Z",
+  "extra": "--toxic-fresh --price-ceiling 0.978 --one-full-bet --hedge-belief 0.20"
+ },
+ {
+  "arm": "arm-live-nohedge",
+  "pid": 3742896,
+  "started_utc": "2026-09-28T02:47:37Z",
+  "extra": "--toxic-fresh --price-ceiling 0.978 --one-full-bet --hedge-belief 0.01"
+ },
+ {
+  "arm": "arm-floor90",
+  "pid": 3772756,
+  "started_utc": "2026-09-28T05:21:11Z",
+  "extra": "--early-frac 0.333 --early-min-price 0.90"
+ },
+ {
+  "arm": "arm-floor85",
+  "pid": 3771352,
+  "started_utc": "2026-09-28T05:21:17Z",
+  "extra": "--early-frac 0.333 --early-min-price 0.85"
+ },
+ {
+  "arm": "arm-floor80",
+  "pid": 3773000,
+  "started_utc": "2026-09-28T05:21:23Z",
+  "extra": "--early-frac 0.333 --early-min-price 0.80"
+ },
+ {
+  "arm": "arm-floor70",
+  "pid": 3772508,
+  "started_utc": "2026-09-28T05:21:29Z",
+  "extra": "--early-frac 0.333 --early-min-price 0.70"
+ },
+ {
+  "arm": "arm-floor90-full",
+  "pid": 3762588,
+  "started_utc": "2026-09-28T05:21:35Z",
+  "extra": "--early-frac 1.0 --early-min-price 0.90"
+ },
+ {
+  "arm": "arm-live-twin",
+  "pid": 4228512,
+  "started_utc": "2026-09-29T18:59:18Z",
+  "extra": "exact live argv minus --live; --minutes 10080 --max-losses 1000 --loss-abort -100000"
+ }
 ]
