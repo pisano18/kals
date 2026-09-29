@@ -1,3 +1,16 @@
+# v-ladder-settlefix -- LIVE 2026-09-29 17:16:12Z (pid 4217364; research/cleanroom/ladder_live.py): the penny ladder no longer books a market whose settlement lookup came back EMPTY (not yet determined) -- it waits for yes/no, as the paper engine does.
+
+Why: 17:15:04Z it booked KXNEAR15M-26SEP291315-15 (1 NO at 97.9c) as -$0.979 on result "" and dropped the holding;
+Kalshi finalized the market NO -- a +$0.021 WIN (subaccount 1 balance 15.063 = 15 + 0.042 + 0.021 confirms). Real
+money was never affected; the process's day-loss counter was ($0.98 too low), which could have fired the -$6 day
+stop falsely. That one wrong live_settle row stays in ladder-live-orders.jsonl; Kalshi's settlements are the money.
+Self-test gains "an empty (unsettled) result books nothing and keeps the holding"; PASSED. Stopped by stop file
+17:15:49Z, relaunched 17:16:12Z (boot_all.ps1 argv unchanged).
+
+**REVERT:** `git revert` this commit and restart the ladder (stop file, delete it, boot_all.ps1 or the RELAUNCH line).
+
+---
+
 # v-keepalive-cleanroom -- 2026-09-29 15:37Z (boot_all.ps1 section 3e; runs at logon and every 10 min via the KalsBoot scheduled task): the clean-room bots now restart themselves -- LIVE forecaster_live (subaccount 2, --variant race1_98) and ladder_live (subaccount 1), and PAPER bettor_paper, the ladder paper bot and both forecaster-variant side-by-side runs. Operator 2026-09-29: "Restart and turn everything back on obviously? Make it so they automatically keep themselves in".
 
 A live bot is never started while results\forecaster-live.stop / results\ladder-live.stop exists (the bots exit on

@@ -161,6 +161,8 @@ class Broker:
 
     # --- results ---
     def on_result(self, ticker, result):
+        if result not in ("yes", "no"):
+            return      # not settled yet (09-29 13:15 ET NEAR: an empty result was booked as a loss; it had won)
         with self.lock:
             h = self.held.pop(ticker, None)
             if not h or h["n"] <= 0:
@@ -345,6 +347,8 @@ def selftest():
     pid = next(p for p, v in br.live.items() if v["status"] == "resting")
     br.on_fill(pid, 1)
     ck(br.held and list(br.held.values())[0]["n"] == 1, "a fill is held")
+    br.on_result(br.live[pid]["ticker"], "")
+    ck(br.held and list(br.held.values())[0]["n"] == 1, "an empty (unsettled) result books nothing and keeps the holding")
     br.day_pnl = -5.5
     br.day = et_day(now[0])
     br.on_result(br.live[pid]["ticker"], "no")
