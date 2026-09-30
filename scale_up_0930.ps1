@@ -10,6 +10,7 @@
 #   2. Coin race: stops the live process and starts it again at 40 contracts a leg, $120 open-bet cap, and
 #      --live-max-losses 2 (stop for the rest of the ET day after 2 losing races, instead of stopping for good on 1).
 #   3. Forecaster (subaccount 2): stop file -> wait for exit -> delete it -> start with --scale 0.10 (1/10 of paper;
+#      plus --crash-gap 0.10: skip an order whose best ask has already collapsed more than 10c under its price;
 #      every rail doubles with it: 10 a side, 40 a close, $44 held, -$24 day, -$40 run).
 #   4. Ladder (subaccount 1): same, with --size 5 (5 contracts a bid; rails x5: 50 contracts, $60 held, -$30 day).
 #   5. Checks each new process wrote its start record with the new settings.
@@ -26,7 +27,7 @@ function Say($m) { $l = "{0}  {1}" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"),
 function Live($like) { @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like $like }) }
 
 $race = @("-u","research/pinracearm.py","--live","--max-contracts","40","--max-stake","120","--live-max-losses","2","--live-rolling-stake","--live-tau-max","30","--live-min-price","0.90","--live-max-legs","5","--live-confirm","5","--live-clock-tau","20","--minutes","10080","--log","C:/kals-repo/results/pinracepenny-live.jsonl","--model","fair","--tau-max","60","--min-price","0.80","--min-edge","0.00")
-$fc   = @("-u","research\cleanroom\forecaster_live.py","--subaccount","2","--live","--variant","race1_98","--scale","0.10","--minutes","10080")
+$fc   = @("-u","research\cleanroom\forecaster_live.py","--subaccount","2","--live","--variant","race1_98","--scale","0.10","--crash-gap","0.10","--minutes","10080")
 $lad  = @("-u","research\cleanroom\ladder_live.py","--subaccount","1","--live","--size","5","--minutes","10080")
 
 # ---- 0. validate (nothing is stopped if any of this fails)
@@ -48,7 +49,7 @@ if ($DryRun) { Say "DRY RUN: all checks passed; nothing stopped or started"; exi
 # ---- 1. keep-alive -> the new argv (+ the live coin race)
 $boot = Get-Content "$repo\boot_all.ps1" -Raw
 $oldFcLine = 'a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--minutes", "10080");'
-$newFcLine = 'a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--scale", "0.10", "--minutes", "10080");'
+$newFcLine = 'a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--scale", "0.10", "--crash-gap", "0.10", "--minutes", "10080");'
 $oldLadLine = 'a = @("-u", "research\cleanroom\ladder_live.py", "--subaccount", "1", "--live", "--minutes", "10080");'
 $newLadLine = 'a = @("-u", "research\cleanroom\ladder_live.py", "--subaccount", "1", "--live", "--size", "5", "--minutes", "10080");'
 $raceAnchor = '    @{ n = "bettor_paper (paper)";'

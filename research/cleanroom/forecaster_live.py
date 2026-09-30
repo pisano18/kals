@@ -69,6 +69,11 @@ WRITES_PER_S = 3.0
 POOL = 2
 CID_PREFIX = "fc-"
 BROKER = None
+# v-crash-guard (2026-09-30): the live IOC fills far BELOW the price the 1-s check saw when the offer is collapsing
+# (5 such fills in the first 2 days: 3 lost, -$3.05; the 17 ordinary fills: 0 lost, +$7.94). If, when the order is
+# triggered, the engine's own best ask on our side is already more than CRASH_GAP under the price we are about to
+# pay, the collapse is visible -- skip. None = off. Every order logs the best ask at the trigger either way.
+CRASH_GAP = None
 
 
 def apply_scale(scale):
@@ -156,7 +161,7 @@ class Broker:
         return None
 
     # --- called when the paper forecaster books a 'real' fill (size still shown 1 s after its decision) ---
-    def want(self, ticker, close_s, side, px, paper_k, rel=None, p_side=None):
+    def want(self, ticker, close_s, side, px, paper_k, rel=None, p_side=None, best_ask=None):
         now = self.now()
         with self.lock:
             v = self.pos.setdefault((ticker, side), {"close_s": close_s, "paper": 0.0, "asked": 0, "inflight": 0,
@@ -168,6 +173,8 @@ class Broker:
             why = self.stop_reason(now)
             if not why and not (MIN_PX - 1e-9 <= px <= MAX_PX + 1e-9):
                 why = "price"
+            if not why and CRASH_GAP is not None and best_ask is not None and best_ask < px - CRASH_GAP - 1e-9:
+                why = "crash"
             if not why and v["inflight"]:
                 why = "in_flight"
             if not why:
@@ -185,7 +192,8 @@ class Broker:
             self.close_asked[close_s] = self.close_asked.get(close_s, 0) + inc
             cid = "%s%d-%d" % (CID_PREFIX, int(now * 1000), len(self.orders))
             self.orders[cid] = {"ticker": ticker, "side": side, "px": px, "n": inc, "status": "queued", "kid": None,
-                                "t_dec": now, "close_s": close_s, "rel": rel, "p_side": p_side, "paper_k": paper_k}
+                                "t_dec": now, "close_s": close_s, "rel": rel, "p_side": p_side, "paper_k": paper_k,
+                                "best_ask": best_ask}
             self.q.put(("place", cid))
             return inc
 
@@ -291,7 +299,8 @@ class Broker:
         o["kid"] = out.get("order_id")
         self.log.write("placed", body=b, status=st, order_id=o["kid"], filled=out["filled"],
                        remaining=out["remaining"], exec_px=out["exec_price"], fee_total=out["fee_total"],
-                       paper_k=o["paper_k"], age=round(t_send - o["t_dec"], 3), rtt=round(time.time() - t_send, 3),
+                       paper_k=o["paper_k"], best_ask_at_trigger=o.get("best_ask"),
+                       age=round(t_send - o["t_dec"], 3), rtt=round(time.time() - t_send, 3),
                        resp=str(r)[:300])
         with self.lock:
             if st is not None and 400 <= st < 500:
@@ -369,8 +378,13 @@ def install_hooks():
     def add_fill(self, m, strat, fm, side, price, size, fee_, **extra):
         _orig["add_fill"](self, m, strat, fm, side, price, size, fee_, **extra)
         if BROKER is not None and strat == "forecaster" and fm == "real" and extra.get("kind") == "take":
+            _bk = self.books.get(m.ticker)
+            _ba = None
+            if _bk is not None:
+                _bp, _ = _bk.best_ask(side)
+                _ba = None if _bp is None else round(float(_bp), 4)
             BROKER.want(m.ticker, m.close_s, side, round(float(price), 4), float(size), extra.get("rel"),
-                        extra.get("p_side"))
+                        extra.get("p_side"), best_ask=_ba)
 
     def on_result(self, ticker, result, ev, now):
         _orig["on_result"](self, ticker, result, ev, now)
@@ -464,6 +478,24 @@ def selftest():
     ck(br.want("B", 1030, "yes", 0.90, 1) == 1, "paper 10 -> 1")
     run(br)
     ck(br.want("C", 1030, "yes", 0.74, 100) == 0 and br.want("C2", 1030, "no", 0.99, 100) == 0, "74c and 99c refused")
+    global CRASH_GAP
+    _cg = CRASH_GAP
+    brc = Broker(log, 2, False, fake_send, lambda: now[0])
+    try:
+        CRASH_GAP = None
+        ck(brc.want("CG0", 7030, "yes", 0.80, 100, best_ask=0.40) == 5, "crash guard OFF: a collapsed best ask does not refuse")
+        run(brc)
+        CRASH_GAP = 0.10
+        ck(brc.want("CG1", 7930, "yes", 0.80, 100, best_ask=0.60) == 0
+           and any(r["ev"] == "refused" and r["why"] == "crash" for r in sink),
+           "crash guard 10c: best ask 60c under an 80c order -> skipped (why=crash)")
+        ck(brc.want("CG2", 8830, "yes", 0.80, 100, best_ask=0.75) == 5, "crash guard 10c: best ask 75c (5c under) -> sent")
+        run(brc)
+        ck(brc.want("CG3", 9730, "yes", 0.80, 100, best_ask=None) == 5, "crash guard: an unknown best ask never refuses")
+        run(brc)
+    finally:
+        CRASH_GAP = _cg
+    ck(any(r["ev"] == "placed" and r.get("best_ask_at_trigger") == 0.75 for r in sink), "every placed order logs the best ask at the trigger")
     # a miss is not retried; the next paper fill asks only for its own increment
     mode["v"] = "miss"
     br2 = Broker(log, 2, False, fake_send, lambda: now[0])
@@ -647,6 +679,8 @@ def main():
     ap.add_argument("--minutes", type=float, default=10080)
     ap.add_argument("--variant", default="base", help="fc_variants.VARIANTS name; base = the paper forecaster exactly")
     ap.add_argument("--scale", type=float, default=0.05, help="live contracts per paper contract (default 0.05 = 1/20)")
+    ap.add_argument("--crash-gap", type=float, default=None,
+                    help="skip an order when the best ask at the trigger is more than this under its price (off by default)")
     a = ap.parse_args()
     if a.variant not in FV.VARIANTS:
         raise SystemExit("unknown --variant %s" % a.variant)
@@ -658,6 +692,8 @@ def main():
     if not a.subaccount or a.subaccount < 1:
         raise SystemExit("--subaccount N (1..63) is required; the primary account is refused")
     apply_scale(a.scale)
+    global CRASH_GAP
+    CRASH_GAP = a.crash_gap
     if a.live == a.dry_run:
         raise SystemExit("choose exactly one of --live / --dry-run")
     import ordercli
@@ -685,7 +721,7 @@ def main():
     olog = B.Logger(ORDER_LOG)
     br = Broker(olog, a.subaccount, a.dry_run, sender, time.time)
     olog.write("start", pid=os.getpid(), subaccount=a.subaccount, live=a.live, sub_balance=sub_bal,
-               variant=a.variant, variant_params=FV.VARIANTS[a.variant],
+               variant=a.variant, variant_params=FV.VARIANTS[a.variant], crash_gap=CRASH_GAP,
                rails={"scale": str(SCALE), "per_side": MAX_PER_SIDE, "per_close": MAX_PER_CLOSE, "per_order": MAX_ORDER,
                       "max_held": MAX_HELD, "max_commit": MAX_COMMIT, "px": [MIN_PX, MAX_PX], "day_stop": DAY_STOP,
                       "run_stop": RUN_STOP, "late_s": LATE_S, "stale_s": STALE_S, "writes_per_s": WRITES_PER_S})

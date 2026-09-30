@@ -18,6 +18,11 @@ the new argv (and adds the live coin race to it), then restarts:
   contracts a bid, rails x5 (50 contracts, $60 held, -$30 day, start balance <= $73); exposure now counts contracts,
   not orders. Subaccount 1 funded $15.15 -> $65.15 (--sub-fund 50 --sub 1).
 - ordercli SUB_MAX_BALANCE $25 -> $100 (the transfer rail), its self-test updated.
+- **v-crash-guard** (forecaster_live.py, code, NEW --crash-gap, run by the script at 0.10): skip an order when
+  the engine's best ask at the trigger is already more than 10c under the price about to be paid; every order now
+  logs best_ask_at_trigger. Why: live 09-29..30, 5 fills landed >10c under the asked price (the offer collapsing
+  as we sent): 3 lost, -$3.05; the 17 ordinary fills: 0 lost, +$7.94. Whether the collapse is already visible at
+  the trigger is unknown -- the new log field answers it; refusals show as why=crash.
 UNTIL THE SCRIPT RUNS: the running bots keep their old sizes; if one of the two penny bots crashes, the keep-alive's
 OLD argv now fails its start rail (balances are above $25/$35), so it stays down -- a safe failure.
 
