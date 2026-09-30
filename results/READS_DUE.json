@@ -190,35 +190,38 @@
   },
   {
    "id": "missed-daily",
-   "due": "2026-09-30T12:00Z",
+   "due": "2026-10-01T12:00Z",
    "what": "daily missed-trades report",
    "how": "python research/missed.py",
    "bar": "report per gate; flag any gate refusing mostly winners",
    "status": "open",
    "history": [
-    "09-29 12Z: 24 h window: our 15-min coins 30 markets, 1 lost, +$23.70; hourly BTC 3 markets +$0.11; other 5 markets 1 lost -$6.64 (Tencent). Gates flagged 'mostly winners' (ceiling +$28, edge floor +$25, depth +$22, seller gate +$4 at most) each weighed against a $24-57 typical loss -- none actionable; confidence gate refused 16 losers in 124. Seller-gate share 25-26 in 100 = at its OFF line (read 10-01)."
+    "09-29 12Z: 24 h window: our 15-min coins 30 markets, 1 lost, +$23.70; hourly BTC 3 markets +$0.11; other 5 markets 1 lost -$6.64 (Tencent). Gates flagged 'mostly winners' (ceiling +$28, edge floor +$25, depth +$22, seller gate +$4 at most) each weighed against a $24-57 typical loss -- none actionable; confidence gate refused 16 losers in 124. Seller-gate share 25-26 in 100 = at its OFF line (read 10-01).",
+    "09-30 12Z: 24 h: 15-min 25 markets 0 lost +$50.56; hourly BTC 2 +$0.09; race 5 0 lost +$3.87. The 97.8c cap on the 45-s bet refused 1 loser (-$30.11 saved) among 164; depth/spike/early_dear/jump_against/against_thin refused only winners but small ($1-21 at most each vs $17-60 per loss). Seller gate share 43 in 100 on the 45-s leg (6 of 14), 33 in 100 of all buys with >20 s left -- OVER its 25/100 OFF line; its own read is 10-01. One KXBTCD 400 invalid_price again (v-cent loads at the next restart)."
    ]
   },
   {
    "id": "reopen98-guard",
-   "due": "2026-09-30T12:00Z",
+   "due": "2026-10-01T12:00Z",
    "what": "v-reopen98 stop rule (daily until 100 such markets): 30-second buys at 97.9-98c since 09-28 14:36Z.",
    "how": "live logs: orders leg full/topup/late_add with exec or ask 0.979-0.98, joined to the ledger; count losses and whether the seller gate had readings",
    "bar": "back to 0.978 on the 2nd loss in the first 100, on any such loss the gate could not judge, or if --toxic-fresh is turned off",
    "status": "open",
    "history": [
-    "09-29 12Z: 6 buys at 97.9-98c on the 30-s leg (6 markets), 0 of them lost (the BNB 09-28 8 PM market lost -$8.26 on its 97.5c 45-s YES buy; its 98c NO top-up WON). Bar (2nd loss in first 100) not reached: keep."
+    "09-29 12Z: 6 buys at 97.9-98c on the 30-s leg (6 markets), 0 of them lost (the BNB 09-28 8 PM market lost -$8.26 on its 97.5c 45-s YES buy; its 98c NO top-up WON). Bar (2nd loss in first 100) not reached: keep.",
+    "09-30 12Z: 18 buys at 97.9-98c on the 30-s leg in 17 markets since 09-28 14:36Z; 0 of the buys lost. Keep."
    ]
   },
   {
    "id": "floor90-guard",
-   "due": "2026-09-30T12:00Z",
+   "due": "2026-10-01T12:00Z",
    "what": "v-floor90 stop rule (daily): money of every 45-second buy whose ask was under 95c since 09-28 14:36Z, insurance included.",
    "how": "live logs orders leg early with ask_seen < 0.95, joined to the Kalshi ledger per market",
    "bar": "if the running total is below $0 -> --early-min-price back to 0.95 at once",
    "status": "open",
    "history": [
-    "09-29 12Z: 3 markets with a 45-s buy under 95c (asks 90c, 93.9c, 94c): +$1.51, +$1.57, +$3.41 = +$6.49 running total (>= $0): keep."
+    "09-29 12Z: 3 markets with a 45-s buy under 95c (asks 90c, 93.9c, 94c): +$1.51, +$1.57, +$3.41 = +$6.49 running total (>= $0): keep.",
+    "09-30 12Z: 4 markets with a 45-s buy under 95c, running total +$9.85 (insurance included). Keep."
    ]
   },
   {
