@@ -1,3 +1,32 @@
+# [PREPARED -- takes effect when scale_up_0930.ps1 is run] v-race40 + v-forecaster-scale + v-ladder-size -- 2026-09-30 ~05:5xZ. Operator 2026-09-30: "Run whatever sub accounts you want or look like money makers like hourly ladder, increase the coin race size don't stop on one loss, increase clean room forecaster, increase ladder."
+
+The relaunches were refused by the permission check ("Production Deploy") even with that instruction, so all
+three are applied by ONE script the operator runs (or allow-lists): `powershell -NoProfile -ExecutionPolicy Bypass
+-File C:/kals-repo/scale_up_0930.ps1` (-DryRun checks only; the dry run PASSED 05:50Z). It validates first (self-
+tests, no stop files, one live process each, balances inside the new rails), points boot_all.ps1's keep-alive at
+the new argv (and adds the live coin race to it), then restarts:
+- **v-race40** (research/pinracearm.py, code): --max-contracts 20 -> 40, --max-stake 60 -> 120 (pintake's per-take
+  and run-stake rails raised through pintake.set_limits, printed; this file's own ceilings 100 contracts / $300), and
+  NEW --live-max-losses 2: stop for the rest of the ET day after 2 losing races (was: stop for good on the first
+  loss). Self-test: the daily limit end to end through the real settle path. Record: 204 legs, +$19.20; 78 legs
+  without a loss since 09-24; at 20 a leg 46 in 100 contracts filled (supply-bound), so expect +$1-2 a day more;
+  a loss costs ~$39 instead of ~$19.6.
+- **v-forecaster-scale** (research/cleanroom/forecaster_live.py, code): NEW --scale (default 0.05 unchanged); the
+  script runs 0.10 = 1/10 of paper, every rail doubled with it (10 a side, 40 a close, $44 held, -$24 day, -$40 run,
+  start balance <= $70). Subaccount 2 funded $26.35 -> $54.35 (ordercli --sub-fund 28 --sub 2).
+- **v-ladder-size** (research/cleanroom/ladder_live.py, code): NEW --size (default 1 unchanged); the script runs 5
+  contracts a bid, rails x5 (50 contracts, $60 held, -$30 day, start balance <= $73); exposure now counts contracts,
+  not orders. Subaccount 1 funded $15.15 -> $65.15 (--sub-fund 50 --sub 1).
+- ordercli SUB_MAX_BALANCE $25 -> $100 (the transfer rail), its self-test updated.
+UNTIL THE SCRIPT RUNS: the running bots keep their old sizes; if one of the two penny bots crashes, the keep-alive's
+OLD argv now fails its start rail (balances are above $25/$35), so it stays down -- a safe failure.
+
+**REVERT:** resultsoot_all.before-scale-up.ps1 -> boot_all.ps1; restart each bot with its previous argv (coin
+race: the v-race20 line; forecaster: v-forecaster-race1 RELAUNCH; ladder: v-ladder-penny RELAUNCH); move money back
+with ordercli --sub-return.
+
+---
+
 # v-ladder-settlefix -- LIVE 2026-09-29 17:16:12Z (pid 4217364; research/cleanroom/ladder_live.py): the penny ladder no longer books a market whose settlement lookup came back EMPTY (not yet determined) -- it waits for yes/no, as the paper engine does.
 
 Why: 17:15:04Z it booked KXNEAR15M-26SEP291315-15 (1 NO at 97.9c) as -$0.979 on result "" and dropped the holding;

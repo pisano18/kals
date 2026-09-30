@@ -71,6 +71,25 @@ CID_PREFIX = "fc-"
 BROKER = None
 
 
+def apply_scale(scale):
+    """v-forecaster-scale (2026-09-30, operator: "increase clean room forecaster"): every size rail is the 1/20 rail
+    times scale/0.05 -- per side, per close, per order, held, committed, day stop, run stop and the start balance --
+    so a bigger scale can never outgrow its own limits. 0.05 reproduces the v-forecaster-live numbers exactly."""
+    global SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE
+    k = float(scale) / 0.05
+    if not (0.01 <= float(scale) <= 0.25):
+        raise SystemExit("--scale %s is outside 0.01..0.25" % scale)
+    SCALE = Decimal(str(scale))
+    MAX_PER_SIDE = int(round(100 * float(scale)))
+    MAX_PER_CLOSE = int(round(400 * float(scale)))
+    MAX_ORDER = MAX_PER_SIDE
+    MAX_HELD = MAX_PER_CLOSE
+    MAX_COMMIT = round(22.00 * k, 2)
+    DAY_STOP = round(-12.00 * k, 2)
+    RUN_STOP = round(-20.00 * k, 2)
+    MAX_SUB_BALANCE = round(35.00 * k, 2)
+
+
 def et_day(t):
     return (datetime.fromtimestamp(t, timezone.utc) - timedelta(hours=4)).strftime("%Y-%m-%d")
 
@@ -371,7 +390,7 @@ def install_hooks():
 
 # ---------------------------------------------------------------------------------------------------- self-test
 def selftest():
-    global STOP_FILE, BROKER, MAX_HELD, MAX_COMMIT
+    global STOP_FILE, BROKER, MAX_HELD, MAX_COMMIT, SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE
     fails, sink = [], []
     log = B.Logger(None, sink)
     sent = []
@@ -418,6 +437,17 @@ def selftest():
     ck(not body_ok(dict(b1, self_trade_prevention_type="maker"), 2), "maker self-trade mode refused")
     ck(not body_ok(dict(b1, client_order_id="bet-1"), 2), "a foreign client id prefix is refused")
     ck(fee(5, 0.80) == 0.06 and fee(1, 0.95) == 0.01, "taker fee rounds up to the cent")
+    _saved = (SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE)
+    apply_scale(0.05)
+    ck((SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE)
+       == (Decimal("0.05"), 5, 20, 5, 20, 22.0, -12.0, -20.0, 35.0), "--scale 0.05 reproduces the 1/20 rails exactly")
+    apply_scale(0.10)
+    ck((MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE)
+       == (10, 40, 10, 40, 44.0, -24.0, -40.0, 70.0) and scaled(100) == 10 and scaled(77) == 8,
+       "--scale 0.10 doubles every rail with the size (10 a side, 40 a close, $44 held, -$24 day, -$40 run)")
+    ck(body_ok(order_body("T", "yes", 0.8, 10, 2, "fc-x"), 2) and not body_ok(order_body("T", "yes", 0.8, 11, 2, "fc-x"), 2),
+       "--scale 0.10: 10 contracts an order pass, 11 are refused")
+    (SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE) = _saved
     ck([scaled(x) for x in (100, 77, 98, 10, 9, 7, 3, 1, 200)] == [5, 4, 5, 1, 0, 0, 0, 0, 10], "proportional scale 1/20, half up")
     # proportional mirroring, increments, caps
     now = [1000.0]
@@ -616,6 +646,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--minutes", type=float, default=10080)
     ap.add_argument("--variant", default="base", help="fc_variants.VARIANTS name; base = the paper forecaster exactly")
+    ap.add_argument("--scale", type=float, default=0.05, help="live contracts per paper contract (default 0.05 = 1/20)")
     a = ap.parse_args()
     if a.variant not in FV.VARIANTS:
         raise SystemExit("unknown --variant %s" % a.variant)
@@ -626,6 +657,7 @@ def main():
         return 0
     if not a.subaccount or a.subaccount < 1:
         raise SystemExit("--subaccount N (1..63) is required; the primary account is refused")
+    apply_scale(a.scale)
     if a.live == a.dry_run:
         raise SystemExit("choose exactly one of --live / --dry-run")
     import ordercli

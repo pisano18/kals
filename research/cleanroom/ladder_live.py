@@ -56,6 +56,20 @@ MAX_CONTRACTS = 10
 MAX_COMMIT = 12.00
 DAY_STOP = -6.00
 MAX_SUB_BALANCE = 25.00
+
+
+def apply_size(size):
+    """v-ladder-size (2026-09-30, operator: "increase ladder"): contracts per bid, with every rail scaled by it --
+    10 contracts / $12 committed / -$6 day stop per contract of size; start balance $25 + $12 per extra contract."""
+    global SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE
+    n = int(size)
+    if not (1 <= n <= 20):
+        raise SystemExit("--size %s is outside 1..20" % size)
+    SIZE = Decimal(n)
+    MAX_CONTRACTS = 10 * n
+    MAX_COMMIT = 12.00 * n
+    DAY_STOP = -6.00 * n
+    MAX_SUB_BALANCE = 25.00 + 12.00 * (n - 1)
 MAX_LIVE_PER_CLOSE = 9                           # v-ladder-top (09-29): every coin (was 3 -- the first 3 markets to lock
                                                  # took the slots and never filled; all 20 paper fills were in later ones)
 LIVE_LEVELS = (0,)                               # v-ladder-top: mirror only the top rung (model-2c): 16 of 20 paper fills
@@ -104,8 +118,8 @@ class Broker:
         return [v for v in self.live.values() if v["status"] in ("sending", "resting")]
 
     def exposure(self):
-        n = len(self.open_orders()) + sum(h["n"] for h in self.held.values())
-        c = sum(float(v["px"]) for v in self.open_orders()) + sum(h["cost"] for h in self.held.values())
+        n = len(self.open_orders()) * float(SIZE) + sum(h["n"] for h in self.held.values())
+        c = sum(float(v["px"]) * float(SIZE) for v in self.open_orders()) + sum(h["cost"] for h in self.held.values())
         return n, c
 
     def rails_refusal(self, px):
@@ -114,9 +128,9 @@ class Broker:
         if self.halted:
             return "day_stop"
         n, c = self.exposure()
-        if n + 1 > MAX_CONTRACTS:
+        if n + float(SIZE) > MAX_CONTRACTS + 1e-9:
             return "max_contracts"
-        if c + float(px) > MAX_COMMIT + 1e-9:
+        if c + float(px) * float(SIZE) > MAX_COMMIT + 1e-9:
             return "max_commit"
         return None
 
@@ -293,7 +307,7 @@ class _E:
 
 
 def selftest():
-    global STOP_FILE
+    global STOP_FILE, SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE
     fails, sink = [], []
     log = P.Logger(sink=sink)
     sent = []
@@ -392,6 +406,22 @@ def selftest():
     body = src[:src.index("# ----" + "-" * 20)]
     ck(body.count('"POST"') == 1 and '"/portfolio/subaccounts' not in body and "intra_exchange" not in body,
        "the working code has exactly one POST (create order) and no money movement")
+    # v-ladder-size: size 5 -> 5-contract bodies, rails x5, and exposure counted in CONTRACTS
+    _sv = (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE)
+    try:
+        apply_size(1)
+        ck((SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE) == (Decimal(1), 10, 12.0, -6.0, 25.0),
+           "--size 1 reproduces the penny rails exactly")
+        apply_size(5)
+        ck((MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE) == (50, 60.0, -30.0, 73.0), "--size 5 scales every rail x5")
+        b5 = order_body("KXBTC15M-X", "yes", "0.98", 3, "lad-5")
+        ck(b5["count"] == "5.00" and body_ok(b5, 3) and not body_ok(dict(b5, count="1.00"), 3), "--size 5 sends 5-contract bids only")
+        br5 = Broker(log, 3, False, fake_send, lambda: now[0])
+        br5.sync(_E([_M("S%d" % i, 9000 + 900 * i, [_O(5000 + i, "yes", "0.98")]) for i in range(12)]))
+        n5, c5 = br5.exposure()
+        ck(n5 == 50 and c5 <= MAX_COMMIT + 1e-9, "--size 5: exposure counts contracts -- 10 bids of 5 = 50, the 11th refused (%s, %.2f)" % (n5, c5))
+    finally:
+        SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE = _sv
     print("ladder_live self-test " + ("PASSED" if not fails else "FAILED: " + "; ".join(fails)))
     return not fails
 
@@ -404,6 +434,7 @@ def main():
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--minutes", type=float, default=10080)
+    ap.add_argument("--size", type=int, default=1, help="contracts per bid (default 1); every rail scales with it")
     a = ap.parse_args()
     if not selftest() or not P.selftest():
         raise SystemExit("self-test failed; refusing to run")
@@ -411,6 +442,7 @@ def main():
         return 0
     if not a.subaccount or a.subaccount < 1:
         raise SystemExit("--subaccount N (1..63) is required; the primary account is refused")
+    apply_size(a.size)
     if a.live == a.dry_run:
         raise SystemExit("choose exactly one of --live / --dry-run")
     import ordercli

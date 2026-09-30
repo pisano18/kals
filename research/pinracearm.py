@@ -280,7 +280,15 @@ LIVE = {"on": False, "paper": False,
         "clock_tau": _DEFAULT_LIVE_CLOCK_TAU,
         "stop_on_loss": _DEFAULT_LIVE_STOP_ON_LOSS,
         "max_drop": _DEFAULT_LIVE_MAX_DROP, "rolling": False,
+        "max_losses": 1, "day_losses": 0, "loss_day": None, "halted_day": None,
         "races": {}, "armed": {}, "staked": 0.0, "halted": None, "sends": 0}
+
+# v-race40 (2026-09-30, operator: "increase the coin race size don't stop on one loss"): with --live-max-losses N > 1
+# the live bot stops for the rest of the ET DAY after N losing races and trades again the next ET day. N = 1 (the
+# default) is the old stop-dead-on-the-first-loss rule, which never expires. Size above pintake's shipped rails is
+# allowed up to these ceilings of our own, raised through pintake.set_limits (printed, never silent).
+RACE_MAX_CONTRACTS_CEILING = 100.0
+RACE_MAX_STAKE_CEILING = 300.0
 
 # --paper-live's own stake book. The rolling-stake release gives committed
 # dollars back to a ledger; in paper mode it gives them back to THIS one, so
@@ -447,7 +455,7 @@ def live_refusals(tau, price, count, race, coin=None, side=None, state=None,
     bad = []
     if not st["on"]:
         bad.append("not armed -- --live was not given")
-    if st["halted"]:
+    if halt_active(st):
         bad.append("halted: %s" % st["halted"])
     held = st["races"].get(race, [])
     if len(held) >= st["max_legs"]:
@@ -991,6 +999,20 @@ def settle_race(evt, cs, now, rets, real, pending, ledger_rows, paper=False):
                     "from the index" % (LEDGER_WAIT_S // 60, gap_bp))
 
 
+def _et_day(t):
+    """ET calendar day (EDT, UTC-4 -- the repo's Nov-1 clock item applies here too)."""
+    return time.strftime("%Y-%m-%d", time.gmtime(float(t) - 4 * 3600))
+
+
+def halt_active(st, now=None):
+    """The halt that is in force at `now`. A DAILY loss-limit halt (halted_day set) expires when the ET day turns;
+    the first-loss stop (halted_day None) never does."""
+    h = st.get("halted")
+    if h and st.get("halted_day") and st["halted_day"] != _et_day(time.time() if now is None else now):
+        return None
+    return h
+
+
 def loss_halt(evt, lost):
     """The stop-on-first-loss message for the first losing real leg. A TIE is
     named as a tie, with the dollars it cost: money was lost, so the rail
@@ -1091,7 +1113,25 @@ def settle_pass(evt, cs, now, rets, fills, live_pos, pending, ledger_rows,
                  sum(1 for p in real if p["win"]),
                  len(real), sum(p["pnl"] for p in real),
                  "  TIE -- %d leg(s) paid 50c" % len(ties) if ties else ""))
-        if lost and state.get("stop_on_loss") and not state.get("halted"):
+        if state.get("halted") and not halt_active(state, cs):
+            state["halted"] = state["halted_day"] = None          # a new ET day: the daily limit resets
+        if (lost and state.get("stop_on_loss") and not state.get("halted")
+                and int(state.get("max_losses") or 1) > 1):
+            _d = _et_day(cs)
+            if state.get("loss_day") != _d:
+                state["loss_day"], state["day_losses"] = _d, 0
+            state["day_losses"] = int(state.get("day_losses") or 0) + 1
+            rec("live_loss", day=_d, losses_today=state["day_losses"],
+                limit=int(state["max_losses"]), why=loss_halt(evt, lost))
+            if state["day_losses"] >= int(state["max_losses"]):
+                state["halted"] = "%d losing races on %s ET, the daily limit -- %s" % (
+                    state["day_losses"], _d, loss_halt(evt, lost))
+                state["halted_day"] = _d
+                rec("live_halt", why=state["halted"],
+                    staked=round(float(state.get("staked", 0.0)), 4),
+                    sends=state.get("sends"))
+                print("\n  *** LIVE RACE STOPPED FOR THE DAY: %s\n" % state["halted"])
+        elif lost and state.get("stop_on_loss") and not state.get("halted"):
             # STOP DEAD. The whole point of the penny test is to find out
             # whether we lose more often than the tape says; the first real
             # loss is the answer arriving, not a reason to keep going and
@@ -2204,6 +2244,51 @@ def selftest():
        "and --min-z defaults to %g (off), --min-z-tau to %d"
        % (_DEFAULT_MIN_Z, _DEFAULT_MIN_Z_TAU))
 
+    # v-race40: the DAILY loss limit
+    _t0 = calendar.timegm((2026, 9, 30, 14, 0, 0))            # 10:00 ET
+    _sd = {"halted": None, "halted_day": None}
+    ck(halt_active(_sd, _t0) is None, "v-race40: nothing halted -> no halt")
+    _sd = {"halted": "2 losing races", "halted_day": _et_day(_t0)}
+    ck(halt_active(_sd, _t0) == "2 losing races" and halt_active(_sd, _t0 + 86400) is None,
+       "v-race40: a daily-limit halt holds for the rest of that ET day and expires the next ET day")
+    _sd = {"halted": "first real loss", "halted_day": None}
+    ck(halt_active(_sd, _t0 + 5 * 86400) == "first real loss",
+       "v-race40: the first-loss stop (--live-max-losses 1, the default) never expires")
+    _on40 = dict(on, halted="3 losing races", halted_day=_et_day(time.time() - 86400))
+    ck(not any("halted" in x for x in live_refusals(20, 0.95, 1, "R9", coin="BTC", side="yes", state=_on40,
+                                                     exists=never)),
+       "v-race40: yesterday's daily-limit halt does not refuse today's order")
+    _on41 = dict(on, halted="3 losing races", halted_day=_et_day(time.time()))
+    ck(any("halted" in x for x in live_refusals(20, 0.95, 1, "R9", coin="BTC", side="yes", state=_on41,
+                                                 exists=never)),
+       "v-race40: today's daily-limit halt refuses")
+    def _fx(ev):
+        return ([{"event": ev, "coin": "SOL", "ticker": ev + "-SOL", "side": "yes", "price": 0.95, "size": 10, "tau": 5}],
+                [{"event": ev, "coin": "BTC", "ticker": ev + "-BTC", "side": "yes", "price": 0.97, "size": 1.0, "tau": 3,
+                  "ask_seen": 0.97, "zmin": None}],
+                {ev + "-BTC|t": {"ticker": ev + "-BTC", "market_result": "no", "value": 0, "settled_time": "t"}})
+    _recs2, _st2 = [], {"paper": False, "rolling": True, "staked": 0.97, "stop_on_loss": True,
+                        "halted": None, "sends": 1, "max_losses": 2}
+    _p1, _l1, _r1 = _fx("G40")
+    _sp("G40", 10_000, 10_000 + SCORE_DELAY, rets, _p1, _l1, {}, _r1, _drive(_recs2), _st2, {"committed": 0.97})
+    ck(_st2["halted"] is None and _st2.get("day_losses") == 1
+       and [r["kind"] for r in _recs2] == ["settled", "live_settled", "live_loss"],
+       "v-race40 end to end: with a limit of 2, the first losing race is logged (live_loss) and does NOT halt (%s)"
+       % [r["kind"] for r in _recs2])
+    _recs3 = []
+    _st2["staked"] = 0.97
+    _p2, _l2, _r2 = _fx("H40")
+    _sp("H40", 10_000, 10_000 + SCORE_DELAY, rets, _p2, _l2, {}, _r2, _drive(_recs3), _st2, {"committed": 0.97})
+    ck(bool(_st2["halted"]) and "daily limit" in (_st2["halted"] or "") and _st2["halted_day"] == _et_day(10_000)
+       and [r["kind"] for r in _recs3][-1:] == ["live_halt"],
+       "v-race40 end to end: the second losing race the same ET day stops live orders for the rest of that day (%s)"
+       % [r["kind"] for r in _recs3])
+    ck(_ap.parse_args([]).live_max_losses == 1 and _ap.parse_args(["--live-max-losses", "3"]).live_max_losses == 3,
+       "v-race40: --live-max-losses defaults to 1 (the old rule) and parses")
+    ck('max_losses=max(1, int(a.live_max_losses))' in body and 'pintake.set_limits(max_run_stake=LIVE["max_stake"]' in body
+       and body.find("RACE_MAX_CONTRACTS_CEILING") < body.find('pintake.set_limits(max_run_stake=LIVE["max_stake"]'),
+       "v-race40: the setting reaches LIVE, and the stake rail is raised only after this file's own ceiling check")
+
     # PRODUCTION IS ARMED ONLY IN THE --live ARM, never in --paper-live
     _i_al = body.find("if a.live:" + chr(10))
     _i_pl = body.find("elif a.paper_live:")
@@ -2430,6 +2515,9 @@ def build_parser():
                     default=_DEFAULT_LIVE_MAX_CONTRACTS,
                     help="live: contracts per race (default %g)"
                          % _DEFAULT_LIVE_MAX_CONTRACTS)
+    ap.add_argument("--live-max-losses", type=int, default=1,
+                    help="live: stop for the rest of the ET day after this many losing races; 1 (default) = stop "
+                         "for good on the first loss, the penny-test rule")
     ap.add_argument("--max-stake", type=float, default=_DEFAULT_LIVE_MAX_STAKE,
                     help="live: total dollars this process may ever commit "
                          "(default %.2f)" % _DEFAULT_LIVE_MAX_STAKE)
@@ -2537,6 +2625,7 @@ def main():
         # single market is watched so the operator can read what is bounded.
         # --paper-live takes this identical path and sends nothing.
         LIVE.update(on=True, paper=bool(a.paper_live),
+                    max_losses=max(1, int(a.live_max_losses)),
                     max_contracts=float(a.max_contracts),
                     max_stake=float(a.max_stake),
                     tau_max=int(a.live_tau_max),
@@ -2559,9 +2648,18 @@ def main():
         # process; a larger --max-contracts up to pintake.HARD_MAX (25) RAISES
         # it through pintake's own one-way ratchet (printed, never silent).
         # Above HARD_MAX the refusal below still fires.
-        if (pintake.MAX_TAKE_COUNT < LIVE["max_contracts"] <= pintake.HARD_MAX):
+        if (LIVE["max_contracts"] > RACE_MAX_CONTRACTS_CEILING
+                or LIVE["max_stake"] > RACE_MAX_STAKE_CEILING):
+            print("  REFUSING TO ARM -- over this file's own ceilings (%g contracts, $%.2f)"
+                  % (RACE_MAX_CONTRACTS_CEILING, RACE_MAX_STAKE_CEILING))
+            return 1
+        if pintake.MAX_TAKE_COUNT < LIVE["max_contracts"]:
+            # v-race40: pintake.set_limits raises HARD_MAX too when asked past it, and prints both
             pintake.set_limits(max_take_count=LIVE["max_contracts"],
-                               why="--max-contracts (v-race20)")
+                               why="--max-contracts (v-race20 / v-race40)")
+        if pintake.MAX_RUN_STAKE < LIVE["max_stake"]:
+            pintake.set_limits(max_run_stake=LIVE["max_stake"],
+                               why="--max-stake (v-race40, operator 2026-09-30)")
         if LIVE["max_contracts"] > pintake.MAX_TAKE_COUNT:
             print("  REFUSING TO ARM -- %g contracts is over pintake's own "
                   "per-order rail of %g" % (LIVE["max_contracts"],
