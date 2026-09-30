@@ -12,8 +12,8 @@
   },
   {
    "id": "pinrun-exit",
-   "due": "2026-09-30T08:15Z",
-   "what": "Live pinrun (pid 3510420, --minutes 4320) exits ~08:11Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv.",
+   "due": "2026-10-01T14:45Z",
+   "what": "Live pinrun (pid 3882400 since 2026-09-28 14:36:17Z, --minutes 4320) exits ~2026-10-01 14:36Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv. (Was pid 3510420 -- replaced by v-reopen98 before its end.)",
    "how": "process list + newest results/pinrun-live-*.jsonl start record flags",
    "bar": "a new live run with the same flags within 10 min",
    "status": "open"
@@ -232,13 +232,14 @@
   },
   {
    "id": "ladder-live",
-   "due": "2026-09-29T16:00Z",
-   "what": "Penny live ladder (pid 3904676, subaccount 1): orders placed, real fills vs the paper ladder's fills for the same quarter-hours, P&L, rail/day-stop events.",
+   "due": "2026-10-06T16:00Z",
+   "what": "Penny live ladder, v-ladder-top since 2026-09-29 15:35Z (top rung, every coin; pid changes at restarts): real fills vs the paper ladder, P&L, day-stop events.",
    "how": "results/ladder-live-orders.jsonl (placed / live_fill / live_settle), results/ladder-live.jsonl (paper decisions), python research/ordercli.py --sub-status 1",
    "bar": "after 7 days: live fills per day and their loss rate vs the paper ladder; stop if the day stop fires twice or any fill loses on a market the paper bot had as 'locked'",
    "status": "open",
    "history": [
-    "09-29 16Z day-1: 829 placed / 829 cancelled / 0 filled; paper engine filled 20 in 13 markets, none of them orders the live side placed (3-per-close slots taken by early-locking markets). Fix prepared: v-ladder-top (top rung, every coin). Needs a restart (operator go-ahead)."
+    "09-29 16Z day-1: 829 placed / 829 cancelled / 0 filled; paper engine filled 20 in 13 markets, none of them orders the live side placed (3-per-close slots taken by early-locking markets). Fix prepared: v-ladder-top (top rung, every coin). Needs a restart (operator go-ahead).",
+    "2026-09-30 08Z: since the fix, 8 real fills in 7 markets, all won (Kalshi sub 1: +$0.15 on 09-29 plus +$0.06 since); the one wrong live_settle row (09-29 17:15Z) fixed by v-ladder-settlefix. Next: 7-day read 10-06; size 5 waits on scale_up_0930.ps1."
    ]
   },
   {
