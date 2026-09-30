@@ -252,11 +252,14 @@
   },
   {
    "id": "forecaster-live",
-   "due": "2026-09-30T01:00Z",
+   "due": "2026-10-06T01:00Z",
    "what": "Live clean-room forecaster, realistic-fill trigger, 1/20 size (pid 4014356, subaccount 2, $25): orders, live fill rate (contracts filled / asked), P&L and return on money staked, vs the paper forecaster 'real' x 0.05 on the SAME markets.",
    "how": "results/forecaster-live-orders.jsonl (placed / live_fill / live_settle / refused / dropped / halt; paper_k on each order), results/forecaster-live.jsonl (the engine's paper book in the same process), results/cleanroom-bettor.jsonl forecaster_real (paper bot), python research/ordercli.py --sub-status 2 and GET /portfolio/settlements?subaccount=2. Day-1 read 09-30 01:00Z; final 10-06 01:00Z.",
    "bar": "PRE-REGISTERED 2026-09-29 ~01:00Z, before any live fill. STOP if: the -$20 run stop fires, or the day stop fires twice, or after >= 40 filled markets live P&L is below zero. CONSIDER a bigger size only if by 10-06: >= 60 filled markets, live return on money staked >= +5%, live fills >= 60% of contracts asked, and no market lost to buying both sides more than once. Otherwise keep 1/20 and read again.",
-   "status": "open"
+   "status": "open",
+   "history": [
+    "2026-09-30 ~00:4xZ day-1 read: 15 IOC orders, 47 of 48 contracts filled (98 in 100); 14 markets, 13 won, 1 lost (DOGE 15:15 ET -$1.25, a fill at 40c on an 83c ask -- IDEA_LEDGER F18), +$5.06 on $38.52 staked (13.1%). The paper forecaster also traded 12 of the 14 markets: +$21.95 at paper size = +$1.10 at 1/20 vs live +$4.12 -- live got better prices than paper. Bar: no stop condition (no run stop, no day stop, 0 losses on markets paper 'real' did not fill). Off 07:26-15:35Z (blocked restart). KEEP; final read 10-06."
+   ]
   },
   {
    "id": "fcvar-paper",
