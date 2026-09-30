@@ -319,7 +319,8 @@
    "what": "v-keepalive-cleanroom: did boot_all.ps1 keep the clean-room bots up without duplicates?",
    "how": "results/boot_all.log lines 'is NOT running -- starting it' for the clean-room names; count python processes per pattern (exactly 1 each); forecaster-live-orders.jsonl / ladder-live-orders.jsonl 'start' records",
    "bar": "any duplicate live process on one subaccount, or a start while a stop file existed -> revert section 3e at once",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-09-30 15:25Z (11:25 AM ET): boot_all ran every 10 min (last 15:20Z, result 0, 0 missed runs), every run 'all up; nothing to do'; no clean-room restart since section 3e went in; exactly one process per live pattern (forecaster 4453188, ladder 4454364, coin race 4454164), bettor_paper 1, ladder paper 1, fc_variants_paper 2 = the two distinct runs (base, quiet); no start while a stop file existed. PASSES -- keep section 3e."
   },
   {
    "id": "live-twin",
