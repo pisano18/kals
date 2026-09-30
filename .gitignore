@@ -64,6 +64,7 @@ results/pintraj-*.jsonl
 /results/lab_control.json
 /results/kalshi_ledger.json
 /results/kalshi_transfers.json
+/results/botstats_cache.json
 
 # ---- results/ process stdout and continuously appended ops logs. Local diagnostics;
 # no reader uses the git copy. run-*.log (run_when_away) stays tracked.

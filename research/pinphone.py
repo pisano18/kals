@@ -25,7 +25,11 @@ COMMANDS
   /open       open bets            /market    how active sellers are
   /losses     losing closes        /hedges    insurance and whether it was needed
   /stats      the whole record by window: money, win rate vs break-even, losses, timing
-  /race       the coin race penny bot now, and its last 10 races
+  /bots       every bot and its pot (subaccount): running, money by window, cash, the all-bots total
+  /pin  /forecaster (/fc)  /ladder   one bot in full: running or not and why, version,
+              settings, money today / yesterday / 7 days / month / all time, worst and best,
+              open bets, cash, last markets, what its log did today (research/botstats.py)
+  /race       the coin race penny bot now, its last 10 races, and its money by window
   /racestats  the coin race record, and the paper arms on the same races
   /bars       every running test against its pre-registered bar: the numbers
               so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
@@ -156,8 +160,12 @@ HELP_TEXT = """Commands:
 /losses - losing closes
 /hedges - insurance and whether it was needed
 /stats - the whole record by window: money, win rate vs break-even, losses, timing
-/race - the coin race penny bot right now, and its last 10 races
+/bots - every bot: running or not, money today / 7 days / all time, each pot's cash, and the total of all of them
+/pin - the pin bot: running or not and why, version, settings, money today / yesterday / 7 days / month / all time, worst, open bets, cash, last markets
+/race - the coin race penny bot right now, its last 10 races, and its money by window
 /racestats - the coin race record, and the paper arms on the same races
+/forecaster (or /fc) - the forecaster (subaccount 2), the same detail as /pin
+/ladder - the penny ladder (subaccount 1), the same detail as /pin
 /bars - every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
 /pause - no new bets, wait for open ones, then stop
 /start - trade again
@@ -453,8 +461,15 @@ def stats_block(title, st, ndays=None):
 
 
 # ---- versions ---------------------------------------------------------------
-_VER_RE = re.compile(r"^#\s+(v-\S+)\s+--\s+(\d{4}-\d{2}-\d{2})"
+# A joined name ('# v-reopen98 + v-floor90 -- ...') and a 'LIVE ' before the
+# date ('# v-ladder-settlefix -- LIVE 2026-09-29 ...') are both real headers;
+# missing them made /stats date pin's window from a clean-room entry (09-30).
+_VER_RE = re.compile(r"^#\s+(v-\S+(?:\s*\+\s*v-\S+)*)\s+--\s+(?:LIVE\s+)?(\d{4}-\d{2}-\d{2})"
                      r"(?:\s+(~?)(\d{2}):(\d[\dx])(?::\d{2})?Z?)?\s*(.*)$", re.I)
+# Entries that are another bot's: the coin race, the clean-room forecaster and
+# penny ladder, and the boot entries that name them. botstats.version_of uses
+# the same words, and the self-test fails if the two pick different versions.
+_NOT_PIN_RE = re.compile(r"coin.?race|penny|cleanroom|clean-room|bettor|forecaster|ladder_live", re.I)
 
 
 def versions(path):
@@ -487,10 +502,12 @@ def versions(path):
 
 def live_version(path):
     """The newest version entry that is about the UP/DOWN bot -- the coin
-    race's entries (v-race30, v-race-tie1...) are its own bot's and would
-    otherwise sit on top and date every 'since the version' figure wrong."""
+    race's entries (v-race30, v-race-tie1...) and the clean-room bots'
+    (v-forecaster-*, v-ladder-*, v-keepalive-cleanroom) are other bots' and
+    would otherwise sit on top and date every 'since the version' figure
+    wrong."""
     for v in versions(path):
-        if re.search(r"coin.?race|penny", v[3], re.I):
+        if v[0].lower().startswith("v-race") or _NOT_PIN_RE.search(v[0] + " " + v[3]):
             continue
         return v
     return None
@@ -825,6 +842,324 @@ def disk_alert(level, disk_gb):
     return level, None
 
 
+# ===========================================================================
+# /bots /pin /forecaster /ladder, and the money windows under /race.
+#
+# THE OPERATOR, 2026-09-30: "Can you make a spot in the bot to see each sub
+# account, what's running, and as much details about them as possible? Also
+# telegram commands for each sub account type so I can see everything I can
+# about them like pin. Including day performance, long performance,
+# everything you can. And are their totals added to the main pages total
+# stats?"
+#
+# EVERY NUMBER HERE IS research/botstats.py's: Kalshi's settlements read PER
+# SUBACCOUNT (a read with none mixes the pots -- the 2026-09-29 pinledger
+# bug), money per market = payout on the winning side - both sides' cost -
+# fee. Only the WORDS are built here, so the phone and the desktop cannot
+# disagree about a number. The bots' logs say only what a bot DID today.
+# A failed read is said as a failure -- never $0, never "not running".
+#
+# HIS QUESTION, answered on /bots every time: the main page (/today /days
+# /stats and the desktop) reads kalshi_ledger.json, the MAIN account only --
+# pin + coin race. The forecaster (subaccount 2) and the ladder (subaccount
+# 1) are separate pots and are added up only in /bots.
+# ===========================================================================
+BOT_CMDS = {"/pin": "pin", "/forecaster": "forecaster", "/fc": "forecaster", "/ladder": "ladder"}
+BOT_CMD_OF = {"pin": "/pin", "race": "/race", "forecaster": "/fc", "ladder": "/ladder"}
+BS_WINDOWS = ("today", "yesterday", "last_7_days", "this_month", "all_time")
+BS_LABEL = {"today": "Today", "yesterday": "Yesterday", "last_7_days": "Last 7 days",
+            "this_month": "This month", "all_time": "All time"}
+
+
+def _bs():
+    """botstats, imported late: a broken edit there costs these commands, never the phone."""
+    import botstats
+    return botstats
+
+
+def _nof(k, word):
+    return "%s %s%s" % (_cnt(k), word, "" if _f(k) == 1 else "s")
+
+
+def _cash(x):
+    return "?" if x is None else _bs().usd(x).lstrip("+")
+
+
+def _ago(s):
+    if s is None:
+        return "?"
+    s = _f(s)
+    if s < 120:
+        return "%d s ago" % s
+    if s < 7200:
+        return "%d min ago" % (s // 60)
+    return "%.1f h ago" % (s / 3600.0)
+
+
+def bs_window_line(w, label, unit="market", fmt=None):
+    """'Today: +$1.62 on $59.54 put in (+2.7%); 2 markets, 2 won, 0 lost'. None = Kalshi unread."""
+    fmt = fmt or _bs().usd
+    if w is None:
+        return "%s: COULD NOT READ KALSHI" % label
+    if not w["markets"]:
+        return "%s: nothing settled yet" % label
+    return "%s: %s on %s put in (%s); %s, %s won, %s lost" % (
+        label, fmt(w["money"]), _cash(w["put_in"]), _bs().pct(w["return_pct"]),
+        _nof(w["markets"], unit), _cnt(w["won"]), _cnt(w["lost"]))
+
+
+def _short(w, fmt):
+    return "?" if w is None else ("nothing yet" if not w["markets"] else fmt(w["money"]))
+
+
+def bs_running_lines(r):
+    """Running or not, and WHY not: its stop file, a halt, or it died on its own."""
+    L = []
+    if r["alive"] is None:
+        L.append("Running: COULD NOT TELL -- the Windows process list could not be read.")
+    elif r["alive"]:
+        L.append("Running: YES, pid %s, since %s." % (r["pid"], r["started_et"] or "an unknown time"))
+    elif r["stop_flag"]:
+        L.append("Running: NO -- stopped by its stop file (set %s)%s." % (
+            r["stop_flag_et"] or "?", (': "%s"' % r["stop_flag_text"]) if r["stop_flag_text"] else ""))
+    else:
+        L.append("Running: NO, and there is no stop file -- it stopped on its own.")
+    if r["halted"]:
+        L.append("HALTED %s: %s." % (r["halted"]["t_et"], r["halted"]["why"] or r["halted"]["what"]))
+    for p in r["problems"]:
+        if not (p.startswith("NOT RUNNING and no stop file") or p.startswith("could not read the Windows")):
+            L.append("! " + p)                           # the two skipped are said above
+    if r["log"]:
+        L.append("Its log last wrote %s (%s)." % (r["log_last_et"] or "?", _ago(r["log_age_s"])))
+    return L
+
+
+def bs_setup_lines(r):
+    L = ["Version: %s, live since %s." % (r["version"], r["version_et"] or "an unrecorded time")
+         if r["version"] else "Version: no entry for it in VERSIONS.md."]
+    if r["settings_text"]:
+        L.append("Settings: %s." % r["settings_text"])
+    L.append("Keep-alive: %s." % (r["keepalive"] or "NONE -- if it dies, nothing restarts it"))
+    return L
+
+
+def bs_money_lines(m, unit="market", fmt=None):
+    """Every money window of one bot, its worst and best market and day, and the last 7 days."""
+    bs = _bs()
+    fmt = fmt or bs.usd
+    if not m["ok"]:
+        return ["MONEY: COULD NOT READ KALSHI (%s). Nothing here is a zero -- it is unknown."
+                % (m.get("error") or "?")]
+    L = ["MONEY -- %s, read %s; a %s counts on the ET day it closed:"
+         % (m["source"], m["as_of_et"] or "?", unit)]
+    if not m["complete"]:
+        L.append("HISTORY STILL LOADING: all time and this month are partial.")
+    if m["stale"]:
+        L.append("The last Kalshi read failed (%s); these are from %s." % (m["error"], m["as_of_et"] or "?"))
+    for k in BS_WINDOWS:
+        w = m[k]
+        label = w["label"] if w else BS_LABEL[k]
+        if k == "all_time" and m.get("first_day"):
+            label += " (since %s)" % bs.day_label(m["first_day"])
+        line = bs_window_line(w, label, unit, fmt)
+        if k in ("last_7_days", "all_time") and w and w["active_days"] > 1:
+            line += "; %s up, %d down" % (_nof(w["days_up"], "day"), w["days_down"])
+        L.append(line)
+    at = m["all_time"]
+    if at and not at["markets"]:
+        L.append("Nothing settled yet on Kalshi for this bot.")
+        return L
+    for k, name in (("today", "today"), ("all_time", "all time")):
+        w = m[k]
+        if w and w["markets"]:
+            wd = "" if k == "today" else " (%s)" % bs.day_label(w["worst"]["day"])
+            bd = "" if k == "today" else " (%s)" % bs.day_label(w["best"]["day"])
+            L.append("Worst %s %s: %s %s%s; best %s %s%s." % (
+                unit, name, fmt(w["worst"]["money"]), w["worst"]["what"], wd,
+                fmt(w["best"]["money"]), w["best"]["what"], bd))
+    days = m.get("all_days") or []
+    if len(days) > 1:
+        bd = max(days, key=lambda d: d["money"])
+        wd = min(days, key=lambda d: d["money"])
+        L.append("Best day %s (%s), worst day %s (%s), over %d days with a settlement." % (
+            fmt(bd["money"]), bs.day_label(bd["day"]), fmt(wd["money"]), bs.day_label(wd["day"]), len(days)))
+    if at and at["fees"] > 0.004:
+        L.append("Fees all time: %s (already inside the money above)." % _cash(at["fees"]))
+    if at and at["hedged"]:
+        L.append("Bought both sides (hedged): %s all time." % _nof(at["hedged"], unit))
+    d7 = [d for d in m["days_7"] if not d["before_first"]]
+    if d7:
+        L.append("By day:")
+        for d in d7:
+            L.append("  %s: %s" % (d["label"], "nothing settled" if not d["markets"] else
+                                   "%s, %s (%d won, %d lost)" % (fmt(d["money"]), _nof(d["markets"], unit),
+                                                                 d["won"], d["lost"])))
+    return L
+
+
+def bs_open_lines(o, unit="bet"):
+    if not o["ok"]:
+        return ["Open now: COULD NOT READ (%s)." % (o.get("error") or "?")]
+    if not o["count"]:
+        return ["Open now: none."]
+    L = ["Open now: %s, %s at risk%s:" % (_nof(o["count"], unit), _cash(o["at_risk"]),
+                                          (" (the last read failed; from %s)" % o["as_of_et"]) if o.get("stale") else "")]
+    for p in o["positions"][:8]:
+        L.append("  %s %s x%s, %s at risk" % (p["what"], p["side"].upper(), _cnt(p["contracts"]), _cash(p["at_risk"])))
+    if o["count"] > 8:
+        L.append("  +%d more" % (o["count"] - 8))
+    return L
+
+
+def bs_cash_line(bal):
+    if not bal["ok"]:
+        return "Cash: COULD NOT READ (%s)." % (bal.get("error") or "?")
+    return "Cash: %s -- %s." % (_cash(bal["dollars"]), bal["note"])
+
+
+def bs_last_lines(last, fmt=None):
+    fmt = fmt or _bs().usd
+    if not last:
+        return []
+    L = ["Last %d settled:" % len(last)]
+    for x in last:
+        day = pinday.et_day_of_ticker(x["ticker"])
+        L.append("  %s %s %s x%s: %s on %s put in" % (
+            _bs().day_label(day) if day else (x["time_et"] or "?"), x["what"],
+            {"both": "BOTH SIDES", "-": "-"}.get(x["side"], str(x["side"]).upper()),
+            _cnt(x["contracts"]), fmt(x["money"]), _cash(x["put_in"])))
+    return L
+
+
+def bs_activity_lines(name, a):
+    """What the bot DID today by its own log -- orders, fills, passes. Never money."""
+    if not a["ok"]:
+        return ["Today, its own log: %s." % (a.get("note") or "unreadable")]
+    s = "Today, its own log (what it did, not money): %s sent, %d filled (%s contracts)" % (
+        _nof(a["sent"], "order"), a["filled"], _cnt(a["contracts_filled"]))
+    if a["not_filled"]:
+        s += ", %d got nothing" % a["not_filled"]
+    if a["hedges"]:
+        s += ", " + _nof(a["hedges"], "hedge")
+    if a["cancelled"]:
+        s += ", %d cancelled" % a["cancelled"]
+    L = [s + "."]
+    if a.get("note"):
+        L.append("  (%s)" % a["note"])
+    if a["refused"]:
+        grouped = {}
+        for k, v in a["refused_why"].items():
+            w = _bs().plain(k)
+            grouped[w] = grouped.get(w, 0) + v
+        top = ", ".join("%s %d" % kv for kv in sorted(grouped.items(), key=lambda kv: -kv[1])[:4])
+        L.append("  %s %s: %s." % ("Passed" if name == "pin" else "Refused", _nof(a["refused"], "time"), top))
+    for h in a["halts"][-3:]:
+        L.append("  %s: %s %s" % (h["t_et"], h["what"], h["why"]))
+    return L
+
+
+def bs_bot_text(b, now_et):
+    """One bot, everything botstats knows, for /pin /forecaster /ladder."""
+    unit = "leg" if b["name"] == "race" else "market"
+    L = ["%s -- %s. %s" % (b["label"].upper(), b["what"], now_et)]
+    pot = _bs().SUB_NAME.get(str(b["subaccount"]), "subaccount %s" % b["subaccount"])
+    if b["shares_subaccount_with"]:
+        pot += ", shared with the " + " and ".join(_bs().SPEC[x]["label"].lower() for x in b["shares_subaccount_with"])
+    L.append("Pot: %s." % pot)
+    L += bs_running_lines(b["running"])
+    L += bs_setup_lines(b["running"])
+    L.append("")
+    L += bs_money_lines(b["money"], unit)
+    L.append("")
+    L += bs_open_lines(b["open"])
+    L.append(bs_cash_line(b["balance"]))
+    L += bs_last_lines(b["last_settled"])
+    L += bs_activity_lines(b["name"], b["activity_today"])
+    return "\n".join(L)
+
+
+def bs_errors_line(errors):
+    """Errors grouped by what failed, each said once: 'settlements read failed (HTTP 401): pin, race'."""
+    by = {}
+    for e in errors or []:
+        who, _, what = str(e).partition(": ")
+        by.setdefault(what or who, []).append(who)
+    return ["! %s: %s" % (what, ", ".join(sorted(set(who)))) for what, who in sorted(by.items())]
+
+
+def bs_all_text(a):
+    """/bots: the ALL-BOTS total with each bot's share, every pot's cash, and one line a bot."""
+    bs = _bs()
+    fmt = bs.usd
+    L = ["ALL BOTS -- %s" % a["as_of_et"],
+         "Money from Kalshi, every pot; a market counts on the ET day it closed."]
+    anything = False
+    for k in BS_WINDOWS:
+        t = a["total"][k]
+        label = t["label"] if t["label"] != k else BS_LABEL[k]   # botstats labels an unread window by its key
+        if t["partial"] and not t["markets"]:
+            L.append("%s: unknown -- Kalshi could not be read" % label)          # never "nothing settled"
+            continue
+        L.append(bs_window_line(t, label, "market", fmt))
+        if t["markets"]:
+            anything = True
+            L.append("  " + " | ".join("%s %s" % (b, fmt(v) if t["by_bot_markets"].get(b) else "none")
+                                       for b, v in t["by_bot"].items()
+                                       if b != "other" or t["by_bot_markets"].get(b)))
+    miss = a["total"]["all_time"]["missing"]
+    if miss:
+        L.append("PARTIAL: these totals leave out %s -- Kalshi could not be read for %s."
+                 % (", ".join(miss), "it" if len(miss) == 1 else "them"))
+    firsts = [m.get("first_day") for m in [a["bots"][b]["money"] for b in bs.BOTS] + [a["other"]]
+              if m.get("first_day")]
+    if anything:
+        L.append("By day:")
+        for d in a["total_days_7"]:
+            if firsts and d["day"] < min(firsts):
+                continue                                # before anything ever settled
+            parts = ", ".join("%s %s" % (b, fmt(v)) for b, v in d["by_bot"].items() if abs(v) > 0.004)
+            L.append("  %s: %s" % (d["label"], "nothing settled" if not d["markets"] else
+                                   "%s, %s%s" % (fmt(d["money"]), _nof(d["markets"], "market"),
+                                                 (" (%s)" % parts) if parts else "")))
+    elif not miss:
+        L.append("Nothing settled yet in any pot.")
+    bal = a["balances"]
+    L.append("Cash: main account %s (pin + race share it), forecaster %s, ladder %s -- all pots %s."
+             % (_cash(bal["main"]), _cash(bal["forecaster"]), _cash(bal["ladder"]), _cash(bal["all"])))
+    L.append("The main page (/today /days /stats, the desktop) counts pin + race only. The forecaster and "
+             "the ladder are separate pots, added up only here.")
+    L.append("")
+    for name in bs.BOTS:
+        b = a["bots"][name]
+        r, m, o = b["running"], b["money"], b["open"]
+        if r["alive"] is None:
+            run = "running? could not tell"
+        elif r["alive"]:
+            run = "running since %s" % (r["started_et"] or "?")
+        elif r["stop_flag"]:
+            run = "STOPPED by its stop file (%s)" % (r["stop_flag_et"] or "?")
+        else:
+            run = "NOT RUNNING and no stop file -- it stopped on its own"
+        if r["halted"]:
+            run += ", HALTED %s" % r["halted"]["t_et"]
+        mon = ("money: COULD NOT READ KALSHI" if not m["ok"] else
+               "today %s, 7 days %s, all time %s" % (_short(m["today"], fmt), _short(m["last_7_days"], fmt),
+                                                    _short(m["all_time"], fmt)))
+        op = ("open: ?" if not o["ok"] else "open: none" if not o["count"] else
+              "open: %d (%s at risk)" % (o["count"], _cash(o["at_risk"])))
+        L.append("%s (%s): %s. %s. %s; %s. %s" % (
+            b["label"].upper(), bs.SUB_NAME.get(str(b["subaccount"]), "?"), run,
+            r["version"] or "no version entry", mon, op, BOT_CMD_OF[name]))
+    ot = a["other"]
+    if ot.get("ok") and ot.get("all_time") and ot["all_time"]["markets"]:
+        w = ot["all_time"]
+        L.append("NOT ANY BOT'S (main account): all time %s on %s; worst %s %s (%s)." % (
+            fmt(w["money"]), _nof(w["markets"], "market"), fmt(w["worst"]["money"]), w["worst"]["what"],
+            bs.day_label(w["worst"]["day"])))
+    L += bs_errors_line(a["errors"])
+    return "\n".join(L)
+
+
 class Phone:
     def __init__(self, cfg, transport, ledger=None, health_fn=None, cfg_path=CONFIG, now_fn=None,
                  procs_fn=None, versions_path=None, race30_epoch=None):
@@ -848,6 +1183,13 @@ class Phone:
         self.procs_fn = procs_fn or python_procs
         self.versions_path = versions_path or VERSIONS_MD
         self.race30_epoch = race30_epoch or RACE30_EPOCH
+        # /bots /pin /forecaster /ladder and /race's money windows read Kalshi
+        # through botstats. None = botstats' own: kauth.get (GET only, 60 s
+        # cache) and its own process-table read (about 1.5 s natively; the
+        # WMI read behind procs_fn now takes 28-35 s). The self-test plants
+        # a fake Kalshi and a process table here.
+        self.bs_getter = None
+        self.bs_procs = None
 
     # ---- helpers ----
     @property
@@ -1103,7 +1445,10 @@ class Phone:
         taus = first_entries(self.ledger.orders)
         fl = fleet(self.procs_fn())
         ver = live_version(self.versions_path)
-        L = ["STATS  %s ET. Money = Kalshi's books, every bot; days are ET." % et_str(now, "%a %m/%d %I:%M %p")]
+        # "every bot" was true until the forecaster and the ladder got their
+        # own subaccounts; kalshi_ledger.json is the main account only now.
+        L = ["STATS  %s ET. Money = Kalshi's books, main account (pin + coin race; forecaster and "
+             "ladder: /bots); days are ET." % et_str(now, "%a %m/%d %I:%M %p")]
         pid = fl["live"][0] if fl["live"] else None
         live_cl = fl["live"][1] if fl["live"] else ""
         if pid:
@@ -1230,7 +1575,58 @@ class Phone:
         L.append("Paper race arms running: %s." % (
             "process table could not be read" if fl["unknown"] else
             (", ".join(fl["race_arms"]) if fl["race_arms"] else "none")))
+        L += self._race_money_lines()
         return "\n".join(L)
+
+    def _race_money_lines(self):
+        """/race's money by window (2026-09-30), from botstats: every coin-race
+        market in the main account, read from Kalshi live, one leg = one coin's
+        market. Plus what /race did not say: the version, that NOTHING restarts
+        the live race if it dies, what Kalshi holds open, the shared cash and
+        today's refusals. A failure costs these lines only -- the rest of
+        /race still answers."""
+        try:
+            b = self._bs_get("race")
+        except Exception as e:                                  # noqa: BLE001
+            log(traceback.format_exc())
+            return ["", "Money by window: could not build it (%s). The lines above still stand." % str(e)[:160]]
+        L = [""]
+        L += bs_money_lines(b["money"], "leg", money)
+        L.append("")
+        L += bs_setup_lines(b["running"])
+        L += bs_open_lines(b["open"], "leg")
+        L.append(bs_cash_line(b["balance"]))
+        L += bs_activity_lines("race", b["activity_today"])
+        return L
+
+    # ---- /bots /pin /forecaster /ladder ----
+    def _bs_get(self, name):
+        """botstats' dict for one bot, or for 'all'. Kalshi is read at most once a minute."""
+        bs = _bs()
+        if name == "all":
+            return bs.all_bots(now=self.now(), getter=self.bs_getter, procs=self.bs_procs)
+        return bs.bot(name, now=self.now(), getter=self.bs_getter, procs=self.bs_procs)
+
+    def text_bots(self):
+        try:
+            return bs_all_text(self._bs_get("all"))
+        except Exception as e:                                  # noqa: BLE001
+            log(traceback.format_exc())
+            return ("Could not build /bots: %s\nEverything else still works -- /stats and /race carry the "
+                    "main account's numbers." % str(e)[:200])
+
+    def text_bot(self, name):
+        cmd = BOT_CMD_OF.get(name, "/" + name)
+        try:
+            b = self._bs_get(name)
+            out = bs_bot_text(b, _bs().et_clock(self.now()))
+        except Exception as e:                                  # noqa: BLE001
+            log(traceback.format_exc())
+            return ("Could not build %s: %s\nEverything else still works -- /stats and /race carry the "
+                    "main account's numbers." % (cmd, str(e)[:200]))
+        more = {"pin": "More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
+                "forecaster": "Every bot: /bots.", "ladder": "Every bot: /bots."}.get(name)
+        return out + ("\n\n" + more if more else "")
 
     def text_racestats(self):
         """The penny test's record by window (Kalshi's books) and every paper
@@ -1378,6 +1774,10 @@ class Phone:
             return self.text_race()
         if cmd == "/racestats":
             return self.text_racestats()
+        if cmd == "/bots":
+            return self.text_bots()
+        if cmd in BOT_CMDS:
+            return self.text_bot(BOT_CMDS[cmd])
         if cmd == "/bars":
             return self.text_bars()
         if cmd == "/pause":
@@ -1540,6 +1940,92 @@ def selftest():
         cfgp = os.path.join(td, "telegram.json")
         ph = Phone({"token": "x", "secret": "open sesame"}, tg, ledger=L, health_fn=lambda: state["h"],
                    cfg_path=cfgp, now_fn=lambda: now["t"])
+        ck(ph.bs_getter is None and ph.bs_procs is None,
+           "by default /bots /pin /fc /ladder read Kalshi through botstats' own getter (kauth.get, GET only)")
+
+        # ---- the botstats sandbox ------------------------------------------
+        # /race (below) and /bots /pin /forecaster /ladder read Kalshi through
+        # botstats. A self-test must never reach the real Kalshi nor write the
+        # real cache, so botstats' results folder moves into this temp dir and
+        # the phone gets a fake Kalshi and a process table. Every number the
+        # checks expect was worked by hand from the rows planted here; the
+        # phone's clock is 11:00 AM ET, Wed Sep 16.
+        import botstats as _bsm
+        _bs_saved = (_bsm.RESULTS, dict(_bsm._MEMO), dict(_bsm._BACK))
+
+        def _bs_sandbox(name):
+            d = os.path.join(td, name)
+            os.makedirs(d)
+            _bsm.RESULTS = d
+            _bsm._MEMO.update(key=None, data=None)
+            _bsm._BACK.clear()
+            return d
+
+        def _S(tk, st, res, yn=0.0, yc=0.0, nn=0.0, nc=0.0, fee=0.0):
+            return {"ticker": tk, "settled_time": st, "market_result": res, "value": {"yes": 100, "no": 0}[res],
+                    "yes_count_fp": "%.2f" % yn, "yes_total_cost_dollars": "%.6f" % yc,
+                    "no_count_fp": "%.2f" % nn, "no_total_cost_dollars": "%.6f" % nc,
+                    "fee_cost": "%.6f" % fee, "revenue": 0}
+        _bs_world = {
+            "0": [_S("KXBTC15M-26SEP161030-30", "2026-09-16T14:30:05Z", "no", nn=50, nc=49.00, fee=0.10),     # pin +0.90
+                  _S("KXETH15M-26SEP160945-45", "2026-09-16T13:45:05Z", "yes", yn=40, yc=38.80, nn=40, nc=12.00,
+                     fee=0.50),                                     # pin, both sides: 40 - 50.80 - 0.50 = -11.30
+                  _S("KXSOL15M-26SEP152345-45", "2026-09-16T03:45:05Z", "yes", yn=30, yc=29.40, fee=0.06),    # pin +0.54, Sep 15
+                  _S("KXCRYPTOLEAD15M-26SEP161015-XRP", "2026-09-16T14:16:00Z", "yes", yn=20, yc=19.60, fee=0.03),  # race +0.37
+                  _S("KXWTI15M-26SEP151400-00", "2026-09-15T18:00:05Z", "no", yn=5, yc=4.50, fee=0.01)],     # other -4.51
+            "1": [_S("KXNEAR15M-26SEP161030-30", "2026-09-16T14:30:05Z", "yes", yn=2, yc=1.958)],             # ladder +0.042
+            "2": [_S("KXETH15M-26SEP161000-00", "2026-09-16T14:00:06Z", "no", yn=5, yc=2.45, fee=0.09),       # fc -2.54
+                  _S("KXXRP15M-26SEP152300-00", "2026-09-16T03:00:06Z", "yes", yn=3, yc=2.42, fee=0.0328)]}   # fc +0.5472, Sep 15
+        _bs_pos = {"0": [{"ticker": "KXBTC15M-26SEP161115-15", "position_fp": "-30.00", "market_exposure_dollars": "29.10"},
+                         {"ticker": "KXCRYPTOLEAD15M-26SEP161100-SOL", "position_fp": "20.00",
+                          "market_exposure_dollars": "19.60"}]}
+        _bs_bal = {"0": "1000.0000", "1": "15.1000", "2": "24.0000"}
+        _bs_mode = {"m": "planted"}
+        _bs_asked = []
+
+        def _bs_fake(path, q):
+            _bs_asked.append((path, dict(q or {})))
+            if _bs_mode["m"] == "down":
+                return 401, {"error": "unauthorized"}
+            sub, empty = str((q or {}).get("subaccount")), _bs_mode["m"] == "empty"
+            if path == "/portfolio/settlements":
+                return 200, {"settlements": [] if empty else _bs_world.get(sub, []), "cursor": ""}
+            if path == "/portfolio/positions":
+                return 200, {"market_positions": [] if empty else _bs_pos.get(sub, []), "cursor": ""}
+            if path == "/portfolio/balance":
+                return 200, {"balance": 0, "balance_dollars": "0.0000" if empty else _bs_bal.get(sub, "0")}
+            return 404, {}
+        _bs_procs = [
+            (3882400, "2026-09-16T11:59:50Z", r"C:\Python314\python.exe -u C:\kals-repo\research\pinrun.py --live "
+                                              r"--size 20 --max-losses 2"),
+            (3739628, "2026-09-16T02:49:58Z", "python -u research/pinracearm.py --live --max-contracts 20 --max-stake 60 "
+                                              "--live-tau-max 30 --live-min-price 0.90 --live-max-legs 5"),
+            (2574672, "2026-09-15T05:56:08Z", "python -u research/pinracearm.py --paper-live --live-tau-max 60"),
+            (4196192, "2026-09-16T12:34:56Z", r"python -u research\cleanroom\forecaster_live.py --subaccount 2 --live "
+                                              r"--variant race1_98")]
+        _bsdir = _bs_sandbox("botstats-planted")
+        with open(os.path.join(_bsdir, "VERSIONS.md"), "w", encoding="utf-8") as _fh:
+            _fh.write("# Versions\n\n"
+                      "# v-ladder-settlefix -- LIVE 2026-09-16 13:16:12Z (pid 5; research/cleanroom/ladder_live.py): "
+                      "the penny ladder waits for yes/no\n"
+                      "# v-keepalive-cleanroom -- 2026-09-16 12:37Z (boot_all.ps1): the clean-room bots restart "
+                      "themselves -- LIVE forecaster_live and ladder_live\n"
+                      "# v-forecaster-race1 -- LIVE 2026-09-16 12:35:02Z (pid 4196192): race1_98\n"
+                      "# v-reopen98 + v-floor90 -- 2026-09-16 12:00:17Z (pid 3882400; no code change) -- LIVE: 98c\n"
+                      "# v-race20 -- 2026-09-16 02:50Z (pid 3739628; pinracearm.py) -- LIVE: coin race penny bot 20\n")
+        with open(os.path.join(_bsdir, "forecaster-live-orders.jsonl"), "w", encoding="utf-8") as _fh:
+            for _r in ({"t": "2026-09-16T12:35:02.502Z", "ev": "start", "pid": 4196192, "live": True,
+                        "variant": "race1_98", "rails": {"scale": "0.05", "per_side": 5, "per_close": 20,
+                                                         "max_commit": 22.0, "px": [0.75, 0.985],
+                                                         "day_stop": -12.0, "run_stop": -20.0}},
+                       {"t": "2026-09-16T13:59:30.000Z", "ev": "placed", "filled": 5.0},
+                       {"t": "2026-09-16T13:59:30.100Z", "ev": "live_fill", "n": 5},
+                       {"t": "2026-09-16T13:59:41.000Z", "ev": "refused", "why": "in_flight"}):
+                _fh.write(json.dumps(_r) + "\n")
+        os.utime(os.path.join(_bsdir, "forecaster-live-orders.jsonl"), (now["t"] - 30, now["t"] - 30))
+        with open(os.path.join(_bsdir, "ladder-live.stop"), "w", encoding="utf-8") as _fh:
+            _fh.write("stood down by the operator")
+        ph.bs_getter, ph.bs_procs = _bs_fake, _bs_procs
 
         # Plant a Kalshi ledger for the fixture: money comes from Kalshi now,
         # so a test that wants a TODAY figure has to provide Kalshi's books.
@@ -1950,6 +2436,201 @@ def selftest():
                 _fh.write(_led0)
             os.utime(_pl.LEDGER, (time.time() + 30, time.time() + 30))
             L.refresh()
+
+        # ---- /bots /pin /forecaster /ladder, and /race's money windows -----
+        # READ ONLY, BY CONSTRUCTION: the new code is scanned for any order,
+        # cancel, transfer or process-control word. The words are assembled
+        # from pieces so this check does not find itself.
+        import inspect as _insp
+        _newfns = (_bs, _nof, _cash, _ago, bs_window_line, _short, bs_running_lines, bs_setup_lines, bs_money_lines,
+                   bs_open_lines, bs_cash_line, bs_last_lines, bs_activity_lines, bs_bot_text, bs_errors_line,
+                   bs_all_text, Phone._race_money_lines, Phone._bs_get, Phone.text_bots, Phone.text_bot,
+                   Phone.text_race)
+        _nsrc = "\n".join(_insp.getsource(f) for f in _newfns)
+        _bad = [w for w in (r"\b" + "PO" + r"ST\b", r"\b" + "DEL" + r"ETE\b", r"\b" + "PA" + r"TCH\b", r"\b" + "PU" + r"T\b",
+                            "portfolio/" + "orders", "subaccounts/" + "transfer", "order" + "cli", "pin" + "take",
+                            "url" + "open", "urllib" + r"\.request", r"do_" + "(stop|pause|start)", r"self\." + "control",
+                            "Stop-" + "Process", r"\b" + "kill", "termin" + "ate", "sub" + "process", r"os\." + "remove")
+                if re.search(w, _nsrc)]
+        ck(not _bad and len(_nsrc) > 5000,
+           "the new commands' code holds no order, cancel, transfer or process-control call (found: %s)" % _bad)
+        _nb = len(_bs_asked)
+        ck(_nb > 0 and all(q.get("subaccount") in ("0", "1", "2") for _p, q in _bs_asked)
+           and set(_p for _p, _q in _bs_asked) <= set(_bsm.PATHS),
+           "every Kalshi read the phone caused (%d, all from /race above) names its subaccount and is one of "
+           "botstats' three read paths -- with no subaccount, settlements mix every pot" % _nb)
+        # the pin version: joined names and 'LIVE <date>' headers, and the SAME pick as botstats
+        _vp = os.path.join(_bsdir, "VERSIONS.md")
+        ck([v[0] for v in versions(_vp)] == ["v-ladder-settlefix", "v-keepalive-cleanroom", "v-forecaster-race1",
+                                             "v-reopen98 + v-floor90", "v-race20"],
+           "VERSIONS.md: a 'v-a + v-b' name and a 'LIVE <date>' header are read too")
+        ck(live_version(_vp)[0] == "v-reopen98 + v-floor90" == _bsm.version_of("pin")[0]
+           and live_version(_vp)[1] == calendar.timegm((2026, 9, 16, 12, 0, 0)),
+           "/stats' pin version skips the ladder, the clean-room keep-alive and the forecaster and names "
+           "v-reopen98 + v-floor90 -- the same entry botstats picks (it used to name v-keepalive-cleanroom)")
+        _bsm.RESULTS = _bs_saved[0]
+        try:
+            _lv, _bv = live_version(VERSIONS_MD), _bsm.version_of("pin")
+        finally:
+            _bsm.RESULTS = _bsdir
+        ck((_lv[0] if _lv else None) == (_bv[0] if _bv else None),
+           "DRIFT: on the real VERSIONS.md the phone and botstats name the same pin version (%s / %s)"
+           % (_lv[0] if _lv else None, _bv[0] if _bv else None))
+
+        # /bots on the planted world
+        b_ = ph.handle(111, "/bots")
+        ck(b_.startswith("ALL BOTS -- Sep 16 11:00 AM ET"), "/bots: header in ET")
+        ck("Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
+           "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04" in b_,
+           "/bots TODAY is all four pots: -10.40 + 0.37 - 2.54 + 0.042 = -12.53 on 99.80 + 19.60 + 2.45 + 1.958 "
+           "put in, each bot's share listed")
+        ck("Yesterday: -$3.42 on $36.32 put in (-9.4%); 3 markets, 2 won, 1 lost\n"
+           "  pin +$0.54 | race none | forecaster +$0.55 | ladder none | other -$4.51" in b_,
+           "YESTERDAY: the SOL and XRP markets that closed before midnight ET count on Sep 15 though Kalshi "
+           "settled them on the 16th (UTC); the oil market that is no bot's is shown as `other`")
+        ck("All time: -$15.95 on $160.13 put in (-10.0%); 8 markets, 5 won, 3 lost" in b_,
+           "ALL TIME: every settlement in every pot, each once")
+        ck("  Sep 16: -$12.53, 5 markets (pin -$10.40, race +$0.37, forecaster -$2.54, ladder +$0.04)" in b_
+           and "  Sep 15: -$3.42, 3 markets (pin +$0.54, forecaster +$0.55, other -$4.51)" in b_
+           and "Sep 14" not in b_,
+           "by day, with each bot's part; no line for the days before anything settled")
+        ck("Cash: main account $1,000.00 (pin + race share it), forecaster $24.00, ladder $15.10 -- all pots "
+           "$1,039.10." in b_ and "counts pin + race only" in b_,
+           "the cash of every pot, and HIS QUESTION answered: the main page counts pin + race only")
+        ck("PIN BOT (main account): running since Sep 16 7:59 AM ET. v-reopen98 + v-floor90. today -$10.40, "
+           "7 days -$9.86, all time -$9.86; open: 1 ($29.10 at risk). /pin" in b_,
+           "one line a bot: running since (ET), version, money, open bets, its command")
+        ck("PENNY LADDER (subaccount 1): STOPPED by its stop file" in b_
+           and "FORECASTER (subaccount 2): running since Sep 16 8:34 AM ET. v-forecaster-race1." in b_
+           and "COIN RACE (main account): running since Sep 15 10:49 PM ET. v-race20." in b_,
+           "the paper race arm is not the live race; the ladder with a stop file is STOPPED, not dead")
+        ck("NOT ANY BOT'S (main account): all time -$4.51 on 1 market; worst -$4.51 WTI 2:00 PM (Sep 15)." in b_,
+           "a main-account market that is no bot's is shown on its own, never folded into pin")
+        # /pin
+        p_ = ph.handle(111, "/pin")
+        ck(len(p_) < MAX_LEN, "/pin fits one Telegram message on this world (%d chars)" % len(p_))
+        for _want, _why in (
+                ("Pot: main account, shared with the coin race.", "its pot, and who shares it"),
+                ("Running: YES, pid 3882400, since Sep 16 7:59 AM ET.", "running, pid, since when in ET"),
+                ("Version: v-reopen98 + v-floor90, live since Sep 16 8:00 AM ET.", "its version from VERSIONS.md"),
+                ("Settings: halts after 2 losing bets.", "its settings from its command line"),
+                ("Keep-alive: watch_bot.ps1 restarts it", "what restarts it"),
+                ("MONEY -- Kalshi settlements, main account, read Sep 16 11:00 AM ET;", "where the money comes from"),
+                ("Today: -$10.40 on $99.80 put in (-10.4%); 2 markets, 1 won, 1 lost",
+                 "today: the both-sides ETH market pays its winning YES side (-$11.30, not -$51.30)"),
+                ("Yesterday: +$0.54 on $29.40 put in (+1.8%); 1 market, 1 won, 0 lost", "yesterday"),
+                ("Last 7 days: -$9.86 on $129.20 put in (-7.6%); 3 markets, 2 won, 1 lost; 1 day up, 1 down",
+                 "7 days, with days up and down"),
+                ("All time (since Sep 15): -$9.86 on $129.20 put in (-7.6%)", "all time, since its first day"),
+                ("Worst market today: -$11.30 ETH 9:45 AM; best +$0.90 BTC 10:30 AM.", "worst and best today"),
+                ("Worst market all time: -$11.30 ETH 9:45 AM (Sep 16); best +$0.90 BTC 10:30 AM (Sep 16).",
+                 "worst and best all time, with the day"),
+                ("Best day +$0.54 (Sep 15), worst day -$10.40 (Sep 16), over 2 days with a settlement.",
+                 "best and worst day"),
+                ("Fees all time: $0.66", "fees: 0.10 + 0.50 + 0.06"),
+                ("Bought both sides (hedged): 1 market all time.", "hedged markets"),
+                ("Open now: 1 bet, $29.10 at risk:\n  BTC 11:15 AM NO x30, $29.10 at risk",
+                 "open bets from Kalshi: the race's SOL leg in the same pot is NOT pin's"),
+                ("Cash: $1,000.00 -- shared: the coin race's cash sits in the same pot.", "cash, said to be shared"),
+                ("  Sep 16 ETH 9:45 AM BOTH SIDES x80: -$11.30 on $50.80 put in", "the last markets, newest first"),
+                ("Today, its own log: no log file found.", "no log is said, not shown as zero orders"),
+                ("More on pin: /stats", "and where the rest of pin's numbers are")):
+            ck(_want in p_, "/pin: " + _why)
+        ck(p_.index("BTC 10:30 AM NO x50: +$0.90") < p_.index("ETH 9:45 AM BOTH SIDES") < p_.index("SOL 11:45 PM YES x30"),
+           "/pin: last settled newest first")
+        # /forecaster and /fc
+        f_ = ph.handle(111, "/forecaster")
+        ck(ph.handle(111, "/fc") == f_, "/fc is /forecaster")
+        for _want, _why in (
+                ("FORECASTER -- clean-room forecaster", "the forecaster's own page"),
+                ("Pot: subaccount 2.", "its own pot"),
+                ("Running: YES, pid 4196192, since Sep 16 8:34 AM ET.", "running"),
+                ("Its log last wrote Sep 16 10:59 AM ET (30 s ago).", "how fresh its log is"),
+                ("Version: v-forecaster-race1, live since Sep 16 8:35 AM ET.", "its version, not the keep-alive entry"),
+                ("Settings: variant race1_98; 5% of paper size; up to 5 a side, 20 a quarter-hour; at most $22.00 in "
+                 "play; buys 75c to 98.5c; stops the day at -$12.00, the run at -$20.00.", "its rails from its start record"),
+                ("Today: -$2.54 on $2.45 put in (-103.7%); 1 market, 0 won, 1 lost", "subaccount 2's money today"),
+                ("Yesterday: +$0.55 on $2.42 put in (+22.6%); 1 market, 1 won, 0 lost", "and yesterday"),
+                ("Cash: $24.00 -- its own pot (subaccount 2).", "its own cash"),
+                ("1 order sent, 1 filled (5 contracts).", "what its log did today"),
+                ("  Refused 1 time: order already in flight 1.", "its refusals in words")):
+            ck(_want in f_, "/forecaster: " + _why)
+        # /ladder
+        l_ = ph.handle(111, "/ladder")
+        ck("Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
+           and "stopped on its own" not in l_,
+           "/ladder: NOT running, and WHY -- its stop file, with what the file says")
+        ck("Today: +$0.04 on $1.96 put in (+2.1%); 1 market, 1 won, 0 lost" in l_
+           and "Cash: $15.10 -- its own pot (subaccount 1)." in l_
+           and "Version: v-ladder-settlefix, live since Sep 16 9:16 AM ET." in l_,
+           "/ladder: subaccount 1's money, cash and version")
+        # /race keeps everything it said and adds the windows
+        r_ = ph.handle(111, "/race")
+        ck(r_.startswith("COIN RACE  ") and "Last 10 races (Kalshi's books):" in r_ and "Paper race arms running:" in r_,
+           "/race still says everything it said before")
+        ck("MONEY -- Kalshi settlements, main account, read Sep 16 11:00 AM ET; a leg counts on the ET day it closed:"
+           in r_ and "Today: $+0.37 on $19.60 put in (+1.9%); 1 leg, 1 won, 0 lost" in r_
+           and "All time (since Sep 16): $+0.37 on $19.60 put in (+1.9%); 1 leg, 1 won, 0 lost" in r_,
+           "/race adds the race's money by window, in /race's own money style, legs not races")
+        ck(r_.index("Paper race arms running:") < r_.index("MONEY -- Kalshi settlements"),
+           "...AFTER what /race already said")
+        ck("Version: v-race20, live since Sep 15 10:50 PM ET." in r_
+           and "Keep-alive: NONE -- if it dies, nothing restarts it." in r_
+           and "Open now: 1 leg, $19.60 at risk:\n  race SOL 11:00 AM YES x20, $19.60 at risk" in r_
+           and "Cash: $1,000.00 -- shared: the pin bot's cash sits in the same pot." in r_,
+           "/race: its version, that nothing restarts it, the leg Kalshi holds open, the shared cash")
+        ck(all(q.get("subaccount") in ("0", "1", "2") for _p, q in _bs_asked)
+           and set(_p for _p, _q in _bs_asked) <= set(_bsm.PATHS),
+           "still every Kalshi read names its subaccount and is a read path")
+
+        # EMPTY: nothing settled, nothing open, nothing running, no logs
+        _bs_sandbox("botstats-empty")
+        _bs_mode["m"], ph.bs_procs = "empty", []
+        e_, eb_ = ph.handle(111, "/pin"), ph.handle(111, "/bots")
+        ck("Today: nothing settled yet" in e_ and "All time: nothing settled yet" in e_
+           and "Nothing settled yet on Kalshi for this bot." in e_ and "Open now: none." in e_
+           and "Running: NO, and there is no stop file -- it stopped on its own." in e_
+           and "Version: no entry for it in VERSIONS.md." in e_ and "+$" not in e_ and "-$" not in e_,
+           "EMPTY /pin: nothing settled YET, nothing open, not running and why -- no gain or loss invented")
+        ck("Nothing settled yet in any pot." in eb_ and "today nothing yet, 7 days nothing yet, all time nothing yet"
+           in eb_ and "+$" not in eb_ and "-$" not in eb_ and "By day:" not in eb_,
+           "EMPTY /bots: says nothing has settled yet, no gain or loss, no empty day list")
+        # DOWN: Kalshi refuses and the process list cannot be read -- unknown, never $0 or 'not running'
+        _bs_sandbox("botstats-down")
+        _bs_mode["m"], ph.bs_procs = "down", (lambda: None)
+        d_, db_ = ph.handle(111, "/pin"), ph.handle(111, "/bots")
+        ck("MONEY: COULD NOT READ KALSHI (settlements read failed (HTTP 401))" in d_
+           and "Running: COULD NOT TELL" in d_ and "Open now: COULD NOT READ" in d_
+           and "Cash: COULD NOT READ" in d_ and "$0.00" not in d_ and "nothing settled" not in d_,
+           "DOWN /pin: a failed read is said as a failure -- never $0, never 'nothing settled', never 'not running'")
+        ck("Today: unknown -- Kalshi could not be read" in db_ and "Last 7 days: unknown" in db_
+           and "PARTIAL: these totals leave out pin, race, forecaster, ladder, other" in db_
+           and "running? could not tell" in db_ and "money: COULD NOT READ KALSHI" in db_
+           and "! money: settlements read failed (HTTP 401): forecaster, ladder, pin, race" in db_
+           and "nothing settled" not in db_ and "Nothing settled" not in db_,
+           "DOWN /bots: every total is 'unknown', the missing pots are named, each error said once")
+        # BROKEN botstats: those commands say so; /race still answers
+        _sv_b, _sv_a = _bsm.bot, _bsm.all_bots
+
+        def _boom(*a, **k):
+            raise RuntimeError("planted botstats failure")
+        _bsm.bot = _bsm.all_bots = _boom
+        _sv_log = LOG
+        globals()["LOG"] = os.path.join(td, "pinphone.log")    # its planted tracebacks stay out of the real log
+        try:
+            ck(ph.handle(111, "/pin").startswith("Could not build /pin: planted botstats failure")
+               and ph.handle(111, "/bots").startswith("Could not build /bots: planted botstats failure"),
+               "a botstats failure is said by the command that hit it")
+            _rb = ph.handle(111, "/race")
+            ck("Last 10 races (Kalshi's books):" in _rb
+               and "Money by window: could not build it (planted botstats failure)." in _rb,
+               "...and /race still gives everything it gave before, with the windows' failure said")
+        finally:
+            _bsm.bot, _bsm.all_bots = _sv_b, _sv_a
+            globals()["LOG"] = _sv_log
+        ck(all(c in HELP_TEXT for c in ("/bots", "/pin", "/forecaster", "/fc", "/ladder")),
+           "/bots /pin /forecaster /fc /ladder are in /help")
+        _bs_mode["m"], ph.bs_procs = "planted", _bs_procs
         r = ph.handle(111, "/stop")
         ck("/stop yes" in r and not ph.busy, "/stop without yes only explains; nothing is stopped")
         ck(ph.handle(111, "/mute") == "Alerts off. /unmute to turn them back on." and ph.muted, "/mute")
@@ -2063,6 +2744,11 @@ def selftest():
         ph.poll_once()
         ck(tg.sent[-1][0] == 111 and "Commands:" in tg.sent[-1][1] and ph.offset == 3, "poll: the paired chat gets its reply, the stranger nothing, offset advances")
     _pl.LEDGER = _pl_sv
+    _bsm.RESULTS = _bs_saved[0]
+    _bsm._MEMO.clear()
+    _bsm._MEMO.update(_bs_saved[1])
+    _bsm._BACK.clear()
+    _bsm._BACK.update(_bs_saved[2])
     print("pinphone selftest: OK")
 
 
@@ -2080,7 +2766,9 @@ def main():
         n = python_procs()
         print("\n(process table: %s in %.1f s -- the daemon reads it on a background thread)"
               % ("%d python processes" % len(n) if n is not None else "COULD NOT BE READ", time.time() - t0))
-        for name, fn in (("/stats", ph.text_stats), ("/race", ph.text_race), ("/racestats", ph.text_racestats)):
+        for name, fn in (("/stats", ph.text_stats), ("/race", ph.text_race), ("/racestats", ph.text_racestats),
+                         ("/bots", ph.text_bots), ("/pin", lambda: ph.text_bot("pin")),
+                         ("/forecaster", lambda: ph.text_bot("forecaster")), ("/ladder", lambda: ph.text_bot("ladder"))):
             t0 = time.time()
             out = fn()
             print("\n--- %s (%d chars, %.1f s) ---\n%s" % (name, len(out), time.time() - t0, out))
