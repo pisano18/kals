@@ -1,3 +1,14 @@
+# v-topup -- LIVE 2026-09-30 12:12:02Z (pid 4447780, code_sha b34346497c63, restart_bot.ps1; research/pinrun.py _stage46) -- under --one-full-bet a second full-leg order on the side already held is a TOP-UP: it completes the position to SIZE x the band / doubt / late multiple (the same target an early-leg top-up gets) and no further. It never caps a re-buy into the OTHER side (a hedge).
+
+Why (READS_DUE 'topup-leak'): a small first fill followed by a full-size top-up held 1.2-1.6 bets on one coin
+(SOL 09-19 174 vs 107). Driven self-test through the real loop: 2 contracts held -> the top-up asks 3 (flag on)
+vs 5 (flag off: the leak); flag off unchanged; the cap sits in _stage46, which live and paper both call. Full
+pinrun self-test PASSED. Also loaded by this restart: v-cent (hourly-ladder whole-cent limits).
+
+**REVERT:** `git revert 0ea3dcd` (and 2bd... for v-cent if wanted), then restart per do-the-restart-yourself.
+
+---
+
 # [PREPARED -- takes effect when scale_up_0930.ps1 is run] v-race40 + v-forecaster-scale + v-ladder-size -- 2026-09-30 ~05:5xZ. Operator 2026-09-30: "Run whatever sub accounts you want or look like money makers like hourly ladder, increase the coin race size don't stop on one loss, increase clean room forecaster, increase ladder."
 
 The relaunches were refused by the permission check ("Production Deploy") even with that instruction, so all
@@ -72,7 +83,7 @@ v-ladder-penny below (same command; the code change is in the file).
 
 ---
 
-# [CODE ONLY -- loads at the next live restart] v-cent -- committed 2026-09-29 ~12:1xZ (research/pinrun.py cent_limit): hourly ladder markets (KXBTCD and the other LADDER_COIN series) take WHOLE-CENT prices only; the entry limit and the hedge limit on those markets are now rounded DOWN to the cent (never under the ask seen). The 15-minute coins are untouched.
+# v-cent -- LIVE 2026-09-30 12:12:02Z (pid 4447780, code_sha b34346497c63, restart_bot.ps1 with v-topup) -- committed 2026-09-29 ~12:1xZ (research/pinrun.py cent_limit): hourly ladder markets (KXBTCD and the other LADDER_COIN series) take WHOLE-CENT prices only; the entry limit and the hedge limit on those markets are now rounded DOWN to the cent (never under the ask seen). The 15-minute coins are untouched.
 
 Evidence: READS_DUE 'kxbtcd-tick' -- the one early-leg KXBTCD order since v-reopen98 (09-28 23:59 ET,
 KXBTCD-26SEP2900-T82999.99, limit 97.8c from --early-max-price 0.978) came back 400 invalid_price; a KXBTCD hedge
