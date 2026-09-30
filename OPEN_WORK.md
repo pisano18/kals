@@ -59,6 +59,10 @@ research"** (the deeper hunt for what separates losing buys).
   `results/fcvar-paper.jsonl`; compare with `research/cleanroom/fc_compare.py`.
 - Replaced: `v-bettor-penny` (the wrong strategy; 0 orders, stopped 09-29 00:50Z).
 - **Try soon**: rows F01-F17 in `results/IDEA_LEDGER.md` (every lead from the 09-29 work, with status).
+- **Per-bot pages (09-30)**: phone `/bots` (all bots + totals), `/pin`, `/forecaster` (`/fc`), `/ladder`, `/race`;
+  desktop app tab **Bots**. Numbers from Kalshi per subaccount via `research/botstats.py`. The main page's
+  totals are the main account only (pin + coin race + old 'other'); forecaster and ladder appear only here.
+- **Size increases (09-30)**: prepared, run by `scale_up_0930.ps1` (permission-gated; VERSIONS top entry).
 - 09-29 15:35Z: forecaster back LIVE (race1_98); ladder v-ladder-top; both kept alive by boot_all.ps1 (v-keepalive-cleanroom).
 - Memory: `python research/pausepaper.py --pause` / `--resume` freezes the paper
   bots (never the live ones or the recorders) when the operator needs RAM.
