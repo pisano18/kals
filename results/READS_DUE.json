@@ -343,6 +343,7 @@
    "what": "v-crash-guard on the live forecaster (--crash-gap 0.10 since 2026-09-30 12:26Z): does the collapse show in the best ask at the trigger?",
    "how": "results/forecaster-live-orders.jsonl: refused why=crash (with best_ask), placed.best_ask_at_trigger vs live_fill.px (fills >10c under the asked price that were NOT refused = collapses the guard could not see)",
    "bar": "Keep if it refused at least one collapse and no refusal was an ordinary fill that would have won by more than it saved; if every collapse fill passes through unrefused (invisible at the trigger), the guard does nothing -- turn it off and look for a post-fill exit instead.",
+   "progress": "2026-09-30 15:14:45Z first refusal: KXSOL15M-26SEP301115-15 NO at 0.82 (paper 'real' 100 -> 10 live, displayed 357 at 0.82, 329 still there 1 s later); settled NO -> a WIN it skipped, worth +$1.69 (filled at 0.82) to about +$2.75 (filled near 0.71). Saved so far: $0. NOTE: the refused record does NOT carry best_ask (only placed does) -- reconstruct it from the tape orderbook for the read.",
    "status": "open"
   }
  ]
