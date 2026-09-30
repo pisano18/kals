@@ -465,7 +465,7 @@ def main():
     olog = P.Logger(ORDER_LOG)
     br = Broker(olog, a.subaccount, a.dry_run, sender, time.time)
     olog.write("start", pid=os.getpid(), subaccount=a.subaccount, live=a.live, sub_balance=sub_bal,
-               rails={"size": 1, "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
+               rails={"size": int(SIZE), "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
                       "max_live_per_close": MAX_LIVE_PER_CLOSE, "live_levels": list(LIVE_LEVELS),
                       "writes_per_s": WRITES_PER_S})
     threading.Thread(target=br.run_writer, daemon=True).start()

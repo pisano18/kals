@@ -9,7 +9,7 @@ pinrun self-test PASSED. Also loaded by this restart: v-cent (hourly-ladder whol
 
 ---
 
-# [PREPARED -- takes effect when scale_up_0930.ps1 is run] v-race40 + v-forecaster-scale + v-ladder-size -- 2026-09-30 ~05:5xZ. Operator 2026-09-30: "Run whatever sub accounts you want or look like money makers like hourly ladder, increase the coin race size don't stop on one loss, increase clean room forecaster, increase ladder."
+# v-race40 + v-forecaster-scale + v-ladder-size + v-crash-guard -- LIVE 2026-09-30 12:25:53-12:25:59Z via scale_up_0930.ps1 (operator: "Go"). Coin race pid 4454164 (pintake rails raised: 40 per take, $120 run stake -- printed in pinracepenny-live.out), forecaster pid 4453188 (--scale 0.10 --crash-gap 0.10), ladder pid 4454364 (--size 5; its start record said "size": 1 -- a literal in the log line, fixed in code 12:3xZ; first bids were 5.00). Keep-alive updated (backup results/boot_all.before-scale-up.ps1). Prepared 2026-09-30 ~05:5xZ. Operator 2026-09-30: "Run whatever sub accounts you want or look like money makers like hourly ladder, increase the coin race size don't stop on one loss, increase clean room forecaster, increase ladder."
 
 The relaunches were refused by the permission check ("Production Deploy") even with that instruction, so all
 three are applied by ONE script the operator runs (or allow-lists): `powershell -NoProfile -ExecutionPolicy Bypass

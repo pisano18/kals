@@ -1,4 +1,4 @@
-# boot_all.ps1 -- bring the whole machine back after a reboot, and keep it up.
+﻿# boot_all.ps1 -- bring the whole machine back after a reboot, and keep it up.
 #
 # WHY. Nothing started anything after a restart. run_all.ps1 (collectors),
 # watch_bot.ps1 (live bot), the Crypto.com recorder and every paper arm were
@@ -475,11 +475,14 @@ if (-not $NoArms) {
 # forecaster-variant side-by-side runs, so their tests survive a reboot.
 $cleanroom = @(
     @{ n = "forecaster_live (LIVE, subaccount 2)"; like = "*forecaster_live.py*--live*"; unlike = ""; stop = "$res\forecaster-live.stop";
-       a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--minutes", "10080");
+       a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--scale", "0.10", "--crash-gap", "0.10", "--minutes", "10080");
        o = "$res\forecaster-live-stdout.log"; e = "$res\forecaster-live-stderr.log" },
     @{ n = "ladder_live (LIVE, subaccount 1)"; like = "*ladder_live.py*--live*"; unlike = ""; stop = "$res\ladder-live.stop";
-       a = @("-u", "research\cleanroom\ladder_live.py", "--subaccount", "1", "--live", "--minutes", "10080");
+       a = @("-u", "research\cleanroom\ladder_live.py", "--subaccount", "1", "--live", "--size", "5", "--minutes", "10080");
        o = "$res\ladder-live-stdout.log"; e = "$res\ladder-live-stderr.log" },
+    @{ n = "coin race (LIVE, main account)"; like = "*pinracearm.py --live*"; unlike = ""; stop = "$res\pinracepenny.stop";
+       a = @("-u", "research/pinracearm.py", "--live", "--max-contracts", "40", "--max-stake", "120", "--live-max-losses", "2", "--live-rolling-stake", "--live-tau-max", "30", "--live-min-price", "0.90", "--live-max-legs", "5", "--live-confirm", "5", "--live-clock-tau", "20", "--minutes", "10080", "--log", "C:/kals-repo/results/pinracepenny-live.jsonl", "--model", "fair", "--tau-max", "60", "--min-price", "0.80", "--min-edge", "0.00");
+       o = "$res\pinracepenny-live.out"; e = "$res\pinracepenny-live.err" },
     @{ n = "bettor_paper (paper)"; like = "*cleanroom*bettor_paper.py*"; unlike = ""; stop = "";
        a = @("-u", "research\cleanroom\bettor_paper.py", "--minutes", "10080");
        o = "$res\cleanroom-bettor-stdout.log"; e = "$res\cleanroom-bettor-stderr.log" },
