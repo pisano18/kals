@@ -11790,6 +11790,21 @@ def _selftest_body():
        and not _kinds(_rE, "scalein_cap"),
        "v-onefull NULL DRIVEN: a 2-contract first fill is still TOPPED UP with "
        "the flag ON (orders %s)" % (_xE["calls"],))
+    _mF, _tF, _xF = _si_world([(0.960, 500.0)])
+    _xF["lv"] = [(0.960, 2.0)]
+    _rF = _offline_trade_loop([_mF], live=True, take=_tF, run_s=2.5, tau0=18,
+                              flags=dict(_si_flags, ONE_FULL_BET=False))
+    ck(_rF["raised"] is None and len(_xF["calls"]) == 2 and len(_xE["calls"]) == 2
+       and _xE["calls"][1][1] + 2.0 <= _xF["calls"][1][1] + 1e-9
+       and _xE["calls"][1][1] < _xF["calls"][1][1],
+       "v-topup DRIVEN: 2 held, and the top-up asks only for what is MISSING (%g) -- "
+       "with --one-full-bet OFF the same world asks for a whole new bet (%g), which is "
+       "the 1.2-1.6x leak" % (_xE["calls"][1][1], _xF["calls"][1][1]))
+    _srcfu = open(os.path.abspath(__file__), encoding="utf-8").read()
+    ck("if _have_fu > 0 and _side_fu == want:" in _srcfu
+       and _srcfu.index("if _have_fu > 0 and _side_fu == want:") < _srcfu.index("take_n = _stage46(take_n)" + chr(10)),
+       "v-topup: the cap applies only to the side already held (never a hedge re-buy) and lives in _stage46, "
+       "which both the live and the paper path call before sending")
 
     # ---- v-btcd1 (2026-09-24): a ladder series takes its OWN size ---------
     ck(_DEFAULT_SERIES_SIZE is None,
@@ -19552,6 +19567,22 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                         return min(take_n, staged_take(tau, take_n,
                                                        float(SIZE) * _mult46,
                                                        _held46)[0])
+                    # v-topup (2026-09-30, READS_DUE topup-leak): under
+                    # --one-full-bet a SECOND full-leg order on the side we
+                    # already hold is a top-up of an unfinished position, so it
+                    # completes the position to the same target an early-leg
+                    # top-up gets (SIZE x the band / doubt / late multiple) and no
+                    # further. Before this it was sized as a whole new bet, so a
+                    # small first fill + a full top-up held 1.2-1.6 bets (SOL 09-19
+                    # 174 vs 107). The OTHER side (a re-buy into a hedge) is never
+                    # capped here: a gate must never block a hedge.
+                    if ONE_FULL_BET and _leg46 == "full":
+                        _have_fu = float(((prev or {}).get("n_tk") or {}).get(tk, 0.0))
+                        _side_fu = ((prev or {}).get("sides") or {}).get(tk)
+                        if _have_fu > 0 and _side_fu == want:
+                            _mult_fu = max(band_mult(price), _doubt_on[0],
+                                           LATE_MULT if tau <= LATE_TAU else 1.0)
+                            return min(take_n, max(0.0, float(SIZE) * _mult_fu - _have_fu))
                     return take_n
 
                 # ---- R1: THE SEND SITE. With --attempts-on-send BOTH
