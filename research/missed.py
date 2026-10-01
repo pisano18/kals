@@ -53,6 +53,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -273,11 +274,25 @@ def fetch_results(tickers, cache, log=print):
     for i in range(0, len(tickers), 50):
         chunk = tickers[i:i + 50]
         url = API + "?limit=100&tickers=" + ",".join(chunk)
-        try:
-            with urllib.request.urlopen(url, timeout=20) as r:
-                b = json.loads(r.read().decode())
-        except Exception as e:           # report, never guess
-            log("  (result lookup failed for %d tickers: %s)" % (len(chunk), e))
+        # 2026-10-01: a normal run hit HTTP 429 (Too Many Requests) on 6 of these batches and 303 markets came
+        # back unresolved -- a silent undercount of every gate's "would have won/lost". Back off and retry a
+        # 429 up to 4 times before giving up (and still report it, never guess).
+        b = None
+        for attempt in range(5):
+            try:
+                with urllib.request.urlopen(url, timeout=20) as r:
+                    b = json.loads(r.read().decode())
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt < 4:
+                    time.sleep(2.0 * (attempt + 1))
+                    continue
+                log("  (result lookup failed for %d tickers: %s)" % (len(chunk), e))
+                break
+            except Exception as e:       # report, never guess
+                log("  (result lookup failed for %d tickers: %s)" % (len(chunk), e))
+                break
+        if b is None:
             continue
         for mk in b.get("markets") or []:
             if mk.get("status") in ("finalized", "settled") and \
@@ -663,6 +678,35 @@ def selftest():
         os.rmdir(d)
     except OSError:
         pass
+    # 2026-10-01: a 429 is retried, not silently dropped (303 markets went unresolved on a normal run)
+    import io
+    _real_open, _real_sleep, _n = urllib.request.urlopen, time.sleep, [0]
+
+    def _fake_open(url, timeout=20):
+        _n[0] += 1
+        if _n[0] <= 2:
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", {}, None)
+        body = {"markets": [{"ticker": "KXT-1", "status": "finalized", "result": "yes"}]}
+
+        class _R(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+        return _R(json.dumps(body).encode())
+    try:
+        urllib.request.urlopen, time.sleep = _fake_open, (lambda s: None)
+        _c, _lg = {}, []
+        fetch_results(["KXT-1"], _c, log=_lg.append)
+        ck(_c.get("KXT-1") == "yes" and _n[0] == 3 and not _lg,
+           "a 429 is retried with back-off and the result still lands (calls %d, logged %s)" % (_n[0], _lg))
+        _n[0], _c, _lg = -10, {}, []
+        fetch_results(["KXT-1"], _c, log=_lg.append)
+        ck(not _c and len(_lg) == 1 and "429" in _lg[0],
+           "NULL: a 429 that never clears is REPORTED after the retries, never guessed")
+    finally:
+        urllib.request.urlopen, time.sleep = _real_open, _real_sleep
     for m in fails:
         print("SELFTEST FAIL:", m)
     print("missed selftest: %s (%d checks failed)" % ("PASS" if not fails else "FAIL", len(fails)))
