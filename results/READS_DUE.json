@@ -51,7 +51,8 @@
    "what": "v-onefull (--one-full-bet): refusals (gate rebuy_band on full positions) and what those markets did.",
    "how": "live logs since 09-27 08:11Z",
    "bar": "no double full bet on any market; refused second bets' market results vs the 19-day valuation (+$107)",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-10-01 ~07:55Z (3:55 AM ET; exchange closed 3-5 AM so the data is complete), research/sweep/onefull_read.py: 23 refused second full bets since 09-27 08:11Z. Each priced at the refused price x ONE bet (an upper bound -- the fill is not guaranteed): 22 would have won (+$42.65), 1 lost (XRP 19:15Z 09-30, -$5.27 at 87c x 6) -> the rule skipped about +$37 of profit in 4 days (~$9/day) and has not yet avoided a loss. Bar line 1 (no double full bet): no 15-min market held over 2 bets; the largest was NEAR 09-28 13:15Z, 171 contracts = 1.94 bets, the top-up leak that v-topup fixed on 09-30. Bar line 2: vs the 19-day valuation (+$107, all of it from two double-bet disasters, -$130 and -$132), 4 days without a disaster cost ~$37. Insurance whose payoff is rare: too short to judge; keep (operator: lose less first), recount at the next double-bet-size loss or 10-10. It explains about a third of the ~$30/day income drop since 09-27."
   },
   {
    "id": "bars-1001",
