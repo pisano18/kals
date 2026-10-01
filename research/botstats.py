@@ -775,6 +775,33 @@ def version_of(name):
             continue
         vname, rest = m.group(1), m.group(2)
         low = (vname + " " + rest).lower()
+        # 2026-10-01: a heading that ships several bots at once ("v-race40 + v-forecaster-scale + v-ladder-size
+        # + v-crash-guard") names every bot, so the text test below claimed it for none of them and the phone
+        # showed the race's OLD version. A combined heading belongs to each bot one of its names is about.
+        names = [n.strip() for n in vname.split("+")]
+        if len(names) > 1:
+            own = {"race": [n for n in names if n.startswith("v-race")],
+                   "forecaster": [n for n in names if "forecaster" in n or n == "v-crash-guard"],
+                   "ladder": [n for n in names if re.match(r"v-ladder-[a-z]", n)]}
+            if any(own.values()):
+                own["pin"] = []
+            elif not re.search(r"cleanroom|clean-room|bettor|penny", low):
+                own["pin"] = names
+            else:
+                own["pin"] = []
+            if not own[name]:
+                continue
+            vname = " + ".join(own[name])
+            mt = _VER_T.search(rest)
+            t = None
+            if mt:
+                day, hh, mm = mt.group(1), mt.group(2), mt.group(3)
+                try:
+                    t = float(calendar.timegm(time.strptime(
+                        "%sT%s:%s" % (day, hh or "00", (mm or "00").lower().replace("x", "0")), "%Y-%m-%dT%H:%M")))
+                except ValueError:
+                    t = None
+            return vname, t, rest.strip()
         # An entry naming two clean-room bots (v-keepalive-cleanroom) is infrastructure, not either
         # bot's version; `v-ladder7` is pin's hourly ladder table, not the penny ladder.
         race = vname.startswith("v-race") or bool(re.search(r"coin.?race", low))
@@ -870,6 +897,11 @@ def settings_race(start, cl):
         if v is not None:
             s[key] = v
     s["stop_on_first_loss"] = bool(rails.get("stop_on_loss", (start or {}).get("stop_on_loss")))
+    # v-race40 (2026-09-30): --live-max-losses N > 1 stops for the rest of the ET day after N losing races
+    ml = _num(opt(src, "--live-max-losses"))
+    if ml is not None and ml > 1:
+        s["max_losses_per_day"] = ml
+        s["stop_on_first_loss"] = False
     if start and start.get("version"):
         s["code_version"] = start["version"]
     bits = []
@@ -881,7 +913,9 @@ def settings_race(start, cl):
         bits.append("at most %s in play" % usd(s["max_in_play"]).lstrip("+"))
     if "max_bets_per_race" in s:
         bits.append("up to %g bets a race" % s["max_bets_per_race"])
-    if s["stop_on_first_loss"]:
+    if s.get("max_losses_per_day"):
+        bits.append("stops for the rest of the ET day after %g losing races" % s["max_losses_per_day"])
+    elif s["stop_on_first_loss"]:
         bits.append("stops after its first loss")
     return s, "; ".join(bits)
 
@@ -1679,6 +1713,29 @@ def selftest():
         _BACK.clear()
         _BACK.update(saved[2])
         shutil.rmtree(td, ignore_errors=True)
+    # 2026-10-01: a heading that ships several bots at once is each bot's own version, by name
+    td2 = tempfile.mkdtemp(prefix="botstats_v_")
+    saved2 = RESULTS
+    try:
+        globals()["RESULTS"] = td2
+        with open(os.path.join(td2, VERSIONS_NAME), "w", encoding="utf-8") as fh:
+            fh.write("# Versions\n\n"
+                     "# v-topup -- LIVE 2026-09-30 12:12:02Z (pid 4447780): top-up to one bet\n"
+                     "# v-race40 + v-forecaster-scale + v-ladder-size + v-crash-guard -- LIVE 2026-09-30 12:25:53Z: x\n"
+                     "# v-race20 -- 2026-09-28 02:50Z (pid 3739628; pinracearm.py) -- LIVE: coin race 20\n")
+        ck(version_of("race")[0] == "v-race40" and version_of("ladder")[0] == "v-ladder-size"
+           and version_of("forecaster")[0] == "v-forecaster-scale + v-crash-guard"
+           and version_of("pin")[0] == "v-topup",
+           "a combined heading is each named bot's version (race v-race40, not the older v-race20); pin keeps its own")
+    finally:
+        globals()["RESULTS"] = saved2
+        shutil.rmtree(td2, ignore_errors=True)
+    _s40, _t40 = settings_race(None, "python -u research/pinracearm.py --live --max-contracts 40 --max-stake 120 "
+                                     "--live-max-losses 2")
+    ck("40 contracts a bet" in _t40 and "stops for the rest of the ET day after 2 losing races" in _t40
+       and "first loss" not in _t40, "v-race40: the race's rules read 40 a bet and the daily 2-loss stop")
+    _s1, _t1 = settings_race({"live_rails": {"stop_on_loss": True}}, "python -u research/pinracearm.py --live")
+    ck("stops after its first loss" in _t1, "NULL: without --live-max-losses the old first-loss stop is still described")
     print("botstats selftest: OK")
 
 
