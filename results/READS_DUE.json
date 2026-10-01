@@ -196,38 +196,41 @@
   },
   {
    "id": "missed-daily",
-   "due": "2026-10-01T12:00Z",
+   "due": "2026-10-02T12:00Z",
    "what": "daily missed-trades report",
    "how": "python research/missed.py",
    "bar": "report per gate; flag any gate refusing mostly winners",
    "status": "open",
    "history": [
     "09-29 12Z: 24 h window: our 15-min coins 30 markets, 1 lost, +$23.70; hourly BTC 3 markets +$0.11; other 5 markets 1 lost -$6.64 (Tencent). Gates flagged 'mostly winners' (ceiling +$28, edge floor +$25, depth +$22, seller gate +$4 at most) each weighed against a $24-57 typical loss -- none actionable; confidence gate refused 16 losers in 124. Seller-gate share 25-26 in 100 = at its OFF line (read 10-01).",
-    "09-30 12Z: 24 h: 15-min 25 markets 0 lost +$50.56; hourly BTC 2 +$0.09; race 5 0 lost +$3.87. The 97.8c cap on the 45-s bet refused 1 loser (-$30.11 saved) among 164; depth/spike/early_dear/jump_against/against_thin refused only winners but small ($1-21 at most each vs $17-60 per loss). Seller gate share 43 in 100 on the 45-s leg (6 of 14), 33 in 100 of all buys with >20 s left -- OVER its 25/100 OFF line; its own read is 10-01. One KXBTCD 400 invalid_price again (v-cent loads at the next restart)."
+    "09-30 12Z: 24 h: 15-min 25 markets 0 lost +$50.56; hourly BTC 2 +$0.09; race 5 0 lost +$3.87. The 97.8c cap on the 45-s bet refused 1 loser (-$30.11 saved) among 164; depth/spike/early_dear/jump_against/against_thin refused only winners but small ($1-21 at most each vs $17-60 per loss). Seller gate share 43 in 100 on the 45-s leg (6 of 14), 33 in 100 of all buys with >20 s left -- OVER its 25/100 OFF line; its own read is 10-01. One KXBTCD 400 invalid_price again (v-cent loads at the next restart).",
+    "10-01 12Z: window 09-30 12:00Z..10-01 12:00Z, both live logs. Ledger, hand-reconciled with the netted-pair credit: 15-min 24 markets, 1 lost, -$2.86 (+$39.74 / -$42.60). Hourly BTC 2 markets, +$0.07. Race 2 markets, 1 lost, -$1.10. Total -$3.89. The loss: KXXRP15M-26SEP301915-15, insured, -$42.60. At 23:14:40Z dump_guard refused a 75c YES ask (25c under fair, 400 offered, takers selling our side 94/100). In the same second, after that refusal (decided 23:14:40.754Z), the bot bought YES 89 from the 88c ask (12c under fair, inside the 15c dump threshold) up to 98c, avg 94.76c, 20 s left, takers selling our side 56/100. The offer age read 860 s (not exact), so the seller gate could not fire. Hedged 89 NO at 51c. This is IDEA_LEDGER F19 (dump-then-buy); missed.py's same-second rule mislabels it as 'held already'. Gates that refused only winners, never-bought won/lost and the most each could have cost (market results, not ours): ceiling 156/0 +$34.26 at 99.2c; edge floor 358/0 +$28.40; depth 125/0 +$17.81; seller gate 6/0 +$5.28; early_dear 15/0 +$5.44; spike 4/0 +$2.27; against_thin 5/0 +$2.02; jump_against 9/0 +$0.91. Only the ceiling passes one typical loss (-$28.49), by about 1.2x; none actionable. Confidence: 130 won / 13 lost of 143. That is mostly winners by the bar's words, but no price is logged; the model's own average odds on them were 87/100 and 10 of the 13 losers were at 50-80/100. Seller-gate share 31/100 on the 45-s leg (5 of 16) and 27/100 with more than 20 s left (6 of 22): over the 25/100 OFF line, already with the operator via the seller-gate read (KEEP recommended). 11 orders filled nothing (all would have won, at most +$17.45; 4 of them were extra size on markets we held). No KXBTCD 400 this window. Results: 824 looked up in batches of 20, 0 missing; missed.py's 50-per-batch lookup hit HTTP 429 on 6 batches in the first agent's run."
    ]
   },
   {
    "id": "reopen98-guard",
-   "due": "2026-10-01T12:00Z",
+   "due": "2026-10-02T12:00Z",
    "what": "v-reopen98 stop rule (daily until 100 such markets): 30-second buys at 97.9-98c since 09-28 14:36Z.",
    "how": "live logs: orders leg full/topup/late_add with exec or ask 0.979-0.98, joined to the ledger; count losses and whether the seller gate had readings",
    "bar": "back to 0.978 on the 2nd loss in the first 100, on any such loss the gate could not judge, or if --toxic-fresh is turned off",
    "status": "open",
    "history": [
     "09-29 12Z: 6 buys at 97.9-98c on the 30-s leg (6 markets), 0 of them lost (the BNB 09-28 8 PM market lost -$8.26 on its 97.5c 45-s YES buy; its 98c NO top-up WON). Bar (2nd loss in first 100) not reached: keep.",
-    "09-30 12Z: 18 buys at 97.9-98c on the 30-s leg in 17 markets since 09-28 14:36Z; 0 of the buys lost. Keep."
+    "09-30 12Z: 18 buys at 97.9-98c on the 30-s leg in 17 markets since 09-28 14:36Z; 0 of the buys lost. Keep.",
+    "10-01 12Z: covers 2026-09-28 14:36:17Z to 2026-10-01 12:00Z. Matched on fill price rounded to the 0.1c tick, or on ask seen, there were 36 filled 30-s-leg buys (full/topup/late_add) at 97.9-98c: 1,475.98 contracts in 28 markets (23 fifteen-minute with 26 buys, 5 KXBTCD hourly with 10 one-contract buys), and 0 lost. Ledger, whole markets with the netted-pair credit: +$27.33. The in-band buys alone made +$33.46; the gap is BNB 09-29 00:00Z, -$8.26, from its 97.5c 45-s YES buy (its 98c NO top-up won). Since the 09-30 12Z read: 7 new markets, 0 lost, +$12.87. 12 more in-band orders were canceled with no fill. Count toward the first 100: 23 (fifteen-minute only, matching the earlier reads, 6 and then 17 markets/18 buys), or 28 with hourly. The earlier 35/27 recount missed BNB 09-29 19:15Z: average fill 0.9789, of which 45.55 contracts at 97.9-98c; it won. Against Kalshi fills, 28 markets had contracts at 97.9-98c (BNB 09-29 06:30Z and 17:00Z in, 3 ask-only matches out), all won. --toxic-fresh is on in pid 4447780's argv and in restart_bot.ps1; last toxic_fresh refusal 2026-10-01 11:29:27Z. Gate: 36/36 buys had a sold share, 20 an exact offer age, and 16 only a lower bound of at least 612 s. 18 of 36 came at 20 s or less left, where the gate stands down. Two of them would have been refused earlier in the window, NEAR 09-30 06:00Z (share 0.815, 36 ms) and KXBTCD 09-30 13:00Z (0.74, 19 ms); both won. Bar not reached: keep. Outside the band, not counted: XRP 09-30 23:15Z, full-leg buy at ask 88c (average 94.76c), lost -$42.60 after its hedge."
    ]
   },
   {
    "id": "floor90-guard",
-   "due": "2026-10-01T12:00Z",
+   "due": "2026-10-02T12:00Z",
    "what": "v-floor90 stop rule (daily): money of every 45-second buy whose ask was under 95c since 09-28 14:36Z, insurance included.",
    "how": "live logs orders leg early with ask_seen < 0.95, joined to the Kalshi ledger per market",
    "bar": "if the running total is below $0 -> --early-min-price back to 0.95 at once",
    "status": "open",
    "history": [
     "09-29 12Z: 3 markets with a 45-s buy under 95c (asks 90c, 93.9c, 94c): +$1.51, +$1.57, +$3.41 = +$6.49 running total (>= $0): keep.",
-    "09-30 12Z: 4 markets with a 45-s buy under 95c, running total +$9.85 (insurance included). Keep."
+    "09-30 12Z: 4 markets with a 45-s buy under 95c, running total +$9.85 (insurance included). Keep.",
+    "10-01 12Z (ledger written 12:00:29Z): still 4 markets with a 45-s buy under 95c since 09-28 14:36:17Z (XRP 09-28 19:59Z ask 0.90, NEAR 22:29Z 0.94, BNB 09-29 05:44Z 0.939, ETH 18:59Z 0.924), all won, none insured: ledger +$3.41 +$1.57 +$1.51 +$3.36 = +$9.85 running total (45-s buys alone +$8.20; the ETH market includes a 97.07c top-up). No new fill under 95c since 09-29 18:59Z; one send since the last read (HYPE 09-30 12:29Z, ask 0.949) got 0. Bar (below $0) not reached: keep 0.90. Comparison, 45-s buys at 95c and up: 29 markets, +$9.09 whole-market, 1 loss (BNB 09-28 23:59Z, ask 0.95, -$8.26 after its 30c NO insurance). Outside this bar: a 30-s (full-leg) buy at an 88c ask, XRP 09-30 23:14Z, lost -$42.60 insured; the 90c floor does not apply to that leg."
    ]
   },
   {
@@ -316,7 +319,8 @@
    "what": "v-cent is LIVE since 2026-09-30 12:12:02Z (pid 4447780). Check KXBTCD orders since then: no 400 invalid_price.",
    "how": "after the next live start: KXBTCD orders' status codes in the new pinrun-live-*.jsonl (no 400 invalid_price; early-leg limits at whole cents)",
    "bar": "any KXBTCD 400 invalid_price after the restart = the fix did not take; any 15-minute order with a changed limit = the fix leaked -> revert (VERSIONS v-cent)",
-   "status": "open"
+   "status": "read",
+   "read_note": "Read 2026-10-01 ~12:05Z. PASS, keep v-cent. Window: 2026-09-30 12:12:06Z to 2026-10-01 12:02:21Z of pinrun-live-20260930T121206Z.jsonl (code_sha b34346497c63 = current pinrun.py with cent_limit). Results: 46 orders and 2 hedges, all status 201, with 0 errors and 0 invalid_price. KXBTCD: 6 orders with whole-cent limits only. 5 were full-leg at 98c. The 1 early leg (21:59:15Z, KXBTCD-26SEP3018-T83699.99) was rounded from 97.8c to 97c (ask 96c), returned 201, filled 1 and won +$0.03 per the ledger. The 9/28 run had 2 of 2 KXBTCD early legs refused 400 invalid_price at 97.8c. 15-minute markets: 40 orders. 13 of 13 early legs kept 0.978 and 27 others were at 0.98, the same as the 9/28 run, so there was no leak. Gap: there were 0 KXBTCD hedges, so the hedge-side rounding (99.9c to 99c) has been verified only by the self-test, not live."
   },
   {
    "id": "keepalive-check",
