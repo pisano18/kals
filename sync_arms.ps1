@@ -153,7 +153,9 @@ $arms = @(
   # 2026-09-24 08:xxZ (IDEAS item 2): the hourly BTC strike ladder, paper only
   # (--series is refused with --live). Bar: 7 days, >= 30 fired closes, 0 paper
   # losses at <= 30 s, >= 660 captured contracts, offers on >= 15 cheap closes.
-  @{ n="arm-btcd";          drop=@();                    add=@("--series","KXBTCD") },
+  # RETIRED 2026-10-01 08:3xZ: its paper bar read KILL at day 7 (19 fired closes, 31 contracts; READS_DUE
+  # bars-1001). Kept as a comment so a re-sync does not bring it back:
+  # @{ n="arm-btcd";          drop=@();                    add=@("--series","KXBTCD") },
   # 2026-09-24 08:xxZ (results/PREREG_fresh.md): with more than 20 s left, refuse a
   # level posted under 500 ms ago. Live = this arm + the fresh entries, so the
   # refused set's real outcomes are live's own fills. Bar: 7 days, then armh2h2.
