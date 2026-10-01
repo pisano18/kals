@@ -63,7 +63,7 @@ sweep (`results/IDEA_SWEEP_2026-09-25.md`) adds its rows below when it lands.
 | L02 | Coin race late pin | crypto coin race | live (5 contracts) | ~$1-2 | 59 won, 1 tie, 0 lost at 1 contract to 09-24 | OPEN_WORK B1 |
 | L03 | Hourly BTC ladder near rungs | crypto hourly | live (1 contract) | unknown | same gates as 15-min, 30x deeper books | VERSIONS v-btcd1, OPEN_WORK A2 |
 | T01 | Seven-coin hourly ladders | crypto hourly | testing (paper) | unknown | ETH SOL XRP DOGE BNB HYPE ladders on indexes we already follow | VERSIONS v-ladder7 |
-| T02 | Polymarket US BTC 15-min/1-h | cross-venue | testing (recorder) | $0-15 est. | same contract, 1/10-1/50 the book, makers paid a rebate | SECOND_INCOME_SCAN s1-2 |
+| T02 | Polymarket US BTC 15-min/1-h | cross-venue | dead (pin) 2026-10-01: 3-day bar STOP, cheap sure offers in 6 of 100 windows (bar 10), paper -$1.63 | $0-15 est. | same contract, 1/10-1/50 the book, makers paid a rebate | SECOND_INCOME_SCAN s1-2 |
 | T03 | Earthquake markets after USGS confirms | science | testing (watcher) | $0-10 | decided market sometimes still below 97c | OPEN_WORK A6 |
 | T04 | Hourly temperature (Kalshi's own index) | weather | testing (watcher) | ~$0 | prediction perfect (240/240) but nobody sells | OPEN_WORK A5 |
 | N01 | Crypto one-touch monthlies | crypto monthly | needs-data | $2-10 | $3,738 bought <=97c in last 10 min before early close, 3 events | SECOND_INCOME_SCAN s1 row 3 |

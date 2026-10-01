@@ -24,7 +24,8 @@
    "what": "Polymarket paper bot after the blindness fix (pid 3747644).",
    "how": "python research/polypaper.py --report results/polypaper-20260928T034725Z.jsonl (BAR line)",
    "bar": "results/POLYMARKET_WHY_NO_TRADES_2026-09-28.md top: STOP if offered <= 98c in < 10/100 windows or prices missing > 5/100; GO to live Step 2 if >= 15/100 with >= 20 contracts typical",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-10-01 03:48Z (11:48 PM ET 09-30): BAR windows 283 | prices missing in 0 | sure side offered at <= 98c in 17 (6.0 in 100) | median 657 contracts. Bar: STOP if offered < 10/100 -> STOP POLYMARKET (pin). Paper P&L over the 3 days: Polymarket 16 entries -$1.63, Kalshi 22 entries +$7.88. CAVEAT, makes it worse not better: the model was >=99.5% sure in 11,113 of 12,169 seconds 45..3 s before close (91 in 100) -- Kalshi's 60-print averaging math applied to a market that may settle on one print is overconfident, so even the 17 is an upper bound. The bot stopped itself (no polypaper process)."
   },
   {
    "id": "seller-gate",
