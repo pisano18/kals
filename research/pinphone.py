@@ -1128,6 +1128,13 @@ def bs_all_text(a):
              % (_cash(bal["main"]), _cash(bal["forecaster"]), _cash(bal["ladder"]), _cash(bal["all"])))
     L.append("The main page (/today /days /stats, the desktop) counts pin + race only. The forecaster and "
              "the ladder are separate pots, added up only here.")
+    # 2026-10-01: the operator saw about -$119 in Kalshi's app while every bot was up. Kalshi's apps do not
+    # support subaccounts (API-only, docs.kalshi.com/getting_started/subaccounts), so the cash moved from the
+    # main account into the two bot pots shows there as money gone.
+    if bal.get("forecaster") is not None and bal.get("ladder") is not None:
+        L.append("Kalshi's own app shows the MAIN account only. The %s sitting in the forecaster and ladder pots "
+                 "was moved out of it, so Kalshi's screens read that much lower than all pots -- not a loss."
+                 % _cash(bal["forecaster"] + bal["ladder"]))
     L.append("")
     for name in bs.BOTS:
         b = a["bots"][name]
@@ -1277,6 +1284,20 @@ class Phone:
             s = Ledger.summary(self.ledger.settled_on(d))
             b0 = self.ledger.bank_at(et_day_start(d))
             out.append("%s  %s (%s)  %d closes, %d lost" % (d[5:], money(s["net"]), pct((s["net"] / b0) if b0 else None), s["closes"], s["lost"]))
+        # 2026-10-01, the operator: "/days doesn't show any recent negative days on this version". A deploy day
+        # mixes two versions (09-30: +$30.45 before v-topup, -$18.77 after, shown as one +$11.68), so the running
+        # version gets its own line -- Kalshi's books, main account, markets closing after its deploy.
+        ver = live_version(self.versions_path)
+        if ver:
+            try:
+                vs = [m for m in self._markets().values() if m["close"] is not None and m["close"] >= ver[1]]
+            except Exception:                                    # noqa: BLE001
+                vs = None
+            if vs is not None:
+                out.append("")
+                out.append("SINCE %s (%s ET): %s, %d markets, %d lost" % (
+                    ver[0], et_str(ver[1], "%m/%d %I:%M %p"), money(sum(m["pnl"] for m in vs)), len(vs),
+                    sum(1 for m in vs if m["pnl"] < -0.004)))
         out.append("")
         out.append(self.summary_line(self.ledger.settled, None, "ALL TIME"))
         return "\n".join(out)
@@ -2368,6 +2389,17 @@ def selftest():
                "the lifetime line splits the account by bot")
             ck("Made $+1.66 on" in _blk["SINCE v-pinfix"] and "1 mkts" in _blk["SINCE v-pinfix"],
                "SINCE the version: only the market that closed after 12:30Z")
+            # this planted world's order rows are /stats-shaped (no "close"), so the per-day loop is stubbed
+            # out; the since-version line reads Kalshi's books through _markets(), which this world has
+            _days0 = ph.ledger.days
+            try:
+                ph.ledger.days = lambda: []
+                _dy = ph.text_days()
+            finally:
+                ph.ledger.days = _days0
+            ck("SINCE v-pinfix (" in _dy and ": $+1.66, 1 markets, 0 lost" in _dy
+               and _dy.index("SINCE v-pinfix") < _dy.index("ALL TIME"),
+               "/days carries the running version's own line (a deploy day mixes two versions), same money as /stats")
 
             # /race
             r = ph.handle(111, "/race")
@@ -2497,6 +2529,8 @@ def selftest():
         ck("Cash: main account $1,000.00 (pin + race share it), forecaster $24.00, ladder $15.10 -- all pots "
            "$1,039.10." in b_ and "counts pin + race only" in b_,
            "the cash of every pot, and HIS QUESTION answered: the main page counts pin + race only")
+        ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster and ladder pots" in b_,
+           "/bots says why Kalshi's app reads lower than all pots: the bot pots' cash (24.00 + 15.10) is outside it")
         ck("PIN BOT (main account): running since Sep 16 7:59 AM ET. v-reopen98 + v-floor90. today -$10.40, "
            "7 days -$9.86, all time -$9.86; open: 1 ($29.10 at risk). /pin" in b_,
            "one line a bot: running since (ET), version, money, open bets, its command")
