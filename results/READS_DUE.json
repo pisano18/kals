@@ -158,7 +158,8 @@
    "what": "Kalshi removes liquidity_dollars on Oct 1: kalshiwatch must warn.",
    "how": "results/kalshiwatch-alerts.jsonl",
    "bar": "an alert naming liquidity_dollars",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-10-01 15:0xZ: PASS. kalshiwatch-alerts.jsonl 2026-10-01T09:19:12Z field_removed WARN: GET /markets (KXBTCD open) has not had 'liquidity_dollars' for two snapshots running; 'The bot does not read it.' No repo code reads liquidity_dollars except kalshiwatch.py itself (grep research/*.py). The watcher also flagged a new 'sending_ts_ms' field on market_lifecycle_v2/determined and a Get Fills docs edit (harmless)."
   },
   {
    "id": "disk",
