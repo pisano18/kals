@@ -60,7 +60,8 @@
    "what": "Pre-registered arm bars: arm-fresh500, arm-early-off, arm-lateadd-off, arm-btcd (twin), live KXBTCD 1-contract.",
    "how": "python research/bars.py (live log restored 09-28; bars.py still groups some arms together -- see TEST_AUDIT_2026-09-28)",
    "bar": "each arm's PREREG file / bars.py text",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-10-01 08:29Z (4:29 AM ET), python research/bars.py: arm-fresh500 EXTEND 7 days (live fresh fills net -$14.81 with 2 losers BTC 09-26 -$131.98, BNB 09-28 -$8.26; the arm has 2 losers live did not). arm-btcd paper bar KILL (19 fired closes, 31 contracts vs >=30 and >=660 needed) -> paper arm-btcd pid 2967156 STOPPED 08:3xZ; live KXBTCD at 1 contract keeps running with no bar (14 markets, 14 won, +$0.66). Control arms (paper vs live on the same markets, PAPER IS OPTIMISTIC -- tape population, not our fills): lateadd-off +$158, live-frozen (09-20 settings) +$120, brake3 +$39, edge2c +$27, afternoon -$82. arm-early-off has no line in bars.py (TEST_AUDIT grouping). The fair test is paper vs the paper twin (live-twin read 10-02)."
   },
   {
    "id": "arm-live-frozen",
