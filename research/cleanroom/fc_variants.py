@@ -84,6 +84,9 @@ VARIANTS = {
     "race1_98_crash15": {"race_x": 1.0, "race_p": 0.98, "crash_gap": 0.15},
     # 2026-10-02 (live record, our own fills): first entries with 30+ s left lost 5 of 14 markets (-$12.73);
     # every later entry lost 4 of 40 (+$16.27). Paper test of skipping the first seconds, on top of the live rule.
+    # what forecaster_live runs from 10-02 (operator: "Apply whatever you know works now"): race1_98 + no first-entry
+    # in the opening 2 s of the window; the crash guard stays the --crash-gap flag.
+    "race1_98_r28": {"race_x": 1.0, "race_p": 0.98, "r_max": 28},
     "race1_98_crash10_r28": {"race_x": 1.0, "race_p": 0.98, "crash_gap": 0.10, "r_max": 28},
     "race1_98_crash10_r25": {"race_x": 1.0, "race_p": 0.98, "crash_gap": 0.10, "r_max": 25},
 }

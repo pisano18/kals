@@ -33,12 +33,12 @@ function Live($like) { @(Get-CimInstance Win32_Process -Filter "Name='python.exe
 # a second copy. So never remove a stop file while boot_all.ps1 is mid-run (it takes ~1 s). Verifier 2026-10-02.
 function BootAlive() { @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*boot_all.ps1*' }).Count -gt 0 }
 
-$fc  = @("-u","research\cleanroom\forecaster_live.py","--subaccount","2","--live","--variant","race1_98","--auto-scale","--crash-gap","0.10","--minutes","10080")
+$fc  = @("-u","research\cleanroom\forecaster_live.py","--subaccount","2","--live","--variant","race1_98_r28","--auto-scale","--crash-gap","0.10","--minutes","10080")
 $lad = @("-u","research\cleanroom\ladder_live.py","--subaccount","1","--live","--auto-size","--minutes","10080")
 
 # the keep-alive lines (boot_all.ps1 section 3e): the OLD argv, and the NEW one that replaces it
 $oldFcLine = 'a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--scale", "0.10", "--crash-gap", "0.10", "--minutes", "10080");'
-$newFcLine = 'a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--auto-scale", "--crash-gap", "0.10", "--minutes", "10080");'
+$newFcLine = 'a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98_r28", "--auto-scale", "--crash-gap", "0.10", "--minutes", "10080");'
 $oldLadLine = 'a = @("-u", "research\cleanroom\ladder_live.py", "--subaccount", "1", "--live", "--size", "5", "--minutes", "10080");'
 $newLadLine = 'a = @("-u", "research\cleanroom\ladder_live.py", "--subaccount", "1", "--live", "--auto-size", "--minutes", "10080");'
 
