@@ -78,7 +78,8 @@
    "what": "Six other coins' hourly ladders, paper.",
    "how": "python research/bars.py",
    "bar": "read after ~7 days (no written bar)",
-   "status": "open"
+   "status": "read",
+   "read_note": "read 2026-10-02 ~08:00Z, 7.18 d (3 logs 09-25T03:06Z..10-02T07:28Z). Six coins paper 1-contract legs: 109 markets / 82 of 171 hourly closes, +$3.09 (ETH 14 mk +$0.77, SOL 25 +$0.88, XRP 9 +$0.34, DOGE 6 +$0.30, BNB 14 +$0.62, HYPE 41 +$0.18 = wins +$1.77 / 1 loss -$1.59 on KXHYPED-26SEP2821 yes@98c x2 hedged no@80c); offers at <=98c on 109 closes (15/day), <=97c on 60 (8/day), typical 97-98c; no sure look at <=98c was refused. XRP+DOGE (15 mk, 24 legs, all won) were NEVER settled by the arm: those markets finalise at close+31 min (settlement_timer_seconds 1800 vs 60) and pinrun.reconcile() gives up at close+900 s via _release() with no record -- scored here from Kalshi /markets results; fix (longer give-up + a record) before any live XRP/DOGE run. KXBTCD in-arm 25 mk -$1.44 (2 losers: SEP2719 yes@94/90c -$1.42; OCT0201 false-alarm hedge yes@64c x2 -$1.16) vs live ledger 15 mk +$0.72, 0 losses; all 15 live markets in paper (paper +$0.83 on them); live refused both losing closes (toxic_fresh/dump_guard/against_thin). 15-min part +$394.60/360 mk, 5 losers -$143.84, h2h vs 09-25 siblings -$74..+$41 on shared markets = size drift; all 5 losers shared with lateadd-off/122556. Verdict: supply exists (~4x hourly BTC, mostly HYPE/SOL) but 1 contract = pennies (~43c/day paper); not a money case; a live 1-contract FILL test on SOL/BNB/ETH only is the most it justifies, and only with sign-off. No bar, no live change. Arm ends 10-02T12:26Z."
   },
   {
    "id": "coinrace-relaunch",
