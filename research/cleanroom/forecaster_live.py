@@ -344,8 +344,10 @@ class Broker:
                 if inc <= 0:
                     why = "cap"
             if why:
+                # 2026-10-02 (crash-guard read): a refusal carries the best ask it saw, so the next read has a
+                # floor for "how far under the price the offer had collapsed" instead of a typical 11c.
                 self.log.write("refused", ticker=ticker, side=side, px=px, paper_k=paper_k, rel=rel, why=why,
-                               **({"hedge": True} if hedge else {}))
+                               best_ask=best_ask, **({"hedge": True} if hedge else {}))
                 return 0
             v["asked"] += inc
             v["inflight"] = inc
@@ -792,6 +794,8 @@ def selftest():
         ck(brc.want("CG1", 7930, "yes", 0.80, 100, best_ask=0.60) == 0
            and any(r["ev"] == "refused" and r["why"] == "crash" for r in sink),
            "crash guard 10c: best ask 60c under an 80c order -> skipped (why=crash)")
+        ck(any(r["ev"] == "refused" and r["why"] == "crash" and r.get("best_ask") == 0.60 for r in sink),
+           "a crash refusal records the best ask it saw (0.60), so the collapse size has a floor in the read")
         ck(brc.want("CG2", 8830, "yes", 0.80, 100, best_ask=0.75) == 5, "crash guard 10c: best ask 75c (5c under) -> sent")
         run(brc)
         ck(brc.want("CG3", 9730, "yes", 0.80, 100, best_ask=None) == 5, "crash guard: an unknown best ask never refuses")
