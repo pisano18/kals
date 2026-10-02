@@ -471,8 +471,8 @@ if (-not $NoArms) {
 # (subaccount 1) -- each runs its own self-test, subaccount-balance rail and stop-file check before trading.
 # A results\<name>.stop file means STOOD DOWN: never started while it exists (the bots exit when they see it,
 # so a restart needs the file deleted). THE ARGV HERE IS THE DEPLOYED VERSION -- change it only with a
-# VERSIONS.md entry (v-forecaster-race1, v-ladder-top). PAPER: the clean-room paper bots and both
-# forecaster-variant side-by-side runs, so their tests survive a reboot.
+# VERSIONS.md entry (v-forecaster-race1, v-ladder-top). PAPER: the clean-room paper bots and the three
+# forecaster-variant side-by-side runs (main, quiet, crash-guard), so their tests survive a reboot.
 $cleanroom = @(
     @{ n = "forecaster_live (LIVE, subaccount 2)"; like = "*forecaster_live.py*--live*"; unlike = ""; stop = "$res\forecaster-live.stop";
        a = @("-u", "research\cleanroom\forecaster_live.py", "--subaccount", "2", "--live", "--variant", "race1_98", "--scale", "0.10", "--crash-gap", "0.10", "--minutes", "10080");
@@ -489,16 +489,21 @@ $cleanroom = @(
     @{ n = "ladder paper"; like = "*locked_average_ladder_re_paper.py*"; unlike = ""; stop = "";
        a = @("-u", "research\cleanroom\locked_average_ladder_re_paper.py", "--minutes", "10080");
        o = "$res\cleanroom-ladder-stdout.log"; e = "$res\cleanroom-ladder-stderr.log" },
-    @{ n = "forecaster variants paper"; like = "*fc_variants_paper.py*"; unlike = "*fcvar-paper-quiet*"; stop = "";
+    @{ n = "forecaster variants paper"; like = "*fc_variants_paper.py*"; unlike = @("*fcvar-paper-quiet*", "*fcvar-paper-crash*"); stop = "";
        a = @("-u", "research\cleanroom\fc_variants_paper.py", "--minutes", "10080");
        o = "$res\fcvar-paper-stdout.log"; e = "$res\fcvar-paper-stderr.log" },
     @{ n = "forecaster variants paper (quiet run)"; like = "*fc_variants_paper.py*fcvar-paper-quiet*"; unlike = ""; stop = "";
        a = @("-u", "research\cleanroom\fc_variants_paper.py", "--variants", "base,quiet2x,race05_98_quiet2x,race05_98", "--log", "$res\fcvar-paper-quiet.jsonl", "--minutes", "10080");
-       o = "$res\fcvar-paper-quiet-stdout.log"; e = "$res\fcvar-paper-quiet-stderr.log" }
+       o = "$res\fcvar-paper-quiet-stdout.log"; e = "$res\fcvar-paper-quiet-stderr.log" },
+    # 2026-10-02: the live crash guard on paper -- race1_98 with and without it, gaps 5/10/15c (READS_DUE fcvar-crash-paper)
+    @{ n = "forecaster variants paper (crash-guard run)"; like = "*fc_variants_paper.py*fcvar-paper-crash*"; unlike = ""; stop = "";
+       a = @("-u", "research\cleanroom\fc_variants_paper.py", "--variants", "base,race1_98,crash10,race1_98_crash05,race1_98_crash10,race1_98_crash15", "--log", "$res\fcvar-paper-crash.jsonl", "--minutes", "10080");
+       o = "$res\fcvar-paper-crash-stdout.log"; e = "$res\fcvar-paper-crash-stderr.log" }
 )
 foreach ($c in $cleanroom) {
-    $up = @($procs | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like $c.like -and
-                                    (-not $c.unlike -or $_.CommandLine -notlike $c.unlike) }).Count -gt 0
+    # unlike: one pattern or a list; a process matching ANY of them is not this entry
+    $up = @($procs | Where-Object { $cl = $_.CommandLine; $_.Name -eq 'python.exe' -and $cl -like $c.like -and
+                                    -not @(@($c.unlike) | Where-Object { $_ -and $cl -like $_ }).Count }).Count -gt 0
     if ($up) { continue }
     if ($c.stop -and (Test-Path $c.stop)) { Say "$($c.n) is stood down ($($c.stop) exists) -- not starting it"; continue }
     if ($blind -gt 0) { Say "$($c.n) not visible and $blind python process(es) are blind -- not starting it"; continue }

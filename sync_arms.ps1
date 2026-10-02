@@ -170,7 +170,14 @@ $arms = @(
   # follows (ETH SOL XRP DOGE BNB HYPE beside BTC), paper only, 1 contract a rung.
   # Live keeps `--series KXBTCD` only; this arm swaps that group for all seven.
   # Question: do the other coins' hourly books fill us the way BTC's do?
-  @{ n="arm-hourly-all";    drop=@("--series");          add=@("--series","KXBTCD","KXETHD","KXSOLD","KXXRPD","KXDOGED","KXBNBD","KXHYPED") }
+  @{ n="arm-hourly-all";    drop=@("--series");          add=@("--series","KXBTCD","KXETHD","KXSOLD","KXXRPD","KXDOGED","KXBNBD","KXHYPED") },
+  # 2026-10-02 (F20, IDEA_LEDGER; READS_DUE lockfix-paper, due 10-06 12:00Z):
+  # arm-live-twin's settings (live minus --live, no loss stops: --max-losses
+  # is stripped above and its default 0 disables it, --loss-abort -100000)
+  # PLUS --early-price-free-tries -- an early_dear/early_cheap refusal on the
+  # 45-s leg no longer uses up the coin's 3 tries, so a coin at 97.9-98c out
+  # there can still be bought inside 30 s. Seller-gate refusals still use a try.
+  @{ n="arm-lockfix";       drop=@("--loss-abort");      add=@("--loss-abort","-100000","--early-price-free-tries") }
   # arm-farrung (v-farrung flags) RETIRED 2026-09-25 06:3xZ: the far-rung idea is dead
   # (FAR_RUNG_2026-09-25 verdict: 0 safe-side supply at $150+ in 68 closes).
 )
@@ -301,6 +308,13 @@ foreach ($p in $procs) {
     if ($cl -like '*--live*' -or $cl -like '*pinvin_*') { continue }
     # a FROZEN arm is never stale -- not moving is its job
     if ($cl -like '*--arm-name arm-friday*' -or $cl -like '*--arm-name arm-live-frozen*') { continue }
+    # 2026-10-02: arm-live-twin (pid 4228512 at writing) carries NO --arm-name
+    # -- it is "the live argv exactly, minus --live, with no loss stops" -- so
+    # the sweep would retire it as unnamed, and with it the control that
+    # arm-lockfix's read (READS_DUE lockfix-paper) and the 10-01 twin-vs-live
+    # comparisons are measured against. Matched by its two no-stop values.
+    if ($cl -notlike '*--arm-name*' -and $cl -like '*--max-losses 1000*' -and
+        $cl -like '*--loss-abort -100000*') { continue }
     $isKeeper = $false
     foreach ($k in $keep) { if ($cl -like "*--arm-name $k*") { $isKeeper = $true; break } }
     if (-not $isKeeper) { $stale += $p }

@@ -1,3 +1,15 @@
+# v-lockfix-code -- 2026-10-02 06:03Z -- CODE ON DISK, FLAG OFF (F20; research/pinrun.py `--early-price-free-tries`, on-disk code_sha bc5a3f43e2c5, base commit 0ea3dcd): with the flag ON, an early-leg refusal for PRICE (early_cheap / early_dear) gives back the try it was charged (both counters), so a coin at 97.9-98c at 31-45 s is no longer locked out (market_attempts) of the <= 30 s window. The live command line is unchanged, so the live bot does nothing new; its self-restart ~2026-10-03 12:12Z merely loads this code.
+
+Evidence: pinrun self-test 1287 ok / 0 FAIL plain, under the live argv, and under the live argv plus the flag
+(re-run by the verifier 2026-10-02 ~06:20Z). The self-test reproduces the 10-01 lockout with the flag off, buys
+one 98c order at 25 s with it on, and shows toxic_fresh (the seller gate) still spending tries. Paper: arm-lockfix
+pid 4039624, READS_DUE lockfix-paper (read 2026-10-06 12:00Z). Turning it on live needs that read's GO and its
+own entry (`v-lockfix`).
+
+**REVERT (code only; valid while no later commit touches pinrun.py):** `git checkout 0ea3dcd -- research/pinrun.py` -- then, only if live has already restarted onto this code, `powershell -NoProfile -ExecutionPolicy Bypass -File C:/kals-repo/restart_bot.ps1`.
+
+---
+
 # v-topup -- LIVE 2026-09-30 12:12:02Z (pid 4447780, code_sha b34346497c63, restart_bot.ps1; research/pinrun.py _stage46) -- under --one-full-bet a second full-leg order on the side already held is a TOP-UP: it completes the position to SIZE x the band / doubt / late multiple (the same target an early-leg top-up gets) and no further. It never caps a re-buy into the OTHER side (a hedge).
 
 Why (READS_DUE 'topup-leak'): a small first fill followed by a full-size top-up held 1.2-1.6 bets on one coin

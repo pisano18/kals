@@ -896,20 +896,30 @@ def _ago(s):
     return "%.1f h ago" % (s / 3600.0)
 
 
-def bs_window_line(w, label, unit="market", fmt=None):
-    """'Today: +$1.62 on $59.54 put in (+2.7%); 2 markets, 2 won, 0 lost'. None = Kalshi unread."""
+def bs_window_line(w, label, unit="market", fmt=None, whose="its pot"):
+    """'Today: +$1.62 on $59.54 put in (+2.7%) = +0.15% of its pot ($1,100.00); 2 markets, 2 won, 0 lost'.
+    The first % is the return on what the bets cost; the second (2026-10-02) is the share of the pot
+    it had when the window began -- all time: of the money put in -- and is left out when the pot is
+    unknown, never guessed. None = Kalshi unread."""
     fmt = fmt or _bs().usd
     if w is None:
         return "%s: COULD NOT READ KALSHI" % label
     if not w["markets"]:
         return "%s: nothing settled yet" % label
-    return "%s: %s on %s put in (%s); %s, %s won, %s lost" % (
-        label, fmt(w["money"]), _cash(w["put_in"]), _bs().pct(w["return_pct"]),
+    pw = _bs().pot_words(w, whose)
+    return "%s: %s on %s put in (%s)%s; %s, %s won, %s lost" % (
+        label, fmt(w["money"]), _cash(w["put_in"]), _bs().pct(w["return_pct"]), (" = " + pw) if pw else "",
         _nof(w["markets"], unit), _cnt(w["won"]), _cnt(w["lost"]))
 
 
 def _short(w, fmt):
-    return "?" if w is None else ("nothing yet" if not w["markets"] else fmt(w["money"]))
+    """'+$2.63 (+0.24%)' -- the money and, when its pot is known, its share of the pot."""
+    if w is None:
+        return "?"
+    if not w["markets"]:
+        return "nothing yet"
+    p = w.get("pot_pct")
+    return fmt(w["money"]) + ((" (%s)" % _bs().pot_pct_txt(p)) if p is not None else "")
 
 
 def bs_running_lines(r):
@@ -965,6 +975,9 @@ def bs_money_lines(m, unit="market", fmt=None):
         if k in ("last_7_days", "all_time") and w and w["active_days"] > 1:
             line += "; %s up, %d down" % (_nof(w["days_up"], "day"), w["days_down"])
         L.append(line)
+    note = bs._pot_note(m)                  # what '% of its pot' means, or why it is not shown
+    if note:
+        L.append(note)
     at = m["all_time"]
     if at and not at["markets"]:
         L.append("Nothing settled yet on Kalshi for this bot.")
@@ -1092,7 +1105,9 @@ def bs_all_text(a):
     bs = _bs()
     fmt = bs.usd
     L = ["ALL BOTS -- %s" % a["as_of_et"],
-         "Money from Kalshi, every pot; a market counts on the ET day it closed."]
+         "Money from Kalshi, every pot; a market counts on the ET day it closed.",
+         "The % after '=' or in brackets = share of the pot when the window began (its cash + open bets; "
+         "pin and race share the main account). All time = share of the money put in."]
     anything = False
     for k in BS_WINDOWS:
         t = a["total"][k]
@@ -1100,12 +1115,14 @@ def bs_all_text(a):
         if t["partial"] and not t["markets"]:
             L.append("%s: unknown -- Kalshi could not be read" % label)          # never "nothing settled"
             continue
-        L.append(bs_window_line(t, label, "market", fmt))
+        L.append(bs_window_line(t, label, "market", fmt, "all pots"))
         if t["markets"]:
             anything = True
-            L.append("  " + " | ".join("%s %s" % (b, fmt(v) if t["by_bot_markets"].get(b) else "none")
-                                       for b, v in t["by_bot"].items()
-                                       if b != "other" or t["by_bot_markets"].get(b)))
+            pp = t.get("by_bot_pot_pct") or {}
+            L.append("  " + " | ".join(
+                "%s %s" % (b, (fmt(v) + ((" (%s)" % bs.pot_pct_txt(pp[b])) if pp.get(b) is not None else ""))
+                           if t["by_bot_markets"].get(b) else "none")
+                for b, v in t["by_bot"].items() if b != "other" or t["by_bot_markets"].get(b)))
     miss = a["total"]["all_time"]["missing"]
     if miss:
         L.append("PARTIAL: these totals leave out %s -- Kalshi could not be read for %s."
@@ -1164,6 +1181,12 @@ def bs_all_text(a):
             fmt(w["money"]), _nof(w["markets"], "market"), fmt(w["worst"]["money"]), w["worst"]["what"],
             bs.day_label(w["worst"]["day"])))
     L += bs_errors_line(a["errors"])
+    L += bs.pot_check_lines(a.get("pot_check"))     # a pot Kalshi's own books do not explain
+    if all(a["total"][k].get("pot_pct") is None for k in BS_WINDOWS if a["total"][k]["markets"]) \
+            and any(a["total"][k]["markets"] for k in BS_WINDOWS):
+        why = next((a["total"][k].get("pot_why") for k in BS_WINDOWS if a["total"][k].get("pot_why")), None)
+        if why:
+            L.append("%% of the pots: not shown -- %s." % why)
     return "\n".join(L)
 
 
@@ -2004,10 +2027,39 @@ def selftest():
         _bs_mode = {"m": "planted"}
         _bs_asked = []
 
+        # The account's books (2026-10-02, the pot percentages). Planted so every pot RECONCILES: cash +
+        # open bets = money put in + every settled market (main 1048.70 = 1062.70 - 14.00; ladder 15.10 =
+        # 15.06 + 0.042; forecaster 24.00 = 25.99 - 1.9928), so no pot-check warning is due.
+        def _T(s):
+            return calendar.timegm(time.strptime(s, "%Y-%m-%dT%H:%M:%SZ"))
+        _bs_books = {
+            "transfers": [{"amount_cents": 2000, "created_ts": _T("2026-09-14T12:00:00Z"), "from_subaccount": 0,
+                           "to_subaccount": 2},                                   # $20 main -> forecaster
+                          {"amount_cents": 200, "created_ts": _T("2026-09-15T20:00:00Z"), "from_subaccount": 2,
+                           "to_subaccount": 0},                                   # $2 back, 4 PM ET Sep 15
+                          {"amount_cents": 1506, "created_ts": _T("2026-09-16T13:00:00Z"), "from_subaccount": 0,
+                           "to_subaccount": 1},                                   # $15.06 -> ladder, 9 AM today
+                          {"amount_cents": 799, "created_ts": _T("2026-09-16T13:30:00Z"), "from_subaccount": 0,
+                           "to_subaccount": 2}],                                  # $7.99 -> forecaster today
+            "deposits": [{"amount_cents": 100575, "fee_cents": 0, "status": "applied",
+                          "finalized_ts": _T("2026-09-01T12:00:00Z")},
+                         {"amount_cents": 10000, "fee_cents": 200, "status": "applied",   # $98 after the fee,
+                          "finalized_ts": _T("2026-09-15T14:00:00Z")}],                   # 10 AM ET yesterday
+            "withdrawals": [],
+            "subaccount_balances": [{"subaccount_number": 0, "exchange_index": 0, "balance": "0.0000"},
+                                    {"subaccount_number": 0, "exchange_index": 2, "balance": "1000.0000"},
+                                    {"subaccount_number": 1, "exchange_index": 2, "balance": "15.1000"},
+                                    {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"}]}
+
         def _bs_fake(path, q):
             _bs_asked.append((path, dict(q or {})))
             if _bs_mode["m"] == "down":
                 return 401, {"error": "unauthorized"}
+            for _lp, _lk, _pg in _bsm.LEDGERS:
+                if path == _lp:
+                    if _bs_mode["m"] == "noledger":
+                        return 404, {}
+                    return 200, {_lk: [] if _bs_mode["m"] == "empty" else _bs_books[_lk], "cursor": ""}
             sub, empty = str((q or {}).get("subaccount")), _bs_mode["m"] == "empty"
             if path == "/portfolio/settlements":
                 return 200, {"settlements": [] if empty else _bs_world.get(sub, []), "cursor": ""}
@@ -2487,10 +2539,10 @@ def selftest():
         ck(not _bad and len(_nsrc) > 5000,
            "the new commands' code holds no order, cancel, transfer or process-control call (found: %s)" % _bad)
         _nb = len(_bs_asked)
-        ck(_nb > 0 and all(q.get("subaccount") in ("0", "1", "2") for _p, q in _bs_asked)
+        ck(_nb > 0 and all(q.get("subaccount") in ("0", "1", "2") for _p, q in _bs_asked if _p in _bsm.POT_PATHS)
            and set(_p for _p, _q in _bs_asked) <= set(_bsm.PATHS),
-           "every Kalshi read the phone caused (%d, all from /race above) names its subaccount and is one of "
-           "botstats' three read paths -- with no subaccount, settlements mix every pot" % _nb)
+           "every Kalshi read the phone caused (%d, all from /race above) is one of botstats' read paths, and "
+           "every per-pot one names its subaccount -- with none, settlements mix every pot" % _nb)
         # the pin version: joined names and 'LIVE <date>' headers, and the SAME pick as botstats
         _vp = os.path.join(_bsdir, "VERSIONS.md")
         ck([v[0] for v in versions(_vp)] == ["v-ladder-settlefix", "v-keepalive-cleanroom", "v-forecaster-race1",
@@ -2512,16 +2564,30 @@ def selftest():
         # /bots on the planted world
         b_ = ph.handle(111, "/bots")
         ck(b_.startswith("ALL BOTS -- Sep 16 11:00 AM ET"), "/bots: header in ET")
-        ck("Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
-           "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04" in b_,
+        # THE POT (2026-10-02), worked by hand. Now: main 1000 + open 29.10 + 19.60 = 1048.70; ladder
+        # 15.10; forecaster 24.00; all 1087.80. TODAY: main settled -10.03, moved out 15.06 + 7.99 ->
+        # 1048.70 + 10.03 + 23.05 = 1081.78 (pin -10.40 = -0.96%, race +0.37 = +0.03%); forecaster
+        # 24 + 2.54 - 7.99 = 18.55 at midnight, + the 7.99 moved in = 26.54 (-9.6%); ladder ~0 at
+        # midnight + 15.06 moved in = 15.06 (+0.28%); all 1087.80 + 12.528 = 1100.33 (-1.1%).
+        # YESTERDAY: main 1048.70 + 14.00 - 76.95 = 985.75 at the start + 98 deposit + 2 back = 1085.75
+        # (pin +0.05%, other -0.42%); forecaster 24 + 1.9928 - 5.99 = 20.00 (+2.7%); all 1103.75 (-0.31%).
+        ck("Today: -$12.53 on $123.81 put in (-10.1%) = -1.1% of all pots ($1,100.33); 5 markets, 3 won, 2 lost\n"
+           "  pin -$10.40 (-0.96%) | race +$0.37 (+0.03%) | forecaster -$2.54 (-9.6%) | ladder +$0.04 (+0.28%)"
+           in b_,
            "/bots TODAY is all four pots: -10.40 + 0.37 - 2.54 + 0.042 = -12.53 on 99.80 + 19.60 + 2.45 + 1.958 "
-           "put in, each bot's share listed")
-        ck("Yesterday: -$3.42 on $36.32 put in (-9.4%); 3 markets, 2 won, 1 lost\n"
-           "  pin +$0.54 | race none | forecaster +$0.55 | ladder none | other -$4.51" in b_,
+           "put in = -1.1% of the $1,100.33 all pots held at midnight; each bot's share of ITS OWN pot listed")
+        ck("Yesterday: -$3.42 on $36.32 put in (-9.4%) = -0.31% of all pots ($1,103.75); 3 markets, 2 won, 1 lost\n"
+           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.7%) | ladder none | other -$4.51 (-0.42%)"
+           in b_,
            "YESTERDAY: the SOL and XRP markets that closed before midnight ET count on Sep 15 though Kalshi "
-           "settled them on the 16th (UTC); the oil market that is no bot's is shown as `other`")
-        ck("All time: -$15.95 on $160.13 put in (-10.0%); 8 markets, 5 won, 3 lost" in b_,
-           "ALL TIME: every settlement in every pot, each once")
+           "settled them on the 16th (UTC); the oil market that is no bot's is shown as `other`; the $98 "
+           "deposit made during the day is part of the pot")
+        ck("All time: -$15.95 on $160.13 put in (-10.0%) = -1.4" in b_
+           and "% on money put in ($1,103.75); 8 markets, 5 won, 3 lost" in b_,
+           "ALL TIME: every settlement in every pot, each once; as a share of the $1,103.75 deposited after fees")
+        ck("The % after '=' or in brackets = share of the pot when the window began" in b_
+           and "Kalshi's books explain" not in b_,
+           "/bots says once what the percentages are; every planted pot reconciles, so no pot warning")
         ck("  Sep 16: -$12.53, 5 markets (pin -$10.40, race +$0.37, forecaster -$2.54, ladder +$0.04)" in b_
            and "  Sep 15: -$3.42, 3 markets (pin +$0.54, forecaster +$0.55, other -$4.51)" in b_
            and "Sep 14" not in b_,
@@ -2531,9 +2597,9 @@ def selftest():
            "the cash of every pot, and HIS QUESTION answered: the main page counts pin + race only")
         ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster and ladder pots" in b_,
            "/bots says why Kalshi's app reads lower than all pots: the bot pots' cash (24.00 + 15.10) is outside it")
-        ck("PIN BOT (main account): running since Sep 16 7:59 AM ET. v-reopen98 + v-floor90. today -$10.40, "
-           "7 days -$9.86, all time -$9.86; open: 1 ($29.10 at risk). /pin" in b_,
-           "one line a bot: running since (ET), version, money, open bets, its command")
+        ck("PIN BOT (main account): running since Sep 16 7:59 AM ET. v-reopen98 + v-floor90. today -$10.40 "
+           "(-0.96%), 7 days -$9.86 (-0.93%), all time -$9.86 (-0.93%); open: 1 ($29.10 at risk). /pin" in b_,
+           "one line a bot: running since (ET), version, money with its share of the pot, open bets, its command")
         ck("PENNY LADDER (subaccount 1): STOPPED by its stop file" in b_
            and "FORECASTER (subaccount 2): running since Sep 16 8:34 AM ET. v-forecaster-race1." in b_
            and "COIN RACE (main account): running since Sep 15 10:49 PM ET. v-race20." in b_,
@@ -2550,12 +2616,19 @@ def selftest():
                 ("Settings: halts after 2 losing bets.", "its settings from its command line"),
                 ("Keep-alive: watch_bot.ps1 restarts it", "what restarts it"),
                 ("MONEY -- Kalshi settlements, main account, read Sep 16 11:00 AM ET;", "where the money comes from"),
-                ("Today: -$10.40 on $99.80 put in (-10.4%); 2 markets, 1 won, 1 lost",
-                 "today: the both-sides ETH market pays its winning YES side (-$11.30, not -$51.30)"),
-                ("Yesterday: +$0.54 on $29.40 put in (+1.8%); 1 market, 1 won, 0 lost", "yesterday"),
-                ("Last 7 days: -$9.86 on $129.20 put in (-7.6%); 3 markets, 2 won, 1 lost; 1 day up, 1 down",
-                 "7 days, with days up and down"),
-                ("All time (since Sep 15): -$9.86 on $129.20 put in (-7.6%)", "all time, since its first day"),
+                ("Today: -$10.40 on $99.80 put in (-10.4%) = -0.96% of its pot ($1,081.78); 2 markets, 1 won, 1 lost",
+                 "today: the both-sides ETH market pays its winning YES side (-$11.30, not -$51.30); -0.96% of the "
+                 "main pot at midnight ET"),
+                ("Yesterday: +$0.54 on $29.40 put in (+1.8%) = +0.05% of its pot ($1,085.75); 1 market, 1 won, 0 lost",
+                 "yesterday"),
+                ("Last 7 days: -$9.86 on $129.20 put in (-7.6%) = -0.93% of its pot ($1,062.70); 3 markets, 2 won, "
+                 "1 lost; 1 day up, 1 down", "7 days, with days up and down"),
+                ("All time (since Sep 15): -$9.86 on $129.20 put in (-7.6%) = -0.93% on money put in ($1,062.70)",
+                 "all time, since its first day, of the main account's money put in (1103.75 deposited - 41.05 "
+                 "moved to the bot pots)"),
+                ("% of its pot = of what the pot held when the window began (cash + open bets, + any money moved in "
+                 "during it); all time = of the money put in -- the pot is the whole main account, shared with the "
+                 "coin race.", "what the percentages are, and that pin's pot is shared"),
                 ("Worst market today: -$11.30 ETH 9:45 AM; best +$0.90 BTC 10:30 AM.", "worst and best today"),
                 ("Worst market all time: -$11.30 ETH 9:45 AM (Sep 16); best +$0.90 BTC 10:30 AM (Sep 16).",
                  "worst and best all time, with the day"),
@@ -2583,8 +2656,11 @@ def selftest():
                 ("Version: v-forecaster-race1, live since Sep 16 8:35 AM ET.", "its version, not the keep-alive entry"),
                 ("Settings: variant race1_98; 5% of paper size; up to 5 a side, 20 a quarter-hour; at most $22.00 in "
                  "play; buys 75c to 98.5c; stops the day at -$12.00, the run at -$20.00.", "its rails from its start record"),
-                ("Today: -$2.54 on $2.45 put in (-103.7%); 1 market, 0 won, 1 lost", "subaccount 2's money today"),
-                ("Yesterday: +$0.55 on $2.42 put in (+22.6%); 1 market, 1 won, 0 lost", "and yesterday"),
+                ("Today: -$2.54 on $2.45 put in (-103.7%) = -9.6% of its pot ($26.54); 1 market, 0 won, 1 lost",
+                 "subaccount 2's money today: -$2.54 is -9.6% of the $26.54 it had (18.55 at midnight + 7.99 moved in)"),
+                ("Yesterday: +$0.55 on $2.42 put in (+22.6%) = +2.7% of its pot ($20.00); 1 market, 1 won, 0 lost",
+                 "and yesterday"),
+                ("= -7.7% on money put in ($25.99)", "all time: of the 20 - 2 + 7.99 moved into its pot"),
                 ("Cash: $24.00 -- its own pot (subaccount 2).", "its own cash"),
                 ("1 order sent, 1 filled (5 contracts).", "what its log did today"),
                 ("  Refused 1 time: order already in flight 1.", "its refusals in words")):
@@ -2594,7 +2670,7 @@ def selftest():
         ck("Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
            and "stopped on its own" not in l_,
            "/ladder: NOT running, and WHY -- its stop file, with what the file says")
-        ck("Today: +$0.04 on $1.96 put in (+2.1%); 1 market, 1 won, 0 lost" in l_
+        ck("Today: +$0.04 on $1.96 put in (+2.1%) = +0.28% of its pot ($15.06); 1 market, 1 won, 0 lost" in l_
            and "Cash: $15.10 -- its own pot (subaccount 1)." in l_
            and "Version: v-ladder-settlefix, live since Sep 16 9:16 AM ET." in l_,
            "/ladder: subaccount 1's money, cash and version")
@@ -2603,9 +2679,11 @@ def selftest():
         ck(r_.startswith("COIN RACE  ") and "Last 10 races (Kalshi's books):" in r_ and "Paper race arms running:" in r_,
            "/race still says everything it said before")
         ck("MONEY -- Kalshi settlements, main account, read Sep 16 11:00 AM ET; a leg counts on the ET day it closed:"
-           in r_ and "Today: $+0.37 on $19.60 put in (+1.9%); 1 leg, 1 won, 0 lost" in r_
-           and "All time (since Sep 16): $+0.37 on $19.60 put in (+1.9%); 1 leg, 1 won, 0 lost" in r_,
-           "/race adds the race's money by window, in /race's own money style, legs not races")
+           in r_ and "Today: $+0.37 on $19.60 put in (+1.9%) = +0.03% of its pot ($1,081.78); 1 leg, 1 won, 0 lost"
+           in r_ and "All time (since Sep 16): $+0.37 on $19.60 put in (+1.9%) = +0.03% on money put in ($1,062.70); "
+           "1 leg, 1 won, 0 lost" in r_,
+           "/race adds the race's money by window, in /race's own money style, legs not races, each a share of "
+           "the main pot it shares with pin")
         ck(r_.index("Paper race arms running:") < r_.index("MONEY -- Kalshi settlements"),
            "...AFTER what /race already said")
         ck("Version: v-race20, live since Sep 15 10:50 PM ET." in r_
@@ -2613,9 +2691,23 @@ def selftest():
            and "Open now: 1 leg, $19.60 at risk:\n  race SOL 11:00 AM YES x20, $19.60 at risk" in r_
            and "Cash: $1,000.00 -- shared: the pin bot's cash sits in the same pot." in r_,
            "/race: its version, that nothing restarts it, the leg Kalshi holds open, the shared cash")
-        ck(all(q.get("subaccount") in ("0", "1", "2") for _p, q in _bs_asked)
+        ck(all(q.get("subaccount") in ("0", "1", "2") for _p, q in _bs_asked if _p in _bsm.POT_PATHS)
            and set(_p for _p, _q in _bs_asked) <= set(_bsm.PATHS),
-           "still every Kalshi read names its subaccount and is a read path")
+           "still every per-pot Kalshi read names its subaccount and every read is a read path")
+
+        # NULL (2026-10-02): the account's books unreadable -> the money stands, NO pot %, and the reason
+        _bs_sandbox("botstats-noledger")
+        _bs_mode["m"] = "noledger"
+        n_, nb_ = ph.handle(111, "/pin"), ph.handle(111, "/bots")
+        ck("Today: -$10.40 on $99.80 put in (-10.4%); 2 markets, 1 won, 1 lost" in n_
+           and "of its pot (" not in n_ and "on money put in" not in n_
+           and "% of its pot: not shown -- transfers read failed (HTTP 404)." in n_
+           and "Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
+               "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04\n" in nb_
+           and "today -$10.40, 7 days -$9.86, all time -$9.86;" in nb_
+           and "% of the pots: not shown -- main account: transfers read failed (HTTP 404)." in nb_,
+           "NULL: the deposit/transfer listings unreadable -> every dollar figure still shown, NO percentage of "
+           "any pot anywhere (never a guessed base), and the reason said once")
 
         # EMPTY: nothing settled, nothing open, nothing running, no logs
         _bs_sandbox("botstats-empty")

@@ -3912,6 +3912,25 @@ EV_FLOOR = 0.003         # dollars per contract required IN EXPECTATION
 # `attempts[close_s]` exactly where they do today -- neither is touched.
 _DEFAULT_ATTEMPTS_ON_SEND = False
 ATTEMPTS_ON_SEND = False
+# ---- F20 (2026-10-02): --early-price-free-tries, the NARROW R1 ----------
+# Confirmed 10-01 on results/pinrun-live-20260930T121206Z.jsonl: 13 markets
+# refused `early_dear` (45-s leg at 98c, above --early-max-price 0.978) and
+# then `market_attempts` in the SAME SECOND, never ordered -- the three looks
+# that burned the coin's tries were all early-price refusals, so the coin was
+# locked out of the <= 30 s window where 98c is allowed. 33 coins in 2.9 days.
+#
+# With this flag ON, a refusal by `early_cheap` or `early_dear` on the early
+# leg GIVES BACK the try it was charged at the signal point -- BOTH counters,
+# per-market and per-close, for R1's own reason: release only the per-market
+# one and the coin reaches the signal point at 20 Hz and runs the close into
+# `attempts_cap`. EVERY OTHER REFUSAL STILL CONSUMES ITS TRY, the seller gate
+# (`toxic_fresh`) above all -- which is why this is a separate flag and not
+# --attempts-on-send, which would release the seller-gate lockouts too.
+# DEFAULT OFF: an unflagged process (the live bot) is unchanged. Under
+# --attempts-on-send there is nothing to give back (no try was charged), so
+# the refund is skipped and the two flags compose.
+_DEFAULT_EARLY_PRICE_FREE_TRIES = False
+EARLY_PRICE_FREE_TRIES = False
 MAX_ATTEMPTS_PER_MARKET = 3  # AMENDMENT 26 (2026-09-14): orders SENT into ONE
 _DEFAULT_MAX_ATTEMPTS_PER_MARKET = 3   # market in one close, filled or not.
                              # THIS is what the 160-order runaway actually
@@ -4901,7 +4920,7 @@ def _fill_all(body, n):
 # self-test compares this tuple against main()'s source, so a new flag that
 # is not listed here fails the plain --selftest, not a live start.
 _OFFLINE_PINNED_FLAGS = (
-    "ATTEMPTS_ON_SEND",
+    "ATTEMPTS_ON_SEND", "EARLY_PRICE_FREE_TRIES",
     "DOUBT_MULT", "DOUBT_UNDER",
     "BAND_MULTS", "BANK_BRAKE", "DEPTH_LADDER", "DUMP_ENABLED", "EARLY_FRAC", "EDGE_FLOOR", "FRESH_MIN_AGE_MS", "FRESH_TAU_MIN",
     "EARLY_MAX_EDGE", "EARLY_MAX_PRICE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
@@ -5358,7 +5377,8 @@ _FLAG_GLOBALS = ("LATE_EXTRA_TAU", "LATE_EXTRA", "LATE_TAU", "LATE_MULT",
                  "EARLY_MAX_EDGE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
                  "EARLY_FRAC", "BANK_BRAKE", "SIGMA_STRESS", "FLIP_MULT",
                  "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC",
-                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER", "ONE_FULL_BET")
+                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER", "ONE_FULL_BET",
+                 "EARLY_PRICE_FREE_TRIES")
 
 
 def _selftest_body():
@@ -12552,6 +12572,169 @@ def _selftest_body():
        % (len(_r1sent), len(set(t for t, _w, _n in _r1sent)),
           _r1cap_ac[0].get("tried") if _r1cap_ac else None))
 
+    # ---- F20 (2026-10-02): --early-price-free-tries, the NARROW R1 -----
+    # The 10-01 live bug, driven through the real loop: a coin offered at
+    # 98c through the 45-s leg (over the 0.978 early cap -> early_dear), at
+    # 99c from 30 s to 26 s (over the 98c ceiling, refused BEFORE the signal
+    # point, so it costs no try either way) and at 98c from 25 s, where the
+    # full leg may buy it. Revert-proved 2026-10-02 on copies of this file:
+    # with no give-back the ON world is the OFF world; with only the
+    # per-market counter given back the ON world buys NOTHING (attempts_cap)
+    # and the innocent coin gets zero signals.
+    ck(_DEFAULT_EARLY_PRICE_FREE_TRIES is False,
+       "F20 ships OFF -- asserted against the DECLARED default, never the "
+       "running value, so arm-lockfix passes its own startup gate and the "
+       "live argv's decisions are unchanged")
+    _f20f = {"EARLY_TAU_MAX": 45, "EARLY_FRAC": 0.333,
+             "EARLY_MIN_PRICE": 0.90, "EARLY_MAX_PRICE": 0.978}
+
+    def _f20_mkt(n, early_nb, late_nb, gap_nb=0.01):
+        def _bk(t, _e=early_nb, _l=late_nb, _g=gap_nb):
+            if t < 14.0:                       # tau 45..31: the early leg
+                return _ob(0.94, _e)
+            if t < 19.95:                      # tau 30..26: over the ceiling
+                return _ob(0.94, _g)
+            return _ob(0.94, _l)               # tau 25 on: the full leg
+        return {"tk": "KXF%d15M-F20" % n, "series": "KXF%d15M" % n,
+                "iid": "F20%d" % n, "strike": 100.0,
+                "fair": (lambda t: 0.999), "book": _bk}
+
+    def _f20_live(mk, fl):
+        return _offline_trade_loop([mk], live=True, reply=_fill_all,
+                                   run_s=24.0, tau0=45, flags=fl)
+    _f20off = _f20_live(_f20_mkt(1, 0.02, 0.02), dict(_f20f))
+    _f20off_ma = _refusals(_f20off, "market_attempts")
+    _f20off_ed = _refusals(_f20off, "early_dear")
+    ck(_f20off["raised"] is None and not _kinds(_f20off, "order")
+       and not _f20off["posts"] and len(_f20off_ed) == 1
+       and len(_f20off_ma) == 1 and int(_f20off_ma[0]["tried"]) == 3
+       and int(_f20off_ma[0]["tau"]) > 30
+       and float(_f20off_ma[0]["t"]) - float(_f20off_ed[0]["t"]) < 1.0,
+       "F20 CONTROL (flag OFF = live today): three 98c looks in the 45-s "
+       "window are refused early_dear and burn the coin's 3 tries -- "
+       "market_attempts in the SAME SECOND at tau %s -- so the 98c offer at "
+       "25 s, which the full leg may buy, gets NO order (orders %d). The "
+       "10-01 bug, reproduced"
+       % (_f20off_ma[0].get("tau") if _f20off_ma else None,
+          len(_kinds(_f20off, "order"))))
+    _f20on = _f20_live(_f20_mkt(1, 0.02, 0.02),
+                       dict(_f20f, EARLY_PRICE_FREE_TRIES=True))
+    _f20on_o = _kinds(_f20on, "order")
+    ck(_f20on["raised"] is None and len(_f20on_o) == 1
+       and len(_f20on["posts"]) == 1
+       and 21 <= int(_f20on_o[0].get("tau_at_send") or 0) <= 25
+       and abs(float(_f20on_o[0].get("limit_sent") or 0) - 0.98) < 1e-9
+       and _f20on_o[0].get("leg") == "full"
+       and len(_refusals(_f20on, "early_dear")) == 1
+       and not _refusals(_f20on, "market_attempts"),
+       "F20: with the flag ON the same world refuses early_dear in the 45-s "
+       "window WITHOUT spending a try and buys ONE order on the full leg "
+       "at 98c at tau %s (orders %d, market_attempts %d)"
+       % (_f20on_o[0].get("tau_at_send") if _f20on_o else None,
+          len(_f20on_o), len(_refusals(_f20on, "market_attempts"))))
+    # early_cheap, the other price refusal: 94c under a 95c early floor
+    _f20cf = dict(_f20f, EARLY_MIN_PRICE=0.95)
+    _f20c_off = _f20_live(_f20_mkt(2, 0.06, 0.06), dict(_f20cf))
+    _f20c_on = _f20_live(_f20_mkt(2, 0.06, 0.06),
+                         dict(_f20cf, EARLY_PRICE_FREE_TRIES=True))
+    ck(_f20c_off["raised"] is None and _f20c_on["raised"] is None
+       and _refusals(_f20c_off, "early_cheap")
+       and _refusals(_f20c_on, "early_cheap")
+       and not _kinds(_f20c_off, "order")
+       and len(_refusals(_f20c_off, "market_attempts")) == 1
+       and len(_kinds(_f20c_on, "order")) == 1
+       and not _refusals(_f20c_on, "market_attempts"),
+       "F20: early_cheap likewise -- a 94c coin under a 95c early floor is "
+       "locked out with the flag OFF (orders %d) and bought once at <= 25 s "
+       "with it ON (orders %d)"
+       % (len(_kinds(_f20c_off, "order")), len(_kinds(_f20c_on, "order"))))
+    # NULL: the SELLER GATE still spends tries. A 95c early leg (inside the
+    # 90-97.8c band, so it passes both price gates) on a fresh level with
+    # takers selling our side: toxic_fresh refuses it, and the flag must
+    # NOT stop those refusals locking the coin out -- the whole difference
+    # between this flag and --attempts-on-send.
+    _f20tx = {"tk": "KXF3T15M-F20", "series": "KXF3T15M", "iid": "F20T",
+              "strike": 100.0, "fair": (lambda t: 0.999),
+              "book": (lambda t: _ob(0.94, 0.05)),
+              "level_age": (120, True), "taker_flow": (2.0, 8.0, 0.4)}
+    _f20t_off = _offline_trade_loop([_f20tx], run_s=25.0, tau0=40,
+                                    flags=dict(_f20f, TOXIC_FRESH=True))
+    _f20t_on = _offline_trade_loop([_f20tx], run_s=25.0, tau0=40,
+                                   flags=dict(_f20f, TOXIC_FRESH=True,
+                                              EARLY_PRICE_FREE_TRIES=True))
+    _f20t_ma = _refusals(_f20t_on, "market_attempts")
+    ck(_f20t_on["raised"] is None and _refusals(_f20t_on, "toxic_fresh")
+       and len(_f20t_ma) == 1 and int(_f20t_ma[0]["tried"]) == 3
+       and not _kinds(_f20t_on, "signal")
+       and _k1_trace(_f20t_on) == _k1_trace(_f20t_off),
+       "F20 NULL: toxic_fresh (the seller gate) STILL spends a try with the "
+       "flag ON -- three refusals, market_attempts tried=%s, no signal even "
+       "after the gate stands down at 20 s, and the record trail is "
+       "IDENTICAL to the flag-OFF world (%d vs %d records)"
+       % (_f20t_ma[0].get("tried") if _f20t_ma else None,
+          len(_f20t_on["recs"]), len(_f20t_off["recs"])))
+    # NULL: where no early-PRICE refusal happens the flag changes nothing --
+    # a plain 95c buy at 27 s, run both ways, leaves the same trail.
+    _f20p_off = _offline_trade_loop([_spk_mkt(16, lambda t: 0.999)],
+                                    run_s=5.0, tau0=27, flags=dict(_f20f))
+    _f20p_on = _offline_trade_loop([_spk_mkt(16, lambda t: 0.999)],
+                                   run_s=5.0, tau0=27,
+                                   flags=dict(_f20f, EARLY_PRICE_FREE_TRIES=True))
+    ck(_f20p_off["raised"] is None and _kinds(_f20p_off, "signal")
+       and _k1_trace(_f20p_on) == _k1_trace(_f20p_off),
+       "F20 NULL: with no early-price refusal in the world the flag is "
+       "inert -- the same %d records ON and OFF"
+       % len(_f20p_off["recs"]))
+    # COLLATERAL (R1's lesson): the give-back covers the per-CLOSE counter
+    # too, or a coin refused at 20 Hz runs the close into attempts_cap and
+    # an innocent coin in the same close never enters.
+    _f20cw = [_f20_mkt(3, 0.02, 0.02), _k1_B(1)]
+    _f20cfm = dict(_f20f, IMPROVE_SCOPE="market")
+    _f20w_off = _offline_trade_loop(_f20cw, run_s=50.0, tau0=45,
+                                    flags=dict(_f20cfm))
+    _f20w_on = _offline_trade_loop(_f20cw, run_s=50.0, tau0=45,
+                                   flags=dict(_f20cfm,
+                                              EARLY_PRICE_FREE_TRIES=True))
+    _f20_inn = lambda w: [(r.get("tau"), r.get("leg"), r.get("take_n"))
+                          for r in _kinds(w, "signal", _k1_B(1)["tk"])]
+    _f20w_ed = _gate_counts(_f20w_on).get("early_dear", 0)
+    ck(_f20w_on["raised"] is None and not _refusals(_f20w_on, "attempts_cap")
+       and _f20w_ed > MAX_ATTEMPTS_PER_CLOSE
+       and _f20_inn(_f20w_on) and _f20_inn(_f20w_on) == _f20_inn(_f20w_off)
+       and len(_kinds(_f20w_on, "signal", "KXF315M-F20")) == 1
+       and not _kinds(_f20w_off, "signal", "KXF315M-F20"),
+       "F20 COLLATERAL: the coin is refused early_dear %d times -- past the "
+       "close-wide cap of %d -- with NO attempts_cap anywhere, the innocent "
+       "coin enters exactly as with the flag OFF (%s), and the burner is "
+       "bought once at 25 s ON and never OFF"
+       % (_f20w_ed, MAX_ATTEMPTS_PER_CLOSE, _f20_inn(_f20w_on)))
+    # COMPOSES with --attempts-on-send: nothing was charged, nothing is
+    # given back, and the counter cannot go negative into extra orders.
+    _f20both = _f20_live(_f20_mkt(1, 0.02, 0.02),
+                         dict(_f20f, EARLY_PRICE_FREE_TRIES=True,
+                              ATTEMPTS_ON_SEND=True))
+    ck(_f20both["raised"] is None and len(_kinds(_f20both, "order")) == 1
+       and len(_f20both["posts"]) == 1,
+       "F20 + R1 together: still ONE order at 25 s (orders %d)"
+       % len(_kinds(_f20both, "order")))
+    _f20src = inspect.getsource(trade_loop)
+    _f20g = "if EARLY_PRICE_FREE_TRIES and not ATTEMPTS_ON_SEND:"
+    _f20i = [i for i in range(len(_f20src)) if _f20src.startswith(_f20g, i)]
+    ck(len(_f20i) == 2 and _f20src.count("EARLY_PRICE_FREE_TRIES") == 2
+       and _f20src.find('_gate("early_cheap"') < _f20i[0]
+           < _f20src.find('_gate("early_dear"') < _f20i[1]
+           < _f20src.find('_gate("early_wide"')
+       and _f20src.count("attempts.get(close_s, 1) - 1") == 2
+       and _f20src.count("attempts_tk.get((close_s, tk), 1) - 1") == 2
+       and _f20src.find("continue", _f20i[0])
+           > _f20src.find("attempts.get(close_s, 1) - 1", _f20i[0])
+       and _f20src.find("continue", _f20i[1])
+           > _f20src.find("attempts.get(close_s, 1) - 1", _f20i[1]),
+       "F20 by source: the flag is read in exactly TWO places, the "
+       "early_cheap and early_dear refusals, each giving back BOTH counters "
+       "before its `continue` -- no other gate, the seller gate included, "
+       "can reach the give-back")
+
     # ===================================================================
     # R4 (2026-09-23): THE TRAJECTORY. See the TRAJ_* block for the defect.
     #
@@ -19003,6 +19186,12 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                               price=round(price, 4), floor=EARLY_MIN_PRICE,
                               fair=round(f, 5),
                               want=want, size=float(take_n or SIZE))
+                        # F20 --early-price-free-tries: give back the try
+                        # charged at the signal point (BOTH counters; see
+                        # the F20 block by the constants). Off: unchanged.
+                        if EARLY_PRICE_FREE_TRIES and not ATTEMPTS_ON_SEND:
+                            attempts[close_s] = attempts.get(close_s, 1) - 1
+                            attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 1) - 1
                         continue
                     # AMENDMENT 78 (2026-09-20): AND TOO DEAR, ON THE EARLY LEG.
                     #
@@ -19027,6 +19216,12 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
                               price=round(price, 4), ceiling=EARLY_MAX_PRICE,
                               fair=round(f, 5),
                               want=want, size=float(take_n or SIZE))
+                        # F20: the same give-back as early_cheap above --
+                        # the 10-01 bug: three 98c looks at 31-45 s burned
+                        # the coin's tries before the 30-s window opened.
+                        if EARLY_PRICE_FREE_TRIES and not ATTEMPTS_ON_SEND:
+                            attempts[close_s] = attempts.get(close_s, 1) - 1
+                            attempts_tk[(close_s, tk)] = attempts_tk.get((close_s, tk), 1) - 1
                         continue
                     # A50: too GOOD to be true, on the early leg only.
                     if early_wide_block(_leg46, e):
@@ -20141,6 +20336,15 @@ def main():
                          "refusals in the same market and close. The "
                          "per-CLOSE rail is untouched either way, and the cap "
                          "itself still bounds real orders at 3.")
+    ap.add_argument("--early-price-free-tries", action="store_true",
+                    help="F20: an early-leg refusal for PRICE (early_cheap "
+                         "under --early-min-price, early_dear over "
+                         "--early-max-price) gives back the try it was "
+                         "charged, so a coin sitting at 98c at 31-45 s is not "
+                         "locked out (market_attempts) of the <= 30 s window "
+                         "where 98c is allowed. Every other refusal -- the "
+                         "seller gate toxic_fresh above all -- still uses a "
+                         "try. DEFAULT OFF; narrower than --attempts-on-send.")
     ap.add_argument("--extra-coin", type=float, default=None,
                     help="AMENDMENT 56: extra SIZE a close may spend, for a "
                          "coin it is NOT already holding, once the base "
@@ -20640,6 +20844,8 @@ def main():
         globals()["LATE_EXTRA"] = float(a.late_extra)
     if a.attempts_on_send:
         globals()["ATTEMPTS_ON_SEND"] = True
+    if a.early_price_free_tries:
+        globals()["EARLY_PRICE_FREE_TRIES"] = True
     if a.extra_coin is not None:
         if not (0.0 <= a.extra_coin <= float(MAX_PER_CLOSE)):
             raise SystemExit("--extra-coin must sit in [0, MAX_PER_CLOSE=%g], "
@@ -21181,6 +21387,8 @@ def main():
         # R1: the arm's bar reads this field to admit a shared close, and an
         # arm whose own log cannot say what it is testing is not measurable.
         attempts_on_send=ATTEMPTS_ON_SEND,
+        # F20: arm-lockfix's read admits a close by this field
+        early_price_free_tries=EARLY_PRICE_FREE_TRIES,
         # A53: lists, so the Lab can select an arm by its exact bands
         skip_bands=[list(b) for b in SKIP_BANDS],
         band_mults=[list(b) for b in BAND_MULTS],

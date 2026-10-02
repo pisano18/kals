@@ -20,6 +20,11 @@ Gates (each off by default):
   stable_k/stable_p   p_side >= stable_p on each of the last stable_k decisions (no recent flip)
   no_toward    skip if |index - threshold| shrank over the last no_toward seconds (index heading for the strike)
   flow_against skip if, in the last 2 s, takers bought the OTHER side more than ours (needs on_trade)
+  crash_gap    at the 1-s check, skip the real fill if the best ask on our side is more than this under the order
+               price (logged taker_miss why=crash). The paper copy of forecaster_live's v-crash-guard (CRASH_GAP),
+               tested on the same book at the same instant. One known difference: a refused live trigger still uses
+               up the live paper engine's per-side cap, here a skipped one does not -- live carries the refused paper
+               count into its next order on that side, so the two land close, not identical.
 Every forecaster fill carries the features at its decision (feat_*), so a replay can also price a gate offline.
 """
 import math
@@ -34,7 +39,7 @@ import bettor_paper as B                        # noqa: E402
 DEFAULTS = {"r_max": B.F_R_MAX, "min_price": B.F_MIN_PRICE, "max_price": B.F_MAX_PRICE, "min_edge": B.F_MIN_EDGE,
             "min_p": 0.0, "one_side": False, "survive_s": B.SURVIVE_S, "max_age": None, "min_age": None,
             "stable_k": 0, "stable_p": 0.9, "no_toward": 0, "flow_against": False,
-            "quiet_s": None, "race_x": None, "race_p": 0.96, "hedge_p": None, "quiet_mult": None}
+            "quiet_s": None, "race_x": None, "race_p": 0.96, "hedge_p": None, "quiet_mult": None, "crash_gap": None}
 
 VARIANTS = {
     "base": {},
@@ -71,6 +76,12 @@ VARIANTS = {
     "stable2_race05_98_hedge40": {"stable_k": 2, "stable_p": 0.9, "race_x": 0.5, "race_p": 0.98, "hedge_p": 0.40},
     "quiet2x": {"quiet_mult": 2.0},
     "race05_98_quiet2x": {"race_x": 0.5, "race_p": 0.98, "quiet_mult": 2.0},
+    # 2026-10-02: the live crash guard on paper (operator: "Should we add a crash guard to the paper ... Or maybe a
+    # variation"). race1_98_crash10 is the rule forecaster_live runs (--variant race1_98 --crash-gap 0.10).
+    "crash10": {"crash_gap": 0.10},
+    "race1_98_crash05": {"race_x": 1.0, "race_p": 0.98, "crash_gap": 0.05},
+    "race1_98_crash10": {"race_x": 1.0, "race_p": 0.98, "crash_gap": 0.10},
+    "race1_98_crash15": {"race_x": 1.0, "race_p": 0.98, "crash_gap": 0.15},
 }
 
 
@@ -159,6 +170,7 @@ class VEngine(B.Engine):
             self.book_spend(m, p["strat"], "real", p["side"], q, -p["want"])
             b = self.books.get(m.ticker)
             why = None
+            crash_ask = None
             if due >= m.close_s:
                 why, k, still = "closed", 0, None
             elif b is None or not b.synced:
@@ -168,6 +180,13 @@ class VEngine(B.Engine):
                 k = math.floor(min(p["want"], p["displayed"], still - m.taken.get(p["key"], 0.0)) + 1e-9)
                 if k < 1:
                     why, k = "gone", 0
+                elif self.P["crash_gap"] is not None and not p["extra"].get("hedge"):
+                    # forecaster_live's v-crash-guard: the offer is collapsing if the best ask on our side is already
+                    # more than crash_gap under the price we are about to pay. Never applied to a hedge (operator
+                    # rule 09-19: a gate must never block a hedge) -- no crash variant has hedge_p today.
+                    bp, _ = b.best_ask(p["side"])
+                    if bp is not None and float(bp) < q - self.P["crash_gap"] - 1e-9:
+                        why, k, crash_ask = "crash", 0, round(float(bp), 4)
             if k >= 1:
                 m.taken[p["key"]] = m.taken.get(p["key"], 0.0) + k
                 self.book_spend(m, p["strat"], "real", p["side"], q, k)
@@ -175,7 +194,8 @@ class VEngine(B.Engine):
                               displayed=p["displayed"], still_1s=still, want=p["want"], **p["extra"])
             else:
                 self.log.write("taker_miss", strat=p["strat"], ticker=m.ticker, side=p["side"], price=str(p["price"]),
-                               want=p["want"], rel=p["rel"], why=why, still_1s=still)
+                               want=p["want"], rel=p["rel"], why=why, still_1s=still,
+                               **({"best_ask": crash_ask} if why == "crash" else {}))
         m.pending = keep
 
     # --- insurance: when the side held falls below hedge_p, buy the other side up to the contracts held ---
@@ -399,6 +419,44 @@ def selftest():
     trn = [(-40, {"ts_ms": (C - 40) * 1000, "yes_price_dollars": "0.8000", "count_fp": "1.00", "taker_side": "yes", "trade_id": "n"})]
     fqn, _ = world(lambda lg, nf: VEngine(lg, nf, tb, {"quiet_mult": 2.0}), bookq, (), trades=trn, rels=range(-60, 0))
     ck(sum(x[3] for x in fqn if x[0] == "real") == 100, "quiet_mult 2: a trade at close-40 keeps the cap at 100 (%s)" % fqn)
+    # crash_gap (forecaster_live's v-crash-guard on paper): just before the first 1-s check (rel -30) a new offer
+    # appears 15c under our 80c price (YES ask 65c = a NO bid at 35c; below the 75c floor, so nobody buys it)
+    crash = [(-30, {"side": "no", "price_dollars": "0.3500", "delta_fp": "5.00"})]
+    v_ = lambda prm: (lambda lg, nf: VEngine(lg, nf, tb, prm))
+    fcb, scb = world(base, book, crash)
+    fcc, scc = world(v_({"crash_gap": 0.10}), book, crash)
+    ck(any(x[0] == "real" and abs(x[2] - 0.80) < 1e-9 for x in fcb), "crash world: base books the 80c real fill (%s)" % fcb)
+    ck(fcc and not any(x[0] == "real" for x in fcc),
+       "crash10: best ask 15c under the 80c price at the check -> no real fill (%s)" % fcc)
+    ck(any(r["ev"] == "taker_miss" and r["why"] == "crash" and r.get("best_ask") == 0.65 for r in scc),
+       "crash10: the skip is logged taker_miss why=crash with the best ask seen")
+    ck([x for x in fcc if x[0] == "opt"] == [x for x in fcb if x[0] == "opt"], "crash10 leaves the opt fills alone")
+    fcr, _ = world(v_(VARIANTS["race1_98_crash10"]), book, crash)
+    fr98, _ = world(v_(VARIANTS["race1_98"]), book, crash)
+    ck(fcr == fcc and fr98 == fcb, "race1_98_crash10 / race1_98 in the crash world: = crash10 / = base (no race planted)")
+    drop5 = [(-30, {"side": "no", "price_dollars": "0.2500", "delta_fp": "5.00"})]
+    f5, s5 = world(v_({"crash_gap": 0.10}), book, drop5)
+    ck(any(x[0] == "real" and abs(x[2] - 0.80) < 1e-9 for x in f5)
+       and not any(r["ev"] == "taker_miss" and r["why"] == "crash" for r in s5),
+       "crash10: a 5c drop (best ask 75c) is still filled at 80c (%s)" % f5)
+    f15, _ = world(v_(VARIANTS["race1_98_crash15"]), book, crash)
+    ck(any(x[0] == "real" and abs(x[2] - 0.80) < 1e-9 for x in f15), "crash15: a 15c drop is NOT more than 15c -> filled")
+    # NULL: crash_gap None never refuses; crash10 on a book with no collapse changes nothing
+    fn0, sn0 = world(v_({"crash_gap": None}), book, crash)
+    ck(fn0 == fcb and not any(r.get("why") == "crash" for r in sn0), "crash_gap None: same fills as base, no why=crash")
+    fst, sst = world(v_({"crash_gap": 0.10}), book, dl)
+    ck(fst == fv and not any(r.get("why") == "crash" for r in sst), "crash10 on a steady book: same fills as base")
+    ck(all(set(v) <= set(DEFAULTS) for v in VARIANTS.values()), "every variant names only known params")
+    # the crash guard never blocks a hedge: hedge world, and at the hedge's 1-s check (rel -19) a NO ask appears at
+    # 50c, 48.5c under the 98.5c hedge price -- the hedge still fills, equal to the YES held
+    hcr = [(-19, {"side": "yes", "price_dollars": "0.5000", "delta_fp": "5.00"})]
+    fhc, shc = world(v_({"hedge_p": 0.40, "crash_gap": 0.10}), book3, hcr, vals=flip)
+    yes_c = sum(x[3] for x in fhc if x[0] == "real" and x[1] == "yes")
+    ck(yes_c > 0 and any(r["ev"] == "fill" and r["fill"] == "real" and r.get("hedge") and abs(r["price"] - 0.985) < 1e-9
+                         and r["size"] == yes_c for r in shc)
+       and not any(r["ev"] == "taker_miss" and r.get("why") == "crash" and r["side"] == "no" and r["rel"] == -20
+                   for r in shc),
+       "crash guard never blocks a hedge (%s)" % fhc)
     # memory: after the close settles, the engine keeps no per-ticker trade flow, p history or best-ask clock
     clockM = [0.0]
     engM = VEngine(B.Logger(None, []), lambda: clockM[0], tb, {"flow_against": True})

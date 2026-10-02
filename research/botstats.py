@@ -31,10 +31,30 @@ same rule pinday and pinledger use, so this cannot disagree with them.
 money figure, not the put-in. Return = money / put in.
 
 READ ONLY. Kalshi is reached only through a `getter(path, params) -> (status, body)` -- by default
-`kauth.get`, which can only send a GET -- and only three paths are ever asked for (settlements,
-positions, balance). This file holds no HTTP code of its own, starts and stops nothing, and writes
-exactly one file: `results/botstats_cache.json`. The self-test scans this source for any order,
-transfer or process-control call and fails if it finds one.
+`kauth.get`, which can only send a GET -- and only seven paths are ever asked for: three per pot
+(settlements, positions, balance) and four account-wide LISTINGS (the subaccount transfer history,
+every pot's cash by pool, deposits, withdrawals -- see "THE POT" below). This file holds no HTTP code
+of its own, starts and stops nothing, and writes exactly one file: `results/botstats_cache.json`.
+The self-test scans this source for any order, transfer-making or process-control call and fails if
+it finds one.
+
+**THE POT -- every money figure as a PERCENTAGE (2026-10-02).** The operator: *"Dollar amounts mean
+nothing I don't know the sizes. You need to do percentages of their full bank and return on what they
+spent on. 2 is bad if it's got $100 but if it's $10 that's good."* So every window also carries
+`pot_pct` = money / the pot:
+  - a window (today, yesterday, 7 days, month): what the pot HELD WHEN THE WINDOW BEGAN -- its cash in
+    every pool + what its open bets cost -- plus any money moved INTO it during the window (so a pot
+    that started empty and was funded mid-window is not divided by zero; a top-up only ever makes the
+    % smaller). Worked back from now: pot now - money settled since the window began - money moved in
+    since (deposits, withdrawals, subaccount transfers). Cash + open bets moves ONLY by settlements and
+    transfers, so this is exact -- checked 2026-10-02 against every pot's whole history: main account
+    off by $0.03, both subaccounts to the cent.
+  - all time: the money put in -- deposits (after Kalshi's fee) - withdrawals for the whole account;
+    for the main account, that less what was moved out to the bot pots; for a subaccount, what was
+    moved into it less what came back.
+Pin and race share the main account, so both are a % of the same main pot. A pot that cannot be
+worked out from ONE consistent read (a failed read, a stale one, history still loading, the two cash
+reads disagreeing about the unit) gives `pot_pct: None` with `pot_why` -- never a guess.
 
 **THE CACHE.** Per subaccount: the settlement rows (trimmed to the ten fields the money needs), when
 they were last read, and whether the whole history has been walked once. A read is made at most
@@ -62,6 +82,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import pinday                                                    # noqa: E402
 import pinledger                                                 # noqa: E402
+import pinxfer                                                   # noqa: E402  (deposit rules: finished, net of fee)
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 REPO = os.path.dirname(HERE)
@@ -74,8 +95,24 @@ MAX_PAGES = 200                 # 40,000 settlements a pot: a runaway pager stop
 POOL = 2                        # Kalshi's crypto & commodities cash pool, where every bot's cash sits
 BOTS = ("pin", "race", "forecaster", "ladder")
 SUBS = ("0", "1", "2")
-# the only three things this file ever asks Kalshi for
-PATHS = ("/portfolio/settlements", "/portfolio/positions", "/portfolio/balance")
+# the only things this file ever asks Kalshi for -- every one a GET, through `getter`
+POT_PATHS = ("/portfolio/settlements", "/portfolio/positions", "/portfolio/balance")    # each names its pot
+# account-wide LISTINGS (2026-10-02, for the pot): (path, the list's key, paged?)
+LEDGERS = (("/portfolio/subaccounts/transfers", "transfers", True),
+           ("/portfolio/subaccounts/balances", "subaccount_balances", False),
+           ("/portfolio/deposits", "deposits", True),
+           ("/portfolio/withdrawals", "withdrawals", True))
+LEDGER_PATHS = tuple(p for p, _, _ in LEDGERS)
+PATHS = POT_PATHS + LEDGER_PATHS
+LEDGER_PAGES = 50               # a runaway pager on a listing stops loudly
+LEDGER_KEEP = {"transfers": ("amount_cents", "created_ts", "from_subaccount", "to_subaccount", "exchange_index",
+                             "transfer_id"),
+               "subaccount_balances": ("subaccount_number", "exchange_index", "balance", "updated_ts"),
+               "deposits": ("amount_cents", "fee_cents", "status", "finalized_ts", "created_ts", "updated_ts", "id"),
+               "withdrawals": ("amount_cents", "fee_cents", "status", "finalized_ts", "created_ts", "updated_ts",
+                               "id")}
+MIN_POT = 1.0                   # a pot under $1 is no base for a percentage
+POT_CHECK = 1.0                 # cash + open bets vs money put in + all settled: off by more -> said
 KEEP = ("ticker", "settled_time", "market_result", "value", "yes_count_fp", "no_count_fp",
         "yes_total_cost_dollars", "no_total_cost_dollars", "fee_cost", "revenue")
 
@@ -184,6 +221,24 @@ def usd(x):
 
 def pct(x):
     return "n/a" if x is None else "%+.1f%%" % x
+
+
+def pot_pct_txt(x):
+    """A share of a pot: two decimals under 1% (a big pot's day is often -0.4%), one above."""
+    if x is None:
+        return "n/a"
+    return ("%+.2f%%" % x) if abs(x) < 1 else ("%+.1f%%" % x)
+
+
+def pot_words(w, whose="its pot"):
+    """'-0.93% of its pot ($1,088.32)' / '-1.9% on money put in ($946.00)', or None when the pot is
+    unknown -- a percentage is never shown on a guessed base."""
+    if not w or w.get("pot_pct") is None or w.get("pot") is None:
+        return None
+    base = usd(w["pot"]).lstrip("+")
+    if w.get("pot_kind") == "money_in":
+        return "%s on money put in (%s)" % (pot_pct_txt(w["pot_pct"]), base)
+    return "%s of %s (%s)" % (pot_pct_txt(w["pot_pct"]), whose, base)
 
 
 # ---- which bot a settlement belongs to --------------------------------------
@@ -394,13 +449,53 @@ def fetch_balance(sub, getter):
         return None, "balance unreadable: %r" % d.get("balance_dollars")
 
 
+def fetch_ledgers(getter):
+    """The account's own books of money moving IN and BETWEEN pots, and every pot's cash in every pool:
+    four GET listings, each walked to its end. All or nothing -- ({key: rows}, None) or (None, error):
+    a pot worked out from half the books would be a guess. A listing whose key is missing is an error,
+    not an empty list (a renamed field once read as 'no data' for 68 million rows)."""
+    out = {}
+    for path, key, paged in LEDGERS:
+        rows, cursor = [], None
+        for _ in range(LEDGER_PAGES if paged else 1):
+            q = {"limit": PAGE} if paged else {}
+            if cursor:
+                q["cursor"] = cursor
+            st, d = getter(path, q)
+            name = path.rsplit("/", 1)[-1]
+            if st != 200 or not isinstance(d, dict):
+                return None, "%s read failed (HTTP %s)" % (name, st)
+            got = d.get(key, "missing")
+            if got is None:
+                got = []
+            if not isinstance(got, list):
+                return None, "%s unreadable (no '%s' list)" % (name, key)
+            rows += [{f: r[f] for f in LEDGER_KEEP[key] if f in r} for r in got if isinstance(r, dict)]
+            cursor = d.get("cursor") if paged else None
+            if not got or not cursor:
+                break
+        else:
+            return None, "%s: stopped after %d pages without reaching the end" % (path.rsplit("/", 1)[-1],
+                                                                                    LEDGER_PAGES)
+        out[key] = rows
+    return out, None
+
+
 def refresh(c, now, getter):
-    """Bring each pot up to date, at most once every REFRESH_S. Returns True when anything was read."""
+    """Bring each pot up to date, at most once every REFRESH_S. Returns True when anything was read.
+    The account-wide listings are read in the SAME pass as the pots (same `now`), so a pot's
+    percentage is worked out from one consistent read or not at all."""
     subs = c.setdefault("subs", {})
     did = False
+    led = c.setdefault("ledgers", {})
+    # Another process sharing this cache (the desktop app, running an older botstats) may have read the
+    # pots without the listings. A cache whose pots and listings are not from one pass is read again
+    # whole, now -- otherwise the pot percentages could stay unknown for as long as it keeps doing that.
+    aligned = led.get("tried") is not None and all(
+        (subs.get(s) or {}).get("tried") == led.get("tried") for s in SUBS)
     for sub in SUBS:
         x = subs.setdefault(sub, {"rows": {}, "complete": False})
-        if now - float(x.get("tried") or 0) < REFRESH_S:
+        if aligned and now - float(x.get("tried") or 0) < REFRESH_S:
             continue
         if getter is None:
             getter = default_getter()
@@ -418,6 +513,13 @@ def refresh(c, now, getter):
         x["bal_err"] = berr
         if bal is not None:
             x["balance"], x["bal_t"] = bal, now
+    if did:
+        led["tried"] = now
+        got, lerr = fetch_ledgers(getter)
+        led["err"] = lerr
+        if got is not None:
+            led.update(got)
+            led["fetched"] = now
     return did
 
 
@@ -1046,8 +1148,200 @@ def running(name, rows, ok, now):
     return out
 
 
+# ---- the pot (2026-10-02): what each bot's money is a percentage OF ------------
+# See "THE POT" in the module docstring. Every figure here is from Kalshi: cash by pool, open bets'
+# cost, settlements, deposits, withdrawals, subaccount transfers. Nothing is guessed: a pot that cannot
+# be worked out from one consistent read is None with the reason.
+WINDOW_KEYS = ("today", "yesterday", "last_7_days", "this_month", "all_time")
+
+
+def window_span(key, today):
+    """(first ET day, ET day it ends before -- None = now) of a window; all time -> (None, None)."""
+    if key == "today":
+        return today, None
+    if key == "yesterday":
+        return shift_day(today, -1), today
+    if key == "last_7_days":
+        return shift_day(today, -6), None
+    if key == "this_month":
+        return today[:7] + "-01", None
+    return None, None
+
+
+def _int(x):
+    try:
+        return int(float(x))
+    except (TypeError, ValueError):
+        return None
+
+
+def flows(led, sub, t0=None, t1=None):
+    """Net dollars moved INTO pot `sub` ('0', '1', '2'; None = the whole account) at or after epoch t0
+    and before t1 (None = unbounded; both None = all time, undated records included). Deposits
+    (finished, after Kalshi's fee -- pinxfer's rules) and withdrawals land in the main account;
+    subaccount transfers move money between pots and cancel out for the whole account."""
+    def inside(t):
+        if t0 is None and t1 is None:
+            return True
+        return t is not None and (t0 is None or t >= t0) and (t1 is None or t < t1)
+    net = 0.0
+    if sub in (None, "0"):
+        for r in led.get("deposits") or []:
+            if pinxfer.is_done(r) and inside(pinxfer.when(r)):
+                net += pinxfer.net_cents(r) / 100.0
+        for r in led.get("withdrawals") or []:
+            if pinxfer.is_done(r) and inside(pinxfer.when(r)):
+                net -= abs(pinxfer.net_cents(r)) / 100.0
+    if sub is not None:
+        for r in led.get("transfers") or []:
+            if not inside(_int(r.get("created_ts"))):
+                continue
+            a = (_num(r.get("amount_cents")) or 0.0) / 100.0      # cents, by the field's name
+            if str(r.get("to_subaccount")) == sub:
+                net += a
+            if str(r.get("from_subaccount")) == sub:
+                net -= a
+    return net
+
+
+def _cash_all_pools(led, sub, bal_dollars):
+    """(dollars, why): pot `sub`'s cash summed over EVERY pool -- a new deposit can sit in pool 0, where
+    the pool-2 balance never sees it (v-onepool). The listing's field is `balance`, a name that does not
+    say its unit (hard rule 5), so it is trusted only when its pool-2 figure equals /portfolio/balance's
+    `balance_dollars` for the same pot to the cent; otherwise None, never a guess."""
+    vals = {}
+    for r in led.get("subaccount_balances") or []:
+        if str(r.get("subaccount_number")) != sub:
+            continue
+        v, ix = _num(r.get("balance")), _int(r.get("exchange_index"))
+        if v is None or ix is None:
+            return None, "the %s's cash listing is unreadable" % SUB_NAME[sub]
+        vals[ix] = vals.get(ix, 0.0) + v
+    if POOL not in vals:
+        return None, "Kalshi listed no crypto-pool cash for the %s" % SUB_NAME[sub]
+    if bal_dollars is None or abs(vals[POOL] - bal_dollars) > 0.011:
+        # Two reads a few seconds apart: a bet filling between them trips this as surely as a unit change
+        # does, so the words name both and promise nothing about which (2026-10-02 verifier).
+        return None, ("the two cash reads of the %s disagree (%s vs %s) -- a bet filled between them, or the "
+                      "unit is not what it seems -- so it is left out until the next read (within a minute)"
+                      % (SUB_NAME[sub], vals[POOL], bal_dollars))
+    return sum(vals.values()), None
+
+
+def _pot_now(c, sub):
+    """(dollars, why): pot `sub` NOW = its cash in every pool + what its open bets cost (fees paid on
+    them included), every figure from the SAME refresh. (`balance_dollars` is gross of resting orders --
+    measured 2026-09-06 -- so a resting bid does not move it.)"""
+    x = (c.get("subs") or {}).get(sub) or {}
+    led = c.get("ledgers") or {}
+    t = x.get("tried")
+    if t is None:
+        return None, "Kalshi has not been read yet"
+    if not x.get("complete"):
+        return None, "its history is still loading"
+    if x.get("err") or x.get("fetched") != t:
+        return None, "the last settlements read failed"
+    if x.get("pos_err") or x.get("pos_t") != t or x.get("positions") is None:
+        return None, "the last open-bets read failed"
+    if x.get("bal_err") or x.get("bal_t") != t or x.get("balance") is None:
+        return None, "the last cash read failed"
+    if led.get("err") or led.get("fetched") != t:
+        return None, led.get("err") or "the deposit and transfer books were not read with the rest"
+    cash, why = _cash_all_pools(led, sub, x["balance"])
+    if cash is None:
+        return None, why
+    return cash + sum(float(p.get("at_risk") or 0.0) + float(p.get("fees") or 0.0) for p in x["positions"]), None
+
+
+def pot_context(c, today):
+    """What every pot percentage in one report needs, worked out once: per pot its value now (or why
+    not) and its settled money by ET close day -- EVERY market in the pot, whichever bot's -- plus the
+    account's books."""
+    ctx = {"today": today, "led": c.get("ledgers") or {}, "subs": {}}
+    for sub in SUBS:
+        x = (c.get("subs") or {}).get(sub) or {}
+        now_v, why = _pot_now(c, sub)
+        days = {}
+        for s in (x.get("rows") or {}).values():
+            m = market(s)
+            days[m["day"]] = days.get(m["day"], 0.0) + m["money"]
+        ctx["subs"][sub] = {"now": now_v, "why": why, "days": days, "complete": bool(x.get("complete"))}
+    return ctx
+
+
+def pot_for(ctx, sub, key):
+    """(dollars, kind, why): the base of window `key`'s percentage for pot `sub` (None = all pots).
+    kind 'start': what the pot held when the window began, + money moved into it during the window;
+    kind 'money_in': all time -- the net money put in."""
+    led = ctx["led"]
+    subs = SUBS if sub is None else (sub,)
+    kind = "money_in" if key == "all_time" else "start"
+    for s in subs:
+        if not ctx["subs"][s]["complete"]:
+            return None, kind, "the %s's history is still loading" % SUB_NAME[s]
+    if key == "all_time":
+        if led.get("err") or not led.get("fetched"):
+            return None, kind, led.get("err") or "the deposit and transfer books are not read yet"
+        v = flows(led, sub)
+        if v < MIN_POT:
+            return None, kind, "no money put in (%s)" % usd(v)
+        return v, kind, None
+    first, end = window_span(key, ctx["today"])
+    now_v = settled = 0.0
+    for s in subs:
+        p = ctx["subs"][s]
+        if p["now"] is None:
+            return None, kind, (("%s: %s" % (SUB_NAME[s], p["why"])) if sub is None else p["why"])
+        now_v += p["now"]
+        settled += sum(v for d, v in p["days"].items() if d and d >= first)
+    t0 = day_start(first)
+    start = now_v - settled - flows(led, sub, t0)
+    if start < -MIN_POT:
+        return None, kind, "it works back to %s at the start, so a read was out of step" % usd(start)
+    pot = max(0.0, start) + max(0.0, flows(led, sub, t0, day_start(end) if end else None))
+    if pot < MIN_POT:
+        return None, kind, "the pot held under $1 then"
+    return pot, kind, None
+
+
+def attach_pots(block, ctx, sub):
+    """Give each window of a money block its pot: pot ($), pot_kind, pot_of, pot_pct (% of the pot), pot_why."""
+    for k in WINDOW_KEYS:
+        w = block.get(k)
+        if not w:
+            continue
+        pot, kind, why = pot_for(ctx, sub, k)
+        w["pot"] = None if pot is None else round(pot, 2)
+        w["pot_kind"], w["pot_why"] = kind, why
+        w["pot_of"] = "all pots" if sub is None else SUB_NAME[sub]
+        w["pot_pct"] = round(100.0 * w["money"] / pot, 2) if (pot is not None and w["markets"]) else None
+    return block
+
+
+def pot_check(ctx):
+    """Per pot and for all: value now - money put in - every settled market. Zero when Kalshi's books
+    explain the pot (2026-10-02: main $0.03, subaccounts $0.00). A gap is money moving that no listing
+    shows (a reward, a missed deposit), and a window's percentage may be off by up to that much."""
+    out = {}
+    led = ctx["led"]
+    for sub in SUBS + (None,):
+        subs = SUBS if sub is None else (sub,)
+        k = "all" if sub is None else sub
+        if any(ctx["subs"][s]["now"] is None for s in subs) or led.get("err") or not led.get("fetched"):
+            out[k] = None
+            continue
+        now_v = sum(ctx["subs"][s]["now"] for s in subs)
+        settled = sum(sum(ctx["subs"][s]["days"].values()) for s in subs)
+        money_in = flows(led, sub)
+        gap = now_v - money_in - settled
+        out[k] = {"now": round(now_v, 2), "money_in": round(money_in, 2), "settled": round(settled, 2),
+                  "unexplained": round(gap, 2), "off": abs(gap) > POT_CHECK,
+                  "of": "all pots" if sub is None else SUB_NAME[sub]}
+    return out
+
+
 # ---- the per-bot report ------------------------------------------------------
-def _money_block(c, name, today):
+def _money_block(c, name, today, ctx=None):
     sub = SPEC[name]["sub"] if name in SPEC else "0"
     x = (c.get("subs") or {}).get(sub) or {}
     rows = x.get("rows") or {}
@@ -1066,6 +1360,8 @@ def _money_block(c, name, today):
     ms.sort(key=lambda m: (m["t"] or 0), reverse=True)
     base.update(windows(ms, today))
     base["markets"] = ms
+    attach_pots(base, ctx if ctx is not None else pot_context(c, today), sub)
+    base["pot_shared_with"] = [b for b in BOTS if b != name and SPEC[b]["sub"] == sub]
     return base
 
 
@@ -1097,9 +1393,9 @@ def _balance_block(c, name):
             "error": x.get("bal_err")}
 
 
-def _bot_from(c, name, now, rows, ok):
+def _bot_from(c, name, now, rows, ok, ctx=None):
     today = et_day(now)
-    money = _money_block(c, name, today)
+    money = _money_block(c, name, today, ctx)
     last = [{"time_et": et_clock(m["t"]), "ticker": m["ticker"], "what": m["what"], "side": m["side"],
              "contracts": m["contracts"], "money": round(m["money"], 4), "put_in": round(m["put_in"], 4),
              "result": m["result"]} for m in (money.get("markets") or [])[:5]]
@@ -1139,8 +1435,9 @@ def all_bots(now=None, getter=None, procs=None):
     now = time.time() if now is None else float(now)
     c, rows, ok = _load(now, getter, procs)
     today = et_day(now)
-    bots = {b: _bot_from(c, b, now, rows, ok) for b in BOTS}
-    other = _money_block(c, "other", today)
+    ctx = pot_context(c, today)
+    bots = {b: _bot_from(c, b, now, rows, ok, ctx) for b in BOTS}
+    other = _money_block(c, "other", today, ctx)
     other.pop("markets", None)
     other["label"] = "Other main-account markets (the old oil bot, anything unlisted)"
     total, missing = {}, [b for b in BOTS if not bots[b]["money"]["ok"]] + ([] if other["ok"] else ["other"])
@@ -1157,7 +1454,11 @@ def all_bots(now=None, getter=None, procs=None):
                     "by_bot": {b: round(x["money"], 4) for b, x in got},
                     "by_bot_put_in": {b: round(x["put_in"], 4) for b, x in got},
                     "by_bot_markets": {b: x["markets"] for b, x in got},
+                    "by_bot_pot_pct": {b: x.get("pot_pct") for b, x in got},
                     "partial": bool(missing), "missing": missing}
+        attach_pots({w: total[w]}, ctx, None)
+        if missing:                                  # money that leaves a pot out is no base for a share
+            total[w].update(pot_pct=None, pot_why="these totals leave out %s" % ", ".join(missing))
     days_7 = []
     for k in range(7):
         d = shift_day(today, -k)
@@ -1180,7 +1481,7 @@ def all_bots(now=None, getter=None, procs=None):
     errors = [("%s: %s" % (b, e)) for b in BOTS for e in bots[b]["errors"]]
     return {"as_of_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "as_of_et": et_clock(now),
             "today_et": today, "bots": bots, "other": other, "total": total, "total_days_7": days_7,
-            "balances": bal, "note": note, "errors": sorted(set(errors))}
+            "balances": bal, "note": note, "errors": sorted(set(errors)), "pot_check": pot_check(ctx)}
 
 
 # ---- words for a phone screen -------------------------------------------------
@@ -1211,13 +1512,30 @@ def _n(k, word):
     return "%d %s%s" % (k, word, "" if k == 1 else "s")
 
 
-def _wline(w, name):
+def _wline(w, name, whose="its pot"):
     if w is None:
         return "%s: COULD NOT READ KALSHI" % name
     if not w["markets"]:
         return "%s: nothing settled" % name
-    return "%s: %s on %s in (%s), %d won, %d lost" % (
-        name, usd(w["money"]), usd(w["put_in"]).lstrip("+"), pct(w["return_pct"]), w["won"], w["lost"])
+    pw = pot_words(w, whose)
+    return "%s: %s on %s in (%s)%s, %d won, %d lost" % (
+        name, usd(w["money"]), usd(w["put_in"]).lstrip("+"), pct(w["return_pct"]),
+        (" = " + pw) if pw else "", w["won"], w["lost"])
+
+
+def _pot_note(m):
+    """One line on what the pot percentages are, or why none is shown (None if nothing to say)."""
+    ws = [m.get(k) for k in WINDOW_KEYS if m.get(k) and m[k]["markets"]]
+    if not ws:
+        return None
+    if any(w.get("pot_pct") is not None for w in ws):
+        shared = m.get("pot_shared_with") or []
+        return ("%% of its pot = of what the pot held when the window began (cash + open bets, + any money "
+                "moved in during it); all time = of the money put in%s." % (
+                    " -- the pot is the whole main account, shared with the %s" % " and the ".join(
+                        SPEC[b]["label"].lower() for b in shared) if shared else ""))
+    why = next((w.get("pot_why") for w in ws if w.get("pot_why")), None)
+    return ("%% of its pot: not shown -- %s." % why) if why else None
 
 
 def _bot_text(b):
@@ -1256,6 +1574,8 @@ def _bot_text(b):
         L.append(head + ":")
         for k in ("today", "yesterday", "last_7_days", "this_month", "all_time"):
             L.append(_wline(m[k], m[k]["label"]))
+        if _pot_note(m):
+            L.append("  " + _pot_note(m))
         for k in ("today", "all_time"):
             w = m[k]
             if w["markets"]:
@@ -1319,12 +1639,15 @@ def text_summary(name="all", now=None, getter=None, procs=None):
     if name != "all":
         return _bot_text(bot(name, now=now, getter=getter, procs=procs))
     a = all_bots(now=now, getter=getter, procs=procs)
-    L = ["ALL BOTS -- %s" % a["as_of_et"]]
+    L = ["ALL BOTS -- %s" % a["as_of_et"],
+         "% of a pot = of what it held when the window began; all time = of the money put in."]
     for w in ("today", "yesterday", "last_7_days", "this_month", "all_time"):
         t = a["total"][w]
-        L.append(_wline(t, t["label"]))
-        bits = ["%s %s" % (b, usd(v) if t["by_bot_markets"][b] else "none") for b, v in t["by_bot"].items()
-                if b != "other" or t["by_bot_markets"][b]]
+        L.append(_wline(t, t["label"], "all pots"))
+        bits = ["%s %s%s" % (b, usd(v) if t["by_bot_markets"][b] else "none",
+                             (" (%s)" % pot_pct_txt(t["by_bot_pot_pct"][b]))
+                             if t["by_bot_markets"][b] and t["by_bot_pot_pct"].get(b) is not None else "")
+                for b, v in t["by_bot"].items() if b != "other" or t["by_bot_markets"][b]]
         if t["markets"]:
             L.append("  " + " | ".join(bits))
         if t["partial"]:
@@ -1354,7 +1677,23 @@ def text_summary(name="all", now=None, getter=None, procs=None):
             L.append("Open: %s %d (%s at risk)" % (b, o["count"], usd(o["at_risk"]).lstrip("+")))
     for e in a["errors"]:
         L.append("! " + e)
+    L += pot_check_lines(a.get("pot_check"))
     return "\n".join(L)
+
+
+def pot_check_lines(pc):
+    """'! The main account's books are $153.65 off: ...' for each pot whose cash + open bets is not
+    explained by money put in + every settled market. Nothing when they agree or cannot be checked."""
+    out = []
+    for k in SUBS:                                       # per pot; 'all' would repeat them
+        x = (pc or {}).get(k)
+        if x and x.get("off"):
+            out.append("! The %s holds %s %s than Kalshi's books explain (cash + open bets %s; money put in "
+                       "%s, all settled %s) -- money moved that no listing shows, so its %% may be off by "
+                       "up to that." % (x["of"], usd(abs(x["unexplained"])).lstrip("+"),
+                                        "more" if x["unexplained"] > 0 else "less", usd(x["now"]).lstrip("+"),
+                                        usd(x["money_in"]).lstrip("+"), usd(x["settled"])))
+    return out
 
 
 # ---- self-test -----------------------------------------------------------------
@@ -1371,13 +1710,18 @@ def selftest():
     # does not find itself; everything else in the file is scanned.
     with open(os.path.abspath(__file__), encoding="utf-8") as fh:
         src = fh.read()
+    # 2026-10-02: the transfer HISTORY (GET .../transfers, plural) is read for the pot; the singular path
+    # is the one that MOVES money, and it stays forbidden.
     bad = [p for p in (r"\b" + "PO" + r"ST\b", r"\b" + "DEL" + r"ETE\b", r"\b" + "PA" + r"TCH\b", r"\b" + "PU" + r"T\b",
-                       "portfolio/" + "orders", "events/" + "orders", "subaccounts/" + "transfer", "order" + "cli",
+                       "portfolio/" + "orders", "events/" + "orders", "subaccounts/" + r"transfer(?!s)", "order" + "cli",
                        "pin" + "take", "url" + "open", "urllib" + ".request", "Stop-" + "Process", "Start-" + "Process",
                        "task" + "kill", r"os\." + "kill", r"\." + r"terminate\(", "Invoke-" + "WebRequest",
                        "Terminate" + "Process", "Create" + "Process", "Write" + "ProcessMemory", "Shell" + "Execute")
            if re.search(p, src)]
     ck(not bad, "this file contains no order, cancel, transfer or process-control call (found: %s)" % bad)
+    ck(sorted(set(re.findall(r"/portfolio/subaccounts/\w+", src))) == ["/portfolio/subaccounts/balances",
+                                                                     "/portfolio/subaccounts/transfers"],
+       "the only subaccount paths named are the two GET listings (cash by pool, transfer history)")
     masks = re.findall(r"k32\." + r"OpenProcess\(\s*([^,]+),", src)
     ck(masks and all(m.strip() == "0x1000" for m in masks),
        "every process handle is opened with QUERY_LIMITED_INFORMATION (0x1000) only: %s" % masks)
@@ -1409,19 +1753,53 @@ def selftest():
             S("KXNEAR15M-26SEP300030-30", "2026-09-30T04:30:06Z", "yes", yn=2, yc=1.93, fee=0.0048),          # +0.0652
             S("KXXRP15M-26SEP292300-00", "2026-09-30T03:00:06Z", "yes", yn=3, yc=2.42, fee=0.0328)]           # +0.5472
     world = {"0": sub0, "1": sub1, "2": sub2}
-    poss = {"0": [{"ticker": "KXBTC15M-26SEP301245-45", "position_fp": "-30.00", "market_exposure_dollars": "29.10"},
+    poss = {"0": [{"ticker": "KXBTC15M-26SEP301245-45", "position_fp": "-30.00", "market_exposure_dollars": "29.10",
+                   "fees_paid_dollars": "0.06"},
                   {"ticker": "KXCRYPTOLEAD15M-26SEP301230-SOL", "position_fp": "20.00",
                    "market_exposure_dollars": "19.60"}],
             "1": [{"ticker": "KXNEAR15M-26SEP301245-45", "position_fp": "1.00", "market_exposure_dollars": "0.98"}],
             "2": []}
     bals = {"0": "1000.0000", "1": "15.1000", "2": "24.0000"}
+
+    def T(s):
+        return calendar.timegm(time.strptime(s, "%Y-%m-%dT%H:%M:%SZ"))
+    # the account's books (2026-10-02, the pot). Worked by hand below.
+    xfers = [{"amount_cents": 1600, "created_ts": T("2026-09-28T15:54:07Z"), "from_subaccount": 0, "to_subaccount": 1,
+              "exchange_index": 2, "transfer_id": "t1"},                                  # $16 main -> ladder
+             {"amount_cents": 2000, "created_ts": T("2026-09-29T00:15:30Z"), "from_subaccount": 0, "to_subaccount": 2,
+              "exchange_index": 2, "transfer_id": "t2"},       # $20 main -> forecaster, 8:15 PM ET Sep 28
+             {"amount_cents": 200, "created_ts": T("2026-09-29T04:19:02Z"), "from_subaccount": 2, "to_subaccount": 0,
+              "exchange_index": 2, "transfer_id": "t3"},       # $2 back, 12:19 AM ET Sep 29
+             {"amount_cents": 500, "created_ts": T("2026-09-30T14:00:00Z"), "from_subaccount": 0, "to_subaccount": 2,
+              "exchange_index": 2, "transfer_id": "t4"}]       # $5 main -> forecaster, 10 AM ET today
+    deps = [{"amount_cents": 100000, "fee_cents": 0, "status": "applied", "finalized_ts": T("2026-08-01T12:00:00Z")},
+            {"amount_cents": 2550, "fee_cents": 50, "status": "applied",            # $25 after the fee, 9 AM ET
+             "finalized_ts": T("2026-09-30T13:00:00Z")},                            # today, sitting in POOL 0
+            {"amount_cents": 50000, "fee_cents": 0, "status": "pending",            # in flight: must NOT count
+             "created_ts": T("2026-09-30T15:00:00Z")}]
+    wdrs = [{"amount_cents": 4000, "fee_cents": 0, "status": "applied", "finalized_ts": T("2026-09-25T12:00:00Z")}]
     asked = []
-    fail = {"page2": False, "all": False}
+    fail = {"page2": False, "all": False, "ledgers": False, "cents": False}
 
     def fake(path, q):
         asked.append((path, dict(q or {})))
         if fail["all"]:
             return 401, {"error": "nope"}
+        if path in LEDGER_PATHS:
+            if fail["ledgers"]:
+                return 500, "boom"
+            if path.endswith("/transfers"):                  # two pages, to exercise the cursor
+                return 200, ({"transfers": xfers[:2], "cursor": "x2"} if not q.get("cursor")
+                             else {"transfers": xfers[2:], "cursor": ""})
+            if path.endswith("/balances"):
+                return 200, {"subaccount_balances": [
+                    {"subaccount_number": 0, "exchange_index": 0, "balance": "25.0000"},
+                    {"subaccount_number": 0, "exchange_index": 2, "balance": "100000" if fail["cents"] else "1000.0000"},
+                    {"subaccount_number": 1, "exchange_index": 2, "balance": "15.1000"},
+                    {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"}]}
+            if path.endswith("/deposits"):
+                return 200, {"deposits": deps, "cursor": ""}
+            return 200, {"withdrawals": wdrs}
         sub = str((q or {}).get("subaccount"))
         if path == "/portfolio/settlements":
             rows = world.get(sub, [])
@@ -1524,10 +1902,10 @@ def selftest():
 
         # 1. the planted world, first read: a full walk of every pot
         a = all_bots(now=NOW, getter=fake, procs=PROCS)
-        ck(asked and all(q.get("subaccount") in ("0", "1", "2") for _, q in asked),
-           "EVERY Kalshi request names its subaccount -- with none, settlements mix every pot's rows")
-        ck(set(p for p, _ in asked) <= set(PATHS),
-           "and only the three read paths are ever asked for: %s" % sorted(set(p for p, _ in asked)))
+        ck(asked and all(q.get("subaccount") in ("0", "1", "2") for p, q in asked if p in POT_PATHS),
+           "EVERY per-pot Kalshi request names its subaccount -- with none, settlements mix every pot's rows")
+        ck(set(p for p, _ in asked) == set(PATHS),
+           "and only the seven read paths are ever asked for: %s" % sorted(set(p for p, _ in asked)))
         ck(sum(1 for p, q in asked if p == "/portfolio/settlements" and q["subaccount"] == "0") == 2,
            "the first read walks the main account's two settlement pages to the end")
         pin, race, fc, lad = (a["bots"][b] for b in BOTS)
@@ -1625,6 +2003,75 @@ def selftest():
            and any(h["what"] == "stop_file" for h in al["halts"]),
            "ladder today: 3 bids placed, 1 filled, 2 cancelled, 1 refused, and the stop file seen")
 
+        # 1b. THE POT (2026-10-02): every window as a % of what its pot held when the window began, and
+        # all time as a % of the money put in. Worked by hand from the planted books:
+        #   now: main $1,000 crypto pool + $25 in pool 0 (today's deposit) + open bets 29.10 + 0.06 fee
+        #        + 19.60 = $1,073.76; ladder 15.10 + 0.98 = $16.08; forecaster $24.00; all $1,113.84
+        #   main TODAY: settled today -14.56 (pin -10.12, race -4.44); moved in since midnight ET +25.00
+        #     deposit - 5.00 to the forecaster = +20 -> start 1073.76 + 14.56 - 20 = 1068.32, + 20 moved
+        #     in during the day = 1088.32. pin -10.12 / 1088.32 = -0.93%; race -4.44 / 1088.32 = -0.41%
+        #   forecaster TODAY: 24 + 2.4723 - 5 = 21.4723 at the start, + 5 = 26.4723 -> -9.34%
+        #   ladder TODAY: 16.08 - 0.042 = 16.038 -> +0.26%
+        #   all pots TODAY: 1113.84 + 16.9903 - 25 = 1105.8303, + 25 = 1130.8303 -> -16.9903 = -1.50%
+        #   main YESTERDAY (Sep 29): settled since -18.51; moved in since +22 (t3 +2 at 12:19 AM ET, +25,
+        #     -5) -> start 1070.27, + t3's 2 inside the day = 1072.27; pin +0.56 -> +0.05%, other -0.42%
+        #   forecaster YESTERDAY: 24 + 1.9251 - 3 = 22.9251 (the -2 inside the day adds nothing) -> +2.39%
+        #   main 7 DAYS: settled since Sep 24 -18.33; moved since -54 (withdrawal -40, -16, -20, +2, +25,
+        #     -5) -> 1146.09; pin -9.38 -> -0.82%. ladder 7 DAYS: 16.08 - 0.082 - 16 = -0.002 -> 0 at the
+        #     start (it did not exist), + the $16 moved in = 16.00 -> +0.51%. MONTH: main 1145.13 -> -0.74%
+        #   ALL TIME, money put in: all 1000 + 25 - 40 = 985 (the PENDING $500 is not in); main 985 - 16
+        #     - 20 + 2 - 5 = 946; ladder 16; forecaster 23. pin -17.94/946 = -1.90%, forecaster -8.37%,
+        #     all -28.7331/985 = -2.92%
+        def P(w, pot, pp, kind="start"):
+            return (w is not None and w["pot"] is not None and abs(w["pot"] - pot) < 0.006
+                    and w["pot_pct"] is not None and abs(w["pot_pct"] - pp) < 0.006 and w["pot_kind"] == kind)
+        rm, fm, lm, tt = race["money"], fc["money"], lad["money"], a["total"]
+        ck(P(pm["today"], 1088.32, -0.93) and P(rm["today"], 1088.32, -0.41),
+           "TODAY pin -0.93%% and race -0.41%% of the SAME main pot ($1,088.32 = cash in BOTH pools + open "
+           "bets at cost - today's settled + today's deposit, net of the $5 moved out): %s / %s"
+           % ((pm["today"]["pot"], pm["today"]["pot_pct"]), (rm["today"]["pot"], rm["today"]["pot_pct"])))
+        ck(P(fm["today"], 26.4723, -9.34) and P(lm["today"], 16.038, 0.26),
+           "TODAY forecaster -9.34%% of $26.47 (incl. the $5 moved in at 10 AM); ladder +0.26%% of $16.04: %s / %s"
+           % ((fm["today"]["pot"], fm["today"]["pot_pct"]), (lm["today"]["pot"], lm["today"]["pot_pct"])))
+        ck(P(tt["today"], 1130.83, -1.50) and tt["today"]["pot_of"] == "all pots",
+           "TODAY all pots -1.50%% of $1,130.83 -- subaccount transfers cancel, the deposit does not: %s"
+           % ((tt["today"]["pot"], tt["today"]["pot_pct"]),))
+        ck(P(pm["yesterday"], 1072.27, 0.05) and P(a["other"]["yesterday"], 1072.27, -0.42)
+           and P(fm["yesterday"], 22.9251, 2.39) and P(lm["yesterday"], 15.998, 0.25)
+           and P(tt["yesterday"], 1109.1931, -0.30),
+           "YESTERDAY: a past window is worked back from now through today's markets and moves too; only the "
+           "money moved IN during that day is added (main +$2 back from the forecaster)")
+        ck(P(pm["last_7_days"], 1146.09, -0.82) and P(lm["last_7_days"], 16.00, 0.5125)
+           and P(fm["last_7_days"], 25.9251, -7.43) and P(tt["last_7_days"], 1149.0131, -1.76)
+           and P(pm["this_month"], 1145.13, -0.74),
+           "7 DAYS and MONTH: the withdrawal and the money moved out shrink nothing after the start; a pot "
+           "that did not exist at the start (ladder, $0) is a % of the money moved into it, never of $0")
+        ck(P(pm["all_time"], 946.0, -1.90, "money_in") and P(rm["all_time"], 946.0, 100 * -4.44 / 946, "money_in")
+           and P(fm["all_time"], 23.0, -8.37, "money_in") and P(lm["all_time"], 16.0, 0.5125, "money_in")
+           and P(tt["all_time"], 985.0, -2.92, "money_in"),
+           "ALL TIME is of the money put in: deposits after fees - withdrawals ($985, the pending $500 left out); "
+           "main = that - what moved to the bot pots ($946); a subaccount = what moved into it, net ($16, $23)")
+        ck(tt["today"]["by_bot_pot_pct"] == {"pin": -0.93, "race": -0.41, "forecaster": -9.34, "ladder": 0.26,
+                                            "other": None},
+           "the /bots breakdown carries each bot's own %% of its own pot: %s" % tt["today"]["by_bot_pot_pct"])
+        _pt = _bot_text(pin)
+        ck("Today: -$10.12 on $109.50 in (-9.2%) = -0.93% of its pot ($1,088.32), 2 won, 1 lost" in _pt
+           and "All time: -$17.94 on $" in _pt and "= -1.9% on money put in ($946.00)" in _pt
+           and "the pot is the whole main account, shared with the coin race" in _pt,
+           "the phone text: '= X% of its pot ($)' on every window, all time 'on money put in', and pin "
+           "says the main pot is shared")
+        _st = text_summary("all", now=NOW + 1, getter=fake, procs=PROCS)
+        ck("Today: -$16.99 on $" in _st and "= -1.5% of all pots ($1,130.83)" in _st
+           and "pin -$10.12 (-0.93%) | race -$4.44 (-0.41%) | forecaster -$2.47 (-9.3%) | ladder +$0.04 (+0.26%)"
+           in _st, "/bots-style text: the all-pots % and each bot's own % in the breakdown")
+        pc = a["pot_check"]
+        ck(pc["1"]["off"] is False and abs(pc["1"]["unexplained"]) < 0.01
+           and pc["0"]["off"] is True and abs(pc["0"]["unexplained"] - 154.65) < 0.006 and pc["2"]["off"] is True
+           and "! The main account holds $154.65 more than Kalshi's books explain" in _st
+           and "subaccount 1 holds" not in _st,
+           "POT CHECK: the ladder's pot is explained to the cent by money in + settled (no warning); this planted "
+           "main account is not ($1,073.76 now vs $946 in - $26.89 settled = $154.65 unexplained) and is said")
+
         # 2. the cache: a read within 60 s asks Kalshi nothing; after 60 s one page a pot, no double count
         n0 = len(asked)
         a2 = all_bots(now=NOW + 30, getter=fake, procs=PROCS)
@@ -1642,6 +2089,38 @@ def selftest():
             cj = json.load(fh)
         ck(set(cj["subs"]) == set(SUBS) and all(set(r) <= set(KEEP) for r in cj["subs"]["0"]["rows"].values()),
            "the cache holds the three pots, each row trimmed to the fields the money needs")
+        ck(len(cj["ledgers"]["transfers"]) == 4 and len(cj["ledgers"]["deposits"]) == 3,
+           "and the account's books, the transfer history walked across both its pages")
+
+        # 2b. NULL -- the pot unknown means NO percentage, never a guess
+        fail["ledgers"] = True
+        n1 = all_bots(now=NOW + 300, getter=fake, procs=PROCS)
+        ws = [n1["bots"][b]["money"][k] for b in BOTS for k in WINDOW_KEYS] + [n1["total"][k] for k in WINDOW_KEYS]
+        _nt = _bot_text(n1["bots"]["pin"])
+        ck(all(w["pot_pct"] is None and w["pot"] is None for w in ws)
+           and abs(n1["bots"]["pin"]["money"]["today"]["money"] - (-10.12)) < 1e-6
+           and "of its pot (" not in _nt and "on money put in" not in _nt
+           and "% of its pot: not shown -- transfers read failed (HTTP 500)" in _nt
+           and all(v is None for v in n1["pot_check"].values()),
+           "NULL: the books unreadable (the deposit/transfer listings fail) -> the money is still shown, NO "
+           "percentage anywhere, and the page says why")
+        fail["ledgers"], fail["cents"] = False, True
+        n2 = all_bots(now=NOW + 400, getter=fake, procs=PROCS)
+        ck(n2["bots"]["pin"]["money"]["today"]["pot_pct"] is None
+           and "disagree" in n2["bots"]["pin"]["money"]["today"]["pot_why"]
+           and n2["total"]["today"]["pot_pct"] is None and "main account" in n2["total"]["today"]["pot_why"]
+           and n2["bots"]["ladder"]["money"]["today"]["pot_pct"] is not None
+           and n2["bots"]["pin"]["money"]["all_time"]["pot_pct"] is not None,
+           "NULL: a cash listing whose crypto-pool figure is not /portfolio/balance's dollars (100000 vs 1000) is "
+           "an unknown UNIT -- no window % for the main pot or the total (hard rule 5); the ladder's pot and the "
+           "money-put-in base (which needs no cash) stand")
+        fail["cents"] = False
+        cj2 = load_cache()
+        cj2["subs"]["0"]["pos_t"] = cj2["subs"]["0"]["tried"] - 60            # an open-bets read from an older pass
+        ctx2 = pot_context(cj2, et_day(NOW + 400))
+        ck(ctx2["subs"]["0"]["now"] is None and "open-bets" in ctx2["subs"]["0"]["why"]
+           and ctx2["subs"]["1"]["now"] is not None,
+           "NULL: figures from two different reads are never mixed -- a stale open-bets read voids that pot")
 
         # 3. a first walk cut short is RESUMED, and flagged partial until it is
         os.remove(cache_path())
@@ -1701,6 +2180,9 @@ def selftest():
         ck(all(e["bots"][b]["running"]["alive"] is False and e["bots"][b]["activity_today"]["ok"] is False
                and e["bots"][b]["last_settled"] == [] and e["bots"][b]["open"]["count"] == 0 for b in BOTS),
            "EMPTY: nothing running, no logs, no open positions, no last markets")
+        ck(all(e["bots"][b]["money"][k]["pot_pct"] is None for b in BOTS for k in WINDOW_KEYS)
+           and all(e["total"][k]["pot_pct"] is None for k in WINDOW_KEYS),
+           "EMPTY: nothing settled, so no percentage of any pot")
         txt = text_summary("all", now=NOW + 1, getter=empty, procs=[])
         ck("nothing settled" in txt and "+$" not in txt and "-$" not in txt,
            "EMPTY: the phone text says 'nothing settled' and shows no gain or loss")
