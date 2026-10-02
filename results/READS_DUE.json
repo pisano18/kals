@@ -351,7 +351,8 @@
    "what": "Coin race at 40 a leg / $120 cap / stop for the day after 2 losing races (v-race40, pid 4454164 since 2026-09-30 12:25:56Z).",
    "how": "results/pinracepenny-live.jsonl live_order (count_asked vs filled), live_settled (pnl), live_loss / live_halt; Kalshi KXCRYPTOLEAD rows in the main ledger since 12:25Z",
    "bar": "PRE-REGISTERED 2026-09-30 ~12:40Z: back to 20 a leg if the day limit fires on 2 of the first 3 days, or if money since the change is below $0 after 30+ legs. Report the fill ratio at 40 (at 20 it was 46 in 100).",
-   "status": "open"
+   "status": "read",
+   "read_note": "read 2026-10-02 ~11:50Z: 09-30 12:25:56Z..10-02 11:46Z, 11 legs asked 315.46 filled 123.26 (39/100 vs 46.5/100 at 20); 5 races 4W 1L 0T, ledger +$6.08 on $115.41 staked (5.27%/$, +0.54% of main); day limit fired 0 of first 3 ET days; 30-leg clause not matured (11 legs); neither revert trigger fired -> KEEP 40 by the bar (not evidence 40 is safe); the one loss filled 1.26/40 (-$1.14), full fill would be ~-$36; +$6.08 rests on two photo-finish bets of $39.20 and $73.20 (0.23 and 0.45 bp). Operator has the size question (20 + $40/race cap recommended)."
   },
   {
    "id": "crash-guard",
@@ -384,6 +385,14 @@
    "what": "LIVE once the operator runs scale_sub_1002.ps1 (PREPARED 2026-10-02 ~06:55Z, VERSIONS.md v-sub-autosize): forecaster (subaccount 2) on --auto-scale (scale = pot/630, pot = cash + cost of holdings, re-read every 60 s, applied only when nothing is held or in flight; stops -20% day / -33% run / 70% committed of the pot) and ladder (subaccount 1) on --auto-size (size = floor(pot/14), applied only when nothing is held and no bid rests; -20% day / 70% committed), NO start cap. Operator 2026-10-02: 'Set no limits on the sub accounts ... I want each account running just like the main pin.' Evidence for the sizing rule: his order only -- untested on these bots.",
    "how": "results/forecaster-live-orders.jsonl and results/ladder-live-orders.jsonl since the switch: the last 'start' record (live true, auto_scale / auto_size true, pid = the one results/scale_sub_1002.log printed, pot, rails); every 'rescale' (old, new, pot, old_rails, rails) and 'rescale_wait'; every 'placed' body count against the rails in force at that time; any 'day_stop' / 'run_stop' / 'pot_unreadable' / 'sizer_error'. Money per pot: python research/botstats.py. If the script has not run by the due date, say so and move the due to 2 days after it runs.",
    "bar": "PRE-REGISTERED 2026-10-02 ~06:55Z, before the switch. PASS = (1) both bots restarted on the flag (start record with auto_scale / auto_size true from the switch's pid); (2) the first rescale records are sane: forecaster scale within 10% of pot/630, ladder size = floor(pot/14); (3) no order ever above the rails in force at its time (forecaster count <= per_order of the rails then, ladder count = size then); (4) no 'rescale' record while something was held or a bid rested (a rescale between a live_fill and its live_settle, or between a placed bid and its cancel/fill, FAILS). STOP AND REVERT (the v-sub-autosize revert lines) if either bot's day stop fires twice in the first 3 days after the switch. Money is reported but is NOT the bar at 2 days (too few closes).",
+   "status": "open"
+  },
+  {
+   "id": "race40-30legs",
+   "due": "2026-10-05T12:00Z",
+   "what": "Coin race at 40 a leg: the money clause of the race40 bar needs 30+ legs (11 at the 10-02 read, ~5.6 legs/day).",
+   "how": "results/pinracepenny-live.jsonl live_order/live_settled since 2026-09-30 12:25:56Z joined to the main ledger's KXCRYPTOLEAD rows; fill ratio; day-limit firings",
+   "bar": "same as race40 (pre-registered 09-30): back to 20 a leg if the day limit fired on 2 of the first 3 days or if money since the change is below $0 after 30+ legs; also report a full-fill loss (~$36-39 a leg) against the period's profit",
    "status": "open"
   }
  ]
