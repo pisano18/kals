@@ -1,3 +1,58 @@
+# v-sub-autosize -- PREPARED 2026-10-02 ~06:55Z, NOT YET LIVE (research/cleanroom/forecaster_live.py `--auto-scale`, research/cleanroom/ladder_live.py `--auto-size`; the one-shot switch is scale_sub_1002.ps1, its -DryRun PASSED 06:51Z): each side-account bot sizes from its OWN pot like the main bot, with NO start-balance cap. Nothing changes until the operator runs the script.
+
+Operator 2026-10-02: "Set no limits on the sub accounts. I don't think you understand the goal, I want each account
+running just like the main pin. High total making 2-10% per day of its total."
+
+What the script does (`powershell -NoProfile -ExecutionPolicy Bypass -File C:/kals-repo/scale_sub_1002.ps1`; -DryRun = checks only):
+validates (both self-tests, no stop files, one live forecaster + one live ladder, main bot and coin race present and
+untouched, boot_all.ps1 holds the old argv lines, both pots >= $10), points the keep-alive at the new argv (backup
+results/boot_all.before-autosize.ps1), then per bot: stop file -> exit -> delete -> start -> 25 s -> checks the new
+start record carries the flag and the size its pot implies.
+- **Forecaster (subaccount 2)**: `--scale 0.10` -> `--auto-scale`. scale = pot / 630 (pot = cash + the cost of what it
+  holds; $63 -> 0.10 = today's size, $126 -> 0.20, clamped 0.02..1.0 = the paper's own size), read at start and every
+  60 s, applied ONLY when nothing is held or in flight ('rescale' record on each change, 'rescale_wait' once when
+  deferred). Stops: day -20% of the pot at the day's first rescale, run -33% of the pot at start, held + in flight
+  <= 70% of the pot; per side / per close / per order stay 100 / 400 / 100 x scale. At the dry-run pot of $59.05:
+  scale 0.0937 -> 9 a side, 37 a close, $41.34 held, day stop -$11.81, run stop -$19.49 (today: 10 / 40 / $44 / -$24
+  / -$40 -- the stops get TIGHTER and the size a hair smaller until the pot passes $63). A hedge (the paper's hedge_p
+  insurance; no live variant has it) is now exempt from every size/money cap and the crash guard (09-19 rule: a gate
+  must never block a hedge) -- before this it was capped like any order; a plain opposite-side bet is capped as before.
+  `--variant race1_98 --crash-gap 0.10` unchanged.
+- **Ladder (subaccount 1)**: `--size 5` -> `--auto-size`. size = floor(pot / 14) ($70 -> 5 = today's, $140 -> 10,
+  clamped 1..100), the same 60-s re-read, applied only when nothing is held and no bid rests or is being cancelled.
+  Day stop -20% of the day's first pot; resting + held <= 70% of the pot; contracts <= 10 x size. At the dry-run pot
+  of $70.21: 5 a bid, 50 contracts, $49.14 committed, day stop -$14.04 (today: 5 / 50 / $60 / -$30).
+- **Both**: NO upper start cap in the new mode (the fixed --scale / --size modes keep theirs: $70 / $73 today);
+  refuse under a $10 pot; the primary account still refused; the pot's unit is read from both `balance` (cents) and
+  `balance_dollars` and they must agree (hard rule 5); an unreadable pot changes nothing (logged `pot_unreadable`).
+  The `--scale` ceiling 0.25 -> 1.0 and `--size` ceiling 20 -> 100, rails still derived from the value.
+
+Evidence: THE OPERATOR'S ORDER ONLY. No paper or live test of pot-driven sizing on these bots exists; the rule is the
+main bot's shape (bank-proportional, read when flat), not a measured optimum; 630 and 14 are chosen so today's pots
+reproduce today's sizes. Self-tests PASSED (both; planted): scale/size at $63/$126/$630 and $70/$140/$13, the clamps,
+rails move with the scale/size, NO rescale while held / in flight / resting / cancelling then applied once flat, the
+day stop moves only at the day's first rescale and the run stop never, stops = the stated % of the pot, NULL
+(`--scale 0.10` / `--size 5` reproduce today's rails exactly and the old start caps still apply), the hedge path sent
+with every cap full and the crash guard on, the pot reader's unit check. Startup path run with each flag in
+`--dry-run` 06:51-06:53Z (start records in the order logs, pid 4512916 / 4517292, nothing sent). READS_DUE
+`sub-autosize` (2026-10-04 12:00Z; stop-and-revert rule: either bot's day stop twice in the first 3 days).
+
+Verifier 2026-10-02 ~07:10Z: both self-tests re-run PASSED; diffs read; -DryRun re-run PASSED 07:06Z (pots $70.21 /
+$59.05, same pids). One fix to the script: before each stop file is removed it now waits (<= 60 s) while boot_all.ps1
+is mid-run -- KalsBoot runs it every 10 min and it snapshots the process list once at its start, so a run straddling
+the switch could have started a second copy. Known, NOT changed (dormant: race1_98 has no hedge_p): a live hedge
+under 75c would still be refused by the 75c price floor in both want() and body_ok(), and by the stop/halt states;
+the ladder's day stop halts until restart (pre-existing, `halted` is never reset); the run stop is -33% of the START
+pot, not the main bot's 20%-from-high; ordercli's --sub-fund still caps a subaccount at $100 (a funding rail, not a
+bot rail).
+
+**REVERT (once the script has run):** `Copy-Item C:\kals-repo\results\boot_all.before-autosize.ps1 C:\kals-repo\boot_all.ps1` then, per bot, `New-Item C:\kals-repo\results\<forecaster|ladder>-live.stop`, wait for the process to exit, `Remove-Item` the stop file, and start the OLD argv:
+`Start-Process C:\Python314\python.exe -ArgumentList @("-u","research\cleanroom\forecaster_live.py","--subaccount","2","--live","--variant","race1_98","--scale","0.10","--crash-gap","0.10","--minutes","10080") -WorkingDirectory C:\kals-repo -WindowStyle Hidden -RedirectStandardOutput C:\kals-repo\results\forecaster-live-stdout.log -RedirectStandardError C:\kals-repo\results\forecaster-live-stderr.log`
+`Start-Process C:\Python314\python.exe -ArgumentList @("-u","research\cleanroom\ladder_live.py","--subaccount","1","--live","--size","5","--minutes","10080") -WorkingDirectory C:\kals-repo -WindowStyle Hidden -RedirectStandardOutput C:\kals-repo\results\ladder-live-stdout.log -RedirectStandardError C:\kals-repo\results\ladder-live-stderr.log`
+(the fixed modes' start caps are $70 / $73: if a pot has grown past them, use a bigger `--scale` / `--size` or the old start rail refuses). Code only: `git checkout 17bcde8 -- research/cleanroom/forecaster_live.py research/cleanroom/ladder_live.py`.
+
+---
+
 # v-lockfix-code -- 2026-10-02 06:03Z -- CODE ON DISK, FLAG OFF (F20; research/pinrun.py `--early-price-free-tries`, on-disk code_sha bc5a3f43e2c5, base commit 0ea3dcd): with the flag ON, an early-leg refusal for PRICE (early_cheap / early_dear) gives back the try it was charged (both counters), so a coin at 97.9-98c at 31-45 s is no longer locked out (market_attempts) of the <= 30 s window. The live command line is unchanged, so the live bot does nothing new; its self-restart ~2026-10-03 12:12Z merely loads this code.
 
 Evidence: pinrun self-test 1287 ok / 0 FAIL plain, under the live argv, and under the live argv plus the flag

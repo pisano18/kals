@@ -24,14 +24,24 @@ HARD RAILS (code, not flags)
   held at cost); stop for the ET day after -$6 realized; at most 3 markets a quarter-hour; post_only
   always; refuse to start if the subaccount holds more than $25 or its balance is unreadable; stop file
   results/ladder-live.stop cancels everything and exits; at most 3 order writes a second (the live bot
-  shares this API key's rate limit).
+  shares this API key's rate limit). --size n multiplies the contract/money rails by n (v-ladder-size).
+
+--auto-size (v-sub-autosize, 2026-10-02; operator: "Set no limits on the sub accounts ... I want each account running
+  just like the main pin"): the bid size is the subaccount's own POT -- cash + the cost of what it holds -- divided by
+  $14, floored ($70 -> 5, what --size 5 runs; $140 -> 10; clamped 1..100), read at start and re-read every 60 s like
+  the main bot's autosize, APPLIED ONLY WHEN NOTHING IS HELD AND NO BID RESTS (a live position or a resting bid is
+  never resized), each change logged as a 'rescale' record. Day stop -20% of the pot at the day's first rescale;
+  resting + held <= 70% of the pot; contracts <= 10 x size as before. NO start-balance cap in this mode (the operator's
+  order); the $10 floor and the primary-account refusal stay.
 
     python research/cleanroom/ladder_live.py --selftest
     python research/cleanroom/ladder_live.py --subaccount N --dry-run --minutes 30
     python research/cleanroom/ladder_live.py --subaccount N --live --minutes 10080
+    python research/cleanroom/ladder_live.py --subaccount 1 --live --auto-size --minutes 10080
 """
 import argparse
 import json
+import math
 import os
 import queue
 import sys
@@ -58,18 +68,155 @@ DAY_STOP = -6.00
 MAX_SUB_BALANCE = 25.00
 
 
-def apply_size(size):
+# v-sub-autosize (2026-10-02): --auto-size. The pot is the subaccount's cash + the cost of what it holds.
+SIZE_MAX = 100                                   # --size / --auto-size ceiling (was 20)
+POT_PER_CONTRACT = 14.0                          # size = floor(pot / 14): $70 -> 5 (today's size), $140 -> 10
+POT_FLOOR = 10.0                                 # refuse to start under this pot (the lower sanity floor)
+POT_REREAD_S = 60.0                              # the main bot's autosize cadence
+DAY_STOP_FRAC, COMMIT_FRAC = 0.20, 0.70
+
+
+def apply_size(size, pot=None):
     """v-ladder-size (2026-09-30, operator: "increase ladder"): contracts per bid, with every rail scaled by it --
-    10 contracts / $12 committed / -$6 day stop per contract of size; start balance $25 + $12 per extra contract."""
+    10 contracts / $12 committed / -$6 day stop per contract of size; start balance $25 + $12 per extra contract.
+    v-sub-autosize: with `pot` (--auto-size) the contract rail still comes from the size, but the money rail is 70%
+    of the pot, there is no start cap, and the day stop is left to AutoSize (-20% of the day's first pot)."""
     global SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE
     n = int(size)
-    if not (1 <= n <= 20):
-        raise SystemExit("--size %s is outside 1..20" % size)
+    if not (1 <= n <= SIZE_MAX):
+        raise SystemExit("--size %s is outside 1..%d" % (size, SIZE_MAX))
     SIZE = Decimal(n)
     MAX_CONTRACTS = 10 * n
-    MAX_COMMIT = 12.00 * n
-    DAY_STOP = -6.00 * n
-    MAX_SUB_BALANCE = 25.00 + 12.00 * (n - 1)
+    if pot is None:
+        MAX_COMMIT = 12.00 * n
+        DAY_STOP = -6.00 * n
+        MAX_SUB_BALANCE = 25.00 + 12.00 * (n - 1)
+    else:
+        MAX_COMMIT = round(COMMIT_FRAC * float(pot), 2)
+        MAX_SUB_BALANCE = None                   # the operator's order: no cap on what the subaccount may hold
+
+
+def size_for_pot(pot):
+    """pot dollars -> contracts a bid: floor(pot / 14), clamped 1..SIZE_MAX."""
+    return max(1, min(SIZE_MAX, int(math.floor(float(pot) / POT_PER_CONTRACT + 1e-9))))
+
+
+def read_pot(sender, sub):
+    """The subaccount's pot in dollars: cash + the cost of what it holds (Kalshi's market_exposure, the cost basis
+    of each open position), or None when either read is unreadable. The unit is READ, never inferred (hard rule 5,
+    as the main bot's read_bank): `balance` (cents) and `balance_dollars` must both be present and agree to a cent.
+    A resting bid's collateral is not added: the size only ever changes when no bid rests, so that read is cash."""
+    st, bal = sender("GET", "/portfolio/balance", None, {"subaccount": int(sub), "exchange_index": POOL})
+    try:
+        cash = float(bal["balance_dollars"])
+        cents = float(bal["balance"])
+    except Exception:
+        return None
+    if st != 200 or abs(cents / 100.0 - cash) > 0.011:
+        return None
+    st2, pos = sender("GET", "/portfolio/positions", None,
+                      {"subaccount": int(sub), "count_filter": "position", "settlement_status": "unsettled"})
+    if st2 != 200 or not isinstance(pos, dict) or not isinstance(pos.get("market_positions"), list):
+        return None
+    held = 0.0
+    for x in pos["market_positions"]:
+        if not isinstance(x, dict):
+            return None
+        try:
+            if x.get("market_exposure_dollars") is not None:
+                held += abs(float(x["market_exposure_dollars"]))
+            else:
+                held += abs(float(x["market_exposure"])) / 100.0
+        except Exception:
+            return None
+    return round(cash + held, 4)
+
+
+def start_refusal(sub_bal, pot, live, auto):
+    """The start checks, as a function so the self-test drives them. Fixed --size keeps the old balance cap and the
+    $3 live floor; --auto-size has NO cap (the operator's order), only the $10 pot floor. The reason, or None."""
+    if auto:
+        if pot is None:
+            return "--auto-size: the pot is unreadable"
+        if float(pot) < POT_FLOOR:
+            return "--auto-size: pot $%.2f is under the $%.0f floor" % (float(pot), POT_FLOOR)
+        return None
+    if sub_bal is None:
+        return "subaccount balance unreadable"
+    if sub_bal > MAX_SUB_BALANCE:
+        return "subaccount holds $%.2f > $%.2f; this is a penny test" % (sub_bal, MAX_SUB_BALANCE)
+    if live and sub_bal < 3.0:
+        return "subaccount holds $%.2f; fund it first (ordercli --sub-fund)" % sub_bal
+    return None
+
+
+class AutoSize:
+    """--auto-size: the pot-driven bid size. `reader()` -> pot dollars or None; `flat()` -> nothing held, no bid
+    resting or queued (called under `lock`); `on_apply()` after every applied size (main keeps the paper engine's
+    P.SIZE in step). tick() reads at most every POT_REREAD_S; consider() changes the size (and MAX_COMMIT) only when
+    flat, sets the day stop at the day's first applied rescale, and writes a 'rescale' record on every change."""
+
+    def __init__(self, log, reader, now, flat, lock=None, on_apply=None):
+        self.log, self.reader, self.now, self.flat = log, reader, now, flat
+        self.lock = lock if lock is not None else threading.Lock()
+        self.on_apply = on_apply
+        self.pot = self.size = self.day = self.last_read = None
+        self.waiting = False
+        self.reads = 0
+
+    def _apply(self, n, pot):
+        apply_size(n, pot=pot)
+        if self.on_apply is not None:
+            self.on_apply()
+
+    def start(self, pot):
+        global DAY_STOP
+        if pot is None or float(pot) < POT_FLOOR:
+            raise SystemExit("--auto-size: pot %s is unreadable or under the $%.0f floor; refusing" % (pot, POT_FLOOR))
+        self.size = size_for_pot(pot)
+        self._apply(self.size, pot)
+        DAY_STOP = round(-DAY_STOP_FRAC * float(pot), 2)
+        self.pot, self.day, self.last_read = float(pot), et_day(self.now()), self.now()
+        return self.size
+
+    def rails(self):
+        return {"size": int(SIZE), "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP}
+
+    def consider(self, pot, now):
+        """Apply `pot` if it changes anything and nothing is open. Returns True when a rescale was applied."""
+        global DAY_STOP
+        new = size_for_pot(pot)
+        d = et_day(now)
+        if new == self.size and d == self.day:
+            return False
+        if not self.flat():
+            if not self.waiting:
+                self.waiting = True
+                self.log.write("rescale_wait", old=self.size, new=new, pot=round(float(pot), 4), why="held or resting")
+            return False
+        old, old_rails = self.size, self.rails()
+        self._apply(new, pot)
+        if d != self.day:
+            DAY_STOP = round(-DAY_STOP_FRAC * float(pot), 2)
+            self.day = d
+        self.size, self.pot, self.waiting = new, float(pot), False
+        self.log.write("rescale", old=old, new=new, pot=round(float(pot), 4), old_rails=old_rails, rails=self.rails())
+        return True
+
+    def tick(self):
+        now = self.now()
+        if self.last_read is not None and now - self.last_read < POT_REREAD_S:
+            return None
+        self.last_read = now
+        pot = self.reader()
+        self.reads += 1
+        if pot is None:
+            self.log.write("pot_unreadable")
+            return None
+        with self.lock:
+            return self.consider(pot, now)
+
+
 MAX_LIVE_PER_CLOSE = 9                           # v-ladder-top (09-29): every coin (was 3 -- the first 3 markets to lock
                                                  # took the slots and never filled; all 20 paper fills were in later ones)
 LIVE_LEVELS = (0,)                               # v-ladder-top: mirror only the top rung (model-2c): 16 of 20 paper fills
@@ -112,10 +259,16 @@ class Broker:
         self.halted = self.stopped = False
         self.lock = threading.Lock()
         self._w = []
+        self.sizer = None         # AutoSize under --auto-size; its tick runs on the poller thread
 
     # --- exposure and rails ---
     def open_orders(self):
         return [v for v in self.live.values() if v["status"] in ("sending", "resting")]
+
+    def flat(self):
+        """Nothing held, no bid sending/resting/cancelling, nothing queued: the only state in which the size may change."""
+        return (not any(h["n"] > 0 for h in self.held.values()) and not self.open_orders()
+                and not any(v["status"] == "cancelling" for v in self.live.values()) and self.q.empty())
 
     def exposure(self):
         n = len(self.open_orders()) * float(SIZE) + sum(h["n"] for h in self.held.values())
@@ -286,6 +439,11 @@ class Broker:
                     self.poll_fills_once()
             except Exception as e:
                 self.log.write("poll_error", err=repr(e)[:300])
+            try:
+                if self.sizer is not None:        # --auto-size: the 60-s pot re-read (dry run included)
+                    self.sizer.tick()
+            except Exception as e:
+                self.log.write("sizer_error", err=repr(e)[:300])
             time.sleep(2.0)
 
 
@@ -422,6 +580,135 @@ def selftest():
         ck(n5 == 50 and c5 <= MAX_COMMIT + 1e-9, "--size 5: exposure counts contracts -- 10 bids of 5 = 50, the 11th refused (%s, %.2f)" % (n5, c5))
     finally:
         SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE = _sv
+    # v-sub-autosize: --auto-size. NULL first: fixed --size 5 is today's rails exactly and the start cap applies.
+    _sv = (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE)
+    try:
+        apply_size(5)
+        ck((SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE) == (Decimal(5), 50, 60.0, -30.0, 73.0),
+           "NULL: --size 5 without --auto-size is today's rails exactly")
+        ck(start_refusal(73.01, None, True, False) and start_refusal(73.0, None, True, False) is None
+           and start_refusal(2.99, None, True, False) and start_refusal(2.99, None, False, False) is None
+           and start_refusal(None, None, True, False),
+           "NULL: without --auto-size the $73 start cap, the $3 live floor and the unreadable-balance refusal still apply")
+        apply_size(21)
+        ck(MAX_CONTRACTS == 210 and MAX_SUB_BALANCE == 265.0, "--size ceiling raised: 21 is accepted (rails x21)")
+        apply_size(100)
+        ck(MAX_CONTRACTS == 1000 and body_ok(order_body("T", "yes", "0.98", 3, "lad-x"), 3), "--size 100 accepted")
+        try:
+            apply_size(101)
+            ck(False, "--size 101 must be refused")
+        except SystemExit:
+            pass
+        ck([size_for_pot(p) for p in (70, 140, 13, 28, 69.99, 5000, 1400, 9)] == [5, 10, 1, 2, 4, 100, 100, 1],
+           "size = floor(pot/14): $70 -> 5, $140 -> 10, $69.99 -> 4, floor 1, cap 100")
+        ck(start_refusal(None, 500.0, True, True) is None and start_refusal(None, 10.0, True, True) is None,
+           "--auto-size: NO upper start cap ($500 starts)")
+        ck(start_refusal(None, 9.99, True, True) and start_refusal(None, None, True, True),
+           "--auto-size: the $10 floor and the unreadable-pot refusal stay")
+        # the pot reader: unit read from both fields (hard rule 5), cost of holdings added, any unreadable piece -> None
+        def pot_send(bal, pos, st=200, st2=200):
+            return lambda m, p, b, q: (st, bal) if p == "/portfolio/balance" else (st2, pos)
+        ck(read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"},
+                             {"market_positions": [{"ticker": "A", "position": 5, "market_exposure_dollars": "4.9000"},
+                                                   {"ticker": "B", "position": -5, "market_exposure": 400}]}), 1) == 78.9,
+           "pot = cash 70.00 + held 4.90 + 4.00 (cents field) = 78.90")
+        ck(read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, {"market_positions": []}), 1) == 70.0
+           and read_pot(pot_send({"balance": 700000, "balance_dollars": "70.0000"}, {"market_positions": []}), 1) is None
+           and read_pot(pot_send({"balance_dollars": "70.0000"}, {"market_positions": []}), 1) is None
+           and read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, {"nope": 1}), 1) is None
+           and read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, {"market_positions": []}, st2=500), 1) is None
+           and read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"},
+                                 {"market_positions": [{"ticker": "A", "position": 1}]}), 1) is None,
+           "pot: cents and dollars must agree, both present; a missing/failed/unreadable positions read is None (never 'flat')")
+        # the sizer: rails at the example pots, stops as a share of the pot, the clamp, no start cap
+        clk = [1_790_000_000.0]
+        flat = [True]
+        applied, reads = [], []
+        for pot, want in ((70.0, (5, 50, 49.0, -14.0)), (140.0, (10, 100, 98.0, -28.0)), (13.0, (1, 10, 9.1, -2.6)),
+                          (5000.0, (100, 1000, 3500.0, -1000.0))):
+            az = AutoSize(log, lambda: None, lambda: clk[0], lambda: flat[0], on_apply=lambda: applied.append(int(SIZE)))
+            az.start(pot)
+            got = (az.size, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP)
+            ck(got == want and SIZE == Decimal(want[0]) and MAX_SUB_BALANCE is None,
+               "auto-size at pot $%.0f: (size, contracts, commit 70%%, day -20%%) = %s, want %s" % (pot, got, want))
+        ck(applied == [5, 10, 1, 100], "on_apply runs with each applied size (main keeps the paper engine's SIZE in step)")
+        for bad in (9.99, None):
+            try:
+                AutoSize(log, lambda: None, lambda: clk[0], lambda: True).start(bad)
+                ck(False, "auto-size start at pot %s must refuse" % bad)
+            except SystemExit:
+                pass
+        # cadence: one read per 60 s, not more; an unreadable pot changes nothing
+        pots = [70.0]
+        az = AutoSize(log, lambda: (reads.append(1), pots[0])[1], lambda: clk[0], lambda: flat[0])
+        az.start(70.0)
+        n0 = len(sink)
+        for dt in (3, 30, 59):
+            clk[0] = 1_790_000_000.0 + dt
+            az.tick()
+        ck(len(reads) == 0, "no re-read inside 60 s of the start read")
+        clk[0] = 1_790_000_000.0 + 60
+        ck(az.tick() is False and len(reads) == 1 and len(sink) == n0, "re-read at 60 s; same pot -> nothing changes, no record")
+        pots[0] = None
+        clk[0] += 60
+        az.tick()
+        ck(len(reads) == 2 and sink[-1]["ev"] == "pot_unreadable" and az.size == 5 and MAX_COMMIT == 49.0,
+           "an unreadable pot is logged and changes nothing")
+        pots[0] = 70.5
+        clk[0] += 60
+        ck(az.tick() is False and len(sink) == n0 + 1, "a pot change that leaves floor(pot/14) alone changes nothing")
+        # driven through a real Broker: a queued/resting/cancelling bid blocks, a holding blocks, flat applies
+        apply_size(5, pot=70.0)
+        brz = Broker(log, 3, False, fake_send, lambda: clk[0])
+        pots[0] = 70.0
+        az2 = AutoSize(log, lambda: pots[0], lambda: clk[0], brz.flat, brz.lock)
+        az2.start(70.0)
+        brz.sizer = az2
+        ck(brz.flat(), "a fresh broker is flat")
+        msz = [_M("Z1", clk[0] + 30, [_O(8000, "yes", "0.98")])]
+        brz.sync(_E(msz))
+        ck(not brz.flat(), "a bid queued (sending) is not flat")
+        while not brz.q.empty():
+            brz.work_once(brz.q.get())
+        ck(brz.live[8000]["status"] == "resting" and not brz.flat(), "a resting bid is not flat")
+        pots[0] = 140.0
+        clk[0] += 60
+        ck(az2.tick() is False and SIZE == Decimal(5) and MAX_COMMIT == 49.0 and sink[-1]["ev"] == "rescale_wait"
+           and sink[-1]["new"] == 10, "pot $140 with a bid resting: NOT applied (rescale_wait logged), rails unchanged")
+        msz[0].orders[0].live_to = clk[0]
+        brz.sync(_E(msz))
+        ck(not brz.flat(), "a cancel in progress is not flat")
+        while not brz.q.empty():
+            brz.work_once(brz.q.get())
+        ck(brz.flat(), "cancelled -> flat")
+        clk[0] += 60
+        ck(az2.tick() is True and SIZE == Decimal(10) and (MAX_CONTRACTS, MAX_COMMIT, DAY_STOP) == (100, 98.0, -14.0)
+           and sink[-1]["ev"] == "rescale" and (sink[-1]["old"], sink[-1]["new"], sink[-1]["pot"]) == (5, 10, 140.0)
+           and sink[-1]["old_rails"]["size"] == 5 and sink[-1]["rails"]["size"] == 10,
+           "once flat: applied -- size 10, 100 contracts, $98 committed; day stop (same day) unchanged; 'rescale' logged")
+        ck(len([r for r in sink if r["ev"] == "rescale_wait"]) == 1, "the wait is logged once, not every minute")
+        ms2 = [_M("Z2", clk[0] + 30, [_O(8001, "yes", "0.98")])]
+        brz.sync(_E(ms2))
+        while not brz.q.empty():
+            brz.work_once(brz.q.get())
+        ck(sent[-1][0] == "POST" and sent[-1][2]["count"] == "10.00", "the next bid is 10 contracts")
+        brz.on_fill(8001, 10)
+        brz.live[8001]["status"] = "cancelled"       # as after the paper order is consumed and its cancel returns
+        ck(not brz.flat() and brz.held["Z2"]["n"] == 10, "10 held (no bid resting) is not flat")
+        pots[0] = 70.0
+        clk[0] += 60
+        ck(az2.tick() is False and SIZE == Decimal(10), "pot $70 while 10 are held: NOT applied")
+        brz.on_result("Z2", "yes")
+        ck(brz.flat(), "settled -> flat")
+        clk[0] += 60
+        ck(az2.tick() is True and SIZE == Decimal(5) and MAX_COMMIT == 49.0 and DAY_STOP == -14.0,
+           "settled -> the next read puts the size back to 5 ($49 committed); day stop still the day's first")
+        clk[0] += 86400
+        pots[0] = 140.0
+        ck(az2.tick() is True and DAY_STOP == -28.0 and SIZE == Decimal(10),
+           "the next ET day: day stop re-set to -20% of that day's first pot (-$28)")
+    finally:
+        SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE = _sv
     print("ladder_live self-test " + ("PASSED" if not fails else "FAILED: " + "; ".join(fails)))
     return not fails
 
@@ -435,6 +722,10 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--minutes", type=float, default=10080)
     ap.add_argument("--size", type=int, default=1, help="contracts per bid (default 1); every rail scales with it")
+    ap.add_argument("--auto-size", action="store_true",
+                    help="v-sub-autosize: size = floor(the subaccount's pot / 14) (1..100), re-read every 60 s and applied "
+                         "only when nothing is held and no bid rests; day stop -20%% / 70%% committed of the pot; no start "
+                         "cap. --size is ignored with it.")
     a = ap.parse_args()
     if not selftest() or not P.selftest():
         raise SystemExit("self-test failed; refusing to run")
@@ -442,7 +733,8 @@ def main():
         return 0
     if not a.subaccount or a.subaccount < 1:
         raise SystemExit("--subaccount N (1..63) is required; the primary account is refused")
-    apply_size(a.size)
+    if not a.auto_size:
+        apply_size(a.size)
     if a.live == a.dry_run:
         raise SystemExit("choose exactly one of --live / --dry-run")
     import ordercli
@@ -455,19 +747,28 @@ def main():
         sub_bal = float(bal["balance_dollars"])
     except Exception:
         raise SystemExit("subaccount balance unreadable (%s %s); refusing" % (st, str(bal)[:200]))
-    if sub_bal > MAX_SUB_BALANCE:
-        raise SystemExit("subaccount holds $%.2f > $%.2f; this is a penny test -- refusing" % (sub_bal, MAX_SUB_BALANCE))
-    if a.live and sub_bal < 3.0:
-        raise SystemExit("subaccount holds $%.2f; fund it first (ordercli --sub-fund)" % sub_bal)
+    pot = read_pot(sender, a.subaccount) if a.auto_size else None
+    why = start_refusal(sub_bal, pot, a.live, a.auto_size)
+    if why:
+        raise SystemExit(why + " -- refusing")
     if os.path.exists(STOP_FILE):
         raise SystemExit("stop file present: %s" % STOP_FILE)
-    P.NAME, P.LOG_PATH, P.SIZE = "ladder_live", LIVE_LOG, SIZE
+    P.NAME, P.LOG_PATH = "ladder_live", LIVE_LOG
     olog = P.Logger(ORDER_LOG)
     br = Broker(olog, a.subaccount, a.dry_run, sender, time.time)
+    auto = None
+    if a.auto_size:
+        br.sizer = AutoSize(olog, lambda: read_pot(sender, a.subaccount), time.time, br.flat, br.lock,
+                            on_apply=lambda: setattr(P, "SIZE", SIZE))
+        br.sizer.start(pot)                        # sets SIZE and every rail from the pot; refuses under $10
+        auto = {"pot_per_contract": POT_PER_CONTRACT, "size_max": SIZE_MAX, "reread_s": POT_REREAD_S,
+                "day_stop_frac": DAY_STOP_FRAC, "commit_frac": COMMIT_FRAC}
+    P.SIZE = SIZE
     olog.write("start", pid=os.getpid(), subaccount=a.subaccount, live=a.live, sub_balance=sub_bal,
+               auto_size=bool(a.auto_size), pot=pot, auto=auto,
                rails={"size": int(SIZE), "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
-                      "max_live_per_close": MAX_LIVE_PER_CLOSE, "live_levels": list(LIVE_LEVELS),
-                      "writes_per_s": WRITES_PER_S})
+                      "start_cap": MAX_SUB_BALANCE, "max_live_per_close": MAX_LIVE_PER_CLOSE,
+                      "live_levels": list(LIVE_LEVELS), "writes_per_s": WRITES_PER_S})
     threading.Thread(target=br.run_writer, daemon=True).start()
     threading.Thread(target=br.run_poller, daemon=True).start()
     orig_tick, orig_res = P.Engine.tick, P.Engine.on_result

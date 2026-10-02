@@ -25,10 +25,24 @@ HARD RAILS (code, not flags; SCALE = 1/20 of the paper's size)
   realized <= -$12 in an ET day halts to the next ET day; <= -$20 since start halts until restarted; an IOC that comes
   back resting is cancelled and halts; an unreadable answer halts until the order record is read back; refuses to
   start above $35 in the subaccount (funded $25 + its profit); stop file results/forecaster-live.stop; <= 3 order writes a second (shared key).
+  --scale k multiplies every one of those by k/0.05 (v-forecaster-scale).
+
+--auto-scale (v-sub-autosize, 2026-10-02; operator: "Set no limits on the sub accounts ... I want each account running
+  just like the main pin"): the scale is the subaccount's own POT -- cash + the cost of what it holds -- divided by 630
+  ($63 -> 0.10, what --scale 0.10 ran; $126 -> 0.20; $630 -> 1.0 = the paper's size; clamped 0.02..1.0), read at start
+  and re-read every 60 s like the main bot's autosize, APPLIED ONLY WHEN NOTHING IS HELD OR IN FLIGHT (a live position
+  is never resized), each change logged as a 'rescale' record. Stops are a share of the pot, the main bot's shape:
+  day stop -20% of the pot at the day's first rescale, run stop -33% of the pot at start, held + in flight <= 70% of
+  the pot. NO start-balance cap in this mode (the operator's order); the $10 floor and the primary-account refusal stay.
+  WHAT THE GATES BLOCK: every size cap (per side, per close, held, committed, crash guard) applies to a forecaster BET
+  on either side; a HEDGE (the paper's hedge_p insurance, extra hedge=True -- no live variant has it today) is exempt
+  from all of them (operator rule 09-19: a gate must never block a hedge) and keeps only the per-order body rail, the
+  price rail and the stop/halt states.
 
     python research/cleanroom/forecaster_live.py --selftest
     python research/cleanroom/forecaster_live.py --subaccount 2 --dry-run --minutes 30
     python research/cleanroom/forecaster_live.py --subaccount 2 --live --minutes 10080
+    python research/cleanroom/forecaster_live.py --subaccount 2 --live --auto-scale --variant race1_98 --crash-gap 0.10
 """
 import argparse
 import math
@@ -76,23 +90,156 @@ BROKER = None
 CRASH_GAP = None
 
 
-def apply_scale(scale):
+# v-sub-autosize (2026-10-02): --auto-scale. The pot is the subaccount's cash + the cost of what it holds.
+POT_DIVISOR = 630.0                             # scale = pot / 630: $63 -> 0.10 (today's size), $126 -> 0.20
+SCALE_MIN, SCALE_MAX = 0.02, 1.0                # 1.0 = the paper's own size; apply_scale's ceiling for --scale too
+POT_FLOOR = 10.0                                # refuse to start under this pot (the lower sanity floor)
+POT_REREAD_S = 60.0                             # the main bot's autosize cadence
+DAY_STOP_FRAC, RUN_STOP_FRAC, COMMIT_FRAC = 0.20, 0.33, 0.70
+
+
+def apply_scale(scale, pot=None):
     """v-forecaster-scale (2026-09-30, operator: "increase clean room forecaster"): every size rail is the 1/20 rail
     times scale/0.05 -- per side, per close, per order, held, committed, day stop, run stop and the start balance --
-    so a bigger scale can never outgrow its own limits. 0.05 reproduces the v-forecaster-live numbers exactly."""
+    so a bigger scale can never outgrow its own limits. 0.05 reproduces the v-forecaster-live numbers exactly.
+    v-sub-autosize: with `pot` (--auto-scale) the contract rails still come from the scale, but the money rail is
+    70% of the pot, there is no start cap, and the stops are left to AutoScale (day stop / run stop from the pot)."""
     global SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE
     k = float(scale) / 0.05
-    if not (0.01 <= float(scale) <= 0.25):
-        raise SystemExit("--scale %s is outside 0.01..0.25" % scale)
+    if not (0.01 <= float(scale) <= SCALE_MAX):
+        raise SystemExit("--scale %s is outside 0.01..%s" % (scale, SCALE_MAX))
     SCALE = Decimal(str(scale))
     MAX_PER_SIDE = int(round(100 * float(scale)))
     MAX_PER_CLOSE = int(round(400 * float(scale)))
     MAX_ORDER = MAX_PER_SIDE
     MAX_HELD = MAX_PER_CLOSE
-    MAX_COMMIT = round(22.00 * k, 2)
-    DAY_STOP = round(-12.00 * k, 2)
-    RUN_STOP = round(-20.00 * k, 2)
-    MAX_SUB_BALANCE = round(35.00 * k, 2)
+    if pot is None:
+        MAX_COMMIT = round(22.00 * k, 2)
+        DAY_STOP = round(-12.00 * k, 2)
+        RUN_STOP = round(-20.00 * k, 2)
+        MAX_SUB_BALANCE = round(35.00 * k, 2)
+    else:
+        MAX_COMMIT = round(COMMIT_FRAC * float(pot), 2)
+        MAX_SUB_BALANCE = None                  # the operator's order: no cap on what the subaccount may hold
+
+
+def scale_for_pot(pot):
+    """pot dollars -> the live scale: pot / 630, clamped 0.02..1.0, 4 decimals (so a cent of fees never rescales)."""
+    return min(SCALE_MAX, max(SCALE_MIN, round(float(pot) / POT_DIVISOR, 4)))
+
+
+def read_pot(sender, sub):
+    """The subaccount's pot in dollars: cash + the cost of what it holds (Kalshi's market_exposure, the cost basis
+    of each open position), or None when either read is unreadable. The unit is READ, never inferred (hard rule 5,
+    as the main bot's read_bank): `balance` (cents) and `balance_dollars` must both be present and agree to a cent."""
+    st, bal = sender("GET", "/portfolio/balance", None, {"subaccount": int(sub), "exchange_index": POOL})
+    try:
+        cash = float(bal["balance_dollars"])
+        cents = float(bal["balance"])
+    except Exception:
+        return None
+    if st != 200 or abs(cents / 100.0 - cash) > 0.011:
+        return None
+    st2, pos = sender("GET", "/portfolio/positions", None,
+                      {"subaccount": int(sub), "count_filter": "position", "settlement_status": "unsettled"})
+    if st2 != 200 or not isinstance(pos, dict) or not isinstance(pos.get("market_positions"), list):
+        return None
+    held = 0.0
+    for x in pos["market_positions"]:
+        if not isinstance(x, dict):
+            return None
+        try:
+            if x.get("market_exposure_dollars") is not None:
+                held += abs(float(x["market_exposure_dollars"]))
+            else:
+                held += abs(float(x["market_exposure"])) / 100.0
+        except Exception:
+            return None
+    return round(cash + held, 4)
+
+
+def start_refusal(sub_bal, pot, live, auto):
+    """The start checks, as a function so the self-test drives them. Fixed --scale keeps the old balance cap
+    (MAX_SUB_BALANCE + 5c of fee residue) and the $5 live floor; --auto-scale has NO cap (the operator's order),
+    only the $10 pot floor. Returns the reason to refuse, or None."""
+    if auto:
+        if pot is None:
+            return "--auto-scale: the pot is unreadable"
+        if float(pot) < POT_FLOOR:
+            return "--auto-scale: pot $%.2f is under the $%.0f floor" % (float(pot), POT_FLOOR)
+        return None
+    if sub_bal is None:
+        return "subaccount balance unreadable"
+    if sub_bal > MAX_SUB_BALANCE + 0.05:              # fees leave sub-cent residue (25.0042 after a $2.02 sweep)
+        return "subaccount holds $%.2f > $%.2f" % (sub_bal, MAX_SUB_BALANCE)
+    if live and sub_bal < 5.0:
+        return "subaccount holds $%.2f; fund it first (ordercli --sub-fund)" % sub_bal
+    return None
+
+
+class AutoScale:
+    """--auto-scale: the pot-driven sizing. `reader()` -> pot dollars or None; `flat()` -> nothing held or in flight
+    (called under `lock`). tick() reads at most every POT_REREAD_S; consider() changes the scale (and MAX_COMMIT) only
+    when flat, sets the day stop at the day's first applied rescale, and writes a 'rescale' record on every change.
+    The run stop is set once, at start(), from the pot then. Nothing here moves a stop or a rail while a position
+    is open -- the main bot's rule 4 ("ONLY WHEN FLAT")."""
+
+    def __init__(self, log, reader, now, flat, lock=None):
+        self.log, self.reader, self.now, self.flat = log, reader, now, flat
+        self.lock = lock if lock is not None else threading.Lock()
+        self.pot = self.scale = self.day = self.pot_start = self.last_read = None
+        self.waiting = False
+        self.reads = 0
+
+    def start(self, pot):
+        global DAY_STOP, RUN_STOP
+        if pot is None or float(pot) < POT_FLOOR:
+            raise SystemExit("--auto-scale: pot %s is unreadable or under the $%.0f floor; refusing" % (pot, POT_FLOOR))
+        self.pot_start = float(pot)
+        self.scale = scale_for_pot(pot)
+        apply_scale(self.scale, pot=pot)
+        RUN_STOP = round(-RUN_STOP_FRAC * float(pot), 2)
+        DAY_STOP = round(-DAY_STOP_FRAC * float(pot), 2)
+        self.pot, self.day, self.last_read = float(pot), et_day(self.now()), self.now()
+        return self.scale
+
+    def rails(self):
+        return {"scale": str(SCALE), "per_side": MAX_PER_SIDE, "per_close": MAX_PER_CLOSE, "per_order": MAX_ORDER,
+                "max_held": MAX_HELD, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP, "run_stop": RUN_STOP}
+
+    def consider(self, pot, now):
+        """Apply `pot` if it changes anything and nothing is open. Returns True when a rescale was applied."""
+        global DAY_STOP
+        new = scale_for_pot(pot)
+        d = et_day(now)
+        if new == self.scale and d == self.day:
+            return False
+        if not self.flat():
+            if not self.waiting:
+                self.waiting = True
+                self.log.write("rescale_wait", old=self.scale, new=new, pot=round(float(pot), 4), why="position open")
+            return False
+        old, old_rails = self.scale, self.rails()
+        apply_scale(new, pot=pot)
+        if d != self.day:
+            DAY_STOP = round(-DAY_STOP_FRAC * float(pot), 2)
+            self.day = d
+        self.scale, self.pot, self.waiting = new, float(pot), False
+        self.log.write("rescale", old=old, new=new, pot=round(float(pot), 4), old_rails=old_rails, rails=self.rails())
+        return True
+
+    def tick(self):
+        now = self.now()
+        if self.last_read is not None and now - self.last_read < POT_REREAD_S:
+            return None
+        self.last_read = now
+        pot = self.reader()
+        self.reads += 1
+        if pot is None:
+            self.log.write("pot_unreadable")
+            return None
+        with self.lock:
+            return self.consider(pot, now)
 
 
 def et_day(t):
@@ -145,11 +292,17 @@ class Broker:
         self.stopped = False
         self.lock = threading.Lock()
         self._w = []
+        self.sizer = None         # AutoScale under --auto-scale; its tick runs on the poller thread
 
     def exposure(self):
         n = sum(v["n"] + v["inflight"] for v in self.pos.values())
         c = sum(v["cost"] + v["inflight"] * v["px_inflight"] for v in self.pos.values())
         return n, c
+
+    def flat(self):
+        """Nothing held, nothing in flight, nothing queued: the only state in which a rail may change."""
+        n, c = self.exposure()
+        return n == 0 and c == 0 and self.q.empty()
 
     def stop_reason(self, now):
         if self.stopped:
@@ -161,7 +314,12 @@ class Broker:
         return None
 
     # --- called when the paper forecaster books a 'real' fill (size still shown 1 s after its decision) ---
-    def want(self, ticker, close_s, side, px, paper_k, rel=None, p_side=None, best_ask=None):
+    def want(self, ticker, close_s, side, px, paper_k, rel=None, p_side=None, best_ask=None, hedge=False):
+        """A paper 'real' fill -> at most one live IOC for the proportional increment. `hedge` (the paper's hedge_p
+        insurance on the OTHER side of a held market) skips the crash guard and every size/money cap -- per close,
+        held, committed -- a gate must never block a hedge; it keeps the per-side mirror, the per-order body rail,
+        the price rail and the stop/halt states. A plain opposite-side BET (the paper buying both sides on its own
+        rule) is not a hedge and is capped like any other order."""
         now = self.now()
         with self.lock:
             v = self.pos.setdefault((ticker, side), {"close_s": close_s, "paper": 0.0, "asked": 0, "inflight": 0,
@@ -173,18 +331,21 @@ class Broker:
             why = self.stop_reason(now)
             if not why and not (MIN_PX - 1e-9 <= px <= MAX_PX + 1e-9):
                 why = "price"
-            if not why and CRASH_GAP is not None and best_ask is not None and best_ask < px - CRASH_GAP - 1e-9:
+            if not why and not hedge and CRASH_GAP is not None and best_ask is not None and best_ask < px - CRASH_GAP - 1e-9:
                 why = "crash"
             if not why and v["inflight"]:
                 why = "in_flight"
-            if not why:
+            if not why and hedge:
+                inc = min(inc, MAX_ORDER)
+            elif not why:
                 inc = min(inc, MAX_ORDER, MAX_PER_CLOSE - self.close_asked.get(close_s, 0))
                 n, c = self.exposure()
                 inc = min(inc, MAX_HELD - n, int((MAX_COMMIT - c) / px + 1e-9))
                 if inc <= 0:
                     why = "cap"
             if why:
-                self.log.write("refused", ticker=ticker, side=side, px=px, paper_k=paper_k, rel=rel, why=why)
+                self.log.write("refused", ticker=ticker, side=side, px=px, paper_k=paper_k, rel=rel, why=why,
+                               **({"hedge": True} if hedge else {}))
                 return 0
             v["asked"] += inc
             v["inflight"] = inc
@@ -193,7 +354,7 @@ class Broker:
             cid = "%s%d-%d" % (CID_PREFIX, int(now * 1000), len(self.orders))
             self.orders[cid] = {"ticker": ticker, "side": side, "px": px, "n": inc, "status": "queued", "kid": None,
                                 "t_dec": now, "close_s": close_s, "rel": rel, "p_side": p_side, "paper_k": paper_k,
-                                "best_ask": best_ask}
+                                "best_ask": best_ask, "hedge": bool(hedge)}
             self.q.put(("place", cid))
             return inc
 
@@ -299,7 +460,7 @@ class Broker:
         o["kid"] = out.get("order_id")
         self.log.write("placed", body=b, status=st, order_id=o["kid"], filled=out["filled"],
                        remaining=out["remaining"], exec_px=out["exec_price"], fee_total=out["fee_total"],
-                       paper_k=o["paper_k"], best_ask_at_trigger=o.get("best_ask"),
+                       paper_k=o["paper_k"], best_ask_at_trigger=o.get("best_ask"), hedge=o.get("hedge", False),
                        age=round(t_send - o["t_dec"], 3), rtt=round(time.time() - t_send, 3),
                        resp=str(r)[:300])
         with self.lock:
@@ -362,6 +523,11 @@ class Broker:
                     self.poll_unknown_once()
             except Exception as e:
                 self.log.write("poll_error", err=repr(e)[:300])
+            try:
+                if self.sizer is not None:        # --auto-scale: the 60-s pot re-read (dry run included)
+                    self.sizer.tick()
+            except Exception as e:
+                self.log.write("sizer_error", err=repr(e)[:300])
             time.sleep(3.0)
 
 
@@ -384,7 +550,7 @@ def install_hooks():
                 _bp, _ = _bk.best_ask(side)
                 _ba = None if _bp is None else round(float(_bp), 4)
             BROKER.want(m.ticker, m.close_s, side, round(float(price), 4), float(size), extra.get("rel"),
-                        extra.get("p_side"), best_ask=_ba)
+                        extra.get("p_side"), best_ask=_ba, hedge=bool(extra.get("hedge")))
 
     def on_result(self, ticker, result, ev, now):
         _orig["on_result"](self, ticker, result, ev, now)
@@ -405,6 +571,8 @@ def install_hooks():
 # ---------------------------------------------------------------------------------------------------- self-test
 def selftest():
     global STOP_FILE, BROKER, MAX_HELD, MAX_COMMIT, SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE
+    global CRASH_GAP
+    _cg = CRASH_GAP
     fails, sink = [], []
     log = B.Logger(None, sink)
     sent = []
@@ -462,6 +630,143 @@ def selftest():
     ck(body_ok(order_body("T", "yes", 0.8, 10, 2, "fc-x"), 2) and not body_ok(order_body("T", "yes", 0.8, 11, 2, "fc-x"), 2),
        "--scale 0.10: 10 contracts an order pass, 11 are refused")
     (SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE) = _saved
+    # v-sub-autosize: --auto-scale. NULL first: fixed --scale 0.10 is today's rails exactly and the start cap applies.
+    try:
+        apply_scale(0.10)
+        ck((MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE)
+           == (10, 40, 10, 40, 44.0, -24.0, -40.0, 70.0), "NULL: --scale 0.10 without --auto-scale is today's rails exactly")
+        ck(start_refusal(70.06, None, True, False) and start_refusal(70.04, None, True, False) is None
+           and start_refusal(4.99, None, True, False) and start_refusal(4.99, None, False, False) is None
+           and start_refusal(None, None, True, False),
+           "NULL: without --auto-scale the $70 start cap, the $5 live floor and the unreadable-balance refusal still apply")
+        apply_scale(0.30)
+        ck(MAX_PER_SIDE == 30 and MAX_SUB_BALANCE == 210.0, "--scale ceiling raised: 0.30 is accepted (rails x6)")
+        apply_scale(1.0)
+        ck((MAX_PER_SIDE, MAX_PER_CLOSE) == (100, 400), "--scale 1.0 = the paper's own size (100 a side, 400 a close)")
+        try:
+            apply_scale(1.01)
+            ck(False, "--scale 1.01 must be refused")
+        except SystemExit:
+            pass
+        ck([scale_for_pot(p) for p in (63, 126, 630, 5, 10000, 63.01, 31.5)] == [0.1, 0.2, 1.0, 0.02, 1.0, 0.1, 0.05],
+           "scale = pot/630: $63 -> 0.10, $126 -> 0.20, $630 -> 1.0, clamped 0.02..1.0, a cent of fees never moves it")
+        ck(start_refusal(None, 500.0, True, True) is None and start_refusal(None, 10.0, True, True) is None,
+           "--auto-scale: NO upper start cap ($500 starts)")
+        ck(start_refusal(None, 9.99, True, True) and start_refusal(None, None, True, True),
+           "--auto-scale: the $10 floor and the unreadable-pot refusal stay")
+        # the pot reader: unit read from both fields (hard rule 5), cost of holdings added, any unreadable piece -> None
+        def pot_send(bal, pos, st=200, st2=200):
+            return lambda m, p, b, q: (st, bal) if p == "/portfolio/balance" else (st2, pos)
+        ck(read_pot(pot_send({"balance": 6300, "balance_dollars": "63.0000"},
+                             {"market_positions": [{"ticker": "A", "position": 10, "market_exposure_dollars": "9.8000"},
+                                                   {"ticker": "B", "position": -5, "market_exposure": 400}]}), 2) == 76.8,
+           "pot = cash 63.00 + held 9.80 + 4.00 (cents field) = 76.80")
+        ck(read_pot(pot_send({"balance": 6300, "balance_dollars": "63.0000"}, {"market_positions": []}), 2) == 63.0
+           and read_pot(pot_send({"balance": 630000, "balance_dollars": "63.0000"}, {"market_positions": []}), 2) is None
+           and read_pot(pot_send({"balance_dollars": "63.0000"}, {"market_positions": []}), 2) is None
+           and read_pot(pot_send({"balance": 6300, "balance_dollars": "63.0000"}, {"nope": 1}), 2) is None
+           and read_pot(pot_send({"balance": 6300, "balance_dollars": "63.0000"}, {"market_positions": []}, st2=500), 2) is None
+           and read_pot(pot_send({"balance": 6300, "balance_dollars": "63.0000"},
+                                 {"market_positions": [{"ticker": "A", "position": 1}]}), 2) is None,
+           "pot: cents and dollars must agree, both present; a missing/failed/unreadable positions read is None (never 'flat')")
+        # the sizer: rails at the three example pots, stops as a share of the pot, the clamp, no start cap
+        clk = [1_790_000_000.0]
+        flat = [True]
+        reads = []
+        for pot, want in ((63.0, (0.1, 10, 40, 44.1, -12.6, -20.79)), (126.0, (0.2, 20, 80, 88.2, -25.2, -41.58)),
+                          (630.0, (1.0, 100, 400, 441.0, -126.0, -207.9)), (5000.0, (1.0, 100, 400, 3500.0, -1000.0, -1650.0)),
+                          (10.0, (0.02, 2, 8, 7.0, -2.0, -3.3))):
+            az = AutoScale(log, lambda: None, lambda: clk[0], lambda: flat[0])
+            az.start(pot)
+            got = (az.scale, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_COMMIT, DAY_STOP, RUN_STOP)
+            ck(got == want and MAX_ORDER == MAX_PER_SIDE and MAX_HELD == MAX_PER_CLOSE and MAX_SUB_BALANCE is None,
+               "auto-scale at pot $%.0f: (scale, side, close, commit 70%%, day -20%%, run -33%%) = %s, want %s" % (pot, got, want))
+        for bad in (9.99, None):
+            try:
+                AutoScale(log, lambda: None, lambda: clk[0], lambda: True).start(bad)
+                ck(False, "auto-scale start at pot %s must refuse" % bad)
+            except SystemExit:
+                pass
+        # cadence: one read per 60 s, not more; an unreadable pot changes nothing
+        pots = [63.0]
+        az = AutoScale(log, lambda: (reads.append(1), pots[0])[1], lambda: clk[0], lambda: flat[0])
+        az.start(63.0)
+        n0 = len(sink)
+        for dt in (3, 30, 59):
+            clk[0] = 1_790_000_000.0 + dt
+            az.tick()
+        ck(len(reads) == 0, "no re-read inside 60 s of the start read")
+        clk[0] = 1_790_000_000.0 + 60
+        ck(az.tick() is False and len(reads) == 1 and len(sink) == n0, "re-read at 60 s; same pot -> nothing changes, no record")
+        pots[0] = None
+        clk[0] += 60
+        az.tick()
+        ck(len(reads) == 2 and sink[-1]["ev"] == "pot_unreadable" and az.scale == 0.1 and MAX_COMMIT == 44.1,
+           "an unreadable pot is logged and changes nothing")
+        # not applied while something is open; applied once flat; the day stop moves only at the day's first rescale
+        pots[0] = 126.0
+        flat[0] = False
+        clk[0] += 60
+        ck(az.tick() is False and az.scale == 0.1 and MAX_PER_SIDE == 10 and MAX_COMMIT == 44.1 and DAY_STOP == -12.6
+           and sink[-1]["ev"] == "rescale_wait" and sink[-1]["new"] == 0.2,
+           "pot $126 while a position is open: NOT applied (rescale_wait logged), rails unchanged")
+        clk[0] += 60
+        az.tick()
+        ck(len([r for r in sink if r["ev"] == "rescale_wait"]) == 1, "the wait is logged once, not every minute")
+        flat[0] = True
+        clk[0] += 60
+        ck(az.tick() is True and az.scale == 0.2 and (MAX_PER_SIDE, MAX_PER_CLOSE, MAX_COMMIT) == (20, 80, 88.2)
+           and DAY_STOP == -12.6 and RUN_STOP == -20.79 and sink[-1]["ev"] == "rescale"
+           and (sink[-1]["old"], sink[-1]["new"], sink[-1]["pot"]) == (0.1, 0.2, 126.0)
+           and sink[-1]["old_rails"]["per_side"] == 10 and sink[-1]["rails"]["per_side"] == 20,
+           "once flat: applied -- scale 0.2, 20 a side, $88.20 committed; day stop (same day) and run stop unchanged; 'rescale' logged")
+        clk[0] += 86400
+        ck(az.tick() is True and DAY_STOP == -25.2 and RUN_STOP == -20.79 and az.scale == 0.2,
+           "the next ET day: day stop re-set to -20% of that day's first pot (-$25.20); run stop fixed at start")
+        # driven through a real Broker: its own books say when it is flat
+        mode["v"], mode["fill"] = "fill", None
+        apply_scale(0.10, pot=63.0)
+        brz = Broker(log, 2, False, fake_send, lambda: clk[0])
+        pots[0] = 63.0
+        az2 = AutoScale(log, lambda: pots[0], lambda: clk[0], brz.flat, brz.lock)
+        az2.start(63.0)
+        brz.sizer = az2
+        ck(brz.flat(), "a fresh broker is flat")
+        brz.want("AZ", clk[0] + 30, "yes", 0.80, 100)
+        ck(not brz.flat(), "an order in flight is not flat")
+        run(brz)
+        ck(brz.pos[("AZ", "yes")]["n"] == 10 and not brz.flat(), "10 held (scale 0.10) is not flat")
+        pots[0] = 126.0
+        clk[0] += 60
+        ck(az2.tick() is False and MAX_PER_SIDE == 10, "the broker holds 10: a pot of $126 is NOT applied")
+        brz.on_result("AZ", "yes")
+        clk[0] += 60
+        ck(brz.flat() and az2.tick() is True and MAX_PER_SIDE == 20 and az2.scale == 0.2,
+           "settled -> flat -> the next read applies scale 0.2")
+        ck(brz.want("AZ2", clk[0] + 30, "yes", 0.80, 100) == 20, "the next paper 100 asks for 20 live at scale 0.2")
+        run(brz)
+        # a hedge is never blocked by the caps: close full, held full, money full, crash guard on -> still sent
+        apply_scale(0.05)
+        brh = Broker(log, 2, False, fake_send, lambda: clk[0])
+        ck(brh.want("HG", clk[0] + 30, "yes", 0.98, 100) == 5, "5 YES held at 98c")
+        run(brh)
+        MAX_HELD, MAX_COMMIT, MAX_PER_CLOSE = 5, 4.9, 5
+        ck(brh.want("HG2", clk[0] + 30, "no", 0.80, 100) == 0 and sink[-1]["ev"] == "refused" and sink[-1]["why"] == "cap",
+           "a plain opposite-side BET with every cap full is refused (why=cap)")
+        CRASH_GAP = 0.10
+        try:
+            ck(brh.want("HG", clk[0] + 30, "no", 0.985, 100, best_ask=0.50, hedge=True) == 5,
+               "the HEDGE of the 5 YES (NO at 98.5c) is sent with the close, held and money caps full AND the crash guard on")
+        finally:
+            CRASH_GAP = _cg
+        run(brh)
+        pl = [r for r in sink if r["ev"] == "placed"][-1]
+        ck(pl["hedge"] is True and pl["body"]["count"] == "5.00" and pl["body"]["side"] == "ask"
+           and brh.pos[("HG", "no")]["n"] == 5, "the hedge order is placed (NO 5 at 98.5c), marked hedge=true, and held")
+        ck(not body_ok(order_body("T", "yes", 0.8, 6, 2, "fc-x"), 2), "a hedge still cannot exceed the per-order body rail")
+    finally:
+        (SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE) = _saved
+        CRASH_GAP = _cg
     ck([scaled(x) for x in (100, 77, 98, 10, 9, 7, 3, 1, 200)] == [5, 4, 5, 1, 0, 0, 0, 0, 10], "proportional scale 1/20, half up")
     # proportional mirroring, increments, caps
     now = [1000.0]
@@ -478,8 +783,6 @@ def selftest():
     ck(br.want("B", 1030, "yes", 0.90, 1) == 1, "paper 10 -> 1")
     run(br)
     ck(br.want("C", 1030, "yes", 0.74, 100) == 0 and br.want("C2", 1030, "no", 0.99, 100) == 0, "74c and 99c refused")
-    global CRASH_GAP
-    _cg = CRASH_GAP
     brc = Broker(log, 2, False, fake_send, lambda: now[0])
     try:
         CRASH_GAP = None
@@ -679,6 +982,10 @@ def main():
     ap.add_argument("--minutes", type=float, default=10080)
     ap.add_argument("--variant", default="base", help="fc_variants.VARIANTS name; base = the paper forecaster exactly")
     ap.add_argument("--scale", type=float, default=0.05, help="live contracts per paper contract (default 0.05 = 1/20)")
+    ap.add_argument("--auto-scale", action="store_true",
+                    help="v-sub-autosize: scale = the subaccount's pot / 630 (clamped 0.02..1.0), re-read every 60 s and "
+                         "applied only when flat; stops -20%% day / -33%% run / 70%% committed of the pot; no start cap. "
+                         "--scale is ignored with it.")
     ap.add_argument("--crash-gap", type=float, default=None,
                     help="skip an order when the best ask at the trigger is more than this under its price (off by default)")
     a = ap.parse_args()
@@ -691,7 +998,8 @@ def main():
         return 0
     if not a.subaccount or a.subaccount < 1:
         raise SystemExit("--subaccount N (1..63) is required; the primary account is refused")
-    apply_scale(a.scale)
+    if not a.auto_scale:
+        apply_scale(a.scale)
     global CRASH_GAP
     CRASH_GAP = a.crash_gap
     if a.live == a.dry_run:
@@ -706,10 +1014,10 @@ def main():
         sub_bal = float(bal["balance_dollars"])
     except Exception:
         raise SystemExit("subaccount balance unreadable (%s %s); refusing" % (st, str(bal)[:200]))
-    if sub_bal > MAX_SUB_BALANCE + 0.05:              # fees leave sub-cent residue (25.0042 after a $2.02 sweep)
-        raise SystemExit("subaccount holds $%.2f > $%.2f; refusing" % (sub_bal, MAX_SUB_BALANCE))
-    if a.live and sub_bal < 5.0:
-        raise SystemExit("subaccount holds $%.2f; fund it first (ordercli --sub-fund)" % sub_bal)
+    pot = read_pot(sender, a.subaccount) if a.auto_scale else None
+    why = start_refusal(sub_bal, pot, a.live, a.auto_scale)
+    if why:
+        raise SystemExit(why + "; refusing")
     if os.path.exists(STOP_FILE):
         raise SystemExit("stop file present: %s" % STOP_FILE)
     B.NAME, B.LOG_PATH, B.STRATS = "forecaster_live", LIVE_LOG, ("forecaster",)
@@ -720,11 +1028,19 @@ def main():
     B.Engine.__init__ = init
     olog = B.Logger(ORDER_LOG)
     br = Broker(olog, a.subaccount, a.dry_run, sender, time.time)
+    auto = None
+    if a.auto_scale:
+        br.sizer = AutoScale(olog, lambda: read_pot(sender, a.subaccount), time.time, br.flat, br.lock)
+        br.sizer.start(pot)                        # sets SCALE and every rail from the pot; refuses under $10
+        auto = {"pot_divisor": POT_DIVISOR, "scale_min": SCALE_MIN, "scale_max": SCALE_MAX, "reread_s": POT_REREAD_S,
+                "day_stop_frac": DAY_STOP_FRAC, "run_stop_frac": RUN_STOP_FRAC, "commit_frac": COMMIT_FRAC}
     olog.write("start", pid=os.getpid(), subaccount=a.subaccount, live=a.live, sub_balance=sub_bal,
                variant=a.variant, variant_params=FV.VARIANTS[a.variant], crash_gap=CRASH_GAP,
+               auto_scale=bool(a.auto_scale), pot=pot, auto=auto,
                rails={"scale": str(SCALE), "per_side": MAX_PER_SIDE, "per_close": MAX_PER_CLOSE, "per_order": MAX_ORDER,
                       "max_held": MAX_HELD, "max_commit": MAX_COMMIT, "px": [MIN_PX, MAX_PX], "day_stop": DAY_STOP,
-                      "run_stop": RUN_STOP, "late_s": LATE_S, "stale_s": STALE_S, "writes_per_s": WRITES_PER_S})
+                      "run_stop": RUN_STOP, "start_cap": MAX_SUB_BALANCE, "late_s": LATE_S, "stale_s": STALE_S,
+                      "writes_per_s": WRITES_PER_S})
     threading.Thread(target=br.run_writer, daemon=True).start()
     threading.Thread(target=br.run_poller, daemon=True).start()
     install_hooks()

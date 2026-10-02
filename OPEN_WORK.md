@@ -58,6 +58,10 @@ research"** (the deeper hunt for what separates losing buys).
   side-by-side paper `research/cleanroom/fc_variants_paper.py` ->
   `results/fcvar-paper.jsonl`; compare with `research/cleanroom/fc_compare.py`.
 - Replaced: `v-bettor-penny` (the wrong strategy; 0 orders, stopped 09-29 00:50Z).
+- **Say: "sub autosize"** -- PREPARED 2026-10-02, NOT LIVE: both side accounts
+  size from their own pot like the main bot, no start cap (`v-sub-autosize` in
+  `results/VERSIONS.md`; switch = `scale_sub_1002.ps1`, he runs it; read
+  READS_DUE `sub-autosize` 10-04).
 - **Try soon**: rows F01-F17 in `results/IDEA_LEDGER.md` (every lead from the 09-29 work, with status).
 - **Per-bot pages (09-30)**: phone `/bots` (all bots + totals), `/pin`, `/forecaster` (`/fc`), `/ladder`, `/race`;
   desktop app tab **Bots**. Numbers from Kalshi per subaccount via `research/botstats.py`. The main page's
