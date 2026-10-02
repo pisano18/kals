@@ -481,7 +481,7 @@ class Broker:
                 self.log.write("halt", why=self.halted)
             else:
                 o["status"] = "done"
-            self._book_fill(cid, int(round(out["filled"])), out["exec_price"], out["fee_total"])
+            self._book_fill(cid, round(float(out["filled"] or 0), 2), out["exec_price"], out["fee_total"])
         if o["status"] == "rested" and o["kid"]:
             st2, r2 = self.send("DELETE", "/portfolio/events/orders/%s" % o["kid"], None,
                                 {"subaccount": self.sub, "exchange_index": POOL})
@@ -515,7 +515,7 @@ class Broker:
                 continue
             with self.lock:
                 o["kid"], o["status"] = out.get("order_id"), "recovered"
-                self._book_fill(cid, int(round(out["filled"] or 0)), out["exec_price"], out["fee_total"])
+                self._book_fill(cid, round(float(out["filled"] or 0), 2), out["exec_price"], out["fee_total"])
             self.log.write("recovered", cid=cid, record=str(x)[:300])
 
     def run_poller(self):
@@ -971,6 +971,10 @@ def selftest():
     body = src[:src.index("\ndef selftest" + "():")]
     ck(body.count('"POST"') == 1 and body.count('"DELETE"') == 1 and "/portfolio/subaccounts" not in body
        and "intra_exchange" not in body, "working code: one POST (create order), one DELETE (cancel), no money movement")
+    # 2026-10-02: Kalshi filled 0.01 of a 5-contract IOC (NEAR 13:14Z); int(round(x)) booked it as 0, so the
+    # bot's own day/run money (its stops) could drift from Kalshi's on fractional fills. Book the fraction.
+    ck("int(round(out[\"filled\"" not in body and body.count("round(float(out[\"filled\"] or 0), 2)") == 2,
+       "fractional fills are booked as fractions (0.01 stays 0.01), never rounded to whole contracts")
     print("forecaster_live self-test " + ("PASSED" if not fails else "FAILED: " + "; ".join(fails)))
     return not fails
 
