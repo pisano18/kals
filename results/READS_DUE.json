@@ -399,6 +399,14 @@
    "how": "results/pinracepenny-live.jsonl live_order/live_settled since 2026-09-30 12:25:56Z joined to the main ledger's KXCRYPTOLEAD rows; fill ratio; day-limit firings",
    "bar": "same as race40 (pre-registered 09-30): back to 20 a leg if the day limit fired on 2 of the first 3 days or if money since the change is below $0 after 30+ legs; also report a full-fill loss (~$36-39 a leg) against the period's profit",
    "status": "open"
+  },
+  {
+   "id": "fc-early-skip",
+   "due": "2026-10-06T12:00Z",
+   "what": "Forecaster: skip the first seconds of the 30-s window. Live record (our fills, 10-02): first entries with 30+ s left lost 5 of 14 markets (-$12.73); all later entries lost 4 of 40 (+$16.27). Paper run fcvar-paper-early (pid 2001272 since 2026-10-02 21:28Z): base, race1_98_crash10 (= live), race1_98_crash10_r28, race1_98_crash10_r25.",
+   "how": "python research/cleanroom/fc_compare.py --paper results/fcvar-paper-early.jsonl --since 2026-10-02T21:28 (variants vs race1_98_crash10 in THIS process); plus the live split by first-entry rel from results/forecaster-live-orders.jsonl since 2026-10-02 21:28Z",
+   "bar": "PRE-REGISTERED 2026-10-02 ~21:30Z before any forward data: put r_max 28 (or 25) on the live forecaster only if, on this forward paper, its net >= race1_98_crash10's net AND its money lost in losing markets <= 80% of race1_98_crash10's, AND the live record since today still shows first entries at 30+ s losing more often than later ones. Paper vs paper only; noise between identical engines is ~$40 at paper size.",
+   "status": "open"
   }
  ]
 }
