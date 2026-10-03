@@ -83,9 +83,9 @@
   },
   {
    "id": "coinrace-relaunch",
-   "due": "2026-10-05T02:50Z",
-   "what": "Live coin race (v-race20, pid 3739628, --minutes 10080) ends; nothing restarts it.",
-   "how": "relaunch by hand with the v-race20 argv (VERSIONS.md)",
+   "due": "2026-10-10T06:16Z",
+   "what": "Live coin race (v-race20cap, pid 3095608 since 2026-10-03 06:16Z, --minutes 10080) ends; the keep-alive (boot_all.ps1) restarts it with the line ~484 argv. Was pid 3739628 (v-race20), then 1431208 (40 a leg).",
+   "how": "process list + results/pinracepenny-live.jsonl start record (max_contracts 20, max_stake 40)",
    "bar": "relaunched within the next quarter-hour",
    "status": "open"
   },
@@ -387,7 +387,7 @@
   {
    "id": "sub-autosize",
    "due": "2026-10-04T12:00Z",
-   "what": "LIVE once the operator runs scale_sub_1002.ps1 (PREPARED 2026-10-02 ~06:55Z, VERSIONS.md v-sub-autosize): forecaster (subaccount 2) on --auto-scale (scale = pot/630, pot = cash + cost of holdings, re-read every 60 s, applied only when nothing is held or in flight; stops -20% day / -33% run / 70% committed of the pot) and ladder (subaccount 1) on --auto-size (size = floor(pot/14), applied only when nothing is held and no bid rests; -20% day / 70% committed), NO start cap. Operator 2026-10-02: 'Set no limits on the sub accounts ... I want each account running just like the main pin.' Evidence for the sizing rule: his order only -- untested on these bots.",
+   "what": "LIVE since 2026-10-03 06:12:13-16Z (scale_sub_1002.ps1 run by Claude on the operator's 'You run the switch'): forecaster pid 3090252 (subaccount 2, race1_98_r28, --auto-scale, pot $55.93 -> scale 0.0888) and ladder pid 3080724 (subaccount 1, --auto-size, pot $70.91 -> size 5). forecaster (subaccount 2) on --auto-scale (scale = pot/630, pot = cash + cost of holdings, re-read every 60 s, applied only when nothing is held or in flight; stops -20% day / -33% run / 70% committed of the pot) and ladder (subaccount 1) on --auto-size (size = floor(pot/14), applied only when nothing is held and no bid rests; -20% day / 70% committed), NO start cap. Operator 2026-10-02: 'Set no limits on the sub accounts ... I want each account running just like the main pin.' Evidence for the sizing rule: his order only -- untested on these bots.",
    "how": "results/forecaster-live-orders.jsonl and results/ladder-live-orders.jsonl since the switch: the last 'start' record (live true, auto_scale / auto_size true, pid = the one results/scale_sub_1002.log printed, pot, rails); every 'rescale' (old, new, pot, old_rails, rails) and 'rescale_wait'; every 'placed' body count against the rails in force at that time; any 'day_stop' / 'run_stop' / 'pot_unreadable' / 'sizer_error'. Money per pot: python research/botstats.py. If the script has not run by the due date, say so and move the due to 2 days after it runs.",
    "bar": "PRE-REGISTERED 2026-10-02 ~06:55Z, before the switch. PASS = (1) both bots restarted on the flag (start record with auto_scale / auto_size true from the switch's pid); (2) the first rescale records are sane: forecaster scale within 10% of pot/630, ladder size = floor(pot/14); (3) no order ever above the rails in force at its time (forecaster count <= per_order of the rails then, ladder count = size then); (4) no 'rescale' record while something was held or a bid rested (a rescale between a live_fill and its live_settle, or between a placed bid and its cancel/fill, FAILS). STOP AND REVERT (the v-sub-autosize revert lines) if either bot's day stop fires twice in the first 3 days after the switch. Money is reported but is NOT the bar at 2 days (too few closes).",
    "status": "open"
@@ -398,7 +398,8 @@
    "what": "Coin race at 40 a leg: the money clause of the race40 bar needs 30+ legs (11 at the 10-02 read, ~5.6 legs/day).",
    "how": "results/pinracepenny-live.jsonl live_order/live_settled since 2026-09-30 12:25:56Z joined to the main ledger's KXCRYPTOLEAD rows; fill ratio; day-limit firings",
    "bar": "same as race40 (pre-registered 09-30): back to 20 a leg if the day limit fired on 2 of the first 3 days or if money since the change is below $0 after 30+ legs; also report a full-fill loss (~$36-39 a leg) against the period's profit",
-   "status": "open"
+   "status": "read",
+   "read_note": "superseded 2026-10-03 06:16Z: race moved back to 20 a leg with a $40 open cap (v-race20cap) before 30 legs at 40 existed; the 40-a-leg period ends with 11+ legs, read in results/RACE_WHY_2026-10-02.md. Replaced by race20cap."
   },
   {
    "id": "fc-early-skip",
@@ -430,6 +431,14 @@
    "what": "PAPER (F26, IDEA_LEDGER; 10-03 losses review): arm-norebuy (pid 2910836, --rebuy-mult 0, log results/pinrun-paper-20261003T050909Z.jsonl, stdout results/arm-norebuy.out) since 2026-10-03 05:09:09Z on code_sha 9afb6eca6a91 = arm-live-twin's exact argv + the one flag. A68 off: after a hedge alarm the bot never buys MORE of the side it hedged into. In code, rebuy_room() returns 0 at multiple 0, so _both_sides_block() refuses every hedged-side buy whatever its leg (full, top-up, late_add) as gate=both_sides with hedged_into set; the first A68 rebuy is what flips the market's recorded side and opens the uncapped same-side late_add/top-up path (the 09-27..10-02 second flips, SOL 10-02), so blocking the first closes the chain. The hedge itself is untouched. Start record carries rebuy_mult 0.",
    "how": "Window: 2026-10-03T05:09:09Z to the due time, SHARED CLOSES ONLY with arm-live-twin (pid 4228512, log results/pinrun-paper-20260929T185918Z.jsonl, code_sha 7135aa467332, ends by itself ~2026-10-06 18:59Z) (join on close id; results/cf_2026-09-24/armh2h2.py <since>, which groups paper logs by the start-record flag that differs from live and scores settled.pnl_c per market on shared closes). (1) Money: the arm's settled per-market pnl_c/100 summed over shared closes minus the twin's; report it by day as well as the total. (2) The blocked rebuys: the arm's `refused` records gate=both_sides with hedged_into not null, joined to the TWIN's `signal` records on the same (close, ticker) where want == the arm's hedged_into (the rebuy the twin made and the arm did not); for each, the twin's and the arm's per-market pnl. A case where the blocked rebuy was NEEDED to recover a loss = the arm's pnl on that market is below 0 and the twin's is at or above 0 on the same market. PLUMBING FIRST: start record rebuy_mult 0, and at least one both_sides refusal with hedged_into set in the arm while the twin signalled that side; zero such cases = the flag never fired -- say so, report the money anyway, and extend 4 days. Paper vs paper only (the tape population; it says nothing about how often WE lose). Copy-to-copy drift between two identical paper bots is about $18-40 a week, so a gap inside that is noise.",
    "bar": "PRE-REGISTERED 2026-10-03T05:09:09Z, before any forward data existed. GO to live (--rebuy-mult 0 at the next live restart, VERSIONS.md entry, operator told) ONLY IF, over the 7 days on shared closes, the arm is never more than $5 behind the twin (cumulative shared-close money, checked at the end of every ET day in the window, at paper size) AND there is no case where the blocked rebuy would have been needed to recover a loss (defined in `how`). Either clause failing is NOT GO: live keeps A68 at 1.0 and the read names the clause and the market. Paper vs paper only (the tape population; it says nothing about how often WE lose). Copy-to-copy drift between two identical paper bots is about $18-40 a week, so a gap inside that is noise.",
+   "status": "open"
+  },
+  {
+   "id": "race20cap",
+   "due": "2026-10-06T12:00Z",
+   "what": "v-race20cap (coin race 20 a leg, $40 open, pid 3095608 since 2026-10-03 06:16Z) + v-race-daystate (2-losses-a-day count survives restarts).",
+   "how": "results/pinracepenny-live.jsonl live_order/live_settled since 06:16Z joined to the main ledger's KXCRYPTOLEAD rows; no order above 20 contracts or $40 open; results/pinracepenny-daystate.json written; legs, fill ratio, $/day vs $4.34/day (20-a-leg period) and $3.49/day (40-a-leg period)",
+   "bar": "PRE-REGISTERED 2026-10-03 06:20Z: PLUMBING fails (revert to investigate) if any order > 20 contracts or open stake > $40, or if the daystate file is never written after a settled leg. Money is reported, not a bar at 3 days (~17 legs); a full lost leg (~$19) is quoted against the period's profit.",
    "status": "open"
   }
  ]
