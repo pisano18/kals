@@ -16,7 +16,8 @@
    "what": "Live pinrun pid 4447780 (restarted 2026-09-30 12:12:02Z for v-topup + v-cent, --minutes 4320) ends ~2026-10-03 12:12Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv.",
    "how": "process list + newest results/pinrun-live-*.jsonl start record flags",
    "bar": "a new live run with the same flags within 10 min",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-10-03 08:16Z: pid 4447780 did not reach 12:12Z -- it halted at 08:00:35Z on the loss COUNT brake (2 losing trades this run; BTC 04:00 ET false-alarm hedge leg -$14.10 after SOL 10-02 -$88.33 leg / XRP 09-30 -$84.65 leg) and exited; watch_bot.ps1 waited its 15-min brake cooldown and restart_bot.ps1 relaunched it 08:15:52Z as pid 4031340 with the same flags (restart_bot argv) -- bar met (new live run, same flags, within 10 min of the relaunch point). The new run's --minutes 4320 ends ~2026-10-06 08:16Z; v-bankmove live from this start."
   },
   {
    "id": "polymarket-3day",
@@ -413,7 +414,7 @@
    "id": "bankmove-live",
    "status": "open",
    "due": "2026-10-05T12:00Z",
-   "what": "v-bankmove (research/pinrun.py, IDEA_LEDGER F21): a bank move is called a deposit/withdrawal only when Kalshi's own transfer listings (GET /portfolio/deposits, /withdrawals, /subaccounts/transfers) show a matching finished transfer in the window; otherwise a new `unexplained` record, the high-water mark is NOT shifted and the move counts as trading. Goes live when the main bot self-restarts at the end of its 3-day --minutes (~2026-10-03 12:12Z) onto the pinrun.py on disk -- confirm the new live start record carries xfer_confirm: true.",
+   "what": "v-bankmove (research/pinrun.py, IDEA_LEDGER F21): a bank move is called a deposit/withdrawal only when Kalshi's own transfer listings (GET /portfolio/deposits, /withdrawals, /subaccounts/transfers) show a matching finished transfer in the window; otherwise a new `unexplained` record, the high-water mark is NOT shifted and the move counts as trading. LIVE 2026-10-03 08:15:52Z (pid 4031340, start record xfer_confirm: true) after the loss COUNT brake halt + keep-alive relaunch; the planned 12:12Z self-restart no longer happens (new run ends ~10-06 08:16Z).",
    "how": "the live log after the restart (results/pinrun-live-<new>.jsonl): every `external` record must carry a non-empty `transfers` list whose ids exist in results/kalshi_transfers.json (python research/pinxfer.py) or in GET /portfolio/subaccounts/transfers; list every `unexplained` record (t, move, amount, why) and say what each was (delayed payout, coin-race settlement, fee); check results/pinrun-hwm.json moved only at `external` records (hwm_now) and at new bank highs; confirm no `unexplained` with why 'transfer read failed' repeats (a failing listing would make every true transfer unexplained).",
    "bar": "PRE-REGISTERED 2026-10-03: PASS = no `external` withdrawal/deposit record without a matching Kalshi transfer; every `unexplained` record listed and explained; the high-water mark shifted only on confirmed transfers. FAIL (revert = git revert the v-bankmove commit, then restart_bot.ps1) = an `external` record with no matching transfer, OR a real operator deposit/withdrawal left `unexplained` while the listings were readable, OR 'transfer read failed' on 3+ consecutive moves."
   },
@@ -447,6 +448,14 @@
    "what": "v-ladder-limbo + v-ladder-caps LIVE 2026-10-03 07:47Z (ladder pid 3832268, subaccount 1, --auto-size --market-cap-x 2): a 404'd cancel keeps its remainder counted until the poller books it; at most 2 bids' worth (10 at size 5) resting+held in one market.",
    "how": "results/ladder-live-orders.jsonl since 07:47Z: rail_refused why=market_cap (count, closes, tickers); per market max(held+resting) from placed/live_fill/cancelled -- must never exceed 2 x size; rescale records must never sit between a placed bid and its fill/cancel or while held (limbo should now hold them); money per Kalshi /portfolio/settlements subaccount 1 vs the 09-30..10-03 base of +$5.58 / 2.07% on money bet; price the cap: contracts refused x their market's outcome.",
    "bar": "PRE-REGISTERED 2026-10-03 07:50Z. PLUMBING PASS = no market ever above 2 x size held+resting (from Kalshi fills, not the bot's view), no rescale while a bid was in limbo, at least one market_cap refusal seen (else the cap measured nothing -- extend). Money: the cap is expected to cost ~$0.20/day (11% of the ladder's income) for halving the worst single-market bet (28% -> 14% of the pot); REVERT the cap (not the limbo fix) if it has refused more than 25% of the ladder's filled contracts over the window with no loser avoided AND the ladder's day return fell below +1% on money bet. Keep the limbo fix regardless unless it causes a sizer_error / writer_error.",
+   "status": "open"
+  },
+  {
+   "id": "pinrun-exit-1006",
+   "due": "2026-10-06T08:30Z",
+   "what": "Live pinrun pid 4031340 (relaunched 2026-10-03 08:15:52Z by watch_bot after the loss COUNT brake; --minutes 4320) ends ~2026-10-06 08:16Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv.",
+   "how": "process list + newest results/pinrun-live-*.jsonl start record flags",
+   "bar": "a new live run with the same flags within 10 min",
    "status": "open"
   }
  ]
