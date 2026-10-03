@@ -12,3 +12,24 @@
 2026-10-02T03:06:29-04:00  boot_all.ps1 holds both old argv lines
 2026-10-02T03:06:29-04:00  pots: subaccount 1 (ladder) = $70.21 -> 5 a bid; subaccount 2 (forecaster) = $59.05 -> scale 0.0937; no upper rail (the operator's order)
 2026-10-02T03:06:29-04:00  DRY RUN: all checks passed; nothing stopped or started
+2026-10-02T19:57:11-04:00  validating (DryRun=True)
+2026-10-02T19:57:16-04:00  self-test ok: research\cleanroom\forecaster_live.py
+2026-10-02T19:57:23-04:00  self-test ok: research\cleanroom\ladder_live.py
+2026-10-02T19:57:27-04:00  untouched: main bot pid 4447780, coin race pid 1431208; to replace: forecaster pid 4453188, ladder pid 4454364
+2026-10-02T19:57:27-04:00  boot_all.ps1 holds both old argv lines
+2026-10-02T19:57:28-04:00  pots: subaccount 1 (ladder) = $70.61 -> 5 a bid; subaccount 2 (forecaster) = $54.18 -> scale 0.086; no upper rail (the operator's order)
+2026-10-02T19:57:28-04:00  DRY RUN: all checks passed; nothing stopped or started
+2026-10-03T02:11:53-04:00  validating (DryRun=False)
+2026-10-03T02:11:57-04:00  self-test ok: research\cleanroom\forecaster_live.py
+2026-10-03T02:12:05-04:00  self-test ok: research\cleanroom\ladder_live.py
+2026-10-03T02:12:09-04:00  untouched: main bot pid 4447780, coin race pid 1431208; to replace: forecaster pid 4453188, ladder pid 4454364
+2026-10-03T02:12:09-04:00  boot_all.ps1 holds both old argv lines
+2026-10-03T02:12:10-04:00  pots: subaccount 1 (ladder) = $70.91 -> 5 a bid; subaccount 2 (forecaster) = $55.93 -> scale 0.0888; no upper rail (the operator's order)
+2026-10-03T02:12:10-04:00  keep-alive updated (backup results\boot_all.before-autosize.ps1)
+2026-10-03T02:12:13-04:00  started forecaster 3090252: -u research\cleanroom\forecaster_live.py --subaccount 2 --live --variant race1_98_r28 --auto-scale --crash-gap 0.10 --minutes 10080
+2026-10-03T02:12:16-04:00  started ladder 3080724: -u research\cleanroom\ladder_live.py --subaccount 1 --live --auto-size --minutes 10080
+2026-10-03T02:12:42-04:00  FORECASTER: no live --auto-scale start record from pid 3090252: None
+LADDER: no live --auto-size start record from pid 3080724: None
+NOT CONFIRMED -- check results/*-live-stderr.log and the order logs by hand
+2026-10-03T02:12:44-04:00  main bot and coin race untouched (pids 4447780, 1431208)
+2026-10-03T02:12:44-04:00  done -- read results\scale_sub_1002.log; VERSIONS.md v-sub-autosize is now LIVE (mark it), READS_DUE sub-autosize due 2026-10-04 12:00Z

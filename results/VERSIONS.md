@@ -20,7 +20,7 @@ Self-tests PASSED (planted): today's file with 2 losses + halt -> restored, ever
 
 ---
 
-# v-fc-r28 -- PREPARED 2026-10-02 ~23:58Z, goes live with v-sub-autosize when the operator runs scale_sub_1002.ps1 -- forecaster variant race1_98 -> race1_98_r28: no forecaster buy in the first 2 s of its 30-s window (r_max 30 -> 28). Operator 10-02: "Apply whatever you know works now. Tell me how many losses it saves and winners it loses."
+# v-fc-r28 -- LIVE 2026-10-03 06:12:13Z (forecaster pid 3090252, scale_sub_1002.ps1 run on the operator's "You run the switch") -- forecaster variant race1_98 -> race1_98_r28: no forecaster buy in the first 2 s of its 30-s window (r_max 30 -> 28). Operator 10-02: "Apply whatever you know works now. Tell me how many losses it saves and winners it loses."
 
 Evidence (our own live fills, 71 fills / 54 settled markets 09-29..10-02): fills with 30+ s left = 6 losing fills in 5 markets ($23.10) and 9 winning fills ($3.58); skipping them nets +$19.52 over the live record. r_max 25 would save $33.28 but give up $12.64 of 26 winning fills (+$20.64): r28 keeps nearly all the gain for a third of the winners lost. Chosen after seeing the losses (14 first entries, 5 lost) -- the paper side-by-side fcvar-paper-early (READS_DUE fc-early-skip, read 10-06) is the check; revert if it fails.
 
@@ -28,7 +28,7 @@ Evidence (our own live fills, 71 fills / 54 settled markets 09-29..10-02): fills
 
 ---
 
-# v-sub-autosize -- PREPARED 2026-10-02 ~06:55Z, NOT YET LIVE (research/cleanroom/forecaster_live.py `--auto-scale`, research/cleanroom/ladder_live.py `--auto-size`; the one-shot switch is scale_sub_1002.ps1, its -DryRun PASSED 06:51Z): each side-account bot sizes from its OWN pot like the main bot, with NO start-balance cap. Nothing changes until the operator runs the script.
+# v-sub-autosize -- LIVE 2026-10-03 06:12:13-16Z (forecaster pid 3090252 pot $55.93 scale 0.0888; ladder pid 3080724 pot $70.91 size 5; the script's 25-s record check missed the start records, which landed 06:12:18Z and 06:12:24Z -- confirmed by hand) (research/cleanroom/forecaster_live.py `--auto-scale`, research/cleanroom/ladder_live.py `--auto-size`; the one-shot switch is scale_sub_1002.ps1, its -DryRun PASSED 06:51Z): each side-account bot sizes from its OWN pot like the main bot, with NO start-balance cap. Nothing changes until the operator runs the script.
 
 Operator 2026-10-02: "Set no limits on the sub accounts. I don't think you understand the goal, I want each account
 running just like the main pin. High total making 2-10% per day of its total."
