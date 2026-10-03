@@ -244,3 +244,15 @@
 {"note": "Tempting footprint test (does our size change how often the wanted side is quoted?) but size follows the bank monotonically, so size IS calendar time and the result would recover a time trend. O07 already says the counterparty did not change while the model did. Our ~362 orders against 57.7M trade records make any footprint undetectable; MDE enormous.", "pair": ["F-B01", "F-O04"], "t": "2026-10-02T08:50:14Z", "verdict": "nothing"}
 {"note": "A cross-channel reconciliation (trades vs size-reducing deltas in the final 60s) is computable, but I03's 5% is a 376-hour aggregate and true per-window trade density varies by coin and volatility, so the denominator is too loose to detect anything short of catastrophic loss -- which per-hour record counts already catch without the 2-3 GB delta load. Poor MDE, heavy load, no money edge.", "pair": ["F-I02", "F-I03"], "t": "2026-10-02T08:50:14Z", "verdict": "nothing"}
 {"note": "Census from our own live logs: does the auto-sizer actually cut size on the close after a loss, given B01 reads the bank only every 300s and only while flat? If it lags, B04's geometric shrink and B07's drawdown depth are optimistic.", "pair": ["F-B04", "F-P08"], "t": "2026-10-02T08:50:14Z", "verdict": "lead"}
+{"pair": ["F-M02", "F-R05"], "t": "20261003T0848Z", "verdict": "drawn"}
+{"pair": ["F-C10", "F-M05"], "t": "20261003T0848Z", "verdict": "drawn"}
+{"pair": ["F-I05", "F-M06"], "t": "20261003T0848Z", "verdict": "drawn"}
+{"pair": ["F-B01", "F-O02"], "t": "20261003T0848Z", "verdict": "drawn"}
+{"pair": ["F-M06", "F-X06"], "t": "20261003T0848Z", "verdict": "drawn"}
+{"pair": ["F-M01", "F-M09"], "t": "20261003T0848Z", "verdict": "drawn"}
+{"note": "missing index prints FREEZE the sigma EWMA (engine.py:121 skips non-consecutive increments), so a stale wrong-regime sigma is exactly what a uniform 1.25x multiplier cannot fix", "pair": ["F-I05", "F-M06"], "t": "2026-10-03T08:50:35Z", "verdict": "lead"}
+{"note": "", "pair": ["F-M02", "F-R05"], "t": "2026-10-03T08:50:40Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-C10", "F-M05"], "t": "2026-10-03T08:50:40Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-B01", "F-O02"], "t": "2026-10-03T08:50:41Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-M06", "F-X06"], "t": "2026-10-03T08:50:41Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-M01", "F-M09"], "t": "2026-10-03T08:50:41Z", "verdict": "nothing"}
