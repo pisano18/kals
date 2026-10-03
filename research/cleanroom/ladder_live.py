@@ -75,6 +75,12 @@ POT_FLOOR = 10.0                                 # refuse to start under this po
 POT_REREAD_S = 60.0                              # the main bot's autosize cadence
 DAY_STOP_FRAC, COMMIT_FRAC = 0.20, 0.70
 
+# v-ladder-caps (IDEA_LEDGER F23, 2026-10-03): per-market and per-quarter-hour caps as multiples of the bid size
+# (contracts resting + held). 0 = off (the default; the rails above are then exactly as before).
+LIMBO_S = 60.0                                   # v-ladder-limbo: a failed cancel's remainder counts at most this long
+MARKET_CAP_X = 0                                 # --market-cap-x 2: at most 2 bids' worth in one market
+CLOSE_CAP_X = 0                                  # --close-cap-x 5: at most 5 bids' worth across one close's markets
+
 
 def apply_size(size, pot=None):
     """v-ladder-size (2026-09-30, operator: "increase ladder"): contracts per bid, with every rail scaled by it --
@@ -265,17 +271,32 @@ class Broker:
     def open_orders(self):
         return [v for v in self.live.values() if v["status"] in ("sending", "resting")]
 
+    def limbo(self):
+        """v-ladder-limbo (2026-10-03): a bid whose cancel FAILED (404 = it had already filled) is counted at its unfilled
+        remainder until the fill poller has seen it finished (executed/canceled) or LIMBO_S has passed. Before this, a
+        bid that filled just before its cancel counted as neither resting nor held for 0.4-2.8 s, the window in which
+        NEAR's 1-s bursts of re-bids land: the contract/money rails and flat() (the auto-size gate) were blind there."""
+        t = self.now()
+        return [v for v in self.live.values() if v["status"] == "cancel_failed" and not v.get("terminal")
+                and t < v.get("limbo_until", 0) and v["filled"] < float(SIZE)]
+
     def flat(self):
-        """Nothing held, no bid sending/resting/cancelling, nothing queued: the only state in which the size may change."""
-        return (not any(h["n"] > 0 for h in self.held.values()) and not self.open_orders()
+        """Nothing held, no bid sending/resting/cancelling/in limbo, nothing queued: the only state in which the size may change."""
+        return (not any(h["n"] > 0 for h in self.held.values()) and not self.open_orders() and not self.limbo()
                 and not any(v["status"] == "cancelling" for v in self.live.values()) and self.q.empty())
 
     def exposure(self):
-        n = len(self.open_orders()) * float(SIZE) + sum(h["n"] for h in self.held.values())
-        c = sum(float(v["px"]) * float(SIZE) for v in self.open_orders()) + sum(h["cost"] for h in self.held.values())
+        lim = self.limbo()
+        n = len(self.open_orders()) * float(SIZE) + sum(h["n"] for h in self.held.values())             + sum(float(SIZE) - v["filled"] for v in lim)
+        c = sum(float(v["px"]) * float(SIZE) for v in self.open_orders()) + sum(h["cost"] for h in self.held.values())             + sum(float(v["px"]) * (float(SIZE) - v["filled"]) for v in lim)
         return n, c
 
-    def rails_refusal(self, px):
+    def market_contracts(self, ticker):
+        """Contracts resting + held in one market."""
+        h = self.held.get(ticker)
+        return (h["n"] if h else 0) + sum(float(SIZE) for v in self.open_orders() if v["ticker"] == ticker)             + sum(float(SIZE) - v["filled"] for v in self.limbo() if v["ticker"] == ticker)
+
+    def rails_refusal(self, px, ticker=None, close_s=None):
         if self.stopped:
             return "stopped"
         if self.halted:
@@ -285,6 +306,10 @@ class Broker:
             return "max_contracts"
         if c + float(px) * float(SIZE) > MAX_COMMIT + 1e-9:
             return "max_commit"
+        if MARKET_CAP_X and ticker is not None and                 self.market_contracts(ticker) + float(SIZE) > MARKET_CAP_X * float(SIZE) + 1e-9:
+            return "market_cap"
+        if CLOSE_CAP_X and close_s is not None and                 sum(self.market_contracts(t) for t in self.live_markets.get(close_s, ())) + float(SIZE)                 > CLOSE_CAP_X * float(SIZE) + 1e-9:
+            return "close_cap"
         return None
 
     # --- called after every engine tick ---
@@ -307,7 +332,7 @@ class Broker:
                 for pid, o in desired.items():
                     if pid in self.live or m.done or self.halted or self.stopped:
                         continue
-                    why = self.rails_refusal(o.price)
+                    why = self.rails_refusal(o.price, m.ticker, m.close_s)
                     if why:
                         self.live[pid] = {"kid": None, "ticker": m.ticker, "side": o.side, "px": o.price,
                                           "status": "refused", "filled": 0}
@@ -406,6 +431,8 @@ class Broker:
             st, r = self.send("DELETE", "/portfolio/events/orders/%s" % v["kid"], None,
                               {"subaccount": self.sub, "exchange_index": POOL})
             v["status"] = "cancelled" if st in (200, 201) else "cancel_failed"
+            if v["status"] == "cancel_failed":
+                v["limbo_until"] = self.now() + LIMBO_S
             self.log.write("cancelled", order_id=v["kid"], status=st, resp=str(r)[:200])
 
     def run_writer(self):
@@ -430,6 +457,8 @@ class Broker:
                 self.on_fill(pid, int(float(o.get("fill_count_fp") or o.get("fill_count") or 0)))
             except Exception:
                 pass
+            if o.get("status") in ("executed", "canceled", "cancelled"):
+                self.live[pid]["terminal"] = True      # v-ladder-limbo: finished on Kalshi -> its fills are all booked
         return True
 
     def run_poller(self):
@@ -709,6 +738,79 @@ def selftest():
            "the next ET day: day stop re-set to -20% of that day's first pot (-$28)")
     finally:
         SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE = _sv
+    # v-ladder-caps (F23): NULL first -- caps off places exactly what it did before; then 2x per market, 5x per close
+    global MARKET_CAP_X, CLOSE_CAP_X
+    _sv = (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, MARKET_CAP_X, CLOSE_CAP_X)
+    try:
+        apply_size(5)
+
+        def world(n_mk, close_s):
+            return [_M("C%d-%d" % (close_s, i), close_s, [_O(close_s * 10 + i, "yes", "0.98")]) for i in range(n_mk)]
+        for mx, cx, want in ((0, 0, 7), (2, 5, 5), (0, 3, 3)):
+            MARKET_CAP_X, CLOSE_CAP_X = mx, cx
+            brc = Broker(log, 3, False, fake_send, lambda: now[0])
+            brc.sync(_E(world(7, 7000 + mx + cx)))
+            got = len([v for v in brc.live.values() if v["status"] == "sending"])
+            ck(got == want, "caps market x%d / close x%d: 7 markets in one close -> %d bids placed (got %d)" % (mx, cx, want, got))
+        ck(any(r["ev"] == "rail_refused" and r["why"] == "close_cap" for r in sink), "the close cap logs why=close_cap")
+        MARKET_CAP_X, CLOSE_CAP_X = 2, 0
+        brm = Broker(log, 3, False, fake_send, lambda: now[0])
+        mm = [_M("M1", 7700, [_O(77000, "yes", "0.98")])]
+        brm.sync(_E(mm))
+        while not brm.q.empty():
+            brm.work_once(brm.q.get())
+        brm.on_fill(77000, 5)                         # first bid filled, a re-bid comes
+        brm.live[77000]["status"] = "cancelled"
+        mm[0].orders = [_O(77001, "yes", "0.98")]
+        brm.sync(_E(mm))
+        ck(brm.live[77001]["status"] == "sending", "market cap x2: 5 held + a 2nd bid of 5 = 10 is allowed")
+        while not brm.q.empty():
+            brm.work_once(brm.q.get())
+        brm.on_fill(77001, 5)
+        brm.live[77001]["status"] = "cancelled"
+        mm[0].orders = [_O(77002, "yes", "0.98")]
+        brm.sync(_E(mm))
+        ck(brm.live[77002]["status"] == "refused" and sink[-1]["why"] == "market_cap",
+           "market cap x2: 10 held -> the 3rd bid is refused with why=market_cap")
+        ck(brm.market_contracts("M1") == 10 and brm.market_contracts("nope") == 0, "market_contracts counts held + resting")
+        # v-ladder-limbo: the 10-03 shape -- a bid fills, its cancel 404s, the poller has not seen the fill yet
+        clkl = [5000.0]
+
+        def send404(method, path, body, query):
+            if method == "DELETE":
+                return 404, {"error": "not_found"}
+            return fake_send(method, path, body, query)
+        brl = Broker(log, 3, False, send404, lambda: clkl[0])
+        ml = [_M("L1", 7800, [_O(78000, "yes", "0.98")])]
+        brl.sync(_E(ml))
+        while not brl.q.empty():
+            brl.work_once(brl.q.get())
+        ml[0].orders = [_O(78001, "yes", "0.98")]          # paper consumed 78000 (filled); a re-bid one second later
+        brl.sync(_E(ml))
+        while not brl.q.empty():                            # places 78001; the cancel of 78000 -> 404
+            brl.work_once(brl.q.get())
+        ck(brl.live[78000]["status"] == "cancel_failed" and brl.exposure()[0] == 10 and not brl.flat()
+           and brl.market_contracts("L1") == 10,
+           "a 404 cancel keeps its 5 counted (5 limbo + the 5 re-bid = 10) and the broker is NOT flat")
+        mm2 = [_M("L1", 7800, [_O(78002, "yes", "0.98")])]
+        brl.sync(_E(mm2))
+        ck(brl.live.get(78002, {}).get("status") == "refused", "market cap x2 sees the limbo bid: a 3rd bid is refused")
+        brl.on_fill(78000, 5)
+        ck(not brl.limbo() and brl.held["L1"]["n"] == 5, "once the poller books the fill the limbo remainder is 0 (no double count)")
+        brl2 = Broker(log, 3, False, send404, lambda: clkl[0])
+        brl2.sync(_E([_M("L2", 7900, [_O(79000, "yes", "0.98")])]))
+        while not brl2.q.empty():
+            brl2.work_once(brl2.q.get())
+        brl2.live[79000]["status"] = "cancelling"
+        brl2.work_once(("cancel", 79000))
+        ck(brl2.limbo(), "a failed cancel with nothing filled is in limbo")
+        brl2.live[79000]["terminal"] = True
+        ck(not brl2.limbo() and brl2.flat(), "the poller saw it finished (canceled) -> out of limbo, flat")
+        brl2.live[79000]["terminal"] = False
+        clkl[0] += LIMBO_S + 1
+        ck(not brl2.limbo() and brl2.flat(), "limbo expires after LIMBO_S, so a vanished order can never wedge the rails")
+    finally:
+        SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, MARKET_CAP_X, CLOSE_CAP_X = _sv
     print("ladder_live self-test " + ("PASSED" if not fails else "FAILED: " + "; ".join(fails)))
     return not fails
 
@@ -726,6 +828,10 @@ def main():
                     help="v-sub-autosize: size = floor(the subaccount's pot / 14) (1..100), re-read every 60 s and applied "
                          "only when nothing is held and no bid rests; day stop -20%% / 70%% committed of the pot; no start "
                          "cap. --size is ignored with it.")
+    ap.add_argument("--market-cap-x", type=float, default=0,
+                    help="v-ladder-caps (F23): at most this many bids' worth (x size) resting+held in one market; 0 = off")
+    ap.add_argument("--close-cap-x", type=float, default=0,
+                    help="v-ladder-caps (F23): at most this many bids' worth across one quarter-hour's markets; 0 = off")
     a = ap.parse_args()
     if not selftest() or not P.selftest():
         raise SystemExit("self-test failed; refusing to run")
@@ -735,6 +841,8 @@ def main():
         raise SystemExit("--subaccount N (1..63) is required; the primary account is refused")
     if not a.auto_size:
         apply_size(a.size)
+    global MARKET_CAP_X, CLOSE_CAP_X
+    MARKET_CAP_X, CLOSE_CAP_X = a.market_cap_x, a.close_cap_x
     if a.live == a.dry_run:
         raise SystemExit("choose exactly one of --live / --dry-run")
     import ordercli
@@ -768,7 +876,8 @@ def main():
                auto_size=bool(a.auto_size), pot=pot, auto=auto,
                rails={"size": int(SIZE), "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
                       "start_cap": MAX_SUB_BALANCE, "max_live_per_close": MAX_LIVE_PER_CLOSE,
-                      "live_levels": list(LIVE_LEVELS), "writes_per_s": WRITES_PER_S})
+                      "live_levels": list(LIVE_LEVELS), "writes_per_s": WRITES_PER_S,
+                      "market_cap_x": MARKET_CAP_X, "close_cap_x": CLOSE_CAP_X})
     threading.Thread(target=br.run_writer, daemon=True).start()
     threading.Thread(target=br.run_poller, daemon=True).start()
     orig_tick, orig_res = P.Engine.tick, P.Engine.on_result
