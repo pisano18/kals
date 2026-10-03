@@ -2641,6 +2641,190 @@ def shift_hwm(amount, path=None):
     return new
 
 
+# ---------------------------------------------------------------------------
+# v-bankmove (2026-10-03, IDEA_LEDGER F21): A BANK MOVE IS A DEPOSIT OR A
+# WITHDRAWAL ONLY WHEN KALSHI'S OWN RECORDS SHOW THE TRANSFER.
+#
+# classify_bank_move() can only say "the bank moved by more than `realised`
+# explains". Until today that was enough to call it a transfer and move the
+# drawdown brake's high-water mark by it. Four misreads in one live log
+# (results/pinrun-live-20260930T121206Z.jsonl, `external` records):
+#   10-01 01:00:35Z  the coin race's -$1.14 LOSS      -> "withdrawal", mark -1.14
+#   10-01 07:15:21Z  a payout delayed by the exchange -> "withdrawal" -84.62,
+#                    mark reset, bet 87 -> 80 for ~1h45m
+#   10-01 09:00:22Z  that payout landing              -> "deposit" +87.00
+#   10-01 23:18:26Z  the race's +$6.36 payout         -> "deposit", mark moved
+# The dangerous direction is the first: a REAL LOSS read as a withdrawal is
+# subtracted from the mark, so the 20% halt (MAX_DRAWDOWN) never sees it.
+#
+# Now a move is confirmed against GET /portfolio/deposits,
+# /portfolio/withdrawals and /portfolio/subaccounts/transfers (the exchange's
+# records, the same ones research/pinxfer.py and botstats.py read) before it
+# is called a transfer. A matching finished transfer inside the window ->
+# `external` as before, mark shifted, the transfer ids in the record. No
+# match, or a failed read -> a new record kind `unexplained` with the amount,
+# the mark is NOT moved, and the bank change counts as trading: a fall counts
+# against the drawdown, a rise raises the mark the ordinary way (write_hwm).
+# A failed read is NEVER a withdrawal. Listings are cached XFER_CACHE_S; an
+# unmatched move forces one fresh read before it is called unexplained, so a
+# transfer that landed seconds ago is not missed for a stale cache. Each
+# transfer id explains at most one move (state["xfer_used"]).
+# --no-external-detect still switches the whole thing off (nothing is read).
+# ---------------------------------------------------------------------------
+XFER_CONFIRM = True            # confirm every external move against Kalshi
+_DEFAULT_XFER_CONFIRM = True
+XFER_CACHE_S = 60.0            # a transfer listing is reused this long
+XFER_TIMEOUT_S = 4.0           # each GET may hold the (flat) loop this long
+XFER_SLACK_S = 3600.0          # window opens this long before the previous read
+XFER_AHEAD_S = 300.0           # ...and closes this long after now (clock skew)
+XFER_PAGES = 10                # a runaway pager stops loudly
+XFER_MAIN_SUB = "0"            # the main account in subaccount transfers
+XFER_PATHS = (("/portfolio/deposits", "deposits"),
+              ("/portfolio/withdrawals", "withdrawals"),
+              ("/portfolio/subaccounts/transfers", "transfers"))
+_XFER_CACHE = {"at": None, "rows": None}
+_XFER_GETTER = None            # the self-test puts a no-network fake here
+
+
+def _xfer_reset():
+    _XFER_CACHE["at"], _XFER_CACHE["rows"] = None, None
+
+
+def _xfer_ts(v):
+    """A Kalshi timestamp as epoch seconds, or None. Epoch ints are what the
+    deposit listing carries; an ISO string is accepted too, never guessed."""
+    if v is None or v == "":
+        return None
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        pass
+    try:
+        import calendar as _cal
+        return int(_cal.timegm(time.strptime(str(v)[:19], "%Y-%m-%dT%H:%M:%S")))
+    except (TypeError, ValueError):
+        return None
+
+
+def transfer_rows(raw):
+    """Kalshi's three listings flattened to [(ts, signed_dollars, kind, id)]
+    as the MAIN account saw them. Only finished deposits/withdrawals count
+    (pinxfer.is_done); a subaccount transfer counts + into sub 0, - out of it;
+    a row with no usable timestamp is dropped (it could never be windowed)."""
+    import pinxfer
+    rows = []
+    for r in raw.get("deposits") or []:
+        if isinstance(r, dict) and pinxfer.is_done(r) and pinxfer.when(r) is not None:
+            rows.append((pinxfer.when(r), abs(pinxfer.net_cents(r)) / 100.0,
+                         "deposit", str(r.get("id"))))
+    for r in raw.get("withdrawals") or []:
+        if isinstance(r, dict) and pinxfer.is_done(r) and pinxfer.when(r) is not None:
+            rows.append((pinxfer.when(r), -abs(pinxfer.net_cents(r)) / 100.0,
+                         "withdrawal", str(r.get("id"))))
+    for r in raw.get("transfers") or []:
+        if not isinstance(r, dict):
+            continue
+        ts = _xfer_ts(r.get("created_ts") or r.get("finalized_ts"))
+        try:
+            amt = abs(float(r.get("amount_cents") or 0)) / 100.0
+        except (TypeError, ValueError):
+            continue
+        if ts is None or amt <= 0:
+            continue
+        to_, from_ = str(r.get("to_subaccount")), str(r.get("from_subaccount"))
+        tid = str(r.get("transfer_id") or r.get("id") or ("%s|%s|%s" % (ts, from_, to_)))
+        if to_ == XFER_MAIN_SUB and from_ != XFER_MAIN_SUB:
+            rows.append((ts, amt, "transfer_in", tid))
+        elif from_ == XFER_MAIN_SUB and to_ != XFER_MAIN_SUB:
+            rows.append((ts, -amt, "transfer_out", tid))
+    return rows
+
+
+def fetch_transfers(getter=None, now=None, force=False):
+    """(rows, None) from the three listings, or (None, why) when ANY read
+    failed -- a failed read is a failure, never an empty list. `getter(path,
+    params) -> (status, body)`; the default is portfolio_get (kauth.get on a
+    daemon thread, XFER_TIMEOUT_S). A good read is cached XFER_CACHE_S; a
+    failed one is not."""
+    now = time.time() if now is None else now
+    c = _XFER_CACHE
+    if (not force and c["rows"] is not None and c["at"] is not None
+            and 0 <= now - c["at"] < XFER_CACHE_S):
+        return c["rows"], None
+    g = getter or _XFER_GETTER or (lambda p, q: portfolio_get(p, q, timeout=XFER_TIMEOUT_S))
+    raw = {}
+    for path, key in XFER_PATHS:
+        cursor, seen = None, []
+        for _ in range(XFER_PAGES):
+            q = {"limit": "200"}
+            if cursor:
+                q["cursor"] = cursor
+            try:
+                st, b = g(path, q)
+            except Exception as e:                           # noqa: BLE001
+                return None, "%s raised %s: %s" % (path, type(e).__name__, str(e)[:120])
+            if st != 200 or not isinstance(b, dict):
+                return None, "%s -> %s %s" % (path, st, str(b)[:120])
+            got = b.get(key) or []
+            seen.extend(got if isinstance(got, list) else [])
+            cursor = b.get("cursor")
+            if not cursor or not got:
+                break
+        raw[key] = seen
+    rows = transfer_rows(raw)
+    c["at"], c["rows"] = now, rows
+    return rows, None
+
+
+def match_transfer(amount, rows, since, until, used=None, tol=None):
+    """The transfer row(s) that explain `amount` (signed dollars) stamped in
+    [since, until] and not already used: one row within `tol` of it, else
+    every unused row in the window when together they sum to within `tol`.
+    [] when nothing does. `tol` defaults to EXTERNAL_MIN -- the same dollar
+    of fees and settlement timing the classifier already forgives."""
+    tol = abs(EXTERNAL_MIN if tol is None else tol)
+    used = used or set()
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        return []
+    cand = [r for r in rows or () if r[0] is not None and since <= r[0] <= until
+            and r[3] not in used]
+    for r in cand:
+        if abs(float(r[1]) - amount) <= tol:
+            return [r]
+    if len(cand) > 1 and abs(sum(float(r[1]) for r in cand) - amount) <= tol:
+        return list(cand)
+    return []
+
+
+def confirm_move(amount, state, now, getter=None):
+    """(hits, None) when Kalshi's records show the transfer behind a bank
+    move of `amount` since the previous bank read, else ([], why). Marks the
+    matched ids used in state["xfer_used"] so one transfer explains one
+    move. A failed read is ([], 'transfer read failed: ...') -- unexplained,
+    never a withdrawal."""
+    since = float(state.get("ext_at") or now) - XFER_SLACK_S
+    until = float(now) + XFER_AHEAD_S
+    used = state.setdefault("xfer_used", set())
+    rows, err = fetch_transfers(getter, now)
+    hits = [] if rows is None else match_transfer(amount, rows, since, until, used)
+    if rows is not None and not hits and _XFER_CACHE["at"] != now:
+        rows, err = fetch_transfers(getter, now, force=True)      # not a stale cache
+        hits = [] if rows is None else match_transfer(amount, rows, since, until, used)
+    if rows is None:
+        return [], "transfer read failed: %s" % err
+    if not hits:
+        return [], ("no matching Kalshi transfer (%d finished transfer(s) in the "
+                    "window %s..%s)" % (
+                        len([r for r in rows if since <= (r[0] or -1) <= until]),
+                        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since)),
+                        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(until))))
+    for r in hits:
+        used.add(r[3])
+    return hits, None
+
+
 def rebase_hwm(bank, path=None, old=None):
     """SET the high-water mark to `bank` -- the one deliberate way DOWN.
 
@@ -5356,6 +5540,16 @@ def selftest():
     # Restoring them in the finally holds whatever check leaks next.
     _rails_real = (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX,
                    pintake.MAX_RUN_STAKE, pintake.LOSS_ABORT)
+    # v-bankmove: NO TEST MAY READ KALSHI'S TRANSFER LISTINGS. Any check that
+    # drives autosize_tick through a bank move now asks for the transfers;
+    # with the real getter that is three signed GETs from inside the startup
+    # self-test. The default for the whole function is an empty, offline
+    # listing (every unplanted move reads "unexplained"); a check that wants
+    # a transfer passes its own `xfer_get`.
+    _xg_real = _XFER_GETTER
+    globals()["_XFER_GETTER"] = lambda p, q: (200, {"deposits": [], "withdrawals": [],
+                                                   "transfers": []})
+    _xfer_reset()
     try:
         return _selftest_body()
     finally:
@@ -5363,6 +5557,8 @@ def selftest():
          pintake.LOSS_ABORT) = _rails_real
         globals()["HWM_FILE"] = _hwm_real
         globals()["SIZE_MIRROR"] = _mir_real
+        globals()["_XFER_GETTER"] = _xg_real
+        _xfer_reset()
         try:
             for _f in os.listdir(_hwm_dir):
                 os.remove(os.path.join(_hwm_dir, _f))
@@ -7036,10 +7232,14 @@ def _selftest_body():
            "A68 ships at ONE times the losing position. The bet is good -- 6 "
            "of 6 live markets under 40% belief went on to lose -- but n is 6, "
            "so the SIZE is where the caution goes")
-        ck(rebuy_room(82.8, 0.0) == 82.8,
+        # 2026-10-03: at the DECLARED default, not the running value -- this
+        # read REBUY_MAX_MULT and failed the startup self-test of any arm that
+        # sets --rebuy-mult 0 (arm-norebuy, F26), the A47/A48/A49 lesson again.
+        ck(rebuy_room(82.8, 0.0, mult=_DEFAULT_REBUY_MAX_MULT) == 82.8,
            "A68: holding 82.8 on the losing side, we may buy 82.8 more of the "
            "side we hedged into")
-        ck(rebuy_room(82.8, 82.8) == 0.0 and rebuy_room(82.8, 90.0) == 0.0,
+        ck(rebuy_room(82.8, 82.8, mult=_DEFAULT_REBUY_MAX_MULT) == 0.0
+           and rebuy_room(82.8, 90.0, mult=_DEFAULT_REBUY_MAX_MULT) == 0.0,
            "...and once that is spent the room is ZERO, never negative -- the "
            "cap is what separates this from A63, which had none and would "
            "have taken the BNB worst case from +$3 to -$134")
@@ -8787,38 +8987,197 @@ def _selftest_body():
                 max_positions = 3
                 loss_abort = -60.0
 
-            _got = []
-            _st43 = {}
-            _sv43 = dict(pintake.LEDGER)
-            _lim43 = (pintake.LOSS_ABORT, pintake.MAX_RUN_STAKE,
-                      pintake.MAX_TAKE_COUNT, pintake.HARD_MAX)
-            _sz43 = SIZE
-            try:
-                pintake.LEDGER["realised"] = 0.0
-                autosize_tick(_st43, _A43(), {}, rec=lambda k, **kw: _got.append((k, kw)),
-                              now=1e9, bank_reader=lambda: 1500.0, hwm_path=_h43b)
-                autosize_tick(_st43, _A43(), {}, rec=lambda k, **kw: _got.append((k, kw)),
-                              now=1e9 + 1000, bank_reader=lambda: 1000.0,
-                              hwm_path=_h43b)
-            finally:
-                pintake.LEDGER.clear()
-                pintake.LEDGER.update(_sv43)
-                (pintake.LOSS_ABORT, pintake.MAX_RUN_STAKE,
-                 pintake.MAX_TAKE_COUNT, pintake.HARD_MAX) = _lim43
-                globals()["SIZE"] = _sz43
+            # v-bankmove: the move is confirmed against a (faked) Kalshi
+            # transfer listing. `_xfer_world` builds a getter answering the
+            # three endpoints; `_drive43` runs the two ticks (baseline, then
+            # the move) against a fresh $1500 mark and returns the records.
+            def _xfer_world(deps=(), wds=(), xfers=(), status=200, raise_=False):
+                def _g(path, q):
+                    if raise_:
+                        raise OSError("wire down")
+                    if status != 200:
+                        return status, {"error": "boom"}
+                    key = dict(XFER_PATHS)[path]
+                    return 200, {key: list({"deposits": deps, "withdrawals": wds,
+                                            "transfers": xfers}[key])}
+                return _g
+
+            def _wd(amount, ts, fee=0.0, status="applied", id_="w1"):
+                return {"amount_cents": int(round(amount * 100)), "fee_cents": int(round(fee * 100)),
+                        "status": status, "finalized_ts": ts, "created_ts": ts, "id": id_}
+
+            def _drive43(bank2, getter, detect=True, realised2=0.0):
+                _xfer_reset()
+                if os.path.exists(_h43b):
+                    os.remove(_h43b)             # write_hwm never lowers a mark
+                write_hwm(1500.0, _h43b)
+                got, st = [], {}
+                sv = dict(pintake.LEDGER)
+                lim = (pintake.LOSS_ABORT, pintake.MAX_RUN_STAKE,
+                       pintake.MAX_TAKE_COUNT, pintake.HARD_MAX)
+                sz, det = SIZE, EXTERNAL_DETECT
+                try:
+                    globals()["EXTERNAL_DETECT"] = detect
+                    pintake.LEDGER["realised"] = 0.0
+                    autosize_tick(st, _A43(), {}, rec=lambda k, **kw: got.append((k, kw)),
+                                  now=1e9, bank_reader=lambda: 1500.0, hwm_path=_h43b,
+                                  xfer_get=getter)
+                    pintake.LEDGER["realised"] = realised2
+                    autosize_tick(st, _A43(), {}, rec=lambda k, **kw: got.append((k, kw)),
+                                  now=1e9 + 1000, bank_reader=lambda: bank2,
+                                  hwm_path=_h43b, xfer_get=getter)
+                finally:
+                    pintake.LEDGER.clear()
+                    pintake.LEDGER.update(sv)
+                    (pintake.LOSS_ABORT, pintake.MAX_RUN_STAKE,
+                     pintake.MAX_TAKE_COUNT, pintake.HARD_MAX) = lim
+                    globals()["SIZE"] = sz
+                    globals()["EXTERNAL_DETECT"] = det
+                    _xfer_reset()
+                return got, st
+
+            # (1) a $500 drop WITH a matching withdrawal in Kalshi's records
+            _got, _st43 = _drive43(1000.0, _xfer_world(wds=[_wd(500.0, 1e9 + 900)]))
             _ext = [kw for k, kw in _got if k == "external"]
             ck(len(_ext) == 1 and _ext[0].get("move") == "withdrawal"
-               and abs(_ext[0].get("amount", 0) + 500.0) < 1e-9,
-               "autosize_tick END TO END: $500 vanishing with no realised loss "
-               "logs ONE external record saying withdrawal, -500")
+               and abs(_ext[0].get("amount", 0) + 500.0) < 1e-9
+               and not [k for k, _ in _got if k == "unexplained"],
+               "autosize_tick END TO END: $500 vanishing with no realised loss AND "
+               "a $500 withdrawal in Kalshi's records logs ONE external record "
+               "saying withdrawal, -500")
             ck("kind" not in _ext[0],
                "and it does NOT pass `kind` as a keyword -- rec(kind, **kw) "
                "takes it positionally, and rec('external', kind=...) raises "
                "TypeError. That crashed the live bot on 2026-09-15 at "
                "04:29:30Z and the isolated tests all passed through it")
-            ck(abs(read_hwm(_h43b) - 1000.0) < 1e-9,
-               "and the high-water mark really moved on disk, so the next tick "
+            ck(abs(read_hwm(_h43b) - 1000.0) < 1e-9 and abs(_st43.get("drawdown", 1)) < 1e-12,
+               "and the high-water mark really moved on disk, so the same tick "
                "sees zero drawdown instead of 33%")
+            ck(_ext[0].get("transfers") and _ext[0]["transfers"][0].get("id") == "w1"
+               and _ext[0]["transfers"][0].get("kind") == "withdrawal",
+               "v-bankmove: the external record names the Kalshi transfer that "
+               "confirmed it (id w1, withdrawal)")
+            # (2) THE FIX: the same $500 drop with NO transfer anywhere
+            _got, _st43 = _drive43(1000.0, _xfer_world())
+            _un = [kw for k, kw in _got if k == "unexplained"]
+            ck(not [k for k, _ in _got if k == "external"] and len(_un) == 1
+               and _un[0].get("move") == "withdrawal"
+               and abs(_un[0].get("amount", 0) + 500.0) < 1e-9
+               and "no matching" in (_un[0].get("why") or ""),
+               "v-bankmove: the SAME $500 drop with no transfer in Kalshi's records "
+               "is `unexplained` (amount -500, why: no matching transfer), NOT a "
+               "withdrawal -- the 10-01 01:00:35Z coin-race loss and 07:15:21Z "
+               "delayed payout both read this way now")
+            ck(abs(read_hwm(_h43b) - 1500.0) < 1e-9
+               and abs(_st43.get("drawdown", 0) - 500.0 / 1500.0) < 1e-9
+               and _un[0].get("hwm") == 1500.0,
+               "...the high-water mark stays at $1500 and the drop COUNTS as a "
+               "33%% drawdown (got %.3f) -- the 20%% halt sees it"
+               % _st43.get("drawdown", -1))
+            # (3) a $500 rise matching a deposit (net of its fee) -> deposit
+            _got, _st43 = _drive43(2000.0, _xfer_world(deps=[_wd(510.0, 1e9 + 500, fee=10.0, id_="d1")]))
+            _ext = [kw for k, kw in _got if k == "external"]
+            ck(len(_ext) == 1 and _ext[0].get("move") == "deposit"
+               and _ext[0]["transfers"][0]["id"] == "d1"
+               and abs(read_hwm(_h43b) - 2000.0) < 1e-9,
+               "v-bankmove: a $500 rise with a $510 deposit less a $10 fee in the "
+               "records is a DEPOSIT (fee comes off, as pinxfer says), mark 2000")
+            # (4) a $500 rise with no deposit -> unexplained; the mark still
+            # rises to the new bank the ordinary way (write_hwm), never shifted
+            _got, _st43 = _drive43(2000.0, _xfer_world())
+            ck([k for k, _ in _got if k in ("external", "unexplained")] == ["unexplained"]
+               and abs(read_hwm(_h43b) - 2000.0) < 1e-9,
+               "v-bankmove: a $500 rise with NO deposit is `unexplained` -- the "
+               "10-01 09:00:22Z +$87 and 23:18:26Z +$6.36 payouts read this way; "
+               "the mark follows the bank as a new high, not as a deposit")
+            # (5) a pending deposit does not count; a deposit outside the
+            # window does not count; a used id explains one move only
+            _got, _st43 = _drive43(2000.0, _xfer_world(deps=[_wd(500.0, 1e9 + 500, status="pending")]))
+            ck([k for k, _ in _got if k in ("external", "unexplained")] == ["unexplained"],
+               "v-bankmove: a PENDING deposit has not moved the balance and "
+               "confirms nothing")
+            _got, _st43 = _drive43(1000.0, _xfer_world(wds=[_wd(500.0, 1e9 - 2 * XFER_SLACK_S)]))
+            ck([k for k, _ in _got if k in ("external", "unexplained")] == ["unexplained"],
+               "v-bankmove: a withdrawal stamped two slack-windows before the "
+               "previous bank read does not explain today's drop")
+            # (6) the API fails -> unexplained, never a withdrawal
+            _got, _st43 = _drive43(1000.0, _xfer_world(status=500))
+            _un = [kw for k, kw in _got if k == "unexplained"]
+            ck(len(_un) == 1 and "read failed" in (_un[0].get("why") or "")
+               and abs(read_hwm(_h43b) - 1500.0) < 1e-9
+               and abs(_st43.get("drawdown", 0) - 500.0 / 1500.0) < 1e-9,
+               "v-bankmove: a 500 from the listing makes the drop `unexplained` "
+               "(why: read failed), mark untouched, drawdown counted")
+            _got, _st43 = _drive43(1000.0, _xfer_world(raise_=True))
+            ck([k for k, _ in _got if k in ("external", "unexplained")] == ["unexplained"]
+               and abs(read_hwm(_h43b) - 1500.0) < 1e-9,
+               "v-bankmove: a getter that RAISES is the same failure, not a crash "
+               "and not a withdrawal")
+            # (7) a subaccount transfer OUT of the main account is a withdrawal
+            # as the main bank saw it; one INTO it is a deposit
+            _got, _st43 = _drive43(1000.0, _xfer_world(xfers=[
+                {"amount_cents": 50000, "created_ts": 1e9 + 100, "from_subaccount": "0",
+                 "to_subaccount": "2", "transfer_id": "x1"}]))
+            _ext = [kw for k, kw in _got if k == "external"]
+            ck(len(_ext) == 1 and _ext[0]["move"] == "withdrawal"
+               and _ext[0]["transfers"][0]["kind"] == "transfer_out"
+               and abs(read_hwm(_h43b) - 1000.0) < 1e-9,
+               "v-bankmove: $500 moved from the main account to subaccount 2 "
+               "confirms a $500 drop (transfer_out), mark shifted")
+            _got, _st43 = _drive43(1000.0, _xfer_world(xfers=[
+                {"amount_cents": 50000, "created_ts": 1e9 + 100, "from_subaccount": "2",
+                 "to_subaccount": "0", "transfer_id": "x2"}]))
+            ck([k for k, _ in _got if k in ("external", "unexplained")] == ["unexplained"],
+               "v-bankmove: ...and a transfer INTO the main account cannot "
+               "explain a drop (wrong sign)")
+            # (8) NULL: --no-external-detect reads nothing and writes nothing
+            _calls = []
+
+            def _never(path, q):
+                _calls.append(path)
+                raise AssertionError("the listing was read with detection off")
+            _got, _st43 = _drive43(1000.0, _never, detect=False)
+            ck(not _calls and not [k for k, _ in _got if k in ("external", "unexplained")]
+               and abs(read_hwm(_h43b) - 1500.0) < 1e-9
+               and abs(_st43.get("drawdown", 0) - 500.0 / 1500.0) < 1e-9,
+               "NULL: with --no-external-detect nothing is classified, no "
+               "listing is read, no record is written, and the drop is a "
+               "drawdown exactly as before")
+            # (9) the pure helpers
+            _rows = transfer_rows({"deposits": [_wd(378.0, 1789801739, fee=7.56, id_="real")],
+                                   "withdrawals": [_wd(20.0, 5, id_="w"), {"amount_cents": "x", "status": "applied"}],
+                                   "transfers": [{"amount_cents": 1000, "created_ts": "2026-10-01T12:00:00Z",
+                                                  "from_subaccount": "1", "to_subaccount": "0"}, "junk"]})
+            ck(sorted((r[2], r[1]) for r in _rows) == [("deposit", 370.44), ("transfer_in", 10.0),
+                                                       ("withdrawal", -20.0)],
+               "transfer_rows: the real 09-19 deposit nets 370.44, a withdrawal is "
+               "negative, an ISO-stamped subaccount transfer into 0 is +10, and "
+               "junk rows are dropped (%r)" % sorted((r[2], r[1]) for r in _rows))
+            ck(match_transfer(-20.0, _rows, 0, 10) and not match_transfer(-20.0, _rows, 6, 10)
+               and not match_transfer(-20.0, _rows, 0, 10, used={"w"})
+               and match_transfer(380.44, _rows + [(1789801900, 10.0, "deposit", "d2")],
+                                  1789801700, 1789801800) == [],
+               "match_transfer: window and used-id respected; two rows that sum to "
+               "the move only match when BOTH are in the window")
+            ck(len(match_transfer(380.44, [(1789801739, 370.44, "deposit", "a"),
+                                           (1789801740, 10.0, "deposit", "b")],
+                                  1789801700, 1789801800)) == 2,
+               "match_transfer: two deposits that together make the move both match")
+            ck(fetch_transfers(_xfer_world(status=404), now=5.0)[0] is None
+               and fetch_transfers(_xfer_world(), now=5.0)[0] == [],
+               "fetch_transfers: a 404 is (None, why), an empty listing is ([], None)")
+            _xfer_reset()
+            _n = []
+            _cg = lambda p, q: (_n.append(p), (200, {"deposits": [], "withdrawals": [], "transfers": []}))[1]
+            fetch_transfers(_cg, now=100.0)
+            fetch_transfers(_cg, now=150.0)
+            ck(len(_n) == 3, "fetch_transfers: a second read inside %gs uses the cache (%d GETs)"
+               % (XFER_CACHE_S, len(_n)))
+            fetch_transfers(_cg, now=100.0 + XFER_CACHE_S)
+            ck(len(_n) == 6, "...and one past it re-reads all three listings")
+            _xfer_reset()
+            ck(_DEFAULT_XFER_CONFIRM is True and XFER_CONFIRM is True,
+               "v-bankmove declared default: confirmation ON (running %r)" % XFER_CONFIRM)
         finally:
             for _x in os.listdir(_d43b):
                 os.remove(os.path.join(_d43b, _x))
@@ -8836,6 +9195,14 @@ def _selftest_body():
         ck(_ab43.index("if open_positions:") < _ab43.index("classify_bank_move("),
            "and only when FLAT, so collateral on an open position is never "
            "mistaken for a withdrawal")
+        _ab43w = _ab43[:_ab43.index(chr(10) + "def ", 10)]
+        ck(_ab43w.count("shift_hwm(") == 1
+           and _ab43w.index("confirm_move(") < _ab43w.index("shift_hwm(")
+           and 'rec("unexplained"' in _ab43w
+           and _ab43w.index("if _why is None:") < _ab43w.index("shift_hwm("),
+           "v-bankmove: inside autosize_tick the mark is shifted in ONE place, "
+           "after confirm_move and only when it returned no reason -- the "
+           "unexplained branch cannot reach shift_hwm")
 
         # ---- AMENDMENT 41: after a jump, sigma is doubled ---------------
         ck(_DEFAULT_JUMP_WIDEN == 2.0 and _DEFAULT_JUMP_WIDEN_WINDOW == 5
@@ -15510,8 +15877,11 @@ def read_mirror_size(path=None, max_age_s=None, now=None):
 
 
 def autosize_tick(state, a, open_positions, rec=None, now=None,
-                  bank_reader=None, hwm_path=None, mirror_path=None):
-    """Called at the top of the loop. Returns a message when size moved."""
+                  bank_reader=None, hwm_path=None, mirror_path=None,
+                  xfer_get=None):
+    """Called at the top of the loop. Returns a message when size moved.
+    `xfer_get` is a test's stand-in for the transfer listings (v-bankmove);
+    the trade loop passes none and the signed portfolio read is used."""
     # NOT GATED ON a.live ANY MORE (2026-09-14). It was, and the consequence
     # was that every paper what-if traded at its --size while the live bot
     # auto-sized to the bank: on 2026-09-14 live ran 52 contracts and all four
@@ -15559,26 +15929,45 @@ def autosize_tick(state, a, open_positions, rec=None, now=None,
         _kind, _amt = classify_bank_move(bank, state.get("ext_bank"), _real,
                                          state.get("ext_realised"))
         if _kind in ("withdrawal", "deposit"):
-            _moved = shift_hwm(_amt, hwm_path)
-            state["ext_events"] = state.get("ext_events", 0) + 1
-            if rec:
-                # `move`, NOT `kind`. rec(kind, **kw) takes kind POSITIONALLY,
-                # so rec("external", kind=...) raises TypeError: got multiple
-                # values for argument 'kind'. That is exactly what killed the
-                # live bot at 2026-09-15 04:29:30Z -- a late settlement from
-                # the previous run landed in the balance, read correctly as a
-                # deposit, and the logging line crashed the trade loop. The
-                # unit tests covered classify_bank_move and shift_hwm in
-                # isolation and never drove autosize_tick through the branch.
-                rec("external", move=_kind, amount=round(_amt, 2),
-                    bank=round(bank, 2), hwm_now=_moved,
-                    realised_since=round(_real - (state.get("ext_realised") or 0.0), 4))
-            print(f"  *** {_kind.upper()} of ${abs(_amt):.2f} detected -- not a "
-                  f"trading loss. High-water mark moved to "
-                  f"${(_moved if _moved is not None else 0.0):.2f}; the drawdown "
-                  f"brake keeps measuring trading only. ***")
+            # v-bankmove: KALSHI MUST SHOW THE TRANSFER before the mark moves.
+            _hits, _why = ([], None)
+            if XFER_CONFIRM:
+                _hits, _why = confirm_move(_amt, state, now, getter=xfer_get)
+            _since = round(_real - (state.get("ext_realised") or 0.0), 4)
+            if _why is None:
+                _moved = shift_hwm(_amt, hwm_path)
+                state["ext_events"] = state.get("ext_events", 0) + 1
+                if rec:
+                    # `move`, NOT `kind`. rec(kind, **kw) takes kind
+                    # POSITIONALLY, so rec("external", kind=...) raises
+                    # TypeError: got multiple values for argument 'kind'. That
+                    # is exactly what killed the live bot at 2026-09-15
+                    # 04:29:30Z -- a late settlement from the previous run
+                    # landed in the balance, read correctly as a deposit, and
+                    # the logging line crashed the trade loop. The unit tests
+                    # covered classify_bank_move and shift_hwm in isolation
+                    # and never drove autosize_tick through the branch.
+                    rec("external", move=_kind, amount=round(_amt, 2),
+                        bank=round(bank, 2), hwm_now=_moved,
+                        realised_since=_since,
+                        transfers=[{"id": h[3], "kind": h[2], "amount": round(h[1], 2),
+                                    "ts": h[0]} for h in _hits])
+                print(f"  *** {_kind.upper()} of ${abs(_amt):.2f} confirmed by Kalshi's "
+                      f"transfer records -- not a trading loss. High-water mark "
+                      f"moved to ${(_moved if _moved is not None else 0.0):.2f}; the "
+                      f"drawdown brake keeps measuring trading only. ***")
+            else:
+                state["unexplained"] = state.get("unexplained", 0) + 1
+                if rec:
+                    rec("unexplained", move=_kind, amount=round(_amt, 2),
+                        bank=round(bank, 2), hwm=read_hwm(hwm_path),
+                        realised_since=_since, why=_why[:200])
+                print(f"  *** UNEXPLAINED bank move of ${_amt:+.2f} ({_why[:90]}). "
+                      f"The high-water mark is NOT moved; the move counts as "
+                      f"trading until a Kalshi transfer explains it. ***")
     state["ext_bank"] = bank
     state["ext_realised"] = _real
+    state["ext_at"] = now
     # AMENDMENT 30: refresh the high-water mark and the drawdown BEFORE the
     # size is chosen, so a fall in the bank shrinks the bet on the same tick
     # that notices it rather than on the next one.
@@ -21336,6 +21725,7 @@ def main():
         improve_max=IMPROVE_MAX, pick=PICK, gate_audit=True,
         sweep_depth=SWEEP_DEPTH, depth_ladder=DEPTH_LADDER,
         external_detect=EXTERNAL_DETECT, external_min=EXTERNAL_MIN,
+        xfer_confirm=XFER_CONFIRM,
         jump_gate=JUMP_ENABLED, jump_sigma=JUMP_SIGMA,
         jump_lookback=JUMP_LOOKBACK,
         jump_widen=WIDEN_ENABLED, jump_widen_factor=JUMP_WIDEN,
@@ -21380,6 +21770,13 @@ def main():
         # own log cannot say what it is testing is not measurable.
         hedge_price=HEDGE_PRICE, hedge_panic=HEDGE_PANIC,
         rebuy_hedged=REBUY_HEDGED,
+        # 2026-10-03 (F26/F27 paper arms): the seller check's settings and
+        # the A68 multiple, so arm-toxic15 / arm-toxic0 / arm-norebuy can be
+        # told from the twin by their own log -- the A47/A48/A49 lesson.
+        # Before this, --toxic-tau-min and --rebuy-mult left no trace here.
+        toxic_fresh=TOXIC_FRESH, toxic_min_age_ms=TOXIC_MIN_AGE_MS,
+        toxic_min_share=TOXIC_MIN_SHARE, toxic_tau_min=TOXIC_TAU_MIN,
+        rebuy_mult=REBUY_MAX_MULT,
         late_tau=LATE_TAU, late_mult=LATE_MULT,
         late_pin=LATE_PIN, late_jump=LATE_JUMP_SD, extra_coin=EXTRA_COIN,
         late_extra=LATE_EXTRA, late_extra_tau=late_extra_tau(),

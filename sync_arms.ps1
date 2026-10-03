@@ -177,7 +177,21 @@ $arms = @(
   # PLUS --early-price-free-tries -- an early_dear/early_cheap refusal on the
   # 45-s leg no longer uses up the coin's 3 tries, so a coin at 97.9-98c out
   # there can still be bought inside 30 s. Seller-gate refusals still use a try.
-  @{ n="arm-lockfix";       drop=@("--loss-abort");      add=@("--loss-abort","-100000","--early-price-free-tries") }
+  @{ n="arm-lockfix";       drop=@("--loss-abort");      add=@("--loss-abort","-100000","--early-price-free-tries") },
+  # 2026-10-03 ~05:xxZ (F27, IDEA_LEDGER; READS_DUE toxic-inside20-paper, due
+  # 10-10 12:00Z): twin settings PLUS the seller check (--toxic-fresh, live
+  # since 09-27) standing down at 15 s instead of 20 (arm-toxic15) or never
+  # (arm-toxic0). Live record 09-27..10-02: 3 of 26 markets the check flagged
+  # and then let through inside 20 s lost (-$116); 15 s catches SOL 10-02.
+  @{ n="arm-toxic15";       drop=@("--loss-abort");      add=@("--loss-abort","-100000","--toxic-tau-min","15") },
+  @{ n="arm-toxic0";        drop=@("--loss-abort");      add=@("--loss-abort","-100000","--toxic-tau-min","0") },
+  # 2026-10-03 ~05:xxZ (F26, IDEA_LEDGER; READS_DUE norebuy-paper, due 10-10
+  # 12:00Z): twin settings PLUS --rebuy-mult 0 = A68 off: never buy MORE of
+  # the side we hedged into after a hedge alarm. With the A68 room at zero,
+  # _both_sides_block refuses every hedged-side buy (full, top-up and
+  # late_add alike), which closes the 09-27..10-02 "second flip" path. The
+  # hedge itself is untouched.
+  @{ n="arm-norebuy";       drop=@("--loss-abort");      add=@("--loss-abort","-100000","--rebuy-mult","0") }
   # arm-farrung (v-farrung flags) RETIRED 2026-09-25 06:3xZ: the far-rung idea is dead
   # (FAR_RUNG_2026-09-25 verdict: 0 safe-side supply at $150+ in 68 closes).
 )

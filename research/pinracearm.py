@@ -1013,6 +1013,70 @@ def halt_active(st, now=None):
     return h
 
 
+# v-race-daystate (2026-10-03, IDEA_LEDGER F29): THE DAY'S LOSS COUNT SURVIVES A RESTART.
+# Until today `day_losses`, `loss_day`, `halted` and `halted_day` lived only in LIVE, in memory, so a
+# keep-alive restart forgot the day's losses and the 2-losses-a-day stop (v-race40) could be beaten by a
+# restart. Now every change is written to DAYSTATE_FILE and a --live start reads it back: a record from
+# TODAY (ET) is restored -- count and halt -- so a halted day stays halted through a restart; a record from
+# another day is ignored (the daily limit resets at the ET day turn, as before); a corrupt or unreadable
+# file is ignored and said so in the log. Paper arms and the self-test never write results/: the writer
+# runs only when `state["daystate_path"]` is set, and main sets it under --live only.
+DAYSTATE_FILE = os.path.join(REPO, "results", "pinracepenny-daystate.json")
+DAYSTATE_KEYS = ("loss_day", "day_losses", "halted", "halted_day")
+
+
+def save_daystate(state, path=None, now=None):
+    """Write the daily loss counter and halt to `path` (tmp + replace). No path (none in `state` either)
+    = nothing written, so a planted dict in the self-test and a paper arm never touch results/. `day` is
+    the ET day the record belongs to. Returns the path written, or None."""
+    path = path or state.get("daystate_path")
+    if not path:
+        return None
+    now = time.time() if now is None else now
+    d = {k: state.get(k) for k in DAYSTATE_KEYS}
+    d["day"] = state.get("loss_day") or state.get("halted_day") or _et_day(now)
+    d["t"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(d, fh)
+        os.replace(tmp, path)
+    except OSError:
+        return None
+    return path
+
+
+def restore_daystate(state, path=None, now=None):
+    """Read the file at a live start. (what, detail): "restored" -- the record is from TODAY (ET) and its
+    count and halt are now in `state`; "stale" -- another day, ignored; "corrupt" / "missing" -- ignored,
+    with the reason. Never raises; never restores a halt whose day is not today."""
+    path = path or DAYSTATE_FILE
+    now = time.time() if now is None else now
+    if not os.path.exists(path):
+        return "missing", None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+        if not isinstance(d, dict):
+            raise ValueError("not a JSON object")
+        day = str(d.get("day") or "")
+        losses = int(d.get("day_losses") or 0)
+        halted, halted_day = d.get("halted"), d.get("halted_day")
+        if halted is not None and not isinstance(halted, str):
+            raise ValueError("halted is not text")
+        if losses < 0:
+            raise ValueError("negative loss count")
+    except (OSError, ValueError, TypeError) as e:
+        return "corrupt", "%s: %s" % (type(e).__name__, str(e)[:120])
+    today = _et_day(now)
+    if day != today:
+        return "stale", {"day": day, "today": today, "day_losses": losses, "halted": halted}
+    state["loss_day"], state["day_losses"] = day, losses
+    if halted and (halted_day == today or halted_day is None):
+        state["halted"], state["halted_day"] = halted, halted_day
+    return "restored", {"day": day, "day_losses": losses, "halted": halted, "halted_day": halted_day}
+
+
 def loss_halt(evt, lost):
     """The stop-on-first-loss message for the first losing real leg. A TIE is
     named as a tie, with the dollars it cost: money was lost, so the rail
@@ -1115,6 +1179,7 @@ def settle_pass(evt, cs, now, rets, fills, live_pos, pending, ledger_rows,
                  "  TIE -- %d leg(s) paid 50c" % len(ties) if ties else ""))
         if state.get("halted") and not halt_active(state, cs):
             state["halted"] = state["halted_day"] = None          # a new ET day: the daily limit resets
+            save_daystate(state, now=cs)                          # v-race-daystate: every change to disk
         if (lost and state.get("stop_on_loss") and not state.get("halted")
                 and int(state.get("max_losses") or 1) > 1):
             _d = _et_day(cs)
@@ -1131,6 +1196,7 @@ def settle_pass(evt, cs, now, rets, fills, live_pos, pending, ledger_rows,
                     staked=round(float(state.get("staked", 0.0)), 4),
                     sends=state.get("sends"))
                 print("\n  *** LIVE RACE STOPPED FOR THE DAY: %s\n" % state["halted"])
+            save_daystate(state, now=cs)                          # the count, halted or not
         elif lost and state.get("stop_on_loss") and not state.get("halted"):
             # STOP DEAD. The whole point of the penny test is to find out
             # whether we lose more often than the tape says; the first real
@@ -1140,6 +1206,7 @@ def settle_pass(evt, cs, now, rets, fills, live_pos, pending, ledger_rows,
             rec("live_halt", why=state["halted"],
                 staked=round(float(state.get("staked", 0.0)), 4),
                 sends=state.get("sends"))
+            save_daystate(state, now=cs)
             print("\n  *** PENNY TEST HALTED: %s" % state["halted"])
             print("  No further real order will be sent by this "
                   "process. The paper arm keeps running.\n")
@@ -2289,6 +2356,119 @@ def selftest():
        and body.find("RACE_MAX_CONTRACTS_CEILING") < body.find('pintake.set_limits(max_run_stake=LIVE["max_stake"]'),
        "v-race40: the setting reaches LIVE, and the stake rail is raised only after this file's own ceiling check")
 
+    # v-race-daystate: the day's losses survive a restart
+    import tempfile as _tfd
+    _ddir = _tfd.mkdtemp(prefix="racedaystate-")
+    try:
+        _pth = os.path.join(_ddir, "daystate.json")
+        _nowd = time.time()
+        _today = _et_day(_nowd)
+
+        def _fresh():
+            return dict(on, races={}, max_losses=2, day_losses=0, loss_day=None,
+                        halted=None, halted_day=None)
+
+        def _refused(st):
+            return any("halted" in x for x in live_refusals(20, 0.95, 1, "R9", coin="BTC", side="yes",
+                                                             state=st, exists=never))
+        # (a) PLANTED: today's file with 2 losses and the daily halt
+        with open(_pth, "w", encoding="utf-8") as fh:
+            json.dump({"day": _today, "loss_day": _today, "day_losses": 2,
+                       "halted": "2 losing races on %s ET, the daily limit -- planted" % _today,
+                       "halted_day": _today}, fh)
+        _stR = _fresh()
+        _k, _d = restore_daystate(_stR, _pth, _nowd)
+        ck(_k == "restored" and _stR["day_losses"] == 2 and _stR["halted_day"] == _today and _refused(_stR),
+           "v-race-daystate: a state file from TODAY with 2 losses and the halt is restored at start, and "
+           "arming refuses every order for the rest of the day (%s)" % _k)
+        ck(halt_active(_stR, _nowd + 86400) is None,
+           "v-race-daystate: ...and the restored halt still expires when the ET day turns")
+        # (b) today's file with ONE loss, no halt: the count comes back, orders still allowed
+        with open(_pth, "w", encoding="utf-8") as fh:
+            json.dump({"day": _today, "loss_day": _today, "day_losses": 1, "halted": None, "halted_day": None}, fh)
+        _stO = _fresh()
+        ck(restore_daystate(_stO, _pth, _nowd)[0] == "restored" and _stO["day_losses"] == 1
+           and _stO["loss_day"] == _today and not _refused(_stO),
+           "v-race-daystate: one loss today comes back as a count of 1 and nothing is refused -- the NEXT loss halts")
+        # (c) YESTERDAY's file -> ignored
+        _yday = _et_day(_nowd - 86400)
+        with open(_pth, "w", encoding="utf-8") as fh:
+            json.dump({"day": _yday, "loss_day": _yday, "day_losses": 2,
+                       "halted": "2 losing races on %s ET, the daily limit -- planted" % _yday,
+                       "halted_day": _yday}, fh)
+        _stY = _fresh()
+        _k, _d = restore_daystate(_stY, _pth, _nowd)
+        ck(_k == "stale" and _stY["day_losses"] == 0 and _stY["halted"] is None and not _refused(_stY),
+           "v-race-daystate: yesterday's file is ignored -- no losses carried, nothing refused (%s)" % _k)
+        # (d) a CORRUPT file -> ignored, with the reason
+        with open(_pth, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        _stC = _fresh()
+        _k, _d = restore_daystate(_stC, _pth, _nowd)
+        ck(_k == "corrupt" and _d and _stC["halted"] is None and _stC["day_losses"] == 0 and not _refused(_stC),
+           "v-race-daystate: a corrupt file is ignored and says why (%s)" % _d)
+        with open(_pth, "w", encoding="utf-8") as fh:
+            json.dump({"day": _today, "day_losses": 2, "halted": ["list"], "halted_day": _today}, fh)
+        _stC2 = _fresh()
+        ck(restore_daystate(_stC2, _pth, _nowd)[0] == "corrupt" and _stC2["halted"] is None,
+           "v-race-daystate: a file with the right day but a junk halt is corrupt, not restored")
+        os.remove(_pth)
+        ck(restore_daystate(_fresh(), _pth, _nowd) == ("missing", None),
+           "v-race-daystate: no file is `missing`, not an error")
+        # (e) END TO END through settle_pass: the first loss writes the file, the second writes the halt,
+        # and a restart on the same (planted) ET day picks the halt back up
+        _stE = {"paper": False, "rolling": True, "staked": 0.97, "stop_on_loss": True,
+                "halted": None, "sends": 1, "max_losses": 2, "daystate_path": _pth}
+        _pE, _lE, _rE = _fx("D41")
+        _sp("D41", 10_000, 10_000 + SCORE_DELAY, rets, _pE, _lE, {}, _rE, _drive([]), _stE, {"committed": 0.97})
+        with open(_pth, encoding="utf-8") as fh:
+            _disk = json.load(fh)
+        ck(_disk["day_losses"] == 1 and _disk["day"] == _et_day(10_000) and not _disk["halted"],
+           "v-race-daystate end to end: the first losing race writes {day, day_losses 1, no halt} to disk")
+        _stE["staked"] = 0.97
+        _pE2, _lE2, _rE2 = _fx("E41")
+        _sp("E41", 10_000, 10_000 + SCORE_DELAY, rets, _pE2, _lE2, {}, _rE2, _drive([]), _stE, {"committed": 0.97})
+        with open(_pth, encoding="utf-8") as fh:
+            _disk = json.load(fh)
+        ck(_disk["day_losses"] == 2 and "daily limit" in (_disk["halted"] or "")
+           and _disk["halted_day"] == _et_day(10_000),
+           "v-race-daystate end to end: the second writes the halt and its day")
+        _stF = _fresh()
+        # (the planted day is 1969-12-31 ET, so the halt is checked at THAT clock; the real-clock refusal
+        # is case (a) above)
+        ck(restore_daystate(_stF, _pth, 10_000)[0] == "restored" and bool(halt_active(_stF, 10_000))
+           and _stF["day_losses"] == 2,
+           "v-race-daystate end to end: a restart the same ET day reads the halt and the count back")
+        ck(restore_daystate(_fresh(), _pth, 10_000 + 86400)[0] == "stale",
+           "v-race-daystate end to end: ...and the next ET day it is stale, so the day starts clean")
+        # (f) NULL: a planted state with NO daystate_path writes nothing -- the self-test and every paper
+        # arm leave results/ alone
+        _stN = {"paper": False, "rolling": True, "staked": 0.97, "stop_on_loss": True,
+                "halted": None, "sends": 1, "max_losses": 2}
+        _pN, _lN, _rN = _fx("F41")
+        _sp("F41", 10_000, 10_000 + SCORE_DELAY, rets, _pN, _lN, {}, _rN, _drive([]), _stN, {"committed": 0.97})
+        ck(save_daystate(_stN) is None and not os.path.exists(DAYSTATE_FILE + ".tmp"),
+           "NULL: without a daystate_path nothing is written")
+        # (g) the wiring: main sets the path and restores under --live only, after `rec` exists; every
+        # change in settle_pass saves
+        _i_dsp = body.find('LIVE["daystate_path"] = DAYSTATE_FILE')
+        ck(_i_dsp > 0 and "restore_daystate(LIVE)" in body
+           and 0 < _i_dsp - body.rfind("if a.live:", 0, _i_dsp) < 400
+           and body.find("def rec(kind, **kw):") < body.find("restore_daystate(LIVE)")
+           and body.find("restore_daystate(LIVE)") < body.find("pinrun.IndexWS("),
+           "v-race-daystate wiring: main sets daystate_path and restores under --live, after rec() exists and "
+           "before the loop starts")
+        _settle_src = inspect.getsource(settle_pass)
+        ck(_settle_src.count("save_daystate(state") == 3
+           and _settle_src.find('state["halted"] = state["halted_day"] = None') < _settle_src.find("save_daystate(state")
+           and _settle_src.rfind("save_daystate(state") > _settle_src.find('state["halted"] = loss_halt(evt, lost)'),
+           "v-race-daystate wiring: settle_pass saves after the day reset, after the counted loss and after the "
+           "first-loss halt (%d saves)" % _settle_src.count("save_daystate(state"))
+    finally:
+        for _x in os.listdir(_ddir):
+            os.remove(os.path.join(_ddir, _x))
+        os.rmdir(_ddir)
+
     # PRODUCTION IS ARMED ONLY IN THE --live ARM, never in --paper-live
     _i_al = body.find("if a.live:" + chr(10))
     _i_pl = body.find("elif a.paper_live:")
@@ -2765,6 +2945,23 @@ def main():
                      ("max_contracts", "max_stake", "tau_max", "min_price",
                       "max_legs", "confirm", "clock_tau", "rolling",
                       "stop_on_loss", "paper")} if LIVE["on"] else None))
+    if a.live:
+        # v-race-daystate: today's losses and halt come back from disk, so a
+        # restart cannot launder the daily limit. --live ONLY: a paper arm
+        # never writes or reads the file.
+        LIVE["daystate_path"] = DAYSTATE_FILE
+        _dk, _dd = restore_daystate(LIVE)
+        rec("daystate_restored" if _dk == "restored" else "daystate_ignored",
+            what=_dk, detail=_dd, path=DAYSTATE_FILE,
+            day_losses=LIVE.get("day_losses"), halted=LIVE.get("halted"))
+        if _dk == "restored":
+            print("  day state restored from %s: %d losing race(s) today%s"
+                  % (os.path.basename(DAYSTATE_FILE), int(LIVE.get("day_losses") or 0),
+                     " -- STILL STOPPED FOR THE DAY: %s" % LIVE["halted"]
+                     if halt_active(LIVE) else ""))
+        elif _dk != "missing":
+            print("  day state file %s %s -- ignored (%s)"
+                  % (os.path.basename(DAYSTATE_FILE), _dk, _dd))
 
     idx = pinrun.IndexWS(sorted(set(COINS.values()))).start()
     book = livebook.LiveBook()
