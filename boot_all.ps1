@@ -520,3 +520,17 @@ foreach ($c in $cleanroom) {
 }
 
 if ($started -eq 0) { Say "all up; nothing to do" } else { Say "started $started process(es)" }
+
+# ---- one-off, time-gated: the READ-ONLY SJ04 PortWatch recorder for Tuesday 2026-10-06 (READS_DUE portwatch-1006).
+# Starts once inside 10:50-13:25Z on that date if not already running and the dry/real log for the date has no start
+# record from a live run; it exits by itself at 13:30Z. No orders: research/sweep/portwatch_rec.py sends nothing.
+$pwNow = (Get-Date).ToUniversalTime()
+if ($pwNow.ToString("yyyy-MM-dd") -eq "2026-10-06" -and $pwNow.Hour * 60 + $pwNow.Minute -ge 650 -and $pwNow.Hour * 60 + $pwNow.Minute -le 805) {
+    $pwUp = @($procs | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*portwatch_rec.py*' }).Count -gt 0
+    $pwLog = "$res\portwatch-rec-20261006.jsonl"
+    $pwDone = (Test-Path $pwLog) -and ((Get-Content $pwLog -ErrorAction SilentlyContinue | Select-String '"ev": ?"start".*"mode": ?"run"' | Measure-Object).Count -gt 0)
+    if (-not $pwUp -and -not $pwDone) {
+        Say "PortWatch 10-06 recorder (read-only) is due and not running -- starting it"
+        & powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\start_portwatch_1006.ps1" | ForEach-Object { Say $_ }
+    }
+}
