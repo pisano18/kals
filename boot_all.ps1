@@ -498,7 +498,12 @@ $cleanroom = @(
     # 2026-10-02: the live crash guard on paper -- race1_98 with and without it, gaps 5/10/15c (READS_DUE fcvar-crash-paper)
     @{ n = "forecaster variants paper (crash-guard run)"; like = "*fc_variants_paper.py*fcvar-paper-crash*"; unlike = ""; stop = "";
        a = @("-u", "research\cleanroom\fc_variants_paper.py", "--variants", "base,race1_98,crash10,race1_98_crash05,race1_98_crash10,race1_98_crash15", "--log", "$res\fcvar-paper-crash.jsonl", "--minutes", "10080");
-       o = "$res\fcvar-paper-crash-stdout.log"; e = "$res\fcvar-paper-crash-stderr.log" }
+       o = "$res\fcvar-paper-crash-stdout.log"; e = "$res\fcvar-paper-crash-stderr.log" },
+    # 2026-10-03: the SJ02 rain tail NO desk PAPER log, 30 days (READS_DUE rain-paper). GET only, no money; its
+    # self-test asserts no order call exists in the file. results\rain-paper.stop stands it down.
+    @{ n = "rain tail NO desk paper (SJ02)"; like = "*sweep*rain_paper.py*"; unlike = ""; stop = "$res\rain-paper.stop";
+       a = @("-u", "research\sweep\rain_paper.py", "--minutes", "43200");
+       o = "$res\rain-paper-stdout.log"; e = "$res\rain-paper-stderr.log" }
 )
 foreach ($c in $cleanroom) {
     # unlike: one pattern or a list; a process matching ANY of them is not this entry
