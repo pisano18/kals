@@ -506,6 +506,14 @@
    "how": "Shared closes = 15-minute closes where arm-0914 (log above), arm-live-twin (pid 4228512, results/pinrun-paper-20260929T185918Z.jsonl) and live (results/pinrun-live-*.jsonl in force) were all up 60 s before the close; take restart gaps from each log's start/loop records. Per ET day and cumulative, for each of the three: $ (settled pnl), money bet, % return on money bet, markets traded, losing markets with $ each. Then every LIVE losing market in the window and what arm-0914 did on that same market ($, contracts, or 'did not buy'). Money from settled records only (memory paper-log-money-fields: per-market money is pnl_c/100; settled.realised is a running total). Script pattern: results/PAPERS_1002_1003.md (live_vs_twin.py, extract_pin.py in that session's scratchpad). Also report arm-0914 alive / its start-record code_sha still 06d396480a7a.",
    "bar": "Revert is supported only if, over >= 3 full ET days, arm-0914 beats arm-live-twin by more than $40 on shared closes AND has no more losing markets than the twin; a lead under $40 is copy noise (two identical copies drift $18-40 over a few days). Paper cannot see adverse fills (NEAR 10-03: live 94 contracts vs paper 4), so even a pass is a reason to ask the operator, not to switch.",
    "status": "open"
+  },
+  {
+   "id": "revert0925-live",
+   "due": "2026-10-06T12:00Z",
+   "what": "v-revert0925 (PREPARED 2026-10-04T03:17Z, live from the main bot's next restart via restart_bot.ps1): the live main bot on the 09-25 build (C:\\kals-live-0925\\research\\pinrun.py, code_sha f9548c5571ff, git 2fce1837e6) with the 09-25 argv and --early-min-price 0.90. First confirm the live start record carries code_sha f9548c5571ff and early_min_price 0.9. Then daily Kalshi money vs the paper twin (arm-live-twin pid 4228512, current rules) and arm-0925b (pid 4260672, 09-25 build paper) on shared closes.",
+   "how": "Kalshi /portfolio/settlements per ET day from the revert start record (research/pinday.py); paper logs per armh2h2.py on the same closes; % of money bet and % of the account for each.",
+   "bar": "back to the previous version (results/restart_bot.before-revert0925.ps1 copied over restart_bot.ps1, then restart_bot.ps1) if the live bot loses more than 20% of the account from the revert point, or has 3+ losing markets in any ET day",
+   "status": "open"
   }
  ]
 }

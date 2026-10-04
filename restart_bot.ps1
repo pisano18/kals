@@ -45,9 +45,25 @@
 # transfer to us. Certain cost, unproven benefit. The sweep (AMENDMENT 18)
 # stays -- it is separately evidenced and needs no flag.
 
+# -Check (added 2026-10-04, v-revert0925): build and validate the argument
+# list and the code file, print them, and EXIT before pinflat, before any
+# stop, before any start. The watchdog calls this script with no arguments,
+# so its behaviour is unchanged.
+param([switch]$Check)
 $ErrorActionPreference = "Stop"
 $repo = "C:\kals-repo"
 $py = "C:\Python314\python.exe"
+# v-revert0925, 2026-10-04, operator 2026-10-03 ~23:10 ET: "Revert to 9/25."
+# The live bot runs THE 09-25 BUILD, materialised OUTSIDE the working tree:
+# research\pinrun.py at git 2fce1837e6 (code_sha f9548c5571ff, CRLF) plus the
+# research modules it imports at that commit, under C:\kals-live-0925. Its
+# RESULTS path is hard-coded to C:\kals-repo\results, so logs, pid file, HWM,
+# day-loss and the stop flag are exactly where every watcher looks. The argv
+# below is restart_bot.ps1 at 2fce1837e6 with --early-min-price 0.95 -> 0.90
+# ("do whatever makes the most money"). Revert: copy
+# results\restart_bot.before-revert0925.ps1 over this file and rerun it.
+$code = "C:\kals-live-0925"
+$codeSha = "f9548c5571ff"
 
 # --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
 # did not change; nothing on disk said why, so the next session had to guess
@@ -55,6 +71,7 @@ $py = "C:\Python314\python.exe"
 # blocked the script" and "it was run from the wrong directory". A restart that
 # fails silently is worse than one that fails loudly.
 $transcript = "$repo\results\restart_bot.last.log"
+if ($Check) { $transcript = "$repo\results\restart_bot.check.log" }
 try { Stop-Transcript | Out-Null } catch {}
 # 2026-09-24: Start-Transcript THREW on a file collision in 6 of 27 watchdog
 # restarts (audit), and the throw killed this script BEFORE it started the bot
@@ -85,7 +102,7 @@ Write-Host "restart_bot.ps1 starting $(Get-Date -Format o)"
 # running. Then the worst case is "nothing happened" rather than "nothing
 # is running".
 $botArgs = @(
-    "-u", "$repo\research\pinrun.py",
+    "-u", "$code\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
     "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "2",
     "--improve-scope", "market", "--pick", "best",
@@ -171,7 +188,9 @@ $botArgs = @(
     # a third keeps the markets and cuts its tail. arm-early-full and
     # arm-early-off measure the alternatives; research/earlyhindsight.py
     # scores all three from live fills. results/PROJECT_MAP_2026-09-22.md.
-    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.95", "--early-max-price", "0.978",
+    # v-revert0925: the 09-25 line had no --early-max-price (cap 1.0) and a
+    # 0.95 floor; the floor is 0.90 on the operator's word, 2026-10-03.
+    "--early-tau", "45", "--early-frac", "0.333", "--early-min-price", "0.90",
     # v-lateadd-live (2026-09-24): a FULL position may add 0.5 x SIZE inside the
     # last 15 s when the ask is at or above what we paid (-0.5c). Per-second
     # rebuild of 820 held markets: +$95/16 d, ONE losing add (-$3.23), +$66 at
@@ -320,9 +339,9 @@ $botArgs = @(
     # chosen on the first nine alarms it LOSES $84 on the last nine. The 1x
     # rule is the one that survives both halves of the split.
     "--no-hedge-prop",
-    "--toxic-fresh",
-    "--price-ceiling", "0.98",
-    "--one-full-bet",
+    # v-revert0925: --toxic-fresh, --price-ceiling 0.98 and --one-full-bet
+    # REMOVED (the 09-25 line). 0.98 is the 09-25 code's own default ceiling;
+    # --one-full-bet does not exist in the 09-25 code and would be refused.
     # --early-max-price REMOVED 2026-09-20 ~09:5xZ (v-nocap), on the
     # operator's word: "I actually really want to keep the 45 normal" and
     # "If you think dropping sweep cap makes more do it. I just want the
@@ -544,6 +563,32 @@ if ($__bad.Count -gt 0 -or $botArgs.Count -lt 5) {
     exit 1
 }
 Write-Host "argument list ok: $($botArgs.Count) flat strings"
+
+# --- 0c. v-revert0925: THE CODE FILE MUST BE THERE, AND BE THE 09-25 BUILD,
+# BEFORE ANYTHING IS STOPPED. The bot runs from outside the repo now; a
+# missing or changed C:\kals-live-0925 would otherwise surface only after the
+# kill, as "nothing is running". sha256[:12] is pinrun's own code_sha.
+$__script = $botArgs[1]
+if (-not (Test-Path $__script)) {
+    Write-Host "ABORTING: the bot's code file is missing: $__script"
+    Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 1
+}
+$__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
+if ($__sha -ne $codeSha) {
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build)"
+    Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 1
+}
+Write-Host "code file ok: $__script code_sha $__sha"
+if ($Check) {
+    Write-Host "CHECK ONLY -- nothing stopped, nothing started. argv:"
+    Write-Host "  $py $($botArgs -join ' ')"
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 0
+}
 
 # --- 1. REFUSE IF NOT FLAT. Restarting mid-position abandons a live bet: the
 # new process does not know about it, so it never settles it, never hedges it
