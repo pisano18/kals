@@ -534,6 +534,14 @@
    "how": "python research/sweep/dipsell_live.py --report (reads results/dipsell-live-orders.jsonl); first confirm a start record with live true, subaccount 3, pot 50.",
    "bar": "PRE-REGISTERED (2026-10-02 sweep, verbatim): 2 contracts a trigger (then 10), max 5 open, 14 days or 100 fills; pass = fills on 50%+ of triggers, net over +4c a contract with the low end of the range above zero, no day worse than -25%; kill if negative after 60 fills.",
    "status": "open"
+  },
+  {
+   "id": "fullcap-live",
+   "due": "2026-10-11T12:00Z",
+   "what": "v-revert0925-fullcap (PREPARED 2026-10-04 ~09:30Z, NOT live until the operator copies results/restart_bot.fullcap.ps1 over restart_bot.ps1 and runs it): the 09-25 build plus --max-full-bets 1.0 from C:\\kals-live-0925b (code_sha 269958db6d68). If it was never deployed by the due date, mark this read with that note. If deployed: confirm the live start record carries code_sha 269958db6d68 and max_full_bets 1.0; then every market since the deploy: contracts held on the bet side vs SIZE x (1.5 inside 10 s else 1), every `refused` gate full_cap and every full_cap_trim record, and whether each touched market won or lost (Kalshi).",
+   "how": "results/pinrun-live-*.jsonl from the deploy start record (order / refused gate full_cap / full_cap_trim / hedge records) joined to Kalshi /portfolio/settlements per market (results/kalshi_ledger.json); the counterfactual method is results/fullcap_measure_2026-10-04.py (winners: the refused or trimmed contracts' 1 - price; losers: net scaled by kept/actual).",
+   "bar": "back to results/restart_bot.before-fullcap.ps1 (copy over restart_bot.ps1, then restart_bot.ps1) at once if ANY market holds more than 1.0x the full bet in force on one side (the rule is broken), or any hedge on a market where full_cap/full_cap_trim fired is missing or smaller than the position (a gate blocked a hedge); otherwise keep unless the refused/trimmed winners give up more than $30 over the week with no losing market cut (measured cost 09-27..10-04 at 1.0x: $11.38 in 7 days).",
+   "status": "open"
   }
  ]
 }

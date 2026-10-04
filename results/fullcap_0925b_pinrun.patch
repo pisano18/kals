@@ -1,0 +1,317 @@
+diff --git a/research/pinrun.py b/research/pinrun.py
+index 853a5e7..39fbdb7 100644
+--- a/research/pinrun.py
++++ b/research/pinrun.py
+@@ -2888,6 +2888,50 @@ def late_add_ok(tau, have, size, drop, late_tau=None, frac=None):
+         return False
+ 
+ 
++# v-fullcap (2026-10-04, VERSIONS.md v-revert0925-fullcap). Operator 10-04:
++# "Okay one full coin max. Or does a 1.5 coin do better? Check it out."
++# --max-full-bets X: an ENTRY order may not take the contracts this market
++# already holds on THAT side past X x the full bet in force (SIZE -- or the
++# ladder's series size -- times the same band / doubt / late multiple v-topup
++# completes a position to). A partial order is TRIMMED to the room, not
++# refused: a top-up of an unfinished position still completes it. A market
++# with no room left is refused before the signal (gate `full_cap`, no attempt
++# burned). The backport of v-onefull (09-27) + v-topup (09-30) to the 09-25
++# build, as one count rule. Default 0 = OFF = the 09-25 behaviour exactly.
++# A GATE MUST NEVER BLOCK A HEDGE: this is consulted on the entry path only
++# (the hedge pass never calls it), and even there it stands down for a market
++# already insured (hedged_side set: A68's own cap governs the re-buy) and for
++# an entry on the OTHER side from the one held (a re-buy into a hedge).
++MAX_FULL_BETS = 0.0
++_DEFAULT_MAX_FULL_BETS = 0.0
++
++
++def full_bet_room(prev, tk, want, mult=1.0, hedged=None, size=None, x=None):
++    """v-fullcap: contracts an ENTRY on `want` in market `tk` may still add.
++
++    None = the cap does not apply (flag off, an insured market, or the other
++    side from the one held). Otherwise X x full - held, floored at 0, where
++    full = (size or SIZE) x max(1, mult) and held = contracts this close has
++    booked in `tk` (prev["n_tk"]) when the side held is `want`.
++    Reads MAX_FULL_BETS and SIZE at call time, so the flag takes effect."""
++    x = MAX_FULL_BETS if x is None else float(x)
++    if not x or x <= 0:
++        return None
++    if hedged is not None:
++        return None                      # insured: the hedge path owns it
++    held_side = ((prev or {}).get("sides") or {}).get(tk)
++    if held_side is not None and held_side != want:
++        return None                      # the other side: never capped here
++    have = 0.0
++    if held_side == want:
++        try:
++            have = float(((prev or {}).get("n_tk") or {}).get(tk, 0.0))
++        except (TypeError, ValueError):
++            have = 0.0
++    full = float(SIZE if size is None else size) * max(1.0, float(mult or 1.0))
++    return max(0.0, float(x) * full - have)
++
++
+ def rebuy_ok(prev, tk, price, size=None, tau=None):
+     """May we buy market `tk` AGAIN at `price` in this close?
+ 
+@@ -4881,7 +4925,7 @@ _OFFLINE_PINNED_FLAGS = (
+     "SIGMA_STRESS", "SIZE_MIRROR_ON", "SKIP_BANDS", "SWEEP_DEPTH",
+     "SWEEP_ENABLED", "TAPER", "TAPER_FLOOR",
+     "TOXIC_FRESH", "TOXIC_MIN_AGE_MS", "TOXIC_MIN_SHARE", "TOXIC_TAU_MIN",
+-    "WIDEN_ENABLED")
++    "WIDEN_ENABLED", "MAX_FULL_BETS")
+ 
+ 
+ def _offline_trade_loop(markets, live=False, take=None, reply=None,
+@@ -5320,7 +5364,7 @@ _FLAG_GLOBALS = ("LATE_EXTRA_TAU", "LATE_EXTRA", "LATE_TAU", "LATE_MULT",
+                  "EARLY_MAX_EDGE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
+                  "EARLY_FRAC", "BANK_BRAKE", "SIGMA_STRESS", "FLIP_MULT",
+                  "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC",
+-                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER")
++                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER", "MAX_FULL_BETS")
+ 
+ 
+ def _selftest_body():
+@@ -11687,6 +11731,135 @@ def _selftest_body():
+        and all(r.get("leg") != "late_add" for r in _kinds(_bd, "signal")),
+        "v-lateadd NULL: outside the window nothing is relabelled late_add "
+        "(legs %s)" % [r.get("leg") for r in _kinds(_bd, "signal")])
++    # ---- v-fullcap (2026-10-04): --max-full-bets X -----------------------
++    ck(_DEFAULT_MAX_FULL_BETS == 0.0,
++       "v-fullcap: the DECLARED default is 0 = OFF (the 09-25 behaviour); "
++       "--max-full-bets turns it on (live argv)")
++    _fcp = {"sides": {"A": "yes"}, "n_tk": {"A": 99.0}}
++    _fcq = {"sides": {"A": "yes"}, "n_tk": {"A": 30.0}}
++    ck(full_bet_room(_fcp, "A", "yes", 1.0, size=99.0, x=0.0) is None
++       and full_bet_room(_fcp, "A", "yes", 1.0, size=99.0, x=1.0) == 0.0
++       and abs(full_bet_room(_fcq, "A", "yes", 1.0, size=99.0, x=1.0) - 69.0) < 1e-9
++       and abs(full_bet_room(_fcp, "A", "yes", 1.0, size=99.0, x=1.5) - 49.5) < 1e-9
++       and abs(full_bet_room(_fcp, "A", "yes", 1.5, size=99.0, x=1.0) - 49.5) < 1e-9
++       and abs(full_bet_room(None, "A", "yes", 1.0, size=99.0, x=1.0) - 99.0) < 1e-9
++       and abs(full_bet_room(_fcp, "B", "yes", 1.0, size=99.0, x=1.0) - 99.0) < 1e-9,
++       "v-fullcap PURE: off -> no cap; 99 held of a 99 bet at 1.0x -> room 0 "
++       "(refuse); 30 held -> room 69 (a partial order is TRIMMED, so a top-up "
++       "still completes the bet); 1.5x -> 49.5; the late x1.5 multiple -> 49.5; "
++       "a first buy and a DIFFERENT market get a whole bet")
++    ck(full_bet_room(_fcp, "A", "no", 1.0, size=99.0, x=1.0) is None
++       and full_bet_room(_fcp, "A", "yes", 1.0, hedged="no", size=99.0, x=1.0) is None
++       and full_bet_room(_fcp, "A", "no", 1.0, hedged="no", size=99.0, x=1.0) is None,
++       "v-fullcap PURE, A GATE MUST NEVER BLOCK A HEDGE: the OTHER side (a "
++       "re-buy into a hedge) and any market already insured are never capped")
++    _fcsrc = inspect.getsource(trade_loop)
++    _fc_ssz = _fcsrc.index("_ssz = series_size_for(tk)")
++    _fc_calls = [i for i in range(len(_fcsrc))
++                 if _fcsrc.startswith("full_bet_room(", i)]
++    ck(len(_fc_calls) == 2 and all(i > _fc_ssz for i in _fc_calls)
++       and _fcsrc.rindex("hedged_side[_htk] = _opp") < _fc_ssz
++       and _fcsrc.index('_gate("full_cap"') < _fcsrc.index('rec("signal", live=live, **sig)'),
++       "v-fullcap by source: full_bet_room is called exactly twice, both on "
++       "the ENTRY scan (after the series-size line, which follows the whole "
++       "hedge pass), and the full_cap refusal sits before the signal point")
++    _fc_lv = _fcsrc[_fcsrc.index("# ---- AMENDMENT 45 / 46, live path"):]
++    _fc_pp = _fcsrc[_fcsrc.index("take_n = _doubt(take_n)    # paper"):]
++    ck(_fc_lv.index("take_n = min(take_n, float(_room68))")
++       < _fc_lv.index("take_n = _fullcap(take_n)")
++       < _fc_lv.index("rec(\"zero_take\"") < _fc_lv.index("out = pintake.take(CREDS[")
++       and _fc_pp.index("take_n = _stage46(take_n)") < _fc_pp.index("take_n = _fullcap(take_n)")
++       < _fc_pp.index("rec(\"zero_take\""),
++       "v-fullcap by source: the trim runs LAST on both paths (after A68 and "
++       "every widener live; after _stage46 and the series size on paper) and "
++       "before the zero_take backstop, so a trim to nothing is never sent")
++    ck("if MAX_FULL_BETS <= 0:" + chr(10) + "                        return take_n" in _fcsrc
++       and "if MAX_FULL_BETS > 0:" + chr(10) + "                    _fc_mult0" in _fcsrc,
++       "v-fullcap NULL by source: flag off, the trim returns take_n untouched "
++       "and the refusal block is skipped")
++    # DRIVEN, live path, through the REAL loop. The 09-27 shape (BTC
++    # 26SEP270000: 99 at 97.89c, then 99 more at 97.0c, both at 30 s, in the
++    # same second): a full bet fills, the ask comes back ~0.65c cheaper, A23
++    # sends a SECOND full bet ~50 ms later.
++    def _fc_run(x):
++        _mx, _tx, _xx = _si_world([(0.9535, 500.0)])
++        _rx = _offline_trade_loop([_mx], live=True, take=_tx, run_s=2.5,
++                                  tau0=18, flags=dict(_si_flags,
++                                                      MAX_FULL_BETS=x))
++        return _rx, _xx
++    _fc0, _fx0 = _fc_run(0.0)
++    _fc0_sig = _kinds(_fc0, "signal")
++    ck(_fc0["raised"] is None and len(_fx0["calls"]) == 2
++       and all(abs(c[1] - 5.0) < 1e-9 for c in _fx0["calls"])
++       and len(_fc0_sig) == 2
++       and abs(float(_fc0_sig[1]["t"]) - float(_fc0_sig[0]["t"])) < 1.0
++       and not _refusals(_fc0, "full_cap") and not _kinds(_fc0, "full_cap_trim"),
++       "v-fullcap NULL DRIVEN: flag OFF, the 09-27 shape is reproduced -- TWO "
++       "full bets of 5, inside one second, no full_cap record (orders %s)"
++       % (_fx0["calls"],))
++    _fc1, _fx1 = _fc_run(1.0)
++    ck(_fc1["raised"] is None and len(_fx1["calls"]) == 1
++       and abs(_fx1["calls"][0][1] - 5.0) < 1e-9
++       and len(_refusals(_fc1, "full_cap")) >= 1,
++       "v-fullcap DRIVEN at 1.0x: the SECOND full bet of the 09-27 shape is "
++       "REFUSED (gate full_cap) -- one order of 5 (orders %s)" % (_fx1["calls"],))
++    _fc15, _fx15 = _fc_run(1.5)
++    _fc15_tr = _kinds(_fc15, "full_cap_trim")
++    ck(_fc15["raised"] is None and len(_fx15["calls"]) == 2
++       and abs(_fx15["calls"][1][1] - 2.5) < 1e-9 and len(_fc15_tr) == 1
++       and abs(float(_fc15_tr[0]["was"]) - 5.0) < 1e-9,
++       "v-fullcap DRIVEN at 1.5x: the order that would CROSS the cap is "
++       "trimmed to the room (5 -> 2.5), not refused (orders %s)"
++       % (_fx15["calls"],))
++    _fc2, _fx2 = _fc_run(2.0)
++    ck(_fc2["raised"] is None and _fx2["calls"] == _fx0["calls"]
++       and not _kinds(_fc2, "full_cap_trim") and not _refusals(_fc2, "full_cap"),
++       "v-fullcap DRIVEN at 2.0x: a cap the position never reaches changes "
++       "nothing (orders %s)" % (_fx2["calls"],))
++    # a partial first fill: the 'full' leg that follows asks a WHOLE bet (the
++    # 09-25 leak, SOL 09-19 174 vs 107); at 1.0x it is trimmed to what is
++    # missing, so the top-up still completes the position
++    def _fc_part(x):
++        _mp, _tp, _xp = _si_world([(0.960, 500.0)])
++        _xp["lv"] = [(0.960, 2.0)]
++        _rp = _offline_trade_loop([_mp], live=True, take=_tp, run_s=2.5,
++                                  tau0=18, flags=dict(_si_flags,
++                                                      MAX_FULL_BETS=x))
++        return _rp, _xp
++    _fcp0, _fxp0 = _fc_part(0.0)
++    _fcp1, _fxp1 = _fc_part(1.0)
++    ck(_fcp1["raised"] is None and len(_fxp1["calls"]) == 2
++       and abs(_fxp1["calls"][1][1] - 3.0) < 1e-9
++       and len(_fxp0["calls"]) == 2 and abs(_fxp0["calls"][1][1] - 5.0) < 1e-9
++       and len(_kinds(_fcp1, "full_cap_trim")) == 1,
++       "v-fullcap DRIVEN, partial: 2 held, the next order is TRIMMED to the 3 "
++       "missing at 1.0x (flag off asks %g: the leak) -- trim, not refuse "
++       "(orders on %s, off %s)" % (_fxp0["calls"][1][1] if len(_fxp0["calls"]) > 1 else -1,
++                                   _fxp1["calls"], _fxp0["calls"]))
++    # HEDGES PASS: a full position whose belief collapses at +4 s is hedged in
++    # full at 1.0x exactly as with the flag off -- the position already sits
++    # AT the cap, so anything that consulted the cap would refuse it
++    def _fc_hedge(x):
++        _m = {"tk": "KXFC15M-FC", "series": "KXFC15M", "iid": "FC",
++              "strike": 100.0, "fair": (lambda t: 0.10 if t >= 4 else 0.999),
++              "book": (lambda t: _ob(0.94, 0.05))}
++        _r = _offline_trade_loop([_m], live=True, reply=_fill_all,
++                                 flags={"MAX_FULL_BETS": x})
++        _hn = sum(float(r.get("n") or 0) for r in _r["recs"]
++                  if r.get("kind") == "hedge")
++        _hr = [r for r in _r["recs"] if r.get("kind") == "hedge_refused"]
++        _en = sum(float(p.get("count") or 0) for p in _r["posts"]
++                  if p.get("side") == "bid")
++        return _r, _hn, _hr, _en
++    _fh0, _fhn0, _fhr0, _fen0 = _fc_hedge(0.0)
++    _fh1, _fhn1, _fhr1, _fen1 = _fc_hedge(1.0)
++    ck(_fh1["raised"] is None and _fhn1 > 0 and abs(_fhn1 - _fhn0) < 1e-9
++       and abs(_fen1 - _fen0) < 1e-9 and not _fhr1
++       and abs(_fhn1 - _fen1) < 1e-6,
++       "v-fullcap DRIVEN, A GATE MUST NEVER BLOCK A HEDGE: at 1.0x a full "
++       "position that collapses is hedged in full (%g of %g held), the same "
++       "as with the flag off (%g), nothing refused" % (_fhn1, _fen1, _fhn0))
++
+     # ---- v-btcd1 (2026-09-24): a ladder series takes its OWN size ---------
+     ck(_DEFAULT_SERIES_SIZE is None,
+        "v-btcd1: the DECLARED default is OFF (no series size)")
+@@ -19016,6 +19189,26 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+                           bands=[list(b) for b in SKIP_BANDS],
+                           want=want, size=float(take_n or SIZE))
+                     continue
++                # v-fullcap: a market already holding X full bets on this side
++                # is refused HERE, after every other gate and before the signal
++                # (burns no attempt). The multiple is the LARGEST the send site
++                # can use, so this never refuses an order the trim would allow.
++                if MAX_FULL_BETS > 0:
++                    _fc_mult0 = max(band_mult(price),
++                                    float(DOUBT_MULT) if DOUBT_MULT > 1.0 else 1.0,
++                                    LATE_MULT if tau <= LATE_TAU else 1.0)
++                    _fc_room0 = full_bet_room(prev, tk, want, _fc_mult0,
++                                              hedged=hedged_side.get(tk),
++                                              size=_ssz)
++                    if _fc_room0 is not None and round(float(_fc_room0), 2) <= 0:
++                        _gate("full_cap", close_s, tk, leg=_leg46, tau=tau,
++                              price=round(price, 4), want=want,
++                              have=round(float(((prev or {}).get("n_tk") or {}).get(tk, 0.0)), 2),
++                              cap=round(float(MAX_FULL_BETS) * float(SIZE if _ssz is None else _ssz)
++                                        * _fc_mult0, 2),
++                              cap_x=float(MAX_FULL_BETS),
++                              size=float(take_n or SIZE))
++                        continue
+                 sig["leg"] = _leg46
+                 sig["early_held"] = _held46
+                 # (5) the budget this candidate still had, and the moment
+@@ -19406,6 +19599,28 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+                             under=DOUBT_UNDER, size=float(SIZE))
+                     return take_n
+ 
++                def _fullcap(take_n):
++                    """v-fullcap: trim an ENTRY to the room left under
++                    MAX_FULL_BETS x the full bet in force (v-topup's multiple:
++                    band / doubt / late). After every widener on both paths, so
++                    nothing can raise it back. OFF (0) returns take_n as is."""
++                    if MAX_FULL_BETS <= 0:
++                        return take_n
++                    _mult_fc = max(band_mult(price), _doubt_on[0],
++                                   LATE_MULT if tau <= LATE_TAU else 1.0)
++                    _room_fc = full_bet_room(prev, tk, want, _mult_fc,
++                                             hedged=hedged_side.get(tk),
++                                             size=_ssz)
++                    if _room_fc is None or float(take_n) <= _room_fc + 1e-9:
++                        return take_n
++                    rec("full_cap_trim", ticker=tk, want=want, leg=_leg46,
++                        tau=tau, price=round(float(price), 4),
++                        was=round(float(take_n), 2),
++                        now=round(max(0.0, float(_room_fc)), 2),
++                        cap_x=float(MAX_FULL_BETS), mult=_mult_fc,
++                        size=float(SIZE if _ssz is None else _ssz))
++                    return max(0.0, float(_room_fc))
++
+                 def _stage46(take_n):
+                     """AMENDMENT 46: an early or top-up leg keeps its cap however
+                     much A35/A45 widened the order. A full leg is untouched.
+@@ -19483,6 +19698,7 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+                     take_n = _stage46(take_n)
+                     if _ssz is not None:       # v-btcd1, after every widener
+                         take_n = min(float(take_n), _ssz)
++                    take_n = _fullcap(take_n)  # v-fullcap (paper), LAST
+                     if round(float(take_n), 2) <= 0:  # v-zerotake backstop (paper); v-safety2 (3): 2 dp, as sent
+                         rec("zero_take", ticker=tk, want=want, leg=_leg46,
+                             tau=tau, price=round(float(price), 4))
+@@ -19640,6 +19856,10 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+                         # -$134 case A63 was refused for.
+                         if _room68 is not None:
+                             take_n = min(take_n, float(_room68))
++                        # v-fullcap (live): after A68 and every widener, so
++                        # no later line can raise it; before the zero_take
++                        # backstop, so a trim to nothing is never sent.
++                        take_n = _fullcap(take_n)
+                         # v-zerotake backstop (live): whatever cap produced it,
+                         # an order for zero contracts is never sent. pintake
+                         # refuses it, and two refusals halt the whole run
+@@ -20112,6 +20332,11 @@ def main():
+     ap.add_argument("--fresh-tau-min", type=int, default=None, metavar="S",
+                     help="v-fresh: the gate stands down at or under S seconds "
+                          "left (default 20)")
++    ap.add_argument("--max-full-bets", type=float, default=None, metavar="X",
++                    help="v-fullcap: an entry may not take a market's contracts "
++                         "on the side held past X x the full bet in force "
++                         "(trimmed; refused when no room). Hedges exempt. "
++                         "Default 0 = off.")
+     ap.add_argument("--toxic-fresh", action="store_true", default=False,
+                     help="v-toxic: with more than --toxic-tau-min s left, refuse "
+                          "a level known to be younger than --toxic-min-age-ms "
+@@ -20618,6 +20843,11 @@ def main():
+             raise SystemExit("--fresh-tau-min must be in [0, 60], got %r"
+                              % (a.fresh_tau_min,))
+         globals()["FRESH_TAU_MIN"] = int(a.fresh_tau_min)
++    if a.max_full_bets is not None:
++        if not (0.0 <= float(a.max_full_bets) <= 4.0):
++            raise SystemExit("--max-full-bets must be in [0, 4], got %r"
++                             % (a.max_full_bets,))
++        globals()["MAX_FULL_BETS"] = float(a.max_full_bets)
+     if a.toxic_fresh:
+         globals()["TOXIC_FRESH"] = True
+     if a.toxic_min_age_ms is not None:
+@@ -20973,6 +21203,8 @@ def main():
+         # 09-19 hedge_slip deploy could not, and only the command line knew --
+         # which Windows returns empty for a process it will not open.
+         early_max_price=EARLY_MAX_PRICE,
++        # v-fullcap: the per-market cap in full bets (0 = off)
++        max_full_bets=MAX_FULL_BETS,
+         day_loss_at_start=day_loss(),
+         hedge_prop=HEDGE_PROP, hedge_prop_full=HEDGE_PROP_FULL,
+         hedge_prop_half=HEDGE_PROP_HALF,

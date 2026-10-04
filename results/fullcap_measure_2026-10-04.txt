@@ -1,0 +1,116 @@
+ledger tickers appearing more than once: []
+Per-market full-bet cap counterfactual on OUR LIVE FILLS + Kalshi per-market money.
+Never the tape, never pinsim.
+
+PRE-STATED CHOICE RULE (written before any number was computed, 2026-10-04):
+  pick 1.5x only if its net beats 1.0x by more than $20 over the whole window
+  AND it does not let through any loser bigger than 10% of the account at the time;
+  otherwise 1.0x.
+
+
+markets with live bet fills, 15-min coins, since 09-09: 1167 | not in Kalshi ledger: 0 | log vs Kalshi count mismatch >0.5: 0
+autosize bank records: 338 first ('2026-09-13T03:20:30Z', 193.76)
+contracts held / SIZE at entry (quarter steps), by window: [(('A', 0.0), 75), (('A', 0.25), 179), (('A', 0.5), 42), (('A', 0.75), 46), (('A', 1.0), 604), (('A', 1.25), 6), (('A', 1.5), 15), (('A', 1.75), 3), (('A', 2.0), 7), (('A', 2.75), 1), (('A', 3.0), 1), (('B', 0.0), 21), (('B', 0.25), 66), (('B', 0.5), 6), (('B', 0.75), 2), (('B', 1.0), 61), (('B', 1.5), 19), (('B', 2.0), 1), (('C', 0.0), 1), (('C', 0.25), 7), (('C', 1.0), 3), (('C', 1.5), 1)]
+
+=== cap 1.00x full bet ===
+  A 09-09..09-27 08:10Z (multi-bet builds)         touched  19 | winners  16 give up $   33.58 | losers  3 save $  165.96 | net $ +132.38
+  ALL                                              touched  27 | winners  24 give up $   44.97 | losers  3 save $  165.96 | net $ +121.00
+  B 09-27 08:11Z..10-04 03:22Z (one-full-bet live) touched   8 | winners   8 give up $   11.38 | losers  0 save $    0.00 | net $  -11.38
+     loser ('KXNEAR15M-26SEP082045-45', '2026-09-09T00:44:38Z', -52.6, -17.83, 59.0, 20.0, 161.85, 11.0)
+     loser ('KXBTC15M-26SEP232030-30', '2026-09-24T00:29:34Z', -130.41, -65.2, 176.0, 88.0, 1036.44, 6.3)
+     loser ('KXBTC15M-26SEP270000-00', '2026-09-27T03:59:30Z', -131.98, -65.99, 198.0, 99.0, 1166.47, 5.7)
+
+=== cap 1.25x full bet ===
+  A 09-09..09-27 08:10Z (multi-bet builds)         touched  17 | winners  14 give up $   22.85 | losers  3 save $  128.71 | net $ +105.86
+  ALL                                              touched  23 | winners  20 give up $   28.81 | losers  3 save $  128.71 | net $  +99.89
+  B 09-27 08:11Z..10-04 03:22Z (one-full-bet live) touched   6 | winners   6 give up $    5.97 | losers  0 save $    0.00 | net $   -5.97
+     loser ('KXNEAR15M-26SEP082045-45', '2026-09-09T00:44:38Z', -52.6, -22.29, 59.0, 25.0, 161.85, 13.8)
+     loser ('KXBTC15M-26SEP232030-30', '2026-09-24T00:29:34Z', -130.41, -81.51, 176.0, 110.0, 1036.44, 7.9)
+     loser ('KXBTC15M-26SEP270000-00', '2026-09-27T03:59:30Z', -131.98, -82.49, 198.0, 123.8, 1166.47, 7.1)
+
+=== cap 1.50x full bet ===
+  A 09-09..09-27 08:10Z (multi-bet builds)         touched  12 | winners   9 give up $   13.16 | losers  3 save $   91.45 | net $  +78.29
+  ALL                                              touched  13 | winners  10 give up $   14.00 | losers  3 save $   91.45 | net $  +77.45
+  B 09-27 08:11Z..10-04 03:22Z (one-full-bet live) touched   1 | winners   1 give up $    0.84 | losers  0 save $    0.00 | net $   -0.84
+     loser ('KXNEAR15M-26SEP082045-45', '2026-09-09T00:44:38Z', -52.6, -26.75, 59.0, 30.0, 161.85, 16.5)
+     loser ('KXBTC15M-26SEP232030-30', '2026-09-24T00:29:34Z', -130.41, -97.81, 176.0, 132.0, 1036.44, 9.4)
+     loser ('KXBTC15M-26SEP270000-00', '2026-09-27T03:59:30Z', -131.98, -98.98, 198.0, 148.5, 1166.47, 8.5)
+
+=== cap 2.00x full bet ===
+  A 09-09..09-27 08:10Z (multi-bet builds)         touched   1 | winners   0 give up $    0.00 | losers  1 save $   16.94 | net $  +16.94
+  ALL                                              touched   1 | winners   0 give up $    0.00 | losers  1 save $   16.94 | net $  +16.94
+     loser ('KXNEAR15M-26SEP082045-45', '2026-09-09T00:44:38Z', -52.6, -35.66, 59.0, 40.0, 161.85, 22.0)
+
+All losers (Kalshi money < 0) with held/SIZE, bank, loss % bank, and the loss at each cap:
+  KXNEAR15M-26SEP082045-45 2026-09-09T00:44:38Z money   -52.60 held   59.0 size  20.0 (2.95x) bank 161.85 pct 32.5% | at caps [-17.83, -22.29, -26.75, -35.66]
+  KXXRP15M-26SEP100100-00 2026-09-10T04:59:39Z money   -16.61 held   20.0 size  20.0 (1.00x) bank 163.42 pct 10.2% | at caps [-16.61, -16.61, -16.61, -16.61]
+  KXBNB15M-26SEP100130-30 2026-09-10T05:29:34Z money   -17.60 held   18.6 size  20.0 (0.93x) bank 151.88 pct 11.6% | at caps [-17.6, -17.6, -17.6, -17.6]
+  KXDOGE15M-26SEP101815-15 2026-09-10T22:14:49Z money    -2.12 held   20.0 size  20.0 (1.00x) bank 155.37 pct 1.4% | at caps [-2.12, -2.12, -2.12, -2.12]
+  KXSOL15M-26SEP110830-30 2026-09-11T12:29:30Z money   -12.16 held   20.0 size  20.0 (1.00x) bank 170.26 pct 7.1% | at caps [-12.16, -12.16, -12.16, -12.16]
+  KXSOL15M-26SEP112300-00 2026-09-12T02:59:31Z money   -19.61 held   20.0 size  20.0 (1.00x) bank 175.1 pct 11.2% | at caps [-19.61, -19.61, -19.61, -19.61]
+  KXSOL15M-26SEP120400-00 2026-09-12T07:59:41Z money   -18.88 held   20.0 size  20.0 (1.00x) bank 173.06 pct 10.9% | at caps [-18.88, -18.88, -18.88, -18.88]
+  KXZEC15M-26SEP122000-00 2026-09-12T23:59:35Z money    -8.63 held   11.0 size  20.0 (0.55x) bank 188.76 pct 4.6% | at caps [-8.63, -8.63, -8.63, -8.63]
+  KXBTC15M-26SEP140530-30 2026-09-14T09:29:48Z money   -34.26 held   60.0 size  60.0 (1.00x) bank 354.89 pct 9.7% | at caps [-34.26, -34.26, -34.26, -34.26]
+  KXHYPE15M-26SEP141600-00 2026-09-14T19:59:30Z money   -29.90 held   62.0 size  62.0 (1.00x) bank 364.78 pct 8.2% | at caps [-29.9, -29.9, -29.9, -29.9]
+  KXBNB15M-26SEP161230-30 2026-09-16T16:29:30Z money    -0.47 held    1.0 size  86.0 (0.01x) bank 511.12 pct 0.1% | at caps [-0.47, -0.47, -0.47, -0.47]
+  KXBTC15M-26SEP172115-15 2026-09-18T01:14:22Z money   -27.87 held   99.0 size  99.0 (1.00x) bank 582.71 pct 4.8% | at caps [-27.87, -27.87, -27.87, -27.87]
+  KXBNB15M-26SEP190145-45 2026-09-19T05:44:36Z money   -57.76 held   76.0 size  76.0 (1.00x) bank 674.2 pct 8.6% | at caps [-57.76, -57.76, -57.76, -57.76]
+  KXBTC15M-26SEP190200-00 2026-09-19T05:59:25Z money   -66.34 held   70.0 size  70.0 (1.00x) bank 618.23 pct 10.7% | at caps [-66.34, -66.34, -66.34, -66.34]
+  KXBNB15M-26SEP191230-30 2026-09-19T16:29:37Z money   -61.75 held   84.5 size 114.0 (0.74x) bank 1012.56 pct 6.1% | at caps [-61.75, -61.75, -61.75, -61.75]
+  KXBTC15M-26SEP191600-00 2026-09-19T19:59:15Z money  -107.95 held  110.0 size 110.0 (1.00x) bank 970.81 pct 11.1% | at caps [-107.95, -107.95, -107.95, -107.95]
+  KXNEAR15M-26SEP211245-45 2026-09-21T16:44:16Z money   -59.09 held   81.0 size  81.0 (1.00x) bank 952.84 pct 6.2% | at caps [-59.09, -59.09, -59.09, -59.09]
+  KXHYPE15M-26SEP211815-15 2026-09-21T22:14:18Z money   -31.27 held   55.0 size  79.0 (0.70x) bank 932.37 pct 3.4% | at caps [-31.27, -31.27, -31.27, -31.27]
+  KXDOGE15M-26SEP222245-45 2026-09-23T02:44:48Z money    -2.47 held   13.0 size  82.0 (0.16x) bank 969.37 pct 0.3% | at caps [-2.47, -2.47, -2.47, -2.47]
+  KXBTC15M-26SEP232030-30 2026-09-24T00:29:34Z money  -130.41 held  176.0 size  88.0 (2.00x) bank 1036.44 pct 12.6% | at caps [-65.2, -81.51, -97.81, -130.41]
+  KXBTC15M-26SEP270000-00 2026-09-27T03:59:30Z money  -131.98 held  198.0 size  99.0 (2.00x) bank 1166.47 pct 11.3% | at caps [-65.99, -82.49, -98.98, -131.98]
+  KXBNB15M-26SEP282000-00 2026-09-28T23:59:16Z money    -8.26 held   30.3 size  91.0 (0.33x) bank 1071.09 pct 0.8% | at caps [-8.26, -8.26, -8.26, -8.26]
+  KXXRP15M-26SEP301915-15 2026-09-30T23:14:40Z money   -42.60 held   89.0 size  89.0 (1.00x) bank 1046.67 pct 4.1% | at caps [-42.6, -42.6, -42.6, -42.6]
+  KXSOL15M-26OCT022130-30 2026-10-03T01:29:41Z money   -41.11 held   96.0 size  96.0 (1.00x) bank 1131.42 pct 3.6% | at caps [-41.11, -41.11, -41.11, -41.11]
+  KXNEAR15M-26OCT030645-45 2026-10-03T10:44:23Z money   -86.95 held   94.0 size  94.0 (1.00x) bank 1114.42 pct 7.8% | at caps [-86.95, -86.95, -86.95, -86.95]
+
+Touched markets in detail (cap: ticker, window, won, Kalshi $, held, size, removed contracts@price legs):
+  1.00x KXNEAR15M-26SEP082045-45 2026-09-09T00:44:38Z won=False money -52.60 held 59.0 size 20 kept 20.0 | removed [(20.0, 0.956, None, 21), (19.0, 0.73, None, 17)] | legs [(20.0, 0.962, None, 22, 20.0), (20.0, 0.956, None, 21, 20.0), (19.0, 0.73, None, 17, 20.0)]
+  1.00x KXBTC15M-26SEP110115-15 2026-09-11T05:14:42Z won=True money 0.92 held 29.0 size 20 kept 20.0 | removed [(9.0, 0.961, None, 18)] | legs [(20.0, 0.968, None, 18, 20.0), (9.0, 0.961, None, 18, 20.0)]
+  1.00x KXXRP15M-26SEP172300-00 2026-09-18T02:59:30Z won=True money 9.43 held 194.0 size 97 kept 97.0 | removed [(97.0, 0.945, 'full', 29)] | legs [(97.0, 0.9509, 'full', 30, 97.0), (97.0, 0.945, 'full', 29, 97.0)]
+  1.00x KXHYPE15M-26SEP172330-30 2026-09-18T03:29:40Z won=True money 16.41 held 198.0 size 99 kept 99.0 | removed [(99.0, 0.907, 'full', 20)] | legs [(99.0, 0.916, 'full', 20, 99.0), (99.0, 0.907, 'full', 20, 99.0)]
+  1.00x KXZEC15M-26SEP190715-15 2026-09-19T11:14:36Z won=True money 4.86 held 216.0 size 108 kept 108.0 | removed [(108.0, 0.9717, 'full', 22)] | legs [(108.0, 0.98, 'full', 24, 108.0), (108.0, 0.9717, 'full', 22, 108.0)]
+  1.00x KXSOL15M-26SEP191245-45 2026-09-19T16:44:36Z won=True money 3.25 held 174.4 size 107 kept 107.0 | removed [(67.5, 0.98, 'full', 24)] | legs [(67.5, 0.98, 'full', 24, 107.0), (107.0, 0.98, 'full', 24, 107.0)]
+  1.00x KXDOGE15M-26SEP192315-15 2026-09-20T03:14:33Z won=True money 3.09 held 113.0 size 103 kept 103.0 | removed [(10.0, 0.9697, 'full', 22)] | legs [(10.0, 0.98, 'full', 27, 103.0), (103.0, 0.9697, 'full', 22, 103.0)]
+  1.00x KXSOL15M-26SEP230100-00 2026-09-23T04:59:57Z won=True money 7.15 held 218.7 size 82 kept 123.0 | removed [(95.7, 0.962, 'full', 3)] | legs [(123.0, 0.9673, 'full', 3, 123.0), (95.7, 0.962, 'full', 3, 123.0)]
+  1.00x KXSOL15M-26SEP230445-45 2026-09-23T08:44:30Z won=True money 2.79 held 140.0 size 84 kept 84.0 | removed [(56.0, 0.979, 'full', 30)] | legs [(84.0, 0.9784, 'full', 30, 84.0), (56.0, 0.979, 'full', 30, 84.0)]
+  1.00x KXDOGE15M-26SEP231115-15 2026-09-23T15:14:45Z won=True money 6.60 held 170.0 size 85 kept 85.0 | removed [(85.0, 0.9592, 'full', 15)] | legs [(85.0, 0.9577, 'full', 15, 85.0), (85.0, 0.9592, 'full', 15, 85.0)]
+  1.00x KXBTC15M-26SEP232030-30 2026-09-24T00:29:34Z won=False money -130.41 held 176.0 size 88 kept 88.0 | removed [(88.0, 0.8613, 'full', 26)] | legs [(88.0, 0.87, 'full', 26, 88.0), (88.0, 0.8613, 'full', 26, 88.0)]
+  1.00x KXZEC15M-26SEP240700-00 2026-09-24T10:59:48Z won=True money 3.42 held 114.2 size 80 kept 80.0 | removed [(34.2, 0.98, 'late_add', 11)] | legs [(80.0, 0.9628, 'full', 12, 80.0), (34.2, 0.98, 'late_add', 11, 80.0)]
+  1.00x KXETH15M-26SEP240815-15 2026-09-24T12:14:47Z won=True money 4.68 held 121.5 size 81 kept 81.0 | removed [(40.5, 0.9625, 'late_add', 13)] | legs [(81.0, 0.9567, 'full', 13, 81.0), (40.5, 0.9625, 'late_add', 13, 81.0)]
+  1.00x KXXRP15M-26SEP241200-00 2026-09-24T15:59:36Z won=True money 4.64 held 136.7 size 82 kept 82.0 | removed [(54.7, 0.975, 'full', 24)] | legs [(82.0, 0.956, 'full', 24, 82.0), (54.7, 0.975, 'full', 24, 82.0)]
+  1.00x KXBNB15M-26SEP250645-45 2026-09-25T10:44:46Z won=True money 2.33 held 115.4 size 88 kept 88.0 | removed [(27.4, 0.98, 'full', 14)] | legs [(68.9, 0.9772, 'full', 14, 88.0), (46.5, 0.98, 'full', 14, 88.0)]
+  1.00x KXSOL15M-26SEP251015-15 2026-09-25T14:14:42Z won=True money 4.15 held 178.0 size 89 kept 89.0 | removed [(89.0, 0.97, 'full', 18)] | legs [(89.0, 0.98, 'full', 18, 89.0), (89.0, 0.97, 'full', 18, 89.0)]
+  1.00x KXBNB15M-26SEP252115-15 2026-09-26T01:14:47Z won=True money 2.60 held 139.5 size 93 kept 93.0 | removed [(46.5, 0.98, 'late_add', 13)] | legs [(93.0, 0.98, 'full', 13, 93.0), (46.5, 0.98, 'late_add', 13, 93.0)]
+  1.00x KXBTC15M-26SEP260330-30 2026-09-26T07:29:33Z won=True money 2.26 held 112.8 size 97 kept 97.0 | removed [(15.8, 0.9789, 'full', 27)] | legs [(45.1, 0.9776, 'full', 27, 97.0), (67.8, 0.9789, 'full', 27, 97.0)]
+  1.00x KXBTC15M-26SEP270000-00 2026-09-27T03:59:30Z won=False money -131.98 held 198.0 size 99 kept 99.0 | removed [(99.0, 0.97, 'full', 30)] | legs [(99.0, 0.9789, 'full', 30, 99.0), (99.0, 0.97, 'full', 30, 99.0)]
+  1.00x KXBNB15M-26SEP280730-30 2026-09-28T11:29:46Z won=True money 2.42 held 97.0 size 91 kept 91.0 | removed [(6.0, 0.9715, 'full', 14)] | legs [(64.0, 0.974, 'full', 14, 91.0), (33.0, 0.9715, 'full', 14, 91.0)]
+  1.00x KXNEAR15M-26SEP280915-15 2026-09-28T13:14:47Z won=True money 4.59 held 171.0 size 91 kept 91.0 | removed [(80.0, 0.974, 'full', 13)] | legs [(80.0, 0.968, 'full', 13, 91.0), (91.0, 0.974, 'full', 13, 91.0)]
+  1.00x KXBTC15M-26SEP300230-30 2026-09-30T06:29:48Z won=True money 8.81 held 129.0 size 86 kept 86.0 | removed [(43.0, 0.937, 'late_add', 12)] | legs [(86.0, 0.922, 'full', 12, 86.0), (43.0, 0.937, 'late_add', 12, 86.0)]
+  1.00x KXZEC15M-26SEP300615-15 2026-09-30T10:14:45Z won=True money 7.79 held 94.0 size 88 kept 88.0 | removed [(6.0, 0.977, 'late_add', 15)] | legs [(88.0, 0.907, 'full', 16, 88.0), (6.0, 0.977, 'late_add', 15, 88.0)]
+  1.00x KXNEAR15M-26SEP301945-45 2026-09-30T23:44:46Z won=True money 5.25 held 127.5 size 85 kept 85.0 | removed [(42.5, 0.958, 'late_add', 14)] | legs [(85.0, 0.9548, 'full', 14, 85.0), (42.5, 0.958, 'late_add', 14, 85.0)]
+  1.00x KXBNB15M-26OCT011000-00 2026-10-01T13:59:45Z won=True money 16.03 held 132.0 size 88 kept 88.0 | removed [(44.0, 0.9326, 'late_add', 15)] | legs [(88.0, 0.84, 'full', 15, 88.0), (44.0, 0.9326, 'late_add', 15, 88.0)]
+  1.00x KXBTC15M-26OCT030245-45 2026-10-03T06:44:40Z won=True money 7.03 held 141.0 size 94 kept 94.0 | removed [(47.0, 0.97, 'late_add', 15)] | legs [(94.0, 0.9349, 'full', 20, 94.0), (47.0, 0.97, 'late_add', 15, 94.0)]
+  1.00x KXBTC15M-26OCT031430-30 2026-10-03T18:29:41Z won=True money 3.57 held 132.0 size 88 kept 88.0 | removed [(44.0, 0.979, 'late_add', 15)] | legs [(88.0, 0.967, 'full', 19, 88.0), (44.0, 0.979, 'late_add', 15, 88.0)]
+  1.50x KXNEAR15M-26SEP082045-45 2026-09-09T00:44:38Z won=False money -52.60 held 59.0 size 20 kept 30.0 | removed [(10.0, 0.956, None, 21), (19.0, 0.73, None, 17)] | legs [(20.0, 0.962, None, 22, 20.0), (20.0, 0.956, None, 21, 20.0), (19.0, 0.73, None, 17, 20.0)]
+  1.50x KXXRP15M-26SEP172300-00 2026-09-18T02:59:30Z won=True money 9.43 held 194.0 size 97 kept 145.5 | removed [(48.5, 0.945, 'full', 29)] | legs [(97.0, 0.9509, 'full', 30, 97.0), (97.0, 0.945, 'full', 29, 97.0)]
+  1.50x KXHYPE15M-26SEP172330-30 2026-09-18T03:29:40Z won=True money 16.41 held 198.0 size 99 kept 148.5 | removed [(49.5, 0.907, 'full', 20)] | legs [(99.0, 0.916, 'full', 20, 99.0), (99.0, 0.907, 'full', 20, 99.0)]
+  1.50x KXZEC15M-26SEP190715-15 2026-09-19T11:14:36Z won=True money 4.86 held 216.0 size 108 kept 162.0 | removed [(54.0, 0.9717, 'full', 22)] | legs [(108.0, 0.98, 'full', 24, 108.0), (108.0, 0.9717, 'full', 22, 108.0)]
+  1.50x KXSOL15M-26SEP191245-45 2026-09-19T16:44:36Z won=True money 3.25 held 174.4 size 107 kept 160.5 | removed [(14.0, 0.98, 'full', 24)] | legs [(67.5, 0.98, 'full', 24, 107.0), (107.0, 0.98, 'full', 24, 107.0)]
+  1.50x KXSOL15M-26SEP230100-00 2026-09-23T04:59:57Z won=True money 7.15 held 218.7 size 82 kept 184.5 | removed [(34.2, 0.962, 'full', 3)] | legs [(123.0, 0.9673, 'full', 3, 123.0), (95.7, 0.962, 'full', 3, 123.0)]
+  1.50x KXSOL15M-26SEP230445-45 2026-09-23T08:44:30Z won=True money 2.79 held 140.0 size 84 kept 126.0 | removed [(14.0, 0.979, 'full', 30)] | legs [(84.0, 0.9784, 'full', 30, 84.0), (56.0, 0.979, 'full', 30, 84.0)]
+  1.50x KXDOGE15M-26SEP231115-15 2026-09-23T15:14:45Z won=True money 6.60 held 170.0 size 85 kept 127.5 | removed [(42.5, 0.9592, 'full', 15)] | legs [(85.0, 0.9577, 'full', 15, 85.0), (85.0, 0.9592, 'full', 15, 85.0)]
+  1.50x KXBTC15M-26SEP232030-30 2026-09-24T00:29:34Z won=False money -130.41 held 176.0 size 88 kept 132.0 | removed [(44.0, 0.8613, 'full', 26)] | legs [(88.0, 0.87, 'full', 26, 88.0), (88.0, 0.8613, 'full', 26, 88.0)]
+  1.50x KXXRP15M-26SEP241200-00 2026-09-24T15:59:36Z won=True money 4.64 held 136.7 size 82 kept 123.0 | removed [(13.7, 0.975, 'full', 24)] | legs [(82.0, 0.956, 'full', 24, 82.0), (54.7, 0.975, 'full', 24, 82.0)]
+  1.50x KXSOL15M-26SEP251015-15 2026-09-25T14:14:42Z won=True money 4.15 held 178.0 size 89 kept 133.5 | removed [(44.5, 0.97, 'full', 18)] | legs [(89.0, 0.98, 'full', 18, 89.0), (89.0, 0.97, 'full', 18, 89.0)]
+  1.50x KXBTC15M-26SEP270000-00 2026-09-27T03:59:30Z won=False money -131.98 held 198.0 size 99 kept 148.5 | removed [(49.5, 0.97, 'full', 30)] | legs [(99.0, 0.9789, 'full', 30, 99.0), (99.0, 0.97, 'full', 30, 99.0)]
+  1.50x KXNEAR15M-26SEP280915-15 2026-09-28T13:14:47Z won=True money 4.59 held 171.0 size 91 kept 136.5 | removed [(34.5, 0.974, 'full', 13)] | legs [(80.0, 0.968, 'full', 13, 91.0), (91.0, 0.974, 'full', 13, 91.0)]
+
+context A 09-09..09-27 08:10Z (multi-bet builds)         markets  979  Kalshi money $  +578.71  bet-side spend $  47643.11
+context ALL                                              markets 1167  Kalshi money $  +744.26  bet-side spend $  58373.72
+context B 09-27 08:11Z..10-04 03:22Z (one-full-bet live) markets  176  Kalshi money $  +145.24  bet-side spend $  10166.39
+context C 10-04 03:22Z.. (09-25 build again)             markets   12  Kalshi money $   +20.32  bet-side spend $    564.22
