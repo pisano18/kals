@@ -5,17 +5,27 @@ what's running, and as much details about them as possible? Also telegram comman
 account type so I can see everything I can about them like pin. Including day performance, long
 performance, everything you can. And are their totals added to the main pages total stats?"*
 
-Four bots trade real money from one Kalshi key, in three separate pots:
+Five bots trade real money from one Kalshi key, in four separate pots:
 
     bot         pot (subaccount)   its markets
     pin         0 (main)           the 15-minute coin series (pinday.CRYPTO) + the hourly ladders (KXBTCD...)
     race        0 (main)           KXCRYPTOLEAD / KXCRYPTOCOMP -- the coin race
     forecaster  2                  everything subaccount 2 settled (the 30-minute bettor test before it sent 0 orders)
     ladder      1                  everything subaccount 1 settled
+    weather     3 (cash POOL 0)    everything subaccount 3 settled -- the weather dip-seller (sweep/dipsell_live.py,
+                                   2026-10-04), daily-high temperature brackets
+
+**CASH POOLS (2026-10-04).** Kalshi keeps each pot's cash in separate pools (`exchange_index`): crypto
+and commodities in pool 2, where pots 0-2 trade; weather in pool 0, where pot 3 trades. A
+/portfolio/balance read names the pool and answers that pool only -- subaccount 3 reads $0.00 in pool 2
+-- so each pot's cash read uses its OWN pool (`SUB_POOL`). Subaccounts 1 and 2 also exist, empty, in
+pool 0; the cash listing is matched on subaccount number, so their pool-0 rows land in their own pots
+($0) and never in the weather pot.
 
 **THE ANSWER TO "ARE THEIR TOTALS IN THE MAIN PAGE?"** The main page reads `kalshi_ledger.json`,
 which since 2026-09-29 holds subaccount 0 only -- pin + race (+ the old oil bot's rows, shown here as
-`other`). The forecaster and the ladder are NOT in it. `all_bots()` is the only total with all four.
+`other`). The forecaster, the ladder and the weather bot are NOT in it. `all_bots()` is the only total
+with all five.
 
 **MONEY COMES FROM KALSHI, PER SUBACCOUNT.** `/portfolio/settlements` with NO subaccount mixes every
 pot's rows under the same (ticker, settled_time) key -- the bug fixed in pinledger.py on 2026-09-29 --
@@ -92,9 +102,12 @@ REFRESH_S = 60                  # Kalshi and the process table are re-read at mo
 PROC_STALE_S = 300              # an older process table is "could not tell", not "not running"
 PAGE = 200
 MAX_PAGES = 200                 # 40,000 settlements a pot: a runaway pager stops loudly
-POOL = 2                        # Kalshi's crypto & commodities cash pool, where every bot's cash sits
-BOTS = ("pin", "race", "forecaster", "ladder")
-SUBS = ("0", "1", "2")
+POOL = 2                        # Kalshi's crypto & commodities cash pool, where pots 0-2 trade
+BOTS = ("pin", "race", "forecaster", "ladder", "weather")
+SUBS = ("0", "1", "2", "3")
+# the pool each pot TRADES in, whose cash /portfolio/balance is asked for (2026-10-04: the weather
+# dip-seller's KXHIGH markets are exchange_index 0; read live: sub 3 = $50.00 in pool 0, $0.00 in pool 2)
+SUB_POOL = {"0": POOL, "1": POOL, "2": POOL, "3": 0}
 # the only things this file ever asks Kalshi for -- every one a GET, through `getter`
 POT_PATHS = ("/portfolio/settlements", "/portfolio/positions", "/portfolio/balance")    # each names its pot
 # account-wide LISTINGS (2026-10-02, for the pot): (path, the list's key, paged?)
@@ -134,12 +147,18 @@ SPEC = {
     "ladder": {"label": "Penny ladder", "what": "clean-room ladder, 1-contract resting bids", "sub": "1",
                "script": "ladder_live.py", "stop": "ladder-live.stop", "log": "ladder-live-orders.jsonl",
                "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
+    "weather": {"label": "Weather dip-seller",
+                "what": "sells YES on a daily-high temperature bracket after a 10c+ hourly drop, 2 contracts",
+                "sub": "3", "script": "dipsell_live.py", "stop": "dipsell-live.stop",
+                "log": "dipsell-live-orders.jsonl",
+                "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
 }
-SUB_NAME = {"0": "main account", "1": "subaccount 1", "2": "subaccount 2"}
+SUB_NAME = {"0": "main account", "1": "subaccount 1", "2": "subaccount 2", "3": "subaccount 3"}
 
 # what counts as sent / filled / refused / stopped in each bot's own log
 HALT_KINDS = {"pin": ("halt", "entries_stopped", "pause"), "race": ("live_halt",),
-              "forecaster": ("halt", "day_stop", "run_stop"), "ladder": ("day_stop",)}
+              "forecaster": ("halt", "day_stop", "run_stop"), "ladder": ("day_stop",),
+              "weather": ("day_stop", "kill", "done")}
 
 
 # ---- clocks (ET for people, UTC inside) -------------------------------------
@@ -209,6 +228,9 @@ def describe(ticker):
         return ("%s %s" % (m.group(1), clock)).strip()
     if series in PIN_HOURLY:
         return ("%s hourly %s" % (series[2:-1], clock)).strip()
+    m = re.match(r"^KXHIGHT?([A-Z]+)$", series)              # KXHIGHNY / KXHIGHTSFO-26SEP29-B72.5
+    if m and len(parts) > 2:
+        return "%s high %s" % (m.group(1), parts[-1])
     return str(ticker)
 
 
@@ -248,6 +270,8 @@ def owner(ticker, sub):
         return "ladder"
     if sub == "2":
         return "forecaster"
+    if sub == "3":
+        return "weather"
     if series in pinday.RACE or series.startswith("KXCRYPTOLEAD"):
         return "race"
     if series in pinday.CRYPTO or series in PIN_HOURLY:
@@ -439,8 +463,9 @@ def fetch_positions(sub, getter):
 
 def fetch_balance(sub, getter):
     """balance_dollars is DOLLARS; `balance` is cents. The unit is read from the field name, never
-    guessed from the size (hard rule 5), so a body with no balance_dollars is unreadable."""
-    st, d = getter("/portfolio/balance", {"subaccount": sub, "exchange_index": POOL})
+    guessed from the size (hard rule 5), so a body with no balance_dollars is unreadable. The pool is
+    the one this pot trades in (SUB_POOL): Kalshi answers for the named pool only."""
+    st, d = getter("/portfolio/balance", {"subaccount": sub, "exchange_index": SUB_POOL[sub]})
     if st != 200 or not isinstance(d, dict) or "balance_dollars" not in d:
         return None, "balance read failed (HTTP %s)" % st
     try:
@@ -797,6 +822,7 @@ def activity(name, since):
         return out
     out["source"] = [os.path.basename(p) for p in paths]
     why = {}
+    triggers, filled_tk = 0, set()
     for p in paths:
         for r in read_since(p, since) or []:
             k = r.get("kind") or r.get("ev")
@@ -849,6 +875,23 @@ def activity(name, since):
                     out["refused"] += 1
                     g = str(r.get("why") or k)
                     why[g] = why.get(g, 0) + 1
+            elif name == "weather":
+                # dipsell_live.py: one resting SELL-YES order a trigger, 3 h, then cancelled if unfilled
+                if k == "trigger" and r.get("act"):
+                    triggers += 1
+                elif k == "placed":
+                    out["sent"] += 1
+                elif k == "fill":
+                    if r.get("ticker") not in filled_tk:
+                        filled_tk.add(r.get("ticker"))
+                        out["filled"] += 1
+                    out["contracts_filled"] += pinledger.money(r, "delta")
+                elif k == "cancel":
+                    out["cancelled"] += 1
+                elif k in ("rail_refused", "rejected", "body_refused"):
+                    out["refused"] += 1
+                    g = str(r.get("why") or ("Kalshi refused it (HTTP %s)" % r.get("status") if k == "rejected" else k))
+                    why[g] = why.get(g, 0) + 1
             if k in HALT_KINDS[name] or k in ("stop_file", "exit"):
                 out["halts"].append({"t_et": et_clock(_t_of(r)), "what": k,
                                      "why": str(r.get("why") or r.get("day_pnl") or r.get("run_pnl") or "")[:120]})
@@ -856,11 +899,17 @@ def activity(name, since):
     out["contracts_filled"] = round(out["contracts_filled"], 2)
     if name == "ladder":
         out["note"] = "resting bids: most are cancelled unfilled at the close, by design"
+    if name == "weather":
+        out["triggers"] = triggers
+        out["note"] = ("%s seen today; each order rests up to 3 h and is cancelled if unfilled, by design"
+                       % _n(triggers, "price-drop trigger"))
     return out
 
 
 # ---- what is running, and on what settings -----------------------------------
 _VER = re.compile(r"^#\s+(v-[\w.-]+(?:\s*\+\s*v-[\w.-]+)*)\s+--\s+(.*)$")
+# the weather dip-seller's VERSIONS.md entries (v-dipsell-live ...); pinphone._NOT_PIN_RE carries the same words
+WX_VER = r"dipsell|dip.?sell"
 _VER_T = re.compile(r"(\d{4}-\d{2}-\d{2})(?:\s+~?(\d{2}):(\d[\dx])(?::(\d{2}))?Z?)?", re.I)
 
 
@@ -884,10 +933,11 @@ def version_of(name):
         if len(names) > 1:
             own = {"race": [n for n in names if n.startswith("v-race")],
                    "forecaster": [n for n in names if "forecaster" in n or n == "v-crash-guard"],
-                   "ladder": [n for n in names if re.match(r"v-ladder-[a-z]", n)]}
+                   "ladder": [n for n in names if re.match(r"v-ladder-[a-z]", n)],
+                   "weather": [n for n in names if re.search(WX_VER, n)]}
             if any(own.values()):
                 own["pin"] = []
-            elif not re.search(r"cleanroom|clean-room|bettor|penny", low):
+            elif not re.search(r"cleanroom|clean-room|bettor|penny|" + WX_VER, low):
                 own["pin"] = names
             else:
                 own["pin"] = []
@@ -909,9 +959,11 @@ def version_of(name):
         race = vname.startswith("v-race") or bool(re.search(r"coin.?race", low))
         fc = "forecaster" in low
         lad = "ladder_live" in low or "penny ladder" in low
+        wx = bool(re.search(WX_VER, low))
         clean = bool(re.search(r"cleanroom|clean-room|bettor|forecaster|ladder_live|penny", low))
-        mine = {"race": race and not fc and not lad, "forecaster": fc and not lad and not race,
-                "ladder": lad and not fc and not race, "pin": not (race or fc or lad or clean)}[name]
+        mine = {"race": race and not fc and not lad and not wx, "forecaster": fc and not lad and not race and not wx,
+                "ladder": lad and not fc and not race and not wx, "weather": wx and not (race or fc or lad),
+                "pin": not (race or fc or lad or clean or wx)}[name]
         if not mine:
             continue
         t = None
@@ -1055,6 +1107,41 @@ def settings_clean(name, start, cl):
     return s, "; ".join(bits)
 
 
+def settings_weather(start, cl):
+    """The weather dip-seller's rails, from its live start record (they are code constants there)."""
+    st = start or {}
+    r, tr = st.get("rails") or {}, st.get("trigger") or {}
+    s = {"rails": r, "trigger": tr, "start_pot": st.get("start_pot"), "subaccount": st.get("subaccount"),
+         "pool": r.get("pool")}
+    bits = []
+    if tr:
+        hl = tr.get("hours_left") or ["?", "?"]
+        bits.append("sells YES 1c over the ask after a %sc+ hourly drop with %s-%s h left"
+                    % (_fmt_g(tr.get("drop_c")), _fmt_g(hl[0]), _fmt_g(hl[-1])))
+    if r.get("contracts") is not None:
+        bits.append("%s contracts an order, one order a market" % _fmt_g(r["contracts"]))
+    if r.get("max_open") is not None:
+        bits.append("at most %s open" % _fmt_g(r["max_open"]))
+    if r.get("window_s"):
+        bits.append("unfilled orders cancelled after %s h" % _fmt_g(float(r["window_s"]) / 3600.0))
+    if r.get("day_stop_frac") is not None:
+        pot = st.get("start_pot")
+        bits.append("stops the day at -%s%% of its %s start" % (
+            _fmt_g(100.0 * float(r["day_stop_frac"])), usd(float(pot)).lstrip("+") if pot is not None else "?"))
+    if r.get("kill_after") is not None:
+        bits.append("stops for good if behind after %s settled fills" % _fmt_g(r["kill_after"]))
+    if r.get("max_fills") is not None or r.get("max_days") is not None:
+        bits.append("ends at %s fills or %s days" % (_fmt_g(r.get("max_fills")), _fmt_g(r.get("max_days"))))
+    return s, "; ".join(bits)
+
+
+def _fmt_g(x):
+    try:
+        return "%g" % float(x)
+    except (TypeError, ValueError):
+        return "?"
+
+
 def running(name, rows, ok, now):
     spec = SPEC[name]
     stop = os.path.join(RESULTS, spec["stop"])
@@ -1105,7 +1192,7 @@ def running(name, rows, ok, now):
                 start = None
         else:
             pid = out["pid"]
-            if pid is not None and name in ("forecaster", "ladder"):
+            if pid is not None and name in ("forecaster", "ladder", "weather"):
                 start = last_record(log, ("start",), lambda r: r.get("pid") == pid)
             if start is None:
                 start = last_record(log, ("start",), lambda r: r.get("live") is not False)
@@ -1122,6 +1209,8 @@ def running(name, rows, ok, now):
         out["settings"], out["settings_text"] = settings_pin(start, out["command"], sizef)
     elif name == "race":
         out["settings"], out["settings_text"] = settings_race(start, out["command"])
+    elif name == "weather":
+        out["settings"], out["settings_text"] = settings_weather(start, out["command"])
     else:
         out["settings"], out["settings_text"] = settings_clean(name, start, out["command"])
         if out["settings"].get("variant_mismatch"):
@@ -1207,9 +1296,13 @@ def flows(led, sub, t0=None, t1=None):
 def _cash_all_pools(led, sub, bal_dollars):
     """(dollars, why): pot `sub`'s cash summed over EVERY pool -- a new deposit can sit in pool 0, where
     the pool-2 balance never sees it (v-onepool). The listing's field is `balance`, a name that does not
-    say its unit (hard rule 5), so it is trusted only when its pool-2 figure equals /portfolio/balance's
-    `balance_dollars` for the same pot to the cent; otherwise None, never a guess."""
+    say its unit (hard rule 5), so it is trusted only when its figure for the pot's own trading pool
+    (SUB_POOL: 2, or 0 for the weather pot) equals /portfolio/balance's `balance_dollars` for the same pot
+    and pool to the cent; otherwise None, never a guess. Rows are matched on subaccount number, so
+    another pot's row in the same pool (subaccounts 1 and 2 sit, empty, in pool 0 too) is never counted
+    here."""
     vals = {}
+    pool = SUB_POOL[sub]
     for r in led.get("subaccount_balances") or []:
         if str(r.get("subaccount_number")) != sub:
             continue
@@ -1217,14 +1310,14 @@ def _cash_all_pools(led, sub, bal_dollars):
         if v is None or ix is None:
             return None, "the %s's cash listing is unreadable" % SUB_NAME[sub]
         vals[ix] = vals.get(ix, 0.0) + v
-    if POOL not in vals:
-        return None, "Kalshi listed no crypto-pool cash for the %s" % SUB_NAME[sub]
-    if bal_dollars is None or abs(vals[POOL] - bal_dollars) > 0.011:
+    if pool not in vals:
+        return None, "Kalshi listed no pool-%d cash for the %s" % (pool, SUB_NAME[sub])
+    if bal_dollars is None or abs(vals[pool] - bal_dollars) > 0.011:
         # Two reads a few seconds apart: a bet filling between them trips this as surely as a unit change
         # does, so the words name both and promise nothing about which (2026-10-02 verifier).
         return None, ("the two cash reads of the %s disagree (%s vs %s) -- a bet filled between them, or the "
                       "unit is not what it seems -- so it is left out until the next read (within a minute)"
-                      % (SUB_NAME[sub], vals[POOL], bal_dollars))
+                      % (SUB_NAME[sub], vals[pool], bal_dollars))
     return sum(vals.values()), None
 
 
@@ -1472,12 +1565,13 @@ def all_bots(now=None, getter=None, procs=None):
                        "put_in": round(sum(x["put_in"] for x in by.values()), 4),
                        "by_bot": {b: x["money"] for b, x in by.items()}})
     bal = {"main": bots["pin"]["balance"]["dollars"], "forecaster": bots["forecaster"]["balance"]["dollars"],
-           "ladder": bots["ladder"]["balance"]["dollars"]}
+           "ladder": bots["ladder"]["balance"]["dollars"], "weather": bots["weather"]["balance"]["dollars"]}
     bal["all"] = round(sum(bal.values()), 4) if all(v is not None for v in bal.values()) else None
     bal["main_holds"] = ["pin", "race"]
     note = ("The main account's cash%s holds the pin bot and the coin race together; the forecaster "
-            "(subaccount 2) and the ladder (subaccount 1) are separate pots and are NOT in the main account's "
-            "cash or its money totals." % (" (%s)" % usd(bal["main"]).lstrip("+") if bal["main"] is not None else ""))
+            "(subaccount 2), the ladder (subaccount 1) and the weather dip-seller (subaccount 3, weather cash "
+            "pool) are separate pots and are NOT in the main account's cash or its money totals."
+            % (" (%s)" % usd(bal["main"]).lstrip("+") if bal["main"] is not None else ""))
     errors = [("%s: %s" % (b, e)) for b in BOTS for e in bots[b]["errors"]]
     return {"as_of_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "as_of_et": et_clock(now),
             "today_et": today, "bots": bots, "other": other, "total": total, "total_days_7": days_7,
@@ -1498,7 +1592,11 @@ PLAIN = [(r"^no_offer$", "nothing for sale"), (r"^edge_floor$", "edge too thin")
          (r"^price N is under", "price under its floor"), (r"under one contract", "bet under 1 contract"),
          (r"^in_flight$", "order already in flight"), (r"^late$", "too late to send"),
          (r"^stale$", "decision went stale"), (r"^cap$", "at its cap"), (r"^price$", "price out of range"),
-         (r"^max_contracts$", "contract cap"), (r"^max_commit$", "money cap")]
+         (r"^max_contracts$", "contract cap"), (r"^max_commit$", "money cap"),
+         # the weather dip-seller's rails (dipsell_live.rails_refusal)
+         (r"^one_per_market$", "already ordered in that market"), (r"^max_open$", "5 already open"),
+         (r"^no_cash$", "not enough cash"), (r"^day_stop$", "day stop hit"), (r"^killed$", "stopped for good"),
+         (r"^done$", "test finished"), (r"^stopped$", "stop file"), (r"^pool \S+ is not", "wrong cash pool")]
 
 
 def plain(why):
@@ -1620,7 +1718,7 @@ def _bot_text(b):
                                                                     a["contracts_filled"])
         if b["name"] == "pin" and a["hedges"]:
             s += ", " + _n(a["hedges"], "hedge")
-        if b["name"] == "ladder":
+        if b["name"] in ("ladder", "weather"):
             s += ", %d cancelled" % a["cancelled"]
         L.append(s)
         if a["refused"]:
@@ -1660,9 +1758,9 @@ def text_summary(name="all", now=None, getter=None, procs=None):
 
     def cash(x):
         return "?" if x is None else usd(x).lstrip("+")
-    L.append("Cash: main %s (pin + race), forecaster %s, ladder %s, all %s" % (
-        cash(bal["main"]), cash(bal["forecaster"]), cash(bal["ladder"]), cash(bal["all"])))
-    L.append("Main-page totals include pin + race only; forecaster and ladder are separate pots.")
+    L.append("Cash: main %s (pin + race), forecaster %s, ladder %s, weather %s, all %s" % (
+        cash(bal["main"]), cash(bal["forecaster"]), cash(bal["ladder"]), cash(bal["weather"]), cash(bal["all"])))
+    L.append("Main-page totals include pin + race only; forecaster, ladder and weather are separate pots.")
     run = []
     for b in BOTS:
         r = a["bots"][b]["running"]
@@ -1792,11 +1890,16 @@ def selftest():
                 return 200, ({"transfers": xfers[:2], "cursor": "x2"} if not q.get("cursor")
                              else {"transfers": xfers[2:], "cursor": ""})
             if path.endswith("/balances"):
+                # as Kalshi lists it since 2026-10-04: subaccounts 1 and 2 also hold an (empty) pool-0 row,
+                # and subaccount 3 -- the weather pot -- lives in pool 0 only (empty in this world)
                 return 200, {"subaccount_balances": [
                     {"subaccount_number": 0, "exchange_index": 0, "balance": "25.0000"},
                     {"subaccount_number": 0, "exchange_index": 2, "balance": "100000" if fail["cents"] else "1000.0000"},
+                    {"subaccount_number": 1, "exchange_index": 0, "balance": "0.0000"},
                     {"subaccount_number": 1, "exchange_index": 2, "balance": "15.1000"},
-                    {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"}]}
+                    {"subaccount_number": 2, "exchange_index": 0, "balance": "0.0000"},
+                    {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"},
+                    {"subaccount_number": 3, "exchange_index": 0, "balance": "0.0000"}]}
             if path.endswith("/deposits"):
                 return 200, {"deposits": deps, "cursor": ""}
             return 200, {"withdrawals": wdrs}
@@ -1813,6 +1916,9 @@ def selftest():
         if path == "/portfolio/positions":
             return 200, {"market_positions": poss.get(sub, []), "event_positions": [], "cursor": ""}
         if path == "/portfolio/balance":
+            # Kalshi answers for the NAMED pool only (read live 2026-10-04); pots 0-2 trade in pool 2, pot 3 in 0
+            if q.get("exchange_index") != {"3": 0}.get(sub, 2):
+                return 200, {"balance": 0, "balance_dollars": "0.0000"}
             return 200, {"balance": 0, "balance_dollars": bals.get(sub, "0")}
         return 404, {}
 
@@ -1902,13 +2008,13 @@ def selftest():
 
         # 1. the planted world, first read: a full walk of every pot
         a = all_bots(now=NOW, getter=fake, procs=PROCS)
-        ck(asked and all(q.get("subaccount") in ("0", "1", "2") for p, q in asked if p in POT_PATHS),
+        ck(asked and all(q.get("subaccount") in SUBS for p, q in asked if p in POT_PATHS),
            "EVERY per-pot Kalshi request names its subaccount -- with none, settlements mix every pot's rows")
         ck(set(p for p, _ in asked) == set(PATHS),
            "and only the seven read paths are ever asked for: %s" % sorted(set(p for p, _ in asked)))
         ck(sum(1 for p, q in asked if p == "/portfolio/settlements" and q["subaccount"] == "0") == 2,
            "the first read walks the main account's two settlement pages to the end")
-        pin, race, fc, lad = (a["bots"][b] for b in BOTS)
+        pin, race, fc, lad, wxb = (a["bots"][b] for b in BOTS)
         pm = pin["money"]
         ck(pm["today"]["markets"] == 3 and abs(pm["today"]["money"] - (-10.12)) < 1e-6
            and pm["today"]["won"] == 2 and pm["today"]["lost"] == 1 and pm["today"]["hedged"] == 1,
@@ -1988,7 +2094,7 @@ def selftest():
         ck(lr["alive"] is False and lr["stop_flag"] is True and "top rung" in lr["settings_text"],
            "ladder: the ladder PAPER bot is not the live ladder; not running, stopped by its stop file")
         # activity from the logs
-        ap_, ar, af, al = (a["bots"][b]["activity_today"] for b in BOTS)
+        ap_, ar, af, al, _aw = (a["bots"][b]["activity_today"] for b in BOTS)
         ck(ap_["sent"] == 2 and ap_["filled"] == 1 and ap_["contracts_filled"] == 50 and ap_["hedges"] == 1
            and ap_["refused"] == 3 and ap_["refused_why"] == {"no_offer": 2, "edge_floor": 1},
            "pin today: 2 orders, 1 filled (50), 1 hedge, 3 passes by gate -- the 11 PM ET order is yesterday's")
@@ -2052,7 +2158,7 @@ def selftest():
            "ALL TIME is of the money put in: deposits after fees - withdrawals ($985, the pending $500 left out); "
            "main = that - what moved to the bot pots ($946); a subaccount = what moved into it, net ($16, $23)")
         ck(tt["today"]["by_bot_pot_pct"] == {"pin": -0.93, "race": -0.41, "forecaster": -9.34, "ladder": 0.26,
-                                            "other": None},
+                                            "weather": None, "other": None},
            "the /bots breakdown carries each bot's own %% of its own pot: %s" % tt["today"]["by_bot_pot_pct"])
         _pt = _bot_text(pin)
         ck("Today: -$10.12 on $109.50 in (-9.2%) = -0.93% of its pot ($1,088.32), 2 won, 1 lost" in _pt
@@ -2079,7 +2185,7 @@ def selftest():
            "a second read within 60 s makes NO request and gives the same totals")
         a3 = all_bots(now=NOW + 90, getter=fake, procs=PROCS)
         st3 = [q for p, q in asked[n0:] if p == "/portfolio/settlements"]
-        ck(len(st3) == 3 and a3["total"]["all_time"]["money"] == t["all_time"]["money"],
+        ck(len(st3) == 4 and a3["total"]["all_time"]["money"] == t["all_time"]["money"],
            "after 60 s: ONE settlements page a pot (it stops at a page it holds) and nothing counted twice")
         sub2.insert(0, S("KXSOL15M-26SEP301215-15", "2026-09-30T16:15:06Z", "yes", yn=4, yc=3.80, fee=0.01))
         a4 = all_bots(now=NOW + 200, getter=fake, procs=PROCS)
@@ -2195,6 +2301,136 @@ def selftest():
         _BACK.clear()
         _BACK.update(saved[2])
         shutil.rmtree(td, ignore_errors=True)
+    # 6. THE WEATHER POT (2026-10-04): subaccount 3, whose cash sits in POOL 0. Worked by hand:
+    #   $1,000 deposited; $50 moved main -> sub 3 in pool 0 at 3 AM ET Sep 29 (main keeps $950 in pool 2).
+    #   sub 3 settled two Sep 29 brackets: NY sold YES at 40c x2, NO won: +0.80; CHI sold at 35c x2, YES
+    #   won: -1.30 -> yesterday -0.50 on $2.50 put in. Open: MIA NO x2, $1.10. Cash pool 0 = 50 - 0.50 -
+    #   1.10 = 48.40; pot now = 49.50 = 50 put in - 0.50 settled (explained to the cent). Yesterday's pot:
+    #   it held $0 at midnight ET Sep 29, + the $50 moved in that day = $50 -> -0.50 is -1.0%; all time
+    #   -1.0% of the $50 put in. A pool-2 read of sub 3 answers $0.00, as Kalshi does.
+    td3 = tempfile.mkdtemp(prefix="botstats-wx-")
+    try:
+        globals()["RESULTS"] = td3
+        _MEMO.update(key=None, data=None)
+        _BACK.clear()
+        wx_rows = [S("KXHIGHNY-26SEP29-B72.5", "2026-09-30T14:00:05Z", "no", nn=2, nc=1.20),       # +0.80
+                   S("KXHIGHCHI-26SEP29-T65", "2026-09-30T14:00:06Z", "yes", nn=2, nc=1.30)]       # -1.30
+        wx_list = [{"subaccount_number": 0, "exchange_index": 0, "balance": "0.0000"},
+                   {"subaccount_number": 0, "exchange_index": 2, "balance": "950.0000"},
+                   {"subaccount_number": 1, "exchange_index": 0, "balance": "0.0000"},     # the NULL: empty
+                   {"subaccount_number": 1, "exchange_index": 2, "balance": "0.0000"},
+                   {"subaccount_number": 2, "exchange_index": 0, "balance": "0.0000"},     # the NULL: empty
+                   {"subaccount_number": 2, "exchange_index": 2, "balance": "0.0000"},
+                   {"subaccount_number": 3, "exchange_index": 0, "balance": "48.4000"}]
+        wx_asked = []
+
+        def wxf(path, q):
+            wx_asked.append((path, dict(q or {})))
+            sub = str((q or {}).get("subaccount"))
+            if path.endswith("/transfers"):
+                return 200, {"transfers": [{"amount_cents": 5000, "created_ts": T("2026-09-29T07:00:00Z"),
+                                            "from_subaccount": 0, "to_subaccount": 3, "exchange_index": 0,
+                                            "transfer_id": "w1"}], "cursor": ""}
+            if path.endswith("/subaccounts/balances"):
+                return 200, {"subaccount_balances": wx_list}
+            if path.endswith("/deposits"):
+                return 200, {"deposits": [deps[0]], "cursor": ""}
+            if path.endswith("/withdrawals"):
+                return 200, {"withdrawals": [], "cursor": ""}
+            if path == "/portfolio/settlements":
+                return 200, {"settlements": wx_rows if sub == "3" else [], "cursor": ""}
+            if path == "/portfolio/positions":
+                return 200, {"market_positions": [{"ticker": "KXHIGHMIA-26SEP30-B90.5", "position_fp": "-2.00",
+                                                   "market_exposure_dollars": "1.10"}] if sub == "3" else [],
+                             "cursor": ""}
+            if path == "/portfolio/balance":
+                cash_by = {("0", 2): "950.0000", ("3", 0): "48.4000"}
+                return 200, {"balance": 0, "balance_dollars": cash_by.get((sub, q.get("exchange_index")), "0.0000")}
+            return 404, {}
+        J(os.path.join(td3, "dipsell-live-orders.jsonl"), [
+            {"t": "2026-09-29T07:56:53Z", "ev": "start", "pid": 3955508, "subaccount": 3, "live": True,
+             "cash": 50.0, "pot": 50.0, "start_pot": 50.0,
+             "rails": {"contracts": 2, "max_open": 5, "one_order_per_market": True, "window_s": 10800,
+                       "day_stop_frac": 0.25, "kill_after": 60, "max_fills": 100, "max_days": 14, "pool": 0},
+             "trigger": {"drop_c": 10.0, "mid_c": [15.0, 85.0], "hours_left": [6.0, 12.0]}},
+            {"t": "2026-09-30T13:01:00Z", "ev": "trigger", "act": True, "ticker": "KXHIGHMIA-26SEP30-B90.5"},
+            {"t": "2026-09-30T13:01:01Z", "ev": "placed", "ticker": "KXHIGHMIA-26SEP30-B90.5", "order_id": "K1"},
+            {"t": "2026-09-30T13:20:00Z", "ev": "fill", "ticker": "KXHIGHMIA-26SEP30-B90.5", "delta": 1.0,
+             "filled": 1.0},
+            {"t": "2026-09-30T13:40:00Z", "ev": "fill", "ticker": "KXHIGHMIA-26SEP30-B90.5", "delta": 1.0,
+             "filled": 2.0},
+            {"t": "2026-09-30T14:01:00Z", "ev": "trigger", "act": True, "ticker": "KXHIGHLAX-26SEP30-B80.5"},
+            {"t": "2026-09-30T14:01:00Z", "ev": "rail_refused", "ticker": "KXHIGHLAX-26SEP30-B80.5",
+             "why": "max_open"},
+            {"t": "2026-09-30T15:01:00Z", "ev": "cancel", "ticker": "KXHIGHDEN-26SEP30-B70.5", "status": 200}])
+        with open(os.path.join(td3, VERSIONS_NAME), "w", encoding="utf-8") as fh:
+            fh.write("# Versions\n\n"
+                     "# v-dipsell-live -- LIVE 2026-09-29 07:56:53Z (pid 3955508, subaccount 3 pool 0, $50): weather\n"
+                     "# v-reopen98 -- 2026-09-28 14:36:17Z (pid 3882400) -- LIVE: 98c\n")
+        WXP = [(3955508, "2026-09-29T07:56:50Z", "C:\\Python314\\python.exe -u research\\sweep\\dipsell_live.py "
+                "--subaccount 3 --live --minutes 21600"),
+               (77, "", "python research\\sweep\\dipsell_live.py --subaccount 3 --dry-run --minutes 10")]
+        w = all_bots(now=NOW, getter=wxf, procs=WXP)
+        wb = w["bots"]["weather"]
+        ck("weather" in BOTS and wb["label"] == "Weather dip-seller" and wb["subaccount"] == 3
+           and wb["shares_subaccount_with"] == [],
+           "WEATHER: the dip-seller is a bot of its own, in its own pot (subaccount 3)")
+        ck(any(p == "/portfolio/balance" and q == {"subaccount": "3", "exchange_index": 0} for p, q in wx_asked)
+           and not any(p == "/portfolio/balance" and q.get("subaccount") == "3" and q.get("exchange_index") != 0
+                       for p, q in wx_asked)
+           and all(q.get("exchange_index") == 2 for p, q in wx_asked
+                   if p == "/portfolio/balance" and q.get("subaccount") in ("0", "1", "2")),
+           "WEATHER: its cash is read from subaccount 3 in POOL 0 (and never pool 2, where Kalshi says $0.00); "
+           "pots 0-2 still read pool 2")
+        ck(wb["balance"]["dollars"] == 48.4 and wb["open"]["count"] == 1 and abs(wb["open"]["at_risk"] - 1.10) < 1e-9
+           and wb["open"]["positions"][0]["side"] == "no",
+           "WEATHER: cash $48.40, one open bracket (MIA NO x2, $1.10)")
+        wm = wb["money"]
+        ck(wm["yesterday"]["markets"] == 2 and abs(wm["yesterday"]["money"] - (-0.50)) < 1e-9
+           and abs(wm["yesterday"]["put_in"] - 2.50) < 1e-9 and wm["today"]["markets"] == 0
+           and wm["all_time"]["worst"]["what"] == "CHI high T65",
+           "WEATHER: a bracket counts on its ticker's ET day (Sep 29); yesterday -$0.50 on $2.50 put in")
+        ck(P(wm["yesterday"], 50.0, -1.0) and P(wm["all_time"], 50.0, -1.0, "money_in")
+           and wm["today"]["pot_pct"] is None,
+           "WEATHER: -1.0%% of its $50 pot yesterday and all time: %s / %s"
+           % ((wm["yesterday"]["pot"], wm["yesterday"]["pot_pct"]), (wm["all_time"]["pot"], wm["all_time"]["pot_pct"])))
+        wpc = w["pot_check"]
+        ck(wpc["3"] and wpc["3"]["now"] == 49.5 and wpc["3"]["off"] is False
+           and wpc["1"]["now"] == 0.0 and wpc["2"]["now"] == 0.0 and wpc["all"]["now"] == 999.5
+           and wpc["all"]["off"] is False and w["balances"]["all"] == 998.4 and w["balances"]["weather"] == 48.4,
+           "NULL: the EMPTY pool-0 rows of subaccounts 1 and 2 add $0 -- to their own pots, never to the weather "
+           "pot ($49.50 = sub 3 alone); all pots $999.50 = $1,000 in - $0.50 settled, each pot once")
+        ck(w["total"]["yesterday"]["by_bot"].get("weather") == -0.5
+           and abs(w["total"]["all_time"]["money"] - (-0.5)) < 1e-9,
+           "WEATHER: in the ALL-BOTS total, with its share listed")
+        wr = wb["running"]
+        ck(wr["alive"] is True and wr["pids"] == [3955508] and wr["version"] == "v-dipsell-live"
+           and version_of("pin")[0] == "v-reopen98" and "2 contracts an order" in wr["settings_text"]
+           and "-25% of its $50.00 start" in wr["settings_text"] and "boot_all.ps1" in wr["keepalive"],
+           "WEATHER: running (the --live copy, not the dry run), its own VERSIONS entry (never pin's), its rails")
+        wa = wb["activity_today"]
+        ck(wa["sent"] == 1 and wa["filled"] == 1 and wa["contracts_filled"] == 2 and wa["refused"] == 1
+           and wa["cancelled"] == 1 and wa["triggers"] == 2 and wa["refused_why"] == {"max_open": 1},
+           "WEATHER today by its log: 2 triggers, 1 order, 1 filled (2 contracts over two fills), 1 refused, "
+           "1 cancelled")
+        wt = text_summary("all", now=NOW + 1, getter=wxf, procs=WXP)
+        ck("weather $48.40" in wt and "weather yes" in wt and "| weather -$0.50 (-1.0%)" in wt,
+           "WEATHER in the all-bots text: its cash, running, and its yesterday share")
+        # NULL 2: money that is sub 1's in pool 0 stays sub 1's -- the weather pot does not move
+        wx_list[2] = {"subaccount_number": 1, "exchange_index": 0, "balance": "5.0000"}
+        w2 = all_bots(now=NOW + 61, getter=wxf, procs=WXP)
+        ck(w2["pot_check"]["3"]["now"] == 49.5 and w2["pot_check"]["1"]["now"] == 5.0,
+           "NULL: $5 of subaccount 1 sitting in pool 0 is subaccount 1's, never the weather pot's")
+    finally:
+        globals()["RESULTS"] = saved[0]
+        _MEMO.clear()
+        _MEMO.update(saved[1])
+        _BACK.clear()
+        _BACK.update(saved[2])
+        shutil.rmtree(td3, ignore_errors=True)
+    ck(describe("KXHIGHTSFO-26SEP29-B72.5") == "SFO high B72.5" and describe("KXHIGHNY-26SEP29-T65") == "NY high T65",
+       "a weather bracket in words: city, high, bracket")
+
     # 2026-10-01: a heading that ships several bots at once is each bot's own version, by name
     td2 = tempfile.mkdtemp(prefix="botstats_v_")
     saved2 = RESULTS

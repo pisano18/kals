@@ -503,7 +503,14 @@ $cleanroom = @(
     # self-test asserts no order call exists in the file. results\rain-paper.stop stands it down.
     @{ n = "rain tail NO desk paper (SJ02)"; like = "*sweep*rain_paper.py*"; unlike = ""; stop = "$res\rain-paper.stop";
        a = @("-u", "research\sweep\rain_paper.py", "--minutes", "43200");
-       o = "$res\rain-paper-stdout.log"; e = "$res\rain-paper-stderr.log" }
+       o = "$res\rain-paper-stdout.log"; e = "$res\rain-paper-stderr.log" },
+    # 2026-10-04: the SJN1 weather dip-seller -- LIVE, REAL MONEY, subaccount 3 on cash pool 0 ($50), VERSIONS
+    # v-dipsell-live, READS_DUE dipsell-live. It runs its self-test and refuses to start unless subaccount 3's pool-0
+    # pot reads $50-$150 and holds only KXHIGH; it rebuilds its state from results\dipsell-live-orders.jsonl, so a
+    # restart never re-orders a market. results\dipsell-live.stop stands it down (it cancels its resting orders).
+    @{ n = "weather dip-seller (LIVE, subaccount 3)"; like = "*dipsell_live.py*--live*"; unlike = ""; stop = "$res\dipsell-live.stop";
+       a = @("-u", "research\sweep\dipsell_live.py", "--subaccount", "3", "--live", "--minutes", "21600");
+       o = "$res\dipsell-live-stdout.log"; e = "$res\dipsell-live-stderr.log" }
 )
 foreach ($c in $cleanroom) {
     # unlike: one pattern or a list; a process matching ANY of them is not this entry

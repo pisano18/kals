@@ -26,7 +26,7 @@ COMMANDS
   /losses     losing closes        /hedges    insurance and whether it was needed
   /stats      the whole record by window: money, win rate vs break-even, losses, timing
   /bots       every bot and its pot (subaccount): running, money by window, cash, the all-bots total
-  /pin  /forecaster (/fc)  /ladder   one bot in full: running or not and why, version,
+  /pin  /forecaster (/fc)  /ladder  /weather (/wx)   one bot in full: running or not and why, version,
               settings, money today / yesterday / 7 days / month / all time, worst and best,
               open bets, cash, last markets, what its log did today (research/botstats.py)
   /race       the coin race penny bot now, its last 10 races, and its money by window
@@ -166,6 +166,7 @@ HELP_TEXT = """Commands:
 /racestats - the coin race record, and the paper arms on the same races
 /forecaster (or /fc) - the forecaster (subaccount 2), the same detail as /pin
 /ladder - the penny ladder (subaccount 1), the same detail as /pin
+/weather (or /wx) - the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin
 /bars - every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
 /pause - no new bets, wait for open ones, then stop
 /start - trade again
@@ -469,7 +470,8 @@ _VER_RE = re.compile(r"^#\s+(v-\S+(?:\s*\+\s*v-\S+)*)\s+--\s+(?:LIVE\s+)?(\d{4}-
 # Entries that are another bot's: the coin race, the clean-room forecaster and
 # penny ladder, and the boot entries that name them. botstats.version_of uses
 # the same words, and the self-test fails if the two pick different versions.
-_NOT_PIN_RE = re.compile(r"coin.?race|penny|cleanroom|clean-room|bettor|forecaster|ladder_live", re.I)
+_NOT_PIN_RE = re.compile(r"coin.?race|penny|cleanroom|clean-room|bettor|forecaster|ladder_live|dipsell|dip.?sell",
+                         re.I)
 
 
 def versions(path):
@@ -861,11 +863,14 @@ def disk_alert(level, disk_gb):
 #
 # HIS QUESTION, answered on /bots every time: the main page (/today /days
 # /stats and the desktop) reads kalshi_ledger.json, the MAIN account only --
-# pin + coin race. The forecaster (subaccount 2) and the ladder (subaccount
-# 1) are separate pots and are added up only in /bots.
+# pin + coin race. The forecaster (subaccount 2), the ladder (subaccount
+# 1) and the weather dip-seller (subaccount 3, 2026-10-04; its cash sits in
+# Kalshi's weather pool, exchange_index 0) are separate pots and are added
+# up only in /bots.
 # ===========================================================================
-BOT_CMDS = {"/pin": "pin", "/forecaster": "forecaster", "/fc": "forecaster", "/ladder": "ladder"}
-BOT_CMD_OF = {"pin": "/pin", "race": "/race", "forecaster": "/fc", "ladder": "/ladder"}
+BOT_CMDS = {"/pin": "pin", "/forecaster": "forecaster", "/fc": "forecaster", "/ladder": "ladder",
+            "/weather": "weather", "/wx": "weather"}
+BOT_CMD_OF = {"pin": "/pin", "race": "/race", "forecaster": "/fc", "ladder": "/ladder", "weather": "/weather"}
 BS_WINDOWS = ("today", "yesterday", "last_7_days", "this_month", "all_time")
 BS_LABEL = {"today": "Today", "yesterday": "Yesterday", "last_7_days": "Last 7 days",
             "this_month": "This month", "all_time": "All time"}
@@ -1141,17 +1146,18 @@ def bs_all_text(a):
     elif not miss:
         L.append("Nothing settled yet in any pot.")
     bal = a["balances"]
-    L.append("Cash: main account %s (pin + race share it), forecaster %s, ladder %s -- all pots %s."
-             % (_cash(bal["main"]), _cash(bal["forecaster"]), _cash(bal["ladder"]), _cash(bal["all"])))
-    L.append("The main page (/today /days /stats, the desktop) counts pin + race only. The forecaster and "
-             "the ladder are separate pots, added up only here.")
+    L.append("Cash: main account %s (pin + race share it), forecaster %s, ladder %s, weather %s -- all pots %s."
+             % (_cash(bal["main"]), _cash(bal["forecaster"]), _cash(bal["ladder"]), _cash(bal.get("weather")),
+                _cash(bal["all"])))
+    L.append("The main page (/today /days /stats, the desktop) counts pin + race only. The forecaster, "
+             "the ladder and the weather dip-seller are separate pots, added up only here.")
     # 2026-10-01: the operator saw about -$119 in Kalshi's app while every bot was up. Kalshi's apps do not
     # support subaccounts (API-only, docs.kalshi.com/getting_started/subaccounts), so the cash moved from the
     # main account into the two bot pots shows there as money gone.
-    if bal.get("forecaster") is not None and bal.get("ladder") is not None:
-        L.append("Kalshi's own app shows the MAIN account only. The %s sitting in the forecaster and ladder pots "
-                 "was moved out of it, so Kalshi's screens read that much lower than all pots -- not a loss."
-                 % _cash(bal["forecaster"] + bal["ladder"]))
+    if all(bal.get(k) is not None for k in ("forecaster", "ladder", "weather")):
+        L.append("Kalshi's own app shows the MAIN account only. The %s sitting in the forecaster, ladder and "
+                 "weather pots was moved out of it, so Kalshi's screens read that much lower than all pots -- "
+                 "not a loss." % _cash(bal["forecaster"] + bal["ladder"] + bal["weather"]))
     L.append("")
     for name in bs.BOTS:
         b = a["bots"][name]
@@ -1669,7 +1675,8 @@ class Phone:
             return ("Could not build %s: %s\nEverything else still works -- /stats and /race carry the "
                     "main account's numbers." % (cmd, str(e)[:200]))
         more = {"pin": "More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
-                "forecaster": "Every bot: /bots.", "ladder": "Every bot: /bots."}.get(name)
+                "forecaster": "Every bot: /bots.", "ladder": "Every bot: /bots.",
+                "weather": "Every bot: /bots."}.get(name)
         return out + ("\n\n" + more if more else "")
 
     def text_racestats(self):
@@ -2046,26 +2053,54 @@ def selftest():
                          {"amount_cents": 10000, "fee_cents": 200, "status": "applied",   # $98 after the fee,
                           "finalized_ts": _T("2026-09-15T14:00:00Z")}],                   # 10 AM ET yesterday
             "withdrawals": [],
+            # as Kalshi lists it since 2026-10-04: subaccounts 1 and 2 also hold an empty pool-0 row, and
+            # subaccount 3 (the weather dip-seller) lives in pool 0 -- empty in this world
             "subaccount_balances": [{"subaccount_number": 0, "exchange_index": 0, "balance": "0.0000"},
                                     {"subaccount_number": 0, "exchange_index": 2, "balance": "1000.0000"},
+                                    {"subaccount_number": 1, "exchange_index": 0, "balance": "0.0000"},
                                     {"subaccount_number": 1, "exchange_index": 2, "balance": "15.1000"},
-                                    {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"}]}
+                                    {"subaccount_number": 2, "exchange_index": 0, "balance": "0.0000"},
+                                    {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"},
+                                    {"subaccount_number": 3, "exchange_index": 0, "balance": "0.0000"}]}
+        # the WEATHER world (2026-10-04): $50 moved main -> subaccount 3 in POOL 0 at 3 AM ET Sep 15; one Sep 15
+        # bracket settled (NY: sold YES at 40c x2, NO won, +0.80) and one is open (MIA NO x2, $1.10). Cash in
+        # pool 0 = 50 + 0.80 - 1.10 = 49.70; the pot held $0 at midnight Sep 15 + the $50 moved in = $50.
+        _wx_books = dict(_bs_books)
+        _wx_books["transfers"] = _bs_books["transfers"] + [
+            {"amount_cents": 5000, "created_ts": _T("2026-09-15T07:00:00Z"), "from_subaccount": 0, "to_subaccount": 3,
+             "exchange_index": 0}]
+        _wx_books["subaccount_balances"] = _bs_books["subaccount_balances"][:-1] + [
+            {"subaccount_number": 3, "exchange_index": 0, "balance": "49.7000"}]
 
         def _bs_fake(path, q):
             _bs_asked.append((path, dict(q or {})))
             if _bs_mode["m"] == "down":
                 return 401, {"error": "unauthorized"}
+            wx = _bs_mode["m"] == "weather"
             for _lp, _lk, _pg in _bsm.LEDGERS:
                 if path == _lp:
                     if _bs_mode["m"] == "noledger":
                         return 404, {}
-                    return 200, {_lk: [] if _bs_mode["m"] == "empty" else _bs_books[_lk], "cursor": ""}
+                    return 200, {_lk: [] if _bs_mode["m"] == "empty" else (_wx_books if wx else _bs_books)[_lk],
+                                 "cursor": ""}
             sub, empty = str((q or {}).get("subaccount")), _bs_mode["m"] == "empty"
+            if wx and sub == "3":
+                if path == "/portfolio/settlements":
+                    return 200, {"settlements": [_S("KXHIGHNY-26SEP15-B72.5", "2026-09-16T14:00:05Z", "no", nn=2,
+                                                    nc=1.20)], "cursor": ""}
+                if path == "/portfolio/positions":
+                    return 200, {"market_positions": [{"ticker": "KXHIGHMIA-26SEP16-B90.5", "position_fp": "-2.00",
+                                                       "market_exposure_dollars": "1.10"}], "cursor": ""}
             if path == "/portfolio/settlements":
                 return 200, {"settlements": [] if empty else _bs_world.get(sub, []), "cursor": ""}
             if path == "/portfolio/positions":
                 return 200, {"market_positions": [] if empty else _bs_pos.get(sub, []), "cursor": ""}
             if path == "/portfolio/balance":
+                # Kalshi answers for the NAMED pool only: pots 0-2 trade in pool 2, the weather pot (3) in pool 0
+                if (q or {}).get("exchange_index") != (0 if sub == "3" else 2):
+                    return 200, {"balance": 0, "balance_dollars": "0.0000"}
+                if wx and sub == "3":
+                    return 200, {"balance": 0, "balance_dollars": "49.7000"}
                 return 200, {"balance": 0, "balance_dollars": "0.0000" if empty else _bs_bal.get(sub, "0")}
             return 404, {}
         _bs_procs = [
@@ -2539,7 +2574,7 @@ def selftest():
         ck(not _bad and len(_nsrc) > 5000,
            "the new commands' code holds no order, cancel, transfer or process-control call (found: %s)" % _bad)
         _nb = len(_bs_asked)
-        ck(_nb > 0 and all(q.get("subaccount") in ("0", "1", "2") for _p, q in _bs_asked if _p in _bsm.POT_PATHS)
+        ck(_nb > 0 and all(q.get("subaccount") in _bsm.SUBS for _p, q in _bs_asked if _p in _bsm.POT_PATHS)
            and set(_p for _p, _q in _bs_asked) <= set(_bsm.PATHS),
            "every Kalshi read the phone caused (%d, all from /race above) is one of botstats' read paths, and "
            "every per-pot one names its subaccount -- with none, settlements mix every pot" % _nb)
@@ -2577,7 +2612,7 @@ def selftest():
            "/bots TODAY is all four pots: -10.40 + 0.37 - 2.54 + 0.042 = -12.53 on 99.80 + 19.60 + 2.45 + 1.958 "
            "put in = -1.1% of the $1,100.33 all pots held at midnight; each bot's share of ITS OWN pot listed")
         ck("Yesterday: -$3.42 on $36.32 put in (-9.4%) = -0.31% of all pots ($1,103.75); 3 markets, 2 won, 1 lost\n"
-           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.7%) | ladder none | other -$4.51 (-0.42%)"
+           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.7%) | ladder none | weather none | other -$4.51 (-0.42%)"
            in b_,
            "YESTERDAY: the SOL and XRP markets that closed before midnight ET count on Sep 15 though Kalshi "
            "settled them on the 16th (UTC); the oil market that is no bot's is shown as `other`; the $98 "
@@ -2592,10 +2627,10 @@ def selftest():
            and "  Sep 15: -$3.42, 3 markets (pin +$0.54, forecaster +$0.55, other -$4.51)" in b_
            and "Sep 14" not in b_,
            "by day, with each bot's part; no line for the days before anything settled")
-        ck("Cash: main account $1,000.00 (pin + race share it), forecaster $24.00, ladder $15.10 -- all pots "
+        ck("Cash: main account $1,000.00 (pin + race share it), forecaster $24.00, ladder $15.10, weather $0.00 -- all pots "
            "$1,039.10." in b_ and "counts pin + race only" in b_,
            "the cash of every pot, and HIS QUESTION answered: the main page counts pin + race only")
-        ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster and ladder pots" in b_,
+        ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster, ladder and weather pots" in b_,
            "/bots says why Kalshi's app reads lower than all pots: the bot pots' cash (24.00 + 15.10) is outside it")
         ck("PIN BOT (main account): running since Sep 16 7:59 AM ET. v-reopen98 + v-floor90. today -$10.40 "
            "(-0.96%), 7 days -$9.86 (-0.93%), all time -$9.86 (-0.93%); open: 1 ($29.10 at risk). /pin" in b_,
@@ -2691,9 +2726,56 @@ def selftest():
            and "Open now: 1 leg, $19.60 at risk:\n  race SOL 11:00 AM YES x20, $19.60 at risk" in r_
            and "Cash: $1,000.00 -- shared: the pin bot's cash sits in the same pot." in r_,
            "/race: its version, that nothing restarts it, the leg Kalshi holds open, the shared cash")
-        ck(all(q.get("subaccount") in ("0", "1", "2") for _p, q in _bs_asked if _p in _bsm.POT_PATHS)
+        ck(all(q.get("subaccount") in _bsm.SUBS for _p, q in _bs_asked if _p in _bsm.POT_PATHS)
            and set(_p for _p, _q in _bs_asked) <= set(_bsm.PATHS),
            "still every per-pot Kalshi read names its subaccount and every read is a read path")
+
+        # /weather and /wx (2026-10-04): the weather dip-seller, subaccount 3, cash in POOL 0
+        _wxdir = _bs_sandbox("botstats-weather")
+        _bs_mode["m"] = "weather"
+        with open(os.path.join(_wxdir, "dipsell-live-orders.jsonl"), "w", encoding="utf-8") as _fh:
+            _fh.write(json.dumps({"t": "2026-09-15T07:56:53Z", "ev": "start", "pid": 3955508, "subaccount": 3,
+                                  "live": True, "start_pot": 50.0,
+                                  "rails": {"contracts": 2, "max_open": 5, "window_s": 10800, "day_stop_frac": 0.25,
+                                            "kill_after": 60, "max_fills": 100, "max_days": 14, "pool": 0},
+                                  "trigger": {"drop_c": 10.0, "hours_left": [6.0, 12.0]}}) + "\n")
+        with open(os.path.join(_wxdir, "VERSIONS.md"), "w", encoding="utf-8") as _fh:
+            _fh.write("# Versions\n\n# v-dipsell-live -- LIVE 2026-09-15 07:56:53Z (pid 3955508, subaccount 3 pool 0, "
+                      "$50): weather\n# v-reopen98 + v-floor90 -- 2026-09-16 12:00:17Z (pid 3882400) -- LIVE: 98c\n")
+        _wx_n0 = len(_bs_asked)
+        ph.bs_procs = _bs_procs + [(3955508, "2026-09-15T07:56:50Z", r"C:\Python314\python.exe -u "
+                                    r"research\sweep\dipsell_live.py --subaccount 3 --live --minutes 21600")]
+        w_ = ph.handle(111, "/weather")
+        ck(ph.handle(111, "/wx") == w_, "/wx is /weather")
+        for _want, _why in (
+                ("WEATHER DIP-SELLER -- sells YES on a daily-high temperature bracket", "its own page"),
+                ("Pot: subaccount 3.", "its own pot, shared with no bot"),
+                ("Running: YES, pid 3955508, since Sep 15 3:56 AM ET.", "running: the --live dipsell_live.py"),
+                ("Version: v-dipsell-live, live since Sep 15 3:56 AM ET.", "its VERSIONS.md entry"),
+                ("2 contracts an order, one order a market", "its rails from its start record"),
+                ("Keep-alive: boot_all.ps1 (every 10 min) restarts it unless the stop file is there.", "its keep-alive"),
+                ("Yesterday: +$0.80 on $1.20 put in (+66.7%) = +1.6% of its pot ($50.00); 1 market, 1 won, 0 lost",
+                 "yesterday's bracket, +1.6% of the $50 moved into its pot that day"),
+                ("Open now: 1 bet, $1.10 at risk:\n  MIA high B90.5 NO x2, $1.10 at risk", "the bracket Kalshi holds open"),
+                ("Cash: $49.70 -- its own pot (subaccount 3).", "its cash, read from POOL 0")):
+            ck(_want in w_, "/weather: " + _why)
+        ck(any(_p == "/portfolio/balance" and _q == {"subaccount": "3", "exchange_index": 0}
+               for _p, _q in _bs_asked[_wx_n0:])
+           and not any(_p == "/portfolio/balance" and _q.get("subaccount") == "3" and _q.get("exchange_index") != 0
+                       for _p, _q in _bs_asked),
+           "/weather: its cash is read from subaccount 3 in pool 0, never pool 2 (where Kalshi says $0.00)")
+        wb_ = ph.handle(111, "/bots")
+        ck("WEATHER DIP-SELLER (subaccount 3): running since Sep 15 3:56 AM ET. v-dipsell-live." in wb_
+           and "/weather" in wb_ and "| weather none" in wb_ and "weather +$0.80 (+1.6%)" in wb_
+           and "ladder $15.10, weather $49.70 -- all pots $1,088.80." in wb_
+           and "The $88.80 sitting in the forecaster, ladder and weather pots" in wb_
+           and "the ladder and the weather dip-seller are separate pots" in wb_,
+           "/bots: the weather bot's line, its share of yesterday, its cash in the all-pots cash (1000 + 24 + "
+           "15.10 + 49.70, each pot once -- the empty pool-0 rows of subaccounts 1 and 2 add $0), and that "
+           "Kalshi's app does not show it")
+        ck(live_version(os.path.join(_wxdir, "VERSIONS.md"))[0] == "v-reopen98 + v-floor90" == _bsm.version_of("pin")[0],
+           "/stats' pin version skips the weather entry, as botstats does")
+        ph.bs_procs = _bs_procs
 
         # NULL (2026-10-02): the account's books unreadable -> the money stands, NO pot %, and the reason
         _bs_sandbox("botstats-noledger")
@@ -2703,7 +2785,7 @@ def selftest():
            and "of its pot (" not in n_ and "on money put in" not in n_
            and "% of its pot: not shown -- transfers read failed (HTTP 404)." in n_
            and "Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
-               "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04\n" in nb_
+               "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04 | weather none\n" in nb_
            and "today -$10.40, 7 days -$9.86, all time -$9.86;" in nb_
            and "% of the pots: not shown -- main account: transfers read failed (HTTP 404)." in nb_,
            "NULL: the deposit/transfer listings unreadable -> every dollar figure still shown, NO percentage of "
@@ -2730,9 +2812,9 @@ def selftest():
            and "Cash: COULD NOT READ" in d_ and "$0.00" not in d_ and "nothing settled" not in d_,
            "DOWN /pin: a failed read is said as a failure -- never $0, never 'nothing settled', never 'not running'")
         ck("Today: unknown -- Kalshi could not be read" in db_ and "Last 7 days: unknown" in db_
-           and "PARTIAL: these totals leave out pin, race, forecaster, ladder, other" in db_
+           and "PARTIAL: these totals leave out pin, race, forecaster, ladder, weather, other" in db_
            and "running? could not tell" in db_ and "money: COULD NOT READ KALSHI" in db_
-           and "! money: settlements read failed (HTTP 401): forecaster, ladder, pin, race" in db_
+           and "! money: settlements read failed (HTTP 401): forecaster, ladder, pin, race, weather" in db_
            and "nothing settled" not in db_ and "Nothing settled" not in db_,
            "DOWN /bots: every total is 'unknown', the missing pots are named, each error said once")
         # BROKEN botstats: those commands say so; /race still answers
@@ -2754,8 +2836,8 @@ def selftest():
         finally:
             _bsm.bot, _bsm.all_bots = _sv_b, _sv_a
             globals()["LOG"] = _sv_log
-        ck(all(c in HELP_TEXT for c in ("/bots", "/pin", "/forecaster", "/fc", "/ladder")),
-           "/bots /pin /forecaster /fc /ladder are in /help")
+        ck(all(c in HELP_TEXT for c in ("/bots", "/pin", "/forecaster", "/fc", "/ladder", "/weather", "/wx")),
+           "/bots /pin /forecaster /fc /ladder /weather /wx are in /help")
         _bs_mode["m"], ph.bs_procs = "planted", _bs_procs
         r = ph.handle(111, "/stop")
         ck("/stop yes" in r and not ph.busy, "/stop without yes only explains; nothing is stopped")
@@ -2894,7 +2976,8 @@ def main():
               % ("%d python processes" % len(n) if n is not None else "COULD NOT BE READ", time.time() - t0))
         for name, fn in (("/stats", ph.text_stats), ("/race", ph.text_race), ("/racestats", ph.text_racestats),
                          ("/bots", ph.text_bots), ("/pin", lambda: ph.text_bot("pin")),
-                         ("/forecaster", lambda: ph.text_bot("forecaster")), ("/ladder", lambda: ph.text_bot("ladder"))):
+                         ("/forecaster", lambda: ph.text_bot("forecaster")), ("/ladder", lambda: ph.text_bot("ladder")),
+                         ("/weather", lambda: ph.text_bot("weather"))):
             t0 = time.time()
             out = fn()
             print("\n--- %s (%d chars, %.1f s) ---\n%s" % (name, len(out), time.time() - t0, out))
