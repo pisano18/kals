@@ -221,7 +221,7 @@
    "what": "v-reopen98 stop rule (daily until 100 such markets): 30-second buys at 97.9-98c since 09-28 14:36Z.",
    "how": "live logs: orders leg full/topup/late_add with exec or ask 0.979-0.98, joined to the ledger; count losses and whether the seller gate had readings",
    "bar": "back to 0.978 on the 2nd loss in the first 100, on any such loss the gate could not judge, or if --toxic-fresh is turned off",
-   "status": "open",
+   "status": "read",
    "history": [
     "09-29 12Z: 6 buys at 97.9-98c on the 30-s leg (6 markets), 0 of them lost (the BNB 09-28 8 PM market lost -$8.26 on its 97.5c 45-s YES buy; its 98c NO top-up WON). Bar (2nd loss in first 100) not reached: keep.",
     "09-30 12Z: 18 buys at 97.9-98c on the 30-s leg in 17 markets since 09-28 14:36Z; 0 of the buys lost. Keep.",
@@ -230,7 +230,8 @@
    ],
    "read_log": [
     "10-03 12Z: covers 2026-09-28 14:36:17Z to 2026-10-03 12:00Z, three live logs. Matched on exec price rounded to the 0.1c tick or on ask seen: 56 filled 30-s-leg buys (full/topup/late_add) at 97.9-98c in 45 markets (40 fifteen-minute, 5 KXBTCD hourly), ~2,572 contracts, 0 of the buys lost. Since the 10-02 12Z read: 8 new buys in 7 new markets (all fifteen-minute), 0 buys lost, whole-market -$33.79: six won +$7.33, and SOL 10-02 21:30Z -$41.11 whose in-band buy (late_add YES 48 at 98c, 8 s left) WON -- the market's loss is its 91.46c full-leg NO buy at 19 s (outside the band, see missed-daily) after a 50c hedge. Running whole-market money of the 45 markets +$7.26 (the two whole-market losers, BNB 09-28 20:00Z -$8.26 and SOL, both lost on an out-of-band leg). 18 in-band sends got 0 fill. Count toward the first 100: 40 fifteen-minute, 45 with hourly. --toxic-fresh is on: pid 4031340's argv, restart_bot.ps1 line 323, and the 10-03 08:15:52Z start record (toxic_fresh true, min age 500 ms, min share 0.5, stands down under 20 s); 54 toxic_fresh refusals in the window, 16 since last read. Gate readings: 56/56 buys had a sold share; 29 of 56 came at 20 s or less left (gate stands down). No in-band loss, so the could-not-judge clause is moot. Bar not reached: KEEP 0.98."
-   ]
+   ],
+   "read_note": "superseded 2026-10-04 03:22Z by v-revert0925 (operator: 'Revert now'): seller check off, 0.98 on both legs by order; the 98c question is now part of revert0925-live."
   },
   {
    "id": "floor90-guard",
@@ -238,7 +239,7 @@
    "what": "v-floor90 stop rule (daily): money of every 45-second buy whose ask was under 95c since 09-28 14:36Z, insurance included.",
    "how": "live logs orders leg early with ask_seen < 0.95, joined to the Kalshi ledger per market",
    "bar": "if the running total is below $0 -> --early-min-price back to 0.95 at once",
-   "status": "open",
+   "status": "read",
    "history": [
     "09-29 12Z: 3 markets with a 45-s buy under 95c (asks 90c, 93.9c, 94c): +$1.51, +$1.57, +$3.41 = +$6.49 running total (>= $0): keep.",
     "09-30 12Z: 4 markets with a 45-s buy under 95c, running total +$9.85 (insurance included). Keep.",
@@ -247,7 +248,8 @@
    ],
    "read_log": [
     "10-03 12Z (ledger 12:00:42Z): 11 markets with a filled 45-s buy under 95c since 09-28 14:36:17Z (5 new since last read: BNB 10-02 17:45Z ask 0.947 +$1.57, HYPE 10-02 20:00Z 0.929 +$2.86, BTC 10-03 01:15Z 0.947 +$1.46, BTC 10-03 02:00Z 0.94 +$4.22, and NEAR 10-03 10:45Z ask seen 0.938, filled 31.3 at 96.46c at 37 s, then a 62.7 top-up at 97.47c at 30 s, both insured at ~94.9c when belief fell to 0.00015 at 12 s: market settled YES, -$86.95). Running total, insurance included: +$25.32 before NEAR, -$61.63 after (45-s buys alone about -$8.80). BAR TRIPPED (below $0): --early-min-price back to 0.95 at once. A 0.95 floor would have refused the NEAR 45-s leg (ask 93.8c); whether the 30-s leg would still have bought at 96.9c is not knowable from the log. Comparison 95c and up: 46 markets +$8.87, 2 losses (BNB 09-28 23:59Z -$8.26; BTC 10-03 08:00Z ask 0.963, -$13.01 false-alarm insurance on a won bet). 2 sends under 95c got 0 fill, none new."
-   ]
+   ],
+   "read_note": "superseded 2026-10-04 03:22Z: floor stays 0.90 under v-revert0925 by the operator's 'do whatever is best for the 45' (the NEAR loss would have happened at 0.95 too); watched in revert0925-live."
   },
   {
    "id": "kxbtcd-tick",
@@ -421,11 +423,12 @@
   },
   {
    "id": "bankmove-live",
-   "status": "open",
+   "status": "read",
    "due": "2026-10-05T12:00Z",
    "what": "v-bankmove (research/pinrun.py, IDEA_LEDGER F21): a bank move is called a deposit/withdrawal only when Kalshi's own transfer listings (GET /portfolio/deposits, /withdrawals, /subaccounts/transfers) show a matching finished transfer in the window; otherwise a new `unexplained` record, the high-water mark is NOT shifted and the move counts as trading. LIVE 2026-10-03 08:15:52Z (pid 4031340, start record xfer_confirm: true) after the loss COUNT brake halt + keep-alive relaunch; the planned 12:12Z self-restart no longer happens (new run ends ~10-06 08:16Z).",
    "how": "the live log after the restart (results/pinrun-live-<new>.jsonl): every `external` record must carry a non-empty `transfers` list whose ids exist in results/kalshi_transfers.json (python research/pinxfer.py) or in GET /portfolio/subaccounts/transfers; list every `unexplained` record (t, move, amount, why) and say what each was (delayed payout, coin-race settlement, fee); check results/pinrun-hwm.json moved only at `external` records (hwm_now) and at new bank highs; confirm no `unexplained` with why 'transfer read failed' repeats (a failing listing would make every true transfer unexplained).",
-   "bar": "PRE-REGISTERED 2026-10-03: PASS = no `external` withdrawal/deposit record without a matching Kalshi transfer; every `unexplained` record listed and explained; the high-water mark shifted only on confirmed transfers. FAIL (revert = git revert the v-bankmove commit, then restart_bot.ps1) = an `external` record with no matching transfer, OR a real operator deposit/withdrawal left `unexplained` while the listings were readable, OR 'transfer read failed' on 3+ consecutive moves."
+   "bar": "PRE-REGISTERED 2026-10-03: PASS = no `external` withdrawal/deposit record without a matching Kalshi transfer; every `unexplained` record listed and explained; the high-water mark shifted only on confirmed transfers. FAIL (revert = git revert the v-bankmove commit, then restart_bot.ps1) = an `external` record with no matching transfer, OR a real operator deposit/withdrawal left `unexplained` while the listings were readable, OR 'transfer read failed' on 3+ consecutive moves.",
+   "read_note": "2026-10-04: v-bankmove worked live -- race stake out/in 10-03 10:00/10:05Z logged unexplained, mark untouched; the $50 weather-subaccount transfer 03:21Z confirmed as external with its transfer id. The 9/25 build (live from 03:22Z) does NOT have it; its old classifier is back. Closed."
   },
   {
    "id": "toxic-inside20-paper",
@@ -465,7 +468,8 @@
    "what": "Live pinrun pid 4031340 (relaunched 2026-10-03 08:15:52Z by watch_bot after the loss COUNT brake; --minutes 4320) ends ~2026-10-06 08:16Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv.",
    "how": "process list + newest results/pinrun-live-*.jsonl start record flags",
    "bar": "a new live run with the same flags within 10 min",
-   "status": "open"
+   "status": "read",
+   "read_note": "superseded: v-revert0925 restarted the live bot 2026-10-04 03:22:52Z (pid 3506784, --minutes 4320); see pinrun-exit-1007."
   },
   {
    "id": "rain-weekly",
@@ -513,6 +517,22 @@
    "what": "v-revert0925 (PREPARED 2026-10-04T03:17Z, live from the main bot's next restart via restart_bot.ps1): the live main bot on the 09-25 build (C:\\kals-live-0925\\research\\pinrun.py, code_sha f9548c5571ff, git 2fce1837e6) with the 09-25 argv and --early-min-price 0.90. First confirm the live start record carries code_sha f9548c5571ff and early_min_price 0.9. Then daily Kalshi money vs the paper twin (arm-live-twin pid 4228512, current rules) and arm-0925b (pid 4260672, 09-25 build paper) on shared closes.",
    "how": "Kalshi /portfolio/settlements per ET day from the revert start record (research/pinday.py); paper logs per armh2h2.py on the same closes; % of money bet and % of the account for each.",
    "bar": "back to the previous version (results/restart_bot.before-revert0925.ps1 copied over restart_bot.ps1, then restart_bot.ps1) if the live bot loses more than 20% of the account from the revert point, or has 3+ losing markets in any ET day",
+   "status": "open"
+  },
+  {
+   "id": "pinrun-exit-1007",
+   "due": "2026-10-07T03:40Z",
+   "what": "Live pinrun pid 3506784 (v-revert0925, 9/25 build from C:\\kals-live-0925, --minutes 4320, started 2026-10-04 03:22:52Z) ends ~2026-10-07 03:23Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv (same 9/25 code path).",
+   "how": "process list + newest results/pinrun-live-*.jsonl start record: code_sha f9548c5571ff, mode live, early_min_price 0.9",
+   "bar": "a new live run with the same code_sha and flags within 10 min",
+   "status": "open"
+  },
+  {
+   "id": "dipsell-live",
+   "due": "2026-10-05T12:00Z",
+   "what": "Weather dip-seller (SJN1) live micro test, subaccount 3 on pool 0, funded $50 on 2026-10-04 03:21Z (operator: 'Yes run the test', 'Yes move weather'). Bot research/sweep/dipsell_live.py NOT YET STARTED: the session's permission checker refused the start; operator runs `python -u research/sweep/dipsell_live.py --subaccount 3 --live --minutes 21600` (start_dipsell.ps1). 14 days or 100 fills.",
+   "how": "python research/sweep/dipsell_live.py --report (reads results/dipsell-live-orders.jsonl); first confirm a start record with live true, subaccount 3, pot 50.",
+   "bar": "PRE-REGISTERED (2026-10-02 sweep, verbatim): 2 contracts a trigger (then 10), max 5 open, 14 days or 100 fills; pass = fills on 50%+ of triggers, net over +4c a contract with the low end of the range above zero, no day worse than -25%; kill if negative after 60 fills.",
    "status": "open"
   }
  ]
