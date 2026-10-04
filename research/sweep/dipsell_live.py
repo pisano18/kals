@@ -101,6 +101,12 @@ RESERVED = {0: "the primary account", 1: "the live ladder's subaccount", 2: "the
 POT_MIN, POT_MAX = 50.0, 150.0
 NOMINAL_POT = 100.0           # a dry run with no funded subaccount sizes its rails off this
 CID_PREFIX = "dip-"
+
+
+def safe_cid(c):
+    """2026-10-04: Kalshi answers 400 invalid_parameters to a client_order_id holding '.', which every bracket
+    ticker has (KXHIGHTHOU-26OCT04-B81.5); keep only letters, digits, '-' and '_'."""
+    return "".join(ch if (ch.isalnum() or ch in "-_") else "p" for ch in c)
 WRITES_PER_S = 3.0
 SCAN_S, POLL_S, EVAL_DELAY_S, STALE_S, SETTLE_S = 60.0, 15.0, 60.0, 15 * 60.0, 300.0
 GET_GAP_S = 0.15
@@ -393,7 +399,7 @@ class Dip:
         if o is None:
             return
         if kind == "place":
-            cid = "%s%d-%s" % (CID_PREFIX, int(o["H"]), tk[-24:])
+            cid = safe_cid("%s%d-%s" % (CID_PREFIX, int(o["H"]), tk[-24:]))
             b = order_body(tk, o["px"], self.sub, cid, o["exi"])
             if not body_ok(b, self.sub):
                 with self.lock:
@@ -935,6 +941,9 @@ def _selftest():
     nd = evaluate_hour(H, snapN, planted, log, lambda t: got.append(t), False)
     ck(nd["triggers"] == 1 and len(got) == 1, "act=False (a stale hour) logs the trigger and places nothing")
     # 3. order body: post_only SELL YES (side ask) at a + 1c, 2 contracts, the subaccount, pool 0
+    ck(safe_cid("dip-1791140400-KXHIGHTHOU-26OCT04-B81.5") == "dip-1791140400-KXHIGHTHOU-26OCT04-B81p5"
+       and safe_cid("dip-1-KXHIGHTATL-26OCT04-T79") == "dip-1-KXHIGHTATL-26OCT04-T79",
+       "client_order_id: '.' replaced (Kalshi 400s on it), plain ids unchanged")
     b = order_body("KXHIGHNY-26OCT02-B70.5", 0.40, 3, "dip-1-x", 0)
     ck(b["side"] == "ask" and b["price"] == "0.4000" and b["count"] == "2.00" and b["post_only"] is True
        and b["subaccount"] == 3 and b["exchange_index"] == 0 and body_ok(b, 3), "the body is a 2-lot post_only ask at 40c in sub 3 (%s)" % b)
