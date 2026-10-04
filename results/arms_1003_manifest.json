@@ -1,0 +1,21 @@
+[
+ {
+  "arm": "arm-0925b",
+  "pid": 4260672,
+  "started_utc": "2026-10-04T00:36:00Z",
+  "start_record_t": "2026-10-04T00:36:04Z",
+  "log": "results/pinrun-paper-20261004T003604Z.jsonl",
+  "stdout": "results/arm-0925b.out",
+  "stderr": "results/arm-0925b.err",
+  "code_sha": "f9548c5571ff",
+  "git_commit": "2fce1837e65f819e5aba0b0a17b6687c3f492529",
+  "code_dir": "C:\\kals-arms\\arm-0925b\\research",
+  "code_note": "The 09-25 build: research/pinrun.py at 2fce1837e6 (v-scalein-caps, 2026-09-25T12:23Z), the code live ran 2026-09-25T12:23:57Z..2026-09-27T08:10Z (pinrun-live-20260925T122357Z / 20260927T050825Z / 20260927T070510Z; the last of those three already had --price-ceiling 0.978). code_sha is pinrun's own sha256(file)[:12] of the CRLF working-tree file, not a git SHA. Materialised OUTSIDE the working tree with its research imports at the same commit (engine, livebook, pintake, kauth, ordercli, downtime, pinflat) plus the repo files its self-test reads (restart_bot.ps1, results/VERSIONS.md, PREREG_fresh.md, PREREG_toxic.md, DOWNTIME.json) under C:\\kals-arms\\arm-0925b. RESULTS is hard-coded to C:\\kals-repo\\results, so the log lands in the repo.",
+  "argv": "C:\\Python314\\python.exe -u C:\\kals-arms\\arm-0925b\\research\\pinrun.py --size 20 --minutes 10080 --loss-abort -100000 --max-positions 3 --max-losses 1000 --improve-scope market --pick best --max-per-market 2 --improve-max 0.010 --min-fill-frac 0 --sweep-depth --depth-ladder --jump-gate --hedge-belief 0.40 --early-tau 45 --early-frac 0.333 --early-min-price 0.95 --rebuy-late-tau 15 --rebuy-late-frac 0.5 --series KXBTCD --series-size 1 --early-max-edge 10.0 --no-hedge-prop --hedge-slip 0.10 --late-tau 10 --late-mult 1.5 --late-pin 0.9975 --late-jump 2.0 --extra-coin 1 --late-extra 1 --late-extra-tau 15 --bank-brake 4.00 --loss-cap 200 --arm-name arm-0925b",
+  "working_dir": "C:\\kals-repo",
+  "extra": "restart_bot.ps1 at 2fce1837e6 (the 09-25 live argv) minus --live, --minutes 4320 -> 10080, and arm-live-twin's no-brake pair: --max-losses 2 -> 1000, --loss-abort -60.00 -> -100000. Start record equals pinrun-live-20260925T122357Z's except mode, t, minutes, day_loss_at_start, traj_file and loss_abort (-200: --loss-cap 200 clamps it, the same -200 the twin's start record shows).",
+  "selftest": "PASSED with the full argv + --selftest from the materialised dir, Python 3.14, 1262 checks ok, 0 failed (exit 0)",
+  "keepalive": "none: not in sync_arms.ps1's plan (it builds every arm from research\\pinrun.py + live's argv); exempted from its stale-arm sweep by the C:\\kals-arms\\ path. If the process dies, restart by hand with the argv above.",
+  "readsdue": "revert-0925b"
+ }
+]

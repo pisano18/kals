@@ -320,6 +320,12 @@ foreach ($p in $procs) {
     if (-not $cl) { continue }
     if ($cl -notlike '*pinrun.py*') { continue }
     if ($cl -like '*--live*' -or $cl -like '*pinvin_*') { continue }
+    # 2026-10-04: an arm running OLD CODE from outside the repo
+    # (C:\kals-arms\<arm>\research\pinrun.py, materialised by `git show`) is a
+    # frozen build like pinvin_*, not a stale sync -- first one arm-0925b, the
+    # 09-25 build (results/arms_1003_manifest.json, READS_DUE revert-0925b).
+    # Never retired here, and never restarted here either: no keep-alive.
+    if ($cl -like '*\kals-arms\*') { continue }
     # a FROZEN arm is never stale -- not moving is its job
     if ($cl -like '*--arm-name arm-friday*' -or $cl -like '*--arm-name arm-live-frozen*') { continue }
     # 2026-10-02: arm-live-twin (pid 4228512 at writing) carries NO --arm-name
