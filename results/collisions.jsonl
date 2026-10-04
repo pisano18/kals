@@ -256,3 +256,15 @@
 {"note": "", "pair": ["F-B01", "F-O02"], "t": "2026-10-03T08:50:41Z", "verdict": "nothing"}
 {"note": "", "pair": ["F-M06", "F-X06"], "t": "2026-10-03T08:50:41Z", "verdict": "nothing"}
 {"note": "", "pair": ["F-M01", "F-M09"], "t": "2026-10-03T08:50:41Z", "verdict": "nothing"}
+{"pair": ["F-B01", "F-X07"], "t": "20261004T0848Z", "verdict": "drawn"}
+{"pair": ["F-C01", "F-X03"], "t": "20261004T0848Z", "verdict": "drawn"}
+{"pair": ["F-C08", "F-X04"], "t": "20261004T0848Z", "verdict": "drawn"}
+{"pair": ["F-I01", "F-M05"], "t": "20261004T0848Z", "verdict": "drawn"}
+{"pair": ["F-B07", "F-P07"], "t": "20261004T0848Z", "verdict": "drawn"}
+{"pair": ["F-R04", "F-R05"], "t": "20261004T0848Z", "verdict": "drawn"}
+{"note": "autosize cadence (300 s) and round-trip (96 ms) share no mechanism; the only live link, latency -> fills, is already dead by F-P04 (filled and zero-filled have the SAME median latency), so a size-vs-latency regression would produce a number with no decision attached", "pair": ["F-B01", "F-X07"], "t": "2026-10-04T08:50:21Z", "verdict": "nothing"}
+{"note": "price improvement by hour-of-day: 283 fills over 24/7 gives ~8 closes a bucket, far under the 30-cluster floor, and nothing hangs on it either way -- F-X03 reports ZERO fills ever worse than signalled, so there is no downside to time", "pair": ["F-C01", "F-X03"], "t": "2026-10-04T08:50:21Z", "verdict": "nothing"}
+{"note": "cutting a loser at its 23c bid to cap drawdown depth is (a) forbidden to evaluate on the tape (what a rule would have cost US, rule 5), (b) n=12 losing closes ever on our own fills, no power, and (c) dominated by the deployed hedge, which already recovers ~32c at belief 0.40", "pair": ["F-B07", "F-P07"], "t": "2026-10-04T08:50:21Z", "verdict": "nothing"}
+{"note": "two epistemic rules with no numeric handle; any 'measurement' connecting them is a re-run of the forbidden tape-vs-live loss comparison, and the population-gap size itself is already F-O01/F-O03", "pair": ["F-R04", "F-R05"], "t": "2026-10-04T08:50:21Z", "verdict": "nothing"}
+{"note": "did our INDEX INPUT degrade over the same split that took overconfidence 12.5x -> 28.2x? per-window print count, duplicate-print runs and max inter-arrival from the 1/sec channel alone, regressed on the model's stated-vs-realised miss; F-O07 says the counterparty did not change, so the input is the untested half", "pair": ["F-I01", "F-M05"], "t": "2026-10-04T08:50:29Z", "verdict": "lead"}
+{"note": "40% of windows open outside 45-55c so both sides get used, and every NO order is encoded as 1-q against a TAPERED tick -- split our own 28.2% zero-fill rate by bid vs ask and by distance to the 10c/90c taper boundary; pinver counts zero fills globally and has never split them by side", "pair": ["F-C08", "F-X04"], "t": "2026-10-04T08:50:29Z", "verdict": "lead"}
