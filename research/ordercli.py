@@ -692,6 +692,15 @@ def build_sub_transfer(dollars, from_sub, to_sub, day):
             "exchange_index": SUB_POOL}
 
 
+def set_sub_pool(pool):
+    """--sub-pool (2026-10-03, weather dip-seller test): weather markets live in pool 0, the crypto bots in pool 2.
+    Subaccount create / fund / return / balance all use SUB_POOL; only 0 and 2 are accepted."""
+    global SUB_POOL
+    if int(pool) not in (0, 2):
+        raise SystemExit("--sub-pool must be 0 or 2")
+    SUB_POOL = int(pool)
+
+
 def check_sub_transfer(body, src_balance, dst_balance):
     bad = []
     if body["from_subaccount"] == body["to_subaccount"]:
@@ -999,6 +1008,8 @@ def main():
     ap.add_argument("--sub-fund", type=float, help="move $ from the primary account to --sub")
     ap.add_argument("--sub-return", type=float, help="move $ from --sub back to the primary account")
     ap.add_argument("--sub-status", type=int, help="balances, positions and resting orders of a subaccount")
+    ap.add_argument("--sub-pool", type=int, default=2,
+                    help="pool for --sub-create/--sub-fund/--sub-return/--sub-status: 2 = crypto (default), 0 = weather etc.")
     ap.add_argument("--api-limits", action="store_true",
                     help="read GET /account/limits (usage tier and grants)")
     ap.add_argument("--api-upgrade", action="store_true",
@@ -1044,6 +1055,7 @@ def main():
             or a.sub_status is not None:
         if (a.sub_fund is not None or a.sub_return is not None) and a.sub is None:
             raise SystemExit("--sub-fund / --sub-return need --sub N")
+        set_sub_pool(a.sub_pool)
         return sub_main(a)
     if not (a.ticker and a.price):
         raise SystemExit("\n--ticker and --price are required")
