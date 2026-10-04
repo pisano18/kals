@@ -530,7 +530,7 @@
   {
    "id": "dipsell-live",
    "due": "2026-10-05T12:00Z",
-   "what": "Weather dip-seller (SJN1) live micro test, subaccount 3 on pool 0, funded $50 on 2026-10-04 03:21Z (operator: 'Yes run the test', 'Yes move weather'). Bot research/sweep/dipsell_live.py NOT YET STARTED: the session's permission checker refused the start; operator runs `python -u research/sweep/dipsell_live.py --subaccount 3 --live --minutes 21600` (start_dipsell.ps1). 14 days or 100 fills.",
+   "what": "Weather dip-seller (SJN1) live micro test, LIVE since 2026-10-04 07:56:53Z (pid 3955508, subaccount 3 pool 0, $50; operator: 'You run it not me. I give you permission.'). Keep-alive in boot_all.ps1; on the phone as /weather. 14 days or 100 fills. AT THE FINAL READ create results/dipsell-live.stop, or the keep-alive restarts it every 10 min.",
    "how": "python research/sweep/dipsell_live.py --report (reads results/dipsell-live-orders.jsonl); first confirm a start record with live true, subaccount 3, pot 50.",
    "bar": "PRE-REGISTERED (2026-10-02 sweep, verbatim): 2 contracts a trigger (then 10), max 5 open, 14 days or 100 fills; pass = fills on 50%+ of triggers, net over +4c a contract with the low end of the range above zero, no day worse than -25%; kill if negative after 60 fills.",
    "status": "open"
