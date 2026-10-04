@@ -521,9 +521,9 @@
   },
   {
    "id": "pinrun-exit-1007",
-   "due": "2026-10-07T03:40Z",
-   "what": "Live pinrun pid 3506784 (v-revert0925, 9/25 build from C:\\kals-live-0925, --minutes 4320, started 2026-10-04 03:22:52Z) ends ~2026-10-07 03:23Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv (same 9/25 code path).",
-   "how": "process list + newest results/pinrun-live-*.jsonl start record: code_sha f9548c5571ff, mode live, early_min_price 0.9",
+   "due": "2026-10-07T09:40Z",
+   "what": "Live pinrun pid 4202332 (v-revert0925-fullcap, 9/25 build + --max-full-bets 1.0 from C:\\kals-live-0925b, --minutes 4320, started 2026-10-04 09:20:40Z) ends ~2026-10-07 09:21Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv (same 9/25 code path).",
+   "how": "process list + newest results/pinrun-live-*.jsonl start record: code_sha 269958db6d68, mode live, early_min_price 0.9",
    "bar": "a new live run with the same code_sha and flags within 10 min",
    "status": "open"
   },

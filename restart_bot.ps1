@@ -62,8 +62,14 @@ $py = "C:\Python314\python.exe"
 # below is restart_bot.ps1 at 2fce1837e6 with --early-min-price 0.95 -> 0.90
 # ("do whatever makes the most money"). Revert: copy
 # results\restart_bot.before-revert0925.ps1 over this file and rerun it.
-$code = "C:\kals-live-0925"
-$codeSha = "f9548c5571ff"
+# v-revert0925-fullcap, 2026-10-04, operator: "Okay one full coin max. Or does
+# a 1.5 coin do better? Check it out." The same 09-25 build plus ONE backported
+# rule, --max-full-bets (v-onefull + v-topup as one count cap), in a COPY:
+# C:\kals-live-0925b (C:\kals-live-0925 is untouched, so the revert is this
+# file's predecessor, results\restart_bot.before-fullcap.ps1). code_sha below is
+# the patched file's sha256[:12].
+$code = "C:\kals-live-0925b"
+$codeSha = "269958db6d68"
 
 # --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
 # did not change; nothing on disk said why, so the next session had to guess
@@ -107,6 +113,11 @@ $botArgs = @(
     "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "2",
     "--improve-scope", "market", "--pick", "best",
     "--max-per-market", "2", "--improve-max", "0.010",
+    # v-revert0925-fullcap (2026-10-04): an entry may not take a market past
+    # ONE full bet on the side held (trimmed to the room; refused when full;
+    # hedges exempt). Live fills 09-09..10-04: +$121 vs no cap, 1.5x +$77.
+    # Revert: results\restart_bot.before-fullcap.ps1 (VERSIONS.md).
+    "--max-full-bets", "1.0",
     "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate",
     # --hedge-belief 0.60 -> 0.25, v-hedge25, 2026-09-21 ~19:0xZ, on the
     # operator's instruction: "tune it to catch the most it can while having
@@ -577,7 +588,7 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap, C:\kals-live-0925b)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1
