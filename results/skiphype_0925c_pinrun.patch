@@ -1,0 +1,414 @@
+diff --git a/C:/kals-live-0925b/research/pinrun.py b/C:/kals-live-0925c/research/pinrun.py
+index 39fbdb7..5253b28 100644
+--- a/C:/kals-live-0925b/research/pinrun.py
++++ b/C:/kals-live-0925c/research/pinrun.py
+@@ -2932,6 +2932,37 @@ def full_bet_room(prev, tk, want, mult=1.0, hedged=None, size=None, x=None):
+     return max(0.0, float(x) * full - have)
+ 
+ 
++# v-skiphype (2026-10-05, VERSIONS.md v-skiphype). Operator 10-05: "Sure drop
++# it" -- stop buying HYPE. Our live fills 09-20..10-04: HYPE 81 markets, 4
++# lost, -$103.12; the other 8 coins 539 markets, 13 lost, +$360.22.
++# --skip-coin SERIES (repeatable): that 15-minute series is taken OUT OF THE
++# UNIVERSE -- its markets are never put in seen_markets, so they are never
++# scanned, never watched, never entered or topped up -- and a belt-and-braces
++# entry gate (`skip_coin`) refuses one should it ever reach the scan.
++# A GATE MUST NEVER BLOCK A HEDGE: the series STAYS in series_index (so the
++# v-safety2 startup read still adopts a held position in it rather than
++# calling it foreign) and its index stays on the IndexWS. The refresh still
++# reads the series' open markets -- the same GET as before -- but only to
++# keep their facts (`skip_facts`) for adoption. A position we HOLD in one
++# (adopted after a restart) has its book subscribed at once, so the hedge
++# pass, reconcile and settlement manage it exactly as any other position.
++# Default () = OFF = the 09-25 + v-fullcap behaviour exactly.
++SKIP_COINS = ()
++_DEFAULT_SKIP_COINS = ()
++
++
++def skip_coin(tk, coins=None):
++    """v-skiphype: True when ticker `tk` belongs to a --skip-coin series.
++    Reads SKIP_COINS at call time, so the flag takes effect."""
++    coins = SKIP_COINS if coins is None else coins
++    if not coins:
++        return False
++    try:
++        return str(tk).split("-")[0] in coins
++    except Exception:                                    # noqa: BLE001
++        return False
++
++
+ def rebuy_ok(prev, tk, price, size=None, tau=None):
+     """May we buy market `tk` AGAIN at `price` in this close?
+ 
+@@ -4925,7 +4956,7 @@ _OFFLINE_PINNED_FLAGS = (
+     "SIGMA_STRESS", "SIZE_MIRROR_ON", "SKIP_BANDS", "SWEEP_DEPTH",
+     "SWEEP_ENABLED", "TAPER", "TAPER_FLOOR",
+     "TOXIC_FRESH", "TOXIC_MIN_AGE_MS", "TOXIC_MIN_SHARE", "TOXIC_TAU_MIN",
+-    "WIDEN_ENABLED", "MAX_FULL_BETS")
++    "WIDEN_ENABLED", "MAX_FULL_BETS", "SKIP_COINS")
+ 
+ 
+ def _offline_trade_loop(markets, live=False, take=None, reply=None,
+@@ -4933,8 +4964,13 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
+                         size=5.0, tau0=30, plant=False,
+                         flags=None, get_delay=0.0, stall=None,
+                         get_fail_after=None, max_positions=99, bank=None,
+-                        trec_split=False, portfolio=None, result=None):
++                        trec_split=False, portfolio=None, result=None,
++                        strict_book=False):
+     """Run the REAL trade_loop for `run_s` fake seconds on one close.
++    (v-skiphype: `strict_book` makes best() answer None for a ticker the
++    loop has not subscribed, the way the live book does; default False, so
++    every existing world reads exactly what it did. The tickers the loop
++    subscribed are returned under "subs" either way.)
+     (`plant` sets --hedge-plant, the one-contract planted hedge test.)
+ 
+     markets    dicts: tk, series, iid, strike, fair(t) -> P(YES) at index
+@@ -5086,6 +5122,8 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
+             return None, None, None
+ 
+     _stalled = {"done": False}
++    _subs = set()               # v-skiphype: tickers subscribed now
++    _sub_log = []               # v-skiphype: every subscribe, in order
+ 
+     class _Book:
+         def best(self, tk):
+@@ -5097,16 +5135,21 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
+                     and clock.t - t0 >= float(stall[0])):
+                 _stalled["done"] = True
+                 clock.t += float(stall[1])
++            if strict_book and tk not in _subs:
++                return None          # v-skiphype: unsubscribed = no book
+             for m in markets:
+                 if m["tk"] == tk:
+                     return m["book"](clock.t - t0)
+             return None
+ 
+         def subscribe(self, tks):
+-            pass
++            for _t in tks:           # v-skiphype: recorded, nothing else
++                _subs.add(_t)
++                _sub_log.append(_t)
+ 
+         def drop(self, tks):
+-            pass
++            for _t in tks:           # v-skiphype: recorded, nothing else
++                _subs.discard(_t)
+ 
+         def buyable(self, tk, want, lim):
+             # v-scalein: a market may plant the depth at or under a limit;
+@@ -5303,7 +5346,7 @@ def _offline_trade_loop(markets, live=False, take=None, reply=None,
+         _sh.rmtree(tmp, ignore_errors=True)
+     return {"recs": recs, "trecs": trecs, "posts": posts, "raised": raised,
+             "ran_s": round(clock.t - t0, 3), "state": loop_state,
+-            "calls": calls, "gets": gets}
++            "calls": calls, "gets": gets, "subs": list(_sub_log)}
+ 
+ 
+ # ===========================================================================
+@@ -5364,7 +5407,8 @@ _FLAG_GLOBALS = ("LATE_EXTRA_TAU", "LATE_EXTRA", "LATE_TAU", "LATE_MULT",
+                  "EARLY_MAX_EDGE", "EARLY_MIN_PRICE", "EARLY_TAU_MAX",
+                  "EARLY_FRAC", "BANK_BRAKE", "SIGMA_STRESS", "FLIP_MULT",
+                  "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC",
+-                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER", "MAX_FULL_BETS")
++                 "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER", "MAX_FULL_BETS",
++                 "SKIP_COINS")
+ 
+ 
+ def _selftest_body():
+@@ -14555,6 +14599,143 @@ def _selftest_body():
+            and len(_kt_kinds(_ktn, "ktruth", "startup")) == 1,
+            "v-safety2 (1a) NULL: %s is NOT adopted and nothing is hedged"
+            % _kcase)
++
++    # ---- v-skiphype (2026-10-05): --skip-coin SERIES ----------------------
++    ck(_DEFAULT_SKIP_COINS == () and "SKIP_COINS" in _OFFLINE_PINNED_FLAGS
++       and "SKIP_COINS" in _FLAG_GLOBALS,
++       "v-skiphype: the DECLARED default is () = OFF (the 09-25 + v-fullcap "
++       "behaviour); pinned in every offline world and restored after")
++    ck(skip_coin("KXHYPE15M-26OCT050815-15", ("KXHYPE15M",))
++       and not skip_coin("KXBTC15M-26OCT050815-15", ("KXHYPE15M",))
++       and not skip_coin("KXHYPED-26OCT0517-T99.9999", ("KXHYPE15M",))
++       and not skip_coin("KXHYPE15M-26OCT050815-15", ())
++       and not skip_coin(None, ("KXHYPE15M",)),
++       "v-skiphype PURE: a KXHYPE15M ticker is skipped; BTC, the HYPE hourly "
++       "ladder and everything with the flag off are not")
++    _sksrc = inspect.getsource(trade_loop)
++    _sk_h0 = _sksrc.index("# ---------------- AMENDMENT 15: the hedge pass")
++    _sk_h1 = _sksrc.index("\n            _kt_step()\n")
++    ck("SKIP_COINS" not in _sksrc[_sk_h0:_sk_h1]
++       and "skip_coin" not in _sksrc[_sk_h0:_sk_h1]
++       and _sksrc.index('_gate("skip_coin"') > _sk_h1
++       and _sksrc.index('_gate("skip_coin"')
++           < _sksrc.index('rec("signal", live=live, **sig)')
++       and "for series, iid in series_index.items():" in _sksrc,
++       "v-skiphype by source, A GATE MUST NEVER BLOCK A HEDGE: the hedge pass "
++       "never reads the flag; the belt-and-braces entry gate sits on the scan "
++       "BELOW it and before the signal point; series_index is still walked "
++       "whole (the series stays known, so a held position is not 'foreign')")
++    _sk_main = inspect.getsource(main)
++    ck("_series_index = ladder_series_index(a.series)" in _sk_main
++       and "IndexWS(sorted(set(SERIES_TO_INDEX.values())))" in _sk_main
++       and 'globals()["SKIP_COINS"] = tuple(sorted(_sk))' in _sk_main
++       and "skip_coin=list(SKIP_COINS)" in _sk_main,
++       "v-skiphype by source: main() does NOT shrink series_index or the "
++       "index feed (HYPE's index still prints, for a held position's hedge), "
++       "sets SKIP_COINS, and the start record carries skip_coin")
++
++    def _sk_mkt(series, iid, collapse_at=None, early=0.999):
++        return {"tk": series + "-SK", "series": series, "iid": iid,
++                "strike": 100.0,
++                "fair": (lambda t: 0.10 if (collapse_at is not None
++                                            and t >= collapse_at) else early),
++                "book": (lambda t: _ob(0.94, 0.05))}
++
++    def _sk_posts(res, tk, side="bid"):
++        return [(p.get("ticker"), p.get("side"), p.get("price"),
++                 p.get("count"), p.get("_t")) for p in res["posts"]
++                if p.get("ticker") == tk and p.get("side") == side]
++
++    def _sk_strip(x):
++        # the random client_order_id (and the ids derived from it) at any
++        # depth -- an order record carries it inside its `body` too
++        if isinstance(x, dict):
++            return dict((k, _sk_strip(v)) for k, v in x.items()
++                        if "order_id" not in k)
++        if isinstance(x, (list, tuple)):
++            return [_sk_strip(v) for v in x]
++        return x
++    _skB, _skH = "KXBTC15M-SK", "KXHYPE15M-SK"
++    # NULL: a BTC-only world, flag off vs --skip-coin KXHYPE15M -- the flag
++    # names a coin that is not there, so every record and every order is
++    # the same
++    _skn0 = _offline_trade_loop([_sk_mkt("KXBTC15M", "SKB")], live=True,
++                                reply=_fill_all)
++    _skn1 = _offline_trade_loop([_sk_mkt("KXBTC15M", "SKB")], live=True,
++                                reply=_fill_all,
++                                flags={"SKIP_COINS": ("KXHYPE15M",)})
++    ck(_skn0["raised"] is None and _skn1["raised"] is None
++       and len(_sk_posts(_skn0, _skB)) >= 1
++       and _sk_posts(_skn1, _skB) == _sk_posts(_skn0, _skB)
++       and _sk_strip(_skn1["recs"]) == _sk_strip(_skn0["recs"])
++       and _skn1["gets"] == _skn0["gets"],
++       "v-skiphype NULL DRIVEN: on a world with no HYPE the flag changes "
++       "NOTHING -- %d records, %d orders, %d universe GETs identical"
++       % (len(_skn0["recs"]), len(_sk_posts(_skn0, _skB)),
++          len(_skn0["gets"])))
++    # DRIVEN: BTC and HYPE both clear every gate. Flag off: both bought.
++    # Flag on: HYPE is never watched, never scanned, never bought; BTC is
++    # bought exactly as in a world where HYPE does not exist.
++    _skw = lambda: [_sk_mkt("KXBTC15M", "SKB"), _sk_mkt("KXHYPE15M", "SKH")]
++    _ske0 = _offline_trade_loop(_skw(), live=True, reply=_fill_all)
++    _ske1 = _offline_trade_loop(_skw(), live=True, reply=_fill_all,
++                                flags={"SKIP_COINS": ("KXHYPE15M",)})
++    _ske1_sig = [r for r in _ske1["recs"] if r.get("kind") == "signal"
++                 and r.get("ticker") == _skH]
++    _ske1_gate = [r for r in _ske1["recs"] if r.get("gate") == "skip_coin"]
++    ck(_ske0["raised"] is None and len(_sk_posts(_ske0, _skH)) >= 1
++       and len(_sk_posts(_ske0, _skB)) >= 1 and _skH in _ske0["subs"],
++       "v-skiphype control: with the flag OFF this world buys HYPE (%d "
++       "orders) and BTC (%d) -- the test can see a HYPE buy"
++       % (len(_sk_posts(_ske0, _skH)), len(_sk_posts(_ske0, _skB))))
++    ck(_ske1["raised"] is None and not _sk_posts(_ske1, _skH)
++       and not _sk_posts(_ske1, _skH, "ask")
++       and _skH not in _ske1["subs"] and not _ske1_sig
++       and not any(_skH in (r.get("added") or []) for r in _ske1["recs"])
++       and not _ske1_gate
++       and _sk_posts(_ske1, _skB) == _sk_posts(_skn0, _skB),
++       "v-skiphype DRIVEN: --skip-coin KXHYPE15M -- HYPE never subscribed, "
++       "never signalled, never bought (0 orders, was %d); BTC's orders are "
++       "IDENTICAL to a world with no HYPE at all (%s)"
++       % (len(_sk_posts(_ske0, _skH)), _sk_posts(_ske1, _skB)))
++    # A HELD HYPE POSITION IS STILL PROTECTED. The v-safety2 (1a) shape on
++    # HYPE: 5 YES on Kalshi that a fresh bot's books do not hold (a restart
++    # mid-bet), collapsing at +8 s, settling NO. strict_book: an unsubscribed
++    # market has NO book, as live -- so a position the universe dropped
++    # would read hedge_no_ask to the close.
++    def _sk_held(flags):
++        _kx = _KtEx(_kt_fill, pos0={_skH: (5.0, 4.75)})
++        _r = _offline_trade_loop([_sk_mkt("KXHYPE15M", "SKH", 8, early=0.5)],
++                                 live=True, reply=_kx.reply, run_s=70.0,
++                                 tau0=30, portfolio=_kx.portfolio,
++                                 result={_skH: "no"}, strict_book=True,
++                                 flags=flags)
++        return _r, _kx
++    _skh0, _skx0 = _sk_held(None)
++    _skh1, _skx1 = _sk_held({"SKIP_COINS": ("KXHYPE15M",)})
++    _skh1a = _kt_kinds(_skh1, "ktruth", "adopted")
++    _skh_hedge = lambda r: [(x.get("n"), x.get("price")) for x in r["recs"]
++                            if x.get("kind") == "hedge"]
++    ck(_skh1["raised"] is None and len(_skh1a) == 1
++       and abs(float(_skh1a[0].get("n") or 0) - 5.0) < 1e-9
++       and _skh1a[0].get("want") == "yes"
++       and abs(_skx1.really(_skH, "no") - 5.0) < 1e-9
++       and not _sk_posts(_skh1, _skH) and _skH in _skh1["subs"]
++       and any(r.get("kind") == "skip_coin_watch" and r.get("ticker") == _skH
++               for r in _skh1["recs"])
++       and not any(r.get("kind") == "hedge_no_ask" for r in _skh1["recs"]),
++       "v-skiphype DRIVEN, A GATE MUST NEVER BLOCK A HEDGE: 5 HYPE YES held "
++       "from before a restart is ADOPTED, its book subscribed for the hedge, "
++       "and hedged IN FULL when it collapses (adopted %s, hedged %g of 5), "
++       "with no entry on it" % ([r.get("n") for r in _skh1a],
++                                _skx1.really(_skH, "no")))
++    ck(_skh_hedge(_skh1) == _skh_hedge(_skh0) and _skh_hedge(_skh1)
++       and _kt_settled(_skh1) == _kt_settled(_skh0)
++       and len(_kt_settled(_skh1)) == 2,
++       "v-skiphype EQUIVALENCE: the held HYPE position is hedged and SETTLED "
++       "(both legs booked) exactly as with the flag off (hedges %s, settled "
++       "%s)" % (_skh_hedge(_skh1), _kt_settled(_skh1)))
++
+     # a bot HALTED at startup (here: pintake's halt, planted on the first
+     # record) must still read Kalshi and adopt BEFORE it can exit flat
+     _kpl = {"done": False}
+@@ -15567,6 +15748,10 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+                                # as measured on the PREVIOUS pass, 50ms ago.
+     attempts_tk = {}           # AMENDMENT 26: (close_s, ticker) -> orders sent
+     seen_markets = {}          # ticker -> (iid, close_s, strike, digits, exi)
++    # v-skiphype: the same facts for a --skip-coin series' open markets, which
++    # are NOT in seen_markets (never scanned, never watched). Read only to
++    # adopt and protect a position we already hold. Empty with the flag off.
++    skip_facts = {}
+     uni_at = 0.0
+     watching = {}            # ticker -> close_s, so closed ones drop out
+     # ticker -> (close_s, want, cost_per_contract, contracts). THE FOURTH
+@@ -16495,6 +16680,20 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+             _keys.append(_k9)
+             _left -= _n9
+             _i += 1
++        # v-skiphype: a held market in a --skip-coin series is outside the
++        # universe, so its book was never subscribed and the hedge pass would
++        # read no ask for it (hedge_no_ask) to the close. Subscribe it NOW.
++        # False for every ticker with the flag off.
++        if skip_coin(tk_) and tk_ not in watching:
++            try:
++                book.subscribe([tk_])
++                watching[tk_] = int(_cs)
++                rec("skip_coin_watch", ticker=tk_, close_s=int(_cs),
++                    where="adopt", why="held in a --skip-coin series: "
++                    "watched for the hedge only, never bought")
++            except Exception as _e9:                     # noqa: BLE001
++                rec("error", where="skip_coin_watch", ticker=tk_,
++                    err=str(_e9)[:200])
+         state["fills"] = state.get("fills", 0) + 1
+         _kt_fired(_cs, tk_, want_, _cost, float(n_))
+         _kt["adopted"] += 1
+@@ -16507,6 +16706,9 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+ 
+     def _kt_facts(tk_):
+         _f9 = seen_markets.get(tk_)
++        if _f9 is not None:
++            return _f9
++        _f9 = skip_facts.get(tk_)      # v-skiphype; {} with the flag off
+         if _f9 is not None:
+             return _f9
+         return _kt["facts"].get(tk_) or None
+@@ -16652,6 +16854,7 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+         # GET /markets/<ticker>, which is what the refresh reads
+         _need = sorted(t for t, f in _kt["facts"].items()
+                        if f is None and seen_markets.get(t) is None
++                       and skip_facts.get(t) is None     # v-skiphype
+                        and _kt["facts_due"].get(t, 0.0) <= tnow)
+         if _need and _kt["sweep"] == "due":
+             t9 = _need[0]
+@@ -18034,6 +18237,7 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+             _uni_n = None                       # R2: markets THIS refresh built
+             try:
+                 fresh = {}
++                _skf = {}              # v-skiphype: skipped series' facts
+                 for series, iid in series_index.items():
+                     if series in LADDER_SERIES:
+                         # 2026-09-24, paper-only: the hourly strike ladder.
+@@ -18085,9 +18289,33 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+                         # created where _unrest's cancel (which reuses the
+                         # same field) cannot find it. pintake.envtest already
+                         # reads this field; pinrun did not.
+-                        fresh[m["ticker"]] = (iid, cs, float(sk),
+-                                              int(d) if d is not None else None,
+-                                              int(m.get("exchange_index") or 0))
++                        _fct = (iid, cs, float(sk),
++                                int(d) if d is not None else None,
++                                int(m.get("exchange_index") or 0))
++                        if SKIP_COINS and series in SKIP_COINS:
++                            # v-skiphype: OUT OF THE UNIVERSE. Never scanned,
++                            # never watched; its facts kept only so a held
++                            # position in it can be adopted and protected.
++                            _skf[m["ticker"]] = _fct
++                            continue
++                        fresh[m["ticker"]] = _fct
++                if SKIP_COINS:
++                    # v-skiphype: keep the facts (a failed GET keeps the last
++                    # ones), forget a market 300 s after its close, and make
++                    # sure every position we HOLD in a skipped series has its
++                    # book -- the hedge pass reads nothing without it.
++                    skip_facts = dict((t_, f_) for t_, f_ in
++                                      dict(skip_facts, **_skf).items()
++                                      if f_[1] >= now_s - 300)
++                    for _scs, _sw, _sc, _sn, _stk in list(open_pos.values()):
++                        if (skip_coin(_stk) and _stk not in watching
++                                and float(_scs) >= now_s - 300):
++                            book.subscribe([_stk])
++                            watching[_stk] = int(_scs)
++                            rec("skip_coin_watch", ticker=_stk,
++                                close_s=int(_scs), where="universe",
++                                why="held in a --skip-coin series: watched "
++                                    "for the hedge only, never bought")
+                 if fresh:
+                     seen_markets = fresh
+                     new = set(seen_markets) - set(watching)
+@@ -18212,6 +18440,13 @@ def trade_loop(a, rec, book, idx, series_index, trec=None):
+                 tau = close_s - now_s
+                 if not (TAU_MIN <= tau <= max(TAU_MAX, EARLY_TAU_MAX)):
+                     continue                 # not a refusal: outside the window
++                # v-skiphype: belt and braces. A --skip-coin series is never
++                # put in seen_markets, so this cannot fire unless that breaks.
++                # WHAT IT BLOCKS: ENTRIES and top-ups only; the hedge pass is
++                # above and never reads it. False with the flag off.
++                if SKIP_COINS and skip_coin(tk):
++                    _gate("skip_coin", close_s, tk, tau=tau)
++                    continue
+                 # v-farrung: which LADDER series this ticker belongs to (None
+                 # on every 15M ticker), the ladder's own per-close budget when
+                 # --series-max-per-close is set, and the cushion facts the
+@@ -20337,6 +20572,13 @@ def main():
+                          "on the side held past X x the full bet in force "
+                          "(trimmed; refused when no room). Hedges exempt. "
+                          "Default 0 = off.")
++    ap.add_argument("--skip-coin", action="append", default=None,
++                    metavar="SERIES",
++                    help="v-skiphype: take this 15-minute series (e.g. "
++                         "KXHYPE15M) out of the universe -- never watched, "
++                         "never bought. A position already held in it is "
++                         "still adopted, hedged and settled. Repeatable. "
++                         "Default none = off.")
+     ap.add_argument("--toxic-fresh", action="store_true", default=False,
+                     help="v-toxic: with more than --toxic-tau-min s left, refuse "
+                          "a level known to be younger than --toxic-min-age-ms "
+@@ -20848,6 +21090,19 @@ def main():
+             raise SystemExit("--max-full-bets must be in [0, 4], got %r"
+                              % (a.max_full_bets,))
+         globals()["MAX_FULL_BETS"] = float(a.max_full_bets)
++    if a.skip_coin:
++        _sk = []
++        for _s in a.skip_coin:
++            _s = str(_s).strip().upper()
++            if _s not in SERIES_TO_INDEX:
++                raise SystemExit("--skip-coin must name a 15-minute series "
++                                 "in SERIES_TO_INDEX (%s), got %r"
++                                 % (", ".join(sorted(SERIES_TO_INDEX)), _s))
++            if _s not in _sk:
++                _sk.append(_s)
++        if set(_sk) >= set(SERIES_TO_INDEX):
++            raise SystemExit("--skip-coin would skip every series")
++        globals()["SKIP_COINS"] = tuple(sorted(_sk))
+     if a.toxic_fresh:
+         globals()["TOXIC_FRESH"] = True
+     if a.toxic_min_age_ms is not None:
+@@ -21205,6 +21460,8 @@ def main():
+         early_max_price=EARLY_MAX_PRICE,
+         # v-fullcap: the per-market cap in full bets (0 = off)
+         max_full_bets=MAX_FULL_BETS,
++        # v-skiphype: the 15-minute series taken out of the universe
++        skip_coin=list(SKIP_COINS),
+         day_loss_at_start=day_loss(),
+         hedge_prop=HEDGE_PROP, hedge_prop_full=HEDGE_PROP_FULL,
+         hedge_prop_half=HEDGE_PROP_HALF,
