@@ -68,8 +68,15 @@ $py = "C:\Python314\python.exe"
 # C:\kals-live-0925b (C:\kals-live-0925 is untouched, so the revert is this
 # file's predecessor, results\restart_bot.before-fullcap.ps1). code_sha below is
 # the patched file's sha256[:12].
-$code = "C:\kals-live-0925b"
-$codeSha = "269958db6d68"
+# v-skiphype, 2026-10-05, operator: "Sure drop it" (stop trading HYPE). The
+# same build plus ONE flag, --skip-coin KXHYPE15M, in a COPY:
+# C:\kals-live-0925c (C:\kals-live-0925b is untouched, so the revert is this
+# file's predecessor, results\restart_bot.before-skiphype.ps1). HYPE is taken
+# out of the universe (never watched, never bought); a HYPE position already
+# held is still adopted, hedged and settled. code_sha below is the patched
+# file's sha256[:12].
+$code = "C:\kals-live-0925c"
+$codeSha = "3776ff66b2fb"
 
 # --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
 # did not change; nothing on disk said why, so the next session had to guess
@@ -118,6 +125,12 @@ $botArgs = @(
     # hedges exempt). Live fills 09-09..10-04: +$121 vs no cap, 1.5x +$77.
     # Revert: results\restart_bot.before-fullcap.ps1 (VERSIONS.md).
     "--max-full-bets", "1.0",
+    # v-skiphype (2026-10-05): HYPE out of the universe -- never watched,
+    # never bought; a HYPE position already held is still hedged and settled.
+    # Our live fills 09-20..10-04: HYPE 81 markets, 4 lost, -$103.12; the
+    # other 8 coins 539 markets, 13 lost, +$360.22. Operator: "Sure drop it".
+    # Revert: results\restart_bot.before-skiphype.ps1 (VERSIONS.md).
+    "--skip-coin", "KXHYPE15M",
     "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate",
     # --hedge-belief 0.60 -> 0.25, v-hedge25, 2026-09-21 ~19:0xZ, on the
     # operator's instruction: "tune it to catch the most it can while having
@@ -588,7 +601,7 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap, C:\kals-live-0925b)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype, C:\kals-live-0925c)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1
