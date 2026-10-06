@@ -75,8 +75,19 @@ $py = "C:\Python314\python.exe"
 # out of the universe (never watched, never bought); a HYPE position already
 # held is still adopted, hedged and settled. code_sha below is the patched
 # file's sha256[:12].
-$code = "C:\kals-live-0925c"
-$codeSha = "3776ff66b2fb"
+# v-bankfix-nodd, 2026-10-06, operator: "If we lose 20% we aren't actually
+# going to have any solutions so why would we have it" and "fix whatever issue
+# that is with detecting false deposits". The same build plus TWO changes, in a
+# COPY: C:\kals-live-0925d (C:\kals-live-0925c is untouched, so the revert is
+# this file's predecessor, results\restart_bot.before-bankfix.ps1):
+#   - v-bankmove ported (no flag; on): a bank move is a deposit/withdrawal only
+#     when Kalshi's deposits/withdrawals/subaccount-transfer listings show it;
+#     otherwise `unexplained` and the high-water mark is not moved.
+#   - --no-drawdown-halt: the 20% DRAWDOWN halt never fires. The run loss
+#     abort, the DAY loss cap and the loss COUNT brake are unchanged.
+# code_sha below is the patched file's sha256[:12].
+$code = "C:\kals-live-0925d"
+$codeSha = "c0fe4953e891"
 
 # --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
 # did not change; nothing on disk said why, so the next session had to guess
@@ -131,6 +142,13 @@ $botArgs = @(
     # other 8 coins 539 markets, 13 lost, +$360.22. Operator: "Sure drop it".
     # Revert: results\restart_bot.before-skiphype.ps1 (VERSIONS.md).
     "--skip-coin", "KXHYPE15M",
+    # v-bankfix-nodd (2026-10-06): the 20% DRAWDOWN halt is OFF (a crossing is
+    # logged once as drawdown_no_halt). Still on: the run loss abort (-$200
+    # via --loss-cap), the DAY loss cap (same -$200, survives restarts), the
+    # loss COUNT brake (--max-losses 2). Operator: "If we lose 20% we aren't
+    # actually going to have any solutions so why would we have it."
+    # Revert: results\restart_bot.before-bankfix.ps1 (VERSIONS.md).
+    "--no-drawdown-halt",
     "--min-fill-frac", "0", "--sweep-depth", "--depth-ladder", "--jump-gate",
     # --hedge-belief 0.60 -> 0.25, v-hedge25, 2026-09-21 ~19:0xZ, on the
     # operator's instruction: "tune it to catch the most it can while having
@@ -601,7 +619,7 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype, C:\kals-live-0925c)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd, C:\kals-live-0925d)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1
