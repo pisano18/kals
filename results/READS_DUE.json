@@ -582,6 +582,22 @@
    "how": "(Get-PSDrive C).Free; check daily",
    "bar": "daily until resolved: below 10 GB, say so loudly in every message; below 6 GB stop all analysis and write state (CLAUDE.md resource protocol).",
    "status": "open"
+  },
+  {
+   "id": "hype-shadow",
+   "due": "2026-10-06T12:00Z",
+   "what": "DAILY (operator 2026-10-06: 'Track what we'd have if we still traded hype wins and losses'). Since v-skiphype went live (2026-10-05T14:24:02Z) the live main bot does not trade HYPE; this is what it WOULD have made, from the PAPER copies that still trade it: arm-0925b (same 09-25 code as live; --early-min-price 0.95 vs live 0.90, no full-bet cap) and arm-live-twin (live code+argv as of 09-29). Per HYPE market: settled pnl_c/100 summed over legs, scaled x (live size / arm size) at entry from both logs' autosize records. First numbers (2026-10-06 06:37Z): arm-0925b 5 markets, 5 won, 0 lost, +$5.33 on $202 bet (+2.6%); twin 4 markets, 4 won, 0 lost, +$5.88 on $174 (+3.4%).",
+   "how": "python research/hype_shadow.py  (per ET day + total, both arms, every losing market named; self-test runs first). Report wins, losses, net $ and % on money bet, per day and cumulative. Say every time that it is PAPER and the LOSS side is optimistic (paper books what the book showed; live is sold to on losers -- NEAR 10-03 live 94 contracts vs paper 4). Check both arms' last record is recent (alive). After reading, move `due` +1 day and add a line to read_log; the weekly 'skiphype' item keeps the put-back decision.",
+   "bar": "No decision of its own -- the put-back bar stays the 'skiphype' item's (HYPE on paper > +$30 over the week with NO losing market). Flag UNPROMPTED the day any HYPE market loses on paper (name it, $ scaled), since one paper loser already fails that bar.",
+   "status": "open"
+  },
+  {
+   "id": "bankfix-nodd",
+   "due": "2026-10-07T12:00Z",
+   "what": "v-bankfix-nodd (PREPARED 2026-10-06 ~06:45Z, NOT live until results/restart_bot.bankfix.ps1 is copied over restart_bot.ps1 and run while flat): C:\\kals-live-0925d, code_sha c0fe4953e891 = live 0925c + v-bankmove port (bank moves need a matching Kalshi transfer to be called deposit/withdrawal) + --no-drawdown-halt (the 20% DRAWDOWN halt off; run loss abort -$200, DAY cap -$200, 2-loss brake unchanged). If never deployed by the due date, mark read with that note and move nothing.",
+   "how": "If deployed: the live start record has code_sha c0fe4953e891, no_drawdown_halt true, xfer_confirm true, skip_coin ['KXHYPE15M'], max_full_bets 1.0. Then grep the live log for `external` / `unexplained` / `drawdown_no_halt` records: every coin-race stake/payout (main bot realised 0 in between) must read `unexplained` with the mark unchanged (results/pinrun-hwm.json); a real transfer must read `external` with a transfer id. Note any `error` record mentioning transfers/portfolio.",
+   "bar": "Revert (results/restart_bot.before-bankfix.ps1, flat) if: a real transfer was not recognised AND moved sizing wrongly, any error from the transfer reads, or the bot halted on DRAWDOWN (the flag did not take). An `unexplained` on a race move is the PASS shape.",
+   "status": "open"
   }
  ]
 }

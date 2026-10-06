@@ -71,6 +71,19 @@ research"** (the deeper hunt for what separates losing buys).
 - Memory: `python research/pausepaper.py --pause` / `--resume` freezes the paper
   bots (never the live ones or the recorders) when the operator needs RAM.
 
+### A20. HYPE shadow, bank-move fix, no 20% halt -- 2026-10-06
+**Say: "the hype shadow"** (`python research/hype_shadow.py`, READS_DUE
+`hype-shadow`, daily): what live would have made on HYPE since it stopped
+(10-05 10:24 AM ET), from the paper copies arm-0925b and arm-live-twin, scaled
+to live's bet size. PAPER, so the loss side is optimistic. The put-back
+decision stays with `skiphype` (10-12).
+**Say: "the bank fix"** (`v-bankfix-nodd`, PREPARED, not live): C:\kals-live-0925d
+= live + v-bankmove (a bank move is a deposit/withdrawal only if Kalshi shows
+the transfer; the coin race's stake/payout no longer move the high mark) +
+`--no-drawdown-halt` (the 20% halt off). Still stopping the bot: -$200 settled
+in a run, -$200 in an ET day, 2 losing markets in a run. Deploy/revert lines in
+`results/VERSIONS.md`.
+
 ### A00. PICK UP WHERE WE LEFT OFF
 **Say: "pick up where we left off".** The top of `HANDOFF.md` ("PICK UP HERE",
 2026-09-26) has the last instructions and jobs P0-P7.
@@ -383,6 +396,7 @@ matters.
 - **Drawdown halt — live.** If the bank falls 20% below its high mark the bot
   now stops and WAITS. It no longer restarts into the same halt every 15
   minutes. Pressing START on the app resets the mark and resumes.
+  (2026-10-06: operator asked for it OFF -- `v-bankfix-nodd`, PREPARED, A20.)
 - **Phone commands — live.** `/stats` (lifetime, 7 days, 3 days, today, and
   since the newest version: money, win rate, break-even win rate and the margin
   between them, losses, hedges, fees, entry timing, bank and halt headroom),
