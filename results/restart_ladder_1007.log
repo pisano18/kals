@@ -1,0 +1,12 @@
+﻿2026-10-07T08:13:26-04:00  validating (DryRun=True)
+2026-10-07T08:13:33-04:00  self-test ok with the live argv
+2026-10-07T08:13:37-04:00  ok: old ladder pid 3832268; boot_all carries the same argv
+2026-10-07T08:13:37-04:00  DRY RUN: nothing changed
+2026-10-07T08:13:50-04:00  validating (DryRun=False)
+2026-10-07T08:13:57-04:00  self-test ok with the live argv
+2026-10-07T08:14:01-04:00  ok: old ladder pid 3832268; boot_all carries the same argv
+2026-10-07T08:14:01-04:00  stop file written; waiting for pid 3832268 to cancel its bids and exit
+2026-10-07T08:14:03-04:00  old ladder exited after ~1 s
+2026-10-07T08:14:10-04:00  started ladder 4047108: -u research\cleanroom\ladder_live.py --subaccount 1 --live --auto-size --market-cap-x 2 --minutes 10080
+2026-10-07T08:14:18-04:00  start record: {"t":"2026-10-07T12:14:18.105Z","ev":"start","pid":4047108,"subaccount":1,"live":true,"sub_balance":76.7293,"auto_size":true,"pot":76.7293,"auto":{"pot_per_contract":14.0,"size_max":100,"reread_s":60.0,"day_stop_frac":0.2,"commit_frac":0.7},"rails":{"size":5,"max_contracts":50,"max_commit":53.71,"day_stop":-15.35,"start_cap":null,"max_live_per_close":9,"live_levels":[0],"writes_per_s":3.0,"market_cap_x":2.0,"close_cap_x":0}}
+2026-10-07T08:14:21-04:00  live ladders now: 1 (4047108)

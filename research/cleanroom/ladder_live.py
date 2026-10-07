@@ -280,21 +280,36 @@ class Broker:
         return [v for v in self.live.values() if v["status"] == "cancel_failed" and not v.get("terminal")
                 and t < v.get("limbo_until", 0) and v["filled"] < float(SIZE)]
 
+    def in_cancel(self):
+        """v-ladder-capfix (2026-10-07): a bid whose cancel is IN FLIGHT (status 'cancelling') is counted at its unfilled
+        remainder, exactly as limbo() counts a failed cancel. Before this it was counted by neither open_orders()
+        (sending/resting) nor limbo() (cancel_failed): 10-06 13:44:58Z KXZEC15M bid 8593 filled at :58.08, its cancel
+        was in flight until :58.255, and a third bid decided at :58.215 passed the x2 market cap -> 15 held against 10.
+        It drops out when the cancel returns (-> cancelled, or -> cancel_failed and limbo() takes over: never both),
+        when the poller books its fill (remainder 0, the contracts are in held), or when the poller sees it finished."""
+        return [v for v in self.live.values() if v["status"] == "cancelling" and not v.get("terminal")
+                and v["filled"] < float(SIZE)]
+
+    def pending(self):
+        """Bids not resting but possibly still live on Kalshi: limbo (failed cancel) + in_cancel (cancel in flight).
+        The two are disjoint by status. Each counts at SIZE - filled."""
+        return self.limbo() + self.in_cancel()
+
     def flat(self):
         """Nothing held, no bid sending/resting/cancelling/in limbo, nothing queued: the only state in which the size may change."""
         return (not any(h["n"] > 0 for h in self.held.values()) and not self.open_orders() and not self.limbo()
                 and not any(v["status"] == "cancelling" for v in self.live.values()) and self.q.empty())
 
     def exposure(self):
-        lim = self.limbo()
-        n = len(self.open_orders()) * float(SIZE) + sum(h["n"] for h in self.held.values())             + sum(float(SIZE) - v["filled"] for v in lim)
-        c = sum(float(v["px"]) * float(SIZE) for v in self.open_orders()) + sum(h["cost"] for h in self.held.values())             + sum(float(v["px"]) * (float(SIZE) - v["filled"]) for v in lim)
+        pend = self.pending()
+        n = len(self.open_orders()) * float(SIZE) + sum(h["n"] for h in self.held.values())             + sum(float(SIZE) - v["filled"] for v in pend)
+        c = sum(float(v["px"]) * float(SIZE) for v in self.open_orders()) + sum(h["cost"] for h in self.held.values())             + sum(float(v["px"]) * (float(SIZE) - v["filled"]) for v in pend)
         return n, c
 
     def market_contracts(self, ticker):
-        """Contracts resting + held in one market."""
+        """Contracts resting + held + cancelling/limbo remainder in one market."""
         h = self.held.get(ticker)
-        return (h["n"] if h else 0) + sum(float(SIZE) for v in self.open_orders() if v["ticker"] == ticker)             + sum(float(SIZE) - v["filled"] for v in self.limbo() if v["ticker"] == ticker)
+        return (h["n"] if h else 0) + sum(float(SIZE) for v in self.open_orders() if v["ticker"] == ticker)             + sum(float(SIZE) - v["filled"] for v in self.pending() if v["ticker"] == ticker)
 
     def rails_refusal(self, px, ticker=None, close_s=None):
         if self.stopped:
@@ -809,6 +824,84 @@ def selftest():
         brl2.live[79000]["terminal"] = False
         clkl[0] += LIMBO_S + 1
         ck(not brl2.limbo() and brl2.flat(), "limbo expires after LIMBO_S, so a vanished order can never wedge the rails")
+        # v-ladder-capfix: the 10-06 KXZEC15M shape -- 5 held, bid A resting, paper consumes A (cancel queued, in flight),
+        # a re-bid on the same market is decided on a LATER tick before A's cancel has returned
+        MARKET_CAP_X, CLOSE_CAP_X = 2, 0
+        brz = Broker(log, 3, False, fake_send, lambda: now[0])
+        brz.held["Z1"] = {"side": "yes", "n": 5, "cost": 4.9}
+        mz = [_M("Z1", 8600, [_O(86000, "yes", "0.98")])]
+        brz.sync(_E(mz))
+        while not brz.q.empty():
+            brz.work_once(brz.q.get())                      # A (86000) resting: 5 held + 5 resting = 10
+        mz[0].orders = []                                   # paper consumed A -> its cancel is queued, NOT yet sent
+        brz.sync(_E(mz))
+        ck(brz.live[86000]["status"] == "cancelling" and brz.market_contracts("Z1") == 10
+           and brz.exposure()[0] == 10 and abs(brz.exposure()[1] - (4.9 + 0.98 * 5)) < 1e-9,
+           "capfix: a cancelling bid counts at its remainder (5 held + 5 cancelling = 10 contracts, $9.80)")
+        mz[0].orders = [_O(86001, "yes", "0.98")]           # the re-bid arrives before the cancel completes
+        brz.sync(_E(mz))
+        ck(brz.live[86001]["status"] == "refused" and sink[-1].get("why") == "market_cap",
+           "capfix: the 10-06 shape -- a re-bid while A's cancel is in flight is refused with why=market_cap (was 15)")
+        brz.on_fill(86000, 5)                               # Kalshi had filled A; the poller books it mid-cancel
+        ck(brz.market_contracts("Z1") == 10 and brz.exposure()[0] == 10 and not brz.in_cancel(),
+           "capfix: once A's fill is booked mid-cancel its remainder is 0 -> held 10, no double count")
+        brz2 = Broker(log, 3, False, fake_send, lambda: now[0])
+        mz2 = [_M("Z2", 8700, [_O(87000, "yes", "0.98")])]
+        brz2.sync(_E(mz2))
+        while not brz2.q.empty():
+            brz2.work_once(brz2.q.get())
+        brz2.on_fill(87000, 2)                              # A partly filled (2 of 5) before the paper consumed it
+        mz2[0].orders = []
+        brz2.sync(_E(mz2))
+        ck(brz2.market_contracts("Z2") == 5 and brz2.exposure()[0] == 5,
+           "capfix: a partly filled cancelling bid counts SIZE - filled (2 held + 3 remainder = 5)")
+        brz2.work_once(brz2.q.get())                        # the cancel returns 200 -> cancelled
+        ck(brz2.live[87000]["status"] == "cancelled" and not brz2.pending() and brz2.market_contracts("Z2") == 2
+           and brz2.exposure()[0] == 2,
+           "capfix: once the cancel completes the remainder drops out (2 held only)")
+        brz2.live[87000]["status"] = "cancelling"           # a cancel the poller has seen finished on Kalshi
+        brz2.live[87000]["terminal"] = True
+        ck(not brz2.in_cancel() and brz2.market_contracts("Z2") == 2, "capfix: a terminal cancelling bid is not counted")
+        brz2.live[87000]["status"] = "cancelled"
+        brz2.live[87000]["terminal"] = False
+        mz2[0].orders = [_O(87001, "yes", "0.98")]
+        brz2.sync(_E(mz2))
+        ck(brz2.live[87001]["status"] == "sending", "capfix: after the cancel completed a re-bid (2 + 5 <= 10) is placed")
+        brz3 = Broker(log, 3, False, send404, lambda: now[0])   # cancelling -> cancel_failed: counted once, not twice
+        mz3 = [_M("Z3", 8800, [_O(88000, "yes", "0.98")])]
+        brz3.sync(_E(mz3))
+        while not brz3.q.empty():
+            brz3.work_once(brz3.q.get())
+        mz3[0].orders = []
+        brz3.sync(_E(mz3))
+        c_in = brz3.market_contracts("Z3")
+        brz3.work_once(brz3.q.get())                        # DELETE 404 -> cancel_failed, limbo takes over
+        ck(c_in == 5 and brz3.live[88000]["status"] == "cancel_failed" and len(brz3.pending()) == 1
+           and brz3.market_contracts("Z3") == 5 and brz3.exposure()[0] == 5,
+           "capfix: cancelling -> cancel_failed hands the remainder to limbo once (5 before, 5 after, never 10)")
+        # NULL: with nothing cancelling the counts are the pre-fix formula exactly, and with the cap off the re-bid places
+        brn = Broker(log, 3, False, fake_send, lambda: now[0])
+        brn.held["N1"] = {"side": "yes", "n": 5, "cost": 4.9}
+        brn.sync(_E([_M("N1", 8900, [_O(89000, "yes", "0.98")]), _M("N2", 8900, [_O(89001, "yes", "0.97")])]))
+        while not brn.q.empty():
+            brn.work_once(brn.q.get())
+        oldn = len(brn.open_orders()) * float(SIZE) + sum(h["n"] for h in brn.held.values()) \
+            + sum(float(SIZE) - v["filled"] for v in brn.limbo())
+        oldmc = 5 + sum(float(SIZE) for v in brn.open_orders() if v["ticker"] == "N1")
+        ck(not brn.in_cancel() and brn.exposure()[0] == oldn == 15 and brn.market_contracts("N1") == oldmc == 10,
+           "capfix NULL: nothing cancelling -> exposure and market_contracts equal the pre-fix formula")
+        MARKET_CAP_X = 0
+        brz4 = Broker(log, 3, False, fake_send, lambda: now[0])
+        brz4.held["Z4"] = {"side": "yes", "n": 5, "cost": 4.9}
+        mz4 = [_M("Z4", 9000, [_O(90000, "yes", "0.98")])]
+        brz4.sync(_E(mz4))
+        while not brz4.q.empty():
+            brz4.work_once(brz4.q.get())
+        mz4[0].orders = []
+        brz4.sync(_E(mz4))
+        mz4[0].orders = [_O(90001, "yes", "0.98")]
+        brz4.sync(_E(mz4))
+        ck(brz4.live[90001]["status"] == "sending", "capfix NULL: market cap off -> the same re-bid is placed as before")
     finally:
         SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, MARKET_CAP_X, CLOSE_CAP_X = _sv
     print("ladder_live self-test " + ("PASSED" if not fails else "FAILED: " + "; ".join(fails)))
