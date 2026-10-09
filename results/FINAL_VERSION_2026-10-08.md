@@ -141,9 +141,36 @@ level; HYPE is skipped now), SOL 10-02 (-$41.11 at 19 s), ETH 09-27 (-$32.73 at 
    (no credits found in our transfers); a CFTC rule on event contracts went to OMB 09-28 (text
    unpublished); nothing announced that delists or changes the 15-minute series.
 
-### 2f. The raw feeds around every loss (agent read of kalshi_data / feed_data; our own fills)
+### 2f. The raw feeds around every loss (kalshi_data / feed_data around our own fills)
 
-(filled in when the job reports -- see `scratchpad/final/loss_anatomy.md`)
+Every live loser since 09-08 (42 markets, -$1,539) against 120 winners matched on time-left and price,
+rebuilt from the raw index, trade tape, order book and constituent exchange books (the agent's report
+was cut off by a usage limit after writing `scratchpad/final/loss_anatomy.md`; its tables are complete,
+its settlement cross-check matched the ledger on 162 of 162 markets; 6 tape hours missing 09-23/24).
+- What the losses were: 25 index jumps (-$1,040) -- 14 began within 1 s of our send (we bought into
+  the start of the move), 11 began later (nothing visible when we bought); 12 insurance false alarms
+  (-$236: the bet won, the insurance lost); 3 photo finishes (-$126); 1 stale feed; 1 unmeasured.
+- Signals at the send that separate losers from the matched winners (37 looks; the multiple-looks bar
+  is p < 0.0014): the index already moving against us over the last 3 s (>= 2 sd: 8 of 41 losers vs 2
+  of 117 winners, p 0.0003); a constituent exchange book moving against us in the last 3 s (13 of 21 vs
+  12 of 73, p 0.0001; recorded for BTC/ETH/SOL/XRP/DOGE only); the 09-27 seller check (13 of 29 vs 13
+  of 83, p 0.0022). Bot confidence, offer age alone, size offered, trade counts: no separation.
+- So the losses are mostly the index moving in the second we buy, and the people selling to us see it
+  first -- on the exchange books and on the 5-per-second index we do not read.
+- **Checked on EVERY filled market (1,331 with index windows, `idxmove.py`), not a matched sample:**
+  the 3-s move ending at the newest print the bot actually HAD at the send does NOT separate losers
+  (09-22..10-08, 580 markets with ms send times: >= 2 sd refuses 14, catches 1 of 16 losers, first half
+  negative). The same move ending at the print OF the send second does (>= 2 sd: 20 refused, 4 of 16
+  losers, +$95, both halves) -- but for ETH 09-27, BNB 09-26 and BTC 10-04 that print (a 4.5-6.9 sd
+  move against us) reached us 20-40 ms AFTER our order went out. That is look-ahead on the 1/sec feed
+  and the reason for the 5/sec arm. No index-side gate on the 1/sec feed goes into v-seen (this
+  matches the project's record: every index-side gate lost money on our fills). Also checked and
+  dead: the bot's own print age at the send (1.0-1.2 s old: 172 markets, 2.3/100 lost, +$122).
+
+### 2h. The 10-08 ET day (after this file was first written)
+
++$20.64 on 16 markets, 0 lost (+3.4% on $613 bet). Low supply, not a brake: 757 refusals were "no offer
+at all". The paper copies on the same closes: twin +$26.24 (17 markets), 09-25 copy +$31.10 (23).
 
 ### 2g. Side pots (Kalshi subaccount settlements, reconciled to each balance)
 
@@ -166,13 +193,24 @@ level; HYPE is skipped now), SOL 10-02 (-$41.11 at 19 s), ETH 09-27 (-$32.73 at 
 Everything else exactly as now: one full bet per coin, HYPE skipped, 98c ceiling, 0.90 early floor,
 insurance at 0.40, -$200 run / -$200 day / 2-loss pause, size bank/11.76 (`--bank-brake 4.00`).
 
-**Paper first (no money), started the same day:**
-- `arm-5hz`: the repo code with `IndexWS` on `cfbenchmarks_value_5hz` (settlement series = the :000
-  prints, spot = the newest print), otherwise the live argv. Promote to live when, over >= 5 ET days on
-  shared closes, it is within copy noise of the twin on money with no more losers AND its belief crosses
-  0.40 at least 1 s before the twin's on the markets both insured (that is the whole point of it).
-- `arm-late15`: the live argv with the full leg allowed only inside 15 s -- measures how much of the
-  <= 10 s money (2b) is available if the bot waits, i.e. supply, which paper CAN measure.
+**Built and verified 2026-10-09 05:0x-05:1xZ (nothing deployed):** `C:\kals-live-0925e`,
+code_sha 5075b1783acf. `pintake.py --selftest` PASS (new check: the entry goes out
+`taker_at_cross`, the insurance `maker`); `pinrun.py --selftest` PASS (new check on the 5c cap); the
+startup path in PAPER with the exact live argv PASS -- after one fix: an old check asserted the RUNNING
+10c cap and refused to start under `--max-edge-c 5.0` (the 09-18 `--price-ceiling` outage pattern;
+now asserted against the declared default); the start record carries `toxic_fresh true, max_edge_c 5.0,
+edge_cap_tau 20, early_max_edge 5.0`. `results/restart_bot.seen.ps1 -Check` PASS (73 flat strings,
+code_sha matches). Revert file `results/restart_bot.before-seen.ps1` = today's launcher.
+
+**Paper (no money):**
+- `arm-5hz` STARTED 2026-10-09 05:23:01Z, pid 1685096 (`results/start_arm5hz.ps1`): the twin's exact
+  argv + `--index-5hz` on a copy of the twin's code (`C:\kals-arms\arm-5hz`, code_sha 61c71ec1672f):
+  also reads the 5-per-second index; the newest sub-second print sets the projection price;
+  settlement prints unchanged (self-test: a sub-second print never enters the settlement series).
+  Bar pre-registered in READS_DUE `arm-5hz` (10-14): fewer losing markets than the twin and money
+  within $40 -> propose a live port.
+- `arm-late15` (full leg only inside 15 s, a supply measurement): NOT started -- RAM is short (1.3-3 GB
+  free) and it measures supply, not losses; next if wanted.
 
 **Side pots:** ladder to 5x (needs about +$285 in subaccount 1; bar: <= 1 losing market in the first
 150 filled at 5x, then consider 20x); forecaster to 2x (+$50 in subaccount 2; bar: >= +4% per dollar bet

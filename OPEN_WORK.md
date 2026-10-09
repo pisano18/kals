@@ -11,6 +11,20 @@ moment a state changes; it is the operator's index to the work.
 
 ## A. Running tests — nothing here changes the bot until its bar is met
 
+### A21. The derived version `v-seen` + the 5-per-second index test -- 2026-10-09
+**Say: "the final version" / "go v-seen" / "the 5 Hz test".**
+Operator 10-08: derive the version that wins the most from everything. Answer,
+`results/FINAL_VERSION_2026-10-08.md`: the losses are offers the market has
+already seen through. `v-seen` = the live bot + refuse a brand-new offer while
+takers are dumping our side (the seller check, >20 s left) + refuse a price
+more than 5c under the model with >20 s left + insurance orders can never be
+cancelled by our own ladder bid. Built in `C:\kals-live-0925e`
+(code_sha 5075b1783acf), self-test and paper start with the live flags PASS,
+launcher `results/restart_bot.seen.ps1`. **NOT live -- waits for the
+operator.** Bar: READS_DUE `seen-live`. Paper `arm-5hz` (pid 1685096, since
+2026-10-09 05:23Z, `C:\kals-arms\arm-5hz`, `results/start_arm5hz.ps1`): the
+twin + reading Kalshi's 5-per-second index; bar READS_DUE `arm-5hz` (10-14).
+
 ### A17. The "fix this" night, 2026-09-27 -- three live changes and the diagnosis
 **Say: "why no money"** (the diagnosis, `results/WHY_NO_MONEY_2026-09-27.md`),
 **"the seller gate"** (v-toxic-live, read 10-01), **"the 97.8c ceiling"**

@@ -654,6 +654,14 @@
    "how": "Confirm the live start record: code_sha 5075b1783acf, toxic_fresh true, max_edge_c 5.0, early_max_edge 5.0, edge_cap_tau 20. Then Kalshi money per ET day (research/pinday.py) since the deploy, losing markets with $ each, and every `refused` record with gate toxic_fresh / edge_cap / early_wide: what the twin (paper, shared closes) did on those markets.",
    "bar": "PRE-REGISTERED 2026-10-09 (results/FINAL_VERSION_2026-10-08.md section 5): after 7 ET days and again at 300 markets -- KEEP if net >= +$10/day AND losing markets <= 2.5 per 100; REVIEW if $0..+$10/day or the two refusals skip > 35 markets in 100; REVERT (results/restart_bot.before-seen.ps1) if net <= $0 over the 7 days, or two losing markets in one ET day that neither gate flagged and the twin also bought.",
    "status": "open"
+  },
+  {
+   "id": "arm-5hz",
+   "due": "2026-10-14T12:00Z",
+   "what": "PAPER arm-5hz (pid 1685096, started 2026-10-09 05:23:01Z by results/start_arm5hz.ps1; log results/pinrun-paper-20261009T052306Z.jsonl; code C:\\kals-arms\\arm-5hz\\research, code_sha 61c71ec1672f = the twin's repo pinrun 9afb6eca6a91 + --index-5hz): arm-live-twin's exact argv plus ONE flag -- also subscribe to cfbenchmarks_value_5hz (BTC/ETH/SOL/XRP/DOGE stream 5 prints a second since 2026-09-03; ZEC/BNB/HYPE/NEAR stay 1/s) and let the newest sub-second print set spot(). Settlement prints unchanged. Why (results/FINAL_VERSION_2026-10-08.md 2e/2f): the 3 biggest index-move losses of 09-22..10-08 (ETH 09-27 -$32.73, BNB 09-26 -$20.29, BTC 10-04 -$6.08) were bought 63-97 ms into a second whose print -- a 4.5-6.9 sd move against us -- reached us only after the order was out; on the 1/sec feed no gate can see that (the causal 3-s move test caught 1 loser of 16).",
+   "how": "Shared closes with the twin (results/pinrun-paper-20261006T185948Z.jsonl), the rv*.py pattern: per ET day and cumulative $, bet, % on bet, markets, losing markets with $. First confirm the start record index_5hz true and that its signals on the five fast coins carry index_age_s mostly < 0.25 s (the twin's spread 0-1.0 s) -- if not, the 5 Hz feed is not reaching spot() and the arm measures nothing. Then every market where the two DIFFER (bought vs not, or hedged vs not) with the outcome, and on markets both insured, the alarm second of each.",
+   "bar": "PRE-REGISTERED 2026-10-09 05:3xZ, before any result: after >= 5 full ET days of shared closes -- PROMOTE (propose a live port to the operator) if arm-5hz has FEWER losing markets than the twin AND its money is no worse than the twin's by more than $40 (copy noise); KILL if it has MORE losing markets, or money worse by more than $40; otherwise run 5 more days. Paper cannot see adverse fills, so a PROMOTE is a reason to ask, not to switch.",
+   "status": "open"
   }
  ]
 }
