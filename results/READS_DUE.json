@@ -578,11 +578,14 @@
   },
   {
    "id": "pinrun-exit-1007",
-   "due": "2026-10-09T16:00Z",
+   "due": "2026-10-10T13:40Z",
    "what": "Live pinrun v-bankfix-nodd (C:\\kals-live-0925d\\research\\pinrun.py, code_sha c0fe4953e891, --minutes 4320) started 2026-10-06 15:41:22Z (pid 1185604); that run ends ~2026-10-09 15:41Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv. (Fixed 10-07: this item had named the 0925b run, pid 1649400, 09:21Z/04:46Z.)",
    "how": "process list + newest results/pinrun-live-*.jsonl start record: code_sha c0fe4953e891, mode live, early_min_price 0.9, no_drawdown_halt true, xfer_confirm true, skip_coin ['KXHYPE15M'], max_full_bets 1.0",
    "bar": "a new live run with the same code_sha and flags within 10 min",
-   "status": "open"
+   "status": "open",
+   "read_log": [
+    "10-09 15:5xZ: NOT DUE -- the 10-06 run this item named was replaced on 10-07 13:30:39Z (brake restart, pid 3907636, --minutes 4320), so the live run ends ~2026-10-10 13:30Z, not 10-09 15:41Z. Checked 15:49Z: pid 3907636 alive and logging. Due moved to 10-10 13:40Z."
+   ]
   },
   {
    "id": "dipsell-live",
