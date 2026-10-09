@@ -679,6 +679,14 @@
    "how": "Confirm the live start record code_sha 5075b1783acf, toxic_fresh false, max_edge_c 10.0, early_max_edge 10.0. Then every hedge order since the deploy: body self_trade_prevention_type 'maker' (pintake), status, filled; any cancel whose reason is self-trade (user_orders last_update_reason SelfTradeCancel if logged; else a hedge with filled 0 while the book showed size); share filled vs the previous 14 alarms.",
    "bar": "PRE-REGISTERED 2026-10-09 (FINAL_SYNTHESIS 2a/7): REVERT at once (results/restart_bot.before-seen.ps1 = the 0925d launcher) if any insurance order is refused or cancelled for self-trade, or the insurance path errors. Over the next 10 alarms: every insurance order carries maker, none cancelled for self-trade, share filled not below the previous 14 alarms -> KEEP.",
    "status": "open"
+  },
+  {
+   "id": "btc-lead-forward",
+   "due": "2026-10-23T12:00Z",
+   "what": "BTC-lead refusal, scored FORWARD on live fills with NO code in the live bot (operator 10-09: implement only changes I am sure improve; this one is not proven -- most of its TEST gain is two markets). Rule (results/FINAL_SYNTHESIS_2026-10-09.md 1.3): alt markets only (ETH SOL XRP DOGE BNB NEAR ZEC), entry orders with > 20 s left; b = newest whole-second alt print the bot held at the send; M = BRTI P(b-1) - P(b-4); sd = sd of BRTI 1-s changes over [b-301, b-2] (>= 150); s = -M/sd for YES, +M/sd for NO; flagged if s >= 1.0 (lock-out for the rest of the close). Window: live markets with closes from 2026-10-09 20:30Z.",
+   "how": "From results/pinrun-live-*.jsonl orders (t_ms_send, want, tau_at_send, ticker) and C:\\kals\\kalshi_data\\cfbenchmarks_value (streamed, read-only), compute s for every alt entry > 20 s; flagged markets with Kalshi money (results/kalshi_ledger.json). Scripts to reuse: session scratchpad final/design/selection/s09_btc_eval.py, s11_final.py.",
+   "bar": "PRE-REGISTERED 2026-10-09 (FINAL_SYNTHESIS 2a, bar C): read at 40 flagged alt markets, again at 80. Value at a flat bet per flagged market = intended contracts x (1 if our side won else 0 - ask seen) - taker fee. KILL the idea if at 40: <= 1 went against us OR refusing would have cost > $30 net. PROPOSE IT LIVE to the operator if >= 3 went against us in >= 2 distinct closes AND value <= $0. Otherwise extend to 80 (keep only if >= 5 against us in >= 3 closes with value <= $0). Insurance false alarms reported, not counted.",
+   "status": "open"
   }
  ]
 }
