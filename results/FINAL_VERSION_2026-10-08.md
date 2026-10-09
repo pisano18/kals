@@ -32,7 +32,7 @@ is not met yet; the insurance rule stays as it is.
 order, then a 5-prints-a-second index feed proved in paper first.** The money estimate, in-sample on our
 own fills since 09-24: the two refusals would have turned +$14.0/day into +$30.5/day (8 of the 15
 losses refused, 23 markets in 100 skipped). The honest out-of-sample expectation is lower -- call it
-+$15 to +$25 a day on the main pot -- because the thresholds were chosen after seeing those 15 losses.
++$10 to +$20 a day on the main pot (revised down 10-09: half the in-sample gain, and fewer offers -- 10-08 had 16 markets) -- because the thresholds were chosen after seeing those 15 losses.
 The seller refusal has independent support (three paper windows); the price refusal has only our fills.
 
 Side pots, measured: the ladder is the only strategy with zero losses and a measured way to grow
@@ -219,7 +219,7 @@ over 60 markets with <= 8 losers); coin race stays at 20 a leg; weather seller s
 ## 4. What it should be worth, and how sure
 
 - Main pot: in-sample +$30.5/day on the since-09-24 fills vs +$14.0/day without the two refusals.
-  Expect +$15..25/day out of sample. The seller refusal: three independent paper windows (+$116, +$111,
+  Expect +$10..20/day out of sample (revised down 10-09). The seller refusal: three independent paper windows (+$116, +$111,
   -$6) plus both halves of our fills -- the most trustworthy number in this file. The price refusal: our
   fills only, savings concentrated in the second half -- half-trusted. Together they skip 23 markets in
   100 and give up about $14/day of wins to avoid about $28/day of losses.
