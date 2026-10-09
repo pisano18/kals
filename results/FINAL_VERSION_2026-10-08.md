@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-10-09 by results/FINAL_SYNTHESIS_2026-10-09.md** (blind design competition). Its two refusals (seller check, 5c cap) did NOT survive verification; only the insurance self-trade fix and the 5 Hz paper arm carry over. Do not use results/restart_bot.seen.ps1.
+
 # The version that should run -- derived from everything, 2026-10-08 (written 10:1xZ)
 
 Operator's order (10-08 ~09:2xZ): *"take EVERYTHING and consider EVERYTHING to derive what version needs

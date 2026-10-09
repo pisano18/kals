@@ -11,19 +11,24 @@ moment a state changes; it is the operator's index to the work.
 
 ## A. Running tests — nothing here changes the bot until its bar is met
 
-### A21. The derived version `v-seen` + the 5-per-second index test -- 2026-10-09
-**Say: "the final version" / "go v-seen" / "the 5 Hz test".**
-Operator 10-08: derive the version that wins the most from everything. Answer,
-`results/FINAL_VERSION_2026-10-08.md`: the losses are offers the market has
-already seen through. `v-seen` = the live bot + refuse a brand-new offer while
-takers are dumping our side (the seller check, >20 s left) + refuse a price
-more than 5c under the model with >20 s left + insurance orders can never be
-cancelled by our own ladder bid. Built in `C:\kals-live-0925e`
-(code_sha 5075b1783acf), self-test and paper start with the live flags PASS,
-launcher `results/restart_bot.seen.ps1`. **NOT live -- waits for the
-operator.** Bar: READS_DUE `seen-live`. Paper `arm-5hz` (pid 1685096, since
-2026-10-09 05:23Z, `C:\kals-arms\arm-5hz`, `results/start_arm5hz.ps1`): the
-twin + reading Kalshi's 5-per-second index; bar READS_DUE `arm-5hz` (10-14).
+### A21. The final version -- blind design competition, 2026-10-09
+**Say: "the final version" / "go v-stp-maker" / "build btc-lead" / "maker stage 1" / "the 5 Hz test".**
+Operator 10-08/09: derive the version that wins the most from everything, with
+no bias to the current one. A first answer (`v-seen`, `results/FINAL_VERSION_2026-10-08.md`)
+was a patch to the current bot; the operator challenged it, and a blind
+competition (8 designers, 8 skeptics, 3 judges: `results/FINAL_SYNTHESIS_2026-10-09.md`)
+replaced it. Result: the taker stays as it runs (timing, size, sweep, insurance
+trigger: nothing beat them in both periods); "flat since the revert" was HYPE
+(already skipped); v-seen's two refusals lose money and are dropped. New:
+(1) `v-stp-maker` -- insurance orders cancel our own maker bid instead of being
+cancelled (launcher `results/restart_bot.stpmaker.ps1`, paper start PASS, NOT
+live, READS_DUE `stp-maker-live`); (2) the BTC-lead refusal -- on alt coins with
+>20 s left, skip when Bitcoin's index just moved >= 1 sd against our side
+(TEST +$180 on 29 refused markets incl. 4 losers, but two markets carry it):
+NOT BUILT, 48 h log-only first, kill bar in the synthesis 2a; (3) maker ladder
+stage 1 with ~$270 NEW money. Paper `arm-5hz` (pid 1685096) keeps running, bar
+made stricter before any result (READS_DUE `arm-5hz`, 10-14).
+Do NOT use `results/restart_bot.seen.ps1`.
 
 ### A17. The "fix this" night, 2026-09-27 -- three live changes and the diagnosis
 **Say: "why no money"** (the diagnosis, `results/WHY_NO_MONEY_2026-09-27.md`),
