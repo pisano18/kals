@@ -316,3 +316,15 @@
 {"note": "tape-gap coverage is a real measurement but it comes from F-I01+F-I10; the 50c sigma-insensitivity adds nothing, and the index-degradation cut is already LEADS_20261004 L2", "pair": ["F-C07", "F-I10"], "t": "2026-10-08T08:51:13Z", "verdict": "nothing"}
 {"note": "disk headroom and exit economics share no quantity; the only bridge is 'buy the drive', which is an action not a number", "pair": ["F-I08", "F-P07"], "t": "2026-10-08T08:51:13Z", "verdict": "nothing"}
 {"note": "zero settled markets on the equity series means there is nothing to compute; newseries.py already watches for one opening", "pair": ["F-C03", "F-C09"], "t": "2026-10-08T08:51:13Z", "verdict": "nothing"}
+{"pair": ["F-C08", "F-R06"], "t": "20261009T0847Z", "verdict": "drawn"}
+{"pair": ["F-C05", "F-M06"], "t": "20261009T0847Z", "verdict": "drawn"}
+{"pair": ["F-M03", "F-O06"], "t": "20261009T0847Z", "verdict": "drawn"}
+{"pair": ["F-B02", "F-C08"], "t": "20261009T0847Z", "verdict": "drawn"}
+{"pair": ["F-B02", "F-C06"], "t": "20261009T0847Z", "verdict": "drawn"}
+{"pair": ["F-R02", "F-R04"], "t": "20261009T0847Z", "verdict": "drawn"}
+{"note": "R06 is a NO-POWER null (MDE 4.05pp vs a ~0.7pp believed effect); stratifying it by opening |fair-50c| only shrinks n further. A subgroup of an estimator never shown able to find anything is uninterpretable.", "pair": ["F-C08", "F-R06"], "t": "2026-10-09T08:49:40Z", "verdict": "nothing"}
+{"note": "A FLAT sigma multiplier cannot fix a TAU-SHAPED variance error: measure realised_sd/model_sd on a fixed tau grid from the 1/sec index alone (no replay), per coin-normalised sigma.", "pair": ["F-C05", "F-M06"], "t": "2026-10-09T08:49:52Z", "verdict": "lead"}
+{"note": "O06's 0-of-302 is ~0-of-9 after close-time clustering, i.e. no evidence; and it points opposite to M08. Measure whether resting age is just a proxy for stated confidence before anyone gates on it.", "pair": ["F-M03", "F-O06"], "t": "2026-10-09T08:49:52Z", "verdict": "lead"}
+{"note": "B02 is an identity, not a measurement; colliding a formula with a distribution yields arithmetic restatement. Opportunity-weighted sizing also needs a fill/loss model we have no legal source for.", "pair": ["F-B02", "F-C08"], "t": "2026-10-09T08:49:52Z", "verdict": "nothing"}
+{"note": "Relaxing the worst-case size bound for 'already-decided' positions requires the model's own tail probability -- the exact quantity measured 19x overconfident (F-M04). Builds on the known-broken piece; also a live sizing change needing sign-off.", "pair": ["F-B02", "F-C06"], "t": "2026-10-09T08:49:52Z", "verdict": "nothing"}
+{"note": "Same-section pair, and R04 is a meta-fact with nothing to compute. The design-effect re-audit of historical t-stats is arithmetic on reported numbers, not a measurement, and PROJECT_HISTORY.md already holds that log.", "pair": ["F-R02", "F-R04"], "t": "2026-10-09T08:49:52Z", "verdict": "nothing"}
