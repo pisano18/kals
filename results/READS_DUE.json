@@ -595,14 +595,15 @@
    "what": "Weather dip-seller (SJN1) live micro test, LIVE since 2026-10-04 07:56:53Z (pid 3955508, subaccount 3 pool 0, $50; operator: 'You run it not me. I give you permission.'). Keep-alive in boot_all.ps1; on the phone as /weather. 14 days or 100 fills. AT THE FINAL READ create results/dipsell-live.stop, or the keep-alive restarts it every 10 min.",
    "how": "python research/sweep/dipsell_live.py --report (reads results/dipsell-live-orders.jsonl); first confirm a start record with live true, subaccount 3, pot 50.",
    "bar": "PRE-REGISTERED (2026-10-02 sweep, verbatim): 2 contracts a trigger (then 10), max 5 open, 14 days or 100 fills; pass = fills on 50%+ of triggers, net over +4c a contract with the low end of the range above zero, no day worse than -25%; kill if negative after 60 fills.",
-   "status": "open",
+   "status": "read",
    "read_log": [
     "10-05 12Z: start records live true, subaccount 3, pot $50 (pid 3955508, then 665444 after the 10-04 19:20Z client_order_id fix; alive). 12 triggers, 4 rail-refused (one_per_market), 8 orders sent, 3 rejected (2 the '.'-ticker bug, fixed; 1 post-only cross), 4 filled (2 contracts each: DEN B82.5 @ 50c, LV B95.5 @ 38c, LV B97.5 @ 53c, SFO T83 @ 41c, all selling YES), 0 settled (the 10-04 high-temp markets are closed, results not yet posted). Fills on 4 of 12 triggers (33 in 100; 4 of 8 sent = 50 in 100). 4 of the 100 fills the test needs: no verdict, no money yet. Keep running.",
     "10-06 15:50Z: start records live true, sub 3, pot $50; pid 665444 alive. 21 triggers, 7 rail-refused (one_per_market), 14 sent: 3 Kalshi REJECTIONS (2 invalid_parameters = the client-id bug fixed 10-04 19:20Z, 1 post-only cross) + 11 real orders -> 9 filled (82 in 100 of real orders), 2 cancelled unfilled (1 at the bug-fix stop, 1 window end). 9 settled, 6 won 3 lost, 18 contracts: +$1.24 = +2.5% of the $50 pot (Kalshi sub 3 balance $51.24 agrees); +6.9c a contract, range low -5.2c (not above zero yet); worst day -0.8% (10-05). Fills on 9 of 21 raw triggers = 43 in 100 (the script's 64 in 100 counts the 14 sent). 9 of the 100 fills: no verdict. Keep running.",
     "10-07 12:0xZ (results/READS_1007.md): start records live true, sub 3, pot $50; pid 665444 alive. 32 triggers, 12 rail-refused, 20 sent, 3 rejected, 13 filled. 10 settled (Kalshi sub 3 agrees): +$1.58 = +3.2% of the $50 pot; +7.9c a contract, low end -1.7c (not above zero); worst day -0.8%. Fills on 13 of 32 raw triggers = 41 in 100 (65 in 100 of sent). 3 open (10-06 markets). 13 of 100 fills: no verdict, not negative: keep running.",
     "10-09 05:2xZ 55 triggers, 71% filled, 18 settled, 35 contracts: -$5.19 = -14.8c a contract (low end -30.0c), worst day -9.84% (10-07), pot about -10%. pass false (net and low-end fail; fill and worst-day pass). Not yet at the pre-registered 60-fill kill point -- keep running to it.",
     "10-09 12:2xZ 21 settled, 41 contracts, -$5.89 = -14.4c a contract (low -26.9c), worst day -9.84%, pot about -12%; pass false; 55 triggers 71% filled. Not at the 60-fill kill point yet; keep running to it."
-   ]
+   ],
+   "read_note": "10-10 09:47Z: STOPPED EARLY (results/dipsell-live.stop), before its pre-registered 60-fill kill point -- stated loudly. 22 markets, 13 lost, -$6.83 on $23.83 spent (-29% on money spent), 4 of 5 weather days negative; passing needs ~+15c a contract from here vs -16c average. Operator 10-09: implement changes I am sure improve; money sweep (results/MONEY_SWEEP_2026-10-10.md item 2). Open positions settle normally; ~$42 stays in subaccount 3 (pool 0)."
   },
   {
    "id": "fullcap-live",
@@ -691,6 +692,14 @@
    "what": "BTC-lead refusal, scored FORWARD on live fills with NO code in the live bot (operator 10-09: implement only changes I am sure improve; this one is not proven -- most of its TEST gain is two markets). Rule (results/FINAL_SYNTHESIS_2026-10-09.md 1.3): alt markets only (ETH SOL XRP DOGE BNB NEAR ZEC), entry orders with > 20 s left; b = newest whole-second alt print the bot held at the send; M = BRTI P(b-1) - P(b-4); sd = sd of BRTI 1-s changes over [b-301, b-2] (>= 150); s = -M/sd for YES, +M/sd for NO; flagged if s >= 1.0 (lock-out for the rest of the close). Window: live markets with closes from 2026-10-09 20:30Z.",
    "how": "From results/pinrun-live-*.jsonl orders (t_ms_send, want, tau_at_send, ticker) and C:\\kals\\kalshi_data\\cfbenchmarks_value (streamed, read-only), compute s for every alt entry > 20 s; flagged markets with Kalshi money (results/kalshi_ledger.json). Scripts to reuse: session scratchpad final/design/selection/s09_btc_eval.py, s11_final.py.",
    "bar": "PRE-REGISTERED 2026-10-09 (FINAL_SYNTHESIS 2a, bar C): read at 40 flagged alt markets, again at 80. Value at a flat bet per flagged market = intended contracts x (1 if our side won else 0 - ask seen) - taker fee. KILL the idea if at 40: <= 1 went against us OR refusing would have cost > $30 net. PROPOSE IT LIVE to the operator if >= 3 went against us in >= 2 distinct closes AND value <= $0. Otherwise extend to 80 (keep only if >= 5 against us in >= 3 closes with value <= $0). Insurance false alarms reported, not counted.",
+   "status": "open"
+  },
+  {
+   "id": "arm-attempts",
+   "due": "2026-10-17T12:00Z",
+   "what": "PAPER arm-attempts (pid 3363744, started 2026-10-10 09:47:31Z by results/start_arm_attempts.ps1): the LIVE build C:\\kals-live-0925e with today's exact argv minus --live, no-brake pair, plus --attempts-on-send (an attempt counts only when an order is sent, so refusals without an order cannot lock a market out). Money sweep item 6: twice live the lock-out cost a buyable market; 6 buyable markets in 6 days re-checked, ~+$0.30-0.60/day after normal losses.",
+   "how": "Markets where arm-attempts bought and LIVE did not (same closes), each with the live lock-out reason (refused gate market_attempts) and the Kalshi outcome; paper $ per market; plus any market where the flag made the arm buy something that then lost.",
+   "bar": "PRE-REGISTERED 2026-10-10: after 7 ET days, PROPOSE LIVE if the extra markets number >= 4 with 0 lost and net paper $ > 0; DROP if any extra market lost or there are < 2 extra markets.",
    "status": "open"
   }
  ]
