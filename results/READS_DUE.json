@@ -708,7 +708,8 @@
    "bar": "PRE-REGISTERED 2026-10-09 (FINAL_SYNTHESIS 2a/7): REVERT at once (results/restart_bot.before-seen.ps1 = the 0925d launcher) if any insurance order is refused or cancelled for self-trade, or the insurance path errors. Over the next 10 alarms: every insurance order carries maker, none cancelled for self-trade, share filled not below the previous 14 alarms -> KEEP.",
    "status": "open",
    "read_log": [
-    "10-10 04:3xZ: alarm 1 of 10 -- KXXRP15M-26OCT100030-30, belief 0.134 at tau 36, insurance 1 NO filled at 66c; Kalshi GET /portfolio/orders/01a12412-a4a0-74e4-9a74-04e231ed318a shows self_trade_prevention_type 'maker', status executed, fill 1.00. Market lost (bet -$0.98, insurance about +$0.34). No self-trade cancel."
+    "10-10 04:3xZ: alarm 1 of 10 -- KXXRP15M-26OCT100030-30, belief 0.134 at tau 36, insurance 1 NO filled at 66c; Kalshi GET /portfolio/orders/01a12412-a4a0-74e4-9a74-04e231ed318a shows self_trade_prevention_type 'maker', status executed, fill 1.00. Market lost (bet -$0.98, insurance about +$0.34). No self-trade cancel.",
+    "10-10 13:2xZ: alarm 2 of 10 -- KXETH15M-26OCT100915-15, belief 0.283 at tau 19, insurance 94 NO at 62c filled in full; Kalshi GET shows self_trade_prevention_type 'maker', executed, 94.00. Market lost: bet -$82.52, insurance +$34.17, other leg +$1.23 = about -$47.12. No self-trade cancel."
    ]
   },
   {
@@ -717,7 +718,10 @@
    "what": "BTC-lead refusal, scored FORWARD on live fills with NO code in the live bot (operator 10-09: implement only changes I am sure improve; this one is not proven -- most of its TEST gain is two markets). Rule (results/FINAL_SYNTHESIS_2026-10-09.md 1.3): alt markets only (ETH SOL XRP DOGE BNB NEAR ZEC), entry orders with > 20 s left; b = newest whole-second alt print the bot held at the send; M = BRTI P(b-1) - P(b-4); sd = sd of BRTI 1-s changes over [b-301, b-2] (>= 150); s = -M/sd for YES, +M/sd for NO; flagged if s >= 1.0 (lock-out for the rest of the close). Window: live markets with closes from 2026-10-09 20:30Z.",
    "how": "From results/pinrun-live-*.jsonl orders (t_ms_send, want, tau_at_send, ticker) and C:\\kals\\kalshi_data\\cfbenchmarks_value (streamed, read-only), compute s for every alt entry > 20 s; flagged markets with Kalshi money (results/kalshi_ledger.json). Scripts to reuse: session scratchpad final/design/selection/s09_btc_eval.py, s11_final.py.",
    "bar": "PRE-REGISTERED 2026-10-09 (FINAL_SYNTHESIS 2a, bar C): read at 40 flagged alt markets, again at 80. Value at a flat bet per flagged market = intended contracts x (1 if our side won else 0 - ask seen) - taker fee. KILL the idea if at 40: <= 1 went against us OR refusing would have cost > $30 net. PROPOSE IT LIVE to the operator if >= 3 went against us in >= 2 distinct closes AND value <= $0. Otherwise extend to 80 (keep only if >= 5 against us in >= 3 closes with value <= $0). Insurance false alarms reported, not counted.",
-   "status": "open"
+   "status": "open",
+   "read_log": [
+    "10-10 13:2xZ note for the read: KXETH15M-26OCT100915-15 lost about -$47 (full leg at tau 21, ask seen 96.8c filled 87c, offer level 30 ms old, taker sell share 0.69, 10,171 contracts in 3 s). The v-seen seller check (level < 500 ms AND share >= 0.5, tau > 20) WOULD have refused it; score it and the BTC-lead rule on it at the read."
+   ]
   },
   {
    "id": "arm-attempts",
