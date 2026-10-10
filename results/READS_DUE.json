@@ -656,7 +656,7 @@
     "10-07 12:0xZ (results/READS_1007.md): 31.59 GB free at ~12:10Z (run_all.ps1 units; 32.05 at 12:01Z), -3.33 GB in ~20.5 h since 10-06 15:43Z = ~3.9 GB/day. Above 10 GB: no alarm. ~6.6 days to the 6 GB guard at that rate (~10-13/14). No drive bought: daily.",
     "10-09 05:2xZ 25.15 GB free at 10-09 05:06Z (22.96 at 10-08 10:10Z). Above 10 GB: OK. Reclaimable on request: Claude temp cache bash-edit-diff 8.6 GB, restore points 6.8 GB.",
     "10-09 12:2xZ 20.43 GB free at 12:1xZ (-4 GB since 10-09 05:06Z, mostly the design-competition agents' temp files). Above 10 GB: OK.",
-    "10-10 12:3xZ 10-10 12:3xZ: free disk ~11.4 GB and falling ~0.9 GB/h: Windows restore-point (shadow) storage grew 6.8 -> 14.8 GB (max 17.6) since 10-07. Operator asked to clear restore points + cap at 2 GB (not yet answered). Projected 6 GB guard tonight if not cleared."
+    "10-10 12:3xZ: free disk 21.1 GB. Windows removed its only restore point by itself between 12:00 and 12:35Z (shadow storage 14.8 GB -> 0.00 GB, 0 shadow copies), so the ~0.9 GB/h drain is gone for now. It will regrow with the next restore point (max 17.6 GB); capping it at 2 GB stays the operator's call."
    ]
   },
   {
