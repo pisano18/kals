@@ -88,7 +88,8 @@
    "what": "Live coin race (v-race20cap, pid 3095608 since 2026-10-03 06:16Z, --minutes 10080) ends; the keep-alive (boot_all.ps1) restarts it with the line ~484 argv. Was pid 3739628 (v-race20), then 1431208 (40 a leg).",
    "how": "process list + results/pinracepenny-live.jsonl start record (max_contracts 20, max_stake 40)",
    "bar": "relaunched within the next quarter-hour",
-   "status": "open"
+   "status": "read",
+   "read_note": "10-10 06:4xZ: relaunched by the keep-alive at 06:20:08Z (2:20 AM ET), pid 2697236, same argv (--live --max-contracts 20 --max-stake 40 --live-max-losses 2 --live-rolling-stake --live-tau-max 30 --live-min-price 0.90 ... --minutes 10080), ceiling 0.98. PASS. Note: the 2:30 AM ET race was unscored ('index incomplete at close+75s') right after the restart."
   },
   {
    "id": "ladder-paper",
