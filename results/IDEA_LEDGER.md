@@ -16,6 +16,8 @@ sweep (`results/IDEA_SWEEP_2026-09-25.md`) adds its rows below when it lands.
 
 ---
 
+> **CORRECTION 2026-10-10 (results/LADDER_UPSIDE_2026-10-10.md): the 2026-10-02 incentive-program kills used a 100x unit error.** Kalshi's `period_reward` is in CENTI-CENTS (docs verbatim; every one of 22,405 coin-race programs is 200000 = **$20.00 per leg per 15-min window**, not $0.20; the smallest of 278,351 liquidity programs ever listed is exactly $1.00, the filing's legal minimum). Every '$0.20 per leg', '~$2,800/day programme' and '$1.60/market/day' figure below is 100x too small. SI05 (coin-race 1c dead-side filler) and SI21 go back to plausible-needs-data; SJ36/U16/SI02 (does Kalshi pay THIS account) is the open gate. Also: research/lipscan.py skips exchange_index 2 (crypto/commodities) by design, so it can never show the coin race. The rows are left as written so the error stays visible.
+
 ## HOT AREAS -- where the next sweep should look first
 
 Refreshed 2026-10-03 from the 2026-10-02 sweep (`results/IDEA_SWEEP_2026-10-02.md`: 65 checked, 49 dead, 15 need data, 1 rule). Nothing new is proven; every survivor pays under $3/day at the size we can run. The prior list (liquidity rewards, bet-size scaling, Polymarket pin, hourly ladders, sports, parlays, hedges) is settled or folded in below.
