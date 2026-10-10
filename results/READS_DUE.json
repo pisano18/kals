@@ -709,7 +709,8 @@
    "status": "open",
    "read_log": [
     "10-10 04:3xZ: alarm 1 of 10 -- KXXRP15M-26OCT100030-30, belief 0.134 at tau 36, insurance 1 NO filled at 66c; Kalshi GET /portfolio/orders/01a12412-a4a0-74e4-9a74-04e231ed318a shows self_trade_prevention_type 'maker', status executed, fill 1.00. Market lost (bet -$0.98, insurance about +$0.34). No self-trade cancel.",
-    "10-10 13:2xZ: alarm 2 of 10 -- KXETH15M-26OCT100915-15, belief 0.283 at tau 19, insurance 94 NO at 62c filled in full; Kalshi GET shows self_trade_prevention_type 'maker', executed, 94.00. Market lost: bet -$82.52, insurance +$34.17, other leg +$1.23 = about -$47.12. No self-trade cancel."
+    "10-10 13:2xZ: alarm 2 of 10 -- KXETH15M-26OCT100915-15, belief 0.283 at tau 19, insurance 94 NO at 62c filled in full; Kalshi GET shows self_trade_prevention_type 'maker', executed, 94.00. Market lost: bet -$82.52, insurance +$34.17, other leg +$1.23 = about -$47.12. No self-trade cancel.",
+    "10-10 22:0xZ: alarm 3 of 10 -- KXZEC15M-26OCT101800-00: full leg at tau 18 saw a 91.2c ask, filled 92 at 31c (book collapsed 60c in the round trip; offer 38 ms old, 78% sellers); insurance 92 NO at 61c filled, maker setting; the pair locked about +8c a contract; market settled YES (bet +$62.10, insurance about -$56). No self-trade cancel."
    ]
   },
   {
