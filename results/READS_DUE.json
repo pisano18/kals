@@ -582,10 +582,11 @@
    "what": "Live pinrun v-bankfix-nodd (C:\\kals-live-0925d\\research\\pinrun.py, code_sha c0fe4953e891, --minutes 4320) started 2026-10-06 15:41:22Z (pid 1185604); that run ends ~2026-10-09 15:41Z; watch_bot.ps1 should restart it with restart_bot.ps1's argv. (Fixed 10-07: this item had named the 0925b run, pid 1649400, 09:21Z/04:46Z.)",
    "how": "process list + newest results/pinrun-live-*.jsonl start record: code_sha c0fe4953e891, mode live, early_min_price 0.9, no_drawdown_halt true, xfer_confirm true, skip_coin ['KXHYPE15M'], max_full_bets 1.0",
    "bar": "a new live run with the same code_sha and flags within 10 min",
-   "status": "open",
+   "status": "read",
    "read_log": [
     "10-09 15:5xZ: NOT DUE -- the 10-06 run this item named was replaced on 10-07 13:30:39Z (brake restart, pid 3907636, --minutes 4320), so the live run ends ~2026-10-10 13:30Z, not 10-09 15:41Z. Checked 15:49Z: pid 3907636 alive and logging. Due moved to 10-10 13:40Z."
-   ]
+   ],
+   "read_note": "10-10 02:07Z: superseded -- the run was replaced by the v-stp-maker restart (pid 772168, --minutes 4320, ends ~2026-10-13 02:07Z); watch_bot relaunches through restart_bot.ps1 = the 0925e launcher."
   },
   {
    "id": "dipsell-live",
@@ -675,7 +676,7 @@
   {
    "id": "stp-maker-live",
    "due": "2026-10-16T12:00Z",
-   "what": "v-stp-maker (PREPARED 2026-10-09 ~11:1xZ, NOT live until the operator says go and results/restart_bot.stpmaker.ps1 is copied over restart_bot.ps1 and run while flat): today's exact live argv on C:\\kals-live-0925e (code_sha 5075b1783acf). The only behaviour change with these flags: insurance (hedge) orders carry self_trade_prevention_type=maker, so a hedge that crosses our own ladder's resting bid (subaccount 1) cancels that bid instead of being cancelled. Startup path in paper with the exact argv PASS (pinrun-paper-20261009T111025Z.jsonl, errors 0). If never deployed by the due date, mark read with that note.",
+   "what": "v-stp-maker (LIVE 2026-10-10T02:07:23Z, pid 772168, log results/pinrun-live-20261010T020723Z.jsonl; operator: 'Go v-STp-maker'): today's exact live argv on C:\\kals-live-0925e (code_sha 5075b1783acf). The only behaviour change with these flags: insurance (hedge) orders carry self_trade_prevention_type=maker, so a hedge that crosses our own ladder's resting bid (subaccount 1) cancels that bid instead of being cancelled. Startup path in paper with the exact argv PASS (pinrun-paper-20261009T111025Z.jsonl, errors 0). If never deployed by the due date, mark read with that note.",
    "how": "Confirm the live start record code_sha 5075b1783acf, toxic_fresh false, max_edge_c 10.0, early_max_edge 10.0. Then every hedge order since the deploy: body self_trade_prevention_type 'maker' (pintake), status, filled; any cancel whose reason is self-trade (user_orders last_update_reason SelfTradeCancel if logged; else a hedge with filled 0 while the book showed size); share filled vs the previous 14 alarms.",
    "bar": "PRE-REGISTERED 2026-10-09 (FINAL_SYNTHESIS 2a/7): REVERT at once (results/restart_bot.before-seen.ps1 = the 0925d launcher) if any insurance order is refused or cancelled for self-trade, or the insurance path errors. Over the next 10 alarms: every insurance order carries maker, none cancelled for self-trade, share filled not below the previous 14 alarms -> KEEP.",
    "status": "open"

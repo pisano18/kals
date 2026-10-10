@@ -86,8 +86,12 @@ $py = "C:\Python314\python.exe"
 #   - --no-drawdown-halt: the 20% DRAWDOWN halt never fires. The run loss
 #     abort, the DAY loss cap and the loss COUNT brake are unchanged.
 # code_sha below is the patched file's sha256[:12].
-$code = "C:\kals-live-0925d"
-$codeSha = "c0fe4953e891"
+# v-stp-maker (2026-10-09, results/FINAL_SYNTHESIS_2026-10-09.md): the SAME argv on
+# C:\kals-live-0925e, whose only behaviour change with these flags is that insurance
+# orders carry self_trade_prevention_type=maker (our own ladder bid can never cancel
+# insurance). Revert: results\restart_bot.before-seen.ps1 (= the 0925d launcher).
+$code = "C:\kals-live-0925e"
+$codeSha = "5075b1783acf"
 
 # --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
 # did not change; nothing on disk said why, so the next session had to guess
@@ -619,7 +623,7 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd, C:\kals-live-0925d)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker, C:\kals-live-0925e)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1

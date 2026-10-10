@@ -1,3 +1,18 @@
+# v-stp-maker -- LIVE 2026-10-10T02:07:23Z (pid 772168, was 3907636; start record: mode live, code_sha 5075b1783acf, toxic_fresh false, max_edge_c 10.0, early_max_edge 10.0, skip_coin [KXHYPE15M], max_full_bets 1.0, no_drawdown_halt true, xfer_confirm true; ktruth at startup: 0 held). Restart via restart_bot.ps1 while FLAT (pinflat), both recorders writing after (operator 2026-10-09 ~9:50 PM ET: "Go v-STp-maker"). The SAME live argv as v-bankfix-nodd (byte-identical flag list; versioncheck clean) on C:\kals-live-0925e, **code_sha 5075b1783acf** (0925d untouched). Launcher: results/restart_bot.stpmaker.ps1 copied over restart_bot.ps1; -Check PASS (70 flat strings).
+
+WHAT CHANGES: insurance (hedge) orders carry `self_trade_prevention_type = "maker"` (research/pintake.py take(): `if hedge: body["self_trade_prevention_type"] = "maker"`). Kalshi's self-trade prevention is per order and applies across subaccounts on one unified book (a YES bid at 98c IS a NO ask at 2c); with the old `taker_at_cross` an insurance IOC that would cross our own ladder's resting bid (subaccount 1) is CANCELLED; with `maker` the ladder's resting bid is cancelled and the insurance proceeds. Entries keep `taker_at_cross`. 0925e also carries `--max-edge-c` (default = the old 10c constant) and new start-record fields (toxic_fresh, max_edge_c, edge_cap_tau); with this argv they change nothing (start record: toxic_fresh false, max_edge_c 10.0, early_max_edge 10.0).
+
+EVIDENCE: results/FINAL_SYNTHESIS_2026-10-09.md (blind design competition: every judge kept this; measured money effect $0 -- all 14 insurance orders since 09-28 checked, the ladder's bids came 4-29 s after each, so it has not happened yet). Self-tests: pintake --selftest PASS (new check: the entry POST carries taker_at_cross, the hedge POST maker); pinrun --selftest PASS; startup path in PAPER with this exact argv PASS (results/pinrun-paper-20261009T111025Z.jsonl, errors 0).
+
+BAR: READS_DUE `stp-maker-live` (pre-registered 10-09): revert at once if any insurance order is refused or cancelled for self-trade, or the insurance path errors; keep after 10 alarms with every insurance order carrying maker and the filled share not below the previous 14 alarms.
+
+**REVERT:** `Copy-Item C:\kals-repo
+esults
+estart_bot.before-seen.ps1 C:\kals-repo
+estart_bot.ps1 -Force` then, while flat, `powershell -NoProfile -ExecutionPolicy Bypass -File C:/kals-repo/restart_bot.ps1` (the 0925d build, code_sha c0fe4953e891).
+
+---
+
 # v-ladder-capfix -- LIVE 2026-10-07T12:14:10Z (ladder pid 4047108, was 3832268; subaccount 1; start record 12:14:18.105Z: live true, auto_size true, pot $76.73 -> size 5, market_cap_x 2.0, close_cap_x 0). Code: research/cleanroom/ladder_live.py blob 9fec7b284c9f, previous commit ef85845. Argv unchanged (boot_all.ps1 not edited). Run via results/restart_ladder_1007.ps1 (dry run ok, then live; log results/restart_ladder_1007.log): stop file -> old ladder exited in ~1 s (exit record 12:14:01.992Z) -> boot_all not running -> stop file deleted -> started; one live ladder after.
 
 EVIDENCE: results/READS_1007.md ladder-caps, PLUMBING FAIL on clause 1: KXZEC15M-26OCT060945-45 (10-06 9:45 AM ET) held 15 contracts (3 bids of 5) by Kalshi fills against the x2 cap of 10. Bid 8593 filled on Kalshi at 13:44:58.08Z; its cancel was in flight until :58.255 (404); the third bid was decided at :58.215. A bid with status 'cancelling' was counted by neither open_orders() (sending/resting) nor limbo() (cancel_failed), so exposure(), market_contracts() and every rail were blind to it while its cancel was in flight. 1 market of 3,609 bid since 10-03; it won (+$0.30) but was a $14.70 bet, 19% of the pot vs 14% intended.
