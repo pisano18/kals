@@ -121,6 +121,13 @@ _DEFAULT_LIVE_MAX_DROP = 0.02        # fresh ask this far under the one seen = r
 # race_zscores() for the number.
 _DEFAULT_MIN_Z = 0.0                 # 0 = off. 3.0 is the arm's value.
 _DEFAULT_MIN_Z_TAU = 30              # the floor applies only PAST this tau
+# v-race-snowball (2026-10-11). The operator: "I don't want to cap any growth. I want these to grow
+# unchecked and snowball into bigger and bigger days ... Every account should be automatically increasing
+# bets with their bank." OFF by default, so the running live argv (--max-contracts 20 --max-stake 40)
+# sizes exactly as it does today. See bank_sizes() / bank_tick() for the rule.
+_DEFAULT_CONTRACTS_PER_BANK = 0.0    # 0 = off: contracts a leg stay --max-contracts
+_DEFAULT_STAKE_PER_BANK = 0.0        # 0 = off: the open-stake cap stays --max-stake
+_DEFAULT_BANK_REREAD_S = 300         # the bank is re-read at most this often, and only between races
 LIVE_STOP_FILE = os.path.join(REPO, "results", "pinracepenny.stop")
 
 # pinday.RACE_PAT -- the glob the operator's DAY TOTAL reads. `load_race()`
@@ -281,7 +288,13 @@ LIVE = {"on": False, "paper": False,
         "stop_on_loss": _DEFAULT_LIVE_STOP_ON_LOSS,
         "max_drop": _DEFAULT_LIVE_MAX_DROP, "rolling": False,
         "max_losses": 1, "day_losses": 0, "loss_day": None, "halted_day": None,
-        "races": {}, "armed": {}, "staked": 0.0, "halted": None, "sends": 0}
+        "races": {}, "armed": {}, "staked": 0.0, "halted": None, "sends": 0,
+        # v-race-snowball: bank-scaled sizing, OFF unless --contracts-per-bank / --stake-per-bank > 0
+        "contracts_per_bank": _DEFAULT_CONTRACTS_PER_BANK,
+        "stake_per_bank": _DEFAULT_STAKE_PER_BANK,
+        "bank_reread_s": _DEFAULT_BANK_REREAD_S,
+        "fixed_contracts": _DEFAULT_LIVE_MAX_CONTRACTS, "fixed_stake": _DEFAULT_LIVE_MAX_STAKE,
+        "bank": None, "bank_at": None}
 
 # v-race40 (2026-09-30, operator: "increase the coin race size don't stop on one loss"): with --live-max-losses N > 1
 # the live bot stops for the rest of the ET DAY after N losing races and trades again the next ET day. N = 1 (the
@@ -485,6 +498,182 @@ def live_refusals(tau, price, count, race, coin=None, side=None, state=None,
     if exists(LIVE_STOP_FILE):
         bad.append("stop file present: %s" % LIVE_STOP_FILE)
     return bad
+
+
+# ---- v-race-snowball: size the live path from the bank (2026-10-11) -------
+# --contracts-per-bank X  -> contracts a leg = max(1, floor(bank * X))
+# --stake-per-bank Y      -> the open-stake cap = bank * Y (floored to the cent)
+# With X = 20/1050 and Y = 40/1050 a $1,050 bank gives today's 20 a leg and $40, and both then follow the
+# bank up AND down. Both default to 0 = off, which leaves --max-contracts / --max-stake fixed exactly as
+# before. Nothing else moves: the 2-losses-a-day stop, the tie-is-a-loss rule, the price floor, the
+# confirmation, the leg cap and the per-race consistency rule read the same state they always did.
+#
+# THE BANK is the MAIN account's cash in POOL 2 (Crypto & Commodities, where coin race orders spend
+# from), read the way pinrun.read_bank reads its bank: `balance` (cents) and `balance_dollars` are BOTH
+# required and must agree to the cent, so the unit is read, never inferred (hard rule 5). The query MUST
+# name the subaccount. Read live 2026-10-11 08:28Z, GET /portfolio/balance answered:
+#     no query                          $1,069.74  (the main account, every pool)
+#     exchange_index=2                  $1,297.30  (pool 2 of EVERY subaccount -- the trap)
+#     subaccount=0, exchange_index=2    $1,068.25  <- this
+#     subaccount=0, exchange_index=0        $1.49
+# Dropping `subaccount` would size the race on the side bots' money too, about 21% too big that day.
+#
+# WHEN: at most every _DEFAULT_BANK_REREAD_S, and only BETWEEN races -- no real leg waiting on its
+# result, no open race within RACE_BANK_QUIET_S of its close, and on the quarter-hour clock only from
+# RACE_BANK_AFTER_CLOSE_S after a close to RACE_BANK_QUIET_S before the next (4:00..10:00 into each
+# quarter hour) -- so a size never changes mid-race and a slow read cannot stall the seconds that trade.
+# A failed read changes nothing: the last good size (or the argv's fixed one, before the first read) is
+# held, and the failure is logged.
+#
+# The bank is CASH, so an open bet anywhere in the main account makes it read low by that bet's stake.
+# MEASURED in the first paper run, 2026-10-11: a read at 09:00:00Z, the exact close, said $953.93 and
+# cut the size to 18 a leg -- pinrun had bought 91 NEAR + 29 XRP at 08:59:31-41Z for the same close --
+# and at 09:03:57Z the same read said $1,073.99. Every 15-minute series and the race close on the
+# quarter hour and settle within minutes, hence the clock window. What is still open outside it (an
+# hourly bet, say) still reads low: the error is toward a SMALLER race bet, never a bigger one.
+RACE_BANK_QUERY = (("subaccount", 0), ("exchange_index", RACE_EXCHANGE_INDEX))
+RACE_BANK_QUIET_S = 300          # no read while any open race is this close to its close
+RACE_BANK_AFTER_CLOSE_S = 240    # ...nor this soon after a quarter-hour close (the bets on it settle)
+RACE_BANK_RAIL_HEADROOM = 1.25   # pintake's rails are raised this far past a new size, so a growing
+                                 # bank does not re-raise them (and print) on every read
+
+
+def per_bank(text):
+    """argparse type for --contracts-per-bank / --stake-per-bank: a decimal ("0.01904762") or a
+    ratio ("20/1050", read as 20 per $1,050 of bank). Negative, non-finite or a zero denominator
+    is refused at the command line, before anything is armed."""
+    s = str(text).strip()
+    try:
+        if "/" in s:
+            num, den = s.split("/", 1)
+            v = float(num) / float(den)
+        else:
+            v = float(s)
+    except (ValueError, ZeroDivisionError):
+        raise argparse.ArgumentTypeError(
+            "%r is not a number or a ratio like 20/1050" % (text,))
+    if not math.isfinite(v) or v < 0:
+        raise argparse.ArgumentTypeError("%r must be a finite number >= 0" % (text,))
+    return v
+
+
+def read_race_bank(getter):
+    """(dollars, None) or (None, why): the main account's pool-2 cash. `getter(path, query)` returns
+    (status, body) -- pintake._get with the live credentials under --live, kauth.get (GET-only by
+    construction) under --paper-live, a planted function in the self-test. Never raises."""
+    try:
+        st, j = getter("/portfolio/balance", dict(RACE_BANK_QUERY))
+    except Exception as e:                                   # noqa: BLE001
+        return None, "balance read raised %s: %s" % (type(e).__name__, str(e)[:120])
+    if st != 200 or not isinstance(j, dict):
+        return None, "balance read failed (HTTP %s)" % (st,)
+    cents, dollars = j.get("balance"), j.get("balance_dollars")
+    if cents is None or dollars is None:
+        return None, "balance body lacks `balance` or `balance_dollars` -- the unit cannot be read"
+    try:
+        a_, b_ = float(cents) / 100.0, float(dollars)
+    except (TypeError, ValueError):
+        return None, "balance unreadable (%r / %r)" % (cents, dollars)
+    if not (math.isfinite(a_) and math.isfinite(b_)) or b_ < 0:
+        return None, "balance is not a finite non-negative number (%r)" % (dollars,)
+    if abs(a_ - b_) > 0.01 + 1e-9:
+        return None, ("cents and dollars disagree ($%.2f vs $%.4f) -- the unit is not what it seems"
+                      % (a_, b_))
+    return b_, None
+
+
+def bank_sizes(bank, cpb, spb, contracts, stake):
+    """(contracts a leg, open-stake cap) for `bank` dollars. A rate of 0 leaves that number at the
+    fixed argv value it is handed. Contracts never go under one; the 1e-9 keeps 1050 * (20/1050)
+    from flooring to 19 on float error."""
+    c = float(contracts)
+    s = float(stake)
+    if cpb > 0:
+        c = float(max(1, int(math.floor(float(bank) * float(cpb) + 1e-9))))
+    if spb > 0:
+        s = math.floor(float(bank) * float(spb) * 100.0 + 1e-9) / 100.0
+    return c, s
+
+
+def between_races(live_pos, events, now):
+    """True when a size may change: no real (or paper-live) leg is still waiting on its result, the
+    quarter-hour clock is between RACE_BANK_AFTER_CLOSE_S after a close and RACE_BANK_QUIET_S before the
+    next (the bets every 15-minute bot placed on the last close have settled, and none is placed yet on
+    the next), and no open race is within RACE_BANK_QUIET_S of its close (arming, the confirmation and
+    every send happen inside that window, and a stalled read there would cost seconds that trade)."""
+    if any("win" not in p for p in (live_pos or [])):
+        return False
+    into = float(now) % 900.0
+    if into < RACE_BANK_AFTER_CLOSE_S or into >= 900.0 - RACE_BANK_QUIET_S:
+        return False
+    for e in (events or {}).values():
+        try:
+            left = float(e["close"]) - float(now)
+        except (KeyError, TypeError, ValueError):
+            return False
+        if 0 <= left <= RACE_BANK_QUIET_S:
+            return False
+    return True
+
+
+def raise_pintake_rails(contracts, stake):
+    """Loosen pintake's per-order count and run-stake rails so a bigger bank-scaled size is not
+    refused at the order stage (2026-09-08: 160 orders sent, 0 filled, no error raised, because a rail
+    tied to size did not move with it). One-way, as pintake insists: a smaller size needs nothing,
+    because this file's own cap is checked first and is then the stricter one. None, or why not."""
+    try:
+        if pintake.MAX_TAKE_COUNT < contracts:
+            pintake.set_limits(max_take_count=math.ceil(contracts * RACE_BANK_RAIL_HEADROOM),
+                               why="--contracts-per-bank (v-race-snowball)")
+        if pintake.MAX_RUN_STAKE < stake:
+            pintake.set_limits(max_run_stake=round(stake * RACE_BANK_RAIL_HEADROOM, 2),
+                               why="--stake-per-bank (v-race-snowball)")
+    except ValueError as e:
+        return "pintake refused: %s" % e
+    if (contracts > pintake.MAX_TAKE_COUNT or contracts > pintake.HARD_MAX
+            or stake > pintake.MAX_RUN_STAKE + 1e-9):
+        return ("still over pintake's rails (count %g vs %g / HARD_MAX %g, stake $%.2f vs $%.2f)"
+                % (contracts, pintake.MAX_TAKE_COUNT, pintake.HARD_MAX, stake, pintake.MAX_RUN_STAKE))
+    return None
+
+
+def bank_tick(state, getter, now, live_pos, events, rec=None, rails=raise_pintake_rails):
+    """One look at the bank. Returns what happened: "off" (both rates 0 -- nothing read, nothing
+    changed), "wait" (read less than bank_reread_s ago), "mid_race", "failed" (read failed, size held),
+    "refused" (pintake would not admit the new size, size held), "resized" or "same".
+
+    Touches ONLY state's max_contracts, max_stake, bank and bank_at -- never staked, halted, day_losses,
+    max_losses or stop_on_loss, so the loss rails are exactly what they were."""
+    cpb = float(state.get("contracts_per_bank") or 0.0)
+    spb = float(state.get("stake_per_bank") or 0.0)
+    if cpb <= 0 and spb <= 0:
+        return "off"
+    last = state.get("bank_at")
+    if last is not None and now - float(last) < float(state.get("bank_reread_s") or _DEFAULT_BANK_REREAD_S):
+        return "wait"
+    if not between_races(live_pos, events, now):
+        return "mid_race"
+    state["bank_at"] = float(now)
+    was_c, was_s = float(state["max_contracts"]), float(state["max_stake"])
+    bank, why = read_race_bank(getter)
+    if bank is None:
+        if rec:
+            rec("bank_read_failed", why=why, held_contracts=was_c, held_stake=was_s)
+        return "failed"
+    c, s = bank_sizes(bank, cpb, spb, state["fixed_contracts"], state["fixed_stake"])
+    bad = rails(c, s) if rails else None
+    if bad:
+        if rec:
+            rec("bank_resize_refused", why=bad, bank=round(bank, 4), contracts=c, stake=s,
+                held_contracts=was_c, held_stake=was_s)
+        return "refused"
+    state["bank"] = bank
+    state["max_contracts"], state["max_stake"] = c, s
+    changed = (c, s) != (was_c, was_s)
+    if rec:
+        rec("bank_size", bank=round(bank, 4), contracts=c, stake=s, was_contracts=was_c,
+            was_stake=was_s, changed=changed, contracts_per_bank=cpb, stake_per_bank=spb)
+    return "resized" if changed else "same"
 
 
 # ---- the rails ------------------------------------------------------------
@@ -2626,6 +2815,241 @@ def selftest():
     ck("arm_prod" in body and body.index("arm_prod") > body.index("if a.live:"),
        "production is armed only under --live")
 
+    # ---- v-race-snowball (2026-10-11): sizes follow the bank ---------------
+    # Every assertion is on a _DEFAULT_ name or a planted state, never on the running LIVE dict.
+    ck(_DEFAULT_CONTRACTS_PER_BANK == 0.0 and _DEFAULT_STAKE_PER_BANK == 0.0,
+       "snowball: bank sizing is OFF by default (both rates 0)")
+    ck(_DEFAULT_BANK_REREAD_S == 300, "snowball: the bank is re-read at most every 300 s")
+    _apS = build_parser()
+    _liveargv = ["--live", "--max-contracts", "20", "--max-stake", "40", "--live-max-losses", "2",
+                 "--live-rolling-stake", "--live-tau-max", "30", "--live-min-price", "0.90",
+                 "--live-max-legs", "5", "--live-confirm", "5", "--live-clock-tau", "20",
+                 "--minutes", "10080", "--log", "C:/kals-repo/results/pinracepenny-live.jsonl",
+                 "--model", "fair", "--tau-max", "60", "--min-price", "0.80", "--min-edge", "0.00"]
+    _la = _apS.parse_args(_liveargv)
+    ck(_la.contracts_per_bank == _DEFAULT_CONTRACTS_PER_BANK
+       and _la.stake_per_bank == _DEFAULT_STAKE_PER_BANK
+       and _la.max_contracts == 20.0 and _la.max_stake == 40.0,
+       "snowball: TODAY'S LIVE ARGV parses with both rates off -- 20 a leg and $40 stay fixed")
+    _ls = _apS.parse_args(_liveargv + ["--contracts-per-bank", "20/1050", "--stake-per-bank", "40/1050"])
+    ck(_ls.contracts_per_bank == 20 / 1050.0 and _ls.stake_per_bank == 40 / 1050.0
+       and _apS.parse_args(["--contracts-per-bank", "0.5"]).contracts_per_bank == 0.5,
+       "snowball: --contracts-per-bank 20/1050 and --stake-per-bank 40/1050 parse as exact ratios, "
+       "and a plain decimal parses too")
+    _errS = io.StringIO()
+    _old_errS = sys.stderr
+    _codesS = []
+    try:
+        sys.stderr = _errS
+        for _bad in ("-1", "1/0", "abc", "nan", "inf", "20/-1050"):
+            try:
+                _apS.parse_args(["--stake-per-bank", _bad])
+                _codesS.append(0)
+            except SystemExit as e:
+                _codesS.append(e.code)
+    finally:
+        sys.stderr = _old_errS
+    ck(all(c not in (None, 0) for c in _codesS),
+       "snowball: a negative, zero-denominator, junk, NaN or infinite rate is refused at the command "
+       "line (exit codes %s)" % _codesS)
+    _X, _Y = 20 / 1050.0, 40 / 1050.0
+    ck(bank_sizes(1050.0, _X, _Y, 20, 40) == (20.0, 40.0),
+       "snowball: a $1,050 bank at 20/1050 and 40/1050 is today's 20 a leg and $40 open")
+    ck(bank_sizes(1068.251, _X, _Y, 20, 40) == (20.0, 40.69),
+       "snowball: today's real pool-2 bank ($1,068.25, read 10-11) is 20 a leg and $40.69")
+    ck(bank_sizes(2100.0, _X, _Y, 20, 40) == (40.0, 80.0)
+       and bank_sizes(10500.0, _X, _Y, 20, 40) == (200.0, 400.0),
+       "snowball: the bank doubles -> 40 a leg and $80; x10 -> 200 a leg and $400 -- NO CEILING, the "
+       "old 100-contract / $300 startup ceilings do not bind a bank-sized run")
+    ck(bank_sizes(525.0, _X, _Y, 20, 40) == (10.0, 20.0)
+       and bank_sizes(30.0, _X, _Y, 20, 40) == (1.0, 1.14)
+       and bank_sizes(0.0, _X, _Y, 20, 40) == (1.0, 0.0),
+       "snowball: it shrinks with the bank too, and never under one contract")
+    ck(all(bank_sizes(52.5 * k, _X, _Y, 20, 40) == (float(k), 2.0 * k) for k in range(1, 401))
+       and bank_sizes(100.0, 0.29, 0.29, 1, 1) == (29.0, 29.0),
+       "snowball: float error never floors a whole number down (0.29 x 100 is 28.999... in floating "
+       "point and still sizes 29 / $29.00)")
+    ck(bank_sizes(5000.0, 0.0, 0.0, 20, 40) == (20.0, 40.0)
+       and bank_sizes(5000.0, _X, 0.0, 20, 40) == (95.0, 40.0)
+       and bank_sizes(5000.0, 0.0, _Y, 20, 40) == (20.0, 190.47),
+       "NULL: a rate of 0 leaves that number at the argv's fixed value, whatever the bank")
+
+    # THE BANK READ. Wire bodies copied from GET /portfolio/balance, 2026-10-11 08:28Z, answered by
+    # the query actually sent -- so dropping `subaccount` reads every subaccount's pool 2 and FAILS.
+    _wireS = {(): {"balance": 106974, "balance_dollars": "1069.7410"},
+              (("exchange_index", 2),): {"balance": 129730, "balance_dollars": "1297.3012"},
+              (("exchange_index", 2), ("subaccount", 0)): {"balance": 106825,
+                                                            "balance_dollars": "1068.2510"},
+              (("exchange_index", 0), ("subaccount", 0)): {"balance": 149, "balance_dollars": "1.4900"}}
+    _askedS = []
+
+    def _balS(path, q):
+        _askedS.append((path, dict(q or {})))
+        return 200, _wireS[tuple(sorted((q or {}).items()))]
+    ck(read_race_bank(_balS) == (1068.251, None)
+       and _askedS == [("/portfolio/balance", {"subaccount": 0, "exchange_index": 2})],
+       "snowball: the bank is the MAIN account's pool-2 cash ($1,068.25), asked for by subaccount 0 "
+       "AND pool 2 -- not every subaccount's pool 2 ($1,297.30) and not every pool ($1,069.74)")
+    ck(read_race_bank(lambda p, q: (200, {"balance": 106825, "balance_dollars": "106825"}))[0] is None
+       and read_race_bank(lambda p, q: (200, {"balance": 106825}))[0] is None
+       and read_race_bank(lambda p, q: (200, {"balance_dollars": "1068.25"}))[0] is None,
+       "snowball: cents read as dollars, or a body missing either unit, is REFUSED -- never a size")
+
+    def _raiseS(*_a):
+        raise OSError("timed out")
+    ck(read_race_bank(lambda p, q: (500, {}))[0] is None
+       and read_race_bank(lambda p, q: (200, "<html>"))[0] is None
+       and read_race_bank(_raiseS)[0] is None
+       and read_race_bank(lambda p, q: (200, {"balance": -100, "balance_dollars": "-1.00"}))[0] is None
+       and read_race_bank(lambda p, q: (200, {"balance": "x", "balance_dollars": "y"}))[0] is None,
+       "NULL: a 500, a text body, a raising getter, a negative or a junk balance all read as UNKNOWN")
+
+    _Q = 900.0 * 2000                        # a quarter-hour close, on the exchange's grid
+    _B = _Q + 300.0                          # 5:00 into the quarter hour: inside the read window
+    ck(between_races([], {}, _B) is True
+       and between_races([{"event": "E"}], {}, _B) is False
+       and between_races([{"event": "E", "win": True}], {}, _B) is True
+       and between_races([], {"E": {"close": _B + 200.0}}, _B) is False
+       and between_races([], {"E": {"close": _B + RACE_BANK_QUIET_S + 1}}, _B) is True,
+       "snowball: between races = no leg waiting on its result AND no open race within %d s of its "
+       "close" % RACE_BANK_QUIET_S)
+    ck(between_races([], {}, _Q) is False and between_races([], {}, _Q + 100.0) is False
+       and between_races([], {}, _Q + RACE_BANK_AFTER_CLOSE_S - 1) is False
+       and between_races([], {}, _Q + RACE_BANK_AFTER_CLOSE_S) is True
+       and between_races([], {}, _Q + 900.0 - RACE_BANK_QUIET_S - 1) is True
+       and between_races([], {}, _Q + 900.0 - RACE_BANK_QUIET_S) is False
+       and between_races([], {}, _Q + 899.0) is False,
+       "snowball: and on the quarter-hour clock only %d s after a close to %d s before the next -- the "
+       "09:00:00Z paper read sat AT the close, saw $953.93 with the main bot's $115 of 09:00 bets "
+       "still open, and cut 20 a leg to 18 ($1,073.99 four minutes later)"
+       % (RACE_BANK_AFTER_CLOSE_S, RACE_BANK_QUIET_S))
+
+    # bank_tick end to end, on a planted clock, bank and rails
+    _bankv = [2100.0]
+    _callsS = []
+
+    def _getS(path, q):
+        _callsS.append(q)
+        if _bankv[0] is None:
+            return 500, {}
+        return 200, {"balance": int(round(_bankv[0] * 100)), "balance_dollars": "%.4f" % _bankv[0]}
+    _railsS = []
+
+    def _railok(c, s):
+        _railsS.append((c, s))
+        return None
+    _offS = {"max_contracts": 20.0, "max_stake": 40.0, "fixed_contracts": 20.0, "fixed_stake": 40.0,
+             "contracts_per_bank": _DEFAULT_CONTRACTS_PER_BANK,
+             "stake_per_bank": _DEFAULT_STAKE_PER_BANK, "bank_reread_s": _DEFAULT_BANK_REREAD_S,
+             "bank": None, "bank_at": None}
+    ck(bank_tick(_offS, _getS, _Q + 250.0, [], {}, None, _railok) == "off" and not _callsS
+       and (_offS["max_contracts"], _offS["max_stake"]) == (20.0, 40.0),
+       "NULL: OFF reads nothing and changes nothing -- the running argv's behaviour")
+    _bsS = dict(_offS, contracts_per_bank=_X, stake_per_bank=_Y, paper=False, rolling=True,
+                staked=0.0, stop_on_loss=True, halted=None, halted_day=None, max_losses=2,
+                day_losses=0, loss_day=None, sends=0)
+    _rS = []
+    ck(bank_tick(_bsS, _getS, _Q + 250.0, [], {}, _drive(_rS), _railok) == "resized"
+       and (_bsS["max_contracts"], _bsS["max_stake"]) == (40.0, 80.0) and len(_callsS) == 1
+       and _railsS == [(40.0, 80.0)] and [r["kind"] for r in _rS] == ["bank_size"],
+       "snowball: the first read at a $2,100 bank resizes to 40 a leg / $80, raising pintake's rails "
+       "first, and logs it")
+    ck(bank_tick(_bsS, _getS, _Q + 549.0, [], {}, None, _railok) == "wait" and len(_callsS) == 1,
+       "snowball: 299 s later it does not read again")
+    ck(bank_tick(_bsS, _getS, _Q + 550.0, [{"event": "E"}], {}, None, _railok) == "mid_race"
+       and bank_tick(_bsS, _getS, _Q + 550.0, [], {"E": {"close": _Q + 650.0}}, None,
+                     _railok) == "mid_race"
+       and len(_callsS) == 1,
+       "snowball: at 300 s it still waits while a leg is open or a race is about to close")
+    _bankv[0] = 1050.0
+    ck(bank_tick(_bsS, _getS, _Q + 550.0, [], {"E": {"close": _Q + 900.0}}, None, _railok) == "resized"
+       and (_bsS["max_contracts"], _bsS["max_stake"]) == (20.0, 40.0),
+       "snowball: between races the bank fell to $1,050 and the size came straight back DOWN to 20 / $40")
+    ck(bank_tick(_bsS, _getS, _Q + 850.0, [], {}, None, _railok) == "mid_race"
+       and bank_tick(_bsS, _getS, _Q + 900.0, [], {}, None, _railok) == "mid_race"
+       and bank_tick(_bsS, _getS, _Q + 1000.0, [], {}, None, _railok) == "mid_race"
+       and len(_callsS) == 2,
+       "snowball: with nothing open and nothing listed, the CLOCK alone still refuses 50 s before a "
+       "close, at the close and 100 s after it")
+    _bankv[0] = None
+    _rF = []
+    ck(bank_tick(_bsS, _getS, _Q + 1150.0, [], {}, _drive(_rF), _railok) == "failed"
+       and (_bsS["max_contracts"], _bsS["max_stake"]) == (20.0, 40.0)
+       and [r["kind"] for r in _rF] == ["bank_read_failed"],
+       "snowball: a failed read holds the last good size and logs why")
+    _bankv[0] = 2100.0
+    _rR = []
+    ck(bank_tick(_bsS, _getS, _Q + 1450.0, [], {}, _drive(_rR), lambda c, s: "planted refusal") == "refused"
+       and (_bsS["max_contracts"], _bsS["max_stake"]) == (20.0, 40.0)
+       and [r["kind"] for r in _rR] == ["bank_resize_refused"],
+       "snowball: if pintake will not admit the new size, the old size is held -- a size the order "
+       "path refuses is never set")
+    ck(bank_tick(_bsS, _getS, _Q + 2050.0, [], {}, None, _railok) == "resized"
+       and _bsS["max_contracts"] == 40.0,
+       "snowball: and the next good read applies it")
+    # the new size is what the live rails read
+    _onS = dict(on, max_contracts=_bsS["max_contracts"], max_stake=_bsS["max_stake"])
+    ck(live_refusals(20, 0.95, 40, "RS", coin="BTC", side="yes", state=_onS, exists=never) == []
+       and live_refusals(20, 0.95, 40, "RS", coin="BTC", side="yes",
+                         state=dict(on, max_contracts=20.0, max_stake=40.0), exists=never),
+       "snowball: a 40-contract leg passes the live rails at the bank-sized cap and is refused at 20")
+    # the 2-losses-a-day stop and the tie-is-a-loss rule, with bank sizing on
+    _pT, _lT, _rT = _fx("SNOWT")
+    _lT[0]["size"] = 40.0
+    _rT = {"SNOWT-BTC|t": {"ticker": "SNOWT-BTC", "market_result": "scalar", "value": 50,
+                           "settled_time": "t"}}
+    _bsS["staked"] = 0.97 * 40
+    _recT = []
+    _sp("SNOWT", 10_000, 10_000 + SCORE_DELAY, rets, _pT, _lT, {}, _rT, _drive(_recT), _bsS,
+        {"committed": 0.97 * 40})
+    ck(_bsS["day_losses"] == 1 and _bsS["halted"] is None
+       and [r["kind"] for r in _recT][-3:] == ["tie", "live_settled", "live_loss"],
+       "snowball: a 40-contract TIE is still a loss -- counted 1 of 2, no halt yet (%s)"
+       % [r["kind"] for r in _recT])
+    ck(bank_tick(_bsS, _getS, _Q + 2350.0, [], {}, None, _railok) == "same"
+       and _bsS["day_losses"] == 1 and _bsS["halted"] is None and _bsS["max_losses"] == 2
+       and _bsS["stop_on_loss"] is True,
+       "snowball: a bank read touches no loss rail -- the count, the limit and the stop are as they were")
+    _pL, _lL, _rL = _fx("SNOWL")
+    _lL[0]["size"] = 40.0
+    _bsS["staked"] = 0.97 * 40
+    _sp("SNOWL", 10_000, 10_000 + SCORE_DELAY, rets, _pL, _lL, {}, _rL, _drive([]), _bsS,
+        {"committed": 0.97 * 40})
+    ck(bool(_bsS["halted"]) and "daily limit" in _bsS["halted"],
+       "snowball: and the second losing race the same ET day still stops it for the day")
+    # pintake's rails really move, one way only (its globals are restored afterwards)
+    _savedS = (pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE, pintake.HARD_MAX)
+    try:
+        pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE, pintake.HARD_MAX = 20.0, 40.0, 25.0
+        with _cl.redirect_stdout(io.StringIO()):
+            _r1 = raise_pintake_rails(40.0, 80.0)
+            _hi = (pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE, pintake.HARD_MAX)
+            _r2 = raise_pintake_rails(10.0, 20.0)
+        ck(_r1 is None and _hi[0] >= 40.0 and _hi[2] >= 40.0 and _hi[1] >= 80.0,
+           "snowball: a 40 / $80 size raises pintake's per-order count, its HARD_MAX and its run-stake "
+           "rail to admit it (now %g / %g / $%.2f)" % (_hi[0], _hi[2], _hi[1]))
+        ck(_r2 is None and (pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE, pintake.HARD_MAX) == _hi,
+           "snowball: a smaller size asks pintake for nothing and lowers nothing -- this file's own "
+           "cap, checked first, is the stricter one")
+    finally:
+        pintake.MAX_TAKE_COUNT, pintake.MAX_RUN_STAKE, pintake.HARD_MAX = _savedS
+    # the wiring in main()
+    _mS = inspect.getsource(main)
+    ck(_mS.count("bank_tick(") == 1
+       and _mS.find("events = discover()") < _mS.find("bank_tick(LIVE, bank_getter, now, live_pos, events, rec)")
+       < _mS.find("# ---- SCORE"),
+       "snowball wiring: main calls bank_tick once a loop pass, after discovery and before scoring "
+       "and pricing, on the LIVE dict the rails read")
+    ck(0 <= _mS.find("if _bank_flags and not (a.live or a.paper_live):") < _mS.find("if not selftest():"),
+       "snowball wiring: the bank flags without --live or --paper-live are REFUSED at startup")
+    ck(_mS.find("LIVE.update(on=True") < _mS.find("LIVE.update(contracts_per_bank=float(a.contracts_per_bank)")
+       < _mS.find("REFUSING TO ARM -- stop file present"),
+       "snowball wiring: the rates reach LIVE from the command line inside the arming block")
+    ck("pintake._get(CREDS[\"base\"], CREDS[\"pk\"]" in _mS and "bank_getter = kauth.get" in _mS
+       and _mS.find("bank_getter = None") < _mS.find("bank_getter = kauth.get"),
+       "snowball wiring: --live reads the bank with the live key like pinrun; --paper-live through "
+       "kauth, which can only GET; off = no getter, so nothing is read")
+
     print("SELF-TEST", "PASSED" if not f else "FAILED (%d)" % len(f))
     return not f
 
@@ -2737,6 +3161,19 @@ def build_parser():
                     help="--min-z applies only PAST this many seconds out; at "
                          "or inside it nothing changes (default %d)"
                          % _DEFAULT_MIN_Z_TAU)
+    # v-race-snowball (2026-10-11): OFF by default -- the running argv is unaffected
+    ap.add_argument("--contracts-per-bank", type=per_bank,
+                    default=_DEFAULT_CONTRACTS_PER_BANK,
+                    help="live/paper-live: contracts a leg = max(1, floor(bank x THIS)), bank = the "
+                         "main account's pool-2 cash, re-read at most every %d s and only between "
+                         "races. A decimal or a ratio: 20/1050 is 20 a leg at a $1,050 bank. "
+                         "0 = off, --max-contracts stays fixed (default %g)"
+                         % (_DEFAULT_BANK_REREAD_S, _DEFAULT_CONTRACTS_PER_BANK))
+    ap.add_argument("--stake-per-bank", type=per_bank,
+                    default=_DEFAULT_STAKE_PER_BANK,
+                    help="live/paper-live: the open-stake cap = bank x THIS (40/1050 is $40 at a "
+                         "$1,050 bank). 0 = off, --max-stake stays fixed (default %g)"
+                         % _DEFAULT_STAKE_PER_BANK)
     return ap
 
 
@@ -2785,6 +3222,13 @@ def main():
               "%ds would be refused `zmin_under_floor` with zmin null."
               % (a.min_z, a.model, a.min_z_tau))
         return 2
+    _bank_flags = a.contracts_per_bank > 0 or a.stake_per_bank > 0
+    if _bank_flags and not (a.live or a.paper_live):
+        # v-race-snowball: the bank sizes the LIVE decision path only. A plain paper arm sizes from
+        # --size and would silently ignore it -- say so instead of running a week that tests nothing.
+        print("  REFUSED -- --contracts-per-bank / --stake-per-bank size the live decision path; "
+              "give --live or --paper-live")
+        return 2
     if not selftest():
         return 1
     if a.selftest:
@@ -2821,6 +3265,13 @@ def main():
                     # nothing by carrying on.
                     stop_on_loss=(False if a.paper_live
                                   else _DEFAULT_LIVE_STOP_ON_LOSS))
+        # v-race-snowball: the argv's fixed sizes are what trades until the first good bank read,
+        # and what a rate of 0 keeps for good. The bank tick in the loop is the only thing that moves them.
+        LIVE.update(contracts_per_bank=float(a.contracts_per_bank),
+                    stake_per_bank=float(a.stake_per_bank),
+                    bank_reread_s=_DEFAULT_BANK_REREAD_S,
+                    fixed_contracts=LIVE["max_contracts"], fixed_stake=LIVE["max_stake"],
+                    bank=None, bank_at=None)
         if os.path.exists(LIVE_STOP_FILE):
             print("  REFUSING TO ARM -- stop file present: %s" % LIVE_STOP_FILE)
             return 1
@@ -2899,6 +3350,27 @@ def main():
         print("  filled at prices a once-a-second tape never showed.")
         print("  It is also stood down by %s, the MONEY test's switch."
               % os.path.basename(LIVE_STOP_FILE))
+    # v-race-snowball: who reads the bank. --live reads it the way pinrun does (pintake's signed GET,
+    # the live key); --paper-live through kauth, which can only GET. None = bank sizing off.
+    bank_getter = None
+    if _bank_flags:
+        if a.live:
+            bank_getter = (lambda _p, _q: pintake._get(CREDS["base"], CREDS["pk"],
+                                                       CREDS["key_id"], _p, _q))
+        else:
+            import kauth
+            bank_getter = kauth.get
+        print("  BANK-SIZED: contracts a leg = %s, open-stake cap = %s;"
+              % ("max(1, floor(bank x %.8g))" % LIVE["contracts_per_bank"]
+                 if LIVE["contracts_per_bank"] > 0 else "fixed %g" % LIVE["max_contracts"],
+                 "bank x %.8g" % LIVE["stake_per_bank"]
+                 if LIVE["stake_per_bank"] > 0 else "fixed $%.2f" % LIVE["max_stake"]))
+        print("  bank = the main account's pool-2 cash, re-read at most every %d s and only"
+              % LIVE["bank_reread_s"])
+        print("  between races (%d:%02d to %d:%02d into each quarter hour). Until the first good"
+              % (RACE_BANK_AFTER_CLOSE_S // 60, RACE_BANK_AFTER_CLOSE_S % 60,
+                 (900 - RACE_BANK_QUIET_S) // 60, (900 - RACE_BANK_QUIET_S) % 60))
+        print("  read: %g a leg, $%.2f." % (LIVE["max_contracts"], LIVE["max_stake"]))
 
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     logpath = a.log or os.path.join(REPO, "results",
@@ -2944,7 +3416,11 @@ def main():
         live_rails=({k: LIVE[k] for k in
                      ("max_contracts", "max_stake", "tau_max", "min_price",
                       "max_legs", "confirm", "clock_tau", "rolling",
-                      "stop_on_loss", "paper")} if LIVE["on"] else None))
+                      "stop_on_loss", "paper")} if LIVE["on"] else None),
+        bank_sizing=({"contracts_per_bank": LIVE["contracts_per_bank"],
+                      "stake_per_bank": LIVE["stake_per_bank"],
+                      "reread_s": LIVE["bank_reread_s"],
+                      "query": dict(RACE_BANK_QUERY)} if bank_getter else None))
     if a.live:
         # v-race-daystate: today's losses and halt come back from disk, so a
         # restart cannot launder the daily limit. --live ONLY: a paper arm
@@ -3001,6 +3477,15 @@ def main():
                     known.update(events)
                 except Exception as e:                        # noqa: BLE001
                     rec("error", where="discover", err=str(e)[:200])
+
+            # ---- v-race-snowball: re-size from the bank, between races only ----
+            if bank_getter is not None:
+                _was = (LIVE["max_contracts"], LIVE["max_stake"])
+                _bt = bank_tick(LIVE, bank_getter, now, live_pos, events, rec)
+                if _bt in ("resized", "failed", "refused"):
+                    print("  BANK %s: $%s -> %g a leg, $%.2f open cap (was %g / $%.2f)"
+                          % (_bt, "?" if LIVE["bank"] is None else "%.2f" % LIVE["bank"],
+                             LIVE["max_contracts"], LIVE["max_stake"], _was[0], _was[1]))
 
             # ---- SCORE anything that has closed and settled ------------
             # A race leaves `known` and enters `scored` ONLY when settle_pass

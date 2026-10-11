@@ -481,7 +481,7 @@ $cleanroom = @(
        a = @("-u", "research\cleanroom\ladder_live.py", "--subaccount", "1", "--live", "--auto-size", "--market-cap-x", "2", "--minutes", "10080");
        o = "$res\ladder-live-stdout.log"; e = "$res\ladder-live-stderr.log" },
     @{ n = "coin race (LIVE, main account)"; like = "*pinracearm.py --live*"; unlike = ""; stop = "$res\pinracepenny.stop";
-       a = @("-u", "research/pinracearm.py", "--live", "--max-contracts", "20", "--max-stake", "40", "--live-max-losses", "2", "--live-rolling-stake", "--live-tau-max", "30", "--live-min-price", "0.90", "--live-max-legs", "5", "--live-confirm", "5", "--live-clock-tau", "20", "--minutes", "10080", "--log", "C:/kals-repo/results/pinracepenny-live.jsonl", "--model", "fair", "--tau-max", "60", "--min-price", "0.80", "--min-edge", "0.00");
+       a = @("-u", "research/pinracearm.py", "--live", "--max-contracts", "20", "--max-stake", "40", "--live-max-losses", "2", "--live-rolling-stake", "--live-tau-max", "30", "--live-min-price", "0.90", "--live-max-legs", "5", "--live-confirm", "5", "--live-clock-tau", "20", "--minutes", "10080", "--log", "C:/kals-repo/results/pinracepenny-live.jsonl", "--model", "fair", "--tau-max", "60", "--min-price", "0.80", "--min-edge", "0.00", "--contracts-per-bank", "0.019048", "--stake-per-bank", "0.038095");
        o = "$res\pinracepenny-live.out"; e = "$res\pinracepenny-live.err" },
     @{ n = "bettor_paper (paper)"; like = "*cleanroom*bettor_paper.py*"; unlike = ""; stop = "";
        a = @("-u", "research\cleanroom\bettor_paper.py", "--minutes", "10080");

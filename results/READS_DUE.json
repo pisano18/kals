@@ -742,6 +742,14 @@
    "read_log": [
     "10-11 09:0xZ: STOPPED EARLY after 3 races (stop file): expected reward $12.23 vs fill cost $12.45 (102%) -- the fill-cost half of the bar already fails, and each further race costs ~$4 of fills if Kalshi does not pay. 3 races of expected credit ($12.23, every leg over the $1 floor) is enough to see whether Kalshi pays this account at all: read subaccount 4's leftover cash 48 h after 09:00Z (--report)."
    ]
+  },
+  {
+   "id": "race-snowball",
+   "due": "2026-10-18T12:00Z",
+   "what": "v-race-snowball (live coin race sizes grow with the main bank, pid 494356 since 2026-10-11 10:15Z).",
+   "how": "pinracepenny-live.jsonl: every bank read and the size it set (contracts a leg, stake cap) vs the main bank; races, legs got/asked, money (Kalshi KXCRYPTOLEAD rows) per day vs the 20-a-leg weeks.",
+   "bar": "Plumbing: sizes track floor(bank x 0.019048) and bank x 0.038095 within one read; no read outside the 4-10 min window or with an open leg; no failed read changing size. Money: report $/day and losing races next to the previous 7 days at 20 a leg (no revert bar on money -- operator's growth order).",
+   "status": "open"
   }
  ]
 }

@@ -33,7 +33,9 @@ COMMANDS
   /racestats  the coin race record, and the paper arms on the same races
   /bars       every running test against its pre-registered bar: the numbers
               so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
-  /pause      no new bets, wait for open ones, stop     /start    trade again
+  /funds (/bank /accounts)   every Kalshi account's money: cash in each pool, open bets,
+              total, what runs there, each bot's bet size now, and the grand total
+  /pause     no new bets, wait for open ones, stop     /start    trade again
   /stop yes   stop right now (the word 'yes' is required)
   /mute  /unmute   alerts off / on          /help
 
@@ -74,6 +76,22 @@ RESULTS = pindesk.RESULTS
 HEARTBEAT = os.path.join(RESULTS, "pinphone.heartbeat")
 LOG = os.path.join(RESULTS, "pinphone.log")
 MAX_LEN = 3900
+
+# /funds (/bank /accounts): WHAT RUNS IN EACH KALSHI ACCOUNT -- edit here when a bot moves, starts or stops.
+# Key = subaccount number (0 = the main account). A value is the words, or {cash pool: words} when one
+# subaccount does different things in different pools. A subaccount Kalshi lists that is not here
+# shows as "unknown". (2026-10-11, the operator: "Add a way in telegram to see the bankroll or fund
+# sizes of all sub accounts.")
+FUNDS_WHAT = {
+    0: "main bot (pin) + coin race",
+    1: "penny ladder",
+    2: "forecaster",
+    3: {0: "weather dip-seller (stopped)", 2: "empty"},
+    4: "coin-race reward test (stopped)",
+}
+FUNDS_POOL_NAME = {0: "weather pool", 2: "crypto pool"}     # Kalshi's exchange_index; others say "pool N"
+# whose bet size /funds shows under each account (read from that bot's own log, see funds_sizes)
+FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",)}
 
 
 def split_text(s, limit=MAX_LEN):
@@ -168,6 +186,7 @@ HELP_TEXT = """Commands:
 /ladder - the penny ladder (subaccount 1), the same detail as /pin
 /weather (or /wx) - the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin
 /bars - every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
+/funds (or /bank, /accounts) - the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, and the grand total
 /pause - no new bets, wait for open ones, then stop
 /start - trade again
 /stop yes - stop right now
@@ -1196,6 +1215,289 @@ def bs_all_text(a):
     return "\n".join(L)
 
 
+# ===========================================================================
+# /funds (/bank /accounts) -- every Kalshi account's money on one screen.
+#
+# THE OPERATOR, 2026-10-11: "Add a way in telegram to see the bankroll or fund sizes of all sub
+# accounts." /bots says what each bot MADE; this says what SITS in every account now -- every account
+# Kalshi lists, not only the ones a bot is known to use, so a stopped pot (the weather seller, the
+# reward test) or a forgotten one is in front of him. What runs where: FUNDS_WHAT at the top.
+#
+# READ ONLY: three GET paths (FUNDS_PATHS) through `getter(path, params) -> (status, body)` -- by
+# default botstats.default_getter(), i.e. kauth.get, which can only send a GET and times out each
+# request at 20 s. The whole read also has a limit (FUNDS_DEADLINE_S) so a slow Kalshi cannot stall
+# the phone for minutes; a read not made in time is SAID, never shown as $0.
+#
+# CASH UNITS (hard rule 5). The subaccount list's field is `balance`, a name that does not say its
+# unit, so the list is used to FIND the accounts and pools. Each pool's cash is /portfolio/balance's
+# `balance_dollars` (the unit is in the name). A listed 0 is $0 in any unit and is not re-read. When a
+# direct read fails, the list's figure stands in ONLY if another pool's list figure matched its direct
+# dollars read to the cent in the same pass -- the list's unit decided from the sample, never from a
+# figure's size; otherwise that cash is COULD NOT READ.
+#
+# Open bets count at what they COST (market_exposure_dollars), not what they would sell for now.
+# Bet sizes come from each bot's own log (no Kalshi read); every dollar on the page is Kalshi's.
+# ===========================================================================
+FUNDS_PATHS = ("/portfolio/subaccounts/balances", "/portfolio/balance", "/portfolio/positions")   # GET only
+FUNDS_DEADLINE_S = 40.0          # the whole /funds read; kauth.get's own limit is 20 s a request
+FUNDS_POS_PAGES = 5              # 1,000 open bets an account: a runaway pager stops loudly
+FUNDS_FALLBACK_POOLS = (2, 0)    # the subaccount list failed: try FUNDS_WHAT's accounts in these pools
+
+
+def _fnum(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fint(x):
+    try:
+        return int(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _usd2(x):
+    return "$" + "{:,.2f}".format(_f(x))
+
+
+def _pool_name(ix):
+    return FUNDS_POOL_NAME.get(ix, "pool %s" % ix)
+
+
+def funds_read(getter, clock=time.monotonic, deadline_s=FUNDS_DEADLINE_S):
+    """Every account's cash by pool and its open bets, from Kalshi. A failed read is recorded, never
+    raised and never a zero:
+      {"subs": {n: {"pools": {ix: {"dollars": x|None, "from_list": bool, "err": str|None, "listed": x|None}},
+                    "open": dollars|None, "open_n": markets, "open_err": str|None}},
+       "list_err": str|None, "kalshi_cash": {ix: x}|None (Kalshi's whole-account cash by pool),
+       "asked": [(path, params)]}"""
+    t0 = clock()
+    asked = []
+
+    def ask(path, q):
+        if clock() - t0 > deadline_s:
+            return None, "the %d s limit for /funds ran out first" % deadline_s
+        asked.append((path, dict(q)))
+        try:
+            st, d = getter(path, q)
+        except Exception as e:                                  # noqa: BLE001
+            return None, "error: %s" % str(e)[:80]
+        if st != 200 or not isinstance(d, dict):
+            return None, "HTTP %s" % st
+        return d, None
+
+    out = {"subs": {}, "list_err": None, "kalshi_cash": None, "asked": asked}
+    subs = out["subs"]
+    listed = {}                                   # (subaccount, pool) -> the list's figure, unit unknown
+    d, err = ask("/portfolio/subaccounts/balances", {})
+    rows = d.get("subaccount_balances") if d is not None else None
+    if err is None and not isinstance(rows, list):
+        err = "no 'subaccount_balances' list in Kalshi's reply"
+    if err:
+        out["list_err"] = err
+        for n in sorted(FUNDS_WHAT):
+            for ix in FUNDS_FALLBACK_POOLS:
+                listed[(n, ix)] = None
+    else:
+        for r in rows:
+            if isinstance(r, dict) and _fint(r.get("subaccount_number")) is not None \
+                    and _fint(r.get("exchange_index")) is not None:
+                listed[(_fint(r["subaccount_number"]), _fint(r["exchange_index"]))] = _fnum(r.get("balance"))
+    for n, ix in sorted(listed):
+        s = subs.setdefault(n, {"pools": {}, "open": None, "open_n": 0, "open_err": None})
+        p = s["pools"][ix] = {"dollars": None, "from_list": False, "err": None, "listed": listed[(n, ix)]}
+        if p["listed"] == 0.0:
+            p["dollars"] = 0.0                    # $0 in any unit: nothing to read
+            continue
+        d, err = ask("/portfolio/balance", {"subaccount": n, "exchange_index": ix})
+        if d is not None and out["kalshi_cash"] is None and isinstance(d.get("balance_breakdown"), list):
+            kc = {_fint(b.get("exchange_index")): _fnum(b.get("balance")) for b in d["balance_breakdown"]
+                  if isinstance(b, dict)}
+            if kc and None not in kc and None not in kc.values():
+                out["kalshi_cash"] = kc
+        bd = _fnum(d.get("balance_dollars")) if d is not None else None
+        if bd is None:
+            p["err"] = err or "no balance_dollars in Kalshi's reply"
+        else:
+            p["dollars"] = bd
+    # the list's unit, decided once from the whole pass: some pool's list figure equals its dollars read
+    unit_ok = any(p["listed"] and p["err"] is None and p["dollars"] is not None
+                  and abs(p["listed"] - p["dollars"]) <= 0.011
+                  for s in subs.values() for p in s["pools"].values())
+    for s in subs.values():
+        for p in s["pools"].values():
+            if p["dollars"] is None and p["listed"] is not None and unit_ok:
+                p["dollars"], p["from_list"] = p["listed"], True
+    for n in sorted(subs):
+        s = subs[n]
+        tot, cnt, cursor, err = 0.0, 0, None, None
+        for _ in range(FUNDS_POS_PAGES):
+            q = {"subaccount": n, "settlement_status": "unsettled", "count_filter": "position", "limit": 200}
+            if cursor:
+                q["cursor"] = cursor
+            d, err = ask("/portfolio/positions", q)
+            got = d.get("market_positions") if d is not None else None
+            if err is None and not isinstance(got, list):
+                err = "no 'market_positions' list in Kalshi's reply"
+            if err:
+                break
+            for x in got:
+                if not isinstance(x, dict) or abs(pinledger.money(x, "position_fp", "position")) < 1e-9:
+                    continue
+                v = _fnum(x.get("market_exposure_dollars"))
+                if v is None:                     # never read `market_exposure` (cents) in its place
+                    err = "a bet came without market_exposure_dollars"
+                    break
+                tot += v
+                cnt += 1
+            cursor = d.get("cursor")
+            if err or not got or not cursor:
+                break
+        else:
+            err = "more than %d pages of open bets; stopped" % FUNDS_POS_PAGES
+        if err:
+            s["open_err"] = err
+        else:
+            s["open"], s["open_n"] = tot, cnt
+    return out
+
+
+def funds_sizes(results=RESULTS):
+    """{subaccount: [words]}: each bot's bet size NOW, from its own log -- no Kalshi read. A log with no
+    size record leaves that bot out; a log that cannot be read says so. Never a guess."""
+    import glob
+    bs = _bs()
+
+    def when(r):
+        e = bs._epoch((r or {}).get("t"))
+        return bs.et_clock(e) if e else "?"
+
+    def pin():
+        logs = sorted(glob.glob(os.path.join(results, "pinrun-live-*.jsonl")))
+        r = bs.last_record(logs[-1], ("autosize",)) if logs else None
+        if r and _fnum(r.get("new")) is not None:
+            m = re.search(r"bank \$([\d.]+)", str(r.get("why") or ""))
+            return "main bot %g contracts a bet (sized %s%s)" % (
+                _fnum(r["new"]), when(r), (" on a %s bank" % _usd2(m.group(1))) if m else "")
+        sz = read_json(os.path.join(results, "pinrun-live-size.json")) or {}
+        if _fnum(sz.get("size")) is None:
+            return None
+        return "main bot %g contracts a bet (sized %s%s)" % (
+            _fnum(sz["size"]), when({"t": sz.get("at")}),
+            (" on a %s bank" % _usd2(sz["bank"])) if _fnum(sz.get("bank")) is not None else "")
+
+    def race():
+        r = bs.last_record(os.path.join(results, "pinracepenny-live.jsonl"), ("start",))
+        lr = (r or {}).get("live_rails") or {}
+        if _fnum(lr.get("max_contracts")) is None:
+            return None
+        return "coin race %g contracts a bet%s (set at its start %s)" % (
+            _fnum(lr["max_contracts"]),
+            (", at most %s in play" % _usd2(lr["max_stake"]).replace(".00", "")) if _fnum(lr.get("max_stake")) else "",
+            when(r))
+
+    def ladder():
+        r = bs.last_record(os.path.join(results, "ladder-live-orders.jsonl"), ("rescale", "start"))
+        size = _fnum(((r or {}).get("rails") or {}).get("size"))
+        if size is None:
+            size = _fnum((r or {}).get("new"))
+        if size is None:
+            return None
+        pot = _fnum(r.get("pot") if r.get("pot") is not None else r.get("sub_balance"))
+        return "ladder %g-contract bids (sized %s%s)" % (size, when(r), (" on a %s pot" % _usd2(pot)) if pot else "")
+
+    def forecaster():
+        r = bs.last_record(os.path.join(results, "forecaster-live-orders.jsonl"), ("rescale", "start"))
+        rails = (r or {}).get("rails") or {}
+        sc = _fnum(rails.get("scale"))
+        if sc is None:
+            return None
+        pot = _fnum(r.get("pot") if r.get("pot") is not None else r.get("sub_balance"))
+        return "forecaster %g%% of the paper bot's size%s (sized %s%s)" % (
+            round(100.0 * sc, 2), (", up to %s contracts a side" % rails["per_side"]) if rails.get("per_side") else "",
+            when(r), (" on a %s pot" % _usd2(pot)) if pot else "")
+
+    readers = {"pin": pin, "race": race, "ladder": ladder, "forecaster": forecaster}
+    out = {}
+    for n, bots in FUNDS_SIZE_BOTS.items():
+        for b in bots:
+            try:
+                w = readers[b]()
+            except Exception as e:                              # noqa: BLE001
+                w = "%s: its log could not be read (%s)" % (b, str(e)[:60])
+            if w:
+                out.setdefault(n, []).append(w)
+    return out
+
+
+def funds_text(f, sizes, now):
+    """/funds' words from funds_read() and funds_sizes(). Anything unread is named, and a total that
+    leaves something out says 'at least' and what."""
+    L = ["MONEY IN EVERY ACCOUNT -- %s, read from Kalshi now." % _bs().et_clock(now)]
+    if f["list_err"]:
+        L.append("Kalshi's list of subaccounts could not be read (%s), so only the ones known here (%s) are "
+                 "shown -- any other is missing." % (f["list_err"], ", ".join(str(n) for n in sorted(FUNDS_WHAT))))
+    cash_t = open_t = 0.0
+    missing = []
+    pool_t = {}                                   # pool -> cash over every account; None once one is unread
+    for n in sorted(f["subs"]):
+        s = f["subs"][n]
+        what = FUNDS_WHAT.get(n, "unknown (not in FUNDS_WHAT in pinphone.py)")
+        if isinstance(what, dict):
+            what = "; ".join("%s: %s" % (_pool_name(ix), w) for ix, w in sorted(what.items()))
+        name = "MAIN ACCOUNT (0)" if n == 0 else "SUBACCOUNT %d" % n
+        who = "main account" if n == 0 else "subaccount %d" % n
+        cash, parts = 0.0, []
+        for ix in sorted(s["pools"]):
+            p = s["pools"][ix]
+            if p["dollars"] is None:
+                parts.append("%s COULD NOT READ (%s)" % (_pool_name(ix), p["err"]))
+                missing.append("%s %s cash" % (who, _pool_name(ix)))
+                pool_t[ix] = None
+                continue
+            cash += p["dollars"]
+            if pool_t.get(ix, 0.0) is not None:       # a pool already unread stays unread
+                pool_t[ix] = pool_t.get(ix, 0.0) + p["dollars"]
+            if abs(p["dollars"]) > 0.004 or p["from_list"]:
+                parts.append("%s %s%s" % (_pool_name(ix), _usd2(p["dollars"]),
+                                          (" (from Kalshi's list; the direct read failed: %s)" % p["err"])
+                                          if p["from_list"] else ""))
+        if s["open"] is None:
+            ow = "COULD NOT READ (%s)" % s["open_err"]
+            missing.append("%s open bets" % who)
+        else:
+            ow = "none" if not s["open_n"] else "%s on %s" % (_usd2(s["open"]), _nof(s["open_n"], "market"))
+        whole = s["open"] is not None and all(p["dollars"] is not None for p in s["pools"].values())
+        cash_t += cash
+        open_t += s["open"] or 0.0
+        L.append("")
+        L.append("%s -- %s: %s%s" % (name, what, "" if whole else "at least ", _usd2(cash + (s["open"] or 0.0))))
+        L.append("  cash: %s; open bets: %s" % (", ".join(parts) if parts else "$0.00", ow))
+        if sizes.get(n):
+            L.append("  bet size now: " + "; ".join(sizes[n]))
+    L.append("")
+    if not f["subs"]:
+        L.append("NO ACCOUNT COULD BE READ. Nothing above is a zero -- it is unknown.")
+    elif missing:
+        L.append("ALL ACCOUNTS: at least %s (cash %s + open bets %s) -- leaves out what could not be read: %s."
+                 % (_usd2(cash_t + open_t), _usd2(cash_t), _usd2(open_t), ", ".join(missing)))
+    else:
+        L.append("ALL ACCOUNTS: %s = cash %s + open bets %s." % (_usd2(cash_t + open_t), _usd2(cash_t), _usd2(open_t)))
+    kc = f.get("kalshi_cash")
+    if kc and f["subs"] and None not in pool_t.values():
+        ours = sum(v for v in pool_t.values())
+        if all(abs(pool_t.get(ix, 0.0) - kc.get(ix, 0.0)) <= 0.02 for ix in set(kc) | set(pool_t)):
+            L.append("The cash adds up to Kalshi's own whole-account figure (%s)." % _usd2(sum(kc.values())))
+        else:
+            L.append("CHECK: Kalshi's own whole-account cash is %s, but the accounts above add to %s -- an "
+                     "account is missing from Kalshi's list, or a bet filled between reads (send /funds again)."
+                     % (_usd2(sum(kc.values())), _usd2(ours)))
+    L.append("Open bets count at what they cost. Bet sizes are from each bot's own log.")
+    return "\n".join(L)
+
+
 class Phone:
     def __init__(self, cfg, transport, ledger=None, health_fn=None, cfg_path=CONFIG, now_fn=None,
                  procs_fn=None, versions_path=None, race30_epoch=None):
@@ -1226,6 +1528,9 @@ class Phone:
         # a fake Kalshi and a process table here.
         self.bs_getter = None
         self.bs_procs = None
+        # /funds reads Kalshi through this getter; None = botstats.default_getter() (kauth.get, GET only).
+        # The self-test plants a fake Kalshi here.
+        self.funds_getter = None
 
     # ---- helpers ----
     @property
@@ -1739,6 +2044,18 @@ class Phone:
                          Z3_PASS[0], Z3_PASS[1], Z3_PASS_ALT[0], Z3_PASS_ALT[1], Z3_KILL[0], Z3_KILL[1], verdict))
         return "\n".join(L)
 
+    # ---- /funds /bank /accounts ----
+    def text_funds(self):
+        """Every Kalshi account's money (funds_read) with each bot's bet size (funds_sizes). A failure
+        costs this command only."""
+        try:
+            getter = self.funds_getter or _bs().default_getter()
+            return funds_text(funds_read(getter), funds_sizes(self.ledger.results), self.now())
+        except Exception as e:                                  # noqa: BLE001
+            log(traceback.format_exc())
+            return ("Could not build /funds: %s\nEverything else still works -- /bots shows each bot pot's "
+                    "cash." % str(e)[:200])
+
     # ---- /bars ----
     def text_bars(self):
         """Every running test against its pre-registered bar: research/bars.py's
@@ -1831,6 +2148,8 @@ class Phone:
             return self.text_bot(BOT_CMDS[cmd])
         if cmd == "/bars":
             return self.text_bars()
+        if cmd in ("/funds", "/bank", "/accounts"):
+            return self.text_funds()
         if cmd == "/pause":
             return self.control("pause")
         if cmd == "/start":
@@ -2951,6 +3270,169 @@ def selftest():
         tg.push(333, "/status")
         ph.poll_once()
         ck(tg.sent[-1][0] == 111 and "Commands:" in tg.sent[-1][1] and ph.offset == 3, "poll: the paired chat gets its reply, the stranger nothing, offset advances")
+
+        # ---- /funds /bank /accounts (2026-10-11) ----------------------------------------------------
+        # A fake Kalshi with 3 accounts across 2 cash pools. Worked by hand: main = 500.00 + 1.50 cash +
+        # 29.10 open = 530.60 (the 0-contract row's 9.99 is not a bet); sub 1 = 80.25; sub 3 = 40.00 +
+        # 1.10 open = 41.10; all = 651.95 = cash 621.75 + open 30.20. Kalshi's whole-account cash: pool 0 =
+        # 1.50 + 40.00 = 41.50, pool 2 = 580.25 -> 621.75. /portfolio/balance's `balance` is CENTS here
+        # (as Kalshi sends it), so a reader that used it instead of balance_dollars would be 100x off.
+        fw_list = [{"subaccount_number": 0, "exchange_index": 2, "balance": "500.0000"},
+                   {"subaccount_number": 0, "exchange_index": 0, "balance": "1.5000"},
+                   {"subaccount_number": 1, "exchange_index": 0, "balance": "0.0000"},
+                   {"subaccount_number": 1, "exchange_index": 2, "balance": "80.2500"},
+                   {"subaccount_number": 3, "exchange_index": 0, "balance": "40.0000"},
+                   {"subaccount_number": 3, "exchange_index": 2, "balance": "0.0000"}]
+        fw_pos = {0: [{"ticker": "KXBTC15M-26SEP161115-15", "position_fp": "-30.00", "market_exposure_dollars": "29.10"},
+                      {"ticker": "KXETH15M-26SEP161115-15", "position_fp": "0.00", "market_exposure_dollars": "9.99"}],
+                  3: [{"ticker": "KXHIGHNY-26SEP16-B70.5", "position_fp": "-2.00", "market_exposure_dollars": "1.10"}]}
+        fw_break = [{"balance": "41.5000", "exchange_index": 0}, {"balance": "0.0000", "exchange_index": 1},
+                    {"balance": "580.2500", "exchange_index": 2}]
+
+        def fw_get(asked, bad=lambda path, q: None, rows=None, pos=None, brk=None):
+            def get(path, q):
+                asked.append((path, dict(q)))
+                b = bad(path, q)
+                if b == "raise":
+                    raise OSError("connection reset")
+                if b is not None:
+                    return b
+                if path == "/portfolio/subaccounts/balances":
+                    return 200, {"subaccount_balances": rows if rows is not None else fw_list}
+                if path == "/portfolio/balance":
+                    for r in (rows if rows is not None else fw_list):
+                        if (r["subaccount_number"], r["exchange_index"]) == (q["subaccount"], q["exchange_index"]):
+                            return 200, {"balance": int(round(100 * float(r["balance"]))), "balance_dollars": r["balance"],
+                                         "balance_breakdown": brk if brk is not None else fw_break}
+                    return 404, {"error": "not found"}
+                if path == "/portfolio/positions":
+                    return 200, {"market_positions": (pos if pos is not None else fw_pos).get(q["subaccount"], []),
+                                 "event_positions": [], "cursor": ""}
+                return 404, "unknown path"
+            return get
+
+        fa = []
+        f_ = funds_read(fw_get(fa))
+        t_ = funds_text(f_, {}, now["t"])
+        print("    --- /funds, the fake world ---\n    " + t_.replace("\n", "\n    "))
+        ck(sorted(f_["subs"]) == [0, 1, 3] and f_["list_err"] is None, "/funds: the 3 listed accounts, from Kalshi's list")
+        ck("MAIN ACCOUNT (0) -- main bot (pin) + coin race: $530.60" in t_
+           and "  cash: weather pool $1.50, crypto pool $500.00; open bets: $29.10 on 1 market" in t_,
+           "/funds: main = cash in BOTH pools + what its open bet cost = $530.60 (a 0-contract row is not a bet)")
+        ck("SUBACCOUNT 1 -- penny ladder: $80.25" in t_ and "SUBACCOUNT 3 -- weather pool: weather dip-seller (stopped); "
+           "crypto pool: empty: $41.10" in t_, "/funds: each subaccount's total, and what runs in it from FUNDS_WHAT")
+        ck("ALL ACCOUNTS: $651.95 = cash $621.75 + open bets $30.20." in t_, "/funds: the grand total, 3 accounts x 2 pools")
+        ck("The cash adds up to Kalshi's own whole-account figure ($621.75)." in t_,
+           "/funds: checked against Kalshi's whole-account cash by pool")
+        ck(not any(p == "/portfolio/balance" and (q["subaccount"], q["exchange_index"]) in ((1, 0), (3, 2)) for p, q in fa),
+           "/funds: a pool listed at 0 is $0 in any unit -- not read again")
+        ck(set(p for p, _q in fa) <= set(FUNDS_PATHS) and set(p for p, _q in f_["asked"]) == set(FUNDS_PATHS)
+           and all("subaccount" in q for p, q in fa if p != FUNDS_PATHS[0])
+           and all("exchange_index" in q for p, q in fa if p == "/portfolio/balance"),
+           "/funds: only the three GET paths; every balance read names its account AND pool, every open-bets read its account")
+        ck("SUBACCOUNT 7 -- unknown" in funds_text(funds_read(fw_get([], rows=fw_list + [
+            {"subaccount_number": 7, "exchange_index": 2, "balance": "2.0000"}])), {}, now["t"]),
+           "/funds: an account not in FUNDS_WHAT is shown as unknown, not dropped")
+        t_ = funds_text(funds_read(fw_get([], brk=[{"balance": "41.5000", "exchange_index": 0},
+                                                   {"balance": "600.0000", "exchange_index": 2}])), {}, now["t"])
+        ck("CHECK: Kalshi's own whole-account cash is $641.50, but the accounts above add to $621.75" in t_,
+           "/funds: cash Kalshi holds that no listed account explains is said")
+        # unreadable reads: said, never $0, never a crash
+        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (503, "busy") if p == "/portfolio/balance"
+                                          and q["subaccount"] == 1 else None)), {}, now["t"])
+        ck("SUBACCOUNT 1 -- penny ladder: $80.25" in t_ and "crypto pool $80.25 (from Kalshi's list; the direct read failed: "
+           "HTTP 503)" in t_ and "ALL ACCOUNTS: $651.95" in t_,
+           "/funds: one direct cash read fails -> the list's figure, marked, because other pools proved its unit")
+        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/balance" else None)),
+                        {}, now["t"])
+        ck("$500.00" not in t_ and "$80.25" not in t_ and "crypto pool COULD NOT READ (HTTP 500)" in t_
+           and "ALL ACCOUNTS: at least $30.20 (cash $0.00 + open bets $30.20) -- leaves out what could not be read: "
+           "main account weather pool cash, main account crypto pool cash, subaccount 1 crypto pool cash, "
+           "subaccount 3 weather pool cash." in t_ and "adds up" not in t_ and "CHECK:" not in t_,
+           "/funds: EVERY direct cash read fails -> the list's unit is unproven, so no cash figure is shown (hard rule 5)")
+        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == FUNDS_PATHS[0] else
+                                          "raise" if p == "/portfolio/balance" and q["subaccount"] == 1
+                                          and q["exchange_index"] == 2 else None)), {}, now["t"])
+        ck("list of subaccounts could not be read (HTTP 500)" in t_
+           and "MAIN ACCOUNT (0) -- main bot (pin) + coin race: $530.60" in t_
+           and "SUBACCOUNT 1 -- penny ladder: at least $0.00" in t_
+           and "crypto pool COULD NOT READ (error: connection reset)" in t_
+           and "SUBACCOUNT 4 -- coin-race reward test (stopped): at least" in t_ and "ALL ACCOUNTS: at least" in t_,
+           "/funds: the list fails and a read raises -> the known accounts are tried, what failed is named, no crash")
+        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/positions"
+                                          and q["subaccount"] == 3 else None,
+                                          pos={0: [{"ticker": "KXBTC15M-26SEP161115-15", "position_fp": "-30.00",
+                                                    "market_exposure_dollars": "29.10"}],
+                                               1: [{"ticker": "KXNEAR15M-26SEP161115-15", "position_fp": "5.00",
+                                                    "market_exposure": 110}]})), {}, now["t"])
+        ck("SUBACCOUNT 3 -- weather pool: weather dip-seller (stopped); crypto pool: empty: at least $40.00" in t_
+           and "open bets: COULD NOT READ (HTTP 500)" in t_
+           and "open bets: COULD NOT READ (a bet came without market_exposure_dollars)" in t_
+           and "ALL ACCOUNTS: at least $650.85 (cash $621.75 + open bets $29.10) -- leaves out what could not be read: "
+           "subaccount 1 open bets, subaccount 3 open bets." in t_,
+           "/funds: an unreadable open-bets read, and a bet with only cents (never read as dollars), are said")
+        clk = {"t": 0.0}
+
+        def _tick():
+            clk["t"] += 1.0
+            return clk["t"]
+        fa = []
+        t_ = funds_text(funds_read(fw_get(fa), clock=_tick, deadline_s=2), {}, now["t"])
+        ck(len(fa) == 2 and "the 2 s limit for /funds ran out first" in t_ and "ALL ACCOUNTS: at least" in t_,
+           "/funds: a slow Kalshi hits the time limit -> the rest is said as not read, the phone is not stalled")
+        # bet sizes from each bot's own log
+        szd = os.path.join(td, "funds_sizes")
+        os.makedirs(szd)
+        ck(funds_sizes(szd) == {}, "/funds sizes: no logs -> no size invented")
+
+        def _wl(name, recs):
+            with open(os.path.join(szd, name), "w", encoding="utf-8") as fh:
+                for r in recs:
+                    fh.write(json.dumps(r) + "\n")
+        with open(os.path.join(szd, "pinrun-live-size.json"), "w", encoding="utf-8") as fh:
+            json.dump({"size": 77.0, "bank": 900.0, "at": "2026-10-11T08:00:00Z"}, fh)
+        ck(funds_sizes(szd) == {0: ["main bot 77 contracts a bet (sized Oct 11 4:00 AM ET on a $900.00 bank)"]},
+           "/funds sizes: no live log yet -> the main bot's size file")
+        _wl("pinrun-live-20261010T020723Z.jsonl", [{"kind": "autosize", "t": "2026-10-10T08:00:00Z", "old": 40, "new": 50,
+                                                    "why": "bank $600.00"}])
+        _wl("pinrun-live-20261010T221608Z.jsonl", [
+            {"kind": "start", "t": "2026-10-10T22:16:08Z", "size": 20},
+            {"kind": "autosize", "t": "2026-10-11T08:27:42Z", "old": 95.0, "new": 90.0, "why": "bank $1069.74"},
+            {"kind": "autosize", "t": "2026-10-11T08:32:42Z", "old": 90.0, "new": 91.0, "why": "bank $1070.44"},
+            {"kind": "signal", "t": "2026-10-11T08:33:00Z", "size": 91}])
+        _wl("pinracepenny-live.jsonl", [{"kind": "start", "t": "2026-10-10T06:20:08Z",
+                                         "live_rails": {"max_contracts": 20.0, "max_stake": 40.0}}])
+        _wl("ladder-live-orders.jsonl", [
+            {"t": "2026-10-07T12:14:18.105Z", "ev": "start", "subaccount": 1, "pot": 76.7293, "rails": {"size": 5}},
+            {"t": "2026-10-11T04:00:10.450Z", "ev": "rescale", "old": 5, "new": 6, "pot": 84.5, "rails": {"size": 6}},
+            {"t": "2026-10-11T04:01:00Z", "ev": "order", "count": 6}])
+        _wl("forecaster-live-orders.jsonl", [
+            {"t": "2026-10-10T06:20:10.831Z", "ev": "start", "pot": 83.9334, "rails": {"scale": "0.1332", "per_side": 13}},
+            {"t": "2026-10-11T04:00:07.723Z", "ev": "rescale", "old": 0.1332, "new": 0.146, "pot": 91.9692,
+             "rails": {"scale": "0.146", "per_side": 15}}])
+        sz_ = funds_sizes(szd)
+        ck(sz_ == {0: ["main bot 91 contracts a bet (sized Oct 11 4:32 AM ET on a $1,070.44 bank)",
+                       "coin race 20 contracts a bet, at most $40 in play (set at its start Oct 10 2:20 AM ET)"],
+                   1: ["ladder 6-contract bids (sized Oct 11 12:00 AM ET on a $84.50 pot)"],
+                   2: ["forecaster 14.6% of the paper bot's size, up to 15 contracts a side "
+                       "(sized Oct 11 12:00 AM ET on a $91.97 pot)"]},
+           "/funds sizes: main = newest autosize in the NEWEST live log; ladder and forecaster = their newest "
+           "rescale, not the older start")
+        t_ = funds_text(funds_read(fw_get([])), sz_, now["t"])
+        ck("  bet size now: main bot 91 contracts a bet" in t_ and "  bet size now: ladder 6-contract bids" in t_
+           and "\nSUBACCOUNT 3" in t_ and len(t_) < MAX_LEN, "/funds: each account carries its bots' bet sizes; one message")
+        # routed: /funds /bank /accounts, through handle() and the poll loop
+        ck(ph.funds_getter is None, "/funds reads Kalshi through botstats' getter (kauth.get, GET only) by default")
+        ph.funds_getter = fw_get([])
+        ck(all((ph.handle(111, c_) or "").startswith("MONEY IN EVERY ACCOUNT") and "ALL ACCOUNTS: $651.95" in ph.handle(111, c_)
+               for c_ in ("/funds", "/bank", "/accounts", "/Funds@pinbot")),
+           "/funds, /bank and /accounts are routed to the funds page")
+        ck(ph.handle(333, "/funds") is None, "/funds: a stranger gets nothing")
+        ck("/funds" in HELP_TEXT and "/bank" in HELP_TEXT and "/accounts" in HELP_TEXT, "/funds is in /help")
+        tg.push(111, "/funds")
+        ph.poll_once()
+        ck(tg.sent[-1][0] == 111 and "ALL ACCOUNTS: $651.95" in tg.sent[-1][1] and "main bot 85 contracts a bet" in tg.sent[-1][1],
+           "/funds through the poll loop: the paired chat gets the page, with the live log's bet size")
     _pl.LEDGER = _pl_sv
     _bsm.RESULTS = _bs_saved[0]
     _bsm._MEMO.clear()
@@ -2977,7 +3459,7 @@ def main():
         for name, fn in (("/stats", ph.text_stats), ("/race", ph.text_race), ("/racestats", ph.text_racestats),
                          ("/bots", ph.text_bots), ("/pin", lambda: ph.text_bot("pin")),
                          ("/forecaster", lambda: ph.text_bot("forecaster")), ("/ladder", lambda: ph.text_bot("ladder")),
-                         ("/weather", lambda: ph.text_bot("weather"))):
+                         ("/weather", lambda: ph.text_bot("weather")), ("/funds", ph.text_funds)):
             t0 = time.time()
             out = fn()
             print("\n--- %s (%d chars, %.1f s) ---\n%s" % (name, len(out), time.time() - t0, out))
