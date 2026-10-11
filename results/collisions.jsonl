@@ -340,3 +340,15 @@
 {"note": "no shared observable at all. B07's drawdown depth is a function of the close-loss rate and the sizing rule; a silently skipped ticker changes the UNIVERSE, not the loss rate per close. Forcing a link requires assuming dropout moves the loss rate, which is unmeasured and is the premise, not the result.", "pair": ["F-B07", "F-I07"], "t": "2026-10-10T08:50:23Z", "verdict": "nothing"}
 {"note": "the live-looking version (slice the +0.48c touch edge and the zero-information taker result by tau, since C02 makes the unknowable fraction exactly tau/60) changes no decision and has already failed. Market making on 15-min crypto is dead (results/MAKER_SIM_2026-09-24.md s9) and the binding constraint -- queue position -- is not recoverable from aggregate orderbook_delta, so a tau slice leaves it unmeasured. The taker-information half IS F-R06: the clean backward-looking reconstruction had no power (+1.27pp [-1.62,+4.57], MDE 4.05pp). Wrong population too -- touch fills vs our 95c+ entries, where 83.3% of the time no ask exists on our side at any price (F-O04).", "pair": ["F-C02", "F-P10"], "t": "2026-10-10T08:50:34Z", "verdict": "nothing"}
 {"note": "cannot be computed from anything we hold. The variance-collapse measurement needs a 1-per-second equity index; feed_data holds constituent CRYPTO books only, and the S&P/Nasdaq 15-min series have never run a market -- no strike, no settle, no tape, no book. Equity indices also do not trade 24/7, so the 15-min window structure C02 describes cannot even be assumed to carry over. Nothing to measure until a market opens.", "pair": ["F-C02", "F-C09"], "t": "2026-10-10T08:50:34Z", "verdict": "nothing"}
+{"pair": ["F-C10", "F-M07"], "t": "20261011T0848Z", "verdict": "drawn"}
+{"pair": ["F-M04", "F-R01"], "t": "20261011T0848Z", "verdict": "drawn"}
+{"pair": ["F-B02", "F-X02"], "t": "20261011T0848Z", "verdict": "drawn"}
+{"pair": ["F-P03", "F-R06"], "t": "20261011T0848Z", "verdict": "drawn"}
+{"pair": ["F-C06", "F-X01"], "t": "20261011T0848Z", "verdict": "drawn"}
+{"pair": ["F-P01", "F-P05"], "t": "20261011T0848Z", "verdict": "drawn"}
+{"note": "", "pair": ["F-C10", "F-M07"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-M04", "F-R01"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-B02", "F-X02"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-P03", "F-R06"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-C06", "F-X01"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-P01", "F-P05"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
