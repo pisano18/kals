@@ -1,5 +1,7 @@
 # CURRENT_STATE.md -- read this FIRST
 
+> **PICK UP HERE (2026-10-11):** the top section of `HANDOFF.md` ("PICK UP HERE -- 2026-10-11") supersedes the 09-27 note below: live version v-stp-maker, the coin-race reward test, the in-flight snowball/connection builds, open decisions, and the operator's new standing instructions.
+
 > **PICK UP HERE (2026-09-27 ~08:3xZ, the "fix this" night):** read the top
 > section of `HANDOFF.md`. Three live changes since 05:08Z (seller gate, 97.8c
 > ceiling, one full bet per market -- the last is a CODE change), coin race at

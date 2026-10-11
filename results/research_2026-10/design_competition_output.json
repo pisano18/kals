@@ -1,0 +1,691 @@
+{
+  "summary": "Blind design competition for the Kalshi bot: 8 independent designers, a skeptic per design, 3 judges, one synthesis",
+  "agentCount": 20,
+  "logs": [
+    "batch done: timing=partly_sound, maker=partly_sound, selection=partly_sound, sizing=partly_sound",
+    "batch done: hedge=partly_sound, execution=partly_sound, redteam=partly_sound, newthing=partly_sound"
+  ],
+  "result": {
+    "designs": [
+      {
+        "key": "timing",
+        "overall": "partly_sound",
+        "survivors": [
+          "Do not switch to late-only: most early-bought markets cannot be bought late. Model-free, 86% of TEST early-bought markets had no 90-98c offer on our side in the last 20 s. TEST effect of late-only without HYPE is +$0.06/day, i.e. zero; the designer's +$12.44/day is mostly HYPE, which is no longer traded.",
+          "Keep the 31-45 s early leg at 1/3 bet: switching it off loses in every half. TEST effect of keeping it is +$2.35 to +$3.83/day. Small.",
+          "R1 --late-mult 2.0 with the boost conditions unchanged: TEST +$0.70 to +$0.85/day (not +$1.22), 0 losses in 37 boosted orders. At today's bank the drawdown brake already caps the boost, so it adds almost nothing until the bank is above about $1,035 (high-water mark $1,095.67). Sign plausible, not proven: one loss erases 40-60 days of gain.",
+          "21-30 s window, and D2 ('max 1/3 bet before 20 s'): undecidable. TEST without HYPE: dropping 21-30 s is +$2.41/day, D2 +$3.48/day, and both flip negative when the single best market is removed. Neither keeping nor dropping is measured as better."
+        ],
+        "test_per_day": 8.51,
+        "base_test_per_day": 7.29
+      },
+      {
+        "key": "maker",
+        "overall": "partly_sound",
+        "survivors": [
+          "Maker layer (rule unchanged, rest from -30 s, floor 0.25, 98.1c/97.1c, coin-weighted, ~$488 resting): TEST tape supply $17.06/day gross (reproduced exactly). With post_only crossing plus a 1 s placement/cancel it is $14.31/day, and about $12.5/day after the point flip charge. 0 losing fills and 0 flips in 8,847 TEST markets. No live calibration above 5 contracts, and supply is falling (TEST halves $19.07 then $15.04/day).",
+          "Keep floor at 0.25: change 0. Loosening to 0.20 would add +$4.04/day TEST on the proposed config but lets 3 TRAIN flips and 1 TRAIN losing fill through.",
+          "Rest no earlier than -30 s: change 0. Flips reproduced: -60 has 7 TRAIN / 1 TEST, -45 has 3 / 0, -30 has 1 / 0. The extra $ from -45 was not re-measured.",
+          "Coin weighting toward NEAR/ZEC/XRP: about +$4.8/day TEST when matched for capital (the claimed +$6.01 compares $488 with $441). DOGE's TRAIN weight did not hold on TEST.",
+          "Fixed 98.1c/97.1c rungs instead of model-2c: about +$0.9/day TEST at 50 contracts (tape only; assumes no competitor steps up).",
+          "Main taker unchanged, and no maker-gated taker: holds. Its TEST income falls to about $4.3/day if $410 leaves the main account, because it sizes from the main balance.",
+          "Day stop after any losing maker market: an untested rail, 0 TEST effect. Before funding, the existing 70%-of-pot commit rail must be raised, or the pot made about $700."
+        ],
+        "test_per_day": 22.55,
+        "base_test_per_day": 7.29
+      },
+      {
+        "key": "selection",
+        "overall": "partly_sound",
+        "survivors": [
+          "BTC-lead gate (alts only, tau>20, BRTI P(b-1)-P(b-4) >= 1.0 one-second sd against our side, lock-out for the close, hedges never gated): TEST +$179.93 (+$17.31/day; ex-HYPE +$181.79; flat +$10.85/day) on 29 refused markets incl. 4 losers, but only +$9.72 without its two biggest catches, bootstrap P(no gain) ~7%, TEST holdout partly contaminated by loss_anatomy.md. Worst case if it stops catching losers: about -$2.7 to -$4.3/day of refused winners. Honest forward estimate ~+$5-10/day; treat it as a candidate with a pre-registered bar, not a proven gain.",
+          "Comparator rejections confirmed: seller check adds +$1.34 on top of the BTC gate in TEST (+$49 ex-HYPE alone); edge>5c loses at a flat bet in TRAIN (-$58.7). Neither should be added.",
+          "Post-fill lead (identification only): first fill >=2c under the seen ask lost on 2 of 11 TEST markets (-$9.74 net) and 10 of 36 TRAIN; the money of acting on it is unmeasured."
+        ],
+        "test_per_day": 24.6,
+        "base_test_per_day": 7.29
+      },
+      {
+        "key": "sizing",
+        "overall": "partly_sound",
+        "survivors": [
+          "Keep auto-size SIZE = bank/11.76 with no freeze: status quo, TEST effect $0/day.",
+          "Add no new loss-count or day stops: status quo. The stops would have cost $3 to $79 in TEST (stop after the 2nd loss -$79.40, about -$7.6/day). TEST effect of keeping: $0/day.",
+          "R2 (no more than SIZE/3 before 20 s) only as an optional risk trade, not a money rule: TEST +$3.91/day from 2 markets (-$17.6 without the top one), TRAIN -$4.24/day. It earns more per dollar at risk than an even cut of every order.",
+          "R1 (2.0x inside 15 s) only as a pre-registered trial: TEST about +$1.0/day at the observed late loss rate of 1.5 per 100 (the designer's +$2.76/day assumes no losses). Break-even is 2.6 losing per 100 enlarged markets, and the cap's room for a second full bet must be closed first."
+        ],
+        "test_per_day": 19.73,
+        "base_test_per_day": 7.29
+      },
+      {
+        "key": "hedge",
+        "overall": "partly_sound",
+        "survivors": [
+          "Keep insurance (0.40, full held size, first sub-0.40 print, IOC at touch+10c). TEST: our real hedge legs +$134.20 on 11 markets (+$12.9/day); calibrated model +$128-132 (+$12.3-12.7/day). Carried by about 3 saves: +$3 without the best 3; t about 1.6.",
+          "Keep the 0.40 trigger with no threshold change. TEST effect $0: no other threshold beats it in both periods, and the TRAIN-best 0.20 is $45 worse in TEST.",
+          "Reject the hair-over skip. Adopting it would cost -$26 to -$33 in TEST (TRAIN +$121 to +$150).",
+          "Full size, not half. Half would cost -$64 in TEST, but this follows from a positive per-contract value and is not independent evidence.",
+          "Hedge via a reduce-only IOC sell, which is the same money as buying the other side. TEST effect $0; it needs no cash and cannot over-hedge (contract fact).",
+          "STP=maker on hedge orders. TEST effect $0 measured; no hedge has ever been STP-cancelled. Documented exchange behaviour; a precaution.",
+          "Nothing blocks a hedge (no brake, cap, pause or halt may stop it). TEST effect $0, since all 11 TEST alarms fired on time; worth about $78 in TRAIN (BNB 09-19 01:45, BTC 09-19 16:00)."
+        ],
+        "test_per_day": 6,
+        "base_test_per_day": 7.29
+      },
+      {
+        "key": "execution",
+        "overall": "partly_sound",
+        "survivors": [
+          "KEEP the IOC sweep: removal is -$4 to -$21/day in train, H1 and H2; TEST removal +$3.45 to +$7.72/day, all from NEAR 10-03 (without it -$0.30 to -$4.91/day)",
+          "KEEP sizing unchanged (count caps 30/50/80, touch multiples, thin-touch refusal stay rejected): TEST 1x-touch +$8.4 to +$8.8/day but train -$17 to -$18/day and H1 -$14 to -$15/day; cap 80 TEST -$1.37 to -$0.17/day",
+          "KEEP late adds: dropping them is -$4.67/day in TEST (reproduced exactly)",
+          "KEEP top-ups (weak, sign flips): dropping them is +$1.58/day TEST, -$1.65/day train",
+          "No collapse rule: TEST collapse population is 7 markets, 1 losing, -$1.79 in all; nothing to save now",
+          "Connection reuse, as plumbing to build with a pre-registered live read only: TEST +$1.57 to +$2.74/day on validated orders (my rebuild; designer +$1.52), train +$0.34 to +$0.51/day; excludes an unmeasurable losing-side order (DOGE 09-23, about -$77 if caught), so it is not a measured gain",
+          "Instrumentation (per-fill prices, ask at reply, fill print time): no money effect; it makes every bound in this study exact",
+          "WATCH only, 1 Hz index-age band 0.3-1.0 s: TEST +$2.83/day without HYPE (upper bound, whole-market refusal), H1 +$0.11/day"
+        ],
+        "test_per_day": 8.81,
+        "base_test_per_day": 7.29
+      },
+      {
+        "key": "redteam",
+        "overall": "partly_sound",
+        "survivors": [
+          "Current live argv unchanged (baseline): TEST +$75.80 over 10.40 days (+$7.29/day), 12 losing markets",
+          "Seller check (--toxic-fresh): survives only as a small, fragile positive. TEST is about +$36-44 for the no-HYPE bot (+$3.4-4.2/day; claimed +$9.52/day). All of it is S2 and one market (ZEC 10-07): drop that market and it goes negative. About $0 in the 6.15 TEST days it actually ran live. Deploy only with a pre-registered live bar.",
+          "Sweep past a normal best offer: TEST +$48.83 (+$4.7/day), 0 losing",
+          "Sweep past a thin best offer (kept by the TRAIN rule): TEST -$208.56 (-$20/day), 5 losing legs; needs the live bar the design proposes",
+          "One full bet per market (--max-full-bets 1.0): TEST about $0 (it blocked the doubles); TRAIN -$172 of doubles avoided",
+          "1.5x boost inside 10 s: TEST +$25.69 (+$2.5/day), 0 lost",
+          "Late add of half a bet inside 15 s: TEST +$14.32 (+$1.4/day), 0 lost",
+          "Insurance at belief 0.40: TEST +$133.56 (+$12.8/day) but TRAIN -$30.74; a status-quo keep, not a holdout pass"
+        ],
+        "test_per_day": 16.8,
+        "base_test_per_day": 7.29
+      },
+      {
+        "key": "newthing",
+        "overall": "partly_sound",
+        "survivors": [
+          "Gate: last 30 s, lead floor 0.25 x MAXERR AND p >= 0.999 / <= 0.001, decide at print receipt. TEST: 0 gate-wrong of 8,847 gated markets; out-of-fit 09-18..10-08: 0 in 20.4 days (index fact, not a loss rate).",
+          "One post-only 98c bid on the gated side, S about 90, hold to settlement. TEST: +$16.83/day tape supply (125 mk, H1 $18.32 / H2 $15.34); $15.23/day at the live p95 placement time. Not net of an expected $0.5-3/day gate-wrong cost; size 90 never run live.",
+          "Do not lower the floor. TEST: no floor -$13.32/day (10 losing), floor 0.10 -$3.88/day (5 losing), against +$16.83/day at 0.25.",
+          "Scale capital in steps ($350 -> $700 -> $1,250) with the pre-registered live-vs-replay bar and a halt on any losing market. TEST effect $0; it is the only control that can measure the size-90 fill and the true loss rate."
+        ],
+        "test_per_day": 13.9,
+        "base_test_per_day": 7.27
+      }
+    ],
+    "judges": [
+      {
+        "lens": "MAXIMUM EXPECTED MONEY net of losses over the next 30 days. Each part is weighted by what its verifier recomputed, not by what its designer claimed. Losses come only from our live fills. I ran three of my own checks on live fills, ex-HYPE because the build skips HYPE. Scripts and outputs are in C:\\Users\\Joe\\AppData\\Local\\Temp\\claude\\C--kals-repo\\b2dbb5c1-92b0-452a-b1e9-86b7402d3a34\\scratchpad\\final\\judge\\money\\:\n- j1_combos.py / j1.out: each refusal gate alone and stacked, by half and by window, with a close-level bootstrap of every increment.\n- j2_size.py / j2.out: what the taker loses if its bank shrinks.\n- j3_boot30.py / j3.out: 30-day outlook.\n- rt\\: re-runs of the red-team verifier's checks. The red-team verdict itself was never saved, so I only rebuilt its attribution tables.\nNone of my checks read the raw recordings. Afterwards both recorders were alive (collector pid 2532788, feeds pid 105352). Free disk 20.9 GB, free RAM 2.4 GB.",
+        "name": "v-lead: today's taker plus one new refusal (BTC moving against an alt buy in the 3 s before it), insurance orders sent as STP 'maker', and the decided-side maker ladder grown in stages with NEW money only",
+        "live_now": [
+          "Taker v-lead = 0925e code (insurance STP 'maker') + the BTC-lead refusal, with --toxic-fresh OFF and both edge caps at 10c. Small build, live the same day it passes self-test, the paper startup path with the live argv, and versioncheck. Expected +$5-10/day over today's build. If it catches nothing, the worst case is about -$3-4/day of refused winners.",
+          "Maker stage 1 ONLY IF he adds about $240 to subaccount 1. No code change: the current ladder engine auto-sizes to about 23 contracts a bid. Expected about +$2.5-4/day over today's ladder (+$1.3/day).",
+          "Optional, his call: --late-mult 2.0 on the same restart (under $1/day)."
+        ],
+        "paper_first": [
+          {
+            "what": "BTC-lead refusal, live with a kill bar (paper cannot judge it: its value is losers that sellers dumped into us). Read from the firing log + settlements, added to READS_DUE at deploy.",
+            "bar": "After 40 refused alt markets (about 2 weeks at ~3/day):\n- KEEP if >=3 of them settled against the side we would have bought (>=7.5 per 100, vs ~3 per 100 overall).\n- REMOVE if <=1.\n- Otherwise extend to 80 and keep if >=5.\nAlso REMOVE if, at a flat bet, the refused winners' money exceeds the refused losers' money by more than $100 at the 40-market read."
+          },
+          {
+            "what": "Maker stage 1 -> stage 2 (live size calibration; the tape is only checked at 5 a bid, where live filled 1.33x the model)",
+            "bar": "Over the first 60 FILLED maker markets after the step:\n- 0 losing markets (1 = stop the maker and re-read).\n- Live contracts >=70% of the tape THROUGH model at the same size on the same markets (calib.py).\n- Live $ >=70% of that model's $.\nPass = build v2 and go to stage 2."
+          },
+          {
+            "what": "Maker stage 2 hold",
+            "bar": "Next 100 filled markets: <=1 losing market and >= +$8/day net. Otherwise drop back to the stage 1 size."
+          },
+          {
+            "what": "arm-5hz (already running, pre-registered in READS_DUE, read 10-14)",
+            "bar": "As registered: fewer losing markets than the twin and money within $40, then propose a live port. If ported, re-check the BTC-lead refusal on 5 Hz BRTI prints in paper before changing its inputs."
+          },
+          {
+            "what": "21-30 s window tripwire (a read, no paper). Today's windows above 20 s are a default, not a measured win.",
+            "bar": "Cumulative money of markets FIRST filled at 21-30 s since 2026-09-17 15:10Z, insurance included, counted after the BTC-lead refusal. At 300 such markets, if it is below -$100, cap 21-30 s holdings at 1/3 bet. That needs a code change and the startup self-test."
+          },
+          {
+            "what": "Insurance kept as is; watch the real legs",
+            "bar": "Sum of real insurance legs on the next 15 alarms > $0, priced against the trade-based E3 estimate of the same second (not the 1/s ticker touch)."
+          }
+        ],
+        "expected": "About $20/day with NO new money:\n- today's taker ex-HYPE, about $14 (measured $13-19/day across windows since 09-18);\n- the BTC-lead refusal, about +$6 (verifier's honest range +$5-10);\n- the ladder as now, +$1.3.\nLikely range $5-30/day, and swings of plus or minus $50 in a day are normal.\n\nAbout $26/day averaged over the 30 days if he funds both maker stages (about $550 of new money): about +$3/day during stage 1, then about +$10-11/day over today's ladder once stage 2 passes its bar.\n\nFor comparison on today's coins since 09-24: V0's two refusals add +$11.0/day raw but -$15.75 at a flat bet; BTC-lead adds +$11.6/day raw and +$96 at a flat bet. V0's headline +$30.5/day included HYPE and was in-sample.",
+        "v0": "V0 is the live build + seller check + 5c price refusal + insurance STP 'maker'.\n\nWhat survives:\n- The live build itself.\n- STP 'maker' on insurance: costs $0 and is needed once the maker grows.\n- The 5 Hz paper arm, to its 10-14 read.\n\nWhat does not:\n- Both refusals. On the same live markets the BTC-lead refusal does what they tried to do with a third as many refusals (8% vs 40% of markets since the build).\n- In TEST it beats V0 by $72.51 (90% CI +$37 to +$107).\n- Stacking either V0 refusal on top of it loses money in TEST and since the build.\n\nV0's maker plan ('ladder to 5x') is kept as stage 1, but it must be funded with new money: moving it out of the main pot is a wash. V0's forecaster 2x step was not re-verified this round, so it stays at its current size.\n\nOn the operator's worry that this is just a regular update: most of the bot stays because eight independent designs each tried to replace a part of it (timing, size, execution, insurance) and none beat it in both time periods. The two real changes are a different loss signal and a second, separately funded maker business."
+      },
+      {
+        "lens": "ROBUST: lose less and survive. Lower day-to-day swings, smaller worst week, fewer losing days. A part with a strong record in the TEST window (09-28..10-08) beats a bigger in-sample number. Every change needs a pre-registered kill bar, and nothing new goes live that can add a fat loss tail for a gain under $1/day.",
+        "name": "v-steady = build C:\\kals-live-0925e run with TODAY'S 0925d argv values (seller check off, 10c edge caps), plus two changes: (1) insurance orders carry self-trade-prevention 'maker' (already built) and (2) a new BTC-lead entry gate for alt coins. Alongside it, a staged size-up of the post-only 98c ladder in subaccount 1. Every other part of the bot is unchanged.",
+        "live_now": [
+          "Step A (today, already built and self-tested): restart the main bot on C:\\kals-live-0925e with today's 0925d argv values (--toxic-fresh off, --max-edge-c 10.0, --early-max-edge 10.0). The only behaviour change: insurance orders use STP 'maker'. Money effect $0 in normal running; it removes the case where scaling the ladder could cancel a hedge. Before restarting, run the startup path in paper with this exact argv (the 10-09 PASS was with the v-seen argv, not this one).",
+          "Step B (build today, then live; no paper arm, because its value is in the adverse fills paper cannot see): the BTC-lead alt gate. Measured on our own live fills, with today's caps applied to history and HYPE skipped (my check j1/j2):\n- vs today's build: TRAIN +$101 (+$5.1/day, 59 markets changed); TEST +$182 (+$17.5/day, 26 markets: 4 losers -$208 refused, 22 winners -$27 given up).\n- Calendar halves: -$21 / +$122 / -$7 / +$189.\n- Since 09-18 per ET day: mean +$19.6 -> +$34.1, day-to-day sd $49 -> $32, worst day -$115 -> -$45, worst 7 days +$25 -> +$80, losing days 6 -> 3 of 21.\n- If it is pure noise it costs about $2.5-3/day (refuses 2.5-2.9 markets/day at ~$1.1 each).\n- Pre-registered bar, read from the firing log plus Kalshi results: after 40 flagged alt markets (~2-3 weeks), KEEP if >= 3 settled against the side we would have bought, REMOVE if <= 1; otherwise extend to 80 and keep if >= 5. Also report refused-loser $ minus refused-winner $ at a flat bet.",
+          "Step C (after Step A is live, and with the operator's OK on funding): ladder stage 1, pot ~$350, auto-size ~25 a bid at 98c, no code change. Tape estimate TEST about $5.6/day gross, about $4/day after the slower-placement and flip charges. One full market loss at this size is ~$25-49. If funded from the main account (~$270), taker bets shrink ~28%, roughly a wash in money and smaller swings; or the operator adds new money."
+        ],
+        "paper_first": [
+          {
+            "what": "arm-5hz (ALREADY RUNNING since 10-09 05:23Z, pid 1685096): the twin's argv plus the 5-per-second settlement index for the spot price.",
+            "bar": "Pre-registered in READS_DUE arm-5hz, read 10-14: fewer losing markets than the same-code twin on shared closes AND money within $40 of it -> propose a live port. When porting, re-measure the BTC-lead gate on 5 Hz stamps before changing its 1-s definition."
+          },
+          {
+            "what": "Ladder stage 1 -> stage 2 (live size step, not paper: only live fills can measure a 25- or 50-lot's fills and loss rate).",
+            "bar": "Over the first 100 FILLED markets at ~25 a bid: 0 losing markets (1 = stop and re-read), and contracts filled >= 50% of the tape THROUGH-25 model on the same markets (calib.py). Then build stage 2 (coin-weighted with NEAR/ZEC/XRP first, re-weighted on the stage-1 live fills rather than TRAIN's DOGE rank; fixed 98.1c + 97.1c rungs; no refill; per-close cap; day stop after any loss), self-test, startup path in paper, and apply the same bar over a fresh 100 filled markets."
+          },
+          {
+            "what": "BTC-lead gate, refuse-this-second variant (no lock-out), as a paper arm beside the twin.",
+            "bar": "Decision and supply only, never a loss rate: report how many refused markets the variant re-buys within the same close and at what tau. Consider dropping the lock-out only if more than half are re-bought at 20 s or less."
+          },
+          {
+            "what": "Reusing one HTTPS connection for orders (execution design). Today the bot opens a new connection per order: 90 ms vs 23 ms reused. Test it on the DEMO key first, because paper never posts orders.",
+            "bar": "Demo: 200 orders through the lost-reply reconciliation with 0 duplicate or lost orders, and median POST round trip down >= 30 ms. Then live as its own version (not in the same week as Step B, so the reads do not mix); keep if losing markets per 100 filled do not rise over 150 markets. Worth +$1.6-2.7/day on validated orders, but one unmeasurable losing order could cancel it."
+          },
+          {
+            "what": "WATCH, no arm can decide them: (a) a 5c sweep-headroom cap at > 20 s; (b) the post-fill alarm 'first fill >= 2c under the ask seen' (12 of 47 such markets lost) as a top-up block or earlier insurance; (c) a 90-98c offer reappearing on our side in the last 20 s after an early buy (TEST: those 34 markets -$271, the other 216 +$179).",
+            "bar": "Each gets a rule only after >= 3 NEW losing markets of its type in live fills after 10-09, with the rule positive in both the old and new windows. No live change before then."
+          }
+        ],
+        "expected": "About +$15 to +$25 a day across all pots, out of sample.\n- Main taker: about $12-20/day including about +$5-10 from the BTC gate. My honest discount of the in-sample +$5 TRAIN / +$17.5 TEST, since 2 losing markets carry each period.\n- Ladder stage 1: about +$4/day, minus $2-4 of smaller taker bets if it is funded from the main account.\n- Forecaster and coin race: about +$2-3/day.\nFor reference, in-sample on our own fills with today's caps and HYPE skipped:\n- Today's build: TRAIN $36.8/day, TEST $14.8/day.\n- With the gate: TRAIN $41.9/day, TEST $32.3/day. Not expected to repeat.\nLast 14 live days: $8.4/day.",
+        "v0": "V0 (v-seen = live + seller check + 5c edge refusal + insurance STP maker), re-scored on the same live fills with today's caps applied to history and HYPE skipped:\n- TRAIN +$0.46/day vs today's build; calendar halves -$150 / +$159.\n- TEST +$9.3/day, which is -$74 without its 2 best markets.\n- Both of its refusals fail as additions: the seller check is about $0 over the week it was live, refuses 37% of markets in today's-build window, and loses on top of the BTC gate in both periods. The 5c edge refusal works in TEST only and gives up $13.7/day of TRAIN winners.\n\nWhat survives from V0:\n- the base (today's 0925d argv, one full bet, HYPE skipped, 98c ceiling, 0.40 full-size insurance, no size change);\n- the insurance STP 'maker' fix, which this version needs before the ladder grows;\n- the 0925e build itself (run with today's values);\n- the arm-5hz paper test and its bar;\n- its view that the maker ladder is the direction.\n\nThe BTC-lead gate replaces both of V0's refusals. It is positive in both periods (+$5.1 / +$17.5 per day), refuses fewer markets (2.5-2.9/day vs 6/day), and adding V0's gates on top of it loses money in both periods.\n\nMy checks (live fills only, nothing read from the recordings):\n- j1_combos.py / j1.out: 11 policy combinations, halves, daily risk, bootstraps.\n- j2_detail.py / j2.out: which markets carry each increment.\n- j3_vtoxic_copy.py / j3.out: the seller check while it was live.\nAll in C:\\Users\\Joe\\AppData\\Local\\Temp\\claude\\C--kals-repo\\b2dbb5c1-92b0-452a-b1e9-86b7402d3a34\\scratchpad\\final\\judge\\robust\\.\n\nThe redteam designer's summary and verdict were not available (truncated dossier, no VERDICT.md). I evaluated its main lever, the seller check, myself.\n\nBoth recorders were alive after my runs (kalshi_collector pid 2532788, crypto_feeds pid 105352). Free disk 20.9 GB, free RAM 2.4 GB."
+      },
+      {
+        "lens": "EVIDENCE QUALITY AND DEPLOYABILITY. A component goes live only if our own live fills support it out of sample. It also needs a revert line and a bar it can be judged by. Anything resting on tape or paper loss rates, on look-ahead, or on two TEST losers that every rule claims is a hypothesis: it gets a forward test with a bar written now, or it is rejected. My own checks are in judge/evidence/ (j1_checks.py/j1.out, j2_noise_floor.py/j2.out, j3_daysd.py/j3.out).\n- Reconciled: 1,362 markets, +$701.78, $66,379.06 bet. 43 markets lost more than 1c; the brief's 45 includes 2 near-$0 markets.\n- TRAIN: 1,026 markets, +$625.98, $31.76/day.\n- TEST: 336 markets, +$75.80, $7.29/day.\n- TEST without HYPE: 303 markets, 10 lost, +$165.19, $15.89/day, 1.02% on bet.\n- Since the 10-04 revert without HYPE: 168 markets, 5 lost, +$80.95, $19.02/day.\n- HYPE alone since the revert: -$113.50. So the 'roughly flat since the revert' is HYPE, which is already skipped.",
+        "name": "v-evidence: keep the proven taker; fix the hedge self-trade setting now; BTC-lead refusal after a 48-hour live check; grow the maker ladder by its own pre-registered bar",
+        "live_now": [
+          "Keep the taker exactly as live (0925d argv). No seller check, no 5c cap, no boost change.\n- Evidence: the current build without HYPE made +$15.89/day in TEST (303 markets, 10 lost, 1.02% on bet) and +$19.02/day since the 10-04 revert (168 markets, 5 lost). Its losses are already priced into those numbers.\n- Revert: none needed.",
+          "Hedge orders with self_trade_prevention_type=maker: the current argv on build C:\\kals-live-0925e, the only difference being that hedge orders use maker.\n- First: run the startup path in paper with the exact current argv, and pass versioncheck.\n- VERSIONS.md entry 'v-stp-maker'. Revert: copy the current launcher back and restart.\n- Kalshi's documented behaviour: self-trade prevention applies across subaccounts on one book, so with the current taker_at_cross a late hedge that crosses our own ladder's resting bid is cancelled. Measured cost so far: $0.",
+          "Ladder step 1, on his OK, no code: move about $270 from main to subaccount 1, so --auto-size sets about 25 a bid.\n- Gated on: the 10-10 capfix read passing; the main bank at or above its $1,095.67 mark when the transfer is made (or his hwm re-base); the transfer confirmed as 'external' in the live log.\n- Evidence that clears it: the loss and fee clauses of the ladder's own bar, pre-registered 09-27 (CLEANROOM_VS_INCUMBENT_2026-09-27.md line 170: 0-1 losing in the first 100 filled markets, maker fee 0). Live from Kalshi settlements: 124 filled markets, 0 lost, +$14.06 on $683.82 (2.06%), fee about $0.\n- Why it can only lose on a wrong gate: a bid on side X loses only if X loses, and the gate pointed at the losing side in 1 of 24,562 markets, 0 in TEST. That bound comes from the index itself, so the population trap does not apply."
+        ],
+        "paper_first": [
+          {
+            "what": "BTC-lead gate Phase A: LIVE LOG-ONLY for 48 h (--btc-lead-shadow; the bot still buys).\n- This is an implementation check, not evidence. Wrong-feature builds are this project's commonest bug.\n- No paper arm: paper cannot see the adverse fills this gate exists to avoid.",
+            "bar": "Pre-registered 10-09. PASS needs all four, otherwise fix and do not refuse:\n(1) The live s matches s recomputed offline from C:\\kals\\kalshi_data\\cfbenchmarks_value (read-only), within 0.05, on at least 95% of alt sends with more than 20 s left.\n(2) It fires on 6-20% of those sends; the study saw about 12%.\n(3) The BTC print used is at most 1.3 s old at the median. The signal decays: one more second of staleness cut TEST from +$180 to +$136.\n(4) Zero evaluations on hedge or A68 orders."
+          },
+          {
+            "what": "BTC-lead gate Phase B: LIVE REFUSAL, alts, more than 20 s left, lock-out for the close.\n- Evidence: threshold chosen on TRAIN at a flat bet. TRAIN without HYPE: 58 refused, 5 losers, +$208 (+$10.57/day); flat halves +42 / +172. TEST: 29 refused, 4 losers, +$180 (+$17.31/day); without HYPE +$181.79.\n- Controls: random sign negative in both periods; shuffle p 0.005-0.011.\n- Weaknesses: TEST without its two biggest catches (NEAR 10-03, ZEC 10-07) is +$9.72; bootstrap by close gives P(no gain) about 7%; the BTC signal family was flagged in loss_anatomy.md on all losers, TEST included, so the holdout is weaker than it looks.\n- My noise-floor check: refusing a random matching share of these same alt entries costs -$41 in TRAIN and -$12 in TEST, about -$1 to -$2/day. The upside is about +$5-15/day if the signal is real.",
+            "bar": "Pre-registered 10-09. Read at 40 refused alt markets (about 14 days at about 2.8 a day), and again at 80.\n- Value of a refused market = intended contracts x (1 if our side won, else 0, minus the seen ask) minus the taker fee. The outcome is Kalshi's result. Fill is assumed at the seen ask, which overstates the cost of refused winners.\n- KEEP if the refused markets' value sums to at most $0 (refusing saved money) AND at least 2 refused markets settled against our side, in at least 2 distinct closes.\n- KILL (VERSIONS revert, flag off) if at most 1 refused market settled against us at 40, or the refusals cost more than $30 net.\n- Otherwise extend to 80 with the same rule.\n- Engineering KILL at any time: any hedge or A68 order is refused.\n- Report by coin at the read, but do NOT refit coins on this data."
+          },
+          {
+            "what": "Ladder step 2: pot about $700, size about 50, needing about $350 more from main. Only after step 1's bar, and with the same hwm precondition.\n- Income at sizes above 5 has never run live. The tape says size 25 in TEST is about $5.5/day before frictions (a 1-s placement and cancel lag cost 16% at full size). Live at size 5 got 1.33-1.37x the tape model.",
+            "bar": "Pre-registered 10-09. Read after at least 60 filled markets AND at least 7 ET days at size 25:\n(a) 0 losing markets. Any loss halts at once. If the loss did not happen on an index gate-wrong second, the fill model is wrong: go back to size 5.\n(b) Live contracts at least 70% of the tape THROUGH model for the same closes and size (maker calib.py or newthing ladder_tape2.py).\n(c) Ladder net at least +1.0% of pot per day (about $3.5/day at $350). The real alternative, the taker without HYPE, made about 1.5% of bank per day in TEST.\nPASS on all three: propose step 2 to the operator. FAIL on (b) or (c): move the $270 back to main."
+          },
+          {
+            "what": "arm-5hz (PAPER, already running since 10-09 05:23Z): rewrite its read.\n- Its current bar ('fewer losing markets than the twin') compares PAPER loss counts. Paper cannot see adverse fills: the tape said 0.11% where live was 3.4%.\n- The arm is valid for decisions only, so judge it on markets LIVE actually bought.\n- If its hedge path logs the alarm time, price any faster-alarm claim from hedge-side taker TRADES after the alarm (the verifier's E3), never from the 1/s ticker touch.",
+            "bar": "Replaces the 10-14 bar.\n- Set = shared closes where arm-5hz did NOT buy, the twin DID buy, and LIVE bought.\n- After at least 5 ET days: PROMOTE (propose a live port) if live money on that set is at most -$40 with at least 2 losing markets in at least 2 closes.\n- KILL if that money is at least $0.\n- Otherwise run 5 more days.\n- Paper-vs-paper losing counts are reported but not used."
+          },
+          {
+            "what": "Connection reuse for orders (execution design). Deferred: build only after rules 2-4 are live and settled. It touches the order AND hedge path, and its sign is not established: the DOGE 09-23 losing-side order, about -$77 if caught, cannot be measured.",
+            "bar": "If built: demo-key wire test; a dead socket must not block a hedge, and that self-test must fail with the fallback removed. 7 live days: median send-to-fill-print at most 50 ms (from 82), zero hedges delayed past 2 s, zero unreconciled orders, filled share not below the prior week. Any failure: revert."
+          }
+        ],
+        "expected": "About +$15 to +$22/day on main + ladder, against about $13-17/day for today's setup.\n- Today's setup: TEST without HYPE $15.89/day; since 09-18 without HYPE $13.48/day.\n- Taker: about $12-15/day forward (supply is falling: 16 markets on 10-08).\n- BTC-lead gate: +$0 to +$10/day, central about +$4. Noise floor -$1 to -$2/day.\n- Ladder step 1, net of the taker's 27% smaller bets: about -$1 to +$2.5/day.\n- Self-trade fix: $0.\n- The plausible range is about $5-30/day. A whole-bot difference this size cannot be told apart from today's bot in under about 4 weeks: daily sd is about $77.",
+        "v0": "V0 does not survive as a money change.\n- Its in-sample +$14.0 -> +$30.5/day came from thresholds set on the same 15 losers.\n- Its seller check is about $0 forward: no selectivity in its only live run (09-27..10-04). Out of sample, its value is one market (ZEC 10-07). On top of the BTC-lead gate it adds +$1.33 in TEST.\n- Its 5c price refusal fails TRAIN at a flat bet (-$58.7; first half -$175.8).\n- Its 7-day pre-registered bar sits inside a +/-$57/day noise band, so it could not have judged the version.\n\nWhat survives from V0:\n- The insurance self-trade fix. Its build C:\\kals-live-0925e is the right vehicle: with default flags it differs from the live 0925d only in the hedge self-trade setting. Run it with today's argv, not V0's.\n- Its diagnosis that losses are adverse fills on entries with more than 20 s left. The BTC-lead gate targets that same population with a TRAIN-chosen threshold.\n- Its side-pot advice to grow the ladder. It is now backed by the ladder's own pre-registered 09-27 bar, which is met on its loss and fee clauses: 124 filled markets, 0 lost, maker fee $0.\n- Its 5 Hz paper arm, but only with the read rewritten to live-bought markets. Its present bar counts paper losses.\n\nCorrection to V0's framing: 'flat since the revert' is HYPE (-$113.50 since 10-04), and HYPE is already skipped. Without HYPE the current build made +$19.02/day since the revert and +$15.89/day in TEST. The core needs no rescue. This version keeps the core and adds only what has a bar: the self-trade fix now, the BTC-lead gate after a live check, and the ladder by steps."
+      }
+    ],
+    "synthesis": "# FINAL SYNTHESIS: the next version of the 15-minute crypto bot (2026-10-09)\n\n**Inputs.** Eight blind designs. Eight independent verifiers, each of whom rebuilt the numbers from raw data. Three judges, one each for maximum money, robustness and evidence quality. My own checks (design\\synth\\s1_recon.py and s1.out) and two code reads.\n\n**Rules used.** Loss numbers come only from our own live fills. TRAIN is closes before 09-28 00:00Z. TEST is 09-28 to 10-08 09:30Z. n counts markets. Market close times are in ET.\n\n**Reconciliation (my own run).**\n- Lifetime: 1,362 main markets, +$701.78 on $66,379.06 bet, 45 with money below $0.\n- 42 of those lost more than 1c. 12 of the 42 were insurance false alarms: our side won, but the insurance cost money.\n- TEST without HYPE: 303 markets, 10 lost, +$165.19 (+$15.88/day).\n- Since the 10-04 03:30Z revert, without HYPE: 168 markets, 5 lost, +$80.95 (+$19.05/day).\n- HYPE alone since the revert: 10 markets, 2 lost, -$113.50.\n\nSo \"roughly flat since the revert\" is entirely HYPE, and HYPE is already skipped.\n\n---\n\n## 0. The operator's worry: \"is this just a regular update?\"\n\n**In shape, yes. That is what the evidence found, not loyalty to the current bot.**\n\n- **Every part was attacked by someone whose job was to replace it.** Separate designers took: when to buy, how much, how orders are sent, insurance, which markets to refuse, a maker business, a red team of the current bot, and one told to build something entirely new (a maker-only bot with no taker).\n  - A separate verifier rebuilt every claim from the raw recordings.\n  - Three judges with opposite priorities each assembled a version on their own. All three landed on the same shape.\n- **Ideas outside this bot had already been swept.** results/IDEA_LEDGER.md shows 65 ideas checked on 10-02, 49 of them dead. Every survivor pays under $3/day at a size we can run. That covers hourly ladders, weather, brackets, sports and more.\n- **The current bot was not given a free pass.** Three things were found against it:\n  1. Its buying with more than 20 s left is not shown to make money. By half-period it made +$247, -$134, +$33 and -$162. In TEST, without HYPE, alt buys above 20 s lost $54.94 over 154 markets. It stays only because every alternative's gain rests on a single market. It is now on a tripwire (section 1, rule 7).\n  2. Insurance's TRAIN value was overstated by $40-80 because of a stale price model. In TEST it holds on real hedge fills: +$134 over 11 markets.\n  3. \"Flat since the revert\" is HYPE, as shown above.\n- **What is genuinely new:**\n  1. A signal the bot has never used: BTC's settlement index moving against an alt buy in the 3 s before it. It is the only refusal that held in both time periods on our own fills.\n  2. The maker ladder grown as a second business. It makes money at different seconds from the taker: 1,320 of the taker's 1,362 buys happened when the maker's safety rule was not met.\n- **What could not be beaten:** timing, size, the sweep and the insurance trigger. Nothing beat the current settings in both periods on real fills. Changing them anyway would be change for its own sake.\n- **What is still open:** 6 of the 10 TEST losers would get past the new refusal (BTC markets, buys inside 20 s, insurance false alarms). No measured rule catches them yet.\n  - The best leads are watch items (a) and (b) in section 2b. They are \"what happened after we bought\" signals.\n  - That is the one area where a further dedicated design pass could still pay. No new agent was needed to decide this version.\n\n---\n\n## 1. The recommended version: \"v-lead\"\n\n**In plain words.**\n- Keep the taker exactly as it runs today.\n- Add one refusal. On alt coins with more than 20 s left, do not buy if Bitcoin's settlement index has just moved sharply against our side, and stay out of that market for the rest of its 15 minutes. BTC moves tend to drag the alts about a second later.\n- Make insurance orders win any clash with our own maker bids.\n- Grow the maker ladder only with new money, in steps that each pass a bar written in advance.\n- Everything else stays as it is.\n\n**Exact rules.**\n\n**1. Taker base (main account).** Today's live arguments exactly (restart_bot.ps1 = results/restart_bot.before-seen.ps1, which is the 0925d argument list), run on build C:\\kals-live-0925e (code_sha 5075b1783acf).\n- I diffed 0925d against 0925e. With default flags the only behaviour change is that hedge orders carry `self_trade_prevention_type=\"maker\"` (pintake.py around line 761). `--max-edge-c` defaults to the old 10c constant, and `--toxic-fresh` stays off.\n- Coins: BTC, ETH, SOL, XRP, DOGE, BNB, NEAR, ZEC. HYPE stays skipped (`--skip-coin KXHYPE15M`).\n- Bot model at least 0.995, edge at least 0.3c, ceiling 98c, IOC sweep kept.\n- 31-45 s left: early leg, holdings at most 1/3 of a bet, price 90-98c, edge at most 10c.\n- 30 s or less: full bet, with one full bet per market (`--max-full-bets 1.0`) and a 10c edge cap above 20 s.\n- Inside 15 s: late add of half a bet, plus one late extra bet.\n- Inside 10 s: 1.5x boost when the model is at least 0.9975 and there was no 2-sd jump against us. The boost turns off after one boosted loss.\n- Bet size = bank / 11.76 (`--bank-brake 4.00`).\n- Stops unchanged: -$200 run and day loss caps, and a pause after 2 losses. The 20% drawdown halt is OFF in the live arguments (`--no-drawdown-halt`), but the high-water mark still drives the bank brake and the room for the boost.\n- The 1-contract hourly BTC ladder (`--series KXBTCD --series-size 1`) stays.\n\n**2. Insurance.** Unchanged trigger: belief in our side falls below 0.40 on the first print. Full held size, IOC at touch+10c, retried for 30 s. Nothing may block it. A68 stays on.\n- The only change is self-trade setting \"maker\" on insurance orders. An insurance order that crosses our own resting maker bid (subaccount 1) then cancels that bid instead of being cancelled itself.\n- Entries keep `taker_at_cross`.\n- Measured money effect so far: $0. This must be live before the maker grows.\n\n**3. BTC-lead refusal** (new flags `--btc-lead-sd 1.0 --btc-lead-tau 20 [--btc-lead-shadow]`). Build it in a fresh copy, C:\\kals-live-0925f, so 0925e stays the clean revert.\n- **Scope:** alt markets only (ETH, SOL, XRP, DOGE, BNB, NEAR, ZEC). BTC markets are never gated.\n- **When checked:** every entry order (early, full, top-up, late add) with more than 20 s left. Never on the insurance path, never on A68 rebuys.\n- **Inputs:**\n  - b = whole-second stamp of the newest CF print the bot holds for that alt's index.\n  - P(t) = the BRTI print stamped t.\n  - M = P(b-1) - P(b-4).\n  - sd = sample sd of BRTI 1-s changes P(t) - P(t-1) for t in [b-301, b-2]. At least 150 valid changes are needed.\n- **Score:** s = -M/sd when buying YES, +M/sd when buying NO.\n- **Action:** if s ≥ 1.0, refuse the order and lock that market out for the rest of the close. A position already held stays and is insured as usual.\n- **Missing input:** no refusal.\n- **Code it exactly as measured.** Use b-1, not b. Read the newest BRTI print in memory: one more second of staleness cut TEST from +$180 to +$136.\n- **Logging:** log every evaluation, fired or not: ticker, side, tau, ask seen, intended size, s, b, M, sd, and the age of the BTC print used.\n- **Shadow mode** (`--btc-lead-shadow`) logs the same fields but never refuses.\n- **Self-test, in a driven world:**\n  - a BTC drop refuses an alt YES and not an alt NO;\n  - nothing fires at 20 s or less, or on BTC markets;\n  - a held position is still insured;\n  - a missing BRTI print means no refusal;\n  - the test fails with the gate reverted;\n  - the startup path runs in paper with the full live arguments and asserts `_DEFAULT_` values, never the running ones.\n\n**4. Instrumentation** (log-only, in the same 0925f build). Log the price of each fill per order, our best ask at reply time, and the exchange timestamp of our fill print.\n- It must be wrapped so a logging error can never stop an order or a hedge. A self-test case makes the logger throw and checks that the order and the insurance order still go out.\n- No money effect. It turns the execution study's estimated ranges into exact numbers.\n\n**5. Maker ladder** (subaccount 1, research/cleanroom/ladder_live.py). The rule is unchanged:\n- Decide each second from 30 s to 1 s before the close, on receipt of the print.\n- Rest only when p ≥ 0.999 (or ≤ 0.001) AND |proj-thr|/v ≥ 0.25 x MAXERR(rel).\n- One post-only GTC 98c bid on the decided side, self-trade \"maker\". `--market-cap-x 2`, COMMIT_FRAC 0.70, `--auto-size` = pot/14.\n- Cancel when the rule stops holding or a print is missing, and cancel everything at the close.\n- Never start earlier than 30 s, never use a floor below 0.25, never bid 99c.\n\nThe stages:\n- **Stage 0 (now):** pot about $78, about 5 contracts a bid.\n- **Stage 1:** pot about $350, so auto-size gives about 25 a bid. At most 50 contracts and $49 on one market.\n  - Preconditions: the ladder-capfix read (due 10-10 12:00Z) passes, and v-stp-maker is live.\n  - Funding: about $270 of new money, which the operator adds himself (Claude never deposits).\n  - No code change.\n  - Any losing maker market stops the ladder for a re-read.\n- **Stage 2:** pot about $700, size about 50. Only after the stage-1 bar passes, and only as a v2 build:\n  - coin weights re-estimated on stage-1 live fills plus TEST, not TRAIN (DOGE's TRAIN rank failed in TEST; NEAR, ZEC and XRP held);\n  - optional fixed 98.1c and 97.1c price levels instead of model-minus-2c (tape only, about +$0.9/day);\n  - one fill per price level per market, no refill;\n  - a per-close cap;\n  - a stop for the ET day after any losing maker market;\n  - the existing 3 writes/s cap;\n  - self-test and startup path.\n\n**6. Side bots unchanged:**\n- forecaster (subaccount 2), until its own 10-13 bar;\n- coin race at 10 contracts a leg with its existing stake cap;\n- weather dip-seller (subaccount 3, $50), until its 60-fill bar.\n- arm-5hz keeps running in paper.\n\n**7. Tripwires (reads, no code):**\n- **21-30 s window.** Count forward from the v-lead restart: markets first filled at 21-30 s, HYPE excluded, money as traded including insurance. At 150 such markets (about 3 weeks): if the total is below -$75 AND 6 or more lost, propose a cap of 1/3 of a bet before 20 s. That needs a code change, the startup self-test and the operator's OK.\n- **Insurance.** Over the next 10 alarms: every insurance order carries \"maker\", none is cancelled for self-trade, and the share filled is not below the previous 14 alarms. Also report the real insurance legs over the next 15 alarms, priced against the trade-based price of the same second, not the 1/s ticker touch.\n\n---\n\n## 2. What goes live, what goes first to shadow or paper, and what was rejected\n\n### 2a. Live now (in order)\n\n| step | what | before going live | revert | keep/revert bar |\n|---|---|---|---|---|\n| A. **v-stp-maker** (today) | today's arguments on C:\\kals-live-0925e; only change: insurance orders self-trade \"maker\" | startup path in PAPER with this exact argument list (the 10-09 PASS used the v-seen arguments, not these); versioncheck.py; VERSIONS.md entry; READS_DUE item; restart only while flat, arguments checked before the stop | copy results/restart_bot.before-seen.ps1 over restart_bot.ps1 and run it while flat | revert at once if any insurance order is refused or cancelled for self-trade, or the insurance path errors; otherwise rule 7's insurance read |\n| B. **v-lead-shadow** (when 0925f passes its self-test; 48 h) | the BTC-lead check logs but never refuses, plus instrumentation | as A, with the new flags | the v-stp-maker launcher | **PASS needs all four** (pre-registered 10-09): (1) live s matches s recomputed offline from cfbenchmarks_value within 0.05 on ≥95% of alt sends above 20 s; (2) it fires on 6-20% of those sends (the study saw about 12%); (3) median age of the BTC print used ≤ 1.3 s; (4) zero evaluations on insurance or A68 orders. Fail = fix, do not refuse. Flagged markets in this period are bought, so their outcomes count toward C's 40. |\n| C. **v-lead** (after B passes; operator OK) | drop `--btc-lead-shadow`: the refusal is live | startup path in paper with the live arguments; versioncheck; VERSIONS entry | the v-stp-maker launcher (gate off) | below |\n| D. **Maker stage 1** (operator funding; after capfix passes and A is live) | pot about $350, auto-size about 25 | none (no code) | stop file, then move the money back to main if (b) or (c) fails | below |\n\n**Bar for C** (pre-registered 2026-10-09, before any refusal result). It is read at 40 flagged alt markets (about 2 weeks at about 3/day) and again at 80. \"Against us\" means Kalshi settled the market against the side we would have bought. Insurance false alarms are reported but not counted, which makes keeping the gate harder, not easier.\n\nValue at a flat bet, per flagged market = intended contracts x (1 if our side won, else 0, minus the ask seen) minus the taker fee.\n\n- **KILL** (revert, flag off) if at 40:\n  - 1 or fewer went against us, OR\n  - the refusals cost more than $30 net.\n- **KEEP** if 3 or more went against us in 2 or more distinct closes, AND refusing saved money (value ≤ $0).\n- **Otherwise** extend to 80, and keep only if 5 or more went against us in 3 or more closes with value ≤ $0.\n- **Engineering kill at any time:** any insurance or A68 order is refused.\n- Report results by coin, but do NOT refit coins on this data.\n- Odds of the bar: at the measured strength (about 8-10 in 100 against us) it keeps about 6 times in 10. If the signal is pure noise (about 3 in 100), it kills about 2 times in 3 and wrongly keeps about 1 time in 9.\n\n**Bar for D** (pre-registered 2026-10-09). Read at 60 or more filled maker markets AND 7 or more ET days.\n- (a) 0 losing maker markets. Any loss halts at once. If the loss was not on a second when the index made the rule wrong, the fill model is wrong: go back to size 5.\n- (b) Live contracts are at least 70% of the tape model's contracts for the same closes and size (calib.py or ladder_tape2.py).\n- (c) Ladder net is at least +1.0% of the pot per day (about $3.5/day). That is the bar against the real alternative: the taker made about 1.5% of its bank per day in TEST.\n- Pass all three: build v2 and put stage 2 to the operator. Fail (b) or (c): back to size 5.\n\n**If the operator would rather move money from main than add new money:**\n- Only when the main bank is at or above its $1,095.67 high-water mark, or he approves re-basing the mark (that changes his own risk limit).\n- Only while the bot is flat.\n- The live log must show an `external` record with the transfer id within 5 minutes. An `unexplained` record means the bot read the transfer as a trading loss.\n- Expected money is about $0. The taker sized at 0.73x loses about $4/day (judge j2: TEST -$3.98/day, since the build -$4.77/day), and the maker gains $2.5-4/day.\n- What it buys is information: the size-25 fill rate. It does not buy money.\n\n### 2b. Shadow, paper or read first\n\n- **arm-5hz** (paper, running since 10-09 05:23Z, read 10-14). The registered bar stays. **It is made stricter, stated loudly, before any result:** the existing bar compares paper losing counts, which paper cannot judge.\n  - PROMOTE now needs both the registered condition AND a live-market condition. The set is shared closes where arm-5hz did NOT buy, the twin DID buy, and LIVE bought. After 5 or more ET days, live money on that set must be at most -$40, with 2 or more losing markets in 2 or more closes.\n  - KILL if that live money is $0 or more.\n  - If it is ported, re-measure the BTC-lead check on 5 Hz prints in paper before changing its inputs.\n- **BTC-lead without the lock-out** (optional paper arm beside the twin). It measures decisions and supply only: how many refused markets would be re-bought within the same close, and at what time left. Consider dropping the lock-out only if more than half are re-bought at 20 s or less.\n- **Reusing one HTTPS connection for orders.** Deferred, not built this round. It touches the order and insurance paths, and its sign is not established.\n  - Measured: +$1.6-2.7/day on the orders that can be checked. But one known losing-side order (DOGE 09-23, about -$77) cannot be measured.\n  - If it is ever built: test on the demo key first; a dead socket must never delay insurance; its own version and bar.\n- **Watch, measure, no rule.** These are identify-better leads aimed at the losers the gate cannot catch. Measurement is read-only and should run now.\n  - (a) After an early buy, a 90-98c offer reappears on our side in the last 20 s. TEST: those 34 markets made -$271 live; the other 216 made +$179. This is the strongest unmeasured lead. Measure whether it shows up before insurance fires, and what blocking top-ups or insuring earlier would have done, TRAIN vs TEST.\n  - (b) First fill 2c or more under the ask seen. TRAIN: 36 markets, 10 lost. TEST: 11 markets, 2 lost.\n  - (c) Sweeping past a thin best offer (under 10% of a bet): TRAIN +$135, TEST -$208, 5 TEST losing legs.\n  - (d) A 5c cap on how far the sweep may go above the ask seen, with more than 20 s left. Positive in all four windows, but each window rests on one market. Its TRAIN market, BNB 09-19, is already caught by the BTC-lead refusal.\n  - (e) The 1 Hz index-age band: first half about $0.\n  - Rule for all five: a live change only after 3 or more NEW losing markets of that type in live fills after 10-09, with the rule positive in both the old and the new windows.\n  - Untested side lead: when BTC moved at least 1 sd FOR us, the 115 TRAIN and 37 TEST markets were near-clean (2 and 0 losers). Sizing those up is unmeasured and small.\n\n### 2c. Rejected, and why\n\n- **Seller check (`--toxic-fresh`):**\n  - In its only live run (09-27..10-04): 61 refused markets never bought, 2 went against us, worth about $0. Refused markets went against us 2.7 times per 100 against 2.5 for entries it let through, so it showed no selectivity.\n  - On top of BTC-lead it loses: TEST -$32.69 (bootstrap P(no gain) 0.91), since the build -$45.70.\n  - It refuses 37% of markets in the current build against BTC-lead's 8%.\n  - Its big TRAIN save (BTC 09-27, -$132) was a double bet that one-full-bet already blocks.\n  - Kept only as the fallback if BTC-lead fails its bar.\n- **5c edge refusal (`--max-edge-c 5`, `--early-max-edge 5`):** works in one period only.\n  - TRAIN at a flat bet -$58.7 (first half -$175.8). It refuses the cheap, big-edge winners that pay most.\n  - On top of BTC-lead: TEST -$46.90 (P(no gain) 1.00), since the build -$21.86.\n- **V0 as a package vs BTC-lead alone:** BTC-lead is better by +$72.51 in TEST (90% CI +$37 to +$107) and +$74 since the build. TRAIN shows no difference (-$29, CI -$442 to +$327).\n- **`--late-mult 2.0`** (boost 2.0x inside 10 s):\n  - Verified worth only +$0.70-0.85/day in TEST. It is mostly switched off right now anyway, because the bank brake caps the boost while the bank is below about $1,035.\n  - One loss on the extra contracts ($34-48) erases 40-60 days of gain.\n  - **Code side effect, confirmed by me** (0925d pinrun.py lines 20089-20091 and 20501-20502): the full-bet cap's room uses LATE_MULT for every order inside LATE_TAU, whether or not the boost conditions hold. At 2.0 that opens room for a second full bet, which the operator capped.\n- **Timing alternatives:**\n  - Late-only drops about 70% of markets: 86% of TEST early-bought markets had no 90-98c offer on our side in the last 20 s. Without HYPE, its TEST gain is +$0.06/day.\n  - No buying at 21-30 s, and 1/3 of a bet before 20 s: each TEST gain is one market (-$15 to -$30 without it), and both lose in TRAIN.\n  - Early leg off: loses in every half.\n  - Early leg at a full bet: -$3.61/day in TRAIN.\n- **Sizing:**\n  - R2 (1/3 of a bet before 20 s): TRAIN -$4.24/day; TEST is NEAR 10-03 plus ZEC 10-07, both already caught by BTC-lead. On top of the gate it loses in both periods.\n  - R1 (2.0x inside 15 s): about +$1/day at the observed late loss rate, negative at 3 per 100.\n  - New stops: stopping after the 2nd loss costs $123 in TRAIN and $79 in TEST; after the 1st, $150 and $56.\n  - Auto-size stays as it is.\n- **Execution:**\n  - Dropping the sweep: TRAIN -$18.6 to -$20.6/day; its TEST gain is NEAR 10-03 alone.\n  - Count caps and touch multiples: lose in TRAIN.\n  - Dropping late adds: TEST -$4.67/day.\n  - No collapse rule: the TEST collapse group is 7 markets, 1 lost, -$1.79. Nothing to save.\n- **Insurance variants:**\n  - Hair-over skip: TEST -$26 to -$33.\n  - No trigger beats 0.40 in both periods. The TRAIN-best, 0.20, is $45 worse in TEST.\n  - Half size halves a positive value.\n  - Skipping the last 10 s has no TEST alarm to test on.\n  - Unwind and 1.5x insurance rest on prices that were shown, not prices we got.\n- **Ladder-first, no taker (the \"entirely new\" design):**\n  - It swaps a business proven on live fills (+$701.78) for a tape forecast at 18x the largest size ever run live: TEST $16.83/day, about $12-15 realistic, against the taker's measured $15.88/day without HYPE.\n  - That forecast is falling every half-period ($43 → $27 → $18 → $15/day).\n  - The 95% upper bound of its loss cost (about $13/day) equals its profit.\n  - Per dollar the taker is at least as good.\n- **Maker loosening:**\n  - Floor 0.20 lets 3 TRAIN flips through.\n  - Starting at -60 s gives 7 TRAIN plus 1 TEST flips and losing fills; -45 s gives 3 TRAIN flips.\n  - 99c bids make less money.\n  - A taker gated by the maker rule keeps 7 of 1,362 markets.\n- **Funding the maker by moving money out of main now:** expected about $0, and the bank is below the high-water mark. Only as described in 2a.\n- **Coin, hour, weekday and Saturday rules:** not stable across halves.\n- **The BTC-lead gate inside 20 s:** TRAIN -$61.57.\n- **Restricting the gate to NEAR, ZEC and BNB:** a post-hoc fit.\n\n---\n\n## 3. Expected money per day\n\n| part | central | range | basis |\n|---|---|---|---|\n| Taker as today (no HYPE) | $14 | $8-19 | live: TEST $15.88/day (303 markets, 10 lost); since the build $19.05/day (168 markets, 5 lost, 4.25 days); daily average since 09-18 $13.48, typical day $26.54. Supply is softening. |\n| BTC-lead refusal | +$5 | -$3 to +$10 | live fills, lock-out replay. Without HYPE: TRAIN +$208 (+$10.57/day; +$5.1/day with today's caps applied to history), TEST +$182 (+$17.5/day). Discounted because 2 markets carry TEST and the holdout is partly contaminated. If it is noise: -$1 to -$3/day. |\n| Insurance self-trade fix, instrumentation | $0 | $0 | precaution; logging |\n| Ladder as now | $1.3 | $1-2 | live: 124 filled markets, 0 lost, +$14.06 on $683.82 |\n| **Total, no new money** | **about $20/day** | **$5-30/day** | |\n| + maker stage 1 (about $270 new money) | +$3 | +$1 to +$4 | tape at size 25, TEST about $5.5/day before friction and about $4 after, minus today's ladder; only live size 5 is calibrated (live filled 1.33x the model) |\n| + maker stage 2 (about $350 more, only if stage 1 passes) | +$8 | $0 to +$11 | tape only; never run above size 5 |\n\n**What drives the uncertainty.**\n1. **Day-to-day swings.** Since 09-18 (no HYPE) the daily standard deviation is $75.84. The worst day was -$207, and 7 of 20 full days lost money. From noise alone a 30-day average is only known to about ±$14/day, so a whole-bot difference of $5/day cannot be seen in the bottom line within a month. Each part has to be judged on its own bar.\n2. **The BTC-lead gain rests on two markets** (NEAR 10-03 and ZEC 10-07). Without them TEST is +$9.72.\n3. **Supply is softening.** The taker's market counts dip on some days; the maker's tape supply falls every half-period.\n4. **The maker has never run above size 5.**\n\n**Risk.**\n- A day is capped near -$200 by the loss caps.\n- The as-traded record since 09-18, resampled into 30-day months, gives a 5th percentile of -$234 and a losing month 16 times in 100. With the gate at half its measured effect it is 2 in 100, but that is in-sample and optimistic.\n- A realistic bad month for this version is about -$300 to -$400.\n\n---\n\n## 4. Where the judges disagreed and how I resolved it\n\n1. **BTC-lead: refuse live at once (money, robust) or log-only first (evidence).** → **48 h log-only on the live bot, then refuse.**\n   - Wrong-feature builds are this project's commonest bug.\n   - Print staleness decides much of the value, and only the live process can measure its own print age.\n   - Flagged markets during the log-only period are bought, so their outcomes count toward the same 40-market bar. No evidence is lost.\n   - Cost: about 2 days x about $5, so about $10 expected.\n   - A 3-week log-only period (the selection verifier's option) was rejected. It forgoes about $60-100 of expected gain to save about $40 of downside.\n2. **The kill-bar wording (three versions).** → Combined: the settlement count (≥3 against us of 40 to keep, ≤1 to kill), plus evidence's money clauses (value ≤ $0 to keep, more than $30 cost to kill), plus distinct closes. The odds are in 2a.\n3. **`--late-mult 2.0`** (money: optional; robust and evidence: reject). → Rejected. It is under $1/day, mostly switched off by the brake, carries a fat tail, and has the full-bet-cap side effect I confirmed in code.\n4. **Funding the maker: new money (money) or a transfer from main (robust: a wash with smaller swings; evidence: a transfer with preconditions).** → New money preferred. A transfer only as an information purchase, with the high-water-mark preconditions. Otherwise no change. Its expected money is about zero, and \"no change for its own sake\" applies.\n5. **Maker stage-1 bar** (60 filled at 70% / 100 filled at 50% / 60 filled plus 7 days plus 70% plus at least 1%/day). → Evidence's version: the strictest, and the only one that compares against the real alternative.\n6. **Maker v2 contents** (money: build before stage 2 with TRAIN weights; robust: re-weight on stage-1 fills; evidence: reject for now). → Build v2 only after stage 1 passes, with weights from stage-1 live fills plus TEST, never TRAIN's DOGE rank.\n7. **arm-5hz bar** (money and robust: as registered; evidence: rewrite). → Stricter: both conditions are needed to promote. Changed before any result and stated loudly.\n8. **21-30 s tripwire** (money: 300 markets / -$100 counted from 09-17, which already stands at -$170 in-sample; robust: 150 / -$75 forward; evidence: 150 / -$75 AND at least 6 lost, forward). → Evidence's version. Forward-only avoids an in-sample start, and the loser count stops one market from tripping it.\n9. **Connection reuse** (robust: demo first; evidence: defer; money: reject). → Deferred.\n10. **Instrumentation** (evidence only). → Adopted. It is log-only and directly serves \"identify better\".\n11. **Small factual fix.** The evidence judge listed a 20% drawdown halt among the stops. The live arguments carry `--no-drawdown-halt`, so the halt is off. The high-water mark still governs the bank brake and the boost room, which is why the transfer precondition stays.\n\n---\n\n## 5. Does V0 (v-seen) survive?\n\n**Only in part, and not as a money change.**\n\n**What survives:**\n- Its vehicle: build 0925e. With today's arguments it differs from the live build only in the insurance self-trade setting.\n- That self-trade fix itself.\n- Its diagnosis that losses are adverse fills on entries with more than 20 s left. BTC-lead targets the same group with a threshold chosen on TRAIN.\n- Its direction of growing the maker. That is stage 1 here, funded with new money.\n- Its 5 Hz paper arm, with a stricter read.\n\n**What does not survive:**\n- Both refusals: the seller check and the 5c edge cap. Each loses money when added on top of BTC-lead, in TEST and since the build.\n  - The seller check showed no selectivity in the only week it ran live.\n  - The 5c cap fails TRAIN at a flat bet.\n- Its 7-day \"≥ +$10/day\" bar. A 7-day average is only known to about ±$57/day, so that bar could not have judged the version.\n- Its \"flat since the revert\" framing, which was HYPE.\n\n**Practical consequence.** results/restart_bot.seen.ps1 must NOT be used as it is: it turns on `--toxic-fresh` and the 5c caps. OPEN_WORK A21 \"go v-seen\" should become \"go v-stp-maker, then v-lead\".\n\n---\n\n## 6. The three things most likely to make this wrong\n\n1. **The BTC-lead signal is noise or fades.**\n   - Two markets carry TEST.\n   - The holdout is weaker than it looks: loss_anatomy.md had already flagged BTC moves while looking at all losers, TEST ones included.\n   - The gain sits in two of four half-periods: TRAIN halves +$10 and +$198, TEST halves -$7 and +$189, without HYPE.\n   - It is sensitive to print staleness, and others may trade the same lead.\n   - Cost if wrong: about $2-4/day until the kill bar removes it in 2-3 weeks (about -$40 to -$60). The 48-hour check guards against a wrong build.\n2. **The taker's base weakens further, and the losers the gate cannot see keep coming.** Everything here rests on the taker staying positive.\n   - If our loss rate rises to 1.5x lifetime (about 4.2 per 100), today's build is about break-even.\n   - 6 of 10 TEST losers pass the gate: BTC markets, buys inside 20 s, false alarms.\n   - Supply has been softening.\n3. **The maker does not scale the way the tape says, or its rare failure comes in a cluster.**\n   - It has never run above 5 contracts. Competitors may sit at 98c and above, and supply falls every half-period.\n   - The safety bound (1 wrong call in 24,553 markets, 0 in about 16,000 since 09-18) comes from the index, so it holds no matter who sells to us.\n   - But a close where the rule is wrong on several coins at once could cost $100-200 at stage 1-2 sizes. This has happened when starting from -60 s (4 coins on 09-15), never from -30 s at floor 0.25.\n   - Hence stages, new money only, and a halt on any loss.\n\n---\n\n## 7. Decisions for the operator\n\n1. Go **v-stp-maker** now? Today's exact settings on the 0925e build; the only change is that insurance orders cancel our own maker bid instead of being cancelled. This replaces \"go v-seen\".\n2. Build the **BTC-lead refusal**: 48 hours log-only, then refusing, with the 40-market kill bar in 2a? (yes / no)\n3. **Maker stage 1:** add about $270 of NEW money to subaccount 1 for about 25 contracts a bid? (yes / no / instead move it from main later, once the bank is back at $1,095.67)\n\n---\n\n**Files and checks.**\n- My script and output: C:\\Users\\Joe\\AppData\\Local\\Temp\\claude\\C--kals-repo\\b2dbb5c1-92b0-452a-b1e9-86b7402d3a34\\scratchpad\\final\\design\\synth\\s1_recon.py and s1.out.\n- Code reads: C:\\kals-live-0925d vs C:\\kals-live-0925e (the pintake and pinrun diffs), and the full-bet-cap lines in C:\\kals-live-0925d\\research\\pinrun.py.\n- Judge outputs relied on: judge\\money\\j1.out, j2.out, j3.out; judge\\robust\\j1.out; judge\\evidence\\j1.out, j2.out, j3.out and dump_*.txt. Selection refused-market list: design\\selection\\s11.out.\n- I did not read the raw recordings.\n- After my runs: kalshi_collector (pid 2532788, 46 MB) and crypto_feeds (pid 105352, 36 MB) were both alive. Free disk 20.9 GB, free RAM 2.45 GB.\n- FINAL_SYNTHESIS.md was not written to disk, because subagent rules forbid report .md files. This message is its full text."
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Design"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Verify"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 3,
+      "title": "Judge"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 4,
+      "title": "Synthesis"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "design:timing",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "ad79184335ae12964",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791530577492,
+      "queuedAt": 1791530577461,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Timing: keep today's windows, raise the inside-10s boost to…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791532539875,
+      "tokens": 379703,
+      "toolCalls": 89,
+      "durationMs": 1962378,
+      "resultPreview": "{\"name\":\"Timing: keep today's windows, raise the inside-10s boost to 2.0x. Late-only rejected because the early markets cannot be bought late.\",\"philosophy\":\"Buy when the arithmetic is decided and the book still has sellers. The late window (20 s or less) is where the edge is reliable, and the bot already takes about 90% of it. The early windows (21-45 s) are a separate group of markets, and most …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "design:maker",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "af4be23da79f7ff09",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791530577494,
+      "queuedAt": 1791530577462,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Decided-side maker layer: the clean-room ladder scaled to ~…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791533641259,
+      "tokens": 393476,
+      "toolCalls": 106,
+      "durationMs": 3062466,
+      "resultPreview": "{\"name\":\"Decided-side maker layer: the clean-room ladder scaled to ~$490, coin-weighted, 98.1c/97.1c, on top of an unchanged taker\",\"philosophy\":\"Being the maker can't replace the taker; it adds a second business that trades at different seconds. The main bot made 1,320 of its 1,362 buys (TRAIN 987+35 of 1,026, TEST 333 of 336) at seconds when the maker's safety rule did NOT hold, because the lead…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "design:selection",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "ae7f3365c7ae1d985",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791530577495,
+      "queuedAt": 1791530577462,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "selection: BTC-lead refusal gate (alts, >20 s left, lock-ou…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791532064197,
+      "tokens": 354322,
+      "toolCalls": 73,
+      "durationMs": 1485403,
+      "resultPreview": "{\"name\":\"selection: BTC-lead refusal gate (alts, >20 s left, lock-out for the close)\",\"philosophy\":\"Refuse only what our own live money says to refuse, using only what the bot already had before it sent. I scored every rule with a lock-out counterfactual that is exact on live fills. Rules were chosen on a flat-bet score so the 10x drift in bet size could not bias the pick. Thresholds came from TRA…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "design:sizing",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "a540e3c6ddf9eab8b",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791530577496,
+      "queuedAt": 1791530577462,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Late-weighted size: cut size before 20 s (R2), add size ins…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791532245530,
+      "tokens": 360268,
+      "toolCalls": 70,
+      "durationMs": 1666736,
+      "resultPreview": "{\"name\":\"Late-weighted size: cut size before 20 s (R2), add size inside 15 s (R1), on the current build\",\"philosophy\":\"SIZING DESIGN (designer: sizing). Data: 1,362 main markets, +$701.78, 45 losing. I rebuilt each market's money from its own live orders and it matches Kalshi to the cent ($0.00 max difference). TRAIN = closes before 09-28 (1,026 mk, 33 lost, +$625.98, $31.72/day over 19.74 d). TES…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "verify:selection",
+      "phaseIndex": 2,
+      "phaseTitle": "Verify",
+      "agentId": "ab2dbac1524fba9aa",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791532066978,
+      "queuedAt": 1791532066954,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "selection: the current live build (09-25 build + --max-full…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791533353009,
+      "tokens": 198254,
+      "toolCalls": 45,
+      "durationMs": 1286030,
+      "resultPreview": "{\"design\":\"selection: the current live build (09-25 build + --max-full-bets 1.0 + --skip-coin KXHYPE15M) plus one entry gate for alt coins. When more than 20 s are left and BTC's settlement index (BRTI) moved at least 1.0 one-second sd against our side over the 3 s ending one print before the alt print the bot holds (P(b-1)-P(b-4), sd taken from the prior 300 s), the gate refuses the order and loc…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "verify:sizing",
+      "phaseIndex": 2,
+      "phaseTitle": "Verify",
+      "agentId": "a74b7d4402c5862fc",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791532248113,
+      "queuedAt": 1791532248110,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "sizing: 'Late-weighted size' = the current build plus R2 (n…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791533071877,
+      "tokens": 201323,
+      "toolCalls": 37,
+      "durationMs": 823763,
+      "resultPreview": "{\"design\":\"sizing: 'Late-weighted size' = the current build plus R2 (no more than SIZE/3 per market before 20 s, trimmed contracts still counted as bought) plus R1 (one order of up to 2.0 x SIZE inside 15 s; flags --late-tau 15 --late-mult 2.0)\",\"claims\":[{\"claim\":\"Reconcile: 1,362 main markets, +$701.78, 45 losing. TRAIN 1,026 markets / 33 losing / +$625.98; TEST 336 / 12 / +$75.80.\",\"verdict\":\"h…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 7,
+      "label": "verify:timing",
+      "phaseIndex": 2,
+      "phaseTitle": "Verify",
+      "agentId": "a737aa153953ee915",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791532542339,
+      "queuedAt": 1791532542336,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "timing: keep today's buying windows, raise the inside-10 s …",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791533829901,
+      "tokens": 188415,
+      "toolCalls": 48,
+      "durationMs": 1287561,
+      "resultPreview": "{\"design\":\"timing: keep today's buying windows, raise the inside-10 s boost from 1.5x to 2.0x (--late-mult 2.0); late-only rejected\",\"claims\":[{\"claim\":\"Reconciliation: 1,362 markets, +$701.78, 45 losing (33 hedged_loss + 12 loss). TRAIN is 1,026 markets, +$625.98, 33 losing; TEST is 336 markets, +$75.80, 12 losing.\",\"verdict\":\"holds\",\"recomputed\":\"v1_recon.py: 1,362 / +701.78 / 45 losing, with th…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 8,
+      "label": "verify:maker",
+      "phaseIndex": 2,
+      "phaseTitle": "Verify",
+      "agentId": "a57be57645abaa75e",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791533643972,
+      "queuedAt": 1791533643968,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "maker: a 'decided-side' maker layer. It runs the clean-room…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791535596342,
+      "tokens": 283313,
+      "toolCalls": 101,
+      "durationMs": 1952370,
+      "resultPreview": "{\"design\":\"maker: a 'decided-side' maker layer. It runs the clean-room ladder rule unchanged in subaccount 1: from 30 s before the close, rest only when p>=0.999 AND the lead floor 0.25 x MAXERR holds. It bids XRP/ZEC/NEAR/DOGE at 50 contracts at 98.1c plus 50 at 97.1c, and HYPE/SOL at 25+25, with about $488 resting. The main taker bot stays unchanged and about $410 moves from the main account to …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 9,
+      "label": "design:hedge",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "a0937a462a8e7db92",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791535598760,
+      "queuedAt": 1791535598757,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Keep-and-harden insurance: hedge at belief < 0.40, full siz…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791537340340,
+      "tokens": 366670,
+      "toolCalls": 94,
+      "durationMs": 1741576,
+      "resultPreview": "{\"name\":\"Keep-and-harden insurance: hedge at belief < 0.40, full size, on the first print, unblockable (STP=maker, reduce-only sell form), then make it faster\",\"philosophy\":\"FULL REPORT (the harness refused to let this subagent write REPORT.md, \\\"Subagents should return findings as text\\\", so the report is here. Scripts and data are in C:\\\\Users\\\\Joe\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--kals-repo\\\\b2…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 10,
+      "label": "design:execution",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "aa88e4d94def44f1e",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791535598761,
+      "queuedAt": 1791535598758,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Execution (how we buy): keep the IOC sweep exactly as it is…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791539307015,
+      "tokens": 396830,
+      "toolCalls": 105,
+      "durationMs": 3707348,
+      "resultPreview": "{\"name\":\"Execution (how we buy): keep the IOC sweep exactly as it is; only change is reusing one open order connection (plumbing, about +$0.5 to +$1.5/day)\",\"philosophy\":\"The order can only control two things: the highest price it will pay and how many contracts it lets itself take. A crossing IOC always fills at the resting price, so the limit cannot stop the most toxic fills. Those are fills far…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 11,
+      "label": "design:redteam",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "ad8581c2a8c203cc6",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791535598762,
+      "queuedAt": 1791535598758,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "redteam: the current live bot with the seller check switche…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791537276369,
+      "tokens": 435056,
+      "toolCalls": 95,
+      "durationMs": 1676702,
+      "resultPreview": "{\"name\":\"redteam: the current live bot with the seller check switched back on\",\"philosophy\":\"Red-team every live mechanism by tracing the Kalshi money of each market (1,362 markets, +$701.78, reconciled exactly) to whatever bought each contract:\\n- the best offer the bot saw;\\n- the sweep past it (depth);\\n- the 1.5x boost, the late add and the extra bet;\\n- the 45-s leg and its top-up;\\n- insuran…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 12,
+      "label": "design:newthing",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "a509fbaebd55a0974",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791535598763,
+      "queuedAt": 1791535598758,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Ladder-first: the gated 98c maker ladder scaled to the whol…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791538707450,
+      "tokens": 403858,
+      "toolCalls": 91,
+      "durationMs": 3107783,
+      "resultPreview": "{\"name\":\"Ladder-first: the gated 98c maker ladder scaled to the whole bank (no taker)\",\"philosophy\":\"Same edge as the taker (once most of the 60-print settlement average is locked, the outcome is decided), but taken from the other side of the book and later in time. The taker buys before the average is locked, from offers that informed sellers sometimes post. The ladder waits until even a quarter …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 13,
+      "label": "verify:redteam",
+      "phaseIndex": 2,
+      "phaseTitle": "Verify",
+      "agentId": "a414905af831173d3",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791537279328,
+      "queuedAt": 1791537279326,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "redteam: the current live bot with the seller check (--toxi…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791538027285,
+      "tokens": 190572,
+      "toolCalls": 50,
+      "durationMs": 747956,
+      "resultPreview": "{\"design\":\"redteam: the current live bot with the seller check (--toxic-fresh) switched back on\",\"claims\":[{\"claim\":\"Baseline reconciles: 1,362 main markets / +$701.78; TRAIN (closes < 09-28 00:00Z) 1,026 markets, 33 losing, +$625.98 (+$31.71/day); TEST 336 markets, 12 losing, +$75.80 (+$7.29/day); halves T1 +$50/day, T2 +$13.89, S1 +$33.94, S2 -$17.39\",\"verdict\":\"holds\",\"recomputed\":\"v_recon.py /…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 14,
+      "label": "verify:hedge",
+      "phaseIndex": 2,
+      "phaseTitle": "Verify",
+      "agentId": "a6a5a7cd674b4b9de",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791537342940,
+      "queuedAt": 1791537342937,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "hedge: keep-and-harden insurance (hedge at belief < 0.40, f…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791538303223,
+      "tokens": 244968,
+      "toolCalls": 55,
+      "durationMs": 960282,
+      "resultPreview": "{\"design\":\"hedge: keep-and-harden insurance (hedge at belief < 0.40, full held size, on the first print, IOC at touch+10c, unblockable, STP=maker, reduce-only sell form; unwind and 5 Hz fast alarm are paper-only)\",\"claims\":[{\"claim\":\"Reconciliation: 1,362 markets / +$701.78; our-side legs +$589.10, other-side legs +$112.64; 21 saves +$429.34; 13 false alarms -$316.70; A68 legs +$8.02; TEST without…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 15,
+      "label": "verify:newthing",
+      "phaseIndex": 2,
+      "phaseTitle": "Verify",
+      "agentId": "a4bdb8c56ccf605ea",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791538710035,
+      "queuedAt": 1791538710031,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Ladder-first: the gated 98c maker ladder scaled to the whol…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791541529004,
+      "tokens": 261140,
+      "toolCalls": 78,
+      "durationMs": 2818968,
+      "resultPreview": "{\"design\":\"Ladder-first: the gated 98c maker ladder scaled to the whole bank (S=pot/14, about 90), no taker\",\"claims\":[{\"claim\":\"Reconciliation and taker baseline: 1,362 mk / +$701.78 / 45 losing. TRAIN 1,026 mk, 33 losing, $31.76/day (H1 $49.56, H2 $13.96). TEST 336 mk, 12 losing, $7.27/day (H1 $26.14, H2 -$11.59). Live ladder 113 mk, +$12.94, 0 lost.\",\"verdict\":\"holds\",\"recomputed\":\"Exact with m…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 16,
+      "label": "verify:execution",
+      "phaseIndex": 2,
+      "phaseTitle": "Verify",
+      "agentId": "adf197ef1023bbb40",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791539309396,
+      "queuedAt": 1791539309393,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Execution (designer 'execution'): change nothing that is pr…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791542719213,
+      "tokens": 255886,
+      "toolCalls": 81,
+      "durationMs": 3409816,
+      "resultPreview": "{\"design\":\"Execution (designer 'execution'): change nothing that is priced or sized (keep the 09-13 IOC sweep, sizing, top-ups and late adds); build one reused HTTPS connection for orders and hedges with a 2-s timeout and client_order_id reconciliation (claimed +$0.49/day train 09-22..27, +$1.52/day test); add per-fill price, reply-time ask and fill-timestamp logging; 1 Hz index-age band is watch-…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 17,
+      "label": "judge:money",
+      "phaseIndex": 3,
+      "phaseTitle": "Judge",
+      "agentId": "a73bd05efc445a9b1",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791542721900,
+      "queuedAt": 1791542721872,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "MAXIMUM EXPECTED MONEY net of losses over the next 30 days.…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791543476776,
+      "tokens": 239337,
+      "toolCalls": 31,
+      "durationMs": 754873,
+      "resultPreview": "{\"lens\":\"MAXIMUM EXPECTED MONEY net of losses over the next 30 days. Each part is weighted by what its verifier recomputed, not by what its designer claimed. Losses come only from our live fills. I ran three of my own checks on live fills, ex-HYPE because the build skips HYPE. Scripts and outputs are in C:\\\\Users\\\\Joe\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--kals-repo\\\\b2dbb5c1-92b0-452a-b1e9-86b7402d3a3…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 18,
+      "label": "judge:robust",
+      "phaseIndex": 3,
+      "phaseTitle": "Judge",
+      "agentId": "a428a516a5756d0bc",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791542721901,
+      "queuedAt": 1791542721872,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "ROBUST: lose less and survive. Lower day-to-day swings, sma…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791543315968,
+      "tokens": 239529,
+      "toolCalls": 32,
+      "durationMs": 592783,
+      "resultPreview": "{\"lens\":\"ROBUST: lose less and survive. Lower day-to-day swings, smaller worst week, fewer losing days. A part with a strong record in the TEST window (09-28..10-08) beats a bigger in-sample number. Every change needs a pre-registered kill bar, and nothing new goes live that can add a fat loss tail for a gain under $1/day.\",\"version_name\":\"v-steady = build C:\\\\kals-live-0925e run with TODAY'S 0925…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 19,
+      "label": "judge:evidence",
+      "phaseIndex": 3,
+      "phaseTitle": "Judge",
+      "agentId": "ac531932b664aef6a",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791542721902,
+      "queuedAt": 1791542721873,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "EVIDENCE QUALITY AND DEPLOYABILITY. A component goes live o…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791543530655,
+      "tokens": 287747,
+      "toolCalls": 42,
+      "durationMs": 807470,
+      "resultPreview": "{\"lens\":\"EVIDENCE QUALITY AND DEPLOYABILITY. A component goes live only if our own live fills support it out of sample. It also needs a revert line and a bar it can be judged by. Anything resting on tape or paper loss rates, on look-ahead, or on two TEST losers that every rule claims is a hypothesis: it gets a forward test with a bar written now, or it is rejected. My own checks are in judge/evide…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 20,
+      "label": "synthesis",
+      "phaseIndex": 4,
+      "phaseTitle": "Synthesis",
+      "agentId": "a0ca19966eddef45a",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1791543532481,
+      "queuedAt": 1791543532478,
+      "attempt": 1,
+      "lastToolName": "PowerShell",
+      "lastToolSummary": "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" |…",
+      "promptPreview": "CONTEXT. A live trading bot on Kalshi's 15-minute crypto up/down markets (KXBTC15M, KXETH15M, KXSOL15M, KXXRP15M, KXDOGE15M, KXBNB15M, KXNEAR15M, KXZEC15M; HYPE skipped since 10-05) buys the near-certain side at ~90-98c in the last ~45 s as a TAKER and holds to settlement (settlement = mean of 60 one-second CF Benchmarks index prints in the final minute; next strike = this settlement). Lifetime si…",
+      "promptFramed": true,
+      "lastProgressAt": 1791544120647,
+      "tokens": 218955,
+      "toolCalls": 33,
+      "durationMs": 588166,
+      "resultPreview": "# FINAL SYNTHESIS: the next version of the 15-minute crypto bot (2026-10-09)\n\n**Inputs.** Eight blind designs. Eight independent verifiers, each of whom rebuilt the numbers from raw data. Three judges, one each for maximum money, robustness and evidence quality. My own checks (design\\synth\\s1_recon.py and s1.out) and two code reads.\n\n**Rules used.** Loss numbers come only from our own live fills. …"
+    }
+  ],
+  "totalTokens": 5899622,
+  "totalToolCalls": 1356
+}

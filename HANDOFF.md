@@ -1,3 +1,60 @@
+# PICK UP HERE -- 2026-10-11 ~09:0xZ -- read this first (the session of 10-07..10-11 ended with the operator's /clear)
+
+**Operator's standing instructions from this session (also in memory):**
+- "Implement only changes you are sure improve" (10-09); unproven ones are measured forward first.
+- Every bot/version turned on gets a live Monitor + a READS_DUE bar (memory `every-bot-on-gets-a-watcher`).
+- NO routine status messages: write only for urgent items, a loss analysis, a finished read, or a decision. He reads ONLY
+  the "What I need from you" section -- put anything important there (memory `no-routine-status-messages`).
+- SNOWBALL: "I don't want to cap any growth ... Every account should be automatically increasing bets with their bank" (10-11).
+- He is about to give a big prompt about "an ever-constant, no-downtime, self-improving bot".
+
+**LIVE NOW (money):**
+- Main 15-min taker: v-stp-maker since 2026-10-10 02:07:23Z = the 09-25 build + fullcap + skiphype + bankfix-nodd + insurance
+  orders with self_trade_prevention_type=maker. Code C:\kals-live-0925e (code_sha 5075b1783acf), launcher restart_bot.ps1
+  (= results/restart_bot.stpmaker.ps1), revert results/restart_bot.before-seen.ps1. Current run results/pinrun-live-20261010T221608Z.jsonl
+  (watchdog restart after the 2-loss pause 10-10 22:16Z). Size auto = bank/11.76 (91 at $1,070); the 31-45 s early leg is 1/3 of it (~30).
+- Ladder (sub 1, pool 2, auto-size pot/14), forecaster (sub 2, pool 2, auto-scale), coin race taker (main, 20 a leg, $40 open cap -- FIXED, see below).
+- NEW: coin-race REWARD test v-racereward-test (subaccount 4 pool 2, $55, pid 3097040, since 2026-10-11 08:24:47Z, 20 races,
+  research/sweep/racereward_live.py code_sha c73979198066, log results/racereward-live.jsonl, stop file results/racereward-live.stop).
+  Race 1: expected reward $5.40 vs fills $2.65. Verdict 48 h after the last race: READS_DUE `racereward-test`.
+  (An extra EMPTY subaccount 3 in pool 2 was created by the first create call; unused.)
+- STOPPED 10-10: weather dip-seller (sub 3 pool 0, -29% on money bet; ~$42 left there).
+
+**IN FLIGHT when the chat was cleared -- workflow wg538745l "snowball-sizing-and-connection" (run wf_2006e7ab-700):**
+three builds, each independently reviewed, NOTHING deployed. Outputs: notes in the old session scratchpad
+`C:\Users\Joe\AppData\Local\Temp\claude\C--kals-repo\b2dbb5c1-92b0-452a-b1e9-86b7402d3a34\scratchpad\final\snowball\{mainbot,race,conn}\`
+and each agent's final report in `C:\Users\Joe\.claude\projects\C--kals-repo\b2dbb5c1-92b0-452a-b1e9-86b7402d3a34\subagents\workflows\wf_2006e7ab-700\journal.jsonl`
+(if the clear stopped it, the journal holds whatever finished; re-run the unfinished parts):
+  1. C:\kals-live-0925f = 0925e + `--series-size-frac F` (hourly KXBTCD contracts = floor(SIZE x F), F=0.12 -> ~10 now, grows with the bank;
+     operator approved "Bitcoin hourly yes can increase ... size up with its bank") + every bet-SIZE ceiling scaled/removed
+     (loss limits --loss-cap 200 and the 2-loss pause NOT changed). Deploy after a GO review: startup path in paper with the live argv
+     + `--series-size-frac 0.12` instead of `--series-size 1`, VERSIONS entry, READS bar "40 markets, <=1 lost, money > $0", restart while flat.
+  2. research/pinracearm.py: `--contracts-per-bank X --stake-per-bank Y` (OFF by default; X=20/1050, Y=40/1050 keep today's sizes and grow
+     them with the bank; operator: race cap must grow). Deploy = new argv line in boot_all.ps1 (~line 484) + stop-file restart.
+  3. C:\kals-live-0925g = 0925e + ONE kept-open HTTPS connection for orders (operator "Build connections"); demo-tested only.
+     Needs his GO before live (it touches the insurance path).
+
+**Open decisions put to him (unanswered at the clear):** grow the -$200 day loss stop with the bank ("grow day stop"/"keep 200");
+fix the 2-loss pause counting a winning market's insurance leg as a loss ("fix loss count"); cap Windows restore points at 2 GB
+("cap restore points" -- they regrow ~1 GB/h after each new restore point; 10-10 they ate the disk down to 11.4 GB).
+
+**Machine hazards found this session:** SteelSeries GG's capture service (SteelSeriesCaptureSvc) leaked to 6.7 GB on 10-11 ~07:5xZ and
+pushed commit to 28.8/30 GB (bots at risk); it exited; ask him to turn off SteelSeries "Moments". ntopng still leaks
+(Restart-Service ntopng fixes). Windows restore points regrow (see above). Claude Code refuses to stop his programs or move
+money without his explicit words in the chat.
+
+**This session's research, all saved in results/research_2026-10/ (copied from the session scratchpad):** blind design
+competition (results/FINAL_SYNTHESIS_2026-10-09.md; raw output design_competition_output.json), money sweep
+(results/MONEY_SWEEP_2026-10-10.md), ladder/incentive research (results/LADDER_UPSIDE_2026-10-10.md: Kalshi reward
+period_reward is CENTI-CENTS -- the 10-02 sweep's incentive kills were 100x wrong), docs_digest.md (whole-project digest),
+external_research.md, loss_anatomy.md (+ .jsonl.gz), paper_gates.md, live_ledger_report.md, live_markets.jsonl.gz (every live
+market since 09-08 joined to Kalshi money: 1,362 markets, +$701.78, 45 lost), side_bots.md, scripts/.
+Key findings: the taker's settings could not be beaten in both periods; "flat since the revert" was HYPE; the BTC-lead refusal is
+scored FORWARD (READS_DUE btc-lead-forward, no live code); seller check inside 20 s killed (paper); arm-5hz and arm-attempts paper
+tests running (reads 10-14, 10-17).
+
+---
+
 # PICK UP HERE -- 2026-09-28 ~04:3xZ -- the operator's 09-28 batch (read this before the 09-27 section below)
 
 His message 09-28 ~02:4xZ (awake, frustrated: "This bot fucking sucks now"): run all
@@ -25,7 +82,8 @@ DONE (all committed):
   tests. STOPPED: cmdarm (-$654 paper) + cmdarm-wide230 (-$100) and removed from
   boot_all.ps1; wxwatch (bars failed); arm-brake3 (void); arm-edge2c (-$68 vs
   twin); arm-toxic (rule is live). boot_all.ps1's pinledgerd path had a CR/LF
-  in "esearch" (heredoc trap) -- repaired. The live log
+  in "
+esearch" (heredoc trap) -- repaired. The live log
   results/pinrun-live-20260925T122357Z.jsonl had lost its first 9,972 lines on
   disk (09-26 07:31Z, unknown cause, same event rewrote tracked paper logs):
   RESTORED from git HEAD + disk; bars.py now sees live again (it had been blind
