@@ -90,8 +90,11 @@ $py = "C:\Python314\python.exe"
 # C:\kals-live-0925e, whose only behaviour change with these flags is that insurance
 # orders carry self_trade_prevention_type=maker (our own ladder bid can never cancel
 # insurance). Revert: results\restart_bot.before-seen.ps1 (= the 0925d launcher).
-$code = "C:\kals-live-0925e"
-$codeSha = "5075b1783acf"
+# v-snowball (2026-10-11): 0925e + hourly KXBTCD sized at floor(SIZE x 0.12) + no AUTO_SIZE_MAX ceiling + the day
+# loss stop = 0.187 x (bank + today's settled losses) + the 2-loss pause counts losing MARKETS (all legs netted).
+# Revert: copy results\restart_bot.before-snowball.ps1 over this file (= v-stp-maker, 0925e).
+$code = "C:\kals-live-0925h"
+$codeSha = "deda2006d5ae"
 
 # --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
 # did not change; nothing on disk said why, so the next session had to guess
@@ -249,7 +252,7 @@ $botArgs = @(
     # driven 78-88. Its books hold a median 838 contracts where we buy against
     # 28 on the 15-minute markets, which is why it is worth knowing whether we
     # actually get filled. --series is REFUSED live without --series-size.
-    "--series", "KXBTCD", "--series-size", "1",
+    "--series", "KXBTCD", "--series-size-frac", "0.12",
     # AMENDMENT 50, 2026-09-18. The operator asked what to do with the
     # 45-second leg in the meantime: "It's earning good it'd be a shame to
     # shut it off, but also a shame to lose money... It might mean smaller
@@ -564,7 +567,7 @@ $botArgs = @(
     # already reached -$420 at 105 contracts. This is a hard dollar cap: the
     # abort is the TIGHTER of the band and this number, re-applied on every
     # autosize so a moving bank cannot undo it.
-    "--loss-cap", "200"
+    "--loss-cap-frac", "0.187"
     # AMENDMENT 46, deployed 2026-09-17 ("As long as you have the 45 second is
     # built as safely as you described, deploy now"), first at half, then at a
     # THIRD, and from ~19:5xZ the same day at a FULL bet on his instruction:
@@ -623,7 +626,7 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker, C:\kals-live-0925e)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball, C:\kals-live-0925h)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1

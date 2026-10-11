@@ -710,7 +710,8 @@
    "read_log": [
     "10-10 04:3xZ: alarm 1 of 10 -- KXXRP15M-26OCT100030-30, belief 0.134 at tau 36, insurance 1 NO filled at 66c; Kalshi GET /portfolio/orders/01a12412-a4a0-74e4-9a74-04e231ed318a shows self_trade_prevention_type 'maker', status executed, fill 1.00. Market lost (bet -$0.98, insurance about +$0.34). No self-trade cancel.",
     "10-10 13:2xZ: alarm 2 of 10 -- KXETH15M-26OCT100915-15, belief 0.283 at tau 19, insurance 94 NO at 62c filled in full; Kalshi GET shows self_trade_prevention_type 'maker', executed, 94.00. Market lost: bet -$82.52, insurance +$34.17, other leg +$1.23 = about -$47.12. No self-trade cancel.",
-    "10-10 22:0xZ: alarm 3 of 10 -- KXZEC15M-26OCT101800-00: full leg at tau 18 saw a 91.2c ask, filled 92 at 31c (book collapsed 60c in the round trip; offer 38 ms old, 78% sellers); insurance 92 NO at 61c filled, maker setting; the pair locked about +8c a contract; market settled YES (bet +$62.10, insurance about -$56). No self-trade cancel."
+    "10-10 22:0xZ: alarm 3 of 10 -- KXZEC15M-26OCT101800-00: full leg at tau 18 saw a 91.2c ask, filled 92 at 31c (book collapsed 60c in the round trip; offer 38 ms old, 78% sellers); insurance 92 NO at 61c filled, maker setting; the pair locked about +8c a contract; market settled YES (bet +$62.10, insurance about -$56). No self-trade cancel.",
+    "10-11 10:43Z: v-stp-maker's insurance change carries over unchanged into v-snowball (0925h is built on 0925e); keep counting alarms toward the 10 in the new logs."
    ]
   },
   {
@@ -749,6 +750,14 @@
    "what": "v-race-snowball (live coin race sizes grow with the main bank, pid 494356 since 2026-10-11 10:15Z).",
    "how": "pinracepenny-live.jsonl: every bank read and the size it set (contracts a leg, stake cap) vs the main bank; races, legs got/asked, money (Kalshi KXCRYPTOLEAD rows) per day vs the 20-a-leg weeks.",
    "bar": "Plumbing: sizes track floor(bank x 0.019048) and bank x 0.038095 within one read; no read outside the 4-10 min window or with an open leg; no failed read changing size. Money: report $/day and losing races next to the previous 7 days at 20 a leg (no revert bar on money -- operator's growth order).",
+   "status": "open"
+  },
+  {
+   "id": "snowball-live",
+   "due": "2026-10-14T12:00Z",
+   "what": "v-snowball (LIVE 2026-10-11 10:43:32Z, pid 1403468, C:\\kals-live-0925h code_sha deda2006d5ae): hourly KXBTCD at floor(SIZE x 0.12) (11 today), no size ceiling, day/run loss stop = 0.187 x (bank + today's settled losses), 2-loss pause counts losing MARKETS.",
+   "how": "Live logs since the deploy: every KXBTCD order's contracts vs floor(SIZE x 0.12) at that time; hourly markets, lost, money (Kalshi KXBTCD rows); every autosize's loss_cap vs 0.187 x base; every settled record's loss_counted / market_net_c; any halt and its reason.",
+   "bar": "PRE-REGISTERED 2026-10-11 (money sweep item 3): hourly at the new size -- after 40 hourly markets, KEEP if at most 1 lost AND money > $0, else go back to 1 contract (--series-size 1). Plumbing: KXBTCD orders never above floor(SIZE x 0.12) except the 1.5x late boost; loss_cap tracks 0.187 x base on every autosize; no market counted twice; no halt from a market that netted positive.",
    "status": "open"
   }
  ]

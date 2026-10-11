@@ -1,5 +1,7 @@
 # PICK UP HERE -- 2026-10-11 ~09:0xZ -- read this first (the session of 10-07..10-11 ended with the operator's /clear)
 
+**UPDATE 2026-10-11 ~11:0xZ (same session, before the clear):** DEPLOYED v-snowball (main bot, C:\kals-live-0925h, code_sha deda2006d5ae, pid 1403468: hourly BTC floor(SIZE x 0.12), no size ceiling, day stop 0.187 x bank, loss count per market), v-race-snowball (coin race pid 494356, size and stake cap grow with the bank), phone /funds (every account's money + bet sizes; phone bot pid 1009512). Restore points capped at 2 GB (vssadmin). Coin-race reward test STOPPED after 3 races (fills 102% of expected reward); its payment read is READS_DUE racereward-test (10-13). Built, reviewed GO, NOT live: C:\kals-live-0925g (kept-open order connection) -- needs the operator's GO and a merge onto 0925h. Operator decisions 10-11: subaccounts and every account must size from their own fund (memory snowball-every-account); the 45-s leg stays at 1/3 (live: 1/3 388 markets +1.40% on bet vs full 164 markets -0.80%). Push to GitHub is blocked by Claude Code's classifier: local commits only; the operator can push with `git push origin claude/file-uploads-70rtjl`.
+
 **Operator's standing instructions from this session (also in memory):**
 - "Implement only changes you are sure improve" (10-09); unproven ones are measured forward first.
 - Every bot/version turned on gets a live Monitor + a READS_DUE bar (memory `every-bot-on-gets-a-watcher`).
