@@ -34,7 +34,8 @@ COMMANDS
   /bars       every running test against its pre-registered bar: the numbers
               so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
   /funds (/bank /accounts)   every Kalshi account's money: cash in each pool, open bets,
-              total, what runs there, each bot's bet size now, and the grand total
+              total, what runs there, each bot's bet size now, its last 7 ET days of gains
+              and losses from Kalshi's settlements, and the grand total
   /pause     no new bets, wait for open ones, stop     /start    trade again
   /stop yes   stop right now (the word 'yes' is required)
   /mute  /unmute   alerts off / on          /help
@@ -186,7 +187,7 @@ HELP_TEXT = """Commands:
 /ladder - the penny ladder (subaccount 1), the same detail as /pin
 /weather (or /wx) - the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin
 /bars - every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
-/funds (or /bank, /accounts) - the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, and the grand total
+/funds (or /bank, /accounts) - the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, each account's gain or loss on each of the last 7 days (main bot and coin race apart), and the grand total
 /pause - no new bets, wait for open ones, then stop
 /start - trade again
 /stop yes - stop right now
@@ -1432,9 +1433,232 @@ def funds_sizes(results=RESULTS):
     return out
 
 
-def funds_text(f, sizes, now):
+# ---- /funds' PAST DAYS (2026-10-11) ------------------------------------------------------------------
+# THE OPERATOR, 2026-10-11: "Make that funds command include some past days for each accounts and their
+# gains/losses." Under every account: its last FUNDS_DAYS ET days, newest first -- the day's gain or loss
+# in dollars, how many markets settled and how many of them lost -- and the FUNDS_DAYS total, also as a %
+# of what the account holds now.
+#
+# MONEY = KALSHI'S SETTLEMENT RECORDS, NOTHING ELSE. GET /portfolio/settlements naming the subaccount
+# (without it Kalshi mixes every subaccount's rows -- pinledger.py, 2026-09-29), paged newest first and
+# stopped once a page reaches back past the first day shown: a market settles after it closes, so nothing
+# settled earlier can belong to a day shown. Per market = pinledger.pnl (the payout from value/result,
+# minus both sides' cost, minus the fee); a market with several rows is ONE market with its rows summed;
+# the same row read twice (it can slide across a page edge) counts once (pinledger.key_of). Deposits,
+# withdrawals and transfers between accounts are not settlements, are never read here, and so are never a
+# gain -- a difference of balances would have counted them.
+#
+# A market's day is the ET day it CLOSED, read from its ticker (pinday.et_day_of_ticker -- the ticker is
+# already Eastern); the settled time, on the ET clock, only for a ticker that carries no date. The main
+# account is split so its two bots are separate: "main bot" = the 15-minute coin series (KX...15M, not
+# the coin race, not the old commodity series) plus the main bot's hourly coin series (botstats.PIN_HOURLY,
+# e.g. KXBTCD -- the same split /pin uses), "race" = the coin race (pinday.RACE: KXCRYPTOLEAD15M and
+# KXCRYPTOCOMP15M), "other" = anything else (weather, oil) -- never folded into a bot.
+#
+# Each account's pull is kept FUNDS_HIST_TTL_S (60 s), so /funds sent twice does not read Kalshi twice. A
+# failed or cut-short pull is not kept: the days it did reach are shown and the rest are named NOT READ.
+# ---------------------------------------------------------------------------------------------------------
+FUNDS_DAYS = 7
+FUNDS_SHOW_DAYS = (7, 5, 3, 0)          # day lines listed, most first, until the page fits one message
+FUNDS_HIST_TTL_S = 60
+FUNDS_HIST_PAGES = 60                   # 12,000 settlements in FUNDS_DAYS days, one account: stops loudly
+FUNDS_HIST_DEADLINE_S = 15.0            # the whole settlement read, every account; short: loss alerts wait on it
+FUNDS_HIST_PATH = "/portfolio/settlements"                    # GET only
+FUNDS_BOOKS = (("bot", "main bot"), ("race", "race"), ("other", "other"))
+_FUNDS_HIST = {}                        # subaccount -> {"t": clock, "since": epoch, "res": a whole pull}
+
+
+def funds_book(ticker):
+    """Which part of the main account a market is: 'bot', 'race' or 'other'."""
+    series = str(ticker or "").split("-")[0].upper()
+    if series in pinday.RACE:
+        return "race"
+    if re.match(r"^KX[A-Z0-9]+15M$", series) and series not in pinday.COMMODITY:
+        return "bot"
+    if series in _bs().PIN_HOURLY:                      # the main bot's hourly coin bets, as /pin counts them
+        return "bot"
+    return "other"
+
+
+def funds_settled(getter, subs, now, clock=time.monotonic, deadline_s=FUNDS_HIST_DEADLINE_S, memo=None,
+                  days=FUNDS_DAYS):
+    """Each account's settlement rows back to the start of the last `days` ET days, from Kalshi:
+    {sub: {"rows": [...], "err": str|None, "oldest": epoch|None, "since": epoch, "cached": bool}}.
+    `oldest` is the oldest settled time read; after an error only the days that began after it are whole.
+    A pull that finished is kept FUNDS_HIST_TTL_S in `memo` (the module's own by default)."""
+    memo = _FUNDS_HIST if memo is None else memo
+    bs = _bs()
+    since = bs.day_start(bs.shift_day(pinday.et_day_of_epoch(now), -(days - 1)))
+    t0 = clock()
+    out = {}
+    for n in sorted(subs):
+        m = memo.get(n)
+        if m and m["since"] == since and clock() - m["t"] < FUNDS_HIST_TTL_S:
+            out[n] = dict(m["res"], cached=True)
+            continue
+        rows, cursor, oldest, err = {}, None, None, None
+        for _ in range(FUNDS_HIST_PAGES):
+            if clock() - t0 > deadline_s:
+                err = "the %d s limit for /funds ran out first" % deadline_s
+                break
+            q = {"limit": 200, "subaccount": n}
+            if cursor:
+                q["cursor"] = cursor
+            try:
+                st, d = getter(FUNDS_HIST_PATH, q)
+            except Exception as e:                              # noqa: BLE001
+                err = "error: %s" % str(e)[:80]
+                break
+            if st != 200 or not isinstance(d, dict):
+                err = "HTTP %s" % st
+                break
+            got = d.get("settlements", "missing")
+            got = [] if got is None else got
+            if not isinstance(got, list):       # a renamed field is an error, never "nothing settled"
+                err = "no 'settlements' list in Kalshi's reply"
+                break
+            for s in got:
+                if not isinstance(s, dict):
+                    continue
+                rows.setdefault(pinledger.key_of(s), s)
+                e = bs._epoch(s.get("settled_time"))
+                if e is not None and (oldest is None or e < oldest):
+                    oldest = e
+            cursor = d.get("cursor")
+            # an hour past the start: day_start of the November clock-change day is 1 AM ET, not midnight
+            if not got or not cursor or (oldest is not None and oldest < since - 3600):
+                break
+        else:
+            err = "more than %d pages of settlements in %d days; stopped" % (FUNDS_HIST_PAGES, days)
+        res = {"rows": list(rows.values()), "err": err, "oldest": oldest, "since": since, "cached": False}
+        if err is None:
+            memo[n] = {"t": clock(), "since": since, "res": res}
+        out[n] = res
+    return out
+
+
+def funds_days(res, today, days=FUNDS_DAYS):
+    """One account's pull (funds_settled) -> its last `days` ET days, newest first:
+    {"days": [{"day", "read", "all", "bot", "race", "other"}], "total": {"all", "bot", "race", "other"},
+     "other_series": the series in "other" on the days read}.
+    A cell is {"money": dollars, "n": markets settled, "lost": markets that lost}. A day is "read" when the
+    pull reached back past its start; the total is over the days read."""
+    bs = _bs()
+    keys = ("all",) + tuple(k for k, _w in FUNDS_BOOKS)
+
+    def cells():
+        return {k: {"money": 0.0, "n": 0, "lost": 0} for k in keys}
+    want = [bs.shift_day(today, -k) for k in range(days)]
+    mk = {}                                 # ticker -> [day, book, money]: several rows, one market
+    for s in res.get("rows") or []:
+        tk = s.get("ticker")
+        if not isinstance(tk, str) or not tk:
+            continue                        # not a market: a transfer or anything else is never a gain here
+        if tk not in mk:
+            d = pinday.et_day_of_ticker(tk)
+            if d is None:
+                e = bs._epoch(s.get("settled_time"))
+                d = pinday.et_day_of_epoch(e) if e is not None else None
+            mk[tk] = [d, funds_book(tk), 0.0]
+        mk[tk][2] += pinledger.pnl(s)
+    by = {d: cells() for d in want}
+    for d, book, v in mk.values():
+        if d in by:
+            for k in ("all", book):
+                c = by[d][k]
+                c["money"] += v
+                c["n"] += 1
+                c["lost"] += 1 if v < -0.004 else 0
+    err, oldest = res.get("err"), res.get("oldest")
+    out = {"days": [], "total": cells()}
+    for d in want:
+        read = err is None or (oldest is not None and bs.day_start(d) > oldest)
+        out["days"].append(dict(by[d], day=d, read=read))
+        if read:
+            for k in keys:
+                for f_ in ("money", "n", "lost"):
+                    out["total"][k][f_] += by[d][k][f_]
+    read_days = set(x["day"] for x in out["days"] if x["read"])
+    out["other_series"] = sorted(set(tk.split("-")[0] for tk, (d, book, _v) in mk.items()
+                                     if book == "other" and d in read_days))
+    return out
+
+
+def _funds_hist_lines(n, res, today, show, held):
+    """The past-days lines under one account. `show` = how many day lines to list (the total always
+    counts all FUNDS_DAYS); `held` = what the account holds now, or None when that was not read whole."""
+    bs = _bs()
+    if res is None:
+        return ["  past %d ET days: not read" % FUNDS_DAYS]
+    h = funds_days(res, today)
+    unread = [x["day"] for x in h["days"] if not x["read"]]
+    if len(unread) == FUNDS_DAYS:
+        return ["  past %d ET days: COULD NOT READ (%s)" % (FUNDS_DAYS, res.get("err"))]
+
+    def cw(c, extra=""):
+        return "%s (%d of %d lost%s)" % (bs.usd(c["money"]), c["lost"], c["n"], extra)
+
+    def money_w(x, other_names=""):
+        if n != 0 or not x["all"]["n"]:
+            return cw(x["all"])
+        return "%s = %s" % (bs.usd(x["all"]["money"]), " + ".join(
+            "%s %s" % (w, cw(x[k], other_names if k == "other" else "")) for k, w in FUNDS_BOOKS if x[k]["n"]))
+
+    def label(d):
+        return "%s %s%s" % (time.strftime("%a", time.strptime(d, "%Y-%m-%d")), bs.day_label(d),
+                            " so far" if d == today else "")
+    tot = h["total"]
+    if not tot["all"]["n"] and not unread:
+        return ["  past %d ET days: nothing settled" % FUNDS_DAYS]
+    L = ["  past %d ET days%s:" % (
+        FUNDS_DAYS, "" if show >= FUNDS_DAYS else
+        (" -- day lines left out to fit one message" if show <= 0 else
+         " -- the newest %d listed to fit one message; the total counts all %d" % (show, FUNDS_DAYS)))]
+    shown, i = h["days"][:max(show, 0)], 0
+    while i < len(shown):                   # a run of empty (or unread) days is one line
+        x = shown[i]
+        what = ("NOT READ" if not x["read"] else "nothing settled") if not (x["read"] and x["all"]["n"]) else None
+        if what is None:
+            L.append("  %s: %s" % (label(x["day"]), money_w(x)))
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(shown) and not (shown[j + 1]["read"] and shown[j + 1]["all"]["n"]) \
+                and shown[j + 1]["read"] == x["read"]:
+            j += 1
+        L.append("  %s%s: %s" % (label(shown[j]["day"]) + " to " if j > i else "", label(x["day"]), what))
+        i = j + 1
+    if held is None:
+        share = "% not shown: what it holds now was not read whole"
+    elif held < 1.0:
+        share = "% not shown: it holds under $1"
+    else:
+        share = "%s of the %s it holds now" % (bs.pot_pct_txt(100.0 * tot["all"]["money"] / held), _usd2(held))
+    names = ", ".join(("%s hourly" % o[2:-1]) if o in bs.PIN_HOURLY else o for o in h["other_series"])
+    L.append("  %s: %s; %s" % ("%d days" % FUNDS_DAYS if not unread else
+                               "the %d days read" % (FUNDS_DAYS - len(unread)),
+                               money_w(tot, ("; " + names) if names else ""), share))
+    if unread:
+        L.append("  NOT READ: %s (%s)" % (", ".join(label(d) for d in unread), res.get("err")))
+    return L
+
+
+def funds_text(f, sizes, now, hist=None):
     """/funds' words from funds_read() and funds_sizes(). Anything unread is named, and a total that
-    leaves something out says 'at least' and what."""
+    leaves something out says 'at least' and what. With `hist` (funds_settled), every account also
+    carries its last FUNDS_DAYS ET days; the day lines shrink through FUNDS_SHOW_DAYS until the page fits
+    one Telegram message (MAX_LEN), and say so."""
+    if hist is None:
+        return _funds_page(f, sizes, now, None, 0)
+    for show in FUNDS_SHOW_DAYS:
+        t = _funds_page(f, sizes, now, hist, show)
+        if len(t) <= MAX_LEN:
+            break
+    return t
+
+
+def _funds_page(f, sizes, now, hist, show):
+    today = pinday.et_day_of_epoch(now)
     L = ["MONEY IN EVERY ACCOUNT -- %s, read from Kalshi now." % _bs().et_clock(now)]
     if f["list_err"]:
         L.append("Kalshi's list of subaccounts could not be read (%s), so only the ones known here (%s) are "
@@ -1477,6 +1701,8 @@ def funds_text(f, sizes, now):
         L.append("  cash: %s; open bets: %s" % (", ".join(parts) if parts else "$0.00", ow))
         if sizes.get(n):
             L.append("  bet size now: " + "; ".join(sizes[n]))
+        if hist is not None:
+            L.extend(_funds_hist_lines(n, hist.get(n), today, show, (cash + s["open"]) if whole else None))
     L.append("")
     if not f["subs"]:
         L.append("NO ACCOUNT COULD BE READ. Nothing above is a zero -- it is unknown.")
@@ -1495,6 +1721,11 @@ def funds_text(f, sizes, now):
                      "account is missing from Kalshi's list, or a bet filled between reads (send /funds again)."
                      % (_usd2(sum(kc.values())), _usd2(ours)))
     L.append("Open bets count at what they cost. Bet sizes are from each bot's own log.")
+    if hist is not None:
+        L.append("Past days, newest first, from Kalshi's settlement records: what each market paid minus its "
+                 "cost and fees, on the ET day it closed; (2 of 28 lost) = 2 of the 28 markets settled lost "
+                 "money. Deposits and transfers are not gains. Liquidity rewards are paid outside these "
+                 "records and are not counted.")
     return "\n".join(L)
 
 
@@ -2046,11 +2277,13 @@ class Phone:
 
     # ---- /funds /bank /accounts ----
     def text_funds(self):
-        """Every Kalshi account's money (funds_read) with each bot's bet size (funds_sizes). A failure
-        costs this command only."""
+        """Every Kalshi account's money (funds_read) with each bot's bet size (funds_sizes) and its last
+        FUNDS_DAYS ET days of gains and losses (funds_settled). A failure costs this command only."""
         try:
             getter = self.funds_getter or _bs().default_getter()
-            return funds_text(funds_read(getter), funds_sizes(self.ledger.results), self.now())
+            f = funds_read(getter)
+            now = self.now()
+            return funds_text(f, funds_sizes(self.ledger.results), now, funds_settled(getter, f["subs"], now))
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return ("Could not build /funds: %s\nEverything else still works -- /bots shows each bot pot's "
@@ -2282,7 +2515,11 @@ def selftest():
         if not cond:
             raise SystemExit("pinphone selftest: FAILED -- " + msg)
 
+    _st_log = LOG
     with tempfile.TemporaryDirectory() as td:
+        # every log() line the self-test causes (each "sent" reply) goes to this temp folder: the live phone
+        # bot appends to results/pinphone.log, and a self-test's fake replies there would read as sent
+        globals()["LOG"] = os.path.join(td, "pinphone.log")
         p = os.path.join(td, "pinrun-live-20260916T135734Z.jsonl")
         c1, c2 = "KXBNB15M-26SEP161000-00", "KXBTC15M-26SEP161015-15"
         rows = [
@@ -3289,7 +3526,40 @@ def selftest():
         fw_break = [{"balance": "41.5000", "exchange_index": 0}, {"balance": "0.0000", "exchange_index": 1},
                     {"balance": "580.2500", "exchange_index": 2}]
 
-        def fw_get(asked, bad=lambda path, q: None, rows=None, pos=None, brk=None):
+        # PAST DAYS: the same 3 accounts' settlement rows, pages newest first, in BOTH cash pools (ix). The
+        # phone's clock for these checks: 11:00 AM ET Wed Sep 16, so the 7 days are Thu Sep 10 .. Wed Sep 16.
+        # Worked by hand, per market = payout - cost - fee:
+        #   main: Wed 16 = ETH 12:15 AM -19.62 (lost) + race +0.14 = -19.48 | Tue 15 = BTC 11:30 PM +0.19 +
+        #         BTC hourly +1.00 = +1.19 | Mon 14 = BTC 12:00 PM in TWO rows (+0.57, -0.90) = ONE market
+        #         -0.33 (lost) + NY high (pool 0) +0.80 = +0.47 -> 7 days -17.82 (2 of 6 lost) = main bot
+        #         -19.76 (2 of 3) + race +0.14 (0 of 1) + other +1.80 (0 of 2); -3.4% of its $530.60.
+        #   sub 1: Wed 16 +0.05; Sat 12 (9:15 PM ET, settled the 13th UTC) -9.90 -> -9.85 (1 of 2 lost),
+        #          -12.3% of $80.25 -- the $50 moved into it that week is NOT a gain.
+        #   sub 3 (pool 0): Tue 15 +0.50 (a ticker with no date: its settled time 11:40 PM ET, the 16th in
+        #          UTC) + Mon 14 -1.70 (lost) -> -1.20 (1 of 2 lost), -2.9% of $41.10.
+        def _R(tk, st, res, yn=0.0, yc=0.0, nn=0.0, nc=0.0, fee=0.0, ix=2):
+            return {"ticker": tk, "settled_time": st, "market_result": res, "value": {"yes": 100, "no": 0}[res],
+                    "yes_count_fp": "%.2f" % yn, "yes_total_cost_dollars": "%.6f" % yc, "no_count_fp": "%.2f" % nn,
+                    "no_total_cost_dollars": "%.6f" % nc, "fee_cost": "%.6f" % fee, "revenue": 0, "exchange_index": ix}
+        fr_race = _R("KXCRYPTOLEAD15M-26SEP160930-XRP", "2026-09-16T13:30:20Z", "yes", yn=5, yc=4.85, fee=0.01)
+        fr_eth0015 = _R("KXETH15M-26SEP160015-15", "2026-09-16T04:15:03.2Z", "no", yn=20, yc=19.60, fee=0.02)
+        fr_btc2330 = _R("KXBTC15M-26SEP152330-30", "2026-09-16T03:30:03.1Z", "no", nn=10, nc=9.80, fee=0.01)
+        fr_hourly = _R("KXBTCD-26SEP1511-T60000", "2026-09-15T15:00:10Z", "yes", yn=2, yc=1.00)
+        fr_wx0 = _R("KXHIGHNY-26SEP14-B70.5", "2026-09-15T12:00:00Z", "no", nn=2, nc=1.20, ix=0)
+        fr_two_b = _R("KXBTC15M-26SEP141200-00", "2026-09-14T16:00:05Z", "no", yn=30, yc=0.90)
+        fr_two_a = _R("KXBTC15M-26SEP141200-00", "2026-09-14T16:00:03Z", "no", nn=30, nc=29.40, fee=0.03)
+        fr_old = _R("KXBTC15M-26SEP090900-00", "2026-09-09T13:00:03Z", "no", yn=50, yc=49.00)       # Sep 9: out
+        fr_older = _R("KXBTC15M-26SEP081000-00", "2026-09-08T14:00:03Z", "no", yn=60, yc=59.00)     # never asked
+        fw_xfer = {"amount_cents": 5000, "from_subaccount": 0, "to_subaccount": 1, "created_ts": 1789900000}
+        fw_stl = {0: [[fr_race, fr_eth0015, fr_btc2330], [fr_hourly, fr_wx0, fr_two_b],
+                      [dict(fr_two_b), fr_two_a, fr_old], [fr_older]],   # fr_two_b again: it slid across a page edge
+                  1: [[_R("KXNEAR15M-26SEP160300-00", "2026-09-16T07:00:03Z", "no", nn=5, nc=4.95),
+                       dict(fw_xfer, settled_time="2026-09-15T12:00:00Z", revenue=5000),   # money, but not a market
+                       _R("KXBNB15M-26SEP122115-15", "2026-09-13T01:15:03Z", "yes", nn=10, nc=9.90)]],
+                  3: [[_R("KXODD-XYZ", "2026-09-16T03:40:00Z", "yes", yn=1, yc=0.50, ix=0),
+                       _R("KXHIGHNY-26SEP14-B71.5", "2026-09-15T12:00:00Z", "yes", nn=2, nc=1.70, ix=0)]]}
+
+        def fw_get(asked, bad=lambda path, q: None, rows=None, pos=None, brk=None, stl=None):
             def get(path, q):
                 asked.append((path, dict(q)))
                 b = bad(path, q)
@@ -3297,6 +3567,13 @@ def selftest():
                     raise OSError("connection reset")
                 if b is not None:
                     return b
+                if path == "/portfolio/settlements":          # pages per account, newest first (below)
+                    pg = (stl if stl is not None else fw_stl).get(q["subaccount"], [[]])
+                    i = int(q.get("cursor") or 0)
+                    return 200, {"settlements": pg[i], "cursor": str(i + 1) if i + 1 < len(pg) else ""}
+                if path in ("/portfolio/subaccounts/transfers", "/portfolio/deposits"):
+                    return 200, {"transfers": [fw_xfer], "deposits": [{"amount_cents": 100000, "status": "applied"}],
+                                 "cursor": ""}
                 if path == "/portfolio/subaccounts/balances":
                     return 200, {"subaccount_balances": rows if rows is not None else fw_list}
                 if path == "/portfolio/balance":
@@ -3421,18 +3698,176 @@ def selftest():
         t_ = funds_text(funds_read(fw_get([])), sz_, now["t"])
         ck("  bet size now: main bot 91 contracts a bet" in t_ and "  bet size now: ladder 6-contract bids" in t_
            and "\nSUBACCOUNT 3" in t_ and len(t_) < MAX_LEN, "/funds: each account carries its bots' bet sizes; one message")
+        # ---- /funds PAST DAYS (2026-10-11): the world and the hand-worked figures are above fw_get ----
+        fnow = calendar.timegm((2026, 9, 16, 15, 0, 0))                 # 11:00 AM ET Wed Sep 16
+        ck([funds_book(t) for t in ("KXBTC15M-X", "KXNEWCOIN15M-X", "KXCRYPTOLEAD15M-X", "KXCRYPTOCOMP15M-X",
+                                    "KXGOLD15M-X", "KXBTCD-X", "KXHIGHNY-X", "")]
+           == ["bot", "bot", "race", "race", "other", "bot", "other", "other"],
+           "/funds past days: main bot = 15-minute coin series + its hourly coin series (as /pin); race = the coin "
+           "race; weather, oil = other")
+        ha = []
+        hm = {}
+        h_ = funds_settled(fw_get(ha), [0, 1, 3], fnow, memo=hm)
+        ck(set(p for p, _q in ha) == {FUNDS_HIST_PATH} and all(q.get("subaccount") in (0, 1, 3) for _p, q in ha)
+           and [q.get("cursor") for _p, q in ha if q["subaccount"] == 0] == [None, "1", "2"]
+           and sorted(h_) == [0, 1, 3] and all(h_[n]["err"] is None for n in h_),
+           "/funds past days: only GET /portfolio/settlements, every request names its account; main's walk stops "
+           "on the page that reaches back past Thu Sep 10 (3 pages, the 4th never asked)")
+        hd0 = funds_days(h_[0], "2026-09-16")
+        hday = {x["day"]: x for x in hd0["days"]}
+        ck([x["day"] for x in hd0["days"]] == ["2026-09-16", "2026-09-15", "2026-09-14", "2026-09-13", "2026-09-12",
+                                               "2026-09-11", "2026-09-10"] and all(x["read"] for x in hd0["days"]),
+           "/funds past days: the last 7 ET days, newest first, all read")
+        ck(abs(hday["2026-09-15"]["bot"]["money"] - 1.19) < 1e-9 and hday["2026-09-15"]["bot"]["n"] == 2   # + hourly
+           and abs(hday["2026-09-16"]["bot"]["money"] + 19.62) < 1e-9 and hday["2026-09-16"]["bot"]["n"] == 1,
+           "/funds past days: an 11:30 PM ET close is that ET day (Tue 15, settled the 16th UTC); a 12:15 AM ET "
+           "close is the next (Wed 16)")
+        ck(hday["2026-09-14"]["bot"] == {"money": hday["2026-09-14"]["bot"]["money"], "n": 1, "lost": 1}
+           and abs(hday["2026-09-14"]["bot"]["money"] + 0.33) < 1e-9,
+           "/funds past days: a market with two rows is ONE market, its rows summed (-0.33, lost), and a row read "
+           "twice across a page edge counts once")
+        hd1, hd3 = funds_days(h_[1], "2026-09-16"), funds_days(h_[3], "2026-09-16")
+        ck(hd1["total"]["all"]["n"] == 2 and abs(hd1["total"]["all"]["money"] + 9.85) < 1e-9
+           and hd1["days"][4]["all"]["n"] == 1 and hd1["days"][4]["day"] == "2026-09-12",
+           "/funds past days: a transfer is never a gain -- a transfer row among the settlements is not a market, "
+           "the $50 moved into sub 1 is not read, its 7 days are its 2 settlements (-$9.85); 9:15 PM ET is Sat 12")
+        ck(abs(hd3["days"][1]["all"]["money"] - 0.50) < 1e-9 and hd3["days"][0]["all"]["n"] == 0
+           and abs(hd3["total"]["all"]["money"] + 1.20) < 1e-9,
+           "/funds past days: a ticker with no date falls back to its settled time ON THE ET CLOCK (11:40 PM ET Tue "
+           "15, not the 16th UTC); pool-0 weather rows count")
+        ck(abs(hd0["total"]["all"]["money"] + 17.82) < 1e-9 and hd0["total"]["all"]["n"] == 6
+           and hd0["total"]["all"]["lost"] == 2 and abs(hd0["total"]["bot"]["money"] + 18.76) < 1e-9
+           and hd0["total"]["bot"]["n"] == 4 and abs(hd0["total"]["race"]["money"] - 0.14) < 1e-9
+           and abs(hd0["total"]["other"]["money"] - 0.80) < 1e-9 and hd0["other_series"] == ["KXHIGHNY"],
+           "/funds past days: main split -- main bot -18.76 (4 markets, BTC hourly +1.00 among them), race +0.14, "
+           "other +0.80 (the pool-0 NY high); the Sep 9 market is outside the 7 days")
+        t_ = funds_text(funds_read(fw_get([])), {}, fnow, h_)
+        print("    --- /funds with past days, the fake world ---\n    " + t_.replace("\n", "\n    "))
+        ck("  past 7 ET days:\n"
+           "  Wed Sep 16 so far: -$19.48 = main bot -$19.62 (1 of 1 lost) + race +$0.14 (0 of 1 lost)\n"
+           "  Tue Sep 15: +$1.19 = main bot +$1.19 (0 of 2 lost)\n"
+           "  Mon Sep 14: +$0.47 = main bot -$0.33 (1 of 1 lost) + other +$0.80 (0 of 1 lost)\n"
+           "  Thu Sep 10 to Sun Sep 13: nothing settled\n"
+           "  7 days: -$17.82 = main bot -$18.76 (2 of 4 lost) + race +$0.14 (0 of 1 lost) + other +$0.80 (0 of 1 "
+           "lost; KXHIGHNY); -3.4% of the $530.60 it holds now\n\nSUBACCOUNT 1" in t_
+           and "Liquidity rewards are paid outside these records and are not counted." in t_,
+           "/funds past days: the main account's days, newest first, split main bot / race / other, and its 7-day "
+           "total as a % of what it holds now")
+        ck("  Wed Sep 16 so far: +$0.05 (0 of 1 lost)\n  Sun Sep 13 to Tue Sep 15: nothing settled\n"
+           "  Sat Sep 12: -$9.90 (1 of 1 lost)\n  Thu Sep 10 to Fri Sep 11: nothing settled\n"
+           "  7 days: -$9.85 (1 of 2 lost); -12.3% of the $80.25 it holds now" in t_
+           and "  Wed Sep 16 so far: nothing settled\n  Tue Sep 15: +$0.50 (0 of 1 lost)\n"
+           "  Mon Sep 14: -$1.70 (1 of 1 lost)\n  Thu Sep 10 to Sun Sep 13: nothing settled\n"
+           "  7 days: -$1.20 (1 of 2 lost); -2.9% of the $41.10 it holds now" in t_
+           and t_.count("  past 7 ET days:") == 3 and "Deposits and transfers are not gains." in t_
+           and "to fit one message" not in t_ and len(t_) <= MAX_LEN,
+           "/funds past days: each subaccount's days unsplit, empty days as one line, one message")
+        # the 60 s cache
+        hclk = {"t": 1000.0}
+        ha = []
+        hm = {}
+        funds_settled(fw_get(ha), [0, 1, 3], fnow, clock=lambda: hclk["t"], memo=hm)
+        n1 = len(ha)
+        hclk["t"] += 30
+        h2 = funds_settled(fw_get(ha), [0, 1, 3], fnow, clock=lambda: hclk["t"], memo=hm)
+        n2 = len(ha)
+        hclk["t"] += 31
+        funds_settled(fw_get(ha), [0, 1, 3], fnow, clock=lambda: hclk["t"], memo=hm)
+        ck(n1 == 5 and n2 == n1 and all(h2[n]["cached"] for n in h2) and len(ha) == 2 * n1
+           and abs(funds_days(h2[0], "2026-09-16")["total"]["all"]["money"] + 17.82) < 1e-9,
+           "/funds past days: a second /funds within 60 s reads nothing from Kalshi (same figures); after 60 s it "
+           "reads again")
+        hclk["t"] += 1
+        funds_settled(fw_get(ha), [0], fnow + 86400, clock=lambda: hclk["t"], memo=hm)
+        ck(len(ha) > 2 * n1, "/funds past days: a new ET day reads again even inside the 60 s")
+        # failed reads: what is known is shown, the gap is named, nothing failed is kept
+        ha = []
+        hm = {}
+        h_ = funds_settled(fw_get(ha, bad=lambda p, q: (503, "busy") if p == FUNDS_HIST_PATH and q["subaccount"] == 0
+                                  and q.get("cursor") == "2" else (500, {}) if p == FUNDS_HIST_PATH
+                                  and q["subaccount"] == 1 else None), [0, 1, 3], fnow, memo=hm)
+        t_ = funds_text(funds_read(fw_get([])), {}, fnow, h_)
+        ck("  Tue Sep 15: +$1.19 = main bot +$1.19 (0 of 2 lost)\n"
+           "  Thu Sep 10 to Mon Sep 14: NOT READ\n"
+           "  the 2 days read: -$18.29 = main bot -$18.43 (1 of 3 lost) + race +$0.14 (0 of 1 lost); -3.4% of the "
+           "$530.60 it holds now\n"
+           "  NOT READ: Mon Sep 14, Sun Sep 13, Sat Sep 12, Fri Sep 11, Thu Sep 10 (HTTP 503)" in t_
+           and "SUBACCOUNT 1 -- penny ladder: $80.25\n  cash: crypto pool $80.25; open bets: none\n"
+           "  past 7 ET days: COULD NOT READ (HTTP 500)" in t_ and "  7 days: -$1.20 (1 of 2 lost)" in t_
+           and sorted(hm) == [3],
+           "/funds past days: main's 3rd page fails -> the 2 whole days are shown, Sep 10-14 named NOT READ (the "
+           "half-read Sep 14 is not shown); sub 1 fails -> said; neither failed pull is kept")
+        h_ = funds_settled(fw_get([], bad=lambda p, q: "raise" if p == FUNDS_HIST_PATH and q["subaccount"] == 3
+                                  else (200, {"cursor": ""}) if p == FUNDS_HIST_PATH else None), [0, 3], fnow, memo={})
+        ck(h_[0]["err"] == "no 'settlements' list in Kalshi's reply" and h_[3]["err"] == "error: connection reset"
+           and "past 7 ET days: COULD NOT READ (no 'settlements' list in Kalshi's reply)"
+           in funds_text(funds_read(fw_get([])), {}, fnow, h_),
+           "/funds past days: a reply without the settlements list is an error, never 'nothing settled'; a raise is "
+           "said")
+        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/balance" else None)),
+                        {}, fnow, funds_settled(fw_get([]), [0, 1, 3], fnow, memo={}))
+        ck("  7 days: -$17.82 = main bot" in t_ and "% not shown: what it holds now was not read whole" in t_
+           and "% of the $" not in t_,
+           "/funds past days: no % on a balance that was not read whole")
+        t_ = funds_text(funds_read(fw_get([], rows=[{"subaccount_number": 0, "exchange_index": 2, "balance": "0.5000"}],
+                                          pos={}, brk=[])), {}, fnow, funds_settled(fw_get([]), [0], fnow, memo={}))
+        print("    --- /funds past days, an account holding 50c ---\n    " + t_.replace("\n", "\n    "))
+        ck("  7 days: -$17.82 = main bot" in t_ and "% not shown: it holds under $1" in t_ and "% of the $" not in t_,
+           "/funds past days: no % of an account holding under $1 (a % of cents is noise)")
+        hclk2 = {"t": 0.0}
+
+        def _htick():
+            hclk2["t"] += 1.0
+            return hclk2["t"]
+        ha = []
+        hm = {}
+        h_ = funds_settled(fw_get(ha), [0, 1, 3], fnow, clock=_htick, deadline_s=3, memo=hm)
+        ck(h_[0]["err"] is None and h_[1]["err"] == h_[3]["err"] == "the 3 s limit for /funds ran out first"
+           and sorted(hm) == [0] and "past 7 ET days: COULD NOT READ (the 3 s limit for /funds ran out first)"
+           in funds_text(funds_read(fw_get([])), {}, fnow, h_),
+           "/funds past days: a slow Kalshi hits the history time limit -> the accounts not reached are said, not "
+           "kept, and the phone is not stalled")
+        # the length limit: 9 busy accounts do not fit 7 day lines each -> fewer, said, every 7-day total kept
+        big_rows = [{"subaccount_number": k, "exchange_index": 2, "balance": "1000.0000"} for k in range(9)]
+        big_stl = {k: [[_R("%s-26SEP%02d%s-00" % ("KXBTC15M" if j % 2 else "KXCRYPTOLEAD15M", 16 - d, "1015"),
+                           "2026-09-%02dT14:15:03Z" % (16 - d), "no", yn=5, yc=1.0 + j) for d in range(7)
+                        for j in range(2)] + [_R("KXBTCD-26SEP%02d10-T1" % (16 - d), "2026-09-%02dT14:00:09Z" % (16 - d),
+                                                 "yes", yn=5, yc=4.0) for d in range(7)]] for k in range(9)}
+        bg = fw_get([], rows=big_rows, brk=[], stl=big_stl)
+        bf, bh = funds_read(bg), funds_settled(bg, range(9), fnow, memo={})
+        t7 = _funds_page(bf, {}, fnow, bh, 7)
+        t_ = funds_text(bf, {}, fnow, bh)
+        ck(len(t7) > MAX_LEN and len(t_) <= MAX_LEN and "to fit one message" in t_
+           and t_.count("  7 days: ") == 9 and t_.count("  past 7 ET days -- ") == 9,
+           "/funds past days: when 7 day lines do not fit one message (%d chars), fewer are listed and that is said "
+           "(%d chars); all 9 accounts keep their 7-day total" % (len(t7), len(t_)))
         # routed: /funds /bank /accounts, through handle() and the poll loop
         ck(ph.funds_getter is None, "/funds reads Kalshi through botstats' getter (kauth.get, GET only) by default")
-        ph.funds_getter = fw_get([])
+        _FUNDS_HIST.clear()
+        fa = []
+        ph.funds_getter = fw_get(fa)
         ck(all((ph.handle(111, c_) or "").startswith("MONEY IN EVERY ACCOUNT") and "ALL ACCOUNTS: $651.95" in ph.handle(111, c_)
                for c_ in ("/funds", "/bank", "/accounts", "/Funds@pinbot")),
            "/funds, /bank and /accounts are routed to the funds page")
+        t_ = ph.handle(111, "/funds")
+        ck("  past 7 ET days:\n  Thu Sep 17 so far: nothing settled\n  Wed Sep 16: -$19.48 = main bot" in t_
+           and "  7 days: -$17.82 = main bot -$18.76" in t_ and "  7 days: -$9.85 (1 of 2 lost)" in t_
+           and sum(1 for p, _q in fa if p == FUNDS_HIST_PATH) == 5,
+           "/funds through handle() carries every account's past days (phone clock: Thu Sep 17), and nine /funds "
+           "inside 60 s read the settlements once")
         ck(ph.handle(333, "/funds") is None, "/funds: a stranger gets nothing")
         ck("/funds" in HELP_TEXT and "/bank" in HELP_TEXT and "/accounts" in HELP_TEXT, "/funds is in /help")
         tg.push(111, "/funds")
         ph.poll_once()
-        ck(tg.sent[-1][0] == 111 and "ALL ACCOUNTS: $651.95" in tg.sent[-1][1] and "main bot 85 contracts a bet" in tg.sent[-1][1],
-           "/funds through the poll loop: the paired chat gets the page, with the live log's bet size")
+        ck(tg.sent[-1][0] == 111 and "ALL ACCOUNTS: $651.95" in tg.sent[-1][1] and "main bot 85 contracts a bet" in tg.sent[-1][1]
+           and "  past 7 ET days:" in tg.sent[-1][1],
+           "/funds through the poll loop: the paired chat gets the page, with the live log's bet size and past days")
+        with open(LOG, encoding="utf-8") as _fh:
+            _lg = _fh.read()
+        ck(os.path.dirname(LOG) == td and "SENT: MONEY IN EVERY ACCOUNT" in _lg,
+           "the self-test logs what it 'sent' to its own temp folder, never the live phone bot's results/pinphone.log")
+        _FUNDS_HIST.clear()
+    globals()["LOG"] = _st_log
     _pl.LEDGER = _pl_sv
     _bsm.RESULTS = _bs_saved[0]
     _bsm._MEMO.clear()
