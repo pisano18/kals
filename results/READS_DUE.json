@@ -731,6 +731,14 @@
    "how": "Markets where arm-attempts bought and LIVE did not (same closes), each with the live lock-out reason (refused gate market_attempts) and the Kalshi outcome; paper $ per market; plus any market where the flag made the arm buy something that then lost.",
    "bar": "PRE-REGISTERED 2026-10-10: after 7 ET days, PROPOSE LIVE if the extra markets number >= 4 with 0 lost and net paper $ > 0; DROP if any extra market lost or there are < 2 extra markets.",
    "status": "open"
+  },
+  {
+   "id": "racereward-test",
+   "due": "2026-10-13T12:00Z",
+   "what": "LIVE coin-race reward TEST (v-racereward-test, pid 3097040, subaccount 4 pool 2, $55, since 2026-10-11 08:24:47Z, 20 races, log results/racereward-live.jsonl). Question: does Kalshi pay THIS account the liquidity reward for 1c YES bids on dead coin-race legs, and do fills cost less than the reward?",
+   "how": "python research/sweep/racereward_live.py --subaccount 4 --report (GET only): leftover cash by ET day next to the summed expected_credit_floored and fill cost. Kalshi marks coin-race rewards paid 16-40 h after each window, so read >= 48 h after the last race.",
+   "bar": "PRE-REGISTERED (results/MONEY_SWEEP_2026-10-10.md, re-review N8): 48 h after the last race -- PASS if leftover cash >= 50% of the summed expected credit AND fill cost <= 50% of it; FAIL if leftover < $1 total (Kalshi does not pay this account -> stop the reward family: items 7 and 8 of the money sweep die with it).",
+   "status": "open"
   }
  ]
 }
