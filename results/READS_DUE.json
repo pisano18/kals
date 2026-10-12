@@ -661,7 +661,8 @@
     "10-09 05:2xZ 25.15 GB free at 10-09 05:06Z (22.96 at 10-08 10:10Z). Above 10 GB: OK. Reclaimable on request: Claude temp cache bash-edit-diff 8.6 GB, restore points 6.8 GB.",
     "10-09 12:2xZ 20.43 GB free at 12:1xZ (-4 GB since 10-09 05:06Z, mostly the design-competition agents' temp files). Above 10 GB: OK.",
     "10-10 12:3xZ: free disk 21.1 GB. Windows removed its only restore point by itself between 12:00 and 12:35Z (shadow storage 14.8 GB -> 0.00 GB, 0 shadow copies), so the ~0.9 GB/h drain is gone for now. It will regrow with the next restore point (max 17.6 GB); capping it at 2 GB stays the operator's call.",
-    "2026-10-12 08:30Z: 15.7 GB free (18.8 GB at 10-11 ~10:30Z: -3.1 GB in 22 h, ~3.4 GB/day) -> the 6 GB guard ~10-15 morning ET at this pace. Restore points capped at 2 GB on 10-11; hibernation (6.8 GB) still on; no drive bought."
+    "2026-10-12 08:30Z: 15.7 GB free (18.8 GB at 10-11 ~10:30Z: -3.1 GB in 22 h, ~3.4 GB/day) -> the 6 GB guard ~10-15 morning ET at this pace. Restore points capped at 2 GB on 10-11; hibernation (6.8 GB) still on; no drive bought.",
+    "2026-10-12 ~09Z operator: \"Don't delete hibernate. I'll get storage.\" -- hibernation stays on; new storage coming (date not given)."
    ]
   },
   {
@@ -764,6 +765,14 @@
    "what": "v-snowball (LIVE 2026-10-11 10:43:32Z, pid 1403468, C:\\kals-live-0925h code_sha deda2006d5ae): hourly KXBTCD at floor(SIZE x 0.12) (11 today), no size ceiling, day/run loss stop = 0.187 x (bank + today's settled losses), 2-loss pause counts losing MARKETS.",
    "how": "Live logs since the deploy: every KXBTCD order's contracts vs floor(SIZE x 0.12) at that time; hourly markets, lost, money (Kalshi KXBTCD rows); every autosize's loss_cap vs 0.187 x base; every settled record's loss_counted / market_net_c; any halt and its reason.",
    "bar": "PRE-REGISTERED 2026-10-11 (money sweep item 3): hourly at the new size -- after 40 hourly markets, KEEP if at most 1 lost AND money > $0, else go back to 1 contract (--series-size 1). Plumbing: KXBTCD orders never above floor(SIZE x 0.12) except the 1.5x late boost; loss_cap tracks 0.187 x base on every autosize; no market counted twice; no halt from a market that netted positive.",
+   "status": "open"
+  },
+  {
+   "id": "fastconn-live",
+   "due": "2026-10-15T12:00Z",
+   "what": "v-fastconn (BUILDING 2026-10-12 ~09Z, workflow wf_68eefba5-997; NOT live until reviewed GO and results/restart_bot.fastconn.ps1 is copied over restart_bot.ps1 and run while flat): C:\\kals-live-0925i = the live v-snowball build + one kept-open HTTPS connection to Kalshi for orders and insurance (0925g's change), a keep-warm so first entries are warm, a 3-s cap on the lost-reply lookup, conn_event / conn_stats log records, and a one-flag revert --keep-conn off. Operator 2026-10-12: \"Yes to fast orders. Make sure to closely monitor for insurance and errors caused by it.\" If never deployed by the due date, mark read with that note.",
+   "how": "Live log from the deploy start record: every conn_event (what, hedge yes/no, client_order_id, ms, error text), every order/hedge record's warm/cold flag and send ms, conn_stats counters, hedge_unknown / halt records; Kalshi orders and fills per client_order_id (GET /portfolio/orders, /portfolio/fills) to check no duplicates; before-deploy send ms from the 10-03..10-11 live logs for the comparison.",
+   "bar": "PRE-REGISTERED 2026-10-12 ~09Z, before the build or any result. REVERT AT ONCE (restart_bot.before-fastconn.ps1 over restart_bot.ps1, restart while flat; or --keep-conn off) if ANY of: an order placed twice (two orders for one intended send); an insurance order not placed, or placed more than 1 s late, because of a connection event; a halt or pause caused by a connection event; a Traceback mentioning ordercli/pintake connection code. KEEP after 3 days or 150 orders, whichever is later, only if: warm sends' median is at least 30 ms faster than cold/before-deploy sends; at least 80% of entries in the last 60 s of a close went out warm; at most 1 outcome-UNKNOWN event in total and none on an insurance order. Otherwise turn it off (--keep-conn off) and report.",
    "status": "open"
   }
  ]
