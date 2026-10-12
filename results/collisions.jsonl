@@ -352,3 +352,15 @@
 {"note": "", "pair": ["F-P03", "F-R06"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
 {"note": "", "pair": ["F-C06", "F-X01"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
 {"note": "", "pair": ["F-P01", "F-P05"], "t": "2026-10-11T08:51:32Z", "verdict": "nothing"}
+{"pair": ["F-P02", "F-R02"], "t": "20261012T0848Z", "verdict": "drawn"}
+{"pair": ["F-I10", "F-P03"], "t": "20261012T0848Z", "verdict": "drawn"}
+{"pair": ["F-C08", "F-M07"], "t": "20261012T0848Z", "verdict": "drawn"}
+{"pair": ["F-O02", "F-R04"], "t": "20261012T0848Z", "verdict": "drawn"}
+{"pair": ["F-C01", "F-X04"], "t": "20261012T0848Z", "verdict": "drawn"}
+{"pair": ["F-B03", "F-B04"], "t": "20261012T0848Z", "verdict": "drawn"}
+{"note": "widening an already-acknowledged-thin interval moves no decision, and 12 live losses cannot estimate across-close dependence (no power, not no effect)", "pair": ["F-P02", "F-R02"], "t": "2026-10-12T08:51:16Z", "verdict": "nothing"}
+{"note": "the only common cause (box stall -> collector dies AND our orders arrive late) is already falsified by F-P04: filled and zero-filled orders have the same 96 ms median", "pair": ["F-I10", "F-P03"], "t": "2026-10-12T08:51:16Z", "verdict": "nothing"}
+{"note": "does the 26x ask-exists penalty concentrate in windows that OPENED lopsided -- a pre-trade, sigma-free stratifier for the adversely-selected population (pinselect two-arm split, never our loss rate)", "pair": ["F-C08", "F-M07"], "t": "2026-10-12T08:51:27Z", "verdict": "lead"}
+{"note": "the 6 ms tenth may well be a per-level sweep print (F-X05: median 8 legs in one same-instant group) counted as separate competitors, but the only decision resting on F-O02 -- we cannot win the race -- is settled by the 67 ms median against our 96 ms round trip either way", "pair": ["F-O02", "F-R04"], "t": "2026-10-12T08:51:27Z", "verdict": "nothing"}
+{"note": "a side/unit convention error would be systematic across all 12 series and all hours; F-X03 (283/283 fills at or below the signalled price, zero worse) already shows none", "pair": ["F-C01", "F-X04"], "t": "2026-10-12T08:51:27Z", "verdict": "nothing"}
+{"note": "the geometric shrink needs the size to update BETWEEN two losses, but autosize ticks only every 300 s and only while flat -- measure the closes traded at a stale size after any bank move (n = every bank move in live history, not just the 12 losses)", "pair": ["F-B03", "F-B04"], "t": "2026-10-12T08:51:27Z", "verdict": "lead"}
