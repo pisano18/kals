@@ -93,8 +93,32 @@ $py = "C:\Python314\python.exe"
 # v-snowball (2026-10-11): 0925e + hourly KXBTCD sized at floor(SIZE x 0.12) + no AUTO_SIZE_MAX ceiling + the day
 # loss stop = 0.187 x (bank + today's settled losses) + the 2-loss pause counts losing MARKETS (all legs netted).
 # Revert: copy results\restart_bot.before-snowball.ps1 over this file (= v-stp-maker, 0925e).
-$code = "C:\kals-live-0925h"
-$codeSha = "deda2006d5ae"
+# v-fastconn (2026-10-12, operator: "Yes to fast orders. Make sure to
+# closely monitor for insurance and errors caused by it."): C:\kals-live-0925i =
+# 0925h (v-snowball, pinrun deda2006d5ae) + the kept order connection
+# (0925g's ordercli/pintake, reviewed GO) + the review's fixes + the
+# connection records. Two flags, both OFF when omitted:
+#   --keep-conn on   orders, hedges, cancels and balance reads ride ONE kept
+#                    HTTPS connection (warm order ~40-55 ms on production
+#                    GETs vs ~90-105 ms; demo orders 86 ms vs 264 ms)
+#   --keep-warm on   the universe-refresh / reconcile GETs ride it too and
+#                    the idle limit is 120 s (production closes idle
+#                    connections at 240 s), so the FIRST order of a close is
+#                    warm. No request is added.
+# Every connection problem is in the live log as `conn_event` (with
+# hedge yes/no and the error text), every order/hedge record carries
+# conn / conn_ms / conn_result, and `conn_stats` comes every 5 minutes.
+# REVERT, either of:
+#   * flags only (same code, today's connection path exactly): delete the
+#     "--keep-conn", "on", "--keep-warm", "on", line below and rerun;
+#   * whole build: copy results\restart_bot.before-fastconn.ps1 over
+#     restart_bot.ps1 (= v-snowball, C:\kals-live-0925h) and rerun.
+$code = "C:\kals-live-0925i"
+$codeSha = "813f1806e3ad"
+# pinrun's code_sha cannot see ordercli / pintake (0925e and 0925g shared
+# it), so the launcher checks both of them as well, before anything stops.
+$ordercliSha = "467782077a23"
+$pintakeSha = "9150d6b65968"
 
 # --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
 # did not change; nothing on disk said why, so the next session had to guess
@@ -110,9 +134,7 @@ try { Stop-Transcript | Out-Null } catch {}
 # exists to prevent. A transcript is a nicety; the restart is the job.
 try { Start-Transcript -Path $transcript -Force | Out-Null }
 catch {
-    try { Start-Transcript -Path "$repo
-esults
-estart_bot.$(Get-Date -Format yyyyMMddTHHmmss).log" -Force | Out-Null }
+    try { Start-Transcript -Path "$repo\results\restart_bot.$(Get-Date -Format yyyyMMddTHHmmss).log" -Force | Out-Null }
     catch { Write-Host "restart_bot: no transcript ($_) -- continuing" }
 }
 Write-Host "restart_bot.ps1 starting $(Get-Date -Format o)"
@@ -388,6 +410,9 @@ $botArgs = @(
     # chosen on the first nine alarms it LOSES $84 on the last nine. The 1x
     # rule is the one that survives both halves of the split.
     "--no-hedge-prop",
+    # v-fastconn (2026-10-12): the kept order connection, kept warm. Revert
+    # the connection alone by deleting this line (see the block at $code).
+    "--keep-conn", "on", "--keep-warm", "on",
     # v-revert0925: --toxic-fresh, --price-ceiling 0.98 and --one-full-bet
     # REMOVED (the 09-25 line). 0.98 is the 09-25 code's own default ceiling;
     # --one-full-bet does not exist in the 09-25 code and would be refused.
@@ -626,12 +651,30 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball, C:\kals-live-0925h)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball + v-fastconn, C:\kals-live-0925i)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1
 }
 Write-Host "code file ok: $__script code_sha $__sha"
+# v-fastconn: the two files code_sha cannot see, checked before any stop
+foreach ($__pair in @(@("ordercli.py", $ordercliSha), @("pintake.py", $pintakeSha))) {
+    $__f = Join-Path (Split-Path $__script -Parent) $__pair[0]
+    if (-not (Test-Path $__f)) {
+        Write-Host "ABORTING: $__f is missing"
+        Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
+        try { Stop-Transcript | Out-Null } catch {}
+        exit 1
+    }
+    $__h = (Get-FileHash -Algorithm SHA256 -Path $__f).Hash.ToLower().Substring(0, 12)
+    if ($__h -ne $__pair[1]) {
+        Write-Host "ABORTING: $__f has sha256[:12] $__h, expected $($__pair[1]) (v-fastconn, C:\kals-live-0925i)"
+        Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
+        try { Stop-Transcript | Out-Null } catch {}
+        exit 1
+    }
+    Write-Host "code file ok: $__f sha256[:12] $__h"
+}
 if ($Check) {
     Write-Host "CHECK ONLY -- nothing stopped, nothing started. argv:"
     Write-Host "  $py $($botArgs -join ' ')"

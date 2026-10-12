@@ -770,10 +770,13 @@
   {
    "id": "fastconn-live",
    "due": "2026-10-15T12:00Z",
-   "what": "v-fastconn (BUILDING 2026-10-12 ~09Z, workflow wf_68eefba5-997; NOT live until reviewed GO and results/restart_bot.fastconn.ps1 is copied over restart_bot.ps1 and run while flat): C:\\kals-live-0925i = the live v-snowball build + one kept-open HTTPS connection to Kalshi for orders and insurance (0925g's change), a keep-warm so first entries are warm, a 3-s cap on the lost-reply lookup, conn_event / conn_stats log records, and a one-flag revert --keep-conn off. Operator 2026-10-12: \"Yes to fast orders. Make sure to closely monitor for insurance and errors caused by it.\" If never deployed by the due date, mark read with that note.",
+   "what": "v-fastconn (LIVE 2026-10-12T11:15:11Z, pid 2343140, log results/pinrun-live-20261012T111511Z.jsonl; code_sha 813f1806e3ad, ordercli 467782077a23, pintake 9150d6b65968; reviewed GO by two reviewers + gap-fix verified GO, workflows wf_68eefba5-997 and wf_ed010854-b26): C:\\kals-live-0925i = the live v-snowball build + one kept-open HTTPS connection to Kalshi for orders and insurance (0925g's change), a keep-warm so first entries are warm, a 3-s cap on the lost-reply lookup, conn_event / conn_stats log records, and a one-flag revert --keep-conn off. Operator 2026-10-12: \"Yes to fast orders. Make sure to closely monitor for insurance and errors caused by it.\" If never deployed by the due date, mark read with that note.",
    "how": "Live log from the deploy start record: every conn_event (what, hedge yes/no, client_order_id, ms, error text), every order/hedge record's warm/cold flag and send ms, conn_stats counters, hedge_unknown / halt records; Kalshi orders and fills per client_order_id (GET /portfolio/orders, /portfolio/fills) to check no duplicates; before-deploy send ms from the 10-03..10-11 live logs for the comparison.",
    "bar": "PRE-REGISTERED 2026-10-12 ~09Z, before the build or any result. REVERT AT ONCE (restart_bot.before-fastconn.ps1 over restart_bot.ps1, restart while flat; or --keep-conn off) if ANY of: an order placed twice (two orders for one intended send); an insurance order not placed, or placed more than 1 s late, because of a connection event; a halt or pause caused by a connection event; a Traceback mentioning ordercli/pintake connection code. KEEP after 3 days or 150 orders, whichever is later, only if: warm sends' median is at least 30 ms faster than cold/before-deploy sends; at least 80% of entries in the last 60 s of a close went out warm; at most 1 outcome-UNKNOWN event in total and none on an insurance order. Otherwise turn it off (--keep-conn off) and report.",
-   "status": "open"
+   "status": "open",
+   "read_log": [
+    "2026-10-12 11:15Z deployed. Lookup cap shipped at 2.5 s (inside the bar's 3 s). Routine, NOT alarms: conn_event stale_replaced why=stale_idle; a keep-warm GET read_retry with retry_ok=true. Baseline to beat: live entry latency_ms median 89.6 ms, p90 112 ms (553 entries, 10-03..10-12)."
+   ]
   }
  ]
 }
