@@ -748,10 +748,11 @@
    "what": "LIVE coin-race reward TEST (v-racereward-test, pid 3097040, subaccount 4 pool 2, $55, since 2026-10-11 08:24:47Z, 20 races, log results/racereward-live.jsonl). Question: does Kalshi pay THIS account the liquidity reward for 1c YES bids on dead coin-race legs, and do fills cost less than the reward?",
    "how": "python research/sweep/racereward_live.py --subaccount 4 --report (GET only): leftover cash by ET day next to the summed expected_credit_floored and fill cost. Kalshi marks coin-race rewards paid 16-40 h after each window, so read >= 48 h after the last race.",
    "bar": "PRE-REGISTERED (results/MONEY_SWEEP_2026-10-10.md, re-review N8): 48 h after the last race -- PASS if leftover cash >= 50% of the summed expected credit AND fill cost <= 50% of it; FAIL if leftover < $1 total (Kalshi does not pay this account -> stop the reward family: items 7 and 8 of the money sweep die with it).",
-   "status": "open",
+   "status": "read",
    "read_log": [
     "10-11 09:0xZ: STOPPED EARLY after 3 races (stop file): expected reward $12.23 vs fill cost $12.45 (102%) -- the fill-cost half of the bar already fails, and each further race costs ~$4 of fills if Kalshi does not pay. 3 races of expected credit ($12.23, every leg over the $1 floor) is enough to see whether Kalshi pays this account at all: read subaccount 4's leftover cash 48 h after 09:00Z (--report)."
-   ]
+   ],
+   "read_note": "READ 2026-10-13 09:2xZ. Kalshi DID pay -- to the PRIMARY account's pool 0, not to subaccount 4: +$11.04 (90% of the $12.23 expected), in two credits (+$5.70 10:17-10:22Z and +$5.34 by 10:23:06Z on 10-11, ~1 h 20 min after the last race); main pool 0 $1.49 -> $12.53 with no pool-0 trading since 09-28; main pool 2 fully explained by settled profit minus the $55 sent to sub 4; subs 1-4 leftover $0.00; all 15 leg programs paid_out=true in GET /incentive_programs; interest ruled out (scratchpad rewardhunt/recon2.*). Net of the test: reward +$11.04 vs 1c fills lost -$12.45 = -$1.41 over 3 races. BAR (N8): payment clause PASS (>= 50% of expected); fill-cost clause FAIL (102% vs <= 50%) => FAIL as run, but NOT the 'Kalshi does not pay' fail -- the reward family (money sweep items 7/8) lives only if fills can be cut below ~half the reward. Tooling: racereward_live.py --report reads only the subaccount and wrongly says 'not paid'; the clean detector is MAIN pool 0 (no trading there). The main bot's bank-move checker saw the two credits as unexplained cash (+$5.70, +$5.34)."
   },
   {
    "id": "race-snowball",
