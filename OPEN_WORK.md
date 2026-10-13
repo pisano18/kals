@@ -100,11 +100,18 @@ research"** (the deeper hunt for what separates losing buys).
   bots (never the live ones or the recorders) when the operator needs RAM.
 
 ### A20. HYPE shadow, bank-move fix, no 20% halt -- 2026-10-06
-**Say: "the hype shadow"** (`python research/hype_shadow.py`, READS_DUE
-`hype-shadow`, daily): what live would have made on HYPE since it stopped
-(10-05 10:24 AM ET), from the paper copies arm-0925b and arm-live-twin, scaled
-to live's bet size. PAPER, so the loss side is optimistic. The put-back
-decision stays with `skiphype` (10-12).
+**Say: "hype live"** (2026-10-13, `v-coinfrac`, READS_DUE `hype-live-frac`,
+verdict 10-20): HYPE is back in the LIVE main bot at 15% of the normal bet
+(`--coin-size-frac KXHYPE15M:0.15`, C:\kals-live-0925j): 14 contracts at
+SIZE 99, never more than 21, grows with the bank; insurance untouched.
+Operator: "Just run hype live but scaled down proportionally to where the max
+bet is a loss that doesn't matter. Live tests are better." Revert =
+results/restart_bot.before-coinfrac.ps1 (VERSIONS.md). The flag takes any
+15-minute series (`--coin-size-frac KXNEAR15M:0.5`, repeatable).
+**Say: "the hype shadow"** (`python research/hype_shadow.py`; READS_DUE
+`hype-shadow` CLOSED 10-13): what live would have made on HYPE 10-05..10-12
+from the paper copies -- 27 markets, 1 lost, +$82.42 on the relaunched twin
+(ends 10-13 ~18:59Z, not relaunched: the live test replaces it).
 **Say: "the bank fix"** (`v-bankfix-nodd`, PREPARED, not live): C:\kals-live-0925d
 = live + v-bankmove (a bank move is a deposit/withdrawal only if Kalshi shows
 the transfer; the coin race's stake/payout no longer move the high mark) +

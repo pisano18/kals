@@ -113,8 +113,23 @@ $py = "C:\Python314\python.exe"
 #     "--keep-conn", "on", "--keep-warm", "on", line below and rerun;
 #   * whole build: copy results\restart_bot.before-fastconn.ps1 over
 #     restart_bot.ps1 (= v-snowball, C:\kals-live-0925h) and rerun.
-$code = "C:\kals-live-0925i"
-$codeSha = "813f1806e3ad"
+# v-coinfrac (2026-10-13, operator: "Just run hype live but scaled down
+# proportionally to where the max bet is a loss that doesn't matter. Live
+# tests are better."): C:\kals-live-0925j = 0925i (v-fastconn) + ONE flag,
+# --coin-size-frac SERIES:F -- that 15-minute series bets floor(SIZE x F)
+# (at least 1) instead of SIZE: its 45-s leg is a third of THAT, its top-up
+# completes to THAT, the full-bet room and the cap after every widener read
+# THAT, so the market never holds more than floor(SIZE x F) x the late
+# multiple (1.5 inside 10 s). Follows every autosize. Insurance is untouched:
+# a held HYPE position of any size is hedged in full. "--skip-coin KXHYPE15M"
+# is REMOVED (the two cannot name the same series) and
+# "--coin-size-frac KXHYPE15M:0.15" added: HYPE at 15% of the normal bet,
+# 14 contracts at SIZE 99, worst case about $21 (1.5 x 14 x 97c).
+# ordercli.py / pintake.py are byte-identical to 0925i.
+# REVERT: copy results\restart_bot.before-coinfrac.ps1 over restart_bot.ps1
+# (= v-fastconn, C:\kals-live-0925i, HYPE skipped) and rerun while flat.
+$code = "C:\kals-live-0925j"
+$codeSha = "d8c3c7dcb888"
 # pinrun's code_sha cannot see ordercli / pintake (0925e and 0925g shared
 # it), so the launcher checks both of them as well, before anything stops.
 $ordercliSha = "467782077a23"
@@ -165,12 +180,14 @@ $botArgs = @(
     # hedges exempt). Live fills 09-09..10-04: +$121 vs no cap, 1.5x +$77.
     # Revert: results\restart_bot.before-fullcap.ps1 (VERSIONS.md).
     "--max-full-bets", "1.0",
-    # v-skiphype (2026-10-05): HYPE out of the universe -- never watched,
-    # never bought; a HYPE position already held is still hedged and settled.
-    # Our live fills 09-20..10-04: HYPE 81 markets, 4 lost, -$103.12; the
-    # other 8 coins 539 markets, 13 lost, +$360.22. Operator: "Sure drop it".
-    # Revert: results\restart_bot.before-skiphype.ps1 (VERSIONS.md).
-    "--skip-coin", "KXHYPE15M",
+    # v-skiphype (2026-10-05..10-13): HYPE was out of the universe
+    # ("--skip-coin", "KXHYPE15M"; live fills 09-20..10-04: HYPE 81 markets,
+    # 4 lost, -$103.12). WITHDRAWN 2026-10-13 by v-coinfrac below: HYPE is
+    # back at 15% of the normal bet. Operator: "Just run hype live but scaled
+    # down proportionally to where the max bet is a loss that doesn't matter."
+    # Paper HYPE 10-05..10-12 (hype_shadow.py): 27 markets, 1 lost, +$82.42.
+    # Revert: results\restart_bot.before-coinfrac.ps1 (VERSIONS.md).
+    "--coin-size-frac", "KXHYPE15M:0.15",
     # v-bankfix-nodd (2026-10-06): the 20% DRAWDOWN halt is OFF (a crossing is
     # logged once as drawdown_no_halt). Still on: the run loss abort (-$200
     # via --loss-cap), the DAY loss cap (same -$200, survives restarts), the
@@ -651,7 +668,7 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball + v-fastconn, C:\kals-live-0925i)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball + v-fastconn + v-coinfrac, C:\kals-live-0925j)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1

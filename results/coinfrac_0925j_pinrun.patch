@@ -1,0 +1,625 @@
+--- /c/kals-live-0925i/research/pinrun.py	2026-10-12 06:28:35.725825700 -0400
++++ /c/kals-live-0925j/research/pinrun.py	2026-10-13 07:22:32.173005300 -0400
+@@ -3285,6 +3285,41 @@
+ _DEFAULT_SKIP_COINS = ()
+ 
+ 
++# v-coinfrac (2026-10-13, VERSIONS.md v-coinfrac). Operator 10-13: "Just run
++# hype live but scaled down proportionally to where the max bet is a loss
++# that doesn't matter. Live tests are better." --coin-size-frac SERIES:F
++# (repeatable): that 15-minute series bets max(1, floor(SIZE x F)) instead
++# of SIZE -- the early leg (EARLY_FRAC x it), the top-up (to it), the
++# full-bet room and the cap after every widener all read that number, so
++# the market never holds more than MAX_FULL_BETS x floor(SIZE x F) x the
++# late multiple. SIZE is read at call time, so it follows every autosize
++# (proportional, as asked). A GATE MUST NEVER BLOCK A HEDGE: nothing here
++# touches the hedge pass; a held position is hedged in full whatever its
++# size. Never a ladder series (those are series_size_for's).
++# Default {} = OFF = today's behaviour exactly.
++COIN_SIZE_FRAC = {}
++_DEFAULT_COIN_SIZE_FRAC = {}
++
++
++def coin_size_for(ticker, frac=None, base=None):
++    """v-coinfrac: the FULL BET for a --coin-size-frac 15-minute series --
++    max(1, floor(SIZE x F)) -- or None for every other ticker (the ordinary
++    SIZE path). `frac` overrides COIN_SIZE_FRAC and `base` overrides SIZE,
++    for tests. FAILS SMALL: a fraction set but unreadable gives 1 contract,
++    never None -- None would hand the coin the whole bank-driven SIZE."""
++    coins = COIN_SIZE_FRAC if frac is None else frac
++    if not coins:
++        return None
++    try:
++        head = str(ticker).split("-", 1)[0]
++    except Exception:                                    # noqa: BLE001
++        return None
++    if head not in coins or head in LADDER_SERIES:
++        return None
++    v = series_frac_size(coins.get(head), SIZE if base is None else base)
++    return 1.0 if v is None else float(v)
++
++
+ def skip_coin(tk, coins=None):
+     """v-skiphype: True when ticker `tk` belongs to a --skip-coin series.
+     Reads SKIP_COINS at call time, so the flag takes effect."""
+@@ -5513,7 +5548,7 @@
+     "TOXIC_FRESH", "TOXIC_MIN_AGE_MS", "TOXIC_MIN_SHARE", "TOXIC_TAU_MIN",
+     "WIDEN_ENABLED", "MAX_FULL_BETS", "SKIP_COINS", "NO_DD_HALT",
+     "SERIES_SIZE_FRAC", "AUTO_SIZE_MAX", "LOSS_CAP_FRAC",
+-    "KEEP_CONN", "KEEP_WARM")
++    "KEEP_CONN", "KEEP_WARM", "COIN_SIZE_FRAC")
+ 
+ 
+ def _offline_trade_loop(markets, live=False, take=None, reply=None,
+@@ -5996,7 +6031,8 @@
+                  "REBUY_HEDGED", "PIN", "PRICE_CEILING", "MIN_FILL_FRAC",
+                  "LOSS_CAP", "DOUBT_MULT", "DOUBT_UNDER", "MAX_FULL_BETS",
+                  "SKIP_COINS", "NO_DD_HALT", "SERIES_SIZE_FRAC",
+-                 "AUTO_SIZE_MAX", "LOSS_CAP_FRAC", "KEEP_CONN", "KEEP_WARM")
++                 "AUTO_SIZE_MAX", "LOSS_CAP_FRAC", "KEEP_CONN", "KEEP_WARM",
++                 "COIN_SIZE_FRAC")
+ 
+ 
+ def _selftest_body():
+@@ -15714,6 +15750,328 @@
+        "(both legs booked) exactly as with the flag off (hedges %s, settled "
+        "%s)" % (_skh_hedge(_skh1), _kt_settled(_skh1)))
+ 
++    # ---- v-coinfrac (2026-10-13): --coin-size-frac SERIES:F ---------------
++    ck(_DEFAULT_COIN_SIZE_FRAC == {} and "COIN_SIZE_FRAC" in _OFFLINE_PINNED_FLAGS
++       and "COIN_SIZE_FRAC" in _FLAG_GLOBALS,
++       "v-coinfrac: the DECLARED default is {} = OFF (today's behaviour); "
++       "pinned in every offline world and restored after")
++    _cfF = {"KXHYPE15M": 0.15}
++    ck(coin_size_for("KXHYPE15M-26OCT131415-15", frac=_cfF, base=99) == 14.0
++       and coin_size_for("KXHYPE15M-X", frac=_cfF, base=5) == 1.0
++       and coin_size_for("KXHYPE15M-X", frac={"KXHYPE15M": 1.0}, base=99) == 99.0
++       and coin_size_for("KXBTC15M-X", frac=_cfF, base=99) is None
++       and coin_size_for("KXBTCD-26OCT1314-T100", frac={"KXBTCD": 0.15},
++                         base=99) is None
++       and coin_size_for("KXHYPE15M-X", frac={}, base=99) is None
++       and coin_size_for(None, frac=_cfF, base=99) is None
++       and coin_size_for("KXHYPE15M-X", frac=_cfF, base="x") == 1.0,
++       "v-coinfrac PURE: HYPE at SIZE 99 x 0.15 = 14; the floor is never "
++       "below 1; x1.0 = SIZE; BTC, a ladder rung, no fraction and no ticker "
++       "-> None (the ordinary SIZE path); an unreadable SIZE fails SMALL (1)")
++    _cf_src = inspect.getsource(trade_loop)
++    _cf_c1 = _cf_src.index("# v-coinfrac, after every widener")
++    _cf_c2 = _cf_src.rindex("# v-coinfrac, after every widener")
++    ck(_cf_src.count("if _csz is not None:") == 4   # 3 caps + the boost skip
++       and _cf_src.count("# v-coinfrac, after every widener") == 2
++       and _cf_src.index("def _late48(take_n):")
++       < _cf_src.index("no: coin bet capped at %g (--coin-size-frac)")
++       and _cf_src.index("_csz = coin_size_for(tk)")
++       < _cf_src.index("take_n, _leg46 = staged_take(tau, take_n, _fsz, _held46)")
++       < _cf_src.index("if _csz is not None:")
++       and _cf_src.index("take_n = _stage46(take_n)") < _cf_c1
++       < _cf_src.index("take_n = _fullcap(take_n)  # v-fullcap (paper), LAST")
++       and _cf_src.rindex("take_n = _stage46(take_n)") < _cf_c2
++       < _cf_src.index("take_n = min(take_n, float(_room68))")
++       and _cf_src.count("size=_ssz if _ssz is not None else _csz)") == 2
++       and _cf_src.count("_fsz * _mult46") == 1
++       # review 10-13: "full" is measured on the coin's bet everywhere a
++       # position is re-bought, and the coin's bet is read BEFORE the band
++       and _cf_src.index("_csz = coin_size_for(tk)")
++       < _cf_src.index("if not rebuy_ok(prev, tk, price, _fsz, tau=tau):")
++       and _cf_src.count("rebuy_ok(prev, tk, price, SIZE") == 0
++       and _cf_src.count("scalein_cap(prev, tk, price, _fsz, tau=tau)") == 1
++       and _cf_src.count("scalein_cap(prev, tk, price, SIZE") == 0
++       and _cf_src.count("_have_la >= _fsz - 1e-9") == 1
++       and _cf_src.count("float(REBUY_LATE_FRAC) * _fsz") == 2
++       and _cf_src.count("float(REBUY_LATE_FRAC) * float(SIZE)") == 0
++       # ...and a capped coin's order is never recorded as a FIRED boost
++       and _cf_src.index("no: coin bet capped at %g (--coin-size-frac)")
++       < _cf_src.index("_cap48 = one_coin_cap(SIZE, state.get(\"bank\")")
++       and "COIN_SIZE_FRAC" not in _cf_src[_sk_h0:_sk_h1]
++       and "coin_size_for" not in _cf_src[_sk_h0:_sk_h1]
++       and "_csz" not in _cf_src[_sk_h0:_sk_h1],
++       "v-coinfrac by source: the coin's full bet is read once per candidate "
++       "before the leg is staged; the cap sits with v-btcd1's (after the "
++       "early gates, after every widener on BOTH paths, before the full-bet "
++       "trim); the full-bet room reads it (2 calls); the early re-cap reads "
++       "it; the hedge pass never reads any of it")
++    ck('globals()["COIN_SIZE_FRAC"] = dict(_cf)' in _sk_main
++       and "coin_size_frac=dict(COIN_SIZE_FRAC)" in _sk_main
++       and "is also --skip-coin" in _sk_main and "(0, 1]" in _sk_main
++       and _sk_main.index('globals()["SKIP_COINS"]')
++       < _sk_main.index('globals()["COIN_SIZE_FRAC"]'),
++       "v-coinfrac by source: main() parses SERIES:F AFTER --skip-coin (so "
++       "the clash is refused), refuses a fraction outside (0, 1], and the "
++       "start record carries coin_size_frac")
++    _cfB, _cfH = "KXBTC15M-SK", "KXHYPE15M-SK"
++    _cf_n = lambda r, tk: [float(p[3]) for p in _sk_posts(r, tk)]
++    # NULL DRIVEN: a BTC-only world, flag off vs KXHYPE15M:0.2 -- the flag
++    # names a coin that is not there, so every record and order is the same
++    _cfn1 = _offline_trade_loop([_sk_mkt("KXBTC15M", "SKB")], live=True,
++                                reply=_fill_all,
++                                flags={"COIN_SIZE_FRAC": {"KXHYPE15M": 0.2}})
++    ck(_cfn1["raised"] is None
++       and _sk_posts(_cfn1, _skB) == _sk_posts(_skn0, _skB)
++       and _sk_strip(_cfn1["recs"]) == _sk_strip(_skn0["recs"])
++       and _cfn1["gets"] == _skn0["gets"],
++       "v-coinfrac NULL DRIVEN: on a world with no HYPE the flag changes "
++       "NOTHING -- %d records, %d orders, %d universe GETs identical"
++       % (len(_skn0["recs"]), len(_sk_posts(_skn0, _skB)), len(_skn0["gets"])))
++    # DRIVEN: BTC and HYPE both clear every gate at SIZE 20. Flag off: both
++    # bought at 20. KXHYPE15M:0.2: every HYPE order <= 4 and the market never
++    # holds more than 4 (MAX_FULL_BETS 1.0, the live setting); BTC untouched.
++    _cfw = lambda: [_sk_mkt("KXBTC15M", "CFB"), _sk_mkt("KXHYPE15M", "CFH")]
++    _cf0 = _offline_trade_loop(_cfw(), live=True, reply=_fill_all, size=20.0,
++                               flags={"MAX_FULL_BETS": 1.0})
++    _cf1 = _offline_trade_loop(_cfw(), live=True, reply=_fill_all, size=20.0,
++                               flags={"MAX_FULL_BETS": 1.0,
++                                      "COIN_SIZE_FRAC": {"KXHYPE15M": 0.2}})
++    _cf1_sig = [r for r in _cf1["recs"] if r.get("kind") == "signal"
++                and r.get("ticker") == _cfH]
++    ck(_cf0["raised"] is None and _cf_n(_cf0, _cfH) and _cf_n(_cf0, _cfB)
++       and max(_cf_n(_cf0, _cfH)) > 4.0 + 1e-9,
++       "v-coinfrac control: flag OFF at SIZE 20 buys HYPE above 4 contracts "
++       "(%s) and BTC (%s) -- the cap has something to bite"
++       % (_cf_n(_cf0, _cfH), _cf_n(_cf0, _cfB)))
++    ck(_cf1["raised"] is None and _cf_n(_cf1, _cfH)
++       and all(n <= 4.0 + 1e-9 for n in _cf_n(_cf1, _cfH))
++       and sum(_cf_n(_cf1, _cfH)) <= 4.0 + 1e-9
++       and _sk_posts(_cf1, _cfB) == _sk_posts(_cf0, _cfB)
++       and _cf1_sig
++       and all(abs(float(r.get("coin_size") or 0) - 4.0) < 1e-9
++               and float(r.get("take_n") or 0) <= 4.0 + 1e-9 for r in _cf1_sig),
++       "v-coinfrac DRIVEN: --coin-size-frac KXHYPE15M:0.2 at SIZE 20 -- every "
++       "HYPE order <= 4 and the market holds <= 4 (orders %s, flag off %s); "
++       "BTC's orders IDENTICAL (%s); the HYPE signal carries coin_size 4"
++       % (_cf_n(_cf1, _cfH), _cf_n(_cf0, _cfH), _cf_n(_cf1, _cfB)))
++    # DRIVEN, the 45-second leg: EARLY_FRAC x the COIN's bet, not x SIZE
++    _cfe = lambda fl: _offline_trade_loop(
++        [{"tk": _cfH, "series": "KXHYPE15M", "iid": "CFE", "strike": 100.0,
++          "fair": (lambda t: 0.999), "book": (lambda t: _ob(0.94, 0.04))}],
++        live=True, reply=_fill_all, size=30.0, run_s=4.0, tau0=40,
++        flags=dict({"EARLY_TAU_MAX": 45, "EARLY_FRAC": 0.333,
++                    "EARLY_MIN_PRICE": 0.90, "EARLY_MAX_PRICE": 0.978,
++                    "EARLY_MAX_EDGE": 10.0, "MAX_FULL_BETS": 1.0}, **fl))
++    _cfe0 = _cfe({})
++    _cfe1 = _cfe({"COIN_SIZE_FRAC": {"KXHYPE15M": 0.2}})
++    _cfe_leg = lambda r: [x.get("leg") for x in r["recs"]
++                          if x.get("kind") == "signal"]
++    ck(_cfe0["raised"] is None and _cfe1["raised"] is None
++       and _cf_n(_cfe0, _cfH) and _cf_n(_cfe1, _cfH)
++       and _cfe_leg(_cfe0)[:1] == ["early"] and _cfe_leg(_cfe1)[:1] == ["early"]
++       and abs(_cf_n(_cfe0, _cfH)[0] - 0.333 * 30.0) < 0.02
++       and abs(_cf_n(_cfe1, _cfH)[0] - 0.333 * 6.0) < 0.02,
++       "v-coinfrac DRIVEN, the 45-s leg SCALES: early leg %s = a third of "
++       "the coin's 6 (0.2 x 30), where the flag off buys %s (a third of 30)"
++       % (_cf_n(_cfe1, _cfH)[:1], _cf_n(_cfe0, _cfH)[:1]))
++    # A HELD HYPE POSITION IS STILL PROTECTED: the v-skiphype held world (5
++    # YES from before a restart, more than the coin's 1-contract bet at
++    # SIZE 5) is adopted and hedged IN FULL -- the cap never shrinks a hedge
++    _cfh1, _cfx1 = _sk_held({"COIN_SIZE_FRAC": {"KXHYPE15M": 0.2}})
++    ck(_cfh1["raised"] is None and abs(_cfx1.really(_skH, "no") - 5.0) < 1e-9
++       and _skh_hedge(_cfh1) == _skh_hedge(_skh0) and _skh_hedge(_cfh1)
++       and _kt_settled(_cfh1) == _kt_settled(_skh0),
++       "v-coinfrac DRIVEN, A GATE MUST NEVER BLOCK A HEDGE: 5 HYPE YES held "
++       "from before a restart is hedged IN FULL (%g of 5) and settled "
++       "exactly as with the flag off (hedges %s)"
++       % (_cfx1.really(_skH, "no"), _skh_hedge(_cfh1)))
++    # DRIVEN, the PAPER send path (review 10-13: the paper cap line was
++    # counted, not driven): HYPE books <= 4 with coin_size, BTC 20 without
++    _cfp = _offline_trade_loop(_cfw(), live=False, size=20.0,
++                               flags={"MAX_FULL_BETS": 1.0, "MAX_PER_MARKET": 2,
++                                      "IMPROVE_SCOPE": "market",
++                                      "COIN_SIZE_FRAC": {"KXHYPE15M": 0.2}})
++    _cfp_sig = lambda tk: [r for r in _cfp["recs"] if r.get("kind") == "signal"
++                           and r.get("ticker") == tk]
++    ck(_cfp["raised"] is None and _cfp_sig(_cfH) and _cfp_sig(_cfB)
++       and all(float(r.get("take_n") or 0) <= 4.0 + 1e-9
++               and abs(float(r.get("coin_size") or 0) - 4.0) < 1e-9
++               for r in _cfp_sig(_cfH))
++       and all(abs(float(r.get("take_n") or 0) - 20.0) < 1e-9
++               and r.get("coin_size") is None for r in _cfp_sig(_cfB)),
++       "v-coinfrac DRIVEN, PAPER path: HYPE signals %s (<= 4, coin_size 4), "
++       "BTC %s (20, no coin_size)"
++       % ([r.get("take_n") for r in _cfp_sig(_cfH)],
++          [r.get("take_n") for r in _cfp_sig(_cfB)]))
++    # DRIVEN, the re-buy band (review 10-13 finding 1): a capped coin AT its
++    # bet is a FULL position to rebuy_ok, so a cheaper ask inside the late
++    # window is refused rebuy_band exactly as a bot whose whole SIZE is 4
++    def _cf_drop(t):      # ask 95c on the first pass, then 1.5c cheaper
++        return _ob(0.94, 0.05 if t < 0.01 else 0.065)
++    def _cf_reply_ask(body, n):   # fills at the ask the pass saw, as live
++        st, resp = _fill_all(body, n)
++        resp["average_fill_price"] = "0.95" if n == 1 else "0.935"
++        return st, resp
++    _CF_RB = {"MAX_FULL_BETS": 1.0, "MAX_PER_MARKET": 2, "IMPROVE_SCOPE": "market",
++              "REBUY_LATE_TAU": 15, "REBUY_LATE_FRAC": 0.5, "LATE_TAU": 10,
++              "LATE_MULT": 1.5, "LATE_PIN": 0.9975}
++    _cf_rb = lambda size, extra: _offline_trade_loop(
++        [{"tk": _cfH, "series": "KXHYPE15M", "iid": "RB", "strike": 100.0,
++          "fair": (lambda t: 0.999), "book": _cf_drop}],
++        live=True, reply=_cf_reply_ask, size=size, run_s=4.0, tau0=9,
++        flags=dict(_CF_RB, **extra))
++    _cf_gates = lambda r: sorted(set(x.get("gate") for x in r["recs"]
++                                     if x.get("kind") == "refused"
++                                     and x.get("ticker") == _cfH))
++    _cfrb_on = _cf_rb(20.0, {"COIN_SIZE_FRAC": {"KXHYPE15M": 0.2}})
++    _cfrb_4 = _cf_rb(4.0, {})
++    _cfrb_20 = _cf_rb(20.0, {})
++    ck(_cfrb_on["raised"] is None and _cf_n(_cfrb_on, _cfH) == [4.0]
++       and "rebuy_band" in _cf_gates(_cfrb_on)
++       and _cf_n(_cfrb_4, _cfH) == [4.0] and "rebuy_band" in _cf_gates(_cfrb_4)
++       and _sk_posts(_cfrb_on, _cfH) == _sk_posts(_cfrb_4, _cfH)
++       and _cf_n(_cfrb_20, _cfH) == [20.0] and "rebuy_band" in _cf_gates(_cfrb_20),
++       "v-coinfrac DRIVEN, the re-buy band: HYPE at its 4 (SIZE 20 x 0.2) is "
++       "REFUSED rebuy_band on a 1.5c cheaper ask inside the late window -- "
++       "orders %s, gates %s -- identical to a bot whose whole SIZE is 4 "
++       "(%s); SIZE 20 flag off %s"
++       % (_cf_n(_cfrb_on, _cfH), _cf_gates(_cfrb_on), _cf_n(_cfrb_4, _cfH),
++          _cf_n(_cfrb_20, _cfH)))
++    # DRIVEN, the MARKET cap and the boost (review 10-13 findings 2/3): the
++    # live argv at SIZE 99, a deep book, first order INSIDE the last 10 s
++    # (the A35 sweep and the A48 boost both have room to widen): HYPE sends
++    # 14 then a late add of 7 (= 21, the cap), never more; BTC alongside
++    # sends its boosted 148.5; HYPE's order is never recorded as a FIRED
++    # boost, so a HYPE loss cannot switch the boost off for every coin
++    def _cf_deep(ask, qty=500.0):
++        def _bk(t):
++            return _ob(round(ask - 0.02, 4), round(1.0 - ask, 4), size=qty)
++        return {"book": _bk,
++                "buyable": (lambda t, w, lim: qty if ask <= lim + 1e-9 else 0.0),
++                "rungs": (lambda t, s, lim: [(ask, qty)] if ask <= lim + 1e-9 else [])}
++    def _cf_mk(series, iid, bookf, fair=(lambda t: 0.999)):
++        d = {"tk": series + "-X", "series": series, "iid": iid,
++             "strike": 100.0, "fair": fair}
++        d.update(bookf)
++        return d
++    _CF_LIVE = {"MAX_PER_MARKET": 2, "IMPROVE_SCOPE": "market", "IMPROVE_MAX": 0.010,
++                "MAX_FULL_BETS": 1.0, "MIN_FILL_FRAC": 0.0, "SWEEP_DEPTH": True,
++                "DEPTH_LADDER": True, "JUMP_ENABLED": True, "HEDGE_BELIEF": 0.40,
++                "EARLY_TAU_MAX": 45, "EARLY_FRAC": 0.333, "EARLY_MIN_PRICE": 0.90,
++                "REBUY_LATE_TAU": 15, "REBUY_LATE_FRAC": 0.5, "EARLY_MAX_EDGE": 10.0,
++                "HEDGE_PROP": False, "HEDGE_SLIP": 0.10, "LATE_TAU": 10, "LATE_MULT": 1.5,
++                "LATE_PIN": 0.9975, "LATE_JUMP_SD": None, "EXTRA_COIN": 1.0,
++                "LATE_EXTRA": 1.0, "LATE_EXTRA_TAU": 15, "BANK_BRAKE": 4.00,
++                "PICK": "best", "SIZE_MIRROR_ON": False, "EXTERNAL_DETECT": False,
++                "COIN_SIZE_FRAC": {"KXHYPE15M": 0.15}}
++    _CF_BANK99 = 99.0 * ((2.0 + 1.0) * 0.98 * 4.00) + 1.0   # sizes to exactly 99
++    _cfHX, _cfBX = "KXHYPE15M-X", "KXBTC15M-X"
++    _cf_rails = (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX,
++                 pintake.MAX_RUN_STAKE, pintake.LOSS_ABORT)
++
++    def _cf_reply95(body, n):     # fills at the 95c ASK, as a real fill does
++        st, resp = _fill_all(body, n)   # (_fill_all fills at the 98c limit,
++        resp["average_fill_price"] = "0.95"  # which the re-buy band reads as
++        return st, resp                      # 'the ask is 3c cheaper than paid')
++    try:
++        # the rails as main()/apply_size set them live for SIZE 99 x 1.5
++        pintake.MAX_TAKE_COUNT, pintake.HARD_MAX = 99.0 * 1.5, 99.0 * 1.5 * 1.5
++        pintake.MAX_RUN_STAKE, pintake.LOSS_ABORT = 1e6, -1e9
++        _cfE = _offline_trade_loop(
++            [_cf_mk("KXHYPE15M", "H", _cf_deep(0.95)), _cf_mk("KXBTC15M", "B", _cf_deep(0.95))],
++            live=True, reply=_cf_reply95, run_s=6.0, tau0=8, size=99.0,
++            bank=_CF_BANK99, flags=_CF_LIVE)
++        # the same HYPE market LOSES (collapses at +3 s, settles NO): with
++        # the flag off its boosted order is FIRED and the loss switches the
++        # boost off for the run (late_boost_off); with the flag on, nothing
++        # was fired, so nothing is switched off
++        _cf_lose = lambda t: 0.10 if t >= 3.0 else 0.999
++        _cfC = _offline_trade_loop(
++            [_cf_mk("KXHYPE15M", "H", _cf_deep(0.95), fair=_cf_lose)],
++            live=True, reply=_cf_reply95, run_s=60.0, tau0=8, size=99.0,
++            bank=_CF_BANK99, result={_cfHX: "no"}, flags=_CF_LIVE)
++        _cfC0 = _offline_trade_loop(
++            [_cf_mk("KXHYPE15M", "H", _cf_deep(0.95), fair=_cf_lose)],
++            live=True, reply=_cf_reply95, run_s=60.0, tau0=8, size=99.0,
++            bank=_CF_BANK99, result={_cfHX: "no"},
++            flags=dict(_CF_LIVE, COIN_SIZE_FRAC={}))
++    finally:
++        (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX,
++         pintake.MAX_RUN_STAKE, pintake.LOSS_ABORT) = _cf_rails
++    _cf_kind = lambda r, k, tk: [x for x in r["recs"] if x.get("kind") == k
++                                 and (tk is None or x.get("ticker") == tk)]
++    ck(_cfE["raised"] is None
++       and _cf_n(_cfE, _cfHX) == [14.0, 7.0]
++       and _cf_n(_cfE, _cfBX) == [148.5]
++       and [x.get("leg") for x in _cf_kind(_cfE, "signal", _cfHX)] == ["full", "late_add"]
++       and not _cf_kind(_cfE, "late_boost", _cfHX)
++       and _cf_kind(_cfE, "late_boost", _cfBX),
++       "v-coinfrac DRIVEN, the MARKET cap at SIZE 99 under the live argv, deep "
++       "book, first order inside 10 s: HYPE %s (14 then a late add of 7 = 21, "
++       "legs %s), BTC alongside %s (its 1.5x boost FIRED); HYPE's order is "
++       "never recorded as a fired boost"
++       % (_cf_n(_cfE, _cfHX), [x.get("leg") for x in _cf_kind(_cfE, "signal", _cfHX)],
++          _cf_n(_cfE, _cfBX)))
++    ck(_cfC["raised"] is None and _cfC0["raised"] is None
++       and _cf_n(_cfC, _cfHX) and max(_cf_n(_cfC, _cfHX)) <= 14.0 + 1e-9
++       and _cf_kind(_cfC0, "late_boost", _cfHX) and _cf_kind(_cfC0, "late_boost_off", None)
++       and not _cf_kind(_cfC, "late_boost", _cfHX)
++       and not _cf_kind(_cfC, "late_boost_off", None)
++       and _cf_kind(_cfC, "hedge", _cfHX),
++       "v-coinfrac DRIVEN, a HYPE LOSS cannot switch the boost off for every "
++       "coin: flag off the boosted HYPE order %s loses -> late_boost_off %d; "
++       "flag on HYPE %s (<= 14) loses -> late_boost_off %d, and it was hedged "
++       "(%s)"
++       % (_cf_n(_cfC0, _cfHX), len(_cf_kind(_cfC0, "late_boost_off", None)),
++          _cf_n(_cfC, _cfHX), len(_cf_kind(_cfC, "late_boost_off", None)),
++          [(x.get("n"), x.get("price")) for x in _cf_kind(_cfC, "hedge", _cfHX)]))
++    # DRIVEN, a SHORT fill (verifier 10-13: the v-fullcap trim is the only
++    # line that bounds the top-up of an unfinished capped position, and no
++    # check drove it): HYPE fills 10 of 14; the top-up is trimmed to the
++    # room -- 4 outside the last 10 s (market 14), 11 inside (market 21)
++
++    class _CfWire(object):
++        """A fake wire that fills order `n` short (part[n] contracts)."""
++
++        def __init__(self, part):
++            self.part = dict(part)
++
++        def __call__(self, body, n):
++            st, resp = _fill_all(body, n)
++            want = float(body["count"])
++            got = min(want, float(self.part.get(n, want)))
++            # a SHORT fill with nothing resting (the fullcap NULL's 'partial
++            # then topup' shape): remaining 0, or pintake waits on the rest
++            resp["fill_count"] = "%.2f" % got
++            resp["remaining_count"] = "0.00"
++            resp["average_fill_price"] = "0.95"
++            return st, resp
++    try:
++        pintake.MAX_TAKE_COUNT, pintake.HARD_MAX = 99.0 * 1.5, 99.0 * 1.5 * 1.5
++        pintake.MAX_RUN_STAKE, pintake.LOSS_ABORT = 1e6, -1e9
++        _cfP1 = _offline_trade_loop(
++            [_cf_mk("KXHYPE15M", "H", _cf_deep(0.95))], live=True,
++            reply=_CfWire({1: 10.0}), run_s=3.0, tau0=20, size=99.0,
++            bank=_CF_BANK99, flags=_CF_LIVE)
++        _cfP2 = _offline_trade_loop(
++            [_cf_mk("KXHYPE15M", "H", _cf_deep(0.95))], live=True,
++            reply=_CfWire({1: 10.0}), run_s=3.0, tau0=8, size=99.0,
++            bank=_CF_BANK99, flags=_CF_LIVE)
++    finally:
++        (pintake.MAX_TAKE_COUNT, pintake.HARD_MAX,
++         pintake.MAX_RUN_STAKE, pintake.LOSS_ABORT) = _cf_rails
++    _cf_trim = lambda r: [(x.get("was"), x.get("now")) for x in r["recs"]
++                          if x.get("kind") == "full_cap_trim"
++                          and x.get("ticker") == _cfHX]
++    ck(_cfP1["raised"] is None and _cfP2["raised"] is None
++       and _cf_n(_cfP1, _cfHX) == [14.0, 4.0] and _cf_trim(_cfP1) == [(14.0, 4.0)]
++       and _cf_n(_cfP2, _cfHX) == [14.0, 11.0] and _cf_trim(_cfP2) == [(14.0, 11.0)],
++       "v-coinfrac DRIVEN, a SHORT fill (10 of 14): the top-up is trimmed to "
++       "the room -- orders %s (trims %s) at 20 s = market 14; orders %s "
++       "(trims %s) inside 10 s = market 21"
++       % (_cf_n(_cfP1, _cfHX), _cf_trim(_cfP1), _cf_n(_cfP2, _cfHX),
++          _cf_trim(_cfP2)))
++
+     # ---- v-bankfix-nodd (2026-10-06): --no-drawdown-halt ------------------
+     ck(_DEFAULT_NO_DD_HALT is False and "NO_DD_HALT" in _OFFLINE_PINNED_FLAGS
+        and "NO_DD_HALT" in _FLAG_GLOBALS
+@@ -20825,6 +21183,17 @@
+                 # slot and raises the improve bar for the better price still to
+                 # come, which measured WORSE than not trading at all.
+                 take_n = min(float(SIZE), float(size))
++                # v-coinfrac: a --coin-size-frac series' FULL BET is
++                # floor(SIZE x F), read ONCE per candidate, here, so that the
++                # re-buy band (rebuy_ok), the scale-in cap, the late add, the
++                # early leg (EARLY_FRAC x it), the top-up (to it), the full-bet
++                # room and the cap after every widener all measure "full"
++                # against the same number (the review of 10-13: with rebuy_ok
++                # still reading SIZE a capped coin at its full bet looked
++                # unfinished -- no price rule on its add, attempts burnt on
++                # full_cap). Plain assignments, no block: nothing is re-parented.
++                _csz = coin_size_for(tk)
++                _fsz = float(SIZE) if _csz is None else float(_csz)
+                 # THE FLOOR IS MEASURED AGAINST FULL SIZE, NEVER THE REMAINDER --
+                 # the operator's own condition (A17). Trimming take_n first would
+                 # let the tail of a budget buy a moment the floor exists to
+@@ -21003,7 +21372,7 @@
+                 # ours. Rule 5 forbids reading OUR loss rate off it. What is used
+                 # here is the ORDERING and the fact that the groups differ, both of
+                 # which are statements about what the market did.
+-                if not rebuy_ok(prev, tk, price, SIZE, tau=tau):
++                if not rebuy_ok(prev, tk, price, _fsz, tau=tau):   # v-coinfrac: the coin's full bet
+                     nb23 = near.setdefault(close_s, _fresh_near())
+                     nb23["rebuy_band"] = nb23.get("rebuy_band", 0) + 1
+                     _gate("rebuy_band", close_s, tk, want=want,
+@@ -21265,9 +21634,11 @@
+                 # ---- AMENDMENT 46: size the leg BEFORE the signal is recorded, so
+                 # the record carries what will actually be asked for and which
+                 # leg it is (full / early / topup).
++                # (v-coinfrac: _fsz, the coin's full bet, was read above, next
++                # to take_n -- the early leg below is EARLY_FRAC x it.)
+                 _leg46 = "full"
+                 if EARLY_TAU_MAX > TAU_MAX:
+-                    take_n, _leg46 = staged_take(tau, take_n, float(SIZE), _held46)
++                    take_n, _leg46 = staged_take(tau, take_n, _fsz, _held46)
+                     sig["take_n"] = take_n
+                     # AMENDMENT 49: an EARLY leg needs the price to be high as well
+                     # as the model to be confident. The operator, 2026-09-18:
+@@ -21333,6 +21704,12 @@
+                     take_n = min(float(take_n), _ssz)
+                     sig["take_n"] = take_n
+                     sig["series_size"] = _ssz
++                # v-coinfrac: same spot, same reason, for a --coin-size-frac
++                # 15-minute series -- an order never exceeds its full bet.
++                if _csz is not None:
++                    take_n = min(float(take_n), _csz)
++                    sig["take_n"] = take_n
++                    sig["coin_size"] = _csz
+                 if _fr_ctx is not None:
+                     # v-farrung: mu, K and the cushion on the signal (and on
+                     # the order record), so a fill can be read against the
+@@ -21356,11 +21733,13 @@
+                     _have_la = float(((prev or {}).get("n_tk") or {}).get(tk, 0.0))
+                 except (TypeError, ValueError, AttributeError):
+                     _have_la = 0.0
++                # (v-coinfrac: "at SIZE" and the add's cap are measured on
++                # _fsz, the coin's full bet -- SIZE itself for every other coin)
+                 if (REBUY_LATE_TAU and tau <= REBUY_LATE_TAU
+                         and _leg46 in ("full", "topup")
+-                        and _have_la >= float(SIZE) - 1e-9):
+-                    take_n = min(float(take_n), float(REBUY_LATE_FRAC) * float(SIZE),
+-                                 max(0.0, float(SIZE) * (1.0 + float(REBUY_LATE_FRAC))
++                        and _have_la >= _fsz - 1e-9):
++                    take_n = min(float(take_n), float(REBUY_LATE_FRAC) * _fsz,
++                                 max(0.0, _fsz * (1.0 + float(REBUY_LATE_FRAC))
+                                      - _have_la))
+                     _leg46 = "late_add"
+                     _have_la_cap = _have_la
+@@ -21377,8 +21756,8 @@
+                     if round(float(take_n), 2) <= 0:
+                         _gate("late_add_full", close_s, tk, want=want, tau=tau,
+                               price=round(price, 4), have=round(_have_la, 4),
+-                              cap=round(float(SIZE) * (1.0 + float(REBUY_LATE_FRAC)), 4),
+-                              size=float(SIZE))
++                              cap=round(_fsz * (1.0 + float(REBUY_LATE_FRAC)), 4),
++                              size=_fsz)
+                         continue
+                 # v-toxic (2026-09-24, results/PREREG_toxic.md): a level posted
+                 # under TOXIC_MIN_AGE_MS ago WHILE takers net-sold our side in
+@@ -21427,12 +21806,12 @@
+                                     LATE_MULT if tau <= LATE_TAU else 1.0)
+                     _fc_room0 = full_bet_room(prev, tk, want, _fc_mult0,
+                                               hedged=hedged_side.get(tk),
+-                                              size=_ssz)
++                                              size=_ssz if _ssz is not None else _csz)
+                     if _fc_room0 is not None and round(float(_fc_room0), 2) <= 0:
+                         _gate("full_cap", close_s, tk, leg=_leg46, tau=tau,
+                               price=round(price, 4), want=want,
+                               have=round(float(((prev or {}).get("n_tk") or {}).get(tk, 0.0)), 2),
+-                              cap=round(float(MAX_FULL_BETS) * float(SIZE if _ssz is None else _ssz)
++                              cap=round(float(MAX_FULL_BETS) * float(_ssz if _ssz is not None else _fsz)
+                                         * _fc_mult0, 2),
+                               cap_x=float(MAX_FULL_BETS),
+                               size=float(take_n or SIZE))
+@@ -21665,6 +22044,16 @@
+                             need_pin=LATE_PIN, max_jump=LATE_JUMP_SD,
+                             size=float(SIZE))
+                         return take_n
++                    if _csz is not None:
++                        # v-coinfrac (review 10-13): a capped coin's order can
++                        # never be widened -- the cap after every widener puts
++                        # it straight back -- so the boost must not be
++                        # recorded as FIRED: a loss on that market would then
++                        # switch LATE_MULT off for EVERY coin (late_boost_off)
++                        # over a widening that never happened.
++                        boost_why[(close_s, tk)] = (
++                            "no: coin bet capped at %g (--coin-size-frac)" % _fsz)
++                        return take_n
+                     _cap48 = one_coin_cap(SIZE, state.get("bank"), state.get("hwm"),
+                                           mult=LATE_MULT)
+                     _avail48 = float(size)
+@@ -21838,7 +22227,7 @@
+                                    LATE_MULT if tau <= LATE_TAU else 1.0)
+                     _room_fc = full_bet_room(prev, tk, want, _mult_fc,
+                                              hedged=hedged_side.get(tk),
+-                                             size=_ssz)
++                                             size=_ssz if _ssz is not None else _csz)
+                     if _room_fc is None or float(take_n) <= _room_fc + 1e-9:
+                         return take_n
+                     rec("full_cap_trim", ticker=tk, want=want, leg=_leg46,
+@@ -21846,7 +22235,7 @@
+                         was=round(float(take_n), 2),
+                         now=round(max(0.0, float(_room_fc)), 2),
+                         cap_x=float(MAX_FULL_BETS), mult=_mult_fc,
+-                        size=float(SIZE if _ssz is None else _ssz))
++                        size=float(_ssz if _ssz is not None else _fsz))
+                     return max(0.0, float(_room_fc))
+ 
+                 def _stage46(take_n):
+@@ -21881,14 +22270,14 @@
+                             _have_sa = float(((prev or {}).get("n_tk") or {}).get(tk, 0.0))
+                         except (TypeError, ValueError, AttributeError):
+                             _have_sa = 0.0
+-                        return min(take_n, float(REBUY_LATE_FRAC) * float(SIZE),
+-                                   max(0.0, float(SIZE) * (1.0 + float(REBUY_LATE_FRAC))
++                        return min(take_n, float(REBUY_LATE_FRAC) * _fsz,
++                                   max(0.0, _fsz * (1.0 + float(REBUY_LATE_FRAC))
+                                        - _have_sa))
+                     if EARLY_TAU_MAX > TAU_MAX and _leg46 != "full":
+                         _mult46 = max(band_mult(price), _doubt_on[0],
+                                       LATE_MULT if tau <= LATE_TAU else 1.0)
+                         return min(take_n, staged_take(tau, take_n,
+-                                                       float(SIZE) * _mult46,
++                                                       _fsz * _mult46,
+                                                        _held46)[0])
+                     return take_n
+ 
+@@ -21926,6 +22315,8 @@
+                     take_n = _stage46(take_n)
+                     if _ssz is not None:       # v-btcd1, after every widener
+                         take_n = min(float(take_n), _ssz)
++                    if _csz is not None:       # v-coinfrac, after every widener
++                        take_n = min(float(take_n), _csz)
+                     take_n = _fullcap(take_n)  # v-fullcap (paper), LAST
+                     if round(float(take_n), 2) <= 0:  # v-zerotake backstop (paper); v-safety2 (3): 2 dp, as sent
+                         rec("zero_take", ticker=tk, want=want, leg=_leg46,
+@@ -22000,7 +22391,7 @@
+                         # BEFORE the sweep, so A35 sizes from the depth under
+                         # the cap. Entry path only; it lowers a limit, never
+                         # refuses, and the hedge pass is above this line.
+-                        _si_cap = scalein_cap(prev, tk, price, SIZE, tau=tau)
++                        _si_cap = scalein_cap(prev, tk, price, _fsz, tau=tau)   # v-coinfrac: the coin's full bet
+                         if _si_cap is not None and _si_cap < _limit - 1e-12:
+                             rec("scalein_cap", ticker=tk, want=want, tau=tau,
+                                 ask=round(float(price), 4),
+@@ -22078,6 +22469,8 @@
+                         take_n = _stage46(take_n)
+                         if _ssz is not None:       # v-btcd1, after every widener
+                             take_n = min(float(take_n), _ssz)
++                        if _csz is not None:       # v-coinfrac, after every widener
++                            take_n = min(float(take_n), _csz)
+                         # A68: LAST, so no later widener can undo the cap. This is
+                         # the line that makes the bounded rebuy bounded; without
+                         # it the close budget alone allows it and the tail is the
+@@ -22620,6 +23013,14 @@
+                          "never bought. A position already held in it is "
+                          "still adopted, hedged and settled. Repeatable. "
+                          "Default none = off.")
++    ap.add_argument("--coin-size-frac", action="append", default=None,
++                    metavar="SERIES:F",
++                    help="v-coinfrac: this 15-minute series bets "
++                         "floor(SIZE x F), at least 1, instead of SIZE -- "
++                         "early leg, top-up, full-bet room and every cap "
++                         "scale with it; hedges never do. F in (0, 1]. "
++                         "Repeatable; a series cannot also be --skip-coin. "
++                         "Default none = off.")
+     ap.add_argument("--keep-conn", choices=("on", "off"), default="off",
+                     help="v-fastconn: on = orders and reads ride ONE kept "
+                          "HTTPS connection per thread (ordercli v-keepconn). "
+@@ -23176,6 +23577,32 @@
+         if set(_sk) >= set(SERIES_TO_INDEX):
+             raise SystemExit("--skip-coin would skip every series")
+         globals()["SKIP_COINS"] = tuple(sorted(_sk))
++    if getattr(a, "coin_size_frac", None):
++        # v-coinfrac: SERIES:F pairs, refused loudly rather than guessed;
++        # parsed AFTER --skip-coin so the clash can be seen.
++        _cf = {}
++        for _s in a.coin_size_frac:
++            try:
++                _nm, _fv = str(_s).split(":", 1)
++                _nm, _fv = _nm.strip().upper(), float(_fv)
++            except (TypeError, ValueError):
++                raise SystemExit("--coin-size-frac takes SERIES:FRACTION, "
++                                 "e.g. KXHYPE15M:0.15, got %r" % (_s,))
++            if _nm not in SERIES_TO_INDEX:
++                raise SystemExit("--coin-size-frac must name a 15-minute "
++                                 "series in SERIES_TO_INDEX (%s), got %r"
++                                 % (", ".join(sorted(SERIES_TO_INDEX)), _nm))
++            if not (0.0 < _fv <= 1.0) or _fv != _fv:
++                raise SystemExit("--coin-size-frac fraction must be in "
++                                 "(0, 1], got %r" % (_s,))
++            if _nm in SKIP_COINS:
++                raise SystemExit("--coin-size-frac %s is also --skip-coin: "
++                                 "pick one" % _nm)
++            if _nm in _cf:
++                raise SystemExit("--coin-size-frac %s given twice (%r and %r)"
++                                 % (_nm, _cf[_nm], _fv))
++            _cf[_nm] = _fv
++        globals()["COIN_SIZE_FRAC"] = dict(_cf)
+     if getattr(a, "no_drawdown_halt", False):
+         globals()["NO_DD_HALT"] = True                   # v-bankfix-nodd
+     if a.toxic_fresh:
+@@ -23576,6 +24003,8 @@
+         max_full_bets=MAX_FULL_BETS,
+         # v-skiphype: the 15-minute series taken out of the universe
+         skip_coin=list(SKIP_COINS),
++        # v-coinfrac: {15-minute series: fraction of SIZE it bets}
++        coin_size_frac=dict(COIN_SIZE_FRAC),
+         day_loss_at_start=day_loss(),
+         hedge_prop=HEDGE_PROP, hedge_prop_full=HEDGE_PROP_FULL,
+         hedge_prop_half=HEDGE_PROP_HALF,
