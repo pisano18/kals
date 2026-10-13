@@ -73,6 +73,9 @@ is falsified, and say so in the commit. Never edit a fact to fit a story.
 | F-M07 | Where nobody offered to sell, the model misses its own claim by 0.028pp. Where somebody did, by 0.725pp — **26x**. | `results/RESULTS_select.md` |
 | F-M08 | Within each coin, the LOWEST measured-volatility fifth is the worst (5.19% bad, 43.7x overconfident); the middle fifth is the best (1.38%, 8.3x). | 2026-09-13 |
 | F-M09 | Sigma is NOT comparable across coins — it scales with the coin's price. Bucketing on raw sigma sorts by coin. | 2026-09-13 |
+| F-M10 | The previous close's miss does NOT predict the next close's 3-sigma miss: lift 0.86x, by-close interval [0.55, 1.36] over 18,178 coin-closes; the worst miss across all coins last close, 0.93x [0.55, 1.67]. | `results/RESULTS_flood.md` |
+| F-M11 | Hour of day does not predict it either: 1.13x [0.58, 2.38], same sample, against a 2.50x smallest-callable lift. | `results/RESULTS_flood.md` |
+| F-M12 | The calmest fifth of the last five minutes floods 4.28% of the time against the choppiest fifth's 1.05% — monotone across all five, 4.05x. | `results/RESULTS_flood.md` |
 
 ## P — Our performance
 
