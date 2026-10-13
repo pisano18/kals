@@ -9,6 +9,15 @@ moment a state changes; it is the operator's index to the work.
 
 ---
 
+## W. The live watcher
+**Say: "resume watcher".** (2026-10-13) Any new chat starts the live watch: `research/watchlive.py` under the
+Monitor tool -- it prints only losses, insurance orders, connection problems, halts and errors from the main bot
+(following it onto a new log after a restart) and the side bots, and `--status` gives the hourly check (money,
+connection counts, every process alive, disk, RAM). Routine connection refreshes are skipped. It stops when the
+chat is cleared; the phone's Telegram loss alerts keep running regardless.
+
+---
+
 ## A. Running tests — nothing here changes the bot until its bar is met
 
 ### A21. The final version -- blind design competition, 2026-10-09
