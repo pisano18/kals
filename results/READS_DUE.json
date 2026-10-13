@@ -777,7 +777,8 @@
    "bar": "PRE-REGISTERED 2026-10-12 ~09Z, before the build or any result. REVERT AT ONCE (restart_bot.before-fastconn.ps1 over restart_bot.ps1, restart while flat; or --keep-conn off) if ANY of: an order placed twice (two orders for one intended send); an insurance order not placed, or placed more than 1 s late, because of a connection event; a halt or pause caused by a connection event; a Traceback mentioning ordercli/pintake connection code. KEEP after 3 days or 150 orders, whichever is later, only if: warm sends' median is at least 30 ms faster than cold/before-deploy sends; at least 80% of entries in the last 60 s of a close went out warm; at most 1 outcome-UNKNOWN event in total and none on an insurance order. Otherwise turn it off (--keep-conn off) and report.",
    "status": "open",
    "read_log": [
-    "2026-10-12 11:15Z deployed. Lookup cap shipped at 2.5 s (inside the bar's 3 s). Routine, NOT alarms: conn_event stale_replaced why=stale_idle; a keep-warm GET read_retry with retry_ok=true. Baseline to beat: live entry latency_ms median 89.6 ms, p90 112 ms (553 entries, 10-03..10-12)."
+    "2026-10-12 11:15Z deployed. Lookup cap shipped at 2.5 s (inside the bar's 3 s). Routine, NOT alarms: conn_event stale_replaced why=stale_idle; a keep-warm GET read_retry with retry_ok=true. Baseline to beat: live entry latency_ms median 89.6 ms, p90 112 ms (553 entries, 10-03..10-12).",
+    "2026-10-13 ~05Z interim: 37 orders all warm, 0 hedges, 0 failed / unknown / retried / lookups; 33,395 requests, 10 fresh. 4 conn_event, ALL stale_replaced why=stale_dead on keep-warm GETs at idle 19.6 s (02:06, 03:18, 03:49, 03:56Z; none in the first 15 h), each replaced in <1 ms before sending -- the server is closing kept connections at night. Watch the rate: these are the VISIBLE case; the invisible race (a close landing during an order/hedge send) scales with it. The watcher now skips stale_replaced on GETs only."
    ]
   }
  ]
