@@ -652,7 +652,7 @@
   },
   {
    "id": "disk-guard",
-   "due": "2026-10-13T12:00Z",
+   "due": "2026-10-14T12:00Z",
    "what": "Free disk 21.3 GB at 2026-10-06 01:3xZ, falling 3.8-5.4 GB/day; the 6 GB guard (stop analysis) and the 5 GB hard collection stop (run_all.ps1 exits, tape ends for good) land ~10-08 evening .. 10-10 morning ET. Operator asked to buy a drive or approve freeing ~16 GB (restore points 9.7 GB + hibernation 6.8 GB).",
    "how": "(Get-PSDrive C).Free; check daily",
    "bar": "daily until resolved: below 10 GB, say so loudly in every message; below 6 GB stop all analysis and write state (CLAUDE.md resource protocol).",
@@ -664,12 +664,13 @@
     "10-09 12:2xZ 20.43 GB free at 12:1xZ (-4 GB since 10-09 05:06Z, mostly the design-competition agents' temp files). Above 10 GB: OK.",
     "10-10 12:3xZ: free disk 21.1 GB. Windows removed its only restore point by itself between 12:00 and 12:35Z (shadow storage 14.8 GB -> 0.00 GB, 0 shadow copies), so the ~0.9 GB/h drain is gone for now. It will regrow with the next restore point (max 17.6 GB); capping it at 2 GB stays the operator's call.",
     "2026-10-12 08:30Z: 15.7 GB free (18.8 GB at 10-11 ~10:30Z: -3.1 GB in 22 h, ~3.4 GB/day) -> the 6 GB guard ~10-15 morning ET at this pace. Restore points capped at 2 GB on 10-11; hibernation (6.8 GB) still on; no drive bought.",
-    "2026-10-12 ~09Z operator: \"Don't delete hibernate. I'll get storage.\" -- hibernation stays on; new storage coming (date not given)."
+    "2026-10-12 ~09Z operator: \"Don't delete hibernate. I'll get storage.\" -- hibernation stays on; new storage coming (date not given).",
+    "2026-10-13 09:5xZ: 10.55 GB free (15.7 at 10-12 08:30Z: -5.1 GB in 25 h). Causes measured: tape 4.8 GB written in 25 h (kalshi_data 10-12 4.07 GB, normal days ~2.6), and a NEW restore point (created 10-13 03:59Z) already 2.86 GB used -- the 10-11 2 GB cap is GONE (vssadmin: max 17.6 GB again). Re-applying the cap was refused by Claude Code's safety check (it deletes the restore point) -> needs the operator's words. 10:0xZ: NTFS-compressed 1,125 result files idle >24 h + .sweep (reversible, compact /u; nothing deleted): 10.54 -> 13.06 GB. Recycle Bin holds 4.19 GB of his own old files (Android SDK 2022). Monitor armed: alert under 8 GB."
    ]
   },
   {
    "id": "hype-shadow",
-   "due": "2026-10-13T12:00Z",
+   "due": "2026-10-14T12:00Z",
    "what": "DAILY (operator 2026-10-06: 'Track what we'd have if we still traded hype wins and losses'). Since v-skiphype went live (2026-10-05T14:24:02Z) the live main bot does not trade HYPE; this is what it WOULD have made, from the PAPER copies that still trade it: arm-0925b (same 09-25 code as live; --early-min-price 0.95 vs live 0.90, no full-bet cap) and arm-live-twin (live code+argv as of 09-29). Per HYPE market: settled pnl_c/100 summed over legs, scaled x (live size / arm size) at entry from both logs' autosize records. First numbers (2026-10-06 06:37Z): arm-0925b 5 markets, 5 won, 0 lost, +$5.33 on $202 bet (+2.6%); twin 4 markets, 4 won, 0 lost, +$5.88 on $174 (+3.4%).",
    "how": "python research/hype_shadow.py  (per ET day + total, both arms, every losing market named; self-test runs first). Report wins, losses, net $ and % on money bet, per day and cumulative. Say every time that it is PAPER and the LOSS side is optimistic (paper books what the book showed; live is sold to on losers -- NEAR 10-03 live 94 contracts vs paper 4). Check both arms' last record is recent (alive). After reading, move `due` +1 day and add a line to read_log; the weekly 'skiphype' item keeps the put-back decision. | 2026-10-06 18:59:43Z: arm-live-twin's 7-day run ended; relaunched identically (results/relaunch_twin_1006.ps1) as pid 1675248, log results/pinrun-paper-20261006T1859*.jsonl, code_sha 9afb6eca6a91 (today's repo pinrun.py; the old twin ran 7135aa467332) -- join both twin logs; say in each read which code a window used.",
    "bar": "No decision of its own -- the put-back bar stays the 'skiphype' item's (HYPE on paper > +$30 over the week with NO losing market). Flag UNPROMPTED the day any HYPE market loses on paper (name it, $ scaled), since one paper loser already fails that bar.",
@@ -680,7 +681,8 @@
     "10-09 05:2xZ arm-0925b (09-25 code): 21 HYPE markets since 10-05, 21 won, 0 lost, +$52.78 on $878 bet (+6.0%), 10-08 4 mk +$4.17. Twin: the script reads only the OLD twin log (ended 10-06 18:59Z, 6 mk +$6.48) -- the relaunched twin log is not joined yet. PAPER: the loss side is optimistic (live HYPE 81 mk, 4 lost, -$103). On track for the skiphype put-back bar (> +$30, no loser) read 10-12.",
     "10-09 12:2xZ arm-0925b: 24 HYPE markets since 10-05, 24 won, 0 lost, +$57.20 on $999 (+5.7%); 10-09 3 mk +$4.42. PAPER (loss side optimistic). On track for the skiphype put-back read 10-12.",
     "10-10 12:3xZ arm-0925b: 35 HYPE markets since 10-05, 34 won, 1 LOST: KXHYPE15M-26OCT092245-45 (10-09 10:45 PM ET) -$2.88 at the live size (90). Net +$70.81 on $1,428 (+5.0%). PAPER. One paper loser FAILS the skiphype put-back bar (no losing market) -> HYPE stays off at the 10-12 read.",
-    "2026-10-12 08:30Z: arm-0925b 10-05..10-10 37 markets, 36 won, 1 lost (10-09 10:45 PM ET -$2.88), +$73.23 on $1,540.96 bet (+4.75%), PAPER. arm-0925b's 7-day run ENDED 2026-10-11T00:36Z (no records after). hype_shadow.py does NOT yet join the relaunched twin log results/pinrun-paper-20261006T185948Z.jsonl (pid 1675248, alive) -- fix that before the next read."
+    "2026-10-12 08:30Z: arm-0925b 10-05..10-10 37 markets, 36 won, 1 lost (10-09 10:45 PM ET -$2.88), +$73.23 on $1,540.96 bet (+4.75%), PAPER. arm-0925b's 7-day run ENDED 2026-10-11T00:36Z (no records after). hype_shadow.py does NOT yet join the relaunched twin log results/pinrun-paper-20261006T185948Z.jsonl (pid 1675248, alive) -- fix that before the next read.",
+    "2026-10-13 10:0xZ: hype_shadow.py now joins the relaunched twin (TWIN2_START, own section, self-test 1 new check). arm-0925b (ended 10-11 00:36Z) unchanged: 37 mk, 1 lost (10-09 10:45 PM ET -$2.88), +$73.23 on $1,540.96 (+4.75%). Twin relaunch (code 9afb6eca6a91, 10-06 18:59Z..): 27 mk, 26 won, 1 lost (same 10-09 market, -$2.88), +$82.42 on $1,316.56 (+6.26%); 10-11 5 mk +$20.90, 10-12 2 mk +$3.42. PAPER, loss side optimistic. No new HYPE loser. The relaunched twin's --minutes 10080 ends 2026-10-13 ~18:59Z: after that NO paper copy trades HYPE (both arms ended) -> this daily read has no source unless relaunched."
    ]
   },
   {
@@ -781,6 +783,15 @@
     "2026-10-12 11:15Z deployed. Lookup cap shipped at 2.5 s (inside the bar's 3 s). Routine, NOT alarms: conn_event stale_replaced why=stale_idle; a keep-warm GET read_retry with retry_ok=true. Baseline to beat: live entry latency_ms median 89.6 ms, p90 112 ms (553 entries, 10-03..10-12).",
     "2026-10-13 ~05Z interim: 37 orders all warm, 0 hedges, 0 failed / unknown / retried / lookups; 33,395 requests, 10 fresh. 4 conn_event, ALL stale_replaced why=stale_dead on keep-warm GETs at idle 19.6 s (02:06, 03:18, 03:49, 03:56Z; none in the first 15 h), each replaced in <1 ms before sending -- the server is closing kept connections at night. Watch the rate: these are the VISIBLE case; the invisible race (a close landing during an order/hedge send) scales with it. The watcher now skips stale_replaced on GETs only."
    ]
+  },
+  {
+   "id": "strategy-hunt-1013",
+   "due": "2026-10-13T22:00Z",
+   "what": "Multi-agent strategy hunt (operator 2026-10-13: 'I want more bots... anything on the entirety of Kalshi'). Workflow wf_f623051c-8ec (task wbwokcx1b): map (universe + literature) -> 12 lane hunters (reward programs x2, election night, index ladders, sports, maker portfolio, options-implied RV, econ nowcast, weather models, cross-venue, revisit, pro desk) -> merge vs IDEA_LEDGER -> real-data test per idea -> two skeptics (stats, execution) + tiebreak -> critic -> up to 3 rounds (stops after round 2 once a 'strong' survivor exists) -> paper-bot specs -> writer. Read-only, no orders. Scratch C:/kals-repo/.sweep/hunt-2026-10-13/.",
+   "how": "Workflow result (task notification) + results/STRATEGY_HUNT_2026-10-13.md + results/strategy_hunt_2026-10-13.json + the new SH rows in results/IDEA_LEDGER.md. Reconcile every strong survivor's $/day by hand before reporting; journal: C:/Users/Joe/.claude/projects/C--kals-repo/48db8cba-4da4-4ae5-be96-5643e3203123/subagents/workflows/wf_f623051c-8ec/journal.jsonl",
+   "bar": "'strong' = tester viable + both skeptics fail to refute (or tiebreak) + realistic >= $5/day at today's bank. Each strong or viable-small survivor -> a paper bot with a watcher and its own READS_DUE bar; nothing goes live without the operator's GO (new strategy family).",
+   "status": "open",
+   "read_log": []
   }
  ]
 }

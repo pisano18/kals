@@ -9,7 +9,9 @@ THERE IS NO LIVE HYPE DATA ANY MORE, so this reads the PAPER copies that still t
     code_sha f9548c5571ff; live is that build + v-fullcap + v-skiphype). Its flags differ
     from live in two ways: --early-min-price 0.95 (live 0.90) and no --max-full-bets 1.0.
   - arm-live-twin (second view): live's code and argv as of 2026-09-29 (pid 4228512,
-    results/pinrun-paper-20260929T185918Z.jsonl), also still trading HYPE.
+    results/pinrun-paper-20260929T185918Z.jsonl), also still trading HYPE. Its 7-day run
+    ended 2026-10-06 18:59Z; the identical relaunch (pid 1675248, on that day's repo pinrun,
+    results/pinrun-paper-20261006T185948Z.jsonl) is reported as its own section.
 
 For every KXHYPE15M market an arm SETTLED since the window start, per-market money is the
 sum of its settled records' pnl_c / 100 (an entry leg and a hedge leg are separate records;
@@ -43,6 +45,7 @@ RESULTS = os.path.join(HERE, "..", "results")
 SERIES = "KXHYPE15M-"
 SINCE = "2026-10-05T14:24:02Z"          # v-skiphype live start record
 TWIN_START = "2026-09-29T18:59:18Z"     # arm-live-twin (results/arms_0928_manifest.json)
+TWIN2_START = "2026-10-06T18:59:48Z"    # its identical relaunch (results/relaunch_twin_1006.ps1, pid 1675248)
 
 
 def ts(s):
@@ -206,8 +209,9 @@ def fmt(agg):
             % (agg["markets"], agg["won"], agg["lost"], agg["net"], agg["spent"], pct))
 
 
-def find_twin_log(results):
-    want = ts(TWIN_START)
+def find_twin_log(results, start=TWIN_START):
+    """The paper log whose name is within 30 s of `start`, else None."""
+    want = ts(start)
     best = None
     for f in glob.glob(os.path.join(results, "pinrun-paper-*.jsonl")):
         n = os.path.basename(f)[len("pinrun-paper-"):-len(".jsonl")]
@@ -331,6 +335,12 @@ def selftest():
            "t_settle": ts(SINCE), "t_first": ts(SINCE), "spent": 1.0}}, [], [])[0]["factor"] == 1.0,
            "no live size known -> factor 1 (the arm's own money), never a guess")
         ck(et_day(ts("2026-12-01T04:30:00Z")) == "2026-11-30", "EST in December (UTC-5)")
+        for n in ("20260929T185918Z", "20261006T185948Z", "20261006T190030Z"):
+            open(os.path.join(d, "pinrun-paper-%s.jsonl" % n), "w").close()
+        ck(os.path.basename(find_twin_log(d)) == "pinrun-paper-20260929T185918Z.jsonl"
+           and os.path.basename(find_twin_log(d, TWIN2_START)) == "pinrun-paper-20261006T185948Z.jsonl"
+           and find_twin_log(d, "2026-10-08T00:00:00Z") is None,
+           "each twin log found by its own start (nearest within 30 s); no log near a start -> None")
         lines = []
         report("arm", arm, ts(SINCE), lt, out=lines.append)
         ck(any("TOTAL" in x for x in lines) and any(x.strip().startswith("lost: KXHYPE15M-L1") for x in lines),
@@ -369,6 +379,10 @@ def main():
     report("arm-0925b (09-25 code = live's base; early-min-price 0.95, no full-bet cap)",
            arm_0925b_log(a.results), since, lt, until)
     report("arm-live-twin (live code+argv as of 09-29)", find_twin_log(a.results), since, lt, until)
+    # the 7-day twin ended 10-06 18:59Z and was relaunched identically, but on the repo's
+    # pinrun of that day (code_sha printed) -- reported separately so each window names its code
+    report("arm-live-twin relaunch (same argv, 10-06 repo code)",
+           find_twin_log(a.results, TWIN2_START), since, lt, until)
 
 
 if __name__ == "__main__":
