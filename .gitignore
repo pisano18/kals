@@ -91,6 +91,30 @@ results/pintraj-*.jsonl
 /results/quakewatch-*.jsonl
 /results/rungwatch-*.jsonl
 
+# ---- results/ LIVE and side-bot logs (2026-10-15). Claude Code's "Teleport auto-stash"
+# (continuing a session on another machine) runs `git add -A; git stash`: on 2026-10-15
+# 04:39:42Z it took 95 untracked files out of results/ -- every main-bot live log since
+# 09-27, the ladder/forecaster/coin-race/paper logs -- while the bots were starting
+# (stash@{0}; same thing 2026-09-26). Ignored files are not taken. The "LIVE money logs
+# stay tracked" line above had lapsed in practice: no pinrun-live log after 09-25 was
+# ever committed. Already-tracked copies (pinracepenny-live.jsonl, ...) stay tracked
+# and can still be reverted by such a stash.
+/results/pinrun-live-*.jsonl
+/results/ladder-live*.jsonl
+/results/forecaster-live*.jsonl
+/results/bettor-live*.jsonl
+/results/dipsell-*.jsonl
+/results/racereward-*
+/results/fcvar-paper*.jsonl
+/results/cleanroom-*.jsonl
+/results/rain-paper*.jsonl
+/results/lipwatch*.jsonl
+/results/portwatch-rec-*
+/results/polypaper-*.jsonl
+/results/*-stdout.log
+/results/*-stderr.log
+/results/pinracepenny-daystate.json
+
 # ---- results/ rebuildable row caches (tens of MB each, regenerated per run)
 /results/pinlook_*.json
 /results/*_rows.jsonl
