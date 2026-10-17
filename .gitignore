@@ -124,3 +124,13 @@ results/pintraj-*.jsonl
 
 # tax ledger: rebuilt by research/taxledger.py, never committed (2026-09-26)
 results/tax/
+
+# ---- results/ strategy-hunt paper tests (2026-10-17): recorder data, locks, logs
+/results/fxbook/
+/results/fxbook-rec.jsonl
+/results/fxbook-rec.lock
+/results/fxreward-paper.lock
+/results/fxreward-v5.lock
+/results/fc-fast-paper*.jsonl
+/results/racev2-shadow*
+/results/ratehreward-paper*
