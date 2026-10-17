@@ -20,6 +20,19 @@ chat is cleared; the phone's Telegram loss alerts keep running regardless.
 
 ## A. Running tests — nothing here changes the bot until its bar is met
 
+### A22. The strategy hunt, 2026-10-13..16 -- FINISHED 2026-10-17
+**Say: "the hunt report" / "build sidefield" / "build restgate" / "fx reward recorder" / "treasury reward recorder" /
+"coin race v2" / "gas reward recorder" / "rain recorder" / "forecaster speed test".**
+Report `results/STRATEGY_HUNT_2026-10-15.md` (data `results/strategy_hunt_2026-10-15.json`, ledger rows SH01-SH240 in
+`results/IDEA_LEDGER.md`, specs in `.sweep/hunt-2026-10-15/spec-*/SPEC.md`). 126 tests on real data with two skeptics
+each: 0 strong, 2 protective rules (v-sidefield + kdrift: survive Kalshi's coming field/price-format change; restgate:
+resting orders safe across the Thursday pause), 35 "needs data" -- the biggest are liquidity-reward ideas (FX 15-min
+~$50/day, Treasury hourly ~$20, coin race v2 ~$15, thin gas ladders ~$12) worth $0 until a recorder and a signed-off
+micro test show Kalshi pays us and fills cost what the tape says. Lose-less leads: the forecaster waits ~1.3 s by design
+and the offers it misses were +3c winners (upper bound) -> a paper speed variant; ~1 pin order in 5 prices on the
+previous second's print (checked 10-17 on live fills: 4 of 144 such markets lost vs 12 of 491 fresh -- no measurable
+harm). The report's own "What I need from you" lists 10 operator decisions.
+
 ### A21. The final version -- blind design competition, 2026-10-09
 **Say: "the final version" / "go v-stp-maker" / "build btc-lead" / "maker stage 1" / "the 5 Hz test".**
 Operator 10-08/09: derive the version that wins the most from everything, with
