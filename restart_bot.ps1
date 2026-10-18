@@ -179,7 +179,11 @@ Write-Host "restart_bot.ps1 starting $(Get-Date -Format o)"
 $botArgs = @(
     "-u", "$code\research\pinrun.py",
     "--live", "--size", "20", "--minutes", "4320",
-    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "2",
+    # v-nopause (2026-10-18, operator: "two losses should not pause the bot. Remove that."):
+    # --max-losses 2 -> 0 (0 DISABLES the loss COUNT brake, pinrun L17317 / argparse L23277).
+    # Still on: the DAY loss stop and run abort (--loss-cap-frac 0.187 x bank, about -$234 now;
+    # -60.00 below only until the first balance read). Revert: put "2" back.
+    "--loss-abort", "-60.00", "--max-positions", "3", "--max-losses", "0",
     "--improve-scope", "market", "--pick", "best",
     "--max-per-market", "2", "--improve-max", "0.010",
     # v-revert0925-fullcap (2026-10-04): an entry may not take a market past
