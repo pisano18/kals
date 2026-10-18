@@ -191,6 +191,11 @@ $botArgs = @(
     # hedges exempt). Live fills 09-09..10-04: +$121 vs no cap, 1.5x +$77.
     # Revert: results\restart_bot.before-fullcap.ps1 (VERSIONS.md).
     "--max-full-bets", "1.0",
+    # v-band15 (2026-10-18, operator: "if 1.5x makes money, do it"): buys priced in [95.5c, 98.1c) may reach
+    # 1.5 x SIZE (AMENDMENT 53, existing flag). Per-coin study wf_71bb9c0d-aae + skeptic: fills >= 95.5c lose 1.1%
+    # (15/1,372) vs 7.2% below; +$8.1-8.8/day, out-of-sample +$132 over 15.2 days; worst day -$276 -> -$314.
+    # Revert: delete this line pair and rerun while flat.
+    "--band-mult", "0.955", "0.981", "1.5",
     # v-skiphype (2026-10-05..10-13): HYPE was out of the universe
     # ("--skip-coin", "KXHYPE15M"; live fills 09-20..10-04: HYPE 81 markets,
     # 4 lost, -$103.12). WITHDRAWN 2026-10-13 by v-coinfrac below: HYPE is
