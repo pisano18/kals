@@ -883,6 +883,14 @@
    "how": "Markets where the arm bought and LIVE did not on the same closes, each with live's lock-out reason (refused gate market_attempts) and the Kalshi outcome; paper $ per market; any market where the flag made the arm hold MORE than one full bet.",
    "bar": "Same bar as arm-attempts, PRE-REGISTERED 2026-10-10, unchanged: after 7 ET days, PROPOSE LIVE if the extra markets number >= 4 with 0 lost and net paper $ > 0; DROP if any extra market lost or there are < 2 extra markets.",
    "status": "open"
+  },
+  {
+   "id": "fc-maker-paper",
+   "due": "2026-10-29T12:00Z",
+   "what": "PAPER resting-bid forecaster shadow (fc synth 2026-10-18 'Paper test 1'; candidate 1 = s4_sim p_fair_m07_r29_back_pull_nx_L100_C90 / skeptic C1_base). research/cleanroom/fc_maker_paper.py sha256 f76ad9720b75, log results/fc-maker-paper.jsonl (its only results file), own WebSocket with the FcWS subscription-id fix, NO order code (self-test proves it). Virtual post-only bids at live-model fair - 7c from rel -29, none at 90c+ / under 50c / favourite < 55%, re-priced each second, pulled 250 ms after the book moves against them, fills only on printed trades at/through the price with queue ahead modelled, 23 a side, one side per market, live day stop -$28.87 / run stop -$45.24 (run stop halts the ET day, then a simulated restart). Arms: M300 (lands 0.3 s after the print), M500 (0.5 s), NULL (bid at the market mid, no model), M300raw (no stops, context only).",
+   "how": "python research\\cleanroom\fc_maker_paper.py --read   (per arm: $/day = 96 x P&L on covered closes / covered closes, stale-flagged markets excluded; ROI = P&L / cost of fills; run/day stops; longest dry spell; share of seconds with <= 3 order actions; verdict). Covered close = >= 7 of 9 coins with a synced, non-stale book at >= 20 of 29 decision seconds; covered ET day = >= 87 of 96 closes covered; calm day = median rel -29 local/g vol ratio < 0.60.",
+   "bar": "PRE-REGISTERED 2026-10-18 before any paper data. Needs >= 10 covered ET days incl. >= 3 calm; if fewer, extend to 2026-11-02T12:00Z. PASS (all): M300 >= +$10/day after stops; M300 ROI >= 5%; M500 >= +$5/day; M300 - NULL >= $0/day; M300 <= 1 run stop and longest dry spell <= 8 h; M300 order actions (place / cancel / move, a move counted once as one amend; summed over the 9 markets) <= 3/s in >= 99% of the seconds of closes it wrote in (cancel + place counted separately is reported beside it). KILL (any): M300 total <= $0; M500 total < $0; M300 trails NULL by > $5/day; M300 >= 2 run stops. Read flagged UNRELIABLE if stale-flagged markets hold > 10% of M300's filled markets. PASS -> operator decision on a small live probe (23 a side, run stop 0.33 x pot) with live latency measured on real orders; otherwise no live change.",
+   "status": "open"
   }
  ]
 }

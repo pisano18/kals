@@ -60,6 +60,14 @@ its percentage beside it, and the long sentences kept whole behind a tap (an
 expandable quote). Only the layout changed: every figure is the one the plain
 text carried, from the same source. See PRESENTATION below.
 
+CHARTS (2026-10-18, the operator: "do actual x y charts and that solution should work for most
+commands"): right after the words, most commands also get a real x-y chart, a PNG sent with sendPhoto
+-- the running total through the day, $ and % of the bank by day, each running account's money over
+time, a bot's running total and win rate, losses over time, each running test against its bar.
+research/tgcharts.py draws them, from the same functions the words use, on ONE background thread
+(never on the poll loop: alerts, /pause and /stop never wait for a picture). "charts": false in
+telegram.json turns them off; without matplotlib the words still go, and pinphone.log says why.
+
     python research/pinphone.py --selftest
     python research/pinphone.py --preview        # print what each command would send (as the phone shows it)
     python research/pinphone.py                  # run (needs C:\kals\telegram.json)
@@ -67,6 +75,7 @@ text carried, from the same source. See PRESENTATION below.
 import html as _html
 import json
 import os
+import queue
 import re
 import sys
 import threading
@@ -88,6 +97,8 @@ RESULTS = pindesk.RESULTS
 HEARTBEAT = os.path.join(RESULTS, "pinphone.heartbeat")
 LOG = os.path.join(RESULTS, "pinphone.log")
 MAX_LEN = 3900
+CHART_QUEUE = 2                 # pictures waiting to be drawn; one more is dropped (logged), never waited for
+CHART_MAX_BYTES = 9_500_000     # Telegram takes photos up to 10 MB
 
 # /funds (/bank /accounts): WHAT RUNS IN EACH KALSHI ACCOUNT -- edit here when a bot moves, starts or stops.
 # Key = subaccount number (0 = the main account). A value is the words, or {cash pool: words} when one
@@ -104,6 +115,12 @@ FUNDS_WHAT = {
 FUNDS_POOL_NAME = {0: "weather pool", 2: "crypto pool"}     # Kalshi's exchange_index; others say "pool N"
 # whose bet size /funds shows under each account (read from that bot's own log, see funds_sizes)
 FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",)}
+
+
+def _tgc():
+    """research/tgcharts.py, imported on first use (it imports matplotlib only when it draws)."""
+    import tgcharts
+    return tgcharts
 
 
 def split_text(s, limit=MAX_LEN):
@@ -529,12 +546,41 @@ class Telegram:
                 for part in split_text(html_to_plain(chunk), MAX_LEN):
                     self._call("sendMessage", {"chat_id": chat_id, "text": part})
 
+    def _post(self, method, body, ctype, http_timeout=60):
+        req = urllib.request.Request(self.base + method, data=body, headers={"Content-Type": ctype})
+        with urllib.request.urlopen(req, timeout=http_timeout) as r:
+            return json.loads(r.read().decode("utf-8", "replace"))
+
+    def send_photo(self, chat_id, png, caption=None):
+        """One chart: sendPhoto, multipart (photo_body). The caption is plain text (no markup to refuse)."""
+        boundary = "pinphone" + os.urandom(12).hex()
+        d = self._post("sendPhoto", photo_body(chat_id, png, caption, boundary),
+                       "multipart/form-data; boundary=" + boundary)
+        if not (isinstance(d, dict) and d.get("ok")):
+            raise RuntimeError("sendPhoto refused: %s" % (str(d)[:200],))
+
+
+def photo_body(chat_id, png, caption, boundary):
+    """multipart/form-data for sendPhoto: chat_id, caption (cut to Telegram's 1024), the PNG as `photo`."""
+    B = boundary.encode()
+    crlf = b"\r\n"
+    out = []
+    for k, v in (("chat_id", str(chat_id)), ("caption", (caption or "")[:1024] or None)):
+        if v is not None:
+            out.append(b"--" + B + crlf + b'Content-Disposition: form-data; name="' + k.encode() + b'"' + crlf + crlf
+                       + v.encode("utf-8") + crlf)
+    out.append(b"--" + B + crlf + b'Content-Disposition: form-data; name="photo"; filename="chart.png"' + crlf
+               + b"Content-Type: image/png" + crlf + crlf + bytes(png) + crlf)
+    out.append(b"--" + B + b"--" + crlf)
+    return b"".join(out)
+
 
 class FakeTelegram:
     """For the self-test: a queue of incoming messages and a list of sent ones."""
     def __init__(self):
         self.incoming = []
         self.sent = []
+        self.photos = []
         self.n = 0
 
     def push(self, chat_id, text):
@@ -547,6 +593,9 @@ class FakeTelegram:
 
     def send(self, chat_id, text):
         self.sent.append((chat_id, text))
+
+    def send_photo(self, chat_id, png, caption=None):
+        self.photos.append((chat_id, png, caption))
 
 
 # ===========================================================================
@@ -583,6 +632,8 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 /start — trade again
 <code>/stop yes</code> — stop right now
 /mute · /unmute — alerts off / on
+
+📈 Most commands send a chart right after the words (not /open, /help or the controls).
 
 <i>Alerts come by themselves: state changes, every losing close, low disk (under 8 GB, again under 6 GB), and yesterday's summary at 8 AM ET. Long details sit behind a tap on the quoted block.</i>""")
 
@@ -2859,6 +2910,13 @@ class Phone:
         # /funds reads Kalshi through this getter; None = botstats.default_getter() (kauth.get, GET only).
         # The self-test plants a fake Kalshi here.
         self.funds_getter = None
+        # CHARTS (2026-10-18): a picture after the words, drawn on one background thread (chart_after).
+        # Off unless main() turns them on, so every self-test Phone sends words only unless it asks.
+        self.charts_on = False
+        self.chart_fn = None                    # None = tgcharts.build; the self-test plants its own
+        self.chart_stale_s = None               # None = tgcharts.STALE_S
+        self._chart_q = None
+        self._bars_d = None                     # /bars' gathered numbers, for its picture
 
     # ---- helpers ----
     @property
@@ -3662,9 +3720,13 @@ class Phone:
         PASS / KILL / EXTEND / TOO EARLY, and the phone quotes it."""
         if self.bars_fn is not None:
             return bars_html(self.bars_fn())
+        self._bars_d = None
         try:
             import bars
-            return bars_html(bars.text(results=self.ledger.results, now=self.now()))
+            # bars.text() is render(gather()); gathered here so /bars' picture uses these very numbers
+            d = bars.gather(self.ledger.results, self.now())
+            self._bars_d = d
+            return bars_html(bars.render(d))
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return ("Could not build /bars: %s\nEverything else still works -- /stats and /racestats "
@@ -3842,6 +3904,97 @@ class Phone:
             sent.append(msg)
         return sent
 
+    # ---- charts (2026-10-18) ----
+    def chart_after(self, chat_id, text):
+        """Queue the picture for a command whose words were just sent. NEVER RAISES AND NEVER WAITS: the poll
+        loop puts one job on a short queue and goes on; one background thread (_chart_loop) draws it and sends
+        it. Only the paired chat, only a command research/tgcharts.py draws (never /pause /start /stop), and
+        nothing while charts are off. A full queue drops the picture (logged); the words already went.
+        Returns True when queued."""
+        try:
+            if not self.charts_on or chat_id is None or chat_id != self.chat_id:
+                return False
+            cmd = (text or "").strip().partition(" ")[0].lower().split("@")[0]
+            tgc = _tgc()
+            kind = tgc.kind_of(cmd)
+            if kind is None:
+                return False
+            job = {"kind": kind, "cmd": cmd, "chat": chat_id, "queued": time.monotonic(),
+                   "ctx": self._chart_ctx(kind, tgc)}
+            try:
+                self._chart_queue().put_nowait(job)
+            except queue.Full:
+                log("chart for %s skipped: %d pictures already waiting" % (cmd, CHART_QUEUE))
+                return False
+            return True
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
+            return False
+
+    def _chart_ctx(self, kind, tgc):
+        """What the picture reads, fixed right after the words were built: the clock, a private copy of the
+        ledger's lists (this thread keeps appending to the live ones), botstats' getter and process table as
+        the words use them, and /bars' gathered numbers."""
+        ctx = {"now": self.now(), "pp": sys.modules[__name__], "bs_getter": self.bs_getter,
+               "bs_procs": self.bs_procs, "funds_what": FUNDS_WHAT}
+        if kind in tgc.LEDGER_KINDS:
+            ctx["ledger"] = self._ledger_snapshot()
+        if kind == "bars":
+            ctx["bars"] = self._bars_d
+        return ctx
+
+    def _ledger_snapshot(self):
+        import copy
+        s = copy.copy(self.ledger)
+        for k in ("settled", "orders", "hedges", "autosize", "external", "halts", "starts", "closes"):
+            v = getattr(self.ledger, k, None)
+            if isinstance(v, list):
+                setattr(s, k, list(v))
+        return s
+
+    def _chart_queue(self):
+        if self._chart_q is None:
+            self._chart_q = queue.Queue(maxsize=CHART_QUEUE)
+            threading.Thread(target=self._chart_loop, name="charts", daemon=True).start()
+        return self._chart_q
+
+    def _chart_loop(self):
+        while True:
+            job = self._chart_q.get()
+            try:
+                self._chart_one(job)
+            except Exception:                                   # noqa: BLE001
+                log(traceback.format_exc())
+            finally:
+                self._chart_q.task_done()
+
+    def _chart_one(self, job):
+        stale = self.chart_stale_s if self.chart_stale_s is not None else _tgc().STALE_S
+        waited = time.monotonic() - job["queued"]
+        if waited > stale:
+            log("chart for %s dropped: its turn came %.0f s after the words (limit %d s)" % (job["cmd"], waited, stale))
+            return
+        t0 = time.monotonic()
+        try:
+            got = (self.chart_fn or _tgc().build)(job["kind"], job["ctx"])
+        except ImportError as e:
+            if "matplotlib" in str(e):
+                self.charts_on = False
+                log("charts OFF until restart: %s -- the words still go. Fix: C:\\Python314\\python.exe -m pip "
+                    "install matplotlib, then restart pinphone." % e)
+                return
+            raise
+        if not got:
+            log("chart for %s: nothing live to draw (%.1f s)" % (job["cmd"], time.monotonic() - t0))
+            return
+        data, caption = got
+        if len(data) > CHART_MAX_BYTES:
+            log("chart for %s not sent: %d bytes is over %d" % (job["cmd"], len(data), CHART_MAX_BYTES))
+            return
+        self.tg.send_photo(job["chat"], data, caption)
+        log("SENT PHOTO for %s: %d KB, drawn in %.1f s -- %s" % (job["cmd"], len(data) // 1024,
+                                                                 time.monotonic() - t0, (caption or "")[:120]))
+
     # ---- main loop ----
     def poll_once(self, timeout=25):
         try:
@@ -3854,16 +4007,20 @@ class Phone:
             self.offset = max(self.offset or 0, int(u.get("update_id", 0)) + 1)
             m = u.get("message") or {}
             chat = (m.get("chat") or {}).get("id")
+            handled = True
             try:
                 reply = self.handle(chat, m.get("text"))
             except Exception as e:                        # noqa: BLE001
                 reply = "error: %s" % e
+                handled = False
                 log(traceback.format_exc())
             if reply:
                 self.say(reply, chat_id=chat)
+                if handled:
+                    self.chart_after(chat, m.get("text"))     # queued, never drawn here (see chart_after)
 
     def run(self):
-        log("pinphone starting; paired chat: %s" % self.chat_id)
+        log("pinphone starting; paired chat: %s; charts %s" % (self.chat_id, "on" if self.charts_on else "off"))
         # the process table for /stats and /race, read off the poll thread
         threading.Thread(target=proc_refresher, daemon=True).start()
         if self.chat_id:
@@ -5147,6 +5304,103 @@ def selftest():
         ph.poll_once()
         ck(tg.sent[-1][0] == 111 and "Commands" in P(tg.sent[-1][1]) and ph.offset == 3, "poll: the paired chat gets its reply, the stranger nothing, offset advances")
 
+        # ---- charts after the words (2026-10-18) -------------------------------------------------------
+        # The picture is queued AFTER the words are sent and drawn on one background thread: poll_once never
+        # waits for it, alerts run meanwhile, the controls never queue one, a stranger gets none, a failing or
+        # late picture only logs, and a full queue drops (never blocks). tgcharts' own --selftest draws them.
+        import threading as _thr
+        _tgcm = _tgc()
+        ck(all(_tgcm.kind_of(c_) is None for c_ in ("/open", "/help", "/pause", "/start", "/stop", "/mute", "/unmute",
+                                                     "/pair"))
+           and _tgcm.kind_of("/today") == "today" and _tgcm.kind_of("/funds") == "funds" and ph.charts_on is False,
+           "charts: off unless main() turns them on; the controls, /open and /help never get a picture")
+        _pb = photo_body(111, b"\x89PNG\r\n\x1a\nDATA", "Today +$1.00", "BND")
+        ck(_pb.startswith(b"--BND\r\n") and b'name="chat_id"\r\n\r\n111\r\n' in _pb
+           and b'name="caption"\r\n\r\nToday +$1.00\r\n' in _pb
+           and _pb.endswith(b'filename="chart.png"\r\nContent-Type: image/png\r\n\r\n\x89PNG\r\n\x1a\nDATA\r\n--BND--\r\n'),
+           "sendPhoto's multipart body: chat_id, caption, the PNG byte for byte, the closing boundary")
+        _posted = []
+        _tp = Telegram("tok")
+        _tp._post = lambda method, body, ctype, http_timeout=60: (_posted.append((method, ctype, body)), {"ok": True})[1]
+        _tp.send_photo(111, b"PNG", "cap")
+        ck(_posted and _posted[0][0] == "sendPhoto" and _posted[0][1].startswith("multipart/form-data; boundary=pinphone")
+           and (b"--" + _posted[0][1].split("=", 1)[1].encode() + b"--\r\n") in _posted[0][2],
+           "the transport posts the picture to sendPhoto with its own boundary")
+        _tp._post = lambda *a, **k: {"ok": False, "description": "Bad Request"}
+        try:
+            _tp.send_photo(111, b"PNG", "cap")
+            _rf = None
+        except RuntimeError as e:
+            _rf = e
+        ck(_rf is not None, "a refused sendPhoto raises (the chart thread logs it; the words already went)")
+        _in, _gate, _seen = _thr.Event(), _thr.Event(), []
+
+        def _slow_chart(kind, ctx):
+            _seen.append((kind, ctx))
+            _in.set()
+            _gate.wait(20)
+            return (b"\x89PNG fake", "caption " + kind)
+        ph.chart_fn, ph.charts_on = _slow_chart, True
+        _n0 = len(tg.sent)
+        tg.push(111, "/today")
+        _t0 = time.time()
+        ph.poll_once()
+        _dtp = time.time() - _t0
+        ck(len(tg.sent) == _n0 + 1 and tg.photos == [] and _dtp < 5,
+           "charts: the words go first; poll_once returns without waiting for the picture (%.2f s)" % _dtp)
+        ck(_in.wait(20), "charts: the picture is drawn on the background thread")
+        _sv = (ph.last_state, ph.last_rec, ph.seen_losses, ph.last_daily, ph.disk_level, list(tg.sent))
+        ck(isinstance(ph.alerts_tick(), list), "charts: an alert check runs while a picture is still drawing")
+        ph.last_state, ph.last_rec, ph.seen_losses, ph.last_daily, ph.disk_level, tg.sent[:] = _sv
+        tg.push(111, "/stop")
+        tg.push(111, "/help")
+        tg.push(333, "/today")
+        ph.poll_once()
+        ck(ph._chart_q.qsize() == 0, "charts: /stop (its confirm question), /help and a stranger's /today queue nothing")
+        tg.push(111, "/days")
+        tg.push(111, "/losses")
+        tg.push(111, "/stats")
+        ph.poll_once()
+        ck(ph._chart_q.qsize() == CHART_QUEUE,
+           "charts: while one draws, %d wait and the next is dropped -- the poll loop never blocks" % CHART_QUEUE)
+        _gate.set()
+        ph._chart_q.join()
+        ck([(c_, k_) for c_, _p, k_ in tg.photos] == [(111, "caption today"), (111, "caption days"), (111, "caption losses")]
+           and tg.photos[0][1] == b"\x89PNG fake", "charts: each picture goes to the paired chat after its words, in order")
+        _cx = _seen[0][1]
+        ck(_seen[0][0] == "today" and _cx["ledger"] is not ph.ledger and _cx["ledger"].settled == ph.ledger.settled
+           and _cx["ledger"].settled is not ph.ledger.settled and _cx["now"] == now["t"] and _cx["pp"].Phone is Phone,
+           "charts: the picture reads a private copy of the ledger taken with the words, on the phone's clock")
+        _n1 = len(tg.photos)
+        for _fn, _why in ((lambda kind, ctx: 1 / 0, "ZeroDivisionError"), (lambda kind, ctx: None, "nothing live to draw")):
+            ph.chart_fn = _fn
+            tg.push(111, "/days")
+            ph.poll_once()
+            ph._chart_q.join()
+            with open(LOG, encoding="utf-8") as _fh:
+                _lgc = _fh.read()
+            ck(len(tg.photos) == _n1 and _why in _lgc and "All time" in P(tg.sent[-1][1]).split("\n")[0],
+               "charts: a picture that fails or has nothing to draw only logs (%s); the words went as always" % _why)
+        ph.chart_fn, ph.chart_stale_s = _slow_chart, -1
+        tg.push(111, "/days")
+        ph.poll_once()
+        ph._chart_q.join()
+        with open(LOG, encoding="utf-8") as _fh:
+            _lgc = _fh.read()
+        ck(len(tg.photos) == _n1 and "dropped: its turn came" in _lgc, "charts: a picture whose turn comes late is dropped, never sent stale")
+
+        def _no_mpl(kind, ctx):
+            raise ImportError("No module named 'matplotlib'")
+        ph.chart_fn, ph.chart_stale_s = _no_mpl, None
+        tg.push(111, "/days")
+        ph.poll_once()
+        ph._chart_q.join()
+        tg.push(111, "/today")
+        ph.poll_once()
+        ck(ph.charts_on is False and ph._chart_q.qsize() == 0 and len(tg.photos) == _n1,
+           "charts: without matplotlib the phone turns pictures off (logged once) and keeps sending the words")
+        ph.chart_fn = None
+
         # ---- /funds /bank /accounts (2026-10-11) ----------------------------------------------------
         # A fake Kalshi with 3 accounts across 2 cash pools. Worked by hand: main = 500.00 + 1.50 cash +
         # 29.10 open = 530.60 (the 0-contract row's 9.99 is not a bet); sub 1 = 80.25; sub 3 = 40.00 +
@@ -5595,7 +5849,9 @@ def main():
     if not cfg.get("token"):
         print("%s has no token" % CONFIG)
         return 2
-    Phone(cfg, Telegram(cfg["token"])).run()
+    ph = Phone(cfg, Telegram(cfg["token"]))
+    ph.charts_on = cfg.get("charts", True) is not False         # "charts": false in telegram.json = words only
+    ph.run()
     return 0
 
 
