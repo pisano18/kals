@@ -1,6 +1,6 @@
 # CURRENT_STATE.md -- read this FIRST
 
-> **PICK UP HERE (2026-10-18 ~01:1xZ):** read the "UPDATE 2026-10-18" block at the top of `HANDOFF.md` first. v-ladderboost goes live at the ~04:42Z watchdog restart (verify), the seller check stays OFF (operator's call), the Treasury gate passed (its recorder must start before Mon 10-19 07:00Z), and the forecaster and crash-guard checks are running.
+> **PICK UP HERE (2026-10-18 ~01:1xZ):** read the "UPDATE 2026-10-18" block at the top of `HANDOFF.md` first. v-ladderboost went LIVE 04:42:46Z (verified), the seller check stays OFF (operator's call), the Treasury gate passed (its recorder must start before Mon 10-19 07:00Z), and the forecaster and crash-guard checks are running.
 
 > **PICK UP HERE (2026-10-11):** the top section of `HANDOFF.md` ("PICK UP HERE -- 2026-10-11") supersedes the 09-27 note below: live version v-stp-maker, the coin-race reward test, the in-flight snowball/connection builds, open decisions, and the operator's new standing instructions.
 
