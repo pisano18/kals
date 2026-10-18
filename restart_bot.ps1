@@ -128,8 +128,15 @@ $py = "C:\Python314\python.exe"
 # ordercli.py / pintake.py are byte-identical to 0925i.
 # REVERT: copy results\restart_bot.before-coinfrac.ps1 over restart_bot.ps1
 # (= v-fastconn, C:\kals-live-0925i, HYPE skipped) and rerun while flat.
-$code = "C:\kals-live-0925j"
-$codeSha = "d8c3c7dcb888"
+# v-ladderboost (2026-10-13, operator: "Fix ladder boost"): C:\kals-live-0925k = 0925j
+# (v-coinfrac) + ONE line: an hourly-LADDER order (capped at floor(SIZE x 0.12)
+# after every widener) is never recorded as a FIRED last-10-s boost, so a
+# losing ladder rung can no longer switch the boost off for every coin
+# (late_boost_off). Orders are unchanged. Same argv. ordercli/pintake identical.
+# REVERT: copy results\restart_bot.before-ladderboost.ps1 over restart_bot.ps1
+# (= v-coinfrac, C:\kals-live-0925j) and rerun while flat.
+$code = "C:\kals-live-0925k"
+$codeSha = "32639cccc7f1"
 # pinrun's code_sha cannot see ordercli / pintake (0925e and 0925g shared
 # it), so the launcher checks both of them as well, before anything stops.
 $ordercliSha = "467782077a23"
@@ -668,7 +675,7 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball + v-fastconn + v-coinfrac, C:\kals-live-0925j)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball + v-fastconn + v-coinfrac + v-ladderboost, C:\kals-live-0925k)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1
