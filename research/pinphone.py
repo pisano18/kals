@@ -29,7 +29,8 @@ COMMANDS
   /pin  /forecaster (/fc)  /ladder  /weather (/wx)   one bot in full: running or not and why, version,
               settings, money today / yesterday / 7 days / month / all time, worst and best,
               open bets, cash, last markets, what its log did today (research/botstats.py)
-  /race       the coin race penny bot now, its last 10 races, and its money by window
+  /race       the live coin race now (real money, main account; since v-race-snowball its bets grow
+              with the bank), its last 10 races, and its money by window
   /racestats  the coin race record, and the paper arms on the same races
   /bars       every running test against its pre-registered bar: the numbers
               so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
@@ -52,16 +53,26 @@ PAUSE waits for open bets, STOP asks for 'yes', the kill checks the pid's
 command line first. The stand-down flag is shared, so the phone and the
 desktop always agree.
 
+HOW A REPLY LOOKS (2026-10-18, the operator: "They're blobs of text and hard
+to find my numbers"): Telegram HTML -- a headline with the number that
+matters, short sections under bold headers, small aligned tables, money with
+its percentage beside it, and the long sentences kept whole behind a tap (an
+expandable quote). Only the layout changed: every figure is the one the plain
+text carried, from the same source. See PRESENTATION below.
+
     python research/pinphone.py --selftest
-    python research/pinphone.py --preview        # print what /status would send
+    python research/pinphone.py --preview        # print what each command would send (as the phone shows it)
     python research/pinphone.py                  # run (needs C:\kals\telegram.json)
 """
+import html as _html
 import json
 import os
+import re
 import sys
 import threading
 import time
 import traceback
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -115,13 +126,370 @@ def split_text(s, limit=MAX_LEN):
 
 
 def log(msg):
+    """One line to stdout and to LOG. NEVER RAISES (2026-10-18): boot_all starts this program with stdout
+    redirected to results/pinphone.out, and a redirected stdout on this box is cp1252 -- the emoji and box
+    characters the phone's replies carry cannot be written there. Before this fix a raise here came out of
+    say() AFTER the message had gone, and out of poll_once() BEFORE Telegram was told the update was
+    handled: the process died, and the restart answered the same command again. So the console copy falls
+    back to escapes; the log file (utf-8) keeps the real characters."""
     line = "%s  %s" % (time.strftime("%Y-%m-%dT%H:%M:%S"), msg)
-    print(line, flush=True)
+    try:
+        print(line, flush=True)
+    except Exception:                                           # noqa: BLE001
+        try:
+            print(line.encode("ascii", "backslashreplace").decode("ascii"), flush=True)
+        except Exception:                                       # noqa: BLE001
+            pass
     try:
         with open(LOG, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
     except OSError:
         pass
+
+
+def cprint(s):
+    """print() that never raises on a console that cannot show a character (the self-test's and --preview's
+    output carries emoji; a redirected console here is cp1252): the line falls back to escapes."""
+    try:
+        print(s, flush=True)
+    except UnicodeEncodeError:
+        print(str(s).encode("ascii", "backslashreplace").decode("ascii"), flush=True)
+
+
+# ===========================================================================
+# PRESENTATION (2026-10-18). THE OPERATOR: "Make the telegram responses better to read and more pleasant
+# and human friendly to look at. They're blobs of text and hard to find my numbers. Charts and graphs
+# included would be neat only if possible. Also make sure numbers include their percentages next to them
+# wherever possible."
+#
+# A reply is Telegram HTML (parse_mode=HTML): its FIRST LINE is a headline with the number that matters
+# (e.g. "Today +$7.10 (+0.55% of the bank)"), then short sections under bold headers, small aligned tables
+# in <pre> (at most about 36 characters a line, a phone's monospace width), money with its percentage
+# beside it, and the long sentences the bot always wrote kept whole behind a tap (<blockquote
+# expandable>, one per reply where possible, so a reply stays one message). ONLY THE LAYOUT CHANGED:
+# every figure is the one the plain text carried, from the same source, or a percentage worked from two
+# of those figures (money / what the bets cost; a count / its total). One money style: +$1,234.56 / -$4.57.
+#
+# SAFE BY CONSTRUCTION: every piece of data goes through esc() before it meets a tag; a reply built here
+# is an Html (a str marked is_html) and only an Html is sent as HTML -- a plain str (an error, a control
+# callback's words) goes exactly as before. Telegram's nesting rules are kept (tg_html_problems, run by the
+# self-test over every reply): <pre>/<code> never inside a quote or a bold, a quote never inside a quote.
+# split_html never leaves a tag open across messages, and if Telegram refuses the markup anyway the
+# transport re-sends that part as plain text: a formatting slip can never cost an alert. log() never
+# raises (the redirected console is cp1252 and cannot print an emoji).
+#
+# CHARTS are drawn with text (block characters in <pre>, a sparkline in <code>): no plotting library is
+# installed for C:\Python314 (matplotlib, PIL, numpy: none -- checked 2026-10-18), and none is added, so
+# nothing here sends a photo.
+# ===========================================================================
+class Html(str):
+    """A reply written in Telegram HTML; every piece of data inside went through esc()."""
+    is_html = True
+
+
+def esc(x):
+    """Text made safe inside Telegram HTML: & < > become entities (quotes may stay)."""
+    return _html.escape(str(x), quote=False)
+
+
+def html_to_plain(s):
+    """What the phone shows for an Html reply: the tags dropped, the entities decoded."""
+    return _html.unescape(re.sub(r"<[^<>]+>", "", str(s)))
+
+
+_MONEY_SIGN = re.compile(r"\$([+-])(?=\d)")
+_MONEY_BIG = re.compile(r"(?<![\d,.])\$(\d{4,})(?![\d,])")
+
+
+def norm_money(s):
+    """The one money style, for lines written by other modules: '$+1008.55' -> '+$1,008.55',
+    '$-4.57' -> '-$4.57'. Only the dress changes -- the digits are the same digits."""
+    s = _MONEY_SIGN.sub(lambda m: m.group(1) + "$", str(s))
+    return _MONEY_BIG.sub(lambda m: "$" + "{:,}".format(int(m.group(1))), s)
+
+
+def usd(x):
+    """+$1,234.56 / -$4.57 / $0.00 (botstats.usd's style, kept here so a broken botstats costs only the
+    pages that need it). None -> '?'."""
+    if x is None:
+        return "?"
+    s = "{:,.2f}".format(abs(x))
+    return ("+$" if x > 0.004 else ("-$" if x < -0.004 else "$")) + s
+
+
+def dollars(x):
+    """An amount with no sign (a bank, a stake): $1,294.50. None -> '?'."""
+    return "?" if x is None else "$" + "{:,.2f}".format(x)
+
+
+def dot(x):
+    """A colour for a money figure: up, down, or nothing either way / not known."""
+    if x is None:
+        return "⚪"
+    return "🟢" if x > 0.004 else ("🔴" if x < -0.004 else "⚪")
+
+
+def b_(x):
+    return "<b>%s</b>" % esc(x)
+
+
+def i_(x):
+    return "<i>%s</i>" % esc(x)
+
+
+def table(rows, align=None):
+    """Rows of cells -> aligned lines for pre(). The first column is left-aligned, the rest right-aligned
+    (or `align`, one 'l'/'r' a column). A row with fewer cells than the widest (a day heading, 'nothing
+    settled yet') is written as its first cell padded, then the rest, and does not widen the columns."""
+    n = max(len(r) for r in rows) if rows else 0
+    align = align or ("l" + "r" * (n - 1))
+    w = [0] * n
+    for r in rows:
+        if len(r) == n:
+            for k, c in enumerate(r):
+                w[k] = max(w[k], len(str(c)))
+    out = []
+    for r in rows:
+        if len(r) != n:
+            out.append((str(r[0]).ljust(w[0]) + (" " + " ".join(str(c) for c in r[1:]) if len(r) > 1 else ""))
+                       .rstrip())
+            continue
+        out.append(" ".join(str(c).ljust(w[k]) if align[k] == "l" else str(c).rjust(w[k])
+                            for k, c in enumerate(r)).rstrip())
+    return out
+
+
+def pre(lines):
+    return "<pre>%s</pre>" % esc("\n".join(lines))
+
+
+def details(html_lines, title=None):
+    """Long lines behind a tap: Telegram shows the first lines of an expandable quote and opens the rest
+    when it is tapped. `html_lines` are already escaped (elines)."""
+    body = "\n".join(html_lines)
+    if not body.strip():
+        return ""
+    return "<blockquote expandable>%s%s</blockquote>" % (("<b>%s</b>\n" % esc(title)) if title else "", body)
+
+
+def elines(lines):
+    """Another module's plain lines, in this file's money style, escaped for HTML."""
+    return [esc(norm_money(x)) for x in lines]
+
+
+_EIGHTHS = "▏▎▍▌▋▊▉"
+
+
+def hbar(v, mx, width=10):
+    """A text bar for one figure against the biggest one shown: full blocks plus an eighth, light shade
+    for a negative figure. '' when there is nothing to draw against."""
+    if v is None or not mx:
+        return ""
+    n = min(abs(v) / float(mx), 1.0) * width
+    if v < -0.004:
+        return "░" * max(1, int(round(n)))
+    if v <= 0.004:
+        return ""
+    full = int(n)
+    k = int((n - full) * 8)
+    return ("█" * full + (_EIGHTHS[k - 1] if k else "")) or "▏"
+
+
+_SPARK = "▁▂▃▄▅▆▇█"
+
+
+def spark(vals):
+    """A one-line chart of a series (lowest = ▁, highest = █)."""
+    if len(vals) < 2:
+        return ""
+    lo, hi = min(vals), max(vals)
+    if hi - lo < 1e-9:
+        return _SPARK[0] * len(vals)
+    return "".join(_SPARK[int(round((v - lo) / (hi - lo) * 7))] for v in vals)
+
+
+def hm(epoch):
+    """A short ET clock for a table: '3:15a', '10:15p'."""
+    if not epoch:
+        return "?"
+    s = et_str(epoch, "%I:%M %p")
+    return s[:-3] + s[-2].lower() if s.endswith(("AM", "PM")) else s
+
+
+def pct_of(part, whole, digits=0):
+    """'40%' -- a count's share of its total, or '' when the total is zero."""
+    if not whole:
+        return ""
+    return ("%." + str(digits) + "f%%") % (100.0 * part / whole)
+
+
+def pct1(part, whole):
+    """A count's share with one decimal for a table, but '100%' and '0%' when it is all or none (keeps a
+    column narrow on a phone); '-' when the total is zero."""
+    if not whole:
+        return "-"
+    if part >= whole:
+        return "100%"
+    if part <= 0:
+        return "0%"
+    return "%.1f%%" % (100.0 * part / whole)
+
+
+def ret(money_, base, digits=1):
+    """'+2.7%' -- money as a share of what bought it (the bets' cost, a bank), signed; '' when the base is
+    unknown or not positive. Worked from the two figures shown, never from anything else."""
+    if money_ is None or not base or base <= 0:
+        return ""
+    return ("%+." + str(digits) + "f%%") % (100.0 * money_ / base)
+
+
+# Telegram's HTML rules (Bot API, "Formatting options"), checked by the self-test over every reply. A
+# reply that breaks one is refused (HTTP 400) and goes again as plain text -- readable, but unformatted.
+_TG_TAGS = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote",
+            "tg-spoiler", "span"}
+_TG_STYLE = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler", "span"}
+_TG_TOK = re.compile(r"<[^<>]*>|&[#a-zA-Z0-9]*;|[<>&]")
+
+
+def tg_html_problems(s):
+    """What Telegram would refuse in `s`: an unknown tag, a raw < > &, an unknown entity, a tag closed out
+    of order or left open, <pre>/<code> inside a quote or a bold/italic, a quote inside a quote."""
+    bad, stack = [], []
+    for m in _TG_TOK.finditer(str(s)):
+        t = m.group(0)
+        if t in ("<", ">", "&"):
+            bad.append("raw %r" % t)
+            continue
+        if t.startswith("&"):
+            if t not in ("&lt;", "&gt;", "&amp;", "&quot;") and not re.match(r"^&#(\d+|x[0-9a-fA-F]+);$", t):
+                bad.append("entity %s" % t)
+            continue
+        mm = re.match(r"^<(/?)([a-zA-Z][a-zA-Z0-9-]*)(\s[^<>]*)?>$", t)
+        if not mm:
+            bad.append("tag %r" % t)
+            continue
+        close, name, attrs = mm.group(1) == "/", mm.group(2).lower(), (mm.group(3) or "").strip()
+        if name not in _TG_TAGS:
+            bad.append("<%s> is not a Telegram tag" % name)
+        if close:
+            if not stack or stack[-1] != name:
+                bad.append("</%s> closes %s" % (name, stack[-1] if stack else "nothing"))
+            else:
+                stack.pop()
+            continue
+        inside = set(stack)
+        if name == "blockquote" and attrs not in ("", "expandable"):
+            bad.append("<blockquote %s>" % attrs)
+        if "code" in inside or ("pre" in inside and name != "code"):
+            bad.append("<%s> inside pre/code" % name)
+        if name in ("pre", "code") and inside & (_TG_STYLE | {"blockquote", "a"}):
+            bad.append("<%s> inside %s" % (name, "/".join(sorted(inside))))
+        if name == "blockquote" and "blockquote" in inside:
+            bad.append("a quote inside a quote")
+        stack.append(name)
+    if stack:
+        bad.append("left open: %s" % ", ".join(stack))
+    return bad
+
+
+_TAG = re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9-]*)(?:\s[^<>]*)?>")
+
+
+def _open_after(stack, text):
+    st = list(stack)
+    for m in _TAG.finditer(text):
+        name = m.group(2).lower()
+        if m.group(1):
+            for k in range(len(st) - 1, -1, -1):
+                if st[k][0] == name:
+                    del st[k]
+                    break
+        else:
+            st.append((name, m.group(0)))
+    return st
+
+
+def _closers(stack):
+    return "".join("</%s>" % n for n, _o in reversed(stack))
+
+
+def _openers(stack):
+    return "".join(o for _n, o in stack)
+
+
+def _cut_long_line(line, room):
+    """A single line longer than a message: cut at a space outside any tag or entity."""
+    out = []
+    while len(line) > room:
+        spaces, inside = [], False
+        for k, ch in enumerate(line[:room]):
+            if ch == "<":
+                inside = True
+            elif ch == ">":
+                inside = False
+            elif ch == " " and not inside:
+                spaces.append(k)
+        cut = spaces[-1] if spaces and spaces[-1] > room // 2 else -1
+        if cut < 0:
+            cut = room
+            lt, amp = line.rfind("<", 0, cut), line.rfind("&", 0, cut)
+            if lt > line.rfind(">", 0, cut):
+                cut = lt
+            if amp > line.rfind(";", 0, cut) and cut - amp < 10:
+                cut = amp
+            cut = max(cut, 1)
+        out.append(line[:cut])
+        line = line[cut:].lstrip(" ")
+    out.append(line)
+    return out
+
+
+def split_html(s, limit=MAX_LEN):
+    """split_text for an Html reply: chunks of at most `limit` chars, cut at the last blank line when one
+    sits past the first quarter of the chunk (so a section -- a table, a tap-to-open quote -- moves whole to
+    the next message rather than being cut), else at a line. Every chunk stands on its own: a tag open at
+    a cut is closed at the end of the chunk and opened again at the start of the next, so Telegram never
+    sees half a tag."""
+    s = str(s)
+    if len(s) <= limit:
+        return [s]
+    lines = []
+    for ln in s.split("\n"):
+        lines.extend(_cut_long_line(ln, limit - 400) if len(ln) > limit - 400 else [ln])
+    out = []
+    start = []                              # tags open where the current chunk begins
+    cur = []                                # [(line, tags open after it)]
+
+    def body(items):
+        return "\n".join(x for x, _st in items)
+
+    def emit(k):
+        nonlocal start, cur
+        part, end = cur[:k], (cur[k - 1][1] if k else start)
+        text = (_openers(start) + body(part)).rstrip("\n") + _closers(end)
+        if html_to_plain(text).strip():
+            out.append(text)
+        start, cur = end, cur[k:]
+        while cur and not cur[0][0].strip():
+            cur = cur[1:]
+    for ln in lines:
+        while True:
+            st_after = _open_after(cur[-1][1] if cur else start, ln)
+            if not (cur and len(_openers(start)) + len(body(cur + [(ln, st_after)])) + len(_closers(st_after))
+                    > limit):
+                break
+            k = len(cur)
+            for j in range(len(cur) - 1, 0, -1):     # the last blank line, if it is past the first quarter
+                if not cur[j][0].strip():
+                    if len(body(cur[:j])) >= limit // 4:
+                        k = j
+                    break
+            emit(k)                                   # takes at least one line off `cur`
+        if cur or ln.strip():
+            cur.append((ln, st_after))
+    if cur:
+        emit(len(cur))
+    return out or [""]
 
 
 # ===========================================================================
@@ -143,8 +511,23 @@ class Telegram:
         return d.get("result", []) if d.get("ok") else []
 
     def send(self, chat_id, text):
-        for chunk in split_text(text, MAX_LEN):
-            self._call("sendMessage", {"chat_id": chat_id, "text": chunk})
+        """A plain str goes exactly as it always did. An Html reply goes with parse_mode=HTML, cut by
+        split_html; if Telegram refuses a part's markup (HTTP 400, "can't parse entities") that part is
+        sent again as plain text, so a formatting slip never costs a message. Any other failure is
+        raised as before (say() logs it)."""
+        if not getattr(text, "is_html", False):
+            for chunk in split_text(text, MAX_LEN):
+                self._call("sendMessage", {"chat_id": chat_id, "text": chunk})
+            return
+        for chunk in split_html(text, MAX_LEN):
+            try:
+                self._call("sendMessage", {"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"})
+            except urllib.error.HTTPError as e:
+                if e.code != 400:
+                    raise
+                log("Telegram refused the HTML of one part (%s); sent it again as plain text" % e)
+                for part in split_text(html_to_plain(chunk), MAX_LEN):
+                    self._call("sendMessage", {"chat_id": chat_id, "text": part})
 
 
 class FakeTelegram:
@@ -169,30 +552,212 @@ class FakeTelegram:
 # ===========================================================================
 # the bot
 # ===========================================================================
-HELP_TEXT = """Commands:
-/status - is it trading, with the evidence
-/today /yesterday /days - money and % return
-/open - open bets
-/fills - every order today: filled, price paid, seconds out
-/brief - the daily briefing: money, what changed, what it did, the market, what to watch
-/market - how active sellers are
-/losses - losing closes
-/hedges - insurance and whether it was needed
-/stats - the whole record by window: money, win rate vs break-even, losses, timing
-/bots - every bot: running or not, money today / 7 days / all time, each pot's cash, and the total of all of them
-/pin - the pin bot: running or not and why, version, settings, money today / yesterday / 7 days / month / all time, worst, open bets, cash, last markets
-/race - the coin race penny bot right now, its last 10 races, and its money by window
-/racestats - the coin race record, and the paper arms on the same races
-/forecaster (or /fc) - the forecaster (subaccount 2), the same detail as /pin
-/ladder - the penny ladder (subaccount 1), the same detail as /pin
-/weather (or /wx) - the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin
-/bars - every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
-/funds (or /bank, /accounts) - the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, each account's gain or loss on each of the last 7 days (main bot and coin race apart), and the grand total
-/pause - no new bets, wait for open ones, then stop
-/start - trade again
-/stop yes - stop right now
-/mute /unmute - alerts off / on
-Alerts come by themselves: state changes, every losing close, low disk (under 8 GB, again under 6 GB), and yesterday's summary at 8 AM ET."""
+HELP_TEXT = Html("""📱 <b>Commands</b>
+
+💰 <b>Money</b>
+/today · /yesterday · /days — money and % return, day by day
+/stats — the whole record by window: money, win rate vs break-even, losses, timing
+/funds (or /bank, /accounts) — the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, each account's last 7 days (main bot and coin race apart), and the grand total
+/bots — every bot: running or not, money today / 7 days / all time, each pot's cash, and the total of all of them
+
+🤖 <b>One bot</b>
+/pin — the pin bot: running or not and why, version, settings, money by window, worst, open bets, cash, last markets
+/race — the live coin race right now (real money; its bets grow with the bank), its last 10 races, and its money by window
+/racestats — the coin race record, and the paper arms on the same races
+/forecaster (or /fc) — the forecaster (subaccount 2), the same detail as /pin
+/ladder — the penny ladder (subaccount 1), the same detail as /pin
+/weather (or /wx) — the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin
+
+🔎 <b>Right now</b>
+/status — is it trading, with the evidence
+/open — open bets
+/fills — every order today: filled, price paid, seconds out
+/market — how active sellers are
+/losses — losing closes
+/hedges — insurance and whether it was needed
+/brief — the daily briefing: money, what changed, what it did, the market, what to watch
+/bars — every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
+
+🎛 <b>Controls</b>
+/pause — no new bets, wait for open ones, then stop
+/start — trade again
+<code>/stop yes</code> — stop right now
+/mute · /unmute — alerts off / on
+
+<i>Alerts come by themselves: state changes, every losing close, low disk (under 8 GB, again under 6 GB), and yesterday's summary at 8 AM ET. Long details sit behind a tap on the quoted block.</i>""")
+
+# the immediate reply to a control (the work itself runs on a thread, see Phone.control)
+CONTROL_REPLY = {"start": Html("▶️ <b>Starting…</b>"),
+                 "pause": Html("⏸ <b>Pausing</b>: no new bets; waiting for open ones to settle…"),
+                 "stop": Html("⏹ <b>Stopping now…</b>"),
+                 "busy": Html("⏳ Still working on the last command.")}
+UP_TEXT = Html("📱 <b>Pin Bot phone link is up.</b> /status for the state, /help for commands.")
+STOP_ASK = Html("⚠️ <b>STOP stops right now</b>, even with a bet open (it settles by itself but will not be "
+                "hedged).\nTo confirm, send:  <code>/stop yes</code>\nOr use /pause to finish open bets first.")
+
+
+def state_dot(state):
+    return {"TRADING": "🟢", "PAUSING": "🟡", "STALE": "🟡", "BLIND": "🟠", "PAUSED": "⏸", "STOPPED": "⏹",
+            "BRAKE": "🔴", "DOWN": "🔴"}.get(state, "⚪")
+
+
+def alert_state_text(prev, state, hl, det):
+    """STATE CHANGED: the words alerts_tick always sent, under a coloured headline."""
+    body, _nl, ev = str(det).rpartition("\n")
+    if not body:
+        body, ev = ev, ""
+    return Html("%s <b>STATE CHANGED: %s -&gt; %s</b>\n<b>%s</b>\n%s%s" % (
+        state_dot(state), esc(prev), esc(state), esc(hl), esc(body), ("\n<i>%s</i>" % esc(ev)) if ev else ""))
+
+
+def alert_recorder_text(rec, minutes):
+    return Html("⚠️ <b>RECORDER %s</b> -- nothing written for %d+ min.\nThat tape cannot be recreated later. "
+                "If the bot is also BLIND, the problem is the connection to Kalshi, not our programs."
+                % (esc(rec), minutes))
+
+
+def alert_recorder_back_text(was):
+    return Html("✅ <b>RECORDERS WRITING AGAIN</b> (was %s)" % esc(was))
+
+
+def disk_alert_html(msg, level):
+    """disk_alert()'s words (unchanged, the self-test pins them) with the first sentence as a headline."""
+    msg = str(msg)
+    if level == 8:
+        head, sep, rest = msg.partition(". ")
+        head += "." if sep else ""
+    else:
+        head, _sep, rest = msg.partition(" -- ")
+    return Html("%s <b>%s</b>%s" % ("🚨" if level == 6 else "⚠️", esc(head), ("\n" + esc(rest)) if rest else ""))
+
+
+def alert_loss_text(ledger, close, net, legs):
+    """A new losing close: story_loss's facts (pindesk), laid out -- the loss as the headline, one line a
+    leg, why it hurts. The desktop's 'double-click a row' hint is left out: there is no row on a phone."""
+    L = ["🔴 <b>LOSS %s</b> · the quarter-hour closing %s ET on %s" % (
+        esc(usd(net)), esc(et_str(close)), esc(et_str(close, "%b %d")))]
+    for l_ in legs:
+        n = ledger.contracts_for(l_["tk"])
+        L.append("• <b>%s</b> %s at %.1fc, %g contracts → settled %s: <b>%s</b>" % (
+            esc(coin(l_["tk"])), esc(str(l_["want"]).upper()), 100 * float(l_["cost"] or 0), n,
+            esc(str(l_["result"]).upper()), esc(usd(l_["pnl"]))))
+    L.append("")
+    L.append("<b>WHY IT HURTS:</b> <i>a win here makes 2c to 4c a contract; a loss costs most of the 96c-98c "
+             "paid. So one losing close wipes out many winning ones.</i>")
+    L.append("<i>/losses for the list, /today for the day.</i>")
+    return Html("\n".join(L))
+
+
+def alert_daily_text(ledger, d, now):
+    """The 8 AM summary: story_day's own lines (pindesk), under a headline with yesterday's money and its
+    % of the bank at the start of the day -- the same two numbers its MONEY line carries."""
+    s = Ledger.summary(ledger.settled_on(d))
+    b0 = ledger.bank_at(et_day_start(d))
+    lines = story_day(ledger, d, now=now).split("\n")
+    body = [x for x in lines[1:] if x.strip()]
+    out = ["☀️ <b>YESTERDAY %s (%s)</b> · %s" % (esc(usd(s["net"])), esc(pct((s["net"] / b0) if b0 else None)),
+                                                  esc(time.strftime("%a %b %d", time.strptime(d, "%Y-%m-%d"))))]
+    for x in body:
+        head, sep, rest = norm_money(x).partition(": ")
+        out.append(("<b>%s:</b> %s" % (esc(head), esc(rest))) if sep and head.isupper() else esc(norm_money(x)))
+    return Html("\n".join(out))
+
+
+def fmt_or_plain(build, plain):
+    """An alert laid out (build()), or -- if laying it out fails -- the plain words it always had (plain()),
+    so a layout bug can never swallow an alert."""
+    try:
+        return build()
+    except Exception:                                           # noqa: BLE001
+        log("alert layout failed, sending the plain words: %s" % traceback.format_exc()[-400:])
+        return plain()
+
+
+_CAPS_HEAD = re.compile(r"^[A-Z][A-Z0-9 ,'/&-]{4,}(?:\b|$)")
+
+
+def brief_html(text):
+    """/brief: pinbrief's text, unchanged in words (the phone quotes it, never rebuilds it) -- its title
+    and its ALL-CAPS headings in bold, labels like MONEY: in bold, one money style."""
+    try:
+        out = []
+        for k, ln in enumerate(norm_money(text).split("\n")):
+            s = ln.strip()
+            ind = ln[:len(ln) - len(ln.lstrip())]
+            m = _CAPS_HEAD.match(s)
+            if k == 0 and s:
+                out.append("📰 <b>%s</b>" % esc(s))
+            elif m and (m.end() == len(s) or s[m.end():m.end() + 1] in (",", " ")) and not re.match(r"^[A-Z]+:", s):
+                out.append("%s<b>%s</b>%s" % (esc(ind), esc(s[:m.end()]), esc(s[m.end():])))
+            elif re.match(r"^[A-Z][A-Z ]+: ", s):
+                head, _sep, rest = s.partition(": ")
+                out.append("%s<b>%s:</b> %s" % (esc(ind), esc(head), esc(rest)))
+            else:
+                out.append(esc(ln))
+        return Html("\n".join(out))
+    except Exception:                                           # noqa: BLE001
+        return Html(esc(text))
+
+
+_VERDICT = re.compile(r"(VERDICT(?: \([^)]*\))?): (PASS|KILL|EXTEND|TOO EARLY)\b")
+_VERDICT_MARK = {"PASS": "✅", "KILL": "❌", "EXTEND": "🔁", "TOO EARLY": "⏳"}
+
+
+def bars_html(text):
+    """/bars: research/bars.py's text, unchanged in words (one place decides PASS / KILL / EXTEND / TOO
+    EARLY; the phone quotes it). Laid out: the verdicts gathered under the title, each section's name in
+    bold, every VERDICT marked, the long race lists and the watchers' report lines behind a tap."""
+    try:
+        blocks = norm_money(text).split("\n\n")
+        verdicts, out = [], []
+        for bi, blk in enumerate(blocks):
+            lines = blk.split("\n")
+            html, quote, last_head = [], [], None
+            for li, ln in enumerate(lines):
+                # a section's name: 'NAME -- ...' at the left margin; never the verdict line itself, nor a
+                # 'So far: ...' line (2026-10-18: the summary had read 'VERDICT: EXTEND: EXTEND')
+                h0 = ln.split(" -- ", 1)[0]
+                if " -- " in ln and not ln.startswith(" ") and "VERDICT" not in h0 \
+                        and not ln.startswith(("So far", "No ", "The bar")):
+                    last_head = re.sub(r"\s+beside it$", "", h0.rstrip(":"))
+                m = _VERDICT.search(ln)
+                if m:
+                    verdicts.append((last_head or "?", m.group(2)))
+                if ln.startswith("  ") or ln.startswith("Those races: "):
+                    quote.append(esc(ln.strip()))
+                    continue
+                if quote:
+                    html.append(details(quote))
+                    quote = []
+                e = esc(ln)
+                if li == 0:
+                    if ln.startswith("BARS  "):
+                        e = "<b>BARS</b>  " + "<i>%s</i>" % esc(ln[6:])
+                    elif " -- " in ln:
+                        h, _s, r = ln.partition(" -- ")
+                        e = "<b>%s</b> -- %s" % (esc(h), esc(r))
+                    elif ln.endswith(":") or len(ln) < 90:
+                        e = "<b>%s</b>" % esc(ln)
+                    elif ". " in ln:
+                        h, _s, r = ln.partition(". ")
+                        e = "<b>%s.</b> %s" % (esc(h), esc(r))
+                e = _VERDICT.sub(lambda mm: "%s <b>%s: %s</b>" % (_VERDICT_MARK[mm.group(2)], mm.group(1), mm.group(2)), e)
+                html.append(e)
+            if quote:
+                html.append(details(quote))
+            out.append("\n".join(html))
+        if verdicts:
+            head = out[0].split("\n")
+            n = {}
+            for _w, v in verdicts:
+                n[v] = n.get(v, 0) + 1
+            top = "📏 <b>Bars</b>: " + " · ".join("%s %d %s" % (_VERDICT_MARK[v], n[v], v)
+                                                   for v in ("PASS", "KILL", "EXTEND", "TOO EARLY") if n.get(v))
+            summary = [top] + ["%s %s: <b>%s</b>" % (_VERDICT_MARK[v], esc(w), v) for w, v in verdicts] + [""]
+            out[0] = "\n".join(summary + head)
+        return Html("\n\n".join(out))
+    except Exception:                                           # noqa: BLE001
+        return Html(esc(text))
 
 
 # ===========================================================================
@@ -583,6 +1148,15 @@ def python_procs(max_age_s=None):
     return rows
 
 
+def cached_python_procs():
+    """The table the refresher last read while it is fresh, else None (= 'could not be read'). Never asks
+    Windows itself, so a page that can live with 'unknown' (/racestats) never holds the poll thread -- and
+    the alerts behind it -- for a 10-30 s WMI read when the cache is cold or stale."""
+    if _PROCS["rows"] is not None and time.time() - _PROCS["t"] < 2 * PROC_REFRESH_S:
+        return _PROCS["rows"]
+    return None
+
+
 def proc_refresher(period=None):
     """Background thread body: re-read the process table every `period` s."""
     while True:
@@ -682,6 +1256,25 @@ def race_line(r):
                               " + ".join(legs), verdict, money(r["pnl"]))
 
 
+def race_rows(races, n=10):
+    """The newest n races as table lines for /race: a heading a day, then the close (ET), each leg (coin,
+    side, price paid), the race's money and TIE / WON / LOST -- race_line's facts, one leg a row."""
+    rows, day = [], None
+    for r in sorted(races.values(), key=lambda r: -(r["close"] or 0))[:n]:
+        d = et_str(r["close"], "%a %b %d") if r["close"] else "?"
+        if d != day:
+            rows.append((d,))
+            day = d
+        legs = ["%s %s %.0fc" % (_leg_name(m["tk"]), m["side"] or "?", 100.0 * (m["price"] or 0)) for m in r["legs"]]
+        if len(legs) > 3:
+            legs = legs[:3] + ["+%d more" % (len(legs) - 3)]
+        verdict = "TIE" if r["tie"] else ("WON" if r["won"] else "LOST")
+        rows.append((hm(r["close"]) if r["close"] else "?", legs[0] if legs else "-", usd(r["pnl"]), verdict))
+        for x in legs[1:]:
+            rows.append(("", x, "", ""))
+    return table(rows, "llrl")
+
+
 def race_tally(rs):
     n = len(rs)
     w = sum(1 for r in rs if r["won"])
@@ -738,15 +1331,18 @@ def log_records(path, kinds):
 
 
 def penny_view(recs, now, ledger_events=()):
-    """The penny bot's own view of itself, from its log: the last start
-    record (rails), whether the stop rail has fired SINCE that start, the
-    legs it holds on races not yet scored, and the dollars out."""
-    start = halt = None
+    """The live coin race's own view of itself, from its log (pinracepenny-live.jsonl -- the file kept the
+    name from its penny-test days): the last start record (rails), whether the stop rail has fired SINCE
+    that start, the newest bank_size record since that start (v-race-snowball: the size it took from the
+    bank), the legs it holds on races not yet scored, and the dollars out."""
+    start = halt = size = None
     fills, done, staked = {}, set(), None
     for r in recs:
         k = r.get("kind")
         if k == "start":
-            start, halt = r, None
+            start, halt, size = r, None, None
+        elif k == "bank_size":
+            size = r
         elif k == "live_halt":
             halt = r
         elif k == "live_order":
@@ -767,7 +1363,59 @@ def penny_view(recs, now, ledger_events=()):
         (open_ if c is None or c >= now - RACE_OPEN_GRACE_S else pending).append((evt, c, legs))
     open_.sort(key=lambda x: x[1] or 0)
     pending.sort(key=lambda x: x[1] or 0)
-    return {"start": start, "halt": halt, "open": open_, "pending": pending, "staked": staked}
+    return {"start": start, "halt": halt, "open": open_, "pending": pending, "staked": staked, "bank_size": size}
+
+
+def race_size_words(start, size):
+    """How big the live coin race bets, in words, from its own log.
+
+    IT IS NOT A PENNY TEST ANY MORE (2026-10-18; the operator read /race's 'penny bot ... 20 contracts a
+    leg, $40 out at most' and asked whether it still bets a fixed size). Since v-race-snowball (10-11) a
+    start record carries `bank_sizing` {contracts_per_bank, stake_per_bank}: contracts a leg =
+    floor(bank x contracts_per_bank) and the open-stake cap = bank x stake_per_bank, the bank re-read
+    from the main account at most every 5 minutes, only between races with no leg open (VERSIONS.md
+    v-race-snowball), each read logged as a `bank_size` record. The start record's live_rails (20 / $40)
+    are only the size it starts from. Without bank_sizing the size is fixed and the words say so. None
+    when there is no start record."""
+    if not start:
+        return None
+    rails = start.get("live_rails") or {}
+    bsz = start.get("bank_sizing") or {}
+    cpb, spb = _fnum(bsz.get("contracts_per_bank")), _fnum(bsz.get("stake_per_bank"))
+    free = "; settled bets free it up" if rails.get("rolling") else ""
+    if cpb and spb:
+        n = _fnum((size or {}).get("contracts"))
+        bank = _fnum((size or {}).get("bank"))
+        stake = _fnum((size or {}).get("stake"))
+        if n is not None and bank and stake is not None:
+            when = pindesk.parse_t(size.get("t"))
+            return ("bets grow with the bank: %g contracts a leg = the %s bank x %g, rounded down (%.2f per $100 "
+                    "of bank); at most %s open at once = bank x %g (%.2f%%)%s. Bank last read %s ET" % (
+                        n, dollars(bank), cpb, 100.0 * cpb, dollars(stake), spb, 100.0 * spb, free,
+                        et_str(when, "%b %d %I:%M %p") if when else "?"))
+        return ("bets grow with the bank: %.2f contracts a leg per $100 of bank and at most %.2f%% of the bank "
+                "open at once%s; no size read logged since its start (it starts from %g contracts, $%.0f)" % (
+                    100.0 * cpb, 100.0 * spb, free, _f(rails.get("max_contracts"), 1), _f(rails.get("max_stake"))))
+    mc = _f(rails.get("max_contracts"), 1)
+    return "fixed size: %g contract%s a leg, $%.0f out at most%s" % (
+        mc, "" if mc == 1 else "s", _f(rails.get("max_stake")),
+        " (settled bets give it back)" if rails.get("rolling") else " in total")
+
+
+def race_rule_words(start):
+    """When the live coin race buys and when it stops, from its start record. --live-max-losses N > 1
+    (v-race40) stops it for the rest of the ET day after N losing races -- botstats.settings_race reads
+    the same flag the same way."""
+    if not start:
+        return None
+    rails = start.get("live_rails") or {}
+    ml = _fnum(argv_opt(" ".join(str(a) for a in (start.get("argv") or [])), "--live-max-losses"))
+    if ml is not None and ml > 1:
+        stop = "stops for the rest of the ET day after %g losing races" % ml
+    else:
+        stop = "stops on the first loss" if rails.get("stop_on_loss") else "does NOT stop on a loss"
+    return "only inside %d s, %.0fc or better, up to %d legs a race, %s" % (
+        _f(rails.get("tau_max")), 100.0 * _f(rails.get("min_price")), _f(rails.get("max_legs")), stop)
 
 
 def rails_words(rails):
@@ -797,6 +1445,63 @@ def arm_results(path):
         out[evt] = {"positions": int(_f(r.get("positions"))), "pnl": _f(r.get("pnl")),
                     "tie": bool(r.get("tie")) or _f(r.get("ties")) > 0}
     return out
+
+
+_SPANS = {}
+
+
+def log_span(path):
+    """{'first', 'last': epoch of the log's first / last record, 'end': True when the last record is an
+    `end` record} -- from the first line and the last 64 KB only, cached on the file's size and mtime.
+    None when the file cannot be read."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    key = (st.st_size, st.st_mtime)
+    hit = _SPANS.get(path)
+    if hit and hit[0] == key:
+        return hit[1]
+
+    def rec(line):
+        try:
+            r = json.loads(line)
+            return r if isinstance(r, dict) else None
+        except ValueError:
+            return None
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(65536)
+            fh.seek(max(0, st.st_size - 65536))
+            tail = fh.read()
+    except OSError:
+        return None
+    first = last = None
+    for raw in head.decode("utf-8", "replace").split("\n"):
+        r = rec(raw)
+        if r and r.get("t"):
+            first = r
+            break
+    tl = tail.decode("utf-8", "replace").split("\n")
+    for raw in reversed(tl[1:] if st.st_size > 65536 else tl):     # a cut first line is not a record
+        r = rec(raw)
+        if r and r.get("t"):
+            last = r
+            break
+    out = {"first": pindesk.parse_t((first or {}).get("t")), "last": pindesk.parse_t((last or {}).get("t")),
+           "end": (last or {}).get("kind") == "end"}
+    _SPANS[path] = (key, out)
+    return out
+
+
+RACE_ARMS_SCORED = "race_arms_scored.json"      # written once by .sweep\q-2026-10-18e\tg\harness\score_race_arms.py
+
+
+def race_arms_scored(results):
+    """The /racestats arms re-scored on Kalshi's results (results/race_arms_scored.json), or None. The arms
+    are paper and STOPPED (09-27 .. 10-01), so a one-off scoring is final; text_racestats uses an arm's
+    entry only while the arm's log is the size it was scored at."""
+    return read_json(os.path.join(results, RACE_ARMS_SCORED))
 
 
 def arm_record(results, races):
@@ -1216,6 +1921,261 @@ def bs_all_text(a):
     return "\n".join(L)
 
 
+# ---- the same pages, laid out for a phone (2026-10-18) ------------------------------------------------
+# The words above stay the authority: the tables are drawn from the same dicts, and the long sentences
+# are quoted whole in each page's tap-to-open details.
+BS_SHORT = {"today": "Today", "yesterday": "Yest", "last_7_days": "7 days", "all_time": "All"}
+
+
+def _wlabel(k, w):
+    if k == "this_month":                         # botstats labels it with the month's name
+        return str((w or {}).get("label") or "Month")[:3]
+    return BS_SHORT[k]
+
+
+def run_dot(r):
+    if r.get("alive") is None:
+        return "❔"
+    if r.get("alive"):
+        return "🟠" if r.get("halted") else "🟢"
+    return "⏸" if r.get("stop_flag") else "🔴"
+
+
+def bs_money_table(windows, whose="of pot"):
+    """{window key: botstats window} -> (table lines, the base of a money-put-in share or None).
+    Money, its return on what the bets cost, and its share of the pot when the window began (the same
+    numbers bs_window_line words); '-' where the pot is unknown, never a guessed base."""
+    bs = _bs()
+    rows, base = [("", "Money", "Return", whose)], None
+    for k in BS_WINDOWS:
+        w = windows.get(k)
+        lab = _wlabel(k, w)
+        if w is None or (w.get("partial") and not w["markets"]):
+            rows.append((lab, "unknown -- Kalshi unread"))
+            continue
+        if not w["markets"]:
+            rows.append((lab, "nothing settled yet"))
+            continue
+        p = w.get("pot_pct")
+        if p is None or w.get("pot") is None:
+            pt = "-"
+        else:
+            pt = bs.pot_pct_txt(p)
+            if w.get("pot_kind") == "money_in":
+                pt += "*"
+                base = w["pot"]
+        rows.append((lab, usd(w["money"]), bs.pct(w["return_pct"]), pt))
+    return table(rows), base
+
+
+def money_legend(base, whose="its pot"):
+    return i_("Return = on what the bets cost · of pot = of what %s held when the window began%s"
+              % (whose, ("; * all time = of the %s put in" % dollars(base)) if base else ""))
+
+
+def bs_days_table(days, unit="market"):
+    """botstats' days_7 rows -> a small table with a text bar a day (light shade = a losing day)."""
+    mx = max([abs(d["money"]) for d in days if d.get("markets")] or [0])
+    rows = [("Day", "Money", "Legs" if unit == "leg" else "Mkts", "Lost", "")]
+    for d in days:
+        if not d.get("markets"):
+            rows.append((d["label"], "nothing settled"))
+            continue
+        rows.append((d["label"], usd(d["money"]), d["markets"], d.get("lost", ""), hbar(d["money"], mx, 5)))
+    return table(rows, "lrrrl")
+
+
+def _money_detail(m, unit):
+    """bs_money_lines' sentences without its header, its warnings (shown above the table) and its by-day
+    list (the table): every window in words, the pot note, worst and best, fees, hedged."""
+    L = [x for x in bs_money_lines(m, unit, usd)[1:]
+         if not x.startswith(("HISTORY STILL LOADING", "The last Kalshi read failed"))]
+    return L[:L.index("By day:")] if "By day:" in L else L
+
+
+def bs_money_html(m, unit="market"):
+    """One bot's money block: where it comes from, the windows table, the 7-day table."""
+    if not m["ok"]:
+        return elines(bs_money_lines(m, unit, usd))           # the COULD NOT READ line, said once
+    L = ["💰 <b>Money</b> <i>(%s, read %s; a %s counts on the ET day it closed)</i>"
+         % (esc(m["source"]), esc(m["as_of_et"] or "?"), esc(unit))]
+    if not m["complete"]:
+        L.append("⚠️ HISTORY STILL LOADING: all time and this month are partial.")
+    if m["stale"]:
+        L.append("⚠️ The last Kalshi read failed (%s); these are from %s." % (esc(m["error"]), esc(m["as_of_et"] or "?")))
+    tbl, base = bs_money_table({k: m[k] for k in BS_WINDOWS})
+    L.append(pre(tbl))
+    L.append(money_legend(base))
+    if not any(m[k] and m[k]["pot_pct"] is not None for k in BS_WINDOWS if m[k] and m[k]["markets"]):
+        note = _bs()._pot_note(m)
+        if note:
+            L.append(i_(note))
+    d7 = [d for d in m["days_7"] if not d["before_first"]]
+    if d7 and m["all_time"] and m["all_time"]["markets"]:
+        L.append("")
+        L.append("📅 <b>Last 7 days</b>")
+        L.append(pre(bs_days_table(d7, unit)))
+    return L
+
+
+def bs_headline(w, whose="of its pot", who=""):
+    """'🟢 Pin bot today +$5.31 (+2.6% on $202.56 staked · +0.40% of its pot)' -- bs_window_line's own
+    figures; nothing settled and unread are said."""
+    bs = _bs()
+    lab = ("%s today" % who) if who else "Today"
+    if w is None:
+        return "❔ <b>%s: COULD NOT READ KALSHI</b>" % esc(lab)
+    if not w["markets"]:
+        return "⚪ <b>%s: nothing settled yet</b>" % esc(lab)
+    share = ""
+    if w.get("pot_pct") is not None and w.get("pot") is not None:
+        share = " · %s %s" % (bs.pot_pct_txt(w["pot_pct"]), whose)
+    return "%s <b>%s %s</b> (<b>%s</b> on %s staked%s)" % (
+        dot(w["money"]), esc(lab), esc(usd(w["money"])), esc(bs.pct(w["return_pct"])), esc(_cash(w.get("put_in"))),
+        esc(share))
+
+
+def bs_bot_html(b, now_et):
+    """One bot for /pin /forecaster /ladder /weather: headline, status, the money table, the last 7 days,
+    open bets and cash; every sentence bs_bot_text wrote is in the details."""
+    bs = _bs()
+    unit = "leg" if b["name"] == "race" else "market"
+    r, m = b["running"], b["money"]
+    pot = bs.SUB_NAME.get(str(b["subaccount"]), "subaccount %s" % b["subaccount"])
+    if b["shares_subaccount_with"]:
+        pot += ", shared with the " + " and ".join(bs.SPEC[x]["label"].lower() for x in b["shares_subaccount_with"])
+    L = [bs_headline(m["today"] if m["ok"] else None, who=b["label"]),
+         "%s <b>%s</b> -- %s" % (run_dot(r), esc(b["label"].upper()), esc(b["what"])),
+         "<i>%s · Pot: %s.</i>" % (esc(now_et), esc(pot))]
+    L.append("")
+    L.append("⚙️ <b>Status</b>")
+    L += elines(bs_running_lines(r))
+    setup = bs_setup_lines(r)
+    L += elines([x for x in setup if not x.startswith("Settings: ")])
+    L.append("")
+    L += bs_money_html(m, unit)
+    L.append("")
+    ol = elines(bs_open_lines(b["open"]))
+    L.append("📂 " + ol[0].replace("Open now:", "<b>Open now:</b>", 1))
+    L += ol[1:]
+    L.append("💵 " + esc(bs_cash_line(b["balance"])).replace("Cash:", "<b>Cash:</b>", 1))
+    det = (elines(_money_detail(m, unit)) if m["ok"] else []) + elines([x for x in setup if x.startswith("Settings: ")])
+    det += elines(bs_last_lines(b["last_settled"], usd)) + elines(bs_activity_lines(b["name"], b["activity_today"]))
+    L.append(details(det, "🔎 Details: every window in words, settings, last settled, today's log"))
+    return L
+
+
+def _short_html(w):
+    """_short() with the money in bold."""
+    if w is None:
+        return "?"
+    if not w["markets"]:
+        return "nothing yet"
+    p = w.get("pot_pct")
+    return "<b>%s</b>%s" % (esc(usd(w["money"])), (" (%s)" % esc(_bs().pot_pct_txt(p))) if p is not None else "")
+
+
+def bs_all_html(a):
+    """/bots: the all-pots headline and table, 7 days by bot as a chart, one card a bot, the cash, the
+    last 7 days; every sentence bs_all_text wrote is in the details."""
+    bs = _bs()
+    tot = a["total"]
+    t = tot["today"]
+    if t["partial"] and not t["markets"]:
+        L = ["❔ <b>All bots today: unknown -- Kalshi could not be read</b>"]
+    else:
+        L = [bs_headline(t, "of all pots", "All bots")]
+    L.append("<i>🤖 ALL BOTS · %s</i>" % esc(a["as_of_et"]))
+    L.append("")
+    L.append("💰 <b>Money, every pot</b> <i>(Kalshi; a market counts on the ET day it closed)</i>")
+    anything = any(tot[k]["markets"] for k in BS_WINDOWS)
+    tbl, base = bs_money_table(tot, "of pots")
+    L.append(pre(tbl))
+    L.append(money_legend(base, "all pots (pin and race share the main account)"))
+    miss = tot["all_time"]["missing"]
+    if miss:
+        L.append("⚠️ PARTIAL: these totals leave out %s -- Kalshi could not be read for %s."
+                 % (esc(", ".join(miss)), "it" if len(miss) == 1 else "them"))
+    t7 = tot["last_7_days"]
+    if t7["markets"]:
+        got = [(nm, v) for nm, v in t7["by_bot"].items() if nm != "other" or t7["by_bot_markets"].get(nm)]
+        mx = max([abs(v) for nm, v in got if t7["by_bot_markets"].get(nm)] or [0])
+        rows = [(nm, usd(v) if t7["by_bot_markets"].get(nm) else "none",
+                 hbar(v, mx, 10) if t7["by_bot_markets"].get(nm) else "") for nm, v in got]
+        L.append("")
+        L.append("📊 <b>Last 7 days, by bot</b>")
+        L.append(pre(table(rows, "lrl")))
+    L.append("")
+    for name in bs.BOTS:
+        bt = a["bots"][name]
+        r, m, o = bt["running"], bt["money"], bt["open"]
+        if r["alive"] is None:
+            run = "running? could not tell"
+        elif r["alive"]:
+            run = "running since %s" % (r["started_et"] or "?")
+        elif r["stop_flag"]:
+            run = "STOPPED by its stop file (%s)" % (r["stop_flag_et"] or "?")
+        else:
+            run = "NOT RUNNING and no stop file -- it stopped on its own"
+        if r["halted"]:
+            run += ", HALTED %s" % r["halted"]["t_et"]
+        mon = ("money: COULD NOT READ KALSHI" if not m["ok"] else
+               "today %s · 7 days %s · all time %s" % (_short_html(m["today"]), _short_html(m["last_7_days"]),
+                                                       _short_html(m["all_time"])))
+        op = ("open: ?" if not o["ok"] else "open: none" if not o["count"] else
+              "open: %d (%s at risk)" % (o["count"], esc(_cash(o["at_risk"]))))
+        L.append("%s <b>%s</b> · %s · %s" % (run_dot(r), esc(bt["label"].upper()),
+                                            esc(bs.SUB_NAME.get(str(bt["subaccount"]), "?")), BOT_CMD_OF[name]))
+        L.append("%s · %s" % (esc(run), esc(r["version"] or "no version entry")))
+        L.append("%s · %s" % (mon, op))
+    ot = a["other"]
+    if ot.get("ok") and ot.get("all_time") and ot["all_time"]["markets"]:
+        w = ot["all_time"]
+        L.append("⚪ NOT ANY BOT'S (main account): all time %s on %s; worst %s %s (%s)." % (
+            esc(usd(w["money"])), esc(_nof(w["markets"], "market")), esc(usd(w["worst"]["money"])),
+            esc(w["worst"]["what"]), esc(bs.day_label(w["worst"]["day"]))))
+    bal = a["balances"]
+    L.append("")
+    L.append("💵 <b>Cash:</b> main account %s (pin + race share it), forecaster %s, ladder %s, weather %s -- all pots "
+             "<b>%s</b>." % tuple(esc(_cash(x)) for x in (bal["main"], bal["forecaster"], bal["ladder"],
+                                                          bal.get("weather"), bal["all"])))
+    firsts = [mm.get("first_day") for mm in [a["bots"][x]["money"] for x in bs.BOTS] + [a["other"]]
+              if mm.get("first_day")]
+    days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
+    if anything and days:
+        mx = max([abs(d["money"]) for d in days if d["markets"]] or [0])
+        rows = [("Day", "Money", "Mkts", "")]
+        for d in days:
+            rows.append((d["label"], "nothing settled") if not d["markets"] else
+                        (d["label"], usd(d["money"]), d["markets"], hbar(d["money"], mx, 8)))
+        L.append("")
+        L.append("📅 <b>By day</b> (all pots)")
+        L.append(pre(table(rows, "lrrl")))
+    elif not anything and not miss:
+        L.append("Nothing settled yet in any pot.")
+    warn = bs_errors_line(a["errors"]) + list(bs.pot_check_lines(a.get("pot_check")))
+    if all(tot[k].get("pot_pct") is None for k in BS_WINDOWS if tot[k]["markets"]) \
+            and any(tot[k]["markets"] for k in BS_WINDOWS):
+        why = next((tot[k].get("pot_why") for k in BS_WINDOWS if tot[k].get("pot_why")), None)
+        if why:
+            warn.append("%% of the pots: not shown -- %s." % why)
+    for x in warn:
+        L.append("⚠️ " + esc(norm_money(x[2:] if x.startswith("! ") else x)))
+    # the details: bs_all_text's own sentences, whole
+    full = bs_all_text(a).split("\n")
+    keep, skip = [], True
+    for x in full[1:]:
+        if x.startswith(("PIN BOT", "COIN RACE", "FORECASTER", "PENNY LADDER", "WEATHER DIP-SELLER",
+                         "NOT ANY BOT'S", "! ", "PARTIAL:", "% of the pots", "Cash: ")):
+            continue
+        keep.append(x)
+    while keep and not keep[-1].strip():
+        keep.pop()
+    L.append(details(elines(keep), "🔎 Details: each window by bot, each day by bot, what the % mean"))
+    L.append("<i>One bot in full: /pin /race /fc /ladder /weather · every account's cash: /funds</i>")
+    return L
+
+
 # ===========================================================================
 # /funds (/bank /accounts) -- every Kalshi account's money on one screen.
 #
@@ -1390,10 +2350,24 @@ def funds_sizes(results=RESULTS):
             (" on a %s bank" % _usd2(sz["bank"])) if _fnum(sz.get("bank")) is not None else "")
 
     def race():
-        r = bs.last_record(os.path.join(results, "pinracepenny-live.jsonl"), ("start",))
+        path = os.path.join(results, "pinracepenny-live.jsonl")
+        r = bs.last_record(path, ("start",))
         lr = (r or {}).get("live_rails") or {}
         if _fnum(lr.get("max_contracts")) is None:
             return None
+        # v-race-snowball (2026-10-11): a start record with bank_sizing takes its size from the bank; the
+        # size in force is the newest bank_size record after that start, not the start-up live_rails.
+        bsz = r.get("bank_sizing") or {}
+        if _fnum(bsz.get("contracts_per_bank")) and _fnum(bsz.get("stake_per_bank")):
+            sz = bs.last_record(path, ("bank_size",))
+            if sz and (bs._epoch(sz.get("t")) or 0) >= (bs._epoch(r.get("t")) or 0) \
+                    and _fnum(sz.get("contracts")) is not None and _fnum(sz.get("bank")):
+                return "coin race %g contracts a leg, at most %s in play (%.2f%% of a %s bank; sized %s, grows " \
+                       "with the bank)" % (_fnum(sz["contracts"]), _usd2(sz.get("stake")),
+                                           100.0 * _fnum(bsz["stake_per_bank"]), _usd2(sz["bank"]), when(sz))
+            return "coin race: bets grow with the bank (%.2f contracts per $100, %.2f%% of it in play); no size " \
+                   "read logged since its start %s" % (100.0 * _fnum(bsz["contracts_per_bank"]),
+                                                      100.0 * _fnum(bsz["stake_per_bank"]), when(r))
         return "coin race %g contracts a bet%s (set at its start %s)" % (
             _fnum(lr["max_contracts"]),
             (", at most %s in play" % _usd2(lr["max_stake"]).replace(".00", "")) if _fnum(lr.get("max_stake")) else "",
@@ -1657,15 +2631,95 @@ def funds_text(f, sizes, now, hist=None):
     return t
 
 
+# /funds on a phone (2026-10-18): a short name an account goes by in the summary table. Edit beside
+# FUNDS_WHAT when a bot moves; an account not here shows its FUNDS_WHAT words, cut short.
+FUNDS_SHORT = {0: "main+race", 1: "ladder", 2: "forecaster", 3: "weather", 4: "race reward"}
+
+
+def funds_idle(n):
+    """True when every pool of account n is marked stopped or empty in FUNDS_WHAT: money there runs
+    nothing. (The operator, 2026-10-18: 'dead sitting money'.) Unknown accounts are not called idle."""
+    what = FUNDS_WHAT.get(n)
+    if what is None:
+        return False
+    vals = list(what.values()) if isinstance(what, dict) else [what]
+    return all("(stopped)" in str(v) or str(v).strip() == "empty" for v in vals)
+
+
+def _funds_day_label(d, today):
+    return "%s %d%s" % (time.strftime("%a", time.strptime(d, "%Y-%m-%d")), int(d[8:]), "*" if d == today else "")
+
+
+def _funds_days_html(n, res, today, show, held):
+    """One account's past days as a table (money and how many of the markets settled lost), its total and
+    that total's share of what it holds now -- the figures _funds_hist_lines words, from funds_days. For
+    the main account the main bot / race / other split follows, its day-by-day lines behind a tap."""
+    bs = _bs()
+    if res is None:
+        return ["<i>past %d ET days: not read</i>" % FUNDS_DAYS]
+    h = funds_days(res, today)
+    unread = [x["day"] for x in h["days"] if not x["read"]]
+    if len(unread) == FUNDS_DAYS:
+        return ["past %d ET days: COULD NOT READ (%s)" % (FUNDS_DAYS, esc(res.get("err")))]
+    tot = h["total"]
+    if not tot["all"]["n"] and not unread:
+        return ["<i>past %d ET days: nothing settled</i>" % FUNDS_DAYS]
+    head = "Past %d ET days" % FUNDS_DAYS
+    rows = [(head, "Money", "Lost")]
+    shown, i = h["days"][:max(show, 0)], 0
+    while i < len(shown):                   # a run of empty (or unread) days is one row
+        x = shown[i]
+        if x["read"] and x["all"]["n"]:
+            rows.append((_funds_day_label(x["day"], today), usd(x["all"]["money"]),
+                         "%d/%d" % (x["all"]["lost"], x["all"]["n"])))
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(shown) and not (shown[j + 1]["read"] and shown[j + 1]["all"]["n"]) \
+                and shown[j + 1]["read"] == x["read"]:
+            j += 1
+        lab = _funds_day_label(x["day"], today)
+        if j > i:
+            lab = _funds_day_label(shown[j]["day"], today) + "-" + lab
+        rows.append((lab, "NOT READ" if not x["read"] else "nothing settled"))
+        i = j + 1
+    span = "%d days" % FUNDS_DAYS if not unread else "%d days read" % (FUNDS_DAYS - len(unread))
+    L = []
+    if len(rows) > 1:                       # no day rows when the page had to leave them out to fit
+        L.append(pre(table(rows)))
+    total = "%s: <b>%s</b> (%d of %d lost)" % (esc(span), esc(usd(tot["all"]["money"])), tot["all"]["lost"],
+                                               tot["all"]["n"])
+    if held is None:
+        L.append("%s; %% not shown: what it holds now was not read whole" % total)
+    elif held < 1.0:
+        L.append("%s; %% not shown: it holds under $1" % total)
+    else:
+        L.append("%s = <b>%s</b> of the %s it holds now" % (
+            total, esc(bs.pot_pct_txt(100.0 * tot["all"]["money"] / held)), esc(_usd2(held))))
+    if n == 0 and tot["all"]["n"]:
+        names = ", ".join(("%s hourly" % o[2:-1]) if o in bs.PIN_HOURLY else o for o in h["other_series"])
+        L.append("Split: " + " · ".join(
+            "%s <b>%s</b> (%d of %d lost%s)" % (esc(w), esc(usd(tot[k]["money"])), tot[k]["lost"], tot[k]["n"],
+                                                esc("; " + names) if k == "other" and names else "")
+            for k, w in FUNDS_BOOKS if tot[k]["n"]))
+        # the day lines only: the total, its % and the NOT READ list are said above
+        L.append(details(elines([x.strip() for x in _funds_hist_lines(n, res, today, show, held)[1:]
+                                 if not x.strip().startswith(("NOT READ", "7 days:", "the "))]),
+                         "Each day, main bot / race / other"))
+    if unread:
+        L.append("⚠️ NOT READ: %s (%s)" % (esc(", ".join(_funds_day_label(d, "") for d in unread)),
+                                           esc(res.get("err"))))
+    return L
+
+
 def _funds_page(f, sizes, now, hist, show):
+    """/funds as Html: the grand total first, a one-line-an-account table, idle money named, then each
+    account -- the same figures and the same 'at least' / COULD NOT READ rules as always."""
     today = pinday.et_day_of_epoch(now)
-    L = ["MONEY IN EVERY ACCOUNT -- %s, read from Kalshi now." % _bs().et_clock(now)]
-    if f["list_err"]:
-        L.append("Kalshi's list of subaccounts could not be read (%s), so only the ones known here (%s) are "
-                 "shown -- any other is missing." % (f["list_err"], ", ".join(str(n) for n in sorted(FUNDS_WHAT))))
     cash_t = open_t = 0.0
     missing = []
     pool_t = {}                                   # pool -> cash over every account; None once one is unread
+    accts = []
     for n in sorted(f["subs"]):
         s = f["subs"][n]
         what = FUNDS_WHAT.get(n, "unknown (not in FUNDS_WHAT in pinphone.py)")
@@ -1696,37 +2750,80 @@ def _funds_page(f, sizes, now, hist, show):
         whole = s["open"] is not None and all(p["dollars"] is not None for p in s["pools"].values())
         cash_t += cash
         open_t += s["open"] or 0.0
-        L.append("")
-        L.append("%s -- %s: %s%s" % (name, what, "" if whole else "at least ", _usd2(cash + (s["open"] or 0.0))))
-        L.append("  cash: %s; open bets: %s" % (", ".join(parts) if parts else "$0.00", ow))
-        if sizes.get(n):
-            L.append("  bet size now: " + "; ".join(sizes[n]))
-        if hist is not None:
-            L.extend(_funds_hist_lines(n, hist.get(n), today, show, (cash + s["open"]) if whole else None))
-    L.append("")
+        total = cash + (s["open"] or 0.0)
+        wk = None
+        if hist is not None and hist.get(n) is not None:
+            hd = funds_days(hist[n], today)
+            if any(x["read"] for x in hd["days"]):
+                wk = (hd["total"]["all"]["money"], hd["total"]["all"]["n"], all(x["read"] for x in hd["days"]))
+        accts.append(dict(n=n, s=s, what=what, name=name, cash=cash, parts=parts, ow=ow, whole=whole,
+                          total=total, wk=wk))
+    L = []
     if not f["subs"]:
-        L.append("NO ACCOUNT COULD BE READ. Nothing above is a zero -- it is unknown.")
+        L.append("❔ <b>NO ACCOUNT COULD BE READ.</b> Nothing below is a zero -- it is unknown.")
     elif missing:
-        L.append("ALL ACCOUNTS: at least %s (cash %s + open bets %s) -- leaves out what could not be read: %s."
-                 % (_usd2(cash_t + open_t), _usd2(cash_t), _usd2(open_t), ", ".join(missing)))
+        L.append("🏦 <b>ALL ACCOUNTS: at least %s</b> (cash %s + open bets %s)" % (
+            esc(_usd2(cash_t + open_t)), esc(_usd2(cash_t)), esc(_usd2(open_t))))
+        L.append("⚠️ That leaves out what could not be read: %s." % esc(", ".join(missing)))
     else:
-        L.append("ALL ACCOUNTS: %s = cash %s + open bets %s." % (_usd2(cash_t + open_t), _usd2(cash_t), _usd2(open_t)))
+        L.append("🏦 <b>ALL ACCOUNTS: %s</b> = cash %s + open bets %s." % (
+            esc(_usd2(cash_t + open_t)), esc(_usd2(cash_t)), esc(_usd2(open_t))))
+    L.append("<i>MONEY IN EVERY ACCOUNT -- %s, read from Kalshi now.</i>" % esc(_bs().et_clock(now)))
+    if f["list_err"]:
+        L.append("⚠️ Kalshi's list of subaccounts could not be read (%s), so only the ones known here (%s) are "
+                 "shown -- any other is missing." % (esc(f["list_err"]), esc(", ".join(str(n) for n in sorted(FUNDS_WHAT)))))
     kc = f.get("kalshi_cash")
     if kc and f["subs"] and None not in pool_t.values():
         ours = sum(v for v in pool_t.values())
         if all(abs(pool_t.get(ix, 0.0) - kc.get(ix, 0.0)) <= 0.02 for ix in set(kc) | set(pool_t)):
-            L.append("The cash adds up to Kalshi's own whole-account figure (%s)." % _usd2(sum(kc.values())))
+            L.append("✅ The cash adds up to Kalshi's own whole-account figure (%s)." % esc(_usd2(sum(kc.values()))))
         else:
-            L.append("CHECK: Kalshi's own whole-account cash is %s, but the accounts above add to %s -- an "
+            L.append("⚠️ CHECK: Kalshi's own whole-account cash is %s, but the accounts above add to %s -- an "
                      "account is missing from Kalshi's list, or a bet filled between reads (send /funds again)."
-                     % (_usd2(sum(kc.values())), _usd2(ours)))
-    L.append("Open bets count at what they cost. Bet sizes are from each bot's own log.")
-    if hist is not None:
-        L.append("Past days, newest first, from Kalshi's settlement records: what each market paid minus its "
-                 "cost and fees, on the ET day it closed; (2 of 28 lost) = 2 of the 28 markets settled lost "
-                 "money. Deposits and transfers are not gains. Liquidity rewards are paid outside these "
-                 "records and are not counted.")
-    return "\n".join(L)
+                     % (esc(_usd2(sum(kc.values()))), esc(_usd2(ours))))
+    if accts:
+        # Share = the account's slice of ALL ACCOUNTS (shown only when every account was read whole)
+        allt = cash_t + open_t
+        rows = [("Account", "Total $", "Share") + (("7 days",) if hist is not None else ())]
+        for a in accts:
+            nm = "%d %s" % (a["n"], FUNDS_SHORT.get(a["n"], str(a["what"])[:10]))
+            tt = ("" if a["whole"] else ">=") + "{:,.2f}".format(a["total"])
+            sh = (pct_of(a["total"], allt, 1) or "-") if (not missing and allt > 0.004) else "-"
+            if hist is None:
+                rows.append((nm, tt, sh))
+                continue
+            wk = a["wk"]
+            rows.append((nm, tt, sh, "?" if wk is None else ("none" if not wk[1] and wk[2] else
+                                                             usd(wk[0]).replace("$", "") + ("" if wk[2] else "~"))))
+        L.append(pre(table(rows)))
+        idle = [a for a in accts if funds_idle(a["n"]) and a["whole"] and a["total"] > 0.004]
+        if idle:
+            it = sum(a["total"] for a in idle)
+            L.append("💤 <b>Idle: %s</b>%s sits in %s nothing now (%s)." % (
+                esc(_usd2(it)), (" (%s of all)" % pct_of(it, allt, 1)) if allt > 0.004 and not missing else "",
+                "an account that runs" if len(idle) == 1 else "%d accounts that run" % len(idle),
+                esc("; ".join("%d: %s" % (a["n"], a["what"]) for a in idle))))
+    if hist is not None and accts and show < FUNDS_DAYS:
+        L.append(i_("Past days: %s to fit one message; every 7-day total still counts all %d days." % (
+            "the day lines are left out" if show <= 0 else "only the newest %d day lines are listed" % show,
+            FUNDS_DAYS)))
+    for a in accts:
+        s, n = a["s"], a["n"]
+        L.append("")
+        L.append("<b>%s</b> -- %s: <b>%s%s</b>" % (esc(a["name"]), esc(a["what"]), "" if a["whole"] else "at least ",
+                                                  esc(_usd2(a["total"]))))
+        L.append("cash: %s; open bets: %s" % (esc(", ".join(a["parts"]) if a["parts"] else "$0.00"), esc(a["ow"])))
+        if sizes.get(n):
+            L.append("bet size now: " + esc("; ".join(sizes[n])))
+        if hist is not None:
+            L.extend(_funds_days_html(n, hist.get(n), today, show, (a["cash"] + s["open"]) if a["whole"] else None))
+    L.append("")
+    L.append(i_("Open bets count at what they cost. Bet sizes are from each bot's own log."
+                + (" Past days: Kalshi's settlement records -- what each market paid minus its cost and fees, on "
+                   "the ET day it closed (* = so far today); Lost 2/28 = 2 of the 28 markets settled lost money. "
+                   "Deposits and transfers are not gains. Liquidity rewards are paid outside these records and "
+                   "are not counted." if hist is not None else "")))
+    return Html("\n".join(L))
 
 
 class Phone:
@@ -1781,7 +2878,7 @@ class Phone:
         failures were logged -- so there was no way to audit whether an
         alert had fired, which is the whole point of having alerts."""
         cid = chat_id or self.chat_id
-        flat = " | ".join(str(text).splitlines())
+        flat = " | ".join((html_to_plain(text) if getattr(text, "is_html", False) else str(text)).splitlines())
         if cid is None:
             log("NOT SENT (no paired chat): %s" % flat[:200])
             return
@@ -1815,40 +2912,126 @@ class Phone:
                 out += "\n  %.1f h up, %s/h" % (up, money(s["net"] / up))
         return out
 
+    def _staked(self, net, day=None):
+        """What the bets of one ET day (None = every day) cost, from Kalshi's books (the /stats source:
+        cost + fees of every main-account market) -- or None when that source's money for the same window
+        is not the `net` shown (then a 'return on staked' would mix two sources, so none is shown)."""
+        try:
+            ms = [m for m in self._markets().values() if day is None or m["day"] == day]
+        except Exception:                                       # noqa: BLE001
+            return None
+        if not ms:
+            return None
+        st = window_stats(ms, {})
+        return st["risked"] if abs(st["net"] - net) <= 0.011 else None
+
+    def day_html(self, rows, day=None, label=""):
+        """summary_line's numbers laid out: the money and its % (of the bank at the start of the ET day; all
+        time, of the money put in) as the headline; then closes won (count and %), the return on what the
+        bets cost (when Kalshi's books give the same money), fills, hours, and the day as a sparkline of the
+        running total close by close. Html lines."""
+        s = Ledger.summary(rows)
+        if day:
+            b0 = self.ledger.bank_at(et_day_start(day))
+            r = (s["net"] / b0) if b0 else None
+            base = ("%% of the bank = of the %s it held at the start of the ET day" % dollars(b0)) if b0 else None
+            what = "of the bank"
+        else:
+            dep = self.ledger.deposited()
+            r = (s["net"] / dep) if dep else None
+            base = None
+            what = ("on the %s put in" % dollars(dep)) if dep else ""
+        L = ["%s <b>%s %s (%s%s)</b>" % (dot(s["net"]), esc(label), esc(usd(s["net"])), esc(pct(r)),
+                                           (" " + esc(what)) if r is not None and what else "")]
+        if s["closes"]:
+            staked = self._staked(s["net"], day) if s["markets"] else None
+            L.append("<b>%d of %d</b> closes won (<b>%s</b>), %d lost (%.1f%%) · %s%s" % (
+                s["won"], s["closes"], pct_of(s["won"], s["closes"], 1), s["lost"], s["loss_rate"],
+                esc(_nof(s["markets"], "bet")),
+                (" · <b>%s</b> on the %s staked" % (esc(ret(s["net"], staked, 2)), esc(dollars(staked))))
+                if staked else ""))
+        else:
+            L.append("No settled bets.")
+        if day:
+            fs = Ledger.fill_stats(self.ledger.fills_on(day))
+            try:
+                up = hours_up_et_day(day, self.now() if day == et_day(self.now()) else et_day_start(day) + 86400)
+            except Exception:                            # noqa: BLE001
+                up = None
+            L.append("%s, %g contracts%s" % (
+                esc(_nof(fs["fills"], "fill")), fs["contracts"],
+                (" · %d of %d orders filled nothing (%s)" % (fs["zero"], fs["orders"], pct_of(fs["zero"], fs["orders"])))
+                if fs["orders"] else ""))
+            if up:
+                L.append("%.1f h up · <b>%s</b> an hour" % (up, esc(usd(s["net"] / up))))
+            closes = Ledger.by_close(rows)
+            if len(closes) >= 3:
+                run, cum = [], 0.0
+                for k in sorted(closes):
+                    cum += closes[k]
+                    run.append(cum)
+                L.append("Through the day <code>%s</code>" % esc(spark(run)))
+        if base and r is not None:
+            L.append(i_(base))
+        return L
+
     # ---- command texts ----
     def text_status(self):
         h = self.health_fn()
         state, hl, det, _c = status_of(h)
         b = self.ledger.bank()
         dep = self.ledger.deposited()
-        lines = [hl, det, ""]
+        body, _nl, ev = det.rpartition("\n")
+        if not body:
+            body, ev = ev, ""
+        lines = ["%s <b>%s</b>" % (state_dot(state), esc(hl)), esc(body)]
+        if ev:
+            lines.append(i_(ev))
         if b:
-            lines.append("Bank $%.2f, size %g contracts" % (b["bank"], b.get("size") or 0))
-            if dep:
-                lines.append("%s on $%.2f put in" % (pct((b["bank"] - dep) / dep), dep))
+            lines.append("")
+            lines.append("🏦 <b>Bank %s</b>%s · size %g contracts" % (
+                esc(dollars(b["bank"])),
+                (" (<b>%s</b> on the %s put in)" % (esc(pct((b["bank"] - dep) / dep)), esc(dollars(dep)))) if dep else "",
+                b.get("size") or 0))
         today = et_day(self.now())
         lines.append("")
-        lines.append(self.summary_line(self.ledger.settled_on(today), today, "TODAY"))
+        lines += self.day_html(self.ledger.settled_on(today), today, "Today")
         opn = pinflat.positions(self.ledger.newest_rows) if h["alive"] else {}
         if opn:
             lines.append("")
-            lines.append("Open: " + ", ".join("%s %s closes %s" % (coin(t), "x%g" % self.ledger.contracts_for(t), close_et(t)) for t in opn))
+            lines.append("📂 <b>Open:</b> " + esc(", ".join("%s %s closes %s" % (coin(t), "x%g" % self.ledger.contracts_for(t), close_et(t)) for t in opn)))
         wd = h.get("watchdog_s")
         rec = "both writing" if (h.get("kalshi_ok") and h.get("feeds_ok")) else "CHECK RECORDERS"
         lines.append("")
-        lines.append("Watchdog %s. Recorders %s. Disk %.1f GB." % (
-            ("ok, %ds ago" % wd) if wd is not None and wd < 120 else "NOT RUNNING", rec, h.get("disk_gb") or 0))
-        return "\n".join(lines)
+        lines.append("🖥 Watchdog %s · recorders %s · disk %.1f GB free" % (
+            ("ok, %ds ago" % wd) if wd is not None and wd < 120 else "<b>NOT RUNNING</b>",
+            esc(rec) if rec == "both writing" else "<b>%s</b>" % esc(rec), h.get("disk_gb") or 0))
+        return Html("\n".join(lines))
 
     def text_day(self, day, label):
-        return self.summary_line(self.ledger.settled_on(day), day, label)
+        L = self.day_html(self.ledger.settled_on(day), day, label)
+        if day == et_day(self.now()):                          # /today: yesterday beside it, for scale
+            y = et_day(self.now() - 86400)
+            s = Ledger.summary(self.ledger.settled_on(y))
+            b0 = self.ledger.bank_at(et_day_start(y))
+            L.append(i_("Yesterday %s (%s) · /days for the week" % (usd(s["net"]), pct((s["net"] / b0) if b0 else None))))
+        return Html("\n".join(L))
 
     def text_days(self):
-        out = []
+        rows, vals = [("Day", "Money", "% bank", "Lost", "")], []
         for d in list(reversed(self.ledger.days()))[:7]:
             s = Ledger.summary(self.ledger.settled_on(d))
             b0 = self.ledger.bank_at(et_day_start(d))
-            out.append("%s  %s (%s)  %d closes, %d lost" % (d[5:], money(s["net"]), pct((s["net"] / b0) if b0 else None), s["closes"], s["lost"]))
+            vals.append(s["net"])
+            rows.append((d[5:], usd(s["net"]), pct((s["net"] / b0) if b0 else None), "%d/%d" % (s["lost"], s["closes"])))
+        mx = max([abs(v) for v in vals] or [0])
+        rows = [rows[0]] + [r + (hbar(v, mx, 4),) for r, v in zip(rows[1:], vals)]
+        at = self.day_html(self.ledger.settled, None, "All time")
+        out = [at[0]] + at[1:]
+        out.append("")
+        out.append("📅 <b>Last %d days</b> <i>(Kalshi's books, main account; ET days)</i>" % len(vals))
+        out.append(pre(table(rows, "lrrrl")))
+        out.append(i_("% bank = of the bank at the start of that day · Lost 1/25 = 1 losing close of 25"))
         # 2026-10-01, the operator: "/days doesn't show any recent negative days on this version". A deploy day
         # mixes two versions (09-30: +$30.45 before v-topup, -$18.77 after, shown as one +$11.68), so the running
         # version gets its own line -- Kalshi's books, main account, markets closing after its deploy.
@@ -1859,24 +3042,24 @@ class Phone:
             except Exception:                                    # noqa: BLE001
                 vs = None
             if vs is not None:
+                lost = sum(1 for m in vs if m["pnl"] < -0.004)
                 out.append("")
-                out.append("SINCE %s (%s ET): %s, %d markets, %d lost" % (
-                    ver[0], et_str(ver[1], "%m/%d %I:%M %p"), money(sum(m["pnl"] for m in vs)), len(vs),
-                    sum(1 for m in vs if m["pnl"] < -0.004)))
-        out.append("")
-        out.append(self.summary_line(self.ledger.settled, None, "ALL TIME"))
-        return "\n".join(out)
+                out.append("🏷 <b>SINCE %s</b> (%s ET): <b>%s</b>, %d markets, %d lost%s" % (
+                    esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")), esc(usd(sum(m["pnl"] for m in vs))), len(vs),
+                    lost, (" (%s)" % pct_of(lost, len(vs), 1)) if vs else ""))
+        return Html("\n".join(out))
 
     def text_open(self):
         h = self.health_fn()
         opn = pinflat.positions(self.ledger.newest_rows) if h["alive"] else {}
         if not opn:
-            return "No open bets."
-        out = []
+            return Html("No open bets.")
+        rows = []
         for t in opn:
             c = pinflat.close_epoch(t)
-            out.append("%s x%g, closes %s (%d s)" % (coin(t), self.ledger.contracts_for(t), close_et(t), max(0, (c or 0) - self.now())))
-        return "\n".join(out)
+            rows.append((coin(t), "x%g" % self.ledger.contracts_for(t), "closes %s" % close_et(t),
+                         "(%d s)" % max(0, (c or 0) - self.now())))
+        return Html("📂 <b>Open bets: %d</b>\n%s" % (len(rows), pre(table(rows, "lrll"))))
 
     def text_fills(self, day=None):
         """Every order the bot sent today: what filled, what we paid, how late.
@@ -1893,9 +3076,9 @@ class Phone:
         rows = [o for o in self.ledger.orders
                 if o.get("t") and et_day(o["t"]) == day]
         if not rows:
-            return "No orders today (%s)." % day
+            return Html("No orders today (%s)." % esc(day))
         rows.sort(key=lambda o: o["t"])
-        out = ["ORDERS TODAY (%s)" % day, ""]
+        tbl = [("Time", "Coin", "Got/asked", "Paid", "Left")]
         nf = got = asked = 0.0
         zero = 0
         for o in rows:
@@ -1909,17 +3092,16 @@ class Phone:
                 nf += 1
             px = o.get("price") or o.get("ask_seen")
             tau = o.get("tau")
-            out.append("%s  %-5s %s  %s  %s" % (
-                et_str(o["t"]),
-                coin(o.get("tk") or ""),
-                ("%g/%g" % (f, a)) if a else ("%g" % f),
-                ("%.1fc" % (100 * float(px))) if px else "  -  ",
-                ("%ss out" % tau) if tau is not None else "(oil)"))
-        out.append("")
-        out.append("%d orders: %d filled, %d lost the race. Asked %g contracts, "
-                   "got %g (%s)." % (len(rows), int(nf), zero, asked, got,
-                                     pct(got / asked, False) if asked else "-"))
-        return "\n".join(out)
+            tbl.append((hm(o["t"]), coin(o.get("tk") or ""), ("%g/%g" % (f, a)) if a else ("%g" % f),
+                        ("%.1fc" % (100 * float(px))) if px else "-",
+                        ("%ss" % tau) if tau is not None else "(oil)"))
+        out = ["🧾 <b>Orders today: %d</b> · %d filled · %d filled nothing%s" % (
+            len(rows), int(nf), zero, (" (%s)" % pct_of(zero, len(rows))) if rows else ""),
+            i_("%s ET · Left = seconds before the close when it was sent" % day),
+            pre(table(tbl, "llrrr")),
+            "Asked %g contracts, got <b>%g</b> (<b>%s</b>). %d orders: %d filled, %d lost the race." % (
+                asked, got, esc(pct(got / asked, False) if asked else "-"), len(rows), int(nf), zero)]
+        return Html("\n".join(out))
 
     def text_brief(self):
         """The daily briefing, from pinbrief -- the same words the CLI prints.
@@ -1930,7 +3112,7 @@ class Phone:
         """
         try:
             import pinbrief
-            return pinbrief.text(pinbrief.brief(ledger=self.ledger))
+            return brief_html(pinbrief.text(pinbrief.brief(ledger=self.ledger)))
         except Exception as e:                                  # noqa: BLE001
             return ("Could not build today's briefing: %s\n"
                     "Everything else still works -- try /today again, or "
@@ -1938,19 +3120,26 @@ class Phone:
 
     def text_market(self):
         act = self.ledger.activity()
-        out = ["SELLERS: %s" % act["level"]]
         if act["recent"] is not None:
-            out.append("Last 4 quarter-hours: someone selling the winning side on %.0f%% of looks (quiet < %.0f%%, typical %.0f%%, busy > %.0f%%)."
-                       % (100 * act["recent"], 100 * act["p25"], 100 * act["median"], 100 * act["p75"]))
+            out = ["🛒 <b>Sellers: %s</b> · <b>%.0f%%</b> of looks" % (esc(act["level"]), 100 * act["recent"]),
+                   "Last 4 quarter-hours: someone selling the winning side on <b>%.0f%%</b> of looks (quiet &lt; %.0f%%, "
+                   "typical %.0f%%, busy &gt; %.0f%%)."
+                   % (100 * act["recent"], 100 * act["p25"], 100 * act["median"], 100 * act["p75"])]
+        else:
+            out = ["🛒 <b>Sellers: %s</b>" % esc(act["level"])]
         out.append("")
+        out.append("<b>Last %d closes</b>" % min(8, len(self.ledger.closes)))
         for c in list(reversed(self.ledger.closes))[:8]:
             share = Ledger.offer_share(c)
-            out.append("%s  sellers %s  %s" % (et_str(c["close"]) if c["close"] else "?", pct(share, False) if share is not None else "-", self.ledger.reason(c)))
+            out.append("<b>%s</b> · sellers %s · %s" % (esc(et_str(c["close"]) if c["close"] else "?"),
+                                                       esc(pct(share, False) if share is not None else "-"),
+                                                       esc(self.ledger.reason(c))))
         today = et_day(self.now())
         fs = Ledger.fill_stats(self.ledger.fills_on(today))
         out.append("")
-        out.append("Today: %d orders, %d filled, %d lost races; asked %g got %g (%s)." % (
-            fs["orders"], fs["fills"], fs["zero"], fs["asked"], fs["contracts"], pct(fs["share"], False) if fs["share"] is not None else "-"))
+        out.append("<b>Today</b>: %d orders, %d filled, %d filled nothing%s; asked %g got <b>%g</b> (%s)." % (
+            fs["orders"], fs["fills"], fs["zero"], (" (%s)" % pct_of(fs["zero"], fs["orders"])) if fs["orders"] else "",
+            fs["asked"], fs["contracts"], esc(pct(fs["share"], False) if fs["share"] is not None else "-")))
         # IS THE OPPORTUNITY GOING AWAY. Same lines the desktop shows, from
         # the same function, so the phone and the app cannot drift apart.
         # Read from health() rather than recomputed: it is already there.
@@ -1959,36 +3148,44 @@ class Phone:
             sl = h.get("supply_lines") or []
             if sl:
                 out.append("")
-                out.append("IS THE OPPORTUNITY GOING AWAY?")
-                out += sl
+                out.append("📉 <b>IS THE OPPORTUNITY GOING AWAY?</b>")
+                out += elines(sl)
                 age = h.get("supply_age_d")
                 if age is not None:
-                    out.append("(measured up to %.1f days ago)" % age)
+                    out.append(i_("(measured up to %.1f days ago)" % age))
         except Exception:                                   # noqa: BLE001
             pass
-        return "\n".join(out)
+        return Html("\n".join(out))
 
     def text_losses(self):
         rows = self.ledger.losing_closes()[:10]
         if not rows:
-            return "No losing closes."
+            return Html("No losing closes.")
         s = Ledger.summary(self.ledger.settled)
-        out = ["%d losing closes of %d all time (%.1f in 100)." % (s["lost"], s["closes"], s["loss_rate"]), ""]
+        out = ["🔴 <b>%d losing closes</b> of %d all time (%.1f%%)" % (s["lost"], s["closes"], s["loss_rate"]),
+               i_("the last %d, newest first (Kalshi's books, main account)" % len(rows))]
         for close, net, legs in rows:
-            out.append("%s  %s  %s" % (et_str(close, "%m/%d %I:%M %p") if close else "?", money(net), ", ".join(sorted({coin(l["tk"]) for l in legs}))))
-        return "\n".join(out)
+            out.append("<b>%s</b> · %s · %s" % (esc(usd(net)), esc(et_str(close, "%m/%d %I:%M %p") if close else "?"),
+                                                esc(", ".join(sorted({coin(l["tk"]) for l in legs})))))
+        return Html("\n".join(out))
 
     def text_hedges(self):
         ho = list(reversed(self.ledger.hedge_outcomes()))[:8]
         if not ho:
-            return "No hedges yet."
-        out = []
+            return Html("No hedges yet.")
+        out = ["🛡 <b>Insurance</b> (the last %d hedges, newest first)" % len(ho)]
         for g in ho:
-            out.append("%s %s belief %.0f%%: %s  bet %s, hedge %s, net %s" % (
-                et_str(g["t"], "%m/%d %I:%M %p") if g["t"] else "?", coin(g["tk"]), 100 * float(g.get("belief") or 0),
-                g["verdict"] or "pending", money(g["bet_pnl"]) if g["bet_pnl"] is not None else "-",
-                money(g["hedge_pnl"]) if g["hedge_pnl"] is not None else "-", money(g["net"]) if g["net"] is not None else "-"))
-        return "\n".join(out)
+            mark = {"NEEDED": "✅", "WASTED": "➖"}.get(g["verdict"], "⏳")
+            bits = [("bet %s" % usd(g["bet_pnl"])) if g["bet_pnl"] is not None else None,
+                    ("hedge %s" % usd(g["hedge_pnl"])) if g["hedge_pnl"] is not None else None]
+            out.append("%s <b>%s</b> · %s %s · belief %.0f%% · %snet <b>%s</b>" % (
+                mark, esc(g["verdict"] or "pending"), esc(et_str(g["t"], "%m/%d %I:%M %p") if g["t"] else "?"),
+                esc(coin(g["tk"])), 100 * float(g.get("belief") or 0),
+                esc(", ".join(x for x in bits if x) + ", ") if any(bits) else "",
+                esc(usd(g["net"]) if g["net"] is not None else "-")))
+        out.append(i_("NEEDED = the bet lost and the insurance covered part of it; WASTED = the bet held and the "
+                      "insurance expired (its premium)"))
+        return Html("\n".join(out))
 
     # ---- /stats /race /racestats ----
     def _sides(self):
@@ -2014,27 +3211,63 @@ class Phone:
         t = race_tally(rs)
         if not t["races"]:
             return "no real races on Kalshi's books since v-race30."
-        return "%d races since %s: %d won, %d tie, %d lost, %s (/race)." % (
-            t["races"], et_str(self.race30_epoch, "%m/%d"), t["won"], t["tie"], t["lost"], money(t["net"]))
+        return "%d races since %s: %d won (%s), %d tie, %d lost, %s (/race)." % (
+            t["races"], et_str(self.race30_epoch, "%m/%d"), t["won"], pct_of(t["won"], t["races"], 1), t["tie"],
+            t["lost"], usd(t["net"]))
 
     def text_stats(self):
         """Everything he would show a friend, by window. Money is Kalshi's;
         the seconds-left split is from the bots' order records; the bank,
-        size and day count are the live bot's own files."""
+        size and day count are the live bot's own files. On the phone: the
+        lifetime money as the headline, the live bot, one table of every
+        window, and each window's full sentences (stats_block) behind a tap."""
         now = self.now()
         today = et_day(now)
         res = self.ledger.results
         mk = self._markets()
         ms = [m for m in mk.values() if m["day"] >= FIRST_LIVE_DAY]
         if not ms:
-            return "No Kalshi settlements on file since %s (results/kalshi_ledger.json)." % FIRST_LIVE_DAY
+            return Html("No Kalshi settlements on file since %s (results/kalshi_ledger.json)." % FIRST_LIVE_DAY)
         taus = first_entries(self.ledger.orders)
         fl = fleet(self.procs_fn())
         ver = live_version(self.versions_path)
+        wins = [("LIFETIME (since %s)" % _md(FIRST_LIVE_DAY), ms, days_between(FIRST_LIVE_DAY, today), "Life"),
+                ("LAST 7 DAYS", [m for m in ms if m["day"] >= day_minus(today, 6)], 7, "7 days"),
+                ("LAST 3 DAYS", [m for m in ms if m["day"] >= day_minus(today, 2)], 3, "3 days"),
+                ("TODAY (%s)" % _md(today), [m for m in ms if m["day"] == today], 1, "Today")]
+        if ver:
+            wins.append(("SINCE %s (%s ET)" % (ver[0], et_str(ver[1], "%m/%d %I:%M %p")),
+                         [m for m in ms if m["close"] is not None and m["close"] >= ver[1]], None, "Version"))
+        sts = [(title, window_stats(sub, taus), nd, lab, sub) for title, sub, nd, lab in wins]
+        life = sts[0][1]
         # "every bot" was true until the forecaster and the ladder got their
         # own subaccounts; kalshi_ledger.json is the main account only now.
-        L = ["STATS  %s ET. Money = Kalshi's books, main account (pin + coin race; forecaster and "
-             "ladder: /bots); days are ET." % et_str(now, "%a %m/%d %I:%M %p")]
+        L = ["%s <b>Lifetime %s</b> (<b>%s</b> on $%s risked) · since %s" % (
+                 dot(life["net"]), esc(usd(life["net"])), esc(ret(life["net"], life["risked"], 2)),
+                 esc(_usd(life["risked"])), esc(_md(FIRST_LIVE_DAY))),
+             i_("📊 STATS · %s ET · Kalshi's books, main account (pin + coin race; forecaster and ladder: /bots); "
+                "days are ET." % et_str(now, "%a %m/%d %I:%M %p"))]
+        rows = [("", "Money", "Return", "Won", "Lost")]
+        for title, st, nd, lab, sub in sts:
+            if not st["markets"]:
+                rows.append((lab, "nothing settled"))
+                continue
+            rows.append((lab, usd(st["net"]), ret(st["net"], st["risked"], 2) or "-",
+                         pct1(st["won"], st["markets"]), st["losses"]))
+        L.append("")
+        L.append("💰 <b>By window</b>")
+        L.append(pre(table(rows)))
+        L.append(i_("Return = money made on what the bets cost (fees in) · Won = markets won · Lost = markets "
+                    "that lost"))
+        if life["breakeven_d"] is not None and life["win_n"] is not None:
+            L.append("🎯 Lifetime: won <b>%s%%</b> of markets (break-even needs %s%%) · contracts paid %s%% vs "
+                     "break-even %s%%: <b>%+.1f pts</b>" % (
+                         _of100(life["win_c"]), _of100(life["breakeven_c"]), _of100(life["win_n"]),
+                         _of100(life["breakeven_d"]), 100.0 * (life["win_n"] - life["breakeven_d"])))
+        by = {}
+        for m in sts[0][4]:
+            by[m["book"]] = by.get(m["book"], 0.0) + m["pnl"]
+        L.append(esc("By bot: " + ", ".join("%s %s" % (b, usd(v)) for b, v in sorted(by.items())) + "."))
         pid = fl["live"][0] if fl["live"] else None
         live_cl = fl["live"][1] if fl["live"] else ""
         if pid:
@@ -2043,11 +3276,12 @@ class Phone:
             where = " (process table could not be read)"
         else:
             where = ", NOT in the process table"
+        L.append("")
         if ver:
-            L.append("LIVE %s since %s ET%s%s." % (ver[0], et_str(ver[1], "%m/%d %I:%M %p"),
-                                                  " (about)" if ver[2] else "", where))
+            L.append("⚙️ <b>LIVE %s</b> since %s ET%s%s." % (esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")),
+                                                          " (about)" if ver[2] else "", esc(where)))
         else:
-            L.append("LIVE version: no readable header in VERSIONS.md%s." % where)
+            L.append("⚙️ <b>LIVE version</b>: no readable header in VERSIONS.md%s." % esc(where))
         parts = []
         hb = argv_opt(live_cl, "--hedge-belief")
         if hb:
@@ -2058,74 +3292,96 @@ class Phone:
         if sz.get("size") is not None:
             s = "Size %g contracts (auto)" % _f(sz["size"])
             if sz.get("bank") is not None:
-                s += ", bank $%.2f read %s" % (_f(sz["bank"]), et_str(pindesk.parse_t(sz.get("at")) or now))
+                s += ", bank %s read %s" % (dollars(_f(sz["bank"])), et_str(pindesk.parse_t(sz.get("at")) or now))
             parts.append(s)
         if parts:
-            L.append(". ".join(parts) + ".")
+            L.append(esc(". ".join(parts) + "."))
         if hwm.get("hwm") and sz.get("bank") is not None:
             h = _f(hwm["hwm"])
             line = (1.0 - MAX_DRAWDOWN) * h
-            L.append("Halt if the bank falls to $%.2f (%.0f%% under its high of $%.2f): $%.2f of room."
-                     % (line, 100.0 * MAX_DRAWDOWN, h, _f(sz["bank"]) - line))
+            room = _f(sz["bank"]) - line
+            L.append("🛑 Halt if the bank falls to %s (%.0f%% under its high of %s): <b>%s of room</b>%s." % (
+                esc(dollars(line)), 100.0 * MAX_DRAWDOWN, esc(dollars(h)), esc(dollars(room)),
+                (" (%s of the bank)" % pct_of(room, _f(sz["bank"]), 1)) if _f(sz["bank"]) > 0 else ""))
         cap = argv_opt(live_cl, "--loss-cap")
         if dl.get("day") == today and dl.get("realised") is not None:
-            L.append("Today by the bot's own count: %s%s." % (
-                money(_f(dl["realised"])), (" (stops at $-%s for the day)" % cap) if cap else ""))
+            L.append("Today by the bot's own count: <b>%s</b>%s." % (
+                esc(usd(_f(dl["realised"]))), esc(" (stops at -$%s for the day)" % cap) if cap else ""))
         if fl["unknown"]:
             L.append("Paper arms: the process table could not be read.")
         else:
             arms = [a[4:] if a.startswith("arm-") else a for a in fl["arms"]]
-            L.append("Paper arms: %d%s + %d race arms%s." % (
+            L.append(esc("Paper arms: %d%s + %d race arms%s." % (
                 len(arms), (" (" + ", ".join(arms) + ")") if arms else "",
-                len(fl["race_arms"]), (" (" + ", ".join(fl["race_arms"]) + ")") if fl["race_arms"] else ""))
-        L.append("Coin race: " + self._race_summary(races_from(mk)))
-        wins = [("LIFETIME (since %s)" % _md(FIRST_LIVE_DAY), ms, days_between(FIRST_LIVE_DAY, today)),
-                ("LAST 7 DAYS", [m for m in ms if m["day"] >= day_minus(today, 6)], 7),
-                ("LAST 3 DAYS", [m for m in ms if m["day"] >= day_minus(today, 2)], 3),
-                ("TODAY (%s)" % _md(today), [m for m in ms if m["day"] == today], 1)]
-        if ver:
-            wins.append(("SINCE %s (%s ET)" % (ver[0], et_str(ver[1], "%m/%d %I:%M %p")),
-                         [m for m in ms if m["close"] is not None and m["close"] >= ver[1]], None))
-        for i, (title, sub, nd) in enumerate(wins):
-            L.append("")
-            L.append(stats_block(title, window_stats(sub, taus), nd))
-            if i == 0:
-                by = {}
-                for m in sub:
-                    by[m["book"]] = by.get(m["book"], 0.0) + m["pnl"]
-                L.append("By bot: " + ", ".join("%s %s" % (b, money(v)) for b, v in sorted(by.items())) + ".")
-        return "\n".join(L)
+                len(fl["race_arms"]), (" (" + ", ".join(fl["race_arms"]) + ")") if fl["race_arms"] else "")))
+        L.append("🏁 Coin race: " + esc(self._race_summary(races_from(mk))))
+        det, seen = [], []
+        for title, st, nd, lab, sub in sts:                 # every window's full sentences, one quote
+            keys = frozenset(m["tk"] for m in sub)
+            same = next((t0 for t0, k0 in seen if k0 == keys), None) if keys else None
+            seen.append((title, keys))
+            if same:                                        # e.g. a version deployed at midnight = TODAY
+                det.append("%s: the same %s as %s, so the same numbers." % (b_(title), esc(_nof(len(keys), "market")),
+                                                                           esc(same)))
+                continue
+            det.append(b_(title))
+            det += elines(stats_block(title, st, nd).split("\n")[1:])
+        L.append("")
+        L.append(details(det, "🔎 Every window in words (tap)"))
+        return Html("\n".join(L))
 
     def text_race(self):
-        """The coin race's /market: the penny bot now (its own log and the
-        process table), the last 10 races and today's money from Kalshi."""
+        """The coin race's /market: the live race now (its own log and the
+        process table), the last 10 races and today's money from Kalshi.
+
+        2026-10-18: it is NOT the penny test any more and the page says so --
+        real money in the main account, and since v-race-snowball its bets
+        grow with the bank (race_size_words reads the size it last took from
+        the bank, not the start record's 20 / $40 it starts from)."""
         now = self.now()
         today = et_day(now)
         res = self.ledger.results
         races = races_from(self._markets())
         fl = fleet(self.procs_fn())
         recs = log_records(os.path.join(res, "pinracepenny-live.jsonl"),
-                           ("start", "live_halt", "live_order", "live_settled"))
+                           ("start", "live_halt", "live_order", "live_settled", "bank_size"))
         pv = penny_view(recs, now, ledger_events=set(races))
         st = pv["start"] or {}
-        L = ["COIN RACE  %s ET" % et_str(now, "%a %m/%d %I:%M %p")]
-        if fl["penny"]:
-            L.append("Penny bot: RUNNING, pid %d. Real bets: %s." % (fl["penny"][0], rails_words(st.get("live_rails"))))
-        elif fl["unknown"]:
-            L.append("Penny bot: process table could not be read. Its rails: %s." % rails_words(st.get("live_rails")))
+        t = race_tally([r for r in races.values() if r["day"] == today])
+        if t["races"]:
+            L = ["%s <b>Coin race today %s</b> (<b>%s</b> on %s staked) · %d of %d won (%s)%s" % (
+                dot(t["net"]), esc(usd(t["net"])), esc(ret(t["net"], t["paid"])), esc(dollars(t["paid"])),
+                t["won"], t["races"], pct_of(t["won"], t["races"]),
+                (" · %d tie, %d lost" % (t["tie"], t["lost"])) if (t["tie"] or t["lost"]) else "")]
         else:
-            L.append("Penny bot: NOT RUNNING (no pinracearm --live in the process table). Last rails: %s."
-                     % rails_words(st.get("live_rails")))
+            L = ["⚪ <b>Coin race today: no races settled yet</b>"]
+        L.append(i_("🏁 COIN RACE · %s ET · live, real money, main account (Kalshi's books)"
+                    % et_str(now, "%a %m/%d %I:%M %p")))
+        if fl["penny"]:
+            L.append("🟢 <b>RUNNING</b>, pid %d" % fl["penny"][0])
+        elif fl["unknown"]:
+            L.append("❔ <b>Running? The process table could not be read.</b>")
+        else:
+            L.append("🔴 <b>NOT RUNNING</b> (no pinracearm --live in the process table).")
         if os.path.exists(os.path.join(res, "pinracepenny.stop")):
-            L.append("STOOD DOWN: the stop file results/pinracepenny.stop is present.")
+            L.append("⏸ <b>STOOD DOWN</b>: the stop file results/pinracepenny.stop is present.")
+        L.append("")
+        size, rules = race_size_words(pv["start"], pv["bank_size"]), race_rule_words(pv["start"])
+        L.append("📏 <b>How it bets</b>%s" % ("" if fl["penny"] else " <i>(its last start record)</i>"))
+        if size:
+            head, _sep, rest = size.partition(": ")
+            L.append("<b>%s</b>: %s" % (esc(head[:1].upper() + head[1:]), esc(rest)) if rest else esc(size))
+            L.append(esc("Buys " + rules + "."))
+        else:
+            L.append("Rails unknown (no start record).")
         if pv["halt"]:
-            L.append("STOP RAIL FIRED %s ET: %s. No real order since." % (
-                et_str(pindesk.parse_t(pv["halt"].get("t")) or now, "%m/%d %I:%M %p"), pv["halt"].get("why")))
+            L.append("🛑 <b>STOP RAIL FIRED %s ET</b>: %s. No real order since." % (
+                esc(et_str(pindesk.parse_t(pv["halt"].get("t")) or now, "%m/%d %I:%M %p")), esc(pv["halt"].get("why"))))
         elif st:
             L.append("Stop rail: not fired since the restart at %s ET."
-                     % et_str(pindesk.parse_t(st.get("t")) or now, "%m/%d %I:%M %p"))
+                     % esc(et_str(pindesk.parse_t(st.get("t")) or now, "%m/%d %I:%M %p")))
         else:
-            L.append("Stop rail: unknown -- no start record in the penny log.")
+            L.append("Stop rail: unknown -- no start record in its log.")
         nxt = (int(now) // 900 + 1) * 900
         left = int(nxt - now)
 
@@ -2136,53 +3392,54 @@ class Phone:
         held = [x for x in pv["open"] if x[1] == nxt]
         others = [x for x in pv["open"] if x[1] != nxt]
         legs = "; ".join(legs_of(ls) for _e, _c, ls in held)
-        L.append("Now: race closing %s ET (%d:%02d left) -- %s. $%.2f out." % (
-            et_str(nxt), left // 60, left % 60, ("holding " + legs) if legs else "no legs yet",
-            pv["staked"] or 0.0))
-        if others:
-            L.append("Awaiting Kalshi's result: " + "; ".join(
-                "%s ET %s" % (et_str(c) if c else "?", legs_of(ls)) for _e, c, ls in others) + ".")
-        if pv["pending"]:
-            L.append("%d older leg(s) the bot never scored and Kalshi has no row for (oldest %s ET)."
-                     % (sum(len(ls) for _e, _c, ls in pv["pending"]),
-                        et_str(pv["pending"][0][1], "%m/%d %I:%M %p") if pv["pending"][0][1] else "?"))
-        t = race_tally([r for r in races.values() if r["day"] == today])
-        L.append("Today: %s" % ("no races settled yet." if not t["races"] else
-                                "%s on %d races: %d won, %d tie, %d lost."
-                                % (money(t["net"]), t["races"], t["won"], t["tie"], t["lost"])))
         L.append("")
-        L.append("Last 10 races (Kalshi's books):")
+        L.append("⏱ <b>Now</b>: race closing %s ET (%d:%02d left) -- %s. <b>%s out.</b>" % (
+            esc(et_str(nxt)), left // 60, left % 60, esc(("holding " + legs) if legs else "no legs yet"),
+            esc(dollars(pv["staked"] or 0.0))))
+        if others:
+            L.append("Awaiting Kalshi's result: " + esc("; ".join(
+                "%s ET %s" % (et_str(c) if c else "?", legs_of(ls)) for _e, c, ls in others) + "."))
+        if pv["pending"]:
+            L.append("⚠️ %d older leg(s) the bot never scored and Kalshi has no row for (oldest %s ET)."
+                     % (sum(len(ls) for _e, _c, ls in pv["pending"]),
+                        esc(et_str(pv["pending"][0][1], "%m/%d %I:%M %p") if pv["pending"][0][1] else "?")))
+        L.append("")
+        L.append("🏆 <b>Last 10 races</b> <i>(Kalshi's books)</i>")
         if races:
-            for r in sorted(races.values(), key=lambda r: -(r["close"] or 0))[:10]:
-                L.append(race_line(r))
+            L.append(pre(race_rows(races, 10)))
         else:
             L.append("none on file.")
-        L.append("")
-        L.append("Paper race arms running: %s." % (
+        L.append("Paper race arms running: %s." % esc(
             "process table could not be read" if fl["unknown"] else
             (", ".join(fl["race_arms"]) if fl["race_arms"] else "none")))
         L += self._race_money_lines()
-        return "\n".join(L)
+        return Html("\n".join(L))
 
     def _race_money_lines(self):
         """/race's money by window (2026-09-30), from botstats: every coin-race
         market in the main account, read from Kalshi live, one leg = one coin's
-        market. Plus what /race did not say: the version, that NOTHING restarts
-        the live race if it dies, what Kalshi holds open, the shared cash and
-        today's refusals. A failure costs these lines only -- the rest of
-        /race still answers."""
+        market. Plus what /race did not say: the version, its keep-alive, what
+        Kalshi holds open, the shared cash and today's refusals. A failure
+        costs these lines only -- the rest of /race still answers. Html lines;
+        botstats' Settings line is left to /race's 'How it bets' above (it
+        words the start-up size from the command line, not the size the race
+        now takes from the bank)."""
         try:
             b = self._bs_get("race")
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
-            return ["", "Money by window: could not build it (%s). The lines above still stand." % str(e)[:160]]
+            return ["", "Money by window: could not build it (%s). The lines above still stand." % esc(str(e)[:160])]
         L = [""]
-        L += bs_money_lines(b["money"], "leg", money)
+        L += bs_money_html(b["money"], "leg")
         L.append("")
-        L += bs_setup_lines(b["running"])
-        L += bs_open_lines(b["open"], "leg")
-        L.append(bs_cash_line(b["balance"]))
-        L += bs_activity_lines("race", b["activity_today"])
+        L += elines([x for x in bs_setup_lines(b["running"]) if not x.startswith("Settings: ")])
+        ol = elines(bs_open_lines(b["open"], "leg"))
+        L.append("📂 " + ol[0].replace("Open now:", "<b>Open now:</b>", 1))
+        L += ol[1:]
+        L.append("💵 " + esc(bs_cash_line(b["balance"])).replace("Cash:", "<b>Cash:</b>", 1))
+        det = (elines(_money_detail(b["money"], "leg")) if b["money"]["ok"] else [])
+        det += elines(bs_activity_lines("race", b["activity_today"]))
+        L.append(details(det, "🔎 Details: every window in words, today's log"))
         return L
 
     # ---- /bots /pin /forecaster /ladder ----
@@ -2195,7 +3452,7 @@ class Phone:
 
     def text_bots(self):
         try:
-            return bs_all_text(self._bs_get("all"))
+            return Html("\n".join(bs_all_html(self._bs_get("all"))))
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return ("Could not build /bots: %s\nEverything else still works -- /stats and /race carry the "
@@ -2205,7 +3462,7 @@ class Phone:
         cmd = BOT_CMD_OF.get(name, "/" + name)
         try:
             b = self._bs_get(name)
-            out = bs_bot_text(b, _bs().et_clock(self.now()))
+            out = bs_bot_html(b, _bs().et_clock(self.now()))
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return ("Could not build %s: %s\nEverything else still works -- /stats and /race carry the "
@@ -2213,53 +3470,153 @@ class Phone:
         more = {"pin": "More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
                 "forecaster": "Every bot: /bots.", "ladder": "Every bot: /bots.",
                 "weather": "Every bot: /bots."}.get(name)
-        return out + ("\n\n" + more if more else "")
+        return Html("\n".join(out) + ("\n\n" + i_(more) if more else ""))
 
     def text_racestats(self):
-        """The penny test's record by window (Kalshi's books) and every paper
-        race arm on the same races (their own logs, tie-aware)."""
+        """The live coin race's record by window (Kalshi's books) and every
+        paper race arm on the same races.
+
+        2026-10-18 (race-arms + skeptic, .sweep\\q-2026-10-18e\\prior): the
+        five arms are PAPER and STOPPED (09-27 .. 10-01), and their own-log
+        dollars were the arms' paper size (up to 250 contracts, priced at the
+        touch) with ties booked as wins. So each arm now says PAPER and
+        STOPPED with its dates (log_span; the process table says if one runs
+        again), and its money is shown three ways on the same races: at its
+        own size re-scored on Kalshi's results (a tie pays 50c), at the live
+        bot's size, and what the live bot really made there. The first two
+        come from results/race_arms_scored.json, used only while the arm's
+        log is the size it was scored at; otherwise the arm's own-log money is
+        shown and labelled so. Wins / ties / losses are this page's own count
+        (a race Kalshi tied is a tie), as always."""
         now = self.now()
         today = et_day(now)
         res = self.ledger.results
         races = races_from(self._markets())
         if not races:
-            return "No coin-race settlements on Kalshi's books yet."
+            return Html("No coin-race settlements on Kalshi's books yet.")
         r30 = self.race30_epoch
-        L = ["COIN RACE STATS  %s ET. Kalshi's books; a race = one 15-min contest; "
-             "a tie pays 50c a leg and counts as a loss." % et_str(now, "%a %m/%d %I:%M %p")]
         first_day = min(r["day"] for r in races.values())
         allr = list(races.values())
-        wins = [("ALL TIME (since %s)" % _md(first_day), allr),
-                ("LAST 7 DAYS", [r for r in allr if r["day"] >= day_minus(today, 6)]),
-                ("LAST 3 DAYS", [r for r in allr if r["day"] >= day_minus(today, 2)]),
-                ("TODAY", [r for r in allr if r["day"] == today]),
+        wins = [("ALL TIME (since %s)" % _md(first_day), allr, "All"),
+                ("LAST 7 DAYS", [r for r in allr if r["day"] >= day_minus(today, 6)], "7 days"),
+                ("LAST 3 DAYS", [r for r in allr if r["day"] >= day_minus(today, 2)], "3 days"),
+                ("TODAY", [r for r in allr if r["day"] == today], "Today"),
                 ("SINCE v-race30 (%s ET)" % et_str(r30, "%m/%d %I:%M %p"),
-                 [r for r in allr if r["close"] is not None and r["close"] >= r30])]
-        for title, rs in wins:
-            L.append("%s: %s" % (title, race_tally_line(race_tally(rs))))
-        since = {e: r for e, r in races.items() if r["close"] is not None and r["close"] >= r30}
+                 [r for r in allr if r["close"] is not None and r["close"] >= r30], "v30")]
+        at = race_tally(allr)
+        L = ["%s <b>Coin race all time %s</b> (<b>%s</b> on %s staked) · %d races, <b>%s</b> won" % (
+                 dot(at["net"]), esc(usd(at["net"])), esc(ret(at["net"], at["paid"])), esc(dollars(at["paid"])),
+                 at["races"], pct_of(at["won"], at["races"], 1)),
+             i_("🏁 COIN RACE STATS · %s ET · Kalshi's books, real money. A race = one 15-min contest; a tie pays "
+                "50c a leg and counts as a loss." % et_str(now, "%a %m/%d %I:%M %p"))]
+        rows = [("", "Money", "Return", "Races", "Won", "T/L")]
+        det = []
+        for title, rs, lab in wins:
+            t = race_tally(rs)
+            if not t["races"]:
+                rows.append((lab, "no races"))
+                continue
+            rows.append((lab, usd(t["net"]), ret(t["net"], t["paid"]) or "-", t["races"],
+                         pct_of(t["won"], t["races"]), "%d/%d" % (t["tie"], t["lost"])))
+            det.append(esc(norm_money("%s: %s" % (title, race_tally_line(t)))))
         L.append("")
-        L.append("Paper arms on the same %d races since v-race30 (their own logs and size; "
-                 "a race Kalshi tied is a tie):" % len(since))
-        z3res = None
+        L.append(pre(table(rows)))
+        L.append(i_("Return = on what the bets cost (fees in) · Won = races won · T/L = ties / losses · v30 = since "
+                    "v-race30, %s ET (today's rules)" % et_str(r30, "%m/%d %I:%M %p")))
+        # ---- the paper arms, on the races the live bot played since v-race30 ----
+        since = {e: r for e, r in races.items() if r["close"] is not None and r["close"] >= r30}
+        # the cached table only (the arms are stopped; 'unknown' is fine here, a cold-cache read is not)
+        fl = fleet(cached_python_procs() if self.procs_fn is python_procs else self.procs_fn())
+        sc = race_arms_scored(res) or {}
+        cards, rec_rows, money_rows, said, run_det = [], [("Arm", "In", "Won", "W/T/L")], \
+            [("Arm", "Own size", "At live", "Live bot")], [], []
+        n_stopped = n_arms = n_scored = 0
+        starred, star_ties = [], []
+        z3res, z3_span = None, None
         for name in RACE_ARMS:
             p = os.path.join(res, "pinracearm-%s.jsonl" % name)
             if not os.path.exists(p):
-                L.append("%s: no log." % name)
+                cards.append("<b>%s</b>: no log." % esc(name))
                 continue
+            n_arms += 1
             ar = arm_results(p)
+            span = log_span(p) or {}
             if name == "z3":
-                z3res = ar
+                z3res, z3_span = ar, span
+            running = None if fl["unknown"] else (name in fl["race_arms"])
+            quiet = span.get("last") is not None and now - span["last"] > 6 * 3600
+            ran = "%s to %s" % (et_str(span["first"], "%b %d") if span.get("first") else "?",
+                                et_str(span["last"], "%b %d") if span.get("last") else "?")
+            if running:
+                status = "PAPER, RUNNING (since %s)" % (et_str(span["first"], "%b %d") if span.get("first") else "?")
+            elif span.get("end") or quiet:
+                status = "PAPER, STOPPED · ran %s" % ran
+                n_stopped += 1
+            else:
+                status = "PAPER · log written %s ET%s" % (
+                    et_str(span["last"], "%b %d %I:%M %p") if span.get("last") else "?",
+                    "; not in the process table" if running is False else "")
+            a = (sc.get("arms") or {}).get(name) or {}
+            try:
+                fresh = bool(a) and int(a.get("log_size") or -1) == os.path.getsize(p)
+            except OSError:
+                fresh = False
+            cards.append("<b>%s</b> · %s%s" % (esc(name), esc(status),
+                                               (" · " + esc(a["own_size"])) if a.get("own_size") else ""))
             rec = arm_record(ar, since)
-            if not rec["entered"]:
-                L.append("%s: in none of them." % name)
-                continue
-            note = ""
-            if rec["ties_as_wins"]:
-                note = " (its log booked %s)" % ("1 tie as a win" if rec["ties_as_wins"] == 1
-                                                 else "%d ties as wins" % rec["ties_as_wins"])
-            L.append("%s: in %d of %d: %d won, %d tie, %d lost, %s%s." % (
-                name, rec["entered"], len(since), rec["won"], rec["tie"], rec["lost"], money(rec["net"]), note))
+            evs = [e for e in since if (ar.get(e) or {}).get("positions", 0) > 0]
+            live_same = sum(since[e]["pnl"] for e in evs)
+            rec_rows.append((name, "%d %s" % (rec["entered"], pct_of(rec["entered"], len(since))),
+                             pct_of(rec["won"], rec["entered"], 1) or "-",
+                             "%d/%d/%d" % (rec["won"], rec["tie"], rec["lost"])))
+            same = a.get("same") or {}
+            if fresh and same.get("races") == rec["entered"]:
+                n_scored += 1
+                money_rows.append((name, usd(same.get("own")), usd(same.get("at_live")), usd(live_same)))
+                if same.get("own_log") is not None and abs(_f(same["own_log"]) - _f(same.get("own"))) >= 0.005:
+                    said.append("%s %s" % (name, usd(same["own_log"])))
+                run = a.get("run") or {}
+                if run:
+                    run_det.append(esc("%s, whole run: %d races, %d won, %d tie, %d lost; own size %s, at the live "
+                                       "bot's size %s." % (name, run.get("races", 0), run.get("won", 0),
+                                                           run.get("tie", 0), run.get("lost", 0), usd(run.get("own")),
+                                                           usd(run.get("at_live")))))
+            else:
+                money_rows.append((name, usd(rec["net"]) + "*", "-", usd(live_same)))
+                if rec["entered"]:
+                    starred.append(name)
+                    if rec["ties_as_wins"]:
+                        star_ties.append(name)
+        L.append("")
+        L.append("🧪 <b>PAPER ARMS</b> -- no real money%s" % (
+            (" · all %d STOPPED" % n_arms) if n_arms and n_stopped == n_arms else ""))
+        L += cards
+        L.append("")
+        L.append("On the <b>%d</b> races the live bot played since v-race30:" % len(since))
+        L.append(pre(table(rec_rows, "lrrr")))
+        L.append(pre(table(money_rows)))
+        legend = "Own size = the arm's own paper size%s. " % (
+            (", scored on Kalshi's results (a tie pays 50c)%s" % (
+                (" -- their own logs said %s (a log books a tie as a win and does its own fee sums)"
+                 % ", ".join(said)) if said else ""))
+            if n_scored else "")
+        if n_scored:
+            legend += ("At live = the same legs at the live bot's size for that race, capped by what the book "
+                       "showed. ")
+        legend += ("Live bot = what the real bot made on those races (Kalshi). Paper is optimistic (race-arms "
+                   "check, 10-18): on legs the live bot also sent, paper made 41% more than real fills, so At live "
+                   "reads ~40% high; the 250-a-leg arms' Own size prices fills at the touch, and walking the book "
+                   "cuts it 30-66%.")
+        if starred:
+            legend += " * = the arm's own log money (%s)%s." % (
+                "no Kalshi re-scoring on file" if not sc.get("arms") else "its log changed after it was re-scored",
+                ("; %s booked a tie as a win" % (
+                    " and ".join("%s's" % x for x in star_ties) + (" own logs" if len(star_ties) > 1 else " own log")))
+                if star_ties else "")
+        L.append(i_(legend))
+        if sc.get("made"):
+            L.append(i_("Scored once on %s from Kalshi's results (results/%s); stopped arms do not change."
+                        % (et_str(pindesk.parse_t(sc["made"]), "%b %d"), RACE_ARMS_SCORED)))
         if z3res is not None:
             z = z3_progress(z3res, races)
             verdict = ""
@@ -2269,11 +3626,20 @@ class Phone:
                 verdict = " -- PASSED the %d bar" % Z3_PASS[0]
             elif z["races"] >= Z3_PASS_ALT[0] and z["losses"] <= Z3_PASS_ALT[1]:
                 verdict = " -- PASSED the %d bar" % Z3_PASS_ALT[0]
-            L.append("z3 bar: %d races so far, %d loss%s (first 50: %d). Pass = %d races with %d losses, "
-                     "or %d with at most %d. Kill = %d losses in the first %d%s." % (
+            stopped = ""
+            if (z3_span or {}).get("last") and not verdict and "z3" not in fl["race_arms"] \
+                    and ((z3_span or {}).get("end") or now - z3_span["last"] > 6 * 3600):
+                stopped = (" Neither passed nor killed: it STOPPED %s at %d of %d races, so the bar does not move "
+                           "until it runs again." % (et_str(z3_span["last"], "%b %d"), z["races"], Z3_PASS_ALT[0]))
+            L.append("")
+            L.append("🎯 <b>z3 bar</b>: %d races so far, %d loss%s (first 50: %d). Pass = %d races with %d losses, "
+                     "or %d with at most %d. Kill = %d losses in the first %d%s.%s" % (
                          z["races"], z["losses"], "" if z["losses"] == 1 else "es", z["first50_losses"],
-                         Z3_PASS[0], Z3_PASS[1], Z3_PASS_ALT[0], Z3_PASS_ALT[1], Z3_KILL[0], Z3_KILL[1], verdict))
-        return "\n".join(L)
+                         Z3_PASS[0], Z3_PASS[1], Z3_PASS_ALT[0], Z3_PASS_ALT[1], Z3_KILL[0], Z3_KILL[1],
+                         ("<b>%s</b>" % esc(verdict)) if verdict else "", esc(stopped)))
+        L.append("")
+        L.append(details(det + run_det, "🔎 Legs, prices and break-even by window; each arm's whole run (tap)"))
+        return Html("\n".join(L))
 
     # ---- /funds /bank /accounts ----
     def text_funds(self):
@@ -2295,10 +3661,10 @@ class Phone:
         text, unchanged. NOT rebuilt here (the /brief rule): one place decides
         PASS / KILL / EXTEND / TOO EARLY, and the phone quotes it."""
         if self.bars_fn is not None:
-            return self.bars_fn()
+            return bars_html(self.bars_fn())
         try:
             import bars
-            return bars.text(results=self.ledger.results, now=self.now())
+            return bars_html(bars.text(results=self.ledger.results, now=self.now()))
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return ("Could not build /bars: %s\nEverything else still works -- /stats and /racestats "
@@ -2307,7 +3673,7 @@ class Phone:
     # ---- controls ----
     def control(self, which):
         if self.busy:
-            return "Still working on the last command."
+            return CONTROL_REPLY["busy"]
         self.busy = True
 
         def worker():
@@ -2326,8 +3692,7 @@ class Phone:
             finally:
                 self.busy = False
         threading.Thread(target=worker, daemon=True).start()
-        return {"start": "Starting...", "pause": "Pausing: no new bets; waiting for open ones to settle...",
-                "stop": "Stopping now..."}[which]
+        return CONTROL_REPLY[which]
 
     # ---- dispatch ----
     def handle(self, chat_id, text):
@@ -2340,7 +3705,7 @@ class Phone:
                 self.cfg["chat_id"] = chat_id
                 self.save_cfg()
                 log("paired with chat %s" % chat_id)
-                return "Paired. This chat now controls the bot.\n\n" + HELP_TEXT
+                return Html("<b>Paired.</b> This chat now controls the bot.\n\n" + HELP_TEXT)
             log("refused pairing from chat %s" % chat_id)
             return None
         if self.chat_id is None or chat_id != self.chat_id:
@@ -2349,9 +3714,9 @@ class Phone:
         if cmd in ("/status", "/s", "/start@"):
             return self.text_status()
         if cmd == "/today":
-            return self.text_day(et_day(self.now()), "TODAY")
+            return self.text_day(et_day(self.now()), "Today")
         if cmd == "/yesterday":
-            return self.text_day(et_day(self.now() - 86400), "YESTERDAY")
+            return self.text_day(et_day(self.now() - 86400), "Yesterday")
         if cmd == "/days":
             return self.text_days()
         if cmd == "/open":
@@ -2390,16 +3755,16 @@ class Phone:
         if cmd == "/stop":
             if arg.strip().lower() == "yes":
                 return self.control("stop")
-            return "STOP stops right now, even with a bet open (it settles by itself but will not be hedged). Send:  /stop yes\nOr use /pause to finish open bets first."
+            return STOP_ASK
         if cmd == "/mute":
             self.muted = True
-            return "Alerts off. /unmute to turn them back on."
+            return Html("🔕 Alerts off. /unmute to turn them back on.")
         if cmd == "/unmute":
             self.muted = False
-            return "Alerts on."
+            return Html("🔔 Alerts on.")
         if cmd in ("/help", "/?"):
             return HELP_TEXT
-        return "I did not understand that.\n\n" + HELP_TEXT
+        return Html("I did not understand that.\n\n" + HELP_TEXT)
 
     # ---- alerts ----
     def alerts_tick(self):
@@ -2418,8 +3783,12 @@ class Phone:
             # this program would re-send it.
             if (now - et_day_start(today)) >= 8 * 3600:
                 self.last_daily = today
+        # Every alert is laid out by an alert_* function; if that ever fails, the plain words it always had
+        # go instead (fmt_or_plain) -- a layout bug must never swallow an alert.
         if self.last_state is not None and state != self.last_state and not self.muted:
-            msg = "STATE CHANGED: %s -> %s\n%s\n%s" % (self.last_state, state, hl, det)
+            prev = self.last_state
+            msg = fmt_or_plain(lambda: alert_state_text(prev, state, hl, det),
+                               lambda: "STATE CHANGED: %s -> %s\n%s\n%s" % (prev, state, hl, det))
             self.say(msg)
             sent.append(msg)
         self.last_state = state
@@ -2431,21 +3800,26 @@ class Phone:
                   if h.get(k) is False]
         rec = ("SILENT: " + ", ".join(silent)) if silent else "writing"
         if self.last_rec is not None and rec != self.last_rec and not self.muted:
+            was = self.last_rec
             if silent:
-                msg = ("RECORDER %s -- nothing written for %d+ min. That tape "
-                       "cannot be recreated later. If the bot is also BLIND, "
-                       "the problem is the connection to Kalshi, not our "
-                       "programs." % (rec, pindesk.REC_FRESH_S // 60))
+                msg = fmt_or_plain(lambda: alert_recorder_text(rec, pindesk.REC_FRESH_S // 60),
+                                   lambda: ("RECORDER %s -- nothing written for %d+ min. That tape "
+                                            "cannot be recreated later. If the bot is also BLIND, "
+                                            "the problem is the connection to Kalshi, not our "
+                                            "programs." % (rec, pindesk.REC_FRESH_S // 60)))
             else:
-                msg = "RECORDERS WRITING AGAIN (was %s)" % self.last_rec
+                msg = fmt_or_plain(lambda: alert_recorder_back_text(was),
+                                   lambda: "RECORDERS WRITING AGAIN (was %s)" % was)
             self.say(msg)
             sent.append(msg)
         self.last_rec = rec
         # THE DISK. Tracked even when muted, so an unmute does not replay it.
         self.disk_level, dmsg = disk_alert(self.disk_level, h.get("disk_gb"))
         if dmsg and not self.muted:
-            self.say(dmsg)
-            sent.append(dmsg)
+            level = self.disk_level
+            msg = fmt_or_plain(lambda: disk_alert_html(dmsg, level), lambda: dmsg)
+            self.say(msg)
+            sent.append(msg)
         losses = self.ledger.losing_closes()
         keys = {k for k, _n, _l in losses}
         if self.seen_losses is None:
@@ -2455,13 +3829,15 @@ class Phone:
             self.seen_losses = keys
             for close, net, legs in new:
                 if not self.muted:
-                    msg = "LOSS " + story_loss(self.ledger, close, net, legs)
+                    msg = fmt_or_plain(lambda: alert_loss_text(self.ledger, close, net, legs),
+                                       lambda: "LOSS " + story_loss(self.ledger, close, net, legs))
                     self.say(msg)
                     sent.append(msg)
         if (now - et_day_start(today)) >= 8 * 3600 and self.last_daily != today and not self.muted:
             self.last_daily = today
             yday = et_day(now - 86400)
-            msg = "YESTERDAY\n" + story_day(self.ledger, yday, now=now)
+            msg = fmt_or_plain(lambda: alert_daily_text(self.ledger, yday, now),
+                               lambda: "YESTERDAY\n" + story_day(self.ledger, yday, now=now))
             self.say(msg)
             sent.append(msg)
         return sent
@@ -2491,7 +3867,7 @@ class Phone:
         # the process table for /stats and /race, read off the poll thread
         threading.Thread(target=proc_refresher, daemon=True).start()
         if self.chat_id:
-            self.say("Pin Bot phone link is up. /status for the state, /help for commands.")
+            self.say(UP_TEXT)
         while True:
             try:
                 with open(HEARTBEAT, "w") as fh:
@@ -2511,9 +3887,110 @@ def selftest():
     import calendar
 
     def ck(cond, msg):
-        print(("  ok   " if cond else "  FAIL ") + msg)
+        cprint(("  ok   " if cond else "  FAIL ") + msg)
         if not cond:
             raise SystemExit("pinphone selftest: FAILED -- " + msg)
+
+    def P(x):
+        """What the phone shows: an Html reply without its tags; a plain reply as it is."""
+        return html_to_plain(x) if getattr(x, "is_html", False) else ("" if x is None else str(x))
+
+    def fits(x):
+        """Every message the transport would send for this reply is under Telegram's limit, and each
+        one's tags are balanced (no tag left open across a cut)."""
+        parts = split_html(x) if getattr(x, "is_html", False) else split_text(x)
+        return all(len(c) <= MAX_LEN and not _open_after([], c) for c in parts)
+
+    # ---- the presentation layer (2026-10-18) -------------------------------------------------------
+    ck(esc("a<b & c>d") == "a&lt;b &amp; c&gt;d" and html_to_plain(Html("<b>x &lt; y &amp; z</b>")) == "x < y & z",
+       "esc() escapes & < >; html_to_plain() gives back what the phone shows")
+    ck(norm_money("Made $+1008.55, worst $-131.98, fees $248.98, $83,156 risked, per $100") ==
+       "Made +$1,008.55, worst -$131.98, fees $248.98, $83,156 risked, per $100"
+       and norm_money("stake $N + $N would pass the $N cap") == "stake $N + $N would pass the $N cap",
+       "norm_money: one money style ('+$1,008.55'), the digits untouched, non-money '$N' left alone")
+    ck(usd(1008.554) == "+$1,008.55" and usd(-4.57) == "-$4.57" and usd(0.004) == "$0.00" and usd(None) == "?"
+       and dollars(1294.5) == "$1,294.50", "usd / dollars: sign first, thousands separators")
+    ck(table([("Day", "Money", "Lost"), ("10-18", "+$7.10", "0/8"), ("10-17", "+$90.46", "0/34"),
+              ("x", "nothing settled")]) ==
+       ["Day     Money Lost", "10-18  +$7.10  0/8", "10-17 +$90.46 0/34", "x     nothing settled"],
+       "table(): the first column left, numbers right-aligned; a short row spans and does not widen columns")
+    ck(ret(7.10, 262.73, 2) == "+2.70%" and ret(-0.91, 3.907) == "-23.3%" and ret(1.0, 0) == "" and ret(None, 5) == ""
+       and pct1(8, 8) == "100%" and pct1(0, 3) == "0%" and pct1(87, 88) == "98.9%" and pct1(1, 0) == "-",
+       "ret(): money on what bought it, signed, '' with no base; pct1(): one decimal, '100%' / '0%' kept narrow")
+    ck(tg_html_problems("<b>a</b> <i>b &amp; c &lt;</i> <pre>x\ny</pre> <blockquote expandable><b>t</b>\nz"
+                        "</blockquote> <code>c</code>") == []
+       and tg_html_problems("a < b") and tg_html_problems("<blockquote><pre>x</pre></blockquote>")
+       and tg_html_problems("<b><code>x</code></b>") and tg_html_problems("<b>open") and tg_html_problems("<p>x</p>")
+       and tg_html_problems("&nbsp;") and tg_html_problems("<b>x</i>"),
+       "tg_html_problems(): Telegram's rules -- a raw <, pre/code inside a quote or a bold, an unclosed or "
+       "unknown tag, an unknown entity, a tag closed out of order")
+    # log() NEVER RAISES: boot_all redirects stdout to a file, which on this box is cp1252 and cannot hold an
+    # emoji. Before 2026-10-18 the raise came out of say() after the send and out of poll_once() before
+    # Telegram heard the update was handled -- the process died and its restart answered the command again.
+    import io as _io
+    _so, _lg0 = sys.stdout, globals()["LOG"]
+    with tempfile.TemporaryDirectory() as _tdl:
+        globals()["LOG"] = os.path.join(_tdl, "x.log")
+        sys.stdout = _io.TextIOWrapper(_io.BytesIO(), encoding="cp1252", errors="strict")
+        try:
+            log("SENT: 🟢 Today +$7.10 · ▁▂█ → ok")
+            _raised = None
+        except Exception as e:                                  # noqa: BLE001
+            _raised = e
+        finally:
+            sys.stdout.flush()
+            _con = sys.stdout.buffer.getvalue().decode("cp1252")
+            sys.stdout = _so
+        with open(globals()["LOG"], encoding="utf-8") as _fh:
+            _filed = _fh.read()
+        globals()["LOG"] = _lg0
+    ck(_raised is None and "\\U0001f7e2 Today +$7.10" in _con and "🟢 Today +$7.10 · ▁▂█ → ok" in _filed,
+       "log(): a cp1252 console cannot print an emoji -- the console copy falls back to escapes, the utf-8 log "
+       "keeps the real line, and nothing raises (raised: %r)" % (_raised,))
+    ck(hbar(10, 10, 5) == "█████" and hbar(5, 10, 5) == "██▌" and hbar(-3, 10, 5) == "░░" and hbar(0, 10) == ""
+       and hbar(0.01, 1000, 5) == "▏" and spark([1, 2, 3]) == "▁▅█",
+       "text charts: full blocks and eighths, light shade for a loss, a sliver for a tiny gain")
+    _big = Html("<b>Head</b>\n\n" + "\n".join("line %d %s" % (k, "x" * 60) for k in range(40)) + "\n<pre>"
+                + "\n".join("row %d %s" % (k, "y" * 50) for k in range(80)) + "</pre>\n"
+                + details([esc("detail %d %s" % (k, "z" * 70)) for k in range(30)]))
+    _parts = split_html(_big, 1500)
+    ck(len(_parts) > 3 and all(len(c) <= 1500 and not _open_after([], c) for c in _parts)
+       and html_to_plain("\n".join(_parts)).replace("\n", "") == html_to_plain(_big).replace("\n", ""),
+       "split_html: every message under the limit, every tag closed in the message that opened it and opened "
+       "again in the next, nothing lost (%d parts)" % len(_parts))
+    ck(split_html(Html("short")) == ["short"], "split_html: a short reply is one message, untouched")
+    _sent = []
+
+    def _fake_call(method, params, http_timeout=45):
+        _sent.append(dict(params))
+    _tr = Telegram("tok")
+    _tr._call = _fake_call
+    _tr.send(1, Html("<b>hi</b>"))
+    _tr.send(1, "plain <b>as before</b>")
+    ck(_sent[0].get("parse_mode") == "HTML" and _sent[0]["text"] == "<b>hi</b>"
+       and "parse_mode" not in _sent[1] and _sent[1]["text"] == "plain <b>as before</b>",
+       "the transport: an Html reply goes with parse_mode=HTML; a plain str goes exactly as it always did")
+    _sent[:] = []
+
+    def _refuse_html(method, params, http_timeout=45):
+        if params.get("parse_mode"):
+            raise urllib.error.HTTPError("x", 400, "Bad Request: can't parse entities", None, None)
+        _sent.append(dict(params))
+    _tr._call = _refuse_html
+    _st_log0 = globals()["LOG"]
+    with tempfile.TemporaryDirectory() as _tdl:
+        globals()["LOG"] = os.path.join(_tdl, "x.log")
+        _tr.send(1, Html("<b>LOSS -$4.57</b> x &lt; y"))
+        globals()["LOG"] = _st_log0
+    ck(_sent == [{"chat_id": 1, "text": "LOSS -$4.57 x < y"}],
+       "...and if Telegram refuses the markup (HTTP 400) the same words go again as plain text -- never lost")
+    with tempfile.TemporaryDirectory() as _tdl:
+        globals()["LOG"] = os.path.join(_tdl, "x.log")
+        _fp = fmt_or_plain(lambda: 1 / 0, lambda: "plain words")
+        _fp2 = fmt_or_plain(lambda: Html("<b>laid out</b>"), lambda: "plain words")
+        globals()["LOG"] = _st_log0
+    ck(_fp == "plain words" and getattr(_fp2, "is_html", False) and _fp2 == "<b>laid out</b>",
+       "fmt_or_plain: an alert whose layout fails goes out in its plain words; one that lays out goes as Html")
 
     _st_log = LOG
     with tempfile.TemporaryDirectory() as td:
@@ -2706,27 +4183,36 @@ def selftest():
         ck(ph.handle(111, "/status") is None, "before pairing, every message is ignored")
         ck(ph.handle(111, "/pair wrong words") is None and ph.chat_id is None, "a wrong secret is refused silently")
         r = ph.handle(111, "/pair open sesame")
-        ck(r and r.startswith("Paired") and ph.chat_id == 111, "the right secret pairs the chat")
+        ck(r and P(r).startswith("Paired") and ph.chat_id == 111 and "Commands" in P(r),
+           "the right secret pairs the chat, and the reply carries the help")
         ck(json.load(open(cfgp))["chat_id"] == 111, "...and the chat id is saved to the config file")
         ck(ph.handle(222, "/status") is None, "another chat is still ignored after pairing")
         s = ph.handle(111, "/status")
-        ck("TRADING" in s and "Checked just now" in s and "process 4242 is OPEN" in s, "/status carries the state and its evidence")
+        ck("TRADING" in P(s) and "Checked just now" in P(s) and "process 4242 is OPEN" in P(s),
+           "/status carries the state and its evidence")
+        ck(P(s).split("\n")[0].startswith("🟢 TRADING"), "/status: the state is the headline")
         # MONEY COMES FROM KALSHI NOW, not from the log this test plants, so
         # "today" is legitimately empty here. The bank still comes from the
         # bot's own autosize record, which is ours to read.
-        ck("Bank $500.00" in s and "TODAY" in s,
-           "/status carries the bank and a TODAY line; the money itself is "
+        ck("Bank $500.00" in P(s) and "Today " in P(s),
+           "/status carries the bank and a Today line; the money itself is "
            "Kalshi's (results/kalshi_ledger.json) and is absent in this fixture")
         t = ph.handle(111, "/today")
-        ck("$+1.66" in t and "+0.33%" in t and "1 closes" in t, "/today: money, %% of the bank at day start, closes")
-        ck("no settled bets" in ph.handle(111, "/yesterday"), "/yesterday with nothing settled says so")
-        ck("SELLERS:" in ph.handle(111, "/market") and "BOUGHT 85" in ph.handle(111, "/market"), "/market: level and what happened")
+        ck(P(t).split("\n")[0] == "🟢 Today +$1.66 (+0.33% of the bank)" and "1 of 1 closes won (100.0%), 0 lost" in P(t)
+           and "of the $500.00 it held at the start of the ET day" in P(t),
+           "/today: the money and its % of the bank at day start as the headline, then closes won with their %")
+        ck("+2.00% on the $83.34 staked" in P(t),
+           "/today: the return on what the bets cost, from Kalshi's books (+1.6626 on 83.30 + 0.0374 fees) -- "
+           "shown because Kalshi's money for the day is the headline's money")
+        ck("No settled bets" in P(ph.handle(111, "/yesterday")), "/yesterday with nothing settled says so")
+        ck("Sellers:" in P(ph.handle(111, "/market")) and "BOUGHT 85" in P(ph.handle(111, "/market")),
+           "/market: level and what happened")
         # THE DAILY BRIEFING REACHES THE PHONE, and a failure inside it must
         # not take the command down -- he reads this when the app is not in
         # front of him.
         # /fills -- the operator's ask: filled, paid, seconds out, per order.
         _fl = ph.handle(111, "/fills")
-        ck("ORDERS TODAY" in _fl or "No orders today" in _fl,
+        ck("Orders today:" in P(_fl) or "No orders today" in P(_fl),
            "/fills answers with today's orders or says there were none")
         ck(ph.handle(111, "/bets") == _fl, "/bets is the same command")
         _sv_o = L.orders
@@ -2739,19 +4225,22 @@ def selftest():
              "asked": 20.0, "ask_seen": 0.945, "tau": None},
         ]
         try:
-            _f2 = ph.handle(111, "/fills")
-            ck("96.8c" in _f2 and "12s out" in _f2 and "77/77" in _f2,
+            _f2 = P(ph.handle(111, "/fills"))
+            _row = [x for x in _f2.split("\n") if "77/77" in x]
+            ck(len(_row) == 1 and "96.8c" in _row[0] and _row[0].rstrip().endswith("12s"),
                "an order shows what filled, the price PAID in cents, and how "
-               "many seconds were left -- the three things he asked for")
-            ck("0/50" in _f2 and "1 lost the race" in _f2,
+               "many seconds were left -- the three things he asked for, on one table row")
+            ck("0/50" in _f2 and "1 lost the race" in _f2 and _f2.split("\n")[0] ==
+               "🧾 Orders today: 3 · 2 filled · 1 filled nothing (33%)",
                "a ZERO-FILL order is shown, not hidden -- about one order in "
                "five fills nothing, and dropping them would report a 100% fill "
-               "rate")
+               "rate; the headline counts it with its share")
             ck("94.5c" in _f2 and "(oil)" in _f2,
                "an oil order shows its price from `ask_seen` and says (oil) "
                "where the seconds would be, because cmdlive does not record a "
                "tau on the order")
-            ck("got 97" in _f2, "...and the footer totals contracts asked vs got")
+            ck("got 97 (65.99%)" in _f2, "...and the footer totals contracts asked vs got, with the share")
+            ck(max(len(x) for x in _f2.split("\n")[2:6]) <= 36, "/fills: the table fits a phone's width")
         finally:
             L.orders = _sv_o
         _br = ph.handle(111, "/brief")
@@ -2767,7 +4256,7 @@ def selftest():
                "/summary is the same command under its other name")
         finally:
             ph.text_brief = _sv_tb
-        ck("THE DAY --" not in (ph.handle(111, "/today") or ""),
+        ck("THE DAY --" not in P(ph.handle(111, "/today") or ""),
            "and /today is UNTOUCHED -- it already existed and gives the plain "
            "money for the day; taking its name would have quietly replaced "
            "something he uses with something longer")
@@ -2776,7 +4265,7 @@ def selftest():
         # /market from his phone when the app is not in front of him.
         state["h"]["supply_lines"] = ["Cheap offers: up 7% on a normal day."]
         state["h"]["supply_age_d"] = 0.5
-        mk = ph.handle(111, "/market")
+        mk = P(ph.handle(111, "/market"))
         ck("IS THE OPPORTUNITY GOING AWAY?" in mk and "up 7%" in mk,
            "/market carries the opportunity trend, from the same lines the "
            "desktop shows, so the two cannot drift apart")
@@ -2784,12 +4273,13 @@ def selftest():
            "...and says how old the measurement is, because a stale trend is a "
            "reassuring number about a week that already ended")
         state["h"].pop("supply_lines")
-        ck("SELLERS:" in ph.handle(111, "/market"),
+        ck("Sellers:" in P(ph.handle(111, "/market")),
            "NULL: a health reading with no opportunity block still answers")
         ck(ph.handle(111, "/losses") == "No losing closes.", "/losses with none")
         ck(ph.handle(111, "/hedges") == "No hedges yet.", "/hedges with none")
         ck(ph.handle(111, "/open") == "No open bets.", "/open with none")
-        ck("ALL TIME" in ph.handle(111, "/days"), "/days ends with all time")
+        ck(P(ph.handle(111, "/days")).startswith("🟢 All time +$1.66 (+0.33% on the $500.00 put in)"),
+           "/days leads with all time, its % of the money put in")
         # ---- /stats, /race, /racestats -----------------------------------
         # A planted world: Kalshi's books (the ONLY money source), the bots'
         # order records (only for seconds-left), a VERSIONS.md, the live
@@ -2976,61 +4466,73 @@ def selftest():
 
             # /stats
             s = ph.handle(111, "/stats")
-            ck(len(s) < MAX_LEN, "/stats fits one Telegram message on this world (%d chars)" % len(s))
-            ck("LIVE v-pinfix since 09/16 08:30 AM ET, pid 2554960." in s,
+            ck(fits(s) and len(split_html(s)) == 1, "/stats fits one Telegram message on this world (%d chars)" % len(s))
+            ps = P(s)
+            ck(ps.split("\n")[0].startswith("🔴 Lifetime -$57.25 (") and " on $" in ps.split("\n")[0],
+               "/stats: lifetime money and its return on what was risked is the headline")
+            ck("LIVE v-pinfix since 09/16 08:30 AM ET, pid 2554960." in ps,
                "/stats names the live version, its start in ET and the pid")
-            ck("Hedge trigger: belief 40%. Size 79 contracts (auto), bank $930.04 read 10:21 AM." in s,
+            ck("Hedge trigger: belief 40%. Size 79 contracts (auto), bank $930.04 read 10:21 AM." in ps,
                "the hedge trigger from the live argv, the size and bank from the bot's size file")
-            ck("Halt if the bank falls to $829.86 (20% under its high of $1037.33): $100.18 of room." in s,
-               "the halt line is 20% under the high-water mark, with the room left in dollars")
-            ck("Today by the bot's own count: $+11.14 (stops at $-200 for the day)." in s,
+            ck("Halt if the bank falls to $829.86 (20% under its high of $1,037.33): $100.18 of room (10.8% of the "
+               "bank)." in ps,
+               "the halt line is 20% under the high-water mark, with the room left in dollars and as a share")
+            ck("Today by the bot's own count: +$11.14 (stops at -$200 for the day)." in ps,
                "the day figure from the bot's own file is labelled as the bot's, with the cap")
-            ck("Paper arms: 2 (pin0.985, cmdarm-wide230) + 2 race arms (racectl, z3)." in s,
+            ck("Paper arms: 2 (pin0.985, cmdarm-wide230) + 2 race arms (racectl, z3)." in ps,
                "the fleet, counted and named from the process table")
-            ck("Coin race: 2 races since 09/15: 1 won, 1 tie, 0 lost, $-0.91 (/race)." in s,
+            ck("Coin race: 2 races since 09/15: 1 won (50.0%), 1 tie, 0 lost, -$0.91 (/race)." in ps,
                "the coin race summary line: the tie is a tie, not a win")
-            _blk = {}
-            for _part in s.split("\n\n"):
-                _blk[_part.split("\n")[0].split(" (")[0]] = _part
-            ck(set(_blk) >= {"LIFETIME", "LAST 7 DAYS", "LAST 3 DAYS", "TODAY", "SINCE v-pinfix"},
-               "five windows: lifetime, 7 days, 3 days, today, since the live version")
+            ck(any(x.split() == ["Today", "+$0.76", "+0.87%", "60.0%", "2"] for x in ps.split("\n")),
+               "the window table: money, return on what was risked (0.76 / 87.24), markets won, losses")
+            _blk, _cur = {}, None
+            for _ln in ps.split("\n"):                      # the windows' sentences, inside the one quote
+                _k = _ln.split(" (")[0].split(":")[0]
+                if _k in ("LIFETIME", "LAST 7 DAYS", "LAST 3 DAYS", "TODAY") or _k.startswith("SINCE v-"):
+                    _cur = _k
+                    _blk[_cur] = _ln
+                elif _cur:
+                    _blk[_cur] += "\n" + _ln
+            ck(set(_blk) >= {"LIFETIME", "LAST 7 DAYS", "LAST 3 DAYS", "TODAY", "SINCE v-pinfix"}
+               and s.count("<blockquote expandable>") == 1,
+               "five windows: lifetime, 7 days, 3 days, today, since the live version -- in ONE tap-to-open quote")
             _t = _blk["TODAY"]
-            ck("Made $+0.76 on $87 risked; 5 mkts, 3 closes, 89 contracts; fees $0.04." in _t,
+            ck("Made +$0.76 on $87 risked; 5 mkts, 3 closes, 89 contracts; fees $0.04." in _t,
                "TODAY: 1.6626 + 0.0279 + 0.0186 - 0.4721 - 0.4814 = +0.76 on the 87.24 risked; "
                "5 markets on 3 closes; 89 contracts")
             ck("Best day" not in _t, "a one-day window has no best/worst day line")
             ck("Won 3 of 5 mkts (60.0 of 100); 98.9 of 100 contracts paid; by $ risked 97.8." in _t,
                "win rate by market (3 of 5), by contracts paid (88 of 89: the tie paid half) "
                "and by dollars (85.29 of 87.24)")
-            ck("Break-even 98.0 of 100 contracts at 98.0c avg paid (fee in): margin +0.8 pts = $+0.87 per "
+            ck("Break-even 98.0 of 100 contracts at 98.0c avg paid (fee in): margin +0.8 pts = +$0.87 per "
                "$100 risked. By count 97.7 of 100 mkts must win; 60.0 did." in _t,
                "break-even = dollars paid / contracts (87.24 / 89 = 98.0c); the margin is against "
                "the contracts paid (98.9 - 98.0) and matches the real profit per $100 risked; "
                "the count version beside it")
-            ck("Losses 2: $-0.95, avg $-0.48, worst $-0.48 (HYPE 09/16); 0 hedged, their hedge legs netted $+0.00." in _t,
+            ck("Losses 2: -$0.95, avg -$0.48, worst -$0.48 (HYPE 09/16); 0 hedged, their hedge legs netted +$0.00." in _t,
                "TODAY's losses are the two tied legs")
-            _3 = _blk["LAST 3 DAYS"]
-            ck("Made $-53.00 on" in _3 and "8 mkts" in _3,
-               "LAST 3 DAYS adds 09-15 and 09-14: -38.80 -14.10 -0.856 on top of today")
-            ck("Losses 5: $-54.71, avg $-10.94, worst $-38.80 (BTC 09/15); 1 hedged, their hedge legs netted $+5.00." in _3,
+            _7 = _blk["LAST 7 DAYS"]
+            ck("Made -$53.00 on" in _7 and "8 mkts" in _7,
+               "LAST 7 DAYS adds 09-15 and 09-14: -38.80 -14.10 -0.856 on top of today (09-09 is outside it)")
+            ck("Losses 5: -$54.71, avg -$10.94, worst -$38.80 (BTC 09/15); 1 hedged, their hedge legs netted +$5.00." in _7,
                "...five losses, the worst named, the hedged one counted with what its hedge got back")
-            ck("Made $-53.00 on" in _blk["LAST 7 DAYS"],
-               "LAST 7 DAYS is the same: 09-09 is outside it")
+            ck("LAST 3 DAYS: the same 8 markets as LAST 7 DAYS, so the same numbers." in _blk["LAST 3 DAYS"],
+               "LAST 3 DAYS holds the same markets, so it says so instead of repeating every sentence")
             _l = _blk["LIFETIME"]
-            ck("Made $-57.25 on" in _l and "11 mkts" in _l,
+            ck("Made -$57.25 on" in _l and "11 mkts" in _l,
                "LIFETIME adds 09-09 (+2.45, the -36.50 full hedge, the +29.80 over-hedge) and "
                "EXCLUDES the 09-07 row: 11 markets, not 12")
-            ck("Best day $+0.76 (09/16), worst $-39.66 (09/15); avg $-6.36/day over 9 days." in _l,
+            ck("Best day +$0.76 (09/16), worst -$39.66 (09/15); avg -$6.36/day over 9 days." in _l,
                "best and worst ET day, and the average over the calendar days since 09/08")
-            ck("Losses 6: $-91.21, avg $-15.20, worst $-38.80 (BTC 09/15); 2 hedged, their hedge legs "
-               "netted $+44.00; hedge legs on won mkts netted $+55.30." in _l,
+            ck("Losses 6: -$91.21, avg -$15.20, worst -$38.80 (BTC 09/15); 2 hedged, their hedge legs "
+               "netted +$44.00; hedge legs on won mkts netted +$55.30." in _l,
                "the FULL hedge counts (5.00 + 39.00 on two hedged losses) and the over-hedge's "
                "+55.30 sits with the won markets")
-            ck("First buys: 50% with 20 s or less left (2 mkts, $+4.11), 50% at 21-45 s (2 mkts, $-52.90); 7 not timed." in _l,
+            ck("First buys: 50% with 20 s or less left (2 mkts, +$4.11), 50% at 21-45 s (2 mkts, -$52.90); 7 not timed." in _l,
                "seconds-left split from the ORDER records, money per bucket, untimed markets counted")
-            ck("By bot: coin race $-1.76, crypto $-55.49." in _l,
-               "the lifetime line splits the account by bot")
-            ck("Made $+1.66 on" in _blk["SINCE v-pinfix"] and "1 mkts" in _blk["SINCE v-pinfix"],
+            ck("By bot: coin race -$1.76, crypto -$55.49." in ps,
+               "the lifetime money split by bot")
+            ck("Made +$1.66 on" in _blk["SINCE v-pinfix"] and "1 mkts" in _blk["SINCE v-pinfix"],
                "SINCE the version: only the market that closed after 12:30Z")
             # this planted world's order rows are /stats-shaped (no "close"), so the per-day loop is stubbed
             # out; the since-version line reads Kalshi's books through _markets(), which this world has
@@ -3040,31 +4542,37 @@ def selftest():
                 _dy = ph.text_days()
             finally:
                 ph.ledger.days = _days0
-            ck("SINCE v-pinfix (" in _dy and ": $+1.66, 1 markets, 0 lost" in _dy
-               and _dy.index("SINCE v-pinfix") < _dy.index("ALL TIME"),
-               "/days carries the running version's own line (a deploy day mixes two versions), same money as /stats")
+            ck("SINCE v-pinfix (" in P(_dy) and ": +$1.66, 1 markets, 0 lost (0.0%)" in P(_dy)
+               and P(_dy).startswith("🔴 All time "),
+               "/days carries the running version's own line (a deploy day mixes two versions), same money as /stats; "
+               "all time is its headline")
 
             # /race
-            r = ph.handle(111, "/race")
-            ck("Penny bot: RUNNING, pid 15. Real bets: 1 contract a leg, $20 out at most (settled bets "
-               "give it back), only inside 30 s, 90c or better, up to 5 legs, stops on the first loss." in r,
-               "/race: the penny bot's rails in words, from its own start record")
+            r = P(ph.handle(111, "/race"))
+            ck("RUNNING, pid 15" in r and "Fixed size: 1 contract a leg, $20 out at most (settled bets give it back)"
+               in r and "Buys only inside 30 s, 90c or better, up to 5 legs a race, stops on the first loss." in r,
+               "/race: the live race's size and rails in words, from its own start record (a start record with no "
+               "bank_sizing is a fixed size, and says so)")
+            ck("penny" not in r.lower().replace("pinracepenny", ""),
+               "/race never calls the live coin race a penny bot (2026-10-18: it sizes from the bank since "
+               "v-race-snowball)")
             ck("STOP RAIL FIRED 09/16 09:31 AM ET: first real loss: KXCRYPTOLEAD15M-26SEP160930 no at 85c. No real order since." in r,
                "the stop-on-first-loss state, with when and why")
-            ck("Today: $-0.91 on 2 races: 1 won, 1 tie, 0 lost." in r,
-               "today's coin-race money from Kalshi's books")
+            ck(r.split("\n")[0] == "🔴 Coin race today -$0.91 (-23.2% on $3.91 staked) · 1 of 2 won (50%) · 1 tie, 0 lost",
+               "today's coin-race money from Kalshi's books is the headline, with its return on what the legs cost "
+               "(-0.907 on 3.90 + 0.007 fees) and the races won")
             _lines = r.split("\n")
-            _i = _lines.index("Last 10 races (Kalshi's books):")
-            ck(_lines[_i + 1] == "09/16 07:15 AM  HYPE no 98c + XRP yes 97c  TIE $-0.95"
-               and _lines[_i + 2] == "09/16 05:00 AM  BTC no 98c + XRP yes 97c  WON $+0.05"
-               and _lines[_i + 3] == "09/15 09:30 AM  ETH no 85c  LOST $-0.86",
-               "the last races newest first: legs, side, price paid, TIE / WON / LOST, money")
+            _i = _lines.index("🏆 Last 10 races (Kalshi's books)")
+            ck(_lines[_i + 1:_i + 8] == ["Wed Sep 16", "7:15a HYPE no 98c -$0.95 TIE", "      XRP yes 97c",
+                                         "5:00a BTC no 98c  +$0.05 WON", "      XRP yes 97c", "Tue Sep 15",
+                                         "9:30a ETH no 85c  -$0.86 LOST"],
+               "the last races newest first, a heading a day: legs, side, price paid, money, TIE / WON / LOST")
             ck("Paper race arms running: racectl, z3." in r, "the race arms from the process table")
             ph.procs_fn = lambda: None
-            _ru = ph.handle(111, "/race")
-            ck("Penny bot: process table could not be read. Its rails:" in _ru
+            _ru = P(ph.handle(111, "/race"))
+            ck("Running? The process table could not be read." in _ru
                and "Paper race arms running: process table could not be read." in _ru
-               and "(process table could not be read)" in ph.handle(111, "/stats"),
+               and "(process table could not be read)" in P(ph.handle(111, "/stats")),
                "NULL: when the process table cannot be read, /race and /stats SAY so -- "
                "never 'not running' or 'no arms'")
             ph.procs_fn = lambda: _procs
@@ -3075,36 +4583,114 @@ def selftest():
                  "ticker": "KXCRYPTOLEAD15M-26SEP161115-SOL", "side": "yes", "filled": 1.0,
                  "exec_price": 0.98, "staked": 0.98},
             ])
-            r2 = ph.handle(111, "/race")
+            r2 = P(ph.handle(111, "/race"))
             ck("Stop rail: not fired since the restart at 09/16 10:40 AM ET." in r2,
                "after a restart the rail reads as not fired -- a halt before the restart is history")
             ck("Now: race closing 11:15 AM ET (15:00 left) -- holding SOL yes 98c x1. $0.98 out." in r2,
                "the race closing next, the legs held on it and the dollars out")
 
             # /racestats
-            q = ph.handle(111, "/racestats")
-            ck("ALL TIME (since 09/15): 3 races: 1 won, 1 tie, 1 lost. $-1.76. 5 legs at 95.0c avg; "
+            qh = ph.handle(111, "/racestats")
+            q = P(qh)
+            ck("ALL TIME (since 09/15): 3 races: 1 won, 1 tie, 1 lost. -$1.76. 5 legs at 95.0c avg; "
                "break-even 95.3 of 100 legs must pay, actual 60.0." in q,
                "/racestats: races won/tie/lost, money, avg leg price, break-even vs actual per leg")
-            ck("TODAY: 2 races: 1 won, 1 tie, 0 lost. $-0.91." in q, "...and today's")
-            ck("z3: in 2 of 2: 1 won, 1 tie, 0 lost, $+0.04 (its log booked 1 tie as a win)." in q,
-               "a --paper-live arm on the same races: its own log's money, the tie taken from Kalshi")
-            ck("racectl: in 2 of 2: 1 won, 1 tie, 0 lost, $+9.00 (its log booked 1 tie as a win)." in q,
-               "a plain paper arm reads its `settled` records the same way")
+            ck("TODAY: 2 races: 1 won, 1 tie, 0 lost. -$0.91." in q, "...and today's")
+            ck(q.split("\n")[0].startswith("🔴 Coin race all time -$1.76 (") and "3 races, 33.3% won" in q.split("\n")[0],
+               "the all-time money, its return on what the legs cost and the share of races won lead the page")
+            ck(any(x.split() == ["Today", "-$0.91", "-23.2%", "2", "50%", "1/0"] for x in q.split("\n")),
+               "the window table: money, return, races, won, ties / losses")
+            # the arms: in this world both are RUNNING (the process table names them) and nothing is re-scored
+            ck("z3 · PAPER, RUNNING (since Sep 14)" in q and "racectl · PAPER, RUNNING (since Sep 16)" in q,
+               "every arm is labelled PAPER, with whether it runs (the process table) and since when (its log)")
+            ck(any(x.split() == ["z3", "2", "100%", "50.0%", "1/1/0"] for x in q.split("\n"))
+               and any(x.split() == ["racectl", "2", "100%", "50.0%", "1/1/0"] for x in q.split("\n")),
+               "a --paper-live arm and a plain arm on the same races: in 2 of 2, 1 won, the race Kalshi tied is a tie")
+            ck(any(x.split() == ["z3", "+$0.04*", "-", "-$0.91"] for x in q.split("\n"))
+               and any(x.split() == ["racectl", "+$9.00*", "-", "-$0.91"] for x in q.split("\n"))
+               and "* = the arm's own log money (no Kalshi re-scoring on file" in q
+               and "z3's and racectl's own logs booked a tie as a win" in q,
+               "with no re-scoring on file: the arm's own-log money, starred and said so (its log booked the tie "
+               "as a win), no live-size figure invented, and the live bot's money on the same races beside it")
             ck("raceedge0: no log." in q and "gap075: no log." in q, "an arm without a log says so")
             ck("z3 bar: 3 races so far, 2 losses (first 50: 2). Pass = 125 races with 0 losses, or 250 "
                "with at most 1. Kill = 2 losses in the first 50 -- AT THE KILL LINE." in q,
                "the z3 bar counts EVERY race the arm entered, a tie as a loss, and names the kill line")
+            ck(fits(qh) and not tg_html_problems(qh), "/racestats: one message, Telegram-valid")
+            # THE ARMS RE-SCORED ON KALSHI (results/race_arms_scored.json, 2026-10-18): used only while the arm's
+            # log is the size it was scored at; z3 here is scored, racectl's file size does not match
+            _zsz = os.path.getsize(os.path.join(td, "pinracearm-z3.jsonl"))
+            with open(os.path.join(td, RACE_ARMS_SCORED), "w", encoding="utf-8") as _fh:
+                json.dump({"made": "2026-10-18T10:00:00Z", "arms": {
+                    "z3": {"log_size": _zsz, "own_size": "1 contract a leg",
+                           "same": {"races": 2, "own": -0.47, "own_log": 0.04, "at_live": -9.40, "live": -0.91},
+                           "run": {"races": 3, "won": 1, "tie": 1, "lost": 1, "own": -1.45, "at_live": -29.0}},
+                    "racectl": {"log_size": 1, "own_size": "up to 250 a leg (avg 1)",
+                                "same": {"races": 2, "own": 1.0, "own_log": 9.0, "at_live": 1.0, "live": -0.91}}}},
+                          _fh)
+            q2 = P(ph.handle(111, "/racestats"))
+            ck(any(x.split() == ["z3", "-$0.47", "-$9.40", "-$0.91"] for x in q2.split("\n"))
+               and any(x.split() == ["racectl", "+$9.00*", "-", "-$0.91"] for x in q2.split("\n"))
+               and "z3 · PAPER, RUNNING (since Sep 14) · 1 contract a leg" in q2
+               and "their own logs said z3 +$0.04 (a log books a tie as a win" in q2
+               and "z3, whole run: 3 races, 1 won, 1 tie, 1 lost; own size -$1.45, at the live bot's size -$29.00." in q2
+               and "* = the arm's own log money (its log changed after it was re-scored" in q2,
+               "re-scored on Kalshi: z3's own-size money with the tie paid 50c and its money at the live bot's size, "
+               "its own log's figure named; racectl's log changed, so its own-log money stays, starred")
+            # STOPPED: an arm out of the process table whose log ended is PAPER, STOPPED, with its dates; z3's bar
+            # says it cannot move
+            _w(os.path.join(td, "pinracearm-z3.jsonl"), [{"kind": "end", "t": "2026-09-16T12:40:00Z"}])
+            ph.procs_fn = lambda: [x for x in _procs if x[0] not in (13, 14)]
+            q3 = P(ph.handle(111, "/racestats"))
+            ck("z3 · PAPER, STOPPED · ran Sep 14 to Sep 16" in q3 and "racectl · PAPER, " in q3
+               and "PAPER ARMS -- no real money" in q3,
+               "an arm that left the process table, its log ended, reads PAPER, STOPPED with the dates it ran")
+            ck(any(x.split() == ["z3", "+$0.04*", "-", "-$0.91"] for x in q3.split("\n")),
+               "...and its log grew after it was scored, so the scored figures are no longer used")
+            ck("paper made 41% more than real fills" in q3 and "walking the book cuts it 30-66%" in q3,
+               "the legend gives the skeptic's paper-optimism figures (41% on the live bot's own legs; touch "
+               "pricing of the 250-a-leg arms, 30-66%), not the milder 25%")
+            # /racestats on the REAL table reader never reads Windows on the poll thread: with a cold cache it
+            # shows the arms from their logs alone and list_python_procs is not called; a fresh cache is used
+            _lpp_calls, _lpp0, _procs0 = [], list_python_procs, dict(_PROCS)
+
+            def _lpp_spy(*a, **k):
+                _lpp_calls.append(1)
+                return []
+            globals()["list_python_procs"] = _lpp_spy
+            try:
+                _PROCS.update(t=0.0, rows=None)
+                ph.procs_fn = python_procs
+                q4 = P(ph.handle(111, "/racestats"))
+                _fresh_ok = (cached_python_procs() is None
+                             and (_PROCS.update(t=time.time(), rows=[(7, "x")]) or cached_python_procs()) == [(7, "x")]
+                             and (_PROCS.update(t=time.time() - 3 * PROC_REFRESH_S) or cached_python_procs()) is None)
+            finally:
+                globals()["list_python_procs"] = _lpp0
+                _PROCS.clear()
+                _PROCS.update(_procs0)
+            ck(not _lpp_calls and _fresh_ok and "z3 · PAPER, STOPPED · ran Sep 14 to Sep 16" in q4
+               and "PAPER ARMS -- no real money" in q4,
+               "/racestats with the real reader and a cold cache: no synchronous WMI read (alerts never wait behind "
+               "it), the arms still labelled from their logs; a fresh cache is used, a stale one reads as unknown")
+            ph.procs_fn = lambda: _procs
+            os.remove(os.path.join(td, RACE_ARMS_SCORED))
             ck(all("/%s" % c in HELP_TEXT for c in ("stats", "race", "racestats", "bars")), "the four are in /help")
             # /bars -- the operator's one-word verdicts. The text is bars.py's,
             # never rebuilt here; the phone only routes it.
             ph.bars_fn = lambda: "BARS-STUB"
-            ck(ph.handle(111, "/bars") == "BARS-STUB", "/bars returns bars.py's text unchanged")
+            ck(P(ph.handle(111, "/bars")) == "BARS-STUB", "/bars returns bars.py's words unchanged (laid out only)")
             ph.bars_fn = None
             _bt = ph.handle(111, "/bars")
-            ck(_bt.startswith("BARS  ") and "VERDICT:" in _bt and "FRESH OFFER TEST" in _bt,
+            ck("BARS  " in P(_bt) and "VERDICT:" in P(_bt) and "FRESH OFFER TEST" in P(_bt),
                "...and the real module answers on this world with its header and a verdict")
-            ck(all(len(c) <= MAX_LEN for c in split_text(_bt)), "...in chunks under Telegram's limit")
+            _bl = P(_bt).split("\n")
+            _okb = (_bl[0].startswith("📏 Bars: ") and "VERDICT: " not in _bl[1]
+                    and any(x.startswith(("✅ ", "❌ ", "🔁 ", "⏳ ")) and "FRESH OFFER TEST" in x for x in _bl[:8]))
+            ck(_okb, "/bars leads with the verdicts counted, then one line a test named by its section (never the "
+                     "verdict line itself)" + ("" if _okb else " -- got %r" % (_bl[:6],)))
+            ck(fits(_bt) and not any(tg_html_problems(c) for c in split_html(_bt)),
+               "...in messages under Telegram's limit, each one Telegram-valid")
         finally:
             L.orders, L.hedges = _sv_o, _sv_g
             with open(_pl.LEDGER, "w", encoding="utf-8") as _fh:
@@ -3120,7 +4706,11 @@ def selftest():
         _newfns = (_bs, _nof, _cash, _ago, bs_window_line, _short, bs_running_lines, bs_setup_lines, bs_money_lines,
                    bs_open_lines, bs_cash_line, bs_last_lines, bs_activity_lines, bs_bot_text, bs_errors_line,
                    bs_all_text, Phone._race_money_lines, Phone._bs_get, Phone.text_bots, Phone.text_bot,
-                   Phone.text_race)
+                   Phone.text_race,
+                   # 2026-10-18, the phone layout: every new reader and formatter
+                   log_span, race_arms_scored, race_size_words, race_rule_words, race_rows, Phone._staked,
+                   Phone.day_html, pct1, ret, tg_html_problems, split_html, bs_bot_html, bs_all_html, bs_money_html,
+                   _funds_days_html, _funds_page, fmt_or_plain, alert_loss_text, alert_daily_text, cprint)
         _nsrc = "\n".join(_insp.getsource(f) for f in _newfns)
         _bad = [w for w in (r"\b" + "PO" + r"ST\b", r"\b" + "DEL" + r"ETE\b", r"\b" + "PA" + r"TCH\b", r"\b" + "PU" + r"T\b",
                             "portfolio/" + "orders", "subaccounts/" + "transfer", "order" + "cli", "pin" + "take",
@@ -3153,8 +4743,12 @@ def selftest():
            % (_lv[0] if _lv else None, _bv[0] if _bv else None))
 
         # /bots on the planted world
-        b_ = ph.handle(111, "/bots")
-        ck(b_.startswith("ALL BOTS -- Sep 16 11:00 AM ET"), "/bots: header in ET")
+        bh_ = ph.handle(111, "/bots")
+        b_ = P(bh_)
+        ck(b_.split("\n")[1] == "🤖 ALL BOTS · Sep 16 11:00 AM ET", "/bots: header in ET")
+        ck(b_.split("\n")[0] == "🔴 All bots today -$12.53 (-10.1% on $123.81 staked · -1.1% of all pots)",
+           "/bots: today's money over every pot is the headline, with its return and its share of all pots")
+        ck(fits(bh_) and not any(tg_html_problems(c) for c in split_html(bh_)), "/bots: Telegram-valid messages")
         # THE POT (2026-10-02), worked by hand. Now: main 1000 + open 29.10 + 19.60 = 1048.70; ladder
         # 15.10; forecaster 24.00; all 1087.80. TODAY: main settled -10.03, moved out 15.06 + 7.99 ->
         # 1048.70 + 10.03 + 23.05 = 1081.78 (pin -10.40 = -0.96%, race +0.37 = +0.03%); forecaster
@@ -3188,25 +4782,29 @@ def selftest():
            "the cash of every pot, and HIS QUESTION answered: the main page counts pin + race only")
         ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster, ladder and weather pots" in b_,
            "/bots says why Kalshi's app reads lower than all pots: the bot pots' cash (24.00 + 15.10) is outside it")
-        ck("PIN BOT (main account): running since Sep 16 7:59 AM ET. v-reopen98 + v-floor90. today -$10.40 "
-           "(-0.96%), 7 days -$9.86 (-0.93%), all time -$9.86 (-0.93%); open: 1 ($29.10 at risk). /pin" in b_,
-           "one line a bot: running since (ET), version, money with its share of the pot, open bets, its command")
-        ck("PENNY LADDER (subaccount 1): STOPPED by its stop file" in b_
-           and "FORECASTER (subaccount 2): running since Sep 16 8:34 AM ET. v-forecaster-race1." in b_
-           and "COIN RACE (main account): running since Sep 15 10:49 PM ET. v-race20." in b_,
+        ck("🟢 PIN BOT · main account · /pin\nrunning since Sep 16 7:59 AM ET · v-reopen98 + v-floor90\ntoday -$10.40 "
+           "(-0.96%) · 7 days -$9.86 (-0.93%) · all time -$9.86 (-0.93%) · open: 1 ($29.10 at risk)" in b_,
+           "a card a bot: running since (ET), version, money with its share of the pot, open bets, its command")
+        ck("⏸ PENNY LADDER · subaccount 1 · /ladder\nSTOPPED by its stop file" in b_
+           and "FORECASTER · subaccount 2 · /fc\nrunning since Sep 16 8:34 AM ET · v-forecaster-race1" in b_
+           and "COIN RACE · main account · /race\nrunning since Sep 15 10:49 PM ET · v-race20" in b_,
            "the paper race arm is not the live race; the ladder with a stop file is STOPPED, not dead")
         ck("NOT ANY BOT'S (main account): all time -$4.51 on 1 market; worst -$4.51 WTI 2:00 PM (Sep 15)." in b_,
            "a main-account market that is no bot's is shown on its own, never folded into pin")
         # /pin
-        p_ = ph.handle(111, "/pin")
-        ck(len(p_) < MAX_LEN, "/pin fits one Telegram message on this world (%d chars)" % len(p_))
+        ph_ = ph.handle(111, "/pin")
+        p_ = P(ph_)
+        ck(fits(ph_) and len(split_html(ph_)) == 1 and not tg_html_problems(ph_),
+           "/pin fits one Telegram message on this world (%d chars), Telegram-valid" % len(ph_))
+        ck(p_.split("\n")[0] == "🔴 Pin bot today -$10.40 (-10.4% on $99.80 staked · -0.96% of its pot)",
+           "/pin: today's money, its return on what the bets cost and its share of the pot lead the page")
         for _want, _why in (
                 ("Pot: main account, shared with the coin race.", "its pot, and who shares it"),
                 ("Running: YES, pid 3882400, since Sep 16 7:59 AM ET.", "running, pid, since when in ET"),
                 ("Version: v-reopen98 + v-floor90, live since Sep 16 8:00 AM ET.", "its version from VERSIONS.md"),
                 ("Settings: halts after 2 losing bets.", "its settings from its command line"),
                 ("Keep-alive: watch_bot.ps1 restarts it", "what restarts it"),
-                ("MONEY -- Kalshi settlements, main account, read Sep 16 11:00 AM ET;", "where the money comes from"),
+                ("Money (Kalshi settlements, main account, read Sep 16 11:00 AM ET;", "where the money comes from"),
                 ("Today: -$10.40 on $99.80 put in (-10.4%) = -0.96% of its pot ($1,081.78); 2 markets, 1 won, 1 lost",
                  "today: the both-sides ETH market pays its winning YES side (-$11.30, not -$51.30); -0.96% of the "
                  "main pot at midnight ET"),
@@ -3237,8 +4835,8 @@ def selftest():
         ck(p_.index("BTC 10:30 AM NO x50: +$0.90") < p_.index("ETH 9:45 AM BOTH SIDES") < p_.index("SOL 11:45 PM YES x30"),
            "/pin: last settled newest first")
         # /forecaster and /fc
-        f_ = ph.handle(111, "/forecaster")
-        ck(ph.handle(111, "/fc") == f_, "/fc is /forecaster")
+        f_ = P(ph.handle(111, "/forecaster"))
+        ck(P(ph.handle(111, "/fc")) == f_, "/fc is /forecaster")
         for _want, _why in (
                 ("FORECASTER -- clean-room forecaster", "the forecaster's own page"),
                 ("Pot: subaccount 2.", "its own pot"),
@@ -3257,7 +4855,7 @@ def selftest():
                 ("  Refused 1 time: order already in flight 1.", "its refusals in words")):
             ck(_want in f_, "/forecaster: " + _why)
         # /ladder
-        l_ = ph.handle(111, "/ladder")
+        l_ = P(ph.handle(111, "/ladder"))
         ck("Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
            and "stopped on its own" not in l_,
            "/ladder: NOT running, and WHY -- its stop file, with what the file says")
@@ -3266,22 +4864,28 @@ def selftest():
            and "Version: v-ladder-settlefix, live since Sep 16 9:16 AM ET." in l_,
            "/ladder: subaccount 1's money, cash and version")
         # /race keeps everything it said and adds the windows
-        r_ = ph.handle(111, "/race")
-        ck(r_.startswith("COIN RACE  ") and "Last 10 races (Kalshi's books):" in r_ and "Paper race arms running:" in r_,
+        rh_ = ph.handle(111, "/race")
+        r_ = P(rh_)
+        ck("COIN RACE · " in r_ and "Last 10 races (Kalshi's books)" in r_ and "Paper race arms running:" in r_,
            "/race still says everything it said before")
-        ck("MONEY -- Kalshi settlements, main account, read Sep 16 11:00 AM ET; a leg counts on the ET day it closed:"
-           in r_ and "Today: $+0.37 on $19.60 put in (+1.9%) = +0.03% of its pot ($1,081.78); 1 leg, 1 won, 0 lost"
-           in r_ and "All time (since Sep 16): $+0.37 on $19.60 put in (+1.9%) = +0.03% on money put in ($1,062.70); "
+        ck("Money (Kalshi settlements, main account, read Sep 16 11:00 AM ET; a leg counts on the ET day it closed)"
+           in r_ and "Today: +$0.37 on $19.60 put in (+1.9%) = +0.03% of its pot ($1,081.78); 1 leg, 1 won, 0 lost"
+           in r_ and "All time (since Sep 16): +$0.37 on $19.60 put in (+1.9%) = +0.03% on money put in ($1,062.70); "
            "1 leg, 1 won, 0 lost" in r_,
-           "/race adds the race's money by window, in /race's own money style, legs not races, each a share of "
-           "the main pot it shares with pin")
-        ck(r_.index("Paper race arms running:") < r_.index("MONEY -- Kalshi settlements"),
+           "/race adds the race's money by window, legs not races, each a share of the main pot it shares with pin")
+        ck(r_.index("Paper race arms running:") < r_.index("Money (Kalshi settlements"),
            "...AFTER what /race already said")
         ck("Version: v-race20, live since Sep 15 10:50 PM ET." in r_
-           and "Keep-alive: NONE -- if it dies, nothing restarts it." in r_
+           and "Keep-alive: boot_all.ps1 (every 10 min) restarts it unless the stop file is there." in r_
+           and "nothing restarts it" not in r_
            and "Open now: 1 leg, $19.60 at risk:\n  race SOL 11:00 AM YES x20, $19.60 at risk" in r_
            and "Cash: $1,000.00 -- shared: the pin bot's cash sits in the same pot." in r_,
-           "/race: its version, that nothing restarts it, the leg Kalshi holds open, the shared cash")
+           "/race: its version, its keep-alive (boot_all.ps1 has restarted the live race since 09-30, so 'nothing "
+           "restarts it' is no longer said), the leg Kalshi holds open, the shared cash")
+        ck("Settings: " not in r_ and "penny" not in r_.lower().replace("pinracepenny", ""),
+           "/race: botstats' command-line Settings line (the 20 / $40 it STARTS from) is not shown -- 'How it bets' "
+           "reads the size from the race's own log -- and nothing calls it a penny bot")
+        ck(fits(rh_) and not any(tg_html_problems(c) for c in split_html(rh_)), "/race: Telegram-valid messages")
         ck(all(q.get("subaccount") in _bsm.SUBS for _p, q in _bs_asked if _p in _bsm.POT_PATHS)
            and set(_p for _p, _q in _bs_asked) <= set(_bsm.PATHS),
            "still every per-pot Kalshi read names its subaccount and every read is a read path")
@@ -3301,8 +4905,8 @@ def selftest():
         _wx_n0 = len(_bs_asked)
         ph.bs_procs = _bs_procs + [(3955508, "2026-09-15T07:56:50Z", r"C:\Python314\python.exe -u "
                                     r"research\sweep\dipsell_live.py --subaccount 3 --live --minutes 21600")]
-        w_ = ph.handle(111, "/weather")
-        ck(ph.handle(111, "/wx") == w_, "/wx is /weather")
+        w_ = P(ph.handle(111, "/weather"))
+        ck(P(ph.handle(111, "/wx")) == w_, "/wx is /weather")
         for _want, _why in (
                 ("WEATHER DIP-SELLER -- sells YES on a daily-high temperature bracket", "its own page"),
                 ("Pot: subaccount 3.", "its own pot, shared with no bot"),
@@ -3320,8 +4924,8 @@ def selftest():
            and not any(_p == "/portfolio/balance" and _q.get("subaccount") == "3" and _q.get("exchange_index") != 0
                        for _p, _q in _bs_asked),
            "/weather: its cash is read from subaccount 3 in pool 0, never pool 2 (where Kalshi says $0.00)")
-        wb_ = ph.handle(111, "/bots")
-        ck("WEATHER DIP-SELLER (subaccount 3): running since Sep 15 3:56 AM ET. v-dipsell-live." in wb_
+        wb_ = P(ph.handle(111, "/bots"))
+        ck("WEATHER DIP-SELLER · subaccount 3 · /weather\nrunning since Sep 15 3:56 AM ET · v-dipsell-live" in wb_
            and "/weather" in wb_ and "| weather none" in wb_ and "weather +$0.80 (+1.6%)" in wb_
            and "ladder $15.10, weather $49.70 -- all pots $1,088.80." in wb_
            and "The $88.80 sitting in the forecaster, ladder and weather pots" in wb_
@@ -3336,13 +4940,13 @@ def selftest():
         # NULL (2026-10-02): the account's books unreadable -> the money stands, NO pot %, and the reason
         _bs_sandbox("botstats-noledger")
         _bs_mode["m"] = "noledger"
-        n_, nb_ = ph.handle(111, "/pin"), ph.handle(111, "/bots")
+        n_, nb_ = P(ph.handle(111, "/pin")), P(ph.handle(111, "/bots"))
         ck("Today: -$10.40 on $99.80 put in (-10.4%); 2 markets, 1 won, 1 lost" in n_
-           and "of its pot (" not in n_ and "on money put in" not in n_
+           and "of its pot (" not in n_ and "on money put in" not in n_ and "of its pot)" not in n_
            and "% of its pot: not shown -- transfers read failed (HTTP 404)." in n_
            and "Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
                "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04 | weather none\n" in nb_
-           and "today -$10.40, 7 days -$9.86, all time -$9.86;" in nb_
+           and "today -$10.40 · 7 days -$9.86 · all time -$9.86 ·" in nb_
            and "% of the pots: not shown -- main account: transfers read failed (HTTP 404)." in nb_,
            "NULL: the deposit/transfer listings unreadable -> every dollar figure still shown, NO percentage of "
            "any pot anywhere (never a guessed base), and the reason said once")
@@ -3350,19 +4954,19 @@ def selftest():
         # EMPTY: nothing settled, nothing open, nothing running, no logs
         _bs_sandbox("botstats-empty")
         _bs_mode["m"], ph.bs_procs = "empty", []
-        e_, eb_ = ph.handle(111, "/pin"), ph.handle(111, "/bots")
+        e_, eb_ = P(ph.handle(111, "/pin")), P(ph.handle(111, "/bots"))
         ck("Today: nothing settled yet" in e_ and "All time: nothing settled yet" in e_
            and "Nothing settled yet on Kalshi for this bot." in e_ and "Open now: none." in e_
            and "Running: NO, and there is no stop file -- it stopped on its own." in e_
            and "Version: no entry for it in VERSIONS.md." in e_ and "+$" not in e_ and "-$" not in e_,
            "EMPTY /pin: nothing settled YET, nothing open, not running and why -- no gain or loss invented")
-        ck("Nothing settled yet in any pot." in eb_ and "today nothing yet, 7 days nothing yet, all time nothing yet"
-           in eb_ and "+$" not in eb_ and "-$" not in eb_ and "By day:" not in eb_,
+        ck("Nothing settled yet in any pot." in eb_ and "today nothing yet · 7 days nothing yet · all time nothing yet"
+           in eb_ and "+$" not in eb_ and "-$" not in eb_ and "By day:" not in eb_ and "By day (all pots)" not in eb_,
            "EMPTY /bots: says nothing has settled yet, no gain or loss, no empty day list")
         # DOWN: Kalshi refuses and the process list cannot be read -- unknown, never $0 or 'not running'
         _bs_sandbox("botstats-down")
         _bs_mode["m"], ph.bs_procs = "down", (lambda: None)
-        d_, db_ = ph.handle(111, "/pin"), ph.handle(111, "/bots")
+        d_, db_ = P(ph.handle(111, "/pin")), P(ph.handle(111, "/bots"))
         ck("MONEY: COULD NOT READ KALSHI (settlements read failed (HTTP 401))" in d_
            and "Running: COULD NOT TELL" in d_ and "Open now: COULD NOT READ" in d_
            and "Cash: COULD NOT READ" in d_ and "$0.00" not in d_ and "nothing settled" not in d_,
@@ -3370,7 +4974,7 @@ def selftest():
         ck("Today: unknown -- Kalshi could not be read" in db_ and "Last 7 days: unknown" in db_
            and "PARTIAL: these totals leave out pin, race, forecaster, ladder, weather, other" in db_
            and "running? could not tell" in db_ and "money: COULD NOT READ KALSHI" in db_
-           and "! money: settlements read failed (HTTP 401): forecaster, ladder, pin, race, weather" in db_
+           and "money: settlements read failed (HTTP 401): forecaster, ladder, pin, race, weather" in db_
            and "nothing settled" not in db_ and "Nothing settled" not in db_,
            "DOWN /bots: every total is 'unknown', the missing pots are named, each error said once")
         # BROKEN botstats: those commands say so; /race still answers
@@ -3385,8 +4989,8 @@ def selftest():
             ck(ph.handle(111, "/pin").startswith("Could not build /pin: planted botstats failure")
                and ph.handle(111, "/bots").startswith("Could not build /bots: planted botstats failure"),
                "a botstats failure is said by the command that hit it")
-            _rb = ph.handle(111, "/race")
-            ck("Last 10 races (Kalshi's books):" in _rb
+            _rb = P(ph.handle(111, "/race"))
+            ck("Last 10 races (Kalshi's books)" in _rb
                and "Money by window: could not build it (planted botstats failure)." in _rb,
                "...and /race still gives everything it gave before, with the windows' failure said")
         finally:
@@ -3396,34 +5000,59 @@ def selftest():
            "/bots /pin /forecaster /fc /ladder /weather /wx are in /help")
         _bs_mode["m"], ph.bs_procs = "planted", _bs_procs
         r = ph.handle(111, "/stop")
-        ck("/stop yes" in r and not ph.busy, "/stop without yes only explains; nothing is stopped")
-        ck(ph.handle(111, "/mute") == "Alerts off. /unmute to turn them back on." and ph.muted, "/mute")
-        ck(ph.handle(111, "/unmute") == "Alerts on." and not ph.muted, "/unmute")
-        ck("Commands:" in ph.handle(111, "/help") and "Commands:" in ph.handle(111, "what"), "/help, and an unknown message gets the help")
-        ck("Commands:" in ph.handle(111, "/help@PinBotBot"), "a command with the @botname suffix still works")
+        ck("/stop yes" in P(r) and "STOP stops right now" in P(r) and not ph.busy,
+           "/stop without yes only explains; nothing is stopped")
+        ck(P(ph.handle(111, "/mute")) == "🔕 Alerts off. /unmute to turn them back on." and ph.muted, "/mute")
+        ck(P(ph.handle(111, "/unmute")) == "🔔 Alerts on." and not ph.muted, "/unmute")
+        ck("Commands" in P(ph.handle(111, "/help")) and "I did not understand that." in P(ph.handle(111, "what"))
+           and "Commands" in P(ph.handle(111, "what")), "/help, and an unknown message gets the help")
+        ck("Commands" in P(ph.handle(111, "/help@PinBotBot")), "a command with the @botname suffix still works")
+        ck(all(not tg_html_problems(x) for x in (HELP_TEXT, STOP_ASK, UP_TEXT) + tuple(CONTROL_REPLY.values()))
+           and all(getattr(x, "is_html", False) for x in tuple(CONTROL_REPLY.values()) + (HELP_TEXT, STOP_ASK)),
+           "/help, the STOP question, the start-up line and the control replies are valid Telegram HTML")
+        ck([P(CONTROL_REPLY[k]) for k in ("start", "pause", "stop", "busy")] ==
+           ["▶️ Starting…", "⏸ Pausing: no new bets; waiting for open ones to settle…", "⏹ Stopping now…",
+            "⏳ Still working on the last command."],
+           "the control replies say what they always said (the work itself is unchanged: Phone.control)")
 
         # alerts: first tick only records; a change sends once
         ck(ph.alerts_tick() == [] and ph.last_state == "TRADING", "the first alert tick sends nothing, it only learns the state")
         ck(ph.alerts_tick() == [], "NULL: no change, no message")
         state["h"] = dict(state["h"], alive=False)
         sent = ph.alerts_tick()
-        ck(len(sent) == 1 and "TRADING -> DOWN" in sent[0], "the bot going down sends one alert")
+        ck(len(sent) == 1 and "TRADING -> DOWN" in P(sent[0]) and P(sent[0]).startswith("🔴 STATE CHANGED"),
+           "the bot going down sends one alert, its new state as the headline")
+        ck(not tg_html_problems(sent[0]) and getattr(sent[0], "is_html", False)
+           and P(tg.sent[-1][1]) == P(sent[0]), "...valid Telegram HTML, and it is what went to the chat")
         ck(ph.alerts_tick() == [], "...and not a second one while it stays down")
         state["h"] = dict(state["h"], alive=True)
-        ck("DOWN -> TRADING" in ph.alerts_tick()[0], "coming back sends one too")
+        ck("DOWN -> TRADING" in P(ph.alerts_tick()[0]), "coming back sends one too")
         state["h"] = dict(state["h"], blind={"since": None, "bad": 12, "why": "it cannot reach Kalshi"})
         sent = ph.alerts_tick()
-        ck(len(sent) == 1 and "TRADING -> BLIND" in sent[0] and "NOT TRADING" in sent[0],
+        ck(len(sent) == 1 and "TRADING -> BLIND" in P(sent[0]) and "NOT TRADING" in P(sent[0]),
            "THE 09-21 NIGHT: alive but blind sends an alert -- it used to stay TRADING")
         state["h"] = dict(state["h"], blind=None)
-        ck("BLIND -> TRADING" in ph.alerts_tick()[0], "and seeing again sends one")
+        ck("BLIND -> TRADING" in P(ph.alerts_tick()[0]), "and seeing again sends one")
         state["h"] = dict(state["h"], kalshi_ok=False)
         sent = ph.alerts_tick()
-        ck(len(sent) == 1 and "RECORDER SILENT: Kalshi recorder" in sent[0],
+        ck(len(sent) == 1 and "RECORDER SILENT: Kalshi recorder" in P(sent[0]) and not tg_html_problems(sent[0]),
            "a silent Kalshi recorder sends one alert")
         ck(ph.alerts_tick() == [], "...and not a second while it stays silent")
         state["h"] = dict(state["h"], kalshi_ok=True)
-        ck("WRITING AGAIN" in ph.alerts_tick()[0], "and writing again sends one")
+        ck("WRITING AGAIN" in P(ph.alerts_tick()[0]), "and writing again sends one")
+        # A LAYOUT BUG MUST NEVER SWALLOW AN ALERT: the state-change layout planted to fail -> the plain words go
+        _sv_ast = globals()["alert_state_text"]
+        try:
+            globals()["alert_state_text"] = lambda *a: 1 / 0
+            state["h"] = dict(state["h"], alive=False)
+            sent = ph.alerts_tick()
+        finally:
+            globals()["alert_state_text"] = _sv_ast
+        ck(len(sent) == 1 and not getattr(sent[0], "is_html", False)
+           and sent[0].startswith("STATE CHANGED: TRADING -> DOWN\n"),
+           "a state-change alert whose layout fails still goes, in the plain words it always had")
+        state["h"] = dict(state["h"], alive=True)
+        ck("DOWN -> TRADING" in P(ph.alerts_tick()[0]), "...and the next change is laid out again")
         # THE DISK. The pure function first, exact words; then the tick.
         ck(disk_alert(0, 30.0) == (0, None) and disk_alert(0, 9.01) == (0, None), "disk: plenty free, nothing")
         ck(disk_alert(0, 7.5) == (8, "DISK 7.5 GB free, under 8 GB. The recorders stop themselves for good at 5 GB and "
@@ -3440,13 +5069,16 @@ def selftest():
         ck(disk_alert(8, None) == (8, None) and disk_alert(0, None) == (0, None), "NULL: an unreadable disk changes nothing")
         state["h"] = dict(state["h"], disk_gb=7.5)
         sent = ph.alerts_tick()
-        ck(len(sent) == 1 and sent[0].startswith("DISK 7.5 GB free, under 8 GB") and ph.disk_level == 8,
-           "the tick sends the under-8 alert once")
+        ck(len(sent) == 1 and P(sent[0]).startswith("⚠️ DISK 7.5 GB free, under 8 GB.") and ph.disk_level == 8
+           and P(sent[0]).replace("⚠️ ", "", 1).replace("\n", " ") == disk_alert(0, 7.5)[1],
+           "the tick sends the under-8 alert once, disk_alert's exact words under a headline")
         state["h"] = dict(state["h"], disk_gb=7.1)
         ck(ph.alerts_tick() == [], "...and not again at 7.1")
         state["h"] = dict(state["h"], disk_gb=5.9)
         sent = ph.alerts_tick()
-        ck(len(sent) == 1 and sent[0].startswith("DISK 5.9 GB FREE") and ph.disk_level == 6, "under 6 sends the second")
+        ck(len(sent) == 1 and P(sent[0]).startswith("🚨 DISK 5.9 GB FREE") and ph.disk_level == 6
+           and P(sent[0]).replace("🚨 ", "", 1).replace("\n", " -- ", 1) == disk_alert(8, 5.9)[1],
+           "under 6 sends the second, its exact words")
         state["h"] = dict(state["h"], disk_gb=8.5)
         ck(ph.alerts_tick() == [] and ph.disk_level == 6, "8.5 GB: nothing, still armed at 6")
         state["h"] = dict(state["h"], disk_gb=9.5)
@@ -3477,18 +5109,25 @@ def selftest():
             json.dump(_led, _fh)
         os.utime(_pl.LEDGER, (time.time() + 5, time.time() + 5))
         sent = ph.alerts_tick()
-        ck(len(sent) == 1 and sent[0].startswith("LOSS") and "$-38.80" in sent[0] and "WHY IT HURTS" in sent[0], "a new losing close is sent with its story")
+        ck(len(sent) == 1 and P(sent[0]).startswith("🔴 LOSS -$38.80 · the quarter-hour closing 10:15 AM ET on Sep 16")
+           and "BTC NO at 97.0c, 40 contracts → settled YES: -$38.80" in P(sent[0]) and "WHY IT HURTS" in P(sent[0])
+           and not tg_html_problems(sent[0]),
+           "a new losing close is sent with its story: the loss as the headline, one line a leg")
         ck(ph.alerts_tick() == [], "...once")
         ph.muted = True
         state["h"] = dict(state["h"], alive=False)
         ck(ph.alerts_tick() == [] and ph.last_state == "DOWN", "muted: the change is tracked but not sent")
         ph.muted = False
-        ck(not any(t_.startswith("YESTERDAY") for _c, t_ in tg.sent), "a summary already due at startup is NOT re-sent (it started at 11 AM ET)")
+        ck(not any("YESTERDAY" in P(t_).split("\n")[0] for _c, t_ in tg.sent),
+           "a summary already due at startup is NOT re-sent (it started at 11 AM ET)")
         # next day, 9 AM ET: the daily summary of the 16th goes out once
         now["t"] += 86400 - 2 * 3600
         sent = ph.alerts_tick()
-        ck(any(m.startswith("YESTERDAY") and "2026-09-16" in m for m in sent), "after 8 AM ET the daily summary of yesterday goes out")
-        ck(not any(m.startswith("YESTERDAY") for m in ph.alerts_tick()), "...once per day")
+        _dl = [m for m in sent if "YESTERDAY" in P(m).split("\n")[0]]
+        ck(len(_dl) == 1 and P(_dl[0]).startswith("☀️ YESTERDAY -$37.14 (-7.43%) · Wed Sep 16")
+           and "MONEY: -$37.14, which is -7.43% of the $500.00" in P(_dl[0]) and not tg_html_problems(_dl[0]),
+           "after 8 AM ET the daily summary of yesterday goes out: its money and % of the day-start bank lead it")
+        ck(not any("YESTERDAY" in P(m).split("\n")[0] for m in ph.alerts_tick()), "...once per day")
         ck(all(cid == 111 for cid, _t in tg.sent), "every alert went to the paired chat")
         # long messages are split by the real transport's rule
         big = "x" * (MAX_LEN * 2 + 5)
@@ -3506,7 +5145,7 @@ def selftest():
         tg.push(111, "/help")
         tg.push(333, "/status")
         ph.poll_once()
-        ck(tg.sent[-1][0] == 111 and "Commands:" in tg.sent[-1][1] and ph.offset == 3, "poll: the paired chat gets its reply, the stranger nothing, offset advances")
+        ck(tg.sent[-1][0] == 111 and "Commands" in P(tg.sent[-1][1]) and ph.offset == 3, "poll: the paired chat gets its reply, the stranger nothing, offset advances")
 
         # ---- /funds /bank /accounts (2026-10-11) ----------------------------------------------------
         # A fake Kalshi with 3 accounts across 2 cash pools. Worked by hand: main = 500.00 + 1.50 cash +
@@ -3591,15 +5230,25 @@ def selftest():
         fa = []
         f_ = funds_read(fw_get(fa))
         t_ = funds_text(f_, {}, now["t"])
-        print("    --- /funds, the fake world ---\n    " + t_.replace("\n", "\n    "))
+        cprint("    --- /funds, the fake world (as the phone shows it) ---\n    " + P(t_).replace("\n", "\n    "))
         ck(sorted(f_["subs"]) == [0, 1, 3] and f_["list_err"] is None, "/funds: the 3 listed accounts, from Kalshi's list")
-        ck("MAIN ACCOUNT (0) -- main bot (pin) + coin race: $530.60" in t_
-           and "  cash: weather pool $1.50, crypto pool $500.00; open bets: $29.10 on 1 market" in t_,
+        ck(getattr(t_, "is_html", False) and not tg_html_problems(t_) and fits(t_), "/funds: Telegram-valid, one message")
+        tp_ = P(t_)
+        ck("MAIN ACCOUNT (0) -- main bot (pin) + coin race: $530.60" in tp_
+           and "\ncash: weather pool $1.50, crypto pool $500.00; open bets: $29.10 on 1 market" in tp_,
            "/funds: main = cash in BOTH pools + what its open bet cost = $530.60 (a 0-contract row is not a bet)")
-        ck("SUBACCOUNT 1 -- penny ladder: $80.25" in t_ and "SUBACCOUNT 3 -- weather pool: weather dip-seller (stopped); "
-           "crypto pool: empty: $41.10" in t_, "/funds: each subaccount's total, and what runs in it from FUNDS_WHAT")
-        ck("ALL ACCOUNTS: $651.95 = cash $621.75 + open bets $30.20." in t_, "/funds: the grand total, 3 accounts x 2 pools")
-        ck("The cash adds up to Kalshi's own whole-account figure ($621.75)." in t_,
+        ck("SUBACCOUNT 1 -- penny ladder: $80.25" in tp_ and "SUBACCOUNT 3 -- weather pool: weather dip-seller (stopped); "
+           "crypto pool: empty: $41.10" in tp_, "/funds: each subaccount's total, and what runs in it from FUNDS_WHAT")
+        ck(tp_.split("\n")[0] == "🏦 ALL ACCOUNTS: $651.95 = cash $621.75 + open bets $30.20.",
+           "/funds: the grand total, 3 accounts x 2 pools, is the headline")
+        ck(any(x.split() == ["0", "main+race", "530.60", "81.4%"] for x in tp_.split("\n"))
+           and any(x.split() == ["1", "ladder", "80.25", "12.3%"] for x in tp_.split("\n"))
+           and any(x.split() == ["3", "weather", "41.10", "6.3%"] for x in tp_.split("\n")),
+           "/funds: one row an account, its total and its share of all of them (530.60 / 651.95 = 81.4%)")
+        ck("💤 Idle: $41.10 (6.3% of all) sits in an account that runs nothing now (3: weather pool: weather "
+           "dip-seller (stopped); crypto pool: empty)." in tp_,
+           "/funds: money in an account whose bots are all stopped is named as idle, with its share")
+        ck("The cash adds up to Kalshi's own whole-account figure ($621.75)." in tp_,
            "/funds: checked against Kalshi's whole-account cash by pool")
         ck(not any(p == "/portfolio/balance" and (q["subaccount"], q["exchange_index"]) in ((1, 0), (3, 2)) for p, q in fa),
            "/funds: a pool listed at 0 is $0 in any unit -- not read again")
@@ -3607,46 +5256,48 @@ def selftest():
            and all("subaccount" in q for p, q in fa if p != FUNDS_PATHS[0])
            and all("exchange_index" in q for p, q in fa if p == "/portfolio/balance"),
            "/funds: only the three GET paths; every balance read names its account AND pool, every open-bets read its account")
-        ck("SUBACCOUNT 7 -- unknown" in funds_text(funds_read(fw_get([], rows=fw_list + [
-            {"subaccount_number": 7, "exchange_index": 2, "balance": "2.0000"}])), {}, now["t"]),
+        ck("SUBACCOUNT 7 -- unknown" in P(funds_text(funds_read(fw_get([], rows=fw_list + [
+            {"subaccount_number": 7, "exchange_index": 2, "balance": "2.0000"}])), {}, now["t"])),
            "/funds: an account not in FUNDS_WHAT is shown as unknown, not dropped")
-        t_ = funds_text(funds_read(fw_get([], brk=[{"balance": "41.5000", "exchange_index": 0},
-                                                   {"balance": "600.0000", "exchange_index": 2}])), {}, now["t"])
+        t_ = P(funds_text(funds_read(fw_get([], brk=[{"balance": "41.5000", "exchange_index": 0},
+                                                     {"balance": "600.0000", "exchange_index": 2}])), {}, now["t"]))
         ck("CHECK: Kalshi's own whole-account cash is $641.50, but the accounts above add to $621.75" in t_,
            "/funds: cash Kalshi holds that no listed account explains is said")
         # unreadable reads: said, never $0, never a crash
-        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (503, "busy") if p == "/portfolio/balance"
-                                          and q["subaccount"] == 1 else None)), {}, now["t"])
+        t_ = P(funds_text(funds_read(fw_get([], bad=lambda p, q: (503, "busy") if p == "/portfolio/balance"
+                                            and q["subaccount"] == 1 else None)), {}, now["t"]))
         ck("SUBACCOUNT 1 -- penny ladder: $80.25" in t_ and "crypto pool $80.25 (from Kalshi's list; the direct read failed: "
            "HTTP 503)" in t_ and "ALL ACCOUNTS: $651.95" in t_,
            "/funds: one direct cash read fails -> the list's figure, marked, because other pools proved its unit")
-        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/balance" else None)),
-                        {}, now["t"])
+        t_ = P(funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/balance" else None)),
+                          {}, now["t"]))
         ck("$500.00" not in t_ and "$80.25" not in t_ and "crypto pool COULD NOT READ (HTTP 500)" in t_
-           and "ALL ACCOUNTS: at least $30.20 (cash $0.00 + open bets $30.20) -- leaves out what could not be read: "
-           "main account weather pool cash, main account crypto pool cash, subaccount 1 crypto pool cash, "
-           "subaccount 3 weather pool cash." in t_ and "adds up" not in t_ and "CHECK:" not in t_,
-           "/funds: EVERY direct cash read fails -> the list's unit is unproven, so no cash figure is shown (hard rule 5)")
-        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == FUNDS_PATHS[0] else
-                                          "raise" if p == "/portfolio/balance" and q["subaccount"] == 1
-                                          and q["exchange_index"] == 2 else None)), {}, now["t"])
+           and t_.split("\n")[0] == "🏦 ALL ACCOUNTS: at least $30.20 (cash $0.00 + open bets $30.20)"
+           and "That leaves out what could not be read: main account weather pool cash, main account crypto pool "
+           "cash, subaccount 1 crypto pool cash, subaccount 3 weather pool cash." in t_ and "adds up" not in t_
+           and "CHECK:" not in t_ and any(x.split() == ["0", "main+race", ">=29.10", "-"] for x in t_.split("\n")),
+           "/funds: EVERY direct cash read fails -> the list's unit is unproven, so no cash figure is shown (hard rule 5), "
+           "and no account's share is worked from totals that leave money out")
+        t_ = P(funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == FUNDS_PATHS[0] else
+                                            "raise" if p == "/portfolio/balance" and q["subaccount"] == 1
+                                            and q["exchange_index"] == 2 else None)), {}, now["t"]))
         ck("list of subaccounts could not be read (HTTP 500)" in t_
            and "MAIN ACCOUNT (0) -- main bot (pin) + coin race: $530.60" in t_
            and "SUBACCOUNT 1 -- penny ladder: at least $0.00" in t_
            and "crypto pool COULD NOT READ (error: connection reset)" in t_
            and "SUBACCOUNT 4 -- coin-race reward test (stopped): at least" in t_ and "ALL ACCOUNTS: at least" in t_,
            "/funds: the list fails and a read raises -> the known accounts are tried, what failed is named, no crash")
-        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/positions"
-                                          and q["subaccount"] == 3 else None,
-                                          pos={0: [{"ticker": "KXBTC15M-26SEP161115-15", "position_fp": "-30.00",
-                                                    "market_exposure_dollars": "29.10"}],
-                                               1: [{"ticker": "KXNEAR15M-26SEP161115-15", "position_fp": "5.00",
-                                                    "market_exposure": 110}]})), {}, now["t"])
+        t_ = P(funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/positions"
+                                            and q["subaccount"] == 3 else None,
+                                            pos={0: [{"ticker": "KXBTC15M-26SEP161115-15", "position_fp": "-30.00",
+                                                      "market_exposure_dollars": "29.10"}],
+                                                 1: [{"ticker": "KXNEAR15M-26SEP161115-15", "position_fp": "5.00",
+                                                      "market_exposure": 110}]})), {}, now["t"]))
         ck("SUBACCOUNT 3 -- weather pool: weather dip-seller (stopped); crypto pool: empty: at least $40.00" in t_
            and "open bets: COULD NOT READ (HTTP 500)" in t_
            and "open bets: COULD NOT READ (a bet came without market_exposure_dollars)" in t_
-           and "ALL ACCOUNTS: at least $650.85 (cash $621.75 + open bets $29.10) -- leaves out what could not be read: "
-           "subaccount 1 open bets, subaccount 3 open bets." in t_,
+           and "ALL ACCOUNTS: at least $650.85 (cash $621.75 + open bets $29.10)\n" in t_
+           and "That leaves out what could not be read: subaccount 1 open bets, subaccount 3 open bets." in t_,
            "/funds: an unreadable open-bets read, and a bet with only cents (never read as dollars), are said")
         clk = {"t": 0.0}
 
@@ -3654,7 +5305,7 @@ def selftest():
             clk["t"] += 1.0
             return clk["t"]
         fa = []
-        t_ = funds_text(funds_read(fw_get(fa), clock=_tick, deadline_s=2), {}, now["t"])
+        t_ = P(funds_text(funds_read(fw_get(fa), clock=_tick, deadline_s=2), {}, now["t"]))
         ck(len(fa) == 2 and "the 2 s limit for /funds ran out first" in t_ and "ALL ACCOUNTS: at least" in t_,
            "/funds: a slow Kalshi hits the time limit -> the rest is said as not read, the phone is not stalled")
         # bet sizes from each bot's own log
@@ -3695,9 +5346,20 @@ def selftest():
                        "(sized Oct 11 12:00 AM ET on a $91.97 pot)"]},
            "/funds sizes: main = newest autosize in the NEWEST live log; ladder and forecaster = their newest "
            "rescale, not the older start")
-        t_ = funds_text(funds_read(fw_get([])), sz_, now["t"])
-        ck("  bet size now: main bot 91 contracts a bet" in t_ and "  bet size now: ladder 6-contract bids" in t_
-           and "\nSUBACCOUNT 3" in t_ and len(t_) < MAX_LEN, "/funds: each account carries its bots' bet sizes; one message")
+        # v-race-snowball (2026-10-11): a start record with bank_sizing sizes from the bank -- the size in force is the
+        # newest bank_size record after it, not the start-up live_rails (2026-10-18: /funds had said "20 contracts")
+        _wl("pinracepenny-live.jsonl", [
+            {"kind": "start", "t": "2026-10-10T06:20:08Z", "live_rails": {"max_contracts": 20.0, "max_stake": 40.0},
+             "bank_sizing": {"contracts_per_bank": 0.019048, "stake_per_bank": 0.038095}},
+            {"kind": "bank_size", "t": "2026-10-11T15:54:00Z", "bank": 1254.6932, "contracts": 23.0, "stake": 47.79}])
+        ck(funds_sizes(szd)[0][1] == "coin race 23 contracts a leg, at most $47.79 in play (3.81% of a $1,254.69 bank; "
+                                     "sized Oct 11 11:54 AM ET, grows with the bank)",
+           "/funds sizes: the bank-sized coin race shows the size it last took from the bank (23 = floor(1254.69 x "
+           "0.019048); stake cap 1254.69 x 0.038095 = $47.79)")
+        th_ = funds_text(funds_read(fw_get([])), sz_, now["t"])
+        t_ = P(th_)
+        ck("\nbet size now: main bot 91 contracts a bet" in t_ and "\nbet size now: ladder 6-contract bids" in t_
+           and "\nSUBACCOUNT 3" in t_ and len(th_) < MAX_LEN, "/funds: each account carries its bots' bet sizes; one message")
         # ---- /funds PAST DAYS (2026-10-11): the world and the hand-worked figures are above fw_get ----
         fnow = calendar.timegm((2026, 9, 16, 15, 0, 0))                 # 11:00 AM ET Wed Sep 16
         ck([funds_book(t) for t in ("KXBTC15M-X", "KXNEWCOIN15M-X", "KXCRYPTOLEAD15M-X", "KXCRYPTOCOMP15M-X",
@@ -3741,26 +5403,37 @@ def selftest():
            and abs(hd0["total"]["other"]["money"] - 0.80) < 1e-9 and hd0["other_series"] == ["KXHIGHNY"],
            "/funds past days: main split -- main bot -18.76 (4 markets, BTC hourly +1.00 among them), race +0.14, "
            "other +0.80 (the pool-0 NY high); the Sep 9 market is outside the 7 days")
-        t_ = funds_text(funds_read(fw_get([])), {}, fnow, h_)
-        print("    --- /funds with past days, the fake world ---\n    " + t_.replace("\n", "\n    "))
-        ck("  past 7 ET days:\n"
-           "  Wed Sep 16 so far: -$19.48 = main bot -$19.62 (1 of 1 lost) + race +$0.14 (0 of 1 lost)\n"
-           "  Tue Sep 15: +$1.19 = main bot +$1.19 (0 of 2 lost)\n"
-           "  Mon Sep 14: +$0.47 = main bot -$0.33 (1 of 1 lost) + other +$0.80 (0 of 1 lost)\n"
-           "  Thu Sep 10 to Sun Sep 13: nothing settled\n"
-           "  7 days: -$17.82 = main bot -$18.76 (2 of 4 lost) + race +$0.14 (0 of 1 lost) + other +$0.80 (0 of 1 "
-           "lost; KXHIGHNY); -3.4% of the $530.60 it holds now\n\nSUBACCOUNT 1" in t_
+        th_ = funds_text(funds_read(fw_get([])), {}, fnow, h_)
+        t_ = P(th_)
+        cprint("    --- /funds with past days, the fake world ---\n    " + t_.replace("\n", "\n    "))
+        _tl = [x.split() for x in t_.split("\n")]
+        _i0 = t_.index("MAIN ACCOUNT (0)")
+        _main = t_[_i0:t_.index("SUBACCOUNT 1")]
+        ck(["Wed", "16*", "-$19.48", "1/2"] in _tl and ["Tue", "15", "+$1.19", "0/2"] in _tl
+           and ["Mon", "14", "+$0.47", "1/2"] in _tl and ["Thu", "10-Sun", "13", "nothing", "settled"] in _tl
+           and "7 days: -$17.82 (2 of 6 lost) = -3.4% of the $530.60 it holds now" in _main
+           and "Split: main bot -$18.76 (2 of 4 lost) · race +$0.14 (0 of 1 lost) · other +$0.80 (0 of 1 lost; "
+               "KXHIGHNY)" in _main
+           and "Wed Sep 16 so far: -$19.48 = main bot -$19.62 (1 of 1 lost) + race +$0.14 (0 of 1 lost)\n"
+               "Tue Sep 15: +$1.19 = main bot +$1.19 (0 of 2 lost)\n"
+               "Mon Sep 14: +$0.47 = main bot -$0.33 (1 of 1 lost) + other +$0.80 (0 of 1 lost)\n"
+               "Thu Sep 10 to Sun Sep 13: nothing settled" in _main
            and "Liquidity rewards are paid outside these records and are not counted." in t_,
-           "/funds past days: the main account's days, newest first, split main bot / race / other, and its 7-day "
-           "total as a % of what it holds now")
-        ck("  Wed Sep 16 so far: +$0.05 (0 of 1 lost)\n  Sun Sep 13 to Tue Sep 15: nothing settled\n"
-           "  Sat Sep 12: -$9.90 (1 of 1 lost)\n  Thu Sep 10 to Fri Sep 11: nothing settled\n"
-           "  7 days: -$9.85 (1 of 2 lost); -12.3% of the $80.25 it holds now" in t_
-           and "  Wed Sep 16 so far: nothing settled\n  Tue Sep 15: +$0.50 (0 of 1 lost)\n"
-           "  Mon Sep 14: -$1.70 (1 of 1 lost)\n  Thu Sep 10 to Sun Sep 13: nothing settled\n"
-           "  7 days: -$1.20 (1 of 2 lost); -2.9% of the $41.10 it holds now" in t_
-           and t_.count("  past 7 ET days:") == 3 and "Deposits and transfers are not gains." in t_
-           and "to fit one message" not in t_ and len(t_) <= MAX_LEN,
+           "/funds past days: the main account's days newest first (money, lost of settled), its 7-day total and "
+           "its % of what it holds now, the main bot / race / other split, and each day split behind a tap")
+        ck(any(x.split() == ["0", "main+race", "530.60", "81.4%", "-17.82"] for x in t_.split("\n")),
+           "/funds: the summary table carries each account's 7 days too")
+        _s1, _s3 = t_[t_.index("SUBACCOUNT 1"):t_.index("SUBACCOUNT 3")], t_[t_.index("SUBACCOUNT 3"):]
+        ck(["Wed", "16*", "+$0.05", "0/1"] in [x.split() for x in _s1.split("\n")]
+           and ["Sun", "13-Tue", "15", "nothing", "settled"] in [x.split() for x in _s1.split("\n")]
+           and ["Sat", "12", "-$9.90", "1/1"] in [x.split() for x in _s1.split("\n")]
+           and "7 days: -$9.85 (1 of 2 lost) = -12.3% of the $80.25 it holds now" in _s1
+           and ["Wed", "16*", "nothing", "settled"] in [x.split() for x in _s3.split("\n")]
+           and ["Tue", "15", "+$0.50", "0/1"] in [x.split() for x in _s3.split("\n")]
+           and ["Mon", "14", "-$1.70", "1/1"] in [x.split() for x in _s3.split("\n")]
+           and "7 days: -$1.20 (1 of 2 lost) = -2.9% of the $41.10 it holds now" in _s3
+           and t_.count("Past 7 ET days") == 3 and "Deposits and transfers are not gains." in t_
+           and "to fit one message" not in t_ and len(th_) <= MAX_LEN and "Split:" not in _s1 + _s3,
            "/funds past days: each subaccount's days unsplit, empty days as one line, one message")
         # the 60 s cache
         hclk = {"t": 1000.0}
@@ -3786,14 +5459,15 @@ def selftest():
         h_ = funds_settled(fw_get(ha, bad=lambda p, q: (503, "busy") if p == FUNDS_HIST_PATH and q["subaccount"] == 0
                                   and q.get("cursor") == "2" else (500, {}) if p == FUNDS_HIST_PATH
                                   and q["subaccount"] == 1 else None), [0, 1, 3], fnow, memo=hm)
-        t_ = funds_text(funds_read(fw_get([])), {}, fnow, h_)
-        ck("  Tue Sep 15: +$1.19 = main bot +$1.19 (0 of 2 lost)\n"
-           "  Thu Sep 10 to Mon Sep 14: NOT READ\n"
-           "  the 2 days read: -$18.29 = main bot -$18.43 (1 of 3 lost) + race +$0.14 (0 of 1 lost); -3.4% of the "
-           "$530.60 it holds now\n"
-           "  NOT READ: Mon Sep 14, Sun Sep 13, Sat Sep 12, Fri Sep 11, Thu Sep 10 (HTTP 503)" in t_
-           and "SUBACCOUNT 1 -- penny ladder: $80.25\n  cash: crypto pool $80.25; open bets: none\n"
-           "  past 7 ET days: COULD NOT READ (HTTP 500)" in t_ and "  7 days: -$1.20 (1 of 2 lost)" in t_
+        t_ = P(funds_text(funds_read(fw_get([])), {}, fnow, h_))
+        ck(["Tue", "15", "+$1.19", "0/2"] in [x.split() for x in t_.split("\n")]
+           and ["Thu", "10-Mon", "14", "NOT", "READ"] in [x.split() for x in t_.split("\n")]
+           and "2 days read: -$18.29 (1 of 4 lost) = -3.4% of the $530.60 it holds now" in t_
+           and "Split: main bot -$18.43 (1 of 3 lost) · race +$0.14 (0 of 1 lost)" in t_
+           and "Tue Sep 15: +$1.19 = main bot +$1.19 (0 of 2 lost)\nThu Sep 10 to Mon Sep 14: NOT READ" in t_
+           and "NOT READ: Mon 14, Sun 13, Sat 12, Fri 11, Thu 10 (HTTP 503)" in t_
+           and "SUBACCOUNT 1 -- penny ladder: $80.25\ncash: crypto pool $80.25; open bets: none\n"
+           "past 7 ET days: COULD NOT READ (HTTP 500)" in t_ and "7 days: -$1.20 (1 of 2 lost)" in t_
            and sorted(hm) == [3],
            "/funds past days: main's 3rd page fails -> the 2 whole days are shown, Sep 10-14 named NOT READ (the "
            "half-read Sep 14 is not shown); sub 1 fails -> said; neither failed pull is kept")
@@ -3801,18 +5475,18 @@ def selftest():
                                   else (200, {"cursor": ""}) if p == FUNDS_HIST_PATH else None), [0, 3], fnow, memo={})
         ck(h_[0]["err"] == "no 'settlements' list in Kalshi's reply" and h_[3]["err"] == "error: connection reset"
            and "past 7 ET days: COULD NOT READ (no 'settlements' list in Kalshi's reply)"
-           in funds_text(funds_read(fw_get([])), {}, fnow, h_),
+           in P(funds_text(funds_read(fw_get([])), {}, fnow, h_)),
            "/funds past days: a reply without the settlements list is an error, never 'nothing settled'; a raise is "
            "said")
-        t_ = funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/balance" else None)),
-                        {}, fnow, funds_settled(fw_get([]), [0, 1, 3], fnow, memo={}))
-        ck("  7 days: -$17.82 = main bot" in t_ and "% not shown: what it holds now was not read whole" in t_
+        t_ = P(funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/balance" else None)),
+                          {}, fnow, funds_settled(fw_get([]), [0, 1, 3], fnow, memo={})))
+        ck("7 days: -$17.82 (2 of 6 lost); % not shown: what it holds now was not read whole" in t_
            and "% of the $" not in t_,
            "/funds past days: no % on a balance that was not read whole")
-        t_ = funds_text(funds_read(fw_get([], rows=[{"subaccount_number": 0, "exchange_index": 2, "balance": "0.5000"}],
-                                          pos={}, brk=[])), {}, fnow, funds_settled(fw_get([]), [0], fnow, memo={}))
-        print("    --- /funds past days, an account holding 50c ---\n    " + t_.replace("\n", "\n    "))
-        ck("  7 days: -$17.82 = main bot" in t_ and "% not shown: it holds under $1" in t_ and "% of the $" not in t_,
+        t_ = P(funds_text(funds_read(fw_get([], rows=[{"subaccount_number": 0, "exchange_index": 2, "balance": "0.5000"}],
+                                            pos={}, brk=[])), {}, fnow, funds_settled(fw_get([]), [0], fnow, memo={})))
+        cprint("    --- /funds past days, an account holding 50c ---\n    " + t_.replace("\n", "\n    "))
+        ck("7 days: -$17.82 (2 of 6 lost); % not shown: it holds under $1" in t_ and "% of the $" not in t_,
            "/funds past days: no % of an account holding under $1 (a % of cents is noise)")
         hclk2 = {"t": 0.0}
 
@@ -3824,7 +5498,7 @@ def selftest():
         h_ = funds_settled(fw_get(ha), [0, 1, 3], fnow, clock=_htick, deadline_s=3, memo=hm)
         ck(h_[0]["err"] is None and h_[1]["err"] == h_[3]["err"] == "the 3 s limit for /funds ran out first"
            and sorted(hm) == [0] and "past 7 ET days: COULD NOT READ (the 3 s limit for /funds ran out first)"
-           in funds_text(funds_read(fw_get([])), {}, fnow, h_),
+           in P(funds_text(funds_read(fw_get([])), {}, fnow, h_)),
            "/funds past days: a slow Kalshi hits the history time limit -> the accounts not reached are said, not "
            "kept, and the phone is not stalled")
         # the length limit: 9 busy accounts do not fit 7 day lines each -> fewer, said, every 7-day total kept
@@ -3836,22 +5510,26 @@ def selftest():
         bg = fw_get([], rows=big_rows, brk=[], stl=big_stl)
         bf, bh = funds_read(bg), funds_settled(bg, range(9), fnow, memo={})
         t7 = _funds_page(bf, {}, fnow, bh, 7)
-        t_ = funds_text(bf, {}, fnow, bh)
-        ck(len(t7) > MAX_LEN and len(t_) <= MAX_LEN and "to fit one message" in t_
-           and t_.count("  7 days: ") == 9 and t_.count("  past 7 ET days -- ") == 9,
+        th_ = funds_text(bf, {}, fnow, bh)
+        t_ = P(th_)
+        ck(len(t7) > MAX_LEN and len(th_) <= MAX_LEN and t_.count("to fit one message") == 1
+           and t_.count("\n7 days: ") == 9,
            "/funds past days: when 7 day lines do not fit one message (%d chars), fewer are listed and that is said "
-           "(%d chars); all 9 accounts keep their 7-day total" % (len(t7), len(t_)))
+           "once (%d chars); all 9 accounts keep their 7-day total" % (len(t7), len(th_)))
         # routed: /funds /bank /accounts, through handle() and the poll loop
         ck(ph.funds_getter is None, "/funds reads Kalshi through botstats' getter (kauth.get, GET only) by default")
         _FUNDS_HIST.clear()
         fa = []
         ph.funds_getter = fw_get(fa)
-        ck(all((ph.handle(111, c_) or "").startswith("MONEY IN EVERY ACCOUNT") and "ALL ACCOUNTS: $651.95" in ph.handle(111, c_)
+        ck(all(P(ph.handle(111, c_) or "").startswith("🏦 ALL ACCOUNTS: $651.95")
+               and "MONEY IN EVERY ACCOUNT" in P(ph.handle(111, c_))
                for c_ in ("/funds", "/bank", "/accounts", "/Funds@pinbot")),
            "/funds, /bank and /accounts are routed to the funds page")
-        t_ = ph.handle(111, "/funds")
-        ck("  past 7 ET days:\n  Thu Sep 17 so far: nothing settled\n  Wed Sep 16: -$19.48 = main bot" in t_
-           and "  7 days: -$17.82 = main bot -$18.76" in t_ and "  7 days: -$9.85 (1 of 2 lost)" in t_
+        t_ = P(ph.handle(111, "/funds"))
+        ck(["Thu", "17*", "nothing", "settled"] in [x.split() for x in t_.split("\n")]
+           and "\nThu Sep 17 so far: nothing settled\nWed Sep 16: -$19.48 = main bot" in t_
+           and "Split: main bot -$18.76" in t_ and "7 days: -$17.82 (2 of 6 lost)" in t_
+           and "7 days: -$9.85 (1 of 2 lost)" in t_
            and sum(1 for p, _q in fa if p == FUNDS_HIST_PATH) == 5,
            "/funds through handle() carries every account's past days (phone clock: Thu Sep 17), and nine /funds "
            "inside 60 s read the settlements once")
@@ -3859,13 +5537,14 @@ def selftest():
         ck("/funds" in HELP_TEXT and "/bank" in HELP_TEXT and "/accounts" in HELP_TEXT, "/funds is in /help")
         tg.push(111, "/funds")
         ph.poll_once()
-        ck(tg.sent[-1][0] == 111 and "ALL ACCOUNTS: $651.95" in tg.sent[-1][1] and "main bot 85 contracts a bet" in tg.sent[-1][1]
-           and "  past 7 ET days:" in tg.sent[-1][1],
+        ck(tg.sent[-1][0] == 111 and "ALL ACCOUNTS: $651.95" in P(tg.sent[-1][1])
+           and "main bot 85 contracts a bet" in P(tg.sent[-1][1]) and "Past 7 ET days" in P(tg.sent[-1][1]),
            "/funds through the poll loop: the paired chat gets the page, with the live log's bet size and past days")
         with open(LOG, encoding="utf-8") as _fh:
             _lg = _fh.read()
-        ck(os.path.dirname(LOG) == td and "SENT: MONEY IN EVERY ACCOUNT" in _lg,
-           "the self-test logs what it 'sent' to its own temp folder, never the live phone bot's results/pinphone.log")
+        ck(os.path.dirname(LOG) == td and "SENT: 🏦 ALL ACCOUNTS: $651.95" in _lg,
+           "the self-test logs what it 'sent' to its own temp folder (the phone's words, utf-8), never the live "
+           "phone bot's results/pinphone.log")
         _FUNDS_HIST.clear()
     globals()["LOG"] = _st_log
     _pl.LEDGER = _pl_sv
@@ -3882,22 +5561,30 @@ def main():
         selftest()
         return 0
     if "--preview" in sys.argv:
+        # what each command would send, AS THE PHONE SHOWS IT (tags dropped); --html prints the markup instead.
+        # NOTE: /bots /pin /race /funds read Kalshi (GET only, botstats' getter) and the process table.
+        raw = "--html" in sys.argv
+
+        def show(x):
+            return str(x) if raw or not getattr(x, "is_html", False) else html_to_plain(x)
         ph = Phone({"chat_id": 0}, FakeTelegram())
         ph.ledger.refresh()
-        print(ph.text_status())
-        print("\n--- /market ---\n" + ph.text_market())
-        print("\n--- /hedges ---\n" + ph.text_hedges())
+        cprint(show(ph.text_status()))
+        cprint("\n--- /market ---\n" + show(ph.text_market()))
+        cprint("\n--- /hedges ---\n" + show(ph.text_hedges()))
         t0 = time.time()
         n = python_procs()
-        print("\n(process table: %s in %.1f s -- the daemon reads it on a background thread)"
-              % ("%d python processes" % len(n) if n is not None else "COULD NOT BE READ", time.time() - t0))
+        cprint("\n(process table: %s in %.1f s -- the daemon reads it on a background thread)"
+               % ("%d python processes" % len(n) if n is not None else "COULD NOT BE READ", time.time() - t0))
         for name, fn in (("/stats", ph.text_stats), ("/race", ph.text_race), ("/racestats", ph.text_racestats),
                          ("/bots", ph.text_bots), ("/pin", lambda: ph.text_bot("pin")),
                          ("/forecaster", lambda: ph.text_bot("forecaster")), ("/ladder", lambda: ph.text_bot("ladder")),
                          ("/weather", lambda: ph.text_bot("weather")), ("/funds", ph.text_funds)):
             t0 = time.time()
             out = fn()
-            print("\n--- %s (%d chars, %.1f s) ---\n%s" % (name, len(out), time.time() - t0, out))
+            parts = split_html(out) if getattr(out, "is_html", False) else split_text(out)
+            cprint("\n--- %s (%d chars, %d message(s), %.1f s) ---\n%s" % (
+                name, len(out), len(parts), time.time() - t0, show(out)))
         return 0
     try:
         with open(CONFIG, encoding="utf-8") as fh:

@@ -139,7 +139,9 @@ SPEC = {
             "keepalive": "watch_bot.ps1 restarts it unless the stop file is there"},
     "race": {"label": "Coin race", "what": "which coin gains most in 15 minutes", "sub": "0",
              "script": "pinracearm.py", "stop": "pinracepenny.stop", "log": "pinracepenny-live.jsonl",
-             "keepalive": None},        # boot_all.ps1 starts race PAPER arms only; nothing restarts the live one
+             # 2026-10-18: was None ("nothing restarts the live one"), stale since the 09-30 scale-up put the
+             # live race in boot_all.ps1's keep-alive list (section 3e, 'coin race (LIVE, main account)').
+             "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
     "forecaster": {"label": "Forecaster", "what": "clean-room forecaster, 1/20 of paper size", "sub": "2",
                    "script": "forecaster_live.py", "stop": "forecaster-live.stop",
                    "log": "forecaster-live-orders.jsonl",
@@ -925,6 +927,11 @@ def version_of(name):
         if not m:
             continue
         vname, rest = m.group(1), m.group(2)
+        # 2026-10-18: a heading written BEFORE it goes live ('-- INSTALLED <date> ... LIVE at the next restart',
+        # '-- PREPARED <date>') is not the running version. The phone's /stats parser (pinphone._VER_RE) never took
+        # one; this one did, so /pin named v-nopause live while v-ladderboost ran (and pinphone's DRIFT check failed).
+        if re.match(r"(INSTALLED|PREPARED)\b", rest.strip()):
+            continue
         low = (vname + " " + rest).lower()
         # 2026-10-01: a heading that ships several bots at once ("v-race40 + v-forecaster-scale + v-ladder-size
         # + v-crash-guard") names every bot, so the text test below claimed it for none of them and the phone
@@ -2083,10 +2090,10 @@ def selftest():
            "pin settings: bet size from pinrun-live-size.json, the rest from its start record + command line")
         rr = race["running"]
         ck(rr["alive"] is True and rr["pid"] == 3739628 and rr["settings"]["contracts_per_bet"] == 20
-           and rr["halted"] is None and rr["keepalive"] is None and "nothing restarts" in text_summary(
-               "race", now=NOW + 1, getter=fake, procs=PROCS),
+           and rr["halted"] is None and "boot_all.ps1" in (rr["keepalive"] or "") and "nothing restarts" not in
+           text_summary("race", now=NOW + 1, getter=fake, procs=PROCS),
            "race: the --live copy (not --paper-live), 20 a bet; an OLD halt before its start is not a halt; "
-           "no keep-alive, said out loud")
+           "boot_all.ps1 keeps it alive (in its keep-alive list since 09-30), so 'nothing restarts it' is not said")
         fr = fc["running"]
         ck(fr["alive"] is True and fr["settings"]["variant"] == "race1_98" and "variant_mismatch" not in fr["settings"],
            "forecaster: variant from the start record whose pid is the running process (not the later dry run)")
@@ -2445,6 +2452,15 @@ def selftest():
            and version_of("forecaster")[0] == "v-forecaster-scale + v-crash-guard"
            and version_of("pin")[0] == "v-topup",
            "a combined heading is each named bot's version (race v-race40, not the older v-race20); pin keeps its own")
+        # 2026-10-18: a heading written before it goes live is not the running version
+        with open(os.path.join(td2, VERSIONS_NAME), "w", encoding="utf-8") as fh:
+            fh.write("# Versions\n\n"
+                     "# v-nopause -- INSTALLED 2026-10-18 ~10:4xZ in restart_bot.ps1, LIVE at the next restart\n\n"
+                     "# v-floor95 -- PREPARED 2026-10-03 12:15Z (NOT LIVE until the main bot restarts)\n\n"
+                     "# v-ladderboost -- LIVE 2026-10-18T04:42:46Z (pid 923780): ladder boost fix\n")
+        ck(version_of("pin")[0] == "v-ladderboost",
+           "an INSTALLED / PREPARED heading (live only at the next restart) is not the running version: pin is "
+           "still v-ladderboost -- the phone's /stats parser has always skipped them")
     finally:
         globals()["RESULTS"] = saved2
         shutil.rmtree(td2, ignore_errors=True)

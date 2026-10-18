@@ -1,0 +1,171 @@
+{
+ "what": "the five /racestats paper race arms, re-scored once on Kalshi's results (they are stopped)",
+ "made": "2026-10-18T10:39:21Z",
+ "by": "C:\\kals-repo\\.sweep\\q-2026-10-18e\\tg\\harness\\score_race_arms.py (arms_lifetime.py of .sweep\\q-2026-10-18d\\racearms; checked in .sweep\\q-2026-10-18e\\prior\\skeptic_race-arms.md)",
+ "truth": "Kalshi's settlement value per leg (kalshi_ledger.json, else the collector's settlement tape); a tie pays 50c a contract; Kalshi's fee rounding",
+ "at_live": "the live bot's contracts a leg at that race's close, capped at the contracts the arm saw at the best ask",
+ "race30": 1790060580,
+ "live_races_since_race30": 179,
+ "truth_sources": {
+  "tape": 14645,
+  "ledger": 272,
+  "inferred": 35
+ },
+ "arms": {
+  "z3": {
+   "log": "pinracearm-z3.jsonl",
+   "log_size": 7369559,
+   "log_mtime": 1790834169,
+   "kind": "paper_live",
+   "first_t": "2026-09-22T18:49:36Z",
+   "last_t": "2026-10-01T05:56:09Z",
+   "end_t": "2026-10-01T05:56:09Z",
+   "own_size": "1 contract a leg",
+   "same": {
+    "races": 88,
+    "won": 87,
+    "tie": 1,
+    "lost": 0,
+    "own": 3.23,
+    "own_log": 4.23,
+    "at_live": 22.96,
+    "live": 18.43,
+    "staked_own": 118.77,
+    "staked_at_live": 506.41,
+    "live_staked": 452.3
+   },
+   "run": {
+    "races": 134,
+    "won": 133,
+    "tie": 1,
+    "lost": 0,
+    "own": 4.78,
+    "at_live": 33.49
+   }
+  },
+  "gap075": {
+   "log": "pinracearm-gap075.jsonl",
+   "log_size": 4151200,
+   "log_mtime": 1790563575,
+   "kind": "paper_live",
+   "first_t": "2026-09-24T04:27:32Z",
+   "last_t": "2026-09-28T02:46:15Z",
+   "end_t": null,
+   "own_size": "1 contract a leg",
+   "same": {
+    "races": 33,
+    "won": 33,
+    "tie": 0,
+    "lost": 0,
+    "own": 1.32,
+    "own_log": 1.32,
+    "at_live": 4.8,
+    "live": 5.37,
+    "staked_own": 41.68,
+    "staked_at_live": 182.55,
+    "live_staked": 186.98
+   },
+   "run": {
+    "races": 35,
+    "won": 35,
+    "tie": 0,
+    "lost": 0,
+    "own": 1.49,
+    "at_live": 6.11
+   }
+  },
+  "racectl": {
+   "log": "pinracearm-racectl.jsonl",
+   "log_size": 2332566,
+   "log_mtime": 1790488569,
+   "kind": "plain",
+   "first_t": "2026-09-21T07:16:43Z",
+   "last_t": "2026-09-27T05:56:09Z",
+   "end_t": "2026-09-27T05:56:09Z",
+   "own_size": "up to 250 a leg (avg 125)",
+   "same": {
+    "races": 29,
+    "won": 28,
+    "tie": 0,
+    "lost": 1,
+    "own": 25.85,
+    "own_log": 25.69,
+    "at_live": -0.97,
+    "live": 5.24,
+    "staked_own": 3618.15,
+    "staked_at_live": 64.65,
+    "live_staked": 93.49
+   },
+   "run": {
+    "races": 40,
+    "won": 39,
+    "tie": 0,
+    "lost": 1,
+    "own": 169.32,
+    "at_live": 0.57
+   }
+  },
+  "raceedge0": {
+   "log": "pinracearm-raceedge0.jsonl",
+   "log_size": 2365340,
+   "log_mtime": 1790488569,
+   "kind": "plain",
+   "first_t": "2026-09-21T07:16:43Z",
+   "last_t": "2026-09-27T05:56:09Z",
+   "end_t": "2026-09-27T05:56:09Z",
+   "own_size": "up to 250 a leg (avg 56)",
+   "same": {
+    "races": 103,
+    "won": 101,
+    "tie": 1,
+    "lost": 1,
+    "own": 238.44,
+    "own_log": 242.73,
+    "at_live": 2.98,
+    "live": 8.93,
+    "staked_own": 5960.06,
+    "staked_at_live": 274.59,
+    "live_staked": 324.51
+   },
+   "run": {
+    "races": 132,
+    "won": 130,
+    "tie": 1,
+    "lost": 1,
+    "own": 407.0,
+    "at_live": 5.79
+   }
+  },
+  "racetau40": {
+   "log": "pinracearm-racetau40.jsonl",
+   "log_size": 2399689,
+   "log_mtime": 1790488569,
+   "kind": "plain",
+   "first_t": "2026-09-21T07:36:10Z",
+   "last_t": "2026-09-27T05:56:09Z",
+   "end_t": "2026-09-27T05:56:09Z",
+   "own_size": "up to 250 a leg (avg 128)",
+   "same": {
+    "races": 39,
+    "won": 38,
+    "tie": 1,
+    "lost": 0,
+    "own": 377.09,
+    "own_log": 381.36,
+    "at_live": 4.59,
+    "live": 5.06,
+    "staked_own": 4826.41,
+    "staked_at_live": 87.07,
+    "live_staked": 126.67
+   },
+   "run": {
+    "races": 58,
+    "won": 56,
+    "tie": 1,
+    "lost": 1,
+    "own": 393.54,
+    "at_live": 6.57
+   }
+  }
+ }
+}

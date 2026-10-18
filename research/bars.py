@@ -639,7 +639,7 @@ def z3_verdict(races, losses, first50_losses):
 
 def photo_finishes(gap_log, races, arm_res):
     """The gap075 arm's photo-finish refusals (no_trade / small_gap), and how
-    those races went on Kalshi's books (the penny bot's real legs) and in the
+    those races went on Kalshi's books (the live coin race's real legs) and in the
     arm's own log (did it still enter on another leg)."""
     recs = pinphone.log_records(gap_log, ("start", "no_trade"))
     start = next((r for r in recs if r.get("kind") == "start"), None)
@@ -672,27 +672,46 @@ def race_data(results, markets, now):
     gap = photo_finishes(gp, races, gap_res) if os.path.exists(gp) else None
     return dict(race5=r5, race30=r30, since5=pinphone.race_tally(since5), since30=pinphone.race_tally(since30),
                 z3=dict(bar=Z3_BAR, log=bool(z3res), races=z["races"], losses=z["losses"],
-                        first50_losses=z["first50_losses"], verdict=word, why=why),
-                gap075=gap)
+                        first50_losses=z["first50_losses"], verdict=word, why=why, ran=arm_ran(z3p, now)),
+                gap075=gap, gap075_ran=arm_ran(gp, now))
+
+
+def arm_ran(path, now):
+    """'STOPPED: ran Sep 22 to Oct 01' for a paper arm whose log ended (an `end` record, or nothing written
+    for 6 h -- a running arm writes every quarter-hour), else ''. 2026-10-18: z3 and gap075 stopped in
+    September and /bars still read as if they were running."""
+    span = pinphone.log_span(path) if hasattr(pinphone, "log_span") and os.path.exists(path) else None
+    if not span or not span.get("last"):
+        return ""
+    if not (span.get("end") or now - span["last"] > 6 * 3600):
+        return ""
+    return "STOPPED: ran %s to %s" % (pinphone.et_str(span["first"], "%b %d") if span.get("first") else "?",
+                                      pinphone.et_str(span["last"], "%b %d"))
 
 
 def race_text(d):
-    L = ["COIN RACE (penny bot, real money; Kalshi's books; a tie pays 50c a leg and counts as a loss)."]
+    L = ["COIN RACE (the live race: real money, main account, bets sized from the bank since v-race-snowball; "
+          "Kalshi's books; a tie pays 50c a leg and counts as a loss)."]
     L.append("Since v-race5 (5 contracts a leg, %s): %s" % (et(d["race5"]), pinphone.race_tally_line(d["since5"])))
     L.append("Since v-race30 (%s): %s" % (et(d["race30"]), pinphone.race_tally_line(d["since30"])))
     z = d["z3"]
-    L.append("z3 (earlier entry, paper) -- the bar: %s" % z["bar"])
+    zr = z.get("ran") or ""
+    L.append("z3 (earlier entry, paper%s) -- the bar: %s" % ((", " + zr) if zr else "", z["bar"]))
     if z["log"]:
-        L.append("So far: %d races entered, %s (first 50: %d).  VERDICT: %s -- %s." % (
-            z["races"], _n(z["losses"], "loss"), z["first50_losses"], z["verdict"], z["why"]))
+        L.append("So far: %d races entered, %s (first 50: %d).  VERDICT: %s -- %s.%s" % (
+            z["races"], _n(z["losses"], "loss"), z["first50_losses"], z["verdict"], z["why"],
+            " The arm is stopped, so this does not move until it runs again." if zr and z["verdict"] == "TOO EARLY"
+            else ""))
     else:
         L.append("No z3 log on file.  VERDICT: %s -- %s." % (z["verdict"], z["why"]))
     g = d["gap075"]
-    L.append("gap075 (photo finishes, paper) -- %s It refuses a race whose top two coins are within 0.75 bp." % NO_BAR)
+    gr = d.get("gap075_ran") or ""
+    L.append("gap075 (photo finishes, paper%s) -- %s It refuses a race whose top two coins are within 0.75 bp."
+             % ((", " + gr) if gr else "", NO_BAR))
     if g is None:
         L.append("No gap075 log on file.")
     else:
-        L.append("Since %s it refused %s as photo finishes. The penny bot entered %d of them for real: %d won, "
+        L.append("Since %s it refused %s as photo finishes. The live race entered %d of them for real: %d won, "
                  "%d tie, %d lost, %s.%s" % (
                      et(g["since"]) if g["since"] else "?", _n(g["refused"], "race"), g["penny_entered"], g["won"],
                      g["tie"], g["lost"], money(g["net"]),
@@ -1024,12 +1043,20 @@ def selftest():
         ck(r["z3"]["races"] == 3 and r["z3"]["losses"] == 1 and r["z3"]["verdict"] == "TOO EARLY"
            and "So far: 3 races entered, 1 loss (first 50: 1).  VERDICT: TOO EARLY -- 3 of 250 races, 1 loss so far (first 50: 1)." in s,
            "z3: Kalshi's tie on a race it entered is its one loss")
+        _s7 = render(d7)
+        ck(r["z3"]["ran"] == "" and d["race"]["gap075_ran"] == "" and "z3 (earlier entry, paper) -- the bar:" in s
+           and d7["race"]["z3"]["ran"] == "STOPPED: ran Sep 22 to Sep 24"
+           and "z3 (earlier entry, paper, STOPPED: ran Sep 22 to Sep 24) -- the bar:" in _s7
+           and "The arm is stopped, so this does not move until it runs again." in _s7
+           and "gap075 (photo finishes, paper, STOPPED: ran Sep 24 to Sep 24) --" in _s7,
+           "a paper arm whose log went quiet (6 h+) or ended reads STOPPED with its dates, and a TOO EARLY bar on a "
+           "stopped arm says it will not move (2026-10-18: z3 stopped 10-01 and /bars still read as if it ran)")
         g = r["gap075"]
         ck(g["refused"] == 2 and g["penny_entered"] == 1 and g["tie"] == 1 and g["won"] == 0 and g["lost"] == 0
            and abs(g["net"] + 2.40) < 1e-9 and g["arm_entered_anyway"] == 1,
-           "gap075: 2 races refused as photo finishes; the penny bot entered 1 of them and it TIED (-2.40); "
+           "gap075: 2 races refused as photo finishes; the live race entered 1 of them and it TIED (-2.40); "
            "the arm still entered the other on a wide leg")
-        ck("it refused 2 races as photo finishes. The penny bot entered 1 of them for real: 0 won, 1 tie, 0 lost, $-2.40. "
+        ck("it refused 2 races as photo finishes. The live race entered 1 of them for real: 0 won, 1 tie, 0 lost, $-2.40. "
            "The arm still entered 1 of them on another leg." in s, "...in words")
         ws = d["watchers"]
         _pre = ["wxwatch report:", "BAR 1", "miami", "BAR 2", "miami", "Shadow days so far"]

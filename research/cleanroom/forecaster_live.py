@@ -39,6 +39,42 @@ HARD RAILS (code, not flags; SCALE = 1/20 of the paper's size)
   from all of them (operator rule 09-19: a gate must never block a hedge) and keeps only the per-order body rail, the
   price rail and the stop/halt states.
 
+v-fresh-book (2026-10-18; operator: "Fix the frozen order book"). The order-book feed went silent three times while
+  the socket looked healthy and the bot kept deciding on the frozen book (10-11 03:09Z ~6 min; 10-13 15:45Z ~15 min,
+  bot book 37-42c while the market traded 99.9c; 10-16 07:35Z ~10 min, one real order ETH 22 at 07:44Z, 0 filled).
+  Causes, from results/forecaster-live.jsonl: (1) 10-11 and 10-13: bettor_paper.WS.subscribe reads next_id after the
+  send, so on a reconnect the reader thread's own subscribes (_on_connect) interleaved with the main loop's market
+  subscribe: the request went out as id 1368 (382) but was recorded as 1369 (383), its reply looked superseded, and
+  the bot unsubscribed its OWN fresh subscription right after the 9 snapshots loaded ("ws_unsub_stale", both
+  channels). (2) 10-16: Kalshi sent error code 25 "Subscription buffer overflow" and dropped the orderbook_delta
+  subscription (trades kept arriving); nothing resubscribed until the next quarter-hour.
+  FcWS (installed as bettor_paper.WS in THIS process only -- the paper bots keep theirs) allocates ids under a lock,
+  records the market request id BEFORE sending it, and a reconnect no longer wipes a market request already sent on
+  the new connection. BookWatch sees every feed message on the main loop and marks a market's book STALE -- unsynced,
+  so neither the in-process paper nor this broker trades it (broker refusal why=stale_book) -- until a fresh snapshot
+  arrives, and asks for a resubscribe (at most every 10 s), when: Kalshi sends error code 25 or unsubscribes the live
+  orderbook_delta sid (all books); a trade in that market has no book message for it from 1 s before to 2 s after it
+  (that market); the market subscription is unconfirmed 5 s after it was sent (all books), or a subscribed market
+  got no snapshot from it 5 s after it was confirmed (that market); no book message on ANY subscribed market for 15 s
+  while index prints still arrive (all books: the 10-11 / 10-13 shape, where trades went silent too). A quiet book
+  with no trades is never stale on its own. Why 15 s: of 24,170 health minutes 09-29..10-18 with the socket up,
+  markets active and prints arriving, the only minutes with <= 300 book messages were the four known freezes (32
+  minutes); the 1st percentile is 9,242 a minute. Why 1 s / 2 s for a trade: on 6 recorder-tape hours (10-13 14/16Z,
+  10-16 06Z, 10-18 05-07Z) every one of 1,247,924 trades had a book message for its market within 1 s either side
+  (worst 0.68 s). Every rule counts its seconds on the feed's own receive clock (the
+  latest message seen), so a main loop running behind its queue never makes a false 'stale'. Seq gaps and reconnects
+  were already handled (bettor_paper unsyncs every book and resubscribes; the snapshots re-sync them).
+  --no-book-watch restores the stock client and turns the watch off.
+
+v-resend-dropped (2026-10-18, --resend-dropped, DEFAULT OFF). When the paper wants more contracts on a side while an
+  earlier live order for it is still in flight, the extra is refused (why=in_flight) and was never re-sent. With the
+  flag the latest such trigger is remembered and, once the in-flight order is answered, re-sent ONCE for the deficit
+  at the trigger's price through every gate again at that moment: the broker's (stops, price band, the fresh-book
+  gate, crash guard on the best ask then, every cap, the writer's late/stale rules) and the paper's own entry gates on
+  the model's LATEST decision for that market (edge >= min_edge at that price after the fee, p floor, the race gate),
+  plus two more: the trigger is at most STALE_S (1.5 s) old and the book still shows an ask at or under that price.
+  Re-sent orders and their refusals carry resend=true. With the flag off nothing here runs (no hook, no state).
+
     python research/cleanroom/forecaster_live.py --selftest
     python research/cleanroom/forecaster_live.py --subaccount 2 --dry-run --minutes 30
     python research/cleanroom/forecaster_live.py --subaccount 2 --live --minutes 10080
@@ -49,6 +85,7 @@ import math
 import os
 import queue
 import sys
+import tempfile
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -88,6 +125,16 @@ BROKER = None
 # triggered, the engine's own best ask on our side is already more than CRASH_GAP under the price we are about to
 # pay, the collapse is visible -- skip. None = off. Every order logs the best ask at the trigger either way.
 CRASH_GAP = None
+# v-fresh-book (2026-10-18): see the docstring. WATCH is this process's BookWatch (None = off, as in the self-test worlds).
+BOOK_TRADE_GAP_S = 2.0                          # a trade with no book message for its market this long after it
+BOOK_PRE_S = 1.0                                # a book message this soon BEFORE a trade counts as that trade's delta
+BOOK_ALL_SILENT_S = 15.0                        # no book message on any subscribed market this long (prints still live)
+PRINT_LIVE_S = 5.0                              # "index prints still arrive": the last one is at most this old
+SUB_CONFIRM_S = 5.0                             # a market subscription unconfirmed this long after it was sent
+RESYNC_MIN_S = 10.0                             # at most one watch-asked resubscribe per this many seconds
+WATCH = None
+# v-resend-dropped (2026-10-18): --resend-dropped; False = today's behaviour exactly
+RESEND = False
 
 
 # v-sub-autosize (2026-10-02): --auto-scale. The pot is the subaccount's cash + the cost of what it holds.
@@ -279,6 +326,218 @@ def body_ok(b, sub):
             and MIN_PX - 1e-9 <= want_px <= MAX_PX + 1e-9)
 
 
+class BookWatch:
+    """v-fresh-book: the stale-book detector. observe() sees every feed message on the main loop just BEFORE run_live
+    dispatches it (FcWS wraps the queue's get_nowait); scan() runs at the top of every engine tick; fresh() is the
+    broker's gate. A stale market's book is marked unsynced -- bettor_paper's own do-not-trade state, the one a seq gap
+    uses -- so the paper makes no decision on it and resolves no 1-s survivor on it; the resubscribe's snapshot for that
+    market makes it fresh again. Everything here runs on the main loop thread and is O(markets) per tick."""
+
+    def __init__(self, log=None):
+        self.log = log
+        self.eng = None
+        self.ws = None
+        self.last_book = {}            # ticker -> rx of its last book message (delta or snapshot)
+        self.snap_sid = {}             # ticker -> sid of its last snapshot
+        self.nosnap_done = None        # the confirmed request id the no-snapshot rule already fired for
+        self.pend_trade = {}           # ticker -> rx of the first trade NOT matched by a book message of that market
+        self.stale = {}                # ticker -> {"why": rule, "since": t}
+        self.last_any_book = None
+        self.last_print = None
+        self.sub_ok = (None, None, None)   # (request id, rx, sid) of the confirmed orderbook_delta subscription
+        self.sub_wait = None           # [request id, first seen unconfirmed, flagged]
+        self.silent_ref = None         # the reference time an all-silent flag was raised for (once per episode)
+        self.last_resync = None
+        self.last_rx = None            # the MESSAGE clock: latest receive time seen. Every rule measures its seconds
+        self.n = {}                    # on it, so a main loop running behind its queue never makes a false 'stale'
+
+    def _write(self, ev, **kw):
+        if self.log is not None:
+            self.log.write(ev, **kw)
+
+    def observe(self, rx, obj):
+        if self.last_rx is None or rx > self.last_rx:
+            self.last_rx = rx
+        t = obj.get("type")
+        if t == "orderbook_delta" or t == "orderbook_snapshot":
+            tk = (obj.get("msg") or {}).get("market_ticker")
+            self.last_book[tk] = rx
+            self.last_any_book = rx
+            self.pend_trade.pop(tk, None)
+            if t == "orderbook_snapshot":
+                self.snap_sid[tk] = obj.get("sid")
+            if t == "orderbook_snapshot" and tk in self.stale and obj.get("sid") == self.sub_ok[2]:
+                s = self.stale.pop(tk)             # a snapshot of the CONFIRMED live subscription: fresh again
+                self._write("book_fresh", ticker=tk, why=s["why"], stale_s=round(rx - s["since"], 3))
+        elif t == "trade":
+            tk = (obj.get("msg") or {}).get("market_ticker")
+            lb = self.last_book.get(tk)
+            if tk not in self.pend_trade and (lb is None or rx - lb > BOOK_PRE_S):
+                self.pend_trade[tk] = rx
+        elif t == "cfbenchmarks_value":
+            self.last_print = rx
+        elif t == "subscribed":
+            m = obj.get("msg") or {}
+            if m.get("channel") == "orderbook_delta" and self.ws is not None and obj.get("id") == self.ws.market_sub_id:
+                self.sub_ok = (obj.get("id"), rx, m.get("sid"))
+        elif t == "error":
+            m = obj.get("msg") or {}
+            if m.get("code") == 25:                       # "Subscription buffer overflow" (10-16 07:35:41Z)
+                self.flag_all("ws_error_25", rx, detail=m)
+        elif t == "unsubscribed":
+            sid = obj.get("sid")
+            if sid is not None and self.ws is not None and sid == self.ws.sids.get("orderbook_delta"):
+                self.flag_all("server_unsubscribed", rx, detail={"sid": sid})   # Kalshi dropped the LIVE book sid
+        elif t in ("_ws_up", "_ws_down"):
+            self.pend_trade.clear()
+            self.sub_ok, self.sub_wait, self.silent_ref = (None, None, None), None, None
+
+    def scan(self, now):
+        ws = self.ws
+        if ws is None or not ws.connected or self.last_rx is None:
+            return
+        m = self.last_rx                                  # rule clock (see last_rx); `now` only paces resubscribes
+        subs = set(ws.market_tickers or ())
+        for tk in [tk for tk in self.stale if tk not in subs]:
+            del self.stale[tk]                            # no longer subscribed (its market closed): nothing to wait for
+        for tk in self.stale:                             # a snapshot of an UNconfirmed subscription re-synced it:
+            b = self.eng.books.get(tk) if self.eng is not None else None
+            if b is not None and b.synced:                # keep it out of the paper's decisions too
+                b.synced = False
+        mid = ws.market_sub_id
+        if mid is not None and self.sub_ok[0] != mid:
+            if self.sub_wait is None or self.sub_wait[0] != mid:
+                self.sub_wait = [mid, now, False]
+            elif not self.sub_wait[2] and m - self.sub_wait[1] > SUB_CONFIRM_S:
+                self.sub_wait[2] = True
+                self.flag_all("subscription_unconfirmed", now, detail={"sub_id": mid})
+        if (mid is not None and self.sub_ok[0] == mid and m - self.sub_ok[1] > SUB_CONFIRM_S
+                and self.nosnap_done != mid):
+            self.nosnap_done = mid                        # once per subscription: a subscribed market with no snapshot
+            for tk in sorted(subs):                       # from it 5 s after it was confirmed
+                if self.snap_sid.get(tk) != self.sub_ok[2] and tk not in self.stale:
+                    self.flag(tk, "no_snapshot", now, detail={"sub_id": mid})
+        for tk, t0 in list(self.pend_trade.items()):
+            if m - t0 > BOOK_TRADE_GAP_S and tk not in self.stale and tk in subs:
+                self.flag(tk, "trade_without_book", now, detail={"trade_rx": round(t0, 3)})
+        if (mid is not None and self.sub_ok[0] == mid and self.last_print is not None
+                and m - self.last_print <= PRINT_LIVE_S):
+            ref = max(self.last_any_book or 0.0, self.sub_ok[1] or 0.0)
+            if m - ref > BOOK_ALL_SILENT_S and self.silent_ref != ref:
+                self.silent_ref = ref
+                self.flag_all("all_books_silent", now, detail={"silent_s": round(m - ref, 1)})
+        if self.stale and (self.last_resync is None or now - self.last_resync >= RESYNC_MIN_S):
+            self.resync(now, "still_stale")              # a resubscribe that did not bring the snapshot: ask again
+
+    def fresh(self, tk, now):
+        if tk in self.stale:
+            return False
+        t0 = self.pend_trade.get(tk)
+        return t0 is None or (self.last_rx if self.last_rx is not None else now) - t0 <= BOOK_TRADE_GAP_S
+
+    def _mark(self, tk, why, now):
+        self.n[why] = self.n.get(why, 0) + 1
+        self.stale.setdefault(tk, {"why": why, "since": now})
+        b = self.eng.books.get(tk) if self.eng is not None else None
+        if b is not None:
+            b.synced = False
+
+    def flag(self, tk, why, now, detail=None):
+        self._mark(tk, why, now)
+        self._write("book_stale", why=why, tickers=[tk], detail=detail)
+        self.resync(now, why)
+
+    def flag_all(self, why, now, detail=None):
+        tks = set(self.ws.market_tickers or ()) if self.ws is not None else set()
+        if self.eng is not None:
+            tks.update(tk for tk, b in self.eng.books.items() if b.synced)
+        tks = sorted(tk for tk in tks if tk not in self.stale)
+        for tk in tks:
+            self._mark(tk, why, now)
+        self._write("book_stale", why=why, tickers=tks, detail=detail)
+        self.resync(now, why)
+
+    def resync(self, now, why):
+        """Ask run_live for a resubscribe (eng.resync_wanted: its own seq-gap path, which sends new snapshots)."""
+        if self.eng is None or (self.last_resync is not None and now - self.last_resync < RESYNC_MIN_S):
+            return
+        self.last_resync = now
+        self.eng.resync_wanted = True
+        self._write("book_resync", why=why, stale=sorted(self.stale))
+
+
+class FcWS(B.WS):
+    """v-fresh-book: bettor_paper's websocket client with the subscription-id race closed (see the docstring), and the
+    queue the main loop drains wrapped so BookWatch sees each message first. main() installs it as B.WS for THIS process
+    only. The reader thread (_read_loop) and the reconnect loop (run) are bettor_paper's, unchanged."""
+
+    def __init__(self, q, log, headers_fn):
+        super().__init__(q, log, headers_fn)
+        self._id_lock = threading.Lock()
+        self._sub_conn = None                     # self.reconnects when the current market request was sent
+        w = WATCH
+        if w is not None:
+            w.ws = self
+            get = q.get_nowait
+
+            def get_nowait():
+                item = get()
+                try:
+                    w.observe(item[0], item[1])
+                except Exception as e:           # the watch must never stop the feed
+                    log.write("watch_error", err=repr(e)[:200])
+                return item
+            q.get_nowait = get_nowait
+
+    def _new_id(self):
+        with self._id_lock:
+            self.next_id += 1
+            return self.next_id
+
+    def subscribe(self, channels, **params):
+        i = self._new_id()                        # bettor_paper re-read next_id after the send: the 10-13 race
+        p = {"channels": channels}
+        p.update(params)
+        self.send_json({"id": i, "cmd": "subscribe", "params": p})
+        return i
+
+    def unsubscribe(self, sids):
+        self.send_json({"id": self._new_id(), "cmd": "unsubscribe", "params": {"sids": sids}})
+
+    def set_markets(self, tickers):
+        """As bettor_paper's, except the request id is allocated and recorded BEFORE the request is sent."""
+        self.market_tickers = list(tickers)
+        if not self.connected:
+            return
+        old = [self.sids[c] for c in ("orderbook_delta", "trade") if c in self.sids]
+        for c in ("orderbook_delta", "trade"):
+            self.sids.pop(c, None)
+        if old:
+            self.unsubscribe(old)
+        with self._id_lock:
+            self.market_sub_id = None
+            i = None
+            if self.market_tickers:
+                self.next_id += 1
+                i = self.market_sub_id = self.next_id
+                self._sub_conn = self.reconnects
+        if i is not None:
+            self.send_json({"id": i, "cmd": "subscribe",
+                            "params": {"channels": ["orderbook_delta", "trade"], "market_tickers": self.market_tickers}})
+            self.log.write("ws_subscribe", markets=self.market_tickers, unsubscribed=old, sub_id=i)
+
+    def _on_connect(self):
+        """As bettor_paper's, except a market request the main loop already sent on THIS connection is kept: run()
+        queues _ws_up before calling this, so the main loop's set_markets can come first (it never reads a reply
+        before this returns: the reader thread is the one running this)."""
+        with self._id_lock:
+            self.sids = {}
+            if self._sub_conn != self.reconnects:
+                self.market_sub_id = None
+        self.subscribe(["cfbenchmarks_value"], index_ids=self.index_ids)
+        self.subscribe(["market_lifecycle_v2"])
+
+
 class Broker:
     def __init__(self, log, sub, dry, sender, now):
         self.log, self.sub, self.dry, self.send, self.now = log, int(sub), dry, sender, now
@@ -293,6 +552,7 @@ class Broker:
         self.lock = threading.Lock()
         self._w = []
         self.sizer = None         # AutoScale under --auto-scale; its tick runs on the poller thread
+        self.due = set()          # --resend-dropped: (ticker, side) whose in-flight order was answered with a drop left
 
     def exposure(self):
         n = sum(v["n"] + v["inflight"] for v in self.pos.values())
@@ -314,12 +574,14 @@ class Broker:
         return None
 
     # --- called when the paper forecaster books a 'real' fill (size still shown 1 s after its decision) ---
-    def want(self, ticker, close_s, side, px, paper_k, rel=None, p_side=None, best_ask=None, hedge=False):
+    def want(self, ticker, close_s, side, px, paper_k, rel=None, p_side=None, best_ask=None, hedge=False, resend=None):
         """A paper 'real' fill -> at most one live IOC for the proportional increment. `hedge` (the paper's hedge_p
         insurance on the OTHER side of a held market) skips the crash guard and every size/money cap -- per close,
         held, committed -- a gate must never block a hedge; it keeps the per-side mirror, the per-order body rail,
         the price rail and the stop/halt states. A plain opposite-side BET (the paper buying both sides on its own
-        rule) is not a hedge and is capped like any other order."""
+        rule) is not a hedge and is capped like any other order.
+        v-fresh-book: a bet on a book BookWatch holds stale is refused (why=stale_book; a hedge is exempt, as above).
+        v-resend-dropped: `resend` is the remembered in-flight drop being re-sent (paper_k 0, best_ask read now)."""
         now = self.now()
         with self.lock:
             v = self.pos.setdefault((ticker, side), {"close_s": close_s, "paper": 0.0, "asked": 0, "inflight": 0,
@@ -331,10 +593,21 @@ class Broker:
             why = self.stop_reason(now)
             if not why and not (MIN_PX - 1e-9 <= px <= MAX_PX + 1e-9):
                 why = "price"
+            if not why and not hedge and WATCH is not None and not WATCH.fresh(ticker, now):
+                why = "stale_book"
+            if not why and resend is not None:
+                if now - resend["t"] > STALE_S + 1e-9:
+                    why = "resend_stale"                  # never on a trigger older than STALE_S
+                elif best_ask is None or best_ask > px + 1e-9:
+                    why = "resend_gone"                   # no ask at or under the trigger's price is shown any more
+                elif resend.get("gate"):
+                    why = resend["gate"]                  # the paper's own entry gate fails on its latest decision
             if not why and not hedge and CRASH_GAP is not None and best_ask is not None and best_ask < px - CRASH_GAP - 1e-9:
                 why = "crash"
             if not why and v["inflight"]:
                 why = "in_flight"
+                if RESEND and resend is None:             # remember the latest drop; re-sent once the order is answered
+                    v["drop"] = {"t": now, "px": px, "rel": rel, "p_side": p_side, "hedge": bool(hedge)}
             if not why and hedge:
                 inc = min(inc, MAX_ORDER)
             elif not why:
@@ -347,18 +620,48 @@ class Broker:
                 # 2026-10-02 (crash-guard read): a refusal carries the best ask it saw, so the next read has a
                 # floor for "how far under the price the offer had collapsed" instead of a typical 11c.
                 self.log.write("refused", ticker=ticker, side=side, px=px, paper_k=paper_k, rel=rel, why=why,
-                               best_ask=best_ask, **({"hedge": True} if hedge else {}))
+                               best_ask=best_ask, **({"hedge": True} if hedge else {}),
+                               **({"resend": True} if resend is not None else {}))
                 return 0
+            v.pop("drop", None)                           # this order asks for the whole deficit: nothing left to re-send
+            self.due.discard((ticker, side))
             v["asked"] += inc
             v["inflight"] = inc
             v["px_inflight"] = px
             self.close_asked[close_s] = self.close_asked.get(close_s, 0) + inc
             cid = "%s%d-%d" % (CID_PREFIX, int(now * 1000), len(self.orders))
             self.orders[cid] = {"ticker": ticker, "side": side, "px": px, "n": inc, "status": "queued", "kid": None,
-                                "t_dec": now, "close_s": close_s, "rel": rel, "p_side": p_side, "paper_k": paper_k,
-                                "best_ask": best_ask, "hedge": bool(hedge)}
+                                "t_dec": resend["t"] if resend is not None else now, "close_s": close_s, "rel": rel,
+                                "p_side": p_side, "paper_k": paper_k, "best_ask": best_ask, "hedge": bool(hedge),
+                                "resend": resend is not None}
             self.q.put(("place", cid))
             return inc
+
+    def resend_pass(self, eng):
+        """--resend-dropped (main loop, top of each engine tick): re-send each remembered in-flight drop whose earlier
+        order has been answered, once, through want() -- every gate again, the best ask read from the engine now and
+        the paper's entry gates re-checked on its latest decision (paper_gate)."""
+        if not self.due:
+            return 0
+        with self.lock:
+            keys, self.due = list(self.due), set()
+            jobs = []
+            for k in keys:
+                v = self.pos.get(k)
+                if v is None or v["inflight"] or not v.get("drop"):
+                    continue
+                jobs.append((k, v["close_s"], v.pop("drop")))
+        n = 0
+        for (tk, side), close_s, d in jobs:
+            b = eng.books.get(tk)
+            ba = None
+            if b is not None and b.synced:
+                bp, _ = b.best_ask(side)
+                ba = None if bp is None else round(float(bp), 4)
+            gate = None if d["hedge"] else paper_gate(eng, tk, side, d["px"])
+            n += self.want(tk, close_s, side, d["px"], 0.0, d["rel"], d["p_side"], best_ask=ba, hedge=d["hedge"],
+                           resend=dict(d, gate=gate))
+        return n
 
     def check_stop_file(self):
         if not self.stopped and os.path.exists(STOP_FILE):
@@ -373,6 +676,8 @@ class Broker:
             self.log.write("fill_after_settle", cid=cid, ticker=o["ticker"], n=filled)
             return
         v["inflight"] = 0
+        if v.get("drop"):
+            self.due.add((o["ticker"], o["side"]))    # --resend-dropped: answered with a drop left -> resend_pass
         if filled > 0:
             px = exec_px if exec_px is not None else o["px"]
             v["n"] += filled
@@ -425,6 +730,8 @@ class Broker:
         v = self.pos.get((o["ticker"], o["side"]))
         if v is not None:
             v["inflight"] = 0
+            if v.get("drop"):
+                self.due.add((o["ticker"], o["side"]))
 
     def work_once(self, item):
         kind, cid = item
@@ -464,7 +771,7 @@ class Broker:
                        remaining=out["remaining"], exec_px=out["exec_price"], fee_total=out["fee_total"],
                        paper_k=o["paper_k"], best_ask_at_trigger=o.get("best_ask"), hedge=o.get("hedge", False),
                        age=round(t_send - o["t_dec"], 3), rtt=round(time.time() - t_send, 3),
-                       resp=str(r)[:300])
+                       resp=str(r)[:300], **({"resend": True} if o.get("resend") else {}))
         with self.lock:
             if st is not None and 400 <= st < 500:
                 o["status"] = "rejected"
@@ -560,6 +867,16 @@ def install_hooks():
             BROKER.on_result(ticker, result)
 
     def tick(self):
+        if WATCH is not None and WATCH.eng is self:       # v-fresh-book: stale books are unsynced BEFORE deciding
+            try:
+                WATCH.scan(self.now())
+            except Exception as e:                        # the watch must never stop the paper or the broker
+                self.log.write("watch_error", err=repr(e)[:200])
+        if BROKER is not None and RESEND and BROKER.due:  # v-resend-dropped
+            try:
+                BROKER.resend_pass(self)
+            except Exception as e:
+                self.log.write("resend_error", err=repr(e)[:200])
         open_closes = {m.close_s for m in self.markets.values() if not m.done}
         _orig["tick"](self)
         if BROKER is not None:
@@ -570,10 +887,54 @@ def install_hooks():
     B.Engine.add_fill, B.Engine.on_result, B.Engine.tick = add_fill, on_result, tick
 
 
+_orig_fc = {}
+
+
+def install_resend_hook():
+    """--resend-dropped only: remember each market's LATEST forecaster decision (rel, p yes, index value) on the engine
+    (engine._fc_last) so a re-send can re-check the paper's entry gates on it. A pass-through: the decision itself is
+    untouched. Installed by wire() only when the flag is on (so the default process is today's code path). Idempotent."""
+    if _orig_fc:
+        return
+    _orig_fc["forecaster"] = FV.VEngine.forecaster
+
+    def forecaster(self, m, rel, v, proj, r, exact_yes, b, now):
+        out = _orig_fc["forecaster"](self, m, rel, v, proj, r, exact_yes, b, now)
+        if isinstance(out, dict) and out.get("p") is not None:
+            last = self.__dict__.setdefault("_fc_last", {})
+            last[m.ticker] = (rel, float(out["p"]), float(v))
+        return out
+    FV.VEngine.forecaster = forecaster
+
+
+def paper_gate(eng, ticker, side, px):
+    """--resend-dropped: the paper's entry gates (fc_variants.VEngine.forecaster E5-E7) for buying `side` at `px` NOW,
+    on the engine's latest decision for that market. None = every gate passes, else the refusal reason."""
+    m = getattr(eng, "markets", {}).get(ticker)
+    if m is None or m.done or eng.now() >= m.close_s:
+        return "resend_closed"
+    last = getattr(eng, "_fc_last", {}).get(ticker)
+    if last is None:
+        return "resend_model"                     # no model decision for this market yet (cannot re-check: refuse)
+    rel, p, v = last
+    P = getattr(eng, "P", None) or FV.DEFAULTS
+    ps = p if side == "yes" else 1.0 - p
+    if ps < P["min_p"] or px > P["max_price"] or px < P["min_price"] or ps - px - B.fee1(px) < P["min_edge"] - 1e-12:
+        return "resend_edge"
+    if P.get("race_x") is not None and m.thr_f is not None:
+        bk = getattr(eng, "prints", {}).get(m.index_id, {}).get(m.close_s + rel - 5)
+        if bk is not None:
+            gap_now = abs(v - m.thr_f)
+            toward5 = (gap_now - abs(bk[0] - m.thr_f)) / max(gap_now, 1e-12)
+            if toward5 < -P["race_x"] and ps < P["race_p"]:
+                return "resend_race"
+    return None
+
+
 # ---------------------------------------------------------------------------------------------------- self-test
 def selftest():
     global STOP_FILE, BROKER, MAX_HELD, MAX_COMMIT, SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE
-    global CRASH_GAP
+    global CRASH_GAP, WATCH, RESEND
     _cg = CRASH_GAP
     fails, sink = [], []
     log = B.Logger(None, sink)
@@ -879,14 +1240,14 @@ def selftest():
     mode["v"] = "fill"
     # stop file, dry run
     b9 = Broker(log, 2, False, fake_send, lambda: 1000.0)
-    open(STOP_FILE + ".selftest", "w").close()
-    real = STOP_FILE
-    STOP_FILE = STOP_FILE + ".selftest"
+    real = STOP_FILE                               # 2026-10-18: a temp file, never a file beside the live logs
+    STOP_FILE = os.path.join(tempfile.gettempdir(), "forecaster-live-selftest-%d.flag" % os.getpid())
+    open(STOP_FILE, "w").close()
     try:
         b9.check_stop_file()
     finally:
+        os.remove(STOP_FILE)
         STOP_FILE = real
-        os.remove(real + ".selftest")
     ck(b9.stopped and b9.want("S", 1030, "yes", 0.8, 100) == 0, "the stop file refuses every order")
     n1 = len(sent)
     b10 = Broker(log, 2, True, fake_send, lambda: 1000.0)
@@ -966,6 +1327,8 @@ def selftest():
         ck(b12.q.qsize() == 1, "--variant race05_98: the 1-s survivor queues one live order, as base")
     finally:
         BROKER = None
+    selftest_fresh_book(ck, log, sink, fake_send, run, mode)
+    selftest_resend(ck, log, sink, sent, fake_send, run, mode)
     # the only write endpoints in this file: create order, and cancel of an IOC that rested
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
     body = src[:src.index("\ndef selftest" + "():")]
@@ -979,9 +1342,397 @@ def selftest():
     return not fails
 
 
+class _StubWS:
+    """The four attributes of the websocket client BookWatch reads, for the self-test worlds."""
+
+    def __init__(self, sub_id, sid, tickers):
+        self.connected, self.market_sub_id, self.sids, self.market_tickers = True, sub_id, {"orderbook_delta": sid}, tickers
+
+
+def selftest_fresh_book(ck, log, sink, fake_send, run, mode):
+    """v-fresh-book: the subscription-id race, every BookWatch rule, and two driven worlds (frozen book refuses and
+    resubscribes; a quiet book still trades)."""
+    global WATCH, BROKER
+    w0, b0 = WATCH, BROKER
+    try:
+        # (1) the 10-11 / 10-13 race: the fake send runs the reader thread's _on_connect in the middle of the main
+        # loop's market subscribe, the interleave of 10-13 15:45:42Z (request sent as 1368, recorded as 1369)
+        def race(cls):
+            w = cls(queue.Queue(), B.Logger(None, sink), lambda m, p: {})
+            w.connected, w.reconnects, w.next_id = True, 86, 1366
+            out, hit, at_send = [], [False], []
+
+            def send_json(obj):
+                out.append(obj)
+                if not hit[0] and "market_tickers" in obj.get("params", {}):
+                    hit[0] = True
+                    at_send.append(w.market_sub_id)     # what a reply read by the reader thread right now compares to
+                    w._on_connect()
+                return True
+            w.send_json = send_json
+            w.set_markets(["KXBTC15M-T", "KXETH15M-T"])
+            return w, [o for o in out if "market_tickers" in o.get("params", {})][0], out, at_send[0]
+        WATCH = None
+        w, req, out, seen = race(B.WS)
+        ck(req["id"] != w.market_sub_id and seen is None, "NULL: the stock client sends the market request as %s but "
+           "records %s, and nothing while it is in flight (the 10-13 race: its reply then looks superseded and is "
+           "unsubscribed)" % (req["id"], w.market_sub_id))
+        w, req, out, seen = race(FcWS)
+        ck(req["id"] == w.market_sub_id == seen and len({o["id"] for o in out}) == len(out),
+           "FcWS: the market request id is recorded BEFORE it is sent and stays (%s); every request id is unique" % req["id"])
+        w.reconnects += 1
+        w._on_connect()
+        ck(w.market_sub_id is None and w.sids == {}, "FcWS: a reconnect still clears a request of the OLD connection")
+        # (2) the queue wrapper: each message comes back unchanged, after the watch saw it
+        WATCH = BookWatch(B.Logger(None, sink))
+        q1 = queue.Queue()
+        w1 = FcWS(q1, B.Logger(None, sink), lambda m, p: {})
+        item = (5.0, {"type": "cfbenchmarks_value", "msg": {}})
+        q1.put(item)
+        ck(q1.get_nowait() is item and WATCH.last_print == 5.0 and WATCH.ws is w1,
+           "FcWS: the main loop's queue hands back each message unchanged, after BookWatch saw it")
+
+        # (3) the rules, on a stub client and a real engine's books
+        def world():
+            wt = BookWatch(B.Logger(None, sink))
+            e = B.Engine(B.Logger(None, []), lambda: 0.0, B.Tables(), ["forecaster"])
+            for tk in ("A", "Q"):
+                e.books[tk] = B.Book()
+                e.books[tk].load({"no_dollars_fp": [["0.2000", "50.00"]]}, 1, 7)
+            wt.eng, wt.ws = e, _StubWS(10, 7, ["A", "Q"])
+            wt.observe(100.0, {"type": "subscribed", "id": 10, "msg": {"channel": "orderbook_delta", "sid": 7}})
+            for tk in ("A", "Q"):
+                wt.observe(100.1, {"type": "orderbook_snapshot", "sid": 7, "msg": {"market_ticker": tk}})
+            return wt, e
+        tr = lambda tk: {"type": "trade", "msg": {"market_ticker": tk}}
+        dl = lambda tk: {"type": "orderbook_delta", "sid": 7, "msg": {"market_ticker": tk}}
+        pr = {"type": "cfbenchmarks_value", "msg": {}}
+
+        def at(w_, t):                                  # an index print at t (the message clock moves), then scan
+            w_.observe(t, pr)
+            w_.scan(t)
+        wt, e = world()
+        for t in range(101, 159):                       # 58 s: prints live, A deltas, Q quiet (no trade, no delta)
+            wt.observe(float(t), pr)
+            wt.observe(t + 0.5, dl("A"))
+            wt.scan(t + 0.6)
+        ck(not wt.stale and e.books["Q"].synced and wt.fresh("Q", 158.6) and not e.resync_wanted,
+           "a QUIET book (no trade, no delta for 58 s) while others move is not stale")
+        wt.observe(159.2, dl("A"))
+        wt.observe(160.0, tr("A"))                      # A: a delta 0.8 s BEFORE the trade = that trade's delta
+        wt.observe(161.0, tr("Q"))                      # Q: its delta comes 1.5 s AFTER the trade
+        at(wt, 162.4)
+        ck(not wt.stale and wt.fresh("Q", 162.4), "a trade 1.4 s old without its book message yet: not stale")
+        wt.observe(162.5, dl("Q"))
+        at(wt, 166.0)
+        ck(not wt.stale, "a trade with its book message 0.8 s before or 1.5 s after is matched (not stale)")
+        wt.observe(170.0, tr("Q"))                      # a trade and NO book message after it
+        wt.scan(190.0)
+        ck(not wt.stale, "trade without a book message but NO later message seen yet (main loop behind): not stale")
+        at(wt, 171.9)
+        ck(not wt.stale and wt.fresh("Q", 171.9), "trade without a book message: not stale before 2 s")
+        at(wt, 172.1)
+        ck(list(wt.stale) == ["Q"] and not e.books["Q"].synced and e.books["A"].synced and e.resync_wanted
+           and not wt.fresh("Q", 172.1) and wt.fresh("A", 172.1) and sink[-1]["ev"] == "book_resync",
+           "trade + no book message for 2 s: THAT market stale (book unsynced), the other untouched, resubscribe asked")
+        e.resync_wanted = False
+        e.books["Q"].load({"no_dollars_fp": [["0.2000", "50.00"]]}, 1, 99)
+        wt.observe(173.5, {"type": "orderbook_snapshot", "sid": 99, "msg": {"market_ticker": "Q"}})
+        wt.scan(173.6)
+        ck("Q" in wt.stale and not e.books["Q"].synced,
+           "a snapshot of an UNconfirmed subscription (sid 99) does not make it fresh (re-unsynced before deciding)")
+        wt.scan(176.0)
+        ck(not e.resync_wanted, "one resubscribe per 10 s at most")
+        wt.scan(183.2)
+        ck(e.resync_wanted and sink[-1]["ev"] == "book_resync" and sink[-1]["why"] == "still_stale",
+           "still stale 10 s after the last resubscribe: asked again")
+        wt.ws.market_sub_id = 12
+        wt.observe(183.5, {"type": "subscribed", "id": 12, "msg": {"channel": "orderbook_delta", "sid": 8}})
+        wt.observe(183.6, {"type": "orderbook_snapshot", "sid": 8, "msg": {"market_ticker": "Q"}})
+        ck(not wt.stale and sink[-1]["ev"] == "book_fresh" and sink[-1]["ticker"] == "Q",
+           "the confirmed resubscribe's snapshot makes it fresh again (book_fresh logged)")
+        wt.observe(185.1, tr("Q"))                      # deltas still dead: a trade 1.5 s after that snapshot ...
+        at(wt, 187.0)
+        ck(not wt.stale, "... not stale 1.9 s after the trade")
+        at(wt, 187.2)
+        ck(list(wt.stale) == ["Q"], "a snapshot 1.5 s BEFORE a trade is not that trade's book message: stale again "
+           "2 s after it (deltas dead after a resubscribe, the 10-16 07:35Z shape if Kalshi kept failing)")
+        wt, e = world()
+        wt.ws.market_tickers = ["A", "Q", "N"]          # N subscribed, its snapshot never comes
+        at(wt, 104.9)
+        ck(not wt.stale, "a subscribed market without its snapshot: not flagged within 5 s of the confirmation")
+        at(wt, 105.2)
+        ck(list(wt.stale) == ["N"] and e.resync_wanted, "no snapshot 5 s after the confirmation: that market stale, "
+           "resubscribe asked (A and Q, snapshotted, untouched)")
+        wt, e = world()
+        wt.observe(120.0, {"type": "error", "msg": {"code": 25, "msg": "Subscription buffer overflow"}})
+        ck(sorted(wt.stale) == ["A", "Q"] and not e.books["A"].synced and e.resync_wanted,
+           "error code 25 (10-16 07:35:41Z): every book stale at once, resubscribe asked")
+        wt, e = world()
+        wt.observe(120.0, {"type": "unsubscribed", "sid": 3})
+        ck(not wt.stale, "an 'unsubscribed' for an old sid (our own resubscribe) changes nothing")
+        wt.observe(120.1, {"type": "unsubscribed", "sid": 7})
+        ck(sorted(wt.stale) == ["A", "Q"], "Kalshi unsubscribing the LIVE orderbook sid: every book stale")
+        wt, e = world()
+        wt.ws.market_sub_id = 11                        # a request whose reply never matches (the 10-13 outcome)
+        at(wt, 130.0)
+        at(wt, 134.9)
+        ck(not wt.stale, "an unconfirmed subscription: not stale within 5 s")
+        at(wt, 135.1)
+        ck(sorted(wt.stale) == ["A", "Q"] and e.resync_wanted, "unconfirmed 5 s after it was sent: every book stale")
+        wt, e = world()
+        wt.observe(115.0, pr)
+        wt.scan(115.1)
+        ck(not wt.stale and not e.resync_wanted, "all books AND trades silent 14.9 s: not yet")
+        wt.observe(115.5, pr)
+        wt.scan(115.6)
+        ck(sorted(wt.stale) == ["A", "Q"] and e.resync_wanted and not e.books["Q"].synced,
+           "the 10-11 / 10-13 shape: no book message and no trade on ANY market for 15 s while index prints arrive "
+           "-> every book stale, resubscribe asked")
+        wt, e = world()
+        wt.observe(105.0, pr)
+        wt.scan(170.0)
+        ck(not wt.stale, "the whole socket quiet (no prints either): left to bettor_paper's reconnect, not flagged")
+        wt, e = world()
+        wt.observe(105.0, pr)
+        wt.observe(125.0, {"type": "market_lifecycle_v2", "msg": {}})
+        wt.scan(125.1)
+        ck(not wt.stale, "books silent 25 s but index prints stopped 20 s ago too: not the frozen-book shape, not flagged")
+        wt, e = world()
+        wt.observe(120.0, {"type": "error", "msg": {"code": 25}})
+        wt.ws.market_tickers, wt.ws.market_sub_id = ["A2", "Q2"], 13   # the quarter-hour rolled while stale
+        wt.scan(121.0)
+        ck(not wt.stale, "a stale market that is no longer subscribed is forgotten (no endless resubscribes)")
+
+        # (4) driven worlds: the real engine + hooks + broker (the planted forecaster world of the tests above)
+        def driven(frozen):
+            global WATCH, BROKER
+            install_hooks()
+            C = 5_000_000 if frozen else 6_000_000
+            clk = [C - 100.0]
+            en = B.Engine(B.Logger(None, []), lambda: clk[0], B.Tables(), ["forecaster"])
+            WATCH = BookWatch(B.Logger(None, sink))
+            WATCH.eng, WATCH.ws = en, _StubWS(20, 9, ["F-T", "G-T"])
+            br = Broker(log, 2, False, fake_send, lambda: clk[0])
+            BROKER = br
+            en.add_market("F-T", "BTC", C, Decimal("100.00"), 2, "planted")
+            for s in range(C - 240, C + 1):
+                en.on_print("BRTI", s * 1000, ("101.00", "101.01")[s % 2], s + 0.1)
+            book = {"no_dollars_fp": [["0.2000", "50.00"], ["0.0100", "500.00"]], "yes_dollars_fp": [["0.0100", "40.00"]]}
+            WATCH.observe(C - 100.0, {"type": "subscribed", "id": 20, "msg": {"channel": "orderbook_delta", "sid": 9}})
+            for tk in ("F-T", "G-T"):
+                WATCH.observe(C - 100.0, {"type": "orderbook_snapshot", "sid": 9, "msg": {"market_ticker": tk}})
+            en.on_snapshot("F-T", book, 1, 9)
+            resub = []
+            for k in range(int((C - 100) * 10), int((C - 15) * 10)):
+                clk[0] = k / 10.0
+                t = clk[0]
+                if k % 10 == 0:                         # index prints, and ANOTHER market's book moving every second
+                    WATCH.observe(t, {"type": "cfbenchmarks_value", "msg": {}})
+                    WATCH.observe(t, {"type": "orderbook_delta", "sid": 9, "msg": {"market_ticker": "G-T"}})
+                if frozen and abs(t - (C - 38.0)) < 1e-6:
+                    WATCH.observe(t, {"type": "trade", "msg": {"market_ticker": "F-T"}})     # no book message follows
+                en.tick()
+                if en.resync_wanted and not resub:       # what run_live does: resubscribe; the new snapshots follow
+                    en.resync_wanted = False
+                    resub.append(t)
+                    WATCH.ws.market_sub_id = 21
+                if resub and abs(t - (C - 24.0)) < 1e-6:
+                    WATCH.observe(t, {"type": "subscribed", "id": 21, "msg": {"channel": "orderbook_delta", "sid": 10}})
+                    for tk in ("F-T", "G-T"):
+                        WATCH.observe(t, {"type": "orderbook_snapshot", "sid": 10, "msg": {"market_ticker": tk}})
+                    en.on_snapshot("F-T", book, 1, 10)
+                if frozen and abs(t - (C - 30.5)) < 1e-6:
+                    ck(br.want("F-T", C, "yes", 0.80, 100) == 0 and sink[-1]["why"] == "stale_book",
+                       "FROZEN world: a direct broker order on the stale book is refused (why=stale_book)")
+            return br, resub, en, C
+        mode["v"], mode["fill"] = "fill", None
+        br, resub, en, C = driven(False)
+        o = list(br.orders.values())
+        ck(br.q.qsize() == 1 and len(o) == 1 and o[0]["rel"] == -31 and not resub and not WATCH.stale,
+           "QUIET world: its book silent 85 s, no trade -> the rel -31 survivor still queues one live order, no resubscribe")
+        run(br)
+        br, resub, en, C = driven(True)
+        st = [r for r in sink if r["ev"] == "book_stale" and r["tickers"] == ["F-T"]]
+        ck(st and st[-1]["why"] == "trade_without_book" and resub and abs(resub[0] - (C - 35.0)) < 0.25,
+           "FROZEN world: trade at close-38 s, then >2 s of messages with no book message for it -> stale at "
+           "close-35 s, resubscribe asked (%s)" % resub)
+        ck(any(r["ev"] == "book_fresh" and r["ticker"] == "F-T" for r in sink) and not WATCH.stale,
+           "FROZEN world: the resubscribe's snapshot (close-24 s) makes it fresh")
+        o = list(br.orders.values())
+        ck(len(o) == 1 and (o[0]["rel"] or -99) >= -24, "FROZEN world: no decision on the stale book (rel -31..-25 see it "
+           "unsynced); the first live order comes after the fresh snapshot (%s)" % [(x["rel"], x["n"]) for x in o])
+        run(br)
+
+        # (5) a watch that breaks must never stop trading: its error is logged and the paper + broker go on as stock
+        class _Boom(BookWatch):
+            def scan(self, now):
+                raise RuntimeError("planted watch failure")
+        install_hooks()
+        C2 = 8_000_000
+        clk2 = [C2 - 40.0]
+        esink2 = []
+        en2 = B.Engine(B.Logger(None, esink2), lambda: clk2[0], B.Tables(), ["forecaster"])
+        WATCH = _Boom(B.Logger(None, sink))
+        WATCH.eng = en2
+        br2 = Broker(log, 2, False, fake_send, lambda: clk2[0])
+        BROKER = br2
+        en2.add_market("Z-T", "BTC", C2, Decimal("100.00"), 2, "planted")
+        for s in range(C2 - 240, C2 + 1):
+            en2.on_print("BRTI", s * 1000, ("101.00", "101.01")[s % 2], s + 0.1)
+        en2.on_snapshot("Z-T", {"no_dollars_fp": [["0.2000", "50.00"], ["0.0100", "500.00"]]}, 1)
+        for rel in range(-40, -29):
+            clk2[0] = C2 + rel + 0.2
+            en2.tick()
+        ck(br2.q.qsize() == 1 and any(r["ev"] == "watch_error" for r in esink2),
+           "a BookWatch.scan that raises is logged (watch_error) and the paper + broker still trade, as stock")
+        run(br2)
+    finally:
+        WATCH, BROKER = w0, b0
+
+
+def selftest_resend(ck, log, sink, sent, fake_send, run, mode):
+    """v-resend-dropped: OFF is today's behaviour exactly; ON re-sends once, only through every gate."""
+    global RESEND, CRASH_GAP, WATCH, MAX_HELD
+    saved = (RESEND, CRASH_GAP, WATCH, SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP,
+             RUN_STOP, MAX_SUB_BALANCE)
+
+    class _Eng:
+        """What resend_pass / paper_gate read from the engine: books, markets, the latest decision, prints, P."""
+
+        def __init__(self, ask, clk, p_yes=0.90, v=100.50, back=None, decided=True, closed=False):
+            b = B.Book()
+            b.load({"no_dollars_fp": [["%.4f" % (1 - ask), "100.00"]]}, 1)
+            self.books = {"R-T": b}
+            m = B.Market("R-T", "BTC", 3030, Decimal("100.00"), 2, "planted")      # thr 99.995
+            m.done = closed
+            self.markets = {"R-T": m}
+            self.P = dict(FV.DEFAULTS, **FV.VARIANTS["race1_98_r28"])
+            self._fc_last = {"R-T": (-29, p_yes, v)} if decided else {}
+            self.prints = {"BRTI": {} if back is None else {3030 - 29 - 5: (back, str(back), 0.0)}}
+            self.now = lambda: clk[0]
+
+    def world(on, ask=0.82, age=0.2, crash=None, held=None, stale=False, refill=False, **eng_kw):
+        global RESEND, CRASH_GAP, WATCH, MAX_HELD
+        RESEND, CRASH_GAP, WATCH = on, crash, None
+        apply_scale(0.10)                               # 10 a side
+        if held is not None:
+            MAX_HELD = held
+        clk = [3000.0]
+        br = Broker(log, 2, False, fake_send, lambda: clk[0])
+        n0 = len([s for s in sent if s[0] == "POST"])
+        a = br.want("R-T", 3030, "yes", 0.80, 60)
+        b = br.want("R-T", 3030, "yes", 0.82, 40)      # the paper's next level, while the first order is in flight
+        run(br)
+        if refill:
+            br.want("R-T", 3030, "yes", 0.83, 5)
+        if stale:
+            WATCH = BookWatch(B.Logger(None, sink))
+            WATCH.stale["R-T"] = {"why": "test", "since": clk[0]}
+        clk[0] += age
+        n = br.resend_pass(_Eng(ask, clk, **eng_kw))
+        run(br)
+        n2 = br.resend_pass(_Eng(ask, clk, **eng_kw))
+        posts = [s[2] for s in sent if s[0] == "POST"][n0:]
+        return a, b, n, n2, posts, br
+    try:
+        mode["v"], mode["fill"] = "fill", None
+        a, b, n, n2, posts, br = world(False)
+        ck((a, b, n, n2, len(posts)) == (6, 0, 0, 0, 1) and not br.due and "drop" not in br.pos[("R-T", "yes")],
+           "NULL --resend-dropped OFF: the in-flight drop is refused and never re-sent (today's behaviour exactly)")
+        a, b, n, n2, posts, br = world(True)
+        pl = [r for r in sink if r["ev"] == "placed"][-1]
+        ck((a, b, n, n2, len(posts)) == (6, 0, 4, 0, 2) and posts[1]["count"] == "4.00" and posts[1]["price"] == "0.8200"
+           and pl.get("resend") is True and br.pos[("R-T", "yes")]["n"] == 10,
+           "ON: once the first order is answered, the 4-contract deficit is re-sent ONCE at the trigger's 82c")
+        rs = [o for o in br.orders.values() if o.get("resend")]
+        ck(len(rs) == 1 and rs[0]["t_dec"] == 3000.0,
+           "ON: the re-send carries the DROPPED trigger's time (writer's 1.5-s stale rule counts from it)")
+        for kw, why, msg in ((dict(ask=0.60, crash=0.10), "crash", "the best ask collapsed 22c under the price: crash"),
+                             (dict(ask=0.90), "resend_gone", "no ask at or under 82c any more: resend_gone"),
+                             (dict(age=1.6), "resend_stale", "the trigger is 1.6 s old (> STALE_S): resend_stale"),
+                             (dict(held=6), "cap", "the held cap is full: cap"),
+                             (dict(stale=True), "stale_book", "the book is held stale: stale_book"),
+                             (dict(p_yes=0.84), "resend_edge",
+                              "the model's latest p 0.84 leaves < 2c edge at 82c after the fee: resend_edge"),
+                             (dict(back=101.5), "resend_race",
+                              "the index raced toward the strike (gap 1.5 -> 0.5 in 5 s, p 0.90 < 0.98): resend_race"),
+                             (dict(decided=False), "resend_model", "no model decision to re-check: resend_model"),
+                             (dict(closed=True), "resend_closed", "the market is done: resend_closed")):
+            a, b, n, n2, posts, br = world(True, **kw)
+            rf = [r for r in sink if r["ev"] == "refused"][-1]
+            ck(n == 0 and len(posts) == 1 and rf["why"] == why and rf.get("resend") is True, "ON, gate re-checked: " + msg)
+        a, b, n, n2, posts, br = world(True, refill=True)
+        ck(n == 0 and len(posts) == 2 and posts[1]["count"] == "4.00" and posts[1]["price"] == "0.8300",
+           "ON: a new paper fill after the answer asks for the whole deficit itself; nothing is re-sent twice")
+        # the decision hook the paper-gate re-check reads: a pass-through (same decisions), removed again after
+        # the test so a process started WITHOUT --resend-dropped never runs it
+        def planted(C):
+            esink = []
+            clk = [C - 100.0]
+            e = FV.VEngine(B.Logger(None, esink), lambda: clk[0], B.Tables(), FV.VARIANTS["race1_98_r28"], "race1_98_r28")
+            e.add_market("H-T", "BTC", C, Decimal("100.00"), 2, "planted")
+            for s in range(C - 240, C + 1):
+                e.on_print("BRTI", s * 1000, ("101.00", "101.01")[s % 2], s + 0.1)
+            e.on_snapshot("H-T", {"no_dollars_fp": [["0.2000", "50.00"], ["0.0100", "500.00"]]}, 1)
+            for rel in range(-60, -19):
+                clk[0] = C + rel + 0.2
+                e.tick()
+            return e, [{k: v for k, v in r.items() if k != "t"} for r in esink]
+        hooked0 = bool(_orig_fc)
+        e0, d0 = planted(7_000_000)
+        install_resend_hook()
+        try:
+            e1, d1 = planted(7_000_000)
+        finally:
+            if not hooked0:
+                FV.VEngine.forecaster = _orig_fc.pop("forecaster")
+        last = getattr(e1, "_fc_last", {}).get("H-T")
+        ck(d0 == d1 and any(r["ev"] == "taker_order" for r in d1) and last is not None and last[0] == -20
+           and last[1] > 0.99 and not hasattr(e0, "_fc_last") and (hooked0 or not _orig_fc),
+           "resend hook: decisions identical with and without it, the latest decision (rel -20, p %s) recorded, "
+           "and it is removed after the test" % (None if last is None else round(last[1], 4)))
+    finally:
+        RESEND, CRASH_GAP, WATCH = saved[:3]
+        _restore_rails(saved[3:])
+
+
+def _restore_rails(r):
+    global SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE
+    SCALE, MAX_PER_SIDE, MAX_PER_CLOSE, MAX_ORDER, MAX_HELD, MAX_COMMIT, DAY_STOP, RUN_STOP, MAX_SUB_BALANCE = r
+
+
 # ---------------------------------------------------------------------------------------------------- main
+def wire(br, olog, variant, book_watch=True):
+    """What main() changes in bettor_paper before run_live, as one function (the offline replay calls it too):
+    the paper->broker hooks, the stop-file exit, the --variant engine, and (v-fresh-book) FcWS + the BookWatch."""
+    global BROKER, WATCH
+    install_hooks()
+    if RESEND:
+        install_resend_hook()                      # --resend-dropped only (the paper-gate re-check needs it)
+    BROKER = br
+    orig_tick = B.Engine.tick
+
+    def tick(self):
+        orig_tick(self)
+        if br.stopped and br.q.empty():
+            olog.write("exit", why="stop file")
+            os._exit(0)
+    B.Engine.tick = tick
+    params = FV.VARIANTS[variant]
+    WATCH = BookWatch() if book_watch else None
+    if book_watch:
+        B.WS = FcWS                                # this process only: run_live builds its client from B.WS
+
+    def make_engine(log, now_fn, tables, strats=None):
+        e = FV.VEngine(log, now_fn, tables, params, variant)
+        if WATCH is not None:
+            WATCH.eng, WATCH.log = e, log          # stale/fresh/resync records go to the engine log, beside ws_*
+        return e
+    B.Engine = make_engine
+
+
 def main():
-    global BROKER
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--subaccount", type=int)
@@ -996,6 +1747,10 @@ def main():
                          "--scale is ignored with it.")
     ap.add_argument("--crash-gap", type=float, default=None,
                     help="skip an order when the best ask at the trigger is more than this under its price (off by default)")
+    ap.add_argument("--resend-dropped", action="store_true",
+                    help="v-resend-dropped: re-send an in-flight drop once its order is answered, every gate re-checked (off by default)")
+    ap.add_argument("--no-book-watch", action="store_true",
+                    help="v-fresh-book OFF: the stock websocket client and no stale-book gate (the pre-10-18 behaviour)")
     a = ap.parse_args()
     if a.variant not in FV.VARIANTS:
         raise SystemExit("unknown --variant %s" % a.variant)
@@ -1008,8 +1763,9 @@ def main():
         raise SystemExit("--subaccount N (1..63) is required; the primary account is refused")
     if not a.auto_scale:
         apply_scale(a.scale)
-    global CRASH_GAP
+    global CRASH_GAP, RESEND
     CRASH_GAP = a.crash_gap
+    RESEND = bool(a.resend_dropped)
     if a.live == a.dry_run:
         raise SystemExit("choose exactly one of --live / --dry-run")
     import ordercli
@@ -1048,21 +1804,13 @@ def main():
                rails={"scale": str(SCALE), "per_side": MAX_PER_SIDE, "per_close": MAX_PER_CLOSE, "per_order": MAX_ORDER,
                       "max_held": MAX_HELD, "max_commit": MAX_COMMIT, "px": [MIN_PX, MAX_PX], "day_stop": DAY_STOP,
                       "run_stop": RUN_STOP, "start_cap": MAX_SUB_BALANCE, "late_s": LATE_S, "stale_s": STALE_S,
-                      "writes_per_s": WRITES_PER_S})
+                      "writes_per_s": WRITES_PER_S},
+               resend_dropped=RESEND, book_watch=not a.no_book_watch,
+               watch={"trade_gap_s": BOOK_TRADE_GAP_S, "pre_s": BOOK_PRE_S, "all_silent_s": BOOK_ALL_SILENT_S,
+                      "print_live_s": PRINT_LIVE_S, "sub_confirm_s": SUB_CONFIRM_S, "resync_min_s": RESYNC_MIN_S})
     threading.Thread(target=br.run_writer, daemon=True).start()
     threading.Thread(target=br.run_poller, daemon=True).start()
-    install_hooks()
-    BROKER = br
-    orig_tick = B.Engine.tick
-
-    def tick(self):
-        orig_tick(self)
-        if br.stopped and br.q.empty():
-            olog.write("exit", why="stop file")
-            os._exit(0)
-    B.Engine.tick = tick
-    params = FV.VARIANTS[a.variant]
-    B.Engine = lambda log, now_fn, tables, strats=None: FV.VEngine(log, now_fn, tables, params, a.variant)
+    wire(br, olog, a.variant, book_watch=not a.no_book_watch)
     B.Logger(LIVE_LOG).write("selftest", passed=True, checks=0, variant=a.variant)
     B.run_live(a.minutes)
     return 0
