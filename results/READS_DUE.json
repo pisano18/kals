@@ -898,7 +898,10 @@
    "what": "PAPER research/sweep/ratehreward_paper.py (start results/start_ratehreward_paper.ps1, log results/ratehreward-paper.jsonl): Treasury hourly ladders (KX2/5/7/10/30YRRATEH), 1c/1c reward pairs on strikes 6-9 bp from the yield, cancel-all on the first sweep anywhere; weekdays 07:00-20:59Z from Mon 10-19. Spec .sweep/hunt-2026-10-15/spec-20261015-R1-C2-01/SPEC.md. KILL read Wed 10-21 5:30 PM ET; PASS read Fri 10-23 5:30 PM ET.",
    "how": "python research/sweep/ratehreward_paper.py --report. FIRST the 6.4 reproduction gate: --history 2026-10-16 must reproduce 6 +-1 sweeps over 3.15 +-10% stack-hours, else the recorder is not read.",
    "bar": "PRE-REGISTERED (spec section 6) before any output: population = weekday non-blackout hours 07:00-20:59Z, WS continuous, audit clean; cluster = the hour. KILL (after >= 3 weekdays / >= 30 hours) if any: V2 net-if-paid <= $0 per strike-hour at the point burst share; even E_low V2 net-if-paid <= $0; sweeper present in >= 80% of observable hours; mean credit-if-paid < $3.00; programs not listed 2 consecutive weekdays. PASS (-> put the payment probe to the operator) if all: >= 50 observable non-blackout hours on >= 5 weekdays; V2 net-if-paid >= +$2.00 per strike-hour posted (first sweep of each sweeper hour hits one ghost, burst share at its 90% upper bound); positive in both halves; V2 mean credit-if-paid >= $5.00 per strike-hour; >= 60 V2 strike-hours per weekday.",
-   "status": "open"
+   "status": "read",
+   "read_date": "2026-10-21",
+   "verdict": "KILL",
+   "read_note": "KILL by the pre-registered bar after 3 weekdays / 41 observable hours: V2 net-if-paid at the point burst share -$1.57 per strike-hour (<= 0) and mean credit-if-paid $1.94 per strike-hour (< $3.00); PASS checks all false. Sweeper present in 56% of hours. Recorder stopped via results/ratehreward-paper.stop. Report: .sweep/q-2026-10-21/rate_report.txt"
   },
   {
    "id": "arm-attempts2",
