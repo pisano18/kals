@@ -196,6 +196,11 @@ $botArgs = @(
     # (15/1,372) vs 7.2% below; +$8.1-8.8/day, out-of-sample +$132 over 15.2 days; worst day -$276 -> -$314.
     # Revert: delete this line pair and rerun while flat.
     "--band-mult", "0.955", "0.981", "1.5",
+    # v-hedgejump6 (2026-10-22, operator: "Hedge jump 6"): ALSO buy insurance 1 s after a 6-sigma one-second index move
+    # against our side (AMENDMENT 52, existing flag); the 0.40 belief line stays. Insurance studies 10-18/10-20: +$76..+$189
+    # over all alarms, fragile (older half -$58). STOP RULE: if the first 10 jump-fired hedges net below -$50 vs what the
+    # 0.40 line would have bought, remove this line. Revert: delete this line pair and rerun while flat.
+    "--hedge-jump", "6",
     # v-skiphype (2026-10-05..10-13): HYPE was out of the universe
     # ("--skip-coin", "KXHYPE15M"; live fills 09-20..10-04: HYPE 81 markets,
     # 4 lost, -$103.12). WITHDRAWN 2026-10-13 by v-coinfrac below: HYPE is
