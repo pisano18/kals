@@ -532,6 +532,100 @@ def _race_rows(bs, c):
     return out
 
 
+# ---- today's pace (operator 10-22: "for each bot ... a graph of today with an overlay of yesterday and then
+# another overlay of the last 7 days so I can see if it's on track above or behind") ---------------------------
+PACE_DAYS = 7
+
+
+def day_base(bs, pctx_, sub, day):
+    """What pot `sub` held at midnight ET starting `day`, + money moved in during that day -- botstats.pot_for's
+    rule for one day (so a mid-day top-up only ever makes that day's % smaller). None when it cannot be known."""
+    p = (pctx_.get("subs") or {}).get(sub) or {}
+    if p.get("now") is None or not p.get("complete", True):
+        return None
+    t0, t1 = bs.day_start(day), bs.day_start(bs.shift_day(day, 1))
+    settled = sum(v for d, v in (p.get("days") or {}).items() if d and d >= day)
+    start = p["now"] - settled - bs.flows(pctx_["led"], sub, t0)
+    if start < -bs.MIN_POT:
+        return None
+    pot = max(0.0, start) + max(0.0, bs.flows(pctx_["led"], sub, t0, t1))
+    return pot if pot >= bs.MIN_POT else None
+
+
+def pace_curves(bs, pctx_, sub, ms, today, now):
+    """{'today': [(hour, cum %)], 'yesterday': [...], 'avg7': [...] (the mean of the PACE_DAYS days before today,
+    on a 15-minute grid; days before the bot's first market are left out), 'n7': days averaged}. A day whose base
+    is unknown is left out."""
+    def curve(day):
+        base = day_base(bs, pctx_, sub, day)
+        if base is None:
+            return None
+        t0 = bs.day_start(day)
+        pts, cum = [(0.0, 0.0)], 0.0
+        for m in ms:
+            if bs.et_day(m["t"]) == day:
+                cum += m["money"]
+                pts.append(((m["t"] - t0) / 3600.0, 100.0 * cum / base))
+        return pts
+
+    def at(pts, h):
+        v = 0.0
+        for x, y in pts:
+            if x > h:
+                break
+            v = y
+        return v
+    first = min((m["t"] for m in ms), default=None)
+    out = {"today": curve(today), "yesterday": curve(bs.shift_day(today, -1)), "avg7": None, "n7": 0}
+    if out["today"] is not None:
+        out["today"].append((min(24.0, (now - bs.day_start(today)) / 3600.0), out["today"][-1][1]))
+    if out["yesterday"] is not None:
+        out["yesterday"].append((24.0, out["yesterday"][-1][1]))
+    days = [bs.shift_day(today, -k) for k in range(1, PACE_DAYS + 1)]
+    cs = [c for d in days if first is not None and bs.day_start(bs.shift_day(d, 1)) > first
+          for c in [curve(d)] if c is not None]
+    if cs:
+        grid = [i / 4.0 for i in range(0, 97)]
+        out["avg7"] = [(h, sum(at(c, h) for c in cs) / len(cs)) for h in grid]
+        out["n7"] = len(cs)
+    return out
+
+
+def draw_pace(ax, pc, now_h, goal=None):
+    """Today (blue, to now) over yesterday (grey) and the 7-day average day (orange dashes), as % of the bank."""
+    T = mpl()["ticker"]
+    if pc["avg7"]:
+        ax.plot([h for h, _ in pc["avg7"]], [v for _, v in pc["avg7"]], color=ORANGE, lw=1.8, ls="--", zorder=2,
+                label="average of the last %d days (%s by now)" % (pc["n7"], pctx(_at_h(pc["avg7"], now_h) / 100.0, 2)))
+    if pc["yesterday"]:
+        ax.step([h for h, _ in pc["yesterday"]], [v for _, v in pc["yesterday"]], where="post", color=GREY, lw=1.6,
+                zorder=2, label="yesterday %s (%s by now)" % (pctx(pc["yesterday"][-1][1] / 100.0, 2),
+                                                             pctx(_at_h(pc["yesterday"], now_h) / 100.0, 2)))
+    if pc["today"]:
+        ax.step([h for h, _ in pc["today"]], [v for _, v in pc["today"]], where="post", color=BLUE, lw=2.4, zorder=3,
+                label="today %s" % pctx(pc["today"][-1][1] / 100.0, 2))
+        note(ax, pc["today"][-1][0], pc["today"][-1][1], pctx(pc["today"][-1][1] / 100.0, 2), dx=-4, ha="right")
+    if goal is not None:
+        ax.plot([0, 24], [0, goal], color=MUTED, lw=1.0, ls=":", zorder=1, label="goal %s a day, spread evenly" % pctx(goal / 100.0, 1, False))
+    ax.axvline(now_h, color=AXIS, lw=1.0, ls=":", zorder=1)
+    zero_line(ax)
+    ax.set_xlim(0, 24)
+    ax.xaxis.set_major_locator(T.FixedLocator(list(range(0, 25, 3))))
+    ax.xaxis.set_major_formatter(T.FuncFormatter(lambda v, _p: "%d %s" % ((int(v) % 12) or 12, "AM" if int(v) % 24 < 12 else "PM")))
+    ax.yaxis.set_major_formatter(T.FuncFormatter(lambda v, _p: "%+.2f%%" % v if abs(v) >= 0.005 else "0%"))
+    ax.set_title("Today's pace, % of its bank, by ET clock (dotted line = now)")
+    legend(ax)
+
+
+def _at_h(pts, h):
+    v = 0.0
+    for x, y in pts:
+        if x > h:
+            break
+        v = y
+    return v
+
+
 def chart_bot(ctx, name):
     bs, c, prows, ok = bs_load(ctx)
     if name not in bs.SPEC or bot_stopped(bs, name, prows, ok):
@@ -545,7 +639,14 @@ def chart_bot(ctx, name):
     ms = sorted((m for m in blk["markets"] if m["t"] is not None), key=lambda m: m["t"])
     sub = bs.SPEC[name]["sub"]
     label = bs.SPEC[name]["label"]
-    fig, axs = fig_new(2, 7.4, ratios=[1.25, 1], sharex=True)
+    fig, axs3 = fig_new(3, 11.0, ratios=[1.15, 1.25, 1])
+    try:
+        pc = pace_curves(bs, pctx_, sub, ms, today, now)
+        draw_pace(axs3[0], pc, (now - bs.day_start(today)) / 3600.0, goal=1.0 if name == "ladder" else None)
+    except Exception as e:                              # noqa: BLE001 -- the pace panel never costs the rest
+        axs3[0].set_title("Today's pace: could not be drawn (%s)" % str(e)[:60])
+    axs = axs3[1:]
+    axs[0].sharex(axs[1])
     ax = axs[0]
     run, cum = [], 0.0
     for m in ms:                                        # the running total counts every market ...
@@ -602,7 +703,7 @@ def chart_bot(ctx, name):
     date_axis(axs[-1])
     at, td = blk.get("all_time") or {}, blk.get("today") or {}
     headline(fig, "%s: all time %s%s · today %s" % (
-        label, usd(at.get("money")), (" (%+.1f%% of its pot)" % at["pot_pct"]) if at.get("pot_pct") is not None else "",
+        label, usd(at.get("money")), (" (%+.1f%% of its bank)" % at["pot_pct"]) if at.get("pot_pct") is not None else "",
         usd(td.get("money") or 0.0)))
     cap = ("%s: every settled %s from Kalshi's books (botstats, %s), its running total and its win rate over "
            "time (the last %d days drawn; the total counts all). Right axis: the same dollars as %% of the money put into that account." % (
