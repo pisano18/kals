@@ -783,6 +783,21 @@ def selftest():
            "optc: pot / 7.8 -> 82 at $643.47, 11 at $93.47, 256 at $2,000, 2,564 at $20,000 (no 100 cap)")
         POT_PER_CONTRACT = 14.0
         ck(size_for_pot(643.47) == 45 and size_for_pot(93.47) == 6, "optc NULL: pot / 14 -> 45 and 6 as before")
+        # v-ladder-cplus: --levels 0,1 mirrors the 98c AND the 95c rung (never the 85c one); default 0 = top only
+        global LIVE_LEVELS
+        _svl = LIVE_LEVELS
+        try:
+            COINS = None
+            for lv, want in (((0,), 1), ((0, 1), 2)):
+                LIVE_LEVELS = lv
+                bcp = Broker(log, 3, False, fake_send, lambda: now[0])
+                bcp.sync(_E([_M("KXNEAR15M-26OCT221230-30", 9700, [_O(97000 + j, "yes", ("0.98", "0.95", "0.85")[j], level=j)
+                                                                   for j in range(3)])]))
+                got = sorted(v["px"] for v in bcp.live.values() if v["status"] == "sending")
+                ck(len(got) == want and "0.85" not in [str(x) for x in got],
+                   "cplus: levels %s -> %d bid(s) a market, never the 85c rung (got %s)" % (list(lv), want, got))
+        finally:
+            LIVE_LEVELS = _svl
     finally:
         COINS, POT_PER_CONTRACT = _svc
     # v-ladder-caps (F23): NULL first -- caps off places exactly what it did before; then 2x per market, 5x per close
@@ -959,6 +974,9 @@ def main():
                     help="v-ladder-caps (F23): at most this many bids' worth across one quarter-hour's markets; 0 = off")
     ap.add_argument("--coins", default="",
                     help="v-ladder-optc: comma list of 15-minute series to bid on (e.g. KXNEAR15M,KXZEC15M); empty = all")
+    ap.add_argument("--levels", default="0",
+                    help="v-ladder-cplus: paper rungs to mirror live: 0 = the model-2c bid (98c, default), 0,1 = also "
+                         "the model-5c bid (95c). Pair 0,1 with --market-cap-x 2 (one bid of each a market)")
     ap.add_argument("--pot-per-contract", type=float, default=14.0,
                     help="v-ladder-optc: --auto-size bid = floor(pot / this) (default 14 = unchanged)")
     a = ap.parse_args()
@@ -973,9 +991,14 @@ def main():
     if not selftest() or not P.selftest():
         raise SystemExit("self-test failed; refusing to run")
     COINS, POT_PER_CONTRACT = coins, float(a.pot_per_contract)      # set after the self-test (it assumes the defaults)
+    global LIVE_LEVELS
+    lv = tuple(sorted({int(x) for x in a.levels.split(",") if x.strip()}))
+    if not lv or not set(lv) <= {0, 1}:
+        raise SystemExit("--levels takes 0 or 0,1; got %s" % a.levels)
+    LIVE_LEVELS = lv
     if a.selftest:
-        print("argv: coins %s, pot_per_contract %s -> $643.47 bids %d" % (
-            sorted(COINS) if COINS else "all", POT_PER_CONTRACT, size_for_pot(643.47)))
+        print("argv: coins %s, pot_per_contract %s -> $643.47 bids %d, levels %s, market_cap_x %s" % (
+            sorted(COINS) if COINS else "all", POT_PER_CONTRACT, size_for_pot(643.47), list(LIVE_LEVELS), a.market_cap_x))
     if a.selftest:
         return 0
     if not a.subaccount or a.subaccount < 1:
