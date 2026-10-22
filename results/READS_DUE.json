@@ -942,6 +942,14 @@
    "how": "python -I research\\changes_watch.py   (section 4: pauses, ET days paused, money the pauses would have skipped)",
    "bar": "Operator rule: keep no-pause while the money the replayed pauses would have skipped is >= $0 (no-pause made more). Put --max-losses 2 back only if the skipped markets net < $0 over >= 2 weeks (the pause would have SAVED money). First read 2026-10-22 05:49Z: 136 markets, 4 losing, 1 pause (10-19 23:00Z, ET day 2026-10-19), 0 markets skipped, $0.00.",
    "status": "open"
+  },
+  {
+   "id": "ladder-optc",
+   "due": "2026-10-29T12:00Z",
+   "what": "Ladder Option C (v-ladder-optc, live 10-22 08:58Z): did it make more than the old 9-coin setup would have, and did any coin lose?",
+   "how": "python research/ladder_shadow.py (C vs A since 10-22 from the paper ladder) + Kalshi subaccount-1 record (botstats / pinledger)",
+   "bar": "KEEP if C >= A in shadow money since 10-22 and no C loss; if a dropped coin (BTC ETH SOL BNB) shows paper wins only, report the $ given up; any live loss -> report at once with the market",
+   "status": "open"
   }
  ]
 }

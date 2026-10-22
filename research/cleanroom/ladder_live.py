@@ -996,7 +996,12 @@ def main():
         sub_bal = float(bal["balance_dollars"])
     except Exception:
         raise SystemExit("subaccount balance unreadable (%s %s); refusing" % (st, str(bal)[:200]))
-    pot = read_pot(sender, a.subaccount) if a.auto_size else None
+    pot = None
+    for _try in range(5 if a.auto_size else 0):    # v-ladder-optc: the start read retries (429s right after maintenance)
+        time.sleep(2.0)
+        pot = read_pot(sender, a.subaccount)
+        if pot is not None:
+            break
     why = start_refusal(sub_bal, pot, a.live, a.auto_size)
     if why:
         raise SystemExit(why + " -- refusing")
