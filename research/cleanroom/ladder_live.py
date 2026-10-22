@@ -81,6 +81,12 @@ LIMBO_S = 60.0                                   # v-ladder-limbo: a failed canc
 MARKET_CAP_X = 0                                 # --market-cap-x 2: at most 2 bids' worth in one market
 CLOSE_CAP_X = 0                                  # --close-cap-x 5: at most 5 bids' worth across one close's markets
 
+# v-ladder-optc (2026-10-22, operator: "Okay option c"): --coins limits which 15-minute series the ladder bids on
+# (None = every coin, as before); --pot-per-contract sets the size divisor (default 14 = as before). Option C =
+# NEAR/ZEC/DOGE/HYPE/XRP, pot / 7.8 a bid (9/5 of today's size: the same resting money on 5 coins instead of 9),
+# --market-cap-x 1 (one bid a market). The clean-room paper ladder keeps watching all 9 coins (the shadow).
+COINS = None
+
 
 def apply_size(size, pot=None):
     """v-ladder-size (2026-09-30, operator: "increase ladder"): contracts per bid, with every rail scaled by it --
@@ -103,7 +109,7 @@ def apply_size(size, pot=None):
 
 
 def size_for_pot(pot):
-    """pot dollars -> contracts a bid: floor(pot / 14), clamped 1..SIZE_MAX."""
+    """pot dollars -> contracts a bid: floor(pot / POT_PER_CONTRACT) (14 unless --pot-per-contract), clamped 1..SIZE_MAX."""
     return max(1, min(SIZE_MAX, int(math.floor(float(pot) / POT_PER_CONTRACT + 1e-9))))
 
 
@@ -337,6 +343,8 @@ class Broker:
             for m in list(eng.markets.values()):
                 present.add(m.ticker)
                 desired = {o.id: o for o in m.orders if o.live_to is None and getattr(o, "level", 0) in LIVE_LEVELS}
+                if COINS is not None and m.ticker.split("-")[0] not in COINS:
+                    desired = {}                   # v-ladder-optc: a coin outside --coins is never admitted
                 live_set = self.live_markets.setdefault(m.close_s, set())
                 if m.ticker not in live_set:
                     if desired and len(live_set) < MAX_LIVE_PER_CLOSE and not (self.halted or self.stopped):
@@ -753,6 +761,30 @@ def selftest():
            "the next ET day: day stop re-set to -20% of that day's first pot (-$28)")
     finally:
         SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE = _sv
+    # v-ladder-optc: NULL first (COINS None -> both coins admitted), then --coins admits only the listed series;
+    # the size divisor: $643.47 / 7.8 -> 82, / 14 -> 45 (as before)
+    global COINS, POT_PER_CONTRACT
+    _svc = (COINS, POT_PER_CONTRACT)
+    try:
+        for coins, want in ((None, {"KXNEAR15M-26OCT221200-00", "KXBTC15M-26OCT221200-00"}),
+                            (frozenset({"KXNEAR15M", "KXZEC15M"}), {"KXNEAR15M-26OCT221200-00"})):
+            COINS = coins
+            bco = Broker(log, 3, False, fake_send, lambda: now[0])
+            bco.sync(_E([_M("KXNEAR15M-26OCT221200-00", 9500, [_O(95000, "yes", "0.98")]),
+                         _M("KXBTC15M-26OCT221200-00", 9500, [_O(95001, "no", "0.98")])]))
+            got = {v["ticker"] for v in bco.live.values() if v["status"] == "sending"}
+            ck(got == want, "optc: coins %s -> bids on %s (got %s)" % (sorted(coins) if coins else "all", sorted(want), sorted(got)))
+        COINS = frozenset({"KXNEAR15M"})
+        bco2 = Broker(log, 3, False, fake_send, lambda: now[0])
+        bco2.sync(_E([_M("KXBTC15M-26OCT221215-15", 9600, [_O(96000, "yes", "0.98")])]))
+        ck(not bco2.live_markets.get(9600), "optc: an excluded coin never takes a live-market slot")
+        POT_PER_CONTRACT = 7.8
+        ck(size_for_pot(643.47) == 82 and size_for_pot(93.47) == 11 and size_for_pot(2000) == SIZE_MAX,
+           "optc: pot / 7.8 -> 82 at $643.47, 11 at $93.47, clamped at %d" % SIZE_MAX)
+        POT_PER_CONTRACT = 14.0
+        ck(size_for_pot(643.47) == 45 and size_for_pot(93.47) == 6, "optc NULL: pot / 14 -> 45 and 6 as before")
+    finally:
+        COINS, POT_PER_CONTRACT = _svc
     # v-ladder-caps (F23): NULL first -- caps off places exactly what it did before; then 2x per market, 5x per close
     global MARKET_CAP_X, CLOSE_CAP_X
     _sv = (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, MARKET_CAP_X, CLOSE_CAP_X)
@@ -925,9 +957,25 @@ def main():
                     help="v-ladder-caps (F23): at most this many bids' worth (x size) resting+held in one market; 0 = off")
     ap.add_argument("--close-cap-x", type=float, default=0,
                     help="v-ladder-caps (F23): at most this many bids' worth across one quarter-hour's markets; 0 = off")
+    ap.add_argument("--coins", default="",
+                    help="v-ladder-optc: comma list of 15-minute series to bid on (e.g. KXNEAR15M,KXZEC15M); empty = all")
+    ap.add_argument("--pot-per-contract", type=float, default=14.0,
+                    help="v-ladder-optc: --auto-size bid = floor(pot / this) (default 14 = unchanged)")
     a = ap.parse_args()
+    global COINS, POT_PER_CONTRACT
+    coins = None
+    if a.coins.strip():
+        coins = frozenset(x.strip().upper() for x in a.coins.split(",") if x.strip())
+        if not all(c.startswith("KX") and c.endswith("15M") for c in coins):
+            raise SystemExit("--coins takes 15-minute series like KXNEAR15M; got %s" % sorted(coins))
+    if not (4.0 <= a.pot_per_contract <= 100.0):
+        raise SystemExit("--pot-per-contract %s is outside 4..100" % a.pot_per_contract)
     if not selftest() or not P.selftest():
         raise SystemExit("self-test failed; refusing to run")
+    COINS, POT_PER_CONTRACT = coins, float(a.pot_per_contract)      # set after the self-test (it assumes the defaults)
+    if a.selftest:
+        print("argv: coins %s, pot_per_contract %s -> $643.47 bids %d" % (
+            sorted(COINS) if COINS else "all", POT_PER_CONTRACT, size_for_pot(643.47)))
     if a.selftest:
         return 0
     if not a.subaccount or a.subaccount < 1:
@@ -970,7 +1018,8 @@ def main():
                rails={"size": int(SIZE), "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
                       "start_cap": MAX_SUB_BALANCE, "max_live_per_close": MAX_LIVE_PER_CLOSE,
                       "live_levels": list(LIVE_LEVELS), "writes_per_s": WRITES_PER_S,
-                      "market_cap_x": MARKET_CAP_X, "close_cap_x": CLOSE_CAP_X})
+                      "market_cap_x": MARKET_CAP_X, "close_cap_x": CLOSE_CAP_X,
+                      "coins": sorted(COINS) if COINS is not None else None, "pot_per_contract": POT_PER_CONTRACT})
     threading.Thread(target=br.run_writer, daemon=True).start()
     threading.Thread(target=br.run_poller, daemon=True).start()
     orig_tick, orig_res = P.Engine.tick, P.Engine.on_result
