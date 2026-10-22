@@ -918,6 +918,30 @@
    "how": "python research\\cleanroom\fc_maker_paper.py --read   (per arm: $/day = 96 x P&L on covered closes / covered closes, stale-flagged markets excluded; ROI = P&L / cost of fills; run/day stops; longest dry spell; share of seconds with <= 3 order actions; verdict). Covered close = >= 7 of 9 coins with a synced, non-stale book at >= 20 of 29 decision seconds; covered ET day = >= 87 of 96 closes covered; calm day = median rel -29 local/g vol ratio < 0.60.",
    "bar": "PRE-REGISTERED 2026-10-18 before any paper data. Needs >= 10 covered ET days incl. >= 3 calm; if fewer, extend to 2026-11-02T12:00Z. PASS (all): M300 >= +$10/day after stops; M300 ROI >= 5%; M500 >= +$5/day; M300 - NULL >= $0/day; M300 <= 1 run stop and longest dry spell <= 8 h; M300 order actions (place / cancel / move, a move counted once as one amend; summed over the 9 markets) <= 3/s in >= 99% of the seconds of closes it wrote in (cancel + place counted separately is reported beside it). KILL (any): M300 total <= $0; M500 total < $0; M300 trails NULL by > $5/day; M300 >= 2 run stops. Read flagged UNRELIABLE if stale-flagged markets hold > 10% of M300's filled markets. PASS -> operator decision on a small live probe (23 a side, run stop 0.33 x pot) with live latency measured on real orders; otherwise no live change.",
    "status": "open"
+  },
+  {
+   "id": "watch-band15",
+   "due": "2026-10-28T12:00Z",
+   "what": "WEEKLY read of v-band15 (--band-mult 0.955 0.981 1.5, LIVE 2026-10-21 11:01:51Z per the start record of results/pinrun-live-20261021T110151Z.jsonl). Extra contracts = filled on a band_boost decision above the pre-boost size the bot recorded; their money from Kalshi (results/kalshi_ledger.json via pinledger) plus their pro-rata share of the hedge leg. After each read move 'due' on 7 days.",
+   "how": "python -I research\\changes_watch.py   (section 1: band decisions, extra contracts, extra $ net, losses caused, losing markets)",
+   "bar": "Operator rule: keep only if it makes MORE money. KEEP while extra-contract money since LIVE >= $0. REMOVE (delete the --band-mult line in restart_bot.ps1, rerun while flat) if extra-contract money since LIVE < $0 at any weekly read, or if extra contracts on band markets lose on >= 6 more markets than the study's rate predicts (VERSIONS.md: 'erased if ~6 more losing markets than the 15 observed'). First read 2026-10-22 05:49Z: 32 decisions, 11 with extra, 372.4 extra contracts, +$8.64, losses caused $0.00.",
+   "status": "open"
+  },
+  {
+   "id": "watch-hedgejump6",
+   "due": "2026-10-31T12:00Z",
+   "what": "WEEKLY read of v-hedgejump6 (--hedge-jump 6; installed 2026-10-22 in restart_bot.ps1, live from the first start record with hedge_jump set, expected ~2026-10-24 11:01Z). Every hedge_alarm with trigger 'jump': the hedge leg Kalshi booked vs what the 0.40 belief line alone would have bought (same contracts at the hedge-side ask of the first second belief went under 0.40; $0 if it never did; diff 0 if belief was already under 0.40 at the alarm). Counterfactual priced at the ASK, the real hedge at its FILL: leans against the jump. ALSO READ EARLY the day the report shows 10 scored jump hedges. After each read move 'due' on 7 days.",
+   "how": "python -I research\\changes_watch.py   (section 2: per jump hedge, running total over the first 10)",
+   "bar": "PRE-REGISTERED (VERSIONS.md v-hedgejump6): if the first 10 jump-fired hedges net below -$50 vs what the 0.40 line would have bought, remove the flag (delete the --hedge-jump line in restart_bot.ps1, rerun while flat). After the first 10 pass: keep while the all-time net vs the 0.40 line >= $0 (operator rule: only if it makes more money). First read 2026-10-22 05:49Z: not live, 0 jump hedges.",
+   "status": "open"
+  },
+  {
+   "id": "watch-nopause",
+   "due": "2026-10-25T12:00Z",
+   "what": "WEEKLY read of v-nopause (--max-losses 2 -> 0, LIVE 2026-10-18 11:01:21Z). Replays the old 2-loss brake on Kalshi market money: count losing markets per run (reset at each real restart), a 2nd loss halts the run for ~15 min (watch_bot restart) and the count resets; money given up = Kalshi net of markets first entered inside a pause. After each read move 'due' on 7 days.",
+   "how": "python -I research\\changes_watch.py   (section 4: pauses, ET days paused, money the pauses would have skipped)",
+   "bar": "Operator rule: keep no-pause while the money the replayed pauses would have skipped is >= $0 (no-pause made more). Put --max-losses 2 back only if the skipped markets net < $0 over >= 2 weeks (the pause would have SAVED money). First read 2026-10-22 05:49Z: 136 markets, 4 losing, 1 pause (10-19 23:00Z, ET day 2026-10-19), 0 markets skipped, $0.00.",
+   "status": "open"
   }
  ]
 }
