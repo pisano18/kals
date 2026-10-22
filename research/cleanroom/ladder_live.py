@@ -266,6 +266,7 @@ class Broker:
         self.q = queue.Queue()
         self.live = {}            # paper order id -> {kid, ticker, side, px, status, filled}
         self.live_markets = {}    # close_s -> set(tickers)
+        self.deferred = set()      # v-ladder-reserve: extra bids held back (logged once each)
         self.held = {}            # ticker -> {"side", "n", "cost"}
         self.day, self.day_pnl = None, 0.0
         self.halted = self.stopped = False
@@ -333,6 +334,21 @@ class Broker:
             return "close_cap"
         return None
 
+    def reserve_short(self, o, ticker, live_set):
+        """v-ladder-reserve (2026-10-22): C+ must never cost Option C a bid. A market's FIRST top-rung (98c) bid is
+        privileged; any extra bid (the 95c rung, or a second 98c bid) is placed only if the money committed after it
+        still leaves one first 98c bid (SIZE x 0.98) for every --coins market of this close not yet decided.
+        True = hold this extra bid back for now."""
+        if len(LIVE_LEVELS) < 2:
+            return False                           # only in C+ mode (--levels 0,1); Option C is exactly as before
+        first = getattr(o, "level", 0) == 0 and self.market_contracts(ticker) <= 1e-9
+        if first:
+            return False
+        ncoins = len(COINS) if COINS is not None else 9
+        reserve = 0.98 * float(SIZE) * max(0, ncoins - len(live_set))
+        _n, c = self.exposure()
+        return c + float(o.price) * float(SIZE) + reserve > MAX_COMMIT + 1e-9
+
     # --- called after every engine tick ---
     def sync(self, eng):
         if not self.stopped and os.path.exists(STOP_FILE):
@@ -352,9 +368,15 @@ class Broker:
                         self.log.write("live_market", ticker=m.ticker, close_s=m.close_s)
                     else:
                         continue
-                for pid, o in desired.items():
+                for pid, o in sorted(desired.items(), key=lambda kv: getattr(kv[1], "level", 0)):
                     if pid in self.live or m.done or self.halted or self.stopped:
                         continue
+                    if self.reserve_short(o, m.ticker, live_set):
+                        if pid not in self.deferred:
+                            self.deferred.add(pid)
+                            self.log.write("deferred", ticker=m.ticker, paper_id=pid, px=str(o.price),
+                                           why="reserve: room kept for the first 98c bid of coins not yet decided")
+                        continue                    # not marked: it is tried again next tick, when room may exist
                     why = self.rails_refusal(o.price, m.ticker, m.close_s)
                     if why:
                         self.live[pid] = {"kid": None, "ticker": m.ticker, "side": o.side, "px": o.price,
@@ -796,6 +818,27 @@ def selftest():
                 got = sorted(v["px"] for v in bcp.live.values() if v["status"] == "sending")
                 ck(len(got) == want and "0.85" not in [str(x) for x in got],
                    "cplus: levels %s -> %d bid(s) a market, never the 85c rung (got %s)" % (list(lv), want, got))
+            # v-ladder-reserve: at $643.47 (size 82, $450.43 committable) the 95c rung never takes the money a later
+            # coin's first 98c bid needs; with plenty of money (NULL) both rungs go up at once
+            _svs = (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE)
+            try:
+                LIVE_LEVELS, COINS = (0, 1), frozenset(("KXNEAR15M", "KXZEC15M", "KXDOGE15M", "KXHYPE15M", "KXXRP15M"))
+                for pot, want_first, want_all in ((643.47, ["0.98"], ["0.98"] * 5), (5000.0, ["0.95", "0.98"], None)):
+                    apply_size(82, pot=pot)
+                    brr = Broker(log, 3, False, fake_send, lambda: now[0])
+                    cs = sorted(COINS)
+                    mk = lambda i: _M("%s-26OCT221300-00" % cs[i], 9800, [_O(98000 + 10 * i, "yes", "0.98", level=0),
+                                                                         _O(98001 + 10 * i, "yes", "0.95", level=1)])
+                    brr.sync(_E([mk(0)]))
+                    got = sorted(str(v["px"]) for v in brr.live.values() if v["status"] == "sending")
+                    ck(got == want_first, "reserve: pot $%.0f, first coin decided -> bids %s (got %s)" % (pot, want_first, got))
+                    if want_all:
+                        brr.sync(_E([mk(i) for i in range(5)]))
+                        got = sorted(str(v["px"]) for v in brr.live.values() if v["status"] == "sending")
+                        ck(got == want_all and not any(v["status"] == "refused" for v in brr.live.values()),
+                           "reserve: all 5 coins decided -> every coin gets its 98c bid, none refused (got %s)" % got)
+            finally:
+                SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE = _svs
         finally:
             LIVE_LEVELS = _svl
     finally:
