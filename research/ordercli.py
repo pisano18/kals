@@ -726,12 +726,17 @@ def check_sub_transfer(body, src_balance, dst_balance):
 
 
 def sub_balance(pk, key_id, sub):
-    st, b = send(PROD, pk, key_id, "GET", "/portfolio/balance",
-                 query={"subaccount": int(sub), "exchange_index": SUB_POOL})
-    try:
-        return float(b["balance_dollars"]) if st == 200 else None
-    except Exception:
-        return None
+    for _try in range(5):                      # 10-22: retries 429s (the live bots share this key's rate limit)
+        st, b = send(PROD, pk, key_id, "GET", "/portfolio/balance",
+                     query={"subaccount": int(sub), "exchange_index": SUB_POOL})
+        if st == 429:
+            time.sleep(1.5)
+            continue
+        try:
+            return float(b["balance_dollars"]) if st == 200 else None
+        except Exception:
+            return None
+    return None
 
 
 def sub_main(a):
