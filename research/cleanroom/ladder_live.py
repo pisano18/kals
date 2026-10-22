@@ -69,7 +69,7 @@ MAX_SUB_BALANCE = 25.00
 
 
 # v-sub-autosize (2026-10-02): --auto-size. The pot is the subaccount's cash + the cost of what it holds.
-SIZE_MAX = 100                                   # --size / --auto-size ceiling (was 20)
+SIZE_MAX = 1000000                               # --size / --auto-size ceiling: effectively none (operator 10-22 "Just remove the 100 contracts cap"; was 100, before that 20)
 POT_PER_CONTRACT = 14.0                          # size = floor(pot / 14): $70 -> 5 (today's size), $140 -> 10
 POT_FLOOR = 10.0                                 # refuse to start under this pot (the lower sanity floor)
 POT_REREAD_S = 60.0                              # the main bot's autosize cadence
@@ -647,12 +647,12 @@ def selftest():
         apply_size(100)
         ck(MAX_CONTRACTS == 1000 and body_ok(order_body("T", "yes", "0.98", 3, "lad-x"), 3), "--size 100 accepted")
         try:
-            apply_size(101)
-            ck(False, "--size 101 must be refused")
+            apply_size(SIZE_MAX + 1)
+            ck(False, "--size above SIZE_MAX must be refused")
         except SystemExit:
             pass
-        ck([size_for_pot(p) for p in (70, 140, 13, 28, 69.99, 5000, 1400, 9)] == [5, 10, 1, 2, 4, 100, 100, 1],
-           "size = floor(pot/14): $70 -> 5, $140 -> 10, $69.99 -> 4, floor 1, cap 100")
+        ck([size_for_pot(p) for p in (70, 140, 13, 28, 69.99, 5000, 1400, 9)] == [5, 10, 1, 2, 4, 357, 100, 1],
+           "size = floor(pot/14): $70 -> 5, $140 -> 10, $69.99 -> 4, floor 1, $5000 -> 357 (no 100 cap)")
         ck(start_refusal(None, 500.0, True, True) is None and start_refusal(None, 10.0, True, True) is None,
            "--auto-size: NO upper start cap ($500 starts)")
         ck(start_refusal(None, 9.99, True, True) and start_refusal(None, None, True, True),
@@ -677,13 +677,13 @@ def selftest():
         flat = [True]
         applied, reads = [], []
         for pot, want in ((70.0, (5, 50, 49.0, -14.0)), (140.0, (10, 100, 98.0, -28.0)), (13.0, (1, 10, 9.1, -2.6)),
-                          (5000.0, (100, 1000, 3500.0, -1000.0))):
+                          (5000.0, (357, 3570, 3500.0, -1000.0))):
             az = AutoSize(log, lambda: None, lambda: clk[0], lambda: flat[0], on_apply=lambda: applied.append(int(SIZE)))
             az.start(pot)
             got = (az.size, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP)
             ck(got == want and SIZE == Decimal(want[0]) and MAX_SUB_BALANCE is None,
                "auto-size at pot $%.0f: (size, contracts, commit 70%%, day -20%%) = %s, want %s" % (pot, got, want))
-        ck(applied == [5, 10, 1, 100], "on_apply runs with each applied size (main keeps the paper engine's SIZE in step)")
+        ck(applied == [5, 10, 1, 357], "on_apply runs with each applied size (main keeps the paper engine's SIZE in step)")
         for bad in (9.99, None):
             try:
                 AutoSize(log, lambda: None, lambda: clk[0], lambda: True).start(bad)
@@ -779,8 +779,8 @@ def selftest():
         bco2.sync(_E([_M("KXBTC15M-26OCT221215-15", 9600, [_O(96000, "yes", "0.98")])]))
         ck(not bco2.live_markets.get(9600), "optc: an excluded coin never takes a live-market slot")
         POT_PER_CONTRACT = 7.8
-        ck(size_for_pot(643.47) == 82 and size_for_pot(93.47) == 11 and size_for_pot(2000) == SIZE_MAX,
-           "optc: pot / 7.8 -> 82 at $643.47, 11 at $93.47, clamped at %d" % SIZE_MAX)
+        ck(size_for_pot(643.47) == 82 and size_for_pot(93.47) == 11 and size_for_pot(2000) == 256 and size_for_pot(20000) == 2564,
+           "optc: pot / 7.8 -> 82 at $643.47, 11 at $93.47, 256 at $2,000, 2,564 at $20,000 (no 100 cap)")
         POT_PER_CONTRACT = 14.0
         ck(size_for_pot(643.47) == 45 and size_for_pot(93.47) == 6, "optc NULL: pot / 14 -> 45 and 6 as before")
     finally:
