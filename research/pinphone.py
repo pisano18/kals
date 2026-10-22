@@ -632,6 +632,7 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 /start — trade again
 <code>/stop yes</code> — stop right now
 /mute · /unmute — alerts off / on
+/update — load the newest phone code (self-tests it first; back within ~10 min)
 
 📈 Most commands send a chart right after the words (not /open, /help or the controls).
 
@@ -1677,8 +1678,8 @@ def _ago(s):
     return "%.1f h ago" % (s / 3600.0)
 
 
-def bs_window_line(w, label, unit="market", fmt=None, whose="its pot"):
-    """'Today: +$1.62 on $59.54 put in (+2.7%) = +0.15% of its pot ($1,100.00); 2 markets, 2 won, 0 lost'.
+def bs_window_line(w, label, unit="market", fmt=None, whose="its bank"):
+    """'Today: +$1.62 on $59.54 put in (+2.7%) = +0.15% of its bank ($1,100.00); 2 markets, 2 won, 0 lost'.
     The first % is the return on what the bets cost; the second (2026-10-02) is the share of the pot
     it had when the window began -- all time: of the money put in -- and is left out when the pot is
     unknown, never guessed. None = Kalshi unread."""
@@ -1756,7 +1757,7 @@ def bs_money_lines(m, unit="market", fmt=None):
         if k in ("last_7_days", "all_time") and w and w["active_days"] > 1:
             line += "; %s up, %d down" % (_nof(w["days_up"], "day"), w["days_down"])
         L.append(line)
-    note = bs._pot_note(m)                  # what '% of its pot' means, or why it is not shown
+    note = bs._pot_note(m)                  # what '% of its bank' means, or why it is not shown
     if note:
         L.append(note)
     at = m["all_time"]
@@ -1992,7 +1993,7 @@ def run_dot(r):
     return "⏸" if r.get("stop_flag") else "🔴"
 
 
-def bs_money_table(windows, whose="of pot"):
+def bs_money_table(windows, whose="of bank"):
     """{window key: botstats window} -> (table lines, the base of a money-put-in share or None).
     Money, its return on what the bets cost, and its share of the pot when the window began (the same
     numbers bs_window_line words); '-' where the pot is unknown, never a guessed base."""
@@ -2019,8 +2020,8 @@ def bs_money_table(windows, whose="of pot"):
     return table(rows), base
 
 
-def money_legend(base, whose="its pot"):
-    return i_("Return = on what the bets cost · of pot = of what %s held when the window began%s"
+def money_legend(base, whose="its bank"):
+    return i_("Return = on what the bets cost · of bank = of what %s held when the window began%s"
               % (whose, ("; * all time = of the %s put in" % dollars(base)) if base else ""))
 
 
@@ -2044,8 +2045,9 @@ def _money_detail(m, unit):
     return L[:L.index("By day:")] if "By day:" in L else L
 
 
-def bs_money_html(m, unit="market"):
-    """One bot's money block: where it comes from, the windows table, the 7-day table."""
+def bs_money_html(m, unit="market", goal=None):
+    """One bot's money block: where it comes from, the windows table, the average day as a % of its bank
+    (with the goal, for the ladder), the 7-day table."""
     if not m["ok"]:
         return elines(bs_money_lines(m, unit, usd))           # the COULD NOT READ line, said once
     L = ["💰 <b>Money</b> <i>(%s, read %s; a %s counts on the ET day it closed)</i>"
@@ -2057,6 +2059,9 @@ def bs_money_html(m, unit="market"):
     tbl, base = bs_money_table({k: m[k] for k in BS_WINDOWS})
     L.append(pre(tbl))
     L.append(money_legend(base))
+    avg = bs_avg_day_line(m, goal)
+    if avg:
+        L.append(avg)
     if not any(m[k] and m[k]["pot_pct"] is not None for k in BS_WINDOWS if m[k] and m[k]["markets"]):
         note = _bs()._pot_note(m)
         if note:
@@ -2069,8 +2074,26 @@ def bs_money_html(m, unit="market"):
     return L
 
 
-def bs_headline(w, whose="of its pot", who=""):
-    """'🟢 Pin bot today +$5.31 (+2.6% on $202.56 staked · +0.40% of its pot)' -- bs_window_line's own
+LADDER_GOAL_PCT = 1.0       # operator 10-22: the ladder's target is 1% of its bank a day -- shown next to its %
+
+
+def bs_avg_day_line(m, goal=None):
+    """'📈 Average day, last 7 days: +0.42% of its bank (goal 1.0%)' -- the 7-day window's % of the bank spread over
+    the days it covers (fewer when the bot is newer than that); None when that % is unknown. Operator 10-22:
+    'I can't know how close ladder is to 1%'."""
+    w = m.get("last_7_days")
+    if not w or w.get("pot_pct") is None or not w.get("markets"):
+        return None
+    nd = len([d for d in (m.get("days_7") or []) if not d.get("before_first")]) or 7
+    bs = _bs()
+    txt = "📈 <b>Average day, last %d days: %s of its bank</b>" % (nd, esc(bs.pot_pct_txt(w["pot_pct"] / nd)))
+    if goal is not None:
+        txt += " (goal %s)" % esc(bs.pot_pct_txt(goal).lstrip("+"))
+    return txt
+
+
+def bs_headline(w, whose="of its bank", who="", goal=None):
+    """'🟢 Pin bot today +$5.31 (+2.6% on $202.56 staked · +0.40% of its bank)' -- bs_window_line's own
     figures; nothing settled and unread are said."""
     bs = _bs()
     lab = ("%s today" % who) if who else "Today"
@@ -2081,6 +2104,8 @@ def bs_headline(w, whose="of its pot", who=""):
     share = ""
     if w.get("pot_pct") is not None and w.get("pot") is not None:
         share = " · %s %s" % (bs.pot_pct_txt(w["pot_pct"]), whose)
+        if goal is not None:
+            share += " (goal %s)" % bs.pot_pct_txt(goal).lstrip("+")
     return "%s <b>%s %s</b> (<b>%s</b> on %s staked%s)" % (
         dot(w["money"]), esc(lab), esc(usd(w["money"])), esc(bs.pct(w["return_pct"])), esc(_cash(w.get("put_in"))),
         esc(share))
@@ -2095,7 +2120,8 @@ def bs_bot_html(b, now_et):
     pot = bs.SUB_NAME.get(str(b["subaccount"]), "subaccount %s" % b["subaccount"])
     if b["shares_subaccount_with"]:
         pot += ", shared with the " + " and ".join(bs.SPEC[x]["label"].lower() for x in b["shares_subaccount_with"])
-    L = [bs_headline(m["today"] if m["ok"] else None, who=b["label"]),
+    L = [bs_headline(m["today"] if m["ok"] else None, who=b["label"],
+                     goal=LADDER_GOAL_PCT if b["name"] == "ladder" else None),
          "%s <b>%s</b> -- %s" % (run_dot(r), esc(b["label"].upper()), esc(b["what"])),
          "<i>%s · Pot: %s.</i>" % (esc(now_et), esc(pot))]
     L.append("")
@@ -2104,7 +2130,7 @@ def bs_bot_html(b, now_et):
     setup = bs_setup_lines(r)
     L += elines([x for x in setup if not x.startswith("Settings: ")])
     L.append("")
-    L += bs_money_html(m, unit)
+    L += bs_money_html(m, unit, goal=LADDER_GOAL_PCT if b["name"] == "ladder" else None)
     L.append("")
     ol = elines(bs_open_lines(b["open"]))
     L.append("📂 " + ol[0].replace("Open now:", "<b>Open now:</b>", 1))
@@ -2216,7 +2242,7 @@ def bs_all_html(a):
     full = bs_all_text(a).split("\n")
     keep, skip = [], True
     for x in full[1:]:
-        if x.startswith(("PIN BOT", "COIN RACE", "FORECASTER", "PENNY LADDER", "WEATHER DIP-SELLER",
+        if x.startswith(("PIN BOT", "COIN RACE", "FORECASTER", "PENNY LADDER", "LADDER", "WEATHER DIP-SELLER",
                          "NOT ANY BOT'S", "! ", "PARTIAL:", "% of the pots", "Cash: ")):
             continue
         keep.append(x)
@@ -3824,9 +3850,44 @@ class Phone:
         if cmd == "/unmute":
             self.muted = False
             return Html("🔔 Alerts on.")
+        if cmd == "/update":
+            return self.text_update()
         if cmd in ("/help", "/?"):
             return HELP_TEXT
         return Html("I did not understand that.\n\n" + HELP_TEXT)
+
+    def text_update(self):
+        """/update (operator 10-22): load the newest phone code. This process runs elevated, so nothing else can
+        restart it: it self-tests the files on disk off the poll thread and, only if they pass, the poll loop
+        confirms the /update message to Telegram (so the new process does not answer it again) and exits;
+        boot_all.ps1 (every 10 min) starts the missing phone link on the new code."""
+        if getattr(self, "_updating", False):
+            return Html("🔄 An update check is already running.")
+        self._updating = True
+        chat = self.chat_id
+
+        def work():
+            try:
+                bad = []
+                for f in (os.path.join(HERE, "pinphone.py"), os.path.join(HERE, "botstats.py")):
+                    r = subprocess.run([sys.executable, "-u", f, "--selftest"], cwd=os.path.dirname(HERE),
+                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
+                    if r.returncode != 0:
+                        bad.append("%s (exit %s)" % (os.path.basename(f), r.returncode))
+                if bad:
+                    self.say(Html("⚠️ <b>Update NOT applied</b>: the new code failed its self-test: %s. The phone keeps "
+                                  "running the old code." % esc(", ".join(bad))), chat_id=chat)
+                    return
+                self.say(Html("✅ <b>New code passed its self-test.</b> Restarting the phone link now; it is back on "
+                              "the new code within ~10 minutes (boot_all) and says hello."), chat_id=chat)
+                self._exit_now = True                     # the poll loop confirms the offset, then exits
+            except Exception as e:                       # noqa: BLE001
+                log(traceback.format_exc())
+                self.say("Update check failed: %s" % str(e)[:200], chat_id=chat)
+            finally:
+                self._updating = False
+        threading.Thread(target=work, daemon=True).start()
+        return Html("🔄 <b>Checking the newest phone code</b> (self-test, a few minutes)…")
 
     # ---- alerts ----
     def alerts_tick(self):
@@ -3997,6 +4058,13 @@ class Phone:
 
     # ---- main loop ----
     def poll_once(self, timeout=25):
+        if getattr(self, "_exit_now", False):           # /update passed: confirm what was handled, then leave
+            try:
+                self.tg.get_updates(self.offset, timeout=0)
+            except Exception:                           # noqa: BLE001
+                pass
+            log("/update: exiting so boot_all starts the new code")
+            os._exit(0)
         try:
             updates = self.tg.get_updates(self.offset, timeout=timeout)
         except Exception as e:                            # noqa: BLE001
@@ -4942,7 +5010,7 @@ def selftest():
         ck("🟢 PIN BOT · main account · /pin\nrunning since Sep 16 7:59 AM ET · v-reopen98 + v-floor90\ntoday -$10.40 "
            "(-0.96%) · 7 days -$9.86 (-0.93%) · all time -$9.86 (-0.93%) · open: 1 ($29.10 at risk)" in b_,
            "a card a bot: running since (ET), version, money with its share of the pot, open bets, its command")
-        ck("⏸ PENNY LADDER · subaccount 1 · /ladder\nSTOPPED by its stop file" in b_
+        ck("⏸ LADDER · subaccount 1 · /ladder\nSTOPPED by its stop file" in b_
            and "FORECASTER · subaccount 2 · /fc\nrunning since Sep 16 8:34 AM ET · v-forecaster-race1" in b_
            and "COIN RACE · main account · /race\nrunning since Sep 15 10:49 PM ET · v-race20" in b_,
            "the paper race arm is not the live race; the ladder with a stop file is STOPPED, not dead")
@@ -4953,7 +5021,7 @@ def selftest():
         p_ = P(ph_)
         ck(fits(ph_) and len(split_html(ph_)) == 1 and not tg_html_problems(ph_),
            "/pin fits one Telegram message on this world (%d chars), Telegram-valid" % len(ph_))
-        ck(p_.split("\n")[0] == "🔴 Pin bot today -$10.40 (-10.4% on $99.80 staked · -0.96% of its pot)",
+        ck(p_.split("\n")[0] == "🔴 Pin bot today -$10.40 (-10.4% on $99.80 staked · -0.96% of its bank)",
            "/pin: today's money, its return on what the bets cost and its share of the pot lead the page")
         for _want, _why in (
                 ("Pot: main account, shared with the coin race.", "its pot, and who shares it"),
@@ -4962,17 +5030,17 @@ def selftest():
                 ("Settings: halts after 2 losing bets.", "its settings from its command line"),
                 ("Keep-alive: watch_bot.ps1 restarts it", "what restarts it"),
                 ("Money (Kalshi settlements, main account, read Sep 16 11:00 AM ET;", "where the money comes from"),
-                ("Today: -$10.40 on $99.80 put in (-10.4%) = -0.96% of its pot ($1,081.78); 2 markets, 1 won, 1 lost",
+                ("Today: -$10.40 on $99.80 put in (-10.4%) = -0.96% of its bank ($1,081.78); 2 markets, 1 won, 1 lost",
                  "today: the both-sides ETH market pays its winning YES side (-$11.30, not -$51.30); -0.96% of the "
                  "main pot at midnight ET"),
-                ("Yesterday: +$0.54 on $29.40 put in (+1.8%) = +0.05% of its pot ($1,085.75); 1 market, 1 won, 0 lost",
+                ("Yesterday: +$0.54 on $29.40 put in (+1.8%) = +0.05% of its bank ($1,085.75); 1 market, 1 won, 0 lost",
                  "yesterday"),
-                ("Last 7 days: -$9.86 on $129.20 put in (-7.6%) = -0.93% of its pot ($1,062.70); 3 markets, 2 won, "
+                ("Last 7 days: -$9.86 on $129.20 put in (-7.6%) = -0.93% of its bank ($1,062.70); 3 markets, 2 won, "
                  "1 lost; 1 day up, 1 down", "7 days, with days up and down"),
                 ("All time (since Sep 15): -$9.86 on $129.20 put in (-7.6%) = -0.93% on money put in ($1,062.70)",
                  "all time, since its first day, of the main account's money put in (1103.75 deposited - 41.05 "
                  "moved to the bot pots)"),
-                ("% of its pot = of what the pot held when the window began (cash + open bets, + any money moved in "
+                ("% of its bank = of what the pot held when the window began (cash + open bets, + any money moved in "
                  "during it); all time = of the money put in -- the pot is the whole main account, shared with the "
                  "coin race.", "what the percentages are, and that pin's pot is shared"),
                 ("Worst market today: -$11.30 ETH 9:45 AM; best +$0.90 BTC 10:30 AM.", "worst and best today"),
@@ -5002,9 +5070,9 @@ def selftest():
                 ("Version: v-forecaster-race1, live since Sep 16 8:35 AM ET.", "its version, not the keep-alive entry"),
                 ("Settings: variant race1_98; 5% of paper size; up to 5 a side, 20 a quarter-hour; at most $22.00 in "
                  "play; buys 75c to 98.5c; stops the day at -$12.00, the run at -$20.00.", "its rails from its start record"),
-                ("Today: -$2.54 on $2.45 put in (-103.7%) = -9.6% of its pot ($26.54); 1 market, 0 won, 1 lost",
+                ("Today: -$2.54 on $2.45 put in (-103.7%) = -9.6% of its bank ($26.54); 1 market, 0 won, 1 lost",
                  "subaccount 2's money today: -$2.54 is -9.6% of the $26.54 it had (18.55 at midnight + 7.99 moved in)"),
-                ("Yesterday: +$0.55 on $2.42 put in (+22.6%) = +2.7% of its pot ($20.00); 1 market, 1 won, 0 lost",
+                ("Yesterday: +$0.55 on $2.42 put in (+22.6%) = +2.7% of its bank ($20.00); 1 market, 1 won, 0 lost",
                  "and yesterday"),
                 ("= -7.7% on money put in ($25.99)", "all time: of the 20 - 2 + 7.99 moved into its pot"),
                 ("Cash: $24.00 -- its own pot (subaccount 2).", "its own cash"),
@@ -5016,7 +5084,7 @@ def selftest():
         ck("Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
            and "stopped on its own" not in l_,
            "/ladder: NOT running, and WHY -- its stop file, with what the file says")
-        ck("Today: +$0.04 on $1.96 put in (+2.1%) = +0.28% of its pot ($15.06); 1 market, 1 won, 0 lost" in l_
+        ck("Today: +$0.04 on $1.96 put in (+2.1%) = +0.28% of its bank ($15.06); 1 market, 1 won, 0 lost" in l_
            and "Cash: $15.10 -- its own pot (subaccount 1)." in l_
            and "Version: v-ladder-settlefix, live since Sep 16 9:16 AM ET." in l_,
            "/ladder: subaccount 1's money, cash and version")
@@ -5026,7 +5094,7 @@ def selftest():
         ck("COIN RACE · " in r_ and "Last 10 races (Kalshi's books)" in r_ and "Paper race arms running:" in r_,
            "/race still says everything it said before")
         ck("Money (Kalshi settlements, main account, read Sep 16 11:00 AM ET; a leg counts on the ET day it closed)"
-           in r_ and "Today: +$0.37 on $19.60 put in (+1.9%) = +0.03% of its pot ($1,081.78); 1 leg, 1 won, 0 lost"
+           in r_ and "Today: +$0.37 on $19.60 put in (+1.9%) = +0.03% of its bank ($1,081.78); 1 leg, 1 won, 0 lost"
            in r_ and "All time (since Sep 16): +$0.37 on $19.60 put in (+1.9%) = +0.03% on money put in ($1,062.70); "
            "1 leg, 1 won, 0 lost" in r_,
            "/race adds the race's money by window, legs not races, each a share of the main pot it shares with pin")
@@ -5071,7 +5139,7 @@ def selftest():
                 ("Version: v-dipsell-live, live since Sep 15 3:56 AM ET.", "its VERSIONS.md entry"),
                 ("2 contracts an order, one order a market", "its rails from its start record"),
                 ("Keep-alive: boot_all.ps1 (every 10 min) restarts it unless the stop file is there.", "its keep-alive"),
-                ("Yesterday: +$0.80 on $1.20 put in (+66.7%) = +1.6% of its pot ($50.00); 1 market, 1 won, 0 lost",
+                ("Yesterday: +$0.80 on $1.20 put in (+66.7%) = +1.6% of its bank ($50.00); 1 market, 1 won, 0 lost",
                  "yesterday's bracket, +1.6% of the $50 moved into its pot that day"),
                 ("Open now: 1 bet, $1.10 at risk:\n  MIA high B90.5 NO x2, $1.10 at risk", "the bracket Kalshi holds open"),
                 ("Cash: $49.70 -- its own pot (subaccount 3).", "its cash, read from POOL 0")):
@@ -5099,8 +5167,8 @@ def selftest():
         _bs_mode["m"] = "noledger"
         n_, nb_ = P(ph.handle(111, "/pin")), P(ph.handle(111, "/bots"))
         ck("Today: -$10.40 on $99.80 put in (-10.4%); 2 markets, 1 won, 1 lost" in n_
-           and "of its pot (" not in n_ and "on money put in" not in n_ and "of its pot)" not in n_
-           and "% of its pot: not shown -- transfers read failed (HTTP 404)." in n_
+           and "of its bank (" not in n_ and "on money put in" not in n_ and "of its bank)" not in n_
+           and "% of its bank: not shown -- transfers read failed (HTTP 404)." in n_
            and "Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
                "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04 | weather none\n" in nb_
            and "today -$10.40 · 7 days -$9.86 · all time -$9.86 ·" in nb_

@@ -146,7 +146,7 @@ SPEC = {
                    "script": "forecaster_live.py", "stop": "forecaster-live.stop",
                    "log": "forecaster-live-orders.jsonl",
                    "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
-    "ladder": {"label": "Penny ladder", "what": "clean-room ladder, 1-contract resting bids", "sub": "1",
+    "ladder": {"label": "Ladder", "what": "resting 98c bids on NEAR ZEC DOGE HYPE XRP, sized from its bank (goal 1%/day)", "sub": "1",
                "script": "ladder_live.py", "stop": "ladder-live.stop", "log": "ladder-live-orders.jsonl",
                "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
     "weather": {"label": "Weather dip-seller",
@@ -254,8 +254,8 @@ def pot_pct_txt(x):
     return ("%+.2f%%" % x) if abs(x) < 1 else ("%+.1f%%" % x)
 
 
-def pot_words(w, whose="its pot"):
-    """'-0.93% of its pot ($1,088.32)' / '-1.9% on money put in ($946.00)', or None when the pot is
+def pot_words(w, whose="its bank"):
+    """'-0.93% of its bank ($1,088.32)' / '-1.9% on money put in ($946.00)', or None when the pot is
     unknown -- a percentage is never shown on a guessed base."""
     if not w or w.get("pot_pct") is None or w.get("pot") is None:
         return None
@@ -406,7 +406,14 @@ def default_getter():
     import kauth
 
     def get(path, params):
-        return kauth.get(path, params)
+        # 2026-10-22: Kalshi answers 429 when the live bots and this read land in the same second (the cash
+        # reads failed that way all morning, so every bot's '% of its bank' was blank). Retry, then give up.
+        for k in range(4):
+            st, body = kauth.get(path, params)
+            if st != 429:
+                return st, body
+            time.sleep(0.8 * (k + 1))
+        return st, body
     return get
 
 
@@ -1617,7 +1624,7 @@ def _n(k, word):
     return "%d %s%s" % (k, word, "" if k == 1 else "s")
 
 
-def _wline(w, name, whose="its pot"):
+def _wline(w, name, whose="its bank"):
     if w is None:
         return "%s: COULD NOT READ KALSHI" % name
     if not w["markets"]:
@@ -1635,12 +1642,12 @@ def _pot_note(m):
         return None
     if any(w.get("pot_pct") is not None for w in ws):
         shared = m.get("pot_shared_with") or []
-        return ("%% of its pot = of what the pot held when the window began (cash + open bets, + any money "
+        return ("%% of its bank = of what the pot held when the window began (cash + open bets, + any money "
                 "moved in during it); all time = of the money put in%s." % (
                     " -- the pot is the whole main account, shared with the %s" % " and the ".join(
                         SPEC[b]["label"].lower() for b in shared) if shared else ""))
     why = next((w.get("pot_why") for w in ws if w.get("pot_why")), None)
-    return ("%% of its pot: not shown -- %s." % why) if why else None
+    return ("%% of its bank: not shown -- %s." % why) if why else None
 
 
 def _bot_text(b):
@@ -2168,10 +2175,10 @@ def selftest():
                                             "weather": None, "other": None},
            "the /bots breakdown carries each bot's own %% of its own pot: %s" % tt["today"]["by_bot_pot_pct"])
         _pt = _bot_text(pin)
-        ck("Today: -$10.12 on $109.50 in (-9.2%) = -0.93% of its pot ($1,088.32), 2 won, 1 lost" in _pt
+        ck("Today: -$10.12 on $109.50 in (-9.2%) = -0.93% of its bank ($1,088.32), 2 won, 1 lost" in _pt
            and "All time: -$17.94 on $" in _pt and "= -1.9% on money put in ($946.00)" in _pt
            and "the pot is the whole main account, shared with the coin race" in _pt,
-           "the phone text: '= X% of its pot ($)' on every window, all time 'on money put in', and pin "
+           "the phone text: '= X% of its bank ($)' on every window, all time 'on money put in', and pin "
            "says the main pot is shared")
         _st = text_summary("all", now=NOW + 1, getter=fake, procs=PROCS)
         ck("Today: -$16.99 on $" in _st and "= -1.5% of all pots ($1,130.83)" in _st
@@ -2212,8 +2219,8 @@ def selftest():
         _nt = _bot_text(n1["bots"]["pin"])
         ck(all(w["pot_pct"] is None and w["pot"] is None for w in ws)
            and abs(n1["bots"]["pin"]["money"]["today"]["money"] - (-10.12)) < 1e-6
-           and "of its pot (" not in _nt and "on money put in" not in _nt
-           and "% of its pot: not shown -- transfers read failed (HTTP 500)" in _nt
+           and "of its bank (" not in _nt and "on money put in" not in _nt
+           and "% of its bank: not shown -- transfers read failed (HTTP 500)" in _nt
            and all(v is None for v in n1["pot_check"].values()),
            "NULL: the books unreadable (the deposit/transfer listings fail) -> the money is still shown, NO "
            "percentage anywhere, and the page says why")
