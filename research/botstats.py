@@ -1422,7 +1422,33 @@ def attach_pots(block, ctx, sub):
         w["pot_kind"], w["pot_why"] = kind, why
         w["pot_of"] = "all pots" if sub is None else SUB_NAME[sub]
         w["pot_pct"] = round(100.0 * w["money"] / pot, 2) if (pot is not None and w["markets"]) else None
+    # 2026-10-22: each of the 7 days as a % of what the pot held THAT day (+ money moved in that day), so an
+    # average day is not divided by a later deposit (the ladder's $550 on 10-22 made its week read 0.14%/day)
+    for d in block.get("days_7") or []:
+        pot = day_pot(ctx, sub, d["day"])
+        d["pot"] = None if pot is None else round(pot, 2)
+        d["pot_pct"] = round(100.0 * d["money"] / pot, 2) if pot is not None else None
     return block
+
+
+def day_pot(ctx, sub, day):
+    """pot_for's 'start' rule for the single ET day `day`: what pot `sub` (None = all) held at midnight ET starting
+    it + money moved in during it. None when it cannot be worked out."""
+    led = ctx["led"]
+    subs = SUBS if sub is None else (sub,)
+    now_v = settled = 0.0
+    for s in subs:
+        p = ctx["subs"][s]
+        if p["now"] is None or not p["complete"]:
+            return None
+        now_v += p["now"]
+        settled += sum(v for d, v in p["days"].items() if d and d >= day)
+    t0, t1 = day_start(day), day_start(shift_day(day, 1))
+    start = now_v - settled - flows(led, sub, t0)
+    if start < -MIN_POT:
+        return None
+    pot = max(0.0, start) + max(0.0, flows(led, sub, t0, t1))
+    return pot if pot >= MIN_POT else None
 
 
 def pot_check(ctx):

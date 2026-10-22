@@ -2078,17 +2078,19 @@ LADDER_GOAL_PCT = 1.0       # operator 10-22: the ladder's target is 1% of its b
 
 
 def bs_avg_day_line(m, goal=None):
-    """'📈 Average day, last 7 days: +0.42% of its bank (goal 1.0%)' -- the 7-day window's % of the bank spread over
-    the days it covers (fewer when the bot is newer than that); None when that % is unknown. Operator 10-22:
-    'I can't know how close ladder is to 1%'."""
-    w = m.get("last_7_days")
-    if not w or w.get("pot_pct") is None or not w.get("markets"):
+    """'📈 Average day, last 6 full days: +1.43% of its bank (goal 1.0%) · 5 of 6 at 1%+' -- each full ET day's money
+    as a % of what the bank held THAT day (botstats days_7 pot_pct), averaged; today (still running) is left out.
+    None when no full day has a known %. Operator 10-22: 'I can't know how close ladder is to 1%'."""
+    ds = [d for d in (m.get("days_7") or [])[1:] if not d.get("before_first") and d.get("pot_pct") is not None]
+    if not ds:
         return None
-    nd = len([d for d in (m.get("days_7") or []) if not d.get("before_first")]) or 7
     bs = _bs()
-    txt = "📈 <b>Average day, last %d days: %s of its bank</b>" % (nd, esc(bs.pot_pct_txt(w["pot_pct"] / nd)))
+    avg = sum(d["pot_pct"] for d in ds) / len(ds)
+    txt = "📈 <b>Average day, last %d full days: %s of its bank</b>" % (len(ds), esc(bs.pot_pct_txt(avg)))
     if goal is not None:
-        txt += " (goal %s)" % esc(bs.pot_pct_txt(goal).lstrip("+"))
+        txt += " (goal %s) · %d of %d days at %s+" % (esc(bs.pot_pct_txt(goal).lstrip("+")),
+                                                    sum(d["pot_pct"] >= goal for d in ds), len(ds),
+                                                    esc(bs.pot_pct_txt(goal).lstrip("+")))
     return txt
 
 
