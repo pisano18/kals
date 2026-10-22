@@ -674,8 +674,10 @@ def reward_main(a):
 #   create : POST /portfolio/subaccounts {"exchange_index": 2}
 #   fund   : POST /portfolio/subaccounts/transfer {client_transfer_id (uuid),
 #            from_subaccount, to_subaccount, amount_cents, exchange_index}
-# Rails: a subaccount may hold at most SUB_MAX_BALANCE (penny tests only).
-SUB_MAX_BALANCE = 100.00       # was 25.00 (penny tests); 2026-09-30 operator: increase the forecaster and ladder
+# Rails: a subaccount may hold at most SUB_MAX_BALANCE -- None = no cap.
+# 2026-10-22 operator: "remove that feature, I said they should be able to grow" -> None (was 100.00; 25.00 in the
+# penny tests). Funding a subaccount is still a dry run + sign-off token, and every other transfer rail stays.
+SUB_MAX_BALANCE = None
 SUB_POOL = 2                 # crypto & commodities
 
 
@@ -714,7 +716,7 @@ def check_sub_transfer(body, src_balance, dst_balance):
     else:
         if body["amount_cents"] > int(round(src_balance * 100)):
             bad.append("amount exceeds the source balance $%.2f" % src_balance)
-        if body["to_subaccount"] != 0 and \
+        if body["to_subaccount"] != 0 and SUB_MAX_BALANCE is not None and \
                 dst_balance + body["amount_cents"] / 100.0 > SUB_MAX_BALANCE + 1e-9:
             bad.append("a subaccount may hold at most $%.2f (would be $%.2f)"
                        % (SUB_MAX_BALANCE, dst_balance + body["amount_cents"] / 100.0))
@@ -944,7 +946,6 @@ def selftest():
         fails.append("a legal $15 funding was refused: %s" % check_sub_transfer(sb, 900.0, 0.0))
     for desc, b_, src, dst in (
             ("more than the source holds", build_sub_transfer(15, 0, 1, "d"), 10.0, 0.0),
-            ("subaccount over the rail", build_sub_transfer(15, 0, 1, "d"), 900.0, SUB_MAX_BALANCE - 14.0),
             ("same subaccount", build_sub_transfer(5, 1, 1, "d"), 900.0, 0.0),
             ("balance unreadable", build_sub_transfer(5, 0, 1, "d"), None, 0.0),
             ("zero amount", build_sub_transfer(0, 0, 1, "d"), 900.0, 0.0)):
