@@ -696,7 +696,7 @@ if (-not (Test-Path $__script)) {
 }
 $__sha = (Get-FileHash -Algorithm SHA256 -Path $__script).Hash.ToLower().Substring(0, 12)
 if ($__sha -ne $codeSha) {
-    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball + v-fastconn + v-coinfrac + v-ladderboost, C:\kals-live-0925k)"
+    Write-Host "ABORTING: $__script has code_sha $__sha, expected $codeSha (the 09-25 build + v-fullcap + v-skiphype + v-bankfix-nodd + v-stp-maker + v-snowball + v-fastconn + v-coinfrac + v-ladderboost + v-etclock, C:\kals-live-0925m)"
     Write-Host "NOTHING WAS STOPPED -- the running bot is untouched."
     try { Stop-Transcript | Out-Null } catch {}
     exit 1
