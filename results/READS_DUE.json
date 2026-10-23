@@ -998,7 +998,8 @@
    "what": "Race v2 20-race live test (started 10-23 07:02:27Z, sub 4 $45): 2-h read after the last race, 48-h payment read. Started outside the pre-registered 21-23 ET window: say so in the read.",
    "how": "python research/sweep/racev2_live.py --subaccount 4 --report",
    "bar": "PASS: fills <= 0.25 x model credit AND main pool 0 up >= 0.90 x credit at 48 h; KILL: fills > 0.50 x or payment < 0.5 x",
-   "status": "open"
+   "status": "read",
+   "read_note": "10-23 08:25Z: KILLED after 2 races -- fills $17.43 vs $2.61 modelled credit (6.7x; kill line 0.5x). Realised -$17.43. Sub 4 ~$27.6 to return to main. No more reward research (operator 10-23: 'the LEAST likely place')."
   }
  ]
 }
