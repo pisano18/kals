@@ -988,6 +988,15 @@
    "what": "Race v2 live test: built, self-test 98/98, NOT funded ($45 to sub 4) and NOT started. The largest unmeasured $/day item (shadow $109-155/day if Kalshi pays rewards as modelled; max loss on the test $45).",
    "how": "operator funds sub 4 ($45 via ordercli --sub 4 --sub-fund 45) and starts results/start_racev2-live.ps1 at 9-11 PM ET; read after 20 placed races",
    "bar": "PASS: fills <= 0.25 x model credit AND main pool 0 up >= 0.90 x credit at 48 h; KILL: fills > 0.50 x or payment < 0.5 x",
+   "status": "read",
+   "read_note": "10-23 07:02Z: funded ($45) and STARTED (pid 2432856) at 02:59 AM ET, outside the 21-23 ET window; see racev2-read."
+  },
+  {
+   "id": "racev2-read",
+   "due": "2026-10-25T12:00Z",
+   "what": "Race v2 20-race live test (started 10-23 07:02:27Z, sub 4 $45): 2-h read after the last race, 48-h payment read. Started outside the pre-registered 21-23 ET window: say so in the read.",
+   "how": "python research/sweep/racev2_live.py --subaccount 4 --report",
+   "bar": "PASS: fills <= 0.25 x model credit AND main pool 0 up >= 0.90 x credit at 48 h; KILL: fills > 0.50 x or payment < 0.5 x",
    "status": "open"
   }
  ]

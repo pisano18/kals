@@ -1478,7 +1478,12 @@ def main():
     try:
         log = rr.Log(LIVE_LOG if a.live else DRY_LOG)
         state_path = LIVE_STATE if a.live else DRY_STATE
-        bal = rr.read_balance(sender, SUB)
+        bal = None
+        for _try in range(5):                        # 10-23: the start reads retry 429s (the first two live starts refused on one
+            bal = rr.read_balance(sender, SUB)       # unreadable read under the recorder's 429 storm; the ladder/forecaster do the same)
+            if bal is not None:
+                break
+            time.sleep(2.0)
         state = rr.load_state(state_path)
         for k in ("test_halted", "payment_missing"):
             state.setdefault(k, None)
@@ -1492,7 +1497,12 @@ def main():
                 rr.save_state(state_path, state)
         elif why:
             raise SystemExit("REFUSED: " + why)
-        pool0 = read_main_pool0(sender)
+        pool0 = None
+        for _try in range(5):
+            pool0 = read_main_pool0(sender)
+            if pool0 is not None:
+                break
+            time.sleep(2.0)
         if a.live and pool0 is None:
             raise SystemExit("REFUSED: main pool 0 is unreadable (the payment tripwire needs its baseline)")
         books = rr.RestBooks()
