@@ -6,9 +6,10 @@ work for most commands. For the others figure something out."
 
 WHAT EACH COMMAND GETS (one PNG, sent by pinphone with sendPhoto after the text):
   /today /yesterday        the day's running total close by close on the ET clock (losing closes marked;
-                           /today has yesterday beside it in grey); right axis = the same dollars as % of
-                           the bank at the start of the day
-  /days /brief /summary    every ET day: $ bars, % of the bank bars, the running total ($ and % of money put in)
+                           /today has yesterday beside it in grey); orange dashes = the average day of the 7
+                           days before (10-23); right axis = the same dollars as % of the bank at the start of the day
+  /days /brief /summary    every ET day: $ bars, % of the bank bars (each with its 7-day average line), the
+                           running total ($ and % of money put in); /stats adds won % over 7 days
   /stats                   the same from /stats' own source (Kalshi's books since the first live day), plus
                            each day's won % of markets against its break-even
   /bots /funds /bank /accounts   every RUNNING account's money over time (cash + open bets at cost), a panel each
@@ -263,6 +264,64 @@ def ledger_days(led):
     return [(d, by.get(d, 0.0)) for d in led.days()]
 
 
+# ---- the 7-day average (operator 10-23: "The 7 day average should be on the other charts too where possible.
+# Like on /today as a 3rd line.") -- always the AVG_DAYS ET days BEFORE the day drawn (today never averages itself);
+# a calendar day inside that span with nothing settled counts as $0; days before the first day on the books are
+# left out (so the first week averages the days there are) ------------------------------------------------------
+AVG_DAYS = 7
+
+
+def prev_day(day):
+    return et_day(et_day_start(day) - 3600)
+
+
+def day_avg(led, day):
+    """The average day of the AVG_DAYS ET days before `day`, close by close on the ET clock:
+    ([(seconds after midnight ET, mean running $)] on a 15-minute grid, days averaged) -- ([], 0) when none."""
+    listed = led.days()
+    if not listed:
+        return [], 0
+    ds, d = [], day
+    for _ in range(AVG_DAYS):
+        d = prev_day(d)
+        if d >= listed[0]:
+            ds.append(d)
+    if not ds:
+        return [], 0
+    curves = []
+    for d in ds:
+        t0 = et_day_start(d)
+        curves.append([(k - t0, c) for k, c, _v in closes_cum(led.settled_on(d))])
+
+    def at(pts, g):
+        v = 0.0
+        for x, y in pts:
+            if x > g:
+                break
+            v = y
+        return v
+    grid = list(range(0, 86400 + 1, 900))
+    return [(g, sum(at(c, g) for c in curves) / len(curves)) for g in grid], len(ds)
+
+
+def avg_by_day(vals, days):
+    """{day: mean of `vals` (a {day: number} dict) over that day and the AVG_DAYS-1 calendar days before it}, for
+    each of `days` (sorted ET days); a day missing from `vals` counts as 0; days before min(vals) are left out."""
+    if not vals:
+        return {}
+    first = min(vals)
+    out = {}
+    for day in days:
+        span, d = [], day
+        for _ in range(AVG_DAYS):
+            if d < first:
+                break
+            span.append(vals.get(d, 0.0))
+            d = prev_day(d)
+        out[day] = (sum(span) / len(span)) if span else None
+    return out
+
+
 def markets_of(ctx):
     """/stats' and /hedges' markets: pinphone.markets_from(raw_ledger) with Phone._sides, on the snapshot."""
     pp, led = ctx["pp"], ctx["ledger"]
@@ -313,6 +372,19 @@ def chart_day(ctx, which):
             ax.step([etdt(d0)] + [etdt(k + sh) for k, _c, _v in ypts] + [etdt(d0 + 86400)],
                     [0.0] + [c for _k, c, _v in ypts] + [ypts[-1][1]], where="post", color=GREY, lw=1.6,
                     label="Yesterday %s" % usd(ypts[-1][1]), zorder=2)
+    avg, navg = day_avg(led, day)
+    if avg:
+        if day == today:
+            by_now = avg[0][1]
+            for g, v in avg:
+                if g > now - d0:
+                    break
+                by_now = v
+            alab = "Average of the last %d days %s (%s by now)" % (navg, usd(avg[-1][1]), usd(by_now))
+        else:
+            alab = "Average of the %d days before %s" % (navg, usd(avg[-1][1]))
+        ax.plot([etdt(d0 + g) for g, _v in avg], [v for _g, v in avg], color=ORANGE, lw=1.8, ls="--",
+                label=alab, zorder=2)
     ax.step(X, Y, where="post", color=BLUE, lw=2.2, label="%s %s" % (label, usd(s["net"])), zorder=3)
     lost = [(k, c) for k, c, v in pts if v < 0]
     if lost:
@@ -329,8 +401,9 @@ def chart_day(ctx, which):
     r = (s["net"] / b0) if b0 else None
     headline(fig, "%s %s%s · %d of %d closes won" % (label, usd(s["net"]), (" (%s of the bank)" % pctx(r, 2)) if r is not None else "",
                                                    s["won"], s["closes"]))
-    cap = ("%s: the day's money close by close, Kalshi's books, main account (pin + coin race). Right axis: the same "
-           "dollars as %% of the bank at the start of the ET day." % label)
+    cap = ("%s: the day's money close by close, Kalshi's books, main account (pin + coin race). Orange dashes: the "
+           "average day of the %d days before, on the same clock. Right axis: the same dollars as %% of the bank at "
+           "the start of the ET day." % (label, AVG_DAYS))
     return png(fig), cap
 
 
@@ -389,14 +462,35 @@ def chart_days(ctx, src):
     days = [rows[i][0] for i in keep]
     nets = [rows[i][1] for i in keep]
     run = [runs[i] for i in keep]
-    b0s = [led.bank_at(et_day_start(d)) for d in days]
+    lo = days[0]                                        # the % average reaches AVG_DAYS-1 days left of the picture
+    for _ in range(AVG_DAYS - 1):
+        lo = prev_day(lo)
+    b0 = {d: led.bank_at(et_day_start(d)) for d, _v in rows if d >= lo}
+    b0s = [b0[d] for d in days]
+    pct_by = {d: ((100.0 * v / b0[d]) if b0[d] else 0.0) for d, v in rows if d >= lo}
+    avg_net = avg_by_day(dict(rows), days)
+    avg_pct = avg_by_day(pct_by, days)
     n = 4 if winrate is not None else 3
     fig, axs = fig_new(n, 3.0 * n + 1.2, sharex=True)
     xs = _bars_by_day(axs[0], days, nets, usd)
+    # the average line stops at yesterday: today's bar is half a day, and the last point then equals /today's
+    # "average of the last 7 days"
+    an = [avg_net.get(d) if d < today else None for d in days]
+    ap = [avg_pct.get(d) if d < today else None for d in days]
+    lan = next((a for a in reversed(an) if a is not None), None)
+    lap = next((a for a in reversed(ap) if a is not None), None)
+    if lan is not None:
+        axs[0].plot([x for x, a in zip(xs, an) if a is not None], [a for a in an if a is not None], color=ORANGE,
+                    lw=1.8, ls="--", zorder=4, label="%d-day average, to yesterday (%s a day)" % (AVG_DAYS, usd(lan)))
+        legend(axs[0])
     money_axis(axs[0])
     axs[0].set_title("$ each ET day")
     pc = [(100.0 * v / b) if b else 0.0 for v, b in zip(nets, b0s)]
     _bars_by_day(axs[1], days, pc, lambda v: "%+.2f%%" % v)
+    if lap is not None:
+        axs[1].plot([x for x, a in zip(xs, ap) if a is not None], [a for a in ap if a is not None], color=ORANGE,
+                    lw=1.8, ls="--", zorder=4, label="%d-day average, to yesterday (%+.2f%% a day)" % (AVG_DAYS, lap))
+        legend(axs[1])
     pct_ticks(axs[1])
     axs[1].set_title("% of the bank each day (the bank at the start of that ET day)")
     ax = axs[2]
@@ -415,14 +509,31 @@ def chart_days(ctx, src):
         bx = [x for x, (_d, w, b) in zip(xs, winrate) if w is not None and b is not None]
         ax.plot(wx, wv, color=BLUE, lw=2.0, marker="o", ms=3.5, label="won % of markets", zorder=3)
         ax.plot(bx, bv, color=MUTED, lw=1.6, ls="--", label="break-even %", zorder=2)
+        w7x, w7v = [], []                               # won % of every market in that day and the 6 before it
+        for x, d in zip(xs, days):
+            span, e = [], d
+            for _ in range(AVG_DAYS):
+                if e < fl:
+                    break
+                span.extend(by.get(e, []))
+                e = prev_day(e)
+            st = pp.window_stats(span, {}) if span else None
+            if st and st.get("win_c") is not None:
+                w7x.append(x)
+                w7v.append(100.0 * st["win_c"])
+        if w7v:
+            ax.plot(w7x, w7v, color=ORANGE, lw=1.8, ls="--", label="won %% over %d days (%.1f%% now)" % (AVG_DAYS, w7v[-1]),
+                    zorder=2)
         pct_ticks(ax, signed=False)
         ax.set_title("Each day: won % of markets vs the break-even it needed")
         legend(ax)
     date_axis(axs[-1])
     headline(fig, head)
     cap = ("%s: %s; the last %d days drawn, the running total counts all of them. Top: each day's money; then the "
-           "same day as %% of the bank it began with; then the running total (right axis: %% of the money put in)%s." % (
-               "/stats" if src == "stats" else "/days", src_words, len(days),
+           "same day as %% of the bank it began with (orange dashes: the average of that day and the %d before it, "
+           "drawn to yesterday); "
+           "then the running total (right axis: %% of the money put in)%s." % (
+               "/stats" if src == "stats" else "/days", src_words, len(days), AVG_DAYS - 1,
                "; bottom: won % of markets each day against the break-even win rate its prices needed"
                if winrate is not None else ""))
     return png(fig), cap
@@ -1069,6 +1180,20 @@ def selftest():
         got = build(kind, ctx)
         ck(is_png(got), "%s: a PNG (%d KB, %.1f s), caption %r" % (kind, len(got[0]) // 1024 if got else 0,
                                                                   time.time() - t0, (got or ("", ""))[1][:60]))
+    today = et_day(now)
+    avg, navg = day_avg(led, today)
+    nets = dict(ledger_days(led))
+    want, d = [], today
+    for _ in range(AVG_DAYS):
+        d = prev_day(d)
+        want.append(nets.get(d, 0.0))
+    ck(navg == AVG_DAYS and len(avg) == 97 and abs(avg[-1][1] - sum(want) / AVG_DAYS) < 1e-9 and avg[0][1] == 0.0,
+       "/today's 7-day line: the %d days before today, ends at their mean day %s (= the ledger's own day totals)"
+       % (navg, usd(avg[-1][1] if avg else None)))
+    ab = avg_by_day({"2026-10-10": 7.0, "2026-10-12": 14.0}, ["2026-10-10", "2026-10-12", "2026-10-20"])
+    ck(ab == {"2026-10-10": 7.0, "2026-10-12": 7.0, "2026-10-20": 0.0},
+       "/days' 7-day line: a gap day counts $0, days before the first are left out: %s" % ab)
+    ck(day_avg(Ledger(results=tempfile.gettempdir()), today) == ([], 0), "/today: nothing on the books -> no 7-day line")
     empty = Ledger(results=tempfile.gettempdir())
     empty.deposited = lambda: None
     ck(all(build(k, {"now": now, "ledger": empty, "pp": pp}) is None for k in ("today", "yesterday", "days", "losses", "fills", "market")),
