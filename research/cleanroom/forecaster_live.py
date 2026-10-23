@@ -289,8 +289,34 @@ class AutoScale:
             return self.consider(pot, now)
 
 
+_ET_ZONE = None
+
+
+def et_offset_s(t):
+    """Seconds to add to a UTC epoch for the Eastern wall clock: -14400 (EDT) or -18000 (EST). v-etclock (10-23): was a
+    fixed -4 h; US daylight time ends 2026-11-01 06:00Z, after which the old key turned the day at 23:00 ET (day_pnl and
+    DAY_STOP reset an hour early, the 23:00-24:00 hour booked to the next day). zoneinfo America/New_York first (needs
+    the tzdata package on Windows -- absent here 2026-10-23), else the US rule: 2nd Sunday of March 07:00Z .. 1st Sunday
+    of November 06:00Z."""
+    global _ET_ZONE
+    if _ET_ZONE is None:
+        try:
+            from zoneinfo import ZoneInfo
+            _ET_ZONE = ZoneInfo("America/New_York")
+        except Exception:
+            _ET_ZONE = False
+    if _ET_ZONE:
+        return int(datetime.fromtimestamp(t, _ET_ZONE).utcoffset().total_seconds())
+    y = datetime.fromtimestamp(t, timezone.utc).year
+    mar = datetime(y, 3, 8, 7, tzinfo=timezone.utc)
+    mar += timedelta(days=(6 - mar.weekday()) % 7)
+    nov = datetime(y, 11, 1, 6, tzinfo=timezone.utc)
+    nov += timedelta(days=(6 - nov.weekday()) % 7)
+    return -14400 if mar.timestamp() <= t < nov.timestamp() else -18000
+
+
 def et_day(t):
-    return (datetime.fromtimestamp(t, timezone.utc) - timedelta(hours=4)).strftime("%Y-%m-%d")
+    return datetime.fromtimestamp(t + et_offset_s(t), timezone.utc).strftime("%Y-%m-%d")
 
 
 def fee(n, px):
@@ -1220,6 +1246,12 @@ def selftest():
     run(br7)
     br7.on_result("L", "no")
     ck(br7.halt_day == et_day(now[0]) and br7.want("Y", now[0] + 30, "yes", 0.8, 100) == 0, "-$12 in an ET day halts")
+    # v-etclock: the ET day turns at 04:00Z in summer and 05:00Z in winter; US daylight time ends 2026-11-01 06:00Z
+    _u = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()
+    ck(et_day(_u(2026, 10, 20, 3, 59)) == "2026-10-19" and et_day(_u(2026, 10, 20, 4, 0)) == "2026-10-20"
+       and et_day(_u(2026, 11, 2, 4, 30)) == "2026-11-01" and et_day(_u(2026, 11, 2, 5, 0)) == "2026-11-02"
+       and et_offset_s(_u(2026, 11, 1, 5, 59)) == -14400 and et_offset_s(_u(2026, 11, 1, 6, 0)) == -18000,
+       "v-etclock: 04:30Z on Nov 2 is still ET day 2026-11-01 (23:30 EST); the day turns at 05:00Z once DST ends")
     now[0] += 86400
     ck(br7.want("Y2", now[0] + 30, "yes", 0.8, 100) == 5, "the next ET day trades again")
     run(br7)

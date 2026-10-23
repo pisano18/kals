@@ -270,8 +270,34 @@ POOL = 2
 CID_PREFIX = "lad-"
 
 
+_ET_ZONE = None
+
+
+def et_offset_s(t):
+    """Seconds to add to a UTC epoch for the Eastern wall clock: -14400 (EDT) or -18000 (EST). v-etclock (10-23): was a
+    fixed -4 h; US daylight time ends 2026-11-01 06:00Z, after which the old key turned the day at 23:00 ET (day_pnl and
+    DAY_STOP reset an hour early, the 23:00-24:00 hour booked to the next day). zoneinfo America/New_York first (needs
+    the tzdata package on Windows -- absent here 2026-10-23), else the US rule: 2nd Sunday of March 07:00Z .. 1st Sunday
+    of November 06:00Z."""
+    global _ET_ZONE
+    if _ET_ZONE is None:
+        try:
+            from zoneinfo import ZoneInfo
+            _ET_ZONE = ZoneInfo("America/New_York")
+        except Exception:
+            _ET_ZONE = False
+    if _ET_ZONE:
+        return int(datetime.fromtimestamp(t, _ET_ZONE).utcoffset().total_seconds())
+    y = datetime.fromtimestamp(t, timezone.utc).year
+    mar = datetime(y, 3, 8, 7, tzinfo=timezone.utc)
+    mar += timedelta(days=(6 - mar.weekday()) % 7)
+    nov = datetime(y, 11, 1, 6, tzinfo=timezone.utc)
+    nov += timedelta(days=(6 - nov.weekday()) % 7)
+    return -14400 if mar.timestamp() <= t < nov.timestamp() else -18000
+
+
 def et_day(t):
-    return (datetime.fromtimestamp(t, timezone.utc) - timedelta(hours=4)).strftime("%Y-%m-%d")
+    return datetime.fromtimestamp(t + et_offset_s(t), timezone.utc).strftime("%Y-%m-%d")
 
 
 def order_body(ticker, side, px, sub, cid):
@@ -632,6 +658,12 @@ def selftest():
     br.day = et_day(now[0])
     br.on_result(br.live[pid]["ticker"], "no")
     ck(br.halted, "a realized day at or below -$6 halts")
+    # v-etclock: the ET day turns at 04:00Z in summer and 05:00Z in winter; US daylight time ends 2026-11-01 06:00Z
+    _u = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()
+    ck(et_day(_u(2026, 10, 20, 3, 59)) == "2026-10-19" and et_day(_u(2026, 10, 20, 4, 0)) == "2026-10-20"
+       and et_day(_u(2026, 11, 2, 4, 30)) == "2026-11-01" and et_day(_u(2026, 11, 2, 5, 0)) == "2026-11-02"
+       and et_offset_s(_u(2026, 11, 1, 5, 59)) == -14400 and et_offset_s(_u(2026, 11, 1, 6, 0)) == -18000,
+       "v-etclock: 04:30Z on Nov 2 is still ET day 2026-11-01 (23:30 EST); the day turns at 05:00Z once DST ends")
     before = len([s for s in sent if s[0] == "POST"])
     ms3 = [_M("V1", 3800, [_O(900, "yes", "0.95")])]
     br.sync(_E(ms3))

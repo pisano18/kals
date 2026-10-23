@@ -1080,7 +1080,7 @@ def selftest():
         rows = []
         for k in range(200):
             c = now - k * 3600
-            tm = time.strftime("%y%b%d%H%M", time.gmtime(c - 4 * 3600)).upper()
+            tm = time.strftime("%y%b%d%H%M", time.gmtime(c + pindesk.et_offset(c))).upper()   # v-etclock: ET, not a fixed -4 h
             win = k % 25 != 3
             hedged = k % 40 == 0
             rows.append({"ticker": "KXBTC15M-%s-00" % tm, "settled_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(c + 60)),
