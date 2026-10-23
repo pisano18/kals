@@ -2155,6 +2155,22 @@ def _short_html(w):
     return "<b>%s</b>%s" % (esc(usd(w["money"])), (" (%s)" % esc(_bs().pot_pct_txt(p))) if p is not None else "")
 
 
+def all_bots_avg_before(a, day, n=7):
+    """(mean $ a day over the n ET days BEFORE `day`, days counted) for every bot together, from all_bots()'
+    per-bot all_days (Kalshi's books); a day with nothing settled counts $0; days before the first market on any
+    pot's books are left out. (None, 0) when there are none."""
+    bs = _bs()
+    blocks = [a["bots"][b]["money"] for b in bs.BOTS] + [a["other"]]
+    firsts = [m.get("first_day") for m in blocks if m.get("first_day")]
+    if not firsts:
+        return None, 0
+    ds = [d for d in (bs.shift_day(day, -k) for k in range(1, n + 1)) if d >= min(firsts)]
+    if not ds:
+        return None, 0
+    tot = sum(x["money"] for m in blocks for x in (m.get("all_days") or []) if x["day"] in ds)
+    return tot / len(ds), len(ds)
+
+
 def bs_all_html(a):
     """/bots: the all-pots headline and table, 7 days by bot as a chart, one card a bot, the cash, the
     last 7 days; every sentence bs_all_text wrote is in the details."""
@@ -3323,7 +3339,55 @@ class Phone:
             esc(rec) if rec == "both writing" else "<b>%s</b>" % esc(rec), h.get("disk_gb") or 0))
         return Html("\n".join(lines))
 
+    def _all_bots_day(self, day, label):
+        """/today and /yesterday's headline: EVERY bot's money that ET day from Kalshi's books (botstats.all_bots,
+        the /bots source). The operator, 2026-10-23: "/today doesn't show the right total it says 11.22 right now
+        it's really 24.85" -- the old headline was the main account only (pin + race), not the forecaster's or the
+        ladder's pots. [] when the day is neither today nor yesterday; one warning line when botstats fails."""
+        try:
+            a = self._bs_get("all")
+        except Exception:                                        # noqa: BLE001
+            log(traceback.format_exc())
+            return ["❔ <b>All bots %s: could not be read</b> -- below is the main account only" % esc(label.lower())]
+        bs = _bs()
+        today = a["today_et"]
+        key = "today" if day == today else ("yesterday" if day == bs.shift_day(today, -1) else None)
+        if key is None:
+            return []
+        w = a["total"][key]
+        lab = "All bots %s" % label.lower()
+        if w["partial"] and not w["markets"]:
+            L = ["❔ <b>%s: unknown -- Kalshi could not be read</b>" % esc(lab)]
+        elif not w["markets"]:
+            L = ["⚪ <b>%s: nothing settled yet</b>" % esc(lab)]
+        else:
+            L = ["%s <b>%s %s</b>%s · %d of %d markets won" % (
+                dot(w["money"]), esc(lab), esc(usd(w["money"])),
+                (" (<b>%s</b> of all pots)" % esc(bs.pot_pct_txt(w["pot_pct"]))) if w.get("pot_pct") is not None else "",
+                w["won"], w["markets"])]
+            parts = [(b, v) for b, v in w["by_bot"].items() if w["by_bot_markets"].get(b)]
+            if parts:
+                L.append(esc(" · ".join("%s %s" % (b, usd(v)) for b, v in parts)))
+        if w["partial"] and w["markets"]:
+            L.append("⚠️ PARTIAL: leaves out %s (Kalshi could not be read)" % esc(", ".join(w["missing"])))
+        avg, n = all_bots_avg_before(a, day)
+        more = []
+        if key == "today" and a["total"]["yesterday"]["markets"]:
+            more.append("yesterday %s" % usd(a["total"]["yesterday"]["money"]))
+        if avg is not None:
+            more.append("%d-day average %s a day" % (n, usd(avg)) if key == "today" else
+                        "the %d days before averaged %s a day" % (n, usd(avg)))
+        if more:
+            L.append(esc(" · ".join(more)))
+        L.append(i_("every pot, Kalshi's books; a market counts on the ET day it closed · each bot: /bots"))
+        return L
+
     def text_day(self, day, label):
+        top = self._all_bots_day(day, label)
+        if top:
+            L = self.day_html(self.ledger.settled_on(day), day, "Pin + race")
+            return Html("\n".join(top + ["", "🏦 <b>Main account</b> <i>(pin bot + coin race; the forecaster and the "
+                                             "ladder have their own pots)</i>"] + L))
         L = self.day_html(self.ledger.settled_on(day), day, label)
         if day == et_day(self.now()):                          # /today: yesterday beside it, for scale
             y = et_day(self.now() - 86400)
@@ -4665,9 +4729,14 @@ def selftest():
            "/status carries the bank and a Today line; the money itself is "
            "Kalshi's (results/kalshi_ledger.json) and is absent in this fixture")
         t = ph.handle(111, "/today")
-        ck(P(t).split("\n")[0] == "🟢 Today +$1.66 (+0.33% of the bank)" and "1 of 1 closes won (100.0%), 0 lost" in P(t)
+        _tl = P(t).split("\n")
+        # 2026-10-23 (operator: "/today doesn't show the right total it says 11.22 right now it's really 24.85"): the
+        # headline is EVERY bot's money (botstats.all_bots, the /bots number); the main account follows, as before
+        ck(_tl[0].split(" ", 1)[-1].startswith("All bots today") and "🏦 Main account" in P(t)
+           and "🟢 Pin + race +$1.66 (+0.33% of the bank)" in _tl and "1 of 1 closes won (100.0%), 0 lost" in P(t)
            and "of the $500.00 it held at the start of the ET day" in P(t),
-           "/today: the money and its % of the bank at day start as the headline, then closes won with their %")
+           "/today: every bot's money as the headline, then the main account's money and its %% of the bank at day "
+           "start, then closes won with their %%: %r" % P(t)[:600])
         ck("+2.00% on the $83.34 staked" in P(t),
            "/today: the return on what the bets cost, from Kalshi's books (+1.6626 on 83.30 + 0.0374 fees) -- "
            "shown because Kalshi's money for the day is the headline's money")
