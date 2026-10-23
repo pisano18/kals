@@ -309,7 +309,7 @@
    "what": "Live clean-room forecaster, realistic-fill trigger, 1/20 size (pid 4014356, subaccount 2, $25): orders, live fill rate (contracts filled / asked), P&L and return on money staked, vs the paper forecaster 'real' x 0.05 on the SAME markets. UPDATE 2026-09-30 12:26Z: now --scale 0.10 (1/10 of paper) with --crash-gap 0.10, pid 4453188.",
    "how": "results/forecaster-live-orders.jsonl (placed / live_fill / live_settle / refused / dropped / halt; paper_k on each order), results/forecaster-live.jsonl (the engine's paper book in the same process), results/cleanroom-bettor.jsonl forecaster_real (paper bot), python research/ordercli.py --sub-status 2 and GET /portfolio/settlements?subaccount=2. Day-1 read 09-30 01:00Z; final 10-06 01:00Z.",
    "bar": "PRE-REGISTERED 2026-09-29 ~01:00Z, before any live fill. STOP if: the -$20 run stop fires, or the day stop fires twice, or after >= 40 filled markets live P&L is below zero. CONSIDER a bigger size only if by 10-06: >= 60 filled markets, live return on money staked >= +5%, live fills >= 60% of contracts asked, and no market lost to buying both sides more than once. Otherwise keep 1/20 and read again.",
-   "status": "open",
+   "status": "read",
    "history": [
     "2026-09-30 ~00:4xZ day-1 read: 15 IOC orders, 47 of 48 contracts filled (98 in 100); 14 markets, 13 won, 1 lost (DOGE 15:15 ET -$1.25, a fill at 40c on an 83c ask -- IDEA_LEDGER F18), +$5.06 on $38.52 staked (13.1%). The paper forecaster also traded 12 of the 14 markets: +$21.95 at paper size = +$1.10 at 1/20 vs live +$4.12 -- live got better prices than paper. Bar: no stop condition (no run stop, no day stop, 0 losses on markets paper 'real' did not fill). Off 07:26-15:35Z (blocked restart). KEEP; final read 10-06.",
     "2026-10-06 ~01:40Z FINAL read (Kalshi GET /portfolio/settlements subaccount 2, all 66 settled rows; no open positions; pot balance $63.36). Whole run 09-29..10-06: 66 markets (54 closes), 11 lost, +$12.38 on $297.83 staked = +4.16% on money bet, +19.5% of the current $63.36 pot; money lost in losing markets -$33.53. Before v-fc-r28 (<10-03 06:12Z): 58 mk, 10 lost, +$4.95 (+1.9%). Since v-fc-r28 + v-sub-autosize (pid 3090252): 8 mk, 1 lost (BNB 10-05 11:15Z -$4.29), +$7.43 on $42.89 (+17.3%) -- too few markets to read. Order log: 97 IOC orders, 374 of 435 contracts filled (86%; 84% since r28); 66 refusals; no halt event (no run stop, no day stop); 8 starts, 4 stop-file exits (restarts). Both-sides markets: 5, ALL lost (SOL 09-30 -$5.42, NEAR 10-01 -$3.28, SOL 10-02 -$4.22, DOGE 10-02 -$7.01, NEAR 10-02 -$1.49 = -$21.42, 64% of all money lost), none since r28. Live vs the in-process paper book (forecaster-live.jsonl 'real' x scale in force) on the SAME 66 markets: live +$12.38 vs paper -$31.43 -- live beat its paper twin by ~$44; paper also traded 28 markets live did not (-$42.92 scaled). BAR: STOP? no (no run stop, no day stop twice, P&L > 0 after 40 markets). SIZE UP? NO -- 66 >= 60 markets PASS, fills 86% >= 60% PASS, return +4.16% < +5% FAIL, both-sides losses 5 > 1 FAIL. => keep the current size (the bar's '1/20' is now v-sub-autosize ~0.10 = pot/630, already operator-approved; do not raise it) and READ AGAIN: due moved +7 d to 2026-10-13T01:00Z, same bar, scored on markets since v-fc-r28 (10-03 06:12Z).",
@@ -318,7 +318,7 @@
    "read_log": [
     "2026-10-20 read: KEEP -- 10-20 ~18Z read (scored since v-fc-r28 10-03 06:12Z, own live_settle log, subaccount 2): 79 markets, 10 lost, +$59.76 on $649.68 staked = +9.2%; fills 814/1002 contracts = 81.2%; both-sides markets lost 2 (BTC 10-15 08:15 ET -$7.22, BTC 10-20 13:15 ET -$11.47). No run stop (worst run P&L -$28.70 vs stop -$47.64), no day stop (worst day -$15.80 on 10-19 vs ~-$25..-$29), P&L > 0 after 40 markets. BAR: STOP no; SIZE UP no -- 79>=60, +9.2%>=5%, 81%>=60% PASS but both-sides losses 2 > 1 FAIL => KEEP size (autosize), read again 10-27 01:00Z, same bar. Watch: since the 10-13 read 37 mk 8 lost +$6.97 (+1.7%); since v-fc-bookwatch (10-18 15:20Z) 16 mk 6 lost -$28.70. All 6 bookwatch losers were also taken, same side, by the old-code paper twins (fcvar-paper race1_98, fcvar-paper-crash, fc-fast ctrl), so the fix did not create them. Script .sweep/q-2026-10-20b/reads.py."
    ],
-   "read_note": "2026-10-20 read: KEEP -- 10-20 ~18Z read (scored since v-fc-r28 10-03 06:12Z, own live_settle log, subaccount 2): 79 markets, 10 lost, +$59.76 on $649.68 staked = +9.2%; fills 814/1002 contracts = 81.2%; both-sides markets lost 2 (BTC 10-15 08:15 ET -$7.22, BTC 10-20 13:15 ET -$11.47). No run stop (worst run P&L -$28.70 vs stop -$47.64), no day stop (worst day -$15.80 on 10-19 vs ~-$25..-$29), P&L > 0 after 40 markets. BAR: STOP no; SIZE UP no -- 79>=60, +9.2%>=5%, 81%>=60% PASS but both-sides losses 2 > 1 FAIL => KEEP size (autosize), read again 10-27 01:00Z, same bar. Watch: since the 10-13 read 37 mk 8 lost +$6.97 (+1.7%); since v-fc-bookwatch (10-18 15:20Z) 16 mk 6 lost -$28.70. All 6 bookwatch losers were also taken, same side, by the old-code paper twins (fcvar-paper race1_98, fcvar-paper-crash, fc-fast ctrl), so the fix did not create them. Script .sweep/q-2026-10-20b/reads.py.",
+   "read_note": "10-23: KEEP by the bar over the r28 period (+$3.66/day, 19 ET days; both-sides losses 2 > 1 = the SIZE-UP line fails); the variant changed to race1_98_r28_oneside at 04:50Z -> new count: see fc-oneside-kill.",
    "read_date": "2026-10-20",
    "verdict": "KEEP"
   },
@@ -752,10 +752,11 @@
    "what": "BTC-lead refusal, scored FORWARD on live fills with NO code in the live bot (operator 10-09: implement only changes I am sure improve; this one is not proven -- most of its TEST gain is two markets). Rule (results/FINAL_SYNTHESIS_2026-10-09.md 1.3): alt markets only (ETH SOL XRP DOGE BNB NEAR ZEC), entry orders with > 20 s left; b = newest whole-second alt print the bot held at the send; M = BRTI P(b-1) - P(b-4); sd = sd of BRTI 1-s changes over [b-301, b-2] (>= 150); s = -M/sd for YES, +M/sd for NO; flagged if s >= 1.0 (lock-out for the rest of the close). Window: live markets with closes from 2026-10-09 20:30Z.",
    "how": "From results/pinrun-live-*.jsonl orders (t_ms_send, want, tau_at_send, ticker) and C:\\kals\\kalshi_data\\cfbenchmarks_value (streamed, read-only), compute s for every alt entry > 20 s; flagged markets with Kalshi money (results/kalshi_ledger.json). Scripts to reuse: session scratchpad final/design/selection/s09_btc_eval.py, s11_final.py.",
    "bar": "PRE-REGISTERED 2026-10-09 (FINAL_SYNTHESIS 2a, bar C): read at 40 flagged alt markets, again at 80. Value at a flat bet per flagged market = intended contracts x (1 if our side won else 0 - ask seen) - taker fee. KILL the idea if at 40: <= 1 went against us OR refusing would have cost > $30 net. PROPOSE IT LIVE to the operator if >= 3 went against us in >= 2 distinct closes AND value <= $0. Otherwise extend to 80 (keep only if >= 5 against us in >= 3 closes with value <= $0). Insurance false alarms reported, not counted.",
-   "status": "open",
+   "status": "read",
    "read_log": [
     "10-10 13:2xZ note for the read: KXETH15M-26OCT100915-15 lost about -$47 (full leg at tau 21, ask seen 96.8c filled 87c, offer level 30 ms old, taker sell share 0.69, 10,171 contracts in 3 s). The v-seen seller check (level < 500 ms AND share >= 0.5, tau > 20) WOULD have refused it; score it and the BTC-lead rule on it at the read."
-   ]
+   ],
+   "read_note": "10-23: DROPPED -- the scorer (s09_btc_eval.py / s11_final.py) is not in the repo; the read is 'identify better', not 'make more' (TEST +$180 on 29 refused markets rides two markets). Operator's rule: no new filters."
   },
   {
    "id": "arm-attempts",
@@ -868,7 +869,8 @@
    "what": "PAPER research/cleanroom/fc_fast_paper.py (code_sha b24768ce9f8c, start results/start_fc_fast.ps1, log results/fc-fast-paper.jsonl): the live clean-room forecaster's exact rule (ctrl: decide 0.2 s after the print's second, fill only if still shown 1.0 s later -- what live does) beside a FAST arm (decide on the print, fill if still shown 75 ms later, same caps/price cap/crash guard), on one WebSocket. From the hunt's lose-less lead A: live orders reach Kalshi ~1.26 s after the print; the 76 in 100 contracts lost by waiting were +3.21c winners (upper bound).",
    "how": "python research/cleanroom/fc_fast_paper.py --read (refuses a verdict unless the ctrl arm reproduces the live forecaster's own fills from results/forecaster-live*.jsonl)",
    "bar": "PRE-REGISTERED 2026-10-17 before any run: read after >= 200 fast-variant paper fills over >= 100 closes (~7-10 days); PASS if the fast variant is >= +2.0c a contract better after fee than the control on the same decisions AND both halves positive; KILL if it is <= 0 better. Paper cannot see who we lose to; a PASS is a reason to ask the operator about a live change, not a switch.",
-   "status": "open"
+   "status": "open",
+   "read_note": "10-23 interim: NOT READY (161/200 fills, 63/100 closes); the official --read refuses since v-fc-oneside; second-half D negative. Fix the read or extend."
   },
   {
    "id": "racev2-shadow",
@@ -890,7 +892,8 @@
    "what": "FX 15M reward paper: research/sweep/fxbook_rec.py (dfd61e06057a; READ-ONLY recorder of the FX 15M Kalshi books + Kraken FX books into results/fxbook/) + research/sweep/fxreward_paper.py (7e2cdf290fe9; paper quoter over the latency/queue grid), 5 weekdays Mon 10-19..Fri 10-23. Spec .sweep/hunt-2026-10-15/spec-20261015-R1-C2-03/SPEC.md.",
    "how": "python research/sweep/fxreward_paper.py --report (any V1-V5 validity failure voids the read)",
    "bar": "PRE-REGISTERED (spec section 5) before any FX book was recorded: variant of record S=60, join, T_STOP 300 s, net cap 60, band 10-90c, payout 0.9, fifo_prorata; net per window = credit + fills marked at 60 s. GO to a live micro (operator sign-off still required) for a pair only if ALL: G1 at L=300 ms mean net >= +$1.00/window, 95% lower bound > $0, late half (days 3-5) >= +$0.50; G2 at L=300 ms under 'last' queue >= $0; G3 settlement mean not below markout mean by > 2 SE; G4 >= 1 stale fill per 10 windows at L=300 (zero = blind -> void); G5 worst window >= -$45, worst ET day >= -$150. KILL the pair if at L=150 ms fifo_prorata mean < $0 with 95% upper bound < +$1.00, OR mean credit at S=60 < $1.50/window. Otherwise INCONCLUSIVE: extend once by 5 weekdays, then GO only on G1-G5, else KILL. MDE ~$0.70/window; if markout SD > $10/window report 'no power'.",
-   "status": "open"
+   "status": "read",
+   "read_note": "10-23: VOID -- no paper rows exist (the paper quoter never ran; the recorder only); do not extend the recorder: it is the client drawing 429s. Re-open only with a run of the quoter + recorder v5."
   },
   {
    "id": "ratehreward-paper",
@@ -917,7 +920,8 @@
    "what": "PAPER resting-bid forecaster shadow (fc synth 2026-10-18 'Paper test 1'; candidate 1 = s4_sim p_fair_m07_r29_back_pull_nx_L100_C90 / skeptic C1_base). research/cleanroom/fc_maker_paper.py sha256 f76ad9720b75, log results/fc-maker-paper.jsonl (its only results file), own WebSocket with the FcWS subscription-id fix, NO order code (self-test proves it). Virtual post-only bids at live-model fair - 7c from rel -29, none at 90c+ / under 50c / favourite < 55%, re-priced each second, pulled 250 ms after the book moves against them, fills only on printed trades at/through the price with queue ahead modelled, 23 a side, one side per market, live day stop -$28.87 / run stop -$45.24 (run stop halts the ET day, then a simulated restart). Arms: M300 (lands 0.3 s after the print), M500 (0.5 s), NULL (bid at the market mid, no model), M300raw (no stops, context only).",
    "how": "python research\\cleanroom\fc_maker_paper.py --read   (per arm: $/day = 96 x P&L on covered closes / covered closes, stale-flagged markets excluded; ROI = P&L / cost of fills; run/day stops; longest dry spell; share of seconds with <= 3 order actions; verdict). Covered close = >= 7 of 9 coins with a synced, non-stale book at >= 20 of 29 decision seconds; covered ET day = >= 87 of 96 closes covered; calm day = median rel -29 local/g vol ratio < 0.60.",
    "bar": "PRE-REGISTERED 2026-10-18 before any paper data. Needs >= 10 covered ET days incl. >= 3 calm; if fewer, extend to 2026-11-02T12:00Z. PASS (all): M300 >= +$10/day after stops; M300 ROI >= 5%; M500 >= +$5/day; M300 - NULL >= $0/day; M300 <= 1 run stop and longest dry spell <= 8 h; M300 order actions (place / cancel / move, a move counted once as one amend; summed over the 9 markets) <= 3/s in >= 99% of the seconds of closes it wrote in (cancel + place counted separately is reported beside it). KILL (any): M300 total <= $0; M500 total < $0; M300 trails NULL by > $5/day; M300 >= 2 run stops. Read flagged UNRELIABLE if stale-flagged markets hold > 10% of M300's filled markets. PASS -> operator decision on a small live probe (23 a side, run stop 0.33 x pot) with live latency measured on real orders; otherwise no live change.",
-   "status": "open"
+   "status": "open",
+   "read_note": "10-23 interim: already on a KILL line (M500 total -$36.42 < $0; M300 +$0.92/day vs the +$10/day bar); no live probe. Final read 10-29."
   },
   {
    "id": "watch-band15",
@@ -925,7 +929,8 @@
    "what": "WEEKLY read of v-band15 (--band-mult 0.955 0.981 1.5, LIVE 2026-10-21 11:01:51Z per the start record of results/pinrun-live-20261021T110151Z.jsonl). Extra contracts = filled on a band_boost decision above the pre-boost size the bot recorded; their money from Kalshi (results/kalshi_ledger.json via pinledger) plus their pro-rata share of the hedge leg. After each read move 'due' on 7 days.",
    "how": "python -I research\\changes_watch.py   (section 1: band decisions, extra contracts, extra $ net, losses caused, losing markets)",
    "bar": "Operator rule: keep only if it makes MORE money. KEEP while extra-contract money since LIVE >= $0. REMOVE (delete the --band-mult line in restart_bot.ps1, rerun while flat) if extra-contract money since LIVE < $0 at any weekly read, or if extra contracts on band markets lose on >= 6 more markets than the study's rate predicts (VERSIONS.md: 'erased if ~6 more losing markets than the 15 observed'). First read 2026-10-22 05:49Z: 32 decisions, 11 with extra, 372.4 extra contracts, +$8.64, losses caused $0.00.",
-   "status": "open"
+   "status": "read",
+   "read_note": "10-23: KEEP -- extra-contract money since LIVE +$14.32 in 1.75 days (+$8.2/day, matches the study's +$8.1-8.8); 0 losing band markets. Keep reading weekly via changes_watch.py."
   },
   {
    "id": "watch-hedgejump6",
@@ -941,7 +946,8 @@
    "what": "WEEKLY read of v-nopause (--max-losses 2 -> 0, LIVE 2026-10-18 11:01:21Z). Replays the old 2-loss brake on Kalshi market money: count losing markets per run (reset at each real restart), a 2nd loss halts the run for ~15 min (watch_bot restart) and the count resets; money given up = Kalshi net of markets first entered inside a pause. After each read move 'due' on 7 days.",
    "how": "python -I research\\changes_watch.py   (section 4: pauses, ET days paused, money the pauses would have skipped)",
    "bar": "Operator rule: keep no-pause while the money the replayed pauses would have skipped is >= $0 (no-pause made more). Put --max-losses 2 back only if the skipped markets net < $0 over >= 2 weeks (the pause would have SAVED money). First read 2026-10-22 05:49Z: 136 markets, 4 losing, 1 pause (10-19 23:00Z, ET day 2026-10-19), 0 markets skipped, $0.00.",
-   "status": "open"
+   "status": "read",
+   "read_note": "10-23 (reads agent, .sweep/q-2026-10-23/reads/): KEEP -- money the replayed pauses would have skipped +$0.00 (bar >= $0); the one pause window held no trade."
   },
   {
    "id": "ladder-optc",
@@ -949,6 +955,39 @@
    "what": "Ladder Option C (v-ladder-optc, live 10-22 08:58Z): did it make more than the old 9-coin setup would have, and did any coin lose?",
    "how": "python research/ladder_shadow.py (C vs A since 10-22 from the paper ladder) + Kalshi subaccount-1 record (botstats / pinledger)",
    "bar": "KEEP if C >= A in shadow money since 10-22 and no C loss; if a dropped coin (BTC ETH SOL BNB) shows paper wins only, report the $ given up; any live loss -> report at once with the market",
+   "status": "read",
+   "read_note": "10-23: KEEP C (5 coins) -- shadow since 10-22: C $11.43 vs old A $6.49, C losses 0, live losses 0; v-ladder-fit (10-23 04:04Z) placed 10/10 bids on its first closes."
+  },
+  {
+   "id": "race-gap-read",
+   "due": "2026-10-30T12:00Z",
+   "what": "v-race-gap (--min-gap-bp 0.5, LIVE 10-23 04:40Z): did the tie losses stop and how many races were skipped? Kalshi settlements (botstats_cache subs/0 rows, KXCRYPTOLEAD15M) vs the race log's gap at entry.",
+   "how": "python .sweep/q-2026-10-22/flatbots/race_*.py pattern: ties since 10-23 (market_result scalar) and races/day",
+   "bar": "ties entered after 10-23 = 0; net >= the pre-change run rate (+$0.08/day)",
+   "status": "open"
+  },
+  {
+   "id": "fc-oneside-kill",
+   "due": "2026-11-06T12:00Z",
+   "what": "v-fc-oneside (race1_98_r28_oneside, LIVE 10-23 04:50Z, sub 2 $125.41): judge against the ladder on the same $125; no new money until then.",
+   "how": "Kalshi settlements for sub 2 since 10-23 04:50Z (botstats_cache subs/2) vs the ladder's %/day",
+   "bar": "KEEP if its %/day >= the ladder's on the same money with no both-sides loss; else stop it and move the $125 to the ladder",
+   "status": "open"
+  },
+  {
+   "id": "clockbug-deploy",
+   "due": "2026-10-30T12:00Z",
+   "what": "DST ends 2026-11-01 06:00Z: the ET day key hard-codes UTC-4 (pinrun.py 2481/4342 and wherever else the clockbug agent found). Patches prepared in .sweep/q-2026-10-23/clockbug/ (not deployed).",
+   "how": "deploy per clockbug.md (pin bot build via restart_bot.ps1 / a new C:\\kals-live-<tag>; ladder/forecaster via stop-file restarts) before 11-01",
+   "bar": "every bot's ET day key correct on 11-01 and 11-02",
+   "status": "open"
+  },
+  {
+   "id": "racev2-fund",
+   "due": "2026-10-26T00:00Z",
+   "what": "Race v2 live test: built, self-test 98/98, NOT funded ($45 to sub 4) and NOT started. The largest unmeasured $/day item (shadow $109-155/day if Kalshi pays rewards as modelled; max loss on the test $45).",
+   "how": "operator funds sub 4 ($45 via ordercli --sub 4 --sub-fund 45) and starts results/start_racev2-live.ps1 at 9-11 PM ET; read after 20 placed races",
+   "bar": "PASS: fills <= 0.25 x model credit AND main pool 0 up >= 0.90 x credit at 48 h; KILL: fills > 0.50 x or payment < 0.5 x",
    "status": "open"
   }
  ]
