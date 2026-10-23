@@ -146,7 +146,7 @@ SPEC = {
                    "script": "forecaster_live.py", "stop": "forecaster-live.stop",
                    "log": "forecaster-live-orders.jsonl",
                    "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
-    "ladder": {"label": "Ladder", "what": "resting 98c bids on NEAR ZEC DOGE HYPE XRP, sized from its bank (goal 1%/day)", "sub": "1",
+    "ladder": {"label": "Ladder", "what": "resting 98c and 95c bids on NEAR ZEC DOGE HYPE XRP, sized so every bid fits its bank (goal 1%/day)", "sub": "1",
                "script": "ladder_live.py", "stop": "ladder-live.stop", "log": "ladder-live-orders.jsonl",
                "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
     "weather": {"label": "Weather dip-seller",
