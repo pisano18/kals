@@ -980,7 +980,8 @@
    "what": "DST ends 2026-11-01 06:00Z: the ET day key hard-codes UTC-4 (pinrun.py 2481/4342 and wherever else the clockbug agent found). Patches prepared in .sweep/q-2026-10-23/clockbug/ (not deployed).",
    "how": "deploy per clockbug.md (pin bot build via restart_bot.ps1 / a new C:\\kals-live-<tag>; ladder/forecaster via stop-file restarts) before 11-01",
    "bar": "every bot's ET day key correct on 11-01 and 11-02",
-   "status": "open"
+   "status": "open",
+   "read_note": "10-23 07:2xZ: ladder (pid 2436716) and forecaster (pid 2437128) live on the patched code; pin bot build 0925m + restart_bot.ps1 staged, goes live at the ~10-24 11:02Z run end -- CONFIRM the new pinrun-live start record shows code_sha f36c427f99a5, then close."
   },
   {
    "id": "racev2-fund",
