@@ -135,8 +135,15 @@ $py = "C:\Python314\python.exe"
 # (late_boost_off). Orders are unchanged. Same argv. ordercli/pintake identical.
 # REVERT: copy results\restart_bot.before-ladderboost.ps1 over restart_bot.ps1
 # (= v-coinfrac, C:\kals-live-0925j) and rerun while flat.
-$code = "C:\kals-live-0925k"
-$codeSha = "32639cccc7f1"
+# v-etclock (2026-10-23): C:\kals-live-0925m = 0925k + the ET day key follows US daylight
+# time (et_offset_s: zoneinfo America/New_York, else the US rule; was a fixed -4 h, which
+# would have turned the DAY loss cap and the dayloss file at 23:00 EST from 2026-11-02).
+# Orders and sizes unchanged. Same argv. ordercli/pintake identical. Startup-path self-test
+# with this full argv: SELF-TEST PASSED (.sweep\q-2026-10-23\clockbug\pinrun_0925m_selftest.out).
+# REVERT: copy results\restart_bot.before-etclock.ps1 over restart_bot.ps1
+# (= v-ladderboost, C:\kals-live-0925k, 32639cccc7f1) and rerun while flat.
+$code = "C:\kals-live-0925m"
+$codeSha = "f36c427f99a5"
 # pinrun's code_sha cannot see ordercli / pintake (0925e and 0925g shared
 # it), so the launcher checks both of them as well, before anything stops.
 $ordercliSha = "467782077a23"
